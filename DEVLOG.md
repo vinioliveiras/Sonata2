@@ -366,3 +366,19 @@
   outlines); empty files get the kind/icon their name suggests.
 - Name order is case-insensitive in every locale (casefolded collate key).
 - tests/test_files.py (sizes, sorted load + live insert).
+
+## 2026-09-29 -- progress, glass sidebars, disk meters
+
+- ui/progress.py: bar, spinner, capacity meter, Finder "Copy" window
+  (delayed show, stop buttons, ETA); ui/fmt.py (Finder sizes, ETA);
+  dialog.alert(check="Apply to All"). Gallery rows added.
+- Materials: `sonata-sidebar` (glass when SONATA_GLASS=1, set by
+  session-env.sh; solid elsewhere) + `sonata-glass` transparent windows;
+  Wayfire blur now matches app_id containing "sonata2". Files and Settings
+  sidebars use it.
+- Files sidebar: capacity meter + "N GB free" under Computer and drives
+  (Vini chose the sidebar over Finder's status bar); read on focus.
+- Press/transition feedback on Files toolbar, sidebar rows, icons (rule
+  in DESIGN.md: every click animates).
+- dev-session: component logs in .dev-logs/, GDK_BACKEND unset; layer.py
+  prints once why layer-shell is unavailable.

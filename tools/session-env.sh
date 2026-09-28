@@ -71,4 +71,6 @@ unset QT_STYLE_OVERRIDE KDE_FULL_SESSION KDE_SESSION_VERSION
 # Chromium/Electron (Chrome, Spotify, VS Code...): native Wayland with
 # client-side title bars drawn from the GTK theme.
 export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-auto}"
+# Wayfire blurs Sonata windows here: sidebars use the glass material.
+export SONATA_GLASS=1
 export PYTHONPATH="$SONATA_REPO${PYTHONPATH:+:$PYTHONPATH}"

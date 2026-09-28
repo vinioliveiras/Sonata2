@@ -36,6 +36,20 @@ def ensure_preload() -> None:
     os.execve(sys.executable, sys.orig_argv, env)   # orig_argv keeps "-m sonata2"
 
 
+_reported = False
+
+
+def _why(reason: str) -> None:
+    """Say once, on stderr, why shell surfaces fall back to plain windows."""
+    global _reported
+    if not _reported:
+        _reported = True
+        print(f"sonata2: layer-shell unavailable ({reason}); using plain windows "
+              f"[WAYLAND_DISPLAY={os.environ.get('WAYLAND_DISPLAY')}, "
+              f"GDK_BACKEND={os.environ.get('GDK_BACKEND')}, LD_PRELOAD={os.environ.get('LD_PRELOAD')}]",
+              file=sys.stderr, flush=True)
+
+
 def layer_shell():
     """The Gtk4LayerShell module when usable on this display, else None."""
     try:
@@ -43,12 +57,18 @@ def layer_shell():
         gi.require_version("Gtk4LayerShell", "1.0")
         from gi.repository import Gtk4LayerShell as LS
     except (ImportError, ValueError):
+        _why("Gtk4LayerShell typelib not found")
         return None
     gi.require_version("Gdk", "4.0")
     from gi.repository import Gdk
-    if type(Gdk.Display.get_default()).__name__ != "WaylandDisplay":
-        return None            # X11 / previews: plain windows (no assertion spam)
-    return LS if LS.is_supported() else None
+    display = type(Gdk.Display.get_default()).__name__
+    if display != "WaylandDisplay":
+        _why(f"display is {display}, not Wayland")   # X11 / previews
+        return None
+    if not LS.is_supported():
+        _why("compositor/preload: is_supported() is false")
+        return None
+    return LS
 
 
 def anchor_edge(win, namespace: str, edge: str, exclusive: int) -> bool:

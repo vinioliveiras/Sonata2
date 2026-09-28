@@ -38,9 +38,20 @@ def is_dark() -> bool:
     return Adw.StyleManager.get_default().get_dark()
 
 
+def glass() -> bool:
+    """True when the compositor blurs Sonata windows (Sonata session or the
+    dev session: SONATA_GLASS=1 from session-env.sh). Elsewhere materials
+    fall back to their solid tokens."""
+    import os
+    return os.environ.get("SONATA_GLASS") == "1"
+
+
 def values() -> dict:
-    """Current tokens (for code that needs a value, e.g. drawing)."""
-    return {**tokens.palette(is_dark(), _theme()), **_extra}
+    """Current tokens (for code that needs a value, e.g. drawing), plus the
+    materials resolved for this compositor: `sidebar_material`."""
+    v = {**tokens.palette(is_dark(), _theme()), **_extra}
+    v["sidebar_material"] = v["sidebar_glass" if glass() else "sidebar_bg"]
+    return v
 
 
 _theme_name = None

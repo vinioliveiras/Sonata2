@@ -17,7 +17,10 @@ ui.register("""
 gridview.fs-icons { background: %(content_bg)s; padding: 10px 14px; }
 gridview.fs-icons > child { padding: 4px 2px 6px 2px; background: none; border-radius: 0; outline: none; }
 gridview.fs-icons > child:selected, gridview.fs-icons > child:focus { background: none; }
-gridview.fs-icons .fs-icon { padding: 3px; border-radius: 6px; }
+gridview.fs-icons .fs-icon { padding: 3px; border-radius: 6px;
+  transition: background-color %(t_fast)s, filter %(t_press)s; }
+gridview.fs-icons > child:active .fs-icon { filter: brightness(0.75); }   /* Finder darkens a pressed icon */
+gridview.fs-icons .fs-name { transition: background-color %(t_fast)s, color %(t_fast)s; }
 gridview.fs-icons .fs-name { padding: 1px 4px; border-radius: 4px; font-size: 12px; color: %(label)s; }
 gridview.fs-icons > child:selected .fs-icon { background: %(item_selected_bg)s; }
 gridview.fs-icons > child:selected .fs-name { background: %(accent_selected)s; color: %(label_on_accent)s; }
@@ -35,7 +38,7 @@ columnview.fs-list > header > button:hover { background: %(tool_hover)s; }
 columnview.fs-list > header > button sort-indicator { color: %(label_secondary)s; -gtk-icon-size: 10px; }
 columnview.fs-list > listview { background: %(content_bg)s; }
 columnview.fs-list > listview > row { min-height: 24px; padding: 0; background: none; border-radius: 0;
-  color: %(label)s; }
+  color: %(label)s; transition: background-color %(t_fast)s, color %(t_fast)s; }
 columnview.fs-list > listview > row:nth-child(even) { background: %(row_alt)s; }
 columnview.fs-list > listview > row:selected { background: %(accent_selected)s; color: %(label_on_accent)s; }
 window:backdrop columnview.fs-list > listview > row:selected { background: %(sidebar_selected)s; color: %(label)s; }
@@ -48,7 +51,7 @@ columnview.fs-list > listview > row:selected .fs-dim { color: inherit; }
 .fs-col { border-right: 1px solid %(separator)s; }
 .fs-col listview { background: %(content_bg)s; padding: 2px 4px; }
 .fs-col listview > row { min-height: 22px; padding: 0 6px 0 4px; border-radius: 4px; color: %(label)s;
-  background: none; }
+  background: none; transition: background-color %(t_fast)s, color %(t_fast)s; }
 .fs-col listview > row:selected { background: %(sidebar_selected)s; color: %(label)s; }
 .fs-col.fs-active listview > row:selected { background: %(accent_selected)s; color: %(label_on_accent)s; }
 window:backdrop .fs-col.fs-active listview > row:selected { background: %(sidebar_selected)s; color: %(label)s; }
@@ -89,19 +92,7 @@ def kind(info) -> str:
 
 
 def size(info) -> str:
-    """Finder style: "Zero bytes", "653 bytes", "12 KB", "1.4 MB" (decimal units)."""
-    if is_dir(info):
-        return "--"
-    n = info.get_size()
-    if n == 0:
-        return "Zero bytes"
-    if n < 1000:
-        return f"{n} bytes"
-    if n < 1000 ** 2:
-        return f"{round(n / 1000)} KB"
-    for unit, p in (("MB", 2), ("GB", 3), ("TB", 4)):
-        if n < 1000 ** (p + 1) or unit == "TB":
-            return f"{n / 1000 ** p:.1f} {unit}"
+    return "--" if is_dir(info) else ui.fmt.size(info.get_size())
 
 
 def date(info) -> str:

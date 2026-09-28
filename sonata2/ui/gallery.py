@@ -6,7 +6,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
-from . import controls, label, menu, register, tokens, window  # noqa: E402
+from . import controls, label, menu, progress, register, tokens, window  # noqa: E402
 
 register("""
 window.sonata-gallery { background: %(window_bg)s; color: %(label)s; font-family: %(font)s; }
@@ -58,10 +58,20 @@ class GalleryWindow(Gtk.ApplicationWindow):
         col.append(_row("Hover label", tip_anchor))
         self.menu_anchor = controls.push_button("Right-click menu", lambda: sample_menu(self.menu_anchor))
         col.append(_row("Menu", self.menu_anchor))
+        pulse = progress.bar()
+        GLib.timeout_add(120, lambda: (pulse.pulse(), True)[1])
+        col.append(_row("Progress", _sized(progress.bar(0.42)), _sized(pulse), progress.spinner()))
+        col.append(_row("Meter", _sized(progress.meter(0.55)), _sized(progress.meter(0.95)),
+                        Gtk.Label(label="(disk capacity, red above 90 %)", css_classes=["gallery-caption"])))
         col.append(_row("Traffic lights", window.traffic_lights(lambda: None, lambda: None),
                         Gtk.Label(label="(zoom disabled)", css_classes=["gallery-caption"])))
         self.set_child(col)
         self.connect("map", lambda *_: GLib.timeout_add(300, lambda: (self.tip.popup(), False)[1]))
+
+
+def _sized(w, width=160):
+    w.set_size_request(width, -1)
+    return w
 
 
 def _disabled(w):

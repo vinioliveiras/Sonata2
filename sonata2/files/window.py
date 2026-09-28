@@ -21,14 +21,16 @@ VIEWS = (("icons", "view-grid-symbolic", "as Icons"), ("list", "view-list-symbol
 DEFAULTS = {"view": "icons"}
 
 ui.register("""
-window.sonata-files { background: %(content_bg)s; color: %(label)s; font-family: %(font)s;
-  font-size: %(text_body)s; }
+window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
+.fs-content { background: %(content_bg)s; }
 .fs-paned > separator { min-width: 1px; background: %(separator)s; }
 .fs-toolbar { min-height: 52px; padding: 0 10px 0 8px; background: %(content_bg)s;
   box-shadow: inset 0 -1px %(separator)s; }
 .fs-toolbar .fs-title { font-weight: 700; font-size: %(text_title)s; color: %(label)s; }
 .fs-toolbar button { min-width: 28px; min-height: 26px; padding: 0 4px; border-radius: %(r_button)s;
-  background: none; box-shadow: none; border: none; color: %(tool_icon)s; }
+  background: none; box-shadow: none; border: none; color: %(tool_icon)s;
+  transition: background-color %(t_fast)s, color %(t_fast)s; }
+.fs-toolbar button:active { background: %(sidebar_selected)s; transition: background-color %(t_press)s; }
 .fs-toolbar button:hover { background: %(tool_hover)s; }
 .fs-toolbar button:disabled { color: %(label_tertiary)s; background: none; }
 .fs-toolbar button:checked { background: %(tool_hover)s; color: %(label)s; }
@@ -50,7 +52,7 @@ def _icon_button(icon, tip, cb, css=None):
 
 class FilesWindow(Adw.ApplicationWindow):
     def __init__(self, app, uri: str = None):
-        super().__init__(application=app, title="Files", css_classes=["sonata-files"],
+        super().__init__(application=app, title="Files", css_classes=["sonata-files", "sonata-glass"],
                          default_width=920, default_height=560)
         self.set_size_request(560, 320)
         self.history, self.pos = [], -1
@@ -62,7 +64,7 @@ class FilesWindow(Adw.ApplicationWindow):
         paned.set_position(200)
         self.sidebar.set_size_request(150, -1)
 
-        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["fs-content"])
         content.append(Gtk.WindowHandle(child=self._toolbar()))
         overlay = Gtk.Overlay(vexpand=True)
         overlay.set_child(self._views())
@@ -73,6 +75,7 @@ class FilesWindow(Adw.ApplicationWindow):
         paned.set_shrink_end_child(False)
         self.set_content(paned)
         self._shortcuts()
+        self.connect("notify::is-active", lambda w, _p: w.is_active() and self.sidebar.refresh_space())
         self.set_view(config.load("files", DEFAULTS)["view"], save=False)
         self.go(uri or Gio.File.new_for_path(GLib.get_home_dir()).get_uri())
 

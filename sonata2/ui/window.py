@@ -59,6 +59,15 @@ headerbar .traffic { margin-left: 5px; }   /* headerbar adds its own 5px start p
 """)
 
 
+# Materials (Big Sur vibrancy). A window using them keeps a transparent
+# background; the compositor blurs what shows through (Wayfire blur plugin,
+# app_id contains "sonata2"), and panes that must be opaque set their own.
+theme.register("""
+.sonata-sidebar { background: %(sidebar_material)s; }
+window.sonata-glass { background: transparent; }
+""", key="materials")
+
+
 def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
     """Close / minimize / zoom as macOS-style coloured dots. on_zoom=None greys the
     green one out (fixed-size windows, like System Settings)."""

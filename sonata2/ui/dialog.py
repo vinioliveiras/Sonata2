@@ -6,7 +6,10 @@
                  on_response=lambda rid: ...)
 
 Default button (Return): the response styled "default"; otherwise the first
-non-destructive one (Cancel), as on macOS for destructive alerts."""
+non-destructive one (Cancel), as on macOS for destructive alerts.
+
+check="Apply to All" adds a checkbox (Finder's replace/conflict alerts);
+on_response then gets (response_id, checked)."""
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -22,15 +25,22 @@ window.messagedialog.sonata-alert, window.messagedialog.sonata-alert > contents 
 }
 window.messagedialog.sonata-alert .heading { font-size: %(text_body)s; font-weight: 700; }
 window.messagedialog.sonata-alert .body { font-size: %(text_small)s; color: %(label_secondary)s; }
+window.messagedialog.sonata-alert checkbutton { font-size: %(text_small)s; }
 """)
 
 _STYLE = {"destructive": Adw.ResponseAppearance.DESTRUCTIVE,
           "default": Adw.ResponseAppearance.SUGGESTED}
 
 
-def alert(heading: str, body: str, responses, on_response=None, parent=None) -> Adw.MessageDialog:
+def alert(heading: str, body: str, responses, on_response=None, parent=None,
+          check: str = None) -> Adw.MessageDialog:
     dlg = Adw.MessageDialog(heading=heading, body=body, transient_for=parent,
                             css_classes=["sonata-alert"])
+    box = None
+    if check:
+        from gi.repository import Gtk
+        box = Gtk.CheckButton(label=check, halign=Gtk.Align.CENTER)
+        dlg.set_extra_child(box)
     default = None
     for rid, text, style in responses:
         dlg.add_response(rid, text)
@@ -42,6 +52,9 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None) -> 
         dlg.set_default_response(default)
         dlg.set_close_response(responses[0][0])
     if on_response:
-        dlg.connect("response", lambda _d, rid: on_response(rid))
+        if box is not None:
+            dlg.connect("response", lambda _d, rid: on_response(rid, box.get_active()))
+        else:
+            dlg.connect("response", lambda _d, rid: on_response(rid))
     dlg.present()
     return dlg

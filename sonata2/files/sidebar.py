@@ -1,6 +1,8 @@
 """Files sidebar (Finder source list): Favorites (Recents, Desktop,
 Documents, Downloads, home, GTK bookmarks) and Locations (Computer,
-mounted drives with an eject button). Live: rebuilt when drives come and go."""
+mounted drives with an eject button and a capacity meter -- used / free,
+Vini's choice). Live: rebuilt when drives come and go; free space is read
+again when the window gets focus (no polling)."""
 import os
 
 import gi
@@ -12,10 +14,11 @@ from .. import ui  # noqa: E402
 from . import folder  # noqa: E402
 
 ui.register("""
-.fs-sidebar { background: %(sidebar_bg)s; }
+.fs-sidebar { }
 .fs-sidebar list { background: none; padding: 0 10px 10px 10px; }
 .fs-sidebar list row { min-height: 28px; padding: 0 6px; border-radius: %(r_menu)s;
-  background: none; color: %(label)s; }
+  background: none; color: %(label)s; transition: background-color %(t_fast)s; }
+.fs-sidebar list row:active { background: %(tool_hover)s; }
 .fs-sidebar list row:hover { background: none; }
 .fs-sidebar list row:selected { background: %(sidebar_selected)s; color: %(label)s; }
 .fs-sidebar list row.fs-head { min-height: 22px; margin-top: 8px; }
@@ -25,6 +28,8 @@ ui.register("""
 .fs-sidebar button.fs-eject { min-width: 18px; min-height: 18px; padding: 0; background: none;
   box-shadow: none; border: none; color: %(label_secondary)s; }
 .fs-sidebar-top { min-height: 52px; }
+.fs-sidebar row.fs-disk { min-height: 40px; }
+.fs-sidebar .fs-free { font-size: 10px; color: %(label_secondary)s; }
 """, key="files-sidebar")
 
 
@@ -58,7 +63,7 @@ class Sidebar(Gtk.Box):
     """on_open(uri) when a place is clicked."""
 
     def __init__(self, on_open, top: Gtk.Widget):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, css_classes=["fs-sidebar"])
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, css_classes=["fs-sidebar", "sonata-sidebar"])
         self._on_open = on_open
         self._rows = {}
         self._quiet = False
@@ -77,11 +82,12 @@ class Sidebar(Gtk.Box):
     def rebuild(self) -> None:
         self.list.remove_all()
         self._rows = {}
+        self._disks = []
         self._head("Favorites")
         for title, icon, uri in _favorites():
             self._place(title, icon, uri)
         self._head("Locations")
-        self._place("Computer", "drive-harddisk-symbolic", "file:///")
+        self._place("Computer", "drive-harddisk-symbolic", "file:///", disk=True)
         for mount in self._volumes.get_mounts():
             if mount.is_shadowed():
                 continue
@@ -89,7 +95,7 @@ class Sidebar(Gtk.Box):
             if root.get_uri() in self._rows:
                 continue
             self._place(mount.get_name(), mount.get_symbolic_icon() or "drive-removable-media-symbolic",
-                        root.get_uri(), mount if (mount.can_eject() or mount.can_unmount()) else None)
+                        root.get_uri(), mount if (mount.can_eject() or mount.can_unmount()) else None, disk=True)
         if self._current:
             self.select(self._current)
 
@@ -98,7 +104,7 @@ class Sidebar(Gtk.Box):
         row.set_child(Gtk.Label(label=text, xalign=0, margin_start=2))
         self.list.append(row)
 
-    def _place(self, title, icon, uri, mount=None) -> None:
+    def _place(self, title, icon, uri, mount=None, disk=False) -> None:
         row = Gtk.ListBoxRow()
         row.uri = uri
         box = Gtk.Box(spacing=7)
@@ -108,7 +114,23 @@ class Sidebar(Gtk.Box):
         else:
             img.set_from_gicon(icon)
         box.append(img)
-        box.append(Gtk.Label(label=title, xalign=0, hexpand=True, ellipsize=3, css_classes=["fs-place"]))
+        name = Gtk.Label(label=title, xalign=0, hexpand=True, ellipsize=3, css_classes=["fs-place"])
+        if disk:
+            row.add_css_class("fs-disk")
+            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3, hexpand=True, valign=Gtk.Align.CENTER)
+            col.append(name)
+            line = Gtk.Box(spacing=6)
+            row.meter = ui.progress.meter(0)
+            row.meter.set_hexpand(True)
+            row.free = Gtk.Label(css_classes=["fs-free"])
+            line.append(row.meter)
+            line.append(row.free)
+            col.append(line)
+            box.append(col)
+            self._disks.append(row)
+            self._read_space(row)
+        else:
+            box.append(name)
         if mount is not None:
             eject = Gtk.Button(icon_name="media-eject-symbolic", css_classes=["fs-eject"],
                                tooltip_text="Eject", valign=Gtk.Align.CENTER)
@@ -117,6 +139,29 @@ class Sidebar(Gtk.Box):
         row.set_child(box)
         self.list.append(row)
         self._rows[uri] = row
+
+    def refresh_space(self) -> None:
+        for row in self._disks:
+            self._read_space(row)
+
+    def _read_space(self, row) -> None:
+        def got(f, res):
+            try:
+                info = f.query_filesystem_info_finish(res)
+            except GLib.Error:
+                row.meter.set_visible(False)
+                return
+            total = info.get_attribute_uint64("filesystem::size")
+            free = info.get_attribute_uint64("filesystem::free")
+            if not total:
+                row.meter.get_parent().set_visible(False)
+                return
+            ui.progress.set_meter(row.meter, (total - free) / total)
+            row.free.set_label(f"{ui.fmt.size(free)} free")
+            row.set_tooltip_text(f"{ui.fmt.size(free)} available of {ui.fmt.size(total)}\n"
+                                 f"{ui.fmt.size(total - free)} used")
+        Gio.File.new_for_uri(row.uri).query_filesystem_info_async(
+            "filesystem::size,filesystem::free", GLib.PRIORITY_LOW, None, got)
 
     def _activated(self, _lb, row) -> None:
         if not self._quiet and getattr(row, "uri", None):

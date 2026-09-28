@@ -12,7 +12,10 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 source "$REPO/tools/session-env.sh"     # themes, cursors, GTK_THEME for apps started inside
 command -v wayfire >/dev/null || { echo "wayfire is not installed (sudo pacman -S wayfire)"; exit 1; }
 
+# Unset what a Sonata/GTK host session may leak into this terminal.
+unset GDK_BACKEND
 run="$(mktemp -d)"
+logs="$REPO/.dev-logs"; mkdir -p "$logs"; rm -f "$logs"/*.log
 trap 'rm -rf "$run"' EXIT
 wall="${SONATA2_WALLPAPER:-}"
 if [ -z "$wall" ] && python3 -c "import PIL" 2>/dev/null; then
@@ -37,10 +40,11 @@ sed -e '/^\[autostart\]/,$d' -e "s|= sonata2 |= env PYTHONPATH=$REPO python3 -m 
 {
     echo "[autostart]"
     echo "autostart_wf_shell = false"
-    echo "wallpaper = env PYTHONPATH='$REPO' python3 -m sonata2 wallpaper"
-    echo "dock = env PYTHONPATH='$REPO' python3 -m sonata2 dock"
-    echo "launchpad = env PYTHONPATH='$REPO' python3 -m sonata2 launchpad --background"
-    echo "topbar = env PYTHONPATH='$REPO' python3 -m sonata2 topbar"
+    # each component logs to .dev-logs/<name>.log (read them if something is missing)
+    for c in wallpaper dock "launchpad --background" topbar; do
+        n="${c%% *}"
+        echo "$n = sh -c 'env PYTHONPATH=$REPO python3 -m sonata2 $c > $logs/$n.log 2>&1'"
+    done
     [ -n "$term" ] && echo "terminal = $term"
     echo
     echo "[output:WL-1]"
@@ -57,4 +61,5 @@ if [ -n "$wall" ] && { [ -z "$cur" ] || [ "$cur" = "''" ]; }; then
 fi
 echo "Wayfire config: $run/wayfire.ini"
 [ -z "$wall" ] && echo "(no wallpaper: install python-pillow or set SONATA2_WALLPAPER to see the glass)"
-wayfire -c "$run/wayfire.ini"
+wayfire -c "$run/wayfire.ini" > "$logs/wayfire.log" 2>&1 || true
+echo "Logs: $logs"

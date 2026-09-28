@@ -9,9 +9,10 @@ See docs/DESIGN.md.
     ui.controls.push_button("OK", cb, style="default")
     ui.dialog.alert(heading, body, responses, on_response)
     ui.window.traffic_lights(close, minimize, zoom)
+    ui.progress.bar(0.4) / spinner() / meter(0.7) / start(title, on_cancel)
 """
-from . import controls, dialog, label, menu, panel, theme, tokens, window  # noqa: F401  (register CSS)
+from . import controls, dialog, fmt, label, menu, panel, progress, theme, tokens, window  # noqa: F401  (register CSS)
 from .theme import force_appearance, is_dark, on_change, px, register, rgba, setup, shadow, values  # noqa: F401
 
-__all__ = ["controls", "dialog", "label", "menu", "panel", "theme", "tokens", "window",
+__all__ = ["controls", "dialog", "fmt", "label", "menu", "panel", "progress", "theme", "tokens", "window",
            "force_appearance", "is_dark", "on_change", "px", "register", "rgba", "setup", "shadow", "values"]

@@ -48,7 +48,9 @@ not new code. Selected in `~/.config/sonata2/appearance.json` (`theme`).
 | `ui/menu.py` | Context menu / menu popover: sections, check items, disabled items, side submenus (NESTED) | `menu.popup(widget, [[Item(...)], ...])` |
 | `ui/label.py` | Hover label (Dock name bubble, tooltips) | `HoverLabel(widget, "Name")` |
 | `ui/controls.py` | Push button (plain / default / destructive), pop-up button with the accent chevron cap, switch | `push_button`, `popup_button`, `switch` |
-| `ui/dialog.py` | Alert (bold heading, body, Cancel default for destructive actions) | `alert(heading, body, responses, on_response)` |
+| `ui/dialog.py` | Alert (bold heading, body, Cancel default for destructive actions; optional "Apply to All" checkbox) | `alert(heading, body, responses, on_response, check=None)` |
+| `ui/progress.py` | Progress bar (6 px, accent; indeterminate pulse), spinner, capacity meter (4 px, red above 90 %), Finder "Copy" window of running operations (shows after 0.7 s, stop buttons, "12 MB of 140 MB — About 5 seconds") | `bar(f)`, `spinner()`, `meter(f)`, `start(title, on_cancel).update(done, total)` |
+| `ui/fmt.py` | Finder formats: sizes ("12 KB"), remaining time ("About a minute") | `fmt.size(n)`, `fmt.eta(s)` |
 | `ui/window.py` | Traffic lights (close / minimize / zoom, zoom greyed for fixed windows) | `traffic_lights(close, minimize, zoom=None)` |
 
 Shell components (Dock, Launchpad, ...) register their own CSS through
@@ -72,6 +74,11 @@ Widgets that paint in `do_snapshot` use `ui.rgba()`, `ui.shadow()`,
   `SONATA_DEFAULTS` to re-seed), forces the Qt platform theme, and never reads
   ~/.config/wayfire.ini. Known leak: a user `~/.config/gtk-4.0/gtk.css`
   still applies to third-party GTK4 apps (Sonata's own UI is above it).
+- **Every click animates (Vini).** Anything clickable gives press feedback
+  and eases between states: hover/selection colours transition
+  (`t_fast`), pressed state darkens quickly (`t_press`) -- icons darken
+  like Finder's, buttons/rows get the pressed fill. Surfaces open/close
+  with their own animation (menus, Launchpad zoom, Dock bounce).
 - **Low CPU, even with animations.** Animate only transform/opacity or
   snapshot-painted values; drive them with Adw.TimedAnimation/frame clock
   (no timers polling); stop every animation/tick callback when idle; no

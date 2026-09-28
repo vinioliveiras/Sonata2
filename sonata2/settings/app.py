@@ -37,7 +37,12 @@ SECTIONS = [  # id, title, icon, badge colour, group
 ]
 
 ui.register("""
-window.sonata-settings { background: %(window_bg)s; color: %(label)s; }
+window.sonata-settings { color: %(label)s; }
+/* glass sidebar (standard material), opaque content pane */
+.sonata-settings .sidebar-pane { background: none; }
+.st-sidebar headerbar, .st-sidebar toolbarview, .st-sidebar scrolledwindow,
+.st-sidebar list { background: none; box-shadow: none; }
+.st-content { background: %(window_bg)s; }
 .st-badge { border-radius: 7px; padding: 4px; color: white; }
 .st-badge.big { border-radius: 12px; padding: 10px; }
 .st-badge.blue { background: %(sys_blue)s; } .st-badge.green { background: %(sys_green)s; }
@@ -95,7 +100,7 @@ def slider_row(title, value, lower, upper, on_change, subtitle="") -> Adw.Action
 
 class Settings(Adw.ApplicationWindow):
     def __init__(self, app, start: str = "wifi"):
-        super().__init__(application=app, title="System Settings", css_classes=["sonata-settings"])
+        super().__init__(application=app, title="System Settings", css_classes=["sonata-settings", "sonata-glass"])
         # Fixed size, like macOS System Settings.
         self.set_default_size(920, 640)
         self.set_resizable(False)
@@ -149,7 +154,7 @@ class Settings(Adw.ApplicationWindow):
                              self.select(r.sid, from_sidebar=True))
         box.append(self.listbox)
         tv.set_content(Gtk.ScrolledWindow(child=box, hscrollbar_policy=Gtk.PolicyType.NEVER))
-        return Adw.NavigationPage(title="System Settings", child=tv)
+        return Adw.NavigationPage(title="System Settings", child=tv, css_classes=["st-sidebar", "sonata-sidebar"])
 
     def select(self, sid, from_sidebar=False):
         if not from_sidebar:
@@ -165,7 +170,7 @@ class Settings(Adw.ApplicationWindow):
             hb.set_title_widget(Gtk.Label(label=title, css_classes=["st-pane-title"]))
             tv.add_top_bar(hb)
             tv.set_content(page)
-            self.pages[sid] = Adw.NavigationPage(title=title, child=tv)
+            self.pages[sid] = Adw.NavigationPage(title=title, child=tv, css_classes=["st-content"])
         self.split.set_content(self.pages[sid])
         self.split.set_show_content(True)
 

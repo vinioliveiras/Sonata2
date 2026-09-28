@@ -37,7 +37,8 @@ LIGHT = {
     "module_bg": "rgba(255, 255, 255, 0.55)",    # Control Center modules
     "toggle_off": "rgba(0, 0, 0, 0.10)",         # round module toggles
     "content_bg": "#ffffff",                     # document/list area of windows
-    "sidebar_bg": "#ebebed",                     # source lists (Files, Settings)
+    "sidebar_bg": "#ebebed",                     # source lists (Files, Settings), no blur
+    "sidebar_glass": "rgba(236, 236, 240, 0.66)",  # same, blurred by the compositor (vibrancy)
     "sidebar_selected": "rgba(0, 0, 0, 0.10)",   # selected source-list row
     "item_selected_bg": "rgba(0, 0, 0, 0.08)",   # backdrop behind a selected icon
     "tool_hover": "rgba(0, 0, 0, 0.06)",         # toolbar button hover
@@ -78,6 +79,7 @@ DARK = {
     "toggle_off": "rgba(255, 255, 255, 0.16)",
     "content_bg": "#1e1e1e",
     "sidebar_bg": "#2a2a2c",
+    "sidebar_glass": "rgba(40, 40, 44, 0.62)",
     "sidebar_selected": "rgba(255, 255, 255, 0.10)",
     "item_selected_bg": "rgba(255, 255, 255, 0.10)",
     "tool_hover": "rgba(255, 255, 255, 0.08)",
