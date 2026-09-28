@@ -6,6 +6,10 @@
 #   - GTK3/GTK4/libadwaita apps use the Big Sur window theme (Sonata-Light/Dark)
 #     with macOS button layout (close, minimize, zoom on the left)
 #   - Sonata-only dconf layer, so these choices don't leak into GNOME/KDE
+# Not inherited from a shell process of another session (e.g. a terminal
+# opened from the Dock): the flag would disable layer-shell here.
+unset SONATA2_PRELOADED SONATA2_ORIG_LD_PRELOAD
+case "${LD_PRELOAD:-}" in *gtk4-layer-shell*) unset LD_PRELOAD ;; esac
 SONATA_REPO="${SONATA_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 export SONATA_REPO
 export XDG_DATA_DIRS="$SONATA_REPO/sonata2/data:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"

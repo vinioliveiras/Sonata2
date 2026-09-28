@@ -8,16 +8,30 @@ import os
 import sys
 
 _PRELOAD_FLAG = "SONATA2_PRELOADED"
+_ORIG_PRELOAD = "SONATA2_ORIG_LD_PRELOAD"
 
 
 def ensure_preload() -> None:
-    """Re-exec the current process with libgtk4-layer-shell preloaded."""
-    if os.environ.get(_PRELOAD_FLAG) or not os.environ.get("WAYLAND_DISPLAY"):
+    """Re-exec the current process with libgtk4-layer-shell preloaded.
+
+    After the re-exec the environment is restored, so apps started from the
+    shell (and a nested dev session started from them) don't inherit the
+    preload or the flag -- an inherited flag would skip the preload there
+    and turn every shell surface into a plain window."""
+    if os.environ.get(_PRELOAD_FLAG):
+        os.environ.pop(_PRELOAD_FLAG)
+        orig = os.environ.pop(_ORIG_PRELOAD, "")
+        if orig:
+            os.environ["LD_PRELOAD"] = orig
+        else:
+            os.environ.pop("LD_PRELOAD", None)
+        return
+    if not os.environ.get("WAYLAND_DISPLAY"):
         return
     lib = ctypes.util.find_library("gtk4-layer-shell")
     if not lib:
         return
-    env = dict(os.environ, **{_PRELOAD_FLAG: "1"})
+    env = dict(os.environ, **{_PRELOAD_FLAG: "1", _ORIG_PRELOAD: os.environ.get("LD_PRELOAD", "")})
     env["LD_PRELOAD"] = " ".join(filter(None, (lib, env.get("LD_PRELOAD"))))
     os.execve(sys.executable, sys.orig_argv, env)   # orig_argv keeps "-m sonata2"
 
