@@ -18,10 +18,14 @@ list: [docs/PARITY.md](docs/PARITY.md).
   - [x] M1.5a magnification (animated cosine wave, icons grow above the
         plate), drag the divider to resize (16-128 px), divider menu
         (Turn Magnification On/Off)
-  - [ ] M1.5b position left/bottom/right, auto-hide (slide, delay),
-        divider menu: Turn Hiding On/Off, Position on Screen
-        (All Dock options will also be in the macOS-style Settings app, M6.)
-  - [ ] M1.6 recent apps section, Stacks (Downloads folder: fan/grid)
+  - [x] M1.5b position left/bottom/right, auto-hide (slide, reveal delay,
+        stays while a menu is open), divider menu: Turn Hiding On/Off,
+        Turn Magnification On/Off, Position on Screen, Show Recent
+        Applications. (All Dock options will also be in the macOS-style
+        Settings app, M6.)
+  - [x] M1.6 recent apps section (3, own separator), Stacks: Downloads by
+        default, folders dropped on the Dock; Grid/List panel, drag items
+        out, Sort by / Display as / View content as, Remove, Open
   - [ ] M1.7 polish on hardware: multi-monitor, HiDPI, performance
   - Later (needs other components): notification badges, attention bounce
     (M5), Show All Windows (Wayfire scale IPC), minimized-window tiles

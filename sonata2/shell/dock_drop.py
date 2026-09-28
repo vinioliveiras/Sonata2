@@ -4,6 +4,7 @@
   hovered only if the app can open all of them (MIME types).
 - files on the Trash: move them to the Trash.
 - an application (.desktop file) anywhere on the Dock: pin it at that spot.
+- a folder anywhere on the Dock: add it as a stack.
 """
 import os
 import shutil
@@ -116,27 +117,36 @@ def attach_trash(dock, tile) -> None:
     tile.add_controller(_target(motion, drop, lambda *_: tile.remove_css_class(HOVER)))
 
 
+def _is_dir(f: Gio.File) -> bool:
+    return f.query_file_type(Gio.FileQueryInfoFlags.NONE, None) == Gio.FileType.DIRECTORY
+
+
 def attach_plate(dock) -> None:
-    """Apps dropped between icons (or on the plate's padding) get pinned."""
+    """Apps dropped between icons get pinned; folders become stacks."""
     def motion(target, _x, _y):
         files = _files(target.get_value())
-        return Gdk.DragAction.COPY if files and all(_is_app(f) for f in files) else 0
+        ok = files and (all(_is_app(f) for f in files) or all(_is_dir(f) for f in files))
+        return Gdk.DragAction.COPY if ok else 0
 
-    def drop(_target, value, x, _y):
+    def drop(_target, value, x, y):
         files = _files(value)
+        if files and all(_is_dir(f) for f in files):
+            for f in files:
+                dock.stacks.add(f.get_path())
+            return True
         if not files or not all(_is_app(f) for f in files):
             return False
-        return pin_files(dock, files, x=x)
+        return pin_files(dock, files, x=x, y=y)
 
     dock.add_controller(_target(motion, drop, lambda *_: None))
 
 
-def pin_files(dock, files, before=None, x=None) -> bool:
+def pin_files(dock, files, before=None, x=None, y=0.0) -> bool:
     """Pin dropped .desktop files at the drop position."""
     ok = False
     for f in files:
         did = app_id_for(f)
         if did:
-            dock.pin_at(did, before=before, x=x)
+            dock.pin_at(did, before=before, x=x, y=y)
             ok = True
     return ok

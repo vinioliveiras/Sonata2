@@ -33,7 +33,7 @@ def sample_menu(anchor) -> Gtk.PopoverMenu:
         [Item("Options", submenu=[[Item("Keep in Dock", checked=True), Item("Open at Login", checked=False)],
                                   [Item("Open File Location")]])],
         [Item("Hide"), Item("Quit"), Item("Disabled item", enabled=False)],
-    ], position=Gtk.PositionType.BOTTOM, offset=4)
+    ], position=Gtk.PositionType.BOTTOM, gap=4)
 
 
 class GalleryWindow(Gtk.ApplicationWindow):

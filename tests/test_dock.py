@@ -97,7 +97,8 @@ class DockTest(unittest.TestCase):
         from gi.repository import Gio
         from sonata2.shell import dock_drop
         path = os.path.join(os.environ["XDG_CONFIG_HOME"], "a.txt")
-        open(path, "w").write("hi")
+        with open(path, "w") as fh:
+            fh.write("hi")
         f = Gio.File.new_for_path(path)
         info = self.dock.tiles[self.keys()[0]].info
         expect = any(Gio.content_type_is_a("text/plain", t) for t in (info.get_supported_types() or []))
@@ -114,7 +115,7 @@ class DockTest(unittest.TestCase):
         self.dock.set_magnification(True, 80)
         tiles = self.dock.all_tiles()
         ok, b = tiles[1].compute_bounds(self.win)
-        self.dock._mag_x, self.dock._mag_strength = b.get_x() + b.get_width() / 2, 1.0
+        self.dock._mag_pos, self.dock._mag_strength = b.get_x() + b.get_width() / 2, 1.0
         self.dock._apply_magnification()
         sizes = [t.icon._size for t in tiles]
         self.assertEqual(max(sizes), sizes[1])          # biggest under the pointer
@@ -124,6 +125,48 @@ class DockTest(unittest.TestCase):
         self.dock._mag_strength = 0.0
         self.dock._apply_magnification()
         self.assertTrue(all(t.icon._size == self.cfg["icon_size"] for t in tiles))
+
+    def test_side_positions(self):
+        for edge in ("left", "right"):
+            cfg = dict(self.cfg, position=edge)
+            d = D.Dock(cfg)
+            w = Gtk.Window()
+            w.set_child(d)
+            w.present()
+            settle()
+            x, y, pw, ph = d.plate_rect()
+            self.assertEqual(pw, D.plate_height(cfg))
+            self.assertEqual(x, 0 if edge == "left" else d.get_width() - pw)
+            self.assertTrue(d.vertical)
+            w.destroy()
+
+    def test_recents(self):
+        from sonata2 import apps
+        key = self.keys()[-1]
+        self.dock.set_pinned(key, False)          # not running, not recent -> gone
+        self.assertNotIn(key, self.dock.tiles)
+        self.dock._note_recent(key)
+        self.assertEqual(self.cfg["recent"][0], key)
+        info = apps.lookup(key)
+        self.dock._add_tile(key, info.get_display_name(), info.get_icon(), info)
+        self.dock._relayout()
+        self.assertTrue(self.dock.recent_sep.get_visible())
+        self.assertIs(self.dock._first_extra(), self.dock.tiles[key])
+
+    def test_stack_panel(self):
+        from sonata2.shell import dock_stack
+        folder = os.path.join(os.environ["XDG_CONFIG_HOME"], "stackdir")
+        os.makedirs(folder, exist_ok=True)
+        for n in ("a.txt", "b.txt"):
+            with open(os.path.join(folder, n), "w") as fh:
+                fh.write(n)
+        self.dock.stacks.add(folder)
+        tile = self.dock.stacks.tiles()[-1]
+        self.assertEqual(len(dock_stack._items(folder, "name")), 2)
+        pop = self.dock.stacks.open_panel(tile)
+        settle()
+        pop.popdown()
+        dock_stack.stack_menu(self.dock.stacks, tile).popdown()
 
     def test_keep_in_dock_toggle(self):
         key = self.keys()[0]

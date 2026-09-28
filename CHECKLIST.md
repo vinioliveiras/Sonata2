@@ -79,3 +79,18 @@ Run `tools/dev-session.sh` (or a Wayfire session).
 - [ ] Drag the divider up: the Dock grows (ns-resize cursor); down: shrinks;
       the size stays after restarting.
 - [ ] Maximized windows stop above the (unmagnified) plate at any size.
+
+## M1.5b / M1.6 -- Position, auto-hide, recents, stacks
+- [ ] Divider menu > Position on Screen > Left / Right: the Dock moves,
+      icons stack vertically, dots sit between icon and screen edge, labels
+      and menus open towards the screen centre; windows stop beside it.
+- [ ] Turn Hiding On: the Dock slides out after the pointer leaves; touching
+      the screen edge along the Dock brings it back (~0.3 s); a right-click
+      menu keeps it visible; maximized windows now use the full screen.
+- [ ] Open an unpinned app, quit it: it stays after a second bar (recent,
+      no dot); after using 4 others only the last 3 remain. Divider menu >
+      Show Recent Applications off: the section disappears.
+- [ ] Downloads stack left of the Trash shows the newest file's icon; click:
+      grid with names, click an item opens it, drag one to the desktop.
+      Right-click > View content as > List; Display as > Folder; Sort by.
+- [ ] Drop a folder on the Dock: new stack. Options > Remove from Dock.

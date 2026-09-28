@@ -10,7 +10,7 @@ import shutil
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gio, GLib  # noqa: E402
+from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
 
@@ -124,23 +124,31 @@ def app_menu(dock, key: str, tile):
     elif info:
         sections.append([Item("Open", lambda: dock.launch(tile))])
     tile.label.popdown()
-    return ui.menu.popup(tile, sections)
+    return ui.menu.popup(tile, sections, position=dock.away)
 
 
 def trash_menu(tile):
     Item = ui.menu.Item
     tile.label.popdown()
+    away = getattr(tile.get_parent(), "away", Gtk.PositionType.TOP)
     return ui.menu.popup(tile, [
         [Item("Open", lambda: Gio.AppInfo.launch_default_for_uri("trash:///", None))],
         [Item("Empty Trash…", confirm_empty_trash, enabled=_trash_count() > 0)],
-    ])
+    ], position=away)
 
 
 def divider_menu(dock, divider):
-    """macOS Dock divider menu (hiding/position come with M1.5b)."""
+    """macOS Dock divider menu."""
     Item = ui.menu.Item
-    mag = dock.cfg["magnification"]
+    cfg = dock.cfg
     return ui.menu.popup(divider, [
-        [Item("Turn Magnification Off" if mag else "Turn Magnification On",
-              lambda: dock.set_magnification(not mag))],
-    ])
+        [Item("Turn Hiding Off" if cfg["autohide"] else "Turn Hiding On",
+              lambda: dock.set_option("autohide", not cfg["autohide"])),
+         Item("Turn Magnification Off" if cfg["magnification"] else "Turn Magnification On",
+              lambda: dock.set_magnification(not cfg["magnification"]))],
+        [Item("Position on Screen", submenu=[[
+            Item(label, lambda on, e=e: on and dock.set_option("position", e), checked=cfg["position"] == e)
+            for e, label in (("left", "Left"), ("bottom", "Bottom"), ("right", "Right"))]]),
+         Item("Show Recent Applications", lambda on: dock.set_option("show_recents", on),
+              checked=cfg["show_recents"])],
+    ], position=dock.away)

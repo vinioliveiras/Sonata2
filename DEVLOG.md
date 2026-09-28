@@ -188,3 +188,30 @@
 - Themes: tokens.THEMES = {"mac": ...}; `theme` in appearance.json. The
   windows theme will only add token values (Vini's plan).
 - tests: resize, magnification wave (10 tests).
+
+## 2026-09-28 -- M1.5b/M1.6: position, auto-hide, recents, stacks
+
+- Vini left to test everything later; asked to finish Dock, Launchpad and
+  top bar in one go.
+- Dock is edge-aware (edge-left/bottom/right classes): orientation, tile
+  alignment, dot beside the icon towards the edge, labels/menus on the
+  "away" side, plate painted against the edge, magnification and drag slots
+  along the Dock's axis, divider resizes along the perpendicular axis,
+  sideways launch bounce. Position change rebuilds the Dock
+  (DockWindow.rebuild; Dock.detach() drops the manager listener).
+- Auto-hide: exclusive zone 0; the Dock's snapshot is translated towards the
+  edge (Adw.TimedAnimation, 250 ms); while hidden the input region is a
+  2 px strip at the edge along the Dock; reveal after autohide_delay_ms
+  (300); hide 200 ms after leaving unless a menu/stack panel is open
+  (ui.menu.OPEN / on_closed).
+- Recents: last 3 unpinned apps that ran, kept after they quit, in a section
+  between two bars (recent_sep only when non-empty). Layout order is
+  rebuilt from config by _relayout() after every change.
+- Stacks (dock_stack.py): Downloads by default (XDG dir or ~/Downloads);
+  icon = newest item (Display as Stack) or folder icon; panel = popover with
+  FlowBox grid (5 columns, thumbnails when the thumbnailer made them) or
+  list; items are drag sources (Gdk.FileList); sort by name/added
+  (created/changed incl. usec)/modified/kind; monitored for changes.
+- `--set key=value` overrides Dock settings for previews; PREVIEW_SIZE
+  sizes the preview window.
+- tests: 13.

@@ -20,6 +20,7 @@ default_border none
 default_floating_border none
 for_window [title="Sonata 2 preview"] floating enable, move position 0 0
 CONF
+export PREVIEW_SIZE="${PREVIEW_SIZE:-960x260}"
 export XDG_RUNTIME_DIR="$run" WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1
 sway -c "$cfg" >"$run/sway.log" 2>&1 & sway_pid=$!
 for _ in $(seq 50); do sock=$(ls "$run"/wayland-* 2>/dev/null | grep -v lock | head -1) && [ -n "$sock" ] && break; sleep 0.1; done

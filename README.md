@@ -45,7 +45,14 @@ compositor.
   in a smooth wave above the plate. Right-click the divider (line before
   the Trash) -> Turn Magnification On. Drag the divider up/down to resize.
 
-Not yet: position left/right, auto-hide -- see
+- Divider menu: Turn Hiding On (auto-hide: slides out, comes back when the
+  pointer touches the screen edge), Magnification, Position on Screen
+  (Left / Bottom / Right), Show Recent Applications.
+- Recent apps: the last 3 unpinned apps you used, after a second bar.
+- Stacks: Downloads right of the divider (drop any folder on the Dock to add
+  one); click for a Grid/List panel, right-click for sort/display options.
+
+Remaining: hardware polish (multi-monitor, HiDPI) -- see
 [ROADMAP.md](ROADMAP.md).
 
 The look is macOS Big Sur/Monterey -- deliberately **not** Liquid Glass.
@@ -93,7 +100,8 @@ touching the system:
   `~/.config/sonata2/*.json` and read only by Sonata; never taken from
   GNOME/KDE/gsettings.
   - `dock.json`: pins, icon_size, edge_gap, glass, magnification,
-    magnified_size
+    magnified_size, position, autohide, autohide_delay_ms, show_recents,
+    recent, stacks
   - `appearance.json`: `icon_theme` (default `Sonata`), `theme` (`mac`;
     a `windows` theme comes later)
 - **Linux settings** -- the machine itself: Wi-Fi, Bluetooth, sound,

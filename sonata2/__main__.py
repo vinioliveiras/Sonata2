@@ -21,6 +21,9 @@ def main() -> int:
     p.add_argument("--label", type=int, default=-1)
     p.add_argument("--menu", type=int, default=-1, help="open the N-th tile's menu (screenshots)")
     p.add_argument("--submenu", action="store_true", help="with --menu: also open Options")
+    p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                   help="override a Dock setting for this run (not saved), e.g. position=left")
+    p.add_argument("--stack", action="store_true", help="screenshots: open the first stack")
     p.add_argument("--magnify", type=float, default=-1,
                    help="screenshots: magnify as if the pointer were at this x")
     args = p.parse_args()
@@ -55,6 +58,13 @@ def main() -> int:
                 GLib.timeout_add(500, open_gallery_menu)
             return
         cfg = dock.load_config()
+        import json
+        for kv in args.set:
+            k, v = kv.split("=", 1)
+            try:
+                cfg[k] = json.loads(v)
+            except ValueError:
+                cfg[k] = v
         dock.load_css(cfg)
         from gi.repository import Gdk
         from .wl.toplevels import ToplevelManager
@@ -70,11 +80,14 @@ def main() -> int:
             tiles = list(d.tiles.values()) + [d.trash]
             if args.label < len(tiles):
                 GLib.timeout_add(300, lambda: (tiles[args.label].label.popup(), False)[1])
+        if args.stack:
+            GLib.timeout_add(400, lambda: (win.dock.stacks.tiles() and
+                                           win.dock.stacks.open_panel(win.dock.stacks.tiles()[0]), False)[1])
         if args.magnify >= 0:
             def magnify():
                 d = win.dock
                 d.cfg["magnification"] = True
-                d._mag_x, d._mag_strength = args.magnify, 1.0
+                d._mag_pos, d._mag_strength = args.magnify, 1.0
                 d._apply_magnification()
                 return False
             GLib.timeout_add(300, magnify)

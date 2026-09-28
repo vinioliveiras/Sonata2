@@ -44,6 +44,12 @@ popover.menu separator { margin: 5px 10px; min-height: 1px; background-color: %(
 """)
 
 
+# Open menus of this process, so surfaces can stay put while one is open
+# (e.g. an auto-hiding Dock). `on_closed` callbacks run after any closes.
+OPEN = set()
+on_closed = []
+
+
 @dataclass
 class Item:
     label: str
@@ -77,7 +83,7 @@ def _build(sections, group, prefix="i") -> Gio.Menu:
 
 
 def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
-          offset: int = -6) -> Gtk.PopoverMenu:
+          gap: int = 6) -> Gtk.PopoverMenu:
     """Show a menu anchored to `widget`; it cleans itself up when closed."""
     group = Gio.SimpleActionGroup()
     model = _build(sections, group)
@@ -85,9 +91,17 @@ def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
     pop = Gtk.PopoverMenu.new_from_model_full(model, Gtk.PopoverMenuFlags.NESTED)
     pop.set_has_arrow(False)
     pop.set_position(position)
-    pop.set_offset(0, offset)
+    P = Gtk.PositionType
+    pop.set_offset(*{P.TOP: (0, -gap), P.BOTTOM: (0, gap), P.LEFT: (-gap, 0), P.RIGHT: (gap, 0)}[position])
     pop.set_parent(widget)
-    pop.connect("closed", lambda p: GLib.idle_add(lambda: (p.unparent(), False)[1]))
+
+    def closed(p):
+        OPEN.discard(p)
+        GLib.idle_add(lambda: (p.unparent(), False)[1])
+        for cb in list(on_closed):
+            cb()
+    pop.connect("closed", closed)
+    OPEN.add(pop)
     pop.popup()
     return pop
 

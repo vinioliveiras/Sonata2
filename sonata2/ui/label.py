@@ -28,13 +28,19 @@ class HoverLabel(Gtk.Popover):
                          can_target=False, position=position)
         self._label = Gtk.Label(label=text)
         self.set_child(self._label)
-        self.set_offset(0, -gap if position == Gtk.PositionType.TOP else gap)
+        self.set_position_gap(position, gap)
         self.set_parent(widget)
         if hover:
             motion = Gtk.EventControllerMotion()
             motion.connect("enter", lambda *_: self.popup())
             motion.connect("leave", lambda *_: self.popdown())
             widget.add_controller(motion)
+
+    def set_position_gap(self, position, gap: int = 8) -> None:
+        self.set_position(position)
+        P = Gtk.PositionType
+        self.set_offset(*{P.TOP: (0, -gap), P.BOTTOM: (0, gap),
+                          P.LEFT: (-gap, 0), P.RIGHT: (gap, 0)}[position])
 
     def set_text(self, text: str) -> None:
         self._label.set_label(text)

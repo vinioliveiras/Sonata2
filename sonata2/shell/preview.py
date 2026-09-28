@@ -58,7 +58,10 @@ def _wallpaper(w: int, h: int, dark: bool):
 
 
 class PreviewWindow(Gtk.ApplicationWindow):
-    def __init__(self, app, dock, width: int = 960, height: int = 260):
+    def __init__(self, app, dock, width: int = 0, height: int = 0):
+        # tools/wl-preview.sh exports PREVIEW_SIZE (the virtual screen size).
+        size = os.environ.get("PREVIEW_SIZE", "960x260").split("x")
+        width, height = width or int(size[0]), height or int(size[1])
         super().__init__(application=app, title="Sonata 2 preview",
                          default_width=width, default_height=height, decorated=False,
                          resizable=False)
@@ -70,7 +73,8 @@ class PreviewWindow(Gtk.ApplicationWindow):
                                 hexpand=True, vexpand=True, css_classes=["preview-wall"])
         over = Gtk.Overlay()
         over.set_child(self.wall)
-        dock.set_margin_bottom(4)
+        from .dock import apply_margins
+        apply_margins(dock)
         over.add_overlay(dock)
         self.set_child(over)
         from gi.repository import Adw
