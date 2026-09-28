@@ -10,7 +10,7 @@ SONATA_REPO="${SONATA_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 export SONATA_REPO
 export XDG_DATA_DIRS="$SONATA_REPO/sonata2/data:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 export XCURSOR_PATH="$SONATA_REPO/sonata2/data/icons:$HOME/.local/share/icons:$HOME/.icons:/usr/share/icons:/usr/share/pixmaps"
-export XCURSOR_THEME=Sonata-MacTahoe XCURSOR_SIZE=24
+export XCURSOR_THEME=Sonata-Cursors XCURSOR_SIZE=24
 # Sonata's own settings layer (dconf): values set in the Sonata session go to
 # ~/.config/dconf/sonata and are read first; everything else still comes
 # from the normal user database, which other desktops keep using unchanged.
@@ -20,7 +20,7 @@ export DCONF_PROFILE="$HOME/.config/sonata2/dconf-profile"
 _gs() { gsettings set "$@" 2>/dev/null || true; }
 _gs org.gnome.desktop.wm.preferences button-layout 'close,minimize,maximize:'
 _gs org.gnome.desktop.interface icon-theme 'Sonata'
-_gs org.gnome.desktop.interface cursor-theme 'Sonata-MacTahoe'
+_gs org.gnome.desktop.interface cursor-theme 'Sonata-Cursors'
 _gs org.gnome.desktop.interface cursor-size 24
 # macOS text size (13 px); Inter stands in for SF Pro when it isn't installed.
 if fc-list 2>/dev/null | grep -qi "SF Pro"; then _gs org.gnome.desktop.interface font-name 'SF Pro Text 10'

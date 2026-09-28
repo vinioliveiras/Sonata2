@@ -195,7 +195,7 @@ sonata2/          Python package
                   controls, alert, traffic lights, gallery (docs/DESIGN.md)
   config.py       Sonata settings (JSON in ~/.config/sonata2)
   icons.py        Sonata's own icon lookup (bundled themes, system fallback)
-  data/icons/     bundled icon themes (Sonata, Sonata-MacTahoe)
+  data/icons/     bundled icon and cursor themes (Sonata, Sonata-MacTahoe, Sonata-Cursors)
   apps.py         .desktop lookup, default Dock pins
   shell/          top bar, dock, launcher, control center, notifications
   wl/             Wayland protocol clients (foreign-toplevel, on GTK's

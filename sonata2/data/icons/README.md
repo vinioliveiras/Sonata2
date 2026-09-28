@@ -6,6 +6,7 @@ Sonata uses its own icons, independent of the icon theme set in the system.
 |---|---|---|
 | `Sonata/` | Our overrides, looked up first. `places/scalable/user-trash(-full).svg`: round trash can from [WhiteSur-icon-theme](https://github.com/vinceliuice/WhiteSur-icon-theme) `src/places/scalable/` | GPL-3.0 |
 | `Sonata-MacTahoe/` | [MacTahoe-icon-theme](https://github.com/vinceliuice/MacTahoe-icon-theme) at commit `839848b` (2026-09-10), installed with `./install.sh -n Sonata-MacTahoe` (default blue variant). Symlinks are relative. | GPL-3.0 (see its COPYING) |
+| `Sonata-Cursors/` | macOS cursors from [apple_cursor](https://github.com/ful1e5/apple_cursor) v2.0.1 (`macOS` variant), trimmed to sizes 24/32/48 (x1/HiDPI). Used by Wayfire and apps via `XCURSOR_THEME`. | GPL-3.0 (LICENSE-apple_cursor) |
 
 Lookup order in the shell: `Sonata` -> `Sonata-MacTahoe` -> `hicolor` ->
 the system's icon theme (for apps neither theme has).
