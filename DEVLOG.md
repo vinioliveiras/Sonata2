@@ -135,3 +135,20 @@
   their 48 px box (1/12), so the gap above the dot is 4 px minus that inset
   and the gap below is 4 px -> the visible gaps are equal. Plate is now
   61 px at 48 px icons (exclusive zone follows). Scales with icon_size.
+
+## 2026-09-28 -- Design system (sonata2/ui)
+
+- Vini: one organized pattern for every component (right-click menus,
+  dropdowns, everything), with full macOS behaviour per component.
+- sonata2/ui: tokens.py (semantic colours per appearance, materials,
+  shadows, type, radii, sizes, motion, spacing), theme.py (one CSS provider
+  filled from the tokens, refilled on light/dark -- no `.dark` selectors
+  anywhere), components: menu (sections, checks, disabled, side submenus),
+  label (hover label), controls (push/default/destructive button, Big Sur
+  pop-up button with accent chevron cap -- own `sonata-updown-symbolic`
+  icon, switch), dialog (alert), window (traffic lights, from LayerOSX
+  style.py, which is gone), gallery (`python3 -m sonata2 gallery`).
+- Dock + its menus now use ui.* only; icons.setup() moved into ui.setup().
+- docs/DESIGN.md: rules, token table, components, how to add one.
+- ROADMAP: Dock sub-steps expanded to full macOS parity; Launchpad (M2)
+  comes before the top bar, at Vini's request.

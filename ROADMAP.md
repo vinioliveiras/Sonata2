@@ -4,24 +4,32 @@ Base: LayerOSX code (style, Settings, backend). Sonata is only a feature
 list: [docs/PARITY.md](docs/PARITY.md).
 
 - **M0 -- Skeleton** *(done)*: repo layout, style module ported from LayerOSX.
-- **M1 -- Dock** (finish it completely before the next component):
+- **M1 -- Dock** (finish it completely -- full macOS behaviour, animations,
+  drag and drop -- before the next component):
   - [x] M1.1 pinned apps, Trash, hover labels, launch bounce
   - [x] M1.2 frosted glass (Wayfire blur), running dots, unpinned running
         apps, click to activate/restore, minimize into the icon
-  - [x] M1.3 right-click menus: app (open windows list, Options > Keep in
-        Dock / Open at Login / Open File Location, Hide, Quit / Open);
-        Trash (Open, Empty Trash). Left for later: Show All Windows (needs
-        a Wayfire scale-by-app IPC call)
+  - [x] M1.3 right-click menus (windows, Options > Keep in Dock / Open at
+        Login / Open File Location, Hide, Quit / Open; Trash: Open, Empty)
   - [~] M1.4 drag: [x] reorder, [x] drag out to remove, [x] running app
-        dropped in place gets pinned; [ ] drop an app from the launcher to
-        pin, [ ] drop files on an app (open with) or on the Trash
-  - [ ] M1.5 preferences: size, magnification, position (left/bottom/right),
-        auto-hide, show indicators, show recent apps
-  - [ ] M1.6 polish on hardware: multi-monitor, HiDPI, performance check
-  - Later (needs other components): notification badges (M5)
-  - Rule (Vini): no fixed icons. Finder (file manager) and Launchpad (when
-    M5 adds it) are ordinary tiles: movable, removable, same menu options.
-- **M2 -- Top bar**: Apple-style logo menu (left), clock + status icons
+        dropped in place gets pinned; [ ] drop files on an app (open with)
+        or on the Trash (move to Trash); [ ] drop an app (.desktop) to pin
+  - [ ] M1.5 Dock settings + divider: drag the divider to resize,
+        right-click it (Turn Hiding On/Off, Magnification, Position on
+        Screen, Dock Settings...); size, magnification (animated wave),
+        position left/bottom/right, auto-hide (slide, delay), animate
+        opening apps, show indicators
+  - [ ] M1.6 recent apps section, Stacks (Downloads folder: fan/grid)
+  - [ ] M1.7 polish on hardware: multi-monitor, HiDPI, performance
+  - Later (needs other components): notification badges, attention bounce
+    (M5), Show All Windows (Wayfire scale IPC), minimized-window tiles
+  - Rule (Vini): no fixed icons. Finder (file manager) and Launchpad are
+    ordinary tiles: movable, removable, same menu options.
+- **M2 -- Launchpad** (next, before the top bar): full-screen app grid over
+  the blurred desktop, pages + page dots, search, folders (drag onto each
+  other), drag to reorder / to the Dock, jiggle mode to delete, open/close
+  animations, keyboard navigation.
+- **M3b -- Top bar**: Apple-style logo menu (left), clock + status icons
   (right), Big Sur metrics (24 px, translucent), light/dark.
 - **M3 -- Session**: Wayfire config (animations, decorations with traffic
   lights), session `.desktop`, `install.sh` (`~/.local` or `/usr/local`).

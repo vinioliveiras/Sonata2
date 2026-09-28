@@ -17,17 +17,15 @@ import os
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 
 from .. import apps, config, icons  # noqa: E402
-from ..style import install_css  # noqa: E402
+from .. import ui  # noqa: E402
 from . import dock_menu, layer  # noqa: E402
 
 DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "glass": True}
 LAUNCH_TIMEOUT_MS = 10000   # stop bouncing if no window shows up
 BOUNCE_MS = 620             # one bounce
-GLASS_TINT = {"light": "rgba(246, 246, 250, 0.38)", "dark": "rgba(30, 30, 34, 0.42)"}
 
 # Plate padding and running dot, in px. Unlike macOS (where it sits low),
 # the dot is centred between the icon's visible artwork and the plate edge.
@@ -45,45 +43,23 @@ CSS = """
 window.sonata-dock, window.sonata-dock > contents { background: none; box-shadow: none; }
 .dock-plate {
   padding: %(pad_top)dpx 4px 0 4px;
-  border-radius: 18px;
-  background-color: rgba(236, 236, 240, 0.78);
-  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.14),
-              inset 0 0.5px 0 rgba(255, 255, 255, 0.65),
-              0 6px 18px rgba(0, 0, 0, 0.16);
-}
-.dark .dock-plate {
-  background-color: rgba(38, 38, 42, 0.74);
-  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.55),
-              inset 0 0 0 0.5px rgba(255, 255, 255, 0.14),
-              0 6px 18px rgba(0, 0, 0, 0.30);
+  border-radius: %(r_plate)s;
+  background-color: %(solid_tint)s;
+  box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_plate)s;
 }
 /* Glass: frosted, the compositor blurs and saturates the backdrop. */
-.glass .dock-plate {
-  background-color: %(tint_light)s;
-  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12),
-              inset 0 0 0 0.5px rgba(255, 255, 255, 0.35),
-              0 6px 18px rgba(0, 0, 0, 0.12);
-}
-.dark.glass .dock-plate {
-  background-color: %(tint_dark)s;
-  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.5),
-              inset 0 0 0 0.5px rgba(255, 255, 255, 0.16),
-              0 6px 18px rgba(0, 0, 0, 0.25);
-}
+.glass .dock-plate { background-color: %(glass_tint)s; }
 .dock-tile, .dock-tile:hover, .dock-tile:active, .dock-tile:focus {
   padding: 0 2px; margin: 0; min-width: 0; min-height: 0;
   border: none; border-radius: 0; background: none; box-shadow: none; outline: none;
 }
-.dock-tile image { transition: filter 80ms ease-out; }
+.dock-tile image { transition: filter %(t_press)s ease-out; }
 .dock-tile:active image { filter: brightness(0.62); }
 .dock-tile.dragging { opacity: 0; }   /* keeps its gap while being dragged */
 .dock-dot { min-width: %(dot)dpx; min-height: %(dot)dpx; margin: %(dot_top)dpx 0 %(dot_bottom)dpx 0;
-            border-radius: 99px; background-color: rgba(0, 0, 0, 0.62); opacity: 0; }
-.dark .dock-dot { background-color: rgba(255, 255, 255, 0.72); }
+            border-radius: 99px; background-color: %(indicator)s; opacity: 0; }
 .dock-tile.running .dock-dot { opacity: 1; }
-.dock-sep { min-width: 1px; margin: 4px 5px %(sep_bottom)dpx 5px;
-            background-color: rgba(0, 0, 0, 0.16); }
-.dark .dock-sep { background-color: rgba(255, 255, 255, 0.18); }
+.dock-sep { min-width: 1px; margin: 4px 5px %(sep_bottom)dpx 5px; background-color: %(separator)s; }
 
 @keyframes dock-bounce {
   0%%   { transform: translateY(0); }
@@ -91,21 +67,6 @@ window.sonata-dock, window.sonata-dock > contents { background: none; box-shadow
   100%% { transform: translateY(0); }
 }
 .dock-tile.launching image { animation: dock-bounce %(bounce_ms)dms ease-in-out infinite; }
-
-popover.dock-label { background: none; box-shadow: none; padding: 0; }
-popover.dock-label > contents {
-  padding: 3px 10px; border-radius: 6px; min-height: 0;
-  font-family: "SF Pro Text", "Inter", "Cantarell", sans-serif; font-size: 13px; font-weight: 400;
-  color: rgba(0, 0, 0, 0.85);
-  background-color: rgba(236, 236, 236, 0.97);
-  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.18);
-}
-.dark popover.dock-label > contents {
-  color: #f5f5f7;
-  background-color: rgba(48, 48, 50, 0.97);
-  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.6), inset 0 0 0 0.5px rgba(255, 255, 255, 0.14),
-              0 2px 8px rgba(0, 0, 0, 0.35);
-}
 """
 
 
@@ -125,15 +86,7 @@ class DockTile(Gtk.Button):
         box.append(Gtk.Box(css_classes=["dock-dot"], halign=Gtk.Align.CENTER))
         self.set_child(box)
 
-        self.label = Gtk.Popover(css_classes=["dock-label"], has_arrow=False, autohide=False,
-                                 can_target=False, position=Gtk.PositionType.TOP)
-        self.label.set_child(Gtk.Label(label=name))
-        self.label.set_offset(0, -8)
-        self.label.set_parent(self)
-        motion = Gtk.EventControllerMotion()
-        motion.connect("enter", lambda *_: self.label.popup())
-        motion.connect("leave", lambda *_: self.label.popdown())
-        self.add_controller(motion)
+        self.label = ui.label.HoverLabel(self, name)
         self.connect("clicked", lambda _b: on_click(self))
         if on_menu:
             right = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
@@ -390,11 +343,10 @@ def plate_height(cfg: dict) -> int:
 
 
 def load_css(cfg: dict) -> None:
-    dock_menu.install_css()
+    ui.setup()
     top, bottom = dot_gaps(cfg["icon_size"])
-    install_css(CSS % {"pad_top": PAD_TOP, "sep_bottom": dot_row(cfg), "bounce_ms": BOUNCE_MS,
-                       "dot": DOT, "dot_top": top, "dot_bottom": bottom,
-                       "tint_light": GLASS_TINT["light"], "tint_dark": GLASS_TINT["dark"]})
+    ui.register(CSS, key="dock", pad_top=PAD_TOP, sep_bottom=dot_row(cfg), bounce_ms=BOUNCE_MS,
+                dot=DOT, dot_top=top, dot_bottom=bottom)
 
 
 def load_config() -> dict:
@@ -405,17 +357,9 @@ def load_config() -> dict:
     return cfg
 
 
-def follow_theme(widget: Gtk.Widget, cfg: dict) -> None:
-    """Keep the `dark` class on `widget` in sync with the system appearance;
-    set `glass` from the config."""
-    if cfg["glass"]:
-        widget.add_css_class("glass")
-    sm = Adw.StyleManager.get_default()
-
-    def sync(*_a):
-        (widget.add_css_class if sm.get_dark() else widget.remove_css_class)("dark")
-    sm.connect("notify::dark", sync)
-    sync()
+def apply_glass(widget: Gtk.Widget, cfg: dict) -> None:
+    """`glass` class on the Dock's window when the plate should be frosted."""
+    (widget.add_css_class if cfg["glass"] else widget.remove_css_class)("glass")
 
 
 class DockWindow(Gtk.ApplicationWindow):
@@ -430,4 +374,4 @@ class DockWindow(Gtk.ApplicationWindow):
         # The plate sits edge_gap px above the screen edge; windows stop above it.
         self.dock.set_margin_bottom(cfg["edge_gap"])
         layer.anchor_bottom(self, "sonata2-dock", 0, plate_height(cfg) + cfg["edge_gap"])
-        follow_theme(self, cfg)
+        apply_glass(self, cfg)

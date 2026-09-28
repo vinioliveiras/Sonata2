@@ -13,14 +13,13 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
-from ..style import install_css  # noqa: E402
+from ..ui import register  # noqa: E402
 
 CACHE = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "sonata2")
 BLUR_RADIUS, SATURATION = 18, 1.6   # match [blur] in config/wayfire.ini
 
 CSS = """
-.preview-wall { background-image: linear-gradient(160deg, #1d3b8f 0%, #6b3fa0 38%, #e0567a 70%, #f3a452 100%); }
-.dark .preview-wall { background-image: linear-gradient(160deg, #0b1533 0%, #2a1a4a 45%, #5a2141 75%, #7a4a2a 100%); }
+.preview-wall { background-image: linear-gradient(160deg, #1d3b8f 0%%, #6b3fa0 38%%, #e0567a 70%%, #f3a452 100%%); }
 """
 
 
@@ -63,7 +62,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         super().__init__(application=app, title="Sonata 2 preview",
                          default_width=width, default_height=height, decorated=False,
                          resizable=False)
-        install_css(CSS)
+        register(CSS, key="preview")
         self.dock = dock
         self._size = (width, height)
         self._walls = {}
@@ -78,12 +77,13 @@ class PreviewWindow(Gtk.ApplicationWindow):
         from gi.repository import Gdk
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), self._glass,
                                                   Gtk.STYLE_PROVIDER_PRIORITY_USER + 20)
-        self.connect("notify::css-classes", lambda *_: GLib.idle_add(self._paint))
+        from gi.repository import Adw
+        Adw.StyleManager.get_default().connect("notify::dark", lambda *_: GLib.idle_add(self._paint))
         self.connect("map", lambda *_: GLib.timeout_add(150, self._paint))
 
     def _paint(self) -> bool:
-        from .dock import GLASS_TINT
-        dark = self.has_css_class("dark")
+        from .. import ui
+        dark = ui.is_dark()
         if dark not in self._walls:
             self._walls[dark] = _wallpaper(*self._size, dark)
         walls = self._walls[dark]
@@ -92,7 +92,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self.wall.set_filename(walls[0])
         ok, b = self.dock.compute_bounds(self)
         if ok and self.has_css_class("glass"):
-            tint = GLASS_TINT["dark" if dark else "light"]
+            tint = ui.values()["glass_tint"]
             w, h = self._size
             self._glass.load_from_data(f"""
 .glass .dock-plate {{

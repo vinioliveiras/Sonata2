@@ -14,7 +14,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
-from sonata2 import config, icons  # noqa: E402
+from sonata2 import config  # noqa: E402
 from sonata2.shell import dock as D, dock_menu  # noqa: E402
 
 
@@ -28,7 +28,6 @@ def settle(ms=200):
 class DockTest(unittest.TestCase):
     def setUp(self):
         Gtk.init()
-        icons.setup()
         self.cfg = D.load_config()
         D.load_css(self.cfg)
         if len(self.cfg["pinned"]) < 3:

@@ -15,7 +15,7 @@ PY="${PYTHON:-python3}"
 run="$(mktemp -d)"; chmod 700 "$run"
 cfg="$run/sway.conf"
 cat > "$cfg" <<CONF
-output HEADLESS-1 resolution 960x260 bg #000000 solid_color
+output HEADLESS-1 resolution ${PREVIEW_SIZE:-960x260} bg #000000 solid_color
 default_border none
 default_floating_border none
 for_window [title="Sonata 2 preview"] floating enable, move position 0 0

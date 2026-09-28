@@ -53,6 +53,7 @@ Full session: install `wayfire`, merge `config/wayfire.ini` into
 `~/.config/wayfire.ini`, pick "Wayfire" on the login screen.
 
 Tests: `python3 -m unittest tests.test_dock` (needs a display).
+Design system gallery: `python3 -m sonata2 gallery [--dark]`.
 
 ## Run (development)
 
@@ -116,7 +117,8 @@ them. No distro-specific paths or tools.
 ```
 sonata2/          Python package
   __main__.py     entry point (`python3 -m sonata2 dock`)
-  style.py        shared CSS, theme, traffic lights (from LayerOSX)
+  ui/             design system: tokens, theme, menu, hover label,
+                  controls, alert, traffic lights, gallery (docs/DESIGN.md)
   config.py       Sonata settings (JSON in ~/.config/sonata2)
   icons.py        Sonata's own icon lookup (bundled themes, system fallback)
   data/icons/     bundled icon themes (Sonata, Sonata-MacTahoe)
@@ -128,6 +130,7 @@ sonata2/          Python package
   settings/       the Settings app
 config/           default Wayfire config
 session/          display-manager session entry
+docs/DESIGN.md    design system rules, tokens, components
 docs/PARITY.md    macOS / Windows 11 feature parity list (from Sonata)
 tests/  tools/    headless tests, screenshot helpers
 ```

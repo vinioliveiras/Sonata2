@@ -11,23 +11,9 @@ from .shell import layer
 APP_ID = "io.github.vinioliveiras.sonata2.dock"
 
 
-def _activate_label(root, text) -> bool:
-    """Activate the first descendant whose label is `text` (screenshots)."""
-    w = root.get_first_child()
-    while w is not None:
-        if getattr(w, "get_label", None) and w.get_label() == text:
-            return w.activate()
-        if type(w).__gtype__.name == "GtkModelButton" and w.get_property("text") == text:
-            return w.activate()
-        if _activate_label(w, text):
-            return True
-        w = w.get_next_sibling()
-    return False
-
-
 def main() -> int:
     p = argparse.ArgumentParser(prog="sonata2")
-    p.add_argument("component", choices=["dock"])
+    p.add_argument("component", choices=["dock", "gallery"])
     p.add_argument("--preview", action="store_true")
     g = p.add_mutually_exclusive_group()
     g.add_argument("--dark", action="store_true")
@@ -44,7 +30,7 @@ def main() -> int:
     gi.require_version("Adw", "1")
     from gi.repository import Adw
     from .shell import dock
-    from .style import apply_theme
+    from . import ui
 
     from gi.repository import GLib
     GLib.set_prgname(APP_ID)   # Wayland app_id, also without a session bus
@@ -52,9 +38,20 @@ def main() -> int:
 
     def activate(app):
         if args.dark or args.light:
-            apply_theme("dark" if args.dark else "light")
-        from . import icons
-        icons.setup()   # Sonata's own icon theme, before any widget
+            ui.force_appearance("dark" if args.dark else "light")
+        if args.component == "gallery":
+            from .ui.gallery import GalleryWindow, sample_menu
+            ui.setup()
+            win = GalleryWindow(app)
+            win.present()
+            if args.menu >= 0:
+                def open_gallery_menu():
+                    pop = sample_menu(win.menu_anchor)
+                    if args.submenu:
+                        GLib.timeout_add(300, lambda: (ui.menu.open_submenu(pop, "Options"), False)[1])
+                    return False
+                GLib.timeout_add(500, open_gallery_menu)
+            return
         cfg = dock.load_config()
         dock.load_css(cfg)
         from gi.repository import Gdk
@@ -63,7 +60,7 @@ def main() -> int:
         if args.preview:
             from .shell.preview import PreviewWindow
             win = PreviewWindow(app, dock.Dock(cfg, manager))
-            dock.follow_theme(win, cfg)
+            dock.apply_glass(win, cfg)
         else:
             win = dock.DockWindow(app, cfg, manager)
         win.present()
@@ -81,7 +78,7 @@ def main() -> int:
                 def open_menu():
                     pop = dock_menu.trash_menu(t) if t is d.trash else dock_menu.app_menu(d, t.key, t)
                     if args.submenu:
-                        GLib.timeout_add(300, lambda: (_activate_label(pop, "Options"), False)[1])
+                        GLib.timeout_add(300, lambda: (ui.menu.open_submenu(pop, "Options"), False)[1])
                     return False
                 GLib.timeout_add(400, open_menu)
 

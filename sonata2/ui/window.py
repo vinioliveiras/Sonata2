@@ -1,17 +1,18 @@
-#!/usr/bin/env python3
-"""
-Shared look for every Sonata 2 surface (top bar, dock, Settings, dialogs):
-the macOS-style "traffic light" window controls, theme handling and the CSS
-provider. Ported from LayerOSX (panel/layerosx_style.py); the X11/picom
-"kick" helper was dropped -- Wayfire animates windows itself.
-"""
+"""Window chrome: macOS-style "traffic light" controls (from LayerOSX).
+
+    window.traffic_lights(on_close, on_minimize, on_zoom=None)
+
+on_zoom=None greys the green one out (fixed-size windows, like System
+Settings). Colours are Apple's; every state is spelled out so no GTK theme
+can repaint them."""
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, Gtk  # noqa: E402
+from gi.repository import Gtk  # noqa: E402
 
-TRAFFIC_CSS = """
+from . import theme  # noqa: E402
+
+theme.register("""
 /* macOS-style window controls ("traffic lights"). Every state is spelled out
    and the provider is loaded above USER priority, so a user GTK theme (e.g. a
    macOS-look theme in ~/.config/gtk-4.0) can't repaint them grey on
@@ -47,37 +48,20 @@ TRAFFIC_CSS = """
 .traffic button.tl-zoom:backdrop { background-color: #28c840; }
 .traffic button.tl-disabled,
 .traffic button.tl-disabled:hover,
-.traffic button.tl-disabled:backdrop { background-color: #d1d1d6; }
-.traffic.dark button.tl-disabled,
-.traffic.dark button.tl-disabled:backdrop { background-color: #4a4a4e; }
+.traffic button.tl-disabled:backdrop { background-color: %(tl_disabled)s; }
 .traffic:hover button.tl-disabled label { color: transparent; }
 .traffic button:active { filter: brightness(0.85); }
 .traffic button label { font-size: 9px; font-weight: 900; color: transparent; padding: 0; margin: 0; }
 .traffic:hover button label { color: rgba(0,0,0,.55); }
-"""
+""")
 
 
-def install_css(extra: str = "") -> None:
-    """Load TRAFFIC_CSS + extra above USER priority, so a user GTK theme (e.g. a
-    macOS-look theme in ~/.config/gtk-4.0 on a developer's desktop) can't
-    repaint our controls."""
-    prov = Gtk.CssProvider()
-    prov.load_from_data((TRAFFIC_CSS + extra).encode())
-    Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), prov,
-                                              Gtk.STYLE_PROVIDER_PRIORITY_USER + 10)
-
-
-def apply_theme(theme: str) -> None:
-    Adw.StyleManager.get_default().set_color_scheme(
-        Adw.ColorScheme.FORCE_DARK if theme == "dark" else Adw.ColorScheme.FORCE_LIGHT)
-
-
-def traffic_lights(on_close, on_hide, on_zoom=None, dark=False) -> Gtk.Box:
-    """Close / hide / zoom as macOS-style coloured dots. on_zoom=None greys the
+def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
+    """Close / minimize / zoom as macOS-style coloured dots. on_zoom=None greys the
     green one out (fixed-size windows, like System Settings)."""
-    box = Gtk.Box(css_classes=["traffic"] + (["dark"] if dark else []), valign=Gtk.Align.CENTER)
+    box = Gtk.Box(css_classes=["traffic"], valign=Gtk.Align.CENTER)
     for css, glyph, tip, cb in (("tl-close", "×", "Close", on_close),
-                                ("tl-min", "−", "Hide (press the shortcut again to bring it back)", on_hide),
+                                ("tl-min", "−", "Minimize", on_minimize),
                                 ("tl-zoom", "+", "Zoom" if on_zoom else None, on_zoom)):
         b = Gtk.Button(label=glyph, tooltip_text=tip, css_classes=[css], valign=Gtk.Align.CENTER,
                        focus_on_click=False, can_focus=False)
@@ -88,3 +72,4 @@ def traffic_lights(on_close, on_hide, on_zoom=None, dark=False) -> Gtk.Box:
             b.set_can_target(False)
         box.append(b)
     return box
+
