@@ -24,7 +24,9 @@ from .. import apps, config  # noqa: E402
 from ..style import install_css  # noqa: E402
 from . import dock_menu, layer  # noqa: E402
 
-DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "glass": True}
+DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "glass": True,
+            "trash_icon": "round"}   # "round" = bundled Big Sur-era can, "theme" = icon theme's
+ICON_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "icons")
 LAUNCH_TIMEOUT_MS = 10000   # stop bouncing if no window shows up
 BOUNCE_MS = 620             # one bounce
 GLASS_TINT = {"light": "rgba(246, 246, 250, 0.38)", "dark": "rgba(30, 30, 34, 0.42)"}
@@ -161,7 +163,7 @@ class Dock(Gtk.Box):
         self.windows = {}     # same keys -> [Toplevel]
         self.sep = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL, css_classes=["dock-sep"])
         self.append(self.sep)
-        self.trash = DockTile("Trash", Gio.ThemedIcon.new("user-trash"), cfg["icon_size"],
+        self.trash = DockTile("Trash", self._trash_icon(False), cfg["icon_size"],
                               lambda _t: Gio.AppInfo.launch_default_for_uri("trash:///", None),
                               on_menu=dock_menu.trash_menu)
         self._drag = None     # (key, original index) while an icon is dragged
@@ -361,7 +363,13 @@ class Dock(Gtk.Box):
             full = any(os.scandir(self._trash_dir()))
         except OSError:
             full = False
-        self.trash.image.set_from_icon_name("user-trash-full" if full else "user-trash")
+        self.trash.image.set_from_gicon(self._trash_icon(full))
+
+    def _trash_icon(self, full: bool):
+        if self.cfg["trash_icon"] == "round":
+            name = "sonata2-trash-full.svg" if full else "sonata2-trash-empty.svg"
+            return Gio.FileIcon.new(Gio.File.new_for_path(os.path.join(ICON_DIR, name)))
+        return Gio.ThemedIcon.new("user-trash-full" if full else "user-trash")
 
     def _watch_trash(self) -> None:
         self._update_trash()

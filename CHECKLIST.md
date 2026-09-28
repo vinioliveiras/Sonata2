@@ -49,3 +49,7 @@ Run `tools/dev-session.sh` (or a Wayfire session).
       new order after restarting the Dock.
 - [ ] Esc during a drag puts the icon back.
 - [ ] Drag an icon out of the Dock and drop it on the desktop: removed.
+
+## Dock -- round Trash icon
+- [ ] The Trash is the round frosted can; it shows paper inside when the
+      Trash has items and turns empty again after emptying.

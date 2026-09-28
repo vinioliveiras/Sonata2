@@ -88,3 +88,11 @@
   restores, drag-out removes, Keep in Dock, menus build, app_file.
 - tools/dev-session.sh: Wayfire nested in the current desktop with the
   repo config, wallpaper (swaybg) and the Dock -- how Vini tests from GNOME.
+
+## 2026-09-28 -- Dock: round Trash icon
+
+- Vini wanted the older round trash can instead of MacTahoe's squircle-ish
+  one. Taken from WhiteSur-icon-theme (GPL-3.0, same author as MacTahoe):
+  `user-trash(-full).svg`, bundled in sonata2/data/icons and loaded as
+  Gio.FileIcon, so it works with any icon theme. `trash_icon: "theme"`
+  switches back.

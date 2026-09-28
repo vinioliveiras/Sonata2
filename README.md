@@ -66,6 +66,8 @@ Options: `--dark` / `--light` force the appearance, `--label N` keeps the
 N-th name label visible. Pins, icon size and edge gap are in
 `~/.config/sonata2/dock.json` (created on first run from the installed apps);
 `"glass": false` makes the plate nearly opaque (for compositors without blur).
+`"trash_icon": "theme"` uses the icon theme's Trash instead of the bundled
+round one ([sonata2/data/icons](sonata2/data/icons/README.md)).
 
 For the glass effect and minimize-into-icon, merge
 [config/wayfire.ini](config/wayfire.ini) into `~/.config/wayfire.ini`.
