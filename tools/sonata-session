@@ -12,4 +12,8 @@ for agent in /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 \
              /usr/lib/x86_64-linux-gnu/polkit-gnome-authentication-agent-1; do
     [ -x "$agent" ] && { "$agent" & break; }
 done
-exec wayfire -c "$cfg"
+# Session log (Wayfire + every Sonata component started from it); the
+# previous one is kept as session.old.log.
+logs="${XDG_CACHE_HOME:-$HOME/.cache}/sonata2"; mkdir -p "$logs"
+[ -f "$logs/session.log" ] && mv -f "$logs/session.log" "$logs/session.old.log"
+exec wayfire -c "$cfg" > "$logs/session.log" 2>&1
