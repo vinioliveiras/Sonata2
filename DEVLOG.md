@@ -271,3 +271,24 @@
 - Original symbolic icons: Sonata logo (beamed notes), Control Center.
 - tests/test_topbar.py: all menus open; nmcli split, battery, DMI name.
 - Vini asked next: default window layout, then a Settings app like macOS.
+
+## 2026-09-28 -- M3c: window look
+
+- Wayfire's own decorations: round buttons that turn red/yellow/green on
+  hover (deco-theme.cpp) but always on the right (deco-layout.cpp), no
+  rounded corners/shadows; pixdecor/vecdecor have no per-button colours.
+  So apps draw their title bars (preferred_decoration_mode = client) and
+  GTK apps get a Big Sur theme; Wayfire's decoration only colours the rest.
+- WhiteSur-gtk-theme (vinceliuice, MIT, Big Sur) prebuilt release tarballs
+  at d578265 -> sonata2/data/themes/Sonata-{Light,Dark} (gtk-2/3/4 only,
+  4.4 MB). GTK_THEME makes GTK4/libadwaita apps load it (they ignore the
+  gtk-theme setting).
+- Session isolation: tools/session-env.sh (sourced by tools/sonata-session
+  and dev-session.sh) prepends sonata2/data to XDG_DATA_DIRS (themes and
+  icons without installing), sets XCURSOR_*, and DCONF_PROFILE =
+  `user-db:sonata` over `user-db:user`: button-layout
+  'close,minimize,maximize:', icon/cursor/gtk theme and font are written to
+  ~/.config/dconf/sonata only. Verified in headless sway: macOS button
+  layout inside, GNOME's 'appmenu:close' outside.
+- GTK_THEME is fixed per process: after switching Dark Mode, apps pick the
+  dark theme when reopened.

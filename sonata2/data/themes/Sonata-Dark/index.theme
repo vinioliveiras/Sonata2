@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=Sonata-Dark
+Comment=WhiteSur-Dark (vinceliuice, MIT) bundled for Sonata 2, pinned at d578265
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=Sonata-Dark
+IconTheme=Sonata
+CursorTheme=Sonata-MacTahoe
+ButtonLayout=close,minimize,maximize:

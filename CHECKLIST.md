@@ -123,3 +123,11 @@ Run `tools/dev-session.sh` (or a Wayfire session).
 - [ ] Control Center: Wi-Fi/Bluetooth toggles, Dark Mode switches every app
       and Sonata, Display/Sound sliders.
 - [ ] Clock updates each minute; click shows the calendar.
+
+## M3c -- Windows
+- [ ] `tools/dev-session.sh`: a GTK app opened inside (e.g. Settings, Files,
+      Text Editor) has the Big Sur title bar with close/minimize/zoom on the
+      left, Sonata icons and the MacTahoe cursor.
+- [ ] The same app opened in GNOME (outside) keeps GNOME's look.
+- [ ] Dark Mode (Control Center) + reopening the app: dark Big Sur theme.
+- [ ] An X11 app (e.g. xterm) gets Wayfire's light title bar.

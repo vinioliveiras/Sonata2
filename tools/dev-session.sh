@@ -8,6 +8,7 @@
 # optional: swaybg (wallpaper), python-pillow (generated wallpaper).
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+source "$REPO/tools/session-env.sh"     # themes, cursors, GTK_THEME for apps started inside
 command -v wayfire >/dev/null || { echo "wayfire is not installed (sudo pacman -S wayfire)"; exit 1; }
 
 run="$(mktemp -d)"

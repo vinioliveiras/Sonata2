@@ -57,6 +57,20 @@ Remaining: hardware polish (multi-monitor, HiDPI) -- see
 
 The look is macOS Big Sur/Monterey -- deliberately **not** Liquid Glass.
 
+## Windows
+
+Inside a Sonata session every GTK3/GTK4/libadwaita app gets Big Sur windows:
+traffic lights on the left, Big Sur title bars, controls and colours
+(bundled `Sonata-Light/Dark`, from WhiteSur -- sonata2/data/themes), Sonata
+icons and cursors. `tools/session-env.sh` sets this up **only for the
+session** (GTK_THEME, XDG_DATA_DIRS, a Sonata-only dconf layer in
+~/.config/dconf/sonata) -- GNOME/KDE keep their own look. Apps that don't
+draw title bars get Wayfire's (config/wayfire.ini [decoration]).
+
+Full session: `tools/sonata-session` (copy `session/sonata2.desktop` to
+/usr/share/wayland-sessions/ with your path to get "Sonata" on the login
+screen).
+
 ## Menu bar
 
 `python3 -m sonata2 topbar`: Big Sur menu bar -- Sonata menu (logo), the

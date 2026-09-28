@@ -48,9 +48,13 @@ list: [docs/PARITY.md](docs/PARITY.md).
   join with password), Control Center (Wi-Fi, Bluetooth, Dark Mode,
   Display + Sound sliders), clock + calendar. Menus hang left-aligned.
   Not possible yet: apps' own menus (no global-menu protocol on Wayland).
-- **Next (Vini)**: default window layout (decorations: traffic lights,
-  title bar, shadows, corners -- for every app) and the Settings app based
-  on macOS System Settings.
+- **M3c -- Windows** *(done for GTK apps)*: Big Sur GTK theme (WhiteSur,
+  bundled) + macOS button layout + Sonata icons/cursors, session-only via
+  session-env.sh and a Sonata dconf layer; Wayfire decoration colours for
+  server-side title bars. Open: Wayfire can't put its own buttons on the
+  left nor round/shadow them -> a small Sonata decorator plugin (C++) later;
+  Qt apps follow only as far as the GTK platform theme goes.
+- **M6 -- Settings app** (next): macOS System Settings layout.
 - **M3 -- Session**: Wayfire config (animations, decorations with traffic
   lights), session `.desktop`, `install.sh` (`~/.local` or `/usr/local`).
   Apps inside the Sonata session also use Sonata's icons: install links
