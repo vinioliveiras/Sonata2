@@ -11,6 +11,20 @@ from .shell import layer
 APP_ID = "io.github.vinioliveiras.sonata2.dock"
 
 
+def _activate_label(root, text) -> bool:
+    """Activate the first descendant whose label is `text` (screenshots)."""
+    w = root.get_first_child()
+    while w is not None:
+        if getattr(w, "get_label", None) and w.get_label() == text:
+            return w.activate()
+        if type(w).__gtype__.name == "GtkModelButton" and w.get_property("text") == text:
+            return w.activate()
+        if _activate_label(w, text):
+            return True
+        w = w.get_next_sibling()
+    return False
+
+
 def main() -> int:
     p = argparse.ArgumentParser(prog="sonata2")
     p.add_argument("component", choices=["dock"])
@@ -20,6 +34,7 @@ def main() -> int:
     g.add_argument("--light", action="store_true")
     p.add_argument("--label", type=int, default=-1)
     p.add_argument("--menu", type=int, default=-1, help="open the N-th tile's menu (screenshots)")
+    p.add_argument("--submenu", action="store_true", help="with --menu: also open Options")
     args = p.parse_args()
 
     if not args.preview:
@@ -63,8 +78,12 @@ def main() -> int:
             tiles = d.app_tiles() + [d.trash]
             if args.menu < len(tiles):
                 t = tiles[args.menu]
-                GLib.timeout_add(400, lambda: (dock_menu.trash_menu(t) if t is d.trash
-                                               else dock_menu.app_menu(d, t.key, t), False)[1])
+                def open_menu():
+                    pop = dock_menu.trash_menu(t) if t is d.trash else dock_menu.app_menu(d, t.key, t)
+                    if args.submenu:
+                        GLib.timeout_add(300, lambda: (_activate_label(pop, "Options"), False)[1])
+                    return False
+                GLib.timeout_add(400, open_menu)
 
     app.connect("activate", activate)
     return app.run([sys.argv[0]])

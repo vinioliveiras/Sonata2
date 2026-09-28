@@ -11,39 +11,56 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 AUTOSTART_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
                              "autostart")
 
-CSS = """
-popover.dock-menu { background: none; box-shadow: none; padding: 0; }
-popover.dock-menu > contents {
+# All menus of the shell process (including GTK's nested submenus, which
+# don't inherit our classes) use `popover.menu`; light/dark is swapped by
+# reloading the provider, since submenus aren't under the window's .dark.
+MENU_CSS = """
+popover.menu { background: none; box-shadow: none; padding: 0; }
+popover.menu > contents {
   padding: 5px; border-radius: 7px; min-width: 190px;
   font-family: "SF Pro Text", "Inter", "Cantarell", sans-serif; font-size: 13px;
-  color: rgba(0, 0, 0, 0.85);
-  background-color: rgba(236, 236, 236, 0.97);
-  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.18), 0 6px 18px rgba(0, 0, 0, 0.22);
+  color: %(fg)s; background-color: %(bg)s; box-shadow: %(shadow)s;
 }
-popover.dock-menu modelbutton {
-  min-height: 22px; padding: 0 10px; border-radius: 4px; color: inherit;
+popover.menu modelbutton {
+  min-height: 22px; padding: 0 10px; border-radius: 4px; color: inherit; background: none;
 }
-popover.dock-menu modelbutton:hover, popover.dock-menu modelbutton:selected {
-  background-color: #0a64e1; color: #ffffff;
+popover.menu modelbutton:hover, popover.menu modelbutton:selected,
+popover.menu modelbutton:focus-visible {
+  background-color: %(accent)s; color: #ffffff;
 }
-popover.dock-menu modelbutton check { min-width: 12px; min-height: 12px; margin-right: 4px;
-  border: none; background: none; box-shadow: none; -gtk-icon-size: 12px; }
-popover.dock-menu modelbutton arrow { -gtk-icon-size: 12px; }
-popover.dock-menu separator { margin: 5px 10px; min-height: 1px; background-color: rgba(0, 0, 0, 0.11); }
-.dark popover.dock-menu > contents, popover.dock-menu.dark > contents {
-  color: #f5f5f7;
-  background-color: rgba(44, 44, 46, 0.97);
-  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.6), inset 0 0 0 0.5px rgba(255, 255, 255, 0.14),
-              0 6px 18px rgba(0, 0, 0, 0.4);
-}
-.dark popover.dock-menu modelbutton:hover, popover.dock-menu.dark modelbutton:hover { background-color: #0a84ff; }
-.dark popover.dock-menu separator, popover.dock-menu.dark separator { background-color: rgba(255, 255, 255, 0.12); }
+popover.menu modelbutton:disabled { color: %(disabled)s; }
+popover.menu modelbutton check { min-width: 12px; min-height: 12px; margin-right: 4px;
+  border: none; background: none; box-shadow: none; color: inherit; -gtk-icon-size: 12px; }
+popover.menu modelbutton arrow { -gtk-icon-size: 12px; color: inherit; }
+popover.menu separator { margin: 5px 10px; min-height: 1px; background-color: %(sep)s; }
 """
+MENU_THEME = {
+    False: {"fg": "rgba(0, 0, 0, 0.85)", "bg": "rgba(236, 236, 236, 0.97)",
+            "shadow": "0 0 0 0.5px rgba(0, 0, 0, 0.18), 0 6px 18px rgba(0, 0, 0, 0.22)",
+            "accent": "#0a64e1", "disabled": "rgba(0, 0, 0, 0.3)", "sep": "rgba(0, 0, 0, 0.11)"},
+    True: {"fg": "#f5f5f7", "bg": "rgba(44, 44, 46, 0.97)",
+           "shadow": "0 0 0 0.5px rgba(0, 0, 0, 0.6), inset 0 0 0 0.5px rgba(255, 255, 255, 0.14),"
+                     " 0 6px 18px rgba(0, 0, 0, 0.4)",
+           "accent": "#0a84ff", "disabled": "rgba(255, 255, 255, 0.3)", "sep": "rgba(255, 255, 255, 0.12)"},
+}
+
+
+def install_css() -> None:
+    """Menu style for this process, following the system appearance."""
+    prov = Gtk.CssProvider()
+    Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), prov,
+                                              Gtk.STYLE_PROVIDER_PRIORITY_USER + 10)
+    sm = Adw.StyleManager.get_default()
+
+    def load(*_a):
+        prov.load_from_data((MENU_CSS % MENU_THEME[sm.get_dark()]).encode())
+    sm.connect("notify::dark", load)
+    load()
 
 
 # -- helpers ---------------------------------------------------------------------
@@ -134,7 +151,6 @@ def confirm_empty_trash() -> None:
 def _popup(tile, model: Gio.Menu, group: Gio.SimpleActionGroup) -> Gtk.PopoverMenu:
     tile.insert_action_group("dock", group)
     pop = Gtk.PopoverMenu.new_from_model_full(model, Gtk.PopoverMenuFlags.NESTED)
-    pop.add_css_class("dock-menu")
     pop.set_has_arrow(False)
     pop.set_position(Gtk.PositionType.TOP)
     pop.set_offset(0, -6)

@@ -376,7 +376,7 @@ def plate_height(cfg: dict) -> int:
 
 
 def load_css() -> None:
-    install_css(dock_menu.CSS)
+    dock_menu.install_css()
     install_css(CSS % {"pad_top": PAD_TOP, "sep_bottom": DOT_ROW, "bounce_ms": BOUNCE_MS,
                        "tint_light": GLASS_TINT["light"], "tint_dark": GLASS_TINT["dark"]})
 

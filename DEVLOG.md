@@ -117,3 +117,13 @@
   Sonata. Documented in the README.
 - Not bundled yet: MacTahoe's -dark/-light variants (GTK recolors symbolic
   icons itself; revisit with the top bar).
+
+## 2026-09-28 -- Fix: Options submenu used the default theme
+
+- Reported by Vini (screenshot): the nested Options submenu kept
+  Adwaita's look. GTK creates nested submenus as separate popovers that
+  neither get our `dock-menu` class nor sit under the window's `.dark`.
+  Menu CSS now targets every `popover.menu` of the shell process, and
+  light/dark is applied by reloading that provider on
+  Adw.StyleManager `notify::dark`.
+- `--menu N --submenu` opens the Options submenu for screenshots.
