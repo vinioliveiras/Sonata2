@@ -1,0 +1,12 @@
+[Icon Theme]
+Name=Sonata
+Comment=Sonata 2 icons: own overrides first, then MacTahoe
+Inherits=Sonata-MacTahoe,hicolor
+Directories=places/scalable
+
+[places/scalable]
+Size=64
+MinSize=16
+MaxSize=512
+Context=Places
+Type=Scalable

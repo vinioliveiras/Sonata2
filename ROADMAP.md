@@ -25,8 +25,13 @@ list: [docs/PARITY.md](docs/PARITY.md).
   (right), Big Sur metrics (24 px, translucent), light/dark.
 - **M3 -- Session**: Wayfire config (animations, decorations with traffic
   lights), session `.desktop`, `install.sh` (`~/.local` or `/usr/local`).
+  Apps inside the Sonata session also use Sonata's icons: install links
+  the bundled themes into the icon path and the session (only the Sonata
+  session) sets them for apps.
 - **M4 -- Control Center**: Wi-Fi, Bluetooth, sound, brightness, power mode
   (LayerOSX backend, PipeWire via wpctl, wlr-randr for displays).
 - **M5 -- Launcher, notifications.**
-- **M6 -- Settings app** (LayerOSX panel, generalized).
+- **M6 -- Settings app** (LayerOSX panel, generalized), sidebar split:
+  Sonata (Dock, appearance, icons, animations...) vs. Linux (Wi-Fi,
+  Bluetooth, sound, displays, power, wallpaper...).
 - **Later**: global menu, "Task Bar" (Windows 11) mode.

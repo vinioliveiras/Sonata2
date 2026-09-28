@@ -20,13 +20,11 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 
-from .. import apps, config  # noqa: E402
+from .. import apps, config, icons  # noqa: E402
 from ..style import install_css  # noqa: E402
 from . import dock_menu, layer  # noqa: E402
 
-DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "glass": True,
-            "trash_icon": "round"}   # "round" = bundled Big Sur-era can, "theme" = icon theme's
-ICON_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "icons")
+DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "glass": True}
 LAUNCH_TIMEOUT_MS = 10000   # stop bouncing if no window shows up
 BOUNCE_MS = 620             # one bounce
 GLASS_TINT = {"light": "rgba(246, 246, 250, 0.38)", "dark": "rgba(30, 30, 34, 0.42)"}
@@ -111,7 +109,9 @@ class DockTile(Gtk.Button):
         self.name = name
         self._bounce_src = 0
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.image = Gtk.Image(gicon=gicon, pixel_size=size)
+        self.image = Gtk.Image(pixel_size=size)
+        self.gicon = gicon
+        icons.set_image(self.image, gicon)
         box.append(self.image)
         box.append(Gtk.Box(css_classes=["dock-dot"], halign=Gtk.Align.CENTER))
         self.set_child(box)
@@ -163,7 +163,7 @@ class Dock(Gtk.Box):
         self.windows = {}     # same keys -> [Toplevel]
         self.sep = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL, css_classes=["dock-sep"])
         self.append(self.sep)
-        self.trash = DockTile("Trash", self._trash_icon(False), cfg["icon_size"],
+        self.trash = DockTile("Trash", Gio.ThemedIcon.new("user-trash"), cfg["icon_size"],
                               lambda _t: Gio.AppInfo.launch_default_for_uri("trash:///", None),
                               on_menu=dock_menu.trash_menu)
         self._drag = None     # (key, original index) while an icon is dragged
@@ -235,9 +235,7 @@ class Dock(Gtk.Box):
         self._drag = {"key": tile.key, "index": self.app_tiles().index(tile), "left": False,
                       "dropped": False}
         tile.label.popdown()
-        paintable = Gtk.IconTheme.get_for_display(self.get_display()).lookup_by_gicon(
-            tile.image.get_gicon(), self.cfg["icon_size"], self.get_scale_factor(),
-            Gtk.TextDirection.NONE, Gtk.IconLookupFlags(0))
+        paintable = icons.paintable(self, tile.gicon, self.cfg["icon_size"])
         half = self.cfg["icon_size"] // 2
         src.set_icon(paintable, half, half)
         tile.add_css_class("dragging")
@@ -363,13 +361,7 @@ class Dock(Gtk.Box):
             full = any(os.scandir(self._trash_dir()))
         except OSError:
             full = False
-        self.trash.image.set_from_gicon(self._trash_icon(full))
-
-    def _trash_icon(self, full: bool):
-        if self.cfg["trash_icon"] == "round":
-            name = "sonata2-trash-full.svg" if full else "sonata2-trash-empty.svg"
-            return Gio.FileIcon.new(Gio.File.new_for_path(os.path.join(ICON_DIR, name)))
-        return Gio.ThemedIcon.new("user-trash-full" if full else "user-trash")
+        icons.set_image(self.trash.image, Gio.ThemedIcon.new("user-trash-full" if full else "user-trash"))
 
     def _watch_trash(self) -> None:
         self._update_trash()

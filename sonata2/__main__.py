@@ -38,6 +38,8 @@ def main() -> int:
     def activate(app):
         if args.dark or args.light:
             apply_theme("dark" if args.dark else "light")
+        from . import icons
+        icons.setup()   # Sonata's own icon theme, before any widget
         dock.load_css()
         cfg = dock.load_config()
         from gi.repository import Gdk

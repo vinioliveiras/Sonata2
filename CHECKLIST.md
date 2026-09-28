@@ -53,3 +53,8 @@ Run `tools/dev-session.sh` (or a Wayfire session).
 ## Dock -- round Trash icon
 - [ ] The Trash is the round frosted can; it shows paper inside when the
       Trash has items and turns empty again after emptying.
+
+## Sonata's own icons
+- [ ] Change the system icon theme (e.g. to Adwaita): the Dock keeps the
+      MacTahoe icons and the round Trash.
+- [ ] An app MacTahoe has no icon for still shows its icon (system theme).

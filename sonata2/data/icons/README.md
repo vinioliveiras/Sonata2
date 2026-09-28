@@ -1,10 +1,19 @@
-# Bundled icons
+# Sonata icon themes
 
-| File | Source | License |
+Sonata uses its own icons, independent of the icon theme set in the system.
+
+| Theme | What | License |
 |---|---|---|
-| `sonata2-trash-empty.svg` | [WhiteSur-icon-theme](https://github.com/vinceliuice/WhiteSur-icon-theme) `src/places/scalable/user-trash.svg` | GPL-3.0 |
-| `sonata2-trash-full.svg` | WhiteSur-icon-theme `src/places/scalable/user-trash-full.svg` | GPL-3.0 |
+| `Sonata/` | Our overrides, looked up first. `places/scalable/user-trash(-full).svg`: round trash can from [WhiteSur-icon-theme](https://github.com/vinceliuice/WhiteSur-icon-theme) `src/places/scalable/` | GPL-3.0 |
+| `Sonata-MacTahoe/` | [MacTahoe-icon-theme](https://github.com/vinceliuice/MacTahoe-icon-theme) at commit `839848b` (2026-09-10), installed with `./install.sh -n Sonata-MacTahoe` (default blue variant). Symlinks are relative. | GPL-3.0 (see its COPYING) |
 
-The round, frosted trash can (Big Sur-era look) used by the Dock instead of
-the icon theme's Trash. Set `"trash_icon": "theme"` in
-`~/.config/sonata2/dock.json` to use the theme's icon instead.
+Lookup order in the shell: `Sonata` -> `Sonata-MacTahoe` -> `hicolor` ->
+the system's icon theme (for apps neither theme has).
+
+To override an icon, drop an SVG with the freedesktop name into the matching
+`Sonata/<context>/scalable/` folder (add the folder to `Directories=` in
+`Sonata/index.theme`).
+
+Updating MacTahoe: clone it, run `./install.sh -d /tmp/out -n Sonata-MacTahoe`,
+replace `Sonata-MacTahoe/`, set `Name=Sonata-MacTahoe` in its index.theme and
+update the commit above.

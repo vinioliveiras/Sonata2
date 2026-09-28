@@ -96,3 +96,24 @@
   `user-trash(-full).svg`, bundled in sonata2/data/icons and loaded as
   Gio.FileIcon, so it works with any icon theme. `trash_icon: "theme"`
   switches back.
+
+## 2026-09-28 -- Sonata's own icons; Sonata vs. Linux settings
+
+- Vini: Sonata's icons must work apart from the Linux icon theme, bundled
+  in the repo, and later also used by apps inside the Sonata session.
+  MacTahoe (commit 839848b, blue default) installed as `Sonata-MacTahoe`
+  into sonata2/data/icons (relative symlinks; ~60 MB); the round Trash
+  moved into a small `Sonata` override theme (Inherits=Sonata-MacTahoe,
+  hicolor), so it's the standard `user-trash` name again (the
+  `trash_icon` option is gone).
+- icons.setup(): adds data/icons to the display's icon search path and sets
+  gtk-icon-theme-name *inside the shell process only*; icons.set_image()
+  falls back to a Gtk.IconTheme with the system theme for apps neither
+  bundled theme knows.
+- Side effect: previews no longer need SONATA2_ICON_THEME.
+- Principle set by Vini: Sonata UI/behaviour settings live only in
+  ~/.config/sonata2 (future: 100% customizable); Linux settings (Wi-Fi,
+  wallpaper, sound...) go to the system services and aren't stored by
+  Sonata. Documented in the README.
+- Not bundled yet: MacTahoe's -dark/-light variants (GTK recolors symbolic
+  icons itself; revisit with the top bar).

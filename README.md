@@ -66,15 +66,38 @@ Options: `--dark` / `--light` force the appearance, `--label N` keeps the
 N-th name label visible. Pins, icon size and edge gap are in
 `~/.config/sonata2/dock.json` (created on first run from the installed apps);
 `"glass": false` makes the plate nearly opaque (for compositors without blur).
-`"trash_icon": "theme"` uses the icon theme's Trash instead of the bundled
-round one ([sonata2/data/icons](sonata2/data/icons/README.md)).
 
 For the glass effect and minimize-into-icon, merge
 [config/wayfire.ini](config/wayfire.ini) into `~/.config/wayfire.ini`.
 
 `tools/wl-preview.sh` extras: `PREVIEW_APPS="firefox org.gnome.Console"`
 opens test windows with those app_ids (running dots);
-`SONATA2_ICON_THEME=MacTahoe` picks the icon theme for the preview.
+the preview uses Sonata's icons like the real shell.
+
+## Settings: Sonata vs. Linux
+
+Two separate worlds, so Sonata can become fully customizable without
+touching the system:
+
+- **Sonata settings** -- how the shell looks and behaves (Dock, icons,
+  glass, animations, later the top bar, Launchpad...). Stored only in
+  `~/.config/sonata2/*.json` and read only by Sonata; never taken from
+  GNOME/KDE/gsettings.
+  - `dock.json`: pins, icon size, edge gap, glass
+  - `appearance.json`: `icon_theme` (default `Sonata`)
+- **Linux settings** -- the machine itself: Wi-Fi, Bluetooth, sound,
+  displays, power, wallpaper, keyboard... Sonata doesn't store them; it
+  reads/writes the standard system services (NetworkManager, PipeWire,
+  UPower...), so they stay the same in any desktop.
+
+The Settings app (later) keeps the same split in its sidebar.
+
+## Icons
+
+Sonata has its own icons, separate from the system icon theme:
+`Sonata` (our overrides, e.g. the round Trash) -> `Sonata-MacTahoe`
+(bundled, pinned) -> `hicolor` -> the system theme only for apps none of
+them has. Details: [sonata2/data/icons](sonata2/data/icons/README.md).
 
 ## Stack
 
@@ -94,7 +117,9 @@ them. No distro-specific paths or tools.
 sonata2/          Python package
   __main__.py     entry point (`python3 -m sonata2 dock`)
   style.py        shared CSS, theme, traffic lights (from LayerOSX)
-  config.py       JSON settings in ~/.config/sonata2
+  config.py       Sonata settings (JSON in ~/.config/sonata2)
+  icons.py        Sonata's own icon lookup (bundled themes, system fallback)
+  data/icons/     bundled icon themes (Sonata, Sonata-MacTahoe)
   apps.py         .desktop lookup, default Dock pins
   shell/          top bar, dock, launcher, control center, notifications
   wl/             Wayland protocol clients (foreign-toplevel, on GTK's

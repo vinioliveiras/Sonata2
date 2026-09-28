@@ -64,9 +64,6 @@ class PreviewWindow(Gtk.ApplicationWindow):
                          default_width=width, default_height=height, decorated=False,
                          resizable=False)
         install_css(CSS)
-        theme = os.environ.get("SONATA2_ICON_THEME")   # e.g. MacTahoe, for screenshots
-        if theme:
-            Gtk.Settings.get_default().set_property("gtk-icon-theme-name", theme)
         self.dock = dock
         self._size = (width, height)
         self._walls = {}
