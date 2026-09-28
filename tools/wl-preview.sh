@@ -12,6 +12,8 @@ name="$comp$(printf '%s' "$*" | tr -c 'a-z0-9' '-' | tr -s '-')"; name="${name%-
 mkdir -p "$REPO/screenshots"
 out="$REPO/screenshots/$name.png"
 PY="${PYTHON:-python3}"
+# SONATA_SESSION_ENV=1: preview with the session look (GTK_THEME etc.)
+[ -n "${SONATA_SESSION_ENV:-}" ] && source "$REPO/tools/session-env.sh" 2>/dev/null
 run="$(mktemp -d)"; chmod 700 "$run"
 cfg="$run/sway.conf"
 cat > "$cfg" <<CONF

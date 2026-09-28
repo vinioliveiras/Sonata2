@@ -292,3 +292,22 @@
   layout inside, GNOME's 'appmenu:close' outside.
 - GTK_THEME is fixed per process: after switching Dark Mode, apps pick the
   dark theme when reopened.
+
+## 2026-09-28 -- M6: System Settings (first version)
+
+- sonata2/settings/app.py follows the LayerOSX panel structure Vini liked
+  (Adw.NavigationSplitView, badge sidebar with a user card, one
+  PreferencesPage per section, fixed 920x640, traffic lights with zoom
+  greyed out). Sidebar grouped Linux / Sonata / About (his split).
+- Badge colours are design tokens now (tokens.SYSTEM_COLORS -> sys_*).
+- backend/system.py grew: Bluetooth devices, PipeWire sinks (wpctl status),
+  wlr-randr displays/modes/scale, power-profiles-daemon, gsettings helpers.
+- Live apply: config.watch(name, cb) (Gio file monitor); the Dock rebuilds
+  when appearance/behaviour keys change (its own pin/recents writes don't
+  trigger it), the menu bar reloads, Launchpad reloads unless it was its own
+  save. Settings writes one key and keeps the rest of the file.
+- Wallpaper: `sonata2 wallpaper`, a layer-shell BACKGROUND surface showing
+  org.gnome.desktop.background picture-uri(-dark), live; replaces swaybg.
+- Labels in our windows set their colour explicitly: the session GTK theme
+  otherwise painted them white on the light window background.
+- tests/test_settings.py (all sections build; _save keeps other keys).

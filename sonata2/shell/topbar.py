@@ -76,11 +76,19 @@ class Bar(Gtk.CenterBox):
         self.set_end_widget(right)
 
         ui.on_change(self.queue_draw)
+        self._cfg_mon = config.watch("topbar", self._config_changed)
         if self.manager:
             self.manager.listeners.append(self._active_changed)
         self._tick_clock()
         self._poll()
         GLib.timeout_add_seconds(POLL_S, lambda: (self._poll(), True)[1])
+
+    def _config_changed(self) -> None:
+        """Settings app changed topbar.json: apply live."""
+        self.cfg = config.load("topbar", DEFAULTS)
+        self.battery_pct.set_visible(self.cfg["battery_percent"] and self.battery.get_visible())
+        now = GLib.DateTime.new_now_local()
+        self._set_text(self.clock, now.format(self.cfg["clock_format"]) or now.format("%a %H:%M"))
 
     # -- drawing -------------------------------------------------------------------
     def do_snapshot(self, snap) -> None:
@@ -146,7 +154,7 @@ class Bar(Gtk.CenterBox):
         user = GLib.get_real_name() or GLib.get_user_name()
         return self._menu(btn, [
             [Item("About This Computer", lambda: AboutWindow().present())],
-            [Item("System Settings…", enabled=False)],
+            [Item("System Settings…", lambda: open_settings())],
             [Item("Recent Items", submenu=self._recent_items())],
             [Item("Sleep", lambda: system.power_action("sleep")),
              Item("Restart…", lambda: self._confirm("restart")),
@@ -370,6 +378,16 @@ class Bar(Gtk.CenterBox):
 
     def _poll_soon(self) -> None:
         GLib.timeout_add(600, lambda: (self._poll(), False)[1])
+
+
+def open_settings(page: str = "") -> None:
+    """Start Sonata Settings (its own process)."""
+    import subprocess
+    import sys
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    env = dict(os.environ, PYTHONPATH=repo)
+    subprocess.Popen([sys.executable, "-m", "sonata2", "settings"] + (["--page", page] if page else []),
+                     env=env, start_new_session=True)
 
 
 class ControlCenter(Gtk.Box):

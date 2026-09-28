@@ -9,7 +9,8 @@ Development / screenshots:
   --set KEY=VALUE     override a Dock setting for this run (not saved)
   --label N / --menu N [--submenu] / --stack / --magnify X   (Dock)
   --search TEXT / --folder / --jiggle / --background           (Launchpad)
-  --menu N                                                     (top bar, gallery)"""
+  --menu N                                                     (top bar, gallery)
+  --page ID                                                    (settings)"""
 import argparse
 import json
 import os
@@ -18,6 +19,8 @@ import sys
 from .shell import layer
 
 APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
+           "settings": "io.github.vinioliveiras.sonata2.settings",
+           "wallpaper": "io.github.vinioliveiras.sonata2.wallpaper",
            "launchpad": "io.github.vinioliveiras.sonata2.launchpad",
            "topbar": "io.github.vinioliveiras.sonata2.topbar",
            "gallery": "io.github.vinioliveiras.sonata2.gallery"}
@@ -46,6 +49,8 @@ def run_dock(app, args, ui):
     from .shell import dock, dock_menu, launchpad
     from .wl.toplevels import ToplevelManager
     launchpad.launchpad_desktop_file(sys.executable, REPO)   # Launchpad as a Dock app
+    from .settings.app import settings_desktop_file
+    settings_desktop_file(sys.executable, REPO)             # System Settings in Launchpad
     cfg = dock.load_config()
     if not cfg.get("launchpad_added"):                        # once: pin it after Finder
         cfg["launchpad_added"] = True
@@ -121,6 +126,21 @@ def run_launchpad(app, args, ui, state):
         _later(400, lambda: win.set_jiggle(True))
 
 
+def run_settings(app, args, ui, state):
+    from .settings.app import Settings
+    win = state.get("win")
+    if win is None:
+        win = state["win"] = Settings(app, args.page or "wifi")
+    elif args.page:
+        win.select(args.page)
+    win.present()
+
+
+def run_wallpaper(app, args, ui):
+    from .shell.wallpaper import WallpaperWindow
+    WallpaperWindow(app).present()
+
+
 def run_topbar(app, args, ui):
     from .shell import topbar
     win = topbar.TopBarWindow(app, preview=args.preview)
@@ -146,6 +166,7 @@ def main() -> int:
     p.add_argument("--folder", action="store_true")
     p.add_argument("--jiggle", action="store_true")
     p.add_argument("--background", action="store_true", help="launchpad: start hidden (session autostart)")
+    p.add_argument("--page", default="", help="settings: section to open (wifi, dock, ...)")
     args = p.parse_args()
 
     if not args.preview:
@@ -171,6 +192,10 @@ def main() -> int:
             run_dock(app, args, ui)
         elif args.component == "launchpad":
             run_launchpad(app, args, ui, state)
+        elif args.component == "settings":
+            run_settings(app, args, ui, state)
+        elif args.component == "wallpaper":
+            run_wallpaper(app, args, ui)
         else:
             run_topbar(app, args, ui)
 

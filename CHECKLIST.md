@@ -131,3 +131,16 @@ Run `tools/dev-session.sh` (or a Wayfire session).
 - [ ] The same app opened in GNOME (outside) keeps GNOME's look.
 - [ ] Dark Mode (Control Center) + reopening the app: dark Big Sur theme.
 - [ ] An X11 app (e.g. xterm) gets Wayfire's light title bar.
+
+## M6 -- System Settings
+- [ ] Opens from the Sonata menu (System Settings...) and from Launchpad;
+      traffic lights, fixed size, sidebar badges, Esc closes.
+- [ ] Wi-Fi: switch, list, join (password); Bluetooth: switch, devices,
+      connect/disconnect; Sound: slider, mute, output device.
+- [ ] Displays: brightness; mode and scale per screen (wlr-randr).
+- [ ] Battery: level, power source, energy mode.
+- [ ] Wallpaper: Choose... -> the desktop changes at once.
+- [ ] Desktop & Dock: size, magnification, position, auto-hide, recents --
+      the running Dock changes immediately. Menu Bar: battery %, clock.
+- [ ] Launchpad: Reset... empties folders/order in the open Launchpad.
+- [ ] Appearance: Dark -> Dock, menu bar, Launchpad switch live.

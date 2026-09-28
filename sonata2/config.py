@@ -27,3 +27,19 @@ def save(name: str, data: dict) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     os.replace(tmp, path)   # atomic: never leaves a half-written file
+
+
+def watch(name: str, callback):
+    """Call callback() when <name>.json changes on disk (e.g. from the Settings
+    app). Returns the monitor -- keep a reference to it."""
+    from gi.repository import Gio
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    mon = Gio.File.new_for_path(os.path.join(CONFIG_DIR, name + ".json")).monitor_file(
+        Gio.FileMonitorFlags.WATCH_MOVES, None)
+
+    def changed(_m, _f, _o, event):
+        if event in (Gio.FileMonitorEvent.CHANGES_DONE_HINT, Gio.FileMonitorEvent.CREATED,
+                     Gio.FileMonitorEvent.RENAMED, Gio.FileMonitorEvent.MOVED_IN):
+            callback()
+    mon.connect("changed", changed)
+    return mon

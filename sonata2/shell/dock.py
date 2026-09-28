@@ -801,6 +801,7 @@ class DockWindow(Gtk.ApplicationWindow):
         motion.connect("leave", lambda *_: self._pointer(False))
         self.add_controller(motion)
         ui.menu.on_closed.append(lambda: self._pointer(self._inside))
+        self._cfg_mon = config.watch("dock", self._config_changed)
         self.rebuild()
 
     def rebuild(self) -> None:
@@ -821,6 +822,20 @@ class DockWindow(Gtk.ApplicationWindow):
         self._geometry()
         if self.cfg["autohide"]:
             GLib.timeout_add(600, lambda: (self._pointer(self._inside), False)[1])
+
+    LIVE_KEYS = ("icon_size", "magnification", "magnified_size", "position", "autohide",
+                 "autohide_delay_ms", "show_recents", "glass", "edge_gap")
+
+    def _config_changed(self) -> None:
+        """dock.json changed (Settings app): apply appearance/behaviour keys.
+        The Dock's own writes (pins, recents) don't touch these, so no loop."""
+        new = config.load("dock", DEFAULTS)
+        if all(new[k] == self.cfg[k] for k in self.LIVE_KEYS):
+            return
+        for k in self.LIVE_KEYS:
+            self.cfg[k] = new[k]
+        load_css(self.cfg)
+        self.rebuild()
 
     def _exclusive(self) -> int:
         return 0 if self.cfg["autohide"] else plate_height(self.cfg) + self.cfg["edge_gap"]

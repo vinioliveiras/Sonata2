@@ -68,7 +68,7 @@ def installed_apps() -> dict:
     out = {}
     for info in Gio.AppInfo.get_all():
         did = (info.get_id() or "")
-        if not did.endswith(".desktop") or not info.should_show() or did.startswith("sonata2-"):
+        if not did.endswith(".desktop") or not info.should_show():
             continue
         out[did[:-8]] = info
     return out
@@ -249,6 +249,7 @@ class Launchpad(Gtk.ApplicationWindow):
 
         self.layer = layer.overlay_fullscreen(self, "sonata2-launchpad")
         Gio.AppInfoMonitor.get().connect("changed", lambda *_: self._apps_changed())
+        self._cfg_mon = config.watch("launchpad", self._config_changed)
         self.render()
 
     # -- geometry / rendering ----------------------------------------------------
@@ -299,6 +300,15 @@ class Launchpad(Gtk.ApplicationWindow):
 
     def save(self) -> None:
         config.save("launchpad", self.model.to_json())
+
+    def _config_changed(self) -> None:
+        """launchpad.json changed elsewhere (Settings: reset, unhide)."""
+        data = config.load("launchpad", {"pages": [], "hidden": []})
+        if data == self.model.to_json():
+            return                              # our own save
+        self.model = M.Model(data, self.model.installed)
+        self.widgets.clear()
+        self.render()
 
     def _apps_changed(self) -> None:
         apps.refresh()

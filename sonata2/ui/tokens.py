@@ -111,6 +111,12 @@ SHARED = {
     "t_standard": "250ms",
 }
 
+# Apple system colours (Settings sidebar badges, app accents). Same in
+# light and dark, like the macOS System Settings icons.
+SYSTEM_COLORS = {"blue": "#0a84ff", "green": "#30d158", "pink": "#ff375f", "orange": "#ff9f0a",
+                 "red": "#ff453a", "purple": "#bf5af2", "teal": "#40c8e0", "indigo": "#5e5ce6",
+                 "graphite": "#636366", "gray": "#8e8e93", "black": "#1c1c1e"}
+
 # Spacing scale (px) for layout code.
 SPACE = {"xxs": 2, "xs": 4, "s": 6, "m": 8, "l": 12, "xl": 16, "xxl": 20}
 
@@ -124,4 +130,5 @@ THEMES = {"mac": {"light": LIGHT, "dark": DARK, "shared": SHARED}}
 def palette(dark: bool, theme: str = "mac") -> dict:
     """All tokens for one theme and appearance."""
     t = THEMES.get(theme, THEMES["mac"])
-    return {**t["shared"], **(t["dark"] if dark else t["light"])}
+    return {**t["shared"], **{"sys_" + k: v for k, v in SYSTEM_COLORS.items()},
+            **(t["dark"] if dark else t["light"])}

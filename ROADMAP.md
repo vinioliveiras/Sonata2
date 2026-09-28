@@ -54,7 +54,15 @@ list: [docs/PARITY.md](docs/PARITY.md).
   server-side title bars. Open: Wayfire can't put its own buttons on the
   left nor round/shadow them -> a small Sonata decorator plugin (C++) later;
   Qt apps follow only as far as the GTK platform theme goes.
-- **M6 -- Settings app** (next): macOS System Settings layout.
+- **M6 -- Settings app** *(first version done)*: macOS System Settings
+  layout (from the LayerOSX panel): Linux -- Wi-Fi, Bluetooth, Sound
+  (volume, mute, output device), Displays (brightness, mode, scale via
+  wlr-randr), Battery (level, energy mode via power-profiles-daemon),
+  Wallpaper; Sonata -- Appearance (light/dark, style, icons, glass),
+  Desktop & Dock (all Dock options), Menu Bar (battery %, clock),
+  Launchpad (reset, hidden apps); About. Dock/menu bar/Launchpad apply
+  changes live (config.watch). Wallpaper drawn by `sonata2 wallpaper`.
+  Later: Keyboard, Mouse/Trackpad, Notifications, Users, Privacy, Sharing.
 - **M3 -- Session**: Wayfire config (animations, decorations with traffic
   lights), session `.desktop`, `install.sh` (`~/.local` or `/usr/local`).
   Apps inside the Sonata session also use Sonata's icons: install links
@@ -63,7 +71,4 @@ list: [docs/PARITY.md](docs/PARITY.md).
 - **M4 -- Control Center**: Wi-Fi, Bluetooth, sound, brightness, power mode
   (LayerOSX backend, PipeWire via wpctl, wlr-randr for displays).
 - **M5 -- Launcher, notifications.**
-- **M6 -- Settings app** (LayerOSX panel, generalized), sidebar split:
-  Sonata (Dock, appearance, icons, animations...) vs. Linux (Wi-Fi,
-  Bluetooth, sound, displays, power, wallpaper...).
 - **Later**: global menu, "Task Bar" (Windows 11) mode.

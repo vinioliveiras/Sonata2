@@ -279,3 +279,123 @@ def about() -> About:
         if len(f) >= 3 and ("VGA" in f[0] or "3D" in f[0] or "Display" in f[0]):
             gpus.append(_gpu_name(f[1], f[2]))
     return About(osr.get("PRETTY_NAME", "Linux").strip('"'), machine, cpu, mem, gpus, os.uname().release)
+
+
+# -- Bluetooth devices --------------------------------------------------------------------
+@dataclass
+class BtDevice:
+    mac: str
+    name: str
+    paired: bool
+    connected: bool
+
+
+def bluetooth_devices() -> List[BtDevice]:
+    rc, out = _run(["bluetoothctl", "devices"], timeout=8)
+    devs = []
+    for line in out.splitlines() if rc == 0 else []:
+        parts = line.split(" ", 2)
+        if len(parts) == 3 and parts[0] == "Device":
+            _rc, info = _run(["bluetoothctl", "info", parts[1]], timeout=5)
+            devs.append(BtDevice(parts[1], parts[2], "Paired: yes" in info, "Connected: yes" in info))
+    return sorted(devs, key=lambda d: (not d.connected, not d.paired, d.name.lower()))
+
+
+def bluetooth_connect(mac: str, on: bool) -> bool:
+    return _run(["bluetoothctl", "connect" if on else "disconnect", mac], timeout=20)[0] == 0
+
+
+# -- sound outputs ----------------------------------------------------------------------------
+@dataclass
+class AudioSink:
+    id: int
+    name: str
+    default: bool
+
+
+def audio_sinks() -> List[AudioSink]:
+    """Output devices from `wpctl status` (Audio > Sinks section)."""
+    rc, out = _run(["wpctl", "status"], timeout=5)
+    sinks, section = [], None
+    for line in out.splitlines() if rc == 0 else []:
+        s = line.strip(" │├└─")
+        if s.startswith("Sinks:"):
+            section = "sinks"
+            continue
+        if section == "sinks":
+            if not s or s.endswith(":"):
+                if sinks or s.endswith(":"):
+                    break
+                continue
+            m = re.match(r"(\*)?\s*(\d+)\.\s+(.+?)(\s+\[vol:.*\])?$", s)
+            if m:
+                sinks.append(AudioSink(int(m.group(2)), m.group(3).strip(), bool(m.group(1))))
+    return sinks
+
+
+def set_default_sink(sink_id: int) -> bool:
+    return _run(["wpctl", "set-default", str(sink_id)])[0] == 0
+
+
+# -- displays (wlroots compositors) -------------------------------------------------------------
+@dataclass
+class Display:
+    name: str
+    description: str
+    modes: List[str]        # "1920x1080@60.000"
+    current: str
+    scale: float
+
+
+def displays() -> List[Display]:
+    rc, out = _run(["wlr-randr"], timeout=5)
+    result, cur = [], None
+    for line in out.splitlines() if rc == 0 else []:
+        if line and not line.startswith(" "):
+            name, _, desc = line.partition(" ")
+            cur = Display(name, desc.strip('" '), [], "", 1.0)
+            result.append(cur)
+        elif cur is not None:
+            s = line.strip()
+            m = re.match(r"(\d+x\d+) px, ([\d.]+) Hz(.*)", s)
+            if m:
+                mode = f"{m.group(1)}@{m.group(2)}"
+                if mode not in cur.modes:
+                    cur.modes.append(mode)
+                if "current" in m.group(3):
+                    cur.current = mode
+            elif s.startswith("Scale:"):
+                cur.scale = float(s.split(":")[1])
+    return result
+
+
+def set_display_mode(name: str, mode: str) -> bool:
+    return _run(["wlr-randr", "--output", name, "--mode", mode], timeout=10)[0] == 0
+
+
+def set_display_scale(name: str, scale: float) -> bool:
+    return _run(["wlr-randr", "--output", name, "--scale", str(scale)], timeout=10)[0] == 0
+
+
+# -- power profiles -------------------------------------------------------------------------------
+POWER_PROFILES = (("performance", "High Performance"), ("balanced", "Automatic"),
+                  ("power-saver", "Low Power"))
+
+
+def power_profile() -> Optional[str]:
+    rc, out = _run(["powerprofilesctl", "get"], timeout=5)
+    return out.strip() if rc == 0 else None
+
+
+def set_power_profile(profile: str) -> bool:
+    return _run(["powerprofilesctl", "set", profile], timeout=5)[0] == 0
+
+
+# -- desktop settings in dconf (Linux side; the Sonata session layers them) ------------------------
+def gsetting(schema: str, key: str) -> Optional[str]:
+    rc, out = _run(["gsettings", "get", schema, key], timeout=5)
+    return out.strip().strip("'") if rc == 0 else None
+
+
+def set_gsetting(schema: str, key: str, value: str) -> bool:
+    return _run(["gsettings", "set", schema, key, value], timeout=5)[0] == 0

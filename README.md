@@ -57,6 +57,14 @@ Remaining: hardware polish (multi-monitor, HiDPI) -- see
 
 The look is macOS Big Sur/Monterey -- deliberately **not** Liquid Glass.
 
+## System Settings
+
+`python3 -m sonata2 settings [--page dock]` (also in Launchpad and the
+Sonata menu): macOS System Settings layout. Linux sections (Wi-Fi,
+Bluetooth, Sound, Displays, Battery, Wallpaper) change the system;
+Sonata sections (Appearance, Desktop & Dock, Menu Bar, Launchpad) write
+~/.config/sonata2 and the running shell applies them immediately.
+
 ## Windows
 
 Inside a Sonata session every GTK3/GTK4/libadwaita app gets Big Sur windows:
@@ -95,7 +103,8 @@ Finder on its first run with this version.
 Easiest: `tools/dev-session.sh` opens Wayfire **as a window inside your
 current desktop** (no logout), with the repo's Wayfire settings, a
 wallpaper, the Dock and a terminal. Needs `wayfire`; `swaybg` +
-`python-pillow` for the wallpaper (the glass needs something behind it).
+`python-pillow` for a sample wallpaper (or pick one in System Settings >
+Wallpaper) -- the glass needs something behind it.
 
 Full session: install `wayfire`, merge `config/wayfire.ini` into
 `~/.config/wayfire.ini`, pick "Wayfire" on the login screen.
@@ -191,5 +200,6 @@ tests/  tools/    headless tests, screenshot helpers
 
 ```
 sudo pacman -S --needed wayfire gtk4 libadwaita gtk4-layer-shell python-gobject python-cairo python-pywayland
+# optional: networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon
 # previews/screenshots only: sway grim python-pillow
 ```
