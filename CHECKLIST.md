@@ -58,3 +58,7 @@ Run `tools/dev-session.sh` (or a Wayfire session).
 - [ ] Change the system icon theme (e.g. to Adwaita): the Dock keeps the
       MacTahoe icons and the round Trash.
 - [ ] An app MacTahoe has no icon for still shows its icon (system theme).
+
+## Dock -- running dot
+- [ ] The dot under a running app is vertically centred between the icon's
+      bottom edge and the Dock's bottom edge (light and dark).

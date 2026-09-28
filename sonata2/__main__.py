@@ -55,8 +55,8 @@ def main() -> int:
             apply_theme("dark" if args.dark else "light")
         from . import icons
         icons.setup()   # Sonata's own icon theme, before any widget
-        dock.load_css()
         cfg = dock.load_config()
+        dock.load_css(cfg)
         from gi.repository import Gdk
         from .wl.toplevels import ToplevelManager
         manager = ToplevelManager(Gdk.Display.get_default(), ignore_app_ids={APP_ID})

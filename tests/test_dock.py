@@ -30,6 +30,7 @@ class DockTest(unittest.TestCase):
         Gtk.init()
         icons.setup()
         self.cfg = D.load_config()
+        D.load_css(self.cfg)
         if len(self.cfg["pinned"]) < 3:
             self.skipTest("needs at least 3 installed default apps")
         self.win = Gtk.Window()

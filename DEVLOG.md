@@ -127,3 +127,11 @@
   light/dark is applied by reloading that provider on
   Adw.StyleManager `notify::dark`.
 - `--menu N --submenu` opens the Options submenu for screenshots.
+
+## 2026-09-28 -- Dock: running dot optically centred
+
+- Vini: macOS places the dot too low; centre it between the icon and the
+  plate edge. Measured in screenshots: Sonata-MacTahoe icons end 4 px above
+  their 48 px box (1/12), so the gap above the dot is 4 px minus that inset
+  and the gap below is 4 px -> the visible gaps are equal. Plate is now
+  61 px at 48 px icons (exclusive zone follows). Scales with icon_size.

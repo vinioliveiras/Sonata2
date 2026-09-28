@@ -29,8 +29,17 @@ LAUNCH_TIMEOUT_MS = 10000   # stop bouncing if no window shows up
 BOUNCE_MS = 620             # one bounce
 GLASS_TINT = {"light": "rgba(246, 246, 250, 0.38)", "dark": "rgba(30, 30, 34, 0.42)"}
 
-# Plate padding / dot row, in px (Big Sur at 48 px icons -> 62 px plate).
-PAD_TOP, DOT_ROW, SHADOW = 5, 9, 12
+# Plate padding and running dot, in px. Unlike macOS (where it sits low),
+# the dot is centred between the icon's visible artwork and the plate edge.
+# Icons have a transparent margin inside their box (Sonata-MacTahoe: 1/12
+# of the size), so the gap above the dot is shortened by that margin.
+PAD_TOP, DOT, DOT_GAP, SHADOW = 5, 4, 4, 12
+ART_INSET = 1 / 12   # measured: 4 px at 48 px
+
+
+def dot_gaps(icon_size: int):
+    """(gap above, gap below) the dot, in px, for visual centring."""
+    return max(0, DOT_GAP - round(icon_size * ART_INSET)), DOT_GAP
 
 CSS = """
 window.sonata-dock, window.sonata-dock > contents { background: none; box-shadow: none; }
@@ -68,7 +77,7 @@ window.sonata-dock, window.sonata-dock > contents { background: none; box-shadow
 .dock-tile image { transition: filter 80ms ease-out; }
 .dock-tile:active image { filter: brightness(0.62); }
 .dock-tile.dragging { opacity: 0; }   /* keeps its gap while being dragged */
-.dock-dot { min-width: 4px; min-height: 4px; margin: 2px 0 3px 0;
+.dock-dot { min-width: %(dot)dpx; min-height: %(dot)dpx; margin: %(dot_top)dpx 0 %(dot_bottom)dpx 0;
             border-radius: 99px; background-color: rgba(0, 0, 0, 0.62); opacity: 0; }
 .dark .dock-dot { background-color: rgba(255, 255, 255, 0.72); }
 .dock-tile.running .dock-dot { opacity: 1; }
@@ -371,13 +380,20 @@ class Dock(Gtk.Box):
         self._trash_mon.connect("changed", self._update_trash)
 
 
+def dot_row(cfg: dict) -> int:
+    top, bottom = dot_gaps(cfg["icon_size"])
+    return top + DOT + bottom
+
+
 def plate_height(cfg: dict) -> int:
-    return PAD_TOP + cfg["icon_size"] + DOT_ROW
+    return PAD_TOP + cfg["icon_size"] + dot_row(cfg)
 
 
-def load_css() -> None:
+def load_css(cfg: dict) -> None:
     dock_menu.install_css()
-    install_css(CSS % {"pad_top": PAD_TOP, "sep_bottom": DOT_ROW, "bounce_ms": BOUNCE_MS,
+    top, bottom = dot_gaps(cfg["icon_size"])
+    install_css(CSS % {"pad_top": PAD_TOP, "sep_bottom": dot_row(cfg), "bounce_ms": BOUNCE_MS,
+                       "dot": DOT, "dot_top": top, "dot_bottom": bottom,
                        "tint_light": GLASS_TINT["light"], "tint_dark": GLASS_TINT["dark"]})
 
 
