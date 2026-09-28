@@ -89,6 +89,14 @@ SHARED = {
     "switch_w": "32px",
     "switch_h": "18px",
     "menu_min_w": "190px",
+    # full-screen overlays over the blurred desktop (Launchpad), same in
+    # light and dark like macOS
+    "scrim": "rgba(0, 0, 0, 0.28)",
+    "on_scrim": "#ffffff",
+    "on_scrim_secondary": "rgba(255, 255, 255, 0.60)",
+    "field_on_scrim": "rgba(255, 255, 255, 0.16)",
+    "tile_on_scrim": "rgba(255, 255, 255, 0.20)",
+    "folder_panel": "rgba(255, 255, 255, 0.16)",
     # timings
     "t_press": "80ms",
     "t_fast": "150ms",

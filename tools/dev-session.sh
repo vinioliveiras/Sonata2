@@ -28,12 +28,14 @@ for t in kgx gnome-terminal konsole kitty alacritty foot ghostty xfce4-terminal;
 done
 
 # The repo's config, with autostart pointed at this clone.
-sed '/^\[autostart\]/,$d' "$REPO/config/wayfire.ini" > "$run/wayfire.ini"
+sed -e '/^\[autostart\]/,$d' -e "s|\$HOME/GitHub/sonata2|$REPO|g" "$REPO/config/wayfire.ini" > "$run/wayfire.ini"
 {
     echo "[autostart]"
     echo "autostart_wf_shell = false"
     [ -n "$wall" ] && command -v swaybg >/dev/null && echo "wallpaper = swaybg -m fill -i '$wall'"
     echo "dock = env PYTHONPATH='$REPO' python3 -m sonata2 dock"
+    echo "launchpad = env PYTHONPATH='$REPO' python3 -m sonata2 launchpad --background"
+    echo "topbar = env PYTHONPATH='$REPO' python3 -m sonata2 topbar"
     [ -n "$term" ] && echo "terminal = $term"
     echo
     echo "[output:WL-1]"

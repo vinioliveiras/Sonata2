@@ -94,3 +94,18 @@ Run `tools/dev-session.sh` (or a Wayfire session).
       grid with names, click an item opens it, drag one to the desktop.
       Right-click > View content as > List; Display as > Folder; Sort by.
 - [ ] Drop a folder on the Dock: new stack. Options > Remove from Dock.
+
+## M2 -- Launchpad
+- [ ] Dock shows Launchpad after Finder; click (or F4): the desktop blurs and
+      the grid zooms/fades in; click empty space or Esc: it closes.
+- [ ] Typing filters; arrows move the highlight; Return opens it.
+- [ ] Swipe / scroll / Page Down changes pages; dots follow.
+- [ ] Drag an icon: others move out of the way; hold it at the screen side
+      to flip the page; release -> order kept after reopening.
+- [ ] Hold an app over another ~0.5 s (it grows) and release: a folder named
+      after their category; click it: panel with the apps; click the name to
+      rename; drag an app out of the panel back to the grid.
+- [ ] Drag an app from Launchpad onto the Dock: it gets pinned there.
+- [ ] Press and hold an icon (or hold Alt): icons jiggle; your own shortcuts
+      (~/.local/share/applications) have an x -> Delete asks, then Trash.
+- [ ] Install/remove an app: it appears at the end / disappears.

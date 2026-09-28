@@ -223,3 +223,30 @@
   sat at the left. A non-resizable GtkWindow makes gtk4-layer-shell send
   its fixed size; `resizable=True` lets the anchored edges size it (960 px,
   Dock centred). Auto-hide started hidden without errors (left edge).
+
+## 2026-09-28 -- M2: Launchpad
+
+- Order changed by Vini: Launchpad before the top bar.
+- launchpad_model.py (pure, 7 tests): pages of ids/folder dicts, reconcile
+  with installed apps (new ones alphabetically at the end, missing dropped,
+  1-app folders dissolved), overflow cascades to the next page (macOS),
+  folders named from freedesktop categories, hidden list, ranked search.
+- launchpad.py: layer OVERLAY surface, all edges, exclusive keyboard;
+  ZoomBin paints scrim (+ preview backdrop) and draws the content with the
+  Big Sur zoom (112 % -> 100 %) + fade; Adw.Carousel pages of homogeneous
+  7x5 grids (placeholders keep the grid when a page isn't full) and
+  Adw.CarouselIndicatorDots; icon size from the screen (~56 % of a cell,
+  48-128 px); widgets cached per item and re-attached on changes.
+- Drag: one DragSource per item offering a union of a string (internal) and
+  a Gdk.FileList with the .desktop file (the Dock pins it); per-grid
+  DropTarget: centre of a cell held 400 ms = folder target, otherwise live
+  reorder; 650 ms at the side = page flip; dragging an app from the open
+  folder closes it and takes the app out.
+- Jiggle: CSS rotate +-1.6 deg, odd items phase-shifted; delete badge only
+  for .desktop files in ~/.local/share/applications (macOS only deletes
+  user-installed apps), moved to the Trash after an alert.
+- Launchpad is single-instance (GApplication): running it again toggles;
+  `--background` at login keeps it resident for instant opening. The Dock
+  writes ~/.local/share/applications/sonata2-launchpad.desktop (NoDisplay)
+  with an original icon (Sonata theme: app grid on a tile) and pins it once.
+- layer_shell() no longer calls into gtk4-layer-shell on X11 (assertions).

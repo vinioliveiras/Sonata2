@@ -30,6 +30,10 @@ def layer_shell():
         from gi.repository import Gtk4LayerShell as LS
     except (ImportError, ValueError):
         return None
+    gi.require_version("Gdk", "4.0")
+    from gi.repository import Gdk
+    if type(Gdk.Display.get_default()).__name__ != "WaylandDisplay":
+        return None            # X11 / previews: plain windows (no assertion spam)
     return LS if LS.is_supported() else None
 
 
@@ -75,3 +79,19 @@ def set_input_region(win, rects) -> None:
     for x, y, w, h in rects:
         region.union(cairo.RectangleInt(int(x), int(y), int(w) + 1, int(h) + 1))
     surface.set_input_region(region)
+
+
+def overlay_fullscreen(win, namespace: str) -> bool:
+    """Full-screen surface above everything (Launchpad) that takes the
+    keyboard; ignores other surfaces' exclusive zones. False = plain window."""
+    LS = layer_shell()
+    if not LS:
+        return False
+    LS.init_for_window(win)
+    LS.set_namespace(win, namespace)
+    LS.set_layer(win, LS.Layer.OVERLAY)
+    for e in (LS.Edge.TOP, LS.Edge.BOTTOM, LS.Edge.LEFT, LS.Edge.RIGHT):
+        LS.set_anchor(win, e, True)
+    LS.set_exclusive_zone(win, -1)
+    LS.set_keyboard_mode(win, LS.KeyboardMode.EXCLUSIVE)
+    return True

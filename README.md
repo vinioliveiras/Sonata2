@@ -57,6 +57,16 @@ Remaining: hardware polish (multi-monitor, HiDPI) -- see
 
 The look is macOS Big Sur/Monterey -- deliberately **not** Liquid Glass.
 
+## Launchpad
+
+`python3 -m sonata2 launchpad` (again to close; F4 in the Wayfire config).
+Full-screen app grid over the blurred desktop, like Big Sur: pages, search
+(just type), folders (hold an app over another), drag to reorder or onto
+the Dock, press and hold an icon (or hold Alt) to jiggle -- shortcuts you
+installed yourself get a delete badge (moved to the Trash). Layout is saved
+in `~/.config/sonata2/launchpad.json`. The Dock gets a Launchpad icon after
+Finder on its first run with this version.
+
 ## Try it
 
 Easiest: `tools/dev-session.sh` opens Wayfire **as a window inside your
@@ -67,7 +77,8 @@ wallpaper, the Dock and a terminal. Needs `wayfire`; `swaybg` +
 Full session: install `wayfire`, merge `config/wayfire.ini` into
 `~/.config/wayfire.ini`, pick "Wayfire" on the login screen.
 
-Tests: `python3 -m unittest tests.test_dock` (needs a display).
+Tests: `python3 -m unittest tests.test_launchpad_model` (no display);
+`python3 -m unittest tests.test_dock tests.test_launchpad` (need a display).
 Design system gallery: `python3 -m sonata2 gallery [--dark]`.
 
 ## Run (development)

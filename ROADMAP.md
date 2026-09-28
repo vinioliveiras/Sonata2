@@ -32,10 +32,14 @@ list: [docs/PARITY.md](docs/PARITY.md).
     (M5), Show All Windows (Wayfire scale IPC), minimized-window tiles
   - Rule (Vini): no fixed icons. Finder (file manager) and Launchpad are
     ordinary tiles: movable, removable, same menu options.
-- **M2 -- Launchpad** (next, before the top bar): full-screen app grid over
-  the blurred desktop, pages + page dots, search, folders (drag onto each
-  other), drag to reorder / to the Dock, jiggle mode to delete, open/close
-  animations, keyboard navigation.
+- **M2 -- Launchpad** *(done, to test on hardware)*: full-screen app grid
+  over the blurred desktop, 7x5 pages + page dots (swipe/scroll/keys),
+  search, folders (hold an app over another; named by category; rename;
+  drag out), live drag reorder + page flip at the sides, drag to the Dock
+  to pin, jiggle mode (hold an icon / hold Alt) with delete badge for
+  user-installed shortcuts (-> Trash), zoom+fade open/close, keyboard
+  (arrows, Return, Esc, Page Up/Down). Launchpad tile in the Dock (own
+  icon), F4 in Wayfire.
 - **M3b -- Top bar**: Apple-style logo menu (left), clock + status icons
   (right), Big Sur metrics (24 px, translucent), light/dark.
 - **M3 -- Session**: Wayfire config (animations, decorations with traffic
