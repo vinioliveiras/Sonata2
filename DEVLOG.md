@@ -215,3 +215,11 @@
 - `--set key=value` overrides Dock settings for previews; PREVIEW_SIZE
   sizes the preview window.
 - tests: 13.
+
+## 2026-09-28 -- Fix: Dock surface didn't span the edge
+
+- Headless sway run of the real layer surface: the window kept its natural
+  width (615 px) at x=0 instead of stretching along the edge, so the Dock
+  sat at the left. A non-resizable GtkWindow makes gtk4-layer-shell send
+  its fixed size; `resizable=True` lets the anchored edges size it (960 px,
+  Dock centred). Auto-hide started hidden without errors (left edge).

@@ -784,8 +784,10 @@ class DockWindow(Gtk.ApplicationWindow):
     the Dock) brings it back after autohide_delay_ms."""
 
     def __init__(self, app, cfg: dict, manager=None):
+        # resizable: lets layer-shell stretch the surface along the edge
+        # (a fixed-size window would keep its natural width).
         super().__init__(application=app, title="Dock", css_classes=["sonata-dock"],
-                         decorated=False, resizable=False)
+                         decorated=False, resizable=True)
         self.cfg = cfg
         self.manager = manager
         self.dock = None

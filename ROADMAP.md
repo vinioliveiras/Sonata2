@@ -26,7 +26,8 @@ list: [docs/PARITY.md](docs/PARITY.md).
   - [x] M1.6 recent apps section (3, own separator), Stacks: Downloads by
         default, folders dropped on the Dock; Grid/List panel, drag items
         out, Sort by / Display as / View content as, Remove, Open
-  - [ ] M1.7 polish on hardware: multi-monitor, HiDPI, performance
+  - [ ] M1.7 polish on hardware (Vini's tests): multi-monitor (the Dock
+        shows on the compositor's default output), HiDPI, performance
   - Later (needs other components): notification badges, attention bounce
     (M5), Show All Windows (Wayfire scale IPC), minimized-window tiles
   - Rule (Vini): no fixed icons. Finder (file manager) and Launchpad are
