@@ -79,8 +79,8 @@ DARK = {
 # -- appearance-independent ------------------------------------------------------
 SHARED = {
     # typography (SF Pro when installed, Inter as the open substitute)
-    "font": '"SF Pro Text", "Inter", "Cantarell", sans-serif',
-    "font_display": '"SF Pro Display", "Inter Display", "Inter", sans-serif',
+    "font": '"SF Pro Text", "Inter Variable", "Inter", "Cantarell", sans-serif',
+    "font_display": '"SF Pro Display", "Inter Display", "Inter Variable", "Inter", sans-serif',
     "text_small": "11px",
     "text_body": "13px",
     "text_title": "15px",

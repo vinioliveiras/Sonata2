@@ -62,3 +62,19 @@ Widgets that paint in `do_snapshot` use `ui.rgba()`, `ui.shadow()`,
 2. Constructor/class in the same module; plain GTK widgets underneath.
 3. A row in `ui/gallery.py`; screenshot light + dark.
 4. A section in this file.
+
+## Principles
+
+- **Independent look.** A first Sonata login looks right whatever GNOME/KDE
+  themes, fonts or scaling the user has: themes, icons, cursors (Sonata-Cursors)
+  and fonts (Inter) are bundled; the session seeds every visual gsettings key
+  into its own dconf layer once (`tools/session-env.sh`, bump
+  `SONATA_DEFAULTS` to re-seed), forces the Qt platform theme, and never reads
+  ~/.config/wayfire.ini. Known leak: a user `~/.config/gtk-4.0/gtk.css`
+  still applies to third-party GTK4 apps (Sonata's own UI is above it).
+- **Low CPU, even with animations.** Animate only transform/opacity or
+  snapshot-painted values; drive them with Adw.TimedAnimation/frame clock
+  (no timers polling); stop every animation/tick callback when idle; no
+  work while hidden (auto-hidden Dock, closed Launchpad); compositor effects
+  (blur) only on shell surfaces; profile new components idle (0% CPU) and
+  during animation.

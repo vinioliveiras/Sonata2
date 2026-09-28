@@ -18,3 +18,7 @@ To override an icon, drop an SVG with the freedesktop name into the matching
 Updating MacTahoe: clone it, run `./install.sh -d /tmp/out -n Sonata-MacTahoe`,
 replace `Sonata-MacTahoe/`, set `Name=Sonata-MacTahoe` in its index.theme and
 update the commit above.
+
+## Fonts
+
+`sonata2/data/fonts/`: [Inter](https://github.com/rsms/inter) 4.1 variable (SIL OFL 1.1, LICENSE-Inter.txt), the open stand-in for SF Pro. The session adds this folder through its own fontconfig file (`FONTCONFIG_FILE`), nothing is installed system-wide.
