@@ -14,9 +14,26 @@ KWin) and reuses the GTK4/libadwaita look of
 
 ## Status
 
-Skeleton only: repository layout and the shared style module (ported from
-LayerOSX). Nothing runs yet -- the top bar is the first milestone
-(see [ROADMAP.md](ROADMAP.md)).
+**Dock (first cut):** Big Sur-style plate with the pinned apps, a separator
+and the Trash (empty/full icon follows `~/.local/share/Trash`). Hover shows
+the app name above the icon; click launches it with a bounce. Light/dark
+follows the system appearance. Not yet: running-app dots and window
+switching (next milestone), right-click menu, drag to reorder.
+See [ROADMAP.md](ROADMAP.md).
+
+The look is macOS Big Sur/Monterey -- deliberately **not** Liquid Glass.
+
+## Run (development)
+
+```
+python3 -m sonata2 dock              # on Wayland: layer-shell surface at the bottom edge
+python3 -m sonata2 dock --preview    # in a normal window over a sample wallpaper
+tools/wl-preview.sh dock --dark --label 1   # screenshot in headless sway -> screenshots/
+```
+
+Options: `--dark` / `--light` force the appearance, `--label N` keeps the
+N-th name label visible. Pins, icon size and edge gap are in
+`~/.config/sonata2/dock.json` (created on first run from the installed apps).
 
 ## Stack
 
@@ -34,7 +51,10 @@ them. No distro-specific paths or tools.
 
 ```
 sonata2/          Python package
-  style.py        shared CSS, theme, traffic lights
+  __main__.py     entry point (`python3 -m sonata2 dock`)
+  style.py        shared CSS, theme, traffic lights (from LayerOSX)
+  config.py       JSON settings in ~/.config/sonata2
+  apps.py         .desktop lookup, default Dock pins
   shell/          top bar, dock, launcher, control center, notifications
   wl/             Wayland protocol clients (foreign-toplevel)
   backend/        system backend (network, power, audio, displays)
@@ -49,4 +69,5 @@ tests/  tools/    headless tests, screenshot helpers
 
 ```
 sudo pacman -S --needed wayfire gtk4 libadwaita gtk4-layer-shell python-gobject python-pywayland
+# screenshots only: sway grim
 ```

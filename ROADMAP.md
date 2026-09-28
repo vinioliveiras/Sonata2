@@ -1,12 +1,14 @@
 # Roadmap
 
-Full feature list: [docs/PARITY.md](docs/PARITY.md) (carried over from Sonata).
+Base: LayerOSX code (style, Settings, backend). Sonata is only a feature
+list: [docs/PARITY.md](docs/PARITY.md).
 
 - **M0 -- Skeleton** *(done)*: repo layout, style module ported from LayerOSX.
-- **M1 -- Top bar**: Apple-style logo menu (left), clock + status icons
+- **M1 -- Dock** *(first cut done)*: pinned apps, Trash, hover labels, launch
+  bounce. Next: running dots + click to activate/minimize via
+  wlr-foreign-toplevel, right-click menu, drag to reorder.
+- **M2 -- Top bar**: Apple-style logo menu (left), clock + status icons
   (right), Big Sur metrics (24 px, translucent), light/dark.
-- **M2 -- Dock**: pinned apps, running indicators via wlr-foreign-toplevel,
-  click to launch/activate/minimize.
 - **M3 -- Session**: Wayfire config (animations, decorations with traffic
   lights), session `.desktop`, `install.sh` (`~/.local` or `/usr/local`).
 - **M4 -- Control Center**: Wi-Fi, Bluetooth, sound, brightness, power mode
