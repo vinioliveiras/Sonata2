@@ -2,7 +2,7 @@
 
 --preview shows the Dock over a sample wallpaper in a normal window
 (development, screenshots); --label N keeps the name label of the N-th tile
-visible."""
+visible; --menu N opens the N-th tile's right-click menu."""
 import argparse
 import sys
 
@@ -19,6 +19,7 @@ def main() -> int:
     g.add_argument("--dark", action="store_true")
     g.add_argument("--light", action="store_true")
     p.add_argument("--label", type=int, default=-1)
+    p.add_argument("--menu", type=int, default=-1, help="open the N-th tile's menu (screenshots)")
     args = p.parse_args()
 
     if not args.preview:
@@ -54,6 +55,14 @@ def main() -> int:
             tiles = list(d.tiles.values()) + [d.trash]
             if args.label < len(tiles):
                 GLib.timeout_add(300, lambda: (tiles[args.label].label.popup(), False)[1])
+        if args.menu >= 0:
+            from .shell import dock_menu
+            d = win.dock
+            tiles = d.app_tiles() + [d.trash]
+            if args.menu < len(tiles):
+                t = tiles[args.menu]
+                GLib.timeout_add(400, lambda: (dock_menu.trash_menu(t) if t is d.trash
+                                               else dock_menu.app_menu(d, t.key, t), False)[1])
 
     app.connect("activate", activate)
     return app.run([sys.argv[0]])

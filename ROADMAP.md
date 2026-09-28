@@ -8,11 +8,13 @@ list: [docs/PARITY.md](docs/PARITY.md).
   - [x] M1.1 pinned apps, Trash, hover labels, launch bounce
   - [x] M1.2 frosted glass (Wayfire blur), running dots, unpinned running
         apps, click to activate/restore, minimize into the icon
-  - [ ] M1.3 right-click menus: app (open windows list, Options > Keep in
-        Dock / Open at Login / Show in Files, Show All Windows, Hide, Quit);
-        Trash (Open, Empty Trash)
-  - [ ] M1.4 drag: reorder, drag out to remove, drop an app to pin, drop files
-        on an app (open with) or on the Trash (move to Trash)
+  - [x] M1.3 right-click menus: app (open windows list, Options > Keep in
+        Dock / Open at Login / Open File Location, Hide, Quit / Open);
+        Trash (Open, Empty Trash). Left for later: Show All Windows (needs
+        a Wayfire scale-by-app IPC call)
+  - [~] M1.4 drag: [x] reorder, [x] drag out to remove, [x] running app
+        dropped in place gets pinned; [ ] drop an app from the launcher to
+        pin, [ ] drop files on an app (open with) or on the Trash
   - [ ] M1.5 preferences: size, magnification, position (left/bottom/right),
         auto-hide, show indicators, show recent apps
   - [ ] M1.6 polish on hardware: multi-monitor, HiDPI, performance check

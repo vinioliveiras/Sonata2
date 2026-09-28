@@ -30,3 +30,22 @@ Setup: merge `config/wayfire.ini` into `~/.config/wayfire.ini`, restart Wayfire.
 - [ ] Minimizing a window animates into its Dock icon.
 - [ ] Apps whose app_id differs from the .desktop name (e.g. Steam, Chrome)
       still map to the right icon (no duplicate generic icon).
+
+## M1.3 / M1.4 -- Dock menus + drag
+Run `tools/dev-session.sh` (or a Wayfire session).
+- [ ] Right-click an app: Big Sur-style menu above the icon (rounded, blue
+      hover); the hover name label disappears.
+- [ ] Running app: its window titles on top; clicking one focuses it. Hide
+      minimizes all its windows; Quit closes them.
+- [ ] Options > Keep in Dock unchecked: icon leaves (or moves after the
+      pinned apps if running). Checked again: stays.
+- [ ] Options > Open at Login creates ~/.config/autostart/<app>.desktop;
+      unchecking removes it.
+- [ ] Options > Open File Location opens the file manager with the app's
+      executable selected (try an AppImage, Firefox, a Flatpak).
+- [ ] Trash right-click: Open; Empty Trash... disabled when empty, asks for
+      confirmation, then empties.
+- [ ] Drag an icon left/right: the others make room live; drop keeps the
+      new order after restarting the Dock.
+- [ ] Esc during a drag puts the icon back.
+- [ ] Drag an icon out of the Dock and drop it on the desktop: removed.

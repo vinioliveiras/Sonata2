@@ -8,18 +8,21 @@ glass off it is nearly opaque.
 
 Running apps come from wlr-foreign-toplevel (wl/toplevels.py): a dot under
 running apps, unpinned running apps after the pinned ones, click brings the
-app's windows to the front (macOS behaviour) or launches it."""
+app's windows to the front (macOS behaviour) or launches it.
+
+Right-click menus live in dock_menu.py. Icons are reordered by dragging;
+dragging an app out of the Dock removes it (unless it is running)."""
 import os
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 
 from .. import apps, config  # noqa: E402
 from ..style import install_css  # noqa: E402
-from . import layer  # noqa: E402
+from . import dock_menu, layer  # noqa: E402
 
 DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "glass": True}
 LAUNCH_TIMEOUT_MS = 10000   # stop bouncing if no window shows up
@@ -64,6 +67,7 @@ window.sonata-dock, window.sonata-dock > contents { background: none; box-shadow
 }
 .dock-tile image { transition: filter 80ms ease-out; }
 .dock-tile:active image { filter: brightness(0.62); }
+.dock-tile.dragging { opacity: 0; }   /* keeps its gap while being dragged */
 .dock-dot { min-width: 4px; min-height: 4px; margin: 2px 0 3px 0;
             border-radius: 99px; background-color: rgba(0, 0, 0, 0.62); opacity: 0; }
 .dark .dock-dot { background-color: rgba(255, 255, 255, 0.72); }
@@ -99,9 +103,10 @@ popover.dock-label > contents {
 class DockTile(Gtk.Button):
     """One Dock icon: image, running dot, hover label."""
 
-    def __init__(self, name: str, gicon, size: int, on_click, info=None):
+    def __init__(self, name: str, gicon, size: int, on_click, info=None, on_menu=None):
         super().__init__(css_classes=["dock-tile"], focus_on_click=False, can_focus=False)
         self.info = info
+        self.name = name
         self._bounce_src = 0
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.image = Gtk.Image(gicon=gicon, pixel_size=size)
@@ -119,7 +124,10 @@ class DockTile(Gtk.Button):
         motion.connect("leave", lambda *_: self.label.popdown())
         self.add_controller(motion)
         self.connect("clicked", lambda _b: on_click(self))
-        self.connect("destroy", lambda _b: self.label.unparent())
+        if on_menu:
+            right = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
+            right.connect("pressed", lambda *_: on_menu(self))
+            self.add_controller(right)
 
     def set_running(self, running: bool) -> None:
         (self.add_css_class if running else self.remove_css_class)("running")
@@ -154,7 +162,15 @@ class Dock(Gtk.Box):
         self.sep = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL, css_classes=["dock-sep"])
         self.append(self.sep)
         self.trash = DockTile("Trash", Gio.ThemedIcon.new("user-trash"), cfg["icon_size"],
-                              lambda _t: Gio.AppInfo.launch_default_for_uri("trash:///", None))
+                              lambda _t: Gio.AppInfo.launch_default_for_uri("trash:///", None),
+                              on_menu=dock_menu.trash_menu)
+        self._drag = None     # (key, original index) while an icon is dragged
+        drop = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
+        drop.connect("motion", self._drag_motion)
+        drop.connect("drop", self._drag_drop)
+        drop.connect("enter", self._drag_motion)
+        drop.connect("leave", self._drag_leave)
+        self.add_controller(drop)
         self.append(self.trash)
         for did in cfg["pinned"]:
             info = apps.lookup(did)
@@ -167,10 +183,108 @@ class Dock(Gtk.Box):
             self._schedule_sync()
 
     def _add_tile(self, key, name, gicon, info=None) -> DockTile:
-        tile = DockTile(name, gicon, self.cfg["icon_size"], lambda t: self._clicked(key, t), info)
+        tile = DockTile(name, gicon, self.cfg["icon_size"], lambda t: self._clicked(key, t), info,
+                        on_menu=lambda t: dock_menu.app_menu(self, key, t))
+        tile.key = key
         self.tiles[key] = tile
         self.insert_child_after(tile, self.sep.get_prev_sibling())   # before the separator
+        src = Gtk.DragSource(actions=Gdk.DragAction.MOVE)
+        src.connect("prepare", lambda *_: Gdk.ContentProvider.new_for_value(key))
+        src.connect("drag-begin", self._drag_begin, tile)
+        src.connect("drag-cancel", self._drag_cancel, tile)
+        src.connect("drag-end", self._drag_end, tile)
+        tile.add_controller(src)
         return tile
+
+    def _remove_tile(self, key) -> None:
+        tile = self.tiles.pop(key)
+        tile.label.unparent()
+        self.remove(tile)
+
+    def app_tiles(self) -> list:
+        """App tiles in Dock order (pinned, then unpinned running)."""
+        out, w = [], self.get_first_child()
+        while w is not None and w is not self.sep:
+            out.append(w)
+            w = w.get_next_sibling()
+        return out
+
+    def _save_order(self) -> None:
+        pinned = set(self.cfg["pinned"])
+        self.cfg["pinned"] = [t.key for t in self.app_tiles() if t.key in pinned]
+        config.save("dock", self.cfg)
+
+    def set_pinned(self, key, on: bool) -> None:
+        """Keep in Dock on/off. Unpinning a running app keeps its icon until it quits."""
+        pins = self.cfg["pinned"]
+        if on and key not in pins:
+            pins.append(key)
+            self._save_order()         # takes its current position
+        elif not on and key in pins:
+            pins.remove(key)
+            config.save("dock", self.cfg)
+            if key not in self.windows:
+                self._remove_tile(key)
+            else:                      # macOS: running unpinned apps sit after the pinned ones
+                self.reorder_child_after(self.tiles[key], self.sep.get_prev_sibling())
+
+    # -- drag to reorder -------------------------------------------------------
+    def _drag_begin(self, src, _drag, tile) -> None:
+        self._drag = {"key": tile.key, "index": self.app_tiles().index(tile), "left": False,
+                      "dropped": False}
+        tile.label.popdown()
+        paintable = Gtk.IconTheme.get_for_display(self.get_display()).lookup_by_gicon(
+            tile.image.get_gicon(), self.cfg["icon_size"], self.get_scale_factor(),
+            Gtk.TextDirection.NONE, Gtk.IconLookupFlags(0))
+        half = self.cfg["icon_size"] // 2
+        src.set_icon(paintable, half, half)
+        tile.add_css_class("dragging")
+
+    def _drag_motion(self, _target, x, _y):
+        if not self._drag:
+            return 0
+        self._drag["left"] = False
+        tiles = self.app_tiles()
+        tile = self.tiles[self._drag["key"]]
+        others = [t for t in tiles if t is not tile]
+        # New slot = number of other icons whose centre is left of the pointer.
+        slot = 0
+        for t in others:
+            ok, b = t.compute_bounds(self)
+            if ok and b.get_x() + b.get_width() / 2 < x:
+                slot += 1
+        if tiles.index(tile) != slot:
+            self.reorder_child_after(tile, others[slot - 1] if slot else None)
+        return Gdk.DragAction.MOVE
+
+    def _drag_leave(self, _target) -> None:
+        if self._drag:
+            self._drag["left"] = True
+
+    def _drag_drop(self, _target, _value, _x, _y) -> bool:
+        if not self._drag:
+            return False
+        self._drag["dropped"] = True
+        key = self._drag["key"]
+        if key not in self.cfg["pinned"]:
+            self.cfg["pinned"].append(key)     # dragging a running app into place pins it
+        self._save_order()
+        return True
+
+    def _drag_cancel(self, _src, _drag, reason, tile) -> bool:
+        d = self._drag
+        if d and reason == Gdk.DragCancelReason.NO_TARGET and d["left"]:
+            self.set_pinned(tile.key, False)   # dragged out of the Dock: remove
+            return True                         # no snap-back animation
+        if d:                                   # Esc / refused: put it back
+            tiles = [t for t in self.app_tiles() if t is not tile]
+            i = d["index"]
+            self.reorder_child_after(tile, tiles[i - 1] if i else None)
+        return False
+
+    def _drag_end(self, _src, _drag, _delete, tile) -> None:
+        tile.remove_css_class("dragging")
+        self._drag = None
 
     # -- running apps ----------------------------------------------------------
     def _schedule_sync(self) -> None:
@@ -187,7 +301,7 @@ class Dock(Gtk.Box):
         self.windows = groups
         pinned = set(self.cfg["pinned"])
         for key in [k for k in self.tiles if k not in pinned and k not in groups]:
-            self.remove(self.tiles.pop(key))       # unpinned app quit
+            self._remove_tile(key)                 # unpinned app quit
         for key in groups:
             if key not in self.tiles:
                 info = apps.lookup(key)
@@ -223,9 +337,10 @@ class Dock(Gtk.Box):
             for t in [t for t in wins if not t.minimized] or wins:
                 self.manager.activate(t)
         elif tile.info:
-            self._launch(tile, tile.info)
+            self.launch(tile)
 
-    def _launch(self, tile: DockTile, info) -> None:
+    def launch(self, tile: DockTile) -> None:
+        info = tile.info
         # With window tracking the bounce stops when the first window maps;
         # without it, bounce twice.
         tile.bounce(LAUNCH_TIMEOUT_MS if self.manager else 2 * BOUNCE_MS)
@@ -261,6 +376,7 @@ def plate_height(cfg: dict) -> int:
 
 
 def load_css() -> None:
+    install_css(dock_menu.CSS)
     install_css(CSS % {"pad_top": PAD_TOP, "sep_bottom": DOT_ROW, "bounce_ms": BOUNCE_MS,
                        "tint_light": GLASS_TINT["light"], "tint_dark": GLASS_TINT["dark"]})
 

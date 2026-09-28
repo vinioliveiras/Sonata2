@@ -27,10 +27,32 @@ separator and the Trash (empty/full icon follows `~/.local/share/Trash`).
 - Light/dark follows the system appearance.
 
 Window tracking uses wlr-foreign-toplevel, so it works on any wlroots
-compositor. Not yet: right-click menu, drag to reorder, Dock preferences --
-see [ROADMAP.md](ROADMAP.md).
+compositor.
+- Right-click (Big Sur menu): open windows, Options > Keep in Dock / Open at
+  Login / Open File Location, Hide / Quit (or Open). Trash: Open, Empty Trash.
+  "Open File Location" shows the app's real executable (AppImage, binary,
+  script) selected in the file manager; Flatpak/Snap apps show their
+  .desktop file.
+- Drag an icon to reorder (saved); drag it out of the Dock to remove it
+  (a running app stays until it quits); dropping a running unpinned app
+  among the icons pins it.
+
+Not yet: drop files on apps/Trash, Dock preferences -- see
+[ROADMAP.md](ROADMAP.md).
 
 The look is macOS Big Sur/Monterey -- deliberately **not** Liquid Glass.
+
+## Try it
+
+Easiest: `tools/dev-session.sh` opens Wayfire **as a window inside your
+current desktop** (no logout), with the repo's Wayfire settings, a
+wallpaper, the Dock and a terminal. Needs `wayfire`; `swaybg` +
+`python-pillow` for the wallpaper (the glass needs something behind it).
+
+Full session: install `wayfire`, merge `config/wayfire.ini` into
+`~/.config/wayfire.ini`, pick "Wayfire" on the login screen.
+
+Tests: `python3 -m unittest tests.test_dock` (needs a display).
 
 ## Run (development)
 

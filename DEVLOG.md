@@ -65,3 +65,26 @@
 - Verified in headless sway: layer-shell surface anchored with a 66 px
   exclusive zone (maximized windows stop above it), dots for test windows.
   Blur itself only verifiable on Wayfire with a GPU (not in the test box).
+
+## 2026-09-28 -- M1.3/M1.4: right-click menus, drag to reorder
+
+- Vini asked for drag-to-reorder and an "Open File Location" entry
+  (Windows-style) in the right-click menu; it lives under Options, where
+  macOS has "Show in Finder". It resolves the real executable (realpath of
+  the Exec binary, so AppImages/scripts land in their folder) and selects it
+  via the org.freedesktop.FileManager1 D-Bus API; Flatpak/Snap fall back to
+  the .desktop file.
+- Menus: Gtk.PopoverMenu from a Gio.Menu, NESTED flag for a real Options
+  submenu (not GTK's sliding one); Big Sur metrics: 7 px radius, 5 px
+  padding, 22 px rows, 13 px text, accent-blue hover (#0a64e1 / #0a84ff).
+- Open at Login writes an XDG autostart entry; Wayfire doesn't run XDG
+  autostart by itself -- the session (M3) must (e.g. dex).
+- Drag: Gtk.DragSource per tile (MOVE, key as string) + one DropTarget on
+  the plate; the dragged tile stays as a transparent gap and moves live on
+  every motion event (slot = icons whose centre is left of the pointer).
+  Drop saves the order; cancel with NO_TARGET after leaving the plate =
+  remove; any other cancel restores the original slot.
+- tests/test_dock.py (6 tests, virtual display): reorder + save, Esc
+  restores, drag-out removes, Keep in Dock, menus build, app_file.
+- tools/dev-session.sh: Wayfire nested in the current desktop with the
+  repo config, wallpaper (swaybg) and the Dock -- how Vini tests from GNOME.
