@@ -30,7 +30,10 @@ for t in kgx gnome-terminal konsole kitty alacritty foot ghostty xfce4-terminal;
 done
 
 # The repo's config, with autostart pointed at this clone.
-sed -e '/^\[autostart\]/,$d' -e "s|\$HOME/GitHub/sonata2|$REPO|g" "$REPO/config/wayfire.ini" > "$run/wayfire.ini"
+# (the session's `sonata2 ...` commands become this clone's python -m sonata2;
+# no dbus-update-activation-environment here: it would leak into GNOME)
+sed -e '/^\[autostart\]/,$d' -e "s|= sonata2 |= env PYTHONPATH=$REPO python3 -m sonata2 |" \
+    "$REPO/config/wayfire.ini" > "$run/wayfire.ini"
 {
     echo "[autostart]"
     echo "autostart_wf_shell = false"

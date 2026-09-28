@@ -1,0 +1,82 @@
+"""XDG autostart for the Sonata session (Wayfire doesn't run it).
+
+Starts the apps in ~/.config/autostart and $XDG_CONFIG_DIRS/xdg/autostart
+("Open at Login" in the Dock writes there), following the spec: user
+entries override system ones with the same file name; Hidden=true,
+OnlyShowIn/NotShowIn (desktop "Sonata") and TryExec are honoured.
+`sonata2 autostart` runs once at session start."""
+import os
+
+import gi
+
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib  # noqa: E402
+
+DESKTOP = "Sonata"
+
+
+def _dirs() -> list:
+    """Highest priority first: user dir, then system dirs."""
+    dirs = [os.path.join(GLib.get_user_config_dir(), "autostart")]
+    dirs += [os.path.join(d, "autostart") for d in GLib.get_system_config_dirs()]
+    return dirs
+
+
+def entries() -> list:
+    """(file name, Gio.DesktopAppInfo) of the entries to start."""
+    seen, out = set(), []
+    for d in _dirs():
+        try:
+            names = sorted(os.listdir(d))
+        except OSError:
+            continue
+        for name in names:
+            if not name.endswith(".desktop") or name in seen:
+                continue
+            seen.add(name)                     # a user entry hides the system one
+            kf = GLib.KeyFile()
+            try:
+                kf.load_from_file(os.path.join(d, name), GLib.KeyFileFlags.NONE)
+            except GLib.Error:
+                continue
+            if not _wanted(kf):
+                continue
+            try:
+                info = Gio.DesktopAppInfo.new_from_keyfile(kf)
+            except TypeError:
+                info = None
+            if info:
+                out.append((name, info))
+    return out
+
+
+def _get(kf, key, kind="string"):
+    try:
+        return getattr(kf, f"get_{kind}")("Desktop Entry", key)
+    except GLib.Error:
+        return None
+
+
+def _wanted(kf) -> bool:
+    if _get(kf, "Hidden", "boolean") or _get(kf, "X-GNOME-Autostart-enabled", "boolean") is False:
+        return False
+    only = _get(kf, "OnlyShowIn", "string_list")
+    if only and DESKTOP not in only:
+        return False
+    if DESKTOP in (_get(kf, "NotShowIn", "string_list") or []):
+        return False
+    try_exec = _get(kf, "TryExec")
+    if try_exec and not GLib.find_program_in_path(try_exec):
+        return False
+    return True
+
+
+def run() -> int:
+    started = 0
+    for name, info in entries():
+        try:
+            info.launch([], None)
+            started += 1
+        except GLib.Error as e:
+            print(f"sonata2-autostart: {name}: {e.message}")
+    return started

@@ -311,3 +311,27 @@
 - Labels in our windows set their colour explicitly: the session GTK theme
   otherwise painted them white on the light window background.
 - tests/test_settings.py (all sections build; _save keeps other keys).
+
+## 2026-09-28 -- M3: installer and login session
+
+- Vini: login/session first, then our own Files app.
+- install.sh: user (~/.local) or --system (/usr/local); checks the real
+  requirements by importing them (Gtk 4, Adw 1, Gtk4LayerShell, pywayland,
+  cairo + gi-cairo, wayfire) and prints/runs the package command for
+  pacman/apt/dnf/zypper (optional extras listed too); copies the package,
+  config and session tools to <prefix>/share/sonata2; `sonata2` and
+  `sonata-session` launchers; /usr/share/wayland-sessions/sonata.desktop
+  (the only sudo step in user mode); sonata-portals.conf (gtk default,
+  wlr for screenshots/screencast); ~/.config/sonata2/wayfire.ini replaced
+  only if still the installed default (else .new). --uninstall.
+- The session uses its own Wayfire config and `sonata2 <component>`
+  commands; dev-session.sh rewrites those to this clone and never runs
+  dbus-update-activation-environment (would leak into GNOME).
+- sonata2/autostart.py: XDG autostart runner (user overrides system,
+  Hidden, OnlyShowIn/NotShowIn "Sonata", X-GNOME-Autostart-enabled,
+  TryExec) -> "Open at Login" now works. tests/test_autostart.py.
+- Desktop entries (Launchpad, Settings) use the installed launcher when
+  present (SONATA2_LAUNCHER), else this clone.
+- Key bindings like macOS with Super as Cmd.
+- Verified: install into a scratch HOME, launcher runs, autostart rules.
+  Not verifiable here: a real login (no GPU for Wayfire in the test box).

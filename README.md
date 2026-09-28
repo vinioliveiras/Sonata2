@@ -75,9 +75,6 @@ session** (GTK_THEME, XDG_DATA_DIRS, a Sonata-only dconf layer in
 ~/.config/dconf/sonata) -- GNOME/KDE keep their own look. Apps that don't
 draw title bars get Wayfire's (config/wayfire.ini [decoration]).
 
-Full session: `tools/sonata-session` (copy `session/sonata2.desktop` to
-/usr/share/wayland-sessions/ with your path to get "Sonata" on the login
-screen).
 
 ## Menu bar
 
@@ -98,19 +95,35 @@ installed yourself get a delete badge (moved to the Trash). Layout is saved
 in `~/.config/sonata2/launchpad.json`. The Dock gets a Launchpad icon after
 Finder on its first run with this version.
 
-## Try it
+## Install
 
-Easiest: `tools/dev-session.sh` opens Wayfire **as a window inside your
-current desktop** (no logout), with the repo's Wayfire settings, a
-wallpaper, the Dock and a terminal. Needs `wayfire`; `swaybg` +
-`python-pillow` for a sample wallpaper (or pick one in System Settings >
-Wallpaper) -- the glass needs something behind it.
+```
+./install.sh            # for you (~/.local); asks sudo only for the login-screen entry
+./install.sh --system   # for all users (/usr/local)
+./install.sh --deps     # also install missing packages (pacman/apt/dnf/zypper)
+./install.sh --uninstall
+```
 
-Full session: install `wayfire`, merge `config/wayfire.ini` into
-`~/.config/wayfire.ini`, pick "Wayfire" on the login screen.
+Then log out and pick **Sonata** on the login screen. The session runs
+Wayfire with `~/.config/sonata2/wayfire.ini` (your own
+`~/.config/wayfire.ini` is never touched; an edited Sonata config is kept on
+reinstall), starts the wallpaper, Dock, menu bar, Launchpad and your
+"Open at Login" apps, a polkit agent if one is installed, and hands the
+session environment to portals.
 
-Tests: `python3 -m unittest tests.test_launchpad_model` (no display);
-`python3 -m unittest tests.test_dock tests.test_launchpad` (need a display).
+Keys (macOS-like, Super = Cmd): Super+Space or F4 Launchpad, Super+Tab
+switch apps, Super+Q close, Super+M minimize, Ctrl+Super+F zoom,
+Ctrl+Up all windows, Super+, System Settings, Ctrl+Super+Q lock.
+
+## Try it without logging out
+
+`tools/dev-session.sh` opens Wayfire **as a window inside your current
+desktop** with the Sonata shell from this clone (needs the dependencies
+above; `python-pillow` for a sample wallpaper).
+
+Tests: `python3 -m unittest tests.test_launchpad_model tests.test_autostart`
+(no display); `python3 -m unittest tests.test_dock tests.test_launchpad
+tests.test_topbar tests.test_settings` (need a display).
 Design system gallery: `python3 -m sonata2 gallery [--dark]`.
 
 ## Run (development)

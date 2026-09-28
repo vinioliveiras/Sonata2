@@ -19,12 +19,22 @@ import sys
 from .shell import layer
 
 APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
+           "autostart": "io.github.vinioliveiras.sonata2.autostart",
            "settings": "io.github.vinioliveiras.sonata2.settings",
            "wallpaper": "io.github.vinioliveiras.sonata2.wallpaper",
            "launchpad": "io.github.vinioliveiras.sonata2.launchpad",
            "topbar": "io.github.vinioliveiras.sonata2.topbar",
            "gallery": "io.github.vinioliveiras.sonata2.gallery"}
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def self_command() -> str:
+    """How to start Sonata again (desktop entries, autostart): the installed
+    `sonata2` launcher, or this interpreter + this clone."""
+    launcher = os.environ.get("SONATA2_LAUNCHER")
+    if launcher and os.path.exists(launcher):
+        return launcher
+    return f"env PYTHONPATH={REPO} {sys.executable} -m sonata2"
 
 
 def _later(ms, fn):
@@ -48,9 +58,9 @@ def run_dock(app, args, ui):
     from gi.repository import Gdk
     from .shell import dock, dock_menu, launchpad
     from .wl.toplevels import ToplevelManager
-    launchpad.launchpad_desktop_file(sys.executable, REPO)   # Launchpad as a Dock app
+    launchpad.launchpad_desktop_file(self_command())   # Launchpad as a Dock app
     from .settings.app import settings_desktop_file
-    settings_desktop_file(sys.executable, REPO)             # System Settings in Launchpad
+    settings_desktop_file(self_command())             # System Settings in Launchpad
     cfg = dock.load_config()
     if not cfg.get("launchpad_added"):                        # once: pin it after Finder
         cfg["launchpad_added"] = True
@@ -169,6 +179,10 @@ def main() -> int:
     p.add_argument("--page", default="", help="settings: section to open (wifi, dock, ...)")
     args = p.parse_args()
 
+    if args.component == "autostart":       # no GTK needed
+        from . import autostart
+        autostart.run()
+        return 0
     if not args.preview:
         layer.ensure_preload()   # may re-exec this process
 

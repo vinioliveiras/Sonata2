@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# Start a full Sonata session (what the display manager's "Sonata" entry
-# runs; see session/sonata2.desktop). Uses ~/.config/wayfire.ini when it
-# exists, else the repo's config/wayfire.ini.
+# Start a full Sonata session (what the login screen's "Sonata" entry runs,
+# through the `sonata-session` launcher from install.sh).
 source "$(dirname "$(readlink -f "$0")")/session-env.sh"
 export XDG_CURRENT_DESKTOP=Sonata XDG_SESSION_DESKTOP=sonata
-cfg="$HOME/.config/wayfire.ini"
+# Session config from install.sh (never your ~/.config/wayfire.ini).
+cfg="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/wayfire.ini"
 [ -f "$cfg" ] || cfg="$SONATA_REPO/config/wayfire.ini"
+# Polkit authentication agent (password prompts for system actions), if any.
+for agent in /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 \
+             /usr/libexec/polkit-gnome-authentication-agent-1 \
+             /usr/lib/x86_64-linux-gnu/polkit-gnome-authentication-agent-1; do
+    [ -x "$agent" ] && { "$agent" & break; }
+done
 exec wayfire -c "$cfg"

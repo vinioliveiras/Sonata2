@@ -144,3 +144,14 @@ Run `tools/dev-session.sh` (or a Wayfire session).
       the running Dock changes immediately. Menu Bar: battery %, clock.
 - [ ] Launchpad: Reset... empties folders/order in the open Launchpad.
 - [ ] Appearance: Dark -> Dock, menu bar, Launchpad switch live.
+
+## M3 -- Install + session
+- [ ] `./install.sh`: reports missing packages with the pacman command,
+      installs to ~/.local, asks sudo for the login-screen entry.
+- [ ] Log out: "Sonata" is on the login screen; logging in starts wallpaper,
+      Dock, menu bar; F4 / Super+Space open Launchpad.
+- [ ] An app with Open at Login (Dock > Options) starts at login.
+- [ ] Super+Tab, Super+Q, Super+M, Ctrl+Up, Super+, work.
+- [ ] File chooser / screenshot portals work in apps (xdg-desktop-portal-gtk/-wlr).
+- [ ] Log back into GNOME: it looks and behaves exactly as before.
+- [ ] `./install.sh --uninstall` removes it (settings stay).

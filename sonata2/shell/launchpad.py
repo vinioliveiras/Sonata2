@@ -653,14 +653,14 @@ class Launchpad(Gtk.ApplicationWindow):
         return True
 
 
-def launchpad_desktop_file(repo_python: str, repo_dir: str) -> str:
+def launchpad_desktop_file(command: str) -> str:
     """Write ~/.local/share/applications/sonata2-launchpad.desktop (hidden
     from app lists) so the Dock can show Launchpad as a normal app tile."""
     os.makedirs(USER_APPS, exist_ok=True)
     path = os.path.join(USER_APPS, "sonata2-launchpad.desktop")
     text = ("[Desktop Entry]\nType=Application\nName=Launchpad\nComment=Find and open your apps\n"
             "Icon=sonata-launchpad\nNoDisplay=true\nCategories=System;\n"
-            f"Exec=env PYTHONPATH={repo_dir} {repo_python} -m sonata2 launchpad\n")
+            f"Exec={command} launchpad\n")
     try:
         with open(path, encoding="utf-8") as f:
             if f.read() == text:

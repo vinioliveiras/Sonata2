@@ -63,11 +63,15 @@ list: [docs/PARITY.md](docs/PARITY.md).
   Launchpad (reset, hidden apps); About. Dock/menu bar/Launchpad apply
   changes live (config.watch). Wallpaper drawn by `sonata2 wallpaper`.
   Later: Keyboard, Mouse/Trackpad, Notifications, Users, Privacy, Sharing.
-- **M3 -- Session**: Wayfire config (animations, decorations with traffic
-  lights), session `.desktop`, `install.sh` (`~/.local` or `/usr/local`).
-  Apps inside the Sonata session also use Sonata's icons: install links
-  the bundled themes into the icon path and the session (only the Sonata
-  session) sets them for apps.
+- **M3 -- Session + install** *(done, to test)*: install.sh (user or
+  system, dependency check + distro package commands, launchers, login
+  screen entry, portal preferences, session Wayfire config kept when
+  edited, --uninstall), sonata-session (session env, polkit agent,
+  wayfire), XDG autostart runner, macOS-like key bindings.
+  Next: a Sonata login/lock screen in the macOS style (ext-session-lock for
+  locking; a greeter for the login screen).
+- **Next (Vini)**: Files -- our own macOS-style file manager (columns view,
+  sidebar, Quick Look...), after the session.
 - **M4 -- Control Center**: Wi-Fi, Bluetooth, sound, brightness, power mode
   (LayerOSX backend, PipeWire via wpctl, wlr-randr for displays).
 - **M5 -- Launcher, notifications.**
