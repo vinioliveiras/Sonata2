@@ -159,9 +159,14 @@ def run_files(app, uris, ui):
     for uri in uris or [None]:
         win = FilesWindow(app, uri)
         win.present()
-    sel = os.environ.get("SONATA_PREVIEW_SELECT")      # screenshots: select items
+    view = os.environ.get("SONATA_PREVIEW_VIEW")        # screenshots: view + selection
+    if view:
+        win.set_view(view, save=False)
+    sel = os.environ.get("SONATA_PREVIEW_SELECT")
     if sel:
-        _later(800, lambda: [win.selection.select_item(int(i), False) for i in sel.split(",")])
+        v = win.view
+        target = v.columns[0].selection if view == "columns" else v.selection
+        _later(800, lambda: [target.select_item(int(i), view == "columns") for i in sel.split(",")])
 
 
 def run_wallpaper(app, args, ui):

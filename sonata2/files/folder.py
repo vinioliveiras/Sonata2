@@ -31,7 +31,13 @@ def is_dir(info: Gio.FileInfo) -> bool:
 
 
 def sort_key(info: Gio.FileInfo) -> str:
-    return GLib.utf8_collate_key_for_filename(info.get_display_name(), -1)
+    """Finder name order; cached on the info ("sonata::key") for the views' sorters."""
+    k = info.get_attribute_string("sonata::key")
+    if k is None:
+        name = info.get_display_name()      # case-insensitive in every locale, like Finder
+        k = GLib.utf8_collate_key_for_filename(name.casefold(), -1) + "\x00" + name
+        info.set_attribute_string("sonata::key", k)
+    return k
 
 
 def display_name(uri: str) -> str:
@@ -104,6 +110,14 @@ class Folder:
 
         d.enumerate_children_async(ATTRS, Gio.FileQueryInfoFlags.NONE, GLib.PRIORITY_DEFAULT,
                                    cancel, got_enum)
+
+    def cancel(self) -> None:
+        """Stop loading and watching (a column that was closed)."""
+        if self._cancel:
+            self._cancel.cancel()
+        if self._monitor:
+            self._monitor.cancel()
+            self._monitor = None
 
     def reload(self) -> None:
         if self.uri:

@@ -42,6 +42,7 @@ LIGHT = {
     "item_selected_bg": "rgba(0, 0, 0, 0.08)",   # backdrop behind a selected icon
     "tool_hover": "rgba(0, 0, 0, 0.06)",         # toolbar button hover
     "tool_icon": "rgba(0, 0, 0, 0.55)",          # toolbar glyphs
+    "row_alt": "rgba(0, 0, 0, 0.035)",           # zebra stripe of list views
     # shadows
     "shadow_menu": "0 6px 18px rgba(0, 0, 0, 0.22)",
     "shadow_label": "0 2px 8px rgba(0, 0, 0, 0.18)",
@@ -81,6 +82,7 @@ DARK = {
     "item_selected_bg": "rgba(255, 255, 255, 0.10)",
     "tool_hover": "rgba(255, 255, 255, 0.08)",
     "tool_icon": "rgba(255, 255, 255, 0.60)",
+    "row_alt": "rgba(255, 255, 255, 0.04)",
     "shadow_menu": "0 6px 18px rgba(0, 0, 0, 0.40)",
     "shadow_label": "0 2px 8px rgba(0, 0, 0, 0.35)",
     "shadow_plate": "0 6px 18px rgba(0, 0, 0, 0.28)",

@@ -1,22 +1,24 @@
 """Files window (macOS Big Sur Finder): sidebar | unified toolbar + view.
 
-Part 1: Icons view, navigation (back/forward/enclosing folder), open with
-the default app, filter-as-you-type search of the current folder, hidden
-files toggle, live folder updates. List/Columns views, context menus,
-rename, drag and drop come next (see docs/PARITY.md)."""
+Icons / List / Columns views (views.py), navigation (back/forward/
+enclosing folder), open with the default app, filter-as-you-type search of
+the current folder, hidden files toggle, live folder updates. Context
+menus, rename, drag and drop come next (ROADMAP M7)."""
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk, Pango  # noqa: E402
 
-from .. import icons, ui  # noqa: E402
+from .. import config, ui  # noqa: E402
 from . import folder  # noqa: E402
 from .folder import RECENTS, file_of, is_dir  # noqa: E402
+from .views import ColumnsView, IconsView, ListView  # noqa: E402
 from .sidebar import Sidebar  # noqa: E402
 
-ICON_SIZE = 64
-CELL_W = 96
+VIEWS = (("icons", "view-grid-symbolic", "as Icons"), ("list", "view-list-symbolic", "as List"),
+         ("columns", "view-dual-symbolic", "as Columns"))
+DEFAULTS = {"view": "icons"}
 
 ui.register("""
 window.sonata-files { background: %(content_bg)s; color: %(label)s; font-family: %(font)s;
@@ -35,16 +37,6 @@ window.sonata-files { background: %(content_bg)s; color: %(label)s; font-family:
 .fs-toolbar .fs-seg button:first-child { border-radius: %(r_button)s 0 0 %(r_button)s; }
 .fs-toolbar .fs-seg button:last-child { border-radius: 0 %(r_button)s %(r_button)s 0; }
 .fs-toolbar entry { min-height: 24px; border-radius: %(r_button)s; }
-gridview.fs-icons { background: %(content_bg)s; padding: 10px 14px; }
-gridview.fs-icons > child { padding: 4px 2px 6px 2px; background: none; border-radius: 0; outline: none; }
-gridview.fs-icons > child:selected, gridview.fs-icons > child:focus { background: none; }
-gridview.fs-icons .fs-icon { padding: 3px; border-radius: 6px; }
-gridview.fs-icons .fs-name { padding: 1px 4px; border-radius: 4px; font-size: 12px; color: %(label)s; }
-gridview.fs-icons > child:selected .fs-icon { background: %(item_selected_bg)s; }
-gridview.fs-icons > child:selected .fs-name { background: %(accent_selected)s; color: %(label_on_accent)s; }
-window:backdrop gridview.fs-icons > child:selected .fs-name { background: %(sidebar_selected)s; color: %(label)s; }
-gridview.fs-icons .fs-hidden { opacity: 0.5; }
-gridview.fs-icons rubberband { background: alpha(%(accent)s, 0.15); border: 1px solid alpha(%(accent)s, 0.5); }
 .fs-empty { color: %(label_tertiary)s; font-size: %(text_title)s; }
 """, key="files-window")
 
@@ -73,7 +65,7 @@ class FilesWindow(Adw.ApplicationWindow):
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         content.append(Gtk.WindowHandle(child=self._toolbar()))
         overlay = Gtk.Overlay(vexpand=True)
-        overlay.set_child(Gtk.ScrolledWindow(child=self._icon_view(), hscrollbar_policy=Gtk.PolicyType.NEVER))
+        overlay.set_child(self._views())
         self.empty = Gtk.Label(css_classes=["fs-empty"], visible=False, can_target=False)
         overlay.add_overlay(self.empty)
         content.append(overlay)
@@ -81,6 +73,7 @@ class FilesWindow(Adw.ApplicationWindow):
         paned.set_shrink_end_child(False)
         self.set_content(paned)
         self._shortcuts()
+        self.set_view(config.load("files", DEFAULTS)["view"], save=False)
         self.go(uri or Gio.File.new_for_path(GLib.get_home_dir()).get_uri())
 
     # -- toolbar ---------------------------------------------------------------------
@@ -96,16 +89,12 @@ class FilesWindow(Adw.ApplicationWindow):
         seg = Gtk.Box(css_classes=["fs-seg"], valign=Gtk.Align.CENTER)
         self.view_buttons = {}
         first = None
-        for vid, icon, tip in (("icons", "view-grid-symbolic", "Icons"),
-                               ("list", "view-list-symbolic", "List"),
-                               ("columns", "view-dual-symbolic", "Columns"),
-                               ("gallery", "view-paged-symbolic", "Gallery")):
+        for vid, icon, tip in VIEWS:
             b = Gtk.ToggleButton(icon_name=icon, tooltip_text=tip, focus_on_click=False, group=first)
+            b.connect("toggled", lambda b, v=vid: b.get_active() and self.set_view(v))
             first = first or b
-            b.set_sensitive(vid == "icons")          # the other views come next
             seg.append(b)
             self.view_buttons[vid] = b
-        self.view_buttons["icons"].set_active(True)
         bar.append(seg)
         self.search = Gtk.SearchEntry(placeholder_text="Search", width_chars=16, valign=Gtk.Align.CENTER)
         self.search.connect("search-changed", lambda *_: self._refilter())
@@ -126,44 +115,45 @@ class FilesWindow(Adw.ApplicationWindow):
         self.search.set_text("")
         self.search_rev.set_reveal_child(False)
         self.search_btn.set_visible(True)
-        self.grid.grab_focus()
+        self.view.focus()
 
-    # -- icons view ------------------------------------------------------------------
-    def _icon_view(self):
+    # -- views -----------------------------------------------------------------------
+    def _views(self):
         self.filter = Gtk.CustomFilter.new(self._match)
         self.filtered = Gtk.FilterListModel(model=self.folder.store, filter=self.filter)
-        self.selection = Gtk.MultiSelection(model=self.filtered)
-        f = Gtk.SignalListItemFactory()
-        f.connect("setup", self._setup_cell)
-        f.connect("bind", self._bind_cell)
-        self.grid = Gtk.GridView(model=self.selection, factory=f, max_columns=64, min_columns=1,
-                                 enable_rubberband=True, css_classes=["fs-icons"])
-        self.grid.connect("activate", lambda _g, pos: self.open_item(self.filtered.get_item(pos)))
-        return self.grid
+        self.views = {
+            "icons": IconsView(self.filtered, self.open_item),
+            "list": ListView(self.filtered, self.open_item),
+            "columns": ColumnsView(self.filtered, self.open_item, self._column_location,
+                                   lambda: self.folder.show_hidden),
+        }
+        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE)
+        for vid, v in self.views.items():
+            w = v.widget
+            if vid != "columns":
+                w = Gtk.ScrolledWindow(child=w, hscrollbar_policy=Gtk.PolicyType.NEVER)
+            self.stack.add_named(w, vid)
+        self.view = self.views["icons"]
+        return self.stack
 
-    def _setup_cell(self, _f, item):
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3, halign=Gtk.Align.CENTER)
-        box.set_size_request(CELL_W, -1)
-        img = Gtk.Image(pixel_size=ICON_SIZE, css_classes=["fs-icon"], halign=Gtk.Align.CENTER)
-        lbl = Gtk.Label(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, lines=2, max_width_chars=12,
-                        ellipsize=Pango.EllipsizeMode.MIDDLE, justify=Gtk.Justification.CENTER,
-                        halign=Gtk.Align.CENTER, css_classes=["fs-name"])
-        box.append(img)
-        box.append(lbl)
-        box.img, box.lbl = img, lbl
-        item.set_child(box)
+    def set_view(self, vid, save=True):
+        if vid not in self.views:
+            vid = "icons"
+        self.view = self.views[vid]
+        self.stack.set_visible_child_name(vid)
+        if not self.view_buttons[vid].get_active():
+            self.view_buttons[vid].set_active(True)
+        if vid == "columns" and self.pos >= 0:
+            self.views["columns"].reset(self.history[self.pos])
+        if save and config.load("files", DEFAULTS)["view"] != vid:
+            config.save("files", {**config.load("files", DEFAULTS), "view": vid})
+        self.view.focus()
 
-    def _bind_cell(self, _f, item):
-        info = item.get_item()
-        box = item.get_child()
-        gicon = info.get_icon()
-        if gicon:
-            icons.set_image(box.img, gicon)
-        else:
-            box.img.set_from_icon_name("text-x-generic")
-        box.lbl.set_label(info.get_display_name())
-        hidden = info.get_is_hidden() or info.get_is_backup()
-        (box.add_css_class if hidden else box.remove_css_class)("fs-hidden")
+    def _column_location(self, uri):
+        """Columns view: the title follows the deepest open folder."""
+        name = folder.display_name(uri)
+        self.title.set_label(name)
+        self.set_title(name)
 
     def _match(self, info) -> bool:
         q = self.search.get_text().strip().casefold() if hasattr(self, "search") else ""
@@ -220,9 +210,10 @@ class FilesWindow(Adw.ApplicationWindow):
         self.set_title(name)
         self.sidebar.select(uri)
         self._update_empty()
-        if self.filtered.get_n_items():
-            self.grid.scroll_to(0, Gtk.ListScrollFlags.NONE, None)
-        self.selection.unselect_all()
+        for v in self.views.values():
+            v.unselect_all()
+            v.scroll_top()
+        self.views["columns"].reset(uri)
 
     def _load_failed(self, uri, err):
         name = folder.display_name(uri)
@@ -257,9 +248,8 @@ class FilesWindow(Adw.ApplicationWindow):
                             [("ok", "OK", "default")], parent=self)
 
     def open_selection(self):
-        sel = self.selection.get_selection()
-        for i in range(sel.get_size()):
-            self.open_item(self.filtered.get_item(sel.get_nth(i)))
+        for info in self.view.selected():
+            self.open_item(info)
 
     # -- window ------------------------------------------------------------------------
     def _zoom(self):
@@ -295,9 +285,12 @@ class FilesWindow(Adw.ApplicationWindow):
             ("<Control>f", self._open_search),
             ("<Control>w", self.close),
             ("<Control>n", lambda: FilesWindow(self.get_application(), self.history[self.pos]).present()),
-            ("<Control>a", lambda: self.selection.select_all()),
+            ("<Control>a", lambda: self.view.select_all()),
+            ("<Control>1", lambda: self.set_view("icons")),
+            ("<Control>2", lambda: self.set_view("list")),
+            ("<Control>3", lambda: self.set_view("columns")),
             ("Escape", lambda: self._close_search() if self.search_rev.get_reveal_child()
-             else self.selection.unselect_all()),
+             else self.view.unselect_all()),
         ]
         ctl = Gtk.ShortcutController(scope=Gtk.ShortcutScope.GLOBAL)
         for trig, cb in keys:

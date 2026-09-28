@@ -355,3 +355,14 @@
   20 px from the edge), measured in screenshots for Files and Settings.
 - apps.write_desktop_file() replaces three copies; Files entry
   io.github.vinioliveiras.sonata2.files.desktop (inode/directory).
+
+## 2026-09-29 -- Files F2: List and Columns
+
+- views.py: IconsView / ListView (Gtk.ColumnView over a SortListModel;
+  sorters use the cached "sonata::key") / ColumnsView (one Folder per open
+  column, cancelled when closed; preview column for files). Finder formats:
+  "Today at 14:32", "Zero bytes", "12 KB", "1.4 MB".
+- Small icons are drawn from the 32 px artwork (themes' 16 px folders are
+  outlines); empty files get the kind/icon their name suggests.
+- Name order is case-insensitive in every locale (casefolded collate key).
+- tests/test_files.py (sizes, sorted load + live insert).

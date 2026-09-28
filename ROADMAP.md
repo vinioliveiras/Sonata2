@@ -77,7 +77,10 @@ list: [docs/PARITY.md](docs/PARITY.md).
         search), Icons view (Finder sort, selection look, rubber band),
         open with default app, live folder updates, hidden files
         (Ctrl+Shift+.), Finder keys with Ctrl as Cmd
-  - [ ] F2 List and Columns views, Gallery
+  - [x] F2 List view (Name/Date Modified/Size/Kind, click to sort, zebra
+        rows) and Columns view (column browser, preview column, arrow
+        keys); view saved in files.json; Ctrl+1/2/3
+  - [ ] Gallery view; List: disclosure triangles (expand folders inline)
   - [ ] F3 context menu, rename (Return), new folder, Move to Trash,
         copy/paste, Get Info
   - [ ] F4 drag and drop (copy/move/progress), spring-loaded folders
