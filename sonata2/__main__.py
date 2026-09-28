@@ -8,6 +8,8 @@ import sys
 
 from .shell import layer
 
+APP_ID = "io.github.vinioliveiras.sonata2.dock"
+
 
 def main() -> int:
     p = argparse.ArgumentParser(prog="sonata2")
@@ -28,25 +30,29 @@ def main() -> int:
     from .shell import dock
     from .style import apply_theme
 
-    app = Adw.Application(application_id="io.github.vinioliveiras.sonata2.dock")
+    from gi.repository import GLib
+    GLib.set_prgname(APP_ID)   # Wayland app_id, also without a session bus
+    app = Adw.Application(application_id=APP_ID)
 
     def activate(app):
         if args.dark or args.light:
             apply_theme("dark" if args.dark else "light")
         dock.load_css()
         cfg = dock.load_config()
+        from gi.repository import Gdk
+        from .wl.toplevels import ToplevelManager
+        manager = ToplevelManager(Gdk.Display.get_default(), ignore_app_ids={APP_ID})
         if args.preview:
             from .shell.preview import PreviewWindow
-            win = PreviewWindow(app, dock.Dock(cfg))
-            dock.follow_theme(win)
+            win = PreviewWindow(app, dock.Dock(cfg, manager))
+            dock.follow_theme(win, cfg)
         else:
-            win = dock.DockWindow(app, cfg)
+            win = dock.DockWindow(app, cfg, manager)
         win.present()
         if args.label >= 0:
             d = win.dock
             tiles = list(d.tiles.values()) + [d.trash]
             if args.label < len(tiles):
-                from gi.repository import GLib
                 GLib.timeout_add(300, lambda: (tiles[args.label].label.popup(), False)[1])
 
     app.connect("activate", activate)

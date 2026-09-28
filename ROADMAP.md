@@ -4,9 +4,19 @@ Base: LayerOSX code (style, Settings, backend). Sonata is only a feature
 list: [docs/PARITY.md](docs/PARITY.md).
 
 - **M0 -- Skeleton** *(done)*: repo layout, style module ported from LayerOSX.
-- **M1 -- Dock** *(first cut done)*: pinned apps, Trash, hover labels, launch
-  bounce. Next: running dots + click to activate/minimize via
-  wlr-foreign-toplevel, right-click menu, drag to reorder.
+- **M1 -- Dock** (finish it completely before the next component):
+  - [x] M1.1 pinned apps, Trash, hover labels, launch bounce
+  - [x] M1.2 frosted glass (Wayfire blur), running dots, unpinned running
+        apps, click to activate/restore, minimize into the icon
+  - [ ] M1.3 right-click menus: app (open windows list, Options > Keep in
+        Dock / Open at Login / Show in Files, Show All Windows, Hide, Quit);
+        Trash (Open, Empty Trash)
+  - [ ] M1.4 drag: reorder, drag out to remove, drop an app to pin, drop files
+        on an app (open with) or on the Trash (move to Trash)
+  - [ ] M1.5 preferences: size, magnification, position (left/bottom/right),
+        auto-hide, show indicators, show recent apps
+  - [ ] M1.6 polish on hardware: multi-monitor, HiDPI, performance check
+  - Later (needs other components): notification badges (M5)
 - **M2 -- Top bar**: Apple-style logo menu (left), clock + status icons
   (right), Big Sur metrics (24 px, translucent), light/dark.
 - **M3 -- Session**: Wayfire config (animations, decorations with traffic

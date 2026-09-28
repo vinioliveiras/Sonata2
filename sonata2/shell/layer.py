@@ -19,7 +19,7 @@ def ensure_preload() -> None:
         return
     env = dict(os.environ, **{_PRELOAD_FLAG: "1"})
     env["LD_PRELOAD"] = " ".join(filter(None, (lib, env.get("LD_PRELOAD"))))
-    os.execve(sys.executable, [sys.executable] + sys.argv, env)
+    os.execve(sys.executable, sys.orig_argv, env)   # orig_argv keeps "-m sonata2"
 
 
 def layer_shell():

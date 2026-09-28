@@ -35,3 +35,33 @@
   Wayland; SONATA2_ICON_THEME sets it for previews.
 - Not tested yet on hardware / real layer-shell (the test box has no
   gtk4-layer-shell).
+
+## 2026-09-28 -- M1.2: glass + running apps
+
+- Vini's rule from now on: finish one component completely before the next.
+  ROADMAP lists the Dock sub-steps M1.1-M1.6.
+- Glass: Vini chose the Big Sur frosted glass (not Leopard's 3D shelf, not
+  Liquid Glass). Wayfire's blur plugin blurs layer-shell surfaces when
+  matched by app_id, which Wayfire sets to the layer-shell namespace
+  (`sonata2-dock`). Its blend shader weights the blur by the surface alpha
+  (`blur_alpha = clamp(a / alpha_threshold)` ^ `alpha_exponent`), so the
+  transparent corners stay sharp; threshold 0.3 + exponent 2 blur the plate
+  fully and the soft shadow barely. Tints: light rgba(246,246,250,.38),
+  dark rgba(30,30,34,.42), saturation 1.6.
+- The preview can't blur (no compositor effect), so it paints a
+  Pillow-blurred copy of a generated wallpaper under the plate with the same
+  tint -- same recipe, for screenshots only.
+- Window tracking: wlr-foreign-toplevel via pywayland, on GTK's own
+  wl_display (pointer via ctypes; GdkWayland's getters are skipped in GIR),
+  so GTK's loop dispatches the events -- no second connection or thread.
+  pywayland has no wlr protocols built in: bindings are generated from the
+  bundled XML on first run into ~/.cache/sonata2/pywayland-<ver>/.
+  `set_rectangle` gives the compositor each tile's rect, so Wayfire's
+  squeezimize minimizes into the icon.
+- app_id -> .desktop: exact id, StartupWMClass, last reverse-DNS part,
+  executable name. Unknown apps get a generic icon.
+- Fixes: the LD_PRELOAD re-exec lost `-m sonata2` (now uses sys.orig_argv);
+  GLib.set_prgname(APP_ID) so the app_id is right even without a session bus.
+- Verified in headless sway: layer-shell surface anchored with a 66 px
+  exclusive zone (maximized windows stop above it), dots for test windows.
+  Blur itself only verifiable on Wayfire with a GPU (not in the test box).

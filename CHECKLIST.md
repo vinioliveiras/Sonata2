@@ -16,3 +16,17 @@ that introduced it. `[ ]` = not yet verified on hardware.
 - [ ] Trash icon turns "full" when a file is deleted to the Trash, empty after
       emptying it; click opens the Trash in the file manager.
 - [ ] Switching the system to dark mode re-colors the Dock live.
+
+## M1.2 -- Dock glass + running apps
+Setup: merge `config/wayfire.ini` into `~/.config/wayfire.ini`, restart Wayfire.
+- [ ] The plate is frosted: the wallpaper behind it is blurred and a bit more
+      saturated; no blurred square around the rounded corners.
+- [ ] Opening an app from the Dock: it bounces until its window appears, then
+      a dot shows under it.
+- [ ] An app opened elsewhere (terminal, launcher) that isn't pinned appears
+      after the pinned apps with a dot; it disappears when it quits.
+- [ ] Click a running app whose window is behind others: its windows come to
+      the front. With all its windows minimized: they are restored.
+- [ ] Minimizing a window animates into its Dock icon.
+- [ ] Apps whose app_id differs from the .desktop name (e.g. Steam, Chrome)
+      still map to the right icon (no duplicate generic icon).

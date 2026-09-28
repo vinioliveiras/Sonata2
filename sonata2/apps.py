@@ -47,3 +47,47 @@ def default_pins() -> list:
                     pins.append(did)
                 break
     return pins
+
+
+_INDEX = None
+
+
+def _build_index() -> dict:
+    """Lower-cased app_id candidates -> desktop id (without .desktop)."""
+    idx = {}
+    for info in Gio.AppInfo.get_all():
+        did = info.get_id() or ""
+        if not did.endswith(".desktop"):
+            continue
+        did = did[:-8]
+        keys = [did, did.rsplit(".", 1)[-1]]
+        if isinstance(info, Gio.DesktopAppInfo):
+            wm = info.get_startup_wm_class()
+            if wm:
+                keys.insert(0, wm)
+            exe = (info.get_executable() or "").rsplit("/", 1)[-1]
+            if exe:
+                keys.append(exe)
+        for k in keys:
+            idx.setdefault(k.lower(), did)
+    return idx
+
+
+def match_app_id(app_id: str):
+    """Desktop id for a Wayland app_id (exact, StartupWMClass, last reverse-DNS
+    part, executable), or None when no .desktop matches."""
+    global _INDEX
+    if not app_id:
+        return None
+    if lookup(app_id):
+        return app_id[:-8] if app_id.endswith(".desktop") else app_id
+    if _INDEX is None:
+        _INDEX = _build_index()
+    a = app_id.lower()
+    return _INDEX.get(a) or _INDEX.get(a.rsplit(".", 1)[-1])
+
+
+def refresh() -> None:
+    """Forget the app_id index (call when apps are installed/removed)."""
+    global _INDEX
+    _INDEX = None
