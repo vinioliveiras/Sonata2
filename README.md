@@ -57,6 +57,15 @@ Remaining: hardware polish (multi-monitor, HiDPI) -- see
 
 The look is macOS Big Sur/Monterey -- deliberately **not** Liquid Glass.
 
+## Menu bar
+
+`python3 -m sonata2 topbar`: Big Sur menu bar -- Sonata menu (logo), the
+active app's name with About/Hide/Quit, Window menu, and on the right
+Sound, Battery, Wi-Fi, Control Center and the clock (click: calendar).
+Linux state comes from NetworkManager (nmcli), PipeWire (wpctl),
+brightnessctl, bluetoothctl and sysfs (backend/system.py, ported from
+LayerOSX). Optional tools: `networkmanager wireplumber brightnessctl bluez-utils`.
+
 ## Launchpad
 
 `python3 -m sonata2 launchpad` (again to close; F4 in the Wayfire config).

@@ -1,10 +1,12 @@
-"""Controls (macOS Big Sur): push button, pop-up button (dropdown), switch.
+"""Controls (macOS Big Sur): push button, pop-up button (dropdown), switch,
+slider (menu and Control Center styles).
 
     controls.push_button("Cancel", on_click)
     controls.push_button("Empty Trash", on_click, style="destructive")
     controls.push_button("OK", on_click, style="default")      # accent, Return
     controls.popup_button(["Automatic", "Light", "Dark"], selected=0, on_change=cb)
     controls.switch(active=True, on_change=cb)
+    controls.slider(50, on_change=cb, style="menu" | "module")
 
 Widgets are plain GTK widgets with Sonata classes, so Adw/GTK containers
 work with them unchanged."""
@@ -73,6 +75,21 @@ switch.sonata-switch > slider {
   background: %(knob)s; box-shadow: %(shadow_knob)s;
 }
 switch.sonata-switch image { opacity: 0; }   /* no I/O glyphs */
+
+/* slider (Big Sur menu slider: thin track, accent fill, white knob) */
+scale.sonata-slider { padding: 6px 0; min-width: 160px; }
+scale.sonata-slider trough { min-height: 4px; border-radius: 99px; background: %(control_off)s; border: none; }
+scale.sonata-slider highlight { border-radius: 99px; background: %(accent)s; border: none; }
+scale.sonata-slider slider { min-width: 18px; min-height: 18px; margin: -7px; border-radius: 99px;
+  border: none; background: %(knob)s; box-shadow: 0 0 0 0.5px %(hairline)s, %(shadow_knob)s; }
+
+/* module slider (Control Center: thick capsule, white fill, knob at the end) */
+scale.sonata-module-slider { padding: 0; min-width: 240px; }
+scale.sonata-module-slider trough { min-height: 22px; border-radius: 99px; border: none;
+  background: %(control_off)s; box-shadow: inset 0 0 0 0.5px %(separator)s; }
+scale.sonata-module-slider highlight { min-height: 22px; border-radius: 99px; border: none; background: %(knob)s; }
+scale.sonata-module-slider slider { min-width: 22px; min-height: 22px; margin: 0; border-radius: 99px; border: none;
+  background: %(knob)s; box-shadow: 0 0 0 0.5px %(hairline)s, %(shadow_knob)s; }
 """)
 
 
@@ -91,6 +108,20 @@ def popup_button(options, selected: int = 0, on_change=None) -> Gtk.DropDown:
     if on_change:
         dd.connect("notify::selected", lambda d, _p: on_change(d.get_selected()))
     return dd
+
+
+def slider(value: float = 0, on_change=None, style: str = "menu", lower: float = 0,
+           upper: float = 100) -> Gtk.Scale:
+    """style: "menu" (thin, accent fill) or "module" (Control Center capsule).
+    on_change(value) fires while dragging."""
+    s = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lower, upper, 1)
+    s.add_css_class("sonata-slider" if style == "menu" else "sonata-module-slider")
+    s.set_draw_value(False)
+    s.set_value(value)
+    s.set_hexpand(True)
+    if on_change:
+        s.connect("value-changed", lambda sc: on_change(sc.get_value()))
+    return s
 
 
 def switch(active: bool = False, on_change=None) -> Gtk.Switch:

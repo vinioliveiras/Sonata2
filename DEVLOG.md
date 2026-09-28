@@ -250,3 +250,24 @@
   writes ~/.local/share/applications/sonata2-launchpad.desktop (NoDisplay)
   with an original icon (Sonata theme: app grid on a tile) and pins it once.
 - layer_shell() no longer calls into gtk4-layer-shell on X11 (assertions).
+
+## 2026-09-28 -- M3b: menu bar
+
+- topbar.py: layer TOP surface (top + left + right, exclusive 24 px,
+  keyboard on demand), painted with `bar_bg` (blurred by Wayfire through the
+  `sonata2-` namespace rule) and a 0.5 px bottom separator. Active app from
+  wlr-foreign-toplevel `activated`; the bar offers what that protocol
+  allows (minimize, maximize, activate, close). No global menus: GTK4/Qt6
+  apps export none on Wayland.
+- ui/panel.py (design system): menu-material popovers for custom content
+  (header, section title, rows, Control Center modules, round toggles,
+  styled calendar) + align_to_start() so bar menus hang from the title's
+  left edge. ui/controls.slider: menu and Control Center styles.
+- backend/system.py: LayerOSX nmcli/battery/brightnessctl/About code
+  without the VM parts, PipeWire volume via wpctl, bluetoothctl, power
+  actions via systemctl/loginctl; run_async() keeps the UI responsive.
+- Dark Mode in Control Center writes the freedesktop colour-scheme
+  (gsettings) -- a Linux setting every app follows.
+- Original symbolic icons: Sonata logo (beamed notes), Control Center.
+- tests/test_topbar.py: all menus open; nmcli split, battery, DMI name.
+- Vini asked next: default window layout, then a Settings app like macOS.

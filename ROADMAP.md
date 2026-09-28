@@ -40,8 +40,17 @@ list: [docs/PARITY.md](docs/PARITY.md).
   user-installed shortcuts (-> Trash), zoom+fade open/close, keyboard
   (arrows, Return, Esc, Page Up/Down). Launchpad tile in the Dock (own
   icon), F4 in Wayfire.
-- **M3b -- Top bar**: Apple-style logo menu (left), clock + status icons
-  (right), Big Sur metrics (24 px, translucent), light/dark.
+- **M3b -- Top bar** *(done, to test on hardware)*: 24 px translucent bar;
+  Sonata menu (About This Computer, Recent Items, Sleep/Restart/Shut Down/
+  Lock/Log Out with confirmations), active app menu (About, Hide, Hide
+  Others, Show All, Quit), Window menu (Minimize, Zoom, windows, Bring All
+  to Front); extras: Sound (slider), Battery (percent option), Wi-Fi (list,
+  join with password), Control Center (Wi-Fi, Bluetooth, Dark Mode,
+  Display + Sound sliders), clock + calendar. Menus hang left-aligned.
+  Not possible yet: apps' own menus (no global-menu protocol on Wayland).
+- **Next (Vini)**: default window layout (decorations: traffic lights,
+  title bar, shadows, corners -- for every app) and the Settings app based
+  on macOS System Settings.
 - **M3 -- Session**: Wayfire config (animations, decorations with traffic
   lights), session `.desktop`, `install.sh` (`~/.local` or `/usr/local`).
   Apps inside the Sonata session also use Sonata's icons: install links

@@ -32,6 +32,10 @@ LIGHT = {
     "glass_tint": "rgba(246, 246, 250, 0.38)",   # blurred by the compositor
     "solid_tint": "rgba(236, 236, 240, 0.78)",   # same surface without blur
     "indicator": "rgba(0, 0, 0, 0.62)",          # Dock running dot
+    "bar_bg": "rgba(246, 246, 248, 0.55)",       # menu bar (blurred by the compositor)
+    "bar_item_active": "rgba(0, 0, 0, 0.10)",    # open menu title / pressed extra
+    "module_bg": "rgba(255, 255, 255, 0.55)",    # Control Center modules
+    "toggle_off": "rgba(0, 0, 0, 0.10)",         # round module toggles
     # shadows
     "shadow_menu": "0 6px 18px rgba(0, 0, 0, 0.22)",
     "shadow_label": "0 2px 8px rgba(0, 0, 0, 0.18)",
@@ -61,6 +65,10 @@ DARK = {
     "glass_tint": "rgba(30, 30, 34, 0.42)",
     "solid_tint": "rgba(38, 38, 42, 0.74)",
     "indicator": "rgba(255, 255, 255, 0.72)",
+    "bar_bg": "rgba(30, 30, 32, 0.50)",
+    "bar_item_active": "rgba(255, 255, 255, 0.18)",
+    "module_bg": "rgba(255, 255, 255, 0.08)",
+    "toggle_off": "rgba(255, 255, 255, 0.16)",
     "shadow_menu": "0 6px 18px rgba(0, 0, 0, 0.40)",
     "shadow_label": "0 2px 8px rgba(0, 0, 0, 0.35)",
     "shadow_plate": "0 6px 18px rgba(0, 0, 0, 0.28)",

@@ -109,3 +109,17 @@ Run `tools/dev-session.sh` (or a Wayfire session).
 - [ ] Press and hold an icon (or hold Alt): icons jiggle; your own shortcuts
       (~/.local/share/applications) have an x -> Delete asks, then Trash.
 - [ ] Install/remove an app: it appears at the end / disappears.
+
+## M3b -- Menu bar
+- [ ] 24 px bar at the top, blurred/translucent; windows stop below it.
+- [ ] Logo menu: About This Computer shows OS, machine, CPU, memory,
+      graphics; Restart/Shut Down/Log Out ask first; Sleep and Lock work.
+- [ ] Focus another app: its name appears in bold; Hide / Hide Others /
+      Show All / Quit act on its windows; Window > Zoom maximizes.
+- [ ] Wi-Fi icon shows signal; menu lists networks, switch turns Wi-Fi
+      off/on, a secured network asks for the password.
+- [ ] Sound slider changes the volume; icon follows (muted/low/high).
+- [ ] Battery icon/level; Show Percentage adds the number.
+- [ ] Control Center: Wi-Fi/Bluetooth toggles, Dark Mode switches every app
+      and Sonata, Display/Sound sliders.
+- [ ] Clock updates each minute; click shows the calendar.

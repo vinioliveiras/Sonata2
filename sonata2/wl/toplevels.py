@@ -80,6 +80,10 @@ class Toplevel:
     def activated(self) -> bool:
         return ACTIVATED in self.states
 
+    @property
+    def maximized(self) -> bool:
+        return MAXIMIZED in self.states
+
 
 class ToplevelManager:
     """Tracks all toplevels. `listeners` get called with no arguments after
@@ -175,6 +179,14 @@ class ToplevelManager:
 
     def minimize(self, t: Toplevel) -> None:
         t.handle.set_minimized()
+        self._flush()
+
+    def set_maximized(self, t: Toplevel, on: bool) -> None:
+        (t.handle.set_maximized if on else t.handle.unset_maximized)()
+        self._flush()
+
+    def unminimize(self, t: Toplevel) -> None:
+        t.handle.unset_minimized()
         self._flush()
 
     def close(self, t: Toplevel) -> None:

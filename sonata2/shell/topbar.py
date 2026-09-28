@@ -1,0 +1,509 @@
+"""The menu bar (macOS Big Sur): 24 px translucent bar at the top.
+
+Left:  Sonata menu (logo) -- About This Computer, Recent Items, Sleep,
+       Restart..., Shut Down..., Lock Screen, Log Out...
+       active app name (bold) -- About, Hide, Hide Others, Show All, Quit
+       Window -- Minimize, Zoom, the app's windows, Bring All to Front
+Right: menu extras -- Sound, Battery, Wi-Fi, Control Center, clock.
+
+Apps' own menus (File, Edit, ...) need a global-menu protocol GTK4/Qt6 apps
+don't export on Wayland; the bar offers what wlr-foreign-toplevel allows.
+Menus hang from the title's left edge like macOS. Linux state comes from
+backend/system.py (async)."""
+import os
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+gi.require_version("Graphene", "1.0")
+from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk, Pango  # noqa: E402
+
+from .. import apps, config, ui  # noqa: E402
+from ..backend import system  # noqa: E402
+from . import layer  # noqa: E402
+
+BAR_H = 24
+DEFAULTS = {"battery_percent": False, "clock_format": "%a %-d %b  %H:%M"}
+POLL_S = 10
+
+ui.register("""
+window.sonata-topbar, window.sonata-topbar > contents { background: none; box-shadow: none; }
+.topbar { min-height: %(bar_h)dpx; padding: 0 8px; font-family: %(font)s; font-size: %(text_body)s;
+  color: %(label)s; }
+.topbar-item, .topbar-item:hover, .topbar-item:focus {
+  min-height: %(item_h)dpx; min-width: 0; padding: 0 10px; margin: 0; border-radius: 4px;
+  border: none; background: none; box-shadow: none; outline: none; color: %(label)s;
+  font-weight: 400; }
+.topbar-item.open, .topbar-item:active { background: %(bar_item_active)s; }
+.topbar-item.app { font-weight: 700; }
+.topbar-item.icon { padding: 0 8px; }
+.topbar-item image { -gtk-icon-size: 16px; }
+.topbar-item label.percent { margin-left: 4px; font-size: %(text_small)s; }
+.about-box { padding: 28px 36px 24px 36px; font-family: %(font)s; color: %(label)s; }
+.about-name { font-family: %(font_display)s; font-size: 26px; font-weight: 700; }
+.about-version { color: %(label_secondary)s; margin-bottom: 14px; }
+.about-key { font-weight: 700; }
+window.sonata-about { background: %(window_bg)s; border-radius: %(r_window)s; }
+""", key="topbar", bar_h=BAR_H, item_h=BAR_H - 2)
+
+
+class Bar(Gtk.CenterBox):
+    """The bar's content; painted with the bar material in do_snapshot."""
+
+    def __init__(self, manager=None):
+        super().__init__(css_classes=["topbar"], hexpand=True)
+        self.cfg = config.load("topbar", DEFAULTS)
+        self.manager = manager if manager and manager.available else None
+        self.backdrop = None
+        self.items = []
+        left = Gtk.Box()
+        self.logo = self._item(left, icon="sonata-logo-symbolic", on_click=self._sonata_menu, css="icon")
+        self.app_btn = self._item(left, text=self._fallback_app_name(), on_click=self._app_menu, css="app")
+        self.win_btn = self._item(left, text="Window", on_click=self._window_menu)
+        self.set_start_widget(left)
+
+        right = Gtk.Box()
+        self.sound = self._item(right, icon="audio-volume-high-symbolic", on_click=self._sound_panel, css="icon")
+        self.battery = self._item(right, icon="battery-full-symbolic", on_click=self._battery_panel, css="icon")
+        self.battery_pct = Gtk.Label(css_classes=["percent"])
+        self.battery.get_child().append(self.battery_pct)
+        self.wifi = self._item(right, icon="network-wireless-signal-excellent-symbolic",
+                               on_click=self._wifi_panel, css="icon")
+        self.cc = self._item(right, icon="sonata-control-center-symbolic", on_click=self._control_center,
+                             css="icon")
+        self.clock = self._item(right, text="", on_click=self._calendar)
+        self.set_end_widget(right)
+
+        ui.on_change(self.queue_draw)
+        if self.manager:
+            self.manager.listeners.append(self._active_changed)
+        self._tick_clock()
+        self._poll()
+        GLib.timeout_add_seconds(POLL_S, lambda: (self._poll(), True)[1])
+
+    # -- drawing -------------------------------------------------------------------
+    def do_snapshot(self, snap) -> None:
+        w, h = self.get_width(), self.get_height()
+        if w > 0 and h > 0:
+            rect = Graphene.Rect()
+            rect.init(0, 0, w, h)
+            if self.backdrop:        # preview: stands in for the compositor's blur
+                snap.append_texture(self.backdrop, Graphene.Rect().init(0, 0, self.backdrop.get_width(),
+                                                                        self.backdrop.get_height()))
+            snap.append_color(ui.rgba("bar_bg"), rect)
+            line = Graphene.Rect()
+            line.init(0, h - 0.5, w, 0.5)
+            snap.append_color(ui.rgba("separator"), line)
+        Gtk.CenterBox.do_snapshot(self, snap)
+
+    # -- items ---------------------------------------------------------------------
+    def _item(self, box, text=None, icon=None, on_click=None, css=""):
+        b = Gtk.Button(css_classes=["topbar-item"] + ([css] if css else []), can_focus=False,
+                       valign=Gtk.Align.CENTER)
+        content = Gtk.Box(valign=Gtk.Align.CENTER)
+        if icon:
+            content.append(Gtk.Image(icon_name=icon))
+        if text is not None:
+            content.append(Gtk.Label(label=text))
+        b.set_child(content)
+        b.connect("clicked", lambda btn: self._open(btn, on_click))
+        box.append(b)
+        self.items.append(b)
+        return b
+
+    def _set_text(self, btn, text) -> None:
+        lbl = btn.get_child().get_last_child()
+        if isinstance(lbl, Gtk.Label):
+            lbl.set_label(text)
+
+    def _set_icon(self, btn, name) -> None:
+        img = btn.get_child().get_first_child()
+        if isinstance(img, Gtk.Image):
+            img.set_from_icon_name(name)
+
+    def _open(self, btn, builder) -> None:
+        btn.add_css_class("open")
+        pop = builder(btn)
+        if pop is None:
+            btn.remove_css_class("open")
+            return
+        pop.connect("closed", lambda *_: btn.remove_css_class("open"))
+
+    def open_menu(self, index: int) -> None:
+        """Open the N-th item (screenshots)."""
+        if 0 <= index < len(self.items):
+            self.items[index].emit("clicked")
+
+    def _menu(self, btn, sections):
+        pop = ui.menu.popup(btn, sections, position=Gtk.PositionType.BOTTOM, gap=2)
+        ui.panel.align_to_start(pop, btn, 2)
+        return pop
+
+    # -- Sonata menu -----------------------------------------------------------------
+    def _sonata_menu(self, btn):
+        Item = ui.menu.Item
+        user = GLib.get_real_name() or GLib.get_user_name()
+        return self._menu(btn, [
+            [Item("About This Computer", lambda: AboutWindow().present())],
+            [Item("System Settings…", enabled=False)],
+            [Item("Recent Items", submenu=self._recent_items())],
+            [Item("Sleep", lambda: system.power_action("sleep")),
+             Item("Restart…", lambda: self._confirm("restart")),
+             Item("Shut Down…", lambda: self._confirm("shutdown"))],
+            [Item("Lock Screen", lambda: system.power_action("lock")),
+             Item(f"Log Out {user}…", lambda: self._confirm("logout"))],
+        ])
+
+    def _recent_items(self):
+        Item = ui.menu.Item
+        dock = config.load("dock", {"recent": []})
+        app_items = []
+        for did in dock.get("recent", [])[:5]:
+            info = apps.lookup(did)
+            if info:
+                app_items.append(Item(info.get_display_name(), lambda i=info: i.launch([], None)))
+        docs = []
+        for r in sorted(Gtk.RecentManager.get_default().get_items(), key=lambda r: -r.get_modified().to_unix())[:8]:
+            if r.exists():
+                docs.append(Item(r.get_display_name(), lambda u=r.get_uri():
+                                 Gio.AppInfo.launch_default_for_uri(u, None)))
+        sections = []
+        if app_items:
+            sections.append(app_items)
+        if docs:
+            sections.append(docs)
+        return sections or [[Item("No recent items", enabled=False)]]
+
+    def _confirm(self, kind: str) -> None:
+        text = {"restart": ("Are you sure you want to restart your computer now?", "Restart"),
+                "shutdown": ("Are you sure you want to shut down your computer now?", "Shut Down"),
+                "logout": ("Are you sure you want to quit all applications and log out now?", "Log Out")}[kind]
+        ui.dialog.alert(text[0], "", [("cancel", "Cancel", ""), (kind, text[1], "default")],
+                        lambda r: system.power_action(kind) if r == kind else None)
+
+    # -- active app ------------------------------------------------------------------
+    def _fallback_app_name(self) -> str:
+        """No active window: the file manager (macOS shows Finder)."""
+        pins = config.load("dock", {"pinned": []}).get("pinned") or []
+        info = apps.lookup(pins[0]) if pins else None
+        return info.get_display_name() if info else "Files"
+
+    def _active(self):
+        if not self.manager:
+            return None, []
+        act = next((t for t in self.manager.toplevels if t.activated), None)
+        if not act:
+            return None, []
+        key = apps.match_app_id(act.app_id) or act.app_id
+        wins = [t for t in self.manager.toplevels if (apps.match_app_id(t.app_id) or t.app_id) == key]
+        return key, wins
+
+    def _active_changed(self) -> None:
+        key, _wins = self._active()
+        info = apps.lookup(key) if key else None
+        self._set_text(self.app_btn, info.get_display_name() if info else (key or self._fallback_app_name()))
+
+    def _app_menu(self, btn):
+        Item = ui.menu.Item
+        key, wins = self._active()
+        info = apps.lookup(key) if key else None
+        name = info.get_display_name() if info else (key or self._fallback_app_name())
+        m = self.manager
+        others = [t for t in (m.toplevels if m else []) if t not in wins]
+        return self._menu(btn, [
+            [Item(f"About {name}", lambda: AboutAppWindow(info, name).present(), enabled=bool(info))],
+            [Item(f"Hide {name}", lambda: [m.minimize(t) for t in wins], enabled=bool(wins)),
+             Item("Hide Others", lambda: [m.minimize(t) for t in others], enabled=bool(others)),
+             Item("Show All", lambda: [m.unminimize(t) for t in (m.toplevels if m else [])], enabled=bool(m))],
+            [Item(f"Quit {name}", lambda: [m.close(t) for t in wins], enabled=bool(wins))],
+        ])
+
+    def _window_menu(self, btn):
+        Item = ui.menu.Item
+        key, wins = self._active()
+        m = self.manager
+        act = next((t for t in wins if t.activated), None)
+        sections = [[Item("Minimize", lambda: m.minimize(act), enabled=bool(act)),
+                     Item("Zoom", lambda: m.set_maximized(act, not act.maximized), enabled=bool(act))]]
+        if wins:
+            sections.append([Item(t.title or "Untitled", lambda t=t: m.activate(t), checked=t is act)
+                             for t in wins])
+        sections.append([Item("Bring All to Front", lambda: [m.activate(t) for t in wins], enabled=bool(wins))])
+        return self._menu(btn, sections)
+
+    # -- clock / calendar ----------------------------------------------------------------
+    def _tick_clock(self) -> bool:
+        now = GLib.DateTime.new_now_local()
+        fmt = self.cfg["clock_format"]
+        self._set_text(self.clock, now.format(fmt) or now.format("%a %H:%M"))
+        GLib.timeout_add_seconds(max(1, 60 - now.get_second()), self._tick_clock)
+        return False
+
+    def _calendar(self, btn):
+        cal = Gtk.Calendar()
+        return ui.panel.popup(btn, ui.panel.column(cal), gap=2)
+
+    # -- status polling ------------------------------------------------------------------
+    def _poll(self) -> None:
+        system.run_async(lambda: (system.wifi_available(), system.wifi_enabled(), system.wifi_current()),
+                         self._wifi_state)
+        system.run_async(system.battery, self._battery_state)
+        system.run_async(system.volume, self._sound_state)
+
+    def _wifi_state(self, res) -> None:
+        if not res:
+            return
+        avail, on, (ssid, sig, wired) = res
+        if wired and not ssid:
+            name = "network-wired-symbolic"
+        elif not avail:
+            self.wifi.set_visible(False)
+            return
+        elif not on:
+            name = "network-wireless-offline-symbolic"
+        elif not ssid:
+            name = "network-wireless-signal-none-symbolic"
+        else:
+            name = "network-wireless-signal-" + ("excellent" if sig > 75 else "good" if sig > 50
+                                                  else "ok" if sig > 25 else "weak") + "-symbolic"
+        self.wifi.set_visible(True)
+        self._set_icon(self.wifi, name)
+
+    def _battery_state(self, res) -> None:
+        pct, status = res or (None, "")
+        self.battery.set_visible(pct is not None)
+        if pct is None:
+            return
+        level = min(100, (pct + 5) // 10 * 10)
+        charging = status in ("Charging", "Full")
+        self._set_icon(self.battery, f"battery-level-{level}{'-charging' if charging else ''}-symbolic")
+        self.battery_pct.set_label(f"{pct}%")
+        self.battery_pct.set_visible(self.cfg["battery_percent"])
+
+    def _sound_state(self, res) -> None:
+        self.sound.set_visible(res is not None)
+        if res:
+            vol, muted = res
+            self._set_icon(self.sound, "audio-volume-muted-symbolic" if muted or vol == 0 else
+                           "audio-volume-" + ("high" if vol > 66 else "medium" if vol > 33 else "low") + "-symbolic")
+
+    # -- extras panels -----------------------------------------------------------------------
+    def _wifi_panel(self, btn):
+        on = Gtk.Switch(css_classes=["sonata-switch"], valign=Gtk.Align.CENTER)
+        col = ui.panel.column(ui.panel.header("Wi-Fi", on))
+        nets = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        col.append(ui.panel.separator())
+        col.append(ui.panel.section_title("Networks"))
+        nets.append(ui.panel.row(None, "Searching…"))
+        col.append(nets)
+        pop = ui.panel.popup(btn, col, gap=2)
+        ui.panel.align_to_start(pop, btn, 2)
+
+        def fill(res):
+            enabled, networks = res or (False, [])
+            on.set_active(enabled)
+            while nets.get_first_child():
+                nets.remove(nets.get_first_child())
+            for n in networks[:12]:
+                sig = "excellent" if n.signal > 75 else "good" if n.signal > 50 else "ok" if n.signal > 25 else "weak"
+                trailing = Gtk.Box(spacing=4)
+                if n.secure:
+                    trailing.append(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=12))
+                trailing.append(Gtk.Image(icon_name=f"network-wireless-signal-{sig}-symbolic", pixel_size=16))
+                nets.append(ui.panel.row("object-select-symbolic" if n.connected else None, n.ssid, trailing,
+                                         on_click=lambda n=n: (pop.popdown(), self._join(n))))
+            if not networks:
+                nets.append(ui.panel.row(None, "No networks" if enabled else "Wi-Fi is off"))
+        system.run_async(lambda: (system.wifi_enabled(), system.wifi_scan()), fill)
+        on.connect("state-set", lambda _s, st: (system.run_async(system.set_wifi_enabled, lambda _r: self._poll(), st),
+                                                False)[1])
+        return pop
+
+    def _join(self, net) -> None:
+        if net.connected:
+            return
+        if not net.secure:
+            system.run_async(system.wifi_connect, lambda _r: self._poll(), net.ssid)
+            return
+        entry = Gtk.PasswordEntry(show_peek_icon=True, hexpand=True)
+        dlg = ui.dialog.alert(f"The Wi-Fi network “{net.ssid}” requires a password.", "",
+                              [("cancel", "Cancel", ""), ("join", "Join", "default")],
+                              lambda r: r == "join" and system.run_async(
+                                  system.wifi_connect, lambda _r: self._poll(), net.ssid, entry.get_text()))
+        dlg.set_extra_child(entry)
+
+    def _battery_panel(self, btn):
+        pct, status = system.battery()
+        src = "Power Adapter" if system.on_ac() else "Battery"
+        percent_sw = ui.controls.switch(self.cfg["battery_percent"], self._toggle_percent)
+        col = ui.panel.column(
+            ui.panel.header("Battery", Gtk.Label(label=f"{pct}%" if pct is not None else "")),
+            ui.panel.row(None, f"Power Source: {src}"),
+            ui.panel.row(None, status or ""),
+            ui.panel.separator(),
+            ui.panel.row(None, "Show Percentage", percent_sw))
+        pop = ui.panel.popup(btn, col, gap=2)
+        ui.panel.align_to_start(pop, btn, 2)
+        return pop
+
+    def _toggle_percent(self, on: bool) -> None:
+        self.cfg["battery_percent"] = on
+        config.save("topbar", self.cfg)
+        self.battery_pct.set_visible(on)
+
+    def _sound_panel(self, btn):
+        vol = system.volume()
+        slider = ui.controls.slider(vol[0] if vol else 0, lambda v: self._set_volume(v))
+        col = ui.panel.column(ui.panel.header("Sound"), Gtk.Box(css_classes=["panel-header"]))
+        col.get_last_child().append(slider)
+        pop = ui.panel.popup(btn, col, gap=2)
+        ui.panel.align_to_start(pop, btn, 2)
+        return pop
+
+    def _set_volume(self, v) -> None:
+        system.run_async(system.set_volume, lambda _r: self._poll(), int(v), False)
+
+    def _control_center(self, btn):
+        cc = ControlCenter(self)
+        return ui.panel.popup(btn, cc, gap=2)
+
+    def _poll_soon(self) -> None:
+        GLib.timeout_add(600, lambda: (self._poll(), False)[1])
+
+
+class ControlCenter(Gtk.Box):
+    """Big Sur Control Center (compact): connectivity module, Dark Mode,
+    Display and Sound sliders."""
+
+    def __init__(self, bar: Bar):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8, width_request=300)
+        self.bar = bar
+        ssid, _sig, _wired = system.wifi_current()
+        bt = system.bluetooth_state()
+        conn = ui.panel.module(
+            ui.panel.toggle("network-wireless-symbolic", "Wi-Fi", system.wifi_enabled(),
+                            lambda on: system.run_async(system.set_wifi_enabled, lambda _r: bar._poll(), on),
+                            caption=ssid or "Not Connected"),
+            ui.panel.toggle("bluetooth-active-symbolic", "Bluetooth", bool(bt),
+                            lambda on: system.run_async(system.set_bluetooth, None, on),
+                            caption="On" if bt else "Off" if bt is not None else "Unavailable"))
+        dark = Adw.StyleManager.get_default().get_dark()
+        appearance = ui.panel.module(ui.panel.toggle("weather-clear-night-symbolic", "Dark Mode", dark,
+                                                     self._set_dark))
+        row = Gtk.Box(spacing=8, homogeneous=True)
+        row.append(conn)
+        row.append(appearance)
+        self.append(row)
+        b = system.brightness()
+        if b is not None:
+            self.append(ui.panel.module(Gtk.Label(label="Display", xalign=0, css_classes=["panel-module-title"]),
+                                        ui.controls.slider(b, lambda v: system.run_async(system.set_brightness,
+                                                                                         None, int(v)),
+                                                           style="module")))
+        vol = system.volume()
+        if vol is not None:
+            self.append(ui.panel.module(Gtk.Label(label="Sound", xalign=0, css_classes=["panel-module-title"]),
+                                        ui.controls.slider(vol[0], bar._set_volume, style="module")))
+
+    def _set_dark(self, on: bool) -> None:
+        """Dark Mode is a Linux setting (freedesktop colour-scheme), so every
+        app follows -- and Sonata with them."""
+        system.run_async(lambda: system._run(["gsettings", "set", "org.gnome.desktop.interface",
+                                              "color-scheme", "prefer-dark" if on else "default"]))
+
+
+class AboutWindow(Gtk.Window):
+    """About This Computer (Big Sur layout: logo left, OS name, specs)."""
+
+    def __init__(self):
+        super().__init__(title="About This Computer", css_classes=["sonata-about"], resizable=False,
+                         decorated=False)
+        head = Gtk.Box(margin_top=10, margin_start=8)
+        head.append(ui.window.traffic_lights(self.close, self.minimize))
+        body = Gtk.Box(spacing=36, css_classes=["about-box"])
+        logo = Gtk.Image(icon_name="sonata-logo-symbolic", pixel_size=120, valign=Gtk.Align.CENTER)
+        body.append(logo)
+        info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3, valign=Gtk.Align.CENTER)
+        self.info = info
+        body.append(info)
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        col.append(head)
+        col.append(body)
+        self.set_child(col)
+        system.run_async(system.about, self._fill)
+
+    def _fill(self, a) -> None:
+        if not a:
+            return
+        name, _, version = a.os_name.partition(" ")
+        self.info.append(Gtk.Label(label=name, xalign=0, css_classes=["about-name"]))
+        self.info.append(Gtk.Label(label=version or f"Kernel {a.kernel}", xalign=0, css_classes=["about-version"]))
+        for key, value in (("Computer", a.machine), ("Processor", a.cpu),
+                           ("Memory", f"{a.memory_gb} GB"), ("Graphics", ", ".join(a.gpus) or "—"),
+                           ("Kernel", a.kernel), ("Desktop", "Sonata 2")):
+            row = Gtk.Box(spacing=6)
+            row.append(Gtk.Label(label=key, css_classes=["about-key"]))
+            row.append(Gtk.Label(label=value, xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=48))
+            self.info.append(row)
+
+
+class AboutAppWindow(Gtk.Window):
+    def __init__(self, info, name):
+        super().__init__(title=f"About {name}", css_classes=["sonata-about"], resizable=False, decorated=False)
+        head = Gtk.Box(margin_top=10, margin_start=8)
+        head.append(ui.window.traffic_lights(self.close, self.minimize))
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["about-box"])
+        img = Gtk.Image(pixel_size=96)
+        if info and info.get_icon():
+            img.set_from_gicon(info.get_icon())
+        col.append(img)
+        col.append(Gtk.Label(label=name, css_classes=["about-name"]))
+        if info:
+            for text in (info.get_description(), info.get_generic_name()):
+                if text:
+                    col.append(Gtk.Label(label=text, css_classes=["about-version"], wrap=True, max_width_chars=40))
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        outer.append(head)
+        outer.append(col)
+        self.set_child(outer)
+
+
+class TopBarWindow(Gtk.ApplicationWindow):
+    def __init__(self, app, preview: bool = False):
+        super().__init__(application=app, title="Menu Bar", css_classes=["sonata-topbar"], decorated=False,
+                         resizable=True)
+        from ..wl.toplevels import ToplevelManager
+        self.manager = ToplevelManager(Gdk.Display.get_default(),
+                                       ignore_app_ids={"io.github.vinioliveiras.sonata2.topbar"})
+        self.bar = Bar(self.manager)
+        self.set_size_request(-1, BAR_H)
+        if preview:
+            self._preview()
+        else:
+            self.set_child(self.bar)
+            if layer.layer_shell():
+                LS = layer.layer_shell()
+                LS.init_for_window(self)
+                LS.set_namespace(self, "sonata2-topbar")
+                LS.set_layer(self, LS.Layer.TOP)
+                for e in (LS.Edge.TOP, LS.Edge.LEFT, LS.Edge.RIGHT):
+                    LS.set_anchor(self, e, True)
+                LS.set_exclusive_zone(self, BAR_H)
+                LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND)
+
+    def _preview(self) -> None:
+        """Bar over a sample wallpaper in a normal window (screenshots)."""
+        from .preview import _wallpaper
+        w, h = (int(v) for v in os.environ.get("PREVIEW_SIZE", "1280x400").split("x"))
+        self.set_default_size(w, h)
+        walls = _wallpaper(w, h, ui.is_dark())
+        over = Gtk.Overlay()
+        pic = Gtk.Picture(content_fit=Gtk.ContentFit.FILL, hexpand=True, vexpand=True)
+        if walls:
+            pic.set_filename(walls[0])
+            self.bar.backdrop = Gdk.Texture.new_from_filename(walls[1])
+        over.set_child(pic)
+        self.bar.set_valign(Gtk.Align.START)
+        over.add_overlay(self.bar)
+        self.set_child(over)
