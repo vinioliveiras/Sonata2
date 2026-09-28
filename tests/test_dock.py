@@ -86,6 +86,23 @@ class DockTest(unittest.TestCase):
         path = dock_menu.app_file(self.dock.tiles[self.keys()[0]].info)
         self.assertTrue(os.path.isabs(path) and os.path.exists(path), path)
 
+    def test_pin_at_position(self):
+        key = self.keys()[0]
+        self.dock.set_pinned(key, False)
+        self.dock.pin_at(key, before=self.dock.tiles[self.keys()[1]])
+        self.assertEqual(self.keys().index(key), 1)
+        self.assertIn(key, config.load("dock", D.DEFAULTS)["pinned"])
+
+    def test_can_open_by_mime(self):
+        from gi.repository import Gio
+        from sonata2.shell import dock_drop
+        path = os.path.join(os.environ["XDG_CONFIG_HOME"], "a.txt")
+        open(path, "w").write("hi")
+        f = Gio.File.new_for_path(path)
+        info = self.dock.tiles[self.keys()[0]].info
+        expect = any(Gio.content_type_is_a("text/plain", t) for t in (info.get_supported_types() or []))
+        self.assertEqual(dock_drop.can_open(info, [f]), expect)
+
     def test_keep_in_dock_toggle(self):
         key = self.keys()[0]
         self.dock.set_pinned(key, False)

@@ -62,3 +62,11 @@ Run `tools/dev-session.sh` (or a Wayfire session).
 ## Dock -- running dot
 - [ ] The dot under a running app is vertically centred between the icon's
       bottom edge and the Dock's bottom edge (light and dark).
+
+## M1.4 -- Dock file drops
+- [ ] Drag a .txt from the file manager over the Text Editor icon: it
+      darkens; drop -> opens in it (bounces if it wasn't running).
+- [ ] Over an app that can't open it (e.g. Steam): no darkening, drop refused.
+- [ ] Drop files on the Trash: they move to the Trash, icon turns full.
+- [ ] Drag an app from /usr/share/applications (file manager) onto the Dock
+      between two icons: it's pinned there and stays after a restart.

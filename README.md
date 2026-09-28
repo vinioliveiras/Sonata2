@@ -37,7 +37,11 @@ compositor.
   (a running app stays until it quits); dropping a running unpinned app
   among the icons pins it.
 
-Not yet: drop files on apps/Trash, Dock preferences -- see
+- Drop files on an app to open them with it (the icon darkens only if the
+  app handles those file types), on the Trash to trash them; drop an app's
+  .desktop file on the Dock to pin it at that spot.
+
+Not yet: Dock settings (size, magnification, position, auto-hide) -- see
 [ROADMAP.md](ROADMAP.md).
 
 The look is macOS Big Sur/Monterey -- deliberately **not** Liquid Glass.

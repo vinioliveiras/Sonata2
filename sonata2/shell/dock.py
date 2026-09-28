@@ -21,7 +21,7 @@ from gi.repository import Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 
 from .. import apps, config, icons  # noqa: E402
 from .. import ui  # noqa: E402
-from . import dock_menu, layer  # noqa: E402
+from . import dock_drop, dock_menu, layer  # noqa: E402
 
 DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "glass": True}
 LAUNCH_TIMEOUT_MS = 10000   # stop bouncing if no window shows up
@@ -54,7 +54,7 @@ window.sonata-dock, window.sonata-dock > contents { background: none; box-shadow
   border: none; border-radius: 0; background: none; box-shadow: none; outline: none;
 }
 .dock-tile image { transition: filter %(t_press)s ease-out; }
-.dock-tile:active image { filter: brightness(0.62); }
+.dock-tile:active image, .dock-tile.drop-hover image { filter: brightness(0.62); }
 .dock-tile.dragging { opacity: 0; }   /* keeps its gap while being dragged */
 .dock-dot { min-width: %(dot)dpx; min-height: %(dot)dpx; margin: %(dot_top)dpx 0 %(dot_bottom)dpx 0;
             border-radius: 99px; background-color: %(indicator)s; opacity: 0; }
@@ -135,6 +135,8 @@ class Dock(Gtk.Box):
         drop.connect("enter", self._drag_motion)
         drop.connect("leave", self._drag_leave)
         self.add_controller(drop)
+        dock_drop.attach_plate(self)
+        dock_drop.attach_trash(self, self.trash)
         self.append(self.trash)
         for did in cfg["pinned"]:
             info = apps.lookup(did)
@@ -158,6 +160,7 @@ class Dock(Gtk.Box):
         src.connect("drag-cancel", self._drag_cancel, tile)
         src.connect("drag-end", self._drag_end, tile)
         tile.add_controller(src)
+        dock_drop.attach_app(self, tile)
         return tile
 
     def _remove_tile(self, key) -> None:
@@ -177,6 +180,34 @@ class Dock(Gtk.Box):
         pinned = set(self.cfg["pinned"])
         self.cfg["pinned"] = [t.key for t in self.app_tiles() if t.key in pinned]
         config.save("dock", self.cfg)
+
+    def _slot_at(self, x: float, exclude=None) -> int:
+        """Index among app tiles where something dropped at `x` goes."""
+        slot = 0
+        for t in self.app_tiles():
+            if t is exclude:
+                continue
+            ok, b = t.compute_bounds(self)
+            if ok and b.get_x() + b.get_width() / 2 < x:
+                slot += 1
+        return slot
+
+    def pin_at(self, key, before=None, x=None) -> None:
+        """Pin app `key` (desktop id) before tile `before`, or at plate x."""
+        tile = self.tiles.get(key)
+        if tile is None:
+            info = apps.lookup(key)
+            if not info:
+                return
+            tile = self._add_tile(key, info.get_display_name(), info.get_icon(), info)
+            tile.set_running(key in self.windows)
+        others = [t for t in self.app_tiles() if t is not tile]
+        slot = others.index(before) if before in others else (
+            self._slot_at(x, exclude=tile) if x is not None else len(others))
+        self.reorder_child_after(tile, others[slot - 1] if slot else None)
+        if key not in self.cfg["pinned"]:
+            self.cfg["pinned"].append(key)
+        self._save_order()
 
     def set_pinned(self, key, on: bool) -> None:
         """Keep in Dock on/off. Unpinning a running app keeps its icon until it quits."""
@@ -209,12 +240,7 @@ class Dock(Gtk.Box):
         tiles = self.app_tiles()
         tile = self.tiles[self._drag["key"]]
         others = [t for t in tiles if t is not tile]
-        # New slot = number of other icons whose centre is left of the pointer.
-        slot = 0
-        for t in others:
-            ok, b = t.compute_bounds(self)
-            if ok and b.get_x() + b.get_width() / 2 < x:
-                slot += 1
+        slot = self._slot_at(x, exclude=tile)   # other icons whose centre is left of x
         if tiles.index(tile) != slot:
             self.reorder_child_after(tile, others[slot - 1] if slot else None)
         return Gdk.DragAction.MOVE
@@ -301,11 +327,14 @@ class Dock(Gtk.Box):
         elif tile.info:
             self.launch(tile)
 
-    def launch(self, tile: DockTile) -> None:
-        info = tile.info
+    def launch_feedback(self, tile: DockTile) -> None:
         # With window tracking the bounce stops when the first window maps;
         # without it, bounce twice.
         tile.bounce(LAUNCH_TIMEOUT_MS if self.manager else 2 * BOUNCE_MS)
+
+    def launch(self, tile: DockTile) -> None:
+        info = tile.info
+        self.launch_feedback(tile)
         ctx = tile.get_display().get_app_launch_context()
         try:
             info.launch([], ctx)

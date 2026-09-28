@@ -11,9 +11,10 @@ list: [docs/PARITY.md](docs/PARITY.md).
         apps, click to activate/restore, minimize into the icon
   - [x] M1.3 right-click menus (windows, Options > Keep in Dock / Open at
         Login / Open File Location, Hide, Quit / Open; Trash: Open, Empty)
-  - [~] M1.4 drag: [x] reorder, [x] drag out to remove, [x] running app
-        dropped in place gets pinned; [ ] drop files on an app (open with)
-        or on the Trash (move to Trash); [ ] drop an app (.desktop) to pin
+  - [x] M1.4 drag: reorder, drag out to remove, running app dropped in
+        place gets pinned, drop files on an app (open with, icon darkens
+        only if it can open them) or on the Trash (move to Trash), drop an
+        app (.desktop) anywhere on the Dock to pin it there
   - [ ] M1.5 Dock settings + divider: drag the divider to resize,
         right-click it (Turn Hiding On/Off, Magnification, Position on
         Screen, Dock Settings...); size, magnification (animated wave),

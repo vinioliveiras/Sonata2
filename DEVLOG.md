@@ -152,3 +152,15 @@
 - docs/DESIGN.md: rules, token table, components, how to add one.
 - ROADMAP: Dock sub-steps expanded to full macOS parity; Launchpad (M2)
   comes before the top bar, at Vini's request.
+
+## 2026-09-28 -- M1.4 done: file drops
+
+- dock_drop.py: Gtk.DropTarget(Gdk.FileList) with preload, so acceptance
+  is decided while hovering (macOS darkens the icon only when the app can
+  open the files): every file's content type must be_a one of the app's
+  MimeType entries. Drop -> AppInfo.launch(files) (+ launch bounce if not
+  running). Trash tile: Gio.File.trash() each file. .desktop files dropped
+  on a tile or the plate are pinned at that slot (copied to
+  ~/.local/share/applications if they live elsewhere).
+- Dock.pin_at() and Dock._slot_at() shared with drag-reorder.
+- tests: pin at position, MIME check (8 tests).
