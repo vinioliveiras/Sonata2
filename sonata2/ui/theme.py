@@ -4,6 +4,8 @@ appearance, into one provider; reloads it when light/dark changes.
 Components call `register(template)` at import time (or when their
 geometry is known). Templates use
 `%(token)s` placeholders (write `%%` for a literal percent sign)."""
+import re
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -19,6 +21,8 @@ PRIORITY = Gtk.STYLE_PROVIDER_PRIORITY_USER + 10
 _templates = {}       # key -> (template, local placeholders)
 _extra = {}           # token overrides (future: user customization)
 _provider = None
+_listeners = []       # called after every reload (light/dark switch)
+_parsed = {}          # (token, dark) -> parsed value, for snapshot drawing
 
 
 def register(template: str, key: str = None, **local) -> None:
@@ -36,12 +40,64 @@ def is_dark() -> bool:
 
 def values() -> dict:
     """Current tokens (for code that needs a value, e.g. drawing)."""
-    return {**tokens.palette(is_dark()), **_extra}
+    return {**tokens.palette(is_dark(), _theme()), **_extra}
+
+
+_theme_name = None
+
+
+def _theme() -> str:
+    """Visual theme from Sonata's appearance settings (read once)."""
+    global _theme_name
+    if _theme_name is None:
+        from .. import config
+        _theme_name = config.load("appearance", {"theme": "mac"})["theme"]
+    return _theme_name
 
 
 def _load(*_a) -> None:
     vals = values()
     _provider.load_from_data("\n".join(t % {**vals, **loc} for t, loc in _templates.values()).encode())
+    for cb in list(_listeners):
+        cb()
+
+
+def on_change(callback) -> None:
+    """Call `callback()` whenever the appearance (and so the tokens) changes;
+    for widgets that draw with rgba()/shadow() in their snapshot."""
+    _listeners.append(callback)
+
+
+def px(token: str) -> float:
+    """A size token ("18px") as a number (cached per appearance)."""
+    key = ("px:" + token, is_dark())
+    if key not in _parsed:
+        _parsed[key] = float(values()[token].rstrip("px"))
+    return _parsed[key]
+
+
+def rgba(token: str) -> Gdk.RGBA:
+    """A colour token as Gdk.RGBA (cached per appearance)."""
+    key = (token, is_dark())
+    if key not in _parsed:
+        c = Gdk.RGBA()
+        c.parse(values()[token])
+        _parsed[key] = c
+    return _parsed[key]
+
+
+_SHADOW = re.compile(r"(-?[\d.]+)(?:px)?\s+(-?[\d.]+)(?:px)?\s+([\d.]+)(?:px)?\s+(.+)$")
+
+
+def shadow(token: str):
+    """A shadow token ("dx dy blur colour") as (dx, dy, blur, Gdk.RGBA)."""
+    key = ("shadow:" + token, is_dark())
+    if key not in _parsed:
+        dx, dy, blur, col = _SHADOW.match(values()[token].strip()).groups()
+        c = Gdk.RGBA()
+        c.parse(col)
+        _parsed[key] = (float(dx), float(dy), float(blur), c)
+    return _parsed[key]
 
 
 def setup() -> None:

@@ -99,6 +99,13 @@ SHARED = {
 SPACE = {"xxs": 2, "xs": 4, "s": 6, "m": 8, "l": 12, "xl": 16, "xxl": 20}
 
 
-def palette(dark: bool) -> dict:
-    """All tokens for one appearance."""
-    return {**SHARED, **(DARK if dark else LIGHT)}
+# Visual themes. Only "mac" exists now; a "windows" theme (Windows 11 look,
+# "Task Bar" mode) will add its own LIGHT/DARK/SHARED with the same keys, so
+# components need no change -- only their token values differ.
+THEMES = {"mac": {"light": LIGHT, "dark": DARK, "shared": SHARED}}
+
+
+def palette(dark: bool, theme: str = "mac") -> dict:
+    """All tokens for one theme and appearance."""
+    t = THEMES.get(theme, THEMES["mac"])
+    return {**t["shared"], **(t["dark"] if dark else t["light"])}

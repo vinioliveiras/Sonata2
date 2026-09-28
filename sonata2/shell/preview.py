@@ -73,10 +73,6 @@ class PreviewWindow(Gtk.ApplicationWindow):
         dock.set_margin_bottom(4)
         over.add_overlay(dock)
         self.set_child(over)
-        self._glass = Gtk.CssProvider()
-        from gi.repository import Gdk
-        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), self._glass,
-                                                  Gtk.STYLE_PROVIDER_PRIORITY_USER + 20)
         from gi.repository import Adw
         Adw.StyleManager.get_default().connect("notify::dark", lambda *_: GLib.idle_add(self._paint))
         self.connect("map", lambda *_: GLib.timeout_add(150, self._paint))
@@ -90,16 +86,8 @@ class PreviewWindow(Gtk.ApplicationWindow):
         if not walls:
             return False
         self.wall.set_filename(walls[0])
-        ok, b = self.dock.compute_bounds(self)
-        if ok and self.has_css_class("glass"):
-            tint = ui.values()["glass_tint"]
-            w, h = self._size
-            self._glass.load_from_data(f"""
-.glass .dock-plate {{
-  background-image: linear-gradient({tint}, {tint}), url("file://{walls[1]}");
-  background-size: auto, {w}px {h}px;
-  background-position: 0 0, {-b.get_x():.0f}px {-b.get_y():.0f}px;
-  background-repeat: no-repeat;
-  background-color: transparent;
-}}""".encode())
+        if self.dock.cfg["glass"]:
+            from gi.repository import Gdk
+            self.dock.backdrop = Gdk.Texture.new_from_filename(walls[1])
+            self.dock.queue_draw()
         return False

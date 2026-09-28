@@ -33,16 +33,45 @@ def layer_shell():
     return LS if LS.is_supported() else None
 
 
-def anchor_bottom(win, namespace: str, margin: int, exclusive: int) -> bool:
-    """Make `win` a bottom-centered overlay surface. False = plain window."""
+def anchor_edge(win, namespace: str, edge: str, exclusive: int) -> bool:
+    """Make `win` a layer surface spanning the whole `edge` ("bottom", "left",
+    "right"), so its content can grow (magnification) without resizing the
+    surface; restrict clicks with set_input_region(). False = plain window."""
     LS = layer_shell()
     if not LS:
         return False
     LS.init_for_window(win)
     LS.set_namespace(win, namespace)
     LS.set_layer(win, LS.Layer.TOP)
-    LS.set_anchor(win, LS.Edge.BOTTOM, True)
-    LS.set_margin(win, LS.Edge.BOTTOM, margin)
-    LS.set_exclusive_zone(win, exclusive)
     LS.set_keyboard_mode(win, LS.KeyboardMode.NONE)
+    set_edge(win, edge, exclusive)
     return True
+
+
+def set_edge(win, edge: str, exclusive: int) -> None:
+    LS = layer_shell()
+    E = LS.Edge
+    main = {"bottom": E.BOTTOM, "left": E.LEFT, "right": E.RIGHT}[edge]
+    across = (E.LEFT, E.RIGHT) if edge == "bottom" else (E.TOP, E.BOTTOM)
+    for e in (E.TOP, E.BOTTOM, E.LEFT, E.RIGHT):
+        LS.set_anchor(win, e, e == main or e in across)
+    LS.set_exclusive_zone(win, exclusive)
+
+
+def set_exclusive(win, exclusive: int) -> None:
+    LS = layer_shell()
+    if LS and LS.is_layer_window(win):
+        LS.set_exclusive_zone(win, exclusive)
+
+
+def set_input_region(win, rects) -> None:
+    """Only these (x, y, w, h) rectangles of `win` receive pointer input;
+    the rest of the transparent surface lets clicks through."""
+    import cairo
+    surface = win.get_surface()
+    if not surface:
+        return
+    region = cairo.Region()
+    for x, y, w, h in rects:
+        region.union(cairo.RectangleInt(int(x), int(y), int(w) + 1, int(h) + 1))
+    surface.set_input_region(region)

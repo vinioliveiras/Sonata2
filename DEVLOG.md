@@ -164,3 +164,27 @@
   ~/.local/share/applications if they live elsewhere).
 - Dock.pin_at() and Dock._slot_at() shared with drag-reorder.
 - tests: pin at position, MIME check (8 tests).
+
+## 2026-09-28 -- M1.5a: magnification, divider resize
+
+- The plate is now painted in Dock.do_snapshot at a fixed height at the
+  bottom of the allocation (outset shadow, glass/solid tint, inner
+  highlight, 0.5 px hairline -- all from tokens), so magnified icons grow
+  above it like macOS. No CSS padding on the Dock (it offsets the snapshot
+  origin); side spacers + min height instead.
+- DockIcon: custom widget drawing one paintable at any size (exact size at
+  rest, one large paintable while magnified) -- no SVG re-render per frame.
+- Magnification: cos^2 falloff over 3 icons, distances on the unmagnified
+  layout (no feedback), Adw.TimedAnimation eases strength in (120 ms) /
+  out (250 ms). Off by default (macOS), 80 px when on.
+- The layer surface now spans the bottom edge (anchored left+right) with a
+  fixed height for the biggest possible Dock; the input region is the
+  Dock's bounds, so clicks elsewhere go through. Exclusive zone = plate.
+- Divider: GestureDrag resizes (16-128 px, saved on release), right-click
+  -> Turn Magnification On/Off.
+- PyGObject gotcha: `Gsk.RoundedRect().init_from_rect(...)` returns a view
+  of a freed temporary (bounds read as 0) -- keep the object (_rounded()).
+  Also: a blurred shadow painted before allocation (0 px) aborts GSK.
+- Themes: tokens.THEMES = {"mac": ...}; `theme` in appearance.json. The
+  windows theme will only add token values (Vini's plan).
+- tests: resize, magnification wave (10 tests).

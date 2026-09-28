@@ -134,3 +134,13 @@ def trash_menu(tile):
         [Item("Open", lambda: Gio.AppInfo.launch_default_for_uri("trash:///", None))],
         [Item("Empty Trash…", confirm_empty_trash, enabled=_trash_count() > 0)],
     ])
+
+
+def divider_menu(dock, divider):
+    """macOS Dock divider menu (hiding/position come with M1.5b)."""
+    Item = ui.menu.Item
+    mag = dock.cfg["magnification"]
+    return ui.menu.popup(divider, [
+        [Item("Turn Magnification Off" if mag else "Turn Magnification On",
+              lambda: dock.set_magnification(not mag))],
+    ])

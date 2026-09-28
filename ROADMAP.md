@@ -15,11 +15,12 @@ list: [docs/PARITY.md](docs/PARITY.md).
         place gets pinned, drop files on an app (open with, icon darkens
         only if it can open them) or on the Trash (move to Trash), drop an
         app (.desktop) anywhere on the Dock to pin it there
-  - [ ] M1.5 Dock settings + divider: drag the divider to resize,
-        right-click it (Turn Hiding On/Off, Magnification, Position on
-        Screen, Dock Settings...); size, magnification (animated wave),
-        position left/bottom/right, auto-hide (slide, delay), animate
-        opening apps, show indicators
+  - [x] M1.5a magnification (animated cosine wave, icons grow above the
+        plate), drag the divider to resize (16-128 px), divider menu
+        (Turn Magnification On/Off)
+  - [ ] M1.5b position left/bottom/right, auto-hide (slide, delay),
+        divider menu: Turn Hiding On/Off, Position on Screen
+        (All Dock options will also be in the macOS-style Settings app, M6.)
   - [ ] M1.6 recent apps section, Stacks (Downloads folder: fan/grid)
   - [ ] M1.7 polish on hardware: multi-monitor, HiDPI, performance
   - Later (needs other components): notification badges, attention bounce

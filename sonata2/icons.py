@@ -15,7 +15,7 @@ from gi.repository import Gdk, Gtk  # noqa: E402
 from . import config  # noqa: E402
 
 ICONS_DIR = os.path.join(os.path.dirname(__file__), "data", "icons")
-APPEARANCE_DEFAULTS = {"icon_theme": "Sonata"}
+APPEARANCE_DEFAULTS = {"icon_theme": "Sonata", "theme": "mac"}
 
 _system = None     # Gtk.IconTheme with the system's theme, for fallbacks
 

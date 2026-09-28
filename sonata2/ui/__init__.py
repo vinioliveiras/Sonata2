@@ -11,7 +11,7 @@ See docs/DESIGN.md.
     ui.window.traffic_lights(close, minimize, zoom)
 """
 from . import controls, dialog, label, menu, theme, tokens, window  # noqa: F401  (register CSS)
-from .theme import force_appearance, is_dark, register, setup, values  # noqa: F401
+from .theme import force_appearance, is_dark, on_change, px, register, rgba, setup, shadow, values  # noqa: F401
 
 __all__ = ["controls", "dialog", "label", "menu", "theme", "tokens", "window",
-           "force_appearance", "is_dark", "register", "setup", "values"]
+           "force_appearance", "is_dark", "on_change", "px", "register", "rgba", "setup", "shadow", "values"]

@@ -21,6 +21,8 @@ def main() -> int:
     p.add_argument("--label", type=int, default=-1)
     p.add_argument("--menu", type=int, default=-1, help="open the N-th tile's menu (screenshots)")
     p.add_argument("--submenu", action="store_true", help="with --menu: also open Options")
+    p.add_argument("--magnify", type=float, default=-1,
+                   help="screenshots: magnify as if the pointer were at this x")
     args = p.parse_args()
 
     if not args.preview:
@@ -60,7 +62,6 @@ def main() -> int:
         if args.preview:
             from .shell.preview import PreviewWindow
             win = PreviewWindow(app, dock.Dock(cfg, manager))
-            dock.apply_glass(win, cfg)
         else:
             win = dock.DockWindow(app, cfg, manager)
         win.present()
@@ -69,6 +70,14 @@ def main() -> int:
             tiles = list(d.tiles.values()) + [d.trash]
             if args.label < len(tiles):
                 GLib.timeout_add(300, lambda: (tiles[args.label].label.popup(), False)[1])
+        if args.magnify >= 0:
+            def magnify():
+                d = win.dock
+                d.cfg["magnification"] = True
+                d._mag_x, d._mag_strength = args.magnify, 1.0
+                d._apply_magnification()
+                return False
+            GLib.timeout_add(300, magnify)
         if args.menu >= 0:
             from .shell import dock_menu
             d = win.dock

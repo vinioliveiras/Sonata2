@@ -19,6 +19,13 @@ Code: [`sonata2/ui/`](../sonata2/ui). Gallery: `python3 -m sonata2 gallery`
 5. Sonata settings (look/behaviour) live in `~/.config/sonata2`; Linux
    settings stay in the system (see README).
 
+## Themes
+
+Two visual themes are planned: **mac** (now) and **windows** (later, with
+the "Task Bar" mode). Each is a set of LIGHT / DARK / SHARED token dicts in
+`tokens.THEMES`; components read tokens only, so a new theme is new values,
+not new code. Selected in `~/.config/sonata2/appearance.json` (`theme`).
+
 ## Tokens (`ui/tokens.py`)
 
 | Group | Tokens |
@@ -46,6 +53,8 @@ Code: [`sonata2/ui/`](../sonata2/ui). Gallery: `python3 -m sonata2 gallery`
 
 Shell components (Dock, Launchpad, ...) register their own CSS through
 `ui.register(template, key=..., **geometry)` using the same tokens.
+Widgets that paint in `do_snapshot` use `ui.rgba()`, `ui.shadow()`,
+`ui.px()` and redraw on `ui.on_change()`.
 
 ## Adding a component
 

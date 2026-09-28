@@ -103,6 +103,28 @@ class DockTest(unittest.TestCase):
         expect = any(Gio.content_type_is_a("text/plain", t) for t in (info.get_supported_types() or []))
         self.assertEqual(dock_drop.can_open(info, [f]), expect)
 
+    def test_resize_saves(self):
+        self.dock.set_icon_size(64)
+        self.assertEqual(config.load("dock", D.DEFAULTS)["icon_size"], 64)
+        self.assertEqual(self.dock.tiles[self.keys()[0]].icon._size, 64)
+        self.dock.set_icon_size(500)
+        self.assertEqual(self.cfg["icon_size"], D.MAX_SIZE)
+
+    def test_magnification_wave(self):
+        self.dock.set_magnification(True, 80)
+        tiles = self.dock.all_tiles()
+        ok, b = tiles[1].compute_bounds(self.win)
+        self.dock._mag_x, self.dock._mag_strength = b.get_x() + b.get_width() / 2, 1.0
+        self.dock._apply_magnification()
+        sizes = [t.icon._size for t in tiles]
+        self.assertEqual(max(sizes), sizes[1])          # biggest under the pointer
+        self.assertGreater(sizes[1], sizes[0])
+        self.assertGreater(sizes[0], self.cfg["icon_size"] - 1)
+        self.assertEqual(sizes[-1], self.cfg["icon_size"])   # far away: unchanged
+        self.dock._mag_strength = 0.0
+        self.dock._apply_magnification()
+        self.assertTrue(all(t.icon._size == self.cfg["icon_size"] for t in tiles))
+
     def test_keep_in_dock_toggle(self):
         key = self.keys()[0]
         self.dock.set_pinned(key, False)

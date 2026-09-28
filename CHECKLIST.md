@@ -70,3 +70,12 @@ Run `tools/dev-session.sh` (or a Wayfire session).
 - [ ] Drop files on the Trash: they move to the Trash, icon turns full.
 - [ ] Drag an app from /usr/share/applications (file manager) onto the Dock
       between two icons: it's pinned there and stays after a restart.
+
+## M1.5a -- Magnification, resize
+- [ ] Right-click the divider -> Turn Magnification On; moving along the Dock
+      grows icons in a smooth wave above the plate; leaving eases back.
+- [ ] Clicking a magnified icon works; clicks above the Dock (outside the
+      icons) reach the window below.
+- [ ] Drag the divider up: the Dock grows (ns-resize cursor); down: shrinks;
+      the size stays after restarting.
+- [ ] Maximized windows stop above the (unmagnified) plate at any size.

@@ -41,7 +41,11 @@ compositor.
   app handles those file types), on the Trash to trash them; drop an app's
   .desktop file on the Dock to pin it at that spot.
 
-Not yet: Dock settings (size, magnification, position, auto-hide) -- see
+- Magnification (off by default, like macOS): icons near the pointer grow
+  in a smooth wave above the plate. Right-click the divider (line before
+  the Trash) -> Turn Magnification On. Drag the divider up/down to resize.
+
+Not yet: position left/right, auto-hide -- see
 [ROADMAP.md](ROADMAP.md).
 
 The look is macOS Big Sur/Monterey -- deliberately **not** Liquid Glass.
@@ -88,8 +92,10 @@ touching the system:
   glass, animations, later the top bar, Launchpad...). Stored only in
   `~/.config/sonata2/*.json` and read only by Sonata; never taken from
   GNOME/KDE/gsettings.
-  - `dock.json`: pins, icon size, edge gap, glass
-  - `appearance.json`: `icon_theme` (default `Sonata`)
+  - `dock.json`: pins, icon_size, edge_gap, glass, magnification,
+    magnified_size
+  - `appearance.json`: `icon_theme` (default `Sonata`), `theme` (`mac`;
+    a `windows` theme comes later)
 - **Linux settings** -- the machine itself: Wi-Fi, Bluetooth, sound,
   displays, power, wallpaper, keyboard... Sonata doesn't store them; it
   reads/writes the standard system services (NetworkManager, PipeWire,
@@ -142,6 +148,6 @@ tests/  tools/    headless tests, screenshot helpers
 ## Dependencies (Arch / CachyOS)
 
 ```
-sudo pacman -S --needed wayfire gtk4 libadwaita gtk4-layer-shell python-gobject python-pywayland
+sudo pacman -S --needed wayfire gtk4 libadwaita gtk4-layer-shell python-gobject python-cairo python-pywayland
 # previews/screenshots only: sway grim python-pillow
 ```
