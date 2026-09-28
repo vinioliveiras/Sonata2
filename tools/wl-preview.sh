@@ -31,7 +31,7 @@ fakes=""
 for id in ${PREVIEW_APPS:-}; do GDK_BACKEND=wayland "$PY" "$REPO/tests/fake_app.py" "$id" 2>/dev/null & fakes="$fakes $!"; done
 [ -n "${PREVIEW_APPS:-}" ] && sleep 1
 (cd "$REPO" && GDK_BACKEND=wayland "$PY" -m sonata2 "$comp" --preview "$@" 2>"$run/app.log") & app=$!
-sleep 2.5; [ -n "${PROBE:-}" ] && "$PY" $PROBE; cat "$run"/app.log >&2 || true
+sleep "${PREVIEW_WAIT:-2.5}"; [ -n "${PROBE:-}" ] && "$PY" $PROBE; cat "$run"/app.log >&2 || true
 grim "$out"
 kill $app $sway_pid 2>/dev/null || true; kill $fakes 2>/dev/null || true
 rm -rf "$run"

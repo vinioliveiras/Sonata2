@@ -481,19 +481,10 @@ class Settings(Adw.ApplicationWindow):
 
 
 def settings_desktop_file(command: str) -> str:
-    """~/.local/share/applications/sonata2-settings.desktop (shown in
-    Launchpad as "System Settings")."""
-    path = os.path.join(GLib.get_user_data_dir(), "applications", "sonata2-settings.desktop")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    text = ("[Desktop Entry]\nType=Application\nName=System Settings\nComment=Sonata and system settings\n"
-            "Icon=preferences-system\nCategories=Settings;System;\n"
-            f"Exec={command} settings\n")
-    try:
-        with open(path, encoding="utf-8") as f:
-            if f.read() == text:
-                return path
-    except OSError:
-        pass
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(text)
-    return path
+    """sonata2-settings.desktop (shown in Launchpad as "System Settings")."""
+    from ..apps import write_desktop_file
+    return write_desktop_file("sonata2-settings.desktop",
+                              "[Desktop Entry]\nType=Application\nName=System Settings\n"
+                              "Comment=Sonata and system settings\nIcon=preferences-system\n"
+                              "Categories=Settings;System;\nStartupWMClass=io.github.vinioliveiras.sonata2.settings\n"
+                              f"Exec={command} settings\n")

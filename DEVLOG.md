@@ -335,3 +335,23 @@
 - Key bindings like macOS with Super as Cmd.
 - Verified: install into a scratch HOME, launcher runs, autostart rules.
   Not verifiable here: a real login (no GPU for Wayfire in the test box).
+
+## 2026-09-29 -- look independence, cursors, Files F1
+
+- Cursors: MacTahoe had none; bundled apple_cursor (macOS, GPL-3.0)
+  trimmed to 24/32/48 as Sonata-Cursors (2.3 MB).
+- Independent look: first session run seeds every visual gsettings key
+  into Sonata's dconf layer (versioned marker), bundled Inter via the
+  session's own fontconfig file, Qt platform theme forced to gtk3.
+- Fix: the layer-shell re-exec flag leaked to apps started from the Dock;
+  a nested dev session started from such a terminal showed the shell as
+  plain windows. ensure_preload() now restores the environment.
+- Wayfire "Unknown animation type" log lines: harmless (fixed upstream, #3132).
+- Files F1 (sonata2/files): folder.py (async batched listing, one splice,
+  Finder name order, live monitor with sorted inserts), sidebar.py,
+  window.py (Icons view on Gtk.GridView, virtualised). Tokens: content_bg,
+  sidebar_bg, sidebar_selected, item_selected_bg, tool_hover, tool_icon.
+- Traffic lights: Big Sur geometry (centres 20 px apart, first centre
+  20 px from the edge), measured in screenshots for Files and Settings.
+- apps.write_desktop_file() replaces three copies; Files entry
+  io.github.vinioliveiras.sonata2.files.desktop (inode/directory).

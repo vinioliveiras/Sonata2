@@ -70,8 +70,20 @@ list: [docs/PARITY.md](docs/PARITY.md).
   wayfire), XDG autostart runner, macOS-like key bindings.
   Next: a Sonata login/lock screen in the macOS style (ext-session-lock for
   locking; a greeter for the login screen).
-- **Next (Vini)**: Files -- our own macOS-style file manager (columns view,
-  sidebar, Quick Look...), after the session.
+- **M7 -- Files** (our own Finder; `sonata2 files [FOLDER]`), in parts:
+  - [x] F1 window: sidebar (Favorites: Recents, Desktop, Documents,
+        Downloads, home, GTK bookmarks; Locations: Computer, drives with
+        eject; live), unified toolbar (back/forward, title, view switcher,
+        search), Icons view (Finder sort, selection look, rubber band),
+        open with default app, live folder updates, hidden files
+        (Ctrl+Shift+.), Finder keys with Ctrl as Cmd
+  - [ ] F2 List and Columns views, Gallery
+  - [ ] F3 context menu, rename (Return), new folder, Move to Trash,
+        copy/paste, Get Info
+  - [ ] F4 drag and drop (copy/move/progress), spring-loaded folders
+  - [ ] F5 Quick Look (Space), thumbnails, tabs, recursive search
+  - [ ] F6 default file manager (Dock tile, Stacks, "Open File Location",
+        FileManager1 D-Bus)
 - **M4 -- Control Center**: Wi-Fi, Bluetooth, sound, brightness, power mode
   (LayerOSX backend, PipeWire via wpctl, wlr-randr for displays).
 - **M5 -- Launcher, notifications.**

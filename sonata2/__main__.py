@@ -10,7 +10,8 @@ Development / screenshots:
   --label N / --menu N [--submenu] / --stack / --magnify X   (Dock)
   --search TEXT / --folder / --jiggle / --background           (Launchpad)
   --menu N                                                     (top bar, gallery)
-  --page ID                                                    (settings)"""
+  --page ID                                                    (settings)
+  sonata2 files [FOLDER...]                                    (Files)"""
 import argparse
 import json
 import os
@@ -24,7 +25,11 @@ APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
            "wallpaper": "io.github.vinioliveiras.sonata2.wallpaper",
            "launchpad": "io.github.vinioliveiras.sonata2.launchpad",
            "topbar": "io.github.vinioliveiras.sonata2.topbar",
-           "gallery": "io.github.vinioliveiras.sonata2.gallery"}
+           "gallery": "io.github.vinioliveiras.sonata2.gallery",
+           "files": "io.github.vinioliveiras.sonata2.files"}
+# Shell surfaces (never shown as running apps in the Dock); Files and
+# Settings are ordinary apps.
+SHELL_IDS = {APP_IDS[k] for k in ("dock", "autostart", "wallpaper", "launchpad", "topbar", "gallery")}
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -61,6 +66,8 @@ def run_dock(app, args, ui):
     launchpad.launchpad_desktop_file(self_command())   # Launchpad as a Dock app
     from .settings.app import settings_desktop_file
     settings_desktop_file(self_command())             # System Settings in Launchpad
+    from .files import files_desktop_file
+    files_desktop_file(self_command())                # Files in Launchpad
     cfg = dock.load_config()
     if not cfg.get("launchpad_added"):                        # once: pin it after Finder
         cfg["launchpad_added"] = True
@@ -74,7 +81,7 @@ def run_dock(app, args, ui):
         except ValueError:
             cfg[k] = v
     dock.load_css(cfg)
-    manager = ToplevelManager(Gdk.Display.get_default(), ignore_app_ids=set(APP_IDS.values()))
+    manager = ToplevelManager(Gdk.Display.get_default(), ignore_app_ids=SHELL_IDS)
     if args.preview:
         from .shell.preview import PreviewWindow
         win = PreviewWindow(app, dock.Dock(cfg, manager))
@@ -146,6 +153,17 @@ def run_settings(app, args, ui, state):
     win.present()
 
 
+def run_files(app, uris, ui):
+    """A new Files window per launch (like Finder's File > New Window)."""
+    from .files.window import FilesWindow
+    for uri in uris or [None]:
+        win = FilesWindow(app, uri)
+        win.present()
+    sel = os.environ.get("SONATA_PREVIEW_SELECT")      # screenshots: select items
+    if sel:
+        _later(800, lambda: [win.selection.select_item(int(i), False) for i in sel.split(",")])
+
+
 def run_wallpaper(app, args, ui):
     from .shell.wallpaper import WallpaperWindow
     WallpaperWindow(app).present()
@@ -177,13 +195,14 @@ def main() -> int:
     p.add_argument("--jiggle", action="store_true")
     p.add_argument("--background", action="store_true", help="launchpad: start hidden (session autostart)")
     p.add_argument("--page", default="", help="settings: section to open (wifi, dock, ...)")
-    args = p.parse_args()
+    p.add_argument("path", nargs="*", help="files: folders to open")
+    args = p.parse_intermixed_args()
 
     if args.component == "autostart":       # no GTK needed
         from . import autostart
         autostart.run()
         return 0
-    if not args.preview:
+    if not args.preview and args.component not in ("files", "settings"):
         layer.ensure_preload()   # may re-exec this process
 
     import gi
@@ -195,6 +214,20 @@ def main() -> int:
     GLib.set_prgname(app_id)     # Wayland app_id, also without a session bus
     app = Adw.Application(application_id=app_id)
     state = {}
+    if args.component == "files":
+        from gi.repository import Gio
+        app.set_flags(Gio.ApplicationFlags.HANDLES_OPEN)
+
+        def start():
+            if not state:
+                state["ready"] = True
+                if args.dark or args.light:
+                    ui.force_appearance("dark" if args.dark else "light")
+                ui.setup()
+        app.connect("activate", lambda a: (start(), run_files(a, [], ui)))
+        app.connect("open", lambda a, files, _n, _h: (start(), run_files(a, [f.get_uri() for f in files], ui)))
+        uris = [Gio.File.new_for_commandline_arg(x).get_uri() for x in args.path]
+        return app.run([sys.argv[0]] + uris)
 
     def activate(app):
         if args.dark or args.light:

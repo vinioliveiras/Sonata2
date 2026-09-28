@@ -17,7 +17,10 @@ theme.register("""
    and the provider is loaded above USER priority, so a user GTK theme (e.g. a
    macOS-look theme in ~/.config/gtk-4.0) can't repaint them grey on
    hover/press/focus. */
-.traffic { margin-left: 8px; }
+/* Big Sur geometry: 12px dots, 8px apart (centres 20px apart), first centre
+   20px from the window edge, vertically centred in the title/toolbar. */
+.traffic { margin-left: 10px; }
+headerbar .traffic { margin-left: 5px; }   /* headerbar adds its own 5px start padding */
 .traffic button,
 .traffic button:hover,
 .traffic button:active,
@@ -25,7 +28,7 @@ theme.register("""
 .traffic button:focus,
 .traffic button:focus-visible,
 .traffic button:backdrop {
-  min-width: 12px; min-height: 12px; padding: 0; margin: 0 3px;
+  min-width: 12px; min-height: 12px; padding: 0; margin: 0 4px;
   border: none; border-radius: 999px; outline: none;
   background-image: none; text-shadow: none;
   box-shadow: inset 0 0 0 0.5px rgba(0,0,0,.18);

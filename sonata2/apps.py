@@ -21,6 +21,23 @@ DEFAULT_SLOTS = (
 )
 
 
+def write_desktop_file(filename: str, text: str) -> str:
+    """Write ~/.local/share/applications/<filename> (only when it changed)."""
+    import os
+    from gi.repository import GLib
+    path = os.path.join(GLib.get_user_data_dir(), "applications", filename)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        with open(path, encoding="utf-8") as f:
+            if f.read() == text:
+                return path
+    except OSError:
+        pass
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    return path
+
+
 def lookup(desktop_id: str):
     """Gio.DesktopAppInfo for 'firefox' or 'firefox.desktop', or None."""
     if not desktop_id.endswith(".desktop"):

@@ -36,6 +36,12 @@ LIGHT = {
     "bar_item_active": "rgba(0, 0, 0, 0.10)",    # open menu title / pressed extra
     "module_bg": "rgba(255, 255, 255, 0.55)",    # Control Center modules
     "toggle_off": "rgba(0, 0, 0, 0.10)",         # round module toggles
+    "content_bg": "#ffffff",                     # document/list area of windows
+    "sidebar_bg": "#ebebed",                     # source lists (Files, Settings)
+    "sidebar_selected": "rgba(0, 0, 0, 0.10)",   # selected source-list row
+    "item_selected_bg": "rgba(0, 0, 0, 0.08)",   # backdrop behind a selected icon
+    "tool_hover": "rgba(0, 0, 0, 0.06)",         # toolbar button hover
+    "tool_icon": "rgba(0, 0, 0, 0.55)",          # toolbar glyphs
     # shadows
     "shadow_menu": "0 6px 18px rgba(0, 0, 0, 0.22)",
     "shadow_label": "0 2px 8px rgba(0, 0, 0, 0.18)",
@@ -69,6 +75,12 @@ DARK = {
     "bar_item_active": "rgba(255, 255, 255, 0.18)",
     "module_bg": "rgba(255, 255, 255, 0.08)",
     "toggle_off": "rgba(255, 255, 255, 0.16)",
+    "content_bg": "#1e1e1e",
+    "sidebar_bg": "#2a2a2c",
+    "sidebar_selected": "rgba(255, 255, 255, 0.10)",
+    "item_selected_bg": "rgba(255, 255, 255, 0.10)",
+    "tool_hover": "rgba(255, 255, 255, 0.08)",
+    "tool_icon": "rgba(255, 255, 255, 0.60)",
     "shadow_menu": "0 6px 18px rgba(0, 0, 0, 0.40)",
     "shadow_label": "0 2px 8px rgba(0, 0, 0, 0.35)",
     "shadow_plate": "0 6px 18px rgba(0, 0, 0, 0.28)",
