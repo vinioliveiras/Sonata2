@@ -19,6 +19,8 @@ list: [docs/PARITY.md](docs/PARITY.md).
         auto-hide, show indicators, show recent apps
   - [ ] M1.6 polish on hardware: multi-monitor, HiDPI, performance check
   - Later (needs other components): notification badges (M5)
+  - Rule (Vini): no fixed icons. Finder (file manager) and Launchpad (when
+    M5 adds it) are ordinary tiles: movable, removable, same menu options.
 - **M2 -- Top bar**: Apple-style logo menu (left), clock + status icons
   (right), Big Sur metrics (24 px, translucent), light/dark.
 - **M3 -- Session**: Wayfire config (animations, decorations with traffic
