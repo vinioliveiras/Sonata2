@@ -61,9 +61,15 @@ def layer_shell():
         return None
     gi.require_version("Gdk", "4.0")
     from gi.repository import Gdk
-    display = type(Gdk.Display.get_default()).__name__
-    if display != "WaylandDisplay":
-        _why(f"display is {display}, not Wayland")   # X11 / previews
+    display = Gdk.Display.get_default()
+    try:
+        gi.require_version("GdkWayland", "4.0")
+        from gi.repository import GdkWayland
+        wayland = isinstance(display, GdkWayland.WaylandDisplay)
+    except (ImportError, ValueError):
+        wayland = "Wayland" in type(display).__name__
+    if not wayland:
+        _why(f"display is {type(display).__name__}, not Wayland")   # X11 / previews
         return None
     if not LS.is_supported():
         _why("compositor/preload: is_supported() is false")
