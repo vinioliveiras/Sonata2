@@ -307,14 +307,16 @@ GNOME_MIME = "x-special/gnome-copied-files"
 
 
 def file_content(files, cut=False, with_image=True) -> Gdk.ContentProvider:
-    """Files for the clipboard or a drag, in every form apps look for: a file
-    list (GTK apps), text/uri-list (Chromium/Electron, Qt...), GNOME's
-    copied-files format (Nautilus, Nemo, Dolphin) and, for a single picture,
-    the picture itself (chats and editors that only take image data)."""
+    """Files for the clipboard or a drag, in every form apps look for:
+    text/uri-list (GTK apps read it as a file list; Chromium/Electron, Qt...),
+    GNOME's copied-files format (Nautilus, Nemo, Dolphin) and, for a single
+    picture, the picture itself (chats and editors that only take image data).
+    No Gdk.FileList value on purpose: GTK would then offer the portal's
+    file-transfer format first, and receivers without the document portal
+    (the Dock, Files, other apps) refused the drop."""
     uris = [f.get_uri() for f in files]
     gnome = ("cut" if cut else "copy") + "\n" + "\n".join(uris)
     providers = [
-        Gdk.ContentProvider.new_for_value(Gdk.FileList.new_from_list(files)),
         Gdk.ContentProvider.new_for_bytes("text/uri-list", GLib.Bytes.new(("\r\n".join(uris) + "\r\n").encode())),
         Gdk.ContentProvider.new_for_bytes(GNOME_MIME, GLib.Bytes.new(gnome.encode())),
     ]

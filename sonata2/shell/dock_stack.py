@@ -10,7 +10,7 @@ import os
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, Gio, GLib, GObject, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, ui  # noqa: E402
 
@@ -101,8 +101,8 @@ def _open(gfile: Gio.File) -> None:
 
 def _drag_source(widget, gfile) -> None:
     src = Gtk.DragSource(actions=Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
-    src.connect("prepare", lambda *_: Gdk.ContentProvider.new_for_value(
-        GObject.Value(Gdk.FileList, Gdk.FileList.new_from_list([gfile]))))
+    from ..files.ops import file_content                # a plain uri-list: every receiver takes it
+    src.connect("prepare", lambda *_: file_content([gfile]))
     widget.add_controller(src)
 
 

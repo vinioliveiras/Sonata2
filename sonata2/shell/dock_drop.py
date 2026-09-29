@@ -1,7 +1,9 @@
 """Dropping files onto the Dock (macOS behaviour):
 
-- files on an app icon: open them with that app. The icon darkens while
-  hovered only if the app can open all of them (MIME types).
+- files on an app icon: open them with that app (running or not). The icon
+  darkens while hovered only if the app can open all of them (MIME types).
+  Held there a moment, an open app's windows come forward -- minimized ones
+  too -- to drop the item into one (spring-loading).
 - files on the Trash: move them to the Trash.
 - an application (.desktop file) anywhere on the Dock: pin it at that spot.
 - a folder anywhere on the Dock: add it as a stack.
@@ -19,6 +21,7 @@ from .. import apps  # noqa: E402
 USER_APPS = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
                          "applications")
 HOVER = "drop-hover"
+SPRING_MS = 700            # hold a dragged item on an open app's icon: its windows come forward
 
 
 def _files(value) -> list:
@@ -59,13 +62,100 @@ def app_id_for(f: Gio.File):
     return did if apps.lookup(did) else None
 
 
-def _target(on_motion, on_drop, on_leave) -> Gtk.DropTarget:
-    t = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
-    t.set_preload(True)     # value available during motion, to decide acceptance
-    t.connect("enter", on_motion)
-    t.connect("motion", on_motion)
-    t.connect("leave", on_leave)
-    t.connect("drop", on_drop)
+class _Files:
+    """Stands in for a Gdk.FileList value (what the handlers read)."""
+
+    def __init__(self, files):
+        self._files = files
+
+    def get_files(self):
+        return self._files
+
+
+class _Target:
+    """What the handlers see as "target": the files read so far, and the drop."""
+
+    def __init__(self):
+        self.files, self.drop = None, None
+
+    def get_value(self):
+        return _Files(self.files) if self.files is not None else None
+
+    def get_current_drop(self):
+        return self.drop
+
+
+URI_LIST = "text/uri-list"
+
+
+def _read_uris(drop, done) -> None:
+    """The dragged files as a plain uri list. (A Gdk.FileList target lets GTK
+    pick the portal's file-transfer format first, which fails to convert
+    without the document portal: drags from Files and the Downloads stack
+    were refused.)"""
+    def got_stream(d, res):
+        try:
+            stream, _mime = d.read_finish(res)
+        except GLib.Error:
+            done(None)
+            return
+
+        def got_bytes(st, r):
+            try:
+                data = st.read_bytes_finish(r).get_data() or b""
+            except GLib.Error:
+                done(None)
+                return
+            uris = [ln.strip() for ln in data.decode("utf-8", "replace").splitlines()
+                    if ln.strip() and not ln.startswith("#")]
+            done([Gio.File.new_for_uri(u) for u in uris])
+        stream.read_bytes_async(1 << 20, GLib.PRIORITY_DEFAULT, None, got_bytes)
+    drop.read_async([URI_LIST], GLib.PRIORITY_DEFAULT, None, got_stream)
+
+
+def _target(on_motion, on_drop, on_leave) -> Gtk.DropTargetAsync:
+    """A file drop target that reads text/uri-list itself (see _read_uris);
+    the handlers get (target, x, y) / (target, value, x, y) as before."""
+    t = Gtk.DropTargetAsync.new(Gdk.ContentFormats.new([URI_LIST]),
+                                Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+    st = _Target()
+
+    def accept(_t, drop):
+        return drop.get_formats().contain_mime_type(URI_LIST)
+
+    def enter(_t, drop, x, y):
+        st.drop, st.files = drop, None
+
+        def ready(files):
+            if st.drop is drop:
+                st.files = files or []
+        _read_uris(drop, ready)
+        return Gdk.DragAction.COPY                  # decided on the next motion, once read
+
+    def motion(_t, _drop, x, y):
+        if st.files is None:
+            return Gdk.DragAction.COPY
+        return on_motion(st, x, y) or 0
+
+    def leave(_t, _drop):
+        on_leave(st)
+        st.drop, st.files = None, None
+
+    def dropped(_t, drop, x, y):
+        def finish(files):
+            ok = bool(files) and bool(on_drop(st, _Files(files), x, y))
+            drop.finish(Gdk.DragAction.COPY if ok else 0)
+            st.drop, st.files = None, None
+        if st.files is not None:
+            finish(st.files)
+        else:
+            _read_uris(drop, finish)
+        return True
+    t.connect("accept", accept)
+    t.connect("drag-enter", enter)
+    t.connect("drag-motion", motion)
+    t.connect("drag-leave", leave)
+    t.connect("drop", dropped)
     return t
 
 
@@ -80,9 +170,27 @@ def attach_app(dock, tile) -> None:
             return Gdk.DragAction.COPY           # pin, handled on drop
         ok = can_open(tile.info, files)
         (tile.add_css_class if ok else tile.remove_css_class)(HOVER)
+        if files and tile.key in dock.windows and not spring["src"]:
+            spring["src"] = GLib.timeout_add(SPRING_MS, spring_open)
         return Gdk.DragAction.COPY if ok else 0
 
+    # spring-loading (macOS): held over the icon of an open app, its windows come
+    # forward -- minimized ones too -- so the item can be dropped into one
+    spring = {"src": 0}
+
+    def spring_open():
+        spring["src"] = 0
+        for t in dock.windows.get(tile.key, ()):
+            dock.manager.activate(t)
+        return False
+
+    def spring_cancel():
+        if spring["src"]:
+            GLib.source_remove(spring["src"])
+            spring["src"] = 0
+
     def drop(target, value, x, _y):
+        spring_cancel()
         tile.remove_css_class(HOVER)
         slot = dock.hide_drop_gap()
         files = _files(value)
@@ -100,7 +208,8 @@ def attach_app(dock, tile) -> None:
             dock.launch_feedback(tile)
         return True
 
-    tile.add_controller(_target(motion, drop, lambda *_: (tile.remove_css_class(HOVER), dock.hide_drop_gap_soon())))
+    tile.add_controller(_target(motion, drop, lambda *_: (spring_cancel(), tile.remove_css_class(HOVER),
+                                                           dock.hide_drop_gap_soon())))
 
 
 def attach_trash(dock, tile) -> None:
@@ -135,12 +244,6 @@ def _is_dir(f: Gio.File) -> bool:
 
 def attach_plate(dock) -> None:
     """Apps dropped between icons get pinned; folders become stacks."""
-    def enter(target, x, y):
-        drop = target.get_current_drop()
-        fmts = drop.get_formats().to_string() if drop else "?"
-        print(f"sonata2-dock: drag entered the Dock ({fmts})", flush=True)      # dock.log: DnD debugging
-        return motion(target, x, y)
-
     def motion(target, x, y):
         files = _files(target.get_value())
         apps_only = bool(files) and all(_is_app(f) for f in files)
@@ -163,9 +266,7 @@ def attach_plate(dock) -> None:
             return pin_files(dock, files, before=tiles[slot])
         return pin_files(dock, files, x=x, y=y)
 
-    t = _target(motion, drop, lambda *_: dock.hide_drop_gap_soon())
-    t.connect("enter", enter)
-    dock.add_controller(t)
+    dock.add_controller(_target(motion, drop, lambda *_: dock.hide_drop_gap_soon()))
 
 
 def pin_files(dock, files, before=None, x=None, y=0.0) -> bool:
