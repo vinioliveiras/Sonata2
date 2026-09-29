@@ -39,6 +39,7 @@ APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
            "welcome": "io.github.vinioliveiras.sonata2.welcome",
            "portal": "io.github.vinioliveiras.sonata2.portal",
            "setup": "io.github.vinioliveiras.sonata2.setup",
+           "calculator": "io.github.vinioliveiras.sonata2.calculator",
            "spotlight": "io.github.vinioliveiras.sonata2.spotlight"}
 # Shell surfaces (never shown as running apps in the Dock); Files and
 # Settings are ordinary apps.
@@ -82,6 +83,8 @@ def run_dock(app, args, ui):
     settings_desktop_file(self_command())             # System Settings in Launchpad
     from .files import files_desktop_file
     files_desktop_file(self_command())                # Files in Launchpad
+    from .calculator.window import calculator_desktop_file
+    calculator_desktop_file(self_command())           # Sonata's apps
     cfg = dock.load_config()
     if not cfg.get("launchpad_added"):                        # once: pin it after Finder
         cfg["launchpad_added"] = True
@@ -345,6 +348,14 @@ def run_welcome(app, args, ui, state):
         return                     # a restart of Sonata: no intro
     app.hold()
     state["welcome"] = Welcome(app, APP_IDS)
+
+
+def run_calculator(app, args, ui, state):
+    """One Calculator window (opening it again brings it forward)."""
+    from .calculator.window import CalculatorWindow
+    if state.get("calc") is None:
+        state["calc"] = CalculatorWindow(app)
+    state["calc"].present()
 
 
 def run_setup(app, args, ui, state):
@@ -859,6 +870,8 @@ def main() -> int:
             run_welcome(app, args, ui, state)
         elif args.component == "portal":
             run_portal(app, args, ui, state)
+        elif args.component == "calculator":
+            run_calculator(app, args, ui, state)
         elif args.component == "setup":
             run_setup(app, args, ui, state)
         else:

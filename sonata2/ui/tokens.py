@@ -39,6 +39,13 @@ LIGHT = {
     "titlebar_text": "rgba(38, 38, 38, 1)",
     "titlebar_text_inactive": "rgba(154, 154, 154, 1)",
     "window_outline": "rgba(0, 0, 0, 0.18)",             # hairline of Wayfire-framed windows
+    # Calculator (glass window; keys like macOS Ventura's)
+    "calc_bg": "rgba(232, 232, 236, 0.80)",
+    "calc_display": "rgba(0, 0, 0, 0.85)",
+    "calc_key": "rgba(255, 255, 255, 0.72)",
+    "calc_key_fn": "rgba(0, 0, 0, 0.10)",
+    "calc_key_op": "#ff9f0a",
+    "calc_key_text": "rgba(0, 0, 0, 0.85)",
     "bar_item_active": "rgba(0, 0, 0, 0.10)",    # open menu title / pressed extra
     "module_bg": "rgba(255, 255, 255, 0.55)",    # Control Center modules
     "module_track": "rgba(0, 0, 0, 0.10)",       # Control Center slider, empty part
@@ -88,6 +95,12 @@ DARK = {
     "titlebar_text": "rgba(230, 230, 230, 1)",
     "titlebar_text_inactive": "rgba(138, 138, 138, 1)",
     "window_outline": "rgba(255, 255, 255, 0.14)",       # dark windows: a light edge, like macOS
+    "calc_bg": "rgba(30, 30, 32, 0.82)",
+    "calc_display": "#ffffff",
+    "calc_key": "rgba(255, 255, 255, 0.20)",
+    "calc_key_fn": "rgba(255, 255, 255, 0.10)",
+    "calc_key_op": "#ff9f0a",
+    "calc_key_text": "#ffffff",
     "bar_item_active": "rgba(255, 255, 255, 0.18)",
     "module_bg": "rgba(255, 255, 255, 0.08)",
     "module_track": "rgba(255, 255, 255, 0.12)",
