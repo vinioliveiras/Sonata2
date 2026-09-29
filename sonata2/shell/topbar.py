@@ -779,6 +779,29 @@ def set_titlebar_colors(dark: bool) -> None:
             system.wayfire_set("decoration", k, "\\" + v)
 
 
+def _listen_for_lock() -> None:
+    """logind "Lock" (loginctl lock-session, the Control Center, idle
+    tools) starts Sonata's lock screen; the menu bar always runs, so it
+    listens for the session."""
+    def lock(*_a):
+        from ..__main__ import self_command
+        try:
+            GLib.spawn_async(self_command().split() + ["lock"], flags=GLib.SpawnFlags.SEARCH_PATH)
+        except GLib.Error:
+            pass
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        sid = os.environ.get("XDG_SESSION_ID")
+        method, arg = ("GetSession", GLib.Variant("(s)", (sid,))) if sid else \
+            ("GetSessionByPID", GLib.Variant("(u)", (os.getpid(),)))
+        path = bus.call_sync("org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager",
+                             method, arg, None, Gio.DBusCallFlags.NONE, 2000, None).unpack()[0]
+        bus.signal_subscribe("org.freedesktop.login1", "org.freedesktop.login1.Session", "Lock", path, None,
+                             Gio.DBusSignalFlags.NONE, lock)
+    except GLib.Error:
+        pass                      # no logind: Ctrl+Super+Q still runs `sonata2 lock` directly
+
+
 class TopBarWindow(Gtk.ApplicationWindow):
     def __init__(self, app, preview: bool = False):
         super().__init__(application=app, title="Menu Bar", css_classes=["sonata-topbar"], decorated=False,
@@ -791,6 +814,7 @@ class TopBarWindow(Gtk.ApplicationWindow):
         if not preview:
             from .notifications import Notifications
             self.bar.notifications = Notifications(app)
+            _listen_for_lock()
         if not preview:
             # Title bars Wayfire draws (terminals, X11 apps) follow Dark Mode
             # live too: the menu bar always runs, so it keeps them in sync.

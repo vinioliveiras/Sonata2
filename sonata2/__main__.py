@@ -29,10 +29,11 @@ APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
            "launchpad": "io.github.vinioliveiras.sonata2.launchpad",
            "topbar": "io.github.vinioliveiras.sonata2.topbar",
            "gallery": "io.github.vinioliveiras.sonata2.gallery",
-           "files": "io.github.vinioliveiras.sonata2.files"}
+           "files": "io.github.vinioliveiras.sonata2.files",
+           "lock": "io.github.vinioliveiras.sonata2.lock"}
 # Shell surfaces (never shown as running apps in the Dock); Files and
 # Settings are ordinary apps.
-SHELL_IDS = {APP_IDS[k] for k in ("dock", "autostart", "wallpaper", "launchpad", "topbar", "gallery")}
+SHELL_IDS = {APP_IDS[k] for k in ("dock", "autostart", "wallpaper", "launchpad", "topbar", "gallery", "lock")}
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -191,6 +192,28 @@ def run_files(app, uris, ui):
         _later(1200, show_menu)
     if rename:
         _later(1200, lambda: win.view.begin_rename(win.view.model.get_item(int(rename)), win._commit_rename))
+
+
+def run_lock(app, args, ui, state):
+    """Lock the session (once: a second `sonata2 lock` does nothing)."""
+    if state.get("lock"):
+        return
+    from . import pam
+    from .shell import layer as L
+    try:
+        import gi
+        gi.require_version("Gtk4SessionLock", "1.0")
+        from gi.repository import Gtk4SessionLock as SL
+        supported = SL.is_supported() and L.layer_shell() is not None
+    except (ImportError, ValueError):
+        supported = False
+    if not supported or not pam.available():
+        # never lock without a way to unlock
+        print("sonata2: can't lock (needs gtk4-layer-shell >= 1.1 session lock and PAM)", file=sys.stderr)
+        return
+    from .shell.lock import LockScreen
+    app.hold()
+    state["lock"] = LockScreen(app)
 
 
 def run_wallpaper(app, args, ui):
@@ -387,6 +410,8 @@ def main() -> int:
             run_settings(app, args, ui, state)
         elif args.component == "wallpaper":
             run_wallpaper(app, args, ui)
+        elif args.component == "lock":
+            run_lock(app, args, ui, state)
         else:
             run_topbar(app, args, ui)
 
