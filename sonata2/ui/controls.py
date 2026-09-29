@@ -92,15 +92,18 @@ scale.sonata-slider { padding: 6px 0; min-width: 160px; }
 scale.sonata-slider trough { min-height: 4px; border-radius: 99px; background: %(control_off)s; border: none; }
 scale.sonata-slider highlight { border-radius: 99px; background: %(accent)s; border: none; }
 scale.sonata-slider slider { min-width: 18px; min-height: 18px; margin: -7px; border-radius: 99px;
-  border: none; background: %(knob)s; box-shadow: 0 0 0 0.5px %(hairline)s, %(shadow_knob)s; }
+  border: none; background: #ffffff; box-shadow: 0 0 0 0.5px rgba(0,0,0,0.16), 0 0 2px rgba(0,0,0,0.22); }
 
 /* module slider (Control Center: thick capsule, white fill, knob at the end) */
 scale.sonata-module-slider { padding: 0; min-width: 240px; }
 scale.sonata-module-slider trough { min-height: 22px; border-radius: 99px; border: none;
   background: %(module_track)s; box-shadow: inset 0 0 0 0.5px %(separator)s; }
-scale.sonata-module-slider highlight { min-height: 22px; border-radius: 99px; border: none; background: %(module_fill)s; }
+/* GTK ends the fill at the knob's centre; Big Sur's fill runs under the whole
+   knob, so the capsule reads as one piece: extend it by the knob's radius. */
+scale.sonata-module-slider highlight { min-height: 22px; border-radius: 99px; border: none; background: %(module_fill)s;
+  margin-right: -11px; }
 scale.sonata-module-slider slider { min-width: 22px; min-height: 22px; margin: 0; border-radius: 99px; border: none;
-  background: #ffffff; box-shadow: 0 0 0 0.5px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.30); }
+  background: #ffffff; box-shadow: 0 0 0 0.5px rgba(0,0,0,0.14), 0 0 3px rgba(0,0,0,0.22); }   /* even: no downward drop */
 scale.sonata-module-slider:disabled highlight, scale.sonata-module-slider:disabled slider { opacity: 0.5; }
 """)
 
