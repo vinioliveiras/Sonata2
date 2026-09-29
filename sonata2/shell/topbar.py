@@ -23,7 +23,7 @@ gi.require_version("Graphene", "1.0")
 from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk, Pango  # noqa: E402
 
 from .. import apps, config, ui  # noqa: E402
-from ..backend import system  # noqa: E402
+from ..backend import power, system  # noqa: E402
 from . import layer  # noqa: E402
 
 BAR_H = 24
@@ -124,6 +124,7 @@ class Bar(Gtk.CenterBox):
         self._active_changed()
         self._poll()
         GLib.timeout_add_seconds(POLL_S, lambda: (self._poll(), True)[1])
+        power.watch(self._poll_battery)          # plugged in / charging / level: at once, not at the next poll
 
     def _extras_visibility(self) -> None:
         self.nowplaying.set_visible(self.cfg["show_now_playing"] and self.players.active)
@@ -184,9 +185,12 @@ class Bar(Gtk.CenterBox):
             lbl.set_label(text)
 
     def _set_icon(self, btn, name) -> None:
-        img = btn.get_child().get_first_child()
-        if isinstance(img, Gtk.Image):
-            img.set_from_icon_name(name)
+        # the item's image (the battery has its percentage label before it)
+        child = btn.get_child().get_first_child()
+        while child is not None and not isinstance(child, Gtk.Image):
+            child = child.get_next_sibling()
+        if child is not None and child.get_icon_name() != name:
+            child.set_from_icon_name(name)
 
     def _open(self, btn, builder) -> None:
         btn.add_css_class("open")
@@ -359,9 +363,12 @@ class Bar(Gtk.CenterBox):
     def _poll(self) -> None:
         system.run_async(lambda: (system.wifi_available(), system.wifi_enabled(), system.wifi_current()),
                          self._wifi_state)
+        self._poll_battery()
+        system.run_async(system.volume, self._sound_state)
+
+    def _poll_battery(self) -> None:
         system.run_async(lambda: (*system.battery(), system.on_ac(), system.power_profile_fast()),
                          self._battery_state)
-        system.run_async(system.volume, self._sound_state)
 
     def _wifi_state(self, res) -> None:
         if not res:
@@ -388,18 +395,7 @@ class Bar(Gtk.CenterBox):
             if status:
                 self._set_icon(self.battery, "sonata-battery-missing-symbolic")    # battery, no reading
             return
-        level = min(100, (pct + 5) // 10 * 10)
-        # Big Sur states: charging (bolt), on power but holding -- full or a
-        # charge limit -- (plug), Low Power Mode (yellow), low (red, in the icon)
-        if status == "Charging":
-            state = "-charging"
-        elif ac:
-            state = "-plugged"
-        elif profile == "power-saver":
-            state = "-saver"
-        else:
-            state = ""
-        self._set_icon(self.battery, f"sonata-battery-{level}{state}-symbolic")
+        self._set_icon(self.battery, power.icon_name(pct, status, ac, profile))
         self.battery_pct.set_label(f"{pct}%")
         self.battery_pct.set_visible(self.cfg["battery_percent"])
 

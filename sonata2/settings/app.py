@@ -246,6 +246,8 @@ class Settings(Adw.ApplicationWindow):
         keys.connect("key-pressed", lambda _c, k, *_: (self.close(), True)[1] if k == Gdk.KEY_Escape else False)
         self.add_controller(keys)
         self.select(start if start in [s[0] for s in SECTIONS] else "wifi")
+        from ..backend import power                     # the Battery section follows plug/charge changes
+        power.watch(lambda: self.current == "battery" and self._reload_page("battery"))
 
     def toast(self, text: str) -> None:
         self.toasts.add_toast(Adw.Toast(title=GLib.markup_escape_text(text), timeout=3))
@@ -572,8 +574,12 @@ class Settings(Adw.ApplicationWindow):
 
         def fill(res):
             (pct, status), ac, prof = res or ((None, ""), False, None)
-            info.add(Adw.ActionRow(title="Battery level", subtitle=f"{pct}% · {status}" if pct is not None
-                                   else "No battery"))
+            level = Adw.ActionRow(title="Battery level", subtitle=f"{pct}% · {status}" if pct is not None
+                                  else "No battery")
+            if pct is not None or status:
+                from ..backend import power               # the menu bar's icon, same rule
+                level.add_prefix(Gtk.Image(icon_name=power.icon_name(pct, status, ac, prof), pixel_size=24))
+            info.add(level)
             info.add(Adw.ActionRow(title="Power source", subtitle="Power Adapter" if ac else "Battery"))
             if prof:
                 mode.add(combo_row("Energy mode", list(system.POWER_PROFILES), prof,

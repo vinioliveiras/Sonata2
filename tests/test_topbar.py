@@ -44,6 +44,21 @@ class TopBarTest(unittest.TestCase):
             settle(50)
         win.destroy()
 
+    def test_battery_icon_follows_state(self):
+        bar = topbar.Bar(None)
+
+        def icon():
+            c = bar.battery.get_child().get_first_child()
+            while not isinstance(c, Gtk.Image):
+                c = c.get_next_sibling()
+            return c.get_icon_name()
+        for res, want in (((64, "Discharging", False, None), "sonata-battery-60-symbolic"),
+                          ((64, "Charging", True, None), "sonata-battery-60-charging-symbolic"),
+                          ((80, "Not charging", True, None), "sonata-battery-80-plugged-symbolic"),
+                          ((15, "Discharging", False, "power-saver"), "sonata-battery-20-saver-symbolic")):
+            bar._battery_state(res)
+            self.assertEqual(icon(), want)
+
     def test_split_nmcli(self):
         self.assertEqual(system._split_nmcli(r"yes:My\:Net:80"), ["yes", "My:Net", "80"])
 
