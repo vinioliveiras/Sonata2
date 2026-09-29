@@ -134,12 +134,23 @@ window.sonata-dock *:drop(active) { box-shadow: none; outline: none; border-colo
 .edge-left .dock-divider > box, .edge-right .dock-divider > box,
 .edge-left .dock-recent-sep > box, .edge-right .dock-recent-sep > box { min-height: 1px; }
 
-@keyframes dock-bounce-up { 0%% { transform: none; } 50%% { transform: translateY(-18px); } 100%% { transform: none; } }
-@keyframes dock-bounce-right { 0%% { transform: none; } 50%% { transform: translateX(18px); } 100%% { transform: none; } }
-@keyframes dock-bounce-left { 0%% { transform: none; } 50%% { transform: translateX(-18px); } 100%% { transform: none; } }
-.edge-bottom .dock-tile.launching .dock-icon { animation: dock-bounce-up %(bounce_ms)dms ease-in-out infinite; }
-.edge-left .dock-tile.launching .dock-icon { animation: dock-bounce-right %(bounce_ms)dms ease-in-out infinite; }
-.edge-right .dock-tile.launching .dock-icon { animation: dock-bounce-left %(bounce_ms)dms ease-in-out infinite; }
+/* a ball under gravity (macOS): quick off the Dock, slowing to the top,
+   falling faster back down; each half has its own curve */
+@keyframes dock-bounce-up {
+  0%% { transform: none; animation-timing-function: cubic-bezier(0.33, 0.66, 0.66, 1); }
+  50%% { transform: translateY(-18px); animation-timing-function: cubic-bezier(0.33, 0, 0.66, 0.33); }
+  100%% { transform: none; } }
+@keyframes dock-bounce-right {
+  0%% { transform: none; animation-timing-function: cubic-bezier(0.33, 0.66, 0.66, 1); }
+  50%% { transform: translateX(18px); animation-timing-function: cubic-bezier(0.33, 0, 0.66, 0.33); }
+  100%% { transform: none; } }
+@keyframes dock-bounce-left {
+  0%% { transform: none; animation-timing-function: cubic-bezier(0.33, 0.66, 0.66, 1); }
+  50%% { transform: translateX(-18px); animation-timing-function: cubic-bezier(0.33, 0, 0.66, 0.33); }
+  100%% { transform: none; } }
+.edge-bottom .dock-tile.launching .dock-icon { animation: dock-bounce-up %(bounce_ms)dms infinite; }
+.edge-left .dock-tile.launching .dock-icon { animation: dock-bounce-right %(bounce_ms)dms infinite; }
+.edge-right .dock-tile.launching .dock-icon { animation: dock-bounce-left %(bounce_ms)dms infinite; }
 """
 
 
@@ -277,8 +288,13 @@ class DockTile(Gtk.Button):
         if self._bounce_src:
             GLib.source_remove(self._bounce_src)
         self._bounce_src = GLib.timeout_add(ms, self._stop_bounce)
+        if getattr(self, "_bounce_stats", None) is None:
+            self._bounce_stats = ui.transition.FrameStats(self, "dock bounce")
 
     def _stop_bounce(self) -> bool:
+        stats, self._bounce_stats = getattr(self, "_bounce_stats", None), None
+        if stats:
+            stats.stop()
         self.remove_css_class("launching")
         self._bounce_src = 0
         return False

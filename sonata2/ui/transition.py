@@ -146,3 +146,33 @@ def _start(w, dx, dy, ms) -> None:
     anim.set_easing(Adw.Easing.EASE_OUT_CUBIC)
     w._glide_anim = anim
     anim.play()
+
+
+class FrameStats:
+    """How smooth an animation really ran (logged when it ends): frames
+    drawn, the display's frame time, and the frames that came late --
+    "sonata2-frames: launchpad open: 31 frames, 6.9 ms (144 Hz), 2 late,
+    worst 21.3 ms". Nothing is kept once it stops."""
+
+    def __init__(self, widget: Gtk.Widget, label: str):
+        self.widget, self.label = widget, label
+        self.times = []
+        self.tick = widget.add_tick_callback(self._tick)
+
+    def _tick(self, _w, clock) -> bool:
+        self.times.append(clock.get_frame_time())
+        return True
+
+    def stop(self) -> None:
+        if self.tick is None:
+            return
+        self.widget.remove_tick_callback(self.tick)
+        self.tick = None
+        t = self.times
+        if len(t) < 3:
+            return
+        gaps = sorted((b - a) / 1000 for a, b in zip(t, t[1:]))
+        base = gaps[len(gaps) // 2]                   # the display's frame time
+        late = sum(1 for g in gaps if g > base * 1.5)
+        print(f"sonata2-frames: {self.label}: {len(t)} frames, {base:.1f} ms "
+              f"({1000 / base:.0f} Hz), {late} late, worst {gaps[-1]:.1f} ms", flush=True)

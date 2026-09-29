@@ -494,7 +494,10 @@ class Launchpad(Gtk.ApplicationWindow):
         # macOS: a quick start that settles softly, both ways
         self._anim.set_easing(Adw.Easing.EASE_OUT_QUART if to else Adw.Easing.EASE_OUT_CUBIC)
 
+        stats = ui.transition.FrameStats(self.bin, "launchpad " + ("open" if to else "close"))
+
         def finished(*_a):
+            stats.stop()
             self.bin.thaw()
             if done:
                 done()

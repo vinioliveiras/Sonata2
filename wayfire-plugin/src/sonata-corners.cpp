@@ -38,6 +38,8 @@
 #include <string>
 
 #include <wayfire/core.hpp>
+#include <wayfire/scene.hpp>
+#include <vector>
 #include <wayfire/opengl.hpp>
 #include <wayfire/view.hpp>
 #include <wayfire/toplevel-view.hpp>
@@ -477,6 +479,63 @@ class sonata_corners_t : public wf::plugin_interface_t
     wf::signal::connection_t<wf::view_tiled_signal> on_tiled =
         [=] (wf::view_tiled_signal*) { update_soon(); };
 
+    /* A window being dragged is drawn by Wayfire as an overlay at the very
+     * front of the scene -- over the Dock and the menu bar. macOS keeps them
+     * on top: the drag overlay goes right behind the TOP layer. */
+    bool reordering = false;
+    wf::signal::connection_t<wf::scene::root_node_update_signal> on_root_update =
+        [=] (wf::scene::root_node_update_signal *ev)
+    {
+        if (reordering || !(ev->flags & wf::scene::update_flag::CHILDREN_LIST))
+        {
+            return;
+        }
+
+        auto root = wf::get_core().scene();
+        auto top  = root->layers[(size_t)wf::scene::layer::TOP];
+        std::vector<wf::scene::node_ptr> front, rest;
+        bool past_top = false;
+        for (auto& child : root->get_children())
+        {
+            if (child == top)
+            {
+                past_top = true;
+            }
+
+            if (!past_top && (child->stringify().rfind("move-drag", 0) == 0) &&
+                (child->stringify().rfind("move-drag-view", 0) != 0))
+            {
+                front.push_back(child);
+            } else
+            {
+                rest.push_back(child);
+            }
+        }
+
+        if (front.empty())
+        {
+            return;
+        }
+
+        std::vector<wf::scene::node_ptr> list;
+        for (auto& child : rest)
+        {
+            list.push_back(child);
+            if (child == top)                     /* front-to-back: right behind TOP */
+            {
+                list.insert(list.end(), front.begin(), front.end());
+            }
+        }
+
+        reordering = true;
+        if (root->set_children_list(list))
+        {
+            wf::scene::update(root, wf::scene::update_flag::CHILDREN_LIST);
+        }
+
+        reordering = false;
+    };
+
   public:
     void init() override
     {
@@ -501,6 +560,7 @@ class sonata_corners_t : public wf::plugin_interface_t
         wf::get_core().connect(&on_fullscreen);
         wf::get_core().connect(&on_decoration);
         wf::get_core().connect(&on_tiled);
+        wf::get_core().scene()->connect(&on_root_update);
         update_all();
     }
 
