@@ -5,9 +5,13 @@ preferred_decoration_mode = server), drawn by pixdecor like the rest of
 Sonata. Apps that draw their own frame unless told otherwise are told,
 at every login (`sonata2 autostart`):
 
-- Chromium browsers (Chrome, Chromium, Brave, Edge, Vivaldi): the
-  per-profile "Use system title bar and borders" preference. Skipped while
-  the browser runs (it would write its own value back on quit): next login.
+- Every Chromium-based browser (Chrome, Chromium, Brave, Edge, Vivaldi,
+  Opera, Thorium..., Flatpak ones too), found by its profile folder: the
+  "Use system title bar and borders" preference. Skipped while the browser
+  runs (it would write its own value back on quit): next login.
+- Electron apps with a normal frame get Sonata's title bar by themselves
+  (Wayfire prefers server-side decorations); the ones that draw their own
+  frame and have no setting for it (Spotify, Discord...) keep theirs.
 - VS Code / VSCodium / Code - OSS: "window.titleBarStyle": "native".
 - Firefox, Thunderbird, LibreWolf, Floorp (every profile): user.js
   browser.tabs.inTitlebar = 0 (tabs under the system title bar).
@@ -24,11 +28,6 @@ from gi.repository import GLib
 
 from . import config
 
-BROWSERS = {                      # config folder -> process names
-    "google-chrome": ("chrome",), "google-chrome-beta": ("chrome",), "google-chrome-unstable": ("chrome",),
-    "chromium": ("chromium",), "BraveSoftware/Brave-Browser": ("brave",),
-    "microsoft-edge": ("msedge",), "vivaldi": ("vivaldi-bin", "vivaldi"),
-}
 CODE = ("Code", "Code - OSS", "VSCodium", "Code - Insiders")
 MOZILLA = ("~/.mozilla/firefox", "~/.config/mozilla/firefox", "~/.thunderbird", "~/.librewolf", "~/.floorp",
            "~/.var/app/org.mozilla.firefox/.mozilla/firefox")
@@ -44,12 +43,10 @@ def enabled() -> bool:
 
 def apply(on: bool = None) -> None:
     on = enabled() if on is None else on
-    running = _running()
     cfg = GLib.get_user_config_dir()
-    for folder, procs in BROWSERS.items():
-        if running & set(procs):
-            continue
-        base = os.path.join(cfg, folder)
+    for base in chromium_roots(cfg):
+        if os.path.lexists(os.path.join(base, "SingletonLock")):
+            continue                         # running: it would write its own value back on quit
         try:
             profiles = [p for p in os.listdir(base) if p == "Default" or p.startswith("Profile ")]
         except OSError:
@@ -71,16 +68,29 @@ def apply(on: bool = None) -> None:
             _code_setting(path, "native" if on else "custom")
 
 
-def _running() -> set:
-    names = set()
-    for pid in os.listdir("/proc"):
-        if pid.isdigit():
-            try:
-                with open(f"/proc/{pid}/comm", encoding="utf-8") as f:
-                    names.add(f.read().strip())
-            except OSError:
-                pass
-    return names
+def chromium_roots(cfg: str) -> list:
+    """Every Chromium-based browser's data folder -- Chrome, Chromium, Brave,
+    Edge, Vivaldi, Opera, Thorium... -- found by what they all have: a
+    "Local State" file next to Default/ (one or two levels under ~/.config;
+    Flatpak browsers under ~/.var/app too). Electron apps keep no Default/
+    profile, so they are left alone."""
+    bases = [cfg] + [os.path.join(p, "config") for p in
+                     _listdirs(os.path.expanduser("~/.var/app"))]
+    out = []
+    for base in bases:
+        for d in _listdirs(base):
+            for cand in [d] + _listdirs(d):
+                if os.path.isfile(os.path.join(cand, "Local State")) and \
+                        os.path.isdir(os.path.join(cand, "Default")):
+                    out.append(cand)
+    return out
+
+
+def _listdirs(path: str) -> list:
+    try:
+        return [os.path.join(path, n) for n in os.listdir(path) if os.path.isdir(os.path.join(path, n))]
+    except OSError:
+        return []
 
 
 def _browser_pref(path: str, custom_frame: bool) -> None:
