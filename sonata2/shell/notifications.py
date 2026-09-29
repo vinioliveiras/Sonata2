@@ -449,7 +449,10 @@ class _Center(Gtk.Window):
             self.hide_center()
 
     def show_center(self):
-        self._rebuild()
+        # already built (at start, and on every change while closed): only a new
+        # day needs the calendar redrawn -- opening is then instant
+        if getattr(self, "_built_for", None) != self._state_key():
+            self._rebuild()
         self.present()
         GLib.idle_add(lambda: (self.rev.set_reveal_child(True), False)[1])
 
@@ -484,7 +487,12 @@ class _Center(Gtk.Window):
             return False
         self._settle = GLib.timeout_add(wait, settle)
 
+    def _state_key(self):
+        return (tuple((n.id, getattr(n, "time", None)) for n in self.owner.notes),
+                GLib.DateTime.new_now_local().format("%Y-%m-%d"))
+
     def _rebuild(self):
+        self._built_for = self._state_key()
         while self.col.get_first_child():
             self.col.remove(self.col.get_first_child())
         notes = list(reversed(self.owner.notes))

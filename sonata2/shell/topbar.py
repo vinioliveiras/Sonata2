@@ -470,7 +470,7 @@ class Bar(Gtk.CenterBox):
                 nets.append(net_row(n))
             if not others:
                 nets.append(ui.panel.row(None, "No networks" if enabled else "Wi-Fi: Off"))
-        system.run_async(lambda: (system.wifi_enabled(), system.wifi_scan()), fill)
+        cached("wifi", _wifi_list, fill)
         on.connect("state-set", lambda _s, st: (system.run_async(system.set_wifi_enabled, lambda _r: self._poll(), st),
                                                 False)[1])
         return pop
@@ -539,7 +539,7 @@ class Bar(Gtk.CenterBox):
                 devs.append(row)
             if not paired:
                 devs.append(ui.panel.row(None, "No devices" if self._bt_powered() else "Bluetooth: Off"))
-        system.run_async(system.bluetooth_devices, fill)
+        cached("bluetooth", lambda: system.bluetooth_devices(), fill)
         on.connect("state-set", lambda _s, st: (system.run_async(system.set_bluetooth, None, st), False)[1])
         return pop
 
@@ -740,6 +740,46 @@ ui.register("""
 """, key="control-center")
 
 
+# -- last known answers (Wi-Fi networks, Bluetooth devices, Control Center) ------------------
+# Filled once at start; a menu shows them at once and asks again, updating
+# only what changed (macOS menus never open empty and fill in).
+_CACHE = {}
+
+
+def cached(name, fn, fill) -> None:
+    if name in _CACHE:
+        fill(_CACHE[name])
+
+    def got(res):
+        if res is None:
+            return
+        try:
+            same = name in _CACHE and _CACHE[name] == res
+        except Exception:
+            same = False
+        _CACHE[name] = res
+        if not same:
+            fill(res)
+    system.run_async(fn, got)
+
+
+def prefetch() -> None:
+    """At start (after the login intro): the answers menus will need."""
+    for name, fn in PREFETCH.items():
+        system.run_async(fn, lambda res, n=name: res is not None and _CACHE.__setitem__(n, res))
+
+
+def _wifi_list():
+    return (system.wifi_enabled(), system.wifi_scan())
+
+
+def _cc_state():
+    return (system.wifi_enabled(), system.wifi_current(), system.bluetooth_state())
+
+
+PREFETCH = {"wifi": _wifi_list, "bluetooth": lambda: system.bluetooth_devices(), "cc": _cc_state}
+
+
 def _slider_with_icon(icon, value, on_change, sensitive=True, button=None):
     """Big Sur module slider: the symbol sits inside the capsule, left;
     `button` (a round one) at the right, like the Sound module's AirPlay.
@@ -934,8 +974,9 @@ class ControlCenter(Gtk.Box):
         self.append(ui.panel.module(Gtk.Label(label="Sound", xalign=0, css_classes=["panel-module-title"]),
                                     snd, mic))
         self.np = None
-        system.run_async(lambda: (system.wifi_enabled(), system.wifi_current(), system.bluetooth_state(),
-                                  system.brightness(), system.volume(), system.input_volume()), self._fill)
+        cached("cc", _cc_state, self._fill_toggles)             # Wi-Fi / Bluetooth: last known at once
+        system.run_async(lambda: (system.brightness(), system.volume(), system.input_volume()),
+                         self._fill_sliders)                  # levels: always the live ones
         self._now_playing()
 
     def _small(self, icon, title, cb, close=True):
@@ -952,12 +993,17 @@ class ControlCenter(Gtk.Box):
         if pop:
             pop.popdown()
 
-    def _fill(self, res):
+    def _fill_toggles(self, res):
         if not res:
             return
-        wifi_on, (ssid, _sig, _wired), bt, b, vol, mic = res
+        wifi_on, (ssid, _sig, _wired), bt = res
         ui.panel.set_toggle(self.wifi, bool(wifi_on), ssid or ("Not Connected" if wifi_on else "Off"))
         ui.panel.set_toggle(self.bt, bool(bt), "On" if bt else "Off" if bt is not None else "Unavailable")
+
+    def _fill_sliders(self, res):
+        if not res:
+            return
+        b, vol, mic = res
         if b is None:
             self.bright.set_sensitive(False)
         else:
@@ -1132,6 +1178,7 @@ class TopBarWindow(Gtk.ApplicationWindow):
         if not preview and not secondary:
             from .notifications import Notifications
             self.bar.notifications = Notifications(app)
+            GLib.timeout_add_seconds(4, lambda: (prefetch(), False)[1])     # menus open already filled
             _listen_for_lock()
             from .nightshift import NightShift
             self.bar.nightshift = NightShift()
