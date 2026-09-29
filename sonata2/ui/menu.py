@@ -112,18 +112,38 @@ def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
             cb()
     pop.connect("closed", closed)
     OPEN.add(pop)
+    _no_scroll(pop)
     pop.popup()
     return pop
 
 
-def open_submenu(pop: Gtk.PopoverMenu, label: str) -> bool:
-    """Open the submenu item called `label` (screenshots, tests)."""
-    def walk(w):
+def _no_scroll(pop) -> None:
+    """macOS menus never scroll: every item stays visible. The compositor
+    may shrink a popup that doesn't fit below its anchor (GTK then adds a
+    scrollbar); when that happens the menu is moved up by the missing
+    height (our own "slide") and shown again at full size."""
+    def scrolled(w, out):
+        w = w.get_first_child()
         while w is not None:
-            if type(w).__gtype__.name == "GtkModelButton" and w.get_property("text") == label:
-                return w.activate()
-            if walk(w.get_first_child()):
-                return True
+            if isinstance(w, Gtk.ScrolledWindow):
+                out.append(w)
+            scrolled(w, out)
             w = w.get_next_sibling()
+        return out
+
+    def check(*_a):
+        missing = 0
+        for sw in scrolled(pop, []):
+            adj = sw.get_vadjustment()
+            if sw.get_mapped() and adj.get_upper() - adj.get_page_size() > 1:
+                missing = max(missing, int(adj.get_upper() - adj.get_page_size()))
+        tries = getattr(pop, "_slides", 0)
+        if missing and tries < 3:
+            pop._slides = tries + 1
+            x, y = pop.get_offset()
+            pop.set_offset(x, y - missing)
+            pop.present()
         return False
-    return walk(pop.get_first_child())
+    pop.connect("map", lambda *_: GLib.timeout_add(30, check))
+    for sw in scrolled(pop, []):
+        sw.get_vadjustment().connect("changed", lambda *_: GLib.idle_add(check))
