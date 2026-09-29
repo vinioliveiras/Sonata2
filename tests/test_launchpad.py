@@ -55,6 +55,8 @@ class LaunchpadTest(unittest.TestCase):
         self.drag(first)
         x, y = self.centre(2)
         self.win.drag_over(self.grid, x + self.grid.get_width() / M.COLS * 0.4, y)   # beside the icon
+        self.assertEqual(self.win.model.pages[0].index(first), 0)     # icons wait a moment...
+        self.win._reorder_to(0, 2)                                     # ...then make way (REORDER_HOLD_MS)
         self.assertEqual(self.win.model.pages[0].index(first), 2)
 
     def test_make_folder(self):

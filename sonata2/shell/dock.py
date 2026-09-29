@@ -912,6 +912,18 @@ class DockWindow(Gtk.ApplicationWindow):
         """dock.json changed (Settings app): apply appearance/behaviour keys.
         The Dock's own writes (pins, recents) don't touch these, so no loop."""
         new = config.load("dock", DEFAULTS)
+        # "Keep in Dock" from Launchpad writes pinned: add/remove those tiles
+        if new["pinned"] is not None and new["pinned"] != self.cfg["pinned"]:
+            for key in [k for k in new["pinned"] if k not in self.cfg["pinned"]]:
+                if key not in self.tiles:
+                    info = apps.lookup(key)
+                    if not info:
+                        continue
+                    self._add_tile(key, info.get_display_name(), icons.app_icon(info), info)
+                self.cfg["pinned"].append(key)
+            for key in [k for k in self.cfg["pinned"] if k not in new["pinned"]]:
+                self.set_pinned(key, False)
+            self._relayout()
         if all(new[k] == self.cfg[k] for k in self.LIVE_KEYS):
             return
         for k in self.LIVE_KEYS:

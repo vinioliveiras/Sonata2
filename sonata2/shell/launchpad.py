@@ -28,6 +28,7 @@ from . import layer  # noqa: E402
 
 OPEN_MS, CLOSE_MS = 280, 220
 FOLDER_HOLD_MS, FLIP_HOLD_MS, JIGGLE_HOLD_MS = 400, 650, 800
+REORDER_HOLD_MS = 220       # icons make way only after a short pause (so you can reach an icon to make a folder)
 ZOOM_FROM = 1.12            # icons zoom in from 112 % while fading in (Big Sur)
 USER_APPS = os.path.join(GLib.get_user_data_dir(), "applications")
 
@@ -150,6 +151,9 @@ class LaunchItem(Gtk.Button):
         hold = Gtk.GestureLongPress(delay_factor=JIGGLE_HOLD_MS / 500)
         hold.connect("pressed", lambda *_: pad.set_jiggle(True))
         self.add_controller(hold)
+        menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
+        menu.connect("pressed", lambda _g, _n, x, y: pad.item_menu(self, x, y))
+        self.add_controller(menu)
         pad.attach_drag(self)
 
     def _folder_icon(self, folder, size) -> Gtk.Widget:
@@ -515,6 +519,50 @@ class Launchpad(Gtk.ApplicationWindow):
             if hasattr(w, "badge"):
                 w.badge.set_visible(on)
 
+    def item_menu(self, widget: LaunchItem, x, y) -> None:
+        """Right-click menu (Sonata addition; Launchpad has none on macOS)."""
+        Item = ui.menu.Item
+        item = widget.item
+        if M.is_folder(item):
+            sections = [[Item("Open", lambda: self._open_folder(item))]]
+        else:
+            info = self.installed.get(item)
+            sections = [[Item("Open", lambda: self.activate_item(widget))]]
+            dock = config.load("dock", {"pinned": None})
+            pins = dock.get("pinned")
+            if pins is not None:
+                kept = item in pins
+
+                def toggle_dock(on=not kept):
+                    cfg = config.load("dock", {"pinned": None})
+                    if cfg.get("pinned") is None:
+                        return
+                    if on and item not in cfg["pinned"]:
+                        cfg["pinned"].append(item)
+                    elif not on and item in cfg["pinned"]:
+                        cfg["pinned"].remove(item)
+                    self._save_dock_pins(cfg["pinned"])
+                sections.append([Item("Remove from Dock" if kept else "Keep in Dock", toggle_dock)])
+            if info and info.get_filename():
+                from .dock_menu import show_in_files
+                sections.append([Item("Show in Files", lambda: self.close_launchpad(
+                    lambda: show_in_files(info.get_filename())))])
+            if info and _removable(info):
+                sections.append([Item("Move to Trash", lambda: self.ask_delete(item))])
+        ui.menu.popup(widget, sections, at=(x, y))
+
+    def _save_dock_pins(self, pins) -> None:
+        """Only the "pinned" key of dock.json (the Dock reloads it live)."""
+        import json
+        path = os.path.join(config.CONFIG_DIR, "dock.json")
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            data = {}
+        data["pinned"] = pins
+        config.save("dock", data)
+
     def ask_delete(self, app_id: str) -> None:
         info = self.installed.get(app_id)
         if not info:
@@ -605,6 +653,8 @@ class Launchpad(Gtk.ApplicationWindow):
             self._cancel("flip")
         dragged_is_app = not M.is_folder(d["item"])
         if centre and target is not None and target is not d["item"] and dragged_is_app:
+            self._cancel("reorder")
+            d["pending"] = None
             tw = self._item_widget(target)
             if d["target"] is not tw:
                 self._clear_target()
@@ -612,16 +662,29 @@ class Launchpad(Gtk.ApplicationWindow):
                 self._timer("folder", FOLDER_HOLD_MS, lambda: tw.add_css_class("folder-target"))
             return Gdk.DragAction.MOVE
         self._clear_target()
-        # reorder live
-        loc = self._top_location(d["item"])
+        # reorder live, after a short pause over the same slot
         if d["folder"] is not None:
             self.model.take_out_of_folder(d["folder"], d["item"], grid.index, index)
             d["folder"] = None
             self.render()
-        elif loc != (grid.index, min(index, len(page) - (1 if loc and loc[0] == grid.index else 0))):
-            self.model.move(d["item"], grid.index, index)
-            self.render()
+            return Gdk.DragAction.MOVE
+        want = (grid.index, index)
+        if d.get("pending") != want:
+            d["pending"] = want
+            self._cancel("reorder")
+            self._timer("reorder", REORDER_HOLD_MS, lambda: self._reorder_to(*want))
         return Gdk.DragAction.MOVE
+
+    def _reorder_to(self, page_i: int, index: int) -> None:
+        d = self._drag
+        if not d or d.get("pending") != (page_i, index):
+            return
+        d["pending"] = None
+        page = self.model.pages[page_i] if page_i < len(self.model.pages) else []
+        loc = self._top_location(d["item"])
+        if loc != (page_i, min(index, len(page) - (1 if loc and loc[0] == page_i else 0))):
+            self.model.move(d["item"], page_i, index)
+            self.render()
 
     def _top_location(self, item):
         for p, page in enumerate(self.model.pages):
