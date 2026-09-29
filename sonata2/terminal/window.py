@@ -24,7 +24,7 @@ except (ValueError, ImportError):
 from .. import config, ui  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.terminal"
-DEFAULTS = {"font_size": 12, "scrollback": 10000}
+DEFAULTS = {"font_size": 10, "scrollback": 10000}
 
 ui.register("""
 window.sonata-terminal { background: %(term_bg)s; }
@@ -137,8 +137,9 @@ class TerminalWindow(Gtk.ApplicationWindow):
         sel.alpha = 0.35
         self.term.set_color_highlight(sel)
         self.term.set_color_highlight_foreground(fg)
-        mono = v["font_mono"].split(",")[0].strip().strip('"')
-        font = Pango.FontDescription.from_string(f"{mono} {self.cfg['font_size']}")
+        # the whole list (SF Mono, JetBrains Mono, ... monospace): Pango takes the first installed
+        families = ",".join(f.strip().strip('"') for f in v["font_mono"].split(","))
+        font = Pango.FontDescription.from_string(f"{families} {self.cfg['font_size']}")
         self.term.set_font(font)
 
     def _size_for(self, cols, rows):
@@ -146,7 +147,7 @@ class TerminalWindow(Gtk.ApplicationWindow):
         return int(cols * cw + 12), int(rows * ch + 8)
 
     def _zoom(self, step: int) -> None:
-        size = DEFAULTS["font_size"] if step == 0 else max(8, min(36, self.cfg["font_size"] + step))
+        size = DEFAULTS["font_size"] if step == 0 else max(7, min(36, self.cfg["font_size"] + step))
         self.cfg["font_size"] = size
         config.update("terminal", font_size=size)
         self._apply_look()
