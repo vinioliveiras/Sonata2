@@ -34,4 +34,7 @@ fi
 # previous one is kept as session.old.log.
 logs="${XDG_CACHE_HOME:-$HOME/.cache}/sonata2"; mkdir -p "$logs"
 [ -f "$logs/session.log" ] && mv -f "$logs/session.log" "$logs/session.old.log"
+# The login intro (sonata2/shell/intro.py): the welcome screen, then the
+# Dock and menu bar slide in. Only at login, never on a restart of Sonata.
+touch "${XDG_RUNTIME_DIR:-/tmp}/sonata2-intro"
 exec wayfire -c "$cfg" > "$logs/session.log" 2>&1

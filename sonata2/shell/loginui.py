@@ -33,6 +33,22 @@ entry.lk-field.shake { animation: lk-shake 420ms ease-in-out; }
 """, key="login-ui")
 
 
+ui.register("""
+/* macOS-like motion: everything rises and fades in; leaving fades out */
+@keyframes gr-rise { from { opacity: 0; transform: translateY(18px) scale(0.97); }
+                     to { opacity: 1; transform: none; } }
+@keyframes gr-fade { from { opacity: 0; } to { opacity: 1; } }
+.gr-rise { animation: gr-rise 620ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.gr-rise-late { animation: gr-rise 620ms cubic-bezier(0.2, 0.8, 0.2, 1) 160ms both; }
+.gr-fade-in { animation: gr-fade 700ms ease-out both; }
+.gr-leave { opacity: 0; transform: scale(0.97); transition: opacity 380ms ease-in, transform 380ms ease-in; }
+progressbar.gr-progress { min-width: 190px; margin: 11px 0; }
+progressbar.gr-progress trough { min-height: 5px; border-radius: 99px; background: rgba(255,255,255,0.25);
+  border: none; box-shadow: none; }
+progressbar.gr-progress progress { min-height: 5px; border-radius: 99px; background: white; border: none; }
+""", key="login-motion")
+
+
 def wallpaper_texture():
     override = os.environ.get("SONATA_LOCK_WALLPAPER")        # previews
     if override:

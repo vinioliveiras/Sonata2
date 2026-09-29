@@ -1171,6 +1171,10 @@ class TopBarWindow(Gtk.ApplicationWindow):
                     LS.set_anchor(self, e, True)
                 LS.set_exclusive_zone(self, BAR_H)
                 LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND)
+                from . import intro
+                if intro.pending():                 # login: slides down once the welcome screen fades
+                    LS.set_margin(self, LS.Edge.TOP, -BAR_H)
+                    intro.wait(lambda: intro.slide_layer_margin(self, LS.Edge.TOP, BAR_H))
 
     def _preview(self) -> None:
         """Bar over a sample wallpaper in a normal window (screenshots)."""

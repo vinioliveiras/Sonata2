@@ -997,6 +997,13 @@ class DockWindow(Gtk.ApplicationWindow):
         ui.menu.on_closed.append(lambda: self._pointer(self._inside))
         self._cfg_mon = config.watch("dock", self._config_changed)
         self.rebuild()
+        from . import intro
+        if intro.pending() and not self.cfg["autohide"]:
+            # login: out of sight until the welcome screen fades, then it
+            # slides in from its edge like a hidden Dock showing
+            self.dock.hide_amount = 1.0
+            self.dock.queue_draw()
+            intro.wait(lambda: self._slide(False))
 
     def rebuild(self) -> None:
         if self.dock:

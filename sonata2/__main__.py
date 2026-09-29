@@ -35,11 +35,12 @@ APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
            "files": "io.github.vinioliveiras.sonata2.files",
            "lock": "io.github.vinioliveiras.sonata2.lock",
            "greeter": "io.github.vinioliveiras.sonata2.greeter",
+           "welcome": "io.github.vinioliveiras.sonata2.welcome",
            "spotlight": "io.github.vinioliveiras.sonata2.spotlight"}
 # Shell surfaces (never shown as running apps in the Dock); Files and
 # Settings are ordinary apps.
 SHELL_IDS = {APP_IDS[k] for k in ("dock", "autostart", "wallpaper", "launchpad", "topbar", "gallery", "lock",
-                                   "spotlight", "greeter")}
+                                   "spotlight", "greeter", "welcome")}
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -324,6 +325,16 @@ def run_lock(app, args, ui, state):
     from .shell.lock import LockScreen
     app.hold()
     state["lock"] = LockScreen(app)
+
+
+def run_welcome(app, args, ui, state):
+    """Right after login: covers the display until the shell is up (intro.py)."""
+    from .shell import intro
+    from .shell.welcome import Welcome
+    if not intro.pending() and not args.preview:
+        return                     # a restart of Sonata: no intro
+    app.hold()
+    state["welcome"] = Welcome(app, APP_IDS)
 
 
 def run_greeter(app, args, ui, state):
@@ -821,6 +832,8 @@ def main() -> int:
             run_lock(app, args, ui, state)
         elif args.component == "greeter":
             run_greeter(app, args, ui, state)
+        elif args.component == "welcome":
+            run_welcome(app, args, ui, state)
         else:
             run_topbar(app, args, ui)
 

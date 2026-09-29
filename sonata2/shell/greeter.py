@@ -32,12 +32,16 @@ WALLPAPERS = "/var/lib/sonata-greeter"
 SESSION_DIRS = ("/usr/local/share/wayland-sessions", "/usr/share/wayland-sessions")
 
 ui.register("""
-.gr-user { background: none; border: none; box-shadow: none; padding: 8px; border-radius: 14px; }
+.gr-user { background: none; border: none; box-shadow: none; padding: 8px; border-radius: 14px;
+  transition: background-color 180ms ease-out, transform 180ms ease-out; }
 .gr-user:hover { background: rgba(255,255,255,0.12); }
+.gr-user:active { transform: scale(0.96); }
 .gr-power { min-width: 44px; min-height: 44px; padding: 0; border-radius: 99px; border: none;
+  transition: background-color 160ms ease-out, transform 160ms ease-out;
   background: rgba(255,255,255,0.18); color: white; box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.22);
   -gtk-icon-size: 20px; }
 .gr-power:hover { background: rgba(255,255,255,0.30); }
+.gr-power:active { transform: scale(0.92); }
 .gr-power-label { color: white; font-size: %(text_small)s; text-shadow: 0 1px 2px rgba(0,0,0,0.45); }
 .gr-link { background: none; border: none; box-shadow: none; color: rgba(255,255,255,0.8);
   font-size: %(text_small)s; min-height: 22px; padding: 0 8px; border-radius: 99px; }
@@ -210,7 +214,7 @@ class Greeter:
     def _window(self, monitor, primary):
         win = Gtk.Window(application=self.app, decorated=False)
         win.add_css_class("sonata-lock")
-        over = Gtk.Overlay()
+        over = Gtk.Overlay(css_classes=["gr-fade-in"])
         bd = Backdrop(self._wallpaper())
         self.backdrops.append(bd)
         over.set_child(bd)
@@ -222,7 +226,8 @@ class Greeter:
             self.center = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=220,
                                     halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
             over.add_overlay(self.center)
-            over.add_overlay(self._power())
+            self.power = self._power()
+            over.add_overlay(self.power)
             if not self.fake:
                 over.add_overlay(self._display_button())
             self._show()
@@ -266,7 +271,7 @@ class Greeter:
         return None
 
     def _users_page(self):
-        row = Gtk.Box(spacing=18, halign=Gtk.Align.CENTER, homogeneous=True)
+        row = Gtk.Box(spacing=18, halign=Gtk.Align.CENTER, homogeneous=True, css_classes=["gr-rise"])
         for u in self.users:
             b = Gtk.Button(css_classes=["gr-user"])
             col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -284,12 +289,20 @@ class Greeter:
 
     def _login_page(self):
         u = self.user
-        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, halign=Gtk.Align.CENTER)
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, halign=Gtk.Align.CENTER,
+                      css_classes=["gr-rise"])
+        self.column = col
         col.append(avatar(108, u.name, u.real, u.icon))
         col.append(Gtk.Label(label=u.real, css_classes=["lk-name"]))
         self.entry = password_field()
         self.entry.connect("activate", lambda *_: self._login())
-        col.append(self.entry)
+        # the field turns into a progress bar while logging in (macOS)
+        self.progress = Gtk.ProgressBar(css_classes=["gr-progress"], halign=Gtk.Align.CENTER)
+        self.slot = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=220,
+                              halign=Gtk.Align.CENTER)
+        self.slot.add_named(self.entry, "field")
+        self.slot.add_named(self.progress, "progress")
+        col.append(self.slot)
         links = Gtk.Box(spacing=4, halign=Gtk.Align.CENTER)
         if len(self.users) > 1:
             other = Gtk.Button(label="Other Users", css_classes=["gr-link"])
@@ -390,7 +403,7 @@ class Greeter:
 
     def _power(self):
         bar = Gtk.Box(spacing=20, halign=Gtk.Align.CENTER, valign=Gtk.Align.END, margin_bottom=40,
-                      homogeneous=True)
+                      homogeneous=True, css_classes=["gr-rise-late"])
         for label, icon, method in (("Sleep", "weather-clear-night-symbolic", "Suspend"),
                                     ("Restart", "view-refresh-symbolic", "Reboot"),
                                     ("Shut Down", "system-shutdown-symbolic", "PowerOff")):
@@ -412,6 +425,9 @@ class Greeter:
         self.entry.set_sensitive(False)
         self.hint.set_label("")
         user = self.user.name
+        self.progress.set_fraction(0)
+        self.slot.set_visible_child_name("progress")
+        self._pulse = GLib.timeout_add(90, lambda: (self.progress.pulse(), True)[1])
 
         def work():
             try:
@@ -428,7 +444,14 @@ class Greeter:
                 GLib.idle_add(self._failed, greetd.GreetdError("error", str(e)))
         threading.Thread(target=work, daemon=True).start()
 
+    def _stop_pulse(self):
+        if getattr(self, "_pulse", 0):
+            GLib.source_remove(self._pulse)
+            self._pulse = 0
+
     def _failed(self, err):
+        self._stop_pulse()
+        self.slot.set_visible_child_name("field")
         if err.error_type != "auth_error":
             self.hint.set_label(str(err) or "Couldn't log in")
         shake(self.entry)
@@ -437,6 +460,17 @@ class Greeter:
     def _started(self):
         self.state["user"] = self.user.name
         save_state(self.state)
+        self._stop_pulse()
+        self.progress.set_fraction(1.0)
+        # the picture, name and bar fade away over the blurred wallpaper; the
+        # session's welcome screen (welcome.py) picks up from the same look
+        for w in (getattr(self, "column", None), self.power):
+            if w is not None:
+                w.add_css_class("gr-leave")
+        GLib.timeout_add(420, self._quit)
+        return False
+
+    def _quit(self):
         self.app.quit()
         if not self.fake and os.environ.get("SONATA_GREETER_WAYFIRE"):
             # greetd starts the session when the greeter command (our Wayfire) ends
