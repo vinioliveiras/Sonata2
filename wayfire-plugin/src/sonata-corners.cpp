@@ -142,6 +142,24 @@ static double decoration_shadow(wayfire_toplevel_view view)
     }
 }
 
+/* The radius option, read without option_wrapper_t: a wrapper throws (and
+ * aborts Wayfire) when the plugin's XML wasn't loaded when Wayfire started. */
+static float corner_radius()
+{
+    auto opt = wf::get_core().config->get_option("sonata-corners/radius");
+    if (!opt)
+    {
+        return 10;
+    }
+
+    try {
+        return std::max(0, std::stoi(opt->get_value_str()));
+    } catch (...)
+    {
+        return 10;
+    }
+}
+
 class corners_render_instance_t :
     public wf::scene::transformer_render_instance_t<transformer_base_node_t>
 {
@@ -154,7 +172,6 @@ class corners_render_instance_t :
     transformer_base_node_t *self;
     wayfire_toplevel_view view;
     damage_callback push_to_parent;
-    wf::option_wrapper_t<int> radius_opt{"sonata-corners/radius"};
 
   public:
     corners_render_instance_t(transformer_base_node_t *self, damage_callback push_damage,
@@ -194,7 +211,7 @@ class corners_render_instance_t :
         float ry = g.y + inset - bbox.y;
         float rw = g.width - 2 * inset;
         float rh = g.height - 2 * inset;
-        float radius = std::max(0, (int)radius_opt);
+        float radius = corner_radius();
 
         auto data_ptr = wf::get_core().get_data<corners_program_t>(program_name);
         static const float vertexData[] = {

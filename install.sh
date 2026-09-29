@@ -256,9 +256,15 @@ fi
 if command -v meson >/dev/null && command -v ninja >/dev/null && pkg-config --exists wayfire 2>/dev/null; then
     say "Building Sonata's Wayfire plugin (rounded window corners)"
     bdir="$(mktemp -d)"
+    # staged, then renamed into place: a running Wayfire keeps its loaded copy
+    # (overwriting a loaded library in place would crash it)
     if meson setup "$bdir" "$SRC/wayfire-plugin" --prefix "$PLUG_PREFIX" --libdir lib --buildtype release >"$bdir.log" 2>&1 &&
-       ninja -C "$bdir" >>"$bdir.log" 2>&1 && meson install -C "$bdir" >>"$bdir.log" 2>&1; then
-        echo "  installed to $PLUG_PREFIX"
+       ninja -C "$bdir" >>"$bdir.log" 2>&1 && meson install -C "$bdir" --destdir "$bdir/stage" >>"$bdir.log" 2>&1; then
+        (cd "$bdir/stage$PLUG_PREFIX" && find . -type f) | while read -r f; do
+            mkdir -p "$(dirname "$PLUG_PREFIX/$f")"
+            cp "$bdir/stage$PLUG_PREFIX/$f" "$PLUG_PREFIX/$f.new" && mv -f "$PLUG_PREFIX/$f.new" "$PLUG_PREFIX/$f"
+        done
+        echo "  installed to $PLUG_PREFIX (log out and back in to load a new version)"
     else
         echo "  couldn't build it (window corners stay square); log: $bdir.log"
     fi

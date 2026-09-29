@@ -451,6 +451,13 @@ def _reload_wayfire_config() -> None:
     if subprocess.run(["bash", script, src, tmp], check=False).returncode == 0:
         with open(tmp, encoding="utf-8") as f:            # rewritten in place: Wayfire keeps watching it
             text = f.read()
+        # the plugin list stays as the session started: Wayfire only reads a
+        # new plugin's XML at start, and loading one without it can abort it
+        import re
+        with open(run_cfg, encoding="utf-8") as f:
+            old = re.search(r"^plugins\s*=.*$", f.read(), re.M)
+        if old:
+            text = re.sub(r"^plugins\s*=.*$", lambda _m: old.group(0), text, count=1, flags=re.M)
         with open(run_cfg, "w", encoding="utf-8") as f:
             f.write(text)
         os.remove(tmp)

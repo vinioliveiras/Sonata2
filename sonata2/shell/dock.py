@@ -37,6 +37,8 @@ DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "window_gap": 6, "gl
             "recent": [], "stacks": None, "all_displays": False}
 EDGES = ("left", "bottom", "right")
 MIN_SIZE, MAX_SIZE = 16, 128
+PIN_MIN_SIZE = 36           # pins must still fit at this size: more can't be kept in the Dock
+SCREEN_MARGIN = 16          # px kept free at both ends of the screen edge
 MAX_RECENTS = 3
 LAUNCH_BOUNCES = 3          # macOS bounces a few times, then stops even if no window shows up
 MAX_DOTS = 3                        # running dots: one per window, up to this many
@@ -308,7 +310,7 @@ class DockDivider(DockLine):
         drag.connect("drag-begin", lambda *_: setattr(self, "_start", dock.cfg["icon_size"]))
         drag.connect("drag-update", lambda _g, dx, dy: dock.set_icon_size(
             self._start + sign[0] * dx + sign[1] * dy, save=False))
-        drag.connect("drag-end", lambda *_: config.save("dock", dock.cfg))
+        drag.connect("drag-end", lambda *_: dock.save_cfg())
         self.add_controller(drag)
         right = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
         right.connect("pressed", lambda *_: dock_menu.divider_menu(dock, self))
@@ -329,6 +331,7 @@ class Dock(Gtk.Box):
                          halign={"left": Gtk.Align.START, "right": Gtk.Align.END}.get(self.edge, Gtk.Align.CENTER),
                          valign=Gtk.Align.END if self.edge == "bottom" else Gtk.Align.CENTER)
         self.cfg = cfg
+        self.user_size = cfg["icon_size"]      # the size chosen; cfg["icon_size"] is the size shown
         self.manager = manager if manager and manager.available else None
         self.tiles = {}       # desktop id (or bare app_id) -> DockTile (apps only)
         self.windows = {}     # same keys -> [Toplevel]
@@ -433,13 +436,63 @@ class Dock(Gtk.Box):
     def do_size_allocate(self, width, height, baseline) -> None:
         Gtk.Box.do_size_allocate(self, width, height, baseline)
         self.queue_draw()     # the plate is painted from the new size
+        self.refit_soon()     # the screen edge may have changed (display, rotation)
         for cb in self.on_geometry:
             cb()
 
-    def set_icon_size(self, size: float, save: bool = True) -> None:
-        """Resize the Dock (divider drag, settings)."""
+    def save_cfg(self) -> None:
+        """dock.json with the chosen size (not the shrunk-to-fit one)."""
+        config.save("dock", {**self.cfg, "icon_size": self.user_size})
+
+    # -- fit (macOS): a full Dock shrinks its icons, and grows back when apps close
+    def _span(self) -> float:
+        parent = self.get_parent()
+        if not getattr(parent, "layer", False):       # only a Dock along a real screen edge
+            return 0
+        n = parent.get_height() if self.vertical else parent.get_width()
+        return n - 2 * SHADOW - 2 * SCREEN_MARGIN
+
+    def _cells_room(self, size: float) -> float:
+        """How many icons of `size` fit along the edge."""
+        lines = DIVIDER_W * (2 if self.recent_sep.get_visible() else 1)
+        return (self._span() - 2 * PAD_SIDE - lines) / (size + 2 * TILE_PAD)
+
+    def _fit_size(self) -> int:
+        n = len(self.all_tiles())
+        if self._span() <= 0 or not n:
+            return self.user_size
+        lines = DIVIDER_W * (2 if self.recent_sep.get_visible() else 1)
+        fit = (self._span() - 2 * PAD_SIDE - lines) / n - 2 * TILE_PAD
+        return int(max(MIN_SIZE, min(self.user_size, fit)))
+
+    def refit(self) -> bool:
+        size = self._fit_size()
+        if size != self.cfg["icon_size"]:
+            self.set_icon_size(size, save=False, chosen=False)
+        self._refit_src = 0
+        return False
+
+    def refit_soon(self) -> None:
+        if not getattr(self, "_refit_src", 0):
+            self._refit_src = GLib.idle_add(self.refit)
+
+    def can_pin(self, key) -> bool:
+        """Room for one more pinned app (pins must fit at PIN_MIN_SIZE)."""
+        if key in self.cfg["pinned"] or self._span() <= 0:
+            return True
+        fixed = len(self.stacks.tiles()) + 1                  # stacks + Trash
+        return len(self.cfg["pinned"]) + 1 + fixed <= int(self._cells_room(PIN_MIN_SIZE))
+
+    def set_icon_size(self, size: float, save: bool = True, chosen: bool = True) -> None:
+        """Resize the Dock (divider drag, settings). chosen=False: the fit
+        (the size shown changes, the size chosen stays)."""
         size = int(max(MIN_SIZE, min(MAX_SIZE, round(size))))
+        if chosen:
+            self.user_size = size
+            size = min(size, self._fit_size())
         if size == self.cfg["icon_size"]:
+            if chosen and save:
+                self.save_cfg()
             return
         self.cfg["icon_size"] = size
         self.cfg["magnified_size"] = max(self.cfg["magnified_size"], size)
@@ -450,14 +503,16 @@ class Dock(Gtk.Box):
         self.recent_sep.update()
         self._update_thickness()
         self.queue_draw()
+        for cb in self.on_geometry:
+            cb()
         if save:
-            config.save("dock", self.cfg)
+            self.save_cfg()
 
     def set_magnification(self, on: bool, size: int = None) -> None:
         self.cfg["magnification"] = on
         if size:
             self.cfg["magnified_size"] = int(max(self.cfg["icon_size"], min(MAX_SIZE, size)))
-        config.save("dock", self.cfg)
+        self.save_cfg()
         self._mag_strength = 0.0
         self._apply_magnification()
         for cb in self.on_geometry:
@@ -466,7 +521,7 @@ class Dock(Gtk.Box):
     def set_option(self, key: str, value) -> None:
         """Change a Dock setting; position/recents changes rebuild the Dock."""
         self.cfg[key] = value
-        config.save("dock", self.cfg)
+        self.save_cfg()
         if key in ("position", "show_recents") and self.on_rebuild:
             GLib.idle_add(lambda: (self.on_rebuild(), False)[1])
         for cb in self.on_geometry:
@@ -630,11 +685,12 @@ class Dock(Gtk.Box):
             self.reorder_child_after(tile, prev)
             prev = tile
         self.recent_sep.set_visible(bool(extras) and self.cfg["show_recents"])
+        self.refit_soon()                      # apps opened/closed: shrink or grow back
 
     def _save_order(self) -> None:
         pinned = set(self.cfg["pinned"])
         self.cfg["pinned"] = [t.key for t in self.app_tiles() if t.key in pinned]
-        config.save("dock", self.cfg)
+        self.save_cfg()
         self._relayout()
 
     def _slot_at(self, x: float, y: float = 0.0, exclude=None) -> int:
@@ -661,6 +717,9 @@ class Dock(Gtk.Box):
 
     def pin_at(self, key, before=None, x=None, y=0.0) -> None:
         """Pin app `key` (desktop id) before tile `before`, or at (x, y)."""
+        if not self.can_pin(key):
+            print(f"sonata2-dock: the Dock is full; {key} not kept", flush=True)
+            return
         tile = self.tiles.get(key)
         if tile is None:
             info = apps.lookup(key)
@@ -683,11 +742,13 @@ class Dock(Gtk.Box):
         if not on and key in PERMANENT:
             return
         if on and key not in pins:
+            if not self.can_pin(key):
+                return
             pins.append(key)
             self._save_order()         # takes its current position
         elif not on and key in pins:
             pins.remove(key)
-            config.save("dock", self.cfg)
+            self.save_cfg()
             if key not in self.windows and not self._is_recent(key):
                 self._remove_tile(key)
             else:
@@ -704,7 +765,7 @@ class Dock(Gtk.Box):
         rec = [k for k in self.cfg["recent"] if k != key]
         rec.insert(0, key)
         dropped, self.cfg["recent"] = rec[MAX_RECENTS:], rec[:MAX_RECENTS]
-        config.save("dock", self.cfg)
+        self.save_cfg()
         for k in dropped:
             if k in self.tiles and k not in self.windows and k not in self.cfg["pinned"]:
                 self._remove_tile(k)
@@ -740,7 +801,7 @@ class Dock(Gtk.Box):
             return False
         self._drag["dropped"] = True
         key = self._drag["key"]
-        if key not in self.cfg["pinned"]:
+        if key not in self.cfg["pinned"] and self.can_pin(key):
             self.cfg["pinned"].append(key)     # dragging a running app into place pins it
         self._save_order()
         return True
@@ -958,6 +1019,8 @@ class DockWindow(Gtk.ApplicationWindow):
         d = self.dock
         if d and new["pinned"] is not None and new["pinned"] != self.cfg["pinned"]:
             for key in [k for k in new["pinned"] if k not in self.cfg["pinned"]]:
+                if not d.can_pin(key):
+                    continue                        # the Dock is full
                 if key not in d.tiles:
                     info = apps.lookup(key)
                     if not info:
@@ -967,11 +1030,17 @@ class DockWindow(Gtk.ApplicationWindow):
             for key in [k for k in self.cfg["pinned"] if k not in new["pinned"]]:
                 d.set_pinned(key, False)
             d._relayout()
-        changed = [k for k in self.LIVE_KEYS if new[k] != self.cfg[k]]
+        cur = dict(self.cfg, icon_size=d.user_size if d else self.cfg["icon_size"])
+        changed = [k for k in self.LIVE_KEYS if new[k] != cur[k]]
         if not changed:
             return
         for k in changed:
-            self.cfg[k] = new[k]
+            if k != "icon_size":
+                self.cfg[k] = new[k]
+        if "icon_size" in changed and d is not None:
+            d.set_icon_size(new["icon_size"], save=False)   # the chosen size; the fit still applies
+        elif "icon_size" in changed:
+            self.cfg["icon_size"] = new["icon_size"]
         load_css(self.cfg)
         if self.dock is None or set(changed) & self.REBUILD_KEYS:
             self.rebuild()
