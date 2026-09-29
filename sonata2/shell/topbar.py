@@ -42,12 +42,12 @@ window.sonata-topbar, window.sonata-topbar > contents { background: none; box-sh
 .topbar-item.icon { padding: 0 8px; }
 .topbar-item image { -gtk-icon-size: 16px; }
 .topbar-item.battery image { -gtk-icon-size: 24px; }       /* wide battery, macOS proportions */
-.topbar-item label.percent { margin-left: 4px; font-size: %(text_small)s; }
+.topbar-item label.percent { margin-right: 5px; font-size: %(text_body)s; }
 .about-box { padding: 28px 36px 24px 36px; font-family: %(font)s; color: %(label)s; }
 .about-name { font-family: %(font_display)s; font-size: 26px; font-weight: 700; }
 .about-version { color: %(label_secondary)s; margin-bottom: 14px; }
 .about-key { font-weight: 700; }
-window.sonata-about { background: %(window_bg)s; border-radius: %(r_window)s; }
+window.sonata-about { background: %(window_bg)s; }
 """, key="topbar", bar_h=BAR_H, item_h=BAR_H - 2)
 
 
@@ -72,9 +72,10 @@ class Bar(Gtk.CenterBox):
                                   css="icon")
         self.battery.add_css_class("battery")
         self.battery_pct = Gtk.Label(css_classes=["percent"])
-        self.battery.get_child().append(self.battery_pct)
+        self.battery.get_child().prepend(self.battery_pct)          # "87% [battery]" like Big Sur
         self.wifi = self._item(right, icon="sonata-wifi-3-symbolic",
                                on_click=self._wifi_panel, css="icon")
+        self.spotlight = self._item(right, icon="sonata-search-symbolic", on_click=self._spotlight, css="icon")
         self.cc = self._item(right, icon="sonata-control-center-symbolic", on_click=self._control_center,
                              css="icon")
         self.clock = self._item(right, text="", on_click=self._calendar)
@@ -105,10 +106,8 @@ class Bar(Gtk.CenterBox):
             if self.backdrop:        # preview: stands in for the compositor's blur
                 snap.append_texture(self.backdrop, Graphene.Rect().init(0, 0, self.backdrop.get_width(),
                                                                         self.backdrop.get_height()))
-            snap.append_color(ui.rgba("bar_bg"), rect)
-            line = Graphene.Rect()
-            line.init(0, h - 0.5, w, 0.5)
-            snap.append_color(ui.rgba("separator"), line)
+            # Big Sur: translucent material, no bottom line
+            snap.append_color(ui.rgba("window_bg" if ui.theme.reduce_transparency() else "bar_bg"), rect)
         Gtk.CenterBox.do_snapshot(self, snap)
 
     # -- items ---------------------------------------------------------------------
@@ -382,6 +381,16 @@ class Bar(Gtk.CenterBox):
     def _set_volume(self, v) -> None:
         system.run_async(system.set_volume, lambda _r: self._poll(), int(v), False)
 
+    def _spotlight(self, btn):
+        """Big Sur's magnifier: search apps (Launchpad opens with its search field)."""
+        from ..__main__ import self_command
+        btn.remove_css_class("open")
+        try:
+            GLib.spawn_async(self_command().split() + ["launchpad"], flags=GLib.SpawnFlags.SEARCH_PATH)
+        except GLib.Error:
+            pass
+        return None
+
     def _control_center(self, btn):
         cc = ControlCenter(self)
         return ui.panel.popup(btn, cc, gap=2)
@@ -441,12 +450,13 @@ class ControlCenter(Gtk.Box):
                                               "color-scheme", "prefer-dark" if on else "default"]))
 
 
-class AboutWindow(Gtk.Window):
+class AboutWindow(Adw.Window):
     """About This Computer (Big Sur layout: logo left, OS name, specs)."""
 
     def __init__(self):
-        super().__init__(title="About This Computer", css_classes=["sonata-about"], resizable=False,
-                         decorated=False)
+        super().__init__(title="About This Computer", resizable=False)
+        self.add_css_class("sonata-about")
+        ui.window.standard(self)
         head = Gtk.Box(margin_top=10, margin_start=8)
         head.append(ui.window.traffic_lights(self.close, self.minimize))
         body = Gtk.Box(spacing=36, css_classes=["about-box"])
@@ -458,7 +468,7 @@ class AboutWindow(Gtk.Window):
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col.append(head)
         col.append(body)
-        self.set_child(col)
+        self.set_content(Gtk.WindowHandle(child=col))
         system.run_async(system.about, self._fill)
 
     def _fill(self, a) -> None:
@@ -476,9 +486,11 @@ class AboutWindow(Gtk.Window):
             self.info.append(row)
 
 
-class AboutAppWindow(Gtk.Window):
+class AboutAppWindow(Adw.Window):
     def __init__(self, info, name):
-        super().__init__(title=f"About {name}", css_classes=["sonata-about"], resizable=False, decorated=False)
+        super().__init__(title=f"About {name}", resizable=False)
+        self.add_css_class("sonata-about")
+        ui.window.standard(self)
         head = Gtk.Box(margin_top=10, margin_start=8)
         head.append(ui.window.traffic_lights(self.close, self.minimize))
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["about-box"])
@@ -495,7 +507,7 @@ class AboutAppWindow(Gtk.Window):
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         outer.append(head)
         outer.append(col)
-        self.set_child(outer)
+        self.set_content(Gtk.WindowHandle(child=outer))
 
 
 class TopBarWindow(Gtk.ApplicationWindow):

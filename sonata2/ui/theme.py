@@ -43,7 +43,19 @@ def glass() -> bool:
     dev session: SONATA_GLASS=1 from session-env.sh). Elsewhere materials
     fall back to their solid tokens."""
     import os
-    return os.environ.get("SONATA_GLASS") == "1"
+    return os.environ.get("SONATA_GLASS") == "1" and not reduce_transparency()
+
+
+def reduce_transparency() -> bool:
+    """Accessibility > Reduce transparency (read when the process starts)."""
+    global _reduce
+    if _reduce is None:
+        from .. import config
+        _reduce = bool(config.load("appearance", {}).get("reduce_transparency", False))
+    return _reduce
+
+
+_reduce = None
 
 
 def values() -> dict:

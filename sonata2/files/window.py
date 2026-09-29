@@ -25,7 +25,7 @@ DEFAULTS = {"view": "icons"}
 ui.register("""
 window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
 .fs-content { background: %(content_bg)s; }
-.fs-paned > separator { min-width: 1px; background: %(separator)s; }
+.fs-paned > separator { min-width: 1px; background: %(content_bg)s; box-shadow: inset 1px 0 %(separator)s; }
 .fs-toolbar { min-height: 52px; padding: 0 10px 0 8px; background: %(content_bg)s;
   box-shadow: inset 0 -1px %(separator)s; }
 .fs-toolbar .fs-title { font-weight: 700; font-size: %(text_title)s; color: %(label)s; }
@@ -54,9 +54,13 @@ def _icon_button(icon, tip, cb, css=None):
 
 class FilesWindow(Adw.ApplicationWindow):
     def __init__(self, app, uri: str = None):
-        super().__init__(application=app, title="Files", css_classes=["sonata-files", "sonata-glass"],
-                         default_width=920, default_height=560)
+        # (classes added, not passed: passing css_classes drops GTK's "csd"
+        # class, and with it the rounded corners and the shadow)
+        super().__init__(application=app, title="Files", default_width=920, default_height=560)
+        for c in ("sonata-files", "sonata-glass"):
+            self.add_css_class(c)
         self.set_size_request(560, 320)
+        ui.window.standard(self)
         self.history, self.pos = [], -1
         self.folder = folder.Folder(self._loaded, self._load_failed)
 

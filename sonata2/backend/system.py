@@ -399,3 +399,146 @@ def gsetting(schema: str, key: str) -> Optional[str]:
 
 def set_gsetting(schema: str, key: str, value: str) -> bool:
     return _run(["gsettings", "set", schema, key, value], timeout=5)[0] == 0
+
+
+# -- input devices (Wayfire [input] of the Sonata session) -----------------------------------
+def _wayfire_files() -> List[str]:
+    """The session config and, while a session runs, its resolved copy
+    (the one Wayfire reads and reloads live; see tools/wayfire-config.sh)."""
+    cfg = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "sonata2")
+    files = [os.path.join(cfg, "wayfire.ini")]
+    run = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "sonata2-wayfire.ini")
+    if os.path.exists(run):
+        files.append(run)
+    return files
+
+
+def wayfire_get(section: str, key: str, default: str = "") -> str:
+    for path in reversed(_wayfire_files()):
+        try:
+            with open(path, encoding="utf-8") as f:
+                cur = None
+                for line in f:
+                    s = line.strip()
+                    if s.startswith("[") and s.endswith("]"):
+                        cur = s[1:-1]
+                    elif cur == section and "=" in s and not s.startswith("#"):
+                        k, v = s.split("=", 1)
+                        if k.strip() == key:
+                            return v.strip()
+        except OSError:
+            continue
+    return default
+
+
+def wayfire_set(section: str, key: str, value) -> bool:
+    """Set `key = value` in [section] of the session's Wayfire config(s);
+    Wayfire applies it at once. Comments and other lines stay as they are."""
+    if isinstance(value, bool):
+        value = "true" if value else "false"
+    ok = False
+    for path in _wayfire_files():
+        try:
+            with open(path, encoding="utf-8") as f:
+                lines = f.readlines()
+        except OSError:
+            lines = []
+        out, cur, done, sec_end = [], None, False, None
+        for i, line in enumerate(lines):
+            s = line.strip()
+            if s.startswith("[") and s.endswith("]"):
+                if cur == section and not done:
+                    sec_end = len(out)
+                cur = s[1:-1]
+            elif cur == section and "=" in s and not s.startswith("#") and s.split("=", 1)[0].strip() == key:
+                out.append(f"{key} = {value}\n")
+                done = True
+                continue
+            out.append(line)
+        if not done:
+            if cur == section:
+                sec_end = len(out)
+            if sec_end is not None:
+                while sec_end > 0 and not out[sec_end - 1].strip():      # before the blank line
+                    sec_end -= 1
+                out.insert(sec_end, f"{key} = {value}\n")
+            else:
+                out += [f"\n[{section}]\n", f"{key} = {value}\n"]
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.writelines(out)
+            ok = True
+        except OSError:
+            pass
+    return ok
+
+
+XKB_LAYOUTS = [("us", "U.S."), ("us(intl)", "U.S. International"), ("br", "Brazilian (ABNT2)"),
+               ("gb", "British"), ("de", "German"), ("fr", "French"), ("es", "Spanish"), ("pt", "Portuguese"),
+               ("it", "Italian"), ("latam", "Latin American"), ("ru", "Russian"), ("jp", "Japanese")]
+
+
+def keyboard_layout() -> str:
+    lay = wayfire_get("input", "xkb_layout", "us") or "us"
+    var = wayfire_get("input", "xkb_variant", "")
+    return f"{lay}({var})" if var else lay
+
+
+def set_keyboard_layout(value: str) -> bool:
+    lay, _, var = value.partition("(")
+    return wayfire_set("input", "xkb_layout", lay) and wayfire_set("input", "xkb_variant", var.rstrip(")"))
+
+
+# -- date & time ----------------------------------------------------------------------------------
+def timezone() -> str:
+    rc, out = _run(["timedatectl", "show", "-p", "Timezone", "--value"], timeout=5)
+    if rc == 0 and out.strip():
+        return out.strip()
+    try:
+        return os.path.realpath("/etc/localtime").split("zoneinfo/", 1)[1]
+    except (IndexError, OSError):
+        return "UTC"
+
+
+def timezones() -> List[str]:
+    rc, out = _run(["timedatectl", "list-timezones"], timeout=10)
+    return [z for z in out.split() if z] if rc == 0 else []
+
+
+def set_timezone(zone: str) -> bool:
+    return _run(["timedatectl", "set-timezone", zone], timeout=60)[0] == 0      # polkit may ask
+
+
+def ntp() -> Optional[bool]:
+    rc, out = _run(["timedatectl", "show", "-p", "NTP", "--value"], timeout=5)
+    return out.strip() == "yes" if rc == 0 else None
+
+
+def set_ntp(on: bool) -> bool:
+    return _run(["timedatectl", "set-ntp", "true" if on else "false"], timeout=60)[0] == 0
+
+
+# -- sharing ----------------------------------------------------------------------------------------
+def computer_name() -> str:
+    rc, out = _run(["hostnamectl", "--pretty"], timeout=5)
+    if rc == 0 and out.strip():
+        return out.strip()
+    return GLib.get_host_name()
+
+
+def set_computer_name(name: str) -> bool:
+    """Pretty name as typed, host name derived (like macOS "Local hostname")."""
+    host = re.sub(r"[^a-zA-Z0-9-]+", "-", name).strip("-").lower() or "computer"
+    ok = _run(["hostnamectl", "set-hostname", "--pretty", name], timeout=60)[0] == 0
+    return _run(["hostnamectl", "set-hostname", "--static", host], timeout=60)[0] == 0 and ok
+
+
+# -- default apps ------------------------------------------------------------------------------------
+def default_browser() -> str:
+    rc, out = _run(["xdg-settings", "get", "default-web-browser"], timeout=5)
+    return out.strip() if rc == 0 else ""
+
+
+def set_default_browser(desktop_id: str) -> bool:
+    return _run(["xdg-settings", "set", "default-web-browser", desktop_id], timeout=10)[0] == 0

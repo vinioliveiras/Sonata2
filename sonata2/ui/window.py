@@ -68,6 +68,27 @@ window.sonata-glass { background: transparent; }
 """, key="materials")
 
 
+# Standard frame of Sonata's app windows (Files, System Settings...): Big
+# Sur corners and shadow, contents clipped to the corners, square and
+# shadowless when maximized/tiled/fullscreen.
+theme.register("""
+window.sonata-window.csd { border-radius: %(r_window)s;
+  box-shadow: 0 22px 56px rgba(0, 0, 0, 0.30), 0 0 0 0.5px rgba(0, 0, 0, 0.40),
+              inset 0 0 0 0.5px %(highlight)s; }
+window.sonata-window.csd:backdrop { box-shadow: 0 14px 34px rgba(0, 0, 0, 0.20), 0 0 0 0.5px rgba(0, 0, 0, 0.30); }
+window.sonata-window.maximized, window.sonata-window.fullscreen, window.sonata-window.tiled,
+window.sonata-window.tiled-top, window.sonata-window.tiled-left, window.sonata-window.tiled-right,
+window.sonata-window.tiled-bottom { border-radius: 0; box-shadow: none; }
+""", key="window-frame")
+
+
+def standard(win) -> None:
+    """Give an app window Sonata's standard frame (call once, any time)."""
+    from gi.repository import Gtk as _Gtk
+    win.add_css_class("sonata-window")
+    win.set_overflow(_Gtk.Overflow.HIDDEN)      # children clipped to the rounded corners
+
+
 def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
     """Close / minimize / zoom as macOS-style coloured dots. on_zoom=None greys the
     green one out (fixed-size windows, like System Settings)."""

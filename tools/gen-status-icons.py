@@ -72,6 +72,12 @@ def battery():
                 f.write(head + shell + fill + bolt + "</svg>\n")
 
 
+def search():
+    write("sonata-search-symbolic",
+          '<circle cx="6.7" cy="6.7" r="4.7" fill="none" stroke="#000" stroke-width="1.6"/>'
+          '<path d="M10.2 10.2l4.2 4.2" stroke="#000" stroke-width="1.9" stroke-linecap="round"/>')
+
+
 def logo():
     with open(os.path.join(OUT, "..", "..", "actions", "symbolic", "sonata-logo-symbolic.svg"), "w") as f:
         f.write(HEAD + '<circle cx="8" cy="8" r="6.2" fill="#000"/></svg>\n')
@@ -82,5 +88,6 @@ if __name__ == "__main__":
     volume()
     wifi()
     battery()
+    search()
     logo()
     print("written to", os.path.normpath(OUT))

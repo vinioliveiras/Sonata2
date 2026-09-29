@@ -29,7 +29,14 @@ SECTIONS = [  # id, title, icon, badge colour, group
     ("displays", "Displays", "video-display-symbolic", "blue", "linux"),
     ("battery", "Battery", "battery-full-symbolic", "green", "linux"),
     ("wallpaper", "Wallpaper", "image-x-generic-symbolic", "teal", "linux"),
-    ("appearance", "Appearance", "applications-graphics-symbolic", "black", "sonata"),
+    ("keyboard", "Keyboard", "input-keyboard-symbolic", "gray", "input"),
+    ("trackpad", "Trackpad", "input-touchpad-symbolic", "gray", "input"),
+    ("mouse", "Mouse", "input-mouse-symbolic", "gray", "input"),
+    ("datetime", "Date & Time", "preferences-system-time-symbolic", "blue", "system"),
+    ("users", "Users & Groups", "system-users-symbolic", "gray", "system"),
+    ("sharing", "Sharing", "folder-publicshare-symbolic", "blue", "system"),
+    ("accessibility", "Accessibility", "preferences-desktop-accessibility-symbolic", "blue", "system"),
+    ("appearance", "General", "preferences-system-symbolic", "gray", "sonata"),
     ("dock", "Desktop & Dock", "view-grid-symbolic", "black", "sonata"),
     ("menubar", "Menu Bar", "view-restore-symbolic", "indigo", "sonata"),
     ("launchpad", "Launchpad", "view-app-grid-symbolic", "graphite", "sonata"),
@@ -45,7 +52,14 @@ DESCRIPTIONS = {
     "displays": "Brightness, resolution and how your screens are arranged.",
     "battery": "Battery level, energy mode and the menu bar percentage.",
     "wallpaper": "The picture on your desktop.",
-    "appearance": "Light or dark look for Sonata and your apps.",
+    "appearance": "Appearance, default web browser and Sonata's look.",
+    "keyboard": "Key repeat and the keyboard layout (input source).",
+    "trackpad": "Tracking speed, tap to click and scrolling.",
+    "mouse": "Tracking speed, scrolling and the primary button.",
+    "datetime": "Time zone, automatic time and the menu bar clock.",
+    "users": "Your account and the apps that open when you log in.",
+    "sharing": "The name other computers see on the network.",
+    "accessibility": "Motion, transparency, text and pointer size.",
     "dock": "Size, magnification, position and hiding of the Dock.",
     "menubar": "The clock and the items in the menu bar.",
     "launchpad": "How Launchpad arranges your apps.",
@@ -77,6 +91,68 @@ window.sonata-settings { color: %(label)s; }
 """, key="settings")
 
 
+def _is_admin() -> bool:
+    try:
+        import grp
+        return any(GLib.get_user_name() in grp.getgrnam(g).gr_mem for g in ("wheel", "sudo", "admin")
+                   if _group_exists(g))
+    except (ImportError, KeyError):
+        return False
+
+
+def _group_exists(name) -> bool:
+    import grp
+    try:
+        grp.getgrnam(name)
+        return True
+    except KeyError:
+        return False
+
+
+def _login_items():
+    """(file name, app name, enabled) for every autostart entry (user and
+    system; a user copy overrides the system one)."""
+    from .. import autostart
+    seen, out = set(), []
+    for d in autostart._dirs():
+        try:
+            names = sorted(os.listdir(d))
+        except OSError:
+            continue
+        for name in names:
+            if not name.endswith(".desktop") or name in seen:
+                continue
+            seen.add(name)
+            kf = GLib.KeyFile()
+            try:
+                kf.load_from_file(os.path.join(d, name), GLib.KeyFileFlags.NONE)
+                title = kf.get_locale_string("Desktop Entry", "Name", None)
+            except GLib.Error:
+                continue
+            hidden = autostart._get(kf, "Hidden", "boolean") or autostart._get(
+                kf, "X-GNOME-Autostart-enabled", "boolean") is False
+            only = autostart._get(kf, "OnlyShowIn", "string_list")
+            if only and autostart.DESKTOP not in only:
+                continue
+            out.append((name, title, not hidden))
+    return out
+
+
+def _set_login_item(name, on) -> None:
+    """Enable/disable through a user copy (Hidden=true), like GNOME/KDE."""
+    from .. import autostart
+    user_dir = autostart._dirs()[0]
+    src = next((os.path.join(d, name) for d in autostart._dirs() if os.path.exists(os.path.join(d, name))), None)
+    if not src:
+        return
+    kf = GLib.KeyFile()
+    kf.load_from_file(src, GLib.KeyFileFlags.KEEP_TRANSLATIONS)
+    kf.set_boolean("Desktop Entry", "Hidden", not on)
+    kf.set_boolean("Desktop Entry", "X-GNOME-Autostart-enabled", on)
+    os.makedirs(user_dir, exist_ok=True)
+    kf.save_to_file(os.path.join(user_dir, name))
+
+
 def badge(icon, color, big=False) -> Gtk.Box:
     img = Gtk.Image(icon_name=icon, pixel_size=28 if big else 16)
     box = Gtk.Box(css_classes=["st-badge", color] + (["big"] if big else []),
@@ -104,22 +180,43 @@ def combo_row(title, options, selected, on_change, subtitle="") -> Adw.ComboRow:
     return row
 
 
-def slider_row(title, value, lower, upper, on_change, subtitle="") -> Adw.ActionRow:
+def slider_row(title, value, lower, upper, on_change, subtitle="", ends=None) -> Adw.ActionRow:
+    """ends=("Slow", "Fast"): small labels under the slider's ends (macOS)."""
     row = Adw.ActionRow(title=title, subtitle=subtitle)
     s = ui.controls.slider(value, on_change, lower=lower, upper=upper)
     s.set_size_request(220, -1)
     s.set_valign(Gtk.Align.CENTER)
-    row.add_suffix(s)
+    if ends:
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER, margin_top=4, margin_bottom=4)
+        col.append(s)
+        labels = Gtk.Box()
+        labels.append(Gtk.Label(label=ends[0], css_classes=["st-caption"], hexpand=True, xalign=0))
+        labels.append(Gtk.Label(label=ends[1], css_classes=["st-caption"], xalign=1))
+        col.append(labels)
+        row.add_suffix(col)
+    else:
+        row.add_suffix(s)
     row.slider = s
     return row
 
 
+def _speed(v) -> float:
+    """Wayfire speed (-1..1) <-> slider (0..100)."""
+    try:
+        return (float(v) + 1) * 50
+    except ValueError:
+        return 50
+
+
 class Settings(Adw.ApplicationWindow):
     def __init__(self, app, start: str = "wifi"):
-        super().__init__(application=app, title="System Settings", css_classes=["sonata-settings", "sonata-glass"])
+        super().__init__(application=app, title="System Settings")
+        for c in ("sonata-settings", "sonata-glass"):      # added, not passed (keeps GTK's "csd")
+            self.add_css_class(c)
         # Fixed size, like macOS System Settings.
         self.set_default_size(920, 640)
         self.set_resizable(False)
+        ui.window.standard(self)
         self.toasts = Adw.ToastOverlay()
         self.split = Adw.NavigationSplitView(vexpand=True, min_sidebar_width=230, max_sidebar_width=260)
         self.split.set_sidebar(self._sidebar())
@@ -402,6 +499,154 @@ class Settings(Adw.ApplicationWindow):
         g.add(row)
         return [g]
 
+    # -- input (Wayfire [input]; applied live) --------------------------------------------------
+    def _wf(self, key, value):
+        system.run_async(system.wayfire_set, None, "input", key, value)
+
+    def _page_keyboard(self):
+        get = system.wayfire_get
+        rep = group()
+        rate = int(get("input", "kb_repeat_rate", "40") or 40)
+        delay = int(get("input", "kb_repeat_delay", "400") or 400)
+        rep.add(slider_row("Key Repeat", rate, 2, 80, lambda v: self._wf("kb_repeat_rate", int(v)),
+                           ends=("Slow", "Fast")))
+        # Delay Until Repeat: Long (left) .. Short (right), like macOS
+        rep.add(slider_row("Delay Until Repeat", 1150 - delay, 150, 1000,
+                           lambda v: self._wf("kb_repeat_delay", int(1150 - v)), ends=("Long", "Short")))
+        src = group("Input Sources")
+        cur = system.keyboard_layout()
+        opts = list(system.XKB_LAYOUTS)
+        if cur not in [o[0] for o in opts]:
+            opts.insert(0, (cur, cur))
+        src.add(combo_row("Keyboard layout", opts, cur,
+                          lambda v: system.run_async(system.set_keyboard_layout, None, v)))
+        test = Adw.EntryRow(title="Type here to test")
+        src.add(test)
+        return [rep, src]
+
+    def _page_trackpad(self):
+        get = system.wayfire_get
+        g = group("Point & Click")
+        g.add(slider_row("Tracking speed", _speed(get("input", "touchpad_cursor_speed", "0")), 0, 100,
+                         lambda v: self._wf("touchpad_cursor_speed", round(v / 50 - 1, 2)), ends=("Slow", "Fast")))
+        g.add(switch_row("Tap to click", get("input", "tap_to_click", "true") == "true",
+                         lambda on: self._wf("tap_to_click", on), subtitle="Tap with one finger"))
+        g.add(switch_row("Tap and drag", get("input", "tap_and_drag", "true") == "true",
+                         lambda on: self._wf("tap_and_drag", on)))
+        sc = group("Scroll & Zoom")
+        sc.add(switch_row("Natural scrolling", get("input", "natural_scroll", "false") == "true",
+                          lambda on: self._wf("natural_scroll", on),
+                          subtitle="Content tracks finger movement"))
+        sc.add(switch_row("Ignore trackpad while typing", get("input", "disable_touchpad_while_typing", "false")
+                          == "true", lambda on: self._wf("disable_touchpad_while_typing", on)))
+        return [g, sc]
+
+    def _page_mouse(self):
+        get = system.wayfire_get
+        g = group()
+        g.add(slider_row("Tracking speed", _speed(get("input", "mouse_cursor_speed", "0")), 0, 100,
+                         lambda v: self._wf("mouse_cursor_speed", round(v / 50 - 1, 2)), ends=("Slow", "Fast")))
+        try:
+            scroll = float(get("input", "mouse_scroll_speed", "1") or 1)
+        except ValueError:
+            scroll = 1.0
+        g.add(slider_row("Scrolling speed", scroll * 50, 5, 150,
+                         lambda v: self._wf("mouse_scroll_speed", round(v / 50, 2)), ends=("Slow", "Fast")))
+        g.add(switch_row("Natural scrolling", get("input", "mouse_natural_scroll", "false") == "true",
+                         lambda on: self._wf("mouse_natural_scroll", on),
+                         subtitle="Content tracks finger movement"))
+        g.add(combo_row("Primary mouse button", [(False, "Left"), (True, "Right")],
+                        get("input", "left_handed_mode", "false") == "true",
+                        lambda v: self._wf("left_handed_mode", v)))
+        return [g]
+
+    # -- system --------------------------------------------------------------------------------
+    def _page_datetime(self):
+        from ..shell import topbar as T
+        auto = group()
+        clock = group("Clock")
+        zone = group("Time Zone")
+
+        def fill(res):
+            on, cur, zones = res or (None, "UTC", [])
+            if on is not None:
+                auto.add(switch_row("Set date and time automatically", on,
+                                    lambda v: system.run_async(system.set_ntp, lambda ok: ok or self.toast(
+                                        "Couldn't change the setting"), v)))
+            if zones:
+                row = combo_row("Time zone", [(z, z.replace("_", " ")) for z in zones], cur,
+                                lambda z: system.run_async(system.set_timezone, lambda ok: self.toast(
+                                    f"Time zone: {z}" if ok else "Couldn't change the time zone"), z))
+                row.set_enable_search(True)
+                zone.add(row)
+            else:
+                zone.add(Adw.ActionRow(title="Time zone", subtitle=cur))
+        system.run_async(lambda: (system.ntp(), system.timezone(), system.timezones()), fill)
+        cfg = config.load("topbar", T.DEFAULTS)
+        h24 = "%H" in cfg["clock_format"]
+        clock.add(switch_row("Use a 24-hour clock", h24, lambda on: self._save(
+            "topbar", "clock_format", cfg["clock_format"].replace("%-I:%M %p", "%H:%M") if on
+            else cfg["clock_format"].replace("%H:%M", "%-I:%M %p"))))
+        clock.add(switch_row("Show the date", "%d" in cfg["clock_format"], lambda on: self._save(
+            "topbar", "clock_format", ("%a %-d %b  " if on else "%a ") + ("%H:%M" if "%H" in config.load(
+                "topbar", T.DEFAULTS)["clock_format"] else "%-I:%M %p"))))
+        return [auto, zone, clock]
+
+    def _page_users(self):
+        me = group()
+        row = Adw.ActionRow(title=GLib.get_real_name() or GLib.get_user_name(), use_markup=False,
+                            subtitle=GLib.get_user_name() + (" · Admin" if _is_admin() else " · Standard"))
+        row.add_prefix(Adw.Avatar(size=44, text=GLib.get_real_name() or GLib.get_user_name(), show_initials=True))
+        me.add(row)
+        items = group("Login Items", "These apps open automatically when you log in.")
+        for name, title, enabled in _login_items():
+            items.add(switch_row(title, enabled, lambda on, n=name: _set_login_item(n, on)))
+        if not _login_items():
+            items.add(Adw.ActionRow(title="No login items", subtitle="Use Options > Open at Login in the Dock"))
+        return [me, items]
+
+    def _page_sharing(self):
+        g = group()
+        entry = Adw.EntryRow(title="Computer Name", show_apply_button=True)
+        entry.set_text(system.computer_name())
+        entry.connect("apply", lambda e: system.run_async(
+            system.set_computer_name, lambda ok: self.toast("Computer name changed" if ok else
+                                                            "Couldn't change the name"), e.get_text().strip()))
+        g.add(entry)
+        g.add(Adw.ActionRow(title="Local hostname", subtitle=GLib.get_host_name() + ".local", use_markup=False))
+        return [g]
+
+    def _page_accessibility(self):
+        I = "org.gnome.desktop.interface"
+        disp = group("Display")
+        anim = system.gsetting(I, "enable-animations")
+        disp.add(switch_row("Reduce motion", anim == "false", lambda on: (
+            system.set_gsetting(I, "enable-animations", "false" if on else "true"),
+            system.run_async(system.wayfire_set, None, "animate", "open_animation", "fade" if on else "zoom"),
+            system.run_async(system.wayfire_set, None, "animate", "close_animation", "fade" if on else "zoom"))))
+        app = config.load("appearance", {})
+        disp.add(switch_row("Reduce transparency", app.get("reduce_transparency", False),
+                            lambda on: (self._save("appearance", "reduce_transparency", on),
+                                        self.toast("Applies to windows opened from now on")),
+                            subtitle="Solid sidebars and Dock instead of glass"))
+        try:
+            scale = float(system.gsetting(I, "text-scaling-factor") or 1)
+        except ValueError:
+            scale = 1.0
+        disp.add(combo_row("Text size", [(1.0, "Default"), (1.15, "Large"), (1.3, "Larger")],
+                           min((1.0, 1.15, 1.3), key=lambda v: abs(v - scale)),
+                           lambda v: system.set_gsetting(I, "text-scaling-factor", str(v))))
+        ptr = group("Pointer")
+        try:
+            size = int(system.gsetting(I, "cursor-size") or 24)
+        except ValueError:
+            size = 24
+        ptr.add(combo_row("Pointer size", [(24, "Normal"), (32, "Large"), (48, "Larger")],
+                          min((24, 32, 48), key=lambda v: abs(v - size)),
+                          lambda v: (system.set_gsetting(I, "cursor-size", str(v)),
+                                     system.run_async(system.wayfire_set, None, "input", "cursor_size", v))))
+        return [disp, ptr]
+
     # -- Sonata sections ------------------------------------------------------------
     def _page_appearance(self):
         g = group("Appearance")
@@ -410,6 +655,14 @@ class Settings(Adw.ApplicationWindow):
                         "prefer-dark" if scheme == "prefer-dark" else "default",
                         lambda v: system.set_gsetting("org.gnome.desktop.interface", "color-scheme", v),
                         subtitle="Linux setting: every app follows it"))
+        browsers = [(a.get_id(), a.get_display_name()) for a in Gio.AppInfo.get_all_for_type("x-scheme-handler/https")
+                    if a.get_id()]
+        if browsers:
+            cur = system.default_browser()
+            if cur not in [b[0] for b in browsers]:
+                cur = browsers[0][0]
+            g.add(combo_row("Default web browser", browsers, cur,
+                            lambda v: system.run_async(system.set_default_browser, None, v)))
         s = group("Sonata")
         app = config.load("appearance", {"icon_theme": "Sonata", "theme": "mac"})
         s.add(combo_row("Style", [("mac", "macOS"), ("windows", "Windows 11 (coming later)")], app["theme"],

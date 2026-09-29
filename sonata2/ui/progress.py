@@ -138,8 +138,9 @@ class _Window(Adw.Window):
         return cls._instance
 
     def __init__(self):
-        super().__init__(title="Copy", css_classes=["sonata-progress-window"], default_width=460,
-                         resizable=False, hide_on_close=True)
+        super().__init__(title="Copy", default_width=460, resizable=False, hide_on_close=True)
+        self.add_css_class("sonata-progress-window")
+        window.standard(self)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         head = Gtk.CenterBox(css_classes=["sp-head"])
         head.set_start_widget(window.traffic_lights(self.close, self.minimize, None))

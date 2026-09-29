@@ -358,7 +358,7 @@ class Dock(Gtk.Box):
             if ok:
                 snap.append_texture(self.backdrop, _rect(-p.x, -p.y, self.backdrop.get_width(),
                                                          self.backdrop.get_height()))
-        snap.append_color(ui.rgba("glass_tint" if self.cfg["glass"] else "solid_tint"), rect)
+        snap.append_color(ui.rgba("glass_tint" if self.cfg["glass"] and not ui.theme.reduce_transparency() else "solid_tint"), rect)
         snap.pop()
         snap.append_inset_shadow(rr, ui.rgba("highlight"), 0, 0, 0.5, 0)
         snap.append_border(_rounded(_rect(x - 0.5, y - 0.5, pw + 1, ph + 1), radius + 0.5),
