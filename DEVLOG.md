@@ -382,3 +382,25 @@
   in DESIGN.md: every click animates).
 - dev-session: component logs in .dev-logs/, GDK_BACKEND unset; layer.py
   prints once why layer-shell is unavailable.
+
+## 2026-09-29 (night) -- Big Sur polish pass (Vini asleep, autonomous)
+
+- Files: F3 (menus, rename, new folder, Trash, duplicate, clipboard, Copy
+  window, conflicts), thumbnails, Quick Look, Get Info.
+- Windows: `css_classes=` in a window constructor drops GTK's "csd" class
+  (no rounded corners / shadow) -> classes are added after construction;
+  ui.window.standard() = Big Sur frame. Glass sidebars use the Dock tint.
+- Settings: many Linux sections (see ROADMAP); Wayfire options written to
+  wayfire-overrides.ini + the live resolved config (sonata2/wfconfig.py,
+  merged by tools/wayfire-config.sh).
+- Menu bar: status icons (tools/gen-status-icons.py), Spotlight, input
+  source, clipboard (wl-clipboard), Now Playing (MPRIS, event-driven),
+  Big Sur menus, Control Center, Notifications (own server), HUD (media
+  keys via `sonata2 key` -> GApplication action "osd" over D-Bus), lock
+  screen (Gtk4SessionLock + ctypes PAM; refuses to lock without both).
+- Dock: badges / attention via Unity LauncherEntry.
+- Gotcha: Gio signal_subscribe callbacks get 6 args when user_data is None
+  (a 7th positional parameter raised TypeError silently).
+- Headless menus: the last section of popover menus was cut in headless
+  sway only (the popup got less height than asked); not reproduced on
+  real compositors so far -- keep an eye on it.
