@@ -1148,6 +1148,8 @@ class TopBarWindow(Gtk.ApplicationWindow):
             self.bar.nightshift = NightShift()
             from .idlelock import IdleLock
             self.bar.idlelock = IdleLock()
+            from .mission import MissionBackdrop
+            self.bar.mission = MissionBackdrop(app)
             from ..backend.equalizer import Equalizer
             self.bar.equalizer = Equalizer()
             self.bar.equalizer.start()

@@ -113,9 +113,10 @@ def wallpaper_texture():
 class Backdrop(Gtk.Widget):
     """The wallpaper, cover-fit, blurred and dimmed (drawn once per size)."""
 
-    def __init__(self, texture):
+    def __init__(self, texture, dim: float = 0.18, blur: float = 64):
         super().__init__(hexpand=True, vexpand=True)
         self.texture = texture
+        self.dim, self.blur = dim, blur
 
     def do_snapshot(self, snap):
         w, h = self.get_width(), self.get_height()
@@ -129,12 +130,12 @@ class Backdrop(Gtk.Widget):
         scale = max(w / tw, h / th)
         dw, dh = tw * scale, th * scale
         snap.push_clip(rect)
-        snap.push_blur(64)
+        snap.push_blur(self.blur)
         snap.append_texture(self.texture, Graphene.Rect().init((w - dw) / 2 - 40, (h - dh) / 2 - 40,
                                                               dw + 80, dh + 80))
         snap.pop()
         dim = Gdk.RGBA()
-        dim.parse("rgba(0,0,0,0.18)")
+        dim.parse(f"rgba(0,0,0,{self.dim})")
         snap.append_color(dim, rect)
         snap.pop()
 
