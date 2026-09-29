@@ -31,7 +31,7 @@ from .. import ui  # noqa: E402
 from . import dock_drop, dock_menu, dock_stack, layer  # noqa: E402
 
 DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "window_gap": 6, "glass": True,
-            "indicators": True, "bounce": True, "minimize_effect": "genie",
+            "indicators": True, "bounce": True, "minimize_effect": "genie", "click_minimizes": True,
             "magnification": False, "magnified_size": 80, "position": "bottom",
             "autohide": False, "autohide_delay_ms": 300, "show_recents": True,
             "recent": [], "stacks": None, "all_displays": False}
@@ -882,9 +882,15 @@ class Dock(Gtk.Box):
     def _clicked(self, key, tile: DockTile) -> None:
         wins = self.windows.get(key)
         if wins:
+            shown = [t for t in wins if not t.minimized]
+            if self.cfg.get("click_minimizes", True) and any(t.activated for t in shown):
+                # the app in front: clicking its icon minimizes its windows (Vini)
+                for t in shown:
+                    self.manager.minimize(t)
+                return
             # macOS: bring all of the app's windows forward; if every window
             # is minimized, restore them. The newest window ends up focused.
-            for t in [t for t in wins if not t.minimized] or wins:
+            for t in shown or wins:
                 self.manager.activate(t)
         elif tile.info:
             self.launch(tile)
@@ -1021,7 +1027,7 @@ class DockWindow(Gtk.ApplicationWindow):
     REBUILD_KEYS = {"position", "show_recents"}
     LIVE_KEYS = ("icon_size", "magnification", "magnified_size", "position", "autohide",
                  "autohide_delay_ms", "show_recents", "glass", "edge_gap", "window_gap", "indicators",
-                 "bounce")
+                 "bounce", "click_minimizes")
 
     def _config_changed(self) -> None:
         """dock.json changed (Settings app): apply appearance/behaviour keys.

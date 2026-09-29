@@ -1451,6 +1451,8 @@ class Settings(Adw.ApplicationWindow):
                               subtitle="Otherwise only on the main display (Displays)"))
         behave.add(switch_row("Show suggested and recent apps in Dock", cfg["show_recents"],
                               lambda on: self._save("dock", "show_recents", on)))
+        behave.add(switch_row("Click an app in front to minimize it", cfg["click_minimizes"],
+                              lambda on: self._save("dock", "click_minimizes", on)))
         behave.add(switch_row("Animate opening applications", cfg["bounce"],
                               lambda on: self._save("dock", "bounce", on)))
         behave.add(switch_row("Show indicators for open applications", cfg["indicators"],
