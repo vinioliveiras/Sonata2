@@ -36,11 +36,12 @@ APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
            "lock": "io.github.vinioliveiras.sonata2.lock",
            "greeter": "io.github.vinioliveiras.sonata2.greeter",
            "welcome": "io.github.vinioliveiras.sonata2.welcome",
+           "portal": "io.github.vinioliveiras.sonata2.portal",
            "spotlight": "io.github.vinioliveiras.sonata2.spotlight"}
 # Shell surfaces (never shown as running apps in the Dock); Files and
 # Settings are ordinary apps.
 SHELL_IDS = {APP_IDS[k] for k in ("dock", "autostart", "wallpaper", "launchpad", "topbar", "gallery", "lock",
-                                   "spotlight", "greeter", "welcome")}
+                                   "spotlight", "greeter", "welcome", "portal")}
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -325,6 +326,13 @@ def run_lock(app, args, ui, state):
     from .shell.lock import LockScreen
     app.hold()
     state["lock"] = LockScreen(app)
+
+
+def run_portal(app, args, ui, state):
+    """Open/Save panels for every app (file chooser portal, portal.py)."""
+    if state.get("portal") is None:
+        from .portal import Portal
+        state["portal"] = Portal(app)
 
 
 def run_welcome(app, args, ui, state):
@@ -773,7 +781,7 @@ def main() -> int:
         from . import autostart
         autostart.run()
         return 0
-    if not args.preview and args.component not in ("files", "settings") and \
+    if not args.preview and args.component not in ("files", "settings", "portal") and \
             not (args.component == "greeter" and os.environ.get("SONATA_GREETER_FAKE")):
         layer.ensure_preload()   # may re-exec this process
 
@@ -834,6 +842,8 @@ def main() -> int:
             run_greeter(app, args, ui, state)
         elif args.component == "welcome":
             run_welcome(app, args, ui, state)
+        elif args.component == "portal":
+            run_portal(app, args, ui, state)
         else:
             run_topbar(app, args, ui)
 

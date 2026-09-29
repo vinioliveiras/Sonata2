@@ -57,6 +57,8 @@ if [ "$UNINSTALL" = 1 ]; then
     if [ -f "$SESSION_FILE" ] && ask "Remove \"Sonata\" from the login screen (sudo)?"; then
         sudo rm -f "$SESSION_FILE" /usr/local/bin/sonata-login
     fi
+    rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services/org.freedesktop.impl.portal.desktop.sonata.service"
+    sudo rm -f /usr/share/xdg-desktop-portal/portals/sonata.portal 2>/dev/null || true
     rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services/org.freedesktop.FileManager1.service" \
           "$BIN/sonata-filemanager1"
     rm -f "$HOME/.local/share/applications/sonata2-launchpad.desktop" \
@@ -293,9 +295,16 @@ cp "$def" "$mark"
 
 # -- portals (file chooser, screenshots/screen sharing) for XDG_CURRENT_DESKTOP=Sonata ---------------
 $SUDO mkdir -p "$PORTAL_DIR"
-printf '[preferred]\ndefault=gtk\norg.freedesktop.impl.portal.Screenshot=wlr\norg.freedesktop.impl.portal.ScreenCast=wlr\n' \
+printf '[preferred]\ndefault=gtk\norg.freedesktop.impl.portal.FileChooser=sonata;gtk\norg.freedesktop.impl.portal.Screenshot=wlr\norg.freedesktop.impl.portal.ScreenCast=wlr\n' \
     > "$tmp/sonata-portals.conf"
 $SUDO install -m 644 "$tmp/sonata-portals.conf" "$PORTAL_DIR/sonata-portals.conf"
+# Sonata's Open/Save panels (sonata2/portal.py): a portal backend D-Bus starts
+# on demand; xdg-desktop-portal lists backends only from its system folder
+printf '[portal]\nDBusName=org.freedesktop.impl.portal.desktop.sonata\nInterfaces=org.freedesktop.impl.portal.FileChooser;\nUseIn=Sonata\n' \
+    > "$tmp/sonata.portal"
+sudo install -D -m 644 "$tmp/sonata.portal" /usr/share/xdg-desktop-portal/portals/sonata.portal || true
+printf '[D-BUS Service]\nName=org.freedesktop.impl.portal.desktop.sonata\nExec=%s portal\n' "$BIN/sonata2" \
+    > "$DBUS_DIR/org.freedesktop.impl.portal.desktop.sonata.service"
 
 # -- login screen entry ---------------------------------------------------------------------------------
 # The login screen checks TryExec as its own user (gdm, sddm...), which can't

@@ -33,6 +33,8 @@ CODE = ("Code", "Code - OSS", "VSCodium", "Code - Insiders")
 MOZILLA = ("~/.mozilla/firefox", "~/.config/mozilla/firefox", "~/.thunderbird", "~/.librewolf", "~/.floorp",
            "~/.var/app/org.mozilla.firefox/.mozilla/firefox")
 MOZ_LINE = 'user_pref("browser.tabs.inTitlebar", 0);  // Sonata title bars (Settings > Appearance)'
+# always: Firefox's Open/Save dialogs through the portal (Sonata's panels)
+MOZ_PORTAL = 'user_pref("widget.use-xdg-desktop-portal.file-picker", 1);  // Sonata Open/Save panels'
 
 
 def enabled() -> bool:
@@ -102,8 +104,8 @@ def _mozilla_userjs(path: str, on: bool) -> None:
             lines = f.read().splitlines()
     except OSError:
         lines = []
-    kept = [ln for ln in lines if "Sonata title bars" not in ln]
-    new = kept + ([MOZ_LINE] if on else [])
+    kept = [ln for ln in lines if "Sonata title bars" not in ln and "Sonata Open/Save panels" not in ln]
+    new = kept + ([MOZ_LINE] if on else []) + [MOZ_PORTAL]
     if new != lines:
         _write(path, "\n".join(new) + ("\n" if new else ""))
 

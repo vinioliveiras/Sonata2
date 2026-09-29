@@ -90,6 +90,12 @@ unset QT_STYLE_OVERRIDE KDE_FULL_SESSION KDE_SESSION_VERSION
 # Chromium/Electron (Chrome, Spotify, VS Code...): native Wayland with
 # client-side title bars drawn from the GTK theme.
 export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-auto}"
+# Open/Save dialogs through the file chooser portal -> Sonata's panels
+# (sonata2/portal.py): GTK 3 apps (GTK_USE_PORTAL), GTK 4 apps (GDK_DEBUG
+# portals); Chromium/Electron use the portal on their own, Firefox through
+# its pref (sonata2/titlebars.py)
+export GTK_USE_PORTAL=1
+case ",${GDK_DEBUG:-}," in *,portals,*) ;; *) export GDK_DEBUG="${GDK_DEBUG:+$GDK_DEBUG,}portals" ;; esac
 # Sonata title bars for all apps (Settings > Appearance, on unless turned
 # off): Claude Desktop's Linux build (claude-desktop-bin) draws its own
 # frame unless told to use the system's (sonata2/titlebars.py does the rest)
