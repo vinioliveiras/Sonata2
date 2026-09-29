@@ -43,15 +43,29 @@ _STYLE = {"destructive": Adw.ResponseAppearance.DESTRUCTIVE,
           "default": Adw.ResponseAppearance.SUGGESTED}
 
 
+ALERT_WIDTH = 372     # px: the alert's own width, fixed
+
 # libadwaita >= 1.5: AlertDialog (MessageDialog is deprecated since 1.6)
 _MODERN = hasattr(Adw, "AlertDialog")
 
 
+def _breakable(text: str) -> str:
+    """Long unbroken words (file names: "04iuiyBZ61YPzdVS4GfRYKM-19.webp")
+    get break chances every few letters. Without them the alert's wrapped
+    heading couldn't settle on a width and the alert kept shaking."""
+    import re
+    return re.sub(r"\S{18,}", lambda m: "\u200b".join(m.group(0)[i:i + 8]
+                                                        for i in range(0, len(m.group(0)), 8)), text or "")
+
+
 def alert(heading: str, body: str, responses, on_response=None, parent=None,
           check: str = None):
+    heading, body = _breakable(heading), _breakable(body)
     if _MODERN:
         dlg = Adw.AlertDialog(heading=heading, body=body)
         dlg.add_css_class("sonata-alert")
+        if hasattr(dlg, "set_content_width"):
+            dlg.set_content_width(ALERT_WIDTH)      # one width: the wrapped text can't make it shake
     else:
         dlg = Adw.MessageDialog(heading=heading, body=body, transient_for=parent,
                                 css_classes=["sonata-alert"])
