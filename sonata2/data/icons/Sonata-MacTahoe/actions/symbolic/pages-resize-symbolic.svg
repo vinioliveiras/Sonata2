@@ -1,13 +1,1 @@
-<svg width="16" height="16" version="1.1" xmlns="http://www.w3.org/2000/svg">
- <g fill="#363636">
-  <path d="m5 3c-1.108 0-2 0.892-2 2v6c0 1.108 0.892 2 2 2h6c1.108 0 2-0.892 2-2v-5h-1v5c0 0.554-0.446 1-1 1h-6c-0.554 0-1-0.446-1-1v-6c0-0.554 0.446-1 1-1h5v-1z" stop-color="#000000" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="m9 3v3c0 0.554 0.446 1 1 1h3v-1h-3v-3z" stop-color="#000000" stroke-linecap="round" stroke-linejoin="round"/>
-  <g>
-   <path d="m 10,3 -0.707,0.707 3,3 L 13,6 Z" color="#000000" style="-inkscape-stroke:none"/>
-   <path d="m0 6 2 2-2 2z"/>
-   <path d="m16 6-2 2 2 2z"/>
-   <path d="m10 0-2 2-2-2z"/>
-   <path d="m10 16-2-2-2 2z"/>
-  </g>
- </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" version="1.1"><path fill="#363636" d="M5,3 C3.892,3 3,3.892 3,5 L3,11 C3,12.108 3.892,13 5,13 L11,13 C12.108,13 13,12.108 13,11 L13,6 L12,6 L12,11 C12,11.554 11.554,12 11,12 L5,12 C4.446,12 4,11.554 4,11 L4,5 C4,4.446 4.446,4 5,4 L10,4 L10,3 Z" /><path fill="#363636" d="M9,3 L9,6 C9,6.554 9.446,7 10,7 L13,7 L13,6 L10,6 L10,3 Z" /><path fill="#363636" d="M10,3 L9.293,3.707 L12.293,6.707 L13,6 Z" /><path fill="#363636" d="M0,6 L2,8 L0,10 Z" /><path fill="#363636" d="M16,6 L14,8 L16,10 Z" /><path fill="#363636" d="M10,0 L8,2 L6,0 Z" /><path fill="#363636" d="M10,16 L8,14 L6,16 Z" /></svg>

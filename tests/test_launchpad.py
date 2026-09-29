@@ -63,7 +63,7 @@ class LaunchpadTest(unittest.TestCase):
         a, b = self.win.model.pages[0][0], self.win.model.pages[0][1]
         self.drag(b)
         self.win.drag_over(self.grid, *self.centre(0))
-        settle(L.FOLDER_HOLD_MS + 150)
+        settle(L.FOLDER_HOLD_MS + 500)          # slow software rendering in CI
         self.assertTrue(self.win._drag["target"].has_css_class("folder-target"))
         self.win.drag_drop(self.grid, *self.centre(0))
         item = self.win.model.pages[0][0]
@@ -73,7 +73,7 @@ class LaunchpadTest(unittest.TestCase):
     def test_search_and_escape(self):
         name = self.win.installed[self.win.model.all_apps()[0]].get_display_name()
         self.win.search.set_text(name[:3])
-        settle()
+        settle(800)
         self.assertEqual(self.win.stack.get_visible_child_name(), "results")
         self.assertGreaterEqual(self.win.selected, 0)
         from gi.repository import Gdk

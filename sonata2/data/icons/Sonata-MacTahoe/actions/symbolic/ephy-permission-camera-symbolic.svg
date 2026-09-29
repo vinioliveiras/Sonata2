@@ -1,5 +1,1 @@
-<svg width="16px" height="16px" version="1.1" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
- <path d="m6 3c-1.108 0-2 0.892-2 2v6c0 1.108 0.892 2 2 2h8c1.108 0 2-0.892 2-2v-6c0-1.108-0.892-2-2-2h-8zm0 1h8c0.554 0 1 0.446 1 1v6c0 0.554-0.446 1-1 1h-8c-0.554 0-1-0.446-1-1v-6c0-0.554 0.446-1 1-1z" fill="#363636" stop-color="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-width="3" style="paint-order:fill markers stroke"/>
- <path d="m0 4v8h1.207l3.793-3.793v-0.41406l-3.793-3.793h-1.207zm1 1.207 2.793 2.793-2.793 2.793v-5.5859z" color="#000000" fill="#363636" style="-inkscape-stroke:none"/>
- <rect x="13" y="5" width="1" height="1" fill="#363636" stop-color="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-width="3" style="paint-order:fill markers stroke"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="16px" height="16px" version="1.1" viewBox="0 0 16 16"><path fill="#363636" d="M6,3 C4.892,3 4,3.892 4,5 L4,11 C4,12.108 4.892,13 6,13 L14,13 C15.108,13 16,12.108 16,11 L16,5 C16,3.892 15.108,3 14,3 L6,3 Z M6,4 L14,4 C14.554,4 15,4.446 15,5 L15,11 C15,11.554 14.554,12 14,12 L6,12 C5.446,12 5,11.554 5,11 L5,5 C5,4.446 5.446,4 6,4 Z" /><path fill="#363636" d="M0,4 L0,12 L1.207,12 L5,8.207 L5,7.793 L1.207,4 L0,4 Z M1,5.207 L3.793,8 L1,10.793 L1,5.207 Z" /><path fill="#363636" d="M13,5 L14,5 L14,6 L13,6 L13,5 Z" /></svg>

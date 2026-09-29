@@ -19,6 +19,14 @@ from gi.repository import Adw  # noqa: E402
 from . import theme  # noqa: E402
 
 theme.register("""
+dialog.alert.sonata-alert .heading-bin > label, dialog.alert.sonata-alert .heading,
+window.messagedialog.sonata-alert .heading {
+  font-size: %(text_body)s; font-weight: 700; }
+dialog.alert.sonata-alert .body, window.messagedialog.sonata-alert .body {
+  font-size: %(text_small)s; color: %(label_secondary)s; }
+dialog.alert.sonata-alert { font-family: %(font)s; }
+dialog.alert.sonata-alert .response-area > button { min-height: 28px; padding-top: 0; padding-bottom: 0; border-radius: 7px; font-weight: 500; }   /* Big Sur buttons */
+dialog.alert.sonata-alert > .floating-sheet { border-radius: %(r_dialog)s; }
 window.messagedialog.sonata-alert, window.messagedialog.sonata-alert > contents {
   border-radius: %(r_dialog)s; background-color: %(window_bg)s; color: %(label)s;
   font-family: %(font)s;
@@ -32,10 +40,18 @@ _STYLE = {"destructive": Adw.ResponseAppearance.DESTRUCTIVE,
           "default": Adw.ResponseAppearance.SUGGESTED}
 
 
+# libadwaita >= 1.5: AlertDialog (MessageDialog is deprecated since 1.6)
+_MODERN = hasattr(Adw, "AlertDialog")
+
+
 def alert(heading: str, body: str, responses, on_response=None, parent=None,
-          check: str = None) -> Adw.MessageDialog:
-    dlg = Adw.MessageDialog(heading=heading, body=body, transient_for=parent,
-                            css_classes=["sonata-alert"])
+          check: str = None):
+    if _MODERN:
+        dlg = Adw.AlertDialog(heading=heading, body=body)
+        dlg.add_css_class("sonata-alert")
+    else:
+        dlg = Adw.MessageDialog(heading=heading, body=body, transient_for=parent,
+                                css_classes=["sonata-alert"])
     box = None
     if check:
         from gi.repository import Gtk
@@ -56,5 +72,8 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None,
             dlg.connect("response", lambda _d, rid: on_response(rid, box.get_active()))
         else:
             dlg.connect("response", lambda _d, rid: on_response(rid))
-    dlg.present()
+    if _MODERN:
+        dlg.present(parent)
+    else:
+        dlg.present()
     return dlg

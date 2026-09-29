@@ -4,6 +4,15 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio  # noqa: E402
 
+# GLib >= 2.86 moved DesktopAppInfo to GioUnix (Gio's copy is deprecated);
+# older GLib only has Gio's.
+try:
+    gi.require_version("GioUnix", "2.0")
+    from gi.repository import GioUnix  # noqa: E402
+    DesktopAppInfo = getattr(GioUnix, "DesktopAppInfo", None) or Gio.DesktopAppInfo
+except (ValueError, ImportError):
+    DesktopAppInfo = Gio.DesktopAppInfo
+
 # Default pins, macOS order: Finder, browser, Mail, ..., Terminal, Settings.
 # Each slot lists candidate desktop ids across distros/desktops; the first one
 # installed wins, so the Dock never shows a broken icon.
@@ -43,7 +52,7 @@ def lookup(desktop_id: str):
     if not desktop_id.endswith(".desktop"):
         desktop_id += ".desktop"
     try:
-        return Gio.DesktopAppInfo.new(desktop_id)
+        return DesktopAppInfo.new(desktop_id)
     except TypeError:   # PyGObject raises on a NULL constructor result
         return None
 
@@ -78,7 +87,7 @@ def _build_index() -> dict:
             continue
         did = did[:-8]
         keys = [did, did.rsplit(".", 1)[-1]]
-        if isinstance(info, Gio.DesktopAppInfo):
+        if isinstance(info, DesktopAppInfo):
             wm = info.get_startup_wm_class()
             if wm:
                 keys.insert(0, wm)

@@ -42,7 +42,8 @@ def entries() -> list:
             if not _wanted(kf):
                 continue
             try:
-                info = Gio.DesktopAppInfo.new_from_keyfile(kf)
+                from .apps import DesktopAppInfo
+                info = DesktopAppInfo.new_from_keyfile(kf)
             except TypeError:
                 info = None
             if info:

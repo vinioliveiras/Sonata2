@@ -7,7 +7,8 @@ def open_folder(uri: str) -> None:
     """Show a folder in Files (another process); the system's default file
     manager if Files' entry isn't there."""
     from gi.repository import Gio, GLib
-    info = Gio.DesktopAppInfo.new(APP_ID + ".desktop")
+    from ..apps import lookup
+    info = lookup(APP_ID)
     try:
         if info:
             info.launch_uris([uri], None)

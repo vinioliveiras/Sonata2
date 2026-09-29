@@ -108,7 +108,7 @@ def _theme() -> str:
 
 def _load(*_a) -> None:
     vals = values()
-    _provider.load_from_data("\n".join(t % {**vals, **loc} for t, loc in _templates.values()).encode())
+    _provider.load_from_string("\n".join(t % {**vals, **loc} for t, loc in _templates.values()))
     for cb in list(_listeners):
         cb()
 
