@@ -49,7 +49,7 @@ if [ "$UNINSTALL" = 1 ]; then
     $SUDO rm -rf "$SHARE"
     $SUDO rm -f "$BIN/sonata2" "$BIN/sonata-session" "$PORTAL_DIR/sonata-portals.conf"
     if [ -f "$SESSION_FILE" ] && ask "Remove \"Sonata\" from the login screen (sudo)?"; then
-        sudo rm -f "$SESSION_FILE"
+        sudo rm -f "$SESSION_FILE" /usr/local/bin/sonata-login
     fi
     rm -f "$HOME/.local/share/applications/sonata2-launchpad.desktop" \
           "$HOME/.local/share/applications/sonata2-settings.desktop"
@@ -244,21 +244,41 @@ printf '[preferred]\ndefault=gtk\norg.freedesktop.impl.portal.Screenshot=wlr\nor
 $SUDO install -m 644 "$tmp/sonata-portals.conf" "$PORTAL_DIR/sonata-portals.conf"
 
 # -- login screen entry ---------------------------------------------------------------------------------
+# The login screen checks TryExec as its own user (gdm, sddm...), which can't
+# look inside a private home folder: the entry points to a small system-wide
+# starter that runs the user's own launcher once logged in.
+LOGIN_BIN=/usr/local/bin/sonata-login
+cat > "$tmp/sonata-login" <<'EOF'
+#!/bin/sh
+# "Sonata" on the login screen (install.sh): this user's Sonata, else a
+# system-wide one (install.sh --system).
+for s in "$HOME/.local/bin/sonata-session" /usr/local/bin/sonata-session; do
+    [ -x "$s" ] && exec "$s" "$@"
+done
+echo "Sonata is not installed for $USER (run install.sh)" >&2
+exit 1
+EOF
 cat > "$tmp/sonata.desktop" <<EOF
 [Desktop Entry]
 Name=Sonata
 Comment=Sonata 2 desktop (Wayfire + Sonata shell)
-Exec=$BIN/sonata-session
-TryExec=$BIN/sonata-session
+Exec=$LOGIN_BIN
+TryExec=$LOGIN_BIN
 Type=Application
 DesktopNames=Sonata
 EOF
 if [ -d /usr/share/wayland-sessions ] || [ "$MODE" = system ]; then
     if [ -n "$SUDO" ] || [ "$(id -u)" = 0 ] || ask "Add \"Sonata\" to the login screen (needs sudo)?"; then
+        sudo install -D -m 755 "$tmp/sonata-login" "$LOGIN_BIN" &&
         sudo install -D -m 644 "$tmp/sonata.desktop" "$SESSION_FILE" && echo "Login screen: \"Sonata\" added."
     else
-        echo "Skipped. Later: sudo install -D -m 644 <(cat <<'X'"; cat "$tmp/sonata.desktop"; echo "X"; echo ") $SESSION_FILE"
+        echo "Skipped: the login screen won't list Sonata (run ./install.sh again to add it)."
     fi
+fi
+# GDM lists Wayland sessions only when it runs on Wayland itself.
+if grep -Eqs '^[[:space:]]*WaylandEnable[[:space:]]*=[[:space:]]*false' /etc/gdm/custom.conf /etc/gdm3/custom.conf /etc/gdm3/daemon.conf; then
+    say "GDM has Wayland turned off (WaylandEnable=false in its custom.conf): Sonata won't be listed."
+    echo "  Remove that line (or set it to true) and restart the computer."
 fi
 
 case ":$PATH:" in *":$BIN:"*) ;; *) echo "Note: $BIN is not in your PATH (the session adds it itself)." ;; esac

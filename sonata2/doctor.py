@@ -143,8 +143,27 @@ def check_install(r: Report) -> None:
     r.add(OK if os.path.exists(bin_) else FAIL, "sonata-session launcher",
           fix="" if os.path.exists(bin_) else "./install.sh --dev   (from the repo)")
     entry = "/usr/share/wayland-sessions/sonata.desktop"
-    r.add(OK if os.path.exists(entry) else FAIL, "\"Sonata\" on the login screen",
-          fix="" if os.path.exists(entry) else "./install.sh --dev")
+    try_exec = ""
+    try:
+        m = re.search(r"^TryExec=(.+)$", open(entry).read(), re.M)
+        try_exec = m.group(1).strip() if m else ""
+    except OSError:
+        pass
+    if not os.path.exists(entry):
+        r.add(FAIL, "\"Sonata\" on the login screen", fix="./install.sh --dev")
+    elif try_exec.startswith("/home/") or (try_exec and not os.path.exists(try_exec)):
+        # the login screen checks TryExec as its own user: a private home is invisible to it
+        r.add(FAIL, "\"Sonata\" is hidden on the login screen", f"it can't reach {try_exec}",
+              fix="./install.sh --dev   (installs /usr/local/bin/sonata-login)")
+    else:
+        r.add(OK, "\"Sonata\" on the login screen")
+    for conf in ("/etc/gdm/custom.conf", "/etc/gdm3/custom.conf", "/etc/gdm3/daemon.conf"):
+        try:
+            if re.search(r"^\s*WaylandEnable\s*=\s*false", open(conf).read(), re.M):
+                r.add(FAIL, "GDM runs without Wayland: it hides Wayland sessions like Sonata",
+                      conf, fix=f"remove WaylandEnable=false from {conf}, then restart")
+        except OSError:
+            pass
     share = os.path.expanduser("~/.local/share/sonata2")
     if os.path.islink(share):
         r.add(OK, "dev install", os.path.realpath(share))
