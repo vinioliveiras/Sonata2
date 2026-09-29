@@ -17,10 +17,11 @@ theme.register("""
    and the provider is loaded above USER priority, so a user GTK theme (e.g. a
    macOS-look theme in ~/.config/gtk-4.0) can't repaint them grey on
    hover/press/focus. */
-/* Big Sur geometry: 12px dots, 8px apart (centres 20px apart), first centre
-   20px from the window edge, vertically centred in the title/toolbar. */
-.traffic { margin-left: 10px; }
-headerbar .traffic { margin-left: 5px; }   /* headerbar adds its own 5px start padding */
+/* 12px dots, 8px apart (centres 20px apart). */
+/* Every window (Sonata's, pixdecor's): first dot centred 13 px from the left
+   edge and 14 px from the top, close to the corner (Vini's call). */
+.traffic { margin-left: 3px; margin-top: 8px; }
+headerbar .traffic { margin-left: -2px; margin-top: 2px; }   /* headerbar adds its own padding */
 .traffic button,
 .traffic button:hover,
 .traffic button:active,
@@ -60,8 +61,8 @@ headerbar .traffic { margin-left: 5px; }   /* headerbar adds its own 5px start p
 
 
 # Standard title bar: every Sonata window puts the traffic lights at the
-# same spot as Files (first dot centred 20 px from the left edge and 26 px
-# from the top: a 52 px bar), whatever the window. Use it instead of placing
+# same spot (first dot centred 13 px from the left edge and 14 px from the
+# top, in a 52 px bar), whatever the window. Use it instead of placing
 # traffic_lights() by hand.
 TITLEBAR_H = 52
 theme.register("""
@@ -124,7 +125,7 @@ def standard(win) -> None:
 def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
     """Close / minimize / zoom as macOS-style coloured dots. on_zoom=None greys the
     green one out (fixed-size windows, like System Settings)."""
-    box = Gtk.Box(css_classes=["traffic"], valign=Gtk.Align.CENTER)
+    box = Gtk.Box(css_classes=["traffic"], valign=Gtk.Align.START)
     for css, glyph, tip, cb in (("tl-close", "×", "Close", on_close),
                                 ("tl-min", "−", "Minimize", on_minimize),
                                 ("tl-zoom", "+", "Zoom" if on_zoom else None, on_zoom)):
