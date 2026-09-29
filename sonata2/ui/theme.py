@@ -10,7 +10,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gtk  # noqa: E402
 
 from . import tokens  # noqa: E402
 
@@ -277,6 +277,21 @@ def setup() -> None:
     _appearance_mon = config.watch("appearance", _appearance_changed)
     _follow_color_scheme()
     _load()
+    _sliders_ignore_wheel()
+
+
+def _sliders_ignore_wheel() -> None:
+    """No slider moves under the mouse wheel (macOS): the wheel scrolls the
+    page instead. GtkRange's own scroll controller is taken off every
+    slider as it is realized, so the event goes on to the scrolled window."""
+    def strip(scale, *_a):
+        ctrls = scale.observe_controllers()
+        for i in range(ctrls.get_n_items() - 1, -1, -1):
+            c = ctrls.get_item(i)
+            if isinstance(c, Gtk.EventControllerScroll):
+                scale.remove_controller(c)
+        return True
+    GObject.add_emission_hook(Gtk.Range, "realize", strip)
 
 
 _appearance_mon = None
