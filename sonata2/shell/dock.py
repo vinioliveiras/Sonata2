@@ -904,6 +904,7 @@ class DockWindow(Gtk.ApplicationWindow):
         if self.cfg["autohide"]:
             GLib.timeout_add(600, lambda: (self._pointer(self._inside), False)[1])
 
+    REBUILD_KEYS = {"position", "show_recents"}
     LIVE_KEYS = ("icon_size", "magnification", "magnified_size", "position", "autohide",
                  "autohide_delay_ms", "show_recents", "glass", "edge_gap", "window_gap", "indicators",
                  "bounce")
@@ -913,23 +914,36 @@ class DockWindow(Gtk.ApplicationWindow):
         The Dock's own writes (pins, recents) don't touch these, so no loop."""
         new = config.load("dock", DEFAULTS)
         # "Keep in Dock" from Launchpad writes pinned: add/remove those tiles
-        if new["pinned"] is not None and new["pinned"] != self.cfg["pinned"]:
+        d = self.dock
+        if d and new["pinned"] is not None and new["pinned"] != self.cfg["pinned"]:
             for key in [k for k in new["pinned"] if k not in self.cfg["pinned"]]:
-                if key not in self.tiles:
+                if key not in d.tiles:
                     info = apps.lookup(key)
                     if not info:
                         continue
-                    self._add_tile(key, info.get_display_name(), icons.app_icon(info), info)
+                    d._add_tile(key, info.get_display_name(), icons.app_icon(info), info)
                 self.cfg["pinned"].append(key)
             for key in [k for k in self.cfg["pinned"] if k not in new["pinned"]]:
-                self.set_pinned(key, False)
-            self._relayout()
-        if all(new[k] == self.cfg[k] for k in self.LIVE_KEYS):
+                d.set_pinned(key, False)
+            d._relayout()
+        changed = [k for k in self.LIVE_KEYS if new[k] != self.cfg[k]]
+        if not changed:
             return
-        for k in self.LIVE_KEYS:
+        for k in changed:
             self.cfg[k] = new[k]
         load_css(self.cfg)
-        self.rebuild()
+        if self.dock is None or set(changed) & self.REBUILD_KEYS:
+            self.rebuild()
+            return
+        # everything else applies to the live Dock (it shares self.cfg): no
+        # rebuild, so dragging a Settings slider stays smooth
+        d = self.dock
+        d._mag_strength = 0.0
+        d._apply_magnification()
+        d._update_thickness()
+        d.queue_resize()
+        d.queue_draw()
+        self._geometry()
 
     def _exclusive(self) -> int:
         # window_gap: maximized windows stop a little above the Dock
@@ -937,6 +951,18 @@ class DockWindow(Gtk.ApplicationWindow):
 
     def _thickness(self) -> int:
         return SHADOW + PAD_TOP + max_icon(self.cfg) + dot_row(self.cfg) + self.cfg["edge_gap"]
+
+    def do_size_allocate(self, w, h, baseline) -> None:
+        Gtk.ApplicationWindow.do_size_allocate(self, w, h, baseline)
+        # the input region follows the Dock's real size -- also right after a
+        # live settings change (magnification, size...), without a restart
+        if not getattr(self, "_input_src", 0):
+            self._input_src = GLib.idle_add(self._input_after_layout)
+
+    def _input_after_layout(self) -> bool:
+        self._input_src = 0
+        self._update_input()
+        return False
 
     def _geometry(self) -> None:
         # Fixed surface thickness = biggest possible Dock; changes only with
