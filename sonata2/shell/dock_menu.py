@@ -114,8 +114,11 @@ def app_menu(dock, key: str, tile):
     if info and wins:
         sections.append([Item("New Window", lambda: new_window(dock, tile))])
     pinned = key in dock.cfg["pinned"]
+    from .dock import PERMANENT
     opts = []
-    if info:
+    if info and key in PERMANENT:                  # can't leave the Dock (like Finder)
+        opts = [[Item("Open File Location", lambda: show_in_files(app_file(info)))]]
+    elif info:
         opts = [[Item("Keep in Dock", lambda on: dock.set_pinned(key, on), checked=pinned),
                  Item("Open at Login", lambda on: set_open_at_login(info, on),
                       checked=opens_at_login(info.get_id()[:-8]))],

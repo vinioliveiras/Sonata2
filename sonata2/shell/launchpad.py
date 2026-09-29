@@ -552,7 +552,8 @@ class Launchpad(Gtk.ApplicationWindow):
             sections = [[Item("Open", lambda: self.activate_item(widget))]]
             dock = config.load("dock", {"pinned": None})
             pins = dock.get("pinned")
-            if pins is not None:
+            from .dock import PERMANENT
+            if pins is not None and item not in PERMANENT:       # Files / Launchpad always stay
                 kept = item in pins
 
                 def toggle_dock(on=not kept):

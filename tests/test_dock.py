@@ -44,6 +44,9 @@ class DockTest(unittest.TestCase):
     def keys(self):
         return [t.key for t in self.dock.app_tiles()]
 
+    def removable(self):
+        return [k for k in self.keys() if k not in D.PERMANENT]
+
     def center_x(self, key):
         ok, b = self.dock.tiles[key].compute_bounds(self.dock)
         return b.get_x() + b.get_width() / 2
@@ -68,7 +71,7 @@ class DockTest(unittest.TestCase):
         self.assertEqual(self.keys(), before)
 
     def test_drag_out_removes(self):
-        key = self.keys()[1]
+        key = self.removable()[1]
         self.start_drag(key)
         self.dock._drag_leave(None)
         self.dock._drag_cancel(None, None, Gdk.DragCancelReason.NO_TARGET, self.dock.tiles[key])
@@ -87,7 +90,7 @@ class DockTest(unittest.TestCase):
         self.assertTrue(os.path.isabs(path) and os.path.exists(path), path)
 
     def test_pin_at_position(self):
-        key = self.keys()[0]
+        key = self.removable()[0]
         self.dock.set_pinned(key, False)
         self.dock.pin_at(key, before=self.dock.tiles[self.keys()[1]])
         self.assertEqual(self.keys().index(key), 1)
@@ -169,9 +172,19 @@ class DockTest(unittest.TestCase):
         dock_stack.stack_menu(self.dock.stacks, tile).popdown()
 
     def test_keep_in_dock_toggle(self):
-        key = self.keys()[0]
+        key = self.removable()[0]
         self.dock.set_pinned(key, False)
         self.assertNotIn(key, self.keys())
+
+    def test_files_and_launchpad_stay(self):
+        for key in [k for k in D.PERMANENT if k in self.keys()]:
+            self.dock.set_pinned(key, False)
+            self.start_drag(key)
+            self.dock._drag_leave(None)
+            self.dock._drag_cancel(None, None, Gdk.DragCancelReason.NO_TARGET, self.dock.tiles[key])
+            self.dock._drag = None
+            self.assertIn(key, self.keys())
+            self.assertIn(key, config.load("dock", D.DEFAULTS)["pinned"])
 
 
 if __name__ == "__main__":

@@ -40,6 +40,9 @@ MIN_SIZE, MAX_SIZE = 16, 128
 MAX_RECENTS = 3
 LAUNCH_BOUNCES = 3          # macOS bounces a few times, then stops even if no window shows up
 MAX_DOTS = 3                        # running dots: one per window, up to this many
+# Always in the Dock (like Finder on macOS): Files and Launchpad can't be
+# removed -- the shell relies on them (open folders, reach every app).
+PERMANENT = ("io.github.vinioliveiras.sonata2.files", "sonata2-launchpad")
 NO_BOUNCE = {"sonata2-launchpad"}   # shell toggles open instantly: no launch bounce
 BOUNCE_MS = 620             # one bounce
 MAG_RADIUS = 3.0            # magnification reaches this many icons away
@@ -677,6 +680,8 @@ class Dock(Gtk.Box):
         """Keep in Dock on/off. Unpinning a running app keeps its icon until it
         quits (in the recent/running section, like macOS)."""
         pins = self.cfg["pinned"]
+        if not on and key in PERMANENT:
+            return
         if on and key not in pins:
             pins.append(key)
             self._save_order()         # takes its current position
@@ -742,7 +747,7 @@ class Dock(Gtk.Box):
 
     def _drag_cancel(self, _src, _drag, reason, tile) -> bool:
         d = self._drag
-        if d and reason == Gdk.DragCancelReason.NO_TARGET and d["left"]:
+        if d and reason == Gdk.DragCancelReason.NO_TARGET and d["left"] and tile.key not in PERMANENT:
             self.set_pinned(tile.key, False)   # dragged out of the Dock: remove
             return True                         # no snap-back animation
         if d:                                   # Esc / refused: put it back
@@ -861,6 +866,12 @@ def load_config() -> dict:
         config.save("dock", cfg)
     if cfg["stacks"] is None:
         cfg["stacks"] = dock_stack.default_stacks()
+        config.save("dock", cfg)
+    missing = [k for k in PERMANENT if k not in cfg["pinned"] and apps.lookup(k)]
+    for i, k in enumerate(PERMANENT):                     # Files first, Launchpad next
+        if k in missing:
+            cfg["pinned"].insert(min(i, len(cfg["pinned"])), k)
+    if missing:
         config.save("dock", cfg)
     return cfg
 

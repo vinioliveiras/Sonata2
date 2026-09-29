@@ -17,7 +17,7 @@ except (ValueError, ImportError):
 # Each slot lists candidate desktop ids across distros/desktops; the first one
 # installed wins, so the Dock never shows a broken icon.
 DEFAULT_SLOTS = (
-    ("org.gnome.Nautilus", "nautilus", "org.kde.dolphin", "nemo", "thunar", "pcmanfm-qt", "pcmanfm"),
+    ("io.github.vinioliveiras.sonata2.files", "org.gnome.Nautilus", "nautilus", "org.kde.dolphin", "nemo", "thunar", "pcmanfm-qt", "pcmanfm"),
     ("@browser",),   # the user's default web browser
     ("org.gnome.Evolution", "org.mozilla.Thunderbird", "thunderbird", "geary", "org.gnome.Geary"),
     ("org.gnome.Calendar", "org.kde.merkuro.calendar"),
