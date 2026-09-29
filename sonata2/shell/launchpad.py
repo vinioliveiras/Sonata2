@@ -327,7 +327,19 @@ class Launchpad(Gtk.ApplicationWindow):
     def toggle(self) -> None:
         self.close_launchpad() if self.get_visible() and self.bin.progress > 0.5 else self.open_launchpad()
 
+    def _dock_above(self, on: bool) -> None:
+        """Ask the Dock (its own process) to sit above Launchpad."""
+        try:
+            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        except GLib.Error:
+            return
+        app_id = "io.github.vinioliveiras.sonata2.dock"
+        bus.call(app_id, "/" + app_id.replace(".", "/"), "org.freedesktop.Application", "ActivateAction",
+                 GLib.Variant("(sava{sv})", ("above", [GLib.Variant("b", on)], {})), None,
+                 Gio.DBusCallFlags.NONE, 1000, None, None)
+
     def open_launchpad(self) -> None:
+        self._dock_above(True)
         self.search.set_text("")
         self.set_jiggle(False)
         self._close_folder()
@@ -336,6 +348,8 @@ class Launchpad(Gtk.ApplicationWindow):
         self._animate(1.0, OPEN_MS)
 
     def close_launchpad(self, then=None) -> None:
+        self._dock_above(False)
+
         def done():
             self.set_visible(False)
             if then:

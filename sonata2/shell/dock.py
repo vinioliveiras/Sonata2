@@ -952,6 +952,17 @@ class DockWindow(Gtk.ApplicationWindow):
     def _thickness(self) -> int:
         return SHADOW + PAD_TOP + max_icon(self.cfg) + dot_row(self.cfg) + self.cfg["edge_gap"]
 
+    def set_above(self, on: bool) -> None:
+        """Over Launchpad (OVERLAY) while it is open, TOP otherwise (fullscreen
+        apps cover the Dock)."""
+        LS = layer.layer_shell()
+        if LS and self.layer:
+            LS.set_layer(self, LS.Layer.OVERLAY if on else LS.Layer.TOP)
+        if on and self._hidden:
+            self._slide(False)                   # auto-hide: show it while Launchpad is open
+        elif not on and self.cfg["autohide"]:
+            self._pointer(self._inside)
+
     def do_size_allocate(self, w, h, baseline) -> None:
         Gtk.ApplicationWindow.do_size_allocate(self, w, h, baseline)
         # the input region follows the Dock's real size -- also right after a

@@ -95,6 +95,12 @@ def run_dock(app, args, ui):
         win = dock.DockWindow(app, cfg, manager)
     win.present()
     d = win.dock
+    # Launchpad open: the Dock goes above it (macOS keeps the Dock visible over
+    # Launchpad, and apps can be dragged onto it); back below windows after.
+    from gi.repository import Gio, GLib as _GLib
+    act = Gio.SimpleAction.new("above", _GLib.VariantType.new("b"))
+    act.connect("activate", lambda _a, v: win.set_above(v.get_boolean()) if hasattr(win, "set_above") else None)
+    app.add_action(act)
     if args.label >= 0:
         tiles = d.all_tiles()
         if args.label < len(tiles):
