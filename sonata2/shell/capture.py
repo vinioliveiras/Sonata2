@@ -28,7 +28,7 @@ DEFAULTS = {"save_to": "desktop", "timer": 0}
 ui.register("""
 window.sonata-capture, window.sonata-capture > contents,
 window.sonata-shot, window.sonata-shot > contents { background: none; box-shadow: none; }
-.cap-bar { background: %(menu_bg)s; border-radius: 12px; padding: 6px;
+.cap-bar { background: %(panel_material)s; border-radius: 12px; padding: 6px;
   box-shadow: 0 0 0 0.5px %(hairline)s, 0 10px 30px rgba(0,0,0,0.3); color: %(label)s; font-family: %(font)s; }
 .cap-bar button { min-width: 34px; min-height: 30px; padding: 0 6px; border-radius: 7px; border: none;
   background: none; box-shadow: none; color: %(label)s; }

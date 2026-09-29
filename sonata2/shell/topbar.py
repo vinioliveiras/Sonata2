@@ -27,7 +27,7 @@ from ..backend import system  # noqa: E402
 from . import layer  # noqa: E402
 
 BAR_H = 24
-DEFAULTS = {"battery_percent": False, "clock_format": "%a %-d %b  %H:%M"}
+DEFAULTS = {"battery_percent": False, "clock_format": "%a %-d %b  %H:%M", "show_bluetooth": True}
 POLL_S = 10
 
 ui.register("""
@@ -97,6 +97,10 @@ class Bar(Gtk.CenterBox):
         self.battery.add_css_class("battery")
         self.battery_pct = Gtk.Label(css_classes=["percent"])
         self.battery.get_child().prepend(self.battery_pct)          # "87% [battery]" like Big Sur
+        self.bt = self._item(right, icon="sonata-bluetooth-symbolic", on_click=self._bluetooth_panel,
+                             css="icon")
+        self.bt.set_visible(False)
+        self._watch_bluetooth()
         self.wifi = self._item(right, icon="sonata-wifi-3-symbolic",
                                on_click=self._wifi_panel, css="icon")
         self.spotlight = self._item(right, icon="sonata-search-symbolic", on_click=self._spotlight, css="icon")
@@ -119,6 +123,7 @@ class Bar(Gtk.CenterBox):
         """Settings app changed topbar.json: apply live."""
         self.cfg = config.load("topbar", DEFAULTS)
         self.battery_pct.set_visible(self.cfg["battery_percent"] and self.battery.get_visible())
+        self._bt_update()
         now = GLib.DateTime.new_now_local()
         self._set_text(self.clock, now.format(self.cfg["clock_format"]) or now.format("%a %H:%M"))
 
@@ -406,6 +411,72 @@ class Bar(Gtk.CenterBox):
                                                 False)[1])
         return pop
 
+    # -- Bluetooth (BlueZ over D-Bus: the icon follows the adapter, no polling) --------------
+    def _watch_bluetooth(self) -> None:
+        self._bt_proxy = None
+
+        def appeared(conn, _name, _owner):
+            try:
+                self._bt_proxy = Gio.DBusProxy.new_sync(conn, Gio.DBusProxyFlags.NONE, None, "org.bluez",
+                                                        "/org/bluez/hci0", "org.bluez.Adapter1", None)
+            except GLib.Error:
+                self._bt_proxy = None
+            if self._bt_proxy is not None:
+                self._bt_proxy.connect("g-properties-changed", lambda *_: self._bt_update())
+            self._bt_update()
+
+        def vanished(*_a):
+            self._bt_proxy = None
+            self._bt_update()
+        self._bt_watch = Gio.bus_watch_name(Gio.BusType.SYSTEM, "org.bluez", Gio.BusNameWatcherFlags.NONE,
+                                            appeared, vanished)
+
+    def _bt_powered(self):
+        v = self._bt_proxy.get_cached_property("Powered") if self._bt_proxy else None
+        return None if v is None else v.unpack()
+
+    def _bt_update(self) -> None:
+        powered = self._bt_powered()
+        self.bt.set_visible(powered is not None and self.cfg.get("show_bluetooth", True))
+        self._set_icon(self.bt, "sonata-bluetooth-symbolic" if powered else "sonata-bluetooth-off-symbolic")
+
+    def _bluetooth_panel(self, btn):
+        """Big Sur Bluetooth menu: switch, Devices (paired, connected ones
+        highlighted; click to connect/disconnect), Bluetooth Preferences…"""
+        on = Gtk.Switch(css_classes=["sonata-switch"], valign=Gtk.Align.CENTER,
+                        active=bool(self._bt_powered()))
+        col = ui.panel.column(ui.panel.header("Bluetooth", on))
+        col.append(ui.panel.separator())
+        col.append(ui.panel.section_title("Devices"))
+        devs = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        devs.append(ui.panel.row(None, "Searching…"))
+        col.append(devs)
+        col.append(ui.panel.separator())
+        pop = ui.panel.popup(btn, col, gap=2)
+        col.append(self._prefs_row(pop, "Bluetooth Preferences…", "bluetooth"))
+        ui.panel.align_to_start(pop, btn, 2)
+
+        def badge(d):
+            b = Gtk.Box(css_classes=["wifi-badge"] + (["on"] if d.connected else []), valign=Gtk.Align.CENTER)
+            b.append(Gtk.Image(icon_name=_bt_icon(d.name), pixel_size=14, hexpand=True, halign=Gtk.Align.CENTER))
+            return b
+
+        def fill(lst):
+            while devs.get_first_child():
+                devs.remove(devs.get_first_child())
+            paired = [d for d in lst or [] if d.paired]
+            for d in paired[:12]:
+                row = ui.panel.row(None, d.name, on_click=lambda d=d: (
+                    pop.popdown(), system.run_async(system.bluetooth_connect, None, d.mac, not d.connected)))
+                content = row.get_child() if isinstance(row, Gtk.Button) else row
+                content.prepend(badge(d))
+                devs.append(row)
+            if not paired:
+                devs.append(ui.panel.row(None, "No devices" if self._bt_powered() else "Bluetooth: Off"))
+        system.run_async(system.bluetooth_devices, fill)
+        on.connect("state-set", lambda _s, st: (system.run_async(system.set_bluetooth, None, st), False)[1])
+        return pop
+
     def _join(self, net) -> None:
         if net.connected:
             return
@@ -549,6 +620,20 @@ class Bar(Gtk.CenterBox):
 
     def _poll_soon(self) -> None:
         GLib.timeout_add(600, lambda: (self._poll(), False)[1])
+
+
+def _bt_icon(name: str) -> str:
+    """A device icon from its name (BlueZ's "Icon" needs another call)."""
+    n = name.lower()
+    for keys, icon in ((("airpods", "buds", "headphone", "headset", "wh-", "wf-"), "audio-headphones-symbolic"),
+                       (("speaker", "soundbar", "jbl", "boom"), "audio-speakers-symbolic"),
+                       (("mouse", "mx master", "trackpad"), "input-mouse-symbolic"),
+                       (("keyboard", "keys"), "input-keyboard-symbolic"),
+                       (("controller", "gamepad", "xbox", "dualsense", "dualshock", "joy-con"), "input-gaming-symbolic"),
+                       (("phone", "iphone", "galaxy", "pixel"), "phone-symbolic")):
+        if any(k in n for k in keys):
+            return icon
+    return "sonata-bluetooth-symbolic"
 
 
 def open_settings(page: str = "") -> None:
@@ -869,7 +954,8 @@ class TopBarWindow(Gtk.ApplicationWindow):
     def _preview(self) -> None:
         """Bar over a sample wallpaper in a normal window (screenshots)."""
         GLib.timeout_add(300, lambda: (self.bar._sound_state((70, False)), self.bar._battery_state((64, "Discharging", False)),
-                                       self.bar._wifi_state((True, True, ("Home", 80, False))), False)[-1])
+                                       self.bar._wifi_state((True, True, ("Home", 80, False))),
+                                       self.bar.bt.set_visible(True), False)[-1])
         from .preview import _wallpaper
         w, h = (int(v) for v in os.environ.get("PREVIEW_SIZE", "1280x400").split("x"))
         self.set_default_size(w, h)

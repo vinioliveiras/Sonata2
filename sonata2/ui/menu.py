@@ -25,7 +25,7 @@ popover.menu { background: none; box-shadow: none; padding: 0; }
 popover.menu > contents {
   padding: 5px; border-radius: %(r_menu)s; min-width: %(menu_min_w)s;
   font-family: %(font)s; font-size: %(text_body)s;
-  color: %(label)s; background-color: %(menu_bg)s;
+  color: %(label)s; background-color: %(panel_material)s;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_menu)s;
 }
 popover.menu modelbutton {

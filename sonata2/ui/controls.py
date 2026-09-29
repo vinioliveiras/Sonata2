@@ -62,7 +62,7 @@ dropdown.sonata-popup > button arrow {
 dropdown.sonata-popup popover > contents {
   padding: 5px; border-radius: %(r_menu)s;
   font-family: %(font)s; font-size: %(text_body)s;
-  color: %(label)s; background-color: %(menu_bg)s;
+  color: %(label)s; background-color: %(panel_material)s;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_menu)s;
 }
 dropdown.sonata-popup popover listview { background: none; }

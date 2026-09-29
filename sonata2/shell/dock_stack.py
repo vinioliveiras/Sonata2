@@ -24,7 +24,7 @@ ui.register("""
 popover.stack-panel { background: none; box-shadow: none; padding: 0; }
 popover.stack-panel > contents {
   padding: 10px 8px 8px 8px; border-radius: %(r_dialog)s;
-  font-family: %(font)s; color: %(label)s; background-color: %(menu_bg)s;
+  font-family: %(font)s; color: %(label)s; background-color: %(panel_material)s;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_menu)s;
 }
 .stack-title { font-size: %(text_body)s; font-weight: 700; margin: 0 6px 8px 6px; }

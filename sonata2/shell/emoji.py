@@ -32,7 +32,7 @@ MERGE = {"People & Body": "Smileys & Emotion"}     # macOS: "Smileys & People"
 
 ui.register("""
 window.sonata-emoji, window.sonata-emoji > contents { background: none; box-shadow: none; }
-.emoji-panel { background: %(menu_bg)s; border-radius: 12px; margin: 20px;
+.emoji-panel { background: %(panel_material)s; border-radius: 12px; margin: 20px;
   box-shadow: 0 0 0 0.5px %(hairline)s, 0 12px 36px rgba(0,0,0,0.3); color: %(label)s; font-family: %(font)s; }
 .emoji-panel entry { margin: 10px 10px 4px; min-height: 26px; border-radius: 7px; }
 .emoji-title { font-size: %(text_small)s; font-weight: 600; color: %(label_secondary)s; margin: 6px 12px 2px; }

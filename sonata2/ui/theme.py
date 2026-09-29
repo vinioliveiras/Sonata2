@@ -60,11 +60,12 @@ _reduce = None
 
 def values() -> dict:
     """Current tokens (for code that needs a value, e.g. drawing), plus the
-    materials resolved for this compositor: `sidebar_material`."""
+    materials resolved for this compositor: `sidebar_material`, `panel_material`."""
     v = {**tokens.palette(is_dark(), _theme()), **tokens.accent_tokens(_accent(), is_dark()), **_extra}
     # One glass for the whole system: sidebars use exactly the Dock's tint
     # over the same compositor blur.
     v["sidebar_material"] = v["glass_tint" if glass() else "sidebar_bg"]
+    v["panel_material"] = v["panel_glass" if glass() else "menu_bg"]
     return v
 
 

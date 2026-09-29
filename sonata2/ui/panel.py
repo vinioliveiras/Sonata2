@@ -20,7 +20,7 @@ theme.register("""
 popover.sonata-panel { background: none; box-shadow: none; padding: 0; }
 popover.sonata-panel > contents {
   padding: 6px; border-radius: %(r_dialog)s; min-width: 260px;
-  font-family: %(font)s; font-size: %(text_body)s; color: %(label)s; background-color: %(menu_bg)s;
+  font-family: %(font)s; font-size: %(text_body)s; color: %(label)s; background-color: %(panel_material)s;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_menu)s;
 }
 .panel-header { padding: 4px 10px 6px 10px; }
@@ -29,7 +29,7 @@ popover.sonata-panel > contents {
   color: %(label_secondary)s; }
 .panel-row { min-height: %(control_h)s; padding: 1px 10px; border-radius: %(r_menu_row)s;
   background: none; border: none; box-shadow: none; }
-.panel-row:hover { background: %(accent_selected)s; color: %(label_on_accent)s; }
+.panel-row:hover { background: alpha(%(label)s, 0.10); }   /* Big Sur status menus: soft grey */
 .panel-row label { font-weight: 400; }
 .panel-row.static:hover { background: none; color: inherit; }
 .panel-sep { min-height: 1px; margin: 5px 10px; background: %(separator)s; }

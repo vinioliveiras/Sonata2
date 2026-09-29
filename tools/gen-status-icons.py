@@ -101,6 +101,15 @@ def clipboard():
           '<path d="M5.5 8h5M5.5 10.8h3.4" stroke="#000" stroke-width="1.3" stroke-linecap="round"/>')
 
 
+def bluetooth():
+    """The Bluetooth rune; -off: faded with a slash."""
+    rune = ('<path d="M4.6 5 11.2 10.9 8 13.8V2.2L11.2 5.1 4.6 11" fill="none" stroke="#000" '
+            'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" {x}/>')
+    write("sonata-bluetooth-symbolic", rune.format(x=""))
+    write("sonata-bluetooth-off-symbolic", rune.format(x=FADED) +
+          '<path d="M2.5 2.2l11 11" stroke="#000" stroke-width="1.4" stroke-linecap="round"/>')
+
+
 def record_stop():
     """Stop-recording item (circle with a square, macOS)."""
     write("sonata-record-stop-symbolic",
@@ -122,6 +131,7 @@ if __name__ == "__main__":
     dark_mode()
     now_playing()
     clipboard()
+    bluetooth()
     record_stop()
     logo()
     # GTK wants fill-only symbolic icons (see tools/symbolic-fill.py)

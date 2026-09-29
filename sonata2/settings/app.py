@@ -1282,6 +1282,8 @@ class Settings(Adw.ApplicationWindow):
         g.add(combo_row("Clock", [("%a %-d %b  %H:%M", "Mon 28 Sep  21:41"), ("%a %H:%M", "Mon 21:41"),
                                   ("%a %-d %b  %-I:%M %p", "Mon 28 Sep  9:41 PM"), ("%H:%M", "21:41")],
                         cfg["clock_format"], lambda v: self._save("topbar", "clock_format", v)))
+        g.add(switch_row("Show Bluetooth in menu bar", cfg["show_bluetooth"],
+                         lambda on: self._save("topbar", "show_bluetooth", on)))
         return [g]
 
     def _page_launchpad(self):
