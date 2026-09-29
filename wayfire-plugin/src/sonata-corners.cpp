@@ -34,6 +34,10 @@
  */
 
 #include <map>
+#include <wayfire/render-manager.hpp>
+#include <wayfire/output-layout.hpp>
+#include <algorithm>
+#include <chrono>
 #include <memory>
 #include <string>
 
@@ -536,6 +540,113 @@ class sonata_corners_t : public wf::plugin_interface_t
         reordering = false;
     };
 
+    /* Frame pacing per display, for Sonata's logs: a burst of repaints (an
+     * animation) that ran slower than the display's refresh is written to
+     * session.log once it ends -- "sonata-perf: HDMI-A-1 180 Hz: 42 frames,
+     * median 11.1 ms, worst 27.8 ms, 3 late, render 1.2 ms". Paired with
+     * the apps' own sonata2-frames lines it shows who is slow: the
+     * compositor (these) or the app. */
+    struct perf_t
+    {
+        wf::output_t *output = nullptr;
+        std::vector<double> starts, costs;
+        std::chrono::steady_clock::time_point pre;
+        wf::effect_hook_t pre_hook, post_hook;
+    };
+    std::map<wf::output_t*, std::unique_ptr<perf_t>> perf;
+
+    static double now_ms()
+    {
+        using namespace std::chrono;
+        return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
+    }
+
+    static void report(perf_t *p)
+    {
+        auto& t = p->starts;
+        if (t.size() < 8)
+        {
+            return;
+        }
+
+        std::vector<double> gaps;
+        for (size_t i = 1; i < t.size(); i++)
+        {
+            gaps.push_back(t[i] - t[i - 1]);
+        }
+
+        std::sort(gaps.begin(), gaps.end());
+        double refresh = p->output->handle->refresh > 0 ? p->output->handle->refresh / 1000.0 : 60.0;
+        double period  = 1000.0 / refresh, median = gaps[gaps.size() / 2], worst = gaps.back();
+        if (median < period * 1.3)
+        {
+            return;                         /* kept up with the display: nothing to say */
+        }
+
+        int late = 0;
+        for (double g : gaps)
+        {
+            late += g > period * 1.5;
+        }
+
+        double cost = 0;
+        for (double c : p->costs)
+        {
+            cost += c;
+        }
+
+        LOGI("sonata-perf: ", p->output->to_string(), " ", (int)(refresh + 0.5), " Hz: ", t.size(),
+            " frames, median ", median, " ms, worst ", worst, " ms, ", late, " late, render ",
+            p->costs.empty() ? 0.0 : cost / p->costs.size(), " ms");
+    }
+
+    void track(wf::output_t *o)
+    {
+        if (perf.count(o))
+        {
+            return;
+        }
+
+        auto p = std::make_unique<perf_t>();
+        p->output = o;
+        auto raw = p.get();
+        p->pre_hook = [raw] ()
+        {
+            double now = now_ms();
+            if (!raw->starts.empty() && ((now - raw->starts.back() > 250) || (raw->starts.size() >= 600)))
+            {
+                report(raw);                /* a pause ends the burst */
+                raw->starts.clear();
+                raw->costs.clear();
+            }
+
+            raw->starts.push_back(now);
+            raw->pre = std::chrono::steady_clock::now();
+        };
+        p->post_hook = [raw] ()
+        {
+            raw->costs.push_back(std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - raw->pre).count());
+        };
+        o->render->add_effect(&p->pre_hook, wf::OUTPUT_EFFECT_PRE);
+        o->render->add_effect(&p->post_hook, wf::OUTPUT_EFFECT_POST);
+        perf[o] = std::move(p);
+    }
+
+    wf::signal::connection_t<wf::output_added_signal> on_output_added =
+        [=] (wf::output_added_signal *ev) { track(ev->output); };
+    wf::signal::connection_t<wf::output_pre_remove_signal> on_output_removed =
+        [=] (wf::output_pre_remove_signal *ev)
+    {
+        auto it = perf.find(ev->output);
+        if (it != perf.end())
+        {
+            ev->output->render->rem_effect(&it->second->pre_hook);
+            ev->output->render->rem_effect(&it->second->post_hook);
+            perf.erase(it);
+        }
+    };
+
   public:
     void init() override
     {
@@ -561,11 +672,25 @@ class sonata_corners_t : public wf::plugin_interface_t
         wf::get_core().connect(&on_decoration);
         wf::get_core().connect(&on_tiled);
         wf::get_core().scene()->connect(&on_root_update);
+        wf::get_core().output_layout->connect(&on_output_added);
+        wf::get_core().output_layout->connect(&on_output_removed);
+        for (auto o : wf::get_core().output_layout->get_outputs())
+        {
+            track(o);
+        }
+
         update_all();
     }
 
     void fini() override
     {
+        for (auto& [o, p] : perf)
+        {
+            o->render->rem_effect(&p->pre_hook);
+            o->render->rem_effect(&p->post_hook);
+        }
+
+        perf.clear();
         for (auto& v : wf::get_core().get_all_views())
         {
             if (auto t = v->get_transformed_node()->get_transformer(transformer_name))

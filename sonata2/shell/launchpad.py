@@ -94,12 +94,23 @@ class ZoomBin(Gtk.Widget):
         self.progress = 0.0         # 0 closed .. 1 open
         self.backdrop = None        # preview only
         self.frozen = None          # the grid as one texture while it zooms (freeze())
-        ui.on_change(self.queue_draw)
+        self.cached = None          # that texture, kept while the grid doesn't change
+        self._size = (0, 0)
+        ui.on_change(lambda: (self.invalidate(), self.queue_draw()))
+
+    def invalidate(self, *_a) -> None:
+        """The grid changed (apps, page, search, folder, jiggle, size, look):
+        the next animation draws a new picture of it."""
+        self.cached = None
 
     def freeze(self) -> None:
         """Draw the grid once into a texture for the open/close animation:
         each frame then scales one picture instead of re-drawing every icon
-        and label (smooth at 144 Hz, little CPU)."""
+        and label (smooth at 144 Hz, little CPU). The picture is kept for the
+        next open while the grid stays the same: opening starts at once."""
+        if self.cached is not None:
+            self.frozen = self.cached
+            return
         self.frozen = None
         w, h = self.get_width(), self.get_height()
         native = self.get_native()
@@ -116,6 +127,7 @@ class ZoomBin(Gtk.Widget):
             self.frozen = native.get_renderer().render_texture(node, Graphene.Rect().init(0, 0, w * sf, h * sf))
         except GLib.Error:
             self.frozen = None
+        self.cached = self.frozen
 
     def thaw(self) -> None:
         self.frozen = None
@@ -262,7 +274,7 @@ class Launchpad(Gtk.ApplicationWindow):
         self.search.connect("activate", lambda *_: self._activate_selected())
         self.carousel = Adw.Carousel(hexpand=True, vexpand=True, allow_scroll_wheel=True,
                                      spacing=0, reveal_duration=300)
-        self.carousel.connect("page-changed", lambda *_: self._select(-1))
+        self.carousel.connect("page-changed", lambda *_: (self.bin.invalidate(), self._select(-1)))
         self.results = PageGrid(self, -1)
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=120)
         self.stack.add_named(self.carousel, "pages")
@@ -305,6 +317,9 @@ class Launchpad(Gtk.ApplicationWindow):
     # -- geometry / rendering ----------------------------------------------------
     def do_size_allocate(self, w, h, baseline) -> None:
         Gtk.ApplicationWindow.do_size_allocate(self, w, h, baseline)
+        if getattr(self, "bin", None) and (w, h) != self.bin._size:
+            self.bin._size = (w, h)
+            self.bin.invalidate()
         # Big Sur proportions: ~12 % side margins; icon ~56 % of a cell.
         side = int(w * 0.12)
         self.grid_area.set_margin_start(side)
@@ -360,6 +375,8 @@ class Launchpad(Gtk.ApplicationWindow):
 
     def render(self) -> None:
         """Sync carousel pages with the model (widgets are reused)."""
+        if getattr(self, "bin", None):
+            self.bin.invalidate()
         pages = self.model.pages
         before = ui.transition.glide_record(self.widgets.values(), self)   # icons slide to their new place
         while self.carousel.get_n_pages() < len(pages):
@@ -533,6 +550,7 @@ class Launchpad(Gtk.ApplicationWindow):
 
     def _open_folder(self, folder) -> None:
         self._close_folder()
+        self.bin.invalidate()
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["lp-panel"])
         title = Gtk.EditableLabel(text=folder["folder"], css_classes=["lp-panel-title"], halign=Gtk.Align.CENTER)
 
@@ -569,6 +587,8 @@ class Launchpad(Gtk.ApplicationWindow):
 
     # -- search / selection ----------------------------------------------------------
     def _search_changed(self) -> None:
+        if getattr(self, "bin", None):
+            self.bin.invalidate()
         q = self.search.get_text()
         self.dots.set_opacity(0 if q else 1)
         if not q:
@@ -596,6 +616,8 @@ class Launchpad(Gtk.ApplicationWindow):
         return out
 
     def _select(self, index: int) -> None:
+        if getattr(self, "bin", None):
+            self.bin.invalidate()
         for w in self.widgets.values():
             w.remove_css_class("selected")
         items = self._visible_items() if self.carousel.get_n_pages() else []
@@ -660,6 +682,8 @@ class Launchpad(Gtk.ApplicationWindow):
     _jiggle_sticky = False
 
     def set_jiggle(self, on: bool, sticky: bool = True) -> None:
+        if on != getattr(self, "jiggling", False) and getattr(self, "bin", None):
+            self.bin.invalidate()
         self.jiggling = on
         self._jiggle_sticky = on and sticky
         (self.bin.add_css_class if on else self.bin.remove_css_class)("jiggle")
