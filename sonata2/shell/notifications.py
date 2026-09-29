@@ -171,7 +171,14 @@ class Notifications:
             self.close(params.unpack()[0], reason=3)
             invocation.return_value(None)
         elif method == "Notify":
-            invocation.return_value(GLib.Variant("(u)", (self.notify(*params.unpack()),)))
+            try:
+                nid = self.notify(*params.unpack())
+            except Exception:           # always answer: apps wait on the reply (freeze)
+                import traceback
+                traceback.print_exc()
+                nid = self._next
+                self._next += 1
+            invocation.return_value(GLib.Variant("(u)", (nid,)))
 
     def notify(self, app_name, replaces, app_icon, summary, body, actions, hints, timeout) -> int:
         nid = replaces if replaces and any(n.id == replaces for n in self.notes) else self._next
@@ -185,10 +192,10 @@ class Notifications:
         n = Note(nid, app_name or "", app_icon or "", summary or "", body or "", pairs,
                  hints.get("desktop-entry", "") or "", int(urgency) if isinstance(urgency, int) else 1, timeout,
                  image if image.startswith("/") else "")
-        key = app_key(n.desktop, n.app_name)
+        key = app_key(n.desktop, n.app)
         per = app_settings(self.cfg, key)
         if key and key not in self.cfg.get("apps", {}):      # listed in Settings > Notifications
-            self.cfg.setdefault("apps", {})[key] = dict(APP_DEFAULTS, name=n.app_name or key)
+            self.cfg.setdefault("apps", {})[key] = dict(APP_DEFAULTS, name=n.app or key)
             config.save("notifications", self.cfg)
         if not per["allow"]:
             return nid
