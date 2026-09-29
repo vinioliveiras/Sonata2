@@ -883,6 +883,9 @@ class Dock(Gtk.Box):
 
     def _update_rectangles(self) -> bool:
         """Tell the compositor where each window minimizes to (its Dock icon)."""
+        if getattr(self, "_mag_strength", 0) > 0:        # zoomed icons: wait until they settle
+            self._rects_soon()
+            return False
         native = self.get_native()
         surface = native.get_surface() if native else None
         if not surface:
@@ -901,10 +904,12 @@ class Dock(Gtk.Box):
             if ok:
                 for t in wins:
                     if (t.app_id, t.title) in elsewhere:
-                        # a window on another display: Wayfire can't animate
-                        # across displays (it aimed at the wrong place), so no
-                        # target -- it minimizes with the plain animation
-                        self.manager.set_rectangle(t, surface, 0, 0, 0, 0)
+                        # a window on another display: that display's Dock
+                        # aims it ("Show the Dock on every display"); with a
+                        # single Dock no target at all -- Wayfire can't animate
+                        # across displays, so it uses the plain animation
+                        if not self.cfg.get("all_displays", False):
+                            self.manager.set_rectangle(t, surface, 0, 0, 0, 0)
                     else:
                         self.manager.set_rectangle(t, surface, b.get_x() - ox, b.get_y() - oy,
                                                    b.get_width(), b.get_height())
