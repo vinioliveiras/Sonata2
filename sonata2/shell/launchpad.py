@@ -531,7 +531,13 @@ class Launchpad(Gtk.ApplicationWindow):
                         [("cancel", "Cancel", ""), ("delete", "Delete", "destructive")], answer, parent=self)
 
     # -- drag and drop ---------------------------------------------------------------
+    def _follow_drags(self) -> None:
+        """The hanging drag icon follows the pointer over the whole Launchpad."""
+        if not getattr(self, "_drag_follow", None):
+            self._drag_follow = ui.drag.follow(self, lambda: (self._drag or {}).get("icon"))
+
     def attach_drag(self, widget: LaunchItem) -> None:
+        self._follow_drags()
         src = Gtk.DragSource(actions=Gdk.DragAction.MOVE | Gdk.DragAction.COPY)
 
         def prepare(_s, _x, _y):
@@ -583,8 +589,6 @@ class Launchpad(Gtk.ApplicationWindow):
 
     def drag_over(self, grid: PageGrid, x, y):
         d = self._drag
-        if d and d.get("icon"):
-            d["icon"].feed(x, grid)
         if not d or grid.index < 0:
             return Gdk.DragAction.MOVE if d else 0
         if d["folder"] is not None and self.folder_view:     # dragged out of the open folder

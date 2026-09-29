@@ -86,6 +86,7 @@ ui.register("""
 window.sonata-settings { color: %(label)s; }
 /* glass sidebar (standard material), opaque content pane */
 .sonata-settings .sidebar-pane { background: none; }
+.st-sidebar headerbar, .st-content headerbar { min-height: 52px; }   /* traffic lights where Files has them */
 .st-sidebar headerbar, .st-sidebar toolbarview, .st-sidebar scrolledwindow,
 .st-sidebar list { background: none; box-shadow: none; }
 .st-content, .st-content toolbarview, .st-content headerbar { background: %(pane_bg)s; box-shadow: none; }

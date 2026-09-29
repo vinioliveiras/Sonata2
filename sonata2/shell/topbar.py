@@ -46,7 +46,7 @@ window.sonata-topbar, window.sonata-topbar > contents { background: none; box-sh
 .topbar-item.input-src > box > label { font-size: 10px; font-weight: 700; padding: 0 3px; border-radius: 3px;
   box-shadow: inset 0 0 0 1.2px %(label)s; }
 .topbar-item > box > label.percent { margin-right: 5px; font-size: %(text_body)s; }
-.about-box { padding: 28px 36px 24px 36px; font-family: %(font)s; color: %(label)s; }
+.about-box { padding: 4px 36px 24px 36px; font-family: %(font)s; color: %(label)s; }
 .about-name { font-family: %(font_display)s; font-size: 26px; font-weight: 700; }
 .about-version { color: %(label_secondary)s; margin-bottom: 14px; }
 .about-key { font-weight: 700; }
@@ -738,8 +738,7 @@ class AboutWindow(Adw.Window):
         super().__init__(title="About This Computer", resizable=False)
         self.add_css_class("sonata-about")
         ui.window.standard(self)
-        head = Gtk.Box(margin_top=10, margin_start=8)
-        head.append(ui.window.traffic_lights(self.close, self.minimize))
+        head = ui.window.titlebar(self)
         body = Gtk.Box(spacing=36, css_classes=["about-box"])
         logo = Gtk.Image(icon_name="sonata-logo-symbolic", pixel_size=120, valign=Gtk.Align.CENTER)
         body.append(logo)
@@ -772,8 +771,7 @@ class AboutAppWindow(Adw.Window):
         super().__init__(title=f"About {name}", resizable=False)
         self.add_css_class("sonata-about")
         ui.window.standard(self)
-        head = Gtk.Box(margin_top=10, margin_start=8)
-        head.append(ui.window.traffic_lights(self.close, self.minimize))
+        head = ui.window.titlebar(self)
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["about-box"])
         img = Gtk.Image(pixel_size=96)
         if info:

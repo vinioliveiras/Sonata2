@@ -100,6 +100,8 @@ class FilesWindow(Adw.ApplicationWindow):
         paned.set_shrink_end_child(False)
         self.set_content(paned)
         self._shortcuts()
+        self.drag_icon = None                # set by the views while a file drag runs
+        ui.drag.follow(self, lambda: self.drag_icon)
         self.connect("notify::is-active", lambda w, _p: w.is_active() and self.sidebar.refresh_space())
         self.set_view(config.load("files", DEFAULTS)["view"], save=False)
         self.go(uri or Gio.File.new_for_path(GLib.get_home_dir()).get_uri())

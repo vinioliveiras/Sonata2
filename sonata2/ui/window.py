@@ -59,6 +59,37 @@ headerbar .traffic { margin-left: 5px; }   /* headerbar adds its own 5px start p
 """)
 
 
+# Standard title bar: every Sonata window puts the traffic lights at the
+# same spot as Files (first dot centred 20 px from the left edge and 26 px
+# from the top: a 52 px bar), whatever the window. Use it instead of placing
+# traffic_lights() by hand.
+TITLEBAR_H = 52
+theme.register("""
+.sonata-titlebar { min-height: 52px; padding: 0 10px 0 0; }
+.sonata-titlebar > .sonata-titlebar-title { font-weight: 700; font-size: %(text_body)s; color: %(label)s; }
+""", key="titlebar")
+
+
+def titlebar(win, title: str = None, end: Gtk.Widget = None, zoom=None) -> Gtk.WindowHandle:
+    """52 px bar: traffic lights (zoom=None greys the green one), optional
+    bold centred title (returned as .title_label) and an end widget."""
+    bar = Gtk.CenterBox(css_classes=["sonata-titlebar"])
+    bar.set_start_widget(traffic_lights(win.close, win.minimize, zoom))
+    handle = Gtk.WindowHandle(child=bar)
+    handle.title_label = None
+    if title is not None:
+        handle.title_label = Gtk.Label(label=title, css_classes=["sonata-titlebar-title"])
+        from gi.repository import Pango
+        handle.title_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+        handle.title_label.set_max_width_chars(50)
+        bar.set_center_widget(handle.title_label)
+    if end is not None:
+        end.set_valign(Gtk.Align.CENTER)
+        bar.set_end_widget(end)
+    handle.bar = bar
+    return handle
+
+
 # Materials (Big Sur vibrancy). A window using them keeps a transparent
 # background; the compositor blurs what shows through (Wayfire blur plugin,
 # app_id contains "sonata2"), and panes that must be opaque set their own.

@@ -35,8 +35,6 @@ progressbar.sonata-progress.full > trough > progress { background: %(destructive
 spinner.sonata-spinner { color: %(label_secondary)s; }
 window.sonata-progress-window { background: %(window_bg)s; color: %(label)s; font-family: %(font)s;
   font-size: %(text_body)s; }
-.sp-head { min-height: 28px; }
-.sp-head label { font-weight: 700; }
 .sp-row { padding: 10px 16px 12px 16px; }
 .sp-row + .sp-row { box-shadow: inset 0 1px %(separator)s; }
 .sp-title { color: %(label)s; }
@@ -142,11 +140,9 @@ class _Window(Adw.Window):
         self.add_css_class("sonata-progress-window")
         window.standard(self)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        head = Gtk.CenterBox(css_classes=["sp-head"])
-        head.set_start_widget(window.traffic_lights(self.close, self.minimize, None))
-        self.head_label = Gtk.Label(label="Copy")
-        head.set_center_widget(self.head_label)
-        box.append(Gtk.WindowHandle(child=head))
+        head = window.titlebar(self, "Copy")
+        self.head_label = head.title_label
+        box.append(head)
         self.rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         box.append(self.rows)
         self.set_content(box)

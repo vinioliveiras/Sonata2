@@ -164,6 +164,8 @@ class _Cells:
         accept drops, and open when a drag hovers on them (spring-loaded)."""
         src = Gtk.DragSource(actions=Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
         src.connect("prepare", lambda s_, x, y: self._drag_prepare(box, s_))
+        src.connect("drag-begin", lambda s_, drag: self._drag_begin(box, drag))
+        src.connect("drag-end", lambda *_: self._dnd() and setattr(self._dnd(), "drag_icon", None))
         box.add_controller(src)
         tgt = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
         tgt.connect("accept", lambda t, d: bool(getattr(box, "info", None)) and is_dir(box.info))
@@ -177,9 +179,23 @@ class _Cells:
         if info is None or self._dnd() is None:
             return None
         files = self._dnd().files_for_drag(self, info)
-        paint = icons.paintable(box, info.get_icon() or Gio.ThemedIcon.new("text-x-generic"), 64)
-        source.set_icon(paint, 32, 32)
         return Gdk.ContentProvider.new_for_value(Gdk.FileList.new_from_list(files))
+
+    def _drag_begin(self, box, drag):
+        """The file icon hangs from the pointer and swings (ui.drag)."""
+        info = getattr(box, "info", None)
+        if info is None or self._dnd() is None:
+            return
+        paint = None
+        thumb = info.get_attribute_byte_string("thumbnail::path")
+        if thumb:
+            try:
+                paint = Gdk.Texture.new_from_filename(thumb)
+            except GLib.Error:
+                paint = None
+        if paint is None:
+            paint = icons.paintable(box, info.get_icon() or Gio.ThemedIcon.new("text-x-generic"), 64)
+        self._dnd().drag_icon = ui.drag.hang(drag, paint, 64)
 
     def _drag_enter(self, box):
         info = getattr(box, "info", None)

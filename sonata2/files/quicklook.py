@@ -23,7 +23,6 @@ TEXT_MAX = 256 * 1024
 
 ui.register("""
 window.sonata-ql { background: %(window_bg)s; }
-.ql-bar { min-height: 38px; padding: 0 8px; }
 .ql-title { font-weight: 700; font-size: %(text_body)s; }
 button.ql-open { min-height: 22px; padding: 0 10px; border-radius: 6px; border: none; font-size: %(text_small)s;
   background: alpha(%(label)s, 0.08); color: %(label)s; box-shadow: none; }
@@ -53,14 +52,11 @@ class QuickLook(Adw.Window):
         self.on_close = on_close
         self.info = None
         tv = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        bar = Gtk.CenterBox(css_classes=["ql-bar"])
-        bar.set_start_widget(ui.window.traffic_lights(self.close, self.minimize, self._zoom))
-        self.title = Gtk.Label(css_classes=["ql-title"], ellipsize=Pango.EllipsizeMode.MIDDLE, max_width_chars=50)
-        bar.set_center_widget(self.title)
         self.open_btn = Gtk.Button(css_classes=["ql-open"], valign=Gtk.Align.CENTER)
         self.open_btn.connect("clicked", lambda *_: self._open())
-        bar.set_end_widget(self.open_btn)
-        tv.append(Gtk.WindowHandle(child=bar))
+        head = ui.window.titlebar(self, "", end=self.open_btn, zoom=self._zoom)
+        self.title = head.title_label
+        tv.append(head)
         self.body = Gtk.Box(vexpand=True, hexpand=True)
         tv.append(self.body)
         self.set_content(tv)
@@ -153,9 +149,6 @@ class GetInfo(Adw.Window):
         from .views import kind, size, set_icon
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin_start=16, margin_end=16,
                       margin_bottom=16)
-        head = Gtk.Box(margin_top=8)
-        head.append(ui.window.traffic_lights(self.close, self.minimize, None))
-        col.append(Gtk.WindowHandle(child=head))
         top = Gtk.Box(spacing=10)
         img = Gtk.Image(pixel_size=48)
         set_icon(img, info)
@@ -181,7 +174,10 @@ class GetInfo(Adw.Window):
             if k == "Size:":
                 self.size_row = val
         col.append(grid)
-        self.set_content(col)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        outer.append(ui.window.titlebar(self))       # traffic lights where every window has them
+        outer.append(col)
+        self.set_content(outer)
         if is_dir(info) and f.get_path():
             self.size_row.set_label("Calculating…")
             threading.Thread(target=self._count, args=(f.get_path(),), daemon=True).start()
