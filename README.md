@@ -184,6 +184,25 @@ New apps appear as soon as they're installed.
 - Dock, Menu Bar, Launchpad, Sound Effects, Accessibility.
 - There is a search field, and a double-click on any slider resets it.
 
+**Sonata's own apps.** No GNOME apps needed for the everyday things:
+- Calculator: the macOS Basic calculator, with the keyboard, copy and paste.
+- TextEdit: plain text, with find, text size, and an "Edited" title until
+  you save.
+- Preview: pictures, with zoom (pinch, Ctrl+wheel), next/previous in the
+  folder, rotate and full screen.
+- Terminal: your shell, with the macOS "Basic" colours in light and dark.
+  It needs VTE for GTK 4 (`vte4`; install.sh adds it).
+- Open and Save panels for every app (through the file chooser portal).
+
+**Mission Control.** F3 or Ctrl+Up lays out the windows over the blurred,
+darkened desktop; Ctrl+Super+Up shows every Space.
+
+**Software Update.** Settings → Software Update lists what can be updated
+(System, AUR, Flatpak) with versions, and updates in place.
+
+**First login.** A short Setup Assistant: appearance, accent colour, a few
+Sonata choices.
+
 **Every app's window in the same style.** GTK apps use Sonata's GTK
 theme. Chrome, Firefox, VS Code, terminals and X11 apps get Sonata's title
 bar, drawn by the compositor, with rounded corners and shadows. App icons
