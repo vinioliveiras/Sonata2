@@ -193,13 +193,16 @@ def check_tools(r: Report) -> None:
         else:
             r.add(WARN, f"{cmd} missing", what)
             missing.append(row[col])
-    agent = next((a for a in POLKIT_AGENTS if os.path.exists(a)), None)
+    import glob
+    own = any(glob.glob(d + "/PolkitAgent-1.0.typelib") for d in
+              ("/usr/lib/girepository-1.0", "/usr/lib64/girepository-1.0", "/usr/lib/*/girepository-1.0"))
+    agent = "Sonata's own" if own else next((a for a in POLKIT_AGENTS if os.path.exists(a)), None)
     r.add(OK if agent else FAIL, "polkit agent (password prompts: users, printers, updates)", agent or "",
-          fix="" if agent else {"arch": "sudo pacman -S polkit-gnome", "debian": "sudo apt install policykit-1-gnome",
-                                "rpm": "sudo dnf install polkit-gnome"}.get(fam, "install polkit-gnome"))
-    portals = [p for p in ("xdg-desktop-portal", "xdg-desktop-portal-gtk", "xdg-desktop-portal-wlr")
+          fix="" if agent else {"arch": "sudo pacman -S polkit", "debian": "sudo apt install gir1.2-polkit-1.0",
+                                "rpm": "sudo dnf install polkit-libs"}.get(fam, "install polkit's introspection data"))
+    portals = [p for p in ("xdg-desktop-portal", "xdg-desktop-portal-wlr")
                if any(os.path.exists(os.path.join(d, p)) for d in ("/usr/lib", "/usr/libexec", "/usr/lib/x86_64-linux-gnu"))]
-    lack = {"xdg-desktop-portal-gtk", "xdg-desktop-portal-wlr"} - set(portals)
+    lack = {"xdg-desktop-portal", "xdg-desktop-portal-wlr"} - set(portals)
     r.add(OK if not lack else WARN, "portals (file dialogs, screen sharing)", " ".join(sorted(lack)) + " missing" if lack else "")
     if lack:
         missing += sorted(lack)

@@ -4,8 +4,9 @@ GTK/Qt apps with portals on) gets Sonata's panels (files/chooser.py).
 
 `sonata2 portal` owns org.freedesktop.impl.portal.desktop.sonata on the
 session bus (D-Bus starts it; install.sh registers it, and the Sonata
-session's portals.conf points the FileChooser at it, the GTK one as the
-fallback). It quits a minute after its last panel closes.
+session's portals.conf points the FileChooser and Settings at it). It
+stays up for the session: Settings (Dark Mode, fonts, accent colour...,
+from prefs.py) is how every app follows Sonata's appearance, live.
 
 Interface: org.freedesktop.impl.portal.FileChooser -- OpenFile, SaveFile,
 SaveFiles (each: handle, app_id, parent_window, title, options -> response,
@@ -43,9 +44,54 @@ XML = """<node>
   <property name="version" type="u" access="read"/>
 </interface>
 </node>"""
+SETTINGS_XML = """<node>
+<interface name="org.freedesktop.impl.portal.Settings">
+  <method name="ReadAll">
+    <arg type="as" name="namespaces" direction="in"/><arg type="a{sa{sv}}" name="value" direction="out"/>
+  </method>
+  <method name="Read">
+    <arg type="s" name="namespace" direction="in"/><arg type="s" name="key" direction="in"/>
+    <arg type="v" name="value" direction="out"/>
+  </method>
+  <signal name="SettingChanged">
+    <arg type="s" name="namespace"/><arg type="s" name="key"/><arg type="v" name="value"/>
+  </signal>
+  <property name="version" type="u" access="read"/>
+</interface>
+</node>"""
+APPEARANCE = "org.freedesktop.appearance"
+# accent colours as the portal spec wants them (sRGB 0..1), from Sonata's tokens
 REQUEST_XML = """<node><interface name="org.freedesktop.impl.portal.Request">
   <method name="Close"/></interface></node>"""
-IDLE_S = 60
+
+
+def settings_values() -> dict:
+    """{namespace: {key: GLib.Variant}}: Sonata's settings (prefs.py), plus
+    org.freedesktop.appearance (color-scheme 1 dark / 2 light, accent, contrast)."""
+    from . import config, prefs
+    out = {}
+    for schema, keys in prefs.keys().items():
+        out[schema] = {}
+        for key in keys:
+            t, v = prefs.typed(schema, key)
+            out[schema][key] = GLib.Variant(t, v)
+    dark = prefs.get(prefs.I, "color-scheme") == "prefer-dark"
+    from .ui import tokens
+    accent = config.load("appearance", {"accent": "blue"}).get("accent", "blue")
+    hexc = tokens.ACCENTS.get(accent, tokens.ACCENTS.get("blue"))[0]
+    rgb = tuple(int(hexc[i:i + 2], 16) / 255 for i in (1, 3, 5)) if hexc.startswith("#") else (0.0, 0.48, 1.0)
+    reduce = config.load("appearance", {"reduce_transparency": False}).get("reduce_transparency", False)
+    out[APPEARANCE] = {"color-scheme": GLib.Variant("u", 1 if dark else 2),
+                       "accent-color": GLib.Variant("(ddd)", rgb),
+                       "contrast": GLib.Variant("u", 1 if reduce else 0)}
+    return out
+
+
+def _matches(ns: str, patterns) -> bool:
+    """Portal namespace patterns: exact, or a trailing ".*"."""
+    if not patterns or patterns == [""]:
+        return True
+    return any(ns == p or (p.endswith("*") and ns.startswith(p[:-1])) for p in patterns)
 
 
 def _bytes_path(v) -> str:
@@ -106,11 +152,42 @@ class Portal:
         conn = app.get_dbus_connection()
         node = Gio.DBusNodeInfo.new_for_xml(XML)
         conn.register_object(PATH, node.interfaces[0], self._call, self._get, None)
+        # Settings (Dark Mode, fonts, accent... for every app): lives as long as the session
+        snode = Gio.DBusNodeInfo.new_for_xml(SETTINGS_XML)
+        conn.register_object(PATH, snode.interfaces[0], self._settings_call,
+                             lambda *_a: GLib.Variant("u", 2), None)
+        self._last = settings_values()
+        from . import config, prefs
+        self._mons = [prefs.watch(self._settings_changed), config.watch("appearance", self._settings_changed)]
         self.conn = conn
         Gio.bus_own_name_on_connection(conn, BUS_NAME, Gio.BusNameOwnerFlags.REPLACE, None,
                                        lambda *_: app.quit())
         app.hold()
         self._arm_idle()
+
+    def _settings_call(self, _conn, _sender, _path, _iface, method, params, invocation):
+        vals = settings_values()
+        if method == "ReadAll":
+            (patterns,) = params.unpack()
+            res = {ns: kv for ns, kv in vals.items() if _matches(ns, patterns)}
+            invocation.return_value(GLib.Variant.new_tuple(GLib.Variant("a{sa{sv}}", res)))
+        else:
+            ns, key = params.unpack()
+            if ns in vals and key in vals[ns]:
+                invocation.return_value(GLib.Variant.new_tuple(GLib.Variant("v", vals[ns][key])))
+            else:
+                invocation.return_dbus_error("org.freedesktop.portal.Error.NotFound", f"{ns} {key}")
+
+    def _settings_changed(self, *_a):
+        """Tell apps what changed (they switch Dark Mode, fonts... live)."""
+        new = settings_values()
+        for ns, kv in new.items():
+            for key, v in kv.items():
+                old = self._last.get(ns, {}).get(key)
+                if old is None or not old.equal(v):
+                    self.conn.emit_signal(None, PATH, "org.freedesktop.impl.portal.Settings", "SettingChanged",
+                                          GLib.Variant("(ssv)", (ns, key, v)))
+        self._last = new
 
     def _get(self, _c, _s, _p, _i, prop):
         return GLib.Variant("u", 4) if prop == "version" else None
@@ -157,15 +234,9 @@ class Portal:
             self.conn.unregister_object(reg)
 
     def _arm_idle(self):
-        if self.windows or self._idle:
-            return
-
-        def quit_if_idle():
-            self._idle = 0
-            if not self.windows:
-                self.app.release()
-            return False
-        self._idle = GLib.timeout_add_seconds(IDLE_S, quit_if_idle)
+        """(Kept for the panels' code path.) The settings half serves the
+        whole session, so the portal never quits on idle."""
+        return
 
 
 def _attach_to_parent(win, parent: str) -> None:

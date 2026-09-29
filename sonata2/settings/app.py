@@ -793,8 +793,7 @@ class Settings(Adw.ApplicationWindow):
         return [info, mode, screen]
 
     def _page_wallpaper(self):
-        g = group("Wallpaper", "A Linux desktop setting (org.gnome.desktop.background); "
-                               "the Sonata session draws it.")
+        g = group("Wallpaper", "Sonata draws it; apps that show the desktop picture get it too.")
         uri = system.gsetting("org.gnome.desktop.background", "picture-uri") or ""
         pic = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, css_classes=["st-wall"], height_request=180,
                           can_shrink=True, overflow=Gtk.Overflow.HIDDEN)

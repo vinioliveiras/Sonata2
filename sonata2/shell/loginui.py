@@ -99,9 +99,9 @@ def wallpaper_texture():
     if override:
         return Gdk.Texture.new_from_filename(override)
     try:
-        s = Gio.Settings.new("org.gnome.desktop.background")
+        from .. import prefs
         dark = Adw.StyleManager.get_default().get_dark()
-        uri = s.get_string("picture-uri-dark" if dark else "picture-uri") or s.get_string("picture-uri")
+        uri = prefs.get(prefs.BG, "picture-uri-dark" if dark else "picture-uri") or prefs.get(prefs.BG, "picture-uri")
         f = Gio.File.new_for_uri(uri) if uri else None
         if f and f.query_exists(None):
             return Gdk.Texture.new_from_file(f)

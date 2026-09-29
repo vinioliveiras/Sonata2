@@ -1,8 +1,7 @@
 """Desktop wallpaper: a layer-shell background surface showing the picture
-set in the Linux desktop settings (org.gnome.desktop.background
-picture-uri / picture-uri-dark), updated live. The wallpaper is a *Linux*
-setting (shared with other desktops unless changed inside the Sonata session,
-see tools/session-env.sh); Sonata only draws it. Replaces swaybg. The
+set in Sonata's desktop settings (prefs.py: picture-uri /
+picture-uri-dark, the keys every Linux app knows), updated live. Replaces
+swaybg. The
 desktop icons (desktop.py) sit on top of it."""
 import gi
 
@@ -13,7 +12,6 @@ from gi.repository import Adw, Gio, Gtk  # noqa: E402
 from .. import ui  # noqa: E402
 from . import layer  # noqa: E402
 
-SCHEMA = "org.gnome.desktop.background"
 
 ui.register("""
 window.sonata-wallpaper { background-image: linear-gradient(160deg, #1d3b8f 0%%, #6b3fa0 38%%,
@@ -56,10 +54,8 @@ class WallpaperWindow(Gtk.ApplicationWindow):
                 LS.set_anchor(self, e, True)
             LS.set_exclusive_zone(self, -1)
             LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND if desktop else LS.KeyboardMode.NONE)
-        src = Gio.SettingsSchemaSource.get_default()
-        self.settings = Gio.Settings.new(SCHEMA) if src and src.lookup(SCHEMA, True) else None
-        if self.settings:
-            self.settings.connect("changed", lambda *_: self.update())
+        from .. import prefs
+        self._prefs_mon = prefs.watch(lambda *_: self.update())
         Adw.StyleManager.get_default().connect("notify::dark", lambda *_: self.update())
         self.update()
 
@@ -69,11 +65,9 @@ class WallpaperWindow(Gtk.ApplicationWindow):
             self.desktop.resized(w, h)
 
     def update(self) -> None:
-        if not self.settings:
-            return
+        from .. import prefs
         dark = Adw.StyleManager.get_default().get_dark()
-        uri = self.settings.get_string("picture-uri-dark" if dark else "picture-uri") or \
-            self.settings.get_string("picture-uri")
+        uri = prefs.get(prefs.BG, "picture-uri-dark" if dark else "picture-uri") or prefs.get(prefs.BG, "picture-uri")
         if uri == self._uri:
             return
         self._uri = uri

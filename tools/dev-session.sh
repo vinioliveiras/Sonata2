@@ -56,11 +56,12 @@ sed -e '/^\[autostart\]/,$d' -e "s|= sonata2 |= env PYTHONPATH=$REPO python3 -m 
     echo "mode = 1600x1000"
 } >> "$cfg"
 
-# Sample wallpaper only if none is set (Sonata's dconf layer, see session-env.sh).
-cur="$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null)"
-if [ -n "$wall" ] && { [ -z "$cur" ] || [ "$cur" = "''" ]; }; then
+# Sample wallpaper only if none is set (Sonata's settings, sonata2/prefs.py).
+_prefs() { PYTHONPATH="$REPO" python3 -c "import sys; from sonata2 import prefs; $1" "${@:2}"; }
+cur="$(_prefs 'print(prefs.get(prefs.BG, "picture-uri") or "")' 2>/dev/null)"
+if [ -n "$wall" ] && [ -z "$cur" ]; then
     keep="$HOME/.config/sonata2/sample-wallpaper.png"; cp "$wall" "$keep"
-    gsettings set org.gnome.desktop.background picture-uri "file://$keep" 2>/dev/null || true
+    _prefs 'prefs.set(prefs.BG, "picture-uri", sys.argv[1])' "file://$keep" 2>/dev/null || true
 fi
 echo "Wayfire config: $cfg"
 [ -z "$wall" ] && echo "(no wallpaper: install python-pillow or set SONATA2_WALLPAPER to see the glass)"

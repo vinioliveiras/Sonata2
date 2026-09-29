@@ -10,7 +10,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, GLib, GObject, Graphene, Gtk  # noqa: E402
 
 from . import tokens  # noqa: E402
 
@@ -300,25 +300,22 @@ _iface = None
 
 
 def _follow_color_scheme() -> None:
-    """Dark Mode comes from org.gnome.desktop.interface color-scheme in
-    Sonata's own dconf layer, read directly: libadwaita would otherwise ask
-    the settings portal, which (nested in GNOME, or started before the
-    session environment) reads another database and never switches."""
+    """Dark Mode comes from Sonata's own settings (prefs.py), read directly
+    and followed live."""
     global _iface
-    src = Gio.SettingsSchemaSource.get_default()
-    if not src or not src.lookup("org.gnome.desktop.interface", True):
-        return
-    _iface = Gio.Settings.new("org.gnome.desktop.interface")
-    if not _iface.props.settings_schema.has_key("color-scheme"):
-        return
+    from .. import prefs
+    state = {"dark": None}
 
     def apply(*_a):
         if _forced:
             return
-        dark = _iface.get_string("color-scheme") == "prefer-dark"
+        dark = prefs.get(prefs.I, "color-scheme") == "prefer-dark"
+        if dark == state["dark"]:
+            return
+        state["dark"] = dark
         Adw.StyleManager.get_default().set_color_scheme(
             Adw.ColorScheme.FORCE_DARK if dark else Adw.ColorScheme.FORCE_LIGHT)
-    _iface.connect("changed::color-scheme", apply)
+    _iface = prefs.watch(apply)
     apply()
 
 

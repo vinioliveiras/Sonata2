@@ -714,7 +714,7 @@ def set_power_profile(profile: str) -> bool:
     return _run(["powerprofilesctl", "set", profile], timeout=5)[0] == 0
 
 
-# -- desktop settings in dconf (Linux side; the Sonata session layers them) ------------------------
+# -- desktop settings (Sonata's own store, prefs.py; apps read them through its portal) ------------
 def set_dark_mode(on: bool) -> None:
     """Dark Mode for everything: Sonata (ui.theme follows color-scheme),
     libadwaita/GTK4 apps (color-scheme), GTK3 apps (theme name)."""
@@ -723,12 +723,14 @@ def set_dark_mode(on: bool) -> None:
 
 
 def gsetting(schema: str, key: str) -> Optional[str]:
-    rc, out = _run(["gsettings", "get", schema, key], timeout=5)
-    return out.strip().strip("'") if rc == 0 else None
+    """A desktop setting -- Sonata's own store (prefs.py), not GNOME's."""
+    from .. import prefs
+    return prefs.get(schema, key)
 
 
 def set_gsetting(schema: str, key: str, value: str) -> bool:
-    return _run(["gsettings", "set", schema, key, value], timeout=5)[0] == 0
+    from .. import prefs
+    return prefs.set(schema, key, value)
 
 
 # -- input devices (Wayfire [input] of the Sonata session) -----------------------------------
