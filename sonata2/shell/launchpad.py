@@ -74,7 +74,12 @@ def installed_apps() -> dict:
     return out
 
 
+PROTECTED = apps.PROTECTED
+
+
 def _removable(info) -> bool:
+    if (info.get_id() or "").startswith(PROTECTED):
+        return False
     path = info.get_filename() or ""
     return os.path.dirname(os.path.realpath(path)) == os.path.realpath(USER_APPS)
 
@@ -605,7 +610,7 @@ class Launchpad(Gtk.ApplicationWindow):
 
     def ask_delete(self, app_id: str) -> None:
         info = self.installed.get(app_id)
-        if not info:
+        if not info or not _removable(info):             # Sonata's own apps stay
             return
         name = info.get_display_name()
 

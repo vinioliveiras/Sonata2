@@ -107,9 +107,14 @@ def attach_trash(dock, tile) -> None:
     def drop(_target, value, _x, _y):
         tile.remove_css_class(HOVER)
         moved = False
+        # Sonata's own apps (Files, Settings, Launchpad) never go to the Trash
+        from ..apps import PROTECTED
+        files = [f for f in _files(value) if not (_is_app(f) and (f.get_basename() or "").startswith(PROTECTED))]
+        if not files:
+            return False
         from .. import sounds
         sounds.play("trash")
-        for f in _files(value):
+        for f in files:
             try:
                 moved = f.trash(None) or moved
             except GLib.Error as e:

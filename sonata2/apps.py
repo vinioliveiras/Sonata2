@@ -30,6 +30,11 @@ DEFAULT_SLOTS = (
 )
 
 
+# Sonata's own apps (Files, System Settings, Launchpad): part of the system,
+# never deleted or trashed even though their entries live in ~/.local
+PROTECTED = ("io.github.vinioliveiras.sonata2.", "sonata2-")
+
+
 def write_desktop_file(filename: str, text: str) -> str:
     """Write ~/.local/share/applications/<filename> (only when it changed)."""
     import os
