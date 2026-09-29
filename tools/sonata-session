@@ -16,9 +16,14 @@ fi
 # Resolved copy: Sonata paths filled in, pixdecor title bars when installed.
 run_cfg="${XDG_RUNTIME_DIR:-/tmp}/sonata2-wayfire.ini"
 "$(dirname "$(readlink -f "$0")")/wayfire-config.sh" "$cfg" "$run_cfg" && cfg="$run_cfg"
-# Polkit authentication agent (password prompts for system actions): the
-# first one installed (sonata2 doctor lists them).
-for agent in /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 \
+# Polkit authentication agent (password prompts for system actions):
+# Sonata's own (Wayfire autostart: sonata2 polkit) when polkit's
+# introspection data is there; otherwise the first other agent installed.
+sonata_agent=""
+for t in /usr/lib/girepository-1.0 /usr/lib64/girepository-1.0 /usr/lib/*/girepository-1.0; do
+    [ -f "$t/PolkitAgent-1.0.typelib" ] && sonata_agent=1
+done
+[ -n "$sonata_agent" ] || for agent in /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 \
              /usr/libexec/polkit-gnome-authentication-agent-1 \
              /usr/lib/x86_64-linux-gnu/polkit-gnome-authentication-agent-1 \
              /usr/lib/polkit-kde-authentication-agent-1 /usr/libexec/polkit-kde-authentication-agent-1 \

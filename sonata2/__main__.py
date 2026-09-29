@@ -43,11 +43,12 @@ APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
            "textedit": "io.github.vinioliveiras.sonata2.textedit",
            "preview": "io.github.vinioliveiras.sonata2.preview",
            "terminal": "io.github.vinioliveiras.sonata2.terminal",
+           "polkit": "io.github.vinioliveiras.sonata2.polkit",
            "spotlight": "io.github.vinioliveiras.sonata2.spotlight"}
 # Shell surfaces (never shown as running apps in the Dock); Files and
 # Settings are ordinary apps.
 SHELL_IDS = {APP_IDS[k] for k in ("dock", "autostart", "wallpaper", "launchpad", "topbar", "gallery", "lock",
-                                   "spotlight", "greeter", "welcome", "portal", "setup")}
+                                   "spotlight", "greeter", "welcome", "portal", "setup", "polkit")}
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -357,6 +358,20 @@ def run_welcome(app, args, ui, state):
         return                     # a restart of Sonata: no intro
     app.hold()
     state["welcome"] = Welcome(app, APP_IDS)
+
+
+def run_polkit(app, args, ui, state):
+    """Sonata's password prompt for system actions (shell/polkit.py)."""
+    try:
+        from .shell import polkit
+    except (ImportError, ValueError) as e:             # no polkit introspection data
+        print(f"sonata2 polkit: {e}")
+        return
+    agent = polkit.register(app)
+    if agent is None:
+        return                                        # another agent has the session: exit quietly
+    state["polkit"] = agent
+    app.hold()
 
 
 def run_calculator(app, args, ui, state):
@@ -908,6 +923,8 @@ def main() -> int:
             run_welcome(app, args, ui, state)
         elif args.component == "portal":
             run_portal(app, args, ui, state)
+        elif args.component == "polkit":
+            run_polkit(app, args, ui, state)
         elif args.component == "calculator":
             run_calculator(app, args, ui, state)
         elif args.component == "setup":
