@@ -85,6 +85,14 @@ def run() -> int:
             GLib.spawn_command_line_async(self_command() + " setup")
     except Exception as e:
         print(f"sonata2-autostart: setup: {e}")
+    try:                                   # Sonata's password prompt (polkit agent), kept alive
+        import subprocess
+        if subprocess.run(["pgrep", "-f", r"-m sonata2 keep polkit( |$)"],
+                          stdout=subprocess.DEVNULL).returncode != 0:
+            from .__main__ import self_command
+            GLib.spawn_command_line_async(self_command() + " keep polkit")
+    except Exception as e:
+        print(f"sonata2-autostart: polkit: {e}")
     try:
         from . import keyring
         keyring.start()                    # KeePassXC: saved passwords for every app

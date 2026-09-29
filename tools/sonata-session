@@ -17,7 +17,7 @@ fi
 run_cfg="${XDG_RUNTIME_DIR:-/tmp}/sonata2-wayfire.ini"
 "$(dirname "$(readlink -f "$0")")/wayfire-config.sh" "$cfg" "$run_cfg" && cfg="$run_cfg"
 # Polkit authentication agent (password prompts for system actions):
-# Sonata's own (Wayfire autostart: sonata2 polkit) when polkit's
+# Sonata's own (started by `sonata2 autostart`) when polkit's
 # introspection data is there; otherwise the first other agent installed.
 sonata_agent=""
 for t in /usr/lib/girepository-1.0 /usr/lib64/girepository-1.0 /usr/lib/*/girepository-1.0; do
