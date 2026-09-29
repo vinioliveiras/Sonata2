@@ -51,7 +51,7 @@ def reduce_transparency() -> bool:
     global _reduce
     if _reduce is None:
         from .. import config
-        _reduce = bool(config.load("appearance", {}).get("reduce_transparency", False))
+        _reduce = bool(config.load("appearance", _appearance_defaults())["reduce_transparency"])
     return _reduce
 
 
@@ -61,7 +61,7 @@ _reduce = None
 def values() -> dict:
     """Current tokens (for code that needs a value, e.g. drawing), plus the
     materials resolved for this compositor: `sidebar_material`."""
-    v = {**tokens.palette(is_dark(), _theme()), **_extra}
+    v = {**tokens.palette(is_dark(), _theme()), **tokens.accent_tokens(_accent(), is_dark()), **_extra}
     # One glass for the whole system: sidebars use exactly the Dock's tint
     # over the same compositor blur.
     v["sidebar_material"] = v["glass_tint" if glass() else "sidebar_bg"]
@@ -69,6 +69,31 @@ def values() -> dict:
 
 
 _theme_name = None
+_accent_name = None
+
+
+def _appearance_defaults() -> dict:
+    from ..icons import APPEARANCE_DEFAULTS
+    return APPEARANCE_DEFAULTS
+
+
+def _accent() -> str:
+    """Accent colour from Sonata's appearance settings (live: see setup)."""
+    global _accent_name
+    if _accent_name is None:
+        from .. import config
+        _accent_name = config.load("appearance", _appearance_defaults())["accent"]
+    return _accent_name
+
+
+def _appearance_changed() -> None:
+    """appearance.json changed (Settings): new accent, re-style everything."""
+    global _accent_name
+    old = _accent_name
+    _accent_name = None
+    if _accent() != old:
+        _parsed.clear()
+        _load()
 
 
 def _theme() -> str:
@@ -76,7 +101,7 @@ def _theme() -> str:
     global _theme_name
     if _theme_name is None:
         from .. import config
-        _theme_name = config.load("appearance", {"theme": "mac"})["theme"]
+        _theme_name = config.load("appearance", _appearance_defaults())["theme"]
     return _theme_name
 
 
@@ -135,7 +160,13 @@ def setup() -> None:
     _provider = Gtk.CssProvider()
     Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), _provider, PRIORITY)
     Adw.StyleManager.get_default().connect("notify::dark", _load)
+    from .. import config
+    global _appearance_mon
+    _appearance_mon = config.watch("appearance", _appearance_changed)
     _load()
+
+
+_appearance_mon = None
 
 
 def force_appearance(appearance: str) -> None:

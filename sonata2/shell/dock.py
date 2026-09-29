@@ -30,7 +30,8 @@ from .. import apps, config, icons  # noqa: E402
 from .. import ui  # noqa: E402
 from . import dock_drop, dock_menu, dock_stack, layer  # noqa: E402
 
-DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "glass": True,
+DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "window_gap": 6, "glass": True,
+            "indicators": True, "bounce": True, "minimize_effect": "genie",
             "magnification": False, "magnified_size": 80, "position": "bottom",
             "autohide": False, "autohide_delay_ms": 300, "show_recents": True,
             "recent": [], "stacks": None}
@@ -110,7 +111,7 @@ window.sonata-dock *:drop(active) { box-shadow: none; outline: none; border-colo
 .edge-bottom .dock-dot { margin: %(dot_in)dpx 0 %(dot_out)dpx 0; }
 .edge-left .dock-dot { margin: 0 %(dot_in)dpx 0 %(dot_out)dpx; }
 .edge-right .dock-dot { margin: 0 %(dot_out)dpx 0 %(dot_in)dpx; }
-.dock-tile.running .dock-dot { opacity: 1; }
+.dock-tile.running .dock-dot { opacity: %(dot_on)s; }
 .dock-divider > box, .dock-recent-sep > box { background-color: %(separator)s; }
 .edge-bottom .dock-divider, .edge-bottom .dock-recent-sep { padding: 0 5px; margin-bottom: %(row)dpx; }
 .edge-bottom .dock-divider > box, .edge-bottom .dock-recent-sep > box { min-width: 1px; }
@@ -785,7 +786,7 @@ class Dock(Gtk.Box):
     def launch_feedback(self, tile: DockTile) -> None:
         # Stops when the first window maps, or after a few bounces anyway
         # (apps whose window we can't match must not bounce forever).
-        if tile.key not in NO_BOUNCE:
+        if tile.key not in NO_BOUNCE and self.cfg.get("bounce", True):
             tile.bounce(LAUNCH_BOUNCES * BOUNCE_MS)
 
     def launch(self, tile: DockTile) -> None:
@@ -822,7 +823,7 @@ def load_css(cfg: dict) -> None:
     ui.setup()
     inner, outer = dot_gaps(cfg["icon_size"])
     ui.register(CSS, key="dock", tile_pad=TILE_PAD, row=dot_row(cfg), bounce_ms=BOUNCE_MS,
-                dot=DOT, dot_in=inner, dot_out=outer)
+                dot=DOT, dot_in=inner, dot_out=outer, dot_on="1" if cfg.get("indicators", True) else "0")
 
 
 def load_config() -> dict:
@@ -896,7 +897,8 @@ class DockWindow(Gtk.ApplicationWindow):
             GLib.timeout_add(600, lambda: (self._pointer(self._inside), False)[1])
 
     LIVE_KEYS = ("icon_size", "magnification", "magnified_size", "position", "autohide",
-                 "autohide_delay_ms", "show_recents", "glass", "edge_gap")
+                 "autohide_delay_ms", "show_recents", "glass", "edge_gap", "window_gap", "indicators",
+                 "bounce")
 
     def _config_changed(self) -> None:
         """dock.json changed (Settings app): apply appearance/behaviour keys.
@@ -910,7 +912,8 @@ class DockWindow(Gtk.ApplicationWindow):
         self.rebuild()
 
     def _exclusive(self) -> int:
-        return 0 if self.cfg["autohide"] else plate_height(self.cfg) + self.cfg["edge_gap"]
+        # window_gap: maximized windows stop a little above the Dock
+        return 0 if self.cfg["autohide"] else plate_height(self.cfg) + self.cfg["edge_gap"] + self.cfg["window_gap"]
 
     def _thickness(self) -> int:
         return SHADOW + PAD_TOP + max_icon(self.cfg) + dot_row(self.cfg) + self.cfg["edge_gap"]

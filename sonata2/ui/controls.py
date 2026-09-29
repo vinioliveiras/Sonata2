@@ -18,6 +18,17 @@ from gi.repository import Gtk  # noqa: E402
 from . import theme  # noqa: E402
 
 theme.register("""
+/* libadwaita widgets (switches, sliders, suggested buttons in Adw rows)
+   follow Sonata's accent colour too */
+@define-color accent_bg_color %(accent)s;
+@define-color accent_color %(accent)s;
+@define-color accent_fg_color %(label_on_accent)s;
+""", key="adw-accent")
+theme.register("""
+:root { --accent-bg-color: %(accent)s; --accent-color: %(accent)s; --accent-fg-color: %(label_on_accent)s; }
+""", key="adw-accent-vars")
+
+theme.register("""
 /* push button */
 button.sonata-button {
   min-height: %(control_h)s; min-width: 64px; padding: 0 12px;

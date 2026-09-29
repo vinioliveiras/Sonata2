@@ -133,6 +133,30 @@ SYSTEM_COLORS = {"blue": "#0a84ff", "green": "#30d158", "pink": "#ff375f", "oran
                  "red": "#ff453a", "purple": "#bf5af2", "teal": "#40c8e0", "indigo": "#5e5ce6",
                  "graphite": "#636366", "gray": "#8e8e93", "black": "#1c1c1e"}
 
+# Accent colours (System Preferences > General > Accent colour, Big Sur):
+# name -> (light, dark). "blue" is the default; the selected-row colour is
+# derived from it.
+ACCENTS = {
+    "blue": ("#007aff", "#0a84ff"), "purple": ("#953d96", "#a550a7"), "pink": ("#f74f9e", "#f74f9e"),
+    "red": ("#e0383e", "#ff453a"), "orange": ("#f7821b", "#ff9f0a"), "yellow": ("#fcb827", "#ffd60a"),
+    "green": ("#62ba46", "#32d74b"), "graphite": ("#8c8c8c", "#98989d"),
+}
+
+
+def _darker(hex_color: str, f: float = 0.86) -> str:
+    h = hex_color.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return "#%02x%02x%02x" % (int(r * f), int(g * f), int(b * f))
+
+
+def accent_tokens(name: str, dark: bool) -> dict:
+    """Token overrides for an accent colour (empty for the default blue)."""
+    if name not in ACCENTS or name == "blue":
+        return {}
+    c = ACCENTS[name][1 if dark else 0]
+    return {"accent": c, "accent_selected": c if dark else _darker(c)}
+
+
 # Spacing scale (px) for layout code.
 SPACE = {"xxs": 2, "xs": 4, "s": 6, "m": 8, "l": 12, "xl": 16, "xxl": 20}
 

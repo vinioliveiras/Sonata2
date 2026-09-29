@@ -31,7 +31,7 @@ POLL_S = 10
 
 ui.register("""
 window.sonata-topbar, window.sonata-topbar > contents { background: none; box-shadow: none; }
-.topbar { min-height: %(bar_h)dpx; padding: 0 8px; font-family: %(font)s; font-size: %(text_body)s;
+.topbar { min-height: %(bar_h)dpx; padding: 0; font-family: %(font)s; font-size: %(text_body)s;
   color: %(label)s; }
 .topbar-item, .topbar-item:hover, .topbar-item:focus {
   min-height: %(item_h)dpx; min-width: 0; padding: 0 10px; margin: 0; border-radius: 4px;
@@ -66,6 +66,7 @@ class Bar(Gtk.CenterBox):
         self.logo = self._item(left, icon="sonata-logo-symbolic", on_click=self._sonata_menu, css="icon")
         self.app_btn = self._item(left, text=self._fallback_app_name(), on_click=self._app_menu, css="app")
         self.win_btn = self._item(left, text="Window", on_click=self._window_menu)
+        left.set_margin_start(8)       # no CSS padding: the bar is painted over the whole allocation
         self.set_start_widget(left)
 
         right = Gtk.Box()
@@ -96,6 +97,7 @@ class Bar(Gtk.CenterBox):
         self.cc = self._item(right, icon="sonata-control-center-symbolic", on_click=self._control_center,
                              css="icon")
         self.clock = self._item(right, text="", on_click=self._calendar)
+        right.set_margin_end(8)
         self.set_end_widget(right)
 
         ui.on_change(self.queue_draw)

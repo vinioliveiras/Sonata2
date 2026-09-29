@@ -19,7 +19,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
-from .. import config, ui  # noqa: E402
+from .. import config, icons, ui  # noqa: E402
 from ..backend import system  # noqa: E402
 
 SECTIONS = [  # id, title, icon, badge colour, group
@@ -64,6 +64,13 @@ DESCRIPTIONS = {
     "menubar": "The clock and the items in the menu bar.",
     "launchpad": "How Launchpad arranges your apps.",
 }
+
+_ACCENT_CSS = "".join(f".st-accent.{n} {{ background: {c[0]}; }}\n" for n, c in ui.tokens.ACCENTS.items())
+ui.register(_ACCENT_CSS + """
+button.st-accent { min-width: 16px; min-height: 16px; padding: 0; margin: 0 3px; border-radius: 99px; border: none;
+  box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.2); transition: box-shadow %(t_fast)s; }
+button.st-accent.selected { box-shadow: 0 0 0 2px %(window_bg)s, 0 0 0 3.5px alpha(%(label)s, 0.45); }
+""", key="settings-accent")
 
 ui.register("""
 window.sonata-settings { color: %(label)s; }
@@ -648,7 +655,7 @@ class Settings(Adw.ApplicationWindow):
             system.set_gsetting(I, "enable-animations", "false" if on else "true"),
             system.run_async(system.wayfire_set, None, "animate", "open_animation", "fade" if on else "zoom"),
             system.run_async(system.wayfire_set, None, "animate", "close_animation", "fade" if on else "zoom"))))
-        app = config.load("appearance", {})
+        app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
         disp.add(switch_row("Reduce transparency", app.get("reduce_transparency", False),
                             lambda on: (self._save("appearance", "reduce_transparency", on),
                                         self.toast("Applies to windows opened from now on")),
@@ -672,6 +679,26 @@ class Settings(Adw.ApplicationWindow):
         return [disp, ptr]
 
     # -- Sonata sections ------------------------------------------------------------
+    def _accent_row(self):
+        """Big Sur "Accent colour": a row of colour dots (live everywhere)."""
+        row = Adw.ActionRow(title="Accent colour", subtitle="Buttons, selections, switches and menus")
+        box = Gtk.Box(valign=Gtk.Align.CENTER)
+        cur = config.load("appearance", icons.APPEARANCE_DEFAULTS)["accent"]
+        buttons = {}
+
+        def pick(name):
+            for n, b in buttons.items():
+                (b.add_css_class if n == name else b.remove_css_class)("selected")
+            self._save("appearance", "accent", name)
+        for name in ui.tokens.ACCENTS:
+            b = Gtk.Button(css_classes=["st-accent", name] + (["selected"] if name == cur else []),
+                           tooltip_text=name.capitalize(), valign=Gtk.Align.CENTER)
+            b.connect("clicked", lambda _b, n=name: pick(n))
+            buttons[name] = b
+            box.append(b)
+        row.add_suffix(box)
+        return row
+
     def _page_appearance(self):
         g = group("Appearance")
         scheme = system.gsetting("org.gnome.desktop.interface", "color-scheme") or "default"
@@ -687,8 +714,9 @@ class Settings(Adw.ApplicationWindow):
                 cur = browsers[0][0]
             g.add(combo_row("Default web browser", browsers, cur,
                             lambda v: system.run_async(system.set_default_browser, None, v)))
+        g.add(self._accent_row())
         s = group("Sonata")
-        app = config.load("appearance", {"icon_theme": "Sonata", "theme": "mac"})
+        app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
         s.add(combo_row("Style", [("mac", "macOS"), ("windows", "Windows 11 (coming later)")], app["theme"],
                         lambda v: self._save("appearance", "theme", "mac")))
         themes = sorted({d for base in GLib.get_system_data_dirs() + [GLib.get_user_data_dir()]
@@ -719,7 +747,32 @@ class Settings(Adw.ApplicationWindow):
                               lambda on: self._save("dock", "autohide", on)))
         behave.add(switch_row("Show suggested and recent apps in Dock", cfg["show_recents"],
                               lambda on: self._save("dock", "show_recents", on)))
-        return [size, behave]
+        behave.add(switch_row("Animate opening applications", cfg["bounce"],
+                              lambda on: self._save("dock", "bounce", on)))
+        behave.add(switch_row("Show indicators for open applications", cfg["indicators"],
+                              lambda on: self._save("dock", "indicators", on)))
+        wins = group("Windows")
+        wins.add(combo_row("Minimize windows using", [("genie", "Genie effect"), ("scale", "Scale effect")],
+                           cfg["minimize_effect"], self._set_minimize_effect))
+        dbl = system.gsetting("org.gnome.desktop.wm.preferences", "action-double-click-titlebar") or "toggle-maximize"
+        wins.add(combo_row("Double-click a window's title bar to",
+                           [("toggle-maximize", "Zoom"), ("minimize", "Minimize"), ("none", "Do Nothing")],
+                           dbl if dbl in ("toggle-maximize", "minimize", "none") else "toggle-maximize",
+                           lambda v: system.set_gsetting("org.gnome.desktop.wm.preferences",
+                                                         "action-double-click-titlebar", v)))
+        look = group("Look")
+        look.add(switch_row("Translucent Dock", cfg["glass"], lambda on: self._save("dock", "glass", on),
+                            subtitle="Frosted glass (off: solid)"))
+        look.add(slider_row("Distance from the screen edge", cfg["edge_gap"], 0, 24,
+                            lambda v: self._save("dock", "edge_gap", int(v))))
+        look.add(slider_row("Space above the Dock for zoomed windows", cfg["window_gap"], 0, 24,
+                            lambda v: self._save("dock", "window_gap", int(v))))
+        return [size, behave, wins, look]
+
+    def _set_minimize_effect(self, v):
+        self._save("dock", "minimize_effect", v)
+        system.run_async(system.wayfire_set, None, "animate", "minimize_animation",
+                         "squeezimize" if v == "genie" else "zoom")
 
     def _page_menubar(self):
         from ..shell import topbar as T

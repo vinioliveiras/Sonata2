@@ -121,3 +121,12 @@ list: [docs/PARITY.md](docs/PARITY.md).
   DBusMenu), Night Shift, Siri-less Spotlight window.
 - System Preferences as in Big Sur (icon grid) vs the current sidebar:
   Vini to decide.
+
+## Open questions for Vini (ask before deciding)
+
+1. System Settings: Big Sur icon grid (System Preferences) instead of the sidebar?
+2. Switch Spaces with Ctrl+Left/Right like macOS (clashes with word jumps in Linux apps)? Now Super+Alt+arrows + 3-finger swipe.
+3. Tap to click: off like macOS, or on (now on)?
+4. Hide the plain "Wayfire" entry on the login screen?
+5. Ask for the password after the display turns off / screen saver (lock on idle)?
+6. Push to GitHub once the sonata2 repository exists.

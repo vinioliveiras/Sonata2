@@ -23,7 +23,9 @@ from gi.repository import Gdk, Gio, GObject, Graphene, Gsk, Gtk  # noqa: E402
 from . import config  # noqa: E402
 
 ICONS_DIR = os.path.join(os.path.dirname(__file__), "data", "icons")
-APPEARANCE_DEFAULTS = {"icon_theme": "Sonata", "theme": "mac"}
+# Sonata's appearance.json (config.load keeps only known keys: every
+# reader passes these defaults)
+APPEARANCE_DEFAULTS = {"icon_theme": "Sonata", "theme": "mac", "accent": "blue", "reduce_transparency": False}
 
 _system = None     # Gtk.IconTheme with the system's theme, for fallbacks
 
