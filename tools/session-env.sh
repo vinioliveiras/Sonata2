@@ -80,3 +80,5 @@ done
 # Wayfire blurs Sonata windows here: sidebars use the glass material.
 export SONATA_GLASS=1
 export PYTHONPATH="$SONATA_REPO${PYTHONPATH:+:$PYTHONPATH}"
+# Terminal apps (Vim, Micro... Terminal=true) open in Sonata's Terminal (tools/bin/xdg-terminal-exec)
+export PATH="$SONATA_REPO/tools/bin:$PATH"

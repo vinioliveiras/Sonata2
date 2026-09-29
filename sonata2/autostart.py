@@ -102,6 +102,11 @@ def run() -> int:
     except Exception as e:
         print(f"sonata2-autostart: files: {e}")
     try:
+        from . import gtkstyle
+        gtkstyle.write()                   # other apps' GTK 4 windows in Sonata's colours
+    except Exception as e:
+        print(f"sonata2-autostart: gtk style: {e}")
+    try:
         from . import keyring
         keyring.start()                    # KeePassXC: saved passwords for every app
     except Exception as e:

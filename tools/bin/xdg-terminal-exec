@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""Sonata session: apps that run in a terminal (Vim, Micro, htop... entries
+with Terminal=true) open in Sonata's Terminal. GLib and other launchers ask
+`xdg-terminal-exec` first; tools/session-env.sh puts this folder first in PATH."""
+import os
+import shlex
+import sys
+
+args = [a for a in sys.argv[1:] if not a.startswith("--app-id=") and not a.startswith("--title=")]
+if args[:1] == ["-e"]:
+    args = args[1:]
+here = os.path.dirname(os.path.realpath(__file__))
+repo = os.path.dirname(os.path.dirname(here))
+env = dict(os.environ, PYTHONPATH=repo + (os.pathsep + os.environ["PYTHONPATH"] if os.environ.get("PYTHONPATH") else ""))
+cmd = [sys.executable, "-m", "sonata2", "terminal"] + (["--exec", shlex.join(args)] if args else [])
+os.execve(sys.executable, cmd, env)
