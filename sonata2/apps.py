@@ -52,10 +52,13 @@ def _gpu_aware(method):
                 for k, v in gpu.discrete_env().items():
                     context.setenv(k, v)
             import os as _os
-            if "GTK_THEME" in _os.environ:    # never hand it on: it breaks libadwaita apps
-                if context is None:
-                    context = Gio.AppLaunchContext()
-                context.unsetenv("GTK_THEME")
+            # never hand these on: GTK_THEME breaks libadwaita apps; the shell's
+            # ADW_DISABLE_PORTAL would keep apps from following Dark Mode
+            for name in ("GTK_THEME", "ADW_DISABLE_PORTAL"):
+                if name in _os.environ:
+                    if context is None:
+                        context = Gio.AppLaunchContext()
+                    context.unsetenv(name)
         except Exception as e:                    # never keep an app from opening
             print(f"sonata2: discrete GPU: {e}")
         return method(self, arg, context, *rest)

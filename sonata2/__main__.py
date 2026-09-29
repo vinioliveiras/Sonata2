@@ -777,6 +777,43 @@ def _write_env_report() -> None:
         pass
 
 
+ACTIVATION_ENV = ("WAYLAND_DISPLAY", "DISPLAY", "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "XDG_DATA_DIRS",
+                  "DCONF_PROFILE", "XCURSOR_THEME", "XCURSOR_SIZE", "XCURSOR_PATH", "QT_QPA_PLATFORMTHEME")
+
+
+# shell surfaces (not apps: those keep the portal's Open/Save panels)
+SHELL_NO_PORTAL = ("dock", "topbar", "wallpaper", "launchpad", "spotlight", "polkit", "welcome", "lock",
+                   "greeter", "autostart")
+
+
+def share_session_env() -> None:
+    """Hand this session's display to D-Bus/systemd-started services (the
+    portals) before any Sonata surface asks for them. Wayfire's own
+    autostart line does the same, but in parallel with the shell: a portal
+    started first had no display, failed its startup, and every GTK process
+    waited 2 x 30 s for it. Once per display (a marker in XDG_RUNTIME_DIR)."""
+    import shutil
+    import subprocess
+    wd = os.environ.get("WAYLAND_DISPLAY")
+    tool = shutil.which("dbus-update-activation-environment")
+    if not wd or not tool:
+        return
+    mark = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), f"sonata2-env-{wd}")
+    try:
+        if os.path.getmtime(mark) >= os.path.getmtime(os.path.join(os.path.dirname(mark), wd)):
+            return                                   # done for this Wayfire run
+    except OSError:
+        pass
+    names = [n for n in ACTIVATION_ENV if n in os.environ]
+    try:
+        subprocess.run([tool, "--systemd"] + names, timeout=10, check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with open(mark, "w"):
+            pass
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def keep(argv) -> int:
     """`sonata2 keep dock` (session autostart): run a shell component and
     start it again if it crashes -- a desktop must never lose its Dock or
@@ -792,6 +829,7 @@ def keep(argv) -> int:
     log_path = os.path.join(logdir, f"{argv[0]}.log")
     if os.path.exists(log_path):
         os.replace(log_path, log_path[:-4] + ".old.log")
+    share_session_env()
     crashes = []
     while True:
         started = time.monotonic()
@@ -851,6 +889,16 @@ def main() -> int:
     # session's GTK_THEME=Sonata-Light/Dark restyles libadwaita widgets):
     # our windows look the same in any session.
     os.environ.pop("GTK_THEME", None)
+    # the session's value, kept across the layer-shell re-exec below
+    os.environ.setdefault("SONATA2_SESSION_GDK_DEBUG", os.environ.get("GDK_DEBUG", ""))
+    session_gdk_debug = os.environ["SONATA2_SESSION_GDK_DEBUG"] or None
+    if args.component in SHELL_NO_PORTAL:
+        # the shell reads Sonata's settings itself (prefs.py): it never waits
+        # on the settings portal, even while that is still starting
+        os.environ["GDK_DEBUG"] = ",".join(
+            [f for f in os.environ.get("GDK_DEBUG", "").split(",") if f and f not in ("portals", "no-portals")]
+            + ["no-portals"])
+        os.environ["ADW_DISABLE_PORTAL"] = "1"   # libadwaita's own settings read (the other ~15 s)
     if args.component == "portal":
         # the portal backend is what xdg-desktop-portal waits for while it
         # starts: GTK asking that same portal for settings deadlocked the two
@@ -881,6 +929,12 @@ def main() -> int:
     from gi.repository import Adw, GLib
     from . import ui
     trace.mark("GTK imported")
+    if args.component in SHELL_NO_PORTAL:         # GTK read it at init; apps launched from here get the session's
+        if session_gdk_debug is None:
+            os.environ.pop("GDK_DEBUG", None)
+        else:
+            os.environ["GDK_DEBUG"] = session_gdk_debug
+    os.environ.pop("SONATA2_SESSION_GDK_DEBUG", None)
 
     if args.component == "topbar" and not args.preview:
         GLib.idle_add(lambda: (_write_env_report(), False)[1])
