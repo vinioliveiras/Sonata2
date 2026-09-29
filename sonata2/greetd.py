@@ -61,6 +61,12 @@ class Client:
         except (GreetdError, OSError):
             pass
 
+    def close(self) -> None:
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
 
 class Fake:
     """greetd stand-in: any user, password "sonata"."""
@@ -85,11 +91,25 @@ class Fake:
     def cancel(self):
         pass
 
+    def close(self):
+        pass
+
 
 def login(client, username: str, password: str) -> None:
     """Authenticate `username` (raises GreetdError). Prompts other than the
     password (e.g. an info message) are acknowledged; a second secret
     prompt (2FA) isn't supported yet and fails."""
+    # a wrong password leaves greetd's session half-made: always start clean,
+    # and cancel on any failure (else the next try answers the old session)
+    client.cancel()
+    try:
+        _login(client, username, password)
+    except GreetdError:
+        client.cancel()
+        raise
+
+
+def _login(client, username, password):
     reply = client.create_session(username)
     answered = False
     while reply.get("type") == "auth_message":
@@ -99,6 +119,8 @@ def login(client, username: str, password: str) -> None:
             answered = True
         elif kind in ("info", "error"):
             reply = client.answer(None)
+        elif kind == "secret":                  # asked again: the password was wrong
+            raise GreetdError("auth_error", "Authentication failed")
         else:
             client.cancel()
             raise GreetdError("error", reply.get("auth_message", "Unsupported login step"))

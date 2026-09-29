@@ -41,6 +41,7 @@ if [ "$ACTION" = revert ]; then
     $SUDO systemctl enable "$prev.service"
     [ -f "$GREETD.sonata-backup" ] && $SUDO mv -f "$GREETD.sonata-backup" "$GREETD"
     $SUDO rm -f "$LAUNCHER"            # install.sh keeps it up to date only while it's in use
+    $SUDO rm -f /etc/sysctl.d/20-sonata-quiet-console.conf /etc/systemd/system.conf.d/20-sonata-quiet.conf
     say "Done. Restart the computer to see it."
     exit 0
 fi
@@ -112,7 +113,10 @@ cat > "$tmp/sonata-greeter" <<EOF
 export SONATA_GREETER_WAYFIRE=1 XDG_CURRENT_DESKTOP=Sonata
 export XCURSOR_PATH=$SHARE/sonata2/data/icons XCURSOR_THEME=Sonata-Cursors XCURSOR_SIZE=24
 export XDG_CONFIG_HOME=/var/cache/sonata-greeter/config XDG_CACHE_HOME=/var/cache/sonata-greeter/cache
-exec wayfire -c $SHARE/wayfire.ini
+# a clean screen: no text on this console around the login (the VT shows
+# whatever was printed on it when no compositor holds the display)
+printf '\033c\033[?25l' 2>/dev/null
+exec wayfire -c $SHARE/wayfire.ini > /var/cache/sonata-greeter/wayfire.log 2>&1
 EOF
 $SUDO rm -rf "$SHARE.new"
 $SUDO mkdir -p "$SHARE.new"
@@ -129,6 +133,13 @@ $SUDO install -d -m 755 /var/lib/sonata-greeter
 $SUDO install -d -m 755 -o "$ME" "/var/lib/sonata-greeter/$ME"          # your session copies the wallpaper here
 $SUDO install -d -m 755 -o greeter /var/cache/sonata-greeter
 $SUDO install -d -m 700 -o greeter /var/cache/sonata-greeter/config /var/cache/sonata-greeter/cache
+
+# -- a quiet console: no kernel or boot/shutdown status text between screens -----------------
+printf '# Sonata (tools/greeter-setup.sh): kernel messages off the console\nkernel.printk = 3 3 3 3\n' |
+    $SUDO tee /etc/sysctl.d/20-sonata-quiet-console.conf >/dev/null
+$SUDO install -d /etc/systemd/system.conf.d
+printf '# Sonata (tools/greeter-setup.sh): no [ OK ] lines on screen at boot/shutdown\n[Manager]\nShowStatus=no\n' |
+    $SUDO tee /etc/systemd/system.conf.d/20-sonata-quiet.conf >/dev/null
 
 # -- greetd config ---------------------------------------------------------------------------------
 if [ -f "$GREETD" ] && ! grep -q sonata-greeter "$GREETD" && [ ! -f "$GREETD.sonata-backup" ]; then

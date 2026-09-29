@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Start a full Sonata session (what the login screen's "Sonata" entry runs,
 # through the `sonata-session` launcher from install.sh).
+# no console text shows around the login (greetd's VT)
+[ -t 1 ] && printf '\033c\033[?25l'
 source "$(dirname "$(readlink -f "$0")")/session-env.sh"
 export XDG_CURRENT_DESKTOP=Sonata XDG_SESSION_DESKTOP=sonata
 # Session config from install.sh (never your ~/.config/wayfire.ini).

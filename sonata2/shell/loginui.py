@@ -42,6 +42,7 @@ ui.register("""
 .gr-rise-late { animation: gr-rise 620ms cubic-bezier(0.2, 0.8, 0.2, 1) 160ms both; }
 .gr-fade-in { animation: gr-fade 700ms ease-out both; }
 .gr-leave { opacity: 0; transform: scale(0.97); transition: opacity 380ms ease-in, transform 380ms ease-in; }
+spinner.gr-spinner { color: white; min-width: 22px; min-height: 22px; margin: 3px 0; -gtk-icon-size: 22px; }
 progressbar.gr-progress { min-width: 190px; margin: 11px 0; }
 progressbar.gr-progress trough { min-height: 5px; border-radius: 99px; background: rgba(255,255,255,0.25);
   border: none; box-shadow: none; }

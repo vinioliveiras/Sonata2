@@ -54,9 +54,11 @@ def slide_layer_margin(win, edge, distance: int, ms: int = 420) -> None:
     import time
     start = time.monotonic()
 
-    def tick(_w, _clock):
+    # a timer, not the frame clock: a surface that is entirely off-screen
+    # gets no frame callbacks, so a tick callback would never run
+    def step():
         t = min(1.0, (time.monotonic() - start) * 1000 / ms)
         eased = 1 - (1 - t) ** 3
         LS.set_margin(win, edge, int(round(-distance * (1 - eased))))
-        return GLib.SOURCE_CONTINUE if t < 1 else GLib.SOURCE_REMOVE
-    win.add_tick_callback(tick)
+        return t < 1
+    GLib.timeout_add(16, step)

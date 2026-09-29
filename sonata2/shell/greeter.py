@@ -296,8 +296,8 @@ class Greeter:
         col.append(Gtk.Label(label=u.real, css_classes=["lk-name"]))
         self.entry = password_field()
         self.entry.connect("activate", lambda *_: self._login())
-        # the field turns into a progress bar while logging in (macOS)
-        self.progress = Gtk.ProgressBar(css_classes=["gr-progress"], halign=Gtk.Align.CENTER)
+        # the field turns into a spinner while logging in (macOS)
+        self.progress = Gtk.Spinner(css_classes=["gr-spinner"], halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
         self.slot = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=220,
                               halign=Gtk.Align.CENTER)
         self.slot.add_named(self.entry, "field")
@@ -425,11 +425,11 @@ class Greeter:
         self.entry.set_sensitive(False)
         self.hint.set_label("")
         user = self.user.name
-        self.progress.set_fraction(0)
+        self.progress.start()
         self.slot.set_visible_child_name("progress")
-        self._pulse = GLib.timeout_add(90, lambda: (self.progress.pulse(), True)[1])
 
         def work():
+            client = None
             try:
                 client = greetd.Fake() if self.fake else greetd.Client()
                 greetd.login(client, user, pw)
@@ -439,15 +439,17 @@ class Greeter:
                 client.start_session(session.cmd, env)
                 GLib.idle_add(self._started)
             except greetd.GreetdError as e:
+                if client is not None:
+                    client.close()
                 GLib.idle_add(self._failed, e)
             except OSError as e:
+                if client is not None:
+                    client.close()
                 GLib.idle_add(self._failed, greetd.GreetdError("error", str(e)))
         threading.Thread(target=work, daemon=True).start()
 
     def _stop_pulse(self):
-        if getattr(self, "_pulse", 0):
-            GLib.source_remove(self._pulse)
-            self._pulse = 0
+        self.progress.stop()
 
     def _failed(self, err):
         self._stop_pulse()
@@ -460,9 +462,7 @@ class Greeter:
     def _started(self):
         self.state["user"] = self.user.name
         save_state(self.state)
-        self._stop_pulse()
-        self.progress.set_fraction(1.0)
-        # the picture, name and bar fade away over the blurred wallpaper; the
+        # (the spinner keeps turning while) the picture, name and bar fade away over the blurred wallpaper; the
         # session's welcome screen (welcome.py) picks up from the same look
         for w in (getattr(self, "column", None), self.power):
             if w is not None:

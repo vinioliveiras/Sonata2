@@ -1,8 +1,8 @@
 """Welcome screen right after logging in (`sonata2 welcome`, first in the
 session's autostart; only when intro.pending()).
 
-The login screen's look -- blurred wallpaper, picture, name -- with a thin
-progress bar that fills as the shell comes up (wallpaper, menu bar, Dock,
+The login screen's look -- blurred wallpaper, picture, name -- with a
+spinner while the shell comes up (wallpaper, menu bar, Dock,
 Launchpad own their D-Bus names once running). Then it fades out, the
 wallpaper sharpening under it, and the Dock and menu bar slide in
 (intro.finish()). Gives up waiting after a few seconds."""
@@ -28,7 +28,7 @@ class Welcome:
         self.app = app
         self.names = [app_ids[k] for k in WAIT_FOR if k in app_ids]
         self.started = time.monotonic()
-        self.windows, self.bars = [], []
+        self.windows = []
         tex = wallpaper_texture()
         monitors = Gdk.Display.get_default().get_monitors()
         for i in range(monitors.get_n_items()):
@@ -50,9 +50,8 @@ class Welcome:
                           valign=Gtk.Align.CENTER, css_classes=["gr-fade-in"])
             col.append(avatar())
             col.append(Gtk.Label(label=GLib.get_real_name() or GLib.get_user_name(), css_classes=["lk-name"]))
-            bar = Gtk.ProgressBar(css_classes=["gr-progress"], halign=Gtk.Align.CENTER, margin_top=8)
-            col.append(bar)
-            self.bars.append(bar)
+            spin = Gtk.Spinner(css_classes=["gr-spinner"], halign=Gtk.Align.CENTER, margin_top=8, spinning=True)
+            col.append(spin)                    # macOS: a spinner while the desktop loads
             over.add_overlay(col)
         win.set_child(over)
         if layer.overlay_fullscreen(win, "sonata2-welcome"):
@@ -77,12 +76,7 @@ class Welcome:
                     self.ready.add(name)
         elapsed = time.monotonic() - self.started
         frac = len(self.ready) / max(1, len(self.names))
-        for bar in self.bars:
-            target = max(min(frac, elapsed / MIN_S), min(0.9, elapsed / MAX_S))    # never stands still
-            bar.set_fraction(max(bar.get_fraction(), target))
         if (frac >= 1 and elapsed >= MIN_S) or elapsed >= MAX_S:
-            for bar in self.bars:
-                bar.set_fraction(1.0)
             GLib.timeout_add(250, self._leave)      # the first frames of the shell are drawn by then
             return False
         return True
