@@ -18,7 +18,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gsk", "4.0")
 gi.require_version("Graphene", "1.0")
-from gi.repository import Gdk, Gio, GObject, Graphene, Gsk, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk  # noqa: E402
 
 from . import config  # noqa: E402
 
@@ -133,16 +133,76 @@ def _rgba(spec):
 def set_image(image: Gtk.Image, gicon) -> None:
     """Show `gicon` from Sonata's theme, or from the system theme if only
     that one has it (apps from app_icon() without artwork: on the plate)."""
+    size = image.get_pixel_size() if image.get_pixel_size() > 0 else 48
     if gicon.to_string() in _plated:
-        image.set_from_paintable(paintable(image, gicon, image.get_pixel_size() or 48))
+        image.set_from_paintable(paintable(image, gicon, size))
+        return
+    found = _lookup(image, gicon, size)
+    if isinstance(found, Gdk.Texture):            # drawn by librsvg (see below)
+        image.set_from_paintable(found)
         return
     theme = Gtk.IconTheme.get_for_display(image.get_display())
     if _system is None or theme.has_gicon(gicon) or not _system.has_gicon(gicon):
-        image.set_from_gicon(gicon)
+        image.set_from_gicon(gicon)               # follows icon theme changes
         return
-    size = image.get_pixel_size()
-    image.set_from_paintable(_system.lookup_by_gicon(gicon, size, image.get_scale_factor(),
-                                                     Gtk.TextDirection.NONE, Gtk.IconLookupFlags(0)))
+    image.set_from_paintable(found)
+
+
+# Full-colour SVG icons with filters (the soft shadows in MacTahoe's artwork)
+# are drawn by librsvg through GdkPixbuf: newer GTK SVG renderers draw those
+# filters as a stray translucent square at the top left.
+_filtered = {}          # svg path -> bool
+_rendered = {}          # (path, px) -> Gdk.Texture
+
+
+def _has_filter(path: str) -> bool:
+    v = _filtered.get(path)
+    if v is None:
+        try:
+            with open(path, "rb") as f:
+                v = b"<filter" in f.read()
+        except OSError:
+            v = False
+        _filtered[path] = v
+    return v
+
+
+def _render_rsvg(path: str, px: int):
+    """librsvg (Rsvg typelib) -> cairo -> Gdk.MemoryTexture; None if unavailable."""
+    try:
+        gi.require_version("Rsvg", "2.0")
+        from gi.repository import Rsvg
+        import cairo
+        handle = Rsvg.Handle.new_from_file(path)
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, px, px)
+        cr = cairo.Context(surf)
+        vp = Rsvg.Rectangle()
+        vp.x, vp.y, vp.width, vp.height = 0, 0, px, px
+        handle.render_document(cr, vp)
+        surf.flush()
+        return Gdk.MemoryTexture.new(px, px, Gdk.MemoryFormat.B8G8R8A8_PREMULTIPLIED,
+                                     GLib.Bytes.new(bytes(surf.get_data())), surf.get_stride())
+    except (ValueError, ImportError, GLib.Error, AttributeError):
+        pass
+    try:                                           # GdkPixbuf's SVG loader is librsvg too
+        from gi.repository import GdkPixbuf
+        pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, px, px, True)
+        return Gdk.Texture.new_for_pixbuf(pb)
+    except (GLib.Error, ImportError):
+        return None
+
+
+def _rsvg_texture(path: str, px: int):
+    key = (path, px)
+    tex = _rendered.get(key)
+    if tex is None:
+        tex = _render_rsvg(path, px)
+        if tex is None:
+            return None
+        if len(_rendered) > 400:
+            _rendered.clear()
+        _rendered[key] = tex
+    return tex
 
 
 def paintable(widget: Gtk.Widget, gicon, size: int):
@@ -156,5 +216,12 @@ def _lookup(widget, gicon, size):
     theme = Gtk.IconTheme.get_for_display(widget.get_display())
     if _system is not None and not theme.has_gicon(gicon) and _system.has_gicon(gicon):
         theme = _system
-    return theme.lookup_by_gicon(gicon, size, widget.get_scale_factor(),
-                                 Gtk.TextDirection.NONE, Gtk.IconLookupFlags(0))
+    scale = widget.get_scale_factor()
+    icon = theme.lookup_by_gicon(gicon, size, scale, Gtk.TextDirection.NONE, Gtk.IconLookupFlags(0))
+    f = icon.get_file() if icon is not None else None
+    path = f.get_path() if f is not None else None
+    if path and path.endswith(".svg") and not path.endswith("-symbolic.svg") and _has_filter(path):
+        tex = _rsvg_texture(path, size * scale)
+        if tex is not None:
+            return tex
+    return icon
