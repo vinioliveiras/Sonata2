@@ -188,7 +188,7 @@ class Bar(Gtk.CenterBox):
             self.items[index].emit("clicked")
 
     def _menu(self, btn, sections):
-        pop = ui.menu.popup(btn, sections, position=Gtk.PositionType.BOTTOM, gap=2)
+        pop = ui.menu.popup(btn, sections, position=Gtk.PositionType.BOTTOM, gap=2, glass=True)
         ui.panel.align_to_start(pop, btn, 2)
         return pop
 

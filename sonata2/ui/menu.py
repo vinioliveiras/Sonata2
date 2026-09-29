@@ -25,9 +25,11 @@ popover.menu { background: none; box-shadow: none; padding: 0; }
 popover.menu > contents {
   padding: 5px; border-radius: %(r_menu)s; min-width: %(menu_min_w)s;
   font-family: %(font)s; font-size: %(text_body)s;
-  color: %(label)s; background-color: %(panel_material)s;
+  color: %(label)s; background-color: %(menu_bg)s;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_menu)s;
 }
+/* menu bar menus only: glass (right-click menus stay opaque -- Vini) */
+popover.menu.glass > contents { background-color: %(panel_material)s; }
 popover.menu modelbutton {
   min-height: %(control_h)s; padding: 0 10px; border-radius: %(r_menu_row)s;
   color: inherit; background: none;
@@ -83,7 +85,7 @@ def _build(sections, group, prefix="i") -> Gio.Menu:
 
 
 def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
-          gap: int = 6, at=None) -> Gtk.PopoverMenu:
+          gap: int = 6, at=None, glass: bool = False) -> Gtk.PopoverMenu:
     """Show a menu anchored to `widget`; it cleans itself up when closed.
     at=(x, y) in widget coordinates: a context menu that opens at the
     pointer, its top-left corner there (macOS)."""
@@ -92,6 +94,8 @@ def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
     widget.insert_action_group("m", group)
     pop = Gtk.PopoverMenu.new_from_model_full(model, Gtk.PopoverMenuFlags.NESTED)
     pop.set_has_arrow(False)
+    if glass:
+        pop.add_css_class("glass")
     pop.set_position(position)
     P = Gtk.PositionType
     pop.set_offset(*{P.TOP: (0, -gap), P.BOTTOM: (0, gap), P.LEFT: (-gap, 0), P.RIGHT: (gap, 0)}[position])
