@@ -259,6 +259,11 @@ class Bar(Gtk.CenterBox):
         return False
 
     def _calendar(self, btn):
+        """Big Sur: the clock opens Notification Center."""
+        nc = getattr(self, "notifications", None)
+        if nc is not None:
+            nc.toggle_center()
+            return None
         cal = Gtk.Calendar()
         return ui.panel.popup(btn, ui.panel.column(cal), gap=2)
 
@@ -467,6 +472,7 @@ ui.register("""
   color: %(label)s; margin-right: 2px; }
 .wifi-badge.on { background: %(accent)s; color: %(label_on_accent)s; }
 .cc-small label { font-size: %(text_small)s; font-weight: 400; }
+.cc-small.on image { color: %(accent)s; }
 .cc-slider-box { min-height: 22px; }
 .cc-slider-icon { color: alpha(%(label)s, 0.55); margin-left: 6px; -gtk-icon-size: 12px; }
 .cc-np-title { font-weight: 700; }
@@ -507,12 +513,17 @@ class ControlCenter(Gtk.Box):
         conn.set_valign(Gtk.Align.FILL)
         dark = Adw.StyleManager.get_default().get_dark()
         right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        right.append(ui.panel.module(ui.panel.toggle("sonata-dark-mode-symbolic", "Dark Mode", dark,
-                                                     self._set_dark)))
+        nc = getattr(bar, "notifications", None)
+        right.append(ui.panel.module(ui.panel.toggle("weather-clear-night-symbolic", "Do Not Disturb",
+                                                     bool(nc and nc.dnd),
+                                                     lambda on: nc and nc.set_dnd(on))))
         smalls = Gtk.Box(spacing=8, homogeneous=True)
+        self.dark_btn = self._small("sonata-dark-mode-symbolic", "Dark Mode",
+                                    lambda: self._set_dark(not Adw.StyleManager.get_default().get_dark()),
+                                    close=False)
+        (self.dark_btn.add_css_class if dark else self.dark_btn.remove_css_class)("on")
+        smalls.append(self.dark_btn)
         smalls.append(self._small("camera-photo-symbolic", "Screenshot", self._screenshot))
-        smalls.append(self._small("system-lock-screen-symbolic", "Lock Screen",
-                                  lambda: system.run_async(system.power_action, None, "lock")))
         right.append(smalls)
         row = Gtk.Box(spacing=8, homogeneous=True)
         row.append(conn)
@@ -528,13 +539,13 @@ class ControlCenter(Gtk.Box):
                                   system.brightness(), system.volume()), self._fill)
         self._now_playing()
 
-    def _small(self, icon, title, cb):
+    def _small(self, icon, title, cb, close=True):
         b = Gtk.Button(css_classes=["panel-module", "cc-small"], can_focus=False)
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         col.append(Gtk.Image(icon_name=icon, pixel_size=18))
         col.append(Gtk.Label(label=title, wrap=True, justify=Gtk.Justification.CENTER))
         b.set_child(col)
-        b.connect("clicked", lambda *_: (self._close(), cb()))
+        b.connect("clicked", lambda *_: ((self._close() if close else None), cb()))
         return b
 
     def _close(self):
@@ -613,6 +624,8 @@ class ControlCenter(Gtk.Box):
     def _set_dark(self, on: bool) -> None:
         """Dark Mode is a Linux setting (freedesktop colour-scheme), so every
         app follows -- and Sonata with them."""
+        if hasattr(self, "dark_btn"):
+            (self.dark_btn.add_css_class if on else self.dark_btn.remove_css_class)("on")
         system.run_async(lambda: system._run(["gsettings", "set", "org.gnome.desktop.interface",
                                               "color-scheme", "prefer-dark" if on else "default"]))
 
@@ -703,6 +716,9 @@ class TopBarWindow(Gtk.ApplicationWindow):
                                        ignore_app_ids={"io.github.vinioliveiras.sonata2.topbar"})
         self.bar = Bar(self.manager)
         self.set_size_request(-1, BAR_H)
+        if not preview:
+            from .notifications import Notifications
+            self.bar.notifications = Notifications(app)
         if not preview:
             # Title bars Wayfire draws (terminals, X11 apps) follow Dark Mode
             # live too: the menu bar always runs, so it keeps them in sync.
