@@ -83,8 +83,10 @@ def _build(sections, group, prefix="i") -> Gio.Menu:
 
 
 def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
-          gap: int = 6) -> Gtk.PopoverMenu:
-    """Show a menu anchored to `widget`; it cleans itself up when closed."""
+          gap: int = 6, at=None) -> Gtk.PopoverMenu:
+    """Show a menu anchored to `widget`; it cleans itself up when closed.
+    at=(x, y) in widget coordinates: a context menu that opens at the
+    pointer, its top-left corner there (macOS)."""
     group = Gio.SimpleActionGroup()
     model = _build(sections, group)
     widget.insert_action_group("m", group)
@@ -94,6 +96,14 @@ def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
     P = Gtk.PositionType
     pop.set_offset(*{P.TOP: (0, -gap), P.BOTTOM: (0, gap), P.LEFT: (-gap, 0), P.RIGHT: (gap, 0)}[position])
     pop.set_parent(widget)
+    if at is not None:
+        from gi.repository import Gdk
+        r = Gdk.Rectangle()
+        r.x, r.y, r.width, r.height = int(at[0]), int(at[1]), 1, 1
+        pop.set_pointing_to(r)
+        pop.set_position(Gtk.PositionType.BOTTOM)
+        pop.set_halign(Gtk.Align.START)
+        pop.set_offset(0, 2)
 
     def closed(p):
         OPEN.discard(p)

@@ -168,6 +168,27 @@ def run_files(app, uris, ui):
         v = win.view
         target = v.columns[0].selection if view == "columns" else v.selection
         _later(800, lambda: [target.select_item(int(i), view == "columns") for i in sel.split(",")])
+    menu = os.environ.get("SONATA_PREVIEW_MENU")         # "bg" or an item index
+    rename = os.environ.get("SONATA_PREVIEW_RENAME")
+
+    def cell_point(i):
+        from gi.repository import Graphene
+        v = win.view
+        info = v.model.get_item(i)
+        box = v._cells.get(info)
+        ok, pt = box.compute_point(v.widget, Graphene.Point().init(30, 30))
+        return info, pt.x, pt.y
+    if menu:
+        def show_menu():
+            if menu == "bg":
+                win._context_menu(win.view, win.view.widget, win.view.widget.get_width() - 120,
+                                  win.view.widget.get_height() - 160)
+            else:
+                _info, x, y = cell_point(int(menu))
+                win._context_menu(win.view, win.view.widget, x, y)
+        _later(1200, show_menu)
+    if rename:
+        _later(1200, lambda: win.view.begin_rename(win.view.model.get_item(int(rename)), win._commit_rename))
 
 
 def run_wallpaper(app, args, ui):
