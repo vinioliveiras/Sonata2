@@ -100,8 +100,15 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self.set_title(name)
         if tex is None:
             self.picture.set_paintable(None)
-            ui.dialog.alert(f"“{name}” couldn't be opened.", "It isn't a picture Preview can read.",
-                            [("ok", "OK", "default")], parent=self)
+            self.set_default_size(520, 360)
+
+            # once the window is on screen: an alert on a window not shown yet
+            # never appeared, and left Preview running with nothing visible
+            def tell():
+                ui.dialog.alert(f"“{name}” couldn't be opened.", "It isn't a picture Preview can read.",
+                                [("ok", "OK", "default")], lambda _r: self.close(), parent=self)
+                return False
+            GLib.timeout_add(150, tell)
             return
         self.size_text = f"{tex.get_width()} × {tex.get_height()}"
         self.picture.set_paintable(tex)
