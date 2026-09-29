@@ -42,23 +42,3 @@ def wait(callback) -> None:
     mon.connect("changed", lambda _m, _f, _o, ev: ev == Gio.FileMonitorEvent.DELETED and fire())
     state["mon"] = mon                         # keep it alive
     GLib.timeout_add_seconds(TIMEOUT_S, fire)
-
-
-def slide_layer_margin(win, edge, distance: int, ms: int = 420) -> None:
-    """Slide a layer surface in from beyond `edge`: its margin on that edge
-    goes from -distance to 0 (ease-out)."""
-    from . import layer
-    LS = layer.layer_shell()
-    if not LS:
-        return
-    import time
-    start = time.monotonic()
-
-    # a timer, not the frame clock: a surface that is entirely off-screen
-    # gets no frame callbacks, so a tick callback would never run
-    def step():
-        t = min(1.0, (time.monotonic() - start) * 1000 / ms)
-        eased = 1 - (1 - t) ** 3
-        LS.set_margin(win, edge, int(round(-distance * (1 - eased))))
-        return t < 1
-    GLib.timeout_add(16, step)

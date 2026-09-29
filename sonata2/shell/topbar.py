@@ -1175,8 +1175,31 @@ class TopBarWindow(Gtk.ApplicationWindow):
                 LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND)
                 from . import intro
                 if intro.pending():                 # login: slides down once the welcome screen fades
-                    LS.set_margin(self, LS.Edge.TOP, -BAR_H)
-                    intro.wait(lambda: intro.slide_layer_margin(self, LS.Edge.TOP, BAR_H))
+                    # (the bar's drawing moves, not the surface: a surface
+                    # moved off-screen gets no frames and would never come back)
+                    self._intro_offset = float(BAR_H)
+                    intro.wait(self._slide_in)
+
+    def do_snapshot(self, snap) -> None:
+        off = getattr(self, "_intro_offset", 0.0)
+        if off <= 0:
+            Gtk.ApplicationWindow.do_snapshot(self, snap)
+            return
+        snap.save()
+        snap.translate(Graphene.Point().init(0, -off))
+        Gtk.ApplicationWindow.do_snapshot(self, snap)
+        snap.restore()
+
+    def _slide_in(self, ms: int = 420) -> None:
+        import time
+        start = time.monotonic()
+
+        def step():
+            t = min(1.0, (time.monotonic() - start) * 1000 / ms)
+            self._intro_offset = BAR_H * (1 - (1 - (1 - t) ** 3))
+            self.queue_draw()
+            return t < 1
+        GLib.timeout_add(16, step)
 
     def _preview(self) -> None:
         """Bar over a sample wallpaper in a normal window (screenshots)."""
