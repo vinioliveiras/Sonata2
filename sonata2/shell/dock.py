@@ -314,15 +314,39 @@ class DockDivider(DockLine):
         super().__init__(dock, "dock-divider")
         self.set_cursor_from_name("ew-resize" if dock.vertical else "ns-resize")
         drag = Gtk.GestureDrag()
-        sign = {"bottom": (0, -1), "left": (1, 0), "right": (-1, 0)}[dock.edge]
-        drag.connect("drag-begin", lambda *_: setattr(self, "_start", dock.cfg["icon_size"]))
-        drag.connect("drag-update", lambda _g, dx, dy: dock.set_icon_size(
-            self._start + sign[0] * dx + sign[1] * dy, save=False))
+        drag.connect("drag-begin", lambda g, *_: setattr(self, "_start", (dock.cfg["icon_size"], self._reach(g))))
+        drag.connect("drag-update", self._dragged)
         drag.connect("drag-end", lambda *_: dock.save_cfg())
         self.add_controller(drag)
         right = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
         right.connect("pressed", lambda *_: dock_menu.divider_menu(dock, self))
         self.add_controller(right)
+
+
+    def _reach(self, gesture):
+        """How far the pointer is from the screen edge the Dock sits on. The
+        gesture's own offsets are relative to this bar, which moves as the Dock
+        grows -- the size fed back on itself and jumped up and down."""
+        ev = gesture.get_current_event()
+        root = self.get_root()
+        if ev is None or root is None:
+            return None
+        ok, x, y = ev.get_position()                     # surface coordinates
+        if not ok:
+            return None
+        edge = self.dock.edge
+        if edge == "bottom":
+            return root.get_height() - y
+        return x if edge == "left" else root.get_width() - x
+
+    def _dragged(self, gesture, _dx, _dy):
+        start = getattr(self, "_start", None)
+        now = self._reach(gesture)
+        if not start or start[1] is None or now is None:
+            return
+        size = start[0] + (now - start[1])
+        if abs(size - self.dock.cfg["icon_size"]) >= 1:
+            self.dock.set_icon_size(size, save=False)
 
 
 class Dock(Gtk.Box):
