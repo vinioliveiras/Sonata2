@@ -549,6 +549,85 @@ def set_default_sink(sink_id: int) -> bool:
 set_default_source = set_default_sink            # same wpctl call for inputs
 
 
+# Outputs / inputs as people see them: one entry per available *port*
+# ("Headphones", "Speakers", "HDMI"...) of each device -- wired headphones are
+# a port of the built-in card, not a device of their own. pactl (PipeWire's
+# pulse layer) knows ports; without it, wpctl's device list.
+@dataclass
+class AudioDevice:
+    key: str            # "sink-name|port-name" (or a wpctl id)
+    name: str
+    default: bool
+
+
+def _pactl_devices(kind: str) -> Optional[List[AudioDevice]]:
+    import json
+    rc, out = _run(["pactl", "-f", "json", "list", kind], timeout=5)
+    if rc != 0:
+        return None
+    try:
+        nodes = json.loads(out)
+    except ValueError:
+        return None
+    _rc, default = _run(["pactl", "get-default-" + kind[:-1]], timeout=3)
+    default = default.strip()
+    devs = []
+    for n in nodes:
+        name = n.get("name", "")
+        if kind == "sources" and name.endswith(".monitor"):
+            continue                                          # "Monitor of ..." isn't a microphone
+        desc = n.get("description") or name
+        all_ports = n.get("ports") or []
+        ports = [p for p in all_ports if p.get("availability") != "not available"]
+        if not all_ports:
+            devs.append(AudioDevice(f"{name}|", desc, name == default))      # e.g. Bluetooth headphones
+            continue
+        for p in ports:                                       # none left: unplugged HDMI etc.
+            label = p.get("description") or p.get("name", "")
+            if label.lower() in ("analog output", "analog input", "") or len(ports) == 1 and len(all_ports) == 1:
+                label = desc
+            devs.append(AudioDevice(f"{name}|{p.get('name', '')}", label,
+                                    name == default and n.get("active_port") == p.get("name")))
+    names = [d.name for d in devs]                            # same label twice: say which device
+    for d in devs:
+        if names.count(d.name) > 1:
+            node = d.key.split("|")[0]
+            d.name = f"{d.name} ({next((n.get('description') for n in nodes if n.get('name') == node), node)})"
+    return devs
+
+
+def audio_outputs() -> List[AudioDevice]:
+    devs = _pactl_devices("sinks")
+    if devs is None:
+        devs = [AudioDevice(str(s.id), s.name, s.default) for s in audio_sinks()]
+    return devs
+
+
+def audio_inputs() -> List[AudioDevice]:
+    devs = _pactl_devices("sources")
+    if devs is None:
+        devs = [AudioDevice(str(s.id), s.name, s.default) for s in audio_sources()]
+    return devs
+
+
+def _select(kind: str, key: str) -> bool:
+    if "|" not in key:                                         # wpctl id
+        return set_default_sink(int(key))
+    name, port = key.split("|", 1)
+    ok = _run(["pactl", f"set-default-{kind}", name])[0] == 0
+    if port:
+        ok = _run(["pactl", f"set-{kind}-port", name, port])[0] == 0 and ok
+    return ok
+
+
+def select_output(key: str) -> bool:
+    return _select("sink", key)
+
+
+def select_input(key: str) -> bool:
+    return _select("source", key)
+
+
 # -- displays (wlroots compositors) -------------------------------------------------------------
 @dataclass
 class Display:

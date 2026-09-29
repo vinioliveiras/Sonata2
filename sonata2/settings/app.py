@@ -519,19 +519,28 @@ class Settings(Adw.ApplicationWindow):
         vol = group("Volume")
 
         def fill(res):
-            v, sinks = res or (None, [])
+            v, sinks, sources, mic = res or (None, [], [], None)
             if v is None:
                 vol.add(Adw.ActionRow(title="Output volume", subtitle="PipeWire (wpctl) not found"))
                 return
             vol.add(slider_row("Output volume", v[0], 0, 100,
                                lambda x: system.run_async(system.set_volume, None, int(x))))
             vol.add(switch_row("Mute", v[1], lambda on: system.run_async(system.set_volume, None, None, on)))
-            options = [(s.id, s.name) for s in sinks]
+            if mic is not None:
+                vol.add(slider_row("Input volume", mic[0], 0, 100,
+                                   lambda x: system.run_async(system.set_input_volume, None, int(x))))
+            options = [(s.key, s.name) for s in sinks]
             if options:
-                cur = next((s.id for s in sinks if s.default), options[0][0])
+                cur = next((s.key for s in sinks if s.default), options[0][0])
                 out.add(combo_row("Output device", options, cur,
-                                  lambda sid: system.run_async(system.set_default_sink, None, sid)))
-        system.run_async(lambda: (system.volume(), system.audio_sinks()), fill)
+                                  lambda k: system.run_async(system.select_output, None, k)))
+            ins = [(s.key, s.name) for s in sources]
+            if ins:
+                cur = next((s.key for s in sources if s.default), ins[0][0])
+                out.add(combo_row("Input device", ins, cur,
+                                  lambda k: system.run_async(system.select_input, None, k)))
+        system.run_async(lambda: (system.volume(), system.audio_outputs(), system.audio_inputs(),
+                                  system.input_volume()), fill)
         return [vol, out]
 
     def _page_displays(self):

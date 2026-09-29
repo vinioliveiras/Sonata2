@@ -596,12 +596,12 @@ class Bar(Gtk.CenterBox):
                 slider.set_value(vol[0])
             for sk in sinks:
                 r = ui.panel.row("object-select-symbolic", sk.name, on_click=lambda sk=sk: (
-                    pop.popdown(), system.run_async(system.set_default_sink, None, sk.id)))
+                    pop.popdown(), system.run_async(system.select_output, None, sk.key)))
                 r.icon.set_opacity(1 if sk.default else 0)            # checkmark column (menus)
                 outs.append(r)
             if not sinks:
                 outs.append(ui.panel.row(None, "No output devices"))
-        system.run_async(lambda: (system.volume(), system.audio_sinks()), fill)
+        system.run_async(lambda: (system.volume(), system.audio_outputs()), fill)
         return pop
 
     def _set_volume(self, v) -> None:
@@ -772,7 +772,7 @@ def _device_menu(btn, title, list_fn, set_fn) -> None:
     """Output/input picker (Big Sur: the list under the Sound module)."""
     def fill(devs):
         Item = ui.menu.Item
-        items = [Item(d.name, lambda _on=None, d=d: system.run_async(set_fn, None, d.id), checked=d.default)
+        items = [Item(d.name, lambda _on=None, d=d: system.run_async(set_fn, None, d.key), checked=d.default)
                  for d in devs or []]
         ui.menu.popup(btn, [[Item(title, None, enabled=False)], items or [Item("No devices", None, enabled=False)]],
                       position=Gtk.PositionType.BOTTOM, gap=4, glass=True)
@@ -919,12 +919,12 @@ class ControlCenter(Gtk.Box):
         snd, self.vol = _slider_with_icon(
             _speaker_icon, 50, bar._set_volume,
             button=_round_button("sonata-audio-output-symbolic", "Output",
-                                 lambda b: _device_menu(b, "Output", system.audio_sinks, system.set_default_sink)))
+                                 lambda b: _device_menu(b, "Output", system.audio_outputs, system.select_output)))
         mic, self.mic = _slider_with_icon(
             lambda v: "microphone-disabled-symbolic" if v <= 0 else "audio-input-microphone-symbolic", 50,
             lambda v: system.run_async(system.set_input_volume, None, int(v), False),
             button=_round_button("audio-input-microphone-symbolic", "Input",
-                                 lambda b: _device_menu(b, "Input", system.audio_sources, system.set_default_source)))
+                                 lambda b: _device_menu(b, "Input", system.audio_inputs, system.select_input)))
         self.append(ui.panel.module(Gtk.Label(label="Sound", xalign=0, css_classes=["panel-module-title"]),
                                     snd, mic))
         self.np = None

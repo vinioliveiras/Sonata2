@@ -13,7 +13,7 @@ work with them unchanged."""
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk  # noqa: E402
+from gi.repository import Gdk, GObject, Graphene, Gsk, Gtk  # noqa: E402
 
 from . import theme  # noqa: E402
 
@@ -125,10 +125,87 @@ def popup_button(options, selected: int = 0, on_change=None) -> Gtk.DropDown:
     return dd
 
 
+class ModuleSlider(Gtk.Widget):
+    """Control Center slider, drawn by hand so the knob and the fill line up
+    exactly (Gtk.Scale ends its fill at the knob's centre): a 22 px capsule,
+    the fill runs under the whole knob. Scale-like API: get_value,
+    set_value, "value-changed"."""
+
+    __gsignals__ = {"value-changed": (GObject.SignalFlags.RUN_FIRST, None, ())}
+    H = 22
+
+    def __init__(self, value=0.0, lower=0.0, upper=100.0):
+        super().__init__(hexpand=True, valign=Gtk.Align.CENTER, cursor=Gdk.Cursor.new_from_name("default"))
+        self.lower, self.upper, self.value = lower, upper, float(value)
+        self.set_size_request(120, self.H)
+        drag = Gtk.GestureDrag()
+        drag.connect("drag-begin", lambda _g, x, _y: self._to(x))
+        drag.connect("drag-update", lambda g, dx, _dy: self._to(g.get_start_point()[1] + dx))
+        self.add_controller(drag)
+        self.connect("notify::sensitive", lambda *_: self.queue_draw())
+        theme.on_change(self.queue_draw)
+
+    def get_value(self) -> float:
+        return self.value
+
+    def set_value(self, v) -> None:
+        v = max(self.lower, min(self.upper, float(v)))
+        if v != self.value:
+            self.value = v
+            self.queue_draw()
+            self.emit("value-changed")
+
+    def _to(self, x) -> None:
+        if not self.is_sensitive():
+            return
+        span = max(1, self.get_width() - self.H)
+        frac = max(0.0, min(1.0, (x - self.H / 2) / span))           # the knob's centre follows the pointer
+        self.set_value(self.lower + frac * (self.upper - self.lower))
+
+    def do_snapshot(self, snap) -> None:
+        w, h = self.get_width(), self.H
+        y = (self.get_height() - h) / 2
+        r = h / 2
+        frac = (self.value - self.lower) / max(1e-9, self.upper - self.lower)
+        kx = (w - h) * frac                                             # knob's left edge
+        if not self.is_sensitive():
+            snap.push_opacity(0.45)
+        track = Gsk.RoundedRect()
+        track.init_from_rect(Graphene.Rect().init(0, y, w, h), r)
+        snap.push_rounded_clip(track)
+        snap.append_color(theme.rgba("module_track"), Graphene.Rect().init(0, y, w, h))
+        fill = Gsk.RoundedRect()
+        fill.init_from_rect(Graphene.Rect().init(0, y, kx + h, h), r)
+        snap.push_rounded_clip(fill)
+        snap.append_color(theme.rgba("module_fill"), Graphene.Rect().init(0, y, kx + h, h))
+        snap.pop()
+        snap.pop()
+        knob = Gsk.RoundedRect()
+        knob.init_from_rect(Graphene.Rect().init(kx, y, h, h), r)
+        shadow = Gdk.RGBA()
+        shadow.parse("rgba(0,0,0,0.28)")
+        snap.append_outset_shadow(knob, shadow, 0, 0, 0, 2.5)
+        white = Gdk.RGBA()
+        white.parse("#ffffff")
+        snap.push_rounded_clip(knob)
+        snap.append_color(white, Graphene.Rect().init(kx, y, h, h))
+        snap.pop()
+        edge = Gdk.RGBA()
+        edge.parse("rgba(0,0,0,0.12)")
+        snap.append_border(knob, [0.5] * 4, [edge] * 4)
+        if not self.is_sensitive():
+            snap.pop()
+
+
 def slider(value: float = 0, on_change=None, style: str = "menu", lower: float = 0,
-           upper: float = 100) -> Gtk.Scale:
+           upper: float = 100):
     """style: "menu" (thin, accent fill) or "module" (Control Center capsule).
     on_change(value) fires while dragging."""
+    if style == "module":
+        m = ModuleSlider(value, lower, upper)
+        if on_change:
+            m.connect("value-changed", lambda sl: on_change(sl.get_value()))
+        return m
     s = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lower, upper, 1)
     s.add_css_class("sonata-slider" if style == "menu" else "sonata-module-slider")
     s.set_draw_value(False)
