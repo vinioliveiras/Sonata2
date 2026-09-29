@@ -585,9 +585,10 @@ class Bar(Gtk.CenterBox):
     def _sound_panel(self, btn):
         """Big Sur sound menu: slider, Output devices (check on the current
         one), Sound Preferences…"""
-        slider = ui.controls.slider(0, lambda v: self._set_volume(v))
+        # the same slider as Control Center's Sound module (icon in the capsule)
+        box, slider = _slider_with_icon(_speaker_icon, 0, lambda v: self._set_volume(v))
         holder = Gtk.Box(css_classes=["panel-header"])
-        holder.append(slider)
+        holder.append(box)
         outs = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col = ui.panel.column(ui.panel.header("Sound"), holder, ui.panel.separator(),
                               ui.panel.section_title("Output"), outs, ui.panel.separator())

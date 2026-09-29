@@ -29,6 +29,19 @@ def save(name: str, data: dict) -> None:
     os.replace(tmp, path)   # atomic: never leaves a half-written file
 
 
+def update(name: str, **values) -> None:
+    """Change some keys of <name>.json, keeping every other key as stored."""
+    try:
+        with open(os.path.join(CONFIG_DIR, name + ".json"), encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            data = {}
+    except (OSError, ValueError):
+        data = {}
+    data.update(values)
+    save(name, data)
+
+
 def watch(name: str, callback):
     """Call callback() when <name>.json changes on disk (e.g. from the Settings
     app). Returns the monitor -- keep a reference to it."""
