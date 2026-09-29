@@ -97,10 +97,11 @@ scale.sonata-slider slider { min-width: 18px; min-height: 18px; margin: -7px; bo
 /* module slider (Control Center: thick capsule, white fill, knob at the end) */
 scale.sonata-module-slider { padding: 0; min-width: 240px; }
 scale.sonata-module-slider trough { min-height: 22px; border-radius: 99px; border: none;
-  background: %(control_off)s; box-shadow: inset 0 0 0 0.5px %(separator)s; }
-scale.sonata-module-slider highlight { min-height: 22px; border-radius: 99px; border: none; background: %(knob)s; }
+  background: %(module_track)s; box-shadow: inset 0 0 0 0.5px %(separator)s; }
+scale.sonata-module-slider highlight { min-height: 22px; border-radius: 99px; border: none; background: %(module_fill)s; }
 scale.sonata-module-slider slider { min-width: 22px; min-height: 22px; margin: 0; border-radius: 99px; border: none;
-  background: %(knob)s; box-shadow: 0 0 0 0.5px %(hairline)s, %(shadow_knob)s; }
+  background: #ffffff; box-shadow: 0 0 0 0.5px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.30); }
+scale.sonata-module-slider:disabled highlight, scale.sonata-module-slider:disabled slider { opacity: 0.5; }
 """)
 
 

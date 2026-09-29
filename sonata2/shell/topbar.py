@@ -27,7 +27,10 @@ from ..backend import system  # noqa: E402
 from . import layer  # noqa: E402
 
 BAR_H = 24
-DEFAULTS = {"battery_percent": False, "clock_format": "%a %-d %b  %H:%M", "show_bluetooth": True}
+# Sound and Now Playing live in the Control Center; the menu bar items are
+# optional (Settings > Menu Bar), off by default (Vini).
+DEFAULTS = {"battery_percent": False, "clock_format": "%a %-d %b  %H:%M", "show_bluetooth": True,
+            "show_sound": False, "show_now_playing": False}
 POLL_S = 10
 
 ui.register("""
@@ -85,8 +88,7 @@ class Bar(Gtk.CenterBox):
         self.players = mpris.players()
         self.nowplaying = self._item(right, icon="sonata-now-playing-symbolic", on_click=self._nowplaying_panel,
                                      css="icon")
-        self.players.listeners.append(lambda: self.nowplaying.set_visible(self.players.active))
-        self.nowplaying.set_visible(self.players.active)
+        self.players.listeners.append(self._extras_visibility)
         self.clip = clipboard.History()
         self.clip_btn = self._item(right, icon="sonata-clipboard-symbolic", on_click=self._clipboard_panel,
                                    css="icon")
@@ -95,6 +97,7 @@ class Bar(Gtk.CenterBox):
         self.input_btn.add_css_class("input-src")
         self._update_input()
         self.sound = self._item(right, icon="sonata-volume-3-symbolic", on_click=self._sound_panel, css="icon")
+        self._extras_visibility()
         self.battery = self._item(right, icon="sonata-battery-100-symbolic", on_click=self._battery_panel,
                                   css="icon")
         self.battery.add_css_class("battery")
@@ -122,11 +125,17 @@ class Bar(Gtk.CenterBox):
         self._poll()
         GLib.timeout_add_seconds(POLL_S, lambda: (self._poll(), True)[1])
 
+    def _extras_visibility(self) -> None:
+        self.nowplaying.set_visible(self.cfg["show_now_playing"] and self.players.active)
+        if hasattr(self, "sound"):
+            self.sound.set_visible(self.cfg["show_sound"])
+
     def _config_changed(self) -> None:
         """Settings app changed topbar.json: apply live."""
         self.cfg = config.load("topbar", DEFAULTS)
         self.battery_pct.set_visible(self.cfg["battery_percent"] and self.battery.get_visible())
         self._bt_update()
+        self._extras_visibility()
         now = GLib.DateTime.new_now_local()
         self._set_text(self.clock, now.format(self.cfg["clock_format"]) or now.format("%a %H:%M"))
 
@@ -350,7 +359,8 @@ class Bar(Gtk.CenterBox):
     def _poll(self) -> None:
         system.run_async(lambda: (system.wifi_available(), system.wifi_enabled(), system.wifi_current()),
                          self._wifi_state)
-        system.run_async(lambda: (*system.battery(), system.on_ac()), self._battery_state)
+        system.run_async(lambda: (*system.battery(), system.on_ac(), system.power_profile_fast()),
+                         self._battery_state)
         system.run_async(system.volume, self._sound_state)
 
     def _wifi_state(self, res) -> None:
@@ -372,19 +382,29 @@ class Bar(Gtk.CenterBox):
         self._set_icon(self.wifi, name)
 
     def _battery_state(self, res) -> None:
-        pct, status, ac = res or (None, "", False)
-        self.battery.set_visible(pct is not None)
+        pct, status, ac, profile = (tuple(res) + (None,) * 4)[:4] if res else (None, "", False, None)
+        self.battery.set_visible(pct is not None or bool(status))
         if pct is None:
+            if status:
+                self._set_icon(self.battery, "sonata-battery-missing-symbolic")    # battery, no reading
             return
         level = min(100, (pct + 5) // 10 * 10)
-        # plugged in = the bolt, also when the battery holds ("Not charging": charge limits)
-        charging = ac or status in ("Charging", "Full")
-        self._set_icon(self.battery, f"sonata-battery-{level}{'-charging' if charging else ''}-symbolic")
+        # Big Sur states: charging (bolt), on power but holding -- full or a
+        # charge limit -- (plug), Low Power Mode (yellow), low (red, in the icon)
+        if status == "Charging":
+            state = "-charging"
+        elif ac:
+            state = "-plugged"
+        elif profile == "power-saver":
+            state = "-saver"
+        else:
+            state = ""
+        self._set_icon(self.battery, f"sonata-battery-{level}{state}-symbolic")
         self.battery_pct.set_label(f"{pct}%")
         self.battery_pct.set_visible(self.cfg["battery_percent"])
 
     def _sound_state(self, res) -> None:
-        self.sound.set_visible(res is not None)
+        self.sound.set_visible(res is not None and self.cfg["show_sound"])
         if res:
             vol, muted = res
             self._set_icon(self.sound, "sonata-volume-muted-symbolic" if muted or vol == 0 else
@@ -699,7 +719,12 @@ ui.register("""
 .cc-ns .cc-ns-icon { min-width: 26px; min-height: 26px; border-radius: 13px; background: alpha(%(label)s, 0.1); }
 .cc-ns:checked .cc-ns-icon { background: %(accent)s; color: %(label_on_accent)s; }
 .cc-slider-box { min-height: 22px; }
-.cc-slider-icon { color: alpha(%(label)s, 0.55); margin-left: 6px; -gtk-icon-size: 12px; }
+.cc-slider-icon { color: rgba(0,0,0,0.5); margin-left: 7px; -gtk-icon-size: 12px; }   /* on the white fill */
+.cc-round { min-width: 26px; min-height: 26px; padding: 0; border-radius: 99px; border: none; box-shadow: none;
+  background: %(module_button)s; color: %(label)s; }
+.cc-round:hover { background: alpha(%(label)s, 0.18); }
+.cc-np-art { border-radius: 6px; background: %(module_button)s; min-width: 40px; min-height: 40px; }
+.cc-np-art image { color: %(label_tertiary)s; }
 .cc-np-title { font-weight: 700; }
 .cc-np-artist { color: %(label_secondary)s; font-size: %(text_small)s; }
 .cc-np button { min-width: 26px; min-height: 26px; padding: 0; border: none; background: none;
@@ -708,45 +733,119 @@ ui.register("""
 """, key="control-center")
 
 
-def _slider_with_icon(icon, value, on_change, sensitive=True):
-    """Big Sur module slider: the symbol sits inside the capsule, left."""
-    over = Gtk.Overlay(css_classes=["cc-slider-box"])
+def _slider_with_icon(icon, value, on_change, sensitive=True, button=None):
+    """Big Sur module slider: the symbol sits inside the capsule, left;
+    `button` (a round one) at the right, like the Sound module's AirPlay."""
+    over = Gtk.Overlay(css_classes=["cc-slider-box"], hexpand=True)
     sl = ui.controls.slider(value, on_change, style="module")
     sl.set_sensitive(sensitive)
     over.set_child(sl)
     img = Gtk.Image(icon_name=icon, css_classes=["cc-slider-icon"], halign=Gtk.Align.START,
                     valign=Gtk.Align.CENTER, can_target=False)
     over.add_overlay(img)
-    return over, sl
+    if button is None:
+        return over, sl
+    row = Gtk.Box(spacing=8)
+    row.append(over)
+    row.append(button)
+    return row, sl
+
+
+def _round_button(icon, tooltip, on_click) -> Gtk.Button:
+    b = Gtk.Button(css_classes=["cc-round"], can_focus=False, valign=Gtk.Align.CENTER, tooltip_text=tooltip)
+    b.set_child(Gtk.Image(icon_name=icon, pixel_size=14))
+    b.connect("clicked", lambda btn: on_click(btn))
+    return b
+
+
+def _device_menu(btn, title, list_fn, set_fn) -> None:
+    """Output/input picker (Big Sur: the list under the Sound module)."""
+    def fill(devs):
+        Item = ui.menu.Item
+        items = [Item(d.name, lambda _on=None, d=d: system.run_async(set_fn, None, d.id), checked=d.default)
+                 for d in devs or []]
+        ui.menu.popup(btn, [[Item(title, None, enabled=False)], items or [Item("No devices", None, enabled=False)]],
+                      position=Gtk.PositionType.BOTTOM, gap=4, glass=True)
+    system.run_async(list_fn, fill)
+
+
+_art_cache = {}
+
+
+def _load_art(url: str, image: Gtk.Image, size: int) -> None:
+    """Album art (mpris:artUrl: file:// or http[s]://) into `image`."""
+    if not url:
+        image.set_from_icon_name("sonata-now-playing-symbolic")
+        return
+    if url in _art_cache:
+        image.set_from_paintable(_art_cache[url])
+        return
+
+    def work():
+        try:
+            if url.startswith("file://"):
+                data = open(GLib.filename_from_uri(url)[0], "rb").read()
+            else:
+                import urllib.request
+                with urllib.request.urlopen(url, timeout=5) as r:
+                    data = r.read(4_000_000)
+            return data
+        except (OSError, ValueError):
+            return None
+
+    def done(data):
+        if not data:
+            return
+        try:
+            tex = Gdk.Texture.new_from_bytes(GLib.Bytes.new(data))
+        except GLib.Error:
+            return
+        _art_cache[url] = tex
+        image.set_from_paintable(tex)
+    system.run_async(work, done)
 
 
 def now_playing_module(p, header=False) -> Gtk.Widget:
-    """Big Sur Now Playing: title, artist, previous / play-pause / next;
-    follows the player live."""
+    """Big Sur Now Playing: artwork, title, artist, play/pause and next
+    (previous too in the menu bar item); follows the player live and says
+    "Not Playing" when there is none."""
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
     if header:
         box.append(Gtk.Label(label="Now Playing", xalign=0, css_classes=["panel-module-title"]))
-    row = Gtk.Box(spacing=8, css_classes=["cc-np"])
+    row = Gtk.Box(spacing=10, css_classes=["cc-np"])
+    art_box = Gtk.Box(css_classes=["cc-np-art"], valign=Gtk.Align.CENTER, halign=Gtk.Align.START,
+                      overflow=Gtk.Overflow.HIDDEN, hexpand=False)
+    art_box.set_size_request(40, 40)
+    art = Gtk.Image(pixel_size=40, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+    art_box.append(art)
+    row.append(art_box)
     texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
-    title = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=26, css_classes=["cc-np-title"])
-    artist = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=26, css_classes=["cc-np-artist"])
+    title = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=22, css_classes=["cc-np-title"])
+    artist = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=22, css_classes=["cc-np-artist"])
     texts.append(title)
     texts.append(artist)
     row.append(texts)
     btns = {}
-    for key, icon, method in (("prev", "media-skip-backward-symbolic", "Previous"),
-                              ("play", "media-playback-start-symbolic", "PlayPause"),
-                              ("next", "media-skip-forward-symbolic", "Next")):
-        b = Gtk.Button(icon_name=icon)
+    keys = (("prev", "media-skip-backward-symbolic", "Previous"),) if header else ()
+    for key, icon, method in keys + (("play", "media-playback-start-symbolic", "PlayPause"),
+                                     ("next", "media-skip-forward-symbolic", "Next")):
+        b = Gtk.Button(icon_name=icon, valign=Gtk.Align.CENTER)
         b.connect("clicked", lambda _b, m=method: p.call(m))
         btns[key] = b
         row.append(b)
+    state = {"art": None}
 
     def update():
-        title.set_label(p.title)
-        artist.set_label(p.artist)
-        artist.set_visible(bool(p.artist))
+        title.set_label(p.title if p.active else "Not Playing")
+        artist.set_label(p.artist if p.active else "")
+        artist.set_visible(bool(p.active and p.artist))
         btns["play"].set_icon_name("media-playback-pause-symbolic" if p.playing else "media-playback-start-symbolic")
+        for b in btns.values():
+            b.set_sensitive(p.active)
+        url = p.art if p.active else ""
+        if url != state["art"]:
+            state["art"] = url
+            _load_art(url, art, 40)
     update()
     p.listeners.append(update)
     row.connect("unrealize", lambda *_: update in p.listeners and p.listeners.remove(update))
@@ -788,8 +887,10 @@ class ControlCenter(Gtk.Box):
         row.append(conn)
         row.append(right)
         self.append(row)
-        disp, self.bright = _slider_with_icon("display-brightness-symbolic", 50,
-                                              lambda v: system.run_async(system.set_brightness, None, int(v)))
+        disp, self.bright = _slider_with_icon(
+            "display-brightness-symbolic", 50, lambda v: system.run_async(system.set_brightness, None, int(v)),
+            button=_round_button("video-display-symbolic", "Displays Preferences",
+                                 lambda _b: (self._close(), open_settings("displays"))))
         # Night Shift under the brightness slider (Big Sur's expanded Display module)
         from . import nightshift
         ns = Gtk.ToggleButton(css_classes=["cc-ns"], can_focus=False, active=nightshift.is_on(),
@@ -802,11 +903,20 @@ class ControlCenter(Gtk.Box):
         ns.set_sensitive(shutil.which("wlsunset") is not None)
         self.append(ui.panel.module(Gtk.Label(label="Display", xalign=0, css_classes=["panel-module-title"]),
                                     disp, ns))
-        snd, self.vol = _slider_with_icon("audio-volume-high-symbolic", 50, bar._set_volume)
-        self.append(ui.panel.module(Gtk.Label(label="Sound", xalign=0, css_classes=["panel-module-title"]), snd))
+        snd, self.vol = _slider_with_icon(
+            "audio-volume-high-symbolic", 50, bar._set_volume,
+            button=_round_button("sonata-audio-output-symbolic", "Output",
+                                 lambda b: _device_menu(b, "Output", system.audio_sinks, system.set_default_sink)))
+        mic, self.mic = _slider_with_icon(
+            "audio-input-microphone-symbolic", 50,
+            lambda v: system.run_async(system.set_input_volume, None, int(v), False),
+            button=_round_button("audio-input-microphone-symbolic", "Input",
+                                 lambda b: _device_menu(b, "Input", system.audio_sources, system.set_default_source)))
+        self.append(ui.panel.module(Gtk.Label(label="Sound", xalign=0, css_classes=["panel-module-title"]),
+                                    snd, mic))
         self.np = None
         system.run_async(lambda: (system.wifi_enabled(), system.wifi_current(), system.bluetooth_state(),
-                                  system.brightness(), system.volume()), self._fill)
+                                  system.brightness(), system.volume(), system.input_volume()), self._fill)
         self._now_playing()
 
     def _small(self, icon, title, cb, close=True):
@@ -826,7 +936,7 @@ class ControlCenter(Gtk.Box):
     def _fill(self, res):
         if not res:
             return
-        wifi_on, (ssid, _sig, _wired), bt, b, vol = res
+        wifi_on, (ssid, _sig, _wired), bt, b, vol, mic = res
         ui.panel.set_toggle(self.wifi, bool(wifi_on), ssid or ("Not Connected" if wifi_on else "Off"))
         ui.panel.set_toggle(self.bt, bool(bt), "On" if bt else "Off" if bt is not None else "Unavailable")
         if b is None:
@@ -837,6 +947,10 @@ class ControlCenter(Gtk.Box):
             self.vol.set_sensitive(False)
         else:
             self.vol.set_value(vol[0])
+        if mic is None:
+            self.mic.set_sensitive(False)
+        else:
+            self.mic.set_value(mic[0])
 
     def _screenshot(self):
         """The capture toolbar (Super+Shift+5), after the panel closes."""
@@ -846,9 +960,7 @@ class ControlCenter(Gtk.Box):
 
     def _now_playing(self):
         from . import mpris
-        p = mpris.players()
-        if p.active:
-            self.append(now_playing_module(p))
+        self.append(now_playing_module(mpris.players()))      # always, like Big Sur ("Not Playing")
 
     def _set_dark(self, on: bool) -> None:
         """Dark Mode is a Linux setting (freedesktop colour-scheme), so every
@@ -995,7 +1107,7 @@ class TopBarWindow(Gtk.ApplicationWindow):
 
     def _preview(self) -> None:
         """Bar over a sample wallpaper in a normal window (screenshots)."""
-        GLib.timeout_add(300, lambda: (self.bar._sound_state((70, False)), self.bar._battery_state((64, "Discharging", False)),
+        GLib.timeout_add(300, lambda: (self.bar._sound_state((70, False)), self.bar._battery_state((64, "Discharging", False, None)),
                                        self.bar._wifi_state((True, True, ("Home", 80, False))),
                                        self.bar.bt.set_visible(True), False)[-1])
         from .preview import _wallpaper

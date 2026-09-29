@@ -35,6 +35,9 @@ LIGHT = {
     "bar_bg": "rgba(246, 246, 248, 0.55)",       # menu bar (blurred by the compositor)
     "bar_item_active": "rgba(0, 0, 0, 0.10)",    # open menu title / pressed extra
     "module_bg": "rgba(255, 255, 255, 0.55)",    # Control Center modules
+    "module_track": "rgba(0, 0, 0, 0.10)",       # Control Center slider, empty part
+    "module_fill": "#ffffff",                     # ... filled part and knob
+    "module_button": "rgba(0, 0, 0, 0.08)",      # round buttons beside the sliders
     "toggle_off": "rgba(0, 0, 0, 0.10)",         # round module toggles
     "content_bg": "#ffffff",                     # document/list area of windows
     "pane_bg": "#fafafa",                        # Settings content pane (behind the cards)
@@ -76,6 +79,9 @@ DARK = {
     "bar_bg": "rgba(30, 30, 32, 0.50)",
     "bar_item_active": "rgba(255, 255, 255, 0.18)",
     "module_bg": "rgba(255, 255, 255, 0.08)",
+    "module_track": "rgba(255, 255, 255, 0.12)",
+    "module_fill": "rgba(255, 255, 255, 0.92)",
+    "module_button": "rgba(255, 255, 255, 0.12)",
     "toggle_off": "rgba(255, 255, 255, 0.16)",
     "content_bg": "#1e1e1e",
     "pane_bg": "#242424",

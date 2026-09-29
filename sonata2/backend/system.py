@@ -311,14 +311,25 @@ def volume() -> Optional[Tuple[int, bool]]:
     return (round(float(m.group(1)) * 100), "[MUTED]" in out) if m else None
 
 
-def set_volume(percent: Optional[int] = None, muted: Optional[bool] = None) -> bool:
+def set_volume(percent: Optional[int] = None, muted: Optional[bool] = None,
+               node: str = "@DEFAULT_AUDIO_SINK@") -> bool:
     ok = True
     if percent is not None:
-        ok = _run(["wpctl", "set-volume", "-l", "1.0", "@DEFAULT_AUDIO_SINK@",
-                   f"{max(0, min(100, int(percent)))}%"])[0] == 0
+        ok = _run(["wpctl", "set-volume", "-l", "1.0", node, f"{max(0, min(100, int(percent)))}%"])[0] == 0
     if muted is not None:
-        ok = _run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "1" if muted else "0"])[0] == 0 and ok
+        ok = _run(["wpctl", "set-mute", node, "1" if muted else "0"])[0] == 0 and ok
     return ok
+
+
+def input_volume() -> Optional[Tuple[int, bool]]:
+    """(percent, muted) of the default microphone, None without one."""
+    rc, out = _run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SOURCE@"], timeout=5)
+    m = re.search(r"Volume:\s*([\d.]+)", out) if rc == 0 else None
+    return (round(float(m.group(1)) * 100), "[MUTED]" in out) if m else None
+
+
+def set_input_volume(percent: Optional[int] = None, muted: Optional[bool] = None) -> bool:
+    return set_volume(percent, muted, "@DEFAULT_AUDIO_SOURCE@")
 
 
 # -- display brightness ----------------------------------------------------------------
@@ -461,28 +472,44 @@ class AudioSink:
     default: bool
 
 
-def audio_sinks() -> List[AudioSink]:
-    """Output devices from `wpctl status` (Audio > Sinks section)."""
+def _wpctl_nodes(section: str) -> List[AudioSink]:
+    """Devices of the Audio > `section` ("Sinks" / "Sources") part of `wpctl status`."""
     rc, out = _run(["wpctl", "status"], timeout=5)
-    sinks, section = [], None
+    nodes, in_audio, current = [], False, None
     for line in out.splitlines() if rc == 0 else []:
         s = line.strip(" │├└─")
-        if s.startswith("Sinks:"):
-            section = "sinks"
+        if not line.startswith((" ", "│", "├", "└")) and s:     # top-level: Audio / Video / Settings
+            in_audio = s.startswith("Audio")
+            current = None
             continue
-        if section == "sinks":
-            if not s or s.endswith(":"):
-                if sinks or s.endswith(":"):
-                    break
-                continue
-            m = re.match(r"(\*)?\s*(\d+)\.\s+(.+?)(\s+\[vol:.*\])?$", s)
-            if m:
-                sinks.append(AudioSink(int(m.group(2)), m.group(3).strip(), bool(m.group(1))))
-    return sinks
+        if not in_audio:
+            continue
+        if s.endswith(":"):
+            current = s[:-1]
+            continue
+        if current != section or not s:
+            continue
+        m = re.match(r"(\*)?\s*(\d+)\.\s+(.+?)(\s+\[vol:.*\])?$", s)
+        if m:
+            nodes.append(AudioSink(int(m.group(2)), m.group(3).strip(), bool(m.group(1))))
+    return nodes
+
+
+def audio_sinks() -> List[AudioSink]:
+    """Output devices (wpctl)."""
+    return _wpctl_nodes("Sinks")
+
+
+def audio_sources() -> List[AudioSink]:
+    """Input devices (microphones; wpctl)."""
+    return _wpctl_nodes("Sources")
 
 
 def set_default_sink(sink_id: int) -> bool:
     return _run(["wpctl", "set-default", str(sink_id)])[0] == 0
+
+
+set_default_source = set_default_sink            # same wpctl call for inputs
 
 
 # -- displays (wlroots compositors) -------------------------------------------------------------
@@ -528,6 +555,21 @@ def set_display_scale(name: str, scale: float) -> bool:
 # -- power profiles -------------------------------------------------------------------------------
 POWER_PROFILES = (("performance", "High Performance"), ("balanced", "Automatic"),
                   ("power-saver", "Low Power"))
+
+
+def power_profile_fast() -> Optional[str]:
+    """ActiveProfile over D-Bus (powerprofilesctl is a Python script: too
+    heavy for the menu bar's poll)."""
+    for name, path in (("org.freedesktop.UPower.PowerProfiles", "/org/freedesktop/UPower/PowerProfiles"),
+                       ("net.hadess.PowerProfiles", "/net/hadess/PowerProfiles")):
+        try:
+            bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+            v = bus.call_sync(name, path, "org.freedesktop.DBus.Properties", "Get",
+                              GLib.Variant("(ss)", (name, "ActiveProfile")), None, Gio.DBusCallFlags.NONE, 500, None)
+            return v.unpack()[0]
+        except GLib.Error:
+            continue
+    return None
 
 
 def power_profile() -> Optional[str]:

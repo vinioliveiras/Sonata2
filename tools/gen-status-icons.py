@@ -56,21 +56,43 @@ def wifi():
 
 
 def battery():
-    """24x24 canvas (the bar shows it at 24 px): a macOS-proportioned battery."""
+    """24x24 canvas (the bar shows it at 24 px): a macOS-proportioned battery,
+    every Big Sur state: level in tenths; -charging (bolt, green), -plugged
+    (on power, not charging: plug), -saver (Low Power Mode: yellow), red at
+    10 % and below; sonata-battery-missing (no reading)."""
     head = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">'
     shell = ('<rect x="1.5" y="7" width="19" height="10" rx="3" fill="none" stroke="#000" '
              'stroke-width="1.1" opacity="0.45"/>'
              '<path d="M21.7 10.2c.9.2 1.4.9 1.4 1.8s-.5 1.6-1.4 1.8z" fill="#000" opacity="0.45"/>')
+    bolt = '<path d="M12.6 5.2L8 12.6h3.4l-1 6.2 5-8h-3.5z" fill="#000"/>'
+    plug = ('<path d="M9.6 5.6v2.6M13.4 5.6v2.6" stroke="#000" stroke-width="1.3" stroke-linecap="round"/>'
+            '<path d="M8.4 8.4h6.2v2.2a3.1 3.1 0 0 1-3.1 3.1 3.1 3.1 0 0 1-3.1-3.1z" fill="#000"/>'
+            '<path d="M11.5 13.6v4.4" stroke="#000" stroke-width="1.3" stroke-linecap="round"/>')
+
+    def write24(name, body):
+        with open(os.path.join(OUT, name + ".svg"), "w") as f:
+            f.write(head + body + "</svg>\n")
     for tenth in range(11):
-        w = 15.4 * tenth / 10
-        for charging in (False, True):
-            cls = ' class="success"' if charging else (' class="error"' if tenth <= 1 else "")
-            fill = (f'<rect x="3.3" y="8.8" width="{max(w, 1.6):.2f}" height="6.4" rx="1.6" fill="#000"{cls}/>'
-                    if tenth or charging else "")
-            bolt = ('<path d="M12.6 5.2L8 12.6h3.4l-1 6.2 5-8h-3.5z" fill="#000"/>' if charging else "")
-            name = f"sonata-battery-{tenth * 10}{'-charging' if charging else ''}-symbolic"
-            with open(os.path.join(OUT, name + ".svg"), "w") as f:
-                f.write(head + shell + fill + bolt + "</svg>\n")
+        w = max(15.4 * tenth / 10, 1.6)
+        for state in ("", "charging", "plugged", "saver"):
+            cls = {"charging": ' class="success"', "saver": ' class="warning"'}.get(
+                state, ' class="error"' if tenth <= 1 and not state else "")
+            show = tenth or state
+            dim = ' opacity="0.35"' if state == "plugged" else ""          # the plug reads over it
+            fill = f'<rect x="3.3" y="8.8" width="{w:.2f}" height="6.4" rx="1.6" fill="#000"{cls}{dim}/>' if show else ""
+            glyph = bolt if state == "charging" else plug if state == "plugged" else ""
+            write24(f"sonata-battery-{tenth * 10}{'-' + state if state else ''}-symbolic", shell + fill + glyph)
+    write24("sonata-battery-missing-symbolic", shell +
+            '<path d="M8.5 9.5l5 5M13.5 9.5l-5 5" stroke="#000" stroke-width="1.3" stroke-linecap="round" '
+            'opacity="0.6"/>')
+
+
+def audio_output():
+    """AirPlay-audio style output picker: sound rings over a triangle."""
+    write("sonata-audio-output-symbolic",
+          '<path d="M3.4 10.6a5.6 5.6 0 1 1 9.2 0" fill="none" stroke="#000" stroke-width="1.3" stroke-linecap="round"/>'
+          '<path d="M5.6 9.1a3.1 3.1 0 1 1 4.8 0" fill="none" stroke="#000" stroke-width="1.3" stroke-linecap="round"/>'
+          '<path d="M8 9.6l3.6 4.9H4.4z" fill="#000" stroke="#000" stroke-width=".6" stroke-linejoin="round"/>')
 
 
 def search():
@@ -131,6 +153,7 @@ if __name__ == "__main__":
     dark_mode()
     now_playing()
     clipboard()
+    audio_output()
     bluetooth()
     record_stop()
     logo()

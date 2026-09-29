@@ -1284,6 +1284,12 @@ class Settings(Adw.ApplicationWindow):
                         cfg["clock_format"], lambda v: self._save("topbar", "clock_format", v)))
         g.add(switch_row("Show Bluetooth in menu bar", cfg["show_bluetooth"],
                          lambda on: self._save("topbar", "show_bluetooth", on)))
+        g.add(switch_row("Show Sound in menu bar", cfg["show_sound"],
+                         lambda on: self._save("topbar", "show_sound", on),
+                         subtitle="Volume and outputs are always in Control Center"))
+        g.add(switch_row("Show Now Playing in menu bar", cfg["show_now_playing"],
+                         lambda on: self._save("topbar", "show_now_playing", on),
+                         subtitle="While something plays"))
         return [g]
 
     def _page_launchpad(self):
