@@ -73,6 +73,9 @@ def wayfire_set(section: str, key: str, value) -> bool:
                 out.insert(sec_end, f"{key} = {value}\n")
             else:
                 out += [f"\n[{section}]\n", f"{key} = {value}\n"]
+        if out == lines:
+            ok = True              # already so: no write, so Wayfire doesn't reload (no display modeset)
+            continue
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
