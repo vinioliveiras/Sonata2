@@ -62,6 +62,36 @@ class TopBarTest(unittest.TestCase):
     def test_split_nmcli(self):
         self.assertEqual(system._split_nmcli(r"yes:My\:Net:80"), ["yes", "My:Net", "80"])
 
+    def test_battery_menu_energy_mode(self):
+        from unittest import mock
+        win = Gtk.Window()
+        bar = topbar.Bar(None)
+        win.set_child(bar)
+        win.present()
+        settle()
+        picked = []
+        with mock.patch.object(topbar.system, "power_profile_fast", lambda: "balanced"), \
+                mock.patch.object(topbar.system, "set_power_profile", lambda p: picked.append(p) or True):
+            bar.battery.set_visible(True)
+            pop = bar._battery_panel(bar.battery)
+            settle(300)
+            labels = []
+            def walk(w):
+                if isinstance(w, Gtk.Label):
+                    labels.append(w.get_label())
+                c = w.get_first_child()
+                while c is not None:
+                    walk(c)
+                    c = c.get_next_sibling()
+            walk(pop)
+            self.assertIn("Energy Mode", labels)
+            self.assertIn("Low Power", labels)
+            if os.environ.get("SHOT"):
+                import subprocess
+                subprocess.run(["import", "-window", "root", os.environ["SHOT"]])
+            pop.popdown()
+        win.destroy()
+
     def test_battery_sysfs(self):
         d = tempfile.mkdtemp()
         os.makedirs(os.path.join(d, "BAT0"))

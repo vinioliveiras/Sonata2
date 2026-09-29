@@ -75,11 +75,11 @@ def battery():
     for tenth in range(11):
         w = max(15.4 * tenth / 10, 1.6)
         for state in ("", "charging", "plugged", "saver"):
-            cls = {"charging": ' class="success"', "saver": ' class="warning"'}.get(
-                state, ' class="error"' if tenth <= 1 and not state else "")
+            # the level is solid label colour (white in Dark Mode), charging and
+            # plugged too (Vini's reference); the glyph is cut out of it (knockout())
+            cls = {"saver": ' class="warning"'}.get(state, ' class="error"' if tenth <= 1 and not state else "")
             show = tenth or state
-            dim = ' opacity="0.35"' if state == "plugged" else ""          # the plug reads over it
-            fill = f'<rect x="3.3" y="8.8" width="{w:.2f}" height="6.4" rx="1.6" fill="#000"{cls}{dim}/>' if show else ""
+            fill = f'<rect x="3.3" y="8.8" width="{w:.2f}" height="6.4" rx="1.6" fill="#000"{cls}/>' if show else ""
             glyph = bolt if state == "charging" else plug if state == "plugged" else ""
             write24(f"sonata-battery-{tenth * 10}{'-' + state if state else ''}-symbolic", shell + fill + glyph)
     write24("sonata-battery-missing-symbolic", shell +
@@ -144,6 +144,43 @@ def logo():
         f.write(HEAD + '<circle cx="8" cy="8" r="6.2" fill="#000"/></svg>\n')
 
 
+GAP = 1.2          # clear space around the bolt / plug (px, 24 px canvas)
+
+
+def knockout(path):
+    """Battery with a glyph (fill-only SVG from symbolic-fill.py; shapes in
+    order: shell, nub, level, glyph parts): the shell and the level get a
+    gap around the glyph, so it reads over any level (macOS)."""
+    import re as _re
+    from picosvg.svg_types import SVGPath
+    from picosvg import svg_pathops as sp
+    with open(path, encoding="utf-8") as f:
+        src = f.read()
+    shapes = _re.findall(r"<path ([^>]*?)d=\"([^\"]*)\"\s*/>", src)
+    if len(shapes) < 4:
+        return
+    glyph = SVGPath(d=" ".join(d for _a, d in shapes[3:])).as_cmd_seq()
+    halo = list(sp.union([glyph, sp.stroke(glyph, "round", "round", 2 * GAP, 4, 0.05)], ["nonzero", "nonzero"]))
+    out = []
+    for i, (attrs, d) in enumerate(shapes):
+        if i < 3:
+            cut = list(sp.difference([SVGPath(d=d).as_cmd_seq(), halo], ["nonzero", "nonzero"]))
+            # slivers the cut leaves beside the glyph (under ~1 px²) read as specks: dropped
+            parts, cur = [], []
+            for cmd in cut:
+                if cmd[0] == "M" and cur:
+                    parts.append(cur)
+                    cur = []
+                cur.append(cmd)
+            parts.append(cur)
+            keep = [c for part in parts if abs(sp.path_area(part, "nonzero")) >= 1.0 for c in part]
+            d = SVGPath.from_commands(keep).d
+        out.append(f'<path {attrs}d="{d}" />')
+    head = src[:src.index("<path")]
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(head + "".join(out) + "</svg>\n")
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     volume()
@@ -162,4 +199,7 @@ if __name__ == "__main__":
     here = os.path.dirname(__file__)
     subprocess.run([sys.executable, os.path.join(here, "symbolic-fill.py"), OUT,
                     os.path.join(OUT, "..", "..", "actions", "symbolic")], check=False)
+    for name in sorted(os.listdir(OUT)):
+        if name.startswith("sonata-battery-") and ("-charging-" in name or "-plugged-" in name):
+            knockout(os.path.join(OUT, name))
     print("written to", os.path.normpath(OUT))

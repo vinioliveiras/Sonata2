@@ -562,11 +562,31 @@ class Bar(Gtk.CenterBox):
         pct_lbl = Gtk.Label(css_classes=["dim-label"])
         src_row = ui.panel.row(None, "Power Source: …")
         percent_sw = ui.controls.switch(self.cfg["battery_percent"], self._toggle_percent)
-        col = ui.panel.column(ui.panel.header("Battery", pct_lbl), src_row, ui.panel.separator(),
+        # Energy Mode (power-profiles-daemon), macOS Ventura: a checkmark on the current one
+        modes = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        mode_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, visible=False)
+        mode_box.append(ui.panel.section_title("Energy Mode"))
+        mode_box.append(modes)
+        mode_box.append(ui.panel.separator())
+        col = ui.panel.column(ui.panel.header("Battery", pct_lbl), src_row, ui.panel.separator(), mode_box,
                               ui.panel.row(None, "Show Percentage", percent_sw), ui.panel.separator())
         pop = ui.panel.popup(btn, col, gap=2)
         col.append(self._prefs_row(pop, "Battery Preferences…", "battery"))
         ui.panel.align_to_start(pop, btn, 2)
+
+        def pick(key):
+            pop.popdown()
+            system.run_async(system.set_power_profile, lambda _r: self._poll_battery(), key)
+
+        def fill_modes(current):
+            if not current:
+                return                          # no power-profiles-daemon: no section
+            for key, label in system.POWER_PROFILES:
+                r = ui.panel.row("object-select-symbolic", label, on_click=lambda k=key: pick(k))
+                r.icon.set_opacity(1 if key == current else 0)       # checkmark column (menus)
+                modes.append(r)
+            mode_box.set_visible(True)
+        system.run_async(system.power_profile_fast, fill_modes)
 
         def fill(res):
             (pct, status), ac = res or ((None, ""), False)
