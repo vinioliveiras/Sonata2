@@ -910,16 +910,12 @@ class Dock(Gtk.Box):
                 if here:
                     self.manager.set_rectangle(t, surface, b.get_x() - ox, b.get_y() - oy,
                                                b.get_width(), b.get_height())
-                    t.sent_rect = (int(b.get_x() - ox), int(b.get_y() - oy), int(b.get_width()), int(b.get_height()))
                 elif not several:
                     # a single Dock and the window on another display: Wayfire
                     # can't animate across displays -- no target, plain animation
                     self.manager.set_rectangle(t, surface, 0, 0, 0, 0)
                 # (several Docks: the one on the window's display aims it; never
                 #  touch it from here, or the last Dock to write would win)
-                if os.environ.get("SONATA2_DEBUG_GENIE", "1") == "1":     # (temporary: finding the offset)
-                    print(f"genie: {t.app_id} -> {int(b.get_x() - ox)},{int(b.get_y() - oy)} "
-                          f"{int(b.get_width())}x{int(b.get_height())} origin {ox},{oy} here={here}", flush=True)
         return False
 
     def _windows_here(self, surface):
@@ -943,10 +939,6 @@ class Dock(Gtk.Box):
             if self.cfg.get("click_minimizes", True) and any(t.activated for t in shown):
                 # the app in front: clicking its icon minimizes its windows (Vini)
                 for t in shown:
-                    if os.environ.get("SONATA2_DEBUG_GENIE", "1") == "1":
-                        print(f"genie: dock click minimizes {t.app_id} '{t.title}' "
-                              f"last target {getattr(t, 'sent_rect', None)} mag={getattr(self, '_mag_strength', 0):.2f}",
-                              flush=True)
                     self.manager.minimize(t)
                 return
             # macOS: bring all of the app's windows forward; if every window
