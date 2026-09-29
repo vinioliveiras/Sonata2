@@ -85,6 +85,21 @@ def dark_mode():
           '<path d="M8 2a6 6 0 0 1 0 12z" fill="#000"/>')
 
 
+def now_playing():
+    """Music note (the Now Playing item)."""
+    write("sonata-now-playing-symbolic",
+          '<path d="M6 12.2V3.6l7.5-1.6v8.4" fill="none" stroke="#000" stroke-width="1.5" stroke-linejoin="round"/>'
+          '<ellipse cx="4.3" cy="12.3" rx="2.1" ry="1.7" fill="#000"/>'
+          '<ellipse cx="11.8" cy="10.5" rx="2.1" ry="1.7" fill="#000"/>')
+
+
+def clipboard():
+    write("sonata-clipboard-symbolic",
+          '<rect x="2.8" y="2.6" width="10.4" height="12.4" rx="2" fill="none" stroke="#000" stroke-width="1.4"/>'
+          '<rect x="5.4" y="1" width="5.2" height="3.2" rx="1" fill="#000"/>'
+          '<path d="M5.5 8h5M5.5 10.8h3.4" stroke="#000" stroke-width="1.3" stroke-linecap="round"/>')
+
+
 def logo():
     with open(os.path.join(OUT, "..", "..", "actions", "symbolic", "sonata-logo-symbolic.svg"), "w") as f:
         f.write(HEAD + '<circle cx="8" cy="8" r="6.2" fill="#000"/></svg>\n')
@@ -97,5 +112,7 @@ if __name__ == "__main__":
     battery()
     search()
     dark_mode()
+    now_playing()
+    clipboard()
     logo()
     print("written to", os.path.normpath(OUT))

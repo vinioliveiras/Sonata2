@@ -513,16 +513,31 @@ class Settings(Adw.ApplicationWindow):
         # Delay Until Repeat: Long (left) .. Short (right), like macOS
         rep.add(slider_row("Delay Until Repeat", 1150 - delay, 150, 1000,
                            lambda v: self._wf("kb_repeat_delay", int(1150 - v)), ends=("Long", "Short")))
-        src = group("Input Sources")
-        cur = system.keyboard_layout()
-        opts = list(system.XKB_LAYOUTS)
-        if cur not in [o[0] for o in opts]:
-            opts.insert(0, (cur, cur))
-        src.add(combo_row("Keyboard layout", opts, cur,
-                          lambda v: system.run_async(system.set_keyboard_layout, None, v)))
+        src = group("Input Sources", "The first one is in use; switch from the input menu in the menu bar.")
+        names = dict(system.XKB_LAYOUTS)
+        lays = system.keyboard_layouts()
+        for i, lay in enumerate(lays):
+            r = Adw.ActionRow(title=names.get(lay, lay), subtitle="In use" if i == 0 else "", use_markup=False)
+            rm = Gtk.Button(icon_name="list-remove-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"],
+                            tooltip_text="Remove", sensitive=len(lays) > 1)
+            rm.connect("clicked", lambda _b, lay=lay: self._set_layouts([x for x in system.keyboard_layouts()
+                                                                         if x != lay]))
+            r.add_suffix(rm)
+            src.add(r)
+        add_opts = [("", "Add Input Source…")] + [o for o in system.XKB_LAYOUTS if o[0] not in lays]
+        src.add(combo_row("Add", add_opts, "", lambda v: v and self._set_layouts(system.keyboard_layouts() + [v])))
         test = Adw.EntryRow(title="Type here to test")
         src.add(test)
         return [rep, src]
+
+    def _set_layouts(self, lays):
+        system.run_async(system.set_keyboard_layouts, lambda _r: self._reload_page("keyboard"), lays)
+
+    def _reload_page(self, sid):
+        """Rebuild a section (after its content changed)."""
+        page = self.pages.pop(sid, None)
+        if page is not None and self.split.get_content() is page:
+            self.select(sid, from_sidebar=True)
 
     def _page_trackpad(self):
         get = system.wayfire_get

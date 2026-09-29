@@ -410,6 +410,20 @@ XKB_LAYOUTS = [("us", "U.S."), ("us(intl)", "U.S. International"), ("br", "Brazi
                ("it", "Italian"), ("latam", "Latin American"), ("ru", "Russian"), ("jp", "Japanese")]
 
 
+def keyboard_layouts() -> List[str]:
+    """Input sources, the active (first) one first: ["br", "us(intl)"]."""
+    lays = (wayfire_get("input", "xkb_layout", "us") or "us").split(",")
+    vars_ = (wayfire_get("input", "xkb_variant", "") or "").split(",")
+    vars_ += [""] * (len(lays) - len(vars_))
+    return [f"{l}({v})" if v else l for l, v in zip(lays, vars_)]
+
+
+def set_keyboard_layouts(layouts: List[str]) -> bool:
+    lays = [x.split("(")[0] for x in layouts]
+    vars_ = [x.split("(")[1].rstrip(")") if "(" in x else "" for x in layouts]
+    return wayfire_set("input", "xkb_layout", ",".join(lays)) and wayfire_set("input", "xkb_variant", ",".join(vars_))
+
+
 def keyboard_layout() -> str:
     lay = wayfire_get("input", "xkb_layout", "us") or "us"
     var = wayfire_get("input", "xkb_variant", "")

@@ -40,9 +40,11 @@ window.sonata-topbar, window.sonata-topbar > contents { background: none; box-sh
 .topbar-item.open, .topbar-item:active { background: %(bar_item_active)s; }
 .topbar-item.app { font-weight: 700; }
 .topbar-item.icon { padding: 0 8px; }
-.topbar-item image { -gtk-icon-size: 16px; }
-.topbar-item.battery image { -gtk-icon-size: 24px; }       /* wide battery, macOS proportions */
-.topbar-item label.percent { margin-right: 5px; font-size: %(text_body)s; }
+.topbar-item > box > image { -gtk-icon-size: 16px; }
+.topbar-item.battery > box > image { -gtk-icon-size: 24px; }       /* wide battery, macOS proportions */
+.topbar-item.input-src > box > label { font-size: 10px; font-weight: 700; padding: 0 3px; border-radius: 3px;
+  box-shadow: inset 0 0 0 1.2px %(label)s; }
+.topbar-item > box > label.percent { margin-right: 5px; font-size: %(text_body)s; }
 .about-box { padding: 28px 36px 24px 36px; font-family: %(font)s; color: %(label)s; }
 .about-name { font-family: %(font_display)s; font-size: 26px; font-weight: 700; }
 .about-version { color: %(label_secondary)s; margin-bottom: 14px; }
@@ -67,6 +69,21 @@ class Bar(Gtk.CenterBox):
         self.set_start_widget(left)
 
         right = Gtk.Box()
+        # Now Playing (while a player runs), clipboard history (wl-clipboard),
+        # input source (with 2+ keyboard layouts)
+        from . import clipboard, mpris
+        self.players = mpris.players()
+        self.nowplaying = self._item(right, icon="sonata-now-playing-symbolic", on_click=self._nowplaying_panel,
+                                     css="icon")
+        self.players.listeners.append(lambda: self.nowplaying.set_visible(self.players.active))
+        self.nowplaying.set_visible(self.players.active)
+        self.clip = clipboard.History()
+        self.clip_btn = self._item(right, icon="sonata-clipboard-symbolic", on_click=self._clipboard_panel,
+                                   css="icon")
+        self.clip_btn.set_visible(self.clip.available)
+        self.input_btn = self._item(right, text="", on_click=self._input_panel)
+        self.input_btn.add_css_class("input-src")
+        self._update_input()
         self.sound = self._item(right, icon="sonata-volume-3-symbolic", on_click=self._sound_panel, css="icon")
         self.battery = self._item(right, icon="sonata-battery-100-symbolic", on_click=self._battery_panel,
                                   css="icon")
@@ -438,6 +455,64 @@ class Bar(Gtk.CenterBox):
     def _set_volume(self, v) -> None:
         system.run_async(system.set_volume, lambda _r: self._poll(), int(v), False)
 
+    # -- Now Playing / clipboard / input source -----------------------------------------------
+    def _nowplaying_panel(self, btn):
+        pop = ui.panel.popup(btn, ui.panel.column(now_playing_module(self.players, header=True)), gap=2)
+        ui.panel.align_to_start(pop, btn, 2)
+        return pop
+
+    def _clipboard_panel(self, btn):
+        col = ui.panel.column(ui.panel.header("Clipboard"))
+        pop = ui.panel.popup(btn, col, gap=2)
+        for text in self.clip.items:
+            first = " ".join(text.split())
+            col.append(ui.panel.row(None, first[:48] + ("…" if len(first) > 48 else ""),
+                                    on_click=lambda t=text: (pop.popdown(), self.clip.copy(t))))
+        if not self.clip.items:
+            col.append(ui.panel.row(None, "Nothing copied yet"))
+        col.append(ui.panel.separator())
+        col.append(ui.panel.row(None, "Clear History", on_click=lambda: (pop.popdown(), self.clip.clear())))
+        ui.panel.align_to_start(pop, btn, 2)
+        return pop
+
+    def _layouts(self):
+        lay = system.wayfire_get("input", "xkb_layout", "us") or "us"
+        var = system.wayfire_get("input", "xkb_variant", "")
+        lays, vars_ = lay.split(","), var.split(",")
+        return [f"{l}({v})" if i < len(vars_) and vars_[i] else l for i, (l, v) in
+                enumerate(zip(lays, vars_ + [""] * len(lays)))]
+
+    def _update_input(self):
+        lays = self._layouts()
+        self.input_btn.set_visible(len(lays) > 1)
+        if lays:
+            self._set_text(self.input_btn, lays[0].split("(")[0].upper()[:3])
+
+    def _input_panel(self, btn):
+        names = dict(system.XKB_LAYOUTS)
+        lays = self._layouts()
+        col = ui.panel.column()
+        pop = ui.panel.popup(btn, col, gap=2)
+        for i, l in enumerate(lays):
+            r = ui.panel.row("object-select-symbolic", names.get(l, l), on_click=lambda i=i: (
+                pop.popdown(), self._use_layout(i)))
+            r.icon.set_opacity(1 if i == 0 else 0)
+            col.append(r)
+        col.append(ui.panel.separator())
+        col.append(self._prefs_row(pop, "Open Keyboard Preferences…", "keyboard"))
+        ui.panel.align_to_start(pop, btn, 2)
+        return pop
+
+    def _use_layout(self, i):
+        """Wayland has no "switch layout" request: the chosen one becomes the
+        first of the list, which Wayfire applies at once."""
+        lays = self._layouts()
+        lays.insert(0, lays.pop(i))
+        system.run_async(lambda: (system.wayfire_set("input", "xkb_layout", ",".join(x.split("(")[0] for x in lays)),
+                                  system.wayfire_set("input", "xkb_variant", ",".join(
+                                      x.split("(")[1].rstrip(")") if "(" in x else "" for x in lays))),
+                         lambda _r: self._update_input())
+
     def _spotlight(self, btn):
         """Big Sur's magnifier: search apps (Launchpad opens with its search field)."""
         from ..__main__ import self_command
@@ -493,6 +568,40 @@ def _slider_with_icon(icon, value, on_change, sensitive=True):
                     valign=Gtk.Align.CENTER, can_target=False)
     over.add_overlay(img)
     return over, sl
+
+
+def now_playing_module(p, header=False) -> Gtk.Widget:
+    """Big Sur Now Playing: title, artist, previous / play-pause / next;
+    follows the player live."""
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+    if header:
+        box.append(Gtk.Label(label="Now Playing", xalign=0, css_classes=["panel-module-title"]))
+    row = Gtk.Box(spacing=8, css_classes=["cc-np"])
+    texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
+    title = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=26, css_classes=["cc-np-title"])
+    artist = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=26, css_classes=["cc-np-artist"])
+    texts.append(title)
+    texts.append(artist)
+    row.append(texts)
+    btns = {}
+    for key, icon, method in (("prev", "media-skip-backward-symbolic", "Previous"),
+                              ("play", "media-playback-start-symbolic", "PlayPause"),
+                              ("next", "media-skip-forward-symbolic", "Next")):
+        b = Gtk.Button(icon_name=icon)
+        b.connect("clicked", lambda _b, m=method: p.call(m))
+        btns[key] = b
+        row.append(b)
+
+    def update():
+        title.set_label(p.title)
+        artist.set_label(p.artist)
+        artist.set_visible(bool(p.artist))
+        btns["play"].set_icon_name("media-playback-pause-symbolic" if p.playing else "media-playback-start-symbolic")
+    update()
+    p.listeners.append(update)
+    row.connect("unrealize", lambda *_: update in p.listeners and p.listeners.remove(update))
+    box.append(row)
+    return ui.panel.module(box)
 
 
 class ControlCenter(Gtk.Box):
@@ -578,48 +687,11 @@ class ControlCenter(Gtk.Box):
                 system._run(["grim", os.path.join(pics, name)], timeout=10)
         GLib.timeout_add(350, lambda: (system.run_async(shoot), False)[1])   # after the panel closes
 
-    # -- Now Playing (MPRIS over D-Bus) ---------------------------------------------------
     def _now_playing(self):
-        try:
-            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-            names = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
-                                  "ListNames", None, None, Gio.DBusCallFlags.NONE, 500, None).unpack()[0]
-        except GLib.Error:
-            return
-        players = [n for n in names if n.startswith("org.mpris.MediaPlayer2.")]
-        if not players:
-            return
-        try:
-            proxy = Gio.DBusProxy.new_sync(bus, Gio.DBusProxyFlags.NONE, None, players[0],
-                                           "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player", None)
-        except GLib.Error:
-            return
-        meta = proxy.get_cached_property("Metadata")
-        meta = meta.unpack() if meta else {}
-        title = meta.get("xesam:title") or "Not Playing"
-        artist = ", ".join(meta.get("xesam:artist") or [])
-        status = proxy.get_cached_property("PlaybackStatus")
-        playing = status is not None and status.unpack() == "Playing"
-        box = Gtk.Box(spacing=8, css_classes=["cc-np"])
-        texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
-        texts.append(Gtk.Label(label=title, xalign=0, ellipsize=Pango.EllipsizeMode.END, css_classes=["cc-np-title"]))
-        if artist:
-            texts.append(Gtk.Label(label=artist, xalign=0, ellipsize=Pango.EllipsizeMode.END,
-                                   css_classes=["cc-np-artist"]))
-        box.append(texts)
-
-        def call(method, btn=None):
-            proxy.call(method, None, Gio.DBusCallFlags.NONE, 1000, None, None)
-            if btn is not None:
-                btn.set_icon_name("media-playback-start-symbolic" if btn.get_icon_name().startswith(
-                    "media-playback-pause") else "media-playback-pause-symbolic")
-        play = Gtk.Button(icon_name="media-playback-pause-symbolic" if playing else "media-playback-start-symbolic")
-        play.connect("clicked", lambda b: call("PlayPause", b))
-        nxt = Gtk.Button(icon_name="media-skip-forward-symbolic")
-        nxt.connect("clicked", lambda *_: call("Next"))
-        box.append(play)
-        box.append(nxt)
-        self.append(ui.panel.module(box))
+        from . import mpris
+        p = mpris.players()
+        if p.active:
+            self.append(now_playing_module(p))
 
     def _set_dark(self, on: bool) -> None:
         """Dark Mode is a Linux setting (freedesktop colour-scheme), so every
