@@ -112,9 +112,13 @@ window.sonata-window.csd { border-radius: %(r_window)s;
   box-shadow: 0 22px 56px rgba(0, 0, 0, 0.30), 0 0 0 0.5px rgba(0, 0, 0, 0.40),
               inset 0 0 0 0.5px %(highlight)s; }
 window.sonata-window.csd:backdrop { box-shadow: 0 14px 34px rgba(0, 0, 0, 0.20), 0 0 0 0.5px rgba(0, 0, 0, 0.30); }
-window.sonata-window.maximized, window.sonata-window.tiled,
-window.sonata-window.tiled-top, window.sonata-window.tiled-left, window.sonata-window.tiled-right,
-window.sonata-window.tiled-bottom { box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.40), inset 0 0 0 0.5px %(highlight)s; }
+/* maximized/tiled: a hairline only for windows drawing their own frame; under
+   the compositor's title bar it drew a dark line between the glass title
+   bar and a glass toolbar (Preview) */
+window.sonata-window.csd.maximized, window.sonata-window.csd.tiled,
+window.sonata-window.csd.tiled-top, window.sonata-window.csd.tiled-left, window.sonata-window.csd.tiled-right,
+window.sonata-window.csd.tiled-bottom { box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.40), inset 0 0 0 0.5px %(highlight)s; }
+window.sonata-window:not(.csd) { box-shadow: none; }
 window.sonata-window.fullscreen { border-radius: 0; box-shadow: none; }
 """, key="window-frame")
 

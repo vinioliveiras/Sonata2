@@ -364,7 +364,7 @@ class corners_render_instance_t :
 /* A plain transformer node: no geometric transform at all, so pointer
  * input reaches the window exactly where it is drawn (view_2d_transformer_t,
  * used before, maps input through its own transform). */
-class corners_node_t : public wf::scene::transformer_base_node_t
+class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
 {
     wayfire_toplevel_view view;
 
@@ -372,6 +372,37 @@ class corners_node_t : public wf::scene::transformer_base_node_t
     corners_node_t(wayfire_toplevel_view view) : wf::scene::transformer_base_node_t(false)
     {
         this->view = view;
+    }
+
+    /* Pass the window's opaque region on (minus the rounded corners): the
+     * blur transformer around this one only blurs behind what isn't opaque.
+     * Without it every decorated window was blurred whole, every frame --
+     * a maximized browser cost the compositor ~8 ms a frame. */
+    wf::regionf_t get_opaque_region() const override
+    {
+        if (get_children().empty())
+        {
+            return {};
+        }
+
+        auto inner = dynamic_cast<wf::scene::opaque_region_node_t*>(get_children().front().get());
+        if (!inner)
+        {
+            return {};
+        }
+
+        wf::regionf_t region = inner->get_opaque_region();
+        auto b = get_children_bounding_box();
+        const float c = 16;                        /* at least the corner radius */
+        for (auto corner : {wf::geometry_t{(int)b.x, (int)b.y, (int)c, (int)c},
+                            wf::geometry_t{(int)(b.x + b.width - c), (int)b.y, (int)c, (int)c},
+                            wf::geometry_t{(int)b.x, (int)(b.y + b.height - c), (int)c, (int)c},
+                            wf::geometry_t{(int)(b.x + b.width - c), (int)(b.y + b.height - c), (int)c, (int)c}})
+        {
+            region ^= wf::regionf_t{wf::geometry_t{corner}};
+        }
+
+        return region;
     }
 
     std::string stringify() const override
