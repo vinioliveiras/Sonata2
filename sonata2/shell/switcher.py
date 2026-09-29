@@ -32,7 +32,7 @@ class Switcher(Gtk.Window):
         self.add_css_class("sonata-switcher")
         self.manager, self.mru = manager, mru       # mru: app keys, most recent first
         self.keys, self.index = [], 0
-        self.panel = Gtk.Box(spacing=4, css_classes=["sw-panel"] + ([] if ui.theme.glass() else ["solid"]))
+        self.panel = ui.theme.glass_class(Gtk.Box(spacing=4, css_classes=["sw-panel"]))
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col.append(self.panel)
         self.name = Gtk.Label(css_classes=["sw-name"], ellipsize=Pango.EllipsizeMode.END)

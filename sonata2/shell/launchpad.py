@@ -20,13 +20,13 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Graphene", "1.0")
-from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gtk, Pango  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
 from .. import apps, config, icons, ui  # noqa: E402
 from .. import launchpad_model as M  # noqa: E402
 from . import layer  # noqa: E402
 
-OPEN_MS, CLOSE_MS = 280, 220
+OPEN_MS, CLOSE_MS = 230, 170
 FOLDER_HOLD_MS, FLIP_HOLD_MS, JIGGLE_HOLD_MS = 400, 650, 800
 REORDER_HOLD_MS = 220       # icons make way only after a short pause (so you can reach an icon to make a folder)
 ZOOM_FROM = 1.12            # icons zoom in from 112 % while fading in (Big Sur)
@@ -93,7 +93,33 @@ class ZoomBin(Gtk.Widget):
         self.child = child
         self.progress = 0.0         # 0 closed .. 1 open
         self.backdrop = None        # preview only
+        self.frozen = None          # the grid as one texture while it zooms (freeze())
         ui.on_change(self.queue_draw)
+
+    def freeze(self) -> None:
+        """Draw the grid once into a texture for the open/close animation:
+        each frame then scales one picture instead of re-drawing every icon
+        and label (smooth at 144 Hz, little CPU)."""
+        self.frozen = None
+        w, h = self.get_width(), self.get_height()
+        native = self.get_native()
+        if w <= 0 or h <= 0 or native is None or native.get_renderer() is None:
+            return
+        sf = self.get_scale_factor() or 1
+        snap = Gtk.Snapshot()
+        snap.scale(sf, sf)
+        self.snapshot_child(self.child, snap)
+        node = snap.to_node()
+        if node is None:
+            return
+        try:
+            self.frozen = native.get_renderer().render_texture(node, Graphene.Rect().init(0, 0, w * sf, h * sf))
+        except GLib.Error:
+            self.frozen = None
+
+    def thaw(self) -> None:
+        self.frozen = None
+        self.queue_draw()
 
     def do_snapshot(self, snap) -> None:
         w, h = self.get_width(), self.get_height()
@@ -113,7 +139,10 @@ class ZoomBin(Gtk.Widget):
         snap.translate(Graphene.Point().init(w / 2, h / 2))
         snap.scale(s, s)
         snap.translate(Graphene.Point().init(-w / 2, -h / 2))
-        self.snapshot_child(self.child, snap)
+        if self.frozen is not None and p < 1:
+            snap.append_scaled_texture(self.frozen, Gsk.ScalingFilter.LINEAR, rect)
+        else:
+            self.snapshot_child(self.child, snap)
         snap.restore()
         snap.pop()
 
@@ -459,11 +488,17 @@ class Launchpad(Gtk.ApplicationWindow):
         def step(v):
             self.bin.progress = v
             self.bin.queue_draw()
+        self.bin.freeze()
         self._anim = Adw.TimedAnimation.new(self.bin, self.bin.progress, to, ms,
                                             Adw.CallbackAnimationTarget.new(step))
-        self._anim.set_easing(Adw.Easing.EASE_OUT_CUBIC if to else Adw.Easing.EASE_IN_CUBIC)
-        if done:
-            self._anim.connect("done", lambda *_: done())
+        # macOS: a quick start that settles softly, both ways
+        self._anim.set_easing(Adw.Easing.EASE_OUT_QUART if to else Adw.Easing.EASE_OUT_CUBIC)
+
+        def finished(*_a):
+            self.bin.thaw()
+            if done:
+                done()
+        self._anim.connect("done", finished)
         self._anim.play()
 
     def _background_click(self, gesture, _n, x, y) -> None:

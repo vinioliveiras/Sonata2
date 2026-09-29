@@ -34,6 +34,7 @@ class OSD(Gtk.Window):
         self.add_css_class("sonata-osd")
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["osd-card"] +
                        ([] if ui.theme.glass() else ["solid"]))
+        ui.theme.glass_class(card)
         card.set_size_request(SIZE, SIZE)
         self.icon = Gtk.Image(pixel_size=96, css_classes=["osd-icon"], vexpand=True, valign=Gtk.Align.CENTER)
         card.append(self.icon)

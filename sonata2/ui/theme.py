@@ -48,21 +48,42 @@ def glass() -> bool:
 
 
 def reduce_transparency() -> bool:
-    """Accessibility > Reduce transparency (read when the process starts)."""
+    """Solid materials instead of glass: Accessibility > Reduce transparency,
+    or Appearance > Translucent glass off. Live: both settings are watched
+    (setup) and every Sonata surface re-styles when either changes."""
     global _reduce
     if _reduce is None:
-        from .. import config
-        _reduce = bool(config.load("appearance", _appearance_defaults())["reduce_transparency"])
+        _reduce = reduce_transparency_now()
     return _reduce
 
 
 _reduce = None
+_dock_mon = None
 
 
 def reduce_transparency_now() -> bool:
-    """The setting as it is on disk now (for code that follows changes live)."""
+    """The settings as they are on disk now."""
     from .. import config
-    return bool(config.load("appearance", _appearance_defaults())["reduce_transparency"])
+    return bool(config.load("appearance", _appearance_defaults())["reduce_transparency"]) or \
+        not config.load("dock", {"glass": True}).get("glass", True)
+
+
+def glass_class(widget: Gtk.Widget) -> Gtk.Widget:
+    """Keep a glass surface's "solid" class in step with the setting."""
+    def sync(*_a):
+        (widget.remove_css_class if glass() else widget.add_css_class)("solid")
+    sync()
+    on_change(sync)
+    return widget
+
+
+def _transparency_changed() -> None:
+    global _reduce
+    new = reduce_transparency_now()
+    if new != _reduce:
+        _reduce = new
+        _parsed.clear()
+        _load(fade=True)
 
 
 def values() -> dict:
@@ -99,6 +120,7 @@ def _appearance_changed() -> None:
     global _accent_name
     old = _accent_name
     _accent_name = None
+    _transparency_changed()
     if _accent() != old:
         _parsed.clear()
         _load(fade=True)
@@ -297,6 +319,8 @@ def setup() -> None:
     from .. import config
     global _appearance_mon
     _appearance_mon = config.watch("appearance", _appearance_changed)
+    global _dock_mon
+    _dock_mon = config.watch("dock", _transparency_changed)
     _follow_color_scheme()
     _animation_speed()
     _load()

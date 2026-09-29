@@ -141,6 +141,7 @@ class Spotlight(Gtk.ApplicationWindow):
         self.apps = {}
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["sp-panel"] +
                         ([] if ui.theme.glass() else ["solid"]), halign=Gtk.Align.CENTER, valign=Gtk.Align.START)
+        ui.theme.glass_class(panel)
         panel.set_size_request(WIDTH, -1)
         field = Gtk.Box(spacing=10, css_classes=["sp-field"])
         field.append(Gtk.Image(icon_name="sonata-search-symbolic", pixel_size=22))

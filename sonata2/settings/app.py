@@ -1499,8 +1499,7 @@ class Settings(Adw.ApplicationWindow):
         app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
         disp.add(switch_row("Reduce transparency", app.get("reduce_transparency", False),
                             lambda on: (self._save("appearance", "reduce_transparency", on),
-                                        self._apply_titlebars(),
-                                        self.toast("Applies to windows opened from now on")),
+                                        self._apply_titlebars()),
                             subtitle="Solid sidebars, Dock and title bars instead of glass"))
         disp.add(combo_row("Graphics", [("gl", "Hardware (OpenGL)"), ("vulkan", "Hardware (Vulkan)"),
                                         ("software", "Software (no GPU)")],
@@ -1598,8 +1597,10 @@ class Settings(Adw.ApplicationWindow):
                                          self.toast("Flatpak apps pick it up when they open again")),
                              subtitle="Also changes Flatpak apps in other desktops' sessions while on"))
         dock = config.load("dock", {"glass": True})
-        s.add(switch_row("Translucent glass", dock["glass"], lambda on: self._save("dock", "glass", on),
-                         subtitle="Frosted Dock and menu bar (needs the Wayfire blur plugin)"))
+        s.add(switch_row("Translucent glass", dock["glass"],
+                         lambda on: (self._save("dock", "glass", on), self._apply_titlebars()),
+                         subtitle="Frosted Dock, menu bar, menus, sidebars and title bars "
+                                  "(needs the Wayfire blur plugin)"))
         return [g, s]
 
     def _page_dock(self):
@@ -1638,8 +1639,9 @@ class Settings(Adw.ApplicationWindow):
                            lambda v: system.set_gsetting("org.gnome.desktop.wm.preferences",
                                                          "action-double-click-titlebar", v)))
         look = group("Look")
-        look.add(switch_row("Translucent Dock", cfg["glass"], lambda on: self._save("dock", "glass", on),
-                            subtitle="Frosted glass (off: solid)"))
+        look.add(switch_row("Translucent glass", cfg["glass"],
+                            lambda on: (self._save("dock", "glass", on), self._apply_titlebars()),
+                            subtitle="The Dock, menu bar, menus and title bars (off: solid)"))
         look.add(slider_row("Distance from the screen edge", cfg["edge_gap"], 0, 24,
                             lambda v: self._save("dock", "edge_gap", int(v)), default=D.DEFAULTS["edge_gap"]))
         look.add(slider_row("Space above the Dock for zoomed windows", cfg["window_gap"], 0, 24,

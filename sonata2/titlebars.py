@@ -60,6 +60,7 @@ def apply(on: bool = None) -> None:
             continue
         for p in profiles:
             _browser_pref(os.path.join(base, p, "Preferences"))
+    _chromium_gtk3()
     for base in MOZILLA:
         base = os.path.expanduser(base)
         try:
@@ -75,6 +76,41 @@ def apply(on: bool = None) -> None:
             _code_setting(path, "native" if on else "custom")
     for path in VESKTOP:
         _vesktop_setting(os.path.expanduser(path), on)
+
+
+# the launchers' flag files (Arch packages read them; others ignore them)
+CHROMIUM_FLAGS = ("chrome-flags.conf", "chrome-beta-flags.conf", "chrome-dev-flags.conf", "chromium-flags.conf",
+                  "brave-flags.conf", "vivaldi-stable.conf", "thorium-flags.conf", "microsoft-edge-stable-flags.conf")
+GTK3_FLAG = "--gtk-version=3"
+
+
+def _chromium_gtk3() -> None:
+    """Chromium draws its GTK-mode window buttons right only through GTK 3
+    (Sonata's traffic lights); with GTK 4 they come out as plain glyphs, cut
+    at the edge. Asked for in each browser's flags file (existing flags kept)."""
+    cfg = GLib.get_user_config_dir()
+    for name in CHROMIUM_FLAGS:
+        path = os.path.join(cfg, name)
+        try:
+            with open(path, encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        except FileNotFoundError:
+            lines = None
+        except OSError:
+            continue
+        if lines is None:
+            if not _installed(name):
+                continue                       # only for browsers that are there
+            lines = []
+        if any(ln.strip().startswith("--gtk-version") for ln in lines):
+            continue                           # the user's own choice
+        _write(path, "\n".join(lines + ["# Sonata: its traffic lights in GTK mode", GTK3_FLAG]) + "\n")
+
+
+def _installed(flags_file: str) -> bool:
+    import shutil
+    base = flags_file.replace("-flags.conf", "").replace(".conf", "")
+    return any(shutil.which(b) for b in (base, base + "-stable", "google-" + base, "google-" + base + "-stable"))
 
 
 def chromium_roots(cfg: str) -> list:
