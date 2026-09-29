@@ -29,7 +29,7 @@ LIGHT = {
     "control_off": "rgba(0, 0, 0, 0.09)",        # switch track off
     "knob": "#ffffff",
     "tl_disabled": "#d1d1d6",                    # greyed traffic light
-    "glass_tint": "rgba(236, 236, 240, 0.55)",   # blurred by the compositor
+    "glass_tint": "rgba(228, 228, 234, 0.70)",   # blurred by the compositor
     "solid_tint": "rgba(236, 236, 240, 0.78)",   # same surface without blur
     "indicator": "rgba(0, 0, 0, 0.62)",          # Dock running dot
     "bar_bg": "rgba(246, 246, 248, 0.55)",       # menu bar (blurred by the compositor)
@@ -73,10 +73,10 @@ DARK = {
     "control_off": "rgba(255, 255, 255, 0.14)",
     "knob": "#d9d9d9",
     "tl_disabled": "#4a4a4e",
-    "glass_tint": "rgba(20, 20, 24, 0.62)",
-    "solid_tint": "rgba(38, 38, 42, 0.74)",
+    "glass_tint": "rgba(16, 16, 20, 0.80)",
+    "solid_tint": "rgba(30, 30, 34, 0.86)",
     "indicator": "rgba(255, 255, 255, 0.72)",
-    "bar_bg": "rgba(30, 30, 32, 0.50)",
+    "bar_bg": "rgba(24, 24, 26, 0.64)",
     "bar_item_active": "rgba(255, 255, 255, 0.18)",
     "module_bg": "rgba(255, 255, 255, 0.08)",
     "module_track": "rgba(255, 255, 255, 0.12)",
