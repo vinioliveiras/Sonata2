@@ -25,9 +25,18 @@ class WallpaperWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Wallpaper", css_classes=["sonata-wallpaper"],
                          decorated=False, resizable=True)
-        self.pic = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, hexpand=True, vexpand=True, can_target=False)
+        # two pictures in a cross-fading stack: a new wallpaper (or the dark
+        # variant on Dark Mode) fades in instead of cutting
+        self.pics = [Gtk.Picture(content_fit=Gtk.ContentFit.COVER, hexpand=True, vexpand=True, can_target=False)
+                     for _ in range(2)]
+        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=450,
+                               can_target=False)
+        for i, p in enumerate(self.pics):
+            self.stack.add_named(p, str(i))
+        self._uri = None
+        self.sonata_no_fade = True            # fades its own pictures (ui.theme skips it)
         over = Gtk.Overlay()
-        over.set_child(self.pic)
+        over.set_child(self.stack)
         from .desktop import Desktop          # the icons of ~/Desktop on top of the picture
         self.desktop = Desktop()
         over.add_overlay(self.desktop)
@@ -58,5 +67,10 @@ class WallpaperWindow(Gtk.ApplicationWindow):
         dark = Adw.StyleManager.get_default().get_dark()
         uri = self.settings.get_string("picture-uri-dark" if dark else "picture-uri") or \
             self.settings.get_string("picture-uri")
+        if uri == self._uri:
+            return
+        self._uri = uri
         f = Gio.File.new_for_uri(uri) if uri else None
-        self.pic.set_file(f if f and f.query_exists(None) else None)
+        nxt = self.pics[1] if self.stack.get_visible_child() is self.pics[0] else self.pics[0]
+        nxt.set_file(f if f and f.query_exists(None) else None)
+        self.stack.set_visible_child(nxt)

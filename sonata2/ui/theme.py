@@ -10,7 +10,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, Gio, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk  # noqa: E402
 
 from . import tokens  # noqa: E402
 
@@ -94,7 +94,7 @@ def _appearance_changed() -> None:
     _accent_name = None
     if _accent() != old:
         _parsed.clear()
-        _load()
+        _load(fade=True)
 
 
 def _theme() -> str:
@@ -106,9 +106,101 @@ def _theme() -> str:
     return _theme_name
 
 
-def _load(*_a) -> None:
+# -- cross-fade on appearance changes (Dark Mode, accent) --------------------------------
+# Every window fades from a picture of its old look (_fade_window); what is
+# painted with rgba() (Dock, menu bar...) also blends old and new colours.
+FADE_MS = 320
+_last_vals = None
+_fade = None            # {"old": vals, "t0": µs} while fading
+
+def _content(win):
+    get = getattr(win, "get_content", None)
+    return get() if get and not isinstance(win, Gtk.Popover) else win.get_child()
+
+
+def _set_content(win, child) -> None:
+    if hasattr(win, "set_content"):
+        win.set_content(child)
+    else:
+        win.set_child(child)
+
+
+def _fade_window(win) -> None:
+    """Cross-fade one window: a picture of how it looked, over it, fading
+    out while the new style shows underneath. (GTK doesn't run CSS
+    transitions for stylesheet changes, so this is done with a snapshot.)"""
+    child = _content(win)
+    w, h = (child.get_width(), child.get_height()) if child else (0, 0)
+    if not child or w <= 0 or h <= 0 or not win.get_renderer():
+        return
+    snap = Gtk.Snapshot()
+    Gtk.WidgetPaintable.new(child).snapshot(snap, w, h)
+    node = snap.to_node()
+    if node is None:
+        return
+    tex = win.get_renderer().render_texture(node, Graphene.Rect().init(0, 0, w, h))
+    over = getattr(win, "_sonata_fade_overlay", None)
+    if over is None or over.get_child() is not child:
+        _set_content(win, None)
+        over = Gtk.Overlay()
+        over.set_child(child)
+        _set_content(win, over)
+        win._sonata_fade_overlay = over
+    pic = Gtk.Picture(paintable=tex, can_target=False, content_fit=Gtk.ContentFit.FILL)
+    over.add_overlay(pic)
+    t0 = GLib.get_monotonic_time()
+
+    def tick(*_a):
+        t = min(1.0, (GLib.get_monotonic_time() - t0) / (FADE_MS * 1000))
+        pic.set_opacity(1.0 - t * t * (3 - 2 * t))
+        if t >= 1.0:
+            over.remove_overlay(pic)
+            return False
+        return True
+    GLib.timeout_add(16, tick)
+
+
+def _start_fade(old_vals) -> None:
+    global _fade
+    if not old_vals:
+        return
+    for w in Gtk.Window.list_toplevels():
+        if w.get_visible() and w.get_mapped() and not getattr(w, "sonata_no_fade", False):
+            try:
+                _fade_window(w)
+            except (GLib.Error, TypeError, AttributeError):
+                pass                                   # never block the switch itself
+    _fade = {"old": old_vals, "t0": GLib.get_monotonic_time()}
+
+    def tick():
+        global _fade
+        done = _fade is None or GLib.get_monotonic_time() - _fade["t0"] >= FADE_MS * 1000
+        if done:
+            _fade = None
+            for k in [k for k in _parsed if isinstance(k[0], str) and k[0].startswith("old:")]:
+                del _parsed[k]
+        for cb in list(_listeners):
+            cb()
+        return not done
+    GLib.timeout_add(16, tick)
+
+
+def _fade_t() -> float:
+    if _fade is None:
+        return 1.0
+    t = min(1.0, (GLib.get_monotonic_time() - _fade["t0"]) / (FADE_MS * 1000))
+    return t * t * (3 - 2 * t)                     # ease in-out
+
+
+def _load(*_a, fade=False) -> None:
+    global _last_vals
     vals = values()
-    _provider.load_from_string("\n".join(t % {**vals, **loc} for t, loc in _templates.values()))
+    old = _last_vals
+    _last_vals = vals
+    if fade or (_a and isinstance(_a[0], Adw.StyleManager)):      # notify::dark
+        _start_fade(old)
+    css = "\n".join(t % {**vals, **loc} for t, loc in _templates.values())
+    _provider.load_from_string(css)
     for cb in list(_listeners):
         cb()
 
@@ -128,13 +220,26 @@ def px(token: str) -> float:
 
 
 def rgba(token: str) -> Gdk.RGBA:
-    """A colour token as Gdk.RGBA (cached per appearance)."""
+    """A colour token as Gdk.RGBA (cached per appearance); during a
+    cross-fade, the blend of the previous and the new colour."""
     key = (token, is_dark())
     if key not in _parsed:
         c = Gdk.RGBA()
         c.parse(values()[token])
         _parsed[key] = c
-    return _parsed[key]
+    new = _parsed[key]
+    if _fade is None or token not in _fade["old"]:
+        return new
+    okey = ("old:" + token, _fade["t0"])
+    if okey not in _parsed:
+        o = Gdk.RGBA()
+        o.parse(_fade["old"][token])
+        _parsed[okey] = o
+    o, t = _parsed[okey], _fade_t()
+    c = Gdk.RGBA()
+    c.red, c.green, c.blue, c.alpha = (o.red + (new.red - o.red) * t, o.green + (new.green - o.green) * t,
+                                       o.blue + (new.blue - o.blue) * t, o.alpha + (new.alpha - o.alpha) * t)
+    return c
 
 
 _SHADOW = re.compile(r"(-?[\d.]+)(?:px)?\s+(-?[\d.]+)(?:px)?\s+([\d.]+)(?:px)?\s+(.+)$")
