@@ -6,9 +6,11 @@ Sonata. Apps that draw their own frame unless told otherwise are told,
 at every login (`sonata2 autostart`):
 
 - Every Chromium-based browser (Chrome, Chromium, Brave, Edge, Vivaldi,
-  Opera, Thorium..., Flatpak ones too), found by its profile folder: the
-  "Use system title bar and borders" preference. Skipped while the browser
-  runs (it would write its own value back on quit): next login.
+  Opera, Thorium..., Flatpak ones too), found by its profile folder: like
+  Chrome on a Mac, its own frame with the tabs in the title bar and
+  Sonata's traffic lights to their left (GTK mode) -- always, whatever the
+  option. Skipped while the browser runs (it would write its own value
+  back on quit): next login.
 - Electron apps with a normal frame get Sonata's title bar by themselves
   (Wayfire prefers server-side decorations); the ones that draw their own
   frame and have no setting for it (Spotify, Discord...) keep theirs.
@@ -35,6 +37,7 @@ VESKTOP = ("~/.config/vesktop/settings.json", "~/.var/app/dev.vencord.Vesktop/co
 CODE = ("Code", "Code - OSS", "VSCodium", "Code - Insiders")
 MOZILLA = ("~/.mozilla/firefox", "~/.config/mozilla/firefox", "~/.thunderbird", "~/.librewolf", "~/.floorp",
            "~/.var/app/org.mozilla.firefox/.mozilla/firefox")
+GTK_MODE = 1          # Chromium's "Appearance > Mode": 0 Classic, 1 GTK, 2 Qt
 MOZ_LINE = 'user_pref("browser.tabs.inTitlebar", 0);  // Sonata title bars (Settings > Appearance)'
 # always: Firefox's Open/Save dialogs through the portal (Sonata's panels)
 MOZ_PORTAL = 'user_pref("widget.use-xdg-desktop-portal.file-picker", 1);  // Sonata Open/Save panels'
@@ -56,7 +59,7 @@ def apply(on: bool = None) -> None:
         except OSError:
             continue
         for p in profiles:
-            _browser_pref(os.path.join(base, p, "Preferences"), not on)
+            _browser_pref(os.path.join(base, p, "Preferences"))
     for base in MOZILLA:
         base = os.path.expanduser(base)
         try:
@@ -99,16 +102,23 @@ def _listdirs(path: str) -> list:
         return []
 
 
-def _browser_pref(path: str, custom_frame: bool) -> None:
+def _browser_pref(path: str) -> None:
+    """Chrome on a Mac: tabs in the title bar, the window buttons to their
+    left. Chromium's own frame ("Use system title bar" off) in GTK mode:
+    the buttons are the GTK theme's (Sonata's traffic lights), in the order
+    of Sonata's button layout (close, minimize, maximize on the left), and
+    the tab strip takes Sonata's Light/Dark colours."""
     try:
         with open(path, encoding="utf-8") as f:
             prefs = json.load(f)
     except (OSError, ValueError):
         return
     browser = prefs.setdefault("browser", {})
-    if browser.get("custom_chrome_frame") == custom_frame:
+    theme = prefs.setdefault("extensions", {}).setdefault("theme", {})
+    if browser.get("custom_chrome_frame") is True and theme.get("system_theme") == GTK_MODE:
         return
-    browser["custom_chrome_frame"] = custom_frame
+    browser["custom_chrome_frame"] = True
+    theme["system_theme"] = GTK_MODE
     _write(path, json.dumps(prefs, separators=(",", ":")))
 
 
