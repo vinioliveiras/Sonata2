@@ -82,6 +82,8 @@ uniform vec4 rect;
 uniform float radius;
 uniform vec4 shadow;          /* pixdecor's shadow colour (premultiplied), 0 without it */
 uniform float shadow_radius;
+uniform float square_top;     /* 1: maximized, the top corners meet the menu bar */
+uniform vec4 fill;            /* the title bar's colour (premultiplied) */
 
 varying highp vec2 uvpos;
 
@@ -91,7 +93,16 @@ void main()
     vec2 p = vec2(uvpos.x * size.x, (1.0 - uvpos.y) * size.y);
     vec2 lo = rect.xy;
     vec2 hi = rect.xy + rect.zw;
-    if (radius > 0.0 && p.x >= lo.x && p.y >= lo.y && p.x <= hi.x && p.y <= hi.y)
+    bool top = p.y < lo.y + radius;
+    if (square_top > 0.5 && top && p.x >= lo.x && p.x <= hi.x && p.y >= lo.y)
+    {
+        /* maximized: square top corners, so the title bar and the menu bar
+         * read as one glass -- fill the hole pixdecor's rounded frame left */
+        vec2 q = clamp(p, lo + vec2(radius), hi - vec2(radius));
+        float outside = clamp(length(p - q) - radius + 0.5, 0.0, 1.0);
+        c = c * (1.0 - outside) + fill * outside;
+    }
+    else if (radius > 0.0 && p.x >= lo.x && p.y >= lo.y && p.x <= hi.x && p.y <= hi.y)
     {
         vec2 q = clamp(p, lo + vec2(radius), hi - vec2(radius));
         float d = length(p - q);
@@ -296,6 +307,13 @@ class corners_render_instance_t :
                 shadow_color = glm::vec4{0, 0, 0, 0};
                 shadow_r     = 0;
             }
+            bool maximized = view->pending_tiled_edges() == wf::TILED_EDGES_ALL;
+            data_ptr->program.uniform1f("square_top", maximized ? 1.0f : 0.0f);
+            auto fill = wf::option_type::from_string<wf::color_t>(
+                option_str(view->activated ? "pixdecor/fg_color" : "pixdecor/bg_color"));
+            /* stored premultiplied (Sonata writes them so: pixdecor blends them as such) */
+            data_ptr->program.uniform4f("fill", fill ? glm::vec4{fill->r, fill->g, fill->b, fill->a} :
+                glm::vec4{0, 0, 0, 0});
             data_ptr->program.uniform4f("shadow", shadow_color);
             data_ptr->program.uniform1f("shadow_radius", shadow_r);
             data_ptr->program.attrib_pointer("position", 2, 0, vertexData);

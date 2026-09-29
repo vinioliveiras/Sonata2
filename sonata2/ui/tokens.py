@@ -187,13 +187,18 @@ SPACE = {"xxs": 2, "xs": 4, "s": 6, "m": 8, "l": 12, "xl": 16, "xxl": 20}
 THEMES = {"mac": {"light": LIGHT, "dark": DARK, "shared": SHARED}}
 
 
-def wayfire_color(css: str) -> str:
-    """'rgba(r, g, b, a)' or '#rrggbb' -> Wayfire's '#rrggbbaa'."""
+def wayfire_color(css: str, premultiplied: bool = False) -> str:
+    """'rgba(r, g, b, a)' or '#rrggbb' -> Wayfire's '#rrggbbaa'. pixdecor
+    blends its colours as premultiplied: pass premultiplied=True for it,
+    or a translucent title bar comes out lighter than the same glass
+    elsewhere (and a light one looks opaque)."""
     css = css.strip()
     if css.startswith("#"):
         return (css + "ff")[:9] if len(css) == 7 else css
     r, g, b, *a = [float(x) for x in css[css.index("(") + 1:css.index(")")].split(",")]
-    return "#%02x%02x%02x%02x" % (round(r), round(g), round(b), round(255 * (a[0] if a else 1.0)))
+    a = a[0] if a else 1.0
+    k = a if premultiplied else 1.0
+    return "#%02x%02x%02x%02x" % (round(r * k), round(g * k), round(b * k), round(255 * a))
 
 
 def palette(dark: bool, theme: str = "mac") -> dict:
