@@ -1129,10 +1129,18 @@ class DockWindow(Gtk.ApplicationWindow):
         if not ok:
             return
         x, y, w, h = b.get_x(), b.get_y(), b.get_width(), b.get_height()
+        W, H = self.get_width(), self.get_height()
         if self._hidden:          # a thin strip at the screen edge, along the Dock
-            W, H = self.get_width(), self.get_height()
             x, y, w, h = {"bottom": (x, H - TRIGGER, w, TRIGGER), "left": (0, y, TRIGGER, h),
                           "right": (W - TRIGGER, y, TRIGGER, h)}[self.dock.edge]
+        else:                     # down to the screen edge: the gap under the Dock
+            edge = self.dock.edge # is still "the Dock" (auto-hide would flicker there)
+            if edge == "bottom":
+                h = H - y
+            elif edge == "left":
+                w, x = x + w, 0
+            else:
+                w = W - x
         layer.set_input_region(self, [(x, y, w, h)])
 
     # -- auto-hide -------------------------------------------------------------
@@ -1147,7 +1155,7 @@ class DockWindow(Gtk.ApplicationWindow):
         if inside and self._hidden:
             self._timer = GLib.timeout_add(self.cfg["autohide_delay_ms"], self._reveal)
         elif not inside and not self._hidden and not busy:
-            self._timer = GLib.timeout_add(200, self._conceal)
+            self._timer = GLib.timeout_add(400, self._conceal)
 
     def _reveal(self) -> bool:
         self._timer = 0

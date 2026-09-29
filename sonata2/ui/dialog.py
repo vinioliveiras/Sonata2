@@ -33,6 +33,9 @@ window.messagedialog.sonata-alert, window.messagedialog.sonata-alert > contents 
 }
 window.messagedialog.sonata-alert .heading { font-size: %(text_body)s; font-weight: 700; }
 window.messagedialog.sonata-alert .body { font-size: %(text_small)s; color: %(label_secondary)s; }
+/* standalone alerts (Log Out, Restart...): frosted glass like About/Dock */
+window.dialog-window.sonata-glass-window { box-shadow: none; }
+dialog.alert.sonata-alert.glass, dialog.alert.sonata-alert.glass > * { background: transparent; box-shadow: none; }
 window.messagedialog.sonata-alert checkbutton { font-size: %(text_small)s; }
 """)
 
@@ -74,6 +77,10 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None,
             dlg.connect("response", lambda _d, rid: on_response(rid))
     if _MODERN:
         dlg.present(parent)
+        root = dlg.get_root() if parent is None else None
+        if root is not None and root is not parent:     # own window: glass
+            dlg.add_css_class("glass")
+            root.add_css_class("sonata-glass-window")
     else:
         dlg.present()
     return dlg
