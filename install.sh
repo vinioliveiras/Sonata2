@@ -140,8 +140,13 @@ EOF
 cat > "$tmp/sonata-session-launcher" <<EOF
 #!/bin/sh
 # Starts a Sonata session (the login screen's "Sonata" entry runs this).
+# Everything up to Wayfire's start is traced to ~/.cache/sonata2/login.log
+# (Wayfire and the shell then log to session.log next to it).
+logdir="\${XDG_CACHE_HOME:-\$HOME/.cache}/sonata2"; mkdir -p "\$logdir"
+exec > "\$logdir/login.log" 2>&1
+date; echo "XDG_SESSION_TYPE=\$XDG_SESSION_TYPE WAYLAND_DISPLAY=\$WAYLAND_DISPLAY"
 export PATH="$BIN:\$PATH" SONATA2_LAUNCHER="$BIN/sonata2"
-exec "$SHARE/tools/sonata-session" "\$@"
+exec bash -x "$SHARE/tools/sonata-session" "\$@"
 EOF
 $SUDO install -m 755 "$tmp/sonata2-launcher" "$BIN/sonata2"
 $SUDO install -m 755 "$tmp/sonata-session-launcher" "$BIN/sonata-session"
