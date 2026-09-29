@@ -879,6 +879,7 @@ def main() -> int:
     p.add_argument("--service", action="store_true", help="files: started by D-Bus (FileManager1), no window")
     p.add_argument("--page", default="", help="settings: section to open (wifi, dock, ...)")
     p.add_argument("path", nargs="*", help="files: folders to open")
+    p.add_argument("--new-window", action="store_true", help="terminal, textedit: open another window")
     p.add_argument("--exec", help="terminal: run this shell command in a new window (it stays open)")
     args = p.parse_intermixed_args()
     from . import trace
@@ -1007,6 +1008,23 @@ def main() -> int:
                                            "stty -echo; read _"]).present()
             app.connect("activate", run_command)
             return app.run([sys.argv[0]])
+        if args.component in ("textedit", "terminal"):
+            # "New Window" (the Dock's menu, a middle-click on the icon): a
+            # fresh window even when one is open (activating only raises it)
+            def new_window(*_a):
+                te_start()
+                mod = importlib.import_module(f".{args.component}.window", __package__)
+                (mod.TerminalWindow if args.component == "terminal" else mod.TextEditWindow)(app).present()
+            act = Gio.SimpleAction.new("new-window", None)
+            act.connect("activate", new_window)
+            app.add_action(act)
+            if args.new_window:                         # the desktop entry's New Window action
+                app.register(None)
+                if app.get_is_remote():
+                    app.activate_action("new-window", None)
+                    return 0
+                app.connect("activate", new_window)
+                return app.run([sys.argv[0]])
         app.connect("activate", lambda a: te_start()(a, []))
         app.connect("open", lambda a, files, _n, _h: te_start()(a, [f.get_uri() for f in files]))
         uris = [Gio.File.new_for_commandline_arg(x).get_uri() for x in args.path]

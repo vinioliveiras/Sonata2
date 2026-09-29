@@ -316,4 +316,6 @@ def textedit_desktop_file(command: str) -> str:
                               "MimeType=text/plain;text/markdown;text/x-log;application/x-shellscript;"
                               "text/x-python;application/json;text/csv;\n"
                               "StartupNotify=true\n"
-                              f"Exec={command} textedit %F\n")
+                              f"Exec={command} textedit %F\n"
+                              "Actions=new-window;\n\n[Desktop Action new-window]\nName=New Window\n"
+                              f"Exec={command} textedit --new-window\n")

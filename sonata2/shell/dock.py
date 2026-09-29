@@ -300,6 +300,17 @@ class DockTile(Gtk.Button):
         return False
 
 
+def close_launchpad() -> None:
+    """Close Launchpad (its "close" action over D-Bus; nothing if it isn't running)."""
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        app_id = "io.github.vinioliveiras.sonata2.launchpad"
+        bus.call(app_id, "/" + app_id.replace(".", "/"), "org.freedesktop.Application", "ActivateAction",
+                 GLib.Variant("(sava{sv})", ("close", [], {})), None, Gio.DBusCallFlags.NONE, 800, None, None)
+    except GLib.Error:
+        pass
+
+
 class DockLine(Gtk.Box):
     """A 1 px bar across the Dock (divider or recents separator)."""
 
@@ -494,8 +505,10 @@ class Dock(Gtk.Box):
     def do_size_allocate(self, width, height, baseline) -> None:
         Gtk.Box.do_size_allocate(self, width, height, baseline)
         self.queue_draw()     # the plate is painted from the new size
-        self.refit_soon()     # the screen edge may have changed (display, rotation)
-        self._rects_soon()    # icons moved (fit, apps opened/closed, reorder): minimize targets too
+        if getattr(self, "_mag_strength", 0) <= 0:
+            # not while magnifying (every frame): done once the wave settles
+            self.refit_soon()     # the screen edge may have changed (display, rotation)
+            self._rects_soon()    # icons moved (fit, apps opened/closed, reorder): minimize targets too
         for cb in self.on_geometry:
             cb()
 
@@ -623,7 +636,14 @@ class Dock(Gtk.Box):
         parent = self.get_parent()
         ok, p = self.compute_point(parent, Graphene.Point().init(x, y)) if parent else (False, None)
         self._mag_pos = (p.y if self.vertical else p.x) if ok else None
-        self._apply_magnification()
+        # a mouse reports up to 1000 moves a second: the wave is worked out
+        # once per frame, with the latest position
+        if not getattr(self, "_mag_tick", 0):
+            def tick(*_a):
+                self._mag_tick = 0
+                self._apply_magnification()
+                return GLib.SOURCE_REMOVE
+            self._mag_tick = self.add_tick_callback(tick)
 
     def _mag_animate(self, to: float, ms: int) -> None:
         if not self.cfg["magnification"]:
@@ -712,10 +732,24 @@ class Dock(Gtk.Box):
         src.connect("drag-cancel", self._drag_cancel, tile)
         src.connect("drag-end", self._drag_end, tile)
         tile.add_controller(src)
+        # middle-click: another window of the app (New Window), or open it
+        middle = Gtk.GestureClick(button=Gdk.BUTTON_MIDDLE)
+        middle.connect("released", lambda g, *_: (g.set_state(Gtk.EventSequenceState.CLAIMED),
+                                                   self._middle_click(key, tile)))
+        tile.add_controller(middle)
         dock_drop.attach_app(self, tile)
         from . import dock_preview
         dock_preview.attach(tile, self)           # minimized windows: previews on hover
         return tile
+
+    def _middle_click(self, key, tile) -> None:
+        if not tile.info:
+            return
+        if self.windows.get(key):
+            dock_menu.new_window(self, tile)
+            tile.bounce(BOUNCE_MS)                  # feedback: something is on its way
+        else:
+            self._clicked(key, tile)
 
     def forget_missing(self) -> None:
         """Apps uninstalled (from the Trash, Launchpad, a package manager):
@@ -1079,9 +1113,12 @@ class Dock(Gtk.Box):
 
     def _clicked(self, key, tile: DockTile) -> None:
         wins = self.windows.get(key)
+        over_launchpad = getattr(self.get_root(), "_above", False) and key != "sonata2-launchpad"
+        if over_launchpad:
+            close_launchpad()               # macOS: Launchpad goes, the app comes forward
         if wins:
             shown = [t for t in wins if not t.minimized]
-            if self.cfg.get("click_minimizes", True) and any(t.activated for t in shown):
+            if self.cfg.get("click_minimizes", True) and any(t.activated for t in shown) and not over_launchpad:
                 # the app in front: clicking its icon minimizes its windows (Vini)
                 for t in shown:
                     self.manager.minimize(t)
@@ -1339,7 +1376,10 @@ class DockWindow(Gtk.ApplicationWindow):
         else:
             self.set_size_request(-1, t)
         if self.layer:
-            layer.set_exclusive(self, self._exclusive())
+            ex = self._exclusive()
+            if ex != getattr(self, "_last_exclusive", None):   # not every magnified frame:
+                self._last_exclusive = ex                      # Wayfire re-lays out windows on it
+                layer.set_exclusive(self, ex)
             self._update_input()
         if not self.cfg["autohide"] and self._hidden:
             self._slide(False)

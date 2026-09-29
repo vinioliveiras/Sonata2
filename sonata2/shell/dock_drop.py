@@ -253,13 +253,8 @@ def _uninstall_apps(dock, files) -> None:
     app to the Trash deletes it). Launchpad closes first so the question
     isn't hidden under it."""
     from .uninstall_ui import ask
-    try:
-        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-        app_id = "io.github.vinioliveiras.sonata2.launchpad"
-        bus.call(app_id, "/" + app_id.replace(".", "/"), "org.freedesktop.Application", "ActivateAction",
-                 GLib.Variant("(sava{sv})", ("close", [], {})), None, Gio.DBusCallFlags.NONE, 800, None, None)
-    except GLib.Error:
-        pass
+    from .dock import close_launchpad
+    close_launchpad()
     for f in files:
         did = os.path.basename(f.get_path() or "")[:-8]
         info = apps.lookup(did) or apps.DesktopAppInfo.new_from_filename(f.get_path())

@@ -153,20 +153,52 @@ def force_quit(key) -> bool:
     return bool(pids)
 
 
+NEW_WINDOW = ("new-window", "newwindow", "window-new", "new-empty-window")
+
+
 def new_window(dock, tile) -> None:
-    """The app's own "New Window" action (desktop entry) if it has one,
-    otherwise launching it again (most apps then open a window)."""
+    """Another window of the app (macOS Dock "New Window", or a middle-click
+    on the icon), whichever the app offers first:
+    1. its desktop entry's New Window action (browsers, VS Code, Files...);
+    2. its running GApplication's "new-window" action over D-Bus (GTK apps
+       whose "open again" only raises the window they have);
+    3. launching it again (apps that start one window per launch)."""
     info = tile.info
     ctx = tile.get_display().get_app_launch_context()
     acts = info.list_actions() if hasattr(info, "list_actions") else []
     for a in acts:
-        if a.lower().replace("_", "-") in ("new-window", "newwindow", "window-new", "new-empty-window"):
+        if a.lower().replace("_", "-") in NEW_WINDOW:
             info.launch_action(a, ctx)
             return
+    if _gapplication_new_window(info):
+        return
     try:
         info.launch([], ctx)
     except GLib.Error as e:
         print(f"sonata2-dock: cannot open a new window of {info.get_id()}: {e.message}")
+
+
+def _gapplication_new_window(info) -> bool:
+    app_id = (info.get_id() or "")[:-len(".desktop")] if (info.get_id() or "").endswith(".desktop") else ""
+    if not app_id or not Gio.dbus_is_name(app_id):
+        return False
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        owner = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                              "NameHasOwner", GLib.Variant("(s)", (app_id,)), None, Gio.DBusCallFlags.NONE, 300, None)
+        if not owner.unpack()[0]:
+            return False
+        path = "/" + app_id.replace(".", "/").replace("-", "_")
+        described = bus.call_sync(app_id, path, "org.gtk.Actions", "List", None, None,
+                                  Gio.DBusCallFlags.NONE, 500, None).unpack()[0]
+        name = next((a for a in described if a.lower().replace("_", "-") in NEW_WINDOW), None)
+        if not name:
+            return False
+        bus.call_sync(app_id, path, "org.gtk.Actions", "Activate", GLib.Variant("(sava{sv})", (name, [], {})),
+                      None, Gio.DBusCallFlags.NONE, 500, None)
+        return True
+    except GLib.Error:
+        return False
 
 
 def trash_menu(tile):

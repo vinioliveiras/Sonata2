@@ -260,4 +260,6 @@ def terminal_desktop_file(command: str) -> str:
                               "[Desktop Entry]\nType=Application\nName=Terminal\n"
                               "Comment=Use the command line\nIcon=utilities-terminal\n"
                               "Categories=System;TerminalEmulator;\nStartupNotify=true\n"
-                              f"Exec={command} terminal %F\n")
+                              f"Exec={command} terminal %F\n"
+                              "Actions=new-window;\n\n[Desktop Action new-window]\nName=New Window\n"
+                              f"Exec={command} terminal --new-window\n")
