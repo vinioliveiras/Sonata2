@@ -114,6 +114,11 @@ for t in inode/directory inode/mount-point x-directory/normal application/x-dire
     grep -q "^$t=" "$ml" || \
         sed -i "/^\[Default Applications\]/a $t=io.github.vinioliveiras.sonata2.files.desktop" "$ml"
 done
+# Plain text opens in Sonata's TextEdit (keys the user set keep theirs).
+for t in text/plain text/markdown text/x-log; do
+    grep -q "^$t=" "$ml" || \
+        sed -i "/^\[Default Applications\]/a $t=io.github.vinioliveiras.sonata2.textedit.desktop" "$ml"
+done
 # Wayfire blurs Sonata windows here: sidebars use the glass material.
 export SONATA_GLASS=1
 export PYTHONPATH="$SONATA_REPO${PYTHONPATH:+:$PYTHONPATH}"

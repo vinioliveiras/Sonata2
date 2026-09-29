@@ -40,6 +40,7 @@ APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
            "portal": "io.github.vinioliveiras.sonata2.portal",
            "setup": "io.github.vinioliveiras.sonata2.setup",
            "calculator": "io.github.vinioliveiras.sonata2.calculator",
+           "textedit": "io.github.vinioliveiras.sonata2.textedit",
            "spotlight": "io.github.vinioliveiras.sonata2.spotlight"}
 # Shell surfaces (never shown as running apps in the Dock); Files and
 # Settings are ordinary apps.
@@ -85,6 +86,8 @@ def run_dock(app, args, ui):
     files_desktop_file(self_command())                # Files in Launchpad
     from .calculator.window import calculator_desktop_file
     calculator_desktop_file(self_command())           # Sonata's apps
+    from .textedit.window import textedit_desktop_file
+    textedit_desktop_file(self_command())
     cfg = dock.load_config()
     if not cfg.get("launchpad_added"):                        # once: pin it after Finder
         cfg["launchpad_added"] = True
@@ -843,6 +846,23 @@ def main() -> int:
         else:
             app.connect("activate", lambda a: (start(), run_files(a, [], ui)))
         app.connect("open", lambda a, files, _n, _h: (start(), run_files(a, [f.get_uri() for f in files], ui)))
+        uris = [Gio.File.new_for_commandline_arg(x).get_uri() for x in args.path]
+        return app.run([sys.argv[0]] + uris)
+
+    if args.component == "textedit":
+        from gi.repository import Gio
+        app.set_flags(Gio.ApplicationFlags.HANDLES_OPEN)
+
+        def te_start():
+            if not state:
+                state["ready"] = True
+                if args.dark or args.light:
+                    ui.force_appearance("dark" if args.dark else "light")
+                ui.setup()
+            from .textedit.window import open_paths
+            return open_paths
+        app.connect("activate", lambda a: te_start()(a, []))
+        app.connect("open", lambda a, files, _n, _h: te_start()(a, [f.get_uri() for f in files]))
         uris = [Gio.File.new_for_commandline_arg(x).get_uri() for x in args.path]
         return app.run([sys.argv[0]] + uris)
 
