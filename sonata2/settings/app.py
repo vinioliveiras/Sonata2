@@ -104,6 +104,7 @@ entry.st-search, .st-search { margin: 0 10px 6px 10px; min-height: 26px; border-
 .st-pane-title { font-weight: 700; font-size: %(text_title)s; color: %(label)s; }
 .st-about-name { font-family: %(font_display)s; font-weight: 700; font-size: 26px; color: %(label)s; }
 .st-caption { color: %(label_secondary)s; font-size: %(text_small)s; }
+textview.st-log, textview.st-log text { background: transparent; font-family: %(font_mono)s; font-size: %(text_small)s; }
 .st-wall { border-radius: 10px; }
 """, key="settings")
 
@@ -1211,40 +1212,194 @@ class Settings(Adw.ApplicationWindow):
         return [dnd, lst]
 
     def _page_updates(self):
-        """Big Sur Software Update: checks the distro's package manager (and
-        Flatpak) in the background; Update Now runs it in a terminal
-        (it asks for your password there, as the distro expects)."""
-        g = group()
+        """Ventura Software Update: the distro's name and state on top, then
+        what can be updated per source (System, AUR, Flatpak), each with
+        its versions. Update Now updates in place (backend/updates.py),
+        with a progress bar and the output under Details; sources without
+        an unattended mode, or a failed update, go to a terminal."""
+        from .. import icons
+        from ..backend import updates as U
+        head = group()
         status = Adw.ActionRow(title="Checking for updates…", use_markup=False)
+        logo = Gtk.Image(pixel_size=40, valign=Gtk.Align.CENTER)
+        icons.set_logo(logo)
+        status.add_prefix(logo)
         spin = Gtk.Spinner(spinning=True, valign=Gtk.Align.CENTER)
+        buttons = Gtk.Box(spacing=8, valign=Gtk.Align.CENTER)
         status.add_suffix(spin)
-        g.add(status)
-        lst = group("Updates")
+        status.add_suffix(buttons)
+        head.add(status)
+        prog_row = Gtk.ListBoxRow(activatable=False, selectable=False, visible=False)
+        bar = Gtk.ProgressBar(margin_start=12, margin_end=12, margin_top=10, margin_bottom=10,
+                              valign=Gtk.Align.CENTER)
+        prog_row.set_child(bar)
+        head.add(prog_row)
+        details = Adw.ExpanderRow(title="Details", visible=False)
+        log = Gtk.TextView(editable=False, cursor_visible=False, monospace=True, css_classes=["st-log"],
+                           wrap_mode=Gtk.WrapMode.WORD_CHAR, top_margin=8, bottom_margin=8,
+                           left_margin=12, right_margin=12)
+        scroll = Gtk.ScrolledWindow(child=log, min_content_height=180, max_content_height=180)
+        details.add_row(Gtk.ListBoxRow(activatable=False, selectable=False, child=scroll))
+        head.add(details)
+        lst = group("Updates Available")
         lst.set_visible(False)
+        state = {"srcs": [], "found": {}, "pending": 0, "rows": [], "pulse": 0, "runner": None}
 
-        def fill(res):
-            pkgs, cmd = res or ([], "")
-            status.remove(spin)
-            if not cmd and not pkgs:
+        def clear_buttons():
+            while (c := buttons.get_first_child()):
+                buttons.remove(c)
+
+        def button(label, cb, suggested=False):
+            b = Gtk.Button(label=label, css_classes=["suggested-action"] if suggested else [])
+            b.connect("clicked", lambda *_: cb())
+            buttons.append(b)
+
+        def total():
+            return sum(len(v) for v in state["found"].values() if v)
+
+        def check():
+            clear_buttons()
+            for r in state["rows"]:
+                lst.remove(r)
+            state["rows"].clear()
+            lst.set_visible(False)
+            spin.set_visible(True)
+            status.set_title("Checking for updates…")
+            status.set_subtitle("")
+            state["srcs"] = U.sources()
+            state["found"] = {}
+            state["pending"] = len(state["srcs"])
+            if not state["srcs"]:
+                spin.set_visible(False)
                 status.set_title("Updates can't be checked here")
-                status.set_subtitle("No supported package manager found (pacman-contrib, dnf, apt, zypper, flatpak)")
+                status.set_subtitle("No supported package manager found (pacman, dnf, apt, zypper, Flatpak)")
                 return
-            if not pkgs:
+            for src in state["srcs"]:
+                system.run_async(U.check, lambda ups, s=src: checked(s, ups), src)
+
+        def checked(src, ups):
+            state["found"][src.id] = ups
+            state["pending"] -= 1
+            if state["pending"] == 0:
+                for s in state["srcs"]:                     # in the sources' order
+                    add_list(s, state["found"].get(s.id))
+                summary()
+
+        def add_list(src, ups):
+            if ups:
+                exp = Adw.ExpanderRow(title=src.title, use_markup=False,
+                                      subtitle=f"{len(ups)} update{'s' if len(ups) != 1 else ''}")
+                for u in ups[:300]:
+                    r = Adw.ActionRow(title=u.name, use_markup=False)
+                    if u.new:
+                        r.add_suffix(Gtk.Label(label=f"{u.old} → {u.new}" if u.old else u.new,
+                                               css_classes=["st-caption"], ellipsize=Pango.EllipsizeMode.MIDDLE,
+                                               max_width_chars=36))
+                    exp.add_row(r)
+                lst.add(exp)
+                state["rows"].append(exp)
+                lst.set_visible(True)
+
+        def summary():
+            spin.set_visible(False)
+            clear_buttons()
+            failed = [s.title for s in state["srcs"] if state["found"].get(s.id) is None]
+            n = total()
+            when = GLib.DateTime.new_now_local().format("%H:%M")
+            if n:
+                status.set_title(f"{n} update{'s' if n != 1 else ''} available")
+                status.set_subtitle(f"Checked at {when}" + (f" · {', '.join(failed)} couldn't be checked"
+                                                             if failed else ""))
+                button("Update Now", update, suggested=True)
+            else:
                 status.set_title("Your computer is up to date")
-                status.set_subtitle(GLib.DateTime.new_now_local().format("Checked %H:%M"))
+                status.set_subtitle(f"Checked at {when}" + (f" · {', '.join(failed)} couldn't be checked"
+                                                             if failed else ""))
+                button("Check Again", check)
+
+        def todo():
+            return [s for s in state["srcs"] if state["found"].get(s.id)]
+
+        def in_terminal():
+            cmd = " && ".join(s.terminal for s in todo())
+            if not system.run_in_terminal(cmd):
+                self.toast("No terminal found")
+
+        def say(text):
+            buf = log.get_buffer()
+            buf.insert(buf.get_end_iter(), text + "\n")
+            if buf.get_line_count() > 4000:                  # keep the log light
+                buf.delete(buf.get_start_iter(), buf.get_iter_at_line(1000)[1])
+            log.scroll_to_mark(buf.get_insert(), 0, False, 0, 0)
+            buf.place_cursor(buf.get_end_iter())
+
+        def fraction(f):
+            if f is None:
+                if not state["pulse"]:
+                    state["pulse"] = GLib.timeout_add(120, lambda: (bar.pulse(), True)[1])
                 return
-            status.set_title(f"{len(pkgs)} update{'s' if len(pkgs) != 1 else ''} available")
-            status.set_subtitle(cmd)
-            now = Gtk.Button(label="Update Now", valign=Gtk.Align.CENTER, css_classes=["suggested-action"])
-            now.connect("clicked", lambda *_: system.run_in_terminal(cmd) or self.toast("No terminal found"))
-            status.add_suffix(now)
-            exp = Adw.ExpanderRow(title="Details", use_markup=False, subtitle=", ".join(pkgs[:4]) + ("…" if len(pkgs) > 4 else ""))
-            for p in pkgs[:200]:
-                exp.add_row(Adw.ActionRow(title=p, use_markup=False))
-            lst.add(exp)
-            lst.set_visible(True)
-        system.run_async(system.software_updates, fill)
-        return [g, lst]
+            if state["pulse"]:
+                GLib.source_remove(state["pulse"])
+                state["pulse"] = 0
+            bar.set_fraction(f)
+
+        def update():
+            srcs = todo()
+            if any(s.install is None for s in srcs):     # apt/dnf/zypper: their own terminal flow
+                in_terminal()
+                return
+            clear_buttons()
+            names = [s.title for s in srcs]
+            status.set_title("Updating…")
+            status.set_subtitle(", ".join(names) + " · you may be asked for your password")
+            prog_row.set_visible(True)
+            details.set_visible(True)
+            log.get_buffer().set_text("")
+            kernel = any(u.name.startswith(("linux", "nvidia")) and not u.name.startswith("linux-firmware")
+                         for u in state["found"].get("system") or [])
+            steps = [s.install for s in srcs]
+
+            def line(t):
+                say(t)
+                i = state["runner"].index
+                if 0 <= i < len(srcs):
+                    status.set_title(f"Updating {srcs[i].title}…")
+
+            def done(ok, failed_at):
+                fraction(0.0)
+                prog_row.set_visible(False)
+                state["runner"] = None
+                clear_buttons()
+                if ok:
+                    for r in state["rows"]:
+                        lst.remove(r)
+                    state["rows"].clear()
+                    lst.set_visible(False)
+                    status.set_title("Your computer is up to date")
+                    if kernel:
+                        status.set_subtitle("Restart to finish installing the system updates")
+                        button("Restart…", lambda: system._spawn(["systemctl", "reboot"]), suggested=True)
+                    else:
+                        status.set_subtitle("Updated at " + GLib.DateTime.new_now_local().format("%H:%M"))
+                        button("Check Again", check)
+                else:
+                    status.set_title(f"{srcs[failed_at].title} couldn't be updated")
+                    status.set_subtitle("See Details, or update in a terminal")
+                    details.set_expanded(True)
+                    button("Open in Terminal", in_terminal)
+                    button("Try Again", update, suggested=True)
+            # the app stays alive (the log keeps being read) if the window closes mid-update:
+            # a closed pipe would stop pacman halfway
+            app = self.get_application()
+            app.hold()
+
+            def finished(ok, failed_at):
+                app.release()
+                done(ok, failed_at)
+            state["runner"] = U.Runner(steps, line, fraction, finished)
+            state["runner"].start()
+        check()
+        return [head, lst]
 
     def _page_privacy(self):
         """Big Sur Security & Privacy, with the Linux settings behind it."""

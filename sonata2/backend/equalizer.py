@@ -200,8 +200,18 @@ class Equalizer:
             text = self._events.stdout.readline()
             if " sink " in text or "'server'" in text or " card " in text:
                 self.sync_soon()
+            elif "'new' on sink-input" in text and self.chains:
+                self._links_soon()           # an app started playing: does it go through us?
             return True
         GLib.io_add_watch(ch, GLib.PRIORITY_DEFAULT, GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, line)
+
+    def _links_soon(self) -> None:
+        if not getattr(self, "_links_src", 0):
+            def run():
+                self._links_src = 0
+                _log_links()
+                return False
+            self._links_src = GLib.timeout_add(1500, run)
 
     def sync_soon(self, *_a) -> None:
         if self._src:

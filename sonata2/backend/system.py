@@ -245,36 +245,10 @@ def add_printer() -> None:
 
 
 # -- Software Update ---------------------------------------------------------------
-# (tool that lists updates, command that installs them), first found wins
-UPDATERS = (
-    ("checkupdates", ["checkupdates"], "sudo pacman -Syu"),            # Arch (pacman-contrib)
-    ("dnf", ["dnf", "-q", "check-update"], "sudo dnf upgrade"),
-    ("apt", ["apt", "list", "--upgradable"], "sudo apt update && sudo apt upgrade"),
-    ("zypper", ["zypper", "-q", "list-updates"], "sudo zypper update"),
-)
+# (updates.py lists and installs; a terminal is its fallback)
 TERMINALS = (("kgx", ["--"]), ("gnome-terminal", ["--"]), ("konsole", ["-e"]), ("kitty", []),
              ("alacritty", ["-e"]), ("foot", []), ("ghostty", ["-e"]), ("wezterm", ["start", "--"]),
              ("xfce4-terminal", ["-x"]), ("xterm", ["-e"]))
-
-
-def software_updates() -> Tuple[List[str], str]:
-    """([package lines], install command). Also Flatpak apps."""
-    import shutil
-    pkgs, cmd = [], ""
-    for tool, list_cmd, install in UPDATERS:
-        if shutil.which(tool):
-            _rc, out = _run(list_cmd, timeout=90)
-            pkgs = [ln.split()[0].split("/")[0] for ln in out.splitlines()
-                    if ln.strip() and not ln.startswith(("Listing", "Last metadata", "Loading", "S |", "--"))]
-            cmd = install
-            break
-    if shutil.which("flatpak"):
-        _rc, out = _run(["flatpak", "remote-ls", "--updates", "--columns=application"], timeout=60)
-        fl = [ln.strip() for ln in out.splitlines() if ln.strip() and ln.strip() != "Application ID"]
-        pkgs += fl
-        if fl:
-            cmd = (cmd + " && " if cmd else "") + "flatpak update"
-    return pkgs, cmd
 
 
 def run_in_terminal(command: str) -> bool:
