@@ -220,14 +220,32 @@ def slider(value: float = 0, on_change=None, style: str = "menu", lower: float =
 
 
 def reset_on_double_click(scale: Gtk.Range, default: float) -> None:
-    """Double-click a slider: back to its default value."""
-    g = Gtk.GestureClick(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+    """Double-click a slider: back to its default value.
 
-    def pressed(gest, n, _x, _y):
-        if n == 2:
-            GLib.idle_add(lambda: (scale.set_value(default), False)[1])   # after the scale's own jump
-    g.connect("pressed", pressed)
-    scale.add_controller(g)
+    The slider claims every press for its own drag, which stops a click
+    gesture from ever counting a second click; so the clicks are timed here,
+    from the raw events (capture phase), and the value is reset when the
+    second click is released -- after the slider's own drag is over."""
+    settings = Gtk.Settings.get_default()
+    state = {"t": 0, "x": 0.0, "y": 0.0, "double": False}
+    legacy = Gtk.EventControllerLegacy(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+
+    def event(_c, ev):
+        kind = ev.get_event_type()
+        if kind == Gdk.EventType.BUTTON_PRESS and ev.get_button() == 1:
+            t = ev.get_time()
+            ok, x, y = ev.get_position()
+            limit = settings.get_property("gtk-double-click-time") if settings else 400
+            near = abs(x - state["x"]) < 8 and abs(y - state["y"]) < 8
+            state["double"] = bool(state["t"]) and t - state["t"] <= limit and near
+            state["t"] = 0 if state["double"] else t
+            state["x"], state["y"] = x, y
+        elif kind == Gdk.EventType.BUTTON_RELEASE and state["double"]:
+            state["double"] = False
+            GLib.idle_add(lambda: (scale.set_value(default), False)[1])
+        return False                          # the slider still gets every event
+    legacy.connect("event", event)
+    scale.add_controller(legacy)
 
 
 def switch(active: bool = False, on_change=None) -> Gtk.Switch:
