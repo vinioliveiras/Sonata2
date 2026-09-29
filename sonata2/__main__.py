@@ -207,6 +207,9 @@ def run_files(app, uris, ui):
         _later(1300, win.toggle_quicklook)
     if os.environ.get("SONATA_PREVIEW_INFO"):
         _later(1300, win.get_info)
+    q = os.environ.get("SONATA_PREVIEW_SEARCH")
+    if q:
+        _later(600, lambda: (win._open_search(), win.search.set_text(q)))
 
 
 def run_spotlight(app, args, ui, state):

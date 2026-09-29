@@ -1,8 +1,8 @@
 """Files window (macOS Big Sur Finder): sidebar | unified toolbar + view.
 
 Icons / List / Columns views (views.py), navigation (back/forward/
-enclosing folder), open with the default app, filter-as-you-type search of
-the current folder, hidden files toggle, live folder updates. Context
+enclosing folder), open with the default app, search (This Mac or the
+current folder, recursive, search.py), hidden files toggle, live folder updates. Context
 menus, rename, drag and drop come next (ROADMAP M7)."""
 import os
 
@@ -14,6 +14,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, ui  # noqa: E402
 from . import folder, ops  # noqa: E402
+from .search import Search  # noqa: E402
 from .folder import RECENTS, file_of, is_dir  # noqa: E402
 from .views import ColumnsView, IconsView, ListView  # noqa: E402
 from .sidebar import Sidebar  # noqa: E402
@@ -41,6 +42,12 @@ window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text
 .fs-toolbar .fs-seg button:first-child { border-radius: %(r_button)s 0 0 %(r_button)s; }
 .fs-toolbar .fs-seg button:last-child { border-radius: 0 %(r_button)s %(r_button)s 0; }
 .fs-toolbar entry { min-height: 24px; border-radius: %(r_button)s; }
+.fs-scope { padding: 4px 10px; background: %(content_bg)s; box-shadow: inset 0 -1px %(separator)s; }
+.fs-scope label.fs-scope-title { color: %(label_secondary)s; font-weight: 600; margin-right: 6px; }
+.fs-scope button { min-height: 20px; padding: 0 8px; border-radius: 5px; border: none; box-shadow: none;
+  background: none; color: %(label)s; font-weight: 500; }
+.fs-scope button:checked { background: %(tool_hover)s; }
+.fs-scope .fs-scope-status { color: %(label_tertiary)s; font-size: %(text_small)s; }
 .fs-empty { color: %(label_tertiary)s; font-size: %(text_title)s; }
 """, key="files-window")
 
@@ -82,6 +89,7 @@ class FilesWindow(Adw.ApplicationWindow):
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["fs-content"])
         content.append(Gtk.WindowHandle(child=self._toolbar()))
+        content.append(self._scope_bar())
         overlay = Gtk.Overlay(vexpand=True)
         overlay.set_child(self._views())
         self.empty = Gtk.Label(css_classes=["fs-empty"], visible=False, can_target=False)
@@ -116,7 +124,7 @@ class FilesWindow(Adw.ApplicationWindow):
             self.view_buttons[vid] = b
         bar.append(seg)
         self.search = Gtk.SearchEntry(placeholder_text="Search", width_chars=16, valign=Gtk.Align.CENTER)
-        self.search.connect("search-changed", lambda *_: self._refilter())
+        self.search.connect("search-changed", lambda *_: self._search_changed())
         self.search.connect("stop-search", lambda *_: self._close_search())
         self.search_rev = Gtk.Revealer(child=self.search, transition_type=Gtk.RevealerTransitionType.SLIDE_LEFT,
                                        transition_duration=150)
@@ -130,8 +138,95 @@ class FilesWindow(Adw.ApplicationWindow):
         self.search_rev.set_reveal_child(True)
         self.search.grab_focus()
 
+    # -- search (Finder: This Mac / the current folder, recursive) -------------------------
+    def _scope_bar(self):
+        bar = Gtk.Box(spacing=2, css_classes=["fs-scope"])
+        bar.append(Gtk.Label(label="Search:", css_classes=["fs-scope-title"]))
+        self.scope_home = Gtk.ToggleButton(label="This Mac", active=True, focus_on_click=False)
+        self.scope_here = Gtk.ToggleButton(group=self.scope_home, focus_on_click=False)
+        for b in (self.scope_home, self.scope_here):
+            b.connect("toggled", lambda b: b.get_active() and self._run_search())
+            bar.append(b)
+        self.search_status = Gtk.Label(css_classes=["fs-scope-status"], hexpand=True, xalign=1)
+        bar.append(self.search_status)
+        self.scope_rev = Gtk.Revealer(child=bar, transition_duration=150)
+        self.searcher = Search()
+        self.results = Gio.ListStore(item_type=Gio.FileInfo)
+        self._search_src = 0
+        self._in_results = False
+        return self.scope_rev
+
+    def _search_changed(self):
+        """Filter the folder at once; the recursive search follows after a pause."""
+        q = self.search.get_text().strip()
+        if self._search_src:
+            GLib.source_remove(self._search_src)
+            self._search_src = 0
+        if not q:
+            self._leave_results()
+            return
+        here = self.history[self.pos] if self.pos >= 0 else ""
+        self.scope_here.set_label(f"“{folder.display_name(here)}”")
+        self.scope_here.set_visible(here != RECENTS)
+        self.scope_rev.set_reveal_child(True)
+        if not self._in_results:
+            self._refilter()
+
+        def later():
+            self._search_src = 0
+            self._run_search()
+            return False
+        self._search_src = GLib.timeout_add(250, later)
+
+    def _run_search(self):
+        q = self.search.get_text().strip()
+        if not q:
+            return
+        here = self.history[self.pos] if self.pos >= 0 else RECENTS
+        root_uri = here if self.scope_here.get_active() and here != RECENTS else \
+            Gio.File.new_for_path(GLib.get_home_dir()).get_uri()
+        root = Gio.File.new_for_uri(root_uri).get_path()
+        if not root:
+            return
+        self.results.remove_all()
+        if not self._in_results:
+            self._in_results = True
+            if self.view is self.views["columns"]:
+                self._view_before_search = "columns"
+                self.set_view("list", save=False)
+            self.filtered.set_model(self.results)
+            self._refilter()
+        self.search_status.set_label("Searching…")
+        scope = "This Mac" if not self.scope_here.get_active() else folder.display_name(here)
+        self.title.set_label(f"Searching “{scope}”")
+        self.searcher.start(root, q, self._got_results, self._search_done)
+
+    def _got_results(self, items):
+        self.results.splice(self.results.get_n_items(), 0, items)
+        self._update_empty()
+
+    def _search_done(self, truncated):
+        n = self.results.get_n_items()
+        self.search_status.set_label(f"{n}+ items" if truncated else f"{n} item{'s' if n != 1 else ''}")
+        self._update_empty()
+
+    def _leave_results(self):
+        self.searcher.cancel()
+        self.scope_rev.set_reveal_child(False)
+        if self._in_results:
+            self._in_results = False
+            self.filtered.set_model(self.folder.store)
+            self.results.remove_all()
+            if self.pos >= 0:
+                self.title.set_label(folder.display_name(self.history[self.pos]))
+            if getattr(self, "_view_before_search", None):
+                self.set_view(self._view_before_search, save=False)
+                self._view_before_search = None
+        self._refilter()
+
     def _close_search(self):
         self.search.set_text("")
+        self._leave_results()
         self.search_rev.set_reveal_child(False)
         self.search_btn.set_visible(True)
         self.view.focus()
@@ -186,6 +281,8 @@ class FilesWindow(Adw.ApplicationWindow):
         self.set_title(name)
 
     def _match(self, info) -> bool:
+        if getattr(self, "_in_results", False):
+            return True                         # the search already matched them
         q = self.search.get_text().strip().casefold() if hasattr(self, "search") else ""
         return not q or q in info.get_display_name().casefold()
 
@@ -196,8 +293,9 @@ class FilesWindow(Adw.ApplicationWindow):
     def _update_empty(self):
         empty = self.filtered.get_n_items() == 0
         searching = bool(self.search.get_text().strip())
+        busy = getattr(self, "_in_results", False) and self.search_status.get_label() == "Searching…"
         self.empty.set_label("No Results" if searching else "")
-        self.empty.set_visible(empty and searching)
+        self.empty.set_visible(empty and searching and not busy)
 
     # -- navigation ------------------------------------------------------------------
     def go(self, uri: str, record=True) -> None:

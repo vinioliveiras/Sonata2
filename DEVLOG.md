@@ -404,3 +404,26 @@
 - Headless menus: the last section of popover menus was cut in headless
   sway only (the popup got less height than asked); not reproduced on
   real compositors so far -- keep an eye on it.
+
+## 2026-09-29 (night, 2) -- capture, Night Shift, emoji, more Settings
+
+- `sonata2 screenshot [screen|area|toolbar|stop]` hands the job to the menu
+  bar (GApplication action "capture") so the floating thumbnail and the
+  recording stop item live there; falls back to grim + notification.
+- Night Shift and auto-lock are child processes of the menu bar
+  (wlsunset, swayidle): gamma/idle clients reset when they exit, so one
+  owner keeps them alive and restarts them when their json changes
+  (debounced; Night Shift's "until tomorrow" re-checked every minute).
+  "Sunset to Sunrise" uses the time zone's coordinates (zone1970.tab), no
+  location service.
+- Emoji data: tools/gen-emoji.py -> sonata2/data/emoji.tsv (Unicode
+  emoji-test, fully qualified, no skin tones, <= Emoji 14). GridView keeps
+  only the visible cells.
+- Notifications: per-app settings keyed by desktop-entry (else app name);
+  apps are listed in Settings after their first notification.
+- Files search: os.scandir walk in a thread, Gio.FileInfo per hit, batches
+  via idle_add; the view's FilterListModel switches its model to the
+  results store (Columns falls back to List while searching).
+- Sync gotcha: the cloud mirror's docs were stale and a sync overwrote
+  README (restored). Docs are now pulled back before syncing.
+

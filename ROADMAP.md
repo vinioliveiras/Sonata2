@@ -81,13 +81,15 @@ list: [docs/PARITY.md](docs/PARITY.md).
         rows) and Columns view (column browser, preview column, arrow
         keys); view saved in files.json; Ctrl+1/2/3
   - [ ] Gallery view; List: disclosure triangles (expand folders inline)
+  - [x] Recursive search (This Mac / current folder scope bar, accent-
+        insensitive, background thread, results in batches)
   - [x] F3 context menus, rename in place (Return/F2), New Folder,
         Move to Trash, Duplicate, copy/cut/paste (GNOME-compatible
         clipboard) with the Copy window + conflict alerts; thumbnails
         (images/videos, freedesktop cache)
-  - [ ] Get Info, Quick Look (Space), tabs, Gallery view
-  - [ ] F4 drag and drop (copy/move/progress), spring-loaded folders
-  - [ ] F5 Quick Look (Space), thumbnails, tabs, recursive search
+  - [x] Get Info, Quick Look (Space)
+  - [x] F4 drag and drop (copy/move/progress), spring-loaded folders
+  - [ ] F5 tabs
   - [ ] F6 default file manager (Dock tile, Stacks, "Open File Location",
         FileManager1 D-Bus)
 - **M4 -- Control Center**: Wi-Fi, Bluetooth, sound, brightness, power mode
@@ -111,14 +113,30 @@ list: [docs/PARITY.md](docs/PARITY.md).
   Users & Groups (login items), Sharing, Accessibility, default browser,
   display sleep. Wayfire options go to ~/.config/sonata2/wayfire-overrides.ini.
 
+## Done in the second autonomous pass (2026-09-29, night)
+
+- Spotlight (Super+Space), app switcher (Super+Tab), Files drag and drop.
+- Screenshots: floating thumbnail; Super+Shift+5 toolbar (screen /
+  selection, recording with wf-recorder + stop item in the menu bar,
+  Options: save to Desktop/Documents/Clipboard, 5/10 s timer).
+- Night Shift (wlsunset): Settings > Displays (schedule off / custom /
+  sunset to sunrise from the time zone, until tomorrow, warmth) and the
+  Control Center Display module.
+- Emoji picker (Ctrl+Super+Space), types with wtype + clipboard.
+- Settings: Network (Ethernet/VPN services, import .ovpn / WireGuard),
+  Printers & Scanners (CUPS), Notifications (per app: allow, banners,
+  Notification Center), Security & Privacy (auto-lock via swayidle, off
+  by default; recents; Trash after 30 days; location), Software Update
+  (pacman-contrib / dnf / apt / zypper + Flatpak, Update Now in a terminal).
+- Files: recursive search.
+
 ## Next
 
 - Verify on hardware (the login session black screen: see
   ~/.cache/sonata2/login.log + session.log).
-- Files: Get Info, Quick Look, tabs, Gallery; default file manager.
-- Dock: badges (Unity LauncherEntry), attention bounce.
-- App switcher HUD (Cmd+Tab look), global menu (Wayfire kde-appmenu +
-  DBusMenu), Night Shift, Siri-less Spotlight window.
+- Files: tabs, Gallery view, List disclosure triangles.
+- Settings: Displays arrangement (drag screens, wlr-randr positions).
+- Global menu (Wayfire kde-appmenu + DBusMenu) -- large.
 - System Preferences as in Big Sur (icon grid) vs the current sidebar:
   Vini to decide.
 
@@ -128,5 +146,5 @@ list: [docs/PARITY.md](docs/PARITY.md).
 2. Switch Spaces with Ctrl+Left/Right like macOS (clashes with word jumps in Linux apps)? Now Super+Alt+arrows + 3-finger swipe.
 3. Tap to click: off like macOS, or on (now on)?
 4. Hide the plain "Wayfire" entry on the login screen?
-5. Ask for the password after the display turns off / screen saver (lock on idle)?
+5. Ask for the password after the display turns off (lock on idle)? Now in Settings > Security & Privacy, off by default until the lock screen is tested on your machine; macOS default is "immediately".
 6. Push to GitHub once the sonata2 repository exists.
