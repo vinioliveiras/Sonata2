@@ -181,7 +181,7 @@ class PageGrid(Gtk.Grid):
             self.attach(Gtk.Box(), i % cols, i // cols, 1, 1)
         target = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
         target.connect("motion", lambda _t, x, y: pad.drag_over(self, x, y))
-        target.connect("drop", lambda _t, _v, x, y: pad.drag_drop(self, x, y))
+        target.connect("drop", lambda _t, v, x, y: pad.drag_drop(self, x, y, v))
         target.connect("leave", lambda _t: pad.drag_leave(self))
         self.add_controller(target)
 
@@ -698,8 +698,10 @@ class Launchpad(Gtk.ApplicationWindow):
 
     def drag_over(self, grid: PageGrid, x, y):
         d = self._drag
-        if not d or grid.index < 0:
-            return Gdk.DragAction.MOVE if d else 0
+        if not d:
+            return Gdk.DragAction.MOVE      # an app dragged from the Dock: dropping here unpins it
+        if grid.index < 0:
+            return Gdk.DragAction.MOVE
         if d["folder"] is not None and self.folder_view:     # dragged out of the open folder
             self._close_folder()
         index, centre = grid.cell_at(x, y)
@@ -765,10 +767,13 @@ class Launchpad(Gtk.ApplicationWindow):
     def drag_leave(self, _grid) -> None:
         self._cancel("flip")
 
-    def drag_drop(self, grid, x, y) -> bool:
+    def drag_drop(self, grid, x, y, value=None) -> bool:
         d = self._drag
         if not d:
-            return False
+            # an app dragged out of the Dock (its desktop id): accepted -- the Dock
+            # sees a finished move and takes the app out (macOS)
+            return isinstance(value, str) and value in self.installed
+
         t = d.get("target")
         if t is not None and t.has_css_class("folder-target"):
             target = t.item

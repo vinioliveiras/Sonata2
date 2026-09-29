@@ -706,6 +706,11 @@ class Dock(Gtk.Box):
             self.reorder_child_after(tile, prev)
             prev = tile
         self.recent_sep.set_visible(bool(extras) and self.cfg["show_recents"])
+        gap = getattr(self, "_gap", None)      # an app being dragged in keeps its slot
+        if gap is not None and gap.get_parent() is self and gap.slot >= 0:
+            tiles = self.app_tiles()
+            anchor = tiles[gap.slot - 1] if 0 < gap.slot <= len(tiles) else self.get_first_child()
+            self.reorder_child_after(gap, anchor)
         self.refit_soon()                      # apps opened/closed: shrink or grow back
 
     def _save_order(self) -> None:
@@ -735,6 +740,59 @@ class Dock(Gtk.Box):
             before = ui.transition.glide_record(others, self)      # the others slide aside
             self.reorder_child_after(tile, anchor)
             ui.transition.glide_play(before, self)
+
+    # -- an app dragged in from elsewhere (Launchpad, Files): the others make room --
+    def hide_drop_gap_soon(self) -> None:
+        """Leaving one drop area for the next (plate -> icon) isn't leaving the
+        Dock: close the gap only if nothing asks for it again right away."""
+        if getattr(self, "_gap_hide", 0):
+            return
+        def run():
+            self._gap_hide = 0
+            self.hide_drop_gap()
+            return False
+        self._gap_hide = GLib.timeout_add(120, run)
+
+    def show_drop_gap(self, x: float, y: float) -> None:
+        """Open an empty slot where the dragged app would land (macOS)."""
+        if getattr(self, "_gap_hide", 0):
+            GLib.source_remove(self._gap_hide)
+            self._gap_hide = 0
+        gap = getattr(self, "_gap", None)
+        tiles = self.app_tiles()
+        if gap is None:
+            cell = tiles[0].get_width() if tiles and not self.vertical else \
+                (tiles[0].get_height() if tiles else self.cfg["icon_size"] + 2 * TILE_PAD)
+            gap = self._gap = Gtk.Box(can_target=False)
+            gap.set_size_request(-1 if self.vertical else cell, cell if self.vertical else -1)
+            gap.slot = -1
+        slot = self._slot_at(x, y)
+        if slot == gap.slot:
+            return
+        anchor = tiles[slot - 1] if slot else None
+        before = ui.transition.glide_record(tiles, self)       # the others slide aside
+        anchor = anchor or self.get_first_child()          # (the leading spacer)
+        if gap.get_parent() is None:
+            self.insert_child_after(gap, anchor)
+        else:
+            self.reorder_child_after(gap, anchor)
+        gap.slot = slot
+        ui.transition.glide_play(before, self)
+
+    def hide_drop_gap(self) -> int:
+        """Close it again; returns where it was (-1: none)."""
+        if getattr(self, "_gap_hide", 0):
+            GLib.source_remove(self._gap_hide)
+            self._gap_hide = 0
+        gap = getattr(self, "_gap", None)
+        if gap is None or gap.get_parent() is None:
+            return -1
+        slot = gap.slot
+        before = ui.transition.glide_record(self.app_tiles(), self)
+        self.remove(gap)
+        gap.slot = -1
+        ui.transition.glide_play(before, self)
+        return slot
 
     def pin_at(self, key, before=None, x=None, y=0.0) -> None:
         """Pin app `key` (desktop id) before tile `before`, or at (x, y)."""
@@ -836,9 +894,12 @@ class Dock(Gtk.Box):
             self._move_to_slot(tile, d["index"])
         return False
 
-    def _drag_end(self, _src, _drag, _delete, tile) -> None:
+    def _drag_end(self, _src, _drag, delete, tile) -> None:
         tile.remove_css_class("dragging")
-        self._drag = None
+        d, self._drag = self._drag, None
+        # moved somewhere else that took it (Launchpad): out of the Dock
+        if delete and d and not d["dropped"] and tile.key not in PERMANENT:
+            self.set_pinned(tile.key, False)
 
     # -- running apps ----------------------------------------------------------
     def _schedule_sync(self) -> None:

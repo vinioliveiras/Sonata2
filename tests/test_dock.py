@@ -54,6 +54,19 @@ class DockTest(unittest.TestCase):
     def start_drag(self, key):
         self.dock._drag = {"key": key, "index": self.keys().index(key), "left": False, "dropped": False}
 
+    def test_drop_gap(self):
+        keys = self.keys()
+        x = (self.center_x(keys[0]) + self.center_x(keys[1])) / 2      # between the first two
+        self.dock.show_drop_gap(x, 10)
+        settle(100)
+        self.assertEqual(self.dock._gap.slot, 1)
+        self.assertIs(self.dock._gap.get_prev_sibling(), self.dock.tiles[keys[0]])
+        self.dock._relayout()                                   # a window opening meanwhile
+        self.assertIs(self.dock._gap.get_prev_sibling(), self.dock.tiles[keys[0]])
+        self.assertEqual(self.dock.hide_drop_gap(), 1)
+        self.assertIsNone(self.dock._gap.get_parent())
+        self.assertEqual(self.keys(), keys)
+
     def test_reorder_first_to_last(self):
         first, last = self.keys()[0], self.keys()[-1]
         self.start_drag(first)

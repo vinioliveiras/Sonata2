@@ -12,7 +12,7 @@ import shutil
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Graphene, Gtk  # noqa: E402
 
 from .. import apps  # noqa: E402
 
@@ -70,10 +70,13 @@ def _target(on_motion, on_drop, on_leave) -> Gtk.DropTarget:
 
 
 def attach_app(dock, tile) -> None:
-    def motion(target, x, _y):
+    def motion(target, x, y):
         files = _files(target.get_value())
         if files and all(_is_app(f) for f in files):
             tile.remove_css_class(HOVER)
+            ok, p = tile.compute_point(dock, Graphene.Point().init(x, y))
+            if ok:
+                dock.show_drop_gap(p.x, p.y)     # the icons part where it will land
             return Gdk.DragAction.COPY           # pin, handled on drop
         ok = can_open(tile.info, files)
         (tile.add_css_class if ok else tile.remove_css_class)(HOVER)
@@ -81,9 +84,11 @@ def attach_app(dock, tile) -> None:
 
     def drop(target, value, x, _y):
         tile.remove_css_class(HOVER)
+        slot = dock.hide_drop_gap()
         files = _files(value)
         if files and all(_is_app(f) for f in files):
-            return pin_files(dock, files, before=tile)
+            tiles = dock.app_tiles()
+            return pin_files(dock, files, before=tiles[slot] if 0 <= slot < len(tiles) else tile)
         if not can_open(tile.info, files):
             return False
         try:
@@ -95,7 +100,7 @@ def attach_app(dock, tile) -> None:
             dock.launch_feedback(tile)
         return True
 
-    tile.add_controller(_target(motion, drop, lambda *_: tile.remove_css_class(HOVER)))
+    tile.add_controller(_target(motion, drop, lambda *_: (tile.remove_css_class(HOVER), dock.hide_drop_gap_soon())))
 
 
 def attach_trash(dock, tile) -> None:
@@ -136,12 +141,16 @@ def attach_plate(dock) -> None:
         print(f"sonata2-dock: drag entered the Dock ({fmts})", flush=True)      # dock.log: DnD debugging
         return motion(target, x, y)
 
-    def motion(target, _x, _y):
+    def motion(target, x, y):
         files = _files(target.get_value())
-        ok = files and (all(_is_app(f) for f in files) or all(_is_dir(f) for f in files))
+        apps_only = bool(files) and all(_is_app(f) for f in files)
+        if apps_only:
+            dock.show_drop_gap(x, y)             # the icons part where it will land
+        ok = files and (apps_only or all(_is_dir(f) for f in files))
         return Gdk.DragAction.COPY if ok else 0
 
     def drop(_target, value, x, y):
+        slot = dock.hide_drop_gap()
         files = _files(value)
         if files and all(_is_dir(f) for f in files):
             for f in files:
@@ -149,9 +158,12 @@ def attach_plate(dock) -> None:
             return True
         if not files or not all(_is_app(f) for f in files):
             return False
+        tiles = dock.app_tiles()
+        if 0 <= slot < len(tiles):
+            return pin_files(dock, files, before=tiles[slot])
         return pin_files(dock, files, x=x, y=y)
 
-    t = _target(motion, drop, lambda *_: None)
+    t = _target(motion, drop, lambda *_: dock.hide_drop_gap_soon())
     t.connect("enter", enter)
     dock.add_controller(t)
 
