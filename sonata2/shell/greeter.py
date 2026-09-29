@@ -186,6 +186,11 @@ class Greeter:
             over.add_overlay(self._power())
             self._show()
         win.set_child(over)
+        if self.fake:                            # a try-out inside the session: Esc leaves
+            keys = Gtk.EventControllerKey()
+            keys.connect("key-pressed", lambda _c, k, *_a: (self.app.quit(), True)[1]
+                         if k == Gdk.KEY_Escape else False)
+            win.add_controller(keys)
         from . import layer
         if layer.overlay_fullscreen(win, "sonata2-greeter"):       # a layer surface per display
             LS = layer.layer_shell()
