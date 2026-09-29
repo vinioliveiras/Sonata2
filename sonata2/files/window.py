@@ -21,7 +21,7 @@ from .sidebar import Sidebar  # noqa: E402
 
 VIEWS = (("icons", "view-grid-symbolic", "as Icons"), ("list", "view-list-symbolic", "as List"),
          ("columns", "view-dual-symbolic", "as Columns"))
-DEFAULTS = {"view": "icons"}
+DEFAULTS = {"view": "icons", "sidebar_width": 200}
 
 ui.register("""
 window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
@@ -85,8 +85,9 @@ class FilesWindow(Adw.ApplicationWindow):
         self.sidebar.on_drop = lambda files, dest, copy: self.drop(files, dest, copy)
         paned = Gtk.Paned(start_child=self.sidebar, shrink_start_child=False, resize_start_child=False,
                           css_classes=["fs-paned"])
-        paned.set_position(200)
+        paned.set_position(config.load("files", DEFAULTS)["sidebar_width"])
         self.sidebar.set_size_request(150, -1)
+        self._sidebar_width(paned)
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["fs-content"])
         content.append(Gtk.WindowHandle(child=self._toolbar()))
@@ -106,6 +107,31 @@ class FilesWindow(Adw.ApplicationWindow):
         self.connect("notify::is-active", lambda w, _p: w.is_active() and self.sidebar.refresh_space())
         self.set_view(config.load("files", DEFAULTS)["view"], save=False)
         self.go(uri or Gio.File.new_for_path(GLib.get_home_dir()).get_uri())
+
+    def _sidebar_width(self, paned) -> None:
+        """The sidebar keeps the width you drag it to (all windows, saved);
+        a double-click on the divider puts the standard width back."""
+        pending = {"src": 0}
+
+        def save():
+            pending["src"] = 0
+            cfg = config.load("files", DEFAULTS)
+            if cfg["sidebar_width"] != paned.get_position():
+                config.save("files", {**cfg, "sidebar_width": paned.get_position()})
+            return False
+
+        def moved(*_a):
+            if pending["src"]:
+                GLib.source_remove(pending["src"])
+            pending["src"] = GLib.timeout_add(400, save)
+        paned.connect("notify::position", moved)
+        click = Gtk.GestureClick(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+
+        def pressed(_g, n, x, _y):
+            if n == 2 and abs(x - paned.get_position()) <= 8:          # on the divider
+                paned.set_position(DEFAULTS["sidebar_width"])
+        click.connect("pressed", pressed)
+        paned.add_controller(click)
 
     # -- toolbar ---------------------------------------------------------------------
     def _toolbar(self):
