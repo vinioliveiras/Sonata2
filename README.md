@@ -141,6 +141,21 @@ Delete/Ctrl+Backspace Trash, Ctrl+1/2/3 views, Ctrl+Shift+. hidden files.
 
 Font: Sonata ships Inter (free). If you install Apple's SF Pro yourself (developer.apple.com/fonts, into ~/.local/share/fonts), the session uses it at the next login; Apple's licence doesn't allow bundling it.
 
+## Use it as your desktop
+
+```
+./install.sh --dev --deps     # from this clone; optional packages too
+sonata2 doctor                # what's missing, with the command that fixes it
+```
+
+Then log out and pick **Sonata** on the login screen. The shell components
+restart themselves if one crashes (`sonata2 keep`). Something wrong? The
+logs are in `~/.cache/sonata2/` (`login.log`, `session.log`), and
+`sonata2 doctor` adds the last session's errors to `doctor.txt` there.
+The keyboard layout comes from the system (`localectl`) until you pick
+one in Settings > Keyboard. To go back, pick your old desktop on the
+login screen; `./install.sh --uninstall` removes Sonata (settings stay).
+
 ## Try it without logging out
 
 `tools/dev-session.sh` opens Wayfire **as a window inside your current

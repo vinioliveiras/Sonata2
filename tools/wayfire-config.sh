@@ -17,6 +17,16 @@ if [ -n "$pix" ]; then
     sed -i -E '/^plugins *=/ s/(^| )decoration( |$)/\1pixdecor\2/' "$out"
 fi
 over="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/wayfire-overrides.ini"
+# Keyboard: the system's layout (localectl) until one is picked in Settings.
+if ! grep -qs '^xkb_layout' "$over" && command -v localectl >/dev/null; then
+    st="$(localectl status 2>/dev/null || true)"
+    lay="$(printf '%s\n' "$st" | sed -n 's/^ *X11 Layout: *//p')"
+    var="$(printf '%s\n' "$st" | sed -n 's/^ *X11 Variant: *//p')"
+    mdl="$(printf '%s\n' "$st" | sed -n 's/^ *X11 Model: *//p')"
+    if [ -n "$lay" ]; then
+        sed -i "0,/^\[input\]/s//[input]\nxkb_layout = $lay${var:+\nxkb_variant = $var}${mdl:+\nxkb_model = $mdl}/" "$out"
+    fi
+fi
 if [ -f "$over" ]; then
     PYTHONPATH="$here" python3 - "$out" "$over" <<'PY'
 import sys

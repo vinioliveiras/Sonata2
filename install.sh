@@ -91,13 +91,13 @@ NI=""      # the package manager's "don't ask" flag, for optional packages one b
 case "$family" in
     *arch*)   PM="sudo pacman -S --needed"; NI="--noconfirm"
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python-gobject python-cairo python-pywayland"
-              OPT="networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl libpulse" ;;
+              OPT="networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome gnome-keyring libpulse xorg-xwayland grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
     *debian*|*ubuntu*) PM="sudo apt install"; NI="-y"
               PKGS="wayfire gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtk4layershell-1.0 python3-gi python3-gi-cairo python3-pywayland"
-              OPT="network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr policykit-1-gnome grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl pulseaudio-utils" ;;
+              OPT="network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr policykit-1-gnome gnome-keyring pulseaudio-utils xwayland grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
     *fedora*|*rhel*) PM="sudo dnf install"; NI="-y"
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python3-gobject python3-cairo python3-pywayland"
-              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl pulseaudio-utils" ;;
+              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
     *suse*)   PM="sudo zypper install"; NI="-y"
               PKGS="wayfire gtk4 libadwaita-1-0 typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 gtk4-layer-shell python3-gobject python3-gobject-cairo python3-pywayland"
               OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
@@ -234,5 +234,7 @@ if [ -d /usr/share/wayland-sessions ] || [ "$MODE" = system ]; then
 fi
 
 case ":$PATH:" in *":$BIN:"*) ;; *) echo "Note: $BIN is not in your PATH (the session adds it itself)." ;; esac
+say "Checking this computer (sonata2 doctor):"
+PYTHONPATH="$SHARE" python3 -m sonata2 doctor || true
 say "Done. Log out and pick \"Sonata\" on the login screen, or try it inside your desktop with:"
 echo "  $SRC/tools/dev-session.sh"

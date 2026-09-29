@@ -14,6 +14,9 @@ Development / screenshots:
   sonata2 files [FOLDER...]                                    (Files)
   sonata2 restart [dock topbar launchpad wallpaper]            (reload edited code)
   sonata2 key volume-up|volume-down|volume-mute|brightness-up|brightness-down  (media keys + HUD)
+  sonata2 key play-pause|next|previous                        (media player keys, MPRIS)
+  sonata2 keep <component> [args]                             (session: restart it if it crashes)
+  sonata2 doctor                                              (is this computer ready for Sonata?)
   sonata2 screenshot [area]                                    (Super+Shift+3 / 4)"""
 import argparse
 import json
@@ -353,7 +356,38 @@ def restart(names) -> int:
 KEYS = {  # media keys: (what changes, step); macOS uses 16 steps
     "volume-up": ("volume", +6), "volume-down": ("volume", -6), "volume-mute": ("volume", 0),
     "brightness-up": ("brightness", +6), "brightness-down": ("brightness", -6),
+    "play-pause": ("media", "PlayPause"), "next": ("media", "Next"), "previous": ("media", "Previous"),
 }
+
+
+def _media(method: str) -> int:
+    """Play/pause, next, previous keys: the player that is playing (else
+    the first one) over MPRIS."""
+    from gi.repository import Gio, GLib
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        names = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "ListNames",
+                              None, None, Gio.DBusCallFlags.NONE, 1000, None).unpack()[0]
+    except GLib.Error:
+        return 1
+    players = [n for n in names if n.startswith("org.mpris.MediaPlayer2.")]
+
+    def status(n):
+        try:
+            return bus.call_sync(n, "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties", "Get",
+                                 GLib.Variant("(ss)", ("org.mpris.MediaPlayer2.Player", "PlaybackStatus")),
+                                 None, Gio.DBusCallFlags.NONE, 500, None).unpack()[0]
+        except GLib.Error:
+            return ""
+    target = next((n for n in players if status(n) == "Playing"), players[0] if players else None)
+    if not target:
+        return 1
+    try:
+        bus.call_sync(target, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player", method,
+                      None, None, Gio.DBusCallFlags.NONE, 1000, None)
+    except GLib.Error:
+        return 1
+    return 0
 
 
 def key(name: str) -> int:
@@ -361,6 +395,8 @@ def key(name: str) -> int:
     ask the menu bar process to show the HUD. No GTK in this process."""
     from .backend import system
     kind, step = KEYS.get(name, (None, 0))
+    if kind == "media":
+        return _media(step)
     if kind == "volume":
         cur = system.volume() or (0, False)
         if name == "volume-mute":
@@ -497,7 +533,36 @@ def _write_env_report() -> None:
         pass
 
 
+def keep(argv) -> int:
+    """`sonata2 keep dock` (session autostart): run a shell component and
+    start it again if it crashes -- a desktop must never lose its Dock or
+    menu bar. Stopped on purpose (exit 0, SIGTERM from `sonata2 restart`,
+    logout) it stays stopped; crashing over and over, it gives up."""
+    import subprocess
+    import time
+    cmd = self_command().split() + argv
+    crashes = []
+    while True:
+        started = time.monotonic()
+        code = subprocess.call(cmd)
+        sock = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), os.environ.get("WAYLAND_DISPLAY", "wayland-0"))
+        if code in (0, -15, -2, 130, 143) or not os.path.exists(sock):     # on purpose, or the session ended
+            return 0
+        now = time.monotonic()
+        crashes = [t for t in crashes if now - t < 60] + [now]
+        print(f"sonata2 keep: {' '.join(argv)} exited with {code}; restarting", file=sys.stderr, flush=True)
+        if len(crashes) >= 5:
+            print(f"sonata2 keep: {argv[0]} keeps crashing; giving up", file=sys.stderr)
+            return 1
+        time.sleep(1 if now - started > 10 else 3)
+
+
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "doctor":
+        from . import doctor
+        return doctor.main()
+    if len(sys.argv) > 2 and sys.argv[1] == "keep":
+        return keep(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "screenshot":
         return screenshot(sys.argv[2] if len(sys.argv) > 2 else "screen")
     if len(sys.argv) > 1 and sys.argv[1] == "restart":

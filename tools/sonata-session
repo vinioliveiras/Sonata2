@@ -9,12 +9,22 @@ cfg="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/wayfire.ini"
 # Resolved copy: Sonata paths filled in, pixdecor title bars when installed.
 run_cfg="${XDG_RUNTIME_DIR:-/tmp}/sonata2-wayfire.ini"
 "$(dirname "$(readlink -f "$0")")/wayfire-config.sh" "$cfg" "$run_cfg" && cfg="$run_cfg"
-# Polkit authentication agent (password prompts for system actions), if any.
+# Polkit authentication agent (password prompts for system actions): the
+# first one installed (sonata2 doctor lists them).
 for agent in /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 \
              /usr/libexec/polkit-gnome-authentication-agent-1 \
-             /usr/lib/x86_64-linux-gnu/polkit-gnome-authentication-agent-1; do
+             /usr/lib/x86_64-linux-gnu/polkit-gnome-authentication-agent-1 \
+             /usr/lib/polkit-kde-authentication-agent-1 /usr/libexec/polkit-kde-authentication-agent-1 \
+             /usr/lib/mate-polkit/polkit-mate-authentication-agent-1 /usr/libexec/polkit-mate-authentication-agent-1 \
+             /usr/bin/lxqt-policykit-agent /usr/lib/xfce-polkit/xfce-polkit /usr/libexec/xfce-polkit; do
     [ -x "$agent" ] && { "$agent" & break; }
 done
+# Saved passwords (Chrome, VS Code, Wi-Fi secrets): the login screen's PAM
+# usually unlocks gnome-keyring; make sure its secrets service runs.
+if command -v gnome-keyring-daemon >/dev/null; then
+    eval "$(gnome-keyring-daemon --start --components=secrets,pkcs11 2>/dev/null)" || true
+    export SSH_AUTH_SOCK
+fi
 # Session log (Wayfire + every Sonata component started from it); the
 # previous one is kept as session.old.log.
 logs="${XDG_CACHE_HOME:-$HOME/.cache}/sonata2"; mkdir -p "$logs"
