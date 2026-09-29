@@ -121,7 +121,9 @@ SHARED = {
     "menu_min_w": "190px",
     # full-screen overlays over the blurred desktop (Launchpad), same in
     # light and dark like macOS
-    "scrim": "rgba(0, 0, 0, 0.28)",
+    # alpha >= blur alpha_threshold (0.5, wayfire.ini) or Wayfire skips the
+    # blur; a dark grey instead of black keeps the old ~28 % dimming
+    "scrim": "rgba(64, 64, 70, 0.5)",
     "on_scrim": "#ffffff",
     "on_scrim_secondary": "rgba(255, 255, 255, 0.60)",
     "field_on_scrim": "rgba(255, 255, 255, 0.16)",

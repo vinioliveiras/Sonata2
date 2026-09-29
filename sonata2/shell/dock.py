@@ -1096,6 +1096,11 @@ class DockWindow(Gtk.ApplicationWindow):
 
     def do_size_allocate(self, w, h, baseline) -> None:
         Gtk.ApplicationWindow.do_size_allocate(self, w, h, baseline)
+        # the screen edge's length (login, display change): the Dock's own
+        # allocation may not change when only this surface grows, so fit here
+        if self.dock is not None and (w, h) != getattr(self, "_last_wh", None):
+            self._last_wh = (w, h)
+            self.dock.refit_soon()
         # the input region follows the Dock's real size -- also right after a
         # live settings change (magnification, size...), without a restart
         if not getattr(self, "_input_src", 0):
