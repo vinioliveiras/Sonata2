@@ -261,6 +261,27 @@ def run_files(app, uris, ui):
         _later(600, lambda: (win._open_search(), win.search.set_text(q)))
 
 
+def _serve_file_manager(app, ui) -> None:
+    """Files answers apps' "Show in Folder" (org.freedesktop.FileManager1)."""
+    from gi.repository import Gio
+    from .files import filemanager1
+
+    def props(uris):
+        from .files import folder
+        from .files.quicklook import GetInfo
+        for u in uris:
+            f = Gio.File.new_for_uri(u)
+            try:
+                info = f.query_info(folder.ATTRS, Gio.FileQueryInfoFlags.NONE, None)
+            except Exception:           # noqa: BLE001 -- a missing file: nothing to show
+                continue
+            info.set_attribute_object("sonata::file", f)
+            w = GetInfo(None, info)
+            w.set_application(app)
+            w.present()
+    filemanager1.own(app, lambda uris: run_files(app, uris, ui), lambda uris: run_files(app, uris, ui), props)
+
+
 def run_spotlight(app, args, ui, state):
     """Single instance, resident: running it again toggles it."""
     from .shell.spotlight import Spotlight
@@ -409,12 +430,40 @@ def run_topbar(app, args, ui):
 SHELL_COMPONENTS = ("wallpaper", "dock", "topbar", "launchpad", "spotlight")
 
 
+def _reload_wayfire_config() -> None:
+    """The session's Wayfire config again from the current defaults (+ your
+    Settings changes): Wayfire watches that file and applies it at once, so
+    blur, animation, key or plugin changes need no new login."""
+    import subprocess
+    run_cfg = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "sonata2-wayfire.ini")
+    script = os.path.join(REPO, "tools", "wayfire-config.sh")
+    if not (os.path.exists(run_cfg) and os.path.exists(script)):
+        return                                    # not a Sonata session (dev session, preview)
+    cfg_home = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "sonata2")
+    user, mark = os.path.join(cfg_home, "wayfire.ini"), os.path.join(cfg_home, ".wayfire.ini.installed")
+    src = os.path.join(REPO, "config", "wayfire.ini")
+    try:
+        if os.path.exists(user) and not (os.path.exists(mark) and open(user, "rb").read() == open(mark, "rb").read()):
+            src = user                            # a copy you edited
+    except OSError:
+        pass
+    tmp = run_cfg + ".new"
+    if subprocess.run(["bash", script, src, tmp], check=False).returncode == 0:
+        with open(tmp, encoding="utf-8") as f:            # rewritten in place: Wayfire keeps watching it
+            text = f.read()
+        with open(run_cfg, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.remove(tmp)
+
+
 def restart(names) -> int:
     """`sonata2 restart [dock topbar ...]`: stop those shell components (all
     by default) and start them again with the current code -- to see edits
     live in a running Sonata session."""
     import subprocess
     import time
+    if not names:
+        _reload_wayfire_config()
     names = [n for n in names if n in SHELL_COMPONENTS] or list(SHELL_COMPONENTS)
     for n in names:                       # the keepers first, so they don't start it again
         subprocess.run(["pkill", "-f", "--", rf"-m sonata2 keep {n}( |$)"], check=False)
@@ -672,6 +721,7 @@ def main() -> int:
     p.add_argument("--folder", action="store_true")
     p.add_argument("--jiggle", action="store_true")
     p.add_argument("--background", action="store_true", help="launchpad: start hidden (session autostart)")
+    p.add_argument("--service", action="store_true", help="files: started by D-Bus (FileManager1), no window")
     p.add_argument("--page", default="", help="settings: section to open (wifi, dock, ...)")
     p.add_argument("path", nargs="*", help="files: folders to open")
     args = p.parse_intermixed_args()
@@ -686,8 +736,8 @@ def main() -> int:
     if "GSK_RENDERER" not in os.environ:
         from . import config as _cfg
         from .icons import APPEARANCE_DEFAULTS as _AD
-        os.environ["GSK_RENDERER"] = {"gl": "ngl", "vulkan": "vulkan", "software": "cairo"}.get(
-            _cfg.load("appearance", _AD)["renderer"], "ngl")
+        os.environ["GSK_RENDERER"] = {"gl": "gl", "vulkan": "vulkan", "software": "cairo"}.get(
+            _cfg.load("appearance", _AD)["renderer"], "gl")
     if args.component == "autostart":       # no GTK needed
         from . import autostart
         autostart.run()
@@ -716,7 +766,16 @@ def main() -> int:
                 if args.dark or args.light:
                     ui.force_appearance("dark" if args.dark else "light")
                 ui.setup()
-        app.connect("activate", lambda a: (start(), run_files(a, [], ui)))
+                _serve_file_manager(app, ui)
+        if args.service:                 # started by D-Bus for FileManager1: no window of its own
+            def service(a):
+                start()
+                a.hold()
+                GLib.timeout_add_seconds(30, lambda: (a.release(), False)[1])   # windows keep it alive
+            from gi.repository import GLib
+            app.connect("activate", service)
+        else:
+            app.connect("activate", lambda a: (start(), run_files(a, [], ui)))
         app.connect("open", lambda a, files, _n, _h: (start(), run_files(a, [f.get_uri() for f in files], ui)))
         uris = [Gio.File.new_for_commandline_arg(x).get_uri() for x in args.path]
         return app.run([sys.argv[0]] + uris)

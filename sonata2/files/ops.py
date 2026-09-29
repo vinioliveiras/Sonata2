@@ -306,20 +306,45 @@ def _delete(f, cancel):
 GNOME_MIME = "x-special/gnome-copied-files"
 
 
-def copy_to_clipboard(widget, files, cut=False) -> None:
-    """Put files on the clipboard as a file list (GTK apps), text/uri-list
-    and GNOME's copied-files format (Nautilus, Nemo, Dolphin paste them)."""
+def file_content(files, cut=False, with_image=True) -> Gdk.ContentProvider:
+    """Files for the clipboard or a drag, in every form apps look for: a file
+    list (GTK apps), text/uri-list (Chromium/Electron, Qt...), GNOME's
+    copied-files format (Nautilus, Nemo, Dolphin) and, for a single picture,
+    the picture itself (chats and editors that only take image data)."""
     uris = [f.get_uri() for f in files]
     gnome = ("cut" if cut else "copy") + "\n" + "\n".join(uris)
     providers = [
         Gdk.ContentProvider.new_for_value(Gdk.FileList.new_from_list(files)),
-        Gdk.ContentProvider.new_for_bytes(GNOME_MIME, GLib.Bytes.new(gnome.encode())),
         Gdk.ContentProvider.new_for_bytes("text/uri-list", GLib.Bytes.new(("\r\n".join(uris) + "\r\n").encode())),
+        Gdk.ContentProvider.new_for_bytes(GNOME_MIME, GLib.Bytes.new(gnome.encode())),
     ]
-    png = _image_png(files[0]) if len(files) == 1 and not cut else None
-    if png is not None:                # one picture: apps that take images (chats, editors) paste it
-        providers.append(Gdk.ContentProvider.new_for_bytes("image/png", png))
-    widget.get_clipboard().set_content(Gdk.ContentProvider.new_union(providers))
+    img = _image_data(files[0]) if with_image and len(files) == 1 and not cut else None
+    if img is not None:
+        providers.append(Gdk.ContentProvider.new_for_bytes(*img))
+    return Gdk.ContentProvider.new_union(providers)
+
+
+_RAW = ("image/png", "image/jpeg", "image/gif", "image/webp")
+
+
+def _image_data(f):
+    """(mime, bytes) of a picture file as it is (PNG, JPEG, GIF, WebP: no
+    re-encoding, so a drag starts at once); other pictures become PNG."""
+    try:
+        info = f.query_info("standard::content-type,standard::size", Gio.FileQueryInfoFlags.NONE, None)
+        ct = info.get_content_type() or ""
+        if not ct.startswith("image/") or info.get_size() > 40 << 20:
+            return None
+        if ct in _RAW:
+            return ct, GLib.Bytes.new(f.load_contents(None)[1])
+    except (GLib.Error, TypeError):
+        return None
+    png = _image_png(f)
+    return ("image/png", png) if png is not None else None
+
+
+def copy_to_clipboard(widget, files, cut=False) -> None:
+    widget.get_clipboard().set_content(file_content(files, cut))
 
 
 def _image_png(f):

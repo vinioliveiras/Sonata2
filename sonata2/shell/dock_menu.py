@@ -31,23 +31,12 @@ def app_file(info) -> str:
 
 
 def show_in_files(path: str) -> None:
-    """Open the folder containing `path` with the file selected (FileManager1
-    D-Bus API: Nautilus, Dolphin, Nemo, Thunar...), else just open the folder."""
+    """Open the folder containing `path` in Sonata's Files, the file
+    selected (never another file manager: Vini's call)."""
     if not path:
         return
-    uri = Gio.File.new_for_path(path).get_uri()
-    if os.environ.get("XDG_CURRENT_DESKTOP") == "Sonata" or os.environ.get("SONATA_GLASS") == "1":
-        from ..files import open_folder          # Sonata's Files, the file selected
-        open_folder(uri)
-        return
-    try:
-        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-        bus.call_sync("org.freedesktop.FileManager1", "/org/freedesktop/FileManager1",
-                      "org.freedesktop.FileManager1", "ShowItems",
-                      GLib.Variant("(ass)", ([uri], "")), None, Gio.DBusCallFlags.NONE, 2000, None)
-    except GLib.Error:
-        folder = Gio.File.new_for_path(os.path.dirname(path)).get_uri()
-        Gio.AppInfo.launch_default_for_uri(folder, None)
+    from ..files import open_folder
+    open_folder(Gio.File.new_for_path(path).get_uri())
 
 
 def autostart_path(did: str) -> str:

@@ -221,7 +221,8 @@ class _Cells:
         if info is None or self._dnd() is None:
             return None
         files = self._dnd().files_for_drag(self, info)
-        return Gdk.ContentProvider.new_for_value(Gdk.FileList.new_from_list(files))
+        from .ops import file_content
+        return file_content(files)
 
     def _drag_begin(self, box, drag):
         """The file icon hangs from the pointer and swings (ui.drag)."""

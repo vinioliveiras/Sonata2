@@ -51,6 +51,8 @@ if [ "$UNINSTALL" = 1 ]; then
     if [ -f "$SESSION_FILE" ] && ask "Remove \"Sonata\" from the login screen (sudo)?"; then
         sudo rm -f "$SESSION_FILE" /usr/local/bin/sonata-login
     fi
+    rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services/org.freedesktop.FileManager1.service" \
+          "$BIN/sonata-filemanager1"
     rm -f "$HOME/.local/share/applications/sonata2-launchpad.desktop" \
           "$HOME/.local/share/applications/sonata2-settings.desktop"
     say "Done. Your settings are still in $CFG/sonata2 (delete that folder to reset them)."
@@ -224,6 +226,25 @@ EOF
 $SUDO install -m 755 "$tmp/sonata2-launcher" "$BIN/sonata2"
 $SUDO install -m 755 "$tmp/sonata-session-launcher" "$BIN/sonata-session"
 $SUDO chmod 755 "$SHARE/tools/sonata-session" "$SHARE/tools/session-env.sh" "$SHARE/tools/wayfire-config.sh"
+
+# -- "Show in Folder" (org.freedesktop.FileManager1) opens Sonata's Files -------------------------
+# In the Sonata session only; any other desktop still gets its own file manager.
+DBUS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services"
+mkdir -p "$DBUS_DIR"
+cat > "$tmp/sonata-filemanager1" <<EOF
+#!/bin/sh
+# D-Bus starts this for org.freedesktop.FileManager1 (install.sh).
+case ":\${XDG_CURRENT_DESKTOP:-}:" in
+    *:Sonata:*) exec "$BIN/sonata2" files --service ;;
+esac
+for fm in "nautilus --gapplication-service" "nemo" "dolphin" "thunar --daemon"; do
+    command -v \${fm%% *} >/dev/null && exec \$fm
+done
+exit 1
+EOF
+$SUDO install -m 755 "$tmp/sonata-filemanager1" "$BIN/sonata-filemanager1"
+printf '[D-BUS Service]\nName=org.freedesktop.FileManager1\nExec=%s\n' "$BIN/sonata-filemanager1" \
+    > "$DBUS_DIR/org.freedesktop.FileManager1.service"
 
 # -- Sonata's Wayfire plugin (rounded corners for Chrome, Spotify, terminals...) -----------------
 # Built against the installed Wayfire; a Wayfire update needs a rebuild (run

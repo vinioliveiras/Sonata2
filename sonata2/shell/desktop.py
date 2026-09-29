@@ -455,7 +455,7 @@ class Desktop(Gtk.Fixed):
             self.select([item])
         self._drag_names = [i.name for i in self.selection]
         files = self.selected_files()
-        return Gdk.ContentProvider.new_for_value(Gdk.FileList.new_from_list(files))
+        return ops.file_content(files)            # file list, uri-list and (one picture) its image
 
     def drag_begin(self, item, drag) -> None:
         for i in self.selection:
