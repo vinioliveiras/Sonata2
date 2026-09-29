@@ -9,6 +9,8 @@ at every login (`sonata2 autostart`):
   per-profile "Use system title bar and borders" preference. Skipped while
   the browser runs (it would write its own value back on quit): next login.
 - VS Code / VSCodium / Code - OSS: "window.titleBarStyle": "native".
+- Firefox, Thunderbird, LibreWolf, Floorp (every profile): user.js
+  browser.tabs.inTitlebar = 0 (tabs under the system title bar).
 
 Turning the option off puts both back. Apps with a frame of their own
 and no such setting (Spotify, Claude, Discord...) keep drawing theirs."""
@@ -26,6 +28,9 @@ BROWSERS = {                      # config folder -> process names
     "microsoft-edge": ("msedge",), "vivaldi": ("vivaldi-bin", "vivaldi"),
 }
 CODE = ("Code", "Code - OSS", "VSCodium", "Code - Insiders")
+MOZILLA = ("~/.mozilla/firefox", "~/.config/mozilla/firefox", "~/.thunderbird", "~/.librewolf", "~/.floorp",
+           "~/.var/app/org.mozilla.firefox/.mozilla/firefox")
+MOZ_LINE = 'user_pref("browser.tabs.inTitlebar", 0);  // Sonata title bars (Settings > Appearance)'
 
 
 def enabled() -> bool:
@@ -47,6 +52,15 @@ def apply(on: bool = None) -> None:
             continue
         for p in profiles:
             _browser_pref(os.path.join(base, p, "Preferences"), not on)
+    for base in MOZILLA:
+        base = os.path.expanduser(base)
+        try:
+            profiles = [os.path.join(base, p) for p in os.listdir(base)]
+        except OSError:
+            continue
+        for prof in profiles:
+            if os.path.isfile(os.path.join(prof, "prefs.js")):
+                _mozilla_userjs(os.path.join(prof, "user.js"), on)
     for app in CODE:
         path = os.path.join(cfg, app, "User", "settings.json")
         if os.path.isdir(os.path.join(cfg, app)):
@@ -76,6 +90,20 @@ def _browser_pref(path: str, custom_frame: bool) -> None:
         return
     browser["custom_chrome_frame"] = custom_frame
     _write(path, json.dumps(prefs, separators=(",", ":")))
+
+
+def _mozilla_userjs(path: str, on: bool) -> None:
+    """user.js is read at every start (and overrides prefs.js): our one
+    marked line in or out."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        lines = []
+    kept = [ln for ln in lines if "Sonata title bars" not in ln]
+    new = kept + ([MOZ_LINE] if on else [])
+    if new != lines:
+        _write(path, "\n".join(new) + ("\n" if new else ""))
 
 
 def _code_setting(path: str, style: str) -> None:
