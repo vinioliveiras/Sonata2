@@ -30,10 +30,12 @@ APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
            "topbar": "io.github.vinioliveiras.sonata2.topbar",
            "gallery": "io.github.vinioliveiras.sonata2.gallery",
            "files": "io.github.vinioliveiras.sonata2.files",
-           "lock": "io.github.vinioliveiras.sonata2.lock"}
+           "lock": "io.github.vinioliveiras.sonata2.lock",
+           "spotlight": "io.github.vinioliveiras.sonata2.spotlight"}
 # Shell surfaces (never shown as running apps in the Dock); Files and
 # Settings are ordinary apps.
-SHELL_IDS = {APP_IDS[k] for k in ("dock", "autostart", "wallpaper", "launchpad", "topbar", "gallery", "lock")}
+SHELL_IDS = {APP_IDS[k] for k in ("dock", "autostart", "wallpaper", "launchpad", "topbar", "gallery", "lock",
+                                   "spotlight")}
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -207,6 +209,22 @@ def run_files(app, uris, ui):
         _later(1300, win.get_info)
 
 
+def run_spotlight(app, args, ui, state):
+    """Single instance, resident: running it again toggles it."""
+    from .shell.spotlight import Spotlight
+    win = state.get("win")
+    if win is not None:
+        win.toggle()
+        return
+    win = state["win"] = Spotlight(app)
+    app.hold()
+    if args.background:
+        return
+    win.open_spotlight()
+    if args.search:
+        _later(300, lambda: win.entry.set_text(args.search))
+
+
 def run_lock(app, args, ui, state):
     """Lock the session (once: a second `sonata2 lock` does nothing)."""
     if state.get("lock"):
@@ -256,7 +274,7 @@ def run_topbar(app, args, ui):
         _later(600, lambda: win.bar.open_menu(args.menu))
 
 
-SHELL_COMPONENTS = ("wallpaper", "dock", "topbar", "launchpad")
+SHELL_COMPONENTS = ("wallpaper", "dock", "topbar", "launchpad", "spotlight")
 
 
 def restart(names) -> int:
@@ -271,7 +289,7 @@ def restart(names) -> int:
     time.sleep(0.4)
     cmd = self_command().split()
     for n in names:
-        extra = ["--background"] if n == "launchpad" else []
+        extra = ["--background"] if n in ("launchpad", "spotlight") else []
         subprocess.Popen(cmd + [n] + extra, start_new_session=True,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(f"restarted {n}")
@@ -423,6 +441,8 @@ def main() -> int:
             run_settings(app, args, ui, state)
         elif args.component == "wallpaper":
             run_wallpaper(app, args, ui)
+        elif args.component == "spotlight":
+            run_spotlight(app, args, ui, state)
         elif args.component == "lock":
             run_lock(app, args, ui, state)
         else:

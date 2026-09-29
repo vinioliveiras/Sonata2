@@ -44,7 +44,7 @@ sed -e '/^\[autostart\]/,$d' -e "s|= sonata2 |= env PYTHONPATH=$REPO python3 -m 
     echo "[autostart]"
     echo "autostart_wf_shell = false"
     # each component logs to .dev-logs/<name>.log (read them if something is missing)
-    for c in wallpaper dock "launchpad --background" topbar; do
+    for c in wallpaper dock "launchpad --background" "spotlight --background" topbar; do
         n="${c%% *}"
         echo "$n = sh -c 'env PYTHONPATH=$REPO python3 -m sonata2 $c > $logs/$n.log 2>&1'"
     done

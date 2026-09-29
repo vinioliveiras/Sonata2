@@ -516,11 +516,11 @@ class Bar(Gtk.CenterBox):
                          lambda _r: self._update_input())
 
     def _spotlight(self, btn):
-        """Big Sur's magnifier: search apps (Launchpad opens with its search field)."""
+        """Big Sur's magnifier: Spotlight."""
         from ..__main__ import self_command
         btn.remove_css_class("open")
         try:
-            GLib.spawn_async(self_command().split() + ["launchpad"], flags=GLib.SpawnFlags.SEARCH_PATH)
+            GLib.spawn_async(self_command().split() + ["spotlight"], flags=GLib.SpawnFlags.SEARCH_PATH)
         except GLib.Error:
             pass
         return None

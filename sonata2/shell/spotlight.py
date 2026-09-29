@@ -1,0 +1,358 @@
+"""Spotlight (macOS Big Sur): Super+Space or the menu bar magnifier.
+
+A glass search bar in the upper middle of the screen; typing lists Top Hit,
+Applications, Folders and Documents, plus a calculator answer, with a
+preview of the selected result on the right. Up/Down move, Return opens,
+Escape closes. Resident and hidden between uses (instant opening); files
+come from an index of the home folders built in the background (no
+tracker/locate needed), refreshed when older than a few minutes."""
+import ast
+import operator
+import os
+import threading
+import time
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
+
+from .. import icons, ui  # noqa: E402
+from .. import launchpad_model as M  # noqa: E402
+from . import layer  # noqa: E402
+
+WIDTH = 680
+MAX_FILES = 60000
+INDEX_DEPTH = 5
+INDEX_TTL = 300
+SHOW = {"apps": 6, "folders": 4, "docs": 8}
+
+ui.register("""
+window.sonata-spotlight, window.sonata-spotlight > contents { background: none; box-shadow: none; }
+.sp-panel { background: %(glass_tint)s; border-radius: 12px; color: %(label)s; font-family: %(font)s;
+  box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, 0 18px 50px rgba(0,0,0,0.28); }
+.sp-panel.solid { background: %(menu_bg)s; }
+.sp-field { min-height: 48px; padding: 0 14px; }
+.sp-field image { color: %(label_secondary)s; }
+.sp-field text { font-size: 22px; font-weight: 300; background: none; color: %(label)s; }
+.sp-field text placeholder { color: %(label_tertiary)s; }
+.sp-sep { min-height: 1px; background: %(separator)s; }
+.sp-list { background: none; padding: 4px 0 6px 0; }
+.sp-list row { min-height: 26px; padding: 0 12px; background: none; color: %(label)s; border-radius: 5px;
+  margin: 0 6px; }
+.sp-list row:selected { background: %(accent_selected)s; color: %(label_on_accent)s; }
+.sp-list row.sp-head { min-height: 20px; margin-top: 6px; }
+.sp-list row.sp-head label { font-size: %(text_small)s; font-weight: 700; color: %(label_secondary)s; }
+.sp-preview { padding: 22px 16px; border-left: 1px solid %(separator)s; }
+.sp-prev-name { font-weight: 700; font-size: %(text_title)s; }
+.sp-prev-meta { color: %(label_secondary)s; font-size: %(text_small)s; }
+.sp-calc { font-size: 30px; font-weight: 300; }
+""", key="spotlight")
+
+
+# -- calculator (safe: numbers and + - * / % ** only) -----------------------------------------
+_OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv,
+        ast.Mod: operator.mod, ast.Pow: operator.pow, ast.USub: operator.neg, ast.UAdd: operator.pos}
+
+
+def calculate(text: str):
+    expr = text.strip().replace("×", "*").replace("÷", "/").replace("^", "**").replace(",", ".")
+    if not expr or not any(c.isdigit() for c in expr) or not any(c in "+-*/%" for c in expr[1:]):
+        return None
+
+    def ev(n):
+        if isinstance(n, ast.Expression):
+            return ev(n.body)
+        if isinstance(n, ast.Constant) and isinstance(n.value, (int, float)):
+            return n.value
+        if isinstance(n, ast.BinOp) and type(n.op) in _OPS:
+            if isinstance(n.op, ast.Pow) and abs(ev(n.right)) > 100:
+                raise ValueError
+            return _OPS[type(n.op)](ev(n.left), ev(n.right))
+        if isinstance(n, ast.UnaryOp) and type(n.op) in _OPS:
+            return _OPS[type(n.op)](ev(n.operand))
+        raise ValueError
+    try:
+        v = ev(ast.parse(expr, mode="eval"))
+    except (ValueError, SyntaxError, ZeroDivisionError, OverflowError, TypeError):
+        return None
+    if isinstance(v, float):
+        if v != v or v in (float("inf"), float("-inf")):
+            return None
+        v = round(v, 10)
+        if v.is_integer():
+            v = int(v)
+    return f"{v:,}".replace(",", " ") if isinstance(v, int) else str(v)
+
+
+# -- file index ------------------------------------------------------------------------------------
+class Index:
+    def __init__(self):
+        self.entries = []        # (name lower, path, is_dir)
+        self.built = 0.0
+        self._busy = False
+
+    def refresh(self):
+        if self._busy or time.time() - self.built < INDEX_TTL:
+            return
+        self._busy = True
+        threading.Thread(target=self._build, daemon=True).start()
+
+    def _build(self):
+        home = GLib.get_home_dir()
+        out = []
+        base_depth = home.rstrip("/").count("/")
+        for root, dirs, files in os.walk(home, onerror=lambda e: None):
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "__pycache__")]
+            depth = root.count("/") - base_depth
+            if depth >= INDEX_DEPTH:
+                dirs[:] = []
+            for d in dirs:
+                out.append((d.lower(), os.path.join(root, d), True))
+            for f in files:
+                if not f.startswith("."):
+                    out.append((f.lower(), os.path.join(root, f), False))
+            if len(out) > MAX_FILES:
+                break
+        self.entries = out
+        self.built = time.time()
+        self._busy = False
+
+    def search(self, q: str):
+        q = q.lower()
+        pre, sub = [], []
+        for name, path, d in self.entries:
+            if name.startswith(q):
+                pre.append((len(name), path, d))
+            elif q in name:
+                sub.append((len(name), path, d))
+            if len(pre) > 200:
+                break
+        pre.sort()
+        sub.sort()
+        return [(p, d) for _n, p, d in pre + sub]
+
+
+class Spotlight(Gtk.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app, title="Spotlight", decorated=False, resizable=True)
+        self.add_css_class("sonata-spotlight")
+        self.index = Index()
+        self.apps = {}
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["sp-panel"] +
+                        ([] if ui.theme.glass() else ["solid"]), halign=Gtk.Align.CENTER, valign=Gtk.Align.START)
+        panel.set_size_request(WIDTH, -1)
+        field = Gtk.Box(spacing=10, css_classes=["sp-field"])
+        field.append(Gtk.Image(icon_name="sonata-search-symbolic", pixel_size=22))
+        self.entry = Gtk.Text(placeholder_text="Spotlight Search", hexpand=True)
+        self.entry.connect("changed", lambda *_: self._search())
+        self.entry.connect("activate", lambda *_: self._open_selected())
+        field.append(self.entry)
+        panel.append(field)
+        self.sep = Gtk.Box(css_classes=["sp-sep"], visible=False)
+        panel.append(self.sep)
+        self.body = Gtk.Box(visible=False)
+        self.list = Gtk.ListBox(css_classes=["sp-list"], selection_mode=Gtk.SelectionMode.SINGLE)
+        self.list.connect("row-selected", lambda _l, r: self._preview(r))
+        self.list.connect("row-activated", lambda _l, r: self._open(r))
+        scroller = Gtk.ScrolledWindow(child=self.list, hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                      propagate_natural_height=True, max_content_height=420)
+        scroller.set_size_request(290, -1)
+        self.body.append(scroller)
+        self.prev = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["sp-preview"],
+                            hexpand=True, valign=Gtk.Align.FILL)
+        self.body.append(self.prev)
+        panel.append(self.body)
+        self.set_child(panel)
+        keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        keys.connect("key-pressed", self._key)
+        self.add_controller(keys)
+        click = Gtk.GestureClick()
+        click.connect("released", lambda g, n, x, y: self.pick(x, y, Gtk.PickFlags.DEFAULT) in (self, None)
+                      and self.close_spotlight())
+        self.add_controller(click)
+        LS = layer.layer_shell()
+        if LS:
+            LS.init_for_window(self)
+            LS.set_namespace(self, "sonata2-spotlight")
+            LS.set_layer(self, LS.Layer.OVERLAY)
+            for e in (LS.Edge.TOP, LS.Edge.BOTTOM, LS.Edge.LEFT, LS.Edge.RIGHT):
+                LS.set_anchor(self, e, True)
+            LS.set_exclusive_zone(self, -1)
+            LS.set_keyboard_mode(self, LS.KeyboardMode.EXCLUSIVE)
+        self.connect("realize", lambda *_: self._place(panel))
+
+    def _place(self, panel):
+        mon = self.get_display().get_monitor_at_surface(self.get_surface()) if self.get_surface() else None
+        h = mon.get_geometry().height if mon else 900
+        panel.set_margin_top(int(h * 0.22))
+
+    # -- open / close --------------------------------------------------------------------
+    def toggle(self):
+        if self.get_visible():
+            self.close_spotlight()
+        else:
+            self.open_spotlight()
+
+    def open_spotlight(self):
+        self.index.refresh()
+        self.apps = {a.get_id(): a for a in Gio.AppInfo.get_all() if a.should_show() and a.get_id()}
+        self.entry.set_text("")
+        self._search()
+        self.present()
+        self.entry.grab_focus()
+
+    def close_spotlight(self):
+        self.set_visible(False)
+
+    def _key(self, _c, keyval, _code, _state):
+        if keyval == Gdk.KEY_Escape:
+            if self.entry.get_text():
+                self.entry.set_text("")
+            else:
+                self.close_spotlight()
+            return True
+        if keyval in (Gdk.KEY_Down, Gdk.KEY_Up):
+            self._move(1 if keyval == Gdk.KEY_Down else -1)
+            return True
+        return False
+
+    def _move(self, d):
+        rows, cur = [], self.list.get_selected_row()
+        r = self.list.get_first_child()
+        while r is not None:
+            if isinstance(r, Gtk.ListBoxRow) and r.get_selectable():
+                rows.append(r)
+            r = r.get_next_sibling()
+        if not rows:
+            return
+        i = rows.index(cur) if cur in rows else -1
+        self.list.select_row(rows[max(0, min(len(rows) - 1, i + d))])
+
+    # -- results -------------------------------------------------------------------------
+    def _search(self):
+        q = self.entry.get_text().strip()
+        self.list.remove_all()
+        if not q:
+            self.sep.set_visible(False)
+            self.body.set_visible(False)
+            return
+        results = []            # (section, kind, payload)
+        calc = calculate(q)
+        if calc is not None:
+            results.append(("Calculator", "calc", (q, calc)))
+        meta = {i: (a.get_display_name(), " ".join(filter(None, (a.get_generic_name(), a.get_description(),
+                                                                  " ".join(a.get_keywords() or [])))))
+                for i, a in self.apps.items()}
+        app_ids = M.search(meta, q, limit=SHOW["apps"])
+        found = self.index.search(q) if len(q) > 1 else []
+        folders = [p for p, d in found if d][:SHOW["folders"]]
+        docs = [p for p, d in found if not d][:SHOW["docs"]]
+        if app_ids:
+            results.append(("Top Hit", "app", app_ids[0]))
+            results += [("Applications", "app", i) for i in app_ids[1:]]
+        elif docs or folders:
+            top = (folders or docs)[0]
+            results.append(("Top Hit", "file", top))
+            folders = [p for p in folders if p != top]
+            docs = [p for p in docs if p != top]
+        results += [("Folders", "file", p) for p in folders]
+        results += [("Documents", "file", p) for p in docs]
+        last = None
+        first_row = None
+        for section, kind, payload in results:
+            if section != last:
+                head = Gtk.ListBoxRow(selectable=False, activatable=False, css_classes=["sp-head"])
+                head.set_child(Gtk.Label(label=section, xalign=0))
+                self.list.append(head)
+                last = section
+            row = Gtk.ListBoxRow()
+            row.kind, row.payload = kind, payload
+            box = Gtk.Box(spacing=8)
+            img = Gtk.Image(pixel_size=20)
+            box.append(img)
+            box.append(Gtk.Label(label=self._title(kind, payload), xalign=0, hexpand=True,
+                                 ellipsize=Pango.EllipsizeMode.MIDDLE))
+            self._icon(img, kind, payload)
+            row.set_child(box)
+            self.list.append(row)
+            first_row = first_row or row
+        has = bool(results)
+        self.sep.set_visible(has)
+        self.body.set_visible(has)
+        if first_row:
+            self.list.select_row(first_row)
+
+    def _title(self, kind, payload):
+        if kind == "app":
+            return self.apps[payload].get_display_name()
+        if kind == "calc":
+            return f"{payload[0]} = {payload[1]}"
+        return os.path.basename(payload)
+
+    def _icon(self, img, kind, payload):
+        if kind == "app":
+            icons.set_image(img, icons.app_icon(self.apps[payload]))
+        elif kind == "calc":
+            img.set_from_icon_name("accessories-calculator")
+        else:
+            f = Gio.File.new_for_path(payload)
+            try:
+                info = f.query_info("standard::icon", Gio.FileQueryInfoFlags.NONE, None)
+                icons.set_image(img, info.get_icon())
+            except GLib.Error:
+                img.set_from_icon_name("text-x-generic")
+
+    def _preview(self, row):
+        while self.prev.get_first_child():
+            self.prev.remove(self.prev.get_first_child())
+        if row is None or not hasattr(row, "kind"):
+            return
+        if row.kind == "calc":
+            self.prev.append(Gtk.Label(label=row.payload[1], css_classes=["sp-calc"], wrap=True,
+                                       valign=Gtk.Align.CENTER, vexpand=True))
+            return
+        ct = Gio.content_type_guess(row.payload, None)[0] if row.kind == "file" else ""
+        if ct.startswith("image/"):               # pictures: the picture itself
+            pic = Gtk.Picture(content_fit=Gtk.ContentFit.CONTAIN, margin_top=6)
+            pic.set_filename(row.payload)
+            pic.set_size_request(-1, 170)
+            self.prev.append(pic)
+        else:
+            img = Gtk.Image(pixel_size=128, margin_top=10)
+            self._icon(img, row.kind, row.payload)
+            self.prev.append(img)
+        self.prev.append(Gtk.Label(label=self._title(row.kind, row.payload), css_classes=["sp-prev-name"],
+                                   wrap=True, justify=Gtk.Justification.CENTER))
+        if row.kind == "app":
+            desc = self.apps[row.payload].get_description() or ""
+            self.prev.append(Gtk.Label(label=desc, css_classes=["sp-prev-meta"], wrap=True,
+                                       justify=Gtk.Justification.CENTER, max_width_chars=40))
+        else:
+            home = GLib.get_home_dir()
+            where = os.path.dirname(row.payload).replace(home, "~", 1)
+            self.prev.append(Gtk.Label(label=where, css_classes=["sp-prev-meta"], wrap=True,
+                                       justify=Gtk.Justification.CENTER, max_width_chars=40))
+
+    def _open_selected(self):
+        r = self.list.get_selected_row()
+        if r is not None:
+            self._open(r)
+
+    def _open(self, row):
+        if not hasattr(row, "kind"):
+            return
+        ctx = self.get_display().get_app_launch_context()
+        try:
+            if row.kind == "app":
+                self.apps[row.payload].launch([], ctx)
+            elif row.kind == "calc":
+                self.get_clipboard().set(row.payload[1])          # like macOS: copy the result
+            elif os.path.isdir(row.payload):
+                from ..files import open_folder
+                open_folder(Gio.File.new_for_path(row.payload).get_uri())
+            else:
+                Gio.AppInfo.launch_default_for_uri(Gio.File.new_for_path(row.payload).get_uri(), ctx)
+        except GLib.Error:
+            pass
+        self.close_spotlight()
