@@ -23,7 +23,6 @@ LIGHT = {
     "destructive": "#ff3b30",
     # materials (backgrounds)
     "menu_bg": "rgba(236, 236, 236, 0.97)",     # menus, hover labels
-    "panel_glass": "rgba(236, 236, 240, 0.72)",  # menu bar panels / Control Center over the blur
     "window_bg": "#ececec",
     "control_bg": "#ffffff",                     # push buttons, pop-up buttons
     "control_pressed": "#e5e5e5",
@@ -65,7 +64,6 @@ DARK = {
     "accent_selected": "#0a84ff",
     "destructive": "#ff453a",
     "menu_bg": "rgba(44, 44, 46, 0.97)",
-    "panel_glass": "rgba(30, 30, 34, 0.70)",
     "window_bg": "#1e1e1e",
     "control_bg": "rgba(255, 255, 255, 0.16)",
     "control_pressed": "rgba(255, 255, 255, 0.24)",

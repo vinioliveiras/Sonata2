@@ -54,9 +54,14 @@ class DesktopItem(Gtk.Box):
         from ..files.views import set_icon
         self.desk, self.info = desk, info
         self.img = Gtk.Image(pixel_size=ICON, css_classes=["desk-icon"], halign=Gtk.Align.CENTER)
-        set_icon(self.img, info)
+        self.app = _launcher(info)                     # an app shortcut (.desktop): its icon and name
+        if self.app is not None:
+            from .. import icons
+            icons.set_image(self.img, icons.app_icon(self.app))
+        else:
+            set_icon(self.img, info)
         self.append(self.img)
-        self.lbl = Gtk.Label(label=info.get_display_name(), wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR,
+        self.lbl = Gtk.Label(label=self.app.get_display_name() if self.app else info.get_display_name(), wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR,
                              lines=2, ellipsize=Pango.EllipsizeMode.MIDDLE, justify=Gtk.Justification.CENTER,
                              max_width_chars=13, halign=Gtk.Align.CENTER)
         self.append(self.lbl)
@@ -95,6 +100,17 @@ class DesktopItem(Gtk.Box):
         elif self not in self.desk.selection:
             self.desk.select([self])
         g.set_state(Gtk.EventSequenceState.CLAIMED)
+
+
+def _launcher(info):
+    """The app of a .desktop shortcut on the Desktop, or None."""
+    if not info.get_name().endswith(".desktop"):
+        return None
+    from ..apps import DesktopAppInfo
+    try:
+        return DesktopAppInfo.new_from_filename(file_of(info).get_path() or "")
+    except (TypeError, GLib.Error):
+        return None
 
 
 def _copy(target) -> bool:
@@ -290,7 +306,12 @@ class Desktop(Gtk.Fixed):
         from ..files import open_folder
         for item in self.selection:
             f = file_of(item.info)
-            if is_dir(item.info):
+            if item.app is not None:
+                try:
+                    item.app.launch([], None)
+                except GLib.Error:
+                    pass
+            elif is_dir(item.info):
                 open_folder(f.get_uri())
             else:
                 try:

@@ -65,7 +65,7 @@ def values() -> dict:
     # One glass for the whole system: sidebars use exactly the Dock's tint
     # over the same compositor blur.
     v["sidebar_material"] = v["glass_tint" if glass() else "sidebar_bg"]
-    v["panel_material"] = v["panel_glass" if glass() else "menu_bg"]
+    v["panel_material"] = v["glass_tint" if glass() else "menu_bg"]      # the Dock's / sidebars' glass
     return v
 
 

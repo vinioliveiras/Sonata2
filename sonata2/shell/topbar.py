@@ -376,9 +376,10 @@ class Bar(Gtk.CenterBox):
 
         def badge(n):
             level = 3 if n.signal > 60 else 2 if n.signal > 30 else 1
-            b = Gtk.Box(css_classes=["wifi-badge"] + (["on"] if n.connected else []), valign=Gtk.Align.CENTER)
-            b.append(Gtk.Image(icon_name=f"sonata-wifi-{level}-symbolic", pixel_size=14, hexpand=True,
-                               halign=Gtk.Align.CENTER))
+            b = Gtk.Box(css_classes=["wifi-badge"] + (["on"] if n.connected else []), valign=Gtk.Align.CENTER,
+                        halign=Gtk.Align.START, hexpand=False)
+            b.append(Gtk.Image(icon_name=f"sonata-wifi-{level}-symbolic", pixel_size=14,
+                               halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER))
             return b
 
         def net_row(n):
@@ -457,8 +458,10 @@ class Bar(Gtk.CenterBox):
         ui.panel.align_to_start(pop, btn, 2)
 
         def badge(d):
-            b = Gtk.Box(css_classes=["wifi-badge"] + (["on"] if d.connected else []), valign=Gtk.Align.CENTER)
-            b.append(Gtk.Image(icon_name=_bt_icon(d.name), pixel_size=14, hexpand=True, halign=Gtk.Align.CENTER))
+            b = Gtk.Box(css_classes=["wifi-badge"] + (["on"] if d.connected else []), valign=Gtk.Align.CENTER,
+                        halign=Gtk.Align.START, hexpand=False)
+            b.append(Gtk.Image(icon_name=_bt_icon(d.name), pixel_size=14, halign=Gtk.Align.CENTER,
+                               valign=Gtk.Align.CENTER))
             return b
 
         def fill(lst):
@@ -650,6 +653,7 @@ ui.register("""
 .cc-small { padding: 8px; }
 .wifi-badge { min-width: 26px; min-height: 26px; border-radius: 99px; background: %(toggle_off)s;
   color: %(label)s; margin-right: 2px; }
+.wifi-badge > image { margin: 0 6px; }          /* 26 px circle: 14 px glyph + 2 x 6 px */
 .wifi-badge.on { background: %(accent)s; color: %(label_on_accent)s; }
 .cc-small label { font-size: %(text_small)s; font-weight: 400; }
 .cc-small.on image { color: %(accent)s; }
