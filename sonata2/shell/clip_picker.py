@@ -1,6 +1,6 @@
 """Clipboard history panel (Super+V, like Windows' Win+V, drawn the macOS
 way): a glass panel under the menu bar with the last copies (newest
-first), a search field and Clear All. Click a copy, or pick it with the
+first; images as thumbnails), a search field and Clear All. Click a copy, or pick it with the
 arrow keys and Return, and it is pasted into the window that had focus
 (it goes to the clipboard, then Ctrl+V -- Ctrl+Shift+V in terminals --
 through wtype). The history itself is the menu bar's (clipboard.py):
@@ -15,9 +15,11 @@ from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
 from . import layer  # noqa: E402
+from .clipboard import ClipImage  # noqa: E402
 
 WIDTH = 380
 PREVIEW_LINES = 3
+THUMB_H = 110
 # app ids where Ctrl+V is not "paste" (terminals: Ctrl+Shift+V)
 TERMINALS = ("terminal", "konsole", "kitty", "alacritty", "foot", "ghostty", "wezterm", "xterm", "tilix",
              "terminator", "kgx", "console", "ptyxis", "blackbox", "rio", "warp")
@@ -39,6 +41,7 @@ window.sonata-clip-picker, window.sonata-clip-picker > contents { background: no
 .clip-panel list > row:selected, .clip-panel list > row:selected:hover {
   background: %(accent_selected)s; color: %(label_on_accent)s; }
 .clip-panel list > row:selected .clip-meta { color: alpha(%(label_on_accent)s, 0.75); }
+.clip-panel .clip-thumb { border-radius: 5px; box-shadow: 0 0 0 0.5px %(hairline)s; }
 .clip-panel .clip-meta { font-size: %(text_small)s; color: %(label_secondary)s; }
 .clip-panel .clip-empty { color: %(label_secondary)s; margin: 18px 12px 22px; }
 @keyframes clip-in { from { opacity: 0; transform: translateY(-6px) scale(0.98); } to { opacity: 1; transform: none; } }
@@ -109,15 +112,27 @@ class ClipboardPicker(Gtk.Window):
     # -- content ----------------------------------------------------------------------------------
     def _fill(self) -> None:
         q = self.search.get_text().strip().casefold()
-        items = [t for t in self.history.items if not q or q in t.casefold()]
+        items = [t for t in self.history.items
+                 if not q or (not isinstance(t, ClipImage) and q in t.casefold()) or (isinstance(t, ClipImage)
+                                                                                    and q in "image")]
         self.list.remove_all()
         for text in items:
             row = Gtk.ListBoxRow()
             row.text = text
-            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-            box.append(Gtk.Label(label=_preview(text), xalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR,
-                                 lines=PREVIEW_LINES, ellipsize=Pango.EllipsizeMode.END, max_width_chars=44))
-            box.append(Gtk.Label(label=_meta(text), xalign=0, css_classes=["clip-meta"]))
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            tex = text.texture(WIDTH - 60, THUMB_H) if isinstance(text, ClipImage) else None
+            if tex is not None:                       # an image: its thumbnail
+                pic = Gtk.Picture(paintable=tex, can_shrink=False, content_fit=Gtk.ContentFit.FILL,
+                                  css_classes=["clip-thumb"], overflow=Gtk.Overflow.HIDDEN)
+                pic.set_size_request(tex.get_width(), tex.get_height())
+                holder = Gtk.Box(halign=Gtk.Align.START)      # the thumbnail at its own size
+                holder.append(pic)
+                box.append(holder)
+                box.append(Gtk.Label(label=str(text), xalign=0, css_classes=["clip-meta"]))
+            else:
+                box.append(Gtk.Label(label=_preview(text), xalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR,
+                                     lines=PREVIEW_LINES, ellipsize=Pango.EllipsizeMode.END, max_width_chars=44))
+                box.append(Gtk.Label(label=_meta(text), xalign=0, css_classes=["clip-meta"]))
             row.set_child(box)
             self.list.append(row)
         self.scroll.set_visible(bool(items))

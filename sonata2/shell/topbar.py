@@ -83,17 +83,14 @@ class Bar(Gtk.CenterBox):
                                    css="icon")
         self.rec_stop.set_tooltip_text("Stop Screen Recording")
         self.rec_stop.set_visible(False)
-        # Now Playing (while a player runs), clipboard history (wl-clipboard),
-        # input source (with 2+ keyboard layouts)
+        # Now Playing (while a player runs), input source (with 2+ keyboard layouts)
         from . import clipboard, mpris
         self.players = mpris.players()
         self.nowplaying = self._item(right, icon="sonata-now-playing-symbolic", on_click=self._nowplaying_panel,
                                      css="icon")
         self.players.listeners.append(self._extras_visibility)
+        # clipboard history: kept here, shown by Super+V (clip_picker.py), no menu bar item
         self.clip = clipboard.History()
-        self.clip_btn = self._item(right, icon="sonata-clipboard-symbolic", on_click=self._clipboard_panel,
-                                   css="icon")
-        self.clip_btn.set_visible(self.clip.available)
         self.input_btn = self._item(right, text="", on_click=self._input_panel)
         self.input_btn.add_css_class("input-src")
         self._update_input()
@@ -633,23 +630,9 @@ class Bar(Gtk.CenterBox):
     def _set_volume(self, v) -> None:
         system.run_async(system.set_volume, lambda _r: self._poll(), int(v), False)
 
-    # -- Now Playing / clipboard / input source -----------------------------------------------
+    # -- Now Playing / input source -----------------------------------------------------------
     def _nowplaying_panel(self, btn):
         pop = ui.panel.popup(btn, ui.panel.column(now_playing_module(self.players, header=True)), gap=2)
-        ui.panel.align_to_start(pop, btn, 2)
-        return pop
-
-    def _clipboard_panel(self, btn):
-        col = ui.panel.column(ui.panel.header("Clipboard"))
-        pop = ui.panel.popup(btn, col, gap=2)
-        for text in self.clip.items:
-            first = " ".join(text.split())
-            col.append(ui.panel.row(None, first[:48] + ("…" if len(first) > 48 else ""),
-                                    on_click=lambda t=text: (pop.popdown(), self.clip.copy(t))))
-        if not self.clip.items:
-            col.append(ui.panel.row(None, "Nothing copied yet"))
-        col.append(ui.panel.separator())
-        col.append(ui.panel.row(None, "Clear History", on_click=lambda: (pop.popdown(), self.clip.clear())))
         ui.panel.align_to_start(pop, btn, 2)
         return pop
 
