@@ -3,10 +3,12 @@ Sonata menu, logind's "lock" requests).
 
 ext-session-lock (Gtk4SessionLock, from gtk4-layer-shell): the compositor
 keeps every output covered until we unlock, even if this process dies.
-Look: the wallpaper, blurred and dimmed; the user's picture, name and a
-capsule password field in the lower middle; date and time at the top right.
-A wrong password shakes the field (macOS). Password checked with PAM
-(sonata2/pam.py) in a thread."""
+Same look and motion as the login screen (loginui.py): the wallpaper
+blurred, the user's picture, name and capsule password field rising into
+the middle, Sleep / Restart / Shut Down at the bottom, the date and time
+at the top right. A wrong password shakes the field; while it's checked
+(PAM, sonata2/pam.py, in a thread) the field turns into a spinner, and on
+success everything fades before the desktop shows."""
 import threading
 
 import gi
@@ -15,7 +17,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 from .. import pam  # noqa: E402
-from .loginui import Backdrop, avatar, clock, password_field, shake, wallpaper_texture  # noqa: E402
+from .loginui import Backdrop, avatar, clock, logind, password_field, power_bar, shake, wallpaper_texture  # noqa: E402
 
 
 class LockScreen:
@@ -41,7 +43,7 @@ class LockScreen:
     def _window(self, monitor, primary):
         win = Gtk.Window(application=self.app)
         win.add_css_class("sonata-lock")
-        over = Gtk.Overlay()
+        over = Gtk.Overlay(css_classes=["gr-fade-in"])
         over.set_child(Backdrop(self.texture))
         when = Gtk.Label(css_classes=["lk-clock"], halign=Gtk.Align.END, valign=Gtk.Align.START,
                          margin_top=8, margin_end=16)
@@ -49,6 +51,8 @@ class LockScreen:
         over.add_overlay(when)
         if primary:
             over.add_overlay(self._login())
+            self.power = power_bar(self._power)
+            over.add_overlay(self.power)
         win.set_child(over)
         self.lock.assign_window_to_monitor(win, monitor)
         win.present()
@@ -56,12 +60,18 @@ class LockScreen:
 
     def _login(self):
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, halign=Gtk.Align.CENTER,
-                      valign=Gtk.Align.CENTER)
+                      valign=Gtk.Align.CENTER, css_classes=["gr-rise"])
+        self.column = col
         col.append(avatar())
         col.append(Gtk.Label(label=GLib.get_real_name() or GLib.get_user_name(), css_classes=["lk-name"]))
         self.entry = password_field()
         self.entry.connect("activate", lambda *_: self._check())
-        col.append(self.entry)
+        self.spinner = Gtk.Spinner(css_classes=["gr-spinner"], halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+        self.slot = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=220,
+                              halign=Gtk.Align.CENTER)
+        self.slot.add_named(self.entry, "field")
+        self.slot.add_named(self.spinner, "spinner")
+        col.append(self.slot)
         self.hint = Gtk.Label(label="" if pam.available() else "PAM is not available: can't check passwords",
                               css_classes=["lk-hint"])
         col.append(self.hint)
@@ -73,6 +83,8 @@ class LockScreen:
         if not pw:
             return
         self.entry.set_sensitive(False)
+        self.spinner.start()
+        self.slot.set_visible_child_name("spinner")
         user = GLib.get_user_name()
 
         def work():
@@ -82,7 +94,16 @@ class LockScreen:
 
     def _done(self, ok):
         if ok:
-            self.lock.unlock()
+            for w in (self.column, self.power):           # fade away, then the desktop
+                w.add_css_class("gr-leave")
+            GLib.timeout_add(400, lambda: (self.lock.unlock(), False)[1])
             return False
+        self.spinner.stop()
+        self.slot.set_visible_child_name("field")
         shake(self.entry)
         return False
+
+    def _power(self, method):
+        """Sleep keeps the lock; Restart and Shut Down ask logind (it asks
+        for a password itself when other users are logged in)."""
+        logind(method)

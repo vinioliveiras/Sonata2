@@ -50,6 +50,50 @@ progressbar.gr-progress progress { min-height: 5px; border-radius: 99px; backgro
 """, key="login-motion")
 
 
+ui.register("""
+.gr-user { background: none; border: none; box-shadow: none; padding: 8px; border-radius: 14px;
+  transition: background-color 180ms ease-out, transform 180ms ease-out; }
+.gr-user:hover { background: rgba(255,255,255,0.12); }
+.gr-user:active { transform: scale(0.96); }
+.gr-power { min-width: 44px; min-height: 44px; padding: 0; border-radius: 99px; border: none;
+  transition: background-color 160ms ease-out, transform 160ms ease-out;
+  background: rgba(255,255,255,0.18); color: white; box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.22);
+  -gtk-icon-size: 20px; }
+.gr-power:hover { background: rgba(255,255,255,0.30); }
+.gr-power:active { transform: scale(0.92); }
+.gr-power-label { color: white; font-size: %(text_small)s; text-shadow: 0 1px 2px rgba(0,0,0,0.45); }
+.gr-link { background: none; border: none; box-shadow: none; color: rgba(255,255,255,0.8);
+  font-size: %(text_small)s; min-height: 22px; padding: 0 8px; border-radius: 99px; }
+.gr-link:hover { background: rgba(255,255,255,0.14); color: white; }
+""", key="login-controls")
+
+
+def power_bar(action) -> Gtk.Widget:
+    """Sleep / Restart / Shut Down along the bottom (macOS login and lock
+    screens); action(method) gets the logind method name."""
+    bar = Gtk.Box(spacing=20, halign=Gtk.Align.CENTER, valign=Gtk.Align.END, margin_bottom=40,
+                  homogeneous=True, css_classes=["gr-rise-late"])
+    for label, icon, method in (("Sleep", "weather-clear-night-symbolic", "Suspend"),
+                                ("Restart", "view-refresh-symbolic", "Reboot"),
+                                ("Shut Down", "system-shutdown-symbolic", "PowerOff")):
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        b = Gtk.Button(icon_name=icon, css_classes=["gr-power"], halign=Gtk.Align.CENTER, tooltip_text=label)
+        b.connect("clicked", lambda _b, m=method: action(m))
+        col.append(b)
+        col.append(Gtk.Label(label=label, css_classes=["gr-power-label"]))
+        bar.append(col)
+    return bar
+
+
+def logind(method: str) -> None:
+    try:
+        Gio.bus_get_sync(Gio.BusType.SYSTEM, None).call(
+            "org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager",
+            method, GLib.Variant("(b)", (True,)), None, 0, -1, None, None, None)
+    except GLib.Error:
+        pass
+
+
 def wallpaper_texture():
     override = os.environ.get("SONATA_LOCK_WALLPAPER")        # previews
     if override:
