@@ -20,18 +20,24 @@ def _rgb(hexcolor):
     return tuple(int(hexcolor[i:i + 2], 16) / 255 for i in (1, 3, 5))
 
 
-def dot(color, glyph=None, surf=None):
+SS = 8                                # PNGs: drawn 8x larger, then scaled down
+
+
+def dot(color, glyph=None, surf=None, scale=1):
     """Drawn with cairo (premultiplied alpha, analytic antialiasing): no dark
     fringe, no ringing. The same drawing makes the PNGs (pixdecor draws
     them 1:1) and the SVGs Sonata's own windows use (sharp at any scale),
     so every window's buttons look and hover the same."""
-    surf = surf or cairo.ImageSurface(cairo.FORMAT_ARGB32, SIZE, SIZE)
+    surf = surf or cairo.ImageSurface(cairo.FORMAT_ARGB32, SIZE * scale, SIZE * scale)
     cr = cairo.Context(surf)
+    cr.scale(scale, scale)
     c = SIZE / 2
-    cr.arc(c, c, c, 0, 2 * math.pi)
+    # a hair inside the tile: a circle touching the pixel grid at its four
+    # extremes renders as a diamond-ish shape at 12 px
+    cr.arc(c, c, c - 0.2, 0, 2 * math.pi)
     cr.set_source_rgb(*_rgb(color))
     cr.fill()
-    cr.arc(c, c, c - 0.25, 0, 2 * math.pi)          # 0.5 px rim inside the edge
+    cr.arc(c, c, c - 0.45, 0, 2 * math.pi)          # 0.5 px rim inside the edge
     cr.set_source_rgba(*RIM)
     cr.set_line_width(0.5)
     cr.stroke()
@@ -61,11 +67,35 @@ def dot(color, glyph=None, surf=None):
     return surf
 
 
+def _png(big, path):
+    """Supersampled: a box filter over 8x8 samples per pixel (in premultiplied
+    alpha), so the edge is evenly antialiased all around the circle."""
+    big.flush()
+    w = big.get_width() // SS
+    data, stride = big.get_data(), big.get_stride()
+    out = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, w)
+    od, ost = out.get_data(), out.get_stride()
+    for y in range(w):
+        for x in range(w):
+            acc = [0, 0, 0, 0]
+            for yy in range(y * SS, y * SS + SS):
+                row = yy * stride
+                for xx in range(x * SS, x * SS + SS):
+                    o = row + xx * 4
+                    for k in range(4):
+                        acc[k] += data[o + k]
+            o = y * ost + x * 4
+            for k in range(4):
+                od[o + k] = (acc[k] + SS * SS // 2) // (SS * SS)
+    out.mark_dirty()
+    out.write_to_png(path)
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     for name, color in COLORS.items():
-        dot(color).write_to_png(os.path.join(OUT, f"{name}.png"))
-        dot(color, name).write_to_png(os.path.join(OUT, f"{name}-hover.png"))
+        for suffix, g in (("", None), ("-hover", name)):
+            _png(dot(color, g, scale=SS), os.path.join(OUT, f"{name}{suffix}.png"))
         for suffix, g in (("", None), ("-hover", name)):     # icon theme: GTK renders SVG there
             svg = cairo.SVGSurface(os.path.join(ICONS, f"sonata-tl-{name}{suffix}.svg"), SIZE, SIZE)
             dot(color, g, svg)
