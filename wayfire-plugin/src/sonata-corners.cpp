@@ -276,7 +276,11 @@ class corners_render_instance_t :
 
         data.pass->custom_gles_subpass(data.target, [&]
         {
-            auto src_tex = get_texture(1.0);
+            /* Always the children rendered to the node's buffer: the zero-copy
+             * path hands out the client buffer with its own source box
+             * (wp_viewporter crop: Chromium, Electron), which this shader
+             * would stretch over bbox -- drawn shifted from where input goes. */
+            auto src_tex = self->get_updated_contents(bbox, data.target.scale, this->children);
             auto gl_tex  = wf::gles_texture_t{src_tex};
 
             data_ptr->program.use(gl_tex.type);
