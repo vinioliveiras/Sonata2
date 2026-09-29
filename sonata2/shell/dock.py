@@ -887,14 +887,34 @@ class Dock(Gtk.Box):
         surface = native.get_surface() if native else None
         if not surface:
             return False
+        elsewhere = self._on_other_displays(surface)
         for key, wins in self.windows.items():
             tile = self.tiles.get(key)
             ok, b = tile.compute_bounds(native) if tile else (False, None)
             if ok:
                 for t in wins:
-                    self.manager.set_rectangle(t, surface, b.get_x(), b.get_y(),
-                                               b.get_width(), b.get_height())
+                    if (t.app_id, t.title) in elsewhere:
+                        # a window on another display: Wayfire can't animate
+                        # across displays (it aimed at the wrong place), so no
+                        # target -- it minimizes with the plain animation
+                        self.manager.set_rectangle(t, surface, 0, 0, 0, 0)
+                    else:
+                        self.manager.set_rectangle(t, surface, b.get_x(), b.get_y(),
+                                                   b.get_width(), b.get_height())
         return False
+
+    def _on_other_displays(self, surface) -> set:
+        """(app_id, title) of the windows on displays other than this Dock's
+        (Wayfire IPC; empty when it can't tell)."""
+        from ..wl.wfipc import WayfireIPC
+        from . import monitors
+        mon = self.get_display().get_monitor_at_surface(surface)
+        mine = monitors.connector(mon) if mon else ""
+        views = WayfireIPC().call("window-rules/list-views") if mine else None
+        if not isinstance(views, list):
+            return set()
+        return {(v.get("app-id", ""), v.get("title", "")) for v in views
+                if v.get("output-name") and v.get("output-name") != mine}
 
     def _clicked(self, key, tile: DockTile) -> None:
         wins = self.windows.get(key)
