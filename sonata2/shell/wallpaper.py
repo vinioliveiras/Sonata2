@@ -2,7 +2,8 @@
 set in the Linux desktop settings (org.gnome.desktop.background
 picture-uri / picture-uri-dark), updated live. The wallpaper is a *Linux*
 setting (shared with other desktops unless changed inside the Sonata session,
-see tools/session-env.sh); Sonata only draws it. Replaces swaybg."""
+see tools/session-env.sh); Sonata only draws it. Replaces swaybg. The
+desktop icons (desktop.py) sit on top of it."""
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -24,8 +25,13 @@ class WallpaperWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Wallpaper", css_classes=["sonata-wallpaper"],
                          decorated=False, resizable=True)
-        self.pic = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, hexpand=True, vexpand=True)
-        self.set_child(self.pic)
+        self.pic = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, hexpand=True, vexpand=True, can_target=False)
+        over = Gtk.Overlay()
+        over.set_child(self.pic)
+        from .desktop import Desktop          # the icons of ~/Desktop on top of the picture
+        self.desktop = Desktop()
+        over.add_overlay(self.desktop)
+        self.set_child(over)
         LS = layer.layer_shell()
         if LS:
             LS.init_for_window(self)
@@ -34,12 +40,17 @@ class WallpaperWindow(Gtk.ApplicationWindow):
             for e in (LS.Edge.TOP, LS.Edge.BOTTOM, LS.Edge.LEFT, LS.Edge.RIGHT):
                 LS.set_anchor(self, e, True)
             LS.set_exclusive_zone(self, -1)
+            LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND)     # Delete, Return... on icons
         src = Gio.SettingsSchemaSource.get_default()
         self.settings = Gio.Settings.new(SCHEMA) if src and src.lookup(SCHEMA, True) else None
         if self.settings:
             self.settings.connect("changed", lambda *_: self.update())
         Adw.StyleManager.get_default().connect("notify::dark", lambda *_: self.update())
         self.update()
+
+    def do_size_allocate(self, w, h, baseline) -> None:
+        Gtk.ApplicationWindow.do_size_allocate(self, w, h, baseline)
+        self.desktop.resized(w, h)
 
     def update(self) -> None:
         if not self.settings:
