@@ -20,7 +20,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, icons, ui  # noqa: E402
-from ..backend import system  # noqa: E402
+from ..backend import equalizer, system  # noqa: E402
 
 SECTIONS = [  # id, title, icon, badge colour, group
     ("wifi", "Wi-Fi", "network-wireless-symbolic", "blue", "linux"),
@@ -52,7 +52,7 @@ SECTIONS = [  # id, title, icon, badge colour, group
 KEYWORDS = {
     "wifi": "wireless network internet ssid password", "network": "ethernet vpn proxy wired ip",
     "bluetooth": "devices headphones mouse keyboard pair", "printers": "printer scanner cups print",
-    "sound": "volume output input microphone speakers headphones effects alert",
+    "sound": "volume output input microphone speakers headphones effects alert equalizer eq bass treble",
     "displays": "screen monitor resolution refresh rate hz scale brightness night shift main display",
     "battery": "power energy low power mode charge sleep display off",
     "wallpaper": "background desktop picture", "keyboard": "layout input source repeat shortcuts",
@@ -78,6 +78,9 @@ window.sonata-settings { color: %(label)s; }
 /* glass sidebar (standard material), opaque content pane */
 .sonata-settings .sidebar-pane { box-shadow: none; }
 /* the line between the panes, on an opaque 1 px column like Files' */
+/* equalizer bands: plain knobs on the track (no fill from the bottom) */
+.st-eq scale > trough > highlight, .st-eq scale:disabled > trough > highlight {
+  background-color: transparent; background-image: none; border-color: transparent; box-shadow: none; }
 .st-divider { min-width: 1px; background: %(pane_bg)s; box-shadow: inset 1px 0 %(separator)s; }
 .st-sidebar headerbar, .st-content headerbar { min-height: 52px; }   /* traffic lights where Files has them */
 .st-sidebar headerbar, .st-sidebar toolbarview, .st-sidebar scrolledwindow,
@@ -576,8 +579,17 @@ class Settings(Adw.ApplicationWindow):
                 cur = next((s.key for s in sources if s.default), ins[0][0])
                 out.add(combo_row("Input device", ins, cur,
                                   lambda k: system.run_async(system.select_input, None, k)))
+        eq = group("Equalizer", "Each output keeps its own settings")
+
+        def fill_eq(sinks):
+            if sinks:
+                self._equalizer(eq, sinks)
+            else:
+                eq.set_visible(False)
         system.run_async(lambda: (system.volume(), system.audio_outputs(), system.audio_inputs(),
-                                  system.input_volume()), fill)
+                                  system.input_volume()), lambda res: (fill(res), fill_eq(res and res[1]
+                                                                                           if equalizer.available()
+                                                                                           else None)))
         from ..sounds import DEFAULTS as SND
         snd = config.load("sounds", SND)
         effects = group("Sound Effects")
@@ -586,7 +598,97 @@ class Settings(Adw.ApplicationWindow):
                                subtitle="Moving to the Trash, emptying it, copies finished, screenshots"))
         effects.add(switch_row("Play feedback when volume is changed", snd["volume_feedback"],
                                lambda on: self._save("sounds", "volume_feedback", on)))
-        return [vol, out, effects]
+        return [vol, out, eq, effects]
+
+    def _equalizer(self, grp, outputs) -> None:
+        """Output picker (the one in use first), on/off, preset, ten bands."""
+        E = equalizer
+        keys = [(d.key, d.name) for d in outputs if "|" in d.key]
+        if not keys:
+            grp.set_visible(False)
+            return
+        state = {"key": next((d.key for d in outputs if d.default and "|" in d.key), keys[0][0])}
+        names = list(E.PRESETS) + ["Custom"]
+        on = Adw.SwitchRow(title="Equalizer")
+        preset = Adw.ComboRow(title="Preset", model=Gtk.StringList.new(names))
+        bands = Gtk.Box(homogeneous=True, spacing=6, margin_end=12)
+        scales = []
+        axis = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)          # dB scale, like Music's
+        for i, t in enumerate(("+12 dB", "0 dB", "-12 dB")):
+            axis.append(Gtk.Label(label=t, css_classes=["st-caption"], xalign=1, vexpand=True,
+                                  valign=(Gtk.Align.START, Gtk.Align.CENTER, Gtk.Align.END)[i]))
+        axis.set_size_request(-1, 150)
+        axis_col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        axis_col.append(axis)
+        axis_col.append(Gtk.Label(label=" ", css_classes=["st-caption"]))
+        for label in E.LABELS:
+            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            sc = Gtk.Scale.new_with_range(Gtk.Orientation.VERTICAL, -E.MAX_DB, E.MAX_DB, 0.5)
+            sc.set_inverted(True)
+            sc.set_draw_value(False)
+            sc.set_size_request(-1, 150)
+            sc.set_halign(Gtk.Align.CENTER)
+            col.append(sc)
+            col.append(Gtk.Label(label=label, css_classes=["st-caption"]))
+            bands.append(col)
+            scales.append(sc)
+        wrap = Gtk.Box(spacing=8, margin_start=12, margin_top=12, margin_bottom=12)
+        wrap.append(axis_col)
+        bands.set_hexpand(True)
+        bands.set_margin_start(0)
+        wrap.append(bands)
+        wrap.add_css_class("st-eq")
+        row = Gtk.ListBoxRow(activatable=False, selectable=False, child=wrap)
+        busy = {"on": False}
+
+        def show():
+            c = E.curve(state["key"])
+            busy["on"] = True
+            on.set_active(c["on"])
+            preset.set_selected(names.index(c["preset"]) if c["preset"] in names else len(names) - 1)
+            for sc, g in zip(scales, c["gains"]):
+                sc.set_value(g)
+            for w in (preset, row):
+                w.set_sensitive(c["on"])
+            busy["on"] = False
+
+        def changed_on(r, _p):
+            if not busy["on"]:
+                E.set_curve(state["key"], on=r.get_active())
+                show()
+
+        def changed_preset(r, _p):
+            name = names[r.get_selected()]
+            if not busy["on"] and name != "Custom":
+                E.set_curve(state["key"], preset=name)
+                show()
+        pending = {"src": 0}
+
+        def changed_band(*_a):
+            if busy["on"]:
+                return
+            if pending["src"]:
+                GLib.source_remove(pending["src"])
+
+            def save():
+                pending["src"] = 0
+                E.set_curve(state["key"], gains=[sc.get_value() for sc in scales])
+                c = E.curve(state["key"])
+                busy["on"] = True
+                preset.set_selected(names.index(c["preset"]) if c["preset"] in names else len(names) - 1)
+                busy["on"] = False
+                return False
+            pending["src"] = GLib.timeout_add(120, save)     # dragging: save (and apply) ~8x/s
+        on.connect("notify::active", changed_on)
+        preset.connect("notify::selected", changed_preset)
+        for sc in scales:
+            sc.connect("value-changed", changed_band)
+        if len(keys) > 1:
+            grp.add(combo_row("Output", keys, state["key"], lambda k: (state.update(key=k), show())))
+        grp.add(on)
+        grp.add(preset)
+        grp.add(row)
+        show()
 
     def _page_displays(self):
         bright = group("Brightness")

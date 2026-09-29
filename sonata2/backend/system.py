@@ -591,6 +591,8 @@ def _pactl_devices(kind: str) -> Optional[List[AudioDevice]]:
         name = n.get("name", "")
         if kind == "sources" and name.endswith(".monitor"):
             continue                                          # "Monitor of ..." isn't a microphone
+        if name.startswith("sonata-eq"):
+            continue                                          # the equalizer's filters (equalizer.py)
         desc = n.get("description") or name
         all_ports = n.get("ports") or []
         ports = [p for p in all_ports if p.get("availability") != "not available"]

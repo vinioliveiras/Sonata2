@@ -1146,6 +1146,10 @@ class TopBarWindow(Gtk.ApplicationWindow):
             self.bar.nightshift = NightShift()
             from .idlelock import IdleLock
             self.bar.idlelock = IdleLock()
+            from ..backend.equalizer import Equalizer
+            self.bar.equalizer = Equalizer()
+            self.bar.equalizer.start()
+            app.connect("shutdown", lambda *_: self.bar.equalizer.stop())
         if not preview and not secondary:
             # Title bars Wayfire draws (terminals, X11 apps) follow Dark Mode
             # live too: the menu bar always runs, so it keeps them in sync.
