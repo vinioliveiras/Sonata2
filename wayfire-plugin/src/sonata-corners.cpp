@@ -80,6 +80,8 @@ precision highp float;
 uniform vec2 size;
 uniform vec4 rect;
 uniform float radius;
+uniform vec4 shadow;          /* pixdecor's shadow colour (premultiplied), 0 without it */
+uniform float shadow_radius;
 
 varying highp vec2 uvpos;
 
@@ -93,7 +95,12 @@ void main()
     {
         vec2 q = clamp(p, lo + vec2(radius), hi - vec2(radius));
         float d = length(p - q);
-        c *= clamp(radius + 0.5 - d, 0.0, 1.0);
+        float cover = clamp(radius + 0.5 - d, 0.0, 1.0);
+        /* beyond the arc: the decoration's shadow, as pixdecor draws it
+         * there (it was hidden under the window's square corner) */
+        float da = max(0.0, d - radius);
+        float k = shadow_radius > 0.0 ? exp(-pow(da / shadow_radius, 2.0)) : 0.0;
+        c = c * cover + shadow * k * (1.0 - cover);
     }
     gl_FragColor = c;
 }
@@ -142,10 +149,50 @@ static double decoration_shadow(wayfire_toplevel_view view)
     }
 }
 
+static std::string option_str(const std::string& name)
+{
+    auto opt = wf::get_core().config->get_option(name);
+    return opt ? opt->get_value_str() : "";
+}
+
+/* pixdecor's shadow colour (premultiplied) and radius, when its rounded
+ * engine draws a shadow; zeros otherwise */
+static void decoration_shadow_style(glm::vec4& color, float& radius)
+{
+    color  = glm::vec4{0, 0, 0, 0};
+    radius = 0;
+    if (option_str("pixdecor/overlay_engine") != "rounded_corners")
+    {
+        return;
+    }
+
+    auto col = wf::option_type::from_string<wf::color_t>(option_str("pixdecor/shadow_color"));
+    if (col)
+    {
+        color = glm::vec4{col->r * col->a, col->g * col->a, col->b * col->a, col->a};
+    }
+
+    try {
+        radius = std::stoi(option_str("pixdecor/shadow_radius"));
+    } catch (...)
+    {
+        radius = 0;
+    }
+}
+
 /* The radius option, read without option_wrapper_t: a wrapper throws (and
  * aborts Wayfire) when the plugin's XML wasn't loaded when Wayfire started. */
 static float corner_radius()
 {
+    /* pixdecor's own corner radius when it rounds the frame: the arcs meet */
+    if (option_str("pixdecor/overlay_engine") == "rounded_corners")
+    {
+        try {
+            return std::max(0, std::stoi(option_str("pixdecor/rounded_corner_radius")));
+        } catch (...)
+        {}
+    }
+
     auto opt = wf::get_core().config->get_option("sonata-corners/radius");
     if (!opt)
     {
@@ -236,6 +283,11 @@ class corners_render_instance_t :
             data_ptr->program.uniform2f("size", bbox.width, bbox.height);
             data_ptr->program.uniform4f("rect", glm::vec4{rx, ry, rw, rh});
             data_ptr->program.uniform1f("radius", radius);
+            glm::vec4 shadow_color;
+            float shadow_r;
+            decoration_shadow_style(shadow_color, shadow_r);
+            data_ptr->program.uniform4f("shadow", shadow_color);
+            data_ptr->program.uniform1f("shadow_radius", shadow_r);
             data_ptr->program.attrib_pointer("position", 2, 0, vertexData);
             data_ptr->program.attrib_pointer("texcoord", 2, 0, texCoords);
             data_ptr->program.uniformMatrix4f("mvp", wf::gles::output_transform(data.target));
@@ -322,6 +374,10 @@ class sonata_corners_t : public wf::plugin_interface_t
         {
             /* innermost: the corners are cut before any other transform */
             tnode->add_transformer(std::make_shared<corners_node_t>(view), 0, transformer_name);
+            auto g = view->get_geometry();
+            auto m = view->toplevel()->current().margins;
+            LOGI("sonata-corners: ", view->get_app_id(), " geometry ", g.x, ",", g.y, " ", g.width, "x",
+                g.height, " margins ", m.left, "/", m.top, "/", m.right, "/", m.bottom);
         } else if (!wanted(view) && have)
         {
             tnode->rem_transformer(have);

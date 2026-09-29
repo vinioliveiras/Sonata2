@@ -466,10 +466,22 @@ class Dock(Gtk.Box):
         return int(max(MIN_SIZE, min(self.user_size, fit)))
 
     def refit(self) -> bool:
+        self._refit_src = 0
+        if self._span() <= 0:
+            # the surface isn't laid out along the edge yet (login): try again
+            # shortly instead of waiting for the next click to re-layout
+            self._refit_tries = getattr(self, "_refit_tries", 0) + 1
+            if self._refit_tries < 50:
+                self._refit_src = GLib.timeout_add(100, self.refit)
+            return False
+        self._refit_tries = 0
         size = self._fit_size()
         if size != self.cfg["icon_size"]:
             self.set_icon_size(size, save=False, chosen=False)
-        self._refit_src = 0
+            self.queue_resize()
+            parent = self.get_parent()
+            if parent is not None:
+                parent.queue_resize()
         return False
 
     def refit_soon(self) -> None:
