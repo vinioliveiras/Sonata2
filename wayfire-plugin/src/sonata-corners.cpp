@@ -289,6 +289,13 @@ class corners_render_instance_t :
             glm::vec4 shadow_color;
             float shadow_r;
             decoration_shadow_style(shadow_color, shadow_r);
+            if (inset <= 0)
+            {
+                /* no shadow around this frame (maximized, tiled): nothing
+                 * beyond the arc -- a tint there showed as a dark square */
+                shadow_color = glm::vec4{0, 0, 0, 0};
+                shadow_r     = 0;
+            }
             data_ptr->program.uniform4f("shadow", shadow_color);
             data_ptr->program.uniform1f("shadow_radius", shadow_r);
             data_ptr->program.attrib_pointer("position", 2, 0, vertexData);
