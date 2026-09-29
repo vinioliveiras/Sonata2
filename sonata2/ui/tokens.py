@@ -88,16 +88,16 @@ DARK = {
     "control_off": "rgba(255, 255, 255, 0.14)",
     "knob": "#d9d9d9",
     "tl_disabled": "#4a4a4e",
-    "glass_tint": "rgba(16, 16, 20, 0.80)",
+    "glass_tint": "rgba(16, 16, 20, 0.68)",
     "solid_tint": "rgba(30, 30, 34, 0.86)",
     "indicator": "rgba(255, 255, 255, 0.72)",
-    "bar_bg": "rgba(16, 16, 20, 0.80)",           # = glass_tint
-    "titlebar_bg": "rgba(16, 16, 20, 0.80)",
-    "titlebar_bg_inactive": "rgba(30, 30, 34, 0.86)",
+    "bar_bg": "rgba(16, 16, 20, 0.68)",           # = glass_tint
+    "titlebar_bg": "rgba(16, 16, 20, 0.68)",
+    "titlebar_bg_inactive": "rgba(30, 30, 34, 0.76)",
     "titlebar_text": "rgba(230, 230, 230, 1)",
     "titlebar_text_inactive": "rgba(138, 138, 138, 1)",
     "window_outline": "rgba(255, 255, 255, 0.14)",       # dark windows: a light edge, like macOS
-    "calc_bg": "rgba(30, 30, 32, 0.82)",
+    "calc_bg": "rgba(30, 30, 32, 0.72)",
     "calc_display": "#ffffff",
     "calc_key": "rgba(255, 255, 255, 0.20)",
     "calc_key_fn": "rgba(255, 255, 255, 0.10)",
