@@ -123,7 +123,10 @@ def set_icon(image: Gtk.Image, info, small=False) -> None:
     """The item's icon. small=True (16 px rows): drawn from the 32 px artwork,
     like Finder's full-colour small icons (themes' 16 px folders are outlines)."""
     gicon = info.get_icon()
-    if info.get_content_type() == "application/x-zerosize":
+    app = _launcher_icon(info)
+    if app is not None:                         # an app shortcut (.desktop): the app's icon
+        gicon = app
+    elif info.get_content_type() == "application/x-zerosize":
         gicon = Gio.content_type_get_icon(content_type(info))
     if not gicon:
         gicon = Gio.ThemedIcon.new("text-x-generic")
@@ -137,6 +140,45 @@ def set_icon(image: Gtk.Image, info, small=False) -> None:
     if thumbs.wanted(info):
         thumbs.request(info, folder.file_of(info),
                        lambda tex: image.thumb_for is info and image.set_from_paintable(tex))
+
+
+_launchers = {}      # .desktop path -> (mtime, gicon or None)
+
+
+def label(info) -> str:
+    """The name shown: an app shortcut shows its app's name (like the
+    desktop and Finder), everything else its file name."""
+    if info.get_name().endswith(".desktop"):
+        path = folder.file_of(info).get_path() or ""
+        try:
+            from ..apps import DesktopAppInfo
+            app = DesktopAppInfo.new_from_filename(path)
+            if app is not None:
+                return app.get_display_name()
+        except (TypeError, GLib.Error):
+            pass
+    return info.get_display_name()
+
+
+def _launcher_icon(info):
+    """The app icon of a .desktop shortcut (like Finder's aliases to apps), or None."""
+    if not info.get_name().endswith(".desktop"):
+        return None
+    path = folder.file_of(info).get_path() or ""
+    key = info.get_modification_date_time()
+    stamp = key.to_unix() if key else 0
+    hit = _launchers.get(path)
+    if hit and hit[0] == stamp:
+        return hit[1]
+    gicon = None
+    try:
+        from ..apps import DesktopAppInfo
+        app = DesktopAppInfo.new_from_filename(path)
+        gicon = icons.app_icon(app) if app else None
+    except (TypeError, GLib.Error):
+        pass
+    _launchers[path] = (stamp, gicon)
+    return gicon
 
 
 def _hidden(info) -> bool:
@@ -341,7 +383,7 @@ class IconsView(_Cells):
     def _bind(self, _f, item):
         info, box = item.get_item(), item.get_child()
         set_icon(box.img, info)
-        box.lbl.set_label(info.get_display_name())
+        box.lbl.set_label(label(info))
         (box.add_css_class if _hidden(info) else box.remove_css_class)("fs-hidden")
         self._track(box, info)
 
@@ -424,7 +466,7 @@ class ListView(_Cells):
     def _bind_name(self, _f, item):
         info, box = item.get_item(), item.get_child()
         set_icon(box.img, info, small=True)
-        box.lbl.set_label(info.get_display_name())
+        box.lbl.set_label(label(info))
         (box.add_css_class if _hidden(info) else box.remove_css_class)("fs-hidden")
         self._track(box, info)
 
@@ -492,7 +534,7 @@ class _Column(Gtk.ScrolledWindow, _Cells):
     def _bind(self, _f, item):
         info, box = item.get_item(), item.get_child()
         set_icon(box.img, info, small=True)
-        box.lbl.set_label(info.get_display_name())
+        box.lbl.set_label(label(info))
         box.chev.set_visible(is_dir(info))
         (box.add_css_class if _hidden(info) else box.remove_css_class)("fs-hidden")
         self._track(box, info)
@@ -635,7 +677,7 @@ def _preview(info) -> Gtk.Widget:
     img = Gtk.Image(pixel_size=128, margin_bottom=10)
     set_icon(img, info)
     box.append(img)
-    box.append(Gtk.Label(label=info.get_display_name(), wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR,
+    box.append(Gtk.Label(label=label(info), wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR,
                          justify=Gtk.Justification.CENTER, css_classes=["fs-preview-name"]))
     box.append(Gtk.Label(label=f"{kind(info)} – {size(info)}", css_classes=["fs-preview-kind"]))
     grid = Gtk.Grid(column_spacing=8, row_spacing=2, margin_top=14, halign=Gtk.Align.CENTER)

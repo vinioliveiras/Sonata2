@@ -22,7 +22,9 @@ window.sonata-wallpaper { background-image: linear-gradient(160deg, #1d3b8f 0%%,
 
 
 class WallpaperWindow(Gtk.ApplicationWindow):
-    def __init__(self, app):
+    """One per display (monitors.each); the desktop icons only on the main one."""
+
+    def __init__(self, app, monitor=None, desktop: bool = True):
         super().__init__(application=app, title="Wallpaper", css_classes=["sonata-wallpaper"],
                          decorated=False, resizable=True)
         # two pictures in a cross-fading stack: a new wallpaper (or the dark
@@ -37,19 +39,23 @@ class WallpaperWindow(Gtk.ApplicationWindow):
         self.sonata_no_fade = True            # fades its own pictures (ui.theme skips it)
         over = Gtk.Overlay()
         over.set_child(self.stack)
-        from .desktop import Desktop          # the icons of ~/Desktop on top of the picture
-        self.desktop = Desktop()
-        over.add_overlay(self.desktop)
+        self.desktop = None
+        if desktop:
+            from .desktop import Desktop      # the icons of ~/Desktop on top of the picture
+            self.desktop = Desktop()
+            over.add_overlay(self.desktop)
         self.set_child(over)
         LS = layer.layer_shell()
         if LS:
             LS.init_for_window(self)
             LS.set_namespace(self, "sonata2-wallpaper")
+            if monitor is not None:
+                LS.set_monitor(self, monitor)
             LS.set_layer(self, LS.Layer.BACKGROUND)
             for e in (LS.Edge.TOP, LS.Edge.BOTTOM, LS.Edge.LEFT, LS.Edge.RIGHT):
                 LS.set_anchor(self, e, True)
             LS.set_exclusive_zone(self, -1)
-            LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND)     # Delete, Return... on icons
+            LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND if desktop else LS.KeyboardMode.NONE)
         src = Gio.SettingsSchemaSource.get_default()
         self.settings = Gio.Settings.new(SCHEMA) if src and src.lookup(SCHEMA, True) else None
         if self.settings:
@@ -59,7 +65,8 @@ class WallpaperWindow(Gtk.ApplicationWindow):
 
     def do_size_allocate(self, w, h, baseline) -> None:
         Gtk.ApplicationWindow.do_size_allocate(self, w, h, baseline)
-        self.desktop.resized(w, h)
+        if self.desktop is not None:
+            self.desktop.resized(w, h)
 
     def update(self) -> None:
         if not self.settings:

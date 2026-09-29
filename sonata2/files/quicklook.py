@@ -30,7 +30,6 @@ button.ql-open:hover { background: alpha(%(label)s, 0.14); }
 .ql-text { font-family: "SF Mono", monospace; font-size: 12px; background: %(content_bg)s; }
 .ql-big-name { font-weight: 700; font-size: 18px; }
 .ql-meta { color: %(label_secondary)s; }
-window.sonata-info { background: %(window_bg)s; }
 .gi-name { font-weight: 700; font-size: %(text_body)s; }
 .gi-key { color: %(label_secondary)s; font-size: %(text_small)s; font-weight: 700; }
 .gi-val { font-size: %(text_small)s; }
@@ -144,7 +143,8 @@ class GetInfo(Adw.Window):
         super().__init__(transient_for=None, default_width=300,
                          title=f"{info.get_display_name()} Info")
         self.set_size_request(240, 200)
-        self.add_css_class("sonata-info")
+        for c in ("sonata-info", "sonata-glass-window"):       # frosted glass, like the Dock
+            self.add_css_class(c)
         ui.window.standard(self)
         f = file_of(info)
         from .views import kind, size, set_icon

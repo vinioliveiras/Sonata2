@@ -520,9 +520,19 @@ class Settings(Adw.ApplicationWindow):
                                       lambda x: system.run_async(system.set_brightness, None, int(x))))
             else:
                 bright.add(Adw.ActionRow(title="Brightness", subtitle="No backlight control (brightnessctl)"))
+            if len(ds) > 1:
+                from ..shell.monitors import DEFAULTS as MON
+                cur_main = config.load("displays", MON)["main"]
+                builtin = next((d.name for d in ds if d.name.startswith(("eDP", "LVDS", "DSI"))), ds[0].name)
+                screens.add(combo_row("Main display", [(d.name, d.description or d.name) for d in ds],
+                                      cur_main if cur_main in [d.name for d in ds] else builtin,
+                                      lambda n: config.save("displays", {"main": n}),
+                                      subtitle="Dock and desktop icons; every display gets a menu bar"))
             for d in ds:
-                screens.add(combo_row(f"{d.name}", [(m, m.replace("@", " @ ").split(".")[0] + " Hz")
-                                                    for m in d.modes], d.current,
+                saved = system.display_mode_setting(d.name)
+                opts = [("highrr", "Highest refresh rate")] + \
+                    [(m, m.replace("@", " @ ").split(".")[0] + " Hz") for m in d.modes]
+                screens.add(combo_row(d.name, opts, saved if saved in [o[0] for o in opts] else d.current,
                                       lambda m, d=d: system.run_async(system.set_display_mode, None, d.name, m),
                                       subtitle=d.description))
                 screens.add(combo_row("Scale", [(1.0, "100 %"), (1.25, "125 %"), (1.5, "150 %"), (2.0, "200 %")],

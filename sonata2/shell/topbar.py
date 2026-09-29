@@ -53,7 +53,6 @@ window.sonata-topbar, window.sonata-topbar > contents { background: none; box-sh
 .about-name { font-family: %(font_display)s; font-size: 26px; font-weight: 700; }
 .about-version { color: %(label_secondary)s; margin-bottom: 14px; }
 .about-key { font-weight: 700; }
-window.sonata-about { background: %(window_bg)s; }
 """, key="topbar", bar_h=BAR_H, item_h=BAR_H - 2)
 
 
@@ -120,11 +119,18 @@ class Bar(Gtk.CenterBox):
         self._cfg_mon = config.watch("topbar", self._config_changed)
         if self.manager:
             self.manager.listeners.append(self._active_changed)
+        self.alive = True                        # False once its display is gone (timers stop)
         self._tick_clock()
         self._active_changed()
         self._poll()
-        GLib.timeout_add_seconds(POLL_S, lambda: (self._poll(), True)[1])
-        power.watch(self._poll_battery)          # plugged in / charging / level: at once, not at the next poll
+        GLib.timeout_add_seconds(POLL_S, lambda: (self.alive and self._poll(), self.alive)[1])
+        power.watch(lambda: self.alive and self._poll_battery())    # plug / charge / level: at once
+
+    def stop(self) -> None:
+        """Its display was unplugged: no more polling or listening."""
+        self.alive = False
+        if self.manager and self._active_changed in self.manager.listeners:
+            self.manager.listeners.remove(self._active_changed)
 
     def _extras_visibility(self) -> None:
         self.nowplaying.set_visible(self.cfg["show_now_playing"] and self.players.active)
@@ -348,7 +354,8 @@ class Bar(Gtk.CenterBox):
         now = GLib.DateTime.new_now_local()
         fmt = self.cfg["clock_format"]
         self._set_text(self.clock, now.format(fmt) or now.format("%a %H:%M"))
-        GLib.timeout_add_seconds(max(1, 60 - now.get_second()), self._tick_clock)
+        if self.alive:
+            GLib.timeout_add_seconds(max(1, 60 - now.get_second()), self._tick_clock)
         return False
 
     def _calendar(self, btn):
@@ -986,7 +993,8 @@ class AboutWindow(Adw.Window):
 
     def __init__(self):
         super().__init__(title="About This Computer", default_width=720, default_height=300)
-        self.add_css_class("sonata-about")
+        for c in ("sonata-about", "sonata-glass-window"):       # frosted glass, like the Dock
+            self.add_css_class(c)
         ui.window.standard(self)
         self.set_size_request(320, 260)
         head = ui.window.titlebar(self, zoom=True)
@@ -1038,7 +1046,8 @@ def _scroller(child) -> Gtk.ScrolledWindow:
 class AboutAppWindow(Adw.Window):
     def __init__(self, info, name):
         super().__init__(title=f"About {name}", default_width=360)
-        self.add_css_class("sonata-about")
+        for c in ("sonata-about", "sonata-glass-window"):       # frosted glass, like the Dock
+            self.add_css_class(c)
         ui.window.standard(self)
         self.set_size_request(260, 220)
         head = ui.window.titlebar(self, zoom=True)
@@ -1102,15 +1111,22 @@ def _listen_for_lock() -> None:
 
 
 class TopBarWindow(Gtk.ApplicationWindow):
-    def __init__(self, app, preview: bool = False):
+    """The menu bar of one display. The main display's (secondary=False)
+    also runs the menu bar's services (notifications, Night Shift, lock...);
+    other displays get the same bar without them (macOS: a menu bar on
+    every display)."""
+
+    def __init__(self, app, preview: bool = False, monitor=None, manager=None, secondary: bool = False):
         super().__init__(application=app, title="Menu Bar", css_classes=["sonata-topbar"], decorated=False,
                          resizable=True)
-        from ..wl.toplevels import ToplevelManager
-        self.manager = ToplevelManager(Gdk.Display.get_default(),
-                                       ignore_app_ids={"io.github.vinioliveiras.sonata2.topbar"})
+        if manager is None:
+            from ..wl.toplevels import ToplevelManager
+            manager = ToplevelManager(Gdk.Display.get_default(),
+                                      ignore_app_ids={"io.github.vinioliveiras.sonata2.topbar"})
+        self.manager = manager
         self.bar = Bar(self.manager)
         self.set_size_request(-1, BAR_H)
-        if not preview:
+        if not preview and not secondary:
             from .notifications import Notifications
             self.bar.notifications = Notifications(app)
             _listen_for_lock()
@@ -1118,7 +1134,7 @@ class TopBarWindow(Gtk.ApplicationWindow):
             self.bar.nightshift = NightShift()
             from .idlelock import IdleLock
             self.bar.idlelock = IdleLock()
-        if not preview:
+        if not preview and not secondary:
             # Title bars Wayfire draws (terminals, X11 apps) follow Dark Mode
             # live too: the menu bar always runs, so it keeps them in sync.
             sm = Adw.StyleManager.get_default()
@@ -1132,6 +1148,8 @@ class TopBarWindow(Gtk.ApplicationWindow):
                 LS = layer.layer_shell()
                 LS.init_for_window(self)
                 LS.set_namespace(self, "sonata2-topbar")
+                if monitor is not None:
+                    LS.set_monitor(self, monitor)
                 LS.set_layer(self, LS.Layer.TOP)
                 for e in (LS.Edge.TOP, LS.Edge.LEFT, LS.Edge.RIGHT):
                     LS.set_anchor(self, e, True)

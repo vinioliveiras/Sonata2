@@ -927,6 +927,12 @@ class DockWindow(Gtk.ApplicationWindow):
         self.set_child(self.dock)
         if not self.layer:
             self.layer = layer.anchor_edge(self, "sonata2-dock", edge, self._exclusive())
+            if self.layer:                          # on the main display; follows it (monitors.py)
+                from . import monitors
+                m = monitors.main()
+                if m is not None:
+                    layer.layer_shell().set_monitor(self, m)
+                monitors.on_main_changed(self._move_to)
         else:
             layer.set_edge(self, edge, self._exclusive())
         self._hidden = False
@@ -982,6 +988,15 @@ class DockWindow(Gtk.ApplicationWindow):
 
     def _thickness(self) -> int:
         return SHADOW + PAD_TOP + max_icon(self.cfg) + dot_row(self.cfg) + self.cfg["edge_gap"]
+
+    def _move_to(self, monitor) -> None:
+        """The main display changed (Settings, or it was unplugged)."""
+        if monitor is None:
+            return
+        visible = self.get_visible()
+        self.set_visible(False)
+        layer.layer_shell().set_monitor(self, monitor)
+        self.set_visible(visible)
 
     def set_above(self, on: bool) -> None:
         """Over Launchpad (OVERLAY) while it is open, TOP otherwise (fullscreen

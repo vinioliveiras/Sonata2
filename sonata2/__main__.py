@@ -261,14 +261,49 @@ def run_lock(app, args, ui, state):
 
 def run_wallpaper(app, args, ui):
     from .shell.wallpaper import WallpaperWindow
-    WallpaperWindow(app).present()
+    from .shell import layer, monitors
+    if not layer.layer_shell():                     # a plain window (no layer-shell): just one
+        WallpaperWindow(app).present()
+        return
+    app.hold()
+
+    def create(m):
+        w = WallpaperWindow(app, m, desktop=m is monitors.main())
+        w.present()
+        return w
+    walls = monitors.each(create, lambda w: w.destroy())
+    monitors.on_main_changed(lambda _m: walls.rebuild())     # the desktop icons follow the main display
 
 
 def run_topbar(app, args, ui):
     from gi.repository import Gio, GLib
-    from .shell import topbar
-    win = topbar.TopBarWindow(app, preview=args.preview)
+    from .shell import layer, monitors, topbar
+    main_mon = None if args.preview or not layer.layer_shell() else monitors.main()
+    win = topbar.TopBarWindow(app, preview=args.preview, monitor=main_mon)
     win.present()
+    if main_mon is not None:
+        monitors.ensure_refresh()                # displays run at their highest refresh rate
+
+        def create(m):                           # the other displays: a menu bar each (macOS)
+            if m is monitors.main():
+                return None
+            w = topbar.TopBarWindow(app, monitor=m, manager=win.manager, secondary=True)
+            w.present()
+            return w
+
+        def destroy(w):
+            if w is not None:
+                w.bar.stop()
+                w.destroy()
+        others = monitors.each(create, destroy)
+
+        def main_changed(m):                     # the main bar moves; the others follow
+            LS = layer.layer_shell()
+            win.set_visible(False)
+            LS.set_monitor(win, m)
+            win.set_visible(True)
+            others.rebuild()
+        monitors.on_main_changed(main_changed)
     # HUD for the media keys (`sonata2 key ...` activates this over D-Bus)
     from .shell.osd import OSD
     osd = {}

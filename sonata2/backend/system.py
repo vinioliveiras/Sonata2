@@ -675,12 +675,27 @@ def displays() -> List[Display]:
     return result
 
 
+def display_mode_setting(name: str) -> str:
+    """The saved mode of a display: "highrr" (highest refresh rate, the
+    default), or "1920x1080@143.981" as wlr-randr writes it."""
+    v = wayfire_get(f"output:{name}", "mode", "highrr") or "highrr"
+    m = re.fullmatch(r"(\d+x\d+)@(\d+)", v)
+    if m and int(m.group(2)) > 1000:                  # Wayfire keeps mHz
+        return f"{m.group(1)}@{int(m.group(2)) / 1000:.3f}"
+    return v
+
+
 def set_display_mode(name: str, mode: str) -> bool:
-    return _run(["wlr-randr", "--output", name, "--mode", mode], timeout=10)[0] == 0
+    """Saved in the session's Wayfire config (kept across logins; Wayfire
+    applies it at once). "highrr" = the highest refresh rate available."""
+    if mode not in ("highrr", "highres", "auto"):
+        res, _, hz = mode.partition("@")
+        mode = f"{res}@{round(float(hz or 60) * 1000)}"
+    return wayfire_set(f"output:{name}", "mode", mode)
 
 
 def set_display_scale(name: str, scale: float) -> bool:
-    return _run(["wlr-randr", "--output", name, "--scale", str(scale)], timeout=10)[0] == 0
+    return wayfire_set(f"output:{name}", "scale", scale)
 
 
 # -- power profiles -------------------------------------------------------------------------------

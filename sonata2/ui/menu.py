@@ -43,6 +43,14 @@ popover.menu modelbutton check { min-width: 12px; min-height: 12px; margin-right
   border: none; background: none; box-shadow: none; color: inherit; -gtk-icon-size: 12px; }
 popover.menu modelbutton arrow { -gtk-icon-size: 12px; color: inherit; }
 popover.menu separator { margin: 5px 10px; min-height: 1px; background-color: %(separator)s; }
+/* rows with a small x (Dock: an app's windows) */
+popover.menu .sonata-menu-row { min-height: %(control_h)s; border-radius: %(r_menu_row)s; padding: 0 4px 0 0; }
+popover.menu .sonata-menu-row:hover { background-color: %(accent_selected)s; color: %(label_on_accent)s; }
+popover.menu .sonata-menu-row-label { background: none; border: none; box-shadow: none; padding: 0 10px;
+  min-height: %(control_h)s; color: inherit; font-weight: normal; }
+popover.menu .sonata-menu-x { min-width: 16px; min-height: 16px; padding: 0; border-radius: 99px; border: none;
+  background: none; box-shadow: none; color: inherit; opacity: 0.55; -gtk-icon-size: 10px; }
+popover.menu .sonata-menu-x:hover { opacity: 1; background: alpha(currentColor, 0.18); }
 """)
 
 
@@ -59,16 +67,23 @@ class Item:
     checked: Optional[bool] = None              # None = plain item, bool = checkmark item
     enabled: bool = True
     submenu: list = field(default_factory=list)  # list of sections
+    on_close: Optional[Callable] = None         # a small x at the right (e.g. close that window)
 
 
-def _build(sections, group, prefix="i") -> Gio.Menu:
+def _build(sections, group, prefix="i", customs=None) -> Gio.Menu:
     model = Gio.Menu()
     for s_i, section in enumerate(sections):
         sec = Gio.Menu()
         for i_i, item in enumerate(section):
             name = f"{prefix}{s_i}_{i_i}"
             if item.submenu:
-                sec.append_submenu(item.label, _build(item.submenu, group, name + "_"))
+                sec.append_submenu(item.label, _build(item.submenu, group, name + "_", customs))
+                continue
+            if item.on_close is not None and customs is not None:     # a row with its own x
+                mi = Gio.MenuItem.new(None, None)
+                mi.set_attribute_value("custom", GLib.Variant("s", name))
+                sec.append_item(mi)
+                customs.append((name, item))
                 continue
             if item.checked is None:
                 act = Gio.SimpleAction.new(name, None)
@@ -84,15 +99,34 @@ def _build(sections, group, prefix="i") -> Gio.Menu:
     return model
 
 
+def _closable_row(pop, item) -> Gtk.Widget:
+    """A menu row with a small x on the right: the label does the item's
+    action (and closes the menu); the x runs on_close and removes the row."""
+    row = Gtk.Box(css_classes=["sonata-menu-row"], hexpand=True)
+    main = Gtk.Button(child=Gtk.Label(label=item.label, xalign=0, ellipsize=3, max_width_chars=40),
+                      css_classes=["sonata-menu-row-label"], hexpand=True, can_focus=False)
+    main.set_sensitive(item.enabled)
+    main.connect("clicked", lambda *_: (pop.popdown(), item.on_activate and item.on_activate()))
+    x = Gtk.Button(icon_name="window-close-symbolic", css_classes=["sonata-menu-x"], valign=Gtk.Align.CENTER,
+                   tooltip_text="Close", can_focus=False)
+    x.connect("clicked", lambda *_: (item.on_close(), row.set_visible(False)))
+    row.append(main)
+    row.append(x)
+    return row
+
+
 def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
           gap: int = 6, at=None, glass: bool = False) -> Gtk.PopoverMenu:
     """Show a menu anchored to `widget`; it cleans itself up when closed.
     at=(x, y) in widget coordinates: a context menu that opens at the
     pointer, its top-left corner there (macOS)."""
     group = Gio.SimpleActionGroup()
-    model = _build(sections, group)
+    customs = []
+    model = _build(sections, group, customs=customs)
     widget.insert_action_group("m", group)
     pop = Gtk.PopoverMenu.new_from_model_full(model, Gtk.PopoverMenuFlags.NESTED)
+    for name, item in customs:
+        pop.add_child(_closable_row(pop, item), name)
     pop.set_has_arrow(False)
     if glass:
         pop.add_css_class("glass")

@@ -109,7 +109,8 @@ def app_menu(dock, key: str, tile):
     Item = ui.menu.Item
     sections = []
     if wins:
-        sections.append([Item(t.title or tile.name, lambda t=t: dock.manager.activate(t))
+        sections.append([Item(t.title or tile.name, lambda t=t: dock.manager.activate(t),
+                              on_close=lambda t=t: dock.manager.close(t))       # the x closes that window
                          for t in wins])
     if info and wins:
         sections.append([Item("New Window", lambda: new_window(dock, tile))])

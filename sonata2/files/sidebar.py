@@ -98,6 +98,7 @@ class Sidebar(Gtk.Box):
                 continue
             self._place(mount.get_name(), mount.get_symbolic_icon() or "drive-removable-media-symbolic",
                         root.get_uri(), mount if (mount.can_eject() or mount.can_unmount()) else None, disk=True)
+        self._place("Trash", "user-trash-symbolic", "trash:///")      # (Vini: Trash in the sidebar)
         if self._current:
             self.select(self._current)
 

@@ -381,6 +381,15 @@ class FilesWindow(Adw.ApplicationWindow):
             return
         if f.get_path() and packages.open_path(f.get_path(), self):     # install / run / extract
             return
+        if info.get_name().endswith(".desktop") and f.get_path():        # an app shortcut: open the app
+            from ..apps import DesktopAppInfo
+            try:
+                app = DesktopAppInfo.new_from_filename(f.get_path())
+                if app is not None:
+                    app.launch([], self.get_display().get_app_launch_context())
+                    return
+            except (TypeError, GLib.Error):
+                pass
         ctx = self.get_display().get_app_launch_context()
         Gio.AppInfo.launch_default_for_uri_async(target or f.get_uri(), ctx, None, self._launched, info)
 
@@ -569,6 +578,9 @@ class FilesWindow(Adw.ApplicationWindow):
     def drop(self, files, dest, copy=False) -> bool:
         if dest.get_uri() == RECENTS or not files:
             return False
+        if ops.is_trash(dest.get_uri()):                  # dropped on Trash: move to the Trash
+            ops.trash(files)
+            return True
         files = [f for f in files if not f.equal(dest) and not dest.has_prefix(f)]   # not into itself
         if all(f.get_parent() and f.get_parent().equal(dest) for f in files):
             return False                                  # dropped where they already are
