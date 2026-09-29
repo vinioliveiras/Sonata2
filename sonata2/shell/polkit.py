@@ -17,7 +17,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Polkit", "1.0")
 gi.require_version("PolkitAgent", "1.0")
-from gi.repository import Gio, GLib, Gtk, Polkit, PolkitAgent  # noqa: E402
+from gi.repository import Gio, GLib, Gtk, Polkit, PolkitAgent  # noqa: E402,F401
 
 from .. import ui  # noqa: E402
 from . import layer  # noqa: E402
@@ -135,7 +135,9 @@ class AuthDialog:
         s.initiate()
 
     def _completed(self, _s, gained):
-        self._cancel_session()
+        # a finished session is only let go (cancelling it again is what crashed)
+        done_session, self.session = self.session, None
+        GLib.idle_add(lambda: (done_session and None, False)[1])       # dropped after the signal returns
         if gained:
             self.finish(True)
             return
@@ -168,53 +170,98 @@ class AuthDialog:
         self.done_cb(ok)
 
 
-class Agent(PolkitAgent.Listener):
-    def __init__(self, app):
-        super().__init__()
-        self.app = app
-        self.dialogs = {}
+AGENT_XML = """<node><interface name="org.freedesktop.PolicyKit1.AuthenticationAgent">
+  <method name="BeginAuthentication">
+    <arg type="s" name="action_id" direction="in"/><arg type="s" name="message" direction="in"/>
+    <arg type="s" name="icon_name" direction="in"/><arg type="a{ss}" name="details" direction="in"/>
+    <arg type="s" name="cookie" direction="in"/><arg type="a(sa{sv})" name="identities" direction="in"/>
+  </method>
+  <method name="CancelAuthentication"><arg type="s" name="cookie" direction="in"/></method>
+</interface></node>"""
+AUTHORITY = ("org.freedesktop.PolicyKit1", "/org/freedesktop/PolicyKit1/Authority",
+             "org.freedesktop.PolicyKit1.Authority")
 
-    def do_initiate_authentication(self, action_id, message, icon_name, details, cookie, identities,
-                                   cancellable, callback, user_data=None):
-        task = Gio.Task.new(self, cancellable, callback, user_data)
-        answered = {"done": False}
+
+def _identity(kind: str, details: dict):
+    """polkit's D-Bus identity -> the object PolkitAgent.Session wants."""
+    if kind == "unix-user":
+        return Polkit.UnixUser.new(int(details.get("uid", 0)))
+    if kind == "unix-group":
+        return Polkit.UnixGroup.new(int(details.get("gid", 0)))
+    return None
+
+
+class Agent:
+    """The agent over polkit's D-Bus interface (plain Gio: the listener
+    class's async vfunc can't be implemented safely from Python). polkitd
+    calls BeginAuthentication; the method returns once the dialog is done
+    (an error when cancelled), and CancelAuthentication closes it."""
+
+    def __init__(self, app):
+        self.app = app
+        self.dialogs = {}                 # cookie -> AuthDialog
+        self.bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        node = Gio.DBusNodeInfo.new_for_xml(AGENT_XML)
+        self.reg = self.bus.register_object(OBJECT_PATH, node.interfaces[0], self._call, None, None)
+
+    def _call(self, _conn, _sender, _path, _iface, method, params, invocation):
+        if method == "CancelAuthentication":
+            (cookie,) = params.unpack()
+            dlg = self.dialogs.get(cookie)
+            invocation.return_value(None)
+            if dlg:
+                dlg.finish(False)
+            return
+        action_id, message, _icon, _details, cookie, identities = params.unpack()
+        ids = [i for i in (_identity(kind, det) for kind, det in identities) if i is not None]
+        if not ids:
+            invocation.return_dbus_error("org.freedesktop.PolicyKit1.Error.Failed", "No identity to authenticate")
+            return
 
         def done(ok):
-            if answered["done"]:
-                return
-            answered["done"] = True
             self.dialogs.pop(cookie, None)
             if ok:
-                task.return_boolean(True)
+                invocation.return_value(None)
             else:
-                task.return_error(GLib.Error.new_literal(Polkit.error_quark(), "Cancelled by the user",
-                                                         int(Polkit.Error.CANCELLED)))
-        dlg = AuthDialog(self.app, message, identities, cookie, done)
-        self.dialogs[cookie] = dlg
-        if cancellable is not None:                    # polkit gave up (another agent, timeout)
-            cancellable.connect(lambda *_: GLib.idle_add(lambda: (dlg.finish(False), False)[1]))
+                invocation.return_dbus_error("org.freedesktop.PolicyKit1.Error.Cancelled",
+                                             "Authentication was cancelled")
+        self.dialogs[cookie] = AuthDialog(self.app, message, ids, cookie, done)
 
-    def do_initiate_authentication_finish(self, res):
-        return res.propagate_boolean()
+    # test hook: the same entry polkitd uses, without D-Bus
+    def begin(self, message, identities, cookie, done):
+        self.dialogs[cookie] = AuthDialog(self.app, message, identities, cookie,
+                                          lambda ok: (self.dialogs.pop(cookie, None), done(ok)))
+
+
+def _session_id():
+    try:
+        subj = Polkit.UnixSession.new_for_process_sync(os.getpid(), None)
+        if subj is not None:
+            return subj.get_session_id()
+    except GLib.Error:
+        pass
+    return os.environ.get("XDG_SESSION_ID")
 
 
 def register(app):
     """Register for this login session. Returns the agent (keep it) or None."""
-    agent = Agent(app)
-    subject = None
-    try:
-        subject = Polkit.UnixSession.new_for_process_sync(os.getpid(), None)
-    except GLib.Error:
-        pass
-    if subject is None and os.environ.get("XDG_SESSION_ID"):
-        subject = Polkit.UnixSession.new(os.environ["XDG_SESSION_ID"])
-    if subject is None:
+    sid = _session_id()
+    if not sid:
         print("sonata2 polkit: no login session found")
         return None
     try:
-        agent.handle = agent.register(PolkitAgent.RegisterFlags.NONE, subject, OBJECT_PATH, None)
+        agent = Agent(app)
+    except GLib.Error as e:
+        print(f"sonata2 polkit: no system bus: {e.message}")
+        return None
+    subject = ("unix-session", {"session-id": GLib.Variant("s", sid)})
+    locale = os.environ.get("LC_ALL") or os.environ.get("LC_MESSAGES") or os.environ.get("LANG") or "C"
+    try:
+        agent.bus.call_sync(*AUTHORITY, "RegisterAuthenticationAgent",
+                            GLib.Variant("((sa{sv})ss)", (subject, locale, OBJECT_PATH)),
+                            None, Gio.DBusCallFlags.NONE, 5000, None)
     except GLib.Error as e:
         print(f"sonata2 polkit: couldn't register: {e.message}")
         return None
+    print(f"sonata2 polkit: registered for session {sid}", flush=True)
     return agent
-

@@ -35,21 +35,15 @@ class PolkitTest(unittest.TestCase):
         P.layer.overlay_fullscreen = lambda w, n: (w.set_default_size(600, 400), True)[1]
         app = Adw.Application(application_id="io.test.polkit")
         app.register(None)
-        agent = P.Agent(app)
+        agent = P.Agent.__new__(P.Agent)            # no system bus in tests: the dialog side only
+        agent.app, agent.dialogs = app, {}
         res = {}
-
-        def done(src, r):
-            try:
-                res["v"] = src.initiate_authentication_finish(r)
-            except GLib.Error as e:
-                res["v"] = e.message
-        agent.initiate_authentication("org.test.act", "Test", "", Polkit.Details.new(), "c1",
-                                      [Polkit.UnixUser.new(os.getuid())], None, done)
+        agent.begin("Test", [Polkit.UnixUser.new(os.getuid())], "c1", lambda ok: res.update(v=ok))
         settle(300)
         self.assertIn("c1", agent.dialogs)
         agent.dialogs["c1"].finish(False)
         settle(200)
-        self.assertEqual(res.get("v"), "Cancelled by the user")
+        self.assertEqual(res.get("v"), False)
         self.assertNotIn("c1", agent.dialogs)
 
 
