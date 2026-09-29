@@ -62,9 +62,17 @@ theme.register("""
 """, key="titlebar")
 
 
+def toggle_zoom(win) -> None:
+    """The green button: maximize / restore."""
+    win.unmaximize() if win.is_maximized() else win.maximize()
+
+
 def titlebar(win, title: str = None, end: Gtk.Widget = None, zoom=None) -> Gtk.WindowHandle:
-    """52 px bar: traffic lights (zoom=None greys the green one), optional
-    bold centred title (returned as .title_label) and an end widget."""
+    """52 px bar: traffic lights (zoom=None greys the green one, zoom=True
+    maximizes/restores), optional bold centred title (returned as
+    .title_label) and an end widget."""
+    if zoom is True:
+        zoom = lambda: toggle_zoom(win)     # noqa: E731
     bar = Gtk.CenterBox(css_classes=["sonata-titlebar"])
     bar.set_start_widget(traffic_lights(win.close, win.minimize, zoom))
     handle = Gtk.WindowHandle(child=bar)

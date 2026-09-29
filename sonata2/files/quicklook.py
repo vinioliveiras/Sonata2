@@ -141,8 +141,9 @@ class QuickLook(Adw.Window):
 
 class GetInfo(Adw.Window):
     def __init__(self, parent, info):
-        super().__init__(transient_for=None, default_width=300, resizable=False,
+        super().__init__(transient_for=None, default_width=300,
                          title=f"{info.get_display_name()} Info")
+        self.set_size_request(240, 200)
         self.add_css_class("sonata-info")
         ui.window.standard(self)
         f = file_of(info)
@@ -155,7 +156,7 @@ class GetInfo(Adw.Window):
         top.append(img)
         names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
         names.append(Gtk.Label(label=info.get_display_name(), xalign=0, css_classes=["gi-name"],
-                               ellipsize=Pango.EllipsizeMode.MIDDLE, max_width_chars=28))
+                               ellipsize=Pango.EllipsizeMode.MIDDLE, max_width_chars=28, hexpand=True))
         self.size_lbl = Gtk.Label(label=size(info), xalign=0, css_classes=["gi-val"])
         names.append(self.size_lbl)
         top.append(names)
@@ -169,14 +170,16 @@ class GetInfo(Adw.Window):
         self.size_row = None
         for r, (k, v) in enumerate(rows):
             grid.attach(Gtk.Label(label=k, xalign=1, css_classes=["gi-key"]), 0, r, 1, 1)
-            val = Gtk.Label(label=v, xalign=0, css_classes=["gi-val"], wrap=True, max_width_chars=30)
+            val = Gtk.Label(label=v, xalign=0, css_classes=["gi-val"], wrap=True, max_width_chars=30,
+                            hexpand=True, natural_wrap_mode=Gtk.NaturalWrapMode.NONE)
             grid.attach(val, 1, r, 1, 1)
             if k == "Size:":
                 self.size_row = val
         col.append(grid)
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        outer.append(ui.window.titlebar(self))       # traffic lights where every window has them
-        outer.append(col)
+        outer.append(ui.window.titlebar(self, zoom=True))    # traffic lights where every window has them
+        outer.append(Gtk.ScrolledWindow(child=col, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                        propagate_natural_height=True, propagate_natural_width=True))
         self.set_content(outer)
         if is_dir(info) and f.get_path():
             self.size_row.set_label("Calculating…")

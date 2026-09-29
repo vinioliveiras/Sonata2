@@ -984,14 +984,17 @@ class ControlCenter(Gtk.Box):
 
 
 class AboutWindow(Adw.Window):
-    """About This Computer (Big Sur layout: logo left, OS name, specs)."""
+    """About This Computer (Big Sur layout: logo left, OS name, specs).
+    Resizable; narrow, the logo goes above the text (breakpoint)."""
 
     def __init__(self):
-        super().__init__(title="About This Computer", resizable=False)
+        super().__init__(title="About This Computer", default_width=720, default_height=300)
         self.add_css_class("sonata-about")
         ui.window.standard(self)
-        head = ui.window.titlebar(self)
-        body = Gtk.Box(spacing=36, css_classes=["about-box"])
+        self.set_size_request(320, 260)
+        head = ui.window.titlebar(self, zoom=True)
+        body = Gtk.Box(spacing=36, css_classes=["about-box"], halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER,
+                       vexpand=True)
         logo = Gtk.Image(icon_name="sonata-logo-symbolic", pixel_size=120, valign=Gtk.Align.CENTER)
         body.append(logo)
         info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3, valign=Gtk.Align.CENTER)
@@ -999,8 +1002,15 @@ class AboutWindow(Adw.Window):
         body.append(info)
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col.append(head)
-        col.append(body)
-        self.set_content(Gtk.WindowHandle(child=col))
+        col.append(_scroller(Gtk.WindowHandle(child=body)))   # drag from anywhere, like macOS
+        self.set_content(col)
+        bp = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 560sp"))
+        bp.add_setter(body, "orientation", Gtk.Orientation.VERTICAL)
+        bp.add_setter(body, "spacing", 16)
+        bp.add_setter(logo, "pixel-size", 80)
+        bp.add_setter(logo, "halign", Gtk.Align.CENTER)
+        bp.add_setter(info, "halign", Gtk.Align.CENTER)
+        self.add_breakpoint(bp)
         system.run_async(system.about, self._fill)
 
     def _fill(self, a) -> None:
@@ -1013,32 +1023,43 @@ class AboutWindow(Adw.Window):
                            ("Memory", f"{a.memory_gb} GB"), ("Graphics", ", ".join(a.gpus) or "—"),
                            ("Kernel", a.kernel), ("Desktop", "Sonata 2")):
             row = Gtk.Box(spacing=6)
-            row.append(Gtk.Label(label=key, css_classes=["about-key"]))
-            row.append(Gtk.Label(label=value, xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=48))
+            row.append(Gtk.Label(label=key, css_classes=["about-key"], valign=Gtk.Align.START))
+            # wraps instead of cutting: the window can be narrow or wide
+            row.append(Gtk.Label(label=value, xalign=0, wrap=True, natural_wrap_mode=Gtk.NaturalWrapMode.NONE,
+                                 max_width_chars=60, hexpand=True))
             self.info.append(row)
+
+
+def _scroller(child) -> Gtk.ScrolledWindow:
+    """Lets a small window shrink below its content (scrolls instead)."""
+    return Gtk.ScrolledWindow(child=child, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER,
+                              propagate_natural_height=True, propagate_natural_width=True)
 
 
 class AboutAppWindow(Adw.Window):
     def __init__(self, info, name):
-        super().__init__(title=f"About {name}", resizable=False)
+        super().__init__(title=f"About {name}", default_width=360)
         self.add_css_class("sonata-about")
         ui.window.standard(self)
-        head = ui.window.titlebar(self)
-        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["about-box"])
+        self.set_size_request(260, 220)
+        head = ui.window.titlebar(self, zoom=True)
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["about-box"],
+                      valign=Gtk.Align.CENTER, vexpand=True)
         img = Gtk.Image(pixel_size=96)
         if info:
             from .. import icons
             icons.set_image(img, icons.app_icon(info))
         col.append(img)
-        col.append(Gtk.Label(label=name, css_classes=["about-name"]))
+        col.append(Gtk.Label(label=name, css_classes=["about-name"], wrap=True, justify=Gtk.Justification.CENTER))
         if info:
             for text in (info.get_description(), info.get_generic_name()):
                 if text:
-                    col.append(Gtk.Label(label=text, css_classes=["about-version"], wrap=True, max_width_chars=40))
+                    col.append(Gtk.Label(label=text, css_classes=["about-version"], wrap=True, max_width_chars=40,
+                                         justify=Gtk.Justification.CENTER))
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         outer.append(head)
-        outer.append(col)
-        self.set_content(Gtk.WindowHandle(child=outer))
+        outer.append(_scroller(col))
+        self.set_content(outer)
 
 
 TITLEBAR = {   # Big Sur title bars: (focused bg, unfocused bg, title, unfocused title)
