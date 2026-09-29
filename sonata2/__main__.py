@@ -848,6 +848,13 @@ def main() -> int:
     # session's GTK_THEME=Sonata-Light/Dark restyles libadwaita widgets):
     # our windows look the same in any session.
     os.environ.pop("GTK_THEME", None)
+    if args.component == "portal":
+        # the portal backend is what xdg-desktop-portal waits for while it
+        # starts: GTK asking that same portal for settings deadlocked the two
+        # (every Sonata surface then waited 2 x 30 s at login -- black screen)
+        flags = [f for f in os.environ.get("GDK_DEBUG", "").split(",") if f and f != "portals"]
+        os.environ["GDK_DEBUG"] = ",".join(flags + ["no-portals"])
+        os.environ.pop("GTK_USE_PORTAL", None)
     # GPU drawing for every Sonata surface (Settings > General > Graphics):
     # OpenGL by default -- GTK's Vulkan path also loads every implicit Vulkan
     # layer installed (overlays, frame generators), slow on hybrid laptops
