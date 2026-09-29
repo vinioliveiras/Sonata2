@@ -15,7 +15,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 from .. import config, ui  # noqa: E402
 from . import folder, ops, packages  # noqa: E402
 from .search import Search  # noqa: E402
-from .folder import RECENTS, file_of, is_dir  # noqa: E402
+from .folder import APPS, RECENTS, VIRTUAL, file_of, is_dir  # noqa: E402
 from .views import ColumnsView, IconsView, ListView  # noqa: E402
 from .sidebar import Sidebar  # noqa: E402
 
@@ -175,7 +175,7 @@ class FilesWindow(Adw.ApplicationWindow):
             return
         here = self.history[self.pos] if self.pos >= 0 else ""
         self.scope_here.set_label(f"“{folder.display_name(here)}”")
-        self.scope_here.set_visible(here != RECENTS)
+        self.scope_here.set_visible(here not in VIRTUAL)
         self.scope_rev.set_reveal_child(True)
         if not self._in_results:
             self._refilter()
@@ -191,7 +191,7 @@ class FilesWindow(Adw.ApplicationWindow):
         if not q:
             return
         here = self.history[self.pos] if self.pos >= 0 else RECENTS
-        root_uri = here if self.scope_here.get_active() and here != RECENTS else \
+        root_uri = here if self.scope_here.get_active() and here not in VIRTUAL else \
             Gio.File.new_for_path(GLib.get_home_dir()).get_uri()
         root = Gio.File.new_for_uri(root_uri).get_path()
         if not root:
@@ -333,7 +333,7 @@ class FilesWindow(Adw.ApplicationWindow):
 
     def go_up(self):
         uri = self.history[self.pos] if self.pos >= 0 else None
-        if not uri or uri == RECENTS:
+        if not uri or uri in VIRTUAL:
             return
         parent = Gio.File.new_for_uri(uri).get_parent()
         if parent:
@@ -416,7 +416,7 @@ class FilesWindow(Adw.ApplicationWindow):
         return self.history[self.pos]
 
     def _writable_here(self) -> bool:
-        return self.location() != RECENTS and not ops.is_trash(self.location())
+        return self.location() not in VIRTUAL and not ops.is_trash(self.location())
 
     def _in_trash(self) -> bool:
         return self.pos >= 0 and ops.is_trash(self.history[self.pos])
@@ -476,7 +476,7 @@ class FilesWindow(Adw.ApplicationWindow):
                                   self._writable_sel(sel)),
                              Item("Duplicate", self.duplicate_selection, enabled=self._writable_here())])
             sections.append([Item(f"Copy {what}", self.copy_selection)])
-            if self.history[self.pos] == RECENTS or self.search.get_text():
+            if self.history[self.pos] in VIRTUAL or self.search.get_text():
                 sections.append([Item("Show in Enclosing Folder", lambda: self._reveal(sel[0]))])
             if n == 1 and is_dir(sel[0]):
                 sections.append([Item("New Terminal at Folder", lambda: self._terminal(file_of(sel[0])))])
@@ -580,7 +580,7 @@ class FilesWindow(Adw.ApplicationWindow):
         self.go(target)
 
     def drop(self, files, dest, copy=False) -> bool:
-        if dest.get_uri() == RECENTS or not files:
+        if dest.get_uri() in VIRTUAL or not files:
             return False
         if ops.is_trash(dest.get_uri()):                  # dropped on Trash: move to the Trash
             ops.trash(files)
@@ -691,6 +691,7 @@ class FilesWindow(Adw.ApplicationWindow):
             ("<Control><Shift>o", lambda: self._home_dir(U.DIRECTORY_DOCUMENTS)),
             ("<Control><Alt>l", lambda: self._home_dir(U.DIRECTORY_DOWNLOAD)),
             ("<Control><Shift>f", lambda: self.go(RECENTS)),
+            ("<Control><Shift>a", lambda: self.go(APPS)),
             ("<Control><Shift>period", self.toggle_hidden),
             ("<Control>f", self._open_search),
             ("<Control>w", self.close),

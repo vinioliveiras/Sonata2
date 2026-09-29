@@ -1,8 +1,12 @@
-"""Files sidebar (Finder source list): Favorites (Recents, Desktop,
-Documents, Downloads, home, GTK bookmarks) and Locations (Computer,
+"""Files sidebar (Finder source list): Favorites (Recents, Applications,
+Desktop, Documents, Downloads, home, GTK bookmarks) and Locations (Computer,
 mounted drives with an eject button and a capacity meter -- used / free,
 Vini's choice). Live: rebuilt when drives come and go; free space is read
-again when the window gets focus (no polling)."""
+again when the window gets focus (no polling).
+
+Pin a folder (Finder): drag it between two Favorites -- a line shows where
+it goes -- or onto the Favorites heading. Right-click a pinned folder:
+Remove from Sidebar. Pins are GTK's bookmarks (shared with file dialogs)."""
 import os
 
 import gi
@@ -22,6 +26,8 @@ ui.register("""
 .fs-sidebar list row:hover { background: none; }
 .fs-sidebar list row:selected { background: %(sidebar_selected)s; color: %(label)s; }
 .fs-sidebar list row.drop-target { background: alpha(%(accent)s, 0.25); }
+.fs-sidebar list row.pin-before { box-shadow: inset 0 2px %(accent)s; }
+.fs-sidebar list row.pin-after { box-shadow: inset 0 -2px %(accent)s; }
 .fs-sidebar list row.fs-head { min-height: 22px; margin-top: 8px; }
 .fs-sidebar .fs-head label { font-size: %(text_small)s; font-weight: 700; color: %(label_tertiary)s; }
 .fs-sidebar row image.fs-place { color: %(accent)s; }
@@ -34,8 +40,57 @@ ui.register("""
 """, key="files-sidebar")
 
 
+BOOKMARKS = os.path.join(GLib.get_user_config_dir(), "gtk-3.0", "bookmarks")
+EDGE = 7                   # px at a row's top/bottom where a drop pins instead of moving
+
+
+def read_bookmarks() -> list:
+    """[(uri, label)] of GTK's bookmarks file."""
+    out = []
+    try:
+        with open(BOOKMARKS, encoding="utf-8") as f:
+            for line in f:
+                uri, _, label = line.strip().partition(" ")
+                if uri:
+                    out.append((uri, label))
+    except OSError:
+        pass
+    return out
+
+
+def write_bookmarks(marks) -> None:
+    os.makedirs(os.path.dirname(BOOKMARKS), exist_ok=True)
+    with open(BOOKMARKS + ".new", "w", encoding="utf-8") as f:
+        f.writelines(f"{u} {l}".rstrip() + "\n" for u, l in marks)
+    os.replace(BOOKMARKS + ".new", BOOKMARKS)
+
+
+_sidebars = []            # live sidebars of this process: rebuilt when pins change
+
+
+def _changed() -> None:
+    for sb in list(_sidebars):
+        sb.rebuild()
+
+
+def pin(uris, before: str = None) -> None:
+    """Add folders to Favorites, before the pinned `before` (else at the end)."""
+    marks = read_bookmarks()
+    have = {u for u, _l in marks}
+    new = [(u, "") for u in uris if u not in have]
+    at = next((i for i, (u, _l) in enumerate(marks) if u == before), len(marks))
+    write_bookmarks(marks[:at] + new + marks[at:])
+    _changed()
+
+
+def unpin(uri) -> None:
+    write_bookmarks([(u, l) for u, l in read_bookmarks() if u != uri])
+    _changed()
+
+
 def _favorites():
-    out = [("Recents", "document-open-recent-symbolic", folder.RECENTS)]
+    out = [("Recents", "document-open-recent-symbolic", folder.RECENTS),
+           ("Applications", "view-app-grid-symbolic", folder.APPS)]
     for kind, title, icon in ((GLib.UserDirectory.DIRECTORY_DESKTOP, "Desktop", "user-desktop-symbolic"),
                               (GLib.UserDirectory.DIRECTORY_DOCUMENTS, "Documents", "folder-documents-symbolic"),
                               (GLib.UserDirectory.DIRECTORY_DOWNLOAD, "Downloads", "folder-download-symbolic")):
@@ -45,18 +100,12 @@ def _favorites():
     home = Gio.File.new_for_path(GLib.get_home_dir()).get_uri()
     out.append((GLib.get_user_name(), "user-home-symbolic", home))
     known = {u for _t, _i, u in out}
-    path = os.path.join(GLib.get_user_config_dir(), "gtk-3.0", "bookmarks")
-    try:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                uri, _, label = line.strip().partition(" ")
-                if uri and uri not in known:
-                    f_ = Gio.File.new_for_uri(uri)
-                    out.append((label or GLib.uri_unescape_string(f_.get_basename() or uri, None) or uri,
-                                "folder-symbolic", uri))
-                    known.add(uri)
-    except OSError:
-        pass
+    for uri, label in read_bookmarks():
+        if uri not in known:
+            f_ = Gio.File.new_for_uri(uri)
+            out.append((label or GLib.uri_unescape_string(f_.get_basename() or uri, None) or uri,
+                        "folder-symbolic", uri))
+            known.add(uri)
     return out
 
 
@@ -79,15 +128,30 @@ class Sidebar(Gtk.Box):
         for sig in ("mount-added", "mount-removed", "mount-changed"):
             self._volumes.connect(sig, lambda *_: self.rebuild())
         self._current = None
+        os.makedirs(os.path.dirname(BOOKMARKS), exist_ok=True)      # (a monitor needs the folder)
+        self._marks_mon = Gio.File.new_for_path(BOOKMARKS).monitor_file(Gio.FileMonitorFlags.NONE, None)
+        self._marks_mon.connect("changed", lambda *_: self._rebuild_soon())      # other apps' pins
+        _sidebars.append(self)
+        self.connect("destroy", lambda *_: self in _sidebars and _sidebars.remove(self))
         self.rebuild()
+
+    def _rebuild_soon(self) -> None:
+        if not getattr(self, "_rb_src", 0):
+            def run():
+                self._rb_src = 0
+                self.rebuild()
+                return False
+            self._rb_src = GLib.timeout_add(150, run)
 
     def rebuild(self) -> None:
         self.list.remove_all()
         self._rows = {}
         self._disks = []
-        self._head("Favorites")
+        head = self._head("Favorites")
+        self._pin_target(head, None)                  # on the heading: pinned at the end
+        pinned = {u for u, _l in read_bookmarks()}
         for title, icon, uri in _favorites():
-            self._place(title, icon, uri)
+            self._place(title, icon, uri, favorite=True, pinned=uri in pinned)
         self._head("Locations")
         self._place("Computer", "drive-harddisk-symbolic", "file:///", disk=True)
         for mount in self._volumes.get_mounts():
@@ -102,14 +166,41 @@ class Sidebar(Gtk.Box):
         if self._current:
             self.select(self._current)
 
-    def _head(self, text) -> None:
+    def _head(self, text) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow(selectable=False, activatable=False, css_classes=["fs-head"])
         row.set_child(Gtk.Label(label=text, xalign=0, margin_start=2))
         self.list.append(row)
+        return row
 
-    def _place(self, title, icon, uri, mount=None, disk=False) -> None:
+    @staticmethod
+    def _folders(files) -> list:
+        return [f.get_uri() for f in files
+                if f.query_file_type(Gio.FileQueryInfoFlags.NONE, None) == Gio.FileType.DIRECTORY]
+
+    def _pin_target(self, row, before) -> None:
+        """A drop target that only pins (the Favorites heading)."""
+        tgt = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY | Gdk.DragAction.MOVE | Gdk.DragAction.LINK)
+        tgt.connect("enter", lambda *_a: (row.add_css_class("pin-after"), Gdk.DragAction.COPY)[1])
+        tgt.connect("leave", lambda *_a: row.remove_css_class("pin-after"))
+        tgt.connect("drop", lambda _t, v, *_a: (row.remove_css_class("pin-after"),
+                                                 pin(self._folders(v.get_files()), before), True)[2])
+        row.add_controller(tgt)
+
+    def _zone(self, row, y) -> str:
+        """Where a drag is over a Favorites row: "before"/"after" (pin) or "into"."""
+        h = row.get_height()
+        return "before" if y < EDGE else "after" if y > h - EDGE else "into"
+
+    def _next_pinned(self, row, zone):
+        """The pinned uri a new pin goes before, for a drop at `zone` of `row`."""
+        rows = [r for r in self._rows.values() if getattr(r, "favorite", False)]
+        i = rows.index(row) + (1 if zone == "after" else 0)
+        return next((r.uri for r in rows[i:] if r.pinned), None)
+
+    def _place(self, title, icon, uri, mount=None, disk=False, favorite=False, pinned=False) -> None:
         row = Gtk.ListBoxRow()
         row.uri = uri
+        row.favorite, row.pinned = favorite, pinned
         box = Gtk.Box(spacing=7)
         img = Gtk.Image(pixel_size=16, css_classes=["fs-place"])
         if isinstance(icon, str):
@@ -140,18 +231,53 @@ class Sidebar(Gtk.Box):
             eject.connect("clicked", lambda _b, m=mount: self._eject(m))
             box.append(eject)
         row.set_child(box)
-        if uri != folder.RECENTS:                 # drop files on a place = move/copy them there
-            tgt = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
-            tgt.connect("enter", lambda *_a, r=row: (r.add_css_class("drop-target"), Gdk.DragAction.MOVE)[1])
-            tgt.connect("leave", lambda *_a, r=row: r.remove_css_class("drop-target"))
-            tgt.connect("drop", lambda t, v, x, y, u=uri, r=row: (r.remove_css_class("drop-target"),
-                                                                  self.on_drop and self.on_drop(
-                                                                      list(v.get_files()), Gio.File.new_for_uri(u),
-                                                                      bool(t.get_current_event_state() &
-                                                                           Gdk.ModifierType.CONTROL_MASK)))[1])
-            row.add_controller(tgt)
+        if uri not in folder.VIRTUAL or favorite:
+            self._drop_target(row, uri, favorite)
+        if pinned:
+            menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
+            menu.connect("pressed", lambda _g, _n, x, y, r=row: ui.menu.popup(
+                r, [[ui.menu.Item("Remove from Sidebar", lambda: unpin(r.uri))]], at=(x, y)))
+            row.add_controller(menu)
         self.list.append(row)
         self._rows[uri] = row
+
+    def _drop_target(self, row, uri, favorite) -> None:
+        """Files dropped on a place move/copy there; on a Favorite's top or
+        bottom edge, folders get pinned there instead (a line shows it)."""
+        tgt = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY | Gdk.DragAction.MOVE | Gdk.DragAction.LINK)
+        into_ok = uri not in folder.VIRTUAL
+
+        def show(zone):
+            for c in ("drop-target", "pin-before", "pin-after"):
+                row.remove_css_class(c)
+            if zone == "into" and into_ok:
+                row.add_css_class("drop-target")
+            elif zone in ("before", "after"):
+                row.add_css_class("pin-" + zone)
+
+        def motion(_t, _x, y):
+            zone = self._zone(row, y) if favorite else "into"
+            show(zone)
+            if zone == "into":
+                return Gdk.DragAction.MOVE if into_ok else 0
+            return Gdk.DragAction.COPY          # (the source offers copy/move; nothing is copied)
+
+        def drop(t, value, _x, y):
+            zone = self._zone(row, y) if favorite else "into"
+            show(None)
+            files = list(value.get_files())
+            if zone != "into":
+                pin(self._folders(files), self._next_pinned(row, zone))
+                return True
+            if not into_ok or not self.on_drop:
+                return False
+            return self.on_drop(files, Gio.File.new_for_uri(uri),
+                                bool(t.get_current_event_state() & Gdk.ModifierType.CONTROL_MASK))
+        tgt.connect("enter", motion)
+        tgt.connect("motion", motion)
+        tgt.connect("leave", lambda *_a: show(None))
+        tgt.connect("drop", drop)
+        row.add_controller(tgt)
 
     def refresh_space(self) -> None:
         for row in self._disks:

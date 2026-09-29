@@ -19,6 +19,8 @@ ATTRS = ",".join((
     "standard::size", "standard::target-uri", "time::modified", "time::created", "access::can-write",
     "thumbnail::path", "thumbnail::failed"))
 RECENTS = "sonata:recents"
+APPS = "sonata:applications"      # the installed apps, like Finder's Applications folder
+VIRTUAL = (RECENTS, APPS)
 BATCH = 500
 
 
@@ -43,6 +45,8 @@ def sort_key(info: Gio.FileInfo) -> str:
 def display_name(uri: str) -> str:
     if uri == RECENTS:
         return "Recents"
+    if uri == APPS:
+        return "Applications"
     if uri.rstrip("/") == "trash:":
         return "Trash"
     f = Gio.File.new_for_uri(uri)
@@ -79,6 +83,9 @@ class Folder:
             self._monitor = None
         if uri == RECENTS:
             self._load_recents(uri, cancel)
+            return
+        if uri == APPS:
+            self._load_apps(uri, cancel)
             return
         d = Gio.File.new_for_uri(uri)
         items = []
@@ -158,6 +165,38 @@ class Folder:
             if not cancel.is_cancelled():
                 self._fill(uri, items or [], keep_order=True)
                 self._keys = []           # not name-sorted: live inserts go last
+        from ..backend.system import run_async
+        run_async(work, done)
+
+    def _load_apps(self, uri, cancel) -> None:
+        """Installed apps (the ones Launchpad shows) as their .desktop files,
+        named and drawn like the app: open = launch, drag = to the Dock."""
+        from .. import apps, icons
+
+        def work():
+            out = []
+            for info in apps.scan().values():
+                path = info.get_filename()
+                if not path or not info.should_show():
+                    continue
+                f = Gio.File.new_for_path(path)
+                try:
+                    fi = f.query_info(ATTRS, Gio.FileQueryInfoFlags.NONE, None)
+                except GLib.Error:
+                    continue
+                fi.set_display_name(info.get_display_name())
+                fi.set_attribute_object("sonata::file", f)
+                fi.set_attribute_object("sonata::app", info)
+                out.append(fi)
+            return out
+
+        def done(items):
+            if cancel.is_cancelled():
+                return
+            for fi in items or []:
+                app = fi.get_attribute_object("sonata::app")
+                fi.set_icon(icons.app_icon(app))
+            self._fill(uri, items or [])
         from ..backend.system import run_async
         run_async(work, done)
 
