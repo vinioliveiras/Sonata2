@@ -332,11 +332,12 @@ Type=Application
 DesktopNames=Sonata
 EOF
 if [ -d /usr/share/wayland-sessions ] || [ "$MODE" = system ]; then
-    if [ -n "$SUDO" ] || [ "$(id -u)" = 0 ] || ask "Add \"Sonata\" to the login screen (needs sudo)?"; then
-        sudo install -D -m 755 "$tmp/sonata-login" "$LOGIN_BIN" &&
-        sudo install -D -m 644 "$tmp/sonata.desktop" "$SESSION_FILE" && echo "Login screen: \"Sonata\" added."
+    # always: a Sonata you can't log in to isn't installed (sudo asks for the password)
+    if sudo install -D -m 755 "$tmp/sonata-login" "$LOGIN_BIN" &&
+        sudo install -D -m 644 "$tmp/sonata.desktop" "$SESSION_FILE"; then
+        echo "Login screen: \"Sonata\" added."
     else
-        echo "Skipped: the login screen won't list Sonata (run ./install.sh again to add it)."
+        echo "The login screen entry couldn't be added (sudo refused): run ./install.sh again to add it."
     fi
 fi
 # GDM lists Wayland sessions only when it runs on Wayland itself.
