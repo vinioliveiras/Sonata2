@@ -21,7 +21,7 @@ from ..files.folder import file_of, is_dir  # noqa: E402
 
 CELL_W, CELL_H = 96, 104          # Big Sur's default desktop grid (64 px icons)
 ICON = 64
-TOP, RIGHT, BOTTOM = 34, 14, 96   # below the menu bar, off the edge, above the Dock
+TOP, EDGE = 34, 14                # below the menu bar; off the screen edges
 DEFAULTS = {"positions": {}, "sort": "none"}
 
 ui.register("""
@@ -114,6 +114,7 @@ class Desktop(Gtk.Fixed):
         self._drag_from = None
         self._placed = {}
         self._size = (0, 0)
+        self._margins = self._dock_margins()
         self.folder = folder.Folder(lambda _u: self._sync(), lambda _u, _e: None)
         self.folder.store.connect("items-changed", lambda *_: self._sync())
         self.folder.load(self.dir.get_uri())
@@ -137,6 +138,7 @@ class Desktop(Gtk.Fixed):
         keys.connect("key-pressed", self._key)
         self.add_controller(keys)
         self._mon = config.watch("desktop", self._config_changed)
+        self._dock_mon = config.watch("dock", self._dock_changed)      # the Dock moved / resized
 
     # -- layout -------------------------------------------------------------------------------
     def resized(self, w, h) -> None:
@@ -146,17 +148,27 @@ class Desktop(Gtk.Fixed):
             self._size = (w, h)
             GLib.idle_add(lambda: (self._layout(), False)[1])
 
+    def _dock_margins(self):
+        """(left, right, bottom) kept free: the Dock's edge gets its height
+        (it can sit left, right or bottom; auto-hide leaves only the edge gap)."""
+        from .dock import DEFAULTS as DOCK, plate_height
+        d = config.load("dock", DOCK)
+        thick = 4 if d.get("autohide") else plate_height(d) + d.get("edge_gap", 4) + 8
+        side = d.get("position", "bottom")
+        return (EDGE + (thick if side == "left" else 0), EDGE + (thick if side == "right" else 0),
+                EDGE + (thick if side == "bottom" else 0))
+
     def rows(self) -> int:
-        return max(1, (self._size[1] - TOP - BOTTOM) // CELL_H)
+        return max(1, (self._size[1] - TOP - self._margins[2]) // CELL_H)
 
     def cols(self) -> int:
-        return max(1, (self._size[0] - RIGHT) // CELL_W)
+        return max(1, (self._size[0] - self._margins[0] - self._margins[1]) // CELL_W)
 
     def cell_xy(self, col, row):
-        return self._size[0] - RIGHT - (col + 1) * CELL_W, TOP + row * CELL_H
+        return self._size[0] - self._margins[1] - (col + 1) * CELL_W, TOP + row * CELL_H
 
     def cell_at(self, x, y):
-        col = int((self._size[0] - RIGHT - x) // CELL_W)
+        col = int((self._size[0] - self._margins[1] - x) // CELL_W)
         row = int((y - TOP) // CELL_H)
         return max(0, min(self.cols() - 1, col)), max(0, min(self.rows() - 1, row))
 
@@ -217,6 +229,12 @@ class Desktop(Gtk.Fixed):
     def _config_changed(self) -> None:
         self.cfg = config.load("desktop", DEFAULTS)
         self._layout()
+
+    def _dock_changed(self) -> None:
+        m = self._dock_margins()
+        if m != self._margins:
+            self._margins = m
+            self._layout()
 
     def _save_positions(self, moved: dict) -> None:
         cfg = config.load("desktop", DEFAULTS)
