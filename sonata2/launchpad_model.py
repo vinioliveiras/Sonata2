@@ -8,6 +8,17 @@ an item is dropped on a full page)."""
 COLS, ROWS = 7, 5
 PER_PAGE = COLS * ROWS
 
+
+def set_grid(cols: int, rows: int) -> bool:
+    """Page size for this display (responsive: 7 columns like macOS, fewer on
+    narrow or portrait screens; as many rows as fit, 3 to 8). True if it changed."""
+    global COLS, ROWS, PER_PAGE
+    cols, rows = max(3, min(8, int(cols))), max(3, min(8, int(rows)))
+    if (cols, rows) == (COLS, ROWS):
+        return False
+    COLS, ROWS, PER_PAGE = cols, rows, cols * rows
+    return True
+
 # Folder names from freedesktop main categories (macOS names its new folders
 # after the apps' App Store category).
 CATEGORY_NAMES = (
@@ -70,6 +81,12 @@ class Model:
         pages[-1].extend(new)
         self.pages = pages
         self.normalize()
+
+    def repack(self) -> None:
+        """Pages refilled in order to the current size (after the page grew):
+        no empty rows left at the bottom of a page."""
+        items = [it for page in self.pages for it in page]
+        self.pages = [items[i:i + PER_PAGE] for i in range(0, len(items), PER_PAGE)] or [[]]
 
     def normalize(self) -> None:
         """Cascade overflow to the next pages; drop empty pages (keep one)."""
@@ -165,7 +182,7 @@ class Model:
         self.normalize()
 
 
-def search(installed_meta: dict, query: str, limit: int = PER_PAGE) -> list:
+def search(installed_meta: dict, query: str, limit: int = None) -> list:
     """installed_meta: id -> (name, extra searchable text). Prefix matches on
     the name first, then word prefixes, then substrings anywhere."""
     q = query.strip().lower()
@@ -185,4 +202,4 @@ def search(installed_meta: dict, query: str, limit: int = PER_PAGE) -> list:
         else:
             continue
         ranked.append((rank, n, app_id))
-    return [a for _r, _n, a in sorted(ranked)][:limit]
+    return [a for _r, _n, a in sorted(ranked)][:limit or PER_PAGE]

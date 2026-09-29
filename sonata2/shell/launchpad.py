@@ -173,7 +173,8 @@ class LaunchItem(Gtk.Button):
 
 
 class PageGrid(Gtk.Grid):
-    def __init__(self, pad, index: int, cols: int = M.COLS, rows: int = M.ROWS):
+    def __init__(self, pad, index: int, cols: int = None, rows: int = None):
+        cols, rows = cols or M.COLS, rows or M.ROWS
         super().__init__(row_homogeneous=True, column_homogeneous=True, hexpand=True, vexpand=True)
         self.pad, self.index, self.cols, self.rows = pad, index, cols, rows
         # Fixed 7 x 5 cells even when the page isn't full (placeholders).
@@ -190,6 +191,7 @@ class PageGrid(Gtk.Grid):
 
     def cell_at(self, x, y):
         w, h = self.get_width(), self.get_height()
+        w, h = max(1, w), max(1, h)                     # (not laid out yet)
         c = min(self.cols - 1, max(0, int(x / (w / self.cols))))
         r = min(self.rows - 1, max(0, int(y / (h / self.rows))))
         cx, cy = (c + 0.5) * w / self.cols, (r + 0.5) * h / self.rows
@@ -262,6 +264,13 @@ class Launchpad(Gtk.ApplicationWindow):
         self.layer = layer.overlay_fullscreen(self, "sonata2-launchpad")
         Gio.AppInfoMonitor.get().connect("changed", lambda *_: self._apps_changed())
         self._cfg_mon = config.watch("launchpad", self._config_changed)
+        # Wayfire raises the layer surface you press on: any press here (swiping
+        # pages, holding an icon) would put Launchpad over the Dock -- the Dock
+        # is put back on top right away, it always stays above Launchpad
+        press = Gtk.GestureClick(button=0, propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        press.connect("pressed", lambda *_a: GLib.timeout_add(20, lambda: (
+            self.get_visible() and self._dock_above(True), False)[1]))
+        self.add_controller(press)
         self.render()
 
     # -- geometry / rendering ----------------------------------------------------
@@ -271,7 +280,17 @@ class Launchpad(Gtk.ApplicationWindow):
         side = int(w * 0.12)
         self.grid_area.set_margin_start(side)
         self.grid_area.set_margin_end(side)
-        cell_w, cell_h = (w - 2 * side) / M.COLS, max(1, h - 160) / M.ROWS
+        # as many rows as the display has room for (search, page dots and the Dock
+        # take their share): 5 on 16:9 screens, 6 on taller ones like 16:10
+        from . import dock as D
+        dcfg = config.load("dock", D.DEFAULTS)
+        room = max(1, h - 160 - (D.reserved(dcfg) if dcfg.get("position", "bottom") == "bottom" else 0))
+        width = max(1, w - 2 * side - (D.reserved(dcfg) if dcfg.get("position") in ("left", "right") else 0))
+        cols = 7 if width >= 900 else width // 150               # macOS: 7; fewer on narrow screens
+        rows = room / max(1.0, width / max(1, cols) * 0.8)      # cells a little wider than tall
+        if M.set_grid(cols, rows):
+            GLib.idle_add(lambda: (self._rows_changed(), False)[1])     # not during allocation
+        cell_w, cell_h = width / M.COLS, room / M.ROWS
         size = int(max(48, min(128, cell_w * 0.56, cell_h * 0.62)))
         if abs(size - self.icon_size) >= 4 or not self._sized:
             self._sized = True
@@ -293,6 +312,18 @@ class Launchpad(Gtk.ApplicationWindow):
                 w._apps = tuple(item["apps"])
             self.widgets[key] = w
         return w
+
+    def _rows_changed(self) -> None:
+        """The page size changed (another display): pages rebuilt with the new
+        grid, filled up in order."""
+        self.model.repack()
+        while self.carousel.get_n_pages():
+            self.carousel.remove(self.carousel.get_nth_page(0))
+        self.stack.remove(self.results)
+        self.results = PageGrid(self, -1)
+        self.stack.add_named(self.results, "results")
+        self.render()
+        self.save()
 
     def render(self) -> None:
         """Sync carousel pages with the model (widgets are reused)."""
