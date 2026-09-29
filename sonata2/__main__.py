@@ -876,7 +876,7 @@ def main() -> int:
         app.set_flags(Gio.ApplicationFlags.HANDLES_OPEN)
 
         def start():
-            if not state:
+            if not state.get("ready"):
                 state["ready"] = True
                 if args.dark or args.light:
                     ui.force_appearance("dark" if args.dark else "light")
@@ -918,7 +918,7 @@ def main() -> int:
         app.set_flags(Gio.ApplicationFlags.HANDLES_OPEN)
 
         def te_start():
-            if not state:
+            if not state.get("ready"):
                 state["ready"] = True
                 if args.dark or args.light:
                     ui.force_appearance("dark" if args.dark else "light")
