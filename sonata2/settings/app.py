@@ -474,7 +474,42 @@ class Settings(Adw.ApplicationWindow):
             if not ds:
                 screens.add(Adw.ActionRow(title="Displays", subtitle="wlr-randr not found or no outputs"))
         system.run_async(lambda: (system.brightness(), system.displays()), fill)
-        return [bright, screens]
+        return [bright, screens, self._night_shift_group()]
+
+    def _night_shift_group(self):
+        """Displays > Night Shift (macOS sheet as a group): schedule, custom
+        times, Turn On Until Tomorrow, Colour Temperature."""
+        import shutil
+        from ..shell import nightshift
+        cfg = config.load("nightshift", nightshift.DEFAULTS)
+        g = group("Night Shift", "Night Shift shifts the colours of your display to the warmer end of the "
+                                 "spectrum after dark." + ("" if shutil.which("wlsunset") else
+                                                          " Needs wlsunset (not installed)."))
+        g.set_sensitive(shutil.which("wlsunset") is not None)
+
+        def save(**kw):
+            c = config.load("nightshift", nightshift.DEFAULTS)
+            c.update(kw)
+            config.save("nightshift", c)
+        times = [(f"{h:02d}:{m:02d}", f"{h:02d}:{m:02d}") for h in range(24) for m in (0, 30)]
+        frm = combo_row("From", times, cfg["from"], lambda v: save(**{"from": v}))
+        to = combo_row("To", times, cfg["to"], lambda v: save(to=v))
+
+        def sched(v):
+            save(schedule=v)
+            frm.set_visible(v == "custom")
+            to.set_visible(v == "custom")
+        g.add(combo_row("Schedule", [("off", "Off"), ("custom", "Custom"), ("sunset", "Sunset to Sunrise")],
+                        cfg["schedule"], sched))
+        g.add(frm)
+        g.add(to)
+        frm.set_visible(cfg["schedule"] == "custom")
+        to.set_visible(cfg["schedule"] == "custom")
+        g.add(switch_row("Turn On Until Tomorrow", nightshift.manual_active(cfg), nightshift.set_manual,
+                         subtitle="Manual"))
+        g.add(slider_row("Colour Temperature", cfg["warmth"], 0, 100, lambda v: save(warmth=int(v)),
+                         ends=("Less Warm", "More Warm")))
+        return g
 
     def _page_battery(self):
         info = group()

@@ -84,16 +84,16 @@ family="${ID:-} ${ID_LIKE:-}"
 case "$family" in
     *arch*)   PM="sudo pacman -S --needed"
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python-gobject python-cairo python-pywayland"
-              OPT="networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome grim slurp wl-clipboard ffmpegthumbnailer" ;;
+              OPT="networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset" ;;
     *debian*|*ubuntu*) PM="sudo apt install"
               PKGS="wayfire gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtk4layershell-1.0 python3-gi python3-gi-cairo python3-pywayland"
-              OPT="network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr policykit-1-gnome grim slurp wl-clipboard ffmpegthumbnailer" ;;
+              OPT="network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr policykit-1-gnome grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset" ;;
     *fedora*|*rhel*) PM="sudo dnf install"
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python3-gobject python3-cairo python3-pywayland"
-              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome grim slurp wl-clipboard ffmpegthumbnailer" ;;
+              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset" ;;
     *suse*)   PM="sudo zypper install"
               PKGS="wayfire gtk4 libadwaita-1-0 typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 gtk4-layer-shell python3-gobject python3-gobject-cairo python3-pywayland"
-              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr grim slurp wl-clipboard ffmpegthumbnailer" ;;
+              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset" ;;
     *)        PM=""; PKGS=""; OPT="" ;;
 esac
 

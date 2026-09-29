@@ -111,30 +111,11 @@ reinstall), starts the wallpaper, Dock, menu bar, Launchpad and your
 "Open at Login" apps, a polkit agent if one is installed, and hands the
 session environment to portals.
 
-Developing inside a real session: `./install.sh --dev` links the installed
-Sonata to this clone (no copy), so the session runs the code being edited;
-`sonata2 restart [dock topbar launchpad wallpaper]` reloads the shell parts
-(apps like Files/Settings: just reopen them).
-
-Keys (macOS-like, Super = Cmd):
-
-| Keys | Action |
-|---|---|
-| Super+Space, F4, pinch (4 fingers) | Launchpad |
-| Super+Tab | switch apps |
-| Super+Q / Super+M / Ctrl+Super+F | close / minimize / zoom |
-| Ctrl+Up, F3, swipe up (3 fingers) | Mission Control |
-| Ctrl+Down, swipe down (3 fingers) | App Exposé (all windows) |
-| swipe left/right (3 fingers), Super+Alt+arrows | switch Spaces |
-| Super+Shift+3 / Super+Shift+4, Print | screenshot (whole / selection) to the Desktop |
-| volume / brightness keys | with the Big Sur HUD |
-| Super+, | System Settings |
-| Ctrl+Super+Q | lock screen |
-| Ctrl+Alt+T | terminal (handled by Wayfire: works even if the Sonata shell crashed) |
-
-Files: Space Quick Look, Return rename, Ctrl+I Get Info, Ctrl+Shift+N new
-folder, Ctrl+C/V copy/paste (Ctrl+Alt+V move), Ctrl+D duplicate,
-Delete/Ctrl+Backspace Trash, Ctrl+1/2/3 views, Ctrl+Shift+. hidden files.
+Keys (macOS-like, Super = Cmd): Super+Space or F4 Launchpad, Super+Tab
+switch apps, Super+Q close, Super+M minimize, Ctrl+Super+F zoom,
+Ctrl+Up all windows, Super+, System Settings,
+Super+Shift+3/4 screenshot (screen/selection), Super+Shift+5 capture toolbar
+with screen recording (wf-recorder), Ctrl+Super+Q lock, Ctrl+Alt+T terminal (handled by Wayfire: works even if the Sonata shell crashed).
 
 ## Try it without logging out
 

@@ -13,6 +13,7 @@ don't export on Wayland; the bar offers what wlr-foreign-toplevel allows.
 Menus hang from the title's left edge like macOS. Linux state comes from
 backend/system.py (async)."""
 import os
+import shutil
 
 import gi
 
@@ -70,6 +71,11 @@ class Bar(Gtk.CenterBox):
         self.set_start_widget(left)
 
         right = Gtk.Box()
+        # Screen recording: a stop button while wf-recorder runs (macOS)
+        self.rec_stop = self._item(right, icon="sonata-record-stop-symbolic", on_click=self._stop_recording,
+                                   css="icon")
+        self.rec_stop.set_tooltip_text("Stop Screen Recording")
+        self.rec_stop.set_visible(False)
         # Now Playing (while a player runs), clipboard history (wl-clipboard),
         # input source (with 2+ keyboard layouts)
         from . import clipboard, mpris
@@ -143,6 +149,15 @@ class Bar(Gtk.CenterBox):
         box.append(b)
         self.items.append(b)
         return b
+
+    def set_recording(self, on: bool) -> None:
+        self.rec_stop.set_visible(on)
+
+    def _stop_recording(self, _btn):
+        cap = getattr(self, "capture", None)
+        if cap:
+            cap.stop_recording()
+        return None
 
     def _set_text(self, btn, text) -> None:
         lbl = btn.get_child().get_last_child()
@@ -552,6 +567,9 @@ ui.register("""
 .wifi-badge.on { background: %(accent)s; color: %(label_on_accent)s; }
 .cc-small label { font-size: %(text_small)s; font-weight: 400; }
 .cc-small.on image { color: %(accent)s; }
+.cc-ns { background: none; box-shadow: none; border: none; padding: 2px 0; min-height: 0; color: %(label)s; }
+.cc-ns .cc-ns-icon { min-width: 26px; min-height: 26px; border-radius: 13px; background: alpha(%(label)s, 0.1); }
+.cc-ns:checked .cc-ns-icon { background: %(accent)s; color: %(label_on_accent)s; }
 .cc-slider-box { min-height: 22px; }
 .cc-slider-icon { color: alpha(%(label)s, 0.55); margin-left: 6px; -gtk-icon-size: 12px; }
 .cc-np-title { font-weight: 700; }
@@ -636,7 +654,7 @@ class ControlCenter(Gtk.Box):
                                     close=False)
         (self.dark_btn.add_css_class if dark else self.dark_btn.remove_css_class)("on")
         smalls.append(self.dark_btn)
-        smalls.append(self._small("camera-photo-symbolic", "Screenshot", self._screenshot))
+        smalls.append(self._small("camera-photo-symbolic", "Screenshot", self._screenshot))   # opens the toolbar
         right.append(smalls)
         row = Gtk.Box(spacing=8, homogeneous=True)
         row.append(conn)
@@ -644,7 +662,18 @@ class ControlCenter(Gtk.Box):
         self.append(row)
         disp, self.bright = _slider_with_icon("display-brightness-symbolic", 50,
                                               lambda v: system.run_async(system.set_brightness, None, int(v)))
-        self.append(ui.panel.module(Gtk.Label(label="Display", xalign=0, css_classes=["panel-module-title"]), disp))
+        # Night Shift under the brightness slider (Big Sur's expanded Display module)
+        from . import nightshift
+        ns = Gtk.ToggleButton(css_classes=["cc-ns"], can_focus=False, active=nightshift.is_on(),
+                              halign=Gtk.Align.START)
+        ns_box = Gtk.Box(spacing=8)
+        ns_box.append(Gtk.Image(icon_name="night-light-symbolic", css_classes=["cc-ns-icon"]))
+        ns_box.append(Gtk.Label(label="Night Shift"))
+        ns.set_child(ns_box)
+        ns.connect("toggled", lambda b: nightshift.set_manual(b.get_active()))
+        ns.set_sensitive(shutil.which("wlsunset") is not None)
+        self.append(ui.panel.module(Gtk.Label(label="Display", xalign=0, css_classes=["panel-module-title"]),
+                                    disp, ns))
         snd, self.vol = _slider_with_icon("audio-volume-high-symbolic", 50, bar._set_volume)
         self.append(ui.panel.module(Gtk.Label(label="Sound", xalign=0, css_classes=["panel-module-title"]), snd))
         self.np = None
@@ -682,14 +711,10 @@ class ControlCenter(Gtk.Box):
             self.vol.set_value(vol[0])
 
     def _screenshot(self):
-        """Whole screen to ~/Pictures (grim), like Cmd+Shift+3."""
-        def shoot():
-            import shutil
-            pics = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES) or GLib.get_home_dir()
-            name = GLib.DateTime.new_now_local().format("Screenshot %Y-%m-%d at %H.%M.%S.png")
-            if shutil.which("grim"):
-                system._run(["grim", os.path.join(pics, name)], timeout=10)
-        GLib.timeout_add(350, lambda: (system.run_async(shoot), False)[1])   # after the panel closes
+        """The capture toolbar (Super+Shift+5), after the panel closes."""
+        cap = getattr(self.bar, "capture", None)
+        if cap:
+            GLib.timeout_add(300, lambda: (cap.show_toolbar(), False)[1])
 
     def _now_playing(self):
         from . import mpris
@@ -819,6 +844,8 @@ class TopBarWindow(Gtk.ApplicationWindow):
             from .notifications import Notifications
             self.bar.notifications = Notifications(app)
             _listen_for_lock()
+            from .nightshift import NightShift
+            self.bar.nightshift = NightShift()
         if not preview:
             # Title bars Wayfire draws (terminals, X11 apps) follow Dark Mode
             # live too: the menu bar always runs, so it keeps them in sync.

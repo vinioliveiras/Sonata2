@@ -286,6 +286,24 @@ def run_topbar(app, args, ui):
     act = Gio.SimpleAction.new("switcher", GLib.VariantType.new("s"))
     act.connect("activate", switch)
     app.add_action(act)
+    # Screenshots / recording (sonata2 screenshot ... -> this action):
+    # "screen" | "area" | "toolbar" | "stop"
+    from .shell.capture import Capture
+    win.bar.capture = Capture(app, win.bar)
+
+    def capture(_a, param):
+        from . import config
+        from .shell.capture import DEFAULTS
+        what, cap = param.get_string(), win.bar.capture
+        if what == "toolbar":
+            cap.show_toolbar()
+        elif what == "stop":
+            cap.stop_recording()
+        else:                          # the keyboard shortcuts never wait for the timer
+            cap.run(what, dict(config.load("capture", DEFAULTS), timer=0))
+    act = Gio.SimpleAction.new("capture", GLib.VariantType.new("s"))
+    act.connect("activate", capture)
+    app.add_action(act)
     if args.menu >= 0:
         _later(600, lambda: win.bar.open_menu(args.menu))
 
@@ -347,9 +365,27 @@ def key(name: str) -> int:
     return 0
 
 
-def screenshot(area: bool) -> int:
-    """macOS screenshots: "Screenshot 2026-09-29 at 01.52.10.png" on the
-    Desktop (grim, slurp for a selection), then a notification."""
+def _topbar_action(name: str, param: str) -> bool:
+    from gi.repository import Gio, GLib
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        bus.call_sync(APP_IDS["topbar"], "/" + APP_IDS["topbar"].replace(".", "/"), "org.freedesktop.Application",
+                      "ActivateAction", GLib.Variant("(sava{sv})", (name, [GLib.Variant("s", param)], {})),
+                      None, Gio.DBusCallFlags.NONE, 1000, None)
+        return True
+    except GLib.Error:
+        return False
+
+
+def screenshot(mode: str) -> int:
+    """macOS screenshots. The menu bar does it when it runs (floating
+    thumbnail, Super+Shift+5 toolbar, recording); otherwise
+    "Screenshot 2026-09-29 at 01.52.10.png" on the Desktop and a notification."""
+    if _topbar_action("capture", mode):
+        return 0
+    if mode not in ("screen", "area"):
+        return 1
+    area = mode == "area"
     import shutil
     import subprocess
     from gi.repository import Gio, GLib
@@ -383,7 +419,7 @@ def screenshot(area: bool) -> int:
 
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "screenshot":
-        return screenshot(len(sys.argv) > 2 and sys.argv[2] == "area")
+        return screenshot(sys.argv[2] if len(sys.argv) > 2 else "screen")
     if len(sys.argv) > 1 and sys.argv[1] == "restart":
         return restart(sys.argv[2:])
     if len(sys.argv) > 2 and sys.argv[1] == "key":

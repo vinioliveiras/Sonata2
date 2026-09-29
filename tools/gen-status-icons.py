@@ -100,6 +100,13 @@ def clipboard():
           '<path d="M5.5 8h5M5.5 10.8h3.4" stroke="#000" stroke-width="1.3" stroke-linecap="round"/>')
 
 
+def record_stop():
+    """Stop-recording item (circle with a square, macOS)."""
+    write("sonata-record-stop-symbolic",
+          '<circle cx="8" cy="8" r="6.3" fill="none" stroke="#000" stroke-width="1.4"/>'
+          '<rect x="5.6" y="5.6" width="4.8" height="4.8" rx="0.8" fill="#000"/>')
+
+
 def logo():
     with open(os.path.join(OUT, "..", "..", "actions", "symbolic", "sonata-logo-symbolic.svg"), "w") as f:
         f.write(HEAD + '<circle cx="8" cy="8" r="6.2" fill="#000"/></svg>\n')
@@ -114,5 +121,6 @@ if __name__ == "__main__":
     dark_mode()
     now_playing()
     clipboard()
+    record_stop()
     logo()
     print("written to", os.path.normpath(OUT))
