@@ -40,6 +40,7 @@ if [ "$ACTION" = revert ]; then
     $SUDO systemctl disable greetd.service || true
     $SUDO systemctl enable "$prev.service"
     [ -f "$GREETD.sonata-backup" ] && $SUDO mv -f "$GREETD.sonata-backup" "$GREETD"
+    $SUDO rm -f "$LAUNCHER"            # install.sh keeps it up to date only while it's in use
     say "Done. Restart the computer to see it."
     exit 0
 fi

@@ -156,6 +156,13 @@ The keyboard layout comes from the system (`localectl`) until you pick
 one in Settings > Keyboard. To go back, pick your old desktop on the
 login screen; `./install.sh --uninstall` removes Sonata (settings stay).
 
+The installer also offers Sonata's own login screen (greetd in place of
+GDM/SDDM, from the next boot; same look as the lock screen). Try it first
+inside the session with `SONATA_GREETER_FAKE=1 sonata2 greeter` (password
+`sonata`, Esc leaves). `./install.sh --gdm` puts the old login screen
+back; if the login screen ever fails to start, do that from a text
+console (Ctrl+Alt+F2) and restart.
+
 ## Try it without logging out
 
 `tools/dev-session.sh` opens Wayfire **as a window inside your current
