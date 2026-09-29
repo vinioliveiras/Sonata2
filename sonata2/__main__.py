@@ -270,6 +270,22 @@ def run_topbar(app, args, ui):
     act = Gio.SimpleAction.new("osd", GLib.VariantType.new("s"))
     act.connect("activate", show)
     app.add_action(act)
+    # App switcher (Super+Tab binding -> gdbus -> this action)
+    sw = {}
+
+    def switch(_a, param):
+        if win.bar.manager is None:
+            return
+        if "w" not in sw:
+            from .shell.switcher import Switcher
+            if not hasattr(win.bar, "mru"):
+                win.bar.mru = []
+            sw["w"] = Switcher(app, win.bar.manager, win.bar.mru)
+        sw["w"].mru = getattr(win.bar, "mru", [])
+        sw["w"].step(-1 if param.get_string() == "prev" else 1)
+    act = Gio.SimpleAction.new("switcher", GLib.VariantType.new("s"))
+    act.connect("activate", switch)
+    app.add_action(act)
     if args.menu >= 0:
         _later(600, lambda: win.bar.open_menu(args.menu))
 

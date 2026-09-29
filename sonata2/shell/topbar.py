@@ -235,6 +235,8 @@ class Bar(Gtk.CenterBox):
         """App name + Window menu follow the focused app; on the desktop
         (nothing focused) both are hidden."""
         key, _wins = self._active()
+        if key:                                   # most recently used apps (app switcher)
+            self.mru = [key] + [k for k in getattr(self, "mru", []) if k != key]
         self.app_btn.set_visible(bool(key))
         self.win_btn.set_visible(bool(key))
         if key:
