@@ -81,8 +81,11 @@ list: [docs/PARITY.md](docs/PARITY.md).
         rows) and Columns view (column browser, preview column, arrow
         keys); view saved in files.json; Ctrl+1/2/3
   - [ ] Gallery view; List: disclosure triangles (expand folders inline)
-  - [ ] F3 context menu, rename (Return), new folder, Move to Trash,
-        copy/paste, Get Info
+  - [x] F3 context menus, rename in place (Return/F2), New Folder,
+        Move to Trash, Duplicate, copy/cut/paste (GNOME-compatible
+        clipboard) with the Copy window + conflict alerts; thumbnails
+        (images/videos, freedesktop cache)
+  - [ ] Get Info, Quick Look (Space), tabs, Gallery view
   - [ ] F4 drag and drop (copy/move/progress), spring-loaded folders
   - [ ] F5 Quick Look (Space), thumbnails, tabs, recursive search
   - [ ] F6 default file manager (Dock tile, Stacks, "Open File Location",
@@ -91,3 +94,30 @@ list: [docs/PARITY.md](docs/PARITY.md).
   (LayerOSX backend, PipeWire via wpctl, wlr-randr for displays).
 - **M5 -- Launcher, notifications.**
 - **Later**: global menu, "Task Bar" (Windows 11) mode.
+
+## Done in the Big Sur polish pass (2026-09-29)
+
+- Standard window frame (corners, shadow, clipping) for Sonata apps;
+  glass sidebars (Dock's tint); pixdecor title bars for apps without CSD
+  (AUR wayfire-plugin-pixdecor-git), colours follow Dark Mode live.
+- Menu bar: own status icons, Spotlight item, input source menu, clipboard
+  history, Now Playing; Big Sur Wi-Fi/Battery/Sound menus; Control Center
+  in the Big Sur layout (Do Not Disturb, Dark Mode, Screenshot, sliders,
+  Now Playing).
+- Notifications: server + banners + Notification Center (clock) + DND.
+- Volume/brightness HUD on the media keys; macOS screenshots; Mission
+  Control / App Exposé / Spaces gestures; lock screen (ext-session-lock).
+- Settings: Keyboard (input sources), Trackpad, Mouse, Date & Time,
+  Users & Groups (login items), Sharing, Accessibility, default browser,
+  display sleep. Wayfire options go to ~/.config/sonata2/wayfire-overrides.ini.
+
+## Next
+
+- Verify on hardware (the login session black screen: see
+  ~/.cache/sonata2/login.log + session.log).
+- Files: Get Info, Quick Look, tabs, Gallery; default file manager.
+- Dock: badges (Unity LauncherEntry), attention bounce.
+- App switcher HUD (Cmd+Tab look), global menu (Wayfire kde-appmenu +
+  DBusMenu), Night Shift, Siri-less Spotlight window.
+- System Preferences as in Big Sur (icon grid) vs the current sidebar:
+  Vini to decide.
