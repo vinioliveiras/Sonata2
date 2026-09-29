@@ -110,13 +110,30 @@ def _closable_row(pop, item) -> Gtk.Widget:
     main = Gtk.Button(child=Gtk.Label(label=item.label, xalign=0, ellipsize=3, max_width_chars=40),
                       css_classes=["sonata-menu-row-label"], hexpand=True, can_focus=False)
     main.set_sensitive(item.enabled)
-    main.connect("clicked", lambda *_: (pop.popdown(), item.on_activate and item.on_activate()))
+    _one_click(main, lambda: (pop.popdown(), item.on_activate and item.on_activate()))
     x = Gtk.Button(icon_name="window-close-symbolic", css_classes=["sonata-menu-x"], valign=Gtk.Align.CENTER,
                    tooltip_text="Close", can_focus=False)
-    x.connect("clicked", lambda *_: (item.on_close(), row.set_visible(False)))
+    _one_click(x, lambda: (item.on_close(), row.set_visible(False)))
     row.append(main)
     row.append(x)
     return row
+
+
+def _one_click(button: Gtk.Button, action) -> None:
+    """Inside a PopoverMenu the menu's own gestures see the press first, so a
+    plain "clicked" needed a second click: take the click in the capture
+    phase and act on release over the button."""
+    g = Gtk.GestureClick(button=1, propagation_phase=Gtk.PropagationPhase.CAPTURE)
+
+    def pressed(gest, *_a):
+        gest.set_state(Gtk.EventSequenceState.CLAIMED)
+
+    def released(gest, _n, x, y):
+        if button.get_sensitive() and button.contains(x, y):
+            action()
+    g.connect("pressed", pressed)
+    g.connect("released", released)
+    button.add_controller(g)
 
 
 def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
