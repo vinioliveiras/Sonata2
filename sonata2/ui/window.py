@@ -69,16 +69,17 @@ window.sonata-glass { background: transparent; }
 
 
 # Standard frame of Sonata's app windows (Files, System Settings...): Big
-# Sur corners and shadow, contents clipped to the corners, square and
-# shadowless when maximized/tiled/fullscreen.
+# Sur corners and shadow, contents clipped to the corners; maximized/tiled
+# keep the corners without the shadow (Vini's call), fullscreen is square.
 theme.register("""
 window.sonata-window.csd { border-radius: %(r_window)s;
   box-shadow: 0 22px 56px rgba(0, 0, 0, 0.30), 0 0 0 0.5px rgba(0, 0, 0, 0.40),
               inset 0 0 0 0.5px %(highlight)s; }
 window.sonata-window.csd:backdrop { box-shadow: 0 14px 34px rgba(0, 0, 0, 0.20), 0 0 0 0.5px rgba(0, 0, 0, 0.30); }
-window.sonata-window.maximized, window.sonata-window.fullscreen, window.sonata-window.tiled,
+window.sonata-window.maximized, window.sonata-window.tiled,
 window.sonata-window.tiled-top, window.sonata-window.tiled-left, window.sonata-window.tiled-right,
-window.sonata-window.tiled-bottom { border-radius: 0; box-shadow: none; }
+window.sonata-window.tiled-bottom { box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.40), inset 0 0 0 0.5px %(highlight)s; }
+window.sonata-window.fullscreen { border-radius: 0; box-shadow: none; }
 """, key="window-frame")
 
 

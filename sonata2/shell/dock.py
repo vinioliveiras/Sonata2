@@ -129,6 +129,12 @@ window.sonata-dock *:drop(active) { box-shadow: none; outline: none; border-colo
 """
 
 
+def _open_trash() -> None:
+    """The Trash opens in Sonata's Files (like Finder)."""
+    from ..files import open_folder
+    open_folder("trash:///")
+
+
 class DockIcon(Gtk.Widget):
     """An icon drawn at any size from one paintable. Magnification changes
     the size every frame; resampling a cached texture on the GPU is far
@@ -324,7 +330,7 @@ class Dock(Gtk.Box):
         self.append(self.sep)
         self.stacks = dock_stack.StackRow(self)      # stack tiles live between divider and Trash
         self.trash = DockTile(self, "Trash", Gio.ThemedIcon.new("user-trash"),
-                              lambda _t: Gio.AppInfo.launch_default_for_uri("trash:///", None),
+                              lambda _t: _open_trash(),
                               on_menu=dock_menu.trash_menu)
         self.append(self.trash)
         self.append(self._spacer())

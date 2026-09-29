@@ -6,6 +6,7 @@ recoloured to the label colour; class="success"/"error" to green/red.
 Run after editing:  python3 tools/gen-status-icons.py"""
 import math
 import os
+import sys
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "sonata2", "data", "icons", "Sonata", "status", "symbolic")
 HEAD = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">'
@@ -123,4 +124,9 @@ if __name__ == "__main__":
     clipboard()
     record_stop()
     logo()
+    # GTK wants fill-only symbolic icons (see tools/symbolic-fill.py)
+    import subprocess
+    here = os.path.dirname(__file__)
+    subprocess.run([sys.executable, os.path.join(here, "symbolic-fill.py"), OUT,
+                    os.path.join(OUT, "..", "..", "actions", "symbolic")], check=False)
     print("written to", os.path.normpath(OUT))

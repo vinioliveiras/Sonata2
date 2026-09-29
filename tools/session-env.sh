@@ -87,10 +87,10 @@ unset QT_STYLE_OVERRIDE KDE_FULL_SESSION KDE_SESSION_VERSION
 export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-auto}"
 # Folders open in Sonata's Files -- only in this session: the
 # desktop-specific list (XDG_CURRENT_DESKTOP=Sonata) other desktops ignore.
-if [ ! -f "$HOME/.config/sonata-mimeapps.list" ]; then
-    printf '[Default Applications]\ninode/directory=io.github.vinioliveiras.sonata2.files.desktop\n' \
-        > "$HOME/.config/sonata-mimeapps.list"
-fi
+ml="$HOME/.config/sonata-mimeapps.list"
+[ -f "$ml" ] || printf '[Default Applications]\ninode/directory=io.github.vinioliveiras.sonata2.files.desktop\n' > "$ml"
+grep -q '^x-scheme-handler/trash=' "$ml" 2>/dev/null || \
+    sed -i '/^\[Default Applications\]/a x-scheme-handler/trash=io.github.vinioliveiras.sonata2.files.desktop' "$ml"
 # Wayfire blurs Sonata windows here: sidebars use the glass material.
 export SONATA_GLASS=1
 export PYTHONPATH="$SONATA_REPO${PYTHONPATH:+:$PYTHONPATH}"

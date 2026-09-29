@@ -24,5 +24,5 @@ def files_desktop_file(command: str) -> str:
     return write_desktop_file(APP_ID + ".desktop",
                               "[Desktop Entry]\nType=Application\nName=Files\nComment=Browse your files\n"
                               "Icon=system-file-manager\nCategories=System;FileManager;Utility;\n"
-                              "MimeType=inode/directory;\nStartupNotify=true\n"
+                              "MimeType=inode/directory;x-scheme-handler/trash;\nStartupNotify=true\n"
                               f"Exec={command} files %U\n")

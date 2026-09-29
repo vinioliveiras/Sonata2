@@ -43,6 +43,8 @@ def sort_key(info: Gio.FileInfo) -> str:
 def display_name(uri: str) -> str:
     if uri == RECENTS:
         return "Recents"
+    if uri.rstrip("/") == "trash:":
+        return "Trash"
     f = Gio.File.new_for_uri(uri)
     if f.get_path() == GLib.get_home_dir():
         return GLib.get_user_name()

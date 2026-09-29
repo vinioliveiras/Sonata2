@@ -48,6 +48,7 @@ window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text
   background: none; color: %(label)s; font-weight: 500; }
 .fs-scope button:checked { background: %(tool_hover)s; }
 .fs-scope .fs-scope-status { color: %(label_tertiary)s; font-size: %(text_small)s; }
+.fs-toolbar button.fs-text-btn { padding: 0 10px; color: %(label)s; background: %(tool_hover)s; }
 .fs-empty { color: %(label_tertiary)s; font-size: %(text_title)s; }
 """, key="files-window")
 
@@ -113,6 +114,11 @@ class FilesWindow(Adw.ApplicationWindow):
         self.title = Gtk.Label(css_classes=["fs-title"], margin_start=6, ellipsize=Pango.EllipsizeMode.END,
                                xalign=0, hexpand=True)
         bar.append(self.title)
+        # Trash: Finder's "Empty" button
+        self.empty_btn = Gtk.Button(label="Empty", valign=Gtk.Align.CENTER, visible=False,
+                                    css_classes=["fs-text-btn"])
+        self.empty_btn.connect("clicked", lambda *_: self.empty_trash())
+        bar.append(self.empty_btn)
         seg = Gtk.Box(css_classes=["fs-seg"], valign=Gtk.Align.CENTER)
         self.view_buttons = {}
         first = None
@@ -333,6 +339,7 @@ class FilesWindow(Adw.ApplicationWindow):
         self.fwd.set_sensitive(self.pos < len(self.history) - 1)
 
     def _loaded(self, uri):
+        self.empty_btn.set_visible(ops.is_trash(uri))
         name = folder.display_name(uri)
         self.title.set_label(name)
         self.set_title(name)
@@ -387,7 +394,35 @@ class FilesWindow(Adw.ApplicationWindow):
         return self.history[self.pos]
 
     def _writable_here(self) -> bool:
-        return self.location() != RECENTS
+        return self.location() != RECENTS and not ops.is_trash(self.location())
+
+    def _in_trash(self) -> bool:
+        return self.pos >= 0 and ops.is_trash(self.history[self.pos])
+
+    def empty_trash(self):
+        def answer(rid):
+            if rid == "empty":
+                ops.empty_trash(lambda: self.folder.reload(),
+                                lambda f, e: self._error("The Trash can’t be emptied.", e))
+        ui.dialog.alert("Are you sure you want to permanently erase the items in the Trash?",
+                        "You can’t undo this action.",
+                        [("cancel", "Cancel", ""), ("empty", "Empty Trash", "destructive")], answer, parent=self)
+
+    def delete_selection_now(self):
+        files = self._selected_files()
+        if not files:
+            return
+        what = f"“{files[0].get_basename()}”" if len(files) == 1 else f"these {len(files)} items"
+
+        def answer(rid):
+            if rid == "delete":
+                ops.delete_now(files, None, lambda f, e: self._error(f"“{f.get_basename()}” can’t be deleted.", e))
+        ui.dialog.alert(f"Are you sure you want to delete {what} immediately?", "You can’t undo this action.",
+                        [("cancel", "Cancel", ""), ("delete", "Delete", "destructive")], answer, parent=self)
+
+    def put_back_selection(self):
+        ops.put_back(self._selected_files(),
+                     lambda f, e: self._error(f"“{f.get_basename()}” can’t be put back.", e))
 
     def _selected_files(self):
         return [file_of(i) for i in self.view.selected()]
@@ -400,6 +435,13 @@ class FilesWindow(Adw.ApplicationWindow):
             sel = view.selected() or [info]
             n = len(sel)
             what = f"“{sel[0].get_display_name()}”" if n == 1 else f"{n} Items"
+            if self._in_trash():                 # Finder's Trash menu
+                ui.menu.popup(widget, [[Item("Put Back", self.put_back_selection)],
+                                       [Item("Delete Immediately…", self.delete_selection_now)],
+                                       [Item("Get Info", self.get_info),
+                                        Item(f"Quick Look {what}", self.toggle_quicklook)],
+                                       [Item("Empty Trash", self.empty_trash)]], at=(x, y))
+                return
             sections = [[Item("Open", self.open_selection)]]
             apps = self._open_with_items(sel[0]) if n == 1 and not is_dir(sel[0]) else []
             if apps:
@@ -424,6 +466,8 @@ class FilesWindow(Adw.ApplicationWindow):
                         [Item("View", submenu=[[Item(label, lambda v=vid: self.set_view(v),
                                                      checked=self.view is self.views[vid])
                                                 for vid, _i, label in VIEWS]])]]
+            if self._in_trash():
+                sections.insert(0, [Item("Empty Trash", self.empty_trash)])
             if here:
                 sections.append([Item("New Terminal at Folder",
                                       lambda: self._terminal(Gio.File.new_for_uri(self.location())))])

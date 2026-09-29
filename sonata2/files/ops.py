@@ -91,6 +91,60 @@ def trash(files, on_error=None) -> None:
         f.trash_async(GLib.PRIORITY_DEFAULT, None, done)
 
 
+# -- the Trash (trash:///, gvfs) -------------------------------------------------------------
+TRASH = "trash:///"
+
+
+def is_trash(uri: str) -> bool:
+    return (uri or "").startswith("trash:")
+
+
+def put_back(files, on_error=None) -> None:
+    """Finder "Put Back": move each item to where it was trashed from."""
+    for f in files:
+        try:
+            orig = f.query_info("trash::orig-path", NOFOLLOW, None).get_attribute_byte_string("trash::orig-path")
+            if not orig:
+                raise GLib.Error("The original location is unknown.")
+            dest = Gio.File.new_for_path(orig)
+            parent = dest.get_parent()
+            if parent and not parent.query_exists(None):
+                parent.make_directory_with_parents(None)
+            if dest.query_exists(None):
+                dest = parent.get_child(free_name(parent, dest.get_basename()))
+            f.move(dest, Gio.FileCopyFlags.NOFOLLOW_SYMLINKS, None, None, None)
+        except GLib.Error as e:
+            if on_error:
+                on_error(f, e)
+
+
+def delete_now(files, on_done=None, on_error=None) -> None:
+    """Delete Immediately / Empty Trash, in a thread (big folders)."""
+    import threading
+
+    def run():
+        for f in files:
+            try:
+                _delete(f, None)
+            except GLib.Error as e:
+                if on_error:
+                    GLib.idle_add(lambda f=f, e=e: (on_error(f, e), False)[1])
+        if on_done:
+            GLib.idle_add(lambda: (on_done(), False)[1])
+    threading.Thread(target=run, daemon=True).start()
+
+
+def empty_trash(on_done=None, on_error=None) -> None:
+    t = Gio.File.new_for_uri(TRASH)
+    try:
+        kids = [t.get_child(i.get_name()) for i in t.enumerate_children("standard::name", NOFOLLOW, None)]
+    except GLib.Error as e:
+        if on_error:
+            on_error(t, e)
+        return
+    delete_now(kids, on_done, on_error)
+
+
 # -- copy / move -------------------------------------------------------------------------------
 class Transfer:
     """copy (or move) `sources` into the folder `dest`. `parent` is the

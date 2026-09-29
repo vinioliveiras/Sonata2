@@ -253,9 +253,9 @@ class Settings(Adw.ApplicationWindow):
         super().__init__(application=app, title="System Settings")
         for c in ("sonata-settings", "sonata-glass"):      # added, not passed (keeps GTK's "csd")
             self.add_css_class(c)
-        # Fixed size, like macOS System Settings.
+        # Resizable with a working Zoom button (Vini's call; macOS keeps it fixed).
         self.set_default_size(920, 640)
-        self.set_resizable(False)
+        self.set_size_request(760, 480)
         ui.window.standard(self)
         self.toasts = Adw.ToastOverlay()
         self.split = Adw.NavigationSplitView(vexpand=True, min_sidebar_width=230, max_sidebar_width=260)
@@ -275,7 +275,9 @@ class Settings(Adw.ApplicationWindow):
     def _sidebar(self):
         tv = Adw.ToolbarView()
         hb = Adw.HeaderBar(show_title=False, show_start_title_buttons=False, show_end_title_buttons=False)
-        hb.pack_start(ui.window.traffic_lights(self.close, self.minimize, None))
+        hb.pack_start(ui.window.traffic_lights(self.close, self.minimize,
+                                                  lambda: self.unmaximize() if self.is_maximized()
+                                                  else self.maximize()))
         tv.add_top_bar(hb)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         card = Gtk.Box(spacing=10, css_classes=["st-card"])

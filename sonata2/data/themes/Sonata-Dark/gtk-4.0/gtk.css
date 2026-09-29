@@ -1,1 +1,7 @@
 @import url("resource:///org/gnome/theme/gtk.css");
+/* Sonata: maximized / tiled windows keep their rounded corners (no shadow) */
+window.csd.maximized, window.csd.tiled, window.csd.tiled-top, window.csd.tiled-bottom,
+window.csd.tiled-left, window.csd.tiled-right { border-radius: 10px; }
+window.csd.maximized > .titlebar, window.csd.tiled > .titlebar,
+window.csd.maximized headerbar.titlebar, window.csd.tiled headerbar.titlebar {
+  border-top-left-radius: 10px; border-top-right-radius: 10px; }
