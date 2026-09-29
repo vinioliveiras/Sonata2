@@ -30,6 +30,19 @@ def _wallpaper(w: int, h: int, dark: bool):
     except ImportError:
         return None
     os.makedirs(CACHE, exist_ok=True)
+    photo = os.environ.get("PREVIEW_WALLPAPER")    # a real photo judges glass/contrast better
+    if photo and os.path.isfile(photo):
+        img = Image.open(photo).convert("RGB")
+        k = max(w / img.width, h / img.height)
+        img = img.resize((int(img.width * k) + 1, int(img.height * k) + 1), Image.LANCZOS)
+        img = img.crop(((img.width - w) // 2, (img.height - h) // 2, (img.width - w) // 2 + w,
+                        (img.height - h) // 2 + h))
+        tag = f"photo-{abs(hash(photo)) % 10**8}-{w}x{h}"
+        sharp = os.path.join(CACHE, f"preview-wall-{tag}.png")
+        blurred = os.path.join(CACHE, f"preview-wall-{tag}-blur.png")
+        img.save(sharp)
+        ImageEnhance.Color(img.filter(ImageFilter.GaussianBlur(BLUR_RADIUS))).enhance(SATURATION).save(blurred)
+        return sharp, blurred
     tag = f"{w}x{h}-{'dark' if dark else 'light'}"
     sharp = os.path.join(CACHE, f"preview-wall-{tag}.png")
     blurred = os.path.join(CACHE, f"preview-wall-{tag}-blur.png")

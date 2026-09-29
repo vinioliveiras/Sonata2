@@ -568,6 +568,8 @@ class Dock(Gtk.Box):
         src.connect("drag-end", self._drag_end, tile)
         tile.add_controller(src)
         dock_drop.attach_app(self, tile)
+        from . import dock_preview
+        dock_preview.attach(tile, self)           # minimized windows: previews on hover
         return tile
 
     def _remove_tile(self, key) -> None:
