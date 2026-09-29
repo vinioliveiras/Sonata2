@@ -135,7 +135,7 @@ class Index:
 
 class Spotlight(Gtk.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Spotlight", decorated=False, resizable=True)
+        super().__init__(application=app, title="Search", decorated=False, resizable=True)
         self.add_css_class("sonata-spotlight")
         self.index = Index()
         self.apps = {}
@@ -144,7 +144,7 @@ class Spotlight(Gtk.ApplicationWindow):
         panel.set_size_request(WIDTH, -1)
         field = Gtk.Box(spacing=10, css_classes=["sp-field"])
         field.append(Gtk.Image(icon_name="sonata-search-symbolic", pixel_size=22))
-        self.entry = Gtk.Text(placeholder_text="Spotlight Search", hexpand=True)
+        self.entry = Gtk.Text(placeholder_text="Search", hexpand=True)
         self.entry.connect("changed", lambda *_: self._search())
         self.entry.connect("activate", lambda *_: self._open_selected())
         field.append(self.entry)
