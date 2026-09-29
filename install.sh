@@ -8,6 +8,9 @@
 #                             distro's package manager (pacman/apt/dnf/zypper)
 #   ./install.sh --yes        don't ask (login-screen entry included)
 #   ./install.sh --uninstall  remove it again (your settings stay)
+#   ./install.sh --dev        link to this clone instead of copying it: the
+#                             session runs the code you are editing
+#                             (`sonata2 restart` reloads the shell)
 #
 # Installs: the sonata2 package + themes/icons -> <prefix>/share/sonata2,
 # launchers `sonata2` and `sonata-session` -> <prefix>/bin, the session
@@ -16,11 +19,11 @@
 # preferences for the "Sonata" desktop.
 set -euo pipefail
 SRC="$(cd "$(dirname "$0")" && pwd)"
-MODE=user DEPS=0 YES=0 UNINSTALL=0
+MODE=user DEPS=0 YES=0 UNINSTALL=0 DEV=0
 for a in "$@"; do
     case "$a" in
-        --system) MODE=system ;; --deps) DEPS=1 ;; --yes|-y) YES=1 ;; --uninstall) UNINSTALL=1 ;;
-        -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+        --system) MODE=system ;; --deps) DEPS=1 ;; --yes|-y) YES=1 ;; --uninstall) UNINSTALL=1 ;; --dev) DEV=1 ;;
+        -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
         *) echo "unknown option: $a (see --help)"; exit 2 ;;
     esac
 done
@@ -119,7 +122,12 @@ for f in "$SRC"/LICENSE* "$SRC/README.md"; do [ -e "$f" ] && items+=("$(basename
 cp "$SRC/tools/session-env.sh" "$SRC/tools/sonata-session" "$SRC/tools/wayfire-config.sh" "$tmp/sonata2/tools/"
 $SUDO rm -rf "$SHARE"
 $SUDO mkdir -p "$(dirname "$SHARE")"
-$SUDO cp -a "$tmp/sonata2" "$SHARE"
+if [ "$DEV" = 1 ]; then
+    $SUDO ln -s "$SRC" "$SHARE"          # the session runs this clone's code
+    echo "Dev install: $SHARE -> $SRC"
+else
+    $SUDO cp -a "$tmp/sonata2" "$SHARE"
+fi
 
 cat > "$tmp/sonata2-launcher" <<EOF
 #!/bin/sh

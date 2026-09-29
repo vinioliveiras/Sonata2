@@ -11,7 +11,8 @@ Development / screenshots:
   --search TEXT / --folder / --jiggle / --background           (Launchpad)
   --menu N                                                     (top bar, gallery)
   --page ID                                                    (settings)
-  sonata2 files [FOLDER...]                                    (Files)"""
+  sonata2 files [FOLDER...]                                    (Files)
+  sonata2 restart [dock topbar launchpad wallpaper]            (reload edited code)"""
 import argparse
 import json
 import os
@@ -182,7 +183,31 @@ def run_topbar(app, args, ui):
         _later(600, lambda: win.bar.open_menu(args.menu))
 
 
+SHELL_COMPONENTS = ("wallpaper", "dock", "topbar", "launchpad")
+
+
+def restart(names) -> int:
+    """`sonata2 restart [dock topbar ...]`: stop those shell components (all
+    by default) and start them again with the current code -- to see edits
+    live in a running Sonata session."""
+    import subprocess
+    import time
+    names = [n for n in names if n in SHELL_COMPONENTS] or list(SHELL_COMPONENTS)
+    for n in names:
+        subprocess.run(["pkill", "-f", "--", rf"-m sonata2 {n}( |$)"], check=False)
+    time.sleep(0.4)
+    cmd = self_command().split()
+    for n in names:
+        extra = ["--background"] if n == "launchpad" else []
+        subprocess.Popen(cmd + [n] + extra, start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"restarted {n}")
+    return 0
+
+
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "restart":
+        return restart(sys.argv[2:])
     p = argparse.ArgumentParser(prog="sonata2")
     p.add_argument("component", choices=list(APP_IDS))
     p.add_argument("--preview", action="store_true")

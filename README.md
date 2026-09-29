@@ -111,6 +111,11 @@ reinstall), starts the wallpaper, Dock, menu bar, Launchpad and your
 "Open at Login" apps, a polkit agent if one is installed, and hands the
 session environment to portals.
 
+Developing inside a real session: `./install.sh --dev` links the installed
+Sonata to this clone (no copy), so the session runs the code being edited;
+`sonata2 restart [dock topbar launchpad wallpaper]` reloads the shell parts
+(apps like Files/Settings: just reopen them).
+
 Keys (macOS-like, Super = Cmd): Super+Space or F4 Launchpad, Super+Tab
 switch apps, Super+Q close, Super+M minimize, Ctrl+Super+F zoom,
 Ctrl+Up all windows, Super+, System Settings, Ctrl+Super+Q lock, Ctrl+Alt+T terminal (handled by Wayfire: works even if the Sonata shell crashed).
