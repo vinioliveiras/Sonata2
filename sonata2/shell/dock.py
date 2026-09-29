@@ -437,6 +437,7 @@ class Dock(Gtk.Box):
         Gtk.Box.do_size_allocate(self, width, height, baseline)
         self.queue_draw()     # the plate is painted from the new size
         self.refit_soon()     # the screen edge may have changed (display, rotation)
+        self._rects_soon()    # icons moved (fit, apps opened/closed, reorder): minimize targets too
         for cb in self.on_geometry:
             cb()
 
@@ -863,6 +864,22 @@ class Dock(Gtk.Box):
         self._relayout()
         GLib.idle_add(self._update_rectangles)
         return False
+
+    def _rects_soon(self) -> None:
+        """Minimize targets again once the icons settle (not while magnified:
+        a zoomed icon is bigger and elsewhere than where it comes back to)."""
+        if not self.manager:
+            return
+        if getattr(self, "_rects_src", 0):
+            GLib.source_remove(self._rects_src)
+
+        def run():
+            self._rects_src = 0
+            if getattr(self, "_mag_strength", 0) > 0:
+                self._rects_src = GLib.timeout_add(200, run)
+                return False
+            return self._update_rectangles()
+        self._rects_src = GLib.timeout_add(150, run)
 
     def _update_rectangles(self) -> bool:
         """Tell the compositor where each window minimizes to (its Dock icon)."""
