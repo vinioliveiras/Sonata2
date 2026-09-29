@@ -698,7 +698,8 @@ class Dock(Gtk.Box):
         if not self._drag:
             return 0
         self._drag["left"] = False
-        self._drag["icon"].feed(x, self)
+        if self._drag.get("icon"):
+            self._drag["icon"].feed(x, self)
         tile = self.tiles[self._drag["key"]]
         slot = self._slot_at(x, y, exclude=tile)   # other icons whose centre is before the pointer
         if self.app_tiles().index(tile) != slot:
