@@ -125,11 +125,32 @@ def app_menu(dock, key: str, tile):
         sections.append([Item("Options", submenu=opts)])
     if wins:
         sections.append([Item("Hide", lambda: [dock.manager.minimize(t) for t in wins]),
-                         Item("Quit", lambda: [dock.manager.close(t) for t in wins])])
+                         Item("Quit", lambda: [dock.manager.close(t) for t in wins]),
+                         Item("Force Quit", lambda: force_quit(key))])
     elif info:
         sections.append([Item("Open", lambda: dock.launch(tile))])
     tile.label.popdown()
     return ui.menu.popup(tile, sections, position=dock.away)
+
+
+def force_quit(key) -> bool:
+    """macOS Force Quit: the app's processes are killed at once (SIGKILL),
+    for an app that doesn't answer. Its windows' processes come from
+    Wayfire (IPC list-views: pid of each view whose app id is this app)."""
+    import os
+    import signal
+    from .. import apps
+    from ..wl.wfipc import WayfireIPC
+    views = WayfireIPC().call("window-rules/list-views") or []
+    pids = {v.get("pid") for v in views if isinstance(v, dict) and v.get("pid", 0) > 1
+            and (apps.match_app_id(v.get("app-id") or "") or v.get("app-id")) == key}
+    pids.discard(os.getpid())
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError as e:
+            print(f"sonata2-dock: force quit {key} ({pid}): {e}")
+    return bool(pids)
 
 
 def new_window(dock, tile) -> None:
