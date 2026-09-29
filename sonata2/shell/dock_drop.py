@@ -216,12 +216,17 @@ def attach_trash(dock, tile) -> None:
     def motion(target, _x, _y):
         ok = bool(_files(target.get_value()))
         (tile.add_css_class if ok else tile.remove_css_class)(HOVER)
+        dock.hide_drop_gap()                     # over the Trash: no gap left open between icons
         return Gdk.DragAction.MOVE if ok else 0
 
     def drop(_target, value, _x, _y):
         tile.remove_css_class(HOVER)
+        dock.hide_drop_gap()
         dropped = _files(value)
         if dropped and all(_is_app(f) for f in dropped):     # an app (from Launchpad, Files): uninstall it
+            if dock._drag:
+                # a Dock icon: it stays until the uninstall is confirmed and done
+                dock._drag["dropped"] = True
             _uninstall_apps(dock, dropped)
             return True
         moved = False

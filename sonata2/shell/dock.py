@@ -370,6 +370,16 @@ class Dock(Gtk.Box):
         self.backdrop = None  # preview only: blurred wallpaper texture under the plate
         self.on_geometry = []  # callbacks when size/magnification changes
         self.on_rebuild = None  # host callback: position changed -> rebuild the Dock
+        # an app uninstalled: its icon goes (no empty slot); a burst of changes -> one check
+        mon = Gio.AppInfoMonitor.get()
+        self._apps_src = 0
+
+        def apps_changed(*_a):
+            if not self._apps_src:
+                self._apps_src = GLib.timeout_add(800, lambda: (setattr(self, "_apps_src", 0),
+                                                                self.forget_missing(), False)[2])
+        hid = mon.connect("changed", apps_changed)
+        self.connect("destroy", lambda *_: mon.disconnect(hid))
         self.hide_amount = 0.0  # 0 shown .. 1 slid out (auto-hide), set by the host
         # No CSS padding: the plate is painted over the allocation's edge
         # side, so padding would offset it. Spacers + a minimum thickness
@@ -690,6 +700,17 @@ class Dock(Gtk.Box):
         from . import dock_preview
         dock_preview.attach(tile, self)           # minimized windows: previews on hover
         return tile
+
+    def forget_missing(self) -> None:
+        """Apps uninstalled (from the Trash, Launchpad, a package manager):
+        their icons leave the Dock instead of leaving an empty slot."""
+        apps.scan()
+        gone = [k for k in list(self.cfg["pinned"]) if k not in PERMANENT and not apps.lookup(k)]
+        for key in gone:
+            self.set_pinned(key, False)
+        for key in [k for k in list(self.tiles) if k not in self.cfg["pinned"] and k not in self.windows
+                    and k not in PERMANENT and not apps.lookup(k)]:
+            self._remove_tile(key)
 
     def _remove_tile(self, key) -> None:
         tile = self.tiles.pop(key)

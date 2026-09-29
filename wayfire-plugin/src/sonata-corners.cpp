@@ -383,6 +383,8 @@ class corners_node_t : public wf::scene::transformer_base_node_t
 class sonata_corners_t : public wf::plugin_interface_t
 {
     const std::string transformer_name = "sonata-corners";
+    /* typeid(wf::scene::blur_node_t).name(): the blur plugin's transformer */
+    static inline const std::string blur_name = "N2wf5scene11blur_node_tE";
     wf::wl_idle_call idle_update;
     wf::wl_timer<false> late_update;
 
@@ -426,10 +428,34 @@ class sonata_corners_t : public wf::plugin_interface_t
         }
     }
 
+    /* A submenu (a popup of a popup) is drawn inside its parent menu's node,
+     * so the parent's blur already covers it; blurring it again samples the
+     * parent's offscreen buffer (empty) and the submenu turns near-black. */
+    static void unblur_nested_popup(wayfire_view view)
+    {
+        if (!view || (view->role != wf::VIEW_ROLE_UNMANAGED) || !view->get_root_node())
+        {
+            return;
+        }
+
+        auto parent = view->get_root_node()->parent();
+        if (!parent || !wf::node_to_view(parent))
+        {
+            return;
+        }
+
+        auto tnode = view->get_transformed_node();
+        if (auto blur = tnode->get_transformer(blur_name))
+        {
+            tnode->rem_transformer(blur);
+        }
+    }
+
     void update_all()
     {
         for (auto& v : wf::get_core().get_all_views())
         {
+            unblur_nested_popup(v);
             update(wf::toplevel_cast(v));
         }
     }

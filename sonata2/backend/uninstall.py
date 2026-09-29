@@ -72,17 +72,31 @@ def _run(cmd) -> str:
     return p.stdout.strip() if p.returncode == 0 else ""
 
 
+def _flatpak_id(path: str) -> str:
+    if "/flatpak/exports/" in path and path.endswith(".desktop"):
+        return os.path.basename(path)[:-len(".desktop")]
+    parts = path.split("/")
+    for i, part in enumerate(parts[:-2]):
+        if part == "flatpak" and parts[i + 1] == "app":
+            return parts[i + 2]
+    return ""
+
+
 def owner(info) -> Optional[Owner]:
     did = info.get_id() or ""
     if did.startswith(apps.PROTECTED):
         return None                                   # Files, Settings, Launchpad...: part of Sonata
-    path = os.path.realpath(info.get_filename() or "")
-    if not path:
+    listed = info.get_filename() or ""
+    if not listed:
         return None
-    if "/flatpak/exports/" in path:
-        app_id = os.path.basename(path)[:-len(".desktop")]
-        user = path.startswith(os.path.realpath(GLib.get_user_data_dir()))
-        return Owner("flatpak", app_id, "flatpak-user" if user else "flatpak-system")
+    path = os.path.realpath(listed)
+    # Flatpak: exports/share/applications/<id>.desktop is a link into
+    # flatpak/app/<id>/current/active/export/... -- either spelling counts
+    fp = _flatpak_id(listed) or _flatpak_id(path)
+    if fp:
+        user = os.path.realpath(listed).startswith(os.path.realpath(GLib.get_user_data_dir())) or \
+            listed.startswith(GLib.get_user_data_dir())
+        return Owner("flatpak", fp, "flatpak-user" if user else "flatpak-system")
     for manager, cmd in (("pacman", ["pacman", "-Qqo", path]), ("apt", ["dpkg-query", "-S", path]),
                          ("dnf", ["rpm", "-qf", "--qf", "%{NAME}", path]), ("zypper", ["rpm", "-qf", "--qf", "%{NAME}", path])):
         if manager == "zypper" and not shutil.which("zypper"):

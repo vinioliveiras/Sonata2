@@ -208,5 +208,16 @@ class DockTest(unittest.TestCase):
             self.assertIn(key, config.load("dock", D.DEFAULTS)["pinned"])
 
 
+    def test_uninstalled_app_leaves_no_slot(self):
+        key = self.removable()[0]
+        from unittest import mock
+        real = D.apps.lookup
+        with mock.patch.object(D.apps, "lookup", lambda k: None if k == key else real(k)):
+            self.dock.forget_missing()
+        settle()
+        self.assertNotIn(key, self.keys())
+        self.assertNotIn(key, self.cfg["pinned"])
+
+
 if __name__ == "__main__":
     unittest.main()
