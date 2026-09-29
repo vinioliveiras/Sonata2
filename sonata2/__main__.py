@@ -182,6 +182,10 @@ def run_launchpad(app, args, ui, state):
         return
     win = state["win"] = launchpad.Launchpad(app)
     app.hold()                     # stays resident while hidden: instant opening
+    from gi.repository import Gio as _Gio
+    close = _Gio.SimpleAction.new("close", None)     # (the Dock, before asking to uninstall an app)
+    close.connect("activate", lambda *_a: win.get_visible() and win.close_launchpad())
+    app.add_action(close)
     if not args.preview:
         # macOS: an app opened any other way (Dock, a shortcut, Spotlight)
         # closes Launchpad -- a new window, or another one activated

@@ -78,10 +78,8 @@ PROTECTED = apps.PROTECTED
 
 
 def _removable(info) -> bool:
-    if (info.get_id() or "").startswith(PROTECTED):
-        return False
-    path = info.get_filename() or ""
-    return os.path.dirname(os.path.realpath(path)) == os.path.realpath(USER_APPS)
+    """Apps the jiggle-mode x uninstalls (asked first): all but Sonata's own."""
+    return not (info.get_id() or "").startswith(PROTECTED)
 
 
 class ZoomBin(Gtk.Widget):
@@ -664,7 +662,7 @@ class Launchpad(Gtk.ApplicationWindow):
                 from .dock_menu import show_in_files
                 sections.append([Item("Show in Files", lambda: self.close_launchpad(
                     lambda: show_in_files(info.get_filename())))])
-            if info and _removable(info):
+            if info and not (info.get_id() or "").startswith(PROTECTED):
                 sections.append([Item("Move to Trash", lambda: self.ask_delete(item))])
         ui.menu.popup(widget, sections, at=(x, y))
 
@@ -681,19 +679,13 @@ class Launchpad(Gtk.ApplicationWindow):
         config.save("dock", data)
 
     def ask_delete(self, app_id: str) -> None:
+        """Uninstall (asked first): the package, the Flatpak or the shortcut
+        (backend/uninstall.py). Launchpad closes so the question shows."""
         info = self.installed.get(app_id)
-        if not info or not _removable(info):             # Sonata's own apps stay
+        if not info or (info.get_id() or "").startswith(PROTECTED):   # Sonata's own apps stay
             return
-        name = info.get_display_name()
-
-        def answer(rid):
-            if rid == "delete":
-                try:
-                    Gio.File.new_for_path(info.get_filename()).trash(None)
-                except GLib.Error as e:
-                    print(f"sonata2-launchpad: cannot delete {name}: {e.message}")
-        ui.dialog.alert(f"Delete “{name}”?", "Its shortcut is moved to the Trash.",
-                        [("cancel", "Cancel", ""), ("delete", "Delete", "destructive")], answer, parent=self)
+        from .uninstall_ui import ask
+        self.close_launchpad(lambda: ask(info))
 
     # -- drag and drop ---------------------------------------------------------------
     def _follow_drags(self) -> None:

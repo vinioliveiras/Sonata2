@@ -4,7 +4,7 @@
   darkens while hovered only if the app can open all of them (MIME types).
   Held there a moment, an open app's windows come forward -- minimized ones
   too -- to drop the item into one (spring-loading).
-- files on the Trash: move them to the Trash.
+- files on the Trash: move them to the Trash; an app: uninstall it (asked first).
 - an application (.desktop file) anywhere on the Dock: pin it at that spot.
 - a folder anywhere on the Dock: add it as a stack.
 """
@@ -220,6 +220,10 @@ def attach_trash(dock, tile) -> None:
 
     def drop(_target, value, _x, _y):
         tile.remove_css_class(HOVER)
+        dropped = _files(value)
+        if dropped and all(_is_app(f) for f in dropped):     # an app (from Launchpad, Files): uninstall it
+            _uninstall_apps(dock, dropped)
+            return True
         moved = False
         # Sonata's own apps (Files, Settings, Launchpad) never go to the Trash
         from ..apps import PROTECTED
@@ -236,6 +240,25 @@ def attach_trash(dock, tile) -> None:
         return moved
 
     tile.add_controller(_target(motion, drop, lambda *_: tile.remove_css_class(HOVER)))
+
+
+def _uninstall_apps(dock, files) -> None:
+    """Apps dropped on the Trash: asked, then uninstalled (macOS: dragging an
+    app to the Trash deletes it). Launchpad closes first so the question
+    isn't hidden under it."""
+    from .uninstall_ui import ask
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        app_id = "io.github.vinioliveiras.sonata2.launchpad"
+        bus.call(app_id, "/" + app_id.replace(".", "/"), "org.freedesktop.Application", "ActivateAction",
+                 GLib.Variant("(sava{sv})", ("close", [], {})), None, Gio.DBusCallFlags.NONE, 800, None, None)
+    except GLib.Error:
+        pass
+    for f in files:
+        did = os.path.basename(f.get_path() or "")[:-8]
+        info = apps.lookup(did) or apps.DesktopAppInfo.new_from_filename(f.get_path())
+        if info:
+            ask(info, done=lambda ok, k=did: ok and dock.set_pinned(k, False))
 
 
 def _is_dir(f: Gio.File) -> bool:
