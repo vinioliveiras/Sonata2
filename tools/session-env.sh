@@ -90,6 +90,12 @@ unset QT_STYLE_OVERRIDE KDE_FULL_SESSION KDE_SESSION_VERSION
 # Chromium/Electron (Chrome, Spotify, VS Code...): native Wayland with
 # client-side title bars drawn from the GTK theme.
 export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-auto}"
+# Sonata title bars for all apps (Settings > Appearance, on unless turned
+# off): Claude Desktop's Linux build (claude-desktop-bin) draws its own
+# frame unless told to use the system's (sonata2/titlebars.py does the rest)
+if ! grep -qs '"system_titlebars": *false' "$HOME/.config/sonata2/appearance.json"; then
+    export CLAUDE_NATIVE_TITLEBAR="${CLAUDE_NATIVE_TITLEBAR:-1}"
+fi
 # Folders open in Sonata's Files -- only in this session: the
 # desktop-specific list (XDG_CURRENT_DESKTOP=Sonata) other desktops ignore.
 # Every folder-like type goes to Files (never Nautilus); keys the user

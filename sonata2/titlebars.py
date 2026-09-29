@@ -11,6 +11,8 @@ at every login (`sonata2 autostart`):
 - VS Code / VSCodium / Code - OSS: "window.titleBarStyle": "native".
 - Firefox, Thunderbird, LibreWolf, Floorp (every profile): user.js
   browser.tabs.inTitlebar = 0 (tabs under the system title bar).
+- Claude Desktop (claude-desktop-bin): CLAUDE_NATIVE_TITLEBAR=1, set by
+  tools/session-env.sh at login.
 
 Turning the option off puts both back. Apps with a frame of their own
 and no such setting (Spotify, Claude, Discord...) keep drawing theirs."""
