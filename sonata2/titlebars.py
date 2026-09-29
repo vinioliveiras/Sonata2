@@ -17,6 +17,9 @@ at every login (`sonata2 autostart`):
   browser.tabs.inTitlebar = 0 (tabs under the system title bar).
 - Claude Desktop (claude-desktop-bin): CLAUDE_NATIVE_TITLEBAR=1, set by
   tools/session-env.sh at login.
+- Vesktop (the open Discord client, Flatpak too): settings.json
+  "titleBar": "system". The official Discord app has no such setting (only
+  patching its core.asar, undone by every update): use Vesktop for it.
 
 Turning the option off puts both back. Apps with a frame of their own
 and no such setting (Spotify, Claude, Discord...) keep drawing theirs."""
@@ -28,6 +31,7 @@ from gi.repository import GLib
 
 from . import config
 
+VESKTOP = ("~/.config/vesktop/settings.json", "~/.var/app/dev.vencord.Vesktop/config/vesktop/settings.json")
 CODE = ("Code", "Code - OSS", "VSCodium", "Code - Insiders")
 MOZILLA = ("~/.mozilla/firefox", "~/.config/mozilla/firefox", "~/.thunderbird", "~/.librewolf", "~/.floorp",
            "~/.var/app/org.mozilla.firefox/.mozilla/firefox")
@@ -66,6 +70,8 @@ def apply(on: bool = None) -> None:
         path = os.path.join(cfg, app, "User", "settings.json")
         if os.path.isdir(os.path.join(cfg, app)):
             _code_setting(path, "native" if on else "custom")
+    for path in VESKTOP:
+        _vesktop_setting(os.path.expanduser(path), on)
 
 
 def chromium_roots(cfg: str) -> list:
@@ -140,6 +146,19 @@ def _code_setting(path: str, style: str) -> None:
     if new != text:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         _write(path, new)
+
+
+def _vesktop_setting(path: str, on: bool) -> None:
+    """Vesktop: "titleBar" ("system" = the window manager's; older builds:
+    "customTitleBar" false). Only for a Vesktop that has run once."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return
+    new = dict(data, titleBar="system" if on else "discord", customTitleBar=not on)
+    if new != data:
+        _write(path, json.dumps(new, indent=4))
 
 
 def _write(path: str, text: str) -> None:

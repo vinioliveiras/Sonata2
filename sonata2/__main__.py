@@ -24,6 +24,7 @@ import os
 import sys
 
 from .shell import layer
+from . import apps  # noqa: F401,E402  (cleans app names everywhere: "Spotify (Launcher)")
 
 APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
            "autostart": "io.github.vinioliveiras.sonata2.autostart",

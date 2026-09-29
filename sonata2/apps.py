@@ -13,6 +13,39 @@ try:
 except (ValueError, ImportError):
     DesktopAppInfo = Gio.DesktopAppInfo
 
+
+# -- app names without packaging noise --------------------------------------------------
+# "Spotify (Launcher)", "Discord (Flatpak)", "Firefox (Wayland)": macOS shows
+# just the app's name. Every place that names an app goes through
+# DesktopAppInfo.get_display_name/get_name, so they are cleaned there, once.
+import re  # noqa: E402
+
+_NOISE = re.compile(r"\s*[\(\[](?:launcher|flatpak|snap|appimage|wayland|x11|xwayland|native|"
+                    r"official|unofficial|web ?app|electron|bin|git|stable)[\)\]]\s*$|"
+                    r"\s+-\s+(?:launcher|flatpak|snap)$", re.IGNORECASE)
+
+
+def clean_name(name: str) -> str:
+    if not name:
+        return name
+    out = _NOISE.sub("", name).strip()
+    return out or name
+
+
+def _cleaned(method):
+    def wrapper(self, *a):
+        return clean_name(method(self, *a))
+    wrapper.__name__ = method.__name__
+    return wrapper
+
+
+for _cls in {DesktopAppInfo, Gio.DesktopAppInfo}:
+    for _m in ("get_display_name", "get_name"):
+        if not getattr(getattr(_cls, _m, None), "_sonata_clean", False):
+            _w = _cleaned(getattr(_cls, _m))
+            _w._sonata_clean = True
+            setattr(_cls, _m, _w)
+
 # Default pins, macOS order: Finder, browser, Mail, ..., Terminal, Settings.
 # Each slot lists candidate desktop ids across distros/desktops; the first one
 # installed wins, so the Dock never shows a broken icon.
