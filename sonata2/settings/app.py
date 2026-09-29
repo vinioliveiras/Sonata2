@@ -58,7 +58,9 @@ button.st-accent.selected { box-shadow: 0 0 0 2px %(window_bg)s, 0 0 0 3.5px alp
 ui.register("""
 window.sonata-settings { color: %(label)s; }
 /* glass sidebar (standard material), opaque content pane */
-.sonata-settings .sidebar-pane { background: none; }
+.sonata-settings .sidebar-pane { box-shadow: none; }
+/* the line between the panes, on an opaque 1 px column like Files' */
+.st-divider { min-width: 1px; background: %(pane_bg)s; box-shadow: inset 1px 0 %(separator)s; }
 .st-sidebar headerbar, .st-content headerbar { min-height: 52px; }   /* traffic lights where Files has them */
 .st-sidebar headerbar, .st-sidebar toolbarview, .st-sidebar scrolledwindow,
 .st-sidebar list { background: none; box-shadow: none; }
@@ -231,13 +233,21 @@ class Settings(Adw.ApplicationWindow):
         self.set_size_request(760, 480)
         ui.window.standard(self)
         self.toasts = Adw.ToastOverlay()
-        self.split = Adw.NavigationSplitView(vexpand=True, min_sidebar_width=230, max_sidebar_width=260)
-        self.split.set_sidebar(self._sidebar())
+        # Sidebar | content in a plain box (like Files): whole-pixel edges, no
+        # see-through seam (AdwNavigationSplitView left a half-transparent
+        # column between the panes). The window never gets narrow enough to
+        # need the split view's collapsing.
+        self.split = Gtk.Box(vexpand=True)
+        side = self._sidebar()
+        side.set_size_request(230, -1)
+        side.add_css_class("sidebar-pane")
+        self.split.append(side)
+        self.split.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL, css_classes=["st-divider"]))
         # One content page; sections are stack children, cross-faded on switch.
         self.content = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE)
         self.fade = ui.transition.CrossFade(self.content)
-        self.split.set_content(Adw.NavigationPage(title="System Settings", child=self.fade,
-                                                  css_classes=["st-content"]))
+        self.split.append(Adw.NavigationPage(title="System Settings", child=self.fade, hexpand=True,
+                                             css_classes=["st-content"]))
         self.current = None
         self.toasts.set_child(self.split)
         self.set_content(self.toasts)
@@ -321,7 +331,6 @@ class Settings(Adw.ApplicationWindow):
         self.current = sid
         self.content.set_visible_child(self.pages[sid])
         self.fade.play()
-        self.split.set_show_content(True)
 
     def _async_rows(self, grp, work, fill) -> None:
         """Fill `grp` from work() (threaded); a placeholder while loading."""
@@ -618,6 +627,7 @@ class Settings(Adw.ApplicationWindow):
         if f and f.query_exists(None):
             pic.set_file(f)
         g.add(pic)
+        chooser = group()                        # its own group: the page's standard gap below the picture
         row = Adw.ActionRow(title="Picture", subtitle=f.get_basename() if f else "None")
         choose = Gtk.Button(label="Choose…", valign=Gtk.Align.CENTER)
 
@@ -639,8 +649,8 @@ class Settings(Adw.ApplicationWindow):
             dlg.open(self, None, done)
         choose.connect("clicked", pick)
         row.add_suffix(choose)
-        g.add(row)
-        return [g]
+        chooser.add(row)
+        return [g, chooser]
 
     # -- input (Wayfire [input]; applied live) --------------------------------------------------
     def _wf(self, key, value):
