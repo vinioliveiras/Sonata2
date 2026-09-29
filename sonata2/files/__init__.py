@@ -15,7 +15,26 @@ def open_folder(uri: str) -> None:
             return
     except GLib.Error:
         pass
-    Gio.AppInfo.launch_default_for_uri(uri, None)
+    if uri.startswith("sonata:") or not _launch_default(uri):
+        _spawn_files(uri)          # only Files knows sonata: places (Recents)
+
+
+def _launch_default(uri: str) -> bool:
+    from gi.repository import Gio, GLib
+    try:
+        return Gio.AppInfo.launch_default_for_uri(uri, None)
+    except GLib.Error:
+        return False
+
+
+def _spawn_files(uri: str) -> None:
+    """This clone's Files, without its desktop entry (dev session)."""
+    import os
+    import subprocess
+    import sys
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in (root, os.environ.get("PYTHONPATH")) if p))
+    subprocess.Popen([sys.executable, "-m", "sonata2", "files", uri], env=env, start_new_session=True)
 
 
 def files_desktop_file(command: str) -> str:
