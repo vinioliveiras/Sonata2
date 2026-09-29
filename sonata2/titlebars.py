@@ -8,9 +8,10 @@ at every login (`sonata2 autostart`):
 - Every Chromium-based browser (Chrome, Chromium, Brave, Edge, Vivaldi,
   Opera, Thorium..., Flatpak ones too), found by its profile folder: like
   Chrome on a Mac, its own frame with the tabs in the title bar and
-  Sonata's traffic lights to their left (GTK mode) -- always, whatever the
-  option. Skipped while the browser runs (it would write its own value
-  back on quit): next login.
+  Sonata's traffic lights to their left (GTK mode, set the first time);
+  choosing Classic in the browser brings Sonata's glass title bar back.
+  Skipped while the browser runs (it would write its own value back on
+  quit): next login.
 - Electron apps with a normal frame get Sonata's title bar by themselves
   (Wayfire prefers server-side decorations); the ones that draw their own
   frame and have no setting for it (Spotify, Discord...) keep theirs.
@@ -37,7 +38,7 @@ VESKTOP = ("~/.config/vesktop/settings.json", "~/.var/app/dev.vencord.Vesktop/co
 CODE = ("Code", "Code - OSS", "VSCodium", "Code - Insiders")
 MOZILLA = ("~/.mozilla/firefox", "~/.config/mozilla/firefox", "~/.thunderbird", "~/.librewolf", "~/.floorp",
            "~/.var/app/org.mozilla.firefox/.mozilla/firefox")
-GTK_MODE = 1          # Chromium's "Appearance > Mode": 0 Classic, 1 GTK, 2 Qt
+GTK_MODE, QT_MODE = 1, 2      # Chromium's "Appearance > Mode": 0 Classic, 1 GTK, 2 Qt
 MOZ_LINE = 'user_pref("browser.tabs.inTitlebar", 0);  // Sonata title bars (Settings > Appearance)'
 # always: Firefox's Open/Save dialogs through the portal (Sonata's panels)
 MOZ_PORTAL = 'user_pref("widget.use-xdg-desktop-portal.file-picker", 1);  // Sonata Open/Save panels'
@@ -140,10 +141,11 @@ def _listdirs(path: str) -> list:
 
 def _browser_pref(path: str) -> None:
     """Chrome on a Mac: tabs in the title bar, the window buttons to their
-    left. Chromium's own frame ("Use system title bar" off) in GTK mode:
-    the buttons are the GTK theme's (Sonata's traffic lights), in the order
-    of Sonata's button layout (close, minimize, maximize on the left), and
-    the tab strip takes Sonata's Light/Dark colours."""
+    left. A profile that never chose an Appearance > Mode gets GTK (Sonata's
+    traffic lights, Light/Dark tab strip). The frame follows that mode:
+    GTK keeps the tabs in the title bar with Chromium's own frame; Classic
+    (or a browser theme) goes back to Sonata's glass title bar above the
+    tabs (read at login, while the browser is closed)."""
     try:
         with open(path, encoding="utf-8") as f:
             prefs = json.load(f)
@@ -151,10 +153,19 @@ def _browser_pref(path: str) -> None:
         return
     browser = prefs.setdefault("browser", {})
     theme = prefs.setdefault("extensions", {}).setdefault("theme", {})
-    if browser.get("custom_chrome_frame") is True and theme.get("system_theme") == GTK_MODE:
+    changed = False
+    # never chosen: GTK, like Chrome on a Mac. Qt mode hangs Chromium in
+    # this session (its Qt, told to take GTK's look, starts a second GTK
+    # inside the browser): back to GTK, or the browser would hang at every start
+    if theme.get("system_theme") in (None, QT_MODE):
+        theme["system_theme"] = GTK_MODE
+        changed = True
+    gtk = theme.get("system_theme") == GTK_MODE and not theme.get("id")
+    if browser.get("custom_chrome_frame") is not gtk:
+        browser["custom_chrome_frame"] = gtk
+        changed = True
+    if not changed:
         return
-    browser["custom_chrome_frame"] = True
-    theme["system_theme"] = GTK_MODE
     _write(path, json.dumps(prefs, separators=(",", ":")))
 
 
