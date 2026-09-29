@@ -465,9 +465,14 @@ def _write_env_report() -> None:
             lines.append(f"{mod} {getattr(m, '__version__', getattr(m, 'version', '?'))}")
         except ImportError:
             lines.append(f"{mod} missing")
+    try:
+        from . import icons
+        lines.append(f"logo {icons.distro_logo()}")
+    except Exception as e:                        # noqa: BLE001
+        lines.append(f"logo error {e}")
     for tool, arg in (("wayfire", "--version"), ("grim", "-h"), ("wf-recorder", "--version"),
                       ("wlsunset", "-h"), ("swayidle", "-v"), ("wtype", "-h"), ("nmcli", "--version"),
-                      ("wpctl", "--version"), ("pactl", "--version"), ("brightnessctl", "--version"), ("bluetoothctl", "--version")):
+                      ("wpctl", "--version"), ("brightnessctl", "--version"), ("bluetoothctl", "--version")):
         if shutil.which(tool):
             try:
                 r = subprocess.run([tool, arg], capture_output=True, text=True, timeout=3)

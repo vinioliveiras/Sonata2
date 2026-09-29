@@ -131,6 +131,8 @@ SHARED = {
     "t_press": "80ms",
     "t_fast": "150ms",
     "t_standard": "250ms",
+    "t_open": "180ms",                      # menus, panels, popovers appearing
+    "ease_out": "cubic-bezier(0.2, 0.8, 0.2, 1)",
 }
 
 # Apple system colours (Settings sidebar badges, app accents). Same in

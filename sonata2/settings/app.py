@@ -48,33 +48,6 @@ SECTIONS = [  # id, title, icon, badge colour, group
     ("about", "About", "help-about-symbolic", "gray", "about"),
 ]
 
-# One line under each section's title (the page's hero row, like LayerOSX
-# Settings and macOS System Settings).
-DESCRIPTIONS = {
-    "wifi": "Choose a network and see how this computer is connected.",
-    "network": "Ethernet, VPN and the other ways this computer connects.",
-    "bluetooth": "Connect keyboards, mice, headphones and other wireless devices.",
-    "printers": "Printers, the default printer and print queues (CUPS).",
-    "sound": "Output and input devices and their volume.",
-    "displays": "Brightness, resolution and how your screens are arranged.",
-    "battery": "Battery level, energy mode and the menu bar percentage.",
-    "wallpaper": "The picture on your desktop.",
-    "appearance": "Appearance, default web browser and Sonata's look.",
-    "keyboard": "Key repeat and the keyboard layout (input source).",
-    "trackpad": "Tracking speed, tap to click and scrolling.",
-    "mouse": "Tracking speed, scrolling and the primary button.",
-    "datetime": "Time zone, automatic time and the menu bar clock.",
-    "updates": "Keep the system and your apps up to date.",
-    "notifications": "Do Not Disturb and how each app may notify you.",
-    "users": "Your picture and password, other accounts and the apps that open at login.",
-    "privacy": "Screen lock, recent files, Trash and location services.",
-    "sharing": "The name other computers see on the network.",
-    "accessibility": "Motion, transparency, text and pointer size.",
-    "dock": "Size, magnification, position and hiding of the Dock.",
-    "menubar": "The clock and the items in the menu bar.",
-    "launchpad": "How Launchpad arranges your apps.",
-}
-
 _ACCENT_CSS = "".join(f".st-accent.{n} {{ background: {c[0]}; }}\n" for n, c in ui.tokens.ACCENTS.items())
 ui.register(_ACCENT_CSS + """
 button.st-accent { min-width: 16px; min-height: 16px; padding: 0; margin: 0 3px; border-radius: 99px; border: none;
@@ -90,7 +63,6 @@ window.sonata-settings { color: %(label)s; }
 .st-sidebar headerbar, .st-sidebar toolbarview, .st-sidebar scrolledwindow,
 .st-sidebar list { background: none; box-shadow: none; }
 .st-content, .st-content toolbarview, .st-content headerbar { background: %(pane_bg)s; box-shadow: none; }
-.st-hero label.title { font-weight: 700; }
 .st-badge { border-radius: 7px; padding: 4px; color: white; }
 .st-badge.big { border-radius: 12px; padding: 10px; }
 .st-badge.blue { background: %(sys_blue)s; } .st-badge.green { background: %(sys_green)s; }
@@ -261,6 +233,12 @@ class Settings(Adw.ApplicationWindow):
         self.toasts = Adw.ToastOverlay()
         self.split = Adw.NavigationSplitView(vexpand=True, min_sidebar_width=230, max_sidebar_width=260)
         self.split.set_sidebar(self._sidebar())
+        # One content page; sections are stack children, cross-faded on switch.
+        self.content = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE)
+        self.fade = ui.transition.CrossFade(self.content)
+        self.split.set_content(Adw.NavigationPage(title="System Settings", child=self.fade,
+                                                  css_classes=["st-content"]))
+        self.current = None
         self.toasts.set_child(self.split)
         self.set_content(self.toasts)
         self.pages = {}
@@ -326,12 +304,7 @@ class Settings(Adw.ApplicationWindow):
         if sid not in self.pages:
             title = next(s[1] for s in SECTIONS if s[0] == sid)
             page = Adw.PreferencesPage()
-            self._hero_done = sid == "about"          # About has its own big header
-            groups = getattr(self, f"_page_{sid}")()
-            if not self._hero_done:                    # page didn't turn a row into the hero
-                hero = group()
-                hero.add(self._hero(Adw.ActionRow(title=title, use_markup=False), sid))
-                page.add(hero)
+            groups = getattr(self, f"_page_{sid}")()      # no hero row: the pane title names the section
             for g in groups:
                 page.add(g)
             tv = Adw.ToolbarView()
@@ -339,20 +312,14 @@ class Settings(Adw.ApplicationWindow):
             hb.set_title_widget(Gtk.Label(label=title, css_classes=["st-pane-title"]))
             tv.add_top_bar(hb)
             tv.set_content(page)
-            self.pages[sid] = Adw.NavigationPage(title=title, child=tv, css_classes=["st-content"])
-        self.split.set_content(self.pages[sid])
+            self.pages[sid] = tv
+            self.content.add_named(tv, sid)
+        if self.current is not None and self.current != sid:
+            self.fade.capture()
+        self.current = sid
+        self.content.set_visible_child(self.pages[sid])
+        self.fade.play()
         self.split.set_show_content(True)
-
-    def _hero(self, row, sid):
-        """Make `row` the page's first row: the section's big badge, bold
-        title, one-line description (LayerOSX / System Settings)."""
-        _sid, _title, icon, color, _grp = next(s for s in SECTIONS if s[0] == sid)
-        row.add_prefix(badge(icon, color, big=True))
-        if not row.get_subtitle():
-            row.set_subtitle(DESCRIPTIONS.get(sid, ""))
-        row.add_css_class("st-hero")
-        self._hero_done = True
-        return row
 
     def _async_rows(self, grp, work, fill) -> None:
         """Fill `grp` from work() (threaded); a placeholder while loading."""
@@ -367,8 +334,8 @@ class Settings(Adw.ApplicationWindow):
     # -- Linux sections ------------------------------------------------------------
     def _page_wifi(self):
         top = group()
-        sw = self._hero(switch_row("Wi-Fi", False, lambda on: system.run_async(
-            system.set_wifi_enabled, lambda _r: self._refresh("wifi"), on)), "wifi")
+        sw = switch_row("Wi-Fi", False, lambda on: system.run_async(
+            system.set_wifi_enabled, lambda _r: self._refresh("wifi"), on))
         top.add(sw)
         nets = group("Networks")
         rescan = Gtk.Button(icon_name="view-refresh-symbolic", css_classes=["flat"], valign=Gtk.Align.CENTER,
@@ -488,18 +455,15 @@ class Settings(Adw.ApplicationWindow):
     def _page_bluetooth(self):
         top = group()
         devs = group("My Devices")
-        self._hero_done = True                         # the Bluetooth row below is the hero
 
         def fill(res):
             state, devices = res or (None, [])
             if state is None:
-                top.add(self._hero(Adw.ActionRow(title="Bluetooth", subtitle="No Bluetooth adapter found"),
-                                   "bluetooth"))
+                top.add(Adw.ActionRow(title="Bluetooth", subtitle="No Bluetooth adapter found"))
                 return
-            top.add(self._hero(switch_row("Bluetooth", state,
-                                          lambda on: system.run_async(system.set_bluetooth, None, on),
-                                          subtitle="This computer is discoverable while Bluetooth Settings is open"),
-                               "bluetooth"))
+            top.add(switch_row("Bluetooth", state,
+                               lambda on: system.run_async(system.set_bluetooth, None, on),
+                               subtitle="This computer is discoverable while Bluetooth Settings is open"))
             for d in devices:
                 row = Adw.ActionRow(title=d.name, subtitle="Connected" if d.connected else
                                     ("Not Connected" if d.paired else "Not Paired"))
@@ -699,7 +663,14 @@ class Settings(Adw.ApplicationWindow):
     def _reload_page(self, sid):
         """Rebuild a section (after its content changed)."""
         page = self.pages.pop(sid, None)
-        if page is not None and self.split.get_content() is page:
+        if page is None:
+            return
+        showing = self.current == sid
+        if showing:
+            self.fade.capture()                       # rebuilt in place: fade, no flash
+        self.content.remove(page)
+        if showing:
+            self.current = None
             self.select(sid, from_sidebar=True)
 
     def _page_trackpad(self):
@@ -1345,7 +1316,10 @@ class Settings(Adw.ApplicationWindow):
     def _page_about(self):
         hero = group()
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_top=8, margin_bottom=8)
-        box.append(badge("sonata-logo-symbolic", "black", big=True))
+        logo = Gtk.Image(pixel_size=96, halign=Gtk.Align.CENTER)
+        from .. import icons
+        icons.set_logo(logo)                      # the distro's logo (os-release LOGO=)
+        box.append(logo)
         name = Gtk.Label(label="…", css_classes=["st-about-name"])
         sub = Gtk.Label(label="", css_classes=["st-caption"])
         box.append(name)

@@ -148,6 +148,56 @@ def set_image(image: Gtk.Image, gicon) -> None:
     image.set_from_paintable(found)
 
 
+def distro_logo(size: int = 128):
+    """File of the system's logo (os-release LOGO=, e.g. "cachyos"; then
+    distributor-logo-<ID>, the ID_LIKE family...) from the icon themes
+    (Sonata's bundled distributor logos included) or /usr/share/pixmaps.
+    None when the distro has none."""
+    osr = {}
+    try:
+        with open("/etc/os-release") as f:
+            osr = {k: v.strip().strip('"') for k, v in (ln.split("=", 1) for ln in f if "=" in ln)}
+    except OSError:
+        pass
+    ids = [osr.get("ID", "")] + osr.get("ID_LIKE", "").split()
+    names = [osr.get("LOGO", "")]
+    for i in ids:
+        names += [f"distributor-logo-{i}", f"{i}-logo", i] if i else []
+    names = [n for n in names if n]
+    display = Gdk.Display.get_default()
+    themes = [t for t in (Gtk.IconTheme.get_for_display(display) if display else None, _system) if t]
+    for n in names:
+        for t in themes:
+            if t.has_icon(n):
+                f = t.lookup_icon(n, None, size, 1, Gtk.TextDirection.NONE, 0).get_file()
+                if f and f.get_path():
+                    return f.get_path()
+        for ext in ("svg", "png"):
+            if os.path.exists(f"/usr/share/pixmaps/{n}.{ext}"):
+                return f"/usr/share/pixmaps/{n}.{ext}"
+    return None
+
+
+def set_logo(image: Gtk.Image) -> None:
+    """`image` shows the system's logo at its pixel size, in its own
+    colours (librsvg: GTK's SVG renderer ignores <style> sheets); the
+    Sonata logo when the distro has none."""
+    px = image.get_pixel_size() if image.get_pixel_size() > 0 else 96
+    path = distro_logo(px)
+    tex = None
+    if path and path.endswith(".svg"):
+        tex = _rsvg_texture(path, px * 2)                     # sharp on HiDPI
+    elif path:
+        try:
+            tex = Gdk.Texture.new_from_filename(path)
+        except GLib.Error:
+            tex = None
+    if tex is not None:
+        image.set_from_paintable(tex)
+    else:
+        image.set_from_icon_name("sonata-logo-symbolic")
+
+
 # Full-colour SVG icons with filters (the soft shadows in MacTahoe's artwork)
 # are drawn by librsvg through GdkPixbuf: newer GTK SVG renderers draw those
 # filters as a stray translucent square at the top left.

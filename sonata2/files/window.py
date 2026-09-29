@@ -267,7 +267,8 @@ class FilesWindow(Adw.ApplicationWindow):
                 w = Gtk.ScrolledWindow(child=w, hscrollbar_policy=Gtk.PolicyType.NEVER)
             self.stack.add_named(w, vid)
         self.view = self.views["icons"]
-        return self.stack
+        self.fade = ui.transition.CrossFade(self.stack)    # folder changes cross-fade
+        return self.fade
 
     def set_view(self, vid, save=True):
         if vid not in self.views:
@@ -315,6 +316,8 @@ class FilesWindow(Adw.ApplicationWindow):
             self.pos = len(self.history) - 1
         if self.search.get_text():
             self._close_search()
+        if self.view is not self.views["columns"]:        # columns slide on their own
+            self.fade.capture()
         self.folder.load(uri)
         self._update_nav()
 
@@ -351,8 +354,10 @@ class FilesWindow(Adw.ApplicationWindow):
             v.unselect_all()
             v.scroll_top()
         self.views["columns"].reset(uri)
+        self.fade.play()
 
     def _load_failed(self, uri, err):
+        self.fade.play()
         name = folder.display_name(uri)
         # stay where we were (drop the failed step from the history)
         if self.history and self.history[self.pos] == uri:

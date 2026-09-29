@@ -995,7 +995,9 @@ class AboutWindow(Adw.Window):
         head = ui.window.titlebar(self, zoom=True)
         body = Gtk.Box(spacing=36, css_classes=["about-box"], halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER,
                        vexpand=True)
-        logo = Gtk.Image(icon_name="sonata-logo-symbolic", pixel_size=120, valign=Gtk.Align.CENTER)
+        logo = Gtk.Image(pixel_size=120, valign=Gtk.Align.CENTER)
+        from .. import icons
+        icons.set_logo(logo)                      # the distro's logo (os-release LOGO=)
         body.append(logo)
         info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3, valign=Gtk.Align.CENTER)
         self.info = info
