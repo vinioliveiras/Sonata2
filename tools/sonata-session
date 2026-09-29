@@ -46,4 +46,16 @@ logs="${XDG_CACHE_HOME:-$HOME/.cache}/sonata2"; mkdir -p "$logs"
 # The login intro (sonata2/shell/intro.py): the welcome screen, then the
 # Dock and menu bar slide in. Only at login, never on a restart of Sonata.
 touch "${XDG_RUNTIME_DIR:-/tmp}/sonata2-intro"
+# Portals still running from the previous session (another desktop's
+# environment) would pick that desktop's backends (GNOME's waits ~25 s for
+# gnome-shell) and hold every GTK process at startup: they start again,
+# on first use, with this session's environment -- handed over now, before
+# any Sonata surface asks for them (WAYLAND_DISPLAY follows from Wayfire).
+if command -v systemctl >/dev/null; then
+    systemctl --user stop xdg-desktop-portal.service xdg-desktop-portal-gnome.service \
+        xdg-desktop-portal-gtk.service xdg-desktop-portal-kde.service 2>/dev/null || true
+fi
+command -v dbus-update-activation-environment >/dev/null && \
+    dbus-update-activation-environment --systemd XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_DATA_DIRS \
+        DCONF_PROFILE XCURSOR_THEME XCURSOR_SIZE XCURSOR_PATH QT_QPA_PLATFORMTHEME 2>/dev/null || true
 exec wayfire -c "$cfg" > "$logs/session.log" 2>&1
