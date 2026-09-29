@@ -39,7 +39,30 @@ def _cleaned(method):
     return wrapper
 
 
+def _gpu_aware(method):
+    """Launching an app that wants the discrete GPU (gpu.py) adds its
+    environment to the launch context -- every Sonata launch path goes here."""
+    def wrapper(self, arg, context=None, *rest):
+        try:
+            from . import gpu
+            if gpu.wants_discrete(self):
+                if context is None:
+                    context = Gio.AppLaunchContext()
+                for k, v in gpu.discrete_env().items():
+                    context.setenv(k, v)
+        except Exception as e:                    # never keep an app from opening
+            print(f"sonata2: discrete GPU: {e}")
+        return method(self, arg, context, *rest)
+    wrapper.__name__ = method.__name__
+    return wrapper
+
+
 for _cls in {DesktopAppInfo, Gio.DesktopAppInfo}:
+    for _m in ("launch", "launch_uris"):
+        if not getattr(getattr(_cls, _m, None), "_sonata_gpu", False):
+            _w = _gpu_aware(getattr(_cls, _m))
+            _w._sonata_gpu = True
+            setattr(_cls, _m, _w)
     for _m in ("get_display_name", "get_name"):
         if not getattr(getattr(_cls, _m, None), "_sonata_clean", False):
             _w = _cleaned(getattr(_cls, _m))

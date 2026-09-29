@@ -115,6 +115,10 @@ def app_menu(dock, key: str, tile):
                  Item("Open at Login", lambda on: set_open_at_login(info, on),
                       checked=opens_at_login(info.get_id()[:-8]))],
                 [Item("Open File Location", lambda: show_in_files(app_file(info)))]]
+        from .. import gpu
+        g = gpu.menu_item(info, Item)
+        if g:
+            opts.append([g])
     elif pinned:
         opts = [[Item("Keep in Dock", lambda on: dock.set_pinned(key, on), checked=True)]]
     if opts:
