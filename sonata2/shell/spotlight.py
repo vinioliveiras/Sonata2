@@ -352,7 +352,9 @@ class Spotlight(Gtk.ApplicationWindow):
                 from ..files import open_folder
                 open_folder(Gio.File.new_for_path(row.payload).get_uri())
             else:
-                Gio.AppInfo.launch_default_for_uri(Gio.File.new_for_path(row.payload).get_uri(), ctx)
+                from ..files import packages
+                if not packages.open_path(row.payload):        # install / run / extract
+                    Gio.AppInfo.launch_default_for_uri(Gio.File.new_for_path(row.payload).get_uri(), ctx)
         except GLib.Error:
             pass
         self.close_spotlight()

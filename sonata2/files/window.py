@@ -13,7 +13,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, ui  # noqa: E402
-from . import folder, ops  # noqa: E402
+from . import folder, ops, packages  # noqa: E402
 from .search import Search  # noqa: E402
 from .folder import RECENTS, file_of, is_dir  # noqa: E402
 from .views import ColumnsView, IconsView, ListView  # noqa: E402
@@ -379,6 +379,8 @@ class FilesWindow(Adw.ApplicationWindow):
         if is_dir(info):
             self.go(target or f.get_uri())
             return
+        if f.get_path() and packages.open_path(f.get_path(), self):     # install / run / extract
+            return
         ctx = self.get_display().get_app_launch_context()
         Gio.AppInfo.launch_default_for_uri_async(target or f.get_uri(), ctx, None, self._launched, info)
 
@@ -449,7 +451,8 @@ class FilesWindow(Adw.ApplicationWindow):
                                         Item(f"Quick Look {what}", self.toggle_quicklook)],
                                        [Item("Empty Trash", self.empty_trash)]], at=(x, y))
                 return
-            sections = [[Item("Open", self.open_selection)]]
+            pkg = packages.menu_items(file_of(sel[0]).get_path(), self) if n == 1 and not is_dir(sel[0]) else []
+            sections = [pkg + [Item("Open", self.open_selection)]] if pkg else [[Item("Open", self.open_selection)]]
             apps = self._open_with_items(sel[0]) if n == 1 and not is_dir(sel[0]) else []
             if apps:
                 sections[0].append(Item("Open With", submenu=[apps]))

@@ -93,6 +93,9 @@ def _open(gfile: Gio.File) -> None:
     if gfile.query_file_type(Gio.FileQueryInfoFlags.NONE, None) == Gio.FileType.DIRECTORY:
         open_folder(gfile.get_uri())
         return
+    from ..files import packages
+    if gfile.get_path() and packages.open_path(gfile.get_path()):     # install / run / extract
+        return
     Gio.AppInfo.launch_default_for_uri(gfile.get_uri(), None)
 
 
