@@ -105,22 +105,22 @@ NI=""      # the package manager's "don't ask" flag, for optional packages one b
 case "$family" in
     *arch*)   PM="sudo pacman -S --needed"; NI="--noconfirm"
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python-gobject python-cairo python-pywayland"
-              OPT="networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome gnome-keyring libpulse xorg-xwayland grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl meson ninja" ;;
+              OPT="vte4 networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome gnome-keyring libpulse xorg-xwayland grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl meson ninja" ;;
     *debian*|*ubuntu*) PM="sudo apt install"; NI="-y"
               PKGS="wayfire gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtk4layershell-1.0 python3-gi python3-gi-cairo python3-pywayland"
-              OPT="network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr policykit-1-gnome gnome-keyring pulseaudio-utils xwayland grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
+              OPT="gir1.2-vte-3.91 network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr policykit-1-gnome gnome-keyring pulseaudio-utils xwayland grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
     *fedora*|*rhel*) PM="sudo dnf install"; NI="-y"
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python3-gobject python3-cairo python3-pywayland"
-              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome gnome-keyring pulseaudio-utils xorg-x11-server-Xwayland grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
+              OPT="vte291-gtk4 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome gnome-keyring pulseaudio-utils xorg-x11-server-Xwayland grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
     *suse*)   PM="sudo zypper install"; NI="-y"
               PKGS="wayfire gtk4 libadwaita-1-0 typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 gtk4-layer-shell python3-gobject python3-gobject-cairo python3-pywayland"
-              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
+              OPT="typelib-1_0-Vte-3_91 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
     *void*)   PM="sudo xbps-install"; NI="-y"
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python3-gobject python3-cairo python3-pywayland"
-              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
+              OPT="vte3-gtk4 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
     *alpine*) PM="sudo apk add"; NI=""
               PKGS="wayfire gtk4.0 libadwaita gtk4-layer-shell py3-gobject3 py3-cairo py3-pywayland"
-              OPT="networkmanager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
+              OPT="vte3-gtk4 networkmanager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
     *)        PM=""; PKGS=""; OPT="" ;;
 esac
 

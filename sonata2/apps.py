@@ -55,10 +55,10 @@ DEFAULT_SLOTS = (
     ("org.gnome.Evolution", "org.mozilla.Thunderbird", "thunderbird", "geary", "org.gnome.Geary"),
     ("org.gnome.Calendar", "org.kde.merkuro.calendar"),
     ("org.gnome.Music", "rhythmbox", "org.gnome.Rhythmbox3", "elisa", "org.kde.elisa", "spotify"),
-    ("org.gnome.Loupe", "org.gnome.eog", "eog", "org.kde.gwenview", "gwenview"),
-    ("org.gnome.TextEditor", "org.gnome.gedit", "org.kde.kate", "mousepad", "code", "code-oss"),
+    ("io.github.vinioliveiras.sonata2.preview", "org.gnome.Loupe", "org.gnome.eog", "eog", "org.kde.gwenview", "gwenview"),
+    ("io.github.vinioliveiras.sonata2.textedit", "org.gnome.TextEditor", "org.gnome.gedit", "org.kde.kate", "mousepad", "code", "code-oss"),
     ("steam",),
-    ("org.gnome.Console", "org.gnome.Terminal", "com.mitchellh.ghostty", "kitty", "Alacritty",
+    ("io.github.vinioliveiras.sonata2.terminal", "org.gnome.Console", "org.gnome.Terminal", "com.mitchellh.ghostty", "kitty", "Alacritty",
      "foot", "org.kde.konsole", "xfce4-terminal"),
 )
 
