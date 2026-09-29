@@ -338,6 +338,9 @@ class Dock(Gtk.Box):
         self.badges = {}      # desktop id -> badge text (Unity LauncherEntry)
         self._launcher_entries()
         drop = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
+        # only the Dock's own icon drags: a Launchpad app (which also offers
+        # a string) must reach the file-list target that pins it
+        drop.connect("accept", lambda _t, _d: self._drag is not None)
         drop.connect("motion", self._drag_motion)
         drop.connect("drop", self._drag_drop)
         drop.connect("enter", self._drag_motion)
@@ -409,7 +412,7 @@ class Dock(Gtk.Box):
         snap.append_inset_shadow(rr, ui.rgba("highlight"), 0, 0, 0.5, 0)
         snap.append_border(_rounded(_rect(x - 0.5, y - 0.5, pw + 1, ph + 1), radius + 0.5),
                            [0.5] * 4, [ui.rgba("hairline")] * 4)
-        Gtk.Box.do_snapshot(self, snap)
+        ui.transition.snapshot_children(self, snap)      # icons glide when re-ordered
 
     def do_size_allocate(self, width, height, baseline) -> None:
         Gtk.Box.do_size_allocate(self, width, height, baseline)
@@ -636,7 +639,9 @@ class Dock(Gtk.Box):
         others = [t for t in self.app_tiles() if t is not tile]
         anchor = others[slot - 1] if slot else self.get_first_child()
         if anchor is not tile:
+            before = ui.transition.glide_record(others, self)      # the others slide aside
             self.reorder_child_after(tile, anchor)
+            ui.transition.glide_play(before, self)
 
     def pin_at(self, key, before=None, x=None, y=0.0) -> None:
         """Pin app `key` (desktop id) before tile `before`, or at (x, y)."""

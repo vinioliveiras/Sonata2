@@ -182,6 +182,9 @@ class PageGrid(Gtk.Grid):
         target.connect("leave", lambda _t: pad.drag_leave(self))
         self.add_controller(target)
 
+    def do_snapshot(self, snap) -> None:
+        ui.transition.snapshot_children(self, snap)      # icons glide when re-ordered
+
     def cell_at(self, x, y):
         w, h = self.get_width(), self.get_height()
         c = min(self.cols - 1, max(0, int(x / (w / self.cols))))
@@ -290,6 +293,7 @@ class Launchpad(Gtk.ApplicationWindow):
     def render(self) -> None:
         """Sync carousel pages with the model (widgets are reused)."""
         pages = self.model.pages
+        before = ui.transition.glide_record(self.widgets.values(), self)   # icons slide to their new place
         while self.carousel.get_n_pages() < len(pages):
             self.carousel.append(PageGrid(self, self.carousel.get_n_pages()))
         while self.carousel.get_n_pages() > len(pages):
@@ -302,6 +306,7 @@ class Launchpad(Gtk.ApplicationWindow):
                 (w.add_css_class if n % 2 else w.remove_css_class)("odd")
             grid.fill(widgets)
         self._select(self.selected)
+        ui.transition.glide_play(before, self)
 
     def save(self) -> None:
         config.save("launchpad", self.model.to_json())
@@ -339,7 +344,10 @@ class Launchpad(Gtk.ApplicationWindow):
                  Gio.DBusCallFlags.NONE, 1000, None, None)
 
     def open_launchpad(self) -> None:
-        self._dock_above(True)
+        # the Dock moves up to OVERLAY once Launchpad is mapped: the surface
+        # that changes layer last is on top, so the Dock stays reachable
+        # (drag an app onto it to pin it)
+        GLib.timeout_add(80, lambda: (self.get_visible() and self._dock_above(True), False)[1])
         self.search.set_text("")
         self.set_jiggle(False)
         self._close_folder()

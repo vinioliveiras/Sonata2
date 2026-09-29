@@ -10,7 +10,12 @@ a picture of the old content, over the new, fading out.
     ... change the content ...
     fade.play()                              # when the new content is there
 
-Cheap: one texture and one opacity animation; nothing runs when idle."""
+    before = ui.transition.glide_record(tiles, container)   # before re-ordering
+    ... re-order ...
+    ui.transition.glide_play(before, container)             # they slide into place
+    # container.do_snapshot draws with ui.transition.snapshot_children()
+
+Cheap: one texture or one offset per item; nothing runs when idle."""
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -69,3 +74,75 @@ class CrossFade(Gtk.Overlay):
         if self._pic is not None:
             self.remove_overlay(self._pic)
             self._pic = None
+
+
+# -- glide: items that change place slide there (Launchpad, Dock) -------------------------
+GLIDE_MS = 260
+
+
+def snapshot_children(container: Gtk.Widget, snap) -> None:
+    """Draw `container`'s children, each shifted by its glide offset (call
+    from the container's do_snapshot instead of the parent class's)."""
+    child = container.get_first_child()
+    while child is not None:
+        dx, dy = getattr(child, "_glide", (0, 0))
+        if dx or dy:
+            snap.save()
+            snap.translate(Graphene.Point().init(dx, dy))
+            container.snapshot_child(child, snap)
+            snap.restore()
+        else:
+            container.snapshot_child(child, snap)
+        child = child.get_next_sibling()
+
+
+def glide_record(widgets, ref: Gtk.Widget) -> dict:
+    """Where each widget is drawn now (layout + running glide), in `ref`'s
+    coordinates. Call before re-ordering."""
+    out = {}
+    for w in widgets:
+        if w.get_mapped():
+            ok, p = w.compute_point(ref, Graphene.Point().init(0, 0))
+            if ok:
+                dx, dy = getattr(w, "_glide", (0, 0))
+                out[w] = (p.x + dx, p.y + dy, w.get_parent())
+    return out
+
+
+def glide_play(before: dict, ref: Gtk.Widget, ms: int = GLIDE_MS) -> None:
+    """After re-ordering: every widget recorded in `before` that moved (and
+    kept its parent) slides from its old place to the new one. Runs in the
+    layout phase of the next frame, so the new place is never shown first."""
+    clock = ref.get_frame_clock()
+    if not before or clock is None:
+        return
+    state = {}
+
+    def on_layout(_clock):
+        clock.disconnect(state.pop("id"))
+        for w, (ox, oy, parent) in before.items():
+            if w.get_parent() is not parent or not w.get_mapped():
+                continue
+            ok, p = w.compute_point(ref, Graphene.Point().init(0, 0))
+            if not ok:
+                continue
+            dx, dy = ox - p.x, oy - p.y
+            if abs(dx) < 0.5 and abs(dy) < 0.5:
+                continue
+            _start(w, dx, dy, ms)
+    state["id"] = clock.connect("layout", on_layout)
+    ref.queue_allocate()
+
+
+def _start(w, dx, dy, ms) -> None:
+    if getattr(w, "_glide_anim", None) is not None:
+        w._glide_anim.pause()
+
+    def step(v, w=w, dx=dx, dy=dy):
+        w._glide = (dx * v, dy * v)
+        w.queue_draw()
+    w._glide = (dx, dy)
+    anim = Adw.TimedAnimation.new(w, 1.0, 0.0, ms, Adw.CallbackAnimationTarget.new(step))
+    anim.set_easing(Adw.Easing.EASE_OUT_CUBIC)
+    w._glide_anim = anim
+    anim.play()

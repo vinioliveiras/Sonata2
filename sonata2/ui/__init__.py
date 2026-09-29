@@ -12,6 +12,7 @@ See docs/DESIGN.md.
     ui.drag.hang(drag, paintable, size)   # drag icon swinging from the pointer
     ui.progress.bar(0.4) / spinner() / meter(0.7) / start(title, on_cancel)
     ui.transition.CrossFade(child)        # .capture() / .play() around an in-place change
+    ui.transition.glide_record / glide_play  # re-ordered items slide to their new place
 """
 from . import controls, dialog, drag, fmt, label, menu, panel, progress, theme, tokens, transition, window  # noqa: F401  (register CSS)
 from .theme import force_appearance, is_dark, on_change, px, register, rgba, setup, shadow, values  # noqa: F401
