@@ -10,7 +10,9 @@ App icons (app_icon): the desktop entry's icon is looked up under several
 names (Icon=, desktop id, StartupWMClass, executable...) in Sonata's own
 themes, so e.g. an absolute Icon=/opt/spotify/spotify.png still gets the
 MacTahoe artwork. Apps Sonata has no artwork for keep their own icon, drawn
-on a white Big Sur plate so every app icon has the same shape."""
+on a Big Sur squircle plate (MacTahoe's shape) so every app icon has the
+same shape; the plate takes the icon's colour when the icon is a solid
+tile of its own."""
 import os
 
 import gi
@@ -89,13 +91,38 @@ def app_icon(info) -> Gio.Icon:
     return icon
 
 
+# The plate's geometry, measured on MacTahoe's own artwork (so app icons we
+# plate match the ones we have): a superellipse |x|^4 + |y|^4 = 1 filling
+# 89 % of the tile, a soft shadow under it, the app's icon at 62 %.
+PLATE_INSET = 0.055
+PLATE_EXPONENT = 4.0
+PLATE_ARTWORK = 0.62
+PLATE_WHITE = ("#ffffff", "#ececec")          # top, bottom
+
+
+def _squircle(x, y, w, h, n=PLATE_EXPONENT, steps=96):
+    import math
+    b = Gsk.PathBuilder.new()
+    cx, cy, ax, ay = x + w / 2, y + h / 2, w / 2, h / 2
+    for i in range(steps):
+        t = 2 * math.pi * i / steps
+        c, s_ = math.cos(t), math.sin(t)
+        px = cx + ax * math.copysign(abs(c) ** (2 / n), c)
+        py = cy + ay * math.copysign(abs(s_) ** (2 / n), s_)
+        (b.move_to if i == 0 else b.line_to)(px, py)
+    b.close()
+    return b.to_path()
+
+
 class _Plate(GObject.Object, Gdk.Paintable):
-    """An app's own icon on a white Big Sur squircle (plate 94 % of the
-    tile like MacTahoe's artwork, corners 24 %, artwork 62 %)."""
+    """An app's own icon on a Big Sur squircle -- white, or the icon's own
+    colour when its edges are one solid colour (Claude's orange tile)."""
 
     def __init__(self, inner, size):
         super().__init__()
         self.inner, self.size = inner, size
+        tone = _solid_edge(inner)
+        self.colors = (tone, tone) if tone else PLATE_WHITE      # flat: the icon's own tile blends in
 
     def do_get_intrinsic_width(self):
         return self.size
@@ -104,20 +131,77 @@ class _Plate(GObject.Object, Gdk.Paintable):
         return self.size
 
     def do_snapshot(self, snap, w, h):
-        inset = w * 0.065
-        rect = Graphene.Rect().init(inset, inset, w - 2 * inset, h - 2 * inset)
-        rr = Gsk.RoundedRect()
-        rr.init_from_rect(rect, (w - 2 * inset) * 0.225)
-        snap.push_rounded_clip(rr)
+        inset = w * PLATE_INSET
+        pw, ph = w - 2 * inset, h - 2 * inset
+        rect = Graphene.Rect().init(inset, inset, pw, ph)
+        shadow = Gsk.RoundedRect()
+        shadow.init_from_rect(rect, pw * 0.3)
+        snap.append_outset_shadow(shadow, _rgba("rgba(0,0,0,0.22)"), 0, w * 0.012, 0, w * 0.02)
+        path = _squircle(inset, inset, pw, ph)
+        snap.push_fill(path, Gsk.FillRule.WINDING)
         snap.append_linear_gradient(rect, Graphene.Point().init(0, inset), Graphene.Point().init(0, h - inset),
-                                    [_stop(0, "#ffffff"), _stop(1, "#ececec")])
+                                    [_stop(0, self.colors[0]), _stop(1, self.colors[1])])
         snap.pop()
-        snap.append_border(rr, [0.5] * 4, [_rgba("rgba(0,0,0,0.12)")] * 4)
-        a = w * 0.62
+        snap.append_stroke(path, Gsk.Stroke.new(max(0.5, w / 256)), _rgba("rgba(0,0,0,0.10)"))
+        a = w * PLATE_ARTWORK
         snap.save()
         snap.translate(Graphene.Point().init((w - a) / 2, (h - a) / 2))
         self.inner.snapshot(snap, a, a)
         snap.restore()
+
+
+_tones = {}
+
+
+def _solid_edge(inner):
+    """The colour of an icon whose outer edge is one solid colour (a tile
+    of its own, like Claude's), as "#rrggbb"; None otherwise (logos on
+    transparency, gradients, white tiles). Cached per icon file."""
+    path = None
+    f = inner.get_file() if hasattr(inner, "get_file") else None
+    if f is not None:
+        path = f.get_path()
+    if path is None:
+        return None
+    if path in _tones:
+        return _tones[path]
+    tone = None
+    try:
+        gi.require_version("GdkPixbuf", "2.0")
+        from gi.repository import GdkPixbuf
+        pb = GdkPixbuf.Pixbuf.new_from_file_at_size(path, 48, 48)
+        tone = _edge_tone(pb)
+    except (GLib.Error, ValueError, ImportError):
+        pass
+    _tones[path] = tone
+    return tone
+
+
+def _edge_tone(pb):
+    if not pb.get_has_alpha() and pb.get_n_channels() < 3:
+        return None
+    w, h, n, stride = pb.get_width(), pb.get_height(), pb.get_n_channels(), pb.get_rowstride()
+    px = pb.get_pixels()
+
+    def at(x, y):
+        o = y * stride + x * n
+        return px[o], px[o + 1], px[o + 2], (px[o + 3] if n == 4 else 255)
+    opaque = [(x, y) for y in range(h) for x in range(w) if at(x, y)[3] > 200]
+    if len(opaque) < w * h * 0.5:
+        return None                                  # a logo on transparency: white plate
+    xs, ys = [p[0] for p in opaque], [p[1] for p in opaque]
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    m = max(2, (x1 - x0) // 8)                       # a ring just inside the edge (past rounded corners)
+    ring = [at(x, y) for x in range(x0 + m, x1 - m + 1) for y in (y0 + 2, y1 - 2)] + \
+           [at(x, y) for y in range(y0 + m, y1 - m + 1) for x in (x0 + 2, x1 - 2)]
+    ring = [c for c in ring if c[3] > 200]
+    if len(ring) < 20:
+        return None
+    med = [sorted(c[i] for c in ring)[len(ring) // 2] for i in range(3)]
+    close = sum(1 for c in ring if sum(abs(c[i] - med[i]) for i in range(3)) < 48)
+    if close < len(ring) * 0.85 or min(med) > 225:
+        return None                                  # not one colour, or white already
+    return "#%02x%02x%02x" % tuple(med)
 
 
 def _stop(offset, spec):
@@ -264,6 +348,26 @@ def paintable(widget: Gtk.Widget, gicon, size: int):
     return _lookup(widget, gicon, size)
 
 
+_hicolor_theme = None
+
+
+def _hicolor():
+    global _hicolor_theme
+    if _hicolor_theme is None:
+        _hicolor_theme = Gtk.IconTheme(theme_name="hicolor")
+    return _hicolor_theme
+
+
+def _is_symbolic(path: str) -> bool:
+    base = os.path.basename(path)
+    return "-symbolic." in base or ".symbolic." in base
+
+
+def _asks_symbolic(gicon) -> bool:
+    names = gicon.get_names() if isinstance(gicon, Gio.ThemedIcon) else []
+    return bool(names) and all(n.endswith("-symbolic") for n in names)
+
+
 def _lookup(widget, gicon, size):
     theme = Gtk.IconTheme.get_for_display(widget.get_display())
     if _system is not None and not theme.has_gicon(gicon) and _system.has_gicon(gicon):
@@ -272,6 +376,18 @@ def _lookup(widget, gicon, size):
     icon = theme.lookup_by_gicon(gicon, size, scale, Gtk.TextDirection.NONE, Gtk.IconLookupFlags(0))
     f = icon.get_file() if icon is not None else None
     path = f.get_path() if f is not None else None
+    if path and _is_symbolic(path) and not _asks_symbolic(gicon):
+        # GTK falls back to "<name>-symbolic" inside the first theme that has
+        # it (Sonata-MacTahoe draws some app logos as grey symbolics) before
+        # looking in the next theme, where the app's colour icon is
+        for other in (_system, _hicolor()):
+            if other is None or other is theme or not other.has_gicon(gicon):
+                continue
+            alt = other.lookup_by_gicon(gicon, size, scale, Gtk.TextDirection.NONE, Gtk.IconLookupFlags(0))
+            af = alt.get_file() if alt is not None else None
+            if af is not None and af.get_path() and not _is_symbolic(af.get_path()):
+                icon, path = alt, af.get_path()
+                break
     if path and path.endswith(".svg") and not path.endswith("-symbolic.svg") and _has_filter(path):
         tex = _rsvg_texture(path, size * scale)
         if tex is not None:
