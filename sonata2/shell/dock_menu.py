@@ -125,8 +125,8 @@ def app_menu(dock, key: str, tile):
         sections.append([Item("Options", submenu=opts)])
     if wins:
         sections.append([Item("Hide", lambda: [dock.manager.minimize(t) for t in wins]),
-                         Item("Quit", lambda: [dock.manager.close(t) for t in wins]),
-                         Item("Force Quit", lambda: force_quit(key))])
+                         Item("Force Quit", lambda: force_quit(key)),
+                         Item("Quit", lambda: [dock.manager.close(t) for t in wins])])
     elif info:
         sections.append([Item("Open", lambda: dock.launch(tile))])
     tile.label.popdown()
