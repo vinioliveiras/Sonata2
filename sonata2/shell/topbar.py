@@ -65,7 +65,10 @@ class Bar(Gtk.CenterBox):
         self.items = []
         left = Gtk.Box()
         self.logo = self._item(left, icon="sonata-logo-symbolic", on_click=self._sonata_menu, css="icon")
-        self.app_btn = self._item(left, text=self._fallback_app_name(), on_click=self._app_menu, css="app")
+        self.app_btn = self._item(left, text="Files", on_click=self._app_menu, css="app")
+        # on the desktop (nothing focused) the menus are Files' own, like Finder's
+        self.file_btn = self._item(left, text="File", on_click=self._files_file_menu)
+        self.go_btn = self._item(left, text="Go", on_click=self._files_go_menu)
         self.win_btn = self._item(left, text="Window", on_click=self._window_menu)
         left.set_margin_start(8)       # no CSS padding: the bar is painted over the whole allocation
         self.set_start_widget(left)
@@ -235,12 +238,6 @@ class Bar(Gtk.CenterBox):
                         lambda r: system.power_action(kind) if r == kind else None)
 
     # -- active app ------------------------------------------------------------------
-    def _fallback_app_name(self) -> str:
-        """No active window: the file manager (macOS shows Finder)."""
-        pins = config.load("dock", {"pinned": []}).get("pinned") or []
-        info = apps.lookup(pins[0]) if pins else None
-        return info.get_display_name() if info else "Files"
-
     def _active(self):
         if not self.manager:
             return None, []
@@ -252,22 +249,61 @@ class Bar(Gtk.CenterBox):
         return key, wins
 
     def _active_changed(self) -> None:
-        """App name + Window menu follow the focused app; on the desktop
-        (nothing focused) both are hidden."""
+        """App name + menus follow the focused app; on the desktop (nothing
+        focused) they are Files' -- File, Go, Window -- like Finder's."""
         key, _wins = self._active()
         if key:                                   # most recently used apps (app switcher)
             self.mru = [key] + [k for k in getattr(self, "mru", []) if k != key]
-        self.app_btn.set_visible(bool(key))
-        self.win_btn.set_visible(bool(key))
+        desktop = not key
+        self.file_btn.set_visible(desktop)
+        self.go_btn.set_visible(desktop)
         if key:
             info = apps.lookup(key)
             self._set_text(self.app_btn, info.get_display_name() if info else key)
+        else:
+            self._set_text(self.app_btn, "Files")
+
+    # -- Files' menus on the desktop -------------------------------------------------------
+    def _files_file_menu(self, btn):
+        from ..files import open_folder
+        from ..shell.desktop import desktop_dir
+        Item = ui.menu.Item
+        home = Gio.File.new_for_path(GLib.get_home_dir()).get_uri()
+
+        def new_folder():
+            from ..files import ops
+            ops.new_folder(desktop_dir(), lambda _f: None, lambda _e: None)
+        return self._menu(btn, [
+            [Item("New Files Window", lambda: open_folder(home)),
+             Item("New Folder", new_folder)],
+            [Item("Open Desktop in Files", lambda: open_folder(desktop_dir().get_uri()))],
+            [Item("Empty Trash…", lambda: open_folder("trash:///"))],
+        ])
+
+    def _files_go_menu(self, btn):
+        from ..files import open_folder
+        Item = ui.menu.Item
+        U = GLib.UserDirectory
+
+        def place(kind):
+            p = GLib.get_user_special_dir(kind)
+            return Gio.File.new_for_path(p).get_uri() if p else None
+        home = Gio.File.new_for_path(GLib.get_home_dir()).get_uri()
+        rows = [("Recents", "sonata:recents"), ("Documents", place(U.DIRECTORY_DOCUMENTS)),
+                ("Desktop", place(U.DIRECTORY_DESKTOP)), ("Downloads", place(U.DIRECTORY_DOWNLOAD)),
+                ("Home", home), ("Pictures", place(U.DIRECTORY_PICTURES)), ("Music", place(U.DIRECTORY_MUSIC))]
+        return self._menu(btn, [
+            [Item(name, lambda u=uri: open_folder(u)) for name, uri in rows[:1]],
+            [Item(name, lambda u=uri: open_folder(u), enabled=bool(uri)) for name, uri in rows[1:]],
+            [Item("Computer", lambda: open_folder("file:///")), Item("Trash", lambda: open_folder("trash:///"))],
+        ])
 
     def _app_menu(self, btn):
         Item = ui.menu.Item
         key, wins = self._active()
-        info = apps.lookup(key) if key else None
-        name = info.get_display_name() if info else (key or self._fallback_app_name())
+        from ..files import APP_ID as FILES_ID
+        info = apps.lookup(key) if key else apps.lookup(FILES_ID)       # desktop: Files, like Finder
+        name = info.get_display_name() if info else (key or "Files")
         m = self.manager
         others = [t for t in (m.toplevels if m else []) if t not in wins]
         return self._menu(btn, [
