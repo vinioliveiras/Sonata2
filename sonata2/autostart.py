@@ -73,6 +73,11 @@ def _wanted(kf) -> bool:
 
 
 def run() -> int:
+    from . import titlebars
+    try:
+        titlebars.apply()                  # Sonata title bars for Chrome, VS Code... (before they start)
+    except Exception as e:                 # never keep the login's apps from starting
+        print(f"sonata2-autostart: title bars: {e}")
     started = 0
     for name, info in entries():
         try:

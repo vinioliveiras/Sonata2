@@ -1414,6 +1414,11 @@ class Settings(Adw.ApplicationWindow):
         s.add(combo_row("Icons", [(t, t) for t in themes], app["icon_theme"],
                         lambda v: (self._save("appearance", "icon_theme", v),
                                    self.toast("Restart the Dock and Launchpad to use the new icons"))))
+        s.add(switch_row("Sonata title bars for all apps", app["system_titlebars"],
+                         lambda on: (self._save("appearance", "system_titlebars", on),
+                                     __import__("sonata2.titlebars", fromlist=["apply"]).apply(on),
+                                     self.toast("Apps pick it up when they open again")),
+                         subtitle="Chrome, VS Code and others use Sonata's title bar instead of their own"))
         gen = Adw.ActionRow(title="App icons made by Sonata",
                             subtitle="Apps without Sonata artwork get their icon on the standard frame, saved on disk")
         regen = Gtk.Button(label="Regenerate", valign=Gtk.Align.CENTER)
