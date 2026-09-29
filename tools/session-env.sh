@@ -49,18 +49,32 @@ if [ ! -f "$mark" ] && command -v gsettings >/dev/null; then
     _gs $I font-hinting 'slight'
     _gs $I gtk-enable-primary-paste false
     _gs $I overlay-scrolling true
-    # macOS text size (13 px); Inter stands in for SF Pro when it isn't installed.
-    ui=""; mono="Monospace 10"
-    if fc-list 2>/dev/null | grep -qi "SF Pro"; then ui="SF Pro Text"
-    elif fc-list 2>/dev/null | grep -qi "Inter Variable"; then ui="Inter Variable"
-    elif fc-list 2>/dev/null | grep -qi "Inter"; then ui="Inter"; fi
-    fc-list 2>/dev/null | grep -qi "SF Mono" && mono="SF Mono 10"
-    if [ -n "$ui" ]; then
-        _gs $I font-name "$ui 10"; _gs $I document-font-name "$ui 10"
-        _gs org.gnome.desktop.wm.preferences titlebar-font "$ui Bold 10"
-    fi
-    _gs $I monospace-font-name "$mono"
     touch "$mark"
+fi
+# UI font, every login: SF Pro when the user installed it (Apple's licence
+# forbids shipping it), else the bundled Inter. Only replaces our own
+# defaults, never a font the user picked. macOS text size: 13 px (10 pt).
+if command -v gsettings >/dev/null && command -v fc-list >/dev/null; then
+    I=org.gnome.desktop.interface
+    fams="$(fc-list : family 2>/dev/null)"
+    ui=""
+    for f in "SF Pro Text" "SF Pro" "Inter Variable" "Inter"; do
+        printf '%s\n' "$fams" | tr ',' '\n' | grep -qx "$f" && { ui="$f"; break; }
+    done
+    cur="$(gsettings get $I font-name 2>/dev/null | tr -d "'")"
+    case "$cur" in
+        "SF Pro Text 10"|"SF Pro 10"|"Inter Variable 10"|"Inter 10"|"Cantarell 11"|"Adwaita Sans 11"|"")
+            if [ -n "$ui" ] && [ "$cur" != "$ui 10" ]; then
+                _gs $I font-name "$ui 10"; _gs $I document-font-name "$ui 10"
+                _gs org.gnome.desktop.wm.preferences titlebar-font "$ui Bold 10"
+            fi ;;
+    esac
+    cur="$(gsettings get $I monospace-font-name 2>/dev/null | tr -d "'")"
+    case "$cur" in
+        "Monospace 10"|"Source Code Pro 10"|"Adwaita Mono 11"|"SF Mono 10"|"")
+            if printf '%s\n' "$fams" | tr ',' '\n' | grep -qx "SF Mono"; then m="SF Mono 10"; else m="Monospace 10"; fi
+            [ "$cur" != "$m" ] && _gs $I monospace-font-name "$m" ;;
+    esac
 fi
 scheme="$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null)"
 if [ "$scheme" = "'prefer-dark'" ]; then export GTK_THEME=Sonata-Dark; else export GTK_THEME=Sonata-Light; fi

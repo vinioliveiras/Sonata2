@@ -139,6 +139,8 @@ Files: Ctrl+F search (This Mac or the folder), Space Quick Look, Return rename, 
 folder, Ctrl+C/V copy/paste (Ctrl+Alt+V move), Ctrl+D duplicate,
 Delete/Ctrl+Backspace Trash, Ctrl+1/2/3 views, Ctrl+Shift+. hidden files.
 
+Font: Sonata ships Inter (free). If you install Apple's SF Pro yourself (developer.apple.com/fonts, into ~/.local/share/fonts), the session uses it at the next login; Apple's licence doesn't allow bundling it.
+
 ## Try it without logging out
 
 `tools/dev-session.sh` opens Wayfire **as a window inside your current
