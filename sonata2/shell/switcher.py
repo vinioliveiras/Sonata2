@@ -35,44 +35,69 @@ SLIDE_MS = 150          # the selection glides from app to app
 
 class SwitcherPanel(Gtk.Box):
     """The row of apps with the selection drawn behind them, gliding to the
-    selected app instead of jumping."""
+    selected app instead of jumping. The selection is measured on the app
+    when drawing (never before the layout exists: that drew a small dot in
+    the corner)."""
 
     def __init__(self):
         super().__init__(spacing=4, css_classes=["sw-panel"])
-        self.sel = None          # (x, y, w, h) drawn now
-        self.target = None
+        self.widget = None       # the selected app
+        self.start = None        # where the glide started (x, y, w, h)
+        self.t = 1.0             # glide progress
         self._anim = None
 
-    def select(self, widget, animate: bool) -> None:
+    @property
+    def sel(self):
+        return self.widget
+
+    @sel.setter
+    def sel(self, value):        # None: the next select() lands without a glide
+        if value is None:
+            self.widget, self.start, self.t = None, None, 1.0
+
+    def _rect(self, widget):
+        if widget is None or widget.get_parent() is not self:
+            return None
         ok, b = widget.compute_bounds(self)
-        if not ok:
-            return
-        to = (b.get_x(), b.get_y(), b.get_width(), b.get_height())
-        start = self.sel
-        self.target = to
+        if not ok or b.get_width() < 2 or b.get_height() < 2:
+            return None
+        return (b.get_x(), b.get_y(), b.get_width(), b.get_height())
+
+    def select(self, widget, animate: bool) -> None:
+        now = self._drawn_rect() if animate else None
+        self.widget = widget
         if self._anim:
             self._anim.pause()
-        if not animate or start is None:
-            self.sel = to
+        if now is None:
+            self.start, self.t = None, 1.0
             self.queue_draw()
             return
+        self.start, self.t = now, 0.0
 
         def step(v):
-            self.sel = tuple(a + (c - a) * v for a, c in zip(start, to))
+            self.t = v
             self.queue_draw()
         self._anim = Adw.TimedAnimation.new(self, 0.0, 1.0, SLIDE_MS, Adw.CallbackAnimationTarget.new(step))
         self._anim.set_easing(Adw.Easing.EASE_OUT_CUBIC)
         self._anim.play()
 
+    def _drawn_rect(self):
+        to = self._rect(self.widget)
+        if to is None:
+            return None
+        if self.start is None or self.t >= 1.0:
+            return to
+        return tuple(a + (c - a) * self.t for a, c in zip(self.start, to))
+
     def do_snapshot(self, snap) -> None:
         # the panel's own background/border (CSS), then the selection, then the icons
-        if self.sel:
-            x, y, w, h = self.sel
-            r = Graphene.Rect().init(x, y, w, h)
+        r = self._drawn_rect()
+        if r:
+            rect = Graphene.Rect().init(*r)
             rr = Gsk.RoundedRect()
-            rr.init_from_rect(r, 14)
+            rr.init_from_rect(rect, 14)
             snap.push_rounded_clip(rr)
-            snap.append_color(_alpha(ui.rgba("label"), 0.16), r)
+            snap.append_color(_alpha(ui.rgba("label"), 0.16), rect)
             snap.pop()
         child = self.get_first_child()
         while child is not None:
@@ -162,7 +187,7 @@ class Switcher(Gtk.Window):
             self.items[self.index].append(self.name)
             item = self.items[self.index]
             # after the layout that moved the name: then glide there
-            GLib.idle_add(lambda: (self.panel.select(item, animate and self.panel.sel is not None), False)[1])
+            self.panel.select(item, animate and self.panel.sel is not None)
 
     # -- keys while open -------------------------------------------------------------------
     def _key(self, _c, keyval, _code, state):
