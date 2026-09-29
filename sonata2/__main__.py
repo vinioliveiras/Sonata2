@@ -38,11 +38,12 @@ APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
            "greeter": "io.github.vinioliveiras.sonata2.greeter",
            "welcome": "io.github.vinioliveiras.sonata2.welcome",
            "portal": "io.github.vinioliveiras.sonata2.portal",
+           "setup": "io.github.vinioliveiras.sonata2.setup",
            "spotlight": "io.github.vinioliveiras.sonata2.spotlight"}
 # Shell surfaces (never shown as running apps in the Dock); Files and
 # Settings are ordinary apps.
 SHELL_IDS = {APP_IDS[k] for k in ("dock", "autostart", "wallpaper", "launchpad", "topbar", "gallery", "lock",
-                                   "spotlight", "greeter", "welcome", "portal")}
+                                   "spotlight", "greeter", "welcome", "portal", "setup")}
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -344,6 +345,19 @@ def run_welcome(app, args, ui, state):
         return                     # a restart of Sonata: no intro
     app.hold()
     state["welcome"] = Welcome(app, APP_IDS)
+
+
+def run_setup(app, args, ui, state):
+    """First-run Setup Assistant (shell/setup.py), after the login intro."""
+    from .shell import intro
+    from .shell import setup as S
+    if S.done() and not args.preview:
+        return
+    app.hold()
+
+    def show():
+        state["setup"] = S.SetupAssistant(app, on_done=app.release)
+    intro.wait(lambda: _later(900, show))       # once the Dock and menu bar have slid in
 
 
 def run_greeter(app, args, ui, state):
@@ -845,6 +859,8 @@ def main() -> int:
             run_welcome(app, args, ui, state)
         elif args.component == "portal":
             run_portal(app, args, ui, state)
+        elif args.component == "setup":
+            run_setup(app, args, ui, state)
         else:
             run_topbar(app, args, ui)
 

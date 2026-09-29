@@ -78,6 +78,13 @@ def run() -> int:
         titlebars.apply()                  # Sonata title bars for Chrome, VS Code... (before they start)
     except Exception as e:                 # never keep the login's apps from starting
         print(f"sonata2-autostart: title bars: {e}")
+    try:
+        from . import config
+        if not config.load("setup", {"done": False})["done"]:     # first login: the Setup Assistant
+            from .__main__ import self_command
+            GLib.spawn_command_line_async(self_command() + " setup")
+    except Exception as e:
+        print(f"sonata2-autostart: setup: {e}")
     started = 0
     for name, info in entries():
         try:
