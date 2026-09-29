@@ -38,7 +38,7 @@ doesn't need GNOME or KDE.
 ## Install
 
 ```
-git clone <this repository> sonata2 && cd sonata2
+git clone https://github.com/vinioliveiras/sonata2.git && cd sonata2
 ./install.sh
 ```
 
