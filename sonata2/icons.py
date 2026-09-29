@@ -97,7 +97,10 @@ def app_icon(info) -> Gio.Icon:
 PLATE_INSET = 0.055
 PLATE_EXPONENT = 4.0
 PLATE_ARTWORK = 0.62
-PLATE_WHITE = ("#ffffff", "#ececec")          # top, bottom
+PLATE_WHITE = "#ffffff"
+# the sheen over the whole plate *and* the icon on it (drawn last, so an
+# icon's own tile and the plate shade the same way): top, bottom
+PLATE_SHEEN = ("rgba(255,255,255,0.10)", "rgba(0,0,0,0.075)")
 
 
 def _squircle(x, y, w, h, n=PLATE_EXPONENT, steps=96):
@@ -122,7 +125,7 @@ class _Plate(GObject.Object, Gdk.Paintable):
         super().__init__()
         self.inner, self.size = inner, size
         tone = _solid_edge(inner)
-        self.colors = (tone, tone) if tone else PLATE_WHITE      # flat: the icon's own tile blends in
+        self.color = tone or PLATE_WHITE               # flat: the icon's own tile blends in
 
     def do_get_intrinsic_width(self):
         return self.size
@@ -139,15 +142,16 @@ class _Plate(GObject.Object, Gdk.Paintable):
         snap.append_outset_shadow(shadow, _rgba("rgba(0,0,0,0.22)"), 0, w * 0.012, 0, w * 0.02)
         path = _squircle(inset, inset, pw, ph)
         snap.push_fill(path, Gsk.FillRule.WINDING)
-        snap.append_linear_gradient(rect, Graphene.Point().init(0, inset), Graphene.Point().init(0, h - inset),
-                                    [_stop(0, self.colors[0]), _stop(1, self.colors[1])])
-        snap.pop()
-        snap.append_stroke(path, Gsk.Stroke.new(max(0.5, w / 256)), _rgba("rgba(0,0,0,0.10)"))
+        snap.append_color(_rgba(self.color), rect)
         a = w * PLATE_ARTWORK
         snap.save()
         snap.translate(Graphene.Point().init((w - a) / 2, (h - a) / 2))
         self.inner.snapshot(snap, a, a)
         snap.restore()
+        snap.append_linear_gradient(rect, Graphene.Point().init(0, inset), Graphene.Point().init(0, h - inset),
+                                    [_stop(0, PLATE_SHEEN[0]), _stop(1, PLATE_SHEEN[1])])
+        snap.pop()
+        snap.append_stroke(path, Gsk.Stroke.new(max(0.5, w / 256)), _rgba("rgba(0,0,0,0.10)"))
 
 
 _tones = {}
