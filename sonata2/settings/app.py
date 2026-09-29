@@ -36,13 +36,29 @@ SECTIONS = [  # id, title, icon, badge colour, group
     ("about", "About", "help-about-symbolic", "gray", "about"),
 ]
 
+# One line under each section's title (the page's hero row, like LayerOSX
+# Settings and macOS System Settings).
+DESCRIPTIONS = {
+    "wifi": "Choose a network and see how this computer is connected.",
+    "bluetooth": "Connect keyboards, mice, headphones and other wireless devices.",
+    "sound": "Output and input devices and their volume.",
+    "displays": "Brightness, resolution and how your screens are arranged.",
+    "battery": "Battery level, energy mode and the menu bar percentage.",
+    "wallpaper": "The picture on your desktop.",
+    "appearance": "Light or dark look for Sonata and your apps.",
+    "dock": "Size, magnification, position and hiding of the Dock.",
+    "menubar": "The clock and the items in the menu bar.",
+    "launchpad": "How Launchpad arranges your apps.",
+}
+
 ui.register("""
 window.sonata-settings { color: %(label)s; }
 /* glass sidebar (standard material), opaque content pane */
 .sonata-settings .sidebar-pane { background: none; }
 .st-sidebar headerbar, .st-sidebar toolbarview, .st-sidebar scrolledwindow,
 .st-sidebar list { background: none; box-shadow: none; }
-.st-content { background: %(window_bg)s; }
+.st-content, .st-content toolbarview, .st-content headerbar { background: %(pane_bg)s; box-shadow: none; }
+.st-hero label.title { font-weight: 700; }
 .st-badge { border-radius: 7px; padding: 4px; color: white; }
 .st-badge.big { border-radius: 12px; padding: 10px; }
 .st-badge.blue { background: %(sys_blue)s; } .st-badge.green { background: %(sys_green)s; }
@@ -53,7 +69,7 @@ window.sonata-settings { color: %(label)s; }
 .st-card { padding: 10px 12px 6px 12px; }
 .st-card-title { font-weight: 700; }
 .st-card-sub { color: %(label_secondary)s; font-size: %(text_small)s; }
-.st-group-gap { min-height: 10px; }
+.st-gap-row, .st-gap-row:hover { min-height: 8px; padding: 0; margin: 0; background: none; }
 .st-pane-title { font-weight: 700; font-size: %(text_title)s; color: %(label)s; }
 .st-about-name { font-family: %(font_display)s; font-weight: 700; font-size: 26px; color: %(label)s; }
 .st-caption { color: %(label_secondary)s; font-size: %(text_small)s; }
@@ -138,8 +154,8 @@ class Settings(Adw.ApplicationWindow):
         last = None
         for sid, title, icon, color, grp in SECTIONS:
             if last and grp != last:        # visual gap between groups, like System Settings
-                gap = Gtk.ListBoxRow(selectable=False, activatable=False)
-                gap.set_child(Gtk.Box(css_classes=["st-group-gap"]))
+                gap = Gtk.ListBoxRow(selectable=False, activatable=False, css_classes=["st-gap-row"])
+                gap.set_child(Gtk.Box())
                 self.listbox.append(gap)
             last = grp
             row = Gtk.ListBoxRow()
@@ -163,7 +179,13 @@ class Settings(Adw.ApplicationWindow):
         if sid not in self.pages:
             title = next(s[1] for s in SECTIONS if s[0] == sid)
             page = Adw.PreferencesPage()
-            for g in getattr(self, f"_page_{sid}")():
+            self._hero_done = sid == "about"          # About has its own big header
+            groups = getattr(self, f"_page_{sid}")()
+            if not self._hero_done:                    # page didn't turn a row into the hero
+                hero = group()
+                hero.add(self._hero(Adw.ActionRow(title=title, use_markup=False), sid))
+                page.add(hero)
+            for g in groups:
                 page.add(g)
             tv = Adw.ToolbarView()
             hb = Adw.HeaderBar(show_start_title_buttons=False, show_end_title_buttons=False)
@@ -173,6 +195,17 @@ class Settings(Adw.ApplicationWindow):
             self.pages[sid] = Adw.NavigationPage(title=title, child=tv, css_classes=["st-content"])
         self.split.set_content(self.pages[sid])
         self.split.set_show_content(True)
+
+    def _hero(self, row, sid):
+        """Make `row` the page's first row: the section's big badge, bold
+        title, one-line description (LayerOSX / System Settings)."""
+        _sid, _title, icon, color, _grp = next(s for s in SECTIONS if s[0] == sid)
+        row.add_prefix(badge(icon, color, big=True))
+        if not row.get_subtitle():
+            row.set_subtitle(DESCRIPTIONS.get(sid, ""))
+        row.add_css_class("st-hero")
+        self._hero_done = True
+        return row
 
     def _async_rows(self, grp, work, fill) -> None:
         """Fill `grp` from work() (threaded); a placeholder while loading."""
@@ -187,8 +220,8 @@ class Settings(Adw.ApplicationWindow):
     # -- Linux sections ------------------------------------------------------------
     def _page_wifi(self):
         top = group()
-        sw = switch_row("Wi-Fi", False, lambda on: system.run_async(system.set_wifi_enabled,
-                                                                  lambda _r: self._refresh("wifi"), on))
+        sw = self._hero(switch_row("Wi-Fi", False, lambda on: system.run_async(
+            system.set_wifi_enabled, lambda _r: self._refresh("wifi"), on)), "wifi")
         top.add(sw)
         nets = group("Networks")
         rescan = Gtk.Button(icon_name="view-refresh-symbolic", css_classes=["flat"], valign=Gtk.Align.CENTER,
@@ -248,14 +281,18 @@ class Settings(Adw.ApplicationWindow):
     def _page_bluetooth(self):
         top = group()
         devs = group("My Devices")
+        self._hero_done = True                         # the Bluetooth row below is the hero
 
         def fill(res):
             state, devices = res or (None, [])
             if state is None:
-                top.add(Adw.ActionRow(title="Bluetooth", subtitle="No Bluetooth adapter found"))
+                top.add(self._hero(Adw.ActionRow(title="Bluetooth", subtitle="No Bluetooth adapter found"),
+                                   "bluetooth"))
                 return
-            top.add(switch_row("Bluetooth", state, lambda on: system.run_async(system.set_bluetooth, None, on),
-                               subtitle="This computer is discoverable while Bluetooth Settings is open"))
+            top.add(self._hero(switch_row("Bluetooth", state,
+                                          lambda on: system.run_async(system.set_bluetooth, None, on),
+                                          subtitle="This computer is discoverable while Bluetooth Settings is open"),
+                               "bluetooth"))
             for d in devices:
                 row = Adw.ActionRow(title=d.name, subtitle="Connected" if d.connected else
                                     ("Not Connected" if d.paired else "Not Paired"))

@@ -37,6 +37,7 @@ LIGHT = {
     "module_bg": "rgba(255, 255, 255, 0.55)",    # Control Center modules
     "toggle_off": "rgba(0, 0, 0, 0.10)",         # round module toggles
     "content_bg": "#ffffff",                     # document/list area of windows
+    "pane_bg": "#fafafa",                        # Settings content pane (behind the cards)
     "sidebar_bg": "#ebebed",                     # source lists (Files, Settings), no blur
     "sidebar_selected": "rgba(0, 0, 0, 0.10)",   # selected source-list row
     "item_selected_bg": "rgba(0, 0, 0, 0.08)",   # backdrop behind a selected icon
@@ -77,6 +78,7 @@ DARK = {
     "module_bg": "rgba(255, 255, 255, 0.08)",
     "toggle_off": "rgba(255, 255, 255, 0.16)",
     "content_bg": "#1e1e1e",
+    "pane_bg": "#242424",
     "sidebar_bg": "#2a2a2c",
     "sidebar_selected": "rgba(255, 255, 255, 0.10)",
     "item_selected_bg": "rgba(255, 255, 255, 0.10)",

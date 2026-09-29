@@ -203,6 +203,10 @@ def main() -> int:
     p.add_argument("path", nargs="*", help="files: folders to open")
     args = p.parse_intermixed_args()
 
+    # Sonata's own UI never takes the GTK theme meant for other apps (the
+    # session's GTK_THEME=Sonata-Light/Dark restyles libadwaita widgets):
+    # our windows look the same in any session.
+    os.environ.pop("GTK_THEME", None)
     if args.component == "autostart":       # no GTK needed
         from . import autostart
         autostart.run()
