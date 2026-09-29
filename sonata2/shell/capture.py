@@ -248,7 +248,7 @@ class _Toolbar(Gtk.Window):
             LS.set_layer(self, LS.Layer.OVERLAY)
             LS.set_anchor(self, LS.Edge.BOTTOM, True)
             LS.set_margin(self, LS.Edge.BOTTOM, 120)
-            LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND)
+            LS.set_keyboard_mode(self, LS.KeyboardMode.EXCLUSIVE)   # Esc / Return at once (macOS)
 
     def _set_mode(self, m):
         self.mode = m
