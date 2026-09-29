@@ -149,7 +149,7 @@ def trash_menu(tile):
     tile.label.popdown()
     away = getattr(tile.get_parent(), "away", Gtk.PositionType.TOP)
     return ui.menu.popup(tile, [
-        [Item("Open", lambda: Gio.AppInfo.launch_default_for_uri("trash:///", None))],
+        [Item("Open", lambda: _open_folder("trash:///"))],
         [Item("Empty Trash…", confirm_empty_trash, enabled=_trash_count() > 0)],
     ], position=away)
 
@@ -169,3 +169,8 @@ def divider_menu(dock, divider):
          Item("Show Recent Applications", lambda on: dock.set_option("show_recents", on),
               checked=cfg["show_recents"])],
     ], position=dock.away)
+
+
+def _open_folder(uri: str) -> None:
+    from ..files import open_folder
+    open_folder(uri)                      # always Sonata's Files

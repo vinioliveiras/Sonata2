@@ -92,10 +92,16 @@ unset QT_STYLE_OVERRIDE KDE_FULL_SESSION KDE_SESSION_VERSION
 export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-auto}"
 # Folders open in Sonata's Files -- only in this session: the
 # desktop-specific list (XDG_CURRENT_DESKTOP=Sonata) other desktops ignore.
+# Every folder-like type goes to Files (never Nautilus); keys the user
+# already set keep their value.
 ml="$HOME/.config/sonata-mimeapps.list"
-[ -f "$ml" ] || printf '[Default Applications]\ninode/directory=io.github.vinioliveiras.sonata2.files.desktop\n' > "$ml"
-grep -q '^x-scheme-handler/trash=' "$ml" 2>/dev/null || \
-    sed -i '/^\[Default Applications\]/a x-scheme-handler/trash=io.github.vinioliveiras.sonata2.files.desktop' "$ml"
+grep -q '^\[Default Applications\]' "$ml" 2>/dev/null || printf '[Default Applications]\n' >> "$ml"
+for t in inode/directory inode/mount-point x-directory/normal application/x-directory \
+         x-scheme-handler/trash x-scheme-handler/recent x-scheme-handler/computer \
+         x-scheme-handler/network x-scheme-handler/smb x-scheme-handler/sftp x-scheme-handler/afp; do
+    grep -q "^$t=" "$ml" || \
+        sed -i "/^\[Default Applications\]/a $t=io.github.vinioliveiras.sonata2.files.desktop" "$ml"
+done
 # Wayfire blurs Sonata windows here: sidebars use the glass material.
 export SONATA_GLASS=1
 export PYTHONPATH="$SONATA_REPO${PYTHONPATH:+:$PYTHONPATH}"

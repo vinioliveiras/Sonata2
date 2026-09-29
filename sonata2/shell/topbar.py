@@ -243,8 +243,7 @@ class Bar(Gtk.CenterBox):
         docs = []
         for r in sorted(Gtk.RecentManager.get_default().get_items(), key=lambda r: -r.get_modified().to_unix())[:8]:
             if r.exists():
-                docs.append(Item(r.get_display_name(), lambda u=r.get_uri():
-                                 Gio.AppInfo.launch_default_for_uri(u, None)))
+                docs.append(Item(r.get_display_name(), lambda u=r.get_uri(): _open_recent(u)))
         sections = []
         if app_items:
             sections.append(app_items)
@@ -1108,6 +1107,19 @@ def _listen_for_lock() -> None:
                              Gio.DBusSignalFlags.NONE, lock)
     except GLib.Error:
         pass                      # no logind: Ctrl+Super+Q still runs `sonata2 lock` directly
+
+
+def _open_recent(uri: str) -> None:
+    """A recent item: folders in Sonata's Files, files in their app."""
+    from ..files import open_folder
+    f = Gio.File.new_for_uri(uri)
+    if f.query_file_type(Gio.FileQueryInfoFlags.NONE, None) == Gio.FileType.DIRECTORY:
+        open_folder(uri)
+        return
+    try:
+        Gio.AppInfo.launch_default_for_uri(uri, None)
+    except GLib.Error:
+        pass
 
 
 class TopBarWindow(Gtk.ApplicationWindow):
