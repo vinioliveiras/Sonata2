@@ -307,6 +307,14 @@ sudo install -D -m 644 "$tmp/sonata.portal" /usr/share/xdg-desktop-portal/portal
 printf '[D-BUS Service]\nName=org.freedesktop.impl.portal.desktop.sonata\nExec=%s portal\n' "$BIN/sonata2" \
     > "$DBUS_DIR/org.freedesktop.impl.portal.desktop.sonata.service"
 
+# Screen sharing (Chrome, Firefox, Discord, OBS...): xdg-desktop-portal-wlr
+# captures, Sonata's picker (sonata2/shell/sharepicker.py) asks which
+# screen. Its config for XDG_CURRENT_DESKTOP=Sonata only (other desktops keep theirs).
+mkdir -p "$CFG/xdg-desktop-portal-wlr"
+printf '[screencast]\nchooser_type=dmenu\nchooser_cmd=%s share-picker\nmax_fps=60\n' "$BIN/sonata2" \
+    > "$CFG/xdg-desktop-portal-wlr/Sonata"
+systemctl --user try-restart xdg-desktop-portal-wlr.service 2>/dev/null || true
+
 # -- login screen entry ---------------------------------------------------------------------------------
 # The login screen checks TryExec as its own user (gdm, sddm...), which can't
 # look inside a private home folder: the entry points to a small system-wide
