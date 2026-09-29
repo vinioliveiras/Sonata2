@@ -244,12 +244,13 @@ class corners_render_instance_t :
 
     void render(const wf::scene::render_instruction_t& data) override
     {
+        /* Drawn like Wayfire's own textures: the window's box in logical
+         * coordinates through the target's orthographic projection, over the
+         * whole render buffer. (A hand-made glViewport over the box flipped
+         * it vertically inside the output: the window showed up lower than
+         * where it really is, and the pointer "missed" -- Chrome, Spotify.) */
         auto bbox = self->get_children_bounding_box();
-        wlr_box fb_geom = data.target.framebuffer_box_from_geometry_box(data.target.geometry);
-        auto view_box   = data.target.framebuffer_box_from_geometry_box(bbox);
-        view_box.x -= fb_geom.x;
-        view_box.y -= fb_geom.y;
-        float x = view_box.x, y = view_box.y, w = view_box.width, h = view_box.height;
+        const float x1 = bbox.x, y1 = bbox.y, x2 = bbox.x + bbox.width, y2 = bbox.y + bbox.height;
 
         /* the frame, relative to the texture's top left */
         auto g = view->get_geometry();
@@ -261,11 +262,11 @@ class corners_render_instance_t :
         float radius = corner_radius();
 
         auto data_ptr = wf::get_core().get_data<corners_program_t>(program_name);
-        static const float vertexData[] = {
-            -1.0f, -1.0f,
-            1.0f, -1.0f,
-            1.0f, 1.0f,
-            -1.0f, 1.0f
+        const float vertexData[] = {
+            x1, y2,
+            x2, y2,
+            x2, y1,
+            x1, y1,
         };
         static const float texCoords[] = {
             0.0f, 0.0f,
@@ -277,9 +278,7 @@ class corners_render_instance_t :
         data.pass->custom_gles_subpass(data.target, [&]
         {
             /* Always the children rendered to the node's buffer: the zero-copy
-             * path hands out the client buffer with its own source box
-             * (wp_viewporter crop: Chromium, Electron), which this shader
-             * would stretch over bbox -- drawn shifted from where input goes. */
+             * path hands out the client buffer as is (no decoration) */
             auto src_tex = self->get_updated_contents(bbox, data.target.scale, this->children);
             auto gl_tex  = wf::gles_texture_t{src_tex};
 
@@ -294,12 +293,11 @@ class corners_render_instance_t :
             data_ptr->program.uniform1f("shadow_radius", shadow_r);
             data_ptr->program.attrib_pointer("position", 2, 0, vertexData);
             data_ptr->program.attrib_pointer("texcoord", 2, 0, texCoords);
-            data_ptr->program.uniformMatrix4f("mvp", wf::gles::output_transform(data.target));
+            data_ptr->program.uniformMatrix4f("mvp", wf::gles::render_target_orthographic_projection(data.target));
             GL_CALL(glActiveTexture(GL_TEXTURE0));
             data_ptr->program.set_active_texture(gl_tex);
 
             wf::gles::bind_render_buffer(data.target);
-            GL_CALL(glViewport(x, fb_geom.height - y - h, w, h));
             GL_CALL(glEnable(GL_BLEND));
             GL_CALL(glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA));
             for (const auto& box : data.damage)
