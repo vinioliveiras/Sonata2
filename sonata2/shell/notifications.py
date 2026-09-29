@@ -62,6 +62,10 @@ XML = """
 ui.register("""
 window.sonata-banners, window.sonata-banners > contents,
 window.sonata-nc, window.sonata-nc > contents { background: none; box-shadow: none; }
+/* a card leaving Notification Center (closed, Clear All): slides right and
+   fades while its row collapses */
+.nc-slot > * { transition: opacity 220ms %(ease_out)s, transform 220ms %(ease_out)s; }
+.nc-slot.leaving > * { opacity: 0; transform: translateX(60px); }
 .nt-card { background: %(glass_tint)s; border-radius: 13px; padding: 10px 12px 11px 10px;
   color: %(label)s; font-family: %(font)s;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, 0 8px 22px rgba(0,0,0,0.18); }
@@ -411,7 +415,9 @@ class _Center(Gtk.Window):
                 LS.set_anchor(self, e, True)
             LS.set_exclusive_zone(self, -1)
             LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND)
-        owner.listeners.append(self._rebuild)
+        self._slots = {}             # note id -> Revealer around its card
+        self._settle = 0
+        owner.listeners.append(self._changed)
 
     def _clicked(self, g, _n, x, y):
         # only the cards and widgets keep it open: the empty parts of the
@@ -432,6 +438,33 @@ class _Center(Gtk.Window):
         self.rev.set_reveal_child(False)
         GLib.timeout_add(260, lambda: (self.set_visible(False), False)[1])
 
+    def _changed(self):
+        """Closed notes leave with an animation (staggered for Clear All);
+        anything else rebuilds the column at once."""
+        ids = {n.id for n in self.owner.notes}
+        gone = [nid for nid in self._slots if nid not in ids]
+        new = [n.id for n in list(reversed(self.owner.notes))[:40] if n.id not in self._slots]
+        if not self.get_visible() or new or not gone:
+            self._rebuild()
+            return
+        for i, nid in enumerate(gone):
+            slot = self._slots.pop(nid)
+
+            def leave(slot=slot):
+                slot.add_css_class("leaving")
+                GLib.timeout_add(120, lambda: (slot.set_reveal_child(False), False)[1])
+                return False
+            GLib.timeout_add(1 + min(i, 8) * 45, leave)
+        if self._settle:
+            GLib.source_remove(self._settle)
+        wait = 120 + 260 + min(len(gone) - 1, 8) * 45 + 20
+
+        def settle():
+            self._settle = 0
+            self._rebuild()                     # header ("No Notifications"), Clear All
+            return False
+        self._settle = GLib.timeout_add(wait, settle)
+
     def _rebuild(self):
         while self.col.get_first_child():
             self.col.remove(self.col.get_first_child())
@@ -444,8 +477,12 @@ class _Center(Gtk.Window):
             clear.connect("clicked", lambda *_: self.owner.clear())
             head.append(clear)
         self.col.append(head)
+        self._slots = {}
         for n in notes[:40]:
-            self.col.append(self.owner.card(n))
+            slot = Gtk.Revealer(child=self.owner.card(n), reveal_child=True, css_classes=["nc-slot"],
+                                transition_type=Gtk.RevealerTransitionType.SLIDE_UP, transition_duration=260)
+            self._slots[n.id] = slot
+            self.col.append(slot)
         # Today widgets (Big Sur: below the notifications)
         cal = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["nc-widget"], margin_start=6,
                       margin_top=8)
