@@ -2,7 +2,7 @@
 Name=Sonata
 Comment=Sonata 2 icons: own overrides first, then MacTahoe
 Inherits=Sonata-MacTahoe,hicolor
-Directories=places/scalable,actions/symbolic,apps/scalable
+Directories=places/scalable,actions/symbolic,apps/scalable,status/symbolic
 
 [places/scalable]
 Size=64
@@ -23,4 +23,11 @@ Size=64
 MinSize=16
 MaxSize=512
 Context=Applications
+Type=Scalable
+
+[status/symbolic]
+Size=16
+MinSize=8
+MaxSize=512
+Context=Status
 Type=Scalable

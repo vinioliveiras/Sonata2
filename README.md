@@ -113,7 +113,7 @@ session environment to portals.
 
 Keys (macOS-like, Super = Cmd): Super+Space or F4 Launchpad, Super+Tab
 switch apps, Super+Q close, Super+M minimize, Ctrl+Super+F zoom,
-Ctrl+Up all windows, Super+, System Settings, Ctrl+Super+Q lock.
+Ctrl+Up all windows, Super+, System Settings, Ctrl+Super+Q lock, Ctrl+Alt+T terminal (handled by Wayfire: works even if the Sonata shell crashed).
 
 ## Try it without logging out
 

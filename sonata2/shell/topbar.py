@@ -4,7 +4,9 @@ Left:  Sonata menu (logo) -- About This Computer, Recent Items, Sleep,
        Restart..., Shut Down..., Lock Screen, Log Out...
        active app name (bold) -- About, Hide, Hide Others, Show All, Quit
        Window -- Minimize, Zoom, the app's windows, Bring All to Front
-Right: menu extras -- Sound, Battery, Wi-Fi, Control Center, clock.
+       (both hidden while the desktop has the focus -- Vini's choice)
+Right: menu extras -- Sound, Battery, Wi-Fi, Control Center, clock; own
+       icons (sonata-volume/-wifi/-battery-*, tools/gen-status-icons.py).
 
 Apps' own menus (File, Edit, ...) need a global-menu protocol GTK4/Qt6 apps
 don't export on Wayland; the bar offers what wlr-foreign-toplevel allows.
@@ -39,6 +41,7 @@ window.sonata-topbar, window.sonata-topbar > contents { background: none; box-sh
 .topbar-item.app { font-weight: 700; }
 .topbar-item.icon { padding: 0 8px; }
 .topbar-item image { -gtk-icon-size: 16px; }
+.topbar-item.battery image { -gtk-icon-size: 24px; }       /* wide battery, macOS proportions */
 .topbar-item label.percent { margin-left: 4px; font-size: %(text_small)s; }
 .about-box { padding: 28px 36px 24px 36px; font-family: %(font)s; color: %(label)s; }
 .about-name { font-family: %(font_display)s; font-size: 26px; font-weight: 700; }
@@ -64,11 +67,13 @@ class Bar(Gtk.CenterBox):
         self.set_start_widget(left)
 
         right = Gtk.Box()
-        self.sound = self._item(right, icon="audio-volume-high-symbolic", on_click=self._sound_panel, css="icon")
-        self.battery = self._item(right, icon="battery-full-symbolic", on_click=self._battery_panel, css="icon")
+        self.sound = self._item(right, icon="sonata-volume-3-symbolic", on_click=self._sound_panel, css="icon")
+        self.battery = self._item(right, icon="sonata-battery-100-symbolic", on_click=self._battery_panel,
+                                  css="icon")
+        self.battery.add_css_class("battery")
         self.battery_pct = Gtk.Label(css_classes=["percent"])
         self.battery.get_child().append(self.battery_pct)
-        self.wifi = self._item(right, icon="network-wireless-signal-excellent-symbolic",
+        self.wifi = self._item(right, icon="sonata-wifi-3-symbolic",
                                on_click=self._wifi_panel, css="icon")
         self.cc = self._item(right, icon="sonata-control-center-symbolic", on_click=self._control_center,
                              css="icon")
@@ -80,6 +85,7 @@ class Bar(Gtk.CenterBox):
         if self.manager:
             self.manager.listeners.append(self._active_changed)
         self._tick_clock()
+        self._active_changed()
         self._poll()
         GLib.timeout_add_seconds(POLL_S, lambda: (self._poll(), True)[1])
 
@@ -208,9 +214,14 @@ class Bar(Gtk.CenterBox):
         return key, wins
 
     def _active_changed(self) -> None:
+        """App name + Window menu follow the focused app; on the desktop
+        (nothing focused) both are hidden."""
         key, _wins = self._active()
-        info = apps.lookup(key) if key else None
-        self._set_text(self.app_btn, info.get_display_name() if info else (key or self._fallback_app_name()))
+        self.app_btn.set_visible(bool(key))
+        self.win_btn.set_visible(bool(key))
+        if key:
+            info = apps.lookup(key)
+            self._set_text(self.app_btn, info.get_display_name() if info else key)
 
     def _app_menu(self, btn):
         Item = ui.menu.Item
@@ -269,12 +280,11 @@ class Bar(Gtk.CenterBox):
             self.wifi.set_visible(False)
             return
         elif not on:
-            name = "network-wireless-offline-symbolic"
+            name = "sonata-wifi-off-symbolic"
         elif not ssid:
-            name = "network-wireless-signal-none-symbolic"
+            name = "sonata-wifi-0-symbolic"
         else:
-            name = "network-wireless-signal-" + ("excellent" if sig > 75 else "good" if sig > 50
-                                                  else "ok" if sig > 25 else "weak") + "-symbolic"
+            name = f"sonata-wifi-{3 if sig > 60 else 2 if sig > 30 else 1}-symbolic"
         self.wifi.set_visible(True)
         self._set_icon(self.wifi, name)
 
@@ -285,7 +295,7 @@ class Bar(Gtk.CenterBox):
             return
         level = min(100, (pct + 5) // 10 * 10)
         charging = status in ("Charging", "Full")
-        self._set_icon(self.battery, f"battery-level-{level}{'-charging' if charging else ''}-symbolic")
+        self._set_icon(self.battery, f"sonata-battery-{level}{'-charging' if charging else ''}-symbolic")
         self.battery_pct.set_label(f"{pct}%")
         self.battery_pct.set_visible(self.cfg["battery_percent"])
 
@@ -293,8 +303,8 @@ class Bar(Gtk.CenterBox):
         self.sound.set_visible(res is not None)
         if res:
             vol, muted = res
-            self._set_icon(self.sound, "audio-volume-muted-symbolic" if muted or vol == 0 else
-                           "audio-volume-" + ("high" if vol > 66 else "medium" if vol > 33 else "low") + "-symbolic")
+            self._set_icon(self.sound, "sonata-volume-muted-symbolic" if muted or vol == 0 else
+                           f"sonata-volume-{3 if vol > 66 else 2 if vol > 33 else 1}-symbolic")
 
     # -- extras panels -----------------------------------------------------------------------
     def _wifi_panel(self, btn):
@@ -512,6 +522,8 @@ class TopBarWindow(Gtk.ApplicationWindow):
 
     def _preview(self) -> None:
         """Bar over a sample wallpaper in a normal window (screenshots)."""
+        GLib.timeout_add(300, lambda: (self.bar._sound_state((70, False)), self.bar._battery_state((64, "Discharging")),
+                                       self.bar._wifi_state((True, True, ("Home", 80, False))), False)[-1])
         from .preview import _wallpaper
         w, h = (int(v) for v in os.environ.get("PREVIEW_SIZE", "1280x400").split("x"))
         self.set_default_size(w, h)
