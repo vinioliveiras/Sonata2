@@ -60,4 +60,41 @@ fi
 command -v dbus-update-activation-environment >/dev/null && \
     dbus-update-activation-environment --systemd XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_DATA_DIRS \
         DCONF_PROFILE XCURSOR_THEME XCURSOR_SIZE XCURSOR_PATH QT_QPA_PLATFORMTHEME 2>/dev/null || true
+# Hybrid laptops: draw with the GPU the displays are connected to. wlroots
+# renders on the first GPU it finds -- often the integrated one -- and then
+# copies every frame to the other GPU's screens (a 180 Hz external display
+# and a 144 Hz panel on the NVIDIA card, drawn by the Radeon 680M: animations
+# fell to 60-90 fps). SONATA_PRIMARY_GPU=off keeps wlroots' own choice.
+gpu_set=""
+if [ -z "${WLR_DRM_DEVICES:-}" ] && [ "${SONATA_PRIMARY_GPU:-auto}" != off ]; then
+    best=""; best_n=0; all=""
+    for card in /sys/class/drm/card[0-9]; do
+        [ -e "$card/device" ] || continue
+        n=0
+        for st in "$card"-*/status; do
+            [ -f "$st" ] && [ "$(cat "$st" 2>/dev/null)" = connected ] && n=$((n + 1))
+        done
+        dev="/dev/dri/$(basename "$card")"
+        all="$all $dev"
+        if [ "$n" -gt "$best_n" ]; then best="$dev"; best_n=$n; fi
+    done
+    if [ -n "$best" ] && [ "$(echo $all | wc -w)" -gt 1 ]; then
+        order="$best"
+        for dev in $all; do [ "$dev" = "$best" ] || order="$order:$dev"; done
+        export WLR_DRM_DEVICES="$order"
+        gpu_set=1
+    fi
+fi
+if [ -n "$gpu_set" ]; then
+    # a GPU order the session can't start with (driver trouble) must never
+    # lock you out: Wayfire ending within seconds is started again without it
+    started=$(date +%s)
+    wayfire -c "$cfg" > "$logs/session.log" 2>&1
+    code=$?
+    if [ $(( $(date +%s) - started )) -ge 15 ]; then
+        exit $code
+    fi
+    mv -f "$logs/session.log" "$logs/session.gpu-failed.log"
+    unset WLR_DRM_DEVICES
+fi
 exec wayfire -c "$cfg" > "$logs/session.log" 2>&1
