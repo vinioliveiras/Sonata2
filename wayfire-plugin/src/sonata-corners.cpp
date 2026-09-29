@@ -84,6 +84,7 @@ uniform vec4 shadow;          /* pixdecor's shadow colour (premultiplied), 0 wit
 uniform float shadow_radius;
 uniform float square_top;     /* 1: maximized, the top corners meet the menu bar */
 uniform vec4 fill;            /* the title bar's colour (premultiplied) */
+uniform vec4 outline;         /* hairline along the rounded frame (premultiplied), 0: none */
 
 varying highp vec2 uvpos;
 
@@ -112,6 +113,16 @@ void main()
         float da = max(0.0, d - radius);
         float k = shadow_radius > 0.0 ? exp(-pow(da / shadow_radius, 2.0)) : 0.0;
         c = c * cover + shadow * k * (1.0 - cover);
+    }
+    if (outline.a > 0.0 && square_top < 0.5)
+    {
+        /* macOS hairline: 1 px inside the rounded frame (replaces pixdecor's
+         * square border, which clashed with the arcs) */
+        vec2 half_size = (hi - lo) * 0.5;
+        vec2 dd = abs(p - (lo + half_size)) - (half_size - vec2(radius));
+        float sd = length(max(dd, 0.0)) + min(max(dd.x, dd.y), 0.0) - radius;
+        float ring = clamp(1.0 - abs(sd + 0.5), 0.0, 1.0) * step(sd, 0.5);
+        c = outline * ring + c * (1.0 - outline.a * ring);
     }
     gl_FragColor = c;
 }
@@ -313,6 +324,10 @@ class corners_render_instance_t :
                 option_str(view->activated ? "pixdecor/fg_color" : "pixdecor/bg_color"));
             /* stored premultiplied (Sonata writes them so: pixdecor blends them as such) */
             data_ptr->program.uniform4f("fill", fill ? glm::vec4{fill->r, fill->g, fill->b, fill->a} :
+                glm::vec4{0, 0, 0, 0});
+            auto line = wf::option_type::from_string<wf::color_t>(option_str("sonata-corners/outline"));
+            data_ptr->program.uniform4f("outline", line ?
+                glm::vec4{line->r * line->a, line->g * line->a, line->b * line->a, line->a} :
                 glm::vec4{0, 0, 0, 0});
             data_ptr->program.uniform4f("shadow", shadow_color);
             data_ptr->program.uniform1f("shadow_radius", shadow_r);

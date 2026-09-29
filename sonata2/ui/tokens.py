@@ -38,6 +38,7 @@ LIGHT = {
     "titlebar_bg_inactive": "rgba(240, 240, 243, 0.82)",
     "titlebar_text": "rgba(38, 38, 38, 1)",
     "titlebar_text_inactive": "rgba(154, 154, 154, 1)",
+    "window_outline": "rgba(0, 0, 0, 0.18)",             # hairline of Wayfire-framed windows
     "bar_item_active": "rgba(0, 0, 0, 0.10)",    # open menu title / pressed extra
     "module_bg": "rgba(255, 255, 255, 0.55)",    # Control Center modules
     "module_track": "rgba(0, 0, 0, 0.10)",       # Control Center slider, empty part
@@ -86,6 +87,7 @@ DARK = {
     "titlebar_bg_inactive": "rgba(30, 30, 34, 0.86)",
     "titlebar_text": "rgba(230, 230, 230, 1)",
     "titlebar_text_inactive": "rgba(138, 138, 138, 1)",
+    "window_outline": "rgba(255, 255, 255, 0.14)",       # dark windows: a light edge, like macOS
     "bar_item_active": "rgba(255, 255, 255, 0.18)",
     "module_bg": "rgba(255, 255, 255, 0.08)",
     "module_track": "rgba(255, 255, 255, 0.12)",

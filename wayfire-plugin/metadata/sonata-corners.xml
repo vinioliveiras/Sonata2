@@ -10,5 +10,10 @@
 			<min>0</min>
 			<max>40</max>
 		</option>
+		<option name="outline" type="color">
+			<_short>Outline</_short>
+			<_long>Hairline along the rounded frame (Sonata sets it per appearance).</_long>
+			<default>#00000024</default>
+		</option>
 	</plugin>
 </wayfire>
