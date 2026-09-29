@@ -649,8 +649,11 @@ class Launchpad(Gtk.ApplicationWindow):
             providers = [Gdk.ContentProvider.new_for_value("sonata2-launchpad-item")]
             info = None if M.is_folder(widget.item) else self.installed.get(widget.item)
             if info and info.get_filename():        # lets the Dock pin it
-                fl = Gdk.FileList.new_from_list([Gio.File.new_for_path(info.get_filename())])
-                providers.append(Gdk.ContentProvider.new_for_value(GObject.Value(Gdk.FileList, fl)))
+                # plain text/uri-list: a GdkFileList value would also offer the portal's
+                # file-transfer format, which the Dock picks first and can't convert
+                uri = Gio.File.new_for_path(info.get_filename()).get_uri()
+                providers.append(Gdk.ContentProvider.new_for_bytes(
+                    "text/uri-list", GLib.Bytes.new((uri + "\r\n").encode())))
             return Gdk.ContentProvider.new_union(providers)
 
         def begin(s, drag):
