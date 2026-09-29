@@ -223,12 +223,19 @@ class Desktop(Gtk.Fixed):
         for name in self._sorted_names():          # then the first free cells
             if name not in placed:
                 placed[name] = next(slots, (self.cols() - 1, rows - 1))
+        # icons that already had a spot slide to their new one (new ones just appear)
+        old = getattr(self, "_placed", {}) or {}
+        before = ui.transition.glide_record([it for n, it in self.items.items() if n in old], self)
         for name, (c, r) in placed.items():
             item = self.items.get(name)
             if item:
                 x, y = self.cell_xy(c, r)
                 self.move(item, x, y)
         self._placed = placed
+        ui.transition.glide_play(before, self)
+
+    def do_snapshot(self, snap) -> None:
+        ui.transition.snapshot_children(self, snap)
 
     def _sync(self) -> None:
         """Items follow the folder (live monitor)."""

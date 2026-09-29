@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="sonata-corners">
+		<_short>Sonata Rounded Corners</_short>
+		<_long>Rounds all four corners of windows Wayfire decorates (pixdecor), like Sonata's own windows.</_long>
+		<category>Effects</category>
+		<option name="radius" type="int">
+			<_short>Corner radius</_short>
+			<default>10</default>
+			<min>0</min>
+			<max>40</max>
+		</option>
+	</plugin>
+</wayfire>

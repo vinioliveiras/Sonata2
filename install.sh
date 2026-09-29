@@ -94,7 +94,7 @@ NI=""      # the package manager's "don't ask" flag, for optional packages one b
 case "$family" in
     *arch*)   PM="sudo pacman -S --needed"; NI="--noconfirm"
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python-gobject python-cairo python-pywayland"
-              OPT="networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome gnome-keyring libpulse xorg-xwayland grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
+              OPT="networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome gnome-keyring libpulse xorg-xwayland grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl meson ninja" ;;
     *debian*|*ubuntu*) PM="sudo apt install"; NI="-y"
               PKGS="wayfire gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtk4layershell-1.0 python3-gi python3-gi-cairo python3-pywayland"
               OPT="network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr policykit-1-gnome gnome-keyring pulseaudio-utils xwayland grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
@@ -224,6 +224,26 @@ EOF
 $SUDO install -m 755 "$tmp/sonata2-launcher" "$BIN/sonata2"
 $SUDO install -m 755 "$tmp/sonata-session-launcher" "$BIN/sonata-session"
 $SUDO chmod 755 "$SHARE/tools/sonata-session" "$SHARE/tools/session-env.sh" "$SHARE/tools/wayfire-config.sh"
+
+# -- Sonata's Wayfire plugin (rounded corners for Chrome, Spotify, terminals...) -----------------
+# Built against the installed Wayfire; a Wayfire update needs a rebuild (run
+# ./install.sh again) -- until then Wayfire skips it and corners stay square.
+PLUG_PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install"
+if [ "$DEPS" = 1 ] && [[ "$family" == *arch* ]] && ! command -v meson >/dev/null; then
+    $PM $NI meson ninja >/dev/null 2>&1 || true
+fi
+if command -v meson >/dev/null && command -v ninja >/dev/null && pkg-config --exists wayfire 2>/dev/null; then
+    say "Building Sonata's Wayfire plugin (rounded window corners)"
+    bdir="$(mktemp -d)"
+    if meson setup "$bdir" "$SRC/wayfire-plugin" --prefix "$PLUG_PREFIX" --libdir lib --buildtype release >"$bdir.log" 2>&1 &&
+       ninja -C "$bdir" >>"$bdir.log" 2>&1 && meson install -C "$bdir" >>"$bdir.log" 2>&1; then
+        echo "  installed to $PLUG_PREFIX"
+    else
+        echo "  couldn't build it (window corners stay square); log: $bdir.log"
+    fi
+else
+    echo "Skipped Sonata's Wayfire plugin (needs meson, ninja, a C++ compiler and Wayfire's headers)."
+fi
 
 # -- session config (never overwrite your edits) ----------------------------------------------------
 mkdir -p "$CFG/sonata2"

@@ -16,6 +16,12 @@ sed -e "s|@SONATA@|$here|g" "$in" > "$out"
 if [ -n "$pix" ]; then
     sed -i -E '/^plugins *=/ s/(^| )decoration( |$)/\1pixdecor\2/' "$out"
 fi
+# Sonata's own plugin (install.sh builds it): rounded corners for windows
+# Wayfire decorates. Loaded only when built, like pixdecor.
+corners="${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install/lib/wayfire/libsonata-corners.so"
+if [ -f "$corners" ]; then
+    sed -i -E '/^plugins *=/ s/$/ sonata-corners/' "$out"
+fi
 over="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/wayfire-overrides.ini"
 # Keyboard: the system's layout (localectl) until one is picked in Settings.
 if ! grep -qs '^xkb_layout' "$over" && command -v localectl >/dev/null; then

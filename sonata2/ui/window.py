@@ -96,6 +96,9 @@ def titlebar(win, title: str = None, end: Gtk.Widget = None, zoom=None) -> Gtk.W
 theme.register("""
 .sonata-sidebar { background: %(sidebar_material)s; }
 window.sonata-glass { background: transparent; }
+/* GTK's own drop-target outline (Adwaita paints it orange): Sonata marks
+   drop targets itself (.drop-target / .drop-hover / .folder-target) */
+*:drop(active), *:drop(active):focus { box-shadow: none; outline: none; }
 /* small utility windows (About, Get Info): all glass, the Dock's material */
 window.sonata-glass-window { background: %(panel_material)s; }
 """, key="materials")

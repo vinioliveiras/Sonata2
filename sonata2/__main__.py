@@ -680,6 +680,14 @@ def main() -> int:
     # session's GTK_THEME=Sonata-Light/Dark restyles libadwaita widgets):
     # our windows look the same in any session.
     os.environ.pop("GTK_THEME", None)
+    # GPU drawing for every Sonata surface (Settings > General > Graphics):
+    # OpenGL by default -- GTK's Vulkan path also loads every implicit Vulkan
+    # layer installed (overlays, frame generators), slow on hybrid laptops
+    if "GSK_RENDERER" not in os.environ:
+        from . import config as _cfg
+        from .icons import APPEARANCE_DEFAULTS as _AD
+        os.environ["GSK_RENDERER"] = {"gl": "ngl", "vulkan": "vulkan", "software": "cairo"}.get(
+            _cfg.load("appearance", _AD)["renderer"], "ngl")
     if args.component == "autostart":       # no GTK needed
         from . import autostart
         autostart.run()

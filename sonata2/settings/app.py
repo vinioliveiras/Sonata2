@@ -48,6 +48,24 @@ SECTIONS = [  # id, title, icon, badge colour, group
     ("about", "About", "help-about-symbolic", "gray", "about"),
 ]
 
+# Search (sidebar field, macOS Ventura): words that find a section besides its title.
+KEYWORDS = {
+    "wifi": "wireless network internet ssid password", "network": "ethernet vpn proxy wired ip",
+    "bluetooth": "devices headphones mouse keyboard pair", "printers": "printer scanner cups print",
+    "sound": "volume output input microphone speakers headphones effects alert",
+    "displays": "screen monitor resolution refresh rate hz scale brightness night shift main display",
+    "battery": "power energy low power mode charge sleep display off",
+    "wallpaper": "background desktop picture", "keyboard": "layout input source repeat shortcuts",
+    "trackpad": "touchpad tap click scroll gestures", "mouse": "pointer speed scroll natural",
+    "datetime": "clock time zone date", "notifications": "do not disturb alerts banners",
+    "users": "account password picture avatar login items", "privacy": "security lock screen location trash",
+    "sharing": "file sharing remote", "accessibility": "zoom contrast reduce transparency motion graphics gpu hardware acceleration renderer",
+    "appearance": "dark light mode accent color theme icons font", "dock": "magnification size position autohide "
+    "recent apps displays minimize", "menubar": "clock battery percentage bluetooth sound now playing",
+    "launchpad": "apps grid folders hidden", "updates": "software update upgrade packages",
+    "about": "computer system version restart sonata",
+}
+
 _ACCENT_CSS = "".join(f".st-accent.{n} {{ background: {c[0]}; }}\n" for n, c in ui.tokens.ACCENTS.items())
 ui.register(_ACCENT_CSS + """
 button.st-accent { min-width: 16px; min-height: 16px; padding: 0; margin: 0 3px; border-radius: 99px; border: none;
@@ -75,6 +93,8 @@ window.sonata-settings { color: %(label)s; }
 .st-badge.gray { background: %(sys_gray)s; } .st-badge.red { background: %(sys_red)s; }
 .st-badge.black { background: %(sys_black)s; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
 .st-card { padding: 10px 12px 6px 12px; }
+entry.st-search, .st-search { margin: 0 10px 6px 10px; min-height: 26px; border-radius: 7px; border: none;
+  background: alpha(%(label)s, 0.07); box-shadow: none; font-size: %(text_body)s; }
 .st-card-title { font-weight: 700; }
 .st-card-sub { color: %(label_secondary)s; font-size: %(text_small)s; }
 .st-gap-row, .st-gap-row:hover { min-height: 8px; padding: 0; margin: 0; background: none; }
@@ -253,11 +273,23 @@ class Settings(Adw.ApplicationWindow):
         self.set_content(self.toasts)
         self.pages = {}
         keys = Gtk.EventControllerKey()
-        keys.connect("key-pressed", lambda _c, k, *_: (self.close(), True)[1] if k == Gdk.KEY_Escape else False)
+        keys.connect("key-pressed", self._key)
         self.add_controller(keys)
         self.select(start if start in [s[0] for s in SECTIONS] else "wifi")
         from ..backend import power                     # the Battery section follows plug/charge changes
         power.watch(lambda: self.current == "battery" and self._reload_page("battery"))
+
+    def _key(self, _c, keyval, _code, state) -> bool:
+        if keyval in (Gdk.KEY_f, Gdk.KEY_F) and state & Gdk.ModifierType.CONTROL_MASK:
+            self.search.grab_focus()                       # Ctrl+F: the search field (Cmd+F)
+            return True
+        if keyval == Gdk.KEY_Escape:
+            if self.search.get_text():
+                self.search.set_text("")
+            else:
+                self.close()
+            return True
+        return False
 
     def toast(self, text: str) -> None:
         self.toasts.add_toast(Adw.Toast(title=GLib.markup_escape_text(text), timeout=3))
@@ -286,6 +318,12 @@ class Settings(Adw.ApplicationWindow):
         texts.append(Gtk.Label(label="Sonata 2", xalign=0, css_classes=["st-card-sub"]))
         card.append(texts)
         box.append(card)
+        # Search, macOS Ventura style: filters the sections as you type;
+        # Return opens the first match
+        self.search = Gtk.SearchEntry(placeholder_text="Search", css_classes=["st-search"])
+        self.search.connect("search-changed", lambda *_: self._filter_sections())
+        self.search.connect("activate", lambda *_: self._open_first_match())
+        box.prepend(self.search)
         self.listbox = Gtk.ListBox(css_classes=["navigation-sidebar"], vexpand=True)
         self.rows = {}
         last = None
@@ -308,6 +346,30 @@ class Settings(Adw.ApplicationWindow):
         box.append(self.listbox)
         tv.set_content(Gtk.ScrolledWindow(child=box, hscrollbar_policy=Gtk.PolicyType.NEVER))
         return Adw.NavigationPage(title="System Settings", child=tv, css_classes=["st-sidebar", "sonata-sidebar"])
+
+    def _matches(self, sid, title, q) -> bool:
+        words = f"{title} {KEYWORDS.get(sid, '')}".casefold()
+        return all(w in words for w in q.split())
+
+    def _filter_sections(self) -> None:
+        q = self.search.get_text().strip().casefold()
+        titles = {s[0]: s[1] for s in SECTIONS}
+        row = self.listbox.get_first_child()
+        while row is not None:
+            sid = getattr(row, "sid", None)
+            if sid is None:                                  # group gaps only without a search
+                row.set_visible(not q)
+            else:
+                row.set_visible(not q or self._matches(sid, titles[sid], q))
+            row = row.get_next_sibling()
+
+    def _open_first_match(self) -> None:
+        row = self.listbox.get_first_child()
+        while row is not None:
+            if getattr(row, "sid", None) and row.get_visible():
+                self.listbox.select_row(row)
+                return
+            row = row.get_next_sibling()
 
     def select(self, sid, from_sidebar=False):
         if not from_sidebar:
@@ -1173,6 +1235,12 @@ class Settings(Adw.ApplicationWindow):
                             lambda on: (self._save("appearance", "reduce_transparency", on),
                                         self.toast("Applies to windows opened from now on")),
                             subtitle="Solid sidebars and Dock instead of glass"))
+        disp.add(combo_row("Graphics", [("gl", "Hardware (OpenGL)"), ("vulkan", "Hardware (Vulkan)"),
+                                        ("software", "Software (no GPU)")],
+                           app.get("renderer", "gl"),
+                           lambda v: (self._save("appearance", "renderer", v),
+                                      self.toast("Applies after Restart Sonata")),
+                           subtitle="How Sonata draws its Dock, menu bar and windows"))
         try:
             scale = float(system.gsetting(I, "text-scaling-factor") or 1)
         except ValueError:
