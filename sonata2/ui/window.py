@@ -22,6 +22,9 @@ theme.register("""
    edge and 14 px from the top, close to the corner (Vini's call). */
 .traffic { margin-left: 3px; margin-top: 8px; }
 headerbar .traffic { margin-left: -2px; margin-top: 2px; }   /* headerbar adds its own padding */
+/* The dots are the same pictures pixdecor draws on other apps' title bars
+   (tools/gen-decor.py), so every window looks and hovers alike: the glyph
+   fades in on the button under the pointer. */
 .traffic button,
 .traffic button:hover,
 .traffic button:active,
@@ -30,34 +33,22 @@ headerbar .traffic { margin-left: -2px; margin-top: 2px; }   /* headerbar adds i
 .traffic button:focus-visible,
 .traffic button:backdrop {
   min-width: 12px; min-height: 12px; padding: 0; margin: 0 4px;
-  border: none; border-radius: 999px; outline: none;
-  background-image: none; text-shadow: none;
-  box-shadow: inset 0 0 0 0.5px rgba(0,0,0,.18);
-  transition: none;
+  border: none; border-radius: 999px; outline: none; box-shadow: none; text-shadow: none;
+  background-color: transparent; background-repeat: no-repeat; background-position: center;
+  background-size: 12px 12px;
+  transition: background-image 150ms ease;
 }
-.traffic button.tl-close,
-.traffic button.tl-close:hover,
-.traffic button.tl-close:active,
-.traffic button.tl-close:focus,
-.traffic button.tl-close:backdrop { background-color: #ff5f57; }
-.traffic button.tl-min,
-.traffic button.tl-min:hover,
-.traffic button.tl-min:active,
-.traffic button.tl-min:focus,
-.traffic button.tl-min:backdrop { background-color: #febc2e; }
-.traffic button.tl-zoom,
-.traffic button.tl-zoom:hover,
-.traffic button.tl-zoom:active,
-.traffic button.tl-zoom:focus,
-.traffic button.tl-zoom:backdrop { background-color: #28c840; }
-.traffic button.tl-disabled,
-.traffic button.tl-disabled:hover,
-.traffic button.tl-disabled:backdrop { background-color: %(tl_disabled)s; }
-.traffic:hover button.tl-disabled label { color: transparent; }
+.traffic button.tl-close { background-image: -gtk-icontheme("sonata-tl-close"); }
+.traffic button.tl-close:hover { background-image: -gtk-icontheme("sonata-tl-close-hover"); }
+.traffic button.tl-min { background-image: -gtk-icontheme("sonata-tl-minimize"); }
+.traffic button.tl-min:hover { background-image: -gtk-icontheme("sonata-tl-minimize-hover"); }
+.traffic button.tl-zoom { background-image: -gtk-icontheme("sonata-tl-maximize"); }
+.traffic button.tl-zoom:hover { background-image: -gtk-icontheme("sonata-tl-maximize-hover"); }
+.traffic button.tl-disabled, .traffic button.tl-disabled:hover, .traffic button.tl-disabled:backdrop {
+  background-image: none; background-color: %(tl_disabled)s; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,.18); }
 .traffic button:active { filter: brightness(0.85); }
-.traffic button label { font-size: 9px; font-weight: 900; color: transparent; padding: 0; margin: 0; }
-.traffic:hover button label { color: rgba(0,0,0,.55); }
-""")
+.traffic button label { color: transparent; font-size: 1px; padding: 0; margin: 0; }
+""", key="traffic-lights")
 
 
 # Standard title bar: every Sonata window puts the traffic lights at the
@@ -126,10 +117,10 @@ def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
     """Close / minimize / zoom as macOS-style coloured dots. on_zoom=None greys the
     green one out (fixed-size windows, like System Settings)."""
     box = Gtk.Box(css_classes=["traffic"], valign=Gtk.Align.START)
-    for css, glyph, tip, cb in (("tl-close", "×", "Close", on_close),
-                                ("tl-min", "−", "Minimize", on_minimize),
-                                ("tl-zoom", "+", "Zoom" if on_zoom else None, on_zoom)):
-        b = Gtk.Button(label=glyph, tooltip_text=tip, css_classes=[css], valign=Gtk.Align.CENTER,
+    for css, tip, cb in (("tl-close", "Close", on_close),
+                         ("tl-min", "Minimize", on_minimize),
+                         ("tl-zoom", "Zoom" if on_zoom else None, on_zoom)):
+        b = Gtk.Button(tooltip_text=tip, css_classes=[css], valign=Gtk.Align.CENTER,
                        focus_on_click=False, can_focus=False)
         if cb:
             b.connect("clicked", lambda _b, f=cb: f())
