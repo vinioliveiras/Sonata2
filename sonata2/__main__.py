@@ -1076,6 +1076,21 @@ def main() -> int:
             run_topbar(app, args, ui)
 
     app.connect("activate", activate)
+    if args.component == "settings" and not args.preview:
+        from gi.repository import Gio
+        # a Settings already running (it lingers after closing) only gets
+        # "activate" from a second launch, not its --page: the page goes
+        # over as an action ("Wi-Fi Preferences…" opens Wi-Fi, not the last pane)
+        def show_page(_a, param):
+            args.page = param.get_string()
+            activate(app)
+        act = Gio.SimpleAction.new("show-page", GLib.VariantType.new("s"))
+        act.connect("activate", show_page)
+        app.add_action(act)
+        app.register(None)
+        if app.get_is_remote():
+            app.activate_action("show-page", GLib.Variant("s", args.page or ""))
+            return 0
     return app.run([sys.argv[0]])
 
 

@@ -417,8 +417,11 @@ class FilesWindow(Adw.ApplicationWindow):
                 pass
         if f.get_path() and packages.open_path(f.get_path(), self):     # install / run / extract
             return
+        # macOS: double-click opens the file in its app (pictures in Preview);
+        # Quick Look (Space) is only the fallback when no app opens it
         from .quicklook import previewable
-        if previewable(info):                                            # pictures, movies, text: Quick Look
+        ct = info.get_content_type() or ""
+        if previewable(info) and not (ct and Gio.AppInfo.get_default_for_type(ct, False)):
             self.quick_look_item(info)
             return
         ctx = self.get_display().get_app_launch_context()
