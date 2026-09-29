@@ -729,11 +729,19 @@ class FilesWindow(Adw.ApplicationWindow):
         if isinstance(focus, Gtk.Editable) or (focus and focus.get_ancestor(Gtk.Entry)):
             return False
         ctrl = bool(state & Gdk.ModifierType.CONTROL_MASK)
-        if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_F2) and not ctrl:
+        if keyval == Gdk.KEY_F2 and not ctrl:
             if len(self.view.selected()) == 1:
                 self.rename_selection()
                 return True
             return False
+        if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter) and not ctrl:
+            return self._enter()
+        if keyval == Gdk.KEY_BackSpace and not ctrl:
+            if self.pos > 0:
+                self.go_back()
+            else:
+                self.go_up()
+            return True
         if keyval == Gdk.KEY_space and not ctrl:
             if self.view.selected() or getattr(self, "_ql", None):
                 self.toggle_quicklook()
@@ -747,6 +755,27 @@ class FilesWindow(Adw.ApplicationWindow):
         if ch.isprintable() and ch != "\x00" and not ctrl and not alt and (ch != " " or self._typed):
             return self._type_select(ch)
         return False
+
+    ENTER_TWICE_MS = 350
+
+    def _enter(self) -> bool:
+        """Enter opens the selection; Enter twice (quickly) renames it. The
+        open waits out the double-press window."""
+        if not self.view.selected():
+            return False
+        if getattr(self, "_enter_src", 0):
+            GLib.source_remove(self._enter_src)
+            self._enter_src = 0
+            if len(self.view.selected()) == 1:
+                self.rename_selection()
+            return True
+
+        def open_now():
+            self._enter_src = 0
+            self.open_selection()
+            return False
+        self._enter_src = GLib.timeout_add(self.ENTER_TWICE_MS, open_now)
+        return True
 
     def _type_select(self, ch) -> bool:
         """Letters jump to the first item starting with what was typed; typing
