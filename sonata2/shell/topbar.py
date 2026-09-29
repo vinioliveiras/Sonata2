@@ -218,6 +218,7 @@ class Bar(Gtk.CenterBox):
             [Item("About This Computer", lambda: AboutWindow().present())],
             [Item("System Settings…", lambda: open_settings())],
             [Item("Recent Items", submenu=self._recent_items())],
+            [Item("Restart Sonata", system.restart_sonata)],      # reload the shell; apps stay open
             [Item("Sleep", lambda: system.power_action("sleep")),
              Item("Restart…", lambda: self._confirm("restart")),
              Item("Shut Down…", lambda: self._confirm("shutdown"))],

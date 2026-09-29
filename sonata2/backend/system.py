@@ -422,6 +422,21 @@ def power_action(kind: str) -> None:
         _spawn(cmd)
 
 
+def restart_sonata() -> None:
+    """Reload the shell (Dock, menu bar, Launchpad, Spotlight, wallpaper)
+    with the current code; open apps stay. Detached: it outlives the menu
+    bar that asked for it."""
+    import sys
+    launcher = os.environ.get("SONATA2_LAUNCHER")
+    if launcher and os.path.exists(launcher):
+        cmd = [launcher, "restart"]
+    else:
+        cmd = [sys.executable, "-m", "sonata2", "restart"]
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in (root, os.environ.get("PYTHONPATH")) if p))
+    subprocess.Popen(cmd, env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 # -- About ---------------------------------------------------------------------------------
 @dataclass
 class About:

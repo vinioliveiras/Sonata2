@@ -1345,7 +1345,15 @@ class Settings(Adw.ApplicationWindow):
                                          max_width_chars=40))
                 specs.add(row)
         system.run_async(system.about, fill)
-        return [hero, specs]
+        shell = group("Sonata")
+        row = Adw.ActionRow(title="Restart Sonata",
+                            subtitle="Reloads the Dock, menu bar, Launchpad and wallpaper. Your apps stay open.")
+        btn = Gtk.Button(label="Restart", valign=Gtk.Align.CENTER)
+        btn.connect("clicked", lambda *_: (system.restart_sonata(), self.toast("Restarting Sonata…")))
+        row.add_suffix(btn)
+        row.set_activatable_widget(btn)
+        shell.add(row)
+        return [hero, specs, shell]
 
 
 def settings_desktop_file(command: str) -> str:

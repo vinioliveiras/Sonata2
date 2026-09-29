@@ -341,13 +341,14 @@ def restart(names) -> int:
     import subprocess
     import time
     names = [n for n in names if n in SHELL_COMPONENTS] or list(SHELL_COMPONENTS)
-    for n in names:
+    for n in names:                       # the keepers first, so they don't start it again
+        subprocess.run(["pkill", "-f", "--", rf"-m sonata2 keep {n}( |$)"], check=False)
         subprocess.run(["pkill", "-f", "--", rf"-m sonata2 {n}( |$)"], check=False)
-    time.sleep(0.4)
+    time.sleep(0.6)
     cmd = self_command().split()
     for n in names:
         extra = ["--background"] if n in ("launchpad", "spotlight") else []
-        subprocess.Popen(cmd + [n] + extra, start_new_session=True,
+        subprocess.Popen(cmd + ["keep", n] + extra, start_new_session=True,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(f"restarted {n}")
     return 0
