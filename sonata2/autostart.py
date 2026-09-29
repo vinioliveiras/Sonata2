@@ -104,6 +104,8 @@ def run() -> int:
     try:
         from . import gtkstyle
         gtkstyle.clean()                   # (an older version styled GTK 4 apps for every desktop)
+        from . import flatpak_theme
+        flatpak_theme.apply()              # Flatpak apps in Sonata's look (Settings > General)
     except Exception as e:
         print(f"sonata2-autostart: gtk style: {e}")
     try:

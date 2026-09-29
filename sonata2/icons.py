@@ -28,7 +28,7 @@ from . import config  # noqa: E402
 ICONS_DIR = os.path.join(os.path.dirname(__file__), "data", "icons")
 # Sonata's appearance.json (config.load keeps only known keys: every
 # reader passes these defaults)
-APPEARANCE_DEFAULTS = {"icon_theme": "Sonata", "theme": "mac", "accent": "blue", "reduce_transparency": False,
+APPEARANCE_DEFAULTS = {"flatpak_theme": True, "icon_theme": "Sonata", "theme": "mac", "accent": "blue", "reduce_transparency": False,
                        "renderer": "gl", "system_titlebars": True, "menu_logo": "distro"}
 
 _system = None     # Gtk.IconTheme with the system's theme, for fallbacks

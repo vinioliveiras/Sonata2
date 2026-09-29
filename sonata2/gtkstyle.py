@@ -37,6 +37,11 @@ def update(dark: bool) -> None:
     if in_session() and shutil.which("dbus-update-activation-environment"):
         subprocess.Popen(["dbus-update-activation-environment", "--systemd", f"GTK_THEME={name}"],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        from . import flatpak_theme
+        flatpak_theme.apply(dark)               # Flatpak apps too (when that option is on)
+    except Exception as e:
+        print(f"sonata2: flatpak theme: {e}")
 
 
 def clean(path=None) -> bool:

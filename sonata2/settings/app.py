@@ -12,6 +12,7 @@ The sidebar keeps Vini's split:
   About.
 `python3 -m sonata2 settings [--page ID]`."""
 import os
+import shutil
 
 import gi
 
@@ -1589,6 +1590,13 @@ class Settings(Adw.ApplicationWindow):
                                              self.toast("Making the app icons again…")))
         gen.add_suffix(regen)
         s.add(gen)
+        from .. import flatpak_theme
+        if shutil.which("flatpak"):
+            s.add(switch_row("Sonata style for Flatpak apps", flatpak_theme.enabled(),
+                             lambda on: (self._save("appearance", flatpak_theme.KEY, on),
+                                         system.run_async(flatpak_theme.apply if on else flatpak_theme.remove),
+                                         self.toast("Flatpak apps pick it up when they open again")),
+                             subtitle="Also changes Flatpak apps in other desktops' sessions while on"))
         dock = config.load("dock", {"glass": True})
         s.add(switch_row("Translucent glass", dock["glass"], lambda on: self._save("dock", "glass", on),
                          subtitle="Frosted Dock and menu bar (needs the Wayfire blur plugin)"))
