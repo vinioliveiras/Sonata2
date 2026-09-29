@@ -866,6 +866,8 @@ class Dock(Gtk.Box):
         if self._drag.get("icon"):
             self._drag["icon"].feed(x, self)
         tile = self.tiles[self._drag["key"]]
+        if not tile.get_visible():                 # back over the Dock: its slot opens again
+            self._set_tile_shown(tile, True)
         slot = self._slot_at(x, y, exclude=tile)   # other icons whose centre is before the pointer
         if self.app_tiles().index(tile) != slot:
             self._move_to_slot(tile, slot)
@@ -874,6 +876,15 @@ class Dock(Gtk.Box):
     def _drag_leave(self, _target) -> None:
         if self._drag:
             self._drag["left"] = True
+            key = self._drag["key"]
+            tile = self.tiles.get(key)
+            if tile is not None and key not in PERMANENT:
+                self._set_tile_shown(tile, False)  # dragged out: the others close up (macOS)
+
+    def _set_tile_shown(self, tile, shown: bool) -> None:
+        before = ui.transition.glide_record([t for t in self.app_tiles() if t is not tile], self)
+        tile.set_visible(shown)
+        ui.transition.glide_play(before, self)
 
     def _drag_drop(self, _target, _value, _x, _y) -> bool:
         if not self._drag:
@@ -891,6 +902,7 @@ class Dock(Gtk.Box):
             self.set_pinned(tile.key, False)   # dragged out of the Dock: remove
             return True                         # no snap-back animation
         if d:                                   # Esc / refused: put it back
+            tile.set_visible(True)
             self._move_to_slot(tile, d["index"])
         return False
 
@@ -900,6 +912,9 @@ class Dock(Gtk.Box):
         # moved somewhere else that took it (Launchpad): out of the Dock
         if delete and d and not d["dropped"] and tile.key not in PERMANENT:
             self.set_pinned(tile.key, False)
+        # still in the Dock (dropped back, cancelled, or a running app that keeps its icon)
+        if self.tiles.get(tile.key) is tile and not tile.get_visible():
+            self._set_tile_shown(tile, True)
 
     # -- running apps ----------------------------------------------------------
     def _schedule_sync(self) -> None:

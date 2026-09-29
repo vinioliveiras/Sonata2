@@ -54,6 +54,14 @@ class DockTest(unittest.TestCase):
     def start_drag(self, key):
         self.dock._drag = {"key": key, "index": self.keys().index(key), "left": False, "dropped": False}
 
+    def test_drag_out_closes_up(self):
+        key = self.removable()[0]
+        self.start_drag(key)
+        self.dock._drag_leave(None)
+        self.assertFalse(self.dock.tiles[key].get_visible())      # the others close up
+        self.dock._drag_motion(None, self.center_x(self.keys()[0]), 10)
+        self.assertTrue(self.dock.tiles[key].get_visible())       # back over the Dock
+
     def test_drop_gap(self):
         keys = self.keys()
         x = (self.center_x(keys[0]) + self.center_x(keys[1])) / 2      # between the first two
