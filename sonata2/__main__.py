@@ -592,10 +592,19 @@ def keep(argv) -> int:
     import subprocess
     import time
     cmd = self_command().split() + argv
+    # each component logs to ~/.cache/sonata2/<name>.log (the previous run's
+    # kept as .old.log) -- what `sonata2 doctor` and bug reports read
+    logdir = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "sonata2")
+    os.makedirs(logdir, exist_ok=True)
+    log_path = os.path.join(logdir, f"{argv[0]}.log")
+    if os.path.exists(log_path):
+        os.replace(log_path, log_path[:-4] + ".old.log")
     crashes = []
     while True:
         started = time.monotonic()
-        code = subprocess.call(cmd)
+        with open(log_path, "a", buffering=1) as log:
+            log.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} {' '.join(argv)}\n")
+            code = subprocess.call(cmd, stdout=log, stderr=subprocess.STDOUT)
         sock = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), os.environ.get("WAYLAND_DISPLAY", "wayland-0"))
         if code in (0, -15, -2, 130, 143) or not os.path.exists(sock):     # on purpose, or the session ended
             return 0

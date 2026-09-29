@@ -309,7 +309,50 @@ def copy_to_clipboard(widget, files, cut=False) -> None:
         Gdk.ContentProvider.new_for_bytes(GNOME_MIME, GLib.Bytes.new(gnome.encode())),
         Gdk.ContentProvider.new_for_bytes("text/uri-list", GLib.Bytes.new(("\r\n".join(uris) + "\r\n").encode())),
     ]
+    png = _image_png(files[0]) if len(files) == 1 and not cut else None
+    if png is not None:                # one picture: apps that take images (chats, editors) paste it
+        providers.append(Gdk.ContentProvider.new_for_bytes("image/png", png))
     widget.get_clipboard().set_content(Gdk.ContentProvider.new_union(providers))
+
+
+def _image_png(f):
+    """PNG bytes of an image file (<= 40 MB), or None."""
+    try:
+        info = f.query_info("standard::content-type,standard::size", Gio.FileQueryInfoFlags.NONE, None)
+        if not (info.get_content_type() or "").startswith("image/") or info.get_size() > 40 << 20:
+            return None
+        if info.get_content_type() == "image/png":
+            return GLib.Bytes.new(f.load_contents(None)[1])
+        return Gdk.Texture.new_from_file(f).save_to_png_bytes()
+    except (GLib.Error, TypeError):
+        return None
+
+
+def paste_image(widget, dest, done=None) -> bool:
+    """A picture on the clipboard (copied in a browser, a screenshot...)
+    becomes "Pasted Image <date> at <time>.png" in `dest`. False when the
+    clipboard holds no picture."""
+    cb = widget.get_clipboard()
+    if not _has_image(cb.get_formats()):
+        return False
+
+    def got(c, res):
+        try:
+            tex = c.read_texture_finish(res)
+        except GLib.Error:
+            return
+        if tex is None:
+            return
+        name = GLib.DateTime.new_now_local().format("Pasted Image %Y-%m-%d at %H.%M.%S.png")
+        target = dest.get_child(name)
+        try:
+            tex.save_to_png(target.get_path())
+        except (GLib.Error, TypeError):
+            return
+        if done:
+            done(target)
+    cb.read_texture_async(None, got)
+    return True
 
 
 def read_clipboard(widget, callback) -> None:
@@ -343,8 +386,13 @@ def read_clipboard(widget, callback) -> None:
     callback([], False)
 
 
+def _has_image(formats) -> bool:
+    return formats.contain_gtype(Gdk.Texture) or any(m.startswith("image/") for m in formats.get_mime_types() or [])
+
+
 def clipboard_has_files(widget) -> bool:
+    """Something Paste can put in a folder: files, or a picture."""
     f = widget.get_clipboard().get_formats()
-    return f.contain_mime_type(GNOME_MIME) or f.contain_gtype(Gdk.FileList)
+    return f.contain_mime_type(GNOME_MIME) or f.contain_gtype(Gdk.FileList) or _has_image(f)
 
 

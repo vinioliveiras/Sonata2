@@ -123,6 +123,12 @@ def _is_dir(f: Gio.File) -> bool:
 
 def attach_plate(dock) -> None:
     """Apps dropped between icons get pinned; folders become stacks."""
+    def enter(target, x, y):
+        drop = target.get_current_drop()
+        fmts = drop.get_formats().to_string() if drop else "?"
+        print(f"sonata2-dock: drag entered the Dock ({fmts})", flush=True)      # dock.log: DnD debugging
+        return motion(target, x, y)
+
     def motion(target, _x, _y):
         files = _files(target.get_value())
         ok = files and (all(_is_app(f) for f in files) or all(_is_dir(f) for f in files))
@@ -138,7 +144,9 @@ def attach_plate(dock) -> None:
             return False
         return pin_files(dock, files, x=x, y=y)
 
-    dock.add_controller(_target(motion, drop, lambda *_: None))
+    t = _target(motion, drop, lambda *_: None)
+    t.connect("enter", enter)
+    dock.add_controller(t)
 
 
 def pin_files(dock, files, before=None, x=None, y=0.0) -> bool:

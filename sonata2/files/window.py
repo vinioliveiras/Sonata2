@@ -381,6 +381,10 @@ class FilesWindow(Adw.ApplicationWindow):
             return
         if f.get_path() and packages.open_path(f.get_path(), self):     # install / run / extract
             return
+        from .quicklook import previewable
+        if previewable(info):                                            # pictures, movies, text: Quick Look
+            self.quick_look_item(info)
+            return
         if info.get_name().endswith(".desktop") and f.get_path():        # an app shortcut: open the app
             from ..apps import DesktopAppInfo
             try:
@@ -601,6 +605,12 @@ class FilesWindow(Adw.ApplicationWindow):
         self._ql = QuickLook(self, on_close=lambda: setattr(self, "_ql", None))
         self._ql.show_item(sel[0])
 
+    def quick_look_item(self, info):
+        from .quicklook import QuickLook
+        if getattr(self, "_ql", None) is None:
+            self._ql = QuickLook(self, on_close=lambda: setattr(self, "_ql", None))
+        self._ql.show_item(info)
+
     def _follow_quicklook(self):
         ql = getattr(self, "_ql", None)
         sel = self.view.selected()
@@ -644,6 +654,8 @@ class FilesWindow(Adw.ApplicationWindow):
                 ops.Transfer(files, dest, move=move or cut, parent=self, on_done=self.sidebar.refresh_space)
                 if cut:
                     self.get_clipboard().set_content(None)     # a cut is pasted once
+            else:
+                ops.paste_image(self, dest)                     # a copied picture becomes a file
         ops.read_clipboard(self, got)
 
     def _error(self, heading, err, body=None):

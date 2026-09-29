@@ -249,7 +249,8 @@ def check_keyboard(r: Report) -> None:
 def last_session_errors(n=25) -> str:
     logs = os.path.expanduser("~/.cache/sonata2")
     out = []
-    for name in ("login.log", "session.log"):
+    for name in ("login.log", "session.log", "topbar.log", "dock.log", "launchpad.log", "wallpaper.log",
+                 "spotlight.log"):
         p = os.path.join(logs, name)
         try:
             lines = open(p, errors="replace").read().splitlines()

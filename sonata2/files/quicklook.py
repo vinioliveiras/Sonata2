@@ -22,7 +22,6 @@ from .folder import file_of, is_dir  # noqa: E402
 TEXT_MAX = 256 * 1024
 
 ui.register("""
-window.sonata-ql { background: %(window_bg)s; }
 .ql-title { font-weight: 700; font-size: %(text_body)s; }
 button.ql-open { min-height: 22px; padding: 0 10px; border-radius: 6px; border: none; font-size: %(text_small)s;
   background: alpha(%(label)s, 0.08); color: %(label)s; box-shadow: none; }
@@ -36,6 +35,17 @@ button.ql-open:hover { background: alpha(%(label)s, 0.14); }
 """, key="files-quicklook")
 
 
+def previewable(info) -> bool:
+    """Quick Look shows it itself (picture, movie, sound, text): a
+    double-click opens it here instead of in another app (Vini's call)."""
+    if info is None or is_dir(info) or not file_of(info).get_path():
+        return False
+    ct = info.get_content_type() or ""
+    if ct.startswith(("image/", "video/", "audio/")):
+        return True
+    return (ct.startswith("text/") or Gio.content_type_is_a(ct, "text/plain")) and info.get_size() <= TEXT_MAX * 8
+
+
 def _fmt_date(info, attr):
     t = info.get_attribute_uint64(attr) if info.has_attribute(attr) else 0
     if not t:
@@ -46,7 +56,8 @@ def _fmt_date(info, attr):
 class QuickLook(Adw.Window):
     def __init__(self, parent, on_close=None):
         super().__init__(transient_for=parent, default_width=720, default_height=520, title="Quick Look")
-        self.add_css_class("sonata-ql")
+        for c in ("sonata-ql", "sonata-glass-window"):          # frosted glass, like the Dock
+            self.add_css_class(c)
         ui.window.standard(self)
         self.on_close = on_close
         self.info = None

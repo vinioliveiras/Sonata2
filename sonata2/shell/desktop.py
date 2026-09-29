@@ -99,7 +99,15 @@ class DesktopItem(Gtk.Box):
             self.desk.toggle(self)
         elif self not in self.desk.selection:
             self.desk.select([self])
-        g.set_state(Gtk.EventSequenceState.CLAIMED)
+        # a plain press stays unclaimed: claiming it here cancelled the drag
+        # source on the same icon, so icons couldn't be dragged anywhere
+        if button == Gdk.BUTTON_SECONDARY or n == 2:
+            g.set_state(Gtk.EventSequenceState.CLAIMED)
+
+
+def _previewable(info) -> bool:
+    from ..files.quicklook import previewable
+    return previewable(info)
 
 
 def _launcher(info):
@@ -313,6 +321,8 @@ class Desktop(Gtk.Fixed):
                     pass
             elif is_dir(item.info):
                 open_folder(f.get_uri())
+            elif _previewable(item.info) and len(self.selection) == 1:      # pictures, movies, text
+                self.quick_look()
             elif not (f.get_path() and packages.open_path(f.get_path())):   # packages: install / run / extract
                 try:
                     Gio.AppInfo.launch_default_for_uri(f.get_uri(), None)
@@ -368,6 +378,8 @@ class Desktop(Gtk.Fixed):
                 ops.Transfer(files, self.dir, move=cut)
                 if cut:
                     self.get_clipboard().set_content(None)
+            else:
+                ops.paste_image(self, self.dir)                 # a copied picture becomes a file
         ops.read_clipboard(self, got)
 
     def new_folder(self, at=None) -> None:
@@ -400,14 +412,17 @@ class Desktop(Gtk.Fixed):
         n = len(self.selection)
         what = f"“{item.info.get_display_name()}”" if n == 1 else f"{n} Items"
         pkg = packages.menu_items(file_of(item.info).get_path()) if n == 1 and item.app is None else []
-        ui.menu.popup(item, [
+        # anchored to the desktop, not the icon: the selected icon's styles
+        # (blue label...) would otherwise reach into the menu's rows
+        ok, pt = item.compute_point(self, Graphene.Point().init(x, y))
+        ui.menu.popup(self, [
             pkg + [Item("Open", self.open_selection)],
             [Item("Move to Trash", self.trash_selection)],
             [Item("Get Info", self.get_info), Item("Rename", self.rename_selection, enabled=n == 1),
              Item("Duplicate", self.duplicate_selection)],
             [Item(f"Quick Look {what}", self.quick_look)],
             [Item(f"Copy {what}", self.copy_selection)],
-        ], at=(x, y))
+        ], at=(pt.x, pt.y) if ok else (x, y))
 
     def _background_menu(self, g, _n, x, y) -> None:
         if self.pick(x, y, Gtk.PickFlags.DEFAULT) not in (self, None):
