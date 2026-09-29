@@ -192,6 +192,10 @@ def run_files(app, uris, ui):
         _later(1200, show_menu)
     if rename:
         _later(1200, lambda: win.view.begin_rename(win.view.model.get_item(int(rename)), win._commit_rename))
+    if os.environ.get("SONATA_PREVIEW_QL"):
+        _later(1300, win.toggle_quicklook)
+    if os.environ.get("SONATA_PREVIEW_INFO"):
+        _later(1300, win.get_info)
 
 
 def run_lock(app, args, ui, state):

@@ -138,6 +138,8 @@ class FilesWindow(Adw.ApplicationWindow):
         }
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE)
         for vid, v in self.views.items():
+            if hasattr(v, "selection"):              # Quick Look follows the selection
+                v.selection.connect("selection-changed", lambda *_: self._follow_quicklook())
             menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
             menu.connect("pressed", lambda g, _n, x, y, v=v: self._context_menu(v, g.get_widget(), x, y))
             v.widget.add_controller(menu)
@@ -289,6 +291,8 @@ class FilesWindow(Adw.ApplicationWindow):
             if apps:
                 sections[0].append(Item("Open With", submenu=[apps]))
             sections.append([Item("Move to Trash", self.trash_selection, enabled=self._writable_sel(sel))])
+            sections.append([Item("Get Info", self.get_info),
+                             Item(f"Quick Look {what}", self.toggle_quicklook)])
             sections.append([Item("Rename", lambda: self.rename_selection(), enabled=n == 1 and
                                   self._writable_sel(sel)),
                              Item("Duplicate", self.duplicate_selection, enabled=self._writable_here())])
@@ -384,6 +388,30 @@ class FilesWindow(Adw.ApplicationWindow):
         ops.rename(file_of(info), new_name, lambda f: self._select_when_listed(f.get_basename()),
                    lambda e: self._error(f"The name “{new_name}” can’t be used.", e))
 
+    # Quick Look / Get Info
+    def toggle_quicklook(self):
+        from .quicklook import QuickLook
+        ql = getattr(self, "_ql", None)
+        if ql is not None:
+            ql.close()
+            return
+        sel = self.view.selected()
+        if not sel:
+            return
+        self._ql = QuickLook(self, on_close=lambda: setattr(self, "_ql", None))
+        self._ql.show_item(sel[0])
+
+    def _follow_quicklook(self):
+        ql = getattr(self, "_ql", None)
+        sel = self.view.selected()
+        if ql is not None and sel and sel[0] is not ql.info:
+            ql.show_item(sel[0])
+
+    def get_info(self):
+        from .quicklook import GetInfo
+        for info in self.view.selected()[:10]:
+            GetInfo(self, info).present()
+
     # trash / duplicate / clipboard
     def trash_selection(self):
         files = self._selected_files()
@@ -467,6 +495,8 @@ class FilesWindow(Adw.ApplicationWindow):
             ("<Control>v", self.paste),
             ("<Control><Alt>v", lambda: self.paste(move=True)),        # Finder: Move Item Here
             ("<Control>d", self.duplicate_selection),
+            ("<Control>i", self.get_info),
+            ("<Control>y", self.toggle_quicklook),
         ]
         ctl = Gtk.ShortcutController(scope=Gtk.ShortcutScope.GLOBAL)
         for trig, cb in keys:
@@ -490,6 +520,10 @@ class FilesWindow(Adw.ApplicationWindow):
                 self.rename_selection()
                 return True
             return False
+        if keyval == Gdk.KEY_space and not ctrl:
+            if self.view.selected() or getattr(self, "_ql", None):
+                self.toggle_quicklook()
+                return True
         if keyval == Gdk.KEY_Delete or (keyval == Gdk.KEY_BackSpace and ctrl):
             if self.view.selected():
                 self.trash_selection()

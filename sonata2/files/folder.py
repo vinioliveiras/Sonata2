@@ -16,7 +16,7 @@ from gi.repository import Gio, GLib, Gtk  # noqa: E402
 ATTRS = ",".join((
     "standard::name", "standard::display-name", "standard::icon", "standard::symbolic-icon",
     "standard::type", "standard::is-hidden", "standard::is-backup", "standard::content-type",
-    "standard::size", "standard::target-uri", "time::modified", "access::can-write",
+    "standard::size", "standard::target-uri", "time::modified", "time::created", "access::can-write",
     "thumbnail::path", "thumbnail::failed"))
 RECENTS = "sonata:recents"
 BATCH = 500
