@@ -29,7 +29,7 @@ ICONS_DIR = os.path.join(os.path.dirname(__file__), "data", "icons")
 # Sonata's appearance.json (config.load keeps only known keys: every
 # reader passes these defaults)
 APPEARANCE_DEFAULTS = {"icon_theme": "Sonata", "theme": "mac", "accent": "blue", "reduce_transparency": False,
-                       "renderer": "gl", "system_titlebars": True}
+                       "renderer": "gl", "system_titlebars": True, "menu_logo": "distro"}
 
 _system = None     # Gtk.IconTheme with the system's theme, for fallbacks
 
@@ -241,10 +241,8 @@ def _solid_edge(inner):
         return _tones[path]
     tone = None
     try:
-        gi.require_version("GdkPixbuf", "2.0")
-        from gi.repository import GdkPixbuf
-        pb = GdkPixbuf.Pixbuf.new_from_file_at_size(path, 48, 48)
-        tone = _edge_tone(pb)
+        pb = pixbuf_at(path, 48)
+        tone = _edge_tone(pb) if pb is not None else None
     except (GLib.Error, ValueError, ImportError):
         pass
     _tones[path] = tone
@@ -399,6 +397,26 @@ def _render_rsvg(path: str, px: int):
         pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, px, px, True)
         return Gdk.Texture.new_for_pixbuf(pb)
     except (GLib.Error, ImportError):
+        return None
+
+
+def pixbuf_at(path: str, px: int):
+    """GdkPixbuf of an image file at px (SVG through librsvg, which a
+    GdkPixbuf without its SVG loader can't read); None if unreadable."""
+    gi.require_version("GdkPixbuf", "2.0")
+    from gi.repository import GdkPixbuf
+    if path.endswith(".svg"):
+        tex = _render_rsvg(path, px)
+        if tex is None:
+            return None
+        dl = Gdk.TextureDownloader.new(tex)
+        dl.set_format(Gdk.MemoryFormat.R8G8B8A8)
+        data, stride = dl.download_bytes()
+        return GdkPixbuf.Pixbuf.new_from_bytes(data, GdkPixbuf.Colorspace.RGB, True, 8,
+                                               tex.get_width(), tex.get_height(), stride)
+    try:
+        return GdkPixbuf.Pixbuf.new_from_file_at_size(path, px, px)
+    except GLib.Error:
         return None
 
 

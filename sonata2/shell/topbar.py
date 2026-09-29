@@ -66,7 +66,9 @@ class Bar(Gtk.CenterBox):
         self.backdrop = None
         self.items = []
         left = Gtk.Box()
-        self.logo = self._item(left, icon="sonata-logo-symbolic", on_click=self._sonata_menu, css="icon")
+        self.logo = self._item(left, on_click=self._sonata_menu, css="icon")
+        from ..ui.logo import LogoGlyph                      # distro logo, a shape or a symbol (Settings)
+        self.logo.get_child().append(LogoGlyph(16))
         self.app_btn = self._item(left, text="Files", on_click=self._app_menu, css="app")
         # on the desktop (nothing focused) the menus are Files' own, like Finder's
         self.file_btn = self._item(left, text="File", on_click=self._files_file_menu)

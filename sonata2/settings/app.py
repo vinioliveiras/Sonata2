@@ -1414,6 +1414,10 @@ class Settings(Adw.ApplicationWindow):
         s.add(combo_row("Icons", [(t, t) for t in themes], app["icon_theme"],
                         lambda v: (self._save("appearance", "icon_theme", v),
                                    self.toast("Restart the Dock and Launchpad to use the new icons"))))
+        from ..ui import logo as L
+        s.add(combo_row("Menu bar logo", L.choices(), app["menu_logo"],
+                        lambda v: self._save("appearance", "menu_logo", v),
+                        subtitle="Where the Apple logo is on a Mac"))
         s.add(switch_row("Sonata title bars for all apps", app["system_titlebars"],
                          lambda on: (self._save("appearance", "system_titlebars", on),
                                      __import__("sonata2.titlebars", fromlist=["apply"]).apply(on),
