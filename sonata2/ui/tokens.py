@@ -197,6 +197,18 @@ def accent_tokens(name: str, dark: bool) -> dict:
 
 
 # Spacing scale (px) for layout code.
+# Animation speed for everything Sonata draws (CSS transitions, GTK/Adw
+# animations, stack cross-fades): durations are divided by it. 1.3 = 30 %
+# faster than the designed timings (Vini). Wayfire's own window
+# animations (config/wayfire.ini [animate]/[scale]) are set to match.
+ANIMATION_SPEED = 1.3
+
+
+def ms(duration: float) -> int:
+    """A designed duration (ms) at Sonata's animation speed."""
+    return max(1, round(duration / ANIMATION_SPEED)) if duration > 0 else 0
+
+
 SPACE = {"xxs": 2, "xs": 4, "s": 6, "m": 8, "l": 12, "xl": 16, "xxl": 20}
 
 

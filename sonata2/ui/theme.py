@@ -17,6 +17,7 @@ from . import tokens  # noqa: E402
 # Above USER priority: a user GTK theme (e.g. a macOS-look theme in
 # ~/.config/gtk-4.0) must not repaint Sonata's components.
 PRIORITY = Gtk.STYLE_PROVIDER_PRIORITY_USER + 10
+_MS = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)ms\b")
 
 _templates = {}       # key -> (template, local placeholders)
 _extra = {}           # token overrides (future: user customization)
@@ -206,6 +207,7 @@ def _load(*_a, fade=False) -> None:
     if fade or (_a and isinstance(_a[0], Adw.StyleManager)):      # notify::dark
         _start_fade(old)
     css = "\n".join(t % {**vals, **loc} for t, loc in _templates.values())
+    css = _MS.sub(lambda m: f"{tokens.ms(float(m.group(1)))}ms", css)     # ANIMATION_SPEED
     _provider.load_from_string(css)
     for cb in list(_listeners):
         cb()
@@ -262,6 +264,26 @@ def shadow(token: str):
     return _parsed[key]
 
 
+def _animation_speed() -> None:
+    """Every Adw animation and GTK stack/revealer transition at Sonata's
+    ANIMATION_SPEED (tokens.py), wherever its duration is set."""
+    if getattr(Adw.TimedAnimation, "_sonata_speed", False):
+        return
+    new, set_dur = Adw.TimedAnimation.new, Adw.TimedAnimation.set_duration
+    Adw.TimedAnimation.new = staticmethod(lambda w, a, b, d, t: new(w, a, b, tokens.ms(d), t))
+    Adw.TimedAnimation.set_duration = lambda self, d: set_dur(self, tokens.ms(d))
+    Adw.TimedAnimation._sonata_speed = True
+    for cls in (Gtk.Stack, Gtk.Revealer):
+        orig = cls.set_transition_duration
+        cls.set_transition_duration = lambda self, d, _o=orig: _o(self, tokens.ms(d))
+
+        def init(self, *a, _cls=cls, _init=cls.__init__, **kw):
+            if "transition_duration" in kw:
+                kw["transition_duration"] = tokens.ms(kw["transition_duration"])
+            _init(self, *a, **kw)
+        cls.__init__ = init
+
+
 def setup() -> None:
     """Install the provider once per process (idempotent)."""
     global _provider
@@ -276,6 +298,7 @@ def setup() -> None:
     global _appearance_mon
     _appearance_mon = config.watch("appearance", _appearance_changed)
     _follow_color_scheme()
+    _animation_speed()
     _load()
     _sliders_ignore_wheel()
 
