@@ -57,7 +57,7 @@ DESCRIPTIONS = {
     "trackpad": "Tracking speed, tap to click and scrolling.",
     "mouse": "Tracking speed, scrolling and the primary button.",
     "datetime": "Time zone, automatic time and the menu bar clock.",
-    "users": "Your account and the apps that open when you log in.",
+    "users": "Your picture and password, other accounts and the apps that open at login.",
     "sharing": "The name other computers see on the network.",
     "accessibility": "Motion, transparency, text and pointer size.",
     "dock": "Size, magnification, position and hiding of the Dock.",
@@ -96,6 +96,27 @@ window.sonata-settings { color: %(label)s; }
 .st-caption { color: %(label_secondary)s; font-size: %(text_small)s; }
 .st-wall { border-radius: 10px; }
 """, key="settings")
+
+
+def _clear_group(grp) -> None:
+    """Remove the rows added to an Adw.PreferencesGroup."""
+    rows = []
+    w = grp
+    stack = [grp]
+    while stack:                       # the rows live in the group's inner list box
+        w = stack.pop()
+        c = w.get_first_child()
+        while c is not None:
+            if isinstance(c, Gtk.ListBox):
+                r = c.get_first_child()
+                while r is not None:
+                    rows.append(r)
+                    r = r.get_next_sibling()
+            else:
+                stack.append(c)
+            c = c.get_next_sibling()
+    for r in rows:
+        grp.remove(r)
 
 
 def _is_admin() -> bool:
@@ -624,17 +645,173 @@ class Settings(Adw.ApplicationWindow):
         return [auto, zone, clock]
 
     def _page_users(self):
-        me = group()
-        row = Adw.ActionRow(title=GLib.get_real_name() or GLib.get_user_name(), use_markup=False,
-                            subtitle=GLib.get_user_name() + (" · Admin" if _is_admin() else " · Standard"))
-        row.add_prefix(Adw.Avatar(size=44, text=GLib.get_real_name() or GLib.get_user_name(), show_initials=True))
-        me.add(row)
+        """Big Sur Users & Groups: your account (picture, name, password),
+        other users (+ add, administrator, delete) and Login Items.
+        Accounts go through AccountsService; polkit asks for an admin
+        password where needed."""
+        from ..backend import users as U
+        me = group("Current User")
+        others = group("Other Users")
+        me.add(Adw.ActionRow(title="Loading…"))
+
+        def fill(lst):
+            for g in (me, others):
+                _clear_group(g)
+            if not lst:
+                me.add(Adw.ActionRow(title=GLib.get_real_name() or GLib.get_user_name(), use_markup=False,
+                                     subtitle="AccountsService is not available: accounts can't be changed here"))
+                others.set_visible(False)
+                return
+            for u in lst:
+                (me if u.current else others).add(self._user_row(u))
+            if not any(not u.current for u in lst):
+                others.add(Adw.ActionRow(title="No other users"))
+            add = Adw.ButtonRow(title="Add User…", start_icon_name="list-add-symbolic") \
+                if hasattr(Adw, "ButtonRow") else None
+            if add is not None:
+                add.connect("activated", lambda *_: self._add_user_dialog())
+                others.add(add)
+            else:
+                row = Adw.ActionRow(title="Add User…", activatable=True)
+                row.add_prefix(Gtk.Image(icon_name="list-add-symbolic"))
+                row.connect("activated", lambda *_: self._add_user_dialog())
+                others.add(row)
+        system.run_async(U.users, fill)
         items = group("Login Items", "These apps open automatically when you log in.")
         for name, title, enabled in _login_items():
             items.add(switch_row(title, enabled, lambda on, n=name: _set_login_item(n, on)))
         if not _login_items():
             items.add(Adw.ActionRow(title="No login items", subtitle="Use Options > Open at Login in the Dock"))
-        return [me, items]
+        return [me, others, items]
+
+    def _user_row(self, u):
+        from ..backend import users as U
+        row = Adw.ActionRow(title=u.real_name or u.name, use_markup=False,
+                            subtitle=f"{u.name} · {'Admin' if u.admin else 'Standard'}")
+        av = Adw.Avatar(size=44 if u.current else 32, text=u.real_name or u.name, show_initials=True)
+        if u.icon:
+            try:
+                av.set_custom_image(Gdk.Texture.new_from_filename(u.icon))
+            except GLib.Error:
+                pass
+        pic = Gtk.Button(child=av, css_classes=["flat", "circular"], valign=Gtk.Align.CENTER,
+                         tooltip_text="Change picture")
+        pic.connect("clicked", lambda *_: self._pick_picture(u))
+        row.add_prefix(pic)
+        if u.current:
+            name = Gtk.Button(label="Edit Name…", valign=Gtk.Align.CENTER)
+            name.connect("clicked", lambda *_: self._ask_text(
+                "Full name", u.real_name, lambda v: self._user_op(U.set_real_name, u, v)))
+            pw = Gtk.Button(label="Change Password…", valign=Gtk.Align.CENTER)
+            pw.connect("clicked", lambda *_: self._password_dialog(u))
+            row.add_suffix(name)
+            row.add_suffix(pw)
+        else:
+            Item = ui.menu.Item
+            more = Gtk.Button(icon_name="view-more-symbolic", css_classes=["flat"], valign=Gtk.Align.CENTER)
+            more.connect("clicked", lambda b: ui.menu.popup(b, [
+                [Item("Allow user to administer this computer", lambda on: self._user_op(U.set_admin, u, on),
+                      checked=u.admin)],
+                [Item("Reset Password…", lambda: self._password_dialog(u))],
+                [Item("Delete User…", lambda: self._delete_user(u))]], position=Gtk.PositionType.BOTTOM))
+            row.add_suffix(more)
+        return row
+
+    def _user_op(self, fn, *args, done_text=None):
+        def done(err):
+            if err:
+                self.toast(err)
+            elif done_text:
+                self.toast(done_text)
+            self._reload_page("users")
+        system.run_async(lambda: fn(*args), done)
+
+    def _pick_picture(self, u):
+        from ..backend import users as U
+        dlg = Gtk.FileDialog(title="Choose a picture", modal=True)
+        flt = Gtk.FileFilter(name="Pictures")
+        flt.add_mime_type("image/*")
+        store = Gio.ListStore(item_type=Gtk.FileFilter)
+        store.append(flt)
+        dlg.set_filters(store)
+
+        def chosen(d, res):
+            try:
+                f = d.open_finish(res)
+            except GLib.Error:
+                return
+            if f and f.get_path():
+                self._user_op(U.set_picture, u, f.get_path())
+        dlg.open(self, None, chosen)
+
+    def _ask_text(self, title, value, cb):
+        entry = Gtk.Entry(text=value, activates_default=True, hexpand=True)
+        dlg = ui.dialog.alert(title, "", [("cancel", "Cancel", ""), ("ok", "OK", "default")],
+                              lambda r: r == "ok" and entry.get_text().strip() and cb(entry.get_text().strip()),
+                              parent=self)
+        dlg.set_extra_child(entry)
+
+    def _password_dialog(self, u):
+        from ..backend import users as U
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        new = Gtk.PasswordEntry(placeholder_text="New password", show_peek_icon=True)
+        verify = Gtk.PasswordEntry(placeholder_text="Verify", show_peek_icon=True, activates_default=True)
+        box.append(new)
+        box.append(verify)
+
+        def answer(r):
+            if r != "ok":
+                return
+            if not new.get_text() or new.get_text() != verify.get_text():
+                self.toast("The passwords don't match")
+                return
+            self._user_op(U.set_password, u, new.get_text(), done_text="Password changed")
+        dlg = ui.dialog.alert(f"Change the password for “{u.real_name or u.name}”", "",
+                              [("cancel", "Cancel", ""), ("ok", "Change Password", "default")], answer, parent=self)
+        dlg.set_extra_child(box)
+
+    def _add_user_dialog(self):
+        from ..backend import users as U
+        grid = Gtk.Grid(row_spacing=6, column_spacing=8)
+        full = Gtk.Entry(hexpand=True)
+        acct = Gtk.Entry(hexpand=True)
+        pw = Gtk.PasswordEntry(show_peek_icon=True, hexpand=True)
+        verify = Gtk.PasswordEntry(show_peek_icon=True, hexpand=True)
+        admin = Gtk.CheckButton(label="Allow user to administer this computer")
+        edited = {"acct": False}
+        full.connect("changed", lambda e: not edited["acct"] and acct.set_text(U.short_name(e.get_text())))
+        acct.connect("changed", lambda e: e.has_focus() and edited.update(acct=True))
+        for r, (label, w) in enumerate((("Full Name:", full), ("Account Name:", acct), ("Password:", pw),
+                                        ("Verify:", verify))):
+            grid.attach(Gtk.Label(label=label, xalign=1), 0, r, 1, 1)
+            grid.attach(w, 1, r, 1, 1)
+        grid.attach(admin, 1, 4, 1, 1)
+
+        def answer(r):
+            if r != "create":
+                return
+            name = acct.get_text().strip()
+            if not U.valid_name(name):
+                self.toast("The account name can use lowercase letters, numbers, - and _")
+                return
+            if pw.get_text() != verify.get_text():
+                self.toast("The passwords don't match")
+                return
+            self._user_op(U.create_user, name, full.get_text().strip() or name, admin.get_active(), pw.get_text(),
+                          done_text=f"User “{name}” created")
+        dlg = ui.dialog.alert("New Account", "", [("cancel", "Cancel", ""), ("create", "Create User", "default")],
+                              answer, parent=self)
+        dlg.set_extra_child(grid)
+
+    def _delete_user(self, u):
+        from ..backend import users as U
+        ui.dialog.alert(f"Delete the user “{u.real_name or u.name}”?",
+                        "Their home folder can be kept or deleted.",
+                        [("cancel", "Cancel", ""), ("keep", "Keep Home Folder", ""),
+                         ("delete", "Delete Home Folder", "destructive")],
+                        lambda r: r in ("keep", "delete") and self._user_op(U.delete_user, u, r == "delete",
+                                                                            done_text="User deleted"),
+                        parent=self)
 
     def _page_sharing(self):
         g = group()
