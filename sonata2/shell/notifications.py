@@ -414,8 +414,13 @@ class _Center(Gtk.Window):
         owner.listeners.append(self._rebuild)
 
     def _clicked(self, g, _n, x, y):
+        # only the cards and widgets keep it open: the empty parts of the
+        # column (it spans the full height, over the menu bar's clock and
+        # icons too) close it like any other click outside
         w = self.pick(x, y, Gtk.PickFlags.DEFAULT)
-        if w is None or w is self or w is self.rev:
+        while w is not None and w.get_parent() is not self.col:
+            w = w.get_parent()
+        if w is None:
             self.hide_center()
 
     def show_center(self):
