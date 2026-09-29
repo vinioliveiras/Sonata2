@@ -219,11 +219,33 @@ def run_launchpad(app, args, ui, state):
         _later(400, lambda: win.set_jiggle(True))
 
 
+SETTINGS_LINGER_S = 600
+
+
 def run_settings(app, args, ui, state):
+    """One Settings window. Closing hides it and the app lingers for ten
+    minutes (the hidden window keeps it running): opening Settings again is
+    instant, at the same pane."""
     from .settings.app import Settings
     win = state.get("win")
     if win is None:
         win = state["win"] = Settings(app, args.page or "wifi")
+
+        def closed(w):
+            w.set_visible(False)
+
+            def expire():
+                state["linger"] = 0
+                if not w.get_visible():              # still closed: now really quit
+                    state["win"] = None
+                    w.destroy()
+                return False
+            if state.get("linger"):
+                GLib.source_remove(state["linger"])
+            state["linger"] = GLib.timeout_add_seconds(SETTINGS_LINGER_S, expire)
+            return True
+        from gi.repository import GLib
+        win.connect("close-request", closed)
     elif args.page:
         win.select(args.page)
     win.present()
@@ -858,6 +880,21 @@ def main() -> int:
                     ui.force_appearance("dark" if args.dark else "light")
                 ui.setup()
                 _serve_file_manager(app, ui)
+        if args.background:              # at login: resident like Finder, so every window opens at once
+            def resident(a):
+                if state.get("resident"):    # later: the Dock / Launchpad asking for a window
+                    run_files(a, [], ui)
+                    return
+                state["resident"] = True
+                start()
+                a.hold()                     # never quits on its own
+                from .files.window import FilesWindow
+                # warm once: imports, CSS, icons -- the first window then opens at once
+                GLib.timeout_add(1500, lambda: (FilesWindow(a, None).destroy(), False)[1])
+            from gi.repository import GLib
+            app.connect("activate", resident)
+            app.connect("open", lambda a, files, _n, _h: (start(), run_files(a, [f.get_uri() for f in files], ui)))
+            return app.run([sys.argv[0]])
         if args.service:                 # started by D-Bus for FileManager1: no window of its own
             def service(a):
                 start()

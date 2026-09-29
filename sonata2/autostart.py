@@ -93,6 +93,14 @@ def run() -> int:
             GLib.spawn_command_line_async(self_command() + " keep polkit")
     except Exception as e:
         print(f"sonata2-autostart: polkit: {e}")
+    try:                                   # Files resident (like Finder): windows open at once
+        import subprocess
+        if subprocess.run(["pgrep", "-f", r"-m sonata2 files( |$)"],
+                          stdout=subprocess.DEVNULL).returncode != 0:
+            from .__main__ import self_command
+            GLib.spawn_command_line_async(self_command() + " files --background")
+    except Exception as e:
+        print(f"sonata2-autostart: files: {e}")
     try:
         from . import keyring
         keyring.start()                    # KeePassXC: saved passwords for every app

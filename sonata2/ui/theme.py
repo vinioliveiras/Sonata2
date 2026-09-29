@@ -285,6 +285,9 @@ def _sliders_ignore_wheel() -> None:
     page instead. GtkRange's own scroll controller is taken off every
     slider as it is realized, so the event goes on to the scrolled window."""
     def strip(scale, *_a):
+        # the hook sees every widget's "realize" (the signal is GtkWidget's): sliders only
+        if not isinstance(scale, Gtk.Range):
+            return True
         ctrls = scale.observe_controllers()
         for i in range(ctrls.get_n_items() - 1, -1, -1):
             c = ctrls.get_item(i)
