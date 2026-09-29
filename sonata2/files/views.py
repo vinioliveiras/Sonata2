@@ -30,6 +30,8 @@ entry.fs-rename { min-height: 18px; padding: 0 3px; margin: 0; font-size: 12px; 
   border: none; background: %(content_bg)s; color: %(label)s;
   box-shadow: inset 0 0 0 1px %(accent)s, 0 0 0 3px alpha(%(accent)s, 0.3); }
 .fs-list entry.fs-rename, .fs-col entry.fs-rename { font-size: %(text_body)s; }
+.drop-target .fs-icon, .fs-list .drop-target, .fs-col .drop-target { background: alpha(%(accent)s, 0.25);
+  border-radius: 6px; }
 rubberband { background: alpha(%(accent)s, 0.15); border: 1px solid alpha(%(accent)s, 0.5); }
 
 /* List (Finder list view: zebra rows, small grey headers) */
@@ -68,6 +70,7 @@ window:backdrop .fs-col.fs-active listview > row:selected { background: %(sideba
 .fs-preview .fs-preview-val { color: %(label)s; font-size: %(text_small)s; }
 """, key="files-views")
 
+SPRING_MS = 900        # spring-loaded folders: hover time before a folder opens
 ICON_SIZE = 64
 CELL_W = 96
 COLUMN_W = 230
@@ -154,6 +157,56 @@ class _Cells:
 
     def _init_cells(self):
         self._cells = {}          # FileInfo -> cell box currently showing it
+        self.dnd = None           # the window: files_for_drag(info), drop(files, folder, copy)
+
+    def _dnd_cell(self, box):
+        """Drag the item (or the whole selection it belongs to); folders
+        accept drops, and open when a drag hovers on them (spring-loaded)."""
+        src = Gtk.DragSource(actions=Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+        src.connect("prepare", lambda s_, x, y: self._drag_prepare(box, s_))
+        box.add_controller(src)
+        tgt = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+        tgt.connect("accept", lambda t, d: bool(getattr(box, "info", None)) and is_dir(box.info))
+        tgt.connect("enter", lambda t, x, y: self._drag_enter(box))
+        tgt.connect("leave", lambda t: self._drag_leave(box))
+        tgt.connect("drop", lambda t, v, x, y: self._drop_on(box, t, v))
+        box.add_controller(tgt)
+
+    def _drag_prepare(self, box, source):
+        info = getattr(box, "info", None)
+        if info is None or self._dnd() is None:
+            return None
+        files = self._dnd().files_for_drag(self, info)
+        paint = icons.paintable(box, info.get_icon() or Gio.ThemedIcon.new("text-x-generic"), 64)
+        source.set_icon(paint, 32, 32)
+        return Gdk.ContentProvider.new_for_value(Gdk.FileList.new_from_list(files))
+
+    def _drag_enter(self, box):
+        info = getattr(box, "info", None)
+        if info is None or not is_dir(info):
+            return 0
+        box.add_css_class("drop-target")
+        box._spring = GLib.timeout_add(SPRING_MS, lambda: (self._dnd() and self._dnd().spring_open(info), False)[1])
+        return Gdk.DragAction.MOVE
+
+    def _drag_leave(self, box):
+        box.remove_css_class("drop-target")
+        if getattr(box, "_spring", 0):
+            GLib.source_remove(box._spring)
+            box._spring = 0
+
+    def _drop_on(self, box, target, value):
+        self._drag_leave(box)
+        info = getattr(box, "info", None)
+        if info is None or self._dnd() is None or not is_dir(info):
+            return False
+        copy = bool(target.get_current_event_state() & Gdk.ModifierType.CONTROL_MASK) if \
+            hasattr(target, "get_current_event_state") else False
+        return self._dnd().drop(list(value.get_files()), folder.file_of(info), copy)
+
+    def _dnd(self):
+        """The window's drag-and-drop handler (columns ask their browser)."""
+        return self.dnd or getattr(getattr(self, "browser", None), "dnd", None)
 
     def _track(self, box, info):
         box.info = info
@@ -266,6 +319,7 @@ class IconsView(_Cells):
                             halign=Gtk.Align.CENTER, css_classes=["fs-name"])
         box.append(box.img)
         box.append(box.lbl)
+        self._dnd_cell(box)
         item.set_child(box)
 
     def _bind(self, _f, item):
@@ -348,6 +402,7 @@ class ListView(_Cells):
         box.lbl = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE, hexpand=True)
         box.append(box.img)
         box.append(box.lbl)
+        self._dnd_cell(box)
         item.set_child(box)
 
     def _bind_name(self, _f, item):
@@ -415,6 +470,7 @@ class _Column(Gtk.ScrolledWindow, _Cells):
         box.chev = Gtk.Image(icon_name="go-next-symbolic", css_classes=["fs-chevron"])
         for w in (box.img, box.lbl, box.chev):
             box.append(w)
+        self._dnd_cell(box)
         item.set_child(box)
 
     def _bind(self, _f, item):

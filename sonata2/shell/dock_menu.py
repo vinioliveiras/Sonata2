@@ -36,6 +36,10 @@ def show_in_files(path: str) -> None:
     if not path:
         return
     uri = Gio.File.new_for_path(path).get_uri()
+    if os.environ.get("XDG_CURRENT_DESKTOP") == "Sonata" or os.environ.get("SONATA_GLASS") == "1":
+        from ..files import open_folder          # Sonata's Files, the file selected
+        open_folder(uri)
+        return
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         bus.call_sync("org.freedesktop.FileManager1", "/org/freedesktop/FileManager1",

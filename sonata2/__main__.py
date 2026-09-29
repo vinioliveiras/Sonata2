@@ -160,9 +160,18 @@ def run_settings(app, args, ui, state):
 def run_files(app, uris, ui):
     """A new Files window per launch (like Finder's File > New Window)."""
     from .files.window import FilesWindow
+    from gi.repository import Gio
     for uri in uris or [None]:
+        reveal = None
+        if uri:
+            f = Gio.File.new_for_uri(uri)
+            if f.query_file_type(Gio.FileQueryInfoFlags.NONE, None) not in (Gio.FileType.DIRECTORY,
+                                                                              Gio.FileType.UNKNOWN):
+                reveal, uri = f.get_basename(), f.get_parent().get_uri()   # a file: show it selected
         win = FilesWindow(app, uri)
         win.present()
+        if reveal:
+            win._select_when_listed(reveal)
     view = os.environ.get("SONATA_PREVIEW_VIEW")        # screenshots: view + selection
     if view:
         win.set_view(view, save=False)

@@ -8,7 +8,7 @@ import os
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
 from . import folder  # noqa: E402
@@ -21,6 +21,7 @@ ui.register("""
 .fs-sidebar list row:active { background: %(tool_hover)s; }
 .fs-sidebar list row:hover { background: none; }
 .fs-sidebar list row:selected { background: %(sidebar_selected)s; color: %(label)s; }
+.fs-sidebar list row.drop-target { background: alpha(%(accent)s, 0.25); }
 .fs-sidebar list row.fs-head { min-height: 22px; margin-top: 8px; }
 .fs-sidebar .fs-head label { font-size: %(text_small)s; font-weight: 700; color: %(label_tertiary)s; }
 .fs-sidebar row image.fs-place { color: %(accent)s; }
@@ -65,6 +66,7 @@ class Sidebar(Gtk.Box):
     def __init__(self, on_open, top: Gtk.Widget):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, css_classes=["fs-sidebar", "sonata-sidebar"])
         self._on_open = on_open
+        self.on_drop = None          # (files, folder Gio.File, copy) -> bool, set by the window
         self._rows = {}
         self._quiet = False
         handle = Gtk.WindowHandle(child=top, css_classes=["fs-sidebar-top"])
@@ -137,6 +139,16 @@ class Sidebar(Gtk.Box):
             eject.connect("clicked", lambda _b, m=mount: self._eject(m))
             box.append(eject)
         row.set_child(box)
+        if uri != folder.RECENTS:                 # drop files on a place = move/copy them there
+            tgt = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+            tgt.connect("enter", lambda *_a, r=row: (r.add_css_class("drop-target"), Gdk.DragAction.MOVE)[1])
+            tgt.connect("leave", lambda *_a, r=row: r.remove_css_class("drop-target"))
+            tgt.connect("drop", lambda t, v, x, y, u=uri, r=row: (r.remove_css_class("drop-target"),
+                                                                  self.on_drop and self.on_drop(
+                                                                      list(v.get_files()), Gio.File.new_for_uri(u),
+                                                                      bool(t.get_current_event_state() &
+                                                                           Gdk.ModifierType.CONTROL_MASK)))[1])
+            row.add_controller(tgt)
         self.list.append(row)
         self._rows[uri] = row
 

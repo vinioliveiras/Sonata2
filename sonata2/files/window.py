@@ -52,6 +52,15 @@ def _icon_button(icon, tip, cb, css=None):
     return b
 
 
+def _same_disk(a: Gio.File, b: Gio.File) -> bool:
+    try:
+        fa = a.query_info("id::filesystem", Gio.FileQueryInfoFlags.NONE, None).get_attribute_string("id::filesystem")
+        fb = b.query_info("id::filesystem", Gio.FileQueryInfoFlags.NONE, None).get_attribute_string("id::filesystem")
+        return bool(fa) and fa == fb
+    except GLib.Error:
+        return False
+
+
 class FilesWindow(Adw.ApplicationWindow):
     def __init__(self, app, uri: str = None):
         # (classes added, not passed: passing css_classes drops GTK's "csd"
@@ -65,6 +74,7 @@ class FilesWindow(Adw.ApplicationWindow):
         self.folder = folder.Folder(self._loaded, self._load_failed)
 
         self.sidebar = Sidebar(self.go, ui.window.traffic_lights(self.close, self.minimize, self._zoom))
+        self.sidebar.on_drop = lambda files, dest, copy: self.drop(files, dest, copy)
         paned = Gtk.Paned(start_child=self.sidebar, shrink_start_child=False, resize_start_child=False,
                           css_classes=["fs-paned"])
         paned.set_position(200)
@@ -140,6 +150,12 @@ class FilesWindow(Adw.ApplicationWindow):
         for vid, v in self.views.items():
             if hasattr(v, "selection"):              # Quick Look follows the selection
                 v.selection.connect("selection-changed", lambda *_: self._follow_quicklook())
+            v.dnd = self
+            bg = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+            bg.connect("drop", lambda t, val, x, y: self.drop(
+                list(val.get_files()), Gio.File.new_for_uri(self.location()),
+                bool(t.get_current_event_state() & Gdk.ModifierType.CONTROL_MASK)))
+            v.widget.add_controller(bg)
             menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
             menu.connect("pressed", lambda g, _n, x, y, v=v: self._context_menu(v, g.get_widget(), x, y))
             v.widget.add_controller(menu)
@@ -387,6 +403,26 @@ class FilesWindow(Adw.ApplicationWindow):
             return
         ops.rename(file_of(info), new_name, lambda f: self._select_when_listed(f.get_basename()),
                    lambda e: self._error(f"The name “{new_name}” can’t be used.", e))
+
+    # drag and drop (Finder: same disk moves, another disk copies, Ctrl copies)
+    def files_for_drag(self, view, info):
+        sel = view.selected()
+        return [file_of(i) for i in (sel if info in sel else [info])]
+
+    def spring_open(self, info):
+        """A drag hovering on a folder opens it (spring-loaded folders)."""
+        target = info.get_attribute_string("standard::target-uri") or file_of(info).get_uri()
+        self.go(target)
+
+    def drop(self, files, dest, copy=False) -> bool:
+        if dest.get_uri() == RECENTS or not files:
+            return False
+        files = [f for f in files if not f.equal(dest) and not dest.has_prefix(f)]   # not into itself
+        if all(f.get_parent() and f.get_parent().equal(dest) for f in files):
+            return False                                  # dropped where they already are
+        move = not copy and all(_same_disk(f, dest) for f in files)
+        ops.Transfer(files, dest, move=move, parent=self, on_done=self.sidebar.refresh_space)
+        return True
 
     # Quick Look / Get Info
     def toggle_quicklook(self):
