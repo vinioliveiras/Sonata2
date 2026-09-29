@@ -187,6 +187,9 @@ def run_launchpad(app, args, ui, state):
             win.bin.backdrop = Gdk.Texture.new_from_filename(walls[1])
     if args.background:            # login: start resident, hidden
         win.set_visible(False)
+        if not args.preview:       # drawn once invisibly: the first open is smooth
+            layer.prewarm(win, before=lambda: setattr(win.bin, "progress", 1.0),
+                          after=lambda: setattr(win.bin, "progress", 0.0))
         return
     win.open_launchpad()
     if args.search:
@@ -293,6 +296,8 @@ def run_spotlight(app, args, ui, state):
     win = state["win"] = Spotlight(app)
     app.hold()
     if args.background:
+        if not args.preview:
+            layer.prewarm(win)
         return
     win.open_spotlight()
     if args.search:

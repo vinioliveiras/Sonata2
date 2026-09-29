@@ -135,3 +135,46 @@ def overlay_fullscreen(win, namespace: str) -> bool:
     LS.set_exclusive_zone(win, -1)
     LS.set_keyboard_mode(win, LS.KeyboardMode.EXCLUSIVE)
     return True
+
+
+def prewarm(win, before=None, after=None, frames: int = 3, delay_ms: int = 1500) -> None:
+    """Draw a hidden surface once, invisibly, shortly after start: the first
+    real open then doesn't pay for building the widgets' render nodes,
+    loading icons/fonts and compiling the GPU shaders (the lag of the first
+    Launchpad animation after a restart). The surface is mapped at 1 %
+    opacity, takes no keyboard or clicks, and is hidden again after a few
+    frames. before()/after() put the content in its "open" state and back."""
+    from gi.repository import GLib
+
+    def start():
+        if win.get_visible():
+            return False                          # opened already: nothing to do
+        LS = layer_shell()
+        if LS:
+            LS.set_keyboard_mode(win, LS.KeyboardMode.NONE)
+        if before:
+            before()
+        win.set_opacity(0.01)
+        win.set_can_target(False)
+        win.present()
+        set_input_region(win, [])
+        count = {"n": 0}
+
+        def tick(_w, _clock):
+            count["n"] += 1
+            if count["n"] < frames:
+                return GLib.SOURCE_CONTINUE
+            win.set_visible(False)
+            win.set_opacity(1.0)
+            win.set_can_target(True)
+            if LS:
+                LS.set_keyboard_mode(win, getattr(win, "keyboard_mode", LS.KeyboardMode.EXCLUSIVE))
+            surface = win.get_surface()
+            if surface is not None:
+                surface.set_input_region(None)            # the whole surface again
+            if after:
+                after()
+            return GLib.SOURCE_REMOVE
+        win.add_tick_callback(tick)
+        return False
+    GLib.timeout_add(delay_ms, start)

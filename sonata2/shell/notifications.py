@@ -147,6 +147,24 @@ class Notifications:
         self.listeners = []        # called when the list changes (NC open)
         Gio.bus_own_name(Gio.BusType.SESSION, "org.freedesktop.Notifications",
                          Gio.BusNameOwnerFlags.DO_NOT_QUEUE, self._bus_acquired, None, None)
+        GLib.timeout_add(2500, self._prewarm)
+
+    def _prewarm(self):
+        """Notification Center built and drawn once, invisibly, at start:
+        its first opening slides in without a hitch."""
+        if self.nc is None and layer.layer_shell():
+            self.nc = c = _Center(self.app, self)
+
+            def before():
+                c._rebuild()
+                c.rev.set_transition_duration(0)
+                c.rev.set_reveal_child(True)
+
+            def after():
+                c.rev.set_reveal_child(False)
+                c.rev.set_transition_duration(250)
+            layer.prewarm(c, before=before, after=after, delay_ms=1)
+        return False
 
     def _cfg_changed(self):
         self.cfg = config.load("notifications", DEFAULTS)
@@ -415,6 +433,7 @@ class _Center(Gtk.Window):
                 LS.set_anchor(self, e, True)
             LS.set_exclusive_zone(self, -1)
             LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND)
+            self.keyboard_mode = LS.KeyboardMode.ON_DEMAND        # (layer.prewarm restores it)
         self._slots = {}             # note id -> Revealer around its card
         self._settle = 0
         owner.listeners.append(self._changed)
