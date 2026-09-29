@@ -85,6 +85,11 @@ def run() -> int:
             GLib.spawn_command_line_async(self_command() + " setup")
     except Exception as e:
         print(f"sonata2-autostart: setup: {e}")
+    try:
+        from . import keyring
+        keyring.start()                    # KeePassXC: saved passwords for every app
+    except Exception as e:
+        print(f"sonata2-autostart: keyring: {e}")
     started = 0
     for name, info in entries():
         try:

@@ -203,8 +203,9 @@ def check_tools(r: Report) -> None:
     r.add(OK if not lack else WARN, "portals (file dialogs, screen sharing)", " ".join(sorted(lack)) + " missing" if lack else "")
     if lack:
         missing += sorted(lack)
-    r.add(OK if shutil.which("gnome-keyring-daemon") else WARN, "gnome-keyring (saved passwords: Chrome, VS Code...)",
-          fix="" if shutil.which("gnome-keyring-daemon") else "install gnome-keyring")
+    kp = shutil.which("keepassxc")
+    r.add(OK if kp else WARN, "KeePassXC (saved passwords: Chrome, VS Code, Wi-Fi -- Sonata's keyring)",
+          fix="" if kp else "install keepassxc")
     if missing:
         pm = {"arch": "sudo pacman -S --needed", "debian": "sudo apt install", "rpm": "sudo dnf install"}.get(fam, "install")
         r.add(WARN, "all optional packages in one go", fix=f"{pm} {' '.join(dict.fromkeys(missing))}")

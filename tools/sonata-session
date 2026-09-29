@@ -33,7 +33,9 @@ done
 done
 # Saved passwords (Chrome, VS Code, Wi-Fi secrets): the login screen's PAM
 # usually unlocks gnome-keyring; make sure its secrets service runs.
-if command -v gnome-keyring-daemon >/dev/null; then
+# KeePassXC is Sonata's keyring when installed (sonata2/keyring.py turns on
+# its Secret Service and starts it at login); gnome-keyring only without it.
+if ! command -v keepassxc >/dev/null && command -v gnome-keyring-daemon >/dev/null; then
     eval "$(gnome-keyring-daemon --start --components=secrets,pkcs11 2>/dev/null)" || true
     export SSH_AUTH_SOCK
 fi
