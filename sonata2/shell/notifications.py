@@ -26,7 +26,17 @@ BANNER_W = 344
 BANNER_MS = 5000
 TOP_GAP = 30                # under the 24 px menu bar
 MAX_BANNERS = 3
-DEFAULTS = {"dnd": False}
+DEFAULTS = {"dnd": False, "apps": {}}
+# per app (System Preferences > Notifications): key = desktop entry or app name
+APP_DEFAULTS = {"name": "", "allow": True, "style": "banners", "center": True, "sound": True}
+
+
+def app_key(desktop: str, app_name: str) -> str:
+    return (desktop or app_name or "").strip()
+
+
+def app_settings(cfg: dict, key: str) -> dict:
+    return dict(APP_DEFAULTS, **(cfg.get("apps", {}).get(key) or {}))
 
 XML = """
 <node>
@@ -175,10 +185,18 @@ class Notifications:
         n = Note(nid, app_name or "", app_icon or "", summary or "", body or "", pairs,
                  hints.get("desktop-entry", "") or "", int(urgency) if isinstance(urgency, int) else 1, timeout,
                  image if image.startswith("/") else "")
-        self.notes = [x for x in self.notes if x.id != nid] + [n]
-        self._changed()
+        key = app_key(n.desktop, n.app_name)
+        per = app_settings(self.cfg, key)
+        if key and key not in self.cfg.get("apps", {}):      # listed in Settings > Notifications
+            self.cfg.setdefault("apps", {})[key] = dict(APP_DEFAULTS, name=n.app_name or key)
+            config.save("notifications", self.cfg)
+        if not per["allow"]:
+            return nid
+        if per["center"]:
+            self.notes = [x for x in self.notes if x.id != nid] + [n]
+            self._changed()
         center_open = self.nc is not None and self.nc.get_visible()
-        if (not self.dnd or n.urgency == 2) and not center_open:
+        if per["style"] != "none" and (not self.dnd or n.urgency == 2) and not center_open:
             self._banner(n)
         return nid
 

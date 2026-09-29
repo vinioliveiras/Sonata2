@@ -115,7 +115,7 @@ Keys (macOS-like, Super = Cmd): Super+Space or F4 Launchpad, Super+Tab
 switch apps, Super+Q close, Super+M minimize, Ctrl+Super+F zoom,
 Ctrl+Up all windows, Super+, System Settings,
 Super+Shift+3/4 screenshot (screen/selection), Super+Shift+5 capture toolbar
-with screen recording (wf-recorder), Ctrl+Super+Q lock, Ctrl+Alt+T terminal (handled by Wayfire: works even if the Sonata shell crashed).
+with screen recording (wf-recorder), Ctrl+Super+Space emoji, Ctrl+Super+Q lock, Ctrl+Alt+T terminal (handled by Wayfire: works even if the Sonata shell crashed).
 
 ## Try it without logging out
 

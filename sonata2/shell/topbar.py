@@ -846,6 +846,8 @@ class TopBarWindow(Gtk.ApplicationWindow):
             _listen_for_lock()
             from .nightshift import NightShift
             self.bar.nightshift = NightShift()
+            from .idlelock import IdleLock
+            self.bar.idlelock = IdleLock()
         if not preview:
             # Title bars Wayfire draws (terminals, X11 apps) follow Dark Mode
             # live too: the menu bar always runs, so it keeps them in sync.

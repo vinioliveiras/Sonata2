@@ -24,7 +24,9 @@ from ..backend import system  # noqa: E402
 
 SECTIONS = [  # id, title, icon, badge colour, group
     ("wifi", "Wi-Fi", "network-wireless-symbolic", "blue", "linux"),
+    ("network", "Network", "network-wired-symbolic", "blue", "linux"),
     ("bluetooth", "Bluetooth", "bluetooth-active-symbolic", "blue", "linux"),
+    ("printers", "Printers & Scanners", "printer-symbolic", "gray", "linux"),
     ("sound", "Sound", "audio-volume-high-symbolic", "pink", "linux"),
     ("displays", "Displays", "video-display-symbolic", "blue", "linux"),
     ("battery", "Battery", "battery-full-symbolic", "green", "linux"),
@@ -33,13 +35,16 @@ SECTIONS = [  # id, title, icon, badge colour, group
     ("trackpad", "Trackpad", "input-touchpad-symbolic", "gray", "input"),
     ("mouse", "Mouse", "input-mouse-symbolic", "gray", "input"),
     ("datetime", "Date & Time", "preferences-system-time-symbolic", "blue", "system"),
+    ("notifications", "Notifications", "preferences-system-notifications-symbolic", "red", "system"),
     ("users", "Users & Groups", "system-users-symbolic", "gray", "system"),
+    ("privacy", "Security & Privacy", "security-high-symbolic", "gray", "system"),
     ("sharing", "Sharing", "folder-publicshare-symbolic", "blue", "system"),
     ("accessibility", "Accessibility", "preferences-desktop-accessibility-symbolic", "blue", "system"),
     ("appearance", "General", "preferences-system-symbolic", "gray", "sonata"),
     ("dock", "Desktop & Dock", "view-grid-symbolic", "black", "sonata"),
     ("menubar", "Menu Bar", "view-restore-symbolic", "indigo", "sonata"),
     ("launchpad", "Launchpad", "view-app-grid-symbolic", "graphite", "sonata"),
+    ("updates", "Software Update", "software-update-available-symbolic", "gray", "about"),
     ("about", "About", "help-about-symbolic", "gray", "about"),
 ]
 
@@ -47,7 +52,9 @@ SECTIONS = [  # id, title, icon, badge colour, group
 # Settings and macOS System Settings).
 DESCRIPTIONS = {
     "wifi": "Choose a network and see how this computer is connected.",
+    "network": "Ethernet, VPN and the other ways this computer connects.",
     "bluetooth": "Connect keyboards, mice, headphones and other wireless devices.",
+    "printers": "Printers, the default printer and print queues (CUPS).",
     "sound": "Output and input devices and their volume.",
     "displays": "Brightness, resolution and how your screens are arranged.",
     "battery": "Battery level, energy mode and the menu bar percentage.",
@@ -57,7 +64,10 @@ DESCRIPTIONS = {
     "trackpad": "Tracking speed, tap to click and scrolling.",
     "mouse": "Tracking speed, scrolling and the primary button.",
     "datetime": "Time zone, automatic time and the menu bar clock.",
+    "updates": "Keep the system and your apps up to date.",
+    "notifications": "Do Not Disturb and how each app may notify you.",
     "users": "Your picture and password, other accounts and the apps that open at login.",
+    "privacy": "Screen lock, recent files, Trash and location services.",
     "sharing": "The name other computers see on the network.",
     "accessibility": "Motion, transparency, text and pointer size.",
     "dock": "Size, magnification, position and hiding of the Dock.",
@@ -85,7 +95,9 @@ window.sonata-settings { color: %(label)s; }
 .st-badge.blue { background: %(sys_blue)s; } .st-badge.green { background: %(sys_green)s; }
 .st-badge.pink { background: %(sys_pink)s; } .st-badge.teal { background: %(sys_teal)s; }
 .st-badge.indigo { background: %(sys_indigo)s; } .st-badge.graphite { background: %(sys_graphite)s; }
-.st-badge.gray { background: %(sys_gray)s; }
+.st-status { min-width: 8px; min-height: 8px; border-radius: 4px; margin-right: 4px; }
+.st-status.on { background: %(sys_green)s; } .st-status.off { background: %(sys_red)s; }
+.st-badge.gray { background: %(sys_gray)s; } .st-badge.red { background: %(sys_red)s; }
 .st-badge.black { background: %(sys_black)s; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
 .st-card { padding: 10px 12px 6px 12px; }
 .st-card-title { font-weight: 700; }
@@ -358,6 +370,66 @@ class Settings(Adw.ApplicationWindow):
         self._wifi_switch = sw
         self._fill_wifi(False)
         return [top, nets]
+
+    def _page_network(self):
+        """Big Sur Network: the services (Ethernet, VPN, ...) with their
+        status and address; VPNs are imported from .ovpn / WireGuard files."""
+        svc = group("Services")
+        svc.add(Adw.ActionRow(title="Loading…"))
+        add = Gtk.Button(icon_name="list-add-symbolic", css_classes=["flat"], valign=Gtk.Align.CENTER,
+                         tooltip_text="Import VPN Configuration…")
+        add.connect("clicked", lambda *_: self._import_vpn())
+        svc.set_header_suffix(add)
+        labels = {"ethernet": "Ethernet", "vpn": "VPN", "bridge": "Bridge", "bond": "Bond",
+                  "mobile": "Mobile Broadband", "bluetooth": "Bluetooth PAN"}
+
+        def fill(lst):
+            _clear_group(svc)
+            for n in lst or []:
+                row = Adw.ExpanderRow(title=n.name, use_markup=False,
+                                      subtitle=f"{labels.get(n.kind, n.kind.title())} · "
+                                               + ("Connected" if n.active else "Not Connected"))
+                dot = Gtk.Box(css_classes=["st-status", "on" if n.active else "off"], valign=Gtk.Align.CENTER)
+                row.add_prefix(dot)
+                row.add_row(switch_row("Connected", n.active, lambda on, n=n: system.run_async(
+                    system.net_service_set, lambda r: (self.toast(r[1] if r and not r[0] else "Done"),
+                                                       self._reload_page("network")), n.uuid, on)))
+                for title, val in (("IP Address", n.address), ("Router", n.gateway), ("DNS Server", n.dns),
+                                   ("Device", n.device)):
+                    if val:
+                        r = Adw.ActionRow(title=title, subtitle=val, use_markup=False, subtitle_selectable=True)
+                        row.add_row(r)
+                if n.kind == "vpn":
+                    rm = Adw.ActionRow(title="Remove VPN", activatable=True)
+                    rm.add_css_class("error")
+                    rm.connect("activated", lambda *_a, n=n: system.run_async(
+                        system.net_service_delete, lambda _ok: self._reload_page("network"), n.uuid))
+                    row.add_row(rm)
+                svc.add(row)
+            if not lst:
+                svc.add(Adw.ActionRow(title="No network services",
+                                      subtitle="NetworkManager (nmcli) not available or nothing configured"))
+        system.run_async(system.net_services, fill)
+        return [svc]
+
+    def _import_vpn(self):
+        dlg = Gtk.FileDialog(title="Import VPN Configuration")
+        f = Gtk.FileFilter(name="VPN configurations")
+        for pat in ("*.ovpn", "*.conf"):
+            f.add_pattern(pat)
+        store = Gio.ListStore(item_type=Gtk.FileFilter)
+        store.append(f)
+        dlg.set_filters(store)
+
+        def done(d, res):
+            try:
+                file = d.open_finish(res)
+            except GLib.Error:
+                return
+            system.run_async(system.vpn_import, lambda r: (self.toast("VPN added" if r and r[0] else
+                                                                      "Couldn't import: " + (r[1] if r else "")),
+                                                           self._reload_page("network")), file.get_path())
+        dlg.open(self, None, done)
 
     def _fill_wifi(self, rescan: bool) -> None:
         def work():
@@ -847,6 +919,162 @@ class Settings(Adw.ApplicationWindow):
                         lambda r: r in ("keep", "delete") and self._user_op(U.delete_user, u, r == "delete",
                                                                             done_text="User deleted"),
                         parent=self)
+
+    def _page_notifications(self):
+        """Big Sur Notifications: Do Not Disturb, then every app that has
+        notified (allow, alert style, Notification Center)."""
+        from .. import apps
+        from ..shell.notifications import APP_DEFAULTS, DEFAULTS
+        cfg = config.load("notifications", DEFAULTS)
+        dnd = group("Do Not Disturb", "Banners stay hidden; notifications still collect in the "
+                                      "Notification Center.")
+        dnd.add(switch_row("Do Not Disturb", cfg.get("dnd"), lambda on: self._save("notifications", "dnd", on)))
+        lst = group("Application Notifications")
+
+        def set_app(key, field, value, row=None):
+            c = config.load("notifications", DEFAULTS)
+            c.setdefault("apps", {}).setdefault(key, dict(APP_DEFAULTS))[field] = value
+            config.save("notifications", c)
+            if row is not None:
+                a = dict(APP_DEFAULTS, **c["apps"][key])
+                row.set_subtitle(summary(a))
+
+        def summary(a):
+            if not a["allow"]:
+                return "Off"
+            return "Banners" if a["style"] == "banners" else "Notification Center only" if a["center"] else "None"
+        entries = sorted((cfg.get("apps") or {}).items(), key=lambda kv: (kv[1].get("name") or kv[0]).lower())
+        for key, a in entries:
+            a = dict(APP_DEFAULTS, **a)
+            info = apps.lookup(key)
+            name = info.get_display_name() if info else (a["name"] or key)
+            row = Adw.ExpanderRow(title=name, subtitle=summary(a), use_markup=False)
+            img = Gtk.Image(pixel_size=32)
+            if info:
+                icons.set_image(img, icons.app_icon(info))
+            else:
+                img.set_from_icon_name("application-x-executable")
+            row.add_prefix(img)
+            row.add_row(switch_row("Allow Notifications", a["allow"],
+                                   lambda on, k=key, r=row: set_app(k, "allow", on, r)))
+            row.add_row(combo_row("Alert style", [("banners", "Banners"), ("none", "None")], a["style"],
+                                  lambda v, k=key, r=row: set_app(k, "style", v, r),
+                                  subtitle="Banners appear at the top right and go away automatically"))
+            row.add_row(switch_row("Show in Notification Center", a["center"],
+                                   lambda on, k=key, r=row: set_app(k, "center", on, r)))
+            lst.add(row)
+        if not entries:
+            lst.add(Adw.ActionRow(title="No notifications yet",
+                                  subtitle="Apps appear here after they send their first notification"))
+        return [dnd, lst]
+
+    def _page_updates(self):
+        """Big Sur Software Update: checks the distro's package manager (and
+        Flatpak) in the background; Update Now runs it in a terminal
+        (it asks for your password there, as the distro expects)."""
+        g = group()
+        status = Adw.ActionRow(title="Checking for updates…", use_markup=False)
+        spin = Gtk.Spinner(spinning=True, valign=Gtk.Align.CENTER)
+        status.add_suffix(spin)
+        g.add(status)
+        lst = group("Updates")
+        lst.set_visible(False)
+
+        def fill(res):
+            pkgs, cmd = res or ([], "")
+            status.remove(spin)
+            if not cmd and not pkgs:
+                status.set_title("Updates can't be checked here")
+                status.set_subtitle("No supported package manager found (pacman-contrib, dnf, apt, zypper, flatpak)")
+                return
+            if not pkgs:
+                status.set_title("Your computer is up to date")
+                status.set_subtitle(GLib.DateTime.new_now_local().format("Checked %H:%M"))
+                return
+            status.set_title(f"{len(pkgs)} update{'s' if len(pkgs) != 1 else ''} available")
+            status.set_subtitle(cmd)
+            now = Gtk.Button(label="Update Now", valign=Gtk.Align.CENTER, css_classes=["suggested-action"])
+            now.connect("clicked", lambda *_: system.run_in_terminal(cmd) or self.toast("No terminal found"))
+            status.add_suffix(now)
+            exp = Adw.ExpanderRow(title="Details", use_markup=False, subtitle=", ".join(pkgs[:4]) + ("…" if len(pkgs) > 4 else ""))
+            for p in pkgs[:200]:
+                exp.add_row(Adw.ActionRow(title=p, use_markup=False))
+            lst.add(exp)
+            lst.set_visible(True)
+        system.run_async(system.software_updates, fill)
+        return [g, lst]
+
+    def _page_privacy(self):
+        """Big Sur Security & Privacy, with the Linux settings behind it."""
+        import shutil
+        from ..shell.idlelock import DEFAULTS as SEC
+        sec = config.load("security", SEC)
+        gen = group("General", "" if shutil.which("swayidle") else "Automatic locking needs swayidle "
+                                                                    "(not installed).")
+        opts = [(-1, "Never"), (0, "Immediately"), (5, "5 seconds"), (60, "1 minute"), (300, "5 minutes"),
+                (900, "15 minutes"), (3600, "1 hour")]
+        gen.add(combo_row("Require password after the display turns off", opts, sec["lock_after"],
+                          lambda v: self._save("security", "lock_after", v)))
+        gen.add(switch_row("Lock before sleep", sec["lock_before_sleep"],
+                           lambda on: self._save("security", "lock_before_sleep", on)))
+        gen.set_sensitive(shutil.which("swayidle") is not None)
+        P = "org.gnome.desktop.privacy"
+        priv = group("Privacy")
+        rec = system.gsetting(P, "remember-recent-files")
+        priv.add(switch_row("Remember recent files", rec != "false",
+                            lambda on: system.set_gsetting(P, "remember-recent-files", "true" if on else "false"),
+                            subtitle="Recents in Files and the Open dialogs"))
+        clear = Adw.ActionRow(title="Clear Recent Items", activatable=True)
+        clear.add_suffix(Gtk.Image(icon_name="edit-clear-all-symbolic"))
+
+        def do_clear(*_):
+            try:
+                Gtk.RecentManager.get_default().purge_items()
+                self.toast("Recent items cleared")
+            except GLib.Error:
+                pass
+        clear.connect("activated", do_clear)
+        priv.add(clear)
+        trash = system.gsetting(P, "remove-old-trash-files")
+        priv.add(switch_row("Remove items from the Trash after 30 days", trash == "true",
+                            lambda on: (system.set_gsetting(P, "remove-old-trash-files", "true" if on else "false"),
+                                        system.set_gsetting(P, "old-files-age", "uint32 30"))))
+        loc = system.gsetting("org.gnome.system.location", "enabled")
+        if loc is not None:
+            priv.add(switch_row("Location Services", loc == "true",
+                                lambda on: system.set_gsetting("org.gnome.system.location", "enabled",
+                                                               "true" if on else "false"),
+                                subtitle="Apps may ask for your location (GeoClue)"))
+        return [gen, priv]
+
+    def _page_printers(self):
+        g = group("Printers")
+        g.add(Adw.ActionRow(title="Loading…"))
+        add = Gtk.Button(icon_name="list-add-symbolic", css_classes=["flat"], valign=Gtk.Align.CENTER,
+                         tooltip_text="Add Printer…")
+        add.connect("clicked", lambda *_: system.add_printer())
+        g.set_header_suffix(add)
+
+        def fill(lst):
+            _clear_group(g)
+            if lst is None:
+                g.add(Adw.ActionRow(title="Printing isn't set up", subtitle="Install CUPS to add printers"))
+                add.set_sensitive(False)
+                return
+            for p in lst:
+                row = Adw.ActionRow(title=p.name, use_markup=False,
+                                    subtitle=p.state + (" · Default" if p.default else ""))
+                row.add_prefix(Gtk.Image(icon_name="printer-symbolic", pixel_size=24))
+                if not p.default:
+                    b = Gtk.Button(label="Make Default", valign=Gtk.Align.CENTER)
+                    b.connect("clicked", lambda *_a, p=p: system.run_async(
+                        system.set_default_printer, lambda _ok: self._reload_page("printers"), p.name))
+                    row.add_suffix(b)
+                g.add(row)
+            if not lst:
+                g.add(Adw.ActionRow(title="No printers available", subtitle="Click + to add a printer"))
+        system.run_async(system.printers, fill)
+        return [g]
 
     def _page_sharing(self):
         g = group()

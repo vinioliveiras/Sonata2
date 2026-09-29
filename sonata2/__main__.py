@@ -301,6 +301,17 @@ def run_topbar(app, args, ui):
             cap.stop_recording()
         else:                          # the keyboard shortcuts never wait for the timer
             cap.run(what, dict(config.load("capture", DEFAULTS), timer=0))
+    # Character Viewer (Ctrl+Super+Space)
+    emo = {}
+
+    def emoji(*_a):
+        if "w" not in emo:
+            from .shell.emoji import EmojiPicker
+            emo["w"] = EmojiPicker(app)
+        emo["w"].open()
+    act = Gio.SimpleAction.new("emoji", None)
+    act.connect("activate", emoji)
+    app.add_action(act)
     act = Gio.SimpleAction.new("capture", GLib.VariantType.new("s"))
     act.connect("activate", capture)
     app.add_action(act)

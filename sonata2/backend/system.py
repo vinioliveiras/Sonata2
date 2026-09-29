@@ -14,7 +14,7 @@ import threading
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from gi.repository import GLib
+from gi.repository import Gio, GLib
 
 POWER_SUPPLY = "/sys/class/power_supply"
 _JUNK_DMI = ("to be filled by o.e.m.", "default string", "system product name", "not applicable", "")
@@ -145,6 +145,147 @@ def wifi_disconnect() -> bool:
     rc, out = _run(["nmcli", "-t", "-f", "DEVICE,TYPE", "device"])
     dev = next((ln.split(":")[0] for ln in out.splitlines() if ln.endswith(":wifi")), None)
     return bool(dev) and _run(["nmcli", "device", "disconnect", dev])[0] == 0
+
+
+# -- Network services (Big Sur Network pane): Ethernet, VPN, others -----------------
+@dataclass
+class NetService:
+    name: str
+    uuid: str
+    kind: str          # "ethernet" | "vpn" | "wifi" | other nmcli type
+    device: str
+    active: bool
+    address: str = ""
+    gateway: str = ""
+    dns: str = ""
+
+
+NET_KINDS = {"802-3-ethernet": "ethernet", "vpn": "vpn", "wireguard": "vpn", "802-11-wireless": "wifi",
+             "bridge": "bridge", "bond": "bond", "gsm": "mobile", "bluetooth": "bluetooth"}
+
+
+def net_services() -> List[NetService]:
+    """Saved NetworkManager connections except Wi-Fi networks and loopback,
+    active ones first (with their address)."""
+    rc, out = _run(["nmcli", "-t", "-f", "NAME,UUID,TYPE,DEVICE,ACTIVE", "connection", "show"])
+    if rc != 0:
+        return []
+    services = []
+    for ln in out.splitlines():
+        p = _split_nmcli(ln)
+        if len(p) < 5 or p[2] in ("loopback", "802-11-wireless"):
+            continue
+        s = NetService(p[0], p[1], NET_KINDS.get(p[2], p[2]), p[3], p[4] == "yes")
+        if s.active and s.device:
+            rc2, info = _run(["nmcli", "-t", "-f", "IP4.ADDRESS,IP4.GATEWAY,IP4.DNS", "device", "show", s.device])
+            for il in info.splitlines():
+                k, _, v = il.partition(":")
+                if k.startswith("IP4.ADDRESS") and not s.address:
+                    s.address = v.split("/")[0]
+                elif k == "IP4.GATEWAY":
+                    s.gateway = v
+                elif k.startswith("IP4.DNS") and not s.dns:
+                    s.dns = v
+        services.append(s)
+    services.sort(key=lambda s: (not s.active, s.kind != "ethernet", s.name.lower()))
+    return services
+
+
+def net_service_set(uuid: str, up: bool) -> Tuple[bool, str]:
+    rc, out = _run(["nmcli", "connection", "up" if up else "down", "uuid", uuid], timeout=45)
+    return rc == 0, out.strip()
+
+
+def vpn_import(path: str) -> Tuple[bool, str]:
+    """OpenVPN (.ovpn) or WireGuard (.conf) file -> a NetworkManager VPN."""
+    kind = "wireguard" if path.endswith(".conf") else "openvpn"
+    rc, out = _run(["nmcli", "connection", "import", "type", kind, "file", path], timeout=20)
+    return rc == 0, out.strip()
+
+
+def net_service_delete(uuid: str) -> bool:
+    return _run(["nmcli", "connection", "delete", "uuid", uuid])[0] == 0
+
+
+# -- Printers (CUPS) ----------------------------------------------------------------
+@dataclass
+class Printer:
+    name: str
+    state: str          # "Idle", "Printing", "Disabled"
+    default: bool
+
+
+def printers() -> Optional[List[Printer]]:
+    """None when CUPS isn't installed."""
+    if not shutil.which("lpstat"):
+        return None
+    _rc, d = _run(["lpstat", "-d"])
+    default = d.split(":", 1)[1].strip() if ":" in d else ""
+    _rc, out = _run(["lpstat", "-p"])
+    out_list = []
+    for ln in out.splitlines():
+        m = re.match(r"printer (\S+) (?:is )?(\w+)", ln)
+        if m:
+            st = {"idle": "Idle", "now": "Printing", "disabled": "Disabled"}.get(m.group(2), m.group(2).title())
+            out_list.append(Printer(m.group(1), st, m.group(1) == default))
+    return out_list
+
+
+def set_default_printer(name: str) -> bool:
+    return _run(["lpoptions", "-d", name])[0] == 0
+
+
+def add_printer() -> None:
+    """The distro's printer tool, else the CUPS web page."""
+    for tool in ("system-config-printer", "kde-add-printer"):
+        if shutil.which(tool):
+            _spawn([tool])
+            return
+    Gio.AppInfo.launch_default_for_uri("http://localhost:631/admin", None)
+
+
+# -- Software Update ---------------------------------------------------------------
+# (tool that lists updates, command that installs them), first found wins
+UPDATERS = (
+    ("checkupdates", ["checkupdates"], "sudo pacman -Syu"),            # Arch (pacman-contrib)
+    ("dnf", ["dnf", "-q", "check-update"], "sudo dnf upgrade"),
+    ("apt", ["apt", "list", "--upgradable"], "sudo apt update && sudo apt upgrade"),
+    ("zypper", ["zypper", "-q", "list-updates"], "sudo zypper update"),
+)
+TERMINALS = (("kgx", ["--"]), ("gnome-terminal", ["--"]), ("konsole", ["-e"]), ("kitty", []),
+             ("alacritty", ["-e"]), ("foot", []), ("ghostty", ["-e"]), ("wezterm", ["start", "--"]),
+             ("xfce4-terminal", ["-x"]), ("xterm", ["-e"]))
+
+
+def software_updates() -> Tuple[List[str], str]:
+    """([package lines], install command). Also Flatpak apps."""
+    import shutil
+    pkgs, cmd = [], ""
+    for tool, list_cmd, install in UPDATERS:
+        if shutil.which(tool):
+            _rc, out = _run(list_cmd, timeout=90)
+            pkgs = [ln.split()[0].split("/")[0] for ln in out.splitlines()
+                    if ln.strip() and not ln.startswith(("Listing", "Last metadata", "Loading", "S |", "--"))]
+            cmd = install
+            break
+    if shutil.which("flatpak"):
+        _rc, out = _run(["flatpak", "remote-ls", "--updates", "--columns=application"], timeout=60)
+        fl = [ln.strip() for ln in out.splitlines() if ln.strip() and ln.strip() != "Application ID"]
+        pkgs += fl
+        if fl:
+            cmd = (cmd + " && " if cmd else "") + "flatpak update"
+    return pkgs, cmd
+
+
+def run_in_terminal(command: str) -> bool:
+    """Run a shell command in a terminal window that stays open at the end."""
+    import shutil
+    script = f"{command}; echo; read -p 'Press Enter to close' _"
+    for term, flag in ([(os.environ["TERMINAL"], ["-e"])] if os.environ.get("TERMINAL") else []) + list(TERMINALS):
+        if shutil.which(term):
+            _spawn([term] + flag + ["sh", "-c", script])
+            return True
+    return False
 
 
 # -- Bluetooth -----------------------------------------------------------------------
