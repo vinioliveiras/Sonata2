@@ -47,6 +47,62 @@ def write_desktop_file(filename: str, text: str) -> str:
     return path
 
 
+def app_dirs() -> list:
+    """Every applications folder, highest priority first: the user's, the
+    XDG_DATA_DIRS ones, and Flatpak's exports even when the session's
+    XDG_DATA_DIRS lacks them (a login screen doesn't run /etc/profile.d)."""
+    import os
+    from gi.repository import GLib
+    data = [GLib.get_user_data_dir()] + list(GLib.get_system_data_dirs())
+    data += [os.path.join(GLib.get_user_data_dir(), "flatpak", "exports", "share"),
+             "/var/lib/flatpak/exports/share"]
+    out = []
+    for d in data:
+        p = os.path.join(d, "applications")
+        if p not in out:
+            out.append(p)
+    return out
+
+
+def signature() -> tuple:
+    """Cheap: changes when any applications folder (or subfolder) changes."""
+    import os
+    sig = []
+    for d in app_dirs():
+        for root, dirs, _files in os.walk(d):
+            try:
+                sig.append((root, os.stat(root).st_mtime_ns))
+            except OSError:
+                pass
+    return tuple(sig)
+
+
+_scan = {}          # desktop id -> DesktopAppInfo (scan())
+
+
+def scan() -> dict:
+    """desktop id -> DesktopAppInfo, read from the folders themselves (GIO's
+    own list only notices folders it watched since the process started)."""
+    import os
+    global _scan
+    out = {}
+    for d in app_dirs():
+        for root, _dirs, files in os.walk(d):
+            for n in files:
+                if not n.endswith(".desktop"):
+                    continue
+                did = os.path.relpath(os.path.join(root, n), d).replace(os.sep, "-")
+                if did in out:
+                    continue                           # a higher-priority folder has it
+                try:
+                    info = DesktopAppInfo.new_from_filename(os.path.join(root, n))
+                except TypeError:
+                    info = None
+                out[did] = info
+    _scan = {k: v for k, v in out.items() if v is not None}
+    return dict(_scan)
+
+
 def lookup(desktop_id: str):
     """Gio.DesktopAppInfo for 'firefox' or 'firefox.desktop', or None."""
     if not desktop_id.endswith(".desktop"):
@@ -54,7 +110,7 @@ def lookup(desktop_id: str):
     try:
         return DesktopAppInfo.new(desktop_id)
     except TypeError:   # PyGObject raises on a NULL constructor result
-        return None
+        return _scan.get(desktop_id)          # installed after GIO's first look (see scan())
 
 
 def _default_browser():

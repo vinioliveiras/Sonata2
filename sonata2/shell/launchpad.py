@@ -68,11 +68,9 @@ window.sonata-launchpad *:drop(active) { box-shadow: none; outline: none; border
 def installed_apps() -> dict:
     """desktop id -> Gio.DesktopAppInfo of the apps a launcher should list."""
     out = {}
-    for info in Gio.AppInfo.get_all():
-        did = (info.get_id() or "")
-        if not did.endswith(".desktop") or not info.should_show():
-            continue
-        out[did[:-8]] = info
+    for did, info in apps.scan().items():       # the folders themselves: new apps show up at once
+        if info.should_show():
+            out[did[:-8]] = info
     return out
 
 
@@ -210,6 +208,7 @@ class Launchpad(Gtk.ApplicationWindow):
         super().__init__(application=app, title="Launchpad", css_classes=["sonata-launchpad"],
                          decorated=False)
         self.installed = installed_apps()
+        self._apps_sig = apps.signature()
         self.model = M.Model(config.load("launchpad", {"pages": [], "hidden": []}), {
             k: v.get_display_name() for k, v in self.installed.items()})
         self.save()                # new/removed apps reconciled
@@ -321,6 +320,7 @@ class Launchpad(Gtk.ApplicationWindow):
         self.render()
 
     def _apps_changed(self) -> None:
+        self._apps_sig = apps.signature()
         apps.refresh()
         self.installed = installed_apps()
         self.model.installed = {k: v.get_display_name() for k, v in self.installed.items()}
@@ -343,7 +343,17 @@ class Launchpad(Gtk.ApplicationWindow):
                  GLib.Variant("(sava{sv})", ("above", [GLib.Variant("b", on)], {})), None,
                  Gio.DBusCallFlags.NONE, 1000, None, None)
 
+    def _check_apps(self) -> None:
+        """Apps installed or removed since the last look (cheap: folder times)."""
+        sig = apps.signature()
+        if sig != getattr(self, "_apps_sig", None):
+            first = getattr(self, "_apps_sig", None) is None
+            self._apps_sig = sig
+            if not first:
+                self._apps_changed()
+
     def open_launchpad(self) -> None:
+        self._check_apps()
         # the Dock moves up to OVERLAY once Launchpad is mapped: the surface
         # that changes layer last is on top, so the Dock stays reachable
         # (drag an app onto it to pin it)
@@ -351,9 +361,16 @@ class Launchpad(Gtk.ApplicationWindow):
         self.search.set_text("")
         self.set_jiggle(False)
         self._close_folder()
+        self.bin.progress = 0.0
         self.present()
         self.search.grab_focus()
-        self._animate(1.0, OPEN_MS)
+        # start once the surface is on screen: mapping a full-screen surface
+        # takes a few frames, and an animation started before it would
+        # already be half over when it first shows (the "lag")
+        def first_frame(_w, _clock):
+            self._animate(1.0, OPEN_MS)
+            return GLib.SOURCE_REMOVE
+        self.bin.add_tick_callback(first_frame)
 
     def close_launchpad(self, then=None) -> None:
         self._dock_above(False)

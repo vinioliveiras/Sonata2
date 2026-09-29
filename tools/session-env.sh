@@ -13,6 +13,11 @@ case "${LD_PRELOAD:-}" in *gtk4-layer-shell*) unset LD_PRELOAD ;; esac
 SONATA_REPO="${SONATA_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 export SONATA_REPO
 export XDG_DATA_DIRS="$SONATA_REPO/sonata2/data:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+# Flatpak apps: a login screen session doesn't source /etc/profile.d, where
+# flatpak adds its export folders -- without them its apps are invisible.
+for d in "${XDG_DATA_HOME:-$HOME/.local/share}/flatpak/exports/share" /var/lib/flatpak/exports/share; do
+    case ":$XDG_DATA_DIRS:" in *":$d:"*|*":$d/:"*) ;; *) [ -d "$d" ] && XDG_DATA_DIRS="$XDG_DATA_DIRS:$d" ;; esac
+done
 export XCURSOR_PATH="$SONATA_REPO/sonata2/data/icons:$HOME/.local/share/icons:$HOME/.icons:/usr/share/icons:/usr/share/pixmaps"
 export XCURSOR_THEME=Sonata-Cursors XCURSOR_SIZE=24
 mkdir -p "$HOME/.config/sonata2"
