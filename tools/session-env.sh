@@ -119,6 +119,11 @@ for t in text/plain text/markdown text/x-log; do
     grep -q "^$t=" "$ml" || \
         sed -i "/^\[Default Applications\]/a $t=io.github.vinioliveiras.sonata2.textedit.desktop" "$ml"
 done
+# Pictures open in Sonata's Preview.
+for t in image/png image/jpeg image/gif image/webp image/bmp image/tiff image/svg+xml image/avif image/heic; do
+    grep -q "^$t=" "$ml" || \
+        sed -i "/^\[Default Applications\]/a $t=io.github.vinioliveiras.sonata2.preview.desktop" "$ml"
+done
 # Wayfire blurs Sonata windows here: sidebars use the glass material.
 export SONATA_GLASS=1
 export PYTHONPATH="$SONATA_REPO${PYTHONPATH:+:$PYTHONPATH}"
