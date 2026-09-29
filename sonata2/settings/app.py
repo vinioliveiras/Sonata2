@@ -463,7 +463,16 @@ class Settings(Adw.ApplicationWindow):
             else:
                 mode.add(Adw.ActionRow(title="Energy mode", subtitle="power-profiles-daemon not available"))
         system.run_async(lambda: (system.battery(), system.on_ac(), system.power_profile()), fill)
-        return [info, mode]
+        screen = group("Display")
+        try:
+            cur = int(system.wayfire_get("idle", "dpms_timeout", "600") or 600)
+        except ValueError:
+            cur = 600
+        opts = [(60, "1 minute"), (120, "2 minutes"), (300, "5 minutes"), (600, "10 minutes"),
+                (1200, "20 minutes"), (1800, "30 minutes"), (-1, "Never")]
+        screen.add(combo_row("Turn display off after", opts, min((o[0] for o in opts), key=lambda v: abs(v - cur)),
+                             lambda v: system.run_async(system.wayfire_set, None, "idle", "dpms_timeout", v)))
+        return [info, mode, screen]
 
     def _page_wallpaper(self):
         g = group("Wallpaper", "A Linux desktop setting (org.gnome.desktop.background); "

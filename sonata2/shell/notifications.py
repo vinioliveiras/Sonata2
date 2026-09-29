@@ -57,6 +57,7 @@ window.sonata-nc, window.sonata-nc > contents { background: none; box-shadow: no
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, 0 8px 22px rgba(0,0,0,0.18); }
 .nt-card.solid { background: %(menu_bg)s; }
 .nt-title { font-weight: 700; font-size: %(text_body)s; }
+.nt-image { border-radius: 5px; }
 .nt-body { font-size: %(text_body)s; }
 .nt-app { font-size: %(text_small)s; color: %(label_secondary)s; }
 .nt-time { font-size: %(text_small)s; color: %(label_secondary)s; }
@@ -91,6 +92,7 @@ class Note:
     desktop: str = ""
     urgency: int = 1
     timeout: int = -1
+    image: str = ""          # picture shown on the card's right (screenshots, album art)
     at: float = field(default_factory=time.time)
 
 
@@ -167,8 +169,12 @@ class Notifications:
             self._next += 1
         pairs = [(actions[i], actions[i + 1]) for i in range(0, len(actions) - 1, 2)]
         urgency = hints.get("urgency", 1)
-        n = Note(nid, app_name or "", app_icon or hints.get("image-path", "") or "", summary or "", body or "",
-                 pairs, hints.get("desktop-entry", "") or "", int(urgency) if isinstance(urgency, int) else 1, timeout)
+        image = hints.get("image-path", "") or ""
+        if image.startswith("file://"):
+            image = GLib.filename_from_uri(image)[0]
+        n = Note(nid, app_name or "", app_icon or "", summary or "", body or "", pairs,
+                 hints.get("desktop-entry", "") or "", int(urgency) if isinstance(urgency, int) else 1, timeout,
+                 image if image.startswith("/") else "")
         self.notes = [x for x in self.notes if x.id != nid] + [n]
         self._changed()
         center_open = self.nc is not None and self.nc.get_visible()
@@ -280,6 +286,11 @@ class Notifications:
                 row.append(b)
             col.append(row)
         box.append(col)
+        if n.image:
+            pic = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, valign=Gtk.Align.CENTER, css_classes=["nt-image"])
+            pic.set_filename(n.image)
+            pic.set_size_request(64, 40)
+            box.append(pic)
         over.set_child(box)
         click = Gtk.GestureClick()
         click.connect("released", lambda g, *_: g.get_current_button() == 1 and self.invoke(n))

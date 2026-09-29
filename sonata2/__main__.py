@@ -12,7 +12,9 @@ Development / screenshots:
   --menu N                                                     (top bar, gallery)
   --page ID                                                    (settings)
   sonata2 files [FOLDER...]                                    (Files)
-  sonata2 restart [dock topbar launchpad wallpaper]            (reload edited code)"""
+  sonata2 restart [dock topbar launchpad wallpaper]            (reload edited code)
+  sonata2 key volume-up|volume-down|volume-mute|brightness-up|brightness-down  (media keys + HUD)
+  sonata2 screenshot [area]                                    (Super+Shift+3 / 4)"""
 import argparse
 import json
 import os
@@ -197,9 +199,23 @@ def run_wallpaper(app, args, ui):
 
 
 def run_topbar(app, args, ui):
+    from gi.repository import Gio, GLib
     from .shell import topbar
     win = topbar.TopBarWindow(app, preview=args.preview)
     win.present()
+    # HUD for the media keys (`sonata2 key ...` activates this over D-Bus)
+    from .shell.osd import OSD
+    osd = {}
+
+    def show(_a, param):
+        kind, level, muted = (param.get_string().split(":") + ["0", "0"])[:3]
+        if "w" not in osd:
+            osd["w"] = OSD(app)
+        osd["w"].show_level(kind, int(level), muted == "1")
+        win.bar._poll_soon()                     # menu bar icon follows
+    act = Gio.SimpleAction.new("osd", GLib.VariantType.new("s"))
+    act.connect("activate", show)
+    app.add_action(act)
     if args.menu >= 0:
         _later(600, lambda: win.bar.open_menu(args.menu))
 
@@ -226,9 +242,82 @@ def restart(names) -> int:
     return 0
 
 
+KEYS = {  # media keys: (what changes, step); macOS uses 16 steps
+    "volume-up": ("volume", +6), "volume-down": ("volume", -6), "volume-mute": ("volume", 0),
+    "brightness-up": ("brightness", +6), "brightness-down": ("brightness", -6),
+}
+
+
+def key(name: str) -> int:
+    """`sonata2 key volume-up` (Wayfire key bindings): change the level, then
+    ask the menu bar process to show the HUD. No GTK in this process."""
+    from .backend import system
+    kind, step = KEYS.get(name, (None, 0))
+    if kind == "volume":
+        cur = system.volume() or (0, False)
+        if name == "volume-mute":
+            system.set_volume(muted=not cur[1])
+            level, muted = cur[0], not cur[1]
+        else:
+            level, muted = max(0, min(100, cur[0] + step)), False
+            system.set_volume(level, False)
+    elif kind == "brightness":
+        level, muted = max(1, min(100, (system.brightness() or 50) + step)), False
+        system.set_brightness(level)
+    else:
+        return 2
+    from gi.repository import Gio, GLib
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        bus.call_sync(APP_IDS["topbar"], "/" + APP_IDS["topbar"].replace(".", "/"), "org.freedesktop.Application",
+                      "ActivateAction", GLib.Variant("(sava{sv})", ("osd", [GLib.Variant("s", f"{kind}:{level}:{int(muted)}")], {})),
+                      None, Gio.DBusCallFlags.NONE, 1000, None)
+    except GLib.Error:
+        pass                            # no menu bar: the level still changed
+    return 0
+
+
+def screenshot(area: bool) -> int:
+    """macOS screenshots: "Screenshot 2026-09-29 at 01.52.10.png" on the
+    Desktop (grim, slurp for a selection), then a notification."""
+    import shutil
+    import subprocess
+    from gi.repository import Gio, GLib
+    if not shutil.which("grim"):
+        return 1
+    desk = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DESKTOP) or GLib.get_home_dir()
+    name = GLib.DateTime.new_now_local().format("Screenshot %Y-%m-%d at %H.%M.%S.png")
+    path = os.path.join(desk, name)
+    cmd = ["grim"]
+    if area:
+        if not shutil.which("slurp"):
+            return 1
+        sel = subprocess.run(["slurp"], capture_output=True, text=True)
+        if sel.returncode != 0 or not sel.stdout.strip():
+            return 0                            # Escape: cancelled
+        cmd += ["-g", sel.stdout.strip()]
+    if subprocess.run(cmd + [path]).returncode != 0:
+        return 1
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                      "org.freedesktop.Notifications", "Notify",
+                      GLib.Variant("(susssasa{sv}i)", ("Screenshot", 0, path, "Screenshot", name, [],
+                                                       {"desktop-entry": GLib.Variant("s", APP_IDS["files"]),
+                                                        "image-path": GLib.Variant("s", path)}, -1)),
+                      None, Gio.DBusCallFlags.NONE, 1000, None)
+    except GLib.Error:
+        pass
+    return 0
+
+
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "screenshot":
+        return screenshot(len(sys.argv) > 2 and sys.argv[2] == "area")
     if len(sys.argv) > 1 and sys.argv[1] == "restart":
         return restart(sys.argv[2:])
+    if len(sys.argv) > 2 and sys.argv[1] == "key":
+        return key(sys.argv[2])
     p = argparse.ArgumentParser(prog="sonata2")
     p.add_argument("component", choices=list(APP_IDS))
     p.add_argument("--preview", action="store_true")
