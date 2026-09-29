@@ -105,6 +105,7 @@ if [ -n "$missing" ]; then
     fi
 fi
 [ -n "$OPT" ] && echo "Optional (Wi-Fi, sound, brightness, Bluetooth, displays, energy, portals): $PM $OPT"
+echo "Optional, macOS title bars for terminals/X11 apps: the pixdecor Wayfire plugin (Arch AUR: wayfire-plugin-pixdecor-git)"
 
 # -- files ----------------------------------------------------------------------------------------
 say "Installing Sonata 2 to $PREFIX"
@@ -115,7 +116,7 @@ mkdir -p "$tmp/sonata2/tools"
 items=(sonata2 config)
 for f in "$SRC"/LICENSE* "$SRC/README.md"; do [ -e "$f" ] && items+=("$(basename "$f")"); done
 ( cd "$SRC" && tar --exclude=__pycache__ -cf - "${items[@]}" ) | tar -xf - -C "$tmp/sonata2"
-cp "$SRC/tools/session-env.sh" "$SRC/tools/sonata-session" "$tmp/sonata2/tools/"
+cp "$SRC/tools/session-env.sh" "$SRC/tools/sonata-session" "$SRC/tools/wayfire-config.sh" "$tmp/sonata2/tools/"
 $SUDO rm -rf "$SHARE"
 $SUDO mkdir -p "$(dirname "$SHARE")"
 $SUDO cp -a "$tmp/sonata2" "$SHARE"
@@ -136,7 +137,7 @@ exec "$SHARE/tools/sonata-session" "\$@"
 EOF
 $SUDO install -m 755 "$tmp/sonata2-launcher" "$BIN/sonata2"
 $SUDO install -m 755 "$tmp/sonata-session-launcher" "$BIN/sonata-session"
-$SUDO chmod 755 "$SHARE/tools/sonata-session" "$SHARE/tools/session-env.sh"
+$SUDO chmod 755 "$SHARE/tools/sonata-session" "$SHARE/tools/session-env.sh" "$SHARE/tools/wayfire-config.sh"
 
 # -- session config (never overwrite your edits) ----------------------------------------------------
 mkdir -p "$CFG/sonata2"

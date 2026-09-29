@@ -35,8 +35,9 @@ done
 # The repo's config, with autostart pointed at this clone.
 # (the session's `sonata2 ...` commands become this clone's python -m sonata2;
 # no dbus-update-activation-environment here: it would leak into GNOME)
+"$REPO/tools/wayfire-config.sh" "$REPO/config/wayfire.ini" "$run/resolved.ini"
 sed -e '/^\[autostart\]/,$d' -e "s|= sonata2 |= env PYTHONPATH=$REPO python3 -m sonata2 |" \
-    "$REPO/config/wayfire.ini" > "$run/wayfire.ini"
+    "$run/resolved.ini" > "$run/wayfire.ini"
 {
     echo "[autostart]"
     echo "autostart_wf_shell = false"

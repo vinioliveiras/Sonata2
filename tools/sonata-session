@@ -6,6 +6,9 @@ export XDG_CURRENT_DESKTOP=Sonata XDG_SESSION_DESKTOP=sonata
 # Session config from install.sh (never your ~/.config/wayfire.ini).
 cfg="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/wayfire.ini"
 [ -f "$cfg" ] || cfg="$SONATA_REPO/config/wayfire.ini"
+# Resolved copy: Sonata paths filled in, pixdecor title bars when installed.
+run_cfg="${XDG_RUNTIME_DIR:-/tmp}/sonata2-wayfire.ini"
+"$(dirname "$(readlink -f "$0")")/wayfire-config.sh" "$cfg" "$run_cfg" && cfg="$run_cfg"
 # Polkit authentication agent (password prompts for system actions), if any.
 for agent in /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 \
              /usr/libexec/polkit-gnome-authentication-agent-1 \
