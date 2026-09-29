@@ -36,7 +36,7 @@ class Players:
         self.names = [n for n in names if n.startswith(PREFIX)]
         self._pick()
 
-    def _owner(self, _c, _s, _p, _i, _sig, params, _d):
+    def _owner(self, _c, _s, _p, _i, _sig, params, *_d):
         name, old, new = params.unpack()
         if not name.startswith(PREFIX):
             return

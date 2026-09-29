@@ -24,7 +24,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Gsk", "4.0")
 gi.require_version("Graphene", "1.0")
-from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
 from .. import apps, config, icons  # noqa: E402
 from .. import ui  # noqa: E402
@@ -79,6 +79,12 @@ def _rounded(rect, radius) -> Gsk.RoundedRect:
     rr = Gsk.RoundedRect()
     rr.init_from_rect(rect, radius)
     return rr
+
+
+def _rgba(spec) -> Gdk.RGBA:
+    c = Gdk.RGBA()
+    c.parse(spec)
+    return c
 
 
 def _rect(x, y, w, h) -> Graphene.Rect:
@@ -157,11 +163,42 @@ class DockIcon(Gtk.Widget):
             self._paint[size] = icons.paintable(self, self._gicon, size)
         return self._paint[size]
 
+    badge = ""        # macOS notification badge ("3", "99+"); set_badge()
+
+    def set_badge(self, text: str) -> None:
+        if text != self.badge:
+            self.badge = text
+            self.queue_draw()
+
     def do_snapshot(self, snap) -> None:
         dock = self.get_ancestor(Dock)
         base = dock.cfg["icon_size"] if dock else self._size
         size = self._size if self._size == base else max(self._size, max_icon(dock.cfg))
         self._paintable(size).snapshot(snap, self._size, self._size)
+        if self.badge:
+            self._draw_badge(snap)
+
+    def _draw_badge(self, snap) -> None:
+        """Red pill at the icon's top right, white number (scales with the
+        icon, so it grows with magnification like macOS)."""
+        s = self._size
+        layout = self.create_pango_layout(self.badge)
+        fd = Pango.FontDescription.from_string(f"Sans Bold {max(6, s * 0.2):.1f}px")
+        fd.set_absolute_size(max(7, s * 0.24) * Pango.SCALE)
+        layout.set_font_description(fd)
+        tw, th = layout.get_pixel_size()
+        h = max(s * 0.38, th + 2)
+        w = max(h, tw + h * 0.55)
+        x, y = s - w * 0.78, -h * 0.12
+        rr = _rounded(_rect(x, y, w, h), h / 2)
+        snap.append_outset_shadow(rr, _rgba("rgba(0,0,0,0.25)"), 0, 1, 0, 2)
+        snap.push_rounded_clip(rr)
+        snap.append_color(_rgba("#ff3b30"), _rect(x, y, w, h))
+        snap.pop()
+        snap.save()
+        snap.translate(Graphene.Point().init(x + (w - tw) / 2, y + (h - th) / 2))
+        snap.append_layout(layout, _rgba("#ffffff"))
+        snap.restore()
 
 
 class DockTile(Gtk.Button):
@@ -291,6 +328,8 @@ class Dock(Gtk.Box):
         self.append(self.trash)
         self.append(self._spacer())
         self._drag = None     # (key, original index) while an icon is dragged
+        self.badges = {}      # desktop id -> badge text (Unity LauncherEntry)
+        self._launcher_entries()
         drop = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
         drop.connect("motion", self._drag_motion)
         drop.connect("drop", self._drag_drop)
@@ -448,6 +487,33 @@ class Dock(Gtk.Box):
         self._mag_anim.set_easing(Adw.Easing.EASE_OUT_CUBIC)
         self._mag_anim.play()
 
+    def _launcher_entries(self) -> None:
+        """Badges and attention from apps (com.canonical.Unity.LauncherEntry:
+        Telegram, Thunderbird, Discord, Signal...): the count as a red badge,
+        "urgent" as the attention bounce -- macOS Dock behaviour."""
+        try:
+            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        except GLib.Error:
+            return
+        bus.signal_subscribe(None, "com.canonical.Unity.LauncherEntry", "Update", None, None,
+                             Gio.DBusSignalFlags.NONE, self._launcher_update)
+
+    def _launcher_update(self, _c, _sender, _path, _iface, _sig, params, *_d) -> None:
+        uri, props = params.unpack()
+        did = uri.replace("application://", "")
+        key = did[:-8] if did.endswith(".desktop") else did
+        count, visible = props.get("count"), props.get("count-visible")
+        if count is not None or visible is not None:
+            n = int(count if count is not None else 0)
+            show = visible if visible is not None else bool(self.badges.get(key))
+            self.badges[key] = ("99+" if n > 99 else str(n)) if show and n > 0 else ""
+        tile = self.tiles.get(key) or next((t for k, t in self.tiles.items()
+                                            if k.lower() == key.lower()), None)
+        if tile is not None:
+            tile.icon.set_badge(self.badges.get(key, ""))
+            if props.get("urgent"):
+                tile.bounce(3 * BOUNCE_MS)
+
     def all_tiles(self) -> list:
         return self.app_tiles() + self.stacks.tiles() + [self.trash]
 
@@ -485,6 +551,8 @@ class Dock(Gtk.Box):
                         on_menu=lambda t: dock_menu.app_menu(self, key, t))
         tile.key = key
         self.tiles[key] = tile
+        if self.badges.get(key):                  # a badge that arrived before the tile
+            tile.icon.set_badge(self.badges[key])
         self.insert_child_after(tile, self.sep.get_prev_sibling())   # before the divider
         src = Gtk.DragSource(actions=Gdk.DragAction.MOVE)
         src.connect("prepare", lambda *_: Gdk.ContentProvider.new_for_value(key))
