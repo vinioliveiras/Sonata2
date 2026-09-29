@@ -139,6 +139,44 @@ def user_wallpaper(name: str):
         return None
 
 
+# -- displays (wlr-randr: Wayfire's output management) ------------------------------------------
+def outputs() -> list:
+    """[{name, description, modes: [(w, h, hz)], current: (w, h, hz)}] of the enabled displays."""
+    try:
+        out = subprocess.run(["wlr-randr", "--json"], capture_output=True, text=True, timeout=4).stdout
+        data = json.loads(out)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return []
+    res = []
+    for o in data:
+        if not o.get("enabled", True):
+            continue
+        modes = [(m["width"], m["height"], float(m["refresh"])) for m in o.get("modes", [])]
+        cur = next(((m["width"], m["height"], float(m["refresh"])) for m in o.get("modes", []) if m.get("current")),
+                   None)
+        res.append({"name": o.get("name", ""), "description": o.get("description") or o.get("name", ""),
+                    "modes": modes, "current": cur})
+    return res
+
+
+def best_modes(modes) -> list:
+    """One entry per resolution, at its highest refresh rate; biggest first."""
+    best = {}
+    for w, h, hz in modes:
+        if hz > best.get((w, h), 0):
+            best[(w, h)] = hz
+    return sorted(((w, h, hz) for (w, h), hz in best.items()), key=lambda m: (-m[0] * m[1], -m[2]))
+
+
+def set_mode(name: str, mode) -> bool:
+    w, h, hz = mode
+    try:
+        return subprocess.run(["wlr-randr", "--output", name, "--mode", f"{w}x{h}@{hz:.3f}Hz"],
+                              capture_output=True, timeout=6).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def logind(method: str) -> None:
     try:
         Gio.bus_get_sync(Gio.BusType.SYSTEM, None).call(
@@ -162,6 +200,7 @@ class Greeter:
             self.user = self.users[0]
         self.backdrops = []
         self.windows = []
+        self._restore_modes()
         display = Gdk.Display.get_default()
         monitors = display.get_monitors()
         for i in range(monitors.get_n_items()):
@@ -184,6 +223,8 @@ class Greeter:
                                     halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
             over.add_overlay(self.center)
             over.add_overlay(self._power())
+            if not self.fake:
+                over.add_overlay(self._display_button())
             self._show()
         win.set_child(over)
         if self.fake:                            # a try-out inside the session: Esc leaves
@@ -277,6 +318,75 @@ class Greeter:
             b, [[ui.menu.Item(s.name, lambda s=s: choose(s), checked=(s is self._session()))
                  for s in self.sessions]], position=Gtk.PositionType.BOTTOM, glass=True))
         return btn
+
+    # displays: the saved resolution of each, else its highest refresh rate
+    def _restore_modes(self):
+        if self.fake:
+            return
+        saved = self.state.get("modes", {})
+        for o in outputs():
+            want = saved.get(o["name"])
+            modes = o["modes"]
+            if want and tuple(want) in {(w, h, round(hz, 3)) for w, h, hz in modes}:
+                mode = next(m for m in modes if (m[0], m[1], round(m[2], 3)) == tuple(want))
+            else:
+                cur = o["current"]
+                same = [m for m in modes if cur and (m[0], m[1]) == cur[:2]]
+                mode = max(same or modes, key=lambda m: m[2], default=None)
+            if mode and mode != o["current"]:
+                set_mode(o["name"], mode)
+
+    def _display_button(self):
+        btn = Gtk.Button(icon_name="video-display-symbolic", css_classes=["gr-power"], tooltip_text="Displays",
+                         halign=Gtk.Align.START, valign=Gtk.Align.END, margin_start=24, margin_bottom=24)
+        btn.connect("clicked", lambda b: self._display_menu(b))
+        return btn
+
+    def _display_menu(self, btn):
+        sections = []
+        for o in outputs():
+            items = [ui.menu.Item(o["description"], enabled=False)]
+            cur = o["current"]
+            for m in best_modes(o["modes"])[:14]:
+                label = f"{m[0]} \u00d7 {m[1]}  \u00b7  {round(m[2])} Hz"
+                items.append(ui.menu.Item(label, lambda o=o, m=m: self._try_mode(o, m),
+                                          checked=bool(cur) and cur[:2] == m[:2]))
+            sections.append(items)
+        if sections:
+            ui.menu.popup(btn, sections, position=Gtk.PositionType.TOP, glass=True)
+
+    def _try_mode(self, o, mode):
+        """Apply, and keep it only if confirmed within 15 s (a mode the display
+        can't show would otherwise leave the screen black)."""
+        old = o["current"]
+        if not set_mode(o["name"], mode):
+            return
+        timer = {"src": 0}
+
+        def keep(ok):
+            if timer["src"]:
+                GLib.source_remove(timer["src"])
+            elif timer.get("done"):
+                return
+            timer["src"], timer["done"] = 0, True
+            if ok:
+                self.state.setdefault("modes", {})[o["name"]] = [mode[0], mode[1], round(mode[2], 3)]
+                save_state(self.state)
+            elif old:
+                set_mode(o["name"], old)
+
+        # in the login screen's own window: a separate one would open below it
+        dlg = ui.dialog.alert("Keep these display settings?", "Going back to the previous ones in 15 seconds.",
+                              [("revert", "Revert", ""), ("keep", "Keep", "default")],
+                              lambda r: keep(r == "keep"), parent=self.windows[0] if self.windows else None)
+
+        def expired():
+            timer["src"] = 0
+            keep(False)
+            if hasattr(dlg, "force_close"):
+                dlg.force_close()
+            return False
+        timer["src"] = GLib.timeout_add_seconds(15, expired)
 
     def _power(self):
         bar = Gtk.Box(spacing=20, halign=Gtk.Align.CENTER, valign=Gtk.Align.END, margin_bottom=40,

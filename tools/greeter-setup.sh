@@ -84,6 +84,27 @@ cursor_size = 24
 autostart_wf_shell = false
 greeter = env PYTHONPATH=$SHARE python3 -m sonata2 greeter
 EOF
+# Displays: the same mode/scale/position as your Sonata session (Settings >
+# Displays writes them to wayfire-overrides.ini), else the highest refresh
+# rate. The login screen's own resolution menu can still change them.
+USER_HOME="$(getent passwd "$ME" | cut -d: -f6)"
+python3 - "$USER_HOME/.config/sonata2/wayfire-overrides.ini" >> "$tmp/share/wayfire.ini" <<'PY'
+import configparser, glob, os, sys
+cp = configparser.ConfigParser(interpolation=None, strict=False)
+try:
+    cp.read(sys.argv[1])
+except configparser.Error:
+    pass
+names = sorted({os.path.basename(p).split("-", 1)[1] for p in glob.glob("/sys/class/drm/card*-*")
+                if "-" in os.path.basename(p)})
+for name in names:
+    sec = f"output:{name}"
+    keys = {k: cp.get(sec, k) for k in ("mode", "scale", "position", "transform") if cp.has_option(sec, k)}
+    keys.setdefault("mode", "highrr")
+    print(f"\n[{sec}]")
+    for k, v in keys.items():
+        print(f"{k} = {v}")
+PY
 cat > "$tmp/sonata-greeter" <<EOF
 #!/bin/sh
 # greetd runs this (as user "greeter"): Sonata's login screen in a small
