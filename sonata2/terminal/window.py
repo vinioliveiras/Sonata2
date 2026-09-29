@@ -61,7 +61,7 @@ class TerminalWindow(Gtk.ApplicationWindow):
         self.bar = ui.window.titlebar(self, "Terminal", zoom=True)
         self.bar.add_css_class("tm-bar")
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        col.append(self.bar)
+        # the title bar is the glass one the compositor draws (pixdecor): no second bar
         self._closing = False
         self.pid = None
         if Vte is None:
@@ -143,7 +143,7 @@ class TerminalWindow(Gtk.ApplicationWindow):
 
     def _size_for(self, cols, rows):
         cw, ch = self.term.get_char_width() or 8, self.term.get_char_height() or 17
-        return int(cols * cw + 12), int(rows * ch + ui.window.TITLEBAR_H + 8)
+        return int(cols * cw + 12), int(rows * ch + 8)
 
     def _zoom(self, step: int) -> None:
         size = DEFAULTS["font_size"] if step == 0 else max(8, min(36, self.cfg["font_size"] + step))

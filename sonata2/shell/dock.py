@@ -76,6 +76,14 @@ def plate_height(cfg: dict) -> int:
     return PAD_TOP + cfg["icon_size"] + dot_row(cfg)
 
 
+def reserved(cfg: dict) -> int:
+    """How far the resting Dock reaches in from its screen edge (0 when it
+    hides itself): full-screen shell surfaces keep their content clear of it."""
+    if cfg.get("autohide"):
+        return 0
+    return cfg["edge_gap"] + 2 * PAD_TOP + cfg["icon_size"] + dot_row(cfg)
+
+
 def max_icon(cfg: dict) -> int:
     return max(cfg["icon_size"], cfg["magnified_size"]) if cfg["magnification"] else cfg["icon_size"]
 

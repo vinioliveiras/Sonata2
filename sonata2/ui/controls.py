@@ -230,7 +230,10 @@ def reset_on_double_click(scale: Gtk.Range, default: float) -> None:
     state = {"t": 0, "x": 0.0, "y": 0.0, "double": False}
     legacy = Gtk.EventControllerLegacy(propagation_phase=Gtk.PropagationPhase.CAPTURE)
 
-    def event(_c, ev):
+    def event(c, ev):
+        ev = ev or c.get_current_event()        # PyGObject sometimes hands None
+        if ev is None:
+            return False
         kind = ev.get_event_type()
         if kind == Gdk.EventType.BUTTON_PRESS and ev.get_button() == 1:
             t = ev.get_time()

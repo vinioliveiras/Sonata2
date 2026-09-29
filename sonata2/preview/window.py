@@ -82,7 +82,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
                                    halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
         self.scroll = Gtk.ScrolledWindow(child=self.picture, vexpand=True, hexpand=True, css_classes=["pv-canvas"])
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        col.append(self.bar)
+        # the title bar is the glass one the compositor draws (pixdecor): no second bar
         col.append(self.scroll)
         self.set_child(col)
         self._input()
@@ -243,7 +243,6 @@ class PreviewWindow(Gtk.ApplicationWindow):
 
     def _toggle_fullscreen(self) -> None:
         self.unfullscreen() if self.is_fullscreen() else self.fullscreen()
-        self.bar.set_visible(not self.is_fullscreen())
 
 
 def open_paths(app, paths) -> None:

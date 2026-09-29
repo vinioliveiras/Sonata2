@@ -1,6 +1,6 @@
 """TextEdit (macOS TextEdit, plain text): a document window per file.
 
-Title bar: the traffic lights and "name — Edited" while unsaved. The page
+Title (the compositor's glass title bar): "name — Edited" while unsaved. The page
 fills the window (white / dark), text wraps to the window. Open and Save
 use Sonata's panels (files/chooser.py). Closing an edited document asks
 first (Save / Don't Save / Cancel). Keyboard: ⌘ is Ctrl or Super --
@@ -44,7 +44,7 @@ class TextEditWindow(Gtk.ApplicationWindow):
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.bar = ui.window.titlebar(self, "Untitled", zoom=True)
         self.bar.add_css_class("te-bar")
-        col.append(self.bar)
+        # the title bar is the glass one the compositor draws (pixdecor): no second bar
         self.find_bar = self._find_bar()
         col.append(self.find_bar)
         self.view = Gtk.TextView(css_classes=["te-page"], left_margin=28, right_margin=28, top_margin=20,
@@ -141,7 +141,7 @@ class TextEditWindow(Gtk.ApplicationWindow):
     def _update_title(self) -> None:
         name = self.file.get_basename() if self.file else "Untitled"
         edited = self.buffer.get_modified()
-        self.set_title(name)
+        self.set_title(name + (" — Edited" if edited else ""))
         self.bar.title_label.set_label(name + (" — Edited" if edited else ""))
 
     def _close_request(self, _w) -> bool:

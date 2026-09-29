@@ -363,6 +363,7 @@ class Launchpad(Gtk.ApplicationWindow):
         # that changes layer last is on top, so the Dock stays reachable
         # (drag an app onto it to pin it)
         GLib.timeout_add(80, lambda: (self.get_visible() and self._dock_above(True), False)[1])
+        self._clear_dock()
         self.search.set_text("")
         self.set_jiggle(False)
         self._close_folder()
@@ -376,6 +377,17 @@ class Launchpad(Gtk.ApplicationWindow):
             self._animate(1.0, OPEN_MS)
             return GLib.SOURCE_REMOVE
         self.bin.add_tick_callback(first_frame)
+
+    def _clear_dock(self) -> None:
+        """The Dock stays over Launchpad (macOS): the grid and the page dots
+        keep out of its way, at whichever edge it is."""
+        from . import dock as D
+        cfg = config.load("dock", D.DEFAULTS)
+        room = D.reserved(cfg) + 8
+        edge = cfg.get("position", "bottom")
+        self.col.set_margin_bottom(room if edge == "bottom" else 0)
+        self.col.set_margin_start(room if edge == "left" else 0)
+        self.col.set_margin_end(room if edge == "right" else 0)
 
     def close_launchpad(self, then=None) -> None:
         self._dock_above(False)

@@ -1,5 +1,5 @@
 """Calculator (macOS Calculator, Basic): a small glass window, the display on
-top (the traffic lights over it, like macOS), 5 x 4 round-cornered keys:
+top (under the compositor's glass title bar), 5 x 4 round-cornered keys:
 function keys, digits, orange operators. The keyboard works too:
 digits . + - * / x Enter = % Backspace Escape (AC) Delete (C), ⌘C / Ctrl+C
 copies the result, Ctrl+V pastes a number. The operator waiting for a
@@ -16,7 +16,7 @@ APP_ID = "io.github.vinioliveiras.sonata2.calculator"
 
 ui.register("""
 window.sonata-calculator { background: %(calc_bg)s; }
-.calc-display { padding: 34px 16px 2px 16px; }
+.calc-display { padding: 8px 16px 2px 16px; }
 .calc-display label { color: %(calc_display)s; font-family: %(font_display)s; font-weight: 300; }
 .calc-keys { padding: 6px 8px 10px 8px; }
 button.calc-key { min-width: 48px; min-height: 42px; padding: 0; border-radius: 8px; border: none;
@@ -72,9 +72,7 @@ class CalculatorWindow(Gtk.ApplicationWindow):
                 c += width
         col.append(grid)
         over.set_child(col)
-        lights = ui.window.traffic_lights(self.close, self.minimize, None)
-        lights.set_halign(Gtk.Align.START)
-        over.add_overlay(lights)
+        # the title bar is the glass one the compositor draws (pixdecor)
         self.set_child(over)
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._key)
