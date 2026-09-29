@@ -73,10 +73,47 @@ The installer:
 
 **Requirements:** Wayfire ≥ 0.9, GTK ≥ 4.12, libadwaita ≥ 1.4,
 gtk4-layer-shell ≥ 1.0 and Python ≥ 3.10 with PyGObject, pycairo and
-pywayland. Known good: Arch and derivatives (CachyOS, EndeavourOS,
-Manjaro), Fedora 41+, Debian 13+, Ubuntu 25.04+, openSUSE Tumbleweed.
-Older releases without gtk4-layer-shell (Debian 12, Ubuntu 24.04) are
-reported by the installer.
+pywayland.
+
+### Which distributions
+
+Sonata is developed and tested on **CachyOS** (Arch). Other distributions
+are judged by the versions they ship (September 2026). The ones built on
+**Ubuntu 24.04** can't run it yet: that release has no gtk4-layer-shell,
+and its Wayfire is 0.8.
+
+| Distribution | Status | Notes |
+|---|---|---|
+| Arch, CachyOS, EndeavourOS, Manjaro, Garuda | ✅ works | the reference; everything, including pixdecor title bars (AUR) |
+| Fedora 41 and newer | 🟡 should work | not tested yet |
+| openSUSE Tumbleweed | 🟡 should work | not tested yet |
+| Debian 13 "trixie", LMDE 7, MX Linux 25 | 🟡 should work | Wayfire 0.9: the rounded-corners plugin may not build (windows keep square corners) |
+| Ubuntu 26.04 LTS and its flavours (Kubuntu, Xubuntu...) | 🟡 should work | Wayfire 0.10, gtk4-layer-shell 1.3; not tested yet |
+| Ubuntu 25.10 | 🟡 should work | Wayfire 0.9 (same note as Debian 13) |
+| **Linux Mint 22.x** | ❌ not yet | Ubuntu 24.04 base; wait for **Mint 23** (Ubuntu 26.04 base, planned for Christmas 2026) |
+| Ubuntu 24.04 LTS, Pop!_OS 24.04, Zorin OS 18, elementary OS 8, KDE neon | ❌ not yet | Ubuntu 24.04 base: no gtk4-layer-shell, Wayfire 0.8 |
+| Debian 12 "bookworm" | ❌ no | Wayfire 0.7, no gtk4-layer-shell |
+| Void, Alpine | 🟡 should work | the installer knows their package names; not tested |
+| NixOS, Gentoo, Slackware | ⚪ not by the installer | the dependencies exist; install them yourself and run `./install.sh --no-deps` |
+
+What to expect outside Arch:
+
+- **Title bars for other apps:** Sonata draws them with pixdecor, which is
+  packaged only in the AUR. Elsewhere Wayfire's own simpler title bars are
+  used, in Sonata's colours.
+- **Rounded corners for every window:** the corner plugin is compiled
+  against your Wayfire. If that fails, the installer goes on and windows
+  keep square corners.
+- **Sonata's login screen:** needs greetd. On a distribution that isn't
+  tested yet, install with `--no-greeter` first. If the login screen
+  doesn't start, you are left without a graphical login until you run
+  `./install.sh --gdm` from a text console (Ctrl+Alt+F2).
+- **Easiest way to try it:** a virtual machine (GNOME Boxes, VirtualBox)
+  with CachyOS or Fedora. Blur and animations are slower there, but
+  everything shows.
+
+Found a problem on your distribution? Send `~/.cache/sonata2/doctor.txt`
+(`sonata2 doctor` writes it) and the logs in that folder.
 
 ## Use it
 
