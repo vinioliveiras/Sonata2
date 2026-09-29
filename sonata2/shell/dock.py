@@ -890,7 +890,7 @@ class Dock(Gtk.Box):
         surface = native.get_surface() if native else None
         if not surface:
             return False
-        elsewhere = self._on_other_displays(surface)
+        mine, placed = self._windows_here(surface)
         # Wayfire adds the Dock surface's *layout* position to the rectangle
         # but animates in the display's own coordinates: on a display that
         # isn't at the layout's origin (a second screen to the right) the
@@ -898,40 +898,42 @@ class Dock(Gtk.Box):
         mon = self.get_display().get_monitor_at_surface(surface)
         g = mon.get_geometry() if mon else None
         ox, oy = (g.x, g.y) if g else (0, 0)
+        several = self.cfg.get("all_displays", False)
         for key, wins in self.windows.items():
             tile = self.tiles.get(key)
             ok, b = tile.compute_bounds(native) if tile else (False, None)
-            if ok:
-                for t in wins:
-                    if (t.app_id, t.title) in elsewhere:
-                        # a window on another display: that display's Dock
-                        # aims it ("Show the Dock on every display"); with a
-                        # single Dock no target at all -- Wayfire can't animate
-                        # across displays, so it uses the plain animation
-                        if not self.cfg.get("all_displays", False):
-                            self.manager.set_rectangle(t, surface, 0, 0, 0, 0)
-                    else:
-                        self.manager.set_rectangle(t, surface, b.get_x() - ox, b.get_y() - oy,
-                                                   b.get_width(), b.get_height())
-                    if os.environ.get("SONATA2_DEBUG_GENIE", "1") == "1":     # (temporary: finding the offset)
-                        print(f"genie: {t.app_id} -> {int(b.get_x())},{int(b.get_y())} display origin {ox},{oy} "
-                              f"{int(b.get_width())}x{int(b.get_height())} surface "
-                              f"{native.get_width()}x{native.get_height()} other={(t.app_id, t.title) in elsewhere}",
-                              flush=True)
+            if not ok:
+                continue
+            for t in wins:
+                here = placed is None or (t.app_id, t.title) in mine or \
+                    ((t.app_id, t.title) not in placed and t.app_id in {a for a, _t in mine})
+                if here:
+                    self.manager.set_rectangle(t, surface, b.get_x() - ox, b.get_y() - oy,
+                                               b.get_width(), b.get_height())
+                elif not several:
+                    # a single Dock and the window on another display: Wayfire
+                    # can't animate across displays -- no target, plain animation
+                    self.manager.set_rectangle(t, surface, 0, 0, 0, 0)
+                # (several Docks: the one on the window's display aims it; never
+                #  touch it from here, or the last Dock to write would win)
+                if os.environ.get("SONATA2_DEBUG_GENIE", "1") == "1":     # (temporary: finding the offset)
+                    print(f"genie: {t.app_id} -> {int(b.get_x() - ox)},{int(b.get_y() - oy)} "
+                          f"{int(b.get_width())}x{int(b.get_height())} origin {ox},{oy} here={here}", flush=True)
         return False
 
-    def _on_other_displays(self, surface) -> set:
-        """(app_id, title) of the windows on displays other than this Dock's
-        (Wayfire IPC; empty when it can't tell)."""
+    def _windows_here(self, surface):
+        """(app_id, title) of the windows on this Dock's display, and of all
+        windows Wayfire knows; (set(), None) when Wayfire IPC can't tell."""
         from ..wl.wfipc import WayfireIPC
         from . import monitors
         mon = self.get_display().get_monitor_at_surface(surface)
         mine = monitors.connector(mon) if mon else ""
         views = WayfireIPC().call("window-rules/list-views") if mine else None
         if not isinstance(views, list):
-            return set()
-        return {(v.get("app-id", ""), v.get("title", "")) for v in views
-                if v.get("output-name") and v.get("output-name") != mine}
+            return set(), None
+        views = [v for v in views if v.get("type") in (None, "toplevel") and v.get("output-name")]
+        return ({(v.get("app-id", ""), v.get("title", "")) for v in views if v.get("output-name") == mine},
+                {(v.get("app-id", ""), v.get("title", "")) for v in views})
 
     def _clicked(self, key, tile: DockTile) -> None:
         wins = self.windows.get(key)
