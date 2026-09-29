@@ -38,6 +38,10 @@ popover.menu modelbutton:hover, popover.menu modelbutton:selected,
 popover.menu modelbutton:focus-visible {
   background-color: %(accent_selected)s; color: %(label_on_accent)s;
 }
+/* the pointer left the menu: no row stays highlighted (macOS); the
+   keyboard brings the selection back */
+popover.menu.pointer-out modelbutton:selected:not(:hover):not(:focus-visible) {
+  background: none; color: inherit; }
 popover.menu modelbutton:disabled { color: %(label_tertiary)s; }
 popover.menu modelbutton check { min-width: 12px; min-height: 12px; margin-right: 4px;
   border: none; background: none; box-shadow: none; color: inherit; -gtk-icon-size: 12px; }
@@ -151,8 +155,31 @@ def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
     pop.connect("closed", closed)
     OPEN.add(pop)
     _no_scroll(pop)
+    _hover_only(pop)
     pop.popup()
     return pop
+
+
+def _hover_only(pop) -> None:
+    """GTK keeps the last hovered row selected after the pointer leaves the
+    menu; macOS clears it. Nested submenus are descendants of `pop`, so
+    moving into one isn't a leave."""
+    def popovers(w, out):
+        if isinstance(w, Gtk.Popover):
+            out.append(w)
+        c = w.get_first_child()
+        while c is not None:
+            popovers(c, out)
+            c = c.get_next_sibling()
+        return out
+    for p in popovers(pop, []):
+        m = Gtk.EventControllerMotion()
+        m.connect("leave", lambda _c, p=p: p.add_css_class("pointer-out"))
+        m.connect("enter", lambda _c, _x, _y, p=p: p.remove_css_class("pointer-out"))
+        p.add_controller(m)
+    keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+    keys.connect("key-pressed", lambda *_a: ([q.remove_css_class("pointer-out") for q in popovers(pop, [])], False)[1])
+    pop.add_controller(keys)
 
 
 def _no_scroll(pop) -> None:
