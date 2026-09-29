@@ -38,7 +38,7 @@ class PreviewTest(unittest.TestCase):
         win = PreviewWindow(app, os.path.join(d, "a.png"))
         win.present()
         settle()
-        self.assertEqual(win.title_size.get_label(), "300 × 100")
+        self.assertEqual(win.size_text, "300 × 100")
         win.go(1)
         self.assertTrue(win.path.endswith("b.png"))
         win.step_zoom(1)

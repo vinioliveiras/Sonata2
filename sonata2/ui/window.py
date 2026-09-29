@@ -143,3 +143,35 @@ def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
         box.append(b)
     return box
 
+
+
+# Toolbar under the compositor's glass title bar (Sonata apps keep the
+# title bar pixdecor draws): the same glass, so bar and toolbar read as one
+# (macOS unified toolbar). The window must be see-through behind it
+# (window.sonata-unified); the rest of its content paints its own background.
+theme.register("""
+window.sonata-unified { background: transparent; }
+.sonata-toolbar { min-height: 34px; padding: 0 8px; background: %(titlebar_bg)s;
+  box-shadow: inset 0 -1px %(separator)s; }
+window:backdrop .sonata-toolbar { background: %(titlebar_bg_inactive)s; }
+.sonata-toolbar button.tool { min-width: 28px; min-height: 26px; padding: 0 6px; border-radius: 6px;
+  border: none; background: none; box-shadow: none; color: %(label_secondary)s; }
+.sonata-toolbar button.tool:hover { background: %(tool_hover)s; color: %(label)s; }
+""", key="unified-toolbar")
+
+
+def glass_toolbar(win, start=(), end=()) -> Gtk.CenterBox:
+    """A toolbar continuing the glass title bar. start/end: [(icon, tooltip,
+    callback)] buttons at either side."""
+    win.add_css_class("sonata-unified")
+    bar = Gtk.CenterBox(css_classes=["sonata-toolbar"])
+    for items, setter in ((start, bar.set_start_widget), (end, bar.set_end_widget)):
+        if not items:
+            continue
+        box = Gtk.Box(spacing=2, valign=Gtk.Align.CENTER)
+        for icon, tip, cb in items:
+            b = Gtk.Button(icon_name=icon, tooltip_text=tip, css_classes=["tool"], can_focus=False)
+            b.connect("clicked", lambda _b, f=cb: f())
+            box.append(b)
+        setter(box)
+    return Gtk.WindowHandle(child=bar)
