@@ -695,9 +695,32 @@ class Launchpad(Gtk.ApplicationWindow):
 
     # -- drag and drop ---------------------------------------------------------------
     def _follow_drags(self) -> None:
-        """The hanging drag icon follows the pointer over the whole Launchpad."""
+        """The hanging drag icon follows the pointer over the whole Launchpad;
+        held near a side of the screen, the pages turn (macOS)."""
         if not getattr(self, "_drag_follow", None):
             self._drag_follow = ui.drag.follow(self, lambda: (self._drag or {}).get("icon"))
+            edge = Gtk.DropControllerMotion()
+            edge.connect("motion", lambda _c, x, _y: (setattr(self, "_edge_x", x), self._edge_flip(x)))
+            edge.connect("leave", lambda _c: (setattr(self, "_edge_x", None), self._cancel("flip")))
+            self.add_controller(edge)
+
+    def _edge_flip(self, x) -> None:
+        if not self._drag:
+            return
+        w = max(1, self.get_width())
+        side = self.grid_area.get_margin_start() or int(w * 0.12)
+        if x < side or x > w - side:             # beside the grid: the next / previous page
+            step = -1 if x < side else 1
+            page = int(round(self.carousel.get_position()))
+            self._timer("flip", FLIP_HOLD_MS, lambda: (self._flip(page + step), self._cancel("flip"),
+                                                       self._edge_again(x))[0])
+        else:
+            self._cancel("flip")
+
+    def _edge_again(self, _x) -> None:
+        """Still held there after the page turned: keep turning."""
+        GLib.timeout_add(450, lambda: (self._drag and getattr(self, "_edge_x", None) is not None
+                                       and self._edge_flip(self._edge_x), False)[1])
 
     def attach_drag(self, widget: LaunchItem) -> None:
         self._follow_drags()
@@ -766,13 +789,6 @@ class Launchpad(Gtk.ApplicationWindow):
         index, centre = grid.cell_at(x, y)
         page = self.model.pages[grid.index] if grid.index < len(self.model.pages) else []
         target = page[index] if index < len(page) else None
-        # page flip at the sides
-        w = grid.get_width()
-        if x < w * 0.04 or x > w * 0.96:
-            step = -1 if x < w * 0.04 else 1
-            self._timer("flip", FLIP_HOLD_MS, lambda: self._flip(grid.index + step))
-        else:
-            self._cancel("flip")
         dragged_is_app = not M.is_folder(d["item"])
         if centre and target is not None and target is not d["item"] and dragged_is_app:
             self._cancel("reorder")
@@ -824,7 +840,7 @@ class Launchpad(Gtk.ApplicationWindow):
             self.carousel.scroll_to(self.carousel.get_nth_page(page), True)
 
     def drag_leave(self, _grid) -> None:
-        self._cancel("flip")
+        pass                                    # (turning pages: _edge_flip, over the whole window)
 
     def drag_drop(self, grid, x, y, value=None) -> bool:
         d = self._drag

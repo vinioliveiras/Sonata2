@@ -38,6 +38,7 @@ class LaunchpadTest(unittest.TestCase):
         self.win.set_default_size(1280, 800)
         self.win.open_launchpad()
         settle(600)
+        settle(600)                              # the grid fits the window (may re-layout once)
         self.grid = self.win.carousel.get_nth_page(0)
 
     def tearDown(self):
@@ -58,6 +59,17 @@ class LaunchpadTest(unittest.TestCase):
         self.assertEqual(self.win.model.pages[0].index(first), 0)     # icons wait a moment...
         self.win._reorder_to(0, 2)                                     # ...then make way (REORDER_HOLD_MS)
         self.assertEqual(self.win.model.pages[0].index(first), 2)
+
+    def test_edge_flips_page(self):
+        if self.win.carousel.get_n_pages() < 2:
+            self.skipTest("needs two pages")
+        self.drag(self.win.model.pages[0][0])
+        x = self.win.get_width() - 5                            # held at the right side
+        self.win._edge_x = x
+        self.win._edge_flip(x)
+        settle(L.FLIP_HOLD_MS + 700)
+        self.win._edge_x = None
+        self.assertGreater(self.win.carousel.get_position(), 0.5)
 
     def test_make_folder(self):
         a, b = self.win.model.pages[0][0], self.win.model.pages[0][1]

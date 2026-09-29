@@ -145,7 +145,9 @@ def run_dock(app, args, ui):
     # Launchpad, and apps can be dragged onto it); back below windows after.
     from gi.repository import Gio, GLib as _GLib
     act = Gio.SimpleAction.new("above", _GLib.VariantType.new("b"))
-    act.connect("activate", lambda _a, v: win.set_above(v.get_boolean()) if hasattr(win, "set_above") else None)
+    # every display's Dock (Settings > Dock > "Show the Dock on every display")
+    act.connect("activate", lambda _a, v: [w.set_above(v.get_boolean()) for w in app.get_windows()
+                                           if hasattr(w, "set_above")])
     app.add_action(act)
     if args.label >= 0:
         tiles = d.all_tiles()
