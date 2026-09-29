@@ -101,6 +101,7 @@ class FilesWindow(Adw.ApplicationWindow):
         self.set_content(paned)
         self._shortcuts()
         self.drag_icon = None                # set by the views while a file drag runs
+        self._typed = ""                     # type to select
         ui.drag.follow(self, lambda: self.drag_icon)
         self.connect("notify::is-active", lambda w, _p: w.is_active() and self.sidebar.refresh_space())
         self.set_view(config.load("files", DEFAULTS)["view"], save=False)
@@ -741,4 +742,24 @@ class FilesWindow(Adw.ApplicationWindow):
             if self.view.selected():
                 self.trash_selection()
                 return True
+        ch = chr(Gdk.keyval_to_unicode(keyval) or 0)
+        alt = bool(state & (Gdk.ModifierType.ALT_MASK | Gdk.ModifierType.SUPER_MASK))
+        if ch.isprintable() and ch != "\x00" and not ctrl and not alt and (ch != " " or self._typed):
+            return self._type_select(ch)
         return False
+
+    def _type_select(self, ch) -> bool:
+        """Letters jump to the first item starting with what was typed; typing
+        on within a second extends the name ("do" -> "Documents")."""
+        if getattr(self, "_typed_src", 0):
+            GLib.source_remove(self._typed_src)
+
+        def reset():
+            self._typed, self._typed_src = "", 0
+            return False
+        self._typed = getattr(self, "_typed", "") + ch
+        self._typed_src = GLib.timeout_add(1000, reset)
+        if not self.view.select_prefix(self._typed):
+            self.view.select_prefix(ch)            # a new word: start again from this letter
+            self._typed = ch
+        return True

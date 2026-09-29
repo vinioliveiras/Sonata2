@@ -191,6 +191,11 @@ def _selected(selection, model):
 
 
 # -- shared view behaviour ------------------------------------------------------------------
+def _fold(text: str) -> str:
+    from gi.repository import GLib
+    return GLib.str_to_ascii(text.casefold(), None).casefold()
+
+
 class _Cells:
     """What every view offers the window besides showing items: the item
     under the pointer (context menus), selecting a file by name, and
@@ -300,6 +305,17 @@ class _Cells:
         self.selection.select_item(pos, True)
         self._scroll_to(pos)
         return True
+
+    def select_prefix(self, prefix: str) -> bool:
+        """Type to select (Finder): the first item, in view order, whose name
+        starts with `prefix` (case- and accent-insensitive)."""
+        key = _fold(prefix)
+        for i in range(self.model.get_n_items()):
+            if _fold(self.model.get_item(i).get_display_name()).startswith(key):
+                self.selection.select_item(i, True)
+                self._scroll_to(i)
+                return True
+        return False
 
     def ensure_selected(self, info) -> None:
         """Right-click on an unselected item selects just it (Finder)."""
@@ -645,6 +661,9 @@ class ColumnsView:
 
     def select_name(self, name):
         return self._active().select_name(name)
+
+    def select_prefix(self, prefix):
+        return self._active().select_prefix(prefix)
 
     def begin_rename(self, info, on_commit):
         for c in self.columns:
