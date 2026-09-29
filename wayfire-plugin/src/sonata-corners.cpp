@@ -261,14 +261,22 @@ class corners_render_instance_t :
     }
 };
 
-class corners_node_t : public wf::scene::view_2d_transformer_t
+/* A plain transformer node: no geometric transform at all, so pointer
+ * input reaches the window exactly where it is drawn (view_2d_transformer_t,
+ * used before, maps input through its own transform). */
+class corners_node_t : public wf::scene::transformer_base_node_t
 {
     wayfire_toplevel_view view;
 
   public:
-    corners_node_t(wayfire_toplevel_view view) : wf::scene::view_2d_transformer_t(view)
+    corners_node_t(wayfire_toplevel_view view) : wf::scene::transformer_base_node_t(false)
     {
         this->view = view;
+    }
+
+    std::string stringify() const override
+    {
+        return "sonata-corners";
     }
 
     void gen_render_instances(std::vector<render_instance_uptr>& instances,
