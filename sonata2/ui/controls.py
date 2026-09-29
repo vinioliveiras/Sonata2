@@ -104,7 +104,7 @@ scale.sonata-module-slider highlight { min-height: 22px; border-radius: 99px; bo
   margin-right: -11px; }
 scale.sonata-module-slider slider { min-width: 22px; min-height: 22px; margin: 0; border-radius: 99px; border: none;
   background: #ffffff; box-shadow: 0 0 0 0.5px rgba(0,0,0,0.14), 0 0 3px rgba(0,0,0,0.22); }   /* even: no downward drop */
-scale.sonata-module-slider:disabled highlight, scale.sonata-module-slider:disabled slider { opacity: 0.5; }
+scale.sonata-module-slider:disabled { opacity: 0.45; }     /* dimmed as a whole: no see-through knob */
 """)
 
 

@@ -719,7 +719,8 @@ ui.register("""
 .cc-ns .cc-ns-icon { min-width: 26px; min-height: 26px; border-radius: 13px; background: alpha(%(label)s, 0.1); }
 .cc-ns:checked .cc-ns-icon { background: %(accent)s; color: %(label_on_accent)s; }
 .cc-slider-box { min-height: 22px; }
-.cc-slider-icon { color: rgba(0,0,0,0.5); margin-left: 7px; -gtk-icon-size: 12px; }   /* on the white fill */
+.cc-slider-icon { color: rgba(0,0,0,0.5); margin-left: 5px; -gtk-icon-size: 12px; }   /* on the white fill;
+   centred in the knob at 0 */
 .cc-round { min-width: 26px; min-height: 26px; padding: 0; border-radius: 99px; border: none; box-shadow: none;
   background: %(module_button)s; color: %(label)s; }
 .cc-round:hover { background: alpha(%(label)s, 0.18); }
@@ -735,13 +736,16 @@ ui.register("""
 
 def _slider_with_icon(icon, value, on_change, sensitive=True, button=None):
     """Big Sur module slider: the symbol sits inside the capsule, left;
-    `button` (a round one) at the right, like the Sound module's AirPlay."""
+    `button` (a round one) at the right, like the Sound module's AirPlay.
+    `icon` is a name, or a function value -> name (muted / levels)."""
     over = Gtk.Overlay(css_classes=["cc-slider-box"], hexpand=True)
     sl = ui.controls.slider(value, on_change, style="module")
     sl.set_sensitive(sensitive)
     over.set_child(sl)
-    img = Gtk.Image(icon_name=icon, css_classes=["cc-slider-icon"], halign=Gtk.Align.START,
+    pick = icon if callable(icon) else (lambda _v: icon)
+    img = Gtk.Image(icon_name=pick(value), css_classes=["cc-slider-icon"], halign=Gtk.Align.START,
                     valign=Gtk.Align.CENTER, can_target=False)
+    sl.connect("value-changed", lambda s_: img.set_from_icon_name(pick(s_.get_value())))
     over.add_overlay(img)
     if button is None:
         return over, sl
@@ -749,6 +753,12 @@ def _slider_with_icon(icon, value, on_change, sensitive=True, button=None):
     row.append(over)
     row.append(button)
     return row, sl
+
+
+def _speaker_icon(v) -> str:
+    """Big Sur speaker: slashed at 0, then one to three waves."""
+    return ("audio-volume-muted-symbolic" if v <= 0 else "audio-volume-low-symbolic" if v < 34 else
+            "audio-volume-medium-symbolic" if v < 67 else "audio-volume-high-symbolic")
 
 
 def _round_button(icon, tooltip, on_click) -> Gtk.Button:
@@ -776,8 +786,10 @@ def _load_art(url: str, image: Gtk.Image, size: int) -> None:
     """Album art (mpris:artUrl: file:// or http[s]://) into `image`."""
     if not url:
         image.set_from_icon_name("sonata-now-playing-symbolic")
+        image.set_pixel_size(size // 2)             # a small note in the empty square
         return
     if url in _art_cache:
+        image.set_pixel_size(size)
         image.set_from_paintable(_art_cache[url])
         return
 
@@ -801,6 +813,7 @@ def _load_art(url: str, image: Gtk.Image, size: int) -> None:
         except GLib.Error:
             return
         _art_cache[url] = tex
+        image.set_pixel_size(size)
         image.set_from_paintable(tex)
     system.run_async(work, done)
 
@@ -904,11 +917,11 @@ class ControlCenter(Gtk.Box):
         self.append(ui.panel.module(Gtk.Label(label="Display", xalign=0, css_classes=["panel-module-title"]),
                                     disp, ns))
         snd, self.vol = _slider_with_icon(
-            "audio-volume-high-symbolic", 50, bar._set_volume,
+            _speaker_icon, 50, bar._set_volume,
             button=_round_button("sonata-audio-output-symbolic", "Output",
                                  lambda b: _device_menu(b, "Output", system.audio_sinks, system.set_default_sink)))
         mic, self.mic = _slider_with_icon(
-            "audio-input-microphone-symbolic", 50,
+            lambda v: "microphone-disabled-symbolic" if v <= 0 else "audio-input-microphone-symbolic", 50,
             lambda v: system.run_async(system.set_input_volume, None, int(v), False),
             button=_round_button("audio-input-microphone-symbolic", "Input",
                                  lambda b: _device_menu(b, "Input", system.audio_sources, system.set_default_source)))

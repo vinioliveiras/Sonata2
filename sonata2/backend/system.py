@@ -333,14 +333,51 @@ def set_input_volume(percent: Optional[int] = None, muted: Optional[bool] = None
 
 
 # -- display brightness ----------------------------------------------------------------
+BACKLIGHT = "/sys/class/backlight"
+
+
+def _backlight():
+    """(device name, current, max) of the laptop panel, read from sysfs
+    (firmware/platform interfaces first, like brightnessctl), or None."""
+    try:
+        names = sorted(os.listdir(BACKLIGHT))
+    except OSError:
+        return None
+    rank = {"firmware": 0, "platform": 1, "raw": 2}
+    names.sort(key=lambda n: rank.get(_read(os.path.join(BACKLIGHT, n, "type")), 3))
+    for n in names:
+        cur, mx = _read(os.path.join(BACKLIGHT, n, "brightness")), _read(os.path.join(BACKLIGHT, n, "max_brightness"))
+        if cur.isdigit() and mx.isdigit() and int(mx) > 0:
+            return n, int(cur), int(mx)
+    return None
+
+
 def brightness() -> Optional[int]:
+    """Panel brightness in %: sysfs (no extra tool needed), else brightnessctl."""
+    bl = _backlight()
+    if bl:
+        return round(bl[1] * 100 / bl[2])
     rc, out = _run(["brightnessctl", "-m", "-c", "backlight"], timeout=5)
     m = re.search(r",(\d+)%,", out) if rc == 0 else None
     return int(m.group(1)) if m else None
 
 
 def set_brightness(percent: int) -> bool:
+    """Through logind (SetBrightness: allowed for the active session, no root,
+    no brightnessctl), else brightnessctl."""
     percent = max(5, min(100, int(percent)))   # never fully black
+    bl = _backlight()
+    if bl:
+        name, _cur, mx = bl
+        try:
+            bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+            bus.call_sync("org.freedesktop.login1", "/org/freedesktop/login1/session/auto",
+                          "org.freedesktop.login1.Session", "SetBrightness",
+                          GLib.Variant("(ssu)", ("backlight", name, round(mx * percent / 100))), None,
+                          Gio.DBusCallFlags.NONE, 2000, None)
+            return True
+        except GLib.Error:
+            pass
     return _run(["brightnessctl", "-q", "-c", "backlight", "set", f"{percent}%"])[0] == 0
 
 
