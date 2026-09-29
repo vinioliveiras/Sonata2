@@ -496,6 +496,10 @@ class FilesWindow(Adw.ApplicationWindow):
             apps = self._open_with_items(sel[0]) if n == 1 and not is_dir(sel[0]) else []
             if apps:
                 sections[0].append(Item("Open With", submenu=[apps]))
+            from .. import prefs
+            if n == 1 and prefs.is_picture(sel[0].get_content_type() or ""):     # Finder's Quick Action
+                sections[0].append(Item("Set Desktop Picture",
+                                        lambda f=file_of(sel[0]): prefs.set_wallpaper(f.get_uri())))
             sections.append([Item("Move to Trash", self.trash_selection, enabled=self._writable_sel(sel))])
             sections.append([Item("Get Info", self.get_info),
                              Item(f"Quick Look {what}", self.toggle_quicklook)])

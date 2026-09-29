@@ -422,8 +422,12 @@ class Desktop(Gtk.Fixed):
         # anchored to the desktop, not the icon: the selected icon's styles
         # (blue label...) would otherwise reach into the menu's rows
         ok, pt = item.compute_point(self, Graphene.Point().init(x, y))
+        from .. import prefs
+        first = pkg + [Item("Open", self.open_selection)]
+        if n == 1 and item.app is None and prefs.is_picture(item.info.get_content_type() or ""):
+            first.append(Item("Set Desktop Picture", lambda f=file_of(item.info): prefs.set_wallpaper(f.get_uri())))
         ui.menu.popup(self, [
-            pkg + [Item("Open", self.open_selection)],
+            first,
             [Item("Move to Trash", self.trash_selection)],
             [Item("Get Info", self.get_info), Item("Rename", self.rename_selection, enabled=n == 1),
              Item("Duplicate", self.duplicate_selection)],

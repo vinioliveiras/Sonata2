@@ -199,7 +199,26 @@ def _pass_clicks(pop, root) -> None:
     keys.connect("key-pressed", lambda _c, k, *_a: (pop.popdown(), True)[1] if k == Gdk.KEY_Escape else False)
     root.add_controller(click)
     root.add_controller(keys)
-    active = root.connect("notify::is-active", lambda w, _p: None if w.is_active() else pop.popdown())
+    # another window took over (a click in another app): close. The pointer
+    # moving onto the menu itself can briefly take focus from the window on
+    # some compositors -- that must not close it, so check a moment later
+    # and only when the pointer isn't on the menu.
+    inside = {"on": False}
+    m = Gtk.EventControllerMotion()
+    m.connect("enter", lambda *_a: inside.update(on=True))
+    m.connect("leave", lambda *_a: inside.update(on=False))
+    pop.add_controller(m)
+
+    def deactivated(w, _p):
+        if w.is_active():
+            return
+
+        def check():
+            if not w.is_active() and not inside["on"] and pop.get_visible():
+                pop.popdown()
+            return False
+        GLib.timeout_add(250, check)
+    active = root.connect("notify::is-active", deactivated)
 
     def cleanup(_p):
         root.remove_controller(click)

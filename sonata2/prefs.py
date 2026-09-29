@@ -110,6 +110,17 @@ def _mirror(schema, key, value) -> None:
         pass
 
 
+def set_wallpaper(uri: str) -> None:
+    """Finder's "Set Desktop Picture": the same picture in Light and Dark."""
+    for key in ("picture-uri", "picture-uri-dark"):
+        set(BG, key, uri)
+
+
+def is_picture(content_type: str) -> bool:
+    return bool(content_type) and content_type.startswith("image/") and "svg" not in content_type \
+        and "icon" not in content_type
+
+
 def watch(callback):
     return config.watch(NAME, callback)
 

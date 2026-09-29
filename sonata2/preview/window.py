@@ -5,7 +5,7 @@ zoom around it, ⌘9 shows it at actual size, dragging pans a zoomed
 picture. ← / → go through the other pictures in the same folder,
 ⌘R / ⌘L rotate (the view only), Space or ⌘F fill the screen, ⌘W
 closes. Double-click on the title bar zooms the window (the title bar is a
-normal Sonata one). The title shows the file name and, dimmed, its size."""
+glass one the compositor draws; the tools sit on a toolbar of the same glass)."""
 import os
 
 import gi
@@ -20,14 +20,7 @@ EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".svg
 ZOOMS = (0.1, 0.25, 0.33, 0.5, 0.67, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0)
 
 ui.register("""
-window.sonata-preview { background: %(window_bg)s; }
-.pv-bar { background: %(window_bg)s; box-shadow: inset 0 -1px %(separator)s; }
 .pv-canvas { background: %(content_bg)s; }
-.pv-bar .sonata-titlebar-title { font-weight: 700; font-size: %(text_body)s; color: %(label)s; }
-.pv-dim { color: %(label_secondary)s; font-weight: 400; font-size: %(text_body)s; }
-.pv-tool { min-width: 28px; min-height: 24px; padding: 0 6px; border-radius: 6px; border: none;
-  background: none; box-shadow: none; color: %(label_secondary)s; }
-.pv-tool:hover { background: %(tool_hover)s; color: %(label)s; }
 """, key="preview")
 
 
@@ -64,25 +57,16 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self.texture = None
         self.zoom = None                  # None: fit the window
         self.rotation = 0
-        tools = Gtk.Box(spacing=2)
-        for icon, tip, cb in (("zoom-out-symbolic", "Zoom Out", lambda: self.step_zoom(-1)),
-                              ("zoom-in-symbolic", "Zoom In", lambda: self.step_zoom(1)),
-                              ("object-rotate-left-symbolic", "Rotate Left", lambda: self.rotate(-90))):
-            b = Gtk.Button(icon_name=icon, tooltip_text=tip, css_classes=["pv-tool"], can_focus=False)
-            b.connect("clicked", lambda _b, f=cb: f())
-            tools.append(b)
-        self.bar = ui.window.titlebar(self, "", end=tools, zoom=True)
-        self.bar.add_css_class("pv-bar")
-        self.title_size = Gtk.Label(css_classes=["pv-dim"])
-        title = Gtk.Box(spacing=6)
-        self.bar.bar.set_center_widget(title)
-        title.append(self.bar.title_label)
-        title.append(self.title_size)
+        # zoom and rotate on a toolbar that continues the glass title bar
+        self.toolbar = ui.window.glass_toolbar(self, end=(
+            ("zoom-out-symbolic", "Zoom Out", lambda: self.step_zoom(-1)),
+            ("zoom-in-symbolic", "Zoom In", lambda: self.step_zoom(1)),
+            ("object-rotate-left-symbolic", "Rotate Left", lambda: self.rotate(-90))))
         self.picture = Gtk.Picture(content_fit=Gtk.ContentFit.CONTAIN, can_shrink=True,
                                    halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
         self.scroll = Gtk.ScrolledWindow(child=self.picture, vexpand=True, hexpand=True, css_classes=["pv-canvas"])
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        # the title bar is the glass one the compositor draws (pixdecor): no second bar
+        col.append(self.toolbar)
         col.append(self.scroll)
         self.set_child(col)
         self._input()
@@ -94,14 +78,12 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self.path, self.texture, self.rotation, self.zoom = path, tex, 0, None
         name = os.path.basename(path)
         self.set_title(name)
-        self.bar.title_label.set_label(name)
         if tex is None:
-            self.title_size.set_label("")
             self.picture.set_paintable(None)
             ui.dialog.alert(f"“{name}” couldn't be opened.", "It isn't a picture Preview can read.",
                             [("ok", "OK", "default")], parent=self)
             return
-        self.title_size.set_label(f"{tex.get_width()} × {tex.get_height()}")
+        self.size_text = f"{tex.get_width()} × {tex.get_height()}"
         self.picture.set_paintable(tex)
         Gtk.RecentManager.get_default().add_item(Gio.File.new_for_path(path).get_uri())
         if not self.get_realized():               # the window takes the picture's shape
@@ -217,10 +199,25 @@ class PreviewWindow(Gtk.ApplicationWindow):
                 self.scroll.get_vadjustment().set_value(pan["v"] - dy)
         drag.connect("drag-update", moved)
         self.scroll.add_controller(drag)
+        menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
+        menu.connect("pressed", self._context_menu)
+        self.scroll.add_controller(menu)
         click = Gtk.GestureClick()
         click.connect("pressed", lambda _g, n, _x, _y: n == 2 and self.set_zoom(
             None if self.zoom is not None else 1.0))
         self.scroll.add_controller(click)
+
+    def _context_menu(self, gesture, _n, x, y) -> None:
+        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        from .. import prefs
+        Item = ui.menu.Item
+        uri = Gio.File.new_for_path(self.path).get_uri() if self.path else None
+        ui.menu.popup(self.scroll, [
+            [Item("Zoom In", lambda: self.step_zoom(1)), Item("Zoom Out", lambda: self.step_zoom(-1)),
+             Item("Zoom to Fit", lambda: self.set_zoom(None)), Item("Actual Size", lambda: self.set_zoom(1.0))],
+            [Item("Rotate Left", lambda: self.rotate(-90)), Item("Rotate Right", lambda: self.rotate(90))],
+            [Item("Set Desktop Picture", lambda: prefs.set_wallpaper(uri), enabled=bool(uri))],
+        ], at=(x, y), glass=True, passthrough=True)
 
     def _key(self, _c, keyval, _code, state) -> bool:
         cmd = state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SUPER_MASK)
@@ -242,7 +239,9 @@ class PreviewWindow(Gtk.ApplicationWindow):
         return True
 
     def _toggle_fullscreen(self) -> None:
-        self.unfullscreen() if self.is_fullscreen() else self.fullscreen()
+        full = not self.is_fullscreen()
+        self.fullscreen() if full else self.unfullscreen()
+        self.toolbar.set_visible(not full)
 
 
 def open_paths(app, paths) -> None:
