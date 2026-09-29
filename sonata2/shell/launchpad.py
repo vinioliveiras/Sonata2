@@ -287,7 +287,7 @@ class Launchpad(Gtk.ApplicationWindow):
         room = max(1, h - 160 - (D.reserved(dcfg) if dcfg.get("position", "bottom") == "bottom" else 0))
         width = max(1, w - 2 * side - (D.reserved(dcfg) if dcfg.get("position") in ("left", "right") else 0))
         cols = 7 if width >= 900 else width // 150               # macOS: 7; fewer on narrow screens
-        rows = room / max(1.0, width / max(1, cols) * 0.8)      # cells a little wider than tall
+        rows = room / max(1.0, width / max(1, cols) * 0.72)     # row pitch ~72 % of a column (macOS)
         if M.set_grid(cols, rows):
             GLib.idle_add(lambda: (self._rows_changed(), False)[1])     # not during allocation
         cell_w, cell_h = width / M.COLS, room / M.ROWS
