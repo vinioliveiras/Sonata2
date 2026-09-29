@@ -1160,6 +1160,8 @@ class DockWindow(Gtk.ApplicationWindow):
     def set_above(self, on: bool) -> None:
         """Over Launchpad (OVERLAY) while it is open, TOP otherwise (fullscreen
         apps cover the Dock)."""
+        self._above = on                         # auto-hide waits while Launchpad is open
+        print(f"sonata2-dock: above Launchpad: {on}", flush=True)      # dock.log: Launchpad/Dock debugging
         LS = layer.layer_shell()
         if LS and self.layer:
             LS.set_layer(self, LS.Layer.OVERLAY if on else LS.Layer.TOP)
@@ -1230,7 +1232,9 @@ class DockWindow(Gtk.ApplicationWindow):
         if self._timer:
             GLib.source_remove(self._timer)
             self._timer = 0
-        busy = ui.menu.OPEN or (self.dock and self.dock._drag)
+        # a menu, a drag from the Dock, or Launchpad open (dragging an app out of
+        # it moves the pointer "out" of the Dock): it stays
+        busy = ui.menu.OPEN or (self.dock and self.dock._drag) or getattr(self, "_above", False)
         if inside and self._hidden:
             self._timer = GLib.timeout_add(self.cfg["autohide_delay_ms"], self._reveal)
         elif not inside and not self._hidden and not busy:
