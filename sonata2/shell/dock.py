@@ -685,12 +685,12 @@ class Dock(Gtk.Box):
                 self._remove_tile(k)
 
     # -- drag to reorder -------------------------------------------------------
-    def _drag_begin(self, src, _drag, tile) -> None:
+    def _drag_begin(self, src, drag, tile) -> None:
         self._drag = {"key": tile.key, "index": self.app_tiles().index(tile), "left": False,
                       "dropped": False}
         tile.label.popdown()
         size = self.cfg["icon_size"]
-        src.set_icon(icons.paintable(self, tile.gicon, size), size // 2, size // 2)
+        self._drag["icon"] = ui.drag.hang(drag, icons.paintable(self, tile.gicon, size), size)
         tile.add_css_class("dragging")
         self._mag_animate(0.0, MAG_OUT_MS)
 
@@ -698,6 +698,7 @@ class Dock(Gtk.Box):
         if not self._drag:
             return 0
         self._drag["left"] = False
+        self._drag["icon"].feed(x, self)
         tile = self.tiles[self._drag["key"]]
         slot = self._slot_at(x, y, exclude=tile)   # other icons whose centre is before the pointer
         if self.app_tiles().index(tile) != slot:

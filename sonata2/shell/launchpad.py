@@ -542,12 +542,12 @@ class Launchpad(Gtk.ApplicationWindow):
                 providers.append(Gdk.ContentProvider.new_for_value(GObject.Value(Gdk.FileList, fl)))
             return Gdk.ContentProvider.new_union(providers)
 
-        def begin(s, _d):
+        def begin(s, drag):
             folder = self.folder_view[1] if self.folder_view and widget.item in self.folder_view[1]["apps"] \
                 and not M.is_folder(widget.item) else None
             self._drag = {"item": widget.item, "widget": widget, "folder": folder, "target": None}
-            s.set_icon(Gtk.WidgetPaintable.new(widget.get_first_child().get_first_child()),
-                       self.icon_size // 2, self.icon_size // 2)
+            self._drag["icon"] = ui.drag.hang(
+                drag, Gtk.WidgetPaintable.new(widget.get_first_child().get_first_child()), self.icon_size)
             widget.add_css_class("dragging")
 
         def end(*_):
@@ -583,6 +583,8 @@ class Launchpad(Gtk.ApplicationWindow):
 
     def drag_over(self, grid: PageGrid, x, y):
         d = self._drag
+        if d and d.get("icon"):
+            d["icon"].feed(x, grid)
         if not d or grid.index < 0:
             return Gdk.DragAction.MOVE if d else 0
         if d["folder"] is not None and self.folder_view:     # dragged out of the open folder
