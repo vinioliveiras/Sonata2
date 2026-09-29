@@ -52,6 +52,21 @@
 #include <wayfire/view-transform.hpp>
 #include <wayfire/signal-definitions.hpp>
 #include <wayfire/config/config-manager.hpp>
+#include <wayfire/render.hpp>
+#include <wayfire/util.hpp>
+#include <sys/stat.h>
+#include <ctime>
+#include <drm_fourcc.h>
+
+extern "C"
+{
+#include <wlr/render/drm_format_set.h>
+#include <wlr/render/wlr_renderer.h>
+#include <wlr/types/wlr_ext_foreign_toplevel_list_v1.h>
+#include <wlr/types/wlr_ext_image_capture_source_v1.h>
+#include <wlr/interfaces/wlr_ext_image_capture_source_v1.h>
+#include <wlr/types/wlr_ext_image_copy_capture_v1.h>
+}
 
 static const char *vertex_shader =
     R"(
@@ -417,6 +432,217 @@ class corners_node_t : public wf::scene::transformer_base_node_t, public wf::sce
     }
 };
 
+
+/* ---- Window sharing ---------------------------------------------------------------------------
+ * Screen sharing apps (through xdg-desktop-portal-wlr) can share a single
+ * window when the compositor offers a capture source per toplevel
+ * (ext-foreign-toplevel-image-capture-source-v1). Wayfire offers the
+ * per-display ones only: this adds the per-window ones. A source renders
+ * the window's contents (its surfaces, no title bar or shadow) into a
+ * buffer whenever the capture asks for a frame; wlroots copies that into
+ * the app's buffer. Needs Wayfire's ext-toplevel plugin (the window list
+ * the portal picks from). */
+struct window_source_t
+{
+    wlr_ext_image_capture_source_v1 base; /* first: wl_container_of */
+    std::weak_ptr<wf::view_interface_t> view;
+    wf::auxilliary_buffer_t buffer;
+    int started = 0;
+    bool pending = false;
+    wf::wl_idle_call idle;
+    wf::signal::connection_t<wf::view_unmapped_signal> on_unmap;
+
+    static window_source_t *from(wlr_ext_image_capture_source_v1 *b)
+    {
+        return reinterpret_cast<window_source_t*>(b);
+    }
+
+    void set_constraints(int w, int h)
+    {
+        base.width  = w;
+        base.height = h;
+        if (!base.shm_formats)
+        {
+            base.shm_formats     = (uint32_t*)calloc(2, sizeof(uint32_t));
+            base.shm_formats[0]  = DRM_FORMAT_ARGB8888;
+            base.shm_formats[1]  = DRM_FORMAT_XRGB8888;
+            base.shm_formats_len = 2;
+        }
+
+        /* shared memory only: wlroots reads the window's picture back into
+         * the app's buffer (reliable everywhere; a window is small enough) */
+        wl_signal_emit_mutable(&base.events.constraints_update, nullptr);
+    }
+
+    /* the window's current picture, then a frame event (full damage) */
+    void produce()
+    {
+        pending = false;
+        auto v = view.lock();
+        if (!v || !v->is_mapped() || !v->get_output() || !started)
+        {
+            return;
+        }
+
+        v->take_snapshot(buffer);
+        auto size = buffer.get_size();
+        if ((size.width <= 0) || (size.height <= 0))
+        {
+            return;
+        }
+
+        if (((int)base.width != size.width) || ((int)base.height != size.height))
+        {
+            set_constraints(size.width, size.height);
+        }
+
+        pixman_region32_t damage;
+        pixman_region32_init_rect(&damage, 0, 0, size.width, size.height);
+        wlr_ext_image_capture_source_v1_frame_event ev{};
+        ev.damage = &damage;
+        wl_signal_emit_mutable(&base.events.frame, &ev);
+        pixman_region32_fini(&damage);
+    }
+};
+
+static void window_source_start(wlr_ext_image_capture_source_v1 *b, bool)
+{
+    window_source_t::from(b)->started++;
+}
+
+static void window_source_stop(wlr_ext_image_capture_source_v1 *b)
+{
+    auto s = window_source_t::from(b);
+    s->started = std::max(0, s->started - 1);
+}
+
+static void window_source_request_frame(wlr_ext_image_capture_source_v1 *b, bool)
+{
+    auto s = window_source_t::from(b);
+    if (!s->pending)
+    {
+        s->pending = true;              /* after this request returns */
+        s->idle.run_once([s] () { s->produce(); });
+    }
+}
+
+static void window_source_copy_frame(wlr_ext_image_capture_source_v1 *b,
+    wlr_ext_image_copy_capture_frame_v1 *frame, wlr_ext_image_capture_source_v1_frame_event*)
+{
+    auto s = window_source_t::from(b);
+    if (s->buffer.get_buffer() &&
+        wlr_ext_image_copy_capture_frame_v1_copy_buffer(frame, s->buffer.get_buffer(), wf::get_core().renderer))
+    {
+        timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        wlr_ext_image_copy_capture_frame_v1_ready(frame, WL_OUTPUT_TRANSFORM_NORMAL, &now);
+    }
+}
+
+static const wlr_ext_image_capture_source_v1_interface window_source_impl = {
+    .start = window_source_start,
+    .stop  = window_source_stop,
+    .request_frame = window_source_request_frame,
+    .copy_frame    = window_source_copy_frame,
+    .get_pointer_cursor = nullptr,
+};
+
+class window_capture_t
+{
+    std::map<wf::view_interface_t*, std::unique_ptr<window_source_t>> sources;
+    wl_listener on_request;
+
+    static window_capture_t*& instance()
+    {
+        static window_capture_t *self = nullptr;
+        return self;
+    }
+
+    static void handle_request(wl_listener *listener, void *data)
+    {
+        auto self = instance();
+        auto req  = static_cast<wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request*>(data);
+        auto raw  = self ? static_cast<wf::view_interface_t*>(req->toplevel_handle->data) : nullptr;
+        wayfire_view view;
+        for (auto& v : wf::get_core().get_all_views())
+        {
+            if (v.get() == raw)
+            {
+                view = v;
+            }
+        }
+
+        if (!view)
+        {
+            /* a window gone meanwhile: an empty source that never produces a frame */
+            static window_source_t *inert = [] ()
+            {
+                auto w = new window_source_t();
+                wlr_ext_image_capture_source_v1_init(&w->base, &window_source_impl);
+                return w;
+            }();
+            wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request_accept(req, &inert->base);
+            return;
+        }
+
+        auto it = self->sources.find(raw);
+        if (it == self->sources.end())
+        {
+            auto src = std::make_unique<window_source_t>();
+            wlr_ext_image_capture_source_v1_init(&src->base, &window_source_impl);
+            src->view = view->shared_from_this();
+            auto g = view->get_surface_root_node()->get_bounding_box();
+            src->set_constraints(std::max(1, (int)g.width), std::max(1, (int)g.height));
+            src->on_unmap = [self, raw] (wf::view_unmapped_signal*)
+            {
+                /* the window closed: its capture ends */
+                auto found = self->sources.find(raw);
+                if (found != self->sources.end())
+                {
+                    auto dead = std::move(found->second);
+                    self->sources.erase(found);
+                    wlr_ext_image_capture_source_v1_finish(&dead->base);
+                }
+            };
+            view->connect(&src->on_unmap);
+            it = self->sources.emplace(raw, std::move(src)).first;
+        }
+
+        wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request_accept(req, &it->second->base);
+    }
+
+  public:
+    void init()
+    {
+        /* one global per compositor run, even if the plugin is reloaded */
+        static wlr_ext_foreign_toplevel_image_capture_source_manager_v1 *manager =
+            wlr_ext_foreign_toplevel_image_capture_source_manager_v1_create(wf::get_core().display, 1);
+        instance() = this;
+        if (manager)
+        {
+            on_request.notify = handle_request;
+            wl_signal_add(&manager->events.new_request, &on_request);
+            LOGI("sonata-corners: window sharing (ext-foreign-toplevel-image-capture-source-v1) ready");
+        }
+    }
+
+    void fini()
+    {
+        if (instance() == this)
+        {
+            wl_list_remove(&on_request.link);
+            instance() = nullptr;
+        }
+
+        for (auto& [v, src] : sources)
+        {
+            wlr_ext_image_capture_source_v1_finish(&src->base);
+        }
+
+        sources.clear();
+    }
+};
+
 class sonata_corners_t : public wf::plugin_interface_t
 {
     const std::string transformer_name = "sonata-corners";
@@ -678,9 +904,12 @@ class sonata_corners_t : public wf::plugin_interface_t
         }
     };
 
+    window_capture_t window_capture;
+
   public:
     void init() override
     {
+        window_capture.init();
         if (!wf::get_core().is_gles2())
         {
             LOGE("sonata-corners needs the GLES2 renderer");
@@ -715,6 +944,7 @@ class sonata_corners_t : public wf::plugin_interface_t
 
     void fini() override
     {
+        window_capture.fini();
         for (auto& [o, p] : perf)
         {
             o->render->rem_effect(&p->pre_hook);
