@@ -37,7 +37,8 @@ def _wallpaper(w: int, h: int, dark: bool):
         img = img.resize((int(img.width * k) + 1, int(img.height * k) + 1), Image.LANCZOS)
         img = img.crop(((img.width - w) // 2, (img.height - h) // 2, (img.width - w) // 2 + w,
                         (img.height - h) // 2 + h))
-        tag = f"photo-{abs(hash(photo)) % 10**8}-{w}x{h}"
+        import hashlib
+        tag = f"photo-{hashlib.md5(photo.encode()).hexdigest()[:8]}-{w}x{h}"
         sharp = os.path.join(CACHE, f"preview-wall-{tag}.png")
         blurred = os.path.join(CACHE, f"preview-wall-{tag}-blur.png")
         img.save(sharp)

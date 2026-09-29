@@ -136,9 +136,11 @@ class Bar(Gtk.CenterBox):
         if w > 0 and h > 0:
             rect = Graphene.Rect()
             rect.init(0, 0, w, h)
-            if self.backdrop:        # preview: stands in for the compositor's blur
+            if self.backdrop:        # preview: stands in for the compositor's blur (bar area only)
+                snap.push_clip(rect)
                 snap.append_texture(self.backdrop, Graphene.Rect().init(0, 0, self.backdrop.get_width(),
                                                                         self.backdrop.get_height()))
+                snap.pop()
             # Big Sur: translucent material, no bottom line
             snap.append_color(ui.rgba("window_bg" if ui.theme.reduce_transparency() else "bar_bg"), rect)
         Gtk.CenterBox.do_snapshot(self, snap)

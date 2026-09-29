@@ -45,7 +45,7 @@ def volume():
 
 
 def wifi():
-    cx, cy = 8, 13.4
+    cx, cy = 8, 12.3          # the fan's visual centre on the bar's centre line
     parts = [lambda x="": f'<circle cx="{cx}" cy="{cy - 0.2}" r="1.5" fill="#000" {x}/>',
              lambda x="": arc(cx, cy, 5.0, 44, 1.9, x),
              lambda x="": arc(cx, cy, 9.0, 44, 1.9, x)]
