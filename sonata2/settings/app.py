@@ -285,13 +285,8 @@ class Settings(Adw.ApplicationWindow):
         # your picture (like the Apple ID card); a click opens Users & Groups
         me = GLib.get_real_name() or GLib.get_user_name()
         self.card_avatar = Adw.Avatar(size=44, text=me, show_initials=True)
-        face = os.path.expanduser("~/.face")
-        if os.path.isfile(face):
-            try:
-                self.card_avatar.set_custom_image(Gdk.Texture.new_from_filename(face))
-            except GLib.Error:
-                pass
         card.append(self.card_avatar)
+        self._refresh_card()
         click = Gtk.GestureClick()
         click.connect("released", lambda *_: self.select("users"))
         card.add_controller(click)
@@ -850,12 +845,21 @@ class Settings(Adw.ApplicationWindow):
         system.run_async(lambda: fn(*args), done)
 
     def _refresh_card(self):
-        face = os.path.expanduser("~/.face")
-        if os.path.isfile(face):
-            try:
-                self.card_avatar.set_custom_image(Gdk.Texture.new_from_filename(face))
-            except GLib.Error:
-                pass
+        """The card's picture: AccountsService's (what the login screen
+        shows), else ~/.face, else your initials."""
+        def found(path):
+            for p in (path, os.path.expanduser("~/.face")):
+                if p and os.path.isfile(p):
+                    try:
+                        self.card_avatar.set_custom_image(Gdk.Texture.new_from_filename(p))
+                        return
+                    except GLib.Error:
+                        continue
+
+        def lookup():
+            from ..backend import users as U
+            return next((u.icon for u in U.users() if u.current), "")
+        system.run_async(lookup, found)
 
     def _pick_picture(self, u, anchor=None):
         """Big Sur picture picker: Sonata's stock pictures, or a file."""
