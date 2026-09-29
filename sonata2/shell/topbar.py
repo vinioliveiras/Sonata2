@@ -1072,19 +1072,8 @@ class AboutAppWindow(Adw.Window):
 
 
 def set_titlebar_colors(dark: bool) -> None:
-    """Colours of the server-side title bars (pixdecor and Wayfire's own
-    decoration) for the appearance; Wayfire reloads its config live."""
-    from ..ui import tokens
-    t = tokens.palette(bool(dark))
-    keys = ("titlebar_bg", "titlebar_bg_inactive", "titlebar_text", "titlebar_text_inactive")
-    fg, bg, text, dim = (tokens.wayfire_color(t[k], premultiplied=True) for k in keys)
-    system.wayfire_set("sonata-corners", "outline", "\\" + tokens.wayfire_color(t["window_outline"]))
-    if system.wayfire_get("pixdecor", "fg_color") != "\\" + fg:
-        for k, v in (("fg_color", fg), ("bg_color", bg), ("fg_text_color", text), ("bg_text_color", dim)):
-            system.wayfire_set("pixdecor", k, "\\" + v)
-        fg, bg, text = (tokens.wayfire_color(t[k]) for k in keys[:3])      # Wayfire's own: straight
-        for k, v in (("active_color", fg), ("inactive_color", bg), ("font_color", text)):
-            system.wayfire_set("decoration", k, "\\" + v)
+    from ..titlebars import apply_colors
+    apply_colors(dark)
 
 
 def _listen_for_lock() -> None:

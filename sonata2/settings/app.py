@@ -1401,6 +1401,10 @@ class Settings(Adw.ApplicationWindow):
         check()
         return [head, lst]
 
+    def _apply_titlebars(self):
+        from .. import titlebars
+        system.run_async(titlebars.apply_colors, None, Adw.StyleManager.get_default().get_dark())
+
     def _page_privacy(self):
         """Big Sur Security & Privacy, with the Linux settings behind it."""
         import shutil
@@ -1495,8 +1499,9 @@ class Settings(Adw.ApplicationWindow):
         app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
         disp.add(switch_row("Reduce transparency", app.get("reduce_transparency", False),
                             lambda on: (self._save("appearance", "reduce_transparency", on),
+                                        self._apply_titlebars(),
                                         self.toast("Applies to windows opened from now on")),
-                            subtitle="Solid sidebars and Dock instead of glass"))
+                            subtitle="Solid sidebars, Dock and title bars instead of glass"))
         disp.add(combo_row("Graphics", [("gl", "Hardware (OpenGL)"), ("vulkan", "Hardware (Vulkan)"),
                                         ("software", "Software (no GPU)")],
                            app.get("renderer", "gl"),

@@ -203,6 +203,19 @@ def wayfire_color(css: str, premultiplied: bool = False) -> str:
     return "#%02x%02x%02x%02x" % (round(r * k), round(g * k), round(b * k), round(255 * a))
 
 
+def over(css: str, base: str) -> str:
+    """A translucent colour composited over an opaque one -> 'rgb(...)'."""
+    def parts(c):
+        c = c.strip()
+        if c.startswith("#"):
+            return [int(c[i:i + 2], 16) for i in (1, 3, 5)] + [1.0]
+        v = [float(x) for x in c[c.index("(") + 1:c.index(")")].split(",")]
+        return v[:3] + [v[3] if len(v) > 3 else 1.0]
+    r, g, b, a = parts(css)
+    br, bg, bb, _ = parts(base)
+    return "rgb(%d, %d, %d)" % (round(r * a + br * (1 - a)), round(g * a + bg * (1 - a)), round(b * a + bb * (1 - a)))
+
+
 def palette(dark: bool, theme: str = "mac") -> dict:
     """All tokens for one theme and appearance."""
     t = THEMES.get(theme, THEMES["mac"])

@@ -58,6 +58,12 @@ def reduce_transparency() -> bool:
 _reduce = None
 
 
+def reduce_transparency_now() -> bool:
+    """The setting as it is on disk now (for code that follows changes live)."""
+    from .. import config
+    return bool(config.load("appearance", _appearance_defaults())["reduce_transparency"])
+
+
 def values() -> dict:
     """Current tokens (for code that needs a value, e.g. drawing), plus the
     materials resolved for this compositor: `sidebar_material`, `panel_material`."""

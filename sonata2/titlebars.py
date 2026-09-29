@@ -150,3 +150,31 @@ def _write(path: str, text: str) -> None:
         os.replace(tmp, path)
     except OSError:
         pass
+
+
+# -- colours of the frames Wayfire draws -----------------------------------------------
+BLUR_GLASS = 'app_id contains "sonata2" | type is "unmanaged" | type is "toplevel"'
+BLUR_SOLID = 'app_id contains "sonata2" | type is "unmanaged"'
+
+
+def apply_colors(dark: bool) -> None:
+    """Title bars pixdecor (and Wayfire's own decoration) draw, for the
+    appearance: the Dock's glass (tokens.titlebar_*), blurred by Wayfire.
+    Reduce transparency: solid bars and no blur behind other apps' windows
+    (lighter on the GPU too). Wayfire reloads its config live."""
+    from .backend import system
+    from .ui import theme, tokens
+    t = dict(tokens.palette(bool(dark)))
+    solid = theme.reduce_transparency_now()
+    keys = ("titlebar_bg", "titlebar_bg_inactive", "titlebar_text", "titlebar_text_inactive")
+    if solid:
+        for k in keys[:2]:
+            t[k] = tokens.over(t[k], t["window_bg"])
+    system.wayfire_set("blur", "blur_by_default", BLUR_SOLID if solid else BLUR_GLASS)
+    system.wayfire_set("sonata-corners", "outline", "\\" + tokens.wayfire_color(t["window_outline"]))
+    fg, bg, text, dim = (tokens.wayfire_color(t[k], premultiplied=True) for k in keys)
+    for k, v in (("fg_color", fg), ("bg_color", bg), ("fg_text_color", text), ("bg_text_color", dim)):
+        system.wayfire_set("pixdecor", k, "\\" + v)
+    fg, bg, text = (tokens.wayfire_color(t[k]) for k in keys[:3])          # Wayfire's own: straight
+    for k, v in (("active_color", fg), ("inactive_color", bg), ("font_color", text)):
+        system.wayfire_set("decoration", k, "\\" + v)
