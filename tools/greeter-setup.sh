@@ -41,7 +41,6 @@ if [ "$ACTION" = revert ]; then
     $SUDO systemctl enable "$prev.service"
     [ -f "$GREETD.sonata-backup" ] && $SUDO mv -f "$GREETD.sonata-backup" "$GREETD"
     $SUDO rm -f "$LAUNCHER"            # install.sh keeps it up to date only while it's in use
-    $SUDO rm -f /etc/sysctl.d/20-sonata-quiet-console.conf /etc/systemd/system.conf.d/20-sonata-quiet.conf
     say "Done. Restart the computer to see it."
     exit 0
 fi
@@ -135,11 +134,7 @@ $SUDO install -d -m 755 -o greeter /var/cache/sonata-greeter
 $SUDO install -d -m 700 -o greeter /var/cache/sonata-greeter/config /var/cache/sonata-greeter/cache
 
 # -- a quiet console: no kernel or boot/shutdown status text between screens -----------------
-printf '# Sonata (tools/greeter-setup.sh): kernel messages off the console\nkernel.printk = 3 3 3 3\n' |
-    $SUDO tee /etc/sysctl.d/20-sonata-quiet-console.conf >/dev/null
-$SUDO install -d /etc/systemd/system.conf.d
-printf '# Sonata (tools/greeter-setup.sh): no [ OK ] lines on screen at boot/shutdown\n[Manager]\nShowStatus=no\n' |
-    $SUDO tee /etc/systemd/system.conf.d/20-sonata-quiet.conf >/dev/null
+"$SRC/tools/quiet-console.sh" install >/dev/null
 
 # -- greetd config ---------------------------------------------------------------------------------
 if [ -f "$GREETD" ] && ! grep -q sonata-greeter "$GREETD" && [ ! -f "$GREETD.sonata-backup" ]; then

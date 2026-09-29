@@ -61,6 +61,7 @@ if [ "$UNINSTALL" = 1 ]; then
           "$BIN/sonata-filemanager1"
     rm -f "$HOME/.local/share/applications/sonata2-launchpad.desktop" \
           "$HOME/.local/share/applications/sonata2-settings.desktop"
+    "$(dirname "$0")/tools/quiet-console.sh" revert || true
     say "Done. Your settings are still in $CFG/sonata2 (delete that folder to reset them)."
     exit 0
 fi
@@ -333,6 +334,9 @@ if grep -Eqs '^[[:space:]]*WaylandEnable[[:space:]]*=[[:space:]]*false' /etc/gdm
     say "GDM has Wayland turned off (WaylandEnable=false in its custom.conf): Sonata won't be listed."
     echo "  Remove that line (or set it to true) and restart the computer."
 fi
+
+# -- a quiet console: no kernel messages or "[ OK ]" lines between screens ----------------------------
+"$SRC/tools/quiet-console.sh" install || true
 
 # -- Sonata's login screen (greetd) -------------------------------------------------------------------
 if [ -x /usr/local/bin/sonata-greeter ] && [ "$GREETER" != 0 ]; then
