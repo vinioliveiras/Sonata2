@@ -39,6 +39,7 @@ EDGES = ("left", "bottom", "right")
 MIN_SIZE, MAX_SIZE = 16, 128
 MAX_RECENTS = 3
 LAUNCH_BOUNCES = 3          # macOS bounces a few times, then stops even if no window shows up
+MAX_DOTS = 3                        # running dots: one per window, up to this many
 NO_BOUNCE = {"sonata2-launchpad"}   # shell toggles open instantly: no launch bounce
 BOUNCE_MS = 620             # one bounce
 MAG_RADIUS = 3.0            # magnification reaches this many icons away
@@ -107,11 +108,11 @@ window.sonata-dock *:drop(active) { box-shadow: none; outline: none; border-colo
 .dock-tile:active .dock-icon, .dock-tile.drop-hover .dock-icon { filter: brightness(0.62); }
 .dock-tile.dragging { opacity: 0; }   /* keeps its gap while being dragged */
 .dock-dot { min-width: %(dot)dpx; min-height: %(dot)dpx; border-radius: 99px;
-            background-color: %(indicator)s; opacity: 0; }
-.edge-bottom .dock-dot { margin: %(dot_in)dpx 0 %(dot_out)dpx 0; }
-.edge-left .dock-dot { margin: 0 %(dot_in)dpx 0 %(dot_out)dpx; }
-.edge-right .dock-dot { margin: 0 %(dot_out)dpx 0 %(dot_in)dpx; }
-.dock-tile.running .dock-dot { opacity: %(dot_on)s; }
+            background-color: %(indicator)s; opacity: 0; transition: opacity %(t_fast)s; }
+.edge-bottom .dock-dots { margin: %(dot_in)dpx 0 %(dot_out)dpx 0; }
+.edge-left .dock-dots { margin: 0 %(dot_in)dpx 0 %(dot_out)dpx; }
+.edge-right .dock-dots { margin: 0 %(dot_out)dpx 0 %(dot_in)dpx; }
+.dock-dot.on { opacity: %(dot_on)s; }
 .dock-divider > box, .dock-recent-sep > box { background-color: %(separator)s; }
 .edge-bottom .dock-divider, .edge-bottom .dock-recent-sep { padding: 0 5px; margin-bottom: %(row)dpx; }
 .edge-bottom .dock-divider > box, .edge-bottom .dock-recent-sep > box { min-width: 1px; }
@@ -222,7 +223,13 @@ class DockTile(Gtk.Button):
         self.key = None
         self._bounce_src = 0
         self.icon = DockIcon(gicon, dock.cfg["icon_size"])
-        dot = Gtk.Box(css_classes=["dock-dot"], halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+        # one dot per open window (up to MAX_DOTS; Vini's call, macOS shows one)
+        dot = Gtk.Box(css_classes=["dock-dots"], spacing=3, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER,
+                      orientation=Gtk.Orientation.HORIZONTAL if edge == "bottom" else Gtk.Orientation.VERTICAL)
+        self.dots = [Gtk.Box(css_classes=["dock-dot"]) for _ in range(MAX_DOTS)]
+        for d in self.dots:
+            dot.append(d)
+            d.set_visible(d is self.dots[0])
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL if edge == "bottom" else Gtk.Orientation.HORIZONTAL)
         for w in ((dot, self.icon) if edge == "left" else (self.icon, dot)):
             box.append(w)
@@ -239,7 +246,13 @@ class DockTile(Gtk.Button):
         self.gicon = gicon
         self.icon.set_gicon(gicon)
 
-    def set_running(self, running: bool) -> None:
+    def set_running(self, windows) -> None:
+        """`windows`: how many are open (True = 1); that many dots show."""
+        n = min(MAX_DOTS, int(windows))
+        running = n > 0
+        for i, d in enumerate(self.dots):
+            d.set_visible(i < max(1, n))           # the first keeps its place when off
+            (d.add_css_class if i < n else d.remove_css_class)("on")
         (self.add_css_class if running else self.remove_css_class)("running")
         if running and self._bounce_src:
             GLib.source_remove(self._bounce_src)
@@ -651,7 +664,7 @@ class Dock(Gtk.Box):
             if not info:
                 return
             tile = self._add_tile(key, info.get_display_name(), icons.app_icon(info), info)
-            tile.set_running(key in self.windows)
+            tile.set_running(len(self.windows.get(key, ())))
         others = [t for t in self.app_tiles() if t is not tile]
         slot = others.index(before) if before in others else (
             self._slot_at(x, y, exclude=tile) if x is not None else len(self.cfg["pinned"]))
@@ -768,7 +781,7 @@ class Dock(Gtk.Box):
                 else:   # no .desktop: generic icon, app_id as name
                     self._add_tile(key, key, Gio.ThemedIcon.new("application-x-executable"))
         for key, tile in self.tiles.items():
-            tile.set_running(key in groups)
+            tile.set_running(len(groups.get(key, ())))
         self._relayout()
         GLib.idle_add(self._update_rectangles)
         return False

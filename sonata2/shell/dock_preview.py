@@ -1,7 +1,7 @@
-"""Previews of minimized windows in the Dock (Vini's request; macOS shows
-minimized windows as separate Dock icons instead): hovering an app that has
-minimized windows shows their pictures above its icon; click one to bring it
-back.
+"""Window previews in the Dock (Vini's request; macOS shows minimized
+windows as separate Dock icons instead): hovering an app shows pictures of
+its open windows (minimized ones too) above its icon; click one to bring it
+forward.
 
 Wayland gives no client pictures of other windows, so the Dock keeps a
 recent picture of each window: when a window gets the focus (it's on top
@@ -92,11 +92,11 @@ class WindowShots:
             self.shots[vid]["tex"] = tex
         return False
 
-    def minimized_for(self, key: str):
-        """[(view id, texture, title)] of this Dock app's minimized windows."""
+    def windows_for(self, key: str):
+        """[(view id, texture, title)] of this Dock app's windows that have a picture."""
         out = []
         for vid, e in self.shots.items():
-            if e.get("minimized") and e.get("tex") is not None and \
+            if e.get("tex") is not None and \
                     (apps.match_app_id(e.get("app", "")) or e.get("app")) == key:
                 out.append((vid, e["tex"], e.get("title", "")))
         return out
@@ -158,7 +158,7 @@ def attach(tile, dock) -> None:
         s = shots()
         if not s.enabled or tile.key is None:
             return
-        found = s.minimized_for(tile.key)
+        found = s.windows_for(tile.key)
         if not found:
             return
         if state["src"]:

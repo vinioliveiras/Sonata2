@@ -61,9 +61,22 @@ def family() -> str:
     return ""
 
 
+def _debtap_command(path: str) -> str:
+    """Convert a .deb into an Arch package with debtap, then install it."""
+    d, q = shlex.quote(os.path.dirname(path) or "."), shlex.quote(path)
+    return (f"cd {d} && debtap -Q {q} && "
+            f"sudo pacman -U \"$(ls -t -- *.pkg.tar.zst | head -n 1)\"")
+
+
+def aur_helper():
+    return next((h for h in ("paru", "yay") if shutil.which(h)), None)
+
+
 def install_command(path: str):
     """Shell command that installs `path` here, or None."""
     k, q = kind(path), shlex.quote(path)
+    if k == "debian" and family() == "arch" and shutil.which("debtap"):
+        return _debtap_command(path)                  # .deb on Arch: converted first
     if k in ("arch", "debian", "rpm") and k != family():
         return None
     if k == "arch":
@@ -101,6 +114,19 @@ def install(path: str, parent=None) -> None:
     cmd = install_command(path)
     if cmd is None:
         k = kind(path)
+        helper = aur_helper()
+        if k == "debian" and family() == "arch" and helper:
+            # debtap (AUR) converts .deb packages for Arch; offer to get it
+            def answer(r):
+                if r == "debtap":
+                    system.run_in_terminal(f"{helper} -S debtap && sudo debtap -u && {_debtap_command(path)}")
+            ui.dialog.alert(f"“{name}” is a package for Debian and Ubuntu.",
+                            "It can be converted into an Arch package with debtap, which isn't installed yet. "
+                            "Converted packages usually work, but a version made for this system, a Flatpak or "
+                            "an AppImage is safer.",
+                            [("cancel", "Cancel", ""), ("debtap", "Install debtap and Convert", "default")],
+                            on_response=answer, parent=parent)
+            return
         if k in FAMILY_NAMES:
             here = FAMILY_NAMES.get(family(), "")
             body = f"This is a package for {FAMILY_NAMES[k]}." + \

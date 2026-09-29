@@ -111,6 +111,8 @@ def app_menu(dock, key: str, tile):
     if wins:
         sections.append([Item(t.title or tile.name, lambda t=t: dock.manager.activate(t))
                          for t in wins])
+    if info and wins:
+        sections.append([Item("New Window", lambda: new_window(dock, tile))])
     pinned = key in dock.cfg["pinned"]
     opts = []
     if info:
@@ -129,6 +131,22 @@ def app_menu(dock, key: str, tile):
         sections.append([Item("Open", lambda: dock.launch(tile))])
     tile.label.popdown()
     return ui.menu.popup(tile, sections, position=dock.away)
+
+
+def new_window(dock, tile) -> None:
+    """The app's own "New Window" action (desktop entry) if it has one,
+    otherwise launching it again (most apps then open a window)."""
+    info = tile.info
+    ctx = tile.get_display().get_app_launch_context()
+    acts = info.list_actions() if hasattr(info, "list_actions") else []
+    for a in acts:
+        if a.lower().replace("_", "-") in ("new-window", "newwindow", "window-new", "new-empty-window"):
+            info.launch_action(a, ctx)
+            return
+    try:
+        info.launch([], ctx)
+    except GLib.Error as e:
+        print(f"sonata2-dock: cannot open a new window of {info.get_id()}: {e.message}")
 
 
 def trash_menu(tile):

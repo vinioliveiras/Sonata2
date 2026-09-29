@@ -85,10 +85,11 @@ class PreviewTest(unittest.TestCase):
         _send(fake.watcher, {"event": "view-focused", "view": VIEW})
         settle(800)
         self.assertIsNotNone(s.shots[7]["tex"])
+        key = P.apps.match_app_id(VIEW["app-id"]) or VIEW["app-id"]
+        self.assertEqual([v for v, _t, _n in s.windows_for(key)], [7])       # open windows too
         _send(fake.watcher, {"event": "view-minimized", "view": dict(VIEW, minimized=True)})
         settle(200)
-        key = P.apps.match_app_id(VIEW["app-id"]) or VIEW["app-id"]
-        self.assertEqual([v for v, _t, _n in s.minimized_for(key)], [7])
+        self.assertEqual([v for v, _t, _n in s.windows_for(key)], [7])
         _send(fake.watcher, {"event": "view-unmapped", "view": VIEW})
         settle(200)
         self.assertNotIn(7, s.shots)
