@@ -91,6 +91,11 @@ class Bar(Gtk.CenterBox):
         self.players.listeners.append(self._extras_visibility)
         # clipboard history: kept here, shown by Super+V (clip_picker.py), no menu bar item
         self.clip = clipboard.History()
+        # fullscreen first (gamemode.py): while a fullscreen app has the focus
+        # the polling pauses; leaving it catches up at once
+        from .. import gamemode
+        self.fullscreen_first = gamemode.Watcher()
+        self.fullscreen_first.listeners.append(lambda on: on or self._poll())
         self.input_btn = self._item(right, text="", on_click=self._input_panel)
         self.input_btn.add_css_class("input-src")
         self._update_input()
@@ -367,6 +372,8 @@ class Bar(Gtk.CenterBox):
 
     # -- status polling ------------------------------------------------------------------
     def _poll(self) -> None:
+        if self.fullscreen_first.active:
+            return                      # a fullscreen game/video has the focus: stay out of its way
         system.run_async(lambda: (system.wifi_available(), system.wifi_enabled(), system.wifi_current()),
                          self._wifi_state)
         self._poll_battery()
