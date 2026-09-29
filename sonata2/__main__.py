@@ -137,6 +137,21 @@ def run_launchpad(app, args, ui, state):
         return
     win = state["win"] = launchpad.Launchpad(app)
     app.hold()                     # stays resident while hidden: instant opening
+    if not args.preview:
+        # macOS: an app opened any other way (Dock, a shortcut, Spotlight)
+        # closes Launchpad -- a new window, or another one activated
+        from .wl.toplevels import ToplevelManager
+        mgr = state["toplevels"] = ToplevelManager(Gdk.Display.get_default(), ignore_app_ids=SHELL_IDS)
+        seen = {"wins": set(mgr.toplevels), "active": {t for t in mgr.toplevels if t.activated}}
+
+        def changed():
+            wins = set(mgr.toplevels)
+            active = {t for t in wins if t.activated}
+            fresh = (wins - seen["wins"]) or (active - seen["active"])
+            seen["wins"], seen["active"] = wins, active
+            if fresh and win.get_visible() and win.bin.progress > 0.5:
+                win.close_launchpad()
+        mgr.listeners.append(changed)
     if args.preview:
         from .shell.preview import _wallpaper
         w, h = (int(v) for v in os.environ.get("PREVIEW_SIZE", "1280x800").split("x"))
