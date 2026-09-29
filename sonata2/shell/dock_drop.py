@@ -235,13 +235,14 @@ def attach_trash(dock, tile) -> None:
         files = [f for f in _files(value) if not (_is_app(f) and (f.get_basename() or "").startswith(PROTECTED))]
         if not files:
             return False
-        from .. import sounds
-        sounds.play("trash")
         for f in files:
             try:
                 moved = f.trash(None) or moved
             except GLib.Error as e:
                 print(f"sonata2-dock: cannot move {f.get_uri()} to the Trash: {e.message}")
+        if moved:                                # no sound when nothing could be moved
+            from .. import sounds
+            sounds.play("trash")
         return moved
 
     tile.add_controller(_target(motion, drop, lambda *_: tile.remove_css_class(HOVER)))

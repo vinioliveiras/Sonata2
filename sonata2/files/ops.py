@@ -82,12 +82,14 @@ def rename(f: Gio.File, new_name: str, on_done, on_error) -> None:
 
 def trash(files, on_error=None) -> None:
     from .. import sounds
-    if files:
-        sounds.play("trash")
+    played = {"done": False}
     for f in files:
         def done(src, res):
             try:
                 src.trash_finish(res)
+                if not played["done"]:           # only once something really went to the Trash
+                    played["done"] = True
+                    sounds.play("trash")
             except GLib.Error as e:
                 if on_error:
                     on_error(src, e)
