@@ -905,6 +905,7 @@ def main() -> int:
         # (every Sonata surface then waited 2 x 30 s at login -- black screen)
         flags = [f for f in os.environ.get("GDK_DEBUG", "").split(",") if f and f != "portals"]
         os.environ["GDK_DEBUG"] = ",".join(flags + ["no-portals"])
+        os.environ["ADW_DISABLE_PORTAL"] = "1"       # libadwaita asks it too (100 s at login)
         os.environ.pop("GTK_USE_PORTAL", None)
     # GPU drawing for every Sonata surface (Settings > General > Graphics):
     # OpenGL by default -- GTK's Vulkan path also loads every implicit Vulkan
