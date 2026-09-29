@@ -73,7 +73,7 @@ for t in text/plain text/markdown text/x-log; do
         sed -i "/^\[Default Applications\]/a $t=io.github.vinioliveiras.sonata2.textedit.desktop" "$ml"
 done
 # Pictures open in Sonata's Preview.
-for t in image/png image/jpeg image/gif image/webp image/bmp image/tiff image/svg+xml image/avif image/heic; do
+for t in image/png image/jpeg image/gif image/webp image/bmp image/tiff image/svg+xml image/avif image/heic image/heif image/jxl image/x-canon-cr2 image/x-canon-cr3 image/x-nikon-nef image/x-sony-arw image/x-adobe-dng image/x-olympus-orf image/x-panasonic-rw2 image/x-fuji-raf image/x-pentax-pef image/x-samsung-srw; do
     grep -q "^$t=" "$ml" || \
         sed -i "/^\[Default Applications\]/a $t=io.github.vinioliveiras.sonata2.preview.desktop" "$ml"
 done

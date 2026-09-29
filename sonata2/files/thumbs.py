@@ -114,11 +114,8 @@ def _mark_failed(uri, mtime):
 def _make(uri, path, mtime, ct, size):
     pb = None
     if ct.startswith("image/") and size <= MAX_IMAGE_BYTES:
-        try:
-            pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, SIZE, SIZE, True)
-            pb = pb.apply_embedded_orientation() or pb
-        except GLib.Error:
-            pb = None
+        from .. import imageload                      # WebP, AVIF, camera RAW... too
+        pb = imageload.pixbuf_at_scale(path, SIZE)
     elif ct.startswith("video/"):
         pb = _video_frame(path)
     if pb is None:

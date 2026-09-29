@@ -110,7 +110,12 @@ class QuickLook(Adw.Window):
         if path and ct.startswith("image/"):
             pic = Gtk.Picture(content_fit=Gtk.ContentFit.CONTAIN, hexpand=True, vexpand=True,
                               margin_start=12, margin_end=12, margin_bottom=12)
-            pic.set_file(f)
+            from .. import imageload                  # WebP, AVIF, camera RAW... too
+            tex = imageload.texture(path)
+            if tex is not None:
+                pic.set_paintable(tex)
+            else:
+                pic.set_file(f)
             return pic
         if path and (ct.startswith("video/") or ct.startswith("audio/")):
             v = Gtk.Video(file=f, autoplay=True, hexpand=True, vexpand=True)

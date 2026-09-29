@@ -16,7 +16,10 @@ from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 from .. import ui  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.preview"
-EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".svg", ".ico", ".avif", ".heic")
+from ..imageload import RAW_EXTS, RAW_TYPES  # noqa: E402
+
+EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".svg", ".ico", ".avif", ".heic",
+        ".heif", ".jxl", ".tga", ".qoi") + RAW_EXTS
 ZOOMS = (0.1, 0.25, 0.33, 0.5, 0.67, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0)
 
 ui.register("""
@@ -25,15 +28,10 @@ ui.register("""
 
 
 def load_texture(path: str):
-    """Gdk.Texture of any picture GTK or GdkPixbuf reads (SVG through librsvg)."""
-    try:
-        return Gdk.Texture.new_from_filename(path)
-    except GLib.Error:
-        pass
-    try:
-        return Gdk.Texture.new_for_pixbuf(GdkPixbuf.Pixbuf.new_from_file(path))
-    except GLib.Error:
-        return None
+    """Gdk.Texture of any picture: what GTK/GdkPixbuf/Pillow read, camera
+    RAW files through their built-in preview (imageload.py)."""
+    from .. import imageload
+    return imageload.texture(path)
 
 
 def siblings(path: str) -> list:
@@ -267,6 +265,7 @@ def preview_desktop_file(command: str) -> str:
                               "[Desktop Entry]\nType=Application\nName=Preview\nComment=View pictures\n"
                               "Icon=image-viewer\nCategories=Graphics;Viewer;\n"
                               "MimeType=image/png;image/jpeg;image/gif;image/webp;image/bmp;image/tiff;"
-                              "image/svg+xml;image/x-icon;image/avif;image/heic;\n"
+                              "image/svg+xml;image/x-icon;image/avif;image/heic;image/heif;image/jxl;"
+                              + "".join(t + ";" for t in RAW_TYPES) + "\n"
                               "StartupNotify=true\n"
                               f"Exec={command} preview %F\n")
