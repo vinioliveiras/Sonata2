@@ -236,7 +236,7 @@ class Sidebar(Gtk.Box):
         if pinned:
             menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
             menu.connect("pressed", lambda _g, _n, x, y, r=row: ui.menu.popup(
-                r, [[ui.menu.Item("Remove from Sidebar", lambda: unpin(r.uri))]], at=(x, y)))
+                r, [[ui.menu.Item("Remove from Sidebar", lambda: unpin(r.uri))]], at=(x, y), passthrough=True))
             row.add_controller(menu)
         self.list.append(row)
         self._rows[uri] = row

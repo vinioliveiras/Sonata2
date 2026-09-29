@@ -463,7 +463,7 @@ class FilesWindow(Adw.ApplicationWindow):
                                        [Item("Delete Immediately…", self.delete_selection_now)],
                                        [Item("Get Info", self.get_info),
                                         Item(f"Quick Look {what}", self.toggle_quicklook)],
-                                       [Item("Empty Trash", self.empty_trash)]], at=(x, y))
+                                       [Item("Empty Trash", self.empty_trash)]], at=(x, y), passthrough=True)
                 return
             pkg = packages.menu_items(file_of(sel[0]).get_path(), self) if n == 1 and not is_dir(sel[0]) else []
             sections = [pkg + [Item("Open", self.open_selection)]] if pkg else [[Item("Open", self.open_selection)]]
@@ -495,7 +495,7 @@ class FilesWindow(Adw.ApplicationWindow):
             if here:
                 sections.append([Item("New Terminal at Folder",
                                       lambda: self._terminal(Gio.File.new_for_uri(self.location())))])
-        ui.menu.popup(widget, sections, at=(x, y))
+        ui.menu.popup(widget, sections, at=(x, y), passthrough=True)
 
     def _writable_sel(self, sel) -> bool:
         return all(i.get_attribute_boolean("access::can-write") or not i.has_attribute("access::can-write")

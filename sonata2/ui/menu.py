@@ -16,7 +16,7 @@ from typing import Callable, Optional
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import theme  # noqa: E402
 
@@ -137,10 +137,14 @@ def _one_click(button: Gtk.Button, action) -> None:
 
 
 def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
-          gap: int = 6, at=None, glass: bool = False) -> Gtk.PopoverMenu:
+          gap: int = 6, at=None, glass: bool = False, passthrough: bool = False) -> Gtk.PopoverMenu:
     """Show a menu anchored to `widget`; it cleans itself up when closed.
     at=(x, y) in widget coordinates: a context menu that opens at the
-    pointer, its top-left corner there (macOS)."""
+    pointer, its top-left corner there (macOS).
+    passthrough: (menus inside an app window, e.g. Files' right-click) a
+    click elsewhere in the window closes the menu *and* does its own thing
+    -- selects, opens, right-clicks another file -- instead of only
+    closing the menu."""
     group = Gio.SimpleActionGroup()
     customs = []
     model = _build(sections, group, customs=customs)
@@ -170,11 +174,38 @@ def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
         for cb in list(on_closed):
             cb()
     pop.connect("closed", closed)
+    if passthrough:
+        _pass_clicks(pop, widget.get_root())
     OPEN.add(pop)
     _no_scroll(pop)
     _hover_only(pop)
     pop.popup()
     return pop
+
+
+def _pass_clicks(pop, root) -> None:
+    if not isinstance(root, Gtk.Window):
+        return
+    pop.set_autohide(False)                     # no grab: clicks reach the window
+    click = Gtk.GestureClick(button=0, propagation_phase=Gtk.PropagationPhase.CAPTURE)
+    def pressed(gest, *_a):
+        # popovers are children of the window in the widget tree, so clicks on
+        # the menu itself pass here too: only the window's own surface counts
+        ev = gest.get_current_event()
+        if ev is not None and ev.get_surface() == root.get_surface():
+            pop.popdown()                        # not claimed: the click goes on
+    click.connect("pressed", pressed)
+    keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+    keys.connect("key-pressed", lambda _c, k, *_a: (pop.popdown(), True)[1] if k == Gdk.KEY_Escape else False)
+    root.add_controller(click)
+    root.add_controller(keys)
+    active = root.connect("notify::is-active", lambda w, _p: None if w.is_active() else pop.popdown())
+
+    def cleanup(_p):
+        root.remove_controller(click)
+        root.remove_controller(keys)
+        root.disconnect(active)
+    pop.connect("closed", cleanup)
 
 
 def _hover_only(pop) -> None:
