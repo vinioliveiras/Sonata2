@@ -828,7 +828,7 @@ def now_playing_module(p, header=False) -> Gtk.Widget:
     art_box = Gtk.Box(css_classes=["cc-np-art"], valign=Gtk.Align.CENTER, halign=Gtk.Align.START,
                       overflow=Gtk.Overflow.HIDDEN, hexpand=False)
     art_box.set_size_request(40, 40)
-    art = Gtk.Image(pixel_size=40, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+    art = Gtk.Image(pixel_size=40, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER, hexpand=True, vexpand=True)
     art_box.append(art)
     row.append(art_box)
     texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
