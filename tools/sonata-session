@@ -5,7 +5,12 @@ source "$(dirname "$(readlink -f "$0")")/session-env.sh"
 export XDG_CURRENT_DESKTOP=Sonata XDG_SESSION_DESKTOP=sonata
 # Session config from install.sh (never your ~/.config/wayfire.ini).
 cfg="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/wayfire.ini"
-[ -f "$cfg" ] || cfg="$SONATA_REPO/config/wayfire.ini"
+mark="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/.wayfire.ini.installed"
+# An untouched copy follows Sonata's current default (updates need no
+# reinstall); a copy you edited is used as it is.
+if [ ! -f "$cfg" ] || { [ -f "$mark" ] && cmp -s "$cfg" "$mark"; }; then
+    cfg="$SONATA_REPO/config/wayfire.ini"
+fi
 # Resolved copy: Sonata paths filled in, pixdecor title bars when installed.
 run_cfg="${XDG_RUNTIME_DIR:-/tmp}/sonata2-wayfire.ini"
 "$(dirname "$(readlink -f "$0")")/wayfire-config.sh" "$cfg" "$run_cfg" && cfg="$run_cfg"
