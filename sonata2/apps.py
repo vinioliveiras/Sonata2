@@ -40,8 +40,8 @@ def _cleaned(method):
 
 
 def _gpu_aware(method):
-    """Launching an app that wants the discrete GPU (gpu.py) adds its
-    environment to the launch context -- every Sonata launch path goes here."""
+    """Every Sonata launch path goes here: the discrete GPU's environment
+    for apps that want it (gpu.py), and the current GTK theme (gtkstyle.py)."""
     def wrapper(self, arg, context=None, *rest):
         try:
             from . import gpu
@@ -50,6 +50,11 @@ def _gpu_aware(method):
                     context = Gio.AppLaunchContext()
                 for k, v in gpu.discrete_env().items():
                     context.setenv(k, v)
+            from . import gtkstyle
+            if gtkstyle.in_session():         # the theme of the current appearance (Dark Mode may
+                if context is None:           # have changed since login)
+                    context = Gio.AppLaunchContext()
+                context.setenv("GTK_THEME", gtkstyle.theme_name())
         except Exception as e:                    # never keep an app from opening
             print(f"sonata2: discrete GPU: {e}")
         return method(self, arg, context, *rest)

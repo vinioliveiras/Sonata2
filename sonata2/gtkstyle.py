@@ -1,79 +1,58 @@
-"""Other apps' GTK 4 / libadwaita windows in Sonata's colours.
+"""Other apps' windows in Sonata's look -- only inside the Sonata session.
 
-libadwaita apps (Resources, Papers, Meld, Lutris...) draw with their own
-stylesheet whatever GTK theme is set, but read the user stylesheet
-~/.config/gtk-4.0/gtk.css and its colour variables. Sonata writes its
-palette there (tokens.py: window, content, sidebar, header bar, popovers,
-in Light and Dark via prefers-color-scheme), between markers, keeping
-anything else you put in that file. Dark Mode and the accent colour reach
-them through Sonata's settings portal. Written at every login
-(`sonata2 autostart`)."""
+GTK 3/4 and libadwaita apps take the theme named by GTK_THEME (Sonata-Light
+or Sonata-Dark, set by tools/session-env.sh for this session only; another
+desktop never sees it). Qt apps follow it through QT_QPA_PLATFORMTHEME=gtk3.
+GTK_THEME is read when an app starts, so switching Dark Mode updates it for
+apps opened from then on: every Sonata launch sets it (apps.py), and D-Bus
+activated apps get it through the activation environment (update()).
+
+Nothing is written to ~/.config/gtk-4.0: an earlier version did, and clean()
+removes that block at login so GNOME/KDE sessions keep their own look."""
 import os
+import shutil
+import subprocess
 
 from gi.repository import GLib
 
 BEGIN = "/* >>> Sonata (written at login by sonata2/gtkstyle.py; edit outside these markers) */"
 END = "/* <<< Sonata */"
 
-# libadwaita variable -> Sonata token
-VARS = {
-    "window-bg-color": "window_bg", "window-fg-color": "label",
-    "view-bg-color": "content_bg", "view-fg-color": "label",
-    "headerbar-bg-color": "window_bg", "headerbar-fg-color": "label",
-    "headerbar-backdrop-color": "window_bg", "headerbar-border-color": "separator",
-    "headerbar-shade-color": "separator",
-    "sidebar-bg-color": "sidebar_bg", "sidebar-fg-color": "label", "sidebar-backdrop-color": "sidebar_bg",
-    "secondary-sidebar-bg-color": "pane_bg", "secondary-sidebar-fg-color": "label",
-    "card-bg-color": "control_bg", "card-fg-color": "label",
-    "popover-bg-color": "menu_bg", "popover-fg-color": "label",
-    "dialog-bg-color": "window_bg", "dialog-fg-color": "label",
-    "destructive-bg-color": "destructive", "destructive-color": "destructive",
-    "borders": "separator",
-}
+
+def theme_name(dark: bool = None) -> str:
+    if dark is None:
+        from . import prefs
+        dark = prefs.get(prefs.I, "color-scheme") == "prefer-dark"
+    return "Sonata-Dark" if dark else "Sonata-Light"
 
 
-def _block(palette) -> str:
-    lines = [f"  --{k}: {palette[v]};" for k, v in VARS.items() if v in palette]
-    # libadwaita < 1.6 reads named colours instead of variables
-    named = [f"@define-color {k.replace('-', '_')} {palette[v]};" for k, v in VARS.items() if v in palette]
-    return lines, named
+def in_session() -> bool:
+    return "sonata" in (os.environ.get("XDG_CURRENT_DESKTOP") or "").lower()
 
 
-def css() -> str:
-    from .ui import tokens
-    light, dark = tokens.palette(False), tokens.palette(True)
-    lv, ln = _block(light)
-    dv, _dn = _block(dark)
-    return "\n".join([
-        BEGIN,
-        ":root {", *lv, "}",
-        "@media (prefers-color-scheme: dark) {", "  :root {", *["  " + x for x in dv], "  }", "}",
-        *ln,
-        "/* Big Sur window corners */",
-        f"window.csd, window.csd > .titlebar {{ border-top-left-radius: {tokens.SHARED.get('r_window', '10px')}; "
-        f"border-top-right-radius: {tokens.SHARED.get('r_window', '10px')}; }}",
-        END, ""])
+def update(dark: bool) -> None:
+    """Dark Mode changed: apps started from now on (also by D-Bus) get the new theme."""
+    name = theme_name(dark)
+    os.environ["GTK_THEME"] = name
+    if in_session() and shutil.which("dbus-update-activation-environment"):
+        subprocess.Popen(["dbus-update-activation-environment", "--systemd", f"GTK_THEME={name}"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def write(path=None) -> bool:
-    """Put Sonata's block into the user stylesheet (only when it changed)."""
+def clean(path=None) -> bool:
+    """Remove the block an earlier Sonata put in ~/.config/gtk-4.0/gtk.css."""
     path = path or os.path.join(GLib.get_user_config_dir(), "gtk-4.0", "gtk.css")
     try:
         with open(path, encoding="utf-8") as f:
             text = f.read()
     except OSError:
-        text = ""
-    if BEGIN in text and END in text:
-        before = text[:text.index(BEGIN)]
-        after = text[text.index(END) + len(END):].lstrip("\n")
-    else:
-        before, after = (text + "\n" if text and not text.endswith("\n") else text), ""
-    new = before + css() + after
-    if new == text:
         return False
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".sonata-tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(new)
-    os.replace(tmp, path)
+    if BEGIN not in text or END not in text:
+        return False
+    new = text[:text.index(BEGIN)] + text[text.index(END) + len(END):].lstrip("\n")
+    if new.strip():
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new)
+    else:
+        os.remove(path)
     return True

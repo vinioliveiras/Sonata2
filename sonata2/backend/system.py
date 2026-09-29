@@ -720,6 +720,8 @@ def set_dark_mode(on: bool) -> None:
     libadwaita/GTK4 apps (color-scheme), GTK3 apps (theme name)."""
     set_gsetting("org.gnome.desktop.interface", "color-scheme", "prefer-dark" if on else "default")
     set_gsetting("org.gnome.desktop.interface", "gtk-theme", "Sonata-Dark" if on else "Sonata-Light")
+    from .. import gtkstyle
+    gtkstyle.update(on)
 
 
 def gsetting(schema: str, key: str) -> Optional[str]:

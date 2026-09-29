@@ -103,7 +103,7 @@ def run() -> int:
         print(f"sonata2-autostart: files: {e}")
     try:
         from . import gtkstyle
-        gtkstyle.write()                   # other apps' GTK 4 windows in Sonata's colours
+        gtkstyle.clean()                   # (an older version styled GTK 4 apps for every desktop)
     except Exception as e:
         print(f"sonata2-autostart: gtk style: {e}")
     try:

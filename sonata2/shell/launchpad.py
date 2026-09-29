@@ -262,13 +262,15 @@ class Launchpad(Gtk.ApplicationWindow):
         self.add_controller(keys)
 
         self.layer = layer.overlay_fullscreen(self, "sonata2-launchpad")
+        self._overlay = True
         Gio.AppInfoMonitor.get().connect("changed", lambda *_: self._apps_changed())
         self._cfg_mon = config.watch("launchpad", self._config_changed)
         # Wayfire raises the layer surface you press on: any press here (swiping
         # pages, holding an icon) would put Launchpad over the Dock -- the Dock
         # is put back on top right away, it always stays above Launchpad
+        # (only needed in the rare case Launchpad sits on the overlay layer, see _pick_layer)
         press = Gtk.GestureClick(button=0, propagation_phase=Gtk.PropagationPhase.CAPTURE)
-        press.connect("pressed", lambda *_a: GLib.timeout_add(20, lambda: (
+        press.connect("pressed", lambda *_a: self._overlay and GLib.timeout_add(20, lambda: (
             self.get_visible() and self._dock_above(True), False)[1]))
         self.add_controller(press)
         self.render()
@@ -324,6 +326,8 @@ class Launchpad(Gtk.ApplicationWindow):
         self.stack.add_named(self.results, "results")
         self.render()
         self.save()
+        if self.search.get_text():                   # searching: results on the new grid
+            self._search_changed()
 
     def render(self) -> None:
         """Sync carousel pages with the model (widgets are reused)."""
@@ -388,7 +392,26 @@ class Launchpad(Gtk.ApplicationWindow):
             if not first:
                 self._apps_changed()
 
+    def _pick_layer(self) -> None:
+        """Launchpad goes on the TOP layer, under the Dock (OVERLAY while
+        Launchpad is open): Wayfire raises whatever you click, and a click on
+        Launchpad could otherwise cover the Dock (it blinked back). A focused
+        full-screen app hides the TOP layer, so then Launchpad uses OVERLAY."""
+        LS = layer.layer_shell()
+        if not LS or not self.layer:
+            return
+        full = False
+        try:
+            from ..wl.wfipc import WayfireIPC
+            views = WayfireIPC().call("window-rules/list-views") or []
+            full = any(v.get("fullscreen") and v.get("activated") for v in views if isinstance(v, dict))
+        except Exception:
+            pass
+        self._overlay = full
+        LS.set_layer(self, LS.Layer.OVERLAY if full else LS.Layer.TOP)
+
     def open_launchpad(self) -> None:
+        self._pick_layer()
         self._check_apps()
         # the Dock moves up to OVERLAY once Launchpad is mapped: the surface
         # that changes layer last is on top, so the Dock stays reachable
@@ -692,7 +715,8 @@ class Launchpad(Gtk.ApplicationWindow):
             return Gdk.ContentProvider.new_union(providers)
 
         def begin(s, drag):
-            self._dock_above(True)              # pressing raised Launchpad over the Dock: bring it back
+            if self._overlay:
+                self._dock_above(True)          # pressing raised Launchpad over the Dock: bring it back
             folder = self.folder_view[1] if self.folder_view and widget.item in self.folder_view[1]["apps"] \
                 and not M.is_folder(widget.item) else None
             self._drag = {"item": widget.item, "widget": widget, "folder": folder, "target": None}
