@@ -181,7 +181,7 @@ class Greeter:
         over.add_overlay(when)
         if primary:
             self.center = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=220,
-                                    halign=Gtk.Align.CENTER, valign=Gtk.Align.END, margin_bottom=150)
+                                    halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
             over.add_overlay(self.center)
             over.add_overlay(self._power())
             self._show()

@@ -56,7 +56,7 @@ class LockScreen:
 
     def _login(self):
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, halign=Gtk.Align.CENTER,
-                      valign=Gtk.Align.END, margin_bottom=160)
+                      valign=Gtk.Align.CENTER)
         col.append(avatar())
         col.append(Gtk.Label(label=GLib.get_real_name() or GLib.get_user_name(), css_classes=["lk-name"]))
         self.entry = password_field()
