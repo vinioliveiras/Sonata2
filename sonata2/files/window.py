@@ -380,13 +380,7 @@ class FilesWindow(Adw.ApplicationWindow):
         if is_dir(info):
             self.go(target or f.get_uri())
             return
-        if f.get_path() and packages.open_path(f.get_path(), self):     # install / run / extract
-            return
-        from .quicklook import previewable
-        if previewable(info):                                            # pictures, movies, text: Quick Look
-            self.quick_look_item(info)
-            return
-        if info.get_name().endswith(".desktop") and f.get_path():        # an app shortcut: open the app
+        if info.get_name().endswith(".desktop") and f.get_path():        # an app (Applications, shortcuts)
             from ..apps import DesktopAppInfo
             try:
                 app = DesktopAppInfo.new_from_filename(f.get_path())
@@ -395,6 +389,12 @@ class FilesWindow(Adw.ApplicationWindow):
                     return
             except (TypeError, GLib.Error):
                 pass
+        if f.get_path() and packages.open_path(f.get_path(), self):     # install / run / extract
+            return
+        from .quicklook import previewable
+        if previewable(info):                                            # pictures, movies, text: Quick Look
+            self.quick_look_item(info)
+            return
         ctx = self.get_display().get_app_launch_context()
         Gio.AppInfo.launch_default_for_uri_async(target or f.get_uri(), ctx, None, self._launched, info)
 

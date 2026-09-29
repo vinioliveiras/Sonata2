@@ -41,6 +41,8 @@ def previewable(info) -> bool:
     if info is None or is_dir(info) or not file_of(info).get_path():
         return False
     ct = info.get_content_type() or ""
+    if info.get_name().endswith(".desktop"):
+        return False                     # an app: opening it launches it
     if ct.startswith(("image/", "video/", "audio/")):
         return True
     return (ct.startswith("text/") or Gio.content_type_is_a(ct, "text/plain")) and info.get_size() <= TEXT_MAX * 8
