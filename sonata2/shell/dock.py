@@ -1318,8 +1318,9 @@ class DockWindow(Gtk.ApplicationWindow):
         self._geometry()
 
     def _exclusive(self) -> int:
-        # window_gap: maximized windows stop a little above the Dock
-        return 0 if self.cfg["autohide"] else plate_height(self.cfg) + self.cfg["edge_gap"] + self.cfg["window_gap"]
+        # maximized windows stop above the Dock by the same space the Dock
+        # keeps from the screen edge (one gap, both sides of the plate)
+        return 0 if self.cfg["autohide"] else plate_height(self.cfg) + 2 * self.cfg["edge_gap"]
 
     def _thickness(self) -> int:
         return SHADOW + PAD_TOP + max_icon(self.cfg) + dot_row(self.cfg) + self.cfg["edge_gap"]

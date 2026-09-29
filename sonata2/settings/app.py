@@ -1642,10 +1642,8 @@ class Settings(Adw.ApplicationWindow):
         look.add(switch_row("Translucent glass", cfg["glass"],
                             lambda on: (self._save("dock", "glass", on), self._apply_titlebars()),
                             subtitle="The Dock, menu bar, menus and title bars (off: solid)"))
-        look.add(slider_row("Distance from the screen edge", cfg["edge_gap"], 0, 24,
+        look.add(slider_row("Distance from the screen edge", cfg["edge_gap"], 0, 24,    # and from zoomed windows
                             lambda v: self._save("dock", "edge_gap", int(v)), default=D.DEFAULTS["edge_gap"]))
-        look.add(slider_row("Space above the Dock for zoomed windows", cfg["window_gap"], 0, 24,
-                            lambda v: self._save("dock", "window_gap", int(v)), default=D.DEFAULTS["window_gap"]))
         return [size, behave, wins, look]
 
     def _set_minimize_effect(self, v):
