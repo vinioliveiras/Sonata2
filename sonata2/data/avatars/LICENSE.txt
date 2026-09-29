@@ -1,0 +1,1 @@
+Sonata stock user pictures: emoji from Noto Color Emoji (Google, Apache License 2.0 / SIL OFL 1.1) on generated gradients (tools/gen-avatars.py).

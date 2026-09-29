@@ -348,11 +348,18 @@ def battery(power_supply: str = POWER_SUPPLY) -> Tuple[Optional[int], str]:
 
 
 def on_ac(power_supply: str = POWER_SUPPLY) -> bool:
+    """Plugged in: any mains / USB-C supply online (names vary: AC, ACAD,
+    ADP1, ucsi-source-psy-...; the "type" file is what counts)."""
     try:
-        return any(_read(os.path.join(power_supply, x, "online")) == "1"
-                   for x in os.listdir(power_supply) if x.startswith(("AC", "ADP", "ACAD")))
+        names = os.listdir(power_supply)
     except OSError:
         return False
+    for x in names:
+        kind = _read(os.path.join(power_supply, x, "type"))
+        if (kind in ("Mains", "USB") or x.startswith(("AC", "ADP"))) and \
+                _read(os.path.join(power_supply, x, "online")) == "1":
+            return True
+    return False
 
 
 # -- session / power -------------------------------------------------------------------------
@@ -533,6 +540,13 @@ def set_power_profile(profile: str) -> bool:
 
 
 # -- desktop settings in dconf (Linux side; the Sonata session layers them) ------------------------
+def set_dark_mode(on: bool) -> None:
+    """Dark Mode for everything: Sonata (ui.theme follows color-scheme),
+    libadwaita/GTK4 apps (color-scheme), GTK3 apps (theme name)."""
+    set_gsetting("org.gnome.desktop.interface", "color-scheme", "prefer-dark" if on else "default")
+    set_gsetting("org.gnome.desktop.interface", "gtk-theme", "Sonata-Dark" if on else "Sonata-Light")
+
+
 def gsetting(schema: str, key: str) -> Optional[str]:
     rc, out = _run(["gsettings", "get", schema, key], timeout=5)
     return out.strip().strip("'") if rc == 0 else None

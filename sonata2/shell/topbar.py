@@ -307,7 +307,7 @@ class Bar(Gtk.CenterBox):
     def _poll(self) -> None:
         system.run_async(lambda: (system.wifi_available(), system.wifi_enabled(), system.wifi_current()),
                          self._wifi_state)
-        system.run_async(system.battery, self._battery_state)
+        system.run_async(lambda: (*system.battery(), system.on_ac()), self._battery_state)
         system.run_async(system.volume, self._sound_state)
 
     def _wifi_state(self, res) -> None:
@@ -329,12 +329,13 @@ class Bar(Gtk.CenterBox):
         self._set_icon(self.wifi, name)
 
     def _battery_state(self, res) -> None:
-        pct, status = res or (None, "")
+        pct, status, ac = res or (None, "", False)
         self.battery.set_visible(pct is not None)
         if pct is None:
             return
         level = min(100, (pct + 5) // 10 * 10)
-        charging = status in ("Charging", "Full")
+        # plugged in = the bolt, also when the battery holds ("Not charging": charge limits)
+        charging = ac or status in ("Charging", "Full")
         self._set_icon(self.battery, f"sonata-battery-{level}{'-charging' if charging else ''}-symbolic")
         self.battery_pct.set_label(f"{pct}%")
         self.battery_pct.set_visible(self.cfg["battery_percent"])
@@ -727,8 +728,7 @@ class ControlCenter(Gtk.Box):
         app follows -- and Sonata with them."""
         if hasattr(self, "dark_btn"):
             (self.dark_btn.add_css_class if on else self.dark_btn.remove_css_class)("on")
-        system.run_async(lambda: system._run(["gsettings", "set", "org.gnome.desktop.interface",
-                                              "color-scheme", "prefer-dark" if on else "default"]))
+        system.run_async(system.set_dark_mode, None, on)
 
 
 class AboutWindow(Adw.Window):
@@ -868,7 +868,7 @@ class TopBarWindow(Gtk.ApplicationWindow):
 
     def _preview(self) -> None:
         """Bar over a sample wallpaper in a normal window (screenshots)."""
-        GLib.timeout_add(300, lambda: (self.bar._sound_state((70, False)), self.bar._battery_state((64, "Discharging")),
+        GLib.timeout_add(300, lambda: (self.bar._sound_state((70, False)), self.bar._battery_state((64, "Discharging", False)),
                                        self.bar._wifi_state((True, True, ("Home", 80, False))), False)[-1])
         from .preview import _wallpaper
         w, h = (int(v) for v in os.environ.get("PREVIEW_SIZE", "1280x400").split("x"))

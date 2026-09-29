@@ -83,14 +83,56 @@ def _call_user(path: str, method: str, sig: str, *args) -> Optional[str]:
         return e.message
 
 
+AVATARS = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "avatars")
+PICTURE_PX = 256
+
+
+def stock_pictures() -> List[str]:
+    """Sonata's own user pictures (tools/gen-avatars.py)."""
+    try:
+        return sorted(os.path.join(AVATARS, n) for n in os.listdir(AVATARS) if n.endswith(".png"))
+    except OSError:
+        return []
+
+
+def _square_png(file_path: str) -> str:
+    """The picture cropped to a centred square, 256 px, as a PNG in /tmp:
+    accounts-daemon (root) refuses big files and can't read some home
+    folders, so it always gets a small copy it can read."""
+    import tempfile
+    import gi
+    gi.require_version("GdkPixbuf", "2.0")
+    from gi.repository import GdkPixbuf
+    pb = GdkPixbuf.Pixbuf.new_from_file(file_path)
+    pb = pb.apply_embedded_orientation() or pb
+    side = min(pb.get_width(), pb.get_height())
+    pb = pb.new_subpixbuf((pb.get_width() - side) // 2, (pb.get_height() - side) // 2, side, side)
+    pb = pb.scale_simple(PICTURE_PX, PICTURE_PX, GdkPixbuf.InterpType.HYPER)
+    fd, out = tempfile.mkstemp(prefix="sonata-picture-", suffix=".png", dir="/tmp")
+    os.close(fd)
+    pb.savev(out, "png", [], [])
+    os.chmod(out, 0o644)
+    return out
+
+
 def set_picture(user: User, file_path: str) -> Optional[str]:
-    err = _call_user(user.path, "SetIconFile", "(s)", file_path)
-    if err is None and user.current:          # ~/.face too (lock screen, other apps)
+    try:
+        small = _square_png(file_path)
+    except GLib.Error as e:
+        return f"This picture can't be used: {e.message}"
+    try:
+        err = _call_user(user.path, "SetIconFile", "(s)", small)
+        if err is None and user.current:          # ~/.face too (lock screen, other apps)
+            try:
+                shutil.copyfile(small, os.path.expanduser("~/.face"))
+            except OSError:
+                pass
+        return err
+    finally:
         try:
-            shutil.copyfile(file_path, os.path.expanduser("~/.face"))
+            os.remove(small)
         except OSError:
             pass
-    return err
 
 
 def set_real_name(user: User, name: str) -> Optional[str]:

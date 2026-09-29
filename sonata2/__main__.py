@@ -431,6 +431,61 @@ def screenshot(mode: str) -> int:
     return 0
 
 
+def _write_env_report() -> None:
+    """~/.cache/sonata2/env.txt: library versions of this machine, so the
+    development environment can match them (written by the menu bar)."""
+    import platform
+    import shutil
+    import subprocess
+    lines = [f"python {platform.python_version()}"]
+    try:
+        import gi
+        lines.append(f"pygobject {gi.__version__}")
+        from gi.repository import Adw, GLib, Gtk
+        lines += [f"gtk {Gtk.get_major_version()}.{Gtk.get_minor_version()}.{Gtk.get_micro_version()}",
+                  f"libadwaita {Adw.get_major_version()}.{Adw.get_minor_version()}.{Adw.get_micro_version()}",
+                  f"glib {GLib.MAJOR_VERSION}.{GLib.MINOR_VERSION}.{GLib.MICRO_VERSION}"]
+        try:
+            gi.require_version("Gtk4LayerShell", "1.0")
+            from gi.repository import Gtk4LayerShell as L
+            lines.append(f"gtk4-layer-shell {L.get_major_version()}.{L.get_minor_version()}.{L.get_micro_version()}")
+        except (ValueError, ImportError):
+            lines.append("gtk4-layer-shell missing")
+    except Exception as e:                        # noqa: BLE001 -- a report, never fatal
+        lines.append(f"gi error {e}")
+    for mod in ("pywayland", "cairo", "PIL"):
+        try:
+            m = __import__(mod)
+            lines.append(f"{mod} {getattr(m, '__version__', getattr(m, 'version', '?'))}")
+        except ImportError:
+            lines.append(f"{mod} missing")
+    for tool, arg in (("wayfire", "--version"), ("grim", "-h"), ("wf-recorder", "--version"),
+                      ("wlsunset", "-h"), ("swayidle", "-v"), ("wtype", "-h"), ("nmcli", "--version"),
+                      ("wpctl", "--version"), ("brightnessctl", "--version"), ("bluetoothctl", "--version")):
+        if shutil.which(tool):
+            try:
+                r = subprocess.run([tool, arg], capture_output=True, text=True, timeout=3)
+                first = (r.stdout or r.stderr).strip().splitlines()
+                lines.append(f"{tool} {first[0] if first else 'present'}")
+            except (OSError, subprocess.SubprocessError):
+                lines.append(f"{tool} present")
+        else:
+            lines.append(f"{tool} missing")
+    try:
+        with open("/etc/os-release") as f:
+            lines.append(next((ln.strip() for ln in f if ln.startswith("PRETTY_NAME=")), "os ?"))
+    except OSError:
+        pass
+    lines.append(f"desktop {os.environ.get('XDG_CURRENT_DESKTOP', '')} session {os.environ.get('XDG_SESSION_DESKTOP', '')}")
+    d = os.path.join(os.path.expanduser("~/.cache"), "sonata2")
+    try:
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "env.txt"), "w") as f:
+            f.write("\n".join(lines) + "\n")
+    except OSError:
+        pass
+
+
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "screenshot":
         return screenshot(sys.argv[2] if len(sys.argv) > 2 else "screen")
@@ -474,6 +529,8 @@ def main() -> int:
     from gi.repository import Adw, GLib
     from . import ui
 
+    if args.component == "topbar" and not args.preview:
+        GLib.idle_add(lambda: (_write_env_report(), False)[1])
     app_id = APP_IDS[args.component]
     GLib.set_prgname(app_id)     # Wayland app_id, also without a session bus
     app = Adw.Application(application_id=app_id)

@@ -282,7 +282,19 @@ class Settings(Adw.ApplicationWindow):
         tv.add_top_bar(hb)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         card = Gtk.Box(spacing=10, css_classes=["st-card"])
-        card.append(badge("sonata-logo-symbolic", "black", big=True))
+        # your picture (like the Apple ID card); a click opens Users & Groups
+        me = GLib.get_real_name() or GLib.get_user_name()
+        self.card_avatar = Adw.Avatar(size=44, text=me, show_initials=True)
+        face = os.path.expanduser("~/.face")
+        if os.path.isfile(face):
+            try:
+                self.card_avatar.set_custom_image(Gdk.Texture.new_from_filename(face))
+            except GLib.Error:
+                pass
+        card.append(self.card_avatar)
+        click = Gtk.GestureClick()
+        click.connect("released", lambda *_: self.select("users"))
+        card.add_controller(click)
         texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
         texts.append(Gtk.Label(label=GLib.get_real_name() or GLib.get_user_name(), xalign=0,
                                css_classes=["st-card-title"]))
@@ -806,7 +818,7 @@ class Settings(Adw.ApplicationWindow):
                 pass
         pic = Gtk.Button(child=av, css_classes=["flat", "circular"], valign=Gtk.Align.CENTER,
                          tooltip_text="Change picture")
-        pic.connect("clicked", lambda *_: self._pick_picture(u))
+        pic.connect("clicked", lambda b: self._pick_picture(u, b))
         row.add_prefix(pic)
         if u.current:
             name = Gtk.Button(label="Edit Name…", valign=Gtk.Align.CENTER)
@@ -834,25 +846,65 @@ class Settings(Adw.ApplicationWindow):
             elif done_text:
                 self.toast(done_text)
             self._reload_page("users")
+            self._refresh_card()
         system.run_async(lambda: fn(*args), done)
 
-    def _pick_picture(self, u):
-        from ..backend import users as U
-        dlg = Gtk.FileDialog(title="Choose a picture", modal=True)
-        flt = Gtk.FileFilter(name="Pictures")
-        flt.add_mime_type("image/*")
-        store = Gio.ListStore(item_type=Gtk.FileFilter)
-        store.append(flt)
-        dlg.set_filters(store)
-
-        def chosen(d, res):
+    def _refresh_card(self):
+        face = os.path.expanduser("~/.face")
+        if os.path.isfile(face):
             try:
-                f = d.open_finish(res)
+                self.card_avatar.set_custom_image(Gdk.Texture.new_from_filename(face))
             except GLib.Error:
-                return
-            if f and f.get_path():
-                self._user_op(U.set_picture, u, f.get_path())
-        dlg.open(self, None, chosen)
+                pass
+
+    def _pick_picture(self, u, anchor=None):
+        """Big Sur picture picker: Sonata's stock pictures, or a file."""
+        from ..backend import users as U
+        pop = Gtk.Popover(has_arrow=True, position=Gtk.PositionType.RIGHT)
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin_top=10, margin_bottom=10,
+                      margin_start=10, margin_end=10)
+        col.append(Gtk.Label(label="Pictures", xalign=0, css_classes=["heading"]))
+        grid = Gtk.FlowBox(max_children_per_line=6, min_children_per_line=6, selection_mode=Gtk.SelectionMode.NONE,
+                           row_spacing=6, column_spacing=6, homogeneous=True)
+
+        def use(path):
+            pop.popdown()
+            self._user_op(U.set_picture, u, path, done_text="Picture changed")
+        for path in U.stock_pictures():
+            av = Adw.Avatar(size=48)
+            try:
+                av.set_custom_image(Gdk.Texture.new_from_filename(path))
+            except GLib.Error:
+                continue
+            b = Gtk.Button(child=av, css_classes=["flat", "circular"], tooltip_text=os.path.basename(path)[:-4].title())
+            b.connect("clicked", lambda _b, p=path: use(p))
+            grid.append(b)
+        col.append(grid)
+        other = Gtk.Button(label="Choose from Files…")
+        col.append(other)
+        pop.set_child(col)
+
+        def from_file(*_):
+            pop.popdown()
+            dlg = Gtk.FileDialog(title="Choose a picture", modal=True)
+            flt = Gtk.FileFilter(name="Pictures")
+            flt.add_mime_type("image/*")
+            store = Gio.ListStore(item_type=Gtk.FileFilter)
+            store.append(flt)
+            dlg.set_filters(store)
+
+            def chosen(d, res):
+                try:
+                    f = d.open_finish(res)
+                except GLib.Error:
+                    return
+                if f and f.get_path():
+                    use(f.get_path())
+            dlg.open(self, None, chosen)
+        other.connect("clicked", from_file)
+        pop.set_parent(anchor or self)
+        pop.connect("closed", lambda p: GLib.idle_add(lambda: (p.unparent(), False)[1]))
+        pop.popup()
 
     def _ask_text(self, title, value, cb):
         entry = Gtk.Entry(text=value, activates_default=True, hexpand=True)
@@ -1147,7 +1199,7 @@ class Settings(Adw.ApplicationWindow):
         scheme = system.gsetting("org.gnome.desktop.interface", "color-scheme") or "default"
         g.add(combo_row("Appearance", [("default", "Light"), ("prefer-dark", "Dark")],
                         "prefer-dark" if scheme == "prefer-dark" else "default",
-                        lambda v: system.set_gsetting("org.gnome.desktop.interface", "color-scheme", v),
+                        lambda v: system.run_async(system.set_dark_mode, None, v == "prefer-dark"),
                         subtitle="Linux setting: every app follows it"))
         browsers = [(a.get_id(), a.get_display_name()) for a in Gio.AppInfo.get_all_for_type("x-scheme-handler/https")
                     if a.get_id()]
