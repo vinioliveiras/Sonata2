@@ -3,8 +3,8 @@
 Flatpak apps run sandboxed: they don't see the system's themes nor the
 session's GTK_THEME. Turning this on copies Sonata's GTK themes to
 ~/.local/share/themes (inside the sandbox's reach) and adds to Flatpak's
-user overrides for every app: read access to that folder and GTK_THEME
-(kept in step with Dark Mode). Flatpak overrides apply in every session,
+user overrides for every app: read access to that folder (the theme name
+and Dark Mode come from Sonata's settings portal, which Flatpak apps read). Flatpak overrides apply in every session,
 so a GNOME/KDE session's Flatpak apps look like Sonata's too while it's
 on; turning it off removes exactly what Sonata added."""
 import os
@@ -71,14 +71,17 @@ def apply(dark: bool = None) -> bool:
     """On (at login, on toggle, on Dark Mode): themes copied, overrides set."""
     if not shutil.which("flatpak") or not enabled():
         return False
-    from .gtkstyle import theme_name
     _copy_themes()
 
     def change(kf):
         fs = _filesystems(kf)
         if FS not in fs:
             kf.set_string("Context", "filesystems", ";".join(fs + [FS]) + ";")
-        kf.set_string("Environment", "GTK_THEME", theme_name(dark))
+        try:                                   # (an earlier version forced GTK_THEME: it broke libadwaita apps)
+            if kf.get_string("Environment", "GTK_THEME").startswith("Sonata-"):
+                kf.remove_key("Environment", "GTK_THEME")
+        except GLib.Error:
+            pass
     _edit(change)
     return True
 

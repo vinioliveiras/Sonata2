@@ -30,13 +30,13 @@ FC
 export FONTCONFIG_FILE="$HOME/.config/sonata2/fonts.conf"
 # Sonata's own desktop settings (sonata2/prefs.py: ~/.config/sonata2/system.json;
 # apps read them through Sonata's settings portal -- no GNOME/dconf needed).
-# Every login: Sonata's defaults on the first run, the UI font, GTK_THEME.
+# Every login: Sonata's defaults on the first run, the UI font.
 # (copies kept for apps that read GSettings directly go to a Sonata-only
 # dconf layer, so they never leak into another desktop's settings)
 printf 'user-db:sonata\nuser-db:user\n' > "$HOME/.config/sonata2/dconf-profile"
 export DCONF_PROFILE="$HOME/.config/sonata2/dconf-profile"
 eval "$(PYTHONPATH="$SONATA_REPO${PYTHONPATH:+:$PYTHONPATH}" python3 -m sonata2.prefs session-env 2>/dev/null)"
-[ -n "$GTK_THEME" ] || export GTK_THEME=Sonata-Light
+unset GTK_THEME     # (apps read the theme from Sonata's settings; the variable broke libadwaita apps)
 # Qt apps: always the GTK look here, never a KDE/qt5ct theme set elsewhere.
 export QT_QPA_PLATFORMTHEME=gtk3
 unset QT_STYLE_OVERRIDE KDE_FULL_SESSION KDE_SESSION_VERSION

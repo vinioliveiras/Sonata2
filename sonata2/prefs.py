@@ -15,7 +15,7 @@ there (older apps that read them directly), but nothing depends on it.
 
 `python -m sonata2.prefs session-env` (tools/session-env.sh, every login):
 fills in Sonata's defaults (first run), picks the UI font, and prints the
-environment the session needs (GTK_THEME)."""
+environment the session needs."""
 import os
 import shutil
 import subprocess
@@ -195,7 +195,9 @@ def session_env() -> str:
     theme = "Sonata-Dark" if dark else "Sonata-Light"
     if get(I, "gtk-theme") != theme:
         set(I, "gtk-theme", theme)
-    return f"export GTK_THEME={theme}\n"
+    # other apps take the GTK theme from the settings (portal / Sonata's dconf
+    # layer) -- never from a GTK_THEME variable, which breaks libadwaita apps
+    return "unset GTK_THEME\n"
 
 
 if __name__ == "__main__":

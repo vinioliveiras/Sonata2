@@ -291,6 +291,8 @@ class Launchpad(Gtk.ApplicationWindow):
         cols = 7 if width >= 900 else width // 150               # macOS: 7; fewer on narrow screens
         rows = room / max(1.0, width / max(1, cols) * 0.72)     # row pitch ~72 % of a column (macOS)
         if M.set_grid(cols, rows):
+            print(f"sonata2-launchpad: grid {M.COLS}x{M.ROWS} for {w}x{h} (room {room}, width {width}, "
+                  f"dock {D.reserved(dcfg)})", flush=True)                # launchpad.log
             GLib.idle_add(lambda: (self._rows_changed(), False)[1])     # not during allocation
         cell_w, cell_h = width / M.COLS, room / M.ROWS
         size = int(max(48, min(128, cell_w * 0.56, cell_h * 0.62)))
