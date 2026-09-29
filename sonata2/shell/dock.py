@@ -888,6 +888,13 @@ class Dock(Gtk.Box):
         if not surface:
             return False
         elsewhere = self._on_other_displays(surface)
+        # Wayfire adds the Dock surface's *layout* position to the rectangle
+        # but animates in the display's own coordinates: on a display that
+        # isn't at the layout's origin (a second screen to the right) the
+        # genie aimed that far off. Take the display's origin back out.
+        mon = self.get_display().get_monitor_at_surface(surface)
+        g = mon.get_geometry() if mon else None
+        ox, oy = (g.x, g.y) if g else (0, 0)
         for key, wins in self.windows.items():
             tile = self.tiles.get(key)
             ok, b = tile.compute_bounds(native) if tile else (False, None)
@@ -899,8 +906,13 @@ class Dock(Gtk.Box):
                         # target -- it minimizes with the plain animation
                         self.manager.set_rectangle(t, surface, 0, 0, 0, 0)
                     else:
-                        self.manager.set_rectangle(t, surface, b.get_x(), b.get_y(),
+                        self.manager.set_rectangle(t, surface, b.get_x() - ox, b.get_y() - oy,
                                                    b.get_width(), b.get_height())
+                    if os.environ.get("SONATA2_DEBUG_GENIE", "1") == "1":     # (temporary: finding the offset)
+                        print(f"genie: {t.app_id} -> {int(b.get_x())},{int(b.get_y())} display origin {ox},{oy} "
+                              f"{int(b.get_width())}x{int(b.get_height())} surface "
+                              f"{native.get_width()}x{native.get_height()} other={(t.app_id, t.title) in elsewhere}",
+                              flush=True)
         return False
 
     def _on_other_displays(self, surface) -> set:
