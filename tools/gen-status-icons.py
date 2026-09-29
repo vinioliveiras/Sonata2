@@ -139,6 +139,22 @@ def record_stop():
           '<rect x="5.6" y="5.6" width="4.8" height="4.8" rx="0.8" fill="#000"/>')
 
 
+def editing():
+    """Preview's toolbar: Crop (two corner brackets) and Adjust Color (sliders)."""
+    def w(name, body):
+        with open(os.path.join(OUT, "..", "..", "actions", "symbolic", name + ".svg"), "w") as f:
+            f.write(HEAD + body + "</svg>\n")
+    w("sonata-crop-symbolic",
+      '<path d="M4.2 1.2v9.1c0 .8.6 1.5 1.5 1.5h9.1" fill="none" stroke="#000" stroke-width="1.5" '
+      'stroke-linecap="round" stroke-linejoin="round"/>'
+      '<path d="M1.2 4.2h9.1c.8 0 1.5.6 1.5 1.5v9.1" fill="none" stroke="#000" stroke-width="1.5" '
+      'stroke-linecap="round" stroke-linejoin="round"/>')
+    w("sonata-adjust-symbolic",
+      '<path d="M1.5 4h13M1.5 8h13M1.5 12h13" stroke="#000" stroke-width="1.3" stroke-linecap="round" opacity="0.45"/>'
+      '<circle cx="5" cy="4" r="1.9" fill="#000"/><circle cx="10.6" cy="8" r="1.9" fill="#000"/>'
+      '<circle cx="6.8" cy="12" r="1.9" fill="#000"/>')
+
+
 def logo():
     with open(os.path.join(OUT, "..", "..", "actions", "symbolic", "sonata-logo-symbolic.svg"), "w") as f:
         f.write(HEAD + '<circle cx="8" cy="8" r="6.2" fill="#000"/></svg>\n')
@@ -193,6 +209,7 @@ if __name__ == "__main__":
     audio_output()
     bluetooth()
     record_stop()
+    editing()
     logo()
     # GTK wants fill-only symbolic icons (see tools/symbolic-fill.py)
     import subprocess
