@@ -657,6 +657,8 @@ class Dock(Gtk.Box):
         self._mag_anim = Adw.TimedAnimation.new(self, self._mag_strength, to, ms,
                                                 Adw.CallbackAnimationTarget.new(step))
         self._mag_anim.set_easing(Adw.Easing.EASE_OUT_CUBIC)
+        stats = ui.transition.FrameStats(self, "dock magnify " + ("in" if to else "out"))
+        self._mag_anim.connect("done", lambda *_: stats.stop())
         self._mag_anim.play()
 
     def _launcher_entries(self) -> None:
@@ -1445,5 +1447,7 @@ class DockWindow(Gtk.ApplicationWindow):
         self._hide_anim = Adw.TimedAnimation.new(self, dock.hide_amount, 1.0 if hide else 0.0,
                                                  HIDE_MS, Adw.CallbackAnimationTarget.new(step))
         self._hide_anim.set_easing(Adw.Easing.EASE_IN_OUT_CUBIC)
+        stats = ui.transition.FrameStats(self, "dock " + ("hide" if hide else "show"))
+        self._hide_anim.connect("done", lambda *_: stats.stop())
         self._hide_anim.play()
         self._update_input()

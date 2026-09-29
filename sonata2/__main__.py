@@ -530,6 +530,16 @@ def run_topbar(app, args, ui):
     act = Gio.SimpleAction.new("emoji", None)
     act.connect("activate", emoji)
     app.add_action(act)
+
+    # Clipboard history (Super+V, like Windows' Win+V)
+    def clipboard(*_a):
+        if "c" not in emo:
+            from .shell.clip_picker import ClipboardPicker
+            emo["c"] = ClipboardPicker(app, win.bar.clip)
+        emo["c"].open()
+    act = Gio.SimpleAction.new("clipboard", None)
+    act.connect("activate", clipboard)
+    app.add_action(act)
     act = Gio.SimpleAction.new("capture", GLib.VariantType.new("s"))
     act.connect("activate", capture)
     app.add_action(act)
