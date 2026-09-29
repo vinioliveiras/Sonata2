@@ -55,7 +55,10 @@ def _fmt_date(info, attr):
 
 class QuickLook(Adw.Window):
     def __init__(self, parent, on_close=None):
-        super().__init__(transient_for=parent, default_width=720, default_height=520, title="Quick Look")
+        # not transient: Wayfire won't maximize a window with a parent, and
+        # Quick Look is its own window on macOS too (the desktop's has none)
+        super().__init__(application=parent.get_application() if parent else None,
+                         default_width=720, default_height=520, title="Quick Look")
         for c in ("sonata-ql", "sonata-glass-window"):          # frosted glass, like the Dock
             self.add_css_class(c)
         ui.window.standard(self)
