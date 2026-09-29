@@ -60,7 +60,7 @@ KEYWORDS = {
     "datetime": "clock time zone date", "notifications": "do not disturb alerts banners",
     "users": "account password picture avatar login items", "privacy": "security lock screen location trash",
     "sharing": "file sharing remote", "accessibility": "zoom contrast reduce transparency motion graphics gpu hardware acceleration renderer",
-    "appearance": "dark light mode accent color theme icons font", "dock": "magnification size position autohide "
+    "appearance": "app icons regenerate frame generated dark light mode accent color theme icons font", "dock": "magnification size position autohide "
     "recent apps displays minimize", "menubar": "clock battery percentage bluetooth sound now playing",
     "launchpad": "apps grid folders hidden", "updates": "software update upgrade packages",
     "about": "computer system version restart sonata",
@@ -1414,6 +1414,13 @@ class Settings(Adw.ApplicationWindow):
         s.add(combo_row("Icons", [(t, t) for t in themes], app["icon_theme"],
                         lambda v: (self._save("appearance", "icon_theme", v),
                                    self.toast("Restart the Dock and Launchpad to use the new icons"))))
+        gen = Adw.ActionRow(title="App icons made by Sonata",
+                            subtitle="Apps without Sonata artwork get their icon on the standard frame, saved on disk")
+        regen = Gtk.Button(label="Regenerate", valign=Gtk.Align.CENTER)
+        regen.connect("clicked", lambda *_: (icons.clear_generated(), system.restart_sonata(),
+                                             self.toast("Making the app icons again…")))
+        gen.add_suffix(regen)
+        s.add(gen)
         dock = config.load("dock", {"glass": True})
         s.add(switch_row("Translucent glass", dock["glass"], lambda on: self._save("dock", "glass", on),
                          subtitle="Frosted Dock and menu bar (needs the Wayfire blur plugin)"))

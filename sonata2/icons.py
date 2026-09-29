@@ -87,8 +87,78 @@ def app_icon(info) -> Gio.Icon:
         if name in own:
             return Gio.ThemedIcon.new(name)
     icon = info.get_icon() or Gio.ThemedIcon.new("application-x-executable")
-    _plated.add(icon.to_string())
+    made = generated(icon)
+    if made is not None:
+        return made
+    _plated.add(icon.to_string())                 # drawn live (no display to render with)
     return icon
+
+
+# -- generated app icons: plated once, saved to disk ---------------------------------------------
+# App icons without Sonata artwork are rendered on their plate once and kept
+# as PNGs; the same file then shows everywhere (Dock, Launchpad, Files...).
+# A new version of the app's icon (another file or date) makes a new one.
+# Settings > Appearance > "Regenerate" empties the folder.
+GENERATED = os.path.join(GLib.get_user_cache_dir(), "sonata2", "app-icons")
+GEN_SIZE = 256
+
+
+def generated(gicon):
+    """Gio.FileIcon of `gicon` on its plate, rendering it if needed; None
+    when it can't be rendered here (no display, icon not found)."""
+    import hashlib
+    display = Gdk.Display.get_default()
+    if display is None:
+        return None
+    src = _resolve(display, 1, gicon, int(GEN_SIZE * PLATE_ARTWORK))
+    f = src.get_file() if src is not None and hasattr(src, "get_file") else None
+    path = f.get_path() if f is not None else None
+    if not path:
+        return None
+    try:
+        stamp = f"{path}\n{int(os.path.getmtime(path))}\n{PLATE_VERSION}"
+    except OSError:
+        return None
+    name = hashlib.sha1(gicon.to_string().encode()).hexdigest()[:20]
+    png, meta = os.path.join(GENERATED, name + ".png"), os.path.join(GENERATED, name + ".src")
+    try:
+        with open(meta, encoding="utf-8") as fh:
+            fresh = fh.read() == stamp and os.path.exists(png)
+    except OSError:
+        fresh = False
+    if not fresh and not _render_plate(display, src, png, meta, stamp):
+        return None
+    return Gio.FileIcon.new(Gio.File.new_for_path(png))
+
+
+PLATE_VERSION = 1       # bump when the plate's look changes: every icon is made again
+
+
+def _render_plate(display, inner, png, meta, stamp) -> bool:
+    try:
+        os.makedirs(GENERATED, exist_ok=True)
+        snap = Gtk.Snapshot()
+        _Plate(inner, GEN_SIZE).snapshot(snap, GEN_SIZE, GEN_SIZE)
+        node = snap.to_node()
+        renderer = Gsk.CairoRenderer.new()
+        renderer.realize_for_display(display)
+        tex = renderer.render_texture(node, Graphene.Rect().init(0, 0, GEN_SIZE, GEN_SIZE))
+        renderer.unrealize()
+        tmp = png + f".{os.getpid()}.tmp"                 # several shell processes may do it at once
+        tex.save_to_png(tmp)
+        os.replace(tmp, png)
+        with open(meta + f".{os.getpid()}.tmp", "w", encoding="utf-8") as fh:
+            fh.write(stamp)
+        os.replace(meta + f".{os.getpid()}.tmp", meta)
+        return True
+    except (OSError, GLib.Error, TypeError, AttributeError):
+        return False
+
+
+def clear_generated() -> None:
+    """Settings: forget every generated icon (made again when next shown)."""
+    import shutil
+    shutil.rmtree(GENERATED, ignore_errors=True)
 
 
 # The plate's geometry, measured on MacTahoe's own artwork (so app icons we
@@ -373,10 +443,13 @@ def _asks_symbolic(gicon) -> bool:
 
 
 def _lookup(widget, gicon, size):
-    theme = Gtk.IconTheme.get_for_display(widget.get_display())
+    return _resolve(widget.get_display(), widget.get_scale_factor(), gicon, size)
+
+
+def _resolve(display, scale, gicon, size):
+    theme = Gtk.IconTheme.get_for_display(display)
     if _system is not None and not theme.has_gicon(gicon) and _system.has_gicon(gicon):
         theme = _system
-    scale = widget.get_scale_factor()
     icon = theme.lookup_by_gicon(gicon, size, scale, Gtk.TextDirection.NONE, Gtk.IconLookupFlags(0))
     f = icon.get_file() if icon is not None else None
     path = f.get_path() if f is not None else None
