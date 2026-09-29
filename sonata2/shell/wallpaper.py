@@ -81,3 +81,32 @@ class WallpaperWindow(Gtk.ApplicationWindow):
         nxt = self.pics[1] if self.stack.get_visible_child() is self.pics[0] else self.pics[0]
         nxt.set_file(f if f and f.query_exists(None) else None)
         self.stack.set_visible_child(nxt)
+        if self.desktop is not None and f is not None:
+            share_with_login_screen(f)
+
+
+_shared = None
+
+
+def share_with_login_screen(f: Gio.File) -> None:
+    """The login screen (greeter.py) shows this user's wallpaper: copy it
+    where the greeter can read it (install.sh --greeter makes the folder,
+    owned by this user). Nothing to do without that folder."""
+    global _shared
+    import os
+    from gi.repository import GLib
+    folder = os.path.join("/var/lib/sonata-greeter", GLib.get_user_name())
+    if f.get_uri() == _shared or not os.access(folder, os.W_OK):
+        return
+    _shared = f.get_uri()
+    dest = Gio.File.new_for_path(os.path.join(folder, "wallpaper"))
+    f.copy_async(dest, Gio.FileCopyFlags.OVERWRITE, GLib.PRIORITY_LOW, None, None,
+                 lambda src, res: _copied(src, res))
+
+
+def _copied(src, res) -> None:
+    from gi.repository import GLib
+    try:
+        src.copy_finish(res)
+    except GLib.Error:
+        pass

@@ -15,6 +15,9 @@
 #   ./install.sh --dev        link to this clone instead of copying it: the
 #                             session runs the code you are editing
 #                             (`sonata2 restart` reloads the shell)
+#   ./install.sh --greeter    also use Sonata's own login screen (greetd in
+#                             place of GDM/SDDM; from the next boot)
+#   ./install.sh --gdm        back to the previous login screen (only that)
 #
 # Installs: the sonata2 package + themes/icons -> <prefix>/share/sonata2,
 # launchers `sonata2` and `sonata-session` -> <prefix>/bin, the session
@@ -23,10 +26,11 @@
 # preferences for the "Sonata" desktop.
 set -euo pipefail
 SRC="$(cd "$(dirname "$0")" && pwd)"
-MODE=user DEPS=1 YES=0 UNINSTALL=0 DEV=0
+MODE=user DEPS=1 YES=0 UNINSTALL=0 DEV=0 GREETER=0
 for a in "$@"; do
     case "$a" in
         --system) MODE=system ;; --deps) DEPS=1 ;; --no-deps) DEPS=0 ;; --yes|-y) YES=1 ;; --uninstall) UNINSTALL=1 ;; --dev) DEV=1 ;;
+        --greeter) GREETER=1 ;; --gdm) exec "$(dirname "$0")/tools/greeter-setup.sh" revert ;;
         -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 0 ;;
         *) echo "unknown option: $a (see --help)"; exit 2 ;;
     esac
@@ -333,3 +337,9 @@ say "Checking this computer (sonata2 doctor):"
 PYTHONPATH="$SHARE" python3 -m sonata2 doctor || true
 say "Done. Log out and pick \"Sonata\" on the login screen, or try it inside your desktop with:"
 echo "  $SRC/tools/dev-session.sh"
+if [ "$GREETER" = 1 ]; then
+    say "Sonata's login screen (greetd)"
+    "$SRC/tools/greeter-setup.sh" install
+elif [ -x /usr/local/bin/sonata-greeter ]; then
+    "$SRC/tools/greeter-setup.sh" install >/dev/null && echo "Login screen: updated to this version."
+fi

@@ -34,11 +34,12 @@ APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
            "gallery": "io.github.vinioliveiras.sonata2.gallery",
            "files": "io.github.vinioliveiras.sonata2.files",
            "lock": "io.github.vinioliveiras.sonata2.lock",
+           "greeter": "io.github.vinioliveiras.sonata2.greeter",
            "spotlight": "io.github.vinioliveiras.sonata2.spotlight"}
 # Shell surfaces (never shown as running apps in the Dock); Files and
 # Settings are ordinary apps.
 SHELL_IDS = {APP_IDS[k] for k in ("dock", "autostart", "wallpaper", "launchpad", "topbar", "gallery", "lock",
-                                   "spotlight")}
+                                   "spotlight", "greeter")}
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -318,6 +319,13 @@ def run_lock(app, args, ui, state):
     from .shell.lock import LockScreen
     app.hold()
     state["lock"] = LockScreen(app)
+
+
+def run_greeter(app, args, ui, state):
+    """The login screen (greetd; install.sh --greeter)."""
+    from .shell.greeter import Greeter
+    app.hold()
+    state["greeter"] = Greeter(app)
 
 
 def run_wallpaper(app, args, ui):
@@ -749,7 +757,8 @@ def main() -> int:
         from . import autostart
         autostart.run()
         return 0
-    if not args.preview and args.component not in ("files", "settings"):
+    if not args.preview and args.component not in ("files", "settings") and \
+            not (args.component == "greeter" and os.environ.get("SONATA_GREETER_FAKE")):
         layer.ensure_preload()   # may re-exec this process
 
     import gi
@@ -805,6 +814,8 @@ def main() -> int:
             run_spotlight(app, args, ui, state)
         elif args.component == "lock":
             run_lock(app, args, ui, state)
+        elif args.component == "greeter":
+            run_greeter(app, args, ui, state)
         else:
             run_topbar(app, args, ui)
 
