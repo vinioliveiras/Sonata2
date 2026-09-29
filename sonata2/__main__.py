@@ -843,6 +843,9 @@ def main() -> int:
     p.add_argument("path", nargs="*", help="files: folders to open")
     p.add_argument("--exec", help="terminal: run this shell command in a new window (it stays open)")
     args = p.parse_intermixed_args()
+    from . import trace
+    if not args.preview:
+        trace.start(args.component)          # startup timing in the component's log
 
     # Sonata's own UI never takes the GTK theme meant for other apps (the
     # session's GTK_THEME=Sonata-Light/Dark restyles libadwaita widgets):
@@ -866,15 +869,18 @@ def main() -> int:
     if args.component == "autostart":       # no GTK needed
         from . import autostart
         autostart.run()
+        trace.ready("autostart done")
         return 0
     if not args.preview and args.component not in ("files", "settings", "portal") and \
             not (args.component == "greeter" and os.environ.get("SONATA_GREETER_FAKE")):
         layer.ensure_preload()   # may re-exec this process
 
+    trace.mark("importing GTK")
     import gi
     gi.require_version("Adw", "1")
     from gi.repository import Adw, GLib
     from . import ui
+    trace.mark("GTK imported")
 
     if args.component == "topbar" and not args.preview:
         GLib.idle_add(lambda: (_write_env_report(), False)[1])
@@ -952,6 +958,8 @@ def main() -> int:
         return app.run([sys.argv[0]] + uris)
 
     def activate(app):
+        trace.mark("activate (display open)")
+        GLib.idle_add(lambda: (trace.ready("first idle after activate"), False)[1])
         if args.dark or args.light:
             ui.force_appearance("dark" if args.dark else "light")
         ui.setup()

@@ -73,11 +73,14 @@ def _wanted(kf) -> bool:
 
 
 def run() -> int:
+    from .trace import mark
+    mark("autostart: title bars")
     from . import titlebars
     try:
         titlebars.apply()                  # Sonata title bars for Chrome, VS Code... (before they start)
     except Exception as e:                 # never keep the login's apps from starting
         print(f"sonata2-autostart: title bars: {e}")
+    mark("autostart: setup check")
     try:
         from . import config
         if not config.load("setup", {"done": False})["done"]:     # first login: the Setup Assistant
@@ -85,6 +88,7 @@ def run() -> int:
             GLib.spawn_command_line_async(self_command() + " setup")
     except Exception as e:
         print(f"sonata2-autostart: setup: {e}")
+    mark("autostart: polkit")
     try:                                   # Sonata's password prompt (polkit agent), kept alive
         import subprocess
         if subprocess.run(["pgrep", "-f", r"-m sonata2 keep polkit( |$)"],
@@ -93,6 +97,7 @@ def run() -> int:
             GLib.spawn_command_line_async(self_command() + " keep polkit")
     except Exception as e:
         print(f"sonata2-autostart: polkit: {e}")
+    mark("autostart: files")
     try:                                   # Files resident (like Finder): windows open at once
         import subprocess
         if subprocess.run(["pgrep", "-f", r"-m sonata2 files( |$)"],
@@ -101,22 +106,28 @@ def run() -> int:
             GLib.spawn_command_line_async(self_command() + " files --background")
     except Exception as e:
         print(f"sonata2-autostart: files: {e}")
+    mark("autostart: gtk style")
     try:
         from . import gtkstyle
         gtkstyle.clean()                   # (an older version styled GTK 4 apps for every desktop)
+        mark("autostart: reset env")
         gtkstyle.reset_env()               # (and forced GTK_THEME on D-Bus activated apps)
+        mark("autostart: flatpak theme")
         from . import flatpak_theme
         flatpak_theme.apply()              # Flatpak apps in Sonata's look (Settings > General)
     except Exception as e:
         print(f"sonata2-autostart: gtk style: {e}")
+    mark("autostart: keyring")
     try:
         from . import keyring
         keyring.start()                    # KeePassXC: saved passwords for every app
     except Exception as e:
         print(f"sonata2-autostart: keyring: {e}")
+    mark("autostart: login items")
     started = 0
     for name, info in entries():
         try:
+            mark(f"autostart: {name}")
             info.launch([], None)
             started += 1
         except GLib.Error as e:
