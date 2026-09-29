@@ -64,6 +64,7 @@ if [ "$UNINSTALL" = 1 ]; then
     rm -f "$HOME/.local/share/applications/sonata2-launchpad.desktop" \
           "$HOME/.local/share/applications/sonata2-settings.desktop"
     "$(dirname "$0")/tools/quiet-console.sh" revert || true
+    sudo rm -f /etc/polkit-1/rules.d/50-sonata2-mount.rules 2>/dev/null || true
     say "Done. Your settings are still in $CFG/sonata2 (delete that folder to reset them)."
     exit 0
 fi
@@ -346,6 +347,20 @@ fi
 
 # -- a quiet console: no kernel messages or "[ OK ]" lines between screens ----------------------------
 "$SRC/tools/quiet-console.sh" install || true
+
+# -- disks: Files mounts every disk at login; the administrator isn't asked for a password -----------
+# (udisks' "mount a system disk" action, for wheel/sudo members at a local, active session)
+rule='polkit.addRule(function(action, subject) {
+    if ((action.id == "org.freedesktop.udisks2.filesystem-mount-system" ||
+         action.id == "org.freedesktop.udisks2.filesystem-mount" ||
+         action.id == "org.freedesktop.udisks2.encrypted-unlock-system") &&
+        subject.local && subject.active && (subject.isInGroup("wheel") || subject.isInGroup("sudo")))
+        return polkit.Result.YES;
+});'
+if [ -d /etc/polkit-1/rules.d ] || sudo mkdir -p /etc/polkit-1/rules.d 2>/dev/null; then
+    printf '%s\n' "$rule" | sudo tee /etc/polkit-1/rules.d/50-sonata2-mount.rules >/dev/null && \
+        echo "Disks: mounted at login without a password (polkit rule 50-sonata2-mount)."
+fi
 
 # -- Sonata's login screen (greetd) -------------------------------------------------------------------
 if [ -x /usr/local/bin/sonata-greeter ] && [ "$GREETER" != 0 ]; then

@@ -888,6 +888,8 @@ def main() -> int:
                 state["resident"] = True
                 start()
                 a.hold()                     # never quits on its own
+                from .files import automount
+                automount.start()            # every disk mounted and in the sidebar
                 from .files.window import FilesWindow
                 # warm once: imports, CSS, icons -- the first window then opens at once
                 GLib.timeout_add(1500, lambda: (FilesWindow(a, None).destroy(), False)[1])

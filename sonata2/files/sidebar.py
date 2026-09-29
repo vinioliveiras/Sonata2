@@ -125,7 +125,7 @@ class Sidebar(Gtk.Box):
         self.append(Gtk.ScrolledWindow(child=self.list, vexpand=True,
                                        hscrollbar_policy=Gtk.PolicyType.NEVER))
         self._volumes = Gio.VolumeMonitor.get()
-        for sig in ("mount-added", "mount-removed", "mount-changed"):
+        for sig in ("mount-added", "mount-removed", "mount-changed", "volume-added", "volume-removed"):
             self._volumes.connect(sig, lambda *_: self.rebuild())
         self._current = None
         os.makedirs(os.path.dirname(BOOKMARKS), exist_ok=True)      # (a monitor needs the folder)
@@ -162,6 +162,15 @@ class Sidebar(Gtk.Box):
                 continue
             self._place(mount.get_name(), mount.get_symbolic_icon() or "drive-removable-media-symbolic",
                         root.get_uri(), mount if (mount.can_eject() or mount.can_unmount()) else None, disk=True)
+        # disks not mounted yet (still mounting, or one that couldn't be): shown too; a click mounts it
+        for vol in self._volumes.get_volumes():
+            if vol.get_mount() is not None or not vol.can_mount():
+                continue
+            uri = "volume:" + (vol.get_uuid() or vol.get_identifier("unix-device") or vol.get_name())
+            if uri in self._rows:
+                continue
+            self._place(vol.get_name(), vol.get_symbolic_icon() or "drive-harddisk-symbolic", uri, disk=True)
+            self._rows[uri].volume = vol
         self._place("Trash", "user-trash-symbolic", "trash:///")      # (Vini: Trash in the sidebar)
         if self._current:
             self.select(self._current)
@@ -303,8 +312,23 @@ class Sidebar(Gtk.Box):
             "filesystem::size,filesystem::free", GLib.PRIORITY_LOW, None, got)
 
     def _activated(self, _lb, row) -> None:
-        if not self._quiet and getattr(row, "uri", None):
-            self._on_open(row.uri)
+        if self._quiet or not getattr(row, "uri", None):
+            return
+        vol = getattr(row, "volume", None)
+        if vol is not None:                          # not mounted yet: mount, then open it
+            def done(v, res):
+                try:
+                    v.mount_finish(res)
+                except GLib.Error as e:
+                    ui.dialog.alert(f"“{v.get_name()}” couldn't be opened.", e.message,
+                                    [("ok", "OK", "default")], parent=self.get_root())
+                    return
+                m = v.get_mount()
+                if m is not None:
+                    self._on_open(m.get_root().get_uri())
+            vol.mount(Gio.MountMountFlags.NONE, Gtk.MountOperation.new(self.get_root()), None, done)
+            return
+        self._on_open(row.uri)
 
     def select(self, uri) -> None:
         """Highlight the place showing `uri` (none if it isn't one)."""
