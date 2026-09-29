@@ -218,10 +218,11 @@ def combo_row(title, options, selected, on_change, subtitle="") -> Adw.ComboRow:
     return row
 
 
-def slider_row(title, value, lower, upper, on_change, subtitle="", ends=None) -> Adw.ActionRow:
-    """ends=("Slow", "Fast"): small labels under the slider's ends (macOS)."""
+def slider_row(title, value, lower, upper, on_change, subtitle="", ends=None, default=None) -> Adw.ActionRow:
+    """ends=("Slow", "Fast"): small labels under the slider's ends (macOS).
+    default: a double-click on the slider resets it to this value."""
     row = Adw.ActionRow(title=title, subtitle=subtitle)
-    s = ui.controls.slider(value, on_change, lower=lower, upper=upper)
+    s = ui.controls.slider(value, on_change, lower=lower, upper=upper, default=default)
     s.set_size_request(220, -1)
     s.set_valign(Gtk.Align.CENTER)
     if ends:
@@ -631,6 +632,7 @@ class Settings(Adw.ApplicationWindow):
             col.append(sc)
             col.append(Gtk.Label(label=label, css_classes=["st-caption"]))
             bands.append(col)
+            ui.controls.reset_on_double_click(sc, 0.0)
             scales.append(sc)
         wrap = Gtk.Box(spacing=8, margin_start=12, margin_top=12, margin_bottom=12)
         wrap.append(axis_col)
@@ -756,7 +758,7 @@ class Settings(Adw.ApplicationWindow):
         g.add(switch_row("Turn On Until Tomorrow", nightshift.manual_active(cfg), nightshift.set_manual,
                          subtitle="Manual"))
         g.add(slider_row("Colour Temperature", cfg["warmth"], 0, 100, lambda v: save(warmth=int(v)),
-                         ends=("Less Warm", "More Warm")))
+                         ends=("Less Warm", "More Warm"), default=50))
         return g
 
     def _page_battery(self):
@@ -834,10 +836,10 @@ class Settings(Adw.ApplicationWindow):
         rate = int(get("input", "kb_repeat_rate", "40") or 40)
         delay = int(get("input", "kb_repeat_delay", "400") or 400)
         rep.add(slider_row("Key Repeat", rate, 2, 80, lambda v: self._wf("kb_repeat_rate", int(v)),
-                           ends=("Slow", "Fast")))
+                           ends=("Slow", "Fast"), default=40))
         # Delay Until Repeat: Long (left) .. Short (right), like macOS
         rep.add(slider_row("Delay Until Repeat", 1150 - delay, 150, 1000,
-                           lambda v: self._wf("kb_repeat_delay", int(1150 - v)), ends=("Long", "Short")))
+                           lambda v: self._wf("kb_repeat_delay", int(1150 - v)), ends=("Long", "Short"), default=750))
         src = group("Input Sources", "The first one is in use; switch from the input menu in the menu bar.")
         names = dict(system.XKB_LAYOUTS)
         lays = system.keyboard_layouts()
@@ -875,7 +877,8 @@ class Settings(Adw.ApplicationWindow):
         get = system.wayfire_get
         g = group("Point & Click")
         g.add(slider_row("Tracking speed", _speed(get("input", "touchpad_cursor_speed", "0")), 0, 100,
-                         lambda v: self._wf("touchpad_cursor_speed", round(v / 50 - 1, 2)), ends=("Slow", "Fast")))
+                         lambda v: self._wf("touchpad_cursor_speed", round(v / 50 - 1, 2)), ends=("Slow", "Fast"),
+                         default=50))
         g.add(switch_row("Tap to click", get("input", "tap_to_click", "true") == "true",
                          lambda on: self._wf("tap_to_click", on), subtitle="Tap with one finger"))
         g.add(switch_row("Tap and drag", get("input", "tap_and_drag", "true") == "true",
@@ -892,13 +895,15 @@ class Settings(Adw.ApplicationWindow):
         get = system.wayfire_get
         g = group()
         g.add(slider_row("Tracking speed", _speed(get("input", "mouse_cursor_speed", "0")), 0, 100,
-                         lambda v: self._wf("mouse_cursor_speed", round(v / 50 - 1, 2)), ends=("Slow", "Fast")))
+                         lambda v: self._wf("mouse_cursor_speed", round(v / 50 - 1, 2)), ends=("Slow", "Fast"),
+                         default=50))
         try:
             scroll = float(get("input", "mouse_scroll_speed", "1") or 1)
         except ValueError:
             scroll = 1.0
         g.add(slider_row("Scrolling speed", scroll * 50, 5, 150,
-                         lambda v: self._wf("mouse_scroll_speed", round(v / 50, 2)), ends=("Slow", "Fast")))
+                         lambda v: self._wf("mouse_scroll_speed", round(v / 50, 2)), ends=("Slow", "Fast"),
+                         default=50))
         g.add(switch_row("Natural scrolling", get("input", "mouse_natural_scroll", "false") == "true",
                          lambda on: self._wf("mouse_natural_scroll", on),
                          subtitle="Content tracks finger movement"))
@@ -1419,10 +1424,11 @@ class Settings(Adw.ApplicationWindow):
         cfg = config.load("dock", D.DEFAULTS)
         size = group("Dock")
         size.add(slider_row("Size", cfg["icon_size"], D.MIN_SIZE, D.MAX_SIZE,
-                            lambda v: self._save("dock", "icon_size", int(v))))
+                            lambda v: self._save("dock", "icon_size", int(v)), default=D.DEFAULTS["icon_size"]))
         size.add(switch_row("Magnification", cfg["magnification"], lambda on: self._save("dock", "magnification", on)))
         size.add(slider_row("Magnified size", cfg["magnified_size"], D.MIN_SIZE, D.MAX_SIZE,
-                            lambda v: self._save("dock", "magnified_size", int(v))))
+                            lambda v: self._save("dock", "magnified_size", int(v)),
+                            default=D.DEFAULTS["magnified_size"]))
         size.add(combo_row("Position on screen", [("left", "Left"), ("bottom", "Bottom"), ("right", "Right")],
                            cfg["position"], lambda v: self._save("dock", "position", v)))
         behave = group()
@@ -1450,9 +1456,9 @@ class Settings(Adw.ApplicationWindow):
         look.add(switch_row("Translucent Dock", cfg["glass"], lambda on: self._save("dock", "glass", on),
                             subtitle="Frosted glass (off: solid)"))
         look.add(slider_row("Distance from the screen edge", cfg["edge_gap"], 0, 24,
-                            lambda v: self._save("dock", "edge_gap", int(v))))
+                            lambda v: self._save("dock", "edge_gap", int(v)), default=D.DEFAULTS["edge_gap"]))
         look.add(slider_row("Space above the Dock for zoomed windows", cfg["window_gap"], 0, 24,
-                            lambda v: self._save("dock", "window_gap", int(v))))
+                            lambda v: self._save("dock", "window_gap", int(v)), default=D.DEFAULTS["window_gap"]))
         return [size, behave, wins, look]
 
     def _set_minimize_effect(self, v):

@@ -13,7 +13,7 @@ work with them unchanged."""
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, GObject, Graphene, Gsk, Gtk  # noqa: E402
+from gi.repository import Gdk, GLib, GObject, Graphene, Gsk, Gtk  # noqa: E402
 
 from . import theme  # noqa: E402
 
@@ -198,9 +198,10 @@ class ModuleSlider(Gtk.Widget):
 
 
 def slider(value: float = 0, on_change=None, style: str = "menu", lower: float = 0,
-           upper: float = 100):
+           upper: float = 100, default: float = None):
     """style: "menu" (thin, accent fill) or "module" (Control Center capsule).
-    on_change(value) fires while dragging."""
+    on_change(value) fires while dragging. default: a double-click puts the
+    slider back to it (and on_change applies it)."""
     if style == "module":
         m = ModuleSlider(value, lower, upper)
         if on_change:
@@ -213,7 +214,20 @@ def slider(value: float = 0, on_change=None, style: str = "menu", lower: float =
     s.set_hexpand(True)
     if on_change:
         s.connect("value-changed", lambda sc: on_change(sc.get_value()))
+    if default is not None:
+        reset_on_double_click(s, default)
     return s
+
+
+def reset_on_double_click(scale: Gtk.Range, default: float) -> None:
+    """Double-click a slider: back to its default value."""
+    g = Gtk.GestureClick(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+
+    def pressed(gest, n, _x, _y):
+        if n == 2:
+            GLib.idle_add(lambda: (scale.set_value(default), False)[1])   # after the scale's own jump
+    g.connect("pressed", pressed)
+    scale.add_controller(g)
 
 
 def switch(active: bool = False, on_change=None) -> Gtk.Switch:
