@@ -98,6 +98,31 @@ def run_dock(app, args, ui):
         win = dock.DockWindow(app, cfg, manager)
     win.present()
     d = win.dock
+    from .shell import layer, monitors
+    if not args.preview and layer.layer_shell():
+        # Settings > Dock > "Show the Dock on every display": a Dock of its own
+        # on each other display (same apps; the main one does the extras)
+        def create(m):
+            if m is monitors.main() or not dock.load_config().get("all_displays"):
+                return None
+            w = dock.DockWindow(app, dock.load_config(), manager, monitor=m)
+            w.present()
+            return w
+
+        def destroy(w):
+            if w is not None:
+                w.dock.detach()
+                w.destroy()
+        extra = monitors.each(create, destroy)
+        monitors.on_main_changed(lambda _m: extra.rebuild())
+        state_all = {"on": bool(cfg.get("all_displays"))}
+
+        def cfg_changed():
+            on = bool(dock.load_config().get("all_displays"))
+            if on != state_all["on"]:
+                state_all["on"] = on
+                extra.rebuild()
+        app._sonata_dock_cfg = dock.config.watch("dock", cfg_changed)
     # Launchpad open: the Dock goes above it (macOS keeps the Dock visible over
     # Launchpad, and apps can be dragged onto it); back below windows after.
     from gi.repository import Gio, GLib as _GLib
@@ -456,6 +481,8 @@ def key(name: str) -> int:
         else:
             level, muted = max(0, min(100, cur[0] + step)), False
             system.set_volume(level, False)
+            from . import sounds
+            sounds.play("volume")                      # macOS: feedback when the volume changes
     elif kind == "brightness":
         level, muted = max(1, min(100, (system.brightness() or 50) + step)), False
         system.set_brightness(level)

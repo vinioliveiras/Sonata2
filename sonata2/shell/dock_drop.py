@@ -107,6 +107,8 @@ def attach_trash(dock, tile) -> None:
     def drop(_target, value, _x, _y):
         tile.remove_css_class(HOVER)
         moved = False
+        from .. import sounds
+        sounds.play("trash")
         for f in _files(value):
             try:
                 moved = f.trash(None) or moved

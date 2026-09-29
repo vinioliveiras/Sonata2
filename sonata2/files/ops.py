@@ -81,6 +81,9 @@ def rename(f: Gio.File, new_name: str, on_done, on_error) -> None:
 
 
 def trash(files, on_error=None) -> None:
+    from .. import sounds
+    if files:
+        sounds.play("trash")
     for f in files:
         def done(src, res):
             try:
@@ -135,6 +138,8 @@ def delete_now(files, on_done=None, on_error=None) -> None:
 
 
 def empty_trash(on_done=None, on_error=None) -> None:
+    from .. import sounds
+    sounds.play("empty-trash")
     t = Gio.File.new_for_uri(TRASH)
     try:
         kids = [t.get_child(i.get_name()) for i in t.enumerate_children("standard::name", NOFOLLOW, None)]
@@ -274,6 +279,8 @@ class Transfer:
     # -- GTK thread ---------------------------------------------------------------------
     def _finish(self, err):
         self.op.finish()
+        from .. import sounds
+        sounds.play("done" if err is None else "error")
         if err is not None:
             ui.dialog.alert("The operation can’t be completed.", err.message, [("ok", "OK", "default")],
                             parent=self.parent)

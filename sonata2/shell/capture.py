@@ -160,6 +160,8 @@ class Capture:
         cmd = ["grim"] + (["-g", geo] if geo else []) + [path]
         if subprocess.run(cmd).returncode != 0:
             return
+        from .. import sounds
+        sounds.play("screenshot")
         if to_clip and shutil.which("wl-copy"):
             with open(path, "rb") as f:
                 subprocess.run(["wl-copy", "--type", "image/png"], stdin=f)

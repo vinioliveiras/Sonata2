@@ -516,7 +516,15 @@ class Settings(Adw.ApplicationWindow):
                                   lambda k: system.run_async(system.select_input, None, k)))
         system.run_async(lambda: (system.volume(), system.audio_outputs(), system.audio_inputs(),
                                   system.input_volume()), fill)
-        return [vol, out]
+        from ..sounds import DEFAULTS as SND
+        snd = config.load("sounds", SND)
+        effects = group("Sound Effects")
+        effects.add(switch_row("Play user interface sound effects", snd["effects"],
+                               lambda on: self._save("sounds", "effects", on),
+                               subtitle="Moving to the Trash, emptying it, copies finished, screenshots"))
+        effects.add(switch_row("Play feedback when volume is changed", snd["volume_feedback"],
+                               lambda on: self._save("sounds", "volume_feedback", on)))
+        return [vol, out, effects]
 
     def _page_displays(self):
         bright = group("Brightness")
@@ -1250,6 +1258,9 @@ class Settings(Adw.ApplicationWindow):
         behave = group()
         behave.add(switch_row("Automatically hide and show the Dock", cfg["autohide"],
                               lambda on: self._save("dock", "autohide", on)))
+        behave.add(switch_row("Show the Dock on every display", cfg.get("all_displays", False),
+                              lambda on: self._save("dock", "all_displays", on),
+                              subtitle="Otherwise only on the main display (Displays)"))
         behave.add(switch_row("Show suggested and recent apps in Dock", cfg["show_recents"],
                               lambda on: self._save("dock", "show_recents", on)))
         behave.add(switch_row("Animate opening applications", cfg["bounce"],

@@ -34,7 +34,7 @@ DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "window_gap": 6, "gl
             "indicators": True, "bounce": True, "minimize_effect": "genie",
             "magnification": False, "magnified_size": 80, "position": "bottom",
             "autohide": False, "autohide_delay_ms": 300, "show_recents": True,
-            "recent": [], "stacks": None}
+            "recent": [], "stacks": None, "all_displays": False}
 EDGES = ("left", "bottom", "right")
 MIN_SIZE, MAX_SIZE = 16, 128
 MAX_RECENTS = 3
@@ -895,7 +895,10 @@ class DockWindow(Gtk.ApplicationWindow):
     Auto-hide: the Dock slides out; a TRIGGER px strip at the edge (along
     the Dock) brings it back after autohide_delay_ms."""
 
-    def __init__(self, app, cfg: dict, manager=None):
+    def __init__(self, app, cfg: dict, manager=None, monitor=None):
+        """monitor=None: the main display, following it; else that display
+        (the extra Docks of "Show the Dock on every display")."""
+        self._monitor = monitor
         # resizable: lets layer-shell stretch the surface along the edge
         # (a fixed-size window would keep its natural width).
         super().__init__(application=app, title="Dock", css_classes=["sonata-dock"],
@@ -929,10 +932,11 @@ class DockWindow(Gtk.ApplicationWindow):
             self.layer = layer.anchor_edge(self, "sonata2-dock", edge, self._exclusive())
             if self.layer:                          # on the main display; follows it (monitors.py)
                 from . import monitors
-                m = monitors.main()
+                m = self._monitor or monitors.main()
                 if m is not None:
                     layer.layer_shell().set_monitor(self, m)
-                monitors.on_main_changed(self._move_to)
+                if self._monitor is None:
+                    monitors.on_main_changed(self._move_to)
         else:
             layer.set_edge(self, edge, self._exclusive())
         self._hidden = False

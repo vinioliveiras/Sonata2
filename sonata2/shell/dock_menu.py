@@ -79,6 +79,8 @@ def _trash_count() -> int:
 def empty_trash() -> None:
     """Permanently delete the Trash's contents (via gvfs trash:///, which also
     covers trash folders on other drives; plain files as a fallback)."""
+    from .. import sounds
+    sounds.play("empty-trash")
     trash = Gio.File.new_for_uri("trash:///")
     try:
         for child in trash.enumerate_children("standard::name", Gio.FileQueryInfoFlags.NONE, None):
