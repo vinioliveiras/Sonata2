@@ -306,32 +306,59 @@ class Bar(Gtk.CenterBox):
                            f"sonata-volume-{3 if vol > 66 else 2 if vol > 33 else 1}-symbolic")
 
     # -- extras panels -----------------------------------------------------------------------
+    def _prefs_row(self, pop, title, page):
+        """"Wi-Fi Preferences…" etc. at the bottom of a menu (Big Sur)."""
+        return ui.panel.row(None, title, on_click=lambda: (pop.popdown(), open_settings(page)))
+
     def _wifi_panel(self, btn):
+        """Big Sur Wi-Fi menu: switch, the joined network, other networks
+        (round signal badges, lock), Wi-Fi Preferences…"""
         on = Gtk.Switch(css_classes=["sonata-switch"], valign=Gtk.Align.CENTER)
         col = ui.panel.column(ui.panel.header("Wi-Fi", on))
+        cur_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         nets = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col.append(ui.panel.separator())
-        col.append(ui.panel.section_title("Networks"))
+        col.append(cur_box)
+        col.append(ui.panel.section_title("Other Networks"))
         nets.append(ui.panel.row(None, "Searching…"))
         col.append(nets)
+        col.append(ui.panel.separator())
         pop = ui.panel.popup(btn, col, gap=2)
+        col.append(self._prefs_row(pop, "Wi-Fi Preferences…", "wifi"))
         ui.panel.align_to_start(pop, btn, 2)
+
+        def badge(n):
+            level = 3 if n.signal > 60 else 2 if n.signal > 30 else 1
+            b = Gtk.Box(css_classes=["wifi-badge"] + (["on"] if n.connected else []), valign=Gtk.Align.CENTER)
+            b.append(Gtk.Image(icon_name=f"sonata-wifi-{level}-symbolic", pixel_size=14, hexpand=True,
+                               halign=Gtk.Align.CENTER))
+            return b
+
+        def net_row(n):
+            trailing = Gtk.Box(spacing=4)
+            if n.secure:
+                trailing.append(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=12,
+                                          css_classes=["dim-label"]))
+            row = ui.panel.row(None, n.ssid, trailing, on_click=lambda n=n: (pop.popdown(), self._join(n)))
+            content = row.get_child() if isinstance(row, Gtk.Button) else row
+            content.prepend(badge(n))
+            return row
 
         def fill(res):
             enabled, networks = res or (False, [])
             on.set_active(enabled)
-            while nets.get_first_child():
-                nets.remove(nets.get_first_child())
-            for n in networks[:12]:
-                sig = "excellent" if n.signal > 75 else "good" if n.signal > 50 else "ok" if n.signal > 25 else "weak"
-                trailing = Gtk.Box(spacing=4)
-                if n.secure:
-                    trailing.append(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=12))
-                trailing.append(Gtk.Image(icon_name=f"network-wireless-signal-{sig}-symbolic", pixel_size=16))
-                nets.append(ui.panel.row("object-select-symbolic" if n.connected else None, n.ssid, trailing,
-                                         on_click=lambda n=n: (pop.popdown(), self._join(n))))
-            if not networks:
-                nets.append(ui.panel.row(None, "No networks" if enabled else "Wi-Fi is off"))
+            for box in (cur_box, nets):
+                while box.get_first_child():
+                    box.remove(box.get_first_child())
+            joined = [n for n in networks if n.connected]
+            if joined:
+                cur_box.append(ui.panel.section_title("Known Network"))
+                cur_box.append(net_row(joined[0]))
+            others = [n for n in networks if not n.connected][:10]
+            for n in others:
+                nets.append(net_row(n))
+            if not others:
+                nets.append(ui.panel.row(None, "No networks" if enabled else "Wi-Fi: Off"))
         system.run_async(lambda: (system.wifi_enabled(), system.wifi_scan()), fill)
         on.connect("state-set", lambda _s, st: (system.run_async(system.set_wifi_enabled, lambda _r: self._poll(), st),
                                                 False)[1])
@@ -351,17 +378,24 @@ class Bar(Gtk.CenterBox):
         dlg.set_extra_child(entry)
 
     def _battery_panel(self, btn):
-        pct, status = system.battery()
-        src = "Power Adapter" if system.on_ac() else "Battery"
+        """Big Sur battery menu: header with the level, power source,
+        Show Percentage, Battery Preferences… (filled in the background)."""
+        pct_lbl = Gtk.Label(css_classes=["dim-label"])
+        src_row = ui.panel.row(None, "Power Source: …")
         percent_sw = ui.controls.switch(self.cfg["battery_percent"], self._toggle_percent)
-        col = ui.panel.column(
-            ui.panel.header("Battery", Gtk.Label(label=f"{pct}%" if pct is not None else "")),
-            ui.panel.row(None, f"Power Source: {src}"),
-            ui.panel.row(None, status or ""),
-            ui.panel.separator(),
-            ui.panel.row(None, "Show Percentage", percent_sw))
+        col = ui.panel.column(ui.panel.header("Battery", pct_lbl), src_row, ui.panel.separator(),
+                              ui.panel.row(None, "Show Percentage", percent_sw), ui.panel.separator())
         pop = ui.panel.popup(btn, col, gap=2)
+        col.append(self._prefs_row(pop, "Battery Preferences…", "battery"))
         ui.panel.align_to_start(pop, btn, 2)
+
+        def fill(res):
+            (pct, status), ac = res or ((None, ""), False)
+            pct_lbl.set_label(f"{pct}%" if pct is not None else "")
+            text = "Power Source: " + ("Power Adapter" if ac else "Battery")
+            src_row.label.set_label(text + (f" · {status}" if status and status not in ("Discharging", "Unknown")
+                                            else ""))
+        system.run_async(lambda: (system.battery(), system.on_ac()), fill)
         return pop
 
     def _toggle_percent(self, on: bool) -> None:
@@ -370,12 +404,30 @@ class Bar(Gtk.CenterBox):
         self.battery_pct.set_visible(on)
 
     def _sound_panel(self, btn):
-        vol = system.volume()
-        slider = ui.controls.slider(vol[0] if vol else 0, lambda v: self._set_volume(v))
-        col = ui.panel.column(ui.panel.header("Sound"), Gtk.Box(css_classes=["panel-header"]))
-        col.get_last_child().append(slider)
+        """Big Sur sound menu: slider, Output devices (check on the current
+        one), Sound Preferences…"""
+        slider = ui.controls.slider(0, lambda v: self._set_volume(v))
+        holder = Gtk.Box(css_classes=["panel-header"])
+        holder.append(slider)
+        outs = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        col = ui.panel.column(ui.panel.header("Sound"), holder, ui.panel.separator(),
+                              ui.panel.section_title("Output"), outs, ui.panel.separator())
         pop = ui.panel.popup(btn, col, gap=2)
+        col.append(self._prefs_row(pop, "Sound Preferences…", "sound"))
         ui.panel.align_to_start(pop, btn, 2)
+
+        def fill(res):
+            vol, sinks = res or (None, [])
+            if vol:
+                slider.set_value(vol[0])
+            for sk in sinks:
+                r = ui.panel.row("object-select-symbolic", sk.name, on_click=lambda sk=sk: (
+                    pop.popdown(), system.run_async(system.set_default_sink, None, sk.id)))
+                r.icon.set_opacity(1 if sk.default else 0)            # checkmark column (menus)
+                outs.append(r)
+            if not sinks:
+                outs.append(ui.panel.row(None, "No output devices"))
+        system.run_async(lambda: (system.volume(), system.audio_sinks()), fill)
         return pop
 
     def _set_volume(self, v) -> None:
@@ -409,39 +461,154 @@ def open_settings(page: str = "") -> None:
                      env=env, start_new_session=True)
 
 
+ui.register("""
+.cc-small { padding: 8px; }
+.wifi-badge { min-width: 26px; min-height: 26px; border-radius: 99px; background: %(toggle_off)s;
+  color: %(label)s; margin-right: 2px; }
+.wifi-badge.on { background: %(accent)s; color: %(label_on_accent)s; }
+.cc-small label { font-size: %(text_small)s; font-weight: 400; }
+.cc-slider-box { min-height: 22px; }
+.cc-slider-icon { color: alpha(%(label)s, 0.55); margin-left: 6px; -gtk-icon-size: 12px; }
+.cc-np-title { font-weight: 700; }
+.cc-np-artist { color: %(label_secondary)s; font-size: %(text_small)s; }
+.cc-np button { min-width: 26px; min-height: 26px; padding: 0; border: none; background: none;
+  box-shadow: none; color: %(label)s; border-radius: 99px; }
+.cc-np button:hover { background: %(tool_hover)s; }
+""", key="control-center")
+
+
+def _slider_with_icon(icon, value, on_change, sensitive=True):
+    """Big Sur module slider: the symbol sits inside the capsule, left."""
+    over = Gtk.Overlay(css_classes=["cc-slider-box"])
+    sl = ui.controls.slider(value, on_change, style="module")
+    sl.set_sensitive(sensitive)
+    over.set_child(sl)
+    img = Gtk.Image(icon_name=icon, css_classes=["cc-slider-icon"], halign=Gtk.Align.START,
+                    valign=Gtk.Align.CENTER, can_target=False)
+    over.add_overlay(img)
+    return over, sl
+
+
 class ControlCenter(Gtk.Box):
-    """Big Sur Control Center (compact): connectivity module, Dark Mode,
-    Display and Sound sliders."""
+    """Big Sur Control Center: connectivity module (Wi-Fi, Bluetooth) beside
+    Dark Mode and two small modules (Screenshot, Lock Screen); Display and
+    Sound sliders; Now Playing (MPRIS) when a player runs. Opens at once;
+    states fill in from background reads."""
 
     def __init__(self, bar: Bar):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8, width_request=300)
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8, width_request=320)
         self.bar = bar
-        ssid, _sig, _wired = system.wifi_current()
-        bt = system.bluetooth_state()
-        conn = ui.panel.module(
-            ui.panel.toggle("network-wireless-symbolic", "Wi-Fi", system.wifi_enabled(),
-                            lambda on: system.run_async(system.set_wifi_enabled, lambda _r: bar._poll(), on),
-                            caption=ssid or "Not Connected"),
-            ui.panel.toggle("bluetooth-active-symbolic", "Bluetooth", bool(bt),
-                            lambda on: system.run_async(system.set_bluetooth, None, on),
-                            caption="On" if bt else "Off" if bt is not None else "Unavailable"))
+        self.wifi = ui.panel.toggle("network-wireless-symbolic", "Wi-Fi", False,
+                                    lambda on: system.run_async(system.set_wifi_enabled, lambda _r: bar._poll(), on),
+                                    caption="…")
+        self.bt = ui.panel.toggle("bluetooth-active-symbolic", "Bluetooth", False,
+                                  lambda on: system.run_async(system.set_bluetooth, None, on), caption="…")
+        conn = ui.panel.module(self.wifi, self.bt, spacing=12)
+        conn.set_valign(Gtk.Align.FILL)
         dark = Adw.StyleManager.get_default().get_dark()
-        appearance = ui.panel.module(ui.panel.toggle("weather-clear-night-symbolic", "Dark Mode", dark,
-                                                     self._set_dark))
+        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        right.append(ui.panel.module(ui.panel.toggle("sonata-dark-mode-symbolic", "Dark Mode", dark,
+                                                     self._set_dark)))
+        smalls = Gtk.Box(spacing=8, homogeneous=True)
+        smalls.append(self._small("camera-photo-symbolic", "Screenshot", self._screenshot))
+        smalls.append(self._small("system-lock-screen-symbolic", "Lock Screen",
+                                  lambda: system.run_async(system.power_action, None, "lock")))
+        right.append(smalls)
         row = Gtk.Box(spacing=8, homogeneous=True)
         row.append(conn)
-        row.append(appearance)
+        row.append(right)
         self.append(row)
-        b = system.brightness()
-        if b is not None:
-            self.append(ui.panel.module(Gtk.Label(label="Display", xalign=0, css_classes=["panel-module-title"]),
-                                        ui.controls.slider(b, lambda v: system.run_async(system.set_brightness,
-                                                                                         None, int(v)),
-                                                           style="module")))
-        vol = system.volume()
-        if vol is not None:
-            self.append(ui.panel.module(Gtk.Label(label="Sound", xalign=0, css_classes=["panel-module-title"]),
-                                        ui.controls.slider(vol[0], bar._set_volume, style="module")))
+        disp, self.bright = _slider_with_icon("display-brightness-symbolic", 50,
+                                              lambda v: system.run_async(system.set_brightness, None, int(v)))
+        self.append(ui.panel.module(Gtk.Label(label="Display", xalign=0, css_classes=["panel-module-title"]), disp))
+        snd, self.vol = _slider_with_icon("audio-volume-high-symbolic", 50, bar._set_volume)
+        self.append(ui.panel.module(Gtk.Label(label="Sound", xalign=0, css_classes=["panel-module-title"]), snd))
+        self.np = None
+        system.run_async(lambda: (system.wifi_enabled(), system.wifi_current(), system.bluetooth_state(),
+                                  system.brightness(), system.volume()), self._fill)
+        self._now_playing()
+
+    def _small(self, icon, title, cb):
+        b = Gtk.Button(css_classes=["panel-module", "cc-small"], can_focus=False)
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        col.append(Gtk.Image(icon_name=icon, pixel_size=18))
+        col.append(Gtk.Label(label=title, wrap=True, justify=Gtk.Justification.CENTER))
+        b.set_child(col)
+        b.connect("clicked", lambda *_: (self._close(), cb()))
+        return b
+
+    def _close(self):
+        pop = self.get_ancestor(Gtk.Popover)
+        if pop:
+            pop.popdown()
+
+    def _fill(self, res):
+        if not res:
+            return
+        wifi_on, (ssid, _sig, _wired), bt, b, vol = res
+        ui.panel.set_toggle(self.wifi, bool(wifi_on), ssid or ("Not Connected" if wifi_on else "Off"))
+        ui.panel.set_toggle(self.bt, bool(bt), "On" if bt else "Off" if bt is not None else "Unavailable")
+        if b is None:
+            self.bright.set_sensitive(False)
+        else:
+            self.bright.set_value(b)
+        if vol is None:
+            self.vol.set_sensitive(False)
+        else:
+            self.vol.set_value(vol[0])
+
+    def _screenshot(self):
+        """Whole screen to ~/Pictures (grim), like Cmd+Shift+3."""
+        def shoot():
+            import shutil
+            pics = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES) or GLib.get_home_dir()
+            name = GLib.DateTime.new_now_local().format("Screenshot %Y-%m-%d at %H.%M.%S.png")
+            if shutil.which("grim"):
+                system._run(["grim", os.path.join(pics, name)], timeout=10)
+        GLib.timeout_add(350, lambda: (system.run_async(shoot), False)[1])   # after the panel closes
+
+    # -- Now Playing (MPRIS over D-Bus) ---------------------------------------------------
+    def _now_playing(self):
+        try:
+            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+            names = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                                  "ListNames", None, None, Gio.DBusCallFlags.NONE, 500, None).unpack()[0]
+        except GLib.Error:
+            return
+        players = [n for n in names if n.startswith("org.mpris.MediaPlayer2.")]
+        if not players:
+            return
+        try:
+            proxy = Gio.DBusProxy.new_sync(bus, Gio.DBusProxyFlags.NONE, None, players[0],
+                                           "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player", None)
+        except GLib.Error:
+            return
+        meta = proxy.get_cached_property("Metadata")
+        meta = meta.unpack() if meta else {}
+        title = meta.get("xesam:title") or "Not Playing"
+        artist = ", ".join(meta.get("xesam:artist") or [])
+        status = proxy.get_cached_property("PlaybackStatus")
+        playing = status is not None and status.unpack() == "Playing"
+        box = Gtk.Box(spacing=8, css_classes=["cc-np"])
+        texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
+        texts.append(Gtk.Label(label=title, xalign=0, ellipsize=Pango.EllipsizeMode.END, css_classes=["cc-np-title"]))
+        if artist:
+            texts.append(Gtk.Label(label=artist, xalign=0, ellipsize=Pango.EllipsizeMode.END,
+                                   css_classes=["cc-np-artist"]))
+        box.append(texts)
+
+        def call(method, btn=None):
+            proxy.call(method, None, Gio.DBusCallFlags.NONE, 1000, None, None)
+            if btn is not None:
+                btn.set_icon_name("media-playback-start-symbolic" if btn.get_icon_name().startswith(
+                    "media-playback-pause") else "media-playback-pause-symbolic")
+        play = Gtk.Button(icon_name="media-playback-pause-symbolic" if playing else "media-playback-start-symbolic")
+        play.connect("clicked", lambda b: call("PlayPause", b))
+        nxt = Gtk.Button(icon_name="media-skip-forward-symbolic")
+        nxt.connect("clicked", lambda *_: call("Next"))
+        box.append(play)
+        box.append(nxt)
+        self.append(ui.panel.module(box))
 
     def _set_dark(self, on: bool) -> None:
         """Dark Mode is a Linux setting (freedesktop colour-scheme), so every
@@ -510,6 +677,23 @@ class AboutAppWindow(Adw.Window):
         self.set_content(Gtk.WindowHandle(child=outer))
 
 
+TITLEBAR = {   # Big Sur title bars: (focused bg, unfocused bg, title, unfocused title)
+    False: ("#e8e8e8ff", "#f6f6f6ff", "#262626ff", "#9a9a9aff"),
+    True: ("#2d2d2dff", "#262626ff", "#e6e6e6ff", "#8a8a8aff"),
+}
+
+
+def set_titlebar_colors(dark: bool) -> None:
+    """Colours of the server-side title bars (pixdecor and Wayfire's own
+    decoration) for the appearance; Wayfire reloads its config live."""
+    fg, bg, text, dim = TITLEBAR[bool(dark)]
+    if system.wayfire_get("pixdecor", "fg_color") != "\\" + fg:
+        for k, v in (("fg_color", fg), ("bg_color", bg), ("fg_text_color", text), ("bg_text_color", dim)):
+            system.wayfire_set("pixdecor", k, "\\" + v)
+        for k, v in (("active_color", fg), ("inactive_color", bg), ("font_color", text)):
+            system.wayfire_set("decoration", k, "\\" + v)
+
+
 class TopBarWindow(Gtk.ApplicationWindow):
     def __init__(self, app, preview: bool = False):
         super().__init__(application=app, title="Menu Bar", css_classes=["sonata-topbar"], decorated=False,
@@ -519,6 +703,12 @@ class TopBarWindow(Gtk.ApplicationWindow):
                                        ignore_app_ids={"io.github.vinioliveiras.sonata2.topbar"})
         self.bar = Bar(self.manager)
         self.set_size_request(-1, BAR_H)
+        if not preview:
+            # Title bars Wayfire draws (terminals, X11 apps) follow Dark Mode
+            # live too: the menu bar always runs, so it keeps them in sync.
+            sm = Adw.StyleManager.get_default()
+            sm.connect("notify::dark", lambda m, _p: system.run_async(set_titlebar_colors, None, m.get_dark()))
+            system.run_async(set_titlebar_colors, None, sm.get_dark())
         if preview:
             self._preview()
         else:

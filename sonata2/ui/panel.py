@@ -30,6 +30,7 @@ popover.sonata-panel > contents {
 .panel-row { min-height: %(control_h)s; padding: 1px 10px; border-radius: %(r_menu_row)s;
   background: none; border: none; box-shadow: none; }
 .panel-row:hover { background: %(accent_selected)s; color: %(label_on_accent)s; }
+.panel-row label { font-weight: 400; }
 .panel-row.static:hover { background: none; color: inherit; }
 .panel-sep { min-height: 1px; margin: 5px 10px; background: %(separator)s; }
 .panel-module { background: %(module_bg)s; border-radius: 12px; padding: 10px;
@@ -107,20 +108,25 @@ def separator() -> Gtk.Box:
 
 
 def row(icon_name, text: str, trailing: Gtk.Widget = None, on_click=None) -> Gtk.Widget:
+    """A menu-like row; `.label` / `.icon` let callers update it later."""
     content = Gtk.Box(spacing=8)
+    icon = None
     if icon_name:
-        content.append(Gtk.Image(icon_name=icon_name, pixel_size=16))
-    content.append(Gtk.Label(label=text, xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.END,
-                             max_width_chars=30))
+        icon = Gtk.Image(icon_name=icon_name, pixel_size=16)
+        content.append(icon)
+    label = Gtk.Label(label=text, xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.END, max_width_chars=30)
+    content.append(label)
     if trailing is not None:
         content.append(trailing)
     if on_click is None:
         content.add_css_class("panel-row")
         content.add_css_class("static")
+        content.label, content.icon = label, icon
         return content
     b = Gtk.Button(css_classes=["panel-row"], can_focus=False)
     b.set_child(content)
     b.connect("clicked", lambda _b: on_click())
+    b.label, b.icon = label, icon
     return b
 
 
@@ -145,9 +151,17 @@ def toggle(icon_name: str, title: str, on: bool, on_change, caption: str = "") -
     box.append(btn)
     texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
     texts.append(Gtk.Label(label=title, xalign=0, css_classes=["panel-module-title"]))
-    if caption:
-        texts.append(Gtk.Label(label=caption, xalign=0, css_classes=["panel-caption"],
-                               ellipsize=Pango.EllipsizeMode.END, max_width_chars=16))
+    box.caption = Gtk.Label(label=caption, xalign=0, css_classes=["panel-caption"], visible=bool(caption),
+                            ellipsize=Pango.EllipsizeMode.END, max_width_chars=16)
+    texts.append(box.caption)
     box.append(texts)
     box.button = btn
     return box
+
+
+def set_toggle(box, on: bool, caption: str = None) -> None:
+    """Update a toggle() without calling its callback."""
+    (box.button.add_css_class if on else box.button.remove_css_class)("on")
+    if caption is not None:
+        box.caption.set_label(caption)
+        box.caption.set_visible(bool(caption))

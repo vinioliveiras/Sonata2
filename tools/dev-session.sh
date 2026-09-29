@@ -36,8 +36,10 @@ done
 # (the session's `sonata2 ...` commands become this clone's python -m sonata2;
 # no dbus-update-activation-environment here: it would leak into GNOME)
 "$REPO/tools/wayfire-config.sh" "$REPO/config/wayfire.ini" "$run/resolved.ini"
+# (at the path Settings edits live: sonata2/wfconfig.py)
+cfg="${XDG_RUNTIME_DIR:-$run}/sonata2-wayfire.ini"
 sed -e '/^\[autostart\]/,$d' -e "s|= sonata2 |= env PYTHONPATH=$REPO python3 -m sonata2 |" \
-    "$run/resolved.ini" > "$run/wayfire.ini"
+    "$run/resolved.ini" > "$cfg"
 {
     echo "[autostart]"
     echo "autostart_wf_shell = false"
@@ -52,7 +54,7 @@ sed -e '/^\[autostart\]/,$d' -e "s|= sonata2 |= env PYTHONPATH=$REPO python3 -m 
     echo "mode = 1600x1000"
     echo "[output:X11-1]"
     echo "mode = 1600x1000"
-} >> "$run/wayfire.ini"
+} >> "$cfg"
 
 # Sample wallpaper only if none is set (Sonata's dconf layer, see session-env.sh).
 cur="$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null)"
@@ -60,7 +62,7 @@ if [ -n "$wall" ] && { [ -z "$cur" ] || [ "$cur" = "''" ]; }; then
     keep="$HOME/.config/sonata2/sample-wallpaper.png"; cp "$wall" "$keep"
     gsettings set org.gnome.desktop.background picture-uri "file://$keep" 2>/dev/null || true
 fi
-echo "Wayfire config: $run/wayfire.ini"
+echo "Wayfire config: $cfg"
 [ -z "$wall" ] && echo "(no wallpaper: install python-pillow or set SONATA2_WALLPAPER to see the glass)"
-wayfire -c "$run/wayfire.ini" > "$logs/wayfire.log" 2>&1 || true
+wayfire -c "$cfg" > "$logs/wayfire.log" 2>&1 || true
 echo "Logs: $logs"

@@ -402,76 +402,7 @@ def set_gsetting(schema: str, key: str, value: str) -> bool:
 
 
 # -- input devices (Wayfire [input] of the Sonata session) -----------------------------------
-def _wayfire_files() -> List[str]:
-    """The session config and, while a session runs, its resolved copy
-    (the one Wayfire reads and reloads live; see tools/wayfire-config.sh)."""
-    cfg = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "sonata2")
-    files = [os.path.join(cfg, "wayfire.ini")]
-    run = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "sonata2-wayfire.ini")
-    if os.path.exists(run):
-        files.append(run)
-    return files
-
-
-def wayfire_get(section: str, key: str, default: str = "") -> str:
-    for path in reversed(_wayfire_files()):
-        try:
-            with open(path, encoding="utf-8") as f:
-                cur = None
-                for line in f:
-                    s = line.strip()
-                    if s.startswith("[") and s.endswith("]"):
-                        cur = s[1:-1]
-                    elif cur == section and "=" in s and not s.startswith("#"):
-                        k, v = s.split("=", 1)
-                        if k.strip() == key:
-                            return v.strip()
-        except OSError:
-            continue
-    return default
-
-
-def wayfire_set(section: str, key: str, value) -> bool:
-    """Set `key = value` in [section] of the session's Wayfire config(s);
-    Wayfire applies it at once. Comments and other lines stay as they are."""
-    if isinstance(value, bool):
-        value = "true" if value else "false"
-    ok = False
-    for path in _wayfire_files():
-        try:
-            with open(path, encoding="utf-8") as f:
-                lines = f.readlines()
-        except OSError:
-            lines = []
-        out, cur, done, sec_end = [], None, False, None
-        for i, line in enumerate(lines):
-            s = line.strip()
-            if s.startswith("[") and s.endswith("]"):
-                if cur == section and not done:
-                    sec_end = len(out)
-                cur = s[1:-1]
-            elif cur == section and "=" in s and not s.startswith("#") and s.split("=", 1)[0].strip() == key:
-                out.append(f"{key} = {value}\n")
-                done = True
-                continue
-            out.append(line)
-        if not done:
-            if cur == section:
-                sec_end = len(out)
-            if sec_end is not None:
-                while sec_end > 0 and not out[sec_end - 1].strip():      # before the blank line
-                    sec_end -= 1
-                out.insert(sec_end, f"{key} = {value}\n")
-            else:
-                out += [f"\n[{section}]\n", f"{key} = {value}\n"]
-        try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                f.writelines(out)
-            ok = True
-        except OSError:
-            pass
-    return ok
+from ..wfconfig import wayfire_get, wayfire_set  # noqa: E402,F401  (gi-free, used by the session script)
 
 
 XKB_LAYOUTS = [("us", "U.S."), ("us(intl)", "U.S. International"), ("br", "Brazilian (ABNT2)"),

@@ -78,6 +78,13 @@ def search():
           '<path d="M10.2 10.2l4.2 4.2" stroke="#000" stroke-width="1.9" stroke-linecap="round"/>')
 
 
+def dark_mode():
+    """Half-filled circle (the Dark Mode control)."""
+    write("sonata-dark-mode-symbolic",
+          '<circle cx="8" cy="8" r="6" fill="none" stroke="#000" stroke-width="1.5"/>'
+          '<path d="M8 2a6 6 0 0 1 0 12z" fill="#000"/>')
+
+
 def logo():
     with open(os.path.join(OUT, "..", "..", "actions", "symbolic", "sonata-logo-symbolic.svg"), "w") as f:
         f.write(HEAD + '<circle cx="8" cy="8" r="6.2" fill="#000"/></svg>\n')
@@ -89,5 +96,6 @@ if __name__ == "__main__":
     wifi()
     battery()
     search()
+    dark_mode()
     logo()
     print("written to", os.path.normpath(OUT))
