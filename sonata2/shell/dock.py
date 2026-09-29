@@ -37,7 +37,8 @@ DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "glass": True,
 EDGES = ("left", "bottom", "right")
 MIN_SIZE, MAX_SIZE = 16, 128
 MAX_RECENTS = 3
-LAUNCH_TIMEOUT_MS = 10000   # stop bouncing if no window shows up
+LAUNCH_BOUNCES = 3          # macOS bounces a few times, then stops even if no window shows up
+NO_BOUNCE = {"sonata2-launchpad"}   # shell toggles open instantly: no launch bounce
 BOUNCE_MS = 620             # one bounce
 MAG_RADIUS = 3.0            # magnification reaches this many icons away
 MAG_IN_MS, MAG_OUT_MS = 120, 250
@@ -88,6 +89,8 @@ def _rect(x, y, w, h) -> Graphene.Rect:
 
 CSS = """
 window.sonata-dock, window.sonata-dock > contents { background: none; box-shadow: none; }
+/* no GTK drop-target outline (the dashed frame while dragging) */
+window.sonata-dock *:drop(active) { box-shadow: none; outline: none; border-color: transparent; }
 .dock-tile, .dock-tile:hover, .dock-tile:active, .dock-tile:focus {
   padding: 0 %(tile_pad)dpx; margin: 0; min-width: 0; min-height: 0;
   border: none; border-radius: 0; background: none; box-shadow: none; outline: none;
@@ -198,7 +201,7 @@ class DockTile(Gtk.Button):
             GLib.source_remove(self._bounce_src)
             self._stop_bounce()
 
-    def bounce(self, ms: int = LAUNCH_TIMEOUT_MS) -> None:
+    def bounce(self, ms: int = LAUNCH_BOUNCES * BOUNCE_MS) -> None:
         """Bounce until the app's first window appears (set_running) or `ms`."""
         self.add_css_class("launching")
         if self._bounce_src:
@@ -300,12 +303,12 @@ class Dock(Gtk.Box):
         for did in cfg["pinned"]:
             info = apps.lookup(did)
             if info:
-                self._add_tile(did, info.get_display_name(), info.get_icon(), info)
+                self._add_tile(did, info.get_display_name(), icons.app_icon(info), info)
         if cfg["show_recents"]:
             for did in cfg["recent"]:
                 info = apps.lookup(did)
                 if info and did not in self.tiles:
-                    self._add_tile(did, info.get_display_name(), info.get_icon(), info)
+                    self._add_tile(did, info.get_display_name(), icons.app_icon(info), info)
         self.stacks.load()
         self._relayout()
         self._watch_trash()
@@ -565,7 +568,7 @@ class Dock(Gtk.Box):
             info = apps.lookup(key)
             if not info:
                 return
-            tile = self._add_tile(key, info.get_display_name(), info.get_icon(), info)
+            tile = self._add_tile(key, info.get_display_name(), icons.app_icon(info), info)
             tile.set_running(key in self.windows)
         others = [t for t in self.app_tiles() if t is not tile]
         slot = others.index(before) if before in others else (
@@ -677,7 +680,7 @@ class Dock(Gtk.Box):
             if key not in self.tiles:
                 info = apps.lookup(key)
                 if info:
-                    self._add_tile(key, info.get_display_name(), info.get_icon(), info)
+                    self._add_tile(key, info.get_display_name(), icons.app_icon(info), info)
                 else:   # no .desktop: generic icon, app_id as name
                     self._add_tile(key, key, Gio.ThemedIcon.new("application-x-executable"))
         for key, tile in self.tiles.items():
@@ -712,9 +715,10 @@ class Dock(Gtk.Box):
             self.launch(tile)
 
     def launch_feedback(self, tile: DockTile) -> None:
-        # With window tracking the bounce stops when the first window maps;
-        # without it, bounce twice.
-        tile.bounce(LAUNCH_TIMEOUT_MS if self.manager else 2 * BOUNCE_MS)
+        # Stops when the first window maps, or after a few bounces anyway
+        # (apps whose window we can't match must not bounce forever).
+        if tile.key not in NO_BOUNCE:
+            tile.bounce(LAUNCH_BOUNCES * BOUNCE_MS)
 
     def launch(self, tile: DockTile) -> None:
         info = tile.info

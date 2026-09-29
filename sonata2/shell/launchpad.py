@@ -33,6 +33,7 @@ USER_APPS = os.path.join(GLib.get_user_data_dir(), "applications")
 
 ui.register("""
 window.sonata-launchpad, window.sonata-launchpad > contents { background: none; }
+window.sonata-launchpad *:drop(active) { box-shadow: none; outline: none; border-color: transparent; }
 .lp-search { min-height: 28px; min-width: 240px; border-radius: 8px; padding: 0 8px;
   background: %(field_on_scrim)s; color: %(on_scrim)s; border: none; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.18);
   font-family: %(font)s; font-size: %(text_body)s; caret-color: %(on_scrim)s; }
@@ -131,7 +132,7 @@ class LaunchItem(Gtk.Button):
             info = pad.installed.get(item)
             self.name = info.get_display_name() if info else item
             img = Gtk.Image(pixel_size=size, css_classes=["lp-icon"])
-            icons.set_image(img, info.get_icon() if info and info.get_icon()
+            icons.set_image(img, icons.app_icon(info) if info
                             else Gio.ThemedIcon.new("application-x-executable"))
             over.set_child(img)
             if info and _removable(info):
@@ -158,8 +159,8 @@ class LaunchItem(Gtk.Button):
         for i, app_id in enumerate(folder["apps"][:9]):
             info = self.pad.installed.get(app_id)
             img = Gtk.Image(pixel_size=mini)
-            if info and info.get_icon():
-                icons.set_image(img, info.get_icon())
+            if info:
+                icons.set_image(img, icons.app_icon(info))
             box.attach(img, i % 3, i // 3, 1, 1)
         return box
 

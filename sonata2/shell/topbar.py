@@ -483,8 +483,9 @@ class AboutAppWindow(Gtk.Window):
         head.append(ui.window.traffic_lights(self.close, self.minimize))
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["about-box"])
         img = Gtk.Image(pixel_size=96)
-        if info and info.get_icon():
-            img.set_from_gicon(info.get_icon())
+        if info:
+            from .. import icons
+            icons.set_image(img, icons.app_icon(info))
         col.append(img)
         col.append(Gtk.Label(label=name, css_classes=["about-name"]))
         if info:

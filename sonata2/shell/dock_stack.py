@@ -88,6 +88,11 @@ def _icon(info) -> Gio.Icon:
 
 
 def _open(gfile: Gio.File) -> None:
+    """Folders open in Sonata's Files, files in their default app."""
+    from ..files import open_folder
+    if gfile.query_file_type(Gio.FileQueryInfoFlags.NONE, None) == Gio.FileType.DIRECTORY:
+        open_folder(gfile.get_uri())
+        return
     Gio.AppInfo.launch_default_for_uri(gfile.get_uri(), None)
 
 

@@ -4,13 +4,21 @@ The shell process looks icons up in the bundled `Sonata` theme (our
 overrides -> Sonata-MacTahoe -> hicolor), chosen in Sonata's own settings
 (`appearance.json`, key `icon_theme`), never in the Linux one. Only when an
 app's icon exists in none of those does it fall back to the system theme.
-setup() must run once, before any widget is created."""
+setup() must run once, before any widget is created.
+
+App icons (app_icon): the desktop entry's icon is looked up under several
+names (Icon=, desktop id, StartupWMClass, executable...) in Sonata's own
+themes, so e.g. an absolute Icon=/opt/spotify/spotify.png still gets the
+MacTahoe artwork. Apps Sonata has no artwork for keep their own icon, drawn
+on a white Big Sur plate so every app icon has the same shape."""
 import os
 
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, Gtk  # noqa: E402
+gi.require_version("Gsk", "4.0")
+gi.require_version("Graphene", "1.0")
+from gi.repository import Gdk, Gio, GObject, Graphene, Gsk, Gtk  # noqa: E402
 
 from . import config  # noqa: E402
 
@@ -31,9 +39,101 @@ def setup() -> None:
                           config.load("appearance", APPEARANCE_DEFAULTS)["icon_theme"])
 
 
+# -- app icons -------------------------------------------------------------------------------
+_own_names = None      # icon names Sonata's themes draw (app artwork)
+_plated = set()        # gicon strings to draw on the white plate
+
+
+def _own():
+    global _own_names
+    if _own_names is None:
+        _own_names = set()
+        for rel in ("Sonata/apps/scalable", "Sonata-MacTahoe/apps/scalable"):
+            try:
+                _own_names.update(os.path.splitext(n)[0] for n in os.listdir(os.path.join(ICONS_DIR, rel)))
+            except OSError:
+                pass
+    return _own_names
+
+
+def _candidates(info):
+    icon = info.get_icon()
+    if isinstance(icon, Gio.ThemedIcon):
+        yield from icon.get_names()
+    elif isinstance(icon, Gio.FileIcon):
+        base = os.path.splitext(icon.get_file().get_basename() or "")[0]
+        yield base
+        yield base.split("-linux")[0]                   # spotify-linux-512 -> spotify
+    did = (info.get_id() or "")[:-8] if (info.get_id() or "").endswith(".desktop") else (info.get_id() or "")
+    wm = info.get_startup_wm_class() if hasattr(info, "get_startup_wm_class") else None
+    exe = os.path.basename(info.get_executable() or "")
+    for name in (did, wm, exe, (info.get_name() or "").replace(" ", "-")):
+        if name:
+            yield name
+            yield name.lower()
+
+
+def app_icon(info) -> Gio.Icon:
+    """The icon to show for an app (Gio.AppInfo): Sonata's artwork when any
+    of its names match, else the app's own icon, marked for the plate."""
+    own = _own()
+    for name in _candidates(info):
+        if name in own:
+            return Gio.ThemedIcon.new(name)
+    icon = info.get_icon() or Gio.ThemedIcon.new("application-x-executable")
+    _plated.add(icon.to_string())
+    return icon
+
+
+class _Plate(GObject.Object, Gdk.Paintable):
+    """An app's own icon on a white Big Sur squircle (plate 94 % of the
+    tile like MacTahoe's artwork, corners 24 %, artwork 62 %)."""
+
+    def __init__(self, inner, size):
+        super().__init__()
+        self.inner, self.size = inner, size
+
+    def do_get_intrinsic_width(self):
+        return self.size
+
+    def do_get_intrinsic_height(self):
+        return self.size
+
+    def do_snapshot(self, snap, w, h):
+        inset = w * 0.065
+        rect = Graphene.Rect().init(inset, inset, w - 2 * inset, h - 2 * inset)
+        rr = Gsk.RoundedRect()
+        rr.init_from_rect(rect, (w - 2 * inset) * 0.225)
+        snap.push_rounded_clip(rr)
+        snap.append_linear_gradient(rect, Graphene.Point().init(0, inset), Graphene.Point().init(0, h - inset),
+                                    [_stop(0, "#ffffff"), _stop(1, "#ececec")])
+        snap.pop()
+        snap.append_border(rr, [0.5] * 4, [_rgba("rgba(0,0,0,0.12)")] * 4)
+        a = w * 0.62
+        snap.save()
+        snap.translate(Graphene.Point().init((w - a) / 2, (h - a) / 2))
+        self.inner.snapshot(snap, a, a)
+        snap.restore()
+
+
+def _stop(offset, spec):
+    st = Gsk.ColorStop()
+    st.offset, st.color = offset, _rgba(spec)
+    return st
+
+
+def _rgba(spec):
+    c = Gdk.RGBA()
+    c.parse(spec)
+    return c
+
+
 def set_image(image: Gtk.Image, gicon) -> None:
     """Show `gicon` from Sonata's theme, or from the system theme if only
-    that one has it."""
+    that one has it (apps from app_icon() without artwork: on the plate)."""
+    if gicon.to_string() in _plated:
+        image.set_from_paintable(paintable(image, gicon, image.get_pixel_size() or 48))
+        return
     theme = Gtk.IconTheme.get_for_display(image.get_display())
     if _system is None or theme.has_gicon(gicon) or not _system.has_gicon(gicon):
         image.set_from_gicon(gicon)
@@ -45,6 +145,12 @@ def set_image(image: Gtk.Image, gicon) -> None:
 
 def paintable(widget: Gtk.Widget, gicon, size: int):
     """Icon paintable (drag icons etc.) with the same fallback as set_image."""
+    if gicon.to_string() in _plated:
+        return _Plate(_lookup(widget, gicon, int(size * 0.62) or 1), size)
+    return _lookup(widget, gicon, size)
+
+
+def _lookup(widget, gicon, size):
     theme = Gtk.IconTheme.get_for_display(widget.get_display())
     if _system is not None and not theme.has_gicon(gicon) and _system.has_gicon(gicon):
         theme = _system
