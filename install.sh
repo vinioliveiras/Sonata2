@@ -4,9 +4,12 @@
 #   ./install.sh              install for this user (~/.local), ask for sudo
 #                             only to add "Sonata" to the login screen
 #   ./install.sh --system     install for all users (/usr/local, needs sudo)
-#   ./install.sh --deps       also install missing dependencies with the
-#                             distro's package manager (pacman/apt/dnf/zypper/xbps/apk);
-#                             optional extras one by one, pywayland from PyPI if needed
+#   (dependencies)            always checked and installed with the distro's
+#                             package manager (pacman/apt/dnf/zypper/xbps/apk):
+#                             required ones, then every optional one (Wi-Fi,
+#                             screenshots, Night Shift...), pywayland from PyPI
+#                             if needed, pixdecor from the AUR on Arch
+#   ./install.sh --no-deps    only check them (print what's missing)
 #   ./install.sh --yes        don't ask (login-screen entry included)
 #   ./install.sh --uninstall  remove it again (your settings stay)
 #   ./install.sh --dev        link to this clone instead of copying it: the
@@ -20,11 +23,11 @@
 # preferences for the "Sonata" desktop.
 set -euo pipefail
 SRC="$(cd "$(dirname "$0")" && pwd)"
-MODE=user DEPS=0 YES=0 UNINSTALL=0 DEV=0
+MODE=user DEPS=1 YES=0 UNINSTALL=0 DEV=0
 for a in "$@"; do
     case "$a" in
-        --system) MODE=system ;; --deps) DEPS=1 ;; --yes|-y) YES=1 ;; --uninstall) UNINSTALL=1 ;; --dev) DEV=1 ;;
-        -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+        --system) MODE=system ;; --deps) DEPS=1 ;; --no-deps) DEPS=0 ;; --yes|-y) YES=1 ;; --uninstall) UNINSTALL=1 ;; --dev) DEV=1 ;;
+        -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 0 ;;
         *) echo "unknown option: $a (see --help)"; exit 2 ;;
     esac
 done
@@ -97,7 +100,7 @@ case "$family" in
               OPT="network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr policykit-1-gnome gnome-keyring pulseaudio-utils xwayland grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
     *fedora*|*rhel*) PM="sudo dnf install"; NI="-y"
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python3-gobject python3-cairo python3-pywayland"
-              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
+              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome gnome-keyring pulseaudio-utils xorg-x11-server-Xwayland grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
     *suse*)   PM="sudo zypper install"; NI="-y"
               PKGS="wayfire gtk4 libadwaita-1-0 typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 gtk4-layer-shell python3-gobject python3-gobject-cairo python3-pywayland"
               OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
@@ -110,11 +113,12 @@ case "$family" in
     *)        PM=""; PKGS=""; OPT="" ;;
 esac
 
+[ "$DEPS" = 1 ] && [ -n "$PM" ] && [ "$(id -u)" != 0 ] && { say "Dependencies need your password (sudo)"; sudo -v || DEPS=0; }
 if [ -n "$missing" ]; then
     say "Missing: $missing"
     if [ -n "$PM" ]; then
         echo "Install with:  $PM $PKGS"
-        if [ "$DEPS" = 1 ] || ask "Install them now?"; then $PM $PKGS || true; fi
+        if [ "$DEPS" = 1 ]; then $PM $NI $PKGS || true; fi
     else
         echo "Install Wayfire, GTK 4, libadwaita, gtk4-layer-shell (+ GObject introspection),"
         echo "PyGObject with cairo support and pywayland with your package manager."
@@ -146,14 +150,38 @@ if bad:
     print("\033[1mToo old for Sonata:\033[0m " + ", ".join(bad) + " -- a newer distro release is needed.")
 PY
 if [ -n "$OPT" ]; then
-    echo "Optional (Wi-Fi, sound, brightness, Bluetooth, displays, energy, portals, screenshots,"
-    echo "clipboard, video thumbnails, recording, Night Shift, emoji typing, auto-lock): $PM $OPT"
-    if [ "$DEPS" = 1 ] && [ -n "$NI" ]; then
-        # one by one: a package this release doesn't have mustn't stop the others
-        for p in $OPT; do $PM $NI "$p" >/dev/null 2>&1 || echo "  (not available here: $p)"; done
+    say "Features (Wi-Fi, sound, brightness, Bluetooth, displays, energy, portals, password prompts,"
+    say "saved passwords, screenshots, recording, Night Shift, emoji typing, auto-lock)"
+    if [ "$DEPS" = 1 ]; then
+        # all at once (one transaction); if the distro lacks one of them, one by
+        # one so the others still get installed
+        if ! $PM $NI $OPT; then
+            for p in $OPT; do $PM $NI "$p" >/dev/null 2>&1 || echo "  (not available here: $p)"; done
+        fi
+        # services those features talk to
+        for svc in NetworkManager bluetooth power-profiles-daemon; do
+            if systemctl list-unit-files "$svc.service" >/dev/null 2>&1 && ! systemctl is-active -q "$svc"; then
+                sudo systemctl enable --now "$svc" >/dev/null 2>&1 && echo "  started $svc"
+            fi
+        done
+    else
+        echo "  $PM $OPT"
     fi
 fi
-echo "Optional, macOS title bars for terminals/X11 apps: the pixdecor Wayfire plugin (Arch AUR: wayfire-plugin-pixdecor-git; elsewhere build from github.com/soreau/pixdecor)"
+# pixdecor: macOS title bars for terminals / X11 apps (a Wayfire plugin built from source)
+pixdecor=""
+for d in $(pkg-config --variable=plugindir wayfire 2>/dev/null) /usr/lib/wayfire /usr/lib64/wayfire /usr/local/lib/wayfire; do
+    [ -f "$d/libpixdecor.so" ] && pixdecor=1
+done
+if [ -z "$pixdecor" ]; then
+    aur="$(command -v paru || command -v yay || true)"
+    if [ "$DEPS" = 1 ] && [ -n "$aur" ] && [[ "$family" == *arch* ]]; then
+        say "pixdecor (macOS title bars for terminals and X11 apps) from the AUR -- builds for a few minutes"
+        "$aur" -S --needed --noconfirm wayfire-plugin-pixdecor-git || echo "  (pixdecor didn't build; title bars stay Wayfire's own)"
+    else
+        echo "Optional, macOS title bars for terminals/X11 apps: the pixdecor Wayfire plugin (Arch AUR: wayfire-plugin-pixdecor-git; elsewhere build from github.com/soreau/pixdecor)"
+    fi
+fi
 
 # -- files ----------------------------------------------------------------------------------------
 say "Installing Sonata 2 to $PREFIX"

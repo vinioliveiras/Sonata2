@@ -98,9 +98,9 @@ Finder on its first run with this version.
 ## Install
 
 ```
-./install.sh            # for you (~/.local); asks sudo only for the login-screen entry
+./install.sh            # for you (~/.local), with every dependency (asks your sudo password)
 ./install.sh --system   # for all users (/usr/local)
-./install.sh --deps     # also install missing packages (pacman/apt/dnf/zypper)
+./install.sh --no-deps  # don't install packages, only list what's missing
 ./install.sh --uninstall
 ```
 
@@ -144,7 +144,7 @@ Font: Sonata ships Inter (free). If you install Apple's SF Pro yourself (develop
 ## Use it as your desktop
 
 ```
-./install.sh --dev --deps     # from this clone; optional packages too
+./install.sh --dev            # from this clone, with every dependency
 sonata2 doctor                # what's missing, with the command that fixes it
 ```
 
@@ -229,7 +229,7 @@ them. No distro-specific paths or tools. Minimums: Wayfire 0.9, GTK 4.12,
 libadwaita 1.4, gtk4-layer-shell 1.0, Python 3.10 (developed on the newest:
 GTK 4.24 / libadwaita 1.10). Known good: Arch and derivatives (CachyOS,
 EndeavourOS, Manjaro), Fedora 41+, Debian 13+, Ubuntu 25.04+ and
-derivatives, openSUSE Tumbleweed. `./install.sh --deps` installs what's
+derivatives, openSUSE Tumbleweed. `./install.sh` installs what's
 missing with pacman/apt/dnf/zypper/xbps/apk (optional extras one by one, so a
 package a release lacks doesn't block the rest; pywayland from PyPI when the
 distro has none). Too-old releases (e.g. Debian 12, Ubuntu 24.04: no
