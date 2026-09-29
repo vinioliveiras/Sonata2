@@ -806,9 +806,8 @@ def _load_art(url: str, image: Gtk.Image, size: int) -> None:
 
 
 def now_playing_module(p, header=False) -> Gtk.Widget:
-    """Big Sur Now Playing: artwork, title, artist, play/pause and next
-    (previous too in the menu bar item); follows the player live and says
-    "Not Playing" when there is none."""
+    """Big Sur Now Playing: artwork, title, artist, previous / play-pause /
+    next; follows the player live and says "Not Playing" when there is none."""
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
     if header:
         box.append(Gtk.Label(label="Now Playing", xalign=0, css_classes=["panel-module-title"]))
@@ -826,9 +825,10 @@ def now_playing_module(p, header=False) -> Gtk.Widget:
     texts.append(artist)
     row.append(texts)
     btns = {}
-    keys = (("prev", "media-skip-backward-symbolic", "Previous"),) if header else ()
-    for key, icon, method in keys + (("play", "media-playback-start-symbolic", "PlayPause"),
-                                     ("next", "media-skip-forward-symbolic", "Next")):
+    # previous / play-pause / next (macOS shows no "previous" here; Vini wants it)
+    for key, icon, method in (("prev", "media-skip-backward-symbolic", "Previous"),
+                              ("play", "media-playback-start-symbolic", "PlayPause"),
+                              ("next", "media-skip-forward-symbolic", "Next")):
         b = Gtk.Button(icon_name=icon, valign=Gtk.Align.CENTER)
         b.connect("clicked", lambda _b, m=method: p.call(m))
         btns[key] = b
