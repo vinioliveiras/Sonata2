@@ -1071,16 +1071,13 @@ class AboutAppWindow(Adw.Window):
         self.set_content(outer)
 
 
-TITLEBAR = {   # Big Sur title bars: (focused bg, unfocused bg, title, unfocused title)
-    False: ("#e8e8e8ff", "#f6f6f6ff", "#262626ff", "#9a9a9aff"),
-    True: ("#2d2d2dff", "#262626ff", "#e6e6e6ff", "#8a8a8aff"),
-}
-
-
 def set_titlebar_colors(dark: bool) -> None:
     """Colours of the server-side title bars (pixdecor and Wayfire's own
     decoration) for the appearance; Wayfire reloads its config live."""
-    fg, bg, text, dim = TITLEBAR[bool(dark)]
+    from ..ui import tokens
+    t = tokens.palette(bool(dark))
+    fg, bg, text, dim = (tokens.wayfire_color(t[k]) for k in
+                         ("titlebar_bg", "titlebar_bg_inactive", "titlebar_text", "titlebar_text_inactive"))
     if system.wayfire_get("pixdecor", "fg_color") != "\\" + fg:
         for k, v in (("fg_color", fg), ("bg_color", bg), ("fg_text_color", text), ("bg_text_color", dim)):
             system.wayfire_set("pixdecor", k, "\\" + v)

@@ -33,6 +33,11 @@ LIGHT = {
     "solid_tint": "rgba(236, 236, 240, 0.78)",   # same surface without blur
     "indicator": "rgba(0, 0, 0, 0.62)",          # Dock running dot
     "bar_bg": "rgba(228, 228, 234, 0.70)",       # menu bar: the same glass as glass_tint
+    # title bars Wayfire draws (Chrome, Spotify, X11 apps): the Dock's glass
+    "titlebar_bg": "rgba(228, 228, 234, 0.70)",          # = glass_tint
+    "titlebar_bg_inactive": "rgba(240, 240, 243, 0.82)",
+    "titlebar_text": "rgba(38, 38, 38, 1)",
+    "titlebar_text_inactive": "rgba(154, 154, 154, 1)",
     "bar_item_active": "rgba(0, 0, 0, 0.10)",    # open menu title / pressed extra
     "module_bg": "rgba(255, 255, 255, 0.55)",    # Control Center modules
     "module_track": "rgba(0, 0, 0, 0.10)",       # Control Center slider, empty part
@@ -77,6 +82,10 @@ DARK = {
     "solid_tint": "rgba(30, 30, 34, 0.86)",
     "indicator": "rgba(255, 255, 255, 0.72)",
     "bar_bg": "rgba(16, 16, 20, 0.80)",           # = glass_tint
+    "titlebar_bg": "rgba(16, 16, 20, 0.80)",
+    "titlebar_bg_inactive": "rgba(30, 30, 34, 0.86)",
+    "titlebar_text": "rgba(230, 230, 230, 1)",
+    "titlebar_text_inactive": "rgba(138, 138, 138, 1)",
     "bar_item_active": "rgba(255, 255, 255, 0.18)",
     "module_bg": "rgba(255, 255, 255, 0.08)",
     "module_track": "rgba(255, 255, 255, 0.12)",
@@ -175,6 +184,15 @@ SPACE = {"xxs": 2, "xs": 4, "s": 6, "m": 8, "l": 12, "xl": 16, "xxl": 20}
 # "Task Bar" mode) will add its own LIGHT/DARK/SHARED with the same keys, so
 # components need no change -- only their token values differ.
 THEMES = {"mac": {"light": LIGHT, "dark": DARK, "shared": SHARED}}
+
+
+def wayfire_color(css: str) -> str:
+    """'rgba(r, g, b, a)' or '#rrggbb' -> Wayfire's '#rrggbbaa'."""
+    css = css.strip()
+    if css.startswith("#"):
+        return (css + "ff")[:9] if len(css) == 7 else css
+    r, g, b, *a = [float(x) for x in css[css.index("(") + 1:css.index(")")].split(",")]
+    return "#%02x%02x%02x%02x" % (round(r), round(g), round(b), round(255 * (a[0] if a else 1.0)))
 
 
 def palette(dark: bool, theme: str = "mac") -> dict:

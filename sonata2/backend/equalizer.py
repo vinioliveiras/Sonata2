@@ -20,6 +20,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 
 from gi.repository import GLib
 
@@ -55,6 +56,12 @@ PRESETS = {
 DEFAULTS = {"outputs": {}}      # key -> {"on": bool, "preset": str, "gains": [10 floats]}
 PREFIX = "sonata-eq"            # node names; system.py hides them from the output lists
 RUN_CONF = os.path.join(GLib.get_user_runtime_dir() or "/tmp", "sonata2-equalizer.conf")
+# the chain process's own output (errors loading the chain, WirePlumber links)
+LOG = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "sonata2", "equalizer.log")
+
+
+def _log(*a) -> None:
+    print("equalizer:", *a, file=sys.stderr, flush=True)
 
 
 # -- settings (Settings app) ----------------------------------------------------------
@@ -128,7 +135,7 @@ def conf_text(sinks: dict) -> str:
       }}
     }}
   }}""")
-    return ("context.properties = { log.level = 0 }\n"
+    return ("context.properties = { log.level = 2 }\n"
             "context.spa-libs = { audio.convert.* = audioconvert/libspa-audioconvert "
             "support.* = support/libspa-support }\n"
             "context.modules = [\n"
@@ -142,6 +149,8 @@ def conf_text(sinks: dict) -> str:
 def _run(cmd, timeout=4):
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        if p.returncode:
+            _log(" ".join(cmd[:3]), "->", p.returncode, (p.stderr or "").strip()[:300])
         return p.returncode, p.stdout
     except (OSError, subprocess.SubprocessError):
         return 1, ""
@@ -207,9 +216,11 @@ class Equalizer:
     def sync(self) -> None:
         sinks = _sinks()
         want = tuple(sorted(s for s, port in sinks if curve(f"{s}|{port}")["on"]))
+        _log("outputs", [f"{s}|{p}" for s, p in sinks], "on:", list(want))
         if want != self.chains or (want and (self.proc is None or self.proc.poll() is not None)):
             self._restart({s: curve(f"{s}|{port}")["gains"] for s, port in sinks if s in want})
             GLib.timeout_add(700, lambda: (self._apply(sinks), False)[1])   # nodes need a moment
+            GLib.timeout_add(3000, lambda: (_log_links(), False)[1])
             return
         self._apply(sinks)
 
@@ -226,9 +237,13 @@ class Equalizer:
         with open(RUN_CONF, "w", encoding="utf-8") as f:
             f.write(conf_text(sinks))
         try:
-            self.proc = subprocess.Popen(["pipewire", "-c", RUN_CONF], stdout=subprocess.DEVNULL,
-                                         stderr=subprocess.DEVNULL, start_new_session=True)
-        except OSError:
+            os.makedirs(os.path.dirname(LOG), exist_ok=True)
+            with open(LOG, "w", encoding="utf-8") as log:
+                self.proc = subprocess.Popen(["pipewire", "-c", RUN_CONF], stdout=log, stderr=log,
+                                             start_new_session=True)
+            _log("chain process", self.proc.pid, "for", list(sinks))
+        except OSError as e:
+            _log("can't start pipewire:", e)
             self.proc = None
 
     def _apply(self, sinks) -> None:
@@ -236,6 +251,8 @@ class Equalizer:
         for sink, port in sinks:
             nid = ids.get(f"{PREFIX}.{_slug(sink)}")
             if nid is None:
+                _log("no filter node for", sink, "(chain process",
+                     "exited)" if self.proc is None or self.proc.poll() is not None else "running)")
                 continue
             gains = curve(f"{sink}|{port}")["gains"]
             params = " ".join(f'"b{i}:Gain" {g:.1f}' for i, g in enumerate(gains))
@@ -261,3 +278,19 @@ def _node_ids() -> dict:
         if o.get("type", "").endswith("Node") and name.startswith(PREFIX + "."):
             ids[name] = o["id"]
     return ids
+
+
+def _log_links() -> None:
+    """What WirePlumber linked to the chains (the log shows whether the
+    sound really goes through the equalizer)."""
+    _rc, ver = _run(["wireplumber", "--version"])
+    _log("wireplumber", " ".join(ver.split())[:80])
+    _rc, out = _run(["pw-link", "-l"])
+    lines, keep = [], 0
+    for ln in out.splitlines():
+        if PREFIX in ln:
+            keep = 3
+        if keep:
+            lines.append(ln.strip())
+            keep -= 1
+    _log("links:", " / ".join(lines) or "none")
