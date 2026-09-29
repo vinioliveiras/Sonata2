@@ -654,6 +654,7 @@ class Launchpad(Gtk.ApplicationWindow):
             return Gdk.ContentProvider.new_union(providers)
 
         def begin(s, drag):
+            self._dock_above(True)              # pressing raised Launchpad over the Dock: bring it back
             folder = self.folder_view[1] if self.folder_view and widget.item in self.folder_view[1]["apps"] \
                 and not M.is_folder(widget.item) else None
             self._drag = {"item": widget.item, "widget": widget, "folder": folder, "target": None}

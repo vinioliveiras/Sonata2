@@ -1164,7 +1164,13 @@ class DockWindow(Gtk.ApplicationWindow):
         print(f"sonata2-dock: above Launchpad: {on}", flush=True)      # dock.log: Launchpad/Dock debugging
         LS = layer.layer_shell()
         if LS and self.layer:
-            LS.set_layer(self, LS.Layer.OVERLAY if on else LS.Layer.TOP)
+            if on and LS.get_layer(self) == LS.Layer.OVERLAY:
+                # already there, but Launchpad was raised over it (Wayfire raises
+                # the surface you press on): changing layer again puts the Dock on top
+                LS.set_layer(self, LS.Layer.TOP)
+                GLib.timeout_add(16, lambda: (LS.set_layer(self, LS.Layer.OVERLAY), False)[1])
+            else:
+                LS.set_layer(self, LS.Layer.OVERLAY if on else LS.Layer.TOP)
         if on and self._hidden:
             self._slide(False)                   # auto-hide: show it while Launchpad is open
         elif not on and self.cfg["autohide"]:
