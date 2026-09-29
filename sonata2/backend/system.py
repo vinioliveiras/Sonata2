@@ -254,6 +254,17 @@ TERMINALS = (("kgx", ["--"]), ("gnome-terminal", ["--"]), ("konsole", ["-e"]), (
 def run_in_terminal(command: str) -> bool:
     """Run a shell command in a terminal window that stays open at the end."""
     import shutil
+    import shlex
+    try:                                    # Sonata's own Terminal first (needs VTE for GTK 4)
+        import gi
+        gi.require_version("Vte", "3.91")
+        from gi.repository import Vte  # noqa: F401
+        from ..__main__ import self_command
+        subprocess.Popen(shlex.split(self_command()) + ["terminal", "--exec", command], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except (ValueError, ImportError, OSError):
+        pass
     script = f"{command}; echo; read -p 'Press Enter to close' _"
     for term, flag in ([(os.environ["TERMINAL"], ["-e"])] if os.environ.get("TERMINAL") else []) + list(TERMINALS):
         if shutil.which(term):

@@ -42,6 +42,7 @@ APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
            "calculator": "io.github.vinioliveiras.sonata2.calculator",
            "textedit": "io.github.vinioliveiras.sonata2.textedit",
            "preview": "io.github.vinioliveiras.sonata2.preview",
+           "terminal": "io.github.vinioliveiras.sonata2.terminal",
            "spotlight": "io.github.vinioliveiras.sonata2.spotlight"}
 # Shell surfaces (never shown as running apps in the Dock); Files and
 # Settings are ordinary apps.
@@ -91,6 +92,8 @@ def run_dock(app, args, ui):
     textedit_desktop_file(self_command())
     from .preview.window import preview_desktop_file
     preview_desktop_file(self_command())
+    from .terminal.window import terminal_desktop_file
+    terminal_desktop_file(self_command())
     cfg = dock.load_config()
     if not cfg.get("launchpad_added"):                        # once: pin it after Finder
         cfg["launchpad_added"] = True
@@ -795,6 +798,7 @@ def main() -> int:
     p.add_argument("--service", action="store_true", help="files: started by D-Bus (FileManager1), no window")
     p.add_argument("--page", default="", help="settings: section to open (wifi, dock, ...)")
     p.add_argument("path", nargs="*", help="files: folders to open")
+    p.add_argument("--exec", help="terminal: run this shell command in a new window (it stays open)")
     args = p.parse_intermixed_args()
 
     # Sonata's own UI never takes the GTK theme meant for other apps (the
@@ -852,7 +856,7 @@ def main() -> int:
         uris = [Gio.File.new_for_commandline_arg(x).get_uri() for x in args.path]
         return app.run([sys.argv[0]] + uris)
 
-    if args.component in ("textedit", "preview"):         # document apps: files open in the running one
+    if args.component in ("textedit", "preview", "terminal"):   # files/folders open in the running one
         from gi.repository import Gio
         import importlib
         app.set_flags(Gio.ApplicationFlags.HANDLES_OPEN)
@@ -863,7 +867,18 @@ def main() -> int:
                 if args.dark or args.light:
                     ui.force_appearance("dark" if args.dark else "light")
                 ui.setup()
-            return importlib.import_module(f".{args.component}.window", __package__).open_paths
+            mod = importlib.import_module(f".{args.component}.window", __package__)
+            return getattr(mod, "open_paths", None) or mod.open_windows
+        if args.component == "terminal" and args.exec:     # a window of its own for the command
+            app.set_flags(Gio.ApplicationFlags.NON_UNIQUE)
+
+            def run_command(a):
+                te_start()
+                from .terminal.window import TerminalWindow
+                TerminalWindow(a, command=["sh", "-c", args.exec + "; echo; printf '[Process completed]'; "
+                                           "stty -echo; read _"]).present()
+            app.connect("activate", run_command)
+            return app.run([sys.argv[0]])
         app.connect("activate", lambda a: te_start()(a, []))
         app.connect("open", lambda a, files, _n, _h: te_start()(a, [f.get_uri() for f in files]))
         uris = [Gio.File.new_for_commandline_arg(x).get_uri() for x in args.path]

@@ -46,6 +46,8 @@ LIGHT = {
     "calc_key_fn": "rgba(0, 0, 0, 0.10)",
     "calc_key_op": "#ff9f0a",
     "calc_key_text": "rgba(0, 0, 0, 0.85)",
+    "term_bg": "#ffffff",                          # Terminal, macOS "Basic" profile
+    "term_fg": "#000000",
     "bar_item_active": "rgba(0, 0, 0, 0.10)",    # open menu title / pressed extra
     "module_bg": "rgba(255, 255, 255, 0.55)",    # Control Center modules
     "module_track": "rgba(0, 0, 0, 0.10)",       # Control Center slider, empty part
@@ -101,6 +103,8 @@ DARK = {
     "calc_key_fn": "rgba(255, 255, 255, 0.10)",
     "calc_key_op": "#ff9f0a",
     "calc_key_text": "#ffffff",
+    "term_bg": "#1e1e1e",
+    "term_fg": "#e6e6e6",
     "bar_item_active": "rgba(255, 255, 255, 0.18)",
     "module_bg": "rgba(255, 255, 255, 0.08)",
     "module_track": "rgba(255, 255, 255, 0.12)",
