@@ -210,7 +210,15 @@ them has. Details: [sonata2/data/icons](sonata2/data/icons/README.md).
 | Window list | wlr-foreign-toplevel via [pywayland](https://github.com/flacjacket/pywayland) | Compositor-agnostic (any wlroots compositor), no D-Bus bridge |
 
 Portability: only these packages are required, and all major distros ship
-them. No distro-specific paths or tools.
+them. No distro-specific paths or tools. Minimums: Wayfire 0.9, GTK 4.12,
+libadwaita 1.4, gtk4-layer-shell 1.0, Python 3.10 (developed on the newest:
+GTK 4.24 / libadwaita 1.10). Known good: Arch and derivatives (CachyOS,
+EndeavourOS, Manjaro), Fedora 41+, Debian 13+, Ubuntu 25.04+ and
+derivatives, openSUSE Tumbleweed. `./install.sh --deps` installs what's
+missing with pacman/apt/dnf/zypper/xbps/apk (optional extras one by one, so a
+package a release lacks doesn't block the rest; pywayland from PyPI when the
+distro has none). Too-old releases (e.g. Debian 12, Ubuntu 24.04: no
+gtk4-layer-shell) are reported.
 
 ## Layout
 

@@ -5,7 +5,8 @@
 #                             only to add "Sonata" to the login screen
 #   ./install.sh --system     install for all users (/usr/local, needs sudo)
 #   ./install.sh --deps       also install missing dependencies with the
-#                             distro's package manager (pacman/apt/dnf/zypper)
+#                             distro's package manager (pacman/apt/dnf/zypper/xbps/apk);
+#                             optional extras one by one, pywayland from PyPI if needed
 #   ./install.sh --yes        don't ask (login-screen entry included)
 #   ./install.sh --uninstall  remove it again (your settings stay)
 #   ./install.sh --dev        link to this clone instead of copying it: the
@@ -81,19 +82,31 @@ missing="$(echo "$missing" | xargs)"
 
 . /etc/os-release 2>/dev/null || true
 family="${ID:-} ${ID_LIKE:-}"
+# Package names per family (checked against the distros' archives, 2026-09).
+# Needs: Wayfire >= 0.9, GTK >= 4.12, libadwaita >= 1.4, gtk4-layer-shell >= 1.0,
+# Python >= 3.10 with PyGObject, pycairo and pywayland. Known good: Arch and its
+# derivatives (CachyOS, EndeavourOS, Manjaro), Fedora 41+, Debian 13+,
+# Ubuntu 25.04+ / derivatives, openSUSE Tumbleweed.
+NI=""      # the package manager's "don't ask" flag, for optional packages one by one
 case "$family" in
-    *arch*)   PM="sudo pacman -S --needed"
+    *arch*)   PM="sudo pacman -S --needed"; NI="--noconfirm"
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python-gobject python-cairo python-pywayland"
-              OPT="networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle" ;;
-    *debian*|*ubuntu*) PM="sudo apt install"
+              OPT="networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
+    *debian*|*ubuntu*) PM="sudo apt install"; NI="-y"
               PKGS="wayfire gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtk4layershell-1.0 python3-gi python3-gi-cairo python3-pywayland"
-              OPT="network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr policykit-1-gnome grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle" ;;
-    *fedora*|*rhel*) PM="sudo dnf install"
+              OPT="network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr policykit-1-gnome grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
+    *fedora*|*rhel*) PM="sudo dnf install"; NI="-y"
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python3-gobject python3-cairo python3-pywayland"
-              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle" ;;
-    *suse*)   PM="sudo zypper install"
+              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr polkit-gnome grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
+    *suse*)   PM="sudo zypper install"; NI="-y"
               PKGS="wayfire gtk4 libadwaita-1-0 typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 gtk4-layer-shell python3-gobject python3-gobject-cairo python3-pywayland"
-              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle" ;;
+              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
+    *void*)   PM="sudo xbps-install"; NI="-y"
+              PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python3-gobject python3-cairo python3-pywayland"
+              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
+    *alpine*) PM="sudo apk add"; NI=""
+              PKGS="wayfire gtk4.0 libadwaita gtk4-layer-shell py3-gobject3 py3-cairo py3-pywayland"
+              OPT="networkmanager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-gtk xdg-desktop-portal-wlr grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
     *)        PM=""; PKGS=""; OPT="" ;;
 esac
 
@@ -101,14 +114,46 @@ if [ -n "$missing" ]; then
     say "Missing: $missing"
     if [ -n "$PM" ]; then
         echo "Install with:  $PM $PKGS"
-        if [ "$DEPS" = 1 ] || ask "Install them now?"; then $PM $PKGS; fi
+        if [ "$DEPS" = 1 ] || ask "Install them now?"; then $PM $PKGS || true; fi
     else
         echo "Install Wayfire, GTK 4, libadwaita, gtk4-layer-shell (+ GObject introspection),"
         echo "PyGObject with cairo support and pywayland with your package manager."
     fi
+    # pywayland isn't packaged everywhere: pip, for this user
+    if ! python3 -c "import pywayland" 2>/dev/null; then
+        say "pywayland from PyPI (this user only)"
+        python3 -m pip install --user pywayland 2>/dev/null || \
+            python3 -m pip install --user --break-system-packages pywayland || true
+    fi
 fi
-[ -n "$OPT" ] && echo "Optional (Wi-Fi, sound, brightness, Bluetooth, displays, energy, portals, screenshots, clipboard, video thumbnails): $PM $OPT"
-echo "Optional, macOS title bars for terminals/X11 apps: the pixdecor Wayfire plugin (Arch AUR: wayfire-plugin-pixdecor-git)"
+# Versions (older ones are the usual reason something doesn't show up)
+python3 - <<'PY' || true
+import sys
+bad = []
+if sys.version_info < (3, 10):
+    bad.append(f"Python {sys.version.split()[0]} (needs 3.10+)")
+try:
+    import gi
+    gi.require_version("Gtk", "4.0"); gi.require_version("Adw", "1")
+    from gi.repository import Adw, Gtk
+    if (Gtk.get_major_version(), Gtk.get_minor_version()) < (4, 12):
+        bad.append(f"GTK {Gtk.get_major_version()}.{Gtk.get_minor_version()} (needs 4.12+)")
+    if (Adw.get_major_version(), Adw.get_minor_version()) < (1, 4):
+        bad.append(f"libadwaita {Adw.get_major_version()}.{Adw.get_minor_version()} (needs 1.4+)")
+except Exception:
+    pass
+if bad:
+    print("\033[1mToo old for Sonata:\033[0m " + ", ".join(bad) + " -- a newer distro release is needed.")
+PY
+if [ -n "$OPT" ]; then
+    echo "Optional (Wi-Fi, sound, brightness, Bluetooth, displays, energy, portals, screenshots,"
+    echo "clipboard, video thumbnails, recording, Night Shift, emoji typing, auto-lock): $PM $OPT"
+    if [ "$DEPS" = 1 ] && [ -n "$NI" ]; then
+        # one by one: a package this release doesn't have mustn't stop the others
+        for p in $OPT; do $PM $NI "$p" >/dev/null 2>&1 || echo "  (not available here: $p)"; done
+    fi
+fi
+echo "Optional, macOS title bars for terminals/X11 apps: the pixdecor Wayfire plugin (Arch AUR: wayfire-plugin-pixdecor-git; elsewhere build from github.com/soreau/pixdecor)"
 
 # -- files ----------------------------------------------------------------------------------------
 say "Installing Sonata 2 to $PREFIX"
