@@ -25,11 +25,11 @@ popover.menu { background: none; box-shadow: none; padding: 0; }
 popover.menu > contents {
   padding: 5px; border-radius: %(r_menu)s; min-width: %(menu_min_w)s;
   font-family: %(font)s; font-size: %(text_body)s;
-  color: %(label)s; background-color: %(menu_bg)s;
+  color: %(label)s; background-color: %(panel_material)s;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_menu)s;
 }
-/* menu bar menus only: glass (right-click menus stay opaque -- Vini) */
-popover.menu.glass > contents { background-color: %(panel_material)s; }
+/* every menu -- menu bar, right-click, and their nested submenus (which
+   don't inherit our classes) -- is the same glass (Vini) */
 popover.menu modelbutton {
   min-height: %(control_h)s; padding: 0 10px; border-radius: %(r_menu_row)s;
   color: inherit; background: none;
