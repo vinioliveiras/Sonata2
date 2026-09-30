@@ -853,6 +853,27 @@ class FixedWidthRegressions(unittest.TestCase):
         self.assertEqual(topbar.count("gap=PANEL_GAP)"), 0)       # every menu bar panel has a width
 
 
+class MusicTitleAndSeamRegressions(unittest.TestCase):
+    """Music showed the song twice (title bar + LCD), and the seam fix under
+    the title bar altered the top of the LCD's text (a 12-row band)."""
+
+    def test_music_title_stays_music(self):
+        src = (pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "music" / "window.py").read_text()
+        self.assertNotIn('— Music"', src)
+
+    def test_seam_band_clears_toolbar_content(self):
+        root = pathlib.Path(__file__).resolve().parent.parent
+        cpp = (root / "wayfire-plugin" / "src" / "sonata-corners.cpp").read_text()
+        band = float(re.search(r"const float SEAM_BAND = ([0-9.]+);", cpp).group(1))
+        self.assertNotIn("seam + 12.0", cpp)
+        css = (root / "sonata2" / "ui" / "window.py").read_text()
+        pad_top = int(re.search(r"\.sonata-toolbar \{ min-height: 34px; padding: (\d+)px", css).group(1))
+        music = (root / "sonata2" / "music" / "window.py").read_text()
+        lcd_margin = int(re.search(r"\.mu-lcd \{ min-height: 40px; margin: (\d+)px", music).group(1))
+        self.assertGreaterEqual(pad_top + lcd_margin, band)         # the LCD starts below the band
+        self.assertGreater(band, 5)                                # still covers the maximized overlap
+
+
 class ThemeFadeFocusRegressions(unittest.TestCase):
     """Turning Translucent glass on/off made Settings jump to the next section:
     the theme cross-fade moved the window content, the focused sidebar row

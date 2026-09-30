@@ -172,7 +172,7 @@ def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
 # (window.sonata-unified); the rest of its content paints its own background.
 theme.register("""
 window.sonata-unified { background: transparent; }
-.sonata-toolbar { min-height: 34px; padding: 0 8px; background: %(titlebar_bg)s;
+.sonata-toolbar { min-height: 34px; padding: 2px 8px 0 8px; background: %(titlebar_bg)s;
   box-shadow: inset 0 -1px %(separator)s; }
 window:backdrop .sonata-toolbar { background: %(titlebar_bg_inactive)s; }
 .sonata-toolbar button.tool { min-width: 28px; min-height: 26px; padding: 0 6px; border-radius: 6px;

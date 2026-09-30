@@ -1361,9 +1361,9 @@ class MusicWindow(Gtk.ApplicationWindow):
             self.lcd_title.set_label(t.get("title") or "")
             sub = " — ".join(x for x in (t.get("artist"), t.get("album")) if x)
             self.lcd_sub.set_label(sub)
-            self.set_title(f"{t.get('title')} — Music" if t.get("title") else "Music")
-        else:
-            self.set_title("Music")
+        # the song shows in the LCD right under the title bar: the title stays
+        # "Music" (it was the song twice, in the title bar and the LCD)
+        self.set_title("Music")
         self._update_time(self.player.position if has else 0)
         self._state_changed()
 

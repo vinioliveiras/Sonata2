@@ -108,6 +108,10 @@ uniform float square_top;     /* 1: maximized, the top corners meet the menu bar
 uniform vec4 fill;            /* the title bar's colour (premultiplied) */
 uniform vec4 outline;         /* hairline along the rounded frame (premultiplied), 0: none */
 uniform float seam;           /* where the client's surface starts under the title bar, < 0: none */
+/* rows under the seam that may carry the title bar's tint twice: pixdecor
+ * reaches 1 px under the client (5 px maximized). Kept small: content that
+ * starts lower (a toolbar's controls, Music's LCD) must never be touched. */
+const float SEAM_BAND = 8.0;
 
 varying highp vec2 uvpos;
 
@@ -117,7 +121,7 @@ void main()
     vec2 p = vec2(uvpos.x * size.x, (1.0 - uvpos.y) * size.y);
     vec2 lo = rect.xy;
     vec2 hi = rect.xy + rect.zw;
-    if (seam >= 0.0 && p.y >= seam && p.y < seam + 12.0 && p.x >= lo.x && p.x <= hi.x)
+    if (seam >= 0.0 && p.y >= seam && p.y < seam + SEAM_BAND && p.x >= lo.x && p.x <= hi.x)
     {
         /* pixdecor's title bar reaches a few pixels under the client's top
          * (1 px, 5 px maximized): a see-through toolbar there got the title
@@ -125,8 +129,8 @@ void main()
          * pixel is denser than the same column further down; take the extra
          * layer (the title bar's colour behind the client) out again. */
         /* the plain toolbar: its left edge, below the band */
-        vec4 plain = get_pixel(vec2((lo.x + 3.0) / size.x, 1.0 - (seam + 12.0) / size.y));
-        vec4 below = get_pixel(vec2(uvpos.x, 1.0 - (seam + 12.0) / size.y));
+        vec4 plain = get_pixel(vec2((lo.x + 3.0) / size.x, 1.0 - (seam + SEAM_BAND) / size.y));
+        vec4 below = get_pixel(vec2(uvpos.x, 1.0 - (seam + SEAM_BAND) / size.y));
         /* a column that is plain toolbar below the band (not a control that
          * starts there: copying from one smeared its text upwards), or a
          * pixel with exactly one extra title-bar layer over the toolbar */
