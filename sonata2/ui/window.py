@@ -175,6 +175,18 @@ window.sonata-unified { background: transparent; }
 .sonata-toolbar { min-height: 34px; padding: 2px 8px 0 8px; background: %(titlebar_bg)s;
   box-shadow: inset 0 -1px %(separator)s; }
 window:backdrop .sonata-toolbar { background: %(titlebar_bg_inactive)s; }
+/* pixdecor's title bar reaches under the window's top: 1 px, 5 px when
+ * maximized. Those rows of the toolbar stay see-through, so the title bar's
+ * glass shows there alone -- painted twice, the glass turned into a dark
+ * band (the compositor's seam fix could miss it, maximized). */
+window.sonata-unified .sonata-toolbar {
+  background: linear-gradient(to bottom, transparent 1px, %(titlebar_bg)s 1px); }
+window.sonata-unified:backdrop .sonata-toolbar {
+  background: linear-gradient(to bottom, transparent 1px, %(titlebar_bg_inactive)s 1px); }
+window.sonata-unified.maximized .sonata-toolbar {
+  background: linear-gradient(to bottom, transparent 5px, %(titlebar_bg)s 5px); }
+window.sonata-unified.maximized:backdrop .sonata-toolbar {
+  background: linear-gradient(to bottom, transparent 5px, %(titlebar_bg_inactive)s 5px); }
 .sonata-toolbar button.tool { min-width: 28px; min-height: 26px; padding: 0 6px; border-radius: 6px;
   border: none; background: none; box-shadow: none; color: %(label_secondary)s; }
 .sonata-toolbar button.tool:hover { background: %(tool_hover)s; color: %(label)s; }

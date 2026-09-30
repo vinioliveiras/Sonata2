@@ -874,6 +874,41 @@ class MusicTitleAndSeamRegressions(unittest.TestCase):
         self.assertGreater(band, 5)                                # still covers the maximized overlap
 
 
+class UnifiedToolbarSeamRegressions(unittest.TestCase):
+    """A dark band under the title bar of maximized glass windows (Music):
+    pixdecor's title bar reaches 5 px under a maximized window (1 px
+    otherwise) and the toolbar's glass was painted there too. Those rows of
+    the toolbar are now see-through."""
+
+    def _top_alpha(self, maximized):
+        win = Gtk.Window()
+        ui.window.standard(win)
+        bar = ui.window.glass_toolbar(win, start=(("media-playback-start-symbolic", "Play", lambda: None),))
+        win.set_child(bar)
+        win.set_default_size(300, 60)
+        if maximized:
+            win.add_css_class("maximized")
+        win.present()
+        settle(400)
+        w, h = win.get_width(), win.get_height()
+        snap = Gtk.Snapshot()
+        Gtk.WidgetPaintable.new(bar).snapshot(snap, w, h)
+        tex = win.get_renderer().render_texture(snap.to_node(), Graphene.Rect().init(0, 0, w, h))
+        dl = Gdk.TextureDownloader.new(tex)
+        dl.set_format(Gdk.MemoryFormat.R8G8B8A8)
+        data, stride = dl.download_bytes()
+        data = data.get_data()
+        win.destroy()
+        return [data[y * stride + 150 * 4 + 3] for y in range(8)]
+
+    def test_rows_under_the_title_bar_are_see_through(self):
+        floating, maximized = self._top_alpha(False), self._top_alpha(True)
+        self.assertEqual(floating[0], 0)
+        self.assertTrue(all(a > 0 for a in floating[1:]))
+        self.assertEqual(maximized[:5], [0] * 5)
+        self.assertTrue(all(a > 0 for a in maximized[5:]))
+
+
 class ThemeFadeFocusRegressions(unittest.TestCase):
     """Turning Translucent glass on/off made Settings jump to the next section:
     the theme cross-fade moved the window content, the focused sidebar row
