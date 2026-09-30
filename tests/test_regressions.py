@@ -880,7 +880,7 @@ class MusicTitleAndSeamRegressions(unittest.TestCase):
         cpp = (pathlib.Path(__file__).resolve().parent.parent / "wayfire-plugin" / "src" /
                "sonata-corners.cpp").read_text()
         self.assertIn("float overlap = square_top > 0.5 ? 5.0 : 1.0;", cpp)
-        self.assertRegex(cpp, r"c\.a < 0\.99 && p\.y >= seam && p\.y < seam \+ overlap")
+        self.assertRegex(cpp, r"fill\.a > 0\.0 && p\.y >= seam && p\.y < seam \+ overlap")
         self.assertIn("c = fill;", cpp)
 
 
@@ -917,6 +917,27 @@ class UnifiedToolbarSeamRegressions(unittest.TestCase):
         self.assertTrue(all(a > 0 for a in floating[1:]))
         self.assertEqual(maximized[:5], [0] * 5)
         self.assertTrue(all(a > 0 for a in maximized[5:]))
+
+
+class DiscreteGpuRegressions(unittest.TestCase):
+    """Steam's "Use Discrete Graphics" came back checked after unchecking it:
+    its desktop entry asks for the discrete GPU (PrefersNonDefaultGPU)."""
+
+    def test_unchecking_an_app_that_asks_for_it_sticks(self):
+        from sonata2 import gpu
+
+        class Info:
+            def get_id(self): return "steam.desktop"
+            def has_key(self, k): return k == "PrefersNonDefaultGPU"
+            def get_boolean(self, _k): return True
+        steam = Info()
+        gpu.config.save(gpu.NAME, dict(gpu.DEFAULTS))
+        self.assertTrue(gpu.wants_discrete(steam))              # its entry asks for it
+        gpu.set_discrete(steam, False)
+        self.assertFalse(gpu.wants_discrete(steam))             # the user's choice wins
+        gpu.set_discrete(steam, True)
+        self.assertTrue(gpu.wants_discrete(steam))
+        self.assertNotIn("steam", gpu.config.load(gpu.NAME, gpu.DEFAULTS)["integrated"])
 
 
 class ThemeFadeFocusRegressions(unittest.TestCase):

@@ -16,7 +16,10 @@ import os
 from . import config
 
 NAME = "gpu"
-DEFAULTS = {"discrete": []}          # desktop ids (without .desktop)
+# desktop ids (without .desktop) the user put on the discrete GPU, or took
+# off it -- an app whose entry asks for it (PrefersNonDefaultGPU) is on it
+# unless the user said no
+DEFAULTS = {"discrete": [], "integrated": []}
 NVIDIA_ENV = {"__NV_PRIME_RENDER_OFFLOAD": "1", "__GLX_VENDOR_LIBRARY_NAME": "nvidia",
               "__VK_LAYER_NV_optimus": "NVIDIA_only", "__EGL_VENDOR_LIBRARY_FILENAMES":
               "/usr/share/glvnd/egl_vendor.d/10_nvidia.json"}
@@ -83,7 +86,10 @@ def _key(info) -> str:
 
 
 def wants_discrete(info) -> bool:
-    if _key(info) in config.load(NAME, DEFAULTS)["discrete"]:
+    cfg = config.load(NAME, DEFAULTS)
+    if _key(info) in cfg.get("integrated", []):            # unchecked: the user's choice wins
+        return False
+    if _key(info) in cfg.get("discrete", []):
         return True
     try:
         return bool(info.has_key("PrefersNonDefaultGPU") and info.get_boolean("PrefersNonDefaultGPU"))
@@ -92,11 +98,14 @@ def wants_discrete(info) -> bool:
 
 
 def set_discrete(info, on: bool) -> None:
+    """The user's choice for this app, kept either way (Steam asks for the
+    discrete GPU in its entry: unchecking it used to come back checked)."""
     cfg = config.load(NAME, DEFAULTS)
-    ids = [k for k in cfg["discrete"] if k != _key(info)]
-    if on:
-        ids.append(_key(info))
-    config.save(NAME, {"discrete": ids})
+    key = _key(info)
+    discrete = [k for k in cfg.get("discrete", []) if k != key]
+    integrated = [k for k in cfg.get("integrated", []) if k != key]
+    (discrete if on else integrated).append(key)
+    config.save(NAME, {"discrete": discrete, "integrated": integrated})
 
 
 def menu_item(info, Item):
