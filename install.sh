@@ -7,7 +7,8 @@
 #   (dependencies)            always checked and installed with the distro's
 #                             package manager (pacman/apt/dnf/zypper/xbps/apk):
 #                             required ones, then every optional one (Wi-Fi,
-#                             screenshots, Night Shift...), pywayland from PyPI
+#                             screenshots, Night Shift, game controllers:
+#                             wtype...), pywayland from PyPI
 #                             if needed, pixdecor from the AUR on Arch
 #   ./install.sh --no-deps    only check them (print what's missing)
 #   ./install.sh --yes        don't ask (login-screen entry included)
