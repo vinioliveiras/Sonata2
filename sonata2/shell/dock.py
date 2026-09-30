@@ -134,23 +134,48 @@ window.sonata-dock *:drop(active) { box-shadow: none; outline: none; border-colo
 .edge-left .dock-divider > box, .edge-right .dock-divider > box,
 .edge-left .dock-recent-sep > box, .edge-right .dock-recent-sep > box { min-height: 1px; }
 
-/* a ball under gravity (macOS): quick off the Dock, slowing to the top,
-   falling faster back down; each half has its own curve */
+/* a ball under gravity (macOS): a parabola, quick off the Dock, slowing
+   to the top, falling faster back down (GTK ignores per-keyframe curves:
+   the arc is sampled, played linearly) */
 @keyframes dock-bounce-up {
-  0%% { transform: none; animation-timing-function: cubic-bezier(0.33, 0.66, 0.66, 1); }
-  50%% { transform: translateY(-18px); animation-timing-function: cubic-bezier(0.33, 0, 0.66, 0.33); }
+  0%% { transform: none; }
+  10%% { transform: translateY(-6.48px); }
+  20%% { transform: translateY(-11.52px); }
+  30%% { transform: translateY(-15.12px); }
+  40%% { transform: translateY(-17.28px); }
+  50%% { transform: translateY(-18.0px); }
+  60%% { transform: translateY(-17.28px); }
+  70%% { transform: translateY(-15.12px); }
+  80%% { transform: translateY(-11.52px); }
+  90%% { transform: translateY(-6.48px); }
   100%% { transform: none; } }
 @keyframes dock-bounce-right {
-  0%% { transform: none; animation-timing-function: cubic-bezier(0.33, 0.66, 0.66, 1); }
-  50%% { transform: translateX(18px); animation-timing-function: cubic-bezier(0.33, 0, 0.66, 0.33); }
+  0%% { transform: none; }
+  10%% { transform: translateX(6.48px); }
+  20%% { transform: translateX(11.52px); }
+  30%% { transform: translateX(15.12px); }
+  40%% { transform: translateX(17.28px); }
+  50%% { transform: translateX(18.0px); }
+  60%% { transform: translateX(17.28px); }
+  70%% { transform: translateX(15.12px); }
+  80%% { transform: translateX(11.52px); }
+  90%% { transform: translateX(6.48px); }
   100%% { transform: none; } }
 @keyframes dock-bounce-left {
-  0%% { transform: none; animation-timing-function: cubic-bezier(0.33, 0.66, 0.66, 1); }
-  50%% { transform: translateX(-18px); animation-timing-function: cubic-bezier(0.33, 0, 0.66, 0.33); }
+  0%% { transform: none; }
+  10%% { transform: translateX(-6.48px); }
+  20%% { transform: translateX(-11.52px); }
+  30%% { transform: translateX(-15.12px); }
+  40%% { transform: translateX(-17.28px); }
+  50%% { transform: translateX(-18.0px); }
+  60%% { transform: translateX(-17.28px); }
+  70%% { transform: translateX(-15.12px); }
+  80%% { transform: translateX(-11.52px); }
+  90%% { transform: translateX(-6.48px); }
   100%% { transform: none; } }
-.edge-bottom .dock-tile.launching .dock-icon { animation: dock-bounce-up %(bounce_ms)dms infinite; }
-.edge-left .dock-tile.launching .dock-icon { animation: dock-bounce-right %(bounce_ms)dms infinite; }
-.edge-right .dock-tile.launching .dock-icon { animation: dock-bounce-left %(bounce_ms)dms infinite; }
+.edge-bottom .dock-tile.launching .dock-icon { animation: dock-bounce-up %(bounce_ms)dms linear infinite; }
+.edge-left .dock-tile.launching .dock-icon { animation: dock-bounce-right %(bounce_ms)dms linear infinite; }
+.edge-right .dock-tile.launching .dock-icon { animation: dock-bounce-left %(bounce_ms)dms linear infinite; }
 """
 
 
