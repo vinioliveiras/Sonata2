@@ -124,15 +124,18 @@ void main()
          * bar's tint twice -- a dark seam between the two glasses. Such a
          * pixel is denser than the same column further down; take the extra
          * layer (the title bar's colour behind the client) out again. */
+        /* the plain toolbar: its left edge, below the band */
+        vec4 plain = get_pixel(vec2((lo.x + 3.0) / size.x, 1.0 - (seam + 12.0) / size.y));
         vec4 below = get_pixel(vec2(uvpos.x, 1.0 - (seam + 12.0) / size.y));
-        vec4 below2 = get_pixel(vec2(uvpos.x, 1.0 - (seam + 15.0) / size.y));
-        /* denser than the plain toolbar under it (the same two rows further
-         * down: background, not a control): take the toolbar's pixel. The
-         * extra layer isn't always the title bar's colour (under the traffic
-         * lights it is darker), so it is replaced, not subtracted. */
-        if (below.a < 0.99 && c.a > below.a + 0.02 && length(below - below2) < 0.01)
+        /* a column that is plain toolbar below the band (not a control that
+         * starts there: copying from one smeared its text upwards), or a
+         * pixel with exactly one extra title-bar layer over the toolbar */
+        bool plain_column = length(below - plain) < 0.02;
+        float twice = plain.a + (1.0 - plain.a) * fill.a;
+        if (plain.a > 0.2 && plain.a < 0.99 &&
+            ((plain_column && c.a > plain.a + 0.02) || (fill.a > 0.0 && abs(c.a - twice) < 0.02)))
         {
-            c = below;
+            c = plain;
         }
     }
     bool top = p.y < lo.y + radius;
