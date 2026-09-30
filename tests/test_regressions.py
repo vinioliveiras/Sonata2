@@ -354,6 +354,28 @@ class SettingsFollowUpRegressions(unittest.TestCase):
         self.assertIn('show_quietly(row, zstate["zone"])', src)
 
 
+class BluetoothRegressions(unittest.TestCase):
+    def test_failed_connection_is_not_reported_as_done(self):
+        """Bluetooth "lied": bluetoothctl's one-shot connect exits 0 even when
+        it fails, and Settings said "Done"."""
+        from sonata2.backend import bluez, system
+        real_av, real_run = bluez.available, system._run
+        bluez.available = lambda: False
+        system._run = lambda cmd, timeout=0: (0, "Attempting to connect to AA:BB\nFailed to connect: "
+                                                 "org.bluez.Error.Failed br-connection-page-timeout")
+        try:
+            ok, msg = system.bluetooth_connect_result("AA:BB", True)
+        finally:
+            bluez.available, system._run = real_av, real_run
+        self.assertFalse(ok)
+        self.assertIn("Failed", msg)
+
+    def test_bluez_errors_read_as_sentences(self):
+        from sonata2.backend import bluez
+        e = GLib.Error.new_literal(GLib.quark_from_string("x"), "org.bluez.Error.Failed: br-connection-page-timeout", 1)
+        self.assertIn("didn't answer", bluez._message(e))
+
+
 class TopbarRegressions(unittest.TestCase):
     def test_now_playing_title_does_not_widen_control_center(self):
         from sonata2.shell import topbar

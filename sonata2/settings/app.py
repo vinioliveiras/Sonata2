@@ -304,6 +304,8 @@ class Settings(Adw.ApplicationWindow):
         # Resizable with a working Zoom button (Vini's call; macOS keeps it fixed).
         self.set_default_size(920, 640)
         self.set_size_request(760, 480)
+        # Bluetooth's search for nearby devices ends with the window
+        self.connect("close-request", lambda *_: (getattr(self, "_bt_scan_src", 0) and self._bt_scan(False), False)[1])
         ui.window.standard(self)
         self.toasts = Adw.ToastOverlay()
         # Sidebar | content in a plain box (like Files): whole-pixel edges, no
@@ -615,30 +617,94 @@ class Settings(Adw.ApplicationWindow):
     def _page_bluetooth(self):
         top = group()
         devs = group("My Devices")
+        near = group("Nearby Devices", "Put a device in pairing mode to see it here.")
+
+        def device_row(d):
+            row = Adw.ActionRow(title=d.name, use_markup=False, subtitle="Connected" if d.connected else
+                                ("Not Connected" if d.paired else ""))
+            btn = Gtk.Button(label="Disconnect" if d.connected else "Connect", valign=Gtk.Align.CENTER,
+                             css_classes=["sonata-button"])
+
+            def done(res):
+                ok, msg = res or (False, "That didn't work")
+                self.toast(msg)
+                self._reload_page("bluetooth")
+            btn.connect("clicked", lambda b, d=d: (b.set_sensitive(False), b.set_label(
+                "Connecting…" if not d.connected else "Disconnecting…"), system.run_async(
+                system.bluetooth_connect_result, done, d.mac, not d.connected)))
+            row.add_suffix(btn)
+            return row
 
         def fill(res):
             state, devices = res or (None, [])
             if state is None:
                 top.add(Adw.ActionRow(title="Bluetooth", subtitle="No Bluetooth adapter found"))
                 devs.set_visible(False)
+                near.set_visible(False)
                 return
-            # (not made discoverable: pairing new devices isn't done here)
             top.add(switch_row("Bluetooth", state, lambda on: system.run_async(
                 system.set_bluetooth, lambda _ok: self._reload_page("bluetooth"), on)))
-            for d in devices:
-                row = Adw.ActionRow(title=d.name, use_markup=False, subtitle="Connected" if d.connected else
-                                    ("Not Connected" if d.paired else "Not Paired"))
-                btn = Gtk.Button(label="Disconnect" if d.connected else "Connect", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
-                btn.connect("clicked", lambda b, d=d: (b.set_sensitive(False), system.run_async(
-                    system.bluetooth_connect, lambda ok: (self.toast("Done" if ok else "That didn't work"),
-                                                          self._reload_page("bluetooth")),
-                    d.mac, not d.connected)))
-                row.add_suffix(btn)
-                devs.add(row)
-            if not devices:
+            paired = [d for d in devices if d.paired]
+            for d in paired:
+                devs.add(device_row(d))
+            if not paired:
                 devs.add(Adw.ActionRow(title="No devices"))
+            self._bt_near = near
+            self._bt_near_rows = {}
+            self._bt_fill_near([d for d in devices if not d.paired])
+            if state:
+                self._bt_scan(True)
+            else:
+                near.set_visible(False)
         system.run_async(lambda: (system.bluetooth_state(), system.bluetooth_devices()), fill)
-        return [top, devs]
+        return [top, devs, near]
+
+    def _bt_fill_near(self, nearby) -> None:
+        near = getattr(self, "_bt_near", None)
+        if near is None:
+            return
+        for mac, row in list(self._bt_near_rows.items()):
+            if mac not in {d.mac for d in nearby}:
+                near.remove(row)
+                del self._bt_near_rows[mac]
+        for d in nearby:
+            if d.mac not in self._bt_near_rows:
+                row = Adw.ActionRow(title=d.name, use_markup=False)
+                btn = Gtk.Button(label="Connect", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+
+                def done(res):
+                    ok, msg = res or (False, "That didn't work")
+                    self.toast(msg)
+                    if ok:
+                        self._reload_page("bluetooth")
+                    else:
+                        GLib.idle_add(lambda: (self._bt_poll(), False)[1])
+                btn.connect("clicked", lambda b, d=d: (b.set_sensitive(False), b.set_label("Connecting…"),
+                                                       system.run_async(system.bluetooth_connect_result, done,
+                                                                        d.mac, True)))
+                row.add_suffix(btn)
+                near.add(row)
+                self._bt_near_rows[d.mac] = row
+
+    def _bt_scan(self, on: bool) -> None:
+        """Look for nearby devices while the Bluetooth section shows (macOS);
+        the list follows every 3 s; stops when another section is chosen."""
+        from ..backend import bluez
+        src = getattr(self, "_bt_scan_src", 0)
+        if src:
+            GLib.source_remove(src)
+            self._bt_scan_src = 0
+        system.run_async(bluez.discovery, None, on)
+        if on:
+            self._bt_scan_src = GLib.timeout_add_seconds(3, self._bt_poll)
+
+    def _bt_poll(self) -> bool:
+        if self.current != "bluetooth":
+            self._bt_scan(False)
+            return False
+        system.run_async(system.bluetooth_devices, lambda devs: self._bt_fill_near(
+            [d for d in devs or [] if not d.paired]))
+        return True
 
     def _page_sound(self):
         out = group("Output")

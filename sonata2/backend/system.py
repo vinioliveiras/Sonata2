@@ -534,15 +534,15 @@ def about() -> About:
 
 
 # -- Bluetooth devices --------------------------------------------------------------------
-@dataclass
-class BtDevice:
-    mac: str
-    name: str
-    paired: bool
-    connected: bool
+# BlueZ over D-Bus (backend/bluez.py): real results. bluetoothctl only when
+# BlueZ isn't on the bus (its one-shot "connect" exits 0 even on failure).
+from .bluez import BtDevice  # noqa: E402
 
 
 def bluetooth_devices() -> List[BtDevice]:
+    from . import bluez
+    if bluez.available():
+        return bluez.devices()
     rc, out = _run(["bluetoothctl", "devices"], timeout=8)
     devs = []
     for line in out.splitlines() if rc == 0 else []:
@@ -553,8 +553,19 @@ def bluetooth_devices() -> List[BtDevice]:
     return sorted(devs, key=lambda d: (not d.connected, not d.paired, d.name.lower()))
 
 
+def bluetooth_connect_result(mac: str, on: bool) -> Tuple[bool, str]:
+    """(ok, message): connect (pairing and trusting first if needed) or
+    disconnect, and whether it really happened."""
+    from . import bluez
+    if bluez.available():
+        return bluez.connect(mac) if on else bluez.disconnect(mac)
+    rc, out = _run(["bluetoothctl", "connect" if on else "disconnect", mac], timeout=20)
+    ok = rc == 0 and ("successful" in out.lower()) and "failed" not in out.lower()
+    return ok, "Connected" if ok and on else "Disconnected" if ok else (out.strip().splitlines() or ["That didn't work"])[-1]
+
+
 def bluetooth_connect(mac: str, on: bool) -> bool:
-    return _run(["bluetoothctl", "connect" if on else "disconnect", mac], timeout=20)[0] == 0
+    return bluetooth_connect_result(mac, on)[0]
 
 
 # -- sound outputs ----------------------------------------------------------------------------
