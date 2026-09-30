@@ -962,7 +962,7 @@ class ControlCenter(Gtk.Box):
                                     close=False)
         (self.dark_btn.add_css_class if dark else self.dark_btn.remove_css_class)("on")
         smalls.append(self.dark_btn)
-        smalls.append(self._small("screenshooter-symbolic", "Screenshot", self._screenshot))   # opens the toolbar
+        smalls.append(self._small("sonata-screenshot-symbolic", "Screenshot", self._screenshot))   # opens the toolbar
         right.append(smalls)
         row = Gtk.Box(spacing=8, homogeneous=True)
         row.append(conn)
