@@ -896,8 +896,12 @@ def now_playing_module(p, header=False) -> Gtk.Widget:
     art_box.append(art)
     row.append(art_box)
     texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
-    title = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=22, css_classes=["cc-np-title"])
-    artist = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=22, css_classes=["cc-np-artist"])
+    # asks for no width of its own (max_width_chars=1): a long title is cut
+    # with "…" and never widens Control Center
+    title = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=1, hexpand=True,
+                      css_classes=["cc-np-title"])
+    artist = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=1, hexpand=True,
+                      css_classes=["cc-np-artist"])
     texts.append(title)
     texts.append(artist)
     row.append(texts)
