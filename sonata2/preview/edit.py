@@ -1,13 +1,15 @@
-"""Preview's edits (macOS Preview: Rotate, Flip, Crop, Adjust Color):
+"""Preview's edits (macOS Preview: Rotate, Flip, Crop, Adjust Color, Adjust Size):
 a list of operations over the picture, applied to a small copy while
 editing (instant) and to the full picture when saving. Pillow does the
 work. Nothing touches the file until Save.
 
     ed = Edits.load(path)            # None when Pillow can't read it
     ed.push(("rotate", 90)); ed.push(("crop", (0.1, 0.1, 0.9, 0.8)))
+    ed.push(("resize", (0.5, 0.5)))  # factors of the size at that point
     ed.adjust["brightness"] = 0.2    # -1 .. 1, 0 = unchanged
     tex = ed.texture()               # the edited picture (small copy)
-    ed.save(path)                    # the full-size result"""
+    ed.save(path)                    # the full-size result (then it's the new start)
+    ed.write(path, "JPEG", 80)       # Export As: a copy, the edits stay"""
 import os
 
 import gi
@@ -21,6 +23,9 @@ ADJUSTMENTS = (("brightness", "Brightness"), ("contrast", "Contrast"), ("saturat
 # formats Preview writes back in place; others (RAW, SVG, animated GIF...) need Save As
 WRITABLE = {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG", ".webp": "WEBP", ".bmp": "BMP",
             ".tif": "TIFF", ".tiff": "TIFF"}
+# Export As: (menu name, Pillow format, extension, has a quality setting)
+EXPORT_FORMATS = (("PNG", "PNG", ".png", False), ("JPEG", "JPEG", ".jpg", True),
+                  ("WebP", "WEBP", ".webp", True), ("TIFF", "TIFF", ".tiff", False))
 
 
 class Edits:
@@ -28,7 +33,8 @@ class Edits:
         self.full = image                        # the picture as opened (upright)
         self.proxy = image.copy()
         self.proxy.thumbnail((PROXY, PROXY))
-        self.ops = []                            # [("rotate", 90) | ("flip", "h"|"v") | ("crop", (x0, y0, x1, y1))]
+        # [("rotate", 90) | ("flip", "h"|"v") | ("crop", (x0, y0, x1, y1)) | ("resize", (fx, fy))]
+        self.ops = []
         self.adjust = {k: 0.0 for k, _t in ADJUSTMENTS}
 
     @classmethod
@@ -76,6 +82,25 @@ class Edits:
         for k in self.adjust:
             self.adjust[k] = 0.0
 
+    def size(self) -> tuple:
+        """The full-size result's pixels (w, h), without rendering it."""
+        w, h = self.full.size
+        for kind, arg in self.ops:
+            if kind == "rotate" and arg % 180:
+                w, h = h, w
+            elif kind == "crop":
+                x0, y0, x1, y1 = arg
+                w, h = max(1, round(x1 * w) - round(x0 * w)), max(1, round(y1 * h) - round(y0 * h))
+            elif kind == "resize":
+                w, h = max(1, round(w * arg[0])), max(1, round(h * arg[1]))
+        return w, h
+
+    def resize_to(self, w: int, h: int) -> None:
+        """Adjust Size: the result becomes w x h pixels."""
+        cw, ch = self.size()
+        if (w, h) != (cw, ch) and w > 0 and h > 0:
+            self.push(("resize", (w / cw, h / ch)))
+
     def render(self, image):
         from PIL import Image, ImageEnhance
         im = image
@@ -91,6 +116,9 @@ class Edits:
                 box = (round(x0 * w), round(y0 * h), max(round(x0 * w) + 1, round(x1 * w)),
                        max(round(y0 * h) + 1, round(y1 * h)))
                 im = im.crop(box)
+            elif kind == "resize":
+                w, h = im.size
+                im = im.resize((max(1, round(w * arg[0])), max(1, round(h * arg[1]))), Image.Resampling.LANCZOS)
         a = self.adjust
         if abs(a["warmth"]) > 1e-3:              # warmer: more red, less blue (and back)
             alpha = im.getchannel("A") if im.mode == "RGBA" else None
@@ -119,15 +147,27 @@ class Edits:
         from ..imageload import is_raw
         return os.path.splitext(path)[1].lower() in WRITABLE and not is_raw(path)
 
-    def save(self, path: str) -> None:
-        """The full-size result, written next to the file then moved over it."""
-        fmt = WRITABLE.get(os.path.splitext(path)[1].lower(), "PNG")
+    def write(self, path: str, fmt: str = None, quality: int = 92):
+        """The full-size result into path (fmt: a Pillow format; default: by
+        the extension), written next to it then moved over it. The edits stay."""
+        fmt = fmt or WRITABLE.get(os.path.splitext(path)[1].lower(), "PNG")
         result = self.render(self.full)
         im = result.convert("RGB") if fmt in ("JPEG", "BMP") and result.mode == "RGBA" else result
-        opts = {"quality": 92} if fmt in ("JPEG", "WEBP") else {}
+        opts = {"quality": int(quality)} if fmt in ("JPEG", "WEBP") else {}
+        if fmt == "TIFF":
+            opts["compression"] = "tiff_lzw"
         tmp = os.path.join(os.path.dirname(path), f".{os.path.basename(path)}.sonata-tmp")
-        im.save(tmp, fmt, **opts)
-        os.replace(tmp, path)
+        try:
+            im.save(tmp, fmt, **opts)
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        return result
+
+    def save(self, path: str) -> None:
+        """The full-size result over path; it becomes the new start."""
+        result = self.write(path)
         self.full = result                       # the saved picture is the new start
         self.proxy = self.full.copy()
         self.proxy.thumbnail((PROXY, PROXY))

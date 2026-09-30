@@ -1,19 +1,28 @@
-"""Preview (macOS Preview, images): one window per picture.
+"""Preview (macOS Preview, images): a window per picture, or one window for
+the pictures opened together, with their thumbnails in a sidebar.
 
-The picture fits the window; ⌘+ / ⌘- / ⌘0 (or Ctrl+wheel, or a pinch)
-zoom around it, ⌘9 shows it at actual size, dragging pans a zoomed
-picture. ← / → go through the other pictures in the same folder,
-⌘R / ⌘L rotate (the view only), Space or ⌘F fill the screen, ⌘W
-closes. Double-click on the title bar zooms the window (the title bar is a
-glass one the compositor draws; the tools sit on a toolbar of the same glass)."""
+The picture fits the window; ⌘+ / ⌘- / ⌘0 zoom in steps that glide, ⌘9
+shows it at actual size. Ctrl+wheel and a pinch zoom around the pointer,
+two-finger scroll or dragging pans a zoomed picture (a flick glides on),
+a double-click goes to actual size around the click and back to fit.
+← / → go through the other pictures (the folder's, or the files opened
+together), ⌥⌘2 shows the thumbnail sidebar, ⌘I the Info panel (size,
+file, colour, camera EXIF), ⌘⇧F plays a slideshow (full screen, a
+cross-fade every 3 s, ← → move, Space pauses, Esc stops). ⌘R / ⌘L rotate,
+⌘K crops, Adjust Color / Resize… / Export As… are on the toolbar and the
+context menu; ⌘Z undoes, ⌘S saves, ⌘⇧S saves as. Space or ⌘F fill the
+screen, ⌘W closes (asking about unsaved edits). The title bar is the
+glass one the compositor draws; the tools sit on a toolbar of the same
+glass."""
 import os
 
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..ui import tokens  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.preview"
 from ..imageload import RAW_EXTS, RAW_TYPES  # noqa: E402
@@ -21,11 +30,18 @@ from ..imageload import RAW_EXTS, RAW_TYPES  # noqa: E402
 EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".svg", ".ico", ".avif", ".heic",
         ".heif", ".jxl", ".tga", ".qoi") + RAW_EXTS
 ZOOMS = (0.1, 0.25, 0.33, 0.5, 0.67, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0)
+SLIDE_S = 3                        # slideshow: seconds per picture
 
 ui.register("""
 .pv-canvas { background: %(content_bg)s; }
+window.pv-slideshow .pv-canvas { background: #000000; }   /* the slideshow's stage is black, like macOS */
 .pv-adjust { padding: 12px 14px 10px 14px; }
 .pv-adjust label.pv-adj-name { font-size: %(text_small)s; color: %(label_secondary)s; }
+.pv-sheet { padding: 12px 14px 10px 14px; }
+.pv-sheet label { font-size: %(text_small)s; }
+.pv-sheet label.pv-sheet-title { font-size: %(text_body)s; font-weight: 700; }
+.pv-sheet label.pv-sheet-dim { color: %(label_secondary)s; }
+.pv-sheet spinbutton { min-height: %(control_h)s; font-size: %(text_small)s; }
 .sonata-toolbar button.tool:checked { background: alpha(%(label)s, 0.14); }
 """, key="preview")
 
@@ -49,85 +65,234 @@ def siblings(path: str) -> list:
 
 
 class PreviewWindow(Gtk.ApplicationWindow):
-    def __init__(self, app, path: str):
+    def __init__(self, app, path: str, paths=None):
+        """paths: the pictures opened together (their thumbnails show);
+        None: the folder's pictures, sidebar hidden."""
         if not GLib.get_application_name():
             GLib.set_application_name("Preview")           # Recent documents need it
         super().__init__(application=app, css_classes=["sonata-preview"])
         ui.window.standard(self)
+        from .canvas import Canvas
+        from .info import InfoPanel
+        from .sidebar import Thumbnails
         self.path = None
         self.texture = None
-        self.zoom = None                  # None: fit the window
-        self.rotation = 0
-        # zoom and rotate on a toolbar that continues the glass title bar
+        self.size_text = ""
         self.edits = None                 # edit.Edits once something is edited
         self.crop = None                  # crop mode: the selection (x0, y0, x1, y1) in canvas pixels
-        self.toolbar = ui.window.glass_toolbar(self, end=(
+        self.group = list(paths) if paths and len(paths) > 1 else None   # opened together
+        self.pics = list(self.group or [path])
+        self._asking = False              # a save prompt is up
+        self._slides = None               # slideshow: {"timer": id, "paused": bool, "sidebar", "info"}
+        self._info_serial = 0
+        self.toolbar = ui.window.glass_toolbar(self, start=(
+            ("sidebar-show-symbolic", "Thumbnails", self.toggle_sidebar),
+        ), end=(
+            ("info-symbolic", "Show Info", self.toggle_info),
             ("zoom-out-symbolic", "Zoom Out", lambda: self.step_zoom(-1)),
             ("zoom-in-symbolic", "Zoom In", lambda: self.step_zoom(1)),
             ("object-rotate-left-symbolic", "Rotate Left", lambda: self.rotate(-90)),
             ("sonata-crop-symbolic", "Crop", self.crop_button),
             ("sonata-adjust-symbolic", "Adjust Color", self.adjust_panel)))
         tools = self.toolbar.get_child().get_end_widget()
-        self.crop_btn = tools.get_last_child().get_prev_sibling()
         self.adjust_btn = tools.get_last_child()
-        self.picture = Gtk.Picture(content_fit=Gtk.ContentFit.CONTAIN, can_shrink=True,
-                                   halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
-        self.scroll = Gtk.ScrolledWindow(child=self.picture, vexpand=True, hexpand=True, css_classes=["pv-canvas"])
+        self.crop_btn = self.adjust_btn.get_prev_sibling()
+        self.info_btn = tools.get_first_child()
+        self.sidebar_btn = self.toolbar.get_child().get_start_widget().get_first_child()
+        self.canvas = Canvas()
         # the crop selection is drawn over the picture
-        self.overlay = Gtk.Overlay(child=self.scroll, vexpand=True)
+        self.overlay = Gtk.Overlay(child=self.canvas, vexpand=True, hexpand=True)
         self.crop_area = Gtk.DrawingArea(visible=False, can_target=True)
         self.crop_area.set_draw_func(self._draw_crop)
         self.overlay.add_overlay(self.crop_area)
+        # thumbnails | picture | info
+        dur = tokens.ms(250)
+        self.thumbs = Thumbnails(self._pick)
+        self.sidebar = Gtk.Revealer(child=self.thumbs, transition_type=Gtk.RevealerTransitionType.SLIDE_RIGHT,
+                                    transition_duration=dur, reveal_child=bool(self.group))
+        self.info = InfoPanel()
+        self.info_rev = Gtk.Revealer(child=self.info, transition_type=Gtk.RevealerTransitionType.SLIDE_LEFT,
+                                     transition_duration=dur, reveal_child=False)
+        body = Gtk.Box(vexpand=True)
+        body.append(self.sidebar)
+        body.append(self.overlay)
+        body.append(self.info_rev)
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col.append(self.toolbar)
-        col.append(self.overlay)
+        col.append(body)
         self.set_child(col)
         self._input()
         self._crop_input()
         self.connect("close-request", self._close_request)
+        self.connect("notify::fullscreened", self._fullscreen_changed)
+        self.connect("unmap", lambda *_: self.stop_slideshow())
         self.open(path)
+        if self.group is None and self.path:
+            self._load_siblings()
+
+    # -- properties --------------------------------------------------------------------------
+    @property
+    def zoom(self):
+        """None: fits the window; a number: the scale."""
+        return self.canvas.zoom
+
+    def _load_siblings(self) -> None:
+        """The folder's pictures, listed off the main loop."""
+        from ..backend.system import run_async
+        path = self.path
+
+        def done(pics):
+            if pics and self.group is None and self.path and os.path.dirname(self.path) == os.path.dirname(path):
+                self.pics = pics if self.path in pics else pics + [self.path]
+                self.thumbs.set_paths(self.pics, self.path)
+        run_async(siblings, done, path)
 
     # -- file ------------------------------------------------------------------------------
-    def open(self, path: str) -> None:
+    def open(self, path: str, fade: bool = False) -> None:
         if self.edits is not None and self.edits.edited:       # ← / → with unsaved edits: ask first
-            self._ask_save(lambda: (setattr(self, "edits", None), self.open(path)))
+            self._ask_save(lambda: (setattr(self, "edits", None), self.open(path, fade)))
             return
         tex = load_texture(path)
         self.edits, self.crop = None, None
         self.crop_area.set_visible(False)
-        self.path, self.texture, self.rotation, self.zoom = path, tex, 0, None
+        known = self.path is None or path in self.pics
+        self.path, self.texture = path, tex
         name = os.path.basename(path)
         self.set_title(name)
+        if not known:                                           # Save As: a new file, maybe elsewhere
+            self.pics = self.pics + [path] if self.group else [path]
+            if self.group is None:
+                self._load_siblings()
+        self.thumbs.set_paths(self.pics, path)
         if tex is None:
-            self.picture.set_paintable(None)
+            self.canvas.set_texture(None)
             self.set_default_size(520, 360)
 
             # once the window is on screen: an alert on a window not shown yet
             # never appeared, and left Preview running with nothing visible
             def tell():
+                if self.path != path or len(self.pics) > 1:     # moved on, or others to see: no need to close
+                    if self.path == path:
+                        ui.dialog.alert(f"“{name}” couldn't be opened.", "It isn't a picture Preview can read.",
+                                        [("ok", "OK", "default")], parent=self)
+                    return False
                 ui.dialog.alert(f"“{name}” couldn't be opened.", "It isn't a picture Preview can read.",
                                 [("ok", "OK", "default")], lambda _r: self.close(), parent=self)
                 return False
             GLib.timeout_add(150, tell)
             return
         self.size_text = f"{tex.get_width()} × {tex.get_height()}"
-        self.picture.set_paintable(tex)
+        self.canvas.set_texture(tex, fade=fade)
         Gtk.RecentManager.get_default().add_item(Gio.File.new_for_path(path).get_uri())
         if not self.get_realized():               # the window takes the picture's shape
             w, h = tex.get_width(), tex.get_height()
             mon = Gdk.Display.get_default().get_monitors().get_item(0)
             g = mon.get_geometry() if mon else None
             max_w, max_h = (g.width * 0.7, g.height * 0.7) if g else (1100, 760)
-            s = min(1.0, max_w / max(1, w), (max_h - ui.window.TITLEBAR_H) / max(1, h))
-            self.set_default_size(max(420, int(w * s)), max(300, int(h * s) + ui.window.TITLEBAR_H))
-        self._layout()
+            side = self.thumbs.get_size_request()[0] if self.sidebar.get_reveal_child() else 0
+            s = min(1.0, (max_w - side) / max(1, w), (max_h - ui.window.TITLEBAR_H) / max(1, h))
+            self.set_default_size(max(420, int(w * s) + side), max(300, int(h * s) + ui.window.TITLEBAR_H))
+        if self.info_rev.get_reveal_child():
+            self._refresh_info()
 
-    def go(self, step: int) -> None:
+    def go(self, step: int, fade: bool = False) -> None:
         if not self.path:
             return
-        pics = siblings(self.path)
+        pics = self.pics
         if self.path in pics and len(pics) > 1:
-            self.open(pics[(pics.index(self.path) + step) % len(pics)])
+            self.open(pics[(pics.index(self.path) + step) % len(pics)], fade=fade)
+
+    def _pick(self, path: str) -> None:
+        """A thumbnail was clicked."""
+        if path != self.path:
+            self.open(path)
+            if self.path != path:                 # asked about the edits first: stay on the shown one
+                self.thumbs.select(self.path)
+
+    # -- sidebar / info ----------------------------------------------------------------------
+    def toggle_sidebar(self) -> None:
+        self.sidebar.set_reveal_child(not self.sidebar.get_reveal_child())
+        if self.sidebar.get_reveal_child():
+            GLib.idle_add(lambda: (self.thumbs.select(self.path), False)[1])
+
+    def toggle_info(self) -> None:
+        show = not self.info_rev.get_reveal_child()
+        self.info_rev.set_reveal_child(show)
+        if show:
+            self._refresh_info()
+
+    def _refresh_info(self) -> None:
+        if not self.path:
+            return
+        from ..backend.system import run_async
+        from .info import read
+        self._info_serial += 1
+        serial, path = self._info_serial, self.path
+        size = (self.texture.get_width(), self.texture.get_height()) if self.texture is not None else None
+        if self.info.path != path:
+            self.info.show(path, {"name": os.path.basename(path)})
+
+        def done(data):
+            if data is not None and serial == self._info_serial:
+                self.info.show(path, data)
+        run_async(read, done, path, size)
+
+    # -- slideshow -------------------------------------------------------------------------
+    def slideshow(self) -> None:
+        """⌘⇧F: full screen, a cross-fade to the next picture every 3 s."""
+        if self._slides is not None:
+            self.stop_slideshow()
+            return
+        if self.edits is not None and self.edits.edited:
+            self._ask_save(self.slideshow)
+            return
+        self._end_crop()
+        self._slides = {"timer": 0, "paused": False, "sidebar": self.sidebar.get_reveal_child(),
+                        "info": self.info_rev.get_reveal_child()}
+        for rev in (self.sidebar, self.info_rev):
+            rev.set_transition_duration(0)
+            rev.set_reveal_child(False)
+        self.add_css_class("pv-slideshow")
+        self.toolbar.set_visible(False)
+        self.canvas.set_zoom(None)
+        self.fullscreen()
+        self._arm_slides()
+
+    def _arm_slides(self) -> None:
+        s = self._slides
+        if s is None:
+            return
+        if s["timer"]:
+            GLib.source_remove(s["timer"])
+        s["timer"] = 0 if s["paused"] else GLib.timeout_add_seconds(SLIDE_S, self._next_slide)
+
+    def _next_slide(self) -> bool:
+        if self._slides is None:
+            return False
+        if self.get_mapped() and not (self.get_surface() and self.get_surface().get_state()
+                                      & Gdk.ToplevelState.MINIMIZED):
+            self.go(1, fade=True)
+        return True
+
+    def stop_slideshow(self) -> None:
+        s, self._slides = self._slides, None
+        if s is None:
+            return
+        if s["timer"]:
+            GLib.source_remove(s["timer"])
+        self.remove_css_class("pv-slideshow")
+        self.toolbar.set_visible(True)
+        for rev, shown in ((self.sidebar, s["sidebar"]), (self.info_rev, s["info"])):
+            rev.set_reveal_child(shown)
+            rev.set_transition_duration(tokens.ms(250))
+        if self.is_fullscreen():
+            self.unfullscreen()
+
+    def _fullscreen_changed(self, *_a) -> None:
+        full = self.is_fullscreen()
+        if not full and self._slides is not None:      # left full screen some other way
+            self.stop_slideshow()
+        self.toolbar.set_visible(not full)
 
     # -- editing ---------------------------------------------------------------------------
     def _editor(self):
@@ -145,10 +310,9 @@ class PreviewWindow(Gtk.ApplicationWindow):
         if ed is None:
             return
         self.texture = ed.texture()
-        self.picture.set_paintable(self.texture)
+        self.canvas.set_texture(self.texture, keep_view=True)
         name = os.path.basename(self.path or "")
         self.set_title(name + (" — Edited" if ed.edited else ""))
-        self._layout()
 
     def edit(self, op) -> None:
         ed = self._editor()
@@ -185,13 +349,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
 
     def _picture_rect(self):
         """Where the picture is drawn on the canvas (x, y, w, h)."""
-        if self.texture is None:
-            return None
-        cw, ch = self.overlay.get_width(), self.overlay.get_height()
-        tw, th = self.texture.get_width(), self.texture.get_height()
-        s = min(1.0, cw / max(1, tw), ch / max(1, th))
-        w, h = tw * s, th * s
-        return ((cw - w) / 2, (ch - h) / 2, w, h)
+        return self.canvas.image_rect()
 
     def _crop_fraction(self):
         r = self._picture_rect()
@@ -303,6 +461,163 @@ class PreviewWindow(Gtk.ApplicationWindow):
         box.append(reset)
         ui.panel.popup(self.adjust_btn, box)
 
+    # Resize… (macOS: Tools > Adjust Size…): a small sheet under the toolbar
+    def resize_sheet(self):
+        ed = self._editor()
+        if ed is None:
+            return None
+        w0, h0 = ed.size()
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["pv-sheet"])
+        box.append(Gtk.Label(label="Resize", xalign=0, css_classes=["pv-sheet-title"]))
+        grid = Gtk.Grid(column_spacing=8, row_spacing=6)
+
+        def spin(value, upper):
+            s = Gtk.SpinButton.new_with_range(1, upper, 1)
+            s.set_value(value)
+            s.set_width_chars(6)
+            return s
+        width, height, percent = spin(w0, 100000), spin(h0, 100000), spin(100, 1000)
+        for i, (name, sb, unit) in enumerate((("Width:", width, "pixels"), ("Height:", height, "pixels"),
+                                              ("Scale:", percent, "percent"))):
+            grid.attach(Gtk.Label(label=name, xalign=1), 0, i, 1, 1)
+            grid.attach(sb, 1, i, 1, 1)
+            grid.attach(Gtk.Label(label=unit, xalign=0, css_classes=["pv-sheet-dim"]), 2, i, 1, 1)
+        box.append(grid)
+        keep = Gtk.Box(spacing=8)
+        ratio = ui.controls.switch(True)
+        keep.append(ratio)
+        keep.append(Gtk.Label(label="Scale proportionally", xalign=0))
+        box.append(keep)
+        result = Gtk.Label(xalign=0, css_classes=["pv-sheet-dim"])
+        box.append(result)
+        busy = {"on": False}
+
+        def sync(src):
+            if busy["on"]:
+                return
+            busy["on"] = True
+            w, h = width.get_value(), height.get_value()
+            if src is percent:
+                w, h = w0 * percent.get_value() / 100, h0 * percent.get_value() / 100
+                width.set_value(round(w))
+                height.set_value(round(h))
+            elif ratio.get_active():
+                if src is width:
+                    height.set_value(max(1, round(w * h0 / w0)))
+                elif src is height:
+                    width.set_value(max(1, round(h * w0 / h0)))
+                percent.set_value(round(width.get_value() / w0 * 100))
+            result.set_label(f"Resulting size: {int(width.get_value())} × {int(height.get_value())} pixels")
+            busy["on"] = False
+        for sb in (width, height, percent):
+            sb.connect("value-changed", sync)
+        ratio.connect("notify::active", lambda *_: ratio.get_active() and sync(width))
+        sync(None)
+        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END, margin_top=4)
+        pop = {}
+
+        def ok():
+            self.resize_to(int(width.get_value()), int(height.get_value()))
+            pop["p"].popdown()
+        buttons.append(ui.controls.push_button("Cancel", lambda: pop["p"].popdown()))
+        buttons.append(ui.controls.push_button("OK", ok, "default"))
+        box.append(buttons)
+        box.sheet = {"width": width, "height": height, "percent": percent, "ratio": ratio, "ok": ok}
+        pop["p"] = ui.panel.popup(self.toolbar, box)
+        return box
+
+    def resize_to(self, w: int, h: int) -> None:
+        ed = self._editor()
+        if ed is not None and (w, h) != ed.size():
+            ed.resize_to(w, h)
+            self._show_edits()
+
+    # Export As…: the format (and quality) first, then where
+    def export_sheet(self):
+        from .edit import EXPORT_FORMATS, WRITABLE
+        if not self.path:
+            return None
+        pil = WRITABLE.get(os.path.splitext(self.path)[1].lower())
+        current = next((i for i, f in enumerate(EXPORT_FORMATS) if f[1] == pil), 0)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["pv-sheet"])
+        box.set_size_request(260, -1)
+        box.append(Gtk.Label(label="Export As", xalign=0, css_classes=["pv-sheet-title"]))
+        row = Gtk.Box(spacing=8)
+        row.append(Gtk.Label(label="Format:", xalign=1))
+        fmt = ui.controls.popup_button([f[0] for f in EXPORT_FORMATS], current)
+        fmt.set_hexpand(True)
+        row.append(fmt)
+        box.append(row)
+        qrow = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        qlabel = Gtk.Label(xalign=0)
+        state = {"q": 85}
+
+        def quality(v):
+            state["q"] = int(v)
+            qlabel.set_label(f"Quality: {state['q']} %")
+        qrow.append(qlabel)
+        qrow.append(ui.controls.slider(85, quality, lower=10, upper=100, default=85))
+        quality(85)
+        box.append(qrow)
+
+        def fmt_changed(*_a):
+            qrow.set_visible(EXPORT_FORMATS[fmt.get_selected()][3])
+        fmt.connect("notify::selected", fmt_changed)
+        fmt_changed()
+        pop = {}
+
+        def go():
+            _name, pil, fext, _q = EXPORT_FORMATS[fmt.get_selected()]
+            pop["p"].popdown()
+            self.export_as(pil, fext, state["q"])
+        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END, margin_top=4)
+        buttons.append(ui.controls.push_button("Cancel", lambda: pop["p"].popdown()))
+        buttons.append(ui.controls.push_button("Save…", go, "default"))
+        box.append(buttons)
+        box.sheet = {"format": fmt, "go": go, "quality": state}
+        pop["p"] = ui.panel.popup(self.toolbar, box)
+        return box
+
+    def export_as(self, fmt: str, ext: str, quality: int = 85, target: str = None) -> bool:
+        """A copy of the (edited) picture in another format; the window
+        stays on this one. target: skip the Save panel (tests)."""
+        ed = self.edits
+        if ed is None:
+            from .edit import Edits
+            ed = Edits.load(self.path) if self.path else None
+            if ed is None:
+                ui.dialog.alert("This picture can't be exported.", "Preview can only view it.",
+                                [("ok", "OK", "default")], parent=self)
+                return False
+
+        def write(path):
+            if os.path.splitext(path)[1].lower() not in {".jpg": (".jpg", ".jpeg"),
+                                                         ".tiff": (".tiff", ".tif")}.get(ext, (ext,)):
+                path += ext
+            try:
+                ed.write(path, fmt, quality)
+            except Exception as e:
+                ui.dialog.alert("The picture couldn't be exported.", str(e), [("ok", "OK", "default")],
+                                parent=self)
+                return False
+            return True
+        if target:
+            return write(target)
+        from ..files.chooser import ChooserWindow
+        base = os.path.splitext(os.path.basename(self.path))[0]
+
+        def done(uris, _i):
+            target = Gio.File.new_for_uri(uris[0]).get_path() if uris else None
+            if target:
+                write(target)
+        dlg = ChooserWindow(self.get_application(), mode="save", title="Export As",
+                            folder=Gio.File.new_for_path(os.path.dirname(self.path)).get_uri(), name=base + ext,
+                            filters=[("Images", [(0, "*" + ext)])], on_done=done)
+        dlg.set_transient_for(self)
+        dlg.set_modal(True)
+        dlg.present()
+        return True
+
     # saving
     def save(self, then=None) -> None:
         ed = self.edits
@@ -320,6 +635,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
             ui.dialog.alert("The picture couldn't be saved.", str(e), [("ok", "OK", "default")], parent=self)
             return
         self._show_edits()
+        self.thumbs.refresh(self.path)             # its thumbnail is made again (new mtime)
         if then:
             then()
 
@@ -358,170 +674,146 @@ class PreviewWindow(Gtk.ApplicationWindow):
         dlg.present()
 
     def _ask_save(self, then) -> None:
+        """The "keep the changes?" alert. Once at a time: ⌘W pressed twice, or
+        the close button while ← asked, used to stack alerts on each other."""
+        if self._asking:
+            return
+        self._asking = True
         name = os.path.basename(self.path or "")
 
         def answer(rid):
+            self._asking = False
             if rid == "save":
                 self.save(then)
             elif rid == "discard":
                 self.edits.revert()
                 then()
-        ui.dialog.alert(f"Do you want to keep the changes you made to “{name}”?",
-                        "Your changes will be lost if you don't save them.",
-                        [("discard", "Don't Save", "destructive"), ("cancel", "Cancel", ""),
-                         ("save", "Save", "default")], answer, parent=self)
+            else:
+                self.thumbs.select(self.path)
+        self.prompt = ui.dialog.alert(f"Do you want to keep the changes you made to “{name}”?",
+                                      "Your changes will be lost if you don't save them.",
+                                      [("discard", "Don't Save", "destructive"), ("cancel", "Cancel", ""),
+                                       ("save", "Save", "default")], answer, parent=self)
 
     def _close_request(self, _w) -> bool:
         if self.edits is not None and self.edits.edited:
             self._ask_save(self.destroy)
             return True
+        self.stop_slideshow()
         return False
 
     # -- view ------------------------------------------------------------------------------
-
     def fit_scale(self) -> float:
-        if self.texture is None:
-            return 1.0
-        w = max(1, self.scroll.get_width() or self.get_width())
-        h = max(1, self.scroll.get_height() or (self.get_height() - ui.window.TITLEBAR_H))
-        return min(1.0, w / self.texture.get_width(), h / self.texture.get_height())
+        return self.canvas.fit_scale()
 
-    def set_zoom(self, z) -> None:
-        """Zoom around the middle of what shows (None: fit the window)."""
-        ha, va = self.scroll.get_hadjustment(), self.scroll.get_vadjustment()
-
-        def centre(a):
-            return (a.get_value() + a.get_page_size() / 2) / a.get_upper() if a.get_upper() > 0 else 0.5
-        fx, fy = (centre(ha), centre(va)) if self.zoom is not None else (0.5, 0.5)
-        self.zoom = None if z is None else max(ZOOMS[0], min(ZOOMS[-1], z))
-        self._layout()
-
-        def restore():
-            for a, f in ((ha, fx), (va, fy)):
-                a.set_value(max(0, f * a.get_upper() - a.get_page_size() / 2))
-            return False
-        GLib.timeout_add(30, restore)          # once the picture has its new size
+    def set_zoom(self, z, anchor=None, animate: bool = False) -> None:
+        """z: a scale, None fits the window; anchor: the point that stays put
+        (default: the middle of what shows)."""
+        if z is not None:
+            z = max(ZOOMS[0], min(ZOOMS[-1], z))
+        self.canvas.set_zoom(z, anchor=anchor, animate=animate)
 
     def step_zoom(self, step: int) -> None:
-        cur = self.zoom or self.fit_scale()
+        cur = self.canvas._target or self.zoom or self.fit_scale()
         if step > 0:
             nxt = next((z for z in ZOOMS if z > cur + 1e-3), ZOOMS[-1])
         else:
             nxt = next((z for z in reversed(ZOOMS) if z < cur - 1e-3), ZOOMS[0])
-        self.set_zoom(nxt)
-
-    def _layout(self) -> None:
-        if self.texture is None:
-            return
-        if self.zoom is None:
-            self.picture.set_size_request(-1, -1)
-            self.picture.set_can_shrink(True)
-            self.picture.set_halign(Gtk.Align.FILL)
-            self.picture.set_valign(Gtk.Align.FILL)
-        else:
-            self.picture.set_can_shrink(False)
-            self.picture.set_halign(Gtk.Align.CENTER)
-            self.picture.set_valign(Gtk.Align.CENTER)
-            self.picture.set_size_request(int(self.texture.get_width() * self.zoom),
-                                          int(self.texture.get_height() * self.zoom))
-            self.picture.set_content_fit(Gtk.ContentFit.FILL)
-            return
-        self.picture.set_content_fit(Gtk.ContentFit.SCALE_DOWN)
+        self.set_zoom(nxt, animate=True)
 
     # -- input -----------------------------------------------------------------------------
     def _input(self) -> None:
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._key)
         self.add_controller(keys)
-        wheel = Gtk.EventControllerScroll(flags=Gtk.EventControllerScrollFlags.VERTICAL)
-        wheel.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-
-        def scrolled(c, _dx, dy):
-            if c.get_current_event_state() & Gdk.ModifierType.CONTROL_MASK:
-                self.step_zoom(-1 if dy > 0 else 1)
-                return True
-            return False
-        wheel.connect("scroll", scrolled)
-        self.scroll.add_controller(wheel)
-        pinch = Gtk.GestureZoom()
-        state = {"start": 1.0}
-        pinch.connect("begin", lambda *_: state.update(start=self.zoom or self.fit_scale()))
-        pinch.connect("scale-changed", lambda _g, s: self.set_zoom(state["start"] * s))
-        self.scroll.add_controller(pinch)
-        drag = Gtk.GestureDrag()
-        pan = {"h": 0.0, "v": 0.0}
-        drag.connect("drag-begin", lambda *_: pan.update(h=self.scroll.get_hadjustment().get_value(),
-                                                          v=self.scroll.get_vadjustment().get_value()))
-
-        def moved(_g, dx, dy):
-            if self.zoom is not None:
-                self.scroll.get_hadjustment().set_value(pan["h"] - dx)
-                self.scroll.get_vadjustment().set_value(pan["v"] - dy)
-        drag.connect("drag-update", moved)
-        self.scroll.add_controller(drag)
         menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
         menu.connect("pressed", self._context_menu)
-        self.scroll.add_controller(menu)
-        click = Gtk.GestureClick()
-        click.connect("pressed", lambda _g, n, _x, _y: n == 2 and self.set_zoom(
-            None if self.zoom is not None else 1.0))
-        self.scroll.add_controller(click)
+        self.canvas.add_controller(menu)
 
     def _context_menu(self, gesture, _n, x, y) -> None:
         gesture.set_state(Gtk.EventSequenceState.CLAIMED)
         from .. import prefs
         Item = ui.menu.Item
         uri = Gio.File.new_for_path(self.path).get_uri() if self.path else None
-        ui.menu.popup(self.scroll, [
+        edited = bool(self.edits and self.edits.edited)
+        ui.menu.popup(self.canvas, [
             [Item("Zoom In", lambda: self.step_zoom(1)), Item("Zoom Out", lambda: self.step_zoom(-1)),
-             Item("Zoom to Fit", lambda: self.set_zoom(None)), Item("Actual Size", lambda: self.set_zoom(1.0))],
+             Item("Zoom to Fit", lambda: self.set_zoom(None, animate=True)),
+             Item("Actual Size", lambda: self.set_zoom(1.0, anchor=(x, y), animate=True))],
+            [Item("Thumbnails", lambda *_: self.toggle_sidebar(), checked=self.sidebar.get_reveal_child()),
+             Item("Show Info", lambda *_: self.toggle_info(), checked=self.info_rev.get_reveal_child()),
+             Item("Slideshow", self.slideshow)],
             [Item("Rotate Left", lambda: self.rotate(-90)), Item("Rotate Right", lambda: self.rotate(90)),
              Item("Flip Horizontal", lambda: self.edit(("flip", "h"))),
              Item("Flip Vertical", lambda: self.edit(("flip", "v")))],
-            [Item("Crop", self.crop_button), Item("Adjust Color…", self.adjust_panel)],
+            [Item("Crop", self.crop_button), Item("Adjust Color…", self.adjust_panel),
+             Item("Resize…", self.resize_sheet)],
             [Item("Undo", self.undo, enabled=bool(self.edits and self.edits.ops)),
-             Item("Revert", self.revert, enabled=bool(self.edits and self.edits.edited)),
-             Item("Save", self.save, enabled=bool(self.edits and self.edits.edited)),
-             Item("Save As…", self.save_as)],
+             Item("Revert", self.revert, enabled=edited),
+             Item("Save", self.save, enabled=edited),
+             Item("Save As…", self.save_as), Item("Export As…", self.export_sheet)],
             [Item("Set Desktop Picture", lambda: prefs.set_wallpaper(uri), enabled=bool(uri))],
         ], at=(x, y), glass=True, passthrough=True)
 
     def _key(self, _c, keyval, _code, state) -> bool:
         cmd = state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SUPER_MASK)
+        shift = state & Gdk.ModifierType.SHIFT_MASK
+        alt = state & Gdk.ModifierType.ALT_MASK
         k = Gdk.keyval_to_lower(keyval)
-        if cmd:
+        if self._slides is not None and not cmd:         # slideshow keys
+            act = {Gdk.KEY_Left: lambda: (self.go(-1, fade=True), self._arm_slides()),
+                   Gdk.KEY_Up: lambda: (self.go(-1, fade=True), self._arm_slides()),
+                   Gdk.KEY_Right: lambda: (self.go(1, fade=True), self._arm_slides()),
+                   Gdk.KEY_Down: lambda: (self.go(1, fade=True), self._arm_slides()),
+                   Gdk.KEY_space: self._pause_slides,
+                   Gdk.KEY_Escape: self.stop_slideshow}.get(keyval)
+        elif cmd:
             act = {Gdk.KEY_plus: lambda: self.step_zoom(1), Gdk.KEY_equal: lambda: self.step_zoom(1),
-                   Gdk.KEY_minus: lambda: self.step_zoom(-1), Gdk.KEY_0: lambda: self.set_zoom(None),
-                   Gdk.KEY_9: lambda: self.set_zoom(1.0), Gdk.KEY_r: lambda: self.rotate(90),
+                   Gdk.KEY_minus: lambda: self.step_zoom(-1), Gdk.KEY_0: lambda: self.set_zoom(None, animate=True),
+                   Gdk.KEY_9: lambda: self.set_zoom(1.0, animate=True), Gdk.KEY_r: lambda: self.rotate(90),
                    Gdk.KEY_l: lambda: self.rotate(-90), Gdk.KEY_w: self.close,
                    Gdk.KEY_f: self._toggle_fullscreen, Gdk.KEY_z: self.undo, Gdk.KEY_s: self.save,
-                   Gdk.KEY_k: self.crop_button}.get(k)
-            if k == Gdk.KEY_s and state & Gdk.ModifierType.SHIFT_MASK:
+                   Gdk.KEY_k: self.crop_button, Gdk.KEY_i: self.toggle_info}.get(k)
+            if k == Gdk.KEY_s and shift:
                 act = self.save_as
+            elif k == Gdk.KEY_f and shift:
+                act = self.slideshow
+            elif alt and keyval in (Gdk.KEY_2, Gdk.KEY_at, Gdk.KEY_KP_2, Gdk.KEY_twosuperior):
+                act = self.toggle_sidebar
         elif self.crop_area.get_visible() and keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_Escape):
             act = self._apply_crop if keyval != Gdk.KEY_Escape else self._end_crop
         else:
             act = {Gdk.KEY_Left: lambda: self.go(-1), Gdk.KEY_Right: lambda: self.go(1),
                    Gdk.KEY_Up: lambda: self.go(-1), Gdk.KEY_Down: lambda: self.go(1),
                    Gdk.KEY_space: self._toggle_fullscreen,
-                   Gdk.KEY_Escape: lambda: self.is_fullscreen() and self.unfullscreen()}.get(keyval)
+                   Gdk.KEY_Escape: lambda: self.is_fullscreen() and self._toggle_fullscreen()}.get(keyval)
         if act is None:
             return False
         act()
         return True
 
+    def _pause_slides(self) -> None:
+        if self._slides is not None:
+            self._slides["paused"] = not self._slides["paused"]
+            self._arm_slides()
+
     def _toggle_fullscreen(self) -> None:
+        if self._slides is not None:
+            self.stop_slideshow()
+            return
         full = not self.is_fullscreen()
         self.fullscreen() if full else self.unfullscreen()
         self.toolbar.set_visible(not full)
 
 
 def open_paths(app, paths) -> None:
-    for p in paths:
-        f = Gio.File.new_for_commandline_arg(p)
-        path = f.get_path()
-        if not path:
-            continue
+    """One window per picture; several pictures opened together share one
+    window with their thumbnails in the sidebar."""
+    files = [Gio.File.new_for_commandline_arg(p).get_path() for p in paths]
+    files = [p for p in files if p]
+    if len(files) > 1:
+        PreviewWindow(app, files[0], paths=files).present()
+    for path in files[:1] if len(files) == 1 else []:
         same = next((w for w in app.get_windows() if isinstance(w, PreviewWindow) and w.path == path), None)
         (same or PreviewWindow(app, path)).present()
     if not paths and not app.get_windows():

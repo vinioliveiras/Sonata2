@@ -76,6 +76,45 @@ class OpsTest(unittest.TestCase):
         self.assertFalse(os.path.exists(self.p("src copy")))
         self.assertTrue(os.path.isfile(self.p("dst2", "src copy", "sub", "f.bin")))
 
+    def test_drop_plan_no_ops(self):
+        """Finder: a drop onto the items' own folder, onto themselves or a
+        folder into its own subfolder transfers nothing."""
+        os.makedirs(self.p("dir", "sub"))
+        open(self.p("a.txt"), "w").close()
+        os.mkdir(self.p("other"))
+        F = Gio.File.new_for_path
+        a, d, sub, other = F(self.p("a.txt")), F(self.p("dir")), F(self.p("dir", "sub")), F(self.p("other"))
+        self.assertEqual(ops.drop_plan([a, d], self.g), [])                     # already there
+        self.assertEqual(ops.drop_plan([a], F(self.d + "/")), [])              # same folder, other spelling
+        self.assertEqual(ops.drop_plan([d], d), [])                             # onto itself
+        self.assertEqual(ops.drop_plan([d], sub), [])                           # into its own subfolder
+        self.assertEqual(ops.drop_plan([a, d], d), [])                          # selection onto a member
+        self.assertEqual([f.get_path() for f in ops.drop_plan([a, d], other)], [a.get_path(), d.get_path()])
+        self.assertEqual(ops.drop_plan([sub], d), [])                           # its own parent
+        self.assertEqual([f.get_path() for f in ops.drop_plan([sub], self.g)], [sub.get_path()])
+        os.symlink(self.d, self.p("other", "link"))                              # same folder via a symlink
+        self.assertEqual(ops.drop_plan([a], F(self.p("other", "link"))), [])
+
+    def test_transfer_same_place_is_silent(self):
+        """A move onto the folder the item is in, or a folder into itself:
+        no error alert, nothing copied."""
+        os.makedirs(self.p("dir", "sub"))
+        open(self.p("a.txt"), "w").close()
+        alerts, done = [], []
+        real = ops.ui.dialog.alert
+        ops.ui.dialog.alert = lambda *a, **k: alerts.append(a)
+        try:
+            F = Gio.File.new_for_path
+            ops.Transfer([F(self.p("a.txt"))], self.g, move=True, on_done=lambda: done.append(1))
+            ops.Transfer([F(self.p("dir"))], F(self.p("dir", "sub")), move=True, on_done=lambda: done.append(2))
+            ops.Transfer([F(self.p("dir"))], F(self.p("dir", "sub")), on_done=lambda: done.append(3))
+            self.assertTrue(spin(lambda: len(done) == 3))
+        finally:
+            ops.ui.dialog.alert = real
+        self.assertEqual(alerts, [])
+        self.assertEqual(sorted(os.listdir(self.d)), ["a.txt", "dir"])
+        self.assertEqual(os.listdir(self.p("dir", "sub")), [])
+
     def test_clipboard_roundtrip(self):
         win = Gtk.Window()
         f = Gio.File.new_for_path(self.p("x"))

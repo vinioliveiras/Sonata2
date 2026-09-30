@@ -1662,6 +1662,9 @@ class Settings(Adw.ApplicationWindow):
                         cfg["clock_format"], lambda v: self._save("topbar", "clock_format", v)))
         g.add(switch_row("Show Bluetooth in menu bar", cfg["show_bluetooth"],
                          lambda on: self._save("topbar", "show_bluetooth", on)))
+        g.add(switch_row("Show background apps in menu bar", cfg.get("show_tray", True),
+                         lambda on: self._save("topbar", "show_tray", on),
+                         subtitle="Status icons of apps running in the background (Discord, Steam…)"))
         g.add(switch_row("Show Sound in menu bar", cfg["show_sound"],
                          lambda on: self._save("topbar", "show_sound", on),
                          subtitle="Volume and outputs are always in Control Center"))

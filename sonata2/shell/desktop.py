@@ -328,8 +328,10 @@ class Desktop(Gtk.Fixed):
                     pass
             elif is_dir(item.info):
                 open_folder(f.get_uri())
-            elif _previewable(item.info) and len(self.selection) == 1:      # pictures, movies, text
-                self.quick_look()
+            elif _previewable(item.info) and len(self.selection) == 1 and not (
+                    item.info.get_content_type() and
+                    Gio.AppInfo.get_default_for_type(item.info.get_content_type(), False)):
+                self.quick_look()             # Quick Look only when no app opens it (like Files)
             elif not (f.get_path() and packages.open_path(f.get_path())):   # packages: install / run / extract
                 try:
                     Gio.AppInfo.launch_default_for_uri(f.get_uri(), None)
@@ -497,8 +499,8 @@ class Desktop(Gtk.Fixed):
         return self.drop_into(files, self.dir, _copy(target))
 
     def drop_into(self, files, dest: Gio.File, copy=False) -> bool:
-        files = [f for f in files if not f.equal(dest) and not dest.has_prefix(f)]
-        if not files or all(f.get_parent() and f.get_parent().equal(dest) for f in files):
+        files = ops.drop_plan(files, dest)        # same folder / into itself: silently nothing
+        if not files:
             return False
         from ..files.window import _same_disk
         move = not copy and all(_same_disk(f, dest) for f in files)

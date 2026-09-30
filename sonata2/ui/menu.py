@@ -47,6 +47,15 @@ popover.menu modelbutton check { min-width: 12px; min-height: 12px; margin-right
   border: none; background: none; box-shadow: none; color: inherit; -gtk-icon-size: 12px; }
 popover.menu modelbutton arrow { -gtk-icon-size: 12px; color: inherit; }
 popover.menu separator { margin: 5px 10px; min-height: 1px; background-color: %(separator)s; }
+/* pop-up buttons' lists (Gtk.DropDown: Settings, Control Center's sound
+   devices...) are the same glass menu: no opaque list behind the rows */
+popover.menu listview, popover.menu listview.view, popover.menu scrolledwindow { background: none; }
+popover.menu listview > row { min-height: %(control_h)s; padding: 0 10px; margin: 0; border-radius: %(r_menu_row)s;
+  color: inherit; background: none; }
+popover.menu listview > row:hover, popover.menu listview > row:selected:hover,
+popover.menu listview > row:focus-visible { background-color: %(accent_selected)s; color: %(label_on_accent)s; }
+popover.menu listview > row:selected { background: none; }
+popover.menu listview > row image { -gtk-icon-size: 12px; color: inherit; }
 /* rows with a small x (Dock: an app's windows) */
 popover.menu .sonata-menu-row { min-height: %(control_h)s; border-radius: %(r_menu_row)s; padding: 0 4px 0 0; }
 popover.menu .sonata-menu-row:hover { background-color: %(accent_selected)s; color: %(label_on_accent)s; }

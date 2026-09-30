@@ -1,9 +1,17 @@
-"""Files window (macOS Big Sur Finder): sidebar | unified toolbar + view.
+"""Files window (macOS Finder): sidebar | unified toolbar + tabs + view.
 
 Icons / List / Columns views (views.py), navigation (back/forward/
 enclosing folder), open with the default app, search (This Mac or the
-current folder, recursive, search.py), hidden files toggle, live folder updates. Context
-menus, rename, drag and drop come next (ROADMAP M7)."""
+current folder, recursive, search.py), hidden files toggle, live folder
+updates, context menus, rename, drag and drop, clipboard, Quick Look.
+
+Tabs (Finder): ⌘T opens a tab on the same folder, ⌘W closes the tab (the
+window with the last one), Ctrl+Tab / Ctrl+Shift+Tab and ⌘⇧[ / ⌘⇧]
+switch tabs (⌘ = Ctrl or Super). A folder's context menu has "Open in New
+Tab"; a middle-click on a folder opens it in a new tab behind. Each tab
+(Tab) keeps its folder, view mode, selection and back/forward history;
+the sidebar, toolbar and window title follow the tab in front. The tab
+strip (tabs.py) shows once there are two tabs."""
 import os
 
 import gi
@@ -18,6 +26,7 @@ from .search import Search  # noqa: E402
 from .folder import APPS, RECENTS, VIRTUAL, file_of, is_dir  # noqa: E402
 from .views import ColumnsView, IconsView, ListView  # noqa: E402
 from .sidebar import Sidebar  # noqa: E402
+from .tabs import TabStrip  # noqa: E402
 
 VIEWS = (("icons", "view-grid-symbolic", "as Icons"), ("list", "view-list-symbolic", "as List"),
          ("columns", "view-dual-symbolic", "as Columns"))
@@ -52,6 +61,9 @@ window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text
 .fs-empty { color: %(label_tertiary)s; font-size: %(text_title)s; }
 """, key="files-window")
 
+# window state that belongs to the tab in front (FilesWindow reads/writes it through)
+_TAB_STATE = ("history", "pos", "folder", "views", "view", "filtered", "filter", "stack", "fade", "empty")
+
 
 def _icon_button(icon, tip, cb, css=None):
     b = Gtk.Button(icon_name=icon, tooltip_text=tip, focus_on_click=False, valign=Gtk.Align.CENTER,
@@ -69,7 +81,67 @@ def _same_disk(a: Gio.File, b: Gio.File) -> bool:
         return False
 
 
+class Tab:
+    """One Finder tab: its folder (history, back/forward), its views with
+    their selection, its view mode. `widget` is what the window shows."""
+
+    def __init__(self, win, view_id):
+        self.win = win
+        self.history, self.pos = [], -1
+        self.folder = folder.Folder(lambda u: win._tab_loaded(self, u), lambda u, e: win._tab_failed(self, u, e))
+        self.folder.show_hidden = win.show_hidden
+        self.name = ""                           # what the tab shows (columns: the deepest folder)
+        self.button = None                       # its tab in the strip
+        self.filter = Gtk.CustomFilter.new(lambda info: win._match(info) if win.tab is self else True)
+        self.filtered = Gtk.FilterListModel(model=self.folder.store, filter=self.filter)
+        self.views = win._make_views(self)
+        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE)
+        for vid, v in self.views.items():
+            w = v.widget
+            if vid != "columns":
+                w = Gtk.ScrolledWindow(child=w, hscrollbar_policy=Gtk.PolicyType.NEVER)
+            self.stack.add_named(w, vid)
+        self.fade = ui.transition.CrossFade(self.stack)    # folder changes cross-fade
+        self.widget = Gtk.Overlay(vexpand=True)
+        self.widget.set_child(self.fade)
+        self.empty = Gtk.Label(css_classes=["fs-empty"], visible=False, can_target=False)
+        self.widget.add_overlay(self.empty)
+        self.view = self.views.get(view_id) or self.views["icons"]
+        self.stack.set_visible_child_name(self.view_id)
+
+    @property
+    def uri(self) -> str:
+        return self.history[self.pos] if self.pos >= 0 else ""
+
+    @property
+    def view_id(self) -> str:
+        return next(k for k, v in self.views.items() if v is self.view)
+
+    def title(self) -> str:
+        return self.name or (folder.display_name(self.uri) if self.uri else "Files")
+
+    def after_load(self, uri) -> None:
+        """A folder finished loading: fresh views, back at the top."""
+        self.name = folder.display_name(uri)
+        for v in self.views.values():
+            v.unselect_all()
+            v.scroll_top()
+        self.views["columns"].reset(uri)
+        self.fade.play()
+
+    def dispose(self) -> None:
+        self.folder.cancel()
+        self.views["columns"].reset(None)
+
+
+def _tab_state(name):
+    return property(lambda self: getattr(self.tab, name),
+                    lambda self, value: setattr(self.tab, name, value))
+
+
 class FilesWindow(Adw.ApplicationWindow):
+    TABS = True              # the Open/Save panel (chooser.py) has no tabs
+
     def __init__(self, app, uri: str = None):
         # (classes added, not passed: passing css_classes drops GTK's "csd"
         # class, and with it the rounded corners and the shadow)
@@ -78,8 +150,10 @@ class FilesWindow(Adw.ApplicationWindow):
             self.add_css_class(c)
         self.set_size_request(560, 320)
         ui.window.standard(self)
-        self.history, self.pos = [], -1
-        self.folder = folder.Folder(self._loaded, self._load_failed)
+        self.tabs, self.tab = [], None
+        self.show_hidden = False
+        self._syncing = False                # toolbar being set to the tab in front
+        self._dragged = []                   # files of a drag started here (spring-load guard)
 
         self.sidebar = Sidebar(self.go, ui.window.traffic_lights(self.close, self.minimize, self._zoom))
         self.sidebar.on_drop = lambda files, dest, copy: self.drop(files, dest, copy)
@@ -91,12 +165,11 @@ class FilesWindow(Adw.ApplicationWindow):
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["fs-content"])
         content.append(Gtk.WindowHandle(child=self._toolbar()))
+        self.strip = TabStrip(self)
+        content.append(self.strip)
         content.append(self._scope_bar())
-        overlay = Gtk.Overlay(vexpand=True)
-        overlay.set_child(self._views())
-        self.empty = Gtk.Label(css_classes=["fs-empty"], visible=False, can_target=False)
-        overlay.add_overlay(self.empty)
-        content.append(overlay)
+        self.tab_stack = Gtk.Stack(vexpand=True, transition_type=Gtk.StackTransitionType.NONE)
+        content.append(self.tab_stack)
         paned.set_end_child(content)
         paned.set_shrink_end_child(False)
         self.set_content(paned)
@@ -105,8 +178,8 @@ class FilesWindow(Adw.ApplicationWindow):
         self._typed = ""                     # type to select
         ui.drag.follow(self, lambda: self.drag_icon)
         self.connect("notify::is-active", lambda w, _p: w.is_active() and self.sidebar.refresh_space())
-        self.set_view(config.load("files", DEFAULTS)["view"], save=False)
-        self.go(uri or Gio.File.new_for_path(GLib.get_home_dir()).get_uri())
+        self._add_tab(uri or Gio.File.new_for_path(GLib.get_home_dir()).get_uri(),
+                      config.load("files", DEFAULTS)["view"], select=True)
 
     def _sidebar_width(self, paned) -> None:
         """The sidebar keeps the width you drag it to (all windows, saved);
@@ -153,7 +226,7 @@ class FilesWindow(Adw.ApplicationWindow):
         first = None
         for vid, icon, tip in VIEWS:
             b = Gtk.ToggleButton(icon_name=icon, tooltip_text=tip, focus_on_click=False, group=first)
-            b.connect("toggled", lambda b, v=vid: b.get_active() and self.set_view(v))
+            b.connect("toggled", lambda b, v=vid: b.get_active() and not self._syncing and self.set_view(v))
             first = first or b
             seg.append(b)
             self.view_buttons[vid] = b
@@ -267,19 +340,17 @@ class FilesWindow(Adw.ApplicationWindow):
         self.view.focus()
 
     # -- views -----------------------------------------------------------------------
-    def _views(self):
-        self.filter = Gtk.CustomFilter.new(self._match)
-        self.filtered = Gtk.FilterListModel(model=self.folder.store, filter=self.filter)
-        self.views = {
-            "icons": IconsView(self.filtered, self.open_item),
-            "list": ListView(self.filtered, self.open_item),
-            "columns": ColumnsView(self.filtered, self.open_item, self._column_location,
-                                   lambda: self.folder.show_hidden),
+    def _make_views(self, tab):
+        """A tab's three views, wired to the window (open, menus, drops)."""
+        views = {
+            "icons": IconsView(tab.filtered, self.open_item),
+            "list": ListView(tab.filtered, self.open_item),
+            "columns": ColumnsView(tab.filtered, self.open_item, lambda uri: self._column_location(tab, uri),
+                                   lambda: self.show_hidden),
         }
-        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE)
-        for vid, v in self.views.items():
+        for v in views.values():
             if hasattr(v, "selection"):              # Quick Look follows the selection
-                v.selection.connect("selection-changed", lambda *_: self._follow_quicklook())
+                v.selection.connect("selection-changed", lambda *_: tab is self.tab and self._follow_quicklook())
             v.dnd = self
             bg = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
             bg.connect("drop", lambda t, val, x, y: self.drop(
@@ -289,32 +360,39 @@ class FilesWindow(Adw.ApplicationWindow):
             menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
             menu.connect("pressed", lambda g, _n, x, y, v=v: self._context_menu(v, g.get_widget(), x, y))
             v.widget.add_controller(menu)
-            w = v.widget
-            if vid != "columns":
-                w = Gtk.ScrolledWindow(child=w, hscrollbar_policy=Gtk.PolicyType.NEVER)
-            self.stack.add_named(w, vid)
-        self.view = self.views["icons"]
-        self.fade = ui.transition.CrossFade(self.stack)    # folder changes cross-fade
-        return self.fade
+            middle = Gtk.GestureClick(button=Gdk.BUTTON_MIDDLE)       # a folder in a new tab (behind)
+            middle.connect("pressed", lambda g, _n, x, y, v=v: self._middle_click(v, g, x, y))
+            v.widget.add_controller(middle)
+        return views
 
     def set_view(self, vid, save=True):
         if vid not in self.views:
             vid = "icons"
         self.view = self.views[vid]
         self.stack.set_visible_child_name(vid)
-        if not self.view_buttons[vid].get_active():
-            self.view_buttons[vid].set_active(True)
+        self._sync_view_buttons()
         if vid == "columns" and self.pos >= 0:
             self.views["columns"].reset(self.history[self.pos])
         if save and config.load("files", DEFAULTS)["view"] != vid:
             config.save("files", {**config.load("files", DEFAULTS), "view": vid})
         self.view.focus()
 
-    def _column_location(self, uri):
-        """Columns view: the title follows the deepest open folder."""
-        name = folder.display_name(uri)
-        self.title.set_label(name)
-        self.set_title(name)
+    def _sync_view_buttons(self):
+        b = self.view_buttons[self.tab.view_id]
+        if not b.get_active():
+            self._syncing = True
+            b.set_active(True)
+            self._syncing = False
+
+    def _column_location(self, tab, uri):
+        """Columns view: the title (and the tab) follow the deepest open folder."""
+        if not uri:
+            return
+        tab.name = folder.display_name(uri)
+        self.strip.retitle(tab)
+        if tab is self.tab:
+            self.title.set_label(tab.name)
+            self.set_title(tab.name)
 
     def _match(self, info) -> bool:
         if getattr(self, "_in_results", False):
@@ -370,32 +448,141 @@ class FilesWindow(Adw.ApplicationWindow):
         self.back.set_sensitive(self.pos > 0)
         self.fwd.set_sensitive(self.pos < len(self.history) - 1)
 
+    def _tab_loaded(self, tab, uri):
+        tab.after_load(uri)
+        self.strip.retitle(tab)
+        if tab is self.tab:
+            self._loaded(uri)
+
     def _loaded(self, uri):
+        """The tab in front shows `uri`: toolbar, title and sidebar follow."""
         self.empty_btn.set_visible(ops.is_trash(uri))
-        name = folder.display_name(uri)
+        name = self.tab.title()
         self.title.set_label(name)
         self.set_title(name)
         self.sidebar.select(uri)
         self._update_empty()
-        for v in self.views.values():
-            v.unselect_all()
-            v.scroll_top()
-        self.views["columns"].reset(uri)
-        self.fade.play()
+
+    def _tab_failed(self, tab, uri, err):
+        tab.fade.play()
+        # stay where we were (drop the failed step from the history)
+        if tab.history and tab.history[tab.pos] == uri:
+            del tab.history[tab.pos]
+            tab.pos -= 1
+        if tab is self.tab:
+            self._update_nav()
+        if tab.pos < 0 and len(self.tabs) > 1:     # a new tab that never opened
+            self.close_tab(tab)
+        self._load_failed(uri, err)
 
     def _load_failed(self, uri, err):
-        self.fade.play()
         name = folder.display_name(uri)
-        # stay where we were (drop the failed step from the history)
-        if self.history and self.history[self.pos] == uri:
-            del self.history[self.pos]
-            self.pos -= 1
-            self._update_nav()
         if err.matches(Gio.io_error_quark(), Gio.IOErrorEnum.PERMISSION_DENIED):
             body = "You don't have permission to see its contents."
         else:
             body = err.message
         ui.dialog.alert(f"The folder “{name}” can’t be opened.", body, [("ok", "OK", "default")], parent=self)
+
+    # -- tabs (Finder) -----------------------------------------------------------------
+    def _add_tab(self, uri, view_id=None, index=None, select=True):
+        tab = Tab(self, view_id or (self.tab.view_id if self.tab else "icons"))
+        if index is None:
+            index = self.tabs.index(self.tab) + 1 if self.tab in self.tabs else len(self.tabs)
+        self.tabs.insert(index, tab)
+        self.tab_stack.add_child(tab.widget)
+        self.strip.add(tab, index)
+        if select or self.tab is None:
+            self.select_tab(tab)
+        tab.history, tab.pos = [uri], 0
+        if tab is self.tab:
+            self._update_nav()
+        tab.folder.load(uri)
+        return tab
+
+    def new_tab(self, uri=None, select=True):
+        """⌘T: a tab on the same folder (Finder), after the current one."""
+        if not self.TABS:
+            return None
+        return self._add_tab(uri or self.tab.uri, select=select)
+
+    def open_in_new_tab(self, info, select=True):
+        if info is not None and is_dir(info):
+            self.new_tab(info.get_attribute_string("standard::target-uri") or file_of(info).get_uri(), select)
+
+    def _middle_click(self, view, gesture, x, y):
+        if not self.TABS:
+            return
+        info = view.info_at(gesture.get_widget(), x, y)
+        if info is not None and is_dir(info):
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            self.open_in_new_tab(info, select=False)
+
+    def select_tab(self, tab):
+        if tab not in self.tabs or tab is self.tab:
+            return
+        if self.tab is not None and (self.search.get_text() or self.search_rev.get_reveal_child()):
+            self._close_search()                  # the search belongs to the tab it ran in
+        self.tab = tab
+        self.tab_stack.set_visible_child(tab.widget)
+        self.strip.set_active(tab)
+        self._sync_view_buttons()
+        self._update_nav()
+        if tab.uri:
+            self.empty_btn.set_visible(ops.is_trash(tab.uri))
+            self.sidebar.select(tab.uri)
+        self.title.set_label(tab.title())
+        self.set_title(tab.title())
+        self._update_empty()
+        tab.view.focus()
+
+    def close_tab(self, tab=None):
+        """⌘W: closes the tab; the window with its last tab."""
+        tab = tab or self.tab
+        if len(self.tabs) <= 1:
+            self.close()
+            return
+        i = self.tabs.index(tab)
+        if tab is self.tab:
+            self.select_tab(self.tabs[i + 1] if i + 1 < len(self.tabs) else self.tabs[i - 1])
+        self.tabs.remove(tab)
+        self.strip.remove(tab)
+        self.tab_stack.remove(tab.widget)
+        tab.dispose()
+
+    def move_tab(self, tab, index):
+        index = max(0, min(index, len(self.tabs) - 1))
+        if self.tabs.index(tab) != index:
+            self.tabs.remove(tab)
+            self.tabs.insert(index, tab)
+            self.strip.move(tab, index)
+
+    def cycle_tab(self, step):
+        if len(self.tabs) > 1:
+            self.select_tab(self.tabs[(self.tabs.index(self.tab) + step) % len(self.tabs)])
+
+    def _tab_keys(self, _c, keyval, _code, state) -> bool:
+        """⌘T, ⌘W, Ctrl+Tab / Ctrl+Shift+Tab, ⌘⇧[ / ⌘⇧] (⌘: Ctrl or Super)."""
+        if not self.TABS:
+            return False
+        ctrl = bool(state & Gdk.ModifierType.CONTROL_MASK)
+        cmd = ctrl or bool(state & Gdk.ModifierType.SUPER_MASK)
+        shift = bool(state & Gdk.ModifierType.SHIFT_MASK)
+        k = Gdk.keyval_to_lower(keyval)
+        if ctrl and k in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab, Gdk.KEY_KP_Tab):
+            self.cycle_tab(-1 if shift or k == Gdk.KEY_ISO_Left_Tab else 1)
+            return True
+        if not cmd:
+            return False
+        if shift and k in (Gdk.KEY_bracketleft, Gdk.KEY_braceleft, Gdk.KEY_bracketright, Gdk.KEY_braceright):
+            self.cycle_tab(-1 if k in (Gdk.KEY_bracketleft, Gdk.KEY_braceleft) else 1)
+            return True
+        if not shift and k == Gdk.KEY_t:
+            self.new_tab()
+            return True
+        if not shift and k == Gdk.KEY_w:
+            self.close_tab()
+            return True
+        return False
 
     # -- opening -----------------------------------------------------------------------
     def open_item(self, info) -> None:
@@ -496,6 +683,8 @@ class FilesWindow(Adw.ApplicationWindow):
                 return
             pkg = packages.menu_items(file_of(sel[0]).get_path(), self) if n == 1 and not is_dir(sel[0]) else []
             sections = [pkg + [Item("Open", self.open_selection)]] if pkg else [[Item("Open", self.open_selection)]]
+            if self.TABS and n == 1 and is_dir(sel[0]):
+                sections[0].append(Item("Open in New Tab", lambda i=sel[0]: self.open_in_new_tab(i)))
             apps = self._open_with_items(sel[0]) if n == 1 and not is_dir(sel[0]) else []
             if apps:
                 sections[0].append(Item("Open With", submenu=[apps]))
@@ -608,20 +797,34 @@ class FilesWindow(Adw.ApplicationWindow):
         sel = view.selected()
         return [file_of(i) for i in (sel if info in sel else [info])]
 
+    def drag_started(self, files):
+        """The views report a drag leaving them (None when it ends)."""
+        self._dragged = list(files or [])
+
+    def is_dragged(self, f) -> bool:
+        return any(f.equal(d) for d in self._dragged)
+
     def spring_open(self, info):
         """A drag hovering on a folder opens it (spring-loaded folders)."""
+        if self.is_dragged(file_of(info)):
+            return                                        # never into the folder being dragged
         target = info.get_attribute_string("standard::target-uri") or file_of(info).get_uri()
         self.go(target)
 
     def drop(self, files, dest, copy=False) -> bool:
+        """Files dropped on a folder (view background, folder, sidebar, tab).
+        Onto their own folder, onto themselves or a folder into its own
+        subfolder: silently nothing (ops.drop_plan)."""
         if dest.get_uri() in VIRTUAL or not files:
             return False
         if ops.is_trash(dest.get_uri()):                  # dropped on Trash: move to the Trash
-            ops.trash(files)
-            return True
-        files = [f for f in files if not f.equal(dest) and not dest.has_prefix(f)]   # not into itself
-        if all(f.get_parent() and f.get_parent().equal(dest) for f in files):
-            return False                                  # dropped where they already are
+            files = [f for f in files if not ops.is_trash(f.get_uri())]
+            if files:
+                ops.trash(files)
+            return bool(files)
+        files = ops.drop_plan(files, dest)
+        if not files:
+            return False
         move = not copy and all(_same_disk(f, dest) for f in files)
         ops.Transfer(files, dest, move=move, parent=self, on_done=self.sidebar.refresh_space)
         return True
@@ -700,8 +903,10 @@ class FilesWindow(Adw.ApplicationWindow):
         self.unmaximize() if self.is_maximized() else self.maximize()
 
     def toggle_hidden(self):
-        self.folder.show_hidden = not self.folder.show_hidden
-        self.folder.reload()
+        self.show_hidden = not self.show_hidden
+        for t in self.tabs:
+            t.folder.show_hidden = self.show_hidden
+            t.folder.reload()
 
     def _home_dir(self, kind=None):
         if kind is None:
@@ -728,7 +933,7 @@ class FilesWindow(Adw.ApplicationWindow):
             ("<Control><Shift>a", lambda: self.go(APPS)),
             ("<Control><Shift>period", self.toggle_hidden),
             ("<Control>f", self._open_search),
-            ("<Control>w", self.close),
+            ("<Control>w", self.close_tab),                  # (the tab keys take it first)
             ("<Control>n", lambda: FilesWindow(self.get_application(), self.history[self.pos]).present()),
             ("<Control>a", lambda: self.view.select_all()),
             ("<Control>1", lambda: self.set_view("icons")),
@@ -756,6 +961,9 @@ class FilesWindow(Adw.ApplicationWindow):
         keys2 = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         keys2.connect("key-pressed", self._file_keys)
         self.add_controller(keys2)
+        tabs = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)   # ahead of focus keys
+        tabs.connect("key-pressed", self._tab_keys)
+        self.add_controller(tabs)
 
     def _file_keys(self, _c, keyval, _code, state) -> bool:
         focus = self.get_focus()
@@ -825,3 +1033,8 @@ class FilesWindow(Adw.ApplicationWindow):
             self.view.select_prefix(ch)            # a new word: start again from this letter
             self._typed = ch
         return True
+
+
+for _n in _TAB_STATE:            # self.history, self.view... are the front tab's
+    setattr(FilesWindow, _n, _tab_state(_n))
+del _n

@@ -196,6 +196,37 @@ def _fold(text: str) -> str:
     return GLib.str_to_ascii(text.casefold(), None).casefold()
 
 
+_ITEM_NODES = ("child", "row", "cell")       # a grid cell, a list row, a column-view cell
+
+
+def _find_info(w, depth=4):
+    info = getattr(w, "info", None)
+    if info is not None or depth == 0:
+        return info
+    c = w.get_first_child()
+    while c is not None:
+        info = _find_info(c, depth - 1)
+        if info is not None:
+            return info
+        c = c.get_next_sibling()
+    return None
+
+
+def info_under(widget, x, y):
+    """The FileInfo of the item at (x, y) of a view's `widget`, or None."""
+    w = widget.pick(x, y, Gtk.PickFlags.DEFAULT)
+    while w is not None and w is not widget:
+        info = getattr(w, "info", None)
+        if info is not None:
+            return info
+        if w.get_css_name() in _ITEM_NODES:
+            info = _find_info(w)
+            if info is not None:
+                return info
+        w = w.get_parent()
+    return None
+
+
 class _Cells:
     """What every view offers the window besides showing items: the item
     under the pointer (context menus), selecting a file by name, and
@@ -207,13 +238,8 @@ class _Cells:
         self.dnd = None           # the window: files_for_drag(info), drop(files, folder, copy)
 
     def _dnd_cell(self, box):
-        """Drag the item (or the whole selection it belongs to); folders
-        accept drops, and open when a drag hovers on them (spring-loaded)."""
-        src = Gtk.DragSource(actions=Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
-        src.connect("prepare", lambda s_, x, y: self._drag_prepare(box, s_))
-        src.connect("drag-begin", lambda s_, drag: self._drag_begin(box, drag))
-        src.connect("drag-end", lambda *_: self._dnd() and setattr(self._dnd(), "drag_icon", None))
-        box.add_controller(src)
+        """Folders accept drops, and open when a drag hovers on them
+        (spring-loaded). (Dragging starts from the whole list: _dnd_list.)"""
         tgt = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
         tgt.connect("accept", lambda t, d: bool(getattr(box, "info", None)) and is_dir(box.info))
         tgt.connect("enter", lambda t, x, y: self._drag_enter(box))
@@ -221,17 +247,45 @@ class _Cells:
         tgt.connect("drop", lambda t, v, x, y: self._drop_on(box, t, v))
         box.add_controller(tgt)
 
-    def _drag_prepare(self, box, source):
-        info = getattr(box, "info", None)
+    def _dnd_list(self, widget, rubberband=False):
+        """Pressing on an item and moving drags the item (with the selection
+        it belongs to) -- anywhere on it: icon, name, any column of a row.
+        Only a press on empty space starts the rubber band. One drag source
+        for the whole list, ahead of the list's own gestures (capture)."""
+        self._drag_info = None
+        src = Gtk.DragSource(actions=Gdk.DragAction.COPY | Gdk.DragAction.MOVE,
+                             propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        src.connect("prepare", lambda s_, x, y: self._drag_prepare(widget, x, y))
+        src.connect("drag-begin", lambda s_, drag: self._drag_begin(widget, drag))
+        src.connect("drag-end", lambda *_: self._drag_end())
+        widget.add_controller(src)
+        if rubberband:
+            press = Gtk.GestureClick(button=0, propagation_phase=Gtk.PropagationPhase.CAPTURE)
+
+            def pressed(_g, _n, x, y):
+                on_item = self.info_at(widget, x, y) is not None
+                widget.set_enable_rubberband(not on_item)
+            press.connect("pressed", pressed)
+            widget.add_controller(press)
+
+    def _drag_prepare(self, widget, x, y):
+        picked = widget.pick(x, y, Gtk.PickFlags.DEFAULT)
+        if picked is not None and (isinstance(picked, Gtk.Editable) or picked.get_ancestor(Gtk.Editable)):
+            return None                          # selecting text in the rename field
+        info = self.info_at(widget, x, y)
         if info is None or self._dnd() is None:
             return None
         files = self._dnd().files_for_drag(self, info)
+        self._drag_info = info
+        dnd = self._dnd()
+        if hasattr(dnd, "drag_started"):
+            dnd.drag_started(files)
         from .ops import file_content
         return file_content(files)
 
-    def _drag_begin(self, box, drag):
-        """The file icon hangs from the pointer and swings (ui.drag)."""
-        info = getattr(box, "info", None)
+    def _drag_begin(self, widget, drag):
+        """The file icon follows the pointer (ui.drag)."""
+        info = self._drag_info
         if info is None or self._dnd() is None:
             return
         paint = None
@@ -242,13 +296,24 @@ class _Cells:
             except GLib.Error:
                 paint = None
         if paint is None:
-            paint = icons.paintable(box, info.get_icon() or Gio.ThemedIcon.new("text-x-generic"), 64)
+            paint = icons.paintable(widget, info.get_icon() or Gio.ThemedIcon.new("text-x-generic"), 64)
         self._dnd().drag_icon = ui.drag.hang(drag, paint, 64)
+
+    def _drag_end(self):
+        self._drag_info = None
+        dnd = self._dnd()
+        if dnd is not None:
+            dnd.drag_icon = None
+            if hasattr(dnd, "drag_started"):
+                dnd.drag_started(None)
 
     def _drag_enter(self, box):
         info = getattr(box, "info", None)
         if info is None or not is_dir(info):
             return 0
+        dnd = self._dnd()
+        if dnd is not None and getattr(dnd, "is_dragged", None) and dnd.is_dragged(folder.file_of(info)):
+            return 0                             # the dragged folder itself: no target, no spring
         box.add_css_class("drop-target")
         box._spring = GLib.timeout_add(SPRING_MS, lambda: (self._dnd() and self._dnd().spring_open(info), False)[1])
         return Gdk.DragAction.MOVE
@@ -283,14 +348,9 @@ class _Cells:
         box.info = None
 
     def info_at(self, widget, x, y):
-        """The FileInfo under (x, y) of `widget` (None = background)."""
-        w = widget.pick(x, y, Gtk.PickFlags.DEFAULT)
-        while w is not None and w is not widget:
-            info = getattr(w, "info", None)
-            if info is not None:
-                return info
-            w = w.get_parent()
-        return None
+        """The FileInfo under (x, y) of `widget` (None = background). Any
+        point of an item counts: a grid cell's padding, a row's gaps."""
+        return info_under(widget, x, y)
 
     def position_of(self, name: str) -> int:
         for i in range(self.model.get_n_items()):
@@ -383,6 +443,7 @@ class IconsView(_Cells):
         f.connect("unbind", lambda _f, item: self._untrack(item.get_child()))
         self.widget = Gtk.GridView(model=self.selection, factory=f, max_columns=64, min_columns=1,
                                    enable_rubberband=True, css_classes=["fs-icons"])
+        self._dnd_list(self.widget, rubberband=True)
         self.widget.connect("activate", lambda _g, pos: on_open(model.get_item(pos)))
 
     def _setup(self, _f, item):
@@ -457,6 +518,7 @@ class ListView(_Cells):
                      width=160)
         self.view.sort_by_column(name, Gtk.SortType.ASCENDING)
         self.widget = self.view
+        self._dnd_list(self.view, rubberband=True)
 
     def _column(self, title, setup, bind, cmp=None, expand=False, width=-1, unbind=None):
         f = Gtk.SignalListItemFactory()
@@ -537,6 +599,18 @@ class _Column(Gtk.ScrolledWindow, _Cells):
         keys.connect("key-pressed", lambda _c, k, *_: browser._key(self, k))
         self.list.add_controller(keys)
         self.set_child(self.list)
+        self._dnd_list(self.list)
+        bg = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+        bg.connect("drop", self._drop_here)         # on the column's empty space: into its folder
+        self.add_controller(bg)
+
+    def _drop_here(self, target, value, _x, _y):
+        dnd = self._dnd()
+        uri = self.owner.uri if self.owner else self.browser.root_uri
+        if dnd is None or not uri:
+            return False
+        copy = bool(target.get_current_event_state() & Gdk.ModifierType.CONTROL_MASK)
+        return dnd.drop(list(value.get_files()), Gio.File.new_for_uri(uri), copy)
 
     def _setup(self, _f, item):
         box = Gtk.Box(spacing=6)

@@ -5,7 +5,7 @@ Left:  Sonata menu (logo) -- About This Computer, Recent Items, Sleep,
        active app name (bold) -- About, Hide, Hide Others, Show All, Quit
        Window -- Minimize, Zoom, the app's windows, Bring All to Front
        (both hidden while the desktop has the focus -- Vini's choice)
-Right: menu extras -- Sound, Battery, Wi-Fi, Control Center, clock; own
+Right: background apps' tray icons (tray.py), then menu extras -- Sound, Battery, Wi-Fi, Control Center, clock; own
        icons (sonata-volume/-wifi/-battery-*, tools/gen-status-icons.py).
 
 Apps' own menus (File, Edit, ...) need a global-menu protocol GTK4/Qt6 apps
@@ -30,7 +30,7 @@ BAR_H = 24
 # Sound and Now Playing live in the Control Center; the menu bar items are
 # optional (Settings > Menu Bar), off by default (Vini).
 DEFAULTS = {"battery_percent": False, "clock_format": "%a %-d %b  %H:%M", "show_bluetooth": True,
-            "show_sound": False, "show_now_playing": False}
+            "show_sound": False, "show_now_playing": False, "show_tray": True}
 POLL_S = 10
 
 ui.register("""
@@ -78,6 +78,10 @@ class Bar(Gtk.CenterBox):
         self.set_start_widget(left)
 
         right = Gtk.Box()
+        # background apps' status icons (StatusNotifierItem, tray.py), left of the extras
+        from .tray import TrayBox
+        self.tray = TrayBox(self, self.cfg.get("show_tray", True))
+        right.append(self.tray)
         # Screen recording: a stop button while wf-recorder runs (macOS)
         self.rec_stop = self._item(right, icon="sonata-record-stop-symbolic", on_click=self._stop_recording,
                                    css="icon")
@@ -133,6 +137,7 @@ class Bar(Gtk.CenterBox):
     def stop(self) -> None:
         """Its display was unplugged: no more polling or listening."""
         self.alive = False
+        self.tray.stop()
         if self.manager and self._active_changed in self.manager.listeners:
             self.manager.listeners.remove(self._active_changed)
 
@@ -147,6 +152,7 @@ class Bar(Gtk.CenterBox):
         self.battery_pct.set_visible(self.cfg["battery_percent"] and self.battery.get_visible())
         self._bt_update()
         self._extras_visibility()
+        self.tray.set_shown(self.cfg.get("show_tray", True))
         now = GLib.DateTime.new_now_local()
         self._set_text(self.clock, now.format(self.cfg["clock_format"]) or now.format("%a %H:%M"))
 

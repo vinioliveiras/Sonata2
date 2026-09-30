@@ -153,6 +153,41 @@ def empty_trash(on_done=None, on_error=None) -> None:
 
 
 # -- copy / move -------------------------------------------------------------------------------
+def _real(f: Gio.File, item=False):
+    """A comparable key for `f`: its resolved path (symlinked folders and
+    "a/../b" compare equal), else its URI. item=True resolves only the
+    folder it is in (a symlink stays itself, not what it points to)."""
+    p = f.get_path()
+    if not p:
+        return f.get_uri().rstrip("/")
+    if item and os.path.basename(p):
+        return os.path.join(os.path.realpath(os.path.dirname(p)), os.path.basename(p))
+    return os.path.realpath(p)
+
+
+def _inside(key, parent_key) -> bool:
+    """`key` is `parent_key` or below it."""
+    return key == parent_key or key.startswith(parent_key.rstrip("/") + "/")
+
+
+def drop_plan(files, dest: Gio.File) -> list:
+    """What a drag and drop onto the folder `dest` really transfers (Finder):
+    nothing when an item is dropped onto itself, or a folder into one of its
+    own subfolders (the whole drop is refused, silently); items already in
+    `dest` are left alone, so a drop back onto their own folder is a no-op."""
+    d = _real(dest)
+    out = []
+    for f in files:
+        k = _real(f, item=True)
+        if _inside(d, k):                    # onto itself / into its own subfolder
+            return []
+        parent = f.get_parent()
+        if parent is not None and _real(parent) == d:
+            continue                         # already there
+        out.append(f)
+    return out
+
+
 class Transfer:
     """copy (or move) `sources` into the folder `dest`. `parent` is the
     window for the alerts; on_done() runs on the GTK thread at the end."""
@@ -207,10 +242,13 @@ class Transfer:
             target = self.dest.get_child(free_name(self.dest, name, is_dir))
         else:
             target = self.dest.get_child(name)
-            if src.equal(target) and not self.move:        # paste into the same folder = duplicate
-                target = self.dest.get_child(free_name(self.dest, name, is_dir))
-            elif src.equal(target):
+            same = src.equal(target) or _real(src, True) == _real(target, True)
+            if self.move and same:                         # moved to where it is: nothing to do
                 return
+            if is_dir and _inside(_real(self.dest), _real(src, True)):
+                return                                     # a folder into itself: refused, silently
+            if same:                                       # paste into the same folder = duplicate
+                target = self.dest.get_child(free_name(self.dest, name, is_dir))
             elif target.query_exists(self.cancel):
                 answer = self._ask(name, is_dir)
                 if answer == "stop":

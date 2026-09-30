@@ -95,6 +95,10 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None,
         if root is not None and root is not parent:     # own window: glass
             dlg.add_css_class("glass")
             root.add_css_class("sonata-glass-window")
+            # a fixed-size (min = max) window made the compositor and GTK
+            # disagree on its size every frame: the alert "wobbled" sideways
+            if hasattr(root, "set_resizable"):
+                root.set_resizable(True)
     else:
         dlg.present()
     return dlg

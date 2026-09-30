@@ -48,6 +48,7 @@ def matches(info, rules) -> bool:
 
 
 class ChooserWindow(FilesWindow):
+    TABS = False
     def __init__(self, app, mode="open", title="", accept_label="", multiple=False, filters=None,
                  current_filter=0, folder=None, name="", on_done=None):
         self.mode = mode
