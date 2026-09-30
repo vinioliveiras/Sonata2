@@ -25,10 +25,19 @@ class FixedWidth(Gtk.Widget):
         child.set_parent(self)
         self.connect("destroy", FixedWidth._unparent)
 
+    def _w(self) -> int:
+        """The fixed width, or the child's minimum when that is wider: GTK
+        warns (and clips) when a child gets less than its minimum (Control
+        Center needed 328 px in a 320 px panel). The minimum never follows
+        long text (labels ellipsize), so the panel still doesn't grow."""
+        mn = self.get_first_child().measure(Gtk.Orientation.HORIZONTAL, -1)[0]
+        return max(self.width, mn)
+
     def do_measure(self, orientation, for_size):
         if orientation == Gtk.Orientation.HORIZONTAL:
-            return self.width, self.width, -1, -1
-        mn, nat, _b, _nb = self.get_first_child().measure(orientation, self.width)
+            w = self._w()
+            return w, w, -1, -1
+        mn, nat, _b, _nb = self.get_first_child().measure(orientation, max(for_size, self._w()))
         return mn, nat, -1, -1
 
     def do_size_allocate(self, width, height, baseline):

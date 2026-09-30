@@ -831,6 +831,15 @@ class FixedWidthRegressions(unittest.TestCase):
         self.assertGreater(self._natural(long)[1], 1000)          # what used to stretch the panel
         self.assertEqual(self._natural(FixedWidth(long, 344)), (344, 344))
 
+    def test_never_below_the_child_minimum(self):
+        """Control Center needed 328 px in its 320 px panel: GTK warned
+        ("Trying to measure ... for width of 320, but it needs at least 328")
+        and clipped it. The panel takes the child's minimum then, still fixed."""
+        from sonata2.ui.fixed import FixedWidth
+        wide = Gtk.Box(width_request=328)
+        self.assertEqual(self._natural(FixedWidth(wide, 320)), (328, 328))
+        self.assertEqual(self._natural(FixedWidth(Gtk.Box(width_request=100), 320)), (320, 320))
+
     def test_notification_card_width(self):
         from sonata2.shell import notifications as N
         fake = type("F", (), {"_icon": lambda s, img, n: None, "invoke": lambda s, *a: None,
