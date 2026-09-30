@@ -221,6 +221,21 @@ class MusicRegressions(unittest.TestCase):
         self.assertRegex(src, r"vol = Gtk.Box\(spacing=6, valign=Gtk.Align.CENTER, margin_start=\d+")
 
 
+class ButtonRegressions(unittest.TestCase):
+    def test_push_buttons_are_macos_style(self):
+        """The Save panel's buttons (and others) used Adwaita's look (bold,
+        big pills) instead of Sonata's macOS push buttons."""
+        root = pathlib.Path(__file__).parent.parent / "sonata2"
+        for f in root.rglob("*.py"):
+            if f.parent.name == "ui":
+                continue
+            src = f.read_text()
+            self.assertNotIn("suggested-action", src, f"{f}: use sonata-button + default")
+            self.assertNotIn("destructive-action", src, f"{f}: use sonata-button + destructive")
+        chooser = (root / "files" / "chooser.py").read_text()
+        self.assertEqual(chooser.count('"sonata-button"'), 3)
+
+
 class TopbarRegressions(unittest.TestCase):
     def test_now_playing_title_does_not_widen_control_center(self):
         from sonata2.shell import topbar

@@ -26,7 +26,9 @@ ui.register("""
 .fc-bottom { padding: 10px 12px; background: %(content_bg)s; box-shadow: inset 0 1px %(separator)s; }
 .fc-top { padding: 10px 14px; background: %(content_bg)s; box-shadow: inset 0 -1px %(separator)s; }
 .fc-top label, .fc-bottom label.fc-caption { color: %(label_secondary)s; }
-.fc-top entry { min-width: 260px; }
+.fc-top entry { min-width: 260px; min-height: %(control_h)s; border-radius: %(r_button)s; border: none;
+  background: %(control_bg)s; color: %(label)s; box-shadow: 0 0 0 0.5px %(hairline)s, %(shadow_control)s; }
+.fc-top entry:focus-within { outline: none; box-shadow: 0 0 0 3px alpha(%(accent)s, 0.45); }   /* macOS focus ring */
 button.fc-accept { min-width: 76px; }
 button.fc-cancel { min-width: 76px; }
 """, key="chooser")
@@ -97,16 +99,16 @@ class ChooserWindow(FilesWindow):
             combo.connect("notify::selected", lambda d, _p: self._set_filter(d.get_selected()))
             bar.append(combo)
         if self.mode in ("save", "folder"):
-            new = Gtk.Button(label="New Folder", css_classes=["fc-cancel"])
+            new = Gtk.Button(label="New Folder", css_classes=["sonata-button", "fc-cancel"])
             new.connect("clicked", lambda *_: self.new_folder())
             bar.append(new)
         bar.append(Gtk.Box(hexpand=True))
-        cancel = Gtk.Button(label="Cancel", css_classes=["fc-cancel"])
+        cancel = Gtk.Button(label="Cancel", css_classes=["sonata-button", "fc-cancel"])
         cancel.connect("clicked", lambda *_: self._finish(None))
         bar.append(cancel)
         label = accept_label.replace("_", "") if accept_label else \
             {"open": "Open", "save": "Save", "folder": "Choose"}[self.mode]
-        self.accept_btn = Gtk.Button(label=label, css_classes=["suggested-action", "fc-accept"])
+        self.accept_btn = Gtk.Button(label=label, css_classes=["sonata-button", "default", "fc-accept"])
         self.accept_btn.connect("clicked", lambda *_: self._accept())
         bar.append(self.accept_btn)
         self.set_default_widget(self.accept_btn)

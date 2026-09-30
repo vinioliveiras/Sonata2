@@ -450,7 +450,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
                                     default=0)
             sliders[key] = sl
             box.append(sl)
-        reset = Gtk.Button(label="Reset All", halign=Gtk.Align.END, margin_top=6)
+        reset = Gtk.Button(label="Reset All", halign=Gtk.Align.END, margin_top=6, css_classes=["sonata-button"])
 
         def reset_all(*_a):
             for k, sl in sliders.items():

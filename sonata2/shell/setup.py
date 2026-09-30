@@ -44,7 +44,7 @@ ui.register("""
   -gtk-icon-size: 20px; transition: background-color 160ms ease-out, transform 160ms ease-out; }
 .su-next:hover { background: rgba(255,255,255,0.34); }
 .su-next:active { transform: scale(0.92); }
-.su-start { min-height: 34px; padding: 0 22px; border-radius: 99px; font-weight: 600; }
+button.sonata-button.su-start { min-height: 34px; padding: 0 22px; border-radius: 99px; font-weight: 600; }
 .su-dot { min-width: 22px; min-height: 22px; padding: 0; margin: 0 4px; border-radius: 99px; border: none;
   box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.25); transition: box-shadow 160ms ease-out; }
 .su-dot.selected { box-shadow: 0 0 0 2px rgba(0,0,0,0.25), 0 0 0 4px white; }
@@ -227,7 +227,7 @@ class SetupAssistant:
                           panel, next_to=True)
 
     def _ready(self):
-        start = Gtk.Button(label="Get Started", css_classes=["suggested-action", "su-start"],
+        start = Gtk.Button(label="Get Started", css_classes=["sonata-button", "default", "su-start"],
                            halign=Gtk.Align.CENTER)
         start.connect("clicked", lambda *_: self.finish())
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)

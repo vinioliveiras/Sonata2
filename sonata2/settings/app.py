@@ -550,7 +550,7 @@ class Settings(Adw.ApplicationWindow):
             for d in devices:
                 row = Adw.ActionRow(title=d.name, subtitle="Connected" if d.connected else
                                     ("Not Connected" if d.paired else "Not Paired"))
-                btn = Gtk.Button(label="Disconnect" if d.connected else "Connect", valign=Gtk.Align.CENTER)
+                btn = Gtk.Button(label="Disconnect" if d.connected else "Connect", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
                 btn.connect("clicked", lambda b, d=d: system.run_async(
                     system.bluetooth_connect, lambda ok: self.toast(("Done" if ok else "That didn't work")),
                     d.mac, not d.connected))
@@ -808,7 +808,7 @@ class Settings(Adw.ApplicationWindow):
         g.add(pic)
         chooser = group()                        # its own group: the page's standard gap below the picture
         row = Adw.ActionRow(title="Picture", subtitle=f.get_basename() if f else "None")
-        choose = Gtk.Button(label="Choose…", valign=Gtk.Align.CENTER)
+        choose = Gtk.Button(label="Choose…", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
 
         def pick(*_):
             dlg = Gtk.FileDialog(title="Choose a Picture")
@@ -1004,10 +1004,10 @@ class Settings(Adw.ApplicationWindow):
         pic.connect("clicked", lambda b: self._pick_picture(u, b))
         row.add_prefix(pic)
         if u.current:
-            name = Gtk.Button(label="Edit Name…", valign=Gtk.Align.CENTER)
+            name = Gtk.Button(label="Edit Name…", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
             name.connect("clicked", lambda *_: self._ask_text(
                 "Full name", u.real_name, lambda v: self._user_op(U.set_real_name, u, v)))
-            pw = Gtk.Button(label="Change Password…", valign=Gtk.Align.CENTER)
+            pw = Gtk.Button(label="Change Password…", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
             pw.connect("clicked", lambda *_: self._password_dialog(u))
             row.add_suffix(name)
             row.add_suffix(pw)
@@ -1072,7 +1072,7 @@ class Settings(Adw.ApplicationWindow):
             b.connect("clicked", lambda _b, p=path: use(p))
             grid.append(b)
         col.append(grid)
-        other = Gtk.Button(label="Choose from Files…")
+        other = Gtk.Button(label="Choose from Files…", css_classes=["sonata-button"])
         col.append(other)
         pop.set_child(col)
 
@@ -1254,7 +1254,7 @@ class Settings(Adw.ApplicationWindow):
                 buttons.remove(c)
 
         def button(label, cb, suggested=False):
-            b = Gtk.Button(label=label, css_classes=["suggested-action"] if suggested else [])
+            b = Gtk.Button(label=label, css_classes=["sonata-button"] + (["default"] if suggested else []))
             b.connect("clicked", lambda *_: cb())
             buttons.append(b)
 
@@ -1471,7 +1471,7 @@ class Settings(Adw.ApplicationWindow):
                                     subtitle=p.state + (" · Default" if p.default else ""))
                 row.add_prefix(Gtk.Image(icon_name="printer-symbolic", pixel_size=24))
                 if not p.default:
-                    b = Gtk.Button(label="Make Default", valign=Gtk.Align.CENTER)
+                    b = Gtk.Button(label="Make Default", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
                     b.connect("clicked", lambda *_a, p=p: system.run_async(
                         system.set_default_printer, lambda _ok: self._reload_page("printers"), p.name))
                     row.add_suffix(b)
@@ -1588,7 +1588,7 @@ class Settings(Adw.ApplicationWindow):
                          subtitle="Chrome, VS Code and others use Sonata's title bar instead of their own"))
         gen = Adw.ActionRow(title="App icons made by Sonata",
                             subtitle="Apps without Sonata artwork get their icon on the standard frame, saved on disk")
-        regen = Gtk.Button(label="Regenerate", valign=Gtk.Align.CENTER)
+        regen = Gtk.Button(label="Regenerate", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
         regen.connect("clicked", lambda *_: (icons.clear_generated(), system.restart_sonata(),
                                              self.toast("Making the app icons again…")))
         gen.add_suffix(regen)
@@ -1679,7 +1679,7 @@ class Settings(Adw.ApplicationWindow):
 
     def _page_launchpad(self):
         g = group("Launchpad")
-        reset = Gtk.Button(label="Reset…", valign=Gtk.Align.CENTER)
+        reset = Gtk.Button(label="Reset…", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
         reset.connect("clicked", lambda *_: ui.dialog.alert(
             "Reset the Launchpad layout?", "Folders and your icon order are removed; apps are sorted by name.",
             [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
@@ -1750,13 +1750,13 @@ class Settings(Adw.ApplicationWindow):
             img = Gtk.Image(pixel_size=32)
             icons.set_image(img, icons.app_icon(info))
             r.add_prefix(img)
-            b = Gtk.Button(label="Show", valign=Gtk.Align.CENTER)
+            b = Gtk.Button(label="Show", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
             b.connect("clicked", lambda _b, did=did: (self._set_hidden(did, False), self._show_hidden_apps()))
             r.add_suffix(b)
             h.add(r)
         if not hidden:
             h.add(Adw.ActionRow(title="No hidden apps"))
-        add = Gtk.Button(label="Hide an App…", halign=Gtk.Align.START, margin_top=10)
+        add = Gtk.Button(label="Hide an App…", halign=Gtk.Align.START, margin_top=10, css_classes=["sonata-button"])
         add.connect("clicked", lambda b: self._pick_app_to_hide(b, installed, hidden))
         h.add(add)
         page.add(h)
@@ -1859,7 +1859,7 @@ class Settings(Adw.ApplicationWindow):
         shell = group("Sonata")
         row = Adw.ActionRow(title="Restart Sonata",
                             subtitle="Reloads the Dock, menu bar, Launchpad and wallpaper. Your apps stay open.")
-        btn = Gtk.Button(label="Restart", valign=Gtk.Align.CENTER)
+        btn = Gtk.Button(label="Restart", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
         btn.connect("clicked", lambda *_: (system.restart_sonata(), self.toast("Restarting Sonata…")))
         row.add_suffix(btn)
         row.set_activatable_widget(btn)
