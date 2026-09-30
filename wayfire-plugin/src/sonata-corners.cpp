@@ -117,22 +117,22 @@ void main()
     vec2 p = vec2(uvpos.x * size.x, (1.0 - uvpos.y) * size.y);
     vec2 lo = rect.xy;
     vec2 hi = rect.xy + rect.zw;
-    if (seam >= 0.0 && p.y >= seam && p.y < seam + 8.0 && p.x >= lo.x && p.x <= hi.x)
+    if (seam >= 0.0 && p.y >= seam && p.y < seam + 12.0 && p.x >= lo.x && p.x <= hi.x)
     {
         /* pixdecor's title bar reaches a few pixels under the client's top
          * (1 px, 5 px maximized): a see-through toolbar there got the title
          * bar's tint twice -- a dark seam between the two glasses. Such a
          * pixel is denser than the same column further down; take the extra
          * layer (the title bar's colour behind the client) out again. */
-        vec4 below = get_pixel(vec2(uvpos.x, 1.0 - (seam + 8.0) / size.y));
-        /* only the exact signature of one extra title-bar layer over a glass
-         * toolbar: alpha = below + (1 - below) * fill (anything else -- the
-         * traffic lights' area, the frame's edge -- is left as drawn) */
-        float twice = below.a + (1.0 - below.a) * fill.a;
-        if (below.a > 0.2 && below.a < 0.99 && fill.a > 0.0 && abs(c.a - twice) < 0.03)
+        vec4 below = get_pixel(vec2(uvpos.x, 1.0 - (seam + 12.0) / size.y));
+        vec4 below2 = get_pixel(vec2(uvpos.x, 1.0 - (seam + 15.0) / size.y));
+        /* denser than the plain toolbar under it (the same two rows further
+         * down: background, not a control): take the toolbar's pixel. The
+         * extra layer isn't always the title bar's colour (under the traffic
+         * lights it is darker), so it is replaced, not subtracted. */
+        if (below.a < 0.99 && c.a > below.a + 0.02 && length(below - below2) < 0.01)
         {
-            c = clamp(c - fill * (1.0 - below.a), vec4(0.0), vec4(1.0));
-            c.rgb = min(c.rgb, vec3(c.a));
+            c = below;
         }
     }
     bool top = p.y < lo.y + radius;
