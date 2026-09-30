@@ -43,6 +43,7 @@
 
 #include <wayfire/core.hpp>
 #include <wayfire/scene.hpp>
+#include <wayfire/scene-operations.hpp>
 #include <vector>
 #include <wayfire/opengl.hpp>
 #include <wayfire/view.hpp>
@@ -660,8 +661,6 @@ class window_capture_t
 class sonata_corners_t : public wf::plugin_interface_t
 {
     const std::string transformer_name = "sonata-corners";
-    /* typeid(wf::scene::blur_node_t).name(): the blur plugin's transformer */
-    static inline const std::string blur_name = "N2wf5scene11blur_node_tE";
     wf::wl_idle_call idle_update;
     wf::wl_timer<false> late_update;
 
@@ -705,26 +704,36 @@ class sonata_corners_t : public wf::plugin_interface_t
         }
     }
 
-    /* A submenu (a popup of a popup) is drawn inside its parent menu's node,
-     * so the parent's blur already covers it; blurring it again samples the
-     * parent's offscreen buffer (empty) and the submenu turns near-black. */
-    static void unblur_nested_popup(wayfire_view view)
+    /* A submenu (a popup of a popup): Wayfire puts it inside its parent
+     * menu's view node, next to (not inside) the parent's blur -- so it had
+     * no glass, and its own blur there came out near-black. Lifted into the
+     * layer the menu is in, in front of it, it is drawn like the menu itself:
+     * straight onto the screen, with its own blur (the frosted glass). The
+     * position stays: popup nodes carry global coordinates. */
+    static void lift_nested_popup(wayfire_view view)
     {
         if (!view || (view->role != wf::VIEW_ROLE_UNMANAGED) || !view->get_root_node())
         {
             return;
         }
 
-        auto parent = view->get_root_node()->parent();
-        if (!parent || !wf::node_to_view(parent))
+        auto root = view->get_root_node();
+        wf::scene::node_t *n = root->parent();
+        if (!n || !wf::node_to_view(n))
         {
-            return;
+            return;                                 /* already in a layer */
         }
 
-        auto tnode = view->get_transformed_node();
-        if (auto blur = tnode->get_transformer(blur_name))
+        while (n && wf::node_to_view(n))
         {
-            tnode->rem_transformer(blur);
+            n = n->parent();
+        }
+
+        auto layer = n ? std::dynamic_pointer_cast<wf::scene::floating_inner_node_t>(n->shared_from_this()) :
+            nullptr;
+        if (layer)
+        {
+            wf::scene::readd_front(layer, root);
         }
     }
 
@@ -732,7 +741,7 @@ class sonata_corners_t : public wf::plugin_interface_t
     {
         for (auto& v : wf::get_core().get_all_views())
         {
-            unblur_nested_popup(v);
+            lift_nested_popup(v);
             update(wf::toplevel_cast(v));
         }
     }
