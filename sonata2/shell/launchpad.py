@@ -61,7 +61,7 @@ window.sonata-launchpad *:drop(active) { box-shadow: none; outline: none; border
                        100%% { transform: rotate(-1.6deg); } }
 .jiggle .lp-item .lp-icon, .jiggle .lp-item .lp-folder { animation: lp-jiggle 260ms ease-in-out infinite; }
 .jiggle .lp-item.odd .lp-icon, .jiggle .lp-item.odd .lp-folder { animation-delay: -130ms; }
-.lp-lock { -gtk-icon-size: 40%%; color: %(on_scrim)s; }
+.lp-lock { color: %(on_scrim)s; }
 .lp-lock-text { color: %(on_scrim)s; font-family: %(font)s; font-size: %(text_body)s; }
 .lp-lock-hint { color: %(on_scrim_secondary)s; font-family: %(font)s; font-size: %(text_small)s; }
 .lp-lock-panel passwordentry { min-width: 220px; min-height: 28px; border-radius: 8px; padding: 0 8px;
@@ -69,8 +69,15 @@ window.sonata-launchpad *:drop(active) { box-shadow: none; outline: none; border
 @keyframes lp-shake { 0%%, 100%% { transform: none; } 20%%, 60%% { transform: translateX(-8px); }
                       40%%, 80%% { transform: translateX(8px); } }
 .lp-lock-panel.shake { animation: lp-shake 360ms ease-in-out; }
+/* folders open and close with a zoom + fade (Big Sur); the grid dims behind */
+.lp-col { transition: opacity %(fold_in)dms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.lp-col.dimmed { opacity: 0.35; }
+@keyframes lp-folder-in { from { opacity: 0; transform: scale(0.86); } to { opacity: 1; transform: none; } }
+@keyframes lp-folder-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.92); } }
+.lp-folder-view { animation: lp-folder-in %(fold_in)dms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.lp-folder-view.closing { animation: lp-folder-out %(fold_out)dms ease-in both; }
 .lp-empty { color: %(on_scrim_secondary)s; font-family: %(font)s; font-size: %(text_title)s; }
-""", key="launchpad", lp_label="12px")
+""", key="launchpad", lp_label="12px", fold_in=ui.tokens.ms(240), fold_out=ui.tokens.ms(160))
 
 
 def installed_apps() -> dict:
@@ -215,7 +222,7 @@ class LaunchItem(Gtk.Button):
             for i in range(min(9, len(folder["apps"]))):
                 box.attach(Gtk.Image(icon_name="application-x-executable", pixel_size=mini), i % 3, i // 3, 1, 1)
             over = Gtk.Overlay(child=box)
-            over.add_overlay(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=int(size * 0.3),
+            over.add_overlay(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=int(size * 0.42),
                                        css_classes=["lp-lock"], halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER))
             return over
         mini = max(10, int(size * 0.8 / 3) - 4)
@@ -298,7 +305,7 @@ class Launchpad(Gtk.ApplicationWindow):
         self.stack.add_named(self.results, "results")
         dots = self.dots = Adw.CarouselIndicatorDots(carousel=self.carousel, css_classes=["lp-dots"],
                                                      margin_bottom=32, margin_top=12)
-        self.col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["lp-col"])
         self.col.append(self.search)
         self.grid_area = Gtk.Box(hexpand=True, vexpand=True)
         self.grid_area.append(self.stack)
@@ -470,7 +477,8 @@ class Launchpad(Gtk.ApplicationWindow):
         wrap.append(panel)
         self.overlay.add_overlay(wrap)
         self.folder_view = (wrap, None, panel)
-        self.col.set_opacity(0.35)
+        wrap.add_css_class("lp-folder-view")
+        self.col.add_css_class("dimmed")
         entry.grab_focus()
 
         def done(ok):
@@ -683,13 +691,19 @@ class Launchpad(Gtk.ApplicationWindow):
         wrap.append(panel)
         self.overlay.add_overlay(wrap)
         self.folder_view = (wrap, folder, panel)
-        self.col.set_opacity(0.35)
+        wrap.add_css_class("lp-folder-view")
+        self.col.add_css_class("dimmed")
 
     def _close_folder(self) -> None:
+        """Zooms/fades out (the grid comes back at once for drags and clicks)."""
         if self.folder_view:
-            self.overlay.remove_overlay(self.folder_view[0])
+            wrap = self.folder_view[0]
             self.folder_view = None
-            self.col.set_opacity(1.0)
+            self.col.remove_css_class("dimmed")
+            wrap.set_can_target(False)
+            wrap.add_css_class("closing")
+            GLib.timeout_add(ui.tokens.ms(160) + 20, lambda: (
+                wrap.get_parent() is not None and self.overlay.remove_overlay(wrap), False)[1])
             self.render()
 
     # -- search / selection ----------------------------------------------------------
@@ -961,7 +975,8 @@ class Launchpad(Gtk.ApplicationWindow):
         if d["folder"] is not None and self.folder_view:     # dragged out of the open folder
             self._close_folder()
         index, centre = grid.cell_at(x, y)
-        page = self.model.pages[grid.index] if grid.index < len(self.model.pages) else []
+        shown = self._pages_with_hidden()         # the Hidden folder too: dropping on it hides
+        page = shown[grid.index] if grid.index < len(shown) else []
         target = page[index] if index < len(page) else None
         dragged_is_app = not M.is_folder(d["item"])
         if centre and target is not None and target is not d["item"] and dragged_is_app:
