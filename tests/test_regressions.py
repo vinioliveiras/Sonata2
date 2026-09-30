@@ -623,6 +623,28 @@ class patched:
             setattr(self.mod, k, v)
 
 
+class ThemeFadeFocusRegressions(unittest.TestCase):
+    """Turning Translucent glass on/off made Settings jump to the next section:
+    the theme cross-fade moved the window content, the focused sidebar row
+    lost focus and the list selected the following one."""
+
+    def test_look_change_keeps_the_section(self):
+        from sonata2 import config, ui
+        from sonata2.settings import app as st
+        ui.setup()
+        w = st.Settings(None, "dock")
+        w.present()
+        settle(400)
+        w.rows["dock"].grab_focus()
+        before = config.load("dock", {"glass": True}).get("glass", True)
+        w._save("dock", "glass", not before)
+        settle(900)
+        self.assertEqual(w.current, "dock")
+        self.assertEqual(w.listbox.get_selected_row().sid, "dock")
+        self.assertNotIn("menubar", w.pages)
+        w.destroy()
+
+
 class SettingsAuditRegressions(unittest.TestCase):
     """Settings audit (options that didn't work / looked off)."""
 

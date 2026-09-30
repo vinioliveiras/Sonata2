@@ -7,15 +7,16 @@ bar process; nothing runs while no controller is connected.
     D-pad          arrow keys                         B / circle    Esc
     LB / RB        app switcher (A picks, B closes)   Y / square    Launchpad
     Start          Spotlight                          View/Select   Mission Control
-    Guide (Xbox / PS) held 1 s: pause / resume
+    Guide (Xbox / PS)  Mission Control; pressed 10 times quickly: on / off
 
-Games keep the controller: it is never grabbed, and the desktop control
+Off by default. Games keep the controller: it is never grabbed, and the desktop control
 pauses by itself while a fullscreen window has the focus (gamemode.py)
 or while Steam runs (its own desktop mode would double every press).
 Actions are named (ACTIONS) so a future SteamOS-style theme can bind the
 same buttons to its own navigation.
 
-Settings: ~/.config/sonata2/gamepad.json {"enabled", "speed"}."""
+Settings: ~/.config/sonata2/gamepad.json {"enabled", "speed", "scroll",
+"pause_steam"} (Settings > Game Controllers)."""
 import os
 import time
 
@@ -25,12 +26,13 @@ from .. import config, gamemode
 from . import evdev as E
 from .vpointer import BTN_LEFT, BTN_RIGHT, VirtualPointer, key
 
-DEFAULTS = {"enabled": True, "speed": 1.0}
+DEFAULTS = {"enabled": False, "speed": 1.0, "scroll": 1.0, "pause_steam": True}
 DEAD = 0.18                 # stick dead zone
 TICK_MS = 8                 # while a stick is pushed (~120 Hz)
 MAX_PX_S = 1500.0           # pointer speed at full tilt (speed 1.0)
 SCROLL_PX_S = 900.0
-HOLD_S = 1.0                # Guide held this long: pause / resume
+TOGGLE_TAPS = 10            # Guide pressed this many times quickly: on / off
+TAP_GAP_S = 0.5             # max time between those presses
 
 # button -> action (named for other front ends)
 BUTTONS = {E.BTN_SOUTH: "primary", E.BTN_NORTH: "secondary", E.BTN_EAST: "back", E.BTN_WEST: "launchpad",
@@ -38,6 +40,12 @@ BUTTONS = {E.BTN_SOUTH: "primary", E.BTN_NORTH: "secondary", E.BTN_EAST: "back",
            E.BTN_SELECT: "mission", E.BTN_MODE: "guide",
            E.BTN_DPAD_UP: "up", E.BTN_DPAD_DOWN: "down", E.BTN_DPAD_LEFT: "left", E.BTN_DPAD_RIGHT: "right"}
 ACTIONS = set(BUTTONS.values())
+# what each button does, as Settings lists it (Xbox / PlayStation names)
+LEGEND = [("Left stick", "Pointer (LT slower, RT faster)"),
+          ("Right stick", "Scroll"), ("A / Cross", "Click (hold to drag)"), ("X / Triangle", "Right-click"),
+          ("B / Circle", "Back (Esc)"), ("Y / Square", "Launchpad"), ("LB / RB", "Switch apps"),
+          ("D-pad", "Arrow keys"), ("Start / Options", "Spotlight"), ("View / Share", "Mission Control"),
+          ("Xbox / PS button", "Mission Control · 10× quickly: on / off")]
 ARROWS = {"up": "Up", "down": "Down", "left": "Left", "right": "Right"}
 
 
@@ -74,8 +82,8 @@ class Gamepads:
         self._tick_src = 0
         self._acc = [0.0, 0.0]
         self._last = 0.0
-        self._paused_by_user = False
-        self._guide_down = None
+        self._taps = []                       # Guide presses of the current burst
+        self._tap_src = 0
         self._steam = False
         self._steam_src = 0
         self._dev_mon = Gio.File.new_for_path("/dev/input").monitor_directory(Gio.FileMonitorFlags.NONE, None)
@@ -85,10 +93,7 @@ class Gamepads:
 
     # -- devices --------------------------------------------------------------------------------
     def scan(self) -> None:
-        if not self.cfg["enabled"]:
-            for pad in list(self.pads.values()):
-                pad.close()
-            return
+        # listened to even while off: the Guide burst turns it on
         for path in E.find_gamepads():
             if path not in self.pads:
                 try:
@@ -114,7 +119,8 @@ class Gamepads:
     # -- state ------------------------------------------------------------------------------------
     @property
     def paused(self) -> bool:
-        return self._paused_by_user or self._steam or gamemode.active()
+        return (not self.cfg["enabled"] or (self._steam and self.cfg.get("pause_steam", True))
+                or gamemode.active())
 
     def _pointer(self) -> VirtualPointer:
         if self.vp is None or not self.vp.ok:
@@ -142,27 +148,44 @@ class Gamepads:
         if name is None:
             return
         pressed = value != 0
-        if name == "guide":                               # held: pause / resume (works while paused)
-            if pressed:
-                self._guide_down = time.monotonic()
-                GLib.timeout_add(int(HOLD_S * 1000), self._guide_held)
-            else:
-                if self._guide_down and time.monotonic() - self._guide_down < HOLD_S and not self.paused:
-                    self.action("mission", True)
-                self._guide_down = None
+        if name == "guide":
+            if value == 1:
+                self._guide_tap()
             return
         if value == 2:                                    # key repeat
             return
         if not self.paused:
             self.action(name, pressed)
 
-    def _guide_held(self) -> bool:
-        if self._guide_down and time.monotonic() - self._guide_down >= HOLD_S - 0.05:
-            self._guide_down = None
-            self._paused_by_user = not self._paused_by_user
-            self._notify("Controller: desktop control paused" if self._paused_by_user
-                         else "Controller: desktop control on")
+    def _guide_tap(self) -> None:
+        """One press: Mission Control, once the burst is over. Ten quick
+        presses: desktop control on / off (works while off or paused)."""
+        now = time.monotonic()
+        if self._taps and now - self._taps[-1] > TAP_GAP_S:
+            self._taps = []
+        self._taps.append(now)
+        if self._tap_src:
+            GLib.source_remove(self._tap_src)
+            self._tap_src = 0
+        if len(self._taps) >= TOGGLE_TAPS:
+            self._taps = []
+            self.set_enabled(not self.cfg["enabled"])
+            return
+        self._tap_src = GLib.timeout_add(int(TAP_GAP_S * 1000), self._burst_over)
+
+    def _burst_over(self) -> bool:
+        self._tap_src = 0
+        taps, self._taps = len(self._taps), []
+        if taps == 1 and not self.paused:
+            self.action("mission", True)
         return False
+
+    def set_enabled(self, on: bool) -> None:
+        self.cfg = {**self.cfg, "enabled": on}
+        config.save("gamepad", self.cfg)
+        if not on:
+            self.axes.clear()
+        self._notify("Controller: desktop control on" if on else "Controller: desktop control off")
 
     def _notify(self, text: str) -> None:
         try:
@@ -240,13 +263,17 @@ class Gamepads:
             self._acc[0] -= mx
             self._acc[1] -= my
             vp.move(mx, my)
-        sx = curve(self._axis(E.ABS_RX)) * SCROLL_PX_S * dt
-        sy = curve(self._axis(E.ABS_RY)) * SCROLL_PX_S * dt
+        scroll = SCROLL_PX_S * float(self.cfg.get("scroll", 1.0)) * dt
+        sx = curve(self._axis(E.ABS_RX)) * scroll
+        sy = curve(self._axis(E.ABS_RY)) * scroll
         if sx or sy:
             vp.scroll(sx, sy)
         return True
 
     def stop(self) -> None:
+        if self._tap_src:
+            GLib.source_remove(self._tap_src)
+            self._tap_src = 0
         for pad in list(self.pads.values()):
             pad.close()
         if self.vp is not None:

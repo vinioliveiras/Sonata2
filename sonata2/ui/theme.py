@@ -169,11 +169,16 @@ def _fade_window(win) -> None:
     tex = win.get_renderer().render_texture(node, Graphene.Rect().init(0, 0, w, h))
     over = getattr(win, "_sonata_fade_overlay", None)
     if over is None or over.get_child() is not child:
+        # moving the content drops the focus, and GTK hands it on: a sidebar
+        # list would select its next row (Settings jumped a section). Keep it.
+        focus = win.get_focus()
         _set_content(win, None)
         over = Gtk.Overlay()
         over.set_child(child)
         _set_content(win, over)
         win._sonata_fade_overlay = over
+        if focus is not None and focus.get_root() is win:
+            focus.grab_focus()
     # the old look at its own size, pinned to the top left: if the window's
     # layout changes meanwhile it is covered, never stretched
     pic = Gtk.Picture(paintable=tex, can_target=False, can_shrink=False, content_fit=Gtk.ContentFit.FILL,

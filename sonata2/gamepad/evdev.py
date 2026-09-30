@@ -78,6 +78,17 @@ def find_gamepads(folder: str = "/dev/input") -> list:
     return [os.path.join(folder, n) for n in names if is_gamepad(os.path.join(folder, n))]
 
 
+def gamepad_name(path: str) -> str:
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    except OSError:
+        return ""
+    try:
+        return name_of(fd)
+    finally:
+        os.close(fd)
+
+
 class Gamepad:
     """One open controller; events come on the GLib main loop."""
 

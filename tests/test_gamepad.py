@@ -43,6 +43,7 @@ class GamepadTest(unittest.TestCase):
         S.steam_running = lambda: False
         gamemode.Watcher._write(False)
         self.g = S.Gamepads(None, None)
+        self.g.cfg["enabled"] = True
         self.g.vp = FakePointer()
 
     def tearDown(self):
@@ -76,17 +77,39 @@ class GamepadTest(unittest.TestCase):
         self.press(E.BTN_EAST, 1)
         self.assertEqual(self.keys, [])
 
-    def test_guide_held_pauses(self):
-        S.HOLD_S, real = 0.2, S.HOLD_S
-        try:
+    def test_off_by_default_and_ignores_buttons_when_off(self):
+        self.assertFalse(S.DEFAULTS["enabled"])
+        self.g.cfg["enabled"] = False
+        self.press(E.BTN_SOUTH, 1)
+        self.press(E.BTN_EAST, 1)
+        self.assertEqual((self.g.vp.log, self.keys), ([], []))
+
+    def test_ten_quick_guide_presses_toggle(self):
+        self.g._notify = lambda _t: None
+        self.g.cfg["enabled"] = False
+        for _ in range(S.TOGGLE_TAPS):
             self.press(E.BTN_MODE, 1)
-            settle(350)
             self.press(E.BTN_MODE, 0)
-            self.assertTrue(self.g.paused)
-            self.press(E.BTN_SOUTH, 1)
-            self.assertEqual(self.g.vp.log, [])
-        finally:
-            S.HOLD_S = real
+        self.assertTrue(self.g.cfg["enabled"])
+        self.assertTrue(S.config.load("gamepad", S.DEFAULTS)["enabled"])     # saved
+        settle(int(S.TAP_GAP_S * 1000) + 150)
+        self.assertEqual(self.keys, [])            # a burst is not Mission Control
+        for _ in range(S.TOGGLE_TAPS):
+            self.press(E.BTN_MODE, 1)
+        self.assertFalse(self.g.cfg["enabled"])
+
+    def test_one_guide_press_is_mission_control(self):
+        self.press(E.BTN_MODE, 1)
+        self.press(E.BTN_MODE, 0)
+        self.assertEqual(self.keys, [])            # waits: more presses may follow
+        settle(int(S.TAP_GAP_S * 1000) + 150)
+        self.assertEqual(self.keys, ["F3"])
+
+    def test_steam_pause_can_be_turned_off(self):
+        self.g._steam = True
+        self.assertTrue(self.g.paused)
+        self.g.cfg["pause_steam"] = False
+        self.assertFalse(self.g.paused)
 
     def test_switcher_driven_by_the_controller(self):
         calls = []

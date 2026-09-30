@@ -36,6 +36,7 @@ SECTIONS = [  # id, title, icon, badge colour, group
     ("keyboard", "Keyboard", "input-keyboard-symbolic", "gray", "input"),
     ("trackpad", "Trackpad", "input-touchpad-symbolic", "gray", "input"),
     ("mouse", "Mouse", "input-mouse-symbolic", "gray", "input"),
+    ("gamepad", "Game Controllers", "input-gaming-symbolic", "gray", "input"),
     ("datetime", "Date & Time", "preferences-system-time-symbolic", "blue", "system"),
     ("notifications", "Notifications", "preferences-system-notifications-symbolic", "red", "system"),
     ("users", "Users & Groups", "system-users-symbolic", "gray", "system"),
@@ -59,7 +60,8 @@ KEYWORDS = {
     "displays": "screen monitor resolution refresh rate hz scale brightness night shift main display",
     "battery": "power energy low power mode charge sleep display off",
     "wallpaper": "background desktop picture", "keyboard": "layout input source repeat shortcuts",
-    "trackpad": "touchpad tap click scroll gestures", "mouse": "pointer speed scroll natural game controller gamepad xbox playstation joystick",
+    "trackpad": "touchpad tap click scroll gestures", "mouse": "pointer speed scroll natural",
+    "gamepad": "game controller gamepad xbox playstation dualsense joystick steam",
     "datetime": "clock time zone date", "notifications": "do not disturb alerts banners",
     "users": "account password picture avatar login items", "privacy": "security lock screen location trash",
     "sharing": "file sharing remote", "accessibility": "zoom contrast reduce transparency motion graphics gpu hardware acceleration renderer",
@@ -76,7 +78,7 @@ PAGE_CONFIGS = {
     "sound": ("sounds",), "displays": ("displays", "nightshift"), "wallpaper": ("system",),
     "datetime": ("topbar",), "notifications": ("notifications",), "privacy": ("security", "system"),
     "accessibility": ("appearance", "system"), "appearance": ("appearance", "dock", "system"),
-    "dock": ("dock", "system"), "menubar": ("topbar",),
+    "dock": ("dock", "system"), "menubar": ("topbar",), "gamepad": ("gamepad",),
 }
 
 _ACCENT_CSS = "".join(f".st-accent.{n} {{ background: {c[0]}; }}\n" for n, c in ui.tokens.ACCENTS.items())
@@ -1093,19 +1095,59 @@ class Settings(Adw.ApplicationWindow):
         g.add(combo_row("Primary mouse button", [(False, "Left"), (True, "Right")],
                         get("input", "left_handed_mode", "false") == "true",
                         lambda v: self._wf("left_handed_mode", v)))
-        # a game controller as a mouse (sonata2/gamepad): paused in fullscreen
-        # games and while Steam runs
-        from ..gamepad.service import DEFAULTS as GP
+        return [g]
+
+    def _page_gamepad(self):
+        """Like macOS Game Controllers: the connected ones, then what they do
+        on the desktop (sonata2/gamepad; paused in fullscreen games)."""
+        from ..gamepad import evdev as E
+        from ..gamepad.service import DEFAULTS as GP, LEGEND
         gp = config.load("gamepad", GP)
-        pad = group("Game Controller", "Left stick moves the pointer, A clicks, X right-clicks, B goes back, "
-                                       "the right stick scrolls. Paused in fullscreen games and while Steam "
-                                       "is open; hold the Xbox/PS button to pause it yourself.")
-        pad.add(switch_row("Control the desktop with a game controller", gp["enabled"],
-                           lambda on: self._save("gamepad", "enabled", on)))
-        pad.add(slider_row("Pointer speed", float(gp["speed"]) * 50, 10, 100,
-                           lambda v: self._save("gamepad", "speed", round(v / 50, 2)), ends=("Slow", "Fast"),
-                           default=50))
-        return [g, pad]
+        pads = group("Controllers")
+
+        def fill():
+            for r in getattr(pads, "_rows", ()):
+                pads.remove(r)
+            pads._rows = []
+            found = [E.gamepad_name(p) or "Game Controller" for p in E.find_gamepads()]
+            for name in found:
+                row = Adw.ActionRow(title=GLib.markup_escape_text(name), subtitle="Connected")
+                row.add_prefix(Gtk.Image(icon_name="input-gaming-symbolic", pixel_size=24))
+                pads.add(row)
+                pads._rows.append(row)
+            if not found:
+                row = Adw.ActionRow(title="No controller connected",
+                                    subtitle="Plug one in with a cable, or pair it in Bluetooth")
+                bt = Gtk.Button(label="Bluetooth…", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+                bt.connect("clicked", lambda *_: self.select("bluetooth"))
+                row.add_suffix(bt)
+                pads.add(row)
+                pads._rows.append(row)
+        fill()
+        mon = Gio.File.new_for_path("/dev/input").monitor_directory(Gio.FileMonitorFlags.NONE, None)
+        mon.connect("changed", lambda *_a: GLib.timeout_add(700, lambda: (fill(), False)[1]))
+        pads._mon = mon                                   # lives as long as the page
+
+        desk = group("Desktop Control", "Use a controller as mouse and keyboard when no game is running. "
+                                        "It pauses by itself while a game fills the screen. Press the "
+                                        "Xbox / PS button 10 times quickly to turn it on or off.")
+        desk.add(switch_row("Control the desktop with a controller", gp["enabled"],
+                            lambda on: self._save("gamepad", "enabled", on)))
+        desk.add(slider_row("Pointer speed", float(gp["speed"]) * 50, 10, 100,
+                            lambda v: self._save("gamepad", "speed", round(v / 50, 2)), ends=("Slow", "Fast"),
+                            default=50))
+        desk.add(slider_row("Scrolling speed", float(gp["scroll"]) * 50, 10, 100,
+                            lambda v: self._save("gamepad", "scroll", round(v / 50, 2)), ends=("Slow", "Fast"),
+                            default=50))
+        desk.add(switch_row("Pause while Steam is open", gp["pause_steam"],
+                            lambda on: self._save("gamepad", "pause_steam", on),
+                            subtitle="Steam has its own desktop controls: both would act on every press"))
+        keys = group("Buttons")
+        for button, does in LEGEND:
+            row = Adw.ActionRow(title=button)
+            row.add_suffix(Gtk.Label(label=does, xalign=1, css_classes=["dim-label"]))
+            keys.add(row)
+        return [pads, desk, keys]
 
     # -- system --------------------------------------------------------------------------------
     def _page_datetime(self):
