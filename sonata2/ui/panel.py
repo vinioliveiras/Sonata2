@@ -53,8 +53,13 @@ popover.sonata-panel calendar > grid > label:selected { background: %(accent)s; 
 
 
 def popup(anchor: Gtk.Widget, child: Gtk.Widget, position=Gtk.PositionType.BOTTOM, gap: int = 4,
-          align_start: bool = False) -> Gtk.Popover:
+          align_start: bool = False, width: int = None) -> Gtk.Popover:
+    """width: a fixed content width (menu bar panels): long names ellipsize
+    instead of stretching the panel (ui/fixed.py)."""
     pop = Gtk.Popover(css_classes=["sonata-panel"], has_arrow=False, position=position)
+    if width:
+        from .fixed import FixedWidth
+        child = FixedWidth(child, width)
     pop.set_child(child)
     P = Gtk.PositionType
     pop.set_offset(*{P.TOP: (0, -gap), P.BOTTOM: (0, gap), P.LEFT: (-gap, 0), P.RIGHT: (gap, 0)}[position])

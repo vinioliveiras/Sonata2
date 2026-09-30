@@ -816,6 +816,43 @@ class ShowAgainRegressions(unittest.TestCase):
         self.assertIn('show_again(state["calc"])', src)
 
 
+class FixedWidthRegressions(unittest.TestCase):
+    """Notification Center (and the Calendar widget under it) grew wider
+    with a long Chrome notification: an ellipsized label still asks for its
+    whole text as natural width. Shell surfaces now have one fixed width."""
+
+    def _natural(self, widget):
+        return widget.measure(Gtk.Orientation.HORIZONTAL, -1)[:2]
+
+    def test_fixed_width_ignores_long_content(self):
+        from gi.repository import Pango
+        from sonata2.ui.fixed import FixedWidth
+        long = Gtk.Label(label="A very long title " * 40, ellipsize=Pango.EllipsizeMode.END, hexpand=True)
+        self.assertGreater(self._natural(long)[1], 1000)          # what used to stretch the panel
+        self.assertEqual(self._natural(FixedWidth(long, 344)), (344, 344))
+
+    def test_notification_card_width(self):
+        from sonata2.shell import notifications as N
+        fake = type("F", (), {"_icon": lambda s, img, n: None, "invoke": lambda s, *a: None,
+                              "close": lambda s, *a: None})()
+        widths = []
+        for title, body in (("Hi", "short"), ("Google Chrome — " + "x" * 300, "y " * 400)):
+            n = N.Note(1, "chrome", "", title, body, [("open", "Open in a new window " * 5)])
+            widths.append(self._natural(N.Notifications.card(fake, n))[1])
+        self.assertEqual(widths[0], widths[1])
+
+    def test_shell_surfaces_use_it(self):
+        root = pathlib.Path(__file__).resolve().parent.parent / "sonata2"
+        for rel, needle in (("shell/notifications.py", "FixedWidth(box, BANNER_W)"),
+                            ("shell/notifications.py", "FixedWidth(cal,"),
+                            ("shell/spotlight.py", "FixedWidth(panel, WIDTH"),
+                            ("shell/clip_picker.py", "FixedWidth(panel, WIDTH)"),
+                            ("shell/topbar.py", "width=CC_W"), ("ui/panel.py", "FixedWidth(child, width)")):
+            self.assertIn(needle, (root / rel).read_text(), rel)
+        topbar = (root / "shell/topbar.py").read_text()
+        self.assertEqual(topbar.count("gap=PANEL_GAP)"), 0)       # every menu bar panel has a width
+
+
 class ThemeFadeFocusRegressions(unittest.TestCase):
     """Turning Translucent glass on/off made Settings jump to the next section:
     the theme cross-fade moved the window content, the focused sidebar row

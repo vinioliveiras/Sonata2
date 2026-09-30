@@ -347,7 +347,8 @@ class Notifications:
             pic.set_filename(n.image)
             pic.set_size_request(64, 40)
             box.append(pic)
-        over.set_child(box)
+        from ..ui.fixed import FixedWidth
+        over.set_child(FixedWidth(box, BANNER_W))            # a long title or body never widens it
         click = Gtk.GestureClick()
         click.connect("released", lambda g, *_: g.get_current_button() == 1 and self.invoke(n))
         box.add_controller(click)
@@ -522,7 +523,6 @@ class _Center(Gtk.Window):
         # Today widgets (Big Sur: below the notifications)
         cal = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["nc-widget"], margin_start=6,
                       margin_top=8)
-        cal.set_size_request(BANNER_W, -1)
         events = _upcoming()
         cal.append(_month(events, self._open_calendar))
         cal.append(_up_next(events))
@@ -530,7 +530,8 @@ class _Center(Gtk.Window):
         click = Gtk.GestureClick()
         click.connect("released", lambda *_: self._open_calendar(None))
         cal.add_controller(click)
-        self.col.append(cal)
+        from ..ui.fixed import FixedWidth
+        self.col.append(FixedWidth(cal, BANNER_W + 6))        # (its margin_start); an event title never widens it
 
     def _open_calendar(self, date) -> None:
         """Calendar, on `date` (a datetime.date) in the Day view, or as it was."""

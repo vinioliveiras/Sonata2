@@ -67,7 +67,6 @@ class ClipboardPicker(Gtk.Window):
         self.add_css_class("sonata-clip-picker")
         self.history = history
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["clip-panel"])
-        panel.set_size_request(WIDTH, -1)
         ui.theme.glass_class(panel)
         head = Gtk.Box(css_classes=["clip-head"])
         head.append(Gtk.Label(label="Clipboard", xalign=0, hexpand=True, css_classes=["clip-title"]))
@@ -86,7 +85,8 @@ class ClipboardPicker(Gtk.Window):
         panel.append(self.scroll)
         self.empty = Gtk.Label(label="Nothing copied yet", css_classes=["clip-empty"])
         panel.append(self.empty)
-        self.set_child(panel)
+        from ..ui.fixed import FixedWidth
+        self.set_child(FixedWidth(panel, WIDTH))                  # long copied text never widens it
 
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         keys.connect("key-pressed", self._key)

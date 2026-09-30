@@ -142,7 +142,6 @@ class Spotlight(Gtk.ApplicationWindow):
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["sp-panel"] +
                         ([] if ui.theme.glass() else ["solid"]), halign=Gtk.Align.CENTER, valign=Gtk.Align.START)
         ui.theme.glass_class(panel)
-        panel.set_size_request(WIDTH, -1)
         field = Gtk.Box(spacing=10, css_classes=["sp-field"])
         field.append(Gtk.Image(icon_name="sonata-search-symbolic", pixel_size=22))
         self.entry = Gtk.Text(placeholder_text="Search", hexpand=True)
@@ -164,7 +163,9 @@ class Spotlight(Gtk.ApplicationWindow):
                             hexpand=True, valign=Gtk.Align.FILL)
         self.body.append(self.prev)
         panel.append(self.body)
-        self.set_child(panel)
+        from ..ui.fixed import FixedWidth
+        # one width: a long file name in the results never widens Search
+        self.set_child(FixedWidth(panel, WIDTH, halign=Gtk.Align.CENTER, valign=Gtk.Align.START))
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         keys.connect("key-pressed", self._key)
         self.add_controller(keys)
