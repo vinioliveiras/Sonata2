@@ -240,9 +240,11 @@ New apps appear as soon as they're installed.
   Up Next and media keys (MPRIS).
 - Videos: a QuickTime-style player, with a floating control bar, and
   every movie resumes where you left it.
-- Camera: your webcam filling the window, a red shutter, a 3-2-1
-  countdown and a flash, the photos in a strip underneath (saved in
-  Pictures/Camera); pick the camera, mirror the picture.
+- Camera: laid out like the iPhone's Camera: photos and videos with
+  sound (VIDEO / PHOTO), a 3 s timer, the screen as a flash, the last
+  capture at a click (Pictures/Camera, Videos/Camera); pick the camera,
+  mirror the picture. Videos use the graphics card's encoder when there
+  is one.
 - Task Manager: processes grouped by app, performance graphs (CPU,
   memory, disks, network, GPU), app history, startup apps, users and
   services.

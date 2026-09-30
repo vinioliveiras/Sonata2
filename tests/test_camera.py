@@ -37,6 +37,12 @@ class LogicTest(unittest.TestCase):
         open(first, "w").close()
         self.assertTrue(W.unique(folder, "Photo 2026-09-30 at 15.00.00.jpg").endswith("15.00.00 2.jpg"))
 
+    def test_square_thumbnail(self):
+        from gi.repository import GdkPixbuf
+        pb = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 320, 180)
+        tex = W.square_texture(pb, 88)
+        self.assertEqual((tex.get_width(), tex.get_height()), (88, 88))
+
     def test_recent_photos_newest_first(self):
         folder = tempfile.mkdtemp()
         for i, name in enumerate(("a.jpg", "b.png", "c.txt", "d.jpeg")):
@@ -74,23 +80,53 @@ class CameraTest(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertFalse(cam.running)
 
-    def test_window_takes_photos_into_the_strip(self):
+    def test_photo_keeps_the_window_size(self):
+        """The window grew after the first photo (the thumbnail strip appeared)."""
         win = W.CameraWindow(None, source=test_source)
         win.cfg["countdown"] = False
         win.present()
         settle(1000)
+        size = (win.get_width(), win.get_height())
         self.assertTrue(win.shutter.get_sensitive())
         win.capture()
-        settle(300)
+        settle(500)
         self.assertEqual(len(os.listdir(self.pics)), 1)
-        self.assertTrue(win.strip.get_visible())
-        self.assertIsNotNone(win.strip_box.get_first_child())
+        self.assertTrue(win.last_photo and win.last_photo.startswith(self.pics))
+        self.assertEqual((win.get_width(), win.get_height()), size)
         win.close()
         self.assertFalse(win.cam.running)                            # closing frees the camera
+
+    def test_video_mode_records_with_sound(self):
+        vids = tempfile.mkdtemp()
+        old, W.videos_dir = W.videos_dir, (lambda: vids)
+        live = lambda n: Gst.ElementFactory.make_with_properties(n, ["is-live"], [True])  # noqa: E731
+        try:
+            win = W.CameraWindow(None, source=lambda: live("videotestsrc"))
+            win.cam.audio_source = lambda: live("audiotestsrc")
+            win.cfg["countdown"] = False
+            win.present()
+            settle(800)
+            win._set_mode("video", save=False)
+            win.capture()
+            self.assertTrue(win.cam.recording)
+            self.assertTrue(win.shutter.has_css_class("recording"))
+            self.assertTrue(win.rec_time.get_visible())
+            settle(1500)
+            win.capture()                                           # stop
+            settle(2500)
+            files = os.listdir(vids)
+            self.assertEqual(len(files), 1)
+            self.assertGreater(os.path.getsize(os.path.join(vids, files[0])), 10000)
+            self.assertFalse(win.shutter.has_css_class("recording"))
+            self.assertEqual(win.last_photo, os.path.join(vids, files[0]))
+            win.close()
+        finally:
+            W.videos_dir = old
 
     def test_countdown_and_escape(self):
         win = W.CameraWindow(None, source=test_source)
         win.cfg["countdown"] = True
+        win.cfg["flash"] = False
         win.present()
         settle(800)
         win.capture()

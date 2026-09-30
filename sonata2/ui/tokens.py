@@ -174,7 +174,9 @@ SHARED = {
 # light and dark, like the macOS System Settings icons.
 SYSTEM_COLORS = {"blue": "#0a84ff", "green": "#30d158", "pink": "#ff375f", "orange": "#ff9f0a",
                  "red": "#ff453a", "purple": "#bf5af2", "teal": "#40c8e0", "indigo": "#5e5ce6",
-                 "graphite": "#636366", "gray": "#8e8e93", "black": "#1c1c1e"}
+                 "graphite": "#636366", "gray": "#8e8e93", "black": "#1c1c1e",
+                 "yellow": "#ffd60a",           # the camera's selected mode (iOS)
+                 "pure_black": "#000000"}       # behind a camera / video picture
 
 # Accent colours (System Preferences > General > Accent colour, Big Sur):
 # name -> (light, dark). "blue" is the default; the selected-row colour is
