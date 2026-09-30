@@ -27,6 +27,9 @@ from ..backend import power, system  # noqa: E402
 from . import layer  # noqa: E402
 
 BAR_H = 24
+# the menu bar's panels (Control Center, Wi-Fi, clock...) open this far below
+# it, and maximized windows keep the same distance from it (Vini)
+PANEL_GAP = 2
 # Sound and Now Playing live in the Control Center; the menu bar items are
 # optional (Settings > Menu Bar), off by default (Vini).
 DEFAULTS = {"battery_percent": False, "clock_format": "%a %-d %b  %H:%M", "show_bluetooth": True,
@@ -222,7 +225,7 @@ class Bar(Gtk.CenterBox):
             self.items[index].emit("clicked")
 
     def _menu(self, btn, sections):
-        pop = ui.menu.popup(btn, sections, position=Gtk.PositionType.BOTTOM, gap=2, glass=True)
+        pop = ui.menu.popup(btn, sections, position=Gtk.PositionType.BOTTOM, gap=PANEL_GAP, glass=True)
         ui.panel.align_to_start(pop, btn, 2)
         return pop
 
@@ -374,7 +377,7 @@ class Bar(Gtk.CenterBox):
             nc.toggle_center()
             return None
         cal = Gtk.Calendar()
-        return ui.panel.popup(btn, ui.panel.column(cal), gap=2)
+        return ui.panel.popup(btn, ui.panel.column(cal), gap=PANEL_GAP)
 
     # -- status polling ------------------------------------------------------------------
     def _poll(self) -> None:
@@ -443,7 +446,7 @@ class Bar(Gtk.CenterBox):
         nets.append(ui.panel.row(None, "Searching…"))
         col.append(nets)
         col.append(ui.panel.separator())
-        pop = ui.panel.popup(btn, col, gap=2)
+        pop = ui.panel.popup(btn, col, gap=PANEL_GAP)
         col.append(self._prefs_row(pop, "Wi-Fi Preferences…", "wifi"))
         ui.panel.align_to_start(pop, btn, 2)
 
@@ -526,7 +529,7 @@ class Bar(Gtk.CenterBox):
         devs.append(ui.panel.row(None, "Searching…"))
         col.append(devs)
         col.append(ui.panel.separator())
-        pop = ui.panel.popup(btn, col, gap=2)
+        pop = ui.panel.popup(btn, col, gap=PANEL_GAP)
         col.append(self._prefs_row(pop, "Bluetooth Preferences…", "bluetooth"))
         ui.panel.align_to_start(pop, btn, 2)
 
@@ -580,7 +583,7 @@ class Bar(Gtk.CenterBox):
         mode_box.append(ui.panel.separator())
         col = ui.panel.column(ui.panel.header("Battery", pct_lbl), src_row, ui.panel.separator(), mode_box,
                               ui.panel.row(None, "Show Percentage", percent_sw), ui.panel.separator())
-        pop = ui.panel.popup(btn, col, gap=2)
+        pop = ui.panel.popup(btn, col, gap=PANEL_GAP)
         col.append(self._prefs_row(pop, "Battery Preferences…", "battery"))
         ui.panel.align_to_start(pop, btn, 2)
 
@@ -622,7 +625,7 @@ class Bar(Gtk.CenterBox):
         outs = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col = ui.panel.column(ui.panel.header("Sound"), holder, ui.panel.separator(),
                               ui.panel.section_title("Output"), outs, ui.panel.separator())
-        pop = ui.panel.popup(btn, col, gap=2)
+        pop = ui.panel.popup(btn, col, gap=PANEL_GAP)
         col.append(self._prefs_row(pop, "Sound Preferences…", "sound"))
         ui.panel.align_to_start(pop, btn, 2)
 
@@ -645,7 +648,7 @@ class Bar(Gtk.CenterBox):
 
     # -- Now Playing / input source -----------------------------------------------------------
     def _nowplaying_panel(self, btn):
-        pop = ui.panel.popup(btn, ui.panel.column(now_playing_module(self.players, header=True)), gap=2)
+        pop = ui.panel.popup(btn, ui.panel.column(now_playing_module(self.players, header=True)), gap=PANEL_GAP)
         ui.panel.align_to_start(pop, btn, 2)
         return pop
 
@@ -666,7 +669,7 @@ class Bar(Gtk.CenterBox):
         names = dict(system.XKB_LAYOUTS)
         lays = self._layouts()
         col = ui.panel.column()
-        pop = ui.panel.popup(btn, col, gap=2)
+        pop = ui.panel.popup(btn, col, gap=PANEL_GAP)
         for i, l in enumerate(lays):
             r = ui.panel.row("object-select-symbolic", names.get(l, l), on_click=lambda i=i: (
                 pop.popdown(), self._use_layout(i)))
@@ -699,7 +702,7 @@ class Bar(Gtk.CenterBox):
 
     def _control_center(self, btn):
         cc = ControlCenter(self)
-        return ui.panel.popup(btn, cc, gap=2)
+        return ui.panel.popup(btn, cc, gap=PANEL_GAP)
 
     def _poll_soon(self) -> None:
         GLib.timeout_add(600, lambda: (self._poll(), False)[1])
@@ -1225,7 +1228,7 @@ class TopBarWindow(Gtk.ApplicationWindow):
                 LS.set_layer(self, LS.Layer.TOP)
                 for e in (LS.Edge.TOP, LS.Edge.LEFT, LS.Edge.RIGHT):
                     LS.set_anchor(self, e, True)
-                LS.set_exclusive_zone(self, BAR_H)
+                LS.set_exclusive_zone(self, BAR_H + PANEL_GAP)   # maximized windows: the panels' gap
                 LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND)
                 from . import intro
                 if intro.pending():                 # login: slides down once the welcome screen fades

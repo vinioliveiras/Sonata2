@@ -60,6 +60,7 @@ doesn't need GNOME or KDE.
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
 - [Project layout](#project-layout)
+- [License](#license)
 
 ---
 
@@ -402,3 +403,10 @@ docs/               design system, feature parity
 Sonata succeeds [Sonata](https://github.com/vinioliveiras/sonata)
 (Quickshell on KWin) and started from the GTK4 look of
 [LayerOSX](https://github.com/vinioliveiras/LayerOSX).
+
+## License
+
+Free to use, study, modify and share, for any noncommercial purpose:
+[PolyForm Noncommercial 1.0.0](LICENSE.md). Nobody may sell Sonata or
+use it commercially. The icon themes, cursors, fonts and GTK theme it
+bundles keep their own licenses (listed at the end of LICENSE.md).
