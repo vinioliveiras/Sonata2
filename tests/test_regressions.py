@@ -416,6 +416,25 @@ class BluetoothRegressions(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("xpadneo", msg)
 
+    def test_pairing_error_but_connected_is_success(self):
+        """"Pairing failed" was shown while the Xbox controller connected."""
+        from sonata2.backend import bluez
+
+        class Bus:
+            def call_sync(self, _n, _p, _i, method, *_a):
+                if method == "Pair":
+                    raise GLib.Error.new_literal(GLib.quark_from_string("x"),
+                                                 "org.bluez.Error.AuthenticationFailed", 1)
+        props = {"Paired": False, "Trusted": True, "Connected": True, "ServicesResolved": True}
+        real = (bluez._bus, bluez._device_path, bluez._prop, bluez.STAY_S)
+        bluez._bus, bluez._device_path = Bus, lambda _b, _m: "/dev"
+        bluez._prop, bluez.STAY_S = (lambda _b, _p, n: props[n]), 0.3
+        try:
+            ok, msg = bluez.connect("AA")
+        finally:
+            bluez._bus, bluez._device_path, bluez._prop, bluez.STAY_S = real
+        self.assertTrue(ok, msg)
+
     def test_bluez_errors_read_as_sentences(self):
         from sonata2.backend import bluez
         e = GLib.Error.new_literal(GLib.quark_from_string("x"), "org.bluez.Error.Failed: br-connection-page-timeout", 1)

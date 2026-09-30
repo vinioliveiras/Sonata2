@@ -106,21 +106,43 @@ def _message(e: GLib.Error) -> str:
 
 
 def connect(mac: str) -> Tuple[bool, str]:
+    """Pair (if needed), trust, connect -- judged by the end result: Pair can
+    report an error for a device that then connects fine (the Xbox
+    controller: "Pairing failed", yet connected), so a pairing error only
+    counts when the device doesn't end up connected."""
     try:
         bus = _bus()
         path = _device_path(bus, mac)
         if path is None:
             return False, "Device not found"
+    except GLib.Error as e:
+        return False, _message(e)
+    pair_error = None
+    try:
         if not _prop(bus, path, "Paired"):
             bus.call_sync(BUS_NAME, path, DEVICE, "Pair", None, None, Gio.DBusCallFlags.NONE, 30000, None)
+    except GLib.Error as e:
+        pair_error = _message(e)                 # AlreadyExists, or paired from the device's side...
+    try:
         if not _prop(bus, path, "Trusted"):      # reconnects by itself next time
             bus.call_sync(BUS_NAME, path, "org.freedesktop.DBus.Properties", "Set",
                           GLib.Variant("(ssv)", (DEVICE, "Trusted", GLib.Variant("b", True))), None,
                           Gio.DBusCallFlags.NONE, 3000, None)
-        bus.call_sync(BUS_NAME, path, DEVICE, "Connect", None, None, Gio.DBusCallFlags.NONE, 25000, None)
-        return _settled(bus, path)
+    except GLib.Error:
+        pass
+    connect_error = None
+    try:
+        if not _prop(bus, path, "Connected"):
+            bus.call_sync(BUS_NAME, path, DEVICE, "Connect", None, None, Gio.DBusCallFlags.NONE, 25000, None)
     except GLib.Error as e:
-        return False, _message(e)
+        connect_error = _message(e)
+    try:
+        ok, msg = _settled(bus, path)
+    except GLib.Error as e:
+        ok, msg = False, _message(e)
+    if ok:
+        return True, "Connected"
+    return False, connect_error or pair_error or msg
 
 
 STAY_S = 4.0            # a real connection is still there this long after Connect
