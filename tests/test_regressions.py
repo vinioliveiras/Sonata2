@@ -693,6 +693,71 @@ class ScreenRecordingRegressions(unittest.TestCase):
         self.assertEqual(bar._rec_src, 0)
 
 
+class CaptureTargetsTests(unittest.TestCase):
+    """Capture / record a display or a window; folders per kind; encoders."""
+
+    def test_window_boxes(self):
+        from sonata2.shell import capture as C
+        outs = [{"id": 1, "name": "HDMI-A-1", "geometry": {"x": 0, "y": 0, "width": 1920, "height": 1080}},
+                {"id": 2, "name": "eDP-1", "geometry": {"x": 1920, "y": 0, "width": 1920, "height": 1080}}]
+        v = lambda **k: {"role": "toplevel", "mapped": True, "layer": "workspace", "output-id": 1,
+                         "geometry": {"x": 100, "y": 50, "width": 800, "height": 600}, **k}
+        views = [v(**{"last-focus-timestamp": 1}),
+                 v(**{"output-id": 2, "last-focus-timestamp": 5}),               # on the second display
+                 v(geometry={"x": 2000, "y": 50, "width": 800, "height": 600}),  # another workspace
+                 v(minimized=True), v(role="desktop-environment")]
+        self.assertEqual(C.window_boxes(views, outs), ["2020,50 800x600", "100,50 800x600"])
+
+    def test_folders_per_kind(self):
+        from sonata2.shell import capture as C
+        self.assertEqual(C.DEFAULTS["shots_to"], "pictures")
+        self.assertEqual(C.DEFAULTS["movies_to"], "videos")
+        other = tempfile.mkdtemp()
+        self.assertEqual(C.shots_dir({"shots_to": "other", "shots_dir": other}), other)
+        self.assertEqual(C.movies_dir({"movies_to": "other", "movies_dir": os.path.join(other, "new")}),
+                         os.path.join(other, "new"))                                # made when missing
+
+    def test_encoder_order_and_fallback(self):
+        from sonata2.shell import capture as C
+        order = C.encoders()
+        self.assertEqual(order[-1], "x264")                       # the CPU one always works, last
+        self.assertEqual(C.encoders("x264")[0], "x264")           # the one that worked first
+        cmd = C.recorder_command("/tmp/x.mp4", output="eDP-1", encoder="nvenc")
+        self.assertIn("h264_nvenc", cmd)
+        if cmd[0] == "nice":
+            self.assertEqual(cmd[3], "wf-recorder")                  # the game gets the CPU first
+
+        class Bar:
+            notifications = None
+            def set_recording(self, on): pass
+        cap = C.Capture(None, Bar())
+        cap.rec_path = os.path.join(tempfile.mkdtemp(), "r.mp4")
+        cap._rec = {"geo": None, "output": "eDP-1", "audio": None, "encoders": ["x264"], "encoder": "nvenc"}
+        tried = []
+        cap._spawn = lambda: (tried.append(cap._rec["encoders"].pop(0)), True)[1]
+        dead = type("P", (), {"poll": lambda s: 1})()
+        cap.recorder = dead
+        cap._check_started(dead)                                  # NVENC quit at once: x264 next
+        self.assertEqual(tried, ["x264"])
+
+    def test_recording_control(self):
+        from sonata2.shell import capture as C
+        stopped = []
+        owner = type("O", (), {"stop_recording": lambda s: stopped.append(1)})()
+        pill = C.RecordingControl(None, owner)
+        pill.start(None, True, "mic")
+        self.assertTrue(pill.get_visible())
+        self.assertEqual(pill.sound.get_icon_name(), "audio-input-microphone-symbolic")
+        pill._t0 -= 75 * 1_000_000
+        pill._tick()
+        self.assertEqual(pill.time.get_label(), "1:15")
+        stop = pill.get_child().get_last_child()
+        stop.emit("clicked")
+        self.assertEqual(stopped, [1])
+        pill.stop()
+        self.assertFalse(pill.get_visible())
+
+
 class ThemeFadeFocusRegressions(unittest.TestCase):
     """Turning Translucent glass on/off made Settings jump to the next section:
     the theme cross-fade moved the window content, the focused sidebar row

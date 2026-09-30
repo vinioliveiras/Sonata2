@@ -2,11 +2,14 @@
 
 - Thumbnail: after a screenshot, a small picture floats at the bottom
   right for a few seconds (click to open it), like macOS.
-- Capture toolbar (Super+Shift+5): Capture Entire Screen / Selected
-  Portion, Record Entire Screen / Selected Portion, Options (save to
-  Desktop, Documents or the Clipboard; 5 or 10 s timer), Capture/Record.
-- Recording (wf-recorder): a stop button appears in the menu bar; the
-  movie lands in the chosen folder.
+- Capture toolbar (Super+Shift+5): capture or record a display (click the
+  one you want when there are several), a window (click it) or a
+  selected portion; Options: where screenshots go (Pictures, Desktop,
+  Documents, Clipboard, another folder) and where recordings go (Videos,
+  Desktop, Documents, another folder), each on its own; timer; sound.
+- Recording (wf-recorder): a small control at the top of the recorded
+  display shows the time and stops it (the menu bar has a stop button
+  too); the movie lands in the chosen folder.
 Tools: grim, slurp, wf-recorder, wl-copy (optional; missing ones are
 reported)."""
 import os
@@ -23,7 +26,10 @@ from . import layer  # noqa: E402
 
 THUMB_MS = 5000
 THUMB_W = 200
-DEFAULTS = {"save_to": "desktop", "timer": 0, "audio": "system"}     # audio: none | system | mic
+# shots_to: pictures | desktop | documents | clipboard | other (shots_dir)
+# movies_to: videos | desktop | documents | other (movies_dir); audio: none | system | mic
+DEFAULTS = {"shots_to": "pictures", "shots_dir": "", "movies_to": "videos", "movies_dir": "",
+            "timer": 0, "audio": "system"}
 
 ui.register("""
 window.sonata-capture, window.sonata-capture > contents,
@@ -36,13 +42,46 @@ window.sonata-shot, window.sonata-shot > contents { background: none; box-shadow
 .cap-bar button:checked { background: alpha(%(label)s, 0.16); }
 .cap-bar button.cap-go { padding: 0 12px; font-weight: 600; }
 .cap-bar .cap-sep { min-width: 1px; background: %(separator)s; margin: 4px 6px; }
+/* the recording control: a pill over the middle of the menu bar */
+window.sonata-rec, window.sonata-rec > contents { background: none; box-shadow: none; }
+.rec-pill { background: %(panel_material)s; color: %(label)s; border-radius: 99px; padding: 0 2px 0 9px;
+  min-height: 20px; box-shadow: 0 0 0 0.5px %(hairline)s, 0 2px 8px rgba(0,0,0,0.25); font-family: %(font)s;
+  font-size: 12px; font-weight: 600; font-feature-settings: "tnum"; }
+.rec-dot { min-width: 8px; min-height: 8px; border-radius: 4px; background: %(sys_red)s;
+  animation: rec-blink 1.4s ease-in-out infinite; }
+@keyframes rec-blink { 50%% { opacity: 0.3; } }
+.rec-pill image.rec-sound { -gtk-icon-size: 12px; opacity: 0.7; }
+.rec-pill button { min-width: 18px; min-height: 18px; padding: 0; margin: 1px 0; border-radius: 99px;
+  border: none; box-shadow: none; background: alpha(%(label)s, 0.1); color: %(label)s; }
+.rec-pill button:hover { background: alpha(%(label)s, 0.2); }
+.rec-pill button image { -gtk-icon-size: 12px; }
 .shot-thumb { border-radius: 6px; box-shadow: 0 0 0 0.5px rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.35); }
 """, key="capture")
 
 
-def _dir(where: str) -> str:
-    kind = {"documents": GLib.UserDirectory.DIRECTORY_DOCUMENTS}.get(where, GLib.UserDirectory.DIRECTORY_DESKTOP)
-    return GLib.get_user_special_dir(kind) or GLib.get_home_dir()
+_SPECIAL = {"desktop": GLib.UserDirectory.DIRECTORY_DESKTOP, "documents": GLib.UserDirectory.DIRECTORY_DOCUMENTS,
+            "pictures": GLib.UserDirectory.DIRECTORY_PICTURES, "videos": GLib.UserDirectory.DIRECTORY_VIDEOS}
+
+
+def _dir(where: str, other: str = "") -> str:
+    """The folder a capture goes to (made if missing)."""
+    if where == "other" and other:
+        path = other
+    else:
+        path = GLib.get_user_special_dir(_SPECIAL.get(where, _SPECIAL["desktop"])) or GLib.get_home_dir()
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError:
+        path = GLib.get_home_dir()
+    return path
+
+
+def shots_dir(cfg) -> str:
+    return _dir(cfg.get("shots_to", "pictures"), cfg.get("shots_dir", ""))
+
+
+def movies_dir(cfg) -> str:
+    return _dir(cfg.get("movies_to", "videos"), cfg.get("movies_dir", ""))
 
 
 FPS = 60                        # a steady 60 fps, not the display's 144/180 Hz
@@ -58,6 +97,45 @@ def focused_output():
         return (out.get("info") or {}).get("name") or None
     except Exception:
         return None
+
+
+def _ipc():
+    from ..wl.wfipc import WayfireIPC
+    return WayfireIPC()
+
+
+def outputs() -> list:
+    """[{"id", "name", "geometry"}] of the displays (Wayfire)."""
+    try:
+        outs = _ipc().call("window-rules/list-outputs")
+    except Exception:
+        outs = None
+    return [o for o in outs if isinstance(o, dict)] if isinstance(outs, list) else []
+
+
+def window_boxes(views, outs) -> list:
+    """"x,y wxh" (layout coordinates) of the windows one can click on:
+    mapped app windows on the shown workspace, front ones first."""
+    where = {o.get("id"): o.get("geometry") or {} for o in outs}
+    boxes = []
+    for v in sorted((v for v in views if isinstance(v, dict)), key=lambda v: -v.get("last-focus-timestamp", 0)):
+        if (v.get("role", "toplevel") != "toplevel" or not v.get("mapped", True) or v.get("minimized")
+                or v.get("layer", "workspace") != "workspace"):
+            continue
+        g, o = v.get("geometry") or {}, where.get(v.get("output-id"))
+        w, h = g.get("width", 0), g.get("height", 0)
+        if o is None or w <= 0 or h <= 0:
+            continue
+        x, y = g.get("x", 0), g.get("y", 0)                 # output-local; other workspaces lie outside
+        if x + w <= 0 or y + h <= 0 or x >= o.get("width", 0) or y >= o.get("height", 0):
+            continue
+        boxes.append(f"{o.get('x', 0) + x},{o.get('y', 0) + y} {w}x{h}")
+    return boxes
+
+
+def _slurp(args, stdin=None):
+    r = subprocess.run(["slurp"] + args, input=stdin, capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
 
 
 def audio_device(kind: str):
@@ -76,11 +154,32 @@ def audio_device(kind: str):
     return name + ".monitor" if kind == "system" and not name.endswith(".monitor") else name
 
 
-def recorder_command(path: str, geo=None, output=None, audio=None) -> list:
-    """wf-recorder: H.264 in yuv420p (plays everywhere, QuickTime-style
-    players included) at a constant FPS, fast enough for games."""
-    cmd = ["wf-recorder", "-y", "-f", path, "-r", str(FPS), "-x", "yuv420p",
-           "-c", "libx264", "-p", "preset=veryfast", "-p", "crf=20"]
+RENDER_NODE = "/dev/dri/renderD128"
+# H.264 that plays everywhere, easiest on the games first: the GPU's own
+# encoder (NVIDIA NVENC, then VA-API on AMD / Intel), else x264 on the CPU.
+# One that fails to start is skipped (Capture tries the next).
+ENCODERS = {
+    "nvenc": ["-c", "h264_nvenc", "-x", "nv12", "-p", "preset=p2", "-p", "rc=vbr", "-p", "cq=23"],
+    "vaapi": ["-c", "h264_vaapi", "-d", RENDER_NODE],
+    "x264": ["-c", "libx264", "-x", "yuv420p", "-p", "preset=superfast", "-p", "crf=23"],
+}
+
+
+def encoders(preferred=None) -> list:
+    """The encoders to try, in order (the one that worked last time first)."""
+    found = [e for e, ok in (("nvenc", os.path.exists("/dev/nvidia0")),
+                             ("vaapi", os.path.exists(RENDER_NODE)), ("x264", True)) if ok]
+    if preferred in found:
+        found.remove(preferred)
+        found.insert(0, preferred)
+    return found
+
+
+def recorder_command(path: str, geo=None, output=None, audio=None, encoder="x264") -> list:
+    """wf-recorder at a constant FPS with a low CPU priority: the game or
+    app being recorded goes first."""
+    cmd = (["nice", "-n", "10"] if shutil.which("nice") else []) + \
+        ["wf-recorder", "-y", "-f", path, "-r", str(FPS)] + ENCODERS.get(encoder, ENCODERS["x264"])
     if geo:
         cmd += ["-g", geo]
     elif output:
@@ -150,6 +249,63 @@ class Thumbnail(Gtk.Window):
         self._hide()
 
 
+class RecordingControl(Gtk.Window):
+    """While recording: a red dot, the time, the sound being recorded and a
+    stop button, over the middle of the recorded display's menu bar."""
+
+    def __init__(self, app, owner):
+        super().__init__(application=app, title="Screen Recording", decorated=False, resizable=False)
+        self.add_css_class("sonata-rec")
+        self.owner, self._src, self._t0 = owner, 0, 0
+        box = Gtk.Box(spacing=6, css_classes=["rec-pill"], valign=Gtk.Align.CENTER)
+        box.append(Gtk.Box(css_classes=["rec-dot"], valign=Gtk.Align.CENTER))
+        self.time = Gtk.Label(label="0:00")
+        box.append(self.time)
+        self.sound = Gtk.Image(css_classes=["rec-sound"])
+        box.append(self.sound)
+        stop = Gtk.Button(icon_name="media-playback-stop-symbolic", tooltip_text="Stop Recording",
+                          valign=Gtk.Align.CENTER)
+        stop.connect("clicked", lambda *_: self.owner.stop_recording())
+        box.append(stop)
+        self.set_child(box)
+        LS = layer.layer_shell()
+        self.LS = LS
+        if LS:
+            LS.init_for_window(self)
+            LS.set_namespace(self, "sonata2-recording")
+            LS.set_layer(self, LS.Layer.OVERLAY)
+            LS.set_anchor(self, LS.Edge.TOP, True)
+            LS.set_margin(self, LS.Edge.TOP, 2)
+            LS.set_exclusive_zone(self, -1)           # over the menu bar, not below it
+            LS.set_keyboard_mode(self, LS.KeyboardMode.NONE)
+
+    def start(self, output, audio: bool, kind=None):
+        if self.LS and output:
+            mons = Gdk.Display.get_default().get_monitors()
+            for i in range(mons.get_n_items()):
+                if mons.get_item(i).get_connector() == output:
+                    self.LS.set_monitor(self, mons.get_item(i))
+        self.sound.set_visible(audio)
+        self.sound.set_from_icon_name("audio-input-microphone-symbolic" if kind == "mic"
+                                      else "audio-volume-high-symbolic")
+        self._t0 = GLib.get_monotonic_time()
+        self._tick()
+        if not self._src:
+            self._src = GLib.timeout_add(1000, self._tick)
+        self.present()
+
+    def _tick(self) -> bool:
+        s = int((GLib.get_monotonic_time() - self._t0) / 1_000_000)
+        self.time.set_label(f"{s // 3600}:{s // 60 % 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60}:{s % 60:02d}")
+        return True
+
+    def stop(self):
+        if self._src:
+            GLib.source_remove(self._src)
+            self._src = 0
+        self.set_visible(False)
+
+
 class Capture:
     """Toolbar + recorder + thumbnail; one per menu bar process."""
 
@@ -159,6 +315,8 @@ class Capture:
         self.toolbar = None
         self.recorder = None           # subprocess.Popen while recording
         self.rec_path = None
+        self._rec = {}                 # what is being recorded: geo, output, audio, encoders left
+        self.pill = None               # the recording control (RecordingControl)
 
     # -- thumbnail --------------------------------------------------------------------------
     def shot_taken(self, path: str):
@@ -183,27 +341,51 @@ class Capture:
         GLib.timeout_add(delay, lambda: (self._run(mode, cfg), False)[1])
 
     def _run(self, mode, cfg):
-        geo = None
-        if mode.endswith("area"):
-            if not shutil.which("slurp"):
-                self._missing("slurp")
+        """mode: screen (every display: Super+Shift+3) | display | window | area,
+        or rec-display | rec-window | rec-area (rec-screen: the focused display)."""
+        rec = mode.startswith("rec-")
+        what = mode[4:] if rec else mode
+        geo = output = None
+        if what in ("display", "window", "area") and not shutil.which("slurp"):
+            self._missing("slurp")
+            return
+        if what == "display":
+            outs = outputs()
+            if len(outs) > 1:                           # click the display you want
+                output = _slurp(["-o", "-f", "%o"])
+                if output is None:
+                    return
+            else:
+                output = (outs[0].get("name") if outs else None) or focused_output()
+        elif what == "window":
+            try:
+                views = _ipc().call("window-rules/list-views") or []
+            except Exception:
+                views = []
+            boxes = window_boxes(views, outputs())
+            if not boxes:
                 return
-            r = subprocess.run(["slurp"], capture_output=True, text=True)
-            if r.returncode != 0 or not r.stdout.strip():
+            geo = _slurp(["-r"], "\n".join(boxes) + "\n")   # click a window
+            if geo is None:
                 return
-            geo = r.stdout.strip()
-        if mode.startswith("rec"):
-            self._record(geo, cfg)
+        elif what == "area":
+            geo = _slurp([])
+            if geo is None:
+                return
+        elif rec:                                       # rec-screen: the focused display
+            output = focused_output()
+        if rec:
+            self._record(geo, cfg, output)
         else:
-            self._shoot(geo, cfg)
+            self._shoot(geo, cfg, output)
 
-    def _shoot(self, geo, cfg):
+    def _shoot(self, geo, cfg, output=None):
         if not shutil.which("grim"):
             self._missing("grim")
             return
-        to_clip = cfg.get("save_to") == "clipboard"
-        path = os.path.join(GLib.get_tmp_dir() if to_clip else _dir(cfg.get("save_to")), _name("Screenshot", "png"))
-        cmd = ["grim"] + (["-g", geo] if geo else []) + [path]
+        to_clip = cfg.get("shots_to") == "clipboard"
+        path = os.path.join(GLib.get_tmp_dir() if to_clip else shots_dir(cfg), _name("Screenshot", "png"))
+        cmd = ["grim"] + (["-g", geo] if geo else ["-o", output] if output else []) + [path]
         if subprocess.run(cmd).returncode != 0:
             return
         from .. import sounds
@@ -213,38 +395,89 @@ class Capture:
                 subprocess.run(["wl-copy", "--type", "image/png"], stdin=f)
         self.shot_taken(path)
 
-    def _record(self, geo, cfg):
+    def _record(self, geo, cfg, output=None):
         if not shutil.which("wf-recorder"):
             self._missing("wf-recorder")
             return
-        where = cfg.get("save_to") if cfg.get("save_to") != "clipboard" else "desktop"
-        self.rec_path = os.path.join(_dir(where), _name("Screen Recording", "mp4"))
-        cmd = recorder_command(self.rec_path, geo, None if geo else focused_output(),
-                               audio_device(cfg.get("audio", "system")))
+        self.rec_path = os.path.join(movies_dir(cfg), _name("Screen Recording", "mp4"))
+        if not geo and not output:
+            output = focused_output()
+        audio = audio_device(cfg.get("audio", "system"))
+        self._rec = {"geo": geo, "output": output, "audio": audio,
+                     "encoders": encoders(config.load("capture", DEFAULTS).get("encoder"))}
+        if not self._spawn():
+            return
+        self.bar.set_recording(True)
+        if self.pill is None:
+            self.pill = RecordingControl(self.app, self)
+        self.pill.start(output or self._output_at(geo), bool(audio), cfg.get("audio"))
+
+    def _spawn(self) -> bool:
+        """Start wf-recorder with the next encoder to try."""
+        r = self._rec
+        r["retry"] = "encoder" in r
+        encoder = r["encoders"].pop(0)
+        r["encoder"] = encoder
+        cmd = recorder_command(self.rec_path, r["geo"], r["output"], r["audio"], encoder)
         try:
-            log = open(os.path.join(GLib.get_user_cache_dir(), "sonata2", "recorder.log"), "w", encoding="utf-8")
+            log = open(os.path.join(GLib.get_user_cache_dir(), "sonata2", "recorder.log"),
+                       "a" if r.get("retry") else "w", encoding="utf-8")       # every try of this recording
         except OSError:
             log = subprocess.DEVNULL
         try:
+            if log is not subprocess.DEVNULL:
+                log.write(" ".join(cmd) + "\n")
+                log.flush()
             self.recorder = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
         except OSError:
             self.recorder = None
-            return
+            return False
         finally:
             if log is not subprocess.DEVNULL:
                 log.close()                    # the child keeps its own copy
-        self.bar.set_recording(True)
         GLib.timeout_add(1500, self._check_started, self.recorder)
+        return True
+
+    @staticmethod
+    def _output_at(geo):
+        """The display holding a recorded window / portion ("x,y wxh")."""
+        try:
+            x, y = (int(float(n)) for n in geo.split(" ")[0].split(","))
+        except (AttributeError, ValueError):
+            return None
+        for o in outputs():
+            g = o.get("geometry") or {}
+            if g.get("x", 0) <= x < g.get("x", 0) + g.get("width", 0) and \
+                    g.get("y", 0) <= y < g.get("y", 0) + g.get("height", 0):
+                return o.get("name")
+        return None
 
     def _check_started(self, proc) -> bool:
-        """wf-recorder quitting at once (no output, bad codec): say so."""
-        if proc is self.recorder and proc.poll() is not None:
-            self.recorder = None
-            self.bar.set_recording(False)
-            nc = getattr(self.bar, "notifications", None)
-            if nc:
-                nc.notify("Screen Recording", 0, "dialog-warning", "Screen recording didn't start",
-                          "Details in ~/.cache/sonata2/recorder.log", [], {}, -1)
+        """wf-recorder quitting at once: the next encoder, else say so. One
+        that runs is remembered for next time."""
+        if proc is not self.recorder:
+            return False
+        if proc.poll() is None:
+            c = config.load("capture", DEFAULTS)
+            if c.get("encoder") != self._rec.get("encoder"):
+                c["encoder"] = self._rec.get("encoder")
+                config.save("capture", c)
+            return False
+        if self._rec.get("encoders"):
+            try:
+                os.remove(self.rec_path)                # the failed start's empty file
+            except OSError:
+                pass
+            if self._spawn():
+                return False
+        self.recorder = None
+        self.bar.set_recording(False)
+        if self.pill is not None:
+            self.pill.stop()
+        nc = getattr(self.bar, "notifications", None)
+        if nc:
+            nc.notify("Screen Recording", 0, "dialog-warning", "Screen recording didn't start",
+                      "Details in ~/.cache/sonata2/recorder.log", [], {}, -1)
         return False
 
     def stop_recording(self):
@@ -254,6 +487,8 @@ class Capture:
             return
         self.recorder = None
         self.bar.set_recording(False)
+        if self.pill is not None:
+            self.pill.stop()
         proc.send_signal(2)                    # SIGINT: wf-recorder finishes the file
         waited = {"ms": 0}
 
@@ -306,10 +541,12 @@ class Capture:
 
 
 class _Toolbar(Gtk.Window):
-    MODES = (("screen", "video-display-symbolic", "Capture Entire Screen"),
-             ("area", "edit-select-all-symbolic", "Capture Selected Portion"),
-             ("rec-screen", "media-record-symbolic", "Record Entire Screen"),
-             ("rec-area", "camera-video-symbolic", "Record Selected Portion"))
+    MODES = (("display", "sonata-capture-screen-symbolic", "Capture a Display"),
+             ("window", "sonata-capture-window-symbolic", "Capture a Window"),
+             ("area", "sonata-capture-area-symbolic", "Capture Selected Portion"),
+             ("rec-display", "sonata-record-screen-symbolic", "Record a Display"),
+             ("rec-window", "sonata-record-window-symbolic", "Record a Window"),
+             ("rec-area", "sonata-record-area-symbolic", "Record Selected Portion"))
 
     def __init__(self, app, owner: Capture):
         super().__init__(application=app, title="Screenshot", decorated=False, resizable=False)
@@ -321,12 +558,12 @@ class _Toolbar(Gtk.Window):
         close.connect("clicked", lambda *_: self.set_visible(False))
         bar.append(close)
         bar.append(Gtk.Box(css_classes=["cap-sep"]))
-        self.mode = "screen"
+        self.mode = "display"
         first = None
         for i, (mode, icon, tip) in enumerate(self.MODES):
-            if i == 2:
+            if i == 3:
                 bar.append(Gtk.Box(css_classes=["cap-sep"]))
-            b = Gtk.ToggleButton(icon_name=icon, tooltip_text=tip, group=first, active=(mode == "screen"))
+            b = Gtk.ToggleButton(icon_name=icon, tooltip_text=tip, group=first, active=(mode == "display"))
             b.connect("toggled", lambda b, m=mode: b.get_active() and self._set_mode(m))
             first = first or b
             bar.append(b)
@@ -362,12 +599,19 @@ class _Toolbar(Gtk.Window):
         def setv(k, v):
             c[k] = v
             config.save("capture", c)
+
+        def places(key, first, extra=()):
+            other = c.get(key + "_dir") if c.get(key + "_to") == "other" else ""
+            opts = [first, ("desktop", "Desktop"), ("documents", "Documents")] + list(extra)
+            items = [Item(label, lambda _on, v=v: setv(key + "_to", v), checked=c.get(key + "_to") == v)
+                     for v, label in opts]
+            items.append(Item(f"Other: {os.path.basename(other)}" if other else "Other Folder…",
+                              lambda _on: self._pick_folder(key), checked=bool(other)))
+            return [items]
         pop = ui.menu.popup(button, [
-            [Item("Save to Desktop", lambda _on: setv("save_to", "desktop"), checked=c["save_to"] == "desktop"),
-             Item("Save to Documents", lambda _on: setv("save_to", "documents"),
-                  checked=c["save_to"] == "documents"),
-             Item("Copy to Clipboard", lambda _on: setv("save_to", "clipboard"),
-                  checked=c["save_to"] == "clipboard")],
+            [Item("Save Screenshots To", submenu=places("shots", ("pictures", "Pictures"),
+                                                        [("clipboard", "Clipboard")])),
+             Item("Save Recordings To", submenu=places("movies", ("videos", "Videos")))],
             [Item("Timer: None", lambda _on: setv("timer", 0), checked=c["timer"] == 0),
              Item("Timer: 5 Seconds", lambda _on: setv("timer", 5), checked=c["timer"] == 5),
              Item("Timer: 10 Seconds", lambda _on: setv("timer", 10), checked=c["timer"] == 10)],
@@ -379,6 +623,26 @@ class _Toolbar(Gtk.Window):
             position=Gtk.PositionType.TOP)
         button.set_active(False)
         return pop
+
+    def _pick_folder(self, key):
+        """Another folder for screenshots (key "shots") or recordings ("movies")."""
+        self.set_visible(False)                       # the dialog must not sit under the toolbar
+        dialog = Gtk.FileDialog(title="Save Screenshots To" if key == "shots" else "Save Recordings To",
+                                accept_label="Choose")
+        cur = self.cfg.get(key + "_dir")
+        if cur and os.path.isdir(cur):
+            dialog.set_initial_folder(Gio.File.new_for_path(cur))
+
+        def done(d, res):
+            try:
+                folder = d.select_folder_finish(res)
+            except GLib.Error:
+                folder = None
+            if folder is not None and folder.get_path():
+                self.cfg[key + "_to"], self.cfg[key + "_dir"] = "other", folder.get_path()
+                config.save("capture", self.cfg)
+            self.present()
+        dialog.select_folder(None, None, done)
 
     def _go(self):
         self.set_visible(False)
