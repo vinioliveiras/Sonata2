@@ -45,6 +45,7 @@ SECTIONS = [  # id, title, icon, badge colour, group
     ("dock", "Desktop & Dock", "view-grid-symbolic", "black", "sonata"),
     ("menubar", "Menu Bar", "view-restore-symbolic", "indigo", "sonata"),
     ("launchpad", "Launchpad", "view-app-grid-symbolic", "graphite", "sonata"),
+    ("hidden", "Hidden & Protected Apps", "system-lock-screen-symbolic", "gray", "sonata"),
     ("updates", "Software Update", "software-update-available-symbolic", "gray", "about"),
     ("about", "About", "help-about-symbolic", "gray", "about"),
 ]
@@ -63,7 +64,7 @@ KEYWORDS = {
     "sharing": "file sharing remote", "accessibility": "zoom contrast reduce transparency motion graphics gpu hardware acceleration renderer",
     "appearance": "app icons regenerate frame generated dark light mode accent color theme icons font", "dock": "magnification size position autohide "
     "recent apps displays minimize", "menubar": "clock battery percentage bluetooth sound now playing",
-    "launchpad": "apps grid folders hidden", "updates": "software update upgrade packages",
+    "launchpad": "apps grid folders", "hidden": "hide hidden protected private lock password apps", "updates": "software update upgrade packages",
     "about": "computer system version restart sonata",
 }
 
@@ -394,6 +395,9 @@ class Settings(Adw.ApplicationWindow):
             tv.set_content(page)
             self.pages[sid] = tv
             self.content.add_named(tv, sid)
+        if self.current == "hidden" and sid != "hidden" and "hidden" in self.pages:
+            old = self.pages.pop("hidden")          # Hidden & Protected Apps locks again
+            GLib.idle_add(lambda: (self.content.remove(old), False)[1])
         if self.current is not None and self.current != sid:
             self.fade.capture()
         self.current = sid
@@ -1685,12 +1689,133 @@ class Settings(Adw.ApplicationWindow):
         row = Adw.ActionRow(title="Layout", subtitle="Pages, folders and order")
         row.add_suffix(reset)
         g.add(row)
-        n = len(config.load("launchpad", {"pages": [], "hidden": []}).get("hidden", []))
-        h = group("Hidden apps")
-        # the names stay behind the password: only the Hidden folder shows them
-        h.add(Adw.ActionRow(title=f"{n} hidden app{'s' if n != 1 else ''}" if n else "None",
-                            subtitle="In the Hidden folder in Launchpad, opened with your password"))
-        return [g, h]
+        return [g]
+
+    # -- Hidden & Protected Apps: behind the user's password ----------------------------------
+    def _page_hidden(self):
+        """Locked until the user's password (PAM, like the lock screen) is
+        typed; locks again when another section is chosen."""
+        from .. import pam
+        g = group("", "Apps hidden from Launchpad, Search and the Dock. Enter your password to see and edit them.")
+        row = Adw.ActionRow(title="Password")
+        row.add_prefix(Gtk.Image(icon_name="system-lock-screen-symbolic"))
+        entry = Gtk.PasswordEntry(show_peek_icon=True, valign=Gtk.Align.CENTER, width_chars=18)
+        row.add_suffix(entry)
+        g.add(row)
+        hint = Gtk.Label(label="" if pam.available() else "PAM is not available: can't check passwords",
+                         xalign=0, css_classes=["dim-label", "caption"])
+        g.add(hint)
+        self._hidden_lock = g
+        self._hidden_groups = []
+
+        def done(ok):
+            entry.set_sensitive(True)
+            if ok:
+                self._show_hidden_apps()
+            else:
+                hint.set_label("Wrong password")
+                entry.set_text("")
+                entry.grab_focus()
+            return False
+
+        def check(_e):
+            pw = entry.get_text()
+            if pw:
+                import threading
+                entry.set_sensitive(False)
+                user = GLib.get_user_name()
+                threading.Thread(target=lambda: GLib.idle_add(done, pam.authenticate(user, pw)),
+                                 daemon=True).start()
+        entry.connect("activate", check)
+        GLib.idle_add(lambda: (entry.grab_focus(), False)[1])
+        return [g]
+
+    def _hidden_page(self):
+        return self.pages["hidden"].get_content()        # the Adw.PreferencesPage
+
+    def _show_hidden_apps(self) -> None:
+        page = self._hidden_page()
+        for grp in [self._hidden_lock] + self._hidden_groups:
+            if grp.get_parent() is not None:
+                page.remove(grp)
+        self._hidden_groups = []
+        from .. import apps
+        installed = {d[:-8]: i for d, i in apps.scan().items() if i.should_show()}
+        hidden = [a for a in config.load("launchpad", {"pages": [], "hidden": []}).get("hidden", [])
+                  if a in installed]
+        h = group("Hidden apps", "In the Hidden folder in Launchpad (opened with your password).")
+        for did in hidden:
+            info = installed[did]
+            r = Adw.ActionRow(title=info.get_display_name())
+            img = Gtk.Image(pixel_size=32)
+            icons.set_image(img, icons.app_icon(info))
+            r.add_prefix(img)
+            b = Gtk.Button(label="Show", valign=Gtk.Align.CENTER)
+            b.connect("clicked", lambda _b, did=did: (self._set_hidden(did, False), self._show_hidden_apps()))
+            r.add_suffix(b)
+            h.add(r)
+        if not hidden:
+            h.add(Adw.ActionRow(title="No hidden apps"))
+        add = Gtk.Button(label="Hide an App…", halign=Gtk.Align.START, margin_top=10)
+        add.connect("clicked", lambda b: self._pick_app_to_hide(b, installed, hidden))
+        h.add(add)
+        page.add(h)
+        self._hidden_groups = [h]
+
+    def _pick_app_to_hide(self, anchor, installed, hidden) -> None:
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        search = Gtk.SearchEntry(placeholder_text="Search")
+        box.append(search)
+        lb = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
+        names = sorted(((i.get_display_name(), d) for d, i in installed.items() if d not in hidden),
+                       key=lambda t: t[0].casefold())
+        for name, did in names:
+            r = Gtk.ListBoxRow()
+            rb = Gtk.Box(spacing=8, margin_start=6, margin_end=6, margin_top=4, margin_bottom=4)
+            img = Gtk.Image(pixel_size=24)
+            icons.set_image(img, icons.app_icon(installed[did]))
+            rb.append(img)
+            rb.append(Gtk.Label(label=name, xalign=0))
+            r.set_child(rb)
+            r.name, r.did = name.casefold(), did
+            lb.append(r)
+        lb.set_filter_func(lambda r: search.get_text().casefold() in r.name)
+        search.connect("search-changed", lambda *_: lb.invalidate_filter())
+        box.append(Gtk.ScrolledWindow(child=lb, min_content_height=300, min_content_width=280,
+                                      hscrollbar_policy=Gtk.PolicyType.NEVER))
+        pop = ui.panel.popup(anchor, box)
+
+        def picked(_lb, r):
+            pop.popdown()
+            self._set_hidden(r.did, True)
+            self._show_hidden_apps()
+        lb.connect("row-activated", picked)
+        search.grab_focus()
+
+    @staticmethod
+    def _set_hidden(did: str, on: bool) -> None:
+        """Hide (out of Launchpad's pages, the Dock) or show again; Launchpad
+        and the Dock reload their files."""
+        from .. import apps, launchpad_model as M
+        data = config.load("launchpad", {"pages": [], "hidden": []})
+        names = {d[:-8]: i.get_display_name() for d, i in apps.scan().items() if i.should_show()}
+        m = M.Model(data, names)
+        if on:
+            m.hide(did)
+            dock = config.load("dock", {"pinned": None})
+            if dock.get("pinned") and did in dock["pinned"]:
+                import json
+                try:
+                    with open(os.path.join(config.CONFIG_DIR, "dock.json"), encoding="utf-8") as f:
+                        full = json.load(f)
+                except (OSError, ValueError):
+                    full = {}
+                full["pinned"] = [p for p in dock["pinned"] if p != did]
+                config.save("dock", full)
+        elif did in m.hidden:
+            m.hidden.remove(did)
+            m.reconcile()
+        config.save("launchpad", m.to_json())
 
     def _save(self, name: str, key: str, value) -> None:
         """Write one Sonata setting; the running component reloads it."""
