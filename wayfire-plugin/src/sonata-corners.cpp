@@ -33,7 +33,6 @@
  * SOFTWARE.
  */
 
-#include <sstream>
 #include <map>
 #include <wayfire/render-manager.hpp>
 #include <wayfire/output-layout.hpp>
@@ -113,6 +112,10 @@ uniform float seam;           /* where the client's surface starts under the tit
  * reaches 1 px under the client (5 px maximized). Kept small: content that
  * starts lower (a toolbar's controls, Music's LCD) must never be touched. */
 const float SEAM_BAND = 8.0;
+/* maximized: pixdecor's stubs below the overlap rows (see main) */
+const float STUB_ROWS = 4.0;
+const float STUB_LEFT = 64.0;    /* its button area: 7 + 3 x 12 + 2 x 8 = 59, and its edge */
+const float STUB_RIGHT = 12.0;   /* its right edge (9 px) */
 
 varying highp vec2 uvpos;
 
@@ -132,6 +135,16 @@ void main()
          * are opaque, and these rows lie under the (translucent) title bar
          * for every app anyway. */
         c = fill;
+    }
+    else if (square_top > 0.5 && seam >= 0.0 && p.y >= seam + overlap && p.y < seam + overlap + STUB_ROWS &&
+             ((p.x >= lo.x && p.x < lo.x + STUB_LEFT) || (p.x > hi.x - STUB_RIGHT && p.x <= hi.x)))
+    {
+        /* maximized, pixdecor draws with its 4 px border shift: its button
+         * area (left) and right edge reach 4 more rows under the client, as
+         * opaque dark stubs (measured: seam+5..seam+8, 61 px / 9 px wide).
+         * What they hide is the client's toolbar: take the same column just
+         * below them. */
+        c = get_pixel(vec2(uvpos.x, 1.0 - (seam + overlap + STUB_ROWS + 0.5) / size.y));
     }
     else if (seam >= 0.0 && p.y >= seam && p.y < seam + SEAM_BAND && p.x >= lo.x && p.x <= hi.x)
     {
@@ -301,7 +314,6 @@ class corners_render_instance_t :
     transformer_base_node_t *self;
     wayfire_toplevel_view view;
     damage_callback push_to_parent;
-    std::string last_geometry;     /* the seam log below, once per change */
 
   public:
     corners_render_instance_t(transformer_base_node_t *self, damage_callback push_damage,
@@ -393,21 +405,6 @@ class corners_render_instance_t :
             /* the client's surface top (below pixdecor's title bar), for the seam */
             auto m = view->toplevel()->current().margins;
             data_ptr->program.uniform1f("seam", m.top > inset ? float(g.y + m.top - bbox.y) : -1.0f);
-            {
-                /* where the seam fix works (session.log, once per change): the
-                 * texture (bbox), the frame, the margins and the seam row */
-                std::ostringstream o;
-                o << view->get_app_id() << (maximized ? " maximized" : "") << " bbox " << bbox.x << "," << bbox.y <<
-                    " " << bbox.width << "x" << bbox.height << " frame " << g.x << "," << g.y << " " << g.width <<
-                    "x" << g.height << " margins " << m.top << "/" << m.left << "/" << m.right << "/" << m.bottom <<
-                    " inset " << inset << " seam " << (m.top > inset ? g.y + m.top - bbox.y : -1) <<
-                    " scale " << data.target.scale;
-                if (o.str() != last_geometry)
-                {
-                    last_geometry = o.str();
-                    LOGI("sonata-corners: seam ", last_geometry);
-                }
-            }
             data_ptr->program.uniform4f("shadow", shadow_color);
             data_ptr->program.uniform1f("shadow_radius", shadow_r);
             data_ptr->program.attrib_pointer("position", 2, 0, vertexData);
@@ -439,7 +436,7 @@ class corners_render_instance_t :
  * used before, maps input through its own transform). */
 /* the top of a window that is always blurred: title bar + a toolbar */
 /* bumped with every change of the plugin (tests/test_regressions.py checks it) */
-#define SONATA_CORNERS_BUILD "2026-09-30.4 seam geometry log"
+#define SONATA_CORNERS_BUILD "2026-09-30.5 maximized stubs"
 static const int TOP_GLASS = 96;
 
 class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t

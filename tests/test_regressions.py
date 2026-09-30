@@ -883,6 +883,23 @@ class MusicTitleAndSeamRegressions(unittest.TestCase):
         self.assertRegex(cpp, r"fill\.a > 0\.0 && p\.y >= seam && p\.y < seam \+ overlap")
         self.assertIn("c = fill;", cpp)
 
+    def test_maximized_stubs_below_the_overlap(self):
+        """Still dark stubs maximized, 4 rows under the overlap (seam+5..8),
+        61 px left / 9 px right: pixdecor's 4 px border shift. They take the
+        client's column just below; the diagnostic log that found them (once
+        per render instance: it flooded session.log) is gone."""
+        cpp = (pathlib.Path(__file__).resolve().parent.parent / "wayfire-plugin" / "src" /
+               "sonata-corners.cpp").read_text()
+        rows = float(re.search(r"const float STUB_ROWS = ([0-9.]+);", cpp).group(1))
+        left = float(re.search(r"const float STUB_LEFT = ([0-9.]+);", cpp).group(1))
+        right = float(re.search(r"const float STUB_RIGHT = ([0-9.]+);", cpp).group(1))
+        self.assertGreaterEqual(rows, 4)
+        self.assertGreaterEqual(left, 61)
+        self.assertGreaterEqual(right, 9)
+        self.assertLess(left, 100)                                  # the toolbar's controls stay
+        self.assertIn("square_top > 0.5 && seam >= 0.0 && p.y >= seam + overlap", cpp)
+        self.assertNotIn("sonata-corners: seam ", cpp)
+
 
 class UnifiedToolbarSeamRegressions(unittest.TestCase):
     """A dark band under the title bar of maximized glass windows (Music):
