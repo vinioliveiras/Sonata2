@@ -406,7 +406,19 @@ Sonata succeeds [Sonata](https://github.com/vinioliveiras/sonata)
 
 ## License
 
-Free to use, study, modify and share, for any noncommercial purpose:
-[PolyForm Noncommercial 1.0.0](LICENSE.md). Nobody may sell Sonata or
-use it commercially. The icon themes, cursors, fonts and GTK theme it
-bundles keep their own licenses (listed at the end of LICENSE.md).
+Sonata is free software: you can use, study, change and share it under the
+[GNU General Public License v3.0 or later](LICENSE). Copyright 2026 Vini.
+Anyone who shares Sonata, or a version they changed, must share its source
+under the same license: it stays free.
+
+These parts of the repository are other people's work and keep their own
+licenses (they are GPL-compatible):
+
+| Path | What | License |
+|---|---|---|
+| `sonata2/data/icons/Sonata-MacTahoe/` | MacTahoe icon theme | GPL-3.0 (its `COPYING`) |
+| `sonata2/data/icons/Sonata/places/scalable/user-trash*.svg` | WhiteSur trash icons | GPL-3.0 |
+| `sonata2/data/icons/Sonata-Cursors/` | apple_cursor | GPL-3.0 (`LICENSE-apple_cursor`) |
+| `sonata2/data/themes/` (WhiteSur parts) | WhiteSur GTK theme | MIT (`LICENSE-WhiteSur`) |
+| `sonata2/data/fonts/` | Inter | SIL OFL 1.1 (`LICENSE-Inter.txt`) |
+| `sonata2/data/avatars/` | Noto Color Emoji on the stock pictures | Apache-2.0 / OFL 1.1 (`LICENSE.txt`) |

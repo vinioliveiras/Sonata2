@@ -3,7 +3,7 @@
 # for plugins and their metadata on its own).
 #   meson setup build --prefix ~/.local/share/wayfire/plugin-manager/install --libdir lib
 #   meson install -C build
-project('sonata-wayfire-plugins', 'cpp', version: '1.0', license: 'LicenseRef-PolyForm-Noncommercial-1.0.0',
+project('sonata-wayfire-plugins', 'cpp', version: '1.0', license: 'GPL-3.0-or-later',
   meson_version: '>=0.59.0', default_options: ['cpp_std=c++17', 'warning_level=1'])
 
 wayfire = dependency('wayfire')
