@@ -1009,13 +1009,29 @@ class Settings(Adw.ApplicationWindow):
             on, cur, zones = res or (None, "UTC", [])
             auto.set_visible(on is not None)
             if on is not None:
-                auto.add(switch_row("Set date and time automatically", on,
-                                    lambda v: system.run_async(system.set_ntp, lambda ok: ok or self.toast(
-                                        "Couldn't change the setting"), v)))
+                state = {"ntp": on}
+
+                def ntp_done(ok, v):
+                    if ok:
+                        state["ntp"] = v
+                    else:                             # back to what the system still has
+                        self.toast("Couldn't change the setting")
+                        show_quietly(ntp_row, state["ntp"])
+                ntp_row = switch_row("Set date and time automatically", on,
+                                     lambda v: system.run_async(system.set_ntp, lambda ok: ntp_done(ok, v), v))
+                auto.add(ntp_row)
             if zones:
+                zstate = {"zone": cur}
+
+                def zone_done(ok, z):
+                    if ok:
+                        zstate["zone"] = z
+                        self.toast(f"Time zone: {z}")
+                    else:
+                        self.toast("Couldn't change the time zone")
+                        show_quietly(row, zstate["zone"])
                 row = combo_row("Time zone", [(z, z.replace("_", " ")) for z in zones], cur,
-                                lambda z: system.run_async(system.set_timezone, lambda ok: self.toast(
-                                    f"Time zone: {z}" if ok else "Couldn't change the time zone"), z))
+                                lambda z: system.run_async(system.set_timezone, lambda ok: zone_done(ok, z), z))
                 row.set_enable_search(True)
                 zone.add(row)
             else:

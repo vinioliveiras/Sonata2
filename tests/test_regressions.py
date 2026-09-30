@@ -314,6 +314,46 @@ class EqualizerRegressions(unittest.TestCase):
         self.assertIn("for nid in nids:", src)
 
 
+class SettingsFollowUpRegressions(unittest.TestCase):
+    def test_wifi_password_never_on_a_command_line(self):
+        """wifi_connect passed the password to nmcli (visible in `ps`)."""
+        from sonata2.backend import system
+        calls = []
+        real_run, real_dbus = system._run, system._wifi_connect_dbus
+        system._run = lambda cmd, timeout=0: (calls.append(cmd), (0, ""))[1]
+        system._wifi_connect_dbus = lambda ssid, pw: (True, "")
+        try:
+            system.wifi_connect("Home", "hunter22")
+            system.wifi_connect("Cafe")
+        finally:
+            system._run, system._wifi_connect_dbus = real_run, real_dbus
+        self.assertFalse(any("hunter22" in " ".join(c) for c in calls))
+        self.assertEqual(calls, [["nmcli", "device", "wifi", "connect", "Cafe"]])
+
+    def test_old_trash_items_are_removed(self):
+        """"Remove items from the Trash after 30 days" did nothing in Sonata."""
+        import datetime as dt
+        from sonata2 import trash_cleanup
+        root = tempfile.mkdtemp()
+        os.makedirs(os.path.join(root, "info"))
+        os.makedirs(os.path.join(root, "files", "olddir"))
+        now = dt.datetime(2026, 10, 1, 12, 0)
+        for name, age in (("old.txt", 40), ("olddir", 31), ("new.txt", 3)):
+            p = os.path.join(root, "files", name)
+            if not os.path.exists(p):
+                open(p, "w").close()
+            with open(os.path.join(root, "info", name + ".trashinfo"), "w") as f:
+                f.write(f"[Trash Info]\nPath=/x/{name}\nDeletionDate={(now - dt.timedelta(days=age)).isoformat()}\n")
+        self.assertEqual(trash_cleanup.purge(30, root, now), 2)
+        self.assertEqual(sorted(os.listdir(os.path.join(root, "files"))), ["new.txt"])
+        self.assertEqual(os.listdir(os.path.join(root, "info")), ["new.txt.trashinfo"])
+
+    def test_time_settings_go_back_when_they_fail(self):
+        src = pathlib.Path(__file__).parent.parent.joinpath("sonata2", "settings", "app.py").read_text()
+        self.assertIn('show_quietly(ntp_row, state["ntp"])', src)
+        self.assertIn('show_quietly(row, zstate["zone"])', src)
+
+
 class TopbarRegressions(unittest.TestCase):
     def test_now_playing_title_does_not_widen_control_center(self):
         from sonata2.shell import topbar

@@ -1208,6 +1208,8 @@ class TopBarWindow(Gtk.ApplicationWindow):
             self.bar.idlelock = IdleLock()
             from .mission import MissionBackdrop
             self.bar.mission = MissionBackdrop(app)
+            from ..trash_cleanup import Housekeeping
+            self.bar.housekeeping = Housekeeping()              # old Trash items (when that's on)
             from ..backend.equalizer import Equalizer
             self.bar.equalizer = Equalizer()
             self.bar.equalizer.start()

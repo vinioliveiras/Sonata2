@@ -135,10 +135,66 @@ def wifi_scan(rescan: bool = False) -> List[WifiNetwork]:
     return sorted(best.values(), key=lambda n: (not n.connected, -n.signal, n.ssid.lower()))
 
 
+NM = ("org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager", "org.freedesktop.NetworkManager")
+
+
 def wifi_connect(ssid: str, password: str = "") -> Tuple[bool, str]:
-    cmd = ["nmcli", "device", "wifi", "connect", ssid] + (["password", password] if password else [])
-    rc, out = _run(cmd, timeout=45)
-    return rc == 0, (out.replace(password, "•••") if password else out).strip()
+    """Join a network. With a password it goes to NetworkManager over D-Bus
+    (never on a command line, where other users could read it in `ps`);
+    a known or open network is joined with nmcli."""
+    if not password:
+        rc, out = _run(["nmcli", "device", "wifi", "connect", ssid], timeout=45)
+        return rc == 0, out.strip()
+    try:
+        return _wifi_connect_dbus(ssid, password)
+    except GLib.Error as e:
+        Gio.DBusError.strip_remote_error(e)
+        return False, e.message.replace(password, "•••")
+
+
+def _wifi_connect_dbus(ssid: str, password: str) -> Tuple[bool, str]:
+    bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+    devices = bus.call_sync(*NM, "GetDevices", None, GLib.VariantType.new("(ao)"),
+                            Gio.DBusCallFlags.NONE, 5000, None).unpack()[0]
+    wifi = None
+    for path in devices:
+        kind = bus.call_sync("org.freedesktop.NetworkManager", path, "org.freedesktop.DBus.Properties", "Get",
+                             GLib.Variant("(ss)", ("org.freedesktop.NetworkManager.Device", "DeviceType")),
+                             GLib.VariantType.new("(v)"), Gio.DBusCallFlags.NONE, 5000, None).unpack()[0]
+        if kind == 2:                       # NM_DEVICE_TYPE_WIFI
+            wifi = path
+            break
+    if wifi is None:
+        return False, "No Wi-Fi device"
+    conn = GLib.Variant("a{sa{sv}}", {
+        "connection": {"id": GLib.Variant("s", ssid), "type": GLib.Variant("s", "802-11-wireless")},
+        "802-11-wireless": {"ssid": GLib.Variant("ay", ssid.encode())},
+        "802-11-wireless-security": {"key-mgmt": GLib.Variant("s", "wpa-psk"), "psk": GLib.Variant("s", password)},
+    })
+    saved, active = bus.call_sync(*NM, "AddAndActivateConnection", GLib.Variant.new_tuple(
+        conn, GLib.Variant("o", wifi), GLib.Variant("o", "/")), GLib.VariantType.new("(oo)"),
+        Gio.DBusCallFlags.NONE, 45000, None).unpack()
+    # like nmcli: wait until it's up (or failed: a wrong password)
+    import time
+    state = 0
+    for _ in range(90):
+        try:
+            state = bus.call_sync("org.freedesktop.NetworkManager", active, "org.freedesktop.DBus.Properties", "Get",
+                                  GLib.Variant("(ss)", ("org.freedesktop.NetworkManager.Connection.Active", "State")),
+                                  GLib.VariantType.new("(v)"), Gio.DBusCallFlags.NONE, 2000, None).unpack()[0]
+        except GLib.Error:
+            state = 4                       # the active connection is gone: it failed
+        if state in (2, 4):                 # ACTIVATED, DEACTIVATED
+            break
+        time.sleep(0.5)
+    if state == 2:
+        return True, ""
+    try:                                    # don't keep a profile with a wrong password
+        bus.call_sync("org.freedesktop.NetworkManager", saved, "org.freedesktop.NetworkManager.Settings.Connection",
+                      "Delete", None, None, Gio.DBusCallFlags.NONE, 5000, None)
+    except GLib.Error:
+        pass
+    return False, "Couldn't join the network (wrong password?)"
 
 
 def wifi_disconnect() -> bool:
