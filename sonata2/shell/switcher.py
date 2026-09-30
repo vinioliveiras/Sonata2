@@ -126,6 +126,14 @@ class Switcher(Gtk.Window):
         keys.connect("key-pressed", self._key)
         keys.connect("key-released", self._released)
         self.add_controller(keys)
+        # the mouse too (macOS): moving over an app selects it, a click switches
+        motion = Gtk.EventControllerMotion()
+        motion.connect("motion", self._pointer)
+        self.panel.add_controller(motion)
+        click = Gtk.GestureClick()
+        click.connect("released", self._clicked)
+        self.panel.add_controller(click)
+        self._origin = None               # where the pointer was when the switcher opened
         LS = layer.layer_shell()
         if LS:
             LS.init_for_window(self)
@@ -171,6 +179,7 @@ class Switcher(Gtk.Window):
             self.items.append(box)
         if not self.keys:
             return
+        self._origin = None
         self.panel.sel = None                       # opens on the selection, no glide
         self.panel.remove_css_class("closing")
         self.panel.remove_css_class("opening")
@@ -188,6 +197,33 @@ class Switcher(Gtk.Window):
             item = self.items[self.index]
             # after the layout that moved the name: then glide there
             self.panel.select(item, animate and self.panel.sel is not None)
+
+    # -- the mouse ---------------------------------------------------------------------------
+    def _item_at(self, x, y):
+        for i, b in enumerate(self.items):
+            ok, r = b.compute_bounds(self.panel)
+            if ok and r.origin.x <= x < r.origin.x + r.size.width and r.origin.y <= y < r.origin.y + r.size.height:
+                return i
+        return None
+
+    def _clicked(self, _g, _n, x, y):
+        i = self._item_at(x, y)
+        if i is not None:
+            self.index = i
+            self._switch()
+
+    def _pointer(self, _c, x, y):
+        """Hovering selects -- once the pointer really moves: a pointer that
+        happens to rest where the switcher opens doesn't steal the selection."""
+        if self._origin is None:
+            self._origin = (x, y)
+            return
+        if abs(x - self._origin[0]) + abs(y - self._origin[1]) < 4:
+            return
+        i = self._item_at(x, y)
+        if i is not None and i != self.index:
+            self.index = i
+            self._mark()
 
     # -- keys while open -------------------------------------------------------------------
     def _key(self, _c, keyval, _code, state):
