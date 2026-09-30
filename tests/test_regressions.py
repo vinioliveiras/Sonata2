@@ -656,6 +656,42 @@ class ScreenRecordingRegressions(unittest.TestCase):
         self.assertFalse(cap.bar.recording)
         settle(3500)
 
+    def test_sound(self):
+        import stat
+        from sonata2.shell import capture as C
+        self.assertTrue(C.recorder_command("/tmp/x.mp4", audio="dev")[-1] == "--audio=dev")
+        self.assertFalse(any(a.startswith("--audio") for a in C.recorder_command("/tmp/x.mp4")))
+        bin_dir = tempfile.mkdtemp()                   # a pactl that answers like PipeWire's
+        fake = os.path.join(bin_dir, "pactl")
+        with open(fake, "w") as f:
+            f.write('#!/bin/sh\n[ "$1" = get-default-sink ] && echo alsa_output.hdmi || echo alsa_input.mic\n')
+        os.chmod(fake, os.stat(fake).st_mode | stat.S_IEXEC)
+        old = os.environ["PATH"]
+        os.environ["PATH"] = bin_dir + os.pathsep + old
+        try:
+            self.assertEqual(C.audio_device("system"), "alsa_output.hdmi.monitor")    # what the speakers play
+            self.assertEqual(C.audio_device("mic"), "alsa_input.mic")
+            self.assertIsNone(C.audio_device("none"))
+        finally:
+            os.environ["PATH"] = old
+
+    def test_menu_bar_shows_the_time(self):
+        from sonata2.shell import topbar as T
+        from gi.repository import Gtk
+        bar_cls = next(c for c in vars(T).values() if isinstance(c, type) and hasattr(c, "_rec_tick"))
+        bar = bar_cls.__new__(bar_cls)
+        box = Gtk.Box()
+        box.append(Gtk.Image())
+        box.append(Gtk.Label(label=""))
+        bar.rec_stop = Gtk.Button(child=box)
+        bar._rec_src = 0
+        bar.set_recording(True)
+        bar._rec_t0 -= 65 * 1_000_000
+        bar._rec_tick()
+        self.assertEqual(box.get_last_child().get_label(), "1:05")
+        bar.set_recording(False)
+        self.assertEqual(bar._rec_src, 0)
+
 
 class ThemeFadeFocusRegressions(unittest.TestCase):
     """Turning Translucent glass on/off made Settings jump to the next section:

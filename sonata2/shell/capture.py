@@ -23,7 +23,7 @@ from . import layer  # noqa: E402
 
 THUMB_MS = 5000
 THUMB_W = 200
-DEFAULTS = {"save_to": "desktop", "timer": 0}
+DEFAULTS = {"save_to": "desktop", "timer": 0, "audio": "system"}     # audio: none | system | mic
 
 ui.register("""
 window.sonata-capture, window.sonata-capture > contents,
@@ -60,7 +60,23 @@ def focused_output():
         return None
 
 
-def recorder_command(path: str, geo=None, output=None) -> list:
+def audio_device(kind: str):
+    """PulseAudio / PipeWire name to record: what the speakers play (the
+    default output's monitor) or the default microphone. None: no audio."""
+    if kind not in ("system", "mic") or not shutil.which("pactl"):
+        return None
+    try:
+        r = subprocess.run(["pactl", "get-default-sink" if kind == "system" else "get-default-source"],
+                           capture_output=True, text=True, timeout=2)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    name = r.stdout.strip()
+    if r.returncode != 0 or not name:
+        return None
+    return name + ".monitor" if kind == "system" and not name.endswith(".monitor") else name
+
+
+def recorder_command(path: str, geo=None, output=None, audio=None) -> list:
     """wf-recorder: H.264 in yuv420p (plays everywhere, QuickTime-style
     players included) at a constant FPS, fast enough for games."""
     cmd = ["wf-recorder", "-y", "-f", path, "-r", str(FPS), "-x", "yuv420p",
@@ -69,6 +85,8 @@ def recorder_command(path: str, geo=None, output=None) -> list:
         cmd += ["-g", geo]
     elif output:
         cmd += ["-o", output]
+    if audio:
+        cmd.append(f"--audio={audio}")          # AAC in the same file
     return cmd
 
 
@@ -103,8 +121,9 @@ class Thumbnail(Gtk.Window):
             LS.set_margin(self, LS.Edge.RIGHT, 16)
             LS.set_keyboard_mode(self, LS.KeyboardMode.NONE)
 
-    def show_shot(self, path: str):
-        self.path = path
+    def show_shot(self, path: str, open_path: str = None):
+        """path: the picture shown; open_path: what a click opens (a movie)."""
+        self.path = open_path or path
         try:        # a small texture: the window takes the picture's natural size
             pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, THUMB_W, THUMB_W, True)
             self.pic.set_paintable(Gdk.Texture.new_for_pixbuf(pb))
@@ -200,7 +219,8 @@ class Capture:
             return
         where = cfg.get("save_to") if cfg.get("save_to") != "clipboard" else "desktop"
         self.rec_path = os.path.join(_dir(where), _name("Screen Recording", "mp4"))
-        cmd = recorder_command(self.rec_path, geo, None if geo else focused_output())
+        cmd = recorder_command(self.rec_path, geo, None if geo else focused_output(),
+                               audio_device(cfg.get("audio", "system")))
         try:
             log = open(os.path.join(GLib.get_user_cache_dir(), "sonata2", "recorder.log"), "w", encoding="utf-8")
         except OSError:
@@ -250,11 +270,33 @@ class Capture:
 
     def _saved(self, path):
         if path and os.path.exists(path) and os.path.getsize(path) > 0:
+            self._movie_thumbnail(path)
             nc = getattr(self.bar, "notifications", None)
             if nc:
                 nc.notify("Screen Recording", 0, "media-record", "Screen Recording saved",
                           os.path.basename(path), [], {"desktop-entry": "io.github.vinioliveiras.sonata2.files"},
                           -1)
+
+    def _movie_thumbnail(self, path):
+        """The floating thumbnail for a recording too (a frame from it)."""
+        if not shutil.which("ffmpegthumbnailer"):
+            return
+        png = os.path.join(GLib.get_tmp_dir(), "sonata2-recording-thumb.png")
+        try:
+            proc = subprocess.Popen(["ffmpegthumbnailer", "-i", path, "-o", png, "-s", "400", "-t", "10%"],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            return
+
+        def done():
+            if proc.poll() is None:
+                return True
+            if proc.returncode == 0 and os.path.exists(png):
+                if self.thumb is None:
+                    self.thumb = Thumbnail(self.app)
+                self.thumb.show_shot(png, open_path=path)
+            return False
+        GLib.timeout_add(100, done)
 
     def _missing(self, tool):
         nc = getattr(self.bar, "notifications", None)
@@ -328,7 +370,12 @@ class _Toolbar(Gtk.Window):
                   checked=c["save_to"] == "clipboard")],
             [Item("Timer: None", lambda _on: setv("timer", 0), checked=c["timer"] == 0),
              Item("Timer: 5 Seconds", lambda _on: setv("timer", 5), checked=c["timer"] == 5),
-             Item("Timer: 10 Seconds", lambda _on: setv("timer", 10), checked=c["timer"] == 10)]],
+             Item("Timer: 10 Seconds", lambda _on: setv("timer", 10), checked=c["timer"] == 10)],
+            # recordings: sound (macOS: Options > Microphone)
+            [Item("Record Without Sound", lambda _on: setv("audio", "none"), checked=c.get("audio") == "none"),
+             Item("Record System Sound", lambda _on: setv("audio", "system"),
+                  checked=c.get("audio", "system") == "system"),
+             Item("Record Microphone", lambda _on: setv("audio", "mic"), checked=c.get("audio") == "mic")]],
             position=Gtk.PositionType.TOP)
         button.set_active(False)
         return pop
