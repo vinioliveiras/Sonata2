@@ -244,6 +244,53 @@ class MenuRegressions(unittest.TestCase):
         self.assertIn("background-image: linear-gradient(%(separator)s", src)
 
 
+class CalendarWidgetRegressions(unittest.TestCase):
+    def test_menu_bar_calendar_shows_events_and_opens_calendar(self):
+        """The menu bar's calendar showed no events and didn't open Calendar."""
+        import datetime as dt
+        from sonata2.calendar import ics, model
+        from sonata2.shell import notifications as N
+        folder = tempfile.mkdtemp()
+        real = N._calendar_folder
+        N._calendar_folder = lambda: folder
+        try:
+            st = model.Store(folder)
+            st.load()
+            start = dt.datetime.now() + dt.timedelta(hours=1)
+            st.put(ics.Event(uid="x", summary="Dentist", start=start, end=start + dt.timedelta(hours=1),
+                             calendar=st.calendars[0].id))
+            settle(300)
+            events = N._upcoming()
+            self.assertEqual([o.event.summary for o, _c in events], ["Dentist"])
+            opened = []
+            month = N._month(events, opened.append)
+            up = N._up_next(events)
+            texts = []
+
+            def walk(w):
+                if isinstance(w, Gtk.Label):
+                    texts.append(w.get_label())
+                c = w.get_first_child()
+                while c:
+                    walk(c)
+                    c = c.get_next_sibling()
+            walk(up)
+            self.assertIn("Dentist", texts)
+        finally:
+            N._calendar_folder = real
+        src = pathlib.Path(N.__file__).read_text()
+        self.assertIn('"sonata-date:"', src)
+        cal_src = pathlib.Path(__file__).parent.parent.joinpath("sonata2", "calendar", "window.py").read_text()
+        self.assertIn('startswith("sonata-date:")', cal_src)
+
+    def test_play_pause_icons_line_up(self):
+        """Music's pause icon sat higher: at 22 px GTK took MacTahoe's
+        24 px variant, drawn differently; Sonata's own scalable copies win."""
+        from sonata2 import icons
+        for n in ("media-playback-pause-symbolic", "media-playback-start-symbolic"):
+            self.assertTrue(os.path.exists(os.path.join(icons.ICONS_DIR, "Sonata", "actions", "symbolic", n + ".svg")))
+
+
 class TopbarRegressions(unittest.TestCase):
     def test_now_playing_title_does_not_widen_control_center(self):
         from sonata2.shell import topbar

@@ -990,7 +990,15 @@ def open_windows(app, paths) -> None:
     if win is None:
         win = CalendarWindow(app)
     win.present()
-    files = [Gio.File.new_for_commandline_arg(p) for p in paths or []]
+    # "sonata-date:2026-10-01" (the menu bar's Calendar widget): that day
+    for p in paths or []:
+        if p.startswith("sonata-date:"):
+            try:
+                win.go(dt.date.fromisoformat(p[len("sonata-date:"):]), "day")
+            except ValueError:
+                pass
+    paths = [p for p in paths or [] if not p.startswith("sonata-date:")]
+    files = [Gio.File.new_for_commandline_arg(p) for p in paths]
     if files:
         GLib.timeout_add(200, lambda: (win.import_files(files), False)[1])
 

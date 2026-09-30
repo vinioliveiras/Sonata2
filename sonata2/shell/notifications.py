@@ -11,6 +11,7 @@
   grouped by app, over the Today widgets (a calendar).
 - Do Not Disturb (Control Center; notifications.json "dnd"): no banners,
   notifications still collected."""
+import os
 import time
 from dataclasses import dataclass, field
 
@@ -92,6 +93,14 @@ button.nc-clear { min-height: 20px; padding: 0 9px; border-radius: 99px; border:
 .nc-day { font-size: %(text_small)s; color: %(label)s; min-width: 22px; min-height: 22px; border-radius: 99px; }
 .nc-day.weekend { color: %(label_secondary)s; }
 .nc-day.today { background: %(destructive)s; color: white; font-weight: 700; }
+.nc-day.has-events { font-weight: 700; }
+.nc-day:hover { background: alpha(%(label)s, 0.10); }
+.nc-day.today:hover { background: %(destructive)s; }
+.nc-event { margin-top: 6px; }
+.nc-event-bar { min-width: 3px; border-radius: 2px; margin-right: 8px; }
+.nc-event-title { font-size: %(text_small)s; font-weight: 600; color: %(label)s; }
+.nc-event-time { font-size: 11px; color: %(label_secondary)s; }
+.nc-event-day { font-size: 10px; font-weight: 700; color: %(label_secondary)s; margin-top: 8px; }
 """, key="notifications")
 
 
@@ -489,7 +498,7 @@ class _Center(Gtk.Window):
 
     def _state_key(self):
         return (tuple((n.id, getattr(n, "time", None)) for n in self.owner.notes),
-                GLib.DateTime.new_now_local().format("%Y-%m-%d"))
+                GLib.DateTime.new_now_local().format("%Y-%m-%d"), _calendar_stamp())
 
     def _rebuild(self):
         self._built_for = self._state_key()
@@ -514,14 +523,105 @@ class _Center(Gtk.Window):
         cal = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["nc-widget"], margin_start=6,
                       margin_top=8)
         cal.set_size_request(BANNER_W, -1)
-        cal.append(_month())
+        events = _upcoming()
+        cal.append(_month(events, self._open_calendar))
+        cal.append(_up_next(events))
+        # macOS: clicking the Calendar widget opens Calendar
+        click = Gtk.GestureClick()
+        click.connect("released", lambda *_: self._open_calendar(None))
+        cal.add_controller(click)
         self.col.append(cal)
 
+    def _open_calendar(self, date) -> None:
+        """Calendar, on `date` (a datetime.date) in the Day view, or as it was."""
+        from ..__main__ import self_command
+        args = self_command().split() + ["calendar"]
+        if date is not None:
+            args.append("sonata-date:" + date.isoformat())
+        self.hide_center()
+        try:
+            GLib.spawn_async(args, flags=GLib.SpawnFlags.SEARCH_PATH)
+        except GLib.Error:
+            pass
 
-def _month() -> Gtk.Widget:
+
+def _calendar_folder() -> str:
+    return os.path.join(GLib.get_user_data_dir(), "sonata2", "calendar")
+
+
+def _calendar_stamp():
+    """When Calendar's files last changed (the widget redraws after an edit)."""
+    try:
+        folder = _calendar_folder()
+        return max((os.path.getmtime(os.path.join(folder, n)) for n in os.listdir(folder)), default=0)
+    except OSError:
+        return 0
+
+
+def _upcoming(days: int = 31) -> list:
+    """This month's and the next days' event occurrences, from Calendar's
+    own files (none written here); hidden calendars left out."""
+    import datetime as dt
+    try:
+        from ..calendar import ics, model
+        from .. import config
+        folder = _calendar_folder()
+        if not os.path.isdir(folder) or not any(n.endswith(".ics") for n in os.listdir(folder)):
+            return []
+        store = model.Store(folder)
+        store.load()
+        hidden = set(config.load("calendar", {"hidden": []}).get("hidden", []))
+        colors = {c.id: model.PALETTE_HEX.get(c.color, "#007aff") for c in store.calendars}
+        today = dt.date.today()
+        a = dt.datetime(today.year, today.month, 1)
+        b = dt.datetime.combine(today, dt.time()) + dt.timedelta(days=days)
+        return [(o, colors.get(o.event.calendar, "#007aff"))
+                for o in ics.expand(store.visible_events(hidden), a, b)]
+    except Exception:           # a broken file must not take the menu bar down
+        return []
+
+
+def _up_next(events) -> Gtk.Widget:
+    """Big Sur's Up Next: today's and tomorrow's next events (at most 3)."""
+    import datetime as dt
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+    now = dt.datetime.now()
+    today = now.date()
+    soon = [(o, c) for o, c in events if o.end > now and o.start.date() <= today + dt.timedelta(days=1)][:3]
+    if not soon:
+        box.append(Gtk.Label(label="No more events today", xalign=0, css_classes=["nc-event-day"]))
+        return box
+    shown_day = None
+    for o, color in soon:
+        day = o.start.date() if o.start.date() >= today else today
+        if day != shown_day:
+            shown_day = day
+            box.append(Gtk.Label(label="TODAY" if day == today else "TOMORROW", xalign=0,
+                                 css_classes=["nc-event-day"]))
+        row = Gtk.Box(css_classes=["nc-event"])
+        bar = Gtk.Box(css_classes=["nc-event-bar"])
+        bar.set_size_request(3, -1)
+        prov = Gtk.CssProvider()
+        prov.load_from_string(f"box {{ background-color: {color}; }}")
+        bar.get_style_context().add_provider(prov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        row.append(bar)
+        texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        texts.append(Gtk.Label(label=o.event.summary or "New Event", xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=1,
+                               hexpand=True, css_classes=["nc-event-title"]))
+        when = "All day" if o.event.all_day else \
+            f"{o.start.strftime('%H:%M')} – {o.end.strftime('%H:%M')}"
+        texts.append(Gtk.Label(label=when, xalign=0, css_classes=["nc-event-time"]))
+        row.append(texts)
+        box.append(row)
+    return box
+
+
+def _month(events=(), on_day=None) -> Gtk.Widget:
     """Big Sur Calendar widget (small): month in red capitals, weekday
-    initials, this month's days, today in a red circle."""
+    initials, this month's days, today in a red circle; days with events
+    in bold; a day opens Calendar on it."""
     import calendar as pycal
+    import datetime as dt
     now = GLib.DateTime.new_now_local()
     y, m, today = now.get_year(), now.get_month(), now.get_day_of_month()
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -529,6 +629,7 @@ def _month() -> Gtk.Widget:
     grid = Gtk.Grid(column_homogeneous=True, row_spacing=1, column_spacing=2)
     first = pycal.SUNDAY
     cal = pycal.Calendar(firstweekday=first)
+    busy = {o.start.day for o, _c in events if (o.start.year, o.start.month) == (y, m)}
     for i, d in enumerate(("S", "M", "T", "W", "T", "F", "S")):
         grid.attach(Gtk.Label(label=d, css_classes=["nc-wd"]), i, 0, 1, 1)
     for r, week in enumerate(cal.monthdayscalendar(y, m), start=1):
@@ -536,6 +637,14 @@ def _month() -> Gtk.Widget:
             if not day:
                 continue
             classes = ["nc-day"] + (["today"] if day == today else []) + (["weekend"] if c in (0, 6) else [])
-            grid.attach(Gtk.Label(label=str(day), css_classes=classes, halign=Gtk.Align.CENTER), c, r, 1, 1)
+            if day in busy:
+                classes.append("has-events")
+            lab = Gtk.Label(label=str(day), css_classes=classes, halign=Gtk.Align.CENTER)
+            if on_day is not None:
+                click = Gtk.GestureClick()
+                click.connect("released", lambda g, *_a, d=dt.date(y, m, day): (
+                    g.set_state(Gtk.EventSequenceState.CLAIMED), on_day(d)))
+                lab.add_controller(click)
+            grid.attach(lab, c, r, 1, 1)
     box.append(grid)
     return box
