@@ -559,14 +559,15 @@ class MusicWindow(Gtk.ApplicationWindow):
             t.add_css_class("mu-toggle")
         end = bar.get_end_widget()
         self.upnext_btn = end.get_first_child()
-        vol = Gtk.Box(spacing=6, valign=Gtk.Align.CENTER, margin_end=10)
-        vol.append(Gtk.Image(icon_name="audio-volume-low-symbolic", css_classes=["mu-vol-icon"]))
+        # room from the LCD, and the same gap either side of the slider
+        vol = Gtk.Box(spacing=6, valign=Gtk.Align.CENTER, margin_start=16, margin_end=10)
+        vol.append(Gtk.Image(icon_name="audio-volume-low-symbolic", css_classes=["mu-vol-icon"], valign=Gtk.Align.CENTER))
         self._vol_guard = False
         self.volume = ui.controls.slider(self.player.volume * 100, self._volume_slid, lower=0, upper=100)
         self.volume.set_size_request(92, -1)
         self.volume.set_hexpand(False)
         vol.append(self.volume)
-        vol.append(Gtk.Image(icon_name="audio-volume-high-symbolic", css_classes=["mu-vol-icon"]))
+        vol.append(Gtk.Image(icon_name="audio-volume-high-symbolic", css_classes=["mu-vol-icon"], valign=Gtk.Align.CENTER))
         end.prepend(vol)
         bar.set_center_widget(self._lcd())
         return handle

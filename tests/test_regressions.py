@@ -186,6 +186,41 @@ class IconRegressions(unittest.TestCase):
         self.assertGreater(px[1 * stride + 1 * 4 + 3], 200)      # the body: solid
 
 
+class MusicRegressions(unittest.TestCase):
+    def test_plays_through_classic_playbin(self):
+        """Music crashed on MP3s: GTK's media backend uses playbin3, whose
+        decodebin3 aborts ("assertion failed: (collection)")."""
+        from sonata2.music import player
+        Gst = player._gst()
+        if Gst is None:
+            self.skipTest("no GStreamer typelib here")
+        path = os.path.join(_home, "silence.wav")
+        import struct
+        with open(path, "wb") as f:               # 0.2 s of silence
+            data = b"\0" * 8820
+            f.write(b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt " +
+                    struct.pack("<IHHIIHH", 16, 1, 1, 22050, 44100, 2, 16) + b"data" +
+                    struct.pack("<I", len(data)) + data)
+        p = player.Player()
+        p.set_volume(0)
+        self.assertTrue(p.load(path, play=False))
+        self.assertIsInstance(p.stream, player.GstStream)
+        self.assertEqual(p.stream.bin.get_factory().get_name(), "playbin")
+        p.stop()
+
+    def test_songs_and_videos_open_in_sonata_apps(self):
+        """Opening an MP3 from Files did nothing: no default app for audio."""
+        env = pathlib.Path(__file__).parent.parent.joinpath("tools", "session-env.sh").read_text()
+        self.assertIn("audio/mpeg", env)
+        self.assertIn("sonata2.music.desktop", env)
+        self.assertIn("sonata2.videos.desktop", env)
+
+    def test_volume_icons_have_room(self):
+        """The small volume icon sat against the LCD."""
+        src = pathlib.Path(__file__).parent.parent.joinpath("sonata2", "music", "window.py").read_text()
+        self.assertRegex(src, r"vol = Gtk.Box\(spacing=6, valign=Gtk.Align.CENTER, margin_start=\d+")
+
+
 class TopbarRegressions(unittest.TestCase):
     def test_now_playing_title_does_not_widen_control_center(self):
         from sonata2.shell import topbar

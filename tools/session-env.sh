@@ -77,6 +77,17 @@ for t in image/png image/jpeg image/gif image/webp image/bmp image/tiff image/sv
     grep -q "^$t=" "$ml" || \
         sed -i "/^\[Default Applications\]/a $t=io.github.vinioliveiras.sonata2.preview.desktop" "$ml"
 done
+# Songs open in Sonata's Music, videos in Sonata's Videos (as in their desktop files).
+for t in audio/mpeg audio/mp3 audio/flac audio/x-flac audio/ogg audio/x-vorbis+ogg audio/vorbis audio/opus \
+         audio/x-opus+ogg audio/mp4 audio/x-m4a audio/aac audio/x-aac audio/wav audio/x-wav audio/vnd.wave; do
+    grep -q "^$t=" "$ml" || \
+        sed -i "/^\[Default Applications\]/a $t=io.github.vinioliveiras.sonata2.music.desktop" "$ml"
+done
+for t in video/mp4 video/x-matroska video/webm video/x-msvideo video/avi video/quicktime video/mpeg video/ogg \
+         video/x-ogm+ogg video/x-flv video/3gpp video/3gpp2 video/x-m4v video/mp2t video/x-ms-wmv; do
+    grep -q "^$t=" "$ml" || \
+        sed -i "/^\[Default Applications\]/a $t=io.github.vinioliveiras.sonata2.videos.desktop" "$ml"
+done
 # Wayfire blurs Sonata windows here: sidebars use the glass material.
 export SONATA_GLASS=1
 export PYTHONPATH="$SONATA_REPO${PYTHONPATH:+:$PYTHONPATH}"
