@@ -513,6 +513,7 @@ def run_topbar(app, args, ui):
             if not hasattr(win.bar, "mru"):
                 win.bar.mru = []
             sw["w"] = Switcher(app, win.bar.manager, win.bar.mru)
+            win.bar.switcher_win = sw["w"]         # the game controller's A/B/D-pad drive it too
         sw["w"].mru = getattr(win.bar, "mru", [])
         sw["w"].step(-1 if param.get_string() == "prev" else 1)
     act = Gio.SimpleAction.new("switcher", GLib.VariantType.new("s"))

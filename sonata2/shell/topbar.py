@@ -1210,6 +1210,9 @@ class TopBarWindow(Gtk.ApplicationWindow):
             self.bar.mission = MissionBackdrop(app)
             from ..trash_cleanup import Housekeeping
             self.bar.housekeeping = Housekeeping()              # old Trash items (when that's on)
+            from ..gamepad.service import Gamepads                  # controllers drive the desktop
+            self.bar.gamepads = Gamepads(app, lambda: getattr(self.bar, "switcher_win", None))
+            app.connect("shutdown", lambda *_: self.bar.gamepads.stop())
             from ..backend.equalizer import Equalizer
             self.bar.equalizer = Equalizer()
             self.bar.equalizer.start()

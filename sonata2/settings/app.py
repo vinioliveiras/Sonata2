@@ -59,7 +59,7 @@ KEYWORDS = {
     "displays": "screen monitor resolution refresh rate hz scale brightness night shift main display",
     "battery": "power energy low power mode charge sleep display off",
     "wallpaper": "background desktop picture", "keyboard": "layout input source repeat shortcuts",
-    "trackpad": "touchpad tap click scroll gestures", "mouse": "pointer speed scroll natural",
+    "trackpad": "touchpad tap click scroll gestures", "mouse": "pointer speed scroll natural game controller gamepad xbox playstation joystick",
     "datetime": "clock time zone date", "notifications": "do not disturb alerts banners",
     "users": "account password picture avatar login items", "privacy": "security lock screen location trash",
     "sharing": "file sharing remote", "accessibility": "zoom contrast reduce transparency motion graphics gpu hardware acceleration renderer",
@@ -1093,7 +1093,19 @@ class Settings(Adw.ApplicationWindow):
         g.add(combo_row("Primary mouse button", [(False, "Left"), (True, "Right")],
                         get("input", "left_handed_mode", "false") == "true",
                         lambda v: self._wf("left_handed_mode", v)))
-        return [g]
+        # a game controller as a mouse (sonata2/gamepad): paused in fullscreen
+        # games and while Steam runs
+        from ..gamepad.service import DEFAULTS as GP
+        gp = config.load("gamepad", GP)
+        pad = group("Game Controller", "Left stick moves the pointer, A clicks, X right-clicks, B goes back, "
+                                       "the right stick scrolls. Paused in fullscreen games and while Steam "
+                                       "is open; hold the Xbox/PS button to pause it yourself.")
+        pad.add(switch_row("Control the desktop with a game controller", gp["enabled"],
+                           lambda on: self._save("gamepad", "enabled", on)))
+        pad.add(slider_row("Pointer speed", float(gp["speed"]) * 50, 10, 100,
+                           lambda v: self._save("gamepad", "speed", round(v / 50, 2)), ends=("Slow", "Fast"),
+                           default=50))
+        return [g, pad]
 
     # -- system --------------------------------------------------------------------------------
     def _page_datetime(self):

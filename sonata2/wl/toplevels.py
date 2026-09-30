@@ -30,6 +30,7 @@ def _load_protocol():
                          "sonata2", "pywayland-" + pywayland.__version__)
     path = os.path.join(cache, PROTO + ".py")
     if not os.path.exists(path):
+        os.makedirs(cache, exist_ok=True)
         proto = Protocol.parse_file(XML)
         proto.output(cache, {i.name: proto.name for i in proto.interface}
                      | {"wl_seat": "wayland", "wl_output": "wayland", "wl_surface": "wayland"})
