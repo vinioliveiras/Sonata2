@@ -29,13 +29,13 @@ LIGHT = {
     "control_off": "rgba(0, 0, 0, 0.09)",        # switch track off
     "knob": "#ffffff",
     "tl_disabled": "#d1d1d6",                    # greyed traffic light
-    "glass_tint": "rgba(228, 228, 234, 0.70)",   # blurred by the compositor
+    "glass_tint": "rgba(228, 228, 234, 0.60)",   # blurred by the compositor
     "solid_tint": "rgba(236, 236, 240, 0.78)",   # same surface without blur
     "indicator": "rgba(0, 0, 0, 0.62)",          # Dock running dot
-    "bar_bg": "rgba(228, 228, 234, 0.70)",       # menu bar: the same glass as glass_tint
+    "bar_bg": "rgba(228, 228, 234, 0.60)",       # menu bar: the same glass as glass_tint
     # title bars Wayfire draws (Chrome, Spotify, X11 apps): the Dock's glass
-    "titlebar_bg": "rgba(228, 228, 234, 0.70)",          # = glass_tint
-    "titlebar_bg_inactive": "rgba(240, 240, 243, 0.82)",
+    "titlebar_bg": "rgba(228, 228, 234, 0.60)",          # = glass_tint
+    "titlebar_bg_inactive": "rgba(240, 240, 243, 0.74)",
     "titlebar_text": "rgba(38, 38, 38, 1)",
     "titlebar_text_inactive": "rgba(154, 154, 154, 1)",
     "window_outline": "rgba(0, 0, 0, 0.18)",             # hairline of Wayfire-framed windows
@@ -88,12 +88,12 @@ DARK = {
     "control_off": "rgba(255, 255, 255, 0.14)",
     "knob": "#d9d9d9",
     "tl_disabled": "#4a4a4e",
-    "glass_tint": "rgba(16, 16, 20, 0.68)",
+    "glass_tint": "rgba(16, 16, 20, 0.58)",
     "solid_tint": "rgba(30, 30, 34, 0.86)",
     "indicator": "rgba(255, 255, 255, 0.72)",
-    "bar_bg": "rgba(16, 16, 20, 0.68)",           # = glass_tint
-    "titlebar_bg": "rgba(16, 16, 20, 0.68)",
-    "titlebar_bg_inactive": "rgba(30, 30, 34, 0.76)",
+    "bar_bg": "rgba(16, 16, 20, 0.58)",           # = glass_tint
+    "titlebar_bg": "rgba(16, 16, 20, 0.58)",
+    "titlebar_bg_inactive": "rgba(30, 30, 34, 0.68)",
     "titlebar_text": "rgba(230, 230, 230, 1)",
     "titlebar_text_inactive": "rgba(138, 138, 138, 1)",
     "window_outline": "rgba(255, 255, 255, 0.14)",       # dark windows: a light edge, like macOS

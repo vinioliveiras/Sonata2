@@ -27,8 +27,7 @@ from ..backend import power, system  # noqa: E402
 from . import layer  # noqa: E402
 
 BAR_H = 24
-# the menu bar's panels (Control Center, Wi-Fi, clock...) open this far below
-# it, and maximized windows keep the same distance from it (Vini)
+# the menu bar's panels (Control Center, Wi-Fi, clock...) open this far below it
 PANEL_GAP = 2
 # Sound and Now Playing live in the Control Center; the menu bar items are
 # optional (Settings > Menu Bar), off by default (Vini).
@@ -1228,7 +1227,7 @@ class TopBarWindow(Gtk.ApplicationWindow):
                 LS.set_layer(self, LS.Layer.TOP)
                 for e in (LS.Edge.TOP, LS.Edge.LEFT, LS.Edge.RIGHT):
                     LS.set_anchor(self, e, True)
-                LS.set_exclusive_zone(self, BAR_H + PANEL_GAP)   # maximized windows: the panels' gap
+                LS.set_exclusive_zone(self, BAR_H)
                 LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND)
                 from . import intro
                 if intro.pending():                 # login: slides down once the welcome screen fades

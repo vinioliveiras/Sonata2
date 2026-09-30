@@ -339,10 +339,8 @@ class corners_render_instance_t :
                 shadow_color = glm::vec4{0, 0, 0, 0};
                 shadow_r     = 0;
             }
-            /* maximized windows sit a gap below the menu bar (the menu bar's
-             * panels' gap, sonata2 topbar PANEL_GAP): round top corners like
-             * any window, no longer squared to meet the bar */
-            data_ptr->program.uniform1f("square_top", 0.0f);
+            bool maximized = view->pending_tiled_edges() == wf::TILED_EDGES_ALL;
+            data_ptr->program.uniform1f("square_top", maximized ? 1.0f : 0.0f);
             auto fill = wf::option_type::from_string<wf::color_t>(
                 option_str(view->activated ? "pixdecor/fg_color" : "pixdecor/bg_color"));
             /* stored premultiplied (Sonata writes them so: pixdecor blends them as such) */
