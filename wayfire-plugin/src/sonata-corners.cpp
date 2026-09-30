@@ -125,9 +125,14 @@ void main()
          * pixel is denser than the same column further down; take the extra
          * layer (the title bar's colour behind the client) out again. */
         vec4 below = get_pixel(vec2(uvpos.x, 1.0 - (seam + 8.0) / size.y));
-        if (below.a < 0.99 && c.a > below.a + 0.02)
+        /* only the exact signature of one extra title-bar layer over a glass
+         * toolbar: alpha = below + (1 - below) * fill (anything else -- the
+         * traffic lights' area, the frame's edge -- is left as drawn) */
+        float twice = below.a + (1.0 - below.a) * fill.a;
+        if (below.a > 0.2 && below.a < 0.99 && fill.a > 0.0 && abs(c.a - twice) < 0.03)
         {
-            c = max(c - fill * (1.0 - below.a), vec4(0.0));
+            c = clamp(c - fill * (1.0 - below.a), vec4(0.0), vec4(1.0));
+            c.rgb = min(c.rgb, vec3(c.a));
         }
     }
     bool top = p.y < lo.y + radius;
