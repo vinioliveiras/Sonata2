@@ -268,7 +268,8 @@ def run_settings(app, args, ui, state):
         win.connect("close-request", closed)
     elif args.page:
         win.select(args.page)
-    win.present()
+    from .ui.window import show_again
+    show_again(win)                              # it may have been minimized before it was closed
 
 
 def run_files(app, uris, ui):
@@ -421,7 +422,8 @@ def run_calculator(app, args, ui, state):
     from .calculator.window import CalculatorWindow
     if state.get("calc") is None:
         state["calc"] = CalculatorWindow(app)
-    state["calc"].present()
+    from .ui.window import show_again
+    show_again(state["calc"])
 
 
 def run_setup(app, args, ui, state):

@@ -67,6 +67,16 @@ def toggle_zoom(win) -> None:
     win.unmaximize() if win.is_maximized() else win.maximize()
 
 
+def show_again(win) -> None:
+    """Present a window that was hidden instead of closed (Settings lingers,
+    Calculator...). GTK remembers a minimize (the yellow button) as "minimize
+    when shown" and Wayland never tells it the Dock brought the window back,
+    so a hidden window came back minimized. Forget that first."""
+    if not win.get_visible():
+        win.unminimize()
+    win.present()
+
+
 def titlebar(win, title: str = None, end: Gtk.Widget = None, zoom=None) -> Gtk.WindowHandle:
     """52 px bar: traffic lights (zoom=None greys the green one, zoom=True
     maximizes/restores), optional bold centred title (returned as

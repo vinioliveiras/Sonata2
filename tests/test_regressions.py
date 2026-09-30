@@ -758,6 +758,34 @@ class CaptureTargetsTests(unittest.TestCase):
         self.assertFalse(pill.get_visible())
 
 
+class ShowAgainRegressions(unittest.TestCase):
+    """Settings opened minimized: minimized once (yellow button), then closed
+    (it only hides and lingers); GTK re-applied the minimize when shown."""
+
+    def test_hidden_window_is_unminimized_before_present(self):
+        from sonata2.ui.window import show_again
+        calls = []
+
+        class W:
+            visible = False
+            def get_visible(self): return self.visible
+            def unminimize(self): calls.append("unminimize")
+            def present(self): calls.append("present")
+        show_again(W())
+        self.assertEqual(calls, ["unminimize", "present"])
+        calls.clear()
+        w = W()
+        w.visible = True                    # on screen: nothing to forget, never un-minimize by surprise
+        show_again(w)
+        self.assertEqual(calls, ["present"])
+
+    def test_lingering_windows_use_it(self):
+        src = pathlib.Path(__file__).resolve().parent.parent.joinpath("sonata2", "__main__.py").read_text()
+        body = src[src.index("def run_settings"):src.index("def run_files")]
+        self.assertIn("show_again(win)", body)
+        self.assertIn('show_again(state["calc"])', src)
+
+
 class ThemeFadeFocusRegressions(unittest.TestCase):
     """Turning Translucent glass on/off made Settings jump to the next section:
     the theme cross-fade moved the window content, the focused sidebar row
