@@ -11,7 +11,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Adw, Gdk, GLib, Graphene, Gsk, Gtk  # noqa: E402
 
-from .. import config, icons, ui  # noqa: E402
+from .. import config, icons, names, ui  # noqa: E402
 from ..backend import system  # noqa: E402
 from . import layer  # noqa: E402
 from .loginui import Backdrop, wallpaper_texture  # noqa: E402
@@ -232,8 +232,8 @@ class SetupAssistant:
         start.connect("clicked", lambda *_: self.finish())
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.append(start)
-        return self._page("You're All Set", "Open Launchpad with the Super key, Search with Super+Space, "
-                          "and Mission Control with F3.", box, back=True)
+        return self._page("You're All Set", f"Open {names.APPS} with the Super key, {names.SEARCH} with Super+Space, "
+                          f"and {names.OVERVIEW} with F3.", box, back=True)
 
     # -- choices ------------------------------------------------------------------------
     def _set_dark(self, dark):

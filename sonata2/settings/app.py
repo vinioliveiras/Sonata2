@@ -21,7 +21,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
-from .. import config, icons, ui  # noqa: E402
+from .. import config, icons, names, ui  # noqa: E402
 from ..backend import equalizer, system  # noqa: E402
 
 SECTIONS = [  # id, title, icon, badge colour, group
@@ -46,7 +46,7 @@ SECTIONS = [  # id, title, icon, badge colour, group
     ("appearance", "General", "preferences-system-symbolic", "gray", "sonata"),
     ("dock", "Desktop & Dock", "view-grid-symbolic", "black", "sonata"),
     ("menubar", "Menu Bar", "view-restore-symbolic", "indigo", "sonata"),
-    ("launchpad", "Launchpad", "view-app-grid-symbolic", "graphite", "sonata"),
+    ("launchpad", names.APPS, "view-app-grid-symbolic", "graphite", "sonata"),
     ("hidden", "Hidden & Protected Apps", "system-lock-screen-symbolic", "gray", "sonata"),
     ("updates", "Software Update", "software-update-available-symbolic", "gray", "about"),
     ("about", "About", "help-about-symbolic", "gray", "about"),
@@ -67,7 +67,7 @@ KEYWORDS = {
     "sharing": "file sharing remote", "accessibility": "zoom contrast reduce transparency motion graphics gpu hardware acceleration renderer",
     "appearance": "app icons regenerate frame generated dark light mode accent color theme icons font", "dock": "magnification size position autohide "
     "recent apps displays minimize", "menubar": "clock battery percentage bluetooth sound now playing",
-    "launchpad": "apps grid folders", "hidden": "hide hidden protected private lock password apps", "updates": "software update upgrade packages",
+    "launchpad": "apps grid folders launchpad", "hidden": "hide hidden protected private lock password apps", "updates": "software update upgrade packages",
     "about": "computer system version restart sonata",
 }
 
@@ -1834,7 +1834,7 @@ class Settings(Adw.ApplicationWindow):
                         | {"Sonata"})
         s.add(combo_row("Icons", [(t, t) for t in themes], app["icon_theme"],
                         lambda v: (self._save("appearance", "icon_theme", v),
-                                   self.toast("Restart the Dock and Launchpad to use the new icons"))))
+                                   self.toast(f"Restart the Dock and {names.APPS} to use the new icons"))))
         from ..ui import logo as L
         s.add(combo_row("Menu bar logo", L.choices(), app["menu_logo"],
                         lambda v: self._save("appearance", "menu_logo", v),
@@ -1938,14 +1938,14 @@ class Settings(Adw.ApplicationWindow):
         return [g]
 
     def _page_launchpad(self):
-        g = group("Launchpad")
+        g = group(names.APPS)
         reset = Gtk.Button(label="Reset…", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
         reset.connect("clicked", lambda *_: ui.dialog.alert(
-            "Reset the Launchpad layout?", "Folders and your icon order are removed; apps are sorted by name.",
+            f"Reset the {names.APPS} layout?", "Folders and your icon order are removed; apps are sorted by name.",
             [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
             lambda r: r == "reset" and (config.save("launchpad", {"pages": [], "hidden": config.load(
                 "launchpad", {"pages": [], "hidden": []}).get("hidden", [])}),
-                                        self.toast("Launchpad was reset")), parent=self))
+                                        self.toast(f"{names.APPS} was reset")), parent=self))
         row = Adw.ActionRow(title="Layout", subtitle="Pages, folders and order")
         row.add_suffix(reset)
         g.add(row)
@@ -1956,7 +1956,7 @@ class Settings(Adw.ApplicationWindow):
         """Locked until the user's password (PAM, like the lock screen) is
         typed; locks again when another section is chosen."""
         from .. import pam
-        g = group("", "Apps hidden from Launchpad, Search and the Dock. Enter your password to see and edit them.")
+        g = group("", f"Apps hidden from {names.APPS}, {names.SEARCH} and the Dock. Enter your password to see and edit them.")
         row = Adw.ActionRow(title="Password")
         row.add_prefix(Gtk.Image(icon_name="system-lock-screen-symbolic"))
         entry = Gtk.PasswordEntry(show_peek_icon=True, valign=Gtk.Align.CENTER, width_chars=18)
@@ -2003,7 +2003,7 @@ class Settings(Adw.ApplicationWindow):
         installed = {d[:-8]: i for d, i in apps.scan().items() if i.should_show()}
         hidden = [a for a in config.load("launchpad", {"pages": [], "hidden": []}).get("hidden", [])
                   if a in installed]
-        h = group("Hidden apps", "In the Hidden folder in Launchpad (opened with your password).")
+        h = group("Hidden apps", f"In the Hidden folder in {names.APPS} (opened with your password).")
         for did in hidden:
             info = installed[did]
             r = Adw.ActionRow(title=info.get_display_name(), use_markup=False)
@@ -2118,7 +2118,7 @@ class Settings(Adw.ApplicationWindow):
         system.run_async(system.about, fill)
         shell = group("Sonata")
         row = Adw.ActionRow(title="Restart Sonata",
-                            subtitle="Reloads the Dock, menu bar, Launchpad and wallpaper. Your apps stay open.")
+                            subtitle=f"Reloads the Dock, menu bar, {names.APPS} and wallpaper. Your apps stay open.")
         btn = Gtk.Button(label="Restart", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
         btn.connect("clicked", lambda *_: (system.restart_sonata(), self.toast("Restarting Sonata…")))
         row.add_suffix(btn)

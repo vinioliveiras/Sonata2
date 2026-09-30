@@ -1,7 +1,7 @@
 # Sonata 2 (pre-alpha)
 
 **A modern desktop UI for Linux**: a complete shell, not a GTK theme. It
-covers the login screen, menu bar, Dock, Launchpad, Search, notifications,
+covers the login screen, menu bar, Dock, Apps (the app grid), Search, notifications,
 Control Center, a file manager and a Settings app. Everything is animated,
 light and dark, and made to feel smooth on ordinary hardware.
 
@@ -29,8 +29,8 @@ doesn't need GNOME or KDE.
 ![The Sonata desktop: menu bar, desktop icons and the Dock](docs/screenshots/desktop.png)
 <sub>The desktop: menu bar, desktop icons and the Dock ([in Dark Mode](docs/screenshots/desktop-dark.png)).</sub>
 
-![Launchpad: every app in a grid over the blurred desktop](docs/screenshots/launchpad.png)
-<sub>**Launchpad**: every app over the blurred desktop, with search, pages and folders.</sub>
+![Apps: every app in a grid over the blurred desktop](docs/screenshots/launchpad.png)
+<sub>**Apps**: every app over the blurred desktop, with search, pages and folders.</sub>
 
 ![Control Center open under the menu bar](docs/screenshots/controlcenter.png)
 <sub>**Control Center**: Wi-Fi, Bluetooth, Dark Mode, display and sound, Now Playing.</sub>
@@ -197,7 +197,7 @@ one dot per open window.
 - Stacks (Downloads), recent apps, and a thumbnail on hover.
 - It shrinks to fit the screen when full and grows back.
 
-**Launchpad.** Full-screen grid over the blurred desktop, with pages,
+**Apps.** Full-screen grid over the blurred desktop, with pages,
 search (just type), folders, jiggle mode, and dragging apps to the Dock.
 New apps appear as soon as they're installed.
 
@@ -208,7 +208,7 @@ New apps appear as soon as they're installed.
   and live updates.
 - Recents, Applications, pinned folders (drag a folder between two
   Favorites) and drives with capacity.
-- Search in This Mac or the folder, type to select, and drag and drop
+- Search in This Computer or the folder, type to select, and drag and drop
   everywhere.
 - Double-clicking a Linux package installs it (with debtap on Arch), and
   archives are extracted.
@@ -219,7 +219,7 @@ New apps appear as soon as they're installed.
   Notifications.
 - Appearance: light/dark, accent, glass, icons, menu bar logo, title
   bars.
-- Dock, Menu Bar, Launchpad, Sound Effects, Accessibility.
+- Dock, Menu Bar, Apps, Sound Effects, Accessibility.
 - There is a search field, and a double-click on any slider resets it.
 
 **Sonata's own apps.** No GNOME apps needed for the everyday things:
@@ -247,7 +247,7 @@ New apps appear as soon as they're installed.
   rename, erase, First Aid, encrypted volumes.
 - Open and Save panels for every app (through the file chooser portal).
 
-**Mission Control.** F3 or Ctrl+Up lays out the windows over the blurred,
+**Overview.** F3 or Ctrl+Up lays out the windows over the blurred,
 darkened desktop; Ctrl+Super+Up shows every Space.
 
 **Software Update.** Settings → Software Update lists what can be updated
@@ -275,11 +275,11 @@ Super (the Windows key) plays the part of Cmd.
 
 | Keys | Action |
 |---|---|
-| Super (alone), F4, pinch with 4 fingers | Launchpad |
+| Super (alone), F4, pinch with 4 fingers | Apps |
 | Super+Space | Search |
 | Super+Tab / Super+Shift+Tab | switch apps |
 | Super+Q, Alt+F4 / Super+M / Ctrl+Super+F | close / minimize / full screen (remembered per app; Windows games open in full screen by themselves) |
-| Ctrl+Up, F3, swipe up with 3 fingers | Mission Control |
+| Ctrl+Up, F3, swipe up with 3 fingers | Overview |
 | Ctrl+Down, swipe down with 3 fingers | App Exposé |
 | swipe left/right with 3 fingers, Super+Alt+arrows | switch Spaces |
 | Super+Shift+3 / 4, Print | screenshot (screen / selection) |
@@ -314,7 +314,7 @@ Two separate worlds, so Sonata can be customized freely without touching
 the system:
 
 - **Sonata settings**: how the shell looks and behaves (Dock, glass,
-  icons, animations, menu bar, Launchpad...). They are stored only in
+  icons, animations, menu bar, Apps...). They are stored only in
   `~/.config/sonata2/*.json` and applied live by the running shell.
 - **Linux settings**: the machine itself (Wi-Fi, Bluetooth, sound,
   displays, power, wallpaper, keyboard, users). Sonata stores nothing
@@ -398,7 +398,7 @@ with it). They talk through D-Bus and the config files.
 ```
 sonata2/            Python package (`python3 -m sonata2 <component>`)
   ui/               design system: tokens, theme, menus, controls, windows, logo
-  shell/            menu bar, Dock, Launchpad, Search, notifications, login,
+  shell/            menu bar, Dock, Apps (launchpad), Search, notifications, login,
                     lock and welcome screens, wallpaper, desktop icons
   files/            the Files app
   settings/         the Settings app
@@ -428,6 +428,10 @@ Sonata does.
 - The macOS-like theme is a **reference and test theme** while the shell
   is being built. Sonata's direction is its own design and themes anyone
   can make and change.
+- Sonata names its parts its own way: **Apps** (the app grid), **Search**,
+  **Overview** (every window at once), **This Computer**
+  ([sonata2/names.py](sonata2/names.py)). Code and commands keep their
+  technical names (`sonata2 launchpad`, `spotlight`).
 - Sonata's code and its own artwork are original. It does **not** ship
   Apple's software, fonts or system artwork: the font is Inter, and the
   icon and cursor sets are open-source community projects (some recreate

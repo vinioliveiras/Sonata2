@@ -22,7 +22,7 @@ gi.require_version("Adw", "1")
 gi.require_version("Graphene", "1.0")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
-from .. import apps, config, icons, ui  # noqa: E402
+from .. import apps, config, icons, names, ui  # noqa: E402
 from .. import launchpad_model as M  # noqa: E402
 from . import layer  # noqa: E402
 
@@ -275,7 +275,7 @@ class PageGrid(Gtk.Grid):
 
 class Launchpad(Gtk.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Launchpad", css_classes=["sonata-launchpad"],
+        super().__init__(application=app, title=names.APPS, css_classes=["sonata-launchpad"],
                          decorated=False)
         self.installed = installed_apps()
         self._apps_sig = apps.signature()
@@ -823,7 +823,7 @@ class Launchpad(Gtk.ApplicationWindow):
             sections = [[Item("Open", lambda: self.activate_item(widget))]]
         elif in_hidden:
             sections = [[Item("Open", lambda: self.activate_item(widget))],
-                        [Item("Show in Launchpad", lambda: self.unhide_app(item))]]
+                        [Item(f"Show in {names.APPS}", lambda: self.unhide_app(item))]]
         else:
             info = self.installed.get(item)
             sections = [[Item("Open", lambda: self.activate_item(widget))]]
@@ -1061,6 +1061,6 @@ def launchpad_desktop_file(command: str) -> str:
     show Launchpad as a normal app tile."""
     from ..apps import write_desktop_file
     return write_desktop_file("sonata2-launchpad.desktop",
-                              "[Desktop Entry]\nType=Application\nName=Launchpad\nComment=Find and open your apps\n"
+                              f"[Desktop Entry]\nType=Application\nName={names.APPS}\nComment=Find and open your apps\n"
                               "Icon=sonata-launchpad\nNoDisplay=true\nCategories=System;\n"
                               f"Exec={command} launchpad\n")

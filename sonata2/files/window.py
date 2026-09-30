@@ -20,7 +20,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
-from .. import config, ui  # noqa: E402
+from .. import config, names, ui  # noqa: E402
 from . import folder, ops, packages  # noqa: E402
 from .search import Search  # noqa: E402
 from .folder import APPS, RECENTS, VIRTUAL, file_of, is_dir  # noqa: E402
@@ -250,7 +250,7 @@ class FilesWindow(Adw.ApplicationWindow):
     def _scope_bar(self):
         bar = Gtk.Box(spacing=2, css_classes=["fs-scope"])
         bar.append(Gtk.Label(label="Search:", css_classes=["fs-scope-title"]))
-        self.scope_home = Gtk.ToggleButton(label="This Mac", active=True, focus_on_click=False)
+        self.scope_home = Gtk.ToggleButton(label=names.THIS_COMPUTER, active=True, focus_on_click=False)
         self.scope_here = Gtk.ToggleButton(group=self.scope_home, focus_on_click=False)
         for b in (self.scope_home, self.scope_here):
             b.connect("toggled", lambda b: b.get_active() and self._run_search())
@@ -305,7 +305,7 @@ class FilesWindow(Adw.ApplicationWindow):
             self.filtered.set_model(self.results)
             self._refilter()
         self.search_status.set_label("Searching…")
-        scope = "This Mac" if not self.scope_here.get_active() else folder.display_name(here)
+        scope = names.THIS_COMPUTER if not self.scope_here.get_active() else folder.display_name(here)
         self.title.set_label(f"Searching “{scope}”")
         self.searcher.start(root, q, self._got_results, self._search_done)
 

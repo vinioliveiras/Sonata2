@@ -6,8 +6,8 @@ bar process; nothing runs while no controller is connected.
     Right stick    scroll                             X / triangle  right click
     D-pad          arrow keys                         B / circle    Esc
     LB / RB        app switcher (A picks, B closes)   Y / square    Launchpad
-    Start          Spotlight                          View/Select   Mission Control
-    Guide (Xbox / PS)  Mission Control; pressed 5 times quickly: on / off
+    Start          Search                             View/Select   Overview
+    Guide (Xbox / PS)  Overview; pressed 5 times quickly: on / off
 
 Off by default. Games keep the controller: it is never grabbed, and the desktop control
 pauses by itself while a fullscreen window has the focus (gamemode.py)
@@ -23,7 +23,7 @@ import time
 
 from gi.repository import Gio, GLib
 
-from .. import config, gamemode
+from .. import config, gamemode, names
 from . import evdev as E
 from .vpointer import BTN_LEFT, BTN_RIGHT, VirtualPointer, key
 
@@ -44,9 +44,9 @@ ACTIONS = set(BUTTONS.values())
 # what each button does, as Settings lists it (Xbox / PlayStation names)
 LEGEND = [("Left stick", "Pointer (LT slower, RT faster)"),
           ("Right stick", "Scroll"), ("A / Cross", "Click (hold to drag)"), ("X / Triangle", "Right-click"),
-          ("B / Circle", "Back (Esc)"), ("Y / Square", "Launchpad"), ("LB / RB", "Switch apps"),
-          ("D-pad", "Arrow keys"), ("Start / Options", "Spotlight"), ("View / Share", "Mission Control"),
-          ("Xbox / PS button", "Mission Control · 5× quickly: on / off")]
+          ("B / Circle", "Back (Esc)"), ("Y / Square", names.APPS), ("LB / RB", "Switch apps"),
+          ("D-pad", "Arrow keys"), ("Start / Options", names.SEARCH), ("View / Share", names.OVERVIEW),
+          ("Xbox / PS button", f"{names.OVERVIEW} · 5× quickly: on / off")]
 ARROWS = {"up": "Up", "down": "Down", "left": "Left", "right": "Right"}
 
 
