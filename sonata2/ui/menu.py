@@ -55,6 +55,13 @@ popover.menu listview > row { min-height: %(control_h)s; padding: 0 10px; margin
 popover.menu listview > row:hover, popover.menu listview > row:selected:hover,
 popover.menu listview > row:focus-visible { background-color: %(accent_selected)s; color: %(label_on_accent)s; }
 popover.menu listview > row:selected { background: none; }
+/* a hairline between the options (Vini), inset like the menus' separators;
+   gone under the highlighted row and the one after it */
+popover.menu listview > row:not(:first-child) {
+  background-image: linear-gradient(%(separator)s, %(separator)s);
+  background-size: calc(100%% - 20px) 1px; background-position: center top; background-repeat: no-repeat; }
+popover.menu listview > row:hover, popover.menu listview > row:hover + row,
+popover.menu listview > row:focus-visible, popover.menu listview > row:focus-visible + row { background-image: none; }
 popover.menu listview > row image { -gtk-icon-size: 12px; color: inherit; }
 /* rows with a small x (Dock: an app's windows) */
 popover.menu .sonata-menu-row { min-height: %(control_h)s; border-radius: %(r_menu_row)s; padding: 0 4px 0 0; }

@@ -236,6 +236,14 @@ class ButtonRegressions(unittest.TestCase):
         self.assertEqual(chooser.count('"sonata-button"'), 3)
 
 
+class MenuRegressions(unittest.TestCase):
+    def test_dropdown_options_have_dividers(self):
+        """Settings' pop-up lists had no hairline between the options."""
+        src = pathlib.Path(ui.menu.__file__).read_text()
+        self.assertIn("popover.menu listview > row:not(:first-child)", src)
+        self.assertIn("background-image: linear-gradient(%(separator)s", src)
+
+
 class TopbarRegressions(unittest.TestCase):
     def test_now_playing_title_does_not_widen_control_center(self):
         from sonata2.shell import topbar
