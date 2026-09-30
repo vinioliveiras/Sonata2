@@ -862,6 +862,24 @@ class FixedWidthRegressions(unittest.TestCase):
         self.assertEqual(topbar.count("gap=PANEL_GAP)"), 0)       # every menu bar panel has a width
 
 
+class BufferFailureRegressions(unittest.TestCase):
+    """The session crashed to the login screen: NVIDIA refused a window's
+    buffer ("gbm_bo_create failed: Invalid argument", "Failed to allocate
+    auxilliary buffer! Size 876x448") and Wayfire rendered into nothing.
+    sonata-corners allocates first and, when that fails, draws the window's
+    children directly (no rounded corners for that frame) instead."""
+
+    def test_allocation_checked_before_rendering(self):
+        cpp = (pathlib.Path(__file__).resolve().parent.parent / "wayfire-plugin" / "src" /
+               "sonata-corners.cpp").read_text()
+        sched = cpp[cpp.index("void schedule_instructions("):cpp.index("void render(const wf::scene::render_instruction_t")]
+        self.assertIn("inner_content.allocate(", sched)
+        self.assertIn("buffer_reallocation_result_t::FAILED", sched)
+        self.assertIn("ch->schedule_instructions(instructions, target, damage)", sched)
+        self.assertIn("self->cached_damage |= bbox", sched)       # a new buffer is drawn in full
+        self.assertLess(sched.index("FAILED"), sched.index("instructions.push_back"))
+
+
 class MusicTitleAndSeamRegressions(unittest.TestCase):
     """Music showed the song twice (title bar + LCD), and the seam fix under
     the title bar altered the top of the LCD's text (a 12-row band)."""

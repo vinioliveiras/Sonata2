@@ -314,6 +314,7 @@ class corners_render_instance_t :
     transformer_base_node_t *self;
     wayfire_toplevel_view view;
     damage_callback push_to_parent;
+    bool alloc_failed = false;     /* logged once per failure streak */
 
   public:
     corners_render_instance_t(transformer_base_node_t *self, damage_callback push_damage,
@@ -330,6 +331,37 @@ class corners_render_instance_t :
     void schedule_instructions(std::vector<render_instruction_t>& instructions,
         const wf::render_target_t& target, wf::regionf_t& damage) override
     {
+        /* The window is drawn into a buffer first (render). When the GPU
+         * refuses that buffer (NVIDIA's GBM: "gbm_bo_create failed: Invalid
+         * argument"), Wayfire rendered into nothing and the whole session
+         * crashed back to the login screen. Then: the window as it is, this
+         * frame, without rounded corners. Same size and scale as render()'s
+         * get_updated_contents, which then finds the buffer ready. */
+        auto bbox = self->get_children_bounding_box();
+        auto res  = self->inner_content.allocate(wf::dimensions(bbox), target.scale);
+        if (res == wf::buffer_reallocation_result_t::FAILED)
+        {
+            if (!alloc_failed)
+            {
+                LOGE("sonata-corners: no buffer for ", view->get_app_id(), " ", bbox.width, "x", bbox.height,
+                    ": drawn without rounded corners");
+            }
+
+            alloc_failed = true;
+            for (auto& ch : this->children)
+            {
+                ch->schedule_instructions(instructions, target, damage);
+            }
+
+            return;
+        }
+
+        if (res == wf::buffer_reallocation_result_t::REALLOCATED)
+        {
+            self->cached_damage |= bbox;    /* a new buffer: everything again */
+        }
+
+        alloc_failed = false;
         instructions.push_back(render_instruction_t{
                         .instance = this,
                         .target   = target,
@@ -436,7 +468,7 @@ class corners_render_instance_t :
  * used before, maps input through its own transform). */
 /* the top of a window that is always blurred: title bar + a toolbar */
 /* bumped with every change of the plugin (tests/test_regressions.py checks it) */
-#define SONATA_CORNERS_BUILD "2026-09-30.5 maximized stubs"
+#define SONATA_CORNERS_BUILD "2026-10-01.1 survive buffer failures"
 static const int TOP_GLASS = 96;
 
 class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
