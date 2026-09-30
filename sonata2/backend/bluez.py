@@ -118,13 +118,38 @@ def connect(mac: str) -> Tuple[bool, str]:
                           GLib.Variant("(ssv)", (DEVICE, "Trusted", GLib.Variant("b", True))), None,
                           Gio.DBusCallFlags.NONE, 3000, None)
         bus.call_sync(BUS_NAME, path, DEVICE, "Connect", None, None, Gio.DBusCallFlags.NONE, 25000, None)
-        for _ in range(10):                      # Connect can return before the link settles
-            if _prop(bus, path, "Connected"):
-                return True, "Connected"
-            time.sleep(0.3)
-        return False, "The device didn't stay connected"
+        return _settled(bus, path)
     except GLib.Error as e:
         return False, _message(e)
+
+
+STAY_S = 4.0            # a real connection is still there this long after Connect
+
+
+def _settled(bus, path) -> Tuple[bool, str]:
+    """Connect can succeed and the link drop a second later (Xbox controllers
+    do that when the driver doesn't suit them): it only counts when the
+    device is connected with its services, and still is STAY_S later."""
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline:          # connected, services resolved
+        if _prop(bus, path, "Connected") and _prop(bus, path, "ServicesResolved"):
+            break
+        time.sleep(0.25)
+    else:
+        return False, "The device didn't stay connected"
+    until = time.monotonic() + STAY_S
+    while time.monotonic() < until:
+        if not _prop(bus, path, "Connected"):
+            try:
+                icon = _prop(bus, path, "Icon")
+            except GLib.Error:
+                icon = ""
+            if icon == "input-gaming":
+                return False, ("It connected, then dropped. Xbox controllers usually need the xpadneo "
+                               "driver (or Bluetooth ERTM turned off) on Linux.")
+            return False, "It connected, then dropped"
+        time.sleep(0.25)
+    return True, "Connected"
 
 
 def disconnect(mac: str) -> Tuple[bool, str]:

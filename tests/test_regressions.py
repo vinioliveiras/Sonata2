@@ -370,6 +370,41 @@ class BluetoothRegressions(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("Failed", msg)
 
+    def test_forget_and_pair_again_offered(self):
+        """Saved devices can be forgotten, or forgotten and paired again."""
+        from sonata2.backend import bluez, system
+        real_av, real_run = bluez.available, system._run
+        bluez.available = lambda: False
+        system._run = lambda cmd, timeout=0: (0, "[DEL] Device AA:BB X\nDevice has been removed")
+        try:
+            self.assertTrue(system.bluetooth_forget("AA:BB")[0])
+        finally:
+            bluez.available, system._run = real_av, real_run
+        src = pathlib.Path(__file__).parent.parent.joinpath("sonata2", "settings", "app.py").read_text()
+        self.assertIn("Forget This Device…", src)
+        self.assertIn("system.bluetooth_pair_again", src)
+
+    def test_connection_that_drops_is_not_success(self):
+        """The saved Xbox controller "connected" and dropped a second later;
+        Sonata reported it connected."""
+        from sonata2.backend import bluez
+        import time as _t
+        t0 = _t.monotonic()
+        state = {"Connected": True, "ServicesResolved": True, "Icon": "input-gaming"}
+        real_prop, real_stay = bluez._prop, bluez.STAY_S
+
+        def prop(_bus, _path, name):
+            if name in ("Connected", "ServicesResolved") and _t.monotonic() - t0 > 0.5:
+                return False                      # dropped after half a second
+            return state[name]
+        bluez._prop, bluez.STAY_S = prop, 1.0
+        try:
+            ok, msg = bluez._settled(None, "/x")
+        finally:
+            bluez._prop, bluez.STAY_S = real_prop, real_stay
+        self.assertFalse(ok)
+        self.assertIn("xpadneo", msg)
+
     def test_bluez_errors_read_as_sentences(self):
         from sonata2.backend import bluez
         e = GLib.Error.new_literal(GLib.quark_from_string("x"), "org.bluez.Error.Failed: br-connection-page-timeout", 1)

@@ -633,6 +633,11 @@ class Settings(Adw.ApplicationWindow):
                 "Connecting…" if not d.connected else "Disconnecting…"), system.run_async(
                 system.bluetooth_connect_result, done, d.mac, not d.connected)))
             row.add_suffix(btn)
+            if d.paired:                       # macOS: the device's (i) menu
+                more = Gtk.Button(icon_name="view-more-horizontal-symbolic", valign=Gtk.Align.CENTER,
+                                  css_classes=["flat", "circular"], tooltip_text="Options")
+                more.connect("clicked", lambda b, d=d: self._bt_device_menu(b, d, done))
+                row.add_suffix(more)
             return row
 
         def fill(res):
@@ -645,6 +650,7 @@ class Settings(Adw.ApplicationWindow):
             top.add(switch_row("Bluetooth", state, lambda on: system.run_async(
                 system.set_bluetooth, lambda _ok: self._reload_page("bluetooth"), on)))
             paired = [d for d in devices if d.paired]
+            self._bt_shown = {d.mac: d.connected for d in paired}
             for d in paired:
                 devs.add(device_row(d))
             if not paired:
@@ -658,6 +664,21 @@ class Settings(Adw.ApplicationWindow):
                 near.set_visible(False)
         system.run_async(lambda: (system.bluetooth_state(), system.bluetooth_devices()), fill)
         return [top, devs, near]
+
+    def _bt_device_menu(self, anchor, d, done) -> None:
+        """Forget This Device… / Forget and Pair Again…, each asked first."""
+        def ask(title, body, label, fn):
+            ui.dialog.alert(title, body, [("cancel", "Cancel", ""), ("go", label, "destructive")],
+                            lambda r: r == "go" and system.run_async(fn, done, d.mac), parent=self)
+        I = ui.menu.Item
+        ui.menu.popup(anchor, [[
+            I("Forget This Device…", lambda: ask(
+                f"Forget {d.name}?", "It won't connect by itself any more. To use it again, pair it from "
+                "Nearby Devices.", "Forget Device", system.bluetooth_forget)),
+            I("Forget and Pair Again…", lambda: ask(
+                f"Pair {d.name} again?", "Put the device in pairing mode first. Sonata forgets it and pairs "
+                "it anew (this fixes most devices that stopped connecting).", "Pair Again",
+                system.bluetooth_pair_again))]], position=Gtk.PositionType.BOTTOM, glass=True)
 
     def _bt_fill_near(self, nearby) -> None:
         near = getattr(self, "_bt_near", None)
@@ -702,8 +723,16 @@ class Settings(Adw.ApplicationWindow):
         if self.current != "bluetooth":
             self._bt_scan(False)
             return False
-        system.run_async(system.bluetooth_devices, lambda devs: self._bt_fill_near(
-            [d for d in devs or [] if not d.paired]))
+        def got(devs):
+            devs = devs or []
+            # a saved device that connected or dropped since the page was built: show it
+            shown = getattr(self, "_bt_shown", None)
+            now = {d.mac: d.connected for d in devs if d.paired}
+            if shown is not None and now != shown:
+                self._reload_page("bluetooth")
+                return
+            self._bt_fill_near([d for d in devs if not d.paired])
+        system.run_async(system.bluetooth_devices, got)
         return True
 
     def _page_sound(self):

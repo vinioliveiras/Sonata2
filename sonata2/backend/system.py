@@ -564,6 +564,33 @@ def bluetooth_connect_result(mac: str, on: bool) -> Tuple[bool, str]:
     return ok, "Connected" if ok and on else "Disconnected" if ok else (out.strip().splitlines() or ["That didn't work"])[-1]
 
 
+def bluetooth_forget(mac: str) -> Tuple[bool, str]:
+    """Remove a paired device (it can be paired again from Nearby Devices)."""
+    from . import bluez
+    if bluez.available():
+        return bluez.forget(mac)
+    rc, out = _run(["bluetoothctl", "remove", mac], timeout=10)
+    ok = rc == 0 and "removed" in out.lower()
+    return ok, "Removed" if ok else (out.strip().splitlines() or ["That didn't work"])[-1]
+
+
+def bluetooth_pair_again(mac: str) -> Tuple[bool, str]:
+    """Forget, then pair and connect anew (the device in pairing mode)."""
+    ok, msg = bluetooth_forget(mac)
+    if not ok:
+        return ok, msg
+    from . import bluez
+    if not bluez.available():
+        return False, "Removed; pair it again from Nearby Devices"
+    import time
+    bluez.discovery(True)
+    for _ in range(20):                      # it shows up again once in pairing mode
+        if any(d.mac == mac for d in bluez.devices(named_only=False)):
+            return bluez.connect(mac)
+        time.sleep(0.5)
+    return False, "Removed; put the device in pairing mode, then Connect it in Nearby Devices"
+
+
 def bluetooth_connect(mac: str, on: bool) -> bool:
     return bluetooth_connect_result(mac, on)[0]
 
