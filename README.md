@@ -270,7 +270,7 @@ Super (the Windows key) plays the part of Cmd.
 | Super (alone), F4, pinch with 4 fingers | Launchpad |
 | Super+Space | Search |
 | Super+Tab / Super+Shift+Tab | switch apps |
-| Super+Q, Alt+F4 / Super+M / Ctrl+Super+F | close / minimize / zoom |
+| Super+Q, Alt+F4 / Super+M / Ctrl+Super+F | close / minimize / full screen (remembered per app; Windows games open in full screen by themselves) |
 | Ctrl+Up, F3, swipe up with 3 fingers | Mission Control |
 | Ctrl+Down, swipe down with 3 fingers | App Exposé |
 | swipe left/right with 3 fingers, Super+Alt+arrows | switch Spaces |

@@ -519,6 +519,10 @@ def run_topbar(app, args, ui):
     act = Gio.SimpleAction.new("switcher", GLib.VariantType.new("s"))
     act.connect("activate", switch)
     app.add_action(act)
+    # Full screen (Ctrl+Super+F): the focused window, remembered per app (fullscreen.py)
+    act = Gio.SimpleAction.new("fullscreen", None)
+    act.connect("activate", lambda *_: getattr(win.bar, "fullscreen", None) and win.bar.fullscreen.toggle())
+    app.add_action(act)
     # Screenshots / recording (sonata2 screenshot ... -> this action):
     # "screen" | "area" | "toolbar" | "stop"
     from .shell.capture import Capture
