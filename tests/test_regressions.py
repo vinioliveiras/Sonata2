@@ -383,5 +383,229 @@ class SettingsRegressions(unittest.TestCase):
         w.destroy()
 
 
+def rows_of(widget, cls, out=None) -> list:
+    """Every `cls` widget under `widget` (built pages, mapped or not)."""
+    out = [] if out is None else out
+    c = widget.get_first_child()
+    while c is not None:
+        if isinstance(c, cls):
+            out.append(c)
+        rows_of(c, cls, out)
+        c = c.get_next_sibling()
+    return out
+
+
+class patched:
+    """Swap attributes of a module for the duration of a with-block."""
+    def __init__(self, mod, **values):
+        self.mod, self.values, self.old = mod, values, {}
+
+    def __enter__(self):
+        for k, v in self.values.items():
+            self.old[k] = getattr(self.mod, k)
+            setattr(self.mod, k, v)
+
+    def __exit__(self, *_a):
+        for k, v in self.old.items():
+            setattr(self.mod, k, v)
+
+
+class SettingsAuditRegressions(unittest.TestCase):
+    """Settings audit (options that didn't work / looked off)."""
+
+    @classmethod
+    def setUpClass(cls):
+        from sonata2.settings import app as st
+        cls.st = st
+
+    def window(self, start="about"):
+        w = self.st.Settings(None, start)
+        w.present()
+        settle(150)
+        return w
+
+    def switch(self, w, sid, title):
+        return next(r for r in rows_of(w.pages[sid], Adw.SwitchRow) if r.get_title() == title)
+
+    def test_group_titles_with_ampersand_show(self):
+        """Trackpad's "Point & Click" / "Scroll & Zoom" titles were blank
+        (group titles are markup)."""
+        self.assertEqual(self.st.group("Point & Click").get_title(), "Point &amp; Click")
+
+    def test_row_titles_are_plain_text(self):
+        """Names with "&" or "<" (apps, Wi-Fi networks, Bluetooth devices)
+        broke the row titles (markup)."""
+        self.assertFalse(self.st.switch_row("A & B", True, lambda _v: None).get_use_markup())
+        self.assertFalse(self.st.combo_row("A & B", [(1, "x")], 1, lambda _v: None).get_use_markup())
+
+    def test_wifi_state_read_back_does_not_switch_the_radio(self):
+        """Opening Wi-Fi ran `nmcli radio wifi on` again (the switch showing
+        the state it read called its own handler)."""
+        S = self.st.system
+        calls = []
+        with patched(S, wifi_enabled=lambda: True, wifi_scan=lambda _r=False: [],
+                     set_wifi_enabled=lambda on: calls.append(on) or True):
+            w = self.window("wifi")
+            settle(400)
+            self.assertTrue(w._wifi_switch.get_active())
+            self.assertEqual(calls, [])
+            w.destroy()
+
+    def test_clock_switches_use_the_current_format(self):
+        """Date & Time: turning the date off, then 12-hour, brought the date
+        back (the 24-hour switch used the format from when the page opened)."""
+        config.save("topbar", {"clock_format": "%a %-d %b  %H:%M"})
+        w = self.window("datetime")
+        w.select("datetime")
+        settle(150)
+        self.switch(w, "datetime", "Show the date").set_active(False)
+        self.switch(w, "datetime", "Use a 24-hour clock").set_active(False)
+        self.assertEqual(config.load("topbar", {"clock_format": ""})["clock_format"], "%a %-I:%M %p")
+        w.destroy()
+
+    def test_menubar_clock_shows_12_hour_weekday_format(self):
+        """Menu Bar's Clock showed "Mon 28 Sep 21:41" for the format Date &
+        Time makes with the date off and 12-hour (it wasn't in the list)."""
+        config.save("topbar", {"clock_format": "%a %-I:%M %p"})
+        w = self.window("menubar")
+        combo = next(r for r in rows_of(w.pages["menubar"], Adw.ComboRow) if r.get_title() == "Clock")
+        self.assertEqual(combo.values[combo.get_selected()], "%a %-I:%M %p")
+        w.destroy()
+
+    def test_section_rebuilt_when_its_settings_changed_elsewhere(self):
+        """Switches kept an old state after Control Center / the menu bar /
+        another section changed the same setting (pages were cached)."""
+        import time
+        config.save("dock", {"glass": True})
+        w = self.window("dock")
+        w.select("dock")
+        settle(100)
+        self.assertTrue(self.switch(w, "dock", "Translucent glass").get_active())
+        w.select("about")
+        settle(100)
+        time.sleep(0.02)
+        config.update("dock", glass=False)            # e.g. General's own "Translucent glass"
+        w.select("dock")
+        settle(100)
+        self.assertFalse(self.switch(w, "dock", "Translucent glass").get_active())
+        w.destroy()
+
+    def test_slider_writes_are_coalesced(self):
+        """Dragging a slider started a thread (wpctl / Wayfire write) per
+        step, out of order: the last value could lose."""
+        import threading
+        import time
+        done, lock = [], threading.Lock()
+
+        def slow(v):
+            time.sleep(0.05)
+            with lock:
+                done.append(v)
+        w = self.window()
+        for v in range(30):
+            w._latest("k", slow, v)
+        settle(600)
+        self.assertLessEqual(len(done), 3)
+        self.assertEqual(done[-1], 29)
+        w.destroy()
+
+    def test_wayfire_writes_do_not_lose_each_other(self):
+        """Writes from several threads (Reduce motion's two keys, title bar
+        colours, sliders) dropped each other's change in wayfire.ini."""
+        import threading
+        from sonata2 import wfconfig
+        path = os.path.join(_home, "wf-audit.ini")
+        with patched(wfconfig, _wayfire_files=lambda: [path], _wayfire_read_files=lambda: [path]):
+            ts = [threading.Thread(target=wfconfig.wayfire_set, args=("audit", f"k{i}", i)) for i in range(40)]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join()
+            for i in range(40):
+                self.assertEqual(wfconfig.wayfire_get("audit", f"k{i}"), str(i))
+
+    def test_slider_rows_line_up(self):
+        """Sliders started wherever their title ended (they filled the row):
+        now one width, so both edges line up across rows."""
+        a = self.st.slider_row("Size", 50, 0, 100, lambda _v: None)
+        b = self.st.slider_row("Key Repeat", 50, 0, 100, lambda _v: None, ends=("Slow", "Fast"))
+        for r in (a, b):
+            self.assertEqual(r.slider.get_size_request()[0], self.st.SLIDER_W)
+            self.assertFalse(r.slider.compute_expand(Gtk.Orientation.HORIZONTAL))
+        self.assertFalse(b.slider.get_parent().compute_expand(Gtk.Orientation.HORIZONTAL))
+
+    def test_empty_groups_hidden(self):
+        """Sound showed an empty "Output" heading without devices, Bluetooth
+        an empty "My Devices" without an adapter, Date & Time a blank gap."""
+        S = self.st.system
+        with patched(S, volume=lambda: None, bluetooth_state=lambda: None, ntp=lambda: None,
+                     timezone=lambda: "UTC", timezones=lambda: []):
+            w = self.window()
+            for sid in ("sound", "bluetooth", "datetime"):
+                w.select(sid)
+            settle(500)
+            groups = {g.get_title(): g for sid in ("sound", "bluetooth")
+                      for g in rows_of(w.pages[sid], Adw.PreferencesGroup)}
+            self.assertFalse(groups["Output"].get_visible())
+            self.assertFalse(groups["My Devices"].get_visible())
+            first = rows_of(w.pages["datetime"], Adw.PreferencesGroup)[0]
+            self.assertFalse(first.get_visible())
+            w.destroy()
+
+    def test_bluetooth_does_not_claim_discoverable(self):
+        """The Bluetooth switch said "discoverable while Settings is open";
+        nothing made it so."""
+        src = pathlib.Path(self.st.__file__).read_text()
+        self.assertNotIn("discoverable while", src)
+
+    def test_slow_reads_off_the_main_loop(self):
+        """General (xdg-settings default browser) and Sharing (hostnamectl)
+        blocked the window while building; title bars were written on the
+        main loop too."""
+        import threading
+        S = self.st.system
+        seen = []
+
+        def browser():
+            seen.append(threading.current_thread() is threading.main_thread())
+            return ""
+
+        def name():
+            seen.append(threading.current_thread() is threading.main_thread())
+            return "demo"
+        with patched(S, default_browser=browser, computer_name=name):
+            w = self.window()
+            w.select("appearance")
+            w.select("sharing")
+            settle(400)
+            w.destroy()
+        self.assertTrue(seen)
+        self.assertNotIn(True, seen)
+        src = pathlib.Path(self.st.__file__).read_text()
+        self.assertNotIn('fromlist=["apply"]).apply(on)', src)
+
+    def test_display_scale_shows_nearest(self):
+        """A 1.75 scale showed "100 %" (not in the list)."""
+        opts = [(1.0, "100 %"), (1.25, "125 %"), (1.5, "150 %"), (2.0, "200 %")]
+        self.assertEqual(self.st.nearest(opts, 1.8), 2.0)
+        self.assertEqual(self.st.nearest(opts, 1.3), 1.25)
+
+    def test_about_values_and_wallpaper_frame(self):
+        """About's values were caption-size (tiny next to their titles); an
+        empty wallpaper preview was an invisible 180 px gap."""
+        src = pathlib.Path(self.st.__file__).read_text()
+        self.assertIn("background", rule(src, ".st-wall"))
+        self.assertIn('css_classes=["st-value"]', src)
+
+    def test_clear_recent_items_is_a_push_button(self):
+        """"Clear Recent Items" was a whole row with a broom glyph (Adwaita
+        look); macOS uses a push button."""
+        w = self.window("privacy")
+        w.select("privacy")
+        settle(100)
+        labels = [b.get_label() for b in rows_of(w.pages["privacy"], Gtk.Button) if "sonata-button" in b.get_css_classes()]
+        self.assertIn("Clear", labels)
+        w.destroy()
+
 if __name__ == "__main__":
     unittest.main()

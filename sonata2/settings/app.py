@@ -13,6 +13,7 @@ The sidebar keeps Vini's split:
 `python3 -m sonata2 settings [--page ID]`."""
 import os
 import shutil
+import time
 
 import gi
 
@@ -68,6 +69,16 @@ KEYWORDS = {
     "about": "computer system version restart sonata",
 }
 
+# Sections showing Sonata/desktop settings other places change too (Control
+# Center, the menu bar, the Setup Assistant, another section here): built
+# again when shown if one of these files changed since (no stale switches).
+PAGE_CONFIGS = {
+    "sound": ("sounds",), "displays": ("displays", "nightshift"), "wallpaper": ("system",),
+    "datetime": ("topbar",), "notifications": ("notifications",), "privacy": ("security", "system"),
+    "accessibility": ("appearance", "system"), "appearance": ("appearance", "dock", "system"),
+    "dock": ("dock", "system"), "menubar": ("topbar",),
+}
+
 _ACCENT_CSS = "".join(f".st-accent.{n} {{ background: {c[0]}; }}\n" for n, c in ui.tokens.ACCENTS.items())
 ui.register(_ACCENT_CSS + """
 button.st-accent { min-width: 16px; min-height: 16px; padding: 0; margin: 0 3px; border-radius: 99px; border: none;
@@ -107,7 +118,8 @@ entry.st-search, .st-search { margin: 0 10px 6px 10px; min-height: 26px; border-
 .st-about-name { font-family: %(font_display)s; font-weight: 700; font-size: 26px; color: %(label)s; }
 .st-caption { color: %(label_secondary)s; font-size: %(text_small)s; }
 textview.st-log, textview.st-log text { background: transparent; font-family: %(font_mono)s; font-size: %(text_small)s; }
-.st-wall { border-radius: 10px; }
+.st-wall { border-radius: 10px; background: alpha(%(label)s, 0.06); }   /* an empty frame shows too */
+.st-value { color: %(label_secondary)s; }        /* a row's value (About), body size like macOS */
 """, key="settings")
 
 
@@ -202,34 +214,68 @@ def badge(icon, color, big=False) -> Gtk.Box:
     return box
 
 
+SLIDER_W = 240          # every slider row's slider: same width, same leading edge (macOS)
+
+
 def group(title="", description="") -> Adw.PreferencesGroup:
-    return Adw.PreferencesGroup(title=title, description=description)
+    # titles/descriptions are markup: "Point & Click" would come out blank
+    return Adw.PreferencesGroup(title=GLib.markup_escape_text(title),
+                                description=GLib.markup_escape_text(description))
 
 
 def switch_row(title, active, on_change, subtitle="") -> Adw.SwitchRow:
-    row = Adw.SwitchRow(title=title, subtitle=subtitle, active=bool(active))
-    row.connect("notify::active", lambda r, _p: on_change(r.get_active()))
+    # plain text: app, device and network names may hold "&" or "<"
+    row = Adw.SwitchRow(title=title, subtitle=subtitle, active=bool(active), use_markup=False)
+    row.connect("notify::active", lambda r, _p: getattr(r, "quiet", False) or on_change(r.get_active()))
     return row
 
 
 def combo_row(title, options, selected, on_change, subtitle="") -> Adw.ComboRow:
     """options: [(value, label)]"""
-    row = Adw.ComboRow(title=title, subtitle=subtitle, model=Gtk.StringList.new([o[1] for o in options]))
+    row = Adw.ComboRow(title=title, subtitle=subtitle, model=Gtk.StringList.new([o[1] for o in options]),
+                       use_markup=False)
     values = [o[0] for o in options]
+    row.values = values
     row.set_selected(values.index(selected) if selected in values else 0)
-    row.connect("notify::selected", lambda r, _p: on_change(values[r.get_selected()]))
+    row.connect("notify::selected", lambda r, _p: getattr(r, "quiet", False) or on_change(values[r.get_selected()]))
     return row
+
+
+def show_quietly(row, value) -> None:
+    """Show a state read back from the system on a switch/combo row without
+    writing it back (its on_change doesn't run)."""
+    row.quiet = True
+    try:
+        if isinstance(row, Adw.ComboRow):
+            if value in row.values:
+                row.set_selected(row.values.index(value))
+        else:
+            row.set_active(bool(value))
+    finally:
+        row.quiet = False
+
+
+def nearest(options, value):
+    """The option value closest to a number read from the system (1.75 -> 2.0)."""
+    return min((o[0] for o in options), key=lambda v: abs(v - value))
+
+
+def clock_format(date: bool, h24: bool) -> str:
+    """The menu bar clock format for Date & Time's two switches."""
+    return ("%a %-d %b  " if date else "%a ") + ("%H:%M" if h24 else "%-I:%M %p")
 
 
 def slider_row(title, value, lower, upper, on_change, subtitle="", ends=None, default=None) -> Adw.ActionRow:
     """ends=("Slow", "Fast"): small labels under the slider's ends (macOS).
     default: a double-click on the slider resets it to this value."""
-    row = Adw.ActionRow(title=title, subtitle=subtitle)
+    row = Adw.ActionRow(title=title, subtitle=subtitle, use_markup=False)
     s = ui.controls.slider(value, on_change, lower=lower, upper=upper, default=default)
-    s.set_size_request(220, -1)
+    s.set_size_request(SLIDER_W, -1)
+    s.set_hexpand(False)                  # fixed width: the trailing edge lines up with the other controls
     s.set_valign(Gtk.Align.CENTER)
     if ends:
-        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER, margin_top=4, margin_bottom=4)
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER, margin_top=4, margin_bottom=4,
+                      hexpand=False)          # set: the labels' hexpand would widen it past SLIDER_W
         col.append(s)
         labels = Gtk.Box()
         labels.append(Gtk.Label(label=ends[0], css_classes=["st-caption"], hexpand=True, xalign=0))
@@ -279,6 +325,8 @@ class Settings(Adw.ApplicationWindow):
         self.toasts.set_child(self.split)
         self.set_content(self.toasts)
         self.pages = {}
+        self.built = {}                  # section -> time.time() it was built (PAGE_CONFIGS)
+        self._jobs = {}                  # _latest(): key -> [busy, pending args]
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._key)
         self.add_controller(keys)
@@ -382,6 +430,8 @@ class Settings(Adw.ApplicationWindow):
         if not from_sidebar:
             self.listbox.select_row(self.rows[sid])
             return
+        if sid != self.current and sid in self.pages and self._stale(sid):
+            self.content.remove(self.pages.pop(sid))
         if sid not in self.pages:
             title = next(s[1] for s in SECTIONS if s[0] == sid)
             page = Adw.PreferencesPage()
@@ -394,6 +444,7 @@ class Settings(Adw.ApplicationWindow):
             tv.add_top_bar(hb)
             tv.set_content(page)
             self.pages[sid] = tv
+            self.built[sid] = time.time()
             self.content.add_named(tv, sid)
         if self.current == "hidden" and sid != "hidden" and "hidden" in self.pages:
             old = self.pages.pop("hidden")          # Hidden & Protected Apps locks again
@@ -403,6 +454,32 @@ class Settings(Adw.ApplicationWindow):
         self.current = sid
         self.content.set_visible_child(self.pages[sid])
         self.fade.play()
+
+    def _stale(self, sid) -> bool:
+        """A config file the section shows changed after it was built."""
+        for name in PAGE_CONFIGS.get(sid, ()):
+            try:
+                if os.stat(os.path.join(config.CONFIG_DIR, name + ".json")).st_mtime > self.built.get(sid, 0):
+                    return True
+            except OSError:
+                continue
+        return False
+
+    def _latest(self, key, fn, *args) -> None:
+        """fn(*args) off the main loop, one at a time per key; while one runs
+        only the newest call waits (a slider drag: no pile of threads, and
+        the last value is the one that stays)."""
+        job = self._jobs.setdefault(key, [False, None])
+        if job[0]:
+            job[1] = args
+            return
+        job[0] = True
+
+        def done(_res):
+            job[0], nxt, job[1] = False, job[1], None
+            if nxt is not None:
+                self._latest(key, fn, *nxt)
+        system.run_async(fn, done, *args)
 
     def _async_rows(self, grp, work, fill) -> None:
         """Fill `grp` from work() (threaded); a placeholder while loading."""
@@ -497,12 +574,12 @@ class Settings(Adw.ApplicationWindow):
 
         def fill(res):
             enabled, networks = res or (False, [])
-            self._wifi_switch.set_active(enabled)
+            show_quietly(self._wifi_switch, enabled)       # read back: no second `nmcli radio wifi`
             for r in self._wifi_rows:
                 self._wifi_nets.remove(r)
             self._wifi_rows = []
             for n in networks[:20]:
-                row = Adw.ActionRow(title=n.ssid, activatable=not n.connected,
+                row = Adw.ActionRow(title=n.ssid, activatable=not n.connected, use_markup=False,
                                     subtitle="Connected" if n.connected else "")
                 sig = "excellent" if n.signal > 75 else "good" if n.signal > 50 else "ok" if n.signal > 25 else "weak"
                 if n.secure:
@@ -543,17 +620,19 @@ class Settings(Adw.ApplicationWindow):
             state, devices = res or (None, [])
             if state is None:
                 top.add(Adw.ActionRow(title="Bluetooth", subtitle="No Bluetooth adapter found"))
+                devs.set_visible(False)
                 return
-            top.add(switch_row("Bluetooth", state,
-                               lambda on: system.run_async(system.set_bluetooth, None, on),
-                               subtitle="This computer is discoverable while Bluetooth Settings is open"))
+            # (not made discoverable: pairing new devices isn't done here)
+            top.add(switch_row("Bluetooth", state, lambda on: system.run_async(
+                system.set_bluetooth, lambda _ok: self._reload_page("bluetooth"), on)))
             for d in devices:
-                row = Adw.ActionRow(title=d.name, subtitle="Connected" if d.connected else
+                row = Adw.ActionRow(title=d.name, use_markup=False, subtitle="Connected" if d.connected else
                                     ("Not Connected" if d.paired else "Not Paired"))
                 btn = Gtk.Button(label="Disconnect" if d.connected else "Connect", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
-                btn.connect("clicked", lambda b, d=d: system.run_async(
-                    system.bluetooth_connect, lambda ok: self.toast(("Done" if ok else "That didn't work")),
-                    d.mac, not d.connected))
+                btn.connect("clicked", lambda b, d=d: (b.set_sensitive(False), system.run_async(
+                    system.bluetooth_connect, lambda ok: (self.toast("Done" if ok else "That didn't work"),
+                                                          self._reload_page("bluetooth")),
+                    d.mac, not d.connected)))
                 row.add_suffix(btn)
                 devs.add(row)
             if not devices:
@@ -569,13 +648,14 @@ class Settings(Adw.ApplicationWindow):
             v, sinks, sources, mic = res or (None, [], [], None)
             if v is None:
                 vol.add(Adw.ActionRow(title="Output volume", subtitle="PipeWire (wpctl) not found"))
+                out.set_visible(False)
                 return
             vol.add(slider_row("Output volume", v[0], 0, 100,
-                               lambda x: system.run_async(system.set_volume, None, int(x))))
+                               lambda x: self._latest("volume", system.set_volume, int(x))))
             vol.add(switch_row("Mute", v[1], lambda on: system.run_async(system.set_volume, None, None, on)))
             if mic is not None:
                 vol.add(slider_row("Input volume", mic[0], 0, 100,
-                                   lambda x: system.run_async(system.set_input_volume, None, int(x))))
+                                   lambda x: self._latest("mic", system.set_input_volume, int(x))))
             options = [(s.key, s.name) for s in sinks]
             if options:
                 cur = next((s.key for s in sinks if s.default), options[0][0])
@@ -586,6 +666,7 @@ class Settings(Adw.ApplicationWindow):
                 cur = next((s.key for s in sources if s.default), ins[0][0])
                 out.add(combo_row("Input device", ins, cur,
                                   lambda k: system.run_async(system.select_input, None, k)))
+            out.set_visible(bool(options or ins))
         eq = group("Equalizer", "Each output keeps its own settings")
 
         def fill_eq(sinks):
@@ -706,7 +787,7 @@ class Settings(Adw.ApplicationWindow):
             b, ds = res or (None, [])
             if b is not None:
                 bright.add(slider_row("Brightness", b, 5, 100,
-                                      lambda x: system.run_async(system.set_brightness, None, int(x))))
+                                      lambda x: self._latest("brightness", system.set_brightness, int(x))))
             else:
                 bright.add(Adw.ActionRow(title="Brightness", subtitle="No backlight control (brightnessctl)"))
             if len(ds) > 1:
@@ -724,8 +805,8 @@ class Settings(Adw.ApplicationWindow):
                 screens.add(combo_row(d.name, opts, saved if saved in [o[0] for o in opts] else d.current,
                                       lambda m, d=d: system.run_async(system.set_display_mode, None, d.name, m),
                                       subtitle=d.description))
-                screens.add(combo_row("Scale", [(1.0, "100 %"), (1.25, "125 %"), (1.5, "150 %"), (2.0, "200 %")],
-                                      d.scale, lambda s, d=d: system.run_async(system.set_display_scale, None,
+                scales = [(1.0, "100 %"), (1.25, "125 %"), (1.5, "150 %"), (2.0, "200 %")]
+                screens.add(combo_row("Scale", scales, nearest(scales, d.scale), lambda s, d=d: system.run_async(system.set_display_scale, None,
                                                                                d.name, s)))
             if not ds:
                 screens.add(Adw.ActionRow(title="Displays", subtitle="wlr-randr not found or no outputs"))
@@ -833,7 +914,7 @@ class Settings(Adw.ApplicationWindow):
 
     # -- input (Wayfire [input]; applied live) --------------------------------------------------
     def _wf(self, key, value):
-        system.run_async(system.wayfire_set, None, "input", key, value)
+        self._latest(("input", key), system.wayfire_set, "input", key, value)
 
     def _page_keyboard(self):
         get = system.wayfire_get
@@ -926,6 +1007,7 @@ class Settings(Adw.ApplicationWindow):
 
         def fill(res):
             on, cur, zones = res or (None, "UTC", [])
+            auto.set_visible(on is not None)
             if on is not None:
                 auto.add(switch_row("Set date and time automatically", on,
                                     lambda v: system.run_async(system.set_ntp, lambda ok: ok or self.toast(
@@ -939,14 +1021,14 @@ class Settings(Adw.ApplicationWindow):
             else:
                 zone.add(Adw.ActionRow(title="Time zone", subtitle=cur))
         system.run_async(lambda: (system.ntp(), system.timezone(), system.timezones()), fill)
-        cfg = config.load("topbar", T.DEFAULTS)
-        h24 = "%H" in cfg["clock_format"]
-        clock.add(switch_row("Use a 24-hour clock", h24, lambda on: self._save(
-            "topbar", "clock_format", cfg["clock_format"].replace("%-I:%M %p", "%H:%M") if on
-            else cfg["clock_format"].replace("%H:%M", "%-I:%M %p"))))
-        clock.add(switch_row("Show the date", "%d" in cfg["clock_format"], lambda on: self._save(
-            "topbar", "clock_format", ("%a %-d %b  " if on else "%a ") + ("%H:%M" if "%H" in config.load(
-                "topbar", T.DEFAULTS)["clock_format"] else "%-I:%M %p"))))
+        fmt = config.load("topbar", T.DEFAULTS)["clock_format"]
+
+        def set_clock(date=None, h24=None):
+            cur = config.load("topbar", T.DEFAULTS)["clock_format"]      # now, not when the page was built
+            self._save("topbar", "clock_format", clock_format("%d" in cur if date is None else date,
+                                                              "%H" in cur if h24 is None else h24))
+        clock.add(switch_row("Use a 24-hour clock", "%H" in fmt, lambda on: set_clock(h24=on)))
+        clock.add(switch_row("Show the date", "%d" in fmt, lambda on: set_clock(date=on)))
         return [auto, zone, clock]
 
     def _page_users(self):
@@ -983,9 +1065,10 @@ class Settings(Adw.ApplicationWindow):
                 others.add(row)
         system.run_async(U.users, fill)
         items = group("Login Items", "These apps open automatically when you log in.")
-        for name, title, enabled in _login_items():
+        login = _login_items()
+        for name, title, enabled in login:
             items.add(switch_row(title, enabled, lambda on, n=name: _set_login_item(n, on)))
-        if not _login_items():
+        if not login:
             items.add(Adw.ActionRow(title="No login items", subtitle="Use Options > Open at Login in the Dock"))
         return [me, others, items]
 
@@ -1429,8 +1512,9 @@ class Settings(Adw.ApplicationWindow):
         priv.add(switch_row("Remember recent files", rec != "false",
                             lambda on: system.set_gsetting(P, "remember-recent-files", "true" if on else "false"),
                             subtitle="Recents in Files and the Open dialogs"))
-        clear = Adw.ActionRow(title="Clear Recent Items", activatable=True)
-        clear.add_suffix(Gtk.Image(icon_name="edit-clear-all-symbolic"))
+        clear = Adw.ActionRow(title="Recent items", subtitle="Forget the files opened recently")
+        clear_btn = Gtk.Button(label="Clear", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+        clear.add_suffix(clear_btn)
 
         def do_clear(*_):
             try:
@@ -1438,7 +1522,7 @@ class Settings(Adw.ApplicationWindow):
                 self.toast("Recent items cleared")
             except GLib.Error:
                 pass
-        clear.connect("activated", do_clear)
+        clear_btn.connect("clicked", do_clear)
         priv.add(clear)
         trash = system.gsetting(P, "remove-old-trash-files")
         priv.add(switch_row("Remove items from the Trash after 30 days", trash == "true",
@@ -1484,7 +1568,8 @@ class Settings(Adw.ApplicationWindow):
     def _page_sharing(self):
         g = group()
         entry = Adw.EntryRow(title="Computer Name", show_apply_button=True)
-        entry.set_text(system.computer_name())
+        entry.set_text(GLib.get_host_name())
+        system.run_async(system.computer_name, lambda n: n and entry.set_text(n))    # hostnamectl: off the main loop
         entry.connect("apply", lambda e: system.run_async(
             system.set_computer_name, lambda ok: self.toast("Computer name changed" if ok else
                                                             "Couldn't change the name"), e.get_text().strip()))
@@ -1560,11 +1645,12 @@ class Settings(Adw.ApplicationWindow):
         browsers = [(a.get_id(), a.get_display_name()) for a in Gio.AppInfo.get_all_for_type("x-scheme-handler/https")
                     if a.get_id()]
         if browsers:
-            cur = system.default_browser()
-            if cur not in [b[0] for b in browsers]:
-                cur = browsers[0][0]
-            g.add(combo_row("Default web browser", browsers, cur,
-                            lambda v: system.run_async(system.set_default_browser, None, v)))
+            # xdg-settings is a slow shell script: read it off the main loop
+            row = combo_row("Default web browser", browsers, browsers[0][0],
+                            lambda v: system.run_async(system.set_default_browser, None, v))
+            row.set_sensitive(False)
+            g.add(row)
+            system.run_async(system.default_browser, lambda cur: (show_quietly(row, cur), row.set_sensitive(True)))
         g.add(self._accent_row())
         s = group("Sonata")
         app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
@@ -1583,7 +1669,8 @@ class Settings(Adw.ApplicationWindow):
                         subtitle="Where the Apple logo is on a Mac"))
         s.add(switch_row("Sonata title bars for all apps", app["system_titlebars"],
                          lambda on: (self._save("appearance", "system_titlebars", on),
-                                     __import__("sonata2.titlebars", fromlist=["apply"]).apply(on),
+                                     system.run_async(__import__("sonata2.titlebars", fromlist=["apply"]).apply,
+                                                      None, on),
                                      self.toast("Apps pick it up when they open again")),
                          subtitle="Chrome, VS Code and others use Sonata's title bar instead of their own"))
         gen = Adw.ActionRow(title="App icons made by Sonata",
@@ -1662,7 +1749,8 @@ class Settings(Adw.ApplicationWindow):
         g.add(switch_row("Show battery percentage", cfg["battery_percent"],
                          lambda on: self._save("topbar", "battery_percent", on)))
         g.add(combo_row("Clock", [("%a %-d %b  %H:%M", "Mon 28 Sep  21:41"), ("%a %H:%M", "Mon 21:41"),
-                                  ("%a %-d %b  %-I:%M %p", "Mon 28 Sep  9:41 PM"), ("%H:%M", "21:41")],
+                                  ("%a %-d %b  %-I:%M %p", "Mon 28 Sep  9:41 PM"), ("%a %-I:%M %p", "Mon 9:41 PM"),
+                                  ("%H:%M", "21:41")],
                         cfg["clock_format"], lambda v: self._save("topbar", "clock_format", v)))
         g.add(switch_row("Show Bluetooth in menu bar", cfg["show_bluetooth"],
                          lambda on: self._save("topbar", "show_bluetooth", on)))
@@ -1746,7 +1834,7 @@ class Settings(Adw.ApplicationWindow):
         h = group("Hidden apps", "In the Hidden folder in Launchpad (opened with your password).")
         for did in hidden:
             info = installed[did]
-            r = Adw.ActionRow(title=info.get_display_name())
+            r = Adw.ActionRow(title=info.get_display_name(), use_markup=False)
             img = Gtk.Image(pixel_size=32)
             icons.set_image(img, icons.app_icon(info))
             r.add_prefix(img)
@@ -1852,7 +1940,7 @@ class Settings(Adw.ApplicationWindow):
             for k, v in (("Computer", a.machine), ("Processor", a.cpu), ("Memory", f"{a.memory_gb} GB"),
                          ("Graphics", ", ".join(a.gpus) or "—"), ("Kernel", a.kernel)):
                 row = Adw.ActionRow(title=k)
-                row.add_suffix(Gtk.Label(label=v, css_classes=["st-caption"], ellipsize=Pango.EllipsizeMode.END,
+                row.add_suffix(Gtk.Label(label=v, css_classes=["st-value"], ellipsize=Pango.EllipsizeMode.END,
                                          max_width_chars=40))
                 specs.add(row)
         system.run_async(system.about, fill)

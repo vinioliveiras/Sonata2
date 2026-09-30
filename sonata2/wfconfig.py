@@ -1,7 +1,13 @@
 """Wayfire options Sonata changes (Settings: keyboard, trackpad, title bar
 colours...). No GTK here: tools/wayfire-config.sh uses it at login."""
 import os
+import threading
 from typing import List
+
+# Settings writes from worker threads (sliders, title bar colours: several
+# keys at once); each write is read-modify-write of the whole file, so two at
+# a time would drop each other's change or read a half-written file.
+_LOCK = threading.Lock()
 
 
 def _wayfire_files() -> List[str]:
@@ -42,9 +48,15 @@ def wayfire_get(section: str, key: str, default: str = "") -> str:
 
 def wayfire_set(section: str, key: str, value) -> bool:
     """Set `key = value` in [section] of the session's Wayfire config(s);
-    Wayfire applies it at once. Comments and other lines stay as they are."""
+    Wayfire applies it at once. Comments and other lines stay as they are.
+    Thread-safe (one writer at a time)."""
     if isinstance(value, bool):
         value = "true" if value else "false"
+    with _LOCK:
+        return _set(section, key, value)
+
+
+def _set(section: str, key: str, value) -> bool:
     ok = False
     for path in _wayfire_files():
         try:
