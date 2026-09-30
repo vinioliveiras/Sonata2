@@ -187,7 +187,7 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         self.stack.add_named(self._build_detail(), "detail")
         self.stack.add_named(Gtk.Label(label="No Selection", css_classes=["du-empty"]), "empty")
         self.stack.add_named(self._build_missing(), "missing")
-        self.stack.add_named(ui.progress.spinner(), "loading")
+        self.stack.add_named(ui.progress.spinner(size=32), "loading")
         self.stack.set_visible_child_name("loading")
         self.paned = Gtk.Paned(start_child=self.sidebar, end_child=self.stack, shrink_start_child=False,
                                resize_start_child=False, position=220, vexpand=True, css_classes=["du-paned"])

@@ -288,9 +288,36 @@ def _rgba(spec):
     return c
 
 
+# Icons drawn in two versions, one per appearance (macOS: the Trash and
+# Launchpad follow Light/Dark): name -> (Light name, Dark name)
+APPEARANCE_VARIANTS = {"user-trash": ("user-trash", "user-trash-dark"),
+                       "user-trash-full": ("user-trash-full", "user-trash-full-dark"),
+                       "sonata-launchpad": ("sonata-launchpad-light", "sonata-launchpad")}
+
+
+def _dark() -> bool:
+    try:
+        gi.require_version("Adw", "1")
+        from gi.repository import Adw
+        return Adw.StyleManager.get_default().get_dark()
+    except (ValueError, ImportError):
+        return False
+
+
+def for_appearance(gicon):
+    """`gicon` in the current appearance's version (see APPEARANCE_VARIANTS)."""
+    if isinstance(gicon, Gio.ThemedIcon):
+        names = gicon.get_names()
+        pair = APPEARANCE_VARIANTS.get(names[0]) if names else None
+        if pair:
+            return Gio.ThemedIcon.new(pair[1] if _dark() else pair[0])
+    return gicon
+
+
 def set_image(image: Gtk.Image, gicon) -> None:
     """Show `gicon` from Sonata's theme, or from the system theme if only
     that one has it (apps from app_icon() without artwork: on the plate)."""
+    gicon = for_appearance(gicon)
     size = image.get_pixel_size() if image.get_pixel_size() > 0 else 48
     if gicon.to_string() in _plated:
         image.set_from_paintable(paintable(image, gicon, size))
@@ -465,6 +492,7 @@ def _lookup(widget, gicon, size):
 
 
 def _resolve(display, scale, gicon, size):
+    gicon = for_appearance(gicon)
     theme = Gtk.IconTheme.get_for_display(display)
     if _system is not None and not theme.has_gicon(gicon) and _system.has_gicon(gicon):
         theme = _system

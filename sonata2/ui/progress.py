@@ -54,8 +54,11 @@ def bar(fraction=None) -> Gtk.ProgressBar:
     return b
 
 
-def spinner(spinning=True) -> Gtk.Spinner:
-    return Gtk.Spinner(spinning=spinning, css_classes=["sonata-spinner"])
+def spinner(spinning=True, size=16) -> Gtk.Spinner:
+    """A small spinner, centred where it is put (a stack or a box would
+    otherwise stretch it over the whole page)."""
+    return Gtk.Spinner(spinning=spinning, css_classes=["sonata-spinner"], width_request=size,
+                       height_request=size, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
 
 
 def meter(fraction: float) -> Gtk.ProgressBar:

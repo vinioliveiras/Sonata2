@@ -1481,7 +1481,7 @@ def music_desktop_file(command: str) -> str:
     from ..apps import write_desktop_file
     return write_desktop_file(APP_ID + ".desktop",
                               "[Desktop Entry]\nType=Application\nName=Music\nComment=Play your music library\n"
-                              "Icon=audio-player\nCategories=AudioVideo;Audio;Player;\n"
+                              "Icon=gnome-music\nCategories=AudioVideo;Audio;Player;\n"
                               "Keywords=music;songs;albums;playlist;itunes;\n"
                               "MimeType=" + "".join(t + ";" for t in MIME_TYPES) + "\n"
                               "StartupNotify=true\n"

@@ -19,6 +19,34 @@ doesn't need GNOME or KDE.
 > History (decisions, bugs, root causes): [DEVLOG.md](DEVLOG.md).
 > Roadmap: [ROADMAP.md](ROADMAP.md). This README describes the current state.
 
+![The Sonata desktop: menu bar, desktop icons and the Dock](docs/screenshots/desktop.png)
+<sub>The desktop: menu bar, desktop icons and the Dock ([in Dark Mode](docs/screenshots/desktop-dark.png)).</sub>
+
+![Launchpad: every app in a grid over the blurred desktop](docs/screenshots/launchpad.png)
+<sub>**Launchpad**: every app over the blurred desktop, with search, pages and folders.</sub>
+
+![Control Center open under the menu bar](docs/screenshots/controlcenter.png)
+<sub>**Control Center**: Wi-Fi, Bluetooth, Dark Mode, display and sound, Now Playing.</sub>
+
+![Files zoomed between the menu bar and the Dock](docs/screenshots/files-full.png)
+<sub>**Files** with tabs; the menu bar follows the app in front.</sub>
+
+![System Settings on the desktop](docs/screenshots/settings-full.png)
+<sub>**System Settings**: Sonata's own settings and the Linux ones, side by side.</sub>
+
+| | |
+|---|---|
+| ![Files, icon view with two tabs](docs/screenshots/files.png)<br>**Files**: icon view, tabs | ![Files in Dark Mode](docs/screenshots/files-dark.png)<br>**Files** in Dark Mode |
+| ![Notes with a checklist](docs/screenshots/notes.png)<br>**Notes** | ![Notes in Dark Mode](docs/screenshots/notes-dark.png)<br>**Notes** in Dark Mode |
+| ![Reminders: the Today list](docs/screenshots/reminders.png)<br>**Reminders**, in the Notes window | ![Calendar, month view](docs/screenshots/calendar.png)<br>**Calendar**: month view |
+| ![Music, albums view](docs/screenshots/music.png)<br>**Music**: albums | ![Music in Dark Mode](docs/screenshots/music-dark.png)<br>**Music** in Dark Mode |
+| ![Task Manager, Processes page](docs/screenshots/taskmanager.png)<br>**Task Manager**: processes | ![Task Manager, Performance page](docs/screenshots/taskmanager-performance.png)<br>**Task Manager**: performance |
+| ![Task Manager in Dark Mode](docs/screenshots/taskmanager-dark.png)<br>**Task Manager** in Dark Mode | ![Disk Manager](docs/screenshots/diskmanager.png)<br>**Disk Manager** |
+| ![TextEdit with three tabs](docs/screenshots/textedit.png)<br>**TextEdit**: tabs | ![Preview with the thumbnail sidebar](docs/screenshots/preview.png)<br>**Preview**: thumbnails |
+| ![Settings, General page](docs/screenshots/settings.png)<br>**Settings**: General | ![Calculator](docs/screenshots/calculator.png)<br>**Calculator** |
+
+<sub>Screenshots use invented demo data; `tools/readme-shots.py` makes them.</sub>
+
 ---
 
 ## Contents
@@ -166,7 +194,7 @@ New apps appear as soon as they're installed.
 **Search.** Apps, files and settings (Super+Space).
 
 **Files.**
-- Icons, list and columns views, with Quick Look (Space), Get Info
+- Icons, list and columns views, tabs, with Quick Look (Space), Get Info
   and live updates.
 - Recents, Applications, pinned folders (drag a folder between two
   Favorites) and drives with capacity.
@@ -186,12 +214,27 @@ New apps appear as soon as they're installed.
 
 **Sonata's own apps.** No GNOME apps needed for the everyday things:
 - Calculator: the macOS Basic calculator, with the keyboard, copy and paste.
-- TextEdit: plain text, with find, text size, and an "Edited" title until
-  you save.
-- Preview: pictures, with zoom (pinch, Ctrl+wheel), next/previous in the
-  folder, rotate and full screen.
-- Terminal: your shell, with the macOS "Basic" colours in light and dark.
-  It needs VTE for GTK 4 (`vte4`; install.sh adds it).
+- TextEdit: plain text in tabs, with find, text size, encodings and line
+  endings kept, syntax highlighting (with GtkSourceView), and nothing lost
+  on quit: open tabs and unsaved text come back.
+- Preview: pictures, with a thumbnail sidebar, zoom (pinch, Ctrl+wheel),
+  rotate, crop, colour adjustments, slideshow and full screen.
+- Terminal: your shell in tabs, with the macOS "Basic" colours in light
+  and dark. It needs VTE for GTK 4 (`vte4`; install.sh adds it).
+- Notes, with Reminders in the same window: folders, pinned notes,
+  checklists and formatting; reminder lists with Today, Scheduled, due
+  dates, flags and alerts.
+- Calendar: local calendars in Day, Week, Month and Year views, with
+  repeating events, alerts and .ics import.
+- Music: the library in ~/Music, with albums, artists, songs, playlists,
+  Up Next and media keys (MPRIS).
+- Videos: a QuickTime-style player, with a floating control bar, and
+  every movie resumes where you left it.
+- Task Manager: processes grouped by app, performance graphs (CPU,
+  memory, disks, network, GPU), app history, startup apps, users and
+  services.
+- Disk Manager: disks and volumes through UDisks: mount, unmount, eject,
+  rename, erase, First Aid, encrypted volumes.
 - Open and Save panels for every app (through the file chooser portal).
 
 **Mission Control.** F3 or Ctrl+Up lays out the windows over the blurred,
@@ -315,6 +358,7 @@ sonata2 restart [dock topbar ...]        # reload shell parts after editing
 python3 -m sonata2 dock --preview        # a component in a normal window
 tools/wl-preview.sh dock --dark          # screenshot in a headless compositor -> screenshots/
 tools/dev-session.sh                     # the whole shell in a Wayfire window
+xvfb-run -a -s "-screen 0 1920x1200x24" python3 tools/readme-shots.py   # README screenshots (demo data) -> docs/screenshots/
 ```
 
 - **Tests without a display**: `python3 -m unittest tests.test_launchpad_model

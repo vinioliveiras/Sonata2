@@ -25,7 +25,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 gi.require_version("Graphene", "1.0")
-from gi.repository import Gdk, Gio, GLib, Graphene, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
 
@@ -51,10 +51,6 @@ WATCHER_XML = """<node><interface name="org.kde.StatusNotifierWatcher">
 # The spec's signals are StatusNotifierItemRegistered/-Unregistered (what
 # every host and item listens for); "ItemRegistered" in the brief means them.
 
-# same spacing as the other menu extras (.topbar-item.icon); apps' icons at 16 px
-ui.register("""
-.topbar-item.tray-item > box > image { -gtk-icon-size: %(px)dpx; }
-""", key="tray", px=ICON_PX)
 
 
 def _register(conn, path, xml, call, get=None) -> int:
@@ -313,6 +309,78 @@ def _plain(markup: str) -> str:
 _search_paths = set()
 
 
+class MonoIcon(Gtk.Widget):
+    """An app's tray icon as a silhouette in the menu bar's text colour
+    (white in Dark, black in Light, like macOS menu extras): whatever colours
+    the app draws, only the shape (alpha) is kept."""
+
+    def __init__(self):
+        super().__init__(valign=Gtk.Align.CENTER, halign=Gtk.Align.CENTER)
+        self.paintable = None
+
+    def set_icon(self, ic, scale: int) -> None:
+        if ic is None:
+            ic = ("name", "application-x-executable-symbolic")
+        if ic[0] == "name":
+            theme = Gtk.IconTheme.get_for_display(self.get_display())
+            ic = ("paintable", theme.lookup_icon(ic[1], None, ICON_PX, scale, Gtk.TextDirection.NONE,
+                                                 Gtk.IconLookupFlags.FORCE_REGULAR))
+        elif isinstance(ic[1], Gdk.Texture):
+            ic = ("paintable", _silhouette(ic[1]))
+        self.paintable = ic[1]
+        self.queue_draw()
+
+    def do_measure(self, orientation, for_size):
+        return ICON_PX, ICON_PX, -1, -1
+
+    def do_snapshot(self, snap) -> None:
+        if self.paintable is None:
+            return
+        rect = Graphene.Rect().init(0, 0, ICON_PX, ICON_PX)
+        snap.push_mask(Gsk.MaskMode.ALPHA)
+        self.paintable.snapshot(snap, ICON_PX, ICON_PX)
+        snap.pop()
+        snap.append_color(self.get_color(), rect)
+        snap.pop()
+
+def _silhouette(tex):
+    """A full-colour icon as a one-tone shape: the light details drawn on a
+    dark body (Discord's logo on its disc) become holes, like the template
+    images macOS apps give their menu extras. One-tone icons keep their
+    alpha. Returns a texture whose alpha is the shape."""
+    try:
+        d = Gdk.TextureDownloader.new(tex)
+        d.set_format(Gdk.MemoryFormat.R8G8B8A8)
+        data, stride = d.download_bytes()
+        px = data.get_data()
+    except (AttributeError, GLib.Error, TypeError):
+        return tex
+    w, h = tex.get_width(), tex.get_height()
+    lum = []
+    for y in range(h):
+        row = y * stride
+        for x in range(w):
+            i = row + x * 4
+            a = px[i + 3]
+            if a > 128:
+                lum.append((0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255)
+    if len(lum) < 8:
+        return tex
+    lum.sort()
+    lo, hi = lum[len(lum) // 10], lum[len(lum) * 9 // 10]
+    if hi - lo < 0.3:
+        return tex                                      # one tone: the alpha is the shape
+    out = bytearray(w * h * 4)
+    for y in range(h):
+        row = y * stride
+        for x in range(w):
+            i, o = row + x * 4, (y * w + x) * 4
+            l = (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255
+            k = min(1.0, max(0.0, (hi - l) / (hi - lo)))
+            out[o + 3] = int(px[i + 3] * k)
+    return Gdk.MemoryTexture.new(w, h, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(bytes(out)), w * 4)
+
+
 def _named_icon(name: str, theme_path: str):
     if name.startswith("/"):
         return _file_texture(name)
@@ -566,20 +634,14 @@ class TrayBox(Gtk.Box):
         self.set_visible(bool(keys))
 
     def _update(self, b, item) -> None:
-        img = b.get_child().get_first_child()
-        ic = item.icon(max(1, self.get_scale_factor()))
-        if ic is None:
-            img.set_from_icon_name("application-x-executable-symbolic")
-        elif ic[0] == "name":
-            img.set_from_icon_name(ic[1])
-        else:
-            img.set_from_paintable(ic[1])
+        scale = max(1, self.get_scale_factor())
+        b.get_child().get_first_child().set_icon(item.icon(scale), scale)
         b.set_tooltip_text(item.tooltip or None)
 
     def _button(self, item) -> Gtk.Button:
         b = Gtk.Button(css_classes=["topbar-item", "icon", "tray-item"], can_focus=False, valign=Gtk.Align.CENTER)
         box = Gtk.Box(valign=Gtk.Align.CENTER)
-        box.append(Gtk.Image(pixel_size=ICON_PX))
+        box.append(MonoIcon())
         b.set_child(box)
         key = item.key
         b.connect("clicked", lambda btn: self._left(btn, self.host.items.get(key)))

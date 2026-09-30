@@ -379,6 +379,9 @@ class corners_render_instance_t :
 /* A plain transformer node: no geometric transform at all, so pointer
  * input reaches the window exactly where it is drawn (view_2d_transformer_t,
  * used before, maps input through its own transform). */
+/* the top of a window that is always blurred: title bar + a toolbar */
+static const int TOP_GLASS = 96;
+
 class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
 {
     wayfire_toplevel_view view;
@@ -407,15 +410,26 @@ class corners_node_t : public wf::scene::transformer_base_node_t, public wf::sce
         }
 
         wf::regionf_t region = inner->get_opaque_region();
-        auto b = get_children_bounding_box();
-        const float c = 16;                        /* at least the corner radius */
-        for (auto corner : {wf::geometry_t{(int)b.x, (int)b.y, (int)c, (int)c},
-                            wf::geometry_t{(int)(b.x + b.width - c), (int)b.y, (int)c, (int)c},
-                            wf::geometry_t{(int)b.x, (int)(b.y + b.height - c), (int)c, (int)c},
-                            wf::geometry_t{(int)(b.x + b.width - c), (int)(b.y + b.height - c), (int)c, (int)c}})
+
+        /* the frame as drawn (the rounded corners are cut out of it, not
+         * out of the shadow around it) */
+        auto g = view->get_geometry();
+        int inset = (int)decoration_shadow(view);
+        wf::geometry_t f{g.x + inset, g.y + inset, g.width - 2 * inset, g.height - 2 * inset};
+        const int c = 16;                          /* at least the corner radius */
+        for (auto corner : {wf::geometry_t{f.x, f.y, c, c}, wf::geometry_t{f.x + f.width - c, f.y, c, c},
+                            wf::geometry_t{f.x, f.y + f.height - c, c, c},
+                            wf::geometry_t{f.x + f.width - c, f.y + f.height - c, c, c}})
         {
-            region ^= wf::regionf_t{wf::geometry_t{corner}};
+            region ^= wf::regionf_t{corner};
         }
+
+        /* Title bar and toolbar always go through the blur: a few pixels
+         * there were reported opaque but drawn see-through, and with the
+         * wallpaper culled behind them they showed as a dark band between
+         * the glass title bar and a glass toolbar (Preview, Notes). The
+         * strip is cheap to blur; the window body below stays skipped. */
+        region ^= wf::regionf_t{wf::geometry_t{f.x, f.y, f.width, TOP_GLASS}};
 
         return region;
     }

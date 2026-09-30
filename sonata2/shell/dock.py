@@ -214,11 +214,12 @@ class DockIcon(Gtk.Widget):
 
     def _paintable(self, size: int):
         # Exact-size paintable at rest (crisp); while magnified, one big one.
-        if size not in self._paint:
+        key = (size, ui.is_dark())         # the Trash and Launchpad follow Light/Dark
+        if key not in self._paint:
             if len(self._paint) > 2:
                 self._paint.clear()
-            self._paint[size] = icons.paintable(self, self._gicon, size)
-        return self._paint[size]
+            self._paint[key] = icons.paintable(self, self._gicon, size)
+        return self._paint[key]
 
     badge = ""        # macOS notification badge ("3", "99+"); set_badge()
 
@@ -476,7 +477,7 @@ class Dock(Gtk.Box):
         self._watch_trash()
         self._sync_src = 0
         self._setup_magnification()
-        ui.on_change(self.queue_draw)
+        ui.on_change(self._appearance_changed)
         if self.manager:
             self.manager.listeners.append(self._schedule_sync)
             self._schedule_sync()
@@ -1184,6 +1185,20 @@ class Dock(Gtk.Box):
         except OSError:
             full = False
         self.trash.set_gicon(Gio.ThemedIcon.new("user-trash-full" if full else "user-trash"))
+
+    def _appearance_changed(self) -> None:
+        """Light/Dark: redraw every icon (the Trash and Launchpad have one
+        version per appearance) and the Dock's own drawing."""
+        stack = [self]
+        while stack:
+            w = stack.pop()
+            if isinstance(w, DockIcon):
+                w.queue_draw()
+            c = w.get_first_child()
+            while c is not None:
+                stack.append(c)
+                c = c.get_next_sibling()
+        self.queue_draw()
 
     def _watch_trash(self) -> None:
         self._update_trash()

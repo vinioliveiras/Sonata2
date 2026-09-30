@@ -119,6 +119,13 @@ window.sonata-window.csd.maximized, window.sonata-window.csd.tiled,
 window.sonata-window.csd.tiled-top, window.sonata-window.csd.tiled-left, window.sonata-window.csd.tiled-right,
 window.sonata-window.csd.tiled-bottom { box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.40), inset 0 0 0 0.5px %(highlight)s; }
 window.sonata-window:not(.csd) { box-shadow: none; }
+/* the divider between a sidebar and the content: opaque (the window itself
+   is see-through for the glass toolbar, so a bare divider showed the
+   wallpaper through a 1 px gap) */
+window.sonata-window paned:not(.vertical) > separator { min-width: 1px; background: %(content_bg)s;
+  box-shadow: inset 1px 0 %(separator)s; }
+window.sonata-window paned.vertical > separator { min-height: 1px; background: %(content_bg)s;
+  box-shadow: inset 0 1px %(separator)s; }
 window.sonata-window.fullscreen { border-radius: 0; box-shadow: none; }
 """, key="window-frame")
 
