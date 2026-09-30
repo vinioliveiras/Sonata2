@@ -9,6 +9,7 @@ import importlib.util
 import os
 import shutil
 import subprocess
+import sys
 import time
 
 PROTO = "wlr_virtual_pointer_unstable_v1"
@@ -71,7 +72,7 @@ class VirtualPointer:
             self.display.roundtrip()
             self.ok = True
         except Exception as e:           # no Wayland, no pywayland, no protocol: no virtual mouse
-            print(f"sonata2-gamepad: no virtual pointer ({e})")
+            print(f"sonata2-gamepad: no virtual pointer ({e})", file=sys.stderr, flush=True)
             self.ok = False
 
     def _flush(self) -> None:

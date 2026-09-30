@@ -25,6 +25,7 @@ BTN_TL, BTN_TR, BTN_TL2, BTN_TR2 = 0x136, 0x137, 0x138, 0x139
 BTN_SELECT, BTN_START, BTN_MODE, BTN_THUMBL, BTN_THUMBR = 0x13a, 0x13b, 0x13c, 0x13d, 0x13e
 BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT = 0x220, 0x221, 0x222, 0x223
 BTN_GAMEPAD = BTN_SOUTH
+KEY_HOMEPAGE = 0xac     # the Xbox button over Bluetooth (a "Consumer Control" device of its own)
 # axes
 ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ = 0x00, 0x01, 0x02, 0x03, 0x04, 0x05
 ABS_GAS, ABS_BRAKE, ABS_HAT0X, ABS_HAT0Y = 0x09, 0x0a, 0x10, 0x11
@@ -70,12 +71,35 @@ def is_gamepad(path: str) -> bool:
         os.close(fd)
 
 
-def find_gamepads(folder: str = "/dev/input") -> list:
+def _events(folder):
     try:
-        names = sorted(n for n in os.listdir(folder) if n.startswith("event"))
+        return [os.path.join(folder, n) for n in sorted(os.listdir(folder)) if n.startswith("event")]
     except OSError:
         return []
-    return [os.path.join(folder, n) for n in names if is_gamepad(os.path.join(folder, n))]
+
+
+def find_gamepads(folder: str = "/dev/input") -> list:
+    return [p for p in _events(folder) if is_gamepad(p)]
+
+
+def find_guide_devices(pad_names, folder: str = "/dev/input") -> list:
+    """Extra devices of a controller that carry its Xbox / home button: over
+    Bluetooth, Xbox controllers send it from "<name> Consumer Control" as
+    KEY_HOMEPAGE instead of BTN_MODE on the gamepad itself."""
+    found = []
+    for path in _events(folder):
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError:
+            continue
+        try:
+            name = name_of(fd)
+            if (name not in pad_names and any(name.startswith(p) for p in pad_names if p)
+                    and _has(_bits(fd, EV_KEY, 0x300), KEY_HOMEPAGE)):
+                found.append(path)
+        finally:
+            os.close(fd)
+    return found
 
 
 def gamepad_name(path: str) -> str:

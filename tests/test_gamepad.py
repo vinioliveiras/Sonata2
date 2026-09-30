@@ -84,7 +84,7 @@ class GamepadTest(unittest.TestCase):
         self.press(E.BTN_EAST, 1)
         self.assertEqual((self.g.vp.log, self.keys), ([], []))
 
-    def test_ten_quick_guide_presses_toggle(self):
+    def test_quick_guide_presses_toggle(self):
         self.g._notify = lambda _t: None
         self.g.cfg["enabled"] = False
         for _ in range(S.TOGGLE_TAPS):
@@ -97,6 +97,17 @@ class GamepadTest(unittest.TestCase):
         for _ in range(S.TOGGLE_TAPS):
             self.press(E.BTN_MODE, 1)
         self.assertFalse(self.g.cfg["enabled"])
+
+    def test_xbox_button_over_bluetooth_toggles_too(self):
+        """The shortcut did nothing: over Bluetooth the Xbox button comes as
+        KEY_HOMEPAGE from a "Consumer Control" device, not BTN_MODE."""
+        self.assertEqual(S.TOGGLE_TAPS, 5)
+        self.g._notify = lambda _t: None
+        self.g.cfg["enabled"] = False
+        for _ in range(5):
+            self.press(E.KEY_HOMEPAGE, 1)
+            self.press(E.KEY_HOMEPAGE, 0)
+        self.assertTrue(self.g.cfg["enabled"])
 
     def test_one_guide_press_is_mission_control(self):
         self.press(E.BTN_MODE, 1)

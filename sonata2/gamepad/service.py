@@ -7,7 +7,7 @@ bar process; nothing runs while no controller is connected.
     D-pad          arrow keys                         B / circle    Esc
     LB / RB        app switcher (A picks, B closes)   Y / square    Launchpad
     Start          Spotlight                          View/Select   Mission Control
-    Guide (Xbox / PS)  Mission Control; pressed 10 times quickly: on / off
+    Guide (Xbox / PS)  Mission Control; pressed 5 times quickly: on / off
 
 Off by default. Games keep the controller: it is never grabbed, and the desktop control
 pauses by itself while a fullscreen window has the focus (gamemode.py)
@@ -18,6 +18,7 @@ same buttons to its own navigation.
 Settings: ~/.config/sonata2/gamepad.json {"enabled", "speed", "scroll",
 "pause_steam"} (Settings > Game Controllers)."""
 import os
+import sys
 import time
 
 from gi.repository import Gio, GLib
@@ -31,13 +32,13 @@ DEAD = 0.18                 # stick dead zone
 TICK_MS = 8                 # while a stick is pushed (~120 Hz)
 MAX_PX_S = 1500.0           # pointer speed at full tilt (speed 1.0)
 SCROLL_PX_S = 900.0
-TOGGLE_TAPS = 10            # Guide pressed this many times quickly: on / off
+TOGGLE_TAPS = 5             # Guide pressed this many times quickly: on / off
 TAP_GAP_S = 0.5             # max time between those presses
 
 # button -> action (named for other front ends)
 BUTTONS = {E.BTN_SOUTH: "primary", E.BTN_NORTH: "secondary", E.BTN_EAST: "back", E.BTN_WEST: "launchpad",
            E.BTN_TL: "switch_prev", E.BTN_TR: "switch_next", E.BTN_START: "spotlight",
-           E.BTN_SELECT: "mission", E.BTN_MODE: "guide",
+           E.BTN_SELECT: "mission", E.BTN_MODE: "guide", E.KEY_HOMEPAGE: "guide",
            E.BTN_DPAD_UP: "up", E.BTN_DPAD_DOWN: "down", E.BTN_DPAD_LEFT: "left", E.BTN_DPAD_RIGHT: "right"}
 ACTIONS = set(BUTTONS.values())
 # what each button does, as Settings lists it (Xbox / PlayStation names)
@@ -45,8 +46,12 @@ LEGEND = [("Left stick", "Pointer (LT slower, RT faster)"),
           ("Right stick", "Scroll"), ("A / Cross", "Click (hold to drag)"), ("X / Triangle", "Right-click"),
           ("B / Circle", "Back (Esc)"), ("Y / Square", "Launchpad"), ("LB / RB", "Switch apps"),
           ("D-pad", "Arrow keys"), ("Start / Options", "Spotlight"), ("View / Share", "Mission Control"),
-          ("Xbox / PS button", "Mission Control · 10× quickly: on / off")]
+          ("Xbox / PS button", "Mission Control · 5× quickly: on / off")]
 ARROWS = {"up": "Up", "down": "Down", "left": "Left", "right": "Right"}
+
+
+def log(*a) -> None:
+    print("sonata2-gamepad:", *a, file=sys.stderr, flush=True)
 
 
 def steam_running() -> bool:
@@ -98,9 +103,17 @@ class Gamepads:
             if path not in self.pads:
                 try:
                     self.pads[path] = E.Gamepad(path, self._event)
-                    print(f"sonata2-gamepad: {self.pads[path].name or path}")
+                    log(self.pads[path].name or path)
                 except OSError as e:          # not readable: logind gives controllers to the user
-                    print(f"sonata2-gamepad: can't read {path} ({e})")
+                    log(f"can't read {path} ({e})")
+        names = {pad.name for pad in self.pads.values() if pad.name}
+        for path in E.find_guide_devices(names):          # the Xbox button over Bluetooth
+            if path not in self.pads:
+                try:
+                    self.pads[path] = E.Gamepad(path, self._event)
+                    log(f"{self.pads[path].name} (Xbox / home button)")
+                except OSError as e:
+                    log(f"can't read {path} ({e})")
         if self.pads and not self._steam_src:
             self._steam = steam_running()
             self._steam_src = GLib.timeout_add_seconds(5, self._check_steam)
@@ -158,7 +171,7 @@ class Gamepads:
             self.action(name, pressed)
 
     def _guide_tap(self) -> None:
-        """One press: Mission Control, once the burst is over. Ten quick
+        """One press: Mission Control, once the burst is over. Five quick
         presses: desktop control on / off (works while off or paused)."""
         now = time.monotonic()
         if self._taps and now - self._taps[-1] > TAP_GAP_S:
@@ -181,6 +194,7 @@ class Gamepads:
         return False
 
     def set_enabled(self, on: bool) -> None:
+        log("desktop control", "on" if on else "off")
         self.cfg = {**self.cfg, "enabled": on}
         config.save("gamepad", self.cfg)
         if not on:

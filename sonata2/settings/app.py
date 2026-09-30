@@ -1129,10 +1129,15 @@ class Settings(Adw.ApplicationWindow):
         pads._mon = mon                                   # lives as long as the page
 
         desk = group("Desktop Control", "Use a controller as mouse and keyboard when no game is running. "
-                                        "It pauses by itself while a game fills the screen. Press the "
-                                        "Xbox / PS button 10 times quickly to turn it on or off.")
+                                        "It pauses by itself while a game fills the screen.")
         desk.add(switch_row("Control the desktop with a controller", gp["enabled"],
                             lambda on: self._save("gamepad", "enabled", on)))
+        from ..gamepad.service import TOGGLE_TAPS
+        hint = Adw.ActionRow(title="Shortcut on the controller",
+                             subtitle=f"Press the Xbox / PS button {TOGGLE_TAPS} times quickly to turn it on or off, "
+                                      "even in a game")
+        hint.add_prefix(Gtk.Image(icon_name="input-gaming-symbolic", pixel_size=16))
+        desk.add(hint)
         desk.add(slider_row("Pointer speed", float(gp["speed"]) * 50, 10, 100,
                             lambda v: self._save("gamepad", "speed", round(v / 50, 2)), ends=("Slow", "Fast"),
                             default=50))
