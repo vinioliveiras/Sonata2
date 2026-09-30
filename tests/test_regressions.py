@@ -291,6 +291,29 @@ class CalendarWidgetRegressions(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(icons.ICONS_DIR, "Sonata", "actions", "symbolic", n + ".svg")))
 
 
+class EqualizerRegressions(unittest.TestCase):
+    def test_stale_chain_processes_are_stopped(self):
+        """Chrome/Spotify ignored the equalizer: chain processes left by a
+        restarted menu bar kept their old curve, and streams linked to them."""
+        import subprocess
+        import sys
+        import time
+        from sonata2.backend import equalizer
+        real = equalizer.RUN_CONF
+        equalizer.RUN_CONF = "import time; time.sleep(30)"        # the fake chain's "-c" argument
+        try:
+            proc = subprocess.Popen(["pipewire", "-c", equalizer.RUN_CONF], executable=sys.executable)
+            time.sleep(0.3)
+            equalizer._kill_stale_chains()
+            self.assertIsNotNone(proc.wait(timeout=3))
+        finally:
+            equalizer.RUN_CONF = real
+
+    def test_gains_reach_every_copy_of_a_filter(self):
+        src = pathlib.Path(__file__).parent.parent.joinpath("sonata2", "backend", "equalizer.py").read_text()
+        self.assertIn("for nid in nids:", src)
+
+
 class TopbarRegressions(unittest.TestCase):
     def test_now_playing_title_does_not_widen_control_center(self):
         from sonata2.shell import topbar

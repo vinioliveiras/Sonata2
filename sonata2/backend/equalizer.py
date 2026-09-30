@@ -181,6 +181,7 @@ class Equalizer:
     def start(self) -> None:
         if not available():
             return
+        _kill_stale_chains()          # a menu bar that restarted left its chains running
         self._cfg_mon = config.watch("equalizer", self.sync_soon)
         self._subscribe()
         self.sync()
@@ -242,6 +243,7 @@ class Equalizer:
             except subprocess.TimeoutExpired:
                 self.proc.kill()
         self.proc, self.chains = None, tuple(sorted(sinks))
+        _kill_stale_chains()
         if not sinks:
             return
         with open(RUN_CONF, "w", encoding="utf-8") as f:
@@ -259,14 +261,15 @@ class Equalizer:
     def _apply(self, sinks) -> None:
         ids = _node_ids()
         for sink, port in sinks:
-            nid = ids.get(f"{PREFIX}.{_slug(sink)}")
-            if nid is None:
+            nids = ids.get(f"{PREFIX}.{_slug(sink)}")
+            if not nids:
                 _log("no filter node for", sink, "(chain process",
                      "exited)" if self.proc is None or self.proc.poll() is not None else "running)")
                 continue
             gains = curve(f"{sink}|{port}")["gains"]
             params = " ".join(f'"b{i}:Gain" {g:.1f}' for i, g in enumerate(gains))
-            _run(["pw-cli", "set-param", str(nid), "Props", "{ params = [ " + params + " ] }"])
+            for nid in nids:              # every copy (there should be one)
+                _run(["pw-cli", "set-param", str(nid), "Props", "{ params = [ " + params + " ] }"])
 
     def stop(self) -> None:
         self._restart({})
@@ -274,8 +277,31 @@ class Equalizer:
             self._events.terminate()
 
 
+def _kill_stale_chains() -> None:
+    """Chain processes (`pipewire -c <RUN_CONF>`) no Equalizer of this
+    process started: left by a menu bar that crashed or restarted (they run
+    in their own session). Streams linked to such a copy kept its old
+    curve -- Chrome and Spotify didn't follow the equalizer."""
+    me = os.getpid()
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit() or int(pid) == me:
+            continue
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                args = f.read().split(b"\0")
+        except OSError:
+            continue
+        if len(args) >= 3 and os.path.basename(args[0]) == b"pipewire" and args[1] == b"-c" \
+                and args[2] == RUN_CONF.encode():
+            try:
+                os.kill(int(pid), 15)
+                _log("stopped a stale chain process", pid)
+            except OSError:
+                pass
+
+
 def _node_ids() -> dict:
-    """node.name -> id of our filter nodes (pw-dump)."""
+    """node.name -> ids of our filter nodes (pw-dump); normally one each."""
     rc, out = _run(["pw-dump", "-N"], timeout=5)
     try:
         objs = json.loads(out) if rc == 0 else []
@@ -286,7 +312,7 @@ def _node_ids() -> dict:
         props = ((o.get("info") or {}).get("props") or {})
         name = props.get("node.name", "")
         if o.get("type", "").endswith("Node") and name.startswith(PREFIX + "."):
-            ids[name] = o["id"]
+            ids.setdefault(name, []).append(o["id"])
     return ids
 
 
