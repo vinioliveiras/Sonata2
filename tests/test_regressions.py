@@ -623,6 +623,40 @@ class patched:
             setattr(self.mod, k, v)
 
 
+class ScreenRecordingRegressions(unittest.TestCase):
+    """The screen recorder "didn't work well": with two displays wf-recorder
+    asked on a terminal which one and quit; 180 Hz recordings were heavy
+    and choppy; some players couldn't open them; stopping froze the menu bar."""
+
+    def test_command(self):
+        from sonata2.shell import capture as C
+        cmd = C.recorder_command("/tmp/x.mp4", None, "HDMI-A-1")
+        self.assertEqual(cmd[cmd.index("-o") + 1], "HDMI-A-1")        # one display, never a prompt
+        self.assertEqual(cmd[cmd.index("-r") + 1], "60")
+        self.assertEqual(cmd[cmd.index("-x") + 1], "yuv420p")
+        area = C.recorder_command("/tmp/x.mp4", "10,10 200x100", "HDMI-A-1")
+        self.assertIn("-g", area)
+        self.assertNotIn("-o", area)                                  # an area needs no display
+
+    def test_stop_does_not_block(self):
+        import subprocess
+        import time
+        from sonata2.shell import capture as C
+
+        class Bar:
+            recording = None
+            def set_recording(self, on): self.recording = on
+        cap = C.Capture(None, Bar())
+        cap.recorder = subprocess.Popen(["sh", "-c", "trap '' INT; sleep 3"])   # slow to finish
+        cap.rec_path = None
+        t0 = time.monotonic()
+        cap.stop_recording()
+        self.assertLess(time.monotonic() - t0, 0.5)
+        self.assertIsNone(cap.recorder)
+        self.assertFalse(cap.bar.recording)
+        settle(3500)
+
+
 class ThemeFadeFocusRegressions(unittest.TestCase):
     """Turning Translucent glass on/off made Settings jump to the next section:
     the theme cross-fade moved the window content, the focused sidebar row

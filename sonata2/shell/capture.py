@@ -45,6 +45,33 @@ def _dir(where: str) -> str:
     return GLib.get_user_special_dir(kind) or GLib.get_home_dir()
 
 
+FPS = 60                        # a steady 60 fps, not the display's 144/180 Hz
+
+
+def focused_output():
+    """The display with the focus (Wayfire); None: let wf-recorder decide.
+    Without -o, wf-recorder asks on the terminal when there are two
+    displays, and quits (no terminal)."""
+    try:
+        from ..wl.wfipc import WayfireIPC
+        out = WayfireIPC().call("window-rules/get-focused-output") or {}
+        return (out.get("info") or {}).get("name") or None
+    except Exception:
+        return None
+
+
+def recorder_command(path: str, geo=None, output=None) -> list:
+    """wf-recorder: H.264 in yuv420p (plays everywhere, QuickTime-style
+    players included) at a constant FPS, fast enough for games."""
+    cmd = ["wf-recorder", "-y", "-f", path, "-r", str(FPS), "-x", "yuv420p",
+           "-c", "libx264", "-p", "preset=veryfast", "-p", "crf=20"]
+    if geo:
+        cmd += ["-g", geo]
+    elif output:
+        cmd += ["-o", output]
+    return cmd
+
+
 def _name(prefix: str, ext: str) -> str:
     return GLib.DateTime.new_now_local().format(f"{prefix} %Y-%m-%d at %H.%M.%S.{ext}")
 
@@ -173,30 +200,60 @@ class Capture:
             return
         where = cfg.get("save_to") if cfg.get("save_to") != "clipboard" else "desktop"
         self.rec_path = os.path.join(_dir(where), _name("Screen Recording", "mp4"))
-        cmd = ["wf-recorder", "-f", self.rec_path] + (["-g", geo] if geo else [])
+        cmd = recorder_command(self.rec_path, geo, None if geo else focused_output())
         try:
-            self.recorder = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                             stderr=subprocess.DEVNULL)
+            log = open(os.path.join(GLib.get_user_cache_dir(), "sonata2", "recorder.log"), "w", encoding="utf-8")
+        except OSError:
+            log = subprocess.DEVNULL
+        try:
+            self.recorder = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
         except OSError:
             self.recorder = None
             return
+        finally:
+            if log is not subprocess.DEVNULL:
+                log.close()                    # the child keeps its own copy
         self.bar.set_recording(True)
+        GLib.timeout_add(1500, self._check_started, self.recorder)
+
+    def _check_started(self, proc) -> bool:
+        """wf-recorder quitting at once (no output, bad codec): say so."""
+        if proc is self.recorder and proc.poll() is not None:
+            self.recorder = None
+            self.bar.set_recording(False)
+            nc = getattr(self.bar, "notifications", None)
+            if nc:
+                nc.notify("Screen Recording", 0, "dialog-warning", "Screen recording didn't start",
+                          "Details in ~/.cache/sonata2/recorder.log", [], {}, -1)
+        return False
 
     def stop_recording(self):
-        if self.recorder is None:
+        """Stop and finish the movie without blocking the menu bar."""
+        proc, path = self.recorder, self.rec_path
+        if proc is None:
             return
-        self.recorder.send_signal(2)           # SIGINT: wf-recorder finishes the file
-        try:
-            self.recorder.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            self.recorder.kill()
         self.recorder = None
         self.bar.set_recording(False)
-        if self.rec_path and os.path.exists(self.rec_path):
+        proc.send_signal(2)                    # SIGINT: wf-recorder finishes the file
+        waited = {"ms": 0}
+
+        def check():
+            if proc.poll() is None:
+                waited["ms"] += 100
+                if waited["ms"] < 8000:
+                    return True
+                proc.kill()
+                proc.wait()
+            self._saved(path)
+            return False
+        GLib.timeout_add(100, check)
+
+    def _saved(self, path):
+        if path and os.path.exists(path) and os.path.getsize(path) > 0:
             nc = getattr(self.bar, "notifications", None)
             if nc:
                 nc.notify("Screen Recording", 0, "media-record", "Screen Recording saved",
-                          os.path.basename(self.rec_path), [], {"desktop-entry": "io.github.vinioliveiras.sonata2.files"},
+                          os.path.basename(path), [], {"desktop-entry": "io.github.vinioliveiras.sonata2.files"},
                           -1)
 
     def _missing(self, tool):
