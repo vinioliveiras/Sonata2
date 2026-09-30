@@ -17,7 +17,7 @@ import time
 
 from gi.repository import GLib
 
-from . import config
+from . import config, logs
 
 DEFAULTS = {"apps": {}}
 SCREEN_FRACTION = 0.9           # asks for this much of the display: a game wanting the screen
@@ -75,6 +75,8 @@ def log_view(event: str, view: dict) -> None:
     """One line per window shown / closed (~/.cache/sonata2/windows.log, the
     last LOG_LINES): where apps put their windows, for window bugs (Steam's
     main window never showing up)."""
+    if not logs.verbose():
+        return
     g = view.get("geometry") or {}
     line = (f"{time.strftime('%H:%M:%S')} {event.replace('view-', ''):8} id={view.get('id')} "
             f"app={view.get('app-id')!r} title={(view.get('title') or '')[:60]!r} pid={view.get('pid')} "

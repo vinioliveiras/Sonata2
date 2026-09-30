@@ -22,7 +22,7 @@ gi.require_version("Adw", "1")
 gi.require_version("Graphene", "1.0")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
-from .. import apps, config, icons, names, ui  # noqa: E402
+from .. import apps, config, icons, logs, names, ui  # noqa: E402
 from .. import launchpad_model as M  # noqa: E402
 from . import layer  # noqa: E402
 
@@ -357,7 +357,7 @@ class Launchpad(Gtk.ApplicationWindow):
         cols = 7 if width >= 900 else width // 150               # macOS: 7; fewer on narrow screens
         rows = room / max(1.0, width / max(1, cols) * 0.72)     # row pitch ~72 % of a column (macOS)
         if M.set_grid(cols, rows):
-            print(f"sonata2-launchpad: grid {M.COLS}x{M.ROWS} for {w}x{h} (room {room}, width {width}, "
+            logs.verbose() and print(f"sonata2-launchpad: grid {M.COLS}x{M.ROWS} for {w}x{h} (room {room}, width {width}, "
                   f"dock {D.reserved(dcfg)})", flush=True)                # launchpad.log
             GLib.idle_add(lambda: (self._rows_changed(), False)[1])     # not during allocation
         cell_w, cell_h = width / M.COLS, room / M.ROWS

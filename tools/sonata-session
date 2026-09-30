@@ -45,6 +45,16 @@ fi
 # previous one is kept as session.old.log.
 logs="${XDG_CACHE_HOME:-$HOME/.cache}/sonata2"; mkdir -p "$logs"
 [ -f "$logs/session.log" ] && mv -f "$logs/session.log" "$logs/session.old.log"
+# Detailed logs (sonata2/logs.py): a dev install (git clone), the flag file
+# (Settings > About: click the version 7 times) or SONATA_DEBUG=1. Otherwise
+# Wayfire's info lines are left out and the log stops growing at 4 MB --
+# errors and crashes, what `sonata2 doctor` needs.
+here="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+if [ "${SONATA_DEBUG:-}" = 1 ] || [ -e "${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/debug-logging" ] || [ -d "$here/.git" ]; then
+    session_log() { cat > "$1"; }
+else
+    session_log() { awk '!/^II / { n += length($0) + 1; if (n <= 4194304) { print; fflush() } }' > "$1"; }
+fi
 # The login intro (sonata2/shell/intro.py): the welcome screen, then the
 # Dock and menu bar slide in. Only at login, never on a restart of Sonata.
 touch "${XDG_RUNTIME_DIR:-/tmp}/sonata2-intro"
@@ -89,7 +99,7 @@ if [ -n "$gpu_set" ]; then
     # a GPU order the session can't start with (driver trouble) must never
     # lock you out: Wayfire ending within seconds is started again without it
     started=$(date +%s)
-    wayfire -c "$cfg" > "$logs/session.log" 2>&1
+    wayfire -c "$cfg" > >(session_log "$logs/session.log") 2>&1
     code=$?
     if [ $(( $(date +%s) - started )) -ge 15 ]; then
         exit $code
@@ -97,4 +107,4 @@ if [ -n "$gpu_set" ]; then
     mv -f "$logs/session.log" "$logs/session.gpu-failed.log"
     unset WLR_DRM_DEVICES
 fi
-exec wayfire -c "$cfg" > "$logs/session.log" 2>&1
+exec wayfire -c "$cfg" > >(session_log "$logs/session.log") 2>&1

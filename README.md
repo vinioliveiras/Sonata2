@@ -353,7 +353,12 @@ picked in Settings → Appearance.
 ## Troubleshooting
 
 - **Logs**: `~/.cache/sonata2/` holds `session.log` (Wayfire), one log per
-  component (`dock.log`, `topbar.log`...) and `login.log`.
+  component (`dock.log`, `topbar.log`...) and `login.log`. They stay on your
+  computer and small: errors and crashes only, each log capped. **Detailed
+  logs** (every window opened, frame and start-up timings, Wayfire's info
+  lines) are for finding problems: Settings → About, click "Sonata 2
+  desktop" 7 times, turn on Detailed Logs, restart Sonata (always on in a
+  `--dev` install; or run with `SONATA_DEBUG=1`).
 - **`sonata2 doctor`**: checks the machine and writes `doctor.txt` with the
   last errors.
 - **Something stuck**: Sonata menu → Restart Sonata (or `sonata2 restart`).

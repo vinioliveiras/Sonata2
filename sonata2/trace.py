@@ -27,8 +27,13 @@ def start(name: str) -> None:
         pass
 
 
+def _verbose() -> bool:
+    from . import logs                    # start-up timings: detailed logs only
+    return logs.verbose()
+
+
 def mark(label: str) -> None:
-    if _t0 is None:
+    if _t0 is None or not _verbose():
         return
     now = time.time()
     wall = time.strftime("%H:%M:%S", time.localtime(now)) + f".{int(now % 1 * 1000):03d}"

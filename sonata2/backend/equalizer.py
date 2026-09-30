@@ -60,8 +60,11 @@ RUN_CONF = os.path.join(GLib.get_user_runtime_dir() or "/tmp", "sonata2-equalize
 LOG = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "sonata2", "equalizer.log")
 
 
-def _log(*a) -> None:
-    print("equalizer:", *a, file=sys.stderr, flush=True)
+def _log(*a, error=False) -> None:
+    """Routine lines: detailed logs only; errors always."""
+    from .. import logs
+    if error or logs.verbose():
+        print("equalizer:", *a, file=sys.stderr, flush=True)
 
 
 # -- settings (Settings app) ----------------------------------------------------------
@@ -150,7 +153,7 @@ def _run(cmd, timeout=4):
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         if p.returncode:
-            _log(" ".join(cmd[:3]), "->", p.returncode, (p.stderr or "").strip()[:300])
+            _log(" ".join(cmd[:3]), "->", p.returncode, (p.stderr or "").strip()[:300], error=True)
         return p.returncode, p.stdout
     except (OSError, subprocess.SubprocessError):
         return 1, ""
@@ -255,7 +258,7 @@ class Equalizer:
                                              start_new_session=True)
             _log("chain process", self.proc.pid, "for", list(sinks))
         except OSError as e:
-            _log("can't start pipewire:", e)
+            _log("can't start pipewire:", e, error=True)
             self.proc = None
 
     def _apply(self, sinks) -> None:

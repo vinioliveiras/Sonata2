@@ -174,5 +174,8 @@ class FrameStats:
         gaps = sorted((b - a) / 1000 for a, b in zip(t, t[1:]))
         base = gaps[len(gaps) // 2]                   # the display's frame time
         late = sum(1 for g in gaps if g > base * 1.5)
+        from .. import logs
+        if not logs.verbose():                        # frame timings: detailed logs only
+            return
         print(f"sonata2-frames: {self.label}: {len(t)} frames, {base:.1f} ms "
               f"({1000 / base:.0f} Hz), {late} late, worst {gaps[-1]:.1f} ms", flush=True)

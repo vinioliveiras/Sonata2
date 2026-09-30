@@ -23,7 +23,7 @@ import time
 
 from gi.repository import Gio, GLib
 
-from .. import config, gamemode, names
+from .. import config, gamemode, logs, names
 from . import evdev as E
 from .vpointer import BTN_LEFT, BTN_RIGHT, VirtualPointer, key
 
@@ -50,8 +50,10 @@ LEGEND = [("Left stick", "Pointer (LT slower, RT faster)"),
 ARROWS = {"up": "Up", "down": "Down", "left": "Left", "right": "Right"}
 
 
-def log(*a) -> None:
-    print("sonata2-gamepad:", *a, file=sys.stderr, flush=True)
+def log(*a, error=False) -> None:
+    """Routine lines: detailed logs only; errors always."""
+    if error or logs.verbose():
+        print("sonata2-gamepad:", *a, file=sys.stderr, flush=True)
 
 
 def steam_running() -> bool:
@@ -105,7 +107,7 @@ class Gamepads:
                     self.pads[path] = E.Gamepad(path, self._event)
                     log(self.pads[path].name or path)
                 except OSError as e:          # not readable: logind gives controllers to the user
-                    log(f"can't read {path} ({e})")
+                    log(f"can't read {path} ({e})", error=True)
         names = {pad.name for pad in self.pads.values() if pad.name}
         for path in E.find_guide_devices(names):          # the Xbox button over Bluetooth
             if path not in self.pads:
@@ -113,7 +115,7 @@ class Gamepads:
                     self.pads[path] = E.Gamepad(path, self._event)
                     log(f"{self.pads[path].name} (Xbox / home button)")
                 except OSError as e:
-                    log(f"can't read {path} ({e})")
+                    log(f"can't read {path} ({e})", error=True)
         if self.pads and not self._steam_src:
             self._steam = steam_running()
             self._steam_src = GLib.timeout_add_seconds(5, self._check_steam)

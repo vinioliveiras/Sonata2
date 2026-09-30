@@ -263,5 +263,6 @@ def register(app):
     except GLib.Error as e:
         print(f"sonata2 polkit: couldn't register: {e.message}")
         return None
-    print(f"sonata2 polkit: registered for session {sid}", flush=True)
+    from .. import logs
+    logs.verbose() and print(f"sonata2 polkit: registered for session {sid}", flush=True)
     return agent

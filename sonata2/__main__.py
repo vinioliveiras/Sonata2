@@ -866,7 +866,14 @@ def keep(argv) -> int:
         started = time.monotonic()
         with open(log_path, "a", buffering=1) as log:
             log.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} {' '.join(argv)}\n")
-            code = subprocess.call(cmd, stdout=log, stderr=subprocess.STDOUT)
+            child = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
+            while True:                      # the log stays under its cap (logs.py) however long it runs
+                try:
+                    code = child.wait(timeout=60)
+                    break
+                except subprocess.TimeoutExpired:
+                    from . import logs
+                    logs.trim(log_path)
         sock = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), os.environ.get("WAYLAND_DISPLAY", "wayland-0"))
         if code in (0, -15, -2, 130, 143) or not os.path.exists(sock):     # on purpose, or the session ended
             return 0

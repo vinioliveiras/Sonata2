@@ -26,7 +26,7 @@ gi.require_version("Gsk", "4.0")
 gi.require_version("Graphene", "1.0")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
-from .. import apps, config, icons  # noqa: E402
+from .. import apps, config, icons, logs  # noqa: E402
 from .. import ui  # noqa: E402
 from . import dock_drop, dock_menu, dock_stack, layer  # noqa: E402
 
@@ -1385,7 +1385,8 @@ class DockWindow(Gtk.ApplicationWindow):
         """Over Launchpad (OVERLAY) while it is open, TOP otherwise (fullscreen
         apps cover the Dock)."""
         self._above = on                         # auto-hide waits while Launchpad is open
-        print(f"sonata2-dock: above Launchpad: {on}", flush=True)      # dock.log: Launchpad/Dock debugging
+        if logs.verbose():
+            print(f"sonata2-dock: above Launchpad: {on}", flush=True)      # dock.log: Launchpad/Dock debugging
         LS = layer.layer_shell()
         if LS and self.layer:
             if on and LS.get_layer(self) == LS.Layer.OVERLAY:
