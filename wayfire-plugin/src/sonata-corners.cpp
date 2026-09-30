@@ -107,6 +107,7 @@ uniform float shadow_radius;
 uniform float square_top;     /* 1: maximized, the top corners meet the menu bar */
 uniform vec4 fill;            /* the title bar's colour (premultiplied) */
 uniform vec4 outline;         /* hairline along the rounded frame (premultiplied), 0: none */
+uniform float seam;           /* where the client's surface starts under the title bar, < 0: none */
 
 varying highp vec2 uvpos;
 
@@ -116,6 +117,19 @@ void main()
     vec2 p = vec2(uvpos.x * size.x, (1.0 - uvpos.y) * size.y);
     vec2 lo = rect.xy;
     vec2 hi = rect.xy + rect.zw;
+    if (seam >= 0.0 && p.y >= seam && p.y < seam + 8.0 && p.x >= lo.x && p.x <= hi.x)
+    {
+        /* pixdecor's title bar reaches a few pixels under the client's top
+         * (1 px, 5 px maximized): a see-through toolbar there got the title
+         * bar's tint twice -- a dark seam between the two glasses. Such a
+         * pixel is denser than the same column further down; take the extra
+         * layer (the title bar's colour behind the client) out again. */
+        vec4 below = get_pixel(vec2(uvpos.x, 1.0 - (seam + 8.0) / size.y));
+        if (below.a < 0.99 && c.a > below.a + 0.02)
+        {
+            c = max(c - fill * (1.0 - below.a), vec4(0.0));
+        }
+    }
     bool top = p.y < lo.y + radius;
     if (square_top > 0.5 && top && p.x >= lo.x && p.x <= hi.x && p.y >= lo.y)
     {
@@ -351,6 +365,9 @@ class corners_render_instance_t :
             data_ptr->program.uniform4f("outline", line ?
                 glm::vec4{line->r * line->a, line->g * line->a, line->b * line->a, line->a} :
                 glm::vec4{0, 0, 0, 0});
+            /* the client's surface top (below pixdecor's title bar), for the seam */
+            auto m = view->toplevel()->current().margins;
+            data_ptr->program.uniform1f("seam", m.top > inset ? float(g.y + m.top - bbox.y) : -1.0f);
             data_ptr->program.uniform4f("shadow", shadow_color);
             data_ptr->program.uniform1f("shadow_radius", shadow_r);
             data_ptr->program.attrib_pointer("position", 2, 0, vertexData);
