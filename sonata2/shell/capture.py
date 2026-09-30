@@ -45,7 +45,8 @@ window.sonata-shot, window.sonata-shot > contents { background: none; box-shadow
 /* the recording control: a pill over the middle of the menu bar */
 window.sonata-rec, window.sonata-rec > contents { background: none; box-shadow: none; }
 .rec-pill { background: %(panel_material)s; color: %(label)s; border-radius: 99px; padding: 0 2px 0 9px;
-  min-height: 20px; box-shadow: 0 0 0 0.5px %(hairline)s, 0 2px 8px rgba(0,0,0,0.25); font-family: %(font)s;
+  margin: 2px 8px 10px 8px;                                       /* room for the outline and shadow */
+  min-height: 20px; box-shadow: 0 0 0 1px %(hairline)s, inset 0 0 0 1px %(highlight)s, 0 2px 8px rgba(0,0,0,0.25); font-family: %(font)s;
   font-size: 12px; font-weight: 600; font-feature-settings: "tnum"; }
 .rec-dot { min-width: 8px; min-height: 8px; border-radius: 4px; background: %(sys_red)s;
   animation: rec-blink 1.4s ease-in-out infinite; }
@@ -114,8 +115,14 @@ def outputs() -> list:
 
 
 def window_boxes(views, outs) -> list:
-    """"x,y wxh" (layout coordinates) of the windows one can click on:
-    mapped app windows on the shown workspace, front ones first."""
+    """"x,y wxh" (layout coordinates) of the windows one can pick."""
+    return [w["geo"] for w in window_list(views, outs)]
+
+
+def window_list(views, outs) -> list:
+    """[{"geo": "x,y wxh" (layout coordinates), "title", "app"}] of the
+    windows one can pick: mapped app windows on the shown workspace, front
+    ones first."""
     where = {o.get("id"): o.get("geometry") or {} for o in outs}
     boxes = []
     for v in sorted((v for v in views if isinstance(v, dict)), key=lambda v: -v.get("last-focus-timestamp", 0)):
@@ -129,8 +136,33 @@ def window_boxes(views, outs) -> list:
         x, y = g.get("x", 0), g.get("y", 0)                 # output-local; other workspaces lie outside
         if x + w <= 0 or y + h <= 0 or x >= o.get("width", 0) or y >= o.get("height", 0):
             continue
-        boxes.append(f"{o.get('x', 0) + x},{o.get('y', 0) + y} {w}x{h}")
+        boxes.append({"geo": f"{int(o.get('x', 0) + x)},{int(o.get('y', 0) + y)} {int(w)}x{int(h)}",
+                      "title": v.get("title") or "", "app": v.get("app-id") or ""})
     return boxes
+
+
+def _app_info(app_id):
+    from .. import apps
+    try:
+        key = apps.match_app_id(app_id)
+        return apps.lookup(key) if key else None
+    except Exception:                                  # a list to pick from never fails over an icon
+        return None
+
+
+def _app_gicon(app_id):
+    """The app's icon (Dock artwork) for a window's app id, or None."""
+    from .. import icons
+    info = _app_info(app_id)
+    try:
+        return icons.app_icon(info) if info else None
+    except Exception:
+        return None
+
+
+def _app_name(app_id):
+    info = _app_info(app_id)
+    return info.get_name() if info else (app_id or "Window")
 
 
 def _slurp(args, stdin=None):
@@ -275,7 +307,6 @@ class RecordingControl(Gtk.Window):
             LS.set_namespace(self, "sonata2-recording")
             LS.set_layer(self, LS.Layer.OVERLAY)
             LS.set_anchor(self, LS.Edge.TOP, True)
-            LS.set_margin(self, LS.Edge.TOP, 2)
             LS.set_exclusive_zone(self, -1)           # over the menu bar, not below it
             LS.set_keyboard_mode(self, LS.KeyboardMode.NONE)
 
@@ -342,42 +373,54 @@ class Capture:
 
     def _run(self, mode, cfg):
         """mode: screen (every display: Super+Shift+3) | display | window | area,
-        or rec-display | rec-window | rec-area (rec-screen: the focused display)."""
+        or rec-display | rec-window | rec-area (rec-screen: the focused display).
+        A display or a window is picked from a list (thumbnails)."""
         rec = mode.startswith("rec-")
         what = mode[4:] if rec else mode
-        geo = output = None
-        if what in ("display", "window", "area") and not shutil.which("slurp"):
-            self._missing("slurp")
-            return
+
+        def go(geo=None, output=None):
+            (self._record if rec else self._shoot)(geo, cfg, output)
         if what == "display":
             outs = outputs()
-            if len(outs) > 1:                           # click the display you want
-                output = _slurp(["-o", "-f", "%o"])
-                if output is None:
-                    return
-            else:
-                output = (outs[0].get("name") if outs else None) or focused_output()
+            if len(outs) <= 1:
+                go(output=(outs[0].get("name") if outs else None) or focused_output())
+                return
+            from .sharepicker import _display_name, _thumb
+            items = [{"name": _display_name(o.get("name", "")), "texture": _thumb(o.get("name")),
+                      "icon": "video-display-symbolic", "value": o.get("name")} for o in outs]
+            self._pick("Choose a display to " + ("record" if rec else "capture"), items,
+                       "Record" if rec else "Capture", lambda out: go(output=out))
         elif what == "window":
             try:
                 views = _ipc().call("window-rules/list-views") or []
             except Exception:
                 views = []
-            boxes = window_boxes(views, outputs())
-            if not boxes:
+            wins = window_list(views, outputs())
+            if not wins:
                 return
-            geo = _slurp(["-r"], "\n".join(boxes) + "\n")   # click a window
-            if geo is None:
-                return
+            from .sharepicker import thumb_region
+            items = [{"name": w["title"] or _app_name(w["app"]), "texture": thumb_region(w["geo"]),
+                      "badge": _app_gicon(w["app"]), "value": w["geo"]} for w in wins]
+            self._pick("Choose a window to " + ("record" if rec else "capture"), items,
+                       "Record" if rec else "Capture", lambda geo: go(geo=geo))
         elif what == "area":
-            geo = _slurp([])
-            if geo is None:
+            if not shutil.which("slurp"):
+                self._missing("slurp")
                 return
-        elif rec:                                       # rec-screen: the focused display
-            output = focused_output()
-        if rec:
-            self._record(geo, cfg, output)
-        else:
-            self._shoot(geo, cfg, output)
+            geo = _slurp([])
+            if geo is not None:
+                go(geo=geo)
+        else:                                           # screen: all displays; rec-screen: the focused one
+            go(output=focused_output() if rec else None)
+
+    def _pick(self, title, items, action, then):
+        """The list to pick from; the choice runs once the list has gone."""
+        from .sharepicker import Picker
+
+        def done(value):
+            if value is not None:
+                GLib.timeout_add(250, lambda: (then(value), False)[1])     # not in the picture
+        Picker(self.app, title, None, items, action, done).present()
 
     def _shoot(self, geo, cfg, output=None):
         if not shutil.which("grim"):

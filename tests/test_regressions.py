@@ -708,6 +708,36 @@ class CaptureTargetsTests(unittest.TestCase):
                  v(minimized=True), v(role="desktop-environment")]
         self.assertEqual(C.window_boxes(views, outs), ["2020,50 800x600", "100,50 800x600"])
 
+    def test_display_and_window_come_from_a_list(self):
+        """Record a display / a window: pick it from a list (was: click on the screen)."""
+        from sonata2.shell import capture as C
+        outs = [{"id": 1, "name": "HDMI-A-1", "geometry": {"x": 0, "y": 0, "width": 1920, "height": 1080}},
+                {"id": 2, "name": "eDP-1", "geometry": {"x": 1920, "y": 0, "width": 1920, "height": 1080}}]
+        views = [{"role": "toplevel", "mapped": True, "layer": "workspace", "output-id": 2, "title": "Notes",
+                  "app-id": "x", "geometry": {"x": 10, "y": 20, "width": 300, "height": 200}}]
+        ipc = type("I", (), {"call": lambda s, m, d=None: views})()
+        old = C.outputs, C._ipc
+        C.outputs, C._ipc = (lambda: outs), (lambda: ipc)
+        cap = C.Capture(None, None)
+        picked, done = [], []
+        cap._pick = lambda title, items, action, then: picked.append((title, items, action, then))
+        cap._record = lambda geo, cfg, output=None: done.append(("rec", geo, output))
+        cap._shoot = lambda geo, cfg, output=None: done.append(("shot", geo, output))
+        try:
+            cap._run("rec-display", {})
+            title, items, action, then = picked[-1]
+            self.assertEqual([i["value"] for i in items], ["HDMI-A-1", "eDP-1"])
+            self.assertEqual(action, "Record")
+            then("eDP-1")
+            self.assertEqual(done[-1], ("rec", None, "eDP-1"))
+            cap._run("window", {})
+            title, items, action, then = picked[-1]
+            self.assertEqual((items[0]["name"], items[0]["value"]), ("Notes", "1930,20 300x200"))
+            then(items[0]["value"])
+            self.assertEqual(done[-1], ("shot", "1930,20 300x200", None))
+        finally:
+            C.outputs, C._ipc = old
+
     def test_folders_per_kind(self):
         from sonata2.shell import capture as C
         self.assertEqual(C.DEFAULTS["shots_to"], "pictures")

@@ -38,6 +38,7 @@ window.sonata-share, window.sonata-share > contents { background: none; box-shad
 .share-item.selected { background: alpha(%(accent)s, 0.22); }
 .share-item .share-thumb { border-radius: 6px; box-shadow: 0 0 0 0.5px %(hairline)s, 0 2px 6px rgba(0,0,0,0.25); }
 .share-item .share-name { font-size: %(text_small)s; margin-top: 6px; }
+.share-item .share-badge { margin-bottom: 4px; -gtk-icon-shadow: 0 2px 3px rgba(0,0,0,0.3); }
 @keyframes share-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: none; } }
 .share-panel { animation: share-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 """, key="share-picker")
@@ -82,48 +83,74 @@ def _thumb(output):
         return None
 
 
-class SharePicker(Gtk.ApplicationWindow):
-    def __init__(self, app, lines):
-        super().__init__(application=app, title="Share Screen", decorated=False, resizable=False)
+def thumb_region(geo: str):
+    """A small picture of a part of the screen ("x,y wxh")."""
+    if not geo or not shutil.which("grim"):
+        return None
+    try:
+        png = subprocess.run(["grim", "-g", geo, "-s", "0.3", "-"], capture_output=True, timeout=4).stdout
+        loader = GdkPixbuf.PixbufLoader.new_with_type("png")
+        loader.write(png)
+        loader.close()
+        pb = loader.get_pixbuf()
+        w, h = pb.get_width(), pb.get_height()
+        scale = min(THUMB_W / w, 135 / h)                   # fit the item, never stretched
+        return Gdk.Texture.new_for_pixbuf(pb.scale_simple(max(1, round(w * scale)), max(1, round(h * scale)),
+                                                          GdkPixbuf.InterpType.BILINEAR))
+    except (OSError, subprocess.SubprocessError, GLib.Error, ZeroDivisionError, AttributeError):
+        return None
+
+
+class Picker(Gtk.Window):
+    """A glass sheet in the middle of the screen: a thumbnail and a name
+    per choice, the first one selected; action / Cancel, Return / Escape,
+    arrows, double-click. items: [{"name", "texture" | "icon", "badge"
+    (a Gio.Icon over the thumbnail's corner), "value"}]; on_done(value or None)."""
+
+    def __init__(self, app, title, text, items, action, on_done):
+        super().__init__(application=app, title=title, decorated=False, resizable=False)
         self.add_css_class("sonata-share")
-        self.lines, self.index, self.result = lines, 0, None
-        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, css_classes=["share-panel"])
+        self.values, self.index, self.on_done = [it["value"] for it in items], 0, on_done
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, css_classes=["share-panel"],
+                        halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
         ui.theme.glass_class(panel)
         head = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        head.append(Gtk.Label(label="Choose what to share", xalign=0, css_classes=["share-title"]))
-        head.append(Gtk.Label(label="The app will see everything on the screen you pick.", xalign=0,
-                              css_classes=["share-text"]))
+        head.append(Gtk.Label(label=title, xalign=0, css_classes=["share-title"]))
+        if text:
+            head.append(Gtk.Label(label=text, xalign=0, css_classes=["share-text"]))
         panel.append(head)
-        row = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=max(1, min(3, len(lines))), min_children_per_line=1,
-                          homogeneous=True, column_spacing=8, row_spacing=8)
+        grid = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=max(1, min(3, len(items))),
+                           min_children_per_line=1, homogeneous=True, column_spacing=8, row_spacing=8)
         self.items = []
-        for i, line in enumerate(lines):
-            kind, label, output = _parse(line)
+        for i, it in enumerate(items):
             item = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["share-item"])
-            tex = _thumb(output) if kind == "screen" else None
-            if tex is not None:
-                pic = Gtk.Picture(paintable=tex, can_shrink=False, css_classes=["share-thumb"],
-                                  overflow=Gtk.Overflow.HIDDEN, halign=Gtk.Align.CENTER)
-                item.append(pic)
+            if it.get("texture") is not None:
+                pic = Gtk.Picture(paintable=it["texture"], can_shrink=False, css_classes=["share-thumb"],
+                                  overflow=Gtk.Overflow.HIDDEN, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+                art = Gtk.Overlay(child=Gtk.Box(width_request=THUMB_W, height_request=135))
+                art.add_overlay(pic)
             else:
-                item.append(Gtk.Image(icon_name="video-display-symbolic" if kind == "screen" else "window-symbolic",
-                                      pixel_size=64, width_request=THUMB_W, height_request=135))
-            name = _display_name(label) if kind == "screen" else label
-            item.append(Gtk.Label(label=name, css_classes=["share-name"], ellipsize=Pango.EllipsizeMode.END,
+                art = Gtk.Overlay(child=Gtk.Image(icon_name=it.get("icon") or "window-symbolic", pixel_size=64,
+                                                  width_request=THUMB_W, height_request=135))
+            if it.get("badge") is not None:                 # the app's icon, like macOS' window picker
+                art.add_overlay(Gtk.Image(gicon=it["badge"], pixel_size=40, halign=Gtk.Align.CENTER,
+                                          valign=Gtk.Align.END, css_classes=["share-badge"]))
+            item.append(art)
+            item.append(Gtk.Label(label=it["name"], css_classes=["share-name"], ellipsize=Pango.EllipsizeMode.END,
                                   max_width_chars=28))
             click = Gtk.GestureClick()
-            click.connect("pressed", lambda _g, n, _x, _y, i=i: (self._select(i), n == 2 and self._share()))
+            click.connect("pressed", lambda _g, n, _x, _y, i=i: (self._select(i), n == 2 and self._act()))
             item.add_controller(click)
-            row.append(item)
+            grid.append(item)
             self.items.append(item)
-        panel.append(row)
+        panel.append(grid)
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
         cancel = Gtk.Button(label="Cancel", css_classes=["sonata-button"])
         cancel.connect("clicked", lambda *_: self._finish(None))
-        share = Gtk.Button(label="Share", css_classes=["sonata-button", "default"])
-        share.connect("clicked", lambda *_: self._share())
+        go = Gtk.Button(label=action, css_classes=["sonata-button", "default"])
+        go.connect("clicked", lambda *_: self._act())
         buttons.append(cancel)
-        buttons.append(share)
+        buttons.append(go)
         panel.append(buttons)
         self.set_child(panel)
         keys = Gtk.EventControllerKey()
@@ -147,17 +174,39 @@ class SharePicker(Gtk.ApplicationWindow):
         if keyval == Gdk.KEY_Escape:
             self._finish(None)
         elif keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
-            self._share()
+            self._act()
         elif keyval in (Gdk.KEY_Left, Gdk.KEY_Right) and self.items:
             self._select((self.index + (1 if keyval == Gdk.KEY_Right else -1)) % len(self.items))
         else:
             return False
         return True
 
-    def _share(self):
-        self._finish(self.lines[self.index] if self.lines else None)
+    def _act(self):
+        self._finish(self.values[self.index] if self.values else None)
 
-    def _finish(self, line):
+    def _finish(self, value):
+        done, self.on_done = self.on_done, None
+        self.set_visible(False)
+        if done is not None:
+            done(value)
+
+
+class SharePicker(Picker):
+    """The ScreenCast portal's picker (a process of its own: see main())."""
+
+    def __init__(self, app, lines):
+        self.lines, self.result = lines, None
+        items = []
+        for line in lines:
+            kind, label, output = _parse(line)
+            items.append({"name": _display_name(label) if kind == "screen" else label,
+                          "texture": _thumb(output) if kind == "screen" else None,
+                          "icon": "video-display-symbolic" if kind == "screen" else "window-symbolic",
+                          "value": line})
+        super().__init__(app, "Choose what to share", "The app will see everything on the screen you pick.",
+                         items, "Share", self._done)
+
+    def _done(self, line):
         self.result = line
         self.get_application().quit()
 
