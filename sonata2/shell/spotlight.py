@@ -197,7 +197,11 @@ class Spotlight(Gtk.ApplicationWindow):
 
     def open_spotlight(self):
         self.index.refresh()
-        self.apps = {a.get_id(): a for a in Gio.AppInfo.get_all() if a.should_show() and a.get_id()}
+        from .. import config
+        hidden = {h + ".desktop" for h in config.load("launchpad", {"pages": [], "hidden": []}).get("hidden", [])}
+        # apps in Launchpad's Hidden folder (behind the password) aren't found here either
+        self.apps = {a.get_id(): a for a in Gio.AppInfo.get_all()
+                     if a.should_show() and a.get_id() and a.get_id() not in hidden}
         self.entry.set_text("")
         self._search()
         self.present()

@@ -1,7 +1,7 @@
 """Dock right-click menus (macOS Big Sur layout).
 
 App:    <open windows>  |  Options > Keep in Dock / Open at Login /
-        Open File Location  |  Hide, Quit (running) or Open (not running)
+        Open File Location  |  Minimize (Maximize), Quit (running) or Open (not running)
 Trash:  Open  |  Empty Trash...
 """
 import os
@@ -124,7 +124,16 @@ def app_menu(dock, key: str, tile):
     if opts:
         sections.append([Item("Options", submenu=opts)])
     if wins:
-        sections.append([Item("Hide", lambda: [dock.manager.minimize(t) for t in wins]),
+        # Minimize; when every window already is: Maximize (brought back, full size)
+        if all(t.minimized for t in wins):
+            def restore():
+                for t in wins:
+                    dock.manager.activate(t)
+                    dock.manager.set_maximized(t, True)
+            first = Item("Maximize", restore)
+        else:
+            first = Item("Minimize", lambda: [dock.manager.minimize(t) for t in wins])
+        sections.append([first,
                          Item("Force Quit", lambda: force_quit(key)),
                          Item("Quit", lambda: [dock.manager.close(t) for t in wins])])
     elif info:

@@ -61,6 +61,14 @@ window.sonata-launchpad *:drop(active) { box-shadow: none; outline: none; border
                        100%% { transform: rotate(-1.6deg); } }
 .jiggle .lp-item .lp-icon, .jiggle .lp-item .lp-folder { animation: lp-jiggle 260ms ease-in-out infinite; }
 .jiggle .lp-item.odd .lp-icon, .jiggle .lp-item.odd .lp-folder { animation-delay: -130ms; }
+.lp-lock { -gtk-icon-size: 40%%; color: %(on_scrim)s; }
+.lp-lock-text { color: %(on_scrim)s; font-family: %(font)s; font-size: %(text_body)s; }
+.lp-lock-hint { color: %(on_scrim_secondary)s; font-family: %(font)s; font-size: %(text_small)s; }
+.lp-lock-panel passwordentry { min-width: 220px; min-height: 28px; border-radius: 8px; padding: 0 8px;
+  background: %(field_on_scrim)s; color: %(on_scrim)s; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.18); }
+@keyframes lp-shake { 0%%, 100%% { transform: none; } 20%%, 60%% { transform: translateX(-8px); }
+                      40%%, 80%% { transform: translateX(8px); } }
+.lp-lock-panel.shake { animation: lp-shake 360ms ease-in-out; }
 .lp-empty { color: %(on_scrim_secondary)s; font-family: %(font)s; font-size: %(text_title)s; }
 """, key="launchpad", lp_label="12px")
 
@@ -201,6 +209,15 @@ class LaunchItem(Gtk.Button):
     def _folder_icon(self, folder, size) -> Gtk.Widget:
         box = Gtk.Grid(css_classes=["lp-folder"], row_homogeneous=True, column_homogeneous=True,
                        width_request=size, height_request=size, halign=Gtk.Align.CENTER)
+        if folder.get("locked"):
+            # Hidden: generic app icons (nothing of what's inside) and a lock
+            mini = max(10, int(size * 0.8 / 3) - 4)
+            for i in range(min(9, len(folder["apps"]))):
+                box.attach(Gtk.Image(icon_name="application-x-executable", pixel_size=mini), i % 3, i // 3, 1, 1)
+            over = Gtk.Overlay(child=box)
+            over.add_overlay(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=int(size * 0.3),
+                                       css_classes=["lp-lock"], halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER))
+            return over
         mini = max(10, int(size * 0.8 / 3) - 4)
         for i, app_id in enumerate(folder["apps"][:9]):
             info = self.pad.installed.get(app_id)
@@ -377,7 +394,7 @@ class Launchpad(Gtk.ApplicationWindow):
         """Sync carousel pages with the model (widgets are reused)."""
         if getattr(self, "bin", None):
             self.bin.invalidate()
-        pages = self.model.pages
+        pages = self._pages_with_hidden()
         before = ui.transition.glide_record(self.widgets.values(), self)   # icons slide to their new place
         while self.carousel.get_n_pages() < len(pages):
             self.carousel.append(PageGrid(self, self.carousel.get_n_pages()))
@@ -395,6 +412,91 @@ class Launchpad(Gtk.ApplicationWindow):
 
     def save(self) -> None:
         config.save("launchpad", self.model.to_json())
+
+    # -- Hidden: apps hidden from the grid, in a folder that asks for the password ----------
+    HIDDEN = "Hidden"
+
+    def _pages_with_hidden(self):
+        """The model's pages plus the Hidden folder after the last item (not
+        stored: it holds model.hidden, shown only while there are some)."""
+        pages = self.model.pages
+        hidden = [a for a in self.model.hidden if a in self.installed]
+        if not hidden:
+            return pages
+        if not hasattr(self, "_hidden_item"):
+            self._hidden_item = {"folder": self.HIDDEN, "apps": [], "locked": True}
+        self._hidden_item["apps"][:] = hidden
+        pages = [list(p) for p in pages]
+        if len(pages[-1]) < M.PER_PAGE:
+            pages[-1].append(self._hidden_item)
+        else:
+            pages.append([self._hidden_item])
+        return pages
+
+    def hide_app(self, app_id: str) -> None:
+        """Into the Hidden folder: out of the grid, search and the Dock."""
+        self.model.hide(app_id)
+        self.save()
+        self.render()
+        pins = config.load("dock", {"pinned": None}).get("pinned")
+        if pins and app_id in pins:
+            self._save_dock_pins([p for p in pins if p != app_id])
+
+    def unhide_app(self, app_id: str) -> None:
+        """Back from Hidden to the end of the grid."""
+        if app_id in self.model.hidden:
+            self.model.hidden.remove(app_id)
+            self.model.reconcile()
+            self.save()
+            self._close_folder()
+
+    def _ask_password(self, folder) -> None:
+        """The Hidden folder opens only with the user's password (PAM, like
+        the lock screen); it stays open until Launchpad closes."""
+        from .. import pam
+        self._close_folder()
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, css_classes=["lp-panel", "lp-lock-panel"])
+        panel.append(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=36, css_classes=["lp-lock"]))
+        panel.append(Gtk.Label(label="Enter your password to see hidden apps", css_classes=["lp-lock-text"]))
+        entry = Gtk.PasswordEntry(show_peek_icon=True, halign=Gtk.Align.CENTER)
+        panel.append(entry)
+        hint = Gtk.Label(label="" if pam.available() else "PAM is not available: can't check passwords",
+                         css_classes=["lp-lock-hint"])
+        panel.append(hint)
+        wrap = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18, halign=Gtk.Align.CENTER,
+                       valign=Gtk.Align.CENTER)
+        title = Gtk.Label(label=folder["folder"], css_classes=["lp-panel-title"])
+        wrap.append(title)
+        wrap.append(panel)
+        self.overlay.add_overlay(wrap)
+        self.folder_view = (wrap, None, panel)
+        self.col.set_opacity(0.35)
+        entry.grab_focus()
+
+        def done(ok):
+            if self.folder_view is None or self.folder_view[0] is not wrap:
+                return False
+            entry.set_sensitive(True)
+            if ok:
+                self._unlocked = True
+                self._open_folder(folder)
+            else:
+                hint.set_label("Wrong password")
+                entry.set_text("")
+                entry.grab_focus()
+                panel.remove_css_class("shake")
+                GLib.idle_add(lambda: (panel.add_css_class("shake"), False)[1])
+            return False
+
+        def check(_e):
+            pw = entry.get_text()
+            if not pw:
+                return
+            entry.set_sensitive(False)
+            import threading
+            user = GLib.get_user_name()
+            threading.Thread(target=lambda: GLib.idle_add(done, pam.authenticate(user, pw)), daemon=True).start()
+        entry.connect("activate", check)
 
     def _config_changed(self) -> None:
         """launchpad.json changed elsewhere (Settings: reset, unhide)."""
@@ -491,6 +593,7 @@ class Launchpad(Gtk.ApplicationWindow):
 
     def close_launchpad(self, then=None) -> None:
         self._dock_above(False)
+        self._unlocked = False                  # Hidden asks for the password again next time
 
         def done():
             self.set_visible(False)
@@ -541,7 +644,10 @@ class Launchpad(Gtk.ApplicationWindow):
         if self.jiggling and not M.is_folder(widget.item):
             return
         if M.is_folder(widget.item):
-            self._open_folder(widget.item)
+            if widget.item.get("locked") and not getattr(self, "_unlocked", False):
+                self._ask_password(widget.item)
+            else:
+                self._open_folder(widget.item)
             return
         info = self.installed.get(widget.item)
         if info:
@@ -552,7 +658,8 @@ class Launchpad(Gtk.ApplicationWindow):
         self._close_folder()
         self.bin.invalidate()
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["lp-panel"])
-        title = Gtk.EditableLabel(text=folder["folder"], css_classes=["lp-panel-title"], halign=Gtk.Align.CENTER)
+        title = Gtk.EditableLabel(text=folder["folder"], css_classes=["lp-panel-title"], halign=Gtk.Align.CENTER,
+                                  editable=not folder.get("locked"))
 
         def renamed(*_):
             name = title.get_text().strip()
@@ -634,6 +741,8 @@ class Launchpad(Gtk.ApplicationWindow):
 
     def _key(self, _c, keyval, _code, state) -> bool:
         K = Gdk
+        if self.folder_view and self.folder_view[1] is None and keyval != K.KEY_Escape:
+            return False                        # typing the Hidden folder's password
         if keyval == K.KEY_Escape:
             if self.search.get_text():
                 self.search.set_text("")
@@ -695,8 +804,12 @@ class Launchpad(Gtk.ApplicationWindow):
         """Right-click menu (Sonata addition; Launchpad has none on macOS)."""
         Item = ui.menu.Item
         item = widget.item
+        in_hidden = bool(self.folder_view and self.folder_view[1] and self.folder_view[1].get("locked"))
         if M.is_folder(item):
-            sections = [[Item("Open", lambda: self._open_folder(item))]]
+            sections = [[Item("Open", lambda: self.activate_item(widget))]]
+        elif in_hidden:
+            sections = [[Item("Open", lambda: self.activate_item(widget))],
+                        [Item("Show in Launchpad", lambda: self.unhide_app(item))]]
         else:
             info = self.installed.get(item)
             sections = [[Item("Open", lambda: self.activate_item(widget))]]
@@ -724,8 +837,10 @@ class Launchpad(Gtk.ApplicationWindow):
                 from .dock_menu import show_in_files
                 sections.append([Item("Show in Files", lambda: self.close_launchpad(
                     lambda: show_in_files(info.get_filename())))])
+            hide = [Item("Hide", lambda: self.hide_app(item))]      # into the Hidden folder
             if info and not (info.get_id() or "").startswith(PROTECTED):
-                sections.append([Item("Move to Trash", lambda: self.ask_delete(item))])
+                hide.append(Item("Move to Trash", lambda: self.ask_delete(item)))
+            sections.append(hide)
         ui.menu.popup(widget, sections, at=(x, y))
 
     def _save_dock_pins(self, pins) -> None:
@@ -783,6 +898,9 @@ class Launchpad(Gtk.ApplicationWindow):
         src = Gtk.DragSource(actions=Gdk.DragAction.MOVE | Gdk.DragAction.COPY)
 
         def prepare(_s, _x, _y):
+            if (M.is_folder(widget.item) and widget.item.get("locked")) or \
+                    (self.folder_view and self.folder_view[1] and self.folder_view[1].get("locked")):
+                return None                     # Hidden stays where it is; its apps come out by the menu
             providers = [Gdk.ContentProvider.new_for_value("sonata2-launchpad-item")]
             info = None if M.is_folder(widget.item) else self.installed.get(widget.item)
             if info and info.get_filename():        # lets the Dock pin it
@@ -908,7 +1026,10 @@ class Launchpad(Gtk.ApplicationWindow):
         t = d.get("target")
         if t is not None and t.has_css_class("folder-target"):
             target = t.item
-            if M.is_folder(target):
+            if M.is_folder(target) and target.get("locked"):
+                if not M.is_folder(d["item"]):
+                    self.hide_app(d["item"])    # dropped on Hidden: hidden (and off the Dock)
+            elif M.is_folder(target):
                 self.model.make_folder(target, d["item"], target["folder"])
             else:
                 cats_a = (self.installed[target].get_categories() or "").split(";") if target in self.installed else []

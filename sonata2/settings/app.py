@@ -1679,27 +1679,18 @@ class Settings(Adw.ApplicationWindow):
         reset.connect("clicked", lambda *_: ui.dialog.alert(
             "Reset the Launchpad layout?", "Folders and your icon order are removed; apps are sorted by name.",
             [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
-            lambda r: r == "reset" and (config.save("launchpad", {"pages": [], "hidden": []}),
+            lambda r: r == "reset" and (config.save("launchpad", {"pages": [], "hidden": config.load(
+                "launchpad", {"pages": [], "hidden": []}).get("hidden", [])}),
                                         self.toast("Launchpad was reset")), parent=self))
         row = Adw.ActionRow(title="Layout", subtitle="Pages, folders and order")
         row.add_suffix(reset)
         g.add(row)
-        hidden = config.load("launchpad", {"pages": [], "hidden": []}).get("hidden", [])
+        n = len(config.load("launchpad", {"pages": [], "hidden": []}).get("hidden", []))
         h = group("Hidden apps")
-        for did in hidden:
-            r = Adw.ActionRow(title=did)
-            b = Gtk.Button(label="Show", valign=Gtk.Align.CENTER)
-            b.connect("clicked", lambda _b, did=did, r=r: (self._unhide(did), h.remove(r)))
-            r.add_suffix(b)
-            h.add(r)
-        if not hidden:
-            h.add(Adw.ActionRow(title="None"))
+        # the names stay behind the password: only the Hidden folder shows them
+        h.add(Adw.ActionRow(title=f"{n} hidden app{'s' if n != 1 else ''}" if n else "None",
+                            subtitle="In the Hidden folder in Launchpad, opened with your password"))
         return [g, h]
-
-    def _unhide(self, did: str) -> None:
-        data = config.load("launchpad", {"pages": [], "hidden": []})
-        data["hidden"] = [x for x in data.get("hidden", []) if x != did]
-        config.save("launchpad", data)
 
     def _save(self, name: str, key: str, value) -> None:
         """Write one Sonata setting; the running component reloads it."""
