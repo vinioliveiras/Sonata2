@@ -17,7 +17,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 from .. import pam  # noqa: E402
-from .loginui import Backdrop, avatar, clock, logind, password_field, power_bar, shake, wallpaper_texture  # noqa: E402
+from .loginui import Backdrop, WaitGuard, avatar, clock, logind, password_field, power_bar, shake, wallpaper_texture  # noqa: E402
 
 
 class LockScreen:
@@ -75,12 +75,18 @@ class LockScreen:
         self.hint = Gtk.Label(label="" if pam.available() else "PAM is not available: can't check passwords",
                               css_classes=["lk-hint"])
         col.append(self.hint)
+        import os
+        from ..throttle import Throttle
+        # waits after wrong passwords, kept in the user's state folder (a restart doesn't reset it)
+        self.guard = WaitGuard(self.entry, self.hint, Throttle(
+            os.path.join(GLib.get_user_state_dir(), "sonata2", "password-waits.json")))
+        self.guard.blocked(GLib.get_user_name())
         GLib.idle_add(lambda: (self.entry.grab_focus(), False)[1])
         return col
 
     def _check(self):
         pw = self.entry.get_text()
-        if not pw:
+        if not pw or self.guard.blocked(GLib.get_user_name()):
             return
         self.entry.set_sensitive(False)
         self.spinner.start()
@@ -93,7 +99,9 @@ class LockScreen:
         threading.Thread(target=work, daemon=True).start()
 
     def _done(self, ok):
+        user = GLib.get_user_name()
         if ok:
+            self.guard.succeeded(user)
             for w in (self.column, self.power):           # fade away, then the desktop
                 w.add_css_class("gr-leave")
             GLib.timeout_add(400, lambda: (self.lock.unlock(), False)[1])
@@ -101,6 +109,7 @@ class LockScreen:
         self.spinner.stop()
         self.slot.set_visible_child_name("field")
         shake(self.entry)
+        self.guard.failed(user)
         return False
 
     def _power(self, method):

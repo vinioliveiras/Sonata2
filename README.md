@@ -170,7 +170,8 @@ a password field that shakes on a wrong password, and a spinner while
 logging in. Sleep, Restart and Shut Down are at the bottom. It also lists
 other users and sessions, and has a display button: resolution at the
 highest refresh rate, saved, confirmed within 15 s. The lock screen has
-the same look.
+the same look. After a few wrong passwords both make you wait before
+trying again (1, 5, 15 minutes, then an hour), like macOS.
 
 **Menu bar.** Your distribution's logo (or a shape or symbol of your
 choice) with the Sonata menu: About, Settings, Recent Items, Sleep,

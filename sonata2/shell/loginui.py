@@ -178,6 +178,50 @@ def shake(entry: Gtk.Widget) -> None:
     GLib.timeout_add(500, lambda: (entry.remove_css_class("shake"), False)[1])
 
 
+class WaitGuard:
+    """Wrong passwords make the field wait (sonata2/throttle.py): the field
+    is disabled and the hint counts down ("Try again in 4:59")."""
+
+    def __init__(self, entry, hint, throttle):
+        self.entry, self.hint, self.throttle = entry, hint, throttle
+        self._src = 0
+        self._user = None
+
+    def blocked(self, user: str) -> bool:
+        """Show the wait for `user` if there is one; True while waiting."""
+        self._user = user
+        if self.throttle.wait_left(user) > 0:
+            self._count()
+            return True
+        return False
+
+    def failed(self, user: str) -> None:
+        if self.throttle.failed(user) > 0:
+            self._user = user
+            self._count()
+
+    def succeeded(self, user: str) -> None:
+        self.throttle.succeeded(user)
+
+    def _count(self) -> None:
+        self.entry.set_sensitive(False)
+        if not self._src:
+            self._tick()
+            self._src = GLib.timeout_add_seconds(1, self._tick)
+
+    def _tick(self) -> bool:
+        from .. import throttle
+        left = self.throttle.wait_left(self._user)
+        if left > 0 and self.entry.get_root() is not None:
+            self.hint.set_label(throttle.describe(left))
+            return True
+        self._src = 0
+        self.hint.set_label("")
+        self.entry.set_sensitive(True)
+        self.entry.grab_focus()
+        return False
+
+
 def clock(label: Gtk.Label) -> None:
     """Keep `label` on the date and time (every 10 s)."""
     def tick():

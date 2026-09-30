@@ -25,9 +25,10 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import greetd, ui  # noqa: E402
-from .loginui import Backdrop, avatar, clock, password_field, logind, power_bar, shake  # noqa: E402
+from .loginui import Backdrop, WaitGuard, avatar, clock, password_field, logind, power_bar, shake  # noqa: E402
 
 STATE = "/var/cache/sonata-greeter/state.json"
+WAITS = "/var/cache/sonata-greeter/password-waits.json"     # waits after wrong passwords, per user
 WALLPAPERS = "/var/lib/sonata-greeter"
 SESSION_DIRS = ("/usr/local/share/wayland-sessions", "/usr/share/wayland-sessions")
 
@@ -289,6 +290,9 @@ class Greeter:
         col.append(links)
         self.hint = Gtk.Label(css_classes=["lk-hint"])
         col.append(self.hint)
+        from ..throttle import Throttle
+        self.guard = WaitGuard(self.entry, self.hint, Throttle(WAITS))
+        self.guard.blocked(u.name)
         GLib.idle_add(lambda: (self.entry.grab_focus(), False)[1])
         return col
 
@@ -384,7 +388,7 @@ class Greeter:
     def _login(self):
         pw = self.entry.get_text()
         session = self._session()
-        if not pw or session is None:
+        if not pw or session is None or self.guard.blocked(self.user.name):
             return
         self.entry.set_sensitive(False)
         self.hint.set_label("")
@@ -421,9 +425,12 @@ class Greeter:
         if err.error_type != "auth_error":
             self.hint.set_label(str(err) or "Couldn't log in")
         shake(self.entry)
+        if err.error_type == "auth_error":
+            self.guard.failed(self.user.name)
         return False
 
     def _started(self):
+        self.guard.succeeded(self.user.name)
         self.state["user"] = self.user.name
         save_state(self.state)
         # (the spinner keeps turning while) the picture, name and bar fade away over the blurred wallpaper; the
