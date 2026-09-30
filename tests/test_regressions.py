@@ -60,6 +60,17 @@ class DockRegressions(unittest.TestCase):
         from sonata2.shell import dock
         self.assertIn("transition: none", rule(dock.CSS, ".dock-tile, .dock-tile:hover"))
 
+    def test_no_stretch_on_first_light_dark_switch(self):
+        """Still stretched after the transition fix: the theme cross-fade put
+        the Dock in an overlay on the first switch and its old picture (FILL)
+        stretched while the Dock re-laid out."""
+        from sonata2.shell import dock
+        src = pathlib.Path(dock.__file__).read_text()
+        body = src[src.index("class DockWindow"):]
+        self.assertIn("self.sonata_no_fade = True", body[:body.index("self.cfg = cfg") + 20])
+        theme_src = pathlib.Path(ui.theme.__file__).read_text()
+        self.assertIn("halign=Gtk.Align.START, valign=Gtk.Align.START)", theme_src)
+
     def test_bounce_has_no_per_keyframe_curves(self):
         """GTK ignores animation-timing-function inside keyframes (warnings,
         linear bounce): the arc is sampled instead."""

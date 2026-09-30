@@ -174,7 +174,11 @@ def _fade_window(win) -> None:
         over.set_child(child)
         _set_content(win, over)
         win._sonata_fade_overlay = over
-    pic = Gtk.Picture(paintable=tex, can_target=False, content_fit=Gtk.ContentFit.FILL)
+    # the old look at its own size, pinned to the top left: if the window's
+    # layout changes meanwhile it is covered, never stretched
+    pic = Gtk.Picture(paintable=tex, can_target=False, can_shrink=False, content_fit=Gtk.ContentFit.FILL,
+                      halign=Gtk.Align.START, valign=Gtk.Align.START)
+    pic.set_size_request(w, h)
     over.add_overlay(pic)
     t0 = GLib.get_monotonic_time()
 

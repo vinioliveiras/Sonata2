@@ -1262,6 +1262,10 @@ class DockWindow(Gtk.ApplicationWindow):
         # (a fixed-size window would keep its natural width).
         super().__init__(application=app, title="Dock", css_classes=["sonata-dock"],
                          decorated=False, resizable=True)
+        # Light/Dark: no picture cross-fade over the Dock (ui.theme wrapped it in
+        # an overlay the first time: it re-laid out and the old picture stretched
+        # sideways); its plate fades its own colours (ui.on_change)
+        self.sonata_no_fade = True
         self.cfg = cfg
         self.manager = manager
         self.dock = None
