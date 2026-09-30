@@ -35,6 +35,7 @@ SECTIONS = [  # id, title, icon, badge colour, group
     ("wallpaper", "Wallpaper", "image-x-generic-symbolic", "teal", "linux"),
     ("keyboard", "Keyboard", "input-keyboard-symbolic", "gray", "input"),
     ("trackpad", "Trackpad", "input-touchpad-symbolic", "gray", "input"),
+    ("shortcuts", "Keyboard Shortcuts", "preferences-desktop-keyboard-shortcuts-symbolic", "gray", "input"),
     ("mouse", "Mouse", "input-mouse-symbolic", "gray", "input"),
     ("gamepad", "Game Controllers", "input-gaming-symbolic", "gray", "input"),
     ("datetime", "Date & Time", "preferences-system-time-symbolic", "blue", "system"),
@@ -61,6 +62,7 @@ KEYWORDS = {
     "battery": "power energy low power mode charge sleep display off",
     "wallpaper": "background desktop picture", "keyboard": "layout input source repeat shortcuts",
     "trackpad": "touchpad tap click scroll gestures", "mouse": "pointer speed scroll natural",
+    "shortcuts": "keyboard shortcuts keys hotkeys windows super win snap desktop lock screenshot",
     "gamepad": "game controller gamepad xbox playstation dualsense joystick steam",
     "datetime": "clock time zone date", "notifications": "do not disturb alerts banners",
     "users": "account password picture avatar login items", "privacy": "security lock screen location trash",
@@ -1096,6 +1098,11 @@ class Settings(Adw.ApplicationWindow):
                         get("input", "left_handed_mode", "false") == "true",
                         lambda v: self._wf("left_handed_mode", v)))
         return [g]
+
+    def _page_shortcuts(self):
+        from .shortcuts_page import ShortcutsPage
+        self.shortcuts_page = ShortcutsPage(self)
+        return self.shortcuts_page.groups()
 
     def _page_gamepad(self):
         """Like macOS Game Controllers: the connected ones, then what they do

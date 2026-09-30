@@ -271,22 +271,29 @@ They are generated once and kept (Settings → Appearance → Regenerate).
 
 ## Keyboard shortcuts
 
-Super (the Windows key) plays the part of Cmd.
+Super (the Windows key) plays the part of Cmd. macOS-style and
+Windows-style shortcuts both work, and every one can be changed in
+**Settings → Keyboard Shortcuts** (click it, press the new keys).
 
 | Keys | Action |
 |---|---|
 | Super (alone), F4, pinch with 4 fingers | Apps |
-| Super+Space | Search |
-| Super+Tab / Super+Shift+Tab | switch apps |
+| Super+Space, Super+S | Search |
+| Super+E | Files |
+| Super+, / Super+I | Settings |
+| Ctrl+Shift+Esc | Task Manager |
+| Super+Tab / Super+Shift+Tab, Alt+Tab | switch apps |
 | Super+Q, Alt+F4 / Super+M / Ctrl+Super+F | close / minimize / full screen (remembered per app; Windows games open in full screen by themselves) |
+| Super+← / → / ↑ / ↓ | snap to the left / right half, maximize, restore |
+| Super+D | show the desktop (again: the windows come back) |
 | Ctrl+Up, F3, swipe up with 3 fingers | Overview |
-| Ctrl+Down, swipe down with 3 fingers | App Exposé |
-| swipe left/right with 3 fingers, Super+Alt+arrows | switch Spaces |
-| Super+Shift+3 / 4, Print | screenshot (screen / selection) |
-| Super+Shift+5 | capture toolbar (screenshots, screen recording) |
-| Ctrl+Super+Space | emoji |
-| Super+, | Settings |
-| Ctrl+Super+Q | lock the screen |
+| Ctrl+Down, swipe down with 3 fingers | Overview of all Spaces |
+| swipe left/right with 3 fingers, Ctrl+Super+← / →, Super+Alt+← / → | switch Spaces |
+| Super+Shift+3, Super+Print Screen / Super+Shift+4, Super+Shift+S | screenshot (screen / selection) |
+| Super+Shift+5, Print Screen | capture toolbar (screenshots, screen recording) |
+| Ctrl+Super+Space, Super+. | emoji |
+| Super+V | clipboard history |
+| Ctrl+Super+Q, Super+L | lock the screen |
 | Ctrl+Alt+T | terminal (works even if the shell crashed) |
 
 **Files:**
