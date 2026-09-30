@@ -421,6 +421,8 @@ class corners_render_instance_t :
  * input reaches the window exactly where it is drawn (view_2d_transformer_t,
  * used before, maps input through its own transform). */
 /* the top of a window that is always blurred: title bar + a toolbar */
+/* bumped with every change of the plugin (tests/test_regressions.py checks it) */
+#define SONATA_CORNERS_BUILD "2026-09-30.3 seam overlap rows, opaque too"
 static const int TOP_GLASS = 96;
 
 class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
@@ -972,6 +974,8 @@ class sonata_corners_t : public wf::plugin_interface_t
   public:
     void init() override
     {
+        /* which build runs (session.log): a fix is only in once install.sh rebuilt it */
+        LOGI("sonata-corners: build ", SONATA_CORNERS_BUILD);
         window_capture.init();
         if (!wf::get_core().is_gles2())
         {
