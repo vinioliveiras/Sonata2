@@ -659,6 +659,8 @@ class Settings(Adw.ApplicationWindow):
             self._bt_near_rows = {}
             self._bt_fill_near([d for d in devices if not d.paired])
             if state:
+                from ..backend import bluez
+                bluez.register_agent()             # answers "pair?" (on this, the GTK thread)
                 self._bt_scan(True)
             else:
                 near.set_visible(False)

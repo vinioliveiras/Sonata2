@@ -137,7 +137,9 @@ def connect(mac: str) -> Tuple[bool, str]:
     except GLib.Error as e:
         connect_error = _message(e)
     try:
-        ok, msg = _settled(bus, path)
+        # after an error the device may still come up by itself (the Xbox
+        # controller reconnects a few seconds later): give it longer
+        ok, msg = _settled(bus, path, 20 if (pair_error or connect_error) else 8)
     except GLib.Error as e:
         ok, msg = False, _message(e)
     if ok:
@@ -148,11 +150,11 @@ def connect(mac: str) -> Tuple[bool, str]:
 STAY_S = 4.0            # a real connection is still there this long after Connect
 
 
-def _settled(bus, path) -> Tuple[bool, str]:
+def _settled(bus, path, wait: float = 8) -> Tuple[bool, str]:
     """Connect can succeed and the link drop a second later (Xbox controllers
     do that when the driver doesn't suit them): it only counts when the
     device is connected with its services, and still is STAY_S later."""
-    deadline = time.monotonic() + 8
+    deadline = time.monotonic() + wait
     while time.monotonic() < deadline:          # connected, services resolved
         if _prop(bus, path, "Connected") and _prop(bus, path, "ServicesResolved"):
             break
@@ -216,3 +218,57 @@ def discovery(on: bool) -> None:
                           Gio.DBusCallFlags.NONE, 5000, None)
     except GLib.Error:
         pass
+
+
+# -- pairing agent -----------------------------------------------------------------------------
+# Without an agent BlueZ can't answer a device's "confirm pairing?" and Pair
+# fails ("Pairing failed") even for devices that need no code (controllers,
+# headphones). Sonata's agent says yes to those; devices that want a PIN or
+# passkey typed in aren't supported yet (they fail with a clear message).
+AGENT_PATH = "/io/github/vinioliveiras/sonata2/btagent"
+AGENT_XML = """<node><interface name="org.bluez.Agent1">
+<method name="Release"/>
+<method name="RequestPinCode"><arg type="o" direction="in"/><arg type="s" direction="out"/></method>
+<method name="DisplayPinCode"><arg type="o" direction="in"/><arg type="s" direction="in"/></method>
+<method name="RequestPasskey"><arg type="o" direction="in"/><arg type="u" direction="out"/></method>
+<method name="DisplayPasskey"><arg type="o" direction="in"/><arg type="u" direction="in"/><arg type="q" direction="in"/></method>
+<method name="RequestConfirmation"><arg type="o" direction="in"/><arg type="u" direction="in"/></method>
+<method name="RequestAuthorization"><arg type="o" direction="in"/></method>
+<method name="AuthorizeService"><arg type="o" direction="in"/><arg type="s" direction="in"/></method>
+<method name="Cancel"/>
+</interface></node>"""
+_agent = {}
+
+
+def _agent_call(_conn, _sender, _path, _iface, method, _params, invocation):
+    if method in ("RequestPinCode", "RequestPasskey"):
+        invocation.return_dbus_error("org.bluez.Error.Rejected", "Typing a code isn't supported yet")
+    else:                                   # confirmations, authorizations: yes (the user clicked Connect)
+        invocation.return_value(None)
+
+
+def register_agent() -> bool:
+    """Register Sonata's agent (once per process; call from the GTK thread,
+    which answers BlueZ's calls). True when registered."""
+    if _agent.get("id"):
+        return True
+    try:
+        bus = _bus()
+        info = Gio.DBusNodeInfo.new_for_xml(AGENT_XML).interfaces[0]
+        import warnings
+        fn = getattr(bus, "register_object_with_closures2", None)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            reg = (fn or bus.register_object)(AGENT_PATH, info, _agent_call, None, None)
+        mgr = ("org.bluez", "/org/bluez", "org.bluez.AgentManager1")
+        bus.call_sync(*mgr, "RegisterAgent", GLib.Variant("(os)", (AGENT_PATH, "DisplayYesNo")), None,
+                      Gio.DBusCallFlags.NONE, 3000, None)
+        try:
+            bus.call_sync(*mgr, "RequestDefaultAgent", GLib.Variant("(o)", (AGENT_PATH,)), None,
+                          Gio.DBusCallFlags.NONE, 3000, None)
+        except GLib.Error:
+            pass                             # another default agent (a desktop's): ours still answers ours
+        _agent.update(id=reg, bus=bus)
+        return True
+    except GLib.Error:
+        return False

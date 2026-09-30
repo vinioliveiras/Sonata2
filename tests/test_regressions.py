@@ -435,6 +435,22 @@ class BluetoothRegressions(unittest.TestCase):
             bluez._bus, bluez._device_path, bluez._prop, bluez.STAY_S = real
         self.assertTrue(ok, msg)
 
+    def test_pairing_agent_answers_confirmations(self):
+        """Still "Pairing failed": with no agent BlueZ can't confirm the
+        pairing; Sonata's agent says yes to confirmations, no to PIN entry."""
+        from sonata2.backend import bluez
+        seen = []
+
+        class Inv:
+            def return_value(self, v): seen.append("ok")
+            def return_dbus_error(self, name, msg): seen.append(name)
+        for m in ("RequestConfirmation", "RequestAuthorization", "AuthorizeService", "RequestPinCode"):
+            bluez._agent_call(None, "", "", "", m, None, Inv())
+        self.assertEqual(seen, ["ok", "ok", "ok", "org.bluez.Error.Rejected"])
+        Gio.DBusNodeInfo.new_for_xml(bluez.AGENT_XML)            # valid introspection
+        src = pathlib.Path(__file__).parent.parent.joinpath("sonata2", "settings", "app.py").read_text()
+        self.assertIn("bluez.register_agent()", src)
+
     def test_bluez_errors_read_as_sentences(self):
         from sonata2.backend import bluez
         e = GLib.Error.new_literal(GLib.quark_from_string("x"), "org.bluez.Error.Failed: br-connection-page-timeout", 1)
