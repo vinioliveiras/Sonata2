@@ -362,6 +362,9 @@ tools/dev-session.sh                     # the whole shell in a Wayfire window
 xvfb-run -a -s "-screen 0 1920x1200x24" python3 tools/readme-shots.py   # README screenshots (demo data) -> docs/screenshots/
 ```
 
+- **Regressions**: every reported bug that gets fixed gets a test in
+  `tests/test_regressions.py` (named after the bug), so it can't come back:
+  `dbus-run-session -- xvfb-run -a python3 -m unittest tests.test_regressions`.
 - **Tests without a display**: `python3 -m unittest tests.test_launchpad_model
   tests.test_autostart`.
 - **Tests that need a display**: `tests.test_dock`, `tests.test_launchpad`,

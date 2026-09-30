@@ -57,6 +57,8 @@ and sonata2/preview/window.py first: they are the patterns to follow.
   `xvfb-run -a -s "-screen 0 1200x800x24"` that presents the window with
   sample data, then `import -window root out.png`, and look at it (Read
   the png). Check Light and Dark (`ui.force_appearance("dark")`).
+- Bug fixes: add a regression test to `tests/test_regressions.py` (one per
+  reported bug, named after it) -- fixed bugs must not come back.
 - Performance: lazy views (Gtk.ListView/ColumnView/GridView for long
   lists), no polling faster than needed, pause timers when the window is
   hidden/minimized.

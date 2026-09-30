@@ -115,6 +115,9 @@ window.sonata-dock *:drop(active) { box-shadow: none; outline: none; border-colo
 .dock-tile, .dock-tile:hover, .dock-tile:active, .dock-tile:focus {
   padding: 0 %(tile_pad)dpx; margin: 0; min-width: 0; min-height: 0;
   border: none; border-radius: 0; background: none; box-shadow: none; outline: none;
+  /* Adwaita's buttons animate "all": on the first Light/Dark switch its new
+     style sheet made every tile's padding glide -- the Dock stretched sideways */
+  transition: none;
 }
 .edge-left .dock-tile, .edge-right .dock-tile { padding: %(tile_pad)dpx 0; }
 .dock-icon { transition: filter %(t_press)s ease-out; }
