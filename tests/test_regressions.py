@@ -873,6 +873,16 @@ class MusicTitleAndSeamRegressions(unittest.TestCase):
         self.assertGreaterEqual(pad_top + lcd_margin, band)         # the LCD starts below the band
         self.assertGreater(band, 5)                                # still covers the maximized overlap
 
+    def test_overlap_rows_take_the_title_bar_colour(self):
+        """Dark stubs at both ends of that seam, maximized: pixdecor paints
+        its button area twice there. Those rows are the title bar's colour
+        (glass only; opaque app content stays)."""
+        cpp = (pathlib.Path(__file__).resolve().parent.parent / "wayfire-plugin" / "src" /
+               "sonata-corners.cpp").read_text()
+        self.assertIn("float overlap = square_top > 0.5 ? 5.0 : 1.0;", cpp)
+        self.assertRegex(cpp, r"c\.a < 0\.99 && p\.y >= seam && p\.y < seam \+ overlap")
+        self.assertIn("c = fill;", cpp)
+
 
 class UnifiedToolbarSeamRegressions(unittest.TestCase):
     """A dark band under the title bar of maximized glass windows (Music):

@@ -121,7 +121,18 @@ void main()
     vec2 p = vec2(uvpos.x * size.x, (1.0 - uvpos.y) * size.y);
     vec2 lo = rect.xy;
     vec2 hi = rect.xy + rect.zw;
-    if (seam >= 0.0 && p.y >= seam && p.y < seam + SEAM_BAND && p.x >= lo.x && p.x <= hi.x)
+    float overlap = square_top > 0.5 ? 5.0 : 1.0;      /* rows pixdecor's title bar reaches under the client */
+    if (seam >= 0.0 && fill.a > 0.0 && c.a < 0.99 && p.y >= seam && p.y < seam + overlap &&
+        p.x >= lo.x && p.x <= hi.x)
+    {
+        /* those rows are the title bar: Sonata's toolbars leave them clear
+         * (ui/window.py), but pixdecor paints its button area and right
+         * edge there twice (a dark stub at either end, maximized) -- the
+         * title bar's own colour, exactly. Opaque app content (a browser's
+         * tabs) is the app's own and stays. */
+        c = fill;
+    }
+    else if (seam >= 0.0 && p.y >= seam && p.y < seam + SEAM_BAND && p.x >= lo.x && p.x <= hi.x)
     {
         /* pixdecor's title bar reaches a few pixels under the client's top
          * (1 px, 5 px maximized): a see-through toolbar there got the title
