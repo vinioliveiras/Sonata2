@@ -13,6 +13,7 @@
 Remembered in ~/.config/sonata2/fullscreen.json {"apps": {app_id: bool}}.
 Lives in the menu bar process (it already talks to Wayfire)."""
 import os
+import time
 
 from gi.repository import GLib
 
@@ -66,6 +67,34 @@ def looks_like_game(view, screen) -> bool:
     return bool(fixed and w >= MIN_GAME[0] and h >= MIN_GAME[1])
 
 
+LOG = os.path.join(GLib.get_user_cache_dir(), "sonata2", "windows.log")
+LOG_LINES = 400
+
+
+def log_view(event: str, view: dict) -> None:
+    """One line per window shown / closed (~/.cache/sonata2/windows.log, the
+    last LOG_LINES): where apps put their windows, for window bugs (Steam's
+    main window never showing up)."""
+    g = view.get("geometry") or {}
+    line = (f"{time.strftime('%H:%M:%S')} {event.replace('view-', ''):8} id={view.get('id')} "
+            f"app={view.get('app-id')!r} title={(view.get('title') or '')[:60]!r} pid={view.get('pid')} "
+            f"role={view.get('role')} type={view.get('type')} layer={view.get('layer')} "
+            f"at={g.get('x')},{g.get('y')} {g.get('width')}x{g.get('height')} out={view.get('output-name')} "
+            f"ws={view.get('wset-index')} min={view.get('minimized')} full={view.get('fullscreen')} "
+            f"parent={view.get('parent')}\n")
+    try:
+        lines = []
+        if os.path.exists(LOG) and os.path.getsize(LOG) > LOG_LINES * 400:
+            with open(LOG, encoding="utf-8") as f:
+                lines = f.readlines()[-LOG_LINES // 2:]
+            with open(LOG, "w", encoding="utf-8") as f:
+                f.writelines(lines)
+        with open(LOG, "a", encoding="utf-8") as f:
+            f.write(line)
+    except OSError:
+        pass
+
+
 class Rules:
     def __init__(self, ipc=None):
         if ipc is None:
@@ -116,6 +145,7 @@ class Rules:
         vid = view.get("id")
         if vid is None:
             return
+        log_view(msg.get("event", ""), view)
         if msg.get("event") == "view-unmapped":
             self._done.discard(vid)
             return
