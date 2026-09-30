@@ -33,6 +33,7 @@
  * SOFTWARE.
  */
 
+#include <sstream>
 #include <map>
 #include <wayfire/render-manager.hpp>
 #include <wayfire/output-layout.hpp>
@@ -300,6 +301,7 @@ class corners_render_instance_t :
     transformer_base_node_t *self;
     wayfire_toplevel_view view;
     damage_callback push_to_parent;
+    std::string last_geometry;     /* the seam log below, once per change */
 
   public:
     corners_render_instance_t(transformer_base_node_t *self, damage_callback push_damage,
@@ -391,6 +393,21 @@ class corners_render_instance_t :
             /* the client's surface top (below pixdecor's title bar), for the seam */
             auto m = view->toplevel()->current().margins;
             data_ptr->program.uniform1f("seam", m.top > inset ? float(g.y + m.top - bbox.y) : -1.0f);
+            {
+                /* where the seam fix works (session.log, once per change): the
+                 * texture (bbox), the frame, the margins and the seam row */
+                std::ostringstream o;
+                o << view->get_app_id() << (maximized ? " maximized" : "") << " bbox " << bbox.x << "," << bbox.y <<
+                    " " << bbox.width << "x" << bbox.height << " frame " << g.x << "," << g.y << " " << g.width <<
+                    "x" << g.height << " margins " << m.top << "/" << m.left << "/" << m.right << "/" << m.bottom <<
+                    " inset " << inset << " seam " << (m.top > inset ? g.y + m.top - bbox.y : -1) <<
+                    " scale " << data.target.scale;
+                if (o.str() != last_geometry)
+                {
+                    last_geometry = o.str();
+                    LOGI("sonata-corners: seam ", last_geometry);
+                }
+            }
             data_ptr->program.uniform4f("shadow", shadow_color);
             data_ptr->program.uniform1f("shadow_radius", shadow_r);
             data_ptr->program.attrib_pointer("position", 2, 0, vertexData);
@@ -422,7 +439,7 @@ class corners_render_instance_t :
  * used before, maps input through its own transform). */
 /* the top of a window that is always blurred: title bar + a toolbar */
 /* bumped with every change of the plugin (tests/test_regressions.py checks it) */
-#define SONATA_CORNERS_BUILD "2026-09-30.3 seam overlap rows, opaque too"
+#define SONATA_CORNERS_BUILD "2026-09-30.4 seam geometry log"
 static const int TOP_GLASS = 96;
 
 class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
