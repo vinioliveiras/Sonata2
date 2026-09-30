@@ -69,7 +69,8 @@ def _dir(where: str, other: str = "") -> str:
     if where == "other" and other:
         path = other
     else:
-        path = GLib.get_user_special_dir(_SPECIAL.get(where, _SPECIAL["desktop"])) or GLib.get_home_dir()
+        from .. import userdirs
+        path = userdirs.special(_SPECIAL.get(where, _SPECIAL["desktop"]), create=True) or GLib.get_home_dir()
     try:
         os.makedirs(path, exist_ok=True)
     except OSError:

@@ -28,7 +28,8 @@ UNKNOWN_ARTIST, UNKNOWN_ALBUM = "Unknown Artist", "Unknown Album"
 
 
 def music_dir() -> str:
-    d = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_MUSIC)
+    from .. import userdirs
+    d = userdirs.special(GLib.UserDirectory.DIRECTORY_MUSIC)
     return d or os.path.join(GLib.get_home_dir(), "Music")
 
 

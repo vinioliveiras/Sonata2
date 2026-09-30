@@ -59,7 +59,8 @@ button.cam-shutter image { -gtk-icon-size: 22px; }
 
 # -- pure logic (tested) ----------------------------------------------------------------------
 def photos_dir() -> str:
-    pics = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES) or GLib.get_home_dir()
+    from .. import userdirs                      # (~/Camera when the session had no Pictures set)
+    pics = userdirs.special(GLib.UserDirectory.DIRECTORY_PICTURES, create=True) or GLib.get_home_dir()
     return os.path.join(pics, "Camera")
 
 

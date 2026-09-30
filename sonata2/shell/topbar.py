@@ -340,7 +340,8 @@ class Bar(Gtk.CenterBox):
         U = GLib.UserDirectory
 
         def place(kind):
-            p = GLib.get_user_special_dir(kind)
+            from .. import userdirs
+            p = userdirs.special(kind)
             return Gio.File.new_for_path(p).get_uri() if p else None
         home = Gio.File.new_for_path(GLib.get_home_dir()).get_uri()
         rows = [("Recents", "sonata:recents"), ("Documents", place(U.DIRECTORY_DOCUMENTS)),

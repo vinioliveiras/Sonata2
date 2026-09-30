@@ -262,7 +262,8 @@ class Folder:
 
 def xdg_uri(kind) -> str:
     """URI of an XDG user folder (GLib.UserDirectory), or "" when unset/home."""
-    p = GLib.get_user_special_dir(kind)
-    if not p or os.path.realpath(p) == os.path.realpath(GLib.get_home_dir()) or not os.path.isdir(p):
+    from .. import userdirs
+    p = userdirs.special(kind)                    # also without user-dirs.dirs (a fresh Sonata session)
+    if not p:
         return ""
     return Gio.File.new_for_path(p).get_uri()
