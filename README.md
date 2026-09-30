@@ -5,12 +5,19 @@ covers the login screen, menu bar, Dock, Launchpad, Search, notifications,
 Control Center, a file manager and a Settings app. Everything is animated,
 light and dark, and made to feel smooth on ordinary hardware.
 
-The look comes from **themes**. The first theme is inspired by macOS
-(Big Sur to Ventura: layout, glass, motion). A Windows 11-style theme with
-a task bar comes next. Later you will be able to make your own. Every
-colour, size, radius and animation timing lives in one place (design
-tokens, [sonata2/ui/tokens.py](sonata2/ui/tokens.py)). A theme is a set
-of those values, not a fork of the code.
+Sonata is meant to be a **modern, highly customizable shell**, not a copy
+of any one system. The look comes from **themes**: every colour, size,
+radius and animation timing lives in one place (design tokens,
+[sonata2/ui/tokens.py](sonata2/ui/tokens.py)), and a theme is a set of
+those values, not a fork of the code.
+
+> **About the current look.** The one theme there is today follows a
+> macOS-like style. It is a **reference theme for development and
+> testing**: a well-known, demanding design to build and measure the
+> shell's parts against (glass, motion, layout). It is not the goal.
+> Other themes come next (a Windows 11-style one with a task bar, then
+> Sonata's own), and later you will make your own. See
+> [Design and trademarks](#design-and-trademarks).
 
 Sonata runs on [Wayfire](https://github.com/WayfireWM/wayfire) with GTK 4
 and libadwaita. It works on any distribution that ships them, and it
@@ -60,6 +67,7 @@ doesn't need GNOME or KDE.
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
 - [Project layout](#project-layout)
+- [Design and trademarks](#design-and-trademarks)
 - [License](#license)
 
 ---
@@ -407,6 +415,24 @@ docs/               design system, feature parity
 Sonata succeeds [Sonata](https://github.com/vinioliveiras/sonata)
 (Quickshell on KWin) and started from the GTK4 look of
 [LayerOSX](https://github.com/vinioliveiras/LayerOSX).
+
+## Design and trademarks
+
+Sonata is an independent open-source project. It is **not affiliated with,
+endorsed by or sponsored by Apple Inc.** (or Microsoft). macOS, Mac, Big
+Sur, Ventura, Finder, Launchpad, Spotlight and Mission Control are
+trademarks of Apple Inc.; Windows is a trademark of Microsoft. They are
+named here only to describe what a theme looks like or what a part of
+Sonata does.
+
+- The macOS-like theme is a **reference and test theme** while the shell
+  is being built. Sonata's direction is its own design and themes anyone
+  can make and change.
+- Sonata's code and its own artwork are original. It does **not** ship
+  Apple's software, fonts or system artwork: the font is Inter, and the
+  icon and cursor sets are open-source community projects (some recreate
+  that style) under their own licences, listed below. You can install Apple's fonts yourself if you
+  own a licence (see [Troubleshooting](#troubleshooting)).
 
 ## License
 
