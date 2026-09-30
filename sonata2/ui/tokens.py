@@ -34,8 +34,11 @@ LIGHT = {
     "indicator": "rgba(0, 0, 0, 0.62)",          # Dock running dot
     "bar_bg": "rgba(228, 228, 234, 0.60)",       # menu bar: the same glass as glass_tint
     # title bars Wayfire draws (Chrome, Spotify, X11 apps): the Dock's glass
-    "titlebar_bg": "rgba(228, 228, 234, 0.60)",          # = glass_tint
-    "titlebar_bg_inactive": "rgba(240, 240, 243, 0.74)",
+    # windows' own glass (title bars, toolbars, sidebars): darker than the
+    # Dock/menu bar glass, so windows read apart from the desktop (Vini)
+    "window_glass": "rgba(210, 210, 218, 0.74)",
+    "titlebar_bg": "rgba(210, 210, 218, 0.74)",          # = window_glass
+    "titlebar_bg_inactive": "rgba(224, 224, 230, 0.82)",
     "titlebar_text": "rgba(38, 38, 38, 1)",
     "titlebar_text_inactive": "rgba(154, 154, 154, 1)",
     "window_outline": "rgba(0, 0, 0, 0.18)",             # hairline of Wayfire-framed windows
@@ -92,8 +95,9 @@ DARK = {
     "solid_tint": "rgba(30, 30, 34, 0.86)",
     "indicator": "rgba(255, 255, 255, 0.72)",
     "bar_bg": "rgba(16, 16, 20, 0.58)",           # = glass_tint
-    "titlebar_bg": "rgba(16, 16, 20, 0.58)",
-    "titlebar_bg_inactive": "rgba(30, 30, 34, 0.68)",
+    "window_glass": "rgba(4, 4, 6, 0.76)",
+    "titlebar_bg": "rgba(4, 4, 6, 0.76)",                # = window_glass
+    "titlebar_bg_inactive": "rgba(16, 16, 18, 0.82)",
     "titlebar_text": "rgba(230, 230, 230, 1)",
     "titlebar_text_inactive": "rgba(138, 138, 138, 1)",
     "window_outline": "rgba(255, 255, 255, 0.14)",       # dark windows: a light edge, like macOS
