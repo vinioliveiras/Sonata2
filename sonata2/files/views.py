@@ -524,6 +524,7 @@ class ListView(_Cells):
         self._init_cells()
         self.view = Gtk.ColumnView(show_column_separators=False, show_row_separators=False,
                                    enable_rubberband=True, reorderable=True, css_classes=["fs-list"])
+        ui.columns.fill_last(self.view)
         self.sorted = Gtk.SortListModel(model=model, sorter=self.view.get_sorter())
         self.model = self.sorted
         self.selection = Gtk.MultiSelection(model=self.sorted)
@@ -546,7 +547,7 @@ class ListView(_Cells):
                      width=90)
         self._column("Kind", self._setup_text, lambda _f, it: self._bind_text(it, kind(it.get_item())),
                      lambda a, b: _cmp(kind(a).casefold(), kind(b).casefold()) or _cmp(sort_key(a), sort_key(b)),
-                     width=160, expand=True)
+                     width=160)
         self.view.sort_by_column(name, Gtk.SortType.ASCENDING)
         self.widget = self.view
         self._dnd_list(self.view, rubberband=True)

@@ -370,5 +370,8 @@ def row_at(view, x, y):
 
 
 def table(css=("tm-list",)) -> Gtk.ColumnView:
-    return Gtk.ColumnView(show_column_separators=False, show_row_separators=False, reorderable=False,
+    view = Gtk.ColumnView(show_column_separators=False, show_row_separators=False, reorderable=False,
                           css_classes=list(css))
+    from .. import ui
+    ui.columns.fill_last(view)          # columns keep their widths; the last one fills
+    return view

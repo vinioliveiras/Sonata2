@@ -314,6 +314,7 @@ class SongTable:
         self.filtered = Gtk.FilterListModel(model=self.store, filter=win.track_filter)
         self.view = Gtk.ColumnView(show_column_separators=False, show_row_separators=False, reorderable=True,
                                    css_classes=["mu-songs"])
+        ui.columns.fill_last(self.view)     # columns keep their widths; the last one fills
         self.sorted = Gtk.SortListModel(model=self.filtered, sorter=self.view.get_sorter())
         self.selection = Gtk.MultiSelection(model=self.sorted)
         self.view.set_model(self.selection)
@@ -322,7 +323,7 @@ class SongTable:
         self._column("", self._setup_now, self._bind_now, None, width=26, resizable=False,
                      unbind=lambda _f, it: self.bound_now.discard(it.get_child()))
         title = self._column("Title", self._setup_text, lambda _f, it: self._text(it, it.get_item().t.get("title")),
-                             lambda t: _fold(t.get("title")), expand=True, dim=False)
+                             lambda t: _fold(t.get("title")), width=300, dim=False)
         self._column("Time", lambda f, it: self._setup_text(f, it, xalign=1),
                      lambda _f, it: self._text(it, fmt_time(it.get_item().t.get("duration"))
                                                if it.get_item().t.get("duration") else ""),

@@ -1246,6 +1246,37 @@ class FilesSidebarTests(unittest.TestCase):
             self.assertIn("inset 1px 0 %(separator)s", rule, f)
 
 
+class ColumnsFillLastTests(unittest.TestCase):
+    """Task Manager (and Files, Music) list columns got stuck when resized: a
+    middle column expanded and fought every drag. Every Sonata list keeps
+    its column widths; only the last visible column fills (ui.columns)."""
+
+    def _expanding(self, view):
+        cols = view.get_columns()
+        return [cols.get_item(i).get_expand() for i in range(cols.get_n_items()) if cols.get_item(i).get_visible()]
+
+    def test_helper_follows_changes(self):
+        view = Gtk.ColumnView()
+        ui.columns.fill_last(view)
+        a, b, c = (Gtk.ColumnViewColumn(title=t, expand=True) for t in "abc")
+        for col in (a, b, c):
+            view.append_column(col)
+        self.assertEqual(self._expanding(view), [False, False, True])
+        c.set_visible(False)
+        self.assertEqual(self._expanding(view), [False, True])
+        c.set_visible(True)
+        view.insert_column(0, c)                                     # reordered: c first now
+        self.assertEqual(self._expanding(view), [False, False, True])
+        self.assertTrue(b.get_expand())
+
+    def test_every_list_uses_it(self):
+        root = pathlib.Path(__file__).resolve().parent.parent / "sonata2"
+        for f in root.rglob("*.py"):
+            src = f.read_text()
+            if "Gtk.ColumnView(" in src:
+                self.assertIn("ui.columns.fill_last(", src, f"{f}: every column view keeps its widths")
+
+
 class SteamGameDockTests(unittest.TestCase):
     """Steam games showed in the Dock as a generic icon named
     "steam_app_<id>": their name and icon now come from Steam."""
