@@ -151,6 +151,18 @@ class MixerUiTest(unittest.TestCase):
     def tearDown(self):
         self.win.destroy()
 
+    def test_row_looks_like_the_sound_slider(self):
+        """Vini: the big white slider of the Sound menu, the app's icon and
+        name above it (symmetrical with the main one)."""
+        from sonata2.ui.controls import ModuleSlider
+        self.box.set_streams(M.parse(PACTL))
+        row = self.box.rows["firefox"]
+        self.assertIsInstance(row.slider, ModuleSlider)
+        self.assertEqual(row.box.get_orientation(), Gtk.Orientation.VERTICAL)
+        title, capsule = row.box.get_first_child(), row.box.get_last_child()
+        self.assertIs(title.get_first_child(), row.mute)          # icon, then name, on top
+        self.assertTrue(capsule.has_css_class("cc-slider-box"))   # the capsule under them
+
     def test_rows_follow_the_streams(self):
         self.assertTrue(self.box.empty.get_visible())
         ss = M.parse(PACTL)

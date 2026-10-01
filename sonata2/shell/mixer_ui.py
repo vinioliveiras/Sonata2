@@ -12,11 +12,13 @@ from ..backend import mixer  # noqa: E402
 
 SLIDE_MS = 160
 APPLY_MS = 120          # a moving slider: one pactl call per pause, not per step
-ROW_SLIDER_W = 110
-
 ui.register("""
-.mixer-row { min-height: 26px; padding: 1px 10px; }
-.mixer-row label { font-size: %(text_body)s; }
+/* like the Sound menu's own slider (panel-header + Control Center capsule):
+   the app's icon and name above, the big white slider under them (Vini) */
+.mixer-row { padding: 4px 10px 6px 10px; }
+.mixer-row .mixer-title label { font-size: %(text_body)s; font-weight: 400; }
+.mixer-row .cc-slider-box { transition: opacity %(t_fast)s ease-out; }
+.mixer-row.muted .cc-slider-box { opacity: 0.5; }
 .mixer-row button.mixer-mute { padding: 0; min-width: 20px; min-height: 20px; background: none; border: none;
   box-shadow: none; transition: opacity %(t_fast)s ease-out; }
 .mixer-row.muted button.mixer-mute { opacity: 0.4; }
@@ -40,21 +42,22 @@ class MixerRow(Gtk.Revealer):
     def __init__(self, owner, stream):
         super().__init__(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN, transition_duration=SLIDE_MS)
         self.owner, self.key = owner, stream.key
-        self.box = Gtk.Box(spacing=8, css_classes=["mixer-row"])
+        from .topbar import _slider_with_icon, _speaker_icon
+        self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5, css_classes=["mixer-row"])
+        title = Gtk.Box(spacing=6, css_classes=["mixer-title"])
         self.mute = Gtk.Button(css_classes=["mixer-mute"], valign=Gtk.Align.CENTER, can_focus=False,
                                tooltip_text="Mute")
         self.image = Gtk.Image(pixel_size=16)
         icons.set_image(self.image, _gicon(stream))
         self.mute.set_child(self.image)
         self.mute.connect("clicked", lambda _b: self.toggle_mute())
-        self.box.append(self.mute)
+        title.append(self.mute)
         self.label = Gtk.Label(label=stream.name, xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.END,
-                               max_width_chars=14, width_chars=1)
-        self.box.append(self.label)
-        self.slider = ui.controls.slider(stream.volume, self._moved, lower=0, upper=mixer.MAX_PERCENT)
-        self.slider.set_size_request(ROW_SLIDER_W, -1)
-        self.slider.set_hexpand(False)
-        self.box.append(self.slider)
+                               width_chars=1)
+        title.append(self.label)
+        self.box.append(title)
+        capsule, self.slider = _slider_with_icon(_speaker_icon, stream.volume, self._moved)
+        self.box.append(capsule)
         self.set_child(self.box)
         self._src = 0
         self._quiet = False
