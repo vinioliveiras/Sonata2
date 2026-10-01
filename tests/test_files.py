@@ -151,6 +151,23 @@ class TabsTest(unittest.TestCase):
         w.go(self.uri("A"))
         self.assertEqual(lv.sort_state(), ("Size", True))
 
+    def test_sort_by_in_icons(self):
+        """View > Sort By works in icons too, and is the folder's one order (list included)."""
+        w = self.win
+        open(os.path.join(self.d, "big.txt"), "w").write("x" * 5000)
+        self.assertTrue(spin(lambda: w.folder.store.get_n_items() == 4))
+        icons = w.views["icons"]
+        names = lambda: [icons.model.get_item(i).get_name() for i in range(icons.model.get_n_items())]
+        self.assertEqual(names(), ["A", "B", "big.txt", "f.txt"])
+        w.sort_by("Size")                                          # biggest first
+        self.assertEqual(names()[0], "big.txt")
+        self.assertEqual(w.views["list"].sort_state(), ("Size", True))
+        w.go(self.uri("A"))
+        self.assertEqual(icons.sort_state(), ("Name", False))
+        w.go_back()
+        self.assertEqual(icons.sort_state(), ("Size", True))
+        self.assertEqual(names()[0], "big.txt")
+
     def test_keys_and_background_tab(self):
         w = self.win
         info = next(w.folder.store.get_item(i) for i in range(3) if w.folder.store.get_item(i).get_name() == "A")

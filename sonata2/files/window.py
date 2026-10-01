@@ -24,7 +24,7 @@ from .. import config, names, ui  # noqa: E402
 from . import folder, folderprefs, ops, packages  # noqa: E402
 from .search import Search  # noqa: E402
 from .folder import APPS, RECENTS, VIRTUAL, file_of, is_dir  # noqa: E402
-from .views import ColumnsView, IconsView, ListView  # noqa: E402
+from .views import SORT_BY, ColumnsView, IconsView, ListView  # noqa: E402
 from .sidebar import Sidebar  # noqa: E402
 from .tabs import TabStrip  # noqa: E402
 
@@ -329,7 +329,8 @@ class FilesWindow(Adw.ApplicationWindow):
                                    lambda: self.show_hidden),
         }
         # a header click sorts this folder that way from now on
-        views["list"].on_sort = lambda state: tab.uri and folderprefs.remember(tab.uri, sort=state)
+        views["list"].on_sort = lambda state: (views["icons"].set_sort(*state),
+                                                tab.uri and folderprefs.remember(tab.uri, sort=state))
         for v in views.values():
             if hasattr(v, "selection"):              # Quick Look follows the selection
                 v.selection.connect("selection-changed", lambda *_: tab is self.tab and self._follow_quicklook())
@@ -373,7 +374,16 @@ class FilesWindow(Adw.ApplicationWindow):
             else:
                 tab.view = tab.views[vid]
                 tab.stack.set_visible_child_name(vid)
-        tab.views["list"].set_sort(*p.get("sort", folderprefs.DEFAULT_SORT))
+        for vid in ("list", "icons"):
+            tab.views[vid].set_sort(*p.get("sort", folderprefs.DEFAULT_SORT))
+
+    def sort_by(self, title: str) -> None:
+        """View > Sort By: this folder, both icons and list (Finder's direction for each)."""
+        state = (title, dict(SORT_BY).get(title, False))
+        for vid in ("list", "icons"):
+            self.tab.views[vid].set_sort(*state)
+        if self.tab.uri:
+            folderprefs.remember(self.tab.uri, sort=state)
 
     def _sync_view_buttons(self):
         b = self.view_buttons[self.tab.view_id]
@@ -713,6 +723,10 @@ class FilesWindow(Adw.ApplicationWindow):
                         [Item("View", submenu=[[Item(label, lambda v=vid: self.set_view(v),
                                                      checked=self.view is self.views[vid])
                                                 for vid, _i, label in VIEWS]])]]
+            if self.view is not self.views["columns"]:
+                cur = self.view.sort_state()[0]
+                sections[-1].append(Item("Sort By", submenu=[[Item(t, lambda t=t: self.sort_by(t),
+                                                                   checked=t == cur) for t, _d in SORT_BY]]))
             if self._in_trash():
                 sections.insert(0, [Item("Empty Trash", self.empty_trash)])
             if here:

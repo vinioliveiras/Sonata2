@@ -433,9 +433,15 @@ def _inline_rename(box, info, on_commit):
 
 # -- Icons --------------------------------------------------------------------------------
 class IconsView(_Cells):
+    """Icons in a grid, sorted by name unless View > Sort By says otherwise
+    (the same order as the list's: one per folder, folderprefs.py)."""
+
     def __init__(self, model, on_open):
         self._init_cells()
-        self.model = model
+        self._sort = ("Name", False)
+        self.sorter = Gtk.CustomSorter.new(lambda a, b, _d: self._compare(a, b))
+        self.model = Gtk.SortListModel(model=model, sorter=self.sorter)
+        model = self.model
         self.selection = Gtk.MultiSelection(model=model)
         f = Gtk.SignalListItemFactory()
         f.connect("setup", self._setup)
@@ -468,6 +474,20 @@ class IconsView(_Cells):
     def _scroll_to(self, pos):
         self.widget.scroll_to(pos, Gtk.ListScrollFlags.FOCUS, None)
 
+    def _compare(self, a, b) -> int:
+        title, desc = self._sort
+        c = SORTS.get(title, SORTS["Name"])(a, b)
+        return -c if desc else c
+
+    def sort_state(self) -> tuple:
+        return self._sort
+
+    def set_sort(self, title: str, descending: bool = False) -> None:
+        title = title if title in SORTS else "Name"
+        if (title, bool(descending)) != self._sort:
+            self._sort = (title, bool(descending))
+            self.sorter.changed(Gtk.SorterChange.DIFFERENT)
+
     def selected(self):
         return _selected(self.selection, self.model)
 
@@ -488,6 +508,18 @@ class IconsView(_Cells):
 # -- List ---------------------------------------------------------------------------------
 def _cmp(a, b):
     return (a > b) - (a < b)
+
+
+# Sort By (icons) and the list's headers: column title -> compare(a, b), ascending
+SORTS = {
+    "Name": lambda a, b: _cmp(sort_key(a), sort_key(b)),
+    "Kind": lambda a, b: _cmp(kind(a).casefold(), kind(b).casefold()) or _cmp(sort_key(a), sort_key(b)),
+    "Date Modified": lambda a, b: _cmp(a.get_attribute_uint64("time::modified"),
+                                       b.get_attribute_uint64("time::modified")),
+    "Size": lambda a, b: _cmp(-1 if is_dir(a) else a.get_size(), -1 if is_dir(b) else b.get_size()),
+}
+# Sort By's direction for each (Finder: newest and biggest first)
+SORT_BY = (("Name", False), ("Kind", False), ("Date Modified", True), ("Size", True))
 
 
 NAME_W = 320
@@ -535,19 +567,14 @@ class ListView(_Cells):
         # the edge being dragged stayed put, away from the pointer -- the next
         # drag then grabbed Name's header and reordered it instead.) Widths
         # are remembered.
-        name = self._column("Name", self._setup_name, self._bind_name,
-                            lambda a, b: _cmp(sort_key(a), sort_key(b)), width=NAME_W,
+        name = self._column("Name", self._setup_name, self._bind_name, SORTS["Name"], width=NAME_W,
                             unbind=lambda _f, it: self._untrack(it.get_child()))
         self._column("Date Modified", self._setup_text, lambda _f, it: self._bind_text(it, date(it.get_item())),
-                     lambda a, b: _cmp(a.get_attribute_uint64("time::modified"),
-                                       b.get_attribute_uint64("time::modified")), width=190)
+                     SORTS["Date Modified"], width=190)
         self._column("Size", lambda f, it: self._setup_text(f, it, xalign=1),
-                     lambda _f, it: self._bind_text(it, size(it.get_item())),
-                     lambda a, b: _cmp(-1 if is_dir(a) else a.get_size(), -1 if is_dir(b) else b.get_size()),
-                     width=90)
+                     lambda _f, it: self._bind_text(it, size(it.get_item())), SORTS["Size"], width=90)
         self._column("Kind", self._setup_text, lambda _f, it: self._bind_text(it, kind(it.get_item())),
-                     lambda a, b: _cmp(kind(a).casefold(), kind(b).casefold()) or _cmp(sort_key(a), sort_key(b)),
-                     width=160)
+                     SORTS["Kind"], width=160)
         self.view.sort_by_column(name, Gtk.SortType.ASCENDING)
         self.on_sort = None                     # callback((title, descending)) when you click a header
         self._sorting = False
