@@ -649,6 +649,7 @@ class Bar(Gtk.CenterBox):
         one), Sound Preferences…"""
         # the same slider as Control Center's Sound module (icon in the capsule)
         box, slider = _slider_with_icon(_speaker_icon, 0, lambda v: self._set_volume(v))
+        _volume_feedback(slider)
         holder = Gtk.Box(css_classes=["panel-header"])
         holder.append(box)
         outs = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -849,6 +850,12 @@ def _slider_with_icon(icon, value, on_change, sensitive=True, button=None):
     return row, sl
 
 
+def _volume_feedback(slider) -> None:
+    """The volume feedback sound when the slider is let go (Settings > Sound)."""
+    from .. import sounds
+    ui.controls.on_release(slider, lambda: sounds.play_soon("volume"))
+
+
 def _speaker_icon(v) -> str:
     """Big Sur speaker: slashed at 0, then one to three waves."""
     return ("audio-volume-muted-symbolic" if v <= 0 else "audio-volume-low-symbolic" if v < 34 else
@@ -1023,6 +1030,7 @@ class ControlCenter(Gtk.Box):
             _speaker_icon, 50, bar._set_volume,
             button=_round_button("sonata-audio-output-symbolic", "Output",
                                  lambda b: _device_menu(b, "Output", system.audio_outputs, system.select_output)))
+        _volume_feedback(self.vol)
         mic, self.mic = _slider_with_icon(
             lambda v: "microphone-disabled-symbolic" if v <= 0 else "audio-input-microphone-symbolic", 50,
             lambda v: system.run_async(system.set_input_volume, None, int(v), False),

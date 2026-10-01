@@ -57,3 +57,10 @@ def play(event: str) -> None:
             subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         except OSError:
             pass
+
+
+def play_soon(event: str, ms: int = 120) -> None:
+    """play() shortly (GTK processes): after a slider is let go, so the
+    new volume is in place when the sound plays."""
+    from gi.repository import GLib
+    GLib.timeout_add(ms, lambda: (play(event), False)[1])

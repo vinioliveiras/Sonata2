@@ -219,6 +219,36 @@ def slider(value: float = 0, on_change=None, style: str = "menu", lower: float =
     return s
 
 
+def on_release(widget: Gtk.Widget, callback) -> None:
+    """callback() when you let go of a slider (mouse, touch) or release an
+    arrow key on it -- not while dragging, and never for set_value() from
+    code (macOS plays the volume feedback once, on release)."""
+    legacy = Gtk.EventControllerLegacy(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+
+    def event(c, ev):
+        ev = ev or c.get_current_event()
+        if ev is None:
+            return False
+        kind = ev.get_event_type()
+        if is_release(kind, ev.get_button() if kind == Gdk.EventType.BUTTON_RELEASE else 0,
+                      ev.get_keyval() if kind == Gdk.EventType.KEY_RELEASE else 0):
+            callback()
+        return False                          # the slider still gets every event
+    legacy.connect("event", event)
+    widget.add_controller(legacy)
+    widget.release_watch = legacy             # (tests)
+
+
+_SLIDER_KEYS = (Gdk.KEY_Left, Gdk.KEY_Right, Gdk.KEY_Up, Gdk.KEY_Down, Gdk.KEY_Page_Up, Gdk.KEY_Page_Down,
+                Gdk.KEY_Home, Gdk.KEY_End)
+
+
+def is_release(kind, button: int = 0, keyval: int = 0) -> bool:
+    """A slider was let go: left button up, a touch ended, an arrow key up."""
+    return ((kind == Gdk.EventType.BUTTON_RELEASE and button == 1) or kind == Gdk.EventType.TOUCH_END
+            or (kind == Gdk.EventType.KEY_RELEASE and keyval in _SLIDER_KEYS))
+
+
 def reset_on_double_click(scale: Gtk.Range, default: float) -> None:
     """Double-click a slider: back to its default value.
 

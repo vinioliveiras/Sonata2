@@ -772,6 +772,8 @@ class Settings(Adw.ApplicationWindow):
                 return
             out_row = slider_row("Output volume", v[0], 0, 100,
                                  lambda x: self._latest("volume", system.set_volume, int(x)))
+            from .. import sounds
+            ui.controls.on_release(out_row.slider, lambda: sounds.play_soon("volume"))   # feedback on release
             vol.add(out_row)
             vol.add(switch_row("Mute", v[1], lambda on: system.run_async(system.set_volume, None, None, on)))
             mic_row = None
