@@ -26,7 +26,7 @@ gi.require_version("Gsk", "4.0")
 gi.require_version("Graphene", "1.0")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
-from .. import apps, config, icons, logs  # noqa: E402
+from .. import apps, config, icons, logs, steamgames  # noqa: E402
 from .. import ui  # noqa: E402
 from . import dock_drop, dock_menu, dock_stack, layer  # noqa: E402
 
@@ -1070,6 +1070,11 @@ class Dock(Gtk.Box):
                 info = apps.lookup(key)
                 if info:
                     self._add_tile(key, info.get_display_name(), icons.app_icon(info), info)
+                elif steamgames.appid(key):          # a Steam game: its name and icon from Steam
+                    aid = steamgames.appid(key)
+                    pic = steamgames.icon_path(aid)
+                    gicon = (icons.picture_icon(pic) if pic else None) or Gio.ThemedIcon.new("steam")
+                    self._add_tile(key, steamgames.name(aid) or key, gicon)
                 else:   # no .desktop: generic icon, app_id as name
                     self._add_tile(key, key, Gio.ThemedIcon.new("application-x-executable"))
         for key, tile in self.tiles.items():
@@ -1163,6 +1168,10 @@ class Dock(Gtk.Box):
                 self.manager.activate(t)
         elif tile.info:
             self.launch(tile)
+        elif steamgames.appid(key):                 # a Steam game kept in the Dock: start it again
+            self.launch_feedback(tile)
+            if not steamgames.launch(steamgames.appid(key)):
+                tile._stop_bounce()
 
     def launch_feedback(self, tile: DockTile) -> None:
         # Bounces until the first window maps (set_running), LAUNCH_MAX_MS at most.

@@ -971,6 +971,75 @@ class AutomaticPowerBoostTests(unittest.TestCase):
         self.assertIn("self.power.update(", (root / "gamemode.py").read_text())
 
 
+class SteamGameDockTests(unittest.TestCase):
+    """Steam games showed in the Dock as a generic icon named
+    "steam_app_<id>": their name and icon now come from Steam."""
+
+    def setUp(self):
+        from sonata2 import steamgames
+        self.sg = steamgames
+        self.home = tempfile.mkdtemp()
+        steam = os.path.join(self.home, "Steam")
+        os.makedirs(os.path.join(steam, "steamapps"))
+        with open(os.path.join(steam, "steamapps", "libraryfolders.vdf"), "w") as f:
+            f.write('"libraryfolders"\n{\n "0"\n {\n  "path"  "%s"\n }\n}\n' % steam)
+        with open(os.path.join(steam, "steamapps", "appmanifest_3219630.acf"), "w") as f:
+            f.write('"AppState"\n{\n "appid"  "3219630"\n "name"  "Halloween: The Game"\n}\n')
+        cache = os.path.join(steam, "appcache", "librarycache", "3219630")
+        os.makedirs(os.path.join(cache, "43b33351bd6ed183f94e2322f3701069a5815e90"))
+        open(os.path.join(cache, "43b33351bd6ed183f94e2322f3701069a5815e90", "logo.png"), "w").close()
+        self.icon = os.path.join(cache, "c324b7ba65f49c1638bbc64005ed34103f3058bd.jpg")
+        open(self.icon, "w").close()
+        self._dirs, steamgames.STEAM_DIRS = steamgames.STEAM_DIRS, (steam,)
+        self._xdg = os.environ.get("XDG_DATA_HOME")
+        os.environ["XDG_DATA_HOME"] = os.path.join(self.home, "data")
+        steamgames._names.clear()
+
+    def tearDown(self):
+        self.sg.STEAM_DIRS = self._dirs
+        if self._xdg is None:
+            os.environ.pop("XDG_DATA_HOME", None)
+        else:
+            os.environ["XDG_DATA_HOME"] = self._xdg
+
+    def test_name_and_icon(self):
+        self.assertEqual(self.sg.appid("steam_app_3219630"), "3219630")
+        self.assertIsNone(self.sg.appid("steam"))
+        self.assertEqual(self.sg.name("3219630"), "Halloween: The Game")
+        self.assertEqual(self.sg.icon_path("3219630"), self.icon)       # not logo.png
+
+    def test_shortcut_icon_wins(self):
+        big = os.path.join(os.environ["XDG_DATA_HOME"], "icons", "hicolor", "256x256", "apps")
+        os.makedirs(big)
+        open(os.path.join(big, "steam_icon_3219630.png"), "w").close()
+        self.assertTrue(self.sg.icon_path("3219630").endswith("256x256/apps/steam_icon_3219630.png"))
+
+    def test_picture_fills_the_squircle(self):
+        from gi.repository import GdkPixbuf
+        from sonata2 import icons
+        old = icons.GENERATED
+        icons.GENERATED = tempfile.mkdtemp()
+        try:
+            pb = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 32, 32)
+            pb.fill(0xc81e1eff)
+            pic = os.path.join(self.home, "icon.png")
+            pb.savev(pic, "png", [], [])
+            ic = icons.picture_icon(pic)
+            self.assertIsNotNone(ic)
+            out = GdkPixbuf.Pixbuf.new_from_file(ic.get_file().get_path())
+            px = out.get_pixels()
+            mid = (out.get_height() // 2) * out.get_rowstride() + (out.get_width() // 2) * out.get_n_channels()
+            self.assertGreater(px[mid], 150)                           # the picture, not a white plate
+            self.assertLess(px[mid + 1], 80)
+        finally:
+            icons.GENERATED = old
+
+    def test_dock_uses_it(self):
+        src = (pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "shell" / "dock.py").read_text()
+        self.assertIn("steamgames.appid(key)", src)
+        self.assertIn("steamgames.launch(", src)
+
+
 class LaunchBounceTests(unittest.TestCase):
     """The Dock icon bounces until the app's window opens (Vini: slow apps
     stopped bouncing after 3 bounces), with a safety cap."""

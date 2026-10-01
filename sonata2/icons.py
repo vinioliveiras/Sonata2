@@ -134,11 +134,36 @@ def generated(gicon):
 PLATE_VERSION = 1       # bump when the plate's look changes: every icon is made again
 
 
-def _render_plate(display, inner, png, meta, stamp) -> bool:
+def picture_icon(path: str):
+    """Gio.FileIcon of a square picture (a Steam game's icon) filling the
+    Big Sur squircle edge to edge, like an iOS app icon; None when it can't
+    be made. Made once, kept with the generated app icons."""
+    import hashlib
+    display = Gdk.Display.get_default()
+    if display is None or not path or not os.path.exists(path):
+        return None
+    try:
+        stamp = f"picture\n{path}\n{int(os.path.getmtime(path))}\n{PLATE_VERSION}"
+        tex = Gdk.Texture.new_from_filename(path)
+    except (OSError, GLib.Error):
+        return None
+    name = "pic-" + hashlib.sha1(path.encode()).hexdigest()[:20]
+    png, meta = os.path.join(GENERATED, name + ".png"), os.path.join(GENERATED, name + ".src")
+    try:
+        with open(meta, encoding="utf-8") as fh:
+            fresh = fh.read() == stamp and os.path.exists(png)
+    except OSError:
+        fresh = False
+    if not fresh and not _render_plate(display, tex, png, meta, stamp, full=True):
+        return None
+    return Gio.FileIcon.new(Gio.File.new_for_path(png))
+
+
+def _render_plate(display, inner, png, meta, stamp, full: bool = False) -> bool:
     try:
         os.makedirs(GENERATED, exist_ok=True)
         snap = Gtk.Snapshot()
-        _Plate(inner, GEN_SIZE).snapshot(snap, GEN_SIZE, GEN_SIZE)
+        _Plate(inner, GEN_SIZE, full).snapshot(snap, GEN_SIZE, GEN_SIZE)
         node = snap.to_node()
         renderer = Gsk.CairoRenderer.new()
         renderer.realize_for_display(display)
@@ -191,10 +216,10 @@ class _Plate(GObject.Object, Gdk.Paintable):
     """An app's own icon on a Big Sur squircle -- white, or the icon's own
     colour when its edges are one solid colour (Claude's orange tile)."""
 
-    def __init__(self, inner, size):
+    def __init__(self, inner, size, full: bool = False):
         super().__init__()
-        self.inner, self.size = inner, size
-        tone = _solid_edge(inner)
+        self.inner, self.size, self.full = inner, size, full   # full: a picture filling the squircle
+        tone = None if full else _solid_edge(inner)
         self.color = tone or PLATE_WHITE               # flat: the icon's own tile blends in
 
     def do_get_intrinsic_width(self):
@@ -213,11 +238,14 @@ class _Plate(GObject.Object, Gdk.Paintable):
         path = _squircle(inset, inset, pw, ph)
         snap.push_fill(path, Gsk.FillRule.WINDING)
         snap.append_color(_rgba(self.color), rect)
-        a = w * PLATE_ARTWORK
-        snap.save()
-        snap.translate(Graphene.Point().init((w - a) / 2, (h - a) / 2))
-        self.inner.snapshot(snap, a, a)
-        snap.restore()
+        if self.full:
+            snap.append_scaled_texture(self.inner, Gsk.ScalingFilter.TRILINEAR, rect)
+        else:
+            a = w * PLATE_ARTWORK
+            snap.save()
+            snap.translate(Graphene.Point().init((w - a) / 2, (h - a) / 2))
+            self.inner.snapshot(snap, a, a)
+            snap.restore()
         snap.append_linear_gradient(rect, Graphene.Point().init(0, inset), Graphene.Point().init(0, h - inset),
                                     [_stop(0, PLATE_SHEEN[0]), _stop(1, PLATE_SHEEN[1])])
         snap.pop()

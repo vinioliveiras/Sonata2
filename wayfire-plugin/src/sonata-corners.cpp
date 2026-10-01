@@ -407,6 +407,11 @@ class corners_render_instance_t :
             /* Always the children rendered to the node's buffer: the zero-copy
              * path hands out the client buffer as is (no decoration) */
             auto src_tex = self->get_updated_contents(bbox, data.target.scale, this->children);
+            if (!src_tex || !src_tex->get_wlr_texture())
+            {
+                return;     /* no buffer this frame (Wayfire with the skip-frame fix) */
+            }
+
             auto gl_tex  = wf::gles_texture_t{src_tex};
 
             data_ptr->program.use(gl_tex.type);
