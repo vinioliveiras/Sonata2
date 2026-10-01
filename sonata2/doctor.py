@@ -299,7 +299,8 @@ def last_session_errors(n=25) -> str:
     return "\n".join(out)
 
 
-def main() -> int:
+def build() -> Report:
+    """Every check (also used by Feedback Assistant's reports)."""
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     r = Report()
     for check in (check_python, lambda x: check_wayfire(x, repo), check_install, check_tools, check_lock,
@@ -308,12 +309,23 @@ def main() -> int:
             check(r)
         except Exception as e:          # noqa: BLE001 -- a report, never fatal
             r.add(WARN, f"check failed: {e}")
-    print(r.text(color=sys.stdout.isatty()))
+    return r
+
+
+def report_text(r: Report = None) -> str:
+    """What doctor.txt holds: the checks and the last session's errors."""
+    r = r or build()
     errors = last_session_errors()
+    return r.text() + ("\n\nLast session:\n" + errors if errors else "") + "\n"
+
+
+def main() -> int:
+    r = build()
+    print(r.text(color=sys.stdout.isatty()))
     d = os.path.expanduser("~/.cache/sonata2")
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "doctor.txt"), "w") as f:
-        f.write(r.text() + ("\n\nLast session:\n" + errors if errors else "") + "\n")
+        f.write(report_text(r))
     print(f"\nSaved to {d}/doctor.txt")
     return 0 if not any(row[0] == FAIL for row in r.rows) else 1
 
