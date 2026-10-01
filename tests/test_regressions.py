@@ -959,6 +959,11 @@ class AutomaticPowerBoostTests(unittest.TestCase):
         self.b.update(False)
         self.assertEqual(self.profile[0], "power-saver")
 
+    def test_minimized_game_counts_as_closed(self):
+        src = (pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "gamemode.py").read_text()
+        self.assertIn('not v.get("minimized")', src)
+        self.assertIn('"view-minimized"', src)
+
     def test_menus_show_automatic_while_raised(self):
         root = pathlib.Path(__file__).resolve().parent.parent / "sonata2"
         self.assertIn('current = "balanced"', (root / "shell" / "topbar.py").read_text())

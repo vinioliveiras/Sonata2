@@ -16,7 +16,7 @@ every Sonata process can follow it:
 
 Automatic energy mode (power-profiles-daemon's "balanced"): while any
 window is full screen (a game, a video), the profile is raised to
-"performance"; when the last one leaves full screen or closes, back to
+"performance"; when the last one leaves full screen, is minimized or closes, back to
 "balanced". A mode the user picked themselves is never touched."""
 import os
 
@@ -109,7 +109,7 @@ class Watcher:
         self.power = PowerBoost()
         self.power.full = boosted()          # restarted while raised: lowered once nothing is full screen
         if self.ipc.available:
-            self.ipc.watch(["view-focused", "view-fullscreen", "view-unmapped", "view-mapped"],
+            self.ipc.watch(["view-focused", "view-fullscreen", "view-unmapped", "view-mapped", "view-minimized"],
                            lambda _ev: self._soon())
             self._soon()
 
@@ -126,8 +126,11 @@ class Watcher:
         front = next((v for v in views if isinstance(v, dict) and v.get("activated")), None)
         full = bool(front and front.get("fullscreen") and front.get("role", "toplevel") == "toplevel")
         pid = front.get("pid") if full else None
+        # a full-screen window that's minimized isn't being played: Balanced again
+        # until it's back (Alt+Tab away keeps it: the game still runs on screen)
         self.power.update(any(isinstance(v, dict) and v.get("fullscreen") and v.get("mapped", True)
-                              and v.get("role", "toplevel") == "toplevel" for v in views))
+                              and not v.get("minimized") and v.get("role", "toplevel") == "toplevel"
+                              for v in views))
         if full != self.active or pid != self.pid:
             self._gamemode(self.pid, False)
             self.active, self.pid = full, pid
