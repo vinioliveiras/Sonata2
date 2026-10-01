@@ -1160,9 +1160,52 @@ class LibadwaitaLookTests(unittest.TestCase):
         self.assertIn("window:not(.sonata-window) windowcontrols > button.close", sheet)
         self.assertTrue(os.path.exists(os.path.join(adwstyle.runtime_dir(), "sonata-tl-close.svg")))
         self.assertIn("prefers-color-scheme: dark", adwstyle.css(bars=True))
-        self.assertNotIn("headerbar {", adwstyle.css(bars=False))   # old GTK: buttons only
+        self.assertNotIn("background-color: rgba", adwstyle.css(bars=False))   # old GTK: buttons only
         adwstyle.stop()
         self.assertFalse(os.path.exists(adwstyle.css_path()))
+
+    def test_dots_where_sonata_puts_them(self):
+        """Bazaar's dots weren't spaced or placed like Sonata's: 12 px, centres
+        20 px apart, the first centred 13 px from the left and 14 px from the top."""
+        from sonata2 import adwstyle
+        app = Adw.Application(application_id="io.github.test.adwdots")
+        app.register(None)
+        win = Adw.ApplicationWindow(application=app, default_width=500, default_height=200)
+        tv = Adw.ToolbarView()
+        tv.add_top_bar(Adw.HeaderBar())
+        tv.set_content(Gtk.Label(label="x"))
+        win.set_content(tv)
+        prov = Gtk.CssProvider()
+        prov.load_from_string(adwstyle.css(bars=False)) if hasattr(prov, "load_from_string") else \
+            prov.load_from_data(adwstyle.css(bars=False), -1)
+        Gtk.StyleContext.add_provider_for_display(win.get_display(), prov, Gtk.STYLE_PROVIDER_PRIORITY_USER)
+        old = Gtk.Settings.get_default().get_property("gtk-decoration-layout")
+        Gtk.Settings.get_default().set_property("gtk-decoration-layout", "close,minimize,maximize:")
+        try:
+            win.present()
+            end = GLib.get_monotonic_time() + 600 * 1000
+            while GLib.get_monotonic_time() < end:
+                GLib.MainContext.default().iteration(False)
+            found = []
+
+            def walk(w):
+                c = w.get_first_child()
+                while c is not None:
+                    if c.get_css_name() == "button" and c.get_parent().get_css_name() == "windowcontrols":
+                        ok, r = c.compute_bounds(tv)
+                        found.append((r.get_x() + r.get_width() / 2, r.get_y() + r.get_height() / 2,
+                                      r.get_width()))
+                    walk(c)
+                    c = c.get_next_sibling()
+            walk(win)
+            self.assertEqual(len(found), 3)
+            self.assertEqual([round(x) for x, _y, _w in found], [13, 33, 53])
+            self.assertEqual({round(y) for _x, y, _w in found}, {14})
+            self.assertEqual({round(w) for _x, _y, w in found}, {12})
+        finally:
+            Gtk.Settings.get_default().set_property("gtk-decoration-layout", old)
+            Gtk.StyleContext.remove_provider_for_display(win.get_display(), prov)
+            win.destroy()
 
     def test_session_end_removes_it_and_login_keeps_it(self):
         root = pathlib.Path(__file__).resolve().parent.parent

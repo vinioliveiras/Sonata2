@@ -23,6 +23,11 @@ import shutil
 
 from .gtkstyle import BEGIN, END
 
+# Sonata's traffic lights (ui/window.py): first dot's centre from the window's
+# left and top edges; libadwaita centres its header bar's controls this far down
+TL_LEFT, TL_TOP = 13, 14
+TL_CENTRE_Y_ADW = 23
+ADW_START_INSET = 6     # the header bar's start box sits this far in (with no padding)
 LIGHTS = ("close", "close-hover", "minimize", "minimize-hover", "maximize", "maximize-hover")
 
 
@@ -69,12 +74,20 @@ def css(folder: str = None, bars: bool = True) -> str:
                 f"box-shadow: inset 0 -1px {t['separator']}; }}\n"
                 f"window:not(.sonata-window):backdrop headerbar {{ background-color: {t['titlebar_bg_inactive']}; }}\n")
     w = "window:not(.sonata-window) windowcontrols > button"
+    wc = "window:not(.sonata-window) headerbar windowcontrols.start"
+    # Sonata's place for the dots (ui/window.py): 12 px, centres 20 px apart,
+    # the first one centred 13 px from the left edge and 14 px from the top.
+    # libadwaita's header bar: no left padding here, its controls centred in ~46 px.
     return (f"/* Sonata's window look for other GTK 4 apps -- written by sonata2/adwstyle.py at login */\n"
+            f"window:not(.sonata-window) headerbar {{ padding-left: 0; }}\n"
+            f"{wc} {{ border-spacing: 0; padding: 0; margin: 0 0 {2 * (TL_CENTRE_Y_ADW - TL_TOP)}px 0; }}\n"
             f"{w}, {w}:hover, {w}:active, {w}:backdrop {{\n"
             f"  min-width: 12px; min-height: 12px; padding: 0; margin: 0 4px; border: none; border-radius: 999px;\n"
             f"  box-shadow: none; outline: none; background-color: transparent; background-repeat: no-repeat;\n"
             f"  background-position: center; background-size: 12px 12px; }}\n"
-            f"{w} > image {{ opacity: 0; background: none; box-shadow: none; min-width: 12px; min-height: 12px; }}\n"
+            f"{wc} > button:first-child {{ margin-left: {TL_LEFT - 6 - ADW_START_INSET}px; }}\n"
+            f"{w} > image {{ opacity: 0; background: none; box-shadow: none; padding: 0; margin: 0;\n"
+            f"  min-width: 12px; min-height: 12px; -gtk-icon-size: 12px; }}\n"
             f"{w}.close {{ background-image: {url('close')}; }}\n"
             f"{w}.close:hover {{ background-image: {url('close-hover')}; }}\n"
             f"{w}.minimize {{ background-image: {url('minimize')}; }}\n"
