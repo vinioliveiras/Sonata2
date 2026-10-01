@@ -92,7 +92,9 @@ def on_main_changed(callback) -> None:
 
 def ensure_refresh() -> None:
     """Displays without a mode of their own: highest refresh rate. Runs in
-    the menu bar (always there); again when a display is plugged in."""
+    the menu bar (always there); again when a display is plugged in.
+    Never cap it to spare the GPU: some monitors glitch below their top
+    rate (Vini's external one does); a user's own mode in Settings wins."""
     from ..backend import system
 
     def apply(*_a):
