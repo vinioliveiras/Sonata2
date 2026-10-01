@@ -76,5 +76,15 @@ class CornersTest(unittest.TestCase):
         self.assertEqual(sc._create(None), [])                              # off: no surfaces
 
 
+class SettingsPlaceTest(unittest.TestCase):
+    def test_in_displays(self):
+        """Vini: the switch lives in Settings > Displays."""
+        from sonata2.settings import app as S
+        src = open(S.__file__).read()
+        disp = src[src.index("    def _page_displays"):src.index("    def _page_battery")]
+        self.assertIn('"Rounded screen corners"', disp)
+        self.assertEqual(src.count('"Rounded screen corners"'), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -58,7 +58,8 @@ KEYWORDS = {
     "wifi": "wireless network internet ssid password", "network": "ethernet vpn proxy wired ip",
     "bluetooth": "devices headphones mouse keyboard pair", "printers": "printer scanner cups print",
     "sound": "volume output input microphone speakers headphones effects alert equalizer eq bass treble",
-    "displays": "screen monitor resolution refresh rate hz scale brightness night shift main display",
+    "displays": "screen monitor resolution refresh rate hz scale brightness night shift main display "
+                "rounded corners",
     "battery": "power energy low power mode charge sleep display off",
     "wallpaper": "background desktop picture", "keyboard": "layout input source repeat shortcuts",
     "trackpad": "touchpad tap click scroll gestures", "mouse": "pointer speed scroll natural",
@@ -957,7 +958,13 @@ class Settings(Adw.ApplicationWindow):
                 levels[d.name] = levels[None] if system.is_builtin(d.name) else system.brightness(d.name)
             return levels, ds
         system.run_async(read, fill)
-        pages = [bright, screens, self._night_shift_group()]
+        look = group("Appearance")
+        from .. import icons as _icons
+        look.add(switch_row("Rounded screen corners",
+                            config.load("appearance", _icons.APPEARANCE_DEFAULTS).get("screen_corners", True),
+                            lambda on: self._save("appearance", "screen_corners", on),
+                            subtitle="The corners of every display, like a Mac's (the lock screen too)"))
+        pages = [bright, screens, look, self._night_shift_group()]
         from .. import gpu
         if gpu.has_dual_gpu():
             graphics = group("Graphics")
@@ -1974,9 +1981,6 @@ class Settings(Adw.ApplicationWindow):
                                                       None, on),
                                      self.toast("Apps pick it up when they open again")),
                          subtitle="Chrome, VS Code and others use Sonata's title bar instead of their own"))
-        s.add(switch_row("Rounded screen corners", app.get("screen_corners", True),
-                         lambda on: self._save("appearance", "screen_corners", on),
-                         subtitle="The corners of every display, like a Mac's (the lock screen too)"))
         s.add(switch_row("Glass title bars", app.get("glass_titlebars", False), self._set_glass_titlebars,
                          subtitle="See-through, blurred title bars on every window, GNOME apps too "
                                   "(experimental; heavier on the graphics card)"))
