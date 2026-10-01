@@ -32,6 +32,13 @@ def _is_app(f: Gio.File) -> bool:
     return (f.get_path() or "").endswith(".desktop")
 
 
+def _folders(files) -> list:
+    """Launchpad folders in the drop ({"folder", "apps"}), see
+    launchpad_model.encode_folder."""
+    from ..launchpad_model import decode_folder
+    return [d for d in (decode_folder(f.get_uri()) for f in files) if d is not None]
+
+
 def can_open(info, files) -> bool:
     """True if `info` declares support for every file's content type
     (folders: file managers only)."""
@@ -162,7 +169,7 @@ def _target(on_motion, on_drop, on_leave) -> Gtk.DropTargetAsync:
 def attach_app(dock, tile) -> None:
     def motion(target, x, y):
         files = _files(target.get_value())
-        if files and all(_is_app(f) for f in files):
+        if files and (all(_is_app(f) for f in files) or _folders(files)):
             tile.remove_css_class(HOVER)
             ok, p = tile.compute_point(dock, Graphene.Point().init(x, y))
             if ok:
@@ -194,8 +201,10 @@ def attach_app(dock, tile) -> None:
         tile.remove_css_class(HOVER)
         slot = dock.hide_drop_gap()
         files = _files(value)
+        tiles = dock.app_tiles()
+        if _folders(files):
+            return add_folders(dock, _folders(files), before=tiles[slot] if 0 <= slot < len(tiles) else tile)
         if files and all(_is_app(f) for f in files):
-            tiles = dock.app_tiles()
             return pin_files(dock, files, before=tiles[slot] if 0 <= slot < len(tiles) else tile)
         if not can_open(tile.info, files):
             return False
@@ -214,7 +223,8 @@ def attach_app(dock, tile) -> None:
 
 def attach_trash(dock, tile) -> None:
     def motion(target, _x, _y):
-        ok = bool(_files(target.get_value()))
+        files = _files(target.get_value())
+        ok = bool(files) and not _folders(files)        # a Launchpad folder isn't trashed
         (tile.add_css_class if ok else tile.remove_css_class)(HOVER)
         dock.hide_drop_gap()                     # over the Trash: no gap left open between icons
         return Gdk.DragAction.MOVE if ok else 0
@@ -223,6 +233,8 @@ def attach_trash(dock, tile) -> None:
         tile.remove_css_class(HOVER)
         dock.hide_drop_gap()
         dropped = _files(value)
+        if _folders(dropped):
+            return False
         if dropped and all(_is_app(f) for f in dropped):     # an app (from Launchpad, Files): uninstall it
             if dock._drag:
                 # a Dock icon: it stays until the uninstall is confirmed and done
@@ -270,7 +282,7 @@ def attach_plate(dock) -> None:
     """Apps dropped between icons get pinned; folders become stacks."""
     def motion(target, x, y):
         files = _files(target.get_value())
-        apps_only = bool(files) and all(_is_app(f) for f in files)
+        apps_only = bool(files) and (all(_is_app(f) for f in files) or bool(_folders(files)))
         if apps_only:
             dock.show_drop_gap(x, y)             # the icons part where it will land
         ok = files and (apps_only or all(_is_dir(f) for f in files))
@@ -279,6 +291,10 @@ def attach_plate(dock) -> None:
     def drop(_target, value, x, y):
         slot = dock.hide_drop_gap()
         files = _files(value)
+        tiles = dock.app_tiles()
+        if _folders(files):
+            return add_folders(dock, _folders(files), before=tiles[slot] if 0 <= slot < len(tiles) else None,
+                               x=x, y=y)
         if files and all(_is_dir(f) for f in files):
             for f in files:
                 dock.stacks.add(f.get_path())
@@ -291,6 +307,14 @@ def attach_plate(dock) -> None:
         return pin_files(dock, files, x=x, y=y)
 
     dock.add_controller(_target(motion, drop, lambda *_: dock.hide_drop_gap_soon()))
+
+
+def add_folders(dock, folders, before=None, x=None, y=0.0) -> bool:
+    """Launchpad folders dropped on the Dock: a Dock folder each, there."""
+    ok = False
+    for f in folders:
+        ok = dock.add_folder(f["folder"], f["apps"], before=before, x=x, y=y) is not None or ok
+    return ok
 
 
 def pin_files(dock, files, before=None, x=None, y=0.0) -> bool:

@@ -334,6 +334,33 @@ class DockFolderTest(unittest.TestCase):
         self.assertIn(c, d.folder(fkey)["apps"])
         self.assertTrue(d.folder(fkey)["locked"])
 
+    # -- part 4: Launchpad <-> Dock ------------------------------------------------
+    def test_folder_drag_carries_its_apps(self):
+        from sonata2.launchpad_model import decode_folder
+        d, a, b = self.dock, self.apps[0], self.apps[1]
+        fkey = d.make_folder([a, b], name="Work")
+        self.assertEqual(decode_folder(d._drag_text(fkey)), {"folder": "Work", "apps": [a, b]})
+        self.assertEqual(d._drag_text(self.apps[2]), self.apps[2])            # an app: its id
+        d.set_folder_locked(fkey, True)
+        self.assertIsNone(decode_folder(d._drag_text(fkey)))                  # locked: never shown elsewhere
+
+    def test_launchpad_folder_dropped_on_dock(self):
+        from gi.repository import Gio
+        from sonata2.launchpad_model import encode_folder
+        from sonata2.shell import dock_drop
+        d, a, b, c = self.dock, *self.apps[:3]
+        files = [Gio.File.new_for_uri(encode_folder("Games", [a, b, "not.installed"]))]
+        self.assertEqual(dock_drop._folders(files), [{"folder": "Games", "apps": [a, b, "not.installed"]}])
+        self.assertEqual(dock_drop._folders([Gio.File.new_for_path("/tmp")]), [])
+        before = d.tiles[c]
+        self.assertTrue(dock_drop.add_folders(d, dock_drop._folders(files), before=before))
+        fkey = next(k for k in d.cfg["pinned"] if F.is_folder(k))
+        self.assertEqual(d.folder(fkey), {"name": "Games", "apps": [a, b]})
+        pins = d.cfg["pinned"]
+        self.assertEqual(pins.index(fkey) + 1, pins.index(c))                 # right before where dropped
+        self.assertNotIn(a, pins)
+        self.assertFalse(dock_drop.add_folders(d, [{"folder": "X", "apps": ["nope"]}]))
+
     def test_icon_draws(self):
         icon = F.FolderIcon(self.apps[:3], 48)
         self.assertEqual(icon.do_measure(Gtk.Orientation.HORIZONTAL, -1)[0], 48)

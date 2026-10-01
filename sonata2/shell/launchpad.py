@@ -916,6 +916,10 @@ class Launchpad(Gtk.ApplicationWindow):
                     (self.folder_view and self.folder_view[1] and self.folder_view[1].get("locked")):
                 return None                     # Hidden stays where it is; its apps come out by the menu
             providers = [Gdk.ContentProvider.new_for_value("sonata2-launchpad-item")]
+            if M.is_folder(widget.item):            # the Dock keeps a copy of the folder
+                uri = M.encode_folder(widget.item["folder"], widget.item["apps"])
+                providers.append(Gdk.ContentProvider.new_for_bytes(
+                    "text/uri-list", GLib.Bytes.new((uri + "\r\n").encode())))
             info = None if M.is_folder(widget.item) else self.installed.get(widget.item)
             if info and info.get_filename():        # lets the Dock pin it
                 # plain text/uri-list: a GdkFileList value would also offer the portal's
@@ -1036,6 +1040,9 @@ class Launchpad(Gtk.ApplicationWindow):
         if not d:
             # an app dragged out of the Dock (its desktop id): accepted -- the Dock
             # sees a finished move and takes the app out (macOS)
+            folder = M.decode_folder(value)
+            if folder is not None:                  # a Dock folder: it moves here, where dropped
+                return self.drop_dock_folder(grid, x, y, folder)
             return isinstance(value, str) and value in self.installed
 
         t = d.get("target")
@@ -1051,6 +1058,18 @@ class Launchpad(Gtk.ApplicationWindow):
                 cats_b = (self.installed[d["item"]].get_categories() or "").split(";") \
                     if d["item"] in self.installed else []
                 self.model.make_folder(target, d["item"], M.folder_name(cats_a, cats_b))
+        self.save()
+        self.render()
+        return True
+
+    def drop_dock_folder(self, grid, x, y, folder) -> bool:
+        """A folder dragged out of the Dock lands at that cell (its apps
+        come out of where they were); the Dock then lets it go."""
+        if grid.index < 0:
+            return False
+        index, _centre = grid.cell_at(x, y)
+        if self.model.add_folder(folder["folder"], folder["apps"], grid.index, index) is None:
+            return False
         self.save()
         self.render()
         return True

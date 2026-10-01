@@ -781,7 +781,7 @@ class Dock(Gtk.Box):
             tile.icon.set_badge(self.badges[key])
         self.insert_child_after(tile, self.sep.get_prev_sibling())   # before the divider
         src = Gtk.DragSource(actions=Gdk.DragAction.MOVE)
-        src.connect("prepare", lambda *_: Gdk.ContentProvider.new_for_value(key))
+        src.connect("prepare", lambda *_: Gdk.ContentProvider.new_for_value(self._drag_text(key)))
         src.connect("drag-begin", self._drag_begin, tile)
         src.connect("drag-cancel", self._drag_cancel, tile)
         src.connect("drag-end", self._drag_end, tile)
@@ -1145,6 +1145,35 @@ class Dock(Gtk.Box):
         else:
             f.pop("locked", None)
         self._folder_changed(fkey)
+
+    def _drag_text(self, key) -> str:
+        """What a dragged icon carries: the desktop id; a folder carries its
+        name and apps (Launchpad takes it) -- not a locked one's."""
+        f = self.folder(key)
+        if f is not None and not f.get("locked"):
+            from ..launchpad_model import encode_folder
+            return encode_folder(f["name"], f["apps"])
+        return key
+
+    def add_folder(self, name: str, app_ids: list, before=None, x=None, y=0.0):
+        """A folder dragged in (from Launchpad), placed where dropped. Its
+        apps' own icons leave the pinned row. Returns its key (None: no
+        installed apps)."""
+        keys = []
+        for a in app_ids:
+            if a not in keys and a not in PERMANENT and apps.lookup(a):
+                keys.append(a)
+        if not keys:
+            return None
+        fkey = self.make_folder(keys, name=name)
+        tile = self.tiles.get(fkey)
+        if tile is not None:
+            others = [t for t in self.app_tiles() if t is not tile]
+            slot = others.index(before) if before in others else (
+                self._slot_at(x, y, exclude=tile) if x is not None else len(others))
+            self._move_to_slot(tile, slot)
+            self._save_order()
+        return fkey
 
     def open_app(self, key, near=None) -> None:
         """Open (or bring forward) an app from a folder."""

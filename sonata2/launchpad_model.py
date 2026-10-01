@@ -175,11 +175,58 @@ class Model:
         self.pages[page].insert(min(index, len(self.pages[page])), app_id)
         self.normalize()
 
+    def add_folder(self, name: str, app_ids: list, page: int, index: int):
+        """A folder dropped in from the Dock: its apps (installed, not hidden)
+        leave where they were and come together at page/index. One app
+        alone is placed as itself. Returns what was placed (None: nothing)."""
+        keep = []
+        for a in app_ids:
+            if a in self.installed and a not in self.hidden and a not in keep:
+                keep.append(a)
+        if not keep:
+            return None
+        for a in keep:
+            self._remove_app_anywhere(a)
+        item = {"folder": name or "Untitled Folder", "apps": keep} if len(keep) > 1 else keep[0]
+        while page >= len(self.pages):
+            self.pages.append([])
+        self.pages[page].insert(min(index, len(self.pages[page])), item)
+        self.normalize()
+        return item
+
     def hide(self, app_id: str) -> None:
         self._remove_app_anywhere(app_id)
         if app_id not in self.hidden:
             self.hidden.append(app_id)
         self.normalize()
+
+
+# -- folders dragged between Launchpad and the Dock (two processes) -----------
+# The drag carries the folder as text: a string value (Dock -> Launchpad) or
+# one URI in a text/uri-list (Launchpad -> Dock, whose drop targets read uris).
+FOLDER_SCHEME = "sonata2-folder:"
+
+
+def encode_folder(name: str, app_ids: list) -> str:
+    import json
+    from urllib.parse import quote
+    return FOLDER_SCHEME + quote(json.dumps({"folder": name, "apps": list(app_ids)}), safe="")
+
+
+def decode_folder(text) -> dict:
+    """{"folder": name, "apps": [...]} from encode_folder's text, else None."""
+    import json
+    from urllib.parse import unquote
+    if not isinstance(text, str) or not text.startswith(FOLDER_SCHEME):
+        return None
+    try:
+        data = json.loads(unquote(text[len(FOLDER_SCHEME):]))
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("folder"), str) or \
+            not isinstance(data.get("apps"), list) or not all(isinstance(a, str) for a in data["apps"]):
+        return None
+    return {"folder": data["folder"], "apps": list(data["apps"])}
 
 
 def search(installed_meta: dict, query: str, limit: int = None) -> list:

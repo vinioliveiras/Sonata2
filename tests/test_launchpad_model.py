@@ -61,5 +61,39 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(M.search(meta, " "), [])
 
 
+
+class DockFolderTransferTest(unittest.TestCase):
+    """Folders dragged between Launchpad and the Dock travel as text."""
+
+    def test_round_trip(self):
+        t = M.encode_folder("Games & \u00e9 \"x\"", ["a.desktop", "b"])
+        self.assertTrue(t.startswith(M.FOLDER_SCHEME))
+        self.assertNotIn(" ", t)                              # one URI line in a uri-list
+        self.assertEqual(M.decode_folder(t), {"folder": "Games & \u00e9 \"x\"", "apps": ["a.desktop", "b"]})
+
+    def test_decode_rejects(self):
+        for bad in (None, "", "org.app.desktop", "file:///x", M.FOLDER_SCHEME + "nope",
+                    M.FOLDER_SCHEME + "%5B1%5D", M.encode_folder("x", []).replace("apps", "nope")):
+            self.assertIsNone(M.decode_folder(bad), bad)
+
+    def test_add_folder_gathers_apps(self):
+        m = M.Model({"pages": [["app000", {"folder": "F", "apps": ["app001", "app002", "app003"]}, "app004"]]},
+                    installed(6))
+        item = m.add_folder("Work", ["app000", "app002", "gone", "app000"], 0, 1)
+        self.assertEqual(item, {"folder": "Work", "apps": ["app000", "app002"]})
+        flat = m.pages[0]
+        self.assertIn(item, flat)
+        self.assertEqual(sorted(m.all_apps()), [f"app{i:03d}" for i in range(6)])     # nothing lost or doubled
+        self.assertEqual(m.find("app001")[2]["apps"], ["app001", "app003"])
+
+    def test_add_folder_single_and_none(self):
+        m = M.Model({}, installed(3))
+        self.assertEqual(m.add_folder("X", ["app001", "gone"], 0, 0), "app001")
+        self.assertEqual(m.pages[0][0], "app001")
+        self.assertIsNone(m.add_folder("X", ["gone"], 0, 0))
+        m.hidden.append("app002")
+        self.assertEqual(m.add_folder("X", ["app002", "app000"], 0, 0), "app000")      # hidden stays hidden
+
+
 if __name__ == "__main__":
     unittest.main()
