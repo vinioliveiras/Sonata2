@@ -6,7 +6,10 @@ the user's hardware (see ROADMAP open questions).
 
 The same swayidle turns the keyboard's backlight off when the display
 turns off and back to its level when you come back (brightnessctl saves
-and restores it; logind lets it write the LED without root)."""
+and restores it; logind lets it write the LED without root). RGB devices
+(USB keyboards, mice: their light isn't the system's) go dark too through
+OpenRGB when it is installed: the current look saved as a profile, all
+off, the profile loaded back on input."""
 import glob
 import shutil
 import signal
@@ -23,15 +26,27 @@ KBD_OFF = f"brightnessctl -q -d '{KBD}' -s set 0"
 KBD_ON = f"brightnessctl -q -d '{KBD}' -r"
 
 
+RGB_PROFILE = "sonata-idle"
+RGB_OFF = f"openrgb --save-profile {RGB_PROFILE} >/dev/null 2>&1; openrgb --mode off >/dev/null 2>&1"
+RGB_ON = f"openrgb --profile {RGB_PROFILE} >/dev/null 2>&1"
+
+
+def rgb_lights() -> bool:
+    """OpenRGB installed: USB keyboards' and mice's RGB can go dark."""
+    return bool(shutil.which("openrgb"))
+
+
 def keyboard_light() -> bool:
     """A keyboard backlight brightnessctl can dim (asus::kbd_backlight...)."""
     return bool(glob.glob(f"{LEDS}/{KBD}")) and bool(shutil.which("brightnessctl"))
 
 
-def command(cfg: dict, dpms: int, kbd: bool = False) -> list:
+def command(cfg: dict, dpms: int, kbd: bool = False, rgb: bool = False) -> list:
     args = []
     if kbd and dpms > 0:                          # with the display: off, then back on any input
         args += ["timeout", str(dpms), KBD_OFF, "resume", KBD_ON]
+    if rgb and dpms > 0:                          # (in the background: OpenRGB takes a few seconds)
+        args += ["timeout", str(dpms), f"sh -c '{RGB_OFF}' &", "resume", f"sh -c '{RGB_ON}' &"]
     after = int(cfg.get("lock_after", -1))
     if after >= 0:
         base = dpms if dpms > 0 else 600          # display never sleeps: count from 10 min idle
@@ -54,7 +69,7 @@ class IdleLock:
             dpms = int(wfconfig.wayfire_get("idle", "dpms_timeout", "600") or 600)
         except ValueError:
             dpms = 600
-        cmd = (command(config.load("security", DEFAULTS), dpms, keyboard_light())
+        cmd = (command(config.load("security", DEFAULTS), dpms, keyboard_light(), rgb_lights())
                if shutil.which("swayidle") else [])
         if cmd == self.cmd and (not cmd or (self.proc and self.proc.poll() is None)):
             return
