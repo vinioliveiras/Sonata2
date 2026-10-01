@@ -71,12 +71,23 @@ class SettingsTest(unittest.TestCase):
 
     def test_pick_any_colour(self):
         row = self._row()
-        c = Gdk.RGBA()
-        c.parse("#12ab34")
-        row.custom_accent.set_rgba(c)
+        row.custom_accent.emit("clicked")
+        pop = row.custom_accent.picker
+        settle(50)
+        pop.hex.set_text("#12ab34")
+        pop.select_button.emit("clicked")
         settle(50)
         self.assertEqual(config.load("appearance", {"accent": "blue"})["accent"], "#12ab34")
         self.assertTrue(row.custom_accent.has_css_class("selected"))
+        self.assertEqual(row.custom_accent.swatch.color, "#12ab34")
+
+    def test_own_picker_not_gtks(self):
+        """Vini: the GTK colour dialog's buttons and header came in another
+        theme -- the accent picker is Sonata's own (ui.colorpicker)."""
+        import inspect
+        src = inspect.getsource(self.st.Settings._accent_row)
+        self.assertNotIn("ColorDialog", src)
+        self.assertIn("ui.colorpicker", src)
 
     def test_named_dot_unselects_custom(self):
         config.save("appearance", {"accent": "#12ab34"})
@@ -100,6 +111,47 @@ class SettingsTest(unittest.TestCase):
         src = inspect.getsource(self.st)
         for c in set(colours):
             self.assertIn(f".st-badge.{c} {{", src)                       # every colour has its CSS
+
+
+class PickerTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        Gtk.init()
+        from sonata2 import ui
+        ui.setup()
+        cls.C = ui.colorpicker
+
+    def test_hex(self):
+        self.assertEqual(self.C.parse_hex("ABC"), "#aabbcc")
+        self.assertEqual(self.C.parse_hex(" #12AB34 "), "#12ab34")
+        for bad in ("", "#12", "zzzzzz", None):
+            self.assertIsNone(self.C.parse_hex(bad))
+
+    def test_palette(self):
+        cols = self.C.palette()
+        self.assertEqual(len(cols), len(self.C.BASES) + 2)
+        self.assertTrue(all(len(c) == 5 for c in cols))
+        self.assertEqual(cols[0][2], self.C.BASES[0])                 # the hue itself in the middle
+
+    def test_popup_uses_the_kit(self):
+        w = Gtk.Window()
+        anchor = Gtk.Button()
+        w.set_child(anchor)
+        w.present()
+        got = []
+        pop = self.C.popup(anchor, "#ff9f0a", got.append)
+        settle(50)
+        self.assertTrue(pop.has_css_class("sonata-panel"))                 # Sonata's panel, not a dialog
+        self.assertTrue(pop.select_button.has_css_class("sonata-button"))
+        self.assertTrue(pop.select_button.has_css_class("default"))
+        self.assertTrue(pop.swatches["#ff9f0a"].has_css_class("selected"))
+        pop.swatches["#30d158"].emit("clicked")
+        self.assertEqual(pop.hex.get_text(), "#30d158")
+        pop.hex.set_text("nonsense")                                    # ignored until it's a colour
+        self.assertEqual(pop.state["color"], "#30d158")
+        pop.select_button.emit("clicked")
+        self.assertEqual(got, ["#30d158"])
+        w.destroy()
 
 
 if __name__ == "__main__":

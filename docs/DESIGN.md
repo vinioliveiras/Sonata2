@@ -10,7 +10,10 @@ Code: [`sonata2/ui/`](../sonata2/ui). Gallery: `python3 -m sonata2 gallery`
    font, shadow or timing literal anywhere else. A new need = a new token.
 2. **Build UI from `ui` components.** A new kind of control is added to
    `ui/` (with its CSS, a constructor, a gallery row and a section below)
-   before a surface uses it.
+   before a surface uses it. Never use GTK/libadwaita widgets or system
+   dialogs that bring their own look (Gtk.ColorDialog, Gtk.FileDialog's
+   own chrome, Adw.AlertDialog...): they come out in another theme. The
+   colour picker is `ui.colorpicker`, alerts are `ui.dialog`.
 3. **Light/dark is automatic.** Components never check the appearance;
    `ui/theme.py` refills all CSS with the other palette on change.
 4. **Component parity with macOS.** Each shell component ships with the

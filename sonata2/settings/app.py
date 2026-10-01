@@ -135,13 +135,6 @@ ui.register(_ACCENT_CSS + """
 button.st-accent { min-width: 16px; min-height: 16px; padding: 0; margin: 0 3px; border-radius: 99px; border: none;
   box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.2); transition: box-shadow %(t_fast)s; }
 button.st-accent.selected { box-shadow: 0 0 0 2px %(window_bg)s, 0 0 0 3.5px alpha(%(label)s, 0.45); }
-/* the custom colour: a rainbow ring around the picked colour */
-colorbutton.st-accent-custom > button.color { min-width: 16px; min-height: 16px; padding: 2px; margin: 0 3px;
-  border-radius: 99px; border: none; background: conic-gradient(#ff3b30, #ffcc00, #34c759, #0a84ff, #af52de, #ff3b30);
-  box-shadow: none; transition: box-shadow %(t_fast)s; }
-colorbutton.st-accent-custom > button.color colorswatch { min-width: 12px; min-height: 12px; border-radius: 99px; }
-colorbutton.st-accent-custom > button colorswatch > overlay { border-radius: 99px; }
-colorbutton.st-accent-custom.selected > button.color { box-shadow: 0 0 0 2px %(window_bg)s, 0 0 0 3.5px alpha(%(label)s, 0.45); }
 """, key="settings-accent")
 
 ui.register("""
@@ -1995,23 +1988,16 @@ class Settings(Adw.ApplicationWindow):
             b.connect("clicked", lambda _b, n=name: pick(n))
             buttons[name] = b
             box.append(b)
-        # any colour (Vini): the system colour picker; the dot shows the colour picked
-        custom = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog(with_alpha=False, title="Accent Colour"),
-                                       css_classes=["st-accent-custom"] + (["selected"] if custom_now else []),
-                                       valign=Gtk.Align.CENTER, tooltip_text="Other colour…")
-        start = Gdk.RGBA()
-        start.parse(custom_now or ui.tokens.accent_hex(cur))
-        custom.set_rgba(start)
-        sw = custom.get_first_child().get_first_child() if custom.get_first_child() else None
-        if sw is not None:                                # GTK sizes the swatch 38 x 19: a dot like the others
-            sw.set_size_request(12, 12)
+        # any colour (Vini): Sonata's own colour picker; the dot shows the colour picked
+        custom = ui.colorpicker.ColorDot(custom_now or ui.tokens.accent_hex(cur))
+        if custom_now:
+            custom.add_css_class("selected")
 
-        def picked(btn, _p):
-            c = btn.get_rgba()
-            hexc = "#%02x%02x%02x" % (round(c.red * 255), round(c.green * 255), round(c.blue * 255))
-            if hexc != ui.tokens.custom_accent(config.load("appearance", icons.APPEARANCE_DEFAULTS)["accent"]):
-                pick(hexc)
-        custom.connect("notify::rgba", picked)
+        def picked(hexc):
+            custom.set_color(hexc)
+            pick(hexc)
+        custom.connect("clicked", lambda b: setattr(b, "picker", ui.colorpicker.popup(
+            b, custom.swatch.color, picked)))
         box.append(custom)
         row.custom_accent = custom                        # (tests)
         row.add_suffix(box)
