@@ -65,6 +65,8 @@ NO_BOUNCE = {"sonata2-launchpad"}   # shell toggles open instantly: no launch bo
 BOUNCE_MS = 620             # one bounce
 CLOSE_UP_MS = 260           # a removed icon's place closes up
 SETTLE_MS = 200             # a dropped icon glides into its slot
+FOLDER_HOLD_MS = 350        # held this long over another app's middle: drop makes a folder
+FOLDER_ZONE = 0.3           # the middle: within this part of a cell from the icon's centre
 MAG_RADIUS = 3.0            # magnification reaches this many icons away
 MAG_IN_MS, MAG_OUT_MS = 120, 250
 HIDE_MS = 250               # auto-hide slide
@@ -138,7 +140,9 @@ window.sonata-dock *:drop(active) { box-shadow: none; outline: none; border-colo
   transition: none;
 }
 .edge-left .dock-tile, .edge-right .dock-tile { padding: %(tile_pad)dpx 0; }
-.dock-icon { transition: filter %(t_press)s ease-out; }
+.dock-icon { transition: filter %(t_press)s ease-out, transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+/* an app held over another: they'll make a folder (Launchpad) */
+.dock-tile.folder-target .dock-icon { transform: scale(1.18); filter: brightness(0.85); }
 .dock-tile:active .dock-icon, .dock-tile.drop-hover .dock-icon { filter: brightness(0.62); }
 .dock-tile.dragging { opacity: 0; }   /* keeps its gap while being dragged */
 .dock-dot { min-width: %(dot)dpx; min-height: %(dot)dpx; border-radius: 99px;
@@ -1049,8 +1053,9 @@ class Dock(Gtk.Box):
     def in_folder(self, key) -> bool:
         return any(key in f.get("apps", ()) for f in (self.cfg.get("folders") or {}).values())
 
-    def make_folder(self, keys: list, name: str = None) -> str:
-        """A folder of these pinned apps, where the first of them was."""
+    def make_folder(self, keys: list, name: str = None, at_key=None) -> str:
+        """A folder of these pinned apps, where the first of them (or
+        `at_key`) was."""
         keys = [k for k in keys if not dock_folder.is_folder(k) and k not in PERMANENT]
         if not keys:
             return None
@@ -1059,7 +1064,8 @@ class Dock(Gtk.Box):
         fkey = dock_folder.PREFIX + fid
         folders[fid] = {"name": name or dock_folder.default_name(keys), "apps": list(keys)}
         pins = self.cfg["pinned"]
-        at = min((pins.index(k) for k in keys if k in pins), default=len(pins))
+        at = (pins.index(at_key) if at_key in pins
+              else min((pins.index(k) for k in keys if k in pins), default=len(pins)))
         pins.insert(at, fkey)
         for k in keys:
             self._unpin_into_folder(k)
@@ -1179,13 +1185,73 @@ class Dock(Gtk.Box):
         tile = self.tiles[self._drag["key"]]
         if not tile.get_visible():                 # back over the Dock: its slot opens again
             self._set_tile_shown(tile, True)
+        over = self._folder_candidate(tile, x, y)
+        if over is not None:                       # over another app's middle: no reordering
+            self._hold_over(over)
+            return Gdk.DragAction.MOVE
+        self._hold_over(None)
         slot = self._slot_at(x, y, exclude=tile)   # other icons whose centre is before the pointer
         if self.app_tiles().index(tile) != slot:
             self._move_to_slot(tile, slot)
         return Gdk.DragAction.MOVE
 
+    def _folder_candidate(self, tile, x, y):
+        """The pinned tile whose middle is under the pointer, if the dragged
+        app may make a folder with it (or go into it)."""
+        key = tile.key
+        if dock_folder.is_folder(key) or key in PERMANENT or not tile.info:
+            return None
+        pins = self.cfg["pinned"]
+        for t in self.app_tiles():
+            if t is tile or t.key not in pins or t.key in PERMANENT:
+                continue
+            if not (dock_folder.is_folder(t.key) or t.info):
+                continue
+            ok, b = t.compute_bounds(self)
+            if not ok:
+                continue
+            pos, start, size = ((y, b.get_y(), b.get_height()) if self.vertical
+                                else (x, b.get_x(), b.get_width()))
+            other = (x, b.get_x(), b.get_width()) if self.vertical else (y, b.get_y(), b.get_height())
+            if abs(pos - (start + size / 2)) <= size * FOLDER_ZONE and other[1] <= other[0] <= other[1] + other[2]:
+                return t
+        return None
+
+    def _hold_over(self, target) -> None:
+        """Start (or keep) the hold timer over `target`; None clears it."""
+        d = self._drag
+        if d is None:
+            return
+        if d.get("over") is target:
+            return
+        if d.get("hold_src"):
+            GLib.source_remove(d["hold_src"])
+        d["hold_src"] = 0
+        old = d.get("target")
+        if old is not None:
+            old.remove_css_class("folder-target")
+        d["over"], d["target"] = target, None
+        if target is None:
+            return
+
+        def ready():
+            if self._drag is d and d.get("over") is target:
+                d["target"] = target
+                target.add_css_class("folder-target")
+            d["hold_src"] = 0
+            return False
+        d["hold_src"] = GLib.timeout_add(FOLDER_HOLD_MS, ready)
+
+    def _drop_into_folder(self, key, target) -> None:
+        target.remove_css_class("folder-target")
+        if dock_folder.is_folder(target.key):
+            self.add_to_folder(target.key, key)
+        else:
+            self.make_folder([target.key, key], at_key=target.key)
+
     def _drag_leave(self, _target) -> None:
         if self._drag:
+            self._hold_over(None)
             self._drag["left"] = True
             key = self._drag["key"]
             tile = self.tiles.get(key)
@@ -1202,6 +1268,11 @@ class Dock(Gtk.Box):
             return False
         self._drag["dropped"] = True
         key = self._drag["key"]
+        target = self._drag.get("target")
+        self._hold_over(None)
+        if target is not None and target.key in self.cfg["pinned"]:
+            self._drop_into_folder(key, target)
+            return True
         if key not in self.cfg["pinned"] and self.can_pin(key):
             self.cfg["pinned"].append(key)     # dragging a running app into place pins it
         self._save_order()
@@ -1247,6 +1318,7 @@ class Dock(Gtk.Box):
 
     def _drag_end(self, _src, _drag, delete, tile) -> None:
         tile.remove_css_class("dragging")
+        self._hold_over(None)
         d, self._drag = self._drag, None
         # moved somewhere else that took it (Launchpad): out of the Dock
         if delete and d and not d["dropped"] and tile.key not in PERMANENT:

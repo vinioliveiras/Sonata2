@@ -180,6 +180,72 @@ class DockFolderTest(unittest.TestCase):
         settle(F.CLOSE_MS + 100)
         self.assertFalse(pop.get_visible())
 
+    # -- part 2: drop an app on another --------------------------------------------
+    def _drag(self, key):
+        d = self.dock
+        d._drag = {"key": key, "index": d.app_tiles().index(d.tiles[key]), "left": False, "dropped": False}
+
+    def _centre(self, tile):
+        ok, b = tile.compute_bounds(self.dock)
+        self.assertTrue(ok)
+        return b.get_x() + b.get_width() / 2, b.get_y() + b.get_height() / 2
+
+    def test_hold_over_app_then_drop_makes_folder(self):
+        d, a, b = self.dock, self.apps[0], self.apps[1]
+        at = d.cfg["pinned"].index(b)
+        order = [t.key for t in d.app_tiles()]
+        self._drag(a)
+        x, y = self._centre(d.tiles[b])
+        d._drag_motion(None, x, y)
+        self.assertEqual([t.key for t in d.app_tiles()], order)        # no reordering over the middle
+        self.assertFalse(d.tiles[b].has_css_class("folder-target"))    # not before the hold
+        settle(D.FOLDER_HOLD_MS + 100)
+        self.assertTrue(d.tiles[b].has_css_class("folder-target"))
+        target = d.tiles[b]
+        self.assertTrue(d._drag_drop(None, a, x, y))
+        self.assertFalse(target.has_css_class("folder-target"))
+        fkey = next(k for k in d.cfg["pinned"] if F.is_folder(k))
+        self.assertEqual(d.folder(fkey)["apps"], [b, a])               # the one under it first
+        self.assertEqual(d.cfg["pinned"].index(fkey), at - 1)          # in its place (a left before it)
+        self.assertNotIn(a, d.cfg["pinned"])
+        self.assertNotIn(b, d.cfg["pinned"])
+
+    def test_drop_on_folder_adds(self):
+        d, a, b, c = self.dock, *self.apps[:3]
+        fkey = d.make_folder([a, b])
+        settle()
+        self._drag(c)
+        x, y = self._centre(d.tiles[fkey])
+        d._drag_motion(None, x, y)
+        settle(D.FOLDER_HOLD_MS + 100)
+        d._drag_drop(None, c, x, y)
+        self.assertEqual(d.folder(fkey)["apps"], [a, b, c])
+
+    def test_quick_pass_only_reorders(self):
+        # moving across an icon without stopping must not make a folder
+        d, a, b = self.dock, self.apps[0], self.apps[1]
+        self._drag(a)
+        x, y = self._centre(d.tiles[b])
+        d._drag_motion(None, x, y)
+        settle(D.FOLDER_HOLD_MS // 3)
+        d._drag_motion(None, x + d.tiles[b].get_width() / 2, y)       # moved on before the hold (between icons)
+        settle(D.FOLDER_HOLD_MS + 100)
+        self.assertFalse(d.tiles[b].has_css_class("folder-target"))
+        d._drag_drop(None, a, x, y)
+        self.assertFalse(any(F.is_folder(k) for k in d.cfg["pinned"]))
+        self.assertIn(a, d.cfg["pinned"])
+
+    def test_folder_or_permanent_cant_be_dropped_in(self):
+        d, a, b = self.dock, self.apps[0], self.apps[1]
+        fkey = d.make_folder([a, b])
+        settle()
+        perm = next(k for k in D.PERMANENT if k in d.tiles)
+        x, y = self._centre(d.tiles[self.apps[2]])
+        self.assertIsNone(d._folder_candidate(d.tiles[fkey], x, y))    # a folder is only moved
+        self.assertIsNone(d._folder_candidate(d.tiles[perm], x, y))    # Files / Launchpad too
+        x, y = self._centre(d.tiles[perm])
+        self.assertIsNone(d._folder_candidate(d.tiles[self.apps[2]], x, y))   # nor onto them
+
     def test_icon_draws(self):
         icon = F.FolderIcon(self.apps[:3], 48)
         self.assertEqual(icon.do_measure(Gtk.Orientation.HORIZONTAL, -1)[0], 48)
