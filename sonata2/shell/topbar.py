@@ -656,7 +656,21 @@ class Bar(Gtk.CenterBox):
         outs = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col = ui.panel.column(ui.panel.header("Sound"), holder, ui.panel.separator(),
                               ui.panel.section_title("Output"), outs, ui.panel.separator())
+        from ..backend import mixer
+        service = getattr(self, "mixer", None)
+        if mixer.available():                                # every app's own volume, kept (Vini)
+            from .mixer_ui import AppMixer
+            apps_box = AppMixer()
+            col.append(ui.panel.section_title("Applications"))
+            col.append(apps_box)
+            col.append(ui.panel.separator())
+            self.app_mixer = apps_box                        # (tests)
+            system.run_async(mixer.streams, apps_box.set_streams)
         pop = ui.panel.popup(btn, col, gap=PANEL_GAP, width=STATUS_W)
+        if mixer.available() and service is not None:      # apps start / stop playing while it's open
+            service.listeners.append(apps_box.set_streams)
+            pop.connect("closed", lambda _p: apps_box.set_streams in service.listeners
+                        and service.listeners.remove(apps_box.set_streams))
         col.append(self._prefs_row(pop, "Sound Preferences…", "sound"))
         ui.panel.align_to_start(pop, btn, 2)
 
@@ -1278,6 +1292,12 @@ class TopBarWindow(Gtk.ApplicationWindow):
                 app.connect("shutdown", lambda *_: self.bar.alarms.ringer.stop())
             except Exception as e:                                  # never keeps the menu bar from starting
                 print(f"sonata2-topbar: alarms: {e}")
+            try:                                                    # each app's saved volume
+                from ..backend.mixer import MixerService
+                self.bar.mixer = MixerService()
+                app.connect("shutdown", lambda *_: self.bar.mixer.stop())
+            except Exception as e:                                  # never keeps the menu bar from starting
+                print(f"sonata2-topbar: mixer: {e}")
             from .mission import MissionBackdrop
             self.bar.mission = MissionBackdrop(app)
             from ..trash_cleanup import Housekeeping
