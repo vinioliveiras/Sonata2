@@ -1161,6 +1161,9 @@ class LibadwaitaLookTests(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(adwstyle.runtime_dir(), "sonata-tl-close.svg")))
         self.assertIn("prefers-color-scheme: dark", adwstyle.css(bars=True))
         self.assertNotIn("background-color: rgba", adwstyle.css(bars=False))   # old GTK: buttons only
+        sheet = adwstyle.css()
+        self.assertIn("window:not(.sonata-window).csd { border-radius: 10px; }", sheet)   # Sonata's corners
+        self.assertIn("csd.maximized", sheet)                                  # square when maximized
         adwstyle.stop()
         self.assertFalse(os.path.exists(adwstyle.css_path()))
 
