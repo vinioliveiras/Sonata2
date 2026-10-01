@@ -1,23 +1,16 @@
 # Sonata 2 (pre-alpha)
 
 **A modern desktop UI for Linux**: a complete shell, not a GTK theme. It
-covers the login screen, menu bar, Dock, Apps (the app grid), Search, notifications,
+covers the login screen, menu bar, Dock, Launchpad, Search, notifications,
 Control Center, a file manager and a Settings app. Everything is animated,
 light and dark, and made to feel smooth on ordinary hardware.
 
-Sonata is meant to be a **modern, highly customizable shell**, not a copy
-of any one system. The look comes from **themes**: every colour, size,
-radius and animation timing lives in one place (design tokens,
-[sonata2/ui/tokens.py](sonata2/ui/tokens.py)), and a theme is a set of
-those values, not a fork of the code.
-
-> **About the current look.** The one theme there is today follows a
-> macOS-like style. It is a **reference theme for development and
-> testing**: a well-known, demanding design to build and measure the
-> shell's parts against (glass, motion, layout). It is not the goal.
-> Other themes come next (a Windows 11-style one with a task bar, then
-> Sonata's own), and later you will make your own. See
-> [Design and trademarks](#design-and-trademarks).
+The look comes from **themes**. The first theme is inspired by macOS
+(Big Sur to Ventura: layout, glass, motion). A Windows 11-style theme with
+a task bar comes next. Later you will be able to make your own. Every
+colour, size, radius and animation timing lives in one place (design
+tokens, [sonata2/ui/tokens.py](sonata2/ui/tokens.py)). A theme is a set
+of those values, not a fork of the code.
 
 Sonata runs on [Wayfire](https://github.com/WayfireWM/wayfire) with GTK 4
 and libadwaita. It works on any distribution that ships them, and it
@@ -29,8 +22,8 @@ doesn't need GNOME or KDE.
 ![The Sonata desktop: menu bar, desktop icons and the Dock](docs/screenshots/desktop.png)
 <sub>The desktop: menu bar, desktop icons and the Dock ([in Dark Mode](docs/screenshots/desktop-dark.png)).</sub>
 
-![Apps: every app in a grid over the blurred desktop](docs/screenshots/launchpad.png)
-<sub>**Apps**: every app over the blurred desktop, with search, pages and folders.</sub>
+![Launchpad: every app in a grid over the blurred desktop](docs/screenshots/launchpad.png)
+<sub>**Launchpad**: every app over the blurred desktop, with search, pages and folders.</sub>
 
 ![Control Center open under the menu bar](docs/screenshots/controlcenter.png)
 <sub>**Control Center**: Wi-Fi, Bluetooth, Dark Mode, display and sound, Now Playing.</sub>
@@ -67,7 +60,6 @@ doesn't need GNOME or KDE.
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
 - [Project layout](#project-layout)
-- [Design and trademarks](#design-and-trademarks)
 - [License](#license)
 
 ---
@@ -197,7 +189,7 @@ one dot per open window.
 - Stacks (Downloads), recent apps, and a thumbnail on hover.
 - It shrinks to fit the screen when full and grows back.
 
-**Apps.** Full-screen grid over the blurred desktop, with pages,
+**Launchpad.** Full-screen grid over the blurred desktop, with pages,
 search (just type), folders, jiggle mode, and dragging apps to the Dock.
 New apps appear as soon as they're installed.
 
@@ -208,7 +200,7 @@ New apps appear as soon as they're installed.
   and live updates.
 - Recents, Applications, pinned folders (drag a folder between two
   Favorites) and drives with capacity.
-- Search in This Computer or the folder, type to select, and drag and drop
+- Search in This Mac or the folder, type to select, and drag and drop
   everywhere.
 - Double-clicking a Linux package installs it (with debtap on Arch), and
   archives are extracted.
@@ -219,7 +211,7 @@ New apps appear as soon as they're installed.
   Notifications.
 - Appearance: light/dark, accent, glass, icons, menu bar logo, title
   bars.
-- Dock, Menu Bar, Apps, Sound Effects, Accessibility.
+- Dock, Menu Bar, Launchpad, Sound Effects, Accessibility.
 - There is a search field, and a double-click on any slider resets it.
 
 **Sonata's own apps.** No GNOME apps needed for the everyday things:
@@ -240,11 +232,6 @@ New apps appear as soon as they're installed.
   Up Next and media keys (MPRIS).
 - Videos: a QuickTime-style player, with a floating control bar, and
   every movie resumes where you left it.
-- Camera: laid out like the iPhone's Camera: photos and videos with
-  sound (VIDEO / PHOTO), a 3 s timer, the screen as a flash, the last
-  capture at a click (Pictures/Camera, Videos/Camera); pick the camera,
-  mirror the picture. Videos use the graphics card's encoder when there
-  is one.
 - Task Manager: processes grouped by app, performance graphs (CPU,
   memory, disks, network, GPU), app history, startup apps, users and
   services.
@@ -252,7 +239,7 @@ New apps appear as soon as they're installed.
   rename, erase, First Aid, encrypted volumes.
 - Open and Save panels for every app (through the file chooser portal).
 
-**Overview.** F3 or Ctrl+Up lays out the windows over the blurred,
+**Mission Control.** F3 or Ctrl+Up lays out the windows over the blurred,
 darkened desktop; Ctrl+Super+Up shows every Space.
 
 **Software Update.** Settings → Software Update lists what can be updated
@@ -276,29 +263,22 @@ They are generated once and kept (Settings → Appearance → Regenerate).
 
 ## Keyboard shortcuts
 
-Super (the Windows key) plays the part of Cmd. macOS-style and
-Windows-style shortcuts both work, and every one can be changed in
-**Settings → Keyboard Shortcuts** (click it, press the new keys).
+Super (the Windows key) plays the part of Cmd.
 
 | Keys | Action |
 |---|---|
-| Super (alone), F4, pinch with 4 fingers | Apps |
-| Super+Space, Super+S | Search |
-| Super+E | Files |
-| Super+, / Super+I | Settings |
-| Ctrl+Shift+Esc | Task Manager |
-| Super+Tab / Super+Shift+Tab, Alt+Tab | switch apps |
+| Super (alone), F4, pinch with 4 fingers | Launchpad |
+| Super+Space | Search |
+| Super+Tab / Super+Shift+Tab | switch apps |
 | Super+Q, Alt+F4 / Super+M / Ctrl+Super+F | close / minimize / full screen (remembered per app; Windows games open in full screen by themselves) |
-| Super+← / → / ↑ / ↓ | snap to the left / right half, maximize, restore |
-| Super+D | show the desktop (again: the windows come back) |
-| Ctrl+Up, F3, swipe up with 3 fingers | Overview |
-| Ctrl+Down, swipe down with 3 fingers | Overview of all Spaces |
-| swipe left/right with 3 fingers, Ctrl+Super+← / →, Super+Alt+← / → | switch Spaces |
-| Super+Shift+3, Super+Print Screen / Super+Shift+4, Super+Shift+S | screenshot (screen / selection) |
-| Super+Shift+5, Print Screen | capture toolbar (screenshots, screen recording) |
-| Ctrl+Super+Space, Super+. | emoji |
-| Super+V | clipboard history |
-| Ctrl+Super+Q, Super+L | lock the screen |
+| Ctrl+Up, F3, swipe up with 3 fingers | Mission Control |
+| Ctrl+Down, swipe down with 3 fingers | App Exposé |
+| swipe left/right with 3 fingers, Super+Alt+arrows | switch Spaces |
+| Super+Shift+3 / 4, Print | screenshot (screen / selection) |
+| Super+Shift+5 | capture toolbar (screenshots, screen recording) |
+| Ctrl+Super+Space | emoji |
+| Super+, | Settings |
+| Ctrl+Super+Q | lock the screen |
 | Ctrl+Alt+T | terminal (works even if the shell crashed) |
 
 **Files:**
@@ -326,7 +306,7 @@ Two separate worlds, so Sonata can be customized freely without touching
 the system:
 
 - **Sonata settings**: how the shell looks and behaves (Dock, glass,
-  icons, animations, menu bar, Apps...). They are stored only in
+  icons, animations, menu bar, Launchpad...). They are stored only in
   `~/.config/sonata2/*.json` and applied live by the running shell.
 - **Linux settings**: the machine itself (Wi-Fi, Bluetooth, sound,
   displays, power, wallpaper, keyboard, users). Sonata stores nothing
@@ -358,12 +338,7 @@ picked in Settings → Appearance.
 ## Troubleshooting
 
 - **Logs**: `~/.cache/sonata2/` holds `session.log` (Wayfire), one log per
-  component (`dock.log`, `topbar.log`...) and `login.log`. They stay on your
-  computer and small: errors and crashes only, each log capped. **Detailed
-  logs** (every window opened, frame and start-up timings, Wayfire's info
-  lines) are for finding problems: Settings → About, click "Sonata 2
-  desktop" 7 times, turn on Detailed Logs, restart Sonata (always on in a
-  `--dev` install; or run with `SONATA_DEBUG=1`).
+  component (`dock.log`, `topbar.log`...) and `login.log`.
 - **`sonata2 doctor`**: checks the machine and writes `doctor.txt` with the
   last errors.
 - **Something stuck**: Sonata menu → Restart Sonata (or `sonata2 restart`).
@@ -374,6 +349,15 @@ picked in Settings → Appearance.
   bars for all apps" (off gives apps back their own frames).
 - **Icons look wrong after an app update**: Settings → Appearance → App
   icons → Regenerate.
+- **Laptops with two graphics cards** (integrated + NVIDIA): Sonata draws
+  the desktop with the integrated card, like GNOME and KDE; games and apps
+  set to "Use Discrete Graphics" (right-click in the Dock or Apps) run on
+  the NVIDIA card. Settings → Displays → Graphics can draw the desktop with
+  the card the displays are wired to (smoother on a fast external display),
+  but NVIDIA's driver can refuse memory there and end the session: if that
+  happens, Sonata turns the option off by itself and tells you at the next
+  login. `sonata2 doctor` checks `nvidia_drm.modeset=1`, `nvidia_drm.fbdev=1`
+  and the driver version.
 - **Fonts**: Sonata ships Inter. If you install Apple's SF Pro yourself
   (into `~/.local/share/fonts`), the session uses it from the next login.
 
@@ -415,7 +399,7 @@ with it). They talk through D-Bus and the config files.
 ```
 sonata2/            Python package (`python3 -m sonata2 <component>`)
   ui/               design system: tokens, theme, menus, controls, windows, logo
-  shell/            menu bar, Dock, Apps (launchpad), Search, notifications, login,
+  shell/            menu bar, Dock, Launchpad, Search, notifications, login,
                     lock and welcome screens, wallpaper, desktop icons
   files/            the Files app
   settings/         the Settings app
@@ -432,28 +416,6 @@ docs/               design system, feature parity
 Sonata succeeds [Sonata](https://github.com/vinioliveiras/sonata)
 (Quickshell on KWin) and started from the GTK4 look of
 [LayerOSX](https://github.com/vinioliveiras/LayerOSX).
-
-## Design and trademarks
-
-Sonata is an independent open-source project. It is **not affiliated with,
-endorsed by or sponsored by Apple Inc.** (or Microsoft). macOS, Mac, Big
-Sur, Ventura, Finder, Launchpad, Spotlight and Mission Control are
-trademarks of Apple Inc.; Windows is a trademark of Microsoft. They are
-named here only to describe what a theme looks like or what a part of
-Sonata does.
-
-- The macOS-like theme is a **reference and test theme** while the shell
-  is being built. Sonata's direction is its own design and themes anyone
-  can make and change.
-- Sonata names its parts its own way: **Apps** (the app grid), **Search**,
-  **Overview** (every window at once), **This Computer**
-  ([sonata2/names.py](sonata2/names.py)). Code and commands keep their
-  technical names (`sonata2 launchpad`, `spotlight`).
-- Sonata's code and its own artwork are original. It does **not** ship
-  Apple's software, fonts or system artwork: the font is Inter, and the
-  icon and cursor sets are open-source community projects (some recreate
-  that style) under their own licences, listed below. You can install Apple's fonts yourself if you
-  own a licence (see [Troubleshooting](#troubleshooting)).
 
 ## License
 

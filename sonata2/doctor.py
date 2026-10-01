@@ -220,6 +220,14 @@ def check_lock(r: Report) -> None:
     r.add(OK if os.path.exists(f"/etc/pam.d/{svc}") else FAIL, f"lock screen PAM service: {svc}")
 
 
+def _read(path: str) -> str:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
 def check_gpu(r: Report) -> None:
     drm = sorted(d for d in os.listdir("/sys/class/drm") if re.fullmatch(r"card\d+", d)) if os.path.isdir("/sys/class/drm") else []
     drivers = []
@@ -237,9 +245,29 @@ def check_gpu(r: Report) -> None:
             pass
         r.add(OK if ms == "Y" else FAIL, "NVIDIA kernel modesetting", f"nvidia_drm.modeset={ms or '?'}",
               fix="" if ms == "Y" else "add nvidia_drm.modeset=1 to the kernel command line")
+        fb = _read("/sys/module/nvidia_drm/parameters/fbdev")
+        if fb:
+            r.add(OK if fb == "Y" else WARN, "NVIDIA framebuffer device", f"nvidia_drm.fbdev={fb}",
+                  fix="" if fb == "Y" else "add nvidia_drm.fbdev=1 to the kernel command line "
+                                           "(steadier Wayland sessions)")
+        ver = _read("/sys/module/nvidia/version")
+        if ver:
+            major = int(ver.split(".")[0]) if ver.split(".")[0].isdigit() else 0
+            r.add(OK if major >= 555 else WARN, "NVIDIA driver", ver,
+                  fix="" if major >= 555 else "update to 555 or newer (explicit sync for Wayland)")
+        if not any(os.path.exists(p) for p in ("/usr/lib/gbm/nvidia-drm_gbm.so",
+                                                 "/usr/lib64/gbm/nvidia-drm_gbm.so",
+                                                 "/usr/lib/x86_64-linux-gnu/gbm/nvidia-drm_gbm.so")):
+            r.add(WARN, "NVIDIA GBM backend", "nvidia-drm_gbm.so not found",
+                  fix="install the NVIDIA driver's GBM/EGL packages (egl-gbm)")
         if len(drivers) > 1:
-            r.add(OK, "hybrid graphics: Wayfire draws on the first GPU (the integrated one); "
-                      "games still use the NVIDIA card (prime-run / Steam)")
+            from . import gpu
+            if gpu.compositor_on_display_gpu():
+                r.add(WARN, "hybrid graphics: Wayfire draws with the displays' GPU (Settings > Displays > "
+                            "Graphics); on NVIDIA that can end the session -- Sonata turns it off if it does")
+            else:
+                r.add(OK, "hybrid graphics: Wayfire draws on the integrated GPU; "
+                          "games still use the NVIDIA card (prime-run / Steam)")
 
 
 def check_keyboard(r: Report) -> None:

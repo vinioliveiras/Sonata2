@@ -1237,6 +1237,8 @@ class TopBarWindow(Gtk.ApplicationWindow):
             app.connect("shutdown", lambda *_: self.bar.gamepads.stop())
             from .. import fullscreen                               # Ctrl+Super+F, remembered; games
             self.bar.fullscreen = fullscreen.Rules()
+            from .. import gpu                                      # crashed on the discrete GPU last time
+            GLib.timeout_add_seconds(4, lambda: gpu.crash_notice() and False)
             from ..backend.equalizer import Equalizer
             self.bar.equalizer = Equalizer()
             self.bar.equalizer.start()

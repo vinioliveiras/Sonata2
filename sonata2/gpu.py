@@ -134,6 +134,38 @@ def set_compositor_on_display_gpu(on: bool) -> None:
         pass
 
 
+def crash_marker() -> str:
+    """Left by tools/sonata-session when Wayfire crashed on the displays' GPU."""
+    return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
+                        "sonata2", "display-gpu-crashed")
+
+
+def crash_notice() -> bool:
+    """Once after such a crash: tell the user the option was turned off."""
+    path = crash_marker()
+    if not os.path.exists(path):
+        return False
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+    try:
+        from gi.repository import Gio, GLib
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        bus.call("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                 "org.freedesktop.Notifications", "Notify",
+                 GLib.Variant("(susssasa{sv}i)", (
+                     "Sonata", 0, "video-display",
+                     "Graphics set back to the integrated card",
+                     "The last session ended because the discrete card refused memory. "
+                     "Sonata draws with the integrated card again (Settings > Displays > Graphics); "
+                     "games still use the discrete card.", [], {}, -1)),
+                 None, Gio.DBusCallFlags.NONE, 2000, None, None)
+    except Exception:
+        pass
+    return True
+
+
 # Electron apps whose native Wayland window never shows on hybrid laptops:
 # their GPU process can't import the compositor's buffers (GitHub Desktop
 # 3.4, Flatpak: "eglCreateImage failed with 0x3009", the GPU process

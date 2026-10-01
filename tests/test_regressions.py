@@ -893,6 +893,43 @@ class DisplayGpuOptInRegressions(unittest.TestCase):
                 os.environ["XDG_CONFIG_HOME"] = old
 
 
+class DisplayGpuSafetyNetRegressions(unittest.TestCase):
+    """If the opt-in display GPU crashes the session again (NVIDIA refusing
+    buffers), Sonata turns it off for the next login and says so once."""
+
+    def test_session_turns_it_off_after_such_a_crash(self):
+        sess = (pathlib.Path(__file__).resolve().parent.parent / "tools" / "sonata-session").read_text()
+        block = sess[sess.index('wayfire -c "$cfg" > "$logs/session.log" 2>&1\n    code=$?'):]
+        self.assertIn("gbm_bo_create failed", block)
+        self.assertIn('rm -f "$gpu_flag"', block)
+        self.assertIn('touch "$logs/display-gpu-crashed"', block)
+
+    def test_notice_shown_once(self):
+        from sonata2 import gpu
+        old = os.environ.get("XDG_CACHE_HOME")
+        os.environ["XDG_CACHE_HOME"] = tempfile.mkdtemp()
+        try:
+            self.assertFalse(gpu.crash_notice())
+            os.makedirs(os.path.dirname(gpu.crash_marker()))
+            open(gpu.crash_marker(), "w").close()
+            self.assertTrue(gpu.crash_notice())
+            self.assertFalse(gpu.crash_notice())                    # once
+        finally:
+            if old is None:
+                os.environ.pop("XDG_CACHE_HOME", None)
+            else:
+                os.environ["XDG_CACHE_HOME"] = old
+
+    def test_menu_bar_checks_it(self):
+        src = (pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "shell" / "topbar.py").read_text()
+        self.assertIn("gpu.crash_notice()", src)
+
+    def test_doctor_reports_nvidia(self):
+        from sonata2 import doctor
+        r = doctor.Report()
+        doctor.check_gpu(r)                                          # never raises without NVIDIA
+
+
 class ElectronX11Regressions(unittest.TestCase):
     """GitHub Desktop (Flatpak) never showed a window: on native Wayland its
     GPU process failed (eglCreateImage 0x3009) in a loop. Under Xwayland it

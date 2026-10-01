@@ -96,6 +96,13 @@ if [ -n "$gpu_set" ]; then
     started=$(date +%s)
     wayfire -c "$cfg" > "$logs/session.log" 2>&1
     code=$?
+    # crashed because that GPU refused a buffer: back to wlroots' choice from
+    # the next login, and the menu bar says so (gpu.crash_notice)
+    if [ "$code" -ne 0 ] && grep -qs -e "gbm_bo_create failed" -e "Failed to allocate auxilliary buffer" \
+            "$logs/session.log"; then
+        rm -f "$gpu_flag"
+        touch "$logs/display-gpu-crashed"
+    fi
     if [ $(( $(date +%s) - started )) -ge 15 ]; then
         exit $code
     fi
