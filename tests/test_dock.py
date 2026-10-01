@@ -25,6 +25,42 @@ def settle(ms=200):
         ctx.iteration(False)
 
 
+class OrderTest(unittest.TestCase):
+    """Regression: the Dock's order changed after a log-in -- a pinned app
+    without an icon at that moment (Flatpak not seen yet, a Steam game) was
+    dropped on the next save, then came back at the end."""
+
+    def test_merge_keeps_untiled_in_place(self):
+        self.assertEqual(D.merge_order(["a", "b", "x", "c"], ["a", "b", "c"]), ["a", "b", "x", "c"])
+        self.assertEqual(D.merge_order(["a", "b", "x", "c"], ["c", "a", "b"]), ["c", "a", "x", "b"])
+        self.assertEqual(D.merge_order(["a", "b", "new"], ["a", "new", "b", "run"]), ["a", "new", "b"])
+        self.assertEqual(D.merge_order(["a", "a"], ["a"]), ["a"])
+
+    def test_pinned_kept_through_a_save(self):
+        from unittest import mock
+        Gtk.init()
+        cfg = D.load_config()
+        D.load_css(cfg)
+        real = [k for k in cfg["pinned"] if k not in D.PERMANENT]
+        if len(real) < 2:
+            self.skipTest("needs 2 installed default apps")
+        cfg = dict(cfg, pinned=cfg["pinned"][:2] + ["not.installed.yet", "steam_app_570"] + cfg["pinned"][2:])
+        with mock.patch("sonata2.steamgames.name", side_effect=lambda aid: "Dota 2" if aid == "570" else None), \
+                mock.patch("sonata2.steamgames.icon_path", return_value=None):
+            win = Gtk.Window()
+            d = D.Dock(cfg)
+            win.set_child(d)
+            win.present()
+            settle()
+            self.assertIn("steam_app_570", d.tiles)               # a pinned Steam game has its icon
+            self.assertNotIn("not.installed.yet", d.tiles)
+            d._save_order()
+            self.assertEqual(d.cfg["pinned"][2:4], ["not.installed.yet", "steam_app_570"])
+            d.forget_missing()                                    # Steam games aren't "uninstalled"
+            self.assertIn("steam_app_570", d.cfg["pinned"])
+            win.destroy()
+
+
 class DockTest(unittest.TestCase):
     def setUp(self):
         Gtk.init()

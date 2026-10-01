@@ -47,6 +47,19 @@ LAUNCH_MAX_MS = 30000
 MAX_DOTS = 3                        # running dots: one per window, up to this many
 # Always in the Dock (like Finder on macOS): Files and Launchpad can't be
 # removed -- the shell relies on them (open folders, reach every app).
+def merge_order(pinned: list, tile_keys: list) -> list:
+    """The pinned keys in the tiles' order; keys without a tile stay where
+    they were (between the same neighbours)."""
+    shown = [k for k in tile_keys if k in pinned]
+    out, it = [], iter(shown)
+    for k in pinned:
+        out.append(next(it, None) if k in tile_keys else k)
+    out = [k for k in out if k is not None]
+    out += [k for k in it if k not in out]
+    seen = set()
+    return [k for k in out if not (k in seen or seen.add(k))]
+
+
 PERMANENT = ("io.github.vinioliveiras.sonata2.files", "sonata2-launchpad")
 NO_BOUNCE = {"sonata2-launchpad"}   # shell toggles open instantly: no launch bounce
 BOUNCE_MS = 620             # one bounce
@@ -470,10 +483,9 @@ class Dock(Gtk.Box):
         dock_drop.attach_plate(self)
         dock_drop.attach_trash(self, self.trash)
         self._update_thickness()
+        apps.scan()          # Flatpak / AppImage entries GIO hasn't noticed yet get their icons too
         for did in cfg["pinned"]:
-            info = apps.lookup(did)
-            if info:
-                self._add_tile(did, info.get_display_name(), icons.app_icon(info), info)
+            self._add_known_tile(did)
         if cfg["show_recents"]:
             for did in cfg["recent"]:
                 info = apps.lookup(did)
@@ -786,15 +798,36 @@ class Dock(Gtk.Box):
         else:
             self._clicked(key, tile)
 
+    def _add_known_tile(self, key) -> bool:
+        """A tile for an app with a desktop entry, or an installed Steam game
+        (steam_app_N: no entry; name and icon from Steam). False: unknown."""
+        if key in self.tiles:
+            return True
+        info = apps.lookup(key)
+        if info:
+            self._add_tile(key, info.get_display_name(), icons.app_icon(info), info)
+            return True
+        aid = steamgames.appid(key)
+        if aid and steamgames.name(aid):
+            pic = steamgames.icon_path(aid)
+            gicon = (icons.picture_icon(pic) if pic else None) or Gio.ThemedIcon.new("steam")
+            self._add_tile(key, steamgames.name(aid), gicon)
+            return True
+        return False
+
+    def _known(self, key) -> bool:
+        aid = steamgames.appid(key)
+        return bool(apps.lookup(key) or (aid and steamgames.name(aid)))
+
     def forget_missing(self) -> None:
         """Apps uninstalled (from the Trash, Launchpad, a package manager):
         their icons leave the Dock instead of leaving an empty slot."""
         apps.scan()
-        gone = [k for k in list(self.cfg["pinned"]) if k not in PERMANENT and not apps.lookup(k)]
+        gone = [k for k in list(self.cfg["pinned"]) if k not in PERMANENT and not self._known(k)]
         for key in gone:
             self.set_pinned(key, False)
         for key in [k for k in list(self.tiles) if k not in self.cfg["pinned"] and k not in self.windows
-                    and k not in PERMANENT and not apps.lookup(k)]:
+                    and k not in PERMANENT and not self._known(k)]:
             self._remove_tile(key)
 
     def _remove_tile(self, key) -> None:
@@ -867,8 +900,10 @@ class Dock(Gtk.Box):
         self.refit_soon()                      # apps opened/closed: shrink or grow back
 
     def _save_order(self) -> None:
-        pinned = set(self.cfg["pinned"])
-        self.cfg["pinned"] = [t.key for t in self.app_tiles() if t.key in pinned]
+        """Pinned order = the tiles' order. A pinned app without a tile right
+        now (not found yet) keeps its place: it used to be dropped, and came
+        back later at the end -- the Dock's order "shuffled" after a log-in."""
+        self.cfg["pinned"] = merge_order(self.cfg["pinned"], [t.key for t in self.app_tiles()])
         self.save_cfg()
         self._relayout()
 
@@ -981,6 +1016,8 @@ class Dock(Gtk.Box):
         elif not on and key in pins:
             pins.remove(key)
             self.save_cfg()
+            if key not in self.tiles:                  # pinned but never shown (not installed)
+                return
             if key not in self.windows and not self._is_recent(key):
                 self._remove_tile(key)
             else:
@@ -1091,14 +1128,10 @@ class Dock(Gtk.Box):
             self._remove_tile(key)                 # unpinned app quit
         for key in groups:
             if key not in self.tiles:
-                info = apps.lookup(key)
-                if info:
-                    self._add_tile(key, info.get_display_name(), icons.app_icon(info), info)
-                elif steamgames.appid(key):          # a Steam game: its name and icon from Steam
-                    aid = steamgames.appid(key)
-                    pic = steamgames.icon_path(aid)
-                    gicon = (icons.picture_icon(pic) if pic else None) or Gio.ThemedIcon.new("steam")
-                    self._add_tile(key, steamgames.name(aid) or key, gicon)
+                if self._add_known_tile(key):        # a desktop entry, or a Steam game
+                    pass
+                elif steamgames.appid(key):          # a Steam game Steam doesn't list
+                    self._add_tile(key, key, Gio.ThemedIcon.new("steam"))
                 else:   # no .desktop: generic icon, app_id as name
                     self._add_tile(key, key, Gio.ThemedIcon.new("application-x-executable"))
         for key, tile in self.tiles.items():
@@ -1365,11 +1398,8 @@ class DockWindow(Gtk.ApplicationWindow):
             for key in [k for k in new["pinned"] if k not in self.cfg["pinned"]]:
                 if not d.can_pin(key):
                     continue                        # the Dock is full
-                if key not in d.tiles:
-                    info = apps.lookup(key)
-                    if not info:
-                        continue
-                    d._add_tile(key, info.get_display_name(), icons.app_icon(info), info)
+                if key not in d.tiles and not d._add_known_tile(key):
+                    continue
                 self.cfg["pinned"].append(key)
             for key in [k for k in self.cfg["pinned"] if k not in new["pinned"]]:
                 d.set_pinned(key, False)
