@@ -35,7 +35,7 @@ STATUS_W = 280
 CC_W = 320
 # Sound and Now Playing live in the Control Center; the menu bar items are
 # optional (Settings > Menu Bar), off by default (Vini).
-LOGO_PX = 14            # the Sonata menu's logo / shape / symbol (a bit under the 16 px status icons)
+LOGO_PX = 12            # the Sonata menu's logo / shape / symbol (under the 16 px status icons; Vini's call)
 DEFAULTS = {"battery_percent": False, "clock_format": "%a %-d %b  %H:%M", "show_bluetooth": True,
             "show_sound": False, "show_now_playing": False, "show_tray": True}
 POLL_S = 10

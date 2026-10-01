@@ -76,10 +76,10 @@ class TextLogoTest(unittest.TestCase):
     def test_menu_bar_logo_size(self):
         """Vini: the Sonata menu's icon a bit smaller than the 16 px status icons."""
         from sonata2.shell import topbar
-        self.assertEqual(topbar.LOGO_PX, 14)
+        self.assertEqual(topbar.LOGO_PX, 12)
         g = L.LogoGlyph(topbar.LOGO_PX)
         g.set_kind("shape:circle")
-        self.assertEqual(g.measure(gi.repository.Gtk.Orientation.HORIZONTAL, -1)[0], 14)
+        self.assertEqual(g.measure(gi.repository.Gtk.Orientation.HORIZONTAL, -1)[0], 12)
 
 
 if __name__ == "__main__":
