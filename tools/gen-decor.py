@@ -10,8 +10,18 @@ import cairo
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "sonata2", "data", "decor")
 ICONS = os.path.join(os.path.dirname(__file__), "..", "sonata2", "data", "icons", "Sonata", "apps", "scalable")
-SIZE = 12                             # px, like ui/window.py's dots
-COLORS = {"close": "#ff5f57", "minimize": "#febc2e", "maximize": "#28c840", "restore": "#28c840"}
+def _tokens():
+    """sonata2/ui/tokens.py (plain Python: no GTK needed here)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "tokens", os.path.join(os.path.dirname(__file__), "..", "sonata2", "ui", "tokens.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+SIZE = _tokens().FRAME["dot"]         # px: tokens.FRAME, like every window's dots
+COLORS = dict(_tokens().TL_COLORS)
 RIM = (0, 0, 0, 0.18)                 # GTK's `inset 0 0 0 0.5px rgba(0,0,0,.18)`
 GLYPH = (0, 0, 0, 0.55)
 

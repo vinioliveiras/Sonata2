@@ -12,16 +12,31 @@ from gi.repository import Gtk  # noqa: E402
 
 from . import theme  # noqa: E402
 
+# a GTK header bar's own padding around the traffic lights (Sonata's theme)
+HEADERBAR_PAD_X, HEADERBAR_PAD_Y = 5, 6
+
+
+def traffic_metrics() -> dict:
+    """CSS values for the dots, from tokens.FRAME (also used by adwstyle.py)."""
+    from .tokens import FRAME as F
+    half = F["dot"] / 2
+    left = F["dot_left"] - half - F["dot_gap"] / 2          # the box's margin: the first button adds half a gap
+    top = F["dot_top"] - half
+    px = lambda v: f"{v:g}px"                                # noqa: E731
+    return {"tl_dot": px(F["dot"]), "tl_half_gap": px(F["dot_gap"] / 2),
+            "tl_margin_left": px(left), "tl_margin_top": px(top),
+            "tl_hb_left": px(left - HEADERBAR_PAD_X), "tl_hb_top": px(top - HEADERBAR_PAD_Y)}
+
+
 theme.register("""
 /* macOS-style window controls ("traffic lights"). Every state is spelled out
    and the provider is loaded above USER priority, so a user GTK theme (e.g. a
    macOS-look theme in ~/.config/gtk-4.0) can't repaint them grey on
    hover/press/focus. */
-/* 12px dots, 8px apart (centres 20px apart). */
-/* Every window (Sonata's, pixdecor's): first dot centred 13 px from the left
-   edge and 14 px from the top, close to the corner (Vini's call). */
-.traffic { margin-left: 3px; margin-top: 8px; }
-headerbar .traffic { margin-left: -2px; margin-top: 2px; }   /* headerbar adds its own padding */
+/* Size, spacing and place: tokens.FRAME (the same for every window: Sonata's,
+   pixdecor's, other GTK 4 apps'). */
+.traffic { margin-left: %(tl_margin_left)s; margin-top: %(tl_margin_top)s; }
+headerbar .traffic { margin-left: %(tl_hb_left)s; margin-top: %(tl_hb_top)s; }   /* headerbar adds its own padding */
 /* The dots are the same pictures pixdecor draws on other apps' title bars
    (tools/gen-decor.py), so every window looks and hovers alike: the glyph
    fades in on the button under the pointer. */
@@ -32,10 +47,10 @@ headerbar .traffic { margin-left: -2px; margin-top: 2px; }   /* headerbar adds i
 .traffic button:focus,
 .traffic button:focus-visible,
 .traffic button:backdrop {
-  min-width: 12px; min-height: 12px; padding: 0; margin: 0 4px;
+  min-width: %(tl_dot)s; min-height: %(tl_dot)s; padding: 0; margin: 0 %(tl_half_gap)s;
   border: none; border-radius: 999px; outline: none; box-shadow: none; text-shadow: none;
   background-color: transparent; background-repeat: no-repeat; background-position: center;
-  background-size: 12px 12px;
+  background-size: %(tl_dot)s %(tl_dot)s;
   transition: background-image 150ms ease;
 }
 .traffic button.tl-close { background-image: -gtk-icontheme("sonata-tl-close"); }
@@ -48,7 +63,7 @@ headerbar .traffic { margin-left: -2px; margin-top: 2px; }   /* headerbar adds i
   background-image: none; background-color: %(tl_disabled)s; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,.18); }
 .traffic button:active { filter: brightness(0.85); }
 .traffic button label { color: transparent; font-size: 1px; padding: 0; margin: 0; }
-""", key="traffic-lights")
+""", key="traffic-lights", **traffic_metrics())
 
 
 # Standard title bar: every Sonata window puts the traffic lights at the

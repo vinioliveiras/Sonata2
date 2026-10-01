@@ -131,6 +131,21 @@ DARK = {
 }
 
 # -- appearance-independent ------------------------------------------------------
+# Window frame -- the one place for every window's corners and traffic
+# lights. Everything else is derived from it: Sonata's own windows
+# (ui/window.py), the title bars Wayfire draws (pixdecor and sonata-corners,
+# set by tools/wayfire-config.sh at login), other GTK 4 apps (adwstyle.py)
+# and the dot pictures (tools/gen-decor.py; run it after changing "dot" or the
+# colours -- tests/test_regressions.py checks the files match).
+FRAME = {
+    "radius": 10,       # window corners, px
+    "dot": 12,          # traffic light diameter
+    "dot_gap": 8,       # space between two dots
+    "dot_left": 13,     # first dot's centre, from the window's left edge
+    "dot_top": 14,      # ... and from its top edge
+}
+TL_COLORS = {"close": "#ff5f57", "minimize": "#febc2e", "maximize": "#28c840", "restore": "#28c840"}
+
 SHARED = {
     # typography (SF Pro when installed, Inter as the open substitute)
     "font": '"SF Pro Text", "SF Pro", "Inter Variable", "Inter", "Cantarell", sans-serif',
@@ -144,7 +159,7 @@ SHARED = {
     "r_label": "6px",
     "r_menu": "7px",
     "r_menu_row": "4px",
-    "r_window": "10px",
+    "r_window": f"{FRAME['radius']}px",
     "r_dialog": "12px",
     "r_plate": "18px",
     # sizes

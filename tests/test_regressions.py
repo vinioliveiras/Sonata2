@@ -1280,6 +1280,67 @@ class ColumnsFillLastTests(unittest.TestCase):
                 self.assertIn("ui.columns.fill_last(", src, f"{f}: every column view keeps its widths")
 
 
+class WindowFrameSingleSourceTests(unittest.TestCase):
+    """Corners and traffic lights were spelled out in several places (Sonata's
+    windows, pixdecor's title bars, other GTK 4 apps, the dot pictures) and
+    drifted apart. tokens.FRAME is the one place; everything else follows."""
+
+    def setUp(self):
+        from sonata2.ui import tokens
+        self.tokens = tokens
+        self.saved = dict(tokens.FRAME)
+
+    def tearDown(self):
+        self.tokens.FRAME.clear()
+        self.tokens.FRAME.update(self.saved)
+
+    def test_a_change_reaches_every_window(self):
+        from sonata2 import adwstyle, wfconfig
+        from sonata2.ui import window
+        F = self.tokens.FRAME
+        F.update(radius=14, dot=14, dot_gap=10, dot_left=15, dot_top=16)
+        m = window.traffic_metrics()
+        # Sonata's windows: box margin + half a gap + half a dot = the centre
+        self.assertEqual(float(m["tl_margin_left"][:-2]) + 5 + 7, 15)
+        self.assertEqual(float(m["tl_margin_top"][:-2]) + 7, 16)
+        self.assertEqual(m["tl_dot"], "14px")
+        opts = {(sec, k): v for sec, k, v in wfconfig.frame_options(F)}
+        self.assertEqual(opts[("pixdecor", "rounded_corner_radius")], "14")
+        self.assertEqual(opts[("sonata-corners", "radius")], "14")
+        self.assertEqual(opts[("pixdecor", "left_button_spacing")], "10")
+        self.assertEqual(opts[("pixdecor", "left_button_x_offset")], "8")
+        sheet = adwstyle.css(bars=False)
+        self.assertIn("border-radius: 14px", sheet)
+        self.assertIn("min-width: 14px", sheet)
+        self.assertIn("margin: 0 5px", sheet)
+
+    def test_shipped_files_match_the_tokens(self):
+        """wayfire.ini's literal values and the dot pictures: regenerate with
+        tools/gen-decor.py after changing tokens.FRAME / TL_COLORS."""
+        from sonata2 import wfconfig
+        root = pathlib.Path(__file__).resolve().parent.parent
+        ini = (root / "config" / "wayfire.ini").read_text()
+        for sec, key, val in wfconfig.frame_options(self.tokens.FRAME):
+            body = ini.split(f"[{sec}]", 1)[1].split("\n[", 1)[0]
+            self.assertRegex(body, rf"(?m)^{key} = {re.escape(val)}$", f"[{sec}] {key}")
+        from gi.repository import GdkPixbuf
+        dot = self.tokens.FRAME["dot"]
+        for png in (root / "sonata2" / "data" / "decor").glob("*.png"):
+            pb = GdkPixbuf.Pixbuf.new_from_file(str(png))
+            self.assertEqual((pb.get_width(), pb.get_height()), (dot, dot), png.name)
+        for svg in (root / "sonata2" / "data" / "icons" / "Sonata" / "apps" / "scalable").glob("sonata-tl-*.svg"):
+            self.assertIn(f'width="{dot}" height="{dot}"', svg.read_text(), svg.name)
+
+    def test_no_window_numbers_spelled_out(self):
+        root = pathlib.Path(__file__).resolve().parent.parent / "sonata2"
+        win = (root / "ui" / "window.py").read_text()
+        traffic = win[win.index(".traffic {"):win.index('key="traffic-lights"')]
+        self.assertNotRegex(traffic, r"\b(12|13|14|3|8)px")
+        adw = (root / "adwstyle.py").read_text()
+        self.assertNotIn("12px", adw)
+        self.assertIn('"r_window": f"{FRAME[\'radius\']}px"', (root / "ui" / "tokens.py").read_text())
+
+
 class SteamGameDockTests(unittest.TestCase):
     """Steam games showed in the Dock as a generic icon named
     "steam_app_<id>": their name and icon now come from Steam."""

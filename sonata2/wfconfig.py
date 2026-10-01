@@ -46,6 +46,16 @@ def wayfire_get(section: str, key: str, default: str = "") -> str:
     return default
 
 
+def frame_options(frame: dict) -> list:
+    """(section, key, value) for the title bars Wayfire draws, from
+    tokens.FRAME: the same corners and traffic lights as Sonata's windows
+    (pixdecor puts the first dot's left edge x_offset in, dots `spacing` apart)."""
+    return [("pixdecor", "rounded_corner_radius", str(frame["radius"])),
+            ("pixdecor", "left_button_spacing", str(frame["dot_gap"])),
+            ("pixdecor", "left_button_x_offset", f"{frame['dot_left'] - frame['dot'] / 2:g}"),
+            ("sonata-corners", "radius", str(frame["radius"]))]
+
+
 def wayfire_set(section: str, key: str, value) -> bool:
     """Set `key = value` in [section] of the session's Wayfire config(s);
     Wayfire applies it at once. Comments and other lines stay as they are.

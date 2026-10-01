@@ -25,7 +25,9 @@ from .gtkstyle import BEGIN, END
 
 # Sonata's traffic lights (ui/window.py): first dot's centre from the window's
 # left and top edges; libadwaita centres its header bar's controls this far down
-TL_LEFT, TL_TOP = 13, 14
+from .ui.tokens import FRAME  # noqa: E402  (dots and corners: one place for every window)
+
+TL_LEFT, TL_TOP = FRAME["dot_left"], FRAME["dot_top"]
 TL_CENTRE_Y_ADW = 23
 ADW_START_INSET = 6     # the header bar's start box sits this far in (with no padding)
 LIGHTS = ("close", "close-hover", "minimize", "minimize-hover", "maximize", "maximize-hover")
@@ -63,7 +65,8 @@ def media_queries() -> bool:
 
 def css(folder: str = None, bars: bool = True) -> str:
     """The stylesheet (pictures from `folder`; bars: the title bar colour)."""
-    from .ui.tokens import DARK, LIGHT, SHARED
+    from .ui.tokens import DARK, LIGHT
+    D, G = FRAME["dot"], FRAME["dot_gap"]
     folder = folder or runtime_dir()
 
     def url(name):
@@ -81,19 +84,20 @@ def css(folder: str = None, bars: bool = True) -> str:
     return (f"/* Sonata's window look for other GTK 4 apps -- written by sonata2/adwstyle.py at login */\n"
             f"window:not(.sonata-window) headerbar {{ padding-left: 0; }}\n"
             # the corners of Sonata's windows and of the ones Wayfire draws (sonata-corners radius)
-            f"window:not(.sonata-window).csd {{ border-radius: {SHARED['r_window']}; }}\n"
+            f"window:not(.sonata-window).csd {{ border-radius: {FRAME['radius']}px; }}\n"
             f"window:not(.sonata-window).csd.maximized, window:not(.sonata-window).csd.fullscreen,\n"
             f"window:not(.sonata-window).csd.tiled, window:not(.sonata-window).csd.tiled-top,\n"
             f"window:not(.sonata-window).csd.tiled-left, window:not(.sonata-window).csd.tiled-right,\n"
             f"window:not(.sonata-window).csd.tiled-bottom {{ border-radius: 0; }}\n"
             f"{wc} {{ border-spacing: 0; padding: 0; margin: 0 0 {2 * (TL_CENTRE_Y_ADW - TL_TOP)}px 0; }}\n"
             f"{w}, {w}:hover, {w}:active, {w}:backdrop {{\n"
-            f"  min-width: 12px; min-height: 12px; padding: 0; margin: 0 4px; border: none; border-radius: 999px;\n"
+            f"  min-width: {D}px; min-height: {D}px; padding: 0; margin: 0 {G / 2:g}px; border: none;\n"
+            f"  border-radius: 999px;\n"
             f"  box-shadow: none; outline: none; background-color: transparent; background-repeat: no-repeat;\n"
-            f"  background-position: center; background-size: 12px 12px; }}\n"
-            f"{wc} > button:first-child {{ margin-left: {TL_LEFT - 6 - ADW_START_INSET}px; }}\n"
+            f"  background-position: center; background-size: {D}px {D}px; }}\n"
+            f"{wc} > button:first-child {{ margin-left: {TL_LEFT - D / 2 - ADW_START_INSET:g}px; }}\n"
             f"{w} > image {{ opacity: 0; background: none; box-shadow: none; padding: 0; margin: 0;\n"
-            f"  min-width: 12px; min-height: 12px; -gtk-icon-size: 12px; }}\n"
+            f"  min-width: {D}px; min-height: {D}px; -gtk-icon-size: {D}px; }}\n"
             f"{w}.close {{ background-image: {url('close')}; }}\n"
             f"{w}.close:hover {{ background-image: {url('close-hover')}; }}\n"
             f"{w}.minimize {{ background-image: {url('minimize')}; }}\n"

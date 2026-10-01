@@ -22,6 +22,18 @@ corners="${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install/lib
 if [ -f "$corners" ]; then
     sed -i -E '/^plugins *=/ s/$/ sonata-corners/' "$out"
 fi
+# Window frame (corners, traffic lights) from tokens.FRAME -- one place for
+# every window: the title bars Wayfire draws follow Sonata's own windows.
+PYTHONPATH="$here" python3 - "$out" <<'PY' || true
+import importlib.util, os, sys
+from sonata2 import wfconfig
+spec = importlib.util.spec_from_file_location("tokens", os.path.join(os.environ["PYTHONPATH"], "sonata2", "ui", "tokens.py"))
+tokens = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(tokens)
+wfconfig._wayfire_files = lambda: [sys.argv[1]]       # write only the resolved copy
+for sec, key, val in wfconfig.frame_options(tokens.FRAME):
+    wfconfig.wayfire_set(sec, key, val)
+PY
 over="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/wayfire-overrides.ini"
 # Keyboard: the system's layout (localectl) until one is picked in Settings.
 if ! grep -qs '^xkb_layout' "$over" && command -v localectl >/dev/null; then
