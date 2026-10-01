@@ -222,10 +222,22 @@ class WaitGuard:
         return False
 
 
-def clock(label: Gtk.Label) -> None:
+CLOCK_FORMAT = "%a %-d %b  %H:%M"
+
+
+def menu_bar_format() -> str:
+    """The menu bar's clock format (Settings > Date & Time); the default else."""
+    try:
+        from .. import config
+        return config.load("topbar", {"clock_format": CLOCK_FORMAT})["clock_format"] or CLOCK_FORMAT
+    except Exception:
+        return CLOCK_FORMAT
+
+
+def clock(label: Gtk.Label, fmt: str = CLOCK_FORMAT) -> None:
     """Keep `label` on the date and time (every 10 s)."""
     def tick():
-        label.set_label(GLib.DateTime.new_now_local().format("%a %-d %b  %H:%M"))
+        label.set_label(GLib.DateTime.new_now_local().format(fmt) or "")
         return True
     tick()
     GLib.timeout_add_seconds(10, tick)

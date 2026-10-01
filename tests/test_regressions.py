@@ -630,6 +630,21 @@ class LaunchpadRegressions(unittest.TestCase):
         self.assertIn('get("hidden"', src)
 
 
+class LockClockRegressions(unittest.TestCase):
+    def test_clock_top_centre_in_the_menu_bars_format(self):
+        """Vini: the lock screen's clock at the top, centred, like the menu bar's."""
+        import inspect
+        from sonata2.shell import lock, loginui
+        src = inspect.getsource(lock.LockScreen._window)
+        self.assertIn("halign=Gtk.Align.CENTER, valign=Gtk.Align.START", src)
+        self.assertIn("menu_bar_format()", src)
+        config.save("topbar", {"clock_format": "%H:%M"})
+        self.assertEqual(loginui.menu_bar_format(), "%H:%M")
+        lbl = Gtk.Label()
+        loginui.clock(lbl, "%Y")
+        self.assertEqual(lbl.get_label(), GLib.DateTime.new_now_local().format("%Y"))
+
+
 class SettingsRegressions(unittest.TestCase):
     def test_hidden_section_locks_again(self):
         from sonata2.settings import app as st
