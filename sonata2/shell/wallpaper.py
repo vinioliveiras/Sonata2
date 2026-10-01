@@ -20,9 +20,9 @@ window.sonata-wallpaper { background-image: linear-gradient(160deg, #1d3b8f 0%%,
 
 
 class WallpaperWindow(Gtk.ApplicationWindow):
-    """One per display (monitors.each); the desktop icons only on the main one."""
+    """One per display (monitors.each), each with its desktop (icons start on the main one)."""
 
-    def __init__(self, app, monitor=None, desktop: bool = True):
+    def __init__(self, app, monitor=None, desktop: bool = True, main: bool = True):
         super().__init__(application=app, title="Wallpaper", css_classes=["sonata-wallpaper"],
                          decorated=False, resizable=True)
         # two pictures in a cross-fading stack: a new wallpaper (or the dark
@@ -38,9 +38,11 @@ class WallpaperWindow(Gtk.ApplicationWindow):
         over = Gtk.Overlay()
         over.set_child(self.stack)
         self.desktop = None
+        self.main = main
         if desktop:
             from .desktop import Desktop      # the icons of ~/Desktop on top of the picture
-            self.desktop = Desktop()
+            from .monitors import connector
+            self.desktop = Desktop(screen=connector(monitor), main=main)
             over.add_overlay(self.desktop)
         self.set_child(over)
         LS = layer.layer_shell()
@@ -75,7 +77,7 @@ class WallpaperWindow(Gtk.ApplicationWindow):
         nxt = self.pics[1] if self.stack.get_visible_child() is self.pics[0] else self.pics[0]
         nxt.set_file(f if f and f.query_exists(None) else None)
         self.stack.set_visible_child(nxt)
-        if self.desktop is not None and f is not None:
+        if self.main and f is not None:
             share_with_login_screen(f)
 
 

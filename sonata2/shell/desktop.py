@@ -7,7 +7,13 @@ menus like Finder's, rubber-band selection, Delete / Return / Space /
 Ctrl+A / Ctrl+C / Ctrl+V. Lives in the wallpaper process (the background
 layer); reuses Files' folder model, icons, thumbnails and operations.
 
-desktop.json: {"positions": {name: [col, row]}, "sort": "none"|"name"|"kind"|"date"}"""
+Every display has a desktop (macOS): icons start on the main one; one
+dragged onto another display, a folder made or a file dropped there, stays
+there. Its spot remembers the display ([col, row, "HDMI-A-1"]); with that
+display unplugged it shows on the main one.
+
+desktop.json: {"positions": {name: [col, row] | [col, row, connector]},
+               "sort": "none"|"name"|"kind"|"date"}"""
 import os
 
 import gi
@@ -128,8 +134,9 @@ def _copy(target) -> bool:
 class Desktop(Gtk.Fixed):
     """Icon layer over the wallpaper."""
 
-    def __init__(self):
+    def __init__(self, screen: str = "", main: bool = True):
         super().__init__(focusable=True, hexpand=True, vexpand=True)
+        self.screen, self.main = screen, main         # the display's connector; the main display's desktop?
         self.dir = desktop_dir()
         self.cfg = config.load("desktop", DEFAULTS)
         self.items = {}                   # name -> DesktopItem
@@ -214,13 +221,14 @@ class Desktop(Gtk.Fixed):
         pos = {} if self.cfg.get("sort", "none") != "none" else dict(self.cfg.get("positions", {}))
         taken = set()
         placed = {}
-        for name in self._sorted_names():          # remembered spots first
+        mine = [n for n in self._sorted_names() if n in self.items]
+        for name in mine:                          # remembered spots first
             p = pos.get(name)
-            if p and tuple(p) not in taken and p[0] < self.cols() and p[1] < rows:
-                placed[name] = tuple(p)
-                taken.add(tuple(p))
+            if p and (p[0], p[1]) not in taken and p[0] < self.cols() and p[1] < rows:
+                placed[name] = (p[0], p[1])
+                taken.add((p[0], p[1]))
         slots = iter(c for c in free_order if c not in taken)
-        for name in self._sorted_names():          # then the first free cells
+        for name in mine:                          # then the first free cells
             if name not in placed:
                 placed[name] = next(slots, (self.cols() - 1, rows - 1))
         # icons that already had a spot slide to their new one (new ones just appear)
@@ -237,10 +245,25 @@ class Desktop(Gtk.Fixed):
     def do_snapshot(self, snap) -> None:
         ui.transition.snapshot_children(self, snap)
 
+    def _display_of(self, name: str) -> str:
+        """The display an icon was put on ("" = the main one)."""
+        if self.cfg.get("sort", "none") != "none":
+            return ""                                # sorted: all on the main display
+        p = self.cfg.get("positions", {}).get(name)
+        return p[2] if isinstance(p, list) and len(p) > 2 and isinstance(p[2], str) else ""
+
+    def mine(self, name: str) -> bool:
+        """Is this icon shown on this display's desktop?"""
+        where = self._display_of(name)
+        if self.main:
+            return where in ("", self.screen) or where not in _connected()
+        return bool(self.screen) and where == self.screen
+
     def _sync(self) -> None:
-        """Items follow the folder (live monitor)."""
+        """Items follow the folder (live monitor), the ones on this display."""
         store = self.folder.store
         infos = {store.get_item(i).get_name(): store.get_item(i) for i in range(store.get_n_items())}
+        infos = {n: i for n, i in infos.items() if self.mine(n)}
         for name in [n for n in self.items if n not in infos]:
             item = self.items.pop(name)
             if item in self.selection:
@@ -259,7 +282,7 @@ class Desktop(Gtk.Fixed):
 
     def _config_changed(self) -> None:
         self.cfg = config.load("desktop", DEFAULTS)
-        self._layout()
+        self._sync()                                 # icons moved to / from another display
 
     def _dock_changed(self) -> None:
         m = self._dock_margins()
@@ -269,9 +292,13 @@ class Desktop(Gtk.Fixed):
 
     def _save_positions(self, moved: dict) -> None:
         cfg = config.load("desktop", DEFAULTS)
-        cfg["positions"].update({k: list(v) for k, v in moved.items()})
-        known = set(self.items)
-        cfg["positions"] = {k: v for k, v in cfg["positions"].items() if k in known}
+        tag = [] if self.main else [self.screen]          # spots on another display name it
+        cfg["positions"].update({k: [v[0], v[1]] + tag for k, v in moved.items()})
+        # files gone from ~/Desktop lose their spot (not icons of another
+        # display, nor a folder that is being made right now)
+        base = self.dir.get_path()
+        cfg["positions"] = {k: v for k, v in cfg["positions"].items()
+                            if k in moved or os.path.lexists(os.path.join(base, k))}
         if cfg.get("sort", "none") != "none":
             cfg["sort"] = "none"                    # moving an icon by hand (Finder does the same)
         config.save("desktop", cfg)
@@ -495,6 +522,19 @@ class Desktop(Gtk.Fixed):
                 taken.add((c, r))
             self._save_positions(moved)
             return True
+        here = [f for f in files if f.get_parent() is not None and f.get_parent().equal(self.dir)]
+        if here and len(here) == len(files):          # icons from another display's desktop: just move them
+            moved, taken = {}, set(self._placed.values())
+            c, r = col, row
+            for f in here:
+                while (c, r) in taken:
+                    r += 1
+                    if r >= self.rows():
+                        r, c = 0, c + 1
+                moved[f.get_basename()] = (c, r)
+                taken.add((c, r))
+            self._save_positions(moved)
+            return True
         self._save_positions({f.get_basename(): (col, row) for f in files[:1]})
         return self.drop_into(files, self.dir, _copy(target))
 
@@ -529,6 +569,15 @@ class Desktop(Gtk.Fixed):
         else:
             return False
         return True
+
+
+def _connected() -> set:
+    """Connectors of the displays plugged in now."""
+    try:
+        from . import monitors
+        return {monitors.connector(m) for m in monitors._list()}
+    except Exception:                               # no display list (tests, X11): just the main one
+        return set()
 
 
 def _open_settings(page: str) -> None:

@@ -460,7 +460,7 @@ def run_wallpaper(app, args, ui):
     app.hold()
 
     def create(m):
-        w = WallpaperWindow(app, m, desktop=m is monitors.main())
+        w = WallpaperWindow(app, m, main=m is monitors.main())    # a desktop on every display
         w.present()
         return w
     walls = monitors.each(create, lambda w: w.destroy())
