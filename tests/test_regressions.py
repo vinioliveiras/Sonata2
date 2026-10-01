@@ -971,6 +971,63 @@ class AutomaticPowerBoostTests(unittest.TestCase):
         self.assertIn("self.power.update(", (root / "gamemode.py").read_text())
 
 
+class BrightnessTests(unittest.TestCase):
+    """The Control Center slider at its minimum wasn't at the left end (the
+    panel stops at 5 %, read back as 5). The slider now runs over the
+    usable range. External monitors: DDC/CI per display, the Control Center
+    of each display's menu bar controls that display."""
+
+    def test_slider_ends_match_the_panel_range(self):
+        from sonata2.backend import system as S
+        self.assertEqual(S._to_percent(0), S.MIN_BRIGHTNESS)
+        self.assertEqual(S._to_level(S.MIN_BRIGHTNESS), 0)          # minimum: the knob at the left end
+        self.assertEqual(S._to_percent(100), 100)
+        self.assertEqual(S._to_level(100), 100)
+        for v in (0, 1, 37, 50, 99, 100):
+            self.assertEqual(S._to_level(S._to_percent(v)), v)
+
+    def test_builtin_vs_external(self):
+        from sonata2.backend import system as S
+        self.assertTrue(S.is_builtin(None))
+        self.assertTrue(S.is_builtin("eDP-1"))
+        self.assertFalse(S.is_builtin("HDMI-A-1"))
+
+    def test_ddc_bus_from_the_connector(self):
+        from sonata2.backend import system as S
+        root = tempfile.mkdtemp()
+        adapter = os.path.join(root, "devices", "i2c-7")
+        os.makedirs(adapter)
+        conn = os.path.join(root, "drm", "card1-HDMI-A-1")
+        os.makedirs(conn)
+        os.symlink(adapter, os.path.join(conn, "ddc"))
+        old, S.DRM = S.DRM, os.path.join(root, "drm")
+        try:
+            self.assertEqual(S.ddc_bus("HDMI-A-1"), 7)
+            self.assertIsNone(S.ddc_bus("DP-2"))
+        finally:
+            S.DRM = old
+
+    def test_ddc_reading(self):
+        from sonata2.backend import system as S
+        calls = []
+        old_run, old_bus = S._run, S.ddc_bus
+        S._run = lambda cmd, timeout=10: (calls.append(cmd), (0, "VCP 10 C 60 100\n"))[1]
+        S.ddc_bus = lambda out: 7
+        try:
+            self.assertEqual(S.brightness("HDMI-A-1"), S._to_level(60))
+            S.set_brightness(100, "HDMI-A-1")
+            self.assertEqual(calls[-1][:3], ["ddcutil", "--bus", "7"])
+            self.assertEqual(calls[-1][-3:], ["setvcp", "10", "100"])
+        finally:
+            S._run, S.ddc_bus = old_run, old_bus
+
+    def test_control_center_follows_its_display(self):
+        src = (pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "shell" / "topbar.py").read_text()
+        self.assertIn("system.brightness(out)", src)
+        self.assertIn("system.set_brightness, int(v), out", src)
+        self.assertIn("self.bar.monitor = monitor", src)
+
+
 class SteamGameDockTests(unittest.TestCase):
     """Steam games showed in the Dock as a generic icon named
     "steam_app_<id>": their name and icon now come from Steam."""

@@ -885,12 +885,26 @@ class Settings(Adw.ApplicationWindow):
         screens = group("Displays")
 
         def fill(res):
-            b, ds = res or (None, [])
-            if b is not None:
-                bright.add(slider_row("Brightness", b, 5, 100,
-                                      lambda x: self._latest("brightness", system.set_brightness, int(x))))
-            else:
-                bright.add(Adw.ActionRow(title="Brightness", subtitle="No backlight control (brightnessctl)"))
+            levels, ds = res or ({}, [])
+            # one slider per display: the laptop panel and each external
+            # monitor that answers over DDC/CI
+            names = [d.name for d in ds] or [None]
+            if not any(system.is_builtin(n) for n in names):
+                names.insert(0, None)                       # a panel wlr-randr didn't list
+            for n in names:
+                d = next((x for x in ds if x.name == n), None)
+                title = "Built-in Display" if system.is_builtin(n) else (d.description if d and d.description
+                                                                           else n)
+                b = levels.get(n)
+                if b is not None:
+                    bright.add(slider_row(title, b, 0, 100,
+                                          lambda x, n=n: self._latest(("brightness", n), system.set_brightness,
+                                                                      int(x), n)))
+                elif system.is_builtin(n):
+                    bright.add(Adw.ActionRow(title=title, subtitle="No backlight control (brightnessctl)"))
+                else:
+                    bright.add(Adw.ActionRow(title=title, subtitle="Turn on DDC/CI in the monitor's own menu "
+                                                                   "to change its brightness here (needs ddcutil)"))
             if len(ds) > 1:
                 from ..shell.monitors import DEFAULTS as MON
                 cur_main = config.load("displays", MON)["main"]
@@ -911,7 +925,13 @@ class Settings(Adw.ApplicationWindow):
                                                                                d.name, s)))
             if not ds:
                 screens.add(Adw.ActionRow(title="Displays", subtitle="wlr-randr not found or no outputs"))
-        system.run_async(lambda: (system.brightness(), system.displays()), fill)
+        def read():
+            ds = system.displays()
+            levels = {None: system.brightness()}
+            for d in ds:
+                levels[d.name] = levels[None] if system.is_builtin(d.name) else system.brightness(d.name)
+            return levels, ds
+        system.run_async(read, fill)
         pages = [bright, screens, self._night_shift_group()]
         from .. import gpu
         if gpu.has_dual_gpu():

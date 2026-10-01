@@ -37,6 +37,7 @@ TOOLS = [
     ("pactl", "headphones / speakers ports", "libpulse", "pulseaudio-utils", "pulseaudio-utils"),
     ("bluetoothctl", "Bluetooth", "bluez-utils", "bluez", "bluez"),
     ("brightnessctl", "brightness keys (fallback)", "brightnessctl", "brightnessctl", "brightnessctl"),
+    ("ddcutil", "external monitors' brightness (DDC/CI)", "ddcutil", "ddcutil", "ddcutil"),
     ("wlr-randr", "Settings > Displays", "wlr-randr", "wlr-randr", "wlr-randr"),
     ("powerprofilesctl", "energy modes / Low Power Mode", "power-profiles-daemon", "power-profiles-daemon",
      "power-profiles-daemon"),

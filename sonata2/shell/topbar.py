@@ -998,8 +998,13 @@ class ControlCenter(Gtk.Box):
         row.append(conn)
         row.append(right)
         self.append(row)
+        # the brightness of the display this menu bar is on: the laptop panel,
+        # or an external monitor over DDC/CI
+        self.output = self._output()
+        out = self.output
         disp, self.bright = _slider_with_icon(
-            "display-brightness-symbolic", 50, lambda v: system.run_async(system.set_brightness, None, int(v)),
+            "display-brightness-symbolic", 50,
+            lambda v: system.run_latest(("brightness", out), system.set_brightness, int(v), out),
             button=_round_button("video-display-symbolic", "Displays Preferences",
                                  lambda _b: (self._close(), open_settings("displays"))))
         # Night Shift under the brightness slider (Big Sur's expanded Display module)
@@ -1027,9 +1032,22 @@ class ControlCenter(Gtk.Box):
                                     snd, mic))
         self.np = None
         cached("cc", _cc_state, self._fill_toggles)             # Wi-Fi / Bluetooth: last known at once
-        system.run_async(lambda: (system.brightness(), system.volume(), system.input_volume()),
+        system.run_async(lambda: (system.brightness(out), system.volume(), system.input_volume()),
                          self._fill_sliders)                  # levels: always the live ones
         self._now_playing()
+
+    def _output(self):
+        """Connector name of the display this menu bar is on (None: unknown,
+        the laptop panel then)."""
+        try:
+            mon = getattr(self.bar, "monitor", None)
+            if mon is None:
+                nat = self.bar.get_native()
+                surf = nat.get_surface() if nat else None
+                mon = surf.get_display().get_monitor_at_surface(surf) if surf else None
+            return mon.get_connector() if mon is not None else None
+        except Exception:
+            return None
 
     def _small(self, icon, title, cb, close=True):
         b = Gtk.Button(css_classes=["panel-module", "cc-small"], can_focus=False)
@@ -1058,6 +1076,9 @@ class ControlCenter(Gtk.Box):
         b, vol, mic = res
         if b is None:
             self.bright.set_sensitive(False)
+            if not system.is_builtin(self.output):
+                self.bright.set_tooltip_text("This display's brightness can't be changed from the computer "
+                                             "(turn on DDC/CI in its menu; needs ddcutil)")
         else:
             self.bright.set_value(b)
         if vol is None:
@@ -1226,6 +1247,7 @@ class TopBarWindow(Gtk.ApplicationWindow):
                                       ignore_app_ids={"io.github.vinioliveiras.sonata2.topbar"})
         self.manager = manager
         self.bar = Bar(self.manager)
+        self.bar.monitor = monitor          # Control Center's brightness follows this display
         self.set_size_request(-1, BAR_H)
         if not preview and not secondary:
             from .notifications import Notifications

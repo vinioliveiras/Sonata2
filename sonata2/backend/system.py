@@ -393,20 +393,48 @@ def _backlight():
     return None
 
 
-def brightness() -> Optional[int]:
-    """Panel brightness in %: sysfs (no extra tool needed), else brightnessctl."""
+# The slider runs 0..100 over the panel's usable range: the panel never
+# goes below MIN_BRIGHTNESS % (fully black), so slider 0 = that floor. (The
+# slider was put at 0, the panel stayed at 5 %, and reading back drew the
+# knob at 5: never at the left end.)
+MIN_BRIGHTNESS = 5
+BUILTIN = ("eDP", "LVDS", "DSI")
+
+
+def _to_level(percent: float) -> int:
+    return max(0, min(100, round((percent - MIN_BRIGHTNESS) * 100 / (100 - MIN_BRIGHTNESS))))
+
+
+def _to_percent(level: float) -> float:
+    return max(MIN_BRIGHTNESS, min(100, MIN_BRIGHTNESS + level * (100 - MIN_BRIGHTNESS) / 100))
+
+
+def is_builtin(output: Optional[str]) -> bool:
+    return not output or output.startswith(BUILTIN)
+
+
+def brightness(output: Optional[str] = None) -> Optional[int]:
+    """Slider level 0..100 of a display: the laptop panel (sysfs, else
+    brightnessctl) when `output` is None or built in, else an external
+    monitor over DDC/CI (ddcutil). None: can't be read."""
+    if not is_builtin(output):
+        pct = ddc_brightness(output)
+        return None if pct is None else _to_level(pct)
     bl = _backlight()
     if bl:
-        return round(bl[1] * 100 / bl[2])
+        return _to_level(bl[1] * 100 / bl[2])
     rc, out = _run(["brightnessctl", "-m", "-c", "backlight"], timeout=5)
     m = re.search(r",(\d+)%,", out) if rc == 0 else None
-    return int(m.group(1)) if m else None
+    return _to_level(int(m.group(1))) if m else None
 
 
-def set_brightness(percent: int) -> bool:
-    """Through logind (SetBrightness: allowed for the active session, no root,
-    no brightnessctl), else brightnessctl."""
-    percent = max(5, min(100, int(percent)))   # never fully black
+def set_brightness(level: int, output: Optional[str] = None) -> bool:
+    """Slider level 0..100. The panel: through logind (SetBrightness:
+    allowed for the active session, no root), else brightnessctl; an
+    external monitor: DDC/CI."""
+    percent = _to_percent(level)
+    if not is_builtin(output):
+        return set_ddc_brightness(output, percent)
     bl = _backlight()
     if bl:
         name, _cur, mx = bl
@@ -419,7 +447,76 @@ def set_brightness(percent: int) -> bool:
             return True
         except GLib.Error:
             pass
-    return _run(["brightnessctl", "-q", "-c", "backlight", "set", f"{percent}%"])[0] == 0
+    return _run(["brightnessctl", "-q", "-c", "backlight", "set", f"{round(percent)}%"])[0] == 0
+
+
+# External monitors: VCP feature 0x10 (luminance) over the monitor's DDC/CI
+# I2C bus. The bus comes from the DRM connector (/sys/class/drm/cardN-<output>/ddc
+# -> .../i2c-<bus>), so ddcutil doesn't have to probe every bus (seconds).
+DRM = "/sys/class/drm"
+
+
+def ddc_bus(output: str) -> Optional[int]:
+    import glob as _glob
+    for conn in _glob.glob(os.path.join(DRM, f"card*-{output}")):
+        for link in (os.path.join(conn, "ddc"), conn):
+            target = os.path.realpath(link)
+            m = re.search(r"i2c-(\d+)$", target)
+            if m:
+                return int(m.group(1))
+            try:
+                kids = [k for k in os.listdir(target) if re.fullmatch(r"i2c-\d+", k)]
+            except OSError:
+                kids = []
+            if kids:
+                return int(kids[0][4:])
+    return None
+
+
+def ddc_brightness(output: str) -> Optional[int]:
+    """Percent of the monitor's maximum, None without DDC/CI."""
+    bus = ddc_bus(output)
+    if bus is None:
+        return None
+    rc, out = _run(["ddcutil", "--bus", str(bus), "--brief", "getvcp", "10"], timeout=8)
+    m = re.search(r"VCP 10 C (\d+) (\d+)", out) if rc == 0 else None
+    if not m or int(m.group(2)) <= 0:
+        return None
+    _ddc_max[bus] = int(m.group(2))
+    return round(int(m.group(1)) * 100 / int(m.group(2)))
+
+
+_ddc_max = {}               # bus -> the monitor's own maximum (usually 100)
+
+
+def set_ddc_brightness(output: str, percent: float) -> bool:
+    bus = ddc_bus(output)
+    if bus is None:
+        return False
+    return _run(["ddcutil", "--bus", str(bus), "--noverify", "setvcp", "10", str(round(percent * _ddc_max.get(bus, 100) / 100))],
+                timeout=8)[0] == 0
+
+
+_latest_jobs = {}
+
+
+def run_latest(key, fn, *args, callback=None) -> None:
+    """fn(*args) off the main loop, one at a time per key; while one runs
+    only the newest call waits (a slider drag over a slow DDC/CI bus: no
+    pile of threads, and the last value is the one that stays)."""
+    job = _latest_jobs.setdefault(key, [False, None])
+    if job[0]:
+        job[1] = args
+        return
+    job[0] = True
+
+    def done(res):
+        job[0], nxt, job[1] = False, job[1], None
+        if nxt is not None:
+            run_latest(key, fn, *nxt, callback=callback)
+        elif callback:
+            callback(res)
+    run_async(fn, done, *args)
 
 
 # -- battery -------------------------------------------------------------------------------

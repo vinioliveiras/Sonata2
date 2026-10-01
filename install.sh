@@ -7,8 +7,7 @@
 #   (dependencies)            always checked and installed with the distro's
 #                             package manager (pacman/apt/dnf/zypper/xbps/apk):
 #                             required ones, then every optional one (Wi-Fi,
-#                             screenshots, Night Shift, game controllers:
-#                             wtype...), pywayland from PyPI
+#                             screenshots, Night Shift...), pywayland from PyPI
 #                             if needed, pixdecor from the AUR on Arch
 #   ./install.sh --no-deps    only check them (print what's missing)
 #   ./install.sh --yes        don't ask (login-screen entry included)
@@ -106,23 +105,23 @@ family="${ID:-} ${ID_LIKE:-}"
 NI=""      # the package manager's "don't ask" flag, for optional packages one by one
 case "$family" in
     *arch*)   PM="sudo pacman -S --needed"; NI="--noconfirm"
-              PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python-gobject python-cairo python-pywayland gamemode"
-              OPT="vte4 networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk keepassxc libpulse xorg-xwayland grim slurp wl-clipboard ffmpegthumbnailer webp-pixbuf-loader gtksourceview5 gst-plugins-good gst-plugins-bad gst-libav gst-plugin-gtk4 python-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl meson ninja" ;;
+              PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python-gobject python-cairo python-pywayland"
+              OPT="vte4 networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk keepassxc libpulse xorg-xwayland grim slurp wl-clipboard ffmpegthumbnailer webp-pixbuf-loader gamemode gtksourceview5 gst-plugins-good gst-plugins-bad gst-libav python-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl meson ninja ddcutil" ;;
     *debian*|*ubuntu*) PM="sudo apt install"; NI="-y"
-              PKGS="wayfire gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtk4layershell-1.0 python3-gi python3-gi-cairo python3-pywayland gamemode"
-              OPT="gir1.2-vte-3.91 network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gir1.2-polkit-1.0 keepassxc pulseaudio-utils xwayland grim slurp wl-clipboard ffmpegthumbnailer webp-pixbuf-loader gir1.2-gtksource-5 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-gtk4 python3-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl" ;;
+              PKGS="wayfire gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtk4layershell-1.0 python3-gi python3-gi-cairo python3-pywayland"
+              OPT="gir1.2-vte-3.91 network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gir1.2-polkit-1.0 keepassxc pulseaudio-utils xwayland grim slurp wl-clipboard ffmpegthumbnailer webp-pixbuf-loader gamemode gir1.2-gtksource-5 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav python3-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl ddcutil" ;;
     *fedora*|*rhel*) PM="sudo dnf install"; NI="-y"
-              PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python3-gobject python3-cairo python3-pywayland gamemode"
-              OPT="vte291-gtk4 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk keepassxc pulseaudio-utils xorg-x11-server-Xwayland grim slurp wl-clipboard ffmpegthumbnailer webp-pixbuf-loader gtksourceview5 gstreamer1-plugins-good gstreamer1-plugins-bad-free python3-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl" ;;
+              PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python3-gobject python3-cairo python3-pywayland"
+              OPT="vte291-gtk4 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk keepassxc pulseaudio-utils xorg-x11-server-Xwayland grim slurp wl-clipboard ffmpegthumbnailer webp-pixbuf-loader gamemode gtksourceview5 gstreamer1-plugins-good gstreamer1-plugins-bad-free python3-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl ddcutil" ;;
     *suse*)   PM="sudo zypper install"; NI="-y"
-              PKGS="wayfire gtk4 libadwaita-1-0 typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 gtk4-layer-shell python3-gobject python3-gobject-cairo python3-pywayland gamemode"
-              OPT="typelib-1_0-Vte-3_91 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
+              PKGS="wayfire gtk4 libadwaita-1-0 typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 gtk4-layer-shell python3-gobject python3-gobject-cairo python3-pywayland"
+              OPT="typelib-1_0-Vte-3_91 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl ddcutil" ;;
     *void*)   PM="sudo xbps-install"; NI="-y"
-              PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python3-gobject python3-cairo python3-pywayland gamemode"
-              OPT="vte3-gtk4 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
+              PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python3-gobject python3-cairo python3-pywayland"
+              OPT="vte3-gtk4 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl ddcutil" ;;
     *alpine*) PM="sudo apk add"; NI=""
               PKGS="wayfire gtk4.0 libadwaita gtk4-layer-shell py3-gobject3 py3-cairo py3-pywayland"
-              OPT="vte3-gtk4 networkmanager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl" ;;
+              OPT="vte3-gtk4 networkmanager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl ddcutil" ;;
     *)        PM=""; PKGS=""; OPT="" ;;
 esac
 
@@ -177,6 +176,12 @@ if [ -n "$OPT" ]; then
                 sudo systemctl enable --now "$svc" >/dev/null 2>&1 && echo "  started $svc"
             fi
         done
+        # external monitors' brightness (DDC/CI): ddcutil talks over /dev/i2c-*,
+        # which needs the i2c-dev module (its udev rule gives the user access)
+        if command -v ddcutil >/dev/null && [ ! -e /etc/modules-load.d/sonata-i2c.conf ]; then
+            echo i2c-dev | sudo tee /etc/modules-load.d/sonata-i2c.conf >/dev/null && \
+                sudo modprobe i2c-dev 2>/dev/null && echo "  external monitor brightness ready (i2c-dev)"
+        fi
     else
         echo "  $PM $OPT"
     fi
@@ -232,11 +237,7 @@ logdir="\${XDG_CACHE_HOME:-\$HOME/.cache}/sonata2"; mkdir -p "\$logdir"
 exec > "\$logdir/login.log" 2>&1
 date; echo "XDG_SESSION_TYPE=\$XDG_SESSION_TYPE WAYLAND_DISPLAY=\$WAYLAND_DISPLAY"
 export PATH="$BIN:\$PATH" SONATA2_LAUNCHER="$BIN/sonata2"
-# every step traced only with detailed logs (sonata2/logs.py)
-if [ "\${SONATA_DEBUG:-}" = 1 ] || [ -e "\${XDG_CONFIG_HOME:-\$HOME/.config}/sonata2/debug-logging" ] || [ -d "$SHARE/.git" ]; then
-    exec bash -x "$SHARE/tools/sonata-session" "\$@"
-fi
-exec bash "$SHARE/tools/sonata-session" "\$@"
+exec bash -x "$SHARE/tools/sonata-session" "\$@"
 EOF
 $SUDO install -m 755 "$tmp/sonata2-launcher" "$BIN/sonata2"
 $SUDO install -m 755 "$tmp/sonata-session-launcher" "$BIN/sonata-session"

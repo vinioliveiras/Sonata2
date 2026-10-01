@@ -683,8 +683,18 @@ def key(name: str) -> int:
             from . import sounds
             sounds.play("volume")                      # macOS: feedback when the volume changes
     elif kind == "brightness":
-        level, muted = max(1, min(100, (system.brightness() or 50) + step)), False
-        system.set_brightness(level)
+        # the display with the focus: an external monitor over DDC/CI when it
+        # answers, else the laptop panel
+        try:
+            from .wl.wfipc import WayfireIPC
+            out = ((WayfireIPC().call("window-rules/get-focused-output") or {}).get("info") or {}).get("name")
+        except Exception:
+            out = None
+        cur = None if system.is_builtin(out) else system.brightness(out)
+        if cur is None:
+            out, cur = None, system.brightness()
+        level, muted = max(0, min(100, (50 if cur is None else cur) + step)), False
+        system.set_brightness(level, out)
     else:
         return 2
     from gi.repository import Gio, GLib
