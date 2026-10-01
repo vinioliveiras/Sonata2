@@ -1849,7 +1849,7 @@ class ThemeFadeFocusRegressions(unittest.TestCase):
         settle(900)
         self.assertEqual(w.current, "dock")
         self.assertEqual(w.listbox.get_selected_row().sid, "dock")
-        self.assertNotIn("menubar", w.pages)
+        self.assertEqual(list(dict.keys(w.pages)), ["dock"])        # no other section built (Menu Bar is in it)
         w.destroy()
 
 

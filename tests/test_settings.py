@@ -164,6 +164,40 @@ class SettingsTest(unittest.TestCase):
             self.assertIn("SIDEBAR_W", open(os.path.join(root, f)).read(), f)
         self.assertFalse(_re.search(r"sidebar\.set_size_request\(\d", open(os.path.join(root, "diskutil/window.py")).read()))
 
+    def test_sections_merged_nothing_lost(self):
+        """Vini: fewer sections (27 -> 19), nothing removed: every old section's
+        builder still runs inside its new section, old ids still open it."""
+        old_ids = ["wifi", "network", "bluetooth", "printers", "sound", "displays", "battery", "wallpaper",
+                   "keyboard", "trackpad", "shortcuts", "mouse", "gamepad", "datetime", "notifications", "users",
+                   "privacy", "sharing", "accessibility", "appearance", "dock", "menubar", "launchpad", "hidden",
+                   "updates", "about"]
+        ids = [x[0] for x in S.SECTIONS]
+        self.assertEqual(len(ids), 19)
+        built = [p for sid in ids for p in S.parts_of(sid)]
+        self.assertEqual(sorted(built), sorted(old_ids))                     # every builder, once
+        for old in old_ids:
+            self.assertIn(S.section_of(old), ids, old)
+            self.assertTrue(hasattr(S.Settings, f"_page_{old}"), old)
+        self.assertEqual(S.section_of("wallpaper"), "displays")
+        self.assertEqual(S.section_of("updates"), "about")
+        self.assertIn("wallpaper", S.KEYWORDS["displays"].casefold())
+        self.assertIn("topbar", S.PAGE_CONFIGS["dock"])                       # Menu Bar's file still watched
+        win = S.Settings(None, "wallpaper")                                   # an old id (menu bar shortcuts)
+        win.present()
+        settle(200)
+        self.assertEqual(win.current, "displays")
+        self.assertIn("wallpaper", win.pages)
+        for sid in ids:
+            win.select(sid)
+            settle(80)
+            self.assertIn(sid, win.pages, sid)
+        win._reload_page("menubar")                                          # a part reloads its section
+        settle(80)
+        win.select("hidden")
+        settle(80)
+        self.assertEqual(win.current, "launchpad")
+        win.destroy()
+
     def test_save_keeps_other_keys(self):
         config.save("dock", {"pinned": ["a"], "icon_size": 48})
         win = S.Settings(None)

@@ -28,30 +28,68 @@ SECTIONS = [  # id, title, icon, badge colour, group
     ("wifi", "Wi-Fi", "network-wireless-symbolic", "blue", "linux"),
     ("network", "Network", "network-wired-symbolic", "blue", "linux"),
     ("bluetooth", "Bluetooth", "bluetooth-active-symbolic", "blue", "linux"),
-    ("printers", "Printers & Scanners", "printer-symbolic", "gray", "linux"),
     ("sound", "Sound", "audio-volume-high-symbolic", "pink", "linux"),
     ("displays", "Displays", "video-display-symbolic", "blue", "linux"),
     ("battery", "Battery", "battery-full-symbolic", "green", "linux"),
-    ("wallpaper", "Wallpaper", "image-x-generic-symbolic", "teal", "linux"),
     ("keyboard", "Keyboard", "input-keyboard-symbolic", "gray", "input"),
-    ("trackpad", "Trackpad", "input-touchpad-symbolic", "gray", "input"),
-    ("shortcuts", "Keyboard Shortcuts", "preferences-desktop-keyboard-shortcuts-symbolic", "gray", "input"),
-    ("mouse", "Mouse", "input-mouse-symbolic", "gray", "input"),
+    ("mouse", "Mouse & Trackpad", "input-mouse-symbolic", "gray", "input"),
     ("gamepad", "Game Controllers", "input-gaming-symbolic", "gray", "input"),
-    ("datetime", "Date & Time", "preferences-system-time-symbolic", "blue", "system"),
-    ("notifications", "Notifications", "preferences-system-notifications-symbolic", "red", "system"),
-    ("users", "Users & Groups", "system-users-symbolic", "gray", "system"),
-    ("privacy", "Security & Privacy", "security-high-symbolic", "gray", "system"),
-    ("sharing", "Sharing", "folder-publicshare-symbolic", "blue", "system"),
-    ("accessibility", "Accessibility", "preferences-desktop-accessibility-symbolic", "blue", "system"),
+    ("printers", "Printers & Scanners", "printer-symbolic", "gray", "input"),
     ("appearance", "General", "preferences-system-symbolic", "gray", "sonata"),
     ("dock", "Desktop & Dock", "view-grid-symbolic", "black", "sonata"),
-    ("menubar", "Menu Bar", "view-restore-symbolic", "indigo", "sonata"),
     ("launchpad", names.APPS, "view-app-grid-symbolic", "graphite", "sonata"),
-    ("hidden", "Hidden & Protected Apps", "system-lock-screen-symbolic", "gray", "sonata"),
-    ("updates", "Software Update", "software-update-available-symbolic", "gray", "about"),
+    ("notifications", "Notifications", "preferences-system-notifications-symbolic", "red", "sonata"),
+    ("users", "Users & Groups", "system-users-symbolic", "gray", "system"),
+    ("privacy", "Security & Privacy", "security-high-symbolic", "gray", "system"),
+    ("accessibility", "Accessibility", "preferences-desktop-accessibility-symbolic", "blue", "system"),
+    ("datetime", "Date & Time", "preferences-system-time-symbolic", "blue", "system"),
     ("about", "About", "help-about-symbolic", "gray", "about"),
 ]
+
+# Sections made of several parts (each part one _page_<part> builder, shown
+# one after the other). The parts' old ids still open their section
+# (--page wallpaper, "Change Desktop Background…", "Software Update").
+PARTS = {
+    "displays": ("displays", "wallpaper"),
+    "keyboard": ("keyboard", "shortcuts"),
+    "mouse": ("trackpad", "mouse"),
+    "dock": ("dock", "menubar"),
+    "launchpad": ("launchpad", "hidden"),
+    "privacy": ("privacy", "sharing"),
+    "about": ("about", "updates"),
+}
+PART_TITLES = {"wallpaper": "Wallpaper", "shortcuts": "Keyboard Shortcuts", "trackpad": "Trackpad",
+               "menubar": "Menu Bar", "hidden": "Hidden & Protected Apps", "sharing": "Sharing",
+               "updates": "Software Update"}
+
+
+def section_of(sid: str) -> str:
+    """The section showing `sid` (itself, or the one it was merged into)."""
+    for sec, parts in PARTS.items():
+        if sid in parts:
+            return sec
+    return sid
+
+
+def parts_of(sid: str) -> tuple:
+    return PARTS.get(sid, (sid,))
+
+
+class _Pages(dict):
+    """Built sections by id; a merged part's old id finds its section."""
+
+    def __getitem__(self, k):
+        return dict.__getitem__(self, section_of(k))
+
+    def __contains__(self, k):
+        return dict.__contains__(self, section_of(k))
+
+    def get(self, k, default=None):
+        return dict.get(self, section_of(k), default)
+
+    def pop(self, k, *default):
+        return dict.pop(self, section_of(k), *default)
+
 
 # Search (sidebar field, macOS Ventura): words that find a section besides its title.
 KEYWORDS = {
@@ -74,6 +112,10 @@ KEYWORDS = {
     "about": "computer system version restart sonata",
 }
 
+for _sec, _parts in PARTS.items():           # a merged section is found by its parts' words and titles
+    KEYWORDS[_sec] = " ".join([KEYWORDS.get(p, "") for p in _parts] +
+                              [PART_TITLES.get(p, "") for p in _parts]).strip()
+
 # Sections showing Sonata/desktop settings other places change too (Control
 # Center, the menu bar, the Setup Assistant, another section here): built
 # again when shown if one of these files changed since (no stale switches).
@@ -83,6 +125,8 @@ PAGE_CONFIGS = {
     "accessibility": ("appearance", "system"), "appearance": ("appearance", "dock", "system"),
     "dock": ("dock", "system"), "menubar": ("topbar",), "gamepad": ("gamepad",),
 }
+for _sec, _parts in PARTS.items():           # a merged section: every part's files
+    PAGE_CONFIGS[_sec] = tuple(dict.fromkeys(n for p in _parts for n in PAGE_CONFIGS.get(p, ())))
 
 _ACCENT_CSS = "".join(f".st-accent.{n} {{ background: {c[0]}; }}\n" for n, c in ui.tokens.ACCENTS.items())
 ui.register(_ACCENT_CSS + """
@@ -331,13 +375,13 @@ class Settings(Adw.ApplicationWindow):
         self.current = None
         self.toasts.set_child(self.split)
         self.set_content(self.toasts)
-        self.pages = {}
+        self.pages = _Pages()
         self.built = {}                  # section -> time.time() it was built (PAGE_CONFIGS)
         self._jobs = {}                  # _latest(): key -> [busy, pending args]
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._key)
         self.add_controller(keys)
-        self.select(start if start in [s[0] for s in SECTIONS] else "appearance")      # General
+        self.select(section_of(start) if section_of(start) in [s[0] for s in SECTIONS] else "appearance")
         from ..backend import power                     # the Battery section follows plug/charge changes
         power.watch(lambda: self.current == "battery" and self._reload_page("battery"))
 
@@ -434,6 +478,7 @@ class Settings(Adw.ApplicationWindow):
             row = row.get_next_sibling()
 
     def select(self, sid, from_sidebar=False):
+        sid = section_of(sid)
         if not from_sidebar:
             self.listbox.select_row(self.rows[sid])
             return
@@ -442,7 +487,9 @@ class Settings(Adw.ApplicationWindow):
         if sid not in self.pages:
             title = next(s[1] for s in SECTIONS if s[0] == sid)
             page = Adw.PreferencesPage()
-            groups = getattr(self, f"_page_{sid}")()      # no hero row: the pane title names the section
+            groups = []                                    # no hero row: the pane title names the section
+            for part in parts_of(sid):
+                groups += getattr(self, f"_page_{part}")()
             for g in groups:
                 page.add(g)
             tv = Adw.ToolbarView()
@@ -453,8 +500,9 @@ class Settings(Adw.ApplicationWindow):
             self.pages[sid] = tv
             self.built[sid] = time.time()
             self.content.add_named(tv, sid)
-        if self.current == "hidden" and sid != "hidden" and "hidden" in self.pages:
-            old = self.pages.pop("hidden")          # Hidden & Protected Apps locks again
+        hid = section_of("hidden")
+        if self.current == hid and sid != hid and hid in self.pages:
+            old = self.pages.pop(hid)               # Hidden & Protected Apps locks again
             GLib.idle_add(lambda: (self.content.remove(old), False)[1])
         if self.current is not None and self.current != sid:
             self.fade.capture()
@@ -1120,6 +1168,7 @@ class Settings(Adw.ApplicationWindow):
 
     def _reload_page(self, sid):
         """Rebuild a section (after its content changed)."""
+        sid = section_of(sid)
         page = self.pages.pop(sid, None)
         if page is None:
             return
