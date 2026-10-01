@@ -1640,8 +1640,9 @@ class LaunchBounceTests(unittest.TestCase):
         from sonata2.shell import dock
         src = pathlib.Path(dock.__file__).read_text()
         self.assertIn("tile.bounce(LAUNCH_MAX_MS)", src)
-        self.assertGreaterEqual(dock.LAUNCH_MAX_MS, 20000)
         self.assertNotIn("tile.bounce(LAUNCH_BOUNCES * BOUNCE_MS)", src)
+        # ...but 10 bounces at most (Vini: it bounced ~30 s when no window came)
+        self.assertEqual(dock.LAUNCH_MAX_MS, 10 * dock.BOUNCE_MS)
 
 
 class NvidiaNeverDrawsByDefaultRegressions(unittest.TestCase):

@@ -36,6 +36,7 @@ SECTIONS = [  # id, title, icon, badge colour, group (colours varied, not mostly
     ("gamepad", "Game Controllers", "input-gaming-symbolic", "orange", "input"),
     ("printers", "Printers & Scanners", "printer-symbolic", "gray", "input"),
     ("appearance", "Appearance", "preferences-desktop-appearance-symbolic", "indigo", "sonata"),
+    ("appicons", "App Icons", "applications-graphics-symbolic", "pink", "sonata"),
     ("dock", "Desktop & Dock", "view-grid-symbolic", "black", "sonata"),
     ("launchpad", names.APPS, "view-app-grid-symbolic", "graphite", "sonata"),
     ("notifications", "Notifications", "preferences-system-notifications-symbolic", "red", "sonata"),
@@ -109,6 +110,7 @@ KEYWORDS = {
     "appearance": "app icons regenerate frame generated dark light mode accent color theme icons font "
                   "glass transparency translucent blur frosted title bars corners radius",
     "dock": "magnification size position autohide recent apps displays minimize default web browser",
+    "appicons": "icon icons app shape squircle circle rounded custom picture image package theme",
     "menubar": "clock battery percentage bluetooth sound now playing logo text",
     "launchpad": "apps grid folders launchpad", "hidden": "hide hidden protected private lock password apps", "updates": "software update upgrade packages",
     "about": "computer system version restart sonata",
@@ -1225,6 +1227,11 @@ class Settings(Adw.ApplicationWindow):
                         get("input", "left_handed_mode", "false") == "true",
                         lambda v: self._wf("left_handed_mode", v)))
         return [g]
+
+    def _page_appicons(self):
+        from .appicons_page import AppIconsPage
+        self.appicons_page = AppIconsPage(self)
+        return self.appicons_page.groups()
 
     def _page_shortcuts(self):
         from .shortcuts_page import ShortcutsPage

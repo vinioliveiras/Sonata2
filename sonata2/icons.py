@@ -73,9 +73,10 @@ def _candidates(info):
         yield base
         yield base.split("-linux")[0]                   # spotify-linux-512 -> spotify
     did = (info.get_id() or "")[:-8] if (info.get_id() or "").endswith(".desktop") else (info.get_id() or "")
-    wm = info.get_startup_wm_class() if hasattr(info, "get_startup_wm_class") else None
-    exe = os.path.basename(info.get_executable() or "")
-    cmd = (info.get_commandline() or "") if hasattr(info, "get_commandline") else ""
+    from .apps import _entry_field           # (robust to how PyGObject binds GioUnix.DesktopAppInfo)
+    wm = _entry_field(info, "get_startup_wm_class", "StartupWMClass")
+    exe = os.path.basename(_entry_field(info, "get_executable", "Exec").split(" ")[0])
+    cmd = _entry_field(info, "get_commandline", "Exec")
     if exe in LAUNCHERS or "://" in cmd:
         exe = ""        # a game's shortcut (steam steam://rungameid/...): not the launcher's icon
     for name in (did, wm, exe, (info.get_name() or "").replace(" ", "-")):
@@ -87,7 +88,7 @@ def _candidates(info):
 LAUNCHERS = {"steam", "lutris", "heroic", "xdg-open", "gtk-launch", "gio", "env"}
 
 
-def _steam_game_icon(info):
+def _steam_game_icon(info, shape: str = "squircle"):
     """A Steam game's shortcut (Icon=steam_icon_<id>): its picture filling the
     squircle, like the Dock shows the running game; None otherwise."""
     icon = info.get_icon()
@@ -96,22 +97,113 @@ def _steam_game_icon(info):
         if n.startswith("steam_icon_") and n[11:].isdigit():
             from . import steamgames
             pic = steamgames.icon_path(n[11:])
-            return picture_icon(pic) if pic else None
+            return picture_icon(pic, shape=shape) if pic else None
     return None
 
 
+# -- the user's choices (Settings > App Icons; icons.json) ----------------------------------------
+# "shape": every frame's shape; "apps": desktop id -> {"source": "auto" |
+# "package" | "file" | "theme", "path": a picture, "name": a theme icon,
+# "shape": that app's own shape}. "auto": Sonata's artwork, else the package's.
+SHAPES = ("squircle", "circle", "rounded")
+SHAPE_TITLES = {"squircle": "Squircle (macOS)", "circle": "Circle", "rounded": "Rounded Square"}
+SOURCES = ("auto", "package", "file", "theme")
+# "source": every app's default (an app's own choice wins): "auto" or "package"
+ICON_DEFAULTS = {"shape": "squircle", "source": "auto", "apps": {}}
+_prefs = {"mtime": None, "value": None}
+
+
+def prefs() -> dict:
+    """icons.json (cached until the file changes)."""
+    path = os.path.join(config.CONFIG_DIR, "icons.json")
+    try:
+        st = os.stat(path)
+        mtime = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        mtime = 0
+    if _prefs["value"] is None or mtime != _prefs["mtime"]:
+        data = config.load("icons", ICON_DEFAULTS)
+        if data.get("shape") not in SHAPES:
+            data["shape"] = "squircle"
+        if data.get("source") not in ("auto", "package"):
+            data["source"] = "auto"
+        if not isinstance(data.get("apps"), dict):
+            data["apps"] = {}
+        _prefs.update(mtime=mtime, value=data)
+    return _prefs["value"]
+
+
+def forget_prefs() -> None:
+    """Read icons.json again next time (it was just changed)."""
+    _prefs["value"] = None
+
+
+def app_key(info) -> str:
+    did = info.get_id() or ""
+    return did[:-8] if did.endswith(".desktop") else did
+
+
+def app_pref(info) -> dict:
+    """{"source", "path", "name", "shape"} for this app (shape resolved)."""
+    p = prefs()
+    own = p["apps"].get(app_key(info)) or {}
+    return {"source": own.get("source") if own.get("source") in SOURCES else p["source"],
+            "path": own.get("path") or "", "name": own.get("name") or "",
+            "shape": own.get("shape") if own.get("shape") in SHAPES else p["shape"]}
+
+
+def set_app_pref(did: str, **values) -> None:
+    """Change one app's choices (None removes a key; nothing left: back to auto)."""
+    data = config.load("icons", ICON_DEFAULTS)
+    apps = dict(data.get("apps")) if isinstance(data.get("apps"), dict) else {}   # (never the defaults' dict)
+    cur = dict(apps.get(did) or {})
+    for k, v in values.items():
+        if v is None:
+            cur.pop(k, None)
+        else:
+            cur[k] = v
+    if cur.get("source") == prefs()["source"]:       # the same as all apps': nothing of its own
+        cur.pop("source")
+    if cur:
+        apps[did] = cur
+    else:
+        apps.pop(did, None)
+    config.update("icons", apps=apps)
+    forget_prefs()
+
+
+def package_icon(info) -> Gio.Icon:
+    return info.get_icon() or Gio.ThemedIcon.new("application-x-executable")
+
+
 def app_icon(info) -> Gio.Icon:
-    """The icon to show for an app (Gio.AppInfo): Sonata's artwork when any
-    of its names match, else the app's own icon, marked for the plate."""
-    game = _steam_game_icon(info)
-    if game is not None:
-        return game
-    own = _own()
-    for name in _candidates(info):
-        if name in own:
-            return Gio.ThemedIcon.new(name)
-    icon = info.get_icon() or Gio.ThemedIcon.new("application-x-executable")
-    made = generated(icon)
+    """The icon to show for an app (Gio.AppInfo): what the user chose for it
+    (Settings > App Icons), else Sonata's artwork when any of its names
+    match, else the app's own icon -- on the frame, in the chosen shape."""
+    pref = app_pref(info)
+    shape = pref["shape"]
+    if pref["source"] == "file" and pref["path"]:
+        made = picture_icon(pref["path"], shape=shape, artwork=True)
+        if made is not None:
+            return made
+    if pref["source"] == "theme" and pref["name"]:
+        return _plated_icon(Gio.ThemedIcon.new(pref["name"]), shape)
+    if pref["source"] != "package":
+        game = _steam_game_icon(info, shape)
+        if game is not None:
+            return game
+        own = _own()
+        for name in _candidates(info):
+            if name in own:
+                if shape == "squircle":
+                    return Gio.ThemedIcon.new(name)
+                made = generated(Gio.ThemedIcon.new(name), shape=shape, reshape=True)
+                return made if made is not None else Gio.ThemedIcon.new(name)
+    return _plated_icon(package_icon(info), shape)
+
+
+def _plated_icon(icon, shape: str):
+    made = generated(icon, shape=shape)
     if made is not None:
         return made
     _plated.add(icon.to_string())                 # drawn live (no display to render with)
@@ -127,30 +219,36 @@ GENERATED = os.path.join(GLib.get_user_cache_dir(), "sonata2", "app-icons")
 GEN_SIZE = 256
 
 
-def generated(gicon):
-    """Gio.FileIcon of `gicon` on its plate, rendering it if needed; None
-    when it can't be rendered here (no display, icon not found)."""
+def generated(gicon, shape: str = "squircle", reshape: bool = False):
+    """Gio.FileIcon of `gicon` on its plate (in `shape`), rendering it if
+    needed; None when it can't be rendered here (no display, icon not
+    found). reshape: Sonata's own artwork (already on a squircle) cut to
+    another shape instead of put on a plate."""
     import hashlib
     display = Gdk.Display.get_default()
     if display is None:
         return None
-    src = _resolve(display, 1, gicon, int(GEN_SIZE * PLATE_ARTWORK))
+    src = _resolve(display, 1, gicon, GEN_SIZE if reshape else int(GEN_SIZE * PLATE_ARTWORK))
     f = src.get_file() if src is not None and hasattr(src, "get_file") else None
     path = f.get_path() if f is not None else None
+    if not path and src is not None:
+        # drawn by librsvg (an SVG with filters: Sonata's own artwork): its file
+        # still dates the picture
+        path = _theme_path(display, gicon, GEN_SIZE)
     if not path:
         return None
     try:
-        stamp = f"{path}\n{int(os.path.getmtime(path))}\n{PLATE_VERSION}"
+        stamp = f"{path}\n{int(os.path.getmtime(path))}\n{PLATE_VERSION}\n{shape}\n{reshape}"
     except OSError:
         return None
-    name = hashlib.sha1(gicon.to_string().encode()).hexdigest()[:20]
+    name = hashlib.sha1(f"{gicon.to_string()}|{shape}|{reshape}".encode()).hexdigest()[:20]
     png, meta = os.path.join(GENERATED, name + ".png"), os.path.join(GENERATED, name + ".src")
     try:
         with open(meta, encoding="utf-8") as fh:
             fresh = fh.read() == stamp and os.path.exists(png)
     except OSError:
         fresh = False
-    if not fresh and not _render_plate(display, src, png, meta, stamp):
+    if not fresh and not _render_plate(display, src, png, meta, stamp, shape=shape, reshape=reshape):
         return None
     return Gio.FileIcon.new(Gio.File.new_for_path(png))
 
@@ -158,36 +256,45 @@ def generated(gicon):
 PLATE_VERSION = 1       # bump when the plate's look changes: every icon is made again
 
 
-def picture_icon(path: str):
-    """Gio.FileIcon of a square picture (a Steam game's icon) filling the
-    Big Sur squircle edge to edge, like an iOS app icon; None when it can't
-    be made. Made once, kept with the generated app icons."""
+def picture_icon(path: str, shape: str = "squircle", artwork: bool = False):
+    """Gio.FileIcon of a picture on the frame: a square one (a Steam game's
+    icon) filling it edge to edge, like an iOS app icon; artwork (a custom
+    icon the user picked): like an app's own icon (solid tiles fill, logos
+    sit on the plate). None when it can't be made. Kept with the generated
+    app icons."""
     import hashlib
     display = Gdk.Display.get_default()
     if display is None or not path or not os.path.exists(path):
         return None
     try:
-        stamp = f"picture\n{path}\n{int(os.path.getmtime(path))}\n{PLATE_VERSION}"
+        stamp = f"picture\n{path}\n{int(os.path.getmtime(path))}\n{PLATE_VERSION}\n{shape}\n{artwork}"
         tex = Gdk.Texture.new_from_filename(path)
     except (OSError, GLib.Error):
         return None
-    name = "pic-" + hashlib.sha1(path.encode()).hexdigest()[:20]
+    name = "pic-" + hashlib.sha1(f"{path}|{shape}|{artwork}".encode()).hexdigest()[:20]
     png, meta = os.path.join(GENERATED, name + ".png"), os.path.join(GENERATED, name + ".src")
     try:
         with open(meta, encoding="utf-8") as fh:
             fresh = fh.read() == stamp and os.path.exists(png)
     except OSError:
         fresh = False
-    if not fresh and not _render_plate(display, tex, png, meta, stamp, full=True):
+    if artwork:
+        src = Gtk.IconPaintable.new_for_file(Gio.File.new_for_path(path), GEN_SIZE, 1)
+        ok = fresh or _render_plate(display, src, png, meta, stamp, shape=shape)
+    else:
+        ok = fresh or _render_plate(display, tex, png, meta, stamp, full=True, shape=shape)
+    if not ok:
         return None
     return Gio.FileIcon.new(Gio.File.new_for_path(png))
 
 
-def _render_plate(display, inner, png, meta, stamp, full: bool = False) -> bool:
+def _render_plate(display, inner, png, meta, stamp, full: bool = False, shape: str = "squircle",
+                  reshape: bool = False) -> bool:
     try:
         os.makedirs(GENERATED, exist_ok=True)
         snap = Gtk.Snapshot()
-        _Plate(inner, GEN_SIZE, full).snapshot(snap, GEN_SIZE, GEN_SIZE)
+        (_Reshaped(inner, GEN_SIZE, shape) if reshape else _Plate(inner, GEN_SIZE, full, shape)
+         ).snapshot(snap, GEN_SIZE, GEN_SIZE)
         node = snap.to_node()
         renderer = Gsk.CairoRenderer.new()
         renderer.realize_for_display(display)
@@ -236,13 +343,63 @@ def _squircle(x, y, w, h, n=PLATE_EXPONENT, steps=96):
     return b.to_path()
 
 
+def shape_path(shape: str, x, y, w, h):
+    """The frame's outline: macOS squircle, a circle, or a rounded square."""
+    if shape == "circle":
+        b = Gsk.PathBuilder.new()
+        b.add_circle(Graphene.Point().init(x + w / 2, y + h / 2), min(w, h) / 2)
+        return b.to_path()
+    if shape == "rounded":
+        rr = Gsk.RoundedRect()
+        rr.init_from_rect(Graphene.Rect().init(x, y, w, h), min(w, h) * 0.2)
+        b = Gsk.PathBuilder.new()
+        b.add_rounded_rect(rr)
+        return b.to_path()
+    return _squircle(x, y, w, h)
+
+
+def frame_shape() -> str:
+    """The shape every frame follows (folders too)."""
+    return prefs()["shape"]
+
+
+class _Reshaped(GObject.Object, Gdk.Paintable):
+    """Sonata's own artwork (drawn on its squircle) cut to another shape: a
+    little larger, so its squircle edge falls outside the new outline."""
+
+    def __init__(self, inner, size, shape):
+        super().__init__()
+        self.inner, self.size, self.shape = inner, size, shape
+
+    def do_get_intrinsic_width(self):
+        return self.size
+
+    def do_get_intrinsic_height(self):
+        return self.size
+
+    def do_snapshot(self, snap, w, h):
+        inset = w * PLATE_INSET
+        pw = w - 2 * inset
+        path = shape_path(self.shape, inset, inset, pw, pw)
+        snap.push_fill(path, Gsk.FillRule.WINDING)
+        k = 1.06                                         # the artwork's own edge, outside
+        a = w * k
+        snap.save()
+        snap.translate(Graphene.Point().init((w - a) / 2, (h - a) / 2))
+        self.inner.snapshot(snap, a, a)
+        snap.restore()
+        snap.pop()
+        snap.append_stroke(path, Gsk.Stroke.new(max(0.5, w / 256)), _rgba("rgba(0,0,0,0.10)"))
+
+
 class _Plate(GObject.Object, Gdk.Paintable):
     """An app's own icon on a Big Sur squircle -- white, or the icon's own
     colour when its edges are one solid colour (Claude's orange tile)."""
 
-    def __init__(self, inner, size, full: bool = False):
+    def __init__(self, inner, size, full: bool = False, shape: str = "squircle"):
         super().__init__()
         self.inner, self.size, self.full = inner, size, full   # full: a picture filling the squircle
+        self.shape = shape if shape in SHAPES else "squircle"
         tone = None if full else _solid_edge(inner)
         self.color = tone or PLATE_WHITE               # flat: the icon's own tile blends in
 
@@ -257,9 +414,9 @@ class _Plate(GObject.Object, Gdk.Paintable):
         pw, ph = w - 2 * inset, h - 2 * inset
         rect = Graphene.Rect().init(inset, inset, pw, ph)
         shadow = Gsk.RoundedRect()
-        shadow.init_from_rect(rect, pw * 0.3)
+        shadow.init_from_rect(rect, pw * (0.5 if self.shape == "circle" else 0.3))
         snap.append_outset_shadow(shadow, _rgba("rgba(0,0,0,0.22)"), 0, w * 0.012, 0, w * 0.02)
-        path = _squircle(inset, inset, pw, ph)
+        path = shape_path(self.shape, inset, inset, pw, ph)
         snap.push_fill(path, Gsk.FillRule.WINDING)
         snap.append_color(_rgba(self.color), rect)
         if self.full:
@@ -515,7 +672,7 @@ def _rsvg_texture(path: str, px: int):
 def paintable(widget: Gtk.Widget, gicon, size: int):
     """Icon paintable (drag icons etc.) with the same fallback as set_image."""
     if gicon.to_string() in _plated:
-        return _Plate(_lookup(widget, gicon, int(size * 0.62) or 1), size)
+        return _Plate(_lookup(widget, gicon, int(size * 0.62) or 1), size, shape=frame_shape())
     return _lookup(widget, gicon, size)
 
 
@@ -537,6 +694,16 @@ def _is_symbolic(path: str) -> bool:
 def _asks_symbolic(gicon) -> bool:
     names = gicon.get_names() if isinstance(gicon, Gio.ThemedIcon) else []
     return bool(names) and all(n.endswith("-symbolic") for n in names)
+
+
+def _theme_path(display, gicon, size):
+    gicon = for_appearance(gicon)
+    theme = Gtk.IconTheme.get_for_display(display)
+    if _system is not None and not theme.has_gicon(gicon) and _system.has_gicon(gicon):
+        theme = _system
+    icon = theme.lookup_by_gicon(gicon, size, 1, Gtk.TextDirection.NONE, Gtk.IconLookupFlags(0))
+    f = icon.get_file() if icon is not None else None
+    return f.get_path() if f is not None else None
 
 
 def _lookup(widget, gicon, size):

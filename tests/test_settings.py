@@ -172,9 +172,9 @@ class SettingsTest(unittest.TestCase):
                    "privacy", "sharing", "accessibility", "appearance", "dock", "menubar", "launchpad", "hidden",
                    "updates", "about"]
         ids = [x[0] for x in S.SECTIONS]
-        self.assertEqual(len(ids), 19)
+        self.assertEqual(len(ids), 20)                                       # 19 + App Icons (new)
         built = [p for sid in ids for p in S.parts_of(sid)]
-        self.assertEqual(sorted(built), sorted(old_ids))                     # every builder, once
+        self.assertEqual(sorted(built), sorted(old_ids + ["appicons"]))      # every builder, once
         for old in old_ids:
             self.assertIn(S.section_of(old), ids, old)
             self.assertTrue(hasattr(S.Settings, f"_page_{old}"), old)

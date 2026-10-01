@@ -41,9 +41,6 @@ PIN_MIN_SIZE = 36           # pins must still fit at this size: more can't be ke
 SCREEN_MARGIN = 16          # px kept free at both ends of the screen edge
 MAX_RECENTS = 3
 LAUNCH_BOUNCES = 3          # attention / urgent bounces
-# a launch bounces until the app's first window shows up (slow apps: Steam,
-# games), never longer than this -- a window we can't match must not bounce forever
-LAUNCH_MAX_MS = 30000
 MAX_DOTS = 3                        # running dots: one per window, up to this many
 # Always in the Dock (like Finder on macOS): Files and Launchpad can't be
 # removed -- the shell relies on them (open folders, reach every app).
@@ -63,6 +60,10 @@ def merge_order(pinned: list, tile_keys: list) -> list:
 PERMANENT = ("io.github.vinioliveiras.sonata2.files", "sonata2-launchpad")
 NO_BOUNCE = {"sonata2-launchpad"}   # shell toggles open instantly: no launch bounce
 BOUNCE_MS = 620             # one bounce
+# a launch bounces until the app's first window shows up, 10 bounces at most
+# (Vini: it went on ~30 s when no window came, e.g. an app already running)
+LAUNCH_MAX_BOUNCES = 10
+LAUNCH_MAX_MS = LAUNCH_MAX_BOUNCES * BOUNCE_MS
 CLOSE_UP_MS = 260           # a removed icon's place closes up
 SETTLE_MS = 200             # a dropped icon glides into its slot
 FOLDER_HOLD_MS = 350        # held this long over another app's middle: drop makes a folder
@@ -1544,6 +1545,17 @@ class Dock(Gtk.Box):
             full = False
         self.trash.set_gicon(Gio.ThemedIcon.new("user-trash-full" if full else "user-trash"))
 
+    def refresh_icons(self) -> None:
+        """Every app's icon again (its choice or shape changed in Settings)."""
+        icons.forget_prefs()
+        for key, tile in list(self.tiles.items()):
+            if dock_folder.is_folder(key):
+                f = self.folder(key)
+                if f is not None:
+                    tile.icon.set_apps(f["apps"])          # its minis, and its frame's shape
+            elif tile.info is not None:
+                tile.set_gicon(icons.app_icon(tile.info))
+
     def _appearance_changed(self) -> None:
         """Light/Dark: redraw every icon (the Trash and Launchpad have one
         version per appearance) and the Dock's own drawing."""
@@ -1635,6 +1647,8 @@ class DockWindow(Gtk.ApplicationWindow):
         self.add_controller(motion)
         ui.menu.on_closed.append(lambda: self._pointer(self._inside))
         self._cfg_mon = config.watch("dock", self._config_changed)
+        # Settings > App Icons: new icons / shapes, live
+        self._icons_mon = config.watch("icons", lambda: self.dock is not None and self.dock.refresh_icons())
         self.rebuild()
         from . import intro
         if intro.pending() and not self.cfg["autohide"]:

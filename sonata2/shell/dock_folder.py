@@ -95,7 +95,9 @@ def as_launchpad(folder: dict) -> dict:
 def mini_rects(size: float, n: int) -> list:
     """Where the first n (<= 9) mini icons go on a folder icon of `size`:
     [(x, y, side)], row by row, inside a padded 3 x 3 grid."""
-    pad = size * (icons.PLATE_INSET + 0.08)          # inside the app-sized frame
+    # inside the app-sized frame; a round one: inside the square that fits the circle
+    extra = 0.08 if icons.frame_shape() != "circle" else (1 - 2 * icons.PLATE_INSET) * (1 - 0.7071) / 2 + 0.02
+    pad = size * (icons.PLATE_INSET + extra)
     cell = (size - 2 * pad) / GRID
     side = cell * 0.84
     off = (cell - side) / 2
@@ -178,7 +180,7 @@ class FolderIcon(Gtk.Widget):
         if s <= 0:
             return
         b = max(8, -(-s // 8) * 8)
-        key = (b, ui.is_dark(), self.locked, tuple(self.keys))
+        key = (b, ui.is_dark(), self.locked, tuple(self.keys), icons.frame_shape())
         node = self._nodes.get(key)
         if node is None:
             if len(self._nodes) > 6:
@@ -215,9 +217,10 @@ class FolderIcon(Gtk.Widget):
         rect = Graphene.Rect().init(inset, inset, p, p)
         dark = ui.is_dark() or self.on_scrim
         shadow = Gsk.RoundedRect()
-        shadow.init_from_rect(rect, p * 0.3)
+        shadow.init_from_rect(rect, p * (0.5 if icons.frame_shape() == "circle" else 0.3))
         snap.append_outset_shadow(shadow, _rgba("rgba(0,0,0,0.22)"), 0, s * 0.012, 0, s * 0.02)
-        path = icons._squircle(inset, inset, p, p)
+        shape = icons.frame_shape()                      # Settings > App Icons: folders follow apps
+        path = icons.shape_path(shape, inset, inset, p, p)
         snap.push_fill(path, Gsk.FillRule.WINDING)
         fill = ("rgba(255,255,255,0.22)" if self.on_scrim          # Launchpad: its tile_on_scrim, a bit stronger
                 else "rgba(120,120,128,0.55)" if dark else "rgba(255,255,255,0.62)")

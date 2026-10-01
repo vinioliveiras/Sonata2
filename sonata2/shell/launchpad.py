@@ -316,6 +316,7 @@ class Launchpad(Gtk.ApplicationWindow):
         self._overlay = True
         Gio.AppInfoMonitor.get().connect("changed", lambda *_: self._apps_changed())
         self._cfg_mon = config.watch("launchpad", self._config_changed)
+        self._icons_mon = config.watch("icons", lambda: (icons.forget_prefs(), self.widgets.clear(), self.render()))   # App Icons
         # Wayfire raises the layer surface you press on: any press here (swiping
         # pages, holding an icon) would put Launchpad over the Dock -- the Dock
         # is put back on top right away, it always stays above Launchpad
