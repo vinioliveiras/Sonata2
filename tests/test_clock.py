@@ -161,5 +161,50 @@ class WindowTest(unittest.TestCase):
         w.destroy()
 
 
+class SoundTest(unittest.TestCase):
+    """The default sound was the freedesktop alarm: high and sharp (Vini).
+    Soft sounds now, chosen per alarm, louder step by step."""
+
+    def test_sounds_exist_default_soft(self):
+        self.assertEqual(A.SOUND, "morning")
+        for key in A.SOUNDS:
+            self.assertTrue(os.path.isfile(A.sound_path(key)), key)
+        self.assertEqual(A.sound_path("nope"), A.sound_path(A.SOUND))
+        self.assertEqual(A.new()["sound"], "morning")
+
+    def test_old_alarms_get_the_default(self):
+        A.save([{"hour": 7, "minute": 0}])                  # saved before sounds existed
+        self.assertEqual(A.load()[0]["sound"], A.SOUND)
+
+    def test_ramp_then_loop(self):
+        from sonata2.shell.alarmservice import RAMP, ring_command
+        cmd = ring_command("/s.oga", "pw-play")
+        self.assertIn(f"--volume {RAMP[0]}", cmd[2])
+        self.assertIn("while :", cmd[2])
+        self.assertLess(cmd[2].index(f"--volume {RAMP[0]}"), cmd[2].index("while :"))
+        once = ring_command("/s.oga", "paplay", loop=False)
+        self.assertNotIn("while", once[2])
+        self.assertIn("paplay --volume", once[2])
+
+    def test_picker_saves_the_sound(self):
+        from sonata2.clock.window import ClockWindow
+        Adw.init()
+        ui.setup()
+        app = Adw.Application(application_id="io.test.clocksound")
+        app.register(None)
+        A.save([])
+        w = ClockWindow(app)
+        w.present()
+        settle()
+        with mock.patch.object(ClockWindow, "preview") as preview:
+            pop = w.edit(A.new(7, 0), w.add_btn, new=True)
+            pop.sound.set_selected(list(A.SOUNDS).index("chimes"))
+            preview.assert_called_with("chimes")                # a preview of the pick
+            pop.save()
+        settle()
+        self.assertEqual(A.load()[0]["sound"], "chimes")
+        w.destroy()
+
+
 if __name__ == "__main__":
     unittest.main()

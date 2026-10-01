@@ -133,6 +133,15 @@ class ClockWindow(Gtk.ApplicationWindow):
         alarms = [a for a in A.load() if a["id"] != alarm["id"]] + [alarm]
         self._store(sorted(alarms, key=lambda a: (a["hour"], a["minute"])))
 
+    def preview(self, sound) -> None:
+        """Play an alarm sound once (None: stop the one playing)."""
+        if not hasattr(self, "_previewer"):
+            self._previewer = _preview_player()
+        if sound is None:
+            self._previewer.stop()
+        else:
+            self._previewer.start(sound, loop=False)
+
     def add(self) -> None:
         now = GLib.DateTime.new_now_local()
         a = A.new(now.get_hour(), now.get_minute())
@@ -175,6 +184,15 @@ class ClockWindow(Gtk.ApplicationWindow):
         snooze_sw = Gtk.Switch(active=a["snooze"])
         snooze.append(snooze_sw)
         box.append(snooze)
+        # the sound: picking one plays it once (a preview), like the iPhone
+        keys = list(A.SOUNDS)
+        sound = Gtk.Box(spacing=8)
+        sound.append(Gtk.Label(label="Sound", hexpand=True, xalign=0))
+        sound_dd = ui.controls.popup_button([A.SOUNDS[k][0] for k in keys],
+                                            keys.index(a["sound"]) if a["sound"] in keys else 0,
+                                            lambda i: self.preview(keys[i]))
+        sound.append(sound_dd)
+        box.append(sound)
         btns = Gtk.Box(spacing=8, margin_top=4)
         if not new:
             btns.append(ui.controls.push_button("Delete", lambda: (pop.popdown(), self.delete(a["id"])),
@@ -185,17 +203,24 @@ class ClockWindow(Gtk.ApplicationWindow):
         def save():
             a.update(hour=int(hour.get_value()), minute=int(minute.get_value()),
                      repeat=[i for i, t in enumerate(toggles) if t.get_active()],
-                     label=label.get_text().strip(), snooze=snooze_sw.get_active(), enabled=True)
+                     label=label.get_text().strip(), snooze=snooze_sw.get_active(),
+                     sound=keys[sound_dd.get_selected()], enabled=True)
             pop.popdown()
             self.put(a)
         btns.append(ui.controls.push_button("Save", save, style="default"))
         box.append(btns)
         label.connect("activate", lambda _e: save())
         pop.set_child(box)
-        pop.connect("closed", lambda p: GLib.idle_add(p.unparent))
+        pop.connect("closed", lambda p: (self.preview(None), GLib.idle_add(p.unparent)))
         pop.save, pop.hour, pop.minute, pop.days, pop.label = save, hour, minute, toggles, label   # (tests)
+        pop.sound = sound_dd
         pop.popup()
         return pop
+
+
+def _preview_player():
+    from ..shell.alarmservice import Ringer
+    return Ringer()
 
 
 def open_windows(app, paths=()) -> None:

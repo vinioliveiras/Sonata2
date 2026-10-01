@@ -3,7 +3,7 @@ and when each one goes off next. No GTK here: the Clock window edits the
 list, the menu bar process (shell/alarmservice.py) rings them.
 
 alarm = {"id", "hour", "minute", "label", "repeat": [weekday, ...] (0 =
-Monday; empty: once), "enabled", "snooze": bool}
+Monday; empty: once), "enabled", "snooze": bool, "sound": SOUNDS key}
 
 A one-time alarm turns itself off once it has gone off (iPhone / macOS)."""
 import datetime as dt
@@ -12,10 +12,22 @@ import os
 import uuid
 
 FILE = "alarms.json"
-SOUND = "alarm-clock-elapsed"          # data/sounds
+# the alarm's sound: key -> (name shown, file in data/sounds). Soft ones first;
+# Classic is the freedesktop alarm (high and sharp: no longer the default)
+SOUNDS = {"morning": ("Morning", "sonata-alarm-morning"), "chimes": ("Chimes", "sonata-alarm-chimes"),
+          "harp": ("Harp", "sonata-alarm-harp"), "sunrise": ("Sunrise", "sonata-alarm-sunrise"),
+          "pulse": ("Pulse", "sonata-alarm-pulse"), "classic": ("Classic", "alarm-clock-elapsed")}
+SOUND = "morning"
 SNOOZE_MIN = 9                         # iPhone / macOS
 RING_MAX_S = 15 * 60                   # an alarm nobody stops goes quiet after this
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def sound_path(key: str) -> str:
+    """The file of an alarm sound (the default one for an unknown key)."""
+    name = SOUNDS.get(key, SOUNDS[SOUND])[1]
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "sounds",
+                        name + ".oga")
 
 
 def path() -> str:
@@ -25,7 +37,7 @@ def path() -> str:
 
 def new(hour: int = 7, minute: int = 0) -> dict:
     return {"id": uuid.uuid4().hex[:12], "hour": hour, "minute": minute, "label": "Alarm",
-            "repeat": [], "enabled": True, "snooze": True}
+            "repeat": [], "enabled": True, "snooze": True, "sound": SOUND}
 
 
 def _clean(a) -> dict:
@@ -37,6 +49,7 @@ def _clean(a) -> dict:
         out["repeat"] = sorted({int(d) for d in out.get("repeat") or [] if 0 <= int(d) <= 6})
         out["enabled"], out["snooze"] = bool(out["enabled"]), bool(out["snooze"])
         out["label"] = str(out.get("label") or "")
+        out["sound"] = out["sound"] if out.get("sound") in SOUNDS else SOUND
         return out
     except (TypeError, ValueError):
         return None

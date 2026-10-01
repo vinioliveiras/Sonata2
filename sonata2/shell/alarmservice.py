@@ -36,20 +36,35 @@ window.sonata-alarm { background: transparent; }
 """, key="alarm")
 
 
+RAMP = (0.3, 0.45, 0.6, 0.8)        # the first plays, softer; then full volume (a gentle wake-up)
+
+
+def ring_command(path: str, player: str, loop: bool = True) -> list:
+    """sh -c: play the sound getting louder, then on and on (loop) -- or once (a preview)."""
+    def play(v):
+        if player == "pw-play":
+            return f'pw-play --volume {v} "$0"'
+        return f'paplay --volume {int(v * 65536)} "$0"'
+    if not loop:
+        return ["sh", "-c", play(0.8), path]
+    ramp = "; ".join(f"{play(v)}; sleep 0.6" for v in RAMP)
+    return ["sh", "-c", f'{ramp}; while :; do {play(1.0)}; sleep 0.6; done', path]
+
+
 class Ringer:
-    """The alarm sound, looped until stop()."""
+    """An alarm sound, looped until stop() (or played once: preview)."""
 
     def __init__(self):
         self.proc = None
 
-    def start(self) -> None:
+    def start(self, sound: str = A.SOUND, loop: bool = True) -> None:
         self.stop()
-        path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "sounds", A.SOUND + ".oga")
+        path = A.sound_path(sound)
         player = next((p for p in ("pw-play", "paplay") if shutil.which(p)), None)
         if not player or not os.path.exists(path):
             return
         try:
-            self.proc = subprocess.Popen(["sh", "-c", f'while :; do {player} "$0"; sleep 0.6; done', path],
+            self.proc = subprocess.Popen(ring_command(path, player, loop),
                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                          start_new_session=True)
         except OSError:
@@ -173,7 +188,7 @@ class AlarmService:
         self.current = alarm
         self.card = AlarmCard(self.app, alarm, self.snooze, self.stop)
         self.card.present()
-        self.ringer.start()
+        self.ringer.start(alarm.get("sound", A.SOUND))
         self.quiet = GLib.timeout_add_seconds(A.RING_MAX_S, lambda: (self.stop(), False)[1])
 
     def snooze(self) -> None:
