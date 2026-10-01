@@ -200,7 +200,7 @@ New apps appear as soon as they're installed.
   and live updates.
 - Recents, Applications, pinned folders (drag a folder between two
   Favorites) and drives with capacity.
-- Search in This Mac or the folder, type to select, and drag and drop
+- Search in This Computer or the folder, type to select, and drag and drop
   everywhere.
 - Double-clicking a Linux package installs it (with debtap on Arch), and
   archives are extracted.

@@ -2177,7 +2177,9 @@ class Settings(Adw.ApplicationWindow):
                 return
             name.set_label(a.os_name)
             sub.set_label("Sonata 2 desktop")
-            for k, v in (("Computer", a.machine), ("Processor", a.cpu), ("Memory", f"{a.memory_gb} GB"),
+            from .. import __version__
+            for k, v in (("Sonata", __version__), ("Computer", a.machine), ("Processor", a.cpu),
+                         ("Memory", f"{a.memory_gb} GB"),
                          ("Graphics", ", ".join(a.gpus) or "—"), ("Kernel", a.kernel)):
                 row = Adw.ActionRow(title=k)
                 row.add_suffix(Gtk.Label(label=v, css_classes=["st-value"], ellipsize=Pango.EllipsizeMode.END,

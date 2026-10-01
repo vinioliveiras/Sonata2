@@ -1405,6 +1405,17 @@ class OpenPanelWorksTests(unittest.TestCase):
         self.assertTrue(got[-1][0].endswith("/x.txt"))
 
 
+class ReleaseVersionTests(unittest.TestCase):
+    """0.1.0-alpha: the version is in one place, shown in Settings > About,
+    and CHANGELOG.md has its entry."""
+
+    def test_version_everywhere(self):
+        import sonata2
+        root = pathlib.Path(__file__).resolve().parent.parent
+        self.assertIn('("Sonata", __version__)', (root / "sonata2" / "settings" / "app.py").read_text())
+        self.assertIn(f"## {sonata2.__version__} ", (root / "CHANGELOG.md").read_text())
+
+
 class SteamGameDockTests(unittest.TestCase):
     """Steam games showed in the Dock as a generic icon named
     "steam_app_<id>": their name and icon now come from Steam."""
