@@ -35,6 +35,7 @@ STATUS_W = 280
 CC_W = 320
 # Sound and Now Playing live in the Control Center; the menu bar items are
 # optional (Settings > Menu Bar), off by default (Vini).
+LOGO_PX = 14            # the Sonata menu's logo / shape / symbol (a bit under the 16 px status icons)
 DEFAULTS = {"battery_percent": False, "clock_format": "%a %-d %b  %H:%M", "show_bluetooth": True,
             "show_sound": False, "show_now_playing": False, "show_tray": True}
 POLL_S = 10
@@ -76,7 +77,7 @@ class Bar(Gtk.CenterBox):
         left = Gtk.Box()
         self.logo = self._item(left, on_click=self._sonata_menu, css="icon")
         from ..ui.logo import LogoGlyph                      # distro logo, a shape or a symbol (Settings)
-        self.logo.get_child().append(LogoGlyph(16))
+        self.logo.get_child().append(LogoGlyph(LOGO_PX))
         self.app_btn = self._item(left, text="Files", on_click=self._app_menu, css="app")
         # on the desktop (nothing focused) the menus are Files' own, like Finder's
         self.file_btn = self._item(left, text="File", on_click=self._files_file_menu)
