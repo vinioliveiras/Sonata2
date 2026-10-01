@@ -474,6 +474,20 @@ class DockFolderTest(unittest.TestCase):
         src = inspect.getsource(F)
         self.assertIn("background-color: %(dock_material)s", src)
 
+    def test_launchpad_folders_use_the_same_icon(self):
+        """Vini: Launchpad's folders as the Dock's -- exactly an app's frame."""
+        from sonata2.shell import launchpad
+        icon = launchpad.LaunchItem._folder_icon(None, {"folder": "W", "apps": self.apps[:3]}, 64)
+        self.assertIsInstance(icon, F.FolderIcon)
+        self.assertTrue(icon.on_scrim)
+        self.assertTrue(icon.has_css_class("lp-folder"))             # jiggle / folder-target still apply
+        self.assertEqual(icon.do_measure(Gtk.Orientation.HORIZONTAL, -1)[0], 64)
+        hidden = launchpad.LaunchItem._folder_icon(None, {"folder": "Hidden", "apps": [], "locked": True}, 64)
+        self.assertTrue(hidden.locked)
+        snap = Gtk.Snapshot()
+        hidden.do_snapshot(snap)
+        self.assertIsNotNone(snap.to_node())
+
     def test_icon_draws(self):
         icon = F.FolderIcon(self.apps[:3], 48)
         self.assertEqual(icon.do_measure(Gtk.Orientation.HORIZONTAL, -1)[0], 48)

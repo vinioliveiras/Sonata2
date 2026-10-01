@@ -214,25 +214,13 @@ class LaunchItem(Gtk.Button):
         pad.attach_drag(self)
 
     def _folder_icon(self, folder, size) -> Gtk.Widget:
-        box = Gtk.Grid(css_classes=["lp-folder"], row_homogeneous=True, column_homogeneous=True,
-                       width_request=size, height_request=size, halign=Gtk.Align.CENTER)
-        if folder.get("locked"):
-            # Hidden: generic app icons (nothing of what's inside) and a lock
-            mini = max(10, int(size * 0.8 / 3) - 4)
-            for i in range(min(9, len(folder["apps"]))):
-                box.attach(Gtk.Image(icon_name="application-x-executable", pixel_size=mini), i % 3, i // 3, 1, 1)
-            over = Gtk.Overlay(child=box)
-            over.add_overlay(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=int(size * 0.42),
-                                       css_classes=["lp-lock"], halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER))
-            return over
-        mini = max(10, int(size * 0.8 / 3) - 4)
-        for i, app_id in enumerate(folder["apps"][:9]):
-            info = self.pad.installed.get(app_id)
-            img = Gtk.Image(pixel_size=mini)
-            if info:
-                icons.set_image(img, icons.app_icon(info))
-            box.attach(img, i % 3, i // 3, 1, 1)
-        return box
+        """The same folder icon as the Dock's: exactly an app's frame (Vini),
+        its apps in a 3 x 3 grid; Hidden (locked): blank tiles and a lock."""
+        from .dock_folder import FolderIcon
+        icon = FolderIcon(folder["apps"], size, locked=bool(folder.get("locked")), on_scrim=True,
+                          css=("lp-folder",))
+        icon.set_halign(Gtk.Align.CENTER)
+        return icon
 
 
 class PageGrid(Gtk.Grid):
@@ -365,10 +353,7 @@ class Launchpad(Gtk.ApplicationWindow):
         if abs(size - self.icon_size) >= 4 or not self._sized:
             self._sized = True
             self.icon_size = size
-            # folder tile: Big Sur rounded square, radius/padding scale with it
-            ui.register(""".lp-folder { background: %(tile_on_scrim)s; border-radius: %(r)dpx;
-                           padding: %(p)dpx; }""", key="launchpad-size",
-                        r=int(size * 0.22), p=int(size * 0.1))
+            # (folder icons: dock_folder.FolderIcon, drawn at this size)
             GLib.idle_add(lambda: (self.render(), False)[1])
 
     def _item_widget(self, item) -> LaunchItem:

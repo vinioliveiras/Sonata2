@@ -119,10 +119,12 @@ class FolderIcon(Gtk.Widget):
     """A rounded translucent plate with the folder's first nine apps
     (sized like a DockIcon, so magnification and fitting work the same)."""
 
-    def __init__(self, keys: list, size: int, locked: bool = False):
-        super().__init__(css_classes=["dock-icon", "dock-folder-icon"])
+    def __init__(self, keys: list, size: int, locked: bool = False, on_scrim: bool = False, css: tuple = ()):
+        """on_scrim: over Launchpad's dimmed desktop (light and dark alike)."""
+        super().__init__(css_classes=["dock-icon", "dock-folder-icon", *css])
         self._size = size
         self.locked = locked
+        self.on_scrim = on_scrim
         self.set_apps(keys)
 
     def set_locked(self, on: bool) -> None:
@@ -211,13 +213,15 @@ class FolderIcon(Gtk.Widget):
         inset = s * icons.PLATE_INSET
         p = s - 2 * inset
         rect = Graphene.Rect().init(inset, inset, p, p)
-        dark = ui.is_dark()
+        dark = ui.is_dark() or self.on_scrim
         shadow = Gsk.RoundedRect()
         shadow.init_from_rect(rect, p * 0.3)
         snap.append_outset_shadow(shadow, _rgba("rgba(0,0,0,0.22)"), 0, s * 0.012, 0, s * 0.02)
         path = icons._squircle(inset, inset, p, p)
         snap.push_fill(path, Gsk.FillRule.WINDING)
-        snap.append_color(_rgba("rgba(120,120,128,0.55)" if dark else "rgba(255,255,255,0.62)"), rect)
+        fill = ("rgba(255,255,255,0.22)" if self.on_scrim          # Launchpad: its tile_on_scrim, a bit stronger
+                else "rgba(120,120,128,0.55)" if dark else "rgba(255,255,255,0.62)")
+        snap.append_color(_rgba(fill), rect)
         snap.append_linear_gradient(rect, Graphene.Point().init(0, inset), Graphene.Point().init(0, s - inset),
                                     _sheen())
         snap.pop()
