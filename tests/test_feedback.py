@@ -90,6 +90,29 @@ class WindowTest(unittest.TestCase):
             self.assertFalse(win.off_note.get_visible())
             win.destroy()
 
+    def test_one_title_bar(self):
+        """The compositor draws the title bar: a second one inside showed two sets of buttons."""
+        from sonata2.feedback.window import FeedbackWindow
+        win = FeedbackWindow(self.app)
+        found, stack = [], [win]
+        while stack:
+            w = stack.pop()
+            found += [w] if w.has_css_class("sonata-titlebar") else []
+            c = w.get_first_child()
+            while c is not None:
+                stack.append(c)
+                c = c.get_next_sibling()
+        self.assertEqual(found, [])
+        win.destroy()
+
+    def test_own_icon(self):
+        from sonata2.feedback import window
+        with mock.patch("sonata2.apps.write_desktop_file", side_effect=lambda _n, text: text):
+            self.assertIn("Icon=sonata-feedback\n", window.feedback_desktop_file("sonata2"))
+        icon = os.path.join(os.path.dirname(window.__file__), "..", "data", "icons", "Sonata", "apps", "scalable",
+                            "sonata-feedback.svg")
+        self.assertTrue(os.path.isfile(icon))
+
     def test_monitoring_off_asks_first(self):
         from sonata2.feedback.window import FeedbackWindow
         with mock.patch.object(report, "monitoring", return_value=False), \

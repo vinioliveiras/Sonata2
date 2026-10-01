@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Feedback Assistant: white squircle (MacTahoe's shape), soft pink-red exclamation mark -->
+  <defs>
+    <linearGradient id="bg" x1="0" x2="0" y1="4" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e8e8ed"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" x2="0" y1="14" y2="51" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff7a8f"/><stop offset="1" stop-color="#f0465f"/>
+    </linearGradient>
+    <filter id="drop" x="-.1" y="-.1" width="1.2" height="1.25" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation=".7"/>
+    </filter>
+  </defs>
+  <path id="sq" d="M20.26 4c-5.782 0-9.743 1.725-12.321 4.535C5.374 11.331 4 15.34 4 19.876v24.248c0 4.538 1.374 8.545 3.939 11.341C10.517 58.275 14.479 60 20.26 60h23.549c5.782 0 9.743-1.724 12.321-4.535C58.695 52.67 60 49.03 60 44.125V20.786c0-5.935-1.305-9.456-3.87-12.252C53.552 5.725 49.59 4 43.809 4H25.494z"
+        fill="#000" opacity=".22" filter="url(#drop)" transform="translate(0 .8)"/>
+  <path d="M20.26 4c-5.782 0-9.743 1.725-12.321 4.535C5.374 11.331 4 15.34 4 19.876v24.248c0 4.538 1.374 8.545 3.939 11.341C10.517 58.275 14.479 60 20.26 60h23.549c5.782 0 9.743-1.724 12.321-4.535C58.695 52.67 60 49.03 60 44.125V20.786c0-5.935-1.305-9.456-3.87-12.252C53.552 5.725 49.59 4 43.809 4H25.494z"
+        fill="url(#bg)" stroke="#000" stroke-opacity=".08" stroke-width=".5"/>
+  <rect x="27.6" y="14.5" width="8.8" height="25" rx="4.4" fill="url(#mark)"/>
+  <circle cx="32" cy="46.4" r="4.6" fill="url(#mark)"/>
+</svg>

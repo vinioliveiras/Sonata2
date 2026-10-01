@@ -26,7 +26,7 @@ from .. import ui  # noqa: E402
 from . import report  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.feedback"
-WIDTH, HEIGHT = 560, 700
+WIDTH, HEIGHT = 560, 650
 
 ui.register("""
 window.sonata-feedback { background: %(window_bg)s; }
@@ -75,7 +75,7 @@ class FeedbackWindow(Gtk.ApplicationWindow):
         self.busy = False
         self.toasts = Adw.ToastOverlay()
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        col.append(ui.window.titlebar(self, "Feedback Assistant", zoom=True))
+        # no title bar of its own: the compositor draws the glass one (pixdecor)
         page = Adw.PreferencesPage(vexpand=True)
 
         mon = Adw.PreferencesGroup()
@@ -216,7 +216,7 @@ def feedback_desktop_file(command: str) -> str:
     from ..apps import write_desktop_file
     return write_desktop_file(APP_ID + ".desktop",
                               "[Desktop Entry]\nType=Application\nName=Feedback Assistant\n"
-                              "Comment=Report a problem with Sonata\nIcon=deepin-feedback\n"
+                              "Comment=Report a problem with Sonata\nIcon=sonata-feedback\n"
                               "Categories=System;Utility;\nKeywords=bug;report;problem;feedback;logs;crash;\n"
                               "StartupNotify=true\n"
                               f"Exec={command} feedback\n")
