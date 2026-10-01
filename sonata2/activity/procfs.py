@@ -10,6 +10,7 @@ off the main loop (backend.system.run_async).
 
 Rates (CPU %, disk and network per second) need two samples: the first
 sample reports them as 0."""
+import glob
 import os
 import pwd
 import time
@@ -256,6 +257,7 @@ class Proc:
     avg_cpu: float = 0.0          # % of one core over the process's life
     start_ticks: int = 0          # clock ticks after boot (with pid: the process's identity)
     state: str = "S"
+    gpu: float = 0.0              # % of its busiest GPU engine since the previous sample
 
     @property
     def status(self) -> str:
@@ -277,6 +279,81 @@ class Snapshot:
     cpu_mhz: float = 0.0
     uptime: float = 0.0
     interval: float = 0.0
+
+
+# -- GPU use per process ---------------------------------------------------------------------------
+# The kernel's DRM fdinfo (amdgpu, i915, xe, nouveau, msm...): every open
+# /dev/dri/* file of a process lists its client and the nanoseconds each
+# engine was busy for it. NVIDIA's own driver doesn't fill that in: its
+# numbers come from `nvidia-smi pmon` (NvidiaUsage), only while the card is
+# awake anyway -- asking would wake a sleeping laptop GPU.
+FD_RESCAN_S = 5.0                 # which fds of a process are GPU files: looked up again this often
+
+
+def parse_drm_fdinfo(text: str) -> Optional[tuple]:
+    """(client key, {engine: busy ns}) of one DRM fdinfo, None if it isn't one."""
+    pdev = client = None
+    engines = {}
+    for line in text.splitlines():
+        k, _, v = line.partition(":")
+        v = v.strip()
+        if k == "drm-pdev":
+            pdev = v
+        elif k == "drm-client-id":
+            client = v
+        elif k.startswith("drm-engine-") and not k.startswith("drm-engine-capacity"):
+            num = v.split()[0] if v else ""
+            if num.isdigit():
+                engines[k[11:]] = int(num)
+    if client is None or not engines:
+        return None
+    return (pdev or "", client), engines
+
+
+class NvidiaUsage:
+    """pid -> SM % from `nvidia-smi pmon` in the background, only while the
+    NVIDIA card is already awake (runtime PM "active")."""
+
+    def __init__(self, sys: str = "/sys"):
+        import shutil
+        self.sys = sys
+        self.pids = {}
+        self._busy = False
+        self.tool = shutil.which("nvidia-smi")
+        self.devices = []
+        for card in sorted(glob.glob(os.path.join(sys, "class/drm/card[0-9]*"))):
+            drv = os.path.basename(os.path.realpath(os.path.join(card, "device", "driver")))
+            if drv == "nvidia":
+                self.devices.append(os.path.realpath(os.path.join(card, "device")))
+
+    def awake(self) -> bool:
+        return any(_read(os.path.join(d, "power", "runtime_status")).strip() in ("active", "")
+                   for d in self.devices)
+
+    def refresh(self) -> None:
+        if not self.tool or not self.devices or self._busy:
+            return
+        if not self.awake():
+            self.pids = {}
+            return
+        self._busy = True
+        import threading
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        import subprocess
+        out = {}
+        try:
+            text = subprocess.run([self.tool, "pmon", "-c", "1", "-s", "u"], capture_output=True, text=True,
+                                  timeout=5).stdout
+            for line in text.splitlines():
+                f = line.split()
+                if len(f) > 3 and not line.startswith("#") and f[1].isdigit() and f[3].replace(".", "").isdigit():
+                    out[int(f[1])] = max(out.get(int(f[1]), 0.0), float(f[3]))
+        except (OSError, subprocess.SubprocessError, ValueError):
+            pass
+        self.pids = out
+        self._busy = False
 
 
 def _rates(cur: dict, prev: Optional[dict], dt: float, keys) -> dict:
@@ -303,6 +380,10 @@ class Sampler:
         self._disk_static = {}             # name -> (capacity, model)
         self._cpu_info = None
         self._prev_disk_tot = None
+        self._gpu_fds = {}                 # (pid, start) -> [fdinfo paths of its /dev/dri files]
+        self._gpu_scan = {}                # (pid, start) -> when its fds were last looked at
+        self._prev_gpu = {}                # DRM client -> {engine: busy ns}
+        self.nvidia = NvidiaUsage(sys)
         self.boot_time = self._boot_time()
 
     def _boot_time(self) -> float:
@@ -366,6 +447,48 @@ class Sampler:
                 if v.isdigit():
                     out[n] = float(v)
         return out
+
+    def _drm_fdinfos(self, key, d: str, now: float) -> list:
+        if now - self._gpu_scan.get(key, -1e9) >= FD_RESCAN_S:
+            paths = []
+            try:
+                fds = os.listdir(os.path.join(d, "fd"))
+            except OSError:
+                fds = []                                   # another user's process
+            for fd in fds:
+                try:
+                    if os.readlink(os.path.join(d, "fd", fd)).startswith("/dev/dri/"):
+                        paths.append(os.path.join(d, "fdinfo", fd))
+                except OSError:
+                    pass
+            self._gpu_fds[key], self._gpu_scan[key] = paths, now
+        return self._gpu_fds.get(key, [])
+
+    def gpu_usage(self, procs: Dict[int, "Proc"], dt: float, now: float) -> None:
+        """Fills each process's .gpu (see the GPU section above)."""
+        clients, owner = {}, {}
+        for p in procs.values():
+            key = (p.pid, p.start_ticks)
+            for path in self._drm_fdinfos(key, os.path.join(self.proc, str(p.pid)), now):
+                parsed = parse_drm_fdinfo(_read(path))
+                if parsed and parsed[0] not in clients:    # dup'ed fds share one client
+                    clients[parsed[0]] = parsed[1]
+                    owner[parsed[0]] = p
+        for client, engines in clients.items():
+            prev = self._prev_gpu.get(client)
+            if prev is None or dt <= 0:
+                continue
+            busy = max((100.0 * (ns - prev.get(e, ns)) / (dt * 1e9) for e, ns in engines.items()), default=0.0)
+            p = owner[client]
+            p.gpu = min(100.0, max(p.gpu, busy))
+        self._prev_gpu = clients
+        live = {(p.pid, p.start_ticks) for p in procs.values()}
+        self._gpu_fds = {k: v for k, v in self._gpu_fds.items() if k in live}
+        self._gpu_scan = {k: v for k, v in self._gpu_scan.items() if k in live}
+        self.nvidia.refresh()
+        for pid, pct in self.nvidia.pids.items():
+            if pid in procs:
+                procs[pid].gpu = max(procs[pid].gpu, pct)
 
     def _disk_info(self, name: str) -> tuple:
         if name not in self._disk_static:
@@ -493,6 +616,7 @@ class Sampler:
         self._prev_net = ifaces
 
         snap.gpus = self.gpus()
+        self.gpu_usage(procs, dt, now)
         snap.battery = battery_info(self.sys)
         self._prev_t = now
         return snap

@@ -39,6 +39,7 @@ class RowBase(GObject.Object):
     mem = GObject.Property(type=GObject.TYPE_INT64, default=0)
     disk = GObject.Property(type=float, default=0.0)         # bytes/s
     net = GObject.Property(type=float, default=-1.0)        # bytes/s; -1: not measured per process
+    gpu = GObject.Property(type=float, default=0.0)         # % of its busiest GPU engine
     group = GObject.Property(type=int, default=0)
     icon = None
 
@@ -79,7 +80,7 @@ class ProcessRow(RowBase):
         self.ppid = p.ppid
         self.set_values({"cpu": round(p.cpu, 1), "cpu_time": round(p.cpu_time, 2), "threads": p.threads,
                          "mem": p.rss, "read_bytes": p.read_bytes, "write_bytes": p.write_bytes,
-                         "disk": round(p.read_ps + p.write_ps), "status": p.status})
+                         "disk": round(p.read_ps + p.write_ps), "gpu": round(p.gpu, 1), "status": p.status})
 
 
 class AppNode(RowBase):
@@ -210,6 +211,14 @@ def heat_disk(_row, v):
     return _level(v, (1e4, 1e5, 1e6, 1e7, 5e7))
 
 
+def fmt_gpu(v: float) -> str:
+    return f"{v:.1f}%"
+
+
+def heat_gpu(_row, v):
+    return _level(v / 100, (0.005, 0.05, 0.15, 0.3, 0.6))
+
+
 def heat_net(_row, _v):
     return 0
 
@@ -321,6 +330,7 @@ class ProcessesPage(Page):
         self.cols["mem"] = text_column(self.view, "Memory", "mem", fmt_mem, 100, heat=heat_mem, sorter=dummy())
         self.cols["disk"] = text_column(self.view, "Disk", "disk", fmt_disk, 90, heat=heat_disk, sorter=dummy())
         self.cols["net"] = text_column(self.view, "Network", "net", fmt_net, 90, heat=heat_net, sorter=dummy())
+        self.cols["gpu"] = text_column(self.view, "GPU", "gpu", fmt_gpu, 70, heat=heat_gpu, sorter=dummy())
         for cid, c in self.cols.items():
             c.cid = cid
         self._order = ("cpu", True)
@@ -416,6 +426,7 @@ class ProcessesPage(Page):
                              "cpu": round(sum(m.sv["cpu"] for m in node.members), 1),
                              "mem": sum(m.sv["mem"] for m in node.members),
                              "disk": sum(m.sv["disk"] for m in node.members),
+                             "gpu": round(min(100.0, sum(m.sv.get("gpu", 0) for m in node.members)), 1),
                              "status": next((m.sv["status"] for m in node.members if m.sv["status"]), "")})
             wanted.append(node)
         for key in [k for k in self.nodes if k not in win.groups[0]]:
@@ -443,6 +454,8 @@ class ProcessesPage(Page):
         self.cols["disk"].set_title(f"{active:.0f}%\nDisk")
         self.cols["net"].set_title(f"{fmt_bits(8 * (snap.net.get('rx_bytes_ps', 0) + snap.net.get('tx_bytes_ps', 0)))}"
                                    "\nNetwork")
+        gpu = max(snap.gpus.values(), default=None)
+        self.cols["gpu"].set_title(f"{gpu:.0f}%\nGPU" if gpu is not None else "GPU")
         self._buttons()
 
     def _menu(self, gesture, _n, x, y) -> None:

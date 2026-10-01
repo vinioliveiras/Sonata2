@@ -275,6 +275,60 @@ def fake_proc(pid, ppid, exe, uid=None, cpu=0.0, rss=0, read_ps=0.0, write_ps=0.
                        cpu=cpu, read_ps=read_ps, write_ps=write_ps)
 
 
+class GpuColumnTest(unittest.TestCase):
+    """Processes > GPU (Vini): each process's share of its busiest GPU
+    engine, from the kernel's DRM fdinfo (amdgpu, Intel...) or nvidia-smi."""
+
+    FDINFO = ("pos:\t0\nflags:\t02100002\ndrm-driver:\tamdgpu\ndrm-pdev:\t0000:05:00.0\n"
+              "drm-client-id:\t42\ndrm-engine-gfx:\t{gfx} ns\ndrm-engine-compute:\t0 ns\n"
+              "drm-engine-capacity-gfx:\t1\n")
+
+    def test_parse(self):
+        key, eng = procfs.parse_drm_fdinfo(self.FDINFO.format(gfx=123))
+        self.assertEqual(key, ("0000:05:00.0", "42"))
+        self.assertEqual(eng, {"gfx": 123, "compute": 0})
+        self.assertIsNone(procfs.parse_drm_fdinfo("pos: 0\nflags: 1\n"))
+
+    def test_busy_share_per_process(self):
+        root = tempfile.mkdtemp()
+        proc = os.path.join(root, "proc")
+        d = os.path.join(proc, "300")
+        os.makedirs(os.path.join(d, "fd"))
+        os.makedirs(os.path.join(d, "fdinfo"))
+        os.symlink("/dev/dri/renderD128", os.path.join(d, "fd", "7"))
+        os.symlink("/dev/dri/renderD128", os.path.join(d, "fd", "8"))       # a dup: the same client
+        os.symlink("/home/x/file", os.path.join(d, "fd", "3"))
+        info = os.path.join(d, "fdinfo")
+        smp = Sampler.__new__(Sampler)
+        smp.proc, smp.sys = proc, os.path.join(root, "sys")
+        smp._gpu_fds, smp._gpu_scan, smp._prev_gpu = {}, {}, {}
+        smp.nvidia = procfs.NvidiaUsage(smp.sys)
+        mk = lambda: {300: procfs.Proc(pid=300, name="game", comm="game", cmdline="", exe="game", uid=0,  # noqa: E731
+                                       user="", ppid=1, threads=1, rss=0, ticks=0, start_ticks=5)}
+        for fd in ("7", "8"):
+            with open(os.path.join(info, fd), "w") as f:
+                f.write(self.FDINFO.format(gfx=1_000_000_000))
+        smp.gpu_usage(mk(), 0.0, 0.0)                                       # first sample: no rate yet
+        for fd in ("7", "8"):
+            with open(os.path.join(info, fd), "w") as f:
+                f.write(self.FDINFO.format(gfx=1_400_000_000))
+        procs = mk()
+        smp.gpu_usage(procs, 1.0, 1.0)
+        self.assertAlmostEqual(procs[300].gpu, 40.0, places=3)               # 0.4 s busy in 1 s, counted once
+
+    def test_nvidia_pmon(self):
+        nv = procfs.NvidiaUsage("/nonexistent")
+        out = ("# gpu         pid   type     sm    mem    enc    dec    jpg    ofa    command\n"
+               "# Idx           #    C/G      %      %      %      %      %      %    name\n"
+               "    0       4242     G     57     12      -      -      -      -    game.exe\n"
+               "    0       1111     G      -      -      -      -      -      -    Xwayland\n")
+        from unittest import mock
+        nv.tool = "nvidia-smi"
+        with mock.patch("subprocess.run", return_value=mock.Mock(stdout=out)):
+            nv._run()
+        self.assertEqual(nv.pids, {4242: 57.0})
+
+
 class ManageTest(unittest.TestCase):
     def test_group_processes(self):
         procs = {p.pid: p for p in (
