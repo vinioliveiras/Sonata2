@@ -9,8 +9,10 @@
   shows the close button.
 - Notification Center (click the clock): the notifications, newest first,
   grouped by app, over the Today widgets (a calendar).
-- Do Not Disturb (Control Center; notifications.json "dnd"): no banners,
-  notifications still collected."""
+- Do Not Disturb (Control Center; notifications.json "dnd"): no banners at
+  all (critical ones too: Chromium/Electron apps mark ordinary messages
+  critical), the ones on screen go away when it's turned on; notifications
+  still collect in the Notification Center."""
 import os
 import time
 from dataclasses import dataclass, field
@@ -177,14 +179,23 @@ class Notifications:
 
     def _cfg_changed(self):
         self.cfg = config.load("notifications", DEFAULTS)
+        if self.dnd:                                # turned on in Settings: banners on screen go too
+            self._hide_all_banners()
 
     @property
     def dnd(self) -> bool:
         return bool(self.cfg.get("dnd"))
 
     def set_dnd(self, on: bool) -> None:
-        self.cfg["dnd"] = on
+        self.cfg = config.load("notifications", DEFAULTS)      # what Settings wrote is kept
+        self.cfg["dnd"] = bool(on)
         config.save("notifications", self.cfg)
+        if on:
+            self._hide_all_banners()
+
+    def _hide_all_banners(self):
+        for nid in list(self._banners):
+            self._hide_banner(nid)
 
     # -- D-Bus --------------------------------------------------------------------------
     def _bus_acquired(self, conn, _name):
@@ -226,6 +237,9 @@ class Notifications:
         key = app_key(n.desktop, n.app)
         per = app_settings(self.cfg, key)
         if key and key not in self.cfg.get("apps", {}):      # listed in Settings > Notifications
+            # from the file, not memory: an older copy saved here turned Do
+            # Not Disturb (just set in Settings) back off
+            self.cfg = config.load("notifications", DEFAULTS)
             self.cfg.setdefault("apps", {})[key] = dict(APP_DEFAULTS, name=n.app or key)
             config.save("notifications", self.cfg)
         if not per["allow"]:
@@ -234,7 +248,7 @@ class Notifications:
             self.notes = [x for x in self.notes if x.id != nid] + [n]
             self._changed()
         center_open = self.nc is not None and self.nc.get_visible()
-        if per["style"] != "none" and (not self.dnd or n.urgency == 2) and not center_open:
+        if per["style"] != "none" and not self.dnd and not center_open:
             self._banner(n)
         return nid
 
