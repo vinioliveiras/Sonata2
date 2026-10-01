@@ -209,24 +209,49 @@ def default_pins() -> list:
 _INDEX = None
 
 
+# a desktop entry that starts a launcher or wrapper: its window has the app's
+# own id (spotify-launcher.desktop -> app_id "spotify")
+WRAPPER_SUFFIXES = ("-launcher", "-bin", "-wrapper", "-desktop", "-stable", "-wayland", "-x11")
+
+
+def _entry_field(info, method: str, key: str) -> str:
+    """A desktop entry's field (the GI method, else the raw key)."""
+    for call in (lambda: getattr(info, method)(),
+                 lambda: getattr(type(info), method)(info),          # some PyGObject/GioUnix pairs bind it unbound only
+                 lambda: type(info).get_string(info, key)):
+        try:
+            return call() or ""
+        except (AttributeError, TypeError):
+            continue
+    return ""
+
+
 def _build_index() -> dict:
-    """Lower-cased app_id candidates -> desktop id (without .desktop)."""
-    idx = {}
+    """Lower-cased app_id candidates -> desktop id (without .desktop).
+    Exact names first (id, StartupWMClass, last reverse-DNS part,
+    executable); then the same without a wrapper suffix -- only where no
+    entry claims that name exactly."""
+    idx, loose = {}, []
     for info in Gio.AppInfo.get_all():
         did = info.get_id() or ""
         if not did.endswith(".desktop"):
             continue
         did = did[:-8]
         keys = [did, did.rsplit(".", 1)[-1]]
-        if isinstance(info, DesktopAppInfo):
-            wm = info.get_startup_wm_class()
+        if hasattr(info, "get_string"):      # a desktop entry (Gio's or GioUnix's class, by PyGObject version)
+            wm = _entry_field(info, "get_startup_wm_class", "StartupWMClass")
             if wm:
                 keys.insert(0, wm)
-            exe = (info.get_executable() or "").rsplit("/", 1)[-1]
+            exe = _entry_field(info, "get_executable", "Exec").split(" ")[0].rsplit("/", 1)[-1]
             if exe:
                 keys.append(exe)
         for k in keys:
             idx.setdefault(k.lower(), did)
+            for suf in WRAPPER_SUFFIXES:
+                if k.lower().endswith(suf) and len(k) > len(suf):
+                    loose.append((k.lower()[:-len(suf)], did))
+    for k, did in loose:
+        idx.setdefault(k, did)
     return idx
 
 
