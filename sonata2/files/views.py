@@ -490,6 +490,32 @@ def _cmp(a, b):
     return (a > b) - (a < b)
 
 
+NAME_W = 320
+_widths_src = {}
+
+
+def _column_widths() -> dict:
+    from .. import config
+    return config.load("files", {"list_columns": {}}).get("list_columns") or {}
+
+
+def _save_column_width(title, width) -> None:
+    """Remembered a moment after the drag (not on every pixel)."""
+    if width <= 0:
+        return
+    if _widths_src.get(title):
+        GLib.source_remove(_widths_src[title])
+
+    def save():
+        _widths_src[title] = 0
+        cols = dict(_column_widths())
+        cols[title] = int(width)
+        from .. import config
+        config.update("files", list_columns=cols)          # every other key kept as stored
+        return False
+    _widths_src[title] = GLib.timeout_add(400, save)
+
+
 class ListView(_Cells):
     """Name / Date Modified / Size / Kind, sortable by clicking a header
     (Finder: folders are sorted with the files)."""
@@ -503,8 +529,13 @@ class ListView(_Cells):
         self.selection = Gtk.MultiSelection(model=self.sorted)
         self.view.set_model(self.selection)
         self.view.connect("activate", lambda _v, pos: on_open(self.sorted.get_item(pos)))
+        # Finder: every column keeps its width and the last one takes what's
+        # left. (Name used to expand: shrinking another column grew Name, so
+        # the edge being dragged stayed put, away from the pointer -- the next
+        # drag then grabbed Name's header and reordered it instead.) Widths
+        # are remembered.
         name = self._column("Name", self._setup_name, self._bind_name,
-                            lambda a, b: _cmp(sort_key(a), sort_key(b)), expand=True,
+                            lambda a, b: _cmp(sort_key(a), sort_key(b)), width=NAME_W,
                             unbind=lambda _f, it: self._untrack(it.get_child()))
         self._column("Date Modified", self._setup_text, lambda _f, it: self._bind_text(it, date(it.get_item())),
                      lambda a, b: _cmp(a.get_attribute_uint64("time::modified"),
@@ -515,7 +546,7 @@ class ListView(_Cells):
                      width=90)
         self._column("Kind", self._setup_text, lambda _f, it: self._bind_text(it, kind(it.get_item())),
                      lambda a, b: _cmp(kind(a).casefold(), kind(b).casefold()) or _cmp(sort_key(a), sort_key(b)),
-                     width=160)
+                     width=160, expand=True)
         self.view.sort_by_column(name, Gtk.SortType.ASCENDING)
         self.widget = self.view
         self._dnd_list(self.view, rubberband=True)
@@ -528,8 +559,11 @@ class ListView(_Cells):
             f.connect("unbind", unbind)
         col = Gtk.ColumnViewColumn(title=title, factory=f, expand=expand, resizable=True,
                                    sorter=Gtk.CustomSorter.new(lambda a, b, _d: cmp(a, b)))
+        saved = _column_widths().get(title)
+        width = saved if isinstance(saved, int) and saved > 0 else width
         if width > 0:
             col.set_fixed_width(width)
+        col.connect("notify::fixed-width", lambda c, _p: _save_column_width(c.get_title(), c.get_fixed_width()))
         self.view.append_column(col)
         return col
 

@@ -30,7 +30,7 @@ from .tabs import TabStrip  # noqa: E402
 
 VIEWS = (("icons", "view-grid-symbolic", "as Icons"), ("list", "view-list-symbolic", "as List"),
          ("columns", "view-dual-symbolic", "as Columns"))
-DEFAULTS = {"view": "icons", "sidebar_width": 200}
+DEFAULTS = {"view": "icons", "sidebar_width": 200, "list_columns": {}}   # list_columns: views.py
 
 ui.register("""
 window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }

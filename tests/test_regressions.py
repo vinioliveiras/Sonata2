@@ -1058,6 +1058,35 @@ class SoundSettingsFollowTests(unittest.TestCase):
             win.destroy()
 
 
+class FilesListColumnsTests(unittest.TestCase):
+    """Files' list view: resizing a column got stuck -- Name expanded, so
+    shrinking another column grew Name and the dragged edge stayed away
+    from the pointer (the next drag reordered Name instead). Columns keep
+    their widths now, the last one takes the rest; widths are remembered."""
+
+    def _view(self):
+        from sonata2.files import views as V
+        store = Gio.ListStore(item_type=Gio.FileInfo)
+        return V, V.ListView(store, lambda i: None)
+
+    def test_only_the_last_column_expands(self):
+        _V, lv = self._view()
+        cols = list(lv.view.get_columns())
+        self.assertFalse(any(c.get_expand() for c in cols[:-1]))
+        self.assertTrue(cols[-1].get_expand())
+        self.assertTrue(all(c.get_resizable() and c.get_fixed_width() > 0 for c in cols[:-1]))
+
+    def test_widths_remembered(self):
+        from sonata2 import config
+        config.update("files", list_columns={"Date Modified": 123})
+        try:
+            _V, lv = self._view()
+            date = next(c for c in lv.view.get_columns() if c.get_title() == "Date Modified")
+            self.assertEqual(date.get_fixed_width(), 123)
+        finally:
+            config.update("files", list_columns={})
+
+
 class SteamGameDockTests(unittest.TestCase):
     """Steam games showed in the Dock as a generic icon named
     "steam_app_<id>": their name and icon now come from Steam."""
