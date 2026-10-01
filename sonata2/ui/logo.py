@@ -24,6 +24,7 @@ gi.require_version("Gsk", "4.0")
 from gi.repository import Gdk, GLib, Graphene, Gsk, Gtk  # noqa: E402
 
 DEFAULT = "distro"
+EMOJI_EM = 0.85                     # an emoji's font size per pixel of logo height (its glyph is ~1.3 em tall)
 TEXT_MAX = 24                       # characters of custom text
 TEXTS = (("text:sonata", "Text: Sonata"), ("text:user", "Text: your name"), ("text:custom", "Text: custom…"))
 SHAPES = (("circle", "Circle"), ("square", "Square"), ("triangle", "Triangle"), ("diamond", "Diamond"),
@@ -42,6 +43,28 @@ def choices() -> list:
     out += [(f"icon:{k}", label) for k, label in ICONS]
     out += list(TEXTS)
     return out
+
+
+def _is_emoji(ch: str) -> bool:
+    o = ord(ch)
+    return (o >= 0x1F000 or 0x2600 <= o <= 0x27BF or 0x2B00 <= o <= 0x2BFF or o in (0x3297, 0x3299)
+            or o in (0xFE0F, 0x200D, 0x20E3))           # presentation selector, joiner, keycap: part of one
+
+
+def emoji_runs(text: str) -> list:
+    """[(start, end)] UTF-8 byte ranges of the emoji in text (Pango attributes)."""
+    runs, pos, start = [], 0, None
+    for ch in text:
+        n = len(ch.encode("utf-8"))
+        if _is_emoji(ch):
+            start = pos if start is None else start
+        elif start is not None:
+            runs.append((start, pos))
+            start = None
+        pos += n
+    if start is not None:
+        runs.append((start, pos))
+    return runs
 
 
 def text_for(kind: str, custom: str = "") -> str:
@@ -115,6 +138,14 @@ class LogoGlyph(Gtk.Widget):
         from .tokens import SHARED as _S                 # the menu bar's own text size (tokens: text_body)
         desc.set_absolute_size(int(str(_S["text_body"]).rstrip("px")) * Pango.SCALE)
         layout.set_font_description(desc)
+        # emoji are drawn taller than letters (a 13 px font's emoji is ~17 px):
+        # theirs is set so they come out the logo's own size, like the icons
+        attrs = Pango.AttrList()
+        for start, end in emoji_runs(text):
+            a = Pango.attr_size_new_absolute(int(self.size * EMOJI_EM * Pango.SCALE))
+            a.start_index, a.end_index = start, end
+            attrs.insert(a)
+        layout.set_attributes(attrs)
         _ink, logical = layout.get_pixel_extents()
         w, h = max(1, logical.width * scale), max(1, logical.height * scale)
         surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)

@@ -82,5 +82,19 @@ class TextLogoTest(unittest.TestCase):
         self.assertEqual(g.measure(gi.repository.Gtk.Orientation.HORIZONTAL, -1)[0], 12)
 
 
+    def test_emoji_runs(self):
+        self.assertEqual(L.emoji_runs("Vini 🎮"), [(5, 9)])
+        self.assertEqual(L.emoji_runs("🍎"), [(0, 4)])
+        self.assertEqual(L.emoji_runs("❤️ ok"), [(0, 6)])          # with its presentation selector
+        self.assertEqual(L.emoji_runs("Sonata"), [])
+
+    def test_emoji_the_logo_size(self):
+        """An emoji came out ~17 px next to 12 px icons: now about the logo's size."""
+        g = L.LogoGlyph(12)
+        g.set_kind("text:custom", "🍎")
+        self.assertLessEqual(g.text_size[1], 15)
+        self.assertLessEqual(g.text_size[0], 15)
+
+
 if __name__ == "__main__":
     unittest.main()
