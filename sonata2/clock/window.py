@@ -29,7 +29,9 @@ window.sonata-clock .ck-main { background: %(content_bg)s; }
 .ck-sub { font-size: %(text_body)s; color: %(label_secondary)s; }
 .ck-empty { color: %(label_tertiary)s; font-size: %(text_title)s; }
 .ck-edit { padding: 12px; }
-.ck-edit spinbutton { font-family: %(font_display)s; font-size: 28px; font-weight: 300; }
+.ck-edit spinbutton { font-family: %(font_display)s; font-size: 20px; font-weight: 400; min-width: 0; }
+.ck-edit spinbutton text { min-width: 0; padding: 2px 0; }
+.ck-colon { font-family: %(font_display)s; font-size: 20px; color: %(label)s; }
 .ck-day { min-width: 30px; min-height: 30px; padding: 0; border-radius: 99px; font-weight: 600; }
 .ck-day:checked { background: %(accent)s; color: white; }
 """, key="clock")
@@ -150,11 +152,13 @@ class ClockWindow(Gtk.ApplicationWindow):
             s.set_value(value)
             s.connect("output", lambda sp: (sp.set_text(f"{int(sp.get_value()):02d}"), True)[1])
             s.set_orientation(Gtk.Orientation.VERTICAL)
+            s.set_width_chars(2)                  # two digits, never wider (they wrapped)
+            s.set_max_width_chars(2)
             return s
         hour, minute = spin(a["hour"], 23), spin(a["minute"], 59)
         times = Gtk.Box(spacing=4, halign=Gtk.Align.CENTER)
         times.append(hour)
-        times.append(Gtk.Label(label=":", css_classes=["ck-time"]))
+        times.append(Gtk.Label(label=":", css_classes=["ck-colon"]))
         times.append(minute)
         box.append(times)
         days = Gtk.Box(spacing=4, halign=Gtk.Align.CENTER)
@@ -204,7 +208,7 @@ def clock_desktop_file(command: str) -> str:
     from ..apps import write_desktop_file
     return write_desktop_file(APP_ID + ".desktop",
                               "[Desktop Entry]\nType=Application\nName=Clock\n"
-                              "Comment=Alarms that ring even with Do Not Disturb on\nIcon=accessories-clock\n"
+                              "Comment=Alarms that ring even with Do Not Disturb on\nIcon=sonata-clock\n"
                               "Categories=Utility;Clock;\nKeywords=alarm;clock;wake;timer;stopwatch;\n"
                               "StartupNotify=true\n"
                               f"Exec={command} clock\n")

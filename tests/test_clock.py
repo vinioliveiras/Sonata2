@@ -145,6 +145,21 @@ class WindowTest(unittest.TestCase):
         self.assertTrue(w.empty.get_visible())
         w.destroy()
 
+    def test_time_picker_two_digits_and_own_icon(self):
+        """The hour/minute fields wrapped their big digits; Clock has its own icon."""
+        from sonata2.clock import window as W
+        w = W.ClockWindow(self.app)
+        w.present()
+        settle()
+        pop = w.edit(A.new(8, 5), w.add_btn, new=True)
+        self.assertEqual((pop.hour.get_width_chars(), pop.minute.get_max_width_chars()), (2, 2))
+        pop.popdown()
+        with mock.patch("sonata2.apps.write_desktop_file", side_effect=lambda _n, text: text):
+            self.assertIn("Icon=sonata-clock\n", W.clock_desktop_file("sonata2"))
+        self.assertTrue(os.path.isfile(os.path.join(os.path.dirname(W.__file__), "..", "data", "icons", "Sonata",
+                                                    "apps", "scalable", "sonata-clock.svg")))
+        w.destroy()
+
 
 if __name__ == "__main__":
     unittest.main()
