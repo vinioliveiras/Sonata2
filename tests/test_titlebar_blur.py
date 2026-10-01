@@ -15,6 +15,17 @@ class BlurTest(unittest.TestCase):
         ini = open(os.path.join(os.path.dirname(__file__), "..", "config", "wayfire.ini")).read()
         self.assertIn("blur_by_default = " + titlebars.BLUR, ini)
 
+    def test_blur_is_light(self):
+        """The live blur: 2 passes on a third-size picture (was 3 on half-size), same radius."""
+        import configparser
+        cp = configparser.ConfigParser(interpolation=None, strict=False)
+        cp.read(os.path.join(os.path.dirname(__file__), "..", "config", "wayfire.ini"))
+        b = cp["blur"]
+        it, deg, off = int(b["kawase_iterations"]), int(b["kawase_degrade"]), float(b["kawase_offset"])
+        self.assertLessEqual(it, 2)
+        self.assertGreaterEqual(deg, 3)
+        self.assertAlmostEqual(off * 2 ** it * deg, 3.5 * 8 * 2, delta=6)      # about the same frosting
+
     def test_apply_colors_sets_it(self):
         calls = {}
         with mock.patch("sonata2.backend.system.wayfire_set",
