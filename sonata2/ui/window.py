@@ -135,9 +135,9 @@ window.sonata-glass-window { background: %(panel_material)s; }
 # keep the corners without the shadow (Vini's call), fullscreen is square.
 theme.register("""
 window.sonata-window.csd { border-radius: %(r_window)s;
-  box-shadow: 0 22px 56px rgba(0, 0, 0, 0.30), 0 0 0 0.5px rgba(0, 0, 0, 0.40),
+  box-shadow: %(window_shadow)s, 0 0 0 0.5px rgba(0, 0, 0, 0.40),
               inset 0 0 0 0.5px %(highlight)s; }
-window.sonata-window.csd:backdrop { box-shadow: 0 14px 34px rgba(0, 0, 0, 0.20), 0 0 0 0.5px rgba(0, 0, 0, 0.30); }
+window.sonata-window.csd:backdrop { box-shadow: %(window_shadow_backdrop)s, 0 0 0 0.5px rgba(0, 0, 0, 0.30); }
 /* maximized/tiled: a hairline only for windows drawing their own frame; under
    the compositor's title bar it drew a dark line between the glass title
    bar and a glass toolbar (Preview) */

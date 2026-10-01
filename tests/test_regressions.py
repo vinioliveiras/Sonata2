@@ -140,6 +140,19 @@ class WindowRegressions(unittest.TestCase):
         self.assertEqual(px[y * stride + x * 4 + 3], 255, "divider pixel is see-through")
         win.destroy()
 
+    def test_window_shadows_soft_and_from_frame(self):
+        """Window shadows were too strong (24 px, 33 %): softer, one place (tokens.FRAME)."""
+        from sonata2 import wfconfig
+        F = ui.tokens.FRAME
+        self.assertLessEqual(F["shadow_radius"], 16)
+        self.assertLessEqual(int(F["shadow_color"][-2:], 16), 0x40)
+        opts = dict(((sec, key), val) for sec, key, val in wfconfig.frame_options(F))
+        self.assertEqual(opts[("pixdecor", "shadow_radius")], str(F["shadow_radius"]))
+        css = open(os.path.join(os.path.dirname(ui.__file__), "window.py")).read()
+        self.assertIn("%(window_shadow)s", css)
+        self.assertNotIn("22px 56px", css)
+        self.assertEqual(ui.tokens.palette(False)["window_shadow"], F["shadow"])
+
     def test_spinner_is_small_and_centred(self):
         """Disk Manager's loading spinner filled the whole page, off-centre."""
         s = ui.progress.spinner(size=32)
