@@ -28,6 +28,7 @@ _entry("spotify-launcher", "Spotify", "/usr/bin/spotify-launcher")
 _entry("code-oss", "Code", "code-oss")
 _entry("org.example.Thing", "Thing", "thing", "StartupWMClass=ThingWin\n")
 _entry("foo-bin", "Foo (wrapper)", "foo-bin")
+_entry("com.anthropic.Claude", "Claude", "claude-desktop", "StartupWMClass=com.anthropic.Claude\n")
 _entry("foo", "Foo", "foo")
 
 from sonata2 import apps  # noqa: E402
@@ -43,6 +44,12 @@ class MatchTest(unittest.TestCase):
         spotify-launcher.desktop."""
         self.assertEqual(apps.match_app_id("spotify"), "spotify-launcher")
         self.assertEqual(apps.match_app_id("Spotify"), "spotify-launcher")
+
+    def test_claude_window_names(self):
+        """Vini: the same happened with Claude: whatever id its window
+        reports (class, program, short name), it's the pinned entry."""
+        for app_id in ("com.anthropic.Claude", "claude-desktop", "Claude", "claude"):
+            self.assertEqual(apps.match_app_id(app_id), "com.anthropic.Claude", app_id)
 
     def test_exact_names_still_win(self):
         self.assertEqual(apps.match_app_id("foo"), "foo")         # not foo-bin's loose name
