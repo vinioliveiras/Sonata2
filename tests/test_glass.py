@@ -77,6 +77,43 @@ class GlassModelTest(unittest.TestCase):
         self.assertEqual(G.settings()["blur"], 70)
 
 
+class BlurRuleTest(unittest.TestCase):
+    """Performance: a solid part gets no blur pass behind it."""
+
+    def rule(self, **off):
+        return G.blur_rule(G.settings({"glass": {k: {"on": False} for k in off}}))
+
+    def test_all_on_is_wayfire_ini(self):
+        from sonata2 import titlebars
+        config.save("dock", {})
+        self.assertEqual(G.BLUR_ALL, titlebars.BLUR)
+        self.assertEqual(self.rule(), G.BLUR_ALL)
+
+    def test_parts_left_out(self):
+        config.save("dock", {})
+        r = self.rule(dock=True, menus=True)
+        self.assertNotIn("sonata2-dock", r)
+        self.assertNotIn("unmanaged", r)
+        self.assertIn('app_id is "sonata2-topbar"', r)
+        self.assertIn('app_id contains "sonata2."', r)
+        self.assertEqual(self.rule(dock=True, menubar=True, menus=True, windows=True), G.BLUR_NONE)
+        self.assertNotIn("!", self.rule(windows=True))           # positive rules only
+
+    def test_apply_colors_uses_it(self):
+        from unittest import mock
+        from sonata2 import titlebars
+        config.save("dock", {})
+        config.save("appearance", {"glass": {"dock": {"on": False}, "menus": {"on": False}}})
+        calls = {}
+        with mock.patch("sonata2.backend.system.wayfire_set",
+                        side_effect=lambda sec, key, val: calls.__setitem__((sec, key), val)), \
+                mock.patch.object(titlebars, "glass_bars", return_value=False):
+            titlebars.apply_colors(False)
+        self.assertNotIn("sonata2-dock", calls[("blur", "blur_by_default")])
+        self.assertEqual(calls[("blur", "kawase_offset")], "4.5")
+        config.save("appearance", {})
+
+
 class ThemeMaterialsTest(unittest.TestCase):
     def test_tokens_follow_the_settings(self):
         from sonata2.ui import theme
@@ -100,6 +137,42 @@ class ThemeMaterialsTest(unittest.TestCase):
             config.save("appearance", {})
             theme._glass_seen = None
             theme._reduce = None
+
+
+class ThemeReloadTest(unittest.TestCase):
+    """Performance: a glass slider re-styles without the cross-fade (which
+    pictures every window); a switch keeps it; nothing new: no re-parse."""
+
+    @classmethod
+    def setUpClass(cls):
+        Gtk.init()
+        from sonata2 import ui
+        ui.setup()
+
+    def test_fade_only_for_switches(self):
+        from unittest import mock
+        from sonata2.ui import theme
+        config.save("dock", {})
+        config.save("appearance", {})
+        theme._appearance_changed()
+        loads = []
+        with mock.patch.object(theme, "_load", side_effect=lambda *a, fade=False: loads.append(fade)):
+            config.save("appearance", {"glass": {"dock": {"alpha": 0.8}}})
+            theme._appearance_changed()
+            config.save("appearance", {"glass": {"dock": {"alpha": 0.8, "on": False}}})
+            theme._appearance_changed()
+            theme._appearance_changed()                       # nothing new
+        self.assertEqual(loads, [False, True])
+        config.save("appearance", {})
+        theme._appearance_changed()
+
+    def test_same_css_not_parsed_again(self):
+        from unittest import mock
+        from sonata2.ui import theme
+        theme._load()
+        with mock.patch.object(theme._provider, "load_from_string") as parse:
+            theme._load()
+        parse.assert_not_called()
 
 
 class SettingsAppearanceTest(unittest.TestCase):

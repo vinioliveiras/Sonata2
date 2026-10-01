@@ -166,12 +166,14 @@ def _appearance_changed() -> None:
     radii = tokens.user_radii()
     from . import glass as G
     gl = G.settings()
-    if _accent() != old or bars != _glass_bars_on or radii != _radii_seen or gl != _glass_seen:
+    switched = _glass_seen is not None and any(gl[i]["on"] != _glass_seen[i]["on"] for i in G.ITEMS)
+    big = _accent() != old or bars != _glass_bars_on or radii != _radii_seen or switched
+    if big or gl != _glass_seen:
         _glass_bars_on = bars
         _radii_seen = radii
         _glass_seen = gl
         _parsed.clear()
-        _load(fade=True)
+        _load(fade=big)        # a glass slider: no cross-fade (it re-pictures every window); a switch fades
 
 
 def _theme() -> str:
@@ -278,6 +280,9 @@ def _fade_t() -> float:
     return t * t * (3 - 2 * t)                     # ease in-out
 
 
+_last_css = None
+
+
 def _load(*_a, fade=False) -> None:
     global _last_vals
     vals = values()
@@ -287,6 +292,10 @@ def _load(*_a, fade=False) -> None:
         _start_fade(old)
     css = "\n".join(t % {**vals, **loc} for t, loc in _templates.values())
     css = _MS.sub(lambda m: f"{tokens.ms(float(m.group(1)))}ms", css)     # ANIMATION_SPEED
+    global _last_css
+    if css == _last_css and vals == old:
+        return                                  # nothing changed: no re-parse, no redraw everywhere
+    _last_css = css
     _provider.load_from_string(css)
     for cb in list(_listeners):
         cb()

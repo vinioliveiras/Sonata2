@@ -96,6 +96,36 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(config.load(M.NAME, M.DEFAULTS), {"volumes": {"x": 10}, "muted": {"x": True}})
 
 
+class ServiceTest(unittest.TestCase):
+    """Performance: stream events with no new stream and no open menu run nothing."""
+
+    def service(self):
+        svc = M.MixerService.__new__(M.MixerService)
+        svc.listeners, svc._new, svc._src, svc.proc = [], set(), 0, None
+        return svc
+
+    def test_idle_events_spawn_nothing(self):
+        svc = self.service()
+        with mock.patch.object(M, "streams") as st, mock.patch("sonata2.backend.system.run_async") as ra:
+            svc._changed()
+        ra.assert_not_called()
+        st.assert_not_called()
+
+    def test_new_stream_restored_and_menu_told(self):
+        svc = self.service()
+        got = []
+        svc.listeners.append(got.append)
+        svc._new = {10, 12}
+        ss = M.parse(PACTL)
+        with mock.patch.object(M, "streams", return_value=ss) as st, \
+                mock.patch.object(M, "restore", return_value=True) as rs, \
+                mock.patch("sonata2.backend.system.run_async", side_effect=lambda fn, cb=None, *a: cb(fn())):
+            svc._changed()
+        self.assertEqual([c.args[0].index for c in rs.call_args_list], [10, 12])   # each new one
+        self.assertEqual(st.call_count, 2)                      # read again after restoring
+        self.assertEqual(got, [ss])
+
+
 class MixerUiTest(unittest.TestCase):
     def test_icon_never_breaks_the_menu(self):
         with mock.patch.object(self.U.apps, "match_app_id", side_effect=TypeError("GI")):

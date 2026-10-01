@@ -555,6 +555,8 @@ class Dock(Gtk.Box):
     def do_size_allocate(self, width, height, baseline) -> None:
         Gtk.Box.do_size_allocate(self, width, height, baseline)
         self.queue_draw()     # the plate is painted from the new size
+        if self._drag:
+            self._drag.pop("bounds", None)     # icons moved: _folder_candidate measures again
         if getattr(self, "_mag_strength", 0) <= 0:
             # not while magnifying (every frame): done once the wave settles
             self.refit_soon()     # the screen edge may have changed (display, rotation)
@@ -854,6 +856,9 @@ class Dock(Gtk.Box):
         the plate narrows and the neighbours slide together frame by frame."""
         tile = self.tiles.pop(key)
         tile.label.unparent()
+        if getattr(tile, "folder_pop", None) is not None:      # a folder's kept panel
+            tile.folder_pop.unparent()
+            tile.folder_pop = None
         prev = tile.get_prev_sibling()
         cell = (tile.get_height() if self.vertical else tile.get_width()) if tile.get_mapped() else 0
         self.remove(tile)
@@ -940,6 +945,8 @@ class Dock(Gtk.Box):
         return slot
 
     def _move_to_slot(self, tile, slot: int) -> None:
+        if self._drag:
+            self._drag.pop("bounds", None)
         others = [t for t in self.app_tiles() if t is not tile]
         anchor = others[slot - 1] if slot else self.get_first_child()
         if anchor is not tile:
@@ -1243,21 +1250,29 @@ class Dock(Gtk.Box):
         key = tile.key
         if dock_folder.is_folder(key) or key in PERMANENT or not tile.info:
             return None
-        pins = self.cfg["pinned"]
-        for t in self.app_tiles():
-            if t is tile or t.key not in pins or t.key in PERMANENT:
-                continue
-            if not (dock_folder.is_folder(t.key) or t.info):
-                continue
-            ok, b = t.compute_bounds(self)
-            if not ok:
-                continue
-            pos, start, size = ((y, b.get_y(), b.get_height()) if self.vertical
-                                else (x, b.get_x(), b.get_width()))
-            other = (x, b.get_x(), b.get_width()) if self.vertical else (y, b.get_y(), b.get_height())
-            if abs(pos - (start + size / 2)) <= size * FOLDER_ZONE and other[1] <= other[0] <= other[1] + other[2]:
+        for t, (bx, by, bw, bh) in self._drop_targets(tile):
+            pos, start, size = (y, by, bh) if self.vertical else (x, bx, bw)
+            across, a0, alen = (x, bx, bw) if self.vertical else (y, by, bh)
+            if abs(pos - (start + size / 2)) <= size * FOLDER_ZONE and a0 <= across <= a0 + alen:
                 return t
         return None
+
+    def _drop_targets(self, tile) -> list:
+        """[(tile, (x, y, w, h))] a dragged app can make a folder with; measured
+        once per layout (every pointer motion asked each icon before)."""
+        d = self._drag if self._drag is not None else {}
+        if d.get("bounds") is None:
+            pins, out = self.cfg["pinned"], []
+            for t in self.app_tiles():
+                if t is tile or t.key not in pins or t.key in PERMANENT:
+                    continue
+                if not (dock_folder.is_folder(t.key) or t.info):
+                    continue
+                ok, b = t.compute_bounds(self)
+                if ok:
+                    out.append((t, (b.get_x(), b.get_y(), b.get_width(), b.get_height())))
+            d["bounds"] = out
+        return d["bounds"]
 
     def _hold_over(self, target) -> None:
         """Start (or keep) the hold timer over `target`; None clears it."""

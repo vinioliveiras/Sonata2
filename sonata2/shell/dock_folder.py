@@ -121,6 +121,7 @@ class FolderIcon(Gtk.Widget):
 
     def set_locked(self, on: bool) -> None:
         self.locked = bool(on)
+        self._nodes = {}
         self.queue_draw()
 
     def set_apps(self, keys: list) -> None:
@@ -130,6 +131,7 @@ class FolderIcon(Gtk.Widget):
             info = apps.lookup(k)
             self._gicons.append(icons.app_icon(info) if info else None)
         self._paint = {}
+        self._nodes = {}            # (size step, dark, locked, apps) -> render node
         self.queue_draw()
 
     # DockIcon's interface (the Dock sizes and badges its icons)
@@ -162,7 +164,29 @@ class FolderIcon(Gtk.Widget):
         return self._paint[key]
 
     def do_snapshot(self, snap) -> None:
+        """The icon is drawn once per 8 px size step and kept as a render node;
+        magnification (a new size every frame) only scales that node."""
         s = self._size
+        if s <= 0:
+            return
+        b = max(8, -(-s // 8) * 8)
+        key = (b, ui.is_dark(), self.locked, tuple(self.keys))
+        node = self._nodes.get(key)
+        if node is None:
+            if len(self._nodes) > 6:
+                self._nodes.clear()
+            sub = Gtk.Snapshot()
+            self._draw(sub, b)
+            node = self._nodes[key] = sub.to_node()
+        if node is None:
+            return
+        snap.save()
+        if b != s:
+            snap.scale(s / b, s / b)
+        snap.append_node(node)
+        snap.restore()
+
+    def _draw(self, snap, s) -> None:
         rect = Graphene.Rect().init(0, 0, s, s)
         rr = Gsk.RoundedRect()
         rr.init_from_rect(rect, s * 0.225)
@@ -177,9 +201,7 @@ class FolderIcon(Gtk.Widget):
         for (x, y, side), gicon in zip(mini_rects(s, len(self._gicons)), self._gicons):
             if gicon is None:
                 continue
-            # in steps of 8 px: magnification changes `side` every frame, and a new
-            # size would mean an icon theme lookup per mini icon per frame
-            px = max(8, -(-int(round(side)) // 8) * 8)
+            px = max(8, int(round(side)))      # (drawn at an 8 px size step: do_snapshot)
             snap.save()
             snap.translate(Graphene.Point().init(x, y))
             self._mini(gicon, px).snapshot(snap, side, side)
@@ -237,30 +259,64 @@ def check_password(password: str, done) -> None:
 
 
 # -- the open folder ---------------------------------------------------------------------------
+def _signature(folder: dict) -> tuple:
+    return folder["name"], tuple(folder["apps"])
+
+
 def open_panel(dock, tile, then=None) -> Gtk.Popover:
     """The folder's apps in a panel over its icon, zooming in from it (a
     locked folder asks for the password first; `then`: ask, then run it
-    instead of showing the apps)."""
+    instead of showing the apps). An unlocked folder's panel is built once
+    and opened again as it is while its apps don't change."""
     tile.label.popdown()
     folder = dock.folder(tile.key)
+    cached = getattr(tile, "folder_pop", None)
+    reuse = then is None and not folder.get("locked")
+    if cached is not None:
+        if reuse and cached.sig == _signature(folder) and not cached.get_visible():
+            _replay(cached)
+            return cached
+        if not cached.get_visible():
+            cached.unparent()
+        tile.folder_pop = None
     pop = Gtk.Popover(css_classes=["dock-folder-panel"], has_arrow=False, position=dock.away)
     P = Gtk.PositionType
     pop.set_offset(*{P.TOP: (0, -8), P.LEFT: (-8, 0), P.RIGHT: (8, 0)}[dock.away])
     view = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["dock-folder-view"])
     view.append(Gtk.Label(label=folder["name"], css_classes=["dock-folder-title"],
                           ellipsize=Pango.EllipsizeMode.END, max_width_chars=28))
-    pop.view, pop.flow, pop.lock = view, None, None
+    pop.view, pop.flow, pop.lock, pop.sig = view, None, None, _signature(folder)
     pop.set_child(view)
     pop.set_parent(tile)
-    pop.connect("closed", lambda p: GLib.idle_add(lambda: (p.unparent(), False)[1]))
+    if reuse:
+        tile.folder_pop = pop                   # kept (unparented with the tile: Dock._remove_tile)
+    else:                                       # a password panel: never kept
+        pop.connect("closed", lambda p: GLib.idle_add(lambda: (p.unparent(), False)[1]))
     ui.menu.OPEN.add(pop)                       # keeps an auto-hiding Dock visible
     pop.connect("closed", lambda p: (ui.menu.OPEN.discard(p), [cb() for cb in list(ui.menu.on_closed)]))
-    if folder.get("locked") or then is not None:
+    if not reuse:
         _lock_view(dock, tile, pop, then)
     else:
         _apps_view(dock, tile, pop)
     pop.popup()
     return pop
+
+
+def _replay(pop) -> None:
+    """Open a kept panel with its zoom-in again (the class comes back on the
+    next frame, so the animation starts over; hidden until then)."""
+    v = pop.view
+    for c in ("closing", "dock-folder-view"):
+        v.remove_css_class(c)
+    v.set_opacity(0)
+    ui.menu.OPEN.add(pop)
+    pop.popup()
+
+    def start():
+        v.set_opacity(1)
+        v.add_css_class("dock-folder-view")
+        return False
+    GLib.idle_add(start)
 
 
 def _lock_view(dock, tile, pop, then=None) -> None:

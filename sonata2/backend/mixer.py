@@ -200,15 +200,20 @@ class MixerService:
         return True
 
     def _changed(self) -> bool:
+        """A burst of stream events: restore new streams' levels; tell an
+        open Sound menu. With neither, nothing runs (a playing app sends
+        events all the time: no pactl process for each)."""
         self._src = 0
         new, self._new = self._new, set()
+        if not new and not self.listeners:
+            return False
 
         def work():
             data = saved()
             ss = streams()
-            for s in ss:
-                if s.index in new:
-                    restore(s, data)
+            changed = [restore(s, data) for s in ss if s.index in new]     # every one (no short-circuit)
+            if any(changed):
+                ss = streams()                  # the menu shows the levels just put back
             return ss
         from . import system
         system.run_async(work, lambda ss: [cb(ss) for cb in list(self.listeners)])

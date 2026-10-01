@@ -362,12 +362,65 @@ class DockFolderTest(unittest.TestCase):
         self.assertFalse(dock_drop.add_folders(d, [{"folder": "X", "apps": ["nope"]}]))
 
     def test_magnifying_reuses_mini_icons(self):
-        # regression guard (performance): sizes in steps, not one lookup per frame
+        # performance: drawn once per 8 px step and kept; a sweep only scales
         icon = F.FolderIcon(self.apps[:3], 48)
         for size in range(48, 81):                       # a magnification sweep
             icon.set_size(size)
             icon.do_snapshot(Gtk.Snapshot())
-        self.assertLessEqual(len({k[1] for k in icon._paint}), 3)
+        self.assertLessEqual(len(icon._nodes), 5)
+        self.assertLessEqual(len({k[1] for k in icon._paint}), 5)
+        built = dict(icon._nodes)
+        for size in range(80, 47, -1):                   # and back: nothing drawn again
+            icon.set_size(size)
+            icon.do_snapshot(Gtk.Snapshot())
+        self.assertEqual(icon._nodes, built)
+        icon.set_locked(True)                            # a new look: drawn again
+        self.assertEqual(icon._nodes, {})
+
+    def test_panel_kept_and_reopened(self):
+        d, a, b, c = self.dock, *self.apps[:3]
+        fkey = d.make_folder([a, b])
+        settle()
+        tile = d.tiles[fkey]
+        pop = F.open_panel(d, tile)
+        settle()
+        pop.popdown()
+        settle()
+        again = F.open_panel(d, tile)
+        self.assertIs(again, pop)                       # not built again
+        settle()
+        self.assertTrue(pop.view.has_css_class("dock-folder-view"))     # its zoom-in replays
+        self.assertEqual(pop.view.get_opacity(), 1)
+        pop.popdown()
+        settle()
+        d.add_to_folder(fkey, c)                        # its apps changed: a new panel
+        new = F.open_panel(d, tile)
+        self.assertIsNot(new, pop)
+        self.assertIsNone(pop.get_parent())
+        new.popdown()
+        settle()
+        d.ungroup(fkey)                                 # the tile goes: its panel too
+        settle(400)
+        self.assertIsNone(new.get_parent())
+
+    def test_locked_panel_never_kept(self):
+        fkey = self._locked()
+        pop = F.open_panel(self.dock, self.dock.tiles[fkey])
+        self.assertIsNone(getattr(self.dock.tiles[fkey], "folder_pop", None))
+        pop.popdown()
+
+    def test_drop_targets_measured_once_per_layout(self):
+        d, a, b = self.dock, self.apps[0], self.apps[1]
+        self._drag(a)
+        x, y = self._centre(d.tiles[b])
+        d._folder_candidate(d.tiles[a], x, y)
+        first = d._drag["bounds"]
+        for _ in range(5):                              # pointer motions: the same measures
+            self.assertIs(d._folder_candidate(d.tiles[a], x, y), d.tiles[b])
+        self.assertIs(d._drag["bounds"], first)
+        d._move_to_slot(d.tiles[a], 0)                  # a reorder: measured again
+        self.assertNotIn("bounds", d._drag)
+        d._drag = None
 
     def test_icon_draws(self):
         icon = F.FolderIcon(self.apps[:3], 48)

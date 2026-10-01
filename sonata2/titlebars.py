@@ -270,7 +270,10 @@ def apply_colors(dark: bool) -> None:
         a = gcfg["windows"]["alpha"]
         t["titlebar_bg"], t["titlebar_bg_inactive"] = (
             G.with_alpha(t[k], a) if a is not None else t[k] for k in ("titlebar_glass", "titlebar_glass_inactive"))
-    system.wayfire_set("blur", "blur_by_default", BLUR_GLASS if glass else BLUR)
+    rule = G.blur_rule(gcfg)                     # solid parts: no blur pass behind them
+    if glass:
+        rule += ' | type is "toplevel"'
+    system.wayfire_set("blur", "blur_by_default", rule)
     system.wayfire_set("blur", "kawase_offset", str(G.blur_offset(gcfg["blur"])))   # one strength for all
     system.wayfire_set("sonata-corners", "outline", "\\" + tokens.wayfire_color(t["window_outline"]))
     fg, bg, text, dim = (tokens.wayfire_color(t[k], premultiplied=True) for k in keys)

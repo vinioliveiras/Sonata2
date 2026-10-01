@@ -90,3 +90,26 @@ def alpha_of(item: str, tokens: dict, cfg: dict = None) -> float:
 def blur_offset(strength: int) -> float:
     lo, hi = OFFSET_RANGE
     return round(lo + (hi - lo) * min(100, max(0, strength)) / 100, 2)
+
+
+# -- what Wayfire blurs (titlebars.apply_colors) ----------------------------------------------
+# A part that is solid needs no blur behind it: leaving it out saves the
+# blur pass on every frame it changes (GPU time; the Radeon 680M hung in
+# that pass). Only positive rules (no "!"): with every part on, the rule
+# is exactly the one in wayfire.ini.
+BLUR_ALL = 'app_id contains "sonata2" | type is "unmanaged"'
+BLUR_PARTS = {"dock": 'app_id is "sonata2-dock"', "menubar": 'app_id is "sonata2-topbar"',
+              # popups, and every other Sonata layer surface (panels, notifications, Launchpad...)
+              "menus": 'app_id contains "sonata2-" | type is "unmanaged"',
+              "windows": 'app_id contains "sonata2."'}     # Sonata apps (io.github....sonata2.files)
+BLUR_NONE = 'app_id is "sonata2-blur-nothing"'           # matches nothing: the plugin stays loaded
+
+
+def blur_rule(cfg: dict = None) -> str:
+    s = cfg or settings()
+    on = [i for i in ITEMS if s[i]["on"]]
+    if len(on) == len(ITEMS):
+        return BLUR_ALL
+    if "menus" in on:                        # it covers the Dock's and the menu bar's surfaces too
+        on = [i for i in on if i not in ("dock", "menubar")]
+    return " | ".join(BLUR_PARTS[i] for i in on) or BLUR_NONE
