@@ -862,6 +862,25 @@ class FixedWidthRegressions(unittest.TestCase):
         self.assertEqual(topbar.count("gap=PANEL_GAP)"), 0)       # every menu bar panel has a width
 
 
+class ElectronX11Regressions(unittest.TestCase):
+    """GitHub Desktop (Flatpak) never showed a window: on native Wayland its
+    GPU process failed (eglCreateImage 0x3009) in a loop. Under Xwayland it
+    opens: Sonata's launches give it ELECTRON_OZONE_PLATFORM_HINT=x11."""
+
+    def _info(self, did):
+        return type("I", (), {"get_id": lambda s: did + ".desktop"})()
+
+    def test_github_desktop_gets_x11(self):
+        from sonata2 import gpu
+        self.assertEqual(gpu.extra_env(self._info("io.github.shiftey.Desktop")),
+                         {"ELECTRON_OZONE_PLATFORM_HINT": "x11"})
+        self.assertEqual(gpu.extra_env(self._info("google-chrome")), {})
+
+    def test_every_launch_applies_it(self):
+        src = (pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "apps.py").read_text()
+        self.assertIn("gpu.extra_env(self)", src)
+
+
 class BufferFailureRegressions(unittest.TestCase):
     """The session crashed to the login screen: NVIDIA refused a window's
     buffer ("gbm_bo_create failed: Invalid argument", "Failed to allocate

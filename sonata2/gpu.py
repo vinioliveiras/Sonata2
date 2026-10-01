@@ -108,6 +108,21 @@ def set_discrete(info, on: bool) -> None:
     config.save(NAME, {"discrete": discrete, "integrated": integrated})
 
 
+# Electron apps whose native Wayland window never shows on hybrid laptops:
+# their GPU process can't import the compositor's buffers (GitHub Desktop
+# 3.4, Flatpak: "eglCreateImage failed with 0x3009", the GPU process
+# restarting in a loop; the app stayed running with no window, so every
+# later click did nothing). Under Xwayland they open fine.
+X11_APPS = {"io.github.shiftey.Desktop", "github-desktop", "GitHub Desktop"}
+
+
+def extra_env(info) -> dict:
+    """Environment an app needs to open here, besides the GPU's."""
+    if _key(info) in X11_APPS:
+        return {"ELECTRON_OZONE_PLATFORM_HINT": "x11"}
+    return {}
+
+
 def menu_item(info, Item):
     """The checkmark item for right-click menus (None on one-GPU machines)."""
     if info is None or not has_dual_gpu():

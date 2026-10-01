@@ -51,6 +51,10 @@ def _gpu_aware(method):
                     context = Gio.AppLaunchContext()
                 for k, v in gpu.discrete_env().items():
                     context.setenv(k, v)
+            for k, v in gpu.extra_env(self).items():
+                if context is None:
+                    context = Gio.AppLaunchContext()
+                context.setenv(k, v)
             import os as _os
             # never hand these on: GTK_THEME breaks libadwaita apps; the shell's
             # ADW_DISABLE_PORTAL would keep apps from following Dark Mode
