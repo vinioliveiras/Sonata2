@@ -741,6 +741,25 @@ class Settings(Adw.ApplicationWindow):
         system.run_async(system.bluetooth_devices, got)
         return True
 
+    def _follow_levels(self, anchor, out_row, mic_row) -> None:
+        """Sliders follow volume changes made elsewhere (Control Center,
+        keys, other apps) while the page is open."""
+        def update(res):
+            v, mic = res or (None, None)
+            for row, val in ((out_row, v), (mic_row, mic)):
+                if row is not None and val is not None and abs(row.slider.get_value() - val[0]) >= 1:
+                    row.slider.set_value(val[0])
+
+        def changed():
+            if anchor.get_root() is None:              # the page is gone
+                if proc is not None:
+                    proc.kill()
+                return
+            system.run_async(lambda: (system.volume(), system.input_volume()), update)
+        proc = system.watch_audio(changed)
+        if proc is not None:
+            anchor.connect("destroy", lambda *_: proc.kill())
+
     def _page_sound(self):
         out = group("Output")
         vol = group("Volume")
@@ -751,12 +770,16 @@ class Settings(Adw.ApplicationWindow):
                 vol.add(Adw.ActionRow(title="Output volume", subtitle="PipeWire (wpctl) not found"))
                 out.set_visible(False)
                 return
-            vol.add(slider_row("Output volume", v[0], 0, 100,
-                               lambda x: self._latest("volume", system.set_volume, int(x))))
+            out_row = slider_row("Output volume", v[0], 0, 100,
+                                 lambda x: self._latest("volume", system.set_volume, int(x)))
+            vol.add(out_row)
             vol.add(switch_row("Mute", v[1], lambda on: system.run_async(system.set_volume, None, None, on)))
+            mic_row = None
             if mic is not None:
-                vol.add(slider_row("Input volume", mic[0], 0, 100,
-                                   lambda x: self._latest("mic", system.set_input_volume, int(x))))
+                mic_row = slider_row("Input volume", mic[0], 0, 100,
+                                     lambda x: self._latest("mic", system.set_input_volume, int(x)))
+                vol.add(mic_row)
+            self._follow_levels(vol, out_row, mic_row)
             options = [(s.key, s.name) for s in sinks]
             if options:
                 cur = next((s.key for s in sinks if s.default), options[0][0])

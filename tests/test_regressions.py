@@ -1028,6 +1028,36 @@ class BrightnessTests(unittest.TestCase):
         self.assertIn("self.bar.monitor = monitor", src)
 
 
+class SoundSettingsFollowTests(unittest.TestCase):
+    """Changing the input volume in Control Center didn't move the slider in
+    Settings > Sound: its sliders now follow PipeWire's changes."""
+
+    def test_page_follows_changes(self):
+        src = (pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "settings" / "app.py").read_text()
+        self.assertIn("self._follow_levels(vol, out_row, mic_row)", src)
+        self.assertIn("system.watch_audio(changed)", src)
+
+    def test_update_moves_the_sliders(self):
+        from sonata2.settings import app as S
+        from sonata2.backend import system
+        rows = [S.slider_row("Output volume", 50, 0, 100, lambda x: None),
+                S.slider_row("Input volume", 50, 0, 100, lambda x: None)]
+        box = Gtk.ListBox()
+        win = Gtk.Window(child=box)
+        callbacks = []
+        old_w, old_r = system.watch_audio, system.run_async
+        system.watch_audio = lambda cb: (callbacks.append(cb), None)[1]
+        system.run_async = lambda fn, cb=None, *a: cb(((30, False), (80, False)))
+        try:
+            S.Settings._follow_levels(None, box, *rows)
+            callbacks[0]()
+            self.assertEqual(rows[0].slider.get_value(), 30)
+            self.assertEqual(rows[1].slider.get_value(), 80)
+        finally:
+            system.watch_audio, system.run_async = old_w, old_r
+            win.destroy()
+
+
 class SteamGameDockTests(unittest.TestCase):
     """Steam games showed in the Dock as a generic icon named
     "steam_app_<id>": their name and icon now come from Steam."""

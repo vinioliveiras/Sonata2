@@ -362,6 +362,39 @@ def set_volume(percent: Optional[int] = None, muted: Optional[bool] = None,
     return ok
 
 
+def watch_audio(callback):
+    """callback() on the GTK main loop whenever a sink or source changes
+    (volume, mute, devices), through `pactl subscribe`. Returns the
+    process (kill it to stop), None without pactl."""
+    if not shutil.which("pactl"):
+        return None
+    try:
+        proc = subprocess.Popen(["pactl", "subscribe"], stdout=subprocess.PIPE, text=True,
+                                stderr=subprocess.DEVNULL)
+    except OSError:
+        return None
+    state = {"src": 0}
+
+    def fire():
+        state["src"] = 0
+        callback()
+        return False
+
+    def line(_ch, cond):
+        if cond & (GLib.IO_HUP | GLib.IO_ERR):
+            return False
+        text = proc.stdout.readline()
+        if not text:
+            return False
+        if "on sink" in text or "on source" in text or "'server'" in text:
+            if not state["src"]:
+                state["src"] = GLib.timeout_add(120, fire)      # a burst of events: one read
+        return True
+    GLib.io_add_watch(GLib.IOChannel.unix_new(proc.stdout.fileno()), GLib.PRIORITY_DEFAULT,
+                      GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, line)
+    return proc
+
+
 def input_volume() -> Optional[Tuple[int, bool]]:
     """(percent, muted) of the default microphone, None without one."""
     rc, out = _run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SOURCE@"], timeout=5)
