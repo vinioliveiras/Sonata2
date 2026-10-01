@@ -300,7 +300,7 @@ def last_session_errors(n=25) -> str:
 
 
 def build() -> Report:
-    """Every check (also used by Feedback Assistant's reports)."""
+    """Every check (also used by Feedbacker's reports)."""
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     r = Report()
     for check in (check_python, lambda x: check_wayfire(x, repo), check_install, check_tools, check_lock,

@@ -1,4 +1,4 @@
-"""Feedback Assistant's reports: one .zip in ~/Sonata Reports with what a
+"""Feedbacker's reports: one .zip in ~/Sonata Reports with what a
 bug report needs -- your description, Sonata's logs (~/.cache/sonata2),
 `sonata2 doctor` and the system's versions. Nothing leaves the computer:
 "Report on GitHub" opens a pre-filled issue in the browser and you attach

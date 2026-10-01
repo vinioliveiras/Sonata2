@@ -1,4 +1,4 @@
-"""Feedback Assistant (macOS Feedback Assistant): report a problem with Sonata.
+"""Feedbacker (like macOS Feedback Assistant): report a problem with Sonata.
 
 One small window:
 - Monitoring: Sonata's detailed logs on / off (the same switch as Settings >
@@ -67,8 +67,8 @@ def reveal(path: str) -> None:
 class FeedbackWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         if not GLib.get_application_name():
-            GLib.set_application_name("Feedback Assistant")
-        super().__init__(application=app, title="Feedback Assistant", css_classes=["sonata-feedback"])
+            GLib.set_application_name("Feedbacker")
+        super().__init__(application=app, title="Feedbacker", css_classes=["sonata-feedback"])
         ui.window.standard(self)
         self.set_default_size(WIDTH, HEIGHT)
         self.set_size_request(480, 520)
@@ -207,7 +207,7 @@ class FeedbackWindow(Gtk.ApplicationWindow):
 
 
 def open_windows(app, paths=()) -> None:
-    """One Feedback Assistant window; opening it again brings it forward."""
+    """One Feedbacker window; opening it again brings it forward."""
     win = next((w for w in app.get_windows() if isinstance(w, FeedbackWindow)), None)
     (win or FeedbackWindow(app)).present()
 
@@ -215,7 +215,7 @@ def open_windows(app, paths=()) -> None:
 def feedback_desktop_file(command: str) -> str:
     from ..apps import write_desktop_file
     return write_desktop_file(APP_ID + ".desktop",
-                              "[Desktop Entry]\nType=Application\nName=Feedback Assistant\n"
+                              "[Desktop Entry]\nType=Application\nName=Feedbacker\n"
                               "Comment=Report a problem with Sonata\nIcon=sonata-feedback\n"
                               "Categories=System;Utility;\nKeywords=bug;report;problem;feedback;logs;crash;\n"
                               "StartupNotify=true\n"

@@ -96,7 +96,7 @@ DEFAULT_SLOTS = (
     ("steam",),
     ("io.github.vinioliveiras.sonata2.terminal", "org.gnome.Console", "org.gnome.Terminal", "com.mitchellh.ghostty", "kitty", "Alacritty",
      "foot", "org.kde.konsole", "xfce4-terminal"),
-    ("io.github.vinioliveiras.sonata2.feedback",),   # last: Feedback Assistant (can be removed)
+    ("io.github.vinioliveiras.sonata2.feedback",),   # last: Feedbacker (can be removed)
 )
 
 

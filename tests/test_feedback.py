@@ -1,4 +1,4 @@
-"""Feedback Assistant (python3 -m unittest tests.test_feedback)."""
+"""Feedbacker (python3 -m unittest tests.test_feedback)."""
 import os
 import tempfile
 import unittest
