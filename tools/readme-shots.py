@@ -572,7 +572,7 @@ APPS = {  # app key -> (icon name, display name)
     "thunderbird": ("thunderbird", "Thunderbird"),
     "io.github.vinioliveiras.sonata2.files": ("system-file-manager", "Files"),
     "io.github.vinioliveiras.sonata2.music": ("gnome-music", "Music"),
-    "io.github.vinioliveiras.sonata2.notes": ("accessories-notes", "Notes"),
+    "io.github.vinioliveiras.sonata2.notes": ("sonata-notes", "Notes"),
     "io.github.vinioliveiras.sonata2.terminal": ("utilities-terminal", "Terminal"),
     "io.github.vinioliveiras.sonata2.activity": ("utilities-system-monitor", "Task Manager"),
 }

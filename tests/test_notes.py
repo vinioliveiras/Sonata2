@@ -246,5 +246,20 @@ class WindowTest(unittest.TestCase):
         w.destroy()
 
 
+
+class NotesIconTest(unittest.TestCase):
+    def test_pale_yellow_top(self):
+        """Vini: the icon's blue top band is a very soft yellow."""
+        import os
+        from unittest import mock
+        from sonata2.notes import window as W
+        with mock.patch("sonata2.apps.write_desktop_file", side_effect=lambda _n, text: text):
+            self.assertIn("Icon=sonata-notes\n", W.notes_desktop_file("sonata2"))
+        svg = open(os.path.join(os.path.dirname(W.__file__), "..", "data", "icons", "Sonata", "apps", "scalable",
+                                "sonata-notes.svg")).read()
+        self.assertIn("#fff2c0", svg)
+        self.assertNotIn("#0069f5", svg)
+
+
 if __name__ == "__main__":
     unittest.main()

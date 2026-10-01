@@ -872,7 +872,7 @@ def notes_desktop_file(command: str) -> str:
     return write_desktop_file(APP_ID + ".desktop",
                               "[Desktop Entry]\nType=Application\nName=Notes\n"
                               "Comment=Write notes, make checklists and keep reminders\n"
-                              "Icon=accessories-notes\nCategories=Office;Utility;\n"
+                              "Icon=sonata-notes\nCategories=Office;Utility;\n"
                               "Keywords=note;reminder;todo;checklist;\n"
                               "StartupNotify=true\n"
                               f"Exec={command} notes\n")
