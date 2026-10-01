@@ -326,7 +326,7 @@ class Sidebar(Gtk.Box):
                 m = v.get_mount()
                 if m is not None:
                     self._on_open(m.get_root().get_uri())
-            vol.mount(Gio.MountMountFlags.NONE, Gtk.MountOperation.new(self.get_root()), None, done)
+            vol.mount(Gio.MountMountFlags.NONE, ui.mountop.MountOperation(self.get_root()), None, done)
             return
         self._on_open(row.uri)
 
@@ -342,7 +342,7 @@ class Sidebar(Gtk.Box):
         self._quiet = False
 
     def _eject(self, mount) -> None:
-        op = Gtk.MountOperation(parent=self.get_root())
+        op = ui.mountop.MountOperation(self.get_root())
         flags = Gio.MountUnmountFlags.NONE
         if mount.can_eject():
             mount.eject_with_operation(flags, op, None, self._ejected)

@@ -28,7 +28,8 @@ def _mount(vol) -> None:
             _tried.discard(key)
         except Exception as e:          # GLib.Error: hibernated NTFS, cancelled password...
             print(f"sonata2-files: couldn't mount {v.get_name()}: {getattr(e, 'message', e)}", flush=True)
-    vol.mount(Gio.MountMountFlags.NONE, Gio.MountOperation(), None, done)
+    from .. import ui                    # an encrypted disk plugged in: Sonata's password alert
+    vol.mount(Gio.MountMountFlags.NONE, ui.mountop.MountOperation(None), None, done)
 
 
 def start() -> None:
