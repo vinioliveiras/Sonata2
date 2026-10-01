@@ -108,6 +108,32 @@ def set_discrete(info, on: bool) -> None:
     config.save(NAME, {"discrete": discrete, "integrated": integrated})
 
 
+def display_gpu_flag() -> str:
+    """While this file exists, Wayfire draws with the GPU the displays are
+    wired to (tools/sonata-session) instead of wlroots' choice."""
+    return os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
+                        "sonata2", "compositor-display-gpu")
+
+
+def compositor_on_display_gpu() -> bool:
+    return os.path.exists(display_gpu_flag())
+
+
+def set_compositor_on_display_gpu(on: bool) -> None:
+    """Settings > Displays > Graphics (from the next login). Off by default:
+    on NVIDIA it crashed the session (its GBM refused buffers)."""
+    path = display_gpu_flag()
+    try:
+        if on:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("Sonata draws with the displays' GPU while this file exists.\n")
+        elif os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass
+
+
 # Electron apps whose native Wayland window never shows on hybrid laptops:
 # their GPU process can't import the compositor's buffers (GitHub Desktop
 # 3.4, Flatpak: "eglCreateImage failed with 0x3009", the GPU process

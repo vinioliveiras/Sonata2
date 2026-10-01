@@ -912,7 +912,16 @@ class Settings(Adw.ApplicationWindow):
             if not ds:
                 screens.add(Adw.ActionRow(title="Displays", subtitle="wlr-randr not found or no outputs"))
         system.run_async(lambda: (system.brightness(), system.displays()), fill)
-        return [bright, screens, self._night_shift_group()]
+        pages = [bright, screens, self._night_shift_group()]
+        from .. import gpu
+        if gpu.has_dual_gpu():
+            graphics = group("Graphics")
+            graphics.add(switch_row("Draw with the Displays' Graphics Card", gpu.compositor_on_display_gpu(),
+                                    gpu.set_compositor_on_display_gpu,
+                                    subtitle="Smoother on displays wired to the discrete card, but some "
+                                             "NVIDIA drivers can end the session. From the next login."))
+            pages.append(graphics)
+        return pages
 
     def _night_shift_group(self):
         """Displays > Night Shift (macOS sheet as a group): schedule, custom

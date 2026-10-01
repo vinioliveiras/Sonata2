@@ -862,6 +862,37 @@ class FixedWidthRegressions(unittest.TestCase):
         self.assertEqual(topbar.count("gap=PANEL_GAP)"), 0)       # every menu bar panel has a width
 
 
+class DisplayGpuOptInRegressions(unittest.TestCase):
+    """The session kept crashing to the login screen with Wayfire drawing on
+    NVIDIA (gbm_bo_create: Invalid argument, for windows and for the
+    Alt+Tab blur). Drawing on the displays' GPU is now opt-in."""
+
+    def test_session_needs_the_flag(self):
+        sess = (pathlib.Path(__file__).resolve().parent.parent / "tools" / "sonata-session").read_text()
+        self.assertIn('[ "${SONATA_PRIMARY_GPU:-}" = on ]', sess)
+        self.assertIn('[ -e "$gpu_flag" ]', sess)
+        self.assertNotIn('SONATA_PRIMARY_GPU:-auto', sess)
+        self.assertIn("compositor-display-gpu", sess)
+
+    def test_setting_writes_the_flag(self):
+        import tempfile
+        from sonata2 import gpu
+        old = os.environ.get("XDG_CONFIG_HOME")
+        os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp()
+        try:
+            self.assertFalse(gpu.compositor_on_display_gpu())         # off by default
+            gpu.set_compositor_on_display_gpu(True)
+            self.assertTrue(gpu.compositor_on_display_gpu())
+            self.assertTrue(gpu.display_gpu_flag().endswith("sonata2/compositor-display-gpu"))
+            gpu.set_compositor_on_display_gpu(False)
+            self.assertFalse(gpu.compositor_on_display_gpu())
+        finally:
+            if old is None:
+                os.environ.pop("XDG_CONFIG_HOME", None)
+            else:
+                os.environ["XDG_CONFIG_HOME"] = old
+
+
 class ElectronX11Regressions(unittest.TestCase):
     """GitHub Desktop (Flatpak) never showed a window: on native Wayland its
     GPU process failed (eglCreateImage 0x3009) in a loop. Under Xwayland it
