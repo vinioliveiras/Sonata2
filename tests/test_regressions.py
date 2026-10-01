@@ -1087,6 +1087,37 @@ class FilesListColumnsTests(unittest.TestCase):
             config.update("files", list_columns={})
 
 
+class SearchPanelTests(unittest.TestCase):
+    """Search (Spotlight) resized itself with every key and opened/closed
+    with no animation. The results area keeps one height and slides open
+    once; the bar drops in and fades out."""
+
+    def _settle(self, ms):
+        end = GLib.get_monotonic_time() + ms * 1000
+        while GLib.get_monotonic_time() < end:
+            GLib.MainContext.default().iteration(False)
+
+    def test_one_height_while_typing_and_animated(self):
+        from sonata2.shell import spotlight as S
+        app = Adw.Application(application_id="io.github.test.searchpanel")
+        app.register(None)
+        sp = S.Spotlight(app)
+        sp.open_spotlight()
+        self.assertTrue(sp.panel.has_css_class("opening"))
+        self._settle(300)
+        heights = set()
+        for q in ("s", "se", "set", "zzzzqqx", "te"):
+            sp.entry.set_text(q)
+            self._settle(250)
+            heights.add(sp.panel.get_height())
+        self.assertEqual(len(heights), 1, heights)
+        sp.close_spotlight()
+        self.assertTrue(sp.get_visible() and sp.panel.has_css_class("closing"))   # fading out
+        self._settle(S.CLOSE_MS + 150)
+        self.assertFalse(sp.get_visible())
+        sp.destroy()
+
+
 class SteamGameDockTests(unittest.TestCase):
     """Steam games showed in the Dock as a generic icon named
     "steam_app_<id>": their name and icon now come from Steam."""

@@ -26,6 +26,11 @@ MAX_FILES = 60000
 INDEX_DEPTH = 5
 INDEX_TTL = 300
 SHOW = {"apps": 6, "folders": 4, "docs": 8}
+# the results area keeps one height while typing (it used to grow and
+# shrink with every key); it slides open under the bar once, then stays
+RESULTS_H = 400
+OPEN_MS, CLOSE_MS, REVEAL_MS = 200, 120, 180
+SEARCH_DELAY_MS = 40            # a burst of keys: one search
 
 ui.register("""
 window.sonata-spotlight, window.sonata-spotlight > contents { background: none; box-shadow: none; }
@@ -47,7 +52,14 @@ window.sonata-spotlight, window.sonata-spotlight > contents { background: none; 
 .sp-prev-name { font-weight: 700; font-size: %(text_title)s; }
 .sp-prev-meta { color: %(label_secondary)s; font-size: %(text_small)s; }
 .sp-calc { font-size: 30px; font-weight: 300; }
-""", key="spotlight")
+/* Big Sur: the bar drops in softly and fades out; rows ease their highlight */
+@keyframes sp-in { from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+                   to { opacity: 1; transform: none; } }
+@keyframes sp-out { from { opacity: 1; } to { opacity: 0; transform: scale(0.98); } }
+.sp-panel.opening { animation: sp-in %(open_ms)dms cubic-bezier(0.2, 0.9, 0.3, 1); }
+.sp-panel.closing { animation: sp-out %(close_ms)dms ease-in forwards; }
+.sp-list row { transition: background-color 90ms ease-out, color 90ms ease-out; }
+""", key="spotlight", open_ms=OPEN_MS, close_ms=CLOSE_MS)
 
 
 # -- calculator (safe: numbers and + - * / % ** only) -----------------------------------------
@@ -145,24 +157,31 @@ class Spotlight(Gtk.ApplicationWindow):
         field = Gtk.Box(spacing=10, css_classes=["sp-field"])
         field.append(Gtk.Image(icon_name="sonata-search-symbolic", pixel_size=22))
         self.entry = Gtk.Text(placeholder_text="Search", hexpand=True)
-        self.entry.connect("changed", lambda *_: self._search())
+        self.entry.connect("changed", lambda *_: self._search_soon())
         self.entry.connect("activate", lambda *_: self._open_selected())
         field.append(self.entry)
         panel.append(field)
-        self.sep = Gtk.Box(css_classes=["sp-sep"], visible=False)
-        panel.append(self.sep)
-        self.body = Gtk.Box(visible=False)
+        self.sep = Gtk.Box(css_classes=["sp-sep"])
+        results = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        results.append(self.sep)
+        self.body = Gtk.Box()
         self.list = Gtk.ListBox(css_classes=["sp-list"], selection_mode=Gtk.SelectionMode.SINGLE)
+        self.list.set_placeholder(Gtk.Label(label="No Results", css_classes=["sp-prev-meta"], margin_top=16))
         self.list.connect("row-selected", lambda _l, r: self._preview(r))
         self.list.connect("row-activated", lambda _l, r: self._open(r))
-        scroller = Gtk.ScrolledWindow(child=self.list, hscrollbar_policy=Gtk.PolicyType.NEVER,
-                                      propagate_natural_height=True, max_content_height=420)
-        scroller.set_size_request(290, -1)
+        scroller = Gtk.ScrolledWindow(child=self.list, hscrollbar_policy=Gtk.PolicyType.NEVER)
+        scroller.set_size_request(290, RESULTS_H)
         self.body.append(scroller)
         self.prev = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["sp-preview"],
                             hexpand=True, valign=Gtk.Align.FILL)
         self.body.append(self.prev)
-        panel.append(self.body)
+        results.append(self.body)
+        self.reveal = Gtk.Revealer(child=results, transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
+                                   transition_duration=REVEAL_MS, reveal_child=False)
+        panel.append(self.reveal)
+        self.panel = panel
+        self._search_src = 0
+        self._close_src = 0
         from ..ui.fixed import FixedWidth
         # one width: a long file name in the results never widens Search
         self.set_child(FixedWidth(panel, WIDTH, halign=Gtk.Align.CENTER, valign=Gtk.Align.START))
@@ -203,13 +222,30 @@ class Spotlight(Gtk.ApplicationWindow):
         # apps in Launchpad's Hidden folder (behind the password) aren't found here either
         self.apps = {a.get_id(): a for a in Gio.AppInfo.get_all()
                      if a.should_show() and a.get_id() and a.get_id() not in hidden}
+        if self._close_src:                       # reopened while fading out
+            GLib.source_remove(self._close_src)
+            self._close_src = 0
+        self.panel.remove_css_class("closing")
         self.entry.set_text("")
         self._search()
+        self.reveal.set_reveal_child(False)
+        self.panel.remove_css_class("opening")    # (again: restarts the animation)
+        self.panel.add_css_class("opening")
         self.present()
         self.entry.grab_focus()
 
     def close_spotlight(self):
-        self.set_visible(False)
+        if not self.get_visible() or self._close_src:
+            return
+        self.panel.remove_css_class("opening")
+        self.panel.add_css_class("closing")
+
+        def gone():
+            self._close_src = 0
+            self.set_visible(False)
+            self.panel.remove_css_class("closing")
+            return False
+        self._close_src = GLib.timeout_add(CLOSE_MS, gone)
 
     def _key(self, _c, keyval, _code, _state):
         if keyval == Gdk.KEY_Escape:
@@ -236,12 +272,21 @@ class Spotlight(Gtk.ApplicationWindow):
         self.list.select_row(rows[max(0, min(len(rows) - 1, i + d))])
 
     # -- results -------------------------------------------------------------------------
+    def _search_soon(self):
+        if self._search_src:
+            GLib.source_remove(self._search_src)
+
+        def run():
+            self._search_src = 0
+            self._search()
+            return False
+        self._search_src = GLib.timeout_add(SEARCH_DELAY_MS, run)
+
     def _search(self):
         q = self.entry.get_text().strip()
         self.list.remove_all()
         if not q:
-            self.sep.set_visible(False)
-            self.body.set_visible(False)
+            self.reveal.set_reveal_child(False)
             return
         results = []            # (section, kind, payload)
         calc = calculate(q)
@@ -283,9 +328,10 @@ class Spotlight(Gtk.ApplicationWindow):
             row.set_child(box)
             self.list.append(row)
             first_row = first_row or row
-        has = bool(results)
-        self.sep.set_visible(has)
-        self.body.set_visible(has)
+        # once open, the results area stays (a "no results" moment while
+        # typing doesn't collapse and reopen it)
+        if results or not self.reveal.get_reveal_child():
+            self.reveal.set_reveal_child(bool(results))
         if first_row:
             self.list.select_row(first_row)
 
