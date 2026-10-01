@@ -1890,6 +1890,20 @@ class SettingsAuditRegressions(unittest.TestCase):
         (group titles are markup)."""
         self.assertEqual(self.st.group("Point & Click").get_title(), "Point &amp; Click")
 
+    def test_mouse_and_trackpad_groups_say_which(self):
+        """Mouse & Trackpad: both devices' options in one pane -- every group
+        names its device (they looked alike: two "Tracking speed")."""
+        from unittest import mock
+        with mock.patch.object(self.st.system, "wayfire_get", return_value=""):
+            w = self.window("mouse")
+            w.select("mouse", from_sidebar=True)
+            settle(100)
+        titles = [g.get_title() for g in rows_of(w.pages["mouse"], Adw.PreferencesGroup)]
+        self.assertTrue(titles)
+        self.assertTrue(all(t.startswith(("Trackpad", "Mouse")) for t in titles), titles)
+        self.assertIn("Mouse", titles)
+        w.destroy()
+
     def test_row_titles_are_plain_text(self):
         """Names with "&" or "<" (apps, Wi-Fi networks, Bluetooth devices)
         broke the row titles (markup)."""

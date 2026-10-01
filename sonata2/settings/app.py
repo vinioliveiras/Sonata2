@@ -1182,7 +1182,8 @@ class Settings(Adw.ApplicationWindow):
 
     def _page_trackpad(self):
         get = system.wayfire_get
-        g = group("Point & Click")
+        # one section shows both: every group says which device it's for (Vini)
+        g = group("Trackpad: Point & Click")
         g.add(slider_row("Tracking speed", _speed(get("input", "touchpad_cursor_speed", "0")), 0, 100,
                          lambda v: self._wf("touchpad_cursor_speed", round(v / 50 - 1, 2)), ends=("Slow", "Fast"),
                          default=50))
@@ -1190,7 +1191,7 @@ class Settings(Adw.ApplicationWindow):
                          lambda on: self._wf("tap_to_click", on), subtitle="Tap with one finger"))
         g.add(switch_row("Tap and drag", get("input", "tap_and_drag", "true") == "true",
                          lambda on: self._wf("tap_and_drag", on)))
-        sc = group("Scroll & Zoom")
+        sc = group("Trackpad: Scrolling")
         sc.add(switch_row("Natural scrolling", get("input", "natural_scroll", "false") == "true",
                           lambda on: self._wf("natural_scroll", on),
                           subtitle="Content tracks finger movement"))
@@ -1200,7 +1201,7 @@ class Settings(Adw.ApplicationWindow):
 
     def _page_mouse(self):
         get = system.wayfire_get
-        g = group()
+        g = group("Mouse")
         g.add(slider_row("Tracking speed", _speed(get("input", "mouse_cursor_speed", "0")), 0, 100,
                          lambda v: self._wf("mouse_cursor_speed", round(v / 50 - 1, 2)), ends=("Slow", "Fast"),
                          default=50))
