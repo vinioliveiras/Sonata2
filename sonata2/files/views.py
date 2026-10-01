@@ -549,8 +549,36 @@ class ListView(_Cells):
                      lambda a, b: _cmp(kind(a).casefold(), kind(b).casefold()) or _cmp(sort_key(a), sort_key(b)),
                      width=160)
         self.view.sort_by_column(name, Gtk.SortType.ASCENDING)
+        self.on_sort = None                     # callback((title, descending)) when you click a header
+        self._sorting = False
+        self.view.get_sorter().connect("changed", self._sort_changed)
         self.widget = self.view
         self._dnd_list(self.view, rubberband=True)
+
+    # -- sort (remembered per folder: folderprefs.py) ----------------------------------
+    def sort_state(self) -> tuple:
+        """(column title, descending) of the sort in effect."""
+        s = self.view.get_sorter()
+        col = s.get_primary_sort_column()
+        return ((col.get_title() if col else "Name"),
+                s.get_primary_sort_order() == Gtk.SortType.DESCENDING)
+
+    def set_sort(self, title: str, descending: bool = False) -> None:
+        """Sort by a column (an unknown title: Name), without reporting it as your choice."""
+        cols = self.view.get_columns()
+        col = next((cols.get_item(i) for i in range(cols.get_n_items())
+                    if cols.get_item(i).get_title() == title), None) or cols.get_item(0)
+        if self.sort_state() == (col.get_title(), bool(descending)):
+            return
+        self._sorting = True
+        try:
+            self.view.sort_by_column(col, Gtk.SortType.DESCENDING if descending else Gtk.SortType.ASCENDING)
+        finally:
+            self._sorting = False
+
+    def _sort_changed(self, _sorter, _change):
+        if not self._sorting and self.on_sort:
+            self.on_sort(self.sort_state())
 
     def _column(self, title, setup, bind, cmp=None, expand=False, width=-1, unbind=None):
         f = Gtk.SignalListItemFactory()

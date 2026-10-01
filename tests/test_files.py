@@ -29,6 +29,22 @@ def info(size, directory=False):
     return i
 
 
+class FolderPrefsTest(unittest.TestCase):
+    def test_only_what_you_chose_and_bounded(self):
+        from unittest import mock
+        from sonata2.files import folderprefs as P
+        self.assertEqual(P.get("file:///nowhere"), {})
+        P.remember("file:///x", sort=("Kind", True))
+        self.assertEqual(P.get("file:///x"), {"sort": ("Kind", True)})
+        P.remember("file:///x", view="list")
+        self.assertEqual(P.get("file:///x"), {"view": "list", "sort": ("Kind", True)})
+        with mock.patch.object(P, "MAX", 2):
+            P.remember("file:///y", view="icons")
+            P.remember("file:///z", view="icons")
+            self.assertEqual(P.get("file:///x"), {})              # the oldest went
+            self.assertEqual(P.get("file:///z"), {"view": "icons"})
+
+
 class FilesTest(unittest.TestCase):
     def test_size(self):
         self.assertEqual([views.size(info(n)) for n in (0, 653, 12_400, 1_430_000, 2_000_000_000)],
@@ -88,7 +104,7 @@ class TabsTest(unittest.TestCase):
         self.assertIs(w.tab, second)
         self.assertEqual(second.uri, self.uri("A"))
         self.assertTrue(w.strip.get_reveal_child())
-        w.set_view("list", save=False)
+        w.set_view("list")                                      # your choice: B opens in it too (the default)
         w.go(self.uri("B"))
         self.assertTrue(spin(lambda: w.get_title() == "B"))
         w.select_tab(first)
@@ -105,6 +121,35 @@ class TabsTest(unittest.TestCase):
         self.assertEqual(w.tabs, [first])
         self.assertIs(w.tab, first)
         self.assertFalse(w.strip.get_reveal_child())
+
+    def test_view_remembered_per_folder(self):
+        """Each folder opens in the view you chose there (Finder)."""
+        w = self.win
+        w.go(self.uri("A"))
+        w.set_view("list")
+        w.go(self.uri("B"))
+        w.set_view("icons")
+        w.go(self.uri("A"))
+        self.assertEqual(w.tab.view_id, "list")
+        w.go(self.uri("B"))
+        self.assertEqual(w.tab.view_id, "icons")
+        w.go_back()
+        self.assertEqual(w.tab.view_id, "list")
+        tab = w.new_tab(self.uri("A"), select=False)            # a tab behind gets it too
+        self.assertEqual(tab.view_id, "list")
+
+    def test_sort_remembered_per_folder(self):
+        from gi.repository import Gtk
+        w = self.win
+        w.go(self.uri("A"))
+        lv = w.views["list"]
+        cols = lv.view.get_columns()
+        size = next(cols.get_item(i) for i in range(cols.get_n_items()) if cols.get_item(i).get_title() == "Size")
+        lv.view.sort_by_column(size, Gtk.SortType.DESCENDING)    # a header click
+        w.go(self.uri("B"))
+        self.assertEqual(lv.sort_state(), ("Name", False))      # never sorted here: by name
+        w.go(self.uri("A"))
+        self.assertEqual(lv.sort_state(), ("Size", True))
 
     def test_keys_and_background_tab(self):
         w = self.win

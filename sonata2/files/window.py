@@ -21,7 +21,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, names, ui  # noqa: E402
-from . import folder, ops, packages  # noqa: E402
+from . import folder, folderprefs, ops, packages  # noqa: E402
 from .search import Search  # noqa: E402
 from .folder import APPS, RECENTS, VIRTUAL, file_of, is_dir  # noqa: E402
 from .views import ColumnsView, IconsView, ListView  # noqa: E402
@@ -328,6 +328,8 @@ class FilesWindow(Adw.ApplicationWindow):
             "columns": ColumnsView(tab.filtered, self.open_item, lambda uri: self._column_location(tab, uri),
                                    lambda: self.show_hidden),
         }
+        # a header click sorts this folder that way from now on
+        views["list"].on_sort = lambda state: tab.uri and folderprefs.remember(tab.uri, sort=state)
         for v in views.values():
             if hasattr(v, "selection"):              # Quick Look follows the selection
                 v.selection.connect("selection-changed", lambda *_: tab is self.tab and self._follow_quicklook())
@@ -353,9 +355,25 @@ class FilesWindow(Adw.ApplicationWindow):
         self._sync_view_buttons()
         if vid == "columns" and self.pos >= 0:
             self.views["columns"].reset(self.history[self.pos])
-        if save and config.load("files", DEFAULTS)["view"] != vid:
-            config.save("files", {**config.load("files", DEFAULTS), "view": vid})
+        if save:                                           # your choice: this folder, and the default
+            if self.tab.uri:
+                folderprefs.remember(self.tab.uri, view=vid)
+            if config.load("files", DEFAULTS)["view"] != vid:
+                config.update("files", view=vid)
         self.view.focus()
+
+    def _apply_folder_prefs(self, tab, uri) -> None:
+        """Before a folder shows: its own view and sort, if you chose them
+        there; else the default view and Name, ascending."""
+        p = folderprefs.get(uri)
+        vid = p.get("view") or config.load("files", DEFAULTS)["view"]
+        if vid in tab.views and vid != tab.view_id and not getattr(self, "_in_results", False):
+            if tab is self.tab:
+                self.set_view(vid, save=False)
+            else:
+                tab.view = tab.views[vid]
+                tab.stack.set_visible_child_name(vid)
+        tab.views["list"].set_sort(*p.get("sort", folderprefs.DEFAULT_SORT))
 
     def _sync_view_buttons(self):
         b = self.view_buttons[self.tab.view_id]
@@ -403,6 +421,7 @@ class FilesWindow(Adw.ApplicationWindow):
             self._close_search()
         if self.view is not self.views["columns"]:        # columns slide on their own
             self.fade.capture()
+        self._apply_folder_prefs(self.tab, uri)
         self.folder.load(uri)
         self._update_nav()
 
@@ -474,6 +493,8 @@ class FilesWindow(Adw.ApplicationWindow):
         if select or self.tab is None:
             self.select_tab(tab)
         tab.history, tab.pos = [uri], 0
+        if folderprefs.get(uri):
+            self._apply_folder_prefs(tab, uri)
         if tab is self.tab:
             self._update_nav()
         tab.folder.load(uri)
