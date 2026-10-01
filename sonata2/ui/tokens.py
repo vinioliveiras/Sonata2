@@ -137,14 +137,36 @@ DARK = {
 # set by tools/wayfire-config.sh at login), other GTK 4 apps (adwstyle.py)
 # and the dot pictures (tools/gen-decor.py; run it after changing "dot" or the
 # colours -- tests/test_regressions.py checks the files match).
+# A theme (macOS now, Windows later) is a different FRAME.
 FRAME = {
-    "radius": 10,       # window corners, px
-    "dot": 12,          # traffic light diameter
-    "dot_gap": 8,       # space between two dots
-    "dot_left": 13,     # first dot's centre, from the window's left edge
-    "dot_top": 14,      # ... and from its top edge
+    # corners and shadow
+    "radius": 10,                       # window corners, px
+    "shadow_radius": 24,                # the shadow Wayfire draws around other apps' windows
+    "shadow_color": "#00000055",
+    # window buttons
+    "buttons": ("close", "minimize", "maximize"),   # from the window's edge inwards
+    "buttons_side": "left",             # "left" (macOS) / "right" (Windows)
+    "dot": 12,                          # button size (traffic light diameter)
+    "dot_gap": 8,                       # space between two buttons
+    "dot_left": 13,                     # first button's centre, from the window's side edge
+    "dot_top": 14,                      # ... and from its top edge
+    # title bar
+    "title_h": 52,                      # Sonata's own title bars / unified toolbars
+    "title_align": "center",            # "left" / "center" / "right"
+    "title_font": "Inter Variable Semi-Bold 10",    # Pango: title bars Wayfire draws, GSettings
+    # Wayfire's own title bars (when pixdecor isn't installed)
+    "fallback_title_h": 28,
+    "fallback_font": "Inter Semi-Bold",
 }
 TL_COLORS = {"close": "#ff5f57", "minimize": "#febc2e", "maximize": "#28c840", "restore": "#28c840"}
+
+
+def button_layout(frame: dict = None) -> str:
+    """GTK / GNOME "button-layout" (and pixdecor's): "close,minimize,maximize:"
+    with the buttons on the left, ":minimize,maximize,close" on the right."""
+    f = frame or FRAME
+    names = list(f["buttons"])
+    return ",".join(names) + ":" if f["buttons_side"] == "left" else ":" + ",".join(reversed(names))
 
 SHARED = {
     # typography (SF Pro when installed, Inter as the open substitute)

@@ -48,12 +48,29 @@ def wayfire_get(section: str, key: str, default: str = "") -> str:
 
 def frame_options(frame: dict) -> list:
     """(section, key, value) for the title bars Wayfire draws, from
-    tokens.FRAME: the same corners and traffic lights as Sonata's windows
-    (pixdecor puts the first dot's left edge x_offset in, dots `spacing` apart)."""
+    tokens.FRAME: the same corners, buttons, title and shadow as Sonata's
+    windows. pixdecor puts the first button's outer edge x_offset in from its
+    side and the buttons `spacing` apart; Wayfire's own decoration (no
+    pixdecor) only takes the order, title and font."""
+    side = frame["buttons_side"]
+    names = list(frame["buttons"])
+    layout = ",".join(names) + ":" if side == "left" else ":" + ",".join(reversed(names))
+    align = {"left": "0", "center": "1", "right": "2"}[frame["title_align"]]
     return [("pixdecor", "rounded_corner_radius", str(frame["radius"])),
-            ("pixdecor", "left_button_spacing", str(frame["dot_gap"])),
-            ("pixdecor", "left_button_x_offset", f"{frame['dot_left'] - frame['dot'] / 2:g}"),
-            ("sonata-corners", "radius", str(frame["radius"]))]
+            ("pixdecor", "button_layout", layout),
+            ("pixdecor", f"{side}_button_spacing", str(frame["dot_gap"])),
+            ("pixdecor", f"{side}_button_x_offset", f"{frame['dot_left'] - frame['dot'] / 2:g}"),
+            ("pixdecor", "title_font", frame["title_font"]),
+            ("pixdecor", "title_text_align", align),
+            ("pixdecor", "shadow_radius", str(frame["shadow_radius"])),
+            ("pixdecor", "shadow_color", "\\" + frame["shadow_color"]),
+            ("sonata-corners", "radius", str(frame["radius"])),
+            # Wayfire's own bar keeps its buttons on the right: close at the edge
+            ("decoration", "button_order", " ".join(reversed(names)) if side == "right" else
+             " ".join([n for n in names if n != "close"] + ["close"])),
+            ("decoration", "title_height", str(frame["fallback_title_h"])),
+            ("decoration", "title_halign", frame["title_align"]),
+            ("decoration", "font", frame["fallback_font"])]
 
 
 def wayfire_set(section: str, key: str, value) -> bool:

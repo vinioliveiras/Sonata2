@@ -40,12 +40,15 @@ not new code. Selected in `~/.config/sonata2/appearance.json` (`theme`).
 | Sizes | `control_h` 22, `switch_w` 32, `switch_h` 18, `menu_min_w` 190 |
 | Motion | `t_press` 80 ms, `t_fast` 150 ms, `t_standard` 250 ms |
 | Spacing (layout code) | `SPACE`: xxs 2, xs 4, s 6, m 8, l 12, xl 16, xxl 20 |
-| Window frame | `FRAME`: `radius` 10, `dot` 12, `dot_gap` 8, `dot_left` 13, `dot_top` 14; `TL_COLORS` (`r_window` follows `radius`) |
+| Window frame | `FRAME`: corners + shadow (`radius` 10, `shadow_radius`, `shadow_color`), buttons (`buttons` order, `buttons_side` left/right, `dot` 12, `dot_gap` 8, `dot_left` 13, `dot_top` 14), title (`title_h` 52, `title_align`, `title_font`), Wayfire's own bars (`fallback_title_h`, `fallback_font`); `TL_COLORS`. `r_window`, `button_layout()` and the GSettings button layout / title font follow it |
 
 **Window frame: one place.** Change `FRAME` (or `TL_COLORS`) and every window
 follows: Sonata's own (`ui/window.py`), the title bars Wayfire draws (pixdecor,
-sonata-corners: set by `tools/wayfire-config.sh` at login), other GTK 4 apps
-(`adwstyle.py`). The dot pictures are files: run `tools/gen-decor.py` after
+sonata-corners, Wayfire's own bars: set by `tools/wayfire-config.sh` at login
+through `wfconfig.frame_options`), other GTK 4 apps (`adwstyle.py`), GTK/GNOME
+apps' button layout (`prefs.py`). A Windows-style theme is a different FRAME
+(buttons on the right, title on the left...); Sonata's own windows still place
+their traffic lights on the left by code. The dot pictures are files: run `tools/gen-decor.py` after
 changing `dot` or the colours (a test fails until they match).
 
 ## Components

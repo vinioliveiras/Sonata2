@@ -1314,6 +1314,31 @@ class WindowFrameSingleSourceTests(unittest.TestCase):
         self.assertIn("min-width: 14px", sheet)
         self.assertIn("margin: 0 5px", sheet)
 
+    def test_a_windows_like_frame(self):
+        """The future Windows theme: buttons on the right, title on the left --
+        one FRAME change, every frame follows."""
+        from sonata2 import adwstyle, wfconfig
+        F = self.tokens.FRAME
+        F.update(buttons=("close", "maximize", "minimize"), buttons_side="right", title_align="left", radius=8)
+        self.assertEqual(self.tokens.button_layout(F), ":minimize,maximize,close")
+        opts = {(sec, k): v for sec, k, v in wfconfig.frame_options(F)}
+        self.assertEqual(opts[("pixdecor", "button_layout")], ":minimize,maximize,close")
+        self.assertIn(("pixdecor", "right_button_spacing"), opts)
+        self.assertEqual(opts[("pixdecor", "title_text_align")], "0")
+        self.assertEqual(opts[("decoration", "button_order")], "minimize maximize close")
+        sheet = adwstyle.css(bars=False)
+        self.assertIn("windowcontrols.end", sheet)
+        self.assertIn("button:last-child { margin-right:", sheet)
+
+    def test_other_frame_settings_derive_from_it(self):
+        from sonata2 import prefs
+        from sonata2.ui import window
+        F = self.tokens.FRAME
+        self.assertEqual(window.TITLEBAR_H, F["title_h"])
+        self.assertEqual(prefs.DEFAULTS["org.gnome.desktop.wm.preferences/button-layout"],
+                         self.tokens.button_layout(F))
+        self.assertEqual(prefs.DEFAULTS["org.gnome.desktop.wm.preferences/titlebar-font"], F["title_font"])
+
     def test_shipped_files_match_the_tokens(self):
         """wayfire.ini's literal values and the dot pictures: regenerate with
         tools/gen-decor.py after changing tokens.FRAME / TL_COLORS."""

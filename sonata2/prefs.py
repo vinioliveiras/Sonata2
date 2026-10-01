@@ -27,6 +27,17 @@ NAME = "system"
 I, WM, BG = "org.gnome.desktop.interface", "org.gnome.desktop.wm.preferences", "org.gnome.desktop.background"
 P = "org.gnome.desktop.privacy"
 
+def _frame() -> dict:
+    """Window buttons and title font from tokens.FRAME (one place for every
+    window frame). tokens.py is plain Python: read without GTK."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("sonata_tokens",
+                                                  os.path.join(os.path.dirname(__file__), "ui", "tokens.py"))
+    t = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(t)
+    return {"layout": t.button_layout(t.FRAME), "font": t.FRAME["title_font"]}
+
+
 # Sonata's look (macOS), what a fresh session starts with
 DEFAULTS = {
     f"{I}/color-scheme": "default", f"{I}/gtk-theme": "Sonata-Light", f"{I}/icon-theme": "Sonata",
@@ -35,8 +46,8 @@ DEFAULTS = {
     f"{I}/font-hinting": "slight", f"{I}/gtk-enable-primary-paste": "false", f"{I}/overlay-scrolling": "true",
     f"{I}/font-name": "Inter 10", f"{I}/document-font-name": "Inter 10", f"{I}/monospace-font-name": "Monospace 10",
     f"{I}/clock-format": "24h", f"{I}/cursor-blink": "true",
-    f"{WM}/button-layout": "close,minimize,maximize:", f"{WM}/action-double-click-titlebar": "toggle-maximize",
-    f"{WM}/titlebar-font": "Inter Bold 10",
+    f"{WM}/button-layout": _frame()["layout"], f"{WM}/action-double-click-titlebar": "toggle-maximize",
+    f"{WM}/titlebar-font": _frame()["font"],
     f"{BG}/picture-uri": "", f"{BG}/picture-uri-dark": "", f"{BG}/picture-options": "zoom",
     f"{P}/remember-recent-files": "true", f"{P}/remove-old-trash-files": "false", f"{P}/old-files-age": "30",
     "org.gnome.system.location/enabled": "false",

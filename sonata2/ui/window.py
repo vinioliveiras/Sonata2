@@ -70,11 +70,12 @@ headerbar .traffic { margin-left: %(tl_hb_left)s; margin-top: %(tl_hb_top)s; }  
 # same spot (first dot centred 13 px from the left edge and 14 px from the
 # top, in a 52 px bar), whatever the window. Use it instead of placing
 # traffic_lights() by hand.
-TITLEBAR_H = 52
+from .tokens import FRAME as _FRAME  # noqa: E402
+TITLEBAR_H = _FRAME["title_h"]
 theme.register("""
-.sonata-titlebar { min-height: 52px; padding: 0 10px 0 0; }
+.sonata-titlebar { min-height: %(title_h)s; padding: 0 10px 0 0; }
 .sonata-titlebar > .sonata-titlebar-title { font-weight: 700; font-size: %(text_body)s; color: %(label)s; }
-""", key="titlebar")
+""", key="titlebar", title_h=f"{TITLEBAR_H}px")
 
 
 def toggle_zoom(win) -> None:

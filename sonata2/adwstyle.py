@@ -77,12 +77,14 @@ def css(folder: str = None, bars: bool = True) -> str:
                 f"box-shadow: inset 0 -1px {t['separator']}; }}\n"
                 f"window:not(.sonata-window):backdrop headerbar {{ background-color: {t['titlebar_bg_inactive']}; }}\n")
     w = "window:not(.sonata-window) windowcontrols > button"
-    wc = "window:not(.sonata-window) headerbar windowcontrols.start"
+    side = FRAME["buttons_side"]                         # the header bar's start (left) or end box
+    wc = f"window:not(.sonata-window) headerbar windowcontrols.{'start' if side == 'left' else 'end'}"
+    edge = "first-child" if side == "left" else "last-child"
     # Sonata's place for the dots (ui/window.py): 12 px, centres 20 px apart,
     # the first one centred 13 px from the left edge and 14 px from the top.
     # libadwaita's header bar: no left padding here, its controls centred in ~46 px.
     return (f"/* Sonata's window look for other GTK 4 apps -- written by sonata2/adwstyle.py at login */\n"
-            f"window:not(.sonata-window) headerbar {{ padding-left: 0; }}\n"
+            f"window:not(.sonata-window) headerbar {{ padding-{side}: 0; }}\n"
             # the corners of Sonata's windows and of the ones Wayfire draws (sonata-corners radius)
             f"window:not(.sonata-window).csd {{ border-radius: {FRAME['radius']}px; }}\n"
             f"window:not(.sonata-window).csd.maximized, window:not(.sonata-window).csd.fullscreen,\n"
@@ -95,7 +97,7 @@ def css(folder: str = None, bars: bool = True) -> str:
             f"  border-radius: 999px;\n"
             f"  box-shadow: none; outline: none; background-color: transparent; background-repeat: no-repeat;\n"
             f"  background-position: center; background-size: {D}px {D}px; }}\n"
-            f"{wc} > button:first-child {{ margin-left: {TL_LEFT - D / 2 - ADW_START_INSET:g}px; }}\n"
+            f"{wc} > button:{edge} {{ margin-{side}: {TL_LEFT - D / 2 - ADW_START_INSET:g}px; }}\n"
             f"{w} > image {{ opacity: 0; background: none; box-shadow: none; padding: 0; margin: 0;\n"
             f"  min-width: {D}px; min-height: {D}px; -gtk-icon-size: {D}px; }}\n"
             f"{w}.close {{ background-image: {url('close')}; }}\n"
