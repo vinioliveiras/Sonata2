@@ -73,15 +73,37 @@ def _candidates(info):
     did = (info.get_id() or "")[:-8] if (info.get_id() or "").endswith(".desktop") else (info.get_id() or "")
     wm = info.get_startup_wm_class() if hasattr(info, "get_startup_wm_class") else None
     exe = os.path.basename(info.get_executable() or "")
+    cmd = (info.get_commandline() or "") if hasattr(info, "get_commandline") else ""
+    if exe in LAUNCHERS or "://" in cmd:
+        exe = ""        # a game's shortcut (steam steam://rungameid/...): not the launcher's icon
     for name in (did, wm, exe, (info.get_name() or "").replace(" ", "-")):
         if name:
             yield name
             yield name.lower()
 
 
+LAUNCHERS = {"steam", "lutris", "heroic", "xdg-open", "gtk-launch", "gio", "env"}
+
+
+def _steam_game_icon(info):
+    """A Steam game's shortcut (Icon=steam_icon_<id>): its picture filling the
+    squircle, like the Dock shows the running game; None otherwise."""
+    icon = info.get_icon()
+    names = icon.get_names() if isinstance(icon, Gio.ThemedIcon) else []
+    for n in names:
+        if n.startswith("steam_icon_") and n[11:].isdigit():
+            from . import steamgames
+            pic = steamgames.icon_path(n[11:])
+            return picture_icon(pic) if pic else None
+    return None
+
+
 def app_icon(info) -> Gio.Icon:
     """The icon to show for an app (Gio.AppInfo): Sonata's artwork when any
     of its names match, else the app's own icon, marked for the plate."""
+    game = _steam_game_icon(info)
+    if game is not None:
+        return game
     own = _own()
     for name in _candidates(info):
         if name in own:

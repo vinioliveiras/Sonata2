@@ -1235,6 +1235,47 @@ class SteamGameDockTests(unittest.TestCase):
         finally:
             icons.GENERATED = old
 
+    def test_game_shortcut_shows_the_game_not_steam(self):
+        """Apps showed Steam's icon for every game shortcut (Exec=steam
+        steam://rungameid/<id>): the launcher's name matched Sonata's Steam
+        artwork first."""
+        from gi.repository import GdkPixbuf
+        from sonata2 import icons
+        kf = GLib.KeyFile()
+        data = ("[Desktop Entry]\nType=Application\nName=Halloween: The Game\n"
+                "Exec=steam steam://rungameid/3219630\nIcon=steam_icon_3219630\n")
+        kf.load_from_data(data, len(data.encode()), GLib.KeyFileFlags.NONE)
+        bin_dir = os.path.join(self.home, "bin")                    # a "steam" on PATH (GLib checks Exec)
+        os.makedirs(bin_dir)
+        with open(os.path.join(bin_dir, "steam"), "w") as f:
+            f.write("#!/bin/sh\n")
+        os.chmod(os.path.join(bin_dir, "steam"), 0o755)
+        old_path = os.environ["PATH"]
+        os.environ["PATH"] = bin_dir + os.pathsep + old_path
+        try:
+            info = Gio.DesktopAppInfo.new_from_keyfile(kf)
+        finally:
+            os.environ["PATH"] = old_path
+        try:
+            info.get_startup_wm_class()
+        except TypeError:                                            # old PyGObject + GLib 2.86 (test box)
+            self.skipTest("GioUnix.DesktopAppInfo binding broken here")
+        names = list(icons._candidates(info))
+        self.assertNotIn("steam", names)
+        big = os.path.join(os.environ["XDG_DATA_HOME"], "icons", "hicolor", "256x256", "apps")
+        os.makedirs(big)
+        pb = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 64, 64)
+        pb.fill(0x2040c0ff)
+        pb.savev(os.path.join(big, "steam_icon_3219630.png"), "png", [], [])
+        old = icons.GENERATED
+        icons.GENERATED = tempfile.mkdtemp()
+        try:
+            ic = icons.app_icon(info)
+            self.assertIsInstance(ic, Gio.FileIcon)
+            self.assertIn("pic-", ic.get_file().get_basename())          # the game's own picture
+        finally:
+            icons.GENERATED = old
+
     def test_dock_uses_it(self):
         src = (pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "shell" / "dock.py").read_text()
         self.assertIn("steamgames.appid(key)", src)
