@@ -123,6 +123,30 @@ class SettingsTest(unittest.TestCase):
         win.destroy()
         config.save("keyring", {"backend": "gnome"})
 
+    def test_restart_now_or_later(self):
+        """Settings that need a restart ask: Later / Restart Sonata, Log Out, Restart."""
+        from unittest import mock
+        win = S.Settings(None)
+        for kind, action in (("sonata", "restart_sonata"), ("session", "power_action"),
+                             ("system", "power_action")):
+            with mock.patch("sonata2.ui.dialog.alert") as alert, \
+                    mock.patch.object(S.system, action) as act:
+                win.ask_restart(kind, "It")
+                heading, body, responses, answered = alert.call_args[0][:4]
+                self.assertEqual([r[0] for r in responses], ["later", "now"])
+                answered("later")
+                act.assert_not_called()
+                answered("now")
+                act.assert_called_once()
+                if action == "power_action":
+                    self.assertEqual(act.call_args[0][0], "logout" if kind == "session" else "restart")
+        src = open(S.__file__).read()
+        for setting in ('"renderer", v)', '"icon_theme", v)', "set_compositor_on_display_gpu(on)",
+                        "logs.set_verbose(on)"):
+            i = src.index(setting)
+            self.assertIn("ask_restart(", src[i:i + 300], setting)
+        win.destroy()
+
     def test_save_keeps_other_keys(self):
         config.save("dock", {"pinned": ["a"], "icon_size": 48})
         win = S.Settings(None)

@@ -962,7 +962,8 @@ class Settings(Adw.ApplicationWindow):
         if gpu.has_dual_gpu():
             graphics = group("Graphics")
             graphics.add(switch_row("Draw with the Displays' Graphics Card", gpu.compositor_on_display_gpu(),
-                                    gpu.set_compositor_on_display_gpu,
+                                    lambda on: (gpu.set_compositor_on_display_gpu(on),
+                                                self.ask_restart("session", "The graphics card change")),
                                     subtitle="Smoother on displays wired to the discrete card, but some "
                                              "NVIDIA drivers can end the session. From the next login."))
             pages.append(graphics)
@@ -1707,7 +1708,8 @@ class Settings(Adw.ApplicationWindow):
                     status.set_title("Your computer is up to date")
                     if kernel:
                         status.set_subtitle("Restart to finish installing the system updates")
-                        button("Restart…", lambda: system._spawn(["systemctl", "reboot"]), suggested=True)
+                        button("Restart…", lambda: self.ask_restart("system", "The system update"),
+                               suggested=True)
                     else:
                         status.set_subtitle("Updated at " + GLib.DateTime.new_now_local().format("%H:%M"))
                         button("Check Again", check)
@@ -1810,10 +1812,12 @@ class Settings(Adw.ApplicationWindow):
             def work():
                 try:
                     n = keyring.switch_to_gnome(pw, lambda t: GLib.idle_add(self.toast, t))
-                    return f"{n} saved passwords moved: no keyring password from the next login"
+                    return f"{n} saved passwords moved"
                 except Exception as e:                       # noqa: BLE001 -- told, nothing lost
                     return f"Not switched: {e}"
-            system.run_async(work, lambda msg: (self.toast(msg), self._reload_page("privacy")))
+            system.run_async(work, lambda msg: (self.toast(msg), self._reload_page("privacy"),
+                                                msg.startswith("Not") or
+                                                self.ask_restart("session", "The login keyring")))
         dlg = ui.dialog.alert("Use your login password for saved passwords?",
                               "Apps' saved passwords (Chrome, VS Code, Wi-Fi) move from KeePassXC to the "
                               "login keyring, which your login unlocks: no password prompt after logging in. "
@@ -1880,7 +1884,7 @@ class Settings(Adw.ApplicationWindow):
                                         ("software", "Software (no GPU)")],
                            app.get("renderer", "gl"),
                            lambda v: (self._save("appearance", "renderer", v),
-                                      self.toast("Applies after Restart Sonata")),
+                                      self.ask_restart("sonata", "The new graphics setting")),
                            subtitle="How Sonata draws its Dock, menu bar and windows"))
         try:
             scale = float(system.gsetting(I, "text-scaling-factor") or 1)
@@ -1948,7 +1952,7 @@ class Settings(Adw.ApplicationWindow):
                         | {"Sonata"})
         s.add(combo_row("Icons", [(t, t) for t in themes], app["icon_theme"],
                         lambda v: (self._save("appearance", "icon_theme", v),
-                                   self.toast(f"Restart the Dock and {names.APPS} to use the new icons"))))
+                                   self.ask_restart("sonata", "The new icons"))))
         from ..ui import logo as L
         # always there, usable only for "Text: custom…": showing / hiding it
         # moved the rows under it, and a click meant for this field landed on
@@ -2280,6 +2284,33 @@ class Settings(Adw.ApplicationWindow):
         sub.logs_row = logs_row                    # (tests)
         return [hero, specs, shell]
 
+    # Settings that take effect only after a restart (each asks "now or later"):
+    #   sonata   Restart Sonata    Accessibility > Graphics, General > Icons, About > Detailed Logs
+    #   session  Log Out           Displays > Graphics card, Security & Privacy > Use Login Password
+    #   system   Restart computer  Software Update (system packages; its own Restart… button)
+    RESTARTS = {"sonata": ("Restart Sonata now?", "{} takes effect when Sonata restarts. Open apps stay open.",
+                           "Restart Sonata"),
+                "session": ("Log out now?", "{} takes effect from the next login. Save your work first: "
+                                            "apps will quit.", "Log Out"),
+                "system": ("Restart the computer now?", "{} takes effect after a restart. Save your work "
+                                                         "first: apps will quit.", "Restart")}
+
+    def ask_restart(self, kind: str, what: str):
+        """Restart now or later (a setting that needs it was changed)."""
+        heading, body, action = self.RESTARTS[kind]
+
+        def answered(rid):
+            if rid != "now":
+                self.toast("It takes effect after the next restart" if kind != "session"
+                           else "It takes effect from the next login")
+                return
+            if kind == "sonata":
+                system.restart_sonata()
+            else:
+                system.power_action("logout" if kind == "session" else "restart")
+        return ui.dialog.alert(heading, body.format(what), [("later", "Later", ""), ("now", action, "default")],
+                               answered, parent=self)
+
     def _set_glass_titlebars(self, on) -> None:
         """Title bars of every window: the glass, or opaque (the default)."""
         self._save("appearance", "glass_titlebars", on)
@@ -2295,8 +2326,7 @@ class Settings(Adw.ApplicationWindow):
     def _set_detailed_logs(self, on, row):
         from .. import logs
         logs.set_verbose(on)
-        self.toast("Detailed logs on: restart Sonata to start them" if on else
-                   "Detailed logs off from the next start of Sonata")
+        self.ask_restart("sonata", "Detailed logs " + ("on" if on else "off"))
 
 
 def settings_desktop_file(command: str) -> str:
