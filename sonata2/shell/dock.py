@@ -28,13 +28,13 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk, Pang
 
 from .. import apps, config, icons, logs, steamgames  # noqa: E402
 from .. import ui  # noqa: E402
-from . import dock_drop, dock_menu, dock_stack, layer  # noqa: E402
+from . import dock_drop, dock_folder, dock_menu, dock_stack, layer  # noqa: E402
 
 DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "window_gap": 6, "glass": True,
             "indicators": True, "bounce": True, "minimize_effect": "genie", "click_minimizes": True,
             "magnification": False, "magnified_size": 80, "position": "bottom",
             "autohide": False, "autohide_delay_ms": 300, "show_recents": True,
-            "recent": [], "stacks": None, "all_displays": False}
+            "recent": [], "stacks": None, "all_displays": False, "folders": {}}
 EDGES = ("left", "bottom", "right")
 MIN_SIZE, MAX_SIZE = 16, 128
 PIN_MIN_SIZE = 36           # pins must still fit at this size: more can't be kept in the Dock
@@ -283,7 +283,7 @@ class DockIcon(Gtk.Widget):
 class DockTile(Gtk.Button):
     """One Dock icon: icon, running dot (towards the edge), hover label."""
 
-    def __init__(self, dock, name: str, gicon, on_click, info=None, on_menu=None):
+    def __init__(self, dock, name: str, gicon, on_click, info=None, on_menu=None, icon=None):
         edge = dock.edge
         super().__init__(css_classes=["dock-tile"], focus_on_click=False, can_focus=False,
                          valign=Gtk.Align.END if edge == "bottom" else Gtk.Align.FILL,
@@ -293,7 +293,7 @@ class DockTile(Gtk.Button):
         self.gicon = gicon
         self.key = None
         self._bounce_src = 0
-        self.icon = DockIcon(gicon, dock.cfg["icon_size"])
+        self.icon = icon or DockIcon(gicon, dock.cfg["icon_size"])
         # one dot per open window (up to MAX_DOTS; Vini's call, macOS shows one)
         dot = Gtk.Box(css_classes=["dock-dots"], spacing=3, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER,
                       orientation=Gtk.Orientation.HORIZONTAL if edge == "bottom" else Gtk.Orientation.VERTICAL)
@@ -766,9 +766,11 @@ class Dock(Gtk.Box):
             pos += cell
 
     # -- tiles and sections ------------------------------------------------------
-    def _add_tile(self, key, name, gicon, info=None) -> DockTile:
+    def _add_tile(self, key, name, gicon, info=None, icon=None) -> DockTile:
+        folder = dock_folder.is_folder(key)
         tile = DockTile(self, name, gicon, lambda t: self._clicked(key, t), info,
-                        on_menu=lambda t: dock_menu.app_menu(self, key, t))
+                        on_menu=(lambda t: dock_folder.folder_menu(self, t)) if folder
+                        else (lambda t: dock_menu.app_menu(self, key, t)), icon=icon)
         tile.key = key
         self.tiles[key] = tile
         if self.badges.get(key):                  # a badge that arrived before the tile
@@ -785,6 +787,8 @@ class Dock(Gtk.Box):
         middle.connect("released", lambda g, *_: (g.set_state(Gtk.EventSequenceState.CLAIMED),
                                                    self._middle_click(key, tile)))
         tile.add_controller(middle)
+        if folder:
+            return tile
         dock_drop.attach_app(self, tile)
         from . import dock_preview
         dock_preview.attach(tile, self)           # minimized windows: previews on hover
@@ -804,6 +808,13 @@ class Dock(Gtk.Box):
         (steam_app_N: no entry; name and icon from Steam). False: unknown."""
         if key in self.tiles:
             return True
+        if dock_folder.is_folder(key):
+            f = self.folder(key)
+            if not f:
+                return False
+            self._add_tile(key, f["name"], None,
+                           icon=dock_folder.FolderIcon(f["apps"], self.cfg["icon_size"]))
+            return True
         info = apps.lookup(key)
         if info:
             self._add_tile(key, info.get_display_name(), icons.app_icon(info), info)
@@ -817,6 +828,8 @@ class Dock(Gtk.Box):
         return False
 
     def _known(self, key) -> bool:
+        if dock_folder.is_folder(key):
+            return self.folder(key) is not None
         aid = steamgames.appid(key)
         return bool(apps.lookup(key) or (aid and steamgames.name(aid)))
 
@@ -1016,6 +1029,8 @@ class Dock(Gtk.Box):
             self._save_order()         # takes its current position
         elif not on and key in pins:
             pins.remove(key)
+            if dock_folder.is_folder(key):
+                self.cfg["folders"].pop(dock_folder.folder_id(key), None)
             self.save_cfg()
             if key not in self.tiles:                  # pinned but never shown (not installed)
                 return
@@ -1024,13 +1039,117 @@ class Dock(Gtk.Box):
             else:
                 self._relayout()
 
+    # -- folders ---------------------------------------------------------------
+    def folder(self, key):
+        """The folder's {"name", "apps"} (None: not a folder / gone)."""
+        if not dock_folder.is_folder(key):
+            return None
+        return (self.cfg.get("folders") or {}).get(dock_folder.folder_id(key))
+
+    def in_folder(self, key) -> bool:
+        return any(key in f.get("apps", ()) for f in (self.cfg.get("folders") or {}).values())
+
+    def make_folder(self, keys: list, name: str = None) -> str:
+        """A folder of these pinned apps, where the first of them was."""
+        keys = [k for k in keys if not dock_folder.is_folder(k) and k not in PERMANENT]
+        if not keys:
+            return None
+        folders = self.cfg.setdefault("folders", {})
+        fid = dock_folder.new_id(folders)
+        fkey = dock_folder.PREFIX + fid
+        folders[fid] = {"name": name or dock_folder.default_name(keys), "apps": list(keys)}
+        pins = self.cfg["pinned"]
+        at = min((pins.index(k) for k in keys if k in pins), default=len(pins))
+        pins.insert(at, fkey)
+        for k in keys:
+            self._unpin_into_folder(k)
+        self._add_known_tile(fkey)
+        self.save_cfg()
+        self._relayout()
+        return fkey
+
+    def _unpin_into_folder(self, key) -> None:
+        """The app's own icon leaves the pinned row (it now lives in a folder);
+        a running app keeps its icon among the running ones."""
+        if key in self.cfg["pinned"]:
+            self.cfg["pinned"].remove(key)
+        if key in self.tiles and key not in self.windows and not self._is_recent(key):
+            self._remove_tile(key)
+
+    def add_to_folder(self, fkey, key) -> None:
+        f = self.folder(fkey)
+        if f is None or dock_folder.is_folder(key) or key in PERMANENT:
+            return
+        if key not in f["apps"]:
+            f["apps"].append(key)
+        self._unpin_into_folder(key)
+        self._folder_changed(fkey)
+
+    def remove_from_folder(self, fkey, key) -> None:
+        """The app comes back to the Dock right after the folder."""
+        f = self.folder(fkey)
+        if f is None or key not in f["apps"]:
+            return
+        f["apps"].remove(key)
+        pins = self.cfg["pinned"]
+        if key not in pins:
+            pins.insert(pins.index(fkey) + 1, key)
+            self._add_known_tile(key)
+        if len(f["apps"]) <= 1:
+            self.ungroup(fkey)
+            return
+        self._folder_changed(fkey)
+
+    def ungroup(self, fkey) -> None:
+        """The folder's apps go back to the Dock in its place."""
+        f = self.folder(fkey)
+        pins = self.cfg["pinned"]
+        if f is None or fkey not in pins:
+            return
+        at = pins.index(fkey)
+        pins.remove(fkey)
+        for k in [k for k in f["apps"] if k not in pins]:
+            pins.insert(at, k)
+            at += 1
+            self._add_known_tile(k)
+        self.cfg["folders"].pop(dock_folder.folder_id(fkey), None)
+        if fkey in self.tiles:
+            self._remove_tile(fkey)
+        self.save_cfg()
+        self._relayout()
+
+    def _folder_changed(self, fkey) -> None:
+        f, tile = self.folder(fkey), self.tiles.get(fkey)
+        if tile is not None and f is not None:
+            tile.icon.set_apps(f["apps"])
+            tile.name = f["name"]
+            tile.label.set_text(f["name"])
+        self.save_cfg()
+        self._relayout()
+
+    def open_app(self, key, near=None) -> None:
+        """Open (or bring forward) an app from a folder."""
+        tile = self.tiles.get(key)
+        if tile is not None:
+            self._clicked(key, tile)
+            return
+        info = apps.lookup(key)
+        if not info:
+            return
+        if near is not None and self.cfg.get("bounce", True):
+            near.bounce(BOUNCE_MS)
+        try:
+            info.launch([], (near or self).get_display().get_app_launch_context())
+        except GLib.Error as e:
+            print(f"sonata2-dock: cannot launch {info.get_id()}: {e.message}")
+
     # -- recents ---------------------------------------------------------------
     def _is_recent(self, key) -> bool:
         return self.cfg["show_recents"] and key in self.cfg["recent"]
 
     def _note_recent(self, key) -> None:
         """An unpinned app was used: most recent first, MAX_RECENTS kept."""
-        if key in self.cfg["pinned"] or not apps.lookup(key):
+        if key in self.cfg["pinned"] or not apps.lookup(key) or self.in_folder(key):
             return
         rec = [k for k in self.cfg["recent"] if k != key]
         rec.insert(0, key)
@@ -1238,6 +1357,9 @@ class Dock(Gtk.Box):
                 {(v.get("app-id", ""), v.get("title", "")) for v in views})
 
     def _clicked(self, key, tile: DockTile) -> None:
+        if dock_folder.is_folder(key):
+            dock_folder.open_panel(self, tile)
+            return
         wins = self.windows.get(key)
         over_launchpad = getattr(self.get_root(), "_above", False) and key != "sonata2-launchpad"
         if over_launchpad:

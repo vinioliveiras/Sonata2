@@ -119,6 +119,10 @@ def app_menu(dock, key: str, tile):
         g = gpu.menu_item(info, Item)
         if g:
             opts.append([g])
+        from . import dock_folder
+        f = dock_folder.app_items(dock, key)
+        if f:
+            opts.append(f)
     elif pinned:
         opts = [[Item("Keep in Dock", lambda on: dock.set_pinned(key, on), checked=True)]]
     if opts:
