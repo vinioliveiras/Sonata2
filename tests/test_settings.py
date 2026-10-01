@@ -39,6 +39,40 @@ class SettingsTest(unittest.TestCase):
             self.assertIn(sid, win.pages)
         win.destroy()
 
+    def test_menu_bar_text_row(self):
+        """Menu bar logo > Text: custom… shows the text field; saving writes menu_text."""
+        win = S.Settings(None)
+        win.present()
+        win.select("appearance")
+        settle(150)
+        found, stack = [], [win]
+        while stack:
+            w = stack.pop()
+            if isinstance(w, Adw.EntryRow) and w.get_title() == "Menu bar text":
+                found.append(w)
+            c = w.get_first_child()
+            while c is not None:
+                stack.append(c)
+                c = c.get_next_sibling()
+        self.assertEqual(len(found), 1)
+        row = found[0]
+        self.assertFalse(row.get_visible())                        # the default logo: no text field
+        stack, combo = [win], None
+        while stack and combo is None:
+            w = stack.pop()
+            if isinstance(w, Adw.ComboRow) and "text:custom" in getattr(w, "values", []):
+                combo = w
+            c = w.get_first_child()
+            while c is not None:
+                stack.append(c)
+                c = c.get_next_sibling()
+        combo.set_selected(combo.values.index("text:custom"))
+        self.assertTrue(row.get_visible())
+        row.set_text("Vini 🎮")
+        row.emit("apply")
+        self.assertEqual(config.load("appearance", {"menu_text": ""})["menu_text"], "Vini 🎮")
+        win.destroy()
+
     def test_save_keeps_other_keys(self):
         config.save("dock", {"pinned": ["a"], "icon_size": 48})
         win = S.Settings(None)

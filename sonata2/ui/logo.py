@@ -7,6 +7,11 @@
     "sonata"          Sonata's logo
     "shape:<name>"    a geometric shape (SHAPES)
     "icon:<name>"     a ready-made symbol (ICONS)
+    "text:sonata"     the word Sonata
+    "text:user"       your name (first name of the account's full name)
+    "text:custom"     your own text (appearance.json "menu_text"); emoji
+                      welcome, drawn in one colour like the apps' tray
+                      icons (tray.mono_mask)
 
 LogoGlyph draws any of them at the menu bar's icon size and follows the
 setting live."""
@@ -19,6 +24,9 @@ gi.require_version("Gsk", "4.0")
 from gi.repository import Gdk, GLib, Graphene, Gsk, Gtk  # noqa: E402
 
 DEFAULT = "distro"
+TEXT_HEIGHT = 1.25                  # a text logo's line box, in icon sizes (13 px type in a 16 px slot)
+TEXT_MAX = 24                       # characters of custom text
+TEXTS = (("text:sonata", "Text: Sonata"), ("text:user", "Text: your name"), ("text:custom", "Text: custom…"))
 SHAPES = (("circle", "Circle"), ("square", "Square"), ("triangle", "Triangle"), ("diamond", "Diamond"),
           ("hexagon", "Hexagon"), ("star", "Star"), ("ring", "Ring"))
 ICONS = (("starred-symbolic", "Star (outline)"), ("emblem-favorite-symbolic", "Heart"),
@@ -33,7 +41,20 @@ def choices() -> list:
            ("sonata", "Sonata")]
     out += [(f"shape:{k}", label) for k, label in SHAPES]
     out += [(f"icon:{k}", label) for k, label in ICONS]
+    out += list(TEXTS)
     return out
+
+
+def text_for(kind: str, custom: str = "") -> str:
+    """The words a text: logo shows ("" for other kinds)."""
+    if kind == "text:sonata":
+        return "Sonata"
+    if kind == "text:user":
+        return (GLib.get_real_name() or "").split(" ")[0] if GLib.get_real_name() not in ("", "Unknown") \
+            else GLib.get_user_name()
+    if kind == "text:custom":
+        return " ".join((custom or "").split())[:TEXT_MAX] or "Sonata"
+    return ""
 
 
 def _shape_path(name, x, y, s):
@@ -64,18 +85,54 @@ class LogoGlyph(Gtk.Widget):
         self.size = size
         self.kind = None
         self.texture = None
-        self.set_kind(_current())
+        self.text = ""
+        self.set_kind(*_current_with_text())
         from .. import config
-        self._mon = config.watch("appearance", lambda *_: self.set_kind(_current()))
+        self._mon = config.watch("appearance", lambda *_: self.set_kind(*_current_with_text()))
 
-    def set_kind(self, kind: str) -> None:
-        if kind == self.kind:
+    def set_kind(self, kind: str, custom: str = "") -> None:
+        text = text_for(kind, custom)
+        if kind == self.kind and text == self.text:
             return
-        self.kind = kind
+        self.kind, self.text = kind, text
         self.texture = None
         if kind in ("distro", "distro-colour", "sonata") or kind.startswith("icon:"):
             self.texture = self._load(kind)
+        elif text:
+            self.texture = self._text_texture(text)
+        self.queue_resize()
         self.queue_draw()
+
+    def _text_texture(self, text):
+        """The words in the menu bar's bold font, one colour (emoji too)."""
+        gi.require_version("PangoCairo", "1.0")
+        import cairo
+        from gi.repository import Pango, PangoCairo
+        scale = max(1, self.get_scale_factor()) * 2
+        layout = self.create_pango_layout(text)
+        from .tokens import SHARED
+        desc = Pango.FontDescription.from_string(       # the menu bar's font (tokens: "font")
+            ",".join(f.strip().strip('"') for f in SHARED["font"].split(",")) + " Bold")
+        desc.set_absolute_size(13 * Pango.SCALE)
+        layout.set_font_description(desc)
+        _ink, logical = layout.get_pixel_extents()
+        w, h = max(1, logical.width * scale), max(1, logical.height * scale)
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
+        cr = cairo.Context(surf)
+        cr.scale(scale, scale)
+        cr.set_source_rgb(0, 0, 0)
+        PangoCairo.show_layout(cr, layout)
+        surf.flush()
+        stride, data = surf.get_stride(), surf.get_data()
+        rgba = bytearray(len(data))
+        for i in range(0, len(data), 4):              # premultiplied BGRA -> RGBA
+            b, g, r, a = data[i], data[i + 1], data[i + 2], data[i + 3]
+            if a:
+                r, g, b = min(255, r * 255 // a), min(255, g * 255 // a), min(255, b * 255 // a)
+            rgba[i:i + 4] = bytes((r, g, b, a))
+        from ..shell.tray import mono_mask
+        self.text_size = (logical.width, logical.height)
+        return mono_mask(rgba, stride, w, h)
 
     def _load(self, kind):
         from .. import icons
@@ -100,6 +157,9 @@ class LogoGlyph(Gtk.Widget):
         return theme.lookup_icon(name, None, self.size, scale, Gtk.TextDirection.NONE, 0)
 
     def do_measure(self, orientation, for_size):
+        if self.text and self.texture is not None and orientation == Gtk.Orientation.HORIZONTAL:
+            w = self.text_size[0] * self.size / max(1, self.text_size[1]) * TEXT_HEIGHT
+            return int(w), int(w), -1, -1
         return self.size, self.size, -1, -1
 
     def do_snapshot(self, snap):
@@ -116,6 +176,17 @@ class LogoGlyph(Gtk.Widget):
                 snap.append_fill(path, Gsk.FillRule.WINDING, color)
             return
         if self.texture is None:
+            return
+        if self.text:                                            # words: one colour, the slot's height
+            tw, th = self.text_size
+            k = s * TEXT_HEIGHT / max(1, th)
+            box = Graphene.Rect().init((self.get_width() - tw * k) / 2, (self.get_height() - th * k) / 2,
+                                       tw * k, th * k)
+            snap.push_mask(Gsk.MaskMode.ALPHA)
+            snap.append_texture(self.texture, box)
+            snap.pop()
+            snap.append_color(color, box)
+            snap.pop()
             return
         if isinstance(self.texture, Gtk.IconPaintable):          # symbolic icons take the text colour
             snap.save()
@@ -170,3 +241,10 @@ def _current() -> str:
     from .. import config
     from ..icons import APPEARANCE_DEFAULTS
     return config.load("appearance", APPEARANCE_DEFAULTS).get("menu_logo", DEFAULT) or DEFAULT
+
+
+def _current_with_text() -> tuple:
+    from .. import config
+    from ..icons import APPEARANCE_DEFAULTS
+    cfg = config.load("appearance", APPEARANCE_DEFAULTS)
+    return (cfg.get("menu_logo", DEFAULT) or DEFAULT), (cfg.get("menu_text") or "")
