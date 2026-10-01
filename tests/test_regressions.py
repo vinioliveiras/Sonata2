@@ -153,6 +153,13 @@ class WindowRegressions(unittest.TestCase):
         self.assertNotIn("22px 56px", css)
         self.assertEqual(ui.tokens.palette(False)["window_shadow"], F["shadow"])
 
+    def test_dark_backgrounds_darker(self):
+        """Vini: Settings' and Files' dark background darker than macOS' #1e1e1e."""
+        pal = ui.tokens.palette(True)
+        lum = lambda c: sum(int(c[i:i + 2], 16) for i in (1, 3, 5))      # noqa: E731
+        for k in ("window_bg", "content_bg", "pane_bg"):
+            self.assertLess(lum(pal[k]), lum("#1e1e1e"), k)
+
     def test_spinner_is_small_and_centred(self):
         """Disk Manager's loading spinner filled the whole page, off-centre."""
         s = ui.progress.spinner(size=32)
