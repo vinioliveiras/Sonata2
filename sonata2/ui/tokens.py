@@ -288,6 +288,15 @@ def over(css: str, base: str) -> str:
     return "rgb(%d, %d, %d)" % (round(r * a + br * (1 - a)), round(g * a + bg * (1 - a)), round(b * a + bb * (1 - a)))
 
 
+# Title bars are opaque, like libadwaita apps' header bars (Vini, so every
+# window's bar looks the same): the old glass as it showed over the window's
+# own colour. Sonata's title bars and toolbars, the ones Wayfire draws
+# (titlebars.apply_colors) and GNOME apps' (adwstyle.py) all read these.
+for _p in (LIGHT, DARK):
+    for _k in ("titlebar_bg", "titlebar_bg_inactive"):
+        _p[_k] = over(_p[_k], _p["window_bg"])
+
+
 def palette(dark: bool, theme: str = "mac") -> dict:
     """All tokens for one theme and appearance."""
     t = THEMES.get(theme, THEMES["mac"])

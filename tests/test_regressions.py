@@ -148,10 +148,13 @@ class WindowRegressions(unittest.TestCase):
         self.assertEqual(s.get_size_request(), (32, 32))
 
     def test_window_glass_darker_than_dock_glass(self):
-        """Title bars/toolbars/sidebars use their own, darker glass."""
+        """Title bars/toolbars/sidebars use their own, darker glass; title bars
+        show it opaque, as over the window (like GNOME apps' header bars)."""
         for dark in (False, True):
             pal = ui.tokens.palette(dark, "mac")
-            self.assertEqual(pal["titlebar_bg"], pal["window_glass"])
+            self.assertEqual(pal["titlebar_bg"], ui.tokens.over(pal["window_glass"], pal["window_bg"]))
+            self.assertTrue(pal["titlebar_bg"].startswith("rgb(") and
+                            pal["titlebar_bg_inactive"].startswith("rgb("))              # no see-through
             lum = lambda c: sum(int(v) for v in re.findall(r"[\d.]+", c)[:3])      # noqa: E731
             self.assertLess(lum(pal["window_glass"]), lum(pal["glass_tint"]))
 
