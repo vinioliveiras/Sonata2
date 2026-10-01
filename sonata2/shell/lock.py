@@ -53,6 +53,9 @@ class LockScreen:
             over.add_overlay(self._login())
             self.power = power_bar(self._power)
             over.add_overlay(self.power)
+        from .screencorners import CornersOverlay, enabled
+        if enabled():                                     # the desktop's corners hide under the lock
+            over.add_overlay(CornersOverlay())
         win.set_child(over)
         self.lock.assign_window_to_monitor(win, monitor)
         win.present()

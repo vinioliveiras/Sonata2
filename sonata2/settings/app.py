@@ -1974,6 +1974,9 @@ class Settings(Adw.ApplicationWindow):
                                                       None, on),
                                      self.toast("Apps pick it up when they open again")),
                          subtitle="Chrome, VS Code and others use Sonata's title bar instead of their own"))
+        s.add(switch_row("Rounded screen corners", app.get("screen_corners", True),
+                         lambda on: self._save("appearance", "screen_corners", on),
+                         subtitle="The corners of every display, like a Mac's (the lock screen too)"))
         s.add(switch_row("Glass title bars", app.get("glass_titlebars", False), self._set_glass_titlebars,
                          subtitle="See-through, blurred title bars on every window, GNOME apps too "
                                   "(experimental; heavier on the graphics card)"))

@@ -1267,6 +1267,11 @@ class TopBarWindow(Gtk.ApplicationWindow):
             self.bar.nightshift = NightShift()
             from .idlelock import IdleLock
             self.bar.idlelock = IdleLock()
+            try:                                                    # macOS' rounded screen corners
+                from .screencorners import ScreenCorners
+                self.bar.screen_corners = ScreenCorners(app)
+            except Exception as e:                                  # never keeps the menu bar from starting
+                print(f"sonata2-topbar: screen corners: {e}")
             try:                                                    # Clock's alarms ring from here
                 from .alarmservice import AlarmService
                 self.bar.alarms = AlarmService(app)

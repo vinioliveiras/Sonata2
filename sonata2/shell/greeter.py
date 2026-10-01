@@ -208,6 +208,8 @@ class Greeter:
             if not self.fake:
                 over.add_overlay(self._display_button())
             self._show()
+        from .screencorners import CornersOverlay        # (always: the login screen has no settings)
+        over.add_overlay(CornersOverlay())
         win.set_child(over)
         if self.fake:                            # a try-out inside the session: Esc leaves
             keys = Gtk.EventControllerKey()
