@@ -292,8 +292,11 @@ def over(css: str, base: str) -> str:
 # window's bar looks the same): the old glass as it showed over the window's
 # own colour. Sonata's title bars and toolbars, the ones Wayfire draws
 # (titlebars.apply_colors) and GNOME apps' (adwstyle.py) all read these.
+# The glass itself stays as titlebar_glass / titlebar_glass_inactive: Settings >
+# General > "Glass title bars" (off by default) puts it back (ui/theme.py).
 for _p in (LIGHT, DARK):
     for _k in ("titlebar_bg", "titlebar_bg_inactive"):
+        _p[_k.replace("_bg", "_glass")] = _p[_k]
         _p[_k] = over(_p[_k], _p["window_bg"])
 
 

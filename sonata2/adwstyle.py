@@ -63,8 +63,14 @@ def media_queries() -> bool:
         return False
 
 
-def css(folder: str = None, bars: bool = True) -> str:
-    """The stylesheet (pictures from `folder`; bars: the title bar colour)."""
+ADW_HEADER_H = 47      # libadwaita's header bar height: the see-through band of a glass window
+
+
+def css(folder: str = None, bars: bool = True, glass: bool = False) -> str:
+    """The stylesheet (pictures from `folder`; bars: the title bar colour;
+    glass: Settings > General > "Glass title bars", experimental here --
+    the window's background is see-through only behind its header bar,
+    where Wayfire blurs; the rest stays the app's own colour)."""
     from .ui.tokens import DARK, LIGHT
     D, G = FRAME["dot"], FRAME["dot_gap"]
     folder = folder or runtime_dir()
@@ -73,9 +79,16 @@ def css(folder: str = None, bars: bool = True) -> str:
         return f'url("file://{os.path.join(folder, "sonata-tl-" + name + ".svg")}")'
 
     def bar(t):
-        return (f"window:not(.sonata-window) headerbar {{ background-color: {t['titlebar_bg']}; "
-                f"box-shadow: inset 0 -1px {t['separator']}; }}\n"
-                f"window:not(.sonata-window):backdrop headerbar {{ background-color: {t['titlebar_bg_inactive']}; }}\n")
+        bg, bg_off = ((t["titlebar_glass"], t["titlebar_glass_inactive"]) if glass
+                      else (t["titlebar_bg"], t["titlebar_bg_inactive"]))
+        out = (f"window:not(.sonata-window) headerbar {{ background-color: {bg}; "
+               f"box-shadow: inset 0 -1px {t['separator']}; }}\n"
+               f"window:not(.sonata-window):backdrop headerbar {{ background-color: {bg_off}; }}\n")
+        if glass:      # the app paints its window opaque: only the header's band is let through
+            out += (f"window:not(.sonata-window).csd.background {{ background-color: transparent; "
+                    f"background-image: linear-gradient(to bottom, transparent {ADW_HEADER_H}px, "
+                    f"{t['window_bg']} {ADW_HEADER_H}px); }}\n")
+        return out
     w = "window:not(.sonata-window) windowcontrols > button"
     side = FRAME["buttons_side"]                         # the header bar's start (left) or end box
     wc = f"window:not(.sonata-window) headerbar windowcontrols.{'start' if side == 'left' else 'end'}"
@@ -111,7 +124,7 @@ def css(folder: str = None, bars: bool = True) -> str:
             + ((bar(LIGHT) + "@media (prefers-color-scheme: dark) {\n" + bar(DARK) + "}\n") if bars else ""))
 
 
-def write(on: bool = True) -> str:
+def write(on: bool = True, glass: bool = None) -> str:
     """At login: the pictures and the stylesheet (empty when turned off)."""
     folder = runtime_dir()
     os.makedirs(folder, exist_ok=True)
@@ -121,7 +134,10 @@ def write(on: bool = True) -> str:
                             os.path.join(folder, f"sonata-tl-{n}.svg"))
     tmp = css_path() + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        f.write(css(folder, bars=media_queries()) if on else "/* off: Settings > Appearance */\n")
+        if glass is None:
+            from .titlebars import glass_bars
+            glass = glass_bars()
+        f.write(css(folder, bars=media_queries(), glass=glass) if on else "/* off: Settings > Appearance */\n")
     os.replace(tmp, css_path())
     return css_path()
 

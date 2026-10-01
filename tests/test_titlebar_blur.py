@@ -18,10 +18,31 @@ class BlurTest(unittest.TestCase):
     def test_apply_colors_sets_it(self):
         calls = {}
         with mock.patch("sonata2.backend.system.wayfire_set",
-                        side_effect=lambda sec, key, val: calls.__setitem__((sec, key), val)):
+                        side_effect=lambda sec, key, val: calls.__setitem__((sec, key), val)), \
+                mock.patch.object(titlebars, "glass_bars", return_value=False):
             for dark in (False, True):
                 titlebars.apply_colors(dark)
                 self.assertEqual(calls[("blur", "blur_by_default")], titlebars.BLUR)
+
+    def test_glass_title_bars_toggle(self):
+        """Settings > General > Glass title bars (off by default): every window
+        blurred again, see-through bars, GNOME apps' header band too."""
+        from sonata2 import adwstyle, icons
+        from sonata2.ui import tokens
+        self.assertFalse(icons.APPEARANCE_DEFAULTS["glass_titlebars"])
+        calls = {}
+        with mock.patch("sonata2.backend.system.wayfire_set",
+                        side_effect=lambda sec, key, val: calls.__setitem__((sec, key), val)), \
+                mock.patch.object(titlebars, "glass_bars", return_value=True):
+            titlebars.apply_colors(True)
+        self.assertEqual(calls[("blur", "blur_by_default")], titlebars.BLUR_GLASS)
+        glass = tokens.wayfire_color(tokens.palette(True)["titlebar_glass"], premultiplied=True)
+        self.assertEqual(calls[("pixdecor", "fg_color")], "\\" + glass)
+        css = adwstyle.css("/x", bars=True, glass=True)
+        self.assertIn(tokens.palette(True)["titlebar_glass"], css)
+        self.assertIn(f"transparent {adwstyle.ADW_HEADER_H}px", css)      # only the header's band
+        plain = adwstyle.css("/x", bars=True, glass=False)
+        self.assertNotIn("background-color: transparent; background-image", plain)
 
 
 if __name__ == "__main__":

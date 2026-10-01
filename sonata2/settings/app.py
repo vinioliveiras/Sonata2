@@ -1926,6 +1926,9 @@ class Settings(Adw.ApplicationWindow):
                                                       None, on),
                                      self.toast("Apps pick it up when they open again")),
                          subtitle="Chrome, VS Code and others use Sonata's title bar instead of their own"))
+        s.add(switch_row("Glass title bars", app.get("glass_titlebars", False), self._set_glass_titlebars,
+                         subtitle="See-through, blurred title bars on every window, GNOME apps too "
+                                  "(experimental; heavier on the graphics card)"))
         gen = Adw.ActionRow(title="App icons made by Sonata",
                             subtitle="Apps without Sonata artwork get their icon on the standard frame, saved on disk")
         regen = Gtk.Button(label="Regenerate", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
@@ -2232,6 +2235,18 @@ class Settings(Adw.ApplicationWindow):
         sub.add_controller(click)
         sub.logs_row = logs_row                    # (tests)
         return [hero, specs, shell]
+
+    def _set_glass_titlebars(self, on) -> None:
+        """Title bars of every window: the glass, or opaque (the default)."""
+        self._save("appearance", "glass_titlebars", on)
+        from .. import titlebars
+        dark = Adw.StyleManager.get_default().get_dark()
+
+        def apply():
+            titlebars.apply()                                # GNOME apps (adwstyle)
+            titlebars.apply_colors(dark)                     # the bars Wayfire draws
+        system.run_async(apply, None)
+        self.toast("Apps pick it up when they open again")
 
     def _set_detailed_logs(self, on, row):
         from .. import logs

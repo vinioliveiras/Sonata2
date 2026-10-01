@@ -245,6 +245,14 @@ def _write(path: str, text: str) -> None:
 # frame they changed -- moving and resizing a window got heavy, and the
 # blur pass is where the Radeon 680M hung (session crash).
 BLUR = 'app_id contains "sonata2" | type is "unmanaged"'
+# "Glass title bars" on: every window again (their bars are see-through)
+BLUR_GLASS = BLUR + ' | type is "toplevel"'
+
+
+def glass_bars() -> bool:
+    """Glass title bars wanted and possible (not with Reduce transparency)."""
+    from .ui import theme
+    return theme.glass_titlebars() and not theme.reduce_transparency_now()
 
 
 def apply_colors(dark: bool) -> None:
@@ -252,14 +260,13 @@ def apply_colors(dark: bool) -> None:
     appearance (tokens.titlebar_*, opaque like GNOME apps' header bars).
     Wayfire reloads its config live."""
     from .backend import system
-    from .ui import theme, tokens
+    from .ui import tokens
     t = dict(tokens.palette(bool(dark)))
-    solid = theme.reduce_transparency_now()
     keys = ("titlebar_bg", "titlebar_bg_inactive", "titlebar_text", "titlebar_text_inactive")
-    if solid:
-        for k in keys[:2]:
-            t[k] = tokens.over(t[k], t["window_bg"])
-    system.wayfire_set("blur", "blur_by_default", BLUR)
+    glass = glass_bars()
+    if glass:
+        t["titlebar_bg"], t["titlebar_bg_inactive"] = t["titlebar_glass"], t["titlebar_glass_inactive"]
+    system.wayfire_set("blur", "blur_by_default", BLUR_GLASS if glass else BLUR)
     system.wayfire_set("sonata-corners", "outline", "\\" + tokens.wayfire_color(t["window_outline"]))
     fg, bg, text, dim = (tokens.wayfire_color(t[k], premultiplied=True) for k in keys)
     for k, v in (("fg_color", fg), ("bg_color", bg), ("fg_text_color", text), ("bg_text_color", dim)):
