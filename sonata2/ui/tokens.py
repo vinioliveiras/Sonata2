@@ -237,11 +237,33 @@ def _darker(hex_color: str, f: float = 0.86) -> str:
     return "#%02x%02x%02x" % (int(r * f), int(g * f), int(b * f))
 
 
+def custom_accent(name) -> str:
+    """A colour the user picked ("#rrggbb", Settings > Appearance > Accent
+    colour > the custom dot), normalised; None for a named accent."""
+    if not isinstance(name, str) or not name.startswith("#"):
+        return None
+    h = name.strip().lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    try:
+        int(h, 16)
+    except ValueError:
+        return None
+    return "#" + h.lower() if len(h) == 6 else None
+
+
+def accent_hex(name, dark: bool = False) -> str:
+    """The accent's colour, named or custom (blue when unknown)."""
+    return custom_accent(name) or ACCENTS.get(name, ACCENTS["blue"])[1 if dark else 0]
+
+
 def accent_tokens(name: str, dark: bool) -> dict:
     """Token overrides for an accent colour (empty for the default blue)."""
-    if name not in ACCENTS or name == "blue":
-        return {}
-    c = ACCENTS[name][1 if dark else 0]
+    c = custom_accent(name)
+    if c is None:
+        if name not in ACCENTS or name == "blue":
+            return {}
+        c = ACCENTS[name][1 if dark else 0]
     return {"accent": c, "accent_selected": c if dark else _darker(c)}
 
 

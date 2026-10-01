@@ -124,7 +124,7 @@ def run() -> int:
         gtkstyle.reset_env()               # (and forced GTK_THEME on D-Bus activated apps)
         mark("autostart: flatpak theme")
         from . import flatpak_theme
-        flatpak_theme.apply()              # Flatpak apps in Sonata's look (Settings > General)
+        flatpak_theme.apply()              # Flatpak apps in Sonata's look (Settings > Appearance)
     except Exception as e:
         print(f"sonata2-autostart: gtk style: {e}")
     mark("autostart: keyring")

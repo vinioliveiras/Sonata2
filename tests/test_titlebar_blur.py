@@ -36,7 +36,7 @@ class BlurTest(unittest.TestCase):
                 self.assertEqual(calls[("blur", "blur_by_default")], titlebars.BLUR)
 
     def test_glass_title_bars_toggle(self):
-        """Settings > General > Glass title bars (off by default): every window
+        """Settings > Appearance > Glass title bars (off by default): every window
         blurred again, see-through bars, GNOME apps' header band too."""
         from sonata2 import adwstyle, icons
         from sonata2.ui import tokens

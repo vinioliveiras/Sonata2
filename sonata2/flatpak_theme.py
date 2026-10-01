@@ -1,4 +1,4 @@
-"""Sonata's look for Flatpak apps too (Settings > General, on by default).
+"""Sonata's look for Flatpak apps too (Settings > Appearance, on by default).
 
 Flatpak apps run sandboxed: they don't see the system's themes nor the
 session's GTK_THEME. Turning this on copies Sonata's GTK themes to

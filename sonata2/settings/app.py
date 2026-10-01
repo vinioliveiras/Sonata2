@@ -24,25 +24,25 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 from .. import config, icons, names, ui  # noqa: E402
 from ..backend import equalizer, system  # noqa: E402
 
-SECTIONS = [  # id, title, icon, badge colour, group
+SECTIONS = [  # id, title, icon, badge colour, group (colours varied, not mostly grey: Vini)
     ("wifi", "Wi-Fi", "network-wireless-symbolic", "blue", "linux"),
-    ("network", "Network", "network-wired-symbolic", "blue", "linux"),
+    ("network", "Network", "network-wired-symbolic", "indigo", "linux"),
     ("bluetooth", "Bluetooth", "bluetooth-active-symbolic", "blue", "linux"),
     ("sound", "Sound", "audio-volume-high-symbolic", "pink", "linux"),
-    ("displays", "Displays", "video-display-symbolic", "blue", "linux"),
+    ("displays", "Displays", "video-display-symbolic", "teal", "linux"),
     ("battery", "Battery", "battery-full-symbolic", "green", "linux"),
-    ("keyboard", "Keyboard", "input-keyboard-symbolic", "gray", "input"),
-    ("mouse", "Mouse & Trackpad", "input-mouse-symbolic", "gray", "input"),
-    ("gamepad", "Game Controllers", "input-gaming-symbolic", "gray", "input"),
-    ("printers", "Printers & Scanners", "printer-symbolic", "gray", "input"),
-    ("appearance", "Appearance", "preferences-desktop-appearance-symbolic", "blue", "sonata"),
+    ("keyboard", "Keyboard", "input-keyboard-symbolic", "graphite", "input"),
+    ("mouse", "Mouse & Trackpad", "input-mouse-symbolic", "purple", "input"),
+    ("gamepad", "Game Controllers", "input-gaming-symbolic", "orange", "input"),
+    ("printers", "Printers & Scanners", "printer-symbolic", "teal", "input"),
+    ("appearance", "Appearance", "preferences-desktop-appearance-symbolic", "indigo", "sonata"),
     ("dock", "Desktop & Dock", "view-grid-symbolic", "black", "sonata"),
     ("launchpad", names.APPS, "view-app-grid-symbolic", "graphite", "sonata"),
     ("notifications", "Notifications", "preferences-system-notifications-symbolic", "red", "sonata"),
-    ("users", "Users & Groups", "system-users-symbolic", "gray", "system"),
-    ("privacy", "Security & Privacy", "security-high-symbolic", "gray", "system"),
+    ("users", "Users & Groups", "system-users-symbolic", "orange", "system"),
+    ("privacy", "Security & Privacy", "security-high-symbolic", "indigo", "system"),
     ("accessibility", "Accessibility", "preferences-desktop-accessibility-symbolic", "blue", "system"),
-    ("datetime", "Date & Time", "preferences-system-time-symbolic", "blue", "system"),
+    ("datetime", "Date & Time", "preferences-system-time-symbolic", "green", "system"),
     ("about", "About", "help-about-symbolic", "gray", "about"),
 ]
 
@@ -135,6 +135,13 @@ ui.register(_ACCENT_CSS + """
 button.st-accent { min-width: 16px; min-height: 16px; padding: 0; margin: 0 3px; border-radius: 99px; border: none;
   box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.2); transition: box-shadow %(t_fast)s; }
 button.st-accent.selected { box-shadow: 0 0 0 2px %(window_bg)s, 0 0 0 3.5px alpha(%(label)s, 0.45); }
+/* the custom colour: a rainbow ring around the picked colour */
+colorbutton.st-accent-custom > button.color { min-width: 16px; min-height: 16px; padding: 2px; margin: 0 3px;
+  border-radius: 99px; border: none; background: conic-gradient(#ff3b30, #ffcc00, #34c759, #0a84ff, #af52de, #ff3b30);
+  box-shadow: none; transition: box-shadow %(t_fast)s; }
+colorbutton.st-accent-custom > button.color colorswatch { min-width: 12px; min-height: 12px; border-radius: 99px; }
+colorbutton.st-accent-custom > button colorswatch > overlay { border-radius: 99px; }
+colorbutton.st-accent-custom.selected > button.color { box-shadow: 0 0 0 2px %(window_bg)s, 0 0 0 3.5px alpha(%(label)s, 0.45); }
 """, key="settings-accent")
 
 ui.register("""
@@ -161,6 +168,7 @@ row.st-sub-row { transition: opacity %(t_fast)s ease-out; }
 .st-status { min-width: 8px; min-height: 8px; border-radius: 4px; margin-right: 4px; }
 .st-status.on { background: %(sys_green)s; } .st-status.off { background: %(sys_red)s; }
 .st-badge.gray { background: %(sys_gray)s; } .st-badge.red { background: %(sys_red)s; }
+.st-badge.orange { background: %(sys_orange)s; } .st-badge.purple { background: %(sys_purple)s; }
 .st-badge.black { background: %(sys_black)s; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
 .st-card { padding: 10px 12px 6px 12px; }
 entry.st-search, .st-search { margin: 0 10px 6px 10px; min-height: 26px; border-radius: 7px; border: none;
@@ -1974,9 +1982,12 @@ class Settings(Adw.ApplicationWindow):
         cur = config.load("appearance", icons.APPEARANCE_DEFAULTS)["accent"]
         buttons = {}
 
+        custom_now = ui.tokens.custom_accent(cur)
+
         def pick(name):
             for n, b in buttons.items():
                 (b.add_css_class if n == name else b.remove_css_class)("selected")
+            (custom.add_css_class if ui.tokens.custom_accent(name) else custom.remove_css_class)("selected")
             self._save("appearance", "accent", name)
         for name in ui.tokens.ACCENTS:
             b = Gtk.Button(css_classes=["st-accent", name] + (["selected"] if name == cur else []),
@@ -1984,6 +1995,25 @@ class Settings(Adw.ApplicationWindow):
             b.connect("clicked", lambda _b, n=name: pick(n))
             buttons[name] = b
             box.append(b)
+        # any colour (Vini): the system colour picker; the dot shows the colour picked
+        custom = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog(with_alpha=False, title="Accent Colour"),
+                                       css_classes=["st-accent-custom"] + (["selected"] if custom_now else []),
+                                       valign=Gtk.Align.CENTER, tooltip_text="Other colour…")
+        start = Gdk.RGBA()
+        start.parse(custom_now or ui.tokens.accent_hex(cur))
+        custom.set_rgba(start)
+        sw = custom.get_first_child().get_first_child() if custom.get_first_child() else None
+        if sw is not None:                                # GTK sizes the swatch 38 x 19: a dot like the others
+            sw.set_size_request(12, 12)
+
+        def picked(btn, _p):
+            c = btn.get_rgba()
+            hexc = "#%02x%02x%02x" % (round(c.red * 255), round(c.green * 255), round(c.blue * 255))
+            if hexc != ui.tokens.custom_accent(config.load("appearance", icons.APPEARANCE_DEFAULTS)["accent"]):
+                pick(hexc)
+        custom.connect("notify::rgba", picked)
+        box.append(custom)
+        row.custom_accent = custom                        # (tests)
         row.add_suffix(box)
         return row
 

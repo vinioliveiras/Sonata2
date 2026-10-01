@@ -195,7 +195,7 @@ class SetupAssistant:
         acc.append(Gtk.Label(label="Accent Colour", css_classes=["su-caption"]))
         acc.append(dots)
         body.append(acc)
-        return self._page("Choose Your Look", "Pick an appearance. You can change it later in Settings > General.",
+        return self._page("Choose Your Look", "Pick an appearance. You can change it later in Settings > Appearance.",
                           body, next_to=True)
 
     def _sonata(self):

@@ -78,7 +78,7 @@ def settings_values() -> dict:
     dark = prefs.get(prefs.I, "color-scheme") == "prefer-dark"
     from .ui import tokens
     accent = config.load("appearance", {"accent": "blue"}).get("accent", "blue")
-    hexc = tokens.ACCENTS.get(accent, tokens.ACCENTS.get("blue"))[0]
+    hexc = tokens.accent_hex(accent)                 # named or picked (#rrggbb)
     rgb = tuple(int(hexc[i:i + 2], 16) / 255 for i in (1, 3, 5)) if hexc.startswith("#") else (0.0, 0.48, 1.0)
     reduce = config.load("appearance", {"reduce_transparency": False}).get("reduce_transparency", False)
     out[APPEARANCE] = {"color-scheme": GLib.Variant("u", 1 if dark else 2),

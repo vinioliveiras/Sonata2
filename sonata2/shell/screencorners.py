@@ -1,6 +1,6 @@
 """Rounded screen corners (macOS): the four corners of every display are
 masked in black, as if the glass of the screen had round corners.
-Settings > General > "Rounded screen corners" (appearance.json
+Settings > Displays > "Rounded screen corners" (appearance.json
 "screen_corners", on by default).
 
 The desktop: four tiny layer-shell surfaces per display (OVERLAY layer,
