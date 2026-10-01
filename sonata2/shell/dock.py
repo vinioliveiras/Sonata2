@@ -40,7 +40,10 @@ MIN_SIZE, MAX_SIZE = 16, 128
 PIN_MIN_SIZE = 36           # pins must still fit at this size: more can't be kept in the Dock
 SCREEN_MARGIN = 16          # px kept free at both ends of the screen edge
 MAX_RECENTS = 3
-LAUNCH_BOUNCES = 3          # macOS bounces a few times, then stops even if no window shows up
+LAUNCH_BOUNCES = 3          # attention / urgent bounces
+# a launch bounces until the app's first window shows up (slow apps: Steam,
+# games), never longer than this -- a window we can't match must not bounce forever
+LAUNCH_MAX_MS = 30000
 MAX_DOTS = 3                        # running dots: one per window, up to this many
 # Always in the Dock (like Finder on macOS): Files and Launchpad can't be
 # removed -- the shell relies on them (open folders, reach every app).
@@ -311,7 +314,7 @@ class DockTile(Gtk.Button):
             GLib.source_remove(self._bounce_src)
             self._stop_bounce()
 
-    def bounce(self, ms: int = LAUNCH_BOUNCES * BOUNCE_MS) -> None:
+    def bounce(self, ms: int = LAUNCH_MAX_MS) -> None:
         """Bounce until the app's first window appears (set_running) or `ms`."""
         self.add_css_class("launching")
         if self._bounce_src:
@@ -1162,10 +1165,9 @@ class Dock(Gtk.Box):
             self.launch(tile)
 
     def launch_feedback(self, tile: DockTile) -> None:
-        # Stops when the first window maps, or after a few bounces anyway
-        # (apps whose window we can't match must not bounce forever).
+        # Bounces until the first window maps (set_running), LAUNCH_MAX_MS at most.
         if tile.key not in NO_BOUNCE and self.cfg.get("bounce", True):
-            tile.bounce(LAUNCH_BOUNCES * BOUNCE_MS)
+            tile.bounce(LAUNCH_MAX_MS)
 
     def launch(self, tile: DockTile) -> None:
         info = tile.info

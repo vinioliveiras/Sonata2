@@ -966,6 +966,18 @@ class AutomaticPowerBoostTests(unittest.TestCase):
         self.assertIn("self.power.update(", (root / "gamemode.py").read_text())
 
 
+class LaunchBounceTests(unittest.TestCase):
+    """The Dock icon bounces until the app's window opens (Vini: slow apps
+    stopped bouncing after 3 bounces), with a safety cap."""
+
+    def test_bounces_until_the_window(self):
+        from sonata2.shell import dock
+        src = pathlib.Path(dock.__file__).read_text()
+        self.assertIn("tile.bounce(LAUNCH_MAX_MS)", src)
+        self.assertGreaterEqual(dock.LAUNCH_MAX_MS, 20000)
+        self.assertNotIn("tile.bounce(LAUNCH_BOUNCES * BOUNCE_MS)", src)
+
+
 class NvidiaNeverDrawsByDefaultRegressions(unittest.TestCase):
     """Still crashing with the opt-in off: wlroots picks the boot GPU, and
     with the laptop's MUX in dGPU mode that's NVIDIA (session.log: the
