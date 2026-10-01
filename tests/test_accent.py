@@ -94,7 +94,9 @@ class SettingsTest(unittest.TestCase):
         import inspect
         colours = [s[3] for s in self.st.SECTIONS]
         grey = sum(c in ("gray", "graphite") for c in colours)
-        self.assertLessEqual(grey, 3)                                     # Vini: not mostly grey
+        self.assertLessEqual(grey, 5)                                     # Vini: not mostly grey...
+        greys = {s[0] for s in self.st.SECTIONS if s[3] in ("gray", "graphite")}
+        self.assertEqual(greys, {"keyboard", "mouse", "printers", "launchpad", "about"})   # ...but these (macOS)
         src = inspect.getsource(self.st)
         for c in set(colours):
             self.assertIn(f".st-badge.{c} {{", src)                       # every colour has its CSS
