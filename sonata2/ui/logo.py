@@ -130,9 +130,17 @@ class LogoGlyph(Gtk.Widget):
             if a:
                 r, g, b = min(255, r * 255 // a), min(255, g * 255 // a), min(255, b * 255 // a)
             rgba[i:i + 4] = bytes((r, g, b, a))
-        from ..shell.tray import mono_mask
+        bands = []                                    # each character's columns (an emoji: its own tones)
+        it = layout.get_iter()
+        while True:
+            _i, rect = it.get_cluster_extents()
+            x0 = int(rect.x / Pango.SCALE * scale)
+            bands.append((max(0, x0), min(w, x0 + int(rect.width / Pango.SCALE * scale) + 1)))
+            if not it.next_cluster():
+                break
         self.text_size = (logical.width, logical.height)
-        return mono_mask(rgba, stride, w, h)
+        return Gdk.MemoryTexture.new(w, h, Gdk.MemoryFormat.R8G8B8A8,
+                                     GLib.Bytes.new(one_colour(rgba, stride, w, h, bands)), stride)
 
     def _load(self, kind):
         from .. import icons
@@ -248,3 +256,34 @@ def _current_with_text() -> tuple:
     from ..icons import APPEARANCE_DEFAULTS
     cfg = config.load("appearance", APPEARANCE_DEFAULTS)
     return (cfg.get("menu_logo", DEFAULT) or DEFAULT), (cfg.get("menu_text") or "")
+
+
+def one_colour(px: bytearray, stride: int, w: int, h: int, bands) -> bytes:
+    """A text logo in a single colour (white or black, the menu bar's text):
+    each character on its own, its main tone solid and the parts in a
+    contrasting tone cut out -- a smiley's face stays, its eyes and mouth
+    are holes; a dark game controller stays, its light buttons are holes.
+    Plain letters (one tone) are just solid. Only edges keep soft alpha."""
+    out = bytearray(len(px))
+    for x0, x1 in bands:
+        lums = []
+        for y in range(h):
+            for x in range(x0, x1):
+                i = y * stride + x * 4
+                if px[i + 3] > 128:
+                    lums.append((0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255)
+        two_tone = False
+        if len(lums) >= 8:
+            lums.sort()
+            lo, hi, mid = lums[len(lums) // 10], lums[len(lums) * 9 // 10], lums[len(lums) // 2]
+            two_tone = hi - lo >= 0.3
+        for y in range(h):
+            for x in range(x0, x1):
+                i = y * stride + x * 4
+                a = px[i + 3]
+                if two_tone and a:
+                    t = abs((0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255 - mid) / (hi - lo)
+                    a = int(a * min(1.0, max(0.0, (0.55 - t) / 0.2)))     # far from the main tone: a hole
+                a = min(255, max(0, (a - 48) * 255 // 160))                  # no see-through greys
+                out[i + 3] = max(out[i + 3], a)
+    return bytes(out)

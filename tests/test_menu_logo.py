@@ -38,6 +38,25 @@ class TextLogoTest(unittest.TestCase):
         self.assertEqual(L.text_for("text:custom", "   "), "Sonata")
         self.assertEqual(L.text_for("distro"), "")
 
+    def test_emoji_solid_with_holes(self):
+        """A light face with dark eyes: the face solid (no greys), the eyes holes."""
+        w = h = 10
+        px = bytearray(w * h * 4)
+        for i in range(w * h):
+            px[i * 4:i * 4 + 4] = bytes((255, 210, 40, 255))      # yellow face
+        for x0 in (1, 6):                                         # dark eyes, 3 x 3 each
+            for x in range(x0, x0 + 3):
+                for y in range(2, 5):
+                    i = (y * w + x) * 4
+                    px[i:i + 4] = bytes((20, 20, 20, 255))
+        out = L.one_colour(px, w * 4, w, h, [(0, w)])
+        self.assertEqual(out[(7 * w + 5) * 4 + 3], 255)
+        self.assertEqual(out[(3 * w + 2) * 4 + 3], 0)
+        letters = bytearray(px)
+        for i in range(w * h):
+            letters[i * 4:i * 4 + 4] = bytes((0, 0, 0, 255))      # plain text: one tone, all solid
+        self.assertTrue(all(L.one_colour(letters, w * 4, w, h, [(0, w)])[i * 4 + 3] == 255 for i in range(w * h)))
+
     def test_glyph_is_one_colour_and_as_wide_as_the_text(self):
         g = L.LogoGlyph(16)
         g.set_kind("text:custom", "Vini 🎮")
