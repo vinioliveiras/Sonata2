@@ -64,6 +64,7 @@ PERMANENT = ("io.github.vinioliveiras.sonata2.files", "sonata2-launchpad")
 NO_BOUNCE = {"sonata2-launchpad"}   # shell toggles open instantly: no launch bounce
 BOUNCE_MS = 620             # one bounce
 CLOSE_UP_MS = 260           # a removed icon's place closes up
+SETTLE_MS = 200             # a dropped icon glides into its slot
 MAG_RADIUS = 3.0            # magnification reaches this many icons away
 MAG_IN_MS, MAG_OUT_MS = 120, 250
 HIDE_MS = 250               # auto-hide slide
@@ -1053,6 +1054,7 @@ class Dock(Gtk.Box):
         if not self._drag:
             return 0
         self._drag["left"] = False
+        self._drag["x"], self._drag["y"] = x, y
         if self._drag.get("icon"):
             self._drag["icon"].feed(x, self)
         tile = self.tiles[self._drag["key"]]
@@ -1084,17 +1086,45 @@ class Dock(Gtk.Box):
         if key not in self.cfg["pinned"] and self.can_pin(key):
             self.cfg["pinned"].append(key)     # dragging a running app into place pins it
         self._save_order()
+        self._settle(self.tiles.get(key), _x, _y)
         return True
+
+    def _settle(self, tile, x, y) -> None:
+        """The dropped icon glides from under the pointer into its slot
+        (it used to blink in place there as the drag icon vanished)."""
+        if tile is None or not tile.get_mapped():
+            return
+        w, h = tile.get_width(), tile.get_height()
+        tile.remove_css_class("dragging")          # shown now: no empty frame between the two
+        before = {tile: (x - w / 2, y - h / 2, tile.get_parent())}
+        ui.transition.glide_play(before, self, SETTLE_MS)
 
     def _drag_cancel(self, _src, _drag, reason, tile) -> bool:
         d = self._drag
         if d and reason == Gdk.DragCancelReason.NO_TARGET and d["left"] and tile.key not in PERMANENT:
             self.set_pinned(tile.key, False)   # dragged out of the Dock: remove
+            self._poof(d)                       # ...in a puff of smoke (macOS)
             return True                         # no snap-back animation
         if d:                                   # Esc / refused: put it back
             tile.set_visible(True)
             self._move_to_slot(tile, d["index"])
         return False
+
+    def _poof(self, d) -> None:
+        try:
+            from . import poof
+            root = self.get_root()
+            app = root.get_application() if root is not None else None
+            surface = self.get_native().get_surface() if self.get_native() else None
+            mon = Gdk.Display.get_default().get_monitor_at_surface(surface) if surface else None
+            fallback = None
+            if mon is not None:                          # where the Dock last saw it, above the Dock
+                g = mon.get_geometry()
+                fallback = (mon, d.get("x", g.width / 2), g.height - self.get_height() - poof.SIZE / 2)
+            if app is not None:
+                poof.at_pointer(app, fallback)
+        except Exception as e:                           # an effect: never in the way
+            print(f"sonata2-dock: poof: {e}")
 
     def _drag_end(self, _src, _drag, delete, tile) -> None:
         tile.remove_css_class("dragging")

@@ -61,6 +61,28 @@ class OrderTest(unittest.TestCase):
             win.destroy()
 
 
+class DropAnimationTest(unittest.TestCase):
+    def test_poof_swells_then_fades(self):
+        """Dragged out of the Dock: a puff of smoke at the pointer (macOS)."""
+        from sonata2.shell import poof
+        start, mid, end = poof.frame(0.0), poof.frame(0.5), poof.frame(1.0)
+        self.assertGreater(mid[0][2], start[0][2])              # swells
+        self.assertEqual(start[0][3], 1.0)
+        self.assertEqual(end[0][3], 0.0)                        # gone
+        self.assertNotIn("sonata2", "sonata-poof")              # (not blurred)
+
+    def test_drop_settles_without_a_blank_frame(self):
+        """Regression: on drop the icon blinked in its slot (it stayed hidden until
+        the drag ended): it glides from the pointer into place, shown at once."""
+        import inspect
+        src = inspect.getsource(D.Dock._drag_drop)
+        self.assertIn("_settle", src)
+        settle = inspect.getsource(D.Dock._settle)
+        self.assertIn('remove_css_class("dragging")', settle)
+        self.assertIn("glide_play", settle)
+        self.assertIn("_poof", inspect.getsource(D.Dock._drag_cancel))
+
+
 class DockTest(unittest.TestCase):
     def setUp(self):
         Gtk.init()
@@ -89,6 +111,16 @@ class DockTest(unittest.TestCase):
 
     def start_drag(self, key):
         self.dock._drag = {"key": key, "index": self.keys().index(key), "left": False, "dropped": False}
+
+    def test_settle_glides_the_dropped_icon(self):
+        keys = self.removable()
+        tile = self.dock.tiles[keys[0]]
+        tile.add_css_class("dragging")
+        self.dock._settle(tile, 5.0, 5.0)
+        self.assertFalse(tile.has_css_class("dragging"))
+        settle(80)
+        dx, dy = getattr(tile, "_glide", (0, 0))
+        self.assertTrue(abs(dx) > 0.5 or abs(dy) > 0.5)        # still on its way into the slot
 
     def test_drag_out_closes_up(self):
         key = self.removable()[0]
