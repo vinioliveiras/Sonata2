@@ -123,7 +123,7 @@ NI=""      # the package manager's "don't ask" flag, for optional packages one b
 case "$family" in
     *arch*)   PM="sudo pacman -S --needed"; NI="--noconfirm"
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python-gobject python-cairo python-pywayland"
-              OPT="vte4 networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk keepassxc libpulse xorg-xwayland grim slurp wl-clipboard ffmpegthumbnailer webp-pixbuf-loader gamemode gtksourceview5 gst-plugins-good gst-plugins-bad gst-libav python-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl meson ninja ddcutil" ;;
+              OPT="vte4 networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gnome-keyring libsecret keepassxc libpulse xorg-xwayland grim slurp wl-clipboard ffmpegthumbnailer webp-pixbuf-loader gamemode gtksourceview5 gst-plugins-good gst-plugins-bad gst-libav python-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl meson ninja ddcutil" ;;
     *debian*|*ubuntu*) PM="sudo apt install"; NI="-y"
               PKGS="wayfire gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtk4layershell-1.0 python3-gi python3-gi-cairo python3-pywayland"
               OPT="gir1.2-vte-3.91 network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gir1.2-polkit-1.0 keepassxc pulseaudio-utils xwayland grim slurp wl-clipboard ffmpegthumbnailer webp-pixbuf-loader gamemode gir1.2-gtksource-5 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav python3-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl ddcutil" ;;

@@ -103,6 +103,26 @@ class SettingsTest(unittest.TestCase):
         config.save("appearance", {"theme": "mac"})              # older files without the key: on too
         self.assertTrue(titlebars.enabled())
 
+    def test_keyring_switch_offered_for_keepassxc(self):
+        """KeePassXC asked for its password at every login: Security & Privacy offers the move."""
+        config.save("keyring", {"backend": "keepassxc"})
+        win = S.Settings(None)
+        win.present()
+        win.select("privacy")
+        settle(150)
+        found, stack = [], [win]
+        while stack:
+            w = stack.pop()
+            if isinstance(w, Gtk.Button) and w.get_label() == "Use Login Password…":
+                found.append(w)
+            c = w.get_first_child()
+            while c is not None:
+                stack.append(c)
+                c = c.get_next_sibling()
+        self.assertEqual(len(found), 1)
+        win.destroy()
+        config.save("keyring", {"backend": "gnome"})
+
     def test_save_keeps_other_keys(self):
         config.save("dock", {"pinned": ["a"], "icon_size": 48})
         win = S.Settings(None)

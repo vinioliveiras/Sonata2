@@ -907,6 +907,9 @@ def main() -> int:
         return doctor.main()
     if len(sys.argv) > 2 and sys.argv[1] == "keep":
         return keep(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "keyring":         # backend (session script) / pam (root)
+        from . import keyring
+        return keyring.main(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "share-picker":     # screen sharing (xdg-desktop-portal-wlr)
         layer.ensure_preload()                                    # may re-exec (stdin not read yet)
         from .shell import sharepicker

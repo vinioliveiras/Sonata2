@@ -1776,7 +1776,51 @@ class Settings(Adw.ApplicationWindow):
                                 lambda on: system.set_gsetting("org.gnome.system.location", "enabled",
                                                                "true" if on else "false"),
                                 subtitle="Apps may ask for your location (GeoClue)"))
-        return [gen, priv]
+        return [gen, priv, self._keyring_group()]
+
+    def _keyring_group(self):
+        """Where saved passwords live (keyring.py): the login keyring (no
+        prompt after logging in) or KeePassXC (its own password each time)."""
+        from .. import keyring
+        grp = group("Saved Passwords")
+        if keyring.backend() == "keepassxc":
+            row = Adw.ActionRow(title="Kept by KeePassXC", use_markup=False,
+                                subtitle="It asks for its own password at every login")
+            btn = Gtk.Button(label="Use Login Password…", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+            btn.connect("clicked", lambda _b: self._switch_keyring())
+            row.add_suffix(btn)
+        else:
+            row = Adw.ActionRow(title="Login keyring", use_markup=False,
+                                subtitle="Unlocked by your login password: nothing asks after logging in")
+        row.set_subtitle_lines(0)
+        grp.add(row)
+        return grp
+
+    def _switch_keyring(self) -> None:
+        """KeePassXC -> the login keyring, with the apps' saved passwords."""
+        from .. import keyring
+        entry = Gtk.PasswordEntry(show_peek_icon=True, hexpand=True)
+
+        def go(rid):
+            if rid != "switch":
+                return
+            pw = entry.get_text()
+            self.toast("Moving your saved passwords… KeePassXC may ask to unlock its database")
+
+            def work():
+                try:
+                    n = keyring.switch_to_gnome(pw, lambda t: GLib.idle_add(self.toast, t))
+                    return f"{n} saved passwords moved: no keyring password from the next login"
+                except Exception as e:                       # noqa: BLE001 -- told, nothing lost
+                    return f"Not switched: {e}"
+            system.run_async(work, lambda msg: (self.toast(msg), self._reload_page("privacy")))
+        dlg = ui.dialog.alert("Use your login password for saved passwords?",
+                              "Apps' saved passwords (Chrome, VS Code, Wi-Fi) move from KeePassXC to the "
+                              "login keyring, which your login unlocks: no password prompt after logging in. "
+                              "KeePassXC stays installed as a password manager. Type your login password:",
+                              [("cancel", "Cancel", ""), ("switch", "Use Login Password", "default")], go,
+                              parent=self)
+        dlg.set_extra_child(entry)
 
     def _page_printers(self):
         g = group("Printers")

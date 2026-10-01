@@ -144,6 +144,12 @@ $SUDO install -d /etc/greetd
 printf '# Sonata login screen (tools/greeter-setup.sh; "install.sh --gdm" undoes it)\n[terminal]\nvt = 1\n\n[default_session]\ncommand = "%s"\nuser = "greeter"\n' \
     "$LAUNCHER" | $SUDO tee "$GREETD" >/dev/null
 
+# -- the login unlocks GNOME's keyring (saved passwords: no prompt after logging in) ----------
+# pam_gnome_keyring in /etc/pam.d/greetd (a copy kept as .sonata-bak); sonata2/keyring.py
+if command -v gnome-keyring-daemon >/dev/null && [ -f /etc/pam.d/greetd ]; then
+    $SUDO env PYTHONPATH="$SRC" python3 -m sonata2 keyring pam /etc/pam.d/greetd || true
+fi
+
 # -- switch the login manager (next boot: switching now would end this session) ---------------
 prev="$(current_dm || true)"
 if [ -n "$prev" ] && [ "$prev" != greetd ]; then

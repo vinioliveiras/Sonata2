@@ -33,11 +33,12 @@ done
              /usr/bin/lxqt-policykit-agent /usr/lib/xfce-polkit/xfce-polkit /usr/libexec/xfce-polkit; do
     [ -x "$agent" ] && { "$agent" & break; }
 done
-# Saved passwords (Chrome, VS Code, Wi-Fi secrets): the login screen's PAM
-# usually unlocks gnome-keyring; make sure its secrets service runs.
-# KeePassXC is Sonata's keyring when installed (sonata2/keyring.py turns on
-# its Secret Service and starts it at login); gnome-keyring only without it.
-if ! command -v keepassxc >/dev/null && command -v gnome-keyring-daemon >/dev/null; then
+# Saved passwords (Chrome, VS Code, Wi-Fi secrets): GNOME's keyring, unlocked
+# by the login screen's PAM with your password (no prompt); make sure its
+# secrets service runs. KeePassXC instead while it is still your keyring
+# (sonata2/keyring.py: backend; it starts KeePassXC at login).
+keyring_backend="$(PYTHONPATH="$SONATA_REPO" python3 -m sonata2 keyring backend 2>/dev/null || echo gnome)"
+if [ "$keyring_backend" != keepassxc ] && command -v gnome-keyring-daemon >/dev/null; then
     eval "$(gnome-keyring-daemon --start --components=secrets,pkcs11 2>/dev/null)" || true
     export SSH_AUTH_SOCK
 fi

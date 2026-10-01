@@ -207,9 +207,21 @@ def check_tools(r: Report) -> None:
     r.add(OK if not lack else WARN, "portals (file dialogs, screen sharing)", " ".join(sorted(lack)) + " missing" if lack else "")
     if lack:
         missing += sorted(lack)
-    kp = shutil.which("keepassxc")
-    r.add(OK if kp else WARN, "KeePassXC (saved passwords: Chrome, VS Code, Wi-Fi -- Sonata's keyring)",
-          fix="" if kp else "install keepassxc")
+    from . import keyring
+    kr = keyring.backend()
+    if kr == "keepassxc":
+        r.add(WARN, "saved passwords: KeePassXC (asks for its own password at every login)",
+              fix="Settings > Security & Privacy > Use Login Password…")
+    else:
+        gk = shutil.which("gnome-keyring-daemon")
+        r.add(OK if gk else WARN, "saved passwords: login keyring (Chrome, VS Code, Wi-Fi)",
+              fix="" if gk else {"arch": "sudo pacman -S gnome-keyring libsecret",
+                                 "debian": "sudo apt install gnome-keyring",
+                                 "rpm": "sudo dnf install gnome-keyring"}.get(fam, "install gnome-keyring"))
+        if gk and os.path.exists("/etc/pam.d/greetd"):
+            ok = keyring.pam_ready()
+            r.add(OK if ok else WARN, "the login unlocks the keyring (no password prompt)",
+                  fix="" if ok else "./install.sh --greeter (or: sudo sonata2 keyring pam)")
     if missing:
         pm = {"arch": "sudo pacman -S --needed", "debian": "sudo apt install", "rpm": "sudo dnf install"}.get(fam, "install")
         r.add(WARN, "all optional packages in one go", fix=f"{pm} {' '.join(dict.fromkeys(missing))}")
