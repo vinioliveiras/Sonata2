@@ -344,12 +344,40 @@ class DockFolderTest(unittest.TestCase):
         d.set_folder_locked(fkey, True)
         self.assertIsNone(decode_folder(d._drag_text(fkey)))                  # locked: never shown elsewhere
 
+    def test_folder_uri_read_from_the_drop_as_it_came(self):
+        """Regression (Vini: Launchpad folders couldn't be dragged to the Dock):
+        the uri went through Gio.File, which GVfs may rewrite for an unknown
+        scheme; it's read from the drop's text/uri-list and kept as is."""
+        from gi.repository import Gio
+        from sonata2.launchpad_model import decode_folder, encode_folder
+        from sonata2.shell import dock_drop
+        uri = encode_folder("Games & Fun", ["a.desktop", "b"])
+        data = (uri + "\r\n" + "file:///tmp/x.desktop\r\n").encode()
+
+        class Drop:
+            def read_async(self, mimes, _prio, _cancel, cb):
+                self.mimes = mimes
+                cb(self, None)
+
+            def read_finish(self, _res):
+                return Gio.MemoryInputStream.new_from_data(data), dock_drop.URI_LIST
+        got = []
+        dock_drop._read_uris(Drop(), got.append)
+        settle(100)
+        files = got[0]
+        self.assertIsInstance(files[0], dock_drop.RawUri)
+        self.assertEqual(decode_folder(files[0].get_uri()), {"folder": "Games & Fun", "apps": ["a.desktop", "b"]})
+        self.assertIsNone(files[0].get_path())
+        self.assertEqual(files[1].get_path(), "/tmp/x.desktop")            # ordinary files: Gio.File
+        self.assertFalse(dock_drop._is_app(files[0]))
+        self.assertFalse(dock_drop._is_dir(files[0]))
+
     def test_launchpad_folder_dropped_on_dock(self):
         from gi.repository import Gio
         from sonata2.launchpad_model import encode_folder
         from sonata2.shell import dock_drop
         d, a, b, c = self.dock, *self.apps[:3]
-        files = [Gio.File.new_for_uri(encode_folder("Games", [a, b, "not.installed"]))]
+        files = [dock_drop._item(encode_folder("Games", [a, b, "not.installed"]))]
         self.assertEqual(dock_drop._folders(files), [{"folder": "Games", "apps": [a, b, "not.installed"]}])
         self.assertEqual(dock_drop._folders([Gio.File.new_for_path("/tmp")]), [])
         before = d.tiles[c]

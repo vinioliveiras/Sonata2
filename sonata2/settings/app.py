@@ -2103,7 +2103,10 @@ class Settings(Adw.ApplicationWindow):
                 if k == "blur":
                     raw["blur"] = v
                 else:
-                    raw[k] = dict({"on": cur[k]["on"]}, **{kk: vv for kk, vv in raw.get(k, {}).items()}, **v)
+                    part = {"on": cur[k]["on"]}            # (a dict(..., **a, **b) with the same key raised)
+                    part.update(raw.get(k) if isinstance(raw.get(k), dict) else {})
+                    part.update(v)
+                    raw[k] = part
             self._glass_pending = {}
             config.update("appearance", glass=raw)
             from .. import titlebars

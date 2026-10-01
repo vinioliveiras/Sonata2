@@ -69,6 +69,35 @@ def app_id_for(f: Gio.File):
     return did if apps.lookup(did) else None
 
 
+class RawUri:
+    """A dropped URI kept as it came: a Launchpad folder ("sonata2-folder:...").
+    Gio.File.new_for_uri hands unknown schemes to GVfs, which may rewrite
+    them -- the folder's text didn't survive and the drop did nothing."""
+
+    def __init__(self, uri: str):
+        self.uri = uri
+
+    def get_uri(self) -> str:
+        return self.uri
+
+    def get_path(self):
+        return None
+
+    def get_basename(self) -> str:
+        return ""
+
+    def query_file_type(self, *_a):
+        return Gio.FileType.UNKNOWN
+
+    def trash(self, *_a):
+        return False
+
+
+def _item(uri: str):
+    from ..launchpad_model import FOLDER_SCHEME
+    return RawUri(uri) if uri.startswith(FOLDER_SCHEME) else Gio.File.new_for_uri(uri)
+
+
 class _Files:
     """Stands in for a Gdk.FileList value (what the handlers read)."""
 
@@ -115,7 +144,7 @@ def _read_uris(drop, done) -> None:
                 return
             uris = [ln.strip() for ln in data.decode("utf-8", "replace").splitlines()
                     if ln.strip() and not ln.startswith("#")]
-            done([Gio.File.new_for_uri(u) for u in uris])
+            done([_item(u) for u in uris])
         stream.read_bytes_async(1 << 20, GLib.PRIORITY_DEFAULT, None, got_bytes)
     drop.read_async([URI_LIST], GLib.PRIORITY_DEFAULT, None, got_stream)
 
@@ -313,7 +342,9 @@ def add_folders(dock, folders, before=None, x=None, y=0.0) -> bool:
     """Launchpad folders dropped on the Dock: a Dock folder each, there."""
     ok = False
     for f in folders:
-        ok = dock.add_folder(f["folder"], f["apps"], before=before, x=x, y=y) is not None or ok
+        fkey = dock.add_folder(f["folder"], f["apps"], before=before, x=x, y=y)
+        print(f"sonata2-dock: folder dropped: {f['folder']!r} ({len(f['apps'])} apps) -> {fkey}", flush=True)
+        ok = fkey is not None or ok
     return ok
 
 

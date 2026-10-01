@@ -237,6 +237,20 @@ class SettingsAppearanceTest(unittest.TestCase):
         settle(400)
         self.assertEqual(G.settings()["blur"], 80)
 
+    def test_slider_moved_twice_saves(self):
+        """Regression: a part's alpha saved, then changed again, raised
+        (dict() got multiple values for 'alpha') and nothing was saved."""
+        _sw, sl = self.w.glass_rows["menubar"]
+        sl.slider.set_value(20)
+        settle(400)
+        sl.slider.set_value(80)
+        settle(400)
+        self.assertAlmostEqual(G.settings()["menubar"]["alpha"], self.st.Settings._slider_to_alpha(80), 2)
+        self.w.glass_rows["menubar"][0].set_active(False)
+        settle(50)
+        self.assertFalse(G.settings()["menubar"]["on"])
+        self.assertIsNotNone(G.settings()["menubar"]["alpha"])       # the level kept
+
     def test_slider_mapping_round_trips(self):
         for a in (0.5, 0.6, 0.74, 0.95):
             self.assertAlmostEqual(self.st.Settings._slider_to_alpha(self.st.Settings._alpha_to_slider(a)), a, 2)
