@@ -1,5 +1,5 @@
 """Notes and Reminders data: notes.json and reminders.json in
-GLib.get_user_data_dir()/sonata2/notes/, each rewritten atomically (a temp
+GLib.get_user_data_dir()/sonata2-data/notes/, each rewritten atomically (a temp
 file, then os.replace) after every change.
 
 notes.json      {"folders": [{id, name}],
@@ -30,8 +30,8 @@ ALL_DAY_HOUR = 9             # all-day reminders alert at 9:00 (macOS)
 
 
 def data_dir() -> str:
-    from gi.repository import GLib
-    return os.path.join(GLib.get_user_data_dir(), "sonata2", "notes")
+    from .. import userdata
+    return userdata.folder("notes")
 
 
 def write_json(path: str, data) -> None:

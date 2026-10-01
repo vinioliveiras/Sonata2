@@ -1416,6 +1416,68 @@ class ReleaseVersionTests(unittest.TestCase):
         self.assertIn(f"## {sonata2.__version__} ", (root / "CHANGELOG.md").read_text())
 
 
+class UserDataOutsideTheInstallTests(unittest.TestCase):
+    """Calendars and TextEdit's tabs showed up in the git clone: apps kept
+    their data in ~/.local/share/sonata2/<app>, the install folder (a dev
+    install links it to the clone; an update replaces it -- the data went
+    with it). Data lives in ~/.local/share/sonata2-data; what's in the old
+    place moves over, from the apps and from install.sh."""
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.old_env = os.environ.get("XDG_DATA_HOME")
+        os.environ["XDG_DATA_HOME"] = os.path.join(self.home, ".local", "share")
+
+    def tearDown(self):
+        if self.old_env is None:
+            os.environ.pop("XDG_DATA_HOME", None)
+        else:
+            os.environ["XDG_DATA_HOME"] = self.old_env
+
+    def _userdata(self):
+        from unittest import mock
+        from sonata2 import userdata
+        return userdata, mock.patch.object(userdata.GLib, "get_user_data_dir",
+                                           lambda: os.environ["XDG_DATA_HOME"])
+
+    def test_apps_move_their_data_out_of_a_dev_clone(self):
+        userdata, patch = self._userdata()
+        clone = os.path.join(self.home, "GitHub", "sonata2")
+        os.makedirs(os.path.join(clone, "calendar"))
+        with open(os.path.join(clone, "calendar", "home.ics"), "w") as f:
+            f.write("BEGIN:VCALENDAR\n")
+        os.makedirs(os.environ["XDG_DATA_HOME"])
+        os.symlink(clone, os.path.join(os.environ["XDG_DATA_HOME"], "sonata2"))      # install.sh --dev
+        with patch:
+            path = userdata.folder("calendar")
+            self.assertEqual(path, os.path.join(os.environ["XDG_DATA_HOME"], "sonata2-data", "calendar"))
+            self.assertTrue(os.path.exists(os.path.join(path, "home.ics")))
+            self.assertFalse(os.path.exists(os.path.join(clone, "calendar")))        # out of the clone
+            self.assertTrue(os.path.isdir(userdata.folder("notes")))                 # new apps: just created
+
+    def test_install_keeps_your_data(self):
+        import subprocess
+        root = pathlib.Path(__file__).resolve().parent.parent
+        sh = (root / "install.sh").read_text()
+        fn = sh[sh.index("carry_data() {"):sh.index("\n}\n", sh.index("carry_data() {")) + 3]
+        share = os.path.join(os.environ["XDG_DATA_HOME"], "sonata2")
+        os.makedirs(os.path.join(share, "notes"))
+        os.makedirs(os.path.join(share, "sonata2", "notes"))                         # code: stays
+        open(os.path.join(share, "notes", "notes.json"), "w").close()
+        subprocess.run(["bash", "-c", fn + "\ncarry_data"], check=True, capture_output=True,
+                       env={**os.environ, "HOME": self.home, "SHARE": share})
+        self.assertTrue(os.path.exists(os.path.join(os.environ["XDG_DATA_HOME"], "sonata2-data", "notes",
+                                                    "notes.json")))
+        self.assertTrue(os.path.isdir(os.path.join(share, "sonata2", "notes")))
+        self.assertLess(sh.index("carry_data\n$SUDO rm -rf \"$SHARE\""), sh.index('$SUDO cp -a "$tmp/sonata2"'))
+
+    def test_apps_use_it(self):
+        root = pathlib.Path(__file__).resolve().parent.parent / "sonata2"
+        for f in root.rglob("*.py"):
+            if f.name != "userdata.py":
+                self.assertNotIn('get_user_data_dir(), "sonata2"', f.read_text(), f)
+
+
 class SteamGameDockTests(unittest.TestCase):
     """Steam games showed in the Dock as a generic icon named
     "steam_app_<id>": their name and icon now come from Steam."""

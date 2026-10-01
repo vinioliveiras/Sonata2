@@ -47,11 +47,28 @@ CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
 if [ "$MODE" = system ]; then PORTAL_DIR=/usr/share/xdg-desktop-portal; else PORTAL_DIR="$CFG/xdg-desktop-portal"; fi
 
 say() { printf '\033[1m%s\033[0m\n' "$*"; }
+# Your data (notes, calendars, TextEdit's open tabs, Music's playlists) used to
+# live inside the install folder ($SHARE), which an update replaces (and a dev
+# install links to the git clone): carry it to ~/.local/share/sonata2-data
+# (sonata2/userdata.py) before $SHARE goes.
+carry_data() {
+    local data="${XDG_DATA_HOME:-$HOME/.local/share}" src app
+    [ "$SHARE" = "$HOME/.local/share/sonata2" ] || [ "$SHARE" = "$data/sonata2" ] || return 0
+    src="$(readlink -f "$SHARE" 2>/dev/null || true)"
+    [ -n "$src" ] && [ -d "$src" ] || return 0
+    for app in notes calendar textedit music; do
+        if [ -d "$src/$app" ] && [ ! -e "$data/sonata2-data/$app" ]; then
+            mkdir -p "$data/sonata2-data" && mv "$src/$app" "$data/sonata2-data/$app" &&
+                echo "  your $app data is in $data/sonata2-data/$app"
+        fi
+    done
+}
 ask() { [ "$YES" = 1 ] && return 0; read -r -p "$1 [Y/n] " r; [ -z "$r" ] || [[ "$r" =~ ^[YySs] ]]; }
 
 # -- uninstall ---------------------------------------------------------------------------
 if [ "$UNINSTALL" = 1 ]; then
     say "Removing Sonata 2 from $PREFIX"
+    carry_data                           # (your notes and calendars stay)
     $SUDO rm -rf "$SHARE"
     $SUDO rm -f "$BIN/sonata2" "$BIN/sonata-session" "$PORTAL_DIR/sonata-portals.conf"
     if [ -f "$SESSION_FILE" ] && ask "Remove \"Sonata\" from the login screen (sudo)?"; then
@@ -211,6 +228,7 @@ items=(sonata2 config)
 for f in "$SRC"/LICENSE* "$SRC/README.md"; do [ -e "$f" ] && items+=("$(basename "$f")"); done
 ( cd "$SRC" && tar --exclude=__pycache__ -cf - "${items[@]}" ) | tar -xf - -C "$tmp/sonata2"
 cp "$SRC/tools/session-env.sh" "$SRC/tools/sonata-session" "$SRC/tools/wayfire-config.sh" "$tmp/sonata2/tools/"
+carry_data
 $SUDO rm -rf "$SHARE"
 $SUDO mkdir -p "$(dirname "$SHARE")"
 if [ "$DEV" = 1 ]; then

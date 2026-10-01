@@ -14,14 +14,13 @@ import json
 import os
 import re
 
-from gi.repository import GLib
-
 VERSION = 1
 _ID = re.compile(r"^[0-9a-f]{8,64}$")
 
 
 def data_dir() -> str:
-    return os.path.join(GLib.get_user_data_dir(), "sonata2", "textedit")
+    from .. import userdata
+    return userdata.folder("textedit")
 
 
 def _buffers() -> str:

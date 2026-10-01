@@ -19,7 +19,7 @@ Shift+T title, Shift+H heading, Shift+J subheading, Shift+B body,
 Shift+L checklist, Delete deletes the selected note (or reminder), Z
 after a delete brings the note back, W closes.
 
-Data: notes.json and reminders.json in ~/.local/share/sonata2/notes
+Data: notes.json and reminders.json in ~/.local/share/sonata2-data/notes
 (store.py)."""
 import datetime
 import time

@@ -7,7 +7,7 @@ changed (`scan` is blocking -- run it through run_async). Cover art is
 written once per picture to ~/.cache/sonata2/music-art/<sha1>.<ext> (the
 file:// MPRIS hands to the menu bar) with a small thumbnail beside it for
 the album grid. Play counts and playlists are user data:
-~/.local/share/sonata2/music/{plays,playlists}.json.
+~/.local/share/sonata2-data/music/{plays,playlists}.json.
 
 No GTK here (GdkPixbuf only, lazily, to make thumbnails)."""
 import hashlib
@@ -42,7 +42,8 @@ def art_dir() -> str:
 
 
 def data_dir() -> str:
-    return os.path.join(GLib.get_user_data_dir(), "sonata2", "music")
+    from .. import userdata
+    return userdata.folder("music")
 
 
 def _load_json(path: str, default):

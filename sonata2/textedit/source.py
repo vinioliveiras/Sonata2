@@ -10,7 +10,7 @@ import os
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, Gio, GLib, Graphene, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, Graphene, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
 
@@ -123,7 +123,8 @@ _schemes = {"dir": None, "buffers": []}
 
 
 def _scheme_dir() -> str:
-    return os.path.join(GLib.get_user_data_dir(), "sonata2", "textedit", "styles")
+    from .. import userdata
+    return os.path.join(userdata.folder("textedit"), "styles")
 
 
 def scheme():

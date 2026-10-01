@@ -547,7 +547,8 @@ class _Center(Gtk.Window):
 
 
 def _calendar_folder() -> str:
-    return os.path.join(GLib.get_user_data_dir(), "sonata2", "calendar")
+    from .. import userdata
+    return userdata.folder("calendar")
 
 
 def _calendar_stamp():

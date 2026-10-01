@@ -20,7 +20,7 @@ Keys (⌘ is Ctrl or Super): ⌘1..4 Day / Week / Month / Year, ⌘T today,
 ← / → previous / next, ⌘N new event, ⌘F search, ⌘Z undo, ⇧⌘Z redo,
 Delete / Backspace delete, Esc deselects.
 
-Storage: one iCalendar file per calendar in ~/.local/share/sonata2/calendar/
+Storage: one iCalendar file per calendar in ~/.local/share/sonata2-data/calendar/
 (ics.py). .ics files opened with Calendar or dropped on its window are
 imported. While Calendar runs, alerts show as desktop notifications
 (alerts.py)."""
@@ -147,7 +147,8 @@ class CalendarWindow(Gtk.ApplicationWindow):
         self.first_weekday = ws if isinstance(ws, int) and 0 <= ws <= 6 else model.locale_first_weekday()
         topbar = config.load("topbar", {"clock_format": "%H:%M"})
         self.h24 = any(x in topbar["clock_format"] for x in ("%H", "%k", "%R", "%T"))
-        self.store = model.Store(folder or os.path.join(GLib.get_user_data_dir(), "sonata2", "calendar"))
+        from .. import userdata
+        self.store = model.Store(folder or userdata.folder("calendar"))
         self.store.load()
         self.store.async_writes = True
         self.hidden = set(self.cfg["hidden"])

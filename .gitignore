@@ -4,3 +4,8 @@ __pycache__/
 /screenshots/
 .uuid
 .dev-logs/
+# app data of a dev install from before sonata2/userdata.py (it moves out by itself)
+/calendar/
+/textedit/
+/notes/
+/music/
