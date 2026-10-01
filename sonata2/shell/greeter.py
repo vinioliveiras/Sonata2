@@ -25,7 +25,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import greetd, ui  # noqa: E402
-from .loginui import Backdrop, WaitGuard, avatar, clock, password_field, logind, power_bar, shake  # noqa: E402
+from .loginui import Backdrop, WaitGuard, avatar, password_field, top_clock, logind, power_bar, shake  # noqa: E402
 
 STATE = "/var/cache/sonata-greeter/state.json"
 WAITS = "/var/cache/sonata-greeter/password-waits.json"     # waits after wrong passwords, per user
@@ -195,10 +195,7 @@ class Greeter:
         bd = Backdrop(self._wallpaper())
         self.backdrops.append(bd)
         over.set_child(bd)
-        when = Gtk.Label(css_classes=["lk-clock"], halign=Gtk.Align.END, valign=Gtk.Align.START,
-                         margin_top=8, margin_end=16)
-        clock(when)
-        over.add_overlay(when)
+        over.add_overlay(top_clock())                 # like the lock screen: top, centred (Vini)
         if primary:
             self.center = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=220,
                                     halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)

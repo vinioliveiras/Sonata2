@@ -635,9 +635,15 @@ class LockClockRegressions(unittest.TestCase):
         """Vini: the lock screen's clock at the top, centred, like the menu bar's."""
         import inspect
         from sonata2.shell import lock, loginui
+        from sonata2.shell import greeter
         src = inspect.getsource(lock.LockScreen._window)
-        self.assertIn("halign=Gtk.Align.CENTER, valign=Gtk.Align.START", src)
-        self.assertIn("menu_bar_format()", src)
+        self.assertIn("top_clock(menu_bar_format())", src)
+        # Vini: the login screen shows it the same way
+        self.assertIn("top_clock()", inspect.getsource(greeter.Greeter._window))
+        w = loginui.top_clock("%Y")
+        self.assertEqual((w.get_halign(), w.get_valign()), (Gtk.Align.CENTER, Gtk.Align.START))
+        self.assertTrue(w.has_css_class("lk-clock"))
+        self.assertEqual(w.get_label(), GLib.DateTime.new_now_local().format("%Y"))
         config.save("topbar", {"clock_format": "%H:%M"})
         self.assertEqual(loginui.menu_bar_format(), "%H:%M")
         lbl = Gtk.Label()

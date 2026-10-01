@@ -17,7 +17,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 from .. import pam  # noqa: E402
-from .loginui import Backdrop, WaitGuard, avatar, clock, logind, menu_bar_format, password_field, power_bar, shake, wallpaper_texture  # noqa: E402
+from .loginui import Backdrop, WaitGuard, avatar, logind, top_clock, menu_bar_format, password_field, power_bar, shake, wallpaper_texture  # noqa: E402
 
 
 class LockScreen:
@@ -45,11 +45,7 @@ class LockScreen:
         win.add_css_class("sonata-lock")
         over = Gtk.Overlay(css_classes=["gr-fade-in"])
         over.set_child(Backdrop(self.texture))
-        # the date and time at the top, centred, the menu bar's size and format (Vini)
-        when = Gtk.Label(css_classes=["lk-clock"], halign=Gtk.Align.CENTER, valign=Gtk.Align.START,
-                         margin_top=6)
-        clock(when, menu_bar_format())
-        over.add_overlay(when)
+        over.add_overlay(top_clock(menu_bar_format()))     # the menu bar's place, size and format (Vini)
         if primary:
             over.add_overlay(self._login())
             self.power = power_bar(self._power)

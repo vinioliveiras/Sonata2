@@ -234,6 +234,14 @@ def menu_bar_format() -> str:
         return CLOCK_FORMAT
 
 
+def top_clock(fmt: str = None) -> Gtk.Label:
+    """The date and time at the top, centred, the menu bar's size and format
+    (Vini): the lock screen and the login screen show the same."""
+    when = Gtk.Label(css_classes=["lk-clock"], halign=Gtk.Align.CENTER, valign=Gtk.Align.START, margin_top=6)
+    clock(when, fmt or menu_bar_format())
+    return when
+
+
 def clock(label: Gtk.Label, fmt: str = CLOCK_FORMAT) -> None:
     """Keep `label` on the date and time (every 10 s)."""
     def tick():
