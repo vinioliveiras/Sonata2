@@ -24,7 +24,6 @@ gi.require_version("Gsk", "4.0")
 from gi.repository import Gdk, GLib, Graphene, Gsk, Gtk  # noqa: E402
 
 DEFAULT = "distro"
-TEXT_HEIGHT = 1.25                  # a text logo's line box, in icon sizes (13 px type in a 16 px slot)
 TEXT_MAX = 24                       # characters of custom text
 TEXTS = (("text:sonata", "Text: Sonata"), ("text:user", "Text: your name"), ("text:custom", "Text: custom…"))
 SHAPES = (("circle", "Circle"), ("square", "Square"), ("triangle", "Triangle"), ("diamond", "Diamond"),
@@ -113,7 +112,8 @@ class LogoGlyph(Gtk.Widget):
         from .tokens import SHARED
         desc = Pango.FontDescription.from_string(       # the menu bar's font (tokens: "font")
             ",".join(f.strip().strip('"') for f in SHARED["font"].split(",")) + " Bold")
-        desc.set_absolute_size(13 * Pango.SCALE)
+        from .tokens import SHARED as _S                 # the menu bar's own text size (tokens: text_body)
+        desc.set_absolute_size(int(str(_S["text_body"]).rstrip("px")) * Pango.SCALE)
         layout.set_font_description(desc)
         _ink, logical = layout.get_pixel_extents()
         w, h = max(1, logical.width * scale), max(1, logical.height * scale)
@@ -165,9 +165,10 @@ class LogoGlyph(Gtk.Widget):
         return theme.lookup_icon(name, None, self.size, scale, Gtk.TextDirection.NONE, 0)
 
     def do_measure(self, orientation, for_size):
-        if self.text and self.texture is not None and orientation == Gtk.Orientation.HORIZONTAL:
-            w = self.text_size[0] * self.size / max(1, self.text_size[1]) * TEXT_HEIGHT
-            return int(w), int(w), -1, -1
+        if self.text and self.texture is not None:      # words at their own size, like the menus' titles
+            n = self.text_size[0] if orientation == Gtk.Orientation.HORIZONTAL else max(self.size,
+                                                                                       self.text_size[1])
+            return int(n), int(n), -1, -1
         return self.size, self.size, -1, -1
 
     def do_snapshot(self, snap):
@@ -186,10 +187,9 @@ class LogoGlyph(Gtk.Widget):
         if self.texture is None:
             return
         if self.text:                                            # words: one colour, the slot's height
-            tw, th = self.text_size
-            k = s * TEXT_HEIGHT / max(1, th)
-            box = Graphene.Rect().init((self.get_width() - tw * k) / 2, (self.get_height() - th * k) / 2,
-                                       tw * k, th * k)
+            tw, th = self.text_size                              # 1:1 (it used to be scaled up 1.25x)
+            box = Graphene.Rect().init(round((self.get_width() - tw) / 2), round((self.get_height() - th) / 2),
+                                       tw, th)
             snap.push_mask(Gsk.MaskMode.ALPHA)
             snap.append_texture(self.texture, box)
             snap.pop()

@@ -65,6 +65,9 @@ class TextLogoTest(unittest.TestCase):
         self.assertGreater(w, 16 * 2)
         data = g.texture.save_to_png_bytes().get_data()      # mono_mask: colour channels all 0
         self.assertTrue(data)
+        # drawn at the menus' own text size, not scaled up (it looked bigger than the menu titles)
+        self.assertEqual(w, g.text_size[0])
+        self.assertLessEqual(g.text_size[1], 18)
         g.set_kind("shape:circle")
         self.assertEqual(g.text, "")
         self.assertEqual(g.measure(gi.repository.Gtk.Orientation.HORIZONTAL, -1)[0], 16)
