@@ -48,14 +48,14 @@ def glass() -> bool:
 
 
 def glass_titlebars() -> bool:
-    """Settings > General > "Glass title bars" (off: opaque, like GNOME apps)."""
+    """Settings > Appearance > "Glass title bars" (off: opaque, like GNOME apps)."""
     from .. import config
     return bool(config.load("appearance", _appearance_defaults()).get("glass_titlebars", False))
 
 
 def reduce_transparency() -> bool:
     """Solid materials instead of glass: Accessibility > Reduce transparency,
-    or Appearance > Translucent glass off. Live: both settings are watched
+    (each part: Appearance > Glass & Transparency, ui/glass.py). Live: watched
     (setup) and every Sonata surface re-styles when either changes."""
     global _reduce
     if _reduce is None:
@@ -70,8 +70,7 @@ _dock_mon = None
 def reduce_transparency_now() -> bool:
     """The settings as they are on disk now."""
     from .. import config
-    return bool(config.load("appearance", _appearance_defaults())["reduce_transparency"]) or \
-        not config.load("dock", {"glass": True}).get("glass", True)
+    return bool(config.load("appearance", _appearance_defaults())["reduce_transparency"])
 
 
 def glass_class(widget: Gtk.Widget) -> Gtk.Widget:
@@ -97,11 +96,33 @@ def values() -> dict:
     materials resolved for this compositor: `sidebar_material`, `panel_material`."""
     v = {**tokens.palette(is_dark(), _theme()), **tokens.accent_tokens(_accent(), is_dark()), **_extra}
     # Sidebars: the windows' glass (as their title bars), darker than the Dock's
-    v["sidebar_material"] = v["window_glass" if glass() else "sidebar_bg"]
-    v["panel_material"] = v["glass_tint" if glass() else "menu_bg"]      # the Dock's / sidebars' glass
-    if glass() and _glass_bars():                       # title bars and toolbars: the glass again
+    # Each part's glass is set on its own (ui/glass.py, Settings > Appearance)
+    from . import glass as G
+    gcfg = _glass_cfg()
+    ok = glass()
+    v["sidebar_material"] = G.material("windows", v, ok, gcfg)
+    v["panel_material"] = G.material("menus", v, ok, gcfg)      # menus and panels
+    v["dock_material"] = G.material("dock", v, ok, gcfg)
+    v["bar_material"] = G.material("menubar", v, ok, gcfg)
+    if ok and gcfg["windows"]["on"] and _glass_bars():   # title bars and toolbars: the glass again
+        a = gcfg["windows"]["alpha"]
+        for k in ("titlebar_glass", "titlebar_glass_inactive"):
+            if a is not None:
+                v[k] = G.with_alpha(v[k], a)
         v["titlebar_bg"], v["titlebar_bg_inactive"] = v["titlebar_glass"], v["titlebar_glass_inactive"]
     return v
+
+
+_glass_seen = None
+
+
+def _glass_cfg() -> dict:
+    """The glass settings (read once; _appearance_changed reads them again)."""
+    global _glass_seen
+    if _glass_seen is None:
+        from . import glass as G
+        _glass_seen = G.settings()
+    return _glass_seen
 
 
 _glass_bars_on = None
@@ -141,11 +162,14 @@ def _appearance_changed() -> None:
     _accent_name = None
     _transparency_changed()
     bars = glass_titlebars()
-    global _radii_seen
+    global _radii_seen, _glass_seen
     radii = tokens.user_radii()
-    if _accent() != old or bars != _glass_bars_on or radii != _radii_seen:
+    from . import glass as G
+    gl = G.settings()
+    if _accent() != old or bars != _glass_bars_on or radii != _radii_seen or gl != _glass_seen:
         _glass_bars_on = bars
         _radii_seen = radii
+        _glass_seen = gl
         _parsed.clear()
         _load(fade=True)
 
@@ -353,7 +377,7 @@ def setup() -> None:
     global _appearance_mon
     _appearance_mon = config.watch("appearance", _appearance_changed)
     global _dock_mon
-    _dock_mon = config.watch("dock", _transparency_changed)
+    _dock_mon = config.watch("dock", _appearance_changed)       # its old "glass" switch (ui/glass.py)
     _follow_color_scheme()
     _animation_speed()
     _load()

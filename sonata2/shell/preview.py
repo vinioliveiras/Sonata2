@@ -104,7 +104,8 @@ class PreviewWindow(Gtk.ApplicationWindow):
         if not walls:
             return False
         self.wall.set_filename(walls[0])
-        if self.dock.cfg["glass"]:
+        from ..ui import glass as G
+        if G.settings()["dock"]["on"]:
             from gi.repository import Gdk
             self.dock.backdrop = Gdk.Texture.new_from_filename(walls[1])
             self.dock.queue_draw()

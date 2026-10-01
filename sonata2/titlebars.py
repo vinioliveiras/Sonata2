@@ -251,8 +251,8 @@ BLUR_GLASS = BLUR + ' | type is "toplevel"'
 
 def glass_bars() -> bool:
     """Glass title bars wanted and possible (not with Reduce transparency)."""
-    from .ui import theme
-    return theme.glass_titlebars() and not theme.reduce_transparency_now()
+    from .ui import glass, theme
+    return theme.glass_titlebars() and not theme.reduce_transparency_now() and glass.settings()["windows"]["on"]
 
 
 def apply_colors(dark: bool) -> None:
@@ -263,10 +263,15 @@ def apply_colors(dark: bool) -> None:
     from .ui import tokens
     t = dict(tokens.palette(bool(dark)))
     keys = ("titlebar_bg", "titlebar_bg_inactive", "titlebar_text", "titlebar_text_inactive")
+    from .ui import glass as G
+    gcfg = G.settings()
     glass = glass_bars()
     if glass:
-        t["titlebar_bg"], t["titlebar_bg_inactive"] = t["titlebar_glass"], t["titlebar_glass_inactive"]
+        a = gcfg["windows"]["alpha"]
+        t["titlebar_bg"], t["titlebar_bg_inactive"] = (
+            G.with_alpha(t[k], a) if a is not None else t[k] for k in ("titlebar_glass", "titlebar_glass_inactive"))
     system.wayfire_set("blur", "blur_by_default", BLUR_GLASS if glass else BLUR)
+    system.wayfire_set("blur", "kawase_offset", str(G.blur_offset(gcfg["blur"])))   # one strength for all
     system.wayfire_set("sonata-corners", "outline", "\\" + tokens.wayfire_color(t["window_outline"]))
     fg, bg, text, dim = (tokens.wayfire_color(t[k], premultiplied=True) for k in keys)
     for k, v in (("fg_color", fg), ("bg_color", bg), ("fg_text_color", text), ("bg_text_color", dim)):

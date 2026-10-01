@@ -299,14 +299,14 @@ def over(css: str, base: str) -> str:
 # own colour. Sonata's title bars and toolbars, the ones Wayfire draws
 # (titlebars.apply_colors) and GNOME apps' (adwstyle.py) all read these.
 # The glass itself stays as titlebar_glass / titlebar_glass_inactive: Settings >
-# General > "Glass title bars" (off by default) puts it back (ui/theme.py).
+# Appearance > "Glass title bars" (off by default) puts it back (ui/theme.py).
 for _p in (LIGHT, DARK):
     for _k in ("titlebar_bg", "titlebar_bg_inactive"):
         _p[_k.replace("_bg", "_glass")] = _p[_k]
         _p[_k] = over(_p[_k], _p["window_bg"])
 
 
-# Corner radii the user picks (Settings > General > Corners; appearance.json
+# Corner radii the user picks (Settings > Appearance > Corners; appearance.json
 # "radius"): windows (their title bars too, Sonata's, Wayfire's and GNOME
 # apps'), the Dock's plate, menus and panels. Small parts follow their
 # group's ratio. Not the screen's corners (shell/screencorners.py).

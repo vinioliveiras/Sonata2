@@ -1948,18 +1948,18 @@ class SettingsAuditRegressions(unittest.TestCase):
         """Switches kept an old state after Control Center / the menu bar /
         another section changed the same setting (pages were cached)."""
         import time
-        config.save("dock", {"glass": True})
+        config.save("dock", {"magnification": True})
         w = self.window("dock")
         w.select("dock")
         settle(100)
-        self.assertTrue(self.switch(w, "dock", "Translucent glass").get_active())
+        self.assertTrue(self.switch(w, "dock", "Magnification").get_active())
         w.select("about")
         settle(100)
         time.sleep(0.02)
-        config.update("dock", glass=False)            # e.g. General's own "Translucent glass"
+        config.update("dock", magnification=False)    # e.g. the Dock's own menu
         w.select("dock")
         settle(100)
-        self.assertFalse(self.switch(w, "dock", "Translucent glass").get_active())
+        self.assertFalse(self.switch(w, "dock", "Magnification").get_active())
         w.destroy()
 
     def test_slider_writes_are_coalesced(self):

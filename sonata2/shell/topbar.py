@@ -178,7 +178,7 @@ class Bar(Gtk.CenterBox):
                                                                         self.backdrop.get_height()))
                 snap.pop()
             # Big Sur: translucent material, no bottom line
-            snap.append_color(ui.rgba("window_bg" if ui.theme.reduce_transparency() else "bar_bg"), rect)
+            snap.append_color(ui.rgba("bar_material"), rect)       # ui/glass.py
         Gtk.CenterBox.do_snapshot(self, snap)
 
     # -- items ---------------------------------------------------------------------

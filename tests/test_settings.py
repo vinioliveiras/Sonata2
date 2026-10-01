@@ -43,7 +43,7 @@ class SettingsTest(unittest.TestCase):
         """Menu bar logo > Text: custom… shows the text field; saving writes menu_text."""
         win = S.Settings(None)
         win.present()
-        win.select("appearance")
+        win.select("menubar")                 # (it moved from General to Menu Bar)
         settle(150)
         found, stack = [], [win]
         while stack:

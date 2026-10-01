@@ -35,7 +35,7 @@ SECTIONS = [  # id, title, icon, badge colour, group
     ("mouse", "Mouse & Trackpad", "input-mouse-symbolic", "gray", "input"),
     ("gamepad", "Game Controllers", "input-gaming-symbolic", "gray", "input"),
     ("printers", "Printers & Scanners", "printer-symbolic", "gray", "input"),
-    ("appearance", "General", "preferences-system-symbolic", "gray", "sonata"),
+    ("appearance", "Appearance", "preferences-desktop-appearance-symbolic", "blue", "sonata"),
     ("dock", "Desktop & Dock", "view-grid-symbolic", "black", "sonata"),
     ("launchpad", names.APPS, "view-app-grid-symbolic", "graphite", "sonata"),
     ("notifications", "Notifications", "preferences-system-notifications-symbolic", "red", "sonata"),
@@ -106,8 +106,10 @@ KEYWORDS = {
     "datetime": "clock time zone date", "notifications": "do not disturb alerts banners",
     "users": "account password picture avatar login items", "privacy": "security lock screen location trash",
     "sharing": "file sharing remote", "accessibility": "zoom contrast reduce transparency motion graphics gpu hardware acceleration renderer",
-    "appearance": "app icons regenerate frame generated dark light mode accent color theme icons font", "dock": "magnification size position autohide "
-    "recent apps displays minimize", "menubar": "clock battery percentage bluetooth sound now playing",
+    "appearance": "app icons regenerate frame generated dark light mode accent color theme icons font "
+                  "glass transparency translucent blur frosted title bars corners radius",
+    "dock": "magnification size position autohide recent apps displays minimize default web browser",
+    "menubar": "clock battery percentage bluetooth sound now playing logo text",
     "launchpad": "apps grid folders launchpad", "hidden": "hide hidden protected private lock password apps", "updates": "software update upgrade packages",
     "about": "computer system version restart sonata",
 }
@@ -123,7 +125,7 @@ PAGE_CONFIGS = {
     "sound": ("sounds",), "displays": ("displays", "nightshift"), "wallpaper": ("system",),
     "datetime": ("topbar",), "notifications": ("notifications",), "privacy": ("security", "system"),
     "accessibility": ("appearance", "system"), "appearance": ("appearance", "dock", "system"),
-    "dock": ("dock", "system"), "menubar": ("topbar",), "gamepad": ("gamepad",),
+    "dock": ("dock", "system"), "menubar": ("topbar", "appearance"), "gamepad": ("gamepad",),
 }
 for _sec, _parts in PARTS.items():           # a merged section: every part's files
     PAGE_CONFIGS[_sec] = tuple(dict.fromkeys(n for p in _parts for n in PAGE_CONFIGS.get(p, ())))
@@ -137,6 +139,9 @@ button.st-accent.selected { box-shadow: 0 0 0 2px %(window_bg)s, 0 0 0 3.5px alp
 
 ui.register("""
 window.sonata-settings { color: %(label)s; }
+/* a row that belongs to the one above (Glass: Transparency under its switch) */
+row.st-sub-row > box.header { margin-left: 16px; }
+row.st-sub-row { transition: opacity %(t_fast)s ease-out; }
 /* glass sidebar (standard material), opaque content pane */
 .sonata-settings .sidebar-pane { box-shadow: none; }
 /* the line between the panes, on an opaque 1 px column like Files' */
@@ -1983,23 +1988,16 @@ class Settings(Adw.ApplicationWindow):
         return row
 
     def _page_appearance(self):
+        """Everything about how Sonata looks (macOS Appearance): light/dark and
+        accent, style and icons, title bars, glass, corners."""
         g = group("Appearance")
         scheme = system.gsetting("org.gnome.desktop.interface", "color-scheme") or "default"
         g.add(combo_row("Appearance", [("default", "Light"), ("prefer-dark", "Dark")],
                         "prefer-dark" if scheme == "prefer-dark" else "default",
                         lambda v: system.run_async(system.set_dark_mode, None, v == "prefer-dark"),
                         subtitle="Linux setting: every app follows it"))
-        browsers = [(a.get_id(), a.get_display_name()) for a in Gio.AppInfo.get_all_for_type("x-scheme-handler/https")
-                    if a.get_id()]
-        if browsers:
-            # xdg-settings is a slow shell script: read it off the main loop
-            row = combo_row("Default web browser", browsers, browsers[0][0],
-                            lambda v: system.run_async(system.set_default_browser, None, v))
-            row.set_sensitive(False)
-            g.add(row)
-            system.run_async(system.default_browser, lambda cur: (show_quietly(row, cur), row.set_sensitive(True)))
         g.add(self._accent_row())
-        s = group("Sonata")
+        s = group("Style")
         app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
         s.add(combo_row("Style", [("mac", "macOS"), ("windows", "Windows 11 (coming later)")], app["theme"],
                         lambda v: self._save("appearance", "theme", "mac")))
@@ -2010,30 +2008,6 @@ class Settings(Adw.ApplicationWindow):
         s.add(combo_row("Icons", [(t, t) for t in themes], app["icon_theme"],
                         lambda v: (self._save("appearance", "icon_theme", v),
                                    self.ask_restart("sonata", "The new icons"))))
-        from ..ui import logo as L
-        # always there, usable only for "Text: custom…": showing / hiding it
-        # moved the rows under it, and a click meant for this field landed on
-        # "Sonata title bars for all apps" and turned it off
-        text_row = Adw.EntryRow(title="Menu bar text", text=app.get("menu_text") or "", use_markup=False,
-                                sensitive=app["menu_logo"] == "text:custom", show_apply_button=True)
-        if hasattr(text_row, "set_max_length"):         # libadwaita 1.5+
-            text_row.set_max_length(L.TEXT_MAX)
-        text_row.connect("apply", lambda r: self._save("appearance", "menu_text", r.get_text().strip()))
-        s.add(combo_row("Menu bar logo", L.choices(), app["menu_logo"],
-                        lambda v: (self._save("appearance", "menu_logo", v),
-                                   text_row.set_sensitive(v == "text:custom")),
-                        subtitle="Where the Apple logo is on a Mac"))
-        s.add(text_row)                                   # text:custom: your words (emoji drawn in one colour)
-        s.menu_text_row = text_row                        # (tests)
-        s.add(switch_row("Sonata title bars for all apps", app["system_titlebars"],
-                         lambda on: (self._save("appearance", "system_titlebars", on),
-                                     system.run_async(__import__("sonata2.titlebars", fromlist=["apply"]).apply,
-                                                      None, on),
-                                     self.toast("Apps pick it up when they open again")),
-                         subtitle="Chrome, VS Code and others use Sonata's title bar instead of their own"))
-        s.add(switch_row("Glass title bars", app.get("glass_titlebars", False), self._set_glass_titlebars,
-                         subtitle="See-through, blurred title bars on every window, GNOME apps too "
-                                  "(experimental; heavier on the graphics card)"))
         gen = Adw.ActionRow(title="App icons made by Sonata",
                             subtitle="Apps without Sonata artwork get their icon on the standard frame, saved on disk")
         regen = Gtk.Button(label="Regenerate", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
@@ -2048,12 +2022,97 @@ class Settings(Adw.ApplicationWindow):
                                          system.run_async(flatpak_theme.apply if on else flatpak_theme.remove),
                                          self.toast("Flatpak apps pick it up when they open again")),
                              subtitle="Also changes Flatpak apps in other desktops' sessions while on"))
-        dock = config.load("dock", {"glass": True})
-        s.add(switch_row("Translucent glass", dock["glass"],
-                         lambda on: (self._save("dock", "glass", on), self._apply_titlebars()),
-                         subtitle="Frosted Dock, menu bar, menus, sidebars and title bars "
-                                  "(needs the Wayfire blur plugin)"))
-        return [g, s, self._corners_group()]
+        bars = group("Title Bars")
+        bars.add(switch_row("Sonata title bars for all apps", app["system_titlebars"],
+                            lambda on: (self._save("appearance", "system_titlebars", on),
+                                        system.run_async(__import__("sonata2.titlebars", fromlist=["apply"]).apply,
+                                                         None, on),
+                                        self.toast("Apps pick it up when they open again")),
+                            subtitle="Chrome, VS Code and others use Sonata's title bar instead of their own"))
+        bars.add(switch_row("Glass title bars", app.get("glass_titlebars", False), self._set_glass_titlebars,
+                            subtitle="See-through, blurred title bars on every window, GNOME apps too "
+                                     "(experimental; heavier on the graphics card)"))
+        return [g, s, bars, self._glass_group(), self._corners_group()]
+
+    # -- glass, per part (ui/glass.py) -------------------------------------------------------
+    def _glass_group(self):
+        from ..ui import glass as G
+        cur = G.settings()
+        vals = ui.theme.values()
+        g = group("Glass & Transparency",
+                  "Frosted, see-through backgrounds. Off: solid. "
+                  + ("Accessibility > Reduce transparency is on: everything is solid now."
+                     if ui.theme.reduce_transparency() else ""))
+        self.glass_rows = {}
+        for item in G.ITEMS:
+            sw = switch_row(G.TITLES[item], cur[item]["on"], lambda on, k=item: self._set_glass(k, on=on),
+                            subtitle=G.SUBTITLES.get(item, ""))
+            sl = slider_row("Transparency", self._alpha_to_slider(G.alpha_of(item, vals, cur)), 0, 100,
+                            lambda v, k=item: self._set_glass(k, alpha=self._slider_to_alpha(v)),
+                            ends=("Less", "More"),
+                            default=self._alpha_to_slider(G.css_alpha(vals[G.MATERIALS[item][0]])))
+            sl.add_css_class("st-sub-row")
+            sl.set_sensitive(cur[item]["on"])
+            self.glass_rows[item] = (sw, sl)
+            g.add(sw)
+            g.add(sl)
+        blur = slider_row("Blur strength", cur["blur"], 0, 100, lambda v: self._set_glass("blur", blur=v),
+                          subtitle="How frosted every glass part is (one for all: Wayfire's blur)",
+                          ends=("Light", "Strong"), default=G.BLUR_DEFAULT)
+        self.glass_rows["blur"] = blur
+        g.add(blur)
+        return g
+
+    @staticmethod
+    def _alpha_to_slider(alpha: float) -> float:
+        from ..ui import glass as G
+        lo, hi = G.ALPHA_RANGE
+        return round((hi - min(hi, max(lo, alpha))) / (hi - lo) * 100, 1)
+
+    @staticmethod
+    def _slider_to_alpha(v: float) -> float:
+        from ..ui import glass as G
+        lo, hi = G.ALPHA_RANGE
+        return G.clamp_alpha(hi - (hi - lo) * v / 100)
+
+    def _set_glass(self, item, on=None, alpha=None, blur=None) -> None:
+        """Saved a moment after the slider stops (each save re-styles every
+        Sonata surface, with its cross-fade); a switch saves at once."""
+        pend = self._glass_pending = getattr(self, "_glass_pending", {})
+        if item == "blur":
+            pend["blur"] = int(round(blur))
+        else:
+            part = pend.setdefault(item, {})
+            if on is not None:
+                part["on"] = bool(on)
+                rows = getattr(self, "glass_rows", {}).get(item)
+                if rows:
+                    rows[1].set_sensitive(bool(on))
+            if alpha is not None:
+                part["alpha"] = alpha
+        if getattr(self, "_glass_src", 0):
+            GLib.source_remove(self._glass_src)
+            self._glass_src = 0
+
+        def save():
+            self._glass_src = 0
+            from ..ui import glass as G
+            raw = dict(config.load("appearance", icons.APPEARANCE_DEFAULTS).get("glass") or {})
+            cur = G.settings()
+            for k, v in self._glass_pending.items():
+                if k == "blur":
+                    raw["blur"] = v
+                else:
+                    raw[k] = dict({"on": cur[k]["on"]}, **{kk: vv for kk, vv in raw.get(k, {}).items()}, **v)
+            self._glass_pending = {}
+            config.update("appearance", glass=raw)
+            from .. import titlebars
+            system.run_async(titlebars.apply_colors, None, Adw.StyleManager.get_default().get_dark())
+            return False
+        if on is not None:
+            save()
+        else:
+            self._glass_src = GLib.timeout_add(250, save)
 
     def _page_dock(self):
         from ..shell import dock as D
@@ -2081,7 +2140,16 @@ class Settings(Adw.ApplicationWindow):
                               lambda on: self._save("dock", "bounce", on)))
         behave.add(switch_row("Show indicators for open applications", cfg["indicators"],
                               lambda on: self._save("dock", "indicators", on)))
-        wins = group("Windows")
+        wins = group("Windows & Apps")
+        browsers = [(a.get_id(), a.get_display_name()) for a in Gio.AppInfo.get_all_for_type("x-scheme-handler/https")
+                    if a.get_id()]
+        if browsers:
+            # xdg-settings is a slow shell script: read it off the main loop
+            row = combo_row("Default web browser", browsers, browsers[0][0],
+                            lambda v: system.run_async(system.set_default_browser, None, v))
+            row.set_sensitive(False)
+            wins.add(row)
+            system.run_async(system.default_browser, lambda cur: (show_quietly(row, cur), row.set_sensitive(True)))
         wins.add(combo_row("Minimize windows using", [("genie", "Genie effect"), ("scale", "Scale effect")],
                            cfg["minimize_effect"], self._set_minimize_effect))
         dbl = system.gsetting("org.gnome.desktop.wm.preferences", "action-double-click-titlebar") or "toggle-maximize"
@@ -2091,9 +2159,7 @@ class Settings(Adw.ApplicationWindow):
                            lambda v: system.set_gsetting("org.gnome.desktop.wm.preferences",
                                                          "action-double-click-titlebar", v)))
         look = group("Look")
-        look.add(switch_row("Translucent glass", cfg["glass"],
-                            lambda on: (self._save("dock", "glass", on), self._apply_titlebars()),
-                            subtitle="The Dock, menu bar, menus and title bars (off: solid)"))
+        # (its glass: Appearance > Glass & Transparency)
         look.add(slider_row("Distance from the screen edge", cfg["edge_gap"], 0, 24,    # and from zoomed windows
                             lambda v: self._save("dock", "edge_gap", int(v)), default=D.DEFAULTS["edge_gap"]))
         return [size, behave, wins, look]
@@ -2124,7 +2190,24 @@ class Settings(Adw.ApplicationWindow):
         g.add(switch_row("Show Now Playing in menu bar", cfg["show_now_playing"],
                          lambda on: self._save("topbar", "show_now_playing", on),
                          subtitle="While something plays"))
-        return [g]
+        from ..ui import logo as L
+        app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
+        # always there, usable only for "Text: custom…": showing / hiding it
+        # moved the rows under it, and a click meant for the next row landed
+        # on it (it turned "Sonata title bars for all apps" off once)
+        text_row = Adw.EntryRow(title="Menu bar text", text=app.get("menu_text") or "", use_markup=False,
+                                sensitive=app["menu_logo"] == "text:custom", show_apply_button=True)
+        if hasattr(text_row, "set_max_length"):         # libadwaita 1.5+
+            text_row.set_max_length(L.TEXT_MAX)
+        text_row.connect("apply", lambda r: self._save("appearance", "menu_text", r.get_text().strip()))
+        logo = group("Logo")
+        logo.add(combo_row("Menu bar logo", L.choices(), app["menu_logo"],
+                           lambda v: (self._save("appearance", "menu_logo", v),
+                                      text_row.set_sensitive(v == "text:custom")),
+                           subtitle="Where the Apple logo is on a Mac"))
+        logo.add(text_row)                                # text:custom: your words (emoji drawn in one colour)
+        logo.menu_text_row = text_row                     # (tests)
+        return [g, logo]
 
     def _page_launchpad(self):
         g = group(names.APPS)
@@ -2342,7 +2425,7 @@ class Settings(Adw.ApplicationWindow):
         return [hero, specs, shell]
 
     # Settings that take effect only after a restart (each asks "now or later"):
-    #   sonata   Restart Sonata    Accessibility > Graphics, General > Icons, About > Detailed Logs
+    #   sonata   Restart Sonata    Accessibility > Graphics, Appearance > Icons, About > Detailed Logs
     #   session  Log Out           Displays > Graphics card, Security & Privacy > Use Login Password
     #   system   Restart computer  Software Update (system packages; its own Restart… button)
     RESTARTS = {"sonata": ("Restart Sonata now?", "{} takes effect when Sonata restarts. Open apps stay open.",

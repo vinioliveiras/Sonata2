@@ -247,7 +247,7 @@ def run_launchpad(app, args, ui, state):
 SETTINGS_LINGER_S = 600
 
 
-DEFAULT_SETTINGS_PAGE = "appearance"     # General
+DEFAULT_SETTINGS_PAGE = "appearance"     # Appearance (was General)
 
 
 def run_settings(app, args, ui, state):

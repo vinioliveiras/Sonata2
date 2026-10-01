@@ -70,7 +70,7 @@ ADW_HEADER_H = 47      # libadwaita's header bar height: the see-through band of
 
 def css(folder: str = None, bars: bool = True, glass: bool = False) -> str:
     """The stylesheet (pictures from `folder`; bars: the title bar colour;
-    glass: Settings > General > "Glass title bars", experimental here --
+    glass: Settings > Appearance > "Glass title bars", experimental here --
     the window's background is see-through only behind its header bar,
     where Wayfire blurs; the rest stays the app's own colour)."""
     from .ui.tokens import DARK, LIGHT
