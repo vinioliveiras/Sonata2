@@ -34,6 +34,41 @@ def log_dir() -> str:
     return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "sonata2")
 
 
+CRASH = "last-crash"                 # written by tools/sonata-session: "<epoch> <exit code>"
+
+
+def crash() -> dict:
+    """The last session's crash ({"time": epoch, "code": exit code}), or {}."""
+    try:
+        with open(os.path.join(log_dir(), CRASH), encoding="utf-8") as f:
+            when, code = f.read().split()[:2]
+        return {"time": int(when), "code": int(code)}
+    except (OSError, ValueError):
+        return {}
+
+
+def clear_crash() -> None:
+    """Reported: the next login doesn't open Feedbacker again."""
+    try:
+        os.remove(os.path.join(log_dir(), CRASH))
+    except OSError:
+        pass
+
+
+def crash_text(c: dict) -> str:
+    """"Sonata quit unexpectedly at 04:16 (exit code 134, SIGABRT)."""
+    import signal
+    code = c.get("code", 0)
+    why = ""
+    if code > 128:
+        try:
+            why = f", {signal.Signals(code - 128).name}"
+        except ValueError:
+            pass
+    when = time.strftime("%H:%M on %b %d", time.localtime(c.get("time", 0)))
+    return f"Sonata quit unexpectedly at {when} (exit code {code}{why})."
+
+
 def monitoring() -> bool:
     return logs.verbose()
 
@@ -97,7 +132,9 @@ def create(title: str, description: str, doctor_text: str = None, now: float = N
     tmp = path + ".part"
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("description.txt", f"{title.strip()}\n\n{description.strip()}\n")
-        z.writestr("system.txt", "".join(f"{k}: {v}\n" for k, v in info.items()))
+        c = crash()
+        z.writestr("system.txt", "".join(f"{k}: {v}\n" for k, v in info.items())
+                   + (f"Crash: {crash_text(c)}\n" if c else ""))
         z.writestr("doctor.txt", doctor_text)
         for p in _log_files():
             try:

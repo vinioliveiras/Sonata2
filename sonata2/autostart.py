@@ -88,6 +88,16 @@ def run() -> int:
             GLib.spawn_command_line_async(self_command() + " setup")
     except Exception as e:
         print(f"sonata2-autostart: setup: {e}")
+    mark("autostart: crash report")
+    try:                                   # the last session crashed: Feedbacker, its report already saved
+        from .feedback import report
+        if report.crash():
+            from .__main__ import self_command
+            import subprocess                  # a moment after the Dock and menu bar are up
+            subprocess.Popen(["sh", "-c", f"sleep 3; exec {self_command()} feedback"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except Exception as e:
+        print(f"sonata2-autostart: crash report: {e}")
     mark("autostart: polkit")
     try:                                   # Sonata's password prompt (polkit agent), kept alive
         import subprocess

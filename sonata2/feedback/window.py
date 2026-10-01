@@ -12,7 +12,12 @@ One small window:
   GitHub issue in the browser and shows the .zip to attach.
 
 Saving or reporting with monitoring off asks first (Turn On Monitoring /
-Save Anyway)."""
+Save Anyway).
+
+After a crash (tools/sonata-session notes it, with the kernel's lines),
+the next login opens Feedbacker (autostart.py): it says so at the top,
+saves a report at once and fills in the title; describe what you were
+doing and use Report on GitHub…"""
 import os
 import threading
 
@@ -78,6 +83,18 @@ class FeedbackWindow(Gtk.ApplicationWindow):
         # no title bar of its own: the compositor draws the glass one (pixdecor)
         page = Adw.PreferencesPage(vexpand=True)
 
+        # the last session crashed (tools/sonata-session left a note): a report at once
+        self.crash = report.crash()
+        self.crash_row = None
+        if self.crash:
+            grp = Adw.PreferencesGroup()
+            self.crash_row = Adw.ActionRow(title="Sonata quit unexpectedly", use_markup=False,
+                                           subtitle=report.crash_text(self.crash) + " Saving a report with the logs…")
+            self.crash_row.set_subtitle_lines(0)
+            self.crash_row.add_prefix(Gtk.Image(icon_name="dialog-error-symbolic", css_classes=["error"]))
+            grp.add(self.crash_row)
+            page.add(grp)
+
         mon = Adw.PreferencesGroup()
         self.monitor_row = Adw.SwitchRow(title="Monitoring", use_markup=False, active=report.monitoring(),
                                          subtitle="Keeps detailed logs so problems can be traced")
@@ -127,6 +144,11 @@ class FeedbackWindow(Gtk.ApplicationWindow):
         self.toasts.set_child(col)
         self.set_child(self.toasts)
         self._update_note()
+        if self.crash:
+            self.title_row.set_text("Sonata quit unexpectedly")
+            self.text.get_buffer().set_text(report.crash_text(self.crash) + "\n\nWhat I was doing just before: ")
+            self._auto = True
+            self._create(False)                  # no question about monitoring: errors are logged anyway
 
     # -- monitoring ------------------------------------------------------------------
     def _update_note(self):
@@ -191,6 +213,16 @@ class FeedbackWindow(Gtk.ApplicationWindow):
 
     def _created(self, path, err, url):
         self._set_busy(False)
+        if getattr(self, "_auto", False):            # the crash report, made on opening
+            self._auto = False
+            if path and not err:
+                report.clear_crash()                 # the next login doesn't open Feedbacker again
+                self.crash_row.set_subtitle(report.crash_text(self.crash) +
+                                            f" The logs are saved in “{os.path.basename(path)}”.")
+                show = Gtk.Button(label="Show", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+                show.connect("clicked", lambda _b: reveal(path))
+                self.crash_row.add_suffix(show)
+                return False
         if err or not path:
             self.toast(f"Couldn't save the report: {getattr(err, 'strerror', None) or err}")
             return False

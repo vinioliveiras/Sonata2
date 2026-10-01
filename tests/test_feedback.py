@@ -62,6 +62,64 @@ class ReportTest(unittest.TestCase):
             self.assertFalse(report.monitoring())
 
 
+class CrashTest(unittest.TestCase):
+    """After a crash, the next login opens Feedbacker with a report already saved."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = mock.patch.dict(os.environ, {"HOME": self.tmp.name,
+                                                "XDG_CACHE_HOME": os.path.join(self.tmp.name, ".cache")})
+        self.env.start()
+        os.makedirs(report.log_dir())
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def mark(self, text):
+        with open(os.path.join(report.log_dir(), report.CRASH), "w") as f:
+            f.write(text)
+
+    def test_note_read_and_cleared(self):
+        self.assertEqual(report.crash(), {})
+        self.mark("1790000000 134\n")
+        self.assertEqual(report.crash(), {"time": 1790000000, "code": 134})
+        self.assertIn("SIGABRT", report.crash_text(report.crash()))
+        path = report.create("t", "d", doctor_text="", now=0)
+        with zipfile.ZipFile(path) as z:
+            self.assertIn("Crash: Sonata quit unexpectedly", z.read("system.txt").decode())
+        report.clear_crash()
+        self.assertEqual(report.crash(), {})
+        self.mark("garbage")
+        self.assertEqual(report.crash(), {})
+
+    def test_session_script_notes_only_crashes(self):
+        """tools/sonata-session's record_crash: log-out (0) and shutdown signals are not crashes."""
+        import subprocess
+        script = os.path.join(os.path.dirname(__file__), "..", "tools", "sonata-session")
+        body = open(script).read()
+        fn = body[body.index("record_crash() {"):body.index("\n}\n", body.index("record_crash() {")) + 3]
+        for code, crashed in ((0, False), (143, False), (129, False), (130, False), (134, True), (1, True)):
+            mark = os.path.join(report.log_dir(), report.CRASH)
+            if os.path.exists(mark):
+                os.remove(mark)
+            subprocess.run(["bash", "-c", f'logs="{report.log_dir()}"\n{fn}\nrecord_crash {code} 0'],
+                           env={**os.environ, "PATH": "/usr/bin:/bin"}, check=True)
+            self.assertEqual(os.path.exists(mark), crashed, code)
+
+    def test_autostart_opens_feedbacker(self):
+        from sonata2 import autostart
+        self.mark("1790000000 139")
+        with mock.patch("subprocess.Popen") as popen, mock.patch("subprocess.run") as run, \
+                mock.patch.object(autostart, "entries", return_value=[]), \
+                mock.patch("sonata2.titlebars.apply"), mock.patch("sonata2.keyring.start"), \
+                mock.patch("sonata2.flatpak_theme.apply"), mock.patch("sonata2.gtkstyle.reset_env"):
+            run.return_value.returncode = 0
+            autostart.run()
+        cmds = [" ".join(c.args[0]) for c in popen.call_args_list]
+        self.assertTrue(any("feedback" in c for c in cmds), cmds)
+
+
 class DockDefaultTest(unittest.TestCase):
     def test_last_in_dock_and_removable(self):
         from sonata2 import apps
@@ -112,6 +170,24 @@ class WindowTest(unittest.TestCase):
         icon = os.path.join(os.path.dirname(window.__file__), "..", "data", "icons", "Sonata", "apps", "scalable",
                             "sonata-feedback.svg")
         self.assertTrue(os.path.isfile(icon))
+
+    def test_crash_report_on_opening(self):
+        from sonata2.feedback.window import FeedbackWindow
+        with mock.patch.object(report, "crash", return_value={"time": 0, "code": 134}), \
+                mock.patch.object(report, "create", return_value="/tmp/Sonata Report x.zip") as create, \
+                mock.patch.object(report, "clear_crash") as clear, \
+                mock.patch("sonata2.ui.dialog.alert") as alert:
+            win = FeedbackWindow(self.app)
+            from gi.repository import GLib
+            end = GLib.get_monotonic_time() + 2_000_000
+            while not clear.called and GLib.get_monotonic_time() < end:
+                GLib.MainContext.default().iteration(False)
+            create.assert_called_once()
+            clear.assert_called_once()
+            alert.assert_not_called()                          # no monitoring question for this one
+            self.assertEqual(win.title_row.get_text(), "Sonata quit unexpectedly")
+            self.assertIn("Sonata Report x.zip", win.crash_row.get_subtitle())
+            win.destroy()
 
     def test_monitoring_off_asks_first(self):
         from sonata2.feedback.window import FeedbackWindow

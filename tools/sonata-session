@@ -110,12 +110,23 @@ elif [ -z "${WLR_DRM_DEVICES:-}" ] && [ "${SONATA_PRIMARY_GPU:-}" != off ]; then
         gpu_set=1
     fi
 fi
+# Sonata crashed (not a log-out, nor the shutdown's SIGTERM / SIGHUP / Ctrl+C):
+# leave a note for the next login, which opens Feedbacker with a report
+# (feedback/report.py), and keep the kernel's lines from this session
+# (a GPU reset or a driver error shows only there).
+record_crash() {
+    case "$1" in 0|129|130|143) return ;; esac
+    printf '%s %s\n' "$(date +%s)" "$1" > "$logs/last-crash"
+    command -v journalctl >/dev/null && \
+        journalctl -k -b 0 --since "@$2" --no-pager -o short-iso > "$logs/kernel-at-crash.log" 2>&1
+}
 if [ -n "$gpu_set" ]; then
     # a GPU order the session can't start with (driver trouble) must never
     # lock you out: Wayfire ending within seconds is started again without it
     started=$(date +%s)
     wayfire -c "$cfg" > "$logs/session.log" 2>&1
     code=$?
+    record_crash "$code" "$started"
     # crashed because that GPU refused a buffer: back to wlroots' choice from
     # the next login, and the menu bar says so (gpu.crash_notice)
     if [ -n "$display_gpu" ] && [ "$code" -ne 0 ] && grep -qs -e "gbm_bo_create failed" -e "Failed to allocate auxilliary buffer" \
@@ -130,8 +141,10 @@ if [ -n "$gpu_set" ]; then
     mv -f "$logs/session.log" "$logs/session.gpu-failed.log"
     unset WLR_DRM_DEVICES
 fi
+started=$(date +%s)
 wayfire -c "$cfg" > "$logs/session.log" 2>&1
 code=$?
+record_crash "$code" "$started"
 # other desktops' GTK 4 apps never get Sonata's window look (adwstyle.py)
 rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sonata2/adw/libadwaita.css"
 exit $code
