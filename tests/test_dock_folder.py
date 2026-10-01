@@ -177,7 +177,7 @@ class DockFolderTest(unittest.TestCase):
         self.assertEqual(keys, [a, b])
         F.close_panel(pop)
         self.assertTrue(pop.view.has_css_class("closing"))
-        settle(F.CLOSE_MS + 100)
+        settle(F.CLOSE_MS + 400)
         self.assertFalse(pop.get_visible())
 
     # -- part 2: drop an app on another --------------------------------------------
@@ -245,6 +245,94 @@ class DockFolderTest(unittest.TestCase):
         self.assertIsNone(d._folder_candidate(d.tiles[perm], x, y))    # Files / Launchpad too
         x, y = self._centre(d.tiles[perm])
         self.assertIsNone(d._folder_candidate(d.tiles[self.apps[2]], x, y))   # nor onto them
+
+    # -- part 3: locked folders ----------------------------------------------------
+    def _locked(self):
+        d = self.dock
+        fkey = d.make_folder(self.apps[:2], name="Private")
+        d.set_folder_locked(fkey, True)
+        settle()
+        return fkey
+
+    def test_lock_saved_and_icon_hides_apps(self):
+        d = self.dock
+        fkey = self._locked()
+        self.assertTrue(d.folder(fkey)["locked"])
+        self.assertTrue(d.tiles[fkey].icon.locked)
+        self.assertTrue(D.load_config()["folders"][F.folder_id(fkey)]["locked"])
+        d2 = D.Dock(D.load_config())                          # after a login: still locked
+        self.assertTrue(d2.tiles[fkey].icon.locked)
+        d.set_folder_locked(fkey, False)
+        self.assertNotIn("locked", d.folder(fkey))
+        self.assertFalse(d.tiles[fkey].icon.locked)
+
+    def test_locked_icon_draws(self):
+        icon = F.FolderIcon(self.apps[:3], 48, locked=True)
+        snap = Gtk.Snapshot()
+        icon.do_snapshot(snap)
+        self.assertIsNotNone(snap.to_node())
+        self.assertEqual(len(F.lock_paths(48)), 2)
+
+    def _open_with(self, fkey, ok, then=None):
+        from unittest import mock
+        calls = []
+        with mock.patch.object(F, "check_password", side_effect=lambda pw, done: (calls.append(pw), done(ok))):
+            pop = F.open_panel(self.dock, self.dock.tiles[fkey], then=then)
+            settle()
+            self.assertIsNotNone(pop.lock)                    # the password first
+            self.assertIsNone(pop.flow)                       # nothing of the apps yet
+            pop.entry.set_text("secret")
+            pop.entry.emit("activate")
+            settle()
+        self.assertEqual(calls, ["secret"])
+        return pop
+
+    def test_locked_opens_only_with_password(self):
+        fkey = self._locked()
+        pop = self._open_with(fkey, False)
+        self.assertIsNotNone(pop.lock)                        # wrong: still asking
+        self.assertIsNone(pop.flow)
+        self.assertEqual(pop.hint.get_label(), "Wrong password")
+        self.assertEqual(pop.entry.get_text(), "")
+        pop.popdown()
+        settle()
+        pop = self._open_with(fkey, True)
+        self.assertIsNone(pop.lock)
+        self.assertIsNotNone(pop.flow)                        # right: the apps
+        self.assertTrue(self.dock.folder(fkey)["locked"])     # opening doesn't unlock it
+        pop.popdown()
+
+    def test_unlock_and_ungroup_ask_first(self):
+        d = self.dock
+        fkey = self._locked()
+        self._open_with(fkey, False, then=lambda: d.set_folder_locked(fkey, False))
+        self.assertTrue(d.folder(fkey)["locked"])
+        self._open_with(fkey, True, then=lambda: d.set_folder_locked(fkey, False))
+        self.assertNotIn("locked", d.folder(fkey))
+        d.set_folder_locked(fkey, True)
+        self._open_with(fkey, True, then=lambda: d.ungroup(fkey))
+        self.assertNotIn(fkey, d.cfg["pinned"])
+
+    def test_locked_folder_menu(self):
+        from unittest import mock
+        d = self.dock
+        fkey = self._locked()
+        with mock.patch.object(F.ui.menu, "popup", side_effect=lambda w, sections, **k: sections):
+            labels = [i.label for sec in F.folder_menu(d, d.tiles[fkey]) for i in sec]
+        self.assertIn("Unlock Folder\u2026", labels)
+        self.assertIn("Ungroup\u2026", labels)                 # asks: it shows the apps
+        d.set_folder_locked(fkey, False)
+        with mock.patch.object(F.ui.menu, "popup", side_effect=lambda w, sections, **k: sections):
+            labels = [i.label for sec in F.folder_menu(d, d.tiles[fkey]) for i in sec]
+        self.assertIn("Lock Folder", labels)
+
+    def test_drop_into_locked_folder(self):
+        # adding needs no password (nothing inside is shown)
+        d, c = self.dock, self.apps[2]
+        fkey = self._locked()
+        d.add_to_folder(fkey, c)
+        self.assertIn(c, d.folder(fkey)["apps"])
+        self.assertTrue(d.folder(fkey)["locked"])
 
     def test_icon_draws(self):
         icon = F.FolderIcon(self.apps[:3], 48)

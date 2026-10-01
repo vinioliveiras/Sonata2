@@ -7,7 +7,12 @@ Its icon is a rounded plate with up to nine of its apps in a 3 x 3 grid.
 Click: a panel with its apps opens from the icon (zoom + fade); click an
 app to open it. An app's menu has "Add to New Folder" and "Move to
 <folder>"; a folder's menu has "Ungroup" and "Remove from Dock". A folder
-left with one app turns back into that app (Launchpad does the same)."""
+left with one app turns back into that app (Launchpad does the same).
+
+Locked folders ("Lock Folder"): the icon shows blank tiles and a lock,
+nothing of what's inside; opening it (or unlocking it, or ungrouping it)
+asks for the login password (PAM, like the lock screen) every time.
+Apps can still be dropped in without it."""
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -39,6 +44,13 @@ popover.dock-folder-panel > contents {
 .dock-folder-app:hover { background-color: %(control_off)s; }
 .dock-folder-app:active { background-color: %(accent_selected)s; color: %(label_on_accent)s; }
 .dock-folder-app label { font-size: %(text_small)s; }
+.dock-folder-lock { margin: 4px 16px 6px 16px; }
+.dock-folder-lock label { font-size: %(text_body)s; color: %(label_secondary)s; }
+.dock-folder-lock .hint { font-size: %(text_small)s; color: %(label_tertiary)s; }
+.dock-folder-lock passwordentry { min-width: 220px; }
+@keyframes dock-folder-shake { 0%%, 100%% { transform: none; } 20%%, 60%% { transform: translateX(-8px); }
+                               40%%, 80%% { transform: translateX(8px); } }
+.dock-folder-lock.shake { animation: dock-folder-shake 360ms ease-in-out; }
 """, key="dock-folder", open_ms=OPEN_MS, close_ms=CLOSE_MS)
 
 
@@ -101,10 +113,15 @@ class FolderIcon(Gtk.Widget):
     """A rounded translucent plate with the folder's first nine apps
     (sized like a DockIcon, so magnification and fitting work the same)."""
 
-    def __init__(self, keys: list, size: int):
+    def __init__(self, keys: list, size: int, locked: bool = False):
         super().__init__(css_classes=["dock-icon", "dock-folder-icon"])
         self._size = size
+        self.locked = locked
         self.set_apps(keys)
+
+    def set_locked(self, on: bool) -> None:
+        self.locked = bool(on)
+        self.queue_draw()
 
     def set_apps(self, keys: list) -> None:
         self.keys = list(keys)
@@ -154,6 +171,9 @@ class FolderIcon(Gtk.Widget):
         snap.append_color(_rgba("rgba(120,120,128,0.42)" if dark else "rgba(255,255,255,0.55)"), rect)
         snap.pop()
         snap.append_border(rr, [0.5] * 4, [_rgba("rgba(255,255,255,0.18)" if dark else "rgba(0,0,0,0.12)")] * 4)
+        if self.locked:
+            self._draw_locked(snap, s, dark)
+            return
         for (x, y, side), gicon in zip(mini_rects(s, len(self._gicons)), self._gicons):
             if gicon is None:
                 continue
@@ -164,9 +184,61 @@ class FolderIcon(Gtk.Widget):
             snap.restore()
 
 
+    def _draw_locked(self, snap, s, dark) -> None:
+        """Blank tiles (how many apps, not which) and a padlock over them."""
+        tile = _rgba("rgba(255,255,255,0.16)" if dark else "rgba(0,0,0,0.08)")
+        for x, y, side in mini_rects(s, len(self.keys)):
+            rr = Gsk.RoundedRect()
+            rr.init_from_rect(Graphene.Rect().init(x, y, side, side), side * 0.225)
+            snap.push_rounded_clip(rr)
+            snap.append_color(tile, Graphene.Rect().init(x, y, side, side))
+            snap.pop()
+        ink = _rgba("rgba(255,255,255,0.92)" if dark else "rgba(40,40,46,0.85)")
+        for path, fill in lock_paths(s):
+            if fill:
+                snap.append_fill(path, Gsk.FillRule.WINDING, ink)
+            else:
+                snap.append_stroke(path, Gsk.Stroke.new(s * 0.055), ink)
+
+
+def lock_paths(s: float) -> list:
+    """A padlock centred on an s x s icon: [(path, filled?)] -- the body
+    (filled) and the shackle (stroked)."""
+    bw, bh = s * 0.34, s * 0.26
+    bx, by = (s - bw) / 2, s * 0.47
+    body = Gsk.PathBuilder.new()
+    body.add_rounded_rect(_rounded_rect(bx, by, bw, bh, s * 0.05))
+    r = bw * 0.30
+    cx, top = s / 2, by - r * 1.15
+    sh = Gsk.PathBuilder.new()
+    sh.move_to(cx - r, by)
+    sh.line_to(cx - r, top + r)
+    sh.conic_to(cx - r, top, cx, top, 0.70710678)
+    sh.conic_to(cx + r, top, cx + r, top + r, 0.70710678)
+    sh.line_to(cx + r, by)
+    return [(body.to_path(), True), (sh.to_path(), False)]
+
+
+def _rounded_rect(x, y, w, h, r) -> Gsk.RoundedRect:
+    rr = Gsk.RoundedRect()
+    rr.init_from_rect(Graphene.Rect().init(x, y, w, h), r)
+    return rr
+
+
+def check_password(password: str, done) -> None:
+    """The login password (PAM) in a thread; done(ok) on the main loop."""
+    import threading
+    from .. import pam
+    user = GLib.get_user_name()
+    threading.Thread(target=lambda: GLib.idle_add(lambda: (done(pam.authenticate(user, password)), False)[1]),
+                     daemon=True).start()
+
+
 # -- the open folder ---------------------------------------------------------------------------
-def open_panel(dock, tile) -> Gtk.Popover:
-    """The folder's apps in a panel over its icon, zooming in from it."""
+def open_panel(dock, tile, then=None) -> Gtk.Popover:
+    """The folder's apps in a panel over its icon, zooming in from it (a
+    locked folder asks for the password first; `then`: ask, then run it
+    instead of showing the apps)."""
     tile.label.popdown()
     folder = dock.folder(tile.key)
     pop = Gtk.Popover(css_classes=["dock-folder-panel"], has_arrow=False, position=dock.away)
@@ -175,6 +247,72 @@ def open_panel(dock, tile) -> Gtk.Popover:
     view = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["dock-folder-view"])
     view.append(Gtk.Label(label=folder["name"], css_classes=["dock-folder-title"],
                           ellipsize=Pango.EllipsizeMode.END, max_width_chars=28))
+    pop.view, pop.flow, pop.lock = view, None, None
+    pop.set_child(view)
+    pop.set_parent(tile)
+    pop.connect("closed", lambda p: GLib.idle_add(lambda: (p.unparent(), False)[1]))
+    ui.menu.OPEN.add(pop)                       # keeps an auto-hiding Dock visible
+    pop.connect("closed", lambda p: (ui.menu.OPEN.discard(p), [cb() for cb in list(ui.menu.on_closed)]))
+    if folder.get("locked") or then is not None:
+        _lock_view(dock, tile, pop, then)
+    else:
+        _apps_view(dock, tile, pop)
+    pop.popup()
+    return pop
+
+
+def _lock_view(dock, tile, pop, then=None) -> None:
+    """Password first; right: the apps (or then(), e.g. unlock / ungroup)."""
+    from .. import pam
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, css_classes=["dock-folder-lock"])
+    box.append(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=32))
+    box.append(Gtk.Label(label="Enter your password to open this folder" if then is None
+                         else "Enter your password to change this folder", wrap=True,
+                         justify=Gtk.Justification.CENTER, max_width_chars=30))
+    entry = Gtk.PasswordEntry(show_peek_icon=True, halign=Gtk.Align.CENTER)
+    box.append(entry)
+    hint = Gtk.Label(label="" if pam.available() else "Passwords can't be checked (PAM missing)",
+                     css_classes=["hint"])
+    box.append(hint)
+    pop.view.append(box)
+    pop.lock, pop.entry, pop.hint = box, entry, hint      # (tests)
+    from . import layer
+    win = tile.get_root()
+    if win is not None and layer.take_keyboard(win, True):     # the Dock types nothing otherwise
+        pop.connect("closed", lambda _p: layer.take_keyboard(win, False))
+
+    def done(ok):
+        if pop.lock is not box:
+            return
+        entry.set_sensitive(True)
+        if ok:
+            pop.view.remove(box)
+            pop.lock = None
+            if then is not None:
+                pop.popdown()
+                then()
+                return
+            _apps_view(dock, tile, pop)
+            pop.view.remove_css_class("dock-folder-view")         # zoom in again, now with the apps
+            GLib.idle_add(lambda: (pop.view.add_css_class("dock-folder-view"), False)[1])
+        else:
+            hint.set_label("Wrong password")
+            entry.set_text("")
+            entry.grab_focus()
+            box.remove_css_class("shake")
+            GLib.idle_add(lambda: (box.add_css_class("shake"), False)[1])
+
+    def check(_e):
+        pw = entry.get_text()
+        if pw:
+            entry.set_sensitive(False)
+            check_password(pw, done)
+    entry.connect("activate", check)
+    GLib.idle_add(lambda: (entry.grab_focus(), False)[1])
+
+
+def _apps_view(dock, tile, pop) -> None:
+    folder = dock.folder(tile.key)
     keys = [k for k in folder["apps"] if apps.lookup(k)]
     cols = max(1, min(PANEL_COLS, len(keys)))
     flow = Gtk.FlowBox(max_children_per_line=cols, min_children_per_line=cols,
@@ -187,15 +325,8 @@ def open_panel(dock, tile) -> Gtk.Popover:
                                 propagate_natural_height=rows <= 4, min_content_height=min(rows, 4) * 100,
                                 max_content_height=4 * 112)
     scroll.set_child(flow)
-    view.append(scroll)
-    pop.set_child(view)
-    pop.set_parent(tile)
-    pop.view, pop.flow = view, flow             # (tests)
-    pop.connect("closed", lambda p: GLib.idle_add(lambda: (p.unparent(), False)[1]))
-    ui.menu.OPEN.add(pop)                       # keeps an auto-hiding Dock visible
-    pop.connect("closed", lambda p: (ui.menu.OPEN.discard(p), [cb() for cb in list(ui.menu.on_closed)]))
-    pop.popup()
-    return pop
+    pop.view.append(scroll)
+    pop.flow = flow                             # (tests)
 
 
 def close_panel(pop, then=None) -> None:
@@ -235,9 +366,17 @@ def _app_button(dock, tile, key, pop) -> Gtk.Button:
 def folder_menu(dock, tile):
     Item = ui.menu.Item
     tile.label.popdown()
+    locked = bool((dock.folder(tile.key) or {}).get("locked"))
+    if locked:
+        lock = Item("Unlock Folder\u2026", lambda: open_panel(
+            dock, tile, then=lambda: dock.set_folder_locked(tile.key, False)))
+        ungroup = Item("Ungroup\u2026", lambda: open_panel(dock, tile, then=lambda: dock.ungroup(tile.key)))
+    else:
+        lock = Item("Lock Folder", lambda: dock.set_folder_locked(tile.key, True))
+        ungroup = Item("Ungroup", lambda: dock.ungroup(tile.key))
     return ui.menu.popup(tile, [[Item("Open", lambda: open_panel(dock, tile))],
-                                [Item("Ungroup", lambda: dock.ungroup(tile.key)),
-                                 Item("Remove from Dock", lambda: dock.set_pinned(tile.key, False))]],
+                                [lock],
+                                [ungroup, Item("Remove from Dock", lambda: dock.set_pinned(tile.key, False))]],
                          position=dock.away)
 
 

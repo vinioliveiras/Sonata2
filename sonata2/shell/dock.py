@@ -817,7 +817,7 @@ class Dock(Gtk.Box):
             if not f:
                 return False
             self._add_tile(key, f["name"], None,
-                           icon=dock_folder.FolderIcon(f["apps"], self.cfg["icon_size"]))
+                           icon=dock_folder.FolderIcon(f["apps"], self.cfg["icon_size"], f.get("locked", False)))
             return True
         info = apps.lookup(key)
         if info:
@@ -1128,10 +1128,23 @@ class Dock(Gtk.Box):
         f, tile = self.folder(fkey), self.tiles.get(fkey)
         if tile is not None and f is not None:
             tile.icon.set_apps(f["apps"])
+            tile.icon.set_locked(f.get("locked", False))
             tile.name = f["name"]
             tile.label.set_text(f["name"])
         self.save_cfg()
         self._relayout()
+
+    def set_folder_locked(self, fkey, on: bool) -> None:
+        """Lock: what's inside shows only after the password (asked by the
+        menu before unlocking -- see dock_folder.folder_menu)."""
+        f = self.folder(fkey)
+        if f is None:
+            return
+        if on:
+            f["locked"] = True
+        else:
+            f.pop("locked", None)
+        self._folder_changed(fkey)
 
     def open_app(self, key, near=None) -> None:
         """Open (or bring forward) an app from a folder."""

@@ -108,6 +108,17 @@ def set_exclusive(win, exclusive: int) -> None:
         LS.set_exclusive_zone(win, exclusive)
 
 
+def take_keyboard(win, on: bool) -> bool:
+    """A layer surface that normally takes no keyboard (the Dock) takes it
+    while something in it needs typing (a password), and gives it back.
+    False: not a layer surface (nothing to do)."""
+    LS = layer_shell()
+    if not LS or not LS.is_layer_window(win):
+        return False
+    LS.set_keyboard_mode(win, LS.KeyboardMode.EXCLUSIVE if on else LS.KeyboardMode.NONE)
+    return True
+
+
 def set_input_region(win, rects) -> None:
     """Only these (x, y, w, h) rectangles of `win` receive pointer input;
     the rest of the transparent surface lets clicks through."""
