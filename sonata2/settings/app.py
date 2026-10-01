@@ -1906,14 +1906,17 @@ class Settings(Adw.ApplicationWindow):
                         lambda v: (self._save("appearance", "icon_theme", v),
                                    self.toast(f"Restart the Dock and {names.APPS} to use the new icons"))))
         from ..ui import logo as L
+        # always there, usable only for "Text: custom…": showing / hiding it
+        # moved the rows under it, and a click meant for this field landed on
+        # "Sonata title bars for all apps" and turned it off
         text_row = Adw.EntryRow(title="Menu bar text", text=app.get("menu_text") or "", use_markup=False,
-                                visible=app["menu_logo"] == "text:custom", show_apply_button=True)
+                                sensitive=app["menu_logo"] == "text:custom", show_apply_button=True)
         if hasattr(text_row, "set_max_length"):         # libadwaita 1.5+
             text_row.set_max_length(L.TEXT_MAX)
         text_row.connect("apply", lambda r: self._save("appearance", "menu_text", r.get_text().strip()))
         s.add(combo_row("Menu bar logo", L.choices(), app["menu_logo"],
                         lambda v: (self._save("appearance", "menu_logo", v),
-                                   text_row.set_visible(v == "text:custom")),
+                                   text_row.set_sensitive(v == "text:custom")),
                         subtitle="Where the Apple logo is on a Mac"))
         s.add(text_row)                                   # text:custom: your words (emoji drawn in one colour)
         s.menu_text_row = text_row                        # (tests)
