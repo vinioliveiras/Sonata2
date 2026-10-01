@@ -42,7 +42,7 @@ REPEATS = ((None, "None"), ("DAILY", "Every Day"), ("WEEKLY", "Every Week"), ("M
            ("YEARLY", "Every Year"))
 ALERTS = ((None, "None"), (0, "At time of event"), (5, "5 minutes before"), (15, "15 minutes before"),
           (30, "30 minutes before"), (60, "1 hour before"), (1440, "1 day before"))
-SIDEBAR_W = 210
+SIDEBAR_W = ui.window.SIDEBAR_W          # the apps' one sidebar width
 RESULTS_W = 270
 
 

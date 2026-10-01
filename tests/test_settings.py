@@ -147,6 +147,23 @@ class SettingsTest(unittest.TestCase):
             self.assertIn("ask_restart(", src[i:i + 300], setting)
         win.destroy()
 
+    def test_opens_on_general_with_the_shared_sidebar(self):
+        """Settings opened on the pane left open last time: General, unless a pane is asked for.
+        Every app's source list: one width (ui.window.SIDEBAR_W)."""
+        win = S.Settings(None)
+        self.assertEqual(win.current, "appearance")
+        win.destroy()
+        import re as _re
+        src = open(os.path.join(os.path.dirname(S.__file__), "..", "__main__.py")).read()
+        self.assertIn('DEFAULT_SETTINGS_PAGE = "appearance"', src)
+        self.assertIn("win.select(DEFAULT_SETTINGS_PAGE)", src)
+        self.assertEqual(ui.window.SIDEBAR_W, 280)
+        root = os.path.join(os.path.dirname(S.__file__), "..")
+        for f in ("settings/app.py", "files/window.py", "diskutil/window.py", "music/window.py",
+                  "calendar/window.py", "notes/window.py", "activity/performance.py"):
+            self.assertIn("SIDEBAR_W", open(os.path.join(root, f)).read(), f)
+        self.assertFalse(_re.search(r"sidebar\.set_size_request\(\d", open(os.path.join(root, "diskutil/window.py")).read()))
+
     def test_save_keeps_other_keys(self):
         config.save("dock", {"pinned": ["a"], "icon_size": 48})
         win = S.Settings(None)

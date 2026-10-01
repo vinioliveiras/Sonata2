@@ -156,8 +156,9 @@ window.sonata-window.fullscreen { border-radius: 0; box-shadow: none; }
 """, key="window-frame")
 
 
-# one sidebar width for Sonata's apps (Settings, Files...): fixed, no divider to drag
-SIDEBAR_W = 230
+# one sidebar width for every Sonata app with a source list (Settings, Files,
+# Notes, Music, Calendar, Disk Manager, Task Manager's Performance): 230 + 50 (Vini)
+SIDEBAR_W = 280
 
 
 def standard(win) -> None:

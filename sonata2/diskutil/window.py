@@ -181,7 +181,7 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         self.list.add_controller(menu)
         self.sidebar = Gtk.ScrolledWindow(child=self.list, hscrollbar_policy=Gtk.PolicyType.NEVER,
                                           css_classes=["sonata-sidebar", "du-sidebar"])
-        self.sidebar.set_size_request(200, -1)
+        self.sidebar.set_size_request(ui.window.SIDEBAR_W, -1)
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, hexpand=True,
                                css_classes=["du-main"])
         self.stack.add_named(self._build_detail(), "detail")
@@ -190,7 +190,7 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         self.stack.add_named(ui.progress.spinner(size=32), "loading")
         self.stack.set_visible_child_name("loading")
         self.paned = Gtk.Paned(start_child=self.sidebar, end_child=self.stack, shrink_start_child=False,
-                               resize_start_child=False, position=220, vexpand=True, css_classes=["du-paned"])
+                               resize_start_child=False, position=ui.window.SIDEBAR_W, vexpand=True, css_classes=["du-paned"])
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col.append(self.toolbar)
         col.append(self.paned)

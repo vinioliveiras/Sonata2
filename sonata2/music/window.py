@@ -520,7 +520,7 @@ class MusicWindow(Gtk.ApplicationWindow):
         col.append(self._player_bar())
         paned = Gtk.Paned(start_child=self._sidebar(), end_child=self._content(), shrink_start_child=False,
                           resize_start_child=False, shrink_end_child=False, css_classes=["mu-paned"], vexpand=True)
-        paned.set_position(200)
+        paned.set_position(ui.window.SIDEBAR_W)        # the apps' one sidebar width
         col.append(paned)
         self.set_child(col)
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)

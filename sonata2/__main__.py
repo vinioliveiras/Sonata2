@@ -247,14 +247,18 @@ def run_launchpad(app, args, ui, state):
 SETTINGS_LINGER_S = 600
 
 
+DEFAULT_SETTINGS_PAGE = "appearance"     # General
+
+
 def run_settings(app, args, ui, state):
     """One Settings window. Closing hides it and the app lingers for ten
     minutes (the hidden window keeps it running): opening Settings again is
-    instant, at the same pane."""
+    instant. It opens on General, unless asked for a pane (--page: the menu
+    bar's "Wi-Fi Preferences…")."""
     from .settings.app import Settings
     win = state.get("win")
     if win is None:
-        win = state["win"] = Settings(app, args.page or "wifi")
+        win = state["win"] = Settings(app, args.page or DEFAULT_SETTINGS_PAGE)
 
         def closed(w):
             w.set_visible(False)
@@ -273,6 +277,8 @@ def run_settings(app, args, ui, state):
         win.connect("close-request", closed)
     elif args.page:
         win.select(args.page)
+    elif not win.get_visible():                  # opened again after closing: General, not the last pane
+        win.select(DEFAULT_SETTINGS_PAGE)
     from .ui.window import show_again
     show_again(win)                              # it may have been minimized before it was closed
 
@@ -1145,7 +1151,7 @@ def main() -> int:
                 activate(app)                   # the first one, set up as usual
                 return
             from .settings.app import Settings
-            win = Settings(app, args.page or "wifi")
+            win = Settings(app, args.page or DEFAULT_SETTINGS_PAGE)
             win.present()
         act = Gio.SimpleAction.new("new-window", None)
         act.connect("activate", new_window)

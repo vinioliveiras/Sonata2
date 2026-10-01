@@ -302,7 +302,7 @@ def _speed(v) -> float:
 
 
 class Settings(Adw.ApplicationWindow):
-    def __init__(self, app, start: str = "wifi"):
+    def __init__(self, app, start: str = "appearance"):
         super().__init__(application=app, title="System Settings")
         for c in ("sonata-settings", "sonata-glass"):      # added, not passed (keeps GTK's "csd")
             self.add_css_class(c)
@@ -337,7 +337,7 @@ class Settings(Adw.ApplicationWindow):
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._key)
         self.add_controller(keys)
-        self.select(start if start in [s[0] for s in SECTIONS] else "wifi")
+        self.select(start if start in [s[0] for s in SECTIONS] else "appearance")      # General
         from ..backend import power                     # the Battery section follows plug/charge changes
         power.watch(lambda: self.current == "battery" and self._reload_page("battery"))
 

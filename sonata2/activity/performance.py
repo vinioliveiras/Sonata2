@@ -7,6 +7,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Pango  # noqa: E402
 
+from .. import ui  # noqa: E402
 from .pages import Page, fmt_bits  # noqa: E402
 from .procfs import fmt_bytes, fmt_count  # noqa: E402
 from .widgets import CompositionBar, Graph, Series  # noqa: E402
@@ -70,7 +71,7 @@ class PerformancePage(Page):
         self.list = Gtk.ListBox(css_classes=["tm-perf-list"], selection_mode=Gtk.SelectionMode.BROWSE)
         self.list.connect("row-selected", lambda _l, r: r is not None and self.select(r.key))
         left = Gtk.ScrolledWindow(child=self.list, hscrollbar_policy=Gtk.PolicyType.NEVER)
-        left.set_size_request(230, -1)
+        left.set_size_request(ui.window.SIDEBAR_W, -1)
         self.pane = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, hexpand=True,
                             css_classes=["tm-perf-pane"])
         box = Gtk.Box()

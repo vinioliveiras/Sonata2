@@ -224,7 +224,7 @@ class NotesWindow(Gtk.ApplicationWindow):
         self.sidebar = self._sidebar()
         self.outer = Gtk.Paned(start_child=self.sidebar, shrink_start_child=False, resize_start_child=False,
                                css_classes=["nt-paned"], vexpand=True)
-        self.outer.set_position(self.cfg["sidebar_width"])
+        self.outer.set_position(ui.window.SIDEBAR_W)       # the apps' one sidebar width (not remembered)
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=150)
         self.inner = Gtk.Paned(start_child=self._list_pane(), end_child=self._editor_pane(),
                                shrink_start_child=False, resize_start_child=False, shrink_end_child=False,
