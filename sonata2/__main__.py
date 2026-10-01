@@ -928,6 +928,9 @@ def main() -> int:
         return sharepicker.main()
     if len(sys.argv) > 1 and sys.argv[1] == "screenshot":
         return screenshot(sys.argv[2] if len(sys.argv) > 2 else "screen")
+    if len(sys.argv) > 1 and sys.argv[1] == "self-update":     # Sonata's own updates (GitHub releases)
+        from .backend import selfupdate
+        return selfupdate.main(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "restart":
         return restart(sys.argv[2:])
     if len(sys.argv) > 2 and sys.argv[1] == "key":

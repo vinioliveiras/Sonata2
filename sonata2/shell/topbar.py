@@ -1292,6 +1292,11 @@ class TopBarWindow(Gtk.ApplicationWindow):
                 app.connect("shutdown", lambda *_: self.bar.alarms.ringer.stop())
             except Exception as e:                                  # never keeps the menu bar from starting
                 print(f"sonata2-topbar: alarms: {e}")
+            try:                                                    # a new Sonata release: say so
+                from .updatenotify import UpdateNotifier
+                self.bar.update_notifier = UpdateNotifier()
+            except Exception as e:                                  # never keeps the menu bar from starting
+                print(f"sonata2-topbar: update check: {e}")
             try:                                                    # each app's saved volume
                 from ..backend.mixer import MixerService
                 self.bar.mixer = MixerService()

@@ -127,7 +127,17 @@ def sources() -> List[Source]:
         out.append(Source("flatpak", "Flatpak", ["flatpak", "remote-ls", "--updates",
                                                  "--columns=name,application,version"],
                           ["flatpak", "update", "-y", "--noninteractive"], "flatpak update", parse_flatpak))
+    out.append(sonata_source())         # last: its update restarts Sonata
     return out
+
+
+def sonata_source() -> Source:
+    """Sonata itself (backend/selfupdate.py: its GitHub releases). Updated
+    in a terminal: its installer may ask for sudo."""
+    from . import selfupdate
+    from ..__main__ import self_command
+    return Source("sonata", "Sonata", self_command().split() + ["self-update", "--check"], None,
+                  selfupdate.terminal_command(), parse_arrow)
 
 
 def check(src: Source) -> Optional[List[Update]]:
