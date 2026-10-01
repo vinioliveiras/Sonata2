@@ -36,7 +36,7 @@ popover.sonata-panel > contents {
    hands a new popover the pointer's last spot: a row under it flashed) */
 popover.sonata-panel.fresh .panel-row:hover { background: none; }
 .panel-sep { min-height: 1px; margin: 5px 10px; background: %(separator)s; }
-.panel-module { background: %(module_bg)s; border-radius: 12px; padding: 10px;
+.panel-module { background: %(module_bg)s; border-radius: %(r_dialog)s; padding: 10px;
   box-shadow: 0 0 0 0.5px %(separator)s; }
 .panel-module-title { font-weight: 700; }
 .panel-toggle { min-width: 28px; min-height: 28px; padding: 0; border-radius: 99px; border: none;

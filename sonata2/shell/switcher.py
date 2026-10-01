@@ -20,7 +20,7 @@ ui.register("""
 window.sonata-switcher, window.sonata-switcher > contents { background: none; box-shadow: none; }
 /* room around the panel for its shadow: a shadow cut by the window's edge
    left hard, blurred triangles under the bottom corners */
-.sw-panel { background: %(glass_tint)s; border-radius: 22px; padding: 14px; margin: 24px 40px 56px 40px;
+.sw-panel { background: %(glass_tint)s; border-radius: calc(%(r_dialog)s * 1.83); padding: 14px; margin: 24px 40px 56px 40px;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, 0 16px 40px rgba(0,0,0,0.28); }
 .sw-panel.solid { background: %(menu_bg)s; }
 .sw-item { padding: 8px; border-radius: 14px; }

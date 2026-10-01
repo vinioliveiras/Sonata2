@@ -105,6 +105,7 @@ def values() -> dict:
 
 
 _glass_bars_on = None
+_radii_seen = None
 
 
 def _glass_bars() -> bool:
@@ -140,8 +141,11 @@ def _appearance_changed() -> None:
     _accent_name = None
     _transparency_changed()
     bars = glass_titlebars()
-    if _accent() != old or bars != _glass_bars_on:
+    global _radii_seen
+    radii = tokens.user_radii()
+    if _accent() != old or bars != _glass_bars_on or radii != _radii_seen:
         _glass_bars_on = bars
+        _radii_seen = radii
         _parsed.clear()
         _load(fade=True)
 

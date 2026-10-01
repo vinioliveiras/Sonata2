@@ -27,7 +27,7 @@ OBJECT_PATH = "/io/github/vinioliveiras/sonata2/PolkitAgent"
 
 ui.register("""
 window.sonata-auth { background: rgba(0, 0, 0, 0.18); }
-.auth-panel { background: %(panel_material)s; border-radius: 14px; padding: 22px 22px 18px 22px;
+.auth-panel { background: %(panel_material)s; border-radius: calc(%(r_dialog)s * 1.17); padding: 22px 22px 18px 22px;
   box-shadow: 0 22px 56px rgba(0,0,0,0.35), 0 0 0 0.5px rgba(0,0,0,0.35), inset 0 0 0 0.5px %(highlight)s; }
 .auth-title { font-weight: 700; font-size: %(text_body)s; color: %(label)s; }
 .auth-text { font-size: %(text_small)s; color: %(label_secondary)s; }

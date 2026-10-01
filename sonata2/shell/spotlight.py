@@ -34,7 +34,7 @@ SEARCH_DELAY_MS = 40            # a burst of keys: one search
 
 ui.register("""
 window.sonata-spotlight, window.sonata-spotlight > contents { background: none; box-shadow: none; }
-.sp-panel { background: %(glass_tint)s; border-radius: 12px; color: %(label)s; font-family: %(font)s;
+.sp-panel { background: %(glass_tint)s; border-radius: %(r_dialog)s; color: %(label)s; font-family: %(font)s;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, 0 18px 50px rgba(0,0,0,0.28); }
 .sp-panel.solid { background: %(menu_bg)s; }
 .sp-field { min-height: 48px; padding: 0 14px; }

@@ -26,7 +26,7 @@ CHECK_MAX_S = 30
 
 ui.register("""
 window.sonata-alarm { background: transparent; }
-.alarm-card { background: %(panel_material)s; border-radius: 16px; padding: 14px 14px 12px 16px;
+.alarm-card { background: %(panel_material)s; border-radius: calc(%(r_dialog)s * 1.33); padding: 14px 14px 12px 16px;
   margin: 10px; box-shadow: 0 8px 28px rgba(0,0,0,0.35), 0 0 0 0.5px rgba(0,0,0,0.35),
   inset 0 0 0 0.5px %(highlight)s; }
 .alarm-app { font-size: %(text_small)s; color: %(label_secondary)s; font-weight: 600; }

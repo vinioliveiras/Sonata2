@@ -24,7 +24,7 @@ THUMB_W = 220
 CAPTURE_DELAY_MS = 700          # let the window finish drawing / animating
 
 ui.register("""
-popover.dock-preview > contents { background: %(panel_material)s; border-radius: 12px; padding: 8px;
+popover.dock-preview > contents { background: %(panel_material)s; border-radius: %(r_dialog)s; padding: 8px;
   box-shadow: 0 0 0 0.5px %(hairline)s, %(shadow_menu)s; }
 .dock-preview button.shot { padding: 4px; border-radius: 8px; background: none; border: none; box-shadow: none; }
 .dock-preview button.shot:hover { background: alpha(%(label)s, 0.12); }

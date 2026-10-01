@@ -69,7 +69,7 @@ window.sonata-nc, window.sonata-nc > contents { background: none; box-shadow: no
    fades while its row collapses */
 .nc-slot > * { transition: opacity 220ms %(ease_out)s, transform 220ms %(ease_out)s; }
 .nc-slot.leaving > * { opacity: 0; transform: translateX(60px); }
-.nt-card { background: %(glass_tint)s; border-radius: 13px; padding: 10px 12px 11px 10px;
+.nt-card { background: %(glass_tint)s; border-radius: calc(%(r_dialog)s * 1.08); padding: 10px 12px 11px 10px;
   color: %(label)s; font-family: %(font)s;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, 0 8px 22px rgba(0,0,0,0.18); }
 .nt-card.solid { background: %(menu_bg)s; }
@@ -88,7 +88,7 @@ button.nt-action:hover { background: alpha(%(label)s, 0.14); }
   margin: 6px 4px 2px 8px; }
 button.nc-clear { min-height: 20px; padding: 0 9px; border-radius: 99px; border: none; font-size: %(text_small)s;
   background: %(glass_tint)s; color: %(label)s; box-shadow: 0 0 0 0.5px %(hairline)s; }
-.nc-widget { background: %(glass_tint)s; border-radius: 18px; padding: 12px 14px;
+.nc-widget { background: %(glass_tint)s; border-radius: calc(%(r_dialog)s * 1.5); padding: 12px 14px;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, 0 8px 22px rgba(0,0,0,0.18); }
 .nc-month { color: %(destructive)s; font-weight: 700; font-size: %(text_small)s; margin-bottom: 4px; }
 .nc-wd { color: %(label_secondary)s; font-size: 10px; font-weight: 700; }

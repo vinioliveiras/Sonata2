@@ -27,6 +27,8 @@ from .gtkstyle import BEGIN, END
 # left and top edges; libadwaita centres its header bar's controls this far down
 from .ui.tokens import FRAME  # noqa: E402  (dots and corners: one place for every window)
 
+from .ui.tokens import frame as tokens_frame  # noqa: E402  (the user's window radius)
+
 TL_LEFT, TL_TOP = FRAME["dot_left"], FRAME["dot_top"]
 TL_CENTRE_Y_ADW = 23
 ADW_START_INSET = 6     # the header bar's start box sits this far in (with no padding)
@@ -99,7 +101,7 @@ def css(folder: str = None, bars: bool = True, glass: bool = False) -> str:
     return (f"/* Sonata's window look for other GTK 4 apps -- written by sonata2/adwstyle.py at login */\n"
             f"window:not(.sonata-window) headerbar {{ padding-{side}: 0; }}\n"
             # the corners of Sonata's windows and of the ones Wayfire draws (sonata-corners radius)
-            f"window:not(.sonata-window).csd {{ border-radius: {FRAME['radius']}px; }}\n"
+            f"window:not(.sonata-window).csd {{ border-radius: {tokens_frame()['radius']}px; }}\n"
             f"window:not(.sonata-window).csd.maximized, window:not(.sonata-window).csd.fullscreen,\n"
             f"window:not(.sonata-window).csd.tiled, window:not(.sonata-window).csd.tiled-top,\n"
             f"window:not(.sonata-window).csd.tiled-left, window:not(.sonata-window).csd.tiled-right,\n"

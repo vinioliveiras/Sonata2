@@ -31,7 +31,7 @@ spec = importlib.util.spec_from_file_location("tokens", os.path.join(os.environ[
 tokens = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tokens)
 wfconfig._wayfire_files = lambda: [sys.argv[1]]       # write only the resolved copy
-for sec, key, val in wfconfig.frame_options(tokens.FRAME):
+for sec, key, val in wfconfig.frame_options(tokens.frame()):     # the user's radius
     wfconfig.wayfire_set(sec, key, val)
 PY
 over="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/wayfire-overrides.ini"

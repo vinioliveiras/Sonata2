@@ -16,7 +16,7 @@ SHOW_MS = 1400
 
 ui.register("""
 window.sonata-osd, window.sonata-osd > contents { background: none; box-shadow: none; }
-.osd-card { background: %(glass_tint)s; border-radius: 18px;
+.osd-card { background: %(glass_tint)s; border-radius: calc(%(r_dialog)s * 1.5);
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s; color: %(label)s; }
 .osd-card.solid { background: %(menu_bg)s; }
 .osd-icon { color: alpha(%(label)s, 0.8); }

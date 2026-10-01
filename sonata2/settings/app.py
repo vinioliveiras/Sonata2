@@ -2052,7 +2052,7 @@ class Settings(Adw.ApplicationWindow):
                          lambda on: (self._save("dock", "glass", on), self._apply_titlebars()),
                          subtitle="Frosted Dock, menu bar, menus, sidebars and title bars "
                                   "(needs the Wayfire blur plugin)"))
-        return [g, s]
+        return [g, s, self._corners_group()]
 
     def _page_dock(self):
         from ..shell import dock as D
@@ -2366,6 +2366,48 @@ class Settings(Adw.ApplicationWindow):
                 system.power_action("logout" if kind == "session" else "restart")
         return ui.dialog.alert(heading, body.format(what), [("later", "Later", ""), ("now", action, "default")],
                                answered, parent=self)
+
+    RADIUS_ROWS = (("window", "Windows", "Their corners and title bars, other apps' too"),
+                   ("dock", "Dock", ""),
+                   ("menu", "Menus and panels", "Menus, the menu bar's panels, notifications, alerts"))
+
+    def _corners_group(self):
+        """Corner radii (tokens.user_radii): one slider per kind; a double-click resets it."""
+        from ..ui import tokens
+        g = group("Corners", "How round Sonata's windows, Dock and menus are (not the screen's corners).")
+        cur = tokens.user_radii()
+        self.radius_rows = {}
+        for key, title, sub in self.RADIUS_ROWS:
+            lo, hi = tokens.RADIUS_RANGE[key]
+            row = slider_row(title, cur[key], lo, hi, lambda v, k=key: self._set_radius(k, v), subtitle=sub,
+                             ends=("Square", "Round"), default=tokens.RADIUS_DEFAULTS[key])
+            self.radius_rows[key] = row
+            g.add(row)
+        return g
+
+    def _set_radius(self, key, value) -> None:
+        """Saved a moment after the slider stops (each save re-styles every Sonata
+        surface); the title bars Wayfire draws and GNOME apps' follow."""
+        self._radius_pending = dict(getattr(self, "_radius_pending", {}), **{key: int(round(value))})
+        if getattr(self, "_radius_src", 0):
+            GLib.source_remove(self._radius_src)
+
+        def save():
+            self._radius_src = 0
+            from ..ui import tokens
+            radii = dict(tokens.user_radii(), **self._radius_pending)
+            self._radius_pending = {}
+            config.update("appearance", radius=radii)
+
+            def wayfire():
+                from .. import titlebars, wfconfig
+                for sec, k, v in wfconfig.frame_options(tokens.frame()):
+                    if k in ("rounded_corner_radius", "radius"):
+                        system.wayfire_set(sec, k, v)
+                titlebars.apply()                            # GNOME apps' corners (adwstyle)
+            system.run_async(wayfire, None)
+            return False
+        self._radius_src = GLib.timeout_add(250, save)
 
     def _set_glass_titlebars(self, on) -> None:
         """Title bars of every window: the glass, or opaque (the default)."""

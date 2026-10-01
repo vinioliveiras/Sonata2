@@ -306,8 +306,64 @@ for _p in (LIGHT, DARK):
         _p[_k] = over(_p[_k], _p["window_bg"])
 
 
+# Corner radii the user picks (Settings > General > Corners; appearance.json
+# "radius"): windows (their title bars too, Sonata's, Wayfire's and GNOME
+# apps'), the Dock's plate, menus and panels. Small parts follow their
+# group's ratio. Not the screen's corners (shell/screencorners.py).
+RADIUS_DEFAULTS = {"window": FRAME["radius"], "dock": 18, "menu": 7}
+RADIUS_RANGE = {"window": (0, 24), "dock": (0, 32), "menu": (0, 16)}
+_radii_cache = {"mtime": None, "value": dict(RADIUS_DEFAULTS), "set": {}}
+
+
+def user_radii() -> dict:
+    """The radii in effect (appearance.json; no GTK: wayfire-config.sh reads it too)."""
+    import json
+    import os
+    try:
+        from .. import config                  # (the same folder every Sonata setting uses)
+        folder = config.CONFIG_DIR
+    except ImportError:                        # loaded on its own (wayfire-config.sh)
+        folder = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "sonata2")
+    path = os.path.join(folder, "appearance.json")
+    try:
+        mtime = os.stat(path).st_mtime
+    except OSError:
+        return dict(RADIUS_DEFAULTS, window=FRAME["radius"])     # (the theme's own: FRAME)
+    if _radii_cache["mtime"] != mtime:
+        out = dict(RADIUS_DEFAULTS, window=FRAME["radius"])
+        got = {}
+        try:
+            with open(path, encoding="utf-8") as f:
+                got = (json.load(f) or {}).get("radius") or {}
+            for k, (lo, hi) in RADIUS_RANGE.items():
+                if isinstance(got.get(k), (int, float)):
+                    out[k] = int(max(lo, min(hi, round(got[k]))))
+        except (OSError, ValueError, AttributeError):
+            pass
+        _radii_cache.update(mtime=mtime, value=out, set=got if isinstance(got, dict) else {})
+    out = dict(_radii_cache["value"])
+    if "window" not in _radii_cache.get("set", {}):
+        out["window"] = FRAME["radius"]                         # not picked: the theme's own
+    return out
+
+
+def frame() -> dict:
+    """FRAME with the user's window radius."""
+    return dict(FRAME, radius=user_radii()["window"])
+
+
+def radius_tokens(r: dict) -> dict:
+    """The r_* tokens for these radii (the defaults give the designed values)."""
+    def scaled(base, value, ratio):
+        return f"{max(0, round(value * ratio / base)) if base else 0}px"
+    w, d, m = r["window"], r["dock"], r["menu"]
+    return {"r_window": f"{w}px", "r_button": scaled(10, w, 5), "r_plate": f"{d}px",
+            "r_menu": f"{m}px", "r_menu_row": scaled(7, m, 4), "r_label": scaled(7, m, 6),
+            "r_dialog": scaled(7, m, 12)}
+
+
 def palette(dark: bool, theme: str = "mac") -> dict:
     """All tokens for one theme and appearance."""
     t = THEMES.get(theme, THEMES["mac"])
     return {**t["shared"], **{"sys_" + k: v for k, v in SYSTEM_COLORS.items()},
-            **(t["dark"] if dark else t["light"])}
+            **(t["dark"] if dark else t["light"]), **radius_tokens(user_radii())}

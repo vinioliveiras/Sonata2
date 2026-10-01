@@ -26,7 +26,7 @@ TERMINALS = ("terminal", "konsole", "kitty", "alacritty", "foot", "ghostty", "we
 
 ui.register("""
 window.sonata-clip-picker, window.sonata-clip-picker > contents { background: none; box-shadow: none; }
-.clip-panel { background: %(panel_material)s; border-radius: 12px; margin: 20px; padding-bottom: 4px;
+.clip-panel { background: %(panel_material)s; border-radius: %(r_dialog)s; margin: 20px; padding-bottom: 4px;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, 0 12px 36px rgba(0,0,0,0.3);
   color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
 .clip-panel .clip-head { margin: 10px 12px 2px; }

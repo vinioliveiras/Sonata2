@@ -28,7 +28,7 @@ THUMB_W = 240
 
 ui.register("""
 window.sonata-share, window.sonata-share > contents { background: none; box-shadow: none; }
-.share-panel { background: %(panel_material)s; border-radius: 14px; padding: 18px 18px 14px 18px; margin: 30px;
+.share-panel { background: %(panel_material)s; border-radius: calc(%(r_dialog)s * 1.17); padding: 18px 18px 14px 18px; margin: 30px;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, 0 18px 50px rgba(0,0,0,0.32);
   color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
 .share-panel .share-title { font-weight: 700; }
