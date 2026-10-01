@@ -239,15 +239,18 @@ def _write(path: str, text: str) -> None:
 
 
 # -- colours of the frames Wayfire draws -----------------------------------------------
-BLUR_GLASS = 'app_id contains "sonata2" | type is "unmanaged" | type is "toplevel"'
-BLUR_SOLID = 'app_id contains "sonata2" | type is "unmanaged"'
+# What Wayfire blurs behind: Sonata's own surfaces (Dock, menu bar, sidebars)
+# and popups. Other apps' windows no more: their title bars are opaque now
+# (tokens.titlebar_bg), so blurring behind them only cost GPU time on every
+# frame they changed -- moving and resizing a window got heavy, and the
+# blur pass is where the Radeon 680M hung (session crash).
+BLUR = 'app_id contains "sonata2" | type is "unmanaged"'
 
 
 def apply_colors(dark: bool) -> None:
     """Title bars pixdecor (and Wayfire's own decoration) draw, for the
-    appearance: the Dock's glass (tokens.titlebar_*), blurred by Wayfire.
-    Reduce transparency: solid bars and no blur behind other apps' windows
-    (lighter on the GPU too). Wayfire reloads its config live."""
+    appearance (tokens.titlebar_*, opaque like GNOME apps' header bars).
+    Wayfire reloads its config live."""
     from .backend import system
     from .ui import theme, tokens
     t = dict(tokens.palette(bool(dark)))
@@ -256,7 +259,7 @@ def apply_colors(dark: bool) -> None:
     if solid:
         for k in keys[:2]:
             t[k] = tokens.over(t[k], t["window_bg"])
-    system.wayfire_set("blur", "blur_by_default", BLUR_SOLID if solid else BLUR_GLASS)
+    system.wayfire_set("blur", "blur_by_default", BLUR)
     system.wayfire_set("sonata-corners", "outline", "\\" + tokens.wayfire_color(t["window_outline"]))
     fg, bg, text, dim = (tokens.wayfire_color(t[k], premultiplied=True) for k in keys)
     for k, v in (("fg_color", fg), ("bg_color", bg), ("fg_text_color", text), ("bg_text_color", dim)):
