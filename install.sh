@@ -338,6 +338,8 @@ mkdir -p "$CFG/xdg-desktop-portal-wlr"
 printf '[screencast]\nchooser_type=dmenu\nchooser_cmd=%s share-picker\nmax_fps=60\n' "$BIN/sonata2" \
     > "$CFG/xdg-desktop-portal-wlr/Sonata"
 systemctl --user try-restart xdg-desktop-portal-wlr.service 2>/dev/null || true
+# the Open/Save panels (Sonata's portal) run all session: the new code on next use
+pkill -f -- "sonata2 portal( |$)" 2>/dev/null || true
 
 # -- login screen entry ---------------------------------------------------------------------------------
 # The login screen checks TryExec as its own user (gdm, sddm...), which can't

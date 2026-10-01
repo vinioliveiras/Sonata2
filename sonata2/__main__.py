@@ -623,6 +623,10 @@ def restart(names) -> int:
     import time
     if not names:
         _reload_wayfire_config()
+    if not names:
+        # the Open/Save panels' process (portal) runs the whole session: it kept
+        # old code (looks) after an update. Stopped; D-Bus starts it again, new.
+        subprocess.run(["pkill", "-f", "--", r"sonata2 portal( |$)"], check=False)
     names = [n for n in names if n in SHELL_COMPONENTS] or list(SHELL_COMPONENTS)
     for n in names:                       # the keepers first, so they don't start it again
         subprocess.run(["pkill", "-f", "--", rf"-m sonata2 keep {n}( |$)"], check=False)
@@ -830,7 +834,9 @@ def _write_env_report() -> None:
 
 
 ACTIVATION_ENV = ("WAYLAND_DISPLAY", "DISPLAY", "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "XDG_DATA_DIRS",
-                  "DCONF_PROFILE", "XCURSOR_THEME", "XCURSOR_SIZE", "XCURSOR_PATH", "QT_QPA_PLATFORMTHEME")
+                  "DCONF_PROFILE", "XCURSOR_THEME", "XCURSOR_SIZE", "XCURSOR_PATH", "QT_QPA_PLATFORMTHEME",
+                  # the Open/Save panels (portal, D-Bus activated) are Files: glass like it
+                  "SONATA_GLASS")
 
 
 # shell surfaces (not apps: those keep the portal's Open/Save panels)
@@ -966,6 +972,10 @@ def main() -> int:
             [f for f in os.environ.get("GDK_DEBUG", "").split(",") if f and f not in ("portals", "no-portals")]
             + ["no-portals"])
         os.environ["ADW_DISABLE_PORTAL"] = "1"   # libadwaita's own settings read (the other ~15 s)
+    if args.component == "portal" and "Sonata" in os.environ.get("XDG_CURRENT_DESKTOP", "").split(":"):
+        # started by D-Bus, maybe without the session's variables: the Open/Save
+        # panels are Files windows and get its glass (they came out solid -- Vini)
+        os.environ.setdefault("SONATA_GLASS", "1")
     if args.component == "portal":
         # the portal backend is what xdg-desktop-portal waits for while it
         # starts: GTK asking that same portal for settings deadlocked the two

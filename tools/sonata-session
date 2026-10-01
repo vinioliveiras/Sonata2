@@ -60,7 +60,7 @@ if command -v systemctl >/dev/null; then
 fi
 command -v dbus-update-activation-environment >/dev/null && \
     dbus-update-activation-environment --systemd XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_DATA_DIRS \
-        DCONF_PROFILE XCURSOR_THEME XCURSOR_SIZE XCURSOR_PATH QT_QPA_PLATFORMTHEME 2>/dev/null || true
+        DCONF_PROFILE XCURSOR_THEME XCURSOR_SIZE XCURSOR_PATH QT_QPA_PLATFORMTHEME SONATA_GLASS 2>/dev/null || true
 # Hybrid laptops: draw with the GPU the displays are connected to. wlroots
 # renders on the first GPU it finds -- often the integrated one -- and then
 # copies every frame to the other GPU's screens (a 180 Hz external display
