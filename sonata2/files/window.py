@@ -168,7 +168,8 @@ class FilesWindow(Adw.ApplicationWindow):
         split.append(self.sidebar)
         split.append(Gtk.Box(css_classes=["fs-divider"]))
 
-        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["fs-content"], hexpand=True)
+        content = self.content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["fs-content"],
+                                             hexpand=True)              # the Open/Save panel adds to it
         content.append(Gtk.WindowHandle(child=self._toolbar()))
         self.strip = TabStrip(self)
         content.append(self.strip)

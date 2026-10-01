@@ -63,7 +63,7 @@ class ChooserWindow(FilesWindow):
         self.add_css_class("sonata-chooser")
         self.set_title(title or {"open": "Open", "save": "Save", "folder": "Choose Folder"}[mode])
         self.set_default_size(820, 520)
-        content = self.get_content().get_end_child()
+        content = self.content_box            # (it was the paned's end child: Files' sidebar is fixed now)
         if mode == "save":
             content.prepend(self._save_row(name))
         content.append(self._bottom(accept_label))

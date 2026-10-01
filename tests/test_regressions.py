@@ -1366,6 +1366,45 @@ class WindowFrameSingleSourceTests(unittest.TestCase):
         self.assertIn('"r_window": f"{FRAME[\'radius\']}px"', (root / "ui" / "tokens.py").read_text())
 
 
+class OpenPanelWorksTests(unittest.TestCase):
+    """The Open/Save panel stopped opening (Spider's icon picker hung): it
+    reached into the Files window's old divider (paned) to add its bars,
+    and the sidebar became fixed. It opens, filters and answers again."""
+
+    def _settle(self, ms):
+        end = GLib.get_monotonic_time() + ms * 1000
+        while GLib.get_monotonic_time() < end:
+            GLib.MainContext.default().iteration(False)
+
+    def test_open_and_save_panels(self):
+        from gi.repository import GdkPixbuf
+        from sonata2.files.chooser import ChooserWindow
+        folder = tempfile.mkdtemp()
+        pb = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 16, 16)
+        pb.savev(os.path.join(folder, "icon.png"), "png", [], [])
+        open(os.path.join(folder, "notes.txt"), "w").close()
+        app = Adw.Application(application_id="io.github.test.openpanel")
+        app.register(None)
+        got = []
+        win = ChooserWindow(app, mode="open", title="Select icon", folder=Gio.File.new_for_path(folder).get_uri(),
+                            filters=[("Images", [(1, "image/png")])], on_done=lambda u, _f: got.append(u))
+        win.present()
+        self._settle(1200)
+        win.view.select_all()
+        self._settle(100)
+        self.assertEqual([i.get_name() for i in win.view.selected()], ["icon.png"])   # the filter applies
+        win._accept()
+        self._settle(200)
+        self.assertEqual(got, [[Gio.File.new_for_path(os.path.join(folder, "icon.png")).get_uri()]])
+        save = ChooserWindow(app, mode="save", folder=Gio.File.new_for_path(folder).get_uri(), name="x.txt",
+                             on_done=lambda u, _f: got.append(u))
+        save.present()
+        self._settle(600)
+        save._accept()
+        self._settle(200)
+        self.assertTrue(got[-1][0].endswith("/x.txt"))
+
+
 class SteamGameDockTests(unittest.TestCase):
     """Steam games showed in the Dock as a generic icon named
     "steam_app_<id>": their name and icon now come from Steam."""
