@@ -35,7 +35,10 @@ DEFAULTS = {"view": "icons", "list_columns": {}}   # list_columns: views.py
 ui.register("""
 window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
 .fs-content { background: %(content_bg)s; }
-.fs-divider { min-width: 1px; background: %(separator)s; }   /* the sidebar's edge (not draggable) */
+/* the sidebar's edge (not draggable): an opaque base under the hairline -- the
+   separator colour alone is see-through and the wallpaper showed through as a
+   bright gap beside the glass sidebar (like Settings' .st-divider) */
+.fs-divider { min-width: 1px; background: %(content_bg)s; box-shadow: inset 1px 0 %(separator)s; }
 .fs-toolbar { min-height: 52px; padding: 0 10px 0 8px; background: %(content_bg)s;
   box-shadow: inset 0 -1px %(separator)s; }
 .fs-toolbar .fs-title { font-weight: 700; font-size: %(text_title)s; color: %(label)s; }

@@ -1190,6 +1190,18 @@ class FilesSidebarTests(unittest.TestCase):
         self.assertIn("ui.window.SIDEBAR_W", files)
         self.assertIn("ui.window.SIDEBAR_W", (root / "settings" / "app.py").read_text())
 
+    def test_no_see_through_gap_beside_the_sidebar(self):
+        """A bright 1 px gap between the glass sidebar and the list: the
+        divider was only the (translucent) separator colour. Every divider
+        next to a glass pane needs an opaque base under its hairline."""
+        import re
+        root = pathlib.Path(__file__).resolve().parent.parent / "sonata2"
+        for f, cls in (("files/window.py", r"\.fs-divider"), ("settings/app.py", r"\.st-divider"),
+                       ("music/window.py", r"\.mu-paned > separator")):
+            rule = re.search(cls + r" \{([^}]*)\}", (root / f).read_text()).group(1)
+            self.assertRegex(rule, r"background: %\((content_bg|pane_bg)\)s", f)
+            self.assertIn("inset 1px 0 %(separator)s", rule, f)
+
 
 class SteamGameDockTests(unittest.TestCase):
     """Steam games showed in the Dock as a generic icon named

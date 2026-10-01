@@ -46,7 +46,7 @@ TITLES = {"recent": "Recently Added", "albums": "Albums", "songs": "Songs", "art
 ui.register("""
 window.sonata-music { color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
 .mu-content { background: %(content_bg)s; }
-.mu-paned > separator { min-width: 1px; background: %(separator)s; }
+.mu-paned > separator { min-width: 1px; background: %(content_bg)s; box-shadow: inset 1px 0 %(separator)s; }   /* opaque base: no see-through gap */
 
 /* the player: the glass toolbar */
 .sonata-toolbar.mu-player { min-height: 52px; padding: 0 10px; }
