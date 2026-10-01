@@ -346,8 +346,10 @@ class MonoIcon(Gtk.Widget):
 def _silhouette(tex):
     """A full-colour icon as a one-tone shape: the light details drawn on a
     dark body (Discord's logo on its disc) become holes, like the template
-    images macOS apps give their menu extras. One-tone icons keep their
-    alpha. Returns a texture whose alpha is the shape."""
+    images macOS apps give their menu extras. The shape is then made fully
+    solid: icons drawn half see-through (Discord's grey tray logo) came out
+    grey instead of white in Dark Mode / black in Light. Returns a texture
+    whose alpha is the shape."""
     try:
         d = Gdk.TextureDownloader.new(tex)
         d.set_format(Gdk.MemoryFormat.R8G8B8A8)
@@ -356,28 +358,46 @@ def _silhouette(tex):
     except (AttributeError, GLib.Error, TypeError):
         return tex
     w, h = tex.get_width(), tex.get_height()
+    return mono_mask(px, stride, w, h) or tex
+
+
+def mono_mask(px, stride: int, w: int, h: int):
+    """RGBA8 pixels -> the solid one-tone shape (MemoryTexture), None when
+    the icon is empty."""
     lum = []
     for y in range(h):
         row = y * stride
         for x in range(w):
             i = row + x * 4
-            a = px[i + 3]
-            if a > 128:
+            if px[i + 3] > 128:
                 lum.append((0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255)
-    if len(lum) < 8:
-        return tex
-    lum.sort()
-    lo, hi = lum[len(lum) // 10], lum[len(lum) * 9 // 10]
-    if hi - lo < 0.3:
-        return tex                                      # one tone: the alpha is the shape
+    alphas = []
     out = bytearray(w * h * 4)
+    if len(lum) >= 8:
+        lum.sort()
+        lo, hi = lum[len(lum) // 10], lum[len(lum) * 9 // 10]
+    else:
+        lo = hi = 0.0
+    two_tone = hi - lo >= 0.3
     for y in range(h):
         row = y * stride
         for x in range(w):
             i, o = row + x * 4, (y * w + x) * 4
-            l = (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255
-            k = min(1.0, max(0.0, (hi - l) / (hi - lo)))
-            out[o + 3] = int(px[i + 3] * k)
+            a = px[i + 3]
+            if two_tone and a:
+                l = (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255
+                a = int(a * min(1.0, max(0.0, (hi - l) / (hi - lo))))
+            out[o + 3] = a
+            if a > 8:
+                alphas.append(a)
+    if not alphas:
+        return None
+    alphas.sort()
+    top = alphas[len(alphas) * 9 // 10]          # the body's own opacity (edges are softer)
+    if top < 250:
+        k = 255 / max(top, 1)
+        for o in range(3, len(out), 4):
+            out[o] = min(255, int(out[o] * k))
     return Gdk.MemoryTexture.new(w, h, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(bytes(out)), w * 4)
 
 

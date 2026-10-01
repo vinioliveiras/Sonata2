@@ -196,6 +196,25 @@ class IconRegressions(unittest.TestCase):
         self.assertEqual(px[8 * stride + 8 * 4 + 3], 0)          # the light centre: a hole
         self.assertGreater(px[1 * stride + 1 * 4 + 3], 200)      # the body: solid
 
+    def test_see_through_tray_icon_becomes_solid(self):
+        """Discord's tray icon looked grey: its logo is drawn half
+        see-through, and only its alpha was kept. The shape is made solid,
+        so it shows white in Dark Mode and black in Light."""
+        from sonata2.shell import tray
+        n = 16
+        buf = bytearray()
+        for y in range(n):
+            for x in range(n):
+                body = 3 <= x < 13 and 3 <= y < 13
+                buf += bytes((200, 200, 200, 140) if body else (0, 0, 0, 0))
+        tex = Gdk.MemoryTexture.new(n, n, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(bytes(buf)), n * 4)
+        d = Gdk.TextureDownloader.new(tray._silhouette(tex))
+        d.set_format(Gdk.MemoryFormat.R8G8B8A8)
+        data, stride = d.download_bytes()
+        px = data.get_data()
+        self.assertEqual(px[8 * stride + 8 * 4 + 3], 255)        # solid
+        self.assertEqual(px[0 * stride + 0 * 4 + 3], 0)          # outside stays clear
+
 
 class MusicRegressions(unittest.TestCase):
     def test_plays_through_classic_playbin(self):
@@ -891,6 +910,90 @@ class DisplayGpuOptInRegressions(unittest.TestCase):
                 os.environ.pop("XDG_CONFIG_HOME", None)
             else:
                 os.environ["XDG_CONFIG_HOME"] = old
+
+
+class AutomaticPowerBoostTests(unittest.TestCase):
+    """Automatic energy mode: High Performance while something is full
+    screen (a game), back to Balanced when it closes; a mode the user
+    picked is never changed."""
+
+    def setUp(self):
+        from sonata2 import gamemode
+        self.g = gamemode
+        self._boost = gamemode.BOOST
+        gamemode.BOOST = os.path.join(tempfile.mkdtemp(), "boost")
+        self.profile = ["balanced"]
+        self.sets = []
+
+        def set_(p):
+            self.sets.append(p)
+            self.profile[0] = p
+        run = lambda fn, cb: (cb or (lambda _r: None))(fn())      # noqa: E731 (synchronous here)
+        self.b = gamemode.PowerBoost(get=lambda: self.profile[0], set_=set_, run=run)
+
+    def tearDown(self):
+        self.g.BOOST = self._boost
+
+    def test_game_raises_then_restores(self):
+        self.b.update(True)
+        self.assertEqual(self.profile[0], "performance")
+        self.assertTrue(self.g.boosted())
+        self.b.update(True)                                      # still full screen: nothing more
+        self.b.update(False)
+        self.assertEqual(self.profile[0], "balanced")
+        self.assertFalse(self.g.boosted())
+        self.assertEqual(self.sets, ["performance", "balanced"])
+
+    def test_user_modes_untouched(self):
+        for mode in ("power-saver", "performance"):
+            self.profile[0] = mode
+            self.sets.clear()
+            self.b.update(True)
+            self.b.update(False)
+            self.assertEqual(self.sets, [])
+            self.assertEqual(self.profile[0], mode)
+
+    def test_mode_changed_during_the_game_is_kept(self):
+        self.b.update(True)
+        self.profile[0] = "power-saver"                           # picked while playing
+        self.b.update(False)
+        self.assertEqual(self.profile[0], "power-saver")
+
+    def test_menus_show_automatic_while_raised(self):
+        root = pathlib.Path(__file__).resolve().parent.parent / "sonata2"
+        self.assertIn('current = "balanced"', (root / "shell" / "topbar.py").read_text())
+        self.assertIn("gamemode.boosted()", (root / "settings" / "app.py").read_text())
+        self.assertIn("self.power.update(", (root / "gamemode.py").read_text())
+
+
+class NvidiaNeverDrawsByDefaultRegressions(unittest.TestCase):
+    """Still crashing with the opt-in off: wlroots picks the boot GPU, and
+    with the laptop's MUX in dGPU mode that's NVIDIA (session.log: the
+    nvidia-drm backend first, no WLR_DRM_DEVICES). By default the NVIDIA
+    cards now go last, so the integrated GPU draws."""
+
+    def _run(self, cards, env=None):
+        import subprocess
+        sess = (pathlib.Path(__file__).resolve().parent.parent / "tools" / "sonata-session").read_text()
+        start = sess.index('gpu_set=""; display_gpu=""')
+        end = sess.index('if [ -n "$gpu_set" ]; then')
+        root = tempfile.mkdtemp()
+        drm = os.path.join(root, "drm")
+        for name, drv in cards:
+            os.makedirs(os.path.join(root, "drivers", drv), exist_ok=True)
+            os.makedirs(os.path.join(drm, name, "device"))
+            os.symlink(os.path.join(root, "drivers", drv), os.path.join(drm, name, "device", "driver"))
+        script = sess[start:end].replace("/sys/class/drm/", drm + "/") + 'echo "$WLR_DRM_DEVICES|$display_gpu"'
+        e = {"PATH": os.environ["PATH"], "HOME": root, **(env or {})}
+        return subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=e).stdout.strip()
+
+    def test_nvidia_goes_last(self):
+        self.assertEqual(self._run([("card0", "amdgpu"), ("card1", "nvidia")]), "/dev/dri/card0:/dev/dri/card1|")
+        self.assertEqual(self._run([("card0", "nvidia"), ("card1", "i915")]), "/dev/dri/card1:/dev/dri/card0|")
+
+    def test_single_gpu_and_off_untouched(self):
+        self.assertEqual(self._run([("card0", "nvidia")]), "|")
+        self.assertEqual(self._run([("card0", "amdgpu"), ("card1", "nvidia")], {"SONATA_PRIMARY_GPU": "off"}), "|")
 
 
 class DisplayGpuSafetyNetRegressions(unittest.TestCase):

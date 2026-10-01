@@ -960,7 +960,8 @@ class Settings(Adw.ApplicationWindow):
 
     def _page_battery(self):
         info = group()
-        mode = group("Energy Mode")
+        mode = group("Energy Mode", "Automatic switches to High Performance while a game or another app is "
+                                    "full screen, and back when it closes.")
 
         def fill(res):
             (pct, status), ac, prof = res or ((None, ""), False, None)
@@ -972,8 +973,16 @@ class Settings(Adw.ApplicationWindow):
             info.add(level)
             info.add(Adw.ActionRow(title="Power source", subtitle="Power Adapter" if ac else "Battery"))
             if prof:
-                mode.add(combo_row("Energy mode", list(system.POWER_PROFILES), prof,
-                                   lambda p: system.run_async(system.set_power_profile, None, p)))
+                from .. import gamemode
+
+                def pick(p):
+                    if gamemode.boosted():          # raised for a full-screen game
+                        if p == "balanced":
+                            return
+                        gamemode.set_boosted(False)
+                    system.run_async(system.set_power_profile, None, p)
+                shown = "balanced" if prof == "performance" and gamemode.boosted() else prof
+                mode.add(combo_row("Energy mode", list(system.POWER_PROFILES), shown, pick))
             else:
                 mode.add(Adw.ActionRow(title="Energy mode", subtitle="power-profiles-daemon not available"))
         system.run_async(lambda: (system.battery(), system.on_ac(), system.power_profile()), fill)

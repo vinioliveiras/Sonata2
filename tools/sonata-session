@@ -67,8 +67,9 @@ command -v dbus-update-activation-environment >/dev/null && \
 # fell to 60-90 fps). Off by default: Wayfire on NVIDIA's GBM crashed the
 # whole session back to the login screen ("gbm_bo_create failed: Invalid
 # argument" for a window's or the blur's buffer). Turned on in Settings >
-# Displays (the flag file) or with SONATA_PRIMARY_GPU=on.
-gpu_set=""
+# Displays (the flag file) or with SONATA_PRIMARY_GPU=on; SONATA_PRIMARY_GPU=off
+# keeps wlroots' own choice.
+gpu_set=""; display_gpu=""
 gpu_flag="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/compositor-display-gpu"
 if [ -z "${WLR_DRM_DEVICES:-}" ] && { [ "${SONATA_PRIMARY_GPU:-}" = on ] || \
         { [ -e "$gpu_flag" ] && [ "${SONATA_PRIMARY_GPU:-}" != off ]; }; }; then
@@ -88,6 +89,25 @@ if [ -z "${WLR_DRM_DEVICES:-}" ] && { [ "${SONATA_PRIMARY_GPU:-}" = on ] || \
         for dev in $all; do [ "$dev" = "$best" ] || order="$order:$dev"; done
         export WLR_DRM_DEVICES="$order"
         gpu_set=1
+        display_gpu=1
+    fi
+elif [ -z "${WLR_DRM_DEVICES:-}" ] && [ "${SONATA_PRIMARY_GPU:-}" != off ]; then
+    # Default: never draw on an NVIDIA card while another GPU is there.
+    # wlroots picks the boot GPU, and on laptops with a MUX switch (dGPU /
+    # "Ultimate" mode) that is the NVIDIA one -- the same crashes. Its
+    # cards go last; the integrated GPU draws.
+    first=""; last=""
+    for card in /sys/class/drm/card[0-9]; do
+        [ -e "$card/device" ] || continue
+        dev="/dev/dri/$(basename "$card")"
+        case "$(basename "$(readlink -f "$card/device/driver")")" in
+            nvidia*) last="${last:+$last:}$dev" ;;
+            *) first="${first:+$first:}$dev" ;;
+        esac
+    done
+    if [ -n "$first" ] && [ -n "$last" ]; then
+        export WLR_DRM_DEVICES="$first:$last"
+        gpu_set=1
     fi
 fi
 if [ -n "$gpu_set" ]; then
@@ -98,7 +118,7 @@ if [ -n "$gpu_set" ]; then
     code=$?
     # crashed because that GPU refused a buffer: back to wlroots' choice from
     # the next login, and the menu bar says so (gpu.crash_notice)
-    if [ "$code" -ne 0 ] && grep -qs -e "gbm_bo_create failed" -e "Failed to allocate auxilliary buffer" \
+    if [ -n "$display_gpu" ] && [ "$code" -ne 0 ] && grep -qs -e "gbm_bo_create failed" -e "Failed to allocate auxilliary buffer" \
             "$logs/session.log"; then
         rm -f "$gpu_flag"
         touch "$logs/display-gpu-crashed"

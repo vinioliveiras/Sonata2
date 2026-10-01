@@ -610,11 +610,19 @@ class Bar(Gtk.CenterBox):
 
         def pick(key):
             pop.popdown()
+            from .. import gamemode
+            if gamemode.boosted():              # raised for a full-screen game (gamemode.PowerBoost)
+                if key == "balanced":
+                    return                      # already Automatic
+                gamemode.set_boosted(False)     # the user's own pick: kept after the game
             system.run_async(system.set_power_profile, lambda _r: self._poll_battery(), key)
 
         def fill_modes(current):
             if not current:
                 return                          # no power-profiles-daemon: no section
+            from .. import gamemode
+            if current == "performance" and gamemode.boosted():
+                current = "balanced"            # Automatic, running a game at full speed
             for key, label in system.POWER_PROFILES:
                 r = ui.panel.row("object-select-symbolic", label, on_click=lambda k=key: pick(k))
                 r.icon.set_opacity(1 if key == current else 0)       # checkmark column (menus)
