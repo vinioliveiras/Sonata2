@@ -8,8 +8,9 @@ and the accent colour. Nothing uses a GTK_THEME variable: forcing a theme
 that way made libadwaita apps see-through. Another desktop's session never
 sees any of it.
 
-Nothing is written to ~/.config/gtk-4.0: an earlier version did, and clean()
-removes that block at login. reset_env() clears a GTK_THEME an earlier
+~/.config/gtk-4.0/gtk.css only gets adwstyle.py's import line (between the
+markers below): the styles it imports exist only in Sonata's session.
+clean() removes the whole block (an earlier version put styles there). reset_env() clears a GTK_THEME an earlier
 version left in the D-Bus / systemd activation environment."""
 import os
 import shutil

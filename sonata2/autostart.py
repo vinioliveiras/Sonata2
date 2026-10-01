@@ -109,7 +109,7 @@ def run() -> int:
     mark("autostart: gtk style")
     try:
         from . import gtkstyle
-        gtkstyle.clean()                   # (an older version styled GTK 4 apps for every desktop)
+        # (gtk.css keeps only adwstyle's import line now, written by titlebars.apply above)
         mark("autostart: reset env")
         gtkstyle.reset_env()               # (and forced GTK_THEME on D-Bus activated apps)
         mark("autostart: flatpak theme")

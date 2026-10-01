@@ -17,6 +17,8 @@ from . import config
 NAME = "appearance"
 KEY = "flatpak_theme"
 FS = "xdg-data/themes:ro"
+# GTK 4 apps' user stylesheet and the file it imports in Sonata's session (adwstyle.py)
+EXTRA_FS = ("xdg-config/gtk-4.0:ro", "xdg-run/sonata2:ro")
 THEMES = ("Sonata-Light", "Sonata-Dark")
 
 
@@ -75,8 +77,9 @@ def apply(dark: bool = None) -> bool:
 
     def change(kf):
         fs = _filesystems(kf)
-        if FS not in fs:
-            kf.set_string("Context", "filesystems", ";".join(fs + [FS]) + ";")
+        want = [f for f in (FS,) + EXTRA_FS if f not in fs]
+        if want:
+            kf.set_string("Context", "filesystems", ";".join(fs + want) + ";")
         try:                                   # (an earlier version forced GTK_THEME: it broke libadwaita apps)
             if kf.get_string("Environment", "GTK_THEME").startswith("Sonata-"):
                 kf.remove_key("Environment", "GTK_THEME")
@@ -92,7 +95,7 @@ def remove() -> None:
         return
 
     def change(kf):
-        fs = [f for f in _filesystems(kf) if f != FS]
+        fs = [f for f in _filesystems(kf) if f != FS and f not in EXTRA_FS]
         if fs:
             kf.set_string("Context", "filesystems", ";".join(fs) + ";")
         else:

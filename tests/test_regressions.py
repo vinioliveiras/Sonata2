@@ -1118,6 +1118,60 @@ class SearchPanelTests(unittest.TestCase):
         sp.destroy()
 
 
+class LibadwaitaLookTests(unittest.TestCase):
+    """Bazaar and other libadwaita apps kept GNOME's grey window buttons and
+    title bar. In Sonata's session gtk.css imports a stylesheet from the
+    runtime folder: traffic lights and Sonata's title bar colour, never in
+    Sonata's own windows, gone when the session ends."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.env = {k: os.environ.get(k) for k in ("XDG_RUNTIME_DIR", "XDG_CONFIG_HOME")}
+        os.environ["XDG_RUNTIME_DIR"] = os.path.join(self.root, "run")
+        os.environ["XDG_CONFIG_HOME"] = os.path.join(self.root, "cfg")
+
+    def tearDown(self):
+        for k, v in self.env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_import_line_and_stylesheet(self):
+        from sonata2 import adwstyle
+        os.makedirs(os.path.dirname(adwstyle.user_css()))
+        with open(adwstyle.user_css(), "w") as f:
+            f.write("label { color: red; }\n")                     # the user's own rules stay
+        adwstyle.write(True)
+        adwstyle.link()
+        adwstyle.link()                                              # once, however often
+        text = open(adwstyle.user_css()).read()
+        self.assertTrue(text.startswith(adwstyle.BEGIN))            # @import first
+        self.assertEqual(text.count("@import"), 1)
+        self.assertIn("label { color: red; }", text)
+        sheet = open(adwstyle.css_path()).read()
+        self.assertIn("window:not(.sonata-window) windowcontrols > button.close", sheet)
+        self.assertTrue(os.path.exists(os.path.join(adwstyle.runtime_dir(), "sonata-tl-close.svg")))
+        self.assertIn("prefers-color-scheme: dark", adwstyle.css(bars=True))
+        self.assertNotIn("headerbar {", adwstyle.css(bars=False))   # old GTK: buttons only
+        adwstyle.stop()
+        self.assertFalse(os.path.exists(adwstyle.css_path()))
+
+    def test_session_end_removes_it_and_login_keeps_it(self):
+        root = pathlib.Path(__file__).resolve().parent.parent
+        sess = (root / "tools" / "sonata-session").read_text()
+        self.assertGreaterEqual(sess.count("sonata2/adw/libadwaita.css"), 2)
+        self.assertNotIn("exec wayfire", sess)
+        auto = (root / "sonata2" / "autostart.py").read_text()
+        self.assertNotIn("gtkstyle.clean()", auto)                   # would drop the import line
+        self.assertIn("adwstyle.write(on)", (root / "sonata2" / "titlebars.py").read_text())
+
+    def test_flatpak_apps_see_it(self):
+        from sonata2 import flatpak_theme
+        self.assertIn("xdg-config/gtk-4.0:ro", flatpak_theme.EXTRA_FS)
+        self.assertIn("xdg-run/sonata2:ro", flatpak_theme.EXTRA_FS)
+
+
 class SteamGameDockTests(unittest.TestCase):
     """Steam games showed in the Dock as a generic icon named
     "steam_app_<id>": their name and icon now come from Steam."""

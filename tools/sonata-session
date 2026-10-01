@@ -124,9 +124,14 @@ if [ -n "$gpu_set" ]; then
         touch "$logs/display-gpu-crashed"
     fi
     if [ $(( $(date +%s) - started )) -ge 15 ]; then
+        rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sonata2/adw/libadwaita.css"
         exit $code
     fi
     mv -f "$logs/session.log" "$logs/session.gpu-failed.log"
     unset WLR_DRM_DEVICES
 fi
-exec wayfire -c "$cfg" > "$logs/session.log" 2>&1
+wayfire -c "$cfg" > "$logs/session.log" 2>&1
+code=$?
+# other desktops' GTK 4 apps never get Sonata's window look (adwstyle.py)
+rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sonata2/adw/libadwaita.css"
+exit $code

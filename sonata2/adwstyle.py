@@ -1,0 +1,139 @@
+"""Other GTK 4 / libadwaita apps (Bazaar, GNOME apps, Flatpak ones too) in
+Sonata's window look -- only inside the Sonata session.
+
+libadwaita takes no theme, but every GTK 4 app reads the user's
+~/.config/gtk-4.0/gtk.css. Sonata keeps one line there (between markers):
+an @import of $XDG_RUNTIME_DIR/sonata2/adw/libadwaita.css. That file is
+written at each Sonata login and removed when the session ends; the
+runtime folder is emptied at logout/reboot anyway. In a GNOME or KDE
+session it doesn't exist, the import finds nothing and their apps look as
+usual.
+
+What it changes, in windows that aren't Sonata's own (.sonata-window):
+- the title bar buttons: Sonata's traffic lights (the same pictures
+  pixdecor draws on other apps' title bars), already on the left
+  (prefs: button-layout);
+- the header bar: Sonata's title bar colour (glass tint, lighter when the
+  window is inactive), bold title.
+
+Flatpak apps see both paths through Flatpak overrides (flatpak_theme.py).
+Off with Settings > Appearance > "Sonata title bars for all apps"."""
+import os
+import shutil
+
+from .gtkstyle import BEGIN, END
+
+LIGHTS = ("close", "close-hover", "minimize", "minimize-hover", "maximize", "maximize-hover")
+
+
+def runtime_dir() -> str:
+    return os.path.join(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}", "sonata2", "adw")
+
+
+def css_path() -> str:
+    return os.path.join(runtime_dir(), "libadwaita.css")
+
+
+def user_css() -> str:
+    return os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
+                        "gtk-4.0", "gtk.css")
+
+
+def _icons_src() -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "icons", "Sonata", "apps", "scalable")
+
+
+def media_queries() -> bool:
+    """GTK 4.20+ (libadwaita 1.8+) reads @media (prefers-color-scheme: dark);
+    older ones skip the block, and a dark app would get the light title bar:
+    then only the buttons and the bold title change."""
+    try:
+        import gi
+        gi.require_version("Gtk", "4.0")
+        from gi.repository import Gtk
+        return (Gtk.get_major_version(), Gtk.get_minor_version()) >= (4, 20)
+    except Exception:
+        return False
+
+
+def css(folder: str = None, bars: bool = True) -> str:
+    """The stylesheet (pictures from `folder`; bars: the title bar colour)."""
+    from .ui.tokens import DARK, LIGHT
+    folder = folder or runtime_dir()
+
+    def url(name):
+        return f'url("file://{os.path.join(folder, "sonata-tl-" + name + ".svg")}")'
+
+    def bar(t):
+        return (f"window:not(.sonata-window) headerbar {{ background-color: {t['titlebar_bg']}; "
+                f"box-shadow: inset 0 -1px {t['separator']}; }}\n"
+                f"window:not(.sonata-window):backdrop headerbar {{ background-color: {t['titlebar_bg_inactive']}; }}\n")
+    w = "window:not(.sonata-window) windowcontrols > button"
+    return (f"/* Sonata's window look for other GTK 4 apps -- written by sonata2/adwstyle.py at login */\n"
+            f"{w}, {w}:hover, {w}:active, {w}:backdrop {{\n"
+            f"  min-width: 12px; min-height: 12px; padding: 0; margin: 0 4px; border: none; border-radius: 999px;\n"
+            f"  box-shadow: none; outline: none; background-color: transparent; background-repeat: no-repeat;\n"
+            f"  background-position: center; background-size: 12px 12px; }}\n"
+            f"{w} > image {{ opacity: 0; background: none; box-shadow: none; min-width: 12px; min-height: 12px; }}\n"
+            f"{w}.close {{ background-image: {url('close')}; }}\n"
+            f"{w}.close:hover {{ background-image: {url('close-hover')}; }}\n"
+            f"{w}.minimize {{ background-image: {url('minimize')}; }}\n"
+            f"{w}.minimize:hover {{ background-image: {url('minimize-hover')}; }}\n"
+            f"{w}.maximize {{ background-image: {url('maximize')}; }}\n"
+            f"{w}.maximize:hover {{ background-image: {url('maximize-hover')}; }}\n"
+            f"{w}:active {{ filter: brightness(0.85); }}\n"
+            f"window:not(.sonata-window) headerbar .title {{ font-weight: 700; }}\n"
+            + ((bar(LIGHT) + "@media (prefers-color-scheme: dark) {\n" + bar(DARK) + "}\n") if bars else ""))
+
+
+def write(on: bool = True) -> str:
+    """At login: the pictures and the stylesheet (empty when turned off)."""
+    folder = runtime_dir()
+    os.makedirs(folder, exist_ok=True)
+    if on:
+        for n in LIGHTS:
+            shutil.copyfile(os.path.join(_icons_src(), f"sonata-tl-{n}.svg"),
+                            os.path.join(folder, f"sonata-tl-{n}.svg"))
+    tmp = css_path() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(css(folder, bars=media_queries()) if on else "/* off: Settings > Appearance */\n")
+    os.replace(tmp, css_path())
+    return css_path()
+
+
+def link(path: str = None) -> None:
+    """Sonata's one line at the top of ~/.config/gtk-4.0/gtk.css (an @import
+    must come first); anything else in the file is kept as it is."""
+    path = path or user_css()
+    block = f'{BEGIN}\n@import url("file://{css_path()}");\n{END}\n'
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        text = ""
+    if BEGIN in text and END in text:
+        rest = text[:text.index(BEGIN)] + text[text.index(END) + len(END):].lstrip("\n")
+    else:
+        rest = text
+    new = block + rest
+    if new != text:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".sonata.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(new)
+        os.replace(tmp, path)
+
+
+def install() -> None:
+    """At every Sonata login."""
+    from . import titlebars
+    write(titlebars.enabled())
+    link()
+
+
+def stop() -> None:
+    """The session ends: other desktops' apps never see it."""
+    try:
+        os.remove(css_path())
+    except OSError:
+        pass

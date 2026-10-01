@@ -24,6 +24,10 @@ at every login (`sonata2 autostart`):
   "titleBar": "system". The official Discord app has no such setting (only
   patching its core.asar, undone by every update): use Vesktop for it.
 
+- Other GTK 4 / libadwaita apps (Bazaar, GNOME apps): Sonata's traffic
+  lights and title bar colour, through adwstyle.py -- only in Sonata's
+  session.
+
 Turning the option off puts both back. Apps with a frame of their own
 and no such setting (Spotify, Claude, Discord...) keep drawing theirs."""
 import json
@@ -51,6 +55,12 @@ def enabled() -> bool:
 
 def apply(on: bool = None) -> None:
     on = enabled() if on is None else on
+    try:                                     # GTK 4 / libadwaita apps (adwstyle.py)
+        from . import adwstyle
+        adwstyle.write(on)
+        adwstyle.link()
+    except Exception as e:
+        print(f"sonata2: libadwaita style: {e}")
     cfg = GLib.get_user_config_dir()
     for base in chromium_roots(cfg):
         if os.path.lexists(os.path.join(base, "SingletonLock")):
