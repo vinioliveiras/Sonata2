@@ -361,6 +361,14 @@ class DockFolderTest(unittest.TestCase):
         self.assertNotIn(a, pins)
         self.assertFalse(dock_drop.add_folders(d, [{"folder": "X", "apps": ["nope"]}]))
 
+    def test_magnifying_reuses_mini_icons(self):
+        # regression guard (performance): sizes in steps, not one lookup per frame
+        icon = F.FolderIcon(self.apps[:3], 48)
+        for size in range(48, 81):                       # a magnification sweep
+            icon.set_size(size)
+            icon.do_snapshot(Gtk.Snapshot())
+        self.assertLessEqual(len({k[1] for k in icon._paint}), 3)
+
     def test_icon_draws(self):
         icon = F.FolderIcon(self.apps[:3], 48)
         self.assertEqual(icon.do_measure(Gtk.Orientation.HORIZONTAL, -1)[0], 48)

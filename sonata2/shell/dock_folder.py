@@ -177,7 +177,9 @@ class FolderIcon(Gtk.Widget):
         for (x, y, side), gicon in zip(mini_rects(s, len(self._gicons)), self._gicons):
             if gicon is None:
                 continue
-            px = max(8, int(round(side)))
+            # in steps of 8 px: magnification changes `side` every frame, and a new
+            # size would mean an icon theme lookup per mini icon per frame
+            px = max(8, -(-int(round(side)) // 8) * 8)
             snap.save()
             snap.translate(Graphene.Point().init(x, y))
             self._mini(gicon, px).snapshot(snap, side, side)
