@@ -318,7 +318,7 @@ class Settings(Adw.ApplicationWindow):
         # need the split view's collapsing.
         self.split = Gtk.Box(vexpand=True)
         side = self._sidebar()
-        side.set_size_request(230, -1)
+        side.set_size_request(ui.window.SIDEBAR_W, -1)
         side.add_css_class("sidebar-pane")
         self.split.append(side)
         self.split.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL, css_classes=["st-divider"]))

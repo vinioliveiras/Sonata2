@@ -140,6 +140,10 @@ window.sonata-window.fullscreen { border-radius: 0; box-shadow: none; }
 """, key="window-frame")
 
 
+# one sidebar width for Sonata's apps (Settings, Files...): fixed, no divider to drag
+SIDEBAR_W = 230
+
+
 def standard(win) -> None:
     """Give an app window Sonata's standard frame (call once, any time)."""
     from gi.repository import Gtk as _Gtk

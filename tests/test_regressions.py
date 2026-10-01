@@ -1179,6 +1179,18 @@ class LibadwaitaLookTests(unittest.TestCase):
         self.assertIn("xdg-run/sonata2:ro", flatpak_theme.EXTRA_FS)
 
 
+class FilesSidebarTests(unittest.TestCase):
+    """Files' sidebar divider could be dragged and got in the way of the list
+    view's columns: the sidebar now has one width, the same as Settings'."""
+
+    def test_fixed_like_settings(self):
+        root = pathlib.Path(__file__).resolve().parent.parent / "sonata2"
+        files = (root / "files" / "window.py").read_text()
+        self.assertNotIn("Gtk.Paned(", files)
+        self.assertIn("ui.window.SIDEBAR_W", files)
+        self.assertIn("ui.window.SIDEBAR_W", (root / "settings" / "app.py").read_text())
+
+
 class SteamGameDockTests(unittest.TestCase):
     """Steam games showed in the Dock as a generic icon named
     "steam_app_<id>": their name and icon now come from Steam."""

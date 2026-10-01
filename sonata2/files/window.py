@@ -30,12 +30,12 @@ from .tabs import TabStrip  # noqa: E402
 
 VIEWS = (("icons", "view-grid-symbolic", "as Icons"), ("list", "view-list-symbolic", "as List"),
          ("columns", "view-dual-symbolic", "as Columns"))
-DEFAULTS = {"view": "icons", "sidebar_width": 200, "list_columns": {}}   # list_columns: views.py
+DEFAULTS = {"view": "icons", "list_columns": {}}   # list_columns: views.py
 
 ui.register("""
 window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
 .fs-content { background: %(content_bg)s; }
-.fs-paned > separator { min-width: 1px; background: %(content_bg)s; box-shadow: inset 1px 0 %(separator)s; }
+.fs-divider { min-width: 1px; background: %(separator)s; }   /* the sidebar's edge (not draggable) */
 .fs-toolbar { min-height: 52px; padding: 0 10px 0 8px; background: %(content_bg)s;
   box-shadow: inset 0 -1px %(separator)s; }
 .fs-toolbar .fs-title { font-weight: 700; font-size: %(text_title)s; color: %(label)s; }
@@ -157,22 +157,23 @@ class FilesWindow(Adw.ApplicationWindow):
 
         self.sidebar = Sidebar(self.go, ui.window.traffic_lights(self.close, self.minimize, self._zoom))
         self.sidebar.on_drop = lambda files, dest, copy: self.drop(files, dest, copy)
-        paned = Gtk.Paned(start_child=self.sidebar, shrink_start_child=False, resize_start_child=False,
-                          css_classes=["fs-paned"])
-        paned.set_position(config.load("files", DEFAULTS)["sidebar_width"])
-        self.sidebar.set_size_request(150, -1)
-        self._sidebar_width(paned)
+        # one sidebar width, no divider to drag (Vini: resizing it got in
+        # the way of the list's columns)
+        split = Gtk.Box(css_classes=["fs-split"])
+        self.sidebar.set_size_request(ui.window.SIDEBAR_W, -1)      # the same as Settings'
+        self.sidebar.set_hexpand(False)
+        split.append(self.sidebar)
+        split.append(Gtk.Box(css_classes=["fs-divider"]))
 
-        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["fs-content"])
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["fs-content"], hexpand=True)
         content.append(Gtk.WindowHandle(child=self._toolbar()))
         self.strip = TabStrip(self)
         content.append(self.strip)
         content.append(self._scope_bar())
         self.tab_stack = Gtk.Stack(vexpand=True, transition_type=Gtk.StackTransitionType.NONE)
         content.append(self.tab_stack)
-        paned.set_end_child(content)
-        paned.set_shrink_end_child(False)
-        self.set_content(paned)
+        split.append(content)
+        self.set_content(split)
         self._shortcuts()
         self.drag_icon = None                # set by the views while a file drag runs
         self._typed = ""                     # type to select
@@ -180,31 +181,6 @@ class FilesWindow(Adw.ApplicationWindow):
         self.connect("notify::is-active", lambda w, _p: w.is_active() and self.sidebar.refresh_space())
         self._add_tab(uri or Gio.File.new_for_path(GLib.get_home_dir()).get_uri(),
                       config.load("files", DEFAULTS)["view"], select=True)
-
-    def _sidebar_width(self, paned) -> None:
-        """The sidebar keeps the width you drag it to (all windows, saved);
-        a double-click on the divider puts the standard width back."""
-        pending = {"src": 0}
-
-        def save():
-            pending["src"] = 0
-            cfg = config.load("files", DEFAULTS)
-            if cfg["sidebar_width"] != paned.get_position():
-                config.save("files", {**cfg, "sidebar_width": paned.get_position()})
-            return False
-
-        def moved(*_a):
-            if pending["src"]:
-                GLib.source_remove(pending["src"])
-            pending["src"] = GLib.timeout_add(400, save)
-        paned.connect("notify::position", moved)
-        click = Gtk.GestureClick(propagation_phase=Gtk.PropagationPhase.CAPTURE)
-
-        def pressed(_g, n, x, _y):
-            if n == 2 and abs(x - paned.get_position()) <= 8:          # on the divider
-                paned.set_position(DEFAULTS["sidebar_width"])
-        click.connect("pressed", pressed)
-        paned.add_controller(click)
 
     # -- toolbar ---------------------------------------------------------------------
     def _toolbar(self):
