@@ -44,7 +44,7 @@ class ShortcutsPage:
 
     def groups(self) -> list:
         top = Adw.PreferencesGroup(description="Click a shortcut to change it, then press the new keys. "
-                                               "macOS- and Windows-style shortcuts both work.")
+                                               "Super- and Ctrl-style shortcuts both work.")
         out = [top]
         for name in S.GROUPS:
             g = Adw.PreferencesGroup(title=name)

@@ -7,7 +7,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import apps, icons, ui  # noqa: E402
 
@@ -19,9 +19,10 @@ ROW_ICON = 32
 ui.register("""
 .ai-panel { padding: 4px 4px 8px 4px; }
 .ai-preview { margin: 6px 0 10px 0; }
-.ai-line { margin: 4px 10px; }
-.ai-line > label { color: %(label)s; font-size: %(text_body)s; }
-.ai-buttons { margin: 10px 10px 2px 10px; }
+.ai-form { margin: 0 12px; }
+.ai-label { color: %(label_secondary)s; font-size: %(text_body)s; }
+.ai-file { color: %(label_secondary)s; font-size: %(text_small)s; }
+.ai-buttons { margin: 14px 12px 2px 12px; }
 entry.ai-name { min-height: %(control_h)s; }
 """, key="appicons")
 
@@ -154,53 +155,101 @@ class AppIconsPage:
         self._refresh_row(row)
 
     # -- one app's panel (ui.panel popover) -------------------------------------------------------
+    PANEL_W = 300
+    LABEL_W = 70
+
     def edit(self, row) -> Gtk.Popover:
+        """A form like macOS' (labels right-aligned, controls in one column of
+        one width); rows that only apply to one kind of icon slide in/out."""
         pref = icons.app_pref(row.info)
         default_shape = icons.prefs()["shape"]
         preview = Gtk.Image(pixel_size=72, css_classes=["ai-preview"], halign=Gtk.Align.CENTER)
-        icons.set_image(preview, icons.app_icon(row.info))
+        # no row spacing: a hidden row (collapsed Revealer) must leave no gap; rows pad themselves
+        grid = Gtk.Grid(column_spacing=10, row_spacing=0, css_classes=["ai-form"])
+        self._form_row = 0
+
+        def add(label, widget, reveal=False):
+            """A form row; reveal: in a Revealer (shown when it applies)."""
+            lab = Gtk.Label(label=label, xalign=1, width_chars=1, css_classes=["ai-label"])
+            lab.set_size_request(self.LABEL_W, -1)
+            widget.set_hexpand(True)
+            for w in (lab, widget):
+                w.set_margin_top(4)
+                w.set_margin_bottom(4)
+            if not reveal:
+                grid.attach(lab, 0, self._form_row, 1, 1)
+                grid.attach(widget, 1, self._form_row, 1, 1)
+                self._form_row += 1
+                return None
+            box = Gtk.Box(spacing=10)
+            box.append(lab)
+            box.append(widget)
+            rv = Gtk.Revealer(child=box, transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
+                              transition_duration=ui.tokens.ms(180))
+            grid.attach(rv, 0, self._form_row, 2, 1)
+            self._form_row += 1
+            return rv
+
+        srcs = list(icons.SOURCES)
+        source = ui.controls.popup_button([SOURCE_TITLES[x] for x in srcs], srcs.index(pref["source"]),
+                                          lambda i: (self.set_app(row, source=srcs[i]), redraw()))
+        add("Icon", source)
+        pick_box = Gtk.Box(spacing=8)
+        choose = ui.controls.push_button("Choose\u2026", lambda: self._pick_file(row, redraw))
+        file_lbl = Gtk.Label(xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.MIDDLE, css_classes=["ai-file"])
+        pick_box.append(file_lbl)
+        pick_box.append(choose)
+        file_rv = add("Picture", pick_box, reveal=True)
+        name = Gtk.Entry(text=pref["name"], placeholder_text="e.g. firefox", css_classes=["ai-name"])
+        name.connect("activate", lambda e: (self.set_app(row, name=e.get_text().strip() or None,
+                                                          source="theme"), redraw()))
+        name_rv = add("Name", name, reveal=True)
+        cur_scale = pref["scale"] if pref["scale"] is not None else icons.default_scale()
+        size = ui.controls.slider(cur_scale * 100, None, lower=icons.SCALE_RANGE[0] * 100,
+                                  upper=icons.SCALE_RANGE[1] * 100, default=icons.default_scale() * 100)
+        size.connect("value-changed", lambda sl: self._size_changed(row, sl.get_value(), redraw))
+        size_rv = add("Size", size, reveal=True)
+        shapes = [None] + list(icons.SHAPES)
+        own_shape = (icons.prefs()["apps"].get(row.did) or {}).get("shape")
+        shape = ui.controls.popup_button(
+            [f"Default ({icons.SHAPE_TITLES[default_shape]})"] + [icons.SHAPE_TITLES[x] for x in icons.SHAPES],
+            shapes.index(own_shape) if own_shape in shapes else 0,
+            lambda i: (self.set_app(row, shape=shapes[i]), redraw()))
+        add("Shape", shape)
 
         def redraw():
             icons.set_image(preview, icons.app_icon(row.info))
             p = icons.app_pref(row.info)
-            choose.set_visible(p["source"] == "file")
-            name_line.set_visible(p["source"] == "theme")
-
-        srcs = list(icons.SOURCES)
-        source = ui.controls.popup_button([SOURCE_TITLES[s] for s in srcs], srcs.index(pref["source"]),
-                                          lambda i: (self.set_app(row, source=srcs[i]), redraw()))
-        shapes = [None] + list(icons.SHAPES)
-        own_shape = (icons.prefs()["apps"].get(row.did) or {}).get("shape")
-        shape = ui.controls.popup_button(
-            [f"Default ({icons.SHAPE_TITLES[default_shape]})"] + [icons.SHAPE_TITLES[s] for s in icons.SHAPES],
-            shapes.index(own_shape) if own_shape in shapes else 0,
-            lambda i: (self.set_app(row, shape=shapes[i]), redraw()))
-
-        def line(title, widget):
-            box = Gtk.Box(spacing=12, css_classes=["ai-line"])
-            box.append(Gtk.Label(label=title, xalign=0, hexpand=True))
-            box.append(widget)
-            return box
-
-        choose = ui.controls.push_button("Choose Picture…", lambda: self._pick_file(row, redraw))
-        choose.set_halign(Gtk.Align.END)
-        name = Gtk.Entry(text=pref["name"], placeholder_text="icon-name", css_classes=["ai-name"], width_chars=16)
-        name.connect("activate", lambda e: (self.set_app(row, name=e.get_text().strip() or None,
-                                                          source="theme"), redraw()))
-        name_line = line("Icon name", name)
+            file_rv.set_reveal_child(p["source"] == "file")
+            file_lbl.set_label(p["path"].rsplit("/", 1)[-1] if p["path"] else "No picture")
+            name_rv.set_reveal_child(p["source"] == "theme")
+            size_rv.set_reveal_child(icons.plated(row.info))
         btns = Gtk.Box(spacing=8, css_classes=["ai-buttons"], homogeneous=True)
         btns.append(ui.controls.push_button("Use Default", lambda: (
-            icons.set_app_pref(row.did, source=None, path=None, name=None, shape=None),
+            icons.set_app_pref(row.did, source=None, path=None, name=None, shape=None, scale=None),
             self._refresh_row(row), pop.popdown())))
         btns.append(ui.controls.push_button("Done", lambda: pop.popdown(), style="default"))
-        col = ui.panel.column(ui.panel.header(row.info.get_display_name()), preview,
-                              line("Icon", source), choose, name_line, line("Shape", shape), btns)
+        col = ui.panel.column(ui.panel.header(row.info.get_display_name()), preview, grid, btns)
         col.add_css_class("ai-panel")
-        pop = ui.panel.popup(row, col, gap=4)
+        pop = ui.panel.popup(row, col, gap=4, width=self.PANEL_W)
         pop.source, pop.shape, pop.choose, pop.name, pop.preview = source, shape, choose, name, preview   # (tests)
+        pop.size, pop.file_rv, pop.name_rv, pop.size_rv = size, file_rv, name_rv, size_rv
         redraw()
         row.panel = pop
         return pop
+
+    def _size_changed(self, row, value, then) -> None:
+        """Saved (and the icon drawn again) once the slider pauses."""
+        if getattr(self, "_size_src", 0):
+            GLib.source_remove(self._size_src)
+
+        def save():
+            self._size_src = 0
+            v = icons.clamp_scale(value / 100)
+            self.set_app(row, scale=None if abs(v - icons.default_scale()) < 0.005 else v)
+            then()
+            return False
+        self._size_src = GLib.timeout_add(150, save)
 
     def _pick_file(self, row, then) -> None:
         """A picture through the Open panel (Sonata's own, via the portal)."""

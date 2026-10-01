@@ -20,7 +20,7 @@ FREE_MIN = 16 * 1024 * 1024            # unallocated gaps smaller than this don'
 FS_NAMES = {"ext4": "Linux ext4", "ext3": "Linux ext3", "ext2": "Linux ext2", "vfat": "MS-DOS (FAT)",
             "exfat": "ExFAT", "ntfs": "Windows NT File System (NTFS)", "btrfs": "Btrfs", "xfs": "XFS",
             "f2fs": "F2FS", "crypto_LUKS": "Encrypted (LUKS)", "swap": "Linux Swap",
-            "iso9660": "ISO 9660", "udf": "UDF", "hfsplus": "Mac OS Extended", "apfs": "APFS",
+            "iso9660": "ISO 9660", "udf": "UDF", "hfsplus": "HFS+", "apfs": "APFS",
             "LVM2_member": "LVM Physical Volume", "zfs_member": "ZFS", "BitLocker": "Encrypted (BitLocker)"}
 TABLE_NAMES = {"gpt": "GUID Partition Map", "dos": "Master Boot Record"}
 BUS_NAMES = {"usb": "USB", "ieee1394": "FireWire", "sdio": "SD Card", "": ""}

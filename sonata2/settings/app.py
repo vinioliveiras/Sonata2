@@ -1019,7 +1019,7 @@ class Settings(Adw.ApplicationWindow):
         look.add(switch_row("Rounded screen corners",
                             config.load("appearance", _icons.APPEARANCE_DEFAULTS).get("screen_corners", True),
                             lambda on: self._save("appearance", "screen_corners", on),
-                            subtitle="The corners of every display, like a Mac's (the lock screen too)"))
+                            subtitle="The corners of every display rounded (the lock screen too)"))
         pages = [bright, screens, look, self._night_shift_group()]
         from .. import gpu
         if gpu.has_dual_gpu():
@@ -2022,7 +2022,7 @@ class Settings(Adw.ApplicationWindow):
         g.add(self._accent_row())
         s = group("Style")
         app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
-        s.add(combo_row("Style", [("mac", "macOS"), ("windows", "Windows 11 (coming later)")], app["theme"],
+        s.add(combo_row("Style", [("mac", "Sonata"), ("windows", "Windows 11 (coming later)")], app["theme"],
                         lambda v: self._save("appearance", "theme", "mac")))
         themes = sorted({d for base in GLib.get_system_data_dirs() + [GLib.get_user_data_dir()]
                          for d in (os.listdir(os.path.join(base, "icons")) if os.path.isdir(os.path.join(base, "icons"))
@@ -2245,7 +2245,7 @@ class Settings(Adw.ApplicationWindow):
         logo.add(combo_row("Menu bar logo", L.choices(), app["menu_logo"],
                            lambda v: (self._save("appearance", "menu_logo", v),
                                       text_row.set_sensitive(v == "text:custom")),
-                           subtitle="Where the Apple logo is on a Mac"))
+                           subtitle="The menu at the left end of the menu bar"))
         logo.add(text_row)                                # text:custom: your words (emoji drawn in one colour)
         logo.menu_text_row = text_row                     # (tests)
         return [g, logo]

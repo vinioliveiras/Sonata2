@@ -138,7 +138,7 @@ def check_wayfire(r: Report, repo: str) -> None:
     corners = os.path.expanduser("~/.local/share/wayfire/plugin-manager/install/lib/wayfire/libsonata-corners.so")
     r.add(OK if os.path.exists(corners) else WARN, "sonata-corners (rounded corners for Chrome, Spotify...)",
           fix="" if os.path.exists(corners) else "./install.sh   (needs meson, ninja and Wayfire's headers)")
-    r.add(OK if "pixdecor" in have else WARN, "pixdecor (macOS title bars for terminals / X11 apps)",
+    r.add(OK if "pixdecor" in have else WARN, "pixdecor (Sonata title bars for terminals / X11 apps)",
           fix="" if "pixdecor" in have else "AUR: wayfire-plugin-pixdecor-git")
 
 

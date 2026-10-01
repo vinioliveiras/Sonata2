@@ -59,7 +59,8 @@ class PrefsTest(unittest.TestCase):
         self.assertEqual(icons.ICON_DEFAULTS["shape"], "squircle")
         self.assertEqual(icons.prefs()["shape"], "squircle")
         info = FakeInfo()
-        self.assertEqual(icons.app_pref(info), {"source": "auto", "path": "", "name": "", "shape": "squircle"})
+        self.assertEqual(icons.app_pref(info), {"source": "auto", "path": "", "name": "", "scale": None,
+                                                 "shape": "squircle"})
         self.assertIn("apps", icons.ICON_DEFAULTS)
 
     def test_set_and_reset(self):
@@ -87,6 +88,19 @@ class PrefsTest(unittest.TestCase):
         self.assertEqual(icons.app_pref(a)["source"], "auto")
         icons.set_app_pref("org.d", source="package")                        # = everyone's: nothing kept
         self.assertNotIn("org.d", icons.prefs()["apps"])
+
+    def test_scale(self):
+        """Vini: how big the picture sits in its frame, up to all of it."""
+        info = FakeInfo()
+        icons.set_app_pref(info.did, scale=5)
+        self.assertEqual(icons.app_pref(info)["scale"], 1.0)
+        icons.set_app_pref(info.did, scale=0.01)
+        self.assertEqual(icons.app_pref(info)["scale"], icons.SCALE_RANGE[0])
+        self.assertTrue(icons.SCALE_RANGE[0] < icons.default_scale() < 1.0)
+
+    def test_no_macos_in_labels(self):
+        """Vini: no macOS mentions on screen."""
+        self.assertNotIn("macOS", " ".join(icons.SHAPE_TITLES.values()))
 
     def test_bad_values_ignored(self):
         config.save("icons", {"shape": "star", "apps": {"org.test.App": {"source": "?", "shape": "hex"}}})
@@ -217,9 +231,17 @@ class SettingsPageTest(unittest.TestCase):
         settle(50)
         self.assertTrue(pop.has_css_class("sonata-panel"))
         self.assertTrue(pop.source.has_css_class("sonata-popup"))
-        self.assertFalse(pop.choose.get_visible())                      # only for a custom picture
+        self.assertFalse(pop.file_rv.get_reveal_child())               # only for a custom picture
+        self.assertFalse(pop.name_rv.get_reveal_child())
         pop.source.set_selected(list(icons.SOURCES).index("file"))
-        self.assertTrue(pop.choose.get_visible())
+        self.assertTrue(pop.file_rv.get_reveal_child())                # slides in
+        pop.source.set_selected(list(icons.SOURCES).index("theme"))
+        self.assertTrue(pop.name_rv.get_reveal_child())
+        self.assertFalse(pop.file_rv.get_reveal_child())
+        self.assertTrue(pop.size_rv.get_reveal_child())                # a theme icon sits on the plate
+        pop.size.set_value(100)                                        # fills the frame, cut to its shape
+        settle(300)
+        self.assertEqual(icons.app_pref(row.info)["scale"], 1.0)
         pop.shape.set_selected(1 + list(icons.SHAPES).index("rounded"))
         self.assertEqual(icons.app_pref(row.info)["shape"], "rounded")
         self.assertIn("Rounded", row.get_subtitle())

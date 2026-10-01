@@ -23,7 +23,7 @@ ENCODINGS = {
 SHORT = {"utf-8": "UTF-8", "utf-16-le": "UTF-16 LE", "utf-16-be": "UTF-16 BE",
          "windows-1252": "Windows-1252", "iso-8859-1": "ISO-8859-1"}
 NEWLINES = {"LF": "\n", "CRLF": "\r\n", "CR": "\r"}
-NEWLINE_LABELS = {"LF": "macOS / Unix (LF)", "CRLF": "Windows (CRLF)", "CR": "Classic Mac OS (CR)"}
+NEWLINE_LABELS = {"LF": "Linux / Unix (LF)", "CRLF": "Windows (CRLF)", "CR": "Old style (CR)"}
 _BOMS = ((codecs.BOM_UTF8, "utf-8"), (codecs.BOM_UTF16_LE, "utf-16-le"), (codecs.BOM_UTF16_BE, "utf-16-be"))
 
 CONVERTED = (".docx", ".odt", ".rtf")
