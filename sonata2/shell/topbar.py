@@ -1266,6 +1266,12 @@ class TopBarWindow(Gtk.ApplicationWindow):
             self.bar.nightshift = NightShift()
             from .idlelock import IdleLock
             self.bar.idlelock = IdleLock()
+            try:                                                    # Clock's alarms ring from here
+                from .alarmservice import AlarmService
+                self.bar.alarms = AlarmService(app)
+                app.connect("shutdown", lambda *_: self.bar.alarms.ringer.stop())
+            except Exception as e:                                  # never keeps the menu bar from starting
+                print(f"sonata2-topbar: alarms: {e}")
             from .mission import MissionBackdrop
             self.bar.mission = MissionBackdrop(app)
             from ..trash_cleanup import Housekeeping
