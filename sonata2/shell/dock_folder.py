@@ -30,7 +30,8 @@ ui.register("""
 popover.dock-folder-panel { background: none; box-shadow: none; padding: 0; }
 popover.dock-folder-panel > contents {
   padding: 12px 10px 10px 10px; border-radius: calc(%(r_dialog)s * 1.6);
-  font-family: %(font)s; color: %(label)s; background-color: %(menu_bg)s;
+  /* the Dock's own glass (Vini): same tint, same Appearance setting */
+  font-family: %(font)s; color: %(label)s; background-color: %(dock_material)s;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_menu)s;
 }
 @keyframes dock-folder-in { from { opacity: 0; transform: scale(0.82); } to { opacity: 1; transform: none; } }
@@ -94,7 +95,7 @@ def as_launchpad(folder: dict) -> dict:
 def mini_rects(size: float, n: int) -> list:
     """Where the first n (<= 9) mini icons go on a folder icon of `size`:
     [(x, y, side)], row by row, inside a padded 3 x 3 grid."""
-    pad = size * 0.12
+    pad = size * (icons.PLATE_INSET + 0.08)          # inside the app-sized frame
     cell = (size - 2 * pad) / GRID
     side = cell * 0.84
     off = (cell - side) / 2
@@ -107,6 +108,11 @@ def _rgba(spec: str) -> Gdk.RGBA:
     c = Gdk.RGBA()
     c.parse(spec)
     return c
+
+
+def _sheen() -> list:
+    """The app frame's sheen (icons.PLATE_SHEEN) as colour stops."""
+    return [icons._stop(off, spec) for off, spec in zip((0.0, 1.0), icons.PLATE_SHEEN)]
 
 
 class FolderIcon(Gtk.Widget):
@@ -186,15 +192,36 @@ class FolderIcon(Gtk.Widget):
         snap.append_node(node)
         snap.restore()
 
+    def texture(self, size: int):
+        """The icon as a picture (the drag icon: a folder has no gicon, and
+        without one GTK showed the drag's text -- the folder's encoded name
+        and apps, in large letters by the pointer)."""
+        native = self.get_native()
+        renderer = native.get_renderer() if native is not None else None
+        snap = Gtk.Snapshot()
+        self._draw(snap, size)
+        node = snap.to_node()
+        if renderer is None or node is None:
+            return None
+        return renderer.render_texture(node, Graphene.Rect().init(0, 0, size, size))
+
     def _draw(self, snap, s) -> None:
-        rect = Graphene.Rect().init(0, 0, s, s)
-        rr = Gsk.RoundedRect()
-        rr.init_from_rect(rect, s * 0.225)
+        # exactly an app's frame (icons._Plate): the same squircle, inset,
+        # shadow, sheen and edge -- only see-through (Vini: they must match)
+        inset = s * icons.PLATE_INSET
+        p = s - 2 * inset
+        rect = Graphene.Rect().init(inset, inset, p, p)
         dark = ui.is_dark()
-        snap.push_rounded_clip(rr)
-        snap.append_color(_rgba("rgba(120,120,128,0.42)" if dark else "rgba(255,255,255,0.55)"), rect)
+        shadow = Gsk.RoundedRect()
+        shadow.init_from_rect(rect, p * 0.3)
+        snap.append_outset_shadow(shadow, _rgba("rgba(0,0,0,0.22)"), 0, s * 0.012, 0, s * 0.02)
+        path = icons._squircle(inset, inset, p, p)
+        snap.push_fill(path, Gsk.FillRule.WINDING)
+        snap.append_color(_rgba("rgba(120,120,128,0.55)" if dark else "rgba(255,255,255,0.62)"), rect)
+        snap.append_linear_gradient(rect, Graphene.Point().init(0, inset), Graphene.Point().init(0, s - inset),
+                                    _sheen())
         snap.pop()
-        snap.append_border(rr, [0.5] * 4, [_rgba("rgba(255,255,255,0.18)" if dark else "rgba(0,0,0,0.12)")] * 4)
+        snap.append_stroke(path, Gsk.Stroke.new(max(0.5, s / 256)), _rgba("rgba(0,0,0,0.10)"))
         if self.locked:
             self._draw_locked(snap, s, dark)
             return

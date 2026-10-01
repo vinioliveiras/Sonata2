@@ -1220,7 +1220,11 @@ class Dock(Gtk.Box):
                       "dropped": False}
         tile.label.popdown()
         size = self.cfg["icon_size"]
-        self._drag["icon"] = ui.drag.hang(drag, icons.paintable(self, tile.gicon, size), size)
+        pic = tile.icon.texture(size) if dock_folder.is_folder(tile.key) else icons.paintable(self, tile.gicon, size)
+        if pic is not None:
+            self._drag["icon"] = ui.drag.hang(drag, pic, size)
+        else:                                       # never GTK's text drag icon (the drag's content)
+            Gtk.DragIcon.get_for_drag(drag).set_child(Gtk.Box())
         tile.add_css_class("dragging")
         self._mag_animate(0.0, MAG_OUT_MS)
 

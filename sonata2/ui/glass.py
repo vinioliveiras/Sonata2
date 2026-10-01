@@ -21,8 +21,12 @@ SUBTITLES = {"menus": "Menu bar menus, Control Center, Wi-Fi, notifications pane
 # glass token -> solid token, per part
 MATERIALS = {"dock": ("glass_tint", "solid_tint"), "menubar": ("bar_bg", "window_bg"),
              "menus": ("glass_tint", "menu_bg"), "windows": ("window_glass", "sidebar_bg")}
-# below 0.5 Wayfire's blur skips the pixels (alpha_threshold, wayfire.ini): no frost
-ALPHA_RANGE = (0.50, 0.95)
+# Wayfire blurs only where a pixel's alpha reaches alpha_threshold (0.5 in
+# wayfire.ini: soft shadows stay unfrosted). A part set more see-through
+# than that lowers the threshold (blur_threshold), never under THRESHOLD_MIN
+# (dark menus' shadows would get a frosted halo).
+ALPHA_RANGE = (0.38, 0.97)
+THRESHOLD, THRESHOLD_MIN = 0.5, 0.36
 BLUR_DEFAULT = 50
 OFFSET_RANGE = (1.5, 7.5)          # kawase_offset at strength 0 / 100 (50 -> 4.5, the default)
 
@@ -112,4 +116,16 @@ def blur_rule(cfg: dict = None) -> str:
         return BLUR_ALL
     if "menus" in on:                        # it covers the Dock's and the menu bar's surfaces too
         on = [i for i in on if i not in ("dock", "menubar")]
-    return " | ".join(BLUR_PARTS[i] for i in on) or BLUR_NONE
+    rule = " | ".join(BLUR_PARTS[i] for i in on)
+    if "dock" in on:                         # an open Dock folder (a popup) has the Dock's glass
+        rule += ' | type is "unmanaged"'
+    return rule or BLUR_NONE
+
+
+def blur_threshold(cfg: dict = None) -> float:
+    """Wayfire's alpha_threshold for the alphas chosen: just under the most
+    see-through part that is on, 0.5 otherwise."""
+    s = cfg or settings()
+    alphas = [s[i]["alpha"] for i in ITEMS if s[i]["on"] and s[i]["alpha"] is not None]
+    t = min([THRESHOLD] + [a - 0.02 for a in alphas])
+    return round(max(THRESHOLD_MIN, t), 2)

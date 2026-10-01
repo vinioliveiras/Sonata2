@@ -93,11 +93,12 @@ class BlurRuleTest(unittest.TestCase):
         config.save("dock", {})
         r = self.rule(dock=True, menus=True)
         self.assertNotIn("sonata2-dock", r)
-        self.assertNotIn("unmanaged", r)
+        self.assertNotIn("unmanaged", r)                         # no part left that needs popups
         self.assertIn('app_id is "sonata2-topbar"', r)
         self.assertIn('app_id contains "sonata2."', r)
         self.assertEqual(self.rule(dock=True, menubar=True, menus=True, windows=True), G.BLUR_NONE)
         self.assertNotIn("!", self.rule(windows=True))           # positive rules only
+        self.assertIn("unmanaged", self.rule(menus=True))         # the Dock's folder panel: glass too
 
     def test_apply_colors_uses_it(self):
         from unittest import mock
@@ -111,6 +112,31 @@ class BlurRuleTest(unittest.TestCase):
             titlebars.apply_colors(False)
         self.assertNotIn("sonata2-dock", calls[("blur", "blur_by_default")])
         self.assertEqual(calls[("blur", "kawase_offset")], "4.5")
+        config.save("appearance", {})
+
+
+class ThresholdTest(unittest.TestCase):
+    def test_threshold_follows_the_most_see_through_part(self):
+        config.save("dock", {})
+        self.assertEqual(G.blur_threshold(G.settings({})), 0.5)                       # wayfire.ini's
+        cfg = G.settings({"glass": {"dock": {"alpha": 0.45}, "menus": {"alpha": 0.7}}})
+        self.assertEqual(G.blur_threshold(cfg), 0.43)                                 # still frosted
+        cfg = G.settings({"glass": {"dock": {"alpha": 0.38}}})
+        self.assertEqual(G.blur_threshold(cfg), G.THRESHOLD_MIN)                      # shadows stay clear
+        cfg = G.settings({"glass": {"dock": {"alpha": 0.40, "on": False}}})
+        self.assertEqual(G.blur_threshold(cfg), 0.5)                                  # a solid part: no say
+
+    def test_apply_colors_sets_it(self):
+        from unittest import mock
+        from sonata2 import titlebars
+        config.save("dock", {})
+        config.save("appearance", {"glass": {"menubar": {"alpha": 0.42}}})
+        calls = {}
+        with mock.patch("sonata2.backend.system.wayfire_set",
+                        side_effect=lambda sec, key, val: calls.__setitem__((sec, key), val)), \
+                mock.patch.object(titlebars, "glass_bars", return_value=False):
+            titlebars.apply_colors(False)
+        self.assertEqual(calls[("blur", "alpha_threshold")], "0.4")
         config.save("appearance", {})
 
 
@@ -250,6 +276,24 @@ class SettingsAppearanceTest(unittest.TestCase):
         settle(50)
         self.assertFalse(G.settings()["menubar"]["on"])
         self.assertIsNotNone(G.settings()["menubar"]["alpha"])       # the level kept
+
+    def test_dragging_applies_live(self):
+        """Vini: dragging a transparency slider didn't seem to apply -- it only
+        saved once the slider stopped. Now it saves along the way."""
+        _sw, sl = self.w.glass_rows["dock"]
+        seen = set()
+        for v in range(0, 100, 5):                                # a ~1 s drag, a step every 50 ms
+            sl.slider.set_value(v)
+            settle(50)
+            seen.add(G.settings()["dock"]["alpha"])
+        seen.discard(None)
+        self.assertGreaterEqual(len(seen), 4)                     # several levels while still moving
+
+    def test_more_room_to_be_see_through(self):
+        # from the theme's 0.60 the slider used to have 0.10 left towards "More"
+        self.assertLessEqual(G.ALPHA_RANGE[0], 0.40)
+        self.assertGreater(self.st.Settings._alpha_to_slider(0.60), 0)
+        self.assertLess(self.st.Settings._alpha_to_slider(0.60), 80)
 
     def test_slider_mapping_round_trips(self):
         for a in (0.5, 0.6, 0.74, 0.95):

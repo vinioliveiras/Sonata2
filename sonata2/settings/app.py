@@ -2075,9 +2075,13 @@ class Settings(Adw.ApplicationWindow):
         lo, hi = G.ALPHA_RANGE
         return G.clamp_alpha(hi - (hi - lo) * v / 100)
 
+    GLASS_LIVE_MS = 120      # while a slider moves: saved this often (every Sonata surface follows live)
+    GLASS_WAYFIRE_MS = 300   # Wayfire's part (blur rule, strength, threshold): once it stops
+
     def _set_glass(self, item, on=None, alpha=None, blur=None) -> None:
-        """Saved a moment after the slider stops (each save re-styles every
-        Sonata surface, with its cross-fade); a switch saves at once."""
+        """A switch saves at once. A moving slider saves every GLASS_LIVE_MS
+        (a live preview: it used to wait for the slider to stop, so dragging
+        seemed to do nothing); Wayfire's settings follow once it stops."""
         pend = self._glass_pending = getattr(self, "_glass_pending", {})
         if item == "blur":
             pend["blur"] = int(round(blur))
@@ -2090,12 +2094,11 @@ class Settings(Adw.ApplicationWindow):
                     rows[1].set_sensitive(bool(on))
             if alpha is not None:
                 part["alpha"] = alpha
-        if getattr(self, "_glass_src", 0):
-            GLib.source_remove(self._glass_src)
-            self._glass_src = 0
 
         def save():
             self._glass_src = 0
+            if not self._glass_pending:
+                return False
             from ..ui import glass as G
             raw = dict(config.load("appearance", icons.APPEARANCE_DEFAULTS).get("glass") or {})
             cur = G.settings()
@@ -2109,13 +2112,25 @@ class Settings(Adw.ApplicationWindow):
                     raw[k] = part
             self._glass_pending = {}
             config.update("appearance", glass=raw)
+            return False
+
+        def wayfire():
+            self._glass_wf_src = 0
             from .. import titlebars
             system.run_async(titlebars.apply_colors, None, Adw.StyleManager.get_default().get_dark())
             return False
+        if getattr(self, "_glass_wf_src", 0):
+            GLib.source_remove(self._glass_wf_src)
         if on is not None:
+            if getattr(self, "_glass_src", 0):
+                GLib.source_remove(self._glass_src)
             save()
-        else:
-            self._glass_src = GLib.timeout_add(250, save)
+            self._glass_wf_src = 0
+            wayfire()
+            return
+        if not getattr(self, "_glass_src", 0):          # throttle, not debounce: live while dragging
+            self._glass_src = GLib.timeout_add(self.GLASS_LIVE_MS, save)
+        self._glass_wf_src = GLib.timeout_add(self.GLASS_WAYFIRE_MS, wayfire)
 
     def _page_dock(self):
         from ..shell import dock as D

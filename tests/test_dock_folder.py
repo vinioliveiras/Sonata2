@@ -450,6 +450,30 @@ class DockFolderTest(unittest.TestCase):
         self.assertNotIn("bounds", d._drag)
         d._drag = None
 
+    def test_folder_drag_has_its_icon(self):
+        """Vini: dragging a Dock folder showed big text by the pointer -- a
+        folder has no gicon, the drag icon failed and GTK drew the drag's
+        text. It hangs the folder's own picture now."""
+        from unittest import mock
+        from gi.repository import Gdk
+        d, a, b = self.dock, self.apps[0], self.apps[1]
+        fkey = d.make_folder([a, b])
+        settle()
+        tex = d.tiles[fkey].icon.texture(48)
+        self.assertIsInstance(tex, Gdk.Texture)
+        self.assertEqual((tex.get_width(), tex.get_height()), (48, 48))
+        hung = []
+        with mock.patch.object(D.ui.drag, "hang", side_effect=lambda drag, pic, size: hung.append(pic)):
+            d._drag_begin(None, object(), d.tiles[fkey])
+        self.assertIsInstance(hung[0], Gdk.Texture)
+        d.tiles[fkey].remove_css_class("dragging")
+        d._drag = None
+
+    def test_panel_has_the_docks_glass(self):
+        import inspect
+        src = inspect.getsource(F)
+        self.assertIn("background-color: %(dock_material)s", src)
+
     def test_icon_draws(self):
         icon = F.FolderIcon(self.apps[:3], 48)
         self.assertEqual(icon.do_measure(Gtk.Orientation.HORIZONTAL, -1)[0], 48)
