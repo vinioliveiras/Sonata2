@@ -94,21 +94,27 @@ class ChooserWindow(FilesWindow):
         bar = Gtk.Box(spacing=8, css_classes=["fc-bottom"])
         if self.filters:
             bar.append(Gtk.Label(label="Show:" if self.mode != "save" else "Format:", css_classes=["fc-caption"]))
+            # Sonata's pop-up button (the plain GTK one was 34 px tall and
+            # stretched the push buttons beside it to its height)
             combo = Gtk.DropDown.new_from_strings([f[0] for f in self.filters])
+            combo.add_css_class("sonata-popup")
+            combo.set_valign(Gtk.Align.CENTER)
             combo.set_selected(self.filter_index)
             combo.connect("notify::selected", lambda d, _p: self._set_filter(d.get_selected()))
             bar.append(combo)
         if self.mode in ("save", "folder"):
-            new = Gtk.Button(label="New Folder", css_classes=["sonata-button", "fc-cancel"])
+            new = Gtk.Button(label="New Folder", css_classes=["sonata-button", "fc-cancel"],
+                             valign=Gtk.Align.CENTER)
             new.connect("clicked", lambda *_: self.new_folder())
             bar.append(new)
         bar.append(Gtk.Box(hexpand=True))
-        cancel = Gtk.Button(label="Cancel", css_classes=["sonata-button", "fc-cancel"])
+        cancel = Gtk.Button(label="Cancel", css_classes=["sonata-button", "fc-cancel"], valign=Gtk.Align.CENTER)
         cancel.connect("clicked", lambda *_: self._finish(None))
         bar.append(cancel)
         label = accept_label.replace("_", "") if accept_label else \
             {"open": "Open", "save": "Save", "folder": "Choose"}[self.mode]
-        self.accept_btn = Gtk.Button(label=label, css_classes=["sonata-button", "default", "fc-accept"])
+        self.accept_btn = Gtk.Button(label=label, css_classes=["sonata-button", "default", "fc-accept"],
+                                     valign=Gtk.Align.CENTER)
         self.accept_btn.connect("clicked", lambda *_: self._accept())
         bar.append(self.accept_btn)
         self.set_default_widget(self.accept_btn)

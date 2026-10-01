@@ -265,6 +265,13 @@ class ButtonRegressions(unittest.TestCase):
         chooser = (root / "files" / "chooser.py").read_text()
         self.assertEqual(chooser.count('"sonata-button"'), 3)
 
+    def test_open_panel_bottom_bar_is_slim(self):
+        """The Open panel's buttons were fat: its Show: pop-up was GTK's own
+        (34 px) and stretched the push buttons beside it to its height."""
+        chooser = (pathlib.Path(__file__).parent.parent / "sonata2" / "files" / "chooser.py").read_text()
+        self.assertIn('combo.add_css_class("sonata-popup")', chooser)
+        self.assertEqual(chooser.count("valign=Gtk.Align.CENTER"), 3)
+
 
 class MenuRegressions(unittest.TestCase):
     def test_dropdown_options_have_dividers(self):
