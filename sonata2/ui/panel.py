@@ -32,6 +32,9 @@ popover.sonata-panel > contents {
 .panel-row:hover { background: alpha(%(label)s, 0.10); }   /* Big Sur status menus: soft grey */
 .panel-row label { font-weight: 400; }
 .panel-row.static:hover { background: none; color: inherit; }
+/* just opened: no row lit until the pointer really moves in the panel (GTK
+   hands a new popover the pointer's last spot: a row under it flashed) */
+popover.sonata-panel.fresh .panel-row:hover { background: none; }
 .panel-sep { min-height: 1px; margin: 5px 10px; background: %(separator)s; }
 .panel-module { background: %(module_bg)s; border-radius: 12px; padding: 10px;
   box-shadow: 0 0 0 0.5px %(separator)s; }
@@ -74,8 +77,28 @@ def popup(anchor: Gtk.Widget, child: Gtk.Widget, position=Gtk.PositionType.BOTTO
             cb()
     pop.connect("closed", closed)
     menu.OPEN.add(pop)
+    hold_hover(pop)
     pop.popup()
     return pop
+
+
+def hold_hover(pop: Gtk.Popover, slack: float = 2.0) -> None:
+    """No hover highlight until the pointer moves inside the panel (the
+    "fresh" class): a row that only seemed under the pointer as the panel
+    opened (or as its rows were filled in) lit up, then went dark."""
+    pop.add_css_class("fresh")
+    seen = {"at": None}
+    motion = Gtk.EventControllerMotion()
+
+    def moved(_c, x, y):
+        if seen["at"] is None:
+            seen["at"] = (x, y)                  # the first report: where GTK thinks it is
+        elif abs(x - seen["at"][0]) + abs(y - seen["at"][1]) > slack:
+            pop.remove_css_class("fresh")
+    motion.connect("enter", lambda _c, x, y: seen.__setitem__("at", (x, y)))
+    motion.connect("motion", moved)
+    pop.add_controller(motion)
+    pop.hover_motion = moved                     # (tests)
 
 
 def align_to_start(pop: Gtk.Popover, anchor: Gtk.Widget, gap: int = 4) -> None:

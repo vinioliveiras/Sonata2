@@ -90,6 +90,7 @@ class TopBarTest(unittest.TestCase):
                 import subprocess
                 subprocess.run(["import", "-window", "root", os.environ["SHOT"]])
             pop.popdown()
+        settle()                                               # (the panel unparents itself first)
         win.destroy()
 
     def test_battery_sysfs(self):
@@ -105,6 +106,30 @@ class TopBarTest(unittest.TestCase):
         self.assertEqual(system._machine_name("ASUSTeK COMPUTER INC.", "ASUS TUF Gaming A15",
                                               "ASUS TUF Gaming A15 FA507NV_FA507NV"),
                          "ASUS TUF Gaming A15 FA507NV")
+
+
+class PanelHoverTest(unittest.TestCase):
+    """Regression: opening the Bluetooth menu lit a row up for a moment
+    (hover from the pointer's last spot), then it went dark."""
+
+    def test_no_hover_until_the_pointer_moves(self):
+        ui.setup()
+        win = Gtk.Window()
+        anchor = Gtk.Button(label="x")
+        win.set_child(anchor)
+        win.present()
+        settle()
+        col = ui.panel.column(ui.panel.row(None, "Device", on_click=lambda: None))
+        pop = ui.panel.popup(anchor, col)
+        self.assertTrue(pop.has_css_class("fresh"))
+        pop.hover_motion(None, 40.0, 30.0)                     # where GTK says it is: still fresh
+        pop.hover_motion(None, 40.5, 30.5)
+        self.assertTrue(pop.has_css_class("fresh"))
+        pop.hover_motion(None, 48.0, 36.0)                     # a real move
+        self.assertFalse(pop.has_css_class("fresh"))
+        pop.popdown()
+        settle()                                               # (the panel unparents itself first)
+        win.destroy()
 
 
 if __name__ == "__main__":
