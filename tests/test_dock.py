@@ -208,6 +208,31 @@ class DockTest(unittest.TestCase):
             self.assertIn(key, config.load("dock", D.DEFAULTS)["pinned"])
 
 
+    def test_removed_icon_closes_up_smoothly(self):
+        """Removing an icon: its place shrinks over a few frames (the Dock
+        narrows smoothly), then nothing is left of it."""
+        key = self.removable()[1]
+        full = self.dock.get_width()
+        cell = self.dock.tiles[key].get_width()
+        self.dock.set_pinned(key, False)
+        self.assertNotIn(key, self.keys())
+        slots = [w for w in self._children() if w.has_css_class("dock-closing-slot")]
+        self.assertEqual(len(slots), 1)
+        settle(40)
+        mid = self.dock.get_width()
+        settle(D.CLOSE_UP_MS + 200)
+        final = self.dock.get_width()
+        self.assertFalse([w for w in self._children() if w.has_css_class("dock-closing-slot")])
+        self.assertLessEqual(final, full - cell)
+        self.assertTrue(final < mid < full, (full, mid, final))      # part of the way, not at once
+
+    def _children(self):
+        out, w = [], self.dock.get_first_child()
+        while w is not None:
+            out.append(w)
+            w = w.get_next_sibling()
+        return out
+
     def test_uninstalled_app_leaves_no_slot(self):
         key = self.removable()[0]
         from unittest import mock

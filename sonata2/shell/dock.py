@@ -50,6 +50,7 @@ MAX_DOTS = 3                        # running dots: one per window, up to this m
 PERMANENT = ("io.github.vinioliveiras.sonata2.files", "sonata2-launchpad")
 NO_BOUNCE = {"sonata2-launchpad"}   # shell toggles open instantly: no launch bounce
 BOUNCE_MS = 620             # one bounce
+CLOSE_UP_MS = 260           # a removed icon's place closes up
 MAG_RADIUS = 3.0            # magnification reaches this many icons away
 MAG_IN_MS, MAG_OUT_MS = 120, 250
 HIDE_MS = 250               # auto-hide slide
@@ -797,10 +798,33 @@ class Dock(Gtk.Box):
             self._remove_tile(key)
 
     def _remove_tile(self, key) -> None:
+        """The icon goes and its place closes up smoothly (macOS): an empty
+        slot of the icon's size takes its place and shrinks to nothing, so
+        the plate narrows and the neighbours slide together frame by frame."""
         tile = self.tiles.pop(key)
         tile.label.unparent()
+        prev = tile.get_prev_sibling()
+        cell = (tile.get_height() if self.vertical else tile.get_width()) if tile.get_mapped() else 0
         self.remove(tile)
         self._relayout()
+        if cell <= 0 or prev is None or prev.get_parent() is not self or not self.get_mapped():
+            return
+        slot = Gtk.Box(can_target=False, css_classes=["dock-closing-slot"])
+        self.insert_child_after(slot, prev)
+
+        def size(v, slot=slot):
+            n = max(0, int(round(cell * v)))
+            slot.set_size_request(-1 if self.vertical else n, n if self.vertical else -1)
+        size(1.0)
+        anim = Adw.TimedAnimation.new(slot, 1.0, 0.0, CLOSE_UP_MS, Adw.CallbackAnimationTarget.new(size))
+        anim.set_easing(Adw.Easing.EASE_OUT_CUBIC)
+
+        def done(_a, slot=slot):
+            if slot.get_parent() is self:
+                self.remove(slot)
+        anim.connect("done", done)
+        slot._anim = anim              # kept alive while it runs
+        anim.play()
 
     def app_tiles(self) -> list:
         """App tiles in Dock order (pinned, then recent/running)."""
