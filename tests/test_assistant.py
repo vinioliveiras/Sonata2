@@ -568,6 +568,16 @@ class WindowTest(unittest.TestCase):
         finally:
             api.models_async, keystore.save = old, old_save
 
+    def test_settings_key_field_takes_focus(self):
+        # regression (Vini): the API key field couldn't be typed in -- the gear
+        # button (can_focus=False) kept the panel's fields from taking focus
+        self.win.show_settings()
+        settle(100)
+        self.assertTrue(self.win.key_field.grab_focus())
+        self.win.settings_panel.popdown()
+        settle(100)
+        self.assertFalse(self.win.settings_btn.get_can_focus())       # restored once the panel closes
+
     def test_ui_kit_only(self):
         # Vini: every Sonata UI comes from the UI kit (no libadwaita widgets, no system dialogs)
         import inspect

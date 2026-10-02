@@ -70,7 +70,25 @@ def popup(anchor: Gtk.Widget, child: Gtk.Widget, position=Gtk.PositionType.BOTTO
     if align_start:
         align_to_start(pop, anchor, gap)
 
+    # GTK 4: a widget that can't take focus keeps its descendants from taking
+    # it too, and a popover is a child of its anchor -- a text field in a panel
+    # hung from a toolbar button (can_focus=False) couldn't be typed in. The
+    # chain may take focus while the panel is open (a click still doesn't
+    # focus the button: focus_on_click).
+    unlocked = []
+    w = anchor
+    while w is not None and not isinstance(w, Gtk.Root):
+        if not w.get_can_focus():
+            w.set_can_focus(True)
+            unlocked.append((w, w.get_focus_on_click()))
+            w.set_focus_on_click(False)
+        w = w.get_parent()
+
     def closed(p):
+        for wid, foc in unlocked:
+            wid.set_can_focus(False)
+            wid.set_focus_on_click(foc)
+        unlocked.clear()
         menu.OPEN.discard(p)
         GLib.idle_add(lambda: (p.unparent(), False)[1])
         for cb in list(menu.on_closed):
