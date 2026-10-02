@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.4.0-alpha -- 2026-10-02
+
+Wallpapers, a fresh look for the project page, and a steadier session
+while gaming.
+
+### Stability
+- Sonata's build of Wayfire now skips every frame or effect the graphics
+  card can't make room for (blur, animations, minimizing every window with
+  Super+D) instead of crashing. Run `tools/build-wayfire.sh` again.
+- After a crash, the old Dock and menu bar no longer come back next to the
+  new ones.
+
+### Wallpapers
+- Mountains is the new default: snowy peaks in Light, the same peaks under
+  the stars in Dark.
+- Settings > Wallpaper shows Sonata's ten wallpapers (photos from
+  Unsplash); one click sets it for Light and Dark.
+
+### Desktop
+- Minimizing from the Dock flies to the icon on the display you clicked.
+- Apps: no more empty last row when the grid size changed (any screen size).
+- Menus: every text starts on the same line; checks sit after the text,
+  also in submenus (the Dock's Options > Keep in Dock).
+- Disk Manager has its own icon, a storage ring.
+
+### Project page
+- New look built around the Mountains wallpaper, line icons, a Wallpapers
+  section and fresh screenshots.
+
 ## 0.3.0-alpha -- 2026-10-02
 
 Steadier sessions on laptops with two graphics cards, web apps, and an
