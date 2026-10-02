@@ -48,7 +48,7 @@ SHORTCUTS = [
     Shortcut("restore", "Restore Size", "Windows", "grid", "restore"),
     Shortcut("snap_left", "Snap to the Left Half", "Windows", "grid", "slot_l"),
     Shortcut("snap_right", "Snap to the Right Half", "Windows", "grid", "slot_r"),
-    Shortcut("desktop", "Show Desktop", "Windows", "wm-actions", "toggle_showdesktop"),
+    Shortcut("desktop", "Show Desktop", "Windows", "command", "binding_showdesktop"),
     Shortcut("switcher", "Switch Apps", "Windows", "command", "binding_switcher"),
     Shortcut("switcher_back", "Switch Apps Backwards", "Windows", "command", "binding_switcher_back"),
     Shortcut("overview", names.OVERVIEW, "Spaces", "scale", "toggle"),

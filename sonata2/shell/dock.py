@@ -429,6 +429,34 @@ class DockDivider(DockLine):
             self.dock.set_icon_size(size, save=False)
 
 
+# -- Show Desktop (Super+D) -------------------------------------------------------------------
+# Sonata's own, not Wayfire's wm-actions one: there, bringing back any window
+# brought back all of them (Vini: Super+D, then a click on one app restored
+# every app). Here every window goes; a click brings back only that app's;
+# Super+D again brings back the ones it hid, if nothing is showing.
+_DESK = {"hidden": []}
+
+
+def toggle_show_desktop(manager) -> str:
+    """"hid" / "restored" / "" (nothing to do)."""
+    tops = list(manager.toplevels)
+    shown = [t for t in tops if not t.minimized]
+    still = [t for t in _DESK["hidden"] if t in tops and t.minimized]
+    if shown:
+        _DESK["hidden"] = still + shown
+        for d in list(_DOCKS):
+            d._update_rectangles()                # each window flies to the icon on its display
+        for t in shown:
+            manager.minimize(t)
+        return "hid"
+    _DESK["hidden"] = []
+    if not still:
+        return ""
+    for t in reversed(still):                     # the one that was in front comes back last (in front)
+        manager.activate(t)
+    return "restored"
+
+
 # Docks of this process (one per display with all_displays) and the Wayfire
 # events that move windows between displays: their genie targets follow.
 _DOCKS = []

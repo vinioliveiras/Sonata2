@@ -18,7 +18,8 @@ Development / screenshots:
   sonata2 keep <component> [args]                             (session: restart it if it crashes)
   sonata2 doctor                                              (is this computer ready for Sonata?)
   sonata2 screenshot [area]                                    (Super+Shift+3 / 4)
-  sonata2 webapp new | <id>                                    (New Web App form / open a web app)"""
+  sonata2 webapp new | <id>                                    (New Web App form / open a web app)
+  sonata2 show-desktop                                         (Super+D: every window away, and back)"""
 import argparse
 import json
 import os
@@ -173,6 +174,9 @@ def run_dock(app, args, ui):
     # every display's Dock (Settings > Dock > "Show the Dock on every display")
     act.connect("activate", lambda _a, v: [w.set_above(v.get_boolean()) for w in app.get_windows()
                                            if hasattr(w, "set_above")])
+    app.add_action(act)
+    act = Gio.SimpleAction.new("show-desktop", None)                 # Super+D (`sonata2 show-desktop`)
+    act.connect("activate", lambda *_a: dock.toggle_show_desktop(manager))
     app.add_action(act)
     if args.label >= 0:
         tiles = d.all_tiles()
@@ -732,11 +736,18 @@ def key(name: str) -> int:
 
 
 def _topbar_action(name: str, param: str) -> bool:
+    return _app_action("topbar", name, param)
+
+
+def _app_action(component: str, name: str, param: str = None) -> bool:
+    """Run an action of a running Sonata process (org.freedesktop.Application)."""
     from gi.repository import Gio, GLib
+    app_id = APP_IDS[component]
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-        bus.call_sync(APP_IDS["topbar"], "/" + APP_IDS["topbar"].replace(".", "/"), "org.freedesktop.Application",
-                      "ActivateAction", GLib.Variant("(sava{sv})", (name, [GLib.Variant("s", param)], {})),
+        bus.call_sync(app_id, "/" + app_id.replace(".", "/"), "org.freedesktop.Application",
+                      "ActivateAction", GLib.Variant("(sava{sv})", (name, [GLib.Variant("s", param)]
+                                                                    if param is not None else [], {})),
                       None, Gio.DBusCallFlags.NONE, 1000, None)
         return True
     except GLib.Error:
@@ -936,6 +947,8 @@ def main() -> int:
         layer.ensure_preload()                                    # may re-exec (stdin not read yet)
         from .shell import sharepicker
         return sharepicker.main()
+    if len(sys.argv) > 1 and sys.argv[1] == "show-desktop":      # Super+D: the Dock does it
+        return 0 if _app_action("dock", "show-desktop") else 1
     if len(sys.argv) > 1 and sys.argv[1] == "webapp":            # Sonata's web apps (webapps/)
         from . import webapps
         return webapps.main(sys.argv[2:])
