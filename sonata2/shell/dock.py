@@ -1639,6 +1639,35 @@ class Dock(Gtk.Box):
                 #  touch it from here, or the last Dock to write would win)
         return False
 
+    def _bring_here(self, wins) -> bool:
+        """Minimized windows of an app that are on another display move to this
+        Dock's (Wayfire keeps their place on the screen). True when any moved."""
+        from ..wl.wfipc import WayfireIPC
+        from . import monitors
+        native = self.get_native()
+        surface = native.get_surface() if native else None
+        mon = self.get_display().get_monitor_at_surface(surface) if surface else None
+        mine = monitors.connector(mon) if mon else ""
+        if not mine:
+            return False
+        ipc = WayfireIPC()
+        outputs = ipc.call("window-rules/list-outputs")
+        views = ipc.call("window-rules/list-views")
+        if not isinstance(outputs, list) or not isinstance(views, list):
+            return False
+        out_id = next((o.get("id") for o in outputs if o.get("name") == mine), None)
+        if out_id is None:
+            return False
+        wanted = {(t.app_id, t.title) for t in wins}
+        moved = False
+        for v in views:
+            if v.get("type") not in (None, "toplevel") or (v.get("app-id", ""), v.get("title", "")) not in wanted:
+                continue
+            if v.get("output-name") and v.get("output-name") != mine and v.get("minimized", True):
+                ipc.call("window-rules/configure-view", {"id": v["id"], "output_id": out_id})
+                moved = True
+        return moved
+
     def _windows_here(self, surface):
         """(app_id, title) of the windows on this Dock's display, and of all
         windows Wayfire knows; (set(), None) when Wayfire IPC can't tell."""
@@ -1672,6 +1701,13 @@ class Dock(Gtk.Box):
                 return
             # macOS: bring all of the app's windows forward; if every window
             # is minimized, restore them. The newest window ends up focused.
+            # Restored from a Dock on another display: they come to this one,
+            # out of this icon (Vini: "trazer a janela pro monitor onde cliquei")
+            if not shown and len(_DOCKS) > 1 and self._bring_here(wins):
+                for d in list(_DOCKS):
+                    d._update_rectangles()
+                GLib.timeout_add(60, lambda: ([self.manager.activate(t) for t in wins], False)[1])
+                return
             for t in shown or wins:
                 self.manager.activate(t)
         elif tile.info:

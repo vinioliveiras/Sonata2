@@ -80,3 +80,41 @@ class ShowDesktopTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BringHereTest(unittest.TestCase):
+    """Vini: restoring from the Dock on another display brings the window
+    there (and the animation comes out of that Dock's icon)."""
+
+    def test_minimized_windows_move_to_the_clicked_display(self):
+        from unittest import mock
+
+        class IPC:
+            calls = []
+
+            def call(self, method, data=None):
+                IPC.calls.append((method, data))
+                if method == "window-rules/list-outputs":
+                    return [{"id": 1, "name": "HDMI-A-1"}, {"id": 2, "name": "eDP-1"}]
+                if method == "window-rules/list-views":
+                    return [{"id": 10, "app-id": "chrome", "title": "Doc", "type": "toplevel",
+                             "output-name": "HDMI-A-1", "minimized": True},
+                            {"id": 11, "app-id": "chrome", "title": "Here", "type": "toplevel",
+                             "output-name": "eDP-1", "minimized": True},
+                            {"id": 12, "app-id": "files", "title": "Doc", "type": "toplevel",
+                             "output-name": "HDMI-A-1", "minimized": True}]
+                return {"result": "ok"}
+        t1, t2 = mock.Mock(app_id="chrome", title="Doc"), mock.Mock(app_id="chrome", title="Here")
+        d = mock.Mock()
+        mon = mock.Mock()
+        mon.get_connector.return_value = "eDP-1"
+        d.get_display.return_value.get_monitor_at_surface.return_value = mon
+        with mock.patch("sonata2.wl.wfipc.WayfireIPC", IPC):
+            self.assertTrue(D.Dock._bring_here(d, [t1, t2]))
+        moves = [c for c in IPC.calls if c[0] == "window-rules/configure-view"]
+        self.assertEqual(moves, [("window-rules/configure-view", {"id": 10, "output_id": 2})])   # only the other one
+
+    def test_click_uses_it_when_restoring(self):
+        src = open(D.__file__).read()
+        body = src[src.index("    def _clicked(self"):src.index("    def launch_feedback")]
+        self.assertIn("if not shown and len(_DOCKS) > 1 and self._bring_here(wins):", body)
