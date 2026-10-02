@@ -137,10 +137,12 @@ h2 { font-size: clamp(32px, 4.6vw, 56px); line-height: 1.07; letter-spacing: -0.
   transition: transform .35s var(--ease), box-shadow .35s var(--ease);
 }
 .card:hover { transform: translateY(-4px); box-shadow: 0 22px 50px -24px rgba(20, 40, 90, .35); }
-.card .ico {
-  width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; font-size: 22px; margin-bottom: 16px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, transparent), color-mix(in srgb, var(--accent-2) 22%, transparent));
+.card .ico {      /* line icons, no colour: they take the text's */
+  width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; margin-bottom: 16px;
+  color: var(--text); background: color-mix(in srgb, var(--text) 6%, transparent); border: 1px solid var(--card-border);
 }
+.card .ico svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.6;
+  stroke-linecap: round; stroke-linejoin: round; }
 .card h3 { margin: 0 0 8px; font-size: 19px; letter-spacing: -.01em; }
 .card p { margin: 0; color: var(--muted); font-size: 15.5px; }
 .soft { background: var(--bg-soft); }
@@ -279,13 +281,13 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
     <p class="sub reveal">Linux is fast, private and free. What kept people away was everything around it.
       Sonata takes that part off your hands.</p>
     <div class="grid">
-      <div class="card reveal"><div class="ico">🖱️</div><h3>Click, don't type</h3>
+      <div class="card reveal"><div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="3" width="11" height="18" rx="5.5"/><path d="M12 7v3"/></svg></div><h3>Click, don't type</h3>
         <p>Wi-Fi, Bluetooth, displays, sound, printers, users and updates all live in Settings and the Control Center. You never need a terminal.</p></div>
-      <div class="card reveal"><div class="ico">✨</div><h3>Beautiful by default</h3>
+      <div class="card reveal"><div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l1.9 5.2 5.1 1.8-5.1 1.8L12 17.5l-1.9-5.2L5 10.5l5.1-1.8z"/><path d="M18.5 16v4M16.5 18h4"/></svg></div><h3>Beautiful by default</h3>
         <p>Glass, smooth animations and one consistent look for every app, including Chrome, Steam and the rest. Nothing to set up first.</p></div>
-      <div class="card reveal"><div class="ico">🧭</div><h3>Feels familiar</h3>
+      <div class="card reveal"><div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M15.5 8.5l-2.2 4.8-4.8 2.2 2.2-4.8z"/></svg></div><h3>Feels familiar</h3>
         <p>A Dock, a menu bar, a grid of your apps and the Windows shortcuts you already know: Alt+Tab, Super+D, Win+V and more.</p></div>
-      <div class="card reveal"><div class="ico">🛟</div><h3>Takes care of itself</h3>
+      <div class="card reveal"><div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M6 6l3.5 3.5M18 6l-3.5 3.5M6 18l3.5-3.5M18 18l-3.5-3.5"/></svg></div><h3>Takes care of itself</h3>
         <p>If something goes wrong, Sonata starts again on its own and offers to reopen your apps. Updates show up as a notification.</p></div>
     </div>
   </div>
@@ -375,17 +377,17 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
     <p class="kicker reveal">And more</p>
     <h2 class="reveal">The things you'd miss, already here.</h2>
     <div class="grid" style="margin-top:40px">
-      <div class="card reveal"><div class="ico">🎮</div><h3>Games</h3>
+      <div class="card reveal"><div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 8h9a4 4 0 0 1 3.9 3.1l.9 4A2.6 2.6 0 0 1 17 17l-1.6-2H8.6L7 17a2.6 2.6 0 0 1-4.3-1.9l.9-4A4 4 0 0 1 7.5 8z"/><path d="M8 10.5v3M6.5 12h3"/><path d="M15.5 11.5h.01M17 13h.01"/></svg></div><h3>Games</h3>
         <p>Steam games get their own name and icon in the Dock, Alt+Tab and the sound mixer. Game mode kicks in by itself.</p></div>
-      <div class="card reveal"><div class="ico">🌐</div><h3>Web apps</h3>
+      <div class="card reveal"><div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.4 3.5 5.2 3.5 8.5s-1.1 6.1-3.5 8.5c-2.4-2.4-3.5-5.2-3.5-8.5S9.6 5.9 12 3.5z"/></svg></div><h3>Web apps</h3>
         <p>Turn WhatsApp, Notion or any site into an app with one right-click: its own window, icon and notifications.</p></div>
-      <div class="card reveal"><div class="ico">📸</div><h3>Screenshots and recording</h3>
+      <div class="card reveal"><div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="12.5" r="3.5"/></svg></div><h3>Screenshots and recording</h3>
         <p>A display, a window or an area, with sound, from one small toolbar.</p></div>
-      <div class="card reveal"><div class="ico">🖥️</div><h3>Screen Sharing</h3>
+      <div class="card reveal"><div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M9 20.5h6M12 16.5v4"/></svg></div><h3>Screen Sharing</h3>
         <p>See and control your computer from another device, always with a password.</p></div>
-      <div class="card reveal"><div class="ico">🔐</div><h3>Private by design</h3>
+      <div class="card reveal"><div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2"/></svg></div><h3>Private by design</h3>
         <p>No accounts, no tracking. Your notes, files and passwords stay on your computer.</p></div>
-      <div class="card reveal"><div class="ico">💬</div><h3>Report a problem in two clicks</h3>
+      <div class="card reveal"><div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14A1.5 1.5 0 0 1 20.5 7v8.5A1.5 1.5 0 0 1 19 17h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 5 5.5z"/><path d="M8 10h8M8 13h5"/></svg></div><h3>Report a problem in two clicks</h3>
         <p>Feedbacker gathers the logs for you and opens a ready-made report.</p></div>
     </div>
   </div>
