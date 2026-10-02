@@ -3,7 +3,7 @@ same apps as the full-screen Launchpad, on a glass panel in the middle of the
 screen instead of over all of it. Settings > Launchpad > Style picks it;
 its glass and transparency: Settings > Appearance > Glass & Transparency.
 
-    [icon] Applications (type to search)                     [...]
+    [icon] Apps (type to search)                     [...]
     [ Social ][ Creativity ][ Entertainment ][ Productivity & Finance ][ Utilities ][ Other ]
     suggestions: the apps opened last from here (then the Dock's)
     Social ...  Creativity ...  one titled grid per category
@@ -19,13 +19,13 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
-from .. import apps, config, icons, ui  # noqa: E402
+from .. import apps, config, icons, names, ui  # noqa: E402
 from .. import launchpad_model as M  # noqa: E402
 from . import layer  # noqa: E402
 
 NAME = "launcher"                 # ~/.config/sonata2/launcher.json
 DEFAULTS = {"style": "fullscreen", "recent": []}
-STYLES = (("fullscreen", "Full Screen"), ("window", "Window"))
+STYLES = (("fullscreen", "Full Screen"), ("window", names.APPS_MENU))
 COLS = 7
 ICON = 64
 SUGGESTIONS = 7
@@ -150,7 +150,7 @@ def grid(tiles, cols: int = COLS) -> Gtk.FlowBox:
 
 class LaunchpadWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Launchpad", decorated=False, css_classes=["sonata-lpwin"])
+        super().__init__(application=app, title=names.APPS_MENU, decorated=False, css_classes=["sonata-lpwin"])
         self.found = {}
         self.tab = None
         self.tiles = []             # the tiles in view, in order (keyboard / Enter)
@@ -160,7 +160,7 @@ class LaunchpadWindow(Gtk.ApplicationWindow):
                                                   valign=Gtk.Align.CENTER))
         head = Gtk.Box(spacing=10, css_classes=["lpw-head"])
         head.append(Gtk.Image(icon_name="view-app-grid-symbolic", css_classes=["lpw-glyph"]))
-        self.search = Gtk.SearchEntry(placeholder_text="Applications", hexpand=True, css_classes=["lpw-search"])
+        self.search = Gtk.SearchEntry(placeholder_text=names.APPS, hexpand=True, css_classes=["lpw-search"])
         lens = self.search.get_first_child()           # the title is the field: no magnifier in it
         if isinstance(lens, Gtk.Image):
             lens.set_visible(False)
@@ -272,8 +272,8 @@ class LaunchpadWindow(Gtk.ApplicationWindow):
 
     def _menu(self, btn) -> None:
         Item = ui.menu.Item
-        ui.menu.popup(btn, [[Item("Use Full-Screen Launchpad", lambda: self.set_style("fullscreen"))],
-                            [Item("Launchpad Settings…", self._settings)]], position=Gtk.PositionType.BOTTOM)
+        ui.menu.popup(btn, [[Item(f"Use Full-Screen {names.APPS}", lambda: self.set_style("fullscreen"))],
+                            [Item(f"{names.APPS} Settings…", self._settings)]], position=Gtk.PositionType.BOTTOM)
 
     def set_style(self, s: str) -> None:
         config.update(NAME, style=s)

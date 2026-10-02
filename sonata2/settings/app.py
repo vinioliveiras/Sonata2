@@ -2370,7 +2370,7 @@ class Settings(Adw.ApplicationWindow):
                                         self.toast(f"{names.APPS} was reset")), parent=self))
         from ..shell import launchpad_window as LW
         g.add(combo_row("Style", list(LW.STYLES), LW.style(), lambda v: config.update(LW.NAME, style=v),
-                        subtitle="Full Screen: over the whole screen. Window: a panel in the middle, "
+                        subtitle=f"Full Screen: over the whole screen. {names.APPS_MENU}: a panel in the middle, "
                                  "apps by category"))
         row = Adw.ActionRow(title="Layout", subtitle="Pages, folders and order")
         row.add_suffix(reset)

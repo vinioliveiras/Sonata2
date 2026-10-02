@@ -168,6 +168,21 @@ class WindowTest(unittest.TestCase):
         self.assertTrue(self.w.panel.has_css_class("closing"))
 
 
+class NamesTest(unittest.TestCase):
+    def test_no_apple_names_on_screen(self):
+        """Vini: no Apple names: the panel is the "Apps Menu"."""
+        from sonata2 import names
+        from sonata2.ui import glass as G
+        self.assertEqual(dict(LW.STYLES)["window"], names.APPS_MENU)
+        self.assertEqual(G.TITLES["launchpad"], names.APPS_MENU)
+        shown = " ".join([G.TITLES["launchpad"], G.SUBTITLES["launchpad"]] + [t for _k, t in LW.STYLES])
+        for word in ("Launchpad", "Applications", "macOS"):
+            self.assertNotIn(word, shown)
+        src = open(LW.__file__).read()
+        self.assertNotIn('placeholder_text="Applications"', src)
+        self.assertNotIn('"Use Full-Screen Launchpad"', src)
+
+
 class RoutingTest(unittest.TestCase):
     def test_style_picks_the_launchpad(self):
         from sonata2 import __main__ as main

@@ -16,10 +16,10 @@ launchpad_material)."""
 
 ITEMS = ("dock", "menubar", "menus", "windows", "launchpad")
 TITLES = {"dock": "Dock", "menubar": "Menu bar", "menus": "Menus and panels",
-          "windows": "Windows", "launchpad": "Launchpad window"}
+          "windows": "Windows", "launchpad": "Apps Menu"}
 SUBTITLES = {"menus": "Menu bar menus, Control Center, Wi-Fi, notifications panels",
              "windows": "Sidebars, and title bars when Glass title bars is on",
-             "launchpad": "The Launchpad panel when its style is Window (Settings > Launchpad)"}
+             "launchpad": "The apps panel when Apps > Style is Apps Menu"}
 # glass token -> solid token, per part
 MATERIALS = {"dock": ("glass_tint", "solid_tint"), "menubar": ("bar_bg", "window_bg"),
              "menus": ("glass_tint", "menu_bg"), "windows": ("window_glass", "sidebar_bg"),
