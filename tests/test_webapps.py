@@ -1,5 +1,5 @@
 """Sonata's web apps (sonata2/webapps). Vini: our own web apps, made with
-"New Web App…" (right-click on Launchpad, the Desktop, the Dock), after
+"New Web App…" (right-click on Apps' background), after
 Spider's WhatsApp took the session down.
 Run: xvfb-run python3 -m unittest tests.test_webapps"""
 import os
@@ -417,13 +417,15 @@ class DeleteAskTest(unittest.TestCase):
 
 
 class MenusTest(unittest.TestCase):
-    def test_new_web_app_in_the_three_menus(self):
+    def test_new_web_app_only_in_apps(self):
+        """Vini: New Web App… belongs to the Apps menu only (not the Desktop
+        or the Dock)."""
         root = os.path.dirname(os.path.dirname(W.__file__))
         desk = open(os.path.join(root, "shell", "desktop.py")).read()
         dock = open(os.path.join(root, "shell", "dock_menu.py")).read()
         lp = open(os.path.join(root, "shell", "launchpad.py")).read()
-        self.assertIn('Item("New Web App…", _new_webapp)', desk[desk.index("def _background_menu"):])
-        self.assertIn('"New Web App…"', dock[dock.index("def divider_menu"):])
+        self.assertNotIn('"New Web App…"', desk)
+        self.assertNotIn('"New Web App…"', dock)
         self.assertIn('"New Web App…"', lp[lp.index("def _background_menu"):])
         self.assertIn('"Delete Web App…"', lp[lp.index("def item_menu"):])
 

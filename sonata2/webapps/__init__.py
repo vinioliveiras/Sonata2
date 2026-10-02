@@ -1,7 +1,7 @@
 """Sonata's web apps (Vini): a website in a window of its own -- its own
 Dock icon, its own login (cookies and storage apart from every other web
 app), in Launchpad like any app. Made with "New Web App…" (right-click on
-Launchpad's or the Desktop's background, or the Dock's divider).
+the background of Apps, full screen or the Apps Menu).
 
 Each one: config webapps.json {"apps": {id: {"name", "url"}}}, a desktop
 entry sonata2-webapp-<id>.desktop (`sonata2 webapp <id>`, StartupWMClass =
