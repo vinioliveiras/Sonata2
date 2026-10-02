@@ -54,3 +54,36 @@ class FixedWidth(Gtk.Widget):
                 child.unparent()
         except Exception:                       # Python itself shutting down
             pass
+
+
+class MaxWidth(Gtk.Widget):
+    """Centres its child at most `width` wide (a reading column: chat,
+    documents); narrower windows give it all their width.
+
+        column = fixed.MaxWidth(child, 720)"""
+    __gtype_name__ = "SonataMaxWidth"
+    width = GObject.Property(type=int, default=0)
+
+    def __init__(self, child: Gtk.Widget, width: int, **kw):
+        super().__init__(hexpand=True, **kw)
+        self.width = int(width)
+        child.set_parent(self)
+        self.connect("destroy", FixedWidth._unparent)
+
+    def do_measure(self, orientation, for_size):
+        child = self.get_first_child()
+        if orientation == Gtk.Orientation.VERTICAL and for_size > self.width:
+            for_size = self.width
+        mn, nat, _b, _nb = child.measure(orientation, for_size)
+        if orientation == Gtk.Orientation.HORIZONTAL:
+            nat = max(mn, min(nat, self.width))
+        return mn, nat, -1, -1
+
+    def do_size_allocate(self, width, height, baseline):
+        child = self.get_first_child()
+        w = max(min(width, self.width), child.measure(Gtk.Orientation.HORIZONTAL, -1)[0])
+        from gi.repository import Graphene, Gsk
+        child.allocate(w, height, -1, Gsk.Transform().translate(Graphene.Point().init((width - w) / 2, 0)))
+
+    def do_get_request_mode(self):
+        return Gtk.SizeRequestMode.HEIGHT_FOR_WIDTH

@@ -8,6 +8,9 @@ See docs/DESIGN.md.
     ui.label.HoverLabel(widget, "Name")
     ui.controls.push_button("OK", cb, style="default")
     ui.dialog.alert(heading, body, responses, on_response)
+    ui.controls.text_field("", "Name", secret=False)   # one-line field (secret: password)
+    ui.controls.TextArea("Message", trailing=ui.controls.round_button(...))  # growing multi-line field
+    ui.fixed.MaxWidth(child, 720)         # a centred reading column
     ui.window.traffic_lights(close, minimize, zoom)
     ui.drag.hang(drag, paintable, size)   # drag icon swinging from the pointer
     ui.progress.bar(0.4) / spinner() / meter(0.7) / start(title, on_cancel)
@@ -19,9 +22,9 @@ See docs/DESIGN.md.
 New UI is built from these (and tokens), never raw GTK/libadwaita dialogs
 or widgets that bring their own look (Gtk.ColorDialog came out unthemed).
 """
-from . import colorpicker, columns, controls, dialog, drag, fmt, label, menu, mountop, panel, progress, theme, tokens, transition, window  # noqa: F401  (register CSS)
+from . import colorpicker, columns, controls, dialog, drag, fixed, fmt, label, menu, mountop, panel, progress, theme, tokens, transition, window  # noqa: F401  (register CSS)
 from .theme import force_appearance, is_dark, on_change, px, register, rgba, setup, shadow, values  # noqa: F401
 
-__all__ = ["colorpicker", "columns", "controls", "dialog", "drag", "fmt", "label", "menu", "panel", "progress", "theme", "tokens", "transition",
+__all__ = ["colorpicker", "columns", "controls", "dialog", "drag", "fixed", "fmt", "label", "menu", "panel", "progress", "theme", "tokens", "transition",
            "window",
            "force_appearance", "is_dark", "on_change", "px", "register", "rgba", "setup", "shadow", "values"]

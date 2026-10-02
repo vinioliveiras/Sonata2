@@ -286,3 +286,121 @@ def switch(active: bool = False, on_change=None) -> Gtk.Switch:
     if on_change:
         sw.connect("notify::active", lambda s, _p: on_change(s.get_active()))
     return sw
+
+
+# -- text fields ------------------------------------------------------------------------------------
+theme.register("""
+/* text field (Big Sur: white well, hairline, accent focus ring) */
+entry.sonata-field, passwordentry.sonata-field {
+  min-height: %(control_h)s; padding: 0 7px; border-radius: %(r_button)s; border: none;
+  font-family: %(font)s; font-size: %(text_body)s; color: %(label)s; background: %(content_bg)s;
+  box-shadow: inset 0 0 0 0.5px %(hairline)s, inset 0 0.5px 0 alpha(#000, 0.06);
+  outline: none; transition: box-shadow %(t_fast)s ease-out;
+}
+entry.sonata-field:focus-within, passwordentry.sonata-field:focus-within {
+  box-shadow: inset 0 0 0 0.5px %(hairline)s, 0 0 0 3px alpha(%(accent)s, 0.45); }
+entry.sonata-field > text > placeholder, passwordentry.sonata-field > text > placeholder {
+  color: %(label_tertiary)s; }
+entry.sonata-field:disabled, passwordentry.sonata-field:disabled { color: %(label_tertiary)s; }
+passwordentry.sonata-field > image { color: %(label_secondary)s; }
+
+/* text area: a rounded field that grows with its text (message composers) */
+.sonata-text-area { background: %(control_bg)s; border-radius: 18px; padding: 3px 4px 3px 14px;
+  box-shadow: inset 0 0 0 0.5px %(hairline)s, %(shadow_control)s; transition: box-shadow %(t_fast)s ease-out; }
+.sonata-text-area:focus-within { box-shadow: inset 0 0 0 0.5px %(hairline)s, 0 0 0 3px alpha(%(accent)s, 0.35); }
+.sonata-text-area textview, .sonata-text-area textview text { background: none; color: %(label)s;
+  font-family: %(font)s; font-size: %(text_body)s; }
+.sonata-text-area .sonata-placeholder { color: %(label_tertiary)s; }
+/* round accent button at the end of a text area (Send) */
+.sonata-text-area button.sonata-round { min-width: 28px; min-height: 28px; padding: 0; border-radius: 99px;
+  border: none; box-shadow: none; background: %(accent)s; color: %(label_on_accent)s;
+  transition: background-color %(t_fast)s, opacity %(t_fast)s; }
+.sonata-text-area button.sonata-round:disabled { opacity: 0.35; }
+.sonata-text-area button.sonata-round:active { filter: brightness(0.85); transition: filter %(t_press)s; }
+""", key="text-fields")
+
+
+def text_field(text: str = "", placeholder: str = "", secret: bool = False, on_activate=None,
+               on_change=None, hexpand: bool = False) -> Gtk.Widget:
+    """A one-line text field. secret=True: a password field with the peek
+    eye. on_activate(text) on Return, on_change(text) on every edit."""
+    if secret:
+        e = Gtk.PasswordEntry(show_peek_icon=True, css_classes=["sonata-field"], hexpand=hexpand)
+        e.set_property("placeholder-text", placeholder)
+        e.set_text(text)
+    else:
+        e = Gtk.Entry(text=text, placeholder_text=placeholder, css_classes=["sonata-field"], hexpand=hexpand)
+    if on_activate:
+        e.connect("activate", lambda w: on_activate(w.get_text()))
+    if on_change:
+        e.connect("changed", lambda w: on_change(w.get_text()))
+    return e
+
+
+class TextArea(Gtk.Box):
+    """A rounded multi-line field that grows with its text up to max_height
+    (then scrolls), with a placeholder and an optional trailing widget
+    (a send button). .view is the Gtk.TextView, .text() its text.
+    on_submit(text): Return (Shift+Return starts a new line)."""
+
+    def __init__(self, placeholder: str = "", max_height: int = 180, trailing: Gtk.Widget = None,
+                 on_submit=None, on_change=None):
+        super().__init__(spacing=6, css_classes=["sonata-text-area"])
+        self.max_height = max_height
+        self.on_submit, self.on_change = on_submit, on_change
+        self.view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, accepts_tab=False, hexpand=True,
+                                 top_margin=6, bottom_margin=6)
+        self.view.get_buffer().connect("changed", self._changed)
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", self._key)
+        self.view.add_controller(keys)
+        # no scroll bar until the field is at its tallest: a scroll bar's
+        # minimum length made a one-line field twice as tall
+        self.scroll = Gtk.ScrolledWindow(child=self.view, hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                         vscrollbar_policy=Gtk.PolicyType.EXTERNAL,
+                                         propagate_natural_height=True, max_content_height=max_height,
+                                         hexpand=True)
+        self.placeholder = Gtk.Label(label=placeholder, css_classes=["sonata-placeholder"], xalign=0,
+                                     can_target=False, halign=Gtk.Align.START, valign=Gtk.Align.CENTER)
+        field = Gtk.Overlay(child=self.scroll, hexpand=True)
+        field.add_overlay(self.placeholder)
+        self.append(field)
+        if trailing is not None:
+            trailing.set_valign(Gtk.Align.END)
+            self.append(trailing)
+
+    def text(self) -> str:
+        buf = self.view.get_buffer()
+        return buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+
+    def set_text(self, text: str) -> None:
+        self.view.get_buffer().set_text(text)
+
+    def grab_focus(self) -> bool:
+        return self.view.grab_focus()
+
+    def _changed(self, buf) -> None:
+        self.placeholder.set_visible(buf.get_char_count() == 0)
+        GLib.idle_add(self._bar)
+        if self.on_change:
+            self.on_change(self.text())
+
+    def _bar(self) -> bool:
+        tall = self.view.measure(Gtk.Orientation.VERTICAL, max(self.view.get_width(), 1))[1] > self.max_height
+        self.scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC if tall else Gtk.PolicyType.EXTERNAL)
+        return False
+
+    def _key(self, _c, keyval, _code, state) -> bool:
+        if self.on_submit and keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter) \
+                and not state & Gdk.ModifierType.SHIFT_MASK:
+            self.on_submit(self.text())
+            return True
+        return False
+
+
+def round_button(icon_name: str, tooltip: str = "", on_click=None) -> Gtk.Button:
+    """A round accent icon button (a text area's Send)."""
+    b = Gtk.Button(icon_name=icon_name, css_classes=["sonata-round"], tooltip_text=tooltip, can_focus=False)
+    if on_click:
+        b.connect("clicked", lambda _b: on_click())
+    return b

@@ -53,6 +53,10 @@ class GalleryWindow(Gtk.ApplicationWindow):
                         _disabled(controls.push_button("Disabled"))))
         col.append(_row("Pop-up button", controls.popup_button(["Automatic", "Light", "Dark"])))
         col.append(_row("Switches", controls.switch(True), controls.switch(False)))
+        col.append(_row("Text fields", _sized(controls.text_field(placeholder="Name"), 180),
+                        _sized(controls.text_field("secret", secret=True), 180)))
+        col.append(_row("Text area", _sized(controls.TextArea(
+            "Message", trailing=controls.round_button("go-up-symbolic", "Send")), 360)))
         tip_anchor = Gtk.Label(label="Hover label anchor")
         self.tip = label.HoverLabel(tip_anchor, "Firefox", hover=False)
         col.append(_row("Hover label", tip_anchor))
