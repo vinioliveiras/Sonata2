@@ -2065,7 +2065,73 @@ class Settings(Adw.ApplicationWindow):
         bars.add(switch_row("Glass title bars", app.get("glass_titlebars", False), self._set_glass_titlebars,
                             subtitle="See-through, blurred title bars on every window, GNOME apps too "
                                      "(experimental; heavier on the graphics card)"))
-        return [g, s, bars, self._glass_group(), self._corners_group()]
+        reset = self._reset_group("Reset Appearance", "Accent colour, style, icons, title bars, glass and "
+                                  "corners back to the theme's defaults", self.ask_reset_appearance)
+        return [g, s, bars, self._glass_group(), self._corners_group(), reset]
+
+    def _reset_group(self, title, subtitle, ask):
+        """A section's last row: everything on it back to the defaults (asked first)."""
+        g = group()
+        row = Adw.ActionRow(title=title, subtitle=subtitle, use_markup=False)
+        rb = ui.controls.push_button("Reset\u2026", ask, style="destructive")
+        rb.set_valign(Gtk.Align.CENTER)
+        row.add_suffix(rb)
+        g.add(row)
+        g.reset_button = rb                            # (tests)
+        return g
+
+    # what Reset Appearance puts back (Vini: the theme's defaults); light/dark is
+    # the system's setting and stays
+    APPEARANCE_RESET = ("accent", "theme", "icon_theme", "flatpak_theme", "system_titlebars",
+                        "glass_titlebars", "glass", "radius")
+
+    def ask_reset_appearance(self):
+        return ui.dialog.alert("Reset Appearance?",
+                               "The accent colour, style, icons, title bars, glass and corners go back to "
+                               "the theme's defaults.",
+                               [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
+                               lambda rid: rid == "reset" and self.reset_appearance(), parent=self)
+
+    def reset_appearance(self) -> None:
+        import copy
+        from .. import flatpak_theme, titlebars, wfconfig
+        from ..ui import tokens
+        for src in ("_glass_src", "_glass_wf_src", "_radius_src"):      # a slider still saving
+            if getattr(self, src, 0):
+                GLib.source_remove(getattr(self, src))
+                setattr(self, src, 0)
+        self._glass_pending, self._radius_pending = {}, {}
+        old = config.load("appearance", icons.APPEARANCE_DEFAULTS)
+        for k in self.APPEARANCE_RESET:
+            self._save("appearance", k, copy.deepcopy(icons.APPEARANCE_DEFAULTS[k]))
+        dark = Adw.StyleManager.get_default().get_dark()
+        flatpak = old.get(flatpak_theme.KEY) != icons.APPEARANCE_DEFAULTS[flatpak_theme.KEY]
+
+        def apply():
+            for sec, k, v in wfconfig.frame_options(tokens.frame()):
+                if k in ("rounded_corner_radius", "radius"):
+                    system.wayfire_set(sec, k, v)
+            titlebars.apply(icons.APPEARANCE_DEFAULTS["system_titlebars"])
+            titlebars.apply_colors(dark)
+            if flatpak:
+                flatpak_theme.apply()
+        system.run_async(apply, None)
+        self.rebuild_page("appearance")
+        if old.get("icon_theme") != icons.APPEARANCE_DEFAULTS["icon_theme"]:
+            self.ask_restart("sonata", "Sonata's icons")
+        else:
+            self.toast("Appearance reset")
+
+    def rebuild_page(self, sid) -> None:
+        """The section built again from its settings (shown as it is now)."""
+        sid = section_of(sid)
+        page = self.pages.pop(sid, None)
+        if page is None:
+            return
+        self.content.remove(page)                 # (a stack child's name must be free again)
+        if self.current == sid:
+            self.current = None
+            self.select(sid, from_sidebar=True)
 
     # -- glass, per part (ui/glass.py) -------------------------------------------------------
     def _glass_group(self):
@@ -2258,7 +2324,40 @@ class Settings(Adw.ApplicationWindow):
                            subtitle="The menu at the left end of the menu bar"))
         logo.add(text_row)                                # text:custom: your words (emoji drawn in one colour)
         logo.menu_text_row = text_row                     # (tests)
-        return [g, logo]
+        reset = self._reset_group("Reset Desktop & Dock", "The Dock's and menu bar's options back to the "
+                                  "defaults; your apps and folders in the Dock stay", self.ask_reset_dock)
+        return [g, logo, reset]
+
+    # what Reset Desktop & Dock puts back: options, never what's in the Dock
+    # (pinned apps, folders, stacks, recents) nor the default browser
+    DOCK_RESET = ("icon_size", "magnification", "magnified_size", "position", "autohide", "all_displays",
+                  "show_recents", "click_minimizes", "bounce", "indicators", "minimize_effect", "edge_gap")
+
+    def ask_reset_dock(self):
+        return ui.dialog.alert("Reset Desktop & Dock?",
+                               "The Dock's and menu bar's options go back to the defaults. The apps and folders "
+                               "in your Dock stay.",
+                               [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
+                               lambda rid: rid == "reset" and self.reset_dock(), parent=self)
+
+    def reset_dock(self) -> None:
+        import copy
+        from ..shell import dock as D, topbar as T
+        for k in self.DOCK_RESET:
+            self._save("dock", k, copy.deepcopy(D.DEFAULTS[k]))
+        for k, v in T.DEFAULTS.items():
+            self._save("topbar", k, v)
+        for k in ("menu_logo", "menu_text"):
+            self._save("appearance", k, icons.APPEARANCE_DEFAULTS[k])
+
+        def apply():
+            system.wayfire_set("animate", "minimize_animation",
+                               "squeezimize" if D.DEFAULTS["minimize_effect"] == "genie" else "zoom")
+            system.set_gsetting("org.gnome.desktop.wm.preferences", "action-double-click-titlebar",
+                                "toggle-maximize")
+        system.run_async(apply, None)
+        self.rebuild_page("dock")
+        self.toast("Desktop & Dock reset")
 
     def _page_launchpad(self):
         g = group(names.APPS)
@@ -2473,7 +2572,39 @@ class Settings(Adw.ApplicationWindow):
         click.connect("released", tapped)
         sub.add_controller(click)
         sub.logs_row = logs_row                    # (tests)
-        return [hero, specs, shell]
+        reset = group("Reset", "Both ask first, then you log out and back in.")
+        for title, subtitle, what in (
+                ("Reset Settings", "Every Sonata setting back to the defaults. Your Dock and Launchpad "
+                                   "apps, folders and your apps' data stay.", "settings"),
+                ("Reset Sonata", "Sonata as just installed: settings, Dock and Launchpad layout, history and "
+                                 "caches. Notes, calendars and other app data go to the Trash.", "everything")):
+            row = Adw.ActionRow(title=title, subtitle=subtitle, use_markup=False)
+            rb = ui.controls.push_button("Reset\u2026", lambda w=what: self.ask_factory_reset(w),
+                                         style="destructive")
+            rb.set_valign(Gtk.Align.CENTER)
+            row.add_suffix(rb)
+            reset.add(row)
+        return [hero, specs, shell, reset]
+
+    def ask_factory_reset(self, what: str):
+        title, body = {
+            "settings": ("Reset all settings?",
+                         "Every Sonata setting goes back to the default. Your Dock and Launchpad apps and "
+                         "folders, protected apps and your apps' data stay."),
+            "everything": ("Reset Sonata?",
+                           "Sonata goes back to how it was just installed: every setting, the Dock and "
+                           "Launchpad layout, history and caches are removed. Notes, calendars, TextEdit and "
+                           "Music data are moved to the Trash."),
+        }[what]
+        return ui.dialog.alert(title, body, [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
+                               lambda rid: rid == "reset" and self.factory_reset(what), parent=self)
+
+    def factory_reset(self, what: str) -> None:
+        """Then a new login: Wayfire's options and the graphics card choice are read there."""
+        from .. import factory_reset
+        gone = (factory_reset.everything if what == "everything" else factory_reset.settings_only)()
+        print(f"sonata2-settings: reset {what}: {len(gone)} items", flush=True)
+        self.ask_restart("session", "The reset")
 
     # Settings that take effect only after a restart (each asks "now or later"):
     #   sonata   Restart Sonata    Accessibility > Graphics, Appearance > Icons, About > Detailed Logs

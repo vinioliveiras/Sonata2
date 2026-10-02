@@ -18,7 +18,16 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import icons, ui  # noqa: E402
+from .. import apps as _apps  # noqa: E402
 from .. import launchpad_model as M  # noqa: E402
+
+
+def _keywords(info) -> str:
+    """Search words of an app (robust to GioUnix binding the method unbound)."""
+    try:
+        return " ".join(info.get_keywords() or [])
+    except (AttributeError, TypeError):
+        return _apps._entry_field(info, "", "Keywords").replace(";", " ")
 from . import layer  # noqa: E402
 
 WIDTH = 680
@@ -292,8 +301,9 @@ class Spotlight(Gtk.ApplicationWindow):
         calc = calculate(q)
         if calc is not None:
             results.append(("Calculator", "calc", (q, calc)))
-        meta = {i: (a.get_display_name(), " ".join(filter(None, (a.get_generic_name(), a.get_description(),
-                                                                  " ".join(a.get_keywords() or [])))))
+        meta = {i: (a.get_display_name(), " ".join(filter(None, (
+                    _apps._entry_field(a, "get_generic_name", "GenericName"), a.get_description(),
+                    _keywords(a)))))
                 for i, a in self.apps.items()}
         app_ids = M.search(meta, q, limit=SHOW["apps"])
         found = self.index.search(q) if len(q) > 1 else []

@@ -616,6 +616,53 @@ class DockFolderTest(unittest.TestCase):
         self.assertEqual(d.folder(fkey)["apps"], [a, b])
         d._drag = None
 
+    # -- renaming (Vini) --------------------------------------------------------------
+    def test_rename_from_the_panel_title(self):
+        d, a, b = self.dock, *self.apps[:2]
+        fkey = d.make_folder([a, b], name="Work")
+        settle()
+        pop = F.open_panel(d, d.tiles[fkey])
+        settle()
+        self.assertTrue(pop.title.get_editable())
+        pop.title.start_editing()
+        pop.title.set_text("  Games  ")
+        pop.title.stop_editing(True)
+        self.assertEqual(d.folder(fkey)["name"], "Games")
+        self.assertEqual(d.tiles[fkey].name, "Games")
+        self.assertEqual(D.load_config()["folders"][F.folder_id(fkey)]["name"], "Games")   # saved
+        self.assertEqual(pop.sig, F._signature(d.folder(fkey)))                    # kept panel still current
+        pop.title.start_editing()
+        pop.title.set_text("   ")                                                  # empty: the old name
+        pop.title.stop_editing(True)
+        self.assertEqual(d.folder(fkey)["name"], "Games")
+        self.assertEqual(pop.title.get_text(), "Games")
+        pop.popdown()
+        settle()
+
+    def test_rename_menu_starts_editing(self):
+        d, a, b = self.dock, *self.apps[:2]
+        fkey = d.make_folder([a, b], name="Work")
+        settle()
+        pop = F.open_panel(d, d.tiles[fkey], rename=True)
+        settle()
+        self.assertTrue(pop.title.get_editing())
+        pop.popdown()                                                              # closing commits
+        settle()
+        self.assertFalse(pop.title.get_editing())
+        src = open(F.__file__).read()
+        self.assertIn('Item("Rename\\u2026", lambda: open_panel(dock, tile, rename=True))', src)
+
+    def test_locked_name_not_editable_before_password(self):
+        d, a, b = self.dock, *self.apps[:2]
+        fkey = d.make_folder([a, b], name="Work")
+        d.set_folder_locked(fkey, True)
+        settle()
+        pop = F.open_panel(d, d.tiles[fkey])
+        settle()
+        self.assertFalse(pop.title.get_editable())
+        pop.popdown()
+        settle()
+
     def test_poof_window_is_see_through(self):
         import inspect
         from sonata2.shell import poof

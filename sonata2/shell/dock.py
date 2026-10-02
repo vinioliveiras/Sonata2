@@ -1181,6 +1181,14 @@ class Dock(Gtk.Box):
         self.save_cfg()
         self._relayout()
 
+    def rename_folder(self, fkey, name: str) -> None:
+        f = self.folder(fkey)
+        name = (name or "").strip()
+        if f is None or not name:
+            return
+        f["name"] = name
+        self._folder_changed(fkey)
+
     def set_folder_locked(self, fkey, on: bool) -> None:
         """Lock: what's inside shows only after the password (asked by the
         menu before unlocking -- see dock_folder.folder_menu)."""

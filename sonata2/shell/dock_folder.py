@@ -297,7 +297,7 @@ def _signature(folder: dict) -> tuple:
     return folder["name"], tuple(folder["apps"])
 
 
-def open_panel(dock, tile, then=None) -> Gtk.Popover:
+def open_panel(dock, tile, then=None, rename=False) -> Gtk.Popover:
     """The folder's apps in a panel over its icon, zooming in from it (a
     locked folder asks for the password first; `then`: ask, then run it
     instead of showing the apps). An unlocked folder's panel is built once
@@ -309,6 +309,8 @@ def open_panel(dock, tile, then=None) -> Gtk.Popover:
     if cached is not None:
         if reuse and cached.sig == _signature(folder) and not cached.get_visible():
             _replay(cached)
+            if rename:
+                _edit_title(cached)
             return cached
         if not cached.get_visible():
             cached.unparent()
@@ -317,9 +319,14 @@ def open_panel(dock, tile, then=None) -> Gtk.Popover:
     P = Gtk.PositionType
     pop.set_offset(*{P.TOP: (0, -8), P.LEFT: (-8, 0), P.RIGHT: (8, 0)}[dock.away])
     view = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["dock-folder-view"])
-    view.append(Gtk.Label(label=folder["name"], css_classes=["dock-folder-title"],
-                          ellipsize=Pango.EllipsizeMode.END, max_width_chars=28))
-    pop.view, pop.flow, pop.lock, pop.sig = view, None, None, _signature(folder)
+    # the name: click it to rename (Vini), like Launchpad's folders; editable
+    # once the apps show (a locked folder: after its password)
+    title = Gtk.EditableLabel(text=folder["name"], css_classes=["dock-folder-title"], editable=False,
+                              halign=Gtk.Align.CENTER, max_width_chars=28)
+    view.append(title)
+    pop.view, pop.flow, pop.lock, pop.sig, pop.title = view, None, None, _signature(folder), title
+    pop.rename = rename
+    _title_editing(dock, tile, pop)
     pop.set_child(view)
     pop.set_parent(tile)
     if reuse:
@@ -419,6 +426,46 @@ def _apps_view(dock, tile, pop) -> None:
     scroll.set_child(flow)
     pop.view.append(scroll)
     pop.flow = flow                             # (tests)
+    pop.title.set_editable(True)
+    if pop.rename:
+        pop.rename = False
+        _edit_title(pop)
+
+
+def _edit_title(pop) -> None:
+    def start():
+        if pop.get_visible() and pop.title.get_editable():
+            pop.title.start_editing()
+        return False
+    GLib.idle_add(start)
+
+
+def _title_editing(dock, tile, pop) -> None:
+    """Typing needs the keyboard (the Dock takes none); the name is saved
+    when editing stops (Enter, or a click elsewhere), Esc keeps the old one."""
+    title = pop.title
+    from . import layer
+
+    def changed(*_):
+        win = tile.get_root()
+        if title.get_editing():
+            if win is not None:
+                layer.take_keyboard(win, True)
+            return
+        if win is not None and pop.lock is None:        # (the password view keeps it while open)
+            layer.take_keyboard(win, False)
+        name = title.get_text().strip()
+        f = dock.folder(tile.key)
+        if f is None:
+            return
+        if not name:
+            title.set_text(f["name"])
+            return
+        if name != f["name"]:
+            dock.rename_folder(tile.key, name)
+            pop.sig = _signature(dock.folder(tile.key))     # the kept panel stays current
+    title.connect("notify::editing", changed)
+    pop.connect("closed", lambda _p: title.get_editing() and title.stop_editing(True))
 
 
 def close_panel(pop, then=None) -> None:
@@ -479,7 +526,8 @@ def folder_menu(dock, tile):
     else:
         lock = Item("Lock Folder", lambda: dock.set_folder_locked(tile.key, True))
         ungroup = Item("Ungroup", lambda: dock.ungroup(tile.key))
-    return ui.menu.popup(tile, [[Item("Open", lambda: open_panel(dock, tile))],
+    return ui.menu.popup(tile, [[Item("Open", lambda: open_panel(dock, tile)),
+                                 Item("Rename\u2026", lambda: open_panel(dock, tile, rename=True))],
                                 [lock],
                                 [ungroup, Item("Remove from Dock", lambda: remove_with_puff(dock, tile))]],
                          position=dock.away)

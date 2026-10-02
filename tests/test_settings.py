@@ -147,6 +147,93 @@ class SettingsTest(unittest.TestCase):
             self.assertIn("ask_restart(", src[i:i + 300], setting)
         win.destroy()
 
+    def test_reset_appearance(self):
+        """Vini: one button puts Appearance back to the theme's defaults (asked
+        first); other settings stay."""
+        from unittest import mock
+        from sonata2 import icons
+        config.save("appearance", {"accent": "#ff00aa", "glass": {"dock": {"on": False}, "blur": 90},
+                                   "radius": {"window": 3}, "glass_titlebars": True, "system_titlebars": False,
+                                   "menu_text": "Vini", "screen_corners": False})
+        win = S.Settings(None, "appearance")
+        win.present()
+        win.select("appearance", from_sidebar=True)
+        settle(150)
+        before = win.pages["appearance"]
+        with mock.patch("sonata2.ui.dialog.alert") as alert, mock.patch.object(S.system, "run_async") as run:
+            win.ask_reset_appearance()
+            answered = alert.call_args[0][3]
+            answered("cancel")
+            self.assertEqual(config.load("appearance", icons.APPEARANCE_DEFAULTS)["accent"], "#ff00aa")      # nothing before yes
+            answered("reset")
+            run.assert_called()
+        a = config.load("appearance", icons.APPEARANCE_DEFAULTS)
+        for k in S.Settings.APPEARANCE_RESET:
+            self.assertEqual(a[k], icons.APPEARANCE_DEFAULTS[k], k)
+        self.assertEqual((a["menu_text"], a["screen_corners"]), ("Vini", False))   # not on this page: kept
+        settle(150)
+        self.assertIsNot(win.pages["appearance"], before)                          # shown as it is now
+        self.assertIs(win.content.get_visible_child(), win.pages["appearance"])
+        win.destroy()
+
+    def test_reset_dock(self):
+        """Vini: Desktop & Dock back to the defaults; the Dock's apps and folders stay."""
+        from unittest import mock
+        from sonata2 import icons
+        from sonata2.shell import dock as D, topbar as T
+        pins = ["org.gnome.Nautilus.desktop", "folder:f1"]
+        folders = {"f1": {"name": "Work", "apps": ["a.desktop", "b.desktop"]}}
+        config.save("dock", {"icon_size": 90, "position": "left", "autohide": True, "pinned": pins,
+                             "folders": folders, "minimize_effect": "scale"})
+        config.save("topbar", {"battery_percent": True, "clock_format": "%H:%M"})
+        config.update("appearance", menu_text="Vini", menu_logo="text", accent="pink")
+        win = S.Settings(None, "dock")
+        win.present()
+        win.select("dock", from_sidebar=True)
+        settle(150)
+        before = win.pages["dock"]
+        with mock.patch("sonata2.ui.dialog.alert") as alert, mock.patch.object(S.system, "run_async") as run:
+            win.ask_reset_dock()
+            answered = alert.call_args[0][3]
+            answered("cancel")
+            self.assertEqual(config.load("dock", D.DEFAULTS)["icon_size"], 90)
+            answered("reset")
+            run.assert_called()
+        d = config.load("dock", D.DEFAULTS)
+        for k in S.Settings.DOCK_RESET:
+            self.assertEqual(d[k], D.DEFAULTS[k], k)
+        self.assertEqual((d["pinned"], d["folders"]), (pins, folders))           # the Dock's contents stay
+        self.assertEqual(config.load("topbar", T.DEFAULTS), T.DEFAULTS)
+        a = config.load("appearance", icons.APPEARANCE_DEFAULTS)
+        self.assertEqual((a["menu_text"], a["menu_logo"]), ("", icons.APPEARANCE_DEFAULTS["menu_logo"]))
+        self.assertEqual(a["accent"], "pink")                                      # another section's
+        settle(150)
+        self.assertIsNot(win.pages["dock"], before)
+        win.destroy()
+        config.save("dock", {})
+        config.save("topbar", {})
+        config.save("appearance", {})
+
+    def test_about_resets_ask_first(self):
+        """Vini: About > Reset Settings / Reset Sonata, asked first, then log out."""
+        from unittest import mock
+        from sonata2 import factory_reset
+        win = S.Settings(None, "about")
+        win.select("about", from_sidebar=True)
+        settle(100)
+        for what, fn in (("settings", "settings_only"), ("everything", "everything")):
+            with mock.patch("sonata2.ui.dialog.alert") as alert, \
+                    mock.patch.object(factory_reset, fn, return_value=[]) as run, \
+                    mock.patch.object(win, "ask_restart") as restart:
+                win.ask_factory_reset(what)
+                answered = alert.call_args[0][3]
+                answered("cancel")
+                run.assert_not_called()
+                answered("reset")
+                run.assert_called_once()
+                self.assertEqual(restart.call_args[0][0], "session")
+        win.destroy()
+
     def test_opens_on_general_with_the_shared_sidebar(self):
         """Settings opened on the pane left open last time: General, unless a pane is asked for.
         Every app's source list: one width (ui.window.SIDEBAR_W)."""
