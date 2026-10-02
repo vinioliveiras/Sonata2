@@ -451,7 +451,20 @@ def _app_button(dock, tile, key, pop) -> Gtk.Button:
         ui.menu.Item("Remove from Folder", lambda: (pop.popdown(), dock.remove_from_folder(tile.key, key)))]],
         at=(x, y)))
     b.add_controller(menu)
+    # dragged out of the panel: out of the folder, into the Dock (Vini)
+    src = Gtk.DragSource(actions=Gdk.DragAction.MOVE)
+    src.connect("prepare", lambda *_: Gdk.ContentProvider.new_for_value(key))
+    src.connect("drag-begin", lambda _s, drag: _drag_out(dock, tile, key, pop, drag))
+    src.connect("drag-cancel", lambda *_: True)          # no snap back into a closed panel
+    src.connect("drag-end", lambda *_: dock.folder_app_drag_end(tile.key, key))
+    b.add_controller(src)
     return b
+
+
+def _drag_out(dock, tile, key, pop, drag) -> None:
+    pop.popdown()                                        # the Dock is reachable under it
+    if not dock.folder_app_drag_begin(tile.key, key, drag):
+        drag.drop_done(False)
 
 
 # -- menus -------------------------------------------------------------------------------------

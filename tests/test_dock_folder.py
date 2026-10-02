@@ -544,6 +544,78 @@ class DockFolderTest(unittest.TestCase):
         puff.assert_called_once()
         self.assertNotIn(a, d.cfg["pinned"])
 
+    # -- dragging an app out of the folder's panel (Vini: couldn't) ----------------
+    def _drag_out(self, fkey, key):
+        from unittest import mock
+        d = self.dock
+        with mock.patch.object(D.ui.drag, "hang", return_value=None):
+            self.assertTrue(d.folder_app_drag_begin(fkey, key, object()))
+        return d
+
+    def test_panel_apps_can_be_dragged(self):
+        d, a, b = self.dock, *self.apps[:2]
+        fkey = d.make_folder([a, b])
+        settle()
+        pop = F.open_panel(d, d.tiles[fkey])
+        settle()
+        btn = pop.flow.get_first_child().get_child()
+        srcs = [c for c in list(btn.observe_controllers()) if isinstance(c, Gtk.DragSource)]
+        self.assertEqual(len(srcs), 1)
+        pop.popdown()
+        settle()
+
+    def test_dragged_out_and_dropped_on_dock(self):
+        d, a, b, c = self.dock, *self.apps[:3]
+        fkey = d.make_folder([a, b, c])
+        settle()
+        self._drag_out(fkey, c)
+        self.assertEqual(d.folder(fkey)["apps"], [a, b])      # out of the folder at once
+        self.assertIn(c, d.tiles)
+        self.assertFalse(d.tiles[c].get_visible())             # shows where the pointer reaches the Dock
+        x, y = self._centre(d.tiles[d.app_tiles()[0].key])
+        d._drag_motion(None, x - 30, y)
+        self.assertTrue(d.tiles[c].get_visible())
+        self.assertTrue(d._drag_drop(None, c, x - 30, y))
+        d.folder_app_drag_end(fkey, c)
+        self.assertIsNone(d._drag)
+        self.assertIn(c, d.cfg["pinned"])
+        self.assertIn(fkey, d.cfg["pinned"])                   # two apps left: still a folder
+
+    def test_dragged_out_elsewhere_stays_after_folder(self):
+        """Released away from the Dock: out of the folder, never lost."""
+        d, a, b, c = self.dock, *self.apps[:3]
+        fkey = d.make_folder([a, b, c])
+        settle()
+        self._drag_out(fkey, b)
+        d.folder_app_drag_end(fkey, b)
+        pins = d.cfg["pinned"]
+        self.assertEqual(pins[pins.index(fkey) + 1], b)
+        self.assertTrue(d.tiles[b].get_visible())
+        self.assertFalse(d.tiles[b].has_css_class("dragging"))
+        self.assertEqual(D.load_config()["folders"][F.folder_id(fkey)]["apps"], [a, c])   # saved
+
+    def test_last_app_dragged_out_ungroups(self):
+        d, a, b = self.dock, *self.apps[:2]
+        fkey = d.make_folder([a, b])
+        settle()
+        self._drag_out(fkey, a)
+        self.assertIn(fkey, d.tiles)                           # kept while its panel holds the drag
+        d.folder_app_drag_end(fkey, a)
+        settle()
+        self.assertNotIn(fkey, d.cfg["pinned"])
+        self.assertIn(a, d.cfg["pinned"])
+        self.assertIn(b, d.cfg["pinned"])
+
+    def test_drag_out_refused_while_another_drag(self):
+        d, a, b = self.dock, *self.apps[:2]
+        fkey = d.make_folder([a, b])
+        d._drag = {"key": "x", "index": 0, "left": False, "dropped": False}
+        self.assertFalse(d.folder_app_drag_begin(fkey, a, object()))
+        d.folder_app_drag_end(fkey, a)                         # leaves the other drag alone
+        self.assertEqual(d._drag["key"], "x")
+        self.assertEqual(d.folder(fkey)["apps"], [a, b])
+        d._drag = None
+
     def test_poof_window_is_see_through(self):
         import inspect
         from sonata2.shell import poof

@@ -1099,20 +1099,59 @@ class Dock(Gtk.Box):
         self._unpin_into_folder(key)
         self._folder_changed(fkey)
 
-    def remove_from_folder(self, fkey, key) -> None:
-        """The app comes back to the Dock right after the folder."""
+    def remove_from_folder(self, fkey, key, ungroup_last: bool = True) -> None:
+        """The app comes back to the Dock right after the folder (a folder
+        left with one app is ungrouped, unless ungroup_last is False)."""
         f = self.folder(fkey)
         if f is None or key not in f["apps"]:
             return
         f["apps"].remove(key)
         pins = self.cfg["pinned"]
         if key not in pins:
-            pins.insert(pins.index(fkey) + 1, key)
+            pins.insert(pins.index(fkey) + 1 if fkey in pins else len(pins), key)
             self._add_known_tile(key)
-        if len(f["apps"]) <= 1:
+        if len(f["apps"]) <= 1 and ungroup_last:
             self.ungroup(fkey)
             return
         self._folder_changed(fkey)
+
+    # -- an app dragged out of a folder's panel (Vini) --------------------------
+    def folder_app_drag_begin(self, fkey, key, drag) -> bool:
+        """Out of the folder: the app's own icon comes back to the Dock and is
+        dragged like any other -- dropped on the Dock it lands there (or in
+        another folder), anywhere else it stays right after the folder. A
+        folder left with one app is ungrouped when the drag ends (its panel
+        holds the drag's source until then)."""
+        if self._drag is not None or key not in (self.folder(fkey) or {}).get("apps", ()):
+            return False
+        self.remove_from_folder(fkey, key, ungroup_last=False)
+        tile = self.tiles.get(key)
+        if tile is None:
+            return False
+        self._drag_begin(None, drag, tile)
+        self._drag["left"] = True
+        self._drag["from_folder"] = fkey
+        tile.set_visible(False)                    # its slot opens where the pointer reaches the Dock
+        return True
+
+    def folder_app_drag_end(self, fkey, key) -> None:
+        tile = self.tiles.get(key)
+        d = self._drag
+        if d is None or d.get("from_folder") != fkey:
+            return                                 # (its begin was refused)
+        if tile is not None:
+            self._drag_end(None, None, False, tile)   # never removed from the Dock: it left a folder
+        else:
+            self._drag = None
+        if d is not None and not d["dropped"]:
+            self._save_order()
+
+        def last():
+            f = self.folder(fkey)
+            if f is not None and len(f["apps"]) <= 1:
+                self.ungroup(fkey)
+            return False
+        GLib.idle_add(last)
 
     def ungroup(self, fkey) -> None:
         """The folder's apps go back to the Dock in its place."""
