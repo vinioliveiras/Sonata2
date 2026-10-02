@@ -42,6 +42,7 @@ APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
            "setup": "io.github.vinioliveiras.sonata2.setup",
            "calculator": "io.github.vinioliveiras.sonata2.calculator",
            "notes": "io.github.vinioliveiras.sonata2.notes",
+           "assistant": "io.github.vinioliveiras.sonata2.assistant",
            "activity": "io.github.vinioliveiras.sonata2.activity",
            "videos": "io.github.vinioliveiras.sonata2.videos",
            "music": "io.github.vinioliveiras.sonata2.music",
@@ -109,7 +110,7 @@ def run_dock(app, args, ui):
                     ("videos", "videos_desktop_file"), ("music", "music_desktop_file"),
                     ("diskutil", "diskutil_desktop_file"), ("calendar", "calendar_desktop_file"),
                     ("camera", "camera_desktop_file"), ("feedback", "feedback_desktop_file"),
-                    ("clock", "clock_desktop_file")):
+                    ("clock", "clock_desktop_file"), ("assistant", "assistant_desktop_file")):
         try:                                   # an app that fails to load never keeps the Dock from starting
             import importlib
             getattr(importlib.import_module(f".{mod}.window", __package__), fn)(self_command())
@@ -1077,7 +1078,7 @@ def main() -> int:
         return app.run([sys.argv[0]] + uris)
 
     if args.component in ("textedit", "preview", "terminal", "notes", "activity", "videos", "music", "diskutil",
-                          "calendar", "camera", "feedback", "clock"):   # files/folders open in the running one
+                          "calendar", "camera", "feedback", "clock", "assistant"):   # files/folders open in the running one
         from gi.repository import Gio
         import importlib
         app.set_flags(Gio.ApplicationFlags.HANDLES_OPEN)
