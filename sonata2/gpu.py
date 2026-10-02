@@ -138,6 +138,21 @@ def set_compositor_on_display_gpu(on: bool) -> None:
         pass
 
 
+def notify(summary: str, body: str, icon: str = "video-display") -> bool:
+    """An urgent notification from "Sonata" (False when no server answered)."""
+    try:
+        from gi.repository import Gio, GLib
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                      "org.freedesktop.Notifications", "Notify",
+                      GLib.Variant("(susssasa{sv}i)", ("Sonata", 0, icon, summary, body, [],
+                                                       {"urgency": GLib.Variant("y", 2)}, -1)),
+                      None, Gio.DBusCallFlags.NONE, 2000, None)
+        return True
+    except Exception:
+        return False
+
+
 def crash_marker() -> str:
     """Left by tools/sonata-session when Wayfire crashed on the displays' GPU."""
     return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
@@ -166,19 +181,10 @@ def crash_notice() -> bool:
                 return False
     except OSError:
         return False
-    try:
-        from gi.repository import Gio, GLib
-        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-        bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
-                      "org.freedesktop.Notifications", "Notify",
-                      GLib.Variant("(susssasa{sv}i)", (
-                          "Sonata", 0, "video-display",
-                          "Graphics set back to the integrated card",
-                          "The last session ended because the discrete card refused memory. "
-                          "Sonata draws with the integrated card again (Settings > Displays > Graphics); "
-                          "games still use the discrete card.", [], {"urgency": GLib.Variant("y", 2)}, -1)),
-                      None, Gio.DBusCallFlags.NONE, 2000, None)
-    except Exception:
+    if not notify("Graphics set back to the integrated card",
+                  "The last session ended because the discrete card refused memory. "
+                  "Sonata draws with the integrated card again (Settings > Displays > Graphics); "
+                  "games still use the discrete card."):
         return False                              # not told yet: tried again later
     mtime = crashed_at()
     try:

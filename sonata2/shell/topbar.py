@@ -1320,6 +1320,9 @@ class TopBarWindow(Gtk.ApplicationWindow):
                 _tries["n"] += 1
                 return not gpu.crash_notice() and gpu.crashed_at() is not None and _tries["n"] < 6
             GLib.timeout_add_seconds(4, _gpu_notice)
+            from ..vram import VramWatch                          # a full NVIDIA card: who, and a warning
+            self.bar.vram = VramWatch(notify=gpu.notify)
+            self.bar.vram.start()
             from ..backend.equalizer import Equalizer
             self.bar.equalizer = Equalizer()
             self.bar.equalizer.start()
