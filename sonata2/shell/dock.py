@@ -429,30 +429,6 @@ class DockDivider(DockLine):
             self.dock.set_icon_size(size, save=False)
 
 
-# Docks of this process (one per display with all_displays) and the Wayfire
-# events that move windows between displays: their genie targets follow.
-_DOCKS = []
-_WATCH = {"on": False}
-
-
-def _watch_outputs() -> None:
-    """Once per process: when a window appears or moves to another display,
-    every Dock re-aims its windows' minimize targets (the window's display's
-    Dock must set it; Wayfire can't translate a target from another display)."""
-    if _WATCH["on"]:
-        return
-    _WATCH["on"] = True
-    from ..wl.wfipc import WayfireIPC
-    ipc = WayfireIPC()
-    _WATCH["ipc"] = ipc
-
-    def event(_msg):
-        for d in list(_DOCKS):
-            d._rects_soon()
-    if not ipc.watch(["view-mapped", "view-set-output"], event):
-        _WATCH["on"] = False
-
-
 class Dock(Gtk.Box):
     """The plate with all tiles. Hosted by DockWindow or by the preview.
     `manager` is a wl.toplevels.ToplevelManager (None = no window tracking)."""
@@ -531,15 +507,11 @@ class Dock(Gtk.Box):
         if self.manager:
             self.manager.listeners.append(self._schedule_sync)
             self._schedule_sync()
-            _DOCKS.append(self)
-            _watch_outputs()
 
     def detach(self) -> None:
         """Stop listening to shared objects (before the Dock is replaced)."""
         if self.manager and self._schedule_sync in self.manager.listeners:
             self.manager.listeners.remove(self._schedule_sync)
-        if self in _DOCKS:
-            _DOCKS.remove(self)
 
     def _spacer(self) -> Gtk.Box:
         return Gtk.Box(height_request=PAD_SIDE) if self.vertical else Gtk.Box(width_request=PAD_SIDE)
@@ -1493,8 +1465,11 @@ class Dock(Gtk.Box):
         tile.remove_css_class("dragging")
         self._hold_over(None)
         d, self._drag = self._drag, None
-        # moved somewhere else that took it (Launchpad): out of the Dock
-        if delete and d and not d["dropped"] and tile.key not in PERMANENT:
+        # moved somewhere else that took it (Launchpad), or let go away from
+        # the Dock and taken as a copy (the desktop took a folder's text:
+        # Vini couldn't drag a folder off the Dock): out of the Dock (macOS)
+        if d and not d["dropped"] and (delete or (d.get("left") and not d.get("from_folder"))) \
+                and tile.key not in PERMANENT:
             self.set_pinned(tile.key, False)
             if d.get("left"):                      # dropped onto the desktop or another app: the puff too
                 self._poof(d)
@@ -1564,16 +1539,6 @@ class Dock(Gtk.Box):
         if not surface:
             return False
         mine, placed = self._windows_here(surface)
-        several = self.cfg.get("all_displays", False)
-        if placed is None and several:
-            # Wayfire's IPC didn't answer (busy at login): each Dock would aim
-            # every window at itself and the last one won -- the laptop's
-            # windows flew to the other screen's icons (Vini). Try again soon.
-            self._rects_tries = getattr(self, "_rects_tries", 0) + 1
-            if self._rects_tries <= 10:
-                GLib.timeout_add(1000, lambda: (self._update_rectangles(), False)[1])
-            return False
-        self._rects_tries = 0
         # Wayfire adds the Dock surface's *layout* position to the rectangle
         # but animates in the display's own coordinates: on a display that
         # isn't at the layout's origin (a second screen to the right) the
@@ -1581,10 +1546,7 @@ class Dock(Gtk.Box):
         mon = self.get_display().get_monitor_at_surface(surface)
         g = mon.get_geometry() if mon else None
         ox, oy = (g.x, g.y) if g else (0, 0)
-        my_apps = {a for a, _t in mine}
-        # apps with a window on another display: a title Wayfire hadn't seen
-        # yet can't tell which of their windows is here
-        elsewhere = {a for a, _t in (placed or set()) - mine}
+        several = self.cfg.get("all_displays", False)
         for key, wins in self.windows.items():
             tile = self.tiles.get(key)
             ok, b = tile.compute_bounds(native) if tile else (False, None)
@@ -1592,7 +1554,7 @@ class Dock(Gtk.Box):
                 continue
             for t in wins:
                 here = placed is None or (t.app_id, t.title) in mine or \
-                    ((t.app_id, t.title) not in placed and t.app_id in my_apps and t.app_id not in elsewhere)
+                    ((t.app_id, t.title) not in placed and t.app_id in {a for a, _t in mine})
                 if here:
                     self.manager.set_rectangle(t, surface, b.get_x() - ox, b.get_y() - oy,
                                                b.get_width(), b.get_height())
@@ -1630,8 +1592,6 @@ class Dock(Gtk.Box):
             shown = [t for t in wins if not t.minimized]
             if self.cfg.get("click_minimizes", True) and any(t.activated for t in shown) and not over_launchpad:
                 # the app in front: clicking its icon minimizes its windows (Vini)
-                for d in list(_DOCKS) or [self]:
-                    d._update_rectangles()     # aimed from the display each window is on now
                 for t in shown:
                     self.manager.minimize(t)
                 return

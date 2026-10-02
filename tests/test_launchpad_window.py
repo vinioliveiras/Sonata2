@@ -189,6 +189,64 @@ class MenuModeTest(unittest.TestCase):
         src = open(LW.__file__).read()
         self.assertNotIn(".lpw-more label", src)
 
+    def test_drag_beside_an_icon_reorders(self):
+        """Vini: icons couldn't be arranged by dragging in the Apps Menu."""
+        order = [it for p in self.pad.model.pages for it in p]
+        first, last = order[0], order[-1]
+        tile = next(t for t in self.menu.tiles if t.item == last)
+        self.pad._drag = {"item": last, "widget": tile, "folder": None, "target": None}
+        want = (first, False)                                  # before the first one
+        self.pad._drag["pending"] = want
+        self.menu._reorder(want)
+        self.pad._drag = None
+        self.assertEqual(self.pad.model.pages[0][0], last)
+        self.assertEqual([t.item for t in self.menu.tiles][0], last)
+
+    def test_no_reorder_in_a_tab(self):
+        self.menu.set_tab("utilities")
+        tile = self.menu.tiles[0]
+        self.pad._drag = {"item": "gimp", "widget": tile, "folder": None, "target": None}
+        fb = self.menu.body.get_last_child()
+        self.menu.drag_over(fb, 1, 1)
+        self.assertIsNone(self.pad._drag.get("pending"))
+        self.pad._drag = None
+
+    def test_click_behind_the_folder_closes_it(self):
+        """Vini: a click outside the folder didn't close it (only outside the menu)."""
+        self.pad.model.make_folder("calc", "files", "Work")
+        self.pad.save()
+        self.pad.render()
+        folder = next(t for t in self.menu.tiles if isinstance(t.item, dict))
+        self.pad.activate_item(folder)
+        settle(100)
+        self.assertFalse(self.menu.content.get_can_target())  # the dimmed apps take no clicks
+        ok, b = self.menu.panel.compute_bounds(self.menu.root)
+        self.menu._outside(None, 1, b.get_x() + 4, b.get_y() + b.get_height() - 4)   # the menu's corner
+        self.assertIsNone(self.pad.folder_view)
+        self.assertTrue(self.menu.content.get_can_target())
+        self.assertTrue(self.pad.get_visible())                # the menu stays
+
+    def test_options_menu_both_layouts(self):
+        with mock.patch.object(ui.menu, "popup") as popup:
+            LW.options_menu(self.pad, self.menu.panel)
+        labels = [i.label for sec in popup.call_args[0][1] for i in sec]
+        self.assertIn("Use Full-Screen Apps", labels)
+        self.assertTrue(self.pad.more.has_css_class("lp-more"))  # the full screen has it too
+        self.pad.mode = "fullscreen"
+        with mock.patch.object(ui.menu, "popup") as popup:
+            LW.options_menu(self.pad, self.pad.more)
+        labels = [i.label for sec in popup.call_args[0][1] for i in sec]
+        self.assertIn("Use Apps Menu", labels)
+        self.assertIn("Apps Settings\u2026", labels)
+        self.pad.mode = "menu"
+
+    def test_highlight_same_size_and_grey(self):
+        """Vini: the hover followed the name's length, and was blue (grey in the full screen)."""
+        settle(100)
+        widths = {t.get_width() for t in self.menu.tiles if isinstance(t.item, str)}
+        self.assertEqual(len(widths), 1, widths)
+        self.assertNotIn(".lp-item.selected { background: alpha(%(accent)s", open(LW.__file__).read())
+
     def test_hide_moves_it_into_hidden(self):
         self.pad.hide_app("gimp")
         settle(50)

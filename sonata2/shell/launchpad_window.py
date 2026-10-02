@@ -71,7 +71,7 @@ ui.register("""
 /* Launchpad's tiles, on the panel instead of the dimmed desktop */
 .lpw-root .lp-item { padding: 8px 2px 6px 2px; border-radius: 14px; transition: background-color %(t_fast)s; }
 .lpw-root .lp-item:hover { background: alpha(%(label)s, 0.07); }
-.lpw-root .lp-item.selected { background: alpha(%(accent)s, 0.22); }
+.lpw-root .lp-item.selected { background: alpha(%(label)s, 0.12); }   /* grey, as in the full screen (Vini) */
 .lpw-root .lp-label { color: %(label)s; font-size: %(text_body)s; text-shadow: none; margin-top: 4px; }
 .lpw-root .lp-panel { background: %(launchpad_material)s; box-shadow: 0 0 0 0.5px %(hairline)s,
   0 12px 40px rgba(0,0,0,0.28); }
@@ -104,6 +104,28 @@ def category_of(info) -> str:
         if cats & names:
             return cid
     return OTHER[0]
+
+
+SETTINGS_PAGE = "appearance"          # where the style is chosen (Vini)
+
+
+def set_style(pad, s: str) -> None:
+    config.update(NAME, style=s)
+    pad.close_launchpad()
+
+
+def open_style_settings(pad) -> None:
+    from .topbar import open_settings
+    pad.close_launchpad(lambda: open_settings(SETTINGS_PAGE))
+
+
+def options_menu(pad, btn) -> None:
+    """The "•••" menu, in both layouts: the other layout, and its settings."""
+    Item = ui.menu.Item
+    other = (Item(f"Use Full-Screen {names.APPS}", lambda: set_style(pad, "fullscreen"))
+             if pad.mode == "menu" else Item(f"Use {names.APPS_MENU}", lambda: set_style(pad, "window")))
+    ui.menu.popup(btn, [[other], [Item(f"{names.APPS} Settings\u2026", lambda: open_style_settings(pad))]],
+                  position=Gtk.PositionType.BOTTOM)
 
 
 def panel_size(w: int, h: int) -> tuple:
@@ -229,31 +251,31 @@ class MenuView:
         else:
             pad.close_launchpad()
 
+    @staticmethod
+    def _inside(widget, root, x, y) -> bool:
+        ok, b = widget.compute_bounds(root)
+        return ok and b.get_x() <= x <= b.get_x() + b.get_width() and b.get_y() <= y <= b.get_y() + b.get_height()
+
     def _outside(self, _g, _n, x, y) -> None:
-        ok, b = self.panel.compute_bounds(self.root)
-        inside = ok and b.get_x() <= x <= b.get_x() + b.get_width() and b.get_y() <= y <= b.get_y() + b.get_height()
-        if inside:
+        """A click outside the open folder closes the folder (Vini: only a
+        click outside the whole menu did); outside the menu, the menu."""
+        fv = self.pad.folder_view
+        if fv:
+            panel = fv[2]                               # the folder's own panel (its title row too)
+            if not (self._inside(panel, self.root, x, y) or self._inside(fv[0].get_first_child(), self.root, x, y)):
+                self.pad._close_folder()
             return
-        if self.pad.folder_view:
-            self.pad._close_folder()
-        else:
+        if not self._inside(self.panel, self.root, x, y):
             self.pad.close_launchpad()
 
     def _menu(self, btn) -> None:
-        Item = ui.menu.Item
-        ui.menu.popup(btn, [[Item(f"Use Full-Screen {names.APPS}", lambda: self.set_style("fullscreen"))],
-                            [Item(f"{names.APPS} Settings\u2026", self._settings)]],
-                      position=Gtk.PositionType.BOTTOM)
+        options_menu(self.pad, btn)
 
     def set_style(self, s: str) -> None:
-        config.update(NAME, style=s)
-        self.pad.close_launchpad()
-
-    SETTINGS_PAGE = "appearance"          # where the style is chosen (Vini)
+        set_style(self.pad, s)
 
     def _settings(self) -> None:
-        from .topbar import open_settings
-        self.pad.close_launchpad(lambda: open_settings(self.SETTINGS_PAGE))
+        open_style_settings(self.pad)
 
     # -- content ----------------------------------------------------------------------------------
     def _apps(self) -> dict:
@@ -311,6 +333,7 @@ class MenuView:
         if hasattr(w, "badge"):
             w.badge.set_visible(self.pad.jiggling)
         w.set_vexpand(False)                           # (the full screen's cells stretch; rows here don't)
+        w.set_halign(Gtk.Align.FILL)                   # every highlight the cell's size, whatever the name (Vini)
         self.tiles.append(w)
         return w
 
@@ -376,19 +399,49 @@ class MenuView:
         from .launchpad import LaunchItem
         while picked is not None and not isinstance(picked, LaunchItem):
             picked = picked.get_parent()
-        if picked is not None and not M.is_folder(d["item"]) and picked.item is not d["item"] \
-                and picked.item != d["item"]:
-            ok, b = picked.compute_bounds(fb)
-            cx, cy = b.get_x() + b.get_width() / 2, b.get_y() + b.get_height() / 2
-            if ok and abs(x - cx) < b.get_width() * 0.3 and abs(y - cy) < b.get_height() * 0.3:
-                if d["target"] is not picked:
-                    pad._clear_target()
-                    d["target"] = picked
-                    from .launchpad import FOLDER_HOLD_MS
-                    pad._timer("folder", FOLDER_HOLD_MS, lambda: picked.add_css_class("folder-target"))
-                return Gdk.DragAction.MOVE
+        if picked is None or picked.item is d["item"] or picked.item == d["item"]:
+            pad._clear_target()
+            return Gdk.DragAction.MOVE
+        ok, b = picked.compute_bounds(fb)
+        cx, cy = b.get_x() + b.get_width() / 2, b.get_y() + b.get_height() / 2
+        if ok and not M.is_folder(d["item"]) and abs(x - cx) < b.get_width() * 0.3 \
+                and abs(y - cy) < b.get_height() * 0.3:
+            pad._cancel("reorder")
+            d["pending"] = None
+            if d["target"] is not picked:
+                pad._clear_target()
+                d["target"] = picked
+                from .launchpad import FOLDER_HOLD_MS
+                pad._timer("folder", FOLDER_HOLD_MS, lambda: picked.add_css_class("folder-target"))
+            return Gdk.DragAction.MOVE
         pad._clear_target()
+        # beside an icon: the dragged one moves there (Vini: icons couldn't be
+        # arranged here) -- in your order only (no tab, no search), after a pause
+        if ok and self.tab is None and not self.search.get_text().strip():
+            want = (picked.item, x >= cx)
+            if d.get("pending") != want:
+                d["pending"] = want
+                pad._cancel("reorder")
+                from .launchpad import REORDER_HOLD_MS
+                pad._timer("reorder", REORDER_HOLD_MS, lambda: self._reorder(want))
         return Gdk.DragAction.MOVE
+
+    def _reorder(self, want) -> None:
+        pad = self.pad
+        d = pad._drag
+        if not d or d.get("pending") != want:
+            return
+        d["pending"] = None
+        target, after = want
+        loc, src = pad._top_location(target), pad._top_location(d["item"])
+        if loc is None or src is None:                # (Hidden, or inside a folder)
+            return
+        p, i = loc[0], loc[1] + (1 if after else 0)
+        if src[0] == p and src[1] < i:
+            i -= 1
+        if (p, i) != src:
+            pad.model.move(d["item"], p, i)
+            pad.render()
 
     def drag_drop(self, value=None) -> bool:
         pad = self.pad

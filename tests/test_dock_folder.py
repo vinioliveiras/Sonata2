@@ -704,6 +704,29 @@ class DockFolderTest(unittest.TestCase):
             self.assertEqual(json.load(fh)["pages"][0][0]["folder"], "Games")
         config.save("launchpad", {})
 
+    def test_folder_dragged_off_onto_a_copy_target_goes(self):
+        """Vini: a folder dragged off the Dock stayed: the desktop accepted its
+        text as a copy (no "delete"), and nothing removed it."""
+        from unittest import mock
+        d = self.dock
+        fkey = d.make_folder(self.apps[:2], name="W")
+        settle()
+        tile = d.tiles[fkey]
+        d._drag = {"key": fkey, "index": 0, "left": True, "dropped": False}
+        with mock.patch.object(D.Dock, "_poof") as puff:
+            d._drag_end(None, None, False, tile)
+        puff.assert_called_once()
+        self.assertNotIn(fkey, d.cfg["pinned"])
+        self.assertNotIn(F.folder_id(fkey), d.cfg["folders"])
+
+    def test_dropped_back_on_the_dock_stays(self):
+        d = self.dock
+        fkey = d.make_folder(self.apps[:2], name="W")
+        settle()
+        d._drag = {"key": fkey, "index": 0, "left": False, "dropped": True}
+        d._drag_end(None, None, False, d.tiles[fkey])
+        self.assertIn(fkey, d.cfg["pinned"])
+
     def test_poof_window_is_see_through(self):
         import inspect
         from sonata2.shell import poof

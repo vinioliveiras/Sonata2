@@ -54,6 +54,10 @@ window.sonata-launchpad *:drop(active) { box-shadow: none; outline: none; border
 .lp-panel-title, .lp-panel-title text { color: %(on_scrim)s; font-family: %(font_display)s;
   font-size: 30px; font-weight: 600; background: none; }
 .lp-dots { color: %(on_scrim)s; }
+.lp-more { border-radius: 99px; min-width: 30px; min-height: 30px; padding: 0; border: none; box-shadow: none;
+  background: %(field_on_scrim)s; color: %(on_scrim)s; }
+.lp-more:hover { background: %(tile_on_scrim)s; }
+.lp-more .lp-more-dots { font-size: 15px; letter-spacing: 1px; margin-top: -4px; }
 .lp-badge { min-width: 20px; min-height: 20px; padding: 0; border-radius: 99px; border: none;
   background: rgba(60, 60, 64, 0.92); color: white; box-shadow: 0 1px 3px rgba(0,0,0,0.4);
   -gtk-icon-size: 10px; }
@@ -308,6 +312,13 @@ class Launchpad(Gtk.ApplicationWindow):
         self.col.append(dots)
         self.overlay = Gtk.Overlay()
         self.overlay.set_child(self.col)
+        # the "•••" menu, as in the Apps Menu (Vini): the other layout, its settings
+        self.more = Gtk.Button(child=Gtk.Label(label="\u2022\u2022\u2022", css_classes=["lp-more-dots"]),
+                               css_classes=["lp-more"], can_focus=False, halign=Gtk.Align.END,
+                               valign=Gtk.Align.START, margin_top=40, margin_end=48, tooltip_text="Options")
+        self.more.connect("clicked", lambda b: __import__("sonata2.shell.launchpad_window",
+                                                          fromlist=["options_menu"]).options_menu(self, b))
+        self.overlay.add_overlay(self.more)
         self.bin = ZoomBin(self.overlay)
         self.set_child(self.bin)
 
@@ -508,6 +519,7 @@ class Launchpad(Gtk.ApplicationWindow):
         self.folder_view = (wrap, None, panel)
         wrap.add_css_class("lp-folder-view")
         dim.add_css_class("dimmed")
+        dim.set_can_target(False)                 # a click behind the folder closes it
         entry.grab_focus()
 
         def done(ok):
@@ -709,7 +721,7 @@ class Launchpad(Gtk.ApplicationWindow):
         w = picked
         while w is not None and w is not self.bin:
             if isinstance(w, (LaunchItem, Gtk.SearchEntry, Adw.CarouselIndicatorDots, Gtk.EditableLabel)) or \
-                    (w.has_css_class("lp-panel")):
+                    w.has_css_class("lp-panel") or w.has_css_class("lp-more"):
                 return
             w = w.get_parent()
         if self.folder_view:
@@ -773,6 +785,7 @@ class Launchpad(Gtk.ApplicationWindow):
         self.folder_view = (wrap, folder, panel)
         wrap.add_css_class("lp-folder-view")
         dim.add_css_class("dimmed")
+        dim.set_can_target(False)                 # a click behind the folder closes it (Vini)
 
     def _close_folder(self) -> None:
         """Zooms/fades out (the grid comes back at once for drags and clicks)."""
@@ -781,6 +794,7 @@ class Launchpad(Gtk.ApplicationWindow):
             self.folder_view = None
             host, dim = self._host()
             dim.remove_css_class("dimmed")
+            dim.set_can_target(True)
             wrap.set_can_target(False)
             wrap.add_css_class("closing")
             GLib.timeout_add(ui.tokens.ms(160) + 20, lambda: (
