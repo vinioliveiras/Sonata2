@@ -18,7 +18,8 @@
   --accent-2: #7c6fe0;
   --bg: #f7f9fc;
   --bg-soft: #eef2f8;
-  --hero: url("img/hero-day.jpg");
+  --hero: url("img/hero-day.jpg");     /* the Mountains wallpaper, also in Dark (Vini) */
+  --veil: 50%;
   --card: rgba(255, 255, 255, 0.72);
   --card-border: rgba(0, 0, 0, 0.07);
   --text: #16171d;
@@ -29,13 +30,13 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0a0f1c; --bg-soft: #101829; --card: rgba(24, 32, 52, 0.66); --hero: url("img/hero-night.jpg");
+    --bg: #0a0f1c; --bg-soft: #101829; --veil: 70%; --card: rgba(24, 32, 52, 0.66);
     --card-border: rgba(255, 255, 255, 0.08); --text: #f2f3f8; --muted: #a2a5b8;
     --shadow: 0 30px 90px -20px rgba(0, 0, 0, 0.7);
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0a0f1c; --bg-soft: #101829; --card: rgba(24, 32, 52, 0.66); --hero: url("img/hero-night.jpg");
+  --bg: #0a0f1c; --bg-soft: #101829; --veil: 70%; --card: rgba(24, 32, 52, 0.66);
   --card-border: rgba(255, 255, 255, 0.08); --text: #f2f3f8; --muted: #a2a5b8;
   --shadow: 0 30px 90px -20px rgba(0, 0, 0, 0.7);
 }
@@ -86,7 +87,7 @@ nav .links a:hover { color: var(--text); }
   filter: blur(14px) saturate(1.15); transform: scale(1.04);   /* soft, so the screenshot stands out */
   -webkit-mask-image: linear-gradient(#000 45%, transparent); mask-image: linear-gradient(#000 45%, transparent); }
 .sky::after { content: ""; position: absolute; inset: 0;
-  background: linear-gradient(color-mix(in srgb, var(--bg) 50%, transparent), color-mix(in srgb, var(--bg) 20%, transparent) 40%, var(--bg)); }
+  background: linear-gradient(color-mix(in srgb, var(--bg) var(--veil), transparent), color-mix(in srgb, var(--bg) 30%, transparent) 45%, var(--bg)); }
 @keyframes settle { from { transform: scale(1.1); opacity: 0; } }
 .eyebrow {
   display: inline-flex; gap: 8px; align-items: center; font-size: 13px; font-weight: 600; color: var(--muted);
@@ -166,6 +167,7 @@ h2 { font-size: clamp(32px, 4.6vw, 56px); line-height: 1.07; letter-spacing: -0.
 .list li { display: flex; gap: 10px; color: var(--muted); }
 .list li::before { content: ""; flex: none; width: 8px; height: 8px; margin-top: 9px; border-radius: 50%; background: var(--accent); }
 .frame { position: relative; border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--card-border); }
+.frame { cursor: zoom-in; }
 .frame img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; transition: opacity .5s var(--ease); }
 .frame img.top { position: absolute; inset: 0; }
 .frame .tint { position: absolute; inset: 0; background: var(--accent); mix-blend-mode: color; opacity: .14; transition: background-color .4s; pointer-events: none; }
@@ -470,8 +472,13 @@ cd sonata2 &amp;&amp; ./install.sh</div>
 
   // screenshots open larger
   const box = document.getElementById("lightbox"), big = box.querySelector("img");
-  document.querySelectorAll(".gallery img, .frame img").forEach((img) => img.addEventListener("click", () => {
-    big.src = img.currentSrc || img.src; big.alt = img.alt; box.classList.add("open");
+  const open = (img) => { big.src = img.currentSrc || img.src; big.alt = img.alt; box.classList.add("open"); };
+  document.querySelectorAll(".gallery img").forEach((img) => img.addEventListener("click", () => open(img)));
+  // a frame holds the light and the dark picture on top of each other: the one showing opens
+  // (the dark one, invisible, took the click in Light)
+  document.querySelectorAll(".frame").forEach((f) => f.addEventListener("click", () => {
+    const shown = [...f.querySelectorAll("img")].filter((i) => getComputedStyle(i).opacity !== "0").pop();
+    if (shown) open(shown);
   }));
   const close = () => box.classList.remove("open");
   box.addEventListener("click", close);
