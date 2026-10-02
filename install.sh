@@ -79,7 +79,8 @@ if [ "$UNINSTALL" = 1 ]; then
     rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services/org.freedesktop.FileManager1.service" \
           "$BIN/sonata-filemanager1"
     rm -f "$HOME/.local/share/applications/sonata2-launchpad.desktop" \
-          "$HOME/.local/share/applications/sonata2-settings.desktop"
+          "$HOME/.local/share/applications/sonata2-settings.desktop" \
+          "$HOME/.local/share/applications/sonata2-screenshot.desktop"
     "$(dirname "$0")/tools/quiet-console.sh" revert || true
     sudo rm -f /etc/polkit-1/rules.d/50-sonata2-mount.rules 2>/dev/null || true
     say "Done. Your settings are still in $CFG/sonata2 (delete that folder to reset them)."

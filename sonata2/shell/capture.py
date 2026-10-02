@@ -691,3 +691,15 @@ class _Toolbar(Gtk.Window):
     def _go(self):
         self.set_visible(False)
         self.owner.run(self.mode, self.cfg)
+
+
+def capture_desktop_file(command: str) -> str:
+    """Screenshot in Launchpad and the Apps Menu (Vini): opens the capture
+    toolbar, the same as Super+Shift+5."""
+    from ..apps import write_desktop_file
+    return write_desktop_file("sonata2-screenshot.desktop",
+                              "[Desktop Entry]\nType=Application\nName=Screenshot\n"
+                              "Comment=Capture or record the screen, a window or a selection\n"
+                              "Icon=accessories-screenshot\nCategories=Utility;\n"
+                              "Keywords=screenshot;capture;record;screen;recording;print;\n"
+                              f"Exec={command} screenshot toolbar\n")

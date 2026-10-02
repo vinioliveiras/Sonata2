@@ -114,6 +114,8 @@ def run_dock(app, args, ui):
             getattr(importlib.import_module(f".{mod}.window", __package__), fn)(self_command())
         except Exception as e:
             print(f"sonata2-dock: {mod} desktop entry: {e}", file=sys.stderr)
+    from .shell.capture import capture_desktop_file
+    capture_desktop_file(self_command())               # Screenshot (the capture toolbar)
     cfg = dock.load_config()
     if not cfg.get("launchpad_added"):                        # once: pin it after Finder
         cfg["launchpad_added"] = True
