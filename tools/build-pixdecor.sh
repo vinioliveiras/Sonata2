@@ -11,9 +11,15 @@ for t in curl patch meson ninja pkg-config; do
     command -v "$t" >/dev/null || { echo "  pixdecor: needs $t"; exit 1; }
 done
 missing=""
-for p in wayfire pango cairo glm; do
+for p in wayfire pango cairo; do
     pkg-config --exists "$p" || missing="$missing $p"
 done
+# glm: Arch's package ships no pkg-config file, only CMake's -- meson then
+# finds it through cmake
+if ! pkg-config --exists glm; then
+    [ -f /usr/include/glm/glm.hpp ] || missing="$missing glm"
+    command -v cmake >/dev/null || missing="$missing cmake"
+fi
 if [ -n "$missing" ]; then
     echo "  pixdecor: needs the development files of:$missing"
     command -v pacman >/dev/null && echo "  Arch/CachyOS: sudo pacman -S --needed$missing"

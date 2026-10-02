@@ -288,7 +288,7 @@ if [ "$DEPS" = 1 ] && [[ "$family" == *arch* ]] && ! command -v meson >/dev/null
     $PM $NI meson ninja >/dev/null 2>&1 || true
 fi
 if [ "$DEPS" = 1 ] && [[ "$family" == *arch* ]] && ! pkg-config --exists glm 2>/dev/null; then
-    $PM $NI glm >/dev/null 2>&1 || true        # pixdecor (title bars) needs it
+    $PM $NI glm cmake >/dev/null 2>&1 || true  # pixdecor (title bars): glm, found through cmake
 fi
 if command -v meson >/dev/null && command -v ninja >/dev/null && pkg-config --exists wayfire 2>/dev/null; then
     say "Building Sonata's Wayfire plugin (rounded window corners)"
