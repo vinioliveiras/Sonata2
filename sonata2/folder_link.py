@@ -1,6 +1,8 @@
 """Folders linked between the Dock and Launchpad (Vini): a folder dragged
 from one to the other stays the same folder there -- renamed, or an app put
-in or taken out, the other follows. (The Dock's lock stays the Dock's.)
+in or taken out, the other follows. A folder made in the Dock appears in
+Launchpad by itself (at the end; not a locked one). (The Dock's lock stays
+the Dock's.)
 
 The link is a random id kept in both files: dock.json folders[id]["link"]
 and the Launchpad folder's "link". Each side pushes its folders after it
@@ -66,8 +68,16 @@ def to_launchpad(dock_folders) -> bool:
     if not data.get("pages"):
         return False
     linked_now = link_existing(dock_folders, data)
-    links = {d["link"]: d for d in _dock_folders(dock_folders) if d.get("link")}
     hidden = set(data.get("hidden") or [])
+    # a folder made in the Dock shows in Launchpad too (Vini), linked; a locked
+    # one keeps its apps private (Dock only)
+    for d in _dock_folders(dock_folders):
+        if d.get("link") or d.get("locked"):
+            continue
+        d["link"] = new_link()
+        data["pages"][-1].append({"folder": d.get("name") or "Untitled Folder", "apps": [], "link": d["link"]})
+        linked_now = True
+    links = {d["link"]: d for d in _dock_folders(dock_folders) if d.get("link")}
     changed = linked_now
     for f in _lp_folders(data):
         d = links.get(f.get("link"))

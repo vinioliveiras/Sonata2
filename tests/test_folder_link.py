@@ -34,6 +34,7 @@ class LinkTest(unittest.TestCase):
         self.assertFalse(L.to_launchpad(self.dock))                         # nothing new: not written again
 
     def test_dock_app_in_and_out(self):
+        del self.dock["2"]
         self.dock["1"]["apps"] = ["a", "c", "d"]                            # b out; c (top) and d (Other) in
         L.to_launchpad(self.dock)
         page = raw("launchpad")["pages"][0]
@@ -78,9 +79,20 @@ class LinkTest(unittest.TestCase):
         self.assertEqual(raw("dock")["folders"]["2"]["link"], link)
         self.assertEqual(self.lp_item(link)["apps"], ["d", "e"])
 
-    def test_unlinked_never_touched(self):
-        self.dock["2"]["name"] = "Changed"
+    def test_dock_made_folder_appears_in_launchpad(self):
+        """Vini: a folder made in the Dock shows in Launchpad too (linked)."""
+        self.dock["2"]["name"] = "Games"
         L.to_launchpad(self.dock)
+        link = self.dock["2"]["link"]
+        item = self.lp_item(link)
+        self.assertEqual((item["folder"], item["apps"]), ("Games", ["d", "e"]))
+        self.assertEqual(raw("dock")["folders"]["2"]["link"], link)          # linked from now on
+        self.assertFalse(L.to_launchpad(self.dock))                          # added once
+
+    def test_locked_dock_folder_stays_private(self):
+        self.dock["2"]["locked"] = True
+        L.to_launchpad(self.dock)
+        self.assertNotIn("link", self.dock["2"])
         names = [it["folder"] for it in raw("launchpad")["pages"][0] if isinstance(it, dict)]
         self.assertEqual(names, ["Work", "Other"])
 
