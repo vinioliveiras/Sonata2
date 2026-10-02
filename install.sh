@@ -290,6 +290,9 @@ fi
 if [ "$DEPS" = 1 ] && [[ "$family" == *arch* ]] && ! pkg-config --exists glm 2>/dev/null; then
     $PM $NI glm cmake >/dev/null 2>&1 || true  # pixdecor (title bars): glm, found through cmake
 fi
+if [ "$DEPS" = 1 ] && [[ "$family" == *arch* ]] && [ ! -f /usr/include/vulkan/vulkan_core.h ]; then
+    $PM $NI vulkan-headers >/dev/null 2>&1 || true   # wlroots' headers include them (pixdecor)
+fi
 if command -v meson >/dev/null && command -v ninja >/dev/null && pkg-config --exists wayfire 2>/dev/null; then
     say "Building Sonata's Wayfire plugin (rounded window corners)"
     bdir="$(mktemp -d)"

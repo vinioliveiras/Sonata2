@@ -25,7 +25,8 @@ class TitleTest(unittest.TestCase):
         self.assertIn("tail -n", build)
         self.assertIn('grep -E -A3 "error:', build)                  # errors first, not the warnings after them
         self.assertIn("glm", build)                                  # pixdecor needs it (Vini's build failed)
-        self.assertIn("command -v cmake", build)                     # Arch's glm is found only through cmake                              # a failed build says why
+        self.assertIn("command -v cmake", build)
+        self.assertIn("vulkan-headers", build)                       # wlroots' headers need them                     # Arch's glm is found only through cmake                              # a failed build says why
         import subprocess
         self.assertEqual(subprocess.run(["bash", "-n", "tools/build-pixdecor.sh"]).returncode, 0)
         self.assertEqual(subprocess.run(["bash", "-n", "install.sh"]).returncode, 0)

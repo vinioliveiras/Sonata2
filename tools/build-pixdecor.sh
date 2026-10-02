@@ -20,6 +20,8 @@ if ! pkg-config --exists glm; then
     [ -f /usr/include/glm/glm.hpp ] || missing="$missing glm"
     command -v cmake >/dev/null || missing="$missing cmake"
 fi
+# wlroots' headers include Vulkan's (Arch: vulkan-headers, not pulled in by wlroots)
+[ -f /usr/include/vulkan/vulkan_core.h ] || missing="$missing vulkan-headers"
 if [ -n "$missing" ]; then
     echo "  pixdecor: needs the development files of:$missing"
     command -v pacman >/dev/null && echo "  Arch/CachyOS: sudo pacman -S --needed$missing"
