@@ -1173,27 +1173,56 @@ def _hook_app(app) -> None:
         app.connect("window-removed", lambda _a, w: isinstance(w, TextEditWindow) and w._forget())
 
 
-def restore_session(app) -> bool:
-    """Bring back the saved windows and tabs; False when there were none."""
+def _merged(states: list):
+    """Every saved window as one: their tabs side by side, the frontmost
+    window's first (Vini: documents come back as tabs, never as a pile of
+    windows). A file in two windows comes back once; an empty Untitled tab
+    (no text, no file) is left out. None when nothing is left."""
+    tabs, seen, active_id = [], set(), None
+    for i, st in enumerate(states):
+        ts = [t for t in st.get("tabs") or [] if isinstance(t, dict)]
+        if i == 0 and ts:
+            active_id = ts[max(0, min(int(st.get("active") or 0), len(ts) - 1))].get("id")
+        for t in ts:
+            if not t.get("uri") and not t.get("backup"):
+                continue
+            key = t.get("uri") or ("id", t.get("id"))
+            if key in seen:
+                continue
+            seen.add(key)
+            tabs.append(t)
+    if not tabs:
+        return None
+    active = next((i for i, t in enumerate(tabs) if t.get("id") == active_id), 0)
+    return {**states[0], "tabs": tabs, "active": active}
+
+
+def restore_session(app):
+    """Bring back the saved documents as tabs of one window (the saved
+    session is used up: what is closed afterwards stays closed). The window,
+    or None when there was nothing to bring back."""
     _ensure_loaded()
     states, _S["parked"] = _S["parked"], []
-    shown = []
-    for st in reversed(states):                   # the frontmost one last, so it ends on top
-        w = TextEditWindow(app, restore={**st, "tabs": st.get("tabs") or []})
+    st = _merged(states)
+    shown = None
+    if st is not None:
+        w = TextEditWindow(app, restore=st)
         if any(not d.blank or d.file for d in w.docs):
             w.present()
-            shown.append(w)
+            shown = w
         else:
             w._closing = True
             w.destroy()
     schedule_save()
-    return bool(shown)
+    return shown
 
 
 def open_paths(app, paths) -> None:
     """Files become tabs of the frontmost window (files already open come
     forward). Without files: the open window comes forward, or the saved
-    session comes back, or an Untitled window."""
+    session comes back, or an Untitled window. With files and no window
+    open, the saved session comes back too, in the same window (it used to
+    wait hidden for the next launch, and its windows piled up)."""
     wins = [w for w in _S["windows"] if w.get_application() is app]
     if not paths:
         if wins:
@@ -1201,8 +1230,7 @@ def open_paths(app, paths) -> None:
         elif not restore_session(app):
             TextEditWindow(app).present()
         return
-    _ensure_loaded()                              # the saved session waits for the next launch
-    front = wins[0] if wins else None
+    front = wins[0] if wins else restore_session(app)
     for p in paths:
         f = Gio.File.new_for_commandline_arg(p)
         if _find_open(f):

@@ -299,9 +299,9 @@ class TextEditTest(unittest.TestCase):
         w.buffer.place_cursor(w.buffer.get_iter_at_offset(5))
         u = w.new_tab()
         u.buffer.insert_at_cursor("scratch notes ✓")
-        w.new_tab()                                                    # empty Untitled: kept, no text file
+        w.new_tab()                                                    # empty Untitled: not brought back
         w.select(w.docs[1])
-        names = [d.name for d in w.docs]
+        names = [d.name for d in w.docs][:2]
         tw.save_now()
         data = _json(os.path.join(session.data_dir(), "session.json"))
         tabs = data["windows"][0]["tabs"]
@@ -349,8 +349,49 @@ class TextEditTest(unittest.TestCase):
         self.assertEqual(len(tw._S["parked"]), 2)
         tw._S.update(parked=[], loaded=False)
         self.assertTrue(tw.restore_session(app()))
+        self.assertEqual(len(tw._S["windows"]), 1)                     # as tabs of one window
         texts = sorted(d.text() for w in tw._S["windows"] for d in w.docs)
         self.assertIn("don't lose me", texts)
+
+    def test_session_comes_back_as_tabs_and_closed_tabs_stay_closed(self):
+        # regression (Vini): opening a file kept the saved session hidden, so
+        # old windows piled up and all came back at once as windows, even
+        # after closing them
+        tw = self.tw
+        tw.session.save([])                                            # no session left by other tests
+        a, b, c = write("a.txt", "A"), write("b.txt", "B"), write("c.txt", "C")
+        for path in (a, b, c):                                         # three launches, each with a file
+            tw._S.update(parked=[], loaded=False)
+            tw.open_paths(app(), [path])
+            settle(50)
+            self.assertEqual(len(tw._S["windows"]), 1)
+            if path != c:
+                tw._S["windows"][0].close()
+                settle(50)
+        w = tw._S["windows"][0]
+        self.assertEqual(sorted(d.file.get_path() for d in w.docs), sorted([a, b, c]))
+        self.assertEqual(tw._S["parked"], [])                          # nothing left waiting
+        w._remove_tab(next(d for d in w.docs if d.file.get_path() == a))
+        w._remove_tab(next(d for d in w.docs if d.file.get_path() == b))
+        w.close()
+        settle(50)
+        for _ in range(2):                                             # two more launches
+            tw._S.update(parked=[], loaded=False)
+            tw.open_paths(app(), [])
+            settle(50)
+            self.assertEqual(len(tw._S["windows"]), 1)
+            self.assertEqual([d.file.get_path() for d in tw._S["windows"][0].docs], [c])
+            tw._S["windows"][0].close()
+            settle(50)
+
+    def test_merged_session_skips_duplicates_and_empty_untitled(self):
+        tw = self.tw
+        st = tw._merged([{"active": 1, "tabs": [{"id": "1" * 8, "uri": "file:///x"},
+                                                {"id": "2" * 8, "uri": None, "backup": True}]},
+                         {"tabs": [{"id": "3" * 8, "uri": "file:///x"}, {"id": "4" * 8, "uri": None}]}])
+        self.assertEqual([t["id"] for t in st["tabs"]], ["1" * 8, "2" * 8])
+        self.assertEqual(st["active"], 1)
+        self.assertIsNone(tw._merged([{"tabs": [{"id": "4" * 8, "uri": None}]}]))
 
     def test_look_settings(self):
         tw = self.tw
