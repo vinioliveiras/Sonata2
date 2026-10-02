@@ -5,6 +5,8 @@ capsule password field that shakes on a wrong password, the clock.
 Every colour and size of this look lives in the CSS below (tokens where
 Sonata has them), so another theme can restyle both screens at once."""
 import os
+import sys
+import threading
 
 import gi
 
@@ -78,20 +80,62 @@ def power_bar(action) -> Gtk.Widget:
                                 ("Shut Down", "system-shutdown-symbolic", "PowerOff")):
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         b = Gtk.Button(icon_name=icon, css_classes=["gr-power"], halign=Gtk.Align.CENTER, tooltip_text=label)
-        b.connect("clicked", lambda _b, m=method: action(m))
+        b.connect("clicked", lambda _b, m=method: (power_log(f"{m}: button clicked"), action(m)))
         col.append(b)
         col.append(Gtk.Label(label=label, css_classes=["gr-power-label"]))
         bar.append(col)
     return bar
 
 
+SYSTEMCTL = {"Suspend": "suspend", "Reboot": "reboot", "PowerOff": "poweroff"}
+
+
+def power_log(text: str) -> None:
+    """~/.cache/sonata2/power.log: what the power buttons did (Vini: Sleep and
+    Restart did nothing on the lock and login screens, and nothing said why)."""
+    import time
+    try:
+        d = os.path.join(GLib.get_user_cache_dir(), "sonata2")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "power.log"), "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {text}\n")
+    except OSError:
+        pass
+    print(f"sonata2-power: {text}", file=sys.stderr, flush=True)
+
+
 def logind(method: str) -> None:
+    """Ask logind; an error is logged and `systemctl` is tried instead (it
+    errored silently before)."""
+    power_log(f"{method}: asking logind")
+
+    def fallback(why):
+        power_log(f"{method}: logind refused ({why}); trying systemctl {SYSTEMCTL.get(method, '?')}")
+        cmd = SYSTEMCTL.get(method)
+        if not cmd:
+            return
+
+        def run():                                       # off the main loop: the screen stays responsive
+            import subprocess
+            try:
+                p = subprocess.run(["systemctl", cmd], capture_output=True, text=True, timeout=20)
+                power_log(f"{method}: systemctl exit {p.returncode} {p.stderr.strip()}")
+            except (OSError, subprocess.SubprocessError) as e:
+                power_log(f"{method}: systemctl failed: {e}")
+        threading.Thread(target=run, daemon=True).start()
+
+    def done(bus, res):
+        try:
+            bus.call_finish(res)
+            power_log(f"{method}: accepted")
+        except GLib.Error as e:
+            fallback(e.message)
     try:
         Gio.bus_get_sync(Gio.BusType.SYSTEM, None).call(
             "org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager",
-            method, GLib.Variant("(b)", (True,)), None, 0, -1, None, None, None)
-    except GLib.Error:
-        pass
+            method, GLib.Variant("(b)", (True,)), None, 0, -1, None, done)
+    except GLib.Error as e:
+        fallback(e.message)
 
 
 def wallpaper_texture():

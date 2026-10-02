@@ -1675,6 +1675,64 @@ class NvidiaNeverDrawsByDefaultRegressions(unittest.TestCase):
         self.assertEqual(self._run([("card0", "amdgpu"), ("card1", "nvidia")], {"SONATA_PRIMARY_GPU": "off"}), "|")
 
 
+class PowerButtonsRegressions(unittest.TestCase):
+    """Vini: Sleep / Restart on the lock and login screens did nothing; a
+    refused logind call was dropped without a word. Now it's logged and
+    systemctl is tried."""
+
+    def setUp(self):
+        self.cache = tempfile.mkdtemp()
+        self.old = os.environ.get("XDG_CACHE_HOME")
+        os.environ["XDG_CACHE_HOME"] = self.cache
+        from gi.repository import GLib
+        GLib.reload_user_special_dirs_cache() if hasattr(GLib, "reload_user_special_dirs_cache") else None
+
+    def tearDown(self):
+        if self.old is None:
+            os.environ.pop("XDG_CACHE_HOME", None)
+        else:
+            os.environ["XDG_CACHE_HOME"] = self.old
+
+    def test_refused_call_falls_back_to_systemctl(self):
+        from unittest import mock
+        from gi.repository import GLib
+        from sonata2.shell import loginui
+        bus = mock.MagicMock()
+
+        def call(*a):
+            cb = a[-1]
+            res = object()
+            bus.call_finish.side_effect = GLib.Error("Access denied")
+            cb(bus, res)
+        bus.call.side_effect = call
+        ran = []
+        with mock.patch("gi.repository.Gio.bus_get_sync", return_value=bus), \
+                mock.patch.object(loginui, "power_log", side_effect=lambda t: ran.append(t)), \
+                mock.patch("subprocess.run") as run:
+            run.return_value.returncode, run.return_value.stderr = 0, ""
+            loginui.logind("Reboot")
+            for _ in range(50):
+                if run.called:
+                    break
+                import time
+                time.sleep(0.02)
+        run.assert_called_once()
+        self.assertEqual(run.call_args[0][0], ["systemctl", "reboot"])
+        self.assertTrue(any("refused" in t for t in ran))
+
+    def test_buttons_log_and_ask(self):
+        from unittest import mock
+        from sonata2.shell import loginui
+        asked = []
+        with mock.patch.object(loginui, "power_log"):
+            bar = loginui.power_bar(asked.append)
+            col = bar.get_first_child()
+            while col is not None:
+                col.get_first_child().emit("clicked")
+                col = col.get_next_sibling()
+        self.assertEqual(asked, ["Suspend", "Reboot", "PowerOff"])
+
+
 class DisplayGpuOnlyRegressions(unittest.TestCase):
     """Vini: with the MUX in dGPU mode every screen is on the NVIDIA card, yet
     the Radeon 680M still worked for the session (copies) and its page fault
