@@ -14,11 +14,106 @@ index 3ae9968a..ff3a4b0f 100644
              auto texture = wf::texture_t::from_aux(self->snapshot);
              data.pass->add_texture(texture, data.target, self->get_bounding_box(), data.damage);
          }
+diff --git a/plugins/blur/blur-base.cpp b/plugins/blur/blur-base.cpp
+index a20d24cf..c2436326 100644
+--- a/plugins/blur/blur-base.cpp
++++ b/plugins/blur/blur-base.cpp
+@@ -112,7 +112,11 @@ void wf_blur_base::render_iteration(wf::region_t blur_region,
+     width  = std::max(width, 1);
+     height = std::max(height, 1);
+ 
+-    out.allocate({width, height});
++    if (out.allocate({width, height}) == wf::buffer_reallocation_result_t::FAILED)
++    {
++        alloc_failed = true;
++        return;
++    }
+ 
+     GLuint tex_id = wf::gles_texture_t::from_aux(in).tex_id;
+ 
+@@ -176,7 +180,11 @@ wlr_box wf_blur_base::copy_region(wf::auxilliary_buffer_t& result,
+     subbox = sanitize(subbox, degrade_opt, source_box);
+     int degraded_width  = subbox.width / degrade_opt;
+     int degraded_height = subbox.height / degrade_opt;
+-    result.allocate({degraded_width, degraded_height});
++    if (result.allocate({degraded_width, degraded_height}) == wf::buffer_reallocation_result_t::FAILED)
++    {
++        alloc_failed = true;
++        return {0, 0, 0, 0};
++    }
+ 
+     GLuint src_fb = wf::gles::ensure_render_buffer_fb_id(source);
+     GLuint dst_fb = wf::gles::ensure_render_buffer_fb_id(result.get_renderbuffer());
+@@ -192,15 +200,20 @@ wlr_box wf_blur_base::copy_region(wf::auxilliary_buffer_t& result,
+     return subbox;
+ }
+ 
+-void wf_blur_base::prepare_blur(const wf::render_target_t& target_fb, const wf::regionf_t& damage)
++bool wf_blur_base::prepare_blur(const wf::render_target_t& target_fb, const wf::regionf_t& damage)
+ {
+     if (damage.empty())
+     {
+-        return;
++        return true;
+     }
+ 
++    alloc_failed    = false;
+     int degrade     = degrade_opt;
+     auto damage_box = copy_region(fb[0], target_fb, damage);
++    if (alloc_failed)
++    {
++        return false;
++    }
+ 
+     /* As an optimization, we create a region that blur can use
+      * to perform minimal rendering required to blur. We start
+@@ -214,12 +227,18 @@ void wf_blur_base::prepare_blur(const wf::render_target_t& target_fb, const wf::
+     int r = blur_fb0(blur_damage, fb[0].get_size().width, fb[0].get_size().height);
+     /* Make sure the result is always fb[0], because that's what is used in render()
+      * */
++    if (alloc_failed)
++    {
++        return false;
++    }
++
+     if (r != 0)
+     {
+         std::swap(fb[0], fb[1]);
+     }
+ 
+     prepared_geometry = wf::from_integer_box(damage_box);
++    return true;
+ }
+ 
+ static wf::pointf_t get_center(wf::geometry_t g)
 diff --git a/plugins/blur/blur.cpp b/plugins/blur/blur.cpp
-index 4c27a419..c933aaa9 100644
+index 4c27a419..2c69a583 100644
 --- a/plugins/blur/blur.cpp
 +++ b/plugins/blur/blur.cpp
-@@ -213,6 +213,10 @@ class blur_render_instance_t : public transformer_render_instance_t<blur_node_t>
+@@ -178,7 +178,21 @@ class blur_render_instance_t : public transformer_render_instance_t<blur_node_t>
+         // Nodes below should re-render the padded areas so that we can sample from them
+         damage |= padded_region;
+ 
+-        saved_pixels->pixels.allocate(target.get_size());
++        if (saved_pixels->pixels.allocate(target.get_size()) == wf::buffer_reallocation_result_t::FAILED)
++        {
++            // The GPU refused the buffer (its memory full, e.g. a game): this
++            // frame without blur instead of a crash (bind_render_buffer on an
++            // empty buffer took the whole session down).
++            saved_pixels->region.clear();
++            self->release_saved_pixel_buffer(saved_pixels);
++            saved_pixels = nullptr;
++            for (auto& ch : this->children)
++            {
++                ch->schedule_instructions(instructions, target, damage);
++            }
++
++            return;
++        }
+ 
+         wf::gles::run_in_context_if_gles([&]
+         {
+@@ -213,16 +227,31 @@ class blur_render_instance_t : public transformer_render_instance_t<blur_node_t>
          {
              wf::dimensionsf_t render_size;
              auto contents = get_texture(data.target.scale, &render_size);
@@ -29,6 +124,109 @@ index 4c27a419..c933aaa9 100644
  
              auto tex = wf::gles_texture_t{contents};
              if (!data.damage.empty())
+             {
+                 auto translucent_damage = calculate_translucent_damage(data.target, data.damage);
+-                self->provider()->prepare_blur(data.target, translucent_damage);
+-
+                 wf::geometry_t render_geometry = wf::construct_box(wf::origin(bounding_box), render_size);
+                 render_geometry = data.target.aligned_geometry_from_geometry_box(render_geometry);
+-                self->provider()->render(tex, render_geometry, data.damage, data.target, data.target);
++                if (self->provider()->prepare_blur(data.target, translucent_damage))
++                {
++                    self->provider()->render(tex, render_geometry, data.damage, data.target, data.target);
++                } else
++                {
++                    // no buffer for the blur (GPU memory full): the window as it is
++                    wf::gles::bind_render_buffer(data.target);
++                    auto ortho = wf::gles::render_target_orthographic_projection(data.target);
++                    wf::gles::for_each_scissor_rect(data.target, data.damage, [&]
++                    {
++                        OpenGL::render_transformed_texture(tex, render_geometry, ortho,
++                            glm::vec4{1.0, 1.0, 1.0, 1.0});
++                    });
++                }
+             }
+ 
+             GL_CALL(glDisable(GL_SCISSOR_TEST));
+diff --git a/plugins/blur/blur.hpp b/plugins/blur/blur.hpp
+index ed6a8850..857a0b2d 100644
+--- a/plugins/blur/blur.hpp
++++ b/plugins/blur/blur.hpp
+@@ -94,6 +94,8 @@ class wf_blur_base
+     /* used to store temporary results in blur algorithms, cleaned up in base
+      * destructor */
+     wf::auxilliary_buffer_t fb[2];
++    /* a buffer couldn't be allocated in this frame's blur */
++    bool alloc_failed = false;
+     wf::geometry_t prepared_geometry;
+ 
+     /* the program created by the given algorithm, cleaned up in base destructor */
+@@ -139,7 +141,8 @@ class wf_blur_base
+      * @param target_fb A render target containing the background to be blurred.
+      * @param damage    The region to be blurred.
+      */
+-    void prepare_blur(const wf::render_target_t& target_fb, const wf::regionf_t& damage);
++    /** @return false when the GPU refused a buffer (its memory full): no blur this frame. */
++    bool prepare_blur(const wf::render_target_t& target_fb, const wf::regionf_t& damage);
+ 
+     /**
+      * Render a view with a blended background as prepared from @prepare_blur.
+diff --git a/plugins/common/workspace-wall.cpp b/plugins/common/workspace-wall.cpp
+index 2d15ffb1..6f47c9e4 100644
+--- a/plugins/common/workspace-wall.cpp
++++ b/plugins/common/workspace-wall.cpp
+@@ -158,7 +158,7 @@ class workspace_wall_t::workspace_wall_node_t : public scene::node_t
+                         visible_damage |= visible_box;
+                     }
+ 
+-                    if (!visible_damage.empty())
++                    if (!visible_damage.empty() && self->aux_buffers[i][j].get_buffer())  // (refused: skipped)
+                     {
+                         wf::render_target_t aux{self->aux_buffers[i][j]};
+                         aux.subbuffer = self->aux_buffer_current_subbox[i][j];
+@@ -202,6 +202,10 @@ class workspace_wall_t::workspace_wall_node_t : public scene::node_t
+                     auto B   = self->get_bounding_box();
+                     auto render_geometry = wf::scale_box(A, B, box);
+                     auto& buffer = self->aux_buffers[i][j];
++                    if (!buffer.get_buffer())
++                    {
++                        continue;     // the GPU refused it (its memory full): that workspace stays blank
++                    }
+ 
+                     float dim = self->wall->get_color_for_workspace({i, j});
+                     const auto& subbox = self->aux_buffer_current_subbox[i][j];
+diff --git a/plugins/grid/wayfire/plugins/crossfade.hpp b/plugins/grid/wayfire/plugins/crossfade.hpp
+index 6e52e4b9..bd9ee071 100644
+--- a/plugins/grid/wayfire/plugins/crossfade.hpp
++++ b/plugins/grid/wayfire/plugins/crossfade.hpp
+@@ -58,8 +58,13 @@ class crossfade_node_t : public scene::view_2d_transformer_t
+         const wf::geometry_t bbox = root_node->get_bounding_box();
+         const wf::geometry_t g    = view->get_geometry();
+         const float scale = view->get_output()->handle->scale;
+-        original_buffer.allocate(wf::dimensions(g), scale,
+-            wf::buffer_allocation_hints_t{.hdr_linear = view->get_output() && view->get_output()->is_hdr()});
++        if (original_buffer.allocate(wf::dimensions(g), scale,
++            wf::buffer_allocation_hints_t{.hdr_linear = view->get_output() && view->get_output()->is_hdr()}) ==
++            buffer_reallocation_result_t::FAILED)
++        {
++            original_buffer.free();          // the GPU refused it: no crossfade, the view as it is
++            return;
++        }
+ 
+         wf::render_target_t target{original_buffer};
+         target.geometry = view->get_geometry();
+@@ -188,6 +193,11 @@ class crossfade_render_instance_t : public scene::render_instance_t
+             ra = std::pow((self->overlay_alpha - 0.5) * 2, N) / 2.0 + 0.5;
+         }
+ 
++        if (!self->original_buffer.get_buffer())
++        {
++            return;
++        }
++
+         auto tex = wf::texture_t::from_buffer(
+             self->original_buffer.get_buffer(), self->original_buffer.get_texture());
+         data.pass->add_texture(tex, data.target, self->displayed_geometry, data.damage, 1.0 - ra);
 diff --git a/src/api/wayfire/view-transform.hpp b/src/api/wayfire/view-transform.hpp
 index 8c2a422b..4a6e90dd 100644
 --- a/src/api/wayfire/view-transform.hpp

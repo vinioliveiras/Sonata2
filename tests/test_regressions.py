@@ -1904,11 +1904,18 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         rendered into a buffer the full card refused."""
         patch = (pathlib.Path(__file__).resolve().parent.parent / "wayfire-plugin"
                  / "wayfire-buffer-failures.patch").read_text()
+        # Vini (a game filled the card): the blur's saved pixels, its passes,
+        # the workspace wall and grid's crossfade too
         for part in ("src/view/view.cpp", "plugins/animate/unmapped-view-node.hpp",
-                     "src/view/view-3d.cpp", "plugins/blur/blur.cpp"):
+                     "src/view/view-3d.cpp", "plugins/blur/blur.cpp", "plugins/blur/blur-base.cpp",
+                     "plugins/blur/blur.hpp", "plugins/common/workspace-wall.cpp",
+                     "plugins/grid/wayfire/plugins/crossfade.hpp"):
             self.assertIn("+++ b/" + part, patch)
         self.assertIn("wf::buffer_reallocation_result_t::FAILED", patch)
         self.assertIn("if (!self->snapshot.get_buffer())", patch)
+        self.assertIn("if (saved_pixels->pixels.allocate(target.get_size()) == wf::buffer_reallocation_result_t::FAILED)",
+                      patch)
+        self.assertIn("if (self->provider()->prepare_blur(data.target, translucent_damage))", patch)
 
     def _finish(self, code, ran, times=""):
         """Runs tools/sonata-session's finish() alone; "RESTARTED" when it

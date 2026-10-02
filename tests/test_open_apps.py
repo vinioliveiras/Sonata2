@@ -124,3 +124,31 @@ class FeedbackerRowTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class KeepTest(unittest.TestCase):
+    """Vini: after a crash, two Docks and two menu bars -- the old ones were
+    started again on the new compositor, next to the new session's own."""
+
+    def test_a_new_compositor_ends_the_old_components(self):
+        import subprocess
+        from sonata2 import __main__ as main
+        d = tempfile.mkdtemp()
+        sock = os.path.join(d, "wayland-1")
+        open(sock, "w").close()
+        state = {"n": 0}
+
+        class Child:
+            def __init__(self, *_a, **_k):
+                state["n"] += 1
+                os.remove(sock)                                 # the compositor goes...
+                time.sleep(0.01)
+                open(sock, "w").close()                         # ...and a new one makes its socket
+
+            def wait(self, timeout=None):
+                return 1                                        # the component lost its compositor
+        env = {"XDG_RUNTIME_DIR": d, "WAYLAND_DISPLAY": "wayland-1", "XDG_CACHE_HOME": d}
+        with mock.patch.dict(os.environ, env), mock.patch.object(subprocess, "Popen", Child), \
+                mock.patch.object(main, "share_session_env"):
+            self.assertEqual(main.keep(["dock"]), 0)
+        self.assertEqual(state["n"], 1)                          # not started again

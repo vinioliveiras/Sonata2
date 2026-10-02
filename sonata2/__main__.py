@@ -893,6 +893,16 @@ def share_session_env() -> None:
         pass
 
 
+def _socket_id(path: str):
+    """The Wayland socket's identity: a new compositor makes a new one (its
+    inode may be the old one's again; its change time isn't)."""
+    try:
+        st = os.stat(path)
+        return st.st_dev, st.st_ino, st.st_ctime_ns
+    except OSError:
+        return None
+
+
 def keep(argv) -> int:
     """`sonata2 keep dock` (session autostart): run a shell component and
     start it again if it crashes -- a desktop must never lose its Dock or
@@ -909,6 +919,8 @@ def keep(argv) -> int:
     if os.path.exists(log_path):
         os.replace(log_path, log_path[:-4] + ".old.log")
     share_session_env()
+    sock = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), os.environ.get("WAYLAND_DISPLAY", "wayland-0"))
+    session = _socket_id(sock)                 # the compositor this component belongs to
     crashes = []
     while True:
         started = time.monotonic()
@@ -922,8 +934,10 @@ def keep(argv) -> int:
                 except subprocess.TimeoutExpired:
                     from . import logs
                     logs.trim(log_path)
-        sock = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), os.environ.get("WAYLAND_DISPLAY", "wayland-0"))
-        if code in (0, -15, -2, 130, 143) or not os.path.exists(sock):     # on purpose, or the session ended
+        # on purpose, or the session ended -- also when Sonata already started
+        # again on a new compositor (the same socket name): its own Dock and
+        # menu bar are coming (Vini: two Docks and two menu bars after a crash)
+        if code in (0, -15, -2, 130, 143) or _socket_id(sock) != session or session is None:
             return 0
         now = time.monotonic()
         crashes = [t for t in crashes if now - t < 60] + [now]
