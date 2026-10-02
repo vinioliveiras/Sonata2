@@ -49,10 +49,16 @@ TITLEBAR_H = 28              # the compositor's title bar (config/wayfire.ini)
 MARGIN = 48                  # wallpaper around a framed window
 RADIUS = 10                  # r_window token
 MAX_BYTES = 350 * 1024
-# Sonata's default wallpaper (sonata2/shell/wallpaper.py): linear-gradient(160deg, ...)
-WALL_ANGLE = 160
-WALL_STOPS = ((0.0, (0x1d, 0x3b, 0x8f)), (0.38, (0x6b, 0x3f, 0xa0)), (0.70, (0xe0, 0x56, 0x7a)),
-              (1.0, (0xf3, 0xa4, 0x52)))
+# Sonata's default wallpaper (wallpapers.py "Mountains"): day in Light, night in Dark
+
+
+def wall(size, dark: bool = False):
+    """The default wallpaper cover-fit to `size` (RGBA), as the desktop shows it."""
+    from PIL import Image, ImageOps
+    from sonata2 import wallpapers
+    path = wallpapers.DEFAULT.dark if dark else wallpapers.DEFAULT.light
+    return ImageOps.fit(Image.open(path).convert("RGB"), size, Image.LANCZOS, centering=(0.5, 0.45)).convert("RGBA")
+
 
 # name -> (appearance, window size); the capture function is shot_<base name>
 SHOTS = {
@@ -981,15 +987,15 @@ def scene_base(name: str, raws: dict, work: str):
     """(base, frosted) PNG paths for a scene."""
     from PIL import Image
     src = SCENES[name][1]
-    wall = gradient(SCREEN, WALL_ANGLE, WALL_STOPS).convert("RGBA")
+    wall_img = wall(SCREEN, SCENES[name][0] == "dark")
     if src == "wall":
-        img = wall
+        img = wall_img
     elif src in INTERNAL:                                # a zoomed window between menu bar and Dock
         with open(raws[src] + ".json") as f:
             meta = json.load(f)
-        img = wall.copy()
+        img = wall_img.copy()
         layer = window_layer(Image.open(raws[src]).convert("RGBA"), meta)
-        place(img, wall, layer, ((SCREEN[0] - layer.width) // 2, BAR_H + 6), False)
+        place(img, wall_img, layer, ((SCREEN[0] - layer.width) // 2, BAR_H + 6), False)
     else:
         img = Image.open(raws[src]).convert("RGBA")
     base = os.path.join(work, name + "-base.png")
@@ -1135,9 +1141,9 @@ def frame(raw_path: str, out_path: str) -> int:
         meta = json.load(f)
     layer = window_layer(Image.open(raw_path).convert("RGBA"), meta)
     w, h = layer.size
-    wall = gradient((w + 2 * MARGIN, h + 2 * MARGIN), WALL_ANGLE, WALL_STOPS).convert("RGBA")
-    canvas = wall.copy()
-    place(canvas, wall, layer, (MARGIN, MARGIN), meta["mode"] == "dark")
+    bg = wall((w + 2 * MARGIN, h + 2 * MARGIN), meta["mode"] == "dark")
+    canvas = bg.copy()
+    place(canvas, bg, layer, (MARGIN, MARGIN), meta["mode"] == "dark")
     return save_png(canvas, out_path)
 
 
@@ -1145,8 +1151,8 @@ def hero(raws: dict, out_path: str) -> int:
     """Several windows overlapping on the desktop, like a real session."""
     from PIL import Image
     size = (1400, 860)
-    wall = gradient(size, WALL_ANGLE, WALL_STOPS).convert("RGBA")
-    canvas = wall.copy()
+    bg = wall(size)
+    canvas = bg.copy()
     plan = (("music", .62, (40, 40)), ("calendar", .60, (690, 56)), ("notes", .60, (716, 400)),
             ("files", .74, (170, 370)))
     for name, s, pos in plan:
@@ -1156,7 +1162,7 @@ def hero(raws: dict, out_path: str) -> int:
             meta = json.load(f)
         layer = window_layer(Image.open(raws[name]).convert("RGBA"), meta)
         layer = layer.resize((round(layer.width * s), round(layer.height * s)), Image.LANCZOS)
-        place(canvas, wall, layer, pos, meta["mode"] == "dark")
+        place(canvas, bg, layer, pos, meta["mode"] == "dark")
     return save_png(canvas, out_path)
 
 
