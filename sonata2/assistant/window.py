@@ -6,20 +6,29 @@ message field at the bottom (Return sends, Shift+Return starts a new line,
 Esc stops the answer). Answers stream in as they are written, formatted
 from their Markdown (markdown.py). Everything is saved locally (store.py).
 
-Keyboard (⌘ is Ctrl or Super): N new chat, W close, Esc stop.
+Settings (the gear in the toolbar, a panel): the API key (kept in the
+keyring, keystore.py), the model, and the folders Claude may use. With
+folders, Claude can list, read and create files there (tools.py); every
+action waits for your OK in an alert, and shows in the chat.
 
-The API key and model: api.py (Settings come next)."""
+Keyboard (⌘ is Ctrl or Super): N new chat, comma Settings, W close, Esc stop.
+
+Built only from Sonata's UI kit (sonata2/ui): panel, controls (text
+field, text area, round button, pop-up button, push buttons), dialog,
+menu, fixed.MaxWidth, window."""
+import os
+
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, ui  # noqa: E402
-from . import api, markdown  # noqa: E402
+from . import api, keystore, markdown, tools  # noqa: E402
 from . import store as S  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.assistant"
-DEFAULTS = {"selected": "", "model": ""}
+DEFAULTS = {"selected": "", "model": "", "folders": []}
 COLUMN_W = 720              # the conversation's reading width (centred)
 
 ui.register("""
@@ -56,17 +65,15 @@ window.sonata-assistant { color: %(label)s; font-family: %(font)s; font-size: %(
 .as-answer .as-rule { min-height: 1px; background: %(separator)s; margin: 6px 0; }
 .as-error { color: %(destructive)s; margin: 6px 0; }
 .as-composer-bar { background: %(content_bg)s; padding: 6px 24px 14px 24px; }
-.as-composer { background: %(control_bg)s; border-radius: 18px; padding: 4px 4px 4px 14px;
-  box-shadow: inset 0 0 0 0.5px %(separator)s, %(shadow_control)s;
-  transition: box-shadow %(t_fast)s; }
-.as-composer:focus-within { box-shadow: inset 0 0 0 0.5px %(separator)s, 0 0 0 3px alpha(%(accent)s, 0.35); }
-.as-composer textview, .as-composer textview text { background: none; color: %(label)s; }
-.as-composer .as-placeholder { color: %(label_tertiary)s; }
-.as-composer button.as-send { min-width: 28px; min-height: 28px; padding: 0; border-radius: 99px; border: none;
-  box-shadow: none; background: %(accent)s; color: %(label_on_accent)s;
-  transition: background-color %(t_fast)s, opacity %(t_fast)s; }
-.as-composer button.as-send:disabled { opacity: 0.35; }
-.as-composer button.as-send:active { filter: brightness(0.85); transition: filter %(t_press)s; }
+.as-tool { color: %(label_secondary)s; font-size: %(text_small)s; margin: 2px 0; }
+.as-tool image { color: %(label_secondary)s; }
+.as-tool.as-wait { color: %(accent)s; }
+.as-tool.as-wait image { color: %(accent)s; }
+.as-tool.as-denied, .as-tool.as-denied image { color: %(label_tertiary)s; }
+.as-settings { padding: 2px 0 6px 0; }
+.as-settings .as-field-row { padding: 2px 10px 4px 10px; }
+.as-settings .panel-caption { padding: 0 10px; font-weight: 400; }
+.as-settings .as-folder-row button.sonata-button { min-width: 0; }
 """, key="assistant-window")
 
 
@@ -172,6 +179,35 @@ class Answer(Gtk.Box):
             lab.set_markup(markdown.inline(b[1]))
 
 
+TOOL_ICONS = {"list_folder": "folder-symbolic", "read_file": "text-x-generic-symbolic",
+              "create_file": "document-new-symbolic"}
+
+
+class ToolRow(Gtk.Box):
+    """A file action in the chat: waiting for your OK, done, or not allowed."""
+
+    def __init__(self, name: str, text: str, state: str = "done"):
+        super().__init__(spacing=6, css_classes=["as-tool"])
+        self.append(Gtk.Image(icon_name=TOOL_ICONS.get(name, "dialog-information-symbolic"), pixel_size=14))
+        self.label = Gtk.Label(label=text, xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE, hexpand=True)
+        self.append(self.label)
+        self.set_state(state, text)
+
+    def set_state(self, state: str, text: str = None) -> None:
+        for c in ("as-wait", "as-denied"):
+            self.remove_css_class(c)
+        if state in ("wait", "denied"):
+            self.add_css_class("as-" + state)
+        if text is not None:
+            self.label.set_text(text)
+
+
+def _action_of(block: dict) -> tools.Action:
+    inp = block.get("input") or {}
+    path = inp.get("path") if isinstance(inp.get("path"), str) else ""
+    return tools.Action(block.get("name", ""), path, inp, exists=bool(inp.get("overwrite")))
+
+
 class AssistantWindow(Gtk.ApplicationWindow):
     def __init__(self, app, store: S.Store = None):
         super().__init__(application=app, title="Assistant", default_width=1000, default_height=680)
@@ -182,16 +218,20 @@ class AssistantWindow(Gtk.ApplicationWindow):
         self.store = store or S.Store()
         self.chat = None             # the open conversation (with its messages)
         self.job = None              # the answer being written
-        self.job_chat = None         # ...and its conversation
+        self.job_chat = None         # ...and its conversation (also while its file actions wait)
         self.partial = ""            # its text so far
         self.live = None             # its Answer widget, when that chat is shown
         self.typing = None           # the spinner before the first words
+        self.pending = None          # file actions waiting for your OK: {"chat", "queue", "results", "rows"}
+        self._alert = None
         self._stick = True           # follow the end while answers grow
         self._syncing = False
 
         self.toolbar = ui.window.glass_toolbar(self, start=(
             ("sidebar-show-symbolic", "Show Sidebar", self.toggle_sidebar),), end=(
-            ("document-edit-symbolic", "New Chat", self.new_chat),))
+            ("emblem-system-symbolic", "Settings", self.show_settings),
+            ("document-edit-symbolic", "New Chat", self.new_chat)))
+        self.settings_btn = self.toolbar.get_child().get_end_widget().get_first_child()
 
         self.sidebar = self._sidebar()
         self.paned = Gtk.Paned(start_child=self.sidebar, end_child=self._chat_pane(), shrink_start_child=False,
@@ -213,6 +253,7 @@ class AssistantWindow(Gtk.ApplicationWindow):
             self.open_chat(self.cfg["selected"])
         else:
             self.new_chat()
+        keystore.load(lambda _k: None)           # read the key early (a locked keyring may ask)
 
     # -- sidebar ----------------------------------------------------------------------------------
     def _sidebar(self) -> Gtk.Box:
@@ -291,7 +332,7 @@ class AssistantWindow(Gtk.ApplicationWindow):
         def answer(rid):
             if rid != "delete":
                 return
-            if self.job is not None and self.job_chat and self.job_chat["id"] == cid:
+            if self.job_chat is not None and self.job_chat["id"] == cid:
                 self.stop(keep=False)
             self.store.delete(cid)
             if self.chat is not None and self.chat["id"] == cid:
@@ -304,11 +345,133 @@ class AssistantWindow(Gtk.ApplicationWindow):
     def toggle_sidebar(self) -> None:
         self.sidebar.set_visible(not self.sidebar.get_visible())
 
+    # -- settings -----------------------------------------------------------------------------------
+    def show_settings(self) -> None:
+        """The settings panel: API key, model, folders Claude may use."""
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["as-settings"])
+        box.append(ui.panel.header("Assistant Settings"))
+        box.append(ui.panel.section_title("Anthropic API Key"))
+        self.key_field = ui.controls.text_field(keystore.cached(), "sk-ant-…", secret=True,
+                                                on_activate=lambda _t: self._save_key(), hexpand=True)
+        save = ui.controls.push_button("Save", self._save_key)
+        row = Gtk.Box(spacing=6, css_classes=["as-field-row"])
+        row.append(self.key_field)
+        row.append(save)
+        box.append(row)
+        self.key_caption = Gtk.Label(xalign=0, wrap=True, max_width_chars=40, css_classes=["panel-caption"])
+        box.append(self.key_caption)
+        self._key_status()
+
+        box.append(ui.panel.section_title("Model"))
+        self.model_row = Gtk.Box(spacing=6, css_classes=["as-field-row"])
+        box.append(self.model_row)
+        self._fill_models(None, loading=bool(keystore.cached()))
+        if keystore.cached():
+            api.models_async(keystore.cached(), lambda found: self._fill_models(found))
+
+        box.append(ui.panel.separator())
+        box.append(ui.panel.section_title("Folders Claude Can Use"))
+        self.folders_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        box.append(self.folders_box)
+        self._fill_folders()
+        box.append(ui.panel.row("list-add-symbolic", "Add Folder…", on_click=self.add_folder))
+        box.append(Gtk.Label(label="Claude can list, read and create files only in these folders, "
+                             "and asks before every action.", xalign=0, wrap=True, max_width_chars=40,
+                             css_classes=["panel-caption"]))
+        self.settings_panel = ui.panel.popup(self.settings_btn, box, width=360)
+
+    def _key_status(self, text: str = None) -> None:
+        if text is None:
+            env = keystore._env()
+            key = keystore.cached()
+            text = ("Saved in your keyring." if key and key != env else
+                    "Using the ANTHROPIC_API_KEY environment variable." if key else
+                    "Create a key at console.anthropic.com.")
+        self.key_caption.set_label(text)
+
+    def _save_key(self) -> None:
+        key = self.key_field.get_text().strip()
+
+        def done(ok):
+            if not ok:
+                self._key_status("Couldn’t save the key: no keyring is running.")
+                return
+            self._key_status()
+            self._fill_models(None, loading=bool(key))
+            if key:
+                api.models_async(key, lambda found: self._fill_models(found, failed=found is None))
+        keystore.save(key, done)
+
+    def _fill_models(self, found, loading: bool = False, failed: bool = False) -> None:
+        if getattr(self, "model_row", None) is None:
+            return
+        child = self.model_row.get_first_child()
+        while child is not None:
+            nxt = child.get_next_sibling()
+            self.model_row.remove(child)
+            child = nxt
+        ids = [""] + [m for m, _n in (found or [])]
+        names = ["Newest Available"] + [n for _m, n in (found or [])]
+        cur = self.cfg.get("model") or ""
+        if cur and cur not in ids:                 # chosen before; not listed (yet)
+            ids.append(cur)
+            names.append(cur)
+
+        def chosen(i):
+            if 0 <= i < len(ids) and ids[i] != (self.cfg.get("model") or ""):
+                self.cfg["model"] = ids[i]
+                config.update("assistant", model=ids[i])
+        dd = ui.controls.popup_button(names, ids.index(cur) if cur in ids else 0, chosen)
+        dd.set_hexpand(True)
+        dd.set_sensitive(bool(found) or bool(cur))
+        self.model_row.append(dd)
+        if loading:
+            self.model_row.append(ui.progress.spinner())
+        elif failed:
+            self.model_row.append(Gtk.Label(label="Couldn’t load", css_classes=["panel-caption"]))
+
+    def _fill_folders(self) -> None:
+        child = self.folders_box.get_first_child()
+        while child is not None:
+            nxt = child.get_next_sibling()
+            self.folders_box.remove(child)
+            child = nxt
+        for f in self.cfg.get("folders") or []:
+            home = GLib.get_home_dir()
+            shown = "~" + f[len(home):] if f == home or f.startswith(home + "/") else f
+            rm = ui.controls.push_button("Remove", lambda f=f: self.remove_folder(f))
+            row = ui.panel.row("folder-symbolic", shown, trailing=rm)
+            row.add_css_class("as-folder-row")
+            row.set_tooltip_text(f)
+            self.folders_box.append(row)
+
+    def add_folder(self) -> None:
+        from ..files.chooser import ChooserWindow
+        if getattr(self, "settings_panel", None) is not None:
+            self.settings_panel.popdown()
+
+        def done(uris, _i):
+            for uri in uris or []:
+                path = Gio.File.new_for_uri(uri).get_path()
+                if path and path not in self.cfg["folders"]:
+                    self.cfg["folders"] = self.cfg["folders"] + [path]
+            config.update("assistant", folders=self.cfg["folders"])
+        dlg = ChooserWindow(self.get_application(), mode="folder", title="Choose a Folder for Claude",
+                            accept_label="Allow", on_done=done)
+        dlg.set_transient_for(self)
+        dlg.set_modal(True)
+        dlg.present()
+
+    def remove_folder(self, path: str) -> None:
+        self.cfg["folders"] = [f for f in self.cfg["folders"] if f != path]
+        config.update("assistant", folders=self.cfg["folders"])
+        self._fill_folders()
+
     # -- chat ---------------------------------------------------------------------------------------
     def _chat_pane(self) -> Gtk.Widget:
         self.messages = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["as-column"])
         self.scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
-        self.scroll.set_child(_Column(self.messages))
+        self.scroll.set_child(ui.fixed.MaxWidth(self.messages, COLUMN_W))
         adj = self.scroll.get_vadjustment()
         adj.connect("value-changed", self._scrolled)
         adj.connect("changed", self._grown)
@@ -317,29 +480,14 @@ class AssistantWindow(Gtk.ApplicationWindow):
         over = Gtk.Overlay(child=self.scroll, vexpand=True)
         over.add_overlay(self.empty)
 
-        self.input = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, accepts_tab=False, hexpand=True,
-                                  top_margin=6, bottom_margin=6)
-        self.input.get_buffer().connect("changed", self._input_changed)
-        keys = Gtk.EventControllerKey()
-        keys.connect("key-pressed", self._input_key)
-        self.input.add_controller(keys)
-        self.input_scroll = Gtk.ScrolledWindow(child=self.input, hscrollbar_policy=Gtk.PolicyType.NEVER,
-                                               propagate_natural_height=True, max_content_height=180,
-                                               vscrollbar_policy=Gtk.PolicyType.EXTERNAL, hexpand=True,
-                                               valign=Gtk.Align.FILL)
-        self.placeholder = Gtk.Label(label="Message", css_classes=["as-placeholder"], xalign=0, can_target=False,
-                                     halign=Gtk.Align.START, valign=Gtk.Align.CENTER)
-        field = Gtk.Overlay(child=self.input_scroll, hexpand=True)
-        field.add_overlay(self.placeholder)
-        self.send_btn = Gtk.Button(icon_name="go-up-symbolic", css_classes=["as-send"], valign=Gtk.Align.END,
-                                   tooltip_text="Send", can_focus=False, sensitive=False)
-        self.send_btn.connect("clicked", lambda *_: self.stop() if self.job else self.send())
-        composer = Gtk.Box(spacing=6, css_classes=["as-composer"])
-        composer.append(field)
-        composer.append(self.send_btn)
+        self.send_btn = ui.controls.round_button("go-up-symbolic", "Send",
+                                                 lambda: self.stop() if self._busy_here() else self.send())
+        self.send_btn.set_sensitive(False)
+        self.composer = ui.controls.TextArea("Message", trailing=self.send_btn, on_submit=lambda _t: self.send(),
+                                             on_change=lambda _t: self._update_send())
+        self.input = self.composer.view
         bar = Gtk.Box(css_classes=["as-composer-bar"])
-        bar.append(_Column(composer))
-        bar.get_first_child().set_hexpand(True)
+        bar.append(ui.fixed.MaxWidth(self.composer, COLUMN_W))
 
         pane = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["as-chat"])
         pane.set_size_request(320, -1)
@@ -361,19 +509,35 @@ class AssistantWindow(Gtk.ApplicationWindow):
             self.messages.remove(child)
             child = nxt
         self.live = None
+        self._tool_rows = {}
 
     def _add(self, widget: Gtk.Widget, animate: bool = True) -> None:
         self.messages.append(_appear(widget) if animate else widget)
         self.empty.set_visible(False)
 
-    def _add_message(self, msg: dict, animate: bool = True):
+    def _add_message(self, msg: dict, animate: bool = True, results: dict = None):
+        content = msg["content"]
         if msg["role"] == "user":
-            lab = _label(GLib.markup_escape_text(msg["content"]), "as-user")
+            text = api.text_of(content)
+            if not text.strip():                  # only file-action results: shown on their rows
+                return None
+            lab = _label(GLib.markup_escape_text(text), "as-user")
             lab.set_halign(Gtk.Align.END)
             self._add(lab, animate)
             return lab
-        ans = Answer(msg["content"])
-        self._add(ans, animate)
+        text = api.text_of(content)
+        ans = Answer(text) if text.strip() else None
+        if ans is not None:
+            self._add(ans, animate)
+        if not isinstance(content, str):
+            for blk in content:
+                if isinstance(blk, dict) and blk.get("type") == "tool_use":
+                    act = _action_of(blk)
+                    denied = (results or {}).get(blk.get("id"))
+                    row = ToolRow(act.name, ("Not allowed: " if denied else "") + act.summary(),
+                                  "denied" if denied else "done")
+                    self._tool_rows[blk.get("id")] = row
+                    self._add(row, animate)
         return ans
 
     def open_chat(self, cid: str) -> None:
@@ -385,18 +549,33 @@ class AssistantWindow(Gtk.ApplicationWindow):
 
     def new_chat(self) -> None:
         if self.chat is not None and not self.chat["messages"] and self.store.get(self.chat["id"]) is None:
-            self.input.grab_focus()                 # already a fresh chat
+            self.composer.grab_focus()              # already a fresh chat
             return
         self._show(self.store.new_chat())
 
     def _show(self, chat: dict) -> None:
         self.chat = chat
         self._clear()
+        results = {}                                 # tool_use id -> refused (from the tool_result blocks)
         for m in chat["messages"]:
-            self._add_message(m, animate=False)
+            if m["role"] == "user" and not isinstance(m["content"], str):
+                for b in m["content"]:
+                    if isinstance(b, dict) and b.get("type") == "tool_result":
+                        results[b.get("tool_use_id")] = bool(b.get("is_error"))
+        for m in chat["messages"]:
+            self._add_message(m, animate=False, results=results)
         if self.job is not None and self.job_chat is chat:
             self.live = Answer(self.partial)
             self._add(self.live, animate=False)
+        p = self.pending
+        if p is not None:
+            p["rows"] = {}
+            if p["chat"] is chat:                       # its waiting actions: back on their rows
+                for blk in ([p["current"]] if p.get("current") else []) + p["queue"]:
+                    row = self._tool_rows.get(blk.get("id"))
+                    if row is not None:
+                        row.set_state("wait", "Waiting for your OK: " + _action_of(blk).summary())
+                        p["rows"][blk.get("id")] = row
         self.empty.set_visible(not chat["messages"])
         self._stick = True
         self._syncing = True
@@ -404,43 +583,26 @@ class AssistantWindow(Gtk.ApplicationWindow):
         self._syncing = False
         self.set_title(chat.get("title") if chat["messages"] else "Assistant")
         self._update_send()
-        GLib.idle_add(lambda: (self.input.grab_focus(), False)[1])
+        GLib.idle_add(lambda: (self.composer.grab_focus(), False)[1])
 
     # -- sending ------------------------------------------------------------------------------------
-    def _input_changed(self, buf) -> None:
-        self.placeholder.set_visible(buf.get_char_count() == 0)
-        # a scroll bar only once the field is at its tallest (its minimum
-        # length made a one-line field twice as tall)
-        GLib.idle_add(self._input_bar)
-        self._update_send()
+    def _busy(self) -> bool:
+        return self.job is not None or self.pending is not None
 
-    def _input_bar(self) -> bool:
-        tall = self.input.measure(Gtk.Orientation.VERTICAL, max(self.input.get_width(), 1))[1] > 180
-        self.input_scroll.set_policy(Gtk.PolicyType.NEVER,
-                                     Gtk.PolicyType.AUTOMATIC if tall else Gtk.PolicyType.EXTERNAL)
-        return False
-
-    def _input_text(self) -> str:
-        buf = self.input.get_buffer()
-        return buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+    def _busy_here(self) -> bool:
+        return self._busy() and self.job_chat is self.chat
 
     def _update_send(self) -> None:
-        busy = self.job is not None and self.job_chat is self.chat
-        self.send_btn.set_icon_name("media-playback-stop-symbolic" if busy else "go-up-symbolic")
-        self.send_btn.set_tooltip_text("Stop" if busy else "Send")
-        self.send_btn.set_sensitive(busy or (bool(self._input_text().strip()) and self.job is None))
-
-    def _input_key(self, _c, keyval, _code, state) -> bool:
-        if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter) and not state & Gdk.ModifierType.SHIFT_MASK:
-            self.send()
-            return True
-        return False
+        here = self._busy_here()
+        self.send_btn.set_icon_name("media-playback-stop-symbolic" if here else "go-up-symbolic")
+        self.send_btn.set_tooltip_text("Stop" if here else "Send")
+        self.send_btn.set_sensitive(here or (bool(self.composer.text().strip()) and not self._busy()))
 
     def send(self) -> None:
-        text = self._input_text().strip()
-        if not text or self.job is not None:
+        text = self.composer.text().strip()
+        if not text or self._busy():
             return
-        self.input.get_buffer().set_text("")
+        self.composer.set_text("")
         msg = {"role": "user", "content": text}
         self.chat["messages"].append(msg)
         self._add_message(msg)
@@ -448,23 +610,30 @@ class AssistantWindow(Gtk.ApplicationWindow):
         self.store.save(self.chat)
         self.set_title(self.chat["title"])
         self.rebuild_sidebar()
-        self._ask()
+        self._ask(self.chat)
 
-    def _ask(self) -> None:
+    def _ask(self, chat: dict) -> None:
         """Start the answer to the conversation as it is."""
-        key = api.api_key()
+        key = keystore.cached()
         if not key:
-            self._error("Add your Anthropic API key to start chatting "
-                        "(for now: the ANTHROPIC_API_KEY environment variable).", retry=False)
+            self.job_chat = None
+            if chat is self.chat:
+                self._error("Add your Anthropic API key in Settings to start chatting.", retry=False,
+                            button=("Open Settings", self.show_settings))
+            self._update_send()
             return
-        self.job_chat, self.partial = self.chat, ""
-        self.live = Answer()
-        self.typing = ui.progress.spinner()
-        self.typing.set_halign(Gtk.Align.START)
-        self.live.append(self.typing)
-        self._add(self.live)
-        self.job = api.stream(key, self.cfg.get("model") or None, self.chat["messages"],
-                              self._on_text, self._on_done, self._on_error)
+        self.job_chat, self.partial = chat, ""
+        self.live = self.typing = None
+        if chat is self.chat:
+            self.live = Answer()
+            self.typing = ui.progress.spinner()
+            self.typing.set_halign(Gtk.Align.START)
+            self.live.append(self.typing)
+            self._add(self.live)
+        folders = [f for f in self.cfg.get("folders") or [] if f]
+        self.job = api.stream(key, self.cfg.get("model") or None, chat["messages"],
+                              self._on_text, self._on_done, self._on_error,
+                              system=tools.system_prompt(folders) or None, tools=tools.TOOLS if folders else None)
         self._update_send()
 
     def _on_text(self, piece: str) -> None:
@@ -475,24 +644,108 @@ class AssistantWindow(Gtk.ApplicationWindow):
                 self.typing = None
             self.live.set_text(self.partial)
 
-    def _finish(self, keep: bool = True) -> None:
+    def _end_stream(self) -> tuple:
+        """The stream is over: (its chat, its text); the live widgets settle."""
         chat, text = self.job_chat, self.partial
-        self.job, self.job_chat, self.partial = None, None, ""
+        self.job, self.partial = None, ""
         if self.typing is not None and self.live is not None and self.typing.get_parent() is self.live:
             self.live.remove(self.typing)
         self.typing = None
-        if keep and text.strip() and chat is not None:
-            chat["messages"].append({"role": "assistant", "content": text})
-            if self.store.get(chat["id"]) is not None or chat is self.chat:
-                self.store.save(chat)
-                self.rebuild_sidebar()
-        elif self.live is not None and self.live.get_parent() is not None and not text.strip():
+        if self.live is not None and not text.strip() and self.live.get_parent() is not None:
             self.messages.remove(self.live.get_parent())
         self.live = None
+        return chat, text
+
+    def _save_chat(self, chat: dict) -> None:
+        if self.store.get(chat["id"]) is not None or chat is self.chat:
+            self.store.save(chat)
+            self.rebuild_sidebar()
+
+    def _finish(self, keep: bool = True) -> None:
+        chat, text = self._end_stream()
+        self.job_chat = None
+        if keep and text.strip() and chat is not None:
+            chat["messages"].append({"role": "assistant", "content": text})
+            self._save_chat(chat)
         self._update_send()
 
-    def _on_done(self) -> None:
-        self._finish()
+    def _on_done(self, blocks=None, stop=None) -> None:
+        chat, text = self._end_stream()
+        uses = [b for b in blocks or [] if b.get("type") == "tool_use"]
+        if not uses:
+            self.job_chat = None
+            content = api.text_of(blocks) if blocks else text
+            if content.strip() and chat is not None:
+                chat["messages"].append({"role": "assistant", "content": content})
+                self._save_chat(chat)
+            self._update_send()
+            return
+        chat["messages"].append({"role": "assistant", "content": blocks})
+        self._save_chat(chat)
+        self.pending = {"chat": chat, "queue": list(uses), "results": [], "rows": {}}
+        if chat is self.chat:
+            for b in uses:
+                row = ToolRow(b.get("name", ""), "Waiting for your OK: " + _action_of(b).summary(), "wait")
+                self.pending["rows"][b.get("id")] = row
+                self._tool_rows[b.get("id")] = row
+                self._add(row)
+        self._update_send()
+        self._next_tool()
+
+    def _next_tool(self) -> None:
+        """Ask about the next file action (one alert at a time)."""
+        p = self.pending
+        if p is None:
+            return
+        if not p["queue"]:
+            self.pending = None
+            chat = p["chat"]
+            chat["messages"].append({"role": "user", "content": p["results"]})
+            self._save_chat(chat)
+            if p.get("stopped"):
+                self.job_chat = None
+                self._update_send()
+            else:
+                self._ask(chat)
+            return
+        blk = p["queue"].pop(0)
+        row = p["rows"].get(blk.get("id"))
+        try:
+            act = tools.check(blk.get("name", ""), blk.get("input"), self.cfg.get("folders") or [])
+        except tools.Denied as e:
+            self._tool_result(blk, str(e), True, row, "Couldn’t do: " + _action_of(blk).summary())
+            self._next_tool()
+            return
+        name = os.path.basename(act.path.rstrip(os.sep)) or act.path
+        p["current"] = blk
+
+        def answer(rid):
+            if self.pending is not p or p.get("current") is not blk:
+                return
+            self._alert, p["current"] = None, None
+            row = p["rows"].get(blk.get("id"))
+            if rid == "allow":
+                text, err = tools.run(act)
+                self._tool_result(blk, text, err, row, ("Couldn’t do: " if err else "") + act.summary())
+            else:
+                self._tool_result(blk, "The user did not allow this.", True, row, "Not allowed: " + act.summary())
+            self._next_tool()
+        body = act.path
+        if act.name == "create_file":
+            n = act.args["content"].count("\n") + 1
+            body += f"\n{n} line{'s' if n != 1 else ''}, {ui.fmt.size(len(act.args['content'].encode()))}"
+        self._alert = ui.dialog.alert(f"Allow Claude to {act.verb} “{name}”?", body,
+                                      [("deny", "Don’t Allow", ""), ("allow", "Allow",
+                                                                    "destructive" if act.exists else "default")],
+                                      answer, parent=self)
+
+    def _tool_result(self, blk, text, is_error, row, line) -> None:
+        res = {"type": "tool_result", "tool_use_id": blk.get("id"), "content": text}
+        if is_error:
+            res["is_error"] = True
+        self.pending["results"].append(res)
+        if row is not None:
+            row.set_state("denied" if is_error else "done", line)
 
     def _on_error(self, message: str) -> None:
         shown = self.job_chat is self.chat
@@ -500,11 +753,13 @@ class AssistantWindow(Gtk.ApplicationWindow):
         if shown:
             self._error(message, retry=True)
 
-    def _error(self, message: str, retry: bool) -> None:
+    def _error(self, message: str, retry: bool, button=None) -> None:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["as-error"])
         box.append(_label(GLib.markup_escape_text(message)))
         if retry:
-            btn = ui.controls.push_button("Try Again", lambda: self._retry(box))
+            button = ("Try Again", lambda: self._retry(box))
+        if button:
+            btn = ui.controls.push_button(button[0], button[1])
             btn.set_halign(Gtk.Align.START)
             box.append(btn)
         self._add(box)
@@ -513,23 +768,43 @@ class AssistantWindow(Gtk.ApplicationWindow):
         parent = box.get_parent()
         if parent is not None:
             self.messages.remove(parent)
-        if self.job is None and self.chat["messages"] and self.chat["messages"][-1]["role"] == "user":
-            self._ask()
+        if not self._busy() and self.chat["messages"] and self.chat["messages"][-1]["role"] == "user":
+            self._ask(self.chat)
 
     def stop(self, keep: bool = True) -> None:
-        """Stop the answer; what was written so far stays (macOS-like)."""
+        """Stop the answer; what was written so far stays. File actions still
+        waiting are not done (Claude is told so)."""
         if self.job is not None:
             self.job.cancel()
             self._finish(keep)
+        p = self.pending
+        if p is not None:
+            p["stopped"] = True
+            cur, p["current"] = p.get("current"), None
+            for blk in ([cur] if cur else []) + p["queue"]:
+                self._tool_result(blk, "The user stopped this.", True, p["rows"].get(blk.get("id")),
+                                  "Not allowed: " + _action_of(blk).summary())
+            p["queue"] = []
+            if self._alert is not None:
+                alert, self._alert = self._alert, None
+                try:
+                    alert.force_close() if hasattr(alert, "force_close") else alert.close()
+                except Exception:               # noqa: BLE001  (already gone)
+                    pass
+            if self.pending is p:
+                self._next_tool()
 
     # -- window -------------------------------------------------------------------------------------
     def _key(self, _c, keyval, _code, state) -> bool:
         cmd = state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SUPER_MASK)
-        if keyval == Gdk.KEY_Escape and self.job is not None:
+        if keyval == Gdk.KEY_Escape and self._busy_here():
             self.stop()
             return True
         if cmd and keyval in (Gdk.KEY_n, Gdk.KEY_N):
             self.new_chat()
+            return True
+        if cmd and keyval == Gdk.KEY_comma:
+            self.show_settings()
             return True
         if cmd and keyval in (Gdk.KEY_w, Gdk.KEY_W):
             self.close()
@@ -542,14 +817,6 @@ class AssistantWindow(Gtk.ApplicationWindow):
         if sel != self.cfg.get("selected"):
             config.update("assistant", selected=sel)
         return False
-
-
-def _Column(child: Gtk.Widget) -> Gtk.Widget:
-    """Centres its child at most COLUMN_W wide (a reading column). Adw.Clamp
-    is layout only: it brings no look of its own."""
-    gi.require_version("Adw", "1")
-    from gi.repository import Adw
-    return Adw.Clamp(child=child, maximum_size=COLUMN_W, tightening_threshold=COLUMN_W, hexpand=True)
 
 
 def open_windows(app, paths=None) -> None:

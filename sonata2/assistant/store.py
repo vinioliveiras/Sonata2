@@ -3,7 +3,8 @@
 
 index.json             {"chats": [{id, title, created, modified}]}   (the sidebar)
 chats/<id>.json        {"id", "title", "created", "modified",
-                        "messages": [{"role": "user"|"assistant", "content": str}]}
+                        "messages": [{"role": "user"|"assistant", "content": str | [blocks]}]}
+                       blocks (the API's): text, tool_use (a file action), tool_result
 
 Only the index is read at start; a conversation's messages are read when it
 is opened (low memory with many long chats). Every write is atomic (a temp
@@ -73,14 +74,15 @@ class Store:
         meta = self.get(cid) or {}
         data = _read(self._chat_path(cid))
         msgs = [m for m in data.get("messages", []) if isinstance(m, dict)
-                and m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str)]
+                and m.get("role") in ("user", "assistant") and isinstance(m.get("content"), (str, list))]
         return {**meta, **{k: v for k, v in data.items() if k != "messages"}, "id": cid, "messages": msgs}
 
     def save(self, chat: dict) -> None:
         """Write the chat and bring it to the top of the index."""
         chat["modified"] = time.time()
         if chat.get("title") in (None, "", "New Chat"):
-            first = next((m["content"] for m in chat["messages"] if m["role"] == "user"), "")
+            first = next((m["content"] for m in chat["messages"]
+                          if m["role"] == "user" and isinstance(m["content"], str)), "")
             chat["title"] = title_from(first)
         _write(self._chat_path(chat["id"]), chat)
         meta = {k: chat[k] for k in ("id", "title", "created", "modified")}
