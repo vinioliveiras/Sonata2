@@ -83,6 +83,7 @@ if [ "$UNINSTALL" = 1 ]; then
           "$HOME/.local/share/applications/sonata2-screenshot.desktop"
     "$(dirname "$0")/tools/quiet-console.sh" revert || true
     sudo rm -f /etc/polkit-1/rules.d/50-sonata2-mount.rules 2>/dev/null || true
+    rm -rf "$HOME/.local/opt/sonata-wayfire"
     say "Done. Your settings are still in $CFG/sonata2 (delete that folder to reset them)."
     exit 0
 fi
@@ -313,6 +314,14 @@ if command -v meson >/dev/null && command -v ninja >/dev/null && pkg-config --ex
     # built into the same user folder, which Wayfire searches before the system's
     say "Building pixdecor (title bars) with Sonata's title fix"
     bash "$SRC/tools/build-pixdecor.sh" || echo "  (the installed pixdecor stays; retry: tools/build-pixdecor.sh)"
+    # Wayfire itself with Sonata's fix for buffers the GPU refuses (its own folder;
+    # tools/sonata-session uses it while it matches the installed Wayfire)
+    own_wf="$HOME/.local/opt/sonata-wayfire"
+    if ! wayfire --version 2>/dev/null | grep -qs -- "-$(head -n1 "$own_wf/sonata-commit" 2>/dev/null) " &&
+            ask "Build Wayfire with Sonata's crash fix (a few minutes)?"; then
+        say "Building Wayfire with Sonata's fix"
+        bash "$SRC/tools/build-wayfire.sh" || echo "  (the system's Wayfire is used; retry: tools/build-wayfire.sh)"
+    fi
 else
     echo "Skipped Sonata's Wayfire plugin (needs meson, ninja, a C++ compiler and Wayfire's headers)."
 fi

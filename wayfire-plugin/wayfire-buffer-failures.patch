@@ -1,0 +1,181 @@
+diff --git a/plugins/animate/unmapped-view-node.hpp b/plugins/animate/unmapped-view-node.hpp
+index 3ae9968a..ff3a4b0f 100644
+--- a/plugins/animate/unmapped-view-node.hpp
++++ b/plugins/animate/unmapped-view-node.hpp
+@@ -50,6 +50,11 @@ class unmapped_view_snapshot_node : public wf::scene::node_t
+         using simple_render_instance_t::simple_render_instance_t;
+         void render(const wf::scene::render_instruction_t& data)
+         {
++            if (!self->snapshot.get_buffer())
++            {
++                return; // no snapshot (the GPU refused the buffer): nothing to animate
++            }
++
+             auto texture = wf::texture_t::from_aux(self->snapshot);
+             data.pass->add_texture(texture, data.target, self->get_bounding_box(), data.damage);
+         }
+diff --git a/plugins/blur/blur.cpp b/plugins/blur/blur.cpp
+index 4c27a419..c933aaa9 100644
+--- a/plugins/blur/blur.cpp
++++ b/plugins/blur/blur.cpp
+@@ -213,6 +213,10 @@ class blur_render_instance_t : public transformer_render_instance_t<blur_node_t>
+         {
+             wf::dimensionsf_t render_size;
+             auto contents = get_texture(data.target.scale, &render_size);
++            if (!contents)
++            {
++                return;
++            }
+ 
+             auto tex = wf::gles_texture_t{contents};
+             if (!data.damage.empty())
+diff --git a/src/api/wayfire/view-transform.hpp b/src/api/wayfire/view-transform.hpp
+index 8c2a422b..4a6e90dd 100644
+--- a/src/api/wayfire/view-transform.hpp
++++ b/src/api/wayfire/view-transform.hpp
+@@ -78,6 +78,9 @@ class transformer_base_node_t : public scene::floating_inner_node_t
+      *   the @hdr_linear hint if the output is currently in an HDR (PQ) configuration,
+      *   so HDR contents above SDR reference white aren't clipped or banded by an
+      *   8-bit linear backing.
++     *
++     * @return The children's contents, or nullptr when @inner_content could not
++     *   be allocated (the GPU refused the buffer): skip drawing for this frame.
+      */
+     std::shared_ptr<wf::texture_t> get_updated_contents(const wf::geometry_t& bbox, float scale,
+         std::vector<scene::render_instance_uptr>& children, wf::output_t *output = nullptr);
+@@ -125,6 +128,8 @@ class transformer_render_instance_t : public render_instance_t
+      *   size.
+      *
+      * @param out_logical_size If provided, the logical size of the texture is written to this pointer.
++     * @return The texture, or nullptr when the auxiliary buffer could not be
++     *   allocated: the caller should skip drawing for this frame.
+      */
+     std::shared_ptr<wf::texture_t> get_texture(float scale, wf::dimensionsf_t *out_logical_size = nullptr)
+     {
+@@ -139,6 +144,11 @@ class transformer_render_instance_t : public render_instance_t
+ 
+         auto contents =
+             self->get_updated_contents(self->get_children_bounding_box(), scale, children, _shown_on);
++        if (!contents)
++        {
++            return nullptr;
++        }
++
+         if (out_logical_size)
+         {
+             *out_logical_size = wf::dimensionsf_t{
+diff --git a/src/view/view-3d.cpp b/src/view/view-3d.cpp
+index a2e6b77d..a64f6973 100644
+--- a/src/view/view-3d.cpp
++++ b/src/view/view-3d.cpp
+@@ -264,6 +264,11 @@ class view_2d_render_instance_t :
+         {
+             // No rotation, we can use render-agnostic functions.
+             auto tex = this->get_texture(data.target.scale);
++            if (!tex)
++            {
++                return;
++            }
++
+             tex->set_filter_mode(WLR_SCALE_FILTER_BILINEAR);
+             auto bbox = self->get_bounding_box();
+             data.pass->add_texture(tex, data.target, bbox, data.damage, self->get_alpha());
+@@ -288,7 +293,13 @@ class view_2d_render_instance_t :
+ 
+         data.pass->custom_gles_subpass([&]
+         {
+-            auto tex = wf::gles_texture_t{this->get_texture(data.target.scale)};
++            auto contents = this->get_texture(data.target.scale);
++            if (!contents)
++            {
++                return;
++            }
++
++            auto tex = wf::gles_texture_t{contents};
+             wf::gles::bind_render_buffer(data.target);
+             auto ortho = wf::gles::render_target_orthographic_projection(data.target);
+ 
+@@ -305,6 +316,11 @@ class view_2d_render_instance_t :
+         {
+             auto& vk_state = vk::core_ensure_vk(state);
+             auto texture   = get_texture(data.target.scale);
++            if (!texture)
++            {
++                return;
++            }
++
+             auto tex_dset  = state.get_descriptor_pool()->get_descriptor_set(cmd_buf, texture);
+             wf::vk::texture_sampling_params_t sampling{texture};
+             wf::vk::pipeline_specialization_t specialization{};
+@@ -540,7 +556,13 @@ class view_3d_render_instance_t :
+ 
+         data.pass->custom_gles_subpass([&]
+         {
+-            auto tex = wf::gles_texture_t{get_texture(data.target.scale)};
++            auto contents = get_texture(data.target.scale);
++            if (!contents)
++            {
++                return;
++            }
++
++            auto tex = wf::gles_texture_t{contents};
+             wf::gles::bind_render_buffer(data.target);
+             wf::gles::for_each_scissor_rect(data.target, data.damage, [&]
+             {
+@@ -554,6 +576,11 @@ class view_3d_render_instance_t :
+         {
+             auto& vk_state = vk::core_ensure_vk(state);
+             auto texture   = get_texture(data.target.scale);
++            if (!texture)
++            {
++                return;
++            }
++
+             auto tex_dset  = state.get_descriptor_pool()->get_descriptor_set(cmd_buf, texture);
+             wf::vk::texture_sampling_params_t sampling{texture};
+             wf::vk::pipeline_specialization_t specialization{};
+@@ -618,9 +645,18 @@ uint32_t transformer_base_node_t::optimize_update(uint32_t flags)
+ std::shared_ptr<wf::texture_t> transformer_base_node_t::get_updated_contents(const wf::geometry_t& bbox,
+     float scale, std::vector<scene::render_instance_uptr>& children, wf::output_t *output)
+ {
+-    if (inner_content.allocate(wf::dimensions(bbox), scale,
+-        wf::buffer_allocation_hints_t{.hdr_linear = output && output->is_hdr()}) !=
+-        buffer_reallocation_result_t::SAME)
++    auto result = inner_content.allocate(wf::dimensions(bbox), scale,
++        wf::buffer_allocation_hints_t{.hdr_linear = output && output->is_hdr()});
++    if (result == buffer_reallocation_result_t::FAILED)
++    {
++        // The GPU refused the buffer (seen with NVIDIA's GBM: "gbm_bo_create
++        // failed: Invalid argument"). Rendering into it crashed the compositor;
++        // callers skip this frame instead.
++        cached_damage |= bbox;
++        return nullptr;
++    }
++
++    if (result != buffer_reallocation_result_t::SAME)
+     {
+         cached_damage |= bbox;
+     }
+diff --git a/src/view/view.cpp b/src/view/view.cpp
+index daa50dbf..749bd38a 100644
+--- a/src/view/view.cpp
++++ b/src/view/view.cpp
+@@ -96,8 +96,16 @@ void wf::view_interface_t::take_snapshot(wf::auxilliary_buffer_t& buffer)
+     auto root_node = get_surface_root_node();
+     const wf::geometry_t bbox = root_node->get_bounding_box();
+     float scale = get_output()->handle->scale;
+-    buffer.allocate(wf::dimensions(bbox), scale,
+-        wf::buffer_allocation_hints_t{.hdr_linear = get_output() && get_output()->is_hdr()});
++    if (buffer.allocate(wf::dimensions(bbox), scale,
++        wf::buffer_allocation_hints_t{.hdr_linear = get_output() && get_output()->is_hdr()}) ==
++        wf::buffer_reallocation_result_t::FAILED)
++    {
++        // The GPU refused the buffer (its memory full): no snapshot. Rendering
++        // into it aborted the compositor ("Cannot run a render pass without a
++        // valid target"); users of the snapshot check get_buffer().
++        buffer.free();
++        return;
++    }
+ 
+     wf::render_target_t target{buffer};
+     target.geometry = bbox;

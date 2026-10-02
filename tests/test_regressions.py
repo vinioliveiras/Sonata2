@@ -6,6 +6,7 @@ Run: xvfb-run -a python3 -m unittest tests.test_regressions
 import os
 import pathlib
 import re
+import subprocess
 import tempfile
 import unittest
 
@@ -1832,7 +1833,7 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
 
     def test_session_turns_it_off_after_such_a_crash(self):
         sess = (pathlib.Path(__file__).resolve().parent.parent / "tools" / "sonata-session").read_text()
-        block = sess[sess.index('wayfire -c "$cfg" > "$logs/session.log" 2>&1\n    code=$?'):]
+        block = sess[sess.index('"$WAYFIRE" -c "$cfg" > "$logs/session.log" 2>&1\n    code=$?'):]
         self.assertIn("gbm_bo_create failed", block)
         self.assertIn('rm -f "$gpu_flag"', block)
         self.assertIn('touch "$logs/display-gpu-crashed"', block)
@@ -1841,10 +1842,37 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         """Vini: WhatsApp's web app filled the NVIDIA memory with a video; the
         crash turned his display GPU off though the choice wasn't at fault."""
         sess = (pathlib.Path(__file__).resolve().parent.parent / "tools" / "sonata-session").read_text()
-        block = sess[sess.index('wayfire -c "$cfg" > "$logs/session.log" 2>&1\n    code=$?'):]
+        block = sess[sess.index('"$WAYFIRE" -c "$cfg" > "$logs/session.log" 2>&1\n    code=$?'):]
         cond = block[block.index("if [ -n \"$display_gpu\" ]"):block.index('rm -f "$gpu_flag"')]
         self.assertIn('! grep -qs "NV_ERR_NO_MEMORY" "$logs/kernel-at-crash.log"', cond)
         self.assertLess(block.index("record_crash"), block.index("NV_ERR_NO_MEMORY"))   # the log is there first
+
+    def test_own_wayfire_only_when_it_matches_and_never_locks_out(self):
+        """The patched Wayfire (tools/build-wayfire.sh: a full NVIDIA card
+        aborted the session) runs only while built from the installed
+        commit; failing at once, the system's Wayfire starts instead."""
+        root = pathlib.Path(__file__).resolve().parent.parent
+        sess = (root / "tools" / "sonata-session").read_text()
+        self.assertIn('wayfire --version 2>/dev/null | grep -q -- "-$(head -n1 "$own/sonata-commit") "', sess)
+        tail = sess[sess.rindex('"$WAYFIRE" -c "$cfg"'):]
+        self.assertIn('[ "$WAYFIRE" != wayfire ] && [ "$code" -ne 0 ]', tail)
+        self.assertIn('\n    wayfire -c "$cfg" > "$logs/session.log" 2>&1', tail)
+        build = (root / "tools" / "build-wayfire.sh").read_text()
+        self.assertIn("wayfire-buffer-failures.patch", build)
+        self.assertIn('echo "$commit" > "$PREFIX/sonata-commit"', build)
+        for f in ("tools/sonata-session", "tools/build-wayfire.sh", "install.sh"):
+            self.assertEqual(subprocess.run(["bash", "-n", str(root / f)]).returncode, 0, f)
+
+    def test_wayfire_patch_covers_the_snapshot(self):
+        """15:39 crash: the close animation's snapshot (view.cpp take_snapshot)
+        rendered into a buffer the full card refused."""
+        patch = (pathlib.Path(__file__).resolve().parent.parent / "wayfire-plugin"
+                 / "wayfire-buffer-failures.patch").read_text()
+        for part in ("src/view/view.cpp", "plugins/animate/unmapped-view-node.hpp",
+                     "src/view/view-3d.cpp", "plugins/blur/blur.cpp"):
+            self.assertIn("+++ b/" + part, patch)
+        self.assertIn("wf::buffer_reallocation_result_t::FAILED", patch)
+        self.assertIn("if (!self->snapshot.get_buffer())", patch)
 
     def test_webkit_apps_skip_dmabuf_on_nvidia(self):
         env = (pathlib.Path(__file__).resolve().parent.parent / "tools" / "session-env.sh").read_text()
