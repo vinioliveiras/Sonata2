@@ -222,7 +222,7 @@ h2 { font-size: clamp(32px, 4.6vw, 56px); line-height: 1.07; letter-spacing: -0.
   padding: 28px 32px; border-radius: var(--radius); background: var(--card); border: 1px solid var(--card-border); }
 .support h3 { margin: 0 0 6px; font-size: 22px; letter-spacing: -.02em; }
 .support p { margin: 0; color: var(--muted); max-width: 34em; }
-.support .heart { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.support .heart, nav .heart { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* -- credits ------------------------------------------------------------------------- */
 .credits { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); margin-top: 36px; }
@@ -274,6 +274,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
       <a href="#get">Get it</a>
       <a href="#credits">Credits</a>
     </div>
+    <a class="btn ghost small" href="https://ko-fi.com/vinioliveira" target="_blank" rel="noopener" aria-label="Support on Ko-fi" title="Support on Ko-fi"><svg class="heart" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>Ko-fi</a>
     <a class="btn primary small" href="https://github.com/vinioliveiras/sonata2">GitHub</a>
   </div>
 </nav>
@@ -296,6 +297,16 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
     <div class="trust"><span>Free forever</span><span>Your data stays on your computer</span><span>Light and Dark</span><span>Made for everyday people</span></div>
   </div>
 </header>
+
+<section id="support" style="padding:10px 0 20px">
+  <div class="wrap">
+    <div class="support reveal" >
+      <div><h3>Like Sonata? Buy me a coffee.</h3>
+        <p>Sonata is made by one person in their free time and stays free for everyone. A coffee helps keep it going.</p></div>
+      <a class="btn primary" href="https://ko-fi.com/vinioliveira" target="_blank" rel="noopener"><svg class="heart" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>Support on Ko-fi</a>
+    </div>
+  </div>
+</section>
 
 <section id="why">
   <div class="wrap">
@@ -445,11 +456,6 @@ cd sonata2 &amp;&amp; ./install.sh</div>
     <h2 class="reveal">Built on the work of others.</h2>
     <p class="sub reveal" style="margin-bottom:0">Sonata stands on free software and art made by people who share it.
       Each keeps its own license; the details are in the <a href="https://github.com/vinioliveiras/sonata2#license">README</a>.</p>
-    <div class="support reveal" style="margin-top:36px">
-      <div><h3>Like Sonata? Buy me a coffee.</h3>
-        <p>Sonata is made by one person in their free time and stays free for everyone. A coffee helps keep it going.</p></div>
-      <a class="btn primary" href="https://ko-fi.com/vinioliveira" target="_blank" rel="noopener"><svg class="heart" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>Support on Ko-fi</a>
-    </div>
     <p class="credits-h reveal">Icons, themes, fonts and pictures</p>
     <div class="credits" style="margin-top:14px">
       <a class="credit reveal" href="https://github.com/vinceliuice/MacTahoe-icon-theme"><b>MacTahoe icon theme</b><span>The app and system icons</span><small>Vince Liuice · GPL-3.0</small></a>
