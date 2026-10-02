@@ -209,6 +209,7 @@ class Portal:
                             current_filter=args["current_filter"], folder=args["folder"], name=args["name"],
                             on_done=done)
         _attach_to_parent(win, parent)
+        bring_to_front(win)                          # above the asking app, always
         reg = self._export_request(conn, handle, win)
         self.windows[handle] = (win, reg)
         if self._idle:
@@ -237,6 +238,37 @@ class Portal:
         """(Kept for the panels' code path.) The settings half serves the
         whole session, so the portal never quits on idle."""
         return
+
+
+def bring_to_front(win, tries: int = 10) -> None:
+    """The Open/Save panel always comes up above the app that asked (Vini: it
+    opened under Settings' panel): Wayfire keeps it on top and focuses it
+    (IPC: our window, found by this process and its title). Asked again a
+    few times while Wayfire hasn't mapped it yet."""
+    import os
+    title = win.get_title() or ""
+
+    def find(views):
+        mine = [v for v in views if isinstance(v, dict) and v.get("pid") == os.getpid()
+                and v.get("type") in (None, "toplevel") and v.get("mapped", True)]
+        exact = [v for v in mine if v.get("title") == title]
+        return (exact or mine or [None])[-1]
+
+    def attempt(left):
+        try:
+            from .wl.wfipc import WayfireIPC
+            ipc = WayfireIPC()
+            view = find(ipc.call("window-rules/list-views") or [])
+        except Exception:
+            return False
+        if view is None:
+            if left > 0:
+                GLib.timeout_add(80, lambda: attempt(left - 1))
+            return False
+        ipc.call("wm-actions/set-always-on-top", {"view_id": view["id"], "state": True})
+        ipc.call("window-rules/focus-view", {"id": view["id"]})
+        return False
+    win.connect("map", lambda _w: GLib.idle_add(lambda: attempt(tries)))
 
 
 def _attach_to_parent(win, parent: str) -> None:

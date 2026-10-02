@@ -40,5 +40,42 @@ class ChooserIsFilesTest(unittest.TestCase):
             self.assertIn('pkill -f -- "sonata2 portal( |$)"', f.read())
 
 
+class FrontTest(unittest.TestCase):
+    """Vini: the Open panel opened under Settings' panel -- it must always
+    come up above the app that asked."""
+
+    def test_kept_on_top_and_focused(self):
+        import os
+        from sonata2 import portal
+        calls = []
+
+        class IPC:
+            def call(self, method, data=None):
+                calls.append((method, data))
+                if method == "window-rules/list-views":
+                    return [{"id": 3, "pid": 1, "title": "Open", "type": "toplevel"},
+                            {"id": 7, "pid": os.getpid(), "title": "Other", "type": "toplevel"},
+                            {"id": 9, "pid": os.getpid(), "title": "Choose an Icon", "type": "toplevel"}]
+                return None
+
+        class Win:
+            def get_title(self):
+                return "Choose an Icon"
+
+            def connect(self, _sig, cb):
+                self.cb = cb
+        w = Win()
+        with mock.patch("sonata2.wl.wfipc.WayfireIPC", IPC), \
+                mock.patch.object(portal.GLib, "idle_add", side_effect=lambda f: f()):
+            portal.bring_to_front(w)
+            w.cb(w)                                       # mapped
+        self.assertIn(("wm-actions/set-always-on-top", {"view_id": 9, "state": True}), calls)
+        self.assertIn(("window-rules/focus-view", {"id": 9}), calls)
+
+    def test_every_panel_does_it(self):
+        from sonata2 import portal
+        self.assertIn("bring_to_front(win)", inspect.getsource(portal.Portal._call))
+
+
 if __name__ == "__main__":
     unittest.main()
