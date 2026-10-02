@@ -1933,6 +1933,12 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         self.assertIn("if (saved_pixels->pixels.allocate(target.get_size()) == wf::buffer_reallocation_result_t::FAILED)",
                       patch)
         self.assertIn("if (self->provider()->prepare_blur(data.target, translucent_damage))", patch)
+        # 18:53 crash (Win+D during a game): the blur's transformer drew into a
+        # buffer whose framebuffer couldn't be made ("Failed to create FBO"),
+        # so there was no render pass -- wlr_render_pass_add_rect(NULL)
+        self.assertIn("+++ b/src/render.cpp", patch)
+        self.assertEqual(patch.count("if (auto pass = _get_pass())"), 2)
+        self.assertIn("if (auto pass = get_wlr_pass())", patch)
 
     def _finish(self, code, ran, times=""):
         """Runs tools/sonata-session's finish() alone; "RESTARTED" when it

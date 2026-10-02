@@ -1,5 +1,5 @@
 diff --git a/plugins/animate/unmapped-view-node.hpp b/plugins/animate/unmapped-view-node.hpp
-index 3ae9968a..ff3a4b0f 100644
+index 3ae9968..ff3a4b0 100644
 --- a/plugins/animate/unmapped-view-node.hpp
 +++ b/plugins/animate/unmapped-view-node.hpp
 @@ -50,6 +50,11 @@ class unmapped_view_snapshot_node : public wf::scene::node_t
@@ -15,7 +15,7 @@ index 3ae9968a..ff3a4b0f 100644
              data.pass->add_texture(texture, data.target, self->get_bounding_box(), data.damage);
          }
 diff --git a/plugins/blur/blur-base.cpp b/plugins/blur/blur-base.cpp
-index a20d24cf..c2436326 100644
+index a20d24c..c243632 100644
 --- a/plugins/blur/blur-base.cpp
 +++ b/plugins/blur/blur-base.cpp
 @@ -112,7 +112,11 @@ void wf_blur_base::render_iteration(wf::region_t blur_region,
@@ -87,7 +87,7 @@ index a20d24cf..c2436326 100644
  
  static wf::pointf_t get_center(wf::geometry_t g)
 diff --git a/plugins/blur/blur.cpp b/plugins/blur/blur.cpp
-index 4c27a419..2c69a583 100644
+index 4c27a41..2c69a58 100644
 --- a/plugins/blur/blur.cpp
 +++ b/plugins/blur/blur.cpp
 @@ -178,7 +178,21 @@ class blur_render_instance_t : public transformer_render_instance_t<blur_node_t>
@@ -149,7 +149,7 @@ index 4c27a419..2c69a583 100644
  
              GL_CALL(glDisable(GL_SCISSOR_TEST));
 diff --git a/plugins/blur/blur.hpp b/plugins/blur/blur.hpp
-index ed6a8850..857a0b2d 100644
+index ed6a885..857a0b2 100644
 --- a/plugins/blur/blur.hpp
 +++ b/plugins/blur/blur.hpp
 @@ -94,6 +94,8 @@ class wf_blur_base
@@ -172,7 +172,7 @@ index ed6a8850..857a0b2d 100644
      /**
       * Render a view with a blended background as prepared from @prepare_blur.
 diff --git a/plugins/common/workspace-wall.cpp b/plugins/common/workspace-wall.cpp
-index 2d15ffb1..6f47c9e4 100644
+index 2d15ffb..6f47c9e 100644
 --- a/plugins/common/workspace-wall.cpp
 +++ b/plugins/common/workspace-wall.cpp
 @@ -158,7 +158,7 @@ class workspace_wall_t::workspace_wall_node_t : public scene::node_t
@@ -196,7 +196,7 @@ index 2d15ffb1..6f47c9e4 100644
                      float dim = self->wall->get_color_for_workspace({i, j});
                      const auto& subbox = self->aux_buffer_current_subbox[i][j];
 diff --git a/plugins/grid/wayfire/plugins/crossfade.hpp b/plugins/grid/wayfire/plugins/crossfade.hpp
-index 6e52e4b9..bd9ee071 100644
+index 6e52e4b..bd9ee07 100644
 --- a/plugins/grid/wayfire/plugins/crossfade.hpp
 +++ b/plugins/grid/wayfire/plugins/crossfade.hpp
 @@ -58,8 +58,13 @@ class crossfade_node_t : public scene::view_2d_transformer_t
@@ -228,7 +228,7 @@ index 6e52e4b9..bd9ee071 100644
              self->original_buffer.get_buffer(), self->original_buffer.get_texture());
          data.pass->add_texture(tex, data.target, self->displayed_geometry, data.damage, 1.0 - ra);
 diff --git a/src/api/wayfire/view-transform.hpp b/src/api/wayfire/view-transform.hpp
-index 8c2a422b..4a6e90dd 100644
+index 8c2a422..4a6e90d 100644
 --- a/src/api/wayfire/view-transform.hpp
 +++ b/src/api/wayfire/view-transform.hpp
 @@ -78,6 +78,9 @@ class transformer_base_node_t : public scene::floating_inner_node_t
@@ -262,8 +262,49 @@ index 8c2a422b..4a6e90dd 100644
          if (out_logical_size)
          {
              *out_logical_size = wf::dimensionsf_t{
+diff --git a/src/render.cpp b/src/render.cpp
+index 78697fd..19dc5ca 100644
+--- a/src/render.cpp
++++ b/src/render.cpp
+@@ -890,7 +890,11 @@ void wf::render_pass_t::clear(const wf::regionf_t& region, const wf::color_t& co
+         .a = static_cast<float>(color.a),
+     };
+ 
+-    wlr_render_pass_add_rect(_get_pass(), &opts);
++    // Sonata: no pass when the buffer couldn't be set up (graphics memory full) -- skip
++    if (auto pass = _get_pass())
++    {
++        wlr_render_pass_add_rect(pass, &opts);
++    }
+ }
+ 
+ void wf::render_pass_t::add_texture(const std::shared_ptr<wf::texture_t>& texture,
+@@ -949,7 +953,10 @@ void wf::render_pass_t::add_texture(const std::shared_ptr<wf::texture_t>& textur
+         opts.luminance_multiplier = &luminance_multiplier;
+     }
+ 
+-    wlr_render_pass_add_texture(get_wlr_pass(), &opts);
++    if (auto pass = get_wlr_pass())
++    {
++        wlr_render_pass_add_texture(pass, &opts);
++    }
+ }
+ 
+ void wf::render_pass_t::add_rect(const wf::color_t& color, const wf::render_target_t& adjusted_target,
+@@ -968,7 +975,10 @@ void wf::render_pass_t::add_rect(const wf::color_t& color, const wf::render_targ
+     opts.box  = adjusted_target.framebuffer_texture_dst_box_from_geometry_box(geometry);
+     wf::dassert(opts.box.width >= 0);
+     wf::dassert(opts.box.height >= 0);
+-    wlr_render_pass_add_rect(_get_pass(), &opts);
++    if (auto pass = _get_pass())
++    {
++        wlr_render_pass_add_rect(pass, &opts);
++    }
+ }
+ 
+ bool wf::render_pass_t::submit()
 diff --git a/src/view/view-3d.cpp b/src/view/view-3d.cpp
-index a2e6b77d..a64f6973 100644
+index a2e6b77..a64f697 100644
 --- a/src/view/view-3d.cpp
 +++ b/src/view/view-3d.cpp
 @@ -264,6 +264,11 @@ class view_2d_render_instance_t :
@@ -355,7 +396,7 @@ index a2e6b77d..a64f6973 100644
          cached_damage |= bbox;
      }
 diff --git a/src/view/view.cpp b/src/view/view.cpp
-index daa50dbf..749bd38a 100644
+index daa50db..749bd38 100644
 --- a/src/view/view.cpp
 +++ b/src/view/view.cpp
 @@ -96,8 +96,16 @@ void wf::view_interface_t::take_snapshot(wf::auxilliary_buffer_t& buffer)

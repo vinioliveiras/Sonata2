@@ -152,3 +152,52 @@ class KeepTest(unittest.TestCase):
                 mock.patch.object(main, "share_session_env"):
             self.assertEqual(main.keep(["dock"]), 0)
         self.assertEqual(state["n"], 1)                          # not started again
+
+    def _keep(self, child_cls, alive):
+        import subprocess
+        from sonata2 import __main__ as main
+        d = tempfile.mkdtemp()
+        open(os.path.join(d, "wayland-1"), "w").close()
+        env = {"XDG_RUNTIME_DIR": d, "XDG_CACHE_HOME": d, "WAYLAND_DISPLAY": "wayland-1"}
+        with mock.patch.dict(os.environ, env), mock.patch.object(subprocess, "Popen", child_cls), \
+                mock.patch.object(main, "share_session_env"), mock.patch.object(main, "_compositor_alive", alive), \
+                mock.patch("time.sleep"):
+            return main.keep(["dock"]), d
+
+    def test_a_crashed_compositor_ends_them_too(self):
+        """18:53 (Win+D during a game): Wayfire crashed, its socket file
+        stayed, the old Dock was started again and reached the new Wayfire."""
+        state = {"n": 0}
+
+        class Child:
+            def __init__(self, *_a, **_k):
+                state["n"] += 1
+
+            def wait(self, timeout=None):
+                return -11
+        code, _d = self._keep(Child, lambda _p: False)            # nobody listens on the old socket
+        self.assertEqual((code, state["n"]), (0, 1))
+
+    def test_a_new_compositor_during_the_pause(self):
+        state = {"n": 0, "alive": [True, False]}
+
+        class Child:
+            def __init__(self, *_a, **_k):
+                state["n"] += 1
+
+            def wait(self, timeout=None):
+                return -11
+        code, _d = self._keep(Child, lambda _p: state["alive"].pop(0) if state["alive"] else False)
+        self.assertEqual((code, state["n"]), (0, 1))              # checked again before restarting
+
+    def test_a_crashed_component_still_restarts(self):
+        state = {"n": 0}
+
+        class Child:
+            def __init__(self, *_a, **_k):
+                state["n"] += 1
+
+            def wait(self, timeout=None):
+                return -11 if state["n"] < 2 else 0
+        code, _d = self._keep(Child, lambda _p: True)
+        self.assertEqual((code, state["n"]), (0, 2))

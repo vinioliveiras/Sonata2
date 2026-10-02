@@ -903,6 +903,25 @@ def _socket_id(path: str):
         return None
 
 
+def _compositor_alive(path: str) -> bool:
+    """A compositor answers on its socket; a crashed one leaves the socket
+    file behind (nobody removed it) but nothing listens there."""
+    import socket
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.settimeout(1)
+        s.connect(path)
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def _same_session(sock: str, session) -> bool:
+    return session is not None and _socket_id(sock) == session and _compositor_alive(sock)
+
+
 def keep(argv) -> int:
     """`sonata2 keep dock` (session autostart): run a shell component and
     start it again if it crashes -- a desktop must never lose its Dock or
@@ -937,7 +956,11 @@ def keep(argv) -> int:
         # on purpose, or the session ended -- also when Sonata already started
         # again on a new compositor (the same socket name): its own Dock and
         # menu bar are coming (Vini: two Docks and two menu bars after a crash)
-        if code in (0, -15, -2, 130, 143) or _socket_id(sock) != session or session is None:
+        # The compositor crashed: its socket stays until the new one replaces
+        # it, so ask whether anyone listens -- and again after the pause
+        # (Vini, 18:53: restarted a second too late, the old Dock landed on
+        # the new compositor next to the new session's own)
+        if code in (0, -15, -2, 130, 143) or not _same_session(sock, session):
             return 0
         now = time.monotonic()
         crashes = [t for t in crashes if now - t < 60] + [now]
@@ -946,6 +969,8 @@ def keep(argv) -> int:
             print(f"sonata2 keep: {argv[0]} keeps crashing; giving up", file=sys.stderr)
             return 1
         time.sleep(1 if now - started > 10 else 3)
+        if not _same_session(sock, session):
+            return 0
 
 
 def main() -> int:
