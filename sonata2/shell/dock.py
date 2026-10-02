@@ -15,6 +15,7 @@ Layout along the Dock:
 Running apps come from wlr-foreign-toplevel (wl/toplevels.py). Menus:
 dock_menu.py. File drops: dock_drop.py. Stacks: dock_stack.py. Auto-hide
 lives in DockWindow."""
+import json
 import math
 import os
 
@@ -568,6 +569,15 @@ class Dock(Gtk.Box):
     def save_cfg(self) -> None:
         """dock.json with the chosen size (not the shrunk-to-fit one)."""
         config.save("dock", {**self.cfg, "icon_size": self.user_size})
+        # folders linked with Launchpad's (folder_link.py): theirs follow
+        sig = json.dumps(self.cfg.get("folders") or {}, sort_keys=True)
+        if sig != getattr(self, "_folders_pushed", None):
+            self._folders_pushed = sig
+            from .. import folder_link
+            try:
+                folder_link.to_launchpad(self.cfg.get("folders"))
+            except OSError as e:
+                print(f"sonata2-dock: folders not shared with Launchpad: {e}", flush=True)
 
     # -- fit (macOS): a full Dock shrinks its icons, and grows back when apps close
     def _span(self) -> float:
@@ -1207,10 +1217,14 @@ class Dock(Gtk.Box):
         f = self.folder(key)
         if f is not None and not f.get("locked"):
             from ..launchpad_model import encode_folder
-            return encode_folder(f["name"], f["apps"])
+            if not f.get("link"):                  # Launchpad's copy stays the same folder (folder_link)
+                from ..folder_link import new_link
+                f["link"] = new_link()
+                self.save_cfg()
+            return encode_folder(f["name"], f["apps"], f["link"])
         return key
 
-    def add_folder(self, name: str, app_ids: list, before=None, x=None, y=0.0):
+    def add_folder(self, name: str, app_ids: list, before=None, x=None, y=0.0, link: str = ""):
         """A folder dragged in (from Launchpad), placed where dropped. Its
         apps' own icons leave the pinned row. Returns its key (None: no
         installed apps)."""
@@ -1221,6 +1235,9 @@ class Dock(Gtk.Box):
         if not keys:
             return None
         fkey = self.make_folder(keys, name=name)
+        if link and fkey and not any(f.get("link") == link for f in self.cfg["folders"].values()):
+            self.folder(fkey)["link"] = link       # Launchpad's: the same folder from now on
+            self.save_cfg()
         tile = self.tiles.get(fkey)
         if tile is not None:
             others = [t for t in self.app_tiles() if t is not tile]

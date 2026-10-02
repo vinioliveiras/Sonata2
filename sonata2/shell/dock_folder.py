@@ -322,7 +322,7 @@ def open_panel(dock, tile, then=None, rename=False) -> Gtk.Popover:
     # the name: click it to rename (Vini), like Launchpad's folders; editable
     # once the apps show (a locked folder: after its password)
     title = Gtk.EditableLabel(text=folder["name"], css_classes=["dock-folder-title"], editable=False,
-                              halign=Gtk.Align.CENTER, max_width_chars=28)
+                              halign=Gtk.Align.CENTER, max_width_chars=28, xalign=0.5)
     view.append(title)
     pop.view, pop.flow, pop.lock, pop.sig, pop.title = view, None, None, _signature(folder), title
     pop.rename = rename
@@ -335,17 +335,29 @@ def open_panel(dock, tile, then=None, rename=False) -> Gtk.Popover:
         pop.connect("closed", lambda p: GLib.idle_add(lambda: (p.unparent(), False)[1]))
     ui.menu.OPEN.add(pop)                       # keeps an auto-hiding Dock visible
     pop.connect("closed", lambda p: (ui.menu.OPEN.discard(p), [cb() for cb in list(ui.menu.on_closed)]))
+    # the keyboard while it's open (the Dock takes none): its name can be
+    # typed (Vini: clicking it did nothing), Esc closes it, a password too
+    pop.connect("closed", lambda _p: _keyboard(tile, False))
     if not reuse:
         _lock_view(dock, tile, pop, then)
     else:
         _apps_view(dock, tile, pop)
+    _keyboard(tile, True)
     pop.popup()
     return pop
+
+
+def _keyboard(tile, on: bool) -> None:
+    from . import layer
+    win = tile.get_root()
+    if win is not None:
+        layer.take_keyboard(win, on)
 
 
 def _replay(pop) -> None:
     """Open a kept panel with its zoom-in again (the class comes back on the
     next frame, so the animation starts over; hidden until then)."""
+    _keyboard(pop.get_parent(), True)
     v = pop.view
     for c in ("closing", "dock-folder-view"):
         v.remove_css_class(c)
@@ -375,10 +387,6 @@ def _lock_view(dock, tile, pop, then=None) -> None:
     box.append(hint)
     pop.view.append(box)
     pop.lock, pop.entry, pop.hint = box, entry, hint      # (tests)
-    from . import layer
-    win = tile.get_root()
-    if win is not None and layer.take_keyboard(win, True):     # the Dock types nothing otherwise
-        pop.connect("closed", lambda _p: layer.take_keyboard(win, False))
 
     def done(ok):
         if pop.lock is not box:
@@ -441,19 +449,13 @@ def _edit_title(pop) -> None:
 
 
 def _title_editing(dock, tile, pop) -> None:
-    """Typing needs the keyboard (the Dock takes none); the name is saved
-    when editing stops (Enter, or a click elsewhere), Esc keeps the old one."""
+    """The name is saved when editing stops (Enter, or a click elsewhere);
+    Esc keeps the old one (the panel has the keyboard: open_panel)."""
     title = pop.title
-    from . import layer
 
     def changed(*_):
-        win = tile.get_root()
         if title.get_editing():
-            if win is not None:
-                layer.take_keyboard(win, True)
             return
-        if win is not None and pop.lock is None:        # (the password view keeps it while open)
-            layer.take_keyboard(win, False)
         name = title.get_text().strip()
         f = dock.folder(tile.key)
         if f is None:

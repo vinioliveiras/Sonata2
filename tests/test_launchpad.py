@@ -32,6 +32,8 @@ class LaunchpadTest(unittest.TestCase):
         ui.setup()
 
     def setUp(self):
+        from sonata2 import config
+        config.save("launchpad", {"pages": [], "hidden": []})       # each test from a fresh layout
         self.win = L.Launchpad(None)
         if len(self.win.model.all_apps()) < 3:
             self.skipTest("needs 3 installed apps")
@@ -138,6 +140,28 @@ class LaunchpadTest(unittest.TestCase):
         self.assertIsNotNone(self.win.folder_view)
         self.assertIsNone(self.win._editing_title())
         self.assertTrue(self.win._key(None, Gdk.KEY_Right, 0, 0))          # the grid's again
+
+    def test_linked_folder_follows_both_ways(self):
+        """Vini: a folder renamed in Launchpad is renamed in the Dock, and back."""
+        import json
+        from sonata2 import config
+        folder, title = self._folder()
+        folder["link"] = "L5"
+        config.save("dock", {"folders": {"1": {"name": "Work", "apps": list(folder["apps"]), "link": "L5"}},
+                             "pinned": ["folder:1"]})
+        title.start_editing()
+        title.set_text("Games")
+        title.stop_editing(True)
+        with open(os.path.join(config.CONFIG_DIR, "dock.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["folders"]["1"]["name"], "Games")
+        from sonata2 import folder_link
+        folder_link.to_launchpad({"1": {"name": "Tools", "apps": list(folder["apps"]), "link": "L5"}})
+        self.win._config_changed()                                          # (config.watch calls it)
+        settle(100)
+        item = next(it for it in self.win.model.pages[0] if M.is_folder(it) and it.get("link") == "L5")
+        self.assertEqual(item["folder"], "Tools")
+        self.assertEqual(self.win._item_widget(item).label.get_label(), "Tools")
+        config.save("dock", {})
 
     def test_toggle_hides(self):
         self.win.close_launchpad()

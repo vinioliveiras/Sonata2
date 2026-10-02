@@ -342,7 +342,7 @@ def add_folders(dock, folders, before=None, x=None, y=0.0) -> bool:
     """Launchpad folders dropped on the Dock: a Dock folder each, there."""
     ok = False
     for f in folders:
-        fkey = dock.add_folder(f["folder"], f["apps"], before=before, x=x, y=y)
+        fkey = dock.add_folder(f["folder"], f["apps"], before=before, x=x, y=y, link=f.get("link", ""))
         print(f"sonata2-dock: folder dropped: {f['folder']!r} ({len(f['apps'])} apps) -> {fkey}", flush=True)
         ok = fkey is not None or ok
     return ok

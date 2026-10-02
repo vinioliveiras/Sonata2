@@ -43,6 +43,9 @@ def folder_name(categories_a, categories_b) -> str:
     return "Untitled Folder"
 
 
+KEPT_KEYS = ("link",)     # a folder's other keys kept (folder_link.py: the Dock's copy)
+
+
 class Model:
     def __init__(self, data: dict, installed: dict):
         """installed: desktop id -> display name (apps that should be shown)."""
@@ -67,7 +70,11 @@ class Model:
                     apps = [a for a in item.get("apps", []) if a in self.installed and a not in seen]
                     seen.update(apps)
                     if len(apps) > 1:
-                        out.append({"folder": item.get("folder") or "Untitled Folder", "apps": apps})
+                        f = {"folder": item.get("folder") or "Untitled Folder", "apps": apps}
+                        for k in KEPT_KEYS:             # the Dock link, the lock
+                            if item.get(k):
+                                f[k] = item[k]
+                        out.append(f)
                     elif apps:
                         out.append(apps[0])
                 elif item in self.installed and item not in seen:
@@ -175,10 +182,20 @@ class Model:
         self.pages[page].insert(min(index, len(self.pages[page])), app_id)
         self.normalize()
 
-    def add_folder(self, name: str, app_ids: list, page: int, index: int):
+    def add_folder(self, name: str, app_ids: list, page: int, index: int, link: str = ""):
         """A folder dropped in from the Dock: its apps (installed, not hidden)
         leave where they were and come together at page/index. One app
-        alone is placed as itself. Returns what was placed (None: nothing)."""
+        alone is placed as itself. A folder with the same link (dragged back)
+        is replaced: its other apps stay where it was. Returns what was placed
+        (None: nothing)."""
+        if link:
+            for p, pg in enumerate(self.pages):
+                for i, it in enumerate(pg):
+                    if is_folder(it) and it.get("link") == link:
+                        rest = [a for a in it["apps"] if a not in app_ids]
+                        pg[i:i + 1] = rest
+                        if p == page and i < index:
+                            index += len(rest) - 1
         keep = []
         for a in app_ids:
             if a in self.installed and a not in self.hidden and a not in keep:
@@ -188,6 +205,9 @@ class Model:
         for a in keep:
             self._remove_app_anywhere(a)
         item = {"folder": name or "Untitled Folder", "apps": keep} if len(keep) > 1 else keep[0]
+        if is_folder(item):
+            if link:
+                item["link"] = link
         while page >= len(self.pages):
             self.pages.append([])
         self.pages[page].insert(min(index, len(self.pages[page])), item)
@@ -207,10 +227,13 @@ class Model:
 FOLDER_SCHEME = "sonata2-folder:"
 
 
-def encode_folder(name: str, app_ids: list) -> str:
+def encode_folder(name: str, app_ids: list, link: str = "") -> str:
     import json
     from urllib.parse import quote
-    return FOLDER_SCHEME + quote(json.dumps({"folder": name, "apps": list(app_ids)}), safe="")
+    data = {"folder": name, "apps": list(app_ids)}
+    if link:
+        data["link"] = link
+    return FOLDER_SCHEME + quote(json.dumps(data), safe="")
 
 
 def decode_folder(text) -> dict:
@@ -226,7 +249,10 @@ def decode_folder(text) -> dict:
     if not isinstance(data, dict) or not isinstance(data.get("folder"), str) or \
             not isinstance(data.get("apps"), list) or not all(isinstance(a, str) for a in data["apps"]):
         return None
-    return {"folder": data["folder"], "apps": list(data["apps"])}
+    out = {"folder": data["folder"], "apps": list(data["apps"])}
+    if isinstance(data.get("link"), str) and data["link"]:
+        out["link"] = data["link"]
+    return out
 
 
 def search(installed_meta: dict, query: str, limit: int = None) -> list:

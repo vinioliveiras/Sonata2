@@ -14,7 +14,7 @@ import gi  # noqa: E402
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
-from sonata2 import config  # noqa: E402
+from sonata2 import config, launchpad_model as M  # noqa: E402
 from sonata2.shell import dock as D, dock_folder as F  # noqa: E402
 
 
@@ -339,7 +339,8 @@ class DockFolderTest(unittest.TestCase):
         from sonata2.launchpad_model import decode_folder
         d, a, b = self.dock, self.apps[0], self.apps[1]
         fkey = d.make_folder([a, b], name="Work")
-        self.assertEqual(decode_folder(d._drag_text(fkey)), {"folder": "Work", "apps": [a, b]})
+        self.assertEqual(decode_folder(d._drag_text(fkey)),
+                         {"folder": "Work", "apps": [a, b], "link": d.folder(fkey)["link"]})
         self.assertEqual(d._drag_text(self.apps[2]), self.apps[2])            # an app: its id
         d.set_folder_locked(fkey, True)
         self.assertIsNone(decode_folder(d._drag_text(fkey)))                  # locked: never shown elsewhere
@@ -662,6 +663,46 @@ class DockFolderTest(unittest.TestCase):
         self.assertFalse(pop.title.get_editable())
         pop.popdown()
         settle()
+
+    def test_title_centred_and_panel_takes_keyboard(self):
+        """Vini: the name wasn't centred, and clicking it couldn't edit it (the
+        Dock takes no keyboard: editing stopped at once)."""
+        from unittest import mock
+        d, a, b = self.dock, *self.apps[:2]
+        fkey = d.make_folder([a, b], name="Work")
+        settle()
+        with mock.patch("sonata2.shell.layer.take_keyboard") as kb:
+            pop = F.open_panel(d, d.tiles[fkey])
+            settle()
+            self.assertEqual(kb.call_args[0][1], True)
+            self.assertEqual(pop.title.get_property("xalign"), 0.5)
+            pop.popdown()
+            settle()
+            self.assertEqual(kb.call_args[0][1], False)                 # given back when it closes
+            F.open_panel(d, d.tiles[fkey])                              # the kept panel too
+            settle()
+            self.assertEqual(kb.call_args[0][1], True)
+            pop.popdown()
+            settle()
+
+    # -- linked with Launchpad (folder_link) ---------------------------------------
+    def test_drag_text_links_the_folder(self):
+        d, a, b = self.dock, *self.apps[:2]
+        fkey = d.make_folder([a, b], name="Work")
+        f = M.decode_folder(d._drag_text(fkey))
+        self.assertTrue(f["link"])
+        self.assertEqual(d.folder(fkey)["link"], f["link"])
+        self.assertEqual(D.load_config()["folders"][F.folder_id(fkey)]["link"], f["link"])   # kept
+
+    def test_rename_in_dock_reaches_launchpad(self):
+        d, a, b = self.dock, *self.apps[:2]
+        config.save("launchpad", {"pages": [[{"folder": "Work", "apps": [a, b], "link": "L9"}]], "hidden": []})
+        fkey = d.add_folder("Work", [a, b], link="L9")
+        d.rename_folder(fkey, "Games")
+        import json
+        with open(os.path.join(config.CONFIG_DIR, "launchpad.json"), encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["pages"][0][0]["folder"], "Games")
+        config.save("launchpad", {})
 
     def test_poof_window_is_see_through(self):
         import inspect

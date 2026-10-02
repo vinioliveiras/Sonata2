@@ -411,7 +411,13 @@ class Launchpad(Gtk.ApplicationWindow):
         ui.transition.glide_play(before, self)
 
     def save(self) -> None:
-        config.save("launchpad", self.model.to_json())
+        data = self.model.to_json()
+        config.save("launchpad", data)
+        from .. import folder_link                   # the Dock's copies of linked folders follow
+        try:
+            folder_link.to_dock(data)
+        except OSError as e:
+            print(f"sonata2-launchpad: folders not shared with the Dock: {e}", flush=True)
 
     # -- Hidden: apps hidden from the grid, in a folder that asks for the password ----------
     HIDDEN = "Hidden"
@@ -937,7 +943,11 @@ class Launchpad(Gtk.ApplicationWindow):
                 return None                     # Hidden stays where it is; its apps come out by the menu
             providers = [Gdk.ContentProvider.new_for_value("sonata2-launchpad-item")]
             if M.is_folder(widget.item):            # the Dock keeps a copy of the folder
-                uri = M.encode_folder(widget.item["folder"], widget.item["apps"])
+                if not widget.item.get("link"):     # the Dock's copy stays the same folder (folder_link)
+                    from ..folder_link import new_link
+                    widget.item["link"] = new_link()
+                    self.save()
+                uri = M.encode_folder(widget.item["folder"], widget.item["apps"], widget.item["link"])
                 providers.append(Gdk.ContentProvider.new_for_bytes(
                     "text/uri-list", GLib.Bytes.new((uri + "\r\n").encode())))
             info = None if M.is_folder(widget.item) else self.installed.get(widget.item)
@@ -1089,7 +1099,8 @@ class Launchpad(Gtk.ApplicationWindow):
         if grid.index < 0:
             return False
         index, _centre = grid.cell_at(x, y)
-        if self.model.add_folder(folder["folder"], folder["apps"], grid.index, index) is None:
+        if self.model.add_folder(folder["folder"], folder["apps"], grid.index, index,
+                                 link=folder.get("link", "")) is None:
             return False
         self.save()
         self.render()
