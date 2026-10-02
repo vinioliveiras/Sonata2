@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.3.0-alpha -- 2026-10-02
+
+Steadier sessions on laptops with two graphics cards, web apps, and an
+Apps Menu.
+
+### Stability
+- A game or app that fills the graphics card's memory no longer takes the
+  session down: Sonata's build of Wayfire skips a frame or an effect
+  instead (run `tools/build-wayfire.sh`; the installer offers it).
+- On laptops whose screens are all on the NVIDIA card, the integrated GPU
+  never draws the session (most AMD crashes came from there).
+- After a crash Sonata starts again in the same login, and Feedbacker names
+  the cause, keeps a history and offers to reopen your apps.
+- A warning when the NVIDIA card's memory is almost full, naming the app.
+- No more duplicated Dock and menu bar after a restart.
+
+### Apps and web apps
+- New Web App… (right-click Apps, the Desktop or the Dock's divider): a
+  site in its own window, with its own login, icon and Dock item. Edit it
+  or choose its icon later; it can keep running for notifications.
+- Apps Menu: Apps as a compact glass panel with categories, chosen in
+  Settings > Appearance or in the setup; same folders, drags and search as
+  the full screen. Arrow keys and Esc work in both.
+- Folders made in the Dock show up in Apps, and stay in sync both ways.
+- Assistant (new): chat with Claude, with your own API key.
+- Screenshot is in Apps; the capture toolbar opens on the last mode.
+
+### Desktop
+- Super+D shows the desktop; clicking one app brings back only that app.
+- Restoring a window from another display's Dock brings it to that display.
+- Screen Sharing (Settings > Sharing): see and control Sonata from another
+  device with any VNC viewer, always with a password.
+- Steam games show their name and icon in Alt+Tab and the sound mixer.
+- Dock folders are renamed in their own dialog; folder names stay centred.
+
+### Fixes
+- The installer no longer uses the AUR for pixdecor (it conflicted with the
+  stable wayfire, #1); it is built from source.
+- The recording's status shows once, in the middle of the top of the screen.
+- Many smaller fixes, each with a test.
+
 ## 0.2.0-alpha -- 2026-10-02
 
 Sonata now updates itself: from this version on, a new release shows up as
