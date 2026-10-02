@@ -164,7 +164,10 @@ def prewarm(win, before=None, after=None, frames: int = 3, delay_ms: int = 1500)
         if LS:
             LS.set_keyboard_mode(win, LS.KeyboardMode.NONE)
         if before:
-            before()
+            try:
+                before()
+            except Exception as e:       # a warm-up only: never leaves the surface without keys (Esc)
+                print(f"sonata2: prewarm: {e!r}", flush=True)
         win.set_opacity(0.01)
         win.set_can_target(False)
         win.present()

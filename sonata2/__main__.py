@@ -238,7 +238,7 @@ def run_launchpad(app, args, ui, state):
         if not args.preview:       # drawn once invisibly: the first open is smooth
             if LW.style() == "window":             # the Apps Menu layout
                 win._set_mode("menu")
-                layer.prewarm(win, before=lambda: (win.menu._size(), win.menu._build_tabs(), win.menu.refresh()))
+                layer.prewarm(win, before=lambda: (win.menu._size(), win.menu._build_tabs(), win.render()))
             else:
                 layer.prewarm(win, before=lambda: setattr(win.bin, "progress", 1.0),
                               after=lambda: setattr(win.bin, "progress", 0.0))

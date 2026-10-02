@@ -290,6 +290,36 @@ class PlaceAndSizeTest(unittest.TestCase):
         self.assertEqual(LW.panel_size(800, 600), (560, 440))         # never cramped
 
 
+class PrewarmTest(unittest.TestCase):
+    """Vini: Esc stopped closing Launchpad -- the Apps Menu's warm-up called
+    a method that no longer existed, and the surface kept no keyboard."""
+
+    def test_warm_up_calls_only_what_exists(self):
+        import re
+        from sonata2 import __main__ as main
+        src = open(main.__file__).read()
+        line = next(ln for ln in src.splitlines() if "layer.prewarm(win, before=lambda: (win.menu." in ln)
+        from sonata2.shell import launchpad as L
+        for name in re.findall(r"win\.menu\.(\w+)\(", line):
+            self.assertTrue(hasattr(LW.MenuView, name), name)
+        for name in re.findall(r"win\.(\w+)\(\)", line):
+            self.assertTrue(hasattr(L.Launchpad, name), name)
+
+    def test_keyboard_back_even_when_warm_up_fails(self):
+        from sonata2.shell import layer
+        LS = mock.Mock()
+        win = mock.Mock()
+        win.get_visible.return_value = False
+        win.keyboard_mode = "EXCLUSIVE"
+        with mock.patch.object(layer, "layer_shell", return_value=LS), \
+                mock.patch.object(layer, "set_input_region"), \
+                mock.patch("gi.repository.GLib.timeout_add", side_effect=lambda _ms, fn: fn()):
+            layer.prewarm(win, before=lambda: 1 / 0, frames=1)
+        tick = win.add_tick_callback.call_args[0][0]
+        tick(win, None)
+        self.assertEqual(LS.set_keyboard_mode.call_args[0][1], "EXCLUSIVE")
+
+
 class RoutingTest(unittest.TestCase):
     def test_one_launchpad(self):
         from sonata2 import __main__ as main
