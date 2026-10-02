@@ -22,9 +22,19 @@ run_cfg="${XDG_RUNTIME_DIR:-/tmp}/sonata2-wayfire.ini"
 # while it's built from the installed Wayfire's commit (its plugins match)
 WAYFIRE=wayfire
 own="${SONATA_WAYFIRE_PREFIX:-$HOME/.local/opt/sonata-wayfire}"
-if [ -x "$own/bin/wayfire" ] && [ -s "$own/sonata-commit" ] && [ "${SONATA_SYSTEM_WAYFIRE:-}" != 1 ] &&
+# ($own/failed: it couldn't start once -- the system's until it's built again)
+if [ -x "$own/bin/wayfire" ] && [ -s "$own/sonata-commit" ] && [ ! -e "$own/failed" ] &&
+        [ "${SONATA_SYSTEM_WAYFIRE:-}" != 1 ] &&
         wayfire --version 2>/dev/null | grep -q -- "-$(head -n1 "$own/sonata-commit") "; then
     WAYFIRE="$own/bin/wayfire"
+    # plugins installed only system-wide, and their settings (pixdecor.xml: without
+    # it Wayfire aborted at once -- Vini's screen flickered), linked in
+    for d in lib/wayfire share/wayfire/metadata; do
+        mkdir -p "$own/$d"
+        for f in /usr/$d/*; do
+            [ -e "$f" ] && [ ! -e "$own/$d/${f##*/}" ] && ln -s "$f" "$own/$d/${f##*/}" 2>/dev/null
+        done
+    done
 fi
 # Polkit authentication agent (password prompts for system actions):
 # Sonata's own (started by `sonata2 autostart`) when polkit's
@@ -134,8 +144,28 @@ fi
 record_crash() {
     case "$1" in 0|129|130|143) return ;; esac
     printf '%s %s\n' "$(date +%s)" "$1" > "$logs/last-crash"
+    kernel_log "$2"
+}
+kernel_log() {
     command -v journalctl >/dev/null && \
-        journalctl -k -b 0 --since "@$2" --no-pager -o short-iso > "$logs/kernel-at-crash.log" 2>&1
+        journalctl -k -b 0 --since "@$1" --no-pager -o short-iso > "$logs/kernel-at-crash.log" 2>&1
+}
+# Wayfire, until it ends. Sonata's own build failing at once never locks you
+# out, nor counts against the GPU choice or as a crash (Vini: the screen
+# flickered three times, then a crash report): marked failed until it's built
+# again, the system's Wayfire instead.
+run_wayfire() {
+    started=$(date +%s)
+    "$WAYFIRE" -c "$cfg" > "$logs/session.log" 2>&1
+    code=$?
+    if [ "$WAYFIRE" != wayfire ] && [ "$code" -ne 0 ] && [ $(( $(date +%s) - started )) -lt 15 ]; then
+        mv -f "$logs/session.log" "$logs/session.own-wayfire-failed.log"
+        touch "$own/failed"
+        WAYFIRE=wayfire
+        started=$(date +%s)
+        wayfire -c "$cfg" > "$logs/session.log" 2>&1
+        code=$?
+    fi
 }
 # The end of a session. A crash after it had been running a while starts
 # Sonata again at once -- the same login, no password (Vini: a GPU reset
@@ -160,10 +190,9 @@ SESSION_SCRIPT="$(readlink -f "$0")"
 if [ -n "$gpu_set" ]; then
     # a GPU order the session can't start with (driver trouble) must never
     # lock you out: Wayfire ending within seconds is started again without it
-    started=$(date +%s)
-    "$WAYFIRE" -c "$cfg" > "$logs/session.log" 2>&1
-    code=$?
-    record_crash "$code" "$started"
+    run_wayfire
+    ran_long=$(( $(date +%s) - started >= 15 ))
+    if [ "$ran_long" = 1 ]; then record_crash "$code" "$started"; else kernel_log "$started"; fi
     # crashed because that GPU refused a buffer: back to wlroots' choice from
     # the next login, and the menu bar says so (gpu.crash_notice)
     # -- but not when an app filled the card's memory (NVRM NV_ERR_NO_MEMORY:
@@ -173,22 +202,13 @@ if [ -n "$gpu_set" ]; then
         rm -f "$gpu_flag"
         touch "$logs/display-gpu-crashed"
     fi
-    if [ $(( $(date +%s) - started )) -ge 15 ]; then
+    if [ "$ran_long" = 1 ]; then
         finish "$code" "$started"
     fi
     mv -f "$logs/session.log" "$logs/session.gpu-failed.log"
     unset WLR_DRM_DEVICES
 fi
-started=$(date +%s)
-"$WAYFIRE" -c "$cfg" > "$logs/session.log" 2>&1
-code=$?
-# Sonata's own build failing at once never locks you out: the system's Wayfire
-if [ "$WAYFIRE" != wayfire ] && [ "$code" -ne 0 ] && [ $(( $(date +%s) - started )) -lt 5 ]; then
-    mv -f "$logs/session.log" "$logs/session.own-wayfire-failed.log"
-    started=$(date +%s)
-    wayfire -c "$cfg" > "$logs/session.log" 2>&1
-    code=$?
-fi
+run_wayfire
 record_crash "$code" "$started"
 # (finish: other desktops' GTK 4 apps never get Sonata's window look -- adwstyle.py)
 finish "$code" "$started"

@@ -52,4 +52,5 @@ step meson install -C "$wdir/build" --destdir "$wdir/stage"
     cp -p "$wdir/stage$PREFIX/$f" "$PREFIX/$f.new" && mv -f "$PREFIX/$f.new" "$PREFIX/$f"
 done
 echo "$commit" > "$PREFIX/sonata-commit"
+rm -f "$PREFIX/failed"                  # (tools/sonata-session tries it again)
 echo "  Wayfire $commit with Sonata's fix installed to $PREFIX (log out and back in to use it)"

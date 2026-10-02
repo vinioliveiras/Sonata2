@@ -1856,15 +1856,31 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         self.assertIn('wayfire --version 2>/dev/null | grep -q -- "-$(head -n1 "$own/sonata-commit") "', sess)
         tail = sess[sess.rindex('"$WAYFIRE" -c "$cfg"'):]
         self.assertIn('[ "$WAYFIRE" != wayfire ] && [ "$code" -ne 0 ]', tail)
-        self.assertIn('\n    wayfire -c "$cfg" > "$logs/session.log" 2>&1', tail)
+        self.assertIn('\n        wayfire -c "$cfg" > "$logs/session.log" 2>&1', tail)
+        self.assertIn('touch "$own/failed"', tail)                     # not tried again until rebuilt
+        self.assertIn('[ ! -e "$own/failed" ]', sess)
         build = (root / "tools" / "build-wayfire.sh").read_text()
         self.assertIn("wayfire-buffer-failures.patch", build)
         self.assertIn('echo "$commit" > "$PREFIX/sonata-commit"', build)
         # Vini: "wayfire/nonstd/safe-list.hpp: No such file" -- the system's wf-config is older
         self.assertIn("-Duse_system_wfconfig=disabled", build)
         self.assertIn("subprojects/wf-config", build)
+        self.assertIn('rm -f "$PREFIX/failed"', build)
         for f in ("tools/sonata-session", "tools/build-wayfire.sh", "install.sh"):
             self.assertEqual(subprocess.run(["bash", "-n", str(root / f)]).returncode, 0, f)
+
+
+    def test_own_wayfire_fails_quietly(self):
+        """Vini: the screen flickered at login, then a crash report -- the
+        patched Wayfire aborted (pixdecor.xml only in /usr/share): its fast
+        failure was blamed on the GPU and noted as a crash."""
+        sess = (pathlib.Path(__file__).resolve().parent.parent / "tools" / "sonata-session").read_text()
+        self.assertIn('for d in lib/wayfire share/wayfire/metadata; do', sess)
+        gpu = sess[sess.index('if [ -n "$gpu_set" ]; then\n    # a GPU order'):]
+        gpu = gpu[:gpu.index('unset WLR_DRM_DEVICES')]
+        self.assertIn("run_wayfire", gpu)                                 # own build's fallback first
+        self.assertIn('if [ "$ran_long" = 1 ]; then record_crash "$code" "$started"; else kernel_log "$started"; fi',
+                      gpu)                                                # a fast failure is no crash report
 
     def test_wayfire_patch_covers_the_snapshot(self):
         """15:39 crash: the close animation's snapshot (view.cpp take_snapshot)
