@@ -70,8 +70,9 @@ window.sonata-launchpad *:drop(active) { box-shadow: none; outline: none; border
 .lp-lock-hint { color: %(on_scrim_secondary)s; font-family: %(font)s; font-size: %(text_small)s; }
 .lp-lock-panel passwordentry { min-width: 220px; min-height: 28px; border-radius: 8px; padding: 0 8px;
   background: %(field_on_scrim)s; color: %(on_scrim)s; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.18); }
-@keyframes lp-shake { 0%%, 100%% { transform: none; } 20%%, 60%% { transform: translateX(-8px); }
-                      40%%, 80%% { transform: translateX(8px); } }
+@keyframes lp-shake {   /* one selector per step: GTK's CSS has no "0%%, 100%%" lists */
+  0%% { transform: none; } 20%% { transform: translateX(-8px); } 40%% { transform: translateX(8px); }
+  60%% { transform: translateX(-8px); } 80%% { transform: translateX(8px); } 100%% { transform: none; } }
 .lp-lock-panel.shake { animation: lp-shake 360ms ease-in-out; }
 /* folders open and close with a zoom + fade (Big Sur); the grid dims behind */
 .lp-col { transition: opacity %(fold_in)dms cubic-bezier(0.2, 0.8, 0.2, 1); }

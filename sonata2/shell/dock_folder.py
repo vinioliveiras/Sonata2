@@ -49,8 +49,9 @@ popover.dock-folder-panel > contents {
 .dock-folder-lock label { font-size: %(text_body)s; color: %(label_secondary)s; }
 .dock-folder-lock .hint { font-size: %(text_small)s; color: %(label_tertiary)s; }
 .dock-folder-lock passwordentry { min-width: 220px; }
-@keyframes dock-folder-shake { 0%%, 100%% { transform: none; } 20%%, 60%% { transform: translateX(-8px); }
-                               40%%, 80%% { transform: translateX(8px); } }
+@keyframes dock-folder-shake {   /* one selector per step: GTK's CSS has no "0%%, 100%%" lists */
+  0%% { transform: none; } 20%% { transform: translateX(-8px); } 40%% { transform: translateX(8px); }
+  60%% { transform: translateX(-8px); } 80%% { transform: translateX(8px); } 100%% { transform: none; } }
 .dock-folder-lock.shake { animation: dock-folder-shake 360ms ease-in-out; }
 """, key="dock-folder", open_ms=OPEN_MS, close_ms=CLOSE_MS)
 
