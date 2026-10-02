@@ -21,7 +21,6 @@ after a delete brings the note back, W closes.
 
 Data: notes.json and reminders.json in ~/.local/share/sonata2-data/notes
 (store.py)."""
-import datetime
 import time
 
 import gi
@@ -107,39 +106,8 @@ class NoteItem(GObject.Object):
         self.emit("changed")
 
 
-def section_of(t: float, pinned: bool = False, now: float = None) -> tuple:
-    """(rank, title) of the list section a note falls in (macOS: Pinned,
-    Today, Yesterday, Previous 7 Days, Previous 30 Days, months, years)."""
-    if pinned:
-        return (0, 0, "Pinned")
-    today = datetime.date.fromtimestamp(now if now is not None else time.time())
-    d = datetime.date.fromtimestamp(t)
-    days = (today - d).days
-    if days <= 0:
-        return (1, 0, "Today")
-    if days == 1:
-        return (2, 0, "Yesterday")
-    if days <= 7:
-        return (3, 0, "Previous 7 Days")
-    if days <= 30:
-        return (4, 0, "Previous 30 Days")
-    if d.year == today.year:
-        return (5, -d.month, GLib.DateTime.new_local(d.year, d.month, 1, 0, 0, 0).format("%B"))
-    return (6, -d.year, str(d.year))
-
-
-def short_date(t: float, now: float = None) -> str:
-    """14:05 today, Yesterday, a weekday this week, else the date."""
-    today = datetime.date.fromtimestamp(now if now is not None else time.time())
-    dt = GLib.DateTime.new_from_unix_local(int(t))
-    days = (today - datetime.date.fromtimestamp(t)).days
-    if days <= 0:
-        return dt.format("%H:%M")
-    if days == 1:
-        return "Yesterday"
-    if days < 7:
-        return dt.format("%A")
-    return dt.format("%x")
+# moved to ui.fmt (shared with the Assistant's conversation list)
+section_of, short_date = ui.fmt.date_section, ui.fmt.short_date
 
 
 def _cmp_sections(a, b, *_u) -> int:
