@@ -634,6 +634,19 @@ class WindowTest(unittest.TestCase):
         self.jobs[0].on_done(None, "end_turn", {"input_tokens": 600})
         self.assertIn("full", self.win.meters["hour"][0].get_css_classes())   # red past 90 %
 
+    def test_settings_panel_closes_on_a_click_outside(self):
+        # regression (Vini): after setting the key, clicking outside didn't
+        # close the panel (its popup grab lost on Wayland)
+        self.win.show_settings()
+        settle(100)
+        pop = self.win.settings_panel
+        pop.set_autohide(False)                                       # as if the grab was gone
+        pop.press_outside(pop.get_surface())                          # a click in the panel: stays
+        self.assertTrue(pop.get_visible())
+        pop.press_outside(self.win.get_surface())                     # on the window: closes
+        settle(100)
+        self.assertFalse(pop.get_visible())
+
     def test_ui_kit_only(self):
         # Vini: every Sonata UI comes from the UI kit (no libadwaita widgets, no system dialogs)
         import inspect

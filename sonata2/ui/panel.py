@@ -84,7 +84,32 @@ def popup(anchor: Gtk.Widget, child: Gtk.Widget, position=Gtk.PositionType.BOTTO
             w.set_focus_on_click(False)
         w = w.get_parent()
 
+    # a click anywhere else in the window closes the panel. GTK's autohide
+    # relies on the compositor's popup grab, which can be lost on Wayland (a
+    # keyring prompt while saving the Assistant's key): the panel then stayed
+    # open over everything (Vini).
+    root = anchor.get_root()
+    outside = None
+    if isinstance(root, Gtk.Window):
+        outside = Gtk.GestureClick(button=0)
+        outside.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+
+        def close_if_outside(surface):
+            # a press on the window itself (not on the panel, or a pop-up
+            # button's list inside it: their own surfaces)
+            if pop.get_visible() and surface is not None and surface == root.get_surface():
+                pop.popdown()
+
+        def pressed(g, *_a):
+            ev = g.get_current_event()
+            close_if_outside(ev.get_surface() if ev is not None else None)
+        outside.connect("pressed", pressed)
+        root.add_controller(outside)
+        pop.press_outside = close_if_outside       # (tests)
+
     def closed(p):
+        if outside is not None and outside.get_widget() is not None:
+            outside.get_widget().remove_controller(outside)
         for wid, foc in unlocked:
             wid.set_can_focus(False)
             wid.set_focus_on_click(foc)
