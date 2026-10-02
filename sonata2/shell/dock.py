@@ -429,6 +429,8 @@ class DockDivider(DockLine):
             self.dock.set_icon_size(size, save=False)
 
 
+BRING_MS = 120          # a window moved to this display: Wayfire takes it and the new aim, then it comes back
+
 # -- Show Desktop (Super+D) -------------------------------------------------------------------
 # Sonata's own, not Wayfire's wm-actions one: there, bringing back any window
 # brought back all of them (Vini: Super+D, then a click on one app restored
@@ -1639,6 +1641,19 @@ class Dock(Gtk.Box):
                 #  touch it from here, or the last Dock to write would win)
         return False
 
+    def _aim_at(self, tile, wins) -> None:
+        """These windows minimize to / come back from `tile` of this Dock."""
+        native = self.get_native()
+        surface = native.get_surface() if native else None
+        ok, b = tile.compute_bounds(native) if surface and tile else (False, None)
+        if not ok:
+            return
+        mon = self.get_display().get_monitor_at_surface(surface)
+        g = mon.get_geometry() if mon else None
+        ox, oy = (g.x, g.y) if g else (0, 0)            # (as _update_rectangles)
+        for t in wins:
+            self.manager.set_rectangle(t, surface, b.get_x() - ox, b.get_y() - oy, b.get_width(), b.get_height())
+
     def _bring_here(self, wins) -> bool:
         """Minimized windows of an app that are on another display move to this
         Dock's (Wayfire keeps their place on the screen). True when any moved."""
@@ -1704,9 +1719,11 @@ class Dock(Gtk.Box):
             # Restored from a Dock on another display: they come to this one,
             # out of this icon (Vini: "trazer a janela pro monitor onde cliquei")
             if not shown and len(_DOCKS) > 1 and self._bring_here(wins):
-                for d in list(_DOCKS):
-                    d._update_rectangles()
-                GLib.timeout_add(60, lambda: ([self.manager.activate(t) for t in wins], False)[1])
+                # aimed at this icon directly: the general update waits while the
+                # Dock is magnified (the pointer is on it), and the old aim came
+                # out of the other display's icon (Vini)
+                self._aim_at(tile, wins)
+                GLib.timeout_add(BRING_MS, lambda: ([self.manager.activate(t) for t in wins], False)[1])
                 return
             for t in shown or wins:
                 self.manager.activate(t)

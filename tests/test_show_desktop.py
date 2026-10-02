@@ -118,3 +118,22 @@ class BringHereTest(unittest.TestCase):
         src = open(D.__file__).read()
         body = src[src.index("    def _clicked(self"):src.index("    def launch_feedback")]
         self.assertIn("if not shown and len(_DOCKS) > 1 and self._bring_here(wins):", body)
+        # Vini: the window came, but the animation still played toward the other
+        # display -- aimed at this icon directly, before it comes back
+        i = body.index("self._bring_here(wins)")
+        self.assertLess(body.index("self._aim_at(tile, wins)", i), body.index("BRING_MS", i))
+
+    def test_aim_at_sets_this_docks_icon(self):
+        from unittest import mock
+        d = mock.Mock()
+        ok_b = mock.Mock()
+        ok_b.get_x.return_value, ok_b.get_y.return_value = 300, 10
+        ok_b.get_width.return_value, ok_b.get_height.return_value = 64, 64
+        tile = mock.Mock()
+        tile.compute_bounds.return_value = (True, ok_b)
+        geo = mock.Mock(x=0, y=0)
+        d.get_display.return_value.get_monitor_at_surface.return_value.get_geometry.return_value = geo
+        t = mock.Mock()
+        D.Dock._aim_at(d, tile, [t])
+        surface = d.get_native.return_value.get_surface.return_value
+        d.manager.set_rectangle.assert_called_once_with(t, surface, 300, 10, 64, 64)
