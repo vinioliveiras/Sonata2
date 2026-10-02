@@ -104,6 +104,7 @@ def values() -> dict:
     v["panel_material"] = G.material("menus", v, ok, gcfg)      # menus and panels
     v["dock_material"] = G.material("dock", v, ok, gcfg)
     v["bar_material"] = G.material("menubar", v, ok, gcfg)
+    v["launchpad_material"] = G.material("launchpad", v, ok, gcfg)   # Launchpad in a window
     if ok and gcfg["windows"]["on"] and _glass_bars():   # title bars and toolbars: the glass again
         a = gcfg["windows"]["alpha"]
         for k in ("titlebar_glass", "titlebar_glass_inactive"):

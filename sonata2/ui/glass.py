@@ -11,16 +11,19 @@ strength is one for all: Wayfire's blur plugin has a single radius
 Accessibility > Reduce transparency still turns every part solid.
 
 No GTK here: ui/theme.py turns these into the material tokens
-(dock_material, bar_material, panel_material, sidebar_material)."""
+(dock_material, bar_material, panel_material, sidebar_material,
+launchpad_material)."""
 
-ITEMS = ("dock", "menubar", "menus", "windows")
+ITEMS = ("dock", "menubar", "menus", "windows", "launchpad")
 TITLES = {"dock": "Dock", "menubar": "Menu bar", "menus": "Menus and panels",
-          "windows": "Windows"}
+          "windows": "Windows", "launchpad": "Launchpad window"}
 SUBTITLES = {"menus": "Menu bar menus, Control Center, Wi-Fi, notifications panels",
-             "windows": "Sidebars, and title bars when Glass title bars is on"}
+             "windows": "Sidebars, and title bars when Glass title bars is on",
+             "launchpad": "The Launchpad panel when its style is Window (Settings > Launchpad)"}
 # glass token -> solid token, per part
 MATERIALS = {"dock": ("glass_tint", "solid_tint"), "menubar": ("bar_bg", "window_bg"),
-             "menus": ("glass_tint", "menu_bg"), "windows": ("window_glass", "sidebar_bg")}
+             "menus": ("glass_tint", "menu_bg"), "windows": ("window_glass", "sidebar_bg"),
+             "launchpad": ("glass_tint", "menu_bg")}
 # Wayfire blurs only where a pixel's alpha reaches alpha_threshold (0.5 in
 # wayfire.ini: soft shadows stay unfrosted). A part set more see-through
 # than that lowers the threshold (blur_threshold), never under THRESHOLD_MIN
@@ -105,7 +108,8 @@ BLUR_ALL = 'app_id contains "sonata2" | type is "unmanaged"'
 BLUR_PARTS = {"dock": 'app_id is "sonata2-dock"', "menubar": 'app_id is "sonata2-topbar"',
               # popups, and every other Sonata layer surface (panels, notifications, Launchpad...)
               "menus": 'app_id contains "sonata2-" | type is "unmanaged"',
-              "windows": 'app_id contains "sonata2."'}     # Sonata apps (io.github....sonata2.files)
+              "windows": 'app_id contains "sonata2."',     # Sonata apps (io.github....sonata2.files)
+              "launchpad": 'app_id is "sonata2-launchpad-window"'}
 BLUR_NONE = 'app_id is "sonata2-blur-nothing"'           # matches nothing: the plugin stays loaded
 
 
@@ -114,8 +118,8 @@ def blur_rule(cfg: dict = None) -> str:
     on = [i for i in ITEMS if s[i]["on"]]
     if len(on) == len(ITEMS):
         return BLUR_ALL
-    if "menus" in on:                        # it covers the Dock's and the menu bar's surfaces too
-        on = [i for i in on if i not in ("dock", "menubar")]
+    if "menus" in on:                        # it covers the Dock's, the menu bar's and Launchpad's surfaces too
+        on = [i for i in on if i not in ("dock", "menubar", "launchpad")]
     rule = " | ".join(BLUR_PARTS[i] for i in on)
     if "dock" in on:                         # an open Dock folder (a popup) has the Dock's glass
         rule += ' | type is "unmanaged"'

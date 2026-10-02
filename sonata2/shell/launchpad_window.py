@@ -1,6 +1,7 @@
 """Launchpad in a window (Vini; the "Applications" view of macOS 26): the
 same apps as the full-screen Launchpad, on a glass panel in the middle of the
-screen instead of over all of it. Settings > Launchpad > Style picks it.
+screen instead of over all of it. Settings > Launchpad > Style picks it;
+its glass and transparency: Settings > Appearance > Glass & Transparency.
 
     [icon] Applications (type to search)                     [...]
     [ Social ][ Creativity ][ Entertainment ][ Productivity & Finance ][ Utilities ][ Other ]
@@ -48,7 +49,7 @@ OTHER = ("other", "Other")
 
 ui.register("""
 window.sonata-lpwin, window.sonata-lpwin > contents { background: none; box-shadow: none; }
-.lpw-panel { background: %(panel_material)s; border-radius: 26px; padding: 18px 22px 0 22px;
+.lpw-panel { background: %(launchpad_material)s; border-radius: 26px; padding: 18px 22px 0 22px;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, 0 24px 60px rgba(0,0,0,0.30);
   color: %(label)s; font-family: %(font)s; }
 .lpw-panel.solid { background: %(menu_bg)s; }

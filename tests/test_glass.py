@@ -96,7 +96,11 @@ class BlurRuleTest(unittest.TestCase):
         self.assertNotIn("unmanaged", r)                         # no part left that needs popups
         self.assertIn('app_id is "sonata2-topbar"', r)
         self.assertIn('app_id contains "sonata2."', r)
-        self.assertEqual(self.rule(dock=True, menubar=True, menus=True, windows=True), G.BLUR_NONE)
+        self.assertEqual(self.rule(dock=True, menubar=True, menus=True, windows=True, launchpad=True), G.BLUR_NONE)
+        # Vini: the Launchpad window's glass on its own (menus off: still blurred behind it)
+        self.assertEqual(self.rule(dock=True, menubar=True, menus=True, windows=True),
+                         'app_id is "sonata2-launchpad-window"')
+        self.assertNotIn("launchpad-window", self.rule(launchpad=True, windows=True))   # menus' rule covers it
         self.assertNotIn("!", self.rule(windows=True))           # positive rules only
         self.assertIn("unmanaged", self.rule(menus=True))         # the Dock's folder panel: glass too
 
@@ -113,6 +117,17 @@ class BlurRuleTest(unittest.TestCase):
         self.assertNotIn("sonata2-dock", calls[("blur", "blur_by_default")])
         self.assertEqual(calls[("blur", "kawase_offset")], "4.5")
         config.save("appearance", {})
+
+
+class LaunchpadGlassTest(unittest.TestCase):
+    def test_its_own_material(self):
+        cfg = G.settings({"glass": {"launchpad": {"on": True, "alpha": 0.3}, "menus": {"on": False}}})
+        self.assertEqual(G.material("launchpad", TOK, True, cfg), G.with_alpha(TOK["glass_tint"], 0.3))
+        self.assertEqual(G.material("menus", TOK, True, cfg), TOK["menu_bg"])
+        off = G.settings({"glass": {"launchpad": {"on": False}}})
+        self.assertEqual(G.material("launchpad", TOK, True, off), TOK["menu_bg"])
+        from sonata2.shell import launchpad_window as LW
+        self.assertIn("%(launchpad_material)s", open(LW.__file__).read())
 
 
 class ThresholdTest(unittest.TestCase):
