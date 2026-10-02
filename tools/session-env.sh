@@ -43,6 +43,12 @@ unset QT_STYLE_OVERRIDE KDE_FULL_SESSION KDE_SESSION_VERSION
 # Chromium/Electron (Chrome, Spotify, VS Code...): native Wayland with
 # client-side title bars drawn from the GTK theme.
 export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-auto}"
+# WebKitGTK apps (web apps like Spider's WhatsApp, Epiphany) on an NVIDIA
+# card: its DMA-BUF renderer filled the card's memory with a video and took
+# the session down (Vini); the shared-memory path is the usual fix there.
+if [ -d /sys/module/nvidia_drm ]; then
+    export WEBKIT_DISABLE_DMABUF_RENDERER="${WEBKIT_DISABLE_DMABUF_RENDERER:-1}"
+fi
 # Open/Save dialogs through the file chooser portal -> Sonata's panels
 # (sonata2/portal.py): GTK 3 apps (GTK_USE_PORTAL), GTK 4 apps (GDK_DEBUG
 # portals); Chromium/Electron use the portal on their own, Firefox through

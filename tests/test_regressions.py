@@ -1837,6 +1837,20 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         self.assertIn('rm -f "$gpu_flag"', block)
         self.assertIn('touch "$logs/display-gpu-crashed"', block)
 
+    def test_an_app_filling_the_cards_memory_keeps_it(self):
+        """Vini: WhatsApp's web app filled the NVIDIA memory with a video; the
+        crash turned his display GPU off though the choice wasn't at fault."""
+        sess = (pathlib.Path(__file__).resolve().parent.parent / "tools" / "sonata-session").read_text()
+        block = sess[sess.index('wayfire -c "$cfg" > "$logs/session.log" 2>&1\n    code=$?'):]
+        cond = block[block.index("if [ -n \"$display_gpu\" ]"):block.index('rm -f "$gpu_flag"')]
+        self.assertIn('! grep -qs "NV_ERR_NO_MEMORY" "$logs/kernel-at-crash.log"', cond)
+        self.assertLess(block.index("record_crash"), block.index("NV_ERR_NO_MEMORY"))   # the log is there first
+
+    def test_webkit_apps_skip_dmabuf_on_nvidia(self):
+        env = (pathlib.Path(__file__).resolve().parent.parent / "tools" / "session-env.sh").read_text()
+        i = env.index("/sys/module/nvidia_drm")
+        self.assertIn('WEBKIT_DISABLE_DMABUF_RENDERER="${WEBKIT_DISABLE_DMABUF_RENDERER:-1}"', env[i:i + 200])
+
     def test_notice_shown_once(self):
         from sonata2 import gpu
         old = os.environ.get("XDG_CACHE_HOME")

@@ -138,8 +138,10 @@ if [ -n "$gpu_set" ]; then
     record_crash "$code" "$started"
     # crashed because that GPU refused a buffer: back to wlroots' choice from
     # the next login, and the menu bar says so (gpu.crash_notice)
+    # -- but not when an app filled the card's memory (NVRM NV_ERR_NO_MEMORY:
+    # WhatsApp's web app with a video, Vini): that's no fault of the GPU choice
     if [ -n "$display_gpu" ] && [ "$code" -ne 0 ] && grep -qs -e "gbm_bo_create failed" -e "Failed to allocate auxilliary buffer" \
-            "$logs/session.log"; then
+            "$logs/session.log" && ! grep -qs "NV_ERR_NO_MEMORY" "$logs/kernel-at-crash.log"; then
         rm -f "$gpu_flag"
         touch "$logs/display-gpu-crashed"
     fi
