@@ -37,3 +37,17 @@ class TitleTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InstallWithoutAurTest(unittest.TestCase):
+    """Issue #1: on CachyOS the AUR's pixdecor package pulled wayfire-git,
+    which conflicts with the stable wayfire, and --noconfirm stopped the
+    install. pixdecor is only built from source (tools/build-pixdecor.sh)."""
+
+    def test_no_aur_helper(self):
+        inst = open("install.sh", encoding="utf-8").read()
+        for word in ("wayfire-plugin-pixdecor-git", "paru", "yay"):
+            self.assertNotIn(word, inst)
+        self.assertIn('bash "$SRC/tools/build-pixdecor.sh"', inst)
+        doctor = open("sonata2/doctor.py", encoding="utf-8").read()
+        self.assertNotIn("wayfire-plugin-pixdecor-git", doctor)

@@ -77,7 +77,7 @@ The installer:
   (pacman/apt/dnf/zypper/xbps/apk). Optional extras are installed one by
   one, so a package your release lacks doesn't block the rest. pywayland
   comes from PyPI if the distro has none, and pixdecor (the title bars
-  Sonata draws for other apps) comes from the AUR on Arch;
+  Sonata draws for other apps) is built from source against your Wayfire;
 - installs Sonata for you (`~/.local`) and adds **"Sonata" to the login
   screen**;
 - makes Sonata's Files the file manager of the session (folders, "Show in
@@ -113,7 +113,7 @@ and its Wayfire is 0.8.
 
 | Distribution | Status | Notes |
 |---|---|---|
-| Arch, CachyOS, EndeavourOS, Manjaro, Garuda | ✅ works | the reference; everything, including pixdecor title bars (AUR) |
+| Arch, CachyOS, EndeavourOS, Manjaro, Garuda | ✅ works | the reference; everything, including pixdecor title bars |
 | Fedora 41 and newer | 🟡 should work | not tested yet |
 | openSUSE Tumbleweed | 🟡 should work | not tested yet |
 | Debian 13 "trixie", LMDE 7, MX Linux 25 | 🟡 should work | Wayfire 0.9: the rounded-corners plugin may not build (windows keep square corners) |
@@ -127,9 +127,10 @@ and its Wayfire is 0.8.
 
 What to expect outside Arch:
 
-- **Title bars for other apps:** Sonata draws them with pixdecor, which is
-  packaged only in the AUR. Elsewhere Wayfire's own simpler title bars are
-  used, in Sonata's colours.
+- **Title bars for other apps:** Sonata draws them with pixdecor, built from
+  source by the installer (it needs meson, ninja, glm and Wayfire's headers).
+  When it can't be built, Wayfire's own simpler title bars are used, in
+  Sonata's colours.
 - **Rounded corners for every window:** the corner plugin is compiled
   against your Wayfire. If that fails, the installer goes on and windows
   keep square corners.

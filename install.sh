@@ -8,7 +8,7 @@
 #                             package manager (pacman/apt/dnf/zypper/xbps/apk):
 #                             required ones, then every optional one (Wi-Fi,
 #                             screenshots, Night Shift...), pywayland from PyPI
-#                             if needed, pixdecor from the AUR on Arch
+#                             if needed; pixdecor built from source
 #   ./install.sh --no-deps    only check them (print what's missing)
 #   ./install.sh --yes        don't ask (login-screen entry included)
 #   ./install.sh --uninstall  remove it again (your settings stay)
@@ -205,20 +205,10 @@ if [ -n "$OPT" ]; then
         echo "  $PM $OPT"
     fi
 fi
-# pixdecor: macOS title bars for terminals / X11 apps (a Wayfire plugin built from source)
-pixdecor=""
-for d in $(pkg-config --variable=plugindir wayfire 2>/dev/null) /usr/lib/wayfire /usr/lib64/wayfire /usr/local/lib/wayfire; do
-    [ -f "$d/libpixdecor.so" ] && pixdecor=1
-done
-if [ -z "$pixdecor" ]; then
-    aur="$(command -v paru || command -v yay || true)"
-    if [ "$DEPS" = 1 ] && [ -n "$aur" ] && [[ "$family" == *arch* ]]; then
-        say "pixdecor (macOS title bars for terminals and X11 apps) from the AUR -- builds for a few minutes"
-        "$aur" -S --needed --noconfirm wayfire-plugin-pixdecor-git || echo "  (pixdecor didn't build; title bars stay Wayfire's own)"
-    else
-        echo "Optional, macOS title bars for terminals/X11 apps: the pixdecor Wayfire plugin (Arch AUR: wayfire-plugin-pixdecor-git; elsewhere build from github.com/soreau/pixdecor)"
-    fi
-fi
+# pixdecor (title bars for terminals / X11 apps) is built from source further
+# down (tools/build-pixdecor.sh), against the Wayfire installed here. Never
+# from the AUR: its package needs wayfire-git, which conflicts with the stable
+# wayfire and stopped the install under --noconfirm (issue #1).
 
 # -- files ----------------------------------------------------------------------------------------
 say "Installing Sonata 2 to $PREFIX"
