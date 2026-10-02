@@ -29,7 +29,7 @@ THUMB_W = 200
 # shots_to: pictures | desktop | documents | clipboard | other (shots_dir)
 # movies_to: videos | desktop | documents | other (movies_dir); audio: none | system | mic
 DEFAULTS = {"shots_to": "pictures", "shots_dir": "", "movies_to": "videos", "movies_dir": "",
-            "timer": 0, "audio": "system"}
+            "timer": 0, "audio": "system", "mode": "display"}     # mode: the toolbar's last one (Vini)
 
 ui.register("""
 window.sonata-capture, window.sonata-capture > contents,
@@ -363,6 +363,7 @@ class Capture:
             return
         if self.toolbar is None:
             self.toolbar = _Toolbar(self.app, self)
+        self.toolbar.restore()
         self.toolbar.present()
 
     def run(self, mode: str, cfg: dict):
@@ -451,7 +452,6 @@ class Capture:
                      "encoders": encoders(config.load("capture", DEFAULTS).get("encoder"))}
         if not self._spawn():
             return
-        self.bar.set_recording(True)
         if self.pill is None:
             self.pill = RecordingControl(self.app, self)
         self.pill.start(output or self._output_at(geo), bool(audio), cfg.get("audio"))
@@ -515,7 +515,6 @@ class Capture:
             if self._spawn():
                 return False
         self.recorder = None
-        self.bar.set_recording(False)
         if self.pill is not None:
             self.pill.stop()
         nc = getattr(self.bar, "notifications", None)
@@ -530,7 +529,6 @@ class Capture:
         if proc is None:
             return
         self.recorder = None
-        self.bar.set_recording(False)
         if self.pill is not None:
             self.pill.stop()
         proc.send_signal(2)                    # SIGINT: wf-recorder finishes the file
@@ -603,6 +601,7 @@ class _Toolbar(Gtk.Window):
         bar.append(close)
         bar.append(Gtk.Box(css_classes=["cap-sep"]))
         self.mode = "display"
+        self.mode_buttons = {}
         first = None
         for i, (mode, icon, tip) in enumerate(self.MODES):
             if i == 3:
@@ -611,6 +610,7 @@ class _Toolbar(Gtk.Window):
             b.connect("toggled", lambda b, m=mode: b.get_active() and self._set_mode(m))
             first = first or b
             bar.append(b)
+            self.mode_buttons[mode] = b
         bar.append(Gtk.Box(css_classes=["cap-sep"]))
         opts = Gtk.MenuButton(label="Options", direction=Gtk.ArrowType.UP)
         opts.set_create_popup_func(self._options)
@@ -635,6 +635,16 @@ class _Toolbar(Gtk.Window):
     def _set_mode(self, m):
         self.mode = m
         self.go.set_label("Record" if m.startswith("rec") else "Capture")
+        if self.cfg.get("mode") != m:                 # opened next time on the same one (Vini)
+            self.cfg["mode"] = m
+            config.update("capture", mode=m)
+
+    def restore(self) -> None:
+        """Each time it opens: the last mode, and the options as saved."""
+        self.cfg = config.load("capture", DEFAULTS)
+        b = self.mode_buttons.get(self.cfg.get("mode")) or self.mode_buttons["display"]
+        b.set_active(True)
+        self._set_mode(next(m for m, x in self.mode_buttons.items() if x is b))
 
     def _options(self, button):
         Item = ui.menu.Item

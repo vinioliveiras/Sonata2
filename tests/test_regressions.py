@@ -801,22 +801,39 @@ class ScreenRecordingRegressions(unittest.TestCase):
         finally:
             os.environ["PATH"] = old
 
-    def test_menu_bar_shows_the_time(self):
-        from sonata2.shell import topbar as T
-        from gi.repository import Gtk
-        bar_cls = next(c for c in vars(T).values() if isinstance(c, type) and hasattr(c, "_rec_tick"))
-        bar = bar_cls.__new__(bar_cls)
-        box = Gtk.Box()
-        box.append(Gtk.Image())
-        box.append(Gtk.Label(label=""))
-        bar.rec_stop = Gtk.Button(child=box)
-        bar._rec_src = 0
-        bar.set_recording(True)
-        bar._rec_t0 -= 65 * 1_000_000
-        bar._rec_tick()
-        self.assertEqual(box.get_last_child().get_label(), "1:05")
-        bar.set_recording(False)
-        self.assertEqual(bar._rec_src, 0)
+    def test_recording_shows_once(self):
+        """Vini: the recording's status showed twice at the top -- only the
+        control in the middle stays (capture.RecordingControl)."""
+        root = pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "shell"
+        top = (root / "topbar.py").read_text()
+        self.assertNotIn("rec_stop", top)
+        self.assertNotIn("def set_recording", top)
+        self.assertNotIn("set_recording", (root / "capture.py").read_text())
+        self.assertIn("class RecordingControl", (root / "capture.py").read_text())
+
+    def test_toolbar_opens_on_the_last_mode(self):
+        """Vini: the capture toolbar should open on the last capture mode,
+        and with the last sound choice."""
+        from unittest import mock
+        from sonata2 import config
+        from sonata2.shell import capture as C
+        old = config.load("capture", C.DEFAULTS)
+        try:
+            config.save("capture", dict(C.DEFAULTS, mode="rec-area", audio="mic"))
+            with mock.patch.object(C.layer, "layer_shell", return_value=None):
+                tb = C._Toolbar(None, mock.Mock())
+            tb.restore()
+            self.assertTrue(tb.mode_buttons["rec-area"].get_active())
+            self.assertEqual((tb.mode, tb.go.get_label()), ("rec-area", "Record"))
+            self.assertEqual(tb.cfg["audio"], "mic")
+            tb.mode_buttons["window"].set_active(True)                  # chosen: remembered
+            self.assertEqual(config.load("capture", C.DEFAULTS)["mode"], "window")
+            config.save("capture", dict(C.DEFAULTS, mode="nonsense"))
+            tb.restore()
+            self.assertEqual(tb.mode, "display")
+            tb.destroy()
+        finally:
+            config.save("capture", old)
 
 
 class CaptureTargetsTests(unittest.TestCase):

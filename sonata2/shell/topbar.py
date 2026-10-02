@@ -51,8 +51,6 @@ window.sonata-topbar, window.sonata-topbar > contents { background: none; box-sh
 .topbar-item.open, .topbar-item:active { background: %(bar_item_active)s; }
 .topbar-item.app { font-weight: 700; }
 .topbar-item.icon { padding: 0 8px; }
-.topbar-item.rec-stop { padding: 0 8px; }
-.topbar-item.rec-stop label { margin-left: 5px; font-feature-settings: "tnum"; }
 .topbar-item > box > image { -gtk-icon-size: 16px; }
 .topbar-item.battery > box > image { -gtk-icon-size: 24px; }       /* wide battery, macOS proportions */
 .topbar-item.input-src > box > label { font-size: 10px; font-weight: 700; padding: 0 3px; border-radius: 3px;
@@ -91,12 +89,8 @@ class Bar(Gtk.CenterBox):
         from .tray import TrayBox
         self.tray = TrayBox(self, self.cfg.get("show_tray", True))
         right.append(self.tray)
-        # Screen recording: a stop button while wf-recorder runs (macOS)
-        self.rec_stop = self._item(right, text="", icon="sonata-record-stop-symbolic",
-                                   on_click=self._stop_recording, css="rec-stop")
-        self._rec_src, self._rec_t0 = 0, 0
-        self.rec_stop.set_tooltip_text("Stop Screen Recording")
-        self.rec_stop.set_visible(False)
+        # (Screen recording: its status and stop button are the control in the
+        #  middle of the top of the screen -- capture.RecordingControl; not here too)
         # Now Playing (while a player runs), input source (with 2+ keyboard layouts)
         from . import clipboard, mpris
         self.players = mpris.players()
@@ -195,29 +189,6 @@ class Bar(Gtk.CenterBox):
         box.append(b)
         self.items.append(b)
         return b
-
-    def set_recording(self, on: bool) -> None:
-        """The stop button, with how long it has been recording."""
-        self.rec_stop.set_visible(on)
-        if self._rec_src:
-            GLib.source_remove(self._rec_src)
-            self._rec_src = 0
-        if on:
-            self._rec_t0 = GLib.get_monotonic_time()
-            self._rec_tick()
-            self._rec_src = GLib.timeout_add(1000, self._rec_tick)
-
-    def _rec_tick(self) -> bool:
-        s = int((GLib.get_monotonic_time() - self._rec_t0) / 1_000_000)
-        self._set_text(self.rec_stop, f"{s // 3600}:{s // 60 % 60:02d}:{s % 60:02d}" if s >= 3600
-                       else f"{s // 60}:{s % 60:02d}")
-        return True
-
-    def _stop_recording(self, _btn):
-        cap = getattr(self, "capture", None)
-        if cap:
-            cap.stop_recording()
-        return None
 
     def _set_text(self, btn, text) -> None:
         lbl = btn.get_child().get_last_child()
