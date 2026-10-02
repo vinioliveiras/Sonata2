@@ -90,20 +90,31 @@ command -v dbus-update-activation-environment >/dev/null && \
 # keeps wlroots' own choice.
 gpu_set=""; display_gpu=""
 gpu_flag="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/compositor-display-gpu"
-if [ -z "${WLR_DRM_DEVICES:-}" ] && { [ "${SONATA_PRIMARY_GPU:-}" = on ] || \
-        { [ -e "$gpu_flag" ] && [ "${SONATA_PRIMARY_GPU:-}" != off ]; }; }; then
-    best=""; best_n=0; all=""; total=0
-    for card in /sys/class/drm/card[0-9]; do
-        [ -e "$card/device" ] || continue
-        n=0
-        for st in "$card"-*/status; do
-            [ -f "$st" ] && [ "$(cat "$st" 2>/dev/null)" = connected ] && n=$((n + 1))
-        done
-        dev="/dev/dri/$(basename "$card")"
-        all="$all $dev"
-        total=$((total + n))
-        if [ "$n" -gt "$best_n" ]; then best="$dev"; best_n=$n; fi
+# the cards, their connected screens, and which are NVIDIA's
+best=""; best_n=0; all=""; total=0; nv_cards=""; other_cards=""; other_n=0
+for card in /sys/class/drm/card[0-9]; do
+    [ -e "$card/device" ] || continue
+    n=0
+    for st in "$card"-*/status; do
+        [ -f "$st" ] && [ "$(cat "$st" 2>/dev/null)" = connected ] && n=$((n + 1))
     done
+    dev="/dev/dri/$(basename "$card")"
+    all="$all $dev"
+    total=$((total + n))
+    if [ "$n" -gt "$best_n" ]; then best="$dev"; best_n=$n; fi
+    case "$(basename "$(readlink -f "$card/device/driver")")" in
+        nvidia*) nv_cards="${nv_cards:+$nv_cards:}$dev" ;;
+        *) other_cards="${other_cards:+$other_cards:}$dev"; other_n=$((other_n + n)) ;;
+    esac
+done
+# An integrated GPU with no screen of its own (a MUX in dGPU / "Ultimate"
+# mode) never draws the session, whatever the setting (Vini: every AMD
+# crash came from drawing there and copying to the NVIDIA screens; a crash
+# that turned the setting off sent the next login back to it)
+no_screens_gpu=""
+[ -n "$nv_cards" ] && [ -n "$other_cards" ] && [ "$other_n" -eq 0 ] && [ "$best_n" -gt 0 ] && no_screens_gpu=1
+if [ -z "${WLR_DRM_DEVICES:-}" ] && { [ "${SONATA_PRIMARY_GPU:-}" = on ] || \
+        { [ "${SONATA_PRIMARY_GPU:-}" != off ] && { [ -e "$gpu_flag" ] || [ -n "$no_screens_gpu" ]; }; }; }; then
     if [ -n "$best" ] && [ "$(echo $all | wc -w)" -gt 1 ]; then
         order="$best"
         # every screen on that GPU (a MUX in dGPU / "Ultimate" mode): the
@@ -119,21 +130,12 @@ if [ -z "${WLR_DRM_DEVICES:-}" ] && { [ "${SONATA_PRIMARY_GPU:-}" = on ] || \
         display_gpu=1
     fi
 elif [ -z "${WLR_DRM_DEVICES:-}" ] && [ "${SONATA_PRIMARY_GPU:-}" != off ]; then
-    # Default: never draw on an NVIDIA card while another GPU is there.
-    # wlroots picks the boot GPU, and on laptops with a MUX switch (dGPU /
-    # "Ultimate" mode) that is the NVIDIA one -- the same crashes. Its
-    # cards go last; the integrated GPU draws.
-    first=""; last=""
-    for card in /sys/class/drm/card[0-9]; do
-        [ -e "$card/device" ] || continue
-        dev="/dev/dri/$(basename "$card")"
-        case "$(basename "$(readlink -f "$card/device/driver")")" in
-            nvidia*) last="${last:+$last:}$dev" ;;
-            *) first="${first:+$first:}$dev" ;;
-        esac
-    done
-    if [ -n "$first" ] && [ -n "$last" ]; then
-        export WLR_DRM_DEVICES="$first:$last"
+    # Default, when the integrated GPU has screens of its own (hybrid mode):
+    # it draws, the NVIDIA cards go last (wlroots would pick the boot GPU,
+    # NVIDIA on some laptops -- buffer crashes there). With no screen on it,
+    # the branch above already left it out.
+    if [ -n "$other_cards" ] && [ -n "$nv_cards" ]; then
+        export WLR_DRM_DEVICES="$other_cards:$nv_cards"
         gpu_set=1
     fi
 fi
@@ -207,6 +209,9 @@ if [ -n "$gpu_set" ]; then
     fi
     mv -f "$logs/session.log" "$logs/session.gpu-failed.log"
     unset WLR_DRM_DEVICES
+    # the last resort (wlroots' choice may be the other GPU): said once by the
+    # menu bar (gpu.fallback_notice), never silently (Vini)
+    printf '%s\n' "$(date +%s)" > "$logs/gpu-start-failed"
 fi
 run_wayfire
 record_crash "$code" "$started"

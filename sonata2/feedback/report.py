@@ -69,6 +69,104 @@ def crash_text(c: dict) -> str:
     return f"Sonata quit unexpectedly at {when} (exit code {code}{why})."
 
 
+# -- what took the session down (from the logs it left) ----------------------------------------
+HISTORY = "crashes.log"               # one line per crash: "<epoch> <kind> <exit code>" (in the reports too)
+# kind -> what Feedbacker says; the first that matches wins (most specific first)
+KINDS = (
+    ("nvidia-memory", "The NVIDIA card ran out of memory (an app filled it).",
+     ("NV_ERR_NO_MEMORY", "Failed to allocate NVKMS memory")),
+    ("amd-reset", "The AMD graphics card stopped and was reset (a driver bug).",
+     ("amdgpu", "ring gfx", "timeout")),
+    ("gpu-reset", "The graphics card was reset.", ("GPU reset",)),
+    ("nvidia-pcie", "The NVIDIA card's connection had errors (PCIe).", ("BadTLP", "Xid")),
+    ("gpu-buffer", "The graphics card refused a buffer.", ("gbm_bo_create failed", "Failed to allocate auxilliary")),
+    ("wayfire-abort", "Wayfire stopped on an internal error.", ("Fatal error(SIGABRT)", "dassert")),
+    ("wayfire-segfault", "Wayfire crashed (segmentation fault).", ("Fatal error(SIGSEGV)", "wayfire[")),
+)
+
+
+def _read_log(name: str, limit: int = 4 << 20) -> str:
+    try:
+        with open(os.path.join(log_dir(), name), "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - limit))
+            return f.read().decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
+def classify(kernel: str, session: str) -> str:
+    """The crash's kind from the kernel's lines and Wayfire's log."""
+    text = kernel + "\n" + session
+    for kind, _say, marks in KINDS:
+        if kind == "amd-reset":
+            if "amdgpu" in kernel and ("ring gfx" in kernel or "page fault" in kernel) and \
+                    ("timeout" in kernel or "GPU reset" in session):
+                return kind
+            continue
+        if kind == "wayfire-segfault":
+            if "Fatal error(SIGSEGV)" in session or ("segfault at" in kernel and "wayfire[" in kernel):
+                return kind
+            continue
+        if any(m in text for m in marks):
+            return kind
+    return "unknown"
+
+
+def describe(kind: str) -> str:
+    return next((say for k, say, _m in KINDS if k == kind), "The cause isn't in the logs.")
+
+
+def note_crash(c: dict) -> str:
+    """This crash's kind, written once into the history (Feedbacker)."""
+    if not c:
+        return ""
+    for when, kind, _code in history():
+        if when == c["time"]:
+            return kind
+    kind = classify(_read_log("kernel-at-crash.log"), _read_log("session.old.log") or _read_log("session.log"))
+    try:
+        with open(os.path.join(log_dir(), HISTORY), "a", encoding="utf-8") as f:
+            f.write(f"{c['time']} {kind} {c.get('code', 0)}\n")
+        logs.trim(os.path.join(log_dir(), HISTORY))
+    except OSError:
+        pass
+    return kind
+
+
+def history(days: float = None, now: float = None) -> list:
+    """[(epoch, kind, code)], oldest first; only the last `days` when given."""
+    out = []
+    try:
+        with open(os.path.join(log_dir(), HISTORY), encoding="utf-8") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 3 and parts[0].isdigit():
+                    out.append((int(parts[0]), parts[1], int(parts[2]) if parts[2].lstrip("-").isdigit() else 0))
+    except OSError:
+        pass
+    if days is not None:
+        limit = (now or time.time()) - days * 86400
+        out = [h for h in out if h[0] >= limit]
+    return out
+
+
+def history_text(days: float = 7, now: float = None) -> str:
+    """"3 crashes in the last 7 days: 2 AMD resets, 1 NVIDIA memory"."""
+    h = history(days, now)
+    if not h:
+        return ""
+    short = {"nvidia-memory": "NVIDIA memory", "amd-reset": "AMD reset", "gpu-reset": "GPU reset",
+             "nvidia-pcie": "NVIDIA PCIe", "gpu-buffer": "refused buffer", "wayfire-abort": "Wayfire error",
+             "wayfire-segfault": "Wayfire crash", "unknown": "unknown"}
+    counts = {}
+    for _t, kind, _c in h:
+        counts[kind] = counts.get(kind, 0) + 1
+    parts = ", ".join(f"{n} {short.get(k, k)}" for k, n in sorted(counts.items(), key=lambda kv: -kv[1]))
+    return f"{len(h)} crash{'es' if len(h) != 1 else ''} in the last {int(days)} days: {parts}"
+
+
 def monitoring() -> bool:
     return logs.verbose()
 

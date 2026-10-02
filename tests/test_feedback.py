@@ -98,7 +98,7 @@ class CrashTest(unittest.TestCase):
         import subprocess
         script = os.path.join(os.path.dirname(__file__), "..", "tools", "sonata-session")
         body = open(script).read()
-        fn = body[body.index("record_crash() {"):body.index("\n}\n", body.index("record_crash() {")) + 3]
+        fn = body[body.index("record_crash() {"):body.index("\n}\n", body.index("kernel_log() {")) + 3]   # + kernel_log
         for code, crashed in ((0, False), (143, False), (129, False), (130, False), (134, True), (1, True)):
             mark = os.path.join(report.log_dir(), report.CRASH)
             if os.path.exists(mark):

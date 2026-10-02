@@ -153,6 +153,30 @@ def notify(summary: str, body: str, icon: str = "video-display") -> bool:
         return False
 
 
+def fallback_marker() -> str:
+    """Left by tools/sonata-session when Wayfire couldn't start on the chosen
+    GPU and fell back to wlroots' own choice (the last resort)."""
+    return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
+                        "sonata2", "gpu-start-failed")
+
+
+def fallback_notice() -> bool:
+    """Once: Sonata is drawing with another graphics card this session.
+    True when there was nothing to say or it was said."""
+    path = fallback_marker()
+    if not os.path.exists(path):
+        return True
+    if not notify("Sonata started with the other graphics card",
+                  "It couldn't start on the card your displays use, so it is drawing with the other one "
+                  "for this session. Log out and back in to try again; Feedbacker has the logs."):
+        return False
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+    return True
+
+
 def crash_marker() -> str:
     """Left by tools/sonata-session when Wayfire crashed on the displays' GPU."""
     return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),

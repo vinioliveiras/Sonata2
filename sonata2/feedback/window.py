@@ -88,8 +88,12 @@ class FeedbackWindow(Gtk.ApplicationWindow):
         self.crash_row = None
         if self.crash:
             grp = Adw.PreferencesGroup()
+            # what took it down, from its logs, and how often lately (Vini: crashes, with data)
+            kind = report.note_crash(self.crash)
+            self.crash_cause = report.describe(kind) + (f" {report.history_text()}." if report.history_text() else "")
             self.crash_row = Adw.ActionRow(title="Sonata quit unexpectedly", use_markup=False,
-                                           subtitle=report.crash_text(self.crash) + " Saving a report with the logs…")
+                                           subtitle=report.crash_text(self.crash) + " " + self.crash_cause +
+                                           " Saving a report with the logs…")
             self.crash_row.set_subtitle_lines(0)
             self.crash_row.add_prefix(Gtk.Image(icon_name="dialog-error-symbolic", css_classes=["error"]))
             grp.add(self.crash_row)
@@ -241,7 +245,7 @@ class FeedbackWindow(Gtk.ApplicationWindow):
             self._auto = False
             if path and not err:
                 report.clear_crash()                 # the next login doesn't open Feedbacker again
-                self.crash_row.set_subtitle(report.crash_text(self.crash) +
+                self.crash_row.set_subtitle(report.crash_text(self.crash) + " " + self.crash_cause +
                                             f" The logs are saved in “{os.path.basename(path)}”.")
                 show = Gtk.Button(label="Show", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
                 show.connect("clicked", lambda _b: reveal(path))

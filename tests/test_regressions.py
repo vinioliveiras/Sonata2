@@ -1313,7 +1313,10 @@ class LibadwaitaLookTests(unittest.TestCase):
     def test_session_end_removes_it_and_login_keeps_it(self):
         root = pathlib.Path(__file__).resolve().parent.parent
         sess = (root / "tools" / "sonata-session").read_text()
-        self.assertGreaterEqual(sess.count("sonata2/adw/libadwaita.css"), 2)
+        fin = sess[sess.index("finish() {"):sess.index("\n}\n", sess.index("finish() {"))]
+        self.assertIn("sonata2/adw/libadwaita.css", fin)                 # every end goes through finish()
+        self.assertEqual(sess.count('finish "$code" "$started"'), 2)   # (the display-GPU run, the last one)
+        self.assertNotIn("\nexit $code", sess)
         self.assertNotIn("exec wayfire", sess)
         auto = (root / "sonata2" / "autostart.py").read_text()
         self.assertNotIn("gtkstyle.clean()", auto)                   # would drop the import line
@@ -1928,6 +1931,36 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         self.assertEqual((out, code), ("", 134))
         out, _ = self._finish(134, 300, f"{now - 4000} {now - 3000} {now - 10}")   # old ones don't count
         self.assertTrue(out.startswith("RESTARTED"))
+
+    def test_screenless_integrated_gpu_never_draws(self):
+        """Vini: every AMD crash came from Wayfire drawing on the Radeon (no
+        screen of its own in MUX dGPU mode); a crash that turned the setting
+        off sent the next login back to it."""
+        sess = (pathlib.Path(__file__).resolve().parent.parent / "tools" / "sonata-session").read_text()
+        self.assertIn('[ "$other_n" -eq 0 ] && [ "$best_n" -gt 0 ] && no_screens_gpu=1', sess)
+        self.assertIn('{ [ -e "$gpu_flag" ] || [ -n "$no_screens_gpu" ]; }', sess)
+        self.assertIn('printf \'%s\\n\' "$(date +%s)" > "$logs/gpu-start-failed"', sess)
+
+    def test_last_resort_gpu_is_said(self):
+        from unittest import mock
+        from sonata2 import gpu
+        old = os.environ.get("XDG_CACHE_HOME")
+        os.environ["XDG_CACHE_HOME"] = tempfile.mkdtemp()
+        try:
+            self.assertTrue(gpu.fallback_notice())                       # nothing to say
+            os.makedirs(os.path.dirname(gpu.fallback_marker()), exist_ok=True)
+            open(gpu.fallback_marker(), "w").close()
+            with mock.patch.object(gpu, "notify", return_value=False):
+                self.assertFalse(gpu.fallback_notice())                  # no server yet: kept, tried again
+            with mock.patch.object(gpu, "notify", return_value=True) as n:
+                self.assertTrue(gpu.fallback_notice())
+            self.assertIn("other graphics card", n.call_args[0][0])
+            self.assertFalse(os.path.exists(gpu.fallback_marker()))     # once
+        finally:
+            if old is None:
+                os.environ.pop("XDG_CACHE_HOME", None)
+            else:
+                os.environ["XDG_CACHE_HOME"] = old
 
     def test_webkit_apps_skip_dmabuf_on_nvidia(self):
         env = (pathlib.Path(__file__).resolve().parent.parent / "tools" / "session-env.sh").read_text()
