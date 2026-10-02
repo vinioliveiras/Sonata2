@@ -69,7 +69,9 @@ class EmojiPicker(Gtk.Window):
         self.cfg = config.load("emoji", {"recent": []})
         self.group = "recent" if self.cfg["recent"] else "Smileys & Emotion"
 
-        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["emoji-panel"])
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["emoji-panel"],
+                        halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+        self.panel = panel
         panel.set_size_request(340, 380)
         self.search = Gtk.SearchEntry(placeholder_text="Search")
         self.search.connect("search-changed", lambda *_: self._refill())
@@ -101,15 +103,17 @@ class EmojiPicker(Gtk.Window):
         panel.append(tabs)
         self.set_child(panel)
 
-        keys = Gtk.EventControllerKey()
+        # Esc closes it, also from the search field (which kept Esc for itself: Vini)
+        keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         keys.connect("key-pressed", self._key)
         self.add_controller(keys)
-        LS = layer.layer_shell()
-        if LS:
-            LS.init_for_window(self)
-            LS.set_namespace(self, "sonata2-emoji")
-            LS.set_layer(self, LS.Layer.OVERLAY)
-            LS.set_keyboard_mode(self, LS.KeyboardMode.EXCLUSIVE)
+        self.search.connect("stop-search", lambda *_: self.set_visible(False))
+        # a click outside the panel closes it (Vini): the window covers the
+        # screen, see-through; only the panel is drawn
+        if layer.overlay_fullscreen(self, "sonata2-emoji"):
+            click = Gtk.GestureClick(button=0)
+            click.connect("pressed", self._clicked)
+            self.add_controller(click)
         self.tabs[self.group].set_active(True)
         self._refill()
 
@@ -158,6 +162,11 @@ class EmojiPicker(Gtk.Window):
         self.set_visible(False)
         if shutil.which("wtype"):                 # type it once focus is back on the app
             GLib.timeout_add(180, lambda: (subprocess.Popen(["wtype", "--", e]), False)[1])
+
+    def _clicked(self, _g, _n, x, y):
+        w = self.pick(x, y, Gtk.PickFlags.DEFAULT)
+        if w is None or not (w is self.panel or w.is_ancestor(self.panel)):
+            self.set_visible(False)
 
     def _key(self, _c, keyval, _code, _state):
         if keyval == Gdk.KEY_Escape:
