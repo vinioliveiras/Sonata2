@@ -1450,7 +1450,7 @@ class OpenPanelWorksTests(unittest.TestCase):
 
 
 class ReleaseVersionTests(unittest.TestCase):
-    """0.1.0-alpha: the version is in one place, shown in Settings > About,
+    """The version is in one place, shown in Settings > About,
     and CHANGELOG.md has its entry."""
 
     def test_version_everywhere(self):

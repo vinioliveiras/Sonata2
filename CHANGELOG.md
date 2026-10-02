@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.2.0-alpha -- 2026-10-02
+
+Sonata now updates itself: from this version on, a new release shows up as
+a notification and in Settings > Software Update.
+
+### Dock and Apps
+- Folders in the Dock: hold an app over another to make one, or drag a
+  folder in from Apps (and back). Folders can be locked with your password.
+- Apps' folders use the same icon frame as apps.
+- Dropped icons glide into place; a puff of smoke when one is removed.
+- The Dock keeps its order across log-ins, and stays matched to apps that
+  were already open when Sonata restarts (Spotify, Claude...).
+- A launching app's icon bounces until its window opens, 10 bounces at most.
+
+### Settings
+- Fewer sections (20 instead of 27), nothing removed; Settings opens on
+  Appearance.
+- Appearance: light/dark, any accent colour (with Sonata's colour picker),
+  title bars, glass and transparency for the Dock, menu bar, menus and
+  windows each, blur strength, corner radius for windows, Dock and menus.
+- App Icons (new): every app's icon from Sonata, its package, a picture of
+  your own or the icon theme; the frame's shape (squircle, circle, rounded
+  square) for all apps or one, and how big the picture sits in it.
+- Mouse & Trackpad say which options are for which device; section icons
+  in more colours.
+- Settings that need a restart offer Restart Now or Later.
+
+### Desktop
+- Volume per app in the menu bar's Sound menu, kept for the next time.
+- Rounded screen corners (on by default), also on the lock and login screens.
+- Date and time at the top of the lock and login screens.
+- A desktop on every display; darker dark mode; softer window shadows;
+  opaque title bars by default (glass title bars optional); lighter blur.
+- Long window titles no longer run over the title bar buttons (run
+  install.sh again: it builds the patched title bar plugin).
+- Open/Save panels look exactly like Files and always open on top.
+- Saved passwords: the login keyring opens with your login, no extra prompt.
+- RGB devices and the keyboard backlight turn off with the display.
+- Menu bar logo can be text (Sonata, your name or your own words).
+
+### Apps
+- Clock (new): alarms with soft sounds that ring even with Do Not Disturb.
+- Feedbacker (new): report a problem with logs attached; opens by itself
+  after a crash.
+- Files: each folder remembers its view and sort; Sort By in icon view.
+
+### Fixes
+- Do Not Disturb really hides every banner.
+- Many smaller fixes; every fixed bug has a test so it stays fixed.
+
 ## 0.1.0-alpha -- 2026-10-01
 
 First public preview. Sonata 2 is a desktop shell for Wayland (Wayfire,
