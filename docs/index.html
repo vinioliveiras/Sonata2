@@ -214,6 +214,16 @@ h2 { font-size: clamp(32px, 4.6vw, 56px); line-height: 1.07; letter-spacing: -0.
 .copy:hover { background: rgba(255,255,255,.18); }
 .note { margin-top: 18px; font-size: 14.5px; color: var(--muted); }
 
+/* -- credits ------------------------------------------------------------------------- */
+.credits { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); margin-top: 36px; }
+.credit { display: block; padding: 18px 20px; border-radius: 16px; text-decoration: none; background: var(--card);
+  border: 1px solid var(--card-border); transition: transform .3s var(--ease), border-color .3s; }
+.credit:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.credit b { display: block; font-size: 16px; letter-spacing: -.01em; }
+.credit span { display: block; margin-top: 4px; color: var(--muted); font-size: 14px; }
+.credit small { display: block; margin-top: 8px; color: var(--muted); font-size: 12.5px; opacity: .8; }
+.credits-h { margin-top: 56px; font-size: 15px; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
+
 /* -- footer, lightbox, motion ---------------------------------------------------------- */
 footer { padding: 60px 0 70px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--card-border); }
 footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
@@ -252,6 +262,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
       <a href="#yours">Make it yours</a>
       <a href="#apps">Apps</a>
       <a href="#get">Get it</a>
+      <a href="#credits">Credits</a>
     </div>
     <a class="btn primary small" href="https://github.com/vinioliveiras/sonata2">GitHub</a>
   </div>
@@ -414,6 +425,33 @@ git clone https://github.com/vinioliveiras/sonata2.git
 cd sonata2 &amp;&amp; ./install.sh</div>
       <p class="note">Works with Wayfire, GTK 4 and libadwaita on most distributions; the installer gets everything else for you.
         Found a bug? <a href="https://github.com/vinioliveiras/sonata2/issues">Tell us on GitHub</a>.</p>
+    </div>
+  </div>
+</section>
+
+<section id="credits">
+  <div class="wrap">
+    <p class="kicker reveal">Thanks</p>
+    <h2 class="reveal">Built on the work of others.</h2>
+    <p class="sub reveal" style="margin-bottom:0">Sonata stands on free software and art made by people who share it.
+      Each keeps its own license; the details are in the <a href="https://github.com/vinioliveiras/sonata2#license">README</a>.</p>
+    <p class="credits-h reveal">Icons, themes, fonts and pictures</p>
+    <div class="credits" style="margin-top:14px">
+      <a class="credit reveal" href="https://github.com/vinceliuice/MacTahoe-icon-theme"><b>MacTahoe icon theme</b><span>The app and system icons</span><small>Vince Liuice · GPL-3.0</small></a>
+      <a class="credit reveal" href="https://github.com/vinceliuice/WhiteSur-gtk-theme"><b>WhiteSur</b><span>Parts of the GTK theme and the trash icons</span><small>Vince Liuice · MIT / GPL-3.0</small></a>
+      <a class="credit reveal" href="https://github.com/ful1e5/apple_cursor"><b>apple_cursor</b><span>The mouse pointers</span><small>Abdulkaiz Khatri · GPL-3.0</small></a>
+      <a class="credit reveal" href="https://rsms.me/inter/"><b>Inter</b><span>The interface font</span><small>Rasmus Andersson · SIL OFL 1.1</small></a>
+      <a class="credit reveal" href="https://github.com/googlefonts/noto-emoji"><b>Noto Color Emoji</b><span>Emoji on the stock profile pictures</span><small>Google · OFL 1.1 / Apache-2.0</small></a>
+      <a class="credit reveal" href="https://unsplash.com"><b>Unsplash</b><span>The wallpaper photos</span><small>Unsplash photographers · Unsplash License</small></a>
+    </div>
+    <p class="credits-h reveal">Software</p>
+    <div class="credits" style="margin-top:14px">
+      <a class="credit reveal" href="https://wayfire.org"><b>Wayfire</b><span>The compositor that draws the desktop</span><small>Wayfire team · MIT</small></a>
+      <a class="credit reveal" href="https://github.com/soreau/pixdecor"><b>pixdecor</b><span>Window title bars</span><small>Scott Moreau · MIT</small></a>
+      <a class="credit reveal" href="https://gtk.org"><b>GTK 4 and libadwaita</b><span>Every window and control</span><small>GNOME · LGPL-2.1+</small></a>
+      <a class="credit reveal" href="https://github.com/wmww/gtk4-layer-shell"><b>gtk4-layer-shell</b><span>The menu bar, Dock and overlays</span><small>William Wold · MIT</small></a>
+      <a class="credit reveal" href="https://webkitgtk.org"><b>WebKitGTK</b><span>Web apps</span><small>WebKit team · LGPL-2.1 / BSD</small></a>
+      <a class="credit reveal" href="https://github.com/any1/wayvnc"><b>wayvnc</b><span>Screen Sharing</span><small>Andri Yngvason · ISC</small></a>
     </div>
   </div>
 </section>
