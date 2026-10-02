@@ -521,6 +521,34 @@ class DockFolderTest(unittest.TestCase):
         self.assertEqual(other.tiles[fkey].icon.keys, [a, b, self.apps[2]])
         w2.destroy()
 
+    def test_folder_removed_in_a_puff(self):
+        """Vini: removing a folder from the Dock: the puff of smoke, like an app."""
+        from unittest import mock
+        d = self.dock
+        fkey = d.make_folder(self.apps[:2])
+        settle()
+        with mock.patch.object(D.Dock, "_poof") as puff:
+            F.remove_with_puff(d, d.tiles[fkey])
+        puff.assert_called_once()
+        self.assertNotIn(fkey, d.cfg["pinned"])
+
+    def test_dropped_outside_puffs_too(self):
+        """The puff never showed: an icon dropped on the desktop (which takes
+        drops) ended the drag with "delete", a path without the puff."""
+        from unittest import mock
+        d, a = self.dock, self.apps[0]
+        tile = d.tiles[a]
+        d._drag = {"key": a, "index": 0, "left": True, "dropped": False}
+        with mock.patch.object(D.Dock, "_poof") as puff:
+            d._drag_end(None, None, True, tile)
+        puff.assert_called_once()
+        self.assertNotIn(a, d.cfg["pinned"])
+
+    def test_poof_window_is_see_through(self):
+        import inspect
+        from sonata2.shell import poof
+        self.assertIn("window.sonata-poof { background: none", inspect.getsource(poof))
+
     def test_icon_draws(self):
         icon = F.FolderIcon(self.apps[:3], 48)
         self.assertEqual(icon.do_measure(Gtk.Orientation.HORIZONTAL, -1)[0], 48)

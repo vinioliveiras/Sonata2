@@ -11,6 +11,11 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Graphene, Gsk, Gtk  # noqa: E402
 
 SIZE = 96                     # the cloud's box (px)
+
+from .. import ui  # noqa: E402
+
+# a see-through window: only the cloud shows (the theme painted it as a square)
+ui.register("window.sonata-poof { background: none; box-shadow: none; }", key="poof")
 POOF_MS = 360
 # the puffs: (offset x, offset y, radius) as fractions of SIZE, from the centre
 PUFFS = ((0.0, 0.0, 0.20), (-0.17, 0.05, 0.14), (0.17, 0.04, 0.15), (-0.08, -0.15, 0.13),

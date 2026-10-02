@@ -49,7 +49,7 @@ class GlassModelTest(unittest.TestCase):
         self.assertFalse(s["menus"]["on"])
 
     def test_bad_values_cleaned(self):
-        s = G.settings({"glass": {"dock": {"on": True, "alpha": 0.1}, "menus": "x", "blur": 500}})
+        s = G.settings({"glass": {"dock": {"on": True, "alpha": -1}, "menus": "x", "blur": 500}})
         self.assertEqual(s["dock"]["alpha"], G.ALPHA_RANGE[0])         # never below the blur's threshold
         self.assertEqual(s["menus"], {"on": True, "alpha": None})
         self.assertEqual(s["blur"], 100)
@@ -288,6 +288,11 @@ class SettingsAppearanceTest(unittest.TestCase):
             seen.add(G.settings()["dock"]["alpha"])
         seen.discard(None)
         self.assertGreaterEqual(len(seen), 4)                     # several levels while still moving
+
+    def test_most_see_through_is_clear(self):
+        """Vini: the slider's "More" end must be really see-through."""
+        self.assertEqual(G.ALPHA_RANGE[0], 0.0)
+        self.assertEqual(self.st.Settings._slider_to_alpha(100), 0.0)
 
     def test_more_room_to_be_see_through(self):
         # from the theme's 0.60 the slider used to have 0.10 left towards "More"

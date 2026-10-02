@@ -209,7 +209,7 @@ class SettingsPageTest(unittest.TestCase):
         self.assertEqual(icons.prefs()["source"], "auto")
 
     def test_reset_all(self):
-        """Vini: one button resets everything -- every app its package's icon."""
+        """Reset: every app back to the choice for all apps."""
         icons.set_app_pref("org.test.App", source="file", path="/x.png", shape="circle")
         self.page.set_shape("rounded")
         from unittest import mock
@@ -221,9 +221,9 @@ class SettingsPageTest(unittest.TestCase):
         self.assertEqual(icons.prefs()["apps"]["org.test.App"]["source"], "file")
         answer("reset")
         p = icons.prefs()
-        self.assertEqual((p["shape"], p["source"], p["apps"]), ("squircle", "package", {}))
-        self.assertEqual(self.page.shape_row.get_selected(), list(icons.SHAPES).index("squircle"))
-        self.assertIn("own", self.page.rows["org.test.App"].get_subtitle())
+        # Vini: only what was set per app goes -- the shape for all apps stays
+        self.assertEqual((p["shape"], p["apps"]), ("rounded", {}))
+        self.assertEqual(p["source"], "auto")
 
     def test_app_panel_uses_the_kit(self):
         row = self.page.rows["org.test.App"]

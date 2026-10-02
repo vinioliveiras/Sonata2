@@ -1362,7 +1362,12 @@ class Dock(Gtk.Box):
             self._move_to_slot(tile, d["index"])
         return False
 
-    def _poof(self, d) -> None:
+    def poof_at_tile(self, tile) -> None:
+        """The puff where an icon was (a folder removed from its menu)."""
+        ok, b = tile.compute_bounds(self) if tile.get_parent() is self else (False, None)
+        self._poof({"x": b.get_x() + b.get_width() / 2} if ok else {}, at_pointer=False)
+
+    def _poof(self, d, at_pointer: bool = True) -> None:
         try:
             from . import poof
             root = self.get_root()
@@ -1373,10 +1378,19 @@ class Dock(Gtk.Box):
             if mon is not None:                          # where the Dock last saw it, above the Dock
                 g = mon.get_geometry()
                 fallback = (mon, d.get("x", g.width / 2), g.height - self.get_height() - poof.SIZE / 2)
-            if app is not None:
-                poof.at_pointer(app, fallback)
+            if app is None:
+                print("sonata2-dock: poof: no application", flush=True)
+                return
+            if at_pointer:
+                w = poof.at_pointer(app, fallback)
+            elif fallback is not None:
+                w = poof.Poof(app, *fallback)
+                w.present()
+            else:
+                w = None
+            print(f"sonata2-dock: poof {'shown' if w is not None else 'not shown (no display found)'}", flush=True)
         except Exception as e:                           # an effect: never in the way
-            print(f"sonata2-dock: poof: {e}")
+            print(f"sonata2-dock: poof: {e}", flush=True)
 
     def _drag_end(self, _src, _drag, delete, tile) -> None:
         tile.remove_css_class("dragging")
@@ -1385,6 +1399,8 @@ class Dock(Gtk.Box):
         # moved somewhere else that took it (Launchpad): out of the Dock
         if delete and d and not d["dropped"] and tile.key not in PERMANENT:
             self.set_pinned(tile.key, False)
+            if d.get("left"):                      # dropped onto the desktop or another app: the puff too
+                self._poof(d)
         # still in the Dock (dropped back, cancelled, or a running app that keeps its icon)
         if self.tiles.get(tile.key) is tile and not tile.get_visible():
             self._set_tile_shown(tile, True)

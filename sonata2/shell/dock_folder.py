@@ -468,8 +468,14 @@ def folder_menu(dock, tile):
         ungroup = Item("Ungroup", lambda: dock.ungroup(tile.key))
     return ui.menu.popup(tile, [[Item("Open", lambda: open_panel(dock, tile))],
                                 [lock],
-                                [ungroup, Item("Remove from Dock", lambda: dock.set_pinned(tile.key, False))]],
+                                [ungroup, Item("Remove from Dock", lambda: remove_with_puff(dock, tile))]],
                          position=dock.away)
+
+
+def remove_with_puff(dock, tile) -> None:
+    """Remove from Dock, in a puff of smoke like an app dragged out (Vini)."""
+    dock.poof_at_tile(tile)
+    dock.set_pinned(tile.key, False)
 
 
 def app_items(dock, key) -> list:

@@ -25,7 +25,7 @@ MATERIALS = {"dock": ("glass_tint", "solid_tint"), "menubar": ("bar_bg", "window
 # wayfire.ini: soft shadows stay unfrosted). A part set more see-through
 # than that lowers the threshold (blur_threshold), never under THRESHOLD_MIN
 # (dark menus' shadows would get a frosted halo).
-ALPHA_RANGE = (0.38, 0.97)
+ALPHA_RANGE = (0.0, 0.97)        # most see-through: clear glass (Vini); under ~0.36 the frost fades
 THRESHOLD, THRESHOLD_MIN = 0.5, 0.36
 BLUR_DEFAULT = 50
 OFFSET_RANGE = (1.5, 7.5)          # kawase_offset at strength 0 / 100 (50 -> 4.5, the default)

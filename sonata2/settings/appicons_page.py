@@ -61,9 +61,9 @@ class AppIconsPage:
         btns.append(ui.controls.push_button("From Packages", lambda: self.set_source_all("package")))
         every.add_suffix(btns)
         shape.add(every)
-        reset = Adw.ActionRow(title="Reset all app icons", use_markup=False,
-                              subtitle="Every app back to its package's icon, on the squircle; your choices go")
-        rb = ui.controls.push_button("Reset All\u2026", self.ask_reset_all, style="destructive")
+        reset = Adw.ActionRow(title="Reset app icons", use_markup=False,
+                              subtitle="Forget what you set for single apps; the shape and icons above stay")
+        rb = ui.controls.push_button("Reset\u2026", self.ask_reset_all, style="destructive")
         rb.set_valign(Gtk.Align.CENTER)
         reset.add_suffix(rb)
         shape.add(reset)
@@ -134,21 +134,19 @@ class AppIconsPage:
 
     def ask_reset_all(self):
         """Asked first: custom pictures and per-app shapes are forgotten."""
-        return ui.dialog.alert("Reset all app icons?",
-                               "Every app shows its package's icon on the squircle again. The pictures, "
-                               "theme icons and shapes you chose are forgotten.",
-                               [("cancel", "Cancel", ""), ("reset", "Reset All", "destructive")],
+        return ui.dialog.alert("Reset app icons?",
+                               "The pictures, theme icons, sizes and shapes you set for single apps are "
+                               "forgotten. The shape and icons chosen for all apps stay.",
+                               [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
                                lambda rid: rid == "reset" and self.reset_all(), parent=self.settings)
 
     def reset_all(self) -> None:
-        """Vini: one click and every app is back to its package's icon."""
+        """Every app back to the choice for all apps (Vini: only what was set
+        per app goes; the shape and the icons' source stay)."""
         from .. import config
-        config.update("icons", shape="squircle", source="package", apps={})
+        config.update("icons", apps={})
         icons.forget_prefs()
         self.refresh()
-        if hasattr(self, "shape_row"):
-            from .app import show_quietly
-            show_quietly(self.shape_row, "squircle")
 
     def set_app(self, row, **values) -> None:
         icons.set_app_pref(row.did, **values)
