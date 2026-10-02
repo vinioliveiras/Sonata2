@@ -1313,7 +1313,13 @@ class TopBarWindow(Gtk.ApplicationWindow):
             from .. import fullscreen                               # Ctrl+Super+F, remembered; games
             self.bar.fullscreen = fullscreen.Rules()
             from .. import gpu                                      # crashed on the discrete GPU last time
-            GLib.timeout_add_seconds(4, lambda: gpu.crash_notice() and False)
+            # tried until the notification server answers (a few times, at login)
+            _tries = {"n": 0}
+
+            def _gpu_notice():
+                _tries["n"] += 1
+                return not gpu.crash_notice() and gpu.crashed_at() is not None and _tries["n"] < 6
+            GLib.timeout_add_seconds(4, _gpu_notice)
             from ..backend.equalizer import Equalizer
             self.bar.equalizer = Equalizer()
             self.bar.equalizer.start()

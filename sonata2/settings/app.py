@@ -1027,11 +1027,21 @@ class Settings(Adw.ApplicationWindow):
             graphics.add(switch_row("Draw with the Displays' Graphics Card", gpu.compositor_on_display_gpu(),
                                     lambda on: (gpu.set_compositor_on_display_gpu(on),
                                                 self.ask_restart("session", "The graphics card change")),
-                                    subtitle="Smoother on displays wired to the discrete card, but some "
-                                             "NVIDIA drivers can end the session. From the next login."))
+                                    subtitle=self._gpu_subtitle(gpu)))
             pages.append(graphics)
         return pages
 
+    @staticmethod
+    def _gpu_subtitle(gpu) -> str:
+        """Why the switch is off when a crash turned it off (it looked like it
+        turned itself off -- Vini)."""
+        base = ("Smoother on displays wired to the discrete card, but some NVIDIA drivers can end the "
+                "session. From the next login.")
+        when = gpu.crashed_at()
+        if when is None or gpu.compositor_on_display_gpu():
+            return base
+        stamp = GLib.DateTime.new_from_unix_local(int(when)).format("%-d %b, %H:%M")
+        return f"Turned off after the session ended on {stamp}: the card refused memory. " + base
     def _night_shift_group(self):
         """Displays > Night Shift (macOS sheet as a group): schedule, custom
         times, Turn On Until Tomorrow, Colour Temperature."""

@@ -125,6 +125,10 @@ def set_compositor_on_display_gpu(on: bool) -> None:
     path = display_gpu_flag()
     try:
         if on:
+            try:
+                os.remove(crash_marker())          # turned on again: the old crash is history
+            except OSError:
+                pass
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
                 f.write("Sonata draws with the displays' GPU while this file exists.\n")
@@ -140,28 +144,49 @@ def crash_marker() -> str:
                         "sonata2", "display-gpu-crashed")
 
 
-def crash_notice() -> bool:
-    """Once after such a crash: tell the user the option was turned off."""
-    path = crash_marker()
-    if not os.path.exists(path):
-        return False
+def crashed_at():
+    """When a crash turned "Draw with the Displays' Graphics Card" off (the
+    marker's time), None when it didn't. Settings says so next to the switch."""
     try:
-        os.remove(path)
+        return os.path.getmtime(crash_marker())
     except OSError:
-        pass
+        return None
+
+
+def crash_notice() -> bool:
+    """Once after such a crash: tell the user the option was turned off. The
+    marker stays (Settings shows why the switch is off) and is only marked
+    as told once the notification really went out -- at login the
+    notification server may not be up yet (Vini: the switch "turned itself
+    off" with no word about it)."""
+    path = crash_marker()
+    try:
+        with open(path, encoding="utf-8") as f:
+            if "notified" in f.read():
+                return False
+    except OSError:
+        return False
     try:
         from gi.repository import Gio, GLib
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-        bus.call("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
-                 "org.freedesktop.Notifications", "Notify",
-                 GLib.Variant("(susssasa{sv}i)", (
-                     "Sonata", 0, "video-display",
-                     "Graphics set back to the integrated card",
-                     "The last session ended because the discrete card refused memory. "
-                     "Sonata draws with the integrated card again (Settings > Displays > Graphics); "
-                     "games still use the discrete card.", [], {}, -1)),
-                 None, Gio.DBusCallFlags.NONE, 2000, None, None)
+        bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                      "org.freedesktop.Notifications", "Notify",
+                      GLib.Variant("(susssasa{sv}i)", (
+                          "Sonata", 0, "video-display",
+                          "Graphics set back to the integrated card",
+                          "The last session ended because the discrete card refused memory. "
+                          "Sonata draws with the integrated card again (Settings > Displays > Graphics); "
+                          "games still use the discrete card.", [], {"urgency": GLib.Variant("y", 2)}, -1)),
+                      None, Gio.DBusCallFlags.NONE, 2000, None)
     except Exception:
+        return False                              # not told yet: tried again later
+    mtime = crashed_at()
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("notified\n")
+        if mtime is not None:
+            os.utime(path, (mtime, mtime))         # keep the crash's time
+    except OSError:
         pass
     return True
 

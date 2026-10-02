@@ -1691,11 +1691,35 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         old = os.environ.get("XDG_CACHE_HOME")
         os.environ["XDG_CACHE_HOME"] = tempfile.mkdtemp()
         try:
+            from unittest import mock
             self.assertFalse(gpu.crash_notice())
             os.makedirs(os.path.dirname(gpu.crash_marker()))
             open(gpu.crash_marker(), "w").close()
-            self.assertTrue(gpu.crash_notice())
-            self.assertFalse(gpu.crash_notice())                    # once
+            os.utime(gpu.crash_marker(), (1000, 1000))
+            bus = mock.MagicMock()
+            # Vini: the switch "turned itself off" with no word: at login the
+            # notification server may not answer yet -- not told, tried again
+            bus.call_sync.side_effect = Exception("no server yet")
+            with mock.patch("gi.repository.Gio.bus_get_sync", return_value=bus):
+                self.assertFalse(gpu.crash_notice())
+            bus.call_sync.side_effect = None
+            with mock.patch("gi.repository.Gio.bus_get_sync", return_value=bus):
+                self.assertTrue(gpu.crash_notice())
+                self.assertFalse(gpu.crash_notice())                # once
+            self.assertEqual(gpu.crashed_at(), 1000)                # kept: Settings says why it's off
+            old_cfg = os.environ.get("XDG_CONFIG_HOME")
+            os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp()
+            try:
+                from sonata2.settings import app as st
+                self.assertIn("Turned off after the session ended", st.Settings._gpu_subtitle(gpu))
+                gpu.set_compositor_on_display_gpu(True)             # on again: the old crash is history
+                self.assertIsNone(gpu.crashed_at())
+                gpu.set_compositor_on_display_gpu(False)
+            finally:
+                if old_cfg is None:
+                    os.environ.pop("XDG_CONFIG_HOME", None)
+                else:
+                    os.environ["XDG_CONFIG_HOME"] = old_cfg
         finally:
             if old is None:
                 os.environ.pop("XDG_CACHE_HOME", None)
