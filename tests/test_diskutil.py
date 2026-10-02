@@ -305,3 +305,21 @@ class WindowTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DiskManagerIconTest(unittest.TestCase):
+    """Vini: Disk Manager's icon (MacTahoe's) showed an Apple logo -- no
+    Apple names or logos on screen. Sonata's own drive icon, also for the
+    names other disk apps ask for."""
+
+    def test_own_icon(self):
+        import pathlib
+        root = pathlib.Path(__file__).resolve().parent.parent
+        apps = root / "sonata2" / "data" / "icons" / "Sonata" / "apps" / "scalable"
+        art = (apps / "sonata-diskmanager.svg").read_text()
+        self.assertNotIn("apple", art.lower())
+        for name in ("gnome-disk-utility", "gnome-disks", "org.gnome.DiskUtility", "palimpsest"):
+            self.assertEqual((apps / (name + ".svg")).resolve(), (apps / "sonata-diskmanager.svg").resolve(), name)
+        src = (root / "sonata2" / "diskutil" / "window.py").read_text()
+        self.assertIn("Icon=sonata-diskmanager", src)
+        self.assertNotIn('icon_name="gnome-disk-utility"', src)

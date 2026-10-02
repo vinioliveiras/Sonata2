@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Disk Manager, Sonata's own: graphite squircle (MacTahoe's shape), a silver drive
+       seen from above, its platter showing used space in blue, a green activity light -->
+  <defs>
+    <linearGradient id="bg" x1="0" x2="0" y1="4" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4a4f5c"/><stop offset="1" stop-color="#1e2129"/>
+    </linearGradient>
+    <linearGradient id="case" x1="0" x2="0" y1="13" y2="53" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f4f5f8"/><stop offset=".55" stop-color="#d5d8df"/><stop offset="1" stop-color="#aeb3bd"/>
+    </linearGradient>
+    <linearGradient id="side" x1="0" x2="0" y1="47" y2="53" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9aa0ab"/><stop offset="1" stop-color="#6e7480"/>
+    </linearGradient>
+    <radialGradient id="plat" cx="30" cy="28" r="15" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/><stop offset=".7" stop-color="#dfe3ea"/><stop offset="1" stop-color="#c3c8d2"/>
+    </radialGradient>
+    <linearGradient id="used" x1="32" x2="46" y1="16" y2="42" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5aa9ff"/><stop offset="1" stop-color="#1f6fe5"/>
+    </linearGradient>
+    <filter id="drop" x="-.1" y="-.1" width="1.2" height="1.25" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation=".7"/>
+    </filter>
+    <filter id="soft" x="-.2" y="-.2" width="1.4" height="1.4" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="1.1"/>
+    </filter>
+  </defs>
+  <path d="M20.26 4c-5.782 0-9.743 1.725-12.321 4.535C5.374 11.331 4 15.34 4 19.876v24.248c0 4.538 1.374 8.545 3.939 11.341C10.517 58.275 14.479 60 20.26 60h23.549c5.782 0 9.743-1.724 12.321-4.535C58.695 52.67 60 49.03 60 44.125V20.786c0-5.935-1.305-9.456-3.87-12.252C53.552 5.725 49.59 4 43.809 4H25.494z" fill="#000" opacity=".22" filter="url(#drop)" transform="translate(0 .8)"/>
+  <path d="M20.26 4c-5.782 0-9.743 1.725-12.321 4.535C5.374 11.331 4 15.34 4 19.876v24.248c0 4.538 1.374 8.545 3.939 11.341C10.517 58.275 14.479 60 20.26 60h23.549c5.782 0 9.743-1.724 12.321-4.535C58.695 52.67 60 49.03 60 44.125V20.786c0-5.935-1.305-9.456-3.87-12.252C53.552 5.725 49.59 4 43.809 4H25.494z" fill="url(#bg)" stroke="#fff" stroke-opacity=".14" stroke-width=".8"/>
+  <!-- the drive -->
+  <rect x="13" y="16" width="38" height="37" rx="5" fill="#000" opacity=".45" filter="url(#soft)"/>
+  <rect x="13" y="14" width="38" height="38" rx="5" fill="url(#side)"/>
+  <rect x="13" y="12.5" width="38" height="35" rx="5" fill="url(#case)"/>
+  <rect x="13.5" y="13" width="37" height="34" rx="4.6" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width=".8"/>
+  <!-- platter with used space -->
+  <circle cx="32" cy="30" r="13" fill="#8d93a0" opacity=".35"/>
+  <circle cx="32" cy="29.4" r="12.6" fill="url(#plat)"/>
+  <path d="M32 29.4V16.8a12.6 12.6 0 0 1 10.9 18.9z" fill="url(#used)"/>
+  <circle cx="32" cy="29.4" r="8.2" fill="none" stroke="#000" stroke-opacity=".06" stroke-width=".6"/>
+  <circle cx="32" cy="29.4" r="3.4" fill="#eef0f4" stroke="#9aa0ab" stroke-width=".7"/>
+  <circle cx="32" cy="29.4" r="1.1" fill="#8d93a0"/>
+  <!-- screws and activity light -->
+  <g fill="#9aa0ab"><circle cx="17" cy="16.5" r="1"/><circle cx="47" cy="16.5" r="1"/><circle cx="17" cy="43.5" r="1"/></g>
+  <circle cx="47" cy="49.5" r="1.4" fill="#34d058"/>
+  <circle cx="47" cy="49.5" r="3" fill="#34d058" opacity=".35" filter="url(#soft)"/>
+</svg>

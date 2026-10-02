@@ -246,7 +246,7 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
     def _build_missing(self) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, valign=Gtk.Align.CENTER,
                       halign=Gtk.Align.CENTER, css_classes=["du-missing"])
-        box.append(Gtk.Image(icon_name="gnome-disk-utility", pixel_size=96))
+        box.append(Gtk.Image(icon_name="sonata-diskmanager", pixel_size=96))
         self.missing_title = Gtk.Label(label="Disk Manager needs UDisks2", css_classes=["du-missing-title"])
         box.append(self.missing_title)
         self.missing_body = Gtk.Label(label="Install the udisks2 package and start its service "
@@ -784,7 +784,7 @@ def diskutil_desktop_file(command: str) -> str:
     from ..apps import write_desktop_file
     return write_desktop_file(APP_ID + ".desktop",
                               "[Desktop Entry]\nType=Application\nName=Disk Manager\n"
-                              "Comment=Manage disks and volumes\nIcon=gnome-disk-utility\n"
+                              "Comment=Manage disks and volumes\nIcon=sonata-diskmanager\n"
                               "Categories=System;Utility;\nKeywords=disk;drive;partition;format;erase;mount;usb;\n"
                               "StartupNotify=true\n"
                               f"Exec={command} diskutil %F\n")
