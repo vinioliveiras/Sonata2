@@ -8,6 +8,9 @@
 <meta property="og:title" content="Sonata — now you have no excuse not to switch to Linux">
 <meta property="og:description" content="A beautiful, simple desktop for Linux, made for people who have never opened a terminal.">
 <meta property="og:image" content="screenshots/desktop.png">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#1b1d3a">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -63,7 +66,7 @@ nav .bar {
   border: 1px solid var(--card-border); box-shadow: 0 8px 30px -12px rgba(0,0,0,.25);
 }
 nav .logo { font-weight: 800; letter-spacing: -.02em; text-decoration: none; display: flex; align-items: center; gap: 8px; }
-nav .logo i { width: 18px; height: 18px; border-radius: 6px; background: linear-gradient(160deg, #8fc1ff, #3b82f6 45%, #5b5fd6 80%, #2a2f6e); }
+nav .logo i { width: 18px; height: 18px; border-radius: 6px; background: url("favicon.svg") center / cover; }   /* the favicon */
 nav .links { display: flex; gap: 18px; font-size: 14px; color: var(--muted); }
 nav .links a { text-decoration: none; transition: color .2s; }
 nav .links a:hover { color: var(--text); }
@@ -213,6 +216,13 @@ h2 { font-size: clamp(32px, 4.6vw, 56px); line-height: 1.07; letter-spacing: -0.
 }
 .copy:hover { background: rgba(255,255,255,.18); }
 .note { margin-top: 18px; font-size: 14.5px; color: var(--muted); }
+
+/* -- support -------------------------------------------------------------------------- */
+.support { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap;
+  padding: 28px 32px; border-radius: var(--radius); background: var(--card); border: 1px solid var(--card-border); }
+.support h3 { margin: 0 0 6px; font-size: 22px; letter-spacing: -.02em; }
+.support p { margin: 0; color: var(--muted); max-width: 34em; }
+.support .heart { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* -- credits ------------------------------------------------------------------------- */
 .credits { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); margin-top: 36px; }
@@ -435,6 +445,11 @@ cd sonata2 &amp;&amp; ./install.sh</div>
     <h2 class="reveal">Built on the work of others.</h2>
     <p class="sub reveal" style="margin-bottom:0">Sonata stands on free software and art made by people who share it.
       Each keeps its own license; the details are in the <a href="https://github.com/vinioliveiras/sonata2#license">README</a>.</p>
+    <div class="support reveal" style="margin-top:36px">
+      <div><h3>Like Sonata? Buy me a coffee.</h3>
+        <p>Sonata is made by one person in their free time and stays free for everyone. A coffee helps keep it going.</p></div>
+      <a class="btn primary" href="https://ko-fi.com/vinioliveira" target="_blank" rel="noopener"><svg class="heart" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>Support on Ko-fi</a>
+    </div>
     <p class="credits-h reveal">Icons, themes, fonts and pictures</p>
     <div class="credits" style="margin-top:14px">
       <a class="credit reveal" href="https://github.com/vinceliuice/MacTahoe-icon-theme"><b>MacTahoe icon theme</b><span>The app and system icons</span><small>Vince Liuice · GPL-3.0</small></a>
@@ -459,7 +474,7 @@ cd sonata2 &amp;&amp; ./install.sh</div>
 <footer>
   <div class="wrap">
     <span>Sonata is free software under the GPL-3.0. Made with care, for everyone.</span>
-    <span><a href="https://github.com/vinioliveiras/sonata2">Source</a> · <a href="https://github.com/vinioliveiras/sonata2/releases">Releases</a> · <a href="https://github.com/vinioliveiras/sonata2/issues">Issues</a></span>
+    <span><a href="https://github.com/vinioliveiras/sonata2">Source</a> · <a href="https://github.com/vinioliveiras/sonata2/releases">Releases</a> · <a href="https://github.com/vinioliveiras/sonata2/issues">Issues</a> · <a href="https://ko-fi.com/vinioliveira">Ko-fi</a></span>
   </div>
 </footer>
 
