@@ -8,7 +8,8 @@ set -euo pipefail
 in="$1" out="$2"
 here="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 pix=""
-for d in $(pkg-config --variable=plugindir wayfire 2>/dev/null) /usr/lib/wayfire /usr/lib64/wayfire \
+for d in "${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install/lib/wayfire" \
+         $(pkg-config --variable=plugindir wayfire 2>/dev/null) /usr/lib/wayfire /usr/lib64/wayfire \
          /usr/local/lib/wayfire /usr/lib/x86_64-linux-gnu/wayfire; do
     [ -f "$d/libpixdecor.so" ] && { pix=1; break; }
 done
