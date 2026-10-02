@@ -70,3 +70,13 @@ def short_date(t: float, now: float = None) -> str:
     if days < 7:
         return dt.format("%A")
     return dt.format("%x")
+
+
+def count(n: int) -> str:
+    """Short counts: 950, 24K, 1.2M (tokens, items)."""
+    n = int(n)
+    if n < 1000:
+        return str(n)
+    if n < 1_000_000:
+        return f"{n / 1000:.0f}K" if n >= 10_000 else f"{n / 1000:.1f}K".replace(".0K", "K")
+    return f"{n / 1_000_000:.1f}M".replace(".0M", "M")

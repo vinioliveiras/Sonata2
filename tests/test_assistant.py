@@ -21,7 +21,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from sonata2 import ui  # noqa: E402
-from sonata2.assistant import api, keystore, markdown, tools  # noqa: E402
+from sonata2.assistant import api, keystore, markdown, tools, usage  # noqa: E402
 from sonata2.assistant import store as S  # noqa: E402
 
 
@@ -167,10 +167,10 @@ class ApiTest(unittest.TestCase):
                         {"type": "message_stop"}]
 
     def run_job(self, model="m", msgs=None, tools_=None):
-        got = {"text": "", "done": False, "error": None, "blocks": None, "stop": None}
+        got = {"text": "", "done": False, "error": None, "blocks": None, "stop": None, "usage": None}
         job = api.stream("k", model, msgs or [{"role": "user", "content": "hi"}],
                          lambda t: got.__setitem__("text", got["text"] + t),
-                         lambda b, st: got.update(done=True, blocks=b, stop=st),
+                         lambda b, st, u: got.update(done=True, blocks=b, stop=st, usage=u),
                          lambda e: got.__setitem__("error", e), tools=tools_)
         wait_for(lambda: got["done"] or got["error"])
         return job, got
@@ -204,6 +204,16 @@ class ApiTest(unittest.TestCase):
         merged = api.merge_turns([{"role": "user", "content": res}, {"role": "user", "content": "and now?"}])
         self.assertEqual(merged, [{"role": "user", "content": res + [{"type": "text", "text": "and now?"}]}])
         self.assertEqual(api.text_of([{"type": "text", "text": "a"}, {"type": "tool_use"}]), "a")
+
+    def test_usage_and_context_window(self):
+        _Fake.events = [{"type": "message_start", "message": {"model": "model-x", "usage": {
+                            "input_tokens": 100, "cache_read_input_tokens": 50, "output_tokens": 1}}},
+                        delta("Hi"), {"type": "message_delta", "delta": {"stop_reason": "end_turn"},
+                                      "usage": {"output_tokens": 30}}, {"type": "message_stop"}]
+        _job, got = self.run_job()
+        self.assertEqual(got["usage"]["model"], "model-x")
+        self.assertEqual(api.total_tokens(got["usage"]), 180)
+        self.assertEqual(api.context_window("never-listed"), api.DEFAULT_WINDOW)
 
     def test_newest_model_when_none_chosen(self):
         self.run_job(model=None)
@@ -281,6 +291,27 @@ class ToolsTest(unittest.TestCase):
         with open(p, "wb") as f:
             f.write(b"\x00\x01")
         self.assertTrue(tools.run(tools.check("read_file", {"path": p}, self.folders))[1])
+
+
+class UsageTest(unittest.TestCase):
+    def test_hour_and_week(self):
+        d = tempfile.mkdtemp()
+        u = usage.Usage(d)
+        now = 1_000_000_000
+        u.add(10, now - 8 * 86400)                  # too old: dropped
+        u.add(20, now - 2 * 86400)
+        u.add(30, now - 600)
+        u.add(0, now)                               # nothing used: not logged
+        u2 = usage.Usage(d)                         # read back
+        self.assertEqual((u2.last_hour(now), u2.last_week(now)), (30, 50))
+        self.assertEqual(len(u2.calls), 2)
+        with open(u.path, "w") as f:
+            f.write("[broken")
+        self.assertEqual(usage.Usage(d).calls, [])
+
+    def test_count_format(self):
+        self.assertEqual([ui.fmt.count(n) for n in (950, 1000, 1500, 24_400, 200_000, 1_000_000, 2_500_000)],
+                         ["950", "1K", "1.5K", "24K", "200K", "1M", "2.5M"])
 
 
 class KeystoreTest(unittest.TestCase):
@@ -560,6 +591,8 @@ class WindowTest(unittest.TestCase):
             self.win._save_key()
             self.assertEqual(saved, ["new-key"])
             self.assertEqual(self.win.key_caption.get_label(), "Saved in your keyring.")
+            self.win.limit_hourly_limit.set_selected(0)
+            self.assertEqual(config.load("assistant", self.W.DEFAULTS)["hourly_limit"], usage.HOURLY[0])
             self.win.cfg["folders"] = ["/tmp/x"]
             self.win._fill_folders()
             self.win.remove_folder("/tmp/x")
@@ -577,6 +610,29 @@ class WindowTest(unittest.TestCase):
         self.win.settings_panel.popdown()
         settle(100)
         self.assertFalse(self.win.settings_btn.get_can_focus())       # restored once the panel closes
+
+    def test_meters(self):
+        self.win.cfg.update(hourly_limit=1000, weekly_limit=10_000)
+        self.win.update_meters()
+        self.assertEqual(self.win.meters["context"][1].get_label(), "0 / 200K")
+        self.type_send("Hello")
+        self.jobs[0].on_text("Hi")
+        self.jobs[0].on_done(None, "end_turn", {"model": "m", "input_tokens": 400, "output_tokens": 100})
+        meter, value, _c = self.win.meters["hour"]
+        self.assertEqual(value.get_label(), "500 / 1K")
+        self.assertAlmostEqual(meter.get_fraction(), 0.5)
+        self.assertEqual(self.win.meters["week"][1].get_label(), "500 / 10K")
+        self.assertEqual(self.win.meters["context"][1].get_label(), "500 / 200K")
+        cid = self.win.chat["id"]
+        self.win.new_chat()                                           # context follows the open chat
+        self.assertEqual(self.win.meters["context"][1].get_label(), "0 / 200K")
+        self.assertEqual(self.win.meters["hour"][1].get_label(), "500 / 1K")   # usage doesn't
+        self.win.open_chat(cid)                                       # saved with the chat
+        self.assertEqual(self.win.meters["context"][1].get_label(), "500 / 200K")
+        self.jobs.clear()
+        self.type_send("More")
+        self.jobs[0].on_done(None, "end_turn", {"input_tokens": 600})
+        self.assertIn("full", self.win.meters["hour"][0].get_css_classes())   # red past 90 %
 
     def test_ui_kit_only(self):
         # Vini: every Sonata UI comes from the UI kit (no libadwaita widgets, no system dialogs)

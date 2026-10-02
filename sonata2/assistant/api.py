@@ -5,8 +5,9 @@ in a worker thread; callbacks come back on the GTK main loop).
     job.cancel()                      # the Stop button
 
 on_text(str) gets each piece of text as it arrives, on_done(blocks,
-stop_reason) once at the end (the answer's content blocks: text and
-tool_use, with their parsed input), on_error(str) with a readable message
+stop_reason, usage) once at the end (the answer's content blocks: text
+and tool_use, with their parsed input; usage: the model that answered and
+its token counts), on_error(str) with a readable message
 instead of on_done. tools: definitions (tools.py) Claude may call.
 
 The API key comes from keystore.py. The model: the configured one, else the newest
@@ -22,6 +23,8 @@ MAX_TOKENS = 8192
 TIMEOUT = 60          # s without a byte (the stream sends pings meanwhile)
 
 _models = None        # (key, [(id, display name)] newest first)
+_windows = {}         # model id -> context window (max_input_tokens)
+DEFAULT_WINDOW = 200_000
 
 
 def api_key() -> str:
@@ -61,8 +64,18 @@ def models(key: str) -> list:
         req = urllib.request.Request(API + "/models?limit=100", headers=_headers(key))
         with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
             data = json.loads(r.read().decode("utf-8"))
-        _models = (key, [(m["id"], m.get("display_name") or m["id"]) for m in data.get("data", []) if m.get("id")])
+        found = [m for m in data.get("data", []) if m.get("id")]
+        for m in found:
+            if isinstance(m.get("max_input_tokens"), int) and m["max_input_tokens"] > 0:
+                _windows[m["id"]] = m["max_input_tokens"]
+        _models = (key, [(m["id"], m.get("display_name") or m["id"]) for m in found])
     return _models[1]
+
+
+def context_window(model: str) -> int:
+    """The model's context window in tokens (from the models list; a usual
+    size until it was read)."""
+    return _windows.get(model or "", DEFAULT_WINDOW)
 
 
 def models_async(key: str, callback) -> None:
@@ -103,6 +116,13 @@ def parse_sse(lines):
 
 def _blocks(content) -> list:
     return [{"type": "text", "text": content}] if isinstance(content, str) else list(content)
+
+
+def total_tokens(usage: dict) -> int:
+    """Tokens of one call: everything read (cached or not) and written --
+    also the conversation's size in the context window after it."""
+    return sum(int(usage.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens",
+                                                 "cache_read_input_tokens", "output_tokens"))
 
 
 def merge_turns(messages) -> list:
@@ -181,13 +201,18 @@ class Job:
                 return
             buf, last = [], [0.0]
             blocks, partial, stop = {}, {}, None       # index -> block, index -> streamed JSON of a tool's input
+            usage = {"model": model}
             for event, data in parse_sse(self._resp):
                 if self.cancelled:
                     return
                 kind = data.get("type")
                 if event == "error" or kind == "error":
                     raise RuntimeError(data.get("error", {}).get("message") or "The answer stopped with an error.")
-                if kind == "content_block_start":
+                if kind == "message_start":
+                    msg = data.get("message") or {}
+                    usage["model"] = msg.get("model") or model
+                    usage.update({k: v for k, v in (msg.get("usage") or {}).items() if isinstance(v, int)})
+                elif kind == "content_block_start":
                     blk = dict(data.get("content_block") or {})
                     if blk.get("type") in ("text", "tool_use"):
                         blocks[data.get("index", len(blocks))] = blk
@@ -202,6 +227,7 @@ class Job:
                         partial[i] = partial.get(i, "") + d.get("partial_json", "")
                 elif kind == "message_delta":
                     stop = data.get("delta", {}).get("stop_reason") or stop
+                    usage.update({k: v for k, v in (data.get("usage") or {}).items() if isinstance(v, int)})
                 elif kind == "message_stop":
                     break
             self._flush(buf, last, on_text, force=True)
@@ -216,7 +242,7 @@ class Job:
                     out.append({k: blk[k] for k in ("type", "id", "name", "input") if k in blk})
                 elif blk.get("text"):
                     out.append({"type": "text", "text": blk["text"]})
-            self._post(on_done, out, stop)
+            self._post(on_done, out, stop, usage)
         except Exception as e:                      # noqa: BLE001  (shown in the chat)
             if not self.cancelled:
                 self._post(on_error, _error_text(e))

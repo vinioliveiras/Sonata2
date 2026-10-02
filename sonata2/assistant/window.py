@@ -6,8 +6,14 @@ message field at the bottom (Return sends, Shift+Return starts a new line,
 Esc stops the answer). Answers stream in as they are written, formatted
 from their Markdown (markdown.py). Everything is saved locally (store.py).
 
+Above the message field, three meters: the conversation's share of the
+model's context window, and the tokens used in the last hour and the last
+7 days against your own limits (an API key has none of its own: counted
+locally, usage.py).
+
 Settings (the gear in the toolbar, a panel): the API key (kept in the
-keyring, keystore.py), the model, and the folders Claude may use. With
+keyring, keystore.py), the model, your usage limits, and the folders
+Claude may use. With
 folders, Claude can list, read and create files there (tools.py); every
 action waits for your OK in an alert, and shows in the chat.
 
@@ -24,11 +30,11 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, ui  # noqa: E402
-from . import api, keystore, markdown, tools  # noqa: E402
+from . import api, keystore, markdown, tools, usage  # noqa: E402
 from . import store as S  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.assistant"
-DEFAULTS = {"selected": "", "model": "", "folders": []}
+DEFAULTS = {"selected": "", "model": "", "folders": [], "hourly_limit": 1_000_000, "weekly_limit": 10_000_000}
 COLUMN_W = 720              # the conversation's reading width (centred)
 
 ui.register("""
@@ -65,6 +71,9 @@ window.sonata-assistant { color: %(label)s; font-family: %(font)s; font-size: %(
 .as-answer .as-rule { min-height: 1px; background: %(separator)s; margin: 6px 0; }
 .as-error { color: %(destructive)s; margin: 6px 0; }
 .as-composer-bar { background: %(content_bg)s; padding: 6px 24px 14px 24px; }
+.as-meters { padding: 0 8px 8px 8px; }
+.as-meter-title { font-size: %(text_small)s; color: %(label_secondary)s; }
+.as-meter-value { font-size: %(text_small)s; color: %(label_tertiary)s; font-feature-settings: "tnum"; }
 .as-tool { color: %(label_secondary)s; font-size: %(text_small)s; margin: 2px 0; }
 .as-tool image { color: %(label_secondary)s; }
 .as-tool.as-wait { color: %(accent)s; }
@@ -72,6 +81,7 @@ window.sonata-assistant { color: %(label)s; font-family: %(font)s; font-size: %(
 .as-tool.as-denied, .as-tool.as-denied image { color: %(label_tertiary)s; }
 .as-settings { padding: 2px 0 6px 0; }
 .as-settings .as-field-row { padding: 2px 10px 4px 10px; }
+.as-settings .as-field-row > label { font-weight: 400; }
 .as-settings .panel-caption { padding: 0 10px; font-weight: 400; }
 .as-settings .as-folder-row button.sonata-button { min-width: 0; }
 """, key="assistant-window")
@@ -216,6 +226,7 @@ class AssistantWindow(Gtk.ApplicationWindow):
         ui.window.standard(self)
         self.cfg = config.load("assistant", DEFAULTS)
         self.store = store or S.Store()
+        self.usage = usage.Usage(self.store.folder)
         self.chat = None             # the open conversation (with its messages)
         self.job = None              # the answer being written
         self.job_chat = None         # ...and its conversation (also while its file actions wait)
@@ -253,7 +264,9 @@ class AssistantWindow(Gtk.ApplicationWindow):
             self.open_chat(self.cfg["selected"])
         else:
             self.new_chat()
-        keystore.load(lambda _k: None)           # read the key early (a locked keyring may ask)
+        # read the key early (a locked keyring may ask), then the models' context windows
+        keystore.load(lambda k: k and api.models_async(k, lambda _f: self.update_meters()))
+        self._tick = GLib.timeout_add_seconds(60, self._meters_tick)     # the hour and week roll on
 
     # -- sidebar ----------------------------------------------------------------------------------
     def _sidebar(self) -> Gtk.Box:
@@ -368,6 +381,22 @@ class AssistantWindow(Gtk.ApplicationWindow):
         self._fill_models(None, loading=bool(keystore.cached()))
         if keystore.cached():
             api.models_async(keystore.cached(), lambda found: self._fill_models(found))
+
+        box.append(ui.panel.section_title("Usage Limits"))
+        for key, title, options in (("hourly_limit", "Per Hour", usage.HOURLY), ("weekly_limit", "Per Week", usage.WEEKLY)):
+            cur = int(self.cfg.get(key) or options[0])
+            opts = sorted(set(options) | {cur})
+
+            def chosen(i, key=key, opts=opts):
+                self.cfg[key] = opts[i]
+                config.update("assistant", **{key: opts[i]})
+                self.update_meters()
+            row = Gtk.Box(spacing=6, css_classes=["as-field-row"])
+            row.append(Gtk.Label(label=title, xalign=0, hexpand=True))
+            dd = ui.controls.popup_button([f"{ui.fmt.count(o)} tokens" for o in opts], opts.index(cur), chosen)
+            row.append(dd)
+            setattr(self, "limit_" + key, dd)
+            box.append(row)
 
         box.append(ui.panel.separator())
         box.append(ui.panel.section_title("Folders Claude Can Use"))
@@ -486,14 +515,50 @@ class AssistantWindow(Gtk.ApplicationWindow):
         self.composer = ui.controls.TextArea("Message", trailing=self.send_btn, on_submit=lambda _t: self.send(),
                                              on_change=lambda _t: self._update_send())
         self.input = self.composer.view
+        self.meters = {}
+        meters = Gtk.Box(spacing=16, homogeneous=True, css_classes=["as-meters"])
+        for key, title in (("context", "Context"), ("hour", "Last Hour"), ("week", "Last 7 Days")):
+            head = Gtk.Box(spacing=6)
+            head.append(Gtk.Label(label=title, xalign=0, hexpand=True, css_classes=["as-meter-title"]))
+            value = Gtk.Label(css_classes=["as-meter-value"])
+            head.append(value)
+            meter = ui.progress.meter(0)
+            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+            col.append(head)
+            col.append(meter)
+            self.meters[key] = (meter, value, col)
+            meters.append(col)
+        stack = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        stack.append(meters)
+        stack.append(self.composer)
         bar = Gtk.Box(css_classes=["as-composer-bar"])
-        bar.append(ui.fixed.MaxWidth(self.composer, COLUMN_W))
+        bar.append(ui.fixed.MaxWidth(stack, COLUMN_W))
 
         pane = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["as-chat"])
         pane.set_size_request(320, -1)
         pane.append(over)
         pane.append(bar)
         return pane
+
+    def update_meters(self) -> None:
+        """Context of the open chat; tokens of the last hour and week."""
+        chat = self.chat or {}
+        window = api.context_window(chat.get("model") or self.cfg.get("model"))
+        used = int(chat.get("context_tokens") or 0)
+        for key, n, limit, tip in (
+                ("context", used, window, "This conversation’s share of the model’s context window"),
+                ("hour", self.usage.last_hour(), int(self.cfg.get("hourly_limit") or 1),
+                 "Tokens used in the last hour, against your limit (Settings)"),
+                ("week", self.usage.last_week(), int(self.cfg.get("weekly_limit") or 1),
+                 "Tokens used in the last 7 days, against your limit (Settings)")):
+            meter, value, col = self.meters[key]
+            ui.progress.set_meter(meter, n / max(1, limit))
+            value.set_label(f"{ui.fmt.count(n)} / {ui.fmt.count(limit)}")
+            col.set_tooltip_text(f"{tip}: {n:,} of {limit:,} tokens")
+
+    def _meters_tick(self) -> bool:
+        self.update_meters()
+        return True
 
     def _scrolled(self, adj) -> None:
         self._stick = adj.get_value() >= adj.get_upper() - adj.get_page_size() - 40
@@ -583,6 +648,7 @@ class AssistantWindow(Gtk.ApplicationWindow):
         self._syncing = False
         self.set_title(chat.get("title") if chat["messages"] else "Assistant")
         self._update_send()
+        self.update_meters()
         GLib.idle_add(lambda: (self.composer.grab_focus(), False)[1])
 
     # -- sending ------------------------------------------------------------------------------------
@@ -669,8 +735,16 @@ class AssistantWindow(Gtk.ApplicationWindow):
             self._save_chat(chat)
         self._update_send()
 
-    def _on_done(self, blocks=None, stop=None) -> None:
+    def _on_done(self, blocks=None, stop=None, used=None) -> None:
         chat, text = self._end_stream()
+        if used and chat is not None:
+            tokens = api.total_tokens(used)
+            self.usage.add(tokens)
+            chat["context_tokens"] = tokens            # the conversation's size after this answer
+            if used.get("model"):
+                chat["model"] = used["model"]
+            if chat is self.chat:
+                self.update_meters()
         uses = [b for b in blocks or [] if b.get("type") == "tool_use"]
         if not uses:
             self.job_chat = None
@@ -813,6 +887,9 @@ class AssistantWindow(Gtk.ApplicationWindow):
 
     def _close_request(self, _w) -> bool:
         self.stop()
+        if self._tick:
+            GLib.source_remove(self._tick)
+            self._tick = 0
         sel = self.chat["id"] if self.chat and self.store.get(self.chat["id"]) else ""
         if sel != self.cfg.get("selected"):
             config.update("assistant", selected=sel)
