@@ -17,8 +17,15 @@ class TitleTest(unittest.TestCase):
     def test_installer_builds_it_and_session_uses_it(self):
         with open("install.sh", encoding="utf-8") as f:
             inst = f.read()
-        self.assertIn("pixdecor-title.patch", inst)
-        self.assertIn("PIXDECOR_COMMIT=", inst)
+        self.assertIn("tools/build-pixdecor.sh", inst)
+        with open("tools/build-pixdecor.sh", encoding="utf-8") as f:
+            build = f.read()
+        self.assertIn("pixdecor-title.patch", build)
+        self.assertIn("PIXDECOR_COMMIT=", build)
+        self.assertIn("tail -n", build)                              # a failed build says why
+        import subprocess
+        self.assertEqual(subprocess.run(["bash", "-n", "tools/build-pixdecor.sh"]).returncode, 0)
+        self.assertEqual(subprocess.run(["bash", "-n", "install.sh"]).returncode, 0)
         with open("tools/wayfire-config.sh", encoding="utf-8") as f:
             cfg = f.read()
         self.assertIn("plugin-manager/install/lib/wayfire", cfg.split("pix=1")[0])   # the user's build counts

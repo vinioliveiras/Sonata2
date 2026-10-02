@@ -140,6 +140,9 @@ def check_wayfire(r: Report, repo: str) -> None:
           fix="" if os.path.exists(corners) else "./install.sh   (needs meson, ninja and Wayfire's headers)")
     r.add(OK if "pixdecor" in have else WARN, "pixdecor (Sonata title bars for terminals / X11 apps)",
           fix="" if "pixdecor" in have else "AUR: wayfire-plugin-pixdecor-git")
+    fixed = os.path.expanduser("~/.local/share/wayfire/plugin-manager/install/lib/wayfire/libpixdecor.so")
+    r.add(OK if os.path.exists(fixed) else WARN, "pixdecor with Sonata's long-title fix",
+          fix="" if os.path.exists(fixed) else "tools/build-pixdecor.sh   (then log out and back in)")
 
 
 def check_install(r: Report) -> None:

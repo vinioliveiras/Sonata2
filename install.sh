@@ -304,23 +304,8 @@ if command -v meson >/dev/null && command -v ninja >/dev/null && pkg-config --ex
     fi
     # pixdecor with long titles cut before the buttons (wayfire-plugin/pixdecor-title.patch):
     # built into the same user folder, which Wayfire searches before the system's
-    PIXDECOR_COMMIT=5a6f590a368e249b00a71c56e67c1a32a40eb38d
-    if command -v curl >/dev/null && command -v patch >/dev/null && pkg-config --exists pango cairo 2>/dev/null; then
-        say "Building pixdecor (title bars) with Sonata's title fix"
-        pdir="$(mktemp -d)"
-        if curl -fsSL "https://codeload.github.com/soreau/pixdecor/tar.gz/$PIXDECOR_COMMIT" | tar xz -C "$pdir" --strip-components=1 &&
-           patch -d "$pdir" -p1 < "$SRC/wayfire-plugin/pixdecor-title.patch" >"$pdir.log" 2>&1 &&
-           meson setup "$pdir/build" "$pdir" --prefix "$PLUG_PREFIX" --libdir lib --buildtype release >>"$pdir.log" 2>&1 &&
-           ninja -C "$pdir/build" >>"$pdir.log" 2>&1 && meson install -C "$pdir/build" --destdir "$pdir/stage" >>"$pdir.log" 2>&1; then
-            (cd "$pdir/stage$PLUG_PREFIX" && find . -type f) | while read -r f; do
-                mkdir -p "$(dirname "$PLUG_PREFIX/$f")"
-                cp "$pdir/stage$PLUG_PREFIX/$f" "$PLUG_PREFIX/$f.new" && mv -f "$PLUG_PREFIX/$f.new" "$PLUG_PREFIX/$f"
-            done
-            echo "  installed (log out and back in to load it)"
-        else
-            echo "  couldn't build it (the installed pixdecor stays); log: $pdir.log"
-        fi
-    fi
+    say "Building pixdecor (title bars) with Sonata's title fix"
+    bash "$SRC/tools/build-pixdecor.sh" || echo "  (the installed pixdecor stays; retry: tools/build-pixdecor.sh)"
 else
     echo "Skipped Sonata's Wayfire plugin (needs meson, ninja, a C++ compiler and Wayfire's headers)."
 fi
