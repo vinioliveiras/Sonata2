@@ -10,9 +10,15 @@ PIXDECOR_COMMIT=5a6f590a368e249b00a71c56e67c1a32a40eb38d
 for t in curl patch meson ninja pkg-config; do
     command -v "$t" >/dev/null || { echo "  pixdecor: needs $t"; exit 1; }
 done
-for p in wayfire pango cairo; do
-    pkg-config --exists "$p" || { echo "  pixdecor: needs the $p development files"; exit 1; }
+missing=""
+for p in wayfire pango cairo glm; do
+    pkg-config --exists "$p" || missing="$missing $p"
 done
+if [ -n "$missing" ]; then
+    echo "  pixdecor: needs the development files of:$missing"
+    command -v pacman >/dev/null && echo "  Arch/CachyOS: sudo pacman -S --needed$missing"
+    exit 1
+fi
 pdir="$(mktemp -d)"
 log="$pdir.log"
 step() { "$@" >>"$log" 2>&1 || { echo "  pixdecor didn't build ($1 failed); the last lines of $log:"; tail -n 15 "$log" | sed 's/^/    /'; exit 1; }; }

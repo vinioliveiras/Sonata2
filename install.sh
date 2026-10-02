@@ -287,6 +287,9 @@ PLUG_PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install
 if [ "$DEPS" = 1 ] && [[ "$family" == *arch* ]] && ! command -v meson >/dev/null; then
     $PM $NI meson ninja >/dev/null 2>&1 || true
 fi
+if [ "$DEPS" = 1 ] && [[ "$family" == *arch* ]] && ! pkg-config --exists glm 2>/dev/null; then
+    $PM $NI glm >/dev/null 2>&1 || true        # pixdecor (title bars) needs it
+fi
 if command -v meson >/dev/null && command -v ninja >/dev/null && pkg-config --exists wayfire 2>/dev/null; then
     say "Building Sonata's Wayfire plugin (rounded window corners)"
     bdir="$(mktemp -d)"

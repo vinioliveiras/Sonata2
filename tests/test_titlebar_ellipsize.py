@@ -22,7 +22,8 @@ class TitleTest(unittest.TestCase):
             build = f.read()
         self.assertIn("pixdecor-title.patch", build)
         self.assertIn("PIXDECOR_COMMIT=", build)
-        self.assertIn("tail -n", build)                              # a failed build says why
+        self.assertIn("tail -n", build)
+        self.assertIn("glm", build)                                  # pixdecor needs it (Vini's build failed)                              # a failed build says why
         import subprocess
         self.assertEqual(subprocess.run(["bash", "-n", "tools/build-pixdecor.sh"]).returncode, 0)
         self.assertEqual(subprocess.run(["bash", "-n", "install.sh"]).returncode, 0)
