@@ -6,7 +6,7 @@ Launchpad's or the Desktop's background, or the Dock's divider).
 Each one: config webapps.json {"apps": {id: {"name", "url"}}}, a desktop
 entry sonata2-webapp-<id>.desktop (`sonata2 webapp <id>`, StartupWMClass =
 its own app id, so the Dock tells them apart), its data in
-~/.local/share/sonata2/webapps/<id>/ and its icon there (icon.png: the
+~/.local/share/sonata2-data/webapps/<id>/ and its icon there (icon.png: the
 site's own, fetched when it's made; the window updates it from the page).
 
     create(name, url) -> id          remove(id)
@@ -61,8 +61,24 @@ def id_of(desktop: str) -> str:
 
 
 def data_dir(app: str) -> str:
-    from gi.repository import GLib
-    return os.path.join(GLib.get_user_data_dir(), "sonata2", "webapps", app)
+    """~/.local/share/sonata2-data/webapps/<id> (userdata: never Sonata's own
+    folder -- a dev install links that to the git clone, and the logins
+    landed in the repository)."""
+    from .. import userdata
+    return os.path.join(userdata.folder("webapps"), app)
+
+
+def _fix_moved_icon(app: str) -> None:
+    """A picture chosen before the data moved (userdata.migrate): App Icons
+    follows it to the new folder."""
+    from .. import icons
+    folder = data_dir(app)                           # (moves the old folder over first)
+    apps_prefs = config.load("icons", icons.ICON_DEFAULTS).get("apps") or {}
+    path = (apps_prefs.get(desktop_id(app)) or {}).get("path") or ""
+    if path and not os.path.exists(path) and f"/webapps/{app}/" in path:
+        moved = os.path.join(folder, os.path.basename(path))
+        if os.path.exists(moved):
+            icons.set_app_pref(desktop_id(app), path=moved)
 
 
 def icon_path(app: str) -> str:
@@ -349,6 +365,7 @@ def launch(app: str) -> None:
 def write_all(command: str = None) -> None:
     """Every web app's desktop entry (the Dock at login: Sonata's command may have moved)."""
     for app in apps():
+        _fix_moved_icon(app)
         update_theme_icon(app)               # (an icon pack installed or changed since)
         write_desktop(app, command)
 

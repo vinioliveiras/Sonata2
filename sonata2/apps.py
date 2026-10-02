@@ -19,6 +19,7 @@ except (ValueError, ImportError):
 # just the app's name. Every place that names an app goes through
 # DesktopAppInfo.get_display_name/get_name, so they are cleaned there, once.
 import re  # noqa: E402
+import time  # noqa: E402
 
 _NOISE = re.compile(r"\s*[\(\[](?:launcher|flatpak|snap|appimage|wayland|x11|xwayland|native|"
                     r"official|unofficial|web ?app|electron|bin|git|stable)[\)\]]\s*$|"
@@ -207,6 +208,8 @@ def default_pins() -> list:
 
 
 _INDEX = None
+_INDEX_AT = 0.0
+INDEX_RETRY_S = 5.0          # an unknown app_id rebuilds the index at most this often
 
 
 # a desktop entry that starts a launcher or wrapper: its window has the app's
@@ -263,10 +266,22 @@ def match_app_id(app_id: str):
         return None
     if lookup(app_id):
         return app_id[:-8] if app_id.endswith(".desktop") else app_id
+    from . import webapps                           # a Sonata web app: its own entry, by its id
+    if app_id.startswith(webapps.APP_ID_PREFIX):
+        did = webapps.desktop_id(app_id[len(webapps.APP_ID_PREFIX):])
+        if lookup(did):
+            return did
+    global _INDEX_AT
     if _INDEX is None:
-        _INDEX = _build_index()
+        _INDEX, _INDEX_AT = _build_index(), time.monotonic()
     a = app_id.lower()
-    return _INDEX.get(a) or _INDEX.get(a.rsplit(".", 1)[-1])
+    found = _INDEX.get(a) or _INDEX.get(a.rsplit(".", 1)[-1])
+    if found is None and time.monotonic() - _INDEX_AT > INDEX_RETRY_S:
+        # an app installed since the index was built (Vini: a new web app's
+        # window had no icon or name in the Dock): built again, once in a while
+        _INDEX, _INDEX_AT = _build_index(), time.monotonic()
+        found = _INDEX.get(a) or _INDEX.get(a.rsplit(".", 1)[-1])
+    return found
 
 
 def refresh() -> None:

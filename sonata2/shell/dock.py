@@ -455,6 +455,7 @@ class Dock(Gtk.Box):
         self._apps_src = 0
 
         def apps_changed(*_a):
+            apps.refresh()                   # a new app's windows find their entry (app_id index)
             if not self._apps_src:
                 self._apps_src = GLib.timeout_add(800, lambda: (setattr(self, "_apps_src", 0),
                                                                 self.forget_missing(), False)[2])

@@ -45,7 +45,8 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(W.default_name("https://www.notion.so/"), "Notion")
 
     def test_create_writes_its_own_app(self):
-        wid = W.create("WhatsApp", "web.whatsapp.com", command="sonata2", fetch=False)
+        with mock.patch.object(W, "theme_icon", return_value=None):          # (no icon pack's icon here)
+            wid = W.create("WhatsApp", "web.whatsapp.com", command="sonata2", fetch=False)
         self.assertRegex(wid, r"^w[0-9a-f]{10}$")
         path = os.path.join(GLib.get_user_data_dir(), "applications", W.desktop_id(wid) + ".desktop")
         text = open(path).read()
@@ -146,7 +147,8 @@ class WindowTest(unittest.TestCase):
         app.register(None)
         win = self.win_mod.WebAppWindow(app, wid, W.get(wid))
         settle(300)
-        self.assertEqual(win.title_label.get_label(), "Local")
+        self.assertEqual(win.get_title(), "Local")
+        self.assertIsNone(win.view.get_parent().get_first_child().get_child().get_center_widget())  # once (Vini)
         self.assertFalse(win.back.get_sensitive())
         session = win.view.get_network_session()
         self.assertTrue(session.get_website_data_manager().get_base_data_directory().startswith(W.data_dir(wid)))
@@ -243,6 +245,53 @@ class ThemeIconTest(unittest.TestCase):
             wid = W.create("Odd Site", "odd.example", command="sonata2", fetch=False)
         self.assertNotIn("theme_icon", W.get(wid))
         self.assertIn(f"Icon={W.FALLBACK_ICON}\n", W.desktop_text(wid, W.get(wid), "sonata2"))
+
+
+class DataPlaceTest(unittest.TestCase):
+    def test_never_in_sonatas_own_folder(self):
+        """Vini's dev install links ~/.local/share/sonata2 to the git clone:
+        a web app's login landed in the repository."""
+        wid = "w00000000aa"
+        self.assertTrue(W.data_dir(wid).startswith(os.path.join(GLib.get_user_data_dir(), "sonata2-data")))
+        from sonata2 import userdata
+        self.assertIn("webapps", userdata.APPS)
+
+    def test_old_place_moved_and_the_icon_follows(self):
+        from sonata2 import icons, userdata
+        config.save("icons", {})
+        new = os.path.join(userdata.root(), "webapps")
+        import shutil
+        shutil.rmtree(new, ignore_errors=True)
+        old = os.path.join(GLib.get_user_data_dir(), "sonata2", "webapps", "w00000000bb")
+        os.makedirs(old)
+        open(os.path.join(old, "custom-icon.png"), "wb").write(png(64))
+        icons.set_app_pref(W.desktop_id("w00000000bb"), source="file", path=os.path.join(old, "custom-icon.png"))
+        config.save(W.NAME, {"apps": {"w00000000bb": {"name": "Old", "url": "https://old.example/"}}})
+        W.write_all("sonata2")
+        moved = os.path.join(new, "w00000000bb", "custom-icon.png")
+        self.assertTrue(os.path.exists(moved))
+        self.assertEqual(config.load("icons", icons.ICON_DEFAULTS)["apps"][W.desktop_id("w00000000bb")]["path"],
+                         moved)
+
+
+class DockMatchTest(unittest.TestCase):
+    def test_window_finds_its_entry(self):
+        """Vini: a new web app's window had no icon or name in the Dock."""
+        from sonata2 import apps
+        info = mock.Mock()
+        with mock.patch.object(apps, "lookup", side_effect=lambda d: info if d == "sonata2-webapp-w0123456789"
+                               else None):
+            self.assertEqual(apps.match_app_id(W.APP_ID_PREFIX + "w0123456789"), "sonata2-webapp-w0123456789")
+
+    def test_index_rebuilt_for_an_app_installed_since(self):
+        from sonata2 import apps
+        apps._INDEX, apps._INDEX_AT = {}, 0.0
+        with mock.patch.object(apps, "lookup", return_value=None), \
+                mock.patch.object(apps, "_build_index", return_value={"newapp": "new-app"}):
+            self.assertEqual(apps.match_app_id("newapp"), "new-app")
+        dock = open(os.path.join(os.path.dirname(apps.__file__), "shell", "dock.py")).read()
+        self.assertIn("apps.refresh()", dock[dock.index("def apps_changed"):][:200])
+        apps.refresh()
 
 
 class MissingWebKitTest(unittest.TestCase):

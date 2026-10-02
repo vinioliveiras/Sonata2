@@ -15,7 +15,7 @@ import shutil
 from gi.repository import GLib
 
 NAME = "sonata2-data"
-APPS = ("notes", "calendar", "textedit", "music")      # what install.sh carries over too
+APPS = ("notes", "calendar", "textedit", "music", "webapps")      # what install.sh carries over too
 
 
 def root() -> str:

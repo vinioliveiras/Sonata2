@@ -23,8 +23,6 @@ NEW_APP_ID = "io.github.vinioliveiras.sonata2.webapps"
 SIZE = (1200, 820)
 
 ui.register("""
-window.sonata-webapp .wa-title { font-weight: 600; color: %(label)s; }
-window.sonata-webapp:backdrop .wa-title { color: %(label_secondary)s; }
 .wa-form { margin-top: 6px; }
 .wa-form label { color: %(label_secondary)s; }
 .wa-form .wa-icon-note { color: %(label_tertiary)s; }
@@ -82,10 +80,8 @@ class WebAppWindow(Gtk.ApplicationWindow):
         toolbar = ui.window.glass_toolbar(self, start=(("go-previous-symbolic", "Back", self.view.go_back),
                                                        ("go-next-symbolic", "Forward", self.view.go_forward)),
                                           end=(("view-refresh-symbolic", "Reload", self.view.reload),))
-        self.title_label = Gtk.Label(label=entry["name"], css_classes=["wa-title"],
-                                     ellipsize=3, max_width_chars=60)          # Pango.EllipsizeMode.END
+        # the title shows once, in the title bar (Vini: it was there and in the toolbar too)
         bar = toolbar.get_child()
-        bar.set_center_widget(self.title_label)
         start = bar.get_start_widget()
         self.back, self.forward = start.get_first_child(), start.get_last_child()
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -122,7 +118,7 @@ class WebAppWindow(Gtk.ApplicationWindow):
         return True
 
     def _title(self, *_a) -> None:
-        self.title_label.set_label(self.view.get_title() or self.entry["name"])
+        self.set_title(self.view.get_title() or self.entry["name"])
 
     def _favicon(self, *_a) -> None:
         """The page's icon, when we don't have one as good (the site's file
