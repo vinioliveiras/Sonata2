@@ -436,3 +436,4 @@ licenses (they are GPL-compatible):
 | `sonata2/data/themes/` (WhiteSur parts) | WhiteSur GTK theme | MIT (`LICENSE-WhiteSur`) |
 | `sonata2/data/fonts/` | Inter | SIL OFL 1.1 (`LICENSE-Inter.txt`) |
 | `sonata2/data/avatars/` | Noto Color Emoji on the stock pictures | Apache-2.0 / OFL 1.1 (`LICENSE.txt`) |
+| `sonata2/data/wallpapers/` | Photos from Unsplash | Unsplash License (`LICENSE.md`) |

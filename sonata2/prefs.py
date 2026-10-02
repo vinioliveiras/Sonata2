@@ -38,6 +38,11 @@ def _frame() -> dict:
     return {"layout": t.button_layout(t.FRAME), "font": t.FRAME["title_font"]}
 
 
+def _wallpaper() -> tuple:
+    from . import wallpapers
+    return wallpapers.default_uris()
+
+
 # Sonata's look (macOS), what a fresh session starts with
 DEFAULTS = {
     f"{I}/color-scheme": "default", f"{I}/gtk-theme": "Sonata-Light", f"{I}/icon-theme": "Sonata",
@@ -48,7 +53,8 @@ DEFAULTS = {
     f"{I}/clock-format": "24h", f"{I}/cursor-blink": "true",
     f"{WM}/button-layout": _frame()["layout"], f"{WM}/action-double-click-titlebar": "toggle-maximize",
     f"{WM}/titlebar-font": _frame()["font"],
-    f"{BG}/picture-uri": "", f"{BG}/picture-uri-dark": "", f"{BG}/picture-options": "zoom",
+    # Sonata's own "Mountains" (wallpapers.py): snowy peaks in Light, under the stars in Dark
+    f"{BG}/picture-uri": _wallpaper()[0], f"{BG}/picture-uri-dark": _wallpaper()[1], f"{BG}/picture-options": "zoom",
     f"{P}/remember-recent-files": "true", f"{P}/remove-old-trash-files": "false", f"{P}/old-files-age": "30",
     "org.gnome.system.location/enabled": "false",
 }

@@ -100,7 +100,7 @@ KEYWORDS = {
     "displays": "screen monitor resolution refresh rate hz scale brightness night shift main display "
                 "rounded corners",
     "battery": "power energy low power mode charge sleep display off",
-    "wallpaper": "background desktop picture", "keyboard": "layout input source repeat shortcuts",
+    "wallpaper": "background desktop picture photo mountains", "keyboard": "layout input source repeat shortcuts",
     "trackpad": "touchpad tap click scroll gestures", "mouse": "pointer speed scroll natural",
     "shortcuts": "keyboard shortcuts keys hotkeys windows super win snap desktop lock screenshot",
     "gamepad": "game controller gamepad xbox playstation dualsense joystick steam",
@@ -176,6 +176,13 @@ entry.st-search, .st-search { margin: 0 10px 6px 10px; min-height: 26px; border-
 .st-caption { color: %(label_secondary)s; font-size: %(text_small)s; }
 textview.st-log, textview.st-log text { background: transparent; font-family: %(font_mono)s; font-size: %(text_small)s; }
 .st-wall { border-radius: 10px; background: alpha(%(label)s, 0.06); }   /* an empty frame shows too */
+/* Sonata's wallpapers (Settings > Wallpaper): a ring on the one in use */
+button.st-wall-tile { padding: 0; border: none; border-radius: 9px; background: none; box-shadow: none;
+  transition: box-shadow 160ms ease-out; }
+button.st-wall-tile picture { border-radius: 8px; }
+button.st-wall-tile:hover { box-shadow: 0 0 0 2px alpha(%(label)s, 0.25); }
+button.st-wall-tile.selected { box-shadow: 0 0 0 2px %(window_bg)s, 0 0 0 4px %(accent)s; }
+.st-wall-name { color: %(label_secondary)s; font-size: %(text_small)s; }
 .st-value { color: %(label_secondary)s; }        /* a row's value (About), body size like macOS */
 """, key="settings")
 
@@ -1123,17 +1130,56 @@ class Settings(Adw.ApplicationWindow):
         return [info, mode, screen]
 
     def _page_wallpaper(self):
+        from .. import wallpapers as W
         g = group("Wallpaper", "Sonata draws it; apps that show the desktop picture get it too.")
-        uri = system.gsetting("org.gnome.desktop.background", "picture-uri") or ""
         pic = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, css_classes=["st-wall"], height_request=180,
                           can_shrink=True, overflow=Gtk.Overflow.HIDDEN)
-        f = Gio.File.new_for_uri(uri) if uri else None
-        if f and f.query_exists(None):
-            pic.set_file(f)
         g.add(pic)
+        BG = "org.gnome.desktop.background"
+
+        def shown():
+            """(light uri, dark uri) the desktop uses now."""
+            light = system.gsetting(BG, "picture-uri") or ""
+            return light, system.gsetting(BG, "picture-uri-dark") or light
+
+        # Sonata's own pictures (Vini): a click sets them for Light and Dark
+        gallery = group("Sonata Wallpapers")
+        grid = Gtk.FlowBox(max_children_per_line=5, min_children_per_line=5, selection_mode=Gtk.SelectionMode.NONE,
+                           row_spacing=12, column_spacing=12, homogeneous=True)
+        tiles = {}
+        for w in W.CATALOG:
+            thumb = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, can_shrink=True, width_request=88,
+                                height_request=58, overflow=Gtk.Overflow.HIDDEN)
+            thumb.set_filename(W.thumb(w))
+            tip = w.name + (" (changes with Light and Dark)" if w.light != w.dark else "")
+            b = Gtk.Button(child=thumb, css_classes=["st-wall-tile"], tooltip_text=tip)
+            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+            col.append(b)
+            col.append(Gtk.Label(label=w.name, css_classes=["st-wall-name"], ellipsize=3, max_width_chars=12))
+            b.connect("clicked", lambda _b, w=w: use(W.uri(w.light), W.uri(w.dark)))
+            tiles[w.id] = b
+            grid.append(col)
+        gallery.add(grid)
+
         chooser = group()                        # its own group: the page's standard gap below the picture
-        row = Adw.ActionRow(title="Picture", subtitle=f.get_basename() if f else "None")
+        row = Adw.ActionRow(title="Picture")
         choose = Gtk.Button(label="Choose…", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+
+        def refresh():
+            light, dark = shown()
+            uri = dark if Adw.StyleManager.get_default().get_dark() else light
+            f = Gio.File.new_for_uri(uri) if uri else None
+            pic.set_file(f if f and f.query_exists(None) else None)
+            cur = W.current(light, dark)
+            for wid, b in tiles.items():
+                (b.add_css_class if wid == cur else b.remove_css_class)("selected")
+            name = next((w.name for w in W.CATALOG if w.id == cur), None)
+            row.set_subtitle(name or (f.get_basename() if f else "None"))
+
+        def use(light, dark):
+            system.set_gsetting(BG, "picture-uri", light)
+            system.set_gsetting(BG, "picture-uri-dark", dark)
+            refresh()
 
         def pick(*_):
             dlg = Gtk.FileDialog(title="Choose a Picture")
@@ -1146,15 +1192,16 @@ class Settings(Adw.ApplicationWindow):
                     chosen = d.open_finish(res)
                 except GLib.Error:
                     return
-                for key in ("picture-uri", "picture-uri-dark"):
-                    system.set_gsetting("org.gnome.desktop.background", key, chosen.get_uri())
-                pic.set_file(chosen)
-                row.set_subtitle(chosen.get_basename())
+                use(chosen.get_uri(), chosen.get_uri())
             dlg.open(self, None, done)
         choose.connect("clicked", pick)
         row.add_suffix(choose)
         chooser.add(row)
-        return [g, chooser]
+        refresh()
+        sm = Adw.StyleManager.get_default()
+        hid = sm.connect("notify::dark", lambda *_: refresh())
+        pic.connect("destroy", lambda *_: sm.disconnect(hid))
+        return [g, gallery, chooser]
 
     # -- input (Wayfire [input]; applied live) --------------------------------------------------
     def _wf(self, key, value):
