@@ -326,6 +326,9 @@ class Launchpad(Gtk.ApplicationWindow):
         click = Gtk.GestureClick()
         click.connect("released", self._background_click)
         self.bin.add_controller(click)
+        menu_click = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)    # on the window: both layouts
+        menu_click.connect("pressed", self._background_menu)
+        self.add_controller(menu_click)
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         keys.connect("key-pressed", self._key)
         keys.connect("key-released", self._key_up)
@@ -722,14 +725,34 @@ class Launchpad(Gtk.ApplicationWindow):
         self._anim.connect("done", finished)
         self._anim.play()
 
-    def _background_click(self, gesture, _n, x, y) -> None:
-        picked = self.bin.pick(x, y, Gtk.PickFlags.DEFAULT)
-        w = picked
-        while w is not None and w is not self.bin:
-            if isinstance(w, (LaunchItem, Gtk.SearchEntry, Adw.CarouselIndicatorDots, Gtk.EditableLabel)) or \
-                    w.has_css_class("lp-panel") or w.has_css_class("lp-more"):
-                return
+    @staticmethod
+    def _on_background(root, x, y) -> bool:
+        """Nothing of Launchpad's under (x, y) in root: no icon, search,
+        dots, folder panel or button."""
+        w = root.pick(x, y, Gtk.PickFlags.DEFAULT)
+        while w is not None and w is not root:
+            if isinstance(w, (LaunchItem, Gtk.SearchEntry, Adw.CarouselIndicatorDots, Gtk.EditableLabel,
+                              Gtk.Button)) or w.has_css_class("lp-panel") or w.has_css_class("lp-more"):
+                return False
             w = w.get_parent()
+        return True
+
+    def _background_menu(self, gesture, _n, x, y) -> None:
+        """Right-click on the background (both layouts): New Web App…"""
+        root = self.get_child()
+        if self.folder_view or self.jiggling or not self._on_background(root, x, y):
+            return
+        if self.mode == "menu" and not self.menu._inside(self.menu.panel, root, x, y):
+            return
+        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        from .. import webapps
+        Item = ui.menu.Item
+        ui.menu.popup(root, [[Item("New Web App…", lambda: self.close_launchpad(webapps.open_new))]],
+                      at=(x, y))
+
+    def _background_click(self, gesture, _n, x, y) -> None:
+        if not self._on_background(self.bin, x, y):
+            return
         if self.folder_view:
             self._close_folder()
         elif self.jiggling:
@@ -985,8 +1008,23 @@ class Launchpad(Gtk.ApplicationWindow):
             hide = [Item("Hide", lambda: self.hide_app(item))]      # into the Hidden folder
             if info and not (info.get_id() or "").startswith(PROTECTED):
                 hide.append(Item("Move to Trash", lambda: self.ask_delete(item)))
+            from .. import webapps
+            if webapps.is_webapp(item):
+                hide.append(Item("Delete Web App…", lambda: self.ask_delete_webapp(item)))
             sections.append(hide)
         ui.menu.popup(widget, sections, at=(x, y))
+
+    def ask_delete_webapp(self, item) -> None:
+        from .. import webapps
+        wid = webapps.id_of(item)
+        entry = webapps.get(wid) or {}
+
+        def answer(rid):
+            if rid == "delete":
+                webapps.remove(wid)           # its entry goes: Launchpad drops it (AppInfoMonitor)
+        ui.dialog.alert(f"Delete “{entry.get('name', 'this web app')}”?",
+                        "Its login and everything it saved on this computer are deleted too.",
+                        [("cancel", "Cancel", ""), ("delete", "Delete", "destructive")], answer, parent=self)
 
     def _save_dock_pins(self, pins) -> None:
         """Only the "pinned" key of dock.json (the Dock reloads it live)."""

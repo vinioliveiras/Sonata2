@@ -473,7 +473,7 @@ class Desktop(Gtk.Fixed):
         sort = self.cfg.get("sort", "none")
         cell = self.cell_at(x, y)
         ui.menu.popup(self, [
-            [Item("New Folder", lambda: self.new_folder(cell))],
+            [Item("New Folder", lambda: self.new_folder(cell)), Item("New Web App…", _new_webapp)],
             [Item("Paste Item", self.paste, enabled=ops.clipboard_has_files(self))],
             [Item("Change Desktop Background…", lambda: _open_settings("wallpaper"))],
             [Item("Clean Up", self.clean_up),
@@ -578,6 +578,11 @@ def _connected() -> set:
         return {monitors.connector(m) for m in monitors._list()}
     except Exception:                               # no display list (tests, X11): just the main one
         return set()
+
+
+def _new_webapp() -> None:
+    from .. import webapps
+    webapps.open_new()
 
 
 def _open_settings(page: str) -> None:

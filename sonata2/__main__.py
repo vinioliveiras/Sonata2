@@ -17,7 +17,8 @@ Development / screenshots:
   sonata2 key play-pause|next|previous                        (media player keys, MPRIS)
   sonata2 keep <component> [args]                             (session: restart it if it crashes)
   sonata2 doctor                                              (is this computer ready for Sonata?)
-  sonata2 screenshot [area]                                    (Super+Shift+3 / 4)"""
+  sonata2 screenshot [area]                                    (Super+Shift+3 / 4)
+  sonata2 webapp new | <id>                                    (New Web App form / open a web app)"""
 import argparse
 import json
 import os
@@ -116,6 +117,8 @@ def run_dock(app, args, ui):
             print(f"sonata2-dock: {mod} desktop entry: {e}", file=sys.stderr)
     from .shell.capture import capture_desktop_file
     capture_desktop_file(self_command())               # Screenshot (the capture toolbar)
+    from . import webapps
+    webapps.write_all(self_command())                  # the web apps made with "New Web App…"
     cfg = dock.load_config()
     if not cfg.get("launchpad_added"):                        # once: pin it after Finder
         cfg["launchpad_added"] = True
@@ -932,6 +935,9 @@ def main() -> int:
         layer.ensure_preload()                                    # may re-exec (stdin not read yet)
         from .shell import sharepicker
         return sharepicker.main()
+    if len(sys.argv) > 1 and sys.argv[1] == "webapp":            # Sonata's web apps (webapps/)
+        from . import webapps
+        return webapps.main(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "screenshot":
         return screenshot(sys.argv[2] if len(sys.argv) > 2 else "screen")
     if len(sys.argv) > 1 and sys.argv[1] == "self-update":     # Sonata's own updates (GitHub releases)

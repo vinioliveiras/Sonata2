@@ -238,6 +238,7 @@ def divider_menu(dock, divider):
             for e, label in (("left", "Left"), ("bottom", "Bottom"), ("right", "Right"))]]),
          Item("Show Recent Applications", lambda on: dock.set_option("show_recents", on),
               checked=cfg["show_recents"])],
+        [Item("New Web App…", lambda: __import__("sonata2.webapps", fromlist=["open_new"]).open_new())],
     ], position=dock.away)
 
 
