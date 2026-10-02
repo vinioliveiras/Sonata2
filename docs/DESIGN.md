@@ -19,7 +19,14 @@ Code: [`sonata2/ui/`](../sonata2/ui). Gallery: `python3 -m sonata2 gallery`
 4. **Component parity with macOS.** Each shell component ships with the
    full macOS behaviour: interactions, animations, drag and drop, menus,
    keyboard -- tracked in ROADMAP before it's called done.
-5. Sonata settings (look/behaviour) live in `~/.config/sonata2`; Linux
+5. **Reuse before you build (Vini).** Before writing anything, look for
+   what already exists -- functions, layout patterns, animations, the way
+   a component behaves -- and use it. Never duplicate code: a variant of
+   something that exists is the same component with another layout (the
+   Apps Menu is Launchpad's own PageGrids, tiles, search, keys and drags in
+   a panel; only `shell/launchpad_window.py`'s look is its own). If the
+   thing you need is almost there, extend it in place.
+6. Sonata settings (look/behaviour) live in `~/.config/sonata2`; Linux
    settings stay in the system (see README).
 
 ## Themes
@@ -64,8 +71,6 @@ changing `dot` or the colours (a test fails until they match).
 | `ui/dialog.py` | Alert (bold heading, body, Cancel default for destructive actions; optional "Apply to All" checkbox) | `alert(heading, body, responses, on_response, check=None)` |
 | `ui/progress.py` | Progress bar (6 px, accent; indeterminate pulse), spinner, capacity meter (4 px, red above 90 %), Finder "Copy" window of running operations (shows after 0.7 s, stop buttons, "12 MB of 140 MB — About 5 seconds") | `bar(f)`, `spinner()`, `meter(f)`, `start(title, on_cancel).update(done, total)` |
 | `ui/fmt.py` | Finder formats: sizes ("12 KB"), remaining time ("About a minute") | `fmt.size(n)`, `fmt.eta(s)` |
-| `ui/controls.py` | Text field (one line; `secret=True`: password with the peek eye), text area (rounded, grows with its text up to `max_height`, placeholder, optional trailing widget; Return submits, Shift+Return new line), round accent icon button | `text_field(text, placeholder, secret, on_activate, on_change)`, `TextArea(placeholder, trailing=round_button(icon, tip, cb), on_submit=cb)` |
-| `ui/fixed.py` | Fixed-width container (panels), centred reading column of at most N px (chat, documents) | `FixedWidth(child, 320)`, `MaxWidth(child, 720)` |
 | `ui/window.py` | Traffic lights (close / minimize / zoom, zoom greyed for fixed windows) | `traffic_lights(close, minimize, zoom=None)` |
 
 Shell components (Dock, Launchpad, ...) register their own CSS through
