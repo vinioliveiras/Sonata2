@@ -64,6 +64,13 @@ def _gpu_aware(method):
                     if context is None:
                         context = Gio.AppLaunchContext()
                     context.unsetenv(name)
+            args = gpu.extra_args(self)
+            if args:                              # the same app with its Exec line + args (Steam)
+                cmd = gpu.with_args(self.get_commandline() or "", args)
+                flags = Gio.AppInfoCreateFlags.SUPPORTS_URIS if "%U" in cmd or "%u" in cmd \
+                    else Gio.AppInfoCreateFlags.NONE
+                other = Gio.AppInfo.create_from_commandline(cmd, self.get_name(), flags)
+                return getattr(other, method.__name__)(arg, context, *rest)
         except Exception as e:                    # never keep an app from opening
             print(f"sonata2: discrete GPU: {e}")
         return method(self, arg, context, *rest)

@@ -236,6 +236,30 @@ def extra_env(info) -> dict:
     return {}
 
 
+# Steam's own window (its web helper, CEF) never mapped here when CEF drew
+# on the GPU: the client ran, the window was "created" and nothing showed
+# (Vini, NVIDIA under Xwayland; also CachyOS-PKGBUILDS#1376). Drawn by the
+# CPU it opens every time; games are not affected.
+STEAM_APPS = {"steam", "steam-native", "steam-runtime", "com.valvesoftware.Steam"}
+STEAM_ARGS = ["-cef-disable-gpu"]
+
+
+def extra_args(info) -> list:
+    """Arguments an app needs to open here (added to its Exec line)."""
+    if _key(info) in STEAM_APPS and "nvidia" in _cards():
+        return list(STEAM_ARGS)
+    return []
+
+
+def with_args(commandline: str, args) -> str:
+    """`args` into an Exec line, before its first field code (%U, Flatpak's
+    @@u) so they go to the app, not to the launcher; else at the end."""
+    import shlex
+    words = shlex.split(commandline)
+    at = next((i for i, w in enumerate(words) if w.startswith("%") or w.startswith("@@")), len(words))
+    return shlex.join(words[:at] + list(args) + words[at:]).replace("'%U'", "%U").replace("'%u'", "%u")
+
+
 def menu_item(info, Item):
     """The checkmark item for right-click menus (None on one-GPU machines)."""
     if info is None or not has_dual_gpu():
