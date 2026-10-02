@@ -1,3 +1,22 @@
+diff --git a/plugins/animate/squeezimize.hpp b/plugins/animate/squeezimize.hpp
+index 7657a42..7c2b9ac 100644
+--- a/plugins/animate/squeezimize.hpp
++++ b/plugins/animate/squeezimize.hpp
+@@ -282,7 +282,13 @@ class squeezimize_transformer : public wf::scene::view_2d_transformer_t
+                 self->animation_geometry.height
+             };
+ 
+-            auto src_tex = wf::gles_texture_t{this->get_texture(1.0)};
++            auto contents = this->get_texture(1.0);
++            if (!contents)
++            {
++                return; // Sonata: no buffer this frame (graphics memory full)
++            }
++
++            auto src_tex = wf::gles_texture_t{contents};
+             data.pass->custom_gles_subpass(data.target, [&]
+             {
+                 self->program.use(wf::TEXTURE_TYPE_RGBA);
 diff --git a/plugins/animate/unmapped-view-node.hpp b/plugins/animate/unmapped-view-node.hpp
 index 3ae9968..ff3a4b0 100644
 --- a/plugins/animate/unmapped-view-node.hpp
@@ -227,6 +246,19 @@ index 6e52e4b..bd9ee07 100644
          auto tex = wf::texture_t::from_buffer(
              self->original_buffer.get_buffer(), self->original_buffer.get_texture());
          data.pass->add_texture(tex, data.target, self->displayed_geometry, data.damage, 1.0 - ra);
+diff --git a/src/api/wayfire/opengl.hpp b/src/api/wayfire/opengl.hpp
+index 0983b68..ef412b7 100644
+--- a/src/api/wayfire/opengl.hpp
++++ b/src/api/wayfire/opengl.hpp
+@@ -141,7 +141,7 @@ struct gles_texture_t
+     /* Texture target */
+     GLenum target = GL_TEXTURE_2D;
+     /* Actual texture ID */
+-    GLuint tex_id;
++    GLuint tex_id = 0;
+ 
+     /** Invert Y? */
+     bool invert_y = false;
 diff --git a/src/api/wayfire/view-transform.hpp b/src/api/wayfire/view-transform.hpp
 index 8c2a422..4a6e90d 100644
 --- a/src/api/wayfire/view-transform.hpp
@@ -262,11 +294,72 @@ index 8c2a422..4a6e90d 100644
          if (out_logical_size)
          {
              *out_logical_size = wf::dimensionsf_t{
+diff --git a/src/core/img.cpp b/src/core/img.cpp
+index aaf9b0a..dd4be96 100644
+--- a/src/core/img.cpp
++++ b/src/core/img.cpp
+@@ -413,6 +413,11 @@ void write_to_file(std::string name, uint8_t *pixels, int w, int h, std::string
+ void write_to_file(std::string name, const wf::render_buffer_t& fb)
+ {
+     auto tex = wlr_texture_from_buffer(wf::get_core().renderer, fb.get_buffer());
++    if (!tex)
++    {
++        LOGE("failed to create a texture from the buffer");
++        return;
++    }
+ 
+     std::vector<char> buffer(tex->width * tex->height * 4);
+     wlr_texture_read_pixels_options opts{};
+diff --git a/src/core/opengl.cpp b/src/core/opengl.cpp
+index 3192e0d..ac691e9 100644
+--- a/src/core/opengl.cpp
++++ b/src/core/opengl.cpp
+@@ -468,12 +468,22 @@ wf::gles_texture_t::gles_texture_t(GLuint tex)
+     this->tex_id = tex;
+ }
+ 
+-wf::gles_texture_t::gles_texture_t(const std::shared_ptr<wf::texture_t>& tex) :
+-    wf::gles_texture_t(tex->get_wlr_texture(), tex->get_source_box())
+-{}
++wf::gles_texture_t::gles_texture_t(const std::shared_ptr<wf::texture_t>& tex)
++{
++    // Sonata: no texture (the GPU refused its buffer) -> texture 0, draws nothing
++    if (tex && tex->get_wlr_texture())
++    {
++        *this = wf::gles_texture_t(tex->get_wlr_texture(), tex->get_source_box());
++    }
++}
+ 
+ wf::gles_texture_t::gles_texture_t(wlr_texture *texture, std::optional<wlr_fbox> viewport)
+ {
++    if (!texture)
++    {
++        return; // Sonata: texture 0 (see above)
++    }
++
+     wf::dassert(wlr_texture_is_gles2(texture));
+     wlr_gles2_texture_attribs attribs;
+     wlr_gles2_texture_get_attribs(texture, &attribs);
 diff --git a/src/render.cpp b/src/render.cpp
-index 78697fd..19dc5ca 100644
+index 78697fd..2b4d6be 100644
 --- a/src/render.cpp
 +++ b/src/render.cpp
-@@ -890,7 +890,11 @@ void wf::render_pass_t::clear(const wf::regionf_t& region, const wf::color_t& co
+@@ -236,12 +236,12 @@ wlr_texture*wf::texture_t::get_wlr_texture() const
+ 
+ int32_t wf::texture_t::get_width() const
+ {
+-    return texture->width;
++    return texture ? texture->width : 0;
+ }
+ 
+ int32_t wf::texture_t::get_height() const
+ {
+-    return texture->height;
++    return texture ? texture->height : 0;
+ }
+ 
+ wf::render_buffer_t::render_buffer_t(wlr_buffer *buffer, wf::dimensions_t size)
+@@ -890,13 +890,22 @@ void wf::render_pass_t::clear(const wf::regionf_t& region, const wf::color_t& co
          .a = static_cast<float>(color.a),
      };
  
@@ -279,7 +372,18 @@ index 78697fd..19dc5ca 100644
  }
  
  void wf::render_pass_t::add_texture(const std::shared_ptr<wf::texture_t>& texture,
-@@ -949,7 +953,10 @@ void wf::render_pass_t::add_texture(const std::shared_ptr<wf::texture_t>& textur
+     const wf::render_target_t& adjusted_target, const wf::geometry_t& geometry,
+     const wf::regionf_t& damage, float alpha)
+ {
++    if (!texture || !texture->get_wlr_texture())
++    {
++        return; // Sonata: the GPU refused the texture's buffer
++    }
++
+     if (wlr_renderer_is_gles2(this->get_wlr_renderer()))
+     {
+         // This is a hack to make sure that plugins can do whatever they want and we render on the correct
+@@ -949,7 +958,10 @@ void wf::render_pass_t::add_texture(const std::shared_ptr<wf::texture_t>& textur
          opts.luminance_multiplier = &luminance_multiplier;
      }
  
@@ -291,7 +395,7 @@ index 78697fd..19dc5ca 100644
  }
  
  void wf::render_pass_t::add_rect(const wf::color_t& color, const wf::render_target_t& adjusted_target,
-@@ -968,7 +975,10 @@ void wf::render_pass_t::add_rect(const wf::color_t& color, const wf::render_targ
+@@ -968,7 +980,10 @@ void wf::render_pass_t::add_rect(const wf::color_t& color, const wf::render_targ
      opts.box  = adjusted_target.framebuffer_texture_dst_box_from_geometry_box(geometry);
      wf::dassert(opts.box.width >= 0);
      wf::dassert(opts.box.height >= 0);
@@ -304,7 +408,7 @@ index 78697fd..19dc5ca 100644
  
  bool wf::render_pass_t::submit()
 diff --git a/src/view/view-3d.cpp b/src/view/view-3d.cpp
-index a2e6b77..a64f697 100644
+index a2e6b77..f91370a 100644
 --- a/src/view/view-3d.cpp
 +++ b/src/view/view-3d.cpp
 @@ -264,6 +264,11 @@ class view_2d_render_instance_t :
@@ -395,6 +499,22 @@ index a2e6b77..a64f697 100644
      {
          cached_damage |= bbox;
      }
+@@ -638,7 +674,14 @@ std::shared_ptr<wf::texture_t> transformer_base_node_t::get_updated_contents(con
+     wf::render_pass_t::run(params);
+     cached_damage.clear();
+ 
+-    return wf::texture_t::from_aux(inner_content);
++    auto texture = wf::texture_t::from_aux(inner_content);
++    if (!texture->get_wlr_texture())
++    {
++        cached_damage |= bbox; // Sonata: no texture for the buffer (graphics memory full)
++        return nullptr;
++    }
++
++    return texture;
+ }
+ 
+ void transformer_base_node_t::release_buffers()
 diff --git a/src/view/view.cpp b/src/view/view.cpp
 index daa50db..749bd38 100644
 --- a/src/view/view.cpp

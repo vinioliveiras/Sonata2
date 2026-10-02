@@ -1939,6 +1939,16 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         self.assertIn("+++ b/src/render.cpp", patch)
         self.assertEqual(patch.count("if (auto pass = _get_pass())"), 2)
         self.assertIn("if (auto pass = get_wlr_pass())", patch)
+        # the sweep after it: a buffer without a texture is skipped everywhere
+        # (add_texture, gles_texture_t -- also pixdecor's --, the transformers,
+        # squeezimize: Win+D minimizes every window at once)
+        for part in ("src/core/opengl.cpp", "src/api/wayfire/opengl.hpp",
+                     "plugins/animate/squeezimize.hpp", "src/core/img.cpp"):
+            self.assertIn("+++ b/" + part, patch)
+        self.assertIn("+    GLuint tex_id = 0;", patch)
+        self.assertIn("+    if (!texture || !texture->get_wlr_texture())", patch)
+        self.assertIn("+    if (!texture->get_wlr_texture())", patch)
+        self.assertIn("+    return texture ? texture->width : 0;", patch)
 
     def _finish(self, code, ran, times=""):
         """Runs tools/sonata-session's finish() alone; "RESTARTED" when it
