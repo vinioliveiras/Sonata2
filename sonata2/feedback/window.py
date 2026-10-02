@@ -93,6 +93,7 @@ class FeedbackWindow(Gtk.ApplicationWindow):
             self.crash_row.set_subtitle_lines(0)
             self.crash_row.add_prefix(Gtk.Image(icon_name="dialog-error-symbolic", css_classes=["error"]))
             grp.add(self.crash_row)
+            self._reopen_row(grp)
             page.add(grp)
 
         mon = Adw.PreferencesGroup()
@@ -151,6 +152,29 @@ class FeedbackWindow(Gtk.ApplicationWindow):
             self._create(False)                  # no question about monitoring: errors are logged anyway
 
     # -- monitoring ------------------------------------------------------------------
+    def _reopen_row(self, grp) -> None:
+        """The apps that were open before the crash, one click away (Vini)."""
+        from .. import open_apps
+        ids = open_apps.before_crash()
+        self.reopen_row = None
+        if not ids:
+            return
+        shown = open_apps.names(ids)
+        more = f" and {len(shown) - 4} more" if len(shown) > 4 else ""
+        row = Adw.ActionRow(title="Reopen your apps", use_markup=False,
+                            subtitle=", ".join(shown[:4]) + more)
+        row.set_subtitle_lines(0)
+
+        def reopen():
+            n = open_apps.reopen(ids)
+            row.set_subtitle(f"Reopened {n} app{'s' if n != 1 else ''}.")
+            btn.set_sensitive(False)
+        btn = ui.controls.push_button("Reopen", reopen, style="default")
+        btn.set_valign(Gtk.Align.CENTER)
+        row.add_suffix(btn)
+        grp.add(row)
+        self.reopen_row, self.reopen_button = row, btn
+
     def _update_note(self):
         self.off_note.set_visible(not self.monitor_row.get_active())
 

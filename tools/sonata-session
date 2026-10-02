@@ -137,6 +137,26 @@ record_crash() {
     command -v journalctl >/dev/null && \
         journalctl -k -b 0 --since "@$2" --no-pager -o short-iso > "$logs/kernel-at-crash.log" 2>&1
 }
+# The end of a session. A crash after it had been running a while starts
+# Sonata again at once -- the same login, no password (Vini: a GPU reset
+# took him back to the login screen) -- and Feedbacker then offers to reopen
+# the apps (open_apps.py). At most RESTARTS times in RESTART_WINDOW seconds:
+# a crash loop ends at the login screen as before.
+RESTARTS=3
+RESTART_WINDOW=600
+finish() {
+    local code=$1 ran=$(( $(date +%s) - $2 )) now recent t
+    rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sonata2/adw/libadwaita.css"
+    case "$code" in 0|129|130|143) exit "$code" ;; esac
+    [ "$ran" -ge 20 ] && [ "${SONATA_NO_RESTART:-}" != 1 ] || exit "$code"
+    now=$(date +%s); recent=""
+    for t in ${SONATA_RESTART_TIMES:-}; do [ $(( now - t )) -lt $RESTART_WINDOW ] && recent="$recent $t"; done
+    set -- $recent
+    [ $# -lt $RESTARTS ] || exit "$code"
+    export SONATA_RESTART_TIMES="$recent $now"
+    case $- in *x*) exec bash -x "$SESSION_SCRIPT" ;; *) exec bash "$SESSION_SCRIPT" ;; esac
+}
+SESSION_SCRIPT="$(readlink -f "$0")"
 if [ -n "$gpu_set" ]; then
     # a GPU order the session can't start with (driver trouble) must never
     # lock you out: Wayfire ending within seconds is started again without it
@@ -154,8 +174,7 @@ if [ -n "$gpu_set" ]; then
         touch "$logs/display-gpu-crashed"
     fi
     if [ $(( $(date +%s) - started )) -ge 15 ]; then
-        rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sonata2/adw/libadwaita.css"
-        exit $code
+        finish "$code" "$started"
     fi
     mv -f "$logs/session.log" "$logs/session.gpu-failed.log"
     unset WLR_DRM_DEVICES
@@ -171,6 +190,5 @@ if [ "$WAYFIRE" != wayfire ] && [ "$code" -ne 0 ] && [ $(( $(date +%s) - started
     code=$?
 fi
 record_crash "$code" "$started"
-# other desktops' GTK 4 apps never get Sonata's window look (adwstyle.py)
-rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sonata2/adw/libadwaita.css"
-exit $code
+# (finish: other desktops' GTK 4 apps never get Sonata's window look -- adwstyle.py)
+finish "$code" "$started"

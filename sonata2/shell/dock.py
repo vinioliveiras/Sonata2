@@ -1491,6 +1491,9 @@ class Dock(Gtk.Box):
             key = apps.match_app_id(t.app_id) or t.app_id or "?"
             groups.setdefault(key, []).append(t)
         started = [k for k in groups if k not in self.windows]
+        if set(groups) != set(self.windows):
+            from .. import open_apps
+            open_apps.note(list(groups))            # for "Reopen Apps" after a crash
         self.windows = groups
         for key in started:
             self._note_recent(key)

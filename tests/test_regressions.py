@@ -1877,6 +1877,42 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         self.assertIn("wf::buffer_reallocation_result_t::FAILED", patch)
         self.assertIn("if (!self->snapshot.get_buffer())", patch)
 
+    def _finish(self, code, ran, times=""):
+        """Runs tools/sonata-session's finish() alone; "RESTARTED" when it
+        started the session again."""
+        root = pathlib.Path(__file__).resolve().parent.parent
+        sess = (root / "tools" / "sonata-session").read_text()
+        fn = sess[sess.index("RESTARTS=3"):sess.index('SESSION_SCRIPT="$(readlink -f "$0")"')]
+        d = tempfile.mkdtemp()
+        again = os.path.join(d, "again.sh")
+        with open(again, "w") as f:
+            f.write('echo "RESTARTED $SONATA_RESTART_TIMES"\n')
+        script = (f'logs={d}; SESSION_SCRIPT={again}; {fn}\n'
+                  f'finish {code} $(( $(date +%s) - {ran} ))')
+        env = dict(os.environ, SONATA_RESTART_TIMES=times, XDG_RUNTIME_DIR=d)
+        env.pop("SONATA_NO_RESTART", None)
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=env)
+        return r.stdout, r.returncode
+
+    def test_a_crash_starts_sonata_again_in_the_same_login(self):
+        """Vini: a GPU reset took him back to the login screen."""
+        out, _ = self._finish(134, 300)
+        self.assertTrue(out.startswith("RESTARTED"))
+        out, code = self._finish(0, 300)                       # logged out: the login screen
+        self.assertEqual((out, code), ("", 0))
+        out, code = self._finish(143, 300)
+        self.assertEqual(out, "")
+        out, code = self._finish(134, 5)                       # crashed at once: no loop
+        self.assertEqual((out, code), ("", 134))
+
+    def test_a_crash_loop_ends_at_the_login_screen(self):
+        import time
+        now = int(time.time())
+        out, code = self._finish(134, 300, f"{now - 100} {now - 50} {now - 10}")
+        self.assertEqual((out, code), ("", 134))
+        out, _ = self._finish(134, 300, f"{now - 4000} {now - 3000} {now - 10}")   # old ones don't count
+        self.assertTrue(out.startswith("RESTARTED"))
+
     def test_webkit_apps_skip_dmabuf_on_nvidia(self):
         env = (pathlib.Path(__file__).resolve().parent.parent / "tools" / "session-env.sh").read_text()
         i = env.index("/sys/module/nvidia_drm")
