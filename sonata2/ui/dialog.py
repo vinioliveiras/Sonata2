@@ -102,3 +102,31 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None,
     else:
         dlg.present()
     return dlg
+
+
+def ask_text(heading: str, text: str, ok: str, on_done, body: str = "", parent=None):
+    """One line to type (a new name...): an alert with an entry, the text
+    selected, `ok` off while it's empty. on_done(text) with the stripped
+    text, only when confirmed. Its own window (parent None) takes the
+    keyboard wherever it's asked from -- a Dock's panel can't (Vini)."""
+    from gi.repository import GLib
+    from . import controls
+    entry = controls.text_field(text or "", hexpand=True)              # the kit's field
+    entry.set_activates_default(True)
+
+    def answer(rid):
+        value = entry.get_text().strip()
+        if rid == "ok" and value:
+            on_done(value)
+    dlg = alert(heading, body, [("cancel", "Cancel", ""), ("ok", ok, "default")], answer, parent=parent)
+    dlg.set_extra_child(entry)
+    if hasattr(dlg, "set_response_enabled"):
+        entry.connect("changed", lambda e: dlg.set_response_enabled("ok", bool(e.get_text().strip())))
+
+    def focus():
+        entry.grab_focus()
+        entry.select_region(0, -1)
+        return False
+    GLib.idle_add(focus)
+    dlg.entry = entry                                   # (tests)
+    return dlg

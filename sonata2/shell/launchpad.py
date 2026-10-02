@@ -779,8 +779,8 @@ class Launchpad(Gtk.ApplicationWindow):
         self._close_folder()
         self.bin.invalidate()
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["lp-panel"])
-        title = Gtk.EditableLabel(text=folder["folder"], css_classes=["lp-panel-title"], halign=Gtk.Align.CENTER,
-                                  editable=not folder.get("locked"))
+        title = ui.controls.centred_editable_label(folder["folder"], css_classes=["lp-panel-title"],
+                                                   editable=not folder.get("locked"))
 
         def renamed(*_):
             name = title.get_text().strip()

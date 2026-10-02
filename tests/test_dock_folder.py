@@ -14,7 +14,7 @@ import gi  # noqa: E402
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
-from sonata2 import config, launchpad_model as M  # noqa: E402
+from sonata2 import config, launchpad_model as M, ui  # noqa: E402
 from sonata2.shell import dock as D, dock_folder as F  # noqa: E402
 
 
@@ -65,6 +65,7 @@ class DockFolderTest(unittest.TestCase):
             raise unittest.SkipTest("needs 3 installed default apps")
 
     def setUp(self):
+        config.save("launchpad", {})        # no Launchpad pages (another suite's): folders stay Dock-only here
         cfg = D.load_config()
         cfg["folders"] = {}
         self.win = Gtk.Window()
@@ -619,39 +620,52 @@ class DockFolderTest(unittest.TestCase):
 
     # -- renaming (Vini) --------------------------------------------------------------
     def test_rename_from_the_panel_title(self):
+        """Vini: the name couldn't be edited in the Dock (its panel never got
+        the keys): a click on it asks in an alert of its own."""
+        from unittest import mock
         d, a, b = self.dock, *self.apps[:2]
         fkey = d.make_folder([a, b], name="Work")
         settle()
         pop = F.open_panel(d, d.tiles[fkey])
         settle()
-        self.assertTrue(pop.title.get_editable())
-        pop.title.start_editing()
-        pop.title.set_text("  Games  ")
-        pop.title.stop_editing(True)
+        self.assertTrue(pop.title.editable)
+        with mock.patch.object(ui.dialog, "ask_text") as ask:
+            F.ask_rename(d, d.tiles[fkey], pop)
+            settle(400)                                                        # the panel closes first
+        heading, text, ok, done = ask.call_args[0]
+        self.assertEqual((heading, text, ok), ("Rename Folder", "Work", "Rename"))
+        done("Games")
         self.assertEqual(d.folder(fkey)["name"], "Games")
         self.assertEqual(d.tiles[fkey].name, "Games")
         self.assertEqual(D.load_config()["folders"][F.folder_id(fkey)]["name"], "Games")   # saved
-        self.assertEqual(pop.sig, F._signature(d.folder(fkey)))                    # kept panel still current
-        pop.title.start_editing()
-        pop.title.set_text("   ")                                                  # empty: the old name
-        pop.title.stop_editing(True)
-        self.assertEqual(d.folder(fkey)["name"], "Games")
-        self.assertEqual(pop.title.get_text(), "Games")
-        pop.popdown()
         settle()
 
-    def test_rename_menu_starts_editing(self):
+    def test_rename_menu_asks_at_once(self):
+        from unittest import mock
         d, a, b = self.dock, *self.apps[:2]
         fkey = d.make_folder([a, b], name="Work")
         settle()
-        pop = F.open_panel(d, d.tiles[fkey], rename=True)
-        settle()
-        self.assertTrue(pop.title.get_editing())
-        pop.popdown()                                                              # closing commits
-        settle()
-        self.assertFalse(pop.title.get_editing())
+        with mock.patch.object(ui.dialog, "ask_text") as ask:
+            F.ask_rename(d, d.tiles[fkey])
+        self.assertEqual(ask.call_args[0][1], "Work")
         src = open(F.__file__).read()
-        self.assertIn('Item("Rename\\u2026", lambda: open_panel(dock, tile, rename=True))', src)
+        self.assertIn('else ask_rename(dock, tile))', src)
+
+    def test_ask_text_needs_a_name(self):
+        """(Adw's alert crashes in the headless container: its answer alone.)"""
+        from unittest import mock
+        got = []
+        with mock.patch.object(ui.dialog, "alert") as alert:
+            ui.dialog.ask_text("Rename Folder", "Work", "Rename", got.append)
+            answer = alert.call_args[0][3]
+            entry = alert.return_value.set_extra_child.call_args[0][0]
+        entry.set_text("  Games ")
+        answer("ok")
+        entry.set_text("   ")
+        answer("ok")                                                            # empty: nothing
+        entry.set_text("Other")
+        answer("cancel")
+        self.assertEqual(got, ["Games"])
 
     def test_locked_name_not_editable_before_password(self):
         d, a, b = self.dock, *self.apps[:2]
@@ -660,7 +674,7 @@ class DockFolderTest(unittest.TestCase):
         settle()
         pop = F.open_panel(d, d.tiles[fkey])
         settle()
-        self.assertFalse(pop.title.get_editable())
+        self.assertFalse(pop.title.editable)
         pop.popdown()
         settle()
 

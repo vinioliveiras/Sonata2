@@ -126,6 +126,34 @@ class LaunchpadTest(unittest.TestCase):
         settle(100)
         self.assertEqual(self.win._item_widget(folder).label.get_label(), "Games")
 
+    def test_name_centred_after_renaming(self):
+        """Vini: the folder's name wasn't centred once edited (its label kept
+        xalign 0 inside the entry's width)."""
+        folder, title = self._folder()
+        from gi.repository import Gtk
+
+        def centre():
+            ok, b = title.compute_bounds(title.get_parent())
+            return round(b.get_x() + b.get_width() / 2)
+        mid = round(title.get_parent().get_width() / 2)
+        self.assertLessEqual(abs(centre() - mid), 1)
+        title.start_editing()
+        settle(50)
+        title.set_text("A Much Longer Folder Name")
+        title.stop_editing(True)
+        settle(300)
+        self.assertLessEqual(abs(centre() - mid), 1)
+        labels = []
+
+        def walk(w):
+            while w is not None:
+                if isinstance(w, Gtk.Label):
+                    labels.append(w.get_xalign())
+                walk(w.get_first_child())
+                w = w.get_next_sibling()
+        walk(title.get_first_child())
+        self.assertEqual(set(labels), {0.5})
+
     def test_arrow_keys_move_in_the_name(self):
         """Vini: arrows went to the grid while renaming; they move the cursor now."""
         from gi.repository import Gdk

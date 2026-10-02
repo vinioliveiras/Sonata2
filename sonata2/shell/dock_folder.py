@@ -39,7 +39,8 @@ popover.dock-folder-panel > contents {
 .dock-folder-view { animation: dock-folder-in %(open_ms)dms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .dock-folder-view.closing { animation: dock-folder-out %(close_ms)dms ease-in both; }
 .dock-folder-title { font-family: %(font_display)s; font-size: %(text_title)s; font-weight: 700;
-                     margin: 0 6px 10px 6px; }
+                     margin: 0 6px 10px 6px; padding: 1px 8px; border-radius: %(r_button)s; }
+.dock-folder-title.editable:hover { background-color: %(control_off)s; }
 .dock-folder-app { padding: 6px 4px; border-radius: %(r_button)s; background: none; border: none;
                    box-shadow: none; min-width: 84px; }
 .dock-folder-app:hover { background-color: %(control_off)s; }
@@ -320,14 +321,20 @@ def open_panel(dock, tile, then=None, rename=False) -> Gtk.Popover:
     P = Gtk.PositionType
     pop.set_offset(*{P.TOP: (0, -8), P.LEFT: (-8, 0), P.RIGHT: (8, 0)}[dock.away])
     view = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["dock-folder-view"])
-    # the name: click it to rename (Vini), like Launchpad's folders; editable
-    # once the apps show (a locked folder: after its password)
-    title = Gtk.EditableLabel(text=folder["name"], css_classes=["dock-folder-title"], editable=False,
-                              halign=Gtk.Align.CENTER, max_width_chars=28, xalign=0.5)
+    # the name, centred: click it to rename (Vini) -- once the apps show (a
+    # locked folder: after its password). Typed in an alert of its own: the
+    # Dock's panel never got the keys (editing in place did nothing there)
+    title = Gtk.Label(label=folder["name"], css_classes=["dock-folder-title"], halign=Gtk.Align.CENTER,
+                      xalign=0.5, justify=Gtk.Justification.CENTER, max_width_chars=28,
+                      ellipsize=Pango.EllipsizeMode.END, tooltip_text="Rename")
+    title.editable = False
+    click = Gtk.GestureClick()
+    click.connect("released", lambda *_a: title.editable and ask_rename(dock, tile, pop))
+    title.add_controller(click)
     view.append(title)
     pop.view, pop.flow, pop.lock, pop.sig, pop.title = view, None, None, _signature(folder), title
     pop.rename = rename
-    _title_editing(dock, tile, pop)
+    pop.dock, pop.tile = dock, tile
     pop.set_child(view)
     pop.set_parent(tile)
     if reuse:
@@ -435,40 +442,34 @@ def _apps_view(dock, tile, pop) -> None:
     scroll.set_child(flow)
     pop.view.append(scroll)
     pop.flow = flow                             # (tests)
-    pop.title.set_editable(True)
+    pop.title.editable = True
+    pop.title.add_css_class("editable")
     if pop.rename:
         pop.rename = False
         _edit_title(pop)
 
 
 def _edit_title(pop) -> None:
+    """"Rename…" for a locked folder: asked once its apps show."""
     def start():
-        if pop.get_visible() and pop.title.get_editable():
-            pop.title.start_editing()
+        if pop.get_visible() and pop.title.editable:
+            ask_rename(pop.dock, pop.tile, pop)
         return False
     GLib.idle_add(start)
 
 
-def _title_editing(dock, tile, pop) -> None:
-    """The name is saved when editing stops (Enter, or a click elsewhere);
-    Esc keeps the old one (the panel has the keyboard: open_panel)."""
-    title = pop.title
+def ask_rename(dock, tile, pop=None) -> None:
+    """The folder's new name (ui.dialog.ask_text); the panel closes first."""
+    f = dock.folder(tile.key)
+    if f is None:
+        return
 
-    def changed(*_):
-        if title.get_editing():
-            return
-        name = title.get_text().strip()
-        f = dock.folder(tile.key)
-        if f is None:
-            return
-        if not name:
-            title.set_text(f["name"])
-            return
-        if name != f["name"]:
-            dock.rename_folder(tile.key, name)
-            pop.sig = _signature(dock.folder(tile.key))     # the kept panel stays current
-    title.connect("notify::editing", changed)
-    pop.connect("closed", lambda _p: title.get_editing() and title.stop_editing(True))
+    def ask():
+        ui.dialog.ask_text("Rename Folder", f["name"], "Rename", lambda name: dock.rename_folder(tile.key, name))
+    if pop is not None and pop.get_visible():
+        close_panel(pop, then=ask)
+    else:
+        ask()
 
 
 def close_panel(pop, then=None) -> None:
@@ -530,7 +531,8 @@ def folder_menu(dock, tile):
         lock = Item("Lock Folder", lambda: dock.set_folder_locked(tile.key, True))
         ungroup = Item("Ungroup", lambda: dock.ungroup(tile.key))
     return ui.menu.popup(tile, [[Item("Open", lambda: open_panel(dock, tile)),
-                                 Item("Rename\u2026", lambda: open_panel(dock, tile, rename=True))],
+                                 Item("Rename\u2026", lambda: open_panel(dock, tile, rename=True)
+                                      if dock.folder(tile.key).get("locked") else ask_rename(dock, tile))],
                                 [lock],
                                 [ungroup, Item("Remove from Dock", lambda: remove_with_puff(dock, tile))]],
                          position=dock.away)

@@ -186,8 +186,10 @@ class WebAppWindow(Gtk.ApplicationWindow):
 def form(on_done=None, parent=None):
     """Name and address; Create stays off until the address is one. on_done(id)."""
     grid = Gtk.Grid(row_spacing=8, column_spacing=8, css_classes=["wa-form"])
-    url = Gtk.Entry(hexpand=True, placeholder_text="web.whatsapp.com", activates_default=True)
-    name = Gtk.Entry(hexpand=True, placeholder_text="Name", activates_default=True)
+    url = ui.controls.text_field(placeholder="web.whatsapp.com", hexpand=True)     # the kit's fields
+    name = ui.controls.text_field(placeholder="Name", hexpand=True)
+    for e in (url, name):
+        e.set_activates_default(True)
     for row, (label, entry) in enumerate((("Address:", url), ("Name:", name))):
         grid.attach(Gtk.Label(label=label, xalign=1), 0, row, 1, 1)
         grid.attach(entry, 1, row, 1, 1)

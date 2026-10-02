@@ -404,3 +404,25 @@ def round_button(icon_name: str, tooltip: str = "", on_click=None) -> Gtk.Button
     if on_click:
         b.connect("clicked", lambda _b: on_click())
     return b
+
+
+def centred_editable_label(text: str, **kw) -> Gtk.EditableLabel:
+    """A name you click to edit, centred before, during and after editing
+    (Vini: a folder's name moved left once renamed). GtkEditableLabel's own
+    label keeps xalign 0 and its stack keeps the entry's width; both set
+    here."""
+    el = Gtk.EditableLabel(text=text, halign=Gtk.Align.CENTER, xalign=0.5, **kw)
+
+    def walk(w):
+        while w is not None:
+            if isinstance(w, Gtk.Label):
+                w.set_xalign(0.5)
+                w.set_justify(Gtk.Justification.CENTER)
+            elif isinstance(w, Gtk.Stack):
+                w.set_hhomogeneous(False)
+                w.set_interpolate_size(True)
+            walk(w.get_first_child())
+            w = w.get_next_sibling()
+    walk(el.get_first_child())
+    el.connect("notify::editing", lambda *_a: walk(el.get_first_child()))
+    return el
