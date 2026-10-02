@@ -44,6 +44,7 @@ class AppIconsPage:
     def __init__(self, settings):
         self.settings = settings
         self.rows = {}
+        self._focus = None
 
     def groups(self) -> list:
         from .app import combo_row, group
@@ -83,7 +84,20 @@ class AppIconsPage:
             self._add_row(did, info)
         if self.search.get_text():
             self._filter(self.search.get_text())
+        if self._focus in self.rows:
+            self.focus(self._focus)
         return bool(self._pending)
+
+    def focus(self, did: str) -> None:
+        """Open one app's form (Launchpad's "Change Icon…"); its row may
+        still be on its way (the list is built a little at a time)."""
+        did = did.removesuffix(".desktop")
+        row = self.rows.get(did)
+        if row is None:
+            self._focus = did
+            return
+        self._focus = None
+        GLib.idle_add(lambda: (row.grab_focus(), self.edit(row), False)[2])
 
     def _add_row(self, did, info):
         row = Adw.ActionRow(title=info.get_display_name(), use_markup=False, activatable=True)
@@ -250,21 +264,28 @@ class AppIconsPage:
         self._size_src = GLib.timeout_add(150, save)
 
     def _pick_file(self, row, then) -> None:
-        """A picture through the Open panel (Sonata's own, via the portal)."""
-        dlg = Gtk.FileDialog(title="Choose an Icon", modal=True)
-        flt = Gtk.FileFilter(name="Images")
-        for pat in ("*.png", "*.svg", "*.jpg", "*.jpeg", "*.webp"):
-            flt.add_pattern(pat)
-        store = Gio.ListStore.new(Gtk.FileFilter)
-        store.append(flt)
-        dlg.set_filters(store)
+        def chosen(path):
+            self.set_app(row, source="file", path=path)
+            then()
+        pick_picture(self.settings, chosen)
 
-        def done(d, res):
-            try:
-                f = d.open_finish(res)
-            except GLib.Error:
-                return                                     # cancelled
-            if f is not None and f.get_path():
-                self.set_app(row, source="file", path=f.get_path())
-                then()
-        dlg.open(self.settings, None, done)
+
+def pick_picture(parent, on_path) -> None:
+    """A picture through the Open panel (Sonata's own, via the portal):
+    on_path(path) when one was chosen. (App Icons; the New Web App form.)"""
+    dlg = Gtk.FileDialog(title="Choose an Icon", modal=True)
+    flt = Gtk.FileFilter(name="Images")
+    for pat in ("*.png", "*.svg", "*.jpg", "*.jpeg", "*.webp"):
+        flt.add_pattern(pat)
+    store = Gio.ListStore.new(Gtk.FileFilter)
+    store.append(flt)
+    dlg.set_filters(store)
+
+    def done(d, res):
+        try:
+            f = d.open_finish(res)
+        except GLib.Error:
+            return                                     # cancelled
+        if f is not None and f.get_path():
+            on_path(f.get_path())
+    dlg.open(parent, None, done)

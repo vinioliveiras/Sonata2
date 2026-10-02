@@ -153,6 +153,87 @@ class WindowTest(unittest.TestCase):
         win.destroy()
 
 
+class IconChoiceTest(unittest.TestCase):
+    """Vini: choose a web app's icon -- in the form, and later from its
+    Launchpad menu (Settings > App Icons, the same picker)."""
+
+    def setUp(self):
+        config.save(W.NAME, W.DEFAULTS)
+        config.save("icons", {})
+
+    def test_custom_icon_copied_and_used(self):
+        from sonata2 import icons
+        wid = W.create("Site", "example.org", command="sonata2", fetch=False)
+        pic = os.path.join(tempfile.mkdtemp(), "mine.png")
+        with open(pic, "wb") as f:
+            f.write(png(64))
+        dest = W.set_custom_icon(wid, pic)
+        self.assertTrue(dest.startswith(W.data_dir(wid)))                    # a copy: the original may move
+        os.remove(pic)
+        self.assertEqual(config.load("icons", icons.ICON_DEFAULTS)["apps"][W.desktop_id(wid)], {"source": "file", "path": dest})
+        W.remove(wid)
+        self.assertNotIn(W.desktop_id(wid), config.load("icons", icons.ICON_DEFAULTS).get("apps", {}))   # forgotten with it
+        icons.forget_prefs()
+
+    def test_form_uses_the_chosen_picture(self):
+        from sonata2.webapps import window
+        from sonata2.settings import appicons_page
+
+        class Dlg:
+            def __init__(self, *a, **_k):
+                self.on, self.child = a[3], None
+
+            def set_extra_child(self, c):
+                self.child = c
+
+            def set_response_enabled(self, *_a):
+                pass
+        pic = os.path.join(tempfile.mkdtemp(), "mine.png")
+        with open(pic, "wb") as f:
+            f.write(png(64))
+        with mock.patch.object(ui.dialog, "alert", side_effect=Dlg), \
+                mock.patch.object(appicons_page, "pick_picture", side_effect=lambda _p, cb: cb(pic)), \
+                mock.patch.object(W, "create", return_value="w0123456789"), \
+                mock.patch.object(W, "set_custom_icon") as custom:
+            dlg = window.form()
+            dlg.child.get_child_at(1, 0).set_text("example.org")
+            dlg.child.icon_box.get_last_child().emit("clicked")
+            dlg.on("create")
+        custom.assert_called_once_with("w0123456789", pic)
+
+    def test_change_icon_opens_that_apps_form(self):
+        lp = open(os.path.join(os.path.dirname(W.__file__), "..", "shell", "launchpad.py")).read()
+        self.assertIn('"appicons/" + item', lp[lp.index("def item_menu"):])
+        from sonata2.settings.appicons_page import AppIconsPage
+        page = AppIconsPage.__new__(AppIconsPage)
+        page.rows, page._focus = {}, None
+        page.focus("sonata2-webapp-w0123456789.desktop")
+        self.assertEqual(page._focus, "sonata2-webapp-w0123456789")         # waits for its row
+        row = mock.Mock()
+        page.rows["sonata2-webapp-w0123456789"] = row
+        page.edit = mock.Mock()
+        page.focus("sonata2-webapp-w0123456789")
+        settle()
+        page.edit.assert_called_once_with(row)
+        self.assertIsNone(page._focus)
+
+
+class DeleteAskTest(unittest.TestCase):
+    def test_asked_like_move_to_trash(self):
+        """Vini: the question came inside Launchpad, without the glass: it
+        closes Launchpad first and the alert gets its own (glass) window."""
+        from sonata2.shell import launchpad as L
+        pad = mock.Mock()
+        pad.close_launchpad.side_effect = lambda then=None: then and then()
+        with mock.patch.object(ui.dialog, "alert") as alert, \
+                mock.patch.object(W, "get", return_value={"name": "WhatsApp"}):
+            L.Launchpad.ask_delete_webapp(pad, "sonata2-webapp-w0123456789")
+        pad.close_launchpad.assert_called_once()
+        self.assertIn("WhatsApp", alert.call_args[0][0])
+        self.assertNotIn("parent", alert.call_args[1])
+        self.assertEqual(len(alert.call_args[0]), 4)                   # no parent: its own glass window
+
+
 class MenusTest(unittest.TestCase):
     def test_new_web_app_in_the_three_menus(self):
         root = os.path.dirname(os.path.dirname(W.__file__))

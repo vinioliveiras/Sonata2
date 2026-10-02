@@ -136,6 +136,24 @@ def rename(app: str, name: str) -> None:
         write_desktop(app)
 
 
+def set_custom_icon(app: str, picture: str) -> str:
+    """A picture the user chose: copied next to the web app's data (the
+    original may move) and set as its icon in App Icons (icons.json)."""
+    from .. import icons
+    ext = os.path.splitext(picture)[1].lower() or ".png"
+    os.makedirs(data_dir(app), exist_ok=True)
+    for old in os.listdir(data_dir(app)):
+        if old.startswith("custom-icon"):
+            try:
+                os.remove(os.path.join(data_dir(app), old))
+            except OSError:
+                pass
+    dest = os.path.join(data_dir(app), "custom-icon" + ext)
+    shutil.copyfile(picture, dest)
+    icons.set_app_pref(desktop_id(app), source="file", path=dest)
+    return dest
+
+
 def remove(app: str) -> None:
     """The web app, its desktop entry and its data (login, storage)."""
     from gi.repository import GLib
@@ -148,6 +166,8 @@ def remove(app: str) -> None:
         pass
     if re.fullmatch(r"w[0-9a-f]{10}", app):                 # never a path from elsewhere
         shutil.rmtree(data_dir(app), ignore_errors=True)
+        from .. import icons
+        icons.set_app_pref(desktop_id(app), source=None, path=None, name=None, shape=None, scale=None)
 
 
 # -- the site's icon -------------------------------------------------------------------------------

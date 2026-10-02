@@ -486,6 +486,8 @@ class Settings(Adw.ApplicationWindow):
             row = row.get_next_sibling()
 
     def select(self, sid, from_sidebar=False):
+        if "/" in sid:                    # "appicons/<desktop id>": that app's icon form (a web app's menu)
+            sid, self._focus_app = sid.split("/", 1)
         sid = section_of(sid)
         if not from_sidebar:
             self.listbox.select_row(self.rows[sid])
@@ -517,6 +519,10 @@ class Settings(Adw.ApplicationWindow):
         self.current = sid
         self.content.set_visible_child(self.pages[sid])
         self.fade.play()
+        focus = getattr(self, "_focus_app", None)
+        if focus and sid == "appicons" and getattr(self, "appicons_page", None):
+            self._focus_app = None
+            self.appicons_page.focus(focus)
 
     def _stale(self, sid) -> bool:
         """A config file the section shows changed after it was built."""

@@ -27,6 +27,7 @@ window.sonata-webapp .wa-title { font-weight: 600; color: %(label)s; }
 window.sonata-webapp:backdrop .wa-title { color: %(label_secondary)s; }
 .wa-form { margin-top: 6px; }
 .wa-form label { color: %(label_secondary)s; }
+.wa-form .wa-icon-note { color: %(label_tertiary)s; }
 """, key="webapp")
 
 
@@ -194,13 +195,32 @@ def form(on_done=None, parent=None):
     for row, (label, entry) in enumerate((("Address:", url), ("Name:", name))):
         grid.attach(Gtk.Label(label=label, xalign=1), 0, row, 1, 1)
         grid.attach(entry, 1, row, 1, 1)
-    state = {"typed": False}
+    # the icon: the site's own unless you choose a picture (Vini); the same
+    # picker as Settings > App Icons, where it can be changed later
+    state = {"typed": False, "icon": None}
+    icon_box = Gtk.Box(spacing=8)
+    icon_img = Gtk.Image(icon_name=W.FALLBACK_ICON, pixel_size=32)
+    icon_note = Gtk.Label(label="The site's own", xalign=0, hexpand=True, css_classes=["wa-icon-note"])
+
+    def chosen(path):
+        state["icon"] = path
+        icon_img.set_from_file(path)
+        icon_note.set_label(os.path.basename(path))
+    from ..settings.appicons_page import pick_picture
+    icon_box.append(icon_img)
+    icon_box.append(icon_note)
+    icon_box.append(ui.controls.push_button("Choose\u2026", lambda: pick_picture(parent, chosen)))
+    grid.attach(Gtk.Label(label="Icon:", xalign=1), 0, 2, 1, 1)
+    grid.attach(icon_box, 1, 2, 1, 1)
+    grid.icon_box = icon_box                                 # (tests)
 
     def answer(rid):
         if rid == "create":
             target = W.normalize_url(url.get_text())
             if target:
                 wid = W.create(name.get_text(), target)
+                if state["icon"]:
+                    W.set_custom_icon(wid, state["icon"])
                 if on_done:
                     on_done(wid)
                 return

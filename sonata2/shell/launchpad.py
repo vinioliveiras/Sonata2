@@ -1010,11 +1010,17 @@ class Launchpad(Gtk.ApplicationWindow):
                 hide.append(Item("Move to Trash", lambda: self.ask_delete(item)))
             from .. import webapps
             if webapps.is_webapp(item):
+                sections.append([Item("Change Icon…", lambda: self.close_launchpad(
+                    lambda: __import__("sonata2.shell.topbar", fromlist=["open_settings"]).open_settings(
+                        "appicons/" + item)))])
                 hide.append(Item("Delete Web App…", lambda: self.ask_delete_webapp(item)))
             sections.append(hide)
         ui.menu.popup(widget, sections, at=(x, y))
 
     def ask_delete_webapp(self, item) -> None:
+        """Asked like "Move to Trash" (ask_delete): Launchpad closes and the
+        question is a glass alert of its own (Vini: it came inside Launchpad,
+        without the glass)."""
         from .. import webapps
         wid = webapps.id_of(item)
         entry = webapps.get(wid) or {}
@@ -1022,9 +1028,10 @@ class Launchpad(Gtk.ApplicationWindow):
         def answer(rid):
             if rid == "delete":
                 webapps.remove(wid)           # its entry goes: Launchpad drops it (AppInfoMonitor)
-        ui.dialog.alert(f"Delete “{entry.get('name', 'this web app')}”?",
-                        "Its login and everything it saved on this computer are deleted too.",
-                        [("cancel", "Cancel", ""), ("delete", "Delete", "destructive")], answer, parent=self)
+        self.close_launchpad(lambda: ui.dialog.alert(
+            f"Delete “{entry.get('name', 'this web app')}”?",
+            "Its login and everything it saved on this computer are deleted too.",
+            [("cancel", "Cancel", ""), ("delete", "Delete", "destructive")], answer))
 
     def _save_dock_pins(self, pins) -> None:
         """Only the "pinned" key of dock.json (the Dock reloads it live)."""
