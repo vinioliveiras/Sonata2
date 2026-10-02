@@ -378,15 +378,18 @@ class Launchpad(Gtk.ApplicationWindow):
     def _item_widget(self, item) -> LaunchItem:
         key = id(item) if M.is_folder(item) else item
         w = self.widgets.get(key)
-        if w is None or w.item is not item or getattr(w, "_size", 0) != self.icon_size or \
+        size = self._tile_size()
+        if w is None or w.item is not item or getattr(w, "_size", 0) != size or \
                 (M.is_folder(item) and getattr(w, "_apps", None) != tuple(item["apps"])):
-            w = LaunchItem(self, item, self.icon_size)
-            w._size = self.icon_size
+            w = LaunchItem(self, item, size)
+            w._size = size
             if M.is_folder(item):
                 w._apps = tuple(item["apps"])
             self.widgets[key] = w
         elif M.is_folder(item) and w.name != item["folder"]:     # renamed: the kept tile follows
             w.set_name_text(item["folder"])
+        # the Apps Menu: every highlight the cell's width, whatever the name (Vini)
+        w.set_halign(Gtk.Align.FILL if self.mode == "menu" else Gtk.Align.CENTER)
         return w
 
     def _rows_changed(self) -> None:
@@ -406,26 +409,28 @@ class Launchpad(Gtk.ApplicationWindow):
     def render(self) -> None:
         """Sync carousel pages with the model (widgets are reused); in the
         Apps Menu, its grids."""
-        if getattr(self, "mode", "") == "menu" and self.menu is not None:
-            self.menu.refresh()
-            self._full_stale = True
-            return
-        self._full_stale = False
+        menu = self.menu if getattr(self, "mode", "") == "menu" else None
         if getattr(self, "bin", None):
             self.bin.invalidate()
         pages = self._pages_with_hidden()
         before = ui.transition.glide_record(self.widgets.values(), self)   # icons slide to their new place
-        while self.carousel.get_n_pages() < len(pages):
-            self.carousel.append(PageGrid(self, self.carousel.get_n_pages()))
-        while self.carousel.get_n_pages() > len(pages):
-            self.carousel.remove(self.carousel.get_nth_page(self.carousel.get_n_pages() - 1))
+        if menu is not None:                       # the Apps Menu: the same pages, stacked (Vini: only the look)
+            grids = menu.page_grids(pages)
+        else:
+            while self.carousel.get_n_pages() < len(pages):
+                self.carousel.append(PageGrid(self, self.carousel.get_n_pages()))
+            while self.carousel.get_n_pages() > len(pages):
+                self.carousel.remove(self.carousel.get_nth_page(self.carousel.get_n_pages() - 1))
+            grids = [self.carousel.get_nth_page(i) for i in range(len(pages))]
         for i, page in enumerate(pages):
-            grid = self.carousel.get_nth_page(i)
+            grid = grids[i]
             grid.index = i
             widgets = [self._item_widget(it) for it in page]
             for n, w in enumerate(widgets):
                 (w.add_css_class if n % 2 else w.remove_css_class)("odd")
             grid.fill(widgets)
+        if menu is not None:
+            menu.show()
         self._select(self.selected)
         ui.transition.glide_play(before, self)
 
@@ -479,9 +484,6 @@ class Launchpad(Gtk.ApplicationWindow):
         w = self.widgets.get(id(folder))
         if w is not None:
             w.set_name_text(name)
-        if self.menu is not None:
-            for t in self.menu.widgets_of(folder):
-                t.set_name_text(name)
 
     def _host(self):
         """Where folder panels open, and what dims behind them: the full
@@ -581,6 +583,7 @@ class Launchpad(Gtk.ApplicationWindow):
                 from .launchpad_window import MenuView
                 self.menu = MenuView(self)
             self._close_folder()
+            self.menu.take_search()                    # the same field, in the menu's title
             self.set_child(self.menu.root)
             self.add_css_class("lpw-mode")
             if LS and self.layer:
@@ -589,6 +592,8 @@ class Launchpad(Gtk.ApplicationWindow):
             self._overlay = False
         else:
             self._close_folder()
+            if self.menu is not None:
+                self.menu.give_search()
             self.set_child(self.bin)
             self.remove_css_class("lpw-mode")
             if LS and self.layer:
@@ -807,8 +812,11 @@ class Launchpad(Gtk.ApplicationWindow):
             self.bin.invalidate()
         q = self.search.get_text()
         self.dots.set_opacity(0 if q else 1)
+        menu = self.menu if self.mode == "menu" else None
         if not q:
             self.stack.set_visible_child_name("pages")
+            if menu is not None:
+                menu.show()
             self._select(-1)
             return
         from .spotlight import _keywords
@@ -816,13 +824,18 @@ class Launchpad(Gtk.ApplicationWindow):
             apps._entry_field(v, "get_generic_name", "GenericName"), _keywords(v), v.get_executable()])))
             for k, v in self.installed.items() if k in set(self.model.all_apps())}
         found = M.search(meta, q)
-        self.results.fill([LaunchItem(self, a, self.icon_size) for a in found] or
-                          [Gtk.Label(label="No Results", css_classes=["lp-empty"])])
-        self.results.found = found
+        results = menu.results if menu is not None else self.results
+        results.fill([LaunchItem(self, a, self._tile_size()) for a in found] or
+                     [Gtk.Label(label="No Results", css_classes=["lp-empty"])])
+        results.found = found
         self.stack.set_visible_child_name("results")
+        if menu is not None:
+            menu.show()
         self._select(0 if found else -1)
 
     def _visible_items(self) -> list:
+        if self.mode == "menu" and self.menu is not None:
+            return self.menu.visible_items()
         grid = self.results if self.stack.get_visible_child_name() == "results" else \
             self.carousel.get_nth_page(int(round(self.carousel.get_position())))
         out = []
@@ -859,11 +872,6 @@ class Launchpad(Gtk.ApplicationWindow):
                 editing.stop_editing(False)     # the old name back; the folder stays open
                 return True
             return False
-        if self.mode == "menu" and self.menu is not None:
-            if keyval in (K.KEY_Alt_L, K.KEY_Alt_R) and not self.jiggling:
-                self.set_jiggle(True, sticky=False)
-                return False
-            return self.menu.key(keyval)
         if keyval == K.KEY_Escape:
             if self.search.get_text():
                 self.search.set_text("")
@@ -871,6 +879,8 @@ class Launchpad(Gtk.ApplicationWindow):
                 self._close_folder()
             elif self.jiggling:
                 self.set_jiggle(False)
+            elif self.mode == "menu" and self.menu is not None and self.menu.tab is not None:
+                self.menu.set_tab(None)                # the Apps Menu: its tab first
             else:
                 self.close_launchpad()
             return True
@@ -887,7 +897,8 @@ class Launchpad(Gtk.ApplicationWindow):
             j = i + moves[keyval]
             pages = self.carousel.get_n_pages()
             page = int(round(self.carousel.get_position()))
-            if self.stack.get_visible_child_name() == "pages" and (j < 0 or j >= len(items)) and \
+            if self.mode != "menu" and self.stack.get_visible_child_name() == "pages" and \
+                    (j < 0 or j >= len(items)) and \
                     keyval in (K.KEY_Left, K.KEY_Right):
                 np = page + (1 if j >= len(items) else -1)
                 if 0 <= np < pages:
@@ -897,7 +908,7 @@ class Launchpad(Gtk.ApplicationWindow):
                 return True
             self._select(max(0, min(len(items) - 1, j)))
             return True
-        if keyval in (K.KEY_Page_Down, K.KEY_Page_Up):
+        if keyval in (K.KEY_Page_Down, K.KEY_Page_Up) and self.mode != "menu":
             page = int(round(self.carousel.get_position())) + (1 if keyval == K.KEY_Page_Down else -1)
             if 0 <= page < self.carousel.get_n_pages():
                 self.carousel.scroll_to(self.carousel.get_nth_page(page), True)
@@ -929,7 +940,6 @@ class Launchpad(Gtk.ApplicationWindow):
         tiles = list(self.widgets.values())
         if self.menu is not None:
             (self.menu.root.add_css_class if on else self.menu.root.remove_css_class)("jiggle")
-            tiles += list(self.menu.cache.values())
         for w in tiles:
             if hasattr(w, "badge"):
                 w.badge.set_visible(on)
