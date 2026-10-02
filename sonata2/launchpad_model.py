@@ -6,6 +6,7 @@ Items are desktop ids (without .desktop) or folder dicts. Pages hold up to
 COLS x ROWS items; overflow cascades to the next page (macOS behaviour when
 an item is dropped on a full page)."""
 COLS, ROWS = 7, 5
+DEFAULTS = {"pages": [], "hidden": [], "grid": []}    # launchpad.json (config.load keeps only these keys)
 PER_PAGE = COLS * ROWS
 
 
@@ -52,11 +53,13 @@ class Model:
         self.installed = installed
         self.pages = [list(p) for p in (data or {}).get("pages", [])]
         self.hidden = list((data or {}).get("hidden", []))
+        # the page size the pages were filled for ((cols, rows); () = unknown)
+        self.grid = tuple((data or {}).get("grid") or ())
         self.reconcile()
 
     # -- persistence -------------------------------------------------------------
     def to_json(self) -> dict:
-        return {"pages": [list(p) for p in self.pages], "hidden": self.hidden}
+        return {"pages": [list(p) for p in self.pages], "hidden": self.hidden, "grid": list(self.grid)}
 
     def reconcile(self) -> None:
         """Drop uninstalled apps, dissolve 1-app folders, append new apps
@@ -94,6 +97,7 @@ class Model:
         no empty rows left at the bottom of a page."""
         items = [it for page in self.pages for it in page]
         self.pages = [items[i:i + PER_PAGE] for i in range(0, len(items), PER_PAGE)] or [[]]
+        self.grid = (COLS, ROWS)
 
     def normalize(self) -> None:
         """Cascade overflow to the next pages; drop empty pages (keep one)."""

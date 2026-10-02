@@ -277,7 +277,7 @@ class Launchpad(Gtk.ApplicationWindow):
                          decorated=False)
         self.installed = installed_apps()
         self._apps_sig = apps.signature()
-        self.model = M.Model(config.load("launchpad", {"pages": [], "hidden": []}), {
+        self.model = M.Model(config.load("launchpad", M.DEFAULTS), {
             k: v.get_display_name() for k, v in self.installed.items()})
         self.save()                # new/removed apps reconciled
         self.jiggling = False
@@ -367,7 +367,10 @@ class Launchpad(Gtk.ApplicationWindow):
         width = max(1, w - 2 * side - (D.reserved(dcfg) if dcfg.get("position") in ("left", "right") else 0))
         cols = 7 if width >= 900 else width // 150               # macOS: 7; fewer on narrow screens
         rows = room / max(1.0, width / max(1, cols) * 0.72)     # row pitch ~72 % of a column (macOS)
-        if M.set_grid(cols, rows):
+        # also when the saved pages were filled for another size: a grid the
+        # same as the default changed nothing here, and pages made for 7x4
+        # kept an empty fifth row (Vini)
+        if M.set_grid(cols, rows) or self.model.grid != (M.COLS, M.ROWS):
             logs.verbose() and print(f"sonata2-launchpad: grid {M.COLS}x{M.ROWS} for {w}x{h} (room {room}, width {width}, "
                   f"dock {D.reserved(dcfg)})", flush=True)                # launchpad.log
             GLib.idle_add(lambda: (self._rows_changed(), False)[1])     # not during allocation
@@ -555,7 +558,7 @@ class Launchpad(Gtk.ApplicationWindow):
 
     def _config_changed(self) -> None:
         """launchpad.json changed elsewhere (Settings: reset, unhide)."""
-        data = config.load("launchpad", {"pages": [], "hidden": []})
+        data = config.load("launchpad", M.DEFAULTS)
         if data == self.model.to_json():
             return                              # our own save
         self.model = M.Model(data, self.model.installed)

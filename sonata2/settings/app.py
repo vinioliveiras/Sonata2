@@ -2548,7 +2548,7 @@ class Settings(Adw.ApplicationWindow):
         """Hide (out of Launchpad's pages, the Dock) or show again; Launchpad
         and the Dock reload their files."""
         from .. import apps, launchpad_model as M
-        data = config.load("launchpad", {"pages": [], "hidden": []})
+        data = config.load("launchpad", M.DEFAULTS)
         names = {d[:-8]: i.get_display_name() for d, i in apps.scan().items() if i.should_show()}
         m = M.Model(data, names)
         if on:

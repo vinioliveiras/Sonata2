@@ -97,3 +97,33 @@ class DockFolderTransferTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GridRepackTest(unittest.TestCase):
+    """Vini: the fifth row of the Apps page stayed empty -- the pages were
+    filled for a 7x4 grid, and the 7x5 grid (the default) changed nothing."""
+
+    def test_pages_remember_their_grid(self):
+        from sonata2 import launchpad_model as M
+        old = (M.COLS, M.ROWS)
+        try:
+            M.set_grid(7, 5)
+            names = {f"a{i:02}": f"A{i:02}" for i in range(52)}
+            ids = sorted(names)
+            m = M.Model({"pages": [ids[:28], ids[28:]]}, names)
+            self.assertEqual(m.grid, ())                         # an old file: size unknown
+            m.repack()
+            self.assertEqual([len(p) for p in m.pages], [35, 17])
+            self.assertEqual(m.to_json()["grid"], [7, 5])
+            again = M.Model(m.to_json(), names)
+            self.assertEqual(again.grid, (7, 5))                 # kept: no repack next time
+        finally:
+            M.set_grid(*old)
+
+    def test_launchpad_repacks_when_the_grid_differs(self):
+        import pathlib
+        from sonata2 import launchpad_model as M
+        self.assertIn("grid", M.DEFAULTS)                        # config.load keeps it
+        src = (pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "shell" / "launchpad.py").read_text()
+        self.assertIn("if M.set_grid(cols, rows) or self.model.grid != (M.COLS, M.ROWS):", src)
+        self.assertNotIn('config.load("launchpad", {"pages": [], "hidden": []})', src)
