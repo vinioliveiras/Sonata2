@@ -301,6 +301,22 @@ class MenuView:
         for g in want:
             self.body.append(g)
 
+    def reveal(self, widget) -> None:
+        """Scroll so a tile chosen with the arrows is in view."""
+        port = self.scroll.get_child()
+        if isinstance(port, Gtk.Viewport) and hasattr(port, "scroll_to"):     # GTK 4.12+
+            port.scroll_to(widget, None)
+            return
+        ok, b = widget.compute_bounds(self.body)
+        if not ok:
+            return
+        adj = self.scroll.get_vadjustment()
+        top, bottom = b.get_y(), b.get_y() + b.get_height()
+        if top < adj.get_value():
+            adj.set_value(top)
+        elif bottom > adj.get_value() + adj.get_page_size():
+            adj.set_value(bottom - adj.get_page_size())
+
     def visible_items(self) -> list:
         from .launchpad import LaunchItem
         grids = [self.results] if self.pad.search.get_text().strip() else \

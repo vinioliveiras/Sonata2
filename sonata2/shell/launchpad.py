@@ -874,12 +874,15 @@ class Launchpad(Gtk.ApplicationWindow):
             self.bin.invalidate()
         for w in self.widgets.values():
             w.remove_css_class("selected")
-        items = self._visible_items() if self.carousel.get_n_pages() else []
+        # the Apps Menu has no carousel pages: its own grids (Vini: the arrows did nothing there)
+        items = self._visible_items() if self.mode == "menu" or self.carousel.get_n_pages() else []
         for w in items:
             w.remove_css_class("selected")
         self.selected = index if 0 <= index < len(items) else -1
         if self.selected >= 0:
             items[self.selected].add_css_class("selected")
+            if self.mode == "menu" and self.menu is not None:
+                self.menu.reveal(items[self.selected])
 
     def _activate_selected(self) -> None:
         items = self._visible_items()

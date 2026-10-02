@@ -196,6 +196,21 @@ class MenuModeTest(unittest.TestCase):
         self.assertIsNone(self.pad.folder_view)
         self.assertTrue(self.pad.get_visible())
 
+    def test_arrow_keys_move_the_selection(self):
+        """Vini: in the Apps Menu the arrows did nothing (it has no carousel pages)."""
+        items = self.items()
+        self.pad._key(None, Gdk.KEY_Right, 0, 0)
+        self.assertEqual(self.pad.selected, 0)
+        self.assertTrue(self.tile(items[0]).has_css_class("selected"))
+        self.pad._key(None, Gdk.KEY_Right, 0, 0)
+        self.assertEqual(self.pad.selected, 1)
+        self.pad._key(None, Gdk.KEY_Left, 0, 0)
+        self.assertEqual(self.pad.selected, 0)
+        self.assertFalse(self.tile(items[1]).has_css_class("selected"))
+        self.pad._activate_selected()
+        settle(LW.CLOSE_MS + 200)
+        self.assertFalse(self.pad.get_visible())                       # Enter opens it
+
     def test_escape_steps(self):
         self.menu.set_tab("social")
         self.pad._key(None, Gdk.KEY_Escape, 0, 0)
