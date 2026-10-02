@@ -119,6 +119,9 @@ def app_menu(dock, key: str, tile):
         g = gpu.menu_item(info, Item)
         if g:
             opts.append([g])
+        from .. import webapps
+        if webapps.is_webapp(key):
+            opts.append([Item("Edit Web App…", lambda: webapps.edit(webapps.id_of(key)))])
         from . import dock_folder
         f = dock_folder.app_items(dock, key)
         if f:

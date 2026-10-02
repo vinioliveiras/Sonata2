@@ -194,13 +194,15 @@ def write_desktop(app: str, command: str = None) -> str:
     return write_desktop_file(desktop_id(app) + ".desktop", desktop_text(app, entry, command))
 
 
-def create(name: str, url: str, command: str = None, fetch: bool = True) -> str:
+def create(name: str, url: str, command: str = None, fetch: bool = True, background: bool = False) -> str:
     url = normalize_url(url)
     if not url:
         raise ValueError("not a web address")
     app = "w" + uuid.uuid4().hex[:10]
     data = config.load(NAME, DEFAULTS)
     data.setdefault("apps", {})[app] = {"name": (name or "").strip() or default_name(url), "url": url}
+    if background:
+        data["apps"][app]["background"] = True
     config.save(NAME, data)
     os.makedirs(data_dir(app), exist_ok=True)
     update_theme_icon(app)
@@ -210,12 +212,31 @@ def create(name: str, url: str, command: str = None, fetch: bool = True) -> str:
     return app
 
 
-def rename(app: str, name: str) -> None:
+def update(app: str, name: str = None, url: str = None, background: bool = None, command: str = None) -> bool:
+    """Edit a web app (its form): name, address, keep running. Its login stays."""
     data = config.load(NAME, DEFAULTS)
-    if app in data.get("apps", {}) and name.strip():
-        data["apps"][app]["name"] = name.strip()
-        config.save(NAME, data)
-        write_desktop(app)
+    entry = data.get("apps", {}).get(app)
+    if entry is None:
+        return False
+    if name is not None and name.strip():
+        entry["name"] = name.strip()
+    if url is not None:
+        url = normalize_url(url)
+        if url:
+            entry["url"] = url
+    if background is not None:
+        if background:
+            entry["background"] = True
+        else:
+            entry.pop("background", None)
+    config.save(NAME, data)
+    update_theme_icon(app)                       # a new name may have its own icon in the pack
+    write_desktop(app, command)
+    return True
+
+
+def rename(app: str, name: str) -> None:
+    update(app, name=name)
 
 
 def set_custom_icon(app: str, picture: str) -> str:
@@ -360,6 +381,11 @@ def open_new() -> None:
 
 def launch(app: str) -> None:
     _spawn(app)
+
+
+def edit(app: str) -> None:
+    """The form, filled in (its own process: it takes the keyboard)."""
+    _spawn("edit", app)
 
 
 def write_all(command: str = None) -> None:

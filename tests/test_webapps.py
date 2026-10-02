@@ -134,7 +134,7 @@ class WindowTest(unittest.TestCase):
             self.assertTrue(dlg.enabled["create"])
             self.assertEqual(name.get_text(), "Whatsapp")                     # suggested from the address
             dlg.on("create")
-        create.assert_called_once_with("Whatsapp", "https://web.whatsapp.com/")
+        create.assert_called_once_with("Whatsapp", "https://web.whatsapp.com/", background=False)
         self.assertEqual(done, ["w0123456789"])
 
     def test_window_has_its_own_storage(self):
@@ -272,6 +272,94 @@ class DataPlaceTest(unittest.TestCase):
         self.assertTrue(os.path.exists(moved))
         self.assertEqual(config.load("icons", icons.ICON_DEFAULTS)["apps"][W.desktop_id("w00000000bb")]["path"],
                          moved)
+
+
+class EditTest(unittest.TestCase):
+    """Vini: a web app made can be edited (Launchpad's and the Dock's menus)."""
+
+    def setUp(self):
+        config.save(W.NAME, W.DEFAULTS)
+
+    def test_update_keeps_its_login(self):
+        with mock.patch.object(W, "theme_icon", return_value=None):
+            wid = W.create("Zap", "web.whatsapp.com", command="sonata2", fetch=False)
+            open(os.path.join(W.data_dir(wid), "cookies.sqlite"), "w").close()
+            self.assertTrue(W.update(wid, name="WhatsApp", url="https://web.whatsapp.com/?x=1", background=True,
+                                     command="sonata2"))
+        e = W.get(wid)
+        self.assertEqual((e["name"], e["url"], e["background"]), ("WhatsApp", "https://web.whatsapp.com/?x=1", True))
+        self.assertTrue(os.path.exists(os.path.join(W.data_dir(wid), "cookies.sqlite")))   # same data
+        self.assertIn("Name=WhatsApp\n", open(os.path.join(GLib.get_user_data_dir(), "applications",
+                                                             W.desktop_id(wid) + ".desktop")).read())
+        W.update(wid, background=False, command="sonata2")
+        self.assertNotIn("background", W.get(wid))
+        self.assertFalse(W.update("w0000000000", name="x"))
+
+    def test_form_filled_in_and_saves(self):
+        from sonata2.webapps import window
+        with mock.patch.object(W, "theme_icon", return_value=None):
+            wid = W.create("Zap", "web.whatsapp.com", command="sonata2", fetch=False)
+
+        class Dlg:
+            def __init__(self, *a, **_k):
+                self.heading, self.on, self.ok, self.child = a[0], a[3], a[2][1][1], None
+
+            def set_extra_child(self, c):
+                self.child = c
+
+            def set_response_enabled(self, *_a):
+                pass
+        with mock.patch.object(ui.dialog, "alert", side_effect=Dlg), \
+                mock.patch.object(W, "update") as update, mock.patch.object(W, "create") as create:
+            dlg = window.form(wid=wid)
+            self.assertEqual((dlg.heading, dlg.ok), ("Edit Web App", "Save"))
+            url, name = dlg.child.get_child_at(1, 0), dlg.child.get_child_at(1, 1)
+            self.assertEqual((url.get_text(), name.get_text()), ("https://web.whatsapp.com/", "Zap"))
+            name.set_text("WhatsApp")
+            dlg.child.background.set_active(True)
+            dlg.on("create")
+        update.assert_called_once_with(wid, name="WhatsApp", url="https://web.whatsapp.com/", background=True)
+        create.assert_not_called()
+
+    def test_menus_offer_it(self):
+        root = os.path.dirname(os.path.dirname(W.__file__))
+        lp = open(os.path.join(root, "shell", "launchpad.py")).read()
+        dock = open(os.path.join(root, "shell", "dock_menu.py")).read()
+        self.assertIn('"Edit Web App…"', lp[lp.index("def item_menu"):])
+        self.assertIn('"Edit Web App…"', dock[dock.index("def app_menu"):])
+
+
+class CloseTest(unittest.TestCase):
+    """Vini: WhatsApp asked for the QR code again -- the app quit while WebKit
+    was still writing the login."""
+
+    def test_quits_a_moment_after_the_window_goes(self):
+        from sonata2.webapps import window
+        win = mock.Mock(entry={"name": "W", "url": "https://x.org/"}, _quit_src=0)
+        app = win.get_application.return_value
+        with mock.patch("gi.repository.GLib.timeout_add", return_value=7) as later:
+            self.assertTrue(window.WebAppWindow._close(win))
+        win.set_visible.assert_called_once_with(False)
+        self.assertEqual(later.call_args[0][0], window.QUIT_DELAY_MS)
+        app.quit.assert_not_called()
+        later.call_args[0][1]()
+        app.quit.assert_called_once()
+
+    def test_kept_running_in_the_background(self):
+        from sonata2.webapps import window
+        win = mock.Mock(entry={"name": "W", "url": "https://x.org/", "background": True}, _quit_src=0)
+        with mock.patch("gi.repository.GLib.timeout_add") as later:
+            window.WebAppWindow._close(win)
+        later.assert_not_called()
+
+    def test_opened_again_while_closing(self):
+        from sonata2.webapps import window
+        win = mock.Mock(_quit_src=7)
+        with mock.patch("gi.repository.GLib.source_remove") as remove:
+            window.WebAppWindow.reopen(win)
+        remove.assert_called_once_with(7)
+        win.get_application.return_value.release.assert_called_once()
+        win.present.assert_called_once()
 
 
 class DockMatchTest(unittest.TestCase):

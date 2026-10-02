@@ -21,6 +21,7 @@ from .. import ui, webapps as W  # noqa: E402
 
 NEW_APP_ID = "io.github.vinioliveiras.sonata2.webapps"
 SIZE = (1200, 820)
+QUIT_DELAY_MS = 2500           # after its window closes: WebKit writes what the site saved
 
 ui.register("""
 .wa-form { margin-top: 6px; }
@@ -92,7 +93,31 @@ class WebAppWindow(Gtk.ApplicationWindow):
         keys.connect("key-pressed", self._key)
         self.add_controller(keys)
         self._buttons()
+        self.connect("close-request", self._close)
         self.view.load_uri(entry["url"])
+
+    def _close(self, *_a) -> bool:
+        """Closing: the window goes at once; the app either keeps running
+        (the form's "Keep running…": notifications) or quits a moment later,
+        so WebKit finishes writing the login (Vini: WhatsApp asked for the
+        QR code again -- quitting at once lost what it was saving)."""
+        self.set_visible(False)
+        if self.entry.get("background"):
+            return True
+        app = self.get_application()
+        if app is not None and not getattr(self, "_quit_src", 0):
+            app.hold()
+            self._quit_src = GLib.timeout_add(QUIT_DELAY_MS, lambda: (app.release(), app.quit(), False)[2])
+        return True
+
+    def reopen(self) -> None:
+        """Opened again (its icon) while closing or kept in the background."""
+        src = getattr(self, "_quit_src", 0)
+        if src:
+            GLib.source_remove(src)
+            self._quit_src = 0
+            self.get_application().release()
+        self.present()
 
     def _buttons(self) -> None:
         self.back.set_sensitive(self.view.can_go_back())
@@ -183,8 +208,10 @@ class WebAppWindow(Gtk.ApplicationWindow):
 
 
 # -- the "New Web App" form -------------------------------------------------------------------------
-def form(on_done=None, parent=None):
-    """Name and address; Create stays off until the address is one. on_done(id)."""
+def form(on_done=None, parent=None, wid=None):
+    """Name and address; Create stays off until the address is one. on_done(id).
+    wid: edit that web app instead (Vini) -- the same form, filled in."""
+    entry0 = W.get(wid) if wid else None
     grid = Gtk.Grid(row_spacing=8, column_spacing=8, css_classes=["wa-form"])
     url = ui.controls.text_field(placeholder="web.whatsapp.com", hexpand=True)     # the kit's fields
     name = ui.controls.text_field(placeholder="Name", hexpand=True)
@@ -211,21 +238,40 @@ def form(on_done=None, parent=None):
     grid.attach(Gtk.Label(label="Icon:", xalign=1), 0, 2, 1, 1)
     grid.attach(icon_box, 1, 2, 1, 1)
     grid.icon_box = icon_box                                 # (tests)
+    # closing its window keeps it running (a chat's notifications keep coming)
+    background = Gtk.CheckButton(label="Keep running when its window is closed")
+    grid.attach(background, 1, 3, 1, 1)
+    grid.background = background
+    if entry0:
+        url.set_text(entry0["url"])
+        name.set_text(entry0["name"])
+        background.set_active(bool(entry0.get("background")))
+        state["typed"] = True                                # its name stays as it is
+        if os.path.isfile(W.icon_path(wid)):
+            icon_img.set_from_file(W.icon_path(wid))
 
     def answer(rid):
         if rid == "create":
             target = W.normalize_url(url.get_text())
             if target:
-                wid = W.create(name.get_text(), target)
+                if entry0:
+                    W.update(wid, name=name.get_text(), url=target, background=background.get_active())
+                    done = wid
+                else:
+                    done = W.create(name.get_text(), target, background=background.get_active())
                 if state["icon"]:
-                    W.set_custom_icon(wid, state["icon"])
+                    W.set_custom_icon(done, state["icon"])
                 if on_done:
-                    on_done(wid)
+                    on_done(done)
                 return
         if on_done:
             on_done(None)
-    dlg = ui.dialog.alert("New Web App", "A website in a window of its own, with its own icon and login.",
-                          [("cancel", "Cancel", ""), ("create", "Create", "default")], answer, parent=parent)
+    if entry0:
+        heading, body, ok = "Edit Web App", "Changes show the next time it opens.", "Save"
+    else:
+        heading, body, ok = "New Web App", "A website in a window of its own, with its own icon and login.", "Create"
+    dlg = ui.dialog.alert(heading, body, [("cancel", "Cancel", ""), ("create", ok, "default")], answer,
+                          parent=parent)
     dlg.set_extra_child(grid)
 
     def changed(*_a):
@@ -261,13 +307,25 @@ def open_webapp(wid: str) -> int:
         if not W.webkit_available():
             missing_webkit(a)
             return
-        win = next(iter(a.get_windows()), None) or WebAppWindow(a, wid, entry)
-        win.present()
+        win = next(iter(a.get_windows()), None)
+        if win is not None:
+            win.reopen()
+        else:
+            WebAppWindow(a, wid, entry).present()
     app.connect("activate", activate)
     return app.run([sys.argv[0]])
 
 
-def new_webapp() -> int:
+def edit_webapp(wid: str) -> int:
+    """`sonata2 webapp edit <id>`: the form, filled in (Launchpad's and the
+    Dock's "Edit Web App…")."""
+    if not W.get(wid):
+        print(f"sonata2 webapp: no web app {wid}", file=sys.stderr)
+        return 1
+    return new_webapp(wid)
+
+
+def new_webapp(wid: str = None) -> int:
     GLib.set_prgname(NEW_APP_ID)
     GLib.set_application_name("New Web App")
     app = Adw.Application(application_id=NEW_APP_ID)
@@ -282,11 +340,11 @@ def new_webapp() -> int:
             return
         a.hold()
 
-        def done(wid):
-            if wid:
-                W.launch(wid)
+        def done(made):
+            if made and not wid:                       # a new one opens; an edited one stays as it is
+                W.launch(made)
             a.release()
-        a._form = form(done)
+        a._form = form(done, wid=wid)
     app.connect("activate", activate)
     return app.run([sys.argv[0]])
 
@@ -295,4 +353,8 @@ def main(argv) -> int:
     if not argv:
         print("usage: sonata2 webapp new | <id>", file=sys.stderr)
         return 2
-    return new_webapp() if argv[0] == "new" else open_webapp(argv[0])
+    if argv[0] == "new":
+        return new_webapp()
+    if argv[0] == "edit" and len(argv) > 1:
+        return edit_webapp(argv[1])
+    return open_webapp(argv[0])

@@ -1013,6 +1013,8 @@ class Launchpad(Gtk.ApplicationWindow):
                 hide.append(Item("Move to Trash", lambda: self.ask_delete(item)))
             from .. import webapps
             if webapps.is_webapp(item):
+                sections.append([Item("Edit Web App…", lambda: self.close_launchpad(
+                    lambda: webapps.edit(webapps.id_of(item))))])
                 sections.append([Item("Change Icon…", lambda: self.close_launchpad(
                     lambda: __import__("sonata2.shell.topbar", fromlist=["open_settings"]).open_settings(
                         "appicons/" + item)))])
