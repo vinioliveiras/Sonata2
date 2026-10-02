@@ -1024,6 +1024,11 @@ class Dock(Gtk.Box):
             print(f"sonata2-dock: the Dock is full; {key} not kept", flush=True)
             return
         tile = self.tiles.get(key)
+        if key in self.cfg["pinned"] and tile is not None:
+            # already kept: it stays where it is (Vini: dragging it in from
+            # Launchpad moved it); a bounce shows where it is
+            tile.bounce(BOUNCE_MS)
+            return
         if tile is None:
             info = apps.lookup(key)
             if not info:

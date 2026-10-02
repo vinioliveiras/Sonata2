@@ -312,8 +312,9 @@ def attach_plate(dock) -> None:
     def motion(target, x, y):
         files = _files(target.get_value())
         apps_only = bool(files) and (all(_is_app(f) for f in files) or bool(_folders(files)))
-        if apps_only:
-            dock.show_drop_gap(x, y)             # the icons part where it will land
+        new = [f for f in files if not _is_app(f) or app_id_for(f) not in dock.cfg["pinned"]]
+        if apps_only and (new or _folders(files)):
+            dock.show_drop_gap(x, y)             # the icons part where it will land (not for one already kept)
         ok = files and (apps_only or all(_is_dir(f) for f in files))
         return Gdk.DragAction.COPY if ok else 0
 

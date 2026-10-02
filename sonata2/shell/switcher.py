@@ -15,6 +15,8 @@ from .. import apps, icons, ui  # noqa: E402
 from . import layer  # noqa: E402
 
 ICON = 96
+MODS_POLL_MS = 60        # while open: is Alt / Super still held?
+MODS_GRACE_MS = 120      # (after opening: the keyboard's state arrives with the focus)
 
 ui.register("""
 window.sonata-switcher, window.sonata-switcher > contents { background: none; box-shadow: none; }
@@ -185,6 +187,34 @@ class Switcher(Gtk.Window):
         self.panel.remove_css_class("opening")
         self.present()
         self.panel.add_css_class("opening")
+        self._opened_at = GLib.get_monotonic_time()
+        if not getattr(self, "_mods_src", 0):
+            self._mods_src = GLib.timeout_add(MODS_POLL_MS, self._watch_mods)
+
+    # Vini: sometimes the switcher stayed open until an app was picked -- a
+    # quick Alt+Tab let go of Alt before this window had the keyboard, so its
+    # release never arrived. While open, the held keys are checked: no Alt /
+    # Super any more (and the window has the keyboard, so the state is real)
+    # switches, like letting go would have.
+    HELD = Gdk.ModifierType.SUPER_MASK | Gdk.ModifierType.ALT_MASK | Gdk.ModifierType.META_MASK
+
+    def _held_modifiers(self):
+        seat = self.get_display().get_default_seat() if self.get_display() else None
+        kb = seat.get_keyboard() if seat else None
+        return kb.get_modifier_state() if kb else None
+
+    def _watch_mods(self) -> bool:
+        if not self.get_visible() or self.panel.has_css_class("closing"):
+            self._mods_src = 0
+            return False
+        if not self.is_active() or GLib.get_monotonic_time() - self._opened_at < MODS_GRACE_MS * 1000:
+            return True
+        mods = self._held_modifiers()
+        if mods is not None and not (mods & self.HELD):
+            self._mods_src = 0
+            self._switch()
+            return False
+        return True
 
     def _mark(self, animate: bool = True):
         for i, b in enumerate(self.items):

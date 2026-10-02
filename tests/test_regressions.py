@@ -544,6 +544,7 @@ class SwitcherRegressions(unittest.TestCase):
         app.register(None)
         m = M()
         w = switcher.Switcher(app, m, [])
+        w._held_modifiers = lambda: switcher.Switcher.HELD       # Super still held
         w.step(1)
         settle(500)
         ok, r = w.items[2].compute_bounds(w.panel)
@@ -555,6 +556,60 @@ class SwitcherRegressions(unittest.TestCase):
         ok, r = w.items[0].compute_bounds(w.panel)
         w._clicked(None, 1, r.origin.x + 4, r.origin.y + 4)
         self.assertEqual(m.act, ["a1"])
+        w.destroy()
+
+
+class SwitcherStuckRegressions(unittest.TestCase):
+    """Vini: Alt+Tab / Super+Tab sometimes stayed open until an app was
+    picked: Alt was let go before the switcher had the keyboard, so the
+    release never came. Now it switches once no modifier is held."""
+
+    _n = 0
+
+    def _switcher(self, held):
+        from sonata2.shell import switcher
+
+        class T:
+            def __init__(self, a):
+                self.app_id, self.minimized = a, False
+
+        class M:
+            def __init__(self):
+                self.toplevels = [T("a1"), T("a2")]
+                self.act = []
+            def activate(self, t): self.act.append(t.app_id)
+            def close(self, t): pass
+        SwitcherStuckRegressions._n += 1
+        app = Gtk.Application(application_id=f"io.test.regress.switcher{self._n + 1}")
+        app.register(None)
+        m = M()
+        w = switcher.Switcher(app, m, [])
+        w.is_active = lambda: True
+        state = {"mods": held}
+        w._held_modifiers = lambda: state["mods"]
+        return switcher, w, m, state
+
+    def test_let_go_unseen_still_switches(self):
+        switcher, w, m, state = self._switcher(None)
+        state["mods"] = switcher.Switcher.HELD
+        w.step(1)
+        settle(400)
+        self.assertTrue(w.get_visible())                  # held: stays open
+        self.assertEqual(m.act, [])
+        state["mods"] = Gdk.ModifierType(0)               # let go (its release never came)
+        settle(300)
+        self.assertEqual(m.act, ["a2"])                   # the previous app, like a quick Alt+Tab
+        settle(300)
+        self.assertFalse(w.get_visible())
+        w.destroy()
+
+    def test_unknown_state_waits(self):
+        switcher, w, m, state = self._switcher(None)      # no keyboard info: never guesses
+        w.step(1)
+        settle(400)
+        self.assertEqual(m.act, [])
+        w._close()
+        settle(300)
         w.destroy()
 
 

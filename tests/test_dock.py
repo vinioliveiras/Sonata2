@@ -185,6 +185,17 @@ class DockTest(unittest.TestCase):
         self.assertEqual(self.keys().index(key), 1)
         self.assertIn(key, config.load("dock", D.DEFAULTS)["pinned"])
 
+    def test_pin_at_keeps_one_already_kept(self):
+        """Vini: an app dragged in from Launchpad that's already in the Dock
+        moved there; it stays where it is (and bounces)."""
+        keys = self.keys()
+        key = keys[-1]
+        order = list(self.dock.cfg["pinned"])
+        self.dock.pin_at(key, before=self.dock.tiles[keys[0]])
+        self.assertEqual(self.keys(), keys)
+        self.assertEqual(self.dock.cfg["pinned"], order)
+        self.assertTrue(self.dock.tiles[key].has_css_class("launching"))
+
     def test_can_open_by_mime(self):
         from gi.repository import Gio
         from sonata2.shell import dock_drop
