@@ -201,8 +201,9 @@ class LaunchItem(Gtk.Button):
                 self.badge = badge
                 over.add_overlay(badge)
         col.append(over)
-        col.append(Gtk.Label(label=self.name, css_classes=["lp-label"], ellipsize=Pango.EllipsizeMode.END,
-                             max_width_chars=14, width_chars=1, justify=Gtk.Justification.CENTER))
+        self.label = Gtk.Label(label=self.name, css_classes=["lp-label"], ellipsize=Pango.EllipsizeMode.END,
+                               max_width_chars=14, width_chars=1, justify=Gtk.Justification.CENTER)
+        col.append(self.label)
         self.set_child(col)
         self.connect("clicked", lambda _b: pad.activate_item(self))
         hold = Gtk.GestureLongPress(delay_factor=JIGGLE_HOLD_MS / 500)
@@ -212,6 +213,10 @@ class LaunchItem(Gtk.Button):
         menu.connect("pressed", lambda _g, _n, x, y: pad.item_menu(self, x, y))
         self.add_controller(menu)
         pad.attach_drag(self)
+
+    def set_name_text(self, name: str) -> None:
+        self.name = name
+        self.label.set_label(name)
 
     def _folder_icon(self, folder, size) -> Gtk.Widget:
         """The same folder icon as the Dock's: exactly an app's frame (Vini),
@@ -367,6 +372,8 @@ class Launchpad(Gtk.ApplicationWindow):
             if M.is_folder(item):
                 w._apps = tuple(item["apps"])
             self.widgets[key] = w
+        elif M.is_folder(item) and w.name != item["folder"]:     # renamed: the kept tile follows
+            w.set_name_text(item["folder"])
         return w
 
     def _rows_changed(self) -> None:
@@ -442,6 +449,11 @@ class Launchpad(Gtk.ApplicationWindow):
             self.model.reconcile()
             self.save()
             self._close_folder()
+
+    def _folder_tile_name(self, folder, name: str) -> None:
+        w = self.widgets.get(id(folder))
+        if w is not None:
+            w.set_name_text(name)
 
     def _ask_password(self, folder) -> None:
         """The Hidden folder opens only with the user's password (PAM, like
@@ -657,11 +669,17 @@ class Launchpad(Gtk.ApplicationWindow):
 
         def renamed(*_):
             name = title.get_text().strip()
-            if name and name != folder["folder"]:
+            if not name:                                 # empty: the old name back
+                title.set_text(folder["folder"])
+                self._folder_tile_name(folder, folder["folder"])
+            elif name != folder["folder"]:
                 folder["folder"] = name
                 self.save()
                 self.render()
         title.connect("notify::editing", lambda *_: None if title.get_editing() else renamed())
+        # live (Vini): the folder's name in the grid follows each key typed
+        title.connect("changed", lambda *_: title.get_editing() and
+                      self._folder_tile_name(folder, title.get_text().strip() or folder["folder"]))
         n = len(folder["apps"])
         cols = min(M.COLS, max(3, n))
         rows = min(3, (n + cols - 1) // cols)
@@ -702,8 +720,9 @@ class Launchpad(Gtk.ApplicationWindow):
             self.stack.set_visible_child_name("pages")
             self._select(-1)
             return
+        from .spotlight import _keywords
         meta = {k: (v.get_display_name(), " ".join(filter(None, [
-            v.get_generic_name(), " ".join(v.get_keywords() or []), v.get_executable()])))
+            apps._entry_field(v, "get_generic_name", "GenericName"), _keywords(v), v.get_executable()])))
             for k, v in self.installed.items() if k in set(self.model.all_apps())}
         found = M.search(meta, q)
         self.results.fill([LaunchItem(self, a, self.icon_size) for a in found] or
@@ -743,6 +762,12 @@ class Launchpad(Gtk.ApplicationWindow):
         K = Gdk
         if self.folder_view and self.folder_view[1] is None and keyval != K.KEY_Escape:
             return False                        # typing the Hidden folder's password
+        editing = self._editing_title()
+        if editing is not None:                 # renaming a folder: the keys move in its text (Vini)
+            if keyval == K.KEY_Escape:
+                editing.stop_editing(False)     # the old name back; the folder stays open
+                return True
+            return False
         if keyval == K.KEY_Escape:
             if self.search.get_text():
                 self.search.set_text("")
@@ -782,6 +807,15 @@ class Launchpad(Gtk.ApplicationWindow):
                 self.carousel.scroll_to(self.carousel.get_nth_page(page), True)
             return True
         return False
+
+    def _editing_title(self):
+        """The folder's name being edited (an EditableLabel), or None."""
+        w = self.get_root().get_focus() if self.get_root() else None
+        while w is not None:
+            if isinstance(w, Gtk.EditableLabel):
+                return w if w.get_editing() else None
+            w = w.get_parent()
+        return None
 
     def _key_up(self, _c, keyval, _code, _state) -> None:
         if keyval in (Gdk.KEY_Alt_L, Gdk.KEY_Alt_R) and self.jiggling and not self._jiggle_sticky:
@@ -1040,9 +1074,10 @@ class Launchpad(Gtk.ApplicationWindow):
             elif M.is_folder(target):
                 self.model.make_folder(target, d["item"], target["folder"])
             else:
-                cats_a = (self.installed[target].get_categories() or "").split(";") if target in self.installed else []
-                cats_b = (self.installed[d["item"]].get_categories() or "").split(";") \
-                    if d["item"] in self.installed else []
+                def cats(k):
+                    return apps._entry_field(self.installed[k], "get_categories", "Categories").split(";") \
+                        if k in self.installed else []
+                cats_a, cats_b = cats(target), cats(d["item"])
                 self.model.make_folder(target, d["item"], M.folder_name(cats_a, cats_b))
         self.save()
         self.render()

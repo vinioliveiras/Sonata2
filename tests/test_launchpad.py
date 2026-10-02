@@ -92,6 +92,53 @@ class LaunchpadTest(unittest.TestCase):
         self.win._key(None, Gdk.KEY_Escape, 0, 0)
         self.assertEqual(self.win.search.get_text(), "")
 
+    def _folder(self):
+        a, b = self.win.model.pages[0][0], self.win.model.pages[0][1]
+        self.win.model.make_folder(a, b, "Work")
+        self.win.render()
+        settle(200)
+        folder = self.win.model.pages[0][0]
+        self.win._open_folder(folder)
+        settle(300)
+        from gi.repository import Gtk
+        title = self.win.folder_view[0].get_first_child()
+        self.assertIsInstance(title, Gtk.EditableLabel)
+        return folder, title
+
+    def test_rename_shows_live_and_sticks(self):
+        """Vini: the folder's name in the grid follows the typing (it used to
+        keep the old name: the tile was reused as it was)."""
+        folder, title = self._folder()
+        tile = self.win._item_widget(folder)
+        title.start_editing()
+        settle(50)
+        title.set_text("Games")
+        self.assertEqual(tile.label.get_label(), "Games")                 # live
+        title.stop_editing(True)
+        settle(100)
+        self.assertEqual(folder["folder"], "Games")
+        self.assertEqual(self.win._item_widget(folder).label.get_label(), "Games")
+        title.start_editing()
+        title.set_text("Nope")
+        title.stop_editing(False)                                          # Esc: the old name everywhere
+        settle(100)
+        self.assertEqual(self.win._item_widget(folder).label.get_label(), "Games")
+
+    def test_arrow_keys_move_in_the_name(self):
+        """Vini: arrows went to the grid while renaming; they move the cursor now."""
+        from gi.repository import Gdk
+        folder, title = self._folder()
+        title.start_editing()
+        settle(100)
+        self.assertIs(self.win._editing_title(), title)
+        for k in (Gdk.KEY_Left, Gdk.KEY_Right, Gdk.KEY_Up, Gdk.KEY_Down, Gdk.KEY_Home, Gdk.KEY_End):
+            self.assertFalse(self.win._key(None, k, 0, 0))                # left to the text
+        self.assertTrue(self.win._key(None, Gdk.KEY_Escape, 0, 0))         # Esc: stops renaming only
+        self.assertFalse(title.get_editing())
+        self.assertIsNotNone(self.win.folder_view)
+        self.assertIsNone(self.win._editing_title())
+        self.assertTrue(self.win._key(None, Gdk.KEY_Right, 0, 0))          # the grid's again
+
     def test_toggle_hides(self):
         self.win.close_launchpad()
         settle(L.CLOSE_MS + 200)
