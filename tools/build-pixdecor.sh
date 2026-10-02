@@ -27,7 +27,17 @@ if [ -n "$missing" ]; then
 fi
 pdir="$(mktemp -d)"
 log="$pdir.log"
-step() { "$@" >>"$log" 2>&1 || { echo "  pixdecor didn't build ($1 failed); the last lines of $log:"; tail -n 15 "$log" | sed 's/^/    /'; exit 1; }; }
+# a failed step shows its errors (compiler warnings would bury them), else the log's end
+step() {
+    "$@" >>"$log" 2>&1 && return
+    echo "  pixdecor didn't build ($1 failed); from $log:"
+    if grep -qE "error:|ERROR:" "$log"; then
+        grep -E -A3 "error:|ERROR:" "$log" | head -n 40 | sed 's/^/    /'
+    else
+        tail -n 15 "$log" | sed 's/^/    /'
+    fi
+    exit 1
+}
 curl -fsSL "https://codeload.github.com/soreau/pixdecor/tar.gz/$PIXDECOR_COMMIT" -o "$pdir.tgz" >>"$log" 2>&1 ||
     { echo "  pixdecor: couldn't download it"; exit 1; }
 step tar xzf "$pdir.tgz" -C "$pdir" --strip-components=1
