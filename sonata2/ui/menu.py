@@ -213,8 +213,13 @@ def _checks_after_text(pop) -> None:
         while w is not None:
             if w.get_css_name() == "modelbutton":
                 row(w)
-            else:
-                walk(w)
+                if getattr(w, "_sonata_check", None) is None and not getattr(w, "_sonata_watch", False):
+                    # (an indicator GTK only makes when the row shows)
+                    w._sonata_watch = True
+                    w.connect("map", lambda b: GLib.idle_add(lambda: (row(b), False)[1]))
+            # also inside a row: a nested submenu (the Dock's Options) is a popover of
+            # its own under the row that opens it (Vini: "Keep in Dock" lost its check)
+            walk(w)
             w = w.get_next_sibling()
 
     def indicator(btn):

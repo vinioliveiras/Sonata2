@@ -53,4 +53,35 @@ class MenuChecksTest(unittest.TestCase):
         self.assertEqual(checks[2].get_opacity(), 0)           # off
         self.assertIs(rows[1].get_last_child(), checks[1])     # after the text
         pop.popdown()
+        for _ in range(60):                    # the menu unparents itself (idle) before the window goes
+            ctx.iteration(False)
+        win.destroy()
+
+    def test_checks_in_a_submenu(self):
+        """Vini: the Dock's Options > "Keep in Dock" lost its check -- a
+        nested submenu is a popover of its own under the row that opens it."""
+        if not Gtk.init_check():
+            self.skipTest("no display")
+        theme.setup()
+        win = Gtk.Window(default_width=400, default_height=300)
+        b = Gtk.Button(label="x")
+        win.set_child(b)
+        win.present()
+        I = menu.Item
+        pop = menu.popup(b, [[I("New Window", lambda: 0),
+                              I("Options", submenu=[[I("Keep in Dock", lambda s: 0, checked=True),
+                                                     I("Open at Login", lambda s: 0, checked=False)]])]])
+        ctx = GLib.MainContext.default()
+        for _ in range(60):
+            ctx.iteration(False)
+        rows = {r.get_property("text"): r for r in _walk(pop, "modelbutton", [])}
+        rows["Options"].activate()
+        for _ in range(60):
+            ctx.iteration(False)
+        rows = {r.get_property("text"): r for r in _walk(pop, "modelbutton", [])}
+        self.assertEqual(rows["Keep in Dock"]._sonata_check.get_opacity(), 1)
+        self.assertEqual(rows["Open at Login"]._sonata_check.get_opacity(), 0)
+        pop.popdown()
+        for _ in range(60):                    # the menu unparents itself (idle) before the window goes
+            ctx.iteration(False)
         win.destroy()
