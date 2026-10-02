@@ -2,14 +2,13 @@
 macOS 26): the same component -- the same apps, folders, Hidden folder,
 menus, drags to the Dock and the Trash, jiggle mode, linked folders -- on a
 glass panel in the middle of the screen instead of over all of it.
-Settings > Apps > Style picks it; its glass and transparency: Settings >
+Settings > Appearance > Apps style picks it; its glass and transparency: Settings >
 Appearance > Glass & Transparency.
 
     [icon] Apps (type to search)                                   [...]
     [ Social ][ Creativity ][ Entertainment ][ Productivity & Finance ][ Utilities ][ Other ]
-    suggestions: the apps opened last from here (then the Dock's)
-    Folders: your Launchpad folders (and Hidden)
-    Social ...  Creativity ...  one titled grid per category (every app)
+    your apps and folders in the full screen's order (Hidden last);
+    a tab: that category's apps by name (again: back to your order)
 
 MenuView is only the layout: the tiles are Launchpad's own LaunchItems, and
 everything they do goes through the Launchpad (shell/launchpad.py, mode
@@ -28,11 +27,10 @@ from .. import apps, config, names, ui  # noqa: E402
 from .. import launchpad_model as M  # noqa: E402
 
 NAME = "launcher"                 # ~/.config/sonata2/launcher.json
-DEFAULTS = {"style": "fullscreen", "recent": []}
+DEFAULTS = {"style": "fullscreen"}
 STYLES = (("fullscreen", "Full Screen"), ("window", names.APPS_MENU))
 COLS = 7
 ICON = 64
-SUGGESTIONS = 7
 OPEN_MS, CLOSE_MS, FADE_MS = 220, 140, 150
 TILE_W = 128                      # a column's width: the panel's width decides how many (4-7)
 
@@ -85,7 +83,7 @@ ui.register("""
 .lpw-empty { color: %(label_secondary)s; font-size: %(text_title)s; margin: 40px 0; }
 @keyframes lpw-fade { from { opacity: 0; } to { opacity: 1; } }
 .lpw-body { animation: lpw-fade %(fade_ms)dms ease-out both; }
-.lpw-more label { font-size: 15px; letter-spacing: 1px; margin-top: -4px; }
+.lpw-dots { font-size: 15px; letter-spacing: 1px; margin-top: -4px; }   /* (not "label": its menu inherits it) */
 @keyframes lpw-in { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
 .lpw-panel.opening { animation: lpw-in %(open_ms)dms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .lpw-panel.closing { opacity: 0; transform: scale(0.97);
@@ -108,28 +106,16 @@ def category_of(info) -> str:
     return OTHER[0]
 
 
-def suggestions(found: dict) -> list:
-    """The apps opened last from here, then the Dock's, up to SUGGESTIONS."""
-    out = [k for k in config.load(NAME, DEFAULTS).get("recent") or [] if k in found]
-    if len(out) < SUGGESTIONS:
-        from . import dock as D
-        for key in config.load("dock", D.DEFAULTS).get("pinned") or []:
-            k = key[:-8] if key.endswith(".desktop") else key
-            if k in found and k not in out:
-                out.append(k)
-    return out[:SUGGESTIONS]
-
-
-def note_opened(key: str) -> None:
-    cfg = config.load(NAME, DEFAULTS)
-    cfg["recent"] = ([key] + [k for k in cfg.get("recent") or [] if k != key])[:SUGGESTIONS * 2]
-    config.update(NAME, recent=cfg["recent"])
+def panel_size(w: int, h: int) -> tuple:
+    """The panel for a w x h screen (Vini: smaller than at first, which took
+    60 % of the width): about 46 % x 58 %, within 560-940 x 440-680."""
+    return max(560, min(940, int(w * 0.46))), max(440, min(680, int(h * 0.58)))
 
 
 def flow(widgets, cols: int, pad=None) -> Gtk.FlowBox:
     fb = Gtk.FlowBox(max_children_per_line=cols, min_children_per_line=cols, homogeneous=True,
                      selection_mode=Gtk.SelectionMode.NONE, column_spacing=4, row_spacing=4,
-                     activate_on_single_click=False)
+                     activate_on_single_click=False, valign=Gtk.Align.START)   # few apps: at the top (Vini)
     for w in widgets:
         fb.append(w)
     if pad is not None:                       # hold an app over another: a folder (as in the full screen)
@@ -163,8 +149,9 @@ class MenuView:
         self.search.connect("search-changed", lambda *_: self.refresh())
         self.search.connect("activate", lambda *_: self.open_selected())
         head.append(self.search)
-        more = Gtk.Button(label="\u2022\u2022\u2022", css_classes=["lpw-more"], can_focus=False,
-                          valign=Gtk.Align.CENTER, tooltip_text="Options")
+        more = Gtk.Button(child=Gtk.Label(label="\u2022\u2022\u2022", css_classes=["lpw-dots"]),
+                          css_classes=["lpw-more"], can_focus=False, valign=Gtk.Align.CENTER,
+                          tooltip_text="Options")
         more.connect("clicked", lambda b: self._menu(b))
         head.append(more)
         self.panel.append(head)
@@ -174,7 +161,7 @@ class MenuView:
         self.content.append(self.tabs)
         self.content.append(Gtk.Box(css_classes=["lpw-rule"]))
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_bottom=18,
-                            css_classes=["lpw-body"])
+                            valign=Gtk.Align.START, css_classes=["lpw-body"])
         self.scroll = Gtk.ScrolledWindow(child=self.body, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
         self.content.append(self.scroll)
         self.panel.append(self.content)
@@ -195,8 +182,7 @@ class MenuView:
         display = self.pad.get_display()
         mon = display.get_monitors().get_item(0) if display and display.get_monitors().get_n_items() else None
         w, h = (mon.get_geometry().width, mon.get_geometry().height) if mon else (1600, 1000)
-        pw = max(600, min(1180, int(w * 0.60)))
-        ph = max(460, min(820, int(h * 0.66)))
+        pw, ph = panel_size(w, h)
         self.panel.set_size_request(pw, ph)
         self.cols = max(4, min(COLS, (pw - 44) // TILE_W))
 
@@ -263,16 +249,11 @@ class MenuView:
         config.update(NAME, style=s)
         self.pad.close_launchpad()
 
+    SETTINGS_PAGE = "appearance"          # where the style is chosen (Vini)
+
     def _settings(self) -> None:
-        def run():
-            import os
-            import subprocess
-            import sys
-            root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in (root, os.environ.get("PYTHONPATH")) if p))
-            subprocess.Popen([sys.executable, "-m", "sonata2", "settings", "--page", "launchpad"], env=env,
-                             start_new_session=True)
-        self.pad.close_launchpad(run)
+        from .topbar import open_settings
+        self.pad.close_launchpad(lambda: open_settings(self.SETTINGS_PAGE))
 
     # -- content ----------------------------------------------------------------------------------
     def _apps(self) -> dict:
@@ -280,19 +261,22 @@ class MenuView:
         shown = set(self.pad.model.all_apps())
         return {k: v for k, v in self.pad.installed.items() if k in shown}
 
+    def _ordered(self) -> list:
+        """Everything in the full screen's order: your arrangement, folders
+        (an app in a folder shows only inside it) and Hidden last."""
+        return [it for page in self.pad._pages_with_hidden() for it in page
+                if M.is_folder(it) or it in self.pad.installed]
+
     def _groups(self) -> dict:
-        found = self._apps()
+        """Category -> the apps on the grid (not those inside folders), by name."""
+        on_grid = {it for page in self.pad.model.pages for it in page if not M.is_folder(it)}
+        found = {k: v for k, v in self._apps().items() if k in on_grid}
         groups = {}
         for key, info in found.items():
             groups.setdefault(category_of(info), []).append(key)
         for keys in groups.values():
             keys.sort(key=lambda k: found[k].get_display_name().lower())
         return groups
-
-    def _folders(self) -> list:
-        """The Launchpad's folders, in its order, then Hidden (if any)."""
-        out = [it for page in self.pad._pages_with_hidden() for it in page if M.is_folder(it)]
-        return out
 
     def _build_tabs(self) -> None:
         while (c := self.tabs.get_first_child()) is not None:
@@ -326,6 +310,7 @@ class MenuView:
             w.set_name_text(item["folder"])
         if hasattr(w, "badge"):
             w.badge.set_visible(self.pad.jiggling)
+        w.set_vexpand(False)                           # (the full screen's cells stretch; rows here don't)
         self.tiles.append(w)
         return w
 
@@ -360,16 +345,10 @@ class MenuView:
             else:
                 self.body.append(Gtk.Label(label="No Results", css_classes=["lpw-empty"]))
             return
+        if self.tab is None:                           # Launchpad's own order (Vini); a tab sorts by category
+            self.body.append(flow([self.tile(it, "all") for it in self._ordered()], self.cols, self.pad))
+            return
         groups = self._groups()
-        if self.tab is None:
-            top = suggestions(found)
-            if top:
-                self.body.append(flow([self.tile(k, "top") for k in top], self.cols, self.pad))
-                self.body.append(Gtk.Box(css_classes=["lpw-rule"]))
-            folders = self._folders()
-            if folders:
-                self.body.append(Gtk.Label(label="Folders", xalign=0, css_classes=["lpw-section"]))
-                self.body.append(flow([self.tile(f, "f") for f in folders], self.cols, self.pad))
         for cid, title in [(c[0], c[1]) for c in CATEGORIES] + [OTHER]:
             keys = groups.get(cid)
             if not keys or (self.tab is not None and cid != self.tab):
@@ -383,6 +362,8 @@ class MenuView:
         d = pad._drag
         if not d:
             return Gdk.DragAction.MOVE        # from the Dock: dropping here takes it out of the Dock
+        if pad.leave_folder(d):                # out of Hidden: shown again
+            return Gdk.DragAction.MOVE
         if d["folder"] is not None:            # dragged out of an open folder: out of it
             folder = d["folder"]
             pad._close_folder()

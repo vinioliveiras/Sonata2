@@ -731,9 +731,6 @@ class Launchpad(Gtk.ApplicationWindow):
             return
         info = self.installed.get(widget.item)
         if info:
-            if self.mode == "menu":
-                from .launchpad_window import note_opened
-                note_opened(widget.item)                # its suggestions row
             ctx = self.get_display().get_app_launch_context()
             self.close_launchpad(lambda: info.launch([], ctx))
 
@@ -1021,9 +1018,8 @@ class Launchpad(Gtk.ApplicationWindow):
         src = Gtk.DragSource(actions=Gdk.DragAction.MOVE | Gdk.DragAction.COPY)
 
         def prepare(_s, _x, _y):
-            if (M.is_folder(widget.item) and widget.item.get("locked")) or \
-                    (self.folder_view and self.folder_view[1] and self.folder_view[1].get("locked")):
-                return None                     # Hidden stays where it is; its apps come out by the menu
+            if M.is_folder(widget.item) and widget.item.get("locked"):
+                return None                     # Hidden itself stays where it is (its apps can leave: Vini)
             providers = [Gdk.ContentProvider.new_for_value("sonata2-launchpad-item")]
             if M.is_folder(widget.item):            # the Dock keeps a copy of the folder
                 if not widget.item.get("link"):     # the Dock's copy stays the same folder (folder_link)
@@ -1083,11 +1079,29 @@ class Launchpad(Gtk.ApplicationWindow):
             self._drag["target"].remove_css_class("folder-target")
             self._drag["target"] = None
 
+    def leave_folder(self, d) -> bool:
+        """The dragged app came out of its open folder: Hidden shows it
+        again (Vini: dragging out of Hidden did nothing), a folder lets it
+        go to the end. True when it was out of Hidden."""
+        folder = d.get("folder")
+        if folder is None or not folder.get("locked"):
+            return False
+        d["folder"] = None
+        self._close_folder()
+        if d["item"] in self.model.hidden:
+            self.model.hidden.remove(d["item"])
+            self.model.reconcile()               # back at the end of the grid
+            self.save()
+            self.render()
+        return True
+
     def drag_over(self, grid: PageGrid, x, y):
         d = self._drag
         if not d:
             return Gdk.DragAction.MOVE      # an app dragged from the Dock: dropping here unpins it
         if grid.index < 0:
+            return Gdk.DragAction.MOVE
+        if self.leave_folder(d):
             return Gdk.DragAction.MOVE
         if d["folder"] is not None and self.folder_view:     # dragged out of the open folder
             self._close_folder()

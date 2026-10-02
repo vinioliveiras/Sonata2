@@ -2038,6 +2038,11 @@ class Settings(Adw.ApplicationWindow):
                          for d in (os.listdir(os.path.join(base, "icons")) if os.path.isdir(os.path.join(base, "icons"))
                                    else []) if os.path.exists(os.path.join(base, "icons", d, "index.theme"))}
                         | {"Sonata"})
+        from ..shell import launchpad_window as LW          # Vini: with the rest of the look
+        s.add(combo_row(f"{names.APPS} style", list(LW.STYLES), LW.style(),
+                        lambda v: config.update(LW.NAME, style=v),
+                        subtitle=f"Full Screen: over the whole screen. {names.APPS_MENU}: a panel in the middle, "
+                                 "apps by category"))
         s.add(combo_row("Icons", [(t, t) for t in themes], app["icon_theme"],
                         lambda v: (self._save("appearance", "icon_theme", v),
                                    self.ask_restart("sonata", "The new icons"))))
@@ -2368,10 +2373,6 @@ class Settings(Adw.ApplicationWindow):
             lambda r: r == "reset" and (config.save("launchpad", {"pages": [], "hidden": config.load(
                 "launchpad", {"pages": [], "hidden": []}).get("hidden", [])}),
                                         self.toast(f"{names.APPS} was reset")), parent=self))
-        from ..shell import launchpad_window as LW
-        g.add(combo_row("Style", list(LW.STYLES), LW.style(), lambda v: config.update(LW.NAME, style=v),
-                        subtitle=f"Full Screen: over the whole screen. {names.APPS_MENU}: a panel in the middle, "
-                                 "apps by category"))
         row = Adw.ActionRow(title="Layout", subtitle="Pages, folders and order")
         row.add_suffix(reset)
         g.add(row)
