@@ -488,6 +488,39 @@ class DockFolderTest(unittest.TestCase):
         hidden.do_snapshot(snap)
         self.assertIsNotNone(snap.to_node())
 
+    def test_folder_reaches_the_other_displays_dock(self):
+        """Vini (Dock on every display): making a folder made the apps vanish
+        and no folder appeared -- the other display's Dock read the new pins
+        without the new folder, dropped "folder:N", took the apps out and
+        saved, and the two Docks undid it."""
+        import copy
+        import json
+        from types import SimpleNamespace
+        d, a, b = self.dock, self.apps[0], self.apps[1]
+        other_cfg = copy.deepcopy(d.cfg)
+        other = D.Dock(other_cfg)
+        w2 = Gtk.Window(child=other)
+        w2.present()
+        settle()
+        fkey = d.make_folder([a, b], name="Work")                     # on this display
+        path = os.path.join(config.CONFIG_DIR, "dock.json")
+        saved = open(path).read()
+        win = SimpleNamespace(cfg=other_cfg, dock=other, LIVE_KEYS=D.DockWindow.LIVE_KEYS,
+                              REBUILD_KEYS=D.DockWindow.REBUILD_KEYS, rebuild=lambda: None)
+        D.DockWindow._config_changed(win)                            # the other display hears of it
+        settle(400)
+        self.assertIn(fkey, other.tiles)
+        self.assertEqual(other.folder(fkey)["apps"], [a, b])
+        self.assertNotIn(a, other.tiles)
+        self.assertEqual(open(path).read(), saved)                   # it didn't write back
+        on_disk = json.loads(saved)
+        self.assertIn(fkey, on_disk["pinned"])
+        self.assertEqual(on_disk["folders"][F.folder_id(fkey)]["apps"], [a, b])
+        d.add_to_folder(fkey, self.apps[2])                          # changes follow too
+        D.DockWindow._config_changed(win)
+        self.assertEqual(other.tiles[fkey].icon.keys, [a, b, self.apps[2]])
+        w2.destroy()
+
     def test_icon_draws(self):
         icon = F.FolderIcon(self.apps[:3], 48)
         self.assertEqual(icon.do_measure(Gtk.Orientation.HORIZONTAL, -1)[0], 48)

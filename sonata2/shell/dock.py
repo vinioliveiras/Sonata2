@@ -1693,17 +1693,32 @@ class DockWindow(Gtk.ApplicationWindow):
         """dock.json changed (Settings app): apply appearance/behaviour keys.
         The Dock's own writes (pins, recents) don't touch these, so no loop."""
         new = config.load("dock", DEFAULTS)
-        # "Keep in Dock" from Launchpad writes pinned: add/remove those tiles
         d = self.dock
+        # folders first: another display's Dock made / changed one (all_displays).
+        # Without this the pins below saw "folder:N" as unknown, dropped it and
+        # took its apps out -- Vini: making a folder made the apps vanish
+        if d and isinstance(new.get("folders"), dict) and new["folders"] != self.cfg.get("folders"):
+            self.cfg["folders"] = new["folders"]
+            for key, tile in list(d.tiles.items()):
+                f = d.folder(key)
+                if f is not None:
+                    tile.icon.set_apps(f["apps"])
+                    tile.icon.set_locked(f.get("locked", False))
+                    tile.name = f["name"]
+                    tile.label.set_text(f["name"])
+        # "Keep in Dock" from Launchpad writes pinned: add/remove those tiles
         if d and new["pinned"] is not None and new["pinned"] != self.cfg["pinned"]:
-            for key in [k for k in new["pinned"] if k not in self.cfg["pinned"]]:
-                if not d.can_pin(key):
-                    continue                        # the Dock is full
-                if key not in d.tiles and not d._add_known_tile(key):
-                    continue
-                self.cfg["pinned"].append(key)
-            for key in [k for k in self.cfg["pinned"] if k not in new["pinned"]]:
-                d.set_pinned(key, False)
+            # the file's pins, in its order (written by Launchpad, Settings or
+            # another display's Dock); nothing written back from here -- two
+            # Docks answering each other's saves lost a new folder
+            gone = [k for k in self.cfg["pinned"] if k not in new["pinned"]]
+            for key in new["pinned"]:
+                if key not in d.tiles:
+                    d._add_known_tile(key)
+            self.cfg["pinned"] = list(new["pinned"])
+            for key in gone:
+                if key in d.tiles and key not in PERMANENT and key not in d.windows and not d._is_recent(key):
+                    d._remove_tile(key)
             d._relayout()
         cur = dict(self.cfg, icon_size=d.user_size if d else self.cfg["icon_size"])
         changed = [k for k in self.LIVE_KEYS if new[k] != cur[k]]
