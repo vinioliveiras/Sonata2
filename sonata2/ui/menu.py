@@ -43,8 +43,12 @@ popover.menu modelbutton:focus-visible {
 popover.menu.pointer-out modelbutton:selected:not(:hover):not(:focus-visible) {
   background: none; color: inherit; }
 popover.menu modelbutton:disabled { color: %(label_tertiary)s; }
-popover.menu modelbutton check { min-width: 12px; min-height: 12px; margin-right: 4px;
-  border: none; background: none; box-shadow: none; color: inherit; -gtk-icon-size: 12px; }
+/* GTK's own check/radio sits before the text and pushes every row's text
+   right (its column is shared): hidden, with no width -- _checks_after_text
+   shows a check after the text instead (Vini) */
+popover.menu modelbutton check, popover.menu modelbutton radio { min-width: 0; min-height: 0; margin: 0;
+  padding: 0; border: none; background: none; box-shadow: none; opacity: 0; -gtk-icon-size: 0; }
+popover.menu modelbutton image.sonata-menu-check { -gtk-icon-size: 12px; margin-left: 12px; color: inherit; }
 popover.menu modelbutton arrow { -gtk-icon-size: 12px; color: inherit; }
 popover.menu separator { margin: 5px 10px; min-height: 1px; background-color: %(separator)s; }
 /* pop-up buttons' lists (Gtk.DropDown: Settings, Control Center's sound
@@ -195,8 +199,46 @@ def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
     OPEN.add(pop)
     _no_scroll(pop)
     _hover_only(pop)
+    pop.connect("map", _checks_after_text)
     pop.popup()
     return pop
+
+
+def _checks_after_text(pop) -> None:
+    """Checkmark rows: the text starts where every other row's does and the
+    check follows it at the right edge (Vini). GTK's own indicator (hidden
+    by CSS) still carries the state; our image mirrors it."""
+    def walk(w):
+        w = w.get_first_child()
+        while w is not None:
+            if w.get_css_name() == "modelbutton":
+                row(w)
+            else:
+                walk(w)
+            w = w.get_next_sibling()
+
+    def indicator(btn):
+        box = btn.get_first_child()
+        c = box.get_first_child() if box is not None else None
+        while c is not None:
+            if c.get_css_name() in ("check", "radio"):
+                return c
+            c = c.get_next_sibling()
+        return None
+
+    def row(btn):
+        ind = indicator(btn)
+        if ind is None or getattr(btn, "_sonata_check", None) is not None:
+            return
+        img = Gtk.Image(icon_name="object-select-symbolic", css_classes=["sonata-menu-check"],
+                        halign=Gtk.Align.END, hexpand=True)
+        img.insert_before(btn, None)                  # last: after the text (and its shortcut)
+        btn._sonata_check = img
+        sync = lambda *_a: img.set_opacity(1 if ind.get_state_flags() & Gtk.StateFlags.CHECKED else 0)
+        sync()
+        ind.connect("state-flags-changed", sync)
+        btn.connect("destroy", lambda *_a: img.get_parent() is not None and img.unparent())
+    walk(pop)
 
 
 def _pass_clicks(pop, root) -> None:
