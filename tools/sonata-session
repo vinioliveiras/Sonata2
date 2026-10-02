@@ -74,7 +74,7 @@ gpu_set=""; display_gpu=""
 gpu_flag="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/compositor-display-gpu"
 if [ -z "${WLR_DRM_DEVICES:-}" ] && { [ "${SONATA_PRIMARY_GPU:-}" = on ] || \
         { [ -e "$gpu_flag" ] && [ "${SONATA_PRIMARY_GPU:-}" != off ]; }; }; then
-    best=""; best_n=0; all=""
+    best=""; best_n=0; all=""; total=0
     for card in /sys/class/drm/card[0-9]; do
         [ -e "$card/device" ] || continue
         n=0
@@ -83,11 +83,19 @@ if [ -z "${WLR_DRM_DEVICES:-}" ] && { [ "${SONATA_PRIMARY_GPU:-}" = on ] || \
         done
         dev="/dev/dri/$(basename "$card")"
         all="$all $dev"
+        total=$((total + n))
         if [ "$n" -gt "$best_n" ]; then best="$dev"; best_n=$n; fi
     done
     if [ -n "$best" ] && [ "$(echo $all | wc -w)" -gt 1 ]; then
         order="$best"
-        for dev in $all; do [ "$dev" = "$best" ] || order="$order:$dev"; done
+        # every screen on that GPU (a MUX in dGPU / "Ultimate" mode): the
+        # others are left out, so their driver can't take the session down
+        # (Vini: a Radeon 680M page fault in the copies crashed Wayfire with
+        # nothing on its screens). SONATA_KEEP_ALL_GPUS=1 keeps them (a
+        # display plugged into the other GPU then shows up without a new login).
+        if [ "$best_n" -lt "$total" ] || [ "${SONATA_KEEP_ALL_GPUS:-}" = 1 ]; then
+            for dev in $all; do [ "$dev" = "$best" ] || order="$order:$dev"; done
+        fi
         export WLR_DRM_DEVICES="$order"
         gpu_set=1
         display_gpu=1

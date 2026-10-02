@@ -1675,6 +1675,44 @@ class NvidiaNeverDrawsByDefaultRegressions(unittest.TestCase):
         self.assertEqual(self._run([("card0", "amdgpu"), ("card1", "nvidia")], {"SONATA_PRIMARY_GPU": "off"}), "|")
 
 
+class DisplayGpuOnlyRegressions(unittest.TestCase):
+    """Vini: with the MUX in dGPU mode every screen is on the NVIDIA card, yet
+    the Radeon 680M still worked for the session (copies) and its page fault
+    crashed Wayfire. With "Draw with the Displays' Graphics Card" on, a GPU
+    with no screen is left out."""
+
+    def _run(self, cards, env=None):
+        import subprocess
+        sess = (pathlib.Path(__file__).resolve().parent.parent / "tools" / "sonata-session").read_text()
+        start = sess.index('gpu_set=""; display_gpu=""')
+        end = sess.index('if [ -n "$gpu_set" ]; then')
+        root = tempfile.mkdtemp()
+        drm = os.path.join(root, "drm")
+        for name, drv, screens in cards:
+            os.makedirs(os.path.join(root, "drivers", drv), exist_ok=True)
+            os.makedirs(os.path.join(drm, name, "device"))
+            os.symlink(os.path.join(root, "drivers", drv), os.path.join(drm, name, "device", "driver"))
+            for i, st in enumerate(screens):
+                os.makedirs(os.path.join(drm, f"{name}-C{i}"))
+                with open(os.path.join(drm, f"{name}-C{i}", "status"), "w") as f:
+                    f.write(st + "\n")
+        flag = os.path.join(root, ".config", "sonata2", "compositor-display-gpu")
+        os.makedirs(os.path.dirname(flag))
+        open(flag, "w").close()
+        script = sess[start:end].replace("/sys/class/drm/", drm + "/") + 'echo "$WLR_DRM_DEVICES|$display_gpu"'
+        e = {"PATH": os.environ["PATH"], "HOME": root, **(env or {})}
+        return subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=e).stdout.strip()
+
+    def test_gpu_without_screens_left_out(self):
+        mux = [("card0", "amdgpu", ["disconnected"]), ("card1", "nvidia", ["connected", "connected", "disconnected"])]
+        self.assertEqual(self._run(mux), "/dev/dri/card1|1")
+        self.assertEqual(self._run(mux, {"SONATA_KEEP_ALL_GPUS": "1"}), "/dev/dri/card1:/dev/dri/card0|1")
+
+    def test_screens_on_both_keep_both(self):
+        hybrid = [("card0", "amdgpu", ["connected"]), ("card1", "nvidia", ["connected", "connected"])]
+        self.assertEqual(self._run(hybrid), "/dev/dri/card1:/dev/dri/card0|1")
+
+
 class DisplayGpuSafetyNetRegressions(unittest.TestCase):
     """If the opt-in display GPU crashes the session again (NVIDIA refusing
     buffers), Sonata turns it off for the next login and says so once."""
