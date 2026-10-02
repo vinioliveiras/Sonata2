@@ -1652,6 +1652,18 @@ class Dock(Gtk.Box):
         for t in wins:
             self.manager.set_rectangle(t, surface, b.get_x() - ox, b.get_y() - oy, b.get_width(), b.get_height())
 
+    def _here(self, wins) -> list:
+        """The windows of `wins` on this Dock's display (all of them when
+        Wayfire can't tell, or with a single Dock)."""
+        native = self.get_native()
+        surface = native.get_surface() if native else None
+        if not surface or len(_DOCKS) <= 1:
+            return list(wins)
+        mine, placed = self._windows_here(surface)
+        if placed is None:
+            return list(wins)
+        return [t for t in wins if (t.app_id, t.title) in mine]
+
     def _bring_here(self, wins) -> bool:
         """Minimized windows of an app that are on another display move to this
         Dock's (Wayfire keeps their place on the screen). True when any moved."""
@@ -1708,7 +1720,12 @@ class Dock(Gtk.Box):
             if self.cfg.get("click_minimizes", True) and any(t.activated for t in shown) and not over_launchpad:
                 # the app in front: clicking its icon minimizes its windows (Vini)
                 for d in list(_DOCKS) or [self]:
-                    d._update_rectangles()     # aimed from the display each window is on now
+                    if d is not self:
+                        d._update_rectangles()     # aimed from the display each window is on now
+                # this Dock is magnified under the pointer, so its general update
+                # would wait until after the minimize and the windows flew to the
+                # old target, the other display's icon (Vini): the clicked icon now
+                self._aim_at(tile, self._here(wins))
                 for t in shown:
                     self.manager.minimize(t)
                 return

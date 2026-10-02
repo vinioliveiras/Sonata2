@@ -137,3 +137,30 @@ class BringHereTest(unittest.TestCase):
         D.Dock._aim_at(d, tile, [t])
         surface = d.get_native.return_value.get_surface.return_value
         d.manager.set_rectangle.assert_called_once_with(t, surface, 300, 10, 64, 64)
+
+
+class MinimizeAimTest(unittest.TestCase):
+    """Vini: on the second display, minimizing from the Dock still flew to
+    the first display's icon -- the clicked Dock is magnified, so its own
+    update waited until after the minimize."""
+
+    def test_click_aims_at_the_clicked_icon_first(self):
+        src = open(D.__file__).read()
+        body = src[src.index("    def _clicked(self"):src.index("    def launch_feedback")]
+        i = body.index('self.cfg.get("click_minimizes", True)')
+        self.assertLess(body.index("self._aim_at(tile, self._here(wins))", i),
+                        body.index("self.manager.minimize(t)", i))
+        self.assertIn("if d is not self:", body[i:])
+
+    def test_here_keeps_this_displays_windows(self):
+        from unittest import mock
+        t1, t2 = mock.Mock(app_id="chrome", title="A"), mock.Mock(app_id="chrome", title="B")
+        d = mock.Mock()
+        d._windows_here.return_value = ({("chrome", "B")}, {("chrome", "A"), ("chrome", "B")})
+        with mock.patch.object(D, "_DOCKS", [object(), object()]):
+            self.assertEqual(D.Dock._here(d, [t1, t2]), [t2])
+        d._windows_here.return_value = (set(), None)                  # Wayfire didn't answer
+        with mock.patch.object(D, "_DOCKS", [object(), object()]):
+            self.assertEqual(D.Dock._here(d, [t1, t2]), [t1, t2])
+        with mock.patch.object(D, "_DOCKS", [object()]):              # one Dock
+            self.assertEqual(D.Dock._here(d, [t1]), [t1])
