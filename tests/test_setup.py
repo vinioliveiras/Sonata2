@@ -41,6 +41,16 @@ class SetupTest(unittest.TestCase):
             self.assertEqual(a.stack.get_visible_child_name(), name)
         a._go(-1)
         self.assertEqual(a.stack.get_visible_child_name(), "sonata")
+        # Vini: the first setup asks how to see the apps
+        self.assertIn("apps", S.SetupAssistant.PAGES)
+        from sonata2.shell import launchpad_window as LW
+        self.assertEqual(set(a.app_cards), {"fullscreen", "window"})
+        a._set_apps_style("window")
+        self.assertEqual(LW.style(), "window")
+        self.assertTrue(a.app_cards["window"].has_css_class("selected"))
+        self.assertFalse(a.app_cards["fullscreen"].has_css_class("selected"))
+        a._set_apps_style("fullscreen")
+        self.assertEqual(LW.style(), "fullscreen")
         a._set_accent("green")
         self.assertEqual(config.load("appearance", {"accent": ""})["accent"], "green")
         a.finish()

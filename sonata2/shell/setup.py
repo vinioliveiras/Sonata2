@@ -2,7 +2,8 @@
 
 After the first login into Sonata, over the blurred wallpaper (the login
 screen's look): a "hello" in several languages, Choose Your Look (Light /
-Dark, accent colour), a few Sonata choices, then "Get Started". Every choice
+Dark, accent colour), how to see the apps (full screen or the Apps Menu), a
+few Sonata choices, then "Get Started". Every choice
 applies at once and stays in Settings. Shown once: setup.json "done".
 `sonata2 autostart` starts it (`sonata2 setup`) while it isn't done;
 `sonata2 setup --preview` shows it again any time."""
@@ -99,6 +100,59 @@ class LookPreview(Gtk.Widget):
         rounded(rect(w * 0.28, h - 16, w * 0.44, 11), 4, rgba("glass_tint"))  # Dock
 
 
+class AppsPreview(Gtk.Widget):
+    """The two ways to see the apps (Settings > Appearance > Apps style):
+    over the whole screen, or a panel in the middle (the Apps Menu)."""
+
+    COLORS = ("#ff9f0a", "#30d158", "#0a84ff", "#bf5af2", "#ff375f", "#64d2ff", "#ffd60a")
+
+    def __init__(self, texture, kind: str):
+        super().__init__(css_classes=["su-preview"], overflow=Gtk.Overflow.HIDDEN)
+        self.texture, self.kind = texture, kind
+        self.set_size_request(200, 125)
+
+    def do_snapshot(self, snap):
+        w, h = self.get_width(), self.get_height()
+        dark = Adw.StyleManager.get_default().get_dark()
+        t = ui.tokens.palette(dark)
+
+        def rgba(spec):
+            c = Gdk.RGBA()
+            c.parse(spec)
+            return c
+
+        def rect(x, y, rw, rh):
+            return Graphene.Rect().init(x, y, rw, rh)
+
+        def rounded(r, radius, color):
+            rr = Gsk.RoundedRect()
+            rr.init_from_rect(r, radius)
+            snap.push_rounded_clip(rr)
+            snap.append_color(color, r)
+            snap.pop()
+        if self.texture:
+            tw, th = self.texture.get_width(), self.texture.get_height()
+            sc = max(w / tw, h / th)
+            snap.append_texture(self.texture, rect((w - tw * sc) / 2, (h - th * sc) / 2, tw * sc, th * sc))
+        if self.kind == "fullscreen":                                 # dimmed screen, a big grid
+            snap.append_color(Gdk.RGBA(red=0, green=0, blue=0, alpha=0.38), rect(0, 0, w, h))
+            x0, y0, cols, rows, cell, icon = w * 0.14, h * 0.2, 6, 3, w * 0.12, w * 0.07
+        else:                                                         # a panel in the middle, smaller icons
+            snap.append_color(rgba(t["bar_bg"]), rect(0, 0, w, 8))
+            panel = rect(w * 0.2, h * 0.17, w * 0.6, h * 0.62)
+            rounded(panel, 7, rgba(t["menu_bg"]))
+            rounded(rect(panel.get_x() + 6, panel.get_y() + 6, panel.get_width() * 0.4, 4), 2,
+                    rgba(t["separator"]))
+            x0, y0, cols, rows = panel.get_x() + 8, panel.get_y() + 18, 6, 3
+            cell = (panel.get_width() - 16) / cols
+            icon = cell * 0.62
+        for i in range(cols * rows):
+            c, r = i % cols, i // cols
+            rounded(rect(x0 + c * cell + (cell - icon) / 2, y0 + r * cell * 0.95, icon, icon), icon * 0.24,
+                    rgba(self.COLORS[i % len(self.COLORS)]))
+        rounded(rect(w * 0.28, h - 16, w * 0.44, 11), 4, rgba(t["glass_tint"]))  # Dock
+
+
 class SetupAssistant:
     def __init__(self, app, on_done=None):
         self.app = app
@@ -110,8 +164,8 @@ class SetupAssistant:
         over.set_child(Backdrop(self.tex, dim=0.22))
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.SLIDE_LEFT_RIGHT,
                                transition_duration=420, hexpand=True, vexpand=True)
-        for name, page in (("hello", self._hello()), ("look", self._look()), ("sonata", self._sonata()),
-                           ("ready", self._ready())):
+        for name, page in (("hello", self._hello()), ("look", self._look()), ("apps", self._apps()),
+                           ("sonata", self._sonata()), ("ready", self._ready())):
             self.stack.add_named(page, name)
         over.add_overlay(self.stack)
         self.win.set_child(over)
@@ -198,6 +252,24 @@ class SetupAssistant:
         return self._page("Choose Your Look", "Pick an appearance. You can change it later in Settings > Appearance.",
                           body, next_to=True)
 
+    def _apps(self):
+        """Vini: the first setup asks how to see the apps (full screen or the Apps Menu)."""
+        from . import launchpad_window as LW
+        cards = Gtk.Box(spacing=24, halign=Gtk.Align.CENTER)
+        cur = LW.style()
+        self.app_cards = {}
+        for kind, label in LW.STYLES:
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            box.append(AppsPreview(self.tex, kind))
+            box.append(Gtk.Label(label=label, css_classes=["su-caption"]))
+            b = Gtk.Button(child=box, css_classes=["su-card"] + (["selected"] if kind == cur else []))
+            b.connect("clicked", lambda _b, k=kind: self._set_apps_style(k))
+            self.app_cards[kind] = b
+            cards.append(b)
+        return self._page(f"Choose How to See Your {names.APPS}",
+                          f"Over the whole screen, or a smaller {names.APPS_MENU} in the middle that can also "
+                          "sort them by category. You can change it later in Settings > Appearance.", cards, next_to=True)
+
     def _sonata(self):
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["su-panel"], width_request=460)
         app_cfg = config.load("appearance", icons.APPEARANCE_DEFAULTS)
@@ -246,13 +318,19 @@ class SetupAssistant:
             (b.add_css_class if n == name else b.remove_css_class)("selected")
         config.update("appearance", accent=name)
 
+    def _set_apps_style(self, kind):
+        from . import launchpad_window as LW
+        for k, b in self.app_cards.items():
+            (b.add_css_class if k == kind else b.remove_css_class)("selected")
+        config.update(LW.NAME, style=kind)
+
     def _set_titlebars(self, on):
         config.update("appearance", system_titlebars=on)
         from .. import titlebars
         system.run_async(titlebars.apply, None, on)
 
     # -- navigation ----------------------------------------------------------------------
-    PAGES = ("hello", "look", "sonata", "ready")
+    PAGES = ("hello", "look", "apps", "sonata", "ready")
 
     def _go(self, step):
         i = self.PAGES.index(self.stack.get_visible_child_name()) + step
