@@ -1860,6 +1860,9 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         build = (root / "tools" / "build-wayfire.sh").read_text()
         self.assertIn("wayfire-buffer-failures.patch", build)
         self.assertIn('echo "$commit" > "$PREFIX/sonata-commit"', build)
+        # Vini: "wayfire/nonstd/safe-list.hpp: No such file" -- the system's wf-config is older
+        self.assertIn("-Duse_system_wfconfig=disabled", build)
+        self.assertIn("subprojects/wf-config", build)
         for f in ("tools/sonata-session", "tools/build-wayfire.sh", "install.sh"):
             self.assertEqual(subprocess.run(["bash", "-n", str(root / f)]).returncode, 0, f)
 

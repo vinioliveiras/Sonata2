@@ -7,6 +7,8 @@
 # while it matches the installed version (after a Wayfire update, run this
 # again). Takes a few minutes. Run alone to retry; it prints why a build failed.
 set -uo pipefail
+# wf-config comes from Wayfire's own submodule: the commit needs its newer
+# headers (wayfire/nonstd/safe-list.hpp), which the system's may not have
 SRC="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 PREFIX="${SONATA_WAYFIRE_PREFIX:-$HOME/.local/opt/sonata-wayfire}"
 for t in git patch meson ninja pkg-config wayfire; do
@@ -16,7 +18,7 @@ done
 commit="$(wayfire --version 2>/dev/null | sed -n 's/^[0-9.]*-\([0-9a-f]\{7,\}\).*/\1/p' | head -n1)"
 [ -n "$commit" ] || { echo "  wayfire: the installed Wayfire has no commit in its version (a release build): nothing to match"; exit 1; }
 missing=""
-for p in wlroots-0.20 wf-config wayland-server wayland-protocols libinput pixman-1 xkbcommon cairo pango libdrm egl glesv2; do
+for p in wlroots-0.20 wayland-server wayland-protocols libinput pixman-1 xkbcommon cairo pango libdrm egl glesv2; do
     pkg-config --exists "$p" || missing="$missing $p"
 done
 if [ -n "$missing" ]; then
@@ -37,10 +39,10 @@ step() {
 }
 step git clone -q --filter=blob:none https://github.com/WayfireWM/wayfire.git "$wdir/src"
 step git -C "$wdir/src" checkout -q "$commit"
-step git -C "$wdir/src" submodule update -q --init --depth 1 subprojects/wf-json subprojects/wf-utils subprojects/wf-touch
+step git -C "$wdir/src" submodule update -q --init subprojects/wf-json subprojects/wf-utils subprojects/wf-touch subprojects/wf-config
 step patch -d "$wdir/src" -p1 -i "$SRC/wayfire-plugin/wayfire-buffer-failures.patch"
 step meson setup "$wdir/build" "$wdir/src" --prefix "$PREFIX" --libdir lib --buildtype release \
-    -Duse_system_wlroots=enabled -Duse_system_wfconfig=enabled -Dtests=disabled \
+    -Duse_system_wlroots=enabled -Duse_system_wfconfig=disabled -Dtests=disabled \
     -Dcpp_link_args="-Wl,-rpath,$PREFIX/lib" -Dc_link_args="-Wl,-rpath,$PREFIX/lib"
 step ninja -C "$wdir/build"
 step meson install -C "$wdir/build" --destdir "$wdir/stage"
