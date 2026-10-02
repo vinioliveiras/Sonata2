@@ -242,6 +242,13 @@ def form(on_done=None, parent=None):
     return dlg
 
 
+def missing_webkit(app) -> None:
+    """Said instead of failing silently (Vini: "the web app doesn't open" --
+    webkitgtk-6.0 wasn't installed)."""
+    app.hold()
+    ui.dialog.alert(*W.MISSING_WEBKIT, [("ok", "OK", "default")], lambda _r: app.release())
+
+
 def open_webapp(wid: str) -> int:
     entry = W.get(wid)
     if not entry:
@@ -253,6 +260,9 @@ def open_webapp(wid: str) -> int:
 
     def activate(a):
         ui.setup()
+        if not W.webkit_available():
+            missing_webkit(a)
+            return
         win = next(iter(a.get_windows()), None) or WebAppWindow(a, wid, entry)
         win.present()
     app.connect("activate", activate)
@@ -268,6 +278,10 @@ def new_webapp() -> int:
         if getattr(a, "_form", None):
             return
         ui.setup()
+        if not W.webkit_available():
+            a._form = True
+            missing_webkit(a)
+            return
         a.hold()
 
         def done(wid):

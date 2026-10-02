@@ -218,6 +218,51 @@ class IconChoiceTest(unittest.TestCase):
         self.assertIsNone(page._focus)
 
 
+class ThemeIconTest(unittest.TestCase):
+    """Vini: the icon pack's icon first, when it has one with the web app's name."""
+
+    def setUp(self):
+        config.save(W.NAME, W.DEFAULTS)
+
+    def test_names_tried(self):
+        self.assertEqual(W.icon_names("WhatsApp", "https://web.whatsapp.com/")[:1], ["whatsapp"])
+        self.assertIn("google-calendar", W.icon_names("Google Calendar", "https://calendar.google.com/"))
+        self.assertIn("googlecalendar", W.icon_names("Google Calendar", "https://calendar.google.com/"))
+
+    def test_pack_icon_wins_over_the_sites(self):
+        theme = mock.Mock(has_icon=lambda n: n == "whatsapp")
+        with mock.patch("gi.repository.Gtk.IconTheme.get_for_display", return_value=theme):
+            wid = W.create("WhatsApp", "web.whatsapp.com", command="sonata2", fetch=False)
+        self.assertEqual(W.get(wid)["theme_icon"], "whatsapp")
+        open(W.icon_path(wid), "wb").write(png(64))                            # the site's icon too
+        self.assertIn("Icon=whatsapp\n", W.desktop_text(wid, W.get(wid), "sonata2"))
+
+    def test_no_pack_icon_the_sites(self):
+        with mock.patch("gi.repository.Gtk.IconTheme.get_for_display",
+                        return_value=mock.Mock(has_icon=lambda n: False)):
+            wid = W.create("Odd Site", "odd.example", command="sonata2", fetch=False)
+        self.assertNotIn("theme_icon", W.get(wid))
+        self.assertIn(f"Icon={W.FALLBACK_ICON}\n", W.desktop_text(wid, W.get(wid), "sonata2"))
+
+
+class MissingWebKitTest(unittest.TestCase):
+    def test_says_so_instead_of_nothing(self):
+        """Vini: "the web app doesn't open" -- webkitgtk-6.0 wasn't installed."""
+        from sonata2.webapps import window
+        app = mock.Mock()
+        with mock.patch.object(ui.dialog, "alert") as alert:
+            window.missing_webkit(app)
+        self.assertIn("WebKitGTK 6", alert.call_args[0][0])
+        self.assertIn("webkitgtk-6.0", alert.call_args[0][1])
+        app.hold.assert_called_once()
+        alert.call_args[0][3]("ok")
+        app.release.assert_called_once()
+        src = open(window.__file__).read()
+        self.assertEqual(src.count("if not W.webkit_available():"), 2)          # opening one, and the form
+        inst = open(os.path.join(os.path.dirname(W.__file__), "..", "..", "install.sh")).read()
+        self.assertIn("webkitgtk-6.0", inst)
+
+
 class DeleteAskTest(unittest.TestCase):
     def test_asked_like_move_to_trash(self):
         """Vini: the question came inside Launchpad, without the glass: it

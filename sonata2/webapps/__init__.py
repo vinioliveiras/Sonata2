@@ -94,8 +94,73 @@ def _command() -> str:
     return self_command()
 
 
+def webkit_available() -> bool:
+    try:
+        import gi
+        gi.require_version("WebKit", "6.0")
+        return True
+    except ValueError:
+        return False
+
+
+MISSING_WEBKIT = ("Web apps need WebKitGTK 6.",
+                  "Install it with your package manager (Arch / CachyOS: sudo pacman -S webkitgtk-6.0; "
+                  "Ubuntu: gir1.2-webkit-6.0; Fedora: webkitgtk6.0), then open the web app again.")
+
+
+def icon_names(name: str, url: str) -> list:
+    """Theme icon names a web app called `name` may have: "WhatsApp" ->
+    whatsapp; "Google Calendar" -> google-calendar, googlecalendar..."""
+    out = []
+    for text in (name, default_name(url)):
+        slug = re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
+        if slug:
+            out += [slug, slug.replace("-", ""), slug.replace("-", "_")]
+    return list(dict.fromkeys(out))
+
+
+def theme_icon(name: str, url: str):
+    """The icon theme's own icon with the web app's name (Vini: the icon pack
+    first, when it has one), None without one -- or without a display."""
+    try:
+        from gi.repository import Gdk, Gtk
+        display = Gdk.Display.get_default()
+        if display is None:
+            return None
+        theme = Gtk.IconTheme.get_for_display(display)
+    except Exception:
+        return None
+    return next((n for n in icon_names(name, url) if theme.has_icon(n)), None)
+
+
+def update_theme_icon(app: str) -> None:
+    """Look the theme icon up again (main thread: GTK) and keep it in the entry."""
+    data = config.load(NAME, DEFAULTS)
+    entry = data.get("apps", {}).get(app)
+    if not entry:
+        return
+    found = theme_icon(entry.get("name"), entry.get("url"))
+    if found is None and _no_display():
+        return                                   # no display: keep what was found before
+    if entry.get("theme_icon") != found:
+        if found:
+            entry["theme_icon"] = found
+        else:
+            entry.pop("theme_icon", None)
+        config.save(NAME, data)
+
+
+def _no_display() -> bool:
+    try:
+        from gi.repository import Gdk
+        return Gdk.Display.get_default() is None
+    except Exception:
+        return True
+
+
 def desktop_text(app: str, entry: dict, command: str = None) -> str:
-    icon = icon_path(app) if os.path.isfile(icon_path(app)) else FALLBACK_ICON
+    # the icon pack's icon with its name, else the site's, else a generic one
+    icon = entry.get("theme_icon") or (icon_path(app) if os.path.isfile(icon_path(app)) else FALLBACK_ICON)
     name = (entry.get("name") or "Web App").replace("\n", " ")
     return ("[Desktop Entry]\nType=Application\n"
             f"Name={name}\nComment={entry.get('url', '')}\nIcon={icon}\n"
@@ -122,6 +187,7 @@ def create(name: str, url: str, command: str = None, fetch: bool = True) -> str:
     data.setdefault("apps", {})[app] = {"name": (name or "").strip() or default_name(url), "url": url}
     config.save(NAME, data)
     os.makedirs(data_dir(app), exist_ok=True)
+    update_theme_icon(app)
     write_desktop(app, command)
     if fetch:
         threading.Thread(target=lambda: fetch_icon(app) and write_desktop(app, command), daemon=True).start()
@@ -283,6 +349,7 @@ def launch(app: str) -> None:
 def write_all(command: str = None) -> None:
     """Every web app's desktop entry (the Dock at login: Sonata's command may have moved)."""
     for app in apps():
+        update_theme_icon(app)               # (an icon pack installed or changed since)
         write_desktop(app, command)
 
 
