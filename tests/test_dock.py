@@ -325,3 +325,70 @@ class DockTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GenieTargetTest(unittest.TestCase):
+    """Regression (Vini): on the laptop's screen the genie flew to the wrong
+    icon -- with a Dock on each display, a window got its minimize target from
+    the other display's Dock (Wayfire can't translate it: "Minimize hint set
+    to surface on a different output")."""
+
+    class Win:
+        def __init__(self, app_id, title):
+            self.app_id, self.title, self.minimized, self.activated = app_id, title, False, True
+
+    class Manager:
+        def __init__(self):
+            self.listeners, self.rects, self.available, self.toplevels = [], [], True, []
+
+        def set_rectangle(self, t, _surface, x, y, w, h):
+            self.rects.append((t.title, w > 0))
+
+    def setUp(self):
+        Gtk.init()
+        self.cfg = dict(D.load_config(), all_displays=True)
+        D.load_css(self.cfg)
+        self.mgr = self.Manager()
+        self.win = Gtk.Window()
+        self.dock = D.Dock(self.cfg, self.mgr)
+        self.dock._schedule_sync = lambda *a: None
+        self.win.set_child(self.dock)
+        self.win.present()
+        settle()
+        from gi.repository import Gio
+        self.key = "genie-test-app"
+        self.dock._add_tile(self.key, "Test", Gio.ThemedIcon.new("application-x-executable"))
+        settle(100)
+        self.mgr.rects.clear()
+
+    def tearDown(self):
+        self.dock.detach()
+        self.win.destroy()
+
+    def aim(self, mine, placed, *wins):
+        self.dock.windows = {self.key: list(wins)}
+        self.dock._windows_here = lambda _s: (mine, placed)
+        self.mgr.rects.clear()
+        self.dock._update_rectangles()
+        return self.mgr.rects
+
+    def test_ipc_silent_aims_nothing(self):
+        a = self.Win(self.key, "Doc")
+        self.assertEqual(self.aim(set(), None, a), [])                 # tried again later instead
+
+    def test_only_windows_on_this_display(self):
+        here, there = self.Win(self.key, "Here"), self.Win(self.key, "There")
+        rects = self.aim({(self.key, "Here")}, {(self.key, "Here"), (self.key, "There")}, here, there)
+        self.assertEqual(rects, [("Here", True)])
+
+    def test_unknown_title_of_an_app_on_both_displays(self):
+        new = self.Win(self.key, "Renamed")                            # Wayfire hadn't seen this title
+        rects = self.aim({(self.key, "Here")}, {(self.key, "Here"), (self.key, "There")}, new)
+        self.assertEqual(rects, [])
+        rects = self.aim({(self.key, "Here")}, {(self.key, "Here")}, new)   # the app only here: aimed
+        self.assertEqual(rects, [("Renamed", True)])
+
+    def test_docks_registered_for_display_changes(self):
+        self.assertIn(self.dock, D._DOCKS)
+        self.dock.detach()
+        self.assertNotIn(self.dock, D._DOCKS)
