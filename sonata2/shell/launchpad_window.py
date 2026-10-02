@@ -1,27 +1,31 @@
-"""Launchpad in a window (Vini; the "Applications" view of macOS 26): the
-same apps as the full-screen Launchpad, on a glass panel in the middle of the
-screen instead of over all of it. Settings > Launchpad > Style picks it;
-its glass and transparency: Settings > Appearance > Glass & Transparency.
+"""Launchpad's other layout, the Apps Menu (Vini; the "Applications" view of
+macOS 26): the same component -- the same apps, folders, Hidden folder,
+menus, drags to the Dock and the Trash, jiggle mode, linked folders -- on a
+glass panel in the middle of the screen instead of over all of it.
+Settings > Apps > Style picks it; its glass and transparency: Settings >
+Appearance > Glass & Transparency.
 
-    [icon] Apps (type to search)                     [...]
+    [icon] Apps (type to search)                                   [...]
     [ Social ][ Creativity ][ Entertainment ][ Productivity & Finance ][ Utilities ][ Other ]
     suggestions: the apps opened last from here (then the Dock's)
-    Social ...  Creativity ...  one titled grid per category
+    Folders: your Launchpad folders (and Hidden)
+    Social ...  Creativity ...  one titled grid per category (every app)
 
-A tab shows that category alone (again: all). Typing searches every app;
-Enter opens the first. Esc (or a click outside the panel) closes; opening an
-app closes it. The menu bar and the Dock stay reachable: the surface keeps
-out of their reserved space.
+MenuView is only the layout: the tiles are Launchpad's own LaunchItems, and
+everything they do goes through the Launchpad (shell/launchpad.py, mode
+"menu"). A tab shows that category alone (again: all). Typing searches;
+Enter opens the first. Esc steps back (search, tab, folder, jiggle) and
+closes; a click outside the panel closes; opening an app closes it. Hold an
+app over another (or a folder) to make a folder, as in the full screen.
 """
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, GLib, GObject, Gtk  # noqa: E402
 
-from .. import apps, config, icons, names, ui  # noqa: E402
+from .. import apps, config, names, ui  # noqa: E402
 from .. import launchpad_model as M  # noqa: E402
-from . import layer  # noqa: E402
 
 NAME = "launcher"                 # ~/.config/sonata2/launcher.json
 DEFAULTS = {"style": "fullscreen", "recent": []}
@@ -48,7 +52,6 @@ CATEGORIES = (
 OTHER = ("other", "Other")
 
 ui.register("""
-window.sonata-lpwin, window.sonata-lpwin > contents { background: none; box-shadow: none; }
 .lpw-panel { background: %(launchpad_material)s; border-radius: 26px; padding: 18px 22px 0 22px;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, 0 24px 60px rgba(0,0,0,0.30);
   color: %(label)s; font-family: %(font)s; }
@@ -67,12 +70,18 @@ window.sonata-lpwin, window.sonata-lpwin > contents { background: none; box-shad
 .lpw-tab:hover { background: alpha(%(label)s, 0.11); color: %(label)s; }
 .lpw-tab:checked { background: %(accent)s; color: %(label_on_accent)s; }
 .lpw-section { font-weight: 700; font-size: %(text_body)s; color: %(label)s; margin: 4px 2px 6px 2px; }
-.lpw-app { padding: 8px 2px 6px 2px; border-radius: 14px; background: none; border: none; box-shadow: none;
-  transition: background-color %(t_fast)s; }
-.lpw-app:hover { background: alpha(%(label)s, 0.07); }
-.lpw-app:active { background: alpha(%(label)s, 0.13); }
-.lpw-app.selected { background: alpha(%(accent)s, 0.22); }
-.lpw-app label { color: %(label)s; font-size: %(text_body)s; margin-top: 4px; }
+/* Launchpad's tiles, on the panel instead of the dimmed desktop */
+.lpw-root .lp-item { padding: 8px 2px 6px 2px; border-radius: 14px; transition: background-color %(t_fast)s; }
+.lpw-root .lp-item:hover { background: alpha(%(label)s, 0.07); }
+.lpw-root .lp-item.selected { background: alpha(%(accent)s, 0.22); }
+.lpw-root .lp-label { color: %(label)s; font-size: %(text_body)s; text-shadow: none; margin-top: 4px; }
+.lpw-root .lp-panel { background: %(launchpad_material)s; box-shadow: 0 0 0 0.5px %(hairline)s,
+  0 12px 40px rgba(0,0,0,0.28); }
+.lpw-root .lp-panel-title, .lpw-root .lp-panel-title text, .lpw-root .lp-lock, .lpw-root .lp-lock-text {
+  color: %(label)s; }
+.lpw-root .lp-lock-hint { color: %(label_secondary)s; }
+.lpw-content { transition: opacity %(fade_ms)dms ease-out; }
+.lpw-content.dimmed { opacity: 0.3; }
 .lpw-empty { color: %(label_secondary)s; font-size: %(text_title)s; margin: 40px 0; }
 @keyframes lpw-fade { from { opacity: 0; } to { opacity: 1; } }
 .lpw-body { animation: lpw-fade %(fade_ms)dms ease-out both; }
@@ -99,14 +108,6 @@ def category_of(info) -> str:
     return OTHER[0]
 
 
-def listed_apps() -> dict:
-    """desktop id (no .desktop) -> info, as the full-screen Launchpad lists them
-    (its hidden apps left out)."""
-    from .launchpad import installed_apps
-    hidden = set(config.load("launchpad", {"pages": [], "hidden": []}).get("hidden") or [])
-    return {k: v for k, v in installed_apps().items() if k not in hidden}
-
-
 def suggestions(found: dict) -> list:
     """The apps opened last from here, then the Dock's, up to SUGGESTIONS."""
     out = [k for k in config.load(NAME, DEFAULTS).get("recent") or [] if k in found]
@@ -125,36 +126,31 @@ def note_opened(key: str) -> None:
     config.update(NAME, recent=cfg["recent"])
 
 
-class AppTile(Gtk.Button):
-    def __init__(self, key, info, on_open):
-        super().__init__(css_classes=["lpw-app"], can_focus=False, tooltip_text=info.get_display_name())
-        self.key, self.info = key, info
-        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        img = Gtk.Image(pixel_size=ICON)
-        icons.set_image(img, icons.app_icon(info))
-        col.append(img)
-        col.append(Gtk.Label(label=info.get_display_name(), ellipsize=Pango.EllipsizeMode.END, max_width_chars=14,
-                             width_chars=14, justify=Gtk.Justification.CENTER))
-        self.set_child(col)
-        self.connect("clicked", lambda _b: on_open(self))
-
-
-def grid(tiles, cols: int = COLS) -> Gtk.FlowBox:
+def flow(widgets, cols: int, pad=None) -> Gtk.FlowBox:
     fb = Gtk.FlowBox(max_children_per_line=cols, min_children_per_line=cols, homogeneous=True,
                      selection_mode=Gtk.SelectionMode.NONE, column_spacing=4, row_spacing=4,
                      activate_on_single_click=False)
-    for t in tiles:
-        fb.append(t)
+    for w in widgets:
+        fb.append(w)
+    if pad is not None:                       # hold an app over another: a folder (as in the full screen)
+        target = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
+        target.connect("motion", lambda _t, x, y: pad.menu.drag_over(fb, x, y))
+        target.connect("drop", lambda _t, v, x, y: pad.menu.drag_drop(v))
+        fb.add_controller(target)
     return fb
 
 
-class LaunchpadWindow(Gtk.ApplicationWindow):
-    def __init__(self, app):
-        super().__init__(application=app, title=names.APPS_MENU, decorated=False, css_classes=["sonata-lpwin"])
-        self.found = {}
+class MenuView:
+    """The Apps Menu layout of a Launchpad (`pad`). root: what the window
+    shows in this mode."""
+
+    def __init__(self, pad):
+        self.pad = pad
         self.tab = None
-        self.tiles = []             # the tiles in view, in order (keyboard / Enter)
+        self.tiles = []             # LaunchItems in view, in order (keyboard / Enter)
         self.selected = -1
+        self.cache = {}             # (section, key) -> LaunchItem, kept: built once
+        self.cols = COLS
         self.panel = ui.theme.glass_class(Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
                                                   css_classes=["lpw-panel"], halign=Gtk.Align.CENTER,
                                                   valign=Gtk.Align.CENTER))
@@ -166,83 +162,59 @@ class LaunchpadWindow(Gtk.ApplicationWindow):
             lens.set_visible(False)
         self.search.connect("search-changed", lambda *_: self.refresh())
         self.search.connect("activate", lambda *_: self.open_selected())
-        self.search.connect("stop-search", lambda *_: self.escape())
         head.append(self.search)
         more = Gtk.Button(label="\u2022\u2022\u2022", css_classes=["lpw-more"], can_focus=False,
                           valign=Gtk.Align.CENTER, tooltip_text="Options")
         more.connect("clicked", lambda b: self._menu(b))
         head.append(more)
         self.panel.append(head)
-        self.panel.append(Gtk.Box(css_classes=["lpw-rule"]))
+        self.content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, vexpand=True, css_classes=["lpw-content"])
+        self.content.append(Gtk.Box(css_classes=["lpw-rule"]))
         self.tabs = Gtk.Box(spacing=8, homogeneous=True)
-        self.panel.append(self.tabs)
-        self.panel.append(Gtk.Box(css_classes=["lpw-rule"]))
+        self.content.append(self.tabs)
+        self.content.append(Gtk.Box(css_classes=["lpw-rule"]))
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_bottom=18,
                             css_classes=["lpw-body"])
-        self.cache = {}             # key -> AppTile, kept between opens (built once: smooth typing)
-        self.cols = COLS
         self.scroll = Gtk.ScrolledWindow(child=self.body, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
-        self.panel.append(self.scroll)
-        self.set_child(self.panel)
-
-        click = Gtk.GestureClick()                     # outside the panel: close
+        self.content.append(self.scroll)
+        self.panel.append(self.content)
+        # folder panels open over the menu (Launchpad's own, launchpad._host)
+        self.overlay = Gtk.Overlay(child=self.panel, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+        self.root = Gtk.Box(css_classes=["lpw-root"], hexpand=True, vexpand=True)
+        self.overlay.set_hexpand(True)
+        self.root.append(self.overlay)
+        click = Gtk.GestureClick()
         click.connect("released", self._outside)
-        self.add_controller(click)
-        keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
-        keys.connect("key-pressed", self._key)
-        self.add_controller(keys)
-        LS = layer.layer_shell()
-        self.layer = bool(LS)
-        if LS:
-            LS.init_for_window(self)
-            LS.set_namespace(self, "sonata2-launchpad-window")
-            LS.set_layer(self, LS.Layer.TOP)
-            for e in (LS.Edge.TOP, LS.Edge.BOTTOM, LS.Edge.LEFT, LS.Edge.RIGHT):
-                LS.set_anchor(self, e, True)
-            LS.set_exclusive_zone(self, 0)             # inside the menu bar's and the Dock's space
-            LS.set_keyboard_mode(self, LS.KeyboardMode.EXCLUSIVE)
+        self.root.add_controller(click)
 
     # -- open / close -----------------------------------------------------------------------------
-    def toggle(self) -> None:
-        if self.get_visible() and not self.panel.has_css_class("closing"):
-            self.close_window()
-        else:
-            self.open_window()
+    def is_open(self) -> bool:
+        return self.pad.get_visible() and not self.panel.has_css_class("closing")
 
     def _size(self) -> None:
-        mon = None
-        display = self.get_display()
-        if display is not None and display.get_monitors().get_n_items():
-            mon = display.get_monitors().get_item(0)
+        display = self.pad.get_display()
+        mon = display.get_monitors().get_item(0) if display and display.get_monitors().get_n_items() else None
         w, h = (mon.get_geometry().width, mon.get_geometry().height) if mon else (1600, 1000)
         pw = max(600, min(1180, int(w * 0.60)))
         ph = max(460, min(820, int(h * 0.66)))
         self.panel.set_size_request(pw, ph)
         self.cols = max(4, min(COLS, (pw - 44) // TILE_W))
 
-    def prepare(self) -> None:
-        """The apps and the grids, built (also before the first open: prewarm)."""
-        found = listed_apps()
-        if set(found) != set(self.found):
-            self.cache = {k: t for k, t in self.cache.items() if k in found}
-        self.found = found
+    def open(self) -> None:
         self._size()
         self.search.set_text("")
         self.tab = None
         self._build_tabs()
         self.refresh()
-
-    def open_window(self) -> None:
-        self.prepare()
         self.panel.remove_css_class("closing")
         self.panel.remove_css_class("opening")
-        self.present()
+        self.pad.present()
         self.panel.add_css_class("opening")
         self.search.grab_focus()
         self.scroll.get_vadjustment().set_value(0)
 
-    def close_window(self, then=None) -> None:
-        if not self.get_visible():
+    def close(self, then=None) -> None:
+        if not self.pad.get_visible():
             if then:
                 then()
             return
@@ -251,33 +223,45 @@ class LaunchpadWindow(Gtk.ApplicationWindow):
 
         def done():
             if self.panel.has_css_class("closing"):
-                self.set_visible(False)
+                self.pad.set_visible(False)
             if then:
                 then()
             return False
         GLib.timeout_add(ui.tokens.ms(CLOSE_MS), done)
 
     def escape(self) -> None:
+        """One step back: search, tab, folder, jiggle, then close."""
+        pad = self.pad
         if self.search.get_text():
             self.search.set_text("")
+        elif pad.folder_view:
+            pad._close_folder()
+        elif pad.jiggling:
+            pad.set_jiggle(False)
         elif self.tab is not None:
             self.set_tab(None)
         else:
-            self.close_window()
+            pad.close_launchpad()
 
     def _outside(self, _g, _n, x, y) -> None:
-        ok, b = self.panel.compute_bounds(self)
-        if ok and not (b.get_x() <= x <= b.get_x() + b.get_width() and b.get_y() <= y <= b.get_y() + b.get_height()):
-            self.close_window()
+        ok, b = self.panel.compute_bounds(self.root)
+        inside = ok and b.get_x() <= x <= b.get_x() + b.get_width() and b.get_y() <= y <= b.get_y() + b.get_height()
+        if inside:
+            return
+        if self.pad.folder_view:
+            self.pad._close_folder()
+        else:
+            self.pad.close_launchpad()
 
     def _menu(self, btn) -> None:
         Item = ui.menu.Item
         ui.menu.popup(btn, [[Item(f"Use Full-Screen {names.APPS}", lambda: self.set_style("fullscreen"))],
-                            [Item(f"{names.APPS} Settings…", self._settings)]], position=Gtk.PositionType.BOTTOM)
+                            [Item(f"{names.APPS} Settings\u2026", self._settings)]],
+                      position=Gtk.PositionType.BOTTOM)
 
     def set_style(self, s: str) -> None:
         config.update(NAME, style=s)
-        self.close_window()
+        self.pad.close_launchpad()
 
     def _settings(self) -> None:
         def run():
@@ -288,16 +272,27 @@ class LaunchpadWindow(Gtk.ApplicationWindow):
             env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in (root, os.environ.get("PYTHONPATH")) if p))
             subprocess.Popen([sys.executable, "-m", "sonata2", "settings", "--page", "launchpad"], env=env,
                              start_new_session=True)
-        self.close_window(run)
+        self.pad.close_launchpad(run)
 
     # -- content ----------------------------------------------------------------------------------
+    def _apps(self) -> dict:
+        """The apps the full screen shows (Hidden ones only inside Hidden)."""
+        shown = set(self.pad.model.all_apps())
+        return {k: v for k, v in self.pad.installed.items() if k in shown}
+
     def _groups(self) -> dict:
+        found = self._apps()
         groups = {}
-        for key, info in self.found.items():
+        for key, info in found.items():
             groups.setdefault(category_of(info), []).append(key)
         for keys in groups.values():
-            keys.sort(key=lambda k: self.found[k].get_display_name().lower())
+            keys.sort(key=lambda k: found[k].get_display_name().lower())
         return groups
+
+    def _folders(self) -> list:
+        """The Launchpad's folders, in its order, then Hidden (if any)."""
+        out = [it for page in self.pad._pages_with_hidden() for it in page if M.is_folder(it)]
+        return out
 
     def _build_tabs(self) -> None:
         while (c := self.tabs.get_first_child()) is not None:
@@ -319,15 +314,25 @@ class LaunchpadWindow(Gtk.ApplicationWindow):
         self.refresh(fade=True)
         self.scroll.get_vadjustment().set_value(0)
 
-    def _tile(self, key, spare: bool = False) -> AppTile:
-        """The app's tile, made once; `spare`: a second one (the suggestions
-        row shows apps that are also in their category)."""
-        ck = key + "\0s" if spare else key
-        t = self.cache.get(ck)
-        if t is None:
-            t = self.cache[ck] = AppTile(key, self.found[key], self.open_tile)
-        self.tiles.append(t)
-        return t
+    def tile(self, item, section: str = ""):
+        """Launchpad's tile for an app or folder (made once per section)."""
+        from .launchpad import LaunchItem
+        key = (section, id(item) if M.is_folder(item) else item)
+        w = self.cache.get(key)
+        if w is None or w.item is not item or (M.is_folder(item) and getattr(w, "_apps", None) != tuple(item["apps"])):
+            w = self.cache[key] = LaunchItem(self.pad, item, ICON)
+            w._apps = tuple(item["apps"]) if M.is_folder(item) else None
+        elif M.is_folder(item) and w.name != item["folder"]:
+            w.set_name_text(item["folder"])
+        if hasattr(w, "badge"):
+            w.badge.set_visible(self.pad.jiggling)
+        self.tiles.append(w)
+        return w
+
+    def widgets_of(self, item) -> list:
+        """Every tile showing this app / folder (live rename, drag targets)."""
+        k = id(item) if M.is_folder(item) else item
+        return [w for (_s, key), w in self.cache.items() if key == k]
 
     def refresh(self, fade: bool = False) -> None:
         for t in self.tiles:                           # kept tiles leave their old grid
@@ -341,29 +346,86 @@ class LaunchpadWindow(Gtk.ApplicationWindow):
         if fade:                                       # another tab: the grids fade in (not while typing)
             self.body.remove_css_class("lpw-body")
             GLib.idle_add(lambda: (self.body.add_css_class("lpw-body"), False)[1])
+        found = self._apps()
         q = self.search.get_text().strip()
         if q:
-            meta = {k: (v.get_display_name(), apps._entry_field(v, "get_generic_name", "GenericName"))
-                    for k, v in self.found.items()}
+            from .spotlight import _keywords
+            meta = {k: (v.get_display_name(), " ".join(filter(None, [
+                apps._entry_field(v, "get_generic_name", "GenericName"), _keywords(v)])))
+                for k, v in found.items()}
             keys = M.search(meta, q)
             if keys:
-                self.body.append(grid([self._tile(k) for k in keys], self.cols))
+                self.body.append(flow([self.tile(k, "s") for k in keys], self.cols, self.pad))
                 self._select(0)
             else:
                 self.body.append(Gtk.Label(label="No Results", css_classes=["lpw-empty"]))
             return
         groups = self._groups()
         if self.tab is None:
-            top = suggestions(self.found)
+            top = suggestions(found)
             if top:
-                self.body.append(grid([self._tile(k, spare=True) for k in top], self.cols))
+                self.body.append(flow([self.tile(k, "top") for k in top], self.cols, self.pad))
                 self.body.append(Gtk.Box(css_classes=["lpw-rule"]))
+            folders = self._folders()
+            if folders:
+                self.body.append(Gtk.Label(label="Folders", xalign=0, css_classes=["lpw-section"]))
+                self.body.append(flow([self.tile(f, "f") for f in folders], self.cols, self.pad))
         for cid, title in [(c[0], c[1]) for c in CATEGORIES] + [OTHER]:
             keys = groups.get(cid)
             if not keys or (self.tab is not None and cid != self.tab):
                 continue
             self.body.append(Gtk.Label(label=title, xalign=0, css_classes=["lpw-section"]))
-            self.body.append(grid([self._tile(k) for k in keys], self.cols))
+            self.body.append(flow([self.tile(k, cid) for k in keys], self.cols, self.pad))
+
+    # -- making folders by dragging (the full screen's rules, without reordering) ----------------
+    def drag_over(self, fb, x, y):
+        pad = self.pad
+        d = pad._drag
+        if not d:
+            return Gdk.DragAction.MOVE        # from the Dock: dropping here takes it out of the Dock
+        if d["folder"] is not None:            # dragged out of an open folder: out of it
+            folder = d["folder"]
+            pad._close_folder()
+            last = len(pad.model.pages) - 1
+            pad.model.take_out_of_folder(folder, d["item"], last, len(pad.model.pages[last]))
+            d["folder"] = None
+            pad.save()
+            return Gdk.DragAction.MOVE
+        picked = fb.pick(x, y, Gtk.PickFlags.DEFAULT)
+        from .launchpad import LaunchItem
+        while picked is not None and not isinstance(picked, LaunchItem):
+            picked = picked.get_parent()
+        if picked is not None and not M.is_folder(d["item"]) and picked.item is not d["item"] \
+                and picked.item != d["item"]:
+            ok, b = picked.compute_bounds(fb)
+            cx, cy = b.get_x() + b.get_width() / 2, b.get_y() + b.get_height() / 2
+            if ok and abs(x - cx) < b.get_width() * 0.3 and abs(y - cy) < b.get_height() * 0.3:
+                if d["target"] is not picked:
+                    pad._clear_target()
+                    d["target"] = picked
+                    from .launchpad import FOLDER_HOLD_MS
+                    pad._timer("folder", FOLDER_HOLD_MS, lambda: picked.add_css_class("folder-target"))
+                return Gdk.DragAction.MOVE
+        pad._clear_target()
+        return Gdk.DragAction.MOVE
+
+    def drag_drop(self, value=None) -> bool:
+        pad = self.pad
+        if not pad._drag:                      # from the Dock
+            folder = M.decode_folder(value)
+            if folder is not None:             # a Dock folder: at the end of Launchpad
+                last = len(pad.model.pages) - 1
+                ok = pad.model.add_folder(folder["folder"], folder["apps"], last, len(pad.model.pages[last]),
+                                          link=folder.get("link", "")) is not None
+                if ok:
+                    pad.save()
+                    pad.render()
+                return ok
+            return isinstance(value, str) and value in pad.installed
+        pad._drop_on_target()
+        pad.save()
+        pad.render()
+        return True
 
     # -- keyboard ---------------------------------------------------------------------------------
     def _select(self, i: int) -> None:
@@ -373,10 +435,12 @@ class LaunchpadWindow(Gtk.ApplicationWindow):
         if self.selected >= 0:
             self.tiles[self.selected].add_css_class("selected")
 
-    def _key(self, _c, keyval, _code, _state) -> bool:
+    def key(self, keyval) -> bool:
         if keyval == Gdk.KEY_Escape:
             self.escape()
             return True
+        if self.pad.folder_view:
+            return False
         moves = {Gdk.KEY_Left: -1, Gdk.KEY_Right: 1, Gdk.KEY_Up: -self.cols, Gdk.KEY_Down: self.cols}
         if keyval in moves and self.tiles and (self.selected >= 0 or keyval in (Gdk.KEY_Down, Gdk.KEY_Right)):
             self._select(max(0, min(len(self.tiles) - 1, self.selected + moves[keyval]))
@@ -389,17 +453,6 @@ class LaunchpadWindow(Gtk.ApplicationWindow):
 
     def open_selected(self) -> None:
         if 0 <= self.selected < len(self.tiles):
-            self.open_tile(self.tiles[self.selected])
+            self.pad.activate_item(self.tiles[self.selected])
         elif self.tiles and self.search.get_text().strip():
-            self.open_tile(self.tiles[0])
-
-    def open_tile(self, tile) -> None:
-        note_opened(tile.key)
-        ctx = self.get_display().get_app_launch_context()
-
-        def launch():
-            try:
-                tile.info.launch([], ctx)
-            except GLib.Error as e:
-                print(f"sonata2-launchpad: can't open {tile.key}: {e.message}", flush=True)
-        self.close_window(launch)
+            self.pad.activate_item(self.tiles[0])

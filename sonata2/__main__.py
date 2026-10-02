@@ -192,44 +192,9 @@ def run_dock(app, args, ui):
             _later(400, open_menu)
 
 
-def _launchpad_window(app, state):
-    """Launchpad in a window (Settings > Launchpad > Style): made once, kept;
-    an app opened any other way closes it, like the full-screen one."""
-    from gi.repository import Gdk
-    from .shell import launchpad_window as LW
-    pw = state.get("lpwin")
-    if pw is None:
-        pw = state["lpwin"] = LW.LaunchpadWindow(app)
-        app.hold()
-        from .wl.toplevels import ToplevelManager
-        mgr = state.get("toplevels") or ToplevelManager(Gdk.Display.get_default(), ignore_app_ids=SHELL_IDS)
-        state["toplevels"] = mgr
-        seen = {"wins": set(mgr.toplevels), "active": {t for t in mgr.toplevels if t.activated}}
-
-        def changed():
-            wins = set(mgr.toplevels)
-            active = {t for t in wins if t.activated}
-            fresh = (wins - seen["wins"]) or (active - seen["active"])
-            seen["wins"], seen["active"] = wins, active
-            if fresh and pw.get_visible():
-                pw.close_window()
-        mgr.listeners.append(changed)
-    return pw
-
-
 def run_launchpad(app, args, ui, state):
     from gi.repository import Gdk
     from .shell import launchpad, launchpad_window as LW
-    if not args.background and not args.preview and LW.style() == "window":
-        pw = _launchpad_window(app, state)
-        full = state.get("win")
-        if full is not None and full.get_visible():
-            full.close_launchpad()
-        pw.toggle()
-        return
-    pw = state.get("lpwin")
-    if pw is not None and pw.get_visible():
-        pw.close_window()
     win = state.get("win")
     if win is not None:            # second launch: toggle
         win.toggle()
@@ -252,7 +217,7 @@ def run_launchpad(app, args, ui, state):
             active = {t for t in wins if t.activated}
             fresh = (wins - seen["wins"]) or (active - seen["active"])
             seen["wins"], seen["active"] = wins, active
-            if fresh and win.get_visible() and win.bin.progress > 0.5:
+            if fresh and win.get_visible() and (win.mode == "menu" or win.bin.progress > 0.5):
                 win.close_launchpad()
         mgr.listeners.append(changed)
     if args.preview:
@@ -262,14 +227,15 @@ def run_launchpad(app, args, ui, state):
         walls = _wallpaper(w, h, ui.is_dark())
         if walls:
             win.bin.backdrop = Gdk.Texture.new_from_filename(walls[1])
-    if args.background and LW.style() == "window" and not args.preview:
-        pw = _launchpad_window(app, state)             # built and drawn once now: the first open is smooth
-        layer.prewarm(pw, before=pw.prepare)
     if args.background:            # login: start resident, hidden
         win.set_visible(False)
         if not args.preview:       # drawn once invisibly: the first open is smooth
-            layer.prewarm(win, before=lambda: setattr(win.bin, "progress", 1.0),
-                          after=lambda: setattr(win.bin, "progress", 0.0))
+            if LW.style() == "window":             # the Apps Menu layout
+                win._set_mode("menu")
+                layer.prewarm(win, before=lambda: (win.menu._size(), win.menu._build_tabs(), win.menu.refresh()))
+            else:
+                layer.prewarm(win, before=lambda: setattr(win.bin, "progress", 1.0),
+                              after=lambda: setattr(win.bin, "progress", 0.0))
         return
     win.open_launchpad()
     if args.search:

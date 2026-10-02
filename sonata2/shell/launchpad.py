@@ -180,7 +180,7 @@ class LaunchItem(Gtk.Button):
     def __init__(self, pad, item, size: int):
         super().__init__(css_classes=["lp-item"], focus_on_click=False, can_focus=False,
                          hexpand=True, vexpand=True, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
-        self.pad, self.item = pad, item
+        self.pad, self.item, self.size = pad, item, size
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         over = Gtk.Overlay()
         if M.is_folder(item):
@@ -284,6 +284,8 @@ class Launchpad(Gtk.ApplicationWindow):
         self._timers = {}
         self._anim = None
         self.folder_view = None
+        self.mode = "fullscreen"   # or "menu": the Apps Menu layout (launchpad_window.MenuView)
+        self.menu = None
 
         self.search = Gtk.SearchEntry(placeholder_text="Search", css_classes=["lp-search"],
                                       halign=Gtk.Align.CENTER, margin_top=40)
@@ -391,7 +393,13 @@ class Launchpad(Gtk.ApplicationWindow):
             self._search_changed()
 
     def render(self) -> None:
-        """Sync carousel pages with the model (widgets are reused)."""
+        """Sync carousel pages with the model (widgets are reused); in the
+        Apps Menu, its grids."""
+        if getattr(self, "mode", "") == "menu" and self.menu is not None:
+            self.menu.refresh()
+            self._full_stale = True
+            return
+        self._full_stale = False
         if getattr(self, "bin", None):
             self.bin.invalidate()
         pages = self._pages_with_hidden()
@@ -460,6 +468,22 @@ class Launchpad(Gtk.ApplicationWindow):
         w = self.widgets.get(id(folder))
         if w is not None:
             w.set_name_text(name)
+        if self.menu is not None:
+            for t in self.menu.widgets_of(folder):
+                t.set_name_text(name)
+
+    def _host(self):
+        """Where folder panels open, and what dims behind them: the full
+        screen's grid, or the Apps Menu's panel."""
+        if self.mode == "menu" and self.menu is not None:
+            return self.menu.overlay, self.menu.content
+        return self.overlay, self.col
+
+    def _tile_size(self) -> int:
+        if self.mode == "menu":
+            from .launchpad_window import ICON
+            return ICON
+        return self.icon_size
 
     def _ask_password(self, folder) -> None:
         """The Hidden folder opens only with the user's password (PAM, like
@@ -479,10 +503,11 @@ class Launchpad(Gtk.ApplicationWindow):
         title = Gtk.Label(label=folder["folder"], css_classes=["lp-panel-title"])
         wrap.append(title)
         wrap.append(panel)
-        self.overlay.add_overlay(wrap)
+        host, dim = self._host()
+        host.add_overlay(wrap)
         self.folder_view = (wrap, None, panel)
         wrap.add_css_class("lp-folder-view")
-        self.col.add_css_class("dimmed")
+        dim.add_css_class("dimmed")
         entry.grab_focus()
 
         def done(ok):
@@ -530,7 +555,40 @@ class Launchpad(Gtk.ApplicationWindow):
 
     # -- open / close --------------------------------------------------------------
     def toggle(self) -> None:
-        self.close_launchpad() if self.get_visible() and self.bin.progress > 0.5 else self.open_launchpad()
+        shown = self.get_visible() and (self.menu.is_open() if self.mode == "menu" and self.menu
+                                        else self.bin.progress > 0.5)
+        self.close_launchpad() if shown else self.open_launchpad()
+
+    # -- the two layouts: full screen, Apps Menu (Settings > Apps > Style) ---------------------------
+    def _set_mode(self, mode: str) -> None:
+        if mode == self.mode:
+            return
+        LS = layer.layer_shell()
+        if mode == "menu":
+            if self.menu is None:
+                from .launchpad_window import MenuView
+                self.menu = MenuView(self)
+            self._close_folder()
+            self.set_child(self.menu.root)
+            self.add_css_class("lpw-mode")
+            if LS and self.layer:
+                LS.set_layer(self, LS.Layer.TOP)
+                LS.set_exclusive_zone(self, 0)        # inside the menu bar's and the Dock's space
+            self._overlay = False
+        else:
+            self._close_folder()
+            self.set_child(self.bin)
+            self.remove_css_class("lpw-mode")
+            if LS and self.layer:
+                LS.set_exclusive_zone(self, -1)
+        self.mode = mode
+        self.set_jiggle(False)
+        self.render()
+
+    def _open_menu(self) -> None:
+        self._set_mode("menu")
+        self._check_apps()
+        self.menu.open()
 
     def _dock_above(self, on: bool) -> None:
         """Ask the Dock (its own process) to sit above Launchpad."""
@@ -571,6 +629,11 @@ class Launchpad(Gtk.ApplicationWindow):
         LS.set_layer(self, LS.Layer.OVERLAY if full else LS.Layer.TOP)
 
     def open_launchpad(self) -> None:
+        from .launchpad_window import style
+        if style() == "window":
+            self._open_menu()
+            return
+        self._set_mode("fullscreen")
         self._pick_layer()
         self._check_apps()
         # the Dock moves up to OVERLAY once Launchpad is mapped: the surface
@@ -604,8 +667,13 @@ class Launchpad(Gtk.ApplicationWindow):
         self.col.set_margin_end(room if edge == "right" else 0)
 
     def close_launchpad(self, then=None) -> None:
-        self._dock_above(False)
         self._unlocked = False                  # Hidden asks for the password again next time
+        if self.mode == "menu" and self.menu is not None:
+            self._close_folder()
+            self.set_jiggle(False)
+            self.menu.close(then)
+            return
+        self._dock_above(False)
 
         def done():
             self.set_visible(False)
@@ -663,6 +731,9 @@ class Launchpad(Gtk.ApplicationWindow):
             return
         info = self.installed.get(widget.item)
         if info:
+            if self.mode == "menu":
+                from .launchpad_window import note_opened
+                note_opened(widget.item)                # its suggestions row
             ctx = self.get_display().get_app_launch_context()
             self.close_launchpad(lambda: info.launch([], ctx))
 
@@ -690,30 +761,33 @@ class Launchpad(Gtk.ApplicationWindow):
         cols = min(M.COLS, max(3, n))
         rows = min(3, (n + cols - 1) // cols)
         grid = PageGrid(self, -2, cols, rows)
-        grid.set_size_request(cols * int(self.icon_size * 1.7), rows * int(self.icon_size * 1.7))
+        size = self._tile_size()
+        grid.set_size_request(cols * int(size * 1.7), rows * int(size * 1.7))
         grid.folder = folder
-        grid.fill([LaunchItem(self, a, self.icon_size) for a in folder["apps"][:cols * rows]])
+        grid.fill([LaunchItem(self, a, size) for a in folder["apps"][:cols * rows]])
         panel.append(grid)
         # Big Sur: the folder name sits above the panel, editable in place.
         wrap = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18,
                        halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
         wrap.append(title)
         wrap.append(panel)
-        self.overlay.add_overlay(wrap)
+        host, dim = self._host()
+        host.add_overlay(wrap)
         self.folder_view = (wrap, folder, panel)
         wrap.add_css_class("lp-folder-view")
-        self.col.add_css_class("dimmed")
+        dim.add_css_class("dimmed")
 
     def _close_folder(self) -> None:
         """Zooms/fades out (the grid comes back at once for drags and clicks)."""
         if self.folder_view:
             wrap = self.folder_view[0]
             self.folder_view = None
-            self.col.remove_css_class("dimmed")
+            host, dim = self._host()
+            dim.remove_css_class("dimmed")
             wrap.set_can_target(False)
             wrap.add_css_class("closing")
             GLib.timeout_add(ui.tokens.ms(160) + 20, lambda: (
-                wrap.get_parent() is not None and self.overlay.remove_overlay(wrap), False)[1])
+                isinstance(wrap.get_parent(), Gtk.Overlay) and wrap.get_parent().remove_overlay(wrap), False)[1])
             self.render()
 
     # -- search / selection ----------------------------------------------------------
@@ -774,6 +848,11 @@ class Launchpad(Gtk.ApplicationWindow):
                 editing.stop_editing(False)     # the old name back; the folder stays open
                 return True
             return False
+        if self.mode == "menu" and self.menu is not None:
+            if keyval in (K.KEY_Alt_L, K.KEY_Alt_R) and not self.jiggling:
+                self.set_jiggle(True, sticky=False)
+                return False
+            return self.menu.key(keyval)
         if keyval == K.KEY_Escape:
             if self.search.get_text():
                 self.search.set_text("")
@@ -836,7 +915,11 @@ class Launchpad(Gtk.ApplicationWindow):
         self.jiggling = on
         self._jiggle_sticky = on and sticky
         (self.bin.add_css_class if on else self.bin.remove_css_class)("jiggle")
-        for w in self.widgets.values():
+        tiles = list(self.widgets.values())
+        if self.menu is not None:
+            (self.menu.root.add_css_class if on else self.menu.root.remove_css_class)("jiggle")
+            tiles += list(self.menu.cache.values())
+        for w in tiles:
             if hasattr(w, "badge"):
                 w.badge.set_visible(on)
 
@@ -916,7 +999,7 @@ class Launchpad(Gtk.ApplicationWindow):
             self.add_controller(edge)
 
     def _edge_flip(self, x) -> None:
-        if not self._drag:
+        if not self._drag or self.mode == "menu":      # (the Apps Menu has no pages)
             return
         w = max(1, self.get_width())
         side = self.grid_area.get_margin_start() or int(w * 0.12)
@@ -966,7 +1049,7 @@ class Launchpad(Gtk.ApplicationWindow):
                 and not M.is_folder(widget.item) else None
             self._drag = {"item": widget.item, "widget": widget, "folder": folder, "target": None}
             self._drag["icon"] = ui.drag.hang(
-                drag, Gtk.WidgetPaintable.new(widget.get_first_child().get_first_child()), self.icon_size)
+                drag, Gtk.WidgetPaintable.new(widget.get_first_child().get_first_child()), widget.size)
             widget.add_css_class("dragging")
 
         def end(*_):
@@ -1075,7 +1158,16 @@ class Launchpad(Gtk.ApplicationWindow):
                 return self.drop_dock_folder(grid, x, y, folder)
             return isinstance(value, str) and value in self.installed
 
-        t = d.get("target")
+        self._drop_on_target()
+        self.save()
+        self.render()
+        return True
+
+    def _drop_on_target(self) -> None:
+        """Dropped on an app (a new folder) or a folder (into it; Hidden: hidden)
+        held long enough to light up."""
+        d = self._drag
+        t = d.get("target") if d else None
         if t is not None and t.has_css_class("folder-target"):
             target = t.item
             if M.is_folder(target) and target.get("locked"):
@@ -1089,9 +1181,6 @@ class Launchpad(Gtk.ApplicationWindow):
                         if k in self.installed else []
                 cats_a, cats_b = cats(target), cats(d["item"])
                 self.model.make_folder(target, d["item"], M.folder_name(cats_a, cats_b))
-        self.save()
-        self.render()
-        return True
 
     def drop_dock_folder(self, grid, x, y, folder) -> bool:
         """A folder dragged out of the Dock lands at that cell (its apps
