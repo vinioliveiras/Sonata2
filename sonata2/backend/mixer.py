@@ -35,6 +35,7 @@ class Stream:
     volume: int          # percent (the loudest channel)
     muted: bool
     corked: bool = False  # paused
+    pid: int = 0          # the process playing it (application.process.id)
 
 
 def _percent(volume: dict) -> int:
@@ -75,8 +76,65 @@ def parse(text: str) -> List[Stream]:
         name = props.get("application.name") or binary or key
         out.append(Stream(index=int(it.get("index", -1)), key=key, name=name,
                           icon=props.get("application.icon_name") or "", volume=_percent(it.get("volume")),
-                          muted=bool(it.get("mute")), corked=bool(it.get("corked"))))
+                          muted=bool(it.get("mute")), corked=bool(it.get("corked")),
+                          pid=int(props.get("application.process.id") or 0)
+                          if str(props.get("application.process.id") or "").isdigit() else 0))
     return out
+
+
+# -- whose stream: a game's (Steam), or an app's window ---------------------------------------------
+_OWNERS = {}
+PARENTS = 6            # a stream often comes from a helper process (WebKitWebProcess, wine...)
+
+
+def _parent(pid: int, proc: str = "/proc") -> int:
+    try:
+        with open(f"{proc}/{pid}/stat", encoding="utf-8", errors="replace") as f:
+            return int(f.read().rsplit(")", 1)[1].split()[1])
+    except (OSError, ValueError, IndexError):
+        return 0
+
+
+def _steam_app(pid: int, proc: str = "/proc"):
+    try:
+        with open(f"{proc}/{pid}/environ", "rb") as f:
+            env = dict(e.split(b"=", 1) for e in f.read().split(b"\0") if b"=" in e)
+    except OSError:
+        return None
+    aid = (env.get(b"SteamAppId") or env.get(b"SteamGameId") or b"").decode(errors="replace")
+    return aid if aid.isdigit() and aid != "0" else None
+
+
+def whose(pid: int, views=None, proc: str = "/proc"):
+    """("steam", appid) or ("app", window app_id) for the process playing a
+    stream (or one of its parents), None when unknown. Vini: the sound mixer
+    showed no icon for a Steam game. `views`: Wayfire's list-views."""
+    if pid <= 0:
+        return None
+    if pid in _OWNERS:
+        return _OWNERS[pid]
+    if views is None:
+        try:
+            from ..wl.wfipc import WayfireIPC
+            views = WayfireIPC().call("window-rules/list-views")
+        except Exception:
+            views = None
+    by_pid = {v.get("pid"): v.get("app-id") for v in views or [] if isinstance(v, dict) and v.get("app-id")}
+    found, p = None, pid
+    for _ in range(PARENTS):
+        if p <= 1:
+            break
+        aid = _steam_app(p, proc)
+        if aid:
+            found = ("steam", aid)
+            break
+        if p in by_pid:
+            found = ("app", by_pid[p])
+            break
+        p = _parent(p, proc)
+    if found or views is not None:          # (IPC down: asked again next time)
+        _OWNERS[pid] = found
+    return found
 
 
 def group(streams: List[Stream]) -> List[Stream]:

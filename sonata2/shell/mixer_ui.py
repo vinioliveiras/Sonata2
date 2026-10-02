@@ -27,15 +27,35 @@ ui.register("""
 """, key="mixer")
 
 
-def _gicon(stream: "mixer.Stream"):
+def shown(stream: "mixer.Stream"):
+    """(name, Gio.Icon) of a stream's app: its desktop entry by the stream's
+    names; else by the process playing it -- a Steam game (as in the Dock and
+    Alt+Tab) or the app whose window that process (or its parent) has."""
     try:
         did = apps.match_app_id(stream.key) or (apps.match_app_id(stream.icon) if stream.icon else None)
         info = apps.lookup(did) if did else None
+        if info:
+            return stream.name, icons.app_icon(info)
+        from ..backend import mixer
+        from .. import steamgames
+        owner = mixer.whose(stream.pid)
+        if owner and owner[0] == "steam":
+            return steamgames.shown(f"steam_app_{owner[1]}", stream.name)
+        if owner:
+            did = apps.match_app_id(owner[1])
+            info = apps.lookup(did) if did else None
+            if info:
+                return info.get_display_name(), icons.app_icon(info)
+            game = steamgames.shown(owner[1], stream.name)
+            if game:
+                return game
     except Exception:                       # an icon is never worth a broken menu
-        info = None
-    if info:
-        return icons.app_icon(info)
-    return Gio.ThemedIcon.new_from_names([n for n in (stream.icon, "audio-x-generic") if n])
+        pass
+    return stream.name, Gio.ThemedIcon.new_from_names([n for n in (stream.icon, "audio-x-generic") if n])
+
+
+def _gicon(stream: "mixer.Stream"):
+    return shown(stream)[1]
 
 
 class MixerRow(Gtk.Revealer):
@@ -52,7 +72,7 @@ class MixerRow(Gtk.Revealer):
         self.mute.set_child(self.image)
         self.mute.connect("clicked", lambda _b: self.toggle_mute())
         title.append(self.mute)
-        self.label = Gtk.Label(label=stream.name, xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.END,
+        self.label = Gtk.Label(label=shown(stream)[0], xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.END,
                                width_chars=1)
         title.append(self.label)
         self.box.append(title)
@@ -66,7 +86,7 @@ class MixerRow(Gtk.Revealer):
 
     def update(self, stream) -> None:
         """New values from PipeWire (not while the slider is being moved)."""
-        self.label.set_label(stream.name)
+        self.label.set_label(shown(stream)[0])
         if not self._src and abs(self.slider.get_value() - stream.volume) >= 1:
             self._quiet = True
             self.slider.set_value(stream.volume)

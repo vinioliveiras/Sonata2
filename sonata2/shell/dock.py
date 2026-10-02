@@ -897,9 +897,7 @@ class Dock(Gtk.Box):
             return True
         aid = steamgames.appid(key)
         if aid and steamgames.name(aid):
-            pic = steamgames.icon_path(aid)
-            gicon = (icons.picture_icon(pic) if pic else None) or Gio.ThemedIcon.new("steam")
-            self._add_tile(key, steamgames.name(aid), gicon)
+            self._add_tile(key, *steamgames.shown(key))
             return True
         return False
 
@@ -1563,8 +1561,8 @@ class Dock(Gtk.Box):
             if key not in self.tiles:
                 if self._add_known_tile(key):        # a desktop entry, or a Steam game
                     pass
-                elif steamgames.appid(key):          # a Steam game Steam doesn't list
-                    self._add_tile(key, key, Gio.ThemedIcon.new("steam"))
+                elif steamgames.appid(key):          # a Steam game Steam doesn't list: its window's title
+                    self._add_tile(key, *steamgames.shown(key, next((t.title for t in groups[key] if t.title), "")))
                 else:   # no .desktop: generic icon, app_id as name
                     # (logged: a window that should have matched an app is easy to spot)
                     print(f"sonata2-dock: no app for window app_id {key!r}", flush=True)

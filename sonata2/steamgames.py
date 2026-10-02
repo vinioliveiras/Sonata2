@@ -7,7 +7,8 @@ Steam's own copy in appcache/librarycache), and how to start it again.
     steamgames.appid("steam_app_3219630")   # "3219630" (None for other app_ids)
     steamgames.name("3219630")               # "Halloween: The Game"
     steamgames.icon_path("3219630")          # a square picture, or None
-    steamgames.launch("3219630")"""
+    steamgames.launch("3219630")
+    steamgames.shown("steam_app_3219630")    # (name, Gio.Icon): the Dock and the app switcher"""
 import glob
 import os
 import re
@@ -101,3 +102,18 @@ def launch(aid: str) -> bool:
         return True
     except OSError:
         return False
+
+
+def shown(key: str, fallback_name: str = ""):
+    """(name, Gio.Icon) of a Steam game's window, None for other app_ids --
+    one answer for the Dock and the app switcher (Vini: Alt+Tab showed
+    "steam_app_3219630" with a generic icon). Not in a library: the window's
+    title (fallback_name) and Steam's icon."""
+    aid = appid(key)
+    if not aid:
+        return None
+    from gi.repository import Gio
+    from . import icons
+    pic = icon_path(aid)
+    gicon = (icons.picture_icon(pic) if pic else None) or Gio.ThemedIcon.new("steam")
+    return name(aid) or (fallback_name or "").strip() or key, gicon

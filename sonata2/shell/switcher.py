@@ -167,16 +167,21 @@ class Switcher(Gtk.Window):
         while self.panel.get_first_child():
             self.panel.remove(self.panel.get_first_child())
         self.items = []
+        from .. import steamgames
         for key in self.keys:
             info = apps.lookup(key)
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["sw-item"])
             img = Gtk.Image(pixel_size=ICON)
+            # a Steam game: its name and icon, as in the Dock (Vini: "steam_app_…")
+            game = None if info else steamgames.shown(key, next((t.title for t in self.groups[key] if t.title), ""))
             if info:
                 icons.set_image(img, icons.app_icon(info))
+            elif game:
+                icons.set_image(img, game[1])
             else:
                 img.set_from_icon_name("application-x-executable")
             box.append(img)
-            box.name = info.get_display_name() if info else key
+            box.name = info.get_display_name() if info else game[0] if game else key
             self.panel.append(box)
             self.items.append(box)
         if not self.keys:

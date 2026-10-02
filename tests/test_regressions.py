@@ -1618,6 +1618,20 @@ class SteamGameDockTests(unittest.TestCase):
         self.assertEqual(self.sg.name("3219630"), "Halloween: The Game")
         self.assertEqual(self.sg.icon_path("3219630"), self.icon)       # not logo.png
 
+    def test_alt_tab_shows_the_game(self):
+        """Vini: Alt+Tab showed "steam_app_3219630" with a generic icon -- the
+        switcher now asks the same as the Dock (steamgames.shown)."""
+        from unittest import mock
+        with mock.patch("sonata2.icons.picture_icon", return_value="ICON"):
+            self.assertEqual(self.sg.shown("steam_app_3219630", "Ravage"), ("Halloween: The Game", "ICON"))
+            self.sg._names["999"] = None
+            name, _icon = self.sg.shown("steam_app_999", "Ravage  ")
+            self.assertEqual(name, "Ravage")                           # not in a library: the window's title
+        self.assertIsNone(self.sg.shown("firefox"))
+        root = pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "shell"
+        self.assertIn("steamgames.shown(", (root / "switcher.py").read_text())
+        self.assertIn("steamgames.shown(", (root / "dock.py").read_text())
+
     def test_shortcut_icon_wins(self):
         big = os.path.join(os.environ["XDG_DATA_HOME"], "icons", "hicolor", "256x256", "apps")
         os.makedirs(big)
