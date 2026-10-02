@@ -1951,7 +1951,65 @@ class Settings(Adw.ApplicationWindow):
                                                             "Couldn't change the name"), e.get_text().strip()))
         g.add(entry)
         g.add(Adw.ActionRow(title="Local hostname", subtitle=GLib.get_host_name() + ".local", use_markup=False))
-        return [g]
+        return [g, self._screen_sharing_group()]
+
+    def _screen_sharing_group(self):
+        """See and control this screen from another computer or a phone
+        (backend/screenshare.py: wayvnc). Vini: Chrome Remote Desktop can't
+        show a Wayfire session."""
+        from ..backend import screenshare as S
+        g = group("Screen Sharing", "Others can see and control this screen with a VNC viewer "
+                                    "(RealVNC Viewer, TigerVNC) and the password below.")
+        if not S.installed():
+            row = Adw.ActionRow(title="Screen Sharing needs wayvnc", use_markup=False,
+                                subtitle="Install it with your package manager (Arch / CachyOS: "
+                                         "sudo pacman -S wayvnc), then open this page again.")
+            row.set_subtitle_lines(0)
+            g.add(row)
+            return g
+        cfg = config.load(S.NAME, S.DEFAULTS)
+        details = []
+        g.add(switch_row("Screen Sharing", cfg["screen"],
+                         lambda on: (self._save(S.NAME, "screen", on), [d.set_visible(on) for d in details])))
+        shown = [("", "Main display")] + [(d.name, f"{d.name} — {d.description}" if d.description else d.name)
+                                          for d in system.displays()]
+        details.append(combo_row("Display", shown, cfg.get("output", ""),
+                                 lambda v: self._save(S.NAME, "output", v), subtitle="The one others see"))
+        where = Adw.ActionRow(title="Address", use_markup=False, subtitle="…")
+        where.set_subtitle_lines(0)
+        details.append(where)
+
+        def fill(addrs):
+            where.set_subtitle("\n".join(f"{a}  ({'Tailscale' if i.startswith('tailscale') else i})"
+                                         for a, i in addrs) or "No network")
+        system.run_async(S.addresses, fill)
+        user, pw = S.credentials()
+        login = Adw.ActionRow(title="User and password", use_markup=False, subtitle=f"{user}  ·  {pw}")
+        box = Gtk.Box(spacing=8, valign=Gtk.Align.CENTER)
+
+        def copy():
+            self.get_clipboard().set(S.credentials()[1])
+            self.toast("Password copied")
+
+        def renew():
+            S.new_password()
+            login.set_subtitle(f"{user}  ·  {S.credentials()[1]}")
+            self._save(S.NAME, "rev", config.load(S.NAME, S.DEFAULTS).get("rev", 0) + 1)   # wayvnc restarts
+            self.toast("New password: viewers connected now are disconnected")
+        box.append(ui.controls.push_button("Copy", copy))
+        box.append(ui.controls.push_button("New Password", renew))
+        login.add_suffix(box)
+        details.append(login)
+        far = Adw.ActionRow(title="From outside your network", use_markup=False,
+                            subtitle="Install Tailscale on this computer and on the other device, then use the "
+                                     "Tailscale address. Never open port 5900 on your router.")
+        far.set_subtitle_lines(0)
+        details.append(far)
+        for d in details:
+            d.set_visible(cfg["screen"])
+            g.add(d)
+        self.sharing_rows = details                                    # (tests)
+        return g
 
     def _page_accessibility(self):
         I = "org.gnome.desktop.interface"

@@ -1323,6 +1323,10 @@ class TopBarWindow(Gtk.ApplicationWindow):
             from ..vram import VramWatch                          # a full NVIDIA card: who, and a warning
             self.bar.vram = VramWatch(notify=gpu.notify)
             self.bar.vram.start()
+            from ..backend.screenshare import ScreenSharing             # Settings > Sharing > Screen Sharing
+            self.bar.screenshare = ScreenSharing()
+            self.bar.screenshare.start()
+            app.connect("shutdown", lambda *_: self.bar.screenshare.stop())
             from ..backend.equalizer import Equalizer
             self.bar.equalizer = Equalizer()
             self.bar.equalizer.start()
