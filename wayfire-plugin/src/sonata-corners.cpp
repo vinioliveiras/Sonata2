@@ -126,7 +126,18 @@ void main()
     vec2 lo = rect.xy;
     vec2 hi = rect.xy + rect.zw;
     float overlap = square_top > 0.5 ? 5.0 : 1.0;      /* rows pixdecor's title bar reaches under the client */
-    if (seam >= 0.0 && fill.a > 0.0 && p.y >= seam && p.y < seam + overlap && p.x >= lo.x && p.x <= hi.x)
+    /* pixdecor draws behind the client: its stubs only show through a
+     * see-through toolbar (Sonata's glass). Where the client is opaque just
+     * below those rows (a browser's tab strip), what shows there is the
+     * client itself -- left alone (Vini: Chrome's Tab Search button and
+     * Firefox's first tab lost their top, maximized). */
+    bool opaque_below = seam >= 0.0 && p.y >= seam && p.y < seam + SEAM_BAND &&      /* (a fetch: those rows only) */
+        get_pixel(vec2(uvpos.x, 1.0 - (seam + overlap + STUB_ROWS + 0.5) / size.y)).a > 0.99;
+    if (opaque_below)
+    {
+        /* the client's own pixels */
+    }
+    else if (seam >= 0.0 && fill.a > 0.0 && p.y >= seam && p.y < seam + overlap && p.x >= lo.x && p.x <= hi.x)
     {
         /* those rows are the title bar: Sonata's toolbars leave them clear
          * (ui/window.py), but pixdecor paints its button area and right

@@ -2155,6 +2155,20 @@ class MusicTitleAndSeamRegressions(unittest.TestCase):
         self.assertIn("square_top > 0.5 && seam >= 0.0 && p.y >= seam + overlap", cpp)
         self.assertNotIn("sonata-corners: seam ", cpp)
 
+    def test_opaque_client_keeps_its_top(self):
+        """Vini: Chrome's Tab Search button and Firefox's first tab lost their
+        top rows, maximized -- the title bar's colour and the stub copy were
+        painted over an opaque client. pixdecor draws behind the client, so
+        where the client is opaque just under those rows they stay its own."""
+        cpp = (pathlib.Path(__file__).resolve().parent.parent / "wayfire-plugin" / "src" /
+               "sonata-corners.cpp").read_text()
+        main = cpp[cpp.index("void main()"):]
+        self.assertIn("(seam + overlap + STUB_ROWS + 0.5) / size.y)).a > 0.99", main)
+        keep = main.index("if (opaque_below)")
+        self.assertLess(keep, main.index("c = fill;"))                     # checked first
+        self.assertLess(keep, main.index("square_top > 0.5 && seam >= 0.0 && p.y >= seam + overlap"))
+        self.assertIn("p.y >= seam && p.y < seam + SEAM_BAND &&", main[:keep])   # a fetch only near the seam
+
 
 class UnifiedToolbarSeamRegressions(unittest.TestCase):
     """A dark band under the title bar of maximized glass windows (Music):
