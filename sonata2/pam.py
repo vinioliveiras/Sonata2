@@ -9,6 +9,7 @@ from ctypes import CFUNCTYPE, POINTER, Structure, byref, c_char_p, c_int, c_size
 
 PAM_PROMPT_ECHO_OFF = 1
 PAM_PROMPT_ECHO_ON = 2
+PAM_NEW_AUTHTOK_REQD = 12       # password expired: still the right person (a lock screen can't change it)
 SERVICES = ("sonata-lock", "system-local-login", "login", "system-auth", "other")
 
 
@@ -48,6 +49,8 @@ def _pam():
         _lib.pam_start.argtypes = [c_char_p, c_char_p, POINTER(PamConv), POINTER(c_void_p)]
         _lib.pam_authenticate.restype = c_int
         _lib.pam_authenticate.argtypes = [c_void_p, c_int]
+        _lib.pam_acct_mgmt.restype = c_int
+        _lib.pam_acct_mgmt.argtypes = [c_void_p, c_int]
         _lib.pam_setcred.restype = c_int
         _lib.pam_setcred.argtypes = [c_void_p, c_int]
         _lib.pam_end.restype = c_int
@@ -90,6 +93,12 @@ def authenticate(user: str, password: str) -> bool:
     if lib.pam_start(_service().encode(), user.encode(), byref(c), byref(handle)) != 0:
         return False
     rc = lib.pam_authenticate(handle, 0)
+    if rc == 0:
+        # the account itself must still be valid: an expired or locked account
+        # with the right password must not open the lock screen
+        rc = lib.pam_acct_mgmt(handle, 0)
+        if rc == PAM_NEW_AUTHTOK_REQD:
+            rc = 0
     if rc == 0:
         lib.pam_setcred(handle, 0x8)          # PAM_REINITIALIZE_CRED (refresh Kerberos etc.)
     lib.pam_end(handle, rc)

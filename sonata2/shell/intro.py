@@ -42,3 +42,5 @@ def wait(callback) -> None:
     mon.connect("changed", lambda _m, _f, _o, ev: ev == Gio.FileMonitorEvent.DELETED and fire())
     state["mon"] = mon                         # keep it alive
     GLib.timeout_add_seconds(TIMEOUT_S, fire)
+    if not pending():                          # removed before the monitor existed: no event will come
+        GLib.idle_add(fire)

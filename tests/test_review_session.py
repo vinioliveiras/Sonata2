@@ -19,7 +19,7 @@ import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib  # noqa: E402
+from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
 
 from sonata2 import config, doctor, greetd, keyring, pam, portal, userdata  # noqa: E402
 from sonata2 import __main__ as main  # noqa: E402
@@ -57,7 +57,8 @@ class ConfigTest(unittest.TestCase):
         config.update("x", n=2)
         with open(os.path.join(self.d, "x.json"), encoding="utf-8") as f:
             self.assertEqual(json.load(f), {"keep": "me", "n": 2})
-        self.assertEqual(sorted(os.listdir(self.d)), ["x.json"])
+        # The hidden .x.lock (cross-process flock) is expected; no temp file is.
+        self.assertEqual(sorted(n for n in os.listdir(self.d) if not n.endswith(".lock")), ["x.json"])
 
     def test_update_over_a_corrupt_file_starts_fresh(self):
         """A broken file is replaced by the new values, never kept half-read."""
@@ -208,16 +209,11 @@ class GreetdTest(unittest.TestCase):
         with mock.patch("time.sleep"), self.assertRaises(greetd.GreetdError):
             greetd.login(f, "x", "wrong")
 
-    @unittest.expectedFailure
     def test_missing_socket_variable_is_an_error_the_greeter_handles(self):
-        """The greeter's worker only catches GreetdError/OSError."""
-        # BUG: without $GREETD_SOCK, Client() raises KeyError, which escapes
-        # greeter.Greeter._login's worker thread: the spinner turns forever.
+        """No $GREETD_SOCK: a GreetdError the login screen shows, never a KeyError."""
         with mock.patch.dict(os.environ, {}, clear=True):
-            try:
+            with self.assertRaises(greetd.GreetdError):
                 greetd.Client()
-            except (greetd.GreetdError, OSError):
-                pass
 
 
 # -- pam.py ----------------------------------------------------------------------------------
@@ -267,21 +263,15 @@ class DoctorTest(unittest.TestCase):
             out = doctor.last_session_errors(n=5).splitlines()
         self.assertEqual(out, ["--- dock.log ---"] + [f"Error {i}" for i in range(25, 30)])
 
-    @unittest.expectedFailure
     def test_lock_service_in_usr_lib_is_not_a_failure(self):
-        """pam._service() accepts /usr/lib/pam.d; the doctor must agree."""
-        # BUG: check_lock only looks in /etc/pam.d, so a distro shipping PAM
-        # files in /usr/lib/pam.d gets a false FAIL ("problem to fix").
+        """A PAM service in /usr/lib/pam.d (pam._service() accepts it) is OK for the doctor too."""
         r = doctor.Report()
         with mock.patch("os.path.exists", side_effect=lambda p: p == "/usr/lib/pam.d/system-local-login"):
             doctor.check_lock(r)
         self.assertEqual(r.rows[0][0], doctor.OK)
 
-    @unittest.expectedFailure
     def test_errors_read_from_where_keep_writes_logs(self):
-        """`sonata2 keep` logs to $XDG_CACHE_HOME/sonata2; the doctor should read there."""
-        # BUG: last_session_errors() hard-codes ~/.cache, so with XDG_CACHE_HOME
-        # set the report and bug reports miss every component's errors.
+        """The doctor reads the logs in $XDG_CACHE_HOME/sonata2, where `sonata2 keep` writes them."""
         home, cache = tempfile.mkdtemp(), tempfile.mkdtemp()
         write(os.path.join(cache, "sonata2", "dock.log"), "Traceback (most recent call last):")
         with mock.patch.dict(os.environ, {"HOME": home, "XDG_CACHE_HOME": cache}):
@@ -436,13 +426,9 @@ class GreeterLoginTest(unittest.TestCase):
         self.assertEqual(self.g.user.name, "ana")
         self.assertTrue(hasattr(self.g, "entry"))
 
-    @unittest.expectedFailure
     def test_other_users_clicked_while_logging_in(self):
-        """A login that succeeds must finish (save the user, quit) even if
-        "Other Users" was clicked while the spinner turned."""
-        # BUG: _started/_failed read self.user, which "Other Users" sets to None
-        # during the login thread: AttributeError, the greeter never quits and
-        # greetd never starts the session.
+        """A login that succeeds finishes (saves the user) even if "Other Users"
+        was clicked while the spinner turned."""
         self.g._pick(self.g.users[1])
         self.g.entry.set_text("sonata")
 
@@ -624,6 +610,437 @@ class UserdataTest(unittest.TestCase):
         self.assertFalse(userdata.migrate("notes"))
         self.assertTrue(os.path.exists(os.path.join(self.d, "sonata2", "notes", "old.json")))
         self.assertEqual(os.listdir(userdata.folder("notes")), ["new.json"])
+
+
+# -- fixes from the review (regression tests) ----------------------------------------------------
+class Inline:
+    """threading.Thread stand-in: runs the target at once."""
+    def __init__(self, target, daemon=None):
+        self.target = target
+
+    def start(self):
+        self.target()
+
+
+def drain():
+    ctx = GLib.MainContext.default()
+    while ctx.pending():
+        ctx.iteration(False)
+
+
+class GreeterErrorsTest(GreeterLoginTest):
+    def test_unexpected_error_in_the_login_worker_ends_the_spinner(self):
+        """Any exception in the login thread (not only GreetdError/OSError) brings the field back."""
+        self.g._pick(self.g.users[0])
+        self.g.entry.set_text("pw")
+        with mock.patch.object(G.threading, "Thread", Inline), \
+                mock.patch.object(G.greetd, "login", side_effect=ValueError("bad reply")):
+            self.g._login()
+            drain()
+        self.assertEqual(self.g.slot.get_visible_child_name(), "field")
+        self.assertTrue(self.g.entry.get_sensitive())
+        self.assertIn("bad reply", self.g.hint.get_label())
+        self.assertTrue(self.g.links.get_sensitive())
+
+    def test_other_users_is_disabled_while_logging_in(self):
+        """The links row (Other Users, session) can't be used mid-login."""
+        self.g._pick(self.g.users[0])
+        self.g.entry.set_text("pw")
+        with mock.patch.object(G.threading, "Thread", lambda target, daemon=None: mock.Mock()):
+            self.g._login()
+        self.assertFalse(self.g.links.get_sensitive())
+        page = self.g.center.get_visible_child()
+        self.g._pick(None)
+        self.assertIs(self.g.center.get_visible_child(), page)
+
+
+class LockErrorsTest(unittest.TestCase):
+    def test_pam_crash_ends_the_spinner_and_keeps_the_lock(self):
+        """An exception from PAM is a failed attempt: the field comes back, nothing unlocks."""
+        from sonata2.shell import lock as L
+        ls = L.LockScreen.__new__(L.LockScreen)
+        ls.entry = mock.Mock(get_text=lambda: "pw")
+        ls.guard = mock.Mock(blocked=lambda _u: False)
+        ls.spinner, ls.slot = mock.Mock(), mock.Mock()
+        done = []
+        ls._done = done.append
+        with mock.patch.object(L.threading, "Thread", Inline), \
+                mock.patch.object(L.GLib, "idle_add", lambda fn, *a: fn(*a)), \
+                mock.patch.object(L.pam, "authenticate", side_effect=RuntimeError("libpam")):
+            ls._check()
+        self.assertEqual(done, [False])
+
+
+class FakePam:
+    """libpam stand-in: pam_authenticate / pam_acct_mgmt answer `auth` / `acct`."""
+    def __init__(self, auth=0, acct=0):
+        self.auth, self.acct, self.calls = auth, acct, []
+        self._calloc = self._strdup = lambda *a: 0
+
+    def pam_start(self, *a):
+        return 0
+
+    def pam_authenticate(self, *a):
+        self.calls.append("authenticate")
+        return self.auth
+
+    def pam_acct_mgmt(self, *a):
+        self.calls.append("acct_mgmt")
+        return self.acct
+
+    def pam_setcred(self, *a):
+        self.calls.append("setcred")
+        return 0
+
+    def pam_end(self, *a):
+        return 0
+
+
+class PamAccountTest(unittest.TestCase):
+    def _auth(self, **kw):
+        lib = FakePam(**kw)
+        with mock.patch.object(pam, "_pam", return_value=lib):
+            return pam.authenticate("vini", "pw"), lib.calls
+
+    def test_expired_or_locked_account_does_not_unlock(self):
+        """The right password of an expired/locked account (pam_acct_mgmt fails) is refused."""
+        self.assertEqual(self._auth(acct=13), (False, ["authenticate", "acct_mgmt"]))      # PAM_ACCT_EXPIRED
+        self.assertEqual(self._auth(acct=9)[0], False)                                    # PAM_PERM_DENIED
+
+    def test_valid_account_unlocks(self):
+        """A valid account (or only the password expired) authenticates and refreshes credentials."""
+        self.assertEqual(self._auth(), (True, ["authenticate", "acct_mgmt", "setcred"]))
+        self.assertTrue(self._auth(acct=pam.PAM_NEW_AUTHTOK_REQD)[0])
+
+    def test_wrong_password_skips_the_account_check(self):
+        """A wrong password ends there."""
+        self.assertEqual(self._auth(auth=7), (False, ["authenticate"]))
+
+
+class KeyringRollbackTest(unittest.TestCase):
+    def test_rollback_frees_the_secrets_name_before_keepassxc(self):
+        """A failed switch stops gnome-keyring before KeePassXC is started again."""
+        calls = []
+        rec = lambda name, ret=True: (lambda *a: (calls.append(name), ret)[1])     # noqa: E731
+
+        def boom(_items):
+            raise RuntimeError("no")
+        ops = {k: rec(k) for k in ("auth", "write_pam", "quit_kp", "kp_service", "start_gnome", "stop_gnome",
+                                   "start_kp", "set_backend")}
+        ops.update(pam_ready=rec("pam_ready", True), read=rec("read", []), write=boom)
+        with self.assertRaises(RuntimeError):
+            keyring.switch_to_gnome("pw", ops=ops)
+        self.assertLess(calls.index("stop_gnome"), calls.index("start_kp"))
+
+    def test_unpam_removes_only_sonatas_lines(self):
+        """greeter-setup.sh revert: Sonata's keyring lines go, the rest (and the backup) too."""
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "greetd")
+        orig = "#%PAM-1.0\nauth include system-login\nsession include system-login\n"
+        write(path, orig)
+        write(path + ".sonata-bak", orig)
+        write(path, keyring.pam_text(orig))
+        self.assertEqual(keyring.unwrite_pam(path), 0)
+        with open(path) as f:
+            self.assertEqual(f.read(), orig)
+        self.assertFalse(os.path.exists(path + ".sonata-bak"))
+
+    def test_unpam_leaves_files_sonata_never_changed(self):
+        """No .sonata-bak: the user's own pam_gnome_keyring lines stay."""
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "greetd")
+        text = keyring.pam_text("auth include system-login\n")
+        write(path, text)
+        keyring.unwrite_pam(path)
+        with open(path) as f:
+            self.assertEqual(f.read(), text)
+
+
+class SelfCommandTest(unittest.TestCase):
+    def test_desktop_exec_keeps_a_path_with_spaces_whole(self):
+        """self_command() quotes for Exec=: a clone path with spaces/$ parses back to the same argv."""
+        from gi.repository import GLib as GL
+        with mock.patch.object(main, "REPO", "/home/a b/$x%"), mock.patch.dict(os.environ, {"SONATA2_LAUNCHER": ""}):
+            d = tempfile.mkdtemp()
+            path = os.path.join(d, "x.desktop")
+            write(path, f"[Desktop Entry]\nType=Application\nName=x\nExec={main.self_command()} settings\n")
+            kf = GL.KeyFile()
+            kf.load_from_file(path, GL.KeyFileFlags.NONE)
+            exec_line = kf.get_string("Desktop Entry", "Exec").replace("%%", "%")
+            argv = GL.shell_parse_argv(exec_line)[1]
+            self.assertEqual(argv, main.self_argv() + ["settings"])
+
+    def test_autostart_spawns_argv_lists(self):
+        """Autostart starts Setup / polkit / Files as argv lists (a path with spaces stays one argument)."""
+        from sonata2 import autostart
+        spawned = []
+        argv = ["/opt/my apps/sonata2"]
+        with mock.patch("sonata2.__main__.self_argv", return_value=argv), \
+                mock.patch("sonata2.titlebars.apply"), mock.patch("sonata2.gtkstyle.reset_env"), \
+                mock.patch("sonata2.flatpak_theme.apply"), mock.patch("sonata2.keyring.start"), \
+                mock.patch("sonata2.feedback.report.crash", return_value=False), \
+                mock.patch("sonata2.config.load", return_value={"done": False}), \
+                mock.patch("subprocess.run", return_value=types.SimpleNamespace(returncode=1)), \
+                mock.patch.object(autostart, "entries", return_value=[]), \
+                mock.patch.object(autostart.GLib, "spawn_async", lambda a, **_k: spawned.append(a)):
+            autostart.run()
+        self.assertEqual(spawned, [argv + ["setup"], argv + ["keep", "polkit"], argv + ["files", "--background"]])
+
+    def test_main_display_change_moves_brightness_target(self):
+        """When the main display changes, the main bar's monitor (Control Center brightness) follows."""
+        from sonata2.shell import layer, monitors, topbar
+        win = mock.MagicMock()
+        cbs = []
+        with mock.patch.object(topbar, "TopBarWindow", return_value=win), \
+                mock.patch.object(layer, "layer_shell", return_value=mock.MagicMock()), \
+                mock.patch.object(monitors, "main", return_value="old"), \
+                mock.patch.object(monitors, "ensure_refresh"), mock.patch.object(monitors, "each"), \
+                mock.patch.object(monitors, "on_main_changed", cbs.append), \
+                mock.patch("sonata2.shell.capture.Capture"), mock.patch.object(GLib, "timeout_add"), \
+                mock.patch.object(GLib, "timeout_add_seconds"):
+            main.run_topbar(mock.MagicMock(), types.SimpleNamespace(preview=False, menu=-1), None)
+            cbs[0]("new")
+        self.assertEqual(win.bar.monitor, "new")
+
+
+class IntroRaceTest(unittest.TestCase):
+    def test_marker_removed_while_the_monitor_starts_does_not_wait_the_timeout(self):
+        """The marker gone between the check and the monitor: the callback still comes at once."""
+        from sonata2.shell import intro
+        d = tempfile.mkdtemp()
+        mark = os.path.join(d, "intro")
+        write(mark)
+        hits = []
+        real = intro.Gio.File.new_for_path
+
+        def racing(path):
+            os.unlink(mark)                   # deleted just before the monitor exists
+            return real(path)
+        with mock.patch.object(intro, "MARK", mark), mock.patch.object(intro.Gio.File, "new_for_path", racing), \
+                mock.patch.object(intro, "TIMEOUT_S", 60):
+            intro.wait(lambda: hits.append(1))
+            end = GLib.get_monotonic_time() + 300_000
+            while not hits and GLib.get_monotonic_time() < end:
+                GLib.MainContext.default().iteration(False)
+        self.assertEqual(hits, [1])
+
+
+class PortalCacheTest(unittest.TestCase):
+    def test_read_serves_the_watched_values(self):
+        """Settings Read/ReadAll answer from the values the watchers keep, without re-reading files."""
+        p = portal.Portal.__new__(portal.Portal)
+        p._last = {"org.gnome.desktop.interface": {"color-scheme": GLib.Variant("s", "prefer-dark")}}
+        inv = mock.Mock()
+        with mock.patch.object(portal, "settings_values", side_effect=AssertionError("rebuilt")):
+            p._settings_call(None, None, None, None, "Read",
+                             GLib.Variant("(ss)", ("org.gnome.desktop.interface", "color-scheme")), inv)
+        self.assertEqual(inv.return_value.call_args[0][0].unpack(), ("prefer-dark",))
+
+    def test_settings_values_reads_system_json_once(self):
+        """One build of the values loads system.json once, not once per key."""
+        from sonata2 import prefs
+        with mock.patch.object(prefs, "_load", wraps=prefs._load) as load:
+            portal.settings_values()
+        self.assertEqual(load.call_count, 1)
+
+    def test_prefs_defaults_computed_once(self):
+        """prefs computes the default wallpaper once at import (it was twice)."""
+        import importlib
+        from sonata2 import prefs, wallpapers
+        with mock.patch.object(wallpapers, "default_uris", wraps=wallpapers.default_uris) as uris:
+            importlib.reload(prefs)
+        importlib.reload(prefs)
+        self.assertEqual(uris.call_count, 1)
+
+
+class DoctorPamTest(unittest.TestCase):
+    def test_greeter_revert_undoes_keyring_and_quiet_console(self):
+        """tools/greeter-setup.sh revert also takes out the keyring PAM lines and the quiet console."""
+        with open(os.path.join(main.REPO, "tools", "greeter-setup.sh")) as f:
+            text = f.read()
+        revert = text[text.index('if [ "$ACTION" = revert ]'):text.index("exit 0")]
+        self.assertIn("keyring unpam", revert)
+        self.assertIn("quiet-console.sh\" revert", revert)
+
+    def test_installer_never_adds_the_mount_rule_unasked(self):
+        """install.sh: the passwordless-mount polkit rule is opt-in (default No; --yes doesn't add it)."""
+        with open(os.path.join(main.REPO, "install.sh")) as f:
+            text = f.read()
+        self.assertIn('ask_no() { [ "$YES" = 1 ] && return 1;', text)
+        block = text[text.index("MOUNT_RULES="):text.index("# -- Sonata's login screen")]
+        self.assertIn('[ "$MOUNTRULE" = 1 ] || ask_no ', block)
+        self.assertIn("--mount-without-password) MOUNTRULE=1", text)
+
+
+try:
+    gi.require_version("Polkit", "1.0")
+    from gi.repository import Polkit
+    from sonata2.shell import polkit as PK
+except (ImportError, ValueError):
+    PK = None
+
+
+@unittest.skipIf(PK is None, "no polkit introspection data")
+class PolkitAgentTest(unittest.TestCase):
+    def _agent(self):
+        a = PK.Agent.__new__(PK.Agent)
+        a.app, a.dialogs, a.polkitd = None, {}, ":1.5"
+        return a
+
+    def test_only_polkitd_may_begin_authentication(self):
+        """Another bus client calling BeginAuthentication gets an error and no dialog."""
+        a, inv = self._agent(), mock.Mock()
+        params = GLib.Variant("(sssa{ss}sa(sa{sv}))", ("x", "m", "", {}, "c1",
+                                                      [("unix-user", {"uid": GLib.Variant("u", 1000)})]))
+        with mock.patch.object(PK, "AuthDialog") as dlg:
+            a._call(None, ":1.99", None, None, "BeginAuthentication", params, inv)
+        inv.return_dbus_error.assert_called_once()
+        self.assertIn("NotAuthorized", inv.return_dbus_error.call_args[0][0])
+        dlg.assert_not_called()
+        with mock.patch.object(PK, "AuthDialog") as dlg:
+            a._call(None, ":1.5", None, None, "BeginAuthentication", params, mock.Mock())
+        dlg.assert_called_once()
+
+    def test_identity_without_uid_is_never_root(self):
+        """A unix-user without a uid is skipped, not taken as uid 0."""
+        self.assertIsNone(PK._identity("unix-user", {}))
+        self.assertIsNone(PK._identity("unix-group", {}))
+        self.assertEqual(PK._identity("unix-user", {"uid": 1000}).get_uid(), 1000)
+
+
+def _app(name):
+    app = Adw.Application(application_id=f"io.github.vinioliveiras.sonata2.test.{name}")
+    app.register(None)
+    return app
+
+
+def settle(ms=150):
+    end = GLib.get_monotonic_time() + ms * 1000
+    while GLib.get_monotonic_time() < end:
+        GLib.MainContext.default().iteration(False)
+
+
+@unittest.skipIf(PK is None, "no polkit introspection data")
+class PolkitDialogTest(unittest.TestCase):
+    def test_avatar_follows_the_chosen_account(self):
+        """Picking another account in the pop-up changes the picture next to it."""
+        from sonata2 import ui
+        Adw.init()
+        ui.setup()
+        with mock.patch.object(PK.layer, "overlay_fullscreen", return_value=True):
+            d = PK.AuthDialog(_app("pkav"), "m", [Polkit.UnixUser.new(os.getuid()), Polkit.UnixUser.new(0)],
+                              "c", lambda ok: None)
+        first = d.face
+        other = 1 - d.index
+        d.account.set_selected(other)
+        self.assertIsNot(d.face, first)
+        self.assertIs(d.face.get_parent(), d.who)
+        self.assertIsNone(first.get_parent())
+        d.finish(False)
+
+
+class AnimationTests(unittest.TestCase):
+    """Every main action of the session area animates."""
+
+    @classmethod
+    def setUpClass(cls):
+        from sonata2 import ui
+        Adw.init()
+        ui.setup()
+
+    def _greeter(self):
+        d = tempfile.mkdtemp()
+        for name, value in (("STATE", os.path.join(d, "state.json")), ("WAITS", os.path.join(d, "waits.json")),
+                            ("users", lambda: [G.User("vini", "Vini"), G.User("ana", "Ana")]),
+                            ("sessions", lambda: [G.Session("sonata", "Sonata", ["sonata"], "Sonata")])):
+            p = mock.patch.object(G, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        g = G.Greeter(_app("anigreeter"))
+        self.addCleanup(lambda: [w.destroy() for w in g.windows])
+        return g
+
+    def test_login_screen_fades_in_and_user_switch_crossfades(self):
+        """Greeter: the screen fades in; picking a user cross-fades to a rising password page."""
+        g = self._greeter()
+        over = g.windows[0].get_child()
+        self.assertTrue(over.has_css_class("gr-fade-in"))
+        self.assertEqual(g.center.get_transition_type(), Gtk.StackTransitionType.CROSSFADE)
+        self.assertGreater(g.center.get_transition_duration(), 0)
+        g._pick(g.users[0])
+        self.assertTrue(g.center.get_visible_child().has_css_class("gr-rise"))
+        settle(30)
+        self.assertTrue(g.center.get_transition_running())
+
+    def test_login_spinner_crossfade_and_leave(self):
+        """Greeter login: the field cross-fades to the spinner; success fades the column and bar away."""
+        g = self._greeter()
+        g._pick(g.users[0])
+        g.entry.set_text("sonata")
+        self.assertEqual(g.slot.get_transition_type(), Gtk.StackTransitionType.CROSSFADE)
+        with mock.patch.object(G.threading, "Thread", Inline), mock.patch.object(G.GLib, "timeout_add"):
+            g._login()
+            self.assertEqual(g.slot.get_visible_child_name(), "progress")
+            drain()
+        self.assertTrue(g.column.has_css_class("gr-leave"))
+        self.assertTrue(g.power.has_css_class("gr-leave"))
+
+    def test_wrong_password_shakes(self):
+        """A failed login shakes the field (CSS animation class)."""
+        g = self._greeter()
+        g._pick(g.users[0])
+        with mock.patch.object(g.guard, "failed"):
+            g._failed(greetd.GreetdError("auth_error", ""), "vini")
+        drain()                                   # (added on the next idle: restarts the animation)
+        self.assertTrue(g.entry.has_css_class("shake"))
+
+    def test_lock_screen_in_and_out(self):
+        """Lock screen: fades in, the column rises; unlocking fades it away before unlocking."""
+        from sonata2.shell import lock as L
+        ls = L.LockScreen.__new__(L.LockScreen)
+        ls.app, ls.lock, ls.texture, ls.windows = _app("anilock"), mock.Mock(), None, []
+        mon = Gdk.Display.get_default().get_monitors().get_item(0)
+        ls._window(mon, primary=True)
+        self.addCleanup(lambda: [w.destroy() for w in ls.windows])
+        self.assertTrue(ls.windows[0].get_child().has_css_class("gr-fade-in"))
+        self.assertTrue(ls.column.has_css_class("gr-rise"))
+        self.assertEqual(ls.slot.get_transition_type(), Gtk.StackTransitionType.CROSSFADE)
+        ls.guard = mock.Mock()
+        timers = []
+        with mock.patch.object(L.GLib, "timeout_add", lambda ms, fn: timers.append(ms)):
+            ls._done(True)
+        self.assertTrue(ls.column.has_css_class("gr-leave"))
+        self.assertTrue(ls.power.has_css_class("gr-leave"))
+        self.assertTrue(timers and timers[0] > 0)          # unlock only after the fade
+        ls.lock.unlock.assert_not_called()
+
+    def test_polkit_dialog_animates_in(self):
+        """The password sheet scales in (auth-in keyframes on .auth-panel)."""
+        if PK is None:
+            self.skipTest("no polkit introspection data")
+        with mock.patch.object(PK.layer, "overlay_fullscreen", return_value=True):
+            d = PK.AuthDialog(_app("anipk"), "m", [Polkit.UnixUser.new(os.getuid())], "c", lambda ok: None)
+        panel = d.win.get_child()
+        self.assertTrue(panel.has_css_class("auth-panel"))
+        from sonata2.ui import theme
+        self.assertIn("animation: auth-in", theme._templates["polkit-agent"][0])
+        d.finish(False)
+
+    def test_setup_assistant_pages_slide_and_finish_fades(self):
+        """Setup Assistant: pages slide (Stack transition), Get Started fades the window (tick callback)."""
+        from sonata2.shell import setup as S
+        with mock.patch.object(S.layer, "overlay_fullscreen", return_value=True):
+            a = S.SetupAssistant(_app("anisetup"))
+        self.addCleanup(a.win.destroy)
+        self.assertGreater(a.stack.get_transition_duration(), 0)
+        a._go(1)
+        self.assertEqual(a.stack.get_transition_type(), Gtk.StackTransitionType.SLIDE_LEFT)
+        settle(30)
+        self.assertTrue(a.stack.get_transition_running())
+        with mock.patch.object(S.config, "update"), mock.patch.object(a.win, "add_tick_callback") as tick:
+            a.finish()
+        tick.assert_called_once()
+        self.assertTrue(a.stack.has_css_class("gr-leave"))
 
 
 if __name__ == "__main__":

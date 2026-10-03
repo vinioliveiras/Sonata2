@@ -25,8 +25,15 @@ class GreetdError(Exception):
 
 class Client:
     def __init__(self, path: str = None):
+        path = path or os.environ.get("GREETD_SOCK")
+        if not path:                  # not under greetd: an error the login screen shows, not a KeyError
+            raise GreetdError("error", "Not running under greetd (GREETD_SOCK is not set)")
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.connect(path or os.environ["GREETD_SOCK"])
+        try:
+            self.sock.connect(path)
+        except OSError:
+            self.sock.close()
+            raise
 
     def _call(self, msg: dict) -> dict:
         data = json.dumps(msg).encode()

@@ -41,6 +41,11 @@ if [ "$ACTION" = revert ]; then
     $SUDO systemctl enable "$prev.service"
     [ -f "$GREETD.sonata-backup" ] && $SUDO mv -f "$GREETD.sonata-backup" "$GREETD"
     $SUDO rm -f "$LAUNCHER"            # install.sh keeps it up to date only while it's in use
+    # undo the rest of "install": the keyring lines added to greetd's PAM file, the quiet console
+    if [ -f /etc/pam.d/greetd.sonata-bak ]; then
+        $SUDO env PYTHONPATH="$SRC" python3 -m sonata2 keyring unpam /etc/pam.d/greetd || true
+    fi
+    "$SRC/tools/quiet-console.sh" revert || true
     say "Done. Restart the computer to see it."
     exit 0
 fi

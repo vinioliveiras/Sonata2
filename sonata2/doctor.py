@@ -233,7 +233,9 @@ def check_tools(r: Report) -> None:
 def check_lock(r: Report) -> None:
     from . import pam
     svc = pam._service()
-    r.add(OK if os.path.exists(f"/etc/pam.d/{svc}") else FAIL, f"lock screen PAM service: {svc}")
+    # the same places pam._service() looks (distros may ship PAM files in /usr/lib/pam.d)
+    found = any(os.path.exists(os.path.join(d, svc)) for d in ("/etc/pam.d", "/usr/lib/pam.d"))
+    r.add(OK if found else FAIL, f"lock screen PAM service: {svc}")
 
 
 def _read(path: str) -> str:
@@ -298,13 +300,15 @@ def check_keyboard(r: Report) -> None:
 
 
 def last_session_errors(n=25) -> str:
-    logs = os.path.expanduser("~/.cache/sonata2")
+    from .logs import log_dir
+    logs = log_dir()
     out = []
     for name in ("login.log", "session.log", "topbar.log", "dock.log", "launchpad.log", "wallpaper.log",
                  "spotlight.log"):
         p = os.path.join(logs, name)
         try:
-            lines = open(p, errors="replace").read().splitlines()
+            with open(p, errors="replace") as f:
+                lines = f.read().splitlines()
         except OSError:
             continue
         bad = [ln for ln in lines if re.search(r"Traceback|Error|CRITICAL|EE |cannot|failed", ln)]
@@ -337,7 +341,8 @@ def report_text(r: Report = None) -> str:
 def main() -> int:
     r = build()
     print(r.text(color=sys.stdout.isatty()))
-    d = os.path.expanduser("~/.cache/sonata2")
+    from .logs import log_dir
+    d = log_dir()
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "doctor.txt"), "w") as f:
         f.write(report_text(r))

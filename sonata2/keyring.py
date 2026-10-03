@@ -123,6 +123,32 @@ def pam_text(text: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def pam_text_without(text: str) -> str:
+    """pam_text undone: the exact lines Sonata adds removed (other lines,
+    the user's own pam_gnome_keyring ones included, stay)."""
+    ours = {line for _kind, line in PAM_LINES}
+    return "".join(ln for ln in text.splitlines(keepends=True) if ln.rstrip("\n") not in ours)
+
+
+def unwrite_pam(path: str = PAM_FILE) -> int:
+    """As root (greeter-setup.sh revert): take Sonata's lines out again --
+    only when Sonata added them (its .sonata-bak copy exists)."""
+    if not os.path.exists(path + ".sonata-bak"):
+        return 0
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return 1
+    new = pam_text_without(text)
+    if new != text:
+        from .config import atomic_write
+        atomic_write(path, new.encode())
+        os.chmod(path, 0o644)
+    os.remove(path + ".sonata-bak")
+    return 0
+
+
 def pam_ready(path: str = PAM_FILE) -> bool:
     try:
         with open(path, encoding="utf-8") as f:
@@ -141,11 +167,9 @@ def write_pam(path: str = PAM_FILE) -> int:
         return 0
     if not os.path.exists(path + ".sonata-bak"):
         shutil.copy2(path, path + ".sonata-bak")
-    tmp = path + ".sonata-tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(new)
-    os.chmod(tmp, 0o644)
-    os.replace(tmp, path)
+    from .config import atomic_write
+    atomic_write(path, new.encode())
+    os.chmod(path, 0o644)
     return 0
 
 
@@ -226,6 +250,30 @@ def start_gnome_keyring(password: str) -> bool:
     return p.returncode == 0 and _bus_owner_ready()
 
 
+def _stop_gnome_keyring(timeout: float = 5.0) -> None:
+    """Undo start_gnome_keyring: stop the gnome-keyring-daemon that owns the
+    Secret Service name, so KeePassXC can take it back (it gives up when the
+    name is taken). Another owner is left alone."""
+    import signal
+    from gi.repository import Gio
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        dbus = ("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus")
+        pid = bus.call_sync(*dbus, "GetConnectionUnixProcessID", GLib.Variant("(s)", (SECRETS,)), None,
+                            Gio.DBusCallFlags.NONE, 1000, None).unpack()[0]
+        with open(f"/proc/{pid}/comm", encoding="utf-8") as f:
+            if not f.read().startswith("gnome-keyring"):
+                return
+        os.kill(pid, signal.SIGTERM)
+        end = time.monotonic() + timeout
+        while time.monotonic() < end and bus.call_sync(
+                *dbus, "NameHasOwner", GLib.Variant("(s)", (SECRETS,)), None,
+                Gio.DBusCallFlags.NONE, 1000, None).unpack()[0]:
+            time.sleep(0.2)
+    except (GLib.Error, OSError):
+        pass
+
+
 def switch_to_gnome(password: str, step=lambda _t: None, ops=None) -> int:
     """KeePassXC -> GNOME's keyring, once. The login password must be
     right (it becomes the keyring's). Nothing is changed until the secrets
@@ -233,7 +281,8 @@ def switch_to_gnome(password: str, step=lambda _t: None, ops=None) -> int:
     number of secrets moved. `ops` replaces the system calls (tests)."""
     o = dict(auth=_auth, pam_ready=pam_ready, write_pam=_pkexec_pam, read=read_secrets,
              quit_kp=_quit_keepassxc, kp_service=lambda on: enable_secret_service(CONFIG, on, force=True),
-             start_gnome=start_gnome_keyring, write=write_secrets, start_kp=_start_keepassxc,
+             start_gnome=start_gnome_keyring, stop_gnome=_stop_gnome_keyring, write=write_secrets,
+             start_kp=_start_keepassxc,
              set_backend=set_backend)
     o.update(ops or {})
     step("Checking your password…")
@@ -253,6 +302,7 @@ def switch_to_gnome(password: str, step=lambda _t: None, ops=None) -> int:
             raise RuntimeError("GNOME's keyring didn't start.")
         n = o["write"](items)
     except Exception:
+        o["stop_gnome"]()                        # free the Secret Service name first, or KeePassXC can't own it
         o["kp_service"](True)                    # back as it was
         o["start_kp"]()
         raise
@@ -266,9 +316,9 @@ def _auth(password: str) -> bool:
 
 
 def _pkexec_pam() -> bool:
-    from .__main__ import self_command
+    from .__main__ import self_argv
     try:
-        return subprocess.run(["pkexec"] + self_command().split() + ["keyring", "pam"],
+        return subprocess.run(["pkexec"] + self_argv() + ["keyring", "pam"],
                               timeout=120).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
@@ -282,7 +332,7 @@ def _start_keepassxc() -> None:
 
 
 def main(args: list) -> int:
-    """`sonata2 keyring backend|pam`."""
+    """`sonata2 keyring backend|pam|unpam`."""
     if args[:1] == ["backend"]:
         print(backend())
         return 0
@@ -291,5 +341,10 @@ def main(args: list) -> int:
             print("sonata2 keyring pam: run it as root (pkexec)")
             return 1
         return write_pam(args[1] if len(args) > 1 else PAM_FILE)
-    print("usage: sonata2 keyring backend|pam")
+    if args[:1] == ["unpam"]:
+        if os.geteuid() != 0:
+            print("sonata2 keyring unpam: run it as root")
+            return 1
+        return unwrite_pam(args[1] if len(args) > 1 else PAM_FILE)
+    print("usage: sonata2 keyring backend|pam|unpam")
     return 2

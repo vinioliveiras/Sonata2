@@ -260,6 +260,8 @@ class Greeter:
         return row
 
     def _pick(self, user):
+        if getattr(self, "_busy", False):          # logging in: the page must stay until it ends
+            return
         self.user = user
         self._show()
 
@@ -280,6 +282,7 @@ class Greeter:
         self.slot.add_named(self.progress, "progress")
         col.append(self.slot)
         links = Gtk.Box(spacing=4, halign=Gtk.Align.CENTER)
+        self.links = links
         if len(self.users) > 1:
             other = Gtk.Button(label="Other Users", css_classes=["gr-link"])
             other.connect("clicked", lambda *_: self._pick(None))
@@ -390,6 +393,8 @@ class Greeter:
         if not pw or session is None or self.guard.blocked(self.user.name):
             return
         self.entry.set_sensitive(False)
+        self.links.set_sensitive(False)              # no "Other Users"/session change mid-login
+        self._busy = True
         self.hint.set_label("")
         user = self.user.name
         self.progress.start()
@@ -404,33 +409,35 @@ class Greeter:
                 if session.desktops:
                     env.append(f"XDG_CURRENT_DESKTOP={session.desktops}")
                 client.start_session(session.cmd, env)
-                GLib.idle_add(self._started)
-            except greetd.GreetdError as e:
+                GLib.idle_add(self._started, user)
+            except Exception as e:          # any error must end the spinner, never leave it turning
                 if client is not None:
                     client.close()
-                GLib.idle_add(self._failed, e)
-            except OSError as e:
-                if client is not None:
-                    client.close()
-                GLib.idle_add(self._failed, greetd.GreetdError("error", str(e)))
+                if not isinstance(e, greetd.GreetdError):
+                    e = greetd.GreetdError("error", str(e) or type(e).__name__)
+                GLib.idle_add(self._failed, e, user)
         threading.Thread(target=work, daemon=True).start()
 
     def _stop_pulse(self):
         self.progress.stop()
 
-    def _failed(self, err):
+    def _failed(self, err, user=None):
+        user = user or self.user.name
+        self._busy = False
+        self.links.set_sensitive(True)
         self._stop_pulse()
         self.slot.set_visible_child_name("field")
         if err.error_type != "auth_error":
             self.hint.set_label(str(err) or "Couldn't log in")
         shake(self.entry)
         if err.error_type == "auth_error":
-            self.guard.failed(self.user.name)
+            self.guard.failed(user)
         return False
 
-    def _started(self):
-        self.guard.succeeded(self.user.name)
-        self.state["user"] = self.user.name
+    def _started(self, user=None):
+        user = user or self.user.name
+        self.guard.succeeded(user)
+        self.state["user"] = user
         save_state(self.state)
         # (the spinner keeps turning while) the picture, name and bar fade away over the blurred wallpaper; the
         # session's welcome screen (welcome.py) picks up from the same look

@@ -84,17 +84,17 @@ def run() -> int:
     try:
         from . import config
         if not config.load("setup", {"done": False})["done"]:     # first login: the Setup Assistant
-            from .__main__ import self_command
-            GLib.spawn_command_line_async(self_command() + " setup")
+            from .__main__ import self_argv           # (an argv: a clone path with spaces stays whole)
+            GLib.spawn_async(self_argv() + ["setup"], flags=GLib.SpawnFlags.SEARCH_PATH)
     except Exception as e:
         print(f"sonata2-autostart: setup: {e}")
     mark("autostart: crash report")
     try:                                   # the last session crashed: Feedbacker, its report already saved
         from .feedback import report
         if report.crash():
-            from .__main__ import self_command
+            from .__main__ import self_argv
             import subprocess                  # a moment after the Dock and menu bar are up
-            subprocess.Popen(["sh", "-c", f"sleep 3; exec {self_command()} feedback"],
+            subprocess.Popen(["sh", "-c", 'sleep 3; exec "$@"', "sh"] + self_argv() + ["feedback"],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     except Exception as e:
         print(f"sonata2-autostart: crash report: {e}")
@@ -103,8 +103,8 @@ def run() -> int:
         import subprocess
         if subprocess.run(["pgrep", "-f", r"-m sonata2 keep polkit( |$)"],
                           stdout=subprocess.DEVNULL).returncode != 0:
-            from .__main__ import self_command
-            GLib.spawn_command_line_async(self_command() + " keep polkit")
+            from .__main__ import self_argv
+            GLib.spawn_async(self_argv() + ["keep", "polkit"], flags=GLib.SpawnFlags.SEARCH_PATH)
     except Exception as e:
         print(f"sonata2-autostart: polkit: {e}")
     mark("autostart: files")
@@ -112,8 +112,8 @@ def run() -> int:
         import subprocess
         if subprocess.run(["pgrep", "-f", r"-m sonata2 files( |$)"],
                           stdout=subprocess.DEVNULL).returncode != 0:
-            from .__main__ import self_command
-            GLib.spawn_command_line_async(self_command() + " files --background")
+            from .__main__ import self_argv
+            GLib.spawn_async(self_argv() + ["files", "--background"], flags=GLib.SpawnFlags.SEARCH_PATH)
     except Exception as e:
         print(f"sonata2-autostart: files: {e}")
     mark("autostart: gtk style")

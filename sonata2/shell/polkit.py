@@ -83,11 +83,11 @@ class AuthDialog:
         top.append(texts)
         panel.append(top)
         who = Gtk.Box(spacing=10, margin_top=6)
-        who.append(avatar(28, names[self.index], _real_name(names[self.index])))
+        self.who, self.names = who, names
+        self.face = avatar(28, names[self.index], _real_name(names[self.index]))
+        who.append(self.face)
         if len(names) > 1:
-            self.account = Gtk.DropDown.new_from_strings([_real_name(n) for n in names])
-            self.account.set_selected(self.index)
-            self.account.connect("notify::selected", lambda d, _p: self._pick(d.get_selected()))
+            self.account = ui.controls.popup_button([_real_name(n) for n in names], self.index, self._pick)
             self.account.set_hexpand(True)
             who.append(self.account)
         else:
@@ -101,10 +101,8 @@ class AuthDialog:
         self.error = Gtk.Label(xalign=0, css_classes=["auth-error"], visible=False, wrap=True)
         panel.append(self.error)
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END, margin_top=4)
-        cancel = Gtk.Button(label="Cancel", css_classes=["sonata-button"])
-        cancel.connect("clicked", lambda *_: self.finish(False))
-        self.ok = Gtk.Button(label="OK", css_classes=["sonata-button", "default"])
-        self.ok.connect("clicked", lambda *_: self._ok())
+        cancel = ui.controls.push_button("Cancel", lambda: self.finish(False))
+        self.ok = ui.controls.push_button("OK", self._ok, "default")
         buttons.append(cancel)
         buttons.append(self.ok)
         panel.append(buttons)
@@ -120,6 +118,11 @@ class AuthDialog:
     def _pick(self, i):
         self.index = i
         self._cancel_session()
+        # the picture follows the chosen account
+        face = avatar(28, self.names[i], _real_name(self.names[i]))
+        self.who.insert_child_after(face, self.face)
+        self.who.remove(self.face)
+        self.face = face
 
     def _ok(self):
         if not self.entry.get_text():
@@ -184,10 +187,14 @@ AUTHORITY = ("org.freedesktop.PolicyKit1", "/org/freedesktop/PolicyKit1/Authorit
 
 def _identity(kind: str, details: dict):
     """polkit's D-Bus identity -> the object PolkitAgent.Session wants."""
-    if kind == "unix-user":
-        return Polkit.UnixUser.new(int(details.get("uid", 0)))
-    if kind == "unix-group":
-        return Polkit.UnixGroup.new(int(details.get("gid", 0)))
+    # (no id given: skipped -- never a default of 0, which would mean root)
+    try:
+        if kind == "unix-user" and "uid" in details:
+            return Polkit.UnixUser.new(int(details["uid"]))
+        if kind == "unix-group" and "gid" in details:
+            return Polkit.UnixGroup.new(int(details["gid"]))
+    except (TypeError, ValueError):
+        pass
     return None
 
 
@@ -201,10 +208,26 @@ class Agent:
         self.app = app
         self.dialogs = {}                 # cookie -> AuthDialog
         self.bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        # only polkitd may ask for passwords: track its unique bus name
+        try:                              # known before any request (the watch reports it later)
+            self.polkitd = self.bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus",
+                                              "org.freedesktop.DBus", "GetNameOwner",
+                                              GLib.Variant("(s)", (AUTHORITY[0],)), None,
+                                              Gio.DBusCallFlags.NONE, 2000, None).unpack()[0]
+        except GLib.Error:
+            self.polkitd = None
+        self.watch = Gio.bus_watch_name_on_connection(
+            self.bus, AUTHORITY[0], Gio.BusNameWatcherFlags.NONE,
+            lambda _c, _n, owner: setattr(self, "polkitd", owner),
+            lambda *_a: setattr(self, "polkitd", None))
         node = Gio.DBusNodeInfo.new_for_xml(AGENT_XML)
         self.reg = self.bus.register_object(OBJECT_PATH, node.interfaces[0], self._call, None, None)
 
-    def _call(self, _conn, _sender, _path, _iface, method, params, invocation):
+    def _call(self, _conn, sender, _path, _iface, method, params, invocation):
+        if sender is None or sender != self.polkitd:          # anyone else on the bus could fake a prompt
+            invocation.return_dbus_error("org.freedesktop.PolicyKit1.Error.NotAuthorized",
+                                         "Only polkitd may call the authentication agent")
+            return
         if method == "CancelAuthentication":
             (cookie,) = params.unpack()
             dlg = self.dialogs.get(cookie)

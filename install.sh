@@ -20,6 +20,11 @@
 #                             asked once, then kept up to date
 #   ./install.sh --no-greeter keep the current login screen
 #   ./install.sh --gdm        back to the previous login screen (only that)
+#   ./install.sh --mount-without-password
+#                             let administrators mount system disks and unlock
+#                             system LUKS without a password (a polkit rule;
+#                             otherwise asked, default No; --yes never adds it)
+#   ./install.sh --no-mount-without-password  remove that rule again
 #
 # Installs: the sonata2 package + themes/icons -> <prefix>/share/sonata2,
 # launchers `sonata2` and `sonata-session` -> <prefix>/bin, the session
@@ -28,11 +33,12 @@
 # preferences for the "Sonata" desktop.
 set -euo pipefail
 SRC="$(cd "$(dirname "$0")" && pwd)"
-MODE=user DEPS=1 YES=0 UNINSTALL=0 DEV=0 GREETER=ask
+MODE=user DEPS=1 YES=0 UNINSTALL=0 DEV=0 GREETER=ask MOUNTRULE=ask
 for a in "$@"; do
     case "$a" in
         --system) MODE=system ;; --deps) DEPS=1 ;; --no-deps) DEPS=0 ;; --yes|-y) YES=1 ;; --uninstall) UNINSTALL=1 ;; --dev) DEV=1 ;;
-        --greeter) GREETER=1 ;; --no-greeter) GREETER=0 ;; --gdm) exec "$(dirname "$0")/tools/greeter-setup.sh" revert ;;
+        --greeter) GREETER=1 ;; --no-greeter) GREETER=0 ;;
+        --mount-without-password) MOUNTRULE=1 ;; --no-mount-without-password) MOUNTRULE=0 ;; --gdm) exec "$(dirname "$0")/tools/greeter-setup.sh" revert ;;
         -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 0 ;;
         *) echo "unknown option: $a (see --help)"; exit 2 ;;
     esac
@@ -64,6 +70,8 @@ carry_data() {
     done
 }
 ask() { [ "$YES" = 1 ] && return 0; read -r -p "$1 [Y/n] " r; [ -z "$r" ] || [[ "$r" =~ ^[YySs] ]]; }
+# default No (security-relevant choices): --yes answers No, only an explicit flag says yes
+ask_no() { [ "$YES" = 1 ] && return 1; read -r -p "$1 [y/N] " r; [[ "$r" =~ ^[YySs] ]]; }
 
 # -- uninstall ---------------------------------------------------------------------------
 if [ "$UNINSTALL" = 1 ]; then
@@ -393,8 +401,10 @@ fi
 # -- a quiet console: no kernel messages or "[ OK ]" lines between screens ----------------------------
 "$SRC/tools/quiet-console.sh" install || true
 
-# -- disks: Files mounts every disk at login; the administrator isn't asked for a password -----------
-# (udisks' "mount a system disk" action, for wheel/sudo members at a local, active session)
+# -- disks (opt-in): administrators mount system disks / unlock system LUKS without a password -------
+# (udisks' "mount a system disk" action, for wheel/sudo members at a local, active session). It lowers
+# security, so it is never added unasked: asked (default No), or --mount-without-password.
+MOUNT_RULES=/etc/polkit-1/rules.d/50-sonata2-mount.rules
 rule='polkit.addRule(function(action, subject) {
     if ((action.id == "org.freedesktop.udisks2.filesystem-mount-system" ||
          action.id == "org.freedesktop.udisks2.filesystem-mount" ||
@@ -402,9 +412,17 @@ rule='polkit.addRule(function(action, subject) {
         subject.local && subject.active && (subject.isInGroup("wheel") || subject.isInGroup("sudo")))
         return polkit.Result.YES;
 });'
-if [ -d /etc/polkit-1/rules.d ] || sudo mkdir -p /etc/polkit-1/rules.d 2>/dev/null; then
-    printf '%s\n' "$rule" | sudo tee /etc/polkit-1/rules.d/50-sonata2-mount.rules >/dev/null && \
-        echo "Disks: mounted at login without a password (polkit rule 50-sonata2-mount)."
+if [ "$MOUNTRULE" = 0 ]; then
+    sudo rm -f "$MOUNT_RULES" 2>/dev/null && echo "Disks: system disks ask for a password again."
+elif [ -f "$MOUNT_RULES" ] && [ "$MOUNTRULE" = ask ]; then
+    echo "Disks: system disks mount without a password (--no-mount-without-password removes that)."
+elif [ "$MOUNTRULE" = 1 ] || ask_no "Mount system disks and unlock encrypted system disks without asking for a password (administrators only; lowers security)?"; then
+    if [ -d /etc/polkit-1/rules.d ] || sudo mkdir -p /etc/polkit-1/rules.d 2>/dev/null; then
+        printf '%s\n' "$rule" | sudo tee "$MOUNT_RULES" >/dev/null && \
+            echo "Disks: mounted at login without a password (polkit rule 50-sonata2-mount)."
+    fi
+else
+    echo "Disks: system disks ask for the administrator password (--mount-without-password to change)."
 fi
 
 # -- Sonata's login screen (greetd) -------------------------------------------------------------------

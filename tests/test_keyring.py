@@ -81,7 +81,7 @@ class SwitchTest(unittest.TestCase):
                  read=rec("read", [("Chrome Safe Storage", {"application": "chrome"}, b"k", "text/plain")]),
                  quit_kp=rec("quit_kp"), kp_service=rec("kp_service"), start_gnome=rec("start_gnome"),
                  write=lambda items: (self.calls.append(("write", items)), len(items))[1],
-                 start_kp=rec("start_kp"), set_backend=rec("set_backend"))
+                 start_kp=rec("start_kp"), set_backend=rec("set_backend"), stop_gnome=rec("stop_gnome"))
         o.update(over)
         return o
 

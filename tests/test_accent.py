@@ -40,7 +40,7 @@ class TokensTest(unittest.TestCase):
     def test_portal_sends_the_custom_colour(self):
         import inspect
         from sonata2 import portal
-        self.assertIn("accent_hex(accent)", inspect.getsource(portal))
+        self.assertIn("tokens.accent_hex(look[\"accent\"]", inspect.getsource(portal))
 
 
 class SettingsTest(unittest.TestCase):

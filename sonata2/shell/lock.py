@@ -95,7 +95,10 @@ class LockScreen:
         user = GLib.get_user_name()
 
         def work():
-            ok = pam.authenticate(user, pw)
+            try:
+                ok = pam.authenticate(user, pw)
+            except Exception:          # any error must end the spinner (and keep the lock closed)
+                ok = False
             GLib.idle_add(self._done, ok)
         threading.Thread(target=work, daemon=True).start()
 

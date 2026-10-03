@@ -70,17 +70,18 @@ def settings_values() -> dict:
     org.freedesktop.appearance (color-scheme 1 dark / 2 light, accent, contrast)."""
     from . import config, prefs
     out = {}
-    for schema, keys in prefs.keys().items():
+    data = prefs._load()                       # system.json read once, not once per key
+    for schema, keys in prefs.keys(data).items():
         out[schema] = {}
         for key in keys:
-            t, v = prefs.typed(schema, key)
+            t, v = prefs.typed(schema, key, data)
             out[schema][key] = GLib.Variant(t, v)
-    dark = prefs.get(prefs.I, "color-scheme") == "prefer-dark"
+    dark = prefs.get(prefs.I, "color-scheme", data=data) == "prefer-dark"
     from .ui import tokens
-    accent = config.load("appearance", {"accent": "blue"}).get("accent", "blue")
-    hexc = tokens.accent_hex(accent)                 # named or picked (#rrggbb)
+    look = config.load("appearance", {"accent": "blue", "reduce_transparency": False})
+    hexc = tokens.accent_hex(look["accent"] or "blue")                 # named or picked (#rrggbb)
     rgb = tuple(int(hexc[i:i + 2], 16) / 255 for i in (1, 3, 5)) if hexc.startswith("#") else (0.0, 0.48, 1.0)
-    reduce = config.load("appearance", {"reduce_transparency": False}).get("reduce_transparency", False)
+    reduce = look["reduce_transparency"]
     out[APPEARANCE] = {"color-scheme": GLib.Variant("u", 1 if dark else 2),
                        "accent-color": GLib.Variant("(ddd)", rgb),
                        "contrast": GLib.Variant("u", 1 if reduce else 0)}
@@ -166,7 +167,9 @@ class Portal:
         self._arm_idle()
 
     def _settings_call(self, _conn, _sender, _path, _iface, method, params, invocation):
-        vals = settings_values()
+        # the values kept up to date by the watchers (_settings_changed): rebuilding them
+        # here meant ~30 file reads on every Read call, many per app start
+        vals = self._last
         if method == "ReadAll":
             (patterns,) = params.unpack()
             res = {ns: kv for ns, kv in vals.items() if _matches(ns, patterns)}

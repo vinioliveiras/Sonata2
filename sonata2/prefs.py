@@ -43,7 +43,9 @@ def _wallpaper() -> tuple:
     return wallpapers.default_uris()
 
 
-# Sonata's look (macOS), what a fresh session starts with
+# Sonata's look (macOS), what a fresh session starts with (frame and wallpaper read once:
+# each loads a module / scans files)
+_FRAME, _WALL = _frame(), _wallpaper()
 DEFAULTS = {
     f"{I}/color-scheme": "default", f"{I}/gtk-theme": "Sonata-Light", f"{I}/icon-theme": "Sonata",
     f"{I}/cursor-theme": "Sonata-Cursors", f"{I}/cursor-size": "24", f"{I}/accent-color": "blue",
@@ -51,10 +53,10 @@ DEFAULTS = {
     f"{I}/font-hinting": "slight", f"{I}/gtk-enable-primary-paste": "false", f"{I}/overlay-scrolling": "true",
     f"{I}/font-name": "Inter 10", f"{I}/document-font-name": "Inter 10", f"{I}/monospace-font-name": "Monospace 10",
     f"{I}/clock-format": "24h", f"{I}/cursor-blink": "true",
-    f"{WM}/button-layout": _frame()["layout"], f"{WM}/action-double-click-titlebar": "toggle-maximize",
-    f"{WM}/titlebar-font": _frame()["font"],
+    f"{WM}/button-layout": _FRAME["layout"], f"{WM}/action-double-click-titlebar": "toggle-maximize",
+    f"{WM}/titlebar-font": _FRAME["font"],
     # Sonata's own "Mountains" (wallpapers.py): snowy peaks in Light, under the stars in Dark
-    f"{BG}/picture-uri": _wallpaper()[0], f"{BG}/picture-uri-dark": _wallpaper()[1], f"{BG}/picture-options": "zoom",
+    f"{BG}/picture-uri": _WALL[0], f"{BG}/picture-uri-dark": _WALL[1], f"{BG}/picture-options": "zoom",
     f"{P}/remember-recent-files": "true", f"{P}/remove-old-trash-files": "false", f"{P}/old-files-age": "30",
     "org.gnome.system.location/enabled": "false",
 }
@@ -95,8 +97,9 @@ def _from_gsettings(schema: str, key: str):
     return _plain(p.stdout) if p.returncode == 0 else None
 
 
-def get(schema: str, key: str, default=None):
-    data = _load()
+def get(schema: str, key: str, default=None, data: dict = None):
+    """data: system.json already read (callers reading many keys load it once)."""
+    data = _load() if data is None else data
     k = f"{schema}/{key}"
     if k in data:
         return str(data[k])
@@ -142,9 +145,9 @@ def watch(callback):
     return config.watch(NAME, callback)
 
 
-def typed(schema: str, key: str):
+def typed(schema: str, key: str, data: dict = None):
     """(GVariant type, python value) of a setting, for the portal."""
-    v = get(schema, key, "")
+    v = get(schema, key, "", data)
     if key in BOOLS:
         return "b", v == "true"
     if key in INTS:
@@ -160,10 +163,10 @@ def typed(schema: str, key: str):
     return "s", v
 
 
-def keys():
+def keys(data: dict = None):
     """{schema: [keys]} Sonata knows."""
     out = {}
-    for k in list(DEFAULTS) + list(_load()):
+    for k in list(DEFAULTS) + list(_load() if data is None else data):
         schema, _s, key = k.rpartition("/")
         out.setdefault(schema, [])
         if key not in out[schema]:

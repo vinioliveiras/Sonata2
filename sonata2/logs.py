@@ -17,6 +17,12 @@ CAP = 1 << 20                     # a component's log, normal installs (bytes)
 CAP_VERBOSE = 32 << 20
 
 
+def log_dir() -> str:
+    """Where components log ($XDG_CACHE_HOME/sonata2): `keep` writes there,
+    the doctor and bug reports read there."""
+    return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "sonata2")
+
+
 def flag_path() -> str:
     return os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
                         "sonata2", "debug-logging")
