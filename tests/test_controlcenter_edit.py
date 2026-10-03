@@ -160,3 +160,31 @@ class AnimationTest(TempConfig):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FixedSizeTest(TempConfig):
+    """Vini: adding CPU and GPU made Control Center huge -- its size is fixed,
+    whatever the modules (more of them scroll inside it)."""
+
+    def test_same_size_whatever_the_modules(self):
+        import types
+        from sonata2.shell import topbar as T
+        bar = types.SimpleNamespace(_poll=lambda: None, _set_volume=lambda v: None, notifications=None,
+                                    monitor=None, get_native=lambda: None)
+        sizes = set()
+        with mock.patch.object(T.system, "run_async"), mock.patch.object(T, "cached"):
+            for order in (C.DEFAULT_ORDER, list(C.CATALOG), ["dnd"], ["stat_net", "stat_cpu", "stat_gpu"]):
+                config.save("controlcenter", {"modules": order})
+                cc = T.ControlCenter(bar)
+                win = Gtk.Window()
+                win.set_child(cc)
+                win.present()
+                settle(150)
+                sizes.add((cc.get_width(), cc.get_height()))
+                cc.grid.set_editing(True)                            # edit mode doesn't resize it either
+                settle(80)
+                sizes.add((cc.get_width(), cc.get_height()))
+                win.destroy()
+        self.assertEqual(len(sizes), 1, sizes)
+        w, h = sizes.pop()
+        self.assertEqual(w, T.CC_GRID_W)

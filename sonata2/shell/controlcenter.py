@@ -89,7 +89,7 @@ class _Slot(Gtk.Overlay):
         self.set_child(child)
         self.cover = Gtk.Box(hexpand=True, vexpand=True, visible=False)    # the module doesn't react
         self.add_overlay(self.cover)
-        self.badge = ui.edit.badge(lambda: grid.remove_module(mid), corner=True)
+        self.badge = ui.edit.badge(lambda: grid.remove_module(mid))      # inside: the scroller would clip it outside
         self.add_overlay(self.badge)
         ui.edit.hold(self, lambda: grid.set_editing(True))
         drag = Gtk.DragSource(actions=Gdk.DragAction.MOVE)

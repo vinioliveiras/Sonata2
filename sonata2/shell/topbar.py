@@ -33,6 +33,9 @@ PANEL_GAP = 2
 # song name ellipsizes, never widens a panel (ui/fixed.py)
 STATUS_W = 280
 CC_W = 320
+# Control Center's modules area: always this size, whatever is added (Vini) -- the
+# default layout's own size; more modules scroll inside it, nothing widens it
+CC_GRID_W, CC_GRID_H = 344, 406
 # Sound and Now Playing live in the Control Center; the menu bar items are
 # optional (Settings > Menu Bar), off by default (Vini).
 LOGO_PX = 12            # the Sonata menu's logo / shape / symbol (under the 16 px status icons; Vini's call)
@@ -1138,7 +1141,13 @@ class ControlCenter(Gtk.Box):
         for kind in statsui.KINDS:
             self.modules["stat_" + kind] = statsui.module(kind)
         self.grid = CCL.ModuleGrid(self.modules, CCL.load(), on_change=lambda _o: self._edit_bar_update())
-        self.append(self.grid)
+        # fixed size: EXTERNAL keeps a too-wide child from widening it (and shows no bar)
+        self.scroller = Gtk.ScrolledWindow(child=self.grid, hscrollbar_policy=Gtk.PolicyType.EXTERNAL,
+                                           vscrollbar_policy=Gtk.PolicyType.AUTOMATIC, overlay_scrolling=True,
+                                           propagate_natural_width=False, propagate_natural_height=False,
+                                           width_request=CC_GRID_W, height_request=CC_GRID_H,
+                                           css_classes=["cc-scroller"])
+        self.append(self.scroller)
         self.append(self._edit_bar())
         cached("cc", _cc_state, self._fill_toggles)             # Wi-Fi / Bluetooth: last known at once
         system.run_async(lambda: (system.brightness(out), system.volume(), system.input_volume()),

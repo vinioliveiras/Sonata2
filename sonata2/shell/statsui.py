@@ -8,7 +8,7 @@ while one of these is on screen.
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gsk, Gtk  # noqa: E402
+from gi.repository import Gsk, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
 from ..backend import stats as S  # noqa: E402
@@ -25,6 +25,7 @@ ui.register("""
 .stat-item label { font-feature-settings: "tnum"; }
 .stat-caption { font-size: 9px; font-weight: 700; opacity: 0.75; margin-right: 3px; }
 .cc-stat .cc-stat-value { font-feature-settings: "tnum"; font-weight: 600; }
+.cc-stat .cc-stat-speeds { font-size: %(text_small)s; }
 .cc-stat .cc-stat-hint { font-size: %(text_small)s; opacity: 0.6; }
 """, key="statsui")
 
@@ -100,19 +101,30 @@ def module(kind: str) -> Gtk.Widget:
     """Control Center module: icon, title, value and the graph."""
     head = Gtk.Box(spacing=8)
     head.append(Gtk.Image(icon_name=ICONS[kind], pixel_size=16))
-    head.append(Gtk.Label(label=TITLES[kind], xalign=0, hexpand=True, css_classes=["panel-module-title"]))
-    value = Gtk.Label(label="–", xalign=1, css_classes=["cc-stat-value"])
-    head.append(value)
-    graph = Graph(SERIES[kind], 120, 26, kind in PERCENT)
+    # nothing here may widen Control Center (its size is fixed): texts shrink with an ellipsis
+    head.append(Gtk.Label(label=TITLES[kind], xalign=0, hexpand=True, css_classes=["panel-module-title"],
+                          ellipsize=Pango.EllipsizeMode.END, width_chars=1))
+    value = Gtk.Label(label="–", xalign=1, css_classes=["cc-stat-value"], ellipsize=Pango.EllipsizeMode.START,
+                      width_chars=1, max_width_chars=12)
+    graph = Graph(SERIES[kind], 1, 26, kind in PERCENT)        # as wide as the module, never wider
     graph.set_hexpand(True)
-    hint = Gtk.Label(label="", xalign=0, css_classes=["cc-stat-hint"], visible=False)
-    box = ui.panel.module(head, graph, hint, spacing=6)
+    hint = Gtk.Label(label="", xalign=0, css_classes=["cc-stat-hint"], visible=False, wrap=True,
+                     width_chars=1, natural_wrap_mode=Gtk.NaturalWrapMode.WORD)
+    if kind == "net":                    # two speeds: a line of their own under the title
+        value.set_xalign(0)
+        value.set_ellipsize(Pango.EllipsizeMode.END)
+        value.set_max_width_chars(-1)
+        value.add_css_class("cc-stat-speeds")
+        box = ui.panel.module(head, value, graph, hint, spacing=4)
+    else:
+        head.append(value)
+        box = ui.panel.module(head, graph, hint, spacing=6)
     box.add_css_class("cc-stat")
 
     def update(r):
         t = S.text(kind, r)
         value.set_label(t.split(" ", 1)[1] if kind in ("cpu", "gpu", "ram") else
-                        (t if kind == "net" else ("–" if r.fps is None else str(r.fps))))
+                        (t.replace("  ", " ") if kind == "net" else ("–" if r.fps is None else str(r.fps))))
         graph.push(r.history)
         h = S.FPS_HINTS.get(r.fps_state, "") if kind == "fps" else ""
         hint.set_label(h)
