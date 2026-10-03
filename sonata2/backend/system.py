@@ -851,6 +851,22 @@ class Display:
     modes: List[str]        # "1920x1080@60.000"
     current: str
     scale: float
+    x: int = 0              # where it sits in the layout (logical px)
+    y: int = 0
+    enabled: bool = True
+    transform: str = "normal"
+
+    @property
+    def size(self) -> tuple:
+        """Its logical size in the layout: the mode over the scale, turned
+        when the display is rotated."""
+        try:
+            w, h = (int(v) for v in self.current.split("@")[0].split("x"))
+        except ValueError:
+            return 0, 0
+        if self.transform in ("90", "270", "flipped-90", "flipped-270"):
+            w, h = h, w
+        return round(w / (self.scale or 1)), round(h / (self.scale or 1))
 
 
 def displays() -> List[Display]:
@@ -872,7 +888,25 @@ def displays() -> List[Display]:
                     cur.current = mode
             elif s.startswith("Scale:"):
                 cur.scale = float(s.split(":")[1])
+            elif s.startswith("Position:"):
+                try:
+                    cur.x, cur.y = (int(v) for v in s.split(":", 1)[1].strip().split(","))
+                except ValueError:
+                    pass
+            elif s.startswith("Enabled:"):
+                cur.enabled = s.split(":", 1)[1].strip() == "yes"
+            elif s.startswith("Transform:"):
+                cur.transform = s.split(":", 1)[1].strip()
     return result
+
+
+def set_display_positions(positions: dict) -> bool:
+    """{connector: (x, y)}: where each display sits (Settings > Displays >
+    Arrange). Saved in the session's Wayfire config; Wayfire moves them at once."""
+    ok = True
+    for name, (x, y) in positions.items():
+        ok = wayfire_set(f"output:{name}", "position", f"{int(x)},{int(y)}") and ok
+    return ok
 
 
 def display_mode_setting(name: str) -> str:

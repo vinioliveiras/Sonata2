@@ -97,7 +97,7 @@ KEYWORDS = {
     "wifi": "wireless network internet ssid password", "network": "ethernet vpn proxy wired ip",
     "bluetooth": "devices headphones mouse keyboard pair", "printers": "printer scanner cups print",
     "sound": "volume output input microphone speakers headphones effects alert equalizer eq bass treble",
-    "displays": "screen monitor resolution refresh rate hz scale brightness night shift main display "
+    "displays": "screen monitor resolution refresh rate hz scale brightness night shift main display  arrange arrangement main display position"
                 "rounded corners",
     "battery": "power energy low power mode charge sleep display off",
     "wallpaper": "background desktop picture photo mountains", "keyboard": "layout input source repeat shortcuts",
@@ -977,10 +977,12 @@ class Settings(Adw.ApplicationWindow):
 
     def _page_displays(self):
         bright = group("Brightness")
+        arranged = group("Arrangement")            # only with two displays or more
+        arranged.set_visible(False)
         screens = group("Displays")
 
         def fill(res):
-            levels, ds = res or ({}, [])
+            levels, ds = (res or ({}, []))[:2]
             # one slider per display: the laptop panel and each external
             # monitor that answers over DDC/CI
             names = [d.name for d in ds] or [None]
@@ -1002,12 +1004,32 @@ class Settings(Adw.ApplicationWindow):
                                                                    "to change its brightness here (needs ddcutil)"))
             if len(ds) > 1:
                 from ..shell.monitors import DEFAULTS as MON
+                from . import arrange
                 cur_main = config.load("displays", MON)["main"]
                 builtin = next((d.name for d in ds if d.name.startswith(("eDP", "LVDS", "DSI"))), ds[0].name)
-                screens.add(combo_row("Main display", [(d.name, d.description or d.name) for d in ds],
-                                      cur_main if cur_main in [d.name for d in ds] else builtin,
-                                      lambda n: config.save("displays", {"main": n}),
-                                      subtitle="Dock and desktop icons; every display gets a menu bar"))
+                main = cur_main if cur_main in [d.name for d in ds] else builtin
+                main_row = combo_row("Main display", [(d.name, arrange.display_title(d)) for d in ds], main,
+                                     lambda n: config.save("displays", {"main": n}),
+                                     subtitle="Dock, desktop icons and notifications; every display gets a menu bar")
+
+                def new_main(n):                      # the menu bar dragged to another display
+                    config.save("displays", {"main": n})
+                    show_quietly(main_row, n)
+                # where the displays sit, macOS' Arrange: drag a display, drag the menu bar
+                thumb = res[2] if len(res) > 2 else None
+                art = arrange.Arrangement(ds, main,
+                                          lambda pos: system.run_async(system.set_display_positions, None, pos),
+                                          new_main, Gdk.Texture.new_for_pixbuf(thumb) if thumb else None)
+                hint = Gtk.Label(label="Drag the displays to arrange them. Drag the white menu bar to choose "
+                                       "the main display.", wrap=True, xalign=0, css_classes=["dim-label"],
+                                 margin_top=6, margin_bottom=10)
+                frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["display-arrange-box"])
+                frame.append(art)
+                frame.append(hint)
+                arranged.add(frame)
+                arranged.set_visible(True)
+                screens.add(main_row)
+                self.arrangement = art                # (tests)
             for d in ds:
                 saved = system.display_mode_setting(d.name)
                 opts = [("highrr", "Highest refresh rate")] + \
@@ -1025,7 +1047,8 @@ class Settings(Adw.ApplicationWindow):
             levels = {None: system.brightness()}
             for d in ds:
                 levels[d.name] = levels[None] if system.is_builtin(d.name) else system.brightness(d.name)
-            return levels, ds
+            from . import arrange
+            return levels, ds, (arrange.wallpaper_thumb() if len(ds) > 1 else None)
         system.run_async(read, fill)
         look = group("Appearance")
         from .. import icons as _icons
@@ -1033,7 +1056,7 @@ class Settings(Adw.ApplicationWindow):
                             config.load("appearance", _icons.APPEARANCE_DEFAULTS).get("screen_corners", True),
                             lambda on: self._save("appearance", "screen_corners", on),
                             subtitle="The corners of every display rounded (the lock screen too)"))
-        pages = [bright, screens, look, self._night_shift_group()]
+        pages = [bright, arranged, screens, look, self._night_shift_group()]
         from .. import gpu
         nvidia = "nvidia" in gpu._cards()
         if gpu.has_dual_gpu() or nvidia:
