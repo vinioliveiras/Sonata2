@@ -12,6 +12,7 @@ Qt use it). This module is, over plain Gio D-Bus (no extra typelibs):
   ToolTip, Menu, ItemIsMenu), refreshed on NewIcon/NewStatus/... signals.
 - TrayBox: the icons of one menu bar, left of the other status items.
   Left-click: Activate (ItemIsMenu, or an item without Activate: its menu).
+  Double-click: the app itself comes forward (its window, else opened).
   Right-click: the item's com.canonical.dbusmenu menu, shown as Sonata's
   glass menu. Middle-click: SecondaryActivate. Scroll: Scroll.
   Passive items are hidden; NeedsAttention shows the attention icon.
@@ -287,6 +288,27 @@ class TrayItem:
     def activate(self, x: int, y: int, fallback=None) -> None:
         self._item_call("Activate", GLib.Variant("(ii)", (x, y)), fallback)
 
+    def app(self, done) -> None:
+        """done(desktop id or None): the app behind this icon -- from its Id
+        ("steam", "KeePassXC"), else from the program owning its bus name
+        (Electron/Chromium items are "chrome_status_icon_1")."""
+        from .. import apps
+        did = apps.match_app_id(self.id) if self.id else None
+        if did:
+            done(did)
+            return
+
+        def got(conn, res):
+            try:
+                pid = conn.call_finish(res).unpack()[0]
+            except GLib.Error:
+                done(None)
+                return
+            done(app_of_pid(pid))
+        self.conn.call("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                       "GetConnectionUnixProcessID", GLib.Variant("(s)", (self.name,)), None,
+                       Gio.DBusCallFlags.NONE, 1000, None, got)
+
     def secondary_activate(self, x: int, y: int) -> None:
         self._item_call("SecondaryActivate", GLib.Variant("(ii)", (x, y)))
 
@@ -295,6 +317,33 @@ class TrayItem:
 
     def scroll(self, delta: int, orientation: str) -> None:
         self._item_call("Scroll", GLib.Variant("(is)", (delta, orientation)))
+
+
+def app_of_pid(pid: int, proc: str = "/proc"):
+    """Desktop id of the program running as `pid` (its executable's and
+    command's names, as apps.match_app_id knows them), else None."""
+    from .. import apps
+    names = []
+    try:
+        names.append(os.path.basename(os.readlink(os.path.join(proc, str(pid), "exe"))))
+    except OSError:
+        pass
+    try:
+        with open(os.path.join(proc, str(pid), "cmdline"), "rb") as f:
+            arg0 = f.read().split(b"\0", 1)[0].decode("utf-8", "replace")
+        names.append(os.path.basename(arg0))
+    except OSError:
+        pass
+    try:
+        with open(os.path.join(proc, str(pid), "comm")) as f:
+            names.append(f.read().strip())
+    except OSError:
+        pass
+    for n in names:
+        did = apps.match_app_id(n) if n else None
+        if did:
+            return did
+    return None
 
 
 def _plain(markup: str) -> str:
@@ -672,7 +721,7 @@ class TrayBox(Gtk.Box):
         key = item.key
         b.connect("clicked", lambda btn: self._left(btn, self.host.items.get(key)))
         g = Gtk.GestureClick(button=0)
-        g.connect("pressed", lambda gest, _n, x, y: self._press(gest, b, x, y, self.host.items.get(key)))
+        g.connect("pressed", lambda gest, n, x, y: self._press(gest, b, x, y, self.host.items.get(key), n))
         b.add_controller(g)
         sc = Gtk.EventControllerScroll(flags=Gtk.EventControllerScrollFlags.BOTH_AXES |
                                        Gtk.EventControllerScrollFlags.DISCRETE)
@@ -697,16 +746,45 @@ class TrayBox(Gtk.Box):
         # an item without Activate (libappindicator) answers with an error: its menu
         item.activate(*self._point(btn), fallback=lambda: self.show_menu(btn, item))
 
-    def _press(self, gest, btn, x, y, item) -> None:
+    def _press(self, gest, btn, x, y, item, n_press: int = 1) -> None:
         if item is None:
             return
         n = gest.get_current_button()
-        if n == 3:
+        if n == 1 and n_press == 2:
+            gest.set_state(Gtk.EventSequenceState.CLAIMED)
+            self.open_app(btn, item)
+        elif n == 3:
             gest.set_state(Gtk.EventSequenceState.CLAIMED)
             self.show_menu(btn, item)
         elif n == 2:
             gest.set_state(Gtk.EventSequenceState.CLAIMED)
             item.secondary_activate(*self._point(btn, x, y))
+
+    def open_app(self, btn, item) -> None:
+        """Double-click (Vini): the app behind the icon comes forward -- its
+        window restored and focused, else the app opened (a running
+        single-instance app shows its window); unknown app: Activate."""
+        for pop in list(ui.menu.OPEN):            # the first click's menu goes away
+            try:
+                pop.popdown()
+            except Exception:
+                pass
+        point = self._point(btn)
+
+        def found(did):
+            from .. import apps
+            from .notifications import bring_forward
+            if did and bring_forward(did, item.tooltip or ""):
+                return
+            info = apps.lookup(did) if did else None
+            if info is not None:
+                try:
+                    info.launch([], None)
+                    return
+                except GLib.Error:
+                    pass
+            item.activate(*point)
+        item.app(found)
 
     def _scroll(self, item, dx, dy) -> bool:
         if item is None:
