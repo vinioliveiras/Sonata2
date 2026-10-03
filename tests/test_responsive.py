@@ -281,7 +281,7 @@ class LoginScreenTests(Base):
                     mock.patch.object(G, "load_state", lambda: {}), \
                     mock.patch.object(G.Greeter, "_restore_modes", lambda self: None), \
                     mock.patch.object(G.Greeter, "_window", lambda self, m, primary: seen.append(primary)), \
-                    mock.patch.object(monitors, "main", lambda: main):
+                    mock.patch.object(monitors, "main", lambda want=None: main):
                 G.Greeter(None)
             self.assertEqual(seen[0], want)
 

@@ -1006,14 +1006,20 @@ class Settings(Adw.ApplicationWindow):
                 from ..shell.monitors import DEFAULTS as MON
                 from . import arrange
                 cur_main = config.load("displays", MON)["main"]
-                builtin = next((d.name for d in ds if d.name.startswith(("eDP", "LVDS", "DSI"))), ds[0].name)
-                main = cur_main if cur_main in [d.name for d in ds] else builtin
+                # nothing chosen: what monitors.main() picks -- an external monitor first
+                external = next((d.name for d in ds if not d.name.startswith(("eDP", "LVDS", "DSI"))), ds[0].name)
+                main = cur_main if cur_main in [d.name for d in ds] else external
+                from ..shell.monitors import share_with_login_screen
+
+                def set_main(n):
+                    config.save("displays", {"main": n})
+                    share_with_login_screen()          # the login screen too (it can't read ~/.config)
                 main_row = combo_row("Main display", [(d.name, arrange.display_title(d)) for d in ds], main,
-                                     lambda n: config.save("displays", {"main": n}),
+                                     set_main,
                                      subtitle="Dock, desktop icons and notifications; every display gets a menu bar")
 
                 def new_main(n):                      # the menu bar dragged to another display
-                    config.save("displays", {"main": n})
+                    set_main(n)
                     show_quietly(main_row, n)
                 # where the displays sit, macOS' Arrange: drag a display, drag the menu bar
                 thumb = res[2] if len(res) > 2 else None

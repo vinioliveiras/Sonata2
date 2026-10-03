@@ -660,13 +660,18 @@ class MonitorsTest(unittest.TestCase):
         return m
 
     def test_main_display_choice(self):
-        """Main display: the one picked in Settings, else the built-in panel, else the first."""
+        """Main display: the one picked in Settings, else an external monitor (Vini),
+        else the built-in panel."""
         hdmi, edp, dp = self.mon("HDMI-A-1"), self.mon("eDP-1"), self.mon("DP-2")
-        with mock.patch.object(monitors, "_list", return_value=[hdmi, edp, dp]):
+        with mock.patch.object(monitors, "_list", return_value=[edp, hdmi, dp]):
             config.save("displays", {"main": "DP-2"})
             self.assertIs(monitors.main(), dp)
             config.save("displays", {"main": "gone"})
-            self.assertIs(monitors.main(), edp)
+            self.assertIs(monitors.main(), hdmi)                      # external first
+            config.save("displays", monitors.DEFAULTS)
+            self.assertIs(monitors.main(), hdmi)
+        with mock.patch.object(monitors, "_list", return_value=[edp]):
+            self.assertIs(monitors.main(), edp)                       # the laptop alone
         with mock.patch.object(monitors, "_list", return_value=[hdmi, dp]):
             self.assertIs(monitors.main(), hdmi)
         with mock.patch.object(monitors, "_list", return_value=[]):

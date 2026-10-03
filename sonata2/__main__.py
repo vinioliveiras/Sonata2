@@ -501,7 +501,8 @@ def run_wallpaper(app, args, ui):
         w.present()
         return w
     walls = monitors.each(create, lambda w: w.destroy())
-    monitors.on_main_changed(lambda _m: walls.rebuild())     # the desktop icons follow the main display
+    monitors.on_main_changed(lambda _m: (walls.rebuild(), monitors.share_with_login_screen()))  # icons follow it
+    monitors.share_with_login_screen()                       # the login screen uses the same main display
 
 
 def run_topbar(app, args, ui):

@@ -1,7 +1,7 @@
 """Several displays (macOS): the wallpaper and a menu bar on every display;
 the Dock, desktop icons and notifications on the main display. The main
 display is Settings > Displays' choice (displays.json "main" = connector),
-else the built-in panel, else the first one.
+else an external monitor when one is connected, else the built-in panel.
 
     monitors.each(create, destroy)   # a surface per display, hotplug included
     monitors.main()                  # Gdk.Monitor of the main display
@@ -26,18 +26,56 @@ def connector(m) -> str:
     return (m.get_connector() or "") if m is not None else ""
 
 
-def main():
+def main(want: str = None):
+    """want: a connector to prefer (the login screen: the user's choice)."""
     ms = _list()
     if not ms:
         return None
-    want = config.load("displays", DEFAULTS)["main"]
+    if want is None:
+        want = config.load("displays", DEFAULTS)["main"]
     for m in ms:
         if want and connector(m) == want:
             return m
+    # nothing chosen (or the chosen one is unplugged): an external monitor when
+    # one is connected (Vini), else the built-in panel
     for m in ms:
-        if connector(m).startswith(_BUILTIN):
+        if connector(m) and not connector(m).startswith(_BUILTIN):
             return m
     return ms[0]
+
+
+GREETER = "/var/lib/sonata-greeter"          # per user, writable by them (install.sh --greeter)
+
+
+def share_with_login_screen() -> None:
+    """The login screen runs before the session, as another user: it can't
+    read ~/.config. Copy the main display there, like the wallpaper
+    (wallpaper.py); nothing to do without the login screen's folder."""
+    import json
+    import os
+    folder = os.path.join(GREETER, GLib.get_user_name())
+    if not os.access(folder, os.W_OK):
+        return
+    data = json.dumps({"main": config.load("displays", DEFAULTS)["main"]}).encode()
+    try:
+        config.atomic_write(os.path.join(folder, "displays.json"), data, fsync=False)
+    except OSError:
+        pass
+
+
+def login_main(users) -> str:
+    """The main display a user chose (the first of `users` that has one), for the login screen."""
+    import json
+    import os
+    for name in users:
+        try:
+            with open(os.path.join(GREETER, name, "displays.json"), encoding="utf-8") as f:
+                want = json.load(f).get("main")
+            if isinstance(want, str) and want:
+                return want
+        except (OSError, ValueError, AttributeError):
+            continue
+    return ""
 
 
 class Surfaces:

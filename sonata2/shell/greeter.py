@@ -185,7 +185,10 @@ class Greeter:
         display = Gdk.Display.get_default()
         monitors = display.get_monitors()
         from . import monitors as displays
-        main = displays.main()               # the password on the main display (built-in panel), not just the first
+        # the password on the main display the user chose in Settings (their
+        # session shares it, see monitors.share_with_login_screen), else the built-in panel
+        names = [self.user.name] if self.user else [self.state.get("user")] + [u.name for u in self.users]
+        main = displays.main(displays.login_main([n for n in names if n]))
         for i in range(monitors.get_n_items()):
             self._window(monitors.get_item(i), primary=(monitors.get_item(i) is main))
 

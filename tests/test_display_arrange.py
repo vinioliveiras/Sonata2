@@ -159,3 +159,32 @@ class SettingsPageTest(unittest.TestCase):
             self.assertEqual(config.load("displays", {"main": ""})["main"], "HDMI-A-1")
             art.on_move({"eDP-1": (0, 0), "HDMI-A-1": (1536, 0)})
             setpos.assert_called_once_with({"eDP-1": (0, 0), "HDMI-A-1": (1536, 0)})
+
+
+class LoginScreenMainTest(unittest.TestCase):
+    """Vini: with the Acer chosen as the main display, the login still came up on
+    the laptop -- the login screen runs before the session and can't read
+    ~/.config: the session shares the choice with it, like the wallpaper."""
+
+    def test_shared_and_read_back(self):
+        import os
+        import tempfile
+        from sonata2 import config
+        from sonata2.shell import monitors as M
+        root = tempfile.mkdtemp()
+        user = GLib.get_user_name()
+        os.makedirs(os.path.join(root, user))
+        with mock.patch.object(M, "GREETER", root), mock.patch.object(config, "CONFIG_DIR", tempfile.mkdtemp()):
+            config.save("displays", {"main": "HDMI-A-1"})
+            M.share_with_login_screen()
+            self.assertEqual(M.login_main(["nobody", user]), "HDMI-A-1")
+            self.assertEqual(M.login_main(["nobody"]), "")
+            hdmi, edp = mock.Mock(), mock.Mock()
+            hdmi.get_connector.return_value, edp.get_connector.return_value = "HDMI-A-1", "eDP-1"
+            with mock.patch.object(M, "_list", return_value=[edp, hdmi]):
+                self.assertIs(M.main(M.login_main([user])), hdmi)
+
+    def test_no_folder_no_error(self):
+        from sonata2.shell import monitors as M
+        with mock.patch.object(M, "GREETER", "/nonexistent"):
+            M.share_with_login_screen()                           # nothing to do, nothing raised
