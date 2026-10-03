@@ -15,7 +15,7 @@ import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GdkPixbuf, GLib  # noqa: E402
+from gi.repository import Adw, GdkPixbuf, GLib, Gtk  # noqa: E402
 
 from sonata2 import config, ui, webapps as W  # noqa: E402
 
@@ -152,6 +152,17 @@ class WindowTest(unittest.TestCase):
         self.assertFalse(win.back.get_sensitive())
         session = win.view.get_network_session()
         self.assertTrue(session.get_website_data_manager().get_base_data_directory().startswith(W.data_dir(wid)))
+        # Ctrl+V is seen before WebKit takes it (Vini: pictures never pasted in WhatsApp)
+        self.assertEqual(win.keys.get_propagation_phase(), Gtk.PropagationPhase.CAPTURE)
+        from gi.repository import Gdk, GdkPixbuf
+        pb = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, True, 8, 4, 4)
+        png = Gdk.Texture.new_for_pixbuf(pb).save_to_png_bytes()
+        win.get_clipboard().set_content(Gdk.ContentProvider.new_for_bytes("image/png", png))
+        sent = []
+        with mock.patch.object(win, "_send_paste", side_effect=sent.append):
+            self.assertTrue(win._key(win.keys, Gdk.KEY_v, 0, Gdk.ModifierType.CONTROL_MASK))
+            settle(300)
+        self.assertEqual([(n, t) for n, t, _b in sent[0]], [("image.png", "image/png")])
         win.destroy()
 
 

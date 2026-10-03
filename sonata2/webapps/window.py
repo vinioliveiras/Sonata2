@@ -176,9 +176,13 @@ class WebAppWindow(Gtk.ApplicationWindow):
         col.append(toolbar)
         col.append(self.view)
         self.set_child(col)
-        keys = Gtk.EventControllerKey()
+        # before the page: WebKit takes Ctrl+V (and the other keys) itself, so a
+        # window controller in the usual bubble phase never saw them -- pictures
+        # never reached the paste below (Vini: WhatsApp)
+        keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         keys.connect("key-pressed", self._key)
         self.add_controller(keys)
+        self.keys = keys
         self._buttons()
         self.connect("close-request", self._close)
         self.view.load_uri(entry["url"])
