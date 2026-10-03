@@ -51,10 +51,21 @@ class InstallTest(unittest.TestCase):
         with mock.patch.object(S, "install_root", return_value="/home/v/GitHub/sonata2"), \
                 mock.patch.object(S, "is_clone", return_value=True):
             cmd = S.terminal_command("v0.2.0")
-        self.assertIn("git -C '/home/v/GitHub/sonata2' pull --ff-only", cmd)
+        self.assertIn("git -C /home/v/GitHub/sonata2 pull --ff-only", cmd)
         self.assertIn("restart", cmd)
         with mock.patch.object(S, "is_clone", return_value=False):
             self.assertTrue(S.terminal_command("v0.2.0").endswith("self-update v0.2.0"))
+
+    def test_tag_and_path_never_become_shell_code(self):
+        """Review: the GitHub tag went unquoted into a shell line (git refs may hold ; $ `)."""
+        import shlex
+        with mock.patch.object(S, "is_clone", return_value=False):
+            cmd = S.terminal_command("v1;touch /tmp/x")
+        self.assertEqual(shlex.split(cmd)[-2:], ["self-update", "v1;touch /tmp/x"])
+        with mock.patch.object(S, "install_root", return_value="/home/v/my clone'x"), \
+                mock.patch.object(S, "is_clone", return_value=True):
+            cmd = S.terminal_command()
+        self.assertEqual(shlex.split(cmd)[2], "/home/v/my clone'x")
 
     def _tarball(self, members) -> str:
         path = os.path.join(tempfile.mkdtemp(), "rel.tar.gz")

@@ -243,6 +243,17 @@ def _entry_field(info, method: str, key: str) -> str:
     return ""
 
 
+def app_filename(info) -> str:
+    """The .desktop file behind an app ("" when there is none). GioUnix's
+    DesktopAppInfo (GLib 2.80+) binds get_filename only unbound."""
+    for call in (lambda: info.get_filename(), lambda: type(info).get_filename(info)):
+        try:
+            return call() or ""
+        except (AttributeError, TypeError):
+            continue
+    return ""
+
+
 def _build_index() -> dict:
     """Lower-cased app_id candidates -> desktop id (without .desktop).
     Exact names first (id, StartupWMClass, last reverse-DNS part,

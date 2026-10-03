@@ -102,11 +102,14 @@ def install_args(root: str = None) -> list:
 
 def terminal_command(tag: str = "") -> str:
     """What Software Update runs in a terminal (asks for sudo there)."""
-    from ..__main__ import self_command
+    import shlex
+    from ..__main__ import self_argv
+    me = shlex.join(self_argv())
     root = install_root()
     if is_clone(root):
-        return f"git -C '{root}' pull --ff-only && {self_command()} restart"
-    return f"{self_command()} self-update {tag}".strip()
+        return f"git -C {shlex.quote(root)} pull --ff-only && {me} restart"
+    # a git tag may hold ; $ ` -- one quoted word, never shell code
+    return f"{me} self-update {shlex.quote(tag)}" if tag else f"{me} self-update"
 
 
 # -- updating ------------------------------------------------------------------------------
@@ -180,8 +183,8 @@ def main(args: list) -> int:
         print(f"The installer stopped (exit {code}). Sonata wasn't changed.")
         return code
     config.update(NAME, notified=tag)
-    from ..__main__ import self_command
-    subprocess.call(self_command().split() + ["restart"])
+    from ..__main__ import self_argv
+    subprocess.call(self_argv() + ["restart"])
     print(f"Sonata {tag} is installed.")
     return 0
 

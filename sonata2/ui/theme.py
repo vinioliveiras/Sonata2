@@ -5,6 +5,7 @@ Components call `register(template)` at import time (or when their
 geometry is known). Templates use
 `%(token)s` placeholders (write `%%` for a literal percent sign)."""
 import re
+import weakref
 
 import gi
 
@@ -78,7 +79,7 @@ def glass_class(widget: Gtk.Widget) -> Gtk.Widget:
     def sync(*_a):
         (widget.remove_css_class if glass() else widget.add_css_class)("solid")
     sync()
-    on_change(sync)
+    on_change(sync, owner=widget)                 # dropped with the widget
     return widget
 
 
@@ -268,8 +269,7 @@ def _start_fade(old_vals) -> None:
             _fade = None
             for k in [k for k in _parsed if isinstance(k[0], str) and k[0].startswith("old:")]:
                 del _parsed[k]
-        for cb in list(_listeners):
-            cb()
+        _notify_listeners()
         return not done
     GLib.timeout_add(16, tick)
 
@@ -298,14 +298,40 @@ def _load(*_a, fade=False) -> None:
         return                                  # nothing changed: no re-parse, no redraw everywhere
     _last_css = css
     _provider.load_from_string(css)
-    for cb in list(_listeners):
-        cb()
+    _notify_listeners()
 
 
-def on_change(callback) -> None:
+def on_change(callback, owner=None):
     """Call `callback()` whenever the appearance (and so the tokens) changes;
-    for widgets that draw with rgba()/shadow() in their snapshot."""
-    _listeners.append(callback)
+    for widgets that draw with rgba()/shadow() in their snapshot. Returns a
+    handle for off_change(). A bound method is held weakly: a listener never
+    keeps a dead widget alive (a Control Center slider rebuilt on each open
+    stayed in the list for good). Other callables stay until off_change(),
+    or until `owner` (a widget) is destroyed."""
+    if getattr(callback, "__self__", None) is not None:
+        handle = weakref.WeakMethod(callback)
+    else:
+        handle = (lambda cb=callback: cb)
+    _listeners.append(handle)
+    if isinstance(owner, Gtk.Widget):
+        owner.connect("destroy", lambda *_a: off_change(handle))
+    return handle
+
+
+def off_change(handle) -> None:
+    try:
+        _listeners.remove(handle)
+    except ValueError:
+        pass
+
+
+def _notify_listeners() -> None:
+    for handle in list(_listeners):
+        cb = handle()
+        if cb is None:
+            off_change(handle)                   # its widget is gone
+        else:
+            cb()
 
 
 def px(token: str) -> float:

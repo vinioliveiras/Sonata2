@@ -65,12 +65,27 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def self_command() -> str:
-    """How to start Sonata again (desktop entries, autostart): the installed
-    `sonata2` launcher, or this interpreter + this clone."""
+    """How to start Sonata again, for a desktop entry's Exec= line: the
+    installed `sonata2` launcher, or this interpreter + this clone. An
+    argument with spaces or reserved characters is double-quoted per the
+    Desktop Entry spec (a clone path with spaces stays one argument). To run
+    it from Python use self_argv(), never a split of this string."""
+    def q(a):
+        a = a.replace("%", "%%")
+        if not any(c in a for c in ' \t\n"\'\\><~|&;$*?#()`'):
+            return a
+        quoted = '"' + "".join("\\" + c if c in '"`$\\' else c for c in a) + '"'
+        return quoted.replace("\\", "\\\\")       # the file's own string escape comes on top
+    return " ".join(q(a) for a in self_argv())
+
+
+def self_argv() -> list:
+    """How to start Sonata again as an argument list (a clone path with
+    spaces stays one argument): what subprocess / spawn_async callers use."""
     launcher = os.environ.get("SONATA2_LAUNCHER")
     if launcher and os.path.exists(launcher):
-        return launcher
-    return f"env PYTHONPATH={REPO} {sys.executable} -m sonata2"
+        return [launcher]
+    return ["env", f"PYTHONPATH={REPO}", sys.executable, "-m", "sonata2"]
 
 
 def _later(ms, fn):
@@ -120,7 +135,7 @@ def run_dock(app, args, ui):
     from .shell.capture import capture_desktop_file
     capture_desktop_file(self_command())               # Screenshot (the capture toolbar)
     from . import webapps
-    webapps.write_all(self_command())                  # the web apps made with "New Web App…"
+    webapps.write_all(self_command())                # the web apps made with "New Web App…"
     cfg = dock.load_config()
     if not cfg.get("launchpad_added"):                        # once: pin it after Finder
         cfg["launchpad_added"] = True
@@ -515,6 +530,7 @@ def run_topbar(app, args, ui):
             LS = layer.layer_shell()
             win.set_visible(False)
             LS.set_monitor(win, m)
+            win.bar.monitor = m                  # Control Center's brightness follows the new main display
             win.set_visible(True)
             others.rebuild()
         monitors.on_main_changed(main_changed)
@@ -685,7 +701,7 @@ def restart(names) -> int:
         subprocess.run(["pkill", "-f", "--", rf"-m sonata2 keep {n}( |$)"], check=False)
         subprocess.run(["pkill", "-f", "--", rf"-m sonata2 {n}( |$)"], check=False)
     time.sleep(0.6)
-    cmd = self_command().split()
+    cmd = self_argv()
     for n in names:
         extra = ["--background"] if n in ("launchpad", "spotlight") else []
         subprocess.Popen(cmd + ["keep", n] + extra, start_new_session=True,
@@ -968,10 +984,11 @@ def keep(argv) -> int:
     logout) it stays stopped; crashing over and over, it gives up."""
     import subprocess
     import time
-    cmd = self_command().split() + argv
+    cmd = self_argv() + argv
     # each component logs to ~/.cache/sonata2/<name>.log (the previous run's
     # kept as .old.log) -- what `sonata2 doctor` and bug reports read
-    logdir = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "sonata2")
+    from .logs import log_dir
+    logdir = log_dir()
     os.makedirs(logdir, exist_ok=True)
     log_path = os.path.join(logdir, f"{argv[0]}.log")
     if os.path.exists(log_path):
@@ -1032,7 +1049,7 @@ def main() -> int:
         return webapps.main(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "lock-wait":         # swayidle: lock, return once locked
         from .shell import idlelock
-        return idlelock.lock_and_wait(self_command().split() + ["lock"])
+        return idlelock.lock_and_wait(self_argv() + ["lock"])
     if len(sys.argv) > 1 and sys.argv[1] == "screenshot":
         return screenshot(sys.argv[2] if len(sys.argv) > 2 else "screen")
     if len(sys.argv) > 1 and sys.argv[1] == "self-update":     # Sonata's own updates (GitHub releases)
