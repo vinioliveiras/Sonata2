@@ -153,12 +153,11 @@ window.sonata-dock *:drop(active) { box-shadow: none; outline: none; border-colo
 .edge-left .dock-dots { margin: 0 %(dot_in)dpx 0 %(dot_out)dpx; }
 .edge-right .dock-dots { margin: 0 %(dot_out)dpx 0 %(dot_in)dpx; }
 .dock-dot.on { opacity: %(dot_on)s; }
-/* more windows than dots: a +, a touch wider than a dot so it reads as one
-   (at a dot's 4 px it looked like a third dot); the row's height stays */
-.dock-dot.plus { border-radius: 0; background-color: transparent; min-width: %(plus)dpx; min-height: %(plus)dpx;
-  margin: -1px;
+/* more windows than dots: a + no bigger than a dot (Vini), thin arms so it
+   doesn't read as a third dot */
+.dock-dot.plus { border-radius: 0; background-color: transparent;
   background-image: linear-gradient(%(indicator)s, %(indicator)s), linear-gradient(%(indicator)s, %(indicator)s);
-  background-size: 100%% 1.5px, 1.5px 100%%; background-position: center; background-repeat: no-repeat; }
+  background-size: 100%% 1px, 1px 100%%; background-position: center; background-repeat: no-repeat; }
 .dock-divider > box, .dock-recent-sep > box { background-color: %(separator)s; }
 .edge-bottom .dock-divider, .edge-bottom .dock-recent-sep { padding: 0 5px; margin-bottom: %(row)dpx; }
 .edge-bottom .dock-divider > box, .edge-bottom .dock-recent-sep > box { min-width: 1px; }
@@ -1834,7 +1833,7 @@ def load_css(cfg: dict) -> None:
     ui.setup()
     inner, outer = dot_gaps(cfg["icon_size"])
     ui.register(CSS, key="dock", tile_pad=TILE_PAD, row=dot_row(cfg), bounce_ms=BOUNCE_MS,
-                dot=DOT, plus=DOT + 2, dot_in=inner, dot_out=outer, dot_on="1" if cfg.get("indicators", True) else "0")
+                dot=DOT, dot_in=inner, dot_out=outer, dot_on="1" if cfg.get("indicators", True) else "0")
 
 
 def load_config() -> dict:
