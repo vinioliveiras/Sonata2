@@ -160,6 +160,46 @@ window.sonata-window.fullscreen { border-radius: 0; box-shadow: none; }
 # Notes, Music, Calendar, Disk Manager, Task Manager's Performance): 230 + 50 (Vini)
 SIDEBAR_W = 280
 
+# What the shell keeps of every display: the 24 px menu bar and a resting
+# Dock (default size, ~72 px) plus a small margin. App windows open within
+# the rest, so a 1280x720 laptop never gets a window taller than it.
+WORK_MARGIN_W, WORK_MARGIN_H = 32, 104
+
+
+def screen_size(widget=None):
+    """(width, height) in logical px of the display `widget` is shown on.
+    Not shown yet (a window before present()): the smallest display, so
+    whatever is sized from it fits whichever display it opens on. None: no
+    display at all."""
+    from gi.repository import Gdk
+    disp = widget.get_display() if widget is not None else Gdk.Display.get_default()
+    if disp is None:
+        return None
+    native = widget.get_native() if widget is not None else None
+    surf = native.get_surface() if native is not None else None
+    mon = disp.get_monitor_at_surface(surf) if surf is not None else None
+    if mon is not None:
+        g = mon.get_geometry()
+        return g.width, g.height
+    ms = disp.get_monitors()
+    sizes = [(g.width, g.height) for g in (ms.get_item(i).get_geometry() for i in range(ms.get_n_items()))]
+    return min(sizes, key=lambda s: s[0] * s[1]) if sizes else None
+
+
+def fit_size(w: int, h: int, screen=None) -> tuple:
+    """(w, h) shrunk to the work area of a `screen`-sized display (menu bar
+    and Dock taken off); never grown. screen=None: unchanged."""
+    if not screen:
+        return int(w), int(h)
+    return (int(min(w, max(1, screen[0] - WORK_MARGIN_W))),
+            int(min(h, max(1, screen[1] - WORK_MARGIN_H))))
+
+
+def fit_default_size(win, w: int, h: int) -> None:
+    """set_default_size() that never opens a window bigger than the display
+    (the defaults were picked on 1080p; laptops have 720/768 px)."""
+    win.set_default_size(*fit_size(w, h, screen_size(win if win.get_realized() else None)))
+
 
 def standard(win) -> None:
     """Give an app window Sonata's standard frame (call once, any time)."""

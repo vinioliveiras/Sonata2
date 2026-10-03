@@ -207,9 +207,8 @@ class PreviewWindow(Gtk.ApplicationWindow):
         Gtk.RecentManager.get_default().add_item(Gio.File.new_for_path(path).get_uri())
         if not self.get_realized():               # the window takes the picture's shape
             w, h = tex.get_width(), tex.get_height()
-            mon = Gdk.Display.get_default().get_monitors().get_item(0)
-            g = mon.get_geometry() if mon else None
-            max_w, max_h = (g.width * 0.7, g.height * 0.7) if g else (1100, 760)
+            g = ui.window.screen_size()             # the smallest display, not just the first
+            max_w, max_h = (g[0] * 0.7, g[1] * 0.7) if g else (1100, 760)
             side = self.thumbs.get_size_request()[0] if self.sidebar.get_reveal_child() else 0
             s = min(1.0, (max_w - side) / max(1, w), (max_h - ui.window.TITLEBAR_H) / max(1, h))
             self.set_default_size(max(420, int(w * s) + side), max(300, int(h * s) + ui.window.TITLEBAR_H))

@@ -102,7 +102,10 @@ class Tab:
         for vid, v in self.views.items():
             w = v.widget
             if vid != "columns":
-                w = Gtk.ScrolledWindow(child=w, hscrollbar_policy=Gtk.PolicyType.NEVER)
+                # the list's columns scroll sideways when the window is narrow (Finder):
+                # their widths no longer set the window's minimum (it was 1040 px)
+                w = Gtk.ScrolledWindow(child=w, hscrollbar_policy=Gtk.PolicyType.AUTOMATIC if vid == "list"
+                                       else Gtk.PolicyType.NEVER)
             self.stack.add_named(w, vid)
         self.fade = ui.transition.CrossFade(self.stack)    # folder changes cross-fade
         self.widget = Gtk.Overlay(vexpand=True)

@@ -184,8 +184,10 @@ class Greeter:
         self._restore_modes()
         display = Gdk.Display.get_default()
         monitors = display.get_monitors()
+        from . import monitors as displays
+        main = displays.main()               # the password on the main display (built-in panel), not just the first
         for i in range(monitors.get_n_items()):
-            self._window(monitors.get_item(i), primary=(i == 0))
+            self._window(monitors.get_item(i), primary=(monitors.get_item(i) is main))
 
     # windows: one per display, the login column on the first
     def _window(self, monitor, primary):

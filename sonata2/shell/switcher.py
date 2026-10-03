@@ -33,6 +33,18 @@ window.sonata-switcher, window.sonata-switcher > contents { background: none; bo
 """, key="switcher")
 
 SLIDE_MS = 150          # the selection glides from app to app
+ICON_MIN = 32
+# what the panel adds around its icons (.sw-panel margins + padding, .sw-item padding)
+CHROME_W, ITEM_PAD = 2 * 40 + 2 * 14, 2 * 8 + 4
+
+
+def icon_size(n: int, screen_w: int) -> int:
+    """The icons' size for n apps: 96 px, smaller when that many don't fit
+    the display's width (macOS shrinks them too), never under 32."""
+    if n <= 0 or not screen_w:
+        return ICON
+    fit = (screen_w - CHROME_W - 16) // n - ITEM_PAD
+    return max(ICON_MIN, min(ICON, fit))
 
 
 class SwitcherPanel(Gtk.Box):
@@ -173,10 +185,12 @@ class Switcher(Gtk.Window):
             self.panel.remove(self.panel.get_first_child())
         self.items = []
         from .. import steamgames
+        # (the smallest display: the compositor picks the focused one, unknown here)
+        size = icon_size(len(self.keys), (ui.window.screen_size() or (0, 0))[0])
         for key in self.keys:
             info = apps.lookup(key)
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["sw-item"])
-            img = Gtk.Image(pixel_size=ICON)
+            img = Gtk.Image(pixel_size=size)
             # a Steam game: its name and icon, as in the Dock (Vini: "steam_app_…")
             game = None if info or not steamgames.appid(key) else steamgames.shown(
                 key, next((t.title for t in self.groups[key] if getattr(t, "title", "")), ""))

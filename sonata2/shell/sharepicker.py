@@ -69,6 +69,14 @@ def _display_name(connector: str) -> str:
 
 
 THUMB_H = 135
+# the panel around the choices: its margin and padding, the title, the buttons
+CHROME_H = 200
+
+
+def grid_max_height(screen_h: int) -> int:
+    """The tallest the choices may get before they scroll: many windows
+    to share on a 720 px laptop pushed Cancel / Share off the screen."""
+    return max(THUMB_H + 40, int(screen_h) - CHROME_H)
 
 
 def fit_texture(pb):
@@ -142,7 +150,11 @@ class Picker(Gtk.Window):
             item.add_controller(click)
             grid.append(item)
             self.items.append(item)
-        panel.append(grid)
+        screen = ui.window.screen_size()     # (the smallest display: the compositor picks one)
+        self.scroller = Gtk.ScrolledWindow(child=grid, hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                           propagate_natural_width=True, propagate_natural_height=True,
+                                           max_content_height=grid_max_height(screen[1]) if screen else 520)
+        panel.append(self.scroller)
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
         cancel = Gtk.Button(label="Cancel", css_classes=["sonata-button"])
         cancel.connect("clicked", lambda *_: self._finish(None))

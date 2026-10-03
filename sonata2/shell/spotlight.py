@@ -38,6 +38,7 @@ SHOW = {"apps": 6, "folders": 4, "docs": 8}
 # the results area keeps one height while typing (it used to grow and
 # shrink with every key); it slides open under the bar once, then stays
 RESULTS_H = 400
+FIELD_H = 64               # the search field and the line under it (.sp-field: 48 + padding)
 OPEN_MS, CLOSE_MS, REVEAL_MS = 200, 120, 180
 SEARCH_DELAY_MS = 40            # a burst of keys: one search
 
@@ -114,7 +115,18 @@ def calculate(text: str):
         return None
 
 
+def layout_for(screen_h: int) -> tuple:
+    """(margin above the panel, results height) on a display this tall:
+    22 % down like macOS, the results 400 px; on a short display (a small
+    laptop at 2x) both give way so the results stay on screen."""
+    top = int(screen_h * 0.22)
+    room = screen_h - FIELD_H - 16                 # 16: a margin under the results
+    results = max(160, min(RESULTS_H, room - 24))
+    return max(24, min(top, room - results)), results
+
+
 # -- file index ------------------------------------------------------------------------------------
+
 class Index:
     def __init__(self):
         self.entries = []        # (name lower, path, is_dir)
@@ -188,6 +200,7 @@ class Spotlight(Gtk.ApplicationWindow):
         self.list.connect("row-activated", lambda _l, r: self._open(r))
         scroller = Gtk.ScrolledWindow(child=self.list, hscrollbar_policy=Gtk.PolicyType.NEVER)
         scroller.set_size_request(290, RESULTS_H)
+        self.scroller = scroller
         self.body.append(scroller)
         self.prev = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["sp-preview"],
                             hexpand=True, valign=Gtk.Align.FILL)
@@ -220,10 +233,12 @@ class Spotlight(Gtk.ApplicationWindow):
             LS.set_keyboard_mode(self, LS.KeyboardMode.EXCLUSIVE)
         self.connect("realize", lambda *_: self._place(panel))
 
-    def _place(self, panel):
-        mon = self.get_display().get_monitor_at_surface(self.get_surface()) if self.get_surface() else None
-        h = mon.get_geometry().height if mon else 900
-        panel.set_margin_top(int(h * 0.22))
+    def _place(self, panel, mon=None):
+        if mon is None:
+            mon = self.get_display().get_monitor_at_surface(self.get_surface()) if self.get_surface() else None
+        top, results = layout_for(mon.get_geometry().height if mon else 900)
+        panel.set_margin_top(top)
+        self.scroller.set_size_request(290, results)
 
     # -- open / close --------------------------------------------------------------------
     def toggle(self):
@@ -249,6 +264,12 @@ class Spotlight(Gtk.ApplicationWindow):
         self.panel.remove_css_class("opening")    # (again: restarts the animation)
         self.panel.add_css_class("opening")
         self.present()
+        surface = self.get_surface()
+        if surface is not None and getattr(self, "_mon_surface", None) is not surface:
+            # the compositor puts it on the focused display: placed again for
+            # that one (else a 4K's margin pushed the results off a laptop)
+            self._mon_surface = surface
+            surface.connect("enter-monitor", lambda _s, m: self._place(self.panel, m))
         self.entry.grab_focus()
 
     def close_spotlight(self):

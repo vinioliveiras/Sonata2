@@ -156,8 +156,8 @@ def fmt_time(seconds: int) -> str:
 # -- the window ------------------------------------------------------------------------------------
 class CameraWindow(Gtk.ApplicationWindow):
     def __init__(self, app, source=None):
-        super().__init__(application=app, title="Camera", default_width=820, default_height=700,
-                         css_classes=["sonata-camera"])
+        super().__init__(application=app, title="Camera", css_classes=["sonata-camera"])
+        ui.window.fit_default_size(self, 820, 700)  # never bigger than the display (laptops)
         ui.window.standard(self)
         self.set_size_request(460, 480)
         self.cfg = config.load(CONFIG, DEFAULTS)

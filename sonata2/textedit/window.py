@@ -1126,7 +1126,8 @@ class TextEditWindow(Gtk.ApplicationWindow):
 
     def _restore(self, st: dict) -> None:
         if st.get("width") and st.get("height"):
-            self.set_default_size(max(360, int(st["width"])), max(240, int(st["height"])))
+            # saved on a bigger display: shrunk to this one
+            ui.window.fit_default_size(self, max(360, int(st["width"])), max(240, int(st["height"])))
         if st.get("maximized"):
             self.maximize()
         for t in st.get("tabs", []):

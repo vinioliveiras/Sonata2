@@ -75,7 +75,7 @@ class FeedbackWindow(Gtk.ApplicationWindow):
             GLib.set_application_name("Feedbacker")
         super().__init__(application=app, title="Feedbacker", css_classes=["sonata-feedback"])
         ui.window.standard(self)
-        self.set_default_size(WIDTH, HEIGHT)
+        ui.window.fit_default_size(self, WIDTH, HEIGHT)  # never bigger than the display (laptops)
         self.set_size_request(480, 520)
         self.busy = False
         self.toasts = Adw.ToastOverlay()

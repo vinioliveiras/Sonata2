@@ -96,7 +96,7 @@ class WebAppWindow(Gtk.ApplicationWindow):
         super().__init__(application=app, title=entry["name"], css_classes=["sonata-webapp"])
         ui.window.standard(self)
         self.wid, self.entry = wid, entry
-        self.set_default_size(*SIZE)
+        ui.window.fit_default_size(self, *SIZE)  # never bigger than the display (laptops)
         self.set_size_request(420, 360)
         base = W.data_dir(wid)
         session = WebKit.NetworkSession.new(os.path.join(base, "data"), os.path.join(base, "cache"))

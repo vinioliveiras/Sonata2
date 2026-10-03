@@ -148,9 +148,9 @@ class VideoWindow(Gtk.ApplicationWindow):
         self.overlay.add_overlay(self.hud)
         self.set_child(self.overlay)
 
-        mon = Gdk.Display.get_default().get_monitors().get_item(0)
-        g = mon.get_geometry() if mon else None
-        self._max = (g.width * 0.7, g.height * 0.7) if g else (1100, 700)
+        # 70 % of the display (the smallest one until shown: not just the first)
+        g = ui.window.screen_size()
+        self._max = (g[0] * 0.7, g[1] * 0.7) if g else (1100, 700)
         self.set_default_size(*fit_size(1920, 1080, *self._max))
         self._input()
         self.connect("close-request", self._close_request)

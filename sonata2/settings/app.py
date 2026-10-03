@@ -366,7 +366,7 @@ class Settings(Adw.ApplicationWindow):
         for c in ("sonata-settings", "sonata-glass"):      # added, not passed (keeps GTK's "csd")
             self.add_css_class(c)
         # Resizable with a working Zoom button (Vini's call; macOS keeps it fixed).
-        self.set_default_size(920, 640)
+        ui.window.fit_default_size(self, 920, 640)  # never bigger than the display (laptops)
         self.set_size_request(760, 480)
         # Bluetooth's search for nearby devices ends with the window
         self.connect("close-request", lambda *_: (getattr(self, "_bt_scan_src", 0) and self._bt_scan(False), False)[1])

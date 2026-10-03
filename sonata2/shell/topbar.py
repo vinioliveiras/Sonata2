@@ -36,6 +36,7 @@ STATUS_W = 280
 # is added (Vini); it grows downwards with more modules, up to the screen
 # Sound and Now Playing live in the Control Center; the menu bar items are
 # optional (Settings > Menu Bar), off by default (Vini).
+APP_NAME_CHARS = 24     # the bold app name in the menu bar, then "…"
 LOGO_PX = 12            # the Sonata menu's logo / shape / symbol (under the 16 px status icons; Vini's call)
 DEFAULTS = {"battery_percent": False, "clock_format": "%a %-d %b  %H:%M", "show_bluetooth": True,
             "show_sound": False, "show_now_playing": False, "show_tray": True,
@@ -140,6 +141,11 @@ class Bar(Gtk.CenterBox):
         from ..ui.logo import LogoGlyph                      # distro logo, a shape or a symbol (Settings)
         self.logo.get_child().append(LogoGlyph(LOGO_PX))
         self.app_btn = self._item(left, text="Files", on_click=self._app_menu, css="app")
+        # a very long app name ("GNU Image Manipulation Program", a raw app id)
+        # ellipsizes: with tray and stats on a 1280 px display the bar overflowed
+        name = self.app_btn.get_child().get_last_child()
+        name.set_ellipsize(Pango.EllipsizeMode.END)
+        name.set_max_width_chars(APP_NAME_CHARS)
         # on the desktop (nothing focused) the menus are Files' own, like Finder's
         self.file_btn = self._item(left, text="File", on_click=self._files_file_menu)
         self.go_btn = self._item(left, text="Go", on_click=self._files_go_menu)

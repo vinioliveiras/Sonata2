@@ -60,6 +60,7 @@ def popup(anchor: Gtk.Widget, child: Gtk.Widget, position=Gtk.PositionType.BOTTO
     """width: a fixed content width (menu bar panels): long names ellipsize
     instead of stretching the panel (ui/fixed.py)."""
     pop = Gtk.Popover(css_classes=["sonata-panel"], has_arrow=False, position=position)
+    child = fit_screen(child, anchor)
     if width:
         from .fixed import FixedWidth
         child = FixedWidth(child, width)
@@ -123,6 +124,29 @@ def popup(anchor: Gtk.Widget, child: Gtk.Widget, position=Gtk.PositionType.BOTTO
     hold_hover(pop)
     pop.popup()
     return pop
+
+
+# a panel never reaches past its display: the menu bar above it, its own
+# padding and a margin below (a popover taller than the screen is cut off)
+SCREEN_MARGIN = 48
+
+
+def max_height(screen_h: int) -> int:
+    """The tallest a panel's content may be on a display this tall."""
+    return max(200, int(screen_h) - SCREEN_MARGIN)
+
+
+def fit_screen(child: Gtk.Widget, anchor: Gtk.Widget) -> Gtk.Widget:
+    """`child` in a scroller that is exactly its size, until the display is
+    too short for it (a long Wi-Fi list, many audio apps on a 720 px
+    laptop): then it scrolls instead of running off the screen."""
+    from .window import screen_size
+    size = screen_size(anchor)
+    if not size:
+        return child
+    return Gtk.ScrolledWindow(child=child, hscrollbar_policy=Gtk.PolicyType.NEVER,
+                              propagate_natural_width=True, propagate_natural_height=True,
+                              max_content_height=max_height(size[1]), css_classes=["panel-scroller"])
 
 
 def hold_hover(pop: Gtk.Popover, slack: float = 2.0) -> None:

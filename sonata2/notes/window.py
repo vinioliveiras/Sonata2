@@ -155,7 +155,8 @@ def _head(text: str) -> Gtk.ListBoxRow:
 
 class NotesWindow(Gtk.ApplicationWindow):
     def __init__(self, app, store: S.Store = None):
-        super().__init__(application=app, title="Notes", default_width=1060, default_height=640)
+        super().__init__(application=app, title="Notes")
+        ui.window.fit_default_size(self, 1060, 640)  # never bigger than the display (laptops)
         self.add_css_class("sonata-notes")
         self.set_size_request(640, 380)
         ui.window.standard(self)
