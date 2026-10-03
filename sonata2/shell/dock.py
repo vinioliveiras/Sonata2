@@ -1499,7 +1499,7 @@ class Dock(Gtk.Box):
             root = self.get_root()
             app = root.get_application() if root is not None else None
             surface = self.get_native().get_surface() if self.get_native() else None
-            mon = Gdk.Display.get_default().get_monitor_at_surface(surface) if surface else None
+            mon = self._monitor_of(surface)
             fallback = None
             if mon is not None:                          # where the Dock last saw it, above the Dock
                 g = mon.get_geometry()
@@ -1613,7 +1613,7 @@ class Dock(Gtk.Box):
         # but animates in the display's own coordinates: on a display that
         # isn't at the layout's origin (a second screen to the right) the
         # genie aimed that far off. Take the display's origin back out.
-        mon = self.get_display().get_monitor_at_surface(surface)
+        mon = self._monitor_of(surface)
         g = mon.get_geometry() if mon else None
         ox, oy = (g.x, g.y) if g else (0, 0)
         my_apps = {a for a, _t in mine}
@@ -1639,6 +1639,17 @@ class Dock(Gtk.Box):
                 #  touch it from here, or the last Dock to write would win)
         return False
 
+    def _monitor_of(self, surface):
+        """The display this Dock is on: the one its window was put on (layer
+        shell). GTK's monitor "at" the surface could name the other display
+        (Vini: windows on the external screen flew into the laptop's Dock --
+        every minimize, the title bar's button and Super+D too)."""
+        root = self.get_root()
+        mon = getattr(root, "shown_on", None)
+        if mon is not None and mon.is_valid():
+            return mon
+        return self.get_display().get_monitor_at_surface(surface) if surface else None
+
     def _aim_at(self, tile, wins) -> None:
         """These windows minimize to / come back from `tile` of this Dock."""
         native = self.get_native()
@@ -1646,7 +1657,7 @@ class Dock(Gtk.Box):
         ok, b = tile.compute_bounds(native) if surface and tile else (False, None)
         if not ok:
             return
-        mon = self.get_display().get_monitor_at_surface(surface)
+        mon = self._monitor_of(surface)
         g = mon.get_geometry() if mon else None
         ox, oy = (g.x, g.y) if g else (0, 0)            # (as _update_rectangles)
         for t in wins:
@@ -1671,7 +1682,7 @@ class Dock(Gtk.Box):
         from . import monitors
         native = self.get_native()
         surface = native.get_surface() if native else None
-        mon = self.get_display().get_monitor_at_surface(surface) if surface else None
+        mon = self._monitor_of(surface)
         mine = monitors.connector(mon) if mon else ""
         if not mine:
             return False
@@ -1698,7 +1709,7 @@ class Dock(Gtk.Box):
         windows Wayfire knows; (set(), None) when Wayfire IPC can't tell."""
         from ..wl.wfipc import WayfireIPC
         from . import monitors
-        mon = self.get_display().get_monitor_at_surface(surface)
+        mon = self._monitor_of(surface)
         mine = monitors.connector(mon) if mon else ""
         views = WayfireIPC().call("window-rules/list-views") if mine else None
         if not isinstance(views, list):
@@ -1905,6 +1916,7 @@ class DockWindow(Gtk.ApplicationWindow):
                 m = self._monitor or monitors.main()
                 if m is not None:
                     layer.layer_shell().set_monitor(self, m)
+                    self.shown_on = m
                 if self._monitor is None:
                     monitors.on_main_changed(self._move_to)
         else:
@@ -1991,6 +2003,7 @@ class DockWindow(Gtk.ApplicationWindow):
         visible = self.get_visible()
         self.set_visible(False)
         layer.layer_shell().set_monitor(self, monitor)
+        self.shown_on = monitor
         self.set_visible(visible)
 
     def set_above(self, on: bool) -> None:

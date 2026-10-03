@@ -108,7 +108,7 @@ class BringHereTest(unittest.TestCase):
         d = mock.Mock()
         mon = mock.Mock()
         mon.get_connector.return_value = "eDP-1"
-        d.get_display.return_value.get_monitor_at_surface.return_value = mon
+        d._monitor_of.return_value = mon
         with mock.patch("sonata2.wl.wfipc.WayfireIPC", IPC):
             self.assertTrue(D.Dock._bring_here(d, [t1, t2]))
         moves = [c for c in IPC.calls if c[0] == "window-rules/configure-view"]
@@ -132,7 +132,7 @@ class BringHereTest(unittest.TestCase):
         tile = mock.Mock()
         tile.compute_bounds.return_value = (True, ok_b)
         geo = mock.Mock(x=0, y=0)
-        d.get_display.return_value.get_monitor_at_surface.return_value.get_geometry.return_value = geo
+        d._monitor_of.return_value.get_geometry.return_value = geo
         t = mock.Mock()
         D.Dock._aim_at(d, tile, [t])
         surface = d.get_native.return_value.get_surface.return_value
@@ -164,3 +164,25 @@ class MinimizeAimTest(unittest.TestCase):
             self.assertEqual(D.Dock._here(d, [t1, t2]), [t1, t2])
         with mock.patch.object(D, "_DOCKS", [object()]):              # one Dock
             self.assertEqual(D.Dock._here(d, [t1]), [t1])
+
+
+class DockDisplayTest(unittest.TestCase):
+    """Vini: windows on the external display flew into the laptop's Dock (any
+    minimize) -- the laptop's Dock asked GTK which display it was on and got
+    the other one. It uses the display its window was put on."""
+
+    def test_the_display_it_was_put_on(self):
+        from unittest import mock
+        d = mock.Mock()
+        mine = mock.Mock()
+        mine.is_valid.return_value = True
+        d.get_root.return_value.shown_on = mine
+        self.assertIs(D.Dock._monitor_of(d, mock.Mock()), mine)
+        d.get_display.return_value.get_monitor_at_surface.assert_not_called()
+
+    def test_no_gtk_guess_left(self):
+        src = open(D.__file__).read()
+        body = src[src.index("class Dock(Gtk.Box)"):src.index("class DockWindow")]
+        self.assertEqual(body.count("get_monitor_at_surface("), 1)          # only the fallback
+        self.assertIn("self.shown_on = m", src)
+        self.assertIn("self.shown_on = monitor", src)
