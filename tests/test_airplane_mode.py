@@ -78,6 +78,22 @@ class ModuleTest(unittest.TestCase):
         self.assertIs(cc.plane.get_parent(), conn)
         need = conn.measure(Gtk.Orientation.VERTICAL, cc.grid.rect("connectivity")[2])[0]
         self.assertLessEqual(need, C.span_height(C.CATALOG["connectivity"][1][1]))   # 3 rows in its 2x2
+        # the three rows spread over the module: as much room above the first as below the last,
+        # also when its cells are taller than the rows need (fonts differ per computer)
+        def gaps():
+            settle(100)
+            slot = conn.get_parent()
+            _o, box = conn.compute_bounds(slot)
+            _o, top = cc.wifi.compute_bounds(slot)
+            _o, bottom = cc.plane.compute_bounds(slot)
+            return top.get_y() - box.get_y(), box.get_y() + box.get_height() - bottom.get_y() - bottom.get_height()
+        above, below = gaps()
+        self.assertLessEqual(abs(above - below), 3, (above, below))
+        cc.grid._grow["connectivity"] = 170
+        cc.grid.queue_allocate()
+        above, below = gaps()
+        self.assertLessEqual(abs(above - below), 3, (above, below))
+        cc.grid._grow.pop("connectivity")
         cc._fill_toggles((True, ("Home", 80, False), True, None))
         self.assertFalse(cc.plane.button.get_sensitive())                     # no radios: greyed out
         with mock.patch.object(T.system, "run_async") as ra:

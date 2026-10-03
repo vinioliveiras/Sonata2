@@ -1106,7 +1106,10 @@ class ControlCenter(Gtk.Box):
         # where macOS has AirDrop (Vini): Airplane Mode -- every radio off, and back as they were
         self.plane = ui.panel.toggle("airplane-mode-symbolic", "Airplane Mode", False, self._set_airplane, caption="…")
         conn = ui.panel.module(self.wifi, self.bt, self.plane, spacing=2)
-        conn.add_css_class("cc-conn")                           # three rows in its 2x2 cells
+        conn.add_css_class("cc-conn")                           # three rows in its 2x2 cells,
+        conn.set_homogeneous(True)                              # spread evenly over its height
+        for row in (self.wifi, self.bt, self.plane):            # (Vini: packed at the top, a gap below)
+            row.set_valign(Gtk.Align.CENTER)
         conn.set_valign(Gtk.Align.FILL)
         dark = Adw.StyleManager.get_default().get_dark()
         nc = getattr(bar, "notifications", None)
