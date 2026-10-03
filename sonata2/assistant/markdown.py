@@ -8,7 +8,10 @@ text is raw (shown monospaced, never parsed). An unclosed ``` (still
 streaming) is a code block up to the end."""
 import re
 
-from gi.repository import GLib
+import gi
+
+gi.require_version("Pango", "1.0")
+from gi.repository import GLib, Pango  # noqa: E402
 
 _FENCE = re.compile(r"^\s*(```|~~~)")
 _HEAD = re.compile(r"^(#{1,6})\s+(.*)$")
@@ -82,16 +85,30 @@ def blocks(text: str) -> list:
 
 def inline(text: str) -> str:
     """Pango markup for one block of Markdown text (escaped first)."""
-    codes = []
+    codes, hrefs = [], []
 
     def keep(m):
         codes.append(m.group(1))
         return f"\ue000{len(codes) - 1}\ue001"   # private-use marks (a NUL would cut the C string)
+
+    def link(m):
+        # the <a href> tag is held aside too: emphasis never runs inside a URL (__init__.py)
+        hrefs.append(m.group(2))
+        return f"\ue002{len(hrefs) - 1}\ue003{m.group(1)}</a>"
     text = _CODE.sub(keep, text)                     # code spans are never formatted
-    s = GLib.markup_escape_text(text)
-    s = _LINK.sub(lambda m: f'<a href="{m.group(2)}">{m.group(1)}</a>', s)
-    s = _BOLD.sub(r"<b>\2</b>", s)
-    s = _ITALIC.sub(lambda m: f"<i>{m.group(1) or m.group(2)}</i>", s)
-    s = _STRIKE.sub(r"<s>\1</s>", s)
+    plain = GLib.markup_escape_text(text)
+    plain = _LINK.sub(link, plain)
+    s = _STRIKE.sub(r"<s>\1</s>", _ITALIC.sub(lambda m: f"<i>{m.group(1) or m.group(2)}</i>",
+                                                 _BOLD.sub(r"<b>\2</b>", plain)))
+    try:                                             # overlapping ** ~~ give misnested tags:
+        # GtkLabel would show nothing at all (Pango has no <a>: checked as <span>)
+        Pango.parse_markup(re.sub("\ue002\\d+\ue003", "<span>", s).replace("</a>", "</span>"), -1, "\0")
+    except GLib.Error:
+        s = plain                                    # links and code only, the text stays
+    return _restore(s, codes, hrefs)
+
+
+def _restore(s: str, codes: list, hrefs: list) -> str:
+    s = re.sub("\ue002(\\d+)\ue003", lambda m: f'<a href="{hrefs[int(m.group(1))]}">', s)
     return re.sub("\ue000(\\d+)\ue001",
                   lambda m: f"<tt>{GLib.markup_escape_text(codes[int(m.group(1))])}</tt>", s)

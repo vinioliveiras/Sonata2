@@ -6,7 +6,10 @@
     c.display()          # "24"
 Keys: digits, ".", "+", "−", "×", "÷", "=", "%", "±", "C" (clear entry,
 then all), "AC", "⌫" (last digit)."""
-from decimal import Decimal, DivisionByZero, InvalidOperation, localcontext
+from decimal import Decimal, localcontext
+
+# ÷0, invalid operations and results beyond Decimal's exponent range (Overflow) show Error
+MATH_ERRORS = ArithmeticError
 
 OPS = {"+": 1, "−": 1, "×": 2, "÷": 2}
 MAX_DIGITS = 15                  # digits you can type
@@ -88,10 +91,14 @@ class Engine:
 
     def _percent(self):
         x = self.current()
-        if len(self.tokens) >= 2 and self.tokens[-1] in ("+", "−"):
-            x = self.tokens[-2] * x / 100           # 200 + 10 % -> 200 + 20 (macOS)
-        else:
-            x = x / 100
+        try:
+            if len(self.tokens) >= 2 and self.tokens[-1] in ("+", "−"):
+                x = self.tokens[-2] * x / 100       # 200 + 10 % -> 200 + 20 (macOS)
+            else:
+                x = x / 100
+        except MATH_ERRORS:
+            self._fail()
+            return
         self.entry, self.value = None, x
 
     def _operator(self, op):
@@ -104,7 +111,7 @@ class Engine:
         # show what is known so far: everything for + and −, the product chain for × and ÷
         try:
             self.value = self._fold(self.tokens[:-1], OPS[op])
-        except (ZeroDivisionError, DivisionByZero, InvalidOperation):
+        except MATH_ERRORS:
             self._fail()
 
     def _equals(self):
@@ -118,7 +125,7 @@ class Engine:
                 self.value = _apply(self.current(), *self.last)
             else:
                 self.value = self.current()
-        except (ZeroDivisionError, DivisionByZero, InvalidOperation):
+        except MATH_ERRORS:
             self._fail()
             return
         self.tokens, self.entry = [], None

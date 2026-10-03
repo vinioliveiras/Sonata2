@@ -23,6 +23,7 @@ Built only from Sonata's UI kit (sonata2/ui): panel, controls (text
 field, text area, round button, pop-up button, push buttons), dialog,
 menu, fixed.MaxWidth, window."""
 import os
+import threading
 
 import gi
 
@@ -799,15 +800,31 @@ class AssistantWindow(Gtk.ApplicationWindow):
             self._alert, p["current"] = None, None
             row = p["rows"].get(blk.get("id"))
             if rid == "allow":
-                text, err = tools.run(act)
-                self._tool_result(blk, text, err, row, ("Couldn’t do: " if err else "") + act.summary())
-            else:
-                self._tool_result(blk, "The user did not allow this.", True, row, "Not allowed: " + act.summary())
+                # file I/O (up to 2 MB written / 256 KB read) off the main loop
+                p["running"] = True
+
+                def done(text, err):
+                    p["running"] = False
+                    if self.pending is p:
+                        self._tool_result(blk, text, err, row, ("Couldn’t do: " if err else "") + act.summary())
+                        self._next_tool()
+                    return False
+
+                def work():
+                    try:
+                        result = tools.run(act)
+                    except Exception as e:      # noqa: BLE001  (never leave the turn waiting)
+                        result = (str(e) or type(e).__name__, True)
+                    GLib.idle_add(done, *result)
+                threading.Thread(target=work, daemon=True).start()
+                return
+            self._tool_result(blk, "The user did not allow this.", True, row, "Not allowed: " + act.summary())
             self._next_tool()
         body = act.path
         if act.name == "create_file":
             n = act.args["content"].count("\n") + 1
-            body += f"\n{n} line{'s' if n != 1 else ''}, {ui.fmt.size(len(act.args['content'].encode()))}"
+            size = len(act.args["content"].encode("utf-8", "surrogatepass"))      # may hold a lone surrogate
+            body += f"\n{n} line{'s' if n != 1 else ''}, {ui.fmt.size(size)}"
         self._alert = ui.dialog.alert(f"Allow Claude to {act.verb} “{name}”?", body,
                                       [("deny", "Don’t Allow", ""), ("allow", "Allow",
                                                                     "destructive" if act.exists else "default")],
@@ -865,8 +882,8 @@ class AssistantWindow(Gtk.ApplicationWindow):
                     alert.force_close() if hasattr(alert, "force_close") else alert.close()
                 except Exception:               # noqa: BLE001  (already gone)
                     pass
-            if self.pending is p:
-                self._next_tool()
+            if self.pending is p and not p.get("running"):
+                self._next_tool()                # else: the action that is running ends the turn
 
     # -- window -------------------------------------------------------------------------------------
     def _key(self, _c, keyval, _code, state) -> bool:

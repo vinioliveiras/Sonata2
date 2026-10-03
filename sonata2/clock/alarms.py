@@ -61,16 +61,16 @@ def load() -> list:
             data = json.load(f)
     except (OSError, ValueError):
         return []
-    alarms = [_clean(a) for a in (data.get("alarms") if isinstance(data, dict) else [])]
+    items = data.get("alarms") if isinstance(data, dict) else None
+    # {} or "alarms": null must read as no alarms (the menu bar's AlarmService loads this)
+    alarms = [_clean(a) for a in (items if isinstance(items, list) else [])]
     return sorted((a for a in alarms if a), key=lambda a: (a["hour"], a["minute"]))
 
 
 def save(alarms: list) -> None:
-    p = path()
-    tmp = p + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"alarms": alarms}, f, indent=1)
-    os.replace(tmp, p)
+    from ..config import atomic_write
+    # unique temp + rename: the Clock window and the menu bar may write at once
+    atomic_write(path(), json.dumps({"alarms": alarms}, indent=1).encode("utf-8"))
 
 
 def next_time(a: dict, after: dt.datetime) -> dt.datetime:

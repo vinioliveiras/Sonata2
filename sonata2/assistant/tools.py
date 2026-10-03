@@ -88,6 +88,10 @@ def check(name: str, args, folders) -> Action:
     if not isinstance(args, dict) or not isinstance(args.get("path"), str) or not args["path"].strip():
         raise Denied("A path is needed.")
     raw = args["path"].strip()
+    try:
+        raw.encode("utf-8")                         # a lone surrogate from the JSON can't be a real path
+    except UnicodeError:
+        raise Denied("The path is not valid text.") from None
     if not os.path.isabs(os.path.expanduser(raw)):
         raise Denied("The path must be absolute.")
     path = _real(raw)
@@ -135,11 +139,13 @@ def run(action: Action):
             if len(data) > MAX_READ:
                 text += f"\n… (cut at {MAX_READ // 1024} KB)"
             return text, False
+        try:
+            data = action.args["content"].encode("utf-8")
+        except UnicodeError:                        # a lone surrogate: nothing is written
+            return "The content is not valid text (a lone surrogate).", True
+        from ..config import atomic_write
         os.makedirs(os.path.dirname(action.path), exist_ok=True)
-        tmp = action.path + ".sonata-tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(action.args["content"])
-        os.replace(tmp, action.path)
+        atomic_write(action.path, data)             # unique temp, removed on failure
         return f"{'Replaced' if action.exists else 'Created'} {action.path}", False
     except OSError as e:
         return f"{e.strerror or e}", True

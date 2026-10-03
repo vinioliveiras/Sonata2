@@ -231,11 +231,14 @@ class FeedbackWindow(Gtk.ApplicationWindow):
         self._set_busy(True)
 
         def work():
+            url = None
             try:
-                path, err = report.create(title, text), None
-            except OSError as e:
+                info = report.system_info()              # once: it runs pacman and lspci
+                path, err = report.create(title, text, info=info), None
+                if github:
+                    url = report.issue_url(title, text, os.path.basename(path), info=info)
+            except Exception as e:                       # noqa: BLE001  (never busy forever)
                 path, err = None, e
-            url = report.issue_url(title, text, os.path.basename(path)) if path and github else None
             GLib.idle_add(self._created, path, err, url)
         threading.Thread(target=work, daemon=True).start()
 

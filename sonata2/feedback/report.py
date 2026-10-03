@@ -216,11 +216,12 @@ def _log_files() -> list:
             if n.endswith(LOG_EXT) and n != "doctor.txt" and os.path.isfile(os.path.join(d, n))]
 
 
-def create(title: str, description: str, doctor_text: str = None, now: float = None) -> str:
-    """Write ~/Sonata Reports/Sonata Report <date>.zip; returns its path."""
+def create(title: str, description: str, doctor_text: str = None, now: float = None, info: dict = None) -> str:
+    """Write ~/Sonata Reports/Sonata Report <date>.zip; returns its path.
+    info: system_info() already gathered (it runs pacman and lspci)."""
     stamp = time.strftime("%Y-%m-%d at %H.%M.%S", time.localtime(now or time.time()))
     path = os.path.join(folder(), f"Sonata Report {stamp}.zip")
-    info = system_info()
+    info = info if info is not None else system_info()
     if doctor_text is None:
         try:
             from .. import doctor
@@ -228,32 +229,48 @@ def create(title: str, description: str, doctor_text: str = None, now: float = N
         except Exception as e:          # noqa: BLE001 -- the report still goes out
             doctor_text = f"doctor failed: {e}\n"
     tmp = path + ".part"
-    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("description.txt", f"{title.strip()}\n\n{description.strip()}\n")
-        c = crash()
-        z.writestr("system.txt", "".join(f"{k}: {v}\n" for k, v in info.items())
-                   + (f"Crash: {crash_text(c)}\n" if c else ""))
-        z.writestr("doctor.txt", doctor_text)
-        for p in _log_files():
-            try:
-                z.write(p, "logs/" + os.path.basename(p))
-            except OSError:
-                pass
-    os.replace(tmp, path)
+    try:
+        # strict_timestamps=False: a log dated before 1980 (clock reset) is stored as 1980, not refused
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, strict_timestamps=False) as z:
+            z.writestr("description.txt", f"{title.strip()}\n\n{description.strip()}\n")
+            c = crash()
+            z.writestr("system.txt", "".join(f"{k}: {v}\n" for k, v in info.items())
+                       + (f"Crash: {crash_text(c)}\n" if c else ""))
+            z.writestr("doctor.txt", doctor_text)
+            for p in _log_files():
+                try:
+                    z.write(p, "logs/" + os.path.basename(p))
+                except (OSError, ValueError):
+                    pass
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)                   # never a .part left behind
+        except OSError:
+            pass
+        raise
     return path
 
 
-def issue_url(title: str, description: str, report_name: str = "") -> str:
+TITLE_MAX = 200                      # characters of the title kept in the link
+
+
+def issue_url(title: str, description: str, report_name: str = "", info: dict = None) -> str:
     """A GitHub "new issue" link with the title, description and versions."""
-    info = system_info()
+    info = info if info is not None else system_info()
+    title = title.strip()
+    if len(title) > TITLE_MAX:                       # a pasted log as the title: the link stays short
+        title = title[:TITLE_MAX].rstrip() + "…"
     facts = "\n".join(f"- **{k}**: {v}" for k, v in info.items() if v)
     attach = (f"\n\n**Report:** please drag `{report_name}` (in ~/{FOLDER}) here." if report_name else "")
     body = f"### What happened\n\n{description.strip() or '(describe the problem)'}\n\n### System\n\n{facts}{attach}\n"
 
     def url(b):
-        return ISSUES + "?" + urllib.parse.urlencode({"title": title.strip() or "Bug report", "body": b})
+        return ISSUES + "?" + urllib.parse.urlencode({"title": title or "Bug report", "body": b})
     while len(url(body)) > URL_MAX and len(description) > 200:
         description = description[: len(description) * 3 // 4]
         body = (f"### What happened\n\n{description.strip()}…\n\n(full text in the report)\n\n"
                 f"### System\n\n{facts}{attach}\n")
+    while len(url(body)) > URL_MAX and body:         # still too long (many packages, odd characters)
+        body = body[: len(body) * 3 // 4]
     return url(body)

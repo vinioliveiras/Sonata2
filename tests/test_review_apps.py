@@ -7,6 +7,7 @@ import io
 import json
 import os
 import tempfile
+import time
 import unittest
 import urllib.error
 import zipfile
@@ -19,7 +20,7 @@ import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import GdkPixbuf, Gtk  # noqa: E402
+from gi.repository import GdkPixbuf, GLib, Gtk  # noqa: E402
 
 from sonata2 import webapps as W  # noqa: E402
 from sonata2.assistant import api, markdown, tools  # noqa: E402
@@ -81,11 +82,8 @@ class CalculatorEngineTest(unittest.TestCase):
         self.assertEqual(calc("1000±−1="), "-1,001")
         self.assertEqual(fmt(__import__("decimal").Decimal("-0.5")), "-0.5")
 
-    @unittest.expectedFailure
     def test_overflow_shows_error_instead_of_raising(self):
         """A result beyond Decimal's exponent range must show Error."""
-        # BUG: decimal.Overflow is not caught in _equals/_operator (only
-        # DivisionByZero/InvalidOperation), so it escapes press() into the GTK handler.
         from decimal import Decimal
         e = Engine()
         e.value = Decimal("9e999990")
@@ -110,11 +108,8 @@ class CalculatorEngineTest(unittest.TestCase):
         self.assertEqual(self._paste("1,234.5"), "1,234.5")
         self.assertEqual(self._paste("not a number"), "0")
 
-    @unittest.expectedFailure
     def test_paste_negative_and_exponent(self):
         """Pasting "-5" gives -5 and "1e5" gives 100,000 (or is refused)."""
-        # BUG: _pasted presses ± before any digit (negates the old value, then
-        # "5" replaces it -> 5) and drops "e" silently ("1e5" -> 15).
         self.assertEqual(self._paste("-5"), "-5")
         self.assertIn(self._paste("1e5"), ("100,000", "0"))
 
@@ -188,11 +183,8 @@ class AlarmStorageTest(unittest.TestCase):
                 f.write(text)
             self.assertEqual(A.load(), [])
 
-    @unittest.expectedFailure
     def test_object_without_alarms_key(self):
         """A file holding {} (or "alarms": null) reads as no alarms."""
-        # BUG: load() iterates data.get("alarms") -> None: TypeError, which
-        # also takes down AlarmService.__init__ in the menu bar process.
         with open(self.file, "w") as f:
             f.write("{}")
         self.assertEqual(A.load(), [])
@@ -249,12 +241,8 @@ class AssistantToolsTest(unittest.TestCase):
             text, _ = tools.run(tools.check("list_folder", {"path": self.root}, [self.root]))
         self.assertEqual(len(text.splitlines()), 4)
 
-    @unittest.expectedFailure
     def test_lone_surrogate_content_is_an_error_not_a_crash(self):
         """JSON from the API may hold a lone surrogate: run() must return an error and leave no temp file."""
-        # BUG: check() measures with "surrogatepass" but run() writes strict UTF-8:
-        # UnicodeEncodeError escapes run() (only OSError is caught), the .sonata-tmp
-        # file stays behind; window.py's alert body .encode() raises the same way.
         act = tools.check("create_file", {"path": self.root + "/x.txt", "content": "a\ud83d"}, [self.root])
         try:
             _text, err = tools.run(act)
@@ -355,19 +343,13 @@ class AssistantMarkdownTest(unittest.TestCase):
         self.assertNotIn("<b onclick", s)
         self.assertIn("&lt;b", s)
 
-    @unittest.expectedFailure
     def test_underscores_in_a_link_url_stay_literal(self):
         """A link to .../__init__.py keeps its URL intact."""
-        # BUG: _BOLD/_ITALIC run over the already-built <a href="..."> and turn
-        # __init__ inside the href into <b>init</b>.
         s = markdown.inline("[f](https://github.com/a/b/__init__.py)")
         self.assertIn('href="https://github.com/a/b/__init__.py"', s)
 
-    @unittest.expectedFailure
     def test_overlapping_emphasis_keeps_the_text(self):
         """Overlapping ** and ~~ never make the whole paragraph vanish."""
-        # BUG: the regexes produce misnested tags (<s><b>b</s> c</b>); GtkLabel
-        # rejects the markup and shows nothing.
         self.assertTrue(self.label_text("a ~~**b~~ c**"))
 
 
@@ -440,11 +422,8 @@ class WebAppsLogicTest(unittest.TestCase):
         self.assertEqual(W.id_of("sonata2-webapp-w123.desktop"), "w123")
         self.assertEqual(W.default_name("https://www.app.notion.so/"), "Notion")
 
-    @unittest.expectedFailure
     def test_smaller_icon_never_replaces_a_bigger_one(self):
         """A 16 px favicon must not replace a 32 px icon already saved."""
-        # BUG: save_icon keeps the old icon only if old_width >= max(new, ICON_MIN);
-        # with both under ICON_MIN (48) any new icon wins, even a smaller one.
         with tempfile.TemporaryDirectory() as d, mock.patch.object(W, "data_dir", return_value=d):
             self.assertTrue(W.save_icon("w1", png(32)))
             W.save_icon("w1", png(16))
@@ -463,11 +442,8 @@ class WebAppsLogicTest(unittest.TestCase):
         for t in ("mailto:a@b.org", "file:///etc/passwd", "steam://run/1"):
             self.assertFalse(WW.stays_inside("https://web.whatsapp.com/", t), t)
 
-    @unittest.expectedFailure
     def test_ip_hosts_are_not_the_same_site(self):
         """Two different IP addresses are different sites."""
-        # BUG: site() treats IPs like domains (short label + 2-digit last label -> 3 labels),
-        # so 192.168.1.10 and 10.168.1.10 are both "168.1.10".
         from sonata2.webapps import window as WW
         self.assertFalse(WW.stays_inside("http://192.168.1.10/", "http://10.168.1.10/"))
 
@@ -519,12 +495,8 @@ class FeedbackReviewTest(unittest.TestCase):
         self.assertEqual(report.classify("usb timeout", ""), "unknown")
         self.assertEqual(report.classify("amdgpu: ring gfx timeout", ""), "amd-reset")
 
-    @unittest.expectedFailure
     def test_old_log_timestamp_does_not_break_the_report(self):
         """A log file dated before 1980 (clock reset) still goes in the report."""
-        # BUG: ZipFile.write raises ValueError for pre-1980 mtimes; create() only
-        # skips OSError and the window's worker only catches OSError, so the
-        # report fails and Feedbacker stays busy forever (and a .part file is left).
         p = os.path.join(self.logs, "session.log")
         with open(p, "w") as f:
             f.write("x")
@@ -552,6 +524,185 @@ class TerminalFolderTest(unittest.TestCase):
         with mock.patch.object(TW.pwd, "getpwuid", side_effect=KeyError), \
                 mock.patch.dict(os.environ, {"SHELL": "/bin/zsh"}):
             self.assertEqual(TW.user_shell(), "/bin/zsh")
+
+# -- Fixes without an earlier test ------------------------------------------------------------------
+class ReviewFixesTest(unittest.TestCase):
+    def test_percent_overflow_shows_error(self):
+        """% on a value at the edge of Decimal's range shows Error, never raises."""
+        from decimal import Decimal
+        e = Engine()
+        e.tokens = [Decimal("9e999999"), "+"]
+        e.entry = "9e999999"
+        e.press("%")
+        self.assertEqual(e.display(), "Error")
+
+    def test_alarm_save_uses_a_unique_temp(self):
+        """Saving alarms never goes through a fixed alarms.json.tmp (two processes write it)."""
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(A, "path", return_value=d + "/alarms.json"):
+            with open(d + "/alarms.json.tmp", "w") as f:
+                f.write("someone else's")
+            A.save([alarm(7, 0)])
+            with open(d + "/alarms.json.tmp") as f:
+                self.assertEqual(f.read(), "someone else's")
+            self.assertEqual(len(A.load()), 1)
+
+    def test_lone_surrogate_path_is_denied(self):
+        """A path holding a lone surrogate is refused by check(), not a crash in os calls."""
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(tools.Denied):
+                tools.check("read_file", {"path": d + "/a\ud83d.txt"}, [d])
+
+    def test_links_keep_bold_and_bold_keeps_links(self):
+        """Emphasis still works around and inside links once hrefs are protected."""
+        self.assertEqual(markdown.inline("**[x](https://a.org/__a__)**"), '<b><a href="https://a.org/__a__">x</a></b>')
+        self.assertIn("<b>b</b>", markdown.inline("[a **b** c](https://x.org)"))
+
+    def test_shared_suffixes_are_different_sites(self):
+        """a.github.io and b.github.io are two sites; www and web of one domain are one."""
+        from sonata2.webapps import window as WW
+        self.assertFalse(WW.stays_inside("https://a.github.io/", "https://b.github.io/"))
+        self.assertTrue(WW.stays_inside("https://web.whatsapp.com/", "https://www.whatsapp.com/x"))
+        self.assertTrue(WW.stays_inside("http://192.168.1.10/", "http://192.168.1.10:8080/"))
+
+    def test_desktop_name_escapes_cr_and_backslash(self):
+        """\\r and backslashes in a name can't break or escape the desktop entry."""
+        with mock.patch.object(W, "data_dir", return_value="/nonexistent"):
+            text = W.desktop_text("wabc", {"name": "A\rB\\sC", "url": "https://a.org/"}, "sonata2")
+        self.assertIn("Name=A B\\\\sC\n", text)
+        self.assertNotIn("\r", text)
+
+    def test_non_web_links_ask_first(self):
+        """file:// and custom schemes open only after the user agrees; web, mail and tel go at once."""
+        from sonata2.webapps import window as WW
+        win = SimpleNamespace(entry={"name": "Chat"})
+        with mock.patch.object(WW.Gtk, "UriLauncher") as launcher, mock.patch.object(WW.ui.dialog, "alert") as alert:
+            for uri in ("https://x.org/", "mailto:a@b.org", "tel:+5511"):
+                WW.open_outside(win, uri)
+            self.assertEqual(launcher.call_count, 3)
+            alert.assert_not_called()
+            for uri in ("file:///etc/passwd", "steam://run/1"):
+                WW.open_outside(win, uri)
+            self.assertEqual((launcher.call_count, alert.call_count), (3, 2))
+            responses, answer = alert.call_args[0][2], alert.call_args[0][3]
+            self.assertEqual(responses[0][0], "cancel")             # Escape / first: never opens
+            answer("cancel")
+            self.assertEqual(launcher.call_count, 3)
+            answer("open")
+            self.assertEqual(launcher.call_args.kwargs["uri"], "steam://run/1")
+
+    def test_long_title_link_fits(self):
+        """A huge title (a pasted log) still gives a link under URL_MAX."""
+        with mock.patch.object(report, "system_info", return_value={"Sonata": "1"}):
+            url = report.issue_url("x" * 20000, "d")
+        self.assertLessEqual(len(url), report.URL_MAX)
+
+    def test_report_failure_leaves_no_part_file(self):
+        """A report that fails midway leaves no .part file behind."""
+        with tempfile.TemporaryDirectory() as home, mock.patch.dict(os.environ, {"HOME": home}), \
+                mock.patch.object(report, "system_info", return_value={}), \
+                mock.patch.object(report, "crash", side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                report.create("t", "d", doctor_text="")
+            self.assertEqual(os.listdir(report.folder()), [])
+
+    def test_feedback_worker_gathers_info_once_and_never_stays_busy(self):
+        """system_info runs once per report, and any error ends the busy state."""
+        from sonata2.feedback import window as FW
+        got = {}
+        fake = SimpleNamespace(description=lambda: ("t", "d"), _set_busy=lambda b: None,
+                               _created=lambda *a: got.setdefault("created", a))
+        with mock.patch.object(report, "system_info", return_value={"A": "1"}) as info, \
+                mock.patch.object(report, "create", return_value="/x/r.zip"), \
+                mock.patch.object(report, "issue_url", return_value="u"), \
+                mock.patch.object(FW.GLib, "idle_add", lambda fn, *a: fn(*a)), \
+                mock.patch.object(FW.threading, "Thread", lambda target, daemon: SimpleNamespace(start=target)):
+            FW.FeedbackWindow._create(fake, True)
+            self.assertEqual(info.call_count, 1)
+            self.assertEqual(got["created"], ("/x/r.zip", None, "u"))
+            got.clear()
+            with mock.patch.object(report, "create", side_effect=ValueError("bad")):
+                FW.FeedbackWindow._create(fake, False)
+            self.assertIsNone(got["created"][0])
+            self.assertIsInstance(got["created"][1], ValueError)
+
+
+class AssistantToolThreadTest(unittest.TestCase):
+    def test_allowed_action_runs_off_the_main_loop(self):
+        """tools.run() runs in a worker thread; its result comes back on the main loop."""
+        import threading
+        from sonata2.assistant import window as AW
+        ran, answers = {}, []
+
+        def fake_run(act):
+            ran["main"] = threading.current_thread() is threading.main_thread()
+            return "ok", False
+        with tempfile.TemporaryDirectory() as d:
+            p = {"chat": {}, "queue": [{"id": "t1", "name": "read_file", "input": {"path": d}}],
+                 "results": [], "rows": {}}
+            fake = SimpleNamespace(pending=p, cfg={"folders": [d]}, _alert=None)
+            fake._tool_result = lambda blk, text, err, row, line: answers.append((text, err))
+            fake._next_tool = lambda: None
+            os.makedirs(d + "/f")
+            p["queue"][0]["input"]["path"] = d + "/f"
+            p["queue"][0]["name"] = "list_folder"
+            with mock.patch.object(AW.ui.dialog, "alert", lambda h, b, r, cb, parent=None: cb("allow")), \
+                    mock.patch.object(AW.tools, "run", fake_run):
+                AW.AssistantWindow._next_tool(fake)
+                end = time.monotonic() + 3
+                while not answers and time.monotonic() < end:
+                    GLib.MainContext.default().iteration(False)
+        self.assertFalse(ran["main"])
+        self.assertEqual(answers, [("ok", False)])
+        self.assertFalse(p["running"])
+
+
+# -- Animations ------------------------------------------------------------------------------------
+class AnimationTests(unittest.TestCase):
+    def test_assistant_messages_slide_in(self):
+        """Every message / tool row / error added to the chat goes in a SLIDE_DOWN revealer that opens."""
+        from sonata2.assistant import window as AW
+        box = Gtk.Box()
+        fake = SimpleNamespace(messages=box, empty=Gtk.Label())
+        lab = Gtk.Label(label="hi")
+        AW.AssistantWindow._add(fake, lab)
+        rev = box.get_first_child()
+        self.assertIsInstance(rev, Gtk.Revealer)
+        self.assertEqual(rev.get_transition_type(), Gtk.RevealerTransitionType.SLIDE_DOWN)
+        self.assertGreater(rev.get_transition_duration(), 0)
+        self.assertFalse(rev.get_reveal_child())
+        ctx = GLib.MainContext.default()
+        while ctx.pending():
+            ctx.iteration(False)
+        self.assertTrue(rev.get_reveal_child())
+
+    def test_calculator_key_press_lights_up(self):
+        """A typed key lights its button (.pressed) and the keys' colours change with a CSS transition."""
+        from gi.repository import Gdk
+        from sonata2 import ui
+        from sonata2.calculator import window as CW
+        ui.setup()
+        win = CW.CalculatorWindow(None)
+        try:
+            with mock.patch.object(CW.GLib, "timeout_add") as later:
+                self.assertTrue(win._key(None, Gdk.KEY_7, 0, 0))
+            self.assertTrue(win.buttons["7"].has_css_class("pressed"))
+            self.assertEqual(later.call_args[0][0], 110)
+            later.call_args[0][1]()                              # the light goes off again
+            self.assertFalse(win.buttons["7"].has_css_class("pressed"))
+        finally:
+            win.destroy()
+        import inspect
+        self.assertRegex(inspect.getsource(CW), r"button\.calc-key \{[^}]*transition: background-color")
+
+    def test_feedback_busy_spins(self):
+        """Saving a report shows a spinning spinner until it's done."""
+        from sonata2.feedback import window as FW
+        sp = Gtk.Spinner()
+        fake = SimpleNamespace(spinner=sp, save_btn=Gtk.Button(), github_btn=Gtk.Button())
+        FW.FeedbackWindow._set_busy(fake, True)
+        self.assertTrue(sp.get_spinning() and sp.get_visible())
+        FW.FeedbackWindow._set_busy(fake, False)
+        self.assertFalse(sp.get_spinning())
 
 
 if __name__ == "__main__":

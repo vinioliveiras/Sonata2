@@ -4,6 +4,8 @@ function keys, digits, orange operators. The keyboard works too:
 digits . + - * / x Enter = % Backspace Escape (AC) Delete (C), ⌘C / Ctrl+C
 copies the result, Ctrl+V pastes a number. The operator waiting for a
 number stays highlighted (white with orange text), as on a Mac."""
+import re
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -114,12 +116,14 @@ class CalculatorWindow(Gtk.ApplicationWindow):
         except GLib.Error:
             return
         text = text.strip().replace(",", "")
-        try:
-            float(text)
-        except ValueError:
+        # plain decimals only: "1e5", "inf" etc. would be typed wrong (the e dropped)
+        if not re.fullmatch(r"-?(\d+\.?\d*|\.\d+)", text):
             return
-        for ch in text:
-            self.engine.press("±" if ch == "-" else ch)
+        neg = text.startswith("-")
+        for ch in text.lstrip("-"):
+            self.engine.press(ch)
+        if neg:                                       # ± after the digits negates the new entry
+            self.engine.press("±")
         self._refresh()
 
     # -- output ---------------------------------------------------------------------------

@@ -15,7 +15,6 @@ site's own, fetched when it's made; the window updates it from the page).
 """
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -174,12 +173,19 @@ def _no_display() -> bool:
         return True
 
 
+def _desktop_value(text: str) -> str:
+    """A desktop entry string value: line breaks can't add keys, and a
+    backslash is escaped (the spec reads \\s, \\n... as escapes)."""
+    text = str(text).replace("\\", "\\\\")
+    return re.sub(r"[\r\n\t\x00-\x1f]+", " ", text)
+
+
 def desktop_text(app: str, entry: dict, command: str = None) -> str:
     # the icon pack's icon with its name, else the site's, else a generic one
     icon = entry.get("theme_icon") or (icon_path(app) if os.path.isfile(icon_path(app)) else FALLBACK_ICON)
-    name = (entry.get("name") or "Web App").replace("\n", " ")
+    name = _desktop_value(entry.get("name") or "Web App")
     return ("[Desktop Entry]\nType=Application\n"
-            f"Name={name}\nComment={entry.get('url', '')}\nIcon={icon}\n"
+            f"Name={name}\nComment={_desktop_value(entry.get('url', ''))}\nIcon={icon}\n"
             "Categories=Network;WebApps;\nKeywords=web;app;site;\n"
             f"StartupWMClass={app_id(app)}\nStartupNotify=true\n"
             f"X-Sonata-WebApp={app}\n"
@@ -336,15 +342,12 @@ def save_icon(app: str, raw: bytes) -> bool:
     old = icon_path(app)
     if os.path.isfile(old):
         try:
-            if GdkPixbuf.Pixbuf.get_file_info(old)[1] >= max(pix.get_width(), ICON_MIN):
-                return False                 # the one we have is as good
+            if GdkPixbuf.Pixbuf.get_file_info(old)[1] >= pix.get_width():
+                return False                 # the one we have is as good (never a smaller one)
         except Exception:
             pass
-    os.makedirs(data_dir(app), exist_ok=True)
-    tmp = old + ".new"
     try:
-        pix.savev(tmp, "png", [], [])
-        os.replace(tmp, old)
+        config.atomic_write(old, pix.save_to_bufferv("png", [], [])[1])
         return True
     except Exception:
         return False
@@ -369,7 +372,8 @@ def fetch_icon(app: str, download=_get) -> bool:
 
 
 def _spawn(*args) -> None:
-    subprocess.Popen(shlex.split(_command()) + ["webapp", *args], start_new_session=True,
+    from ..__main__ import self_argv
+    subprocess.Popen(self_argv() + ["webapp", *args], start_new_session=True,
                      stdin=subprocess.DEVNULL)
 
 
