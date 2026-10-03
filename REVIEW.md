@@ -58,7 +58,7 @@ Tags: **[xfail]** = proven by an expected-failure test.
 ### Session / login / install (`test_review_session.py`)
 - Doctor: false FAIL when PAM files live in `/usr/lib/pam.d` [xfail]; ignores `XDG_CACHE_HOME` for logs [xfail].
 - greetd: missing `GREETD_SOCK` raises KeyError [xfail].
-- `idlelock.py:22` swayidle `-w` waits for `sonata2 lock` (keyboard backlight not restored until unlock); depends on `sonata2` in PATH.
+- ~~`idlelock.py:22` swayidle `-w` waited for `sonata2 lock`~~ — fixed: `sonata2 lock-wait` returns once locked (queued requests re-locked after each unlock: password asked 3× on waking).
 - keyring rollback restarts KeePassXC while gnome-keyring still owns the secrets name (`keyring.py:261`).
 - `self_command()` string is split / put in `sh -c`: a path with spaces breaks restart, autostart, updates.
 - `intro.py:30` race → Setup waits the full 12 s; polkit dialog avatar doesn't follow the chosen account.

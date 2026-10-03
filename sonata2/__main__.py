@@ -1030,6 +1030,9 @@ def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "webapp":            # Sonata's web apps (webapps/)
         from . import webapps
         return webapps.main(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "lock-wait":         # swayidle: lock, return once locked
+        from .shell import idlelock
+        return idlelock.lock_and_wait(self_command().split() + ["lock"])
     if len(sys.argv) > 1 and sys.argv[1] == "screenshot":
         return screenshot(sys.argv[2] if len(sys.argv) > 2 else "screen")
     if len(sys.argv) > 1 and sys.argv[1] == "self-update":     # Sonata's own updates (GitHub releases)

@@ -11,15 +11,21 @@ and restores it; logind lets it write the LED without root). RGB devices
 OpenRGB when it is installed: the current look saved as a profile, all
 off, the profile loaded back on input."""
 import glob
+import os
 import shutil
 import signal
 import subprocess
+import time
 
 from .. import config, wfconfig
 
 # lock_after: seconds after the display turns off (0 = immediately), -1 = never
 DEFAULTS = {"lock_after": -1, "lock_before_sleep": False}
-LOCK = "sonata2 lock"
+# swayidle -w waits for its command: `sonata2 lock` itself only quits on
+# unlock, so every idle timeout / before-sleep that came meanwhile waited in
+# line and locked again right after each unlock (Vini: the password 3 times
+# on waking). lock-wait starts the lock on its own and returns once locked.
+LOCK = "sonata2 lock-wait"
 LEDS = "/sys/class/leds"
 KBD = "*::kbd_backlight"
 KBD_OFF = f"brightnessctl -q -d '{KBD}' -s set 0"
@@ -29,6 +35,51 @@ KBD_ON = f"brightnessctl -q -d '{KBD}' -r"
 RGB_PROFILE = "sonata-idle"
 RGB_OFF = f"openrgb --save-profile {RGB_PROFILE} >/dev/null 2>&1; openrgb --mode off >/dev/null 2>&1"
 RGB_ON = f"openrgb --profile {RGB_PROFILE} >/dev/null 2>&1"
+
+
+def marker() -> str:
+    """Present while the lock screen holds the session (its pid inside)."""
+    return os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "sonata2-locked")
+
+
+def mark_locked(on: bool) -> None:
+    try:
+        if on:
+            with open(marker(), "w") as f:
+                f.write(str(os.getpid()))
+        else:
+            os.unlink(marker())
+    except OSError:
+        pass
+
+
+def is_locked() -> bool:
+    try:
+        with open(marker()) as f:
+            pid = int(f.read().strip() or 0)
+        os.kill(pid, 0)                              # a lock screen that crashed left it behind
+        return pid > 0
+    except (OSError, ValueError):
+        return False
+
+
+def lock_and_wait(argv: list, timeout: float = 5.0) -> int:
+    """`sonata2 lock-wait`: start the lock screen detached and return once it
+    holds the session (before-sleep: the screen is locked before the machine
+    sleeps), or at once when it already does."""
+    if is_locked():
+        return 0
+    try:
+        subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except OSError:
+        return 1
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if is_locked():
+            return 0
+        time.sleep(0.05)
+    return 1
 
 
 def rgb_lights() -> bool:

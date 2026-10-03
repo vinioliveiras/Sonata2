@@ -26,9 +26,10 @@ class LockScreen:
         from gi.repository import Gtk4SessionLock as SL
         self.app = app
         self.lock = SL.Instance.new()
-        self.lock.connect("locked", lambda *_: None)
-        self.lock.connect("failed", lambda *_: app.quit())         # another locker is active
-        self.lock.connect("unlocked", lambda *_: app.quit())
+        from .idlelock import mark_locked
+        self.lock.connect("locked", lambda *_: mark_locked(True))   # `sonata2 lock-wait` returns
+        self.lock.connect("failed", lambda *_: (mark_locked(False), app.quit()))   # another locker is active
+        self.lock.connect("unlocked", lambda *_: (mark_locked(False), app.quit()))
         self.texture = wallpaper_texture()
         self.windows = []
         self.entry = None
