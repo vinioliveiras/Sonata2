@@ -160,8 +160,10 @@ class LightEffects:
         except (OSError, ValueError):
             saved = {}
         for s, k, _v in LIGHT_OPTIONS:
-            if saved.get(f"{s}/{k}"):
-                self.set(s, k, saved[f"{s}/{k}"])
+            if f"{s}/{k}" not in saved:
+                continue                                 # unreadable save: leave the session copy
+            # "" = the config never set it: drop our value so Wayfire's default is back
+            self.set(s, k, saved[f"{s}/{k}"] or None)
         try:
             os.remove(LIGHT)
         except OSError:

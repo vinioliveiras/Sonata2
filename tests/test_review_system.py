@@ -92,12 +92,9 @@ class WayfireConfigTest(unittest.TestCase):
 
 # -- lighter effects / full screen games -------------------------------------------------------------
 class LightEffectsEmptyTest(unittest.TestCase):
-    @unittest.expectedFailure
     def test_option_unset_before_lightening_comes_back(self):
-        """An option the config didn't set ("" from wayfire_get, Wayfire's
-        default in use) must be put back after the game.
-        BUG: _restore() skips empty saved values, so blur stays forced to
-        'app_id is "sonata2-no-blur"' for the rest of the session."""
+        """An option the config didn't set ("" from wayfire_get) is removed
+        again after the game, so Wayfire's default (blur) is back."""
         cfg = {("animate", "open_animation"): "zoom", ("animate", "close_animation"): "zoom",
                ("animate", "minimize_animation"): "squeezimize"}            # no blur_by_default
         light_file = os.path.join(tempfile.mkdtemp(), "light.json")
@@ -119,12 +116,12 @@ class GameTitleTest(unittest.TestCase):
         self.assertFalse(fullscreen.looks_like_game(self.view("Ubisoft Connect launcher"), (1920, 1080)))
         self.assertTrue(fullscreen.looks_like_game(self.view("Hades II"), (1920, 1080)))
 
-    @unittest.expectedFailure
     def test_game_named_like_a_tool_still_goes_full_screen(self):
-        """BUG: NOT_GAMES is matched as a substring of the title, so games
-        such as "Control", "Crash Bandicoot" or "Assassin's Creed Origins"
-        never open full screen by themselves."""
-        self.assertTrue(fullscreen.looks_like_game(self.view("Control"), (1920, 1080)))
+        """Tool words match whole words only: games named like them count."""
+        for title in ("Control", "Crash Bandicoot", "Assassin's Creed Origins"):
+            self.assertTrue(fullscreen.looks_like_game(self.view(title), (1920, 1080)), title)
+        for title in ("Control Panel", "UnityCrashHandler64.exe", "unins000.exe", "GameInstaller"):
+            self.assertFalse(fullscreen.looks_like_game(self.view(title), (1920, 1080)), title)
 
 
 # -- title bars of other apps ------------------------------------------------------------------------
@@ -151,10 +148,8 @@ class TitlebarSettingsTest(unittest.TestCase):
         titlebars._code_setting(p, "native")
         self.assertEqual(json.loads(_read(p)), {"window.titleBarStyle": "native"})
 
-    @unittest.expectedFailure
     def test_vscode_commented_key_does_not_hide_the_setting(self):
-        """BUG: the regex also matches a commented-out line, so only the
-        comment changes and VS Code keeps its own title bar."""
+        """A commented-out key is not the setting: the live one is added."""
         p = os.path.join(self.d, "settings.json")
         _write(p, '{\n    // "window.titleBarStyle": "custom",\n    "a": 1\n}\n')
         titlebars._code_setting(p, "native")
@@ -415,11 +410,8 @@ class SystemParsersTest(unittest.TestCase):
         self.assertTrue(devs[1].default)
         self.assertFalse(devs[0].default)
 
-    @unittest.expectedFailure
     def test_pactl_warning_on_stderr_keeps_the_device_list(self):
-        """BUG: _run() returns stdout + stderr together, so any pactl warning
-        on stderr breaks json.loads and the port list silently falls back
-        to wpctl (no Headphones/Speakers entries)."""
+        """A warning on stderr of a successful command never reaches the parsed output."""
         done = mock.Mock(returncode=0, stdout='[{"name": "a", "description": "A", "ports": []}]',
                          stderr="W: [pulseaudio] some warning\n")
         with mock.patch.object(system.shutil, "which", return_value="/usr/bin/pactl"), \
@@ -551,11 +543,8 @@ class TrashPurgeTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(keep, "precious.txt")))
         self.assertFalse(os.path.lexists(os.path.join(root, "files", "link")))
 
-    @unittest.expectedFailure
     def test_timezone_in_deletion_date_does_not_stop_the_purge(self):
-        """BUG: a DeletionDate with an offset ("...Z", written by some tools)
-        parses as an aware datetime; `now - when` then raises TypeError and
-        the whole purge stops (the thread dies, nothing else is removed)."""
+        """A DeletionDate with an offset ("...Z") is compared like the others."""
         root = tempfile.mkdtemp()
         os.makedirs(os.path.join(root, "files"))
         self._item(root, "a", "2020-01-01T00:00:00Z", lambda p: _write(p, "x"))
@@ -581,14 +570,295 @@ class RunnerOutputTest(unittest.TestCase):
         self.assertTrue(ok)
         self.assertIn("(2/2) two", lines)
 
-    @unittest.expectedFailure
     def test_invalid_utf8_line_does_not_kill_the_update(self):
-        """BUG: read_line_finish_utf8 raises on a non-UTF-8 byte; _read()
-        takes that for EOF and stops reading the pipe, so the rest of the
-        log is lost and the step (pacman!) dies of SIGPIPE / reports failure."""
-        ok, lines = self._run("printf 'caf\\351\\n'; head -c 200000 /dev/zero | tr '\\0' x | fold -w 100; echo end")
+        """A non-UTF-8 byte in the output never stops reading the pipe."""
+        ok, lines = self._run("printf 'caf\\351\\n'; head -c 200000 /dev/zero | tr '\\0' x | fold -w 100; echo; echo end")
         self.assertTrue(ok)
         self.assertIn("end", lines)
+
+# -- fixes without an xfail test ------------------------------------------------------------------------
+CPP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                   "wayfire-plugin", "src", "sonata-corners.cpp")
+
+
+class WayfireConfigWriteTest(unittest.TestCase):
+    def setUp(self):
+        self.cfg, self.run = tempfile.mkdtemp(), tempfile.mkdtemp()
+        self.env = mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": self.cfg, "XDG_RUNTIME_DIR": self.run})
+        self.env.start()
+        self.live = os.path.join(self.run, "sonata2-wayfire.ini")
+
+    def tearDown(self):
+        self.env.stop()
+
+    def test_live_ini_replaced_whole_never_rewritten_in_place(self):
+        """The live ini Wayfire reloads is a new file renamed over the old
+        (inotify IN_MOVED_TO): never truncated and written in place."""
+        _write(self.live, "[blur]\nmode = a\n")
+        before = os.stat(self.live).st_ino
+        self.assertTrue(wfconfig.runtime_set("blur", "mode", "b"))
+        self.assertNotEqual(os.stat(self.live).st_ino, before)
+        self.assertEqual(_read(self.live), "[blur]\nmode = b\n")
+        self.assertEqual([n for n in os.listdir(self.run) if n.endswith(".tmp")], [])
+
+    def test_writers_take_a_cross_process_lock(self):
+        """Settings and the menu bar write the same file: a flock beside it."""
+        _write(self.live, "[blur]\nmode = a\n")
+        with mock.patch.object(wfconfig.fcntl, "flock") as flock:
+            wfconfig.runtime_set("blur", "mode", "c")
+        flock.assert_called()
+
+    def test_runtime_set_none_removes_the_key(self):
+        """None drops the key so Wayfire's default applies again."""
+        _write(self.live, "[blur]\nblur_by_default = x\nmode = a\n")
+        self.assertTrue(wfconfig.runtime_set("blur", "blur_by_default", None))
+        self.assertEqual(_read(self.live), "[blur]\nmode = a\n")
+        self.assertTrue(wfconfig.runtime_set("blur", "missing", None))
+
+
+class BackendRunTest(unittest.TestCase):
+    def test_stderr_kept_when_the_command_fails(self):
+        """A failing command still reports its error text (Wi-Fi, VPN import...)."""
+        done = mock.Mock(returncode=4, stdout="", stderr="Error: secrets were required\n")
+        with mock.patch.object(system.shutil, "which", return_value="/usr/bin/nmcli"), \
+                mock.patch.object(system.subprocess, "run", return_value=done):
+            self.assertEqual(system._run(["nmcli"]), (4, "Error: secrets were required\n"))
+
+
+class PactlWatchTest(unittest.TestCase):
+    """The one `pactl subscribe` reader: lines on the main loop, respawned when pactl dies."""
+
+    def setUp(self):
+        self.bin = tempfile.mkdtemp()
+        self.count = os.path.join(self.bin, "count")
+        _write(os.path.join(self.bin, "pactl"),
+               f"#!/bin/sh\necho x >> {self.count}\nprintf \"Event 'change' on sink #1\\n\\377\\n\"\n")
+        os.chmod(os.path.join(self.bin, "pactl"), 0o755)
+        self.env = mock.patch.dict(os.environ, {"PATH": self.bin + os.pathsep + os.environ["PATH"]})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+
+    def test_lines_arrive_and_pactl_is_started_again(self):
+        from sonata2.backend import pactl_watch
+        lines, loop = [], GLib.MainLoop()
+        with mock.patch.object(pactl_watch, "RESPAWN_MS", (50, 100)):
+            w = pactl_watch.watch(lines.append)
+            self.assertIsNotNone(w)
+            GLib.timeout_add(1500, loop.quit)
+            loop.run()
+            w.kill()
+        self.assertIn("Event 'change' on sink #1", lines)
+        self.assertIn("�", lines)                         # a bad byte doesn't stop it
+        self.assertGreaterEqual(len(_read(self.count).split()), 2)
+        n = len(_read(self.count).split())
+        loop = GLib.MainLoop()
+        GLib.timeout_add(400, loop.quit)
+        loop.run()
+        self.assertEqual(len(_read(self.count).split()), n)    # stopped: never again
+
+    def test_watchers_share_the_reader(self):
+        """system, mixer and equalizer have no `pactl subscribe` of their own."""
+        root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sonata2", "backend")
+        for name in ("system.py", "mixer.py", "equalizer.py"):
+            src = _read(os.path.join(root, name))
+            self.assertNotIn('"subscribe"', src, name)
+            self.assertIn("watch(", src, name)
+
+    def test_watch_audio_debounces_sink_events(self):
+        got, loop = [], GLib.MainLoop()
+        with mock.patch("sonata2.backend.pactl_watch.watch", side_effect=lambda cb: cb) as w:
+            line = system.watch_audio(lambda: got.append(1))
+        w.assert_called_once()
+        for _ in range(5):
+            line("Event 'change' on sink #3")
+        line("Event 'change' on client #9")
+        GLib.timeout_add(400, loop.quit)
+        loop.run()
+        self.assertEqual(got, [1])
+
+
+class FlatpakBrokenFileTest(FlatpakOverridesTest):
+    def test_unreadable_overrides_are_never_replaced(self):
+        """A broken overrides file is the user's: left alone, not saved over."""
+        _write(self.path, "this is [not a key file\n\x00")
+        before = _read(self.path)
+        flatpak_theme.apply()
+        self.assertEqual(_read(self.path), before)
+
+
+class TitlebarWriteTest(unittest.TestCase):
+    def test_commented_key_after_code_on_a_line_is_ignored(self):
+        p = os.path.join(tempfile.mkdtemp(), "settings.json")
+        _write(p, '{\n    "a": 1, // "window.titleBarStyle": "custom"\n    "window.titleBarStyle": "custom"\n}\n')
+        titlebars._code_setting(p, "native")
+        text = _read(p)
+        self.assertIn('// "window.titleBarStyle": "custom"', text)
+        self.assertIn('    "window.titleBarStyle": "native"', text)
+        self.assertEqual([n for n in os.listdir(os.path.dirname(p)) if n != "settings.json"], [])
+
+
+class SteamUnknownRetryTest(unittest.TestCase):
+    def test_unknown_game_looked_up_again_later(self):
+        """A game not found (still installing) isn't unknown forever."""
+        steamgames._names.clear()
+        found = [None]
+        with mock.patch.object(steamgames, "libraries", side_effect=lambda: []) as libs, \
+                mock.patch.object(steamgames.time, "monotonic", side_effect=lambda: found[0] or 0):
+            self.assertIsNone(steamgames.name("42"))
+            self.assertIsNone(steamgames.name("42"))
+            self.assertEqual(libs.call_count, 1)
+            found[0] = steamgames.UNKNOWN_RETRY_S + 1
+            steamgames.name("42")
+            self.assertEqual(libs.call_count, 2)
+        steamgames._names.clear()
+
+
+class TimeoutsTest(unittest.TestCase):
+    def test_gtkstyle_reset_env_has_a_timeout(self):
+        import subprocess
+        with mock.patch.object(gtkstyle, "in_session", return_value=True), \
+                mock.patch.object(gtkstyle.shutil, "which", return_value="/usr/bin/x"), \
+                mock.patch.object(gtkstyle.subprocess, "run",
+                                  side_effect=subprocess.TimeoutExpired("x", 5)) as run:
+            gtkstyle.reset_env()                      # no exception escapes
+        self.assertTrue(all(c.kwargs.get("timeout") for c in run.call_args_list))
+        self.assertEqual(run.call_count, 2)
+
+    def test_users_crypt_has_a_timeout(self):
+        import subprocess
+        from sonata2.backend import users
+        with mock.patch.object(users.shutil, "which", return_value="/usr/bin/openssl"), \
+                mock.patch.object(users.subprocess, "run", side_effect=subprocess.TimeoutExpired("x", 10)) as run:
+            self.assertIsNone(users._crypt("pw"))
+        self.assertTrue(run.call_args.kwargs.get("timeout"))
+
+
+class IconCacheTest(unittest.TestCase):
+    def test_rendered_svgs_bounded_by_bytes_lru(self):
+        """_rendered keeps a few MB of the most recently used textures."""
+        from sonata2 import icons
+        tex = mock.Mock(get_width=lambda: 256, get_height=lambda: 256)
+        icons._rendered.clear()
+        icons._rendered_bytes = 0
+        with mock.patch.object(icons, "_render_rsvg", return_value=tex):
+            for i in range(200):
+                icons._rsvg_texture(f"/x/{i}.svg", 256)
+                icons._rsvg_texture("/x/0.svg", 256)          # used all the time: kept
+        self.assertLessEqual(icons._rendered_bytes, icons._RENDERED_MAX)
+        self.assertIn(("/x/0.svg", 256), icons._rendered)
+        self.assertNotIn(("/x/1.svg", 256), icons._rendered)
+        icons._rendered.clear()
+        icons._rendered_bytes = 0
+
+    def test_picture_icon_cached_is_not_decoded(self):
+        from sonata2 import icons
+        if icons.Gdk.Display.get_default() is None:
+            self.skipTest("no display")
+        d = tempfile.mkdtemp()
+        pic = os.path.join(d, "p.png")
+        _write(pic, "x")
+        with mock.patch.object(icons, "GENERATED", d), \
+                mock.patch.object(icons, "_render_plate", return_value=True), \
+                mock.patch.object(icons.Gdk.Texture, "new_from_filename") as dec:
+            name = "pic-" + __import__("hashlib").sha1(f"{pic}|squircle|False|None".encode()).hexdigest()[:20]
+            stamp = f"picture\n{pic}\n{int(os.path.getmtime(pic))}\n{icons.PLATE_VERSION}\nsquircle\nFalse\nNone"
+            _write(os.path.join(d, name + ".src"), stamp)
+            _write(os.path.join(d, name + ".png"), "x")
+            self.assertIsNotNone(icons.picture_icon(pic))
+        dec.assert_not_called()
+
+
+class RawMappedTest(unittest.TestCase):
+    def test_raw_mapped_not_read_and_empty_file_is_fine(self):
+        d = tempfile.mkdtemp()
+        p = os.path.join(d, "a.nef")
+        data = b"\x00" * 100 + _jpeg(b"p" * 50) + b"\x00" * 10
+        _write(p, data, "wb")
+        real_open = open
+        with mock.patch("builtins.open", side_effect=lambda *a, **k: real_open(*a, **k)):
+            self.assertEqual(imageload.raw_preview(p), _jpeg(b"p" * 50))
+        _write(os.path.join(d, "e.nef"), b"", "wb")
+        self.assertEqual(imageload.raw_preview(os.path.join(d, "e.nef")), b"")
+        self.assertIn("mmap.mmap(", _read(imageload.__file__))
+        self.assertNotIn("data = f.read()", _read(imageload.__file__))
+
+
+class ToplevelBindingsTest(unittest.TestCase):
+    def test_generated_bindings_renamed_in_whole(self):
+        """Several processes at login: the cached module appears whole or not at all."""
+        import importlib.util
+        if importlib.util.find_spec("pywayland") is None:
+            self.skipTest("no pywayland")
+        from sonata2.wl import toplevels
+        cache = tempfile.mkdtemp()
+        with mock.patch.dict(os.environ, {"XDG_CACHE_HOME": cache}), \
+                mock.patch("sonata2.config.atomic_write", wraps=__import__("sonata2.config").config.atomic_write) as aw:
+            toplevels._load_protocol()
+        aw.assert_called_once()
+        folder = os.path.dirname(aw.call_args.args[0])
+        self.assertEqual([n for n in os.listdir(folder) if n != "__pycache__"], [toplevels.PROTO + ".py"])
+        self.assertIn("from pywayland.protocol.wayland import", _read(aw.call_args.args[0]))
+
+
+class CornersPluginTest(unittest.TestCase):
+    """sonata-corners.cpp can't be built here: its source is checked."""
+
+    def setUp(self):
+        self.cpp = _read(CPP)
+
+    def test_opaque_region_corners_from_the_real_radius(self):
+        region = self.cpp[self.cpp.index("wf::regionf_t get_opaque_region()"):self.cpp.index("std::string stringify()")]
+        self.assertNotIn("const int c = 16;", region)
+        self.assertIn("corner_radius()", region)
+
+    def test_unmap_never_destroys_its_running_callback(self):
+        unmap = self.cpp[self.cpp.index("src->on_unmap = "):self.cpp.index("view->connect(&src->on_unmap);")]
+        self.assertNotIn("auto dead = std::move", unmap)
+        self.assertIn("retired.push_back", unmap)
+        self.assertIn("free_retired.run_once", unmap)
+
+    def test_options_cached_and_refreshed_on_reload(self):
+        render = self.cpp[self.cpp.index("void render(const wf::scene::render_instruction_t"):
+                          self.cpp.index("class corners_node_t")]
+        self.assertNotIn("option_str(", render)
+        self.assertNotIn("from_string", render)
+        self.assertIn("wf::signal::connection_t<wf::reload_config_signal> on_reload", self.cpp)
+        self.assertIn("wf::get_core().connect(&on_reload);", self.cpp)
+        self.assertIn("options_valid = false;", self.cpp)
+
+
+# -- animations ------------------------------------------------------------------------------------------
+class AnimationTests(unittest.TestCase):
+    """This area's only animations are Wayfire's window open/close/minimize
+    ones, which the lighter effects turn off during a game: they must come
+    back afterwards, exactly as configured."""
+
+    def _light(self, cfg, wanted=True):
+        light_file = os.path.join(tempfile.mkdtemp(), "light.json")
+        p = mock.patch.object(gamemode, "LIGHT", light_file)
+        p.start()
+        self.addCleanup(p.stop)
+        return gamemode.LightEffects(get=lambda s, k, d="": cfg.get((s, k), d),
+                                     set_=lambda s, k, v: cfg.__setitem__((s, k), v), wanted=lambda: wanted)
+
+    def test_window_animations_come_back_after_the_game(self):
+        cfg = {("animate", "open_animation"): "zoom", ("animate", "close_animation"): "fade",
+               ("animate", "minimize_animation"): "squeezimize", ("blur", "blur_by_default"): "x"}
+        want = dict(cfg)
+        light = self._light(cfg)
+        light.update(full=True, used=95, total=100)
+        self.assertEqual(cfg[("animate", "open_animation")], "none")
+        light.update(full=False)
+        self.assertEqual(cfg, want)
+
+    def test_animations_untouched_without_a_full_card_or_the_setting(self):
+        cfg = {("animate", "open_animation"): "zoom"}
+        self._light(cfg).update(full=True, used=10, total=100)
+        self.assertEqual(cfg[("animate", "open_animation")], "zoom")
+        self._light(cfg, wanted=False).update(full=True, used=99, total=100)
+        self.assertEqual(cfg[("animate", "open_animation")], "zoom")
 
 
 if __name__ == "__main__":

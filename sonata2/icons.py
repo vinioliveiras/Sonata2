@@ -14,6 +14,7 @@ on a Big Sur squircle plate (MacTahoe's shape) so every app icon has the
 same shape; the plate takes the icon's colour when the icon is a solid
 tile of its own."""
 import os
+from collections import OrderedDict
 
 import gi
 
@@ -295,8 +296,7 @@ def picture_icon(path: str, shape: str = "squircle", artwork: bool = False, scal
         return None
     try:
         stamp = f"picture\n{path}\n{int(os.path.getmtime(path))}\n{PLATE_VERSION}\n{shape}\n{artwork}\n{scale}"
-        tex = Gdk.Texture.new_from_filename(path)
-    except (OSError, GLib.Error):
+    except OSError:
         return None
     name = "pic-" + hashlib.sha1(f"{path}|{shape}|{artwork}|{scale}".encode()).hexdigest()[:20]
     png, meta = os.path.join(GENERATED, name + ".png"), os.path.join(GENERATED, name + ".src")
@@ -308,8 +308,14 @@ def picture_icon(path: str, shape: str = "squircle", artwork: bool = False, scal
     if artwork:
         src = Gtk.IconPaintable.new_for_file(Gio.File.new_for_path(path), GEN_SIZE, 1)
         ok = fresh or _render_plate(display, src, png, meta, stamp, shape=shape, scale=scale)
+    elif fresh:
+        ok = True                      # cached: the picture isn't decoded at all
     else:
-        ok = fresh or _render_plate(display, tex, png, meta, stamp, full=True, shape=shape)
+        try:
+            tex = Gdk.Texture.new_from_filename(path)
+        except GLib.Error:
+            return None
+        ok = _render_plate(display, tex, png, meta, stamp, full=True, shape=shape)
     if not ok:
         return None
     return Gio.FileIcon.new(Gio.File.new_for_path(png))
@@ -660,7 +666,9 @@ def set_logo(image: Gtk.Image) -> None:
 # are drawn by librsvg through GdkPixbuf: newer GTK SVG renderers draw those
 # filters as a stray translucent square at the top left.
 _filtered = {}          # svg path -> bool
-_rendered = {}          # (path, px) -> Gdk.Texture
+_rendered = OrderedDict()   # (path, px) -> Gdk.Texture, least recently used first
+_RENDERED_MAX = 16 << 20    # bytes of pixels kept (was up to 400 textures: ~100 MB at 256 px)
+_rendered_bytes = 0
 
 
 def _has_filter(path: str) -> bool:
@@ -721,15 +729,20 @@ def pixbuf_at(path: str, px: int):
 
 
 def _rsvg_texture(path: str, px: int):
+    global _rendered_bytes
     key = (path, px)
     tex = _rendered.get(key)
+    if tex is not None:
+        _rendered.move_to_end(key)
+        return tex
+    tex = _render_rsvg(path, px)
     if tex is None:
-        tex = _render_rsvg(path, px)
-        if tex is None:
-            return None
-        if len(_rendered) > 400:
-            _rendered.clear()
-        _rendered[key] = tex
+        return None
+    _rendered[key] = tex
+    _rendered_bytes += tex.get_width() * tex.get_height() * 4
+    while _rendered_bytes > _RENDERED_MAX and len(_rendered) > 1:
+        _k, old = _rendered.popitem(last=False)
+        _rendered_bytes -= old.get_width() * old.get_height() * 4
     return tex
 
 

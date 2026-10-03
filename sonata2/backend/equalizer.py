@@ -25,6 +25,7 @@ import sys
 from gi.repository import GLib
 
 from .. import config
+from . import pactl_watch
 
 BANDS = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
 LABELS = ["32", "64", "125", "250", "500", "1K", "2K", "4K", "8K", "16K"]
@@ -191,23 +192,12 @@ class Equalizer:
 
     def _subscribe(self) -> None:
         """pactl subscribe: a sink appeared/changed (port, plugged headphones)."""
-        try:
-            self._events = subprocess.Popen(["pactl", "subscribe"], stdout=subprocess.PIPE, text=True,
-                                            stderr=subprocess.DEVNULL)
-        except OSError:
-            return
-        ch = GLib.IOChannel.unix_new(self._events.stdout.fileno())
-
-        def line(_ch, cond):
-            if cond & (GLib.IO_HUP | GLib.IO_ERR):
-                return False
-            text = self._events.stdout.readline()
+        def line(text):
             if " sink " in text or "'server'" in text or " card " in text:
                 self.sync_soon()
             elif "'new' on sink-input" in text and self.chains:
                 self._links_soon()           # an app started playing: does it go through us?
-            return True
-        GLib.io_add_watch(ch, GLib.PRIORITY_DEFAULT, GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, line)
+        self._events = pactl_watch.watch(line)
 
     def _links_soon(self) -> None:
         if not getattr(self, "_links_src", 0):
@@ -276,8 +266,8 @@ class Equalizer:
 
     def stop(self) -> None:
         self._restart({})
-        if self._events and self._events.poll() is None:
-            self._events.terminate()
+        if self._events:
+            self._events.stop()
 
 
 def _kill_stale_chains() -> None:

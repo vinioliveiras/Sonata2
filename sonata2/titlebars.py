@@ -200,7 +200,8 @@ def _code_setting(path: str, style: str) -> None:
             text = f.read()
     except OSError:
         text = "{\n}\n"
-    key = re.compile(r'("window\.titleBarStyle"\s*:\s*)"[^"]*"')
+    # the live key, never a commented-out "// "window.titleBarStyle": ..." line
+    key = re.compile(r'(?m)^((?:(?!//)[^\n])*?"window\.titleBarStyle"\s*:\s*)"[^"]*"')
     if key.search(text):
         new = key.sub(rf'\1"{style}"', text, count=1)
     else:
@@ -229,11 +230,8 @@ def _vesktop_setting(path: str, on: bool) -> None:
 
 
 def _write(path: str, text: str) -> None:
-    tmp = path + ".sonata-tmp"
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(text)
-        os.replace(tmp, path)
+        config.atomic_write(path, text.encode("utf-8"), fsync=False)     # unique temp: apps write these too
     except OSError:
         pass
 

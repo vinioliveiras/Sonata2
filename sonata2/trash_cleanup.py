@@ -24,7 +24,10 @@ def deletion_date(info_path: str):
         with open(info_path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 if line.startswith("DeletionDate="):
-                    return dt.datetime.fromisoformat(line.split("=", 1)[1].strip())
+                    when = dt.datetime.fromisoformat(line.split("=", 1)[1].strip())
+                    if when.tzinfo is not None:      # "...Z" from some tools: local naive like the spec
+                        when = when.astimezone().replace(tzinfo=None)
+                    return when
     except (OSError, ValueError):
         pass
     return None

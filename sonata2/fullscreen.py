@@ -13,6 +13,7 @@
 Remembered in ~/.config/sonata2/fullscreen.json {"apps": {app_id: bool}}.
 Lives in the menu bar process (it already talks to Wayfire)."""
 import os
+import re
 import time
 
 from gi.repository import GLib
@@ -23,10 +24,17 @@ DEFAULTS = {"apps": {}}
 SCREEN_FRACTION = 0.9           # asks for this much of the display: a game wanting the screen
 MIN_GAME = (800, 600)           # fixed-size windows at least this big are games
 RECHECK_MS = (300, 1500, 4000)  # Wine sizes its window after mapping it
-# Wine windows that aren't games: installers, launchers, tools
-NOT_GAMES = ("explorer", "winecfg", "regedit", "setup", "install", "unins", "redist", "dxsetup", "launcher",
-             "crash", "report", "uplay", "ubisoftconnect", "eadesktop", "origin", "epicgameslauncher",
-             "battle.net", "galaxyclient", "rockstar", "steam.exe", "steamwebhelper", "notepad", "control")
+# Wine windows that aren't games: installers, launchers, tools. Short words
+# only match as whole words (or a word's start: "unins000", "setup.exe"), so
+# games called "Control", "Crash Bandicoot" or "Assassin's Creed Origins"
+# still count; the unambiguous ones match anywhere ("UnityCrashHandler64").
+NOT_GAMES = ("explorer", "setup", "install", "unins", "report", "uplay", "origin", "rockstar", "steam.exe",
+             "notepad", "control panel", "control.exe", "battle.net")
+NOT_GAMES_ANYWHERE = ("winecfg", "regedit", "installer", "redist", "dxsetup", "launcher", "crashhandler",
+                      "crashreport", "crash reporter", "crashpad", "ubisoftconnect", "eadesktop",
+                      "galaxyclient", "webhelper")
+_NOT_GAMES = re.compile(r"(?<![a-z0-9])(?:%s)(?:\d*|er|s?\.exe)(?![a-z])|%s"
+                        % ("|".join(map(re.escape, NOT_GAMES)), "|".join(map(re.escape, NOT_GAMES_ANYWHERE))))
 
 
 def _app(view) -> str:
@@ -55,7 +63,7 @@ def looks_like_game(view, screen) -> bool:
     if view.get("role", "toplevel") != "toplevel" or view.get("type", "toplevel") != "toplevel":
         return False
     name = f"{_app(view)} {view.get('title') or ''}".lower()
-    if any(w in name for w in NOT_GAMES):
+    if _NOT_GAMES.search(name):
         return False
     g = view.get("geometry") or {}
     w, h = g.get("width", 0), g.get("height", 0)

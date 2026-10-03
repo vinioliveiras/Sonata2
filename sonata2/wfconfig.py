@@ -1,13 +1,36 @@
 """Wayfire options Sonata changes (Settings: keyboard, trackpad, title bar
 colours...). No GTK here: tools/wayfire-config.sh uses it at login."""
+import fcntl
 import os
 import threading
+from contextlib import contextmanager
 from typing import List
+
+from . import config
 
 # Settings writes from worker threads (sliders, title bar colours: several
 # keys at once); each write is read-modify-write of the whole file, so two at
 # a time would drop each other's change or read a half-written file.
 _LOCK = threading.Lock()
+
+
+@contextmanager
+def _locked():
+    """One writer at a time: threads (_LOCK) and Sonata's processes (Settings,
+    menu bar's lighter effects) through a flock beside the session copy."""
+    with _LOCK:
+        lock = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "sonata2-wayfire.lock")
+        try:
+            fd = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
+        except OSError:
+            fd = -1                     # no lock file possible: still one thread at a time
+        try:
+            if fd >= 0:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            if fd >= 0:
+                os.close(fd)            # also releases the flock
 
 
 def _wayfire_files() -> List[str]:
@@ -79,20 +102,21 @@ def wayfire_set(section: str, key: str, value) -> bool:
     Thread-safe (one writer at a time)."""
     if isinstance(value, bool):
         value = "true" if value else "false"
-    with _LOCK:
+    with _locked():
         return _set(section, key, value)
 
 
 def runtime_set(section: str, key: str, value) -> bool:
     """Like wayfire_set, for this session only: the resolved copy Wayfire
     reads (made again at every login), never Sonata's overrides -- for
-    temporary changes (lighter effects while gaming) a crash can't keep."""
+    temporary changes (lighter effects while gaming) a crash can't keep.
+    value None removes the key (Wayfire's default applies again)."""
     if isinstance(value, bool):
         value = "true" if value else "false"
     run = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "sonata2-wayfire.ini")
     if not os.path.exists(run):
         return False
-    with _LOCK:
+    with _locked():
         return _set(section, key, value, [run])
 
 
@@ -112,11 +136,12 @@ def _set(section: str, key: str, value, files=None) -> bool:
                     sec_end = len(out)
                 cur = s[1:-1]
             elif cur == section and "=" in s and not s.startswith("#") and s.split("=", 1)[0].strip() == key:
-                out.append(f"{key} = {value}\n")
+                if value is not None:
+                    out.append(f"{key} = {value}\n")
                 done = True
                 continue
             out.append(line)
-        if not done:
+        if not done and value is not None:
             if cur == section:
                 sec_end = len(out)
             if sec_end is not None:
@@ -129,9 +154,9 @@ def _set(section: str, key: str, value, files=None) -> bool:
             ok = True              # already so: no write, so Wayfire doesn't reload (no display modeset)
             continue
         try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                f.writelines(out)
+            # whole new file renamed over the old: Wayfire (inotify IN_MOVED_TO)
+            # never reloads a half-written one
+            config.atomic_write(path, "".join(out).encode("utf-8"), fsync=False)
             ok = True
         except OSError:
             pass

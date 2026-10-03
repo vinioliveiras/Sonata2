@@ -13,9 +13,11 @@ import glob
 import os
 import re
 import subprocess
+import time
 
 STEAM_DIRS = ("~/.local/share/Steam", "~/.steam/steam", "~/.var/app/com.valvesoftware.Steam/.local/share/Steam")
-_names = {}
+_names = {}                 # aid -> (name or None, when looked up)
+UNKNOWN_RETRY_S = 60        # a game not found yet (installing, library mounted later) is looked up again
 
 
 def appid(app_id: str):
@@ -54,8 +56,9 @@ def libraries() -> list:
 
 
 def name(aid: str):
-    if aid in _names:
-        return _names[aid]
+    hit = _names.get(aid)
+    if hit and (hit[0] is not None or time.monotonic() - hit[1] < UNKNOWN_RETRY_S):
+        return hit[0]
     found = None
     for lib in libraries():
         try:
@@ -66,7 +69,7 @@ def name(aid: str):
         if m:
             found = m.group(1)
             break
-    _names[aid] = found
+    _names[aid] = (found, time.monotonic())
     return found
 
 

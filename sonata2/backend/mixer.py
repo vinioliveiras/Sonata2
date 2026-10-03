@@ -17,6 +17,7 @@ from typing import List, Optional
 from gi.repository import GLib
 
 from .. import config
+from . import pactl_watch
 
 NAME = "mixer"
 DEFAULTS = {"volumes": {}, "muted": {}}
@@ -231,31 +232,21 @@ class MixerService:
         self.proc = None
         if not available():
             return
-        try:
-            self.proc = subprocess.Popen(["pactl", "subscribe"], stdout=subprocess.PIPE, text=True,
-                                         stderr=subprocess.DEVNULL)
-        except OSError:
-            return
         self._src = 0
         self._new = set()
-        GLib.io_add_watch(GLib.IOChannel.unix_new(self.proc.stdout.fileno()), GLib.PRIORITY_DEFAULT,
-                          GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, self._line)
+        self.proc = pactl_watch.watch(self._line)       # the shared `pactl subscribe` reader
+        if self.proc is None:
+            return
         GLib.idle_add(lambda: (self._restore_all(), False)[1])      # what was playing before we started
 
-    def _line(self, _ch, cond) -> bool:
-        if cond & (GLib.IO_HUP | GLib.IO_ERR):
-            return False
-        text = self.proc.stdout.readline()
-        if not text:
-            return False
+    def _line(self, text) -> None:
         if "on sink-input" not in text:
-            return True
+            return
         idx = new_stream_index(text)
         if idx is not None:
             self._new.add(idx)
         if not self._src:
             self._src = GLib.timeout_add(150, self._changed)        # a burst: one read
-        return True
 
     def _changed(self) -> bool:
         """A burst of stream events: restore new streams' levels; tell an

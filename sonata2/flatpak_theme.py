@@ -35,8 +35,11 @@ def _edit(fn) -> None:
     kf = GLib.KeyFile()
     try:
         kf.load_from_file(path, GLib.KeyFileFlags.KEEP_COMMENTS)
-    except GLib.Error:
-        pass
+    except GLib.Error as e:
+        # only a missing file starts empty: an unreadable or broken one is
+        # the user's overrides, never saved over with ours alone
+        if not e.matches(GLib.file_error_quark(), GLib.FileError.NOENT):
+            return
     fn(kf)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     kf.save_to_file(path)

@@ -25,6 +25,8 @@ from typing import Callable, List, Optional
 
 from gi.repository import Gio, GLib
 
+from .linereader import read_lines
+
 
 @dataclass
 class Update:
@@ -135,8 +137,8 @@ def sonata_source() -> Source:
     """Sonata itself (backend/selfupdate.py: its GitHub releases). Updated
     in a terminal: its installer may ask for sudo."""
     from . import selfupdate
-    from ..__main__ import self_command
-    return Source("sonata", "Sonata", self_command().split() + ["self-update", "--check"], None,
+    from ..__main__ import self_argv
+    return Source("sonata", "Sonata", self_argv() + ["self-update", "--check"], None,
                   selfupdate.terminal_command(), parse_arrow)
 
 
@@ -193,26 +195,19 @@ class Runner:
             self.on_line(str(e.message))
             self.on_done(False, self.index)
             return
-        stream = Gio.DataInputStream.new(self.proc.get_stdout_pipe())
-        self._read(stream)
+        self._read(self.proc.get_stdout_pipe())
 
     def _read(self, stream) -> None:
-        def got(s, res):
-            try:
-                line, _n = s.read_line_finish_utf8(res)
-            except GLib.Error:
-                line = None
-            if line is None:
-                self.proc.wait_async(self.cancel, self._exited)
-                return
-            for part in line.split("\r"):              # progress bars redraw with \r
+        def line(text):
+            for part in text.split("\r"):              # progress bars redraw with \r
                 if part.strip():
                     m = _STEP.search(part)
                     if m and int(m.group(2)):
                         self.on_fraction(int(m.group(1)) / int(m.group(2)))
                     self.on_line(part.rstrip())
-            self._read(s)
-        stream.read_line_async(GLib.PRIORITY_DEFAULT, self.cancel, got)
+        # bytes, split here: a non-UTF-8 byte must not end the read (pacman
+        # then blocks or dies of SIGPIPE mid-upgrade)
+        read_lines(stream, self.cancel, line, lambda: self.proc.wait_async(self.cancel, self._exited))
 
     def _exited(self, proc, res) -> None:
         try:

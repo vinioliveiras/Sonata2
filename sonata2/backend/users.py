@@ -148,7 +148,11 @@ def _crypt(password: str) -> Optional[str]:
     module since 3.13)."""
     if not shutil.which("openssl"):
         return None
-    r = subprocess.run(["openssl", "passwd", "-6", "-stdin"], input=password, capture_output=True, text=True)
+    try:
+        r = subprocess.run(["openssl", "passwd", "-6", "-stdin"], input=password, capture_output=True, text=True,
+                           timeout=10)               # a stuck openssl must not hang the caller
+    except (OSError, subprocess.TimeoutExpired):
+        return None
     return r.stdout.strip() if r.returncode == 0 else None
 
 

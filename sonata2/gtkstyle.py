@@ -43,12 +43,14 @@ def update(dark: bool) -> None:
 def reset_env() -> None:
     if not in_session():
         return
-    if shutil.which("systemctl"):
-        subprocess.run(["systemctl", "--user", "unset-environment", "GTK_THEME"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if shutil.which("dbus-update-activation-environment"):
-        subprocess.run(["dbus-update-activation-environment", "GTK_THEME="],     # empty = no theme forced
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # a timeout each: a busy/stuck systemd or D-Bus must not hang the caller
+    for cmd in (["systemctl", "--user", "unset-environment", "GTK_THEME"],
+                ["dbus-update-activation-environment", "GTK_THEME="]):     # empty = no theme forced
+        if shutil.which(cmd[0]):
+            try:
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
 
 
 def clean(path=None) -> bool:

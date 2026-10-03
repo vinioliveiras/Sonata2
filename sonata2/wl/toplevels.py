@@ -30,14 +30,25 @@ def _load_protocol():
                          "sonata2", "pywayland-" + pywayland.__version__)
     path = os.path.join(cache, PROTO + ".py")
     if not os.path.exists(path):
+        # several processes start at login: each generates in its own temp
+        # folder, the finished file is renamed in (never a half one imported)
+        import shutil
+        import tempfile
+        from .. import config
         os.makedirs(cache, exist_ok=True)
-        proto = Protocol.parse_file(XML)
-        proto.output(cache, {i.name: proto.name for i in proto.interface}
-                     | {"wl_seat": "wayland", "wl_output": "wayland", "wl_surface": "wayland"})
-        with open(path, encoding="utf-8") as f:
-            src = f.read()
-        with open(path, "w", encoding="utf-8") as f:   # core interfaces come from pywayland
-            f.write(src.replace("from .wayland import", "from pywayland.protocol.wayland import"))
+        tmp = tempfile.mkdtemp(prefix=".gen-", dir=cache)
+        try:
+            proto = Protocol.parse_file(XML)
+            proto.output(tmp, {i.name: proto.name for i in proto.interface}
+                         | {"wl_seat": "wayland", "wl_output": "wayland", "wl_surface": "wayland"})
+            with open(os.path.join(tmp, PROTO + ".py"), encoding="utf-8") as f:
+                src = f.read()
+            # core interfaces come from pywayland
+            config.atomic_write(path, src.replace("from .wayland import",
+                                                  "from pywayland.protocol.wayland import").encode("utf-8"),
+                                fsync=False)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
     spec = importlib.util.spec_from_file_location("sonata2_" + PROTO, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

@@ -38,6 +38,10 @@ def _run(cmd: List[str], timeout: int = 10) -> Tuple[int, str]:
         return 127, ""
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        # stderr only on failure (the error to show): a warning on success
+        # would break the output parsed (pactl JSON, timezone, host name...)
+        if p.returncode == 0:
+            return 0, p.stdout or ""
         return p.returncode, (p.stdout or "") + (p.stderr or "")
     except (OSError, subprocess.TimeoutExpired) as exc:
         return 1, str(exc)
@@ -310,13 +314,12 @@ TERMINALS = (("kgx", ["--"]), ("gnome-terminal", ["--"]), ("konsole", ["-e"]), (
 def run_in_terminal(command: str) -> bool:
     """Run a shell command in a terminal window that stays open at the end."""
     import shutil
-    import shlex
     try:                                    # Sonata's own Terminal first (needs VTE for GTK 4)
         import gi
         gi.require_version("Vte", "3.91")
         from gi.repository import Vte  # noqa: F401
-        from ..__main__ import self_command
-        subprocess.Popen(shlex.split(self_command()) + ["terminal", "--exec", command], start_new_session=True,
+        from ..__main__ import self_argv
+        subprocess.Popen(self_argv() + ["terminal", "--exec", command], start_new_session=True,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
     except (ValueError, ImportError, OSError):
@@ -365,14 +368,8 @@ def set_volume(percent: Optional[int] = None, muted: Optional[bool] = None,
 def watch_audio(callback):
     """callback() on the GTK main loop whenever a sink or source changes
     (volume, mute, devices), through `pactl subscribe`. Returns the
-    process (kill it to stop), None without pactl."""
-    if not shutil.which("pactl"):
-        return None
-    try:
-        proc = subprocess.Popen(["pactl", "subscribe"], stdout=subprocess.PIPE, text=True,
-                                stderr=subprocess.DEVNULL)
-    except OSError:
-        return None
+    watcher (kill() it to stop), None without pactl."""
+    from .pactl_watch import watch
     state = {"src": 0}
 
     def fire():
@@ -380,19 +377,11 @@ def watch_audio(callback):
         callback()
         return False
 
-    def line(_ch, cond):
-        if cond & (GLib.IO_HUP | GLib.IO_ERR):
-            return False
-        text = proc.stdout.readline()
-        if not text:
-            return False
+    def line(text):
         if "on sink" in text or "on source" in text or "'server'" in text:
             if not state["src"]:
                 state["src"] = GLib.timeout_add(120, fire)      # a burst of events: one read
-        return True
-    GLib.io_add_watch(GLib.IOChannel.unix_new(proc.stdout.fileno()), GLib.PRIORITY_DEFAULT,
-                      GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, line)
-    return proc
+    return watch(line)
 
 
 def input_volume() -> Optional[Tuple[int, bool]]:

@@ -53,20 +53,23 @@ def _jpeg_end(data: bytes, start: int) -> int:
 
 def raw_preview(path: str) -> bytes:
     """The largest JPEG inside a RAW file (the camera's full preview)."""
+    import mmap
     try:
         if os.path.getsize(path) > MAX_RAW:
             return b""
-        with open(path, "rb") as f:
-            data = f.read()
-    except OSError:
+        # mapped, not read: only the pages walked are loaded, as page cache the
+        # kernel can drop (a read() held the whole RAW, up to 200 MB, in memory)
+        with open(path, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as data:
+            best = (0, 0)
+            pos = data.find(b"\xff\xd8\xff")
+            while pos >= 0:
+                end = _jpeg_end(data, pos)
+                if end > pos and end - pos > best[1] - best[0]:
+                    best = (pos, end)
+                pos = data.find(b"\xff\xd8\xff", max(pos + 3, end if end > pos else pos + 3))
+            return data[best[0]:best[1]]
+    except (OSError, ValueError):                  # ValueError: an empty file can't be mapped
         return b""
-    best, pos = b"", data.find(b"\xff\xd8\xff")
-    while pos >= 0:
-        end = _jpeg_end(data, pos)
-        if end > pos and end - pos > len(best):
-            best = data[pos:end]
-        pos = data.find(b"\xff\xd8\xff", max(pos + 3, end if end > pos else pos + 3))
-    return best
 
 
 def _pixbuf_from_bytes(data: bytes, size: int = 0):

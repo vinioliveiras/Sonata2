@@ -37,6 +37,7 @@
 #include <wayfire/render-manager.hpp>
 #include <wayfire/output-layout.hpp>
 #include <algorithm>
+#include <cmath>
 #include <chrono>
 #include <memory>
 #include <string>
@@ -227,90 +228,110 @@ class corners_program_t : public wf::custom_data_t
     OpenGL::program_t program;
 };
 
-/* Shadow around pixdecor's frame (part of the window geometry): the frame
- * itself is inset by it. 0 without pixdecor's rounded engine, or when a
- * tiled window has no shadow. */
-static double decoration_shadow(wayfire_toplevel_view view)
-{
-    auto& cfg = *wf::get_core().config;
-    auto engine = cfg.get_option("pixdecor/overlay_engine");
-    auto radius = cfg.get_option("pixdecor/shadow_radius");
-    auto max_shadows = cfg.get_option("pixdecor/maximized_shadows");
-    if (!engine || !radius || (engine->get_value_str() != "rounded_corners"))
-    {
-        return 0;
-    }
-
-    bool tiled = view->pending_tiled_edges() != 0;
-    if (tiled && (!max_shadows || (max_shadows->get_value_str() != "true")))
-    {
-        return 0;
-    }
-
-    try {
-        return 2.0 * std::stoi(radius->get_value_str());
-    } catch (...)
-    {
-        return 0;
-    }
-}
-
 static std::string option_str(const std::string& name)
 {
     auto opt = wf::get_core().config->get_option(name);
     return opt ? opt->get_value_str() : "";
 }
 
+static int option_int(const std::string& name, int fallback)
+{
+    try {
+        return std::stoi(option_str(name));
+    } catch (...)
+    {
+        return fallback;
+    }
+}
+
+static glm::vec4 option_color(const std::string& name, bool premultiply)
+{
+    auto col = wf::option_type::from_string<wf::color_t>(option_str(name));
+    if (!col)
+    {
+        return glm::vec4{0, 0, 0, 0};
+    }
+
+    float k = premultiply ? col->a : 1.0f;
+    return glm::vec4{col->r * k, col->g * k, col->b * k, col->a};
+}
+
+/* Every option the corners read, looked up and parsed once, then again
+ * after each config reload (reload_config_signal: Settings writes the ini).
+ * Read per window per frame (~10 lookups + parses each, at 180 Hz) before.
+ * Read without option_wrapper_t: a wrapper throws (and aborts Wayfire)
+ * when the plugin's XML wasn't loaded when Wayfire started. */
+struct corners_options_t
+{
+    bool rounded_engine = false;   /* pixdecor draws its rounded frame + shadow */
+    bool max_shadows    = false;   /* pixdecor/maximized_shadows */
+    int shadow_radius   = 0;       /* pixdecor/shadow_radius (0: unset or bad) */
+    glm::vec4 shadow_color{0, 0, 0, 0};   /* premultiplied */
+    float radius = 10;             /* corner radius drawn */
+    glm::vec4 fg_fill{0, 0, 0, 0}, bg_fill{0, 0, 0, 0};   /* stored premultiplied by Sonata */
+    glm::vec4 outline{0, 0, 0, 0}; /* premultiplied */
+
+    void load()
+    {
+        rounded_engine = option_str("pixdecor/overlay_engine") == "rounded_corners";
+        max_shadows    = option_str("pixdecor/maximized_shadows") == "true";
+        shadow_radius  = option_int("pixdecor/shadow_radius", 0);
+        shadow_color   = option_color("pixdecor/shadow_color", true);
+        /* pixdecor's own corner radius when it rounds the frame: the arcs meet */
+        int r = rounded_engine ? option_int("pixdecor/rounded_corner_radius", -1) : -1;
+        radius  = std::max(0, r >= 0 ? r : option_int("sonata-corners/radius", 10));
+        fg_fill = option_color("pixdecor/fg_color", false);
+        bg_fill = option_color("pixdecor/bg_color", false);
+        outline = option_color("sonata-corners/outline", true);
+    }
+};
+
+static bool options_valid = false;
+
+static const corners_options_t& options()
+{
+    static corners_options_t cached;
+    if (!options_valid)
+    {
+        cached.load();
+        options_valid = true;
+    }
+
+    return cached;
+}
+
+/* Shadow around pixdecor's frame (part of the window geometry): the frame
+ * itself is inset by it. 0 without pixdecor's rounded engine, or when a
+ * tiled window has no shadow. */
+static double decoration_shadow(wayfire_toplevel_view view)
+{
+    auto& o = options();
+    if (!o.rounded_engine)
+    {
+        return 0;
+    }
+
+    bool tiled = view->pending_tiled_edges() != 0;
+    if (tiled && !o.max_shadows)
+    {
+        return 0;
+    }
+
+    return 2.0 * o.shadow_radius;
+}
+
 /* pixdecor's shadow colour (premultiplied) and radius, when its rounded
  * engine draws a shadow; zeros otherwise */
 static void decoration_shadow_style(glm::vec4& color, float& radius)
 {
-    color  = glm::vec4{0, 0, 0, 0};
-    radius = 0;
-    if (option_str("pixdecor/overlay_engine") != "rounded_corners")
-    {
-        return;
-    }
-
-    auto col = wf::option_type::from_string<wf::color_t>(option_str("pixdecor/shadow_color"));
-    if (col)
-    {
-        color = glm::vec4{col->r * col->a, col->g * col->a, col->b * col->a, col->a};
-    }
-
-    try {
-        radius = std::stoi(option_str("pixdecor/shadow_radius"));
-    } catch (...)
-    {
-        radius = 0;
-    }
+    auto& o = options();
+    color  = o.rounded_engine ? o.shadow_color : glm::vec4{0, 0, 0, 0};
+    radius = o.rounded_engine ? o.shadow_radius : 0;
 }
 
-/* The radius option, read without option_wrapper_t: a wrapper throws (and
- * aborts Wayfire) when the plugin's XML wasn't loaded when Wayfire started. */
 static float corner_radius()
 {
-    /* pixdecor's own corner radius when it rounds the frame: the arcs meet */
-    if (option_str("pixdecor/overlay_engine") == "rounded_corners")
-    {
-        try {
-            return std::max(0, std::stoi(option_str("pixdecor/rounded_corner_radius")));
-        } catch (...)
-        {}
-    }
-
-    auto opt = wf::get_core().config->get_option("sonata-corners/radius");
-    if (!opt)
-    {
-        return 10;
-    }
-
-    try {
-        return std::max(0, std::stoi(opt->get_value_str()));
-    } catch (...)
-    {
-        return 10;
-    }
+    return options().radius;
 }
 
 class corners_render_instance_t :
@@ -441,15 +462,9 @@ class corners_render_instance_t :
             }
             bool maximized = view->pending_tiled_edges() == wf::TILED_EDGES_ALL;
             data_ptr->program.uniform1f("square_top", maximized ? 1.0f : 0.0f);
-            auto fill = wf::option_type::from_string<wf::color_t>(
-                option_str(view->activated ? "pixdecor/fg_color" : "pixdecor/bg_color"));
             /* stored premultiplied (Sonata writes them so: pixdecor blends them as such) */
-            data_ptr->program.uniform4f("fill", fill ? glm::vec4{fill->r, fill->g, fill->b, fill->a} :
-                glm::vec4{0, 0, 0, 0});
-            auto line = wf::option_type::from_string<wf::color_t>(option_str("sonata-corners/outline"));
-            data_ptr->program.uniform4f("outline", line ?
-                glm::vec4{line->r * line->a, line->g * line->a, line->b * line->a, line->a} :
-                glm::vec4{0, 0, 0, 0});
+            data_ptr->program.uniform4f("fill", view->activated ? options().fg_fill : options().bg_fill);
+            data_ptr->program.uniform4f("outline", options().outline);
             /* the client's surface top (below pixdecor's title bar), for the seam */
             auto m = view->toplevel()->current().margins;
             data_ptr->program.uniform1f("seam", m.top > inset ? float(g.y + m.top - bbox.y) : -1.0f);
@@ -521,12 +536,17 @@ class corners_node_t : public wf::scene::transformer_base_node_t, public wf::sce
         auto g = view->get_geometry();
         int inset = (int)decoration_shadow(view);
         wf::geometry_t f{g.x + inset, g.y + inset, g.width - 2 * inset, g.height - 2 * inset};
-        const int c = 16;                          /* at least the corner radius */
+        /* the corners as drawn: the real radius (+1 for the antialiased
+         * edge), never more than half the frame */
+        int c = std::min((int)std::ceil(corner_radius()) + 1, std::min(f.width, f.height) / 2);
         for (auto corner : {wf::geometry_t{f.x, f.y, c, c}, wf::geometry_t{f.x + f.width - c, f.y, c, c},
                             wf::geometry_t{f.x, f.y + f.height - c, c, c},
                             wf::geometry_t{f.x + f.width - c, f.y + f.height - c, c, c}})
         {
-            region ^= wf::regionf_t{corner};
+            if (c > 0)
+            {
+                region ^= wf::regionf_t{corner};
+            }
         }
 
         /* Title bar and toolbar always go through the blur: a few pixels
@@ -669,6 +689,8 @@ static const wlr_ext_image_capture_source_v1_interface window_source_impl = {
 class window_capture_t
 {
     std::map<wf::view_interface_t*, std::unique_ptr<window_source_t>> sources;
+    std::vector<std::unique_ptr<window_source_t>> retired;   /* finished, freed on idle */
+    wf::wl_idle_call free_retired;
     wl_listener on_request;
 
     static window_capture_t*& instance()
@@ -718,9 +740,13 @@ class window_capture_t
                 auto found = self->sources.find(raw);
                 if (found != self->sources.end())
                 {
-                    auto dead = std::move(found->second);
+                    wlr_ext_image_capture_source_v1_finish(&found->second->base);
+                    /* this lambda lives in the source's on_unmap: destroying the
+                     * source now would destroy the running callback (UB).
+                     * Freed on idle, after the signal returned. */
+                    self->retired.push_back(std::move(found->second));
                     self->sources.erase(found);
-                    wlr_ext_image_capture_source_v1_finish(&dead->base);
+                    self->free_retired.run_once([self] () { self->retired.clear(); });
                 }
             };
             view->connect(&src->on_unmap);
@@ -759,6 +785,8 @@ class window_capture_t
         }
 
         sources.clear();
+        free_retired.disconnect();
+        retired.clear();
     }
 };
 
@@ -858,6 +886,9 @@ class sonata_corners_t : public wf::plugin_interface_t
         late_update.set_timeout(250, [=] () { update_all(); });
     }
 
+    /* options are cached (options()): read them again after a reload */
+    wf::signal::connection_t<wf::reload_config_signal> on_reload =
+        [=] (wf::reload_config_signal*) { options_valid = false; };
     wf::signal::connection_t<wf::view_mapped_signal> on_map =
         [=] (wf::view_mapped_signal*) { update_soon(); };
     wf::signal::connection_t<wf::view_fullscreen_signal> on_fullscreen =
@@ -1056,6 +1087,8 @@ class sonata_corners_t : public wf::plugin_interface_t
         }
 
         program_ref_count++;
+        options_valid = false;                 /* (re)loaded plugin: current values */
+        wf::get_core().connect(&on_reload);
         wf::get_core().connect(&on_map);
         wf::get_core().connect(&on_fullscreen);
         wf::get_core().connect(&on_decoration);
