@@ -8,6 +8,35 @@ decorator then, and it stays as the regression test.
 
 Tags: **[xfail]** = proven by an expected-failure test.
 
+## Status — fixes applied (October 2026)
+
+Everything below was fixed, except the items in "Still open". All 63
+expected-failure tests now pass as regression tests (decorators removed),
+and each fix without one got a new test. Each `tests/test_review_<area>.py`
+also has an `AnimationTests` class checking that the area's main actions
+animate.
+
+### Still open
+- TextEdit opens files with a synchronous read (open/restore are sync APIs; making them async is a redesign).
+- Preview's `ThumbLoader` still duplicates `files/thumbs.py` (different APIs; a refactor).
+- Dock locked-folder and Launchpad Hidden-folder password panels are still two widgets with raw `Gtk.PasswordEntry` (PAM logic is shared now); the kit field would change their look.
+- `poof.cursor()` still makes one sync Wayfire IPC call per drag-off.
+- Colour picker hex field keeps its own `Gtk.Entry` (own style/width).
+- Calendar: a changed instance isn't re-keyed when the series' start is edited in the popover (drag-move is handled).
+- Clock's alarm editor uses a raw `Gtk.Popover`/`Gtk.SpinButton`.
+- Music/Videos/Camera time formatters still separate (need a shared `ui.fmt.clock`).
+- sonata-corners.cpp changes are verified by reading only: rebuild the plugin to compile them.
+- Disk Utility rename can't clear a label to empty any more (`ask_text` disables OK on empty text).
+
+### Actions with no animation today (owner to decide)
+- Dock: stack panel opening; removing a stack; a new icon appearing (neighbours glide, no grow-in); new desktop icons.
+- Menu bar: menus/popovers closing; emoji picker open/close; share/capture/clipboard picker close; capture toolbar and recording control.
+- UI kit/Settings: panels closing; Settings sidebar search; slider double-click reset.
+- Files: Icons/List/Columns switch; Quick Look open/close; copy progress; Disk Utility sidebar rebuild. Preview: rotate/flip/crop/adjust; ←/→ outside the slideshow.
+- Media: Music Up Next popup and queue changes, play/pause; Task Manager Properties popup and process rows; Camera countdown, mode switch, new-photo thumbnail.
+- Calendar event blocks appearing/disappearing and period stepping; Notes list add/delete and folder switch; TextEdit tab switch and tabs appearing.
+- Assistant streamed text; Calculator display; Clock alarm list; polkit dialog closing; alarm card.
+
 ## Fix first (data loss, security, stuck UI)
 
 1. **Escape discards unsaved documents** — `ui/dialog.py:86` makes the first response the close response; TextEdit and Preview list "Don't Save" first. Use the first non-destructive / "cancel" response. [xfail]
