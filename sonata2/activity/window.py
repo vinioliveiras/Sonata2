@@ -46,7 +46,11 @@ GENERIC_ICON = "application-x-executable"
 SEARCH_URL = "https://duckduckgo.com/?q="
 # launchers and interpreters: their name says nothing about the app
 _NOT_APPS = {"python", "python3", "sh", "bash", "zsh", "fish", "env", "sudo", "flatpak", "bwrap", "java", "node",
-             "perl", "ruby", "systemd", "dbus-daemon", "gjs", "electron", "xdg-open", "sonata2"}
+             "perl", "ruby", "systemd", "dbus-daemon", "gjs", "electron", "xdg-open", "sonata2",
+             # Windows-game launchers: one of them in a game's entry made every wine
+             # process look like that game (Vini: Halloween shown as Red Dead Redemption)
+             "wine", "wine64", "wine-preloader", "wine64-preloader", "wineserver", "umu-run", "proton",
+             "pressure-vessel", "pressure-vessel-wrap", "reaper", "gamemoderun", "mangohud", "gamescope"}
 
 
 # -- app icons ----------------------------------------------------------------------------------
@@ -88,6 +92,13 @@ def app_for(p, idx: dict):
                 key = f"io.github.vinioliveiras.sonata2.{parts[i + 1].lower()}"
                 if key in idx:
                     return (key,) + idx[key]
+    if getattr(p, "steam", ""):                       # a Steam game's process: the game, by its app id
+        from .. import steamgames
+        key = f"steam_app_{p.steam}"
+        got = steamgames.shown(key, p.name)
+        if got:
+            name, icon = got
+            return key, icon, name
     for key in (p.exe.lower(), p.comm.lower()):
         if key and key not in _NOT_APPS and key in idx:
             icon, name = idx[key]

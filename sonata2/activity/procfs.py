@@ -233,6 +233,22 @@ def battery_info(sys_root: str = "/sys") -> Optional[dict]:
 STATES = {"T": "Suspended", "t": "Suspended", "Z": "Zombie", "D": "Waiting for disk"}
 
 
+def steam_appid(d: str) -> str:
+    """The Steam game a process belongs to: Steam starts every game process
+    (Proton, wine, the game) with SteamAppId set. Read once per process."""
+    try:
+        with open(os.path.join(d, "environ"), "rb") as f:
+            env = f.read()
+    except OSError:
+        return ""
+    for entry in env.split(b"\0"):
+        if entry.startswith((b"SteamAppId=", b"SteamGameId=")):
+            val = entry.split(b"=", 1)[1].decode(errors="replace")
+            if val.isdigit() and val != "0":
+                return val
+    return ""
+
+
 @dataclass
 class Proc:
     pid: int
@@ -258,6 +274,7 @@ class Proc:
     start_ticks: int = 0          # clock ticks after boot (with pid: the process's identity)
     state: str = "S"
     gpu: float = 0.0              # % of its busiest GPU engine since the previous sample
+    steam: str = ""               # the Steam game it belongs to (SteamAppId), "" for others
 
     @property
     def status(self) -> str:
@@ -514,7 +531,8 @@ class Sampler:
             comm = st["comm"]
             # comm is cut at 15 characters: the program's own name reads better
             name = exe if exe and len(comm) >= 15 and exe.startswith(comm[:15]) else comm
-            info = (name, comm, cmdline[:4096], exe, uid, self.user_name(uid) if uid >= 0 else "")
+            info = (name, comm, cmdline[:4096], exe, uid, self.user_name(uid) if uid >= 0 else "",
+                    steam_appid(d))
             self._static[key] = info
         return info
 
@@ -534,8 +552,9 @@ class Sampler:
             st = parse_stat(_read(os.path.join(d, "stat")))
             if st is None:
                 continue                                   # gone meanwhile
-            name, comm, cmdline, exe, uid, user = self._static_info(pid, d, st)
+            name, comm, cmdline, exe, uid, user, steam = self._static_info(pid, d, st)
             p = Proc(pid=pid, name=name, comm=comm, cmdline=cmdline, exe=exe, uid=uid, user=user, ppid=st["ppid"],
+                     steam=steam,
                      threads=st["threads"], rss=st["rss"], ticks=st["ticks"], cpu_time=st["ticks"] / CLK_TCK,
                      start_ticks=st["start"], started=self.boot_time + st["start"] / CLK_TCK, state=st["state"])
             if "io" in want:
