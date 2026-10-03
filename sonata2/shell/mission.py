@@ -13,7 +13,8 @@ import time
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import GLib, Gtk  # noqa: E402
+gi.require_version("Adw", "1")
+from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from ..wl.wfipc import WayfireIPC  # noqa: E402
 from . import layer, monitors  # noqa: E402
@@ -29,6 +30,8 @@ class MissionBackdrop:
         self.windows = {}             # connector -> window
         self.active = set()           # (plugin, connector)
         self.ipc = WayfireIPC()
+        self._textures = {}           # dark? -> decoded wallpaper (kept until system.json changes)
+        self._prefs_mon = None
         if layer.layer_shell() and self.ipc.available:
             self.ipc.watch(["plugin-activation-state-changed"], self._event)
 
@@ -72,13 +75,26 @@ class MissionBackdrop:
         win = self._window(name)
         if win is None:
             return
-        win.backdrop.texture = wallpaper_texture()      # the wallpaper of the moment (Dark Mode...)
-        win.backdrop.queue_draw()
+        tex = self._wallpaper()                         # the wallpaper of the moment (Dark Mode...)
+        if win.backdrop.texture is not tex:
+            win.backdrop.texture = tex
+            win.backdrop.queue_draw()
         if not win.get_visible():
             win.set_opacity(0.0)
             win.present()
             layer.set_input_region(win, [])
         self._fade(win, 1.0)
+
+    def _wallpaper(self):
+        """The wallpaper texture, decoded once per Light/Dark picture (not
+        on every Mission Control open); a wallpaper change drops the cache."""
+        if self._prefs_mon is None:
+            from .. import prefs
+            self._prefs_mon = prefs.watch(lambda *_a: self._textures.clear())
+        dark = Adw.StyleManager.get_default().get_dark()
+        if dark not in self._textures:
+            self._textures[dark] = wallpaper_texture()
+        return self._textures[dark]
 
     def _hide(self, name):
         win = self.windows.get(name)
@@ -86,14 +102,20 @@ class MissionBackdrop:
             self._fade(win, 0.0, lambda: win.set_visible(False))
 
     def _fade(self, win, to, done=None):
+        # a new fade replaces the running one: scale off then on again within
+        # FADE_MS, the old fade-out's done() hid the backdrop while scale was on
+        old = getattr(win, "_fade_src", 0)
+        if old:
+            GLib.source_remove(old)
         start, frm = time.monotonic(), win.get_opacity()
 
         def step():
             t = min(1.0, (time.monotonic() - start) * 1000 / FADE_MS)
             win.set_opacity(frm + (to - frm) * (1 - (1 - t) ** 3))
             if t >= 1:
+                win._fade_src = 0
                 if done:
                     done()
                 return False
             return True
-        GLib.timeout_add(16, step)
+        win._fade_src = GLib.timeout_add(16, step)

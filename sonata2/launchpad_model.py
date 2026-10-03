@@ -44,6 +44,10 @@ def folder_name(categories_a, categories_b) -> str:
     return "Untitled Folder"
 
 
+def _list(v) -> list:
+    return v if isinstance(v, list) else []
+
+
 KEPT_KEYS = ("link",)     # a folder's other keys kept (folder_link.py: the Dock's copy)
 
 
@@ -51,10 +55,12 @@ class Model:
     def __init__(self, data: dict, installed: dict):
         """installed: desktop id -> display name (apps that should be shown)."""
         self.installed = installed
-        self.pages = [list(p) for p in (data or {}).get("pages", [])]
-        self.hidden = list((data or {}).get("hidden", []))
+        data = data if isinstance(data, dict) else {}
+        # a hand-edited / older launchpad.json: anything that isn't a list is dropped
+        self.pages = [list(p) for p in _list(data.get("pages")) if isinstance(p, list)]
+        self.hidden = [a for a in _list(data.get("hidden")) if isinstance(a, str)]
         # the page size the pages were filled for ((cols, rows); () = unknown)
-        self.grid = tuple((data or {}).get("grid") or ())
+        self.grid = tuple(data.get("grid") or ()) if isinstance(data.get("grid"), list) else ()
         self.reconcile()
 
     # -- persistence -------------------------------------------------------------
@@ -70,17 +76,19 @@ class Model:
             out = []
             for item in page:
                 if is_folder(item):
-                    apps = [a for a in item.get("apps", []) if a in self.installed and a not in seen]
+                    apps = [a for a in _list(item.get("apps"))
+                            if isinstance(a, str) and a in self.installed and a not in seen]
                     seen.update(apps)
                     if len(apps) > 1:
-                        f = {"folder": item.get("folder") or "Untitled Folder", "apps": apps}
+                        name = item.get("folder")
+                        f = {"folder": name if isinstance(name, str) and name else "Untitled Folder", "apps": apps}
                         for k in KEPT_KEYS:             # the Dock link, the lock
                             if item.get(k):
                                 f[k] = item[k]
                         out.append(f)
                     elif apps:
                         out.append(apps[0])
-                elif item in self.installed and item not in seen:
+                elif isinstance(item, str) and item in self.installed and item not in seen:
                     seen.add(item)
                     out.append(item)
             pages.append(out)

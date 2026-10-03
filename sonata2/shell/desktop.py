@@ -415,7 +415,10 @@ class Desktop(Gtk.Fixed):
                 if cut:
                     self.get_clipboard().set_content(None)
             else:
-                ops.paste_image(self, self.dir)                 # a copied picture becomes a file
+                ops.paste_image(self, self.dir,                 # a copied picture becomes a file
+                                on_error=lambda e: ui.dialog.alert(
+                                    "The picture couldn’t be pasted.", getattr(e, "message", str(e)),
+                                    [("ok", "OK", "suggested")]))
         ops.read_clipboard(self, got)
 
     def new_folder(self, at=None) -> None:

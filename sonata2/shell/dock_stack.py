@@ -12,13 +12,14 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
-from .. import config, ui  # noqa: E402
+from .. import ui  # noqa: E402
 
 STACK_DEFAULTS = {"display": "stack", "view": "grid", "sort": "added"}
 SORTS = (("name", "Name"), ("added", "Date Added"), ("modified", "Date Modified"),
          ("kind", "Kind"))
 MAX_ITEMS = 60
 GRID_COLS, GRID_ICON = 5, 48
+REFRESH_MS = 300       # monitor events coalesced before the folder is listed again
 
 ui.register("""
 popover.stack-panel { background: none; box-shadow: none; padding: 0; }
@@ -123,7 +124,7 @@ class StackRow:
 
     def _save(self) -> None:
         self.dock.cfg["stacks"] = [t.spec for t in self._tiles]
-        config.save("dock", self.dock.cfg)
+        self.dock.save_cfg()            # the chosen icon size, not the shrunk-to-fit one
 
     def add(self, path: str) -> None:
         if not os.path.isdir(path) or any(t.spec["path"] == path for t in self._tiles):
@@ -132,6 +133,7 @@ class StackRow:
         self._save()
 
     def remove(self, tile) -> None:
+        self._unwatch(tile)
         self._tiles.remove(tile)
         tile.label.unparent()
         self.dock.remove(tile)
@@ -149,8 +151,34 @@ class StackRow:
         self._tiles.append(tile)
         self.refresh_icon(tile)
         mon = Gio.File.new_for_path(spec["path"]).monitor_directory(Gio.FileMonitorFlags.NONE, None)
-        mon.connect("changed", lambda *_: self.refresh_icon(tile))
+        mon.connect("changed", lambda *_: self._refresh_later(tile))
+        tile.stack_monitor, tile.stack_src = mon, 0
         self._monitors.append(mon)
+
+    def _refresh_later(self, tile) -> None:
+        """A burst of changes (a download writing) re-lists the folder once."""
+        if not tile.stack_src:
+            def run():
+                tile.stack_src = 0
+                self.refresh_icon(tile)
+                return False
+            tile.stack_src = GLib.timeout_add(REFRESH_MS, run)
+
+    def _unwatch(self, tile) -> None:
+        mon = getattr(tile, "stack_monitor", None)
+        if mon is not None:
+            mon.cancel()
+            if mon in self._monitors:
+                self._monitors.remove(mon)
+            tile.stack_monitor = None
+        if getattr(tile, "stack_src", 0):
+            GLib.source_remove(tile.stack_src)
+            tile.stack_src = 0
+
+    def detach(self) -> None:
+        """The Dock is replaced: stop watching every stack's folder."""
+        for tile in self._tiles:
+            self._unwatch(tile)
 
     def refresh_icon(self, tile) -> None:
         spec = tile.spec

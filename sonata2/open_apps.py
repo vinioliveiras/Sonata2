@@ -28,18 +28,16 @@ def _read(name: str) -> list:
     try:
         with open(os.path.join(_dir(), name), encoding="utf-8") as f:
             data = json.load(f)
-        return [i for i in data.get("apps", []) if isinstance(i, str)]
+        apps = data.get("apps", [])
+        return [i for i in apps if isinstance(i, str)] if isinstance(apps, list) else []
     except (OSError, ValueError, AttributeError):
         return []
 
 
 def _write(name: str, ids) -> None:
-    os.makedirs(_dir(), exist_ok=True)
-    path = os.path.join(_dir(), name)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"apps": list(ids)}, f)
-    os.replace(tmp, path)
+    from .config import atomic_write
+    # unique temp (Dock and Feedbacker both write here); a cache: no fsync on the main loop
+    atomic_write(os.path.join(_dir(), name), json.dumps({"apps": list(ids)}).encode(), fsync=False)
 
 
 def rotate_after_crash() -> None:

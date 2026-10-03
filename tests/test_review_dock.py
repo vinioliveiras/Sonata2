@@ -152,9 +152,6 @@ class LaunchpadModelTest(unittest.TestCase):
         self.assertIsNone(M.decode_folder(bad_apps))
         self.assertIsNone(M.decode_folder(b"bytes"))
 
-    # BUG: a launchpad.json folder with "apps": null (hand-edited / older
-    # writer) makes Model() raise TypeError -> Launchpad can't start.
-    @unittest.expectedFailure
     def test_corrupt_folder_entry_does_not_crash(self):
         """A malformed folder entry is dropped instead of crashing the Launchpad."""
         m = M.Model({"pages": [[{"folder": "F", "apps": None}, "app000"]]}, installed(1))
@@ -183,10 +180,6 @@ class DockFolderModelTest(unittest.TestCase):
         self.assertEqual(f["apps"], ["a"])
         self.assertEqual(lp, {"folder": "W", "apps": ["a", "b"]})
 
-    # BUG: check_password's thread only schedules an idle callback; the idle
-    # lambda itself calls pam.authenticate, so PAM (with its fail delay)
-    # runs on the GTK main loop and freezes the Dock.
-    @unittest.expectedFailure
     def test_password_checked_off_the_main_thread(self):
         """PAM runs in the worker thread; only the result comes back on the main loop."""
         seen, result = [], []
@@ -235,9 +228,6 @@ class OpenAppsTest(unittest.TestCase):
             json.dump({"apps": ["a", 3, None, "b"]}, f)
         self.assertEqual(O._read(O.FILE), ["a", "b"])
 
-    # BUG: _read catches ValueError/AttributeError but not TypeError:
-    # {"apps": 5} raises and breaks Feedbacker's before_crash().
-    @unittest.expectedFailure
     def test_read_non_list_apps(self):
         """{"apps": <not a list>} reads as empty instead of raising."""
         os.makedirs(O._dir(), exist_ok=True)
@@ -280,10 +270,6 @@ class DropHelpersTest(unittest.TestCase):
         self.assertFalse(dock_drop.can_open(None, [Gio.File.new_for_path("/tmp")]))
         self.assertFalse(dock_drop.can_open(mock.Mock(), []))
 
-    # BUG: under GLib 2.80 + GioUnix (apps.DesktopAppInfo), get_filename is
-    # bound unbound ("takes exactly 1 argument"); app_file / set_open_at_login /
-    # Launchpad's "Show in Files" raise TypeError (tests.test_dock fails too).
-    @unittest.expectedFailure
     def test_app_file_survives_unbound_get_filename(self):
         """Open File Location works whatever way PyGObject binds get_filename."""
         class Info:
@@ -397,10 +383,6 @@ class MissionTest(unittest.TestCase):
             settle(mission.FADE_MS + 120)
         self.assertFalse(win.visible)
 
-    # BUG: _fade never cancels a running fade: scale turned off and on again
-    # within FADE_MS -> the old fade-out finishes last-but-one and its done()
-    # hides the window while scale is active (no backdrop behind the windows).
-    @unittest.expectedFailure
     def test_quick_off_on_keeps_backdrop(self):
         """Scale toggled off then on quickly: the backdrop stays shown."""
         mission, mb, win = self.make()
@@ -414,6 +396,95 @@ class MissionTest(unittest.TestCase):
             settle(mission.FADE_MS + 200)
         self.assertTrue(win.visible)
         self.assertAlmostEqual(win.opacity, 1.0, places=2)
+
+
+# -- fixes without a widget ------------------------------------------------------------------------------
+class ReviewFixTest(unittest.TestCase):
+    def test_corrupt_layout_shapes(self):
+        """pages/hidden/apps of the wrong type (hand-edited launchpad.json) are dropped."""
+        m = M.Model({"pages": None, "hidden": 5}, installed(2))
+        self.assertEqual(m.all_apps(), ["app000", "app001"])
+        m = M.Model({"pages": [[["app000"], {"folder": 3, "apps": ["app000", "app001"]}, 7], "x"]},
+                    installed(2))
+        self.assertEqual(m.pages, [[{"folder": "Untitled Folder", "apps": ["app000", "app001"]}]])
+        self.assertEqual(M.Model("junk", installed(1)).all_apps(), ["app000"])
+
+    def test_open_apps_written_atomically(self):
+        """open-apps.json goes through config.atomic_write (unique temp, no shared .tmp)."""
+        with mock.patch.object(config, "atomic_write") as aw:
+            O._write(O.FILE, ["a"])
+        path, data = aw.call_args[0][:2]
+        self.assertEqual(path, os.path.join(O._dir(), O.FILE))
+        self.assertEqual(json.loads(data), {"apps": ["a"]})
+
+    def test_open_at_login_survives_unbound_get_filename(self):
+        """Open at Login copies the .desktop file whatever way get_filename is bound."""
+        src = tempfile.NamedTemporaryFile(suffix=".desktop", delete=False)
+        src.write(b"[Desktop Entry]\n")
+        src.close()
+
+        class Info:
+            def get_id(self):
+                return "zz-review.desktop"
+            get_filename = staticmethod(lambda self: src.name)
+        with mock.patch.object(dock_menu, "AUTOSTART_DIR", tempfile.mkdtemp()):
+            dock_menu.set_open_at_login(Info(), True)
+            self.assertTrue(dock_menu.opens_at_login("zz-review"))
+
+    def test_launchpad_never_calls_get_filename(self):
+        """Launchpad's Show in Files / drag to Dock use apps.app_filename (GioUnix-safe)."""
+        import inspect
+        from sonata2.shell import launchpad as L
+        self.assertNotIn(".get_filename(", inspect.getsource(L))
+        self.assertNotIn(".get_filename(", inspect.getsource(dock_menu))
+
+    def test_launchpad_search_meta_built_once(self):
+        """Search text for the apps is built once, again only when the apps change."""
+        from sonata2.shell import launchpad as L
+        info = mock.Mock()
+        info.get_display_name.return_value = "X"
+        info.get_executable.return_value = "x"
+        ns = types.SimpleNamespace(installed={"app000": info, "app001": info},
+                                   model=M.Model({}, installed(2)))
+        with mock.patch.object(L.apps, "_entry_field", return_value="") as field, \
+                mock.patch("sonata2.shell.spotlight._keywords", return_value=""):
+            first = L.Launchpad._search_meta(ns)
+            self.assertIs(L.Launchpad._search_meta(ns), first)
+            self.assertEqual(field.call_count, 2)
+            ns.model.hide("app001")
+            self.assertEqual(list(L.Launchpad._search_meta(ns)), ["app000"])
+
+    def test_launchpad_dock_config_cached(self):
+        """dock.json is read once for the grid math, not on every allocation."""
+        from sonata2.shell import launchpad as L
+        ns = types.SimpleNamespace(_dock_cfg=None)
+        with mock.patch.object(L.config, "load", return_value={"position": "bottom"}) as load:
+            for _ in range(3):
+                L.Launchpad._dock_config(ns)
+        self.assertEqual(load.call_count, 1)
+
+    def test_apps_menu_sized_for_main_display(self):
+        """Not shown yet: the Apps Menu is sized for the main display, not monitor 0."""
+        from sonata2.shell import launchpad_window as LW, monitors
+        mon = mock.Mock()
+        mon.get_geometry.return_value = types.SimpleNamespace(width=3000, height=2000)
+        ns = types.SimpleNamespace(pad=mock.Mock(), panel=mock.Mock())
+        ns.pad.get_surface.return_value = None
+        with mock.patch.object(monitors, "main", return_value=mon):
+            LW.MenuView._size(ns)
+        ns.panel.set_size_request.assert_called_once_with(*LW.panel_size(3000, 2000))
+
+    def test_mission_wallpaper_decoded_once(self):
+        """Mission Control reuses the decoded wallpaper; a settings change drops it."""
+        from sonata2.shell import mission
+        with mock.patch.object(mission.layer, "layer_shell", return_value=None):
+            mb = mission.MissionBackdrop(None)
+        with mock.patch.object(mission, "wallpaper_texture", return_value=object()) as wt:
+            first = mb._wallpaper()
+            self.assertIs(mb._wallpaper(), first)
+            mb._textures.clear()                          # what the prefs watch does
+            mb._wallpaper()
+        self.assertEqual(wt.call_count, 2)
 
 
 # -- headless widget checks (Dock with no apps) ------------------------------------------------------
@@ -474,11 +545,6 @@ class DockWidgetTest(unittest.TestCase):
             self.assertEqual(sorted(d.cfg["pinned"]), ["a", "b", "c"])
             self.assertEqual(d.cfg["folders"], {})
 
-    # BUG: StackRow._save writes self.dock.cfg directly (config.save), so
-    # icon_size is the shrunk-to-fit size, not the size the user chose
-    # (Dock.save_cfg writes user_size). Adding a stack on a full Dock
-    # permanently shrinks it.
-    @unittest.expectedFailure
     def test_stack_save_keeps_chosen_size(self):
         """Adding a stack saves the user's chosen icon size, not the fitted one."""
         d = self.dock
@@ -486,9 +552,6 @@ class DockWidgetTest(unittest.TestCase):
         d.stacks.add(tempfile.mkdtemp())
         self.assertEqual(config.load("dock", D.DEFAULTS)["icon_size"], 48)
 
-    # BUG: StackRow.remove leaves the folder's Gio.FileMonitor running (kept
-    # in _monitors, never cancelled): a leak that keeps refreshing a gone tile.
-    @unittest.expectedFailure
     def test_removed_stack_stops_watching(self):
         """Removing a stack cancels its folder monitor."""
         d = self.dock
@@ -498,22 +561,104 @@ class DockWidgetTest(unittest.TestCase):
         d.stacks.remove(tile)
         self.assertTrue(mon.is_cancelled())
 
-    # BUG: Dock.detach() (called on every rebuild: position / recents change)
-    # doesn't undo ui.on_change(self._appearance_changed) -- ui.theme has no
-    # way to remove a listener -- nor the LauncherEntry D-Bus subscription,
-    # so every rebuilt Dock (its whole widget tree) stays alive.
-    @unittest.expectedFailure
     def test_detach_drops_appearance_listener(self):
         """A detached Dock is no longer referenced by the theme's listeners."""
         from sonata2.ui import theme
         self.dock.detach()
-        self.assertFalse(any(getattr(cb, "__self__", None) is self.dock for cb in theme._listeners))
+        self.assertFalse(any(getattr(h(), "__self__", None) is self.dock for h in theme._listeners))
 
-    # BUG: _mag_animate pauses the running Adw animation, which never emits
-    # "done": its FrameStats is never stopped, so its tick callback runs
-    # every frame forever and its list of frame times grows without bound.
-    # Same pattern in DockWindow._slide and Launchpad._animate.
-    @unittest.expectedFailure
+    def test_detach_releases_bus_and_monitors(self):
+        """detach() unsubscribes LauncherEntry and cancels the Trash and stack monitors."""
+        d = self.dock
+        bus = mock.Mock()
+        d._launcher_sub = (bus, 42)
+        d.stacks.add(tempfile.mkdtemp())
+        stack_mon, trash_mon = d.stacks._monitors[-1], d._trash_mon
+        d.detach()
+        bus.signal_unsubscribe.assert_called_once_with(42)
+        self.assertTrue(stack_mon.is_cancelled())
+        self.assertTrue(trash_mon.is_cancelled())
+        self.assertEqual(d._apps_mon, (None, 0))
+
+    def test_stack_refresh_debounced(self):
+        """A burst of folder events re-lists the stack's folder once."""
+        d = self.dock
+        d.stacks.add(tempfile.mkdtemp())
+        tile = d.stacks.tiles()[-1]
+        with mock.patch.object(d.stacks, "refresh_icon") as refresh:
+            for _ in range(5):
+                d.stacks._refresh_later(tile)
+            settle(dock_stack.REFRESH_MS + 150)
+        refresh.assert_called_once_with(tile)
+
+    def test_rectangles_fetched_off_the_main_thread(self):
+        """Allocation-driven minimize targets ask Wayfire in a worker thread."""
+        seen, got = [], []
+        from sonata2.wl import wfipc
+        with mock.patch.object(wfipc.WayfireIPC, "call",
+                               lambda _s, m, *_a: (seen.append(threading.current_thread()), ["v"])[1]), \
+                mock.patch.object(self.dock, "_update_rectangles", side_effect=got.append):
+            self.dock._update_rectangles_bg()
+            for _ in range(100):
+                if got:
+                    break
+                settle(10)
+        self.assertEqual(got, [["v"]])
+        self.assertIsNot(seen[0], threading.main_thread())
+
+    def test_poof_spot_in_display_coordinates(self):
+        """The fallback puff is placed in display coordinates, just off the plate."""
+        d = self.dock
+        native = d.get_native()
+        ok, p = d.compute_point(native, D.Graphene.Point().init(100, 0))
+        x, y = d._poof_spot({"x": 100}, 1920, 1080, 96)
+        self.assertAlmostEqual(x, p.x, places=3)
+        x0, y0, _w, _h = d.plate_rect()
+        self.assertAlmostEqual(y, 1080 - native.get_height() + p.y + y0 - 48, places=3)
+
+    def test_poof_spot_side_dock(self):
+        """A left Dock: the puff goes right of the plate, at the icon's height."""
+        win = Gtk.Window()
+        side = D.Dock(bare_cfg(position="left"))
+        win.set_child(side)
+        win.present()
+        settle(150)
+        try:
+            ok, p = side.compute_point(win, D.Graphene.Point().init(0, 30))
+            x, y = side._poof_spot({"y": 30}, 1920, 1080, 96)
+            x0, _y0, pw, _h = side.plate_rect()
+            self.assertAlmostEqual(y, p.y, places=3)
+            self.assertAlmostEqual(x, p.x + x0 + pw + 48, places=3)
+        finally:
+            side.detach()
+            win.destroy()
+
+    def test_interrupted_slide_stops_frame_stats(self):
+        """Auto-hide reversed mid-slide: the first slide's FrameStats is stopped."""
+        made = []
+        real = D.ui.transition.FrameStats
+
+        class Rec(real):
+            def __init__(s, *a):
+                super().__init__(*a)
+                made.append(s)
+        host = Gtk.Window()
+        host.set_child(Gtk.Box(width_request=50, height_request=50))
+        host.present()
+        host._hidden, host._hide_anim, host.dock = False, None, self.dock
+        host._update_input = lambda: None
+        settle(50)
+        try:
+            with mock.patch.object(D.ui.transition, "FrameStats", Rec):
+                D.DockWindow._slide(host, True)
+                settle(30)
+                D.DockWindow._slide(host, False)
+                settle(D.HIDE_MS + 300)
+            self.assertEqual(len(made), 2)
+            self.assertTrue(all(s.tick is None for s in made))
+        finally:
+            host.destroy()
+
     def test_interrupted_magnify_stops_frame_stats(self):
         """Every FrameStats started by the magnification wave is stopped."""
         made = []
@@ -530,6 +675,241 @@ class DockWidgetTest(unittest.TestCase):
             settle(D.MAG_OUT_MS + 300)
         self.assertEqual(len(made), 2)
         self.assertTrue(all(s.tick is None for s in made))
+
+
+# -- every user-facing action animates (the real code paths) ----------------------------------------
+def source(module) -> str:
+    import inspect
+    return inspect.getsource(module)
+
+
+class AnimationTests(unittest.TestCase):
+    """Each main Dock / Launchpad action starts an animation: an Adw
+    animation playing, icons gliding (ui.transition.glide_play), a CSS
+    animation class, or a frame-clock tick."""
+
+    @classmethod
+    def setUpClass(cls):
+        from gi.repository import Adw
+        Adw.init()
+        D.ui.setup()
+
+    def setUp(self):
+        Gtk.init()
+        self.cfg = bare_cfg(magnification=True)
+        D.load_css(self.cfg)
+        info = mock.Mock()
+        info.get_display_name.return_value = "X"
+        self.patches = [mock.patch("sonata2.apps.lookup", return_value=info),
+                        mock.patch("sonata2.icons.app_icon", return_value=Gio.ThemedIcon.new("x")),
+                        mock.patch("sonata2.shell.dock_preview.attach")]
+        for p in self.patches:
+            p.start()
+        self.win = Gtk.Window()
+        self.dock = D.Dock(self.cfg)
+        self.win.set_child(self.dock)
+        self.win.present()
+        for k in ("a", "b", "c"):
+            self.dock.pin_at(k)
+        settle(200)
+        self.glides = []
+        real = D.ui.transition.glide_play
+        self.glide = mock.patch.object(D.ui.transition, "glide_play",
+                                       side_effect=lambda before, *a, **k: (self.glides.append(before),
+                                                                            real(before, *a, **k)))
+        self.glide.start()
+
+    def tearDown(self):
+        self.glide.stop()
+        for p in self.patches:
+            p.stop()
+        self.dock.detach()
+        self.win.destroy()
+
+    def playing(self, anim):
+        from gi.repository import Adw
+        return anim is not None and anim.get_state() == Adw.AnimationState.PLAYING
+
+    def test_dock_add_icon_others_slide_aside(self):
+        """Keep in Dock at a place: the icons after it glide aside."""
+        first = self.dock.app_tiles()[0]
+        self.dock.pin_at("d", before=first)
+        self.assertTrue(self.glides and self.glides[-1])
+
+    def test_dock_reorder_glides(self):
+        """Dragging an icon to another slot: the others glide."""
+        tile = self.dock.tiles["a"]
+        self.dock._move_to_slot(tile, 2)
+        self.assertTrue(self.glides and self.glides[-1])
+
+    def test_dock_drop_settles(self):
+        """A dropped icon glides from the pointer into its slot."""
+        self.dock._settle(self.dock.tiles["b"], 3.0, 3.0)
+        self.assertTrue(self.glides)
+
+    def test_dock_remove_closes_up(self):
+        """Remove from Dock: the empty slot shrinks with an Adw animation."""
+        self.dock.set_pinned("a", False)
+        slot = next(w for w in self._children() if w.has_css_class("dock-closing-slot"))
+        self.assertTrue(self.playing(slot._anim))
+
+    def test_launchpad_drag_opens_a_gap(self):
+        """An app dragged in from Launchpad: the icons make room (glide)."""
+        ok, b = self.dock.tiles["b"].compute_bounds(self.dock)
+        self.dock.show_drop_gap(b.get_x() + 2, b.get_y() + 2)
+        self.assertTrue(self.glides and self.glides[-1])
+        self.dock.hide_drop_gap()
+
+    def test_magnification_animates(self):
+        """Pointer enters: the magnification wave eases in (Adw.TimedAnimation)."""
+        self.dock._mag_animate(1.0, D.MAG_IN_MS)
+        self.assertTrue(self.playing(self.dock._mag_anim))
+
+    def test_autohide_slides(self):
+        """Auto-hide: the Dock slides out with an Adw animation."""
+        host = Gtk.Window()
+        host.set_child(Gtk.Box(width_request=40, height_request=40))
+        host.present()
+        host._hidden, host._hide_anim, host.dock = False, None, self.dock
+        host._update_input = lambda: None
+        settle(50)
+        try:
+            D.DockWindow._slide(host, True)
+            self.assertTrue(self.playing(host._hide_anim))
+        finally:
+            host.destroy()
+
+    def test_launch_bounces(self):
+        """Launching an app: its icon gets the CSS bounce animation."""
+        tile = self.dock.tiles["c"]
+        tile.bounce(D.BOUNCE_MS)
+        self.assertTrue(tile.has_css_class("launching"))
+        self.assertIn("dock-tile.launching .dock-icon { animation:", D.CSS)
+        tile._stop_bounce()
+
+    def test_folder_panel_zooms_in(self):
+        """Opening a Dock folder: its panel zooms in (CSS animation class)."""
+        key = self.dock.make_folder(["a", "b"], name="W")
+        settle(50)
+        pop = F.open_panel(self.dock, self.dock.tiles[key])
+        try:
+            self.assertTrue(pop.view.has_css_class("dock-folder-view"))
+            self.assertIn("dock-folder-view { animation:", source(F))
+        finally:
+            pop.popdown()
+            settle(50)
+
+    def test_minimize_genie_aimed_at_icon(self):
+        """Minimize (genie): the window's target is its Dock icon's rectangle."""
+        mgr = mock.Mock()
+        self.dock.manager = mgr
+        try:
+            self.dock._aim_at(self.dock.tiles["a"], ["w"])
+        finally:
+            self.dock.manager = None
+        args = mgr.set_rectangle.call_args[0]
+        self.assertEqual(args[0], "w")
+        self.assertGreater(args[4], 0)
+        self.assertGreater(args[5], 0)
+
+    def test_poof_plays(self):
+        """Dragged off the Dock: the puff of smoke runs on the frame clock."""
+        w = poof.Poof(None, None, 0, 0)
+        w.present()
+        settle(120)
+        t = w.cloud.t
+        w.destroy()
+        self.assertGreater(t, 0.0)
+
+    def test_mission_backdrop_fades(self):
+        """Mission Control: the backdrop fades in over several frames."""
+        from sonata2.shell import mission
+        with mock.patch.object(mission.layer, "layer_shell", return_value=None):
+            mb = mission.MissionBackdrop(None)
+        win = FakeWin()
+        win.opacity = 0.0
+        mb._fade(win, 1.0)
+        settle(mission.FADE_MS // 3)
+        self.assertTrue(0.0 < win.opacity < 1.0)
+        settle(mission.FADE_MS + 100)
+        self.assertAlmostEqual(win.opacity, 1.0, places=2)
+
+    def _children(self):
+        out, w = [], self.dock.get_first_child()
+        while w is not None:
+            out.append(w)
+            w = w.get_next_sibling()
+        return out
+
+
+class LaunchpadAnimationTests(unittest.TestCase):
+    """Launchpad open / close / page flip / folders, and the Apps Menu."""
+
+    @classmethod
+    def setUpClass(cls):
+        from gi.repository import Adw
+        Adw.init()
+        D.ui.setup()
+
+    def setUp(self):
+        from tests.test_launchpad_window import APPS
+        from sonata2.shell import launchpad as L, launchpad_window as LW
+        self.L, self.LW = L, LW
+        config.save("launchpad", {"pages": [], "hidden": []})
+        config.save(LW.NAME, {})
+        self.p = mock.patch.object(L, "installed_apps", return_value=dict(APPS))
+        self.p.start()
+        self.pad = L.Launchpad(None)
+        self.pad._dock_above = lambda *_a: None
+        self.pad.set_default_size(1400, 900)
+
+    def tearDown(self):
+        self.pad.destroy()
+        self.p.stop()
+        config.save(self.LW.NAME, {})
+
+    def playing(self, anim):
+        from gi.repository import Adw
+        return anim is not None and anim.get_state() == Adw.AnimationState.PLAYING
+
+    def test_open_and_close_animate(self):
+        """Launchpad opens and closes with an Adw animation of its zoom/fade."""
+        self.pad.open_launchpad()
+        for _ in range(100):
+            if self.pad._anim is not None:
+                break
+            settle(10)
+        self.assertTrue(self.playing(self.pad._anim))
+        settle(self.L.OPEN_MS + 200)
+        self.pad.close_launchpad()
+        self.assertTrue(self.playing(self.pad._anim))
+        settle(self.L.CLOSE_MS + 200)
+        self.assertFalse(self.pad.get_visible())
+
+    def test_page_flip_animates(self):
+        """Turning a page scrolls the carousel with its animation."""
+        self.pad.open_launchpad()
+        settle(300)
+        with mock.patch.object(self.pad.carousel, "scroll_to") as scroll:
+            self.pad._flip(0)
+        self.assertTrue(scroll.call_args[0][1])          # animate=True
+
+    def test_folder_opens_with_zoom(self):
+        """A Launchpad folder opens with the folder-in CSS animation."""
+        self.pad.open_launchpad()
+        settle(300)
+        folder = {"folder": "F", "apps": ["gimp", "calc"]}
+        self.pad._open_folder(folder)
+        self.assertTrue(self.pad.folder_view[0].has_css_class("lp-folder-view"))
+        self.assertIn("lp-folder-view { animation:", source(self.L))
+
+    def test_apps_menu_opens_animated(self):
+        """The Apps Menu (Launchpad as a window) opens with its CSS animation."""
+        config.save(self.LW.NAME, {"style": "window"})
+        self.pad.open_launchpad()
+        settle(200)
+        self.assertTrue(self.pad.menu.panel.has_css_class("opening"))
+        self.assertIn("lpw-panel.opening { animation:", source(self.LW))
 
 
 if __name__ == "__main__":

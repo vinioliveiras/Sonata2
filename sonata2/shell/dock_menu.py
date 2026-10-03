@@ -27,7 +27,8 @@ def app_file(info) -> str:
         path = exe if os.path.isabs(exe) else shutil.which(exe) if exe else None
         if path and os.path.exists(path) and not path.startswith("/snap/bin/"):
             return os.path.realpath(path)
-    return info.get_filename() or ""
+    from ..apps import app_filename
+    return app_filename(info)
 
 
 def show_in_files(path: str) -> None:
@@ -51,8 +52,12 @@ def set_open_at_login(info, on: bool) -> None:
     """XDG autostart entry (a copy of the app's .desktop)."""
     dst = autostart_path(info.get_id()[:-8])
     if on:
+        from ..apps import app_filename
+        src = app_filename(info)
+        if not src:
+            return
         os.makedirs(AUTOSTART_DIR, exist_ok=True)
-        shutil.copyfile(info.get_filename(), dst)
+        shutil.copyfile(src, dst)
     elif os.path.exists(dst):
         os.remove(dst)
 
@@ -66,22 +71,21 @@ def _trash_count() -> int:
 
 
 def empty_trash() -> None:
-    """Permanently delete the Trash's contents (via gvfs trash:///, which also
-    covers trash folders on other drives; plain files as a fallback)."""
-    from .. import sounds
-    sounds.play("empty-trash")
-    trash = Gio.File.new_for_uri("trash:///")
-    try:
-        for child in trash.enumerate_children("standard::name", Gio.FileQueryInfoFlags.NONE, None):
-            trash.get_child(child.get_name()).delete(None)
-        return
-    except GLib.Error:
-        pass
-    data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
-    for sub in ("files", "info"):
-        d = os.path.join(data, "Trash", sub)
-        for e in os.scandir(d) if os.path.isdir(d) else ():
-            (shutil.rmtree if e.is_dir(follow_symlinks=False) else os.remove)(e.path)
+    """Permanently delete the Trash's contents: Files' own (a worker thread,
+    gvfs trash:/// covers other drives too; the sound only once something is
+    erased). Without gvfs: the plain Trash folders."""
+    from ..files import ops
+
+    def plain(*_a):
+        data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+        for sub in ("files", "info"):
+            d = os.path.join(data, "Trash", sub)
+            for e in os.scandir(d) if os.path.isdir(d) else ():
+                try:
+                    (shutil.rmtree if e.is_dir(follow_symlinks=False) else os.remove)(e.path)
+                except OSError:
+                    pass
+    ops.empty_trash(on_error=lambda *_a: plain())
 
 
 def confirm_empty_trash() -> None:

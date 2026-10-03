@@ -211,9 +211,16 @@ class MenuView:
     def is_open(self) -> bool:
         return self.pad.get_visible() and not self.panel.has_css_class("closing")
 
-    def _size(self) -> None:
-        display = self.pad.get_display()
-        mon = display.get_monitors().get_item(0) if display and display.get_monitors().get_n_items() else None
+    def _size(self, mon=None) -> None:
+        """The panel sized for the display it opens on (the one its surface
+        was last on, else the main display -- not always the first one)."""
+        if mon is None:
+            display = self.pad.get_display()
+            surface = self.pad.get_surface()
+            mon = display.get_monitor_at_surface(surface) if display and surface else None
+        if mon is None:
+            from . import monitors
+            mon = monitors.main()
         w, h = (mon.get_geometry().width, mon.get_geometry().height) if mon else (1600, 1000)
         pw, ph = panel_size(w, h)
         self.panel.set_size_request(pw, ph)
@@ -227,6 +234,11 @@ class MenuView:
         self.panel.remove_css_class("closing")
         self.panel.remove_css_class("opening")
         self.pad.present()
+        surface = self.pad.get_surface()
+        if surface is not None and getattr(self, "_mon_surface", None) is not surface:
+            # the compositor puts it on the focused display: sized again for that one
+            self._mon_surface = surface
+            surface.connect("enter-monitor", lambda _s, m: self._size(m))
         self.panel.add_css_class("opening")
         self.pad.search.grab_focus()
         self.scroll.get_vadjustment().set_value(0)

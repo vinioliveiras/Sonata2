@@ -363,6 +363,10 @@ class Launchpad(Gtk.ApplicationWindow):
         Gio.AppInfoMonitor.get().connect("changed", lambda *_: self._apps_changed())
         self._cfg_mon = config.watch("launchpad", self._config_changed)
         self._icons_mon = config.watch("icons", lambda: (icons.forget_prefs(), self.widgets.clear(), self.render()))   # App Icons
+        # dock.json read once, again only when it changes (the grid math needs
+        # the Dock's size on every allocation)
+        self._dock_cfg = None
+        self._dock_mon = config.watch("dock", lambda: setattr(self, "_dock_cfg", None))
         # Wayfire raises the layer surface you press on: any press here (swiping
         # pages, holding an icon) would put Launchpad over the Dock -- the Dock
         # is put back on top right away, it always stays above Launchpad
@@ -386,7 +390,7 @@ class Launchpad(Gtk.ApplicationWindow):
         # as many rows as the display has room for (search, page dots and the Dock
         # take their share): 5 on 16:9 screens, 6 on taller ones like 16:10
         from . import dock as D
-        dcfg = config.load("dock", D.DEFAULTS)
+        dcfg = self._dock_config()
         room = max(1, h - 160 - (D.reserved(dcfg) if dcfg.get("position", "bottom") == "bottom" else 0))
         width = max(1, w - 2 * side - (D.reserved(dcfg) if dcfg.get("position") in ("left", "right") else 0))
         cols = 7 if width >= 900 else width // 150               # macOS: 7; fewer on narrow screens
@@ -575,9 +579,8 @@ class Launchpad(Gtk.ApplicationWindow):
             if not pw:
                 return
             entry.set_sensitive(False)
-            import threading
-            user = GLib.get_user_name()
-            threading.Thread(target=lambda: GLib.idle_add(done, pam.authenticate(user, pw)), daemon=True).start()
+            from .dock_folder import check_password      # PAM in a thread (the Dock's folders too)
+            check_password(pw, done)
         entry.connect("activate", check)
 
     def _config_changed(self) -> None:
@@ -703,11 +706,17 @@ class Launchpad(Gtk.ApplicationWindow):
             return GLib.SOURCE_REMOVE
         self.bin.add_tick_callback(first_frame)
 
+    def _dock_config(self) -> dict:
+        if getattr(self, "_dock_cfg", None) is None:
+            from . import dock as D
+            self._dock_cfg = config.load("dock", D.DEFAULTS)
+        return self._dock_cfg
+
     def _clear_dock(self) -> None:
         """The Dock stays over Launchpad (macOS): the grid and the page dots
         keep out of its way, at whichever edge it is."""
         from . import dock as D
-        cfg = config.load("dock", D.DEFAULTS)
+        cfg = self._dock_config()
         room = D.reserved(cfg) + 8
         edge = cfg.get("position", "bottom")
         self.col.set_margin_bottom(room if edge == "bottom" else 0)
@@ -731,7 +740,9 @@ class Launchpad(Gtk.ApplicationWindow):
 
     def _animate(self, to, ms, done=None) -> None:
         if self._anim:
-            self._anim.pause()
+            self._anim.pause()          # a paused animation never emits "done":
+        if getattr(self, "_anim_stats", None):
+            self._anim_stats.stop()     # its frame counter is stopped here
 
         def step(v):
             self.bin.progress = v
@@ -742,7 +753,7 @@ class Launchpad(Gtk.ApplicationWindow):
         # macOS: a quick start that settles softly, both ways
         self._anim.set_easing(Adw.Easing.EASE_OUT_QUART if to else Adw.Easing.EASE_OUT_CUBIC)
 
-        stats = ui.transition.FrameStats(self.bin, "launchpad " + ("open" if to else "close"))
+        stats = self._anim_stats = ui.transition.FrameStats(self.bin, "launchpad " + ("open" if to else "close"))
 
         def finished(*_a):
             stats.stop()
@@ -870,11 +881,7 @@ class Launchpad(Gtk.ApplicationWindow):
                 menu.show()
             self._select(-1)
             return
-        from .spotlight import _keywords
-        meta = {k: (v.get_display_name(), " ".join(filter(None, [
-            apps._entry_field(v, "get_generic_name", "GenericName"), _keywords(v), v.get_executable()])))
-            for k, v in self.installed.items() if k in set(self.model.all_apps())}
-        found = M.search(meta, q)
+        found = M.search(self._search_meta(), q)
         results = menu.results if menu is not None else self.results
         results.fill([LaunchItem(self, a, self._tile_size()) for a in found] or
                      [Gtk.Label(label="No Results", css_classes=["lp-empty"])])
@@ -883,6 +890,20 @@ class Launchpad(Gtk.ApplicationWindow):
         if menu is not None:
             menu.show()
         self._select(0 if found else -1)
+
+    def _search_meta(self) -> dict:
+        """id -> (name, extra text) of the apps shown, built once while the
+        apps stay the same (it was rebuilt, O(N^2), on every key typed)."""
+        shown = frozenset(self.model.all_apps())
+        cache = getattr(self, "_meta_cache", None)
+        if cache is not None and cache[0] is self.installed and cache[1] == shown:
+            return cache[2]
+        from .spotlight import _keywords
+        meta = {k: (v.get_display_name(), " ".join(filter(None, [
+            apps._entry_field(v, "get_generic_name", "GenericName"), _keywords(v), v.get_executable()])))
+            for k, v in self.installed.items() if k in shown}
+        self._meta_cache = (self.installed, shown, meta)
+        return meta
 
     def _visible_items(self) -> list:
         if self.mode == "menu" and self.menu is not None:
@@ -1031,10 +1052,11 @@ class Launchpad(Gtk.ApplicationWindow):
             g = gpu.menu_item(info, Item) if info else None
             if g:
                 sections.append([g])
-            if info and info.get_filename():
+            path = apps.app_filename(info) if info else ""
+            if path:
                 from .dock_menu import show_in_files
                 sections.append([Item("Show in Files", lambda: self.close_launchpad(
-                    lambda: show_in_files(info.get_filename())))])
+                    lambda: show_in_files(path)))])
             hide = [Item("Hide", lambda: self.hide_app(item))]      # into the Hidden folder
             if info and not (info.get_id() or "").startswith(PROTECTED):
                 hide.append(Item("Move to Trash", lambda: self.ask_delete(item)))
@@ -1132,10 +1154,11 @@ class Launchpad(Gtk.ApplicationWindow):
                 providers.append(Gdk.ContentProvider.new_for_bytes(
                     "text/uri-list", GLib.Bytes.new((uri + "\r\n").encode())))
             info = None if M.is_folder(widget.item) else self.installed.get(widget.item)
-            if info and info.get_filename():        # lets the Dock pin it
+            path = apps.app_filename(info) if info else ""
+            if path:        # lets the Dock pin it
                 # plain text/uri-list: a GdkFileList value would also offer the portal's
                 # file-transfer format, which the Dock picks first and can't convert
-                uri = Gio.File.new_for_path(info.get_filename()).get_uri()
+                uri = Gio.File.new_for_path(path).get_uri()
                 providers.append(Gdk.ContentProvider.new_for_bytes(
                     "text/uri-list", GLib.Bytes.new((uri + "\r\n").encode())))
             return Gdk.ContentProvider.new_union(providers)

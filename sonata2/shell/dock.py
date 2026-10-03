@@ -463,6 +463,7 @@ def toggle_show_desktop(manager) -> str:
 # events that move windows between displays: their genie targets follow.
 _DOCKS = []
 _WATCH = {"on": False}
+_ASK = object()       # "fetch Wayfire's window list now" (_update_rectangles / _windows_here)
 
 
 def _watch_outputs() -> None:
@@ -514,7 +515,8 @@ class Dock(Gtk.Box):
                 self._apps_src = GLib.timeout_add(800, lambda: (setattr(self, "_apps_src", 0),
                                                                 self.forget_missing(), False)[2])
         hid = mon.connect("changed", apps_changed)
-        self.connect("destroy", lambda *_: mon.disconnect(hid))
+        self._apps_mon = (mon, hid)          # undone by detach() (a rebuilt Dock isn't destroyed)
+        self.connect("destroy", lambda *_: self._drop_apps_mon())
         self.hide_amount = 0.0  # 0 shown .. 1 slid out (auto-hide), set by the host
         # No CSS padding: the plate is painted over the allocation's edge
         # side, so padding would offset it. Spacers + a minimum thickness
@@ -558,7 +560,7 @@ class Dock(Gtk.Box):
         self._watch_trash()
         self._sync_src = 0
         self._setup_magnification()
-        ui.on_change(self._appearance_changed)
+        self._theme_handle = ui.on_change(self._appearance_changed)
         if self.manager:
             self.manager.listeners.append(self._schedule_sync)
             self._schedule_sync()
@@ -571,6 +573,28 @@ class Dock(Gtk.Box):
             self.manager.listeners.remove(self._schedule_sync)
         if self in _DOCKS:
             _DOCKS.remove(self)
+        # everything shared that still points at this Dock: the old widget tree
+        # stayed alive (and kept working) after every rebuild
+        from ..ui import theme
+        theme.off_change(getattr(self, "_theme_handle", None))
+        self._drop_apps_mon()
+        if self._apps_src:
+            GLib.source_remove(self._apps_src)
+            self._apps_src = 0
+        bus, sub = getattr(self, "_launcher_sub", (None, 0))
+        if sub:
+            bus.signal_unsubscribe(sub)
+            self._launcher_sub = (None, 0)
+        if getattr(self, "_trash_mon", None) is not None:
+            self._trash_mon.cancel()
+            self._trash_mon = None
+        self.stacks.detach()
+
+    def _drop_apps_mon(self) -> None:
+        mon, hid = getattr(self, "_apps_mon", (None, 0))
+        if hid:
+            mon.disconnect(hid)
+            self._apps_mon = (None, 0)
 
     def _spacer(self) -> Gtk.Box:
         return Gtk.Box(height_request=PAD_SIDE) if self.vertical else Gtk.Box(width_request=PAD_SIDE)
@@ -771,7 +795,9 @@ class Dock(Gtk.Box):
         if not self.cfg["magnification"]:
             return
         if self._mag_anim:
-            self._mag_anim.pause()
+            self._mag_anim.pause()           # a paused animation never emits "done":
+        if getattr(self, "_mag_stats", None):
+            self._mag_stats.stop()           # its frame counter is stopped here
 
         def step(v):
             self._mag_strength = v
@@ -779,7 +805,7 @@ class Dock(Gtk.Box):
         self._mag_anim = Adw.TimedAnimation.new(self, self._mag_strength, to, ms,
                                                 Adw.CallbackAnimationTarget.new(step))
         self._mag_anim.set_easing(Adw.Easing.EASE_OUT_CUBIC)
-        stats = ui.transition.FrameStats(self, "dock magnify " + ("in" if to else "out"))
+        stats = self._mag_stats = ui.transition.FrameStats(self, "dock magnify " + ("in" if to else "out"))
         self._mag_anim.connect("done", lambda *_: stats.stop())
         self._mag_anim.play()
 
@@ -791,8 +817,9 @@ class Dock(Gtk.Box):
             bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         except GLib.Error:
             return
-        bus.signal_subscribe(None, "com.canonical.Unity.LauncherEntry", "Update", None, None,
-                             Gio.DBusSignalFlags.NONE, self._launcher_update)
+        sub = bus.signal_subscribe(None, "com.canonical.Unity.LauncherEntry", "Update", None, None,
+                                   Gio.DBusSignalFlags.NONE, self._launcher_update)
+        self._launcher_sub = (bus, sub)      # unsubscribed by detach()
 
     def _launcher_update(self, _c, _sender, _path, _iface, _sig, params, *_d) -> None:
         uri, props = params.unpack()
@@ -1491,7 +1518,30 @@ class Dock(Gtk.Box):
     def poof_at_tile(self, tile) -> None:
         """The puff where an icon was (a folder removed from its menu)."""
         ok, b = tile.compute_bounds(self) if tile.get_parent() is self else (False, None)
-        self._poof({"x": b.get_x() + b.get_width() / 2} if ok else {}, at_pointer=False)
+        self._poof({"x": b.get_x() + b.get_width() / 2, "y": b.get_y() + b.get_height() / 2} if ok else {},
+                   at_pointer=False)
+
+    def _poof_spot(self, d, mon_w: float, mon_h: float, size: float) -> tuple:
+        """(x, y) on the display for the puff: the last place along the Dock
+        (d["x"]/d["y"] are in the Dock's own coordinates), just off its plate
+        on the screen side. The surface spans its whole edge (layer.set_edge),
+        so the window's corner is the display's corner along that edge."""
+        native = self.get_native()
+        nw, nh = (native.get_width(), native.get_height()) if native else (self.get_width(), self.get_height())
+        ox, oy = {"bottom": (0, mon_h - nh), "left": (0, 0), "right": (mon_w - nw, 0)}[self.edge]
+        along = d.get("y" if self.vertical else "x")
+        if along is None:
+            along = (self.get_height() if self.vertical else self.get_width()) / 2
+        ok, p = self.compute_point(native, Graphene.Point().init(0 if self.vertical else along,
+                                                                  along if self.vertical else 0)) \
+            if native else (False, None)
+        dx, dy = (p.x, p.y) if ok else (0, 0)
+        x0, y0, pw, ph = self.plate_rect()          # the plate inside the Dock
+        if self.edge == "bottom":
+            return ox + dx, oy + dy + y0 - size / 2
+        if self.edge == "left":
+            return ox + dx + x0 + pw + size / 2, oy + dy
+        return ox + dx + x0 - size / 2, oy + dy
 
     def _poof(self, d, at_pointer: bool = True) -> None:
         try:
@@ -1501,9 +1551,9 @@ class Dock(Gtk.Box):
             surface = self.get_native().get_surface() if self.get_native() else None
             mon = self._monitor_of(surface)
             fallback = None
-            if mon is not None:                          # where the Dock last saw it, above the Dock
+            if mon is not None:                          # where the Dock last saw it, beside the Dock
                 g = mon.get_geometry()
-                fallback = (mon, d.get("x", g.width / 2), g.height - self.get_height() - poof.SIZE / 2)
+                fallback = (mon, *self._poof_spot(d, g.width, g.height, poof.SIZE))
             if app is None:
                 print("sonata2-dock: poof: no application", flush=True)
                 return
@@ -1570,7 +1620,7 @@ class Dock(Gtk.Box):
         for key, tile in self.tiles.items():
             tile.set_running(len(groups.get(key, ())))
         self._relayout()
-        GLib.idle_add(self._update_rectangles)
+        GLib.idle_add(self._update_rectangles_bg)
         return False
 
     def _rects_soon(self) -> None:
@@ -1586,11 +1636,37 @@ class Dock(Gtk.Box):
             if getattr(self, "_mag_strength", 0) > 0:
                 self._rects_src = GLib.timeout_add(200, run)
                 return False
-            return self._update_rectangles()
+            return self._update_rectangles_bg()
         self._rects_src = GLib.timeout_add(150, run)
 
-    def _update_rectangles(self) -> bool:
-        """Tell the compositor where each window minimizes to (its Dock icon)."""
+    def _update_rectangles_bg(self) -> bool:
+        """As _update_rectangles, with Wayfire's window list fetched in a
+        thread: icons moving (every reallocation) never wait on its IPC on the
+        main loop. One fetch at a time; changes meanwhile ask once more."""
+        if getattr(self, "_rects_busy", False):
+            self._rects_again = True
+            return False
+        self._rects_busy, self._rects_again = True, False
+
+        def work():
+            from ..wl.wfipc import WayfireIPC
+            views = WayfireIPC().call("window-rules/list-views")
+            GLib.idle_add(done, views)
+
+        def done(views):
+            self._rects_busy = False
+            if self.get_native() is not None:          # not a replaced Dock
+                self._update_rectangles(views)
+            if self._rects_again:
+                self._update_rectangles_bg()
+            return False
+        import threading
+        threading.Thread(target=work, daemon=True).start()
+        return False
+
+    def _update_rectangles(self, views=_ASK) -> bool:
+        """Tell the compositor where each window minimizes to (its Dock icon).
+        views: Wayfire's window list already fetched (default: asked here)."""
         if getattr(self, "_mag_strength", 0) > 0:        # zoomed icons: wait until they settle
             self._rects_soon()
             return False
@@ -1598,7 +1674,7 @@ class Dock(Gtk.Box):
         surface = native.get_surface() if native else None
         if not surface:
             return False
-        mine, placed = self._windows_here(surface)
+        mine, placed = self._windows_here(surface) if views is _ASK else self._windows_here(surface, views)
         several = self.cfg.get("all_displays", False)
         if placed is None and several:
             # Wayfire's IPC didn't answer (busy at login): each Dock would aim
@@ -1606,7 +1682,7 @@ class Dock(Gtk.Box):
             # windows flew to the other screen's icons (Vini). Try again soon.
             self._rects_tries = getattr(self, "_rects_tries", 0) + 1
             if self._rects_tries <= 10:
-                GLib.timeout_add(1000, lambda: (self._update_rectangles(), False)[1])
+                GLib.timeout_add(1000, lambda: (self._update_rectangles_bg(), False)[1])
             return False
         self._rects_tries = 0
         # Wayfire adds the Dock surface's *layout* position to the rectangle
@@ -1704,14 +1780,18 @@ class Dock(Gtk.Box):
                 moved = True
         return moved
 
-    def _windows_here(self, surface):
+    def _windows_here(self, surface, views=_ASK):
         """(app_id, title) of the windows on this Dock's display, and of all
-        windows Wayfire knows; (set(), None) when Wayfire IPC can't tell."""
+        windows Wayfire knows; (set(), None) when Wayfire IPC can't tell.
+        views: Wayfire's list already fetched (default: asked now)."""
         from ..wl.wfipc import WayfireIPC
         from . import monitors
         mon = self._monitor_of(surface)
         mine = monitors.connector(mon) if mon else ""
-        views = WayfireIPC().call("window-rules/list-views") if mine else None
+        if not mine:
+            views = None
+        elif views is _ASK:
+            views = WayfireIPC().call("window-rules/list-views")
         if not isinstance(views, list):
             return set(), None
         views = [v for v in views if v.get("type") in (None, "toplevel") and v.get("output-name")]
@@ -2112,7 +2192,9 @@ class DockWindow(Gtk.ApplicationWindow):
     def _slide(self, hide: bool) -> None:
         self._hidden = hide
         if self._hide_anim:
-            self._hide_anim.pause()
+            self._hide_anim.pause()          # no "done" for a paused one: stop its stats here
+        if getattr(self, "_hide_stats", None):
+            self._hide_stats.stop()
         dock = self.dock
 
         def step(v):
@@ -2121,7 +2203,7 @@ class DockWindow(Gtk.ApplicationWindow):
         self._hide_anim = Adw.TimedAnimation.new(self, dock.hide_amount, 1.0 if hide else 0.0,
                                                  HIDE_MS, Adw.CallbackAnimationTarget.new(step))
         self._hide_anim.set_easing(Adw.Easing.EASE_IN_OUT_CUBIC)
-        stats = ui.transition.FrameStats(self, "dock " + ("hide" if hide else "show"))
+        stats = self._hide_stats = ui.transition.FrameStats(self, "dock " + ("hide" if hide else "show"))
         self._hide_anim.connect("done", lambda *_: stats.stop())
         self._hide_anim.play()
         self._update_input()

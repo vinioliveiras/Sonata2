@@ -290,8 +290,10 @@ def check_password(password: str, done) -> None:
     import threading
     from .. import pam
     user = GLib.get_user_name()
-    threading.Thread(target=lambda: GLib.idle_add(lambda: (done(pam.authenticate(user, password)), False)[1]),
-                     daemon=True).start()
+    def work():
+        ok = pam.authenticate(user, password)         # PAM (and its fail delay) off the main loop
+        GLib.idle_add(lambda: (done(ok), False)[1])
+    threading.Thread(target=work, daemon=True).start()
 
 
 # -- the open folder ---------------------------------------------------------------------------
