@@ -51,3 +51,30 @@ class MenuNameTest(unittest.TestCase):
         with mock.patch.object(gpu, "has_dual_gpu", return_value=True):
             gpu.menu_item(info, Item)
         self.assertEqual(Item.call_args[0][0], "Use High-Performance Graphics")
+
+
+class NotifyOnceTest(unittest.TestCase):
+    """Vini: the same notice four times at login -- notify() waited for the
+    reply of a server living in the same process, timed out, and the notice
+    was sent again."""
+
+    def test_sent_without_waiting(self):
+        from unittest import mock
+        bus = mock.Mock()
+        owned = mock.Mock()
+        owned.unpack.return_value = (True,)
+        bus.call_sync.return_value = owned
+        with mock.patch("gi.repository.Gio.bus_get_sync", return_value=bus):
+            self.assertTrue(gpu.notify("a", "b"))
+        self.assertEqual(bus.call_sync.call_args[0][3], "NameHasOwner")       # only that waits
+        self.assertEqual(bus.call.call_args[0][3], "Notify")                  # sent, not awaited
+
+    def test_no_server_yet(self):
+        from unittest import mock
+        bus = mock.Mock()
+        owned = mock.Mock()
+        owned.unpack.return_value = (False,)
+        bus.call_sync.return_value = owned
+        with mock.patch("gi.repository.Gio.bus_get_sync", return_value=bus):
+            self.assertFalse(gpu.notify("a", "b"))
+        bus.call.assert_not_called()
