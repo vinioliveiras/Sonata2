@@ -52,7 +52,7 @@ class ShortcutsPage:
                 g.add(self._row(s))
             out.append(g)
         reset = Adw.PreferencesGroup()
-        btn = Gtk.Button(label="Restore Defaults", halign=Gtk.Align.START, css_classes=["sonata-button"])
+        btn = ui.controls.push_button("Restore Defaults", halign=Gtk.Align.START)
         btn.connect("clicked", lambda *_: self._reset_all())
         reset.add(btn)
         out.append(reset)

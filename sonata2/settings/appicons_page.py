@@ -212,9 +212,18 @@ class AppIconsPage:
         pick_box.append(file_lbl)
         pick_box.append(choose)
         file_rv = add("Picture", pick_box, reveal=True)
-        name = Gtk.Entry(text=pref["name"], placeholder_text="e.g. firefox", css_classes=["ai-name"])
-        name.connect("activate", lambda e: (self.set_app(row, name=e.get_text().strip() or None,
-                                                          source="theme"), redraw()))
+        name = ui.controls.text_field(pref["name"] or "", "e.g. firefox")
+        name.add_css_class("ai-name")
+
+        def commit(*_):
+            typed = name.get_text().strip()
+            if typed != icons.app_pref(row.info)["name"]:       # Return, or leaving the field (closing the panel)
+                self.set_app(row, name=typed or None, source="theme")
+                redraw()
+        name.connect("activate", commit)
+        leave = Gtk.EventControllerFocus()
+        leave.connect("leave", commit)
+        name.add_controller(leave)
         name_rv = add("Name", name, reveal=True)
         cur_scale = pref["scale"] if pref["scale"] is not None else icons.default_scale()
         size = ui.controls.slider(cur_scale * 100, None, lower=icons.SCALE_RANGE[0] * 100,

@@ -14,10 +14,10 @@ def size(n: int) -> str:
         return "Zero bytes"
     if n < 1000:
         return f"{n} bytes"
-    if n < 1000 ** 2:
+    if round(n / 1000) < 1000:                      # 999 500 bytes: "1.0 MB", not "1000 KB"
         return f"{round(n / 1000)} KB"
     for unit, p in (("MB", 2), ("GB", 3), ("TB", 4)):
-        if n < 1000 ** (p + 1) or unit == "TB":
+        if round(n / 1000 ** p, 1) < 1000 or unit == "TB":
             return f"{n / 1000 ** p:.1f} {unit}"
 
 

@@ -108,9 +108,10 @@ scale.sonata-module-slider:disabled { opacity: 0.45; }     /* dimmed as a whole:
 """)
 
 
-def push_button(label: str, on_click=None, style: str = "") -> Gtk.Button:
-    """style: "" (plain), "default" (accent), "destructive"."""
-    b = Gtk.Button(label=label, css_classes=["sonata-button"] + ([style] if style else []))
+def push_button(label: str, on_click=None, style: str = "", **props) -> Gtk.Button:
+    """style: "" (plain), "default" (accent), "destructive". props: more
+    Gtk.Button properties (valign, halign, margin_top...)."""
+    b = Gtk.Button(label=label, css_classes=["sonata-button"] + ([style] if style else []), **props)
     if on_click:
         b.connect("clicked", lambda _b: on_click())
     return b
@@ -206,6 +207,8 @@ def slider(value: float = 0, on_change=None, style: str = "menu", lower: float =
         m = ModuleSlider(value, lower, upper)
         if on_change:
             m.connect("value-changed", lambda sl: on_change(sl.get_value()))
+        if default is not None:                  # same double-click reset as the thin slider
+            reset_on_double_click(m, default)
         return m
     s = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lower, upper, 1)
     s.add_css_class("sonata-slider" if style == "menu" else "sonata-module-slider")
@@ -249,7 +252,7 @@ def is_release(kind, button: int = 0, keyval: int = 0) -> bool:
             or (kind == Gdk.EventType.KEY_RELEASE and keyval in _SLIDER_KEYS))
 
 
-def reset_on_double_click(scale: Gtk.Range, default: float) -> None:
+def reset_on_double_click(scale: Gtk.Widget, default: float) -> None:
     """Double-click a slider: back to its default value.
 
     The slider claims every press for its own drag, which stops a click

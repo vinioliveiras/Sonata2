@@ -11,7 +11,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
-from . import dialog  # noqa: E402
+from . import controls, dialog  # noqa: E402
 
 
 def split_message(message: str) -> tuple:
@@ -43,15 +43,17 @@ class MountOperation(Gio.MountOperation):
         else:
             anon = None
         if flags & Gio.AskPasswordFlags.NEED_USERNAME:
-            user = Gtk.Entry(text=default_user or "", placeholder_text="Name", activates_default=True)
+            user = controls.text_field(default_user or "", "Name")
+            user.set_activates_default(True)
             box.append(user)
         if flags & Gio.AskPasswordFlags.NEED_DOMAIN:
-            domain = Gtk.Entry(text=default_domain or "", placeholder_text="Domain", activates_default=True)
+            domain = controls.text_field(default_domain or "", "Domain")
+            domain.set_activates_default(True)
             box.append(domain)
         pw = None
         if flags & Gio.AskPasswordFlags.NEED_PASSWORD:
-            pw = Gtk.PasswordEntry(show_peek_icon=True, activates_default=True,
-                                   placeholder_text="Password")
+            pw = controls.text_field(placeholder="Password", secret=True)
+            pw.set_property("activates-default", True)
             box.append(pw)
         remember = None
         if flags & Gio.AskPasswordFlags.SAVING_SUPPORTED:
@@ -99,8 +101,9 @@ class MountOperation(Gio.MountOperation):
                 return
             op.set_choice(int(rid))
             op.reply(Gio.MountOperationResult.HANDLED)
+        # Escape aborts: never picks a choice ("Unmount Anyway" comes first)
         self.dialog = dialog.alert(heading, body, responses or [("0", "OK", "default")], answered,
-                                   parent=self.parent)
+                                   parent=self.parent, close="close")
         return True
 
     # -- "the disk is in use" while ejecting ---------------------------------------------------------

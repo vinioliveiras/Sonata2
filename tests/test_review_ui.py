@@ -148,10 +148,8 @@ class FmtTests(unittest.TestCase):
         self.assertEqual(fmt.size(1_400_000), "1.4 MB")
         self.assertEqual(fmt.size(5 * 1000 ** 5), "5000.0 TB")              # no unit past TB
 
-    @unittest.expectedFailure
     def test_size_rounding_never_shows_1000_kb(self):
-        # BUG: fmt.size rounds KB after choosing the unit: 999 500 bytes is "1000 KB"
-        # (and 999 990 000 bytes "1000.0 MB") instead of moving up to the next unit.
+        """fmt.size moves up a unit when rounding would show "1000 KB"/"1000.0 MB"."""
         self.assertEqual(fmt.size(999_500), "1.0 MB")
         self.assertEqual(fmt.size(999_990_000), "1.0 GB")
 
@@ -238,6 +236,23 @@ class MenuModelTests(unittest.TestCase):
         win.destroy()
 
 
+    def test_menu_actions_live_on_the_menu(self):
+        """The menu's actions hang on the menu, not its anchor (no leftover group or clash)."""
+        win = Gtk.Window()
+        anchor = Gtk.Button(label="x")
+        win.set_child(anchor)
+        win.present()
+        settle(50)
+        got = []
+        pop = ui.menu.popup(anchor, [[ui.menu.Item("A", lambda: got.append(1))]])
+        self.assertFalse(anchor.activate_action("m.i0_0", None))
+        self.assertTrue(pop.activate_action("m.i0_0", None))
+        self.assertEqual(got, [1])
+        pop.popdown()
+        settle(50)
+        win.destroy()
+
+
 # -- alerts -----------------------------------------------------------------------------------
 class DialogTests(unittest.TestCase):
     """Alert logic with libadwaita's dialog replaced by a recorder
@@ -283,12 +298,8 @@ class DialogTests(unittest.TestCase):
         d.set_close_response.assert_called_once_with("cancel")
         d.set_response_appearance.assert_called_once_with("erase", Adw.ResponseAppearance.DESTRUCTIVE)
 
-    @unittest.expectedFailure
     def test_escape_never_picks_the_destructive_response(self):
-        # BUG: dialog.alert sets close_response = responses[0] whatever its style.
-        # TextEdit/Preview's "Save changes?" lists ("discard", "Don't Save",
-        # "destructive") first, so Escape discards the document; GIO's
-        # show-processes choices ("Unmount Anyway", "Cancel") make Escape force it.
+        """Escape gives "cancel", never a destructive response listed first."""
         d = ui.dialog.alert("Save?", "", [("discard", "Don't Save", "destructive"), ("cancel", "Cancel", ""),
                                           ("save", "Save", "default")])
         d.set_close_response.assert_called_once_with("cancel")
@@ -305,10 +316,8 @@ class DialogTests(unittest.TestCase):
         handler(d, "ok")
         self.assertEqual(got, [("ok", True)])
 
-    @unittest.expectedFailure
     def test_ask_text_ok_off_while_empty(self):
-        # BUG: ask_text only disables "ok" on "changed"; opened with an empty
-        # text, OK starts enabled (its docstring says off while empty).
+        """ask_text opened with an empty text starts with OK off."""
         d = ui.dialog.ask_text("New Folder", "", "Create", lambda _t: None)
         d.set_response_enabled.assert_any_call("ok", False)
 
@@ -344,6 +353,34 @@ class DialogTests(unittest.TestCase):
         op.emit("ask-question", "Again", ["A", "B"])
         self.made[-1].connect.call_args.args[1](self.made[-1], "close")
         self.assertEqual(replies[-1], Gio.MountOperationResult.ABORTED)
+
+
+    def test_escape_skips_destructive_without_cancel(self):
+        """No "cancel": Escape gives the first non-destructive response."""
+        d = ui.dialog.alert("Erase?", "", [("erase", "Erase", "destructive"), ("keep", "Keep", "")])
+        d.set_close_response.assert_called_once_with("keep")
+
+    def test_mount_question_escape_aborts(self):
+        """Mount questions: Escape is "close" (aborts), never the first choice ("Unmount Anyway")."""
+        from sonata2.ui import mountop as M
+        op = M.MountOperation(None)
+        op.emit("ask-question", "Disk busy", ["Unmount Anyway", "Cancel"])
+        self.made[-1].set_close_response.assert_called_once_with("close")
+
+    def test_mount_password_fields_are_the_kits(self):
+        """Mount password prompt: name and password are ui.controls text fields; Return confirms."""
+        from sonata2.ui import mountop as M
+        op = M.MountOperation(None)
+        F = Gio.AskPasswordFlags
+        op.emit("ask-password", "Unlock", "me", "", F.NEED_USERNAME | F.NEED_PASSWORD)
+        box = self.made[-1].set_extra_child.call_args.args[0]
+        fields = [w for w in walk(box, Gtk.Widget) if isinstance(w, (Gtk.Entry, Gtk.PasswordEntry))]
+        self.assertEqual(len(fields), 2)
+        for f in fields:
+            self.assertTrue(f.has_css_class("sonata-field"))
+            self.assertTrue(f.get_property("activates-default"))
+        self.assertEqual(fields[0].get_text(), "me")
+        settle(20)
 
 
 # -- controls ---------------------------------------------------------------------------------
@@ -397,6 +434,19 @@ class ControlsTests(unittest.TestCase):
         settle(30)
 
 
+    def test_module_slider_honours_default(self):
+        """slider(style="module", default=...) gets the double-click reset too."""
+        with mock.patch.object(ui.controls, "reset_on_double_click") as reset:
+            s = ui.controls.slider(10, style="module", default=30)
+        reset.assert_called_once_with(s, 30)
+
+    def test_push_button_takes_widget_props(self):
+        """push_button(..., valign=...) passes Gtk.Button properties (Settings' row buttons)."""
+        b = ui.controls.push_button("Go", style="default", valign=Gtk.Align.CENTER)
+        self.assertEqual(b.get_valign(), Gtk.Align.CENTER)
+        self.assertTrue(b.has_css_class("sonata-button") and b.has_css_class("default"))
+
+
 # -- theme ------------------------------------------------------------------------------------
 class ThemeTests(unittest.TestCase):
     def test_register_same_key_replaces(self):
@@ -423,17 +473,26 @@ class ThemeTests(unittest.TestCase):
         self.assertEqual(sub("transition: opacity 130ms;"), f"transition: opacity {T.ms(130)}ms;")
         self.assertEqual(sub("anim-x2ms"), "anim-x2ms")
 
-    @unittest.expectedFailure
     def test_on_change_listeners_released_with_their_widget(self):
-        # BUG: theme.on_change has no way to disconnect: every ModuleSlider
-        # (Control Center, rebuilt on each open) and glass_class() widget
-        # stays in theme._listeners forever, kept alive and redrawn on every
-        # appearance change.
+        """A ModuleSlider (Control Center, rebuilt on each open) used to stay in
+        theme._listeners forever, kept alive and redrawn on every appearance
+        change: bound methods are held weakly now, and off_change() works."""
+        ui.theme._notify_listeners()
         n = len(ui.theme._listeners)
+        class Drawn:                                       # a widget's queue_draw, held weakly
+            def queue_draw(self):
+                pass
         for _ in range(3):
-            ui.controls.slider(10, style="module")
+            ui.theme.on_change(Drawn().queue_draw)
         gc.collect()
+        ui.theme._notify_listeners()                       # prunes the dead ones
         self.assertEqual(len(ui.theme._listeners), n)
+        calls = []
+        h = ui.theme.on_change(lambda: calls.append(1))
+        ui.theme._notify_listeners()
+        ui.theme.off_change(h)
+        ui.theme._notify_listeners()
+        self.assertEqual(calls, [1])
 
 
 # -- Settings helpers -------------------------------------------------------------------------
@@ -509,14 +568,51 @@ class SettingsHelperTests(TempConfig):
         S._clear_group(g)
         self.assertEqual(walk(g, Adw.ActionRow), [])
 
-    @unittest.expectedFailure
     def test_save_survives_a_non_dict_file(self):
-        # BUG: Settings._save re-implements config.update without its
-        # isinstance(dict) check: a dock.json holding "null" or "[]" makes
-        # every Settings switch raise TypeError instead of writing.
+        """Settings._save writes through config.update even over a null/[] file."""
         self.write("dock", "null")
         S.Settings._save(None, "dock", "autohide", True)
         self.assertEqual(config.load("dock", {"autohide": False})["autohide"], True)
+
+    class _Live:
+        GLASS_LIVE_MS = S.Settings.GLASS_LIVE_MS
+        _save_live = S.Settings._save_live
+        _flush_live = S.Settings._flush_live
+        _live_tick = S.Settings._live_tick
+
+    def test_slider_saves_are_throttled(self):
+        """A dragged slider writes at most every GLASS_LIVE_MS, the last value
+        wins, and the Dock's other keys (pins) stay."""
+        self.write("dock", json.dumps({"pinned": ["a.desktop"]}))
+        f = self._Live()
+        with mock.patch.object(config, "update", wraps=config.update) as upd:
+            for v in range(40, 80):
+                f._save_live("dock", "icon_size", v)
+            self.assertEqual(upd.call_count, 0)
+            settle(f.GLASS_LIVE_MS + 80)
+            self.assertEqual(upd.call_count, 1)
+        self.assertEqual(config.load("dock", {"pinned": None, "icon_size": 0}),
+                         {"pinned": ["a.desktop"], "icon_size": 79})
+
+    def test_slider_save_flushed_on_close(self):
+        """Closing Settings writes a slider's pending value at once."""
+        f = self._Live()
+        f._save_live("nightshift", "warmth", 70)
+        f._flush_live()
+        self.assertEqual(config.load("nightshift", {"warmth": 0})["warmth"], 70)
+        settle(S.Settings.GLASS_LIVE_MS + 50)                  # its timer was removed: nothing else runs
+
+    def test_settings_builds_with_the_kit(self):
+        """Settings and the kit's prompts use ui.controls (text_field, push_button,
+        dialog.ask_text): no raw Gtk.Entry or hand-made sonata-button."""
+        import inspect
+        from sonata2.settings import appicons_page, shortcuts_page
+        from sonata2.ui import mountop
+        for mod in (S, appicons_page, shortcuts_page, mountop):
+            src = inspect.getsource(mod)
+            self.assertNotRegex(src, r"Gtk\.(Password)?Entry\(", mod.__name__)
+            self.assertNotIn('css_classes=["sonata-button"', src, mod.__name__)
+        self.assertFalse(hasattr(S.Settings, "_ask_text"))
 
     def test_save_writes_only_into_the_temp_dir(self):
         """_save keeps the other keys and writes to the config folder in use."""
@@ -556,10 +652,8 @@ class SettingsWindowTests(TempConfig):
         finally:
             w.destroy()
 
-    @unittest.expectedFailure
     def test_unavailable_style_choice_goes_back(self):
-        # BUG: Appearance > Style "Windows 11 (coming later)" saves "mac" but the
-        # pop-up keeps showing Windows 11 until the page is rebuilt.
+        """Style "Windows 11 (coming later)" saves mac and the pop-up shows Sonata again."""
         w = S.Settings(None, "appearance")
         w.present()
         settle(150)
@@ -572,12 +666,8 @@ class SettingsWindowTests(TempConfig):
         finally:
             w.destroy()
 
-    @unittest.expectedFailure
     def test_wallpaper_page_released_when_rebuilt(self):
-        # BUG: _page_wallpaper disconnects its StyleManager "notify::dark"
-        # handler on the picture's "destroy", but that handler's closure keeps
-        # the picture alive, so "destroy" never comes: every rebuild of
-        # Displays leaves a handler (and refresh()) behind.
+        """A rebuilt Displays page releases the wallpaper picture and its dark-mode handler."""
         w = S.Settings(None, "displays")
         w.present()
         settle(200)
@@ -594,6 +684,136 @@ class SettingsWindowTests(TempConfig):
             self.assertEqual(gone, [True])
         finally:
             w.destroy()
+
+
+    def test_dock_sliders_save_through_the_throttle(self):
+        """Dock > Size goes through _save_live (not a write per pixel)."""
+        with mock.patch.object(S.Settings, "_save_live") as live:
+            w = S.Settings(None, "dock")
+            w.present()
+            settle(150)
+            try:
+                row = next(r for r in walk(w.pages["dock"], Adw.ActionRow)
+                           if r.get_title() == "Size" and hasattr(r, "slider"))
+                row.slider.set_value(60)
+                live.assert_called_with("dock", "icon_size", 60)
+            finally:
+                w.destroy()
+
+    def test_app_icon_name_kept_without_return(self):
+        """App Icons: the typed theme-icon name is saved when the field loses focus."""
+        from sonata2 import icons
+        from sonata2.settings import appicons_page as P
+
+        class Info:
+            def get_id(self): return "org.test.App.desktop"
+            def get_icon(self): return Gio.ThemedIcon.new("text-editor")
+            def get_name(self): return "Test"
+            def get_display_name(self): return "Test App"
+            def get_executable(self): return "testapp"
+            def get_commandline(self): return "testapp"
+            def get_startup_wm_class(self): return None
+        icons.forget_prefs()
+        with mock.patch.object(P, "app_list", return_value=[("org.test.App", Info())]):
+            w = S.Settings(None, "appicons")
+            w.present()
+            w.select("appicons", from_sidebar=True)
+            settle(300)
+            try:
+                page = w.appicons_page
+                row = page.rows["org.test.App"]
+                pop = page.edit(row)
+                settle(50)
+                pop.name.set_text("firefox")
+                focus = next(c for c in pop.name.observe_controllers() if isinstance(c, Gtk.EventControllerFocus))
+                focus.emit("leave")
+                icons.forget_prefs()
+                p = icons.app_pref(row.info)
+                self.assertEqual((p["name"], p["source"]), ("firefox", "theme"))
+                self.assertTrue(pop.name.has_css_class("sonata-field"))
+                pop.popdown()
+                settle(50)
+            finally:
+                w.destroy()
+                icons.forget_prefs()
+
+
+# -- animations -------------------------------------------------------------------------------
+class AnimationTests(TempConfig):
+    """The main actions of the kit and Settings animate."""
+
+    def test_menus_and_panels_open_with_the_kit_animation(self):
+        """Menus and panels are popovers; "motion-open" animates every popover's contents."""
+        css = ui.theme._templates["motion-open"][0]
+        self.assertRegex(css, r"popover > contents \{ animation: sonata-open")
+        win = Gtk.Window()
+        anchor = Gtk.Button(label="x")
+        win.set_child(anchor)
+        win.present()
+        settle(50)
+        try:
+            m = ui.menu.popup(anchor, [[ui.menu.Item("A", lambda: None)]])
+            p = ui.panel.popup(anchor, Gtk.Label(label="p"))
+            self.assertIsInstance(m, Gtk.Popover)
+            self.assertIsInstance(p, Gtk.Popover)
+            m.popdown()
+            p.popdown()
+            settle(50)
+        finally:
+            win.destroy()
+
+    def test_settings_page_switch_crossfades(self):
+        """Choosing another section: the old page fades out (Adw.TimedAnimation)."""
+        w = S.Settings(None, "appearance")
+        w.present()
+        settle(200)
+        try:
+            started = []
+            real = ui.transition.CrossFade.play
+
+            def spy(fade):
+                real(fade)
+                started.append(fade._anim)
+            def capture(fade):                          # (this xvfb can't render a frame: a stand-in)
+                fade._finish()
+                fade._pic = Gtk.Picture()
+                fade.add_overlay(fade._pic)
+            with mock.patch.object(ui.transition.CrossFade, "play", spy), \
+                    mock.patch.object(ui.transition.CrossFade, "capture", capture):
+                w.select("dock", from_sidebar=True)
+            self.assertTrue(started)
+            self.assertIsInstance(started[-1], Adw.TimedAnimation)
+            self.assertEqual(started[-1].get_state(), Adw.AnimationState.PLAYING)
+            settle(300)
+        finally:
+            w.destroy()
+
+    def test_alerts_are_libadwaita_dialogs(self):
+        """Alerts are Adw.AlertDialog (libadwaita animates them in and out)."""
+        made = []
+
+        def fake(**kw):
+            d = mock.MagicMock(name="AlertDialog")
+            d.get_root.return_value = None
+            made.append(d)
+            return d
+        with mock.patch.object(ui.dialog, "_MODERN", True), \
+                mock.patch.object(ui.dialog.Adw, "AlertDialog", side_effect=fake, create=True):
+            ui.dialog.alert("H", "", [("cancel", "Cancel", "")])
+        made[0].present.assert_called_once()
+
+    def test_switches_animate(self):
+        """The kit's switch eases its colour (CSS transition); Settings' SwitchRows are libadwaita's."""
+        css = "".join(t for t, _l in ui.theme._templates.values() if "switch.sonata-switch {" in t)
+        self.assertRegex(css, r"switch\.sonata-switch \{[^}]*transition: background-color")
+        row = S.switch_row("X", False, lambda on: None)
+        self.assertIsInstance(row, Adw.SwitchRow)
+
+    def test_app_icon_form_rows_slide(self):
+        """App Icons form: rows that apply slide in (Gtk.Revealer SLIDE_DOWN)."""
+        import inspect
+        from sonata2.settings import appicons_page as P
+        self.assertIn("RevealerTransitionType.SLIDE_DOWN", inspect.getsource(P.AppIconsPage.edit))
 
 
 if __name__ == "__main__":

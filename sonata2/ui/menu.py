@@ -168,8 +168,10 @@ def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
     group = Gio.SimpleActionGroup()
     customs = []
     model = _build(sections, group, customs=customs)
-    widget.insert_action_group("m", group)
     pop = Gtk.PopoverMenu.new_from_model_full(model, Gtk.PopoverMenuFlags.NESTED)
+    # on the menu, not the anchor: the anchor kept the last menu's actions
+    # (and their closures) for good, and two menus on one anchor clashed
+    pop.insert_action_group("m", group)
     for name, item in customs:
         pop.add_child(_closable_row(pop, item), name)
     pop.set_has_arrow(False)

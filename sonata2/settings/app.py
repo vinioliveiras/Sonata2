@@ -370,6 +370,7 @@ class Settings(Adw.ApplicationWindow):
         self.set_size_request(760, 480)
         # Bluetooth's search for nearby devices ends with the window
         self.connect("close-request", lambda *_: (getattr(self, "_bt_scan_src", 0) and self._bt_scan(False), False)[1])
+        self.connect("close-request", lambda *_: self._flush_live())     # a slider's last value
         ui.window.standard(self)
         self.toasts = Adw.ToastOverlay()
         # Sidebar | content in a plain box (like Files): whole-pixel edges, no
@@ -678,7 +679,7 @@ class Settings(Adw.ApplicationWindow):
         if not n.secure:
             connect()
             return
-        entry = Gtk.PasswordEntry(show_peek_icon=True)
+        entry = ui.controls.text_field(secret=True)
         dlg = ui.dialog.alert(f"The Wi-Fi network “{n.ssid}” requires a password.", "",
                               [("cancel", "Cancel", ""), ("join", "Join", "default")],
                               lambda r: r == "join" and connect(entry.get_text()), parent=self)
@@ -696,8 +697,7 @@ class Settings(Adw.ApplicationWindow):
         def device_row(d):
             row = Adw.ActionRow(title=d.name, use_markup=False, subtitle="Connected" if d.connected else
                                 ("Not Connected" if d.paired else ""))
-            btn = Gtk.Button(label="Disconnect" if d.connected else "Connect", valign=Gtk.Align.CENTER,
-                             css_classes=["sonata-button"])
+            btn = ui.controls.push_button("Disconnect" if d.connected else "Connect", valign=Gtk.Align.CENTER)
 
             def done(res):
                 ok, msg = res or (False, "That didn't work")
@@ -767,7 +767,7 @@ class Settings(Adw.ApplicationWindow):
         for d in nearby:
             if d.mac not in self._bt_near_rows:
                 row = Adw.ActionRow(title=d.name, use_markup=False)
-                btn = Gtk.Button(label="Connect", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+                btn = ui.controls.push_button("Connect", valign=Gtk.Align.CENTER)
 
                 def done(res):
                     ok, msg = res or (False, "That didn't work")
@@ -1081,9 +1081,7 @@ class Settings(Adw.ApplicationWindow):
         g.set_sensitive(shutil.which("wlsunset") is not None)
 
         def save(**kw):
-            c = config.load("nightshift", nightshift.DEFAULTS)
-            c.update(kw)
-            config.save("nightshift", c)
+            config.update("nightshift", **kw)
         times = [(f"{h:02d}:{m:02d}", f"{h:02d}:{m:02d}") for h in range(24) for m in (0, 30)]
         frm = combo_row("From", times, cfg["from"], lambda v: save(**{"from": v}))
         to = combo_row("To", times, cfg["to"], lambda v: save(to=v))
@@ -1100,7 +1098,8 @@ class Settings(Adw.ApplicationWindow):
         to.set_visible(cfg["schedule"] == "custom")
         g.add(switch_row("Turn On Until Tomorrow", nightshift.manual_active(cfg), nightshift.set_manual,
                          subtitle="Manual"))
-        g.add(slider_row("Colour Temperature", cfg["warmth"], 0, 100, lambda v: save(warmth=int(v)),
+        g.add(slider_row("Colour Temperature", cfg["warmth"], 0, 100,
+                         lambda v: self._save_live("nightshift", "warmth", int(v)),
                          ends=("Less Warm", "More Warm"), default=50))
         return g
 
@@ -1177,18 +1176,25 @@ class Settings(Adw.ApplicationWindow):
 
         chooser = group()                        # its own group: the page's standard gap below the picture
         row = Adw.ActionRow(title="Picture")
-        choose = Gtk.Button(label="Choose…", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+        choose = ui.controls.push_button("Choose…", valign=Gtk.Align.CENTER)
+
+        # the widgets refresh() updates, emptied when the page goes: the tiles'
+        # click closures hold refresh(), and refs to the page from it formed a
+        # cycle through GTK that Python's gc can't see -- the page never died
+        alive = {"pic": pic, "row": row, "tiles": tiles}
 
         def refresh():
+            if not alive:
+                return
             light, dark = shown()
             uri = dark if Adw.StyleManager.get_default().get_dark() else light
             f = Gio.File.new_for_uri(uri) if uri else None
-            pic.set_file(f if f and f.query_exists(None) else None)
+            alive["pic"].set_file(f if f and f.query_exists(None) else None)
             cur = W.current(light, dark)
-            for wid, b in tiles.items():
+            for wid, b in alive["tiles"].items():
                 (b.add_css_class if wid == cur else b.remove_css_class)("selected")
             name = next((w.name for w in W.CATALOG if w.id == cur), None)
-            row.set_subtitle(name or (f.get_basename() if f else "None"))
+            alive["row"].set_subtitle(name or (f.get_basename() if f else "None"))
 
         def use(light, dark):
             system.set_gsetting(BG, "picture-uri", light)
@@ -1214,7 +1220,19 @@ class Settings(Adw.ApplicationWindow):
         refresh()
         sm = Adw.StyleManager.get_default()
         hid = sm.connect("notify::dark", lambda *_: refresh())
-        pic.connect("destroy", lambda *_: sm.disconnect(hid))
+
+        def release():
+            if alive:
+                alive.clear()
+                sm.disconnect(hid)
+
+        def unrealized(w):
+            # removed from the window (rebuilt), not just hidden: let it go
+            # (checked once unparenting is over; DEFAULT priority: idles can
+            # wait behind redraws)
+            GLib.timeout_add(0, lambda: (w.get_root() is None and release(), False)[1])
+        pic.connect("unrealize", unrealized)
+        pic.connect("destroy", lambda *_: release())          # the window closed
         return [g, gallery, chooser]
 
     # -- input (Wayfire [input]; applied live) --------------------------------------------------
@@ -1336,7 +1354,7 @@ class Settings(Adw.ApplicationWindow):
             if not found:
                 row = Adw.ActionRow(title="No controller connected",
                                     subtitle="Plug one in with a cable, or pair it in Bluetooth")
-                bt = Gtk.Button(label="Bluetooth…", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+                bt = ui.controls.push_button("Bluetooth…", valign=Gtk.Align.CENTER)
                 bt.connect("clicked", lambda *_: self.select("bluetooth"))
                 row.add_suffix(bt)
                 pads.add(row)
@@ -1357,10 +1375,10 @@ class Settings(Adw.ApplicationWindow):
         hint.add_prefix(Gtk.Image(icon_name="input-gaming-symbolic", pixel_size=16))
         desk.add(hint)
         desk.add(slider_row("Pointer speed", float(gp["speed"]) * 50, 10, 100,
-                            lambda v: self._save("gamepad", "speed", round(v / 50, 2)), ends=("Slow", "Fast"),
+                            lambda v: self._save_live("gamepad", "speed", round(v / 50, 2)), ends=("Slow", "Fast"),
                             default=50))
         desk.add(slider_row("Scrolling speed", float(gp["scroll"]) * 50, 10, 100,
-                            lambda v: self._save("gamepad", "scroll", round(v / 50, 2)), ends=("Slow", "Fast"),
+                            lambda v: self._save_live("gamepad", "scroll", round(v / 50, 2)), ends=("Slow", "Fast"),
                             default=50))
         desk.add(switch_row("Pause while Steam is open", gp["pause_steam"],
                             lambda on: self._save("gamepad", "pause_steam", on),
@@ -1477,10 +1495,10 @@ class Settings(Adw.ApplicationWindow):
         pic.connect("clicked", lambda b: self._pick_picture(u, b))
         row.add_prefix(pic)
         if u.current:
-            name = Gtk.Button(label="Edit Name…", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
-            name.connect("clicked", lambda *_: self._ask_text(
-                "Full name", u.real_name, lambda v: self._user_op(U.set_real_name, u, v)))
-            pw = Gtk.Button(label="Change Password…", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+            name = ui.controls.push_button("Edit Name…", valign=Gtk.Align.CENTER)
+            name.connect("clicked", lambda *_: ui.dialog.ask_text(
+                "Full name", u.real_name, "OK", lambda v: self._user_op(U.set_real_name, u, v), parent=self))
+            pw = ui.controls.push_button("Change Password…", valign=Gtk.Align.CENTER)
             pw.connect("clicked", lambda *_: self._password_dialog(u))
             row.add_suffix(name)
             row.add_suffix(pw)
@@ -1545,7 +1563,7 @@ class Settings(Adw.ApplicationWindow):
             b.connect("clicked", lambda _b, p=path: use(p))
             grid.append(b)
         col.append(grid)
-        other = Gtk.Button(label="Choose from Files…", css_classes=["sonata-button"])
+        other = ui.controls.push_button("Choose from Files…")
         col.append(other)
         pop.set_child(col)
 
@@ -1571,18 +1589,12 @@ class Settings(Adw.ApplicationWindow):
         pop.connect("closed", lambda p: GLib.idle_add(lambda: (p.unparent(), False)[1]))
         pop.popup()
 
-    def _ask_text(self, title, value, cb):
-        entry = Gtk.Entry(text=value, activates_default=True, hexpand=True)
-        dlg = ui.dialog.alert(title, "", [("cancel", "Cancel", ""), ("ok", "OK", "default")],
-                              lambda r: r == "ok" and entry.get_text().strip() and cb(entry.get_text().strip()),
-                              parent=self)
-        dlg.set_extra_child(entry)
-
     def _password_dialog(self, u):
         from ..backend import users as U
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        new = Gtk.PasswordEntry(placeholder_text="New password", show_peek_icon=True)
-        verify = Gtk.PasswordEntry(placeholder_text="Verify", show_peek_icon=True, activates_default=True)
+        new = ui.controls.text_field(placeholder="New password", secret=True)
+        verify = ui.controls.text_field(placeholder="Verify", secret=True)
+        verify.set_property("activates-default", True)
         box.append(new)
         box.append(verify)
 
@@ -1600,10 +1612,10 @@ class Settings(Adw.ApplicationWindow):
     def _add_user_dialog(self):
         from ..backend import users as U
         grid = Gtk.Grid(row_spacing=6, column_spacing=8)
-        full = Gtk.Entry(hexpand=True)
-        acct = Gtk.Entry(hexpand=True)
-        pw = Gtk.PasswordEntry(show_peek_icon=True, hexpand=True)
-        verify = Gtk.PasswordEntry(show_peek_icon=True, hexpand=True)
+        full = ui.controls.text_field(hexpand=True)
+        acct = ui.controls.text_field(hexpand=True)
+        pw = ui.controls.text_field(secret=True, hexpand=True)
+        verify = ui.controls.text_field(secret=True, hexpand=True)
         admin = Gtk.CheckButton(label="Allow user to administer this computer")
         edited = {"acct": False}
         full.connect("changed", lambda e: not edited["acct"] and acct.set_text(U.short_name(e.get_text())))
@@ -1727,7 +1739,7 @@ class Settings(Adw.ApplicationWindow):
                 buttons.remove(c)
 
         def button(label, cb, suggested=False):
-            b = Gtk.Button(label=label, css_classes=["sonata-button"] + (["default"] if suggested else []))
+            b = ui.controls.push_button(label, style="default" if suggested else "")
             b.connect("clicked", lambda *_: cb())
             buttons.append(b)
 
@@ -1904,7 +1916,7 @@ class Settings(Adw.ApplicationWindow):
                             lambda on: system.set_gsetting(P, "remember-recent-files", "true" if on else "false"),
                             subtitle="Recents in Files and the Open dialogs"))
         clear = Adw.ActionRow(title="Recent items", subtitle="Forget the files opened recently")
-        clear_btn = Gtk.Button(label="Clear", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+        clear_btn = ui.controls.push_button("Clear", valign=Gtk.Align.CENTER)
         clear.add_suffix(clear_btn)
 
         def do_clear(*_):
@@ -1935,7 +1947,7 @@ class Settings(Adw.ApplicationWindow):
         if keyring.backend() == "keepassxc":
             row = Adw.ActionRow(title="Kept by KeePassXC", use_markup=False,
                                 subtitle="It asks for its own password at every login")
-            btn = Gtk.Button(label="Use Login Password…", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+            btn = ui.controls.push_button("Use Login Password…", valign=Gtk.Align.CENTER)
             btn.connect("clicked", lambda _b: self._switch_keyring())
             row.add_suffix(btn)
         else:
@@ -1948,7 +1960,7 @@ class Settings(Adw.ApplicationWindow):
     def _switch_keyring(self) -> None:
         """KeePassXC -> the login keyring, with the apps' saved passwords."""
         from .. import keyring
-        entry = Gtk.PasswordEntry(show_peek_icon=True, hexpand=True)
+        entry = ui.controls.text_field(secret=True, hexpand=True)
 
         def go(rid):
             if rid != "switch":
@@ -1992,7 +2004,7 @@ class Settings(Adw.ApplicationWindow):
                                     subtitle=p.state + (" · Default" if p.default else ""))
                 row.add_prefix(Gtk.Image(icon_name="printer-symbolic", pixel_size=24))
                 if not p.default:
-                    b = Gtk.Button(label="Make Default", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+                    b = ui.controls.push_button("Make Default", valign=Gtk.Align.CENTER)
                     b.connect("clicked", lambda *_a, p=p: system.run_async(
                         system.set_default_printer, lambda _ok: self._reload_page("printers"), p.name))
                     row.add_suffix(b)
@@ -2157,8 +2169,13 @@ class Settings(Adw.ApplicationWindow):
         g.add(self._accent_row())
         s = group("Style")
         app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
-        s.add(combo_row("Style", [("mac", "Sonata"), ("windows", "Windows 11 (coming later)")], app["theme"],
-                        lambda v: self._save("appearance", "theme", "mac")))
+        def style(v):
+            self._save("appearance", "theme", "mac")
+            if v != "mac":                     # not available yet: the pop-up goes back to what's in use
+                show_quietly(style_row, "mac")
+        style_row = combo_row("Style", [("mac", "Sonata"), ("windows", "Windows 11 (coming later)")], app["theme"],
+                              style)
+        s.add(style_row)
         themes = sorted({d for base in GLib.get_system_data_dirs() + [GLib.get_user_data_dir()]
                          for d in (os.listdir(os.path.join(base, "icons")) if os.path.isdir(os.path.join(base, "icons"))
                                    else []) if os.path.exists(os.path.join(base, "icons", d, "index.theme"))}
@@ -2173,7 +2190,7 @@ class Settings(Adw.ApplicationWindow):
                                    self.ask_restart("sonata", "The new icons"))))
         gen = Adw.ActionRow(title="App icons made by Sonata",
                             subtitle="Apps without Sonata artwork get their icon on the standard frame, saved on disk")
-        regen = Gtk.Button(label="Regenerate", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+        regen = ui.controls.push_button("Regenerate", valign=Gtk.Align.CENTER)
         regen.connect("clicked", lambda *_: (icons.clear_generated(), system.restart_sonata(),
                                              self.toast("Making the app icons again…")))
         gen.add_suffix(regen)
@@ -2366,10 +2383,10 @@ class Settings(Adw.ApplicationWindow):
         cfg = config.load("dock", D.DEFAULTS)
         size = group("Dock")
         size.add(slider_row("Size", cfg["icon_size"], D.MIN_SIZE, D.MAX_SIZE,
-                            lambda v: self._save("dock", "icon_size", int(v)), default=D.DEFAULTS["icon_size"]))
+                            lambda v: self._save_live("dock", "icon_size", int(v)), default=D.DEFAULTS["icon_size"]))
         size.add(switch_row("Magnification", cfg["magnification"], lambda on: self._save("dock", "magnification", on)))
         size.add(slider_row("Magnified size", cfg["magnified_size"], D.MIN_SIZE, D.MAX_SIZE,
-                            lambda v: self._save("dock", "magnified_size", int(v)),
+                            lambda v: self._save_live("dock", "magnified_size", int(v)),
                             default=D.DEFAULTS["magnified_size"]))
         size.add(combo_row("Position on screen", [("left", "Left"), ("bottom", "Bottom"), ("right", "Right")],
                            cfg["position"], lambda v: self._save("dock", "position", v)))
@@ -2408,7 +2425,7 @@ class Settings(Adw.ApplicationWindow):
         look = group("Look")
         # (its glass: Appearance > Glass & Transparency)
         look.add(slider_row("Distance from the screen edge", cfg["edge_gap"], 0, 24,    # and from zoomed windows
-                            lambda v: self._save("dock", "edge_gap", int(v)), default=D.DEFAULTS["edge_gap"]))
+                            lambda v: self._save_live("dock", "edge_gap", int(v)), default=D.DEFAULTS["edge_gap"]))
         return [size, behave, wins, look]
 
     def _set_minimize_effect(self, v):
@@ -2491,7 +2508,7 @@ class Settings(Adw.ApplicationWindow):
 
     def _page_launchpad(self):
         g = group(names.APPS)
-        reset = Gtk.Button(label="Reset…", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+        reset = ui.controls.push_button("Reset…", valign=Gtk.Align.CENTER)
         reset.connect("clicked", lambda *_: ui.dialog.alert(
             f"Reset the {names.APPS} layout?", "Folders and your icon order are removed; apps are sorted by name.",
             [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
@@ -2511,7 +2528,9 @@ class Settings(Adw.ApplicationWindow):
         g = group("", f"Apps hidden from {names.APPS}, {names.SEARCH} and the Dock. Enter your password to see and edit them.")
         row = Adw.ActionRow(title="Password")
         row.add_prefix(Gtk.Image(icon_name="system-lock-screen-symbolic"))
-        entry = Gtk.PasswordEntry(show_peek_icon=True, valign=Gtk.Align.CENTER, width_chars=18)
+        entry = ui.controls.text_field(secret=True)
+        entry.set_valign(Gtk.Align.CENTER)
+        entry.set_property("width-chars", 18)
         row.add_suffix(entry)
         g.add(row)
         hint = Gtk.Label(label="" if pam.available() else "PAM is not available: can't check passwords",
@@ -2562,13 +2581,13 @@ class Settings(Adw.ApplicationWindow):
             img = Gtk.Image(pixel_size=32)
             icons.set_image(img, icons.app_icon(info))
             r.add_prefix(img)
-            b = Gtk.Button(label="Show", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+            b = ui.controls.push_button("Show", valign=Gtk.Align.CENTER)
             b.connect("clicked", lambda _b, did=did: (self._set_hidden(did, False), self._show_hidden_apps()))
             r.add_suffix(b)
             h.add(r)
         if not hidden:
             h.add(Adw.ActionRow(title="No hidden apps"))
-        add = Gtk.Button(label="Hide an App…", halign=Gtk.Align.START, margin_top=10, css_classes=["sonata-button"])
+        add = ui.controls.push_button("Hide an App…", halign=Gtk.Align.START, margin_top=10)
         add.connect("clicked", lambda b: self._pick_app_to_hide(b, installed, hidden))
         h.add(add)
         page.add(h)
@@ -2616,30 +2635,39 @@ class Settings(Adw.ApplicationWindow):
             m.hide(did)
             dock = config.load("dock", {"pinned": None})
             if dock.get("pinned") and did in dock["pinned"]:
-                import json
-                try:
-                    with open(os.path.join(config.CONFIG_DIR, "dock.json"), encoding="utf-8") as f:
-                        full = json.load(f)
-                except (OSError, ValueError):
-                    full = {}
-                full["pinned"] = [p for p in dock["pinned"] if p != did]
-                config.save("dock", full)
+                config.update("dock", pinned=[p for p in dock["pinned"] if p != did])
         elif did in m.hidden:
             m.hidden.remove(did)
             m.reconcile()
         config.save("launchpad", m.to_json())
 
     def _save(self, name: str, key: str, value) -> None:
-        """Write one Sonata setting; the running component reloads it."""
-        data = {}
-        try:
-            with open(os.path.join(config.CONFIG_DIR, name + ".json"), encoding="utf-8") as f:
-                import json
-                data = json.load(f)
-        except (OSError, ValueError):
-            pass
-        data[key] = value
-        config.save(name, data)
+        """Write one Sonata setting; the running component reloads it.
+        config.update: locked against the Dock/menu bar writing the same file."""
+        config.update(name, **{key: value})
+
+    def _save_live(self, name: str, key: str, value) -> None:
+        """A moving slider: saved at most every GLASS_LIVE_MS (live, like
+        _set_glass), not once per pixel -- each save makes the running
+        component reload the file. The last value is always written."""
+        pend = self._live_pending = getattr(self, "_live_pending", {})
+        pend.setdefault(name, {})[key] = value
+        if not getattr(self, "_live_src", 0):           # throttle, not debounce: live while dragging
+            self._live_src = GLib.timeout_add(self.GLASS_LIVE_MS, self._live_tick)
+
+    def _live_tick(self) -> bool:
+        self._live_src = 0                              # (this source ends by returning False)
+        return self._flush_live()
+
+    def _flush_live(self) -> bool:
+        """Write the sliders' pending values now (also when Settings closes)."""
+        if getattr(self, "_live_src", 0):
+            GLib.source_remove(self._live_src)
+            self._live_src = 0
+        pend, self._live_pending = getattr(self, "_live_pending", {}), {}
+        for name, values in pend.items():
+            config.update(name, **values)
+        return False
 
     # -- About ------------------------------------------------------------------------
     def _page_about(self):
@@ -2673,7 +2701,7 @@ class Settings(Adw.ApplicationWindow):
         shell = group("Sonata")
         row = Adw.ActionRow(title="Restart Sonata",
                             subtitle=f"Reloads the Dock, menu bar, {names.APPS} and wallpaper. Your apps stay open.")
-        btn = Gtk.Button(label="Restart", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+        btn = ui.controls.push_button("Restart", valign=Gtk.Align.CENTER)
         btn.connect("clicked", lambda *_: (system.restart_sonata(), self.toast("Restarting Sonata…")))
         row.add_suffix(btn)
         row.set_activatable_widget(btn)

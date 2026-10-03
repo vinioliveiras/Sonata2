@@ -59,7 +59,9 @@ def _breakable(text: str) -> str:
 
 
 def alert(heading: str, body: str, responses, on_response=None, parent=None,
-          check: str = None):
+          check: str = None, close: str = None):
+    """close: the response Escape gives (default: "cancel", else the first
+    non-destructive one; it needn't be one of `responses`)."""
     heading, body = _breakable(heading), _breakable(body)
     if _MODERN:
         dlg = Adw.AlertDialog(heading=heading, body=body)
@@ -83,7 +85,12 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None,
             default = rid if default is None or style == "default" else default
     if default:
         dlg.set_default_response(default)
-        dlg.set_close_response(responses[0][0])
+    # Escape = "cancel", else the first non-destructive response: never a
+    # destructive one (TextEdit's "Don't Save" comes first and must not win)
+    close = close or next((rid for rid, _t, _s in responses if rid == "cancel"), None) or \
+        next((rid for rid, _t, s in responses if s != "destructive"), None)
+    if close:
+        dlg.set_close_response(close)
     if on_response:
         if box is not None:
             dlg.connect("response", lambda _d, rid: on_response(rid, box.get_active()))
@@ -122,6 +129,7 @@ def ask_text(heading: str, text: str, ok: str, on_done, body: str = "", parent=N
     dlg.set_extra_child(entry)
     if hasattr(dlg, "set_response_enabled"):
         entry.connect("changed", lambda e: dlg.set_response_enabled("ok", bool(e.get_text().strip())))
+        dlg.set_response_enabled("ok", bool(entry.get_text().strip()))     # opened empty: off already
 
     def focus():
         entry.grab_focus()
