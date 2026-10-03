@@ -79,6 +79,43 @@ def locked(desktop: str, app_name: str) -> bool:
     return bool((ids & _LOCKED["ids"]) or ((app_name or "").casefold() in _LOCKED["names"]))
 
 
+def window_of(views, desktop: str, app_name: str):
+    """The id of the notifying app's most recently used window in Wayfire's
+    list-views, None when it has none."""
+    ds = {(desktop or "").casefold(), (desktop or "").casefold().removesuffix(".desktop")} - {""}
+    name = (app_name or "").casefold()
+    best = None
+    for v in views or []:
+        if not isinstance(v, dict) or v.get("type", "toplevel") != "toplevel" or not v.get("app-id"):
+            continue
+        aid = v["app-id"]
+        mine = False
+        if ds and (aid.casefold() in ds or (apps.match_app_id(aid) or "").casefold() in ds):
+            mine = True
+        elif not ds and name:
+            did = apps.match_app_id(aid)
+            info = apps.lookup(did) if did else None
+            mine = bool(info and (info.get_name() or "").casefold() == name)
+        if mine and (best is None or v.get("last-focus-timestamp", 0) > best.get("last-focus-timestamp", 0)):
+            best = v
+    return best.get("id") if best else None
+
+
+def bring_forward(desktop: str, app_name: str) -> bool:
+    """Restore and focus the app's window; False when it has none open."""
+    try:
+        from ..wl.wfipc import WayfireIPC
+        ipc = WayfireIPC()
+        vid = window_of(ipc.call("window-rules/list-views"), desktop, app_name)
+        if vid is None:
+            return False
+        ipc.call("wm-actions/set-minimized", {"view_id": vid, "state": False})
+        ipc.call("window-rules/focus-view", {"id": vid})
+        return True
+    except Exception:
+        return False
+
+
 def app_settings(cfg: dict, key: str) -> dict:
     return dict(APP_DEFAULTS, **(cfg.get("apps", {}).get(key) or {}))
 
@@ -307,16 +344,21 @@ class Notifications:
                                    "NotificationClosed", GLib.Variant("(uu)", (nid, reason)))
 
     def invoke(self, n: Note, key: str = "default") -> None:
-        if self._conn and (key != "default" or any(k == "default" for k, _l in n.actions)):
+        has_default = any(k == "default" for k, _l in n.actions)
+        if self._conn and (key != "default" or has_default):
             self._conn.emit_signal(None, "/org/freedesktop/Notifications", "org.freedesktop.Notifications",
                                    "ActionInvoked", GLib.Variant("(us)", (n.id, key)))
-        elif n.desktop:                     # no action: bring the app forward (macOS)
-            info = apps.lookup(n.desktop)
-            if info:
-                try:
-                    info.launch([], None)
-                except GLib.Error:
-                    pass
+        if key == "default":
+            # a click on it: its app comes forward -- its window restored and
+            # focused when open, else the app opened (Vini). An app that opens
+            # itself for the click (its own "default" action) isn't opened twice.
+            if not bring_forward(n.desktop, n.app) and not has_default and n.desktop:
+                info = apps.lookup(n.desktop)
+                if info:
+                    try:
+                        info.launch([], None)
+                    except GLib.Error:
+                        pass
         self.close(n.id, 2)
 
     def clear(self) -> None:

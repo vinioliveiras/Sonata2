@@ -618,6 +618,32 @@ class WindowTest(unittest.TestCase):
         self.assertFalse(w._timer)
         w.destroy()
 
+    def test_gpu_engine_column(self):
+        """The GPU Engine column (Vini: mind the column bugs we had): only the
+        last column fills, it sorts, and an app lists its processes' cards."""
+        from gi.repository import Gtk
+        w, s = self.window()
+        w.show_page("processes")
+        page = w.page_by_id["processes"]
+        cols = page.view.get_columns()
+        shown = [cols.get_item(i) for i in range(cols.get_n_items()) if cols.get_item(i).get_visible()]
+        self.assertEqual(shown[-1].get_title(), "GPU Engine")
+        self.assertEqual([c.get_expand() for c in shown], [False] * (len(shown) - 1) + [True])
+        self.assertEqual(page.cols["gpu_on"].cid, "gpu_on")
+        snap = s.sample()
+        for p in snap.procs.values():
+            if p.pid == 30:
+                p.gpu_on = "NVIDIA"
+            if p.pid == 31:
+                p.gpu_on = "AMD"
+        w.apply_snapshot(snap)
+        self.settle()
+        node = page.nodes.get("editor")
+        self.assertIsNotNone(node)
+        self.assertEqual(node.sv["gpu_on"], "AMD, NVIDIA")               # the app: all its processes' cards
+        page.view.sort_by_column(page.cols["gpu_on"], Gtk.SortType.ASCENDING)       # strings sort too
+        self.settle()
+
 
 if __name__ == "__main__":
     unittest.main()

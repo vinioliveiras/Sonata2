@@ -58,26 +58,36 @@ def icon_index() -> dict:
     """Installed apps by the names their processes go by: the executable,
     StartupWMClass and desktop id -> (Gio.Icon, app name). Runs off the
     main loop (reads every .desktop file once)."""
-    idx = {}
+    idx, weak = {}, {}
     for info in Gio.AppInfo.get_all():
         icon = info.get_icon()
         if icon is None:
             continue
         name = info.get_display_name() or info.get_name()
-        keys = []
-        exe = info.get_executable() or ""
-        if exe:
-            keys.append(os.path.basename(exe))
-        wm = info.get_startup_wm_class() if hasattr(info, "get_startup_wm_class") else None
-        if wm:
-            keys.append(wm)
+        strong, loose = [], []
         did = (info.get_id() or "").removesuffix(".desktop")
         if did:
-            keys += [did, did.rsplit(".", 1)[-1]]
-        for k in keys:
+            strong += [did, did.rsplit(".", 1)[-1]]
+        wm = info.get_startup_wm_class() if hasattr(info, "get_startup_wm_class") else None
+        if wm:
+            strong.append(wm)
+        exe = info.get_executable() or ""
+        # a shortcut that only asks another program to start something (a Steam
+        # game: "steam steam://rungameid/...") doesn't own that program's
+        # processes (Vini: Steam itself showed as "Red Dead Redemption")
+        cmd = info.get_commandline() or "" if hasattr(info, "get_commandline") else ""
+        if exe and "://" not in cmd:
+            loose.append(os.path.basename(exe))
+        for k in strong:
             k = k.lower()
             if k and k not in _NOT_APPS:
                 idx.setdefault(k, (icon, name))
+        for k in loose:
+            k = k.lower()
+            if k and k not in _NOT_APPS:
+                weak.setdefault(k, (icon, name))
+    for k, v in weak.items():                   # an executable's name: only where no app owns that name
+        idx.setdefault(k, v)
     return idx
 
 

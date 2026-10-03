@@ -37,3 +37,25 @@ class SteamProcessTest(unittest.TestCase):
         p.name = "wineserver"
         key, _icon, _name = W.app_for(p, {"wineserver": ("X", "Red Dead Redemption")})
         self.assertIsNone(key)
+
+
+class IconIndexTest(unittest.TestCase):
+    """Vini: Steam itself showed as "Red Dead Redemption" -- the game's
+    shortcut runs `steam steam://rungameid/...`, and its executable's name
+    ("steam") was taken for the game."""
+
+    def test_game_shortcut_doesnt_own_steam(self):
+        def app(did, name, cmd, exe):
+            i = mock.Mock()
+            i.get_icon.return_value = name.upper()
+            i.get_display_name.return_value = name
+            i.get_id.return_value = did + ".desktop"
+            i.get_startup_wm_class.return_value = None
+            i.get_executable.return_value = exe
+            i.get_commandline.return_value = cmd
+            return i
+        rdr = app("Red Dead Redemption", "Red Dead Redemption", "steam steam://rungameid/2668510", "steam")
+        steam = app("steam", "Steam", "/usr/bin/steam %U", "/usr/bin/steam")
+        with mock.patch.object(W.Gio.AppInfo, "get_all", return_value=[rdr, steam]):
+            idx = W.icon_index()
+        self.assertEqual(idx["steam"][1], "Steam")
