@@ -29,6 +29,7 @@ CATALOG = {
     "display": ("Display", (4, 2)),
     "sound": ("Sound", (4, 2)),
     "nowplaying": ("Now Playing", (4, 1)),
+    "mixer": ("Volume Mixer", (4, 3)),            # each app's volume (Sound menu's list); scrolls inside
     # performance (statsui.py): not in the default layout, offered by Add Controls
 }
 from ..backend import stats as _stats  # noqa: E402
@@ -222,8 +223,12 @@ class ModuleGrid(Gtk.Widget):
             return
         self.order.remove(mid)
         slot = self.slots.pop(mid, None)
-        if slot is not None and slot.get_parent() is self:
-            slot.unparent()
+        if slot is not None:
+            if slot.get_parent() is self:
+                slot.unparent()
+            # let go of the module: put back (Add Controls) it goes into a new slot --
+            # still held by this one, it came back empty (Vini)
+            slot.set_child(None)
         self._layout(glide=True)
         self._changed()
 

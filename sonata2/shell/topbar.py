@@ -1146,6 +1146,9 @@ class ControlCenter(Gtk.Box):
         self.modules = {"connectivity": conn, "dnd": dnd, "darkmode": self.dark_btn, "screenshot": shot,
                         "display": display, "sound": sound,
                         "nowplaying": now_playing_module(mpris.players())}   # always, like Big Sur ("Not Playing")
+        mixer_mod = self._mixer_module()                       # each app's volume (Add Controls)
+        if mixer_mod is not None:
+            self.modules["mixer"] = mixer_mod
         from . import statsui                                   # performance (Add Controls; read only when shown)
         for kind in statsui.KINDS:
             self.modules["stat_" + kind] = statsui.module(kind)
@@ -1193,6 +1196,35 @@ class ControlCenter(Gtk.Box):
         h = mon.get_geometry().height if mon is not None else 900
         return max(300, h - BAR_H - 120)
 
+    def _mixer_module(self):
+        """The Sound menu's per-app volumes as a module: live while shown
+        (the menu bar's mixer service), its list scrolling inside the module."""
+        from ..backend import mixer
+        if not mixer.available():
+            return None
+        from .mixer_ui import AppMixer
+        apps_box = AppMixer()
+        scroller = Gtk.ScrolledWindow(child=apps_box, hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                      vscrollbar_policy=Gtk.PolicyType.AUTOMATIC, vexpand=True,
+                                      propagate_natural_height=False)
+        box = ui.panel.module(Gtk.Label(label="Volume Mixer", xalign=0, css_classes=["panel-module-title"]),
+                              scroller, spacing=4)
+        box.add_css_class("cc-mixer")
+        self.app_mixer = apps_box                               # (tests)
+        service = getattr(self.bar, "mixer", None)
+
+        def mapped(*_a):
+            system.run_async(mixer.streams, apps_box.set_streams)
+            if service is not None and apps_box.set_streams not in service.listeners:
+                service.listeners.append(apps_box.set_streams)
+
+        def unmapped(*_a):
+            if service is not None and apps_box.set_streams in service.listeners:
+                service.listeners.remove(apps_box.set_streams)
+        box.connect("map", mapped)
+        box.connect("unmap", unmapped)
+        return box
+
     # -- Edit Controls (like Launchpad's jiggle mode) -----------------------------------------
     def _edit_bar(self) -> Gtk.Widget:
         from . import controlcenter as CCL
@@ -1213,14 +1245,14 @@ class ControlCenter(Gtk.Box):
         self.edit_btn.set_visible(not on)
         self.done_btn.set_visible(on)
         self.add_btn.set_visible(on)
-        self.add_btn.set_sensitive(bool(self._CCL.hidden(self.grid.order)))
+        self.add_btn.set_sensitive(any(m in self.modules for m in self._CCL.hidden(self.grid.order)))
 
     def _add_menu(self, btn) -> None:
         """What was taken out, to put back (at the end)."""
         Item = ui.menu.Item
         CCL = self._CCL
         items = [Item(CCL.CATALOG[m][0], lambda m=m: (self.grid.add_module(m), self._edit_bar_update()))
-                 for m in CCL.hidden(self.grid.order)]
+                 for m in CCL.hidden(self.grid.order) if m in self.modules]
         if items:
             ui.menu.popup(btn, [items], position=Gtk.PositionType.TOP)
 

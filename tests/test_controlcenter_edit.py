@@ -66,7 +66,7 @@ class OrderTest(TempConfig):
         self.assertEqual(C.load(), C.DEFAULT_ORDER)
 
     def test_hidden_is_what_add_controls_offers(self):
-        self.assertEqual(C.hidden(C.DEFAULT_ORDER), [m for m in C.CATALOG if m.startswith("stat_")])
+        self.assertEqual(C.hidden(C.DEFAULT_ORDER), [m for m in C.CATALOG if m.startswith("stat_") or m == "mixer"])
         self.assertEqual(C.hidden(["dnd"]), [m for m in C.CATALOG if m != "dnd"])
 
 
@@ -228,3 +228,58 @@ class SameSizeModulesTest(TempConfig):
                     seen.setdefault(mid, set()).add((slot.get_width(), slot.get_height()))
                 win.destroy()
         self.assertTrue(all(len(v) == 1 for v in seen.values()), seen)      # the same in every layout
+
+
+class MixerModuleTest(TempConfig):
+    """Vini: the volume mixer (each app's volume) as a Control Center module."""
+
+    def build(self, available=True):
+        import types
+        from sonata2.backend import mixer
+        from sonata2.shell import topbar as T
+        service = types.SimpleNamespace(listeners=[])
+        bar = types.SimpleNamespace(_poll=lambda: None, _set_volume=lambda v: None, notifications=None,
+                                    monitor=None, get_native=lambda: None, mixer=service)
+        with mock.patch.object(T.system, "run_async"), mock.patch.object(T, "cached"), \
+                mock.patch.object(mixer, "available", return_value=available):
+            cc = T.ControlCenter(bar)
+        return cc, service
+
+    def test_add_it_and_it_follows_the_apps_while_shown(self):
+        cc, service = self.build()
+        self.assertIn("mixer", C.hidden(cc.grid.order))           # off by default: Add Controls
+        win = Gtk.Window()
+        win.set_child(cc)
+        win.present()
+        settle(100)
+        with mock.patch("sonata2.backend.system.run_async"):
+            cc.grid.add_module("mixer")
+            settle(150)
+        self.assertIn(cc.app_mixer.set_streams, service.listeners)  # live while on screen
+        self.assertEqual(cc.grid.slots["mixer"].get_height(), C.span_height(3))
+        win.destroy()
+        settle(50)
+        self.assertNotIn(cc.app_mixer.set_streams, service.listeners)
+
+    def test_not_offered_without_a_sound_server(self):
+        cc, _ = self.build(available=False)
+        self.assertNotIn("mixer", cc.modules)
+
+
+class PutBackTest(TempConfig):
+    def test_removed_then_added_again_is_not_empty(self):
+        """Vini: a module taken out with its x and put back with Add Controls came
+        back empty (its content was still held by the old slot)."""
+        widgets = {m: Gtk.Button(label=m) for m in C.CATALOG}
+        g = C.ModuleGrid(widgets, list(C.DEFAULT_ORDER))
+        win = Gtk.Window(default_width=344)
+        win.set_child(g)
+        win.present()
+        settle(80)
+        g.set_editing(True)
+        g._take_out("darkmode")
+        g.add_module("darkmode")
+        settle(80)
+        self.assertIs(g.slots["darkmode"].get_child(), widgets["darkmode"])
+        self.assertTrue(widgets["darkmode"].get_mapped())
+        win.destroy()
