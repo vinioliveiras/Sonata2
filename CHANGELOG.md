@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.5.0-alpha -- 2026-10-03
+
+A Control Center you arrange yourself, smarter graphics switching, display
+arrangement, and apps that quit properly before a restart.
+
+### Control Center
+- Modules sit on a 4-column grid and are edited like Apps: hold one (or
+  Edit Controls…) and they jiggle; drag to move, x to remove, Add Controls
+  to bring one back.
+- New modules, off until added: CPU, GPU (one per card), Memory, Network,
+  FPS of the full-screen game, and the Volume Mixer, which grows with the
+  apps playing.
+- Its width follows the display and never changes; modules keep one size.
+
+### Menu bar
+- "Automatically hide and show the menu bar", like the Dock.
+- Every status item can be turned off (Settings > Menu Bar), and CPU, GPU,
+  memory, network and FPS can be shown as text or a graph.
+- Double-click a background app's icon to open the app.
+
+### Displays and graphics
+- Settings > Displays: drag the displays to arrange them; drag the menu
+  bar to choose the main display. The login screen follows it.
+- With nothing chosen, an external monitor is the main display.
+- Smart Graphics Switching (on): games and creative apps use the
+  high-performance graphics, everyday apps the graphics that draw the
+  screens. Each app can have its own choice from its right-click menu.
+  Spotify no longer opens empty.
+
+### Apps
+- Restart, Shut Down and Log Out quit the apps first: Chrome no longer
+  asks to restore its tabs. An app with unsaved work cancels it.
+- Settings > Default Apps: browser, mail, calendar, music, videos,
+  pictures, PDFs, text files and folders in one place.
+- Web apps: pictures and copied files paste (WhatsApp); a link brings the
+  browser forward.
+- Task Manager: which graphics card each process uses; a Steam game's
+  processes show as that game.
+
+### Fixes
+- One password when waking up, not three.
+- Windows, panels and pickers fit small displays.
+- Review of every area: over 360 new tests, and fixes in Files, Preview,
+  Calendar, Notes, the login screen, the menu bar, the Dock and more.
+
 ## 0.4.1-alpha -- 2026-10-03
 
 Gaming and everyday apps share the graphics card better, and Steam opens
