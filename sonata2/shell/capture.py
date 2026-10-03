@@ -29,7 +29,8 @@ THUMB_W = 200
 # shots_to: pictures | desktop | documents | clipboard | other (shots_dir)
 # movies_to: videos | desktop | documents | other (movies_dir); audio: none | system | mic
 DEFAULTS = {"shots_to": "pictures", "shots_dir": "", "movies_to": "videos", "movies_dir": "",
-            "timer": 0, "audio": "system", "mode": "display"}     # mode: the toolbar's last one (Vini)
+            "timer": 0, "audio": "system", "mode": "display",     # mode: the toolbar's last one (Vini)
+            "encoder": ""}                                         # the recorder encoder that worked last
 
 ui.register("""
 window.sonata-capture, window.sonata-capture > contents,
@@ -505,8 +506,11 @@ class Capture:
         rec = mode.startswith("rec-")
         what = mode[4:] if rec else mode
         # a picture of a portion / window / display: the screen as it is now,
-        # before a list or the selection takes the keyboard (and closes menus)
-        frozen = Frozen.take() if not rec and what != "screen" else None
+        # before a list or the selection takes the keyboard (and closes menus).
+        # Recording pickers take it too: one grim for every thumbnail.
+        outs = outputs() if what in ("display", "window") else []
+        picker = what == "window" or (what == "display" and len(outs) > 1)
+        frozen = Frozen.take() if (not rec and what != "screen") or (rec and picker) else None
 
         def go(geo=None, output=None):
             if rec:
@@ -514,12 +518,12 @@ class Capture:
             else:
                 self._shoot(geo, cfg, output, frozen=frozen)
         if what == "display":
-            outs = outputs()
             if len(outs) <= 1:
                 go(output=(outs[0].get("name") if outs else None) or focused_output())
                 return
-            from .sharepicker import _display_name, _thumb
-            items = [{"name": _display_name(o.get("name", "")), "texture": _thumb(o.get("name")),
+            from .sharepicker import _display_name, fit_texture
+            items = [{"name": _display_name(o.get("name", "")),
+                      "texture": fit_texture(frozen.output(o.get("name"))) if frozen else None,
                       "icon": "video-display-symbolic", "value": o.get("name")} for o in outs]
             self._pick("Choose a display to " + ("record" if rec else "capture"), items,
                        "Record" if rec else "Capture", lambda out: go(output=out))
@@ -528,11 +532,12 @@ class Capture:
                 views = _ipc().call("window-rules/list-views") or []
             except Exception:
                 views = []
-            wins = window_list(views, outputs())
+            wins = window_list(views, outs)
             if not wins:
                 return
-            from .sharepicker import thumb_region
-            items = [{"name": w["title"] or _app_name(w["app"]), "texture": thumb_region(w["geo"]),
+            from .sharepicker import fit_texture
+            items = [{"name": w["title"] or _app_name(w["app"]),
+                      "texture": fit_texture(frozen.crop(w["geo"])) if frozen else None,
                       "badge": _app_gicon(w["app"]), "value": w["geo"]} for w in wins]
             self._pick("Choose a window to " + ("record" if rec else "capture"), items,
                        "Record" if rec else "Capture", lambda geo: go(geo=geo))
@@ -567,7 +572,9 @@ class Capture:
             self._missing("grim")
             return
         to_clip = cfg.get("shots_to") == "clipboard"
-        path = os.path.join(GLib.get_tmp_dir() if to_clip else shots_dir(cfg), _name("Screenshot", "png"))
+        # clipboard: one reused file in the runtime dir (tmpfs, gone at logout), not a new one in /tmp per shot
+        path = os.path.join(GLib.get_user_runtime_dir() or GLib.get_tmp_dir(), "sonata2-clipboard-shot.png") \
+            if to_clip else os.path.join(shots_dir(cfg), _name("Screenshot", "png"))
         if frozen is not None:
             pb = frozen.crop(geo) if geo else frozen.output(output) if output else frozen.pb
             if pb is None:
@@ -649,10 +656,9 @@ class Capture:
         if proc is not self.recorder:
             return False
         if proc.poll() is None:
-            c = config.load("capture", DEFAULTS)
-            if c.get("encoder") != self._rec.get("encoder"):
-                c["encoder"] = self._rec.get("encoder")
-                config.save("capture", c)
+            enc = self._rec.get("encoder")
+            if config.load("capture", DEFAULTS).get("encoder") != enc:
+                config.update("capture", encoder=enc)          # keep the toolbar's options as stored
             return False
         if self._rec.get("encoders"):
             try:
@@ -799,7 +805,7 @@ class _Toolbar(Gtk.Window):
 
         def setv(k, v):
             c[k] = v
-            config.save("capture", c)
+            config.update("capture", **{k: v})             # not a stale copy over the saved encoder
 
         def places(key, first, extra=()):
             other = c.get(key + "_dir") if c.get(key + "_to") == "other" else ""
@@ -841,7 +847,7 @@ class _Toolbar(Gtk.Window):
                 folder = None
             if folder is not None and folder.get_path():
                 self.cfg[key + "_to"], self.cfg[key + "_dir"] = "other", folder.get_path()
-                config.save("capture", self.cfg)
+                config.update("capture", **{key + "_to": "other", key + "_dir": folder.get_path()})
             self.present()
         dialog.select_folder(None, None, done)
 

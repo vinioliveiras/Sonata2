@@ -68,37 +68,36 @@ def _display_name(connector: str) -> str:
     return connector
 
 
+THUMB_H = 135
+
+
+def fit_texture(pb):
+    """A pixbuf scaled to fit a picker item (never stretched); None stays None."""
+    if pb is None:
+        return None
+    w, h = pb.get_width(), pb.get_height()
+    if w <= 0 or h <= 0:
+        return None
+    scale = min(THUMB_W / w, THUMB_H / h)
+    return Gdk.Texture.new_for_pixbuf(pb.scale_simple(max(1, round(w * scale)), max(1, round(h * scale)),
+                                                      GdkPixbuf.InterpType.BILINEAR))
+
+
+def _grim_texture(args):
+    try:
+        png = subprocess.run(["grim"] + args + ["-"], capture_output=True, timeout=4).stdout
+        loader = GdkPixbuf.PixbufLoader.new_with_type("png")
+        loader.write(png)
+        loader.close()
+        return fit_texture(loader.get_pixbuf())
+    except (OSError, subprocess.SubprocessError, GLib.Error, AttributeError):
+        return None
+
+
 def _thumb(output):
     if not output or not shutil.which("grim"):
         return None
-    try:
-        png = subprocess.run(["grim", "-o", output, "-s", "0.25", "-"], capture_output=True, timeout=4).stdout
-        loader = GdkPixbuf.PixbufLoader.new_with_type("png")
-        loader.write(png)
-        loader.close()
-        pb = loader.get_pixbuf()
-        h = max(1, round(pb.get_height() * THUMB_W / pb.get_width()))
-        return Gdk.Texture.new_for_pixbuf(pb.scale_simple(THUMB_W, h, GdkPixbuf.InterpType.BILINEAR))
-    except (OSError, subprocess.SubprocessError, GLib.Error, ZeroDivisionError, AttributeError):
-        return None
-
-
-def thumb_region(geo: str):
-    """A small picture of a part of the screen ("x,y wxh")."""
-    if not geo or not shutil.which("grim"):
-        return None
-    try:
-        png = subprocess.run(["grim", "-g", geo, "-s", "0.3", "-"], capture_output=True, timeout=4).stdout
-        loader = GdkPixbuf.PixbufLoader.new_with_type("png")
-        loader.write(png)
-        loader.close()
-        pb = loader.get_pixbuf()
-        w, h = pb.get_width(), pb.get_height()
-        scale = min(THUMB_W / w, 135 / h)                   # fit the item, never stretched
-        return Gdk.Texture.new_for_pixbuf(pb.scale_simple(max(1, round(w * scale)), max(1, round(h * scale)),
-                                                          GdkPixbuf.InterpType.BILINEAR))
-    except (OSError, subprocess.SubprocessError, GLib.Error, ZeroDivisionError, AttributeError):
-        return None
+    return _grim_texture(["-o", output, "-s", "0.25"])
 
 
 class Picker(Gtk.Window):
@@ -127,11 +126,11 @@ class Picker(Gtk.Window):
             if it.get("texture") is not None:
                 pic = Gtk.Picture(paintable=it["texture"], can_shrink=False, css_classes=["share-thumb"],
                                   overflow=Gtk.Overflow.HIDDEN, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
-                art = Gtk.Overlay(child=Gtk.Box(width_request=THUMB_W, height_request=135))
+                art = Gtk.Overlay(child=Gtk.Box(width_request=THUMB_W, height_request=THUMB_H))
                 art.add_overlay(pic)
             else:
                 art = Gtk.Overlay(child=Gtk.Image(icon_name=it.get("icon") or "window-symbolic", pixel_size=64,
-                                                  width_request=THUMB_W, height_request=135))
+                                                  width_request=THUMB_W, height_request=THUMB_H))
             if it.get("badge") is not None:                 # the app's icon, like macOS' window picker
                 art.add_overlay(Gtk.Image(gicon=it["badge"], pixel_size=40, halign=Gtk.Align.CENTER,
                                           valign=Gtk.Align.END, css_classes=["share-badge"]))
@@ -186,9 +185,11 @@ class Picker(Gtk.Window):
 
     def _finish(self, value):
         done, self.on_done = self.on_done, None
+        if done is None:
+            return
         self.set_visible(False)
-        if done is not None:
-            done(value)
+        done(value)
+        self.destroy()                        # one per use: thumbnails freed, no hidden windows piling up
 
 
 class SharePicker(Picker):

@@ -29,6 +29,7 @@ BANNER_W = 344
 BANNER_MS = 5000
 TOP_GAP = 30                # under the 24 px menu bar
 MAX_BANNERS = 3
+MAX_NOTES = 100            # kept in the Notification Center (it shows the newest 40)
 DEFAULTS = {"dnd": False, "apps": {}}
 # per app (System Preferences > Notifications): key = desktop entry or app name
 APP_DEFAULTS = {"name": "", "allow": True, "style": "banners", "center": True, "sound": True}
@@ -301,7 +302,9 @@ class Notifications:
             invocation.return_value(GLib.Variant("(u)", (nid,)))
 
     def notify(self, app_name, replaces, app_icon, summary, body, actions, hints, timeout) -> int:
-        nid = replaces if replaces and any(n.id == replaces for n in self.notes) else self._next
+        # any id handed out before is replaced in place, listed or not (a banner-only
+        # app's updates must not stack, and its CloseNotification must find it)
+        nid = replaces if 0 < replaces < self._next else self._next
         if nid == self._next:
             self._next += 1
         pairs = [(actions[i], actions[i + 1]) for i in range(0, len(actions) - 1, 2)]
@@ -325,7 +328,7 @@ class Notifications:
         if not per["allow"]:
             return nid
         if per["center"]:
-            self.notes = [x for x in self.notes if x.id != nid] + [n]
+            self.notes = ([x for x in self.notes if x.id != nid] + [n])[-MAX_NOTES:]
             self._changed()
         center_open = self.nc is not None and self.nc.get_visible()
         if per["style"] != "none" and not self.dnd and not center_open:
@@ -545,6 +548,7 @@ class _Center(Gtk.Window):
             self.keyboard_mode = LS.KeyboardMode.ON_DEMAND        # (layer.prewarm restores it)
         self._slots = {}             # note id -> Revealer around its card
         self._settle = 0
+        self._later = 0              # a rebuild while closed, coalesced
         owner.listeners.append(self._changed)
 
     def _clicked(self, g, _n, x, y):
@@ -572,10 +576,16 @@ class _Center(Gtk.Window):
     def _changed(self):
         """Closed notes leave with an animation (staggered for Clear All);
         anything else rebuilds the column at once."""
+        if not self.get_visible():
+            # closed: one rebuild after a burst, not one per notification
+            # (opening still finds it built; show_center catches anything newer)
+            if not self._later:
+                self._later = GLib.timeout_add(1000, self._rebuild_closed)
+            return
         ids = {n.id for n in self.owner.notes}
         gone = [nid for nid in self._slots if nid not in ids]
         new = [n.id for n in list(reversed(self.owner.notes))[:40] if n.id not in self._slots]
-        if not self.get_visible() or new or not gone:
+        if new or not gone:
             self._rebuild()
             return
         for i, nid in enumerate(gone):
@@ -596,8 +606,14 @@ class _Center(Gtk.Window):
             return False
         self._settle = GLib.timeout_add(wait, settle)
 
+    def _rebuild_closed(self) -> bool:
+        self._later = 0
+        if not self.get_visible() and getattr(self, "_built_for", None) != self._state_key():
+            self._rebuild()
+        return False
+
     def _state_key(self):
-        return (tuple((n.id, getattr(n, "time", None)) for n in self.owner.notes),
+        return (tuple((n.id, n.at) for n in self.owner.notes),
                 GLib.DateTime.new_now_local().format("%Y-%m-%d"), _calendar_stamp())
 
     def _rebuild(self):
@@ -634,8 +650,8 @@ class _Center(Gtk.Window):
 
     def _open_calendar(self, date) -> None:
         """Calendar, on `date` (a datetime.date) in the Day view, or as it was."""
-        from ..__main__ import self_command
-        args = self_command().split() + ["calendar"]
+        from ..__main__ import self_argv
+        args = self_argv() + ["calendar"]
         if date is not None:
             args.append("sonata-date:" + date.isoformat())
         self.hide_center()

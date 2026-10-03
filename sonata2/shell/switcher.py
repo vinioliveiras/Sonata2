@@ -113,6 +113,11 @@ def _alpha(c, a):
     return c
 
 
+def _last_used(t) -> int:
+    """When the window last had the focus (stamped by the menu bar), 0: never seen."""
+    return getattr(t, "focused_at", 0)
+
+
 class Switcher(Gtk.Window):
     def __init__(self, app, manager, mru):
         super().__init__(application=app, title="App Switcher", decorated=False, resizable=False)
@@ -287,7 +292,8 @@ class Switcher(Gtk.Window):
     def _switch(self):
         if self.get_visible() and self.keys:
             wins = self.groups[self.keys[self.index]]
-            for t in [t for t in wins if not t.minimized] or wins:
+            # all of the app's windows come forward, the one used last activated last (on top, focused)
+            for t in sorted([t for t in wins if not t.minimized] or wins, key=_last_used):
                 self.manager.activate(t)
         self._close()
 

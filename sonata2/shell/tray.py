@@ -317,8 +317,12 @@ class MonoIcon(Gtk.Widget):
     def __init__(self):
         super().__init__(valign=Gtk.Align.CENTER, halign=Gtk.Align.CENTER)
         self.paintable = None
+        self._src = None                 # (icon, scale) shown: the same one again costs nothing
 
     def set_icon(self, ic, scale: int) -> None:
+        if self._src is not None and self._src[0] is ic and self._src[1] == scale and ic is not None:
+            return                       # unchanged (the item caches it): no new silhouette
+        self._src = (ic, scale)
         if ic is None:
             ic = ("name", "application-x-executable-symbolic")
         if ic[0] == "name":
@@ -527,7 +531,7 @@ class DBusMenu:
         pop, widget = self.open
         group = Gio.SimpleActionGroup()
         model = ui.menu._build(self.sections(lay), group)
-        widget.insert_action_group("m", group)
+        pop.insert_action_group("m", group)              # on the menu, like ui.menu (not left on the anchor)
         pop.set_menu_model(model)
 
 
@@ -644,12 +648,14 @@ class TrayBox(Gtk.Box):
         prev = None
         for k in keys:
             b = self.buttons.get(k)
+            new = b is None
             if b is None:
                 b = self.buttons[k] = self._button(self.host.items[k])
                 self.insert_child_after(b, prev)
             elif b.get_prev_sibling() is not prev:
                 self.reorder_child_after(b, prev)
-            self._update(b, self.host.items[k])
+            if _item is None or self.host.items[k] is _item or new:
+                self._update(b, self.host.items[k])      # only what changed gets a new icon
             prev = b
         self.set_visible(bool(keys))
 

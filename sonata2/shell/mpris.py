@@ -18,6 +18,7 @@ class Players:
         self.listeners = []
         self.names = []                # bus names, most recently active last
         self.proxy = None
+        self._wanted = None
         try:
             self.bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         except GLib.Error:
@@ -51,12 +52,22 @@ class Players:
         if self.proxy is not None and self.proxy.get_name() == name:
             return
         self.proxy = None
+        self._wanted = name
         if name:
-            try:
-                self.proxy = Gio.DBusProxy.new_sync(self.bus, Gio.DBusProxyFlags.NONE, None, name, PATH, IFACE, None)
-                self.proxy.connect("g-properties-changed", lambda *_: self._changed())
-            except GLib.Error:
-                self.proxy = None
+            # async: a hung player must not freeze the menu bar
+            Gio.DBusProxy.new(self.bus, Gio.DBusProxyFlags.NONE, None, name, PATH, IFACE, None,
+                              self._made, name)
+        self._changed()
+
+    def _made(self, _src, res, name):
+        try:
+            proxy = Gio.DBusProxy.new_finish(res)
+        except GLib.Error:
+            return
+        if name != getattr(self, "_wanted", None):          # another player took over meanwhile
+            return
+        self.proxy = proxy
+        proxy.connect("g-properties-changed", lambda *_: self._changed())
         self._changed()
 
     def _changed(self):
@@ -84,7 +95,8 @@ class Players:
     @property
     def artist(self) -> str:
         meta = self._prop("Metadata") or {}
-        return ", ".join(meta.get("xesam:artist") or [])
+        artist = meta.get("xesam:artist") or []
+        return artist if isinstance(artist, str) else ", ".join(artist)   # some players send a plain string
 
     @property
     def art(self) -> str:

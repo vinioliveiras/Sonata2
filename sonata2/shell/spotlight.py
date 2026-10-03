@@ -76,6 +76,9 @@ _OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, as
         ast.Mod: operator.mod, ast.Pow: operator.pow, ast.USub: operator.neg, ast.UAdd: operator.pos}
 
 
+_MAX_BITS = 14000           # ~4200 digits: under Python's int->str limit, instant to compute
+
+
 def calculate(text: str):
     expr = text.strip().replace("×", "*").replace("÷", "/").replace("^", "**").replace(",", ".")
     if not expr or not any(c.isdigit() for c in expr) or not any(c in "+-*/%" for c in expr[1:]):
@@ -87,9 +90,11 @@ def calculate(text: str):
         if isinstance(n, ast.Constant) and isinstance(n.value, (int, float)):
             return n.value
         if isinstance(n, ast.BinOp) and type(n.op) in _OPS:
-            if isinstance(n.op, ast.Pow) and abs(ev(n.right)) > 100:
+            a, b = ev(n.left), ev(n.right)                # each side once (nested powers stay linear)
+            if isinstance(n.op, ast.Pow) and (abs(b) > 100 or (
+                    isinstance(a, int) and a.bit_length() * abs(b) > _MAX_BITS)):
                 raise ValueError
-            return _OPS[type(n.op)](ev(n.left), ev(n.right))
+            return _OPS[type(n.op)](a, b)
         if isinstance(n, ast.UnaryOp) and type(n.op) in _OPS:
             return _OPS[type(n.op)](ev(n.operand))
         raise ValueError
@@ -103,7 +108,10 @@ def calculate(text: str):
         v = round(v, 10)
         if v.is_integer():
             v = int(v)
-    return f"{v:,}".replace(",", " ") if isinstance(v, int) else str(v)
+    try:
+        return f"{v:,}".replace(",", " ") if isinstance(v, int) else str(v)
+    except ValueError:                                    # too many digits to print
+        return None
 
 
 # -- file index ------------------------------------------------------------------------------------

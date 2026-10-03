@@ -107,7 +107,7 @@ class NightShiftLogicTest(unittest.TestCase):
         """NightShift.apply: starts once, leaves a running identical process alone,
         restarts a dead one and stops it when Night Shift is turned off."""
         ns = nightshift.NightShift.__new__(nightshift.NightShift)       # no timers, no file watch
-        ns.proc, ns.cmd = None, None
+        ns.proc, ns.cmd, ns._gen, ns._waiting = None, None, 0, False
         procs = []
 
         def popen(cmd, **_kw):
@@ -131,10 +131,6 @@ class NightShiftLogicTest(unittest.TestCase):
             procs[1].send_signal.assert_called_once()
             self.assertIsNone(ns.proc)
 
-    # BUG: is_on() promises "manual, or inside the schedule" but only looks at
-    # the manual flag: during a scheduled night the Control Center's Night
-    # Shift toggle shows off while the screen is warm.
-    @unittest.expectedFailure
     def test_is_on_inside_the_schedule(self):
         """The Control Center toggle is on while the custom schedule is active."""
         now = datetime.datetime.now()
@@ -293,11 +289,6 @@ class NotifyServerTest(unittest.TestCase):
         self.assertEqual(self.banners, [nid])
         self.assertNotIn(nid, [n.id for n in self.nc.notes])
 
-    # BUG: replaces_id is honoured only when the note is in the Notification
-    # Center list; for an app with "Show in Notification Center" off every
-    # update gets a new id, so its banners stack and CloseNotification(old id)
-    # closes nothing.
-    @unittest.expectedFailure
     def test_replacement_without_center(self):
         """An update of a banner-only app's notification keeps its id."""
         self.set_app("player", center=False)
@@ -417,9 +408,6 @@ class MprisTest(unittest.TestCase):
         self.assertEqual(picks, ["org.mpris.MediaPlayer2.vlc", "org.mpris.MediaPlayer2.firefox",
                                  "org.mpris.MediaPlayer2.vlc"])
 
-    # BUG: some players send xesam:artist as a plain string (not "as");
-    # ", ".join() then spells it out letter by letter ("M, u, s, e").
-    @unittest.expectedFailure
     def test_artist_as_plain_string(self):
         """A string artist is shown as is."""
         p = self.players({"Metadata": ("a{sv}", {"xesam:artist": GLib.Variant("s", "Muse")})})
@@ -505,11 +493,6 @@ class CaptureLogicTest(unittest.TestCase):
         self.assertFalse(c._check_started(dead))                # a stale check: ignored
         c._spawn.assert_not_called()
 
-    # BUG: "encoder" is not in capture.DEFAULTS and config.load() drops keys
-    # missing from the defaults, so the encoder that worked is saved but never
-    # read back: every recording starts again with the first candidate (a
-    # failing VA-API/NVENC start costs 1.5 s and a retry each time).
-    @unittest.expectedFailure
     def test_working_encoder_is_remembered(self):
         """The encoder of a recorder that keeps running is the first one tried next time."""
         c = capture.Capture(None, types.SimpleNamespace())
@@ -564,17 +547,10 @@ class SpotlightTest(unittest.TestCase):
         for bad in ("42", "-5", "hello", "1/0", "__import__('os')+1", "len('a')+1", "2**1000", "abc+1"):
             self.assertIsNone(c(bad), bad)
 
-    # BUG: the exponent guard only caps the exponent at 100; (10**100)**100 is
-    # a 10 001-digit int and f"{v:,}" raises ValueError (Python's int->str
-    # digit limit) outside the try, so typing it breaks the search.
-    @unittest.expectedFailure
     def test_calculator_huge_result_does_not_raise(self):
         """A result too big to print is no answer, not an exception."""
         self.assertIsNone(spotlight.calculate("(10**100)**100"))
 
-    # BUG: ev() evaluates a power's right side twice (guard + operation), so
-    # nested powers cost 2^depth: "1**1**1...**1" with ~25 levels freezes Search.
-    @unittest.expectedFailure
     def test_calculator_linear_in_nesting(self):
         """Each power in a chain is computed once."""
         calls = []
@@ -733,6 +709,365 @@ class OsdTest(unittest.TestCase):
         self.assertEqual(w.icon.get_icon_name(), "sonata-volume-muted-symbolic")
         GLib.source_remove(w._src)
         w.destroy()
+
+
+# -- fixes from the October review ----------------------------------------------------------------
+def spin(ms=0):
+    """Run the GLib main loop for about `ms` milliseconds."""
+    ctx = GLib.MainContext.default()
+    end = GLib.get_monotonic_time() + ms * 1000
+    while True:
+        while ctx.pending():
+            ctx.iteration(False)
+        if GLib.get_monotonic_time() >= end:
+            break
+        ctx.iteration(False)
+
+
+class ReviewFixesTest(unittest.TestCase):
+    def new_bar(self):
+        with mock.patch.object(system, "run_async"), mock.patch.object(tray, "host") as host:
+            host.return_value = types.SimpleNamespace(items={}, listeners=[])
+            return topbar.Bar()
+
+    def test_bars_share_watchers_and_stop_releases_them(self):
+        """Every display's bar shares one clipboard watcher, gamemode watcher, BlueZ watch and
+        power subscription; stop() lets go of its listeners, theme hook and config monitor."""
+        gm = types.SimpleNamespace(listeners=[], active=False, light=None)
+        bt = types.SimpleNamespace(listeners=[], powered=lambda: None)
+        made = {"clip": 0, "power": 0}
+
+        def clip():
+            made["clip"] += 1
+            return mock.Mock()
+
+        def watch(cb):
+            made["power"] += 1
+            return True
+        with mock.patch.dict(topbar._SHARED, clear=True), \
+                mock.patch.object(clipboard, "History", side_effect=clip), \
+                mock.patch("sonata2.gamemode.Watcher", return_value=gm), \
+                mock.patch.object(topbar, "_Bluetooth", return_value=bt), \
+                mock.patch.object(topbar.power, "watch", side_effect=watch):
+            a, b = self.new_bar(), self.new_bar()
+            self.assertIs(a.clip, b.clip)
+            self.assertIs(a.fullscreen_first, b.fullscreen_first)
+            self.assertEqual(made, {"clip": 1, "power": 1})
+            self.assertEqual((len(gm.listeners), len(bt.listeners)), (2, 2))
+            with mock.patch.object(ui.theme, "off_change") as off:
+                b.stop()
+            off.assert_called_once_with(b._theme_cb)
+            self.assertTrue(b._cfg_mon.is_cancelled())
+            self.assertEqual((len(gm.listeners), len(bt.listeners)), (1, 1))
+            self.assertNotIn(b._extras_visibility, b.players.listeners)
+            self.assertNotIn(b, topbar._BARS)
+            with mock.patch.object(a, "_poll_battery") as pa, mock.patch.object(b, "_poll_battery") as pb:
+                topbar._power_changed()
+            pa.assert_called_once()
+            pb.assert_not_called()
+            a.stop()
+
+    def test_bluetooth_proxy_is_async(self):
+        """The BlueZ adapter proxy is made asynchronously (no sync D-Bus on the main loop)."""
+        bt = topbar._Bluetooth.__new__(topbar._Bluetooth)
+        bt.proxy, bt.listeners = None, []
+        with mock.patch.object(topbar.Gio.DBusProxy, "new") as new, \
+                mock.patch.object(topbar.Gio.DBusProxy, "new_sync", side_effect=AssertionError):
+            bt._appeared(mock.Mock(), "org.bluez", ":1.2")
+        new.assert_called_once()
+
+    def test_album_art_cache_bounded_and_small(self):
+        """Album art is decoded at the shown size (x2) and only the last few are kept."""
+        folder = tempfile.mkdtemp()
+        topbar._art_cache.clear()
+        with mock.patch.object(system, "run_async", side_effect=sync_run_async):
+            for i in range(topbar.ART_KEEP + 3):
+                path = os.path.join(folder, f"{i}.png")
+                with open(path, "wb") as f:
+                    f.write(png_bytes(1000 + i, 800))
+                topbar._load_art("file://" + path, Gtk.Image(), 40)
+        self.assertEqual(len(topbar._art_cache), topbar.ART_KEEP)
+        tex = next(iter(topbar._art_cache.values()))
+        self.assertLessEqual(max(tex.get_width(), tex.get_height()), 80)
+        topbar._art_cache.clear()
+
+    def test_active_window_stamped_and_switcher_raises_last_used_on_top(self):
+        """Super+Tab brings all of an app's windows forward with the last used one activated last."""
+        from sonata2.shell import switcher
+        w1, w2, w3 = (types.SimpleNamespace(app_id="kitty", activated=False, minimized=False) for _ in range(3))
+        fake = types.SimpleNamespace(manager=types.SimpleNamespace(toplevels=[w1, w2, w3]))
+        for w in (w2, w1):                                    # w1 used last, w3 never
+            w.activated = True
+            topbar.Bar._active(fake)
+            w.activated = False
+        sw = types.SimpleNamespace(keys=["kitty"], index=0, groups={"kitty": [w1, w2, w3]},
+                                   manager=mock.Mock(), get_visible=lambda: True, _close=lambda: None)
+        switcher.Switcher._switch(sw)
+        self.assertEqual([c.args[0] for c in sw.manager.activate.call_args_list], [w3, w2, w1])
+
+    def test_notes_capped_and_closed_center_rebuilds_once(self):
+        """The Notification Center list is capped; while closed a burst of notifications
+        rebuilds it once; the state key follows each note's time (n.at)."""
+        n = N.Notifications.__new__(N.Notifications)
+        n.notes, n._next, n.nc, n.listeners, n._conn, n._banners = [], 1, None, [], None, {}
+        n.cfg = {"dnd": True, "apps": {"chat": dict(N.APP_DEFAULTS, name="Chat")}}
+        with mock.patch.object(N, "locked", return_value=False):
+            for _ in range(N.MAX_NOTES + 5):
+                n.notify("Chat", 0, "", "Hi", "", [], {"desktop-entry": "chat"}, -1)
+        self.assertEqual(len(n.notes), N.MAX_NOTES)
+        self.assertEqual(n.notes[-1].id, N.MAX_NOTES + 5)
+        c = N._Center(None, n)
+        with mock.patch.object(c, "_rebuild") as rebuild:
+            for _ in range(5):
+                c._changed()
+            rebuild.assert_not_called()
+            c._built_for = None
+            spin(1100)
+            rebuild.assert_called_once()
+        key = c._state_key()
+        n.notes[-1].at += 1
+        self.assertNotEqual(key, c._state_key())
+        c.destroy()
+
+    def test_calculator_too_many_digits(self):
+        """A product too long to print is no answer, not an exception."""
+        self.assertIsNone(spotlight.calculate("*".join(["9**100"] * 50)))
+
+    def test_mpris_proxy_async_and_stale_answer_dropped(self):
+        """The player proxy is made asynchronously; a proxy for a player that is no longer
+        the newest is dropped."""
+        p = mpris.Players.__new__(mpris.Players)
+        p.listeners, p.names, p.bus, p.proxy, p._wanted = [], ["org.mpris.MediaPlayer2.a"], mock.Mock(), None, None
+        with mock.patch.object(mpris.Gio.DBusProxy, "new") as new, \
+                mock.patch.object(mpris.Gio.DBusProxy, "new_sync", side_effect=AssertionError):
+            p._pick()
+        new.assert_called_once()
+        p._wanted = "org.mpris.MediaPlayer2.b"
+        with mock.patch.object(mpris.Gio.DBusProxy, "new_finish", return_value=mock.Mock()):
+            p._made(None, None, "org.mpris.MediaPlayer2.a")
+        self.assertIsNone(p.proxy)
+
+    def test_nightshift_sunset_schedule_and_polar(self):
+        """Sunset to Sunrise: warm at night, not at noon; polar night / day handled."""
+        cfg = dict(nightshift.DEFAULTS, schedule="sunset")
+        with mock.patch.object(nightshift, "tz_location", return_value=(-23.5, -46.6)):
+            sp = datetime.timezone(datetime.timedelta(hours=-3))
+            self.assertFalse(nightshift.in_schedule(cfg, datetime.datetime(2026, 10, 3, 12, 0, tzinfo=sp)))
+            self.assertTrue(nightshift.in_schedule(cfg, datetime.datetime(2026, 10, 3, 23, 0, tzinfo=sp)))
+            self.assertTrue(nightshift.in_schedule(cfg, datetime.datetime(2026, 10, 3, 3, 0, tzinfo=sp)))
+        self.assertEqual(nightshift.sun_times(78, 15, datetime.date(2026, 12, 21))[0], float("inf"))
+        self.assertEqual(nightshift.sun_times(78, 15, datetime.date(2026, 6, 21))[0], float("-inf"))
+        self.assertFalse(nightshift.in_schedule(dict(cfg, schedule="custom", **{"from": "x"})))
+
+    def test_nightshift_restart_does_not_block(self):
+        """A settings change while wlsunset runs: the old one is reaped off the main loop and
+        the new one starts only after it is gone."""
+        ns = nightshift.NightShift.__new__(nightshift.NightShift)
+        ns.cmd, ns._gen, ns._waiting = ["wlsunset", "-t", "1"], 0, False
+        import threading
+        release = threading.Event()
+        old = mock.Mock()
+        old.poll.return_value = None
+        old.wait.side_effect = lambda timeout=None: release.wait(timeout)
+        ns.proc = old
+        started = []
+        cfg = dict(nightshift.DEFAULTS, schedule="custom", warmth=10)
+        with mock.patch.object(nightshift.shutil, "which", return_value="/usr/bin/wlsunset"), \
+                mock.patch.object(nightshift.subprocess, "Popen", side_effect=lambda cmd, **_k: started.append(cmd)), \
+                mock.patch.object(nightshift.config, "load", side_effect=lambda *_a: dict(cfg)):
+            t0 = GLib.get_monotonic_time()
+            ns.apply()
+            self.assertLess(GLib.get_monotonic_time() - t0, 200_000)
+            old.send_signal.assert_called_once()
+            self.assertEqual(started, [])
+            ns.apply()                                     # a 60 s tick meanwhile: still waiting
+            self.assertEqual(started, [])
+            release.set()
+            spin(200)
+        self.assertEqual(len(started), 1)
+
+    def test_wallpaper_window_lets_go_when_destroyed(self):
+        """A destroyed wallpaper window disconnects from the app-wide StyleManager and
+        cancels its prefs monitor (it was kept alive with its pictures)."""
+        from gi.repository import GObject
+        from sonata2.shell import wallpaper
+        with mock.patch.object(wallpaper.WallpaperWindow, "update"):
+            w = wallpaper.WallpaperWindow(None, desktop=False, main=False)
+        hid, mon = w._dark_id, w._prefs_mon
+        sm = Adw.StyleManager.get_default()
+        self.assertTrue(GObject.signal_handler_is_connected(sm, hid))
+        w.destroy()
+        self.assertFalse(GObject.signal_handler_is_connected(sm, hid))
+        self.assertTrue(mon.is_cancelled())
+
+    def test_tray_silhouette_not_recomputed(self):
+        """The same tray icon again makes no new silhouette; a change to one item updates only it."""
+        icon = tray.MonoIcon()
+        tex = ("paintable", tray.Gdk.Texture.new_for_pixbuf(GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB,
+                                                                                    True, 8, 4, 4)))
+        with mock.patch.object(tray, "_silhouette", side_effect=lambda t: t) as sil:
+            icon.set_icon(tex, 1)
+            icon.set_icon(tex, 1)
+            self.assertEqual(sil.call_count, 1)
+            icon.set_icon(tex, 2)
+            self.assertEqual(sil.call_count, 2)
+        items = {k: types.SimpleNamespace(key=k, visible=True, tooltip="", icon=lambda _s: None) for k in "ab"}
+        src = types.SimpleNamespace(items=items, listeners=[])
+        box = tray.TrayBox(source=src)
+        with mock.patch.object(box, "_update") as upd:
+            box._changed(items["b"])
+        self.assertEqual([c.args[1] for c in upd.call_args_list], [items["b"]])
+        box.stop()
+
+    def test_picker_destroyed_after_answer(self):
+        """A display / window picker is destroyed once it has answered."""
+        got, gone = [], []
+        p = sharepicker.Picker(None, "Pick", None, [{"name": "a", "icon": "x", "value": "a"}], "Go", got.append)
+        with mock.patch.object(p, "destroy", side_effect=lambda: gone.append(1)):
+            p._key(None, sharepicker.Gdk.KEY_Return, 0, 0)
+            p._key(None, sharepicker.Gdk.KEY_Escape, 0, 0)       # answered once, destroyed once
+        self.assertEqual((got, gone), (["a"], [1]))
+        p.destroy()
+
+    def test_capture_pickers_use_frozen_screen(self):
+        """Display / window pickers (recording ones too) take their thumbnails from one frozen
+        screen: grim is not run per item."""
+        outs = CaptureLogicTest.OUTS
+        pb = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, True, 8, 4480, 1440)
+        frozen = capture.Frozen(pb, outs)
+        c = capture.Capture(None, types.SimpleNamespace())
+        picks = []
+        c._pick = lambda title, items, action, then: picks.append(items)
+        views = [{"role": "toplevel", "mapped": True, "title": "w", "output-id": 1,
+                  "geometry": {"x": 10, "y": 20, "width": 300, "height": 200}}]
+        with mock.patch.object(capture, "outputs", return_value=outs), \
+                mock.patch.object(capture.Frozen, "take", return_value=frozen) as take, \
+                mock.patch.object(capture.subprocess, "run", side_effect=AssertionError("grim per item")), \
+                mock.patch.object(capture, "_ipc", return_value=mock.Mock(call=lambda *_a: views)):
+            for mode in ("display", "rec-display", "window", "rec-window"):
+                c._run(mode, {})
+        self.assertEqual(take.call_count, 4)
+        self.assertEqual(len(picks), 4)
+        for items in picks:
+            self.assertTrue(all(it["texture"] is not None for it in items))
+            tex = items[0]["texture"]
+            self.assertLessEqual(tex.get_width(), sharepicker.THUMB_W)
+
+    def test_clipboard_screenshot_reuses_one_runtime_file(self):
+        """Screenshots to the clipboard reuse one file in the runtime dir (no pile-up in /tmp)."""
+        pb = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, True, 8, 8, 8)
+        frozen = capture.Frozen(pb, [])
+        c = capture.Capture(None, types.SimpleNamespace())
+        shots = []
+        c.shot_taken = shots.append
+        with mock.patch.object(capture.shutil, "which", side_effect=lambda t: "/usr/bin/grim" if t == "grim" else None), \
+                mock.patch("sonata2.sounds.play"):
+            c._shoot(None, {"shots_to": "clipboard"}, frozen=frozen)
+            c._shoot(None, {"shots_to": "clipboard"}, frozen=frozen)
+        self.assertEqual(shots[0], shots[1])
+        self.assertTrue(shots[0].startswith(GLib.get_user_runtime_dir() or GLib.get_tmp_dir()))
+        os.unlink(shots[0])
+
+
+# -- animations of the main actions ---------------------------------------------------------------
+class AnimationTests(unittest.TestCase):
+    def test_popovers_open_with_css_animation(self):
+        """Menus, menu bar panels and the Control Center open with the UI kit's popover animation."""
+        tpl = ui.theme._templates["motion-open"][0]
+        self.assertIn("popover > contents { animation: sonata-open", tpl)
+        win = Gtk.Window()
+        btn = Gtk.Button()
+        win.set_child(btn)
+        fake = types.SimpleNamespace()
+        with mock.patch.object(topbar, "ControlCenter", return_value=Gtk.Box()):
+            pop = topbar.Bar._control_center(fake, btn)
+        self.assertIsInstance(pop, Gtk.Popover)
+        pop.popdown()
+        win.destroy()
+
+    def test_notification_banner_slides_in_and_fades_out(self):
+        """A banner slides in (Revealer, 250 ms) and cross-fades out."""
+        n = N.Notifications.__new__(N.Notifications)
+        n._banners, n.win = {}, N._BannerWindow(None)
+        note = N.Note(1, "Chat", "", "Hi", "", [])
+        n._banner(note)
+        rev = n._banners[1][0]
+        self.assertEqual(rev.get_transition_type(), Gtk.RevealerTransitionType.SLIDE_LEFT)
+        self.assertGreater(rev.get_transition_duration(), 0)
+        spin(20)
+        self.assertTrue(rev.get_reveal_child())
+        n._hide_banner(1)
+        self.assertEqual(rev.get_transition_type(), Gtk.RevealerTransitionType.CROSSFADE)
+        self.assertFalse(rev.get_reveal_child())
+        n.win.destroy()
+
+    def test_notification_center_slides(self):
+        """The Notification Center slides in and out (Revealer)."""
+        owner = types.SimpleNamespace(notes=[], listeners=[], card=None, clear=None)
+        c = N._Center(None, owner)
+        self.assertEqual(c.rev.get_transition_type(), Gtk.RevealerTransitionType.SLIDE_LEFT)
+        self.assertGreater(c.rev.get_transition_duration(), 0)
+        c.show_center()
+        spin(20)
+        self.assertTrue(c.rev.get_reveal_child())
+        c.hide_center()
+        self.assertFalse(c.rev.get_reveal_child())
+        c.destroy()
+
+    def test_spotlight_open_close_classes(self):
+        """Spotlight drops in ("opening") and fades out ("closing")."""
+        sp = types.SimpleNamespace(panel=Gtk.Box(), _close_src=0, get_visible=lambda: True)
+        spotlight.Spotlight.close_spotlight(sp)
+        self.assertTrue(sp.panel.has_css_class("closing"))
+        GLib.source_remove(sp._close_src)
+        self.assertIn(".sp-panel.opening { animation: sp-in", ui.theme._templates["spotlight"][0])
+
+    def test_switcher_open_class_and_glide(self):
+        """The switcher opens with the "opening" animation and its selection glides
+        (Adw.TimedAnimation)."""
+        from sonata2.shell import switcher
+        panel = switcher.SwitcherPanel()
+        a, b = Gtk.Box(width_request=40, height_request=40), Gtk.Box(width_request=40, height_request=40)
+        panel.append(a)
+        panel.append(b)
+        win = Gtk.Window(child=panel)
+        win.present()
+        spin(300)
+        panel.select(a, animate=False)
+        panel.select(b, animate=True)
+        self.assertIsInstance(panel._anim, Adw.TimedAnimation)
+        win.destroy()
+        self.assertIn("sw-panel.opening", " ".join(t[0] for t in ui.theme._templates.values()))
+
+    def test_osd_crossfades(self):
+        """The volume / brightness HUD cross-fades in."""
+        w = osd.OSD(None)
+        self.assertEqual(w.rev.get_transition_type(), Gtk.RevealerTransitionType.CROSSFADE)
+        self.assertGreater(w.rev.get_transition_duration(), 0)
+        w.show_level("volume", 30)
+        self.assertTrue(w.rev.get_reveal_child())
+        GLib.source_remove(w._src)
+        w.destroy()
+
+    def test_screenshot_thumbnail_slides(self):
+        """The screenshot thumbnail slides in from the right and back out."""
+        t = capture.Thumbnail(None)
+        path = os.path.join(tempfile.mkdtemp(), "s.png")
+        with open(path, "wb") as f:
+            f.write(png_bytes(40, 30))
+        t.show_shot(path)
+        self.assertEqual(t.rev.get_transition_type(), Gtk.RevealerTransitionType.SLIDE_LEFT)
+        self.assertTrue(t.rev.get_reveal_child())
+        GLib.source_remove(t._src)
+        t._hide()
+        self.assertFalse(t.rev.get_reveal_child())
+        t.destroy()
+
+    def test_pickers_animate_in(self):
+        """The share / capture picker and the clipboard picker panels animate in (CSS)."""
+        css = " ".join(t[0] for t in ui.theme._templates.values())
+        self.assertIn(".share-panel { animation: share-in", css)
+        self.assertIn(".clip-panel { animation: clip-in", css)
 
 
 if __name__ == "__main__":

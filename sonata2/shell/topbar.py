@@ -63,6 +63,58 @@ window.sonata-topbar, window.sonata-topbar > contents { background: none; box-sh
 """, key="topbar", bar_h=BAR_H, item_h=BAR_H - 2)
 
 
+# -- services shared by every display's bar (one watcher each, not one per bar) -----------
+_SHARED = {}
+_BARS = []                       # live bars (stop() removes one)
+
+
+def _shared(key, make):
+    if key not in _SHARED:
+        _SHARED[key] = make()
+    return _SHARED[key]
+
+
+def _power_changed() -> None:
+    for b in list(_BARS):
+        b._poll_battery()
+
+
+class _Bluetooth:
+    """The BlueZ adapter, watched once for all bars (async proxy: a slow
+    bluetoothd never stalls the menu bar)."""
+
+    def __init__(self):
+        self.proxy = None
+        self.listeners = []
+        Gio.bus_watch_name(Gio.BusType.SYSTEM, "org.bluez", Gio.BusNameWatcherFlags.NONE,
+                           self._appeared, self._vanished)
+
+    def _appeared(self, conn, _name, _owner):
+        Gio.DBusProxy.new(conn, Gio.DBusProxyFlags.NONE, None, "org.bluez", "/org/bluez/hci0",
+                          "org.bluez.Adapter1", None, self._made)
+
+    def _made(self, _src, res):
+        try:
+            self.proxy = Gio.DBusProxy.new_finish(res)
+        except GLib.Error:
+            self.proxy = None
+        if self.proxy is not None:
+            self.proxy.connect("g-properties-changed", lambda *_: self._changed())
+        self._changed()
+
+    def _vanished(self, *_a):
+        self.proxy = None
+        self._changed()
+
+    def _changed(self):
+        for cb in list(self.listeners):
+            cb()
+
+    def powered(self):
+        v = self.proxy.get_cached_property("Powered") if self.proxy else None
+        return None if v is None else v.unpack()
+
+
 class Bar(Gtk.CenterBox):
     """The bar's content; painted with the bar material in do_snapshot."""
 
@@ -98,12 +150,14 @@ class Bar(Gtk.CenterBox):
                                      css="icon")
         self.players.listeners.append(self._extras_visibility)
         # clipboard history: kept here, shown by Super+V (clip_picker.py), no menu bar item
-        self.clip = clipboard.History()
+        # (one wl-paste watcher for the process, whatever the number of displays)
+        self.clip = _shared("clip", clipboard.History)
         # fullscreen first (gamemode.py): while a fullscreen app has the focus
-        # the polling pauses; leaving it catches up at once
+        # the polling pauses; leaving it catches up at once. One watcher for all bars.
         from .. import gamemode
-        self.fullscreen_first = gamemode.Watcher()
-        self.fullscreen_first.listeners.append(lambda on: on or self._poll())
+        self.fullscreen_first = _shared("gamemode", gamemode.Watcher)
+        self._fullscreen_cb = lambda on: on or self._poll()
+        self.fullscreen_first.listeners.append(self._fullscreen_cb)
         self.input_btn = self._item(right, text="", on_click=self._input_panel)
         self.input_btn.add_css_class("input-src")
         self._update_input()
@@ -127,7 +181,7 @@ class Bar(Gtk.CenterBox):
         right.set_margin_end(8)
         self.set_end_widget(right)
 
-        ui.on_change(self.queue_draw)
+        self._theme_cb = ui.theme.on_change(self.queue_draw)
         self._cfg_mon = config.watch("topbar", self._config_changed)
         if self.manager:
             self.manager.listeners.append(self._active_changed)
@@ -136,14 +190,23 @@ class Bar(Gtk.CenterBox):
         self._active_changed()
         self._poll()
         GLib.timeout_add_seconds(POLL_S, lambda: (self.alive and self._poll(), self.alive)[1])
-        power.watch(lambda: self.alive and self._poll_battery())    # plug / charge / level: at once
+        _BARS.append(self)
+        # plug / charge / level: at once (subscribed once; it calls every live bar)
+        _shared("power", lambda: power.watch(_power_changed))
 
     def stop(self) -> None:
-        """Its display was unplugged: no more polling or listening."""
+        """Its display was unplugged: no more polling or listening (the shared
+        watchers stay for the other bars)."""
         self.alive = False
         self.tray.stop()
-        if self.manager and self._active_changed in self.manager.listeners:
-            self.manager.listeners.remove(self._active_changed)
+        if self in _BARS:
+            _BARS.remove(self)
+        for owner, cb in ((self.manager, self._active_changed), (self.players, self._extras_visibility),
+                          (self.fullscreen_first, self._fullscreen_cb), (self._bt, self._bt_update)):
+            if owner is not None and cb in owner.listeners:
+                owner.listeners.remove(cb)
+        ui.theme.off_change(self._theme_cb)
+        self._cfg_mon.cancel()
 
     def _extras_visibility(self) -> None:
         self.nowplaying.set_visible(self.cfg["show_now_playing"] and self.players.active)
@@ -270,6 +333,7 @@ class Bar(Gtk.CenterBox):
         act = next((t for t in self.manager.toplevels if t.activated), None)
         if not act:
             return None, []
+        act.focused_at = GLib.get_monotonic_time()  # window recency: Super+Tab raises the last used on top
         key = apps.match_app_id(act.app_id) or act.app_id
         wins = [t for t in self.manager.toplevels if (apps.match_app_id(t.app_id) or t.app_id) == key]
         return key, wins
@@ -483,27 +547,12 @@ class Bar(Gtk.CenterBox):
 
     # -- Bluetooth (BlueZ over D-Bus: the icon follows the adapter, no polling) --------------
     def _watch_bluetooth(self) -> None:
-        self._bt_proxy = None
-
-        def appeared(conn, _name, _owner):
-            try:
-                self._bt_proxy = Gio.DBusProxy.new_sync(conn, Gio.DBusProxyFlags.NONE, None, "org.bluez",
-                                                        "/org/bluez/hci0", "org.bluez.Adapter1", None)
-            except GLib.Error:
-                self._bt_proxy = None
-            if self._bt_proxy is not None:
-                self._bt_proxy.connect("g-properties-changed", lambda *_: self._bt_update())
-            self._bt_update()
-
-        def vanished(*_a):
-            self._bt_proxy = None
-            self._bt_update()
-        self._bt_watch = Gio.bus_watch_name(Gio.BusType.SYSTEM, "org.bluez", Gio.BusNameWatcherFlags.NONE,
-                                            appeared, vanished)
+        self._bt = _shared("bluetooth", _Bluetooth)
+        self._bt.listeners.append(self._bt_update)
+        self._bt_update()
 
     def _bt_powered(self):
-        v = self._bt_proxy.get_cached_property("Powered") if self._bt_proxy else None
-        return None if v is None else v.unpack()
+        return self._bt.powered()
 
     def _bt_update(self) -> None:
         powered = self._bt_powered()
@@ -708,10 +757,10 @@ class Bar(Gtk.CenterBox):
 
     def _spotlight(self, btn):
         """Big Sur's magnifier: Spotlight."""
-        from ..__main__ import self_command
+        from ..__main__ import self_argv
         btn.remove_css_class("open")
         try:
-            GLib.spawn_async(self_command().split() + ["spotlight"], flags=GLib.SpawnFlags.SEARCH_PATH)
+            GLib.spawn_async(self_argv() + ["spotlight"], flags=GLib.SpawnFlags.SEARCH_PATH)
         except GLib.Error:
             pass
         return None
@@ -866,7 +915,8 @@ def _device_menu(btn, title, list_fn, set_fn) -> None:
     system.run_async(list_fn, fill)
 
 
-_art_cache = {}
+_art_cache = {}                 # (url, size) -> texture, newest last; small and few (ART_KEEP)
+ART_KEEP = 8
 
 
 def _load_art(url: str, image: Gtk.Image, size: int) -> None:
@@ -875,31 +925,42 @@ def _load_art(url: str, image: Gtk.Image, size: int) -> None:
         image.set_from_icon_name("sonata-now-playing-symbolic")
         image.set_pixel_size(size // 2)             # a small note in the empty square
         return
-    if url in _art_cache:
+    key = (url, size)
+    if key in _art_cache:
+        _art_cache[key] = _art_cache.pop(key)      # most recently used last
         image.set_pixel_size(size)
-        image.set_from_paintable(_art_cache[url])
+        image.set_from_paintable(_art_cache[key])
         return
+    px = size * 2                                   # sharp on HiDPI, not a full-size cover in memory
 
     def work():
         try:
             if url.startswith("file://"):
-                data = open(GLib.filename_from_uri(url)[0], "rb").read()
+                with open(GLib.filename_from_uri(url)[0], "rb") as f:
+                    data = f.read(16_000_000)
             else:
                 import urllib.request
                 with urllib.request.urlopen(url, timeout=5) as r:
                     data = r.read(4_000_000)
-            return data
-        except (OSError, ValueError):
+            gi.require_version("GdkPixbuf", "2.0")
+            from gi.repository import GdkPixbuf
+            loader = GdkPixbuf.PixbufLoader()
+            loader.connect("size-prepared", lambda ld, w, h: ld.set_size(
+                *((px, max(1, round(h * px / w))) if w >= h else (max(1, round(w * px / h)), px)))
+                if max(w, h) > px else None)
+            loader.write(data)
+            loader.close()
+            return loader.get_pixbuf()
+        except (OSError, ValueError, GLib.Error, ZeroDivisionError):
             return None
 
-    def done(data):
-        if not data:
+    def done(pb):
+        if pb is None:
             return
-        try:
-            tex = Gdk.Texture.new_from_bytes(GLib.Bytes.new(data))
-        except GLib.Error:
-            return
-        _art_cache[url] = tex
+        tex = Gdk.Texture.new_for_pixbuf(pb)
+        _art_cache[key] = tex
+        while len(_art_cache) > ART_KEEP:
+            _art_cache.pop(next(iter(_art_cache)))
         image.set_pixel_size(size)
         image.set_from_paintable(tex)
     system.run_async(work, done)
@@ -1195,9 +1256,9 @@ def _listen_for_lock() -> None:
     tools) starts Sonata's lock screen; the menu bar always runs, so it
     listens for the session."""
     def lock(*_a):
-        from ..__main__ import self_command
+        from ..__main__ import self_argv
         try:
-            GLib.spawn_async(self_command().split() + ["lock"], flags=GLib.SpawnFlags.SEARCH_PATH)
+            GLib.spawn_async(self_argv() + ["lock"], flags=GLib.SpawnFlags.SEARCH_PATH)
         except GLib.Error:
             pass
     try:

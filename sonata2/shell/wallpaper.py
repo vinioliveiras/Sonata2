@@ -86,8 +86,28 @@ class WallpaperWindow(Gtk.ApplicationWindow):
             LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND if desktop else LS.KeyboardMode.NONE)
         from .. import prefs
         self._prefs_mon = prefs.watch(lambda *_: self.update())
-        Adw.StyleManager.get_default().connect("notify::dark", lambda *_: self.update())
+        self._dark_id = Adw.StyleManager.get_default().connect("notify::dark", lambda *_: self.update())
         self.update()
+
+    def destroy(self) -> None:
+        # (not the "destroy" signal: it only comes once the last reference
+        #  is gone, and the StyleManager handler is one)
+        self._release()
+        Gtk.ApplicationWindow.destroy(self)
+
+    def _release(self) -> None:
+        """Destroyed (display unplugged, main display changed): let go of the
+        app-wide StyleManager and the prefs monitor, or they keep this window
+        and its decoded pictures (~33 MB at 4K) alive."""
+        if self._dark_id:
+            Adw.StyleManager.get_default().disconnect(self._dark_id)
+            self._dark_id = 0
+        if self._prefs_mon is not None:
+            self._prefs_mon.cancel()
+            self._prefs_mon = None
+        self._uri = object()                  # a decode still running is dropped when it lands
+        for p in self.pics:
+            p.set_paintable(None)
 
     def do_size_allocate(self, w, h, baseline) -> None:
         Gtk.ApplicationWindow.do_size_allocate(self, w, h, baseline)
