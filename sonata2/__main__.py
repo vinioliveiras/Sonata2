@@ -685,12 +685,24 @@ def _reload_wayfire_config() -> None:
         os.remove(tmp)
 
 
+def _pids(pattern: str) -> list:
+    import subprocess
+    out = subprocess.run(["pgrep", "-f", "--", pattern], capture_output=True, text=True).stdout
+    return [int(p) for p in out.split() if p.isdigit() and int(p) != os.getpid()]
+
+
 def restart(names) -> int:
     """`sonata2 restart [dock topbar ...]`: stop those shell components (all
     by default) and start them again with the current code -- to see edits
-    live in a running Sonata session."""
+    live in a running Sonata session.
+
+    Smooth (Vini): the old Dock and menu bar slide away (SIGUSR1, intro.py),
+    the new ones start out of sight and slide in once ready, and the new
+    wallpaper comes up under the old one before it goes -- no black flash."""
+    import signal
     import subprocess
     import time
+    from .shell import intro
     if not names:
         _reload_wayfire_config()
     if not names:
@@ -698,17 +710,50 @@ def restart(names) -> int:
         # old code (looks) after an update. Stopped; D-Bus starts it again, new.
         subprocess.run(["pkill", "-f", "--", r"sonata2 portal( |$)"], check=False)
     names = [n for n in names if n in SHELL_COMPONENTS] or list(SHELL_COMPONENTS)
+    keepers = {n: _pids(rf"-m sonata2 keep {n}( |$)") for n in names}
+    children = {n: _pids(rf"-m sonata2 {n}( |$)") for n in names}
     for n in names:                       # the keepers first, so they don't start it again
-        subprocess.run(["pkill", "-f", "--", rf"-m sonata2 keep {n}( |$)"], check=False)
-        subprocess.run(["pkill", "-f", "--", rf"-m sonata2 {n}( |$)"], check=False)
-    time.sleep(0.6)
+        for pid in keepers[n]:
+            _signal(pid, signal.SIGTERM)
+    visible = [p for n in ("dock", "topbar") if n in names for p in children[n]]
+    if visible:
+        for pid in visible:                # they slide away
+            _signal(pid, signal.SIGUSR1)
+        time.sleep(0.35)
+        try:
+            with open(intro.RESTART_MARK, "w", encoding="utf-8") as f:
+                f.write("restarting\n")      # the new ones slide in
+        except OSError:
+            pass
+    for n in names:
+        if n != "wallpaper":
+            for pid in children[n]:
+                _signal(pid, signal.SIGTERM)
+    time.sleep(0.3)
     cmd = self_argv()
     for n in names:
         extra = ["--background"] if n in ("launchpad", "spotlight") else []
         subprocess.Popen(cmd + ["keep", n] + extra, start_new_session=True,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(f"restarted {n}")
+    if "wallpaper" in names and children["wallpaper"]:
+        time.sleep(1.5)                    # the new wallpaper is up under the old one
+        for pid in children["wallpaper"]:
+            _signal(pid, signal.SIGTERM)
+    if visible:
+        time.sleep(4)                      # a component started later than that just shows
+        try:
+            os.unlink(intro.RESTART_MARK)
+        except OSError:
+            pass
     return 0
+
+
+def _signal(pid: int, sig) -> None:
+    try:
+        os.kill(pid, sig)
+    except OSError:
+        pass
 
 
 KEYS = {  # media keys: (what changes, step); macOS uses 16 steps

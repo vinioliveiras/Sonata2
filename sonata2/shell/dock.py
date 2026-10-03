@@ -1973,12 +1973,14 @@ class DockWindow(Gtk.ApplicationWindow):
         self._icons_mon = config.watch("icons", lambda: self.dock is not None and self.dock.refresh_icons())
         self.rebuild()
         from . import intro
-        if intro.pending() and not self.cfg["autohide"]:
+        if intro.entering() and not self.cfg["autohide"]:
             # login: out of sight until the welcome screen fades, then it
-            # slides in from its edge like a hidden Dock showing
+            # slides in from its edge like a hidden Dock showing; a restart
+            # of Sonata: the same, as soon as it's ready
             self.dock.hide_amount = 1.0
             self.dock.queue_draw()
             intro.wait(lambda: self._slide(False))
+        intro.leave_on_signal(lambda: self._slide(True))      # restart: the old Dock slides away
 
     def rebuild(self) -> None:
         if self.dock:

@@ -1595,11 +1595,12 @@ class TopBarWindow(Gtk.ApplicationWindow):
                 from . import intro
                 if self._hidden:                    # auto-hide: it starts out of sight
                     pass
-                elif intro.pending():               # login: slides down once the welcome screen fades
+                elif intro.entering():              # login / restart: slides down once ready
                     # (the bar's drawing moves, not the surface: a surface
                     # moved off-screen gets no frames and would never come back)
                     self._intro_offset = float(BAR_H)
                     intro.wait(self._slide_in)
+                intro.leave_on_signal(lambda: self._slide(True))   # restart: the old bar slides away
 
     def do_snapshot(self, snap) -> None:
         off = getattr(self, "_intro_offset", 0.0)

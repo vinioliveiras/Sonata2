@@ -26,13 +26,13 @@ class ChooserIsFilesTest(unittest.TestCase):
         """It runs all session and kept the old look after an update."""
         from sonata2 import __main__ as m
         runs = []
-        with mock.patch("subprocess.run", side_effect=lambda a, **k: runs.append(a)), \
+        with mock.patch("subprocess.run", side_effect=lambda a, **k: runs.append(a) or mock.Mock(stdout="")), \
                 mock.patch("subprocess.Popen"), mock.patch("time.sleep"), \
                 mock.patch.object(m, "_reload_wayfire_config"):
             m.restart([])
         self.assertIn(["pkill", "-f", "--", r"sonata2 portal( |$)"], runs)
         runs.clear()
-        with mock.patch("subprocess.run", side_effect=lambda a, **k: runs.append(a)), \
+        with mock.patch("subprocess.run", side_effect=lambda a, **k: runs.append(a) or mock.Mock(stdout="")), \
                 mock.patch("subprocess.Popen"), mock.patch("time.sleep"):
             m.restart(["dock"])                               # just one part: the panels stay
         self.assertNotIn(["pkill", "-f", "--", r"sonata2 portal( |$)"], runs)
