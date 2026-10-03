@@ -255,11 +255,48 @@ class MixerModuleTest(TempConfig):
         with mock.patch("sonata2.backend.system.run_async"):
             cc.grid.add_module("mixer")
             settle(150)
-        self.assertIn(cc.app_mixer.set_streams, service.listeners)  # live while on screen
-        self.assertEqual(cc.grid.slots["mixer"].get_height(), C.span_height(3))
+        self.assertIn(cc.modules["mixer"]._streams, service.listeners)  # live while on screen
         win.destroy()
         settle(50)
-        self.assertNotIn(cc.app_mixer.set_streams, service.listeners)
+        self.assertNotIn(cc.modules["mixer"]._streams, service.listeners)
+
+    def test_its_height_follows_the_apps_playing(self):
+        """Vini: the mixer grows (a grid row at a time) with the apps playing
+        and shrinks back -- never wider, the modules below glide along."""
+        from sonata2.backend import mixer
+        cc, _service = self.build()
+        win = Gtk.Window()
+        win.set_child(cc)
+        win.present()
+        settle(100)
+        with mock.patch("sonata2.backend.system.run_async"):
+            cc.grid.add_module("mixer")
+            settle(100)
+        feed = cc.modules["mixer"]._streams
+
+        def play(n):
+            feed([mixer.Stream(index=i, key=f"app{i}", name=f"App {i}", icon="", volume=50, muted=False)
+                  for i in range(n)])
+            settle(400)
+            return cc.grid._places["mixer"][3]
+        width = cc.grid.slots["mixer"].get_width()
+        none = play(0)
+        one, four, many = play(1), play(4), play(12)
+        self.assertLessEqual(none, one)
+        self.assertLess(one, four)
+        self.assertLessEqual(four, many)
+        self.assertEqual(many, 6)                                  # past that it scrolls inside
+        self.assertEqual(play(1), one)                             # and shrinks back
+        self.assertEqual(cc.grid.slots["mixer"].get_height(), C.span_height(one))
+        self.assertEqual(cc.grid.slots["mixer"].get_width(), width)  # never wider
+        self.assertEqual(cc.grid.measure(Gtk.Orientation.HORIZONTAL, -1)[1], cc.width)
+        win.destroy()
+
+    def test_rows_for(self):
+        self.assertEqual(C.rows_for(10), 1)
+        self.assertEqual(C.rows_for(C.span_height(2)), 2)
+        self.assertEqual(C.rows_for(C.span_height(2) + 1), 3)
+        self.assertEqual(C.rows_for(10_000), 6)
 
     def test_not_offered_without_a_sound_server(self):
         cc, _ = self.build(available=False)

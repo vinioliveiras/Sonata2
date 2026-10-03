@@ -1204,23 +1204,40 @@ class ControlCenter(Gtk.Box):
             return None
         from .mixer_ui import AppMixer
         apps_box = AppMixer()
+        from . import controlcenter as CCL
         scroller = Gtk.ScrolledWindow(child=apps_box, hscrollbar_policy=Gtk.PolicyType.NEVER,
                                       vscrollbar_policy=Gtk.PolicyType.AUTOMATIC, vexpand=True,
                                       propagate_natural_height=False)
-        box = ui.panel.module(Gtk.Label(label="Volume Mixer", xalign=0, css_classes=["panel-module-title"]),
-                              scroller, spacing=4)
+        title = Gtk.Label(label="Volume Mixer", xalign=0, css_classes=["panel-module-title"])
+        box = ui.panel.module(title, scroller, spacing=4)
         box.add_css_class("cc-mixer")
         self.app_mixer = apps_box                               # (tests)
         service = getattr(self.bar, "mixer", None)
 
+        def fit():
+            """As many grid rows as the apps playing need (Vini), up to 6; past
+            that the list scrolls inside. Rows sliding out don't count."""
+            V = Gtk.Orientation.VERTICAL
+            rows = list(apps_box.rows.values())
+            inner = (sum(r.get_child().measure(V, -1)[1] for r in rows) if rows
+                     else apps_box.empty.measure(V, -1)[1])
+            chrome = box.measure(V, -1)[1] - scroller.measure(V, -1)[1]
+            if getattr(self, "grid", None) is not None:
+                self.grid.set_rows("mixer", CCL.rows_for(chrome + inner))
+
+        def streams(found):
+            apps_box.set_streams(found)
+            fit()
+
         def mapped(*_a):
-            system.run_async(mixer.streams, apps_box.set_streams)
-            if service is not None and apps_box.set_streams not in service.listeners:
-                service.listeners.append(apps_box.set_streams)
+            system.run_async(mixer.streams, streams)
+            if service is not None and streams not in service.listeners:
+                service.listeners.append(streams)
 
         def unmapped(*_a):
-            if service is not None and apps_box.set_streams in service.listeners:
-                service.listeners.remove(apps_box.set_streams)
+            if service is not None and streams in service.listeners:
+                service.listeners.remove(streams)
+        box._streams = streams                                  # (tests)
         box.connect("map", mapped)
         box.connect("unmap", unmapped)
         return box

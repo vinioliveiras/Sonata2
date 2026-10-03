@@ -29,7 +29,7 @@ CATALOG = {
     "display": ("Display", (4, 2)),
     "sound": ("Sound", (4, 2)),
     "nowplaying": ("Now Playing", (4, 1)),
-    "mixer": ("Volume Mixer", (4, 3)),            # each app's volume (Sound menu's list); scrolls inside
+    "mixer": ("Volume Mixer", (4, 2)),            # each app's volume; grows a row per app (set_rows)
     # performance (statsui.py): not in the default layout, offered by Add Controls
 }
 from ..backend import stats as _stats  # noqa: E402
@@ -53,6 +53,14 @@ def span_height(rows: int) -> int:
     return rows * UNIT_H + (rows - 1) * SPACING
 
 
+def rows_for(px: float, most: int = 6) -> int:
+    """The fewest whole grid rows (1..most) that hold `px` of content."""
+    rows = 1
+    while rows < most and span_height(rows) < px:
+        rows += 1
+    return rows
+
+
 def load() -> list:
     """The modules shown, in order: known ids, each once."""
     saved = config.load("controlcenter", DEFAULTS)["modules"]
@@ -73,13 +81,15 @@ def hidden(order) -> list:
     return [m for m in CATALOG if m not in order]
 
 
-def pack(order, cols: int = COLS) -> dict:
+def pack(order, cols: int = COLS, rows: dict = None) -> dict:
     """{id: (col, row, w, h)}: each module in order at the first free place
-    where it fits (left to right, top to bottom), like the macOS grid."""
+    where it fits (left to right, top to bottom), like the macOS grid.
+    rows: {id: h} for modules whose height follows their content (the mixer)."""
     taken = set()
     out = {}
     for m in order:
         w, h = CATALOG[m][1]
+        h = (rows or {}).get(m, h)
         w = min(w, cols)
         row = 0
         while m not in out:
@@ -136,6 +146,8 @@ class ModuleGrid(Gtk.Widget):
         self.editing = False
         self.slots = {}
         self._places = {}
+        self.rows = {}                      # id -> rows, for modules sized by their content
+        self._grow = {}                     # id -> drawn height while it grows or shrinks
         self._dragging = None
         target = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
         target.connect("motion", lambda _t, x, y: self._drag_over(x, y))
@@ -148,7 +160,30 @@ class ModuleGrid(Gtk.Widget):
     def rect(self, mid: str) -> tuple:
         col, row, w, h = self._places[mid]
         return (round(col * (self.col_w + SPACING)), row * (UNIT_H + SPACING),
-                round(w * self.col_w + (w - 1) * SPACING), span_height(h))
+                round(w * self.col_w + (w - 1) * SPACING), round(self._grow.get(mid, span_height(h))))
+
+    def set_rows(self, mid: str, rows: int) -> None:
+        """A module sized by its content (the mixer: a row per app playing)
+        takes `rows` grid rows: it grows or shrinks smoothly, the modules
+        below glide along; the grid never gets wider."""
+        old = self._places.get(mid)
+        if self.rows.get(mid) == rows and (old is None or old[3] == rows):
+            return
+        self.rows[mid] = rows
+        if old is None or old[3] == rows:
+            return
+        start, end = span_height(old[3]), span_height(rows)
+        self._layout(glide=True)
+
+        def step(v):
+            self._grow[mid] = v
+            if v == end:
+                self._grow.pop(mid, None)
+            self.queue_allocate()
+        self._grow[mid] = start
+        ui.transition.tween(self, "rows-" + mid, start, end, 220, step, "control center module size")
+        if self.on_change:
+            self.on_change(self.order)
 
     def do_measure(self, orientation, for_size):
         if orientation == Gtk.Orientation.HORIZONTAL:
@@ -178,7 +213,7 @@ class ModuleGrid(Gtk.Widget):
 
     def _layout(self, glide: bool = False) -> None:
         before = ui.transition.glide_record(list(self.slots.values()), self) if glide else {}
-        self._places = pack(self.order)
+        self._places = pack(self.order, rows=self.rows)
         for mid, slot in list(self.slots.items()):
             if mid not in self._places and slot.get_parent() is self:
                 slot.unparent()
