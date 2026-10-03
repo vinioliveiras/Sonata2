@@ -126,9 +126,14 @@ class WallpaperWindow(Gtk.ApplicationWindow):
             nxt.set_paintable(tex)
             self.stack.set_visible_child(nxt)
             return False
+        first = all(p.get_paintable() is None for p in self.pics)
         if path is None:
             show(None)
-        else:                                    # decoding a 4K photo takes a moment: not on the UI thread
+        elif first:
+            # at login: decoded before the window shows (a thread let the gradient
+            # behind it flash first -- Vini: "the default wallpaper, then mine")
+            show(screen_texture(path, w, h))
+        else:                                    # a change later: decoding a 4K photo takes a moment, off the UI thread
             threading.Thread(target=lambda: GLib.idle_add(show, screen_texture(path, w, h)), daemon=True).start()
         if self.main and f is not None:
             share_with_login_screen(f)

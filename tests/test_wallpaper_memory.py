@@ -31,3 +31,23 @@ class WallpaperMemoryTest(unittest.TestCase):
         src = open(W.__file__).read()
         self.assertIn("p.set_paintable(None) for p in self.pics if p is not st.get_visible_child()", src)
         self.assertNotIn("nxt.set_file(", src)                                   # never the whole file
+
+
+class WallpaperFirstFrameTest(unittest.TestCase):
+    """Vini: at login the default (gradient) showed for a moment before his
+    wallpaper -- the picture was decoded in a thread after the window mapped."""
+
+    def test_first_picture_before_the_window_shows(self):
+        if not Gtk.init_check():
+            self.skipTest("no display")
+        from unittest import mock
+        from sonata2 import prefs
+        app = Gtk.Application(application_id="io.github.test.wallfirst")
+        app.register(None)
+        uri = wallpapers.uri(wallpapers.CATALOG[1].light)
+        with mock.patch.object(prefs, "get", side_effect=lambda s, k, d=None: uri if "picture-uri" in k else d), \
+                mock.patch.object(W, "share_with_login_screen"):
+            win = W.WallpaperWindow(app, desktop=False)
+        shown = win.stack.get_visible_child()
+        self.assertIsNotNone(shown.get_paintable())               # already there, nothing to wait for
+        win.destroy()
