@@ -283,6 +283,9 @@ def check_gpu(r: Report) -> None:
             if gpu.compositor_on_display_gpu():
                 r.add(WARN, "hybrid graphics: Wayfire draws with the displays' GPU (Settings > Displays > "
                             "Graphics); on NVIDIA that can end the session -- Sonata turns it off if it does")
+            elif gpu.render_gpu() and gpu.render_gpu() not in gpu.INTEGRATED:
+                r.add(OK, "hybrid graphics: the screens are on the NVIDIA card (MUX in dGPU mode), "
+                          "Wayfire and every app draw with it")
             else:
                 r.add(OK, "hybrid graphics: Wayfire draws on the integrated GPU; "
                           "games still use the NVIDIA card (prime-run / Steam)")

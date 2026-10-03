@@ -67,18 +67,39 @@ class EverydayIntegratedTest(unittest.TestCase):
     def test_everyday_apps_move_games_stay(self):
         with mock.patch.object(gpu, "everyday_integrated", return_value=True), \
                 mock.patch.object(gpu, "_cards", return_value=["amdgpu", "nvidia"]):
-            chrome = gpu.launch_env(self.info("google-chrome.desktop", "Network;WebBrowser;"))
+            with mock.patch.object(gpu, "render_gpu", return_value="amdgpu"):
+                chrome = gpu.launch_env(self.info("google-chrome.desktop", "Network;WebBrowser;"))
             self.assertEqual(chrome.get("__GLX_VENDOR_LIBRARY_NAME"), "mesa")
             self.assertEqual(gpu.launch_env(self.info("steam.desktop", "Network;FileTransfer;Game;")), {})
             self.assertEqual(gpu.launch_env(self.info("org.gimp.GIMP.desktop", "Graphics;2DGraphics;RasterGraphics;")), {})
             self.assertEqual(gpu.launch_env(self.info("heroic.desktop", "")), {})
 
-    def test_spotify_keeps_the_screens_gpu(self):
-        """Vini: on the integrated GPU Spotify's window opened empty."""
+    def test_apps_follow_the_gpu_that_draws_the_screens(self):
+        """Vini: with the screens on the NVIDIA card, Spotify sent to the
+        integrated GPU opened empty -- everyday apps stay with the screens' GPU."""
+        chrome = self.info("google-chrome.desktop", "WebBrowser;")
+        spotify = self.info("spotify-launcher.desktop", "Audio;Music;")
         with mock.patch.object(gpu, "everyday_integrated", return_value=True), \
                 mock.patch.object(gpu, "_cards", return_value=["amdgpu", "nvidia"]):
-            for did in ("spotify-launcher.desktop", "spotify.desktop", "com.spotify.Client.desktop"):
-                self.assertEqual(gpu.launch_env(self.info(did, "Audio;Music;Player;AudioVideo;")), {})
+            with mock.patch.object(gpu, "render_gpu", return_value="nvidia"):
+                self.assertEqual(gpu.launch_env(spotify), {})
+                self.assertEqual(gpu.launch_env(chrome), {})
+            with mock.patch.object(gpu, "render_gpu", return_value="amdgpu"):
+                self.assertEqual(gpu.launch_env(spotify).get("__GLX_VENDOR_LIBRARY_NAME"), "mesa")
+
+    def test_render_gpu_from_the_session(self):
+        root = tempfile.mkdtemp()
+        for n, drv in (("card0", "amdgpu"), ("card1", "nvidia")):
+            os.makedirs(os.path.join(root, "drivers", drv))
+            os.makedirs(os.path.join(root, n, "device"))
+            os.symlink(os.path.join(root, "drivers", drv), os.path.join(root, n, "device", "driver"))
+        real_join = os.path.join
+        with mock.patch.object(gpu.os.path, "join",
+                               lambda a, *b: real_join(root if a == "/sys/class/drm" else a, *b)):
+            with mock.patch.dict(os.environ, {"WLR_DRM_DEVICES": "/dev/dri/card1:/dev/dri/card0"}):
+                self.assertEqual(gpu.render_gpu(), "nvidia")
+            with mock.patch.dict(os.environ, {"WLR_DRM_DEVICES": "/dev/dri/card0"}):
+                self.assertEqual(gpu.render_gpu(), "amdgpu")
 
     def test_nothing_without_an_integrated_gpu(self):
         with mock.patch.object(gpu, "everyday_integrated", return_value=True), \

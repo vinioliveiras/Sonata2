@@ -308,13 +308,6 @@ def heavy(info) -> bool:
     return bool(cats & HEAVY_CATEGORIES)
 
 
-# Apps drawn through Xwayland by Chromium's CEF (Spotify): moved to the
-# integrated GPU while the screens are driven by the NVIDIA card, the window
-# opened but stayed empty -- its frames never crossed to the other card
-# (Vini). They keep the card that draws the screen.
-SAME_GPU_APPS = {"spotify", "spotify-launcher", "com.spotify.Client"}
-
-
 def integrated_env() -> dict:
     """Mesa (the integrated GPU) for GL/EGL/Vulkan, {} when there is none to use."""
     cards = _cards()
@@ -330,11 +323,40 @@ def integrated_env() -> dict:
     return env
 
 
+INTEGRATED = ("amdgpu", "i915", "xe", "radeon")
+
+
+def render_gpu() -> str:
+    """Driver of the GPU Wayfire draws with: the first of WLR_DRM_DEVICES
+    (tools/sonata-session picks it from where the screens are wired), else
+    the boot GPU, as wlroots does; "" when unknown."""
+    dev = (os.environ.get("WLR_DRM_DEVICES") or "").split(":")[0]
+    if dev:
+        card = os.path.join("/sys/class/drm", os.path.basename(os.path.realpath(dev)))
+    else:
+        card = next((c for c in sorted(glob.glob("/sys/class/drm/card[0-9]"))
+                     if open_text(os.path.join(c, "device", "boot_vga")) == "1"), "")
+    drv = os.path.realpath(os.path.join(card, "device", "driver")) if card else ""
+    return os.path.basename(drv) if drv and os.path.isdir(drv) else ""
+
+
+def open_text(path: str) -> str:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
 def launch_env(info) -> dict:
-    """The GPU environment Sonata launches `info` with ({} = the default)."""
+    """The GPU environment Sonata launches `info` with ({} = the default).
+    Everyday apps go to the integrated GPU only while Wayfire draws with it:
+    with the screens on the NVIDIA card (a MUX in dGPU mode, or a session
+    drawn by it), their frames would have to cross cards, and apps drawn
+    through Xwayland (Spotify, CEF) opened empty (Vini)."""
     if wants_discrete(info):
         return discrete_env()
-    if everyday_integrated() and not heavy(info) and _key(info) not in SAME_GPU_APPS:
+    if everyday_integrated() and not heavy(info) and render_gpu() in INTEGRATED:
         return integrated_env()
     return {}
 

@@ -1083,7 +1083,8 @@ class Settings(Adw.ApplicationWindow):
                                         gpu.set_everyday_integrated,
                                         subtitle="Browsers, chat and office apps use the integrated graphics "
                                                  "and the computer's memory; games and creative apps keep "
-                                                 "the graphics card. For apps opened after the change."))
+                                                 "the graphics card. Only while the screens are drawn by the "
+                                                 "integrated graphics. For apps opened after the change."))
             pages.append(graphics)
         return pages
 
