@@ -111,7 +111,7 @@ KEYWORDS = {
                   "glass transparency translucent blur frosted title bars corners radius",
     "dock": "magnification size position autohide recent apps displays minimize default web browser",
     "appicons": "icon icons app shape squircle circle rounded custom picture image package theme",
-    "menubar": "clock battery percentage bluetooth sound now playing logo text automatically hide show",
+    "menubar": "clock battery percentage bluetooth sound now playing logo text automatically hide show wifi wi-fi search input source keyboard background apps",
     "launchpad": "apps grid folders launchpad", "hidden": "hide hidden protected private lock password apps", "updates": "software update upgrade packages",
     "about": "computer system version restart sonata",
 }
@@ -2440,23 +2440,24 @@ class Settings(Adw.ApplicationWindow):
         g.add(switch_row("Automatically hide and show the menu bar", cfg.get("autohide", False),
                          lambda on: self._save("topbar", "autohide", on),
                          subtitle="It slides back down when the pointer reaches the top of the screen"))
-        g.add(switch_row("Show battery percentage", cfg["battery_percent"],
-                         lambda on: self._save("topbar", "battery_percent", on)))
         g.add(combo_row("Clock", [("%a %-d %b  %H:%M", "Mon 28 Sep  21:41"), ("%a %H:%M", "Mon 21:41"),
                                   ("%a %-d %b  %-I:%M %p", "Mon 28 Sep  9:41 PM"), ("%a %-I:%M %p", "Mon 9:41 PM"),
                                   ("%H:%M", "21:41")],
                         cfg["clock_format"], lambda v: self._save("topbar", "clock_format", v)))
-        g.add(switch_row("Show Bluetooth in menu bar", cfg["show_bluetooth"],
-                         lambda on: self._save("topbar", "show_bluetooth", on)))
-        g.add(switch_row("Show background apps in menu bar", cfg.get("show_tray", True),
-                         lambda on: self._save("topbar", "show_tray", on),
-                         subtitle="Status icons of apps running in the background (Discord, Steam…)"))
-        g.add(switch_row("Show Sound in menu bar", cfg["show_sound"],
-                         lambda on: self._save("topbar", "show_sound", on),
-                         subtitle="Volume and outputs are always in Control Center"))
-        g.add(switch_row("Show Now Playing in menu bar", cfg["show_now_playing"],
-                         lambda on: self._save("topbar", "show_now_playing", on),
-                         subtitle="While something plays"))
+        # every status item, in the menu bar's order (Control Center and the clock always stay)
+        items = group("Show in Menu Bar")
+        for key, title, sub in (("show_tray", "Background apps", "Status icons of apps running in the background "
+                                 "(Discord, Steam…)"),
+                                ("show_now_playing", "Now Playing", "While something plays"),
+                                ("show_input", "Input source", "With two or more keyboard layouts"),
+                                ("show_sound", "Sound", "Volume and outputs are always in Control Center"),
+                                ("show_battery", "Battery", ""),
+                                ("battery_percent", "Battery percentage", ""),
+                                ("show_bluetooth", "Bluetooth", ""),
+                                ("show_wifi", "Wi-Fi", ""),
+                                ("show_spotlight", "Search", "")):
+            items.add(switch_row(title, cfg.get(key, T.DEFAULTS[key]),
+                                 lambda on, k=key: self._save("topbar", k, on), subtitle=sub))
         from ..ui import logo as L
         app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
         # always there, usable only for "Text: custom…": showing / hiding it
@@ -2476,7 +2477,7 @@ class Settings(Adw.ApplicationWindow):
         logo.menu_text_row = text_row                     # (tests)
         reset = self._reset_group("Reset Desktop & Dock", "The Dock's and menu bar's options back to the "
                                   "defaults; your apps and folders in the Dock stay", self.ask_reset_dock)
-        return [g, logo, reset]
+        return [g, items, logo, reset]
 
     # what Reset Desktop & Dock puts back: options, never what's in the Dock
     # (pinned apps, folders, stacks, recents) nor the default browser

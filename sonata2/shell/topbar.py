@@ -38,6 +38,9 @@ CC_W = 320
 LOGO_PX = 12            # the Sonata menu's logo / shape / symbol (under the 16 px status icons; Vini's call)
 DEFAULTS = {"battery_percent": False, "clock_format": "%a %-d %b  %H:%M", "show_bluetooth": True,
             "show_sound": False, "show_now_playing": False, "show_tray": True,
+            # every status item can be taken out of the menu bar (Settings > Menu Bar, Vini);
+            # Control Center and the clock always stay, like macOS
+            "show_wifi": True, "show_battery": True, "show_spotlight": True, "show_input": True,
             "autohide": False}                  # Settings > Menu Bar: hide it like the Dock (Vini)
 HIDE_MS = 250                                   # auto-hide slide (the Dock's)
 REVEAL_MS = 150                                 # pointer at the top edge -> the bar comes down
@@ -178,6 +181,7 @@ class Bar(Gtk.CenterBox):
         self.wifi = self._item(right, icon="sonata-wifi-3-symbolic",
                                on_click=self._wifi_panel, css="icon")
         self.spotlight = self._item(right, icon="sonata-search-symbolic", on_click=self._spotlight, css="icon")
+        self.spotlight.set_visible(self.cfg.get("show_spotlight", True))
         self.cc = self._item(right, icon="sonata-control-center-symbolic", on_click=self._control_center,
                              css="icon")
         self.clock = self._item(right, text="", on_click=self._calendar)
@@ -223,6 +227,9 @@ class Bar(Gtk.CenterBox):
         self._bt_update()
         self._extras_visibility()
         self.tray.set_shown(self.cfg.get("show_tray", True))
+        self.spotlight.set_visible(self.cfg.get("show_spotlight", True))
+        self._update_input()
+        self._poll()                                # Wi-Fi / battery shown or not, at once
         if getattr(self, "on_autohide", None):
             self.on_autohide()
         now = GLib.DateTime.new_now_local()
@@ -472,12 +479,12 @@ class Bar(Gtk.CenterBox):
             name = "sonata-wifi-0-symbolic"
         else:
             name = f"sonata-wifi-{3 if sig > 60 else 2 if sig > 30 else 1}-symbolic"
-        self.wifi.set_visible(True)
+        self.wifi.set_visible(self.cfg.get("show_wifi", True))
         self._set_icon(self.wifi, name)
 
     def _battery_state(self, res) -> None:
         pct, status, ac, profile = (tuple(res) + (None,) * 4)[:4] if res else (None, "", False, None)
-        self.battery.set_visible(pct is not None or bool(status))
+        self.battery.set_visible((pct is not None or bool(status)) and self.cfg.get("show_battery", True))
         if pct is None:
             if status:
                 self._set_icon(self.battery, "sonata-battery-missing-symbolic")    # battery, no reading
@@ -734,7 +741,7 @@ class Bar(Gtk.CenterBox):
 
     def _update_input(self):
         lays = self._layouts()
-        self.input_btn.set_visible(len(lays) > 1)
+        self.input_btn.set_visible(len(lays) > 1 and self.cfg.get("show_input", True))
         if lays:
             self._set_text(self.input_btn, lays[0].split("(")[0].upper()[:3])
 
