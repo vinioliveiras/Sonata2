@@ -33,9 +33,9 @@ PANEL_GAP = 2
 # song name ellipsizes, never widens a panel (ui/fixed.py)
 STATUS_W = 280
 CC_W = 320
-# Control Center's modules area: always this size, whatever is added (Vini) -- the
-# default layout's own size; more modules scroll inside it, nothing widens it
-CC_GRID_W, CC_GRID_H = 344, 406
+# Control Center's modules area: always this wide, whatever is added (Vini) -- the
+# default layout's width; it grows downwards with more modules, up to the screen
+CC_GRID_W = 344
 # Sound and Now Playing live in the Control Center; the menu bar items are
 # optional (Settings > Menu Bar), off by default (Vini).
 LOGO_PX = 12            # the Sonata menu's logo / shape / symbol (under the 16 px status icons; Vini's call)
@@ -1141,17 +1141,32 @@ class ControlCenter(Gtk.Box):
         for kind in statsui.KINDS:
             self.modules["stat_" + kind] = statsui.module(kind)
         self.grid = CCL.ModuleGrid(self.modules, CCL.load(), on_change=lambda _o: self._edit_bar_update())
-        # fixed size: EXTERNAL keeps a too-wide child from widening it (and shows no bar)
+        # fixed width (EXTERNAL keeps a too-wide child from widening it, and shows no bar);
+        # the height follows the modules, and scrolls only past what the screen holds
         self.scroller = Gtk.ScrolledWindow(child=self.grid, hscrollbar_policy=Gtk.PolicyType.EXTERNAL,
                                            vscrollbar_policy=Gtk.PolicyType.AUTOMATIC, overlay_scrolling=True,
-                                           propagate_natural_width=False, propagate_natural_height=False,
-                                           width_request=CC_GRID_W, height_request=CC_GRID_H,
+                                           propagate_natural_width=False, propagate_natural_height=True,
+                                           max_content_height=self._max_height(), width_request=CC_GRID_W,
                                            css_classes=["cc-scroller"])
         self.append(self.scroller)
         self.append(self._edit_bar())
         cached("cc", _cc_state, self._fill_toggles)             # Wi-Fi / Bluetooth: last known at once
         system.run_async(lambda: (system.brightness(out), system.volume(), system.input_volume()),
                          self._fill_sliders)                  # levels: always the live ones
+
+    def _max_height(self) -> int:
+        """The tallest the modules area may get: the display's height under the
+        menu bar, less room for the edit bar and the panel's margins."""
+        mon = getattr(self.bar, "monitor", None)
+        if mon is None:
+            try:
+                disp = Gdk.Display.get_default()
+                mons = disp.get_monitors() if disp else None
+                mon = mons.get_item(0) if mons and mons.get_n_items() else None
+            except Exception:
+                mon = None
+        h = mon.get_geometry().height if mon is not None else 900
+        return max(300, h - BAR_H - 120)
 
     # -- Edit Controls (like Launchpad's jiggle mode) -----------------------------------------
     def _edit_bar(self) -> Gtk.Widget:
