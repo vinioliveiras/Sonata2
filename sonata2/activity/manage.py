@@ -289,11 +289,16 @@ def service_action(unit: str, action: str, scope: str, run=None) -> Tuple[bool, 
     """start / stop / restart. System units ask through polkit (systemd's
     own); if that is refused and pkexec exists, pkexec tries once more."""
     assert action in ("start", "stop", "restart")
+    ask = run or (lambda cmd: _run(cmd, timeout=AUTH_TIMEOUT))     # the user is typing a password
     run = run or _run
-    code, out = run(_systemctl(scope) + [action, unit])
+    # a system unit goes through polkit, which may show its password dialog too
+    code, out = (ask if scope == "system" else run)(_systemctl(scope) + [action, unit])
     if code != 0 and scope == "system" and shutil.which("pkexec"):
-        code, out = run(["pkexec", "systemctl", action, unit])
+        code, out = ask(["pkexec", "systemctl", action, unit])
     return code == 0, out.strip()
+
+
+AUTH_TIMEOUT = 600          # s: polkit / pkexec wait on the password dialog; 20 s killed it mid-typing
 
 
 def _run(cmd: list, timeout: int = 20) -> Tuple[int, str]:

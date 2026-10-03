@@ -55,12 +55,9 @@ def _load_json(path: str, default):
         return default
 
 
-def _save_json(path: str, data) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
-    os.replace(tmp, path)
+def _save_json(path: str, data, fsync: bool = True) -> None:
+    from ..config import atomic_write          # unique temp: two Music processes never share one
+    atomic_write(path, json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), fsync)
 
 
 def is_audio(name: str) -> bool:
@@ -140,8 +137,19 @@ def read_track(path: str, root: str = None, st=None, art_folder: str = None, fol
 def scan(root: str, old: dict, art_folder: str = None) -> dict:
     """Every audio file under root -> entry, re-reading only new/changed
     files (mtime or size differ from `old`). Blocking."""
-    new, covers = {}, {}
+    new, covers, seen = {}, {}, set()
     for folder, dirs, files in os.walk(root, followlinks=True):
+        # Linked folders are followed, but each real folder only once: a link back up
+        # the tree would list every song again and again (and two such links never end).
+        try:
+            st = os.stat(folder)
+        except OSError:
+            dirs[:] = []
+            continue
+        if (st.st_dev, st.st_ino) in seen:
+            dirs[:] = []
+            continue
+        seen.add((st.st_dev, st.st_ino))
         dirs[:] = [d for d in dirs if not d.startswith(".")]
         for name in files:
             if not is_audio(name):
@@ -216,6 +224,7 @@ class Library:
         self.playlists = _load_json(os.path.join(self.data, "playlists.json"), [])
         self.playlists = [p for p in self.playlists if isinstance(p, dict) and "name" in p]
         self._monitors = []
+        self._save_src = 0
 
     # cache ---------------------------------------------------------------------------------
     def load_cache(self) -> bool:
@@ -226,10 +235,28 @@ class Library:
         return True
 
     def save_cache(self) -> None:
-        try:
-            _save_json(self.cache, {"version": CACHE_VERSION, "root": self.root, "tracks": self.tracks})
+        if self._save_src:
+            GLib.source_remove(self._save_src)
+            self._save_src = 0
+        try:          # a cache: no fsync, it is rebuilt by a rescan if lost
+            _save_json(self.cache, {"version": CACHE_VERSION, "root": self.root, "tracks": self.tracks}, False)
         except OSError:
             pass
+
+    def save_cache_later(self) -> None:
+        """Coalesce small changes (learnt durations) into one cache write."""
+        if not self._save_src:
+            self._save_src = GLib.timeout_add_seconds(5, self._save_due)
+
+    def _save_due(self) -> bool:
+        self._save_src = 0
+        self.save_cache()
+        return False
+
+    def flush(self) -> None:
+        """Write a pending cache change now (the window is closing)."""
+        if self._save_src:
+            self.save_cache()
 
     def rescan(self) -> dict:
         """Blocking: the new tracks dict (apply it with `apply`)."""
@@ -252,7 +279,7 @@ class Library:
         t = self.tracks.get(path)
         if t is not None and not t.get("duration") and seconds > 0:
             t["duration"] = seconds
-            self.save_cache()
+            self.save_cache_later()     # not the whole library JSON for every song played
 
     # queries -------------------------------------------------------------------------------
     def songs(self) -> list:

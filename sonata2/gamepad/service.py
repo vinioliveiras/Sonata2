@@ -93,12 +93,25 @@ class Gamepads:
         self._tap_src = 0
         self._steam = False
         self._steam_src = 0
+        self._scan_src = 0
+        self._held = set()                    # virtual mouse buttons we hold down (drag)
         self._dev_mon = Gio.File.new_for_path("/dev/input").monitor_directory(Gio.FileMonitorFlags.NONE, None)
-        self._dev_mon.connect("changed", lambda *_a: GLib.timeout_add(600, lambda: (self.scan(), False)[1]))
+        self._dev_mon.connect("changed", lambda *_a: self._scan_soon())
         self._fs_mon = gamemode.watch(lambda _on: None)      # keeps gamemode.active() fresh
         self.scan()
 
     # -- devices --------------------------------------------------------------------------------
+    def _scan_soon(self) -> None:
+        """One plug creates several nodes (eventN, jsN, hidraw...): one scan once they settle."""
+        if self._scan_src:
+            GLib.source_remove(self._scan_src)
+        self._scan_src = GLib.timeout_add(600, self._scan_due)
+
+    def _scan_due(self) -> bool:
+        self._scan_src = 0
+        self.scan()
+        return False
+
     def scan(self) -> None:
         # listened to even while off: the Guide burst turns it on
         for path in E.find_gamepads():
@@ -148,6 +161,7 @@ class Gamepads:
             self.pads.pop(pad.path, None)
             for k in [k for k in self.axes if k[0] == pad.path]:
                 del self.axes[k]
+            self._release_held()                          # unplugged mid-drag: never a stuck button
             return
         if typ == E.EV_ABS:
             if code in (E.ABS_HAT0X, E.ABS_HAT0Y):        # d-pad as a hat: arrows
@@ -171,6 +185,21 @@ class Gamepads:
             return
         if not self.paused:
             self.action(name, pressed)
+        elif not pressed and name in ("primary", "secondary"):
+            self._release_held()                          # paused mid-drag: still let go
+
+    def _release_held(self) -> None:
+        for btn in list(self._held):
+            self._button(btn, False)
+
+    def _button(self, btn: int, pressed: bool) -> None:
+        if pressed:
+            self._held.add(btn)
+        elif btn in self._held:
+            self._held.discard(btn)
+        else:
+            return                                        # never pressed by us: nothing to release
+        self._pointer().button(btn, pressed)
 
     def _guide_tap(self) -> None:
         """One press: Mission Control, once the burst is over. Five quick
@@ -201,6 +230,7 @@ class Gamepads:
         config.save("gamepad", self.cfg)
         if not on:
             self.axes.clear()
+            self._release_held()
         self._notify("Controller: desktop control on" if on else "Controller: desktop control off")
 
     def _notify(self, text: str) -> None:
@@ -221,10 +251,12 @@ class Gamepads:
             if switching:
                 if pressed:
                     sw._switch()
+                else:
+                    self._button(BTN_LEFT, False)         # pressed before the switcher opened
                 return
-            self._pointer().button(BTN_LEFT, pressed)
+            self._button(BTN_LEFT, pressed)
         elif name == "secondary":
-            self._pointer().button(BTN_RIGHT, pressed)
+            self._button(BTN_RIGHT, pressed)
         elif not pressed:
             return
         elif name == "back":
@@ -237,9 +269,9 @@ class Gamepads:
         elif name in ("switch_next", "switch_prev") and self.app is not None:
             self.app.activate_action("switcher", GLib.Variant("s", "next" if name == "switch_next" else "prev"))
         elif name in ("launchpad", "spotlight"):
-            from ..__main__ import self_command
+            from ..__main__ import self_argv
             try:
-                GLib.spawn_async(self_command().split() + [name], flags=GLib.SpawnFlags.SEARCH_PATH)
+                GLib.spawn_async(self_argv() + [name], flags=GLib.SpawnFlags.SEARCH_PATH)
             except GLib.Error:
                 pass
         elif name == "mission":
@@ -290,6 +322,10 @@ class Gamepads:
         if self._tap_src:
             GLib.source_remove(self._tap_src)
             self._tap_src = 0
+        if self._scan_src:
+            GLib.source_remove(self._scan_src)
+            self._scan_src = 0
+        self._release_held()
         for pad in list(self.pads.values()):
             pad.close()
         if self.vp is not None:

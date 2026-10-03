@@ -305,7 +305,8 @@ class Snapshot:
 # engine was busy for it. NVIDIA's own driver doesn't fill that in: its
 # numbers come from `nvidia-smi pmon` (NvidiaUsage), only while the card is
 # awake anyway -- asking would wake a sleeping laptop GPU.
-FD_RESCAN_S = 5.0
+FD_RESCAN_S = 5.0           # a process's fd list is checked this often...
+FD_FULL_S = 60.0            # ...its links resolved only when that list changed, or this often (reused fd numbers)
 CARD_NAMES = {"amdgpu": "AMD", "radeon": "AMD", "i915": "Intel", "xe": "Intel", "nvidia": "NVIDIA",
               "nvidia-drm": "NVIDIA", "nouveau": "NVIDIA"}      # driver -> the card's maker (Task Manager)                 # which fds of a process are GPU files: looked up again this often
 
@@ -401,7 +402,7 @@ class Sampler:
         self._cpu_info = None
         self._prev_disk_tot = None
         self._gpu_fds = {}                 # (pid, start) -> [fdinfo paths of its /dev/dri files]
-        self._gpu_scan = {}                # (pid, start) -> when its fds were last looked at
+        self._gpu_scan = {}                # (pid, start) -> (listed at, resolved at, hash of its fd list)
         self._gpu_cards = {}               # (pid, start) -> {card names} its open GPU files belong to
         self._pdev_names = {}              # PCI address -> "AMD" / "NVIDIA" / "Intel"
         self._prev_gpu = {}                # DRM client -> {engine: busy ns}
@@ -471,12 +472,18 @@ class Sampler:
         return out
 
     def _drm_fdinfos(self, key, d: str, now: float) -> list:
-        if now - self._gpu_scan.get(key, -1e9) >= FD_RESCAN_S:
-            paths = []
+        listed, resolved, old_hash = self._gpu_scan.get(key, (-1e9, -1e9, None))
+        if now - listed >= FD_RESCAN_S:
             try:
                 fds = os.listdir(os.path.join(d, "fd"))
             except OSError:
                 fds = []                                   # another user's process
+            fd_hash = hash(tuple(sorted(fds)))
+            if fd_hash == old_hash and now - resolved < FD_FULL_S:
+                # Same fds as last time: no readlink of every fd of every process each pass.
+                self._gpu_scan[key] = (now, resolved, fd_hash)
+                return self._gpu_fds.get(key, [])
+            paths = []
             cards = set()
             for fd in fds:
                 try:
@@ -487,7 +494,7 @@ class Sampler:
                     paths.append(os.path.join(d, "fdinfo", fd))
                 elif target.startswith("/dev/nvidia") and target[11:].isdigit():   # NVIDIA's own driver
                     cards.add("NVIDIA")
-            self._gpu_fds[key], self._gpu_scan[key], self._gpu_cards[key] = paths, now, cards
+            self._gpu_fds[key], self._gpu_scan[key], self._gpu_cards[key] = paths, (now, now, fd_hash), cards
         return self._gpu_fds.get(key, [])
 
     def _card_name(self, pdev: str) -> str:
@@ -703,8 +710,11 @@ def fmt_bytes(n: float) -> str:
 
 def fmt_cpu_time(seconds: float) -> str:
     """"12.34", "3:07.21", "1:02:03.45"."""
-    h, rem = divmod(max(0.0, seconds), 3600)
-    m, s = divmod(rem, 60)
+    # Round to hundredths first, so 119.996 rolls over to "2:00.00" (not "1:60.00").
+    cs = round(round(max(0.0, seconds), 2) * 100)
+    h, rem = divmod(cs, 360000)
+    m, s = divmod(rem, 6000)
+    s /= 100
     if h:
         return f"{int(h)}:{int(m):02d}:{s:05.2f}"
     if m:

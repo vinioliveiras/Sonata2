@@ -13,6 +13,7 @@ from .procfs import fmt_bytes, fmt_count  # noqa: E402
 from .widgets import CompositionBar, Graph, Series  # noqa: E402
 
 COLORS = {"cpu": "sys_blue", "memory": "sys_purple", "disk": "sys_green", "net": "sys_orange", "gpu": "sys_teal"}
+GPU_GONE_SAMPLES = 5         # a GPU row goes after this many samples without its load
 
 
 def fmt_ghz(mhz: float) -> str:
@@ -67,6 +68,7 @@ class PerformancePage(Page):
         super().__init__(win)
         self.resources = {}                         # key -> Resource (list order = insertion)
         self.rows = {}                              # key -> list row widgets
+        self._gpu_missing = {}                      # card -> samples in a row without its load
         self.current = None
         self.list = Gtk.ListBox(css_classes=["tm-perf-list"], selection_mode=Gtk.SelectionMode.BROWSE)
         self.list.connect("row-selected", lambda _l, r: r is not None and self.select(r.key))
@@ -268,6 +270,15 @@ class PerformancePage(Page):
                        "small": [("Card", card)]}
             if not first:
                 r.a.push(busy)
+        for key in [k for k in self.resources if k.startswith("gpu:")]:
+            if key[4:] in snap.gpus:
+                self._gpu_missing.pop(key, None)
+                continue
+            # an unplugged card goes; one missed read (a card waking up) doesn't flicker the list
+            self._gpu_missing[key] = self._gpu_missing.get(key, 0) + 1
+            if self._gpu_missing[key] >= GPU_GONE_SAMPLES:
+                self._gpu_missing.pop(key)
+                self._remove(key)
         if not visible:
             return
         for key, row in self.rows.items():

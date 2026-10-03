@@ -99,11 +99,11 @@ class ProcParsingTest(unittest.TestCase):
         self.assertEqual(procfs.fmt_duration(None), "Calculating…")
         self.assertEqual(procfs.fmt_duration(3 * 3600 + 5 * 60 + 59), "3:05")
 
-    @unittest.expectedFailure
     def test_cpu_time_never_shows_60_seconds(self):
         """CPU time just under a minute boundary must roll over, not print "1:60.00"."""
-        # BUG: procfs.fmt_cpu_time rounds the seconds after divmod: 119.996 -> "1:60.00", 59.999 -> "60.00"
         self.assertEqual(procfs.fmt_cpu_time(119.996), "2:00.00")
+        self.assertEqual(procfs.fmt_cpu_time(59.999), "1:00.00")
+        self.assertEqual(procfs.fmt_cpu_time(3599.999), "1:00:00.00")
 
 
 class SamplerEdgeTest(unittest.TestCase):
@@ -310,11 +310,8 @@ class LibraryEdgeTest(unittest.TestCase):
         albums = lib.group_albums([a, b, c])
         self.assertEqual(sorted(len(x["tracks"]) for x in albums), [1, 2])
 
-    @unittest.expectedFailure
     def test_symlink_loop_scans_each_song_once(self):
         """A symlink pointing back up the Music folder must not list every song dozens of times."""
-        # BUG: library.scan uses os.walk(followlinks=True) with no visited-directory check: a link to the
-        # parent yields ~40 copies (until ELOOP); two such links make the scan exponential (hangs).
         _write(os.path.join(self.root, "a.mp3"), b"\x00" * 64, "wb")
         os.symlink(self.root, os.path.join(self.root, "loop"))
         self.assertEqual(len(lib.scan(self.root, {}, self.art)), 1)
@@ -437,11 +434,8 @@ class CameraLogicTest(unittest.TestCase):
                          ("vp8enc", None, "webmmux", None, ".webm"))
         self.assertIsNone(with_elements({"x264enc"}))
 
-    @unittest.expectedFailure
     def test_recent_photos_survives_dangling_symlink(self):
         """A broken link (or a file deleted meanwhile) in the Camera folder must not crash the window."""
-        # BUG: camera/window.py recent_photos sorts with os.path.getmtime, which raises FileNotFoundError;
-        # CameraWindow.__init__ calls last_capture() -> the Camera app fails to open.
         from sonata2.camera import window as W
         folder = tempfile.mkdtemp(dir=_TMP)
         _write(os.path.join(folder, "a.jpg"), b"x", "wb")
@@ -493,11 +487,8 @@ class GamepadEdgeTest(unittest.TestCase):
         self.ev(E.EV_KEY, 0x2ff, 1)                             # an unmapped button
         self.assertEqual(self.keys, ["Left", "Down", "Up"])
 
-    @unittest.expectedFailure
     def test_button_released_when_paused_mid_drag(self):
         """Holding A (drag) when desktop control pauses must not leave the virtual left button stuck down."""
-        # BUG: service._event drops every event while paused, including the release of a button pressed before
-        # (also on unplug / turning control off): the compositor keeps BTN_LEFT held.
         self.ev(E.EV_KEY, E.BTN_SOUTH, 1)
         gamemode.Watcher._write(True)                          # a fullscreen game takes the focus
         self.ev(E.EV_KEY, E.BTN_SOUTH, 0)
@@ -521,6 +512,370 @@ class GamepadEdgeTest(unittest.TestCase):
         self.assertEqual(E.find_guide_devices({"Pad"}, d), [])
         self.assertEqual(E.find_gamepads(os.path.join(d, "missing")), [])
         self.assertEqual(E.gamepad_name(os.path.join(d, "event0")), "")
+
+
+# == Fixes (regressions) =======================================================================
+def _gtk_app(app_id):
+    gi.require_version("Adw", "1")
+    from gi.repository import Adw
+    from sonata2 import ui
+    Adw.init()
+    ui.setup()
+    app = Adw.Application(application_id=app_id)
+    app.register(None)
+    return app
+
+
+def _settle(ms=200):
+    end = GLib.get_monotonic_time() + ms * 1000
+    while GLib.get_monotonic_time() < end:
+        GLib.MainContext.default().iteration(False)
+
+
+class TaskManagerFixTest(unittest.TestCase):
+    def test_password_prompt_not_killed_after_20s(self):
+        """System units go through polkit / pkexec: their password dialog gets minutes, not 20 s."""
+        seen = []
+
+        def fake_run(cmd, timeout=20):
+            seen.append((cmd[0], timeout))
+            return 1, "denied"
+        with mock.patch.object(manage, "_run", fake_run), \
+                mock.patch.object(manage.shutil, "which", return_value="/usr/bin/pkexec"):
+            manage.service_action("a.service", "restart", "system")
+            self.assertEqual(seen, [("systemctl", manage.AUTH_TIMEOUT), ("pkexec", manage.AUTH_TIMEOUT)])
+            self.assertGreaterEqual(manage.AUTH_TIMEOUT, 120)
+            seen.clear()
+            manage.service_action("b.service", "stop", "user")
+        self.assertEqual(seen, [("systemctl", 20)])                     # no password: the short timeout
+
+    def test_gpu_fd_scan_resolves_links_only_when_fds_change(self):
+        """The 5 s GPU pass lists each process's fds but readlinks them only when that list changed."""
+        root = tempfile.mkdtemp(dir=_TMP)
+        d = os.path.join(root, "300")
+        os.makedirs(os.path.join(d, "fd"))
+        os.symlink("/dev/dri/renderD128", os.path.join(d, "fd", "7"))
+        os.symlink("/home/x/file", os.path.join(d, "fd", "3"))
+        smp = Sampler.__new__(Sampler)
+        smp._gpu_fds, smp._gpu_scan, smp._gpu_cards = {}, {}, {}
+        key, calls = (300, 5), []
+        real = os.readlink
+
+        def counting(path, *a):
+            calls.append(path)
+            return real(path, *a)
+        with mock.patch.object(procfs.os, "readlink", counting):
+            self.assertEqual(smp._drm_fdinfos(key, d, 0.0), [os.path.join(d, "fdinfo", "7")])
+            self.assertEqual(len(calls), 2)
+            smp._drm_fdinfos(key, d, procfs.FD_RESCAN_S)                 # same fds: no readlink
+            self.assertEqual(len(calls), 2)
+            os.symlink("/dev/dri/card0", os.path.join(d, "fd", "9"))     # a new fd: resolved again
+            got = smp._drm_fdinfos(key, d, 2 * procfs.FD_RESCAN_S)
+            self.assertEqual(sorted(got), [os.path.join(d, "fdinfo", n) for n in ("7", "9")])
+            calls.clear()
+            smp._drm_fdinfos(key, d, 2 * procfs.FD_RESCAN_S + procfs.FD_FULL_S)   # reused numbers: full pass
+            self.assertEqual(len(calls), 3)
+
+    def test_gone_gpu_leaves_performance_list(self):
+        """A GPU that stops reporting (unplugged) leaves the Performance list after a few samples."""
+        from sonata2.activity.window import TaskManagerWindow
+        app = _gtk_app("io.test.review.media.gpu")
+        w = TaskManagerWindow(app)
+        w.icons = {}
+        page = w.page_by_id["performance"]
+        snap = w.sampler.sample()
+        snap.gpus = {"card7": 40.0}
+        page.update(snap)
+        self.assertIn("gpu:card7", page.resources)
+        page.list.select_row(page.rows["gpu:card7"])
+        snap.gpus = {}
+        page.update(snap)
+        self.assertIn("gpu:card7", page.resources)                      # one missed read: kept
+        for _ in range(10):
+            page.update(snap)
+        self.assertNotIn("gpu:card7", page.resources)
+        self.assertNotIn("gpu:card7", page.rows)
+        self.assertEqual(page.current, "cpu")
+        w._alive = False
+        w.destroy()
+
+    def test_properties_refresh_skips_readlink(self):
+        """The open Properties panel refreshes every sample without reading the exe link again."""
+        from sonata2.activity.window import TaskManagerWindow
+        row = SimpleNamespace(sv={"pid": os.getpid(), "name": "x", "user": "me", "cpu": 0, "cpu_time": 0,
+                                  "threads": 1, "mem": 0}, ppid=1, uid=0, started=0, cmdline="x")
+        win = SimpleNamespace(pid_rows={}, exe_path=mock.Mock(side_effect=AssertionError("readlink")))
+        self.assertEqual(TaskManagerWindow._props(win, row, path=False)[-1][0], "path")
+        win.exe_path = lambda _r: "/usr/bin/x"
+        self.assertEqual(TaskManagerWindow._props(win, row)[-1][2], "/usr/bin/x")
+
+
+class MusicFixTest(unittest.TestCase):
+    def setUp(self):
+        self.base = tempfile.mkdtemp(dir=_TMP)
+        self.lib = lib.Library(os.path.join(self.base, "Music"), cache=os.path.join(self.base, "c.json"),
+                               data=os.path.join(self.base, "d"), art=os.path.join(self.base, "art"))
+        self.lib.tracks = {"/m/a.mp3": {"path": "/m/a.mp3", "title": "A"},
+                           "/m/b.mp3": {"path": "/m/b.mp3", "title": "B"}}
+
+    def test_learnt_durations_coalesce_into_one_write(self):
+        """Every song played learns its length: the library JSON is written once later, not each time."""
+        with mock.patch.object(lib, "_save_json") as save:
+            self.lib.set_duration("/m/a.mp3", 100.0)
+            self.lib.set_duration("/m/b.mp3", 200.0)
+            self.assertEqual(save.call_count, 0)
+            self.lib.flush()                                            # the window closes
+            self.assertEqual(save.call_count, 1)
+            self.lib.flush()
+            self.assertEqual(save.call_count, 1)                        # nothing pending
+        self.lib.set_duration("/m/a.mp3", 1.0)                          # already known: no write planned
+        self.assertEqual(self.lib._save_src, 0)
+
+    def test_pending_write_happens_by_itself(self):
+        """Without a close, the pending cache write lands a few seconds later."""
+        with mock.patch.object(GLib, "timeout_add_seconds", lambda _s, fn: (fn(), 1)[1]), \
+                mock.patch.object(GLib, "source_remove"):
+            self.lib.set_duration("/m/a.mp3", 100.0)
+        with open(self.lib.cache, encoding="utf-8") as f:
+            self.assertIn("100.0", f.read())
+
+    def test_json_saves_use_unique_temp(self):
+        """Library files go through config.atomic_write (no shared "<file>.tmp" between two processes)."""
+        with mock.patch("sonata2.config.atomic_write") as aw:
+            lib._save_json(os.path.join(self.base, "x.json"), {"a": 1})
+        self.assertEqual(aw.call_args[0][1], b'{"a":1}')
+
+    def test_opened_files_read_off_the_main_loop(self):
+        """Files opened from Files are parsed in a worker thread; playback starts when they're read."""
+        from sonata2.music import window as mw
+        threads = []
+        fake = SimpleNamespace(library=self.lib, extra={}, _closed=False, played=[])
+        fake._play_opened = lambda paths: fake.played.append(list(paths))
+        path = os.path.join(self.base, "x.mp3")
+        _write(path, b"\x00" * 64, "wb")
+
+        def fake_async(fn, cb, *a):
+            import threading
+            threads.append(threading.current_thread())
+            cb(fn(*a))
+        with mock.patch.object(mw, "run_async", fake_async), \
+                mock.patch.object(mw.lib, "read_track", return_value={"path": path, "title": "X"}) as rt:
+            mw.MusicWindow.open_files(fake, [path])
+        self.assertEqual(rt.call_count, 1)
+        self.assertEqual(len(threads), 1)
+        self.assertEqual(fake.played, [[path]])
+        self.assertIn(path, fake.extra)
+        fake.played.clear()
+        with mock.patch.object(mw, "run_async", side_effect=AssertionError("no read needed")):
+            mw.MusicWindow.open_files(fake, [path])                    # already read: plays at once
+        self.assertEqual(fake.played, [[path]])
+
+
+class CameraFixTest(unittest.TestCase):
+    def test_last_capture_with_dangling_link(self):
+        """The newest capture ignores broken links in either folder."""
+        from sonata2.camera import window as W
+        pics, vids = tempfile.mkdtemp(dir=_TMP), tempfile.mkdtemp(dir=_TMP)
+        _write(os.path.join(pics, "a.jpg"), b"x", "wb")
+        os.symlink(os.path.join(vids, "gone.mp4"), os.path.join(vids, "z.mp4"))
+        with mock.patch.object(W, "photos_dir", lambda: pics), mock.patch.object(W, "videos_dir", lambda: vids):
+            self.assertEqual(W.last_capture(), os.path.join(pics, "a.jpg"))
+
+    def test_video_thumbnail_needs_no_temp_file(self):
+        """The video's thumbnail is decoded from memory, not a fixed /tmp file another user could own."""
+        from sonata2.camera import window as W
+        src = os.path.join(os.path.dirname(__file__), "..", "sonata2")
+        jpeg = None
+        for folder, _d, files in os.walk(src):
+            jpeg = next((os.path.join(folder, f) for f in files if f.endswith((".jpg", ".png"))), None)
+            if jpeg:
+                break
+        if jpeg is None:
+            from gi.repository import GdkPixbuf
+            pb = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 64, 48)
+            pb.fill(0x336699ff)
+            data = pb.save_to_bufferv("jpeg", [], [])[1]
+        else:
+            with open(jpeg, "rb") as f:
+                data = f.read()
+        fake = SimpleNamespace(cam=SimpleNamespace(frame_jpeg=lambda: data,
+                                                   photo=mock.Mock(side_effect=AssertionError("tmp file"))))
+        with mock.patch.object(W.GLib, "get_tmp_dir", side_effect=AssertionError("tmp dir")):
+            self.assertIsNotNone(W.CameraWindow._frame_texture(fake))
+        fake.cam.frame_jpeg = lambda: None
+        self.assertIsNone(W.CameraWindow._frame_texture(fake))
+
+    def test_device_probe_off_the_main_loop(self):
+        """Looking for cameras (GStreamer's device monitor) runs in a worker thread."""
+        from sonata2.camera import window as W
+        calls = []
+        fake = SimpleNamespace(cam=SimpleNamespace(source=None), _closed=False, cams=[])
+        fake._got_cameras = lambda cams: calls.append(("got", cams))
+        with mock.patch.object(W, "run_async", lambda fn, cb: calls.append(("async", fn))):
+            W.CameraWindow._open_camera(fake)
+        self.assertEqual(calls, [("async", W.engine.devices)])
+        fake._start_camera = mock.Mock()
+        fake._closed = True
+        W.CameraWindow._got_cameras(fake, ["c"])                        # closed meanwhile: nothing starts
+        fake._start_camera.assert_not_called()
+
+
+class GamepadFixTest(GamepadEdgeTest):
+    def test_one_plug_one_scan(self):
+        """The burst of /dev/input changes one plug makes is debounced into a single rescan."""
+        with mock.patch.object(self.g, "scan") as scan:
+            for _ in range(6):
+                self.g._scan_soon()
+            _settle(800)
+        self.assertEqual(scan.call_count, 1)
+
+    def test_button_released_on_unplug_and_disable(self):
+        """Unplugging or turning desktop control off mid-drag lets go of the virtual button."""
+        self.ev(E.EV_KEY, E.BTN_SOUTH, 1)
+        self.g._event(self.pad, None, 0, 0)                             # unplugged
+        self.assertEqual(self.g.vp.log[-1], ("button", S.BTN_LEFT, False))
+        self.ev(E.EV_KEY, E.BTN_NORTH, 1)
+        with mock.patch.object(S.config, "save"):
+            self.g.set_enabled(False)
+        self.assertEqual(self.g.vp.log[-1], ("button", S.BTN_RIGHT, False))
+        n = len(self.g.vp.log)
+        self.g.set_enabled(False) if False else self.g._release_held()  # nothing held: no stray release
+        self.assertEqual(len(self.g.vp.log), n)
+
+
+def _fake_stream(_path):
+    """A 90 s movie that plays nothing (as in test_videos)."""
+    from gi.repository import Gtk
+
+    class Fake(Gtk.MediaStream):
+        def do_play(self):
+            return True
+
+        def do_pause(self):
+            pass
+
+        def do_seek(self, ts):
+            self.seek_success()
+            self.update(ts)
+    s = Fake()
+    s.stream_prepared(True, True, True, 90_000_000)
+    return s
+
+
+class VideosFixTest(unittest.TestCase):
+    def test_volume_saved_once_slider_rests(self):
+        """Dragging the volume slider doesn't rewrite the config each step; closing saves at once."""
+        from sonata2.videos import window as vw
+        app = _gtk_app("io.test.review.media.videos")
+        win = vw.VideoWindow(app, "/movies/vol.mp4", stream_factory=_fake_stream)
+        win.present()
+        _settle(100)
+        with mock.patch.object(vw.config, "update") as upd:
+            for v in range(10, 60, 5):
+                win._volume_changed(v)
+            self.assertEqual(upd.call_count, 0)
+            _settle(800)
+            self.assertEqual(upd.call_count, 1)
+            self.assertAlmostEqual(upd.call_args.kwargs["volume"], 0.55)
+            win.toggle_mute()
+            win.close()                                                 # pending: saved on close
+            vols = [c.kwargs for c in upd.call_args_list if "volume" in c.kwargs]
+            self.assertEqual(len(vols), 2)
+            self.assertTrue(vols[-1]["muted"])
+        _settle(50)
+
+
+# == Animations ================================================================================
+class AnimationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = _gtk_app("io.test.review.media.anim")
+        from gi.repository import Gtk
+        cls.Gtk = Gtk
+
+    def test_task_manager_page_switch_crossfades(self):
+        """Switching Task Manager pages crossfades the content and the page's toolbar buttons."""
+        from sonata2.activity.window import TaskManagerWindow
+        Gtk = self.Gtk
+        w = TaskManagerWindow(self.app)
+        w.icons = {}
+        w.present()
+        _settle(300)
+        for st in (w.stack, w.page_buttons):
+            self.assertEqual(st.get_transition_type(), Gtk.StackTransitionType.CROSSFADE)
+            self.assertGreater(st.get_transition_duration(), 0)
+        w.show_page("performance" if w.page_id != "performance" else "details")
+        self.assertTrue(w.stack.get_transition_running())
+        w._alive = False
+        w.destroy()
+        _settle(50)
+
+    def test_music_view_switch_and_now_playing_crossfade(self):
+        """Albums / Songs / Artists switches and the LCD's idle -> track change crossfade."""
+        from sonata2.music import window as mw
+        Gtk = self.Gtk
+        base = tempfile.mkdtemp(dir=_TMP)
+        library = lib.Library(os.path.join(base, "Music"), cache=os.path.join(base, "c.json"),
+                              data=os.path.join(base, "d"), art=os.path.join(base, "art"))
+        library.tracks = {"/m/a.mp3": {"path": "/m/a.mp3", "title": "A", "artist": "X", "album": "Y",
+                                       "duration": 10, "track": 1}}
+        win = mw.MusicWindow(self.app, library=library, scan=False, mpris=False)
+        win.populate()
+        win.present()
+        _settle(300)
+        for st in (win.stack, win.lcd_stack):
+            self.assertEqual(st.get_transition_type(), Gtk.StackTransitionType.CROSSFADE)
+            self.assertGreater(st.get_transition_duration(), 0)
+        win.show("songs")
+        self.assertTrue(win.stack.get_transition_running())
+        self.assertEqual(win.banner.get_transition_type(), Gtk.RevealerTransitionType.SLIDE_DOWN)
+        win.show("albums")                                              # the saved view, as other tests expect
+        win.close()
+        _settle(50)
+
+    def test_videos_hud_fades(self):
+        """The video controls fade out / in (CSS opacity transition on the .hidden class)."""
+        from sonata2.videos import window as vw
+        with open(vw.__file__, encoding="utf-8") as f:
+            src = f.read()
+        self.assertRegex(src, r"\.vd-hud \{[^}]*transition: opacity")
+        self.assertIn(".vd-hud.hidden { opacity: 0; }", src)
+        win = vw.VideoWindow(self.app, "/movies/hud.mp4", stream_factory=_fake_stream)
+        win.present()
+        _settle(100)
+        win.stream.play()
+        win._hide_now()                                                 # playing: the HUD fades out
+        self.assertTrue(win.hud.has_css_class("hidden"))
+        win.toggle_fullscreen()                                         # full screen brings it back
+        _settle(300)
+        win._show_hud()
+        self.assertFalse(win.hud.has_css_class("hidden"))
+        win.close()
+        _settle(50)
+
+    def test_camera_flash_fades(self):
+        """The shutter's blink (and the screen flash) fade out frame by frame."""
+        from sonata2.camera import window as W
+        win = W.CameraWindow(self.app, source=lambda: None)
+        ticks = []
+        real = GLib.timeout_add
+
+        def spy(ms, fn, *a):
+            ticks.append(ms)
+            return real(ms, fn, *a)
+        win.blink.set_opacity(0.9)
+        with mock.patch.object(W.GLib, "timeout_add", spy):
+            win._fade(win.blink, 120)
+        self.assertEqual(ticks, [16])                                   # ~60 fps steps
+        _settle(60)
+        mid = win.blink.get_opacity()
+        self.assertTrue(0.0 < mid < 0.9, mid)
+        _settle(200)
+        self.assertEqual(win.blink.get_opacity(), 0.0)
+        win._cancel_count()
+        win.cam.stop()
+        win.destroy()
+        _settle(50)
 
 
 if __name__ == "__main__":

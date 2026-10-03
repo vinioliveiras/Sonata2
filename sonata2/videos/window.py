@@ -130,6 +130,7 @@ class VideoWindow(Gtk.ApplicationWindow):
         self._handlers = []
         self._sized = False
         self._hide_src = 0
+        self._vol_src = 0
         self._over_hud = False
         self._last_xy = None
         self._syncing = False
@@ -342,7 +343,15 @@ class VideoWindow(Gtk.ApplicationWindow):
             self.stream.set_muted(self.muted)
         self.mute_btn.set_icon_name(volume_icon(self.volume, self.muted))
         self.mute_btn.set_tooltip_text("Unmute" if self.muted else "Mute")
+        # Saved once the slider rests (like Music): a drag would rewrite the file every step.
+        if self._vol_src:
+            GLib.source_remove(self._vol_src)
+        self._vol_src = GLib.timeout_add(600, self._save_volume)
+
+    def _save_volume(self) -> bool:
+        self._vol_src = 0
         config.update(CONFIG, volume=round(self.volume, 3), muted=self.muted)
+        return False
 
     def toggle_loop(self) -> None:
         if self.stream is not None:
@@ -497,6 +506,9 @@ class VideoWindow(Gtk.ApplicationWindow):
         if self._hide_src:
             GLib.source_remove(self._hide_src)
             self._hide_src = 0
+        if self._vol_src:                           # closed right after a change: still saved
+            GLib.source_remove(self._vol_src)
+            self._save_volume()
         self._release()
         return False
 

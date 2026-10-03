@@ -430,7 +430,8 @@ class TaskManagerWindow(Gtk.ApplicationWindow):
         except GLib.Error:
             pass
 
-    def _props(self, row) -> list:
+    def _props(self, row, path: bool = True) -> list:
+        """The Properties lines; path=False skips the Location (a readlink), which never changes."""
         parent = self.pid_rows.get(row.ppid)
         return [("pid", "PID", str(row.sv["pid"])),
                 ("parent", "Parent process", f"{parent.sv['name']} ({row.ppid})" if parent else str(row.ppid)),
@@ -441,7 +442,7 @@ class TaskManagerWindow(Gtk.ApplicationWindow):
                 ("threads", "Threads", fmt_count(row.sv.get("threads", 0))),
                 ("mem", "Memory", fmt_mem(row.sv.get("mem", 0))),
                 ("started", "Started", time.strftime("%d %b %Y, %H:%M:%S", time.localtime(row.started))),
-                ("path", "Location", self.exe_path(row) or "–")]
+                ("path", "Location", self.exe_path(row) or "–" if path else "")]
 
     def show_properties(self, rows) -> None:
         rows = [r for r in rows or [] if r is not None]
@@ -479,7 +480,7 @@ class TaskManagerWindow(Gtk.ApplicationWindow):
         if self._info is None:
             return
         row, labels = self._info
-        for key, _t, value in self._props(row):
+        for key, _t, value in self._props(row, path=False):
             if key != "path" and labels[key].get_label() != value:
                 labels[key].set_label(value)
 

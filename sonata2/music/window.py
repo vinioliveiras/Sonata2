@@ -506,6 +506,7 @@ class MusicWindow(Gtk.ApplicationWindow):
         self.view = None
         self._back = "albums"
         self._scanning = False
+        self._closed = False
         self._rescan_src = 0
         self.album_blocks = []            # (path, number stack) of the album/artist page, for the speaker
         self.track_filter = Gtk.CustomFilter.new(lambda it: matches(
@@ -1174,16 +1175,35 @@ class MusicWindow(Gtk.ApplicationWindow):
 
     def open_files(self, paths) -> None:
         """Opened from Files: queue the files next and play the first."""
-        paths = [p for p in paths if p and os.path.isfile(p)]
+        paths = [p for p in paths if p]
+        need = [p for p in paths if p not in self.library.tracks and p not in self.extra]
+        if not need:
+            self._play_opened(paths)
+            return
+        art = self.library.art
+
+        def read():                     # tags and covers off the main loop: big files stall the UI
+            got = {}
+            for p in need:
+                try:
+                    if os.path.isfile(p):
+                        got[p] = lib.read_track(p, None, art_folder=art)
+                except (OSError, ValueError):
+                    continue
+            return got
+
+        def done(got):
+            if self._closed:            # closed while reading: don't start playing
+                return
+            for p, t in (got or {}).items():
+                self.extra.setdefault(p, t)
+            self._play_opened(paths)
+        run_async(read, done)
+
+    def _play_opened(self, paths) -> None:
+        paths = [p for p in paths if self.track(p)]
         if not paths:
             return
-        for p in paths:
-            if p not in self.library.tracks and p not in self.extra:
-                try:
-                    self.extra[p] = lib.read_track(p, None, art_folder=self.library.art)
-                except OSError:
-                    continue
-        paths = [p for p in paths if self.track(p)]
         had = self.queue.current is not None and self.player.path is not None
         self.queue.play_next(paths)
         if had:
@@ -1458,8 +1478,10 @@ class MusicWindow(Gtk.ApplicationWindow):
         self.close()
 
     def _closing(self, _w) -> bool:
+        self._closed = True
         self.player.stop(notify=False)
         self.library.unwatch()
+        self.library.flush()
         if self.mpris:
             self.mpris.close()
             self.mpris = None

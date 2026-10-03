@@ -396,6 +396,10 @@ class WindowTest(unittest.TestCase):
         f = os.path.join(base, "opened.mp3")
         make_mp3(f, title="Opened")
         mw.open_windows(app, [f])
+        for _ in range(20):                        # its tags are read off the main loop
+            if win.queue.current == f:
+                break
+            settle(100)
         self.assertEqual(win.queue.current, f)
         self.assertEqual(win.current_track()["title"], "Opened")
         self.assertIn("audio/flac", mw.MIME_TYPES)

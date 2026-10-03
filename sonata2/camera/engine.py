@@ -180,28 +180,36 @@ class Camera:
         return self.pipeline is not None
 
     # -- photos ---------------------------------------------------------------------------------
-    def photo(self, path: str) -> bool:
-        """Save the frame on screen (mirrored as shown) as a JPEG."""
+    def frame_jpeg(self):
+        """The frame on screen (mirrored as shown) as JPEG bytes, or None."""
         if self.sink is None:
-            return False
+            return None
         sample = self.sink.get_property("last-sample")
         if sample is None:
-            return False
+            return None
         try:
             jpeg = GstVideo.video_convert_sample(sample, Gst.Caps.from_string("image/jpeg"), 3 * Gst.SECOND)
         except GLib.Error:
-            return False
+            return None
         buf = jpeg.get_buffer()
         ok, m = buf.map(Gst.MapFlags.READ)
         if not ok:
+            return None
+        try:
+            return bytes(m.data)
+        finally:
+            buf.unmap(m)
+
+    def photo(self, path: str) -> bool:
+        """Save the frame on screen (mirrored as shown) as a JPEG."""
+        data = self.frame_jpeg()
+        if not data:
             return False
         try:
             with open(path, "wb") as f:
-                f.write(m.data)
+                f.write(data)
         except OSError:
             return False
-        finally:
-            buf.unmap(m)
         return True
 
     # -- videos ---------------------------------------------------------------------------------

@@ -24,6 +24,7 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 from .. import config, ui  # noqa: E402
+from ..backend.system import run_async  # noqa: E402
 from . import engine  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.camera"
@@ -115,15 +116,28 @@ def recent_photos(folder: str, limit: int = 60) -> list:
         names = [n for n in os.listdir(folder) if n.lower().endswith(MEDIA)]
     except OSError:
         return []
-    paths = [os.path.join(folder, n) for n in names]
-    paths.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return paths[:limit]
+    dated = []
+    for n in names:
+        p = os.path.join(folder, n)
+        try:                        # a dangling link, or deleted meanwhile: skipped, never a crash
+            dated.append((os.stat(p).st_mtime, p))
+        except OSError:
+            continue
+    dated.sort(reverse=True)
+    return [p for _t, p in dated[:limit]]
+
+
+def _mtime(path: str) -> float:
+    try:
+        return os.stat(path).st_mtime
+    except OSError:
+        return 0.0
 
 
 def last_capture():
     """The newest photo or video of both folders."""
     found = recent_photos(photos_dir(), 1) + recent_photos(videos_dir(), 1)
-    return max(found, key=os.path.getmtime) if found else None
+    return max(found, key=_mtime) if found else None
 
 
 def square_texture(pixbuf, size: int):
@@ -152,6 +166,7 @@ class CameraWindow(Gtk.ApplicationWindow):
         self.last_photo = None
         self._count_src = self._rec_src = 0
         self._rec_t0 = 0
+        self._closed = False
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         root.append(self._top_bar())
         root.append(self._stage())
@@ -160,7 +175,8 @@ class CameraWindow(Gtk.ApplicationWindow):
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._key)
         self.add_controller(keys)
-        self.connect("close-request", lambda *_: (self._cancel_count(), self._stop_video(), self.cam.stop(), False)[3])
+        self.connect("close-request", lambda *_: (self._cancel_count(), self._stop_video(), self.cam.stop(),
+                                                  setattr(self, "_closed", True), False)[4])
         self._set_mode(self.cfg.get("mode", "photo"), save=False)
         self._show_last(last_capture())
         GLib.idle_add(lambda: (self._open_camera(), False)[1])     # the window first, then the camera
@@ -245,7 +261,19 @@ class CameraWindow(Gtk.ApplicationWindow):
     # -- camera ---------------------------------------------------------------------------------
     def _open_camera(self):
         if self.cam.source is None:
-            self.cams = engine.devices()
+            # The device probe can take a while (USB, PipeWire): off the main loop.
+            run_async(engine.devices, self._got_cameras)
+            return
+        self._start_camera()
+
+    def _got_cameras(self, cams):
+        if self._closed:
+            return
+        self.cams = cams or []
+        self._start_camera()
+
+    def _start_camera(self):
+        if self.cam.source is None:
             if not self.cams:
                 self._show_error("No Camera", "Connect a camera, or check that no other app is using it.")
                 self.switch_btn.set_sensitive(False)
@@ -437,11 +465,14 @@ class CameraWindow(Gtk.ApplicationWindow):
     # -- the last photo / video ----------------------------------------------------------------------
     def _frame_texture(self):
         """The frame on screen, small (a video's thumbnail)."""
-        tmp = os.path.join(GLib.get_tmp_dir(), "sonata2-camera-thumb.jpg")
-        if not self.cam.photo(tmp):
+        jpeg = self.cam.frame_jpeg()            # in memory: no shared temp file
+        if not jpeg:
             return None
         try:
-            return square_texture(GdkPixbuf.Pixbuf.new_from_file(tmp), THUMB * 2)
+            loader = GdkPixbuf.PixbufLoader()
+            loader.write(jpeg)
+            loader.close()
+            return square_texture(loader.get_pixbuf(), THUMB * 2)
         except GLib.Error:
             return None
 
@@ -475,9 +506,9 @@ class CameraWindow(Gtk.ApplicationWindow):
             self._show_last(last_capture())
 
         def reveal():
-            from ..__main__ import self_command
+            from ..__main__ import self_argv
             try:
-                GLib.spawn_async(self_command().split() + ["files", Gio.File.new_for_path(path).get_uri()],
+                GLib.spawn_async(self_argv() + ["files", Gio.File.new_for_path(path).get_uri()],
                                  flags=GLib.SpawnFlags.SEARCH_PATH)
             except GLib.Error:
                 pass
