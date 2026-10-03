@@ -41,6 +41,10 @@ DEFAULTS = {"battery_percent": False, "clock_format": "%a %-d %b  %H:%M", "show_
             # every status item can be taken out of the menu bar (Settings > Menu Bar, Vini);
             # Control Center and the clock always stay, like macOS
             "show_wifi": True, "show_battery": True, "show_spotlight": True, "show_input": True,
+            # performance figures (statsui.py), off by default; each as "text" or "graph"
+            "show_cpu": False, "show_gpu": False, "show_ram": False, "show_net": False, "show_fps": False,
+            "cpu_style": "text", "gpu_style": "text", "ram_style": "text", "net_style": "text",
+            "fps_style": "text",
             "autohide": False}                  # Settings > Menu Bar: hide it like the Dock (Vini)
 HIDE_MS = 250                                   # auto-hide slide (the Dock's)
 REVEAL_MS = 150                                 # pointer at the top edge -> the bar comes down
@@ -147,6 +151,11 @@ class Bar(Gtk.CenterBox):
         from .tray import TrayBox
         self.tray = TrayBox(self, self.cfg.get("show_tray", True))
         right.append(self.tray)
+        # CPU, GPU, memory, network, FPS (Settings > Menu Bar; off by default)
+        self.stats_box = Gtk.Box()
+        right.append(self.stats_box)
+        self._stat_items = []
+        self._build_stats()
         # (Screen recording: its status and stop button are the control in the
         #  middle of the top of the screen -- capture.RecordingControl; not here too)
         # Now Playing (while a player runs), input source (with 2+ keyboard layouts)
@@ -228,6 +237,7 @@ class Bar(Gtk.CenterBox):
         self._extras_visibility()
         self.tray.set_shown(self.cfg.get("show_tray", True))
         self.spotlight.set_visible(self.cfg.get("show_spotlight", True))
+        self._build_stats()
         self._update_input()
         self._poll()                                # Wi-Fi / battery shown or not, at once
         if getattr(self, "on_autohide", None):
@@ -264,6 +274,33 @@ class Bar(Gtk.CenterBox):
         box.append(b)
         self.items.append(b)
         return b
+
+    def _build_stats(self) -> None:
+        """The performance items the settings ask for, in a fixed order."""
+        from . import statsui
+        want = [(k, self.cfg.get(f"{k}_style", "text")) for k in statsui.KINDS if self.cfg.get(f"show_{k}")]
+        if want == getattr(self, "_stats_shown", None):
+            return
+        self._stats_shown = want
+        for b in self._stat_items:
+            self.stats_box.remove(b)
+            if b in self.items:
+                self.items.remove(b)
+        self._stat_items = []
+        for kind, style in want:
+            b = self._item(self.stats_box, on_click=self._open_task_manager, css="stat")
+            b.set_child(statsui.menu_item(kind, style))
+            b.set_tooltip_text(statsui.TITLES[kind])
+            self._stat_items.append(b)
+
+    def _open_task_manager(self, _btn):
+        """A performance item: Task Manager (no menu of its own)."""
+        from ..__main__ import self_argv
+        try:
+            GLib.spawn_async(self_argv() + ["activity"], flags=GLib.SpawnFlags.SEARCH_PATH)
+        except GLib.Error:
+            pass
+        return None
 
     def _set_text(self, btn, text) -> None:
         lbl = btn.get_child().get_last_child()
@@ -1097,6 +1134,9 @@ class ControlCenter(Gtk.Box):
         self.modules = {"connectivity": conn, "dnd": dnd, "darkmode": self.dark_btn, "screenshot": shot,
                         "display": display, "sound": sound,
                         "nowplaying": now_playing_module(mpris.players())}   # always, like Big Sur ("Not Playing")
+        from . import statsui                                   # performance (Add Controls; read only when shown)
+        for kind in statsui.KINDS:
+            self.modules["stat_" + kind] = statsui.module(kind)
         self.grid = CCL.ModuleGrid(self.modules, CCL.load(), on_change=lambda _o: self._edit_bar_update())
         self.append(self.grid)
         self.append(self._edit_bar())

@@ -56,6 +56,11 @@
 #include <wayfire/config/config-manager.hpp>
 #include <wayfire/render.hpp>
 #include <wayfire/util.hpp>
+#include <wayfire/seat.hpp>
+#include <wayfire/plugins/ipc/ipc-method-repository.hpp>
+#include <wayfire/plugins/ipc/ipc-helpers.hpp>
+#include <wayfire/plugins/common/shared-core-data.hpp>
+#include <deque>
 #include <sys/stat.h>
 #include <ctime>
 #include <drm_fourcc.h>
@@ -790,6 +795,90 @@ class window_capture_t
     }
 };
 
+/* FPS of the app in front (Control Center / menu bar "FPS", Vini): the
+ * commits of the focused view's surface in the last second -- the frames a
+ * game really hands over. Counted only while someone asks (IPC
+ * "sonata/fps"); 5 s without a question and it lets go of the surface. */
+class fps_counter_t
+{
+    wlr_surface *surface = nullptr;
+    wf::wl_listener_wrapper on_commit, on_destroy;
+    wf::wl_idle_call idle;
+    std::deque<int64_t> stamps;
+    int64_t last_ask = 0, since = 0;
+
+    void unwatch()
+    {
+        on_commit.disconnect();
+        on_destroy.disconnect();
+        surface = nullptr;
+        stamps.clear();
+    }
+
+    void trim(int64_t now)
+    {
+        while (!stamps.empty() && (now - stamps.front() > 1000))
+        {
+            stamps.pop_front();
+        }
+    }
+
+    void watch(wlr_surface *s)
+    {
+        if (s == surface)
+        {
+            return;
+        }
+
+        unwatch();
+        if (!s)
+        {
+            return;
+        }
+
+        surface = s;
+        since   = wf::get_current_time();
+        on_commit.set_callback([this] (void*)
+        {
+            int64_t now = wf::get_current_time();
+            if (now - last_ask > 5000)
+            {
+                /* nobody looks any more: let go, outside the signal's emission */
+                idle.run_once([this] () { unwatch(); });
+                return;
+            }
+
+            stamps.push_back(now);
+            trim(now);
+        });
+        on_commit.connect(&s->events.commit);
+        on_destroy.set_callback([this] (void*) { unwatch(); });
+        on_destroy.connect(&s->events.destroy);
+    }
+
+  public:
+    wf::json_t ask()
+    {
+        int64_t now = wf::get_current_time();
+        last_ask = now;
+        auto view = wf::get_core().seat->get_active_view();
+        watch(view ? view->get_wlr_surface() : nullptr);
+        trim(now);
+        auto response = wf::ipc::json_ok();
+        response["fps"]   = (int)stamps.size();
+        response["ready"] = (bool)(surface && (now - since >= 1000));    /* a full second counted */
+        response["app-id"] = view ? view->get_app_id() : std::string("");
+        auto toplevel = wf::toplevel_cast(view);
+        response["fullscreen"] = (bool)(toplevel && toplevel->pending_fullscreen());
+        return response;
+    }
+
+    void fini()
+    {
+        unwatch();
+    }
+};
+
 class sonata_corners_t : public wf::plugin_interface_t
 {
     const std::string transformer_name = "sonata-corners";
@@ -1063,10 +1152,17 @@ class sonata_corners_t : public wf::plugin_interface_t
     };
 
     window_capture_t window_capture;
+    fps_counter_t fps;
+    wf::shared_data::ref_ptr_t<wf::ipc::method_repository_t> ipc_repo;
+    wf::ipc::method_callback ipc_fps = [=] (wf::json_t)
+    {
+        return fps.ask();
+    };
 
   public:
     void init() override
     {
+        ipc_repo->register_method("sonata/fps", ipc_fps);
         /* which build runs (session.log): a fix is only in once install.sh rebuilt it */
         LOGI("sonata-corners: build ", SONATA_CORNERS_BUILD);
         window_capture.init();
@@ -1106,6 +1202,8 @@ class sonata_corners_t : public wf::plugin_interface_t
 
     void fini() override
     {
+        ipc_repo->unregister_method("sonata/fps");
+        fps.fini();
         window_capture.fini();
         for (auto& [o, p] : perf)
         {

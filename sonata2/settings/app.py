@@ -111,7 +111,7 @@ KEYWORDS = {
                   "glass transparency translucent blur frosted title bars corners radius",
     "dock": "magnification size position autohide recent apps displays minimize default web browser",
     "appicons": "icon icons app shape squircle circle rounded custom picture image package theme",
-    "menubar": "clock battery percentage bluetooth sound now playing logo text automatically hide show wifi wi-fi search input source keyboard background apps",
+    "menubar": "clock battery percentage bluetooth sound now playing logo text automatically hide show wifi wi-fi search input source keyboard background apps cpu gpu memory ram network fps performance",
     "launchpad": "apps grid folders launchpad", "hidden": "hide hidden protected private lock password apps", "updates": "software update upgrade packages",
     "about": "computer system version restart sonata",
 }
@@ -2458,6 +2458,14 @@ class Settings(Adw.ApplicationWindow):
                                 ("show_spotlight", "Search", "")):
             items.add(switch_row(title, cfg.get(key, T.DEFAULTS[key]),
                                  lambda on, k=key: self._save("topbar", k, on), subtitle=sub))
+        # CPU, GPU, memory, network, FPS: off, as text or as a small graph (off by default)
+        from ..shell import statsui
+        perf = group("Performance in Menu Bar")
+        for kind in statsui.KINDS:
+            now = cfg.get(f"{kind}_style", "text") if cfg.get(f"show_{kind}") else "off"
+            perf.add(combo_row(statsui.TITLES[kind], [("off", "Off"), ("text", "Text"), ("graph", "Graph")], now,
+                               lambda v, k=kind: self._set_stat(k, v),
+                               subtitle="Frames per second of the app in front" if kind == "fps" else ""))
         from ..ui import logo as L
         app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
         # always there, usable only for "Text: custom…": showing / hiding it
@@ -2477,7 +2485,12 @@ class Settings(Adw.ApplicationWindow):
         logo.menu_text_row = text_row                     # (tests)
         reset = self._reset_group("Reset Desktop & Dock", "The Dock's and menu bar's options back to the "
                                   "defaults; your apps and folders in the Dock stay", self.ask_reset_dock)
-        return [g, items, logo, reset]
+        return [g, items, perf, logo, reset]
+
+    def _set_stat(self, kind: str, value: str) -> None:
+        if value != "off":
+            config.update("topbar", **{f"{kind}_style": value})
+        self._save("topbar", f"show_{kind}", value != "off")
 
     # what Reset Desktop & Dock puts back: options, never what's in the Dock
     # (pinned apps, folders, stacks, recents) nor the default browser

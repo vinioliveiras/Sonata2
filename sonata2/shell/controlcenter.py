@@ -27,6 +27,12 @@ CATALOG = {
     "display": ("Display", (4, 1)),
     "sound": ("Sound", (4, 1)),
     "nowplaying": ("Now Playing", (4, 1)),
+    # performance (statsui.py): not in the default layout, offered by Add Controls
+    "stat_cpu": ("CPU", (2, 1)),
+    "stat_gpu": ("GPU", (2, 1)),
+    "stat_ram": ("Memory", (2, 1)),
+    "stat_net": ("Network", (2, 1)),
+    "stat_fps": ("FPS", (2, 1)),
 }
 DEFAULT_ORDER = ["connectivity", "dnd", "darkmode", "screenshot", "display", "sound", "nowplaying"]
 DEFAULTS = {"modules": None}            # None: DEFAULT_ORDER (new modules join it in later versions)
