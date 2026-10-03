@@ -783,7 +783,8 @@ SCENE_ACTIVE = {"files-full": SONATA + "files", "settings-full": "sonata2-settin
 DOCK_PINS = [SONATA + "files", "sonata2-launchpad", "firefox", "thunderbird", SONATA + "calendar", SONATA + "notes",
              SONATA + "music", SONATA + "preview", SONATA + "textedit", SONATA + "terminal", SONATA + "activity",
              "sonata2-settings"]
-RUNNING = [SONATA + "files", "firefox", SONATA + "music", SONATA + "notes"]
+RUNNING = [SONATA + "files", SONATA + "files", SONATA + "files", "firefox", SONATA + "music", SONATA + "music",
+           SONATA + "notes"]                    # windows: 3 Files (the +), 2 Music, 1 each
 # other apps in the demo's Launchpad: (desktop id, name, icon, categories)
 DEMO_APPS = [
     ("firefox", "Firefox", "firefox", "Network;WebBrowser;"),

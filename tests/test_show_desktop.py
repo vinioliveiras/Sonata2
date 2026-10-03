@@ -186,3 +186,27 @@ class DockDisplayTest(unittest.TestCase):
         self.assertEqual(body.count("get_monitor_at_surface("), 1)          # only the fallback
         self.assertIn("self.shown_on = m", src)
         self.assertIn("self.shown_on = monitor", src)
+
+
+class DockDotsTest(unittest.TestCase):
+    """Vini: up to two dots, then a small + for more windows."""
+
+    def test_two_dots_then_plus(self):
+        import gi
+        gi.require_version("Gtk", "4.0")
+        from gi.repository import Gio, Gtk
+        if not Gtk.init_check():
+            self.skipTest("no display")
+        from unittest import mock
+        dock = mock.Mock(edge="bottom", cfg={"icon_size": 48}, away=Gtk.PositionType.TOP)
+        with mock.patch.object(D.ui.label, "HoverLabel"):
+            t = D.DockTile(dock, "x", Gio.ThemedIcon.new("folder"), lambda *_: 0)
+        on = lambda: [d.has_css_class("on") for d in t.dots]
+        t.set_running(1)
+        self.assertEqual((on(), t.plus.get_visible()), ([True, False], False))
+        t.set_running(2)
+        self.assertEqual((on(), t.plus.get_visible()), ([True, True], False))
+        t.set_running(5)
+        self.assertEqual((on(), t.plus.get_visible()), ([True, True], True))
+        t.set_running(0)
+        self.assertFalse(t.plus.get_visible())

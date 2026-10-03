@@ -42,7 +42,7 @@ PIN_MIN_SIZE = 36           # pins must still fit at this size: more can't be ke
 SCREEN_MARGIN = 16          # px kept free at both ends of the screen edge
 MAX_RECENTS = 3
 LAUNCH_BOUNCES = 3          # attention / urgent bounces
-MAX_DOTS = 3                        # running dots: one per window, up to this many
+MAX_DOTS = 2                        # running dots: one per window, up to this many; more: a small + (Vini)
 # Always in the Dock (like Finder on macOS): Files and Launchpad can't be
 # removed -- the shell relies on them (open folders, reach every app).
 def merge_order(pinned: list, tile_keys: list) -> list:
@@ -153,6 +153,12 @@ window.sonata-dock *:drop(active) { box-shadow: none; outline: none; border-colo
 .edge-left .dock-dots { margin: 0 %(dot_in)dpx 0 %(dot_out)dpx; }
 .edge-right .dock-dots { margin: 0 %(dot_out)dpx 0 %(dot_in)dpx; }
 .dock-dot.on { opacity: %(dot_on)s; }
+/* more windows than dots: a +, a touch wider than a dot so it reads as one
+   (at a dot's 4 px it looked like a third dot); the row's height stays */
+.dock-dot.plus { border-radius: 0; background-color: transparent; min-width: %(plus)dpx; min-height: %(plus)dpx;
+  margin: -1px;
+  background-image: linear-gradient(%(indicator)s, %(indicator)s), linear-gradient(%(indicator)s, %(indicator)s);
+  background-size: 100%% 1.5px, 1.5px 100%%; background-position: center; background-repeat: no-repeat; }
 .dock-divider > box, .dock-recent-sep > box { background-color: %(separator)s; }
 .edge-bottom .dock-divider, .edge-bottom .dock-recent-sep { padding: 0 5px; margin-bottom: %(row)dpx; }
 .edge-bottom .dock-divider > box, .edge-bottom .dock-recent-sep > box { min-width: 1px; }
@@ -304,7 +310,8 @@ class DockTile(Gtk.Button):
         dot = Gtk.Box(css_classes=["dock-dots"], spacing=3, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER,
                       orientation=Gtk.Orientation.HORIZONTAL if edge == "bottom" else Gtk.Orientation.VERTICAL)
         self.dots = [Gtk.Box(css_classes=["dock-dot"]) for _ in range(MAX_DOTS)]
-        for d in self.dots:
+        self.plus = Gtk.Box(css_classes=["dock-dot", "plus"], visible=False)     # more windows than dots
+        for d in self.dots + [self.plus]:
             dot.append(d)
             d.set_visible(d is self.dots[0])
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL if edge == "bottom" else Gtk.Orientation.HORIZONTAL)
@@ -330,6 +337,9 @@ class DockTile(Gtk.Button):
         for i, d in enumerate(self.dots):
             d.set_visible(i < max(1, n))           # the first keeps its place when off
             (d.add_css_class if i < n else d.remove_css_class)("on")
+        more = int(windows) > MAX_DOTS
+        self.plus.set_visible(more)
+        (self.plus.add_css_class if more else self.plus.remove_css_class)("on")
         (self.add_css_class if running else self.remove_css_class)("running")
         if running and self._bounce_src:
             GLib.source_remove(self._bounce_src)
@@ -1824,7 +1834,7 @@ def load_css(cfg: dict) -> None:
     ui.setup()
     inner, outer = dot_gaps(cfg["icon_size"])
     ui.register(CSS, key="dock", tile_pad=TILE_PAD, row=dot_row(cfg), bounce_ms=BOUNCE_MS,
-                dot=DOT, dot_in=inner, dot_out=outer, dot_on="1" if cfg.get("indicators", True) else "0")
+                dot=DOT, plus=DOT + 2, dot_in=inner, dot_out=outer, dot_on="1" if cfg.get("indicators", True) else "0")
 
 
 def load_config() -> dict:
