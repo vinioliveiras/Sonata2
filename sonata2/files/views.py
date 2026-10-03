@@ -400,7 +400,7 @@ class _Cells:
         _inline_rename(box, info, on_commit)
 
 
-def _inline_rename(box, info, on_commit):
+def _inline_rename(box, info, on_commit, on_end=None):
     from .ops import rename_selection
     name = info.get_display_name()
     entry = Gtk.Entry(text=name, css_classes=["fs-rename"], hexpand=True,
@@ -417,6 +417,8 @@ def _inline_rename(box, info, on_commit):
         if entry.get_parent() is box:
             box.remove(entry)
         box.lbl.set_visible(True)
+        if on_end is not None:
+            on_end()
         if commit and new and new != name:
             on_commit(info, new)
     entry.connect("activate", lambda *_: finish(True))

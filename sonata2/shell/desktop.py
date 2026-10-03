@@ -377,7 +377,13 @@ class Desktop(Gtk.Fixed):
         def commit(info, new):
             old = info.get_name()
             ops.rename(file_of(info), new, lambda _f: self._renamed(old, new), lambda _e: None)
-        _inline_rename(item, item.info, commit)
+        # the desktop sits under the windows and gets the keyboard only when
+        # clicked: it takes it while the name is typed (Vini: a new folder's
+        # name had to be clicked before typing), then gives it back
+        from . import layer
+        win = self.get_root()
+        layer.take_keyboard(win, True, rest="on_demand")
+        _inline_rename(item, item.info, commit, on_end=lambda: layer.take_keyboard(win, False, rest="on_demand"))
 
     def _renamed(self, old, new) -> None:
         p = self._placed.get(old)
@@ -422,11 +428,15 @@ class Desktop(Gtk.Fixed):
         ops.read_clipboard(self, got)
 
     def new_folder(self, at=None) -> None:
-        def done(child):
+        def spot(child):
+            # its spot is saved before it exists: it appears where it was asked
+            # for (Vini: it showed in the first free cell, top right, and glided over)
             if at is not None:
                 self._save_positions({child.get_basename(): at})
+
+        def done(child):
             GLib.timeout_add(300, lambda: (self._rename_new(child.get_basename()), False)[1])
-        ops.new_folder(self.dir, done, lambda _e: None)
+        ops.new_folder(self.dir, done, lambda _e: None, before=spot)
 
     def _rename_new(self, name) -> None:
         item = self.items.get(name)

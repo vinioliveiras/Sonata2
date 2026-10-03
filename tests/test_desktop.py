@@ -75,6 +75,36 @@ class DesktopDisplaysTest(unittest.TestCase):
         other._save_positions({"New Folder": (1, 1)})                  # being made: not on disk yet
         self.assertEqual(config.load("desktop", D.DEFAULTS)["positions"]["New Folder"], [1, 1, "HDMI-A-1"])
 
+    def test_new_folder_appears_where_clicked_and_takes_the_name(self):
+        """Vini: a new folder showed top right and glided to the clicked spot,
+        and its name had to be clicked before typing."""
+        main, _other = self.desks()
+        took = []
+        with mock.patch("sonata2.shell.layer.take_keyboard", side_effect=lambda w, on, rest="none": took.append((on, rest))):
+            main.new_folder((3, 2))
+            # the first layout that sees it already puts it at the click
+            seen = []
+            real = main.move
+
+            def move(item, x, y):
+                if item.info.get_name() == "untitled folder":
+                    seen.append((x, y))
+                real(item, x, y)
+            with mock.patch.object(main, "move", side_effect=move):
+                for _ in range(20):
+                    settle(100)
+                    main._config_changed()
+            self.assertTrue(seen)
+            self.assertEqual(set(seen), {main.cell_xy(3, 2)})              # never anywhere else first
+            settle(400)
+            item = main.items["untitled folder"]
+            entry = item.lbl.get_next_sibling()
+            self.assertEqual(type(entry).__name__, "Entry")                 # typing the name right away
+            self.assertEqual(took[-1], (True, "on_demand"))                # the desktop takes the keyboard
+            entry.emit("activate")
+            settle(100)
+        self.assertEqual(took[-1], (False, "on_demand"))                   # and gives it back
+
     def test_every_display_has_a_desktop(self):
         from sonata2.shell.wallpaper import WallpaperWindow
         import inspect

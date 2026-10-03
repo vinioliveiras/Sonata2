@@ -58,9 +58,13 @@ def rename_selection(name: str, is_dir: bool):
 
 
 # -- simple operations -------------------------------------------------------------------------
-def new_folder(folder: Gio.File, on_done, on_error) -> None:
+def new_folder(folder: Gio.File, on_done, on_error, before=None) -> None:
+    """before(child): called with the folder's file before it exists (the
+    desktop puts its spot down first, so the icon appears right there)."""
     name = free_name(folder, "untitled folder", True, style="number")
     child = folder.get_child(name)
+    if before is not None:
+        before(child)
 
     def done(f, res):
         try:

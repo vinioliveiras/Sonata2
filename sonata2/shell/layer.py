@@ -112,14 +112,16 @@ def set_exclusive(win, exclusive: int) -> None:
         LS.set_exclusive_zone(win, exclusive)
 
 
-def take_keyboard(win, on: bool) -> bool:
-    """A layer surface that normally takes no keyboard (the Dock) takes it
-    while something in it needs typing (a password), and gives it back.
+def take_keyboard(win, on: bool, rest: str = "none") -> bool:
+    """A layer surface that normally takes no keyboard (the Dock), or only
+    when clicked (the desktop: rest="on_demand"), takes it while something
+    in it needs typing (a password, a new folder's name), and gives it back.
     False: not a layer surface (nothing to do)."""
     LS = layer_shell()
     if not LS or not LS.is_layer_window(win):
         return False
-    LS.set_keyboard_mode(win, LS.KeyboardMode.EXCLUSIVE if on else LS.KeyboardMode.NONE)
+    idle = LS.KeyboardMode.ON_DEMAND if rest == "on_demand" else LS.KeyboardMode.NONE
+    LS.set_keyboard_mode(win, LS.KeyboardMode.EXCLUSIVE if on else idle)
     return True
 
 
