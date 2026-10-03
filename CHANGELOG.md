@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.1-alpha -- 2026-10-03
+
+Airplane Mode, a smooth Restart Sonata, and fixes for web apps and the
+desktop.
+
+### Control Center
+- Airplane Mode, in the Wi-Fi & Bluetooth module: every radio off at once;
+  turned off, Wi-Fi and Bluetooth come back as they were.
+- Wi-Fi, Bluetooth and Airplane Mode share the module's height evenly.
+
+### Desktop
+- Restart Sonata is smooth: the Dock and menu bar slide out and back in,
+  and the wallpaper stays on screen (it no longer turns grey).
+- A new folder on the desktop appears where you clicked and is ready for
+  its name: just type.
+
+### Web apps
+- Pictures paste with Ctrl+V (a screenshot, an image copied in a browser
+  or files copied in Files), in WhatsApp and other web apps.
+
+### Project page
+- A new design, with what's new in 0.5.
+
 ## 0.5.0-alpha -- 2026-10-03
 
 A Control Center you arrange yourself, smarter graphics switching, display
