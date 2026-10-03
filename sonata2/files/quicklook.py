@@ -111,11 +111,16 @@ class QuickLook(Adw.Window):
             pic = Gtk.Picture(content_fit=Gtk.ContentFit.CONTAIN, hexpand=True, vexpand=True,
                               margin_start=12, margin_end=12, margin_bottom=12)
             from .. import imageload                  # WebP, AVIF, camera RAW... too
-            tex = imageload.texture(path)
-            if tex is not None:
-                pic.set_paintable(tex)
-            else:
-                pic.set_file(f)
+            from ..backend.system import run_async
+
+            def loaded(tex):                          # decoded off the main loop (big photos)
+                if pic.get_parent() is not self.body:
+                    return                            # the selection moved on meanwhile
+                if tex is not None:
+                    pic.set_paintable(tex)
+                else:
+                    pic.set_file(f)
+            run_async(imageload.texture, loaded, path)
             return pic
         if path and (ct.startswith("video/") or ct.startswith("audio/")):
             v = Gtk.Video(file=f, autoplay=True, hexpand=True, vexpand=True)
@@ -125,11 +130,15 @@ class QuickLook(Adw.Window):
             view = Gtk.TextView(editable=False, cursor_visible=False, monospace=True, css_classes=["ql-text"],
                                 left_margin=14, right_margin=14, top_margin=10, bottom_margin=10,
                                 wrap_mode=Gtk.WrapMode.WORD_CHAR)
-            try:
-                with open(path, "rb") as fh:
-                    view.get_buffer().set_text(fh.read(TEXT_MAX).decode("utf-8", "replace"))
-            except OSError:
-                pass
+            from ..backend.system import run_async
+
+            def read():
+                try:
+                    with open(path, "rb") as fh:
+                        return fh.read(TEXT_MAX).decode("utf-8", "replace")
+                except OSError:
+                    return None
+            run_async(read, lambda text: text is not None and view.get_buffer().set_text(text))
             return Gtk.ScrolledWindow(child=view, hexpand=True, vexpand=True)
         # anything else: big icon + details, like macOS
         from .views import kind, size, date

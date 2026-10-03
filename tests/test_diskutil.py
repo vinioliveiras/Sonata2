@@ -287,8 +287,12 @@ class WindowTest(unittest.TestCase):
         win._set_busy("")
         # erasing a protected volume is refused even if asked directly
         n = len(client.calls)
-        win._do_erase(root, "x", "ext4", None)
+        from unittest import mock
+        from sonata2 import ui as _ui
+        with mock.patch.object(_ui.dialog, "alert") as alert:     # refused, and told why
+            win._do_erase(root, "x", "ext4", None)
         self.assertEqual(len(client.calls), n)
+        self.assertEqual(alert.call_count, 1)
         # eject unmounts first, then ejects and powers off
         client.calls.clear()
         win.eject(backup.disk)

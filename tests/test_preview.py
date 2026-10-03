@@ -30,6 +30,14 @@ def settle(ms=200):
         GLib.MainContext.default().iteration(False)
 
 
+def wait(cond, ms=3000):
+    """← / → and Save run off the main loop: wait for them."""
+    end = GLib.get_monotonic_time() + ms * 1000
+    while not cond() and GLib.get_monotonic_time() < end:
+        GLib.MainContext.default().iteration(False)
+    return cond()
+
+
 def picture(path, w, h, color=0x3366ccff):
     pb = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, w, h)
     pb.fill(color)
@@ -74,7 +82,7 @@ class PreviewTest(unittest.TestCase):
         self.assertEqual(len(win.pics), 3)                  # the folder, listed off the main loop
         self.assertFalse(win.sidebar.get_reveal_child())    # one picture: no thumbnails
         win.go(1)
-        self.assertTrue(win.path.endswith("b.png"))
+        self.assertTrue(wait(lambda: win.path.endswith("b.png")))
         win.step_zoom(1)
         self.assertIsNotNone(win.zoom)
         win.rotate(90)
@@ -118,7 +126,8 @@ class PreviewTest(unittest.TestCase):
         # a picture smaller than the view stays centred
         win.go(-1)
         win.go(-1)          # a.png (300 × 100)
-        self.assertTrue(win.path.endswith("a.png"))
+        self.assertTrue(wait(lambda: win.path.endswith("a.png")))
+        settle(100)
         x, y, w, h = cv.image_rect()
         self.assertAlmostEqual(x + w / 2, cv.get_width() / 2, delta=1)
         self.assertEqual((w, h), (300, 100))
@@ -138,10 +147,10 @@ class PreviewTest(unittest.TestCase):
         self.assertEqual(win.thumbs.model.get_n_items(), 2)
         self.assertEqual(win.thumbs.selection.get_selected(), 0)
         win.go(1)
-        self.assertEqual(win.path, self.a)
+        self.assertTrue(wait(lambda: win.path == self.a))
         self.assertEqual(win.thumbs.selection.get_selected(), 1)   # selection follows ← →
         win.thumbs.selection.set_selected(0)                 # a click jumps
-        self.assertEqual(win.path, self.c)
+        self.assertTrue(wait(lambda: win.path == self.c))
         # thumbnails were made off the main loop and cached, small
         keys = [k for k in sidebar.LOADER.cache if k[0] in (self.a, self.c)]
         self.assertEqual(len(keys), 2)
@@ -208,10 +217,10 @@ class PreviewTest(unittest.TestCase):
         self.assertFalse(win.toolbar.get_visible())
         self.assertTrue(win._slides["timer"])
         win._next_slide()                                     # what the 3 s timer does
-        self.assertEqual(win.path, self.b)
+        self.assertTrue(wait(lambda: win.path == self.b))
         self.assertIsNotNone(win.canvas._fade)                # cross-fading
         win._key(None, Gdk.KEY_Right, 0, 0)
-        self.assertEqual(win.path, self.c)
+        self.assertTrue(wait(lambda: win.path == self.c))
         win._key(None, Gdk.KEY_space, 0, 0)                   # pause
         self.assertEqual(win._slides["timer"], 0)
         win._key(None, Gdk.KEY_Escape, 0, 0)
@@ -258,6 +267,8 @@ class PreviewTest(unittest.TestCase):
         self.assertEqual(ex["format"].get_selected(), 0)     # PNG, like the picture
         # saving writes the full-size result
         win.save()
+        self.assertTrue(win._saving)                         # written off the main loop
+        self.assertTrue(wait(lambda: not win._saving))
         with Image.open(self.c) as im:
             self.assertEqual(im.size, (240, 100))
         self.assertFalse(win.edits.edited)

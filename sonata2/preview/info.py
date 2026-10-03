@@ -149,6 +149,8 @@ def _pillow(path: str) -> dict:
             out["format"] = im.format
         with im:
             out["size"] = im.size if not is_raw(path) else None
+            if out["size"] and im.getexif().get(0x0112) in (5, 6, 7, 8):
+                out["size"] = out["size"][::-1]           # as shown: EXIF says it's turned a quarter
             out["mode"] = im.mode
             out["alpha"] = "A" in im.getbands() or "transparency" in im.info
             dpi = im.info.get("dpi")

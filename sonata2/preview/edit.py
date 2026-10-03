@@ -29,8 +29,9 @@ EXPORT_FORMATS = (("PNG", "PNG", ".png", False), ("JPEG", "JPEG", ".jpg", True),
 
 
 class Edits:
-    def __init__(self, image):
+    def __init__(self, image, exif=None, icc=None):
         self.full = image                        # the picture as opened (upright)
+        self.exif, self.icc = exif, icc          # kept on save (camera data, colour profile)
         self.proxy = image.copy()
         self.proxy.thumbnail((PROXY, PROXY))
         # [("rotate", 90) | ("flip", "h"|"v") | ("crop", (x0, y0, x1, y1)) | ("resize", (fx, fy))]
@@ -55,13 +56,17 @@ class Edits:
                 im = Image.open(path)
                 if getattr(im, "is_animated", False):
                     return None                  # an animation: not edited here
+            icc = im.info.get("icc_profile")
+            exif = im.getexif()
             im = ImageOps.exif_transpose(im)
             im.load()
         except Exception:
             return None
+        if exif is not None and 0x0112 in exif:
+            del exif[0x0112]                     # the pixels are upright now
         if im.mode not in ("RGB", "RGBA"):
             im = im.convert("RGBA" if "A" in im.getbands() or im.mode == "P" else "RGB")
-        return cls(im)
+        return cls(im, exif if exif else None, icc)
 
     # -- edits --------------------------------------------------------------------------------
     @property
@@ -149,17 +154,37 @@ class Edits:
 
     def write(self, path: str, fmt: str = None, quality: int = 92):
         """The full-size result into path (fmt: a Pillow format; default: by
-        the extension), written next to it then moved over it. The edits stay."""
+        the extension), written next to it then moved over it. The edits stay.
+        A symlink is written through (the link stays), the file keeps its
+        permissions, EXIF and colour profile go along."""
         fmt = fmt or WRITABLE.get(os.path.splitext(path)[1].lower(), "PNG")
         result = self.render(self.full)
         im = result.convert("RGB") if fmt in ("JPEG", "BMP") and result.mode == "RGBA" else result
         opts = {"quality": int(quality)} if fmt in ("JPEG", "WEBP") else {}
         if fmt == "TIFF":
             opts["compression"] = "tiff_lzw"
-        tmp = os.path.join(os.path.dirname(path), f".{os.path.basename(path)}.sonata-tmp")
+        if fmt in ("JPEG", "PNG", "WEBP", "TIFF"):
+            if self.exif:
+                opts["exif"] = self.exif.tobytes()
+            if self.icc:
+                opts["icc_profile"] = self.icc
+        real = os.path.realpath(path)            # through a symlink: the picture it points to
+        try:
+            st = os.stat(real)
+        except FileNotFoundError:
+            st = None
+        tmp = os.path.join(os.path.dirname(real), f".{os.path.basename(real)}.{os.getpid()}.sonata-tmp")
         try:
             im.save(tmp, fmt, **opts)
-            os.replace(tmp, path)
+            if st is not None:                   # the old file's mode/owner, not the umask's
+                os.chmod(tmp, st.st_mode & 0o7777)
+                try:
+                    os.chown(tmp, st.st_uid, st.st_gid)
+                except OSError:
+                    pass
+            with open(tmp, "rb") as f:
+                os.fsync(f.fileno())
+            os.replace(tmp, real)
         finally:
             if os.path.exists(tmp):
                 os.unlink(tmp)

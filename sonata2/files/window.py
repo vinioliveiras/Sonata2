@@ -834,8 +834,8 @@ class FilesWindow(Adw.ApplicationWindow):
             return False
         if ops.is_trash(dest.get_uri()):                  # dropped on Trash: move to the Trash
             files = [f for f in files if not ops.is_trash(f.get_uri())]
-            if files:
-                ops.trash(files)
+            if files:                                     # USB/NFS without a Trash: say so
+                ops.trash(files, lambda f, e: self._error(f"“{f.get_basename()}” can’t be moved to the Trash.", e))
             return bool(files)
         files = ops.drop_plan(files, dest)
         if not files:
@@ -907,7 +907,8 @@ class FilesWindow(Adw.ApplicationWindow):
                 if cut:
                     self.get_clipboard().set_content(None)     # a cut is pasted once
             else:
-                ops.paste_image(self, dest)                     # a copied picture becomes a file
+                ops.paste_image(self, dest,                     # a copied picture becomes a file
+                                on_error=lambda e: self._error("The picture can’t be pasted.", e))
         ops.read_clipboard(self, got)
 
     def _error(self, heading, err, body=None):

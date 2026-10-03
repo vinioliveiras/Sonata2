@@ -85,6 +85,9 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self._asking = False              # a save prompt is up
         self._slides = None               # slideshow: {"timer": id, "paused": bool, "sidebar", "info"}
         self._info_serial = 0
+        self._open_serial = 0             # ← / →: the latest picture asked for wins
+        self._loading = None              # the picture being decoded off the main loop
+        self._saving = False              # a save is being written (edits wait)
         self.toolbar = ui.window.glass_toolbar(self, start=(
             ("sidebar-show-symbolic", "Thumbnails", self.toggle_sidebar),
         ), end=(
@@ -149,10 +152,28 @@ class PreviewWindow(Gtk.ApplicationWindow):
 
     # -- file ------------------------------------------------------------------------------
     def open(self, path: str, fade: bool = False) -> None:
+        if self._saving:
+            return
         if self.edits is not None and self.edits.edited:       # ← / → with unsaved edits: ask first
             self._ask_save(lambda: (setattr(self, "edits", None), self.open(path, fade)))
             return
-        tex = load_texture(path)
+        self._open_serial += 1
+        if not self.get_realized():               # the first picture sizes the window
+            self._loading = None
+            self._opened(path, load_texture(path), fade)
+            return
+        # ← / →: decoded off the main loop (a big photo froze the window)
+        from ..backend.system import run_async
+        serial = self._open_serial
+        self._loading = path
+
+        def done(tex):
+            if serial == self._open_serial:
+                self._loading = None
+                self._opened(path, tex, fade)
+        run_async(load_texture, done, path)
+
+    def _opened(self, path: str, tex, fade: bool) -> None:
         self.edits, self.crop = None, None
         self.crop_area.set_visible(False)
         known = self.path is None or path in self.pics
@@ -196,17 +217,18 @@ class PreviewWindow(Gtk.ApplicationWindow):
             self._refresh_info()
 
     def go(self, step: int, fade: bool = False) -> None:
-        if not self.path:
+        cur = self._loading or self.path          # pressed again while one loads: from that one
+        if not cur:
             return
         pics = self.pics
-        if self.path in pics and len(pics) > 1:
-            self.open(pics[(pics.index(self.path) + step) % len(pics)], fade=fade)
+        if cur in pics and len(pics) > 1:
+            self.open(pics[(pics.index(cur) + step) % len(pics)], fade=fade)
 
     def _pick(self, path: str) -> None:
         """A thumbnail was clicked."""
-        if path != self.path:
+        if path != (self._loading or self.path):
             self.open(path)
-            if self.path != path:                 # asked about the edits first: stay on the shown one
+            if self._loading != path and self.path != path:   # asked about the edits first: stay
                 self.thumbs.select(self.path)
 
     # -- sidebar / info ----------------------------------------------------------------------
@@ -297,6 +319,8 @@ class PreviewWindow(Gtk.ApplicationWindow):
     # -- editing ---------------------------------------------------------------------------
     def _editor(self):
         """The picture's edits (loaded the first time something is edited)."""
+        if self._saving:                          # edits wait for the save being written
+            return None
         if self.edits is None and self.path:
             from .edit import Edits
             self.edits = Edits.load(self.path)
@@ -315,6 +339,8 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self.set_title(name + (" — Edited" if ed.edited else ""))
 
     def edit(self, op) -> None:
+        if self._saving:                          # the save renders these edits right now
+            return
         ed = self._editor()
         if ed is not None:
             ed.push(op)
@@ -324,11 +350,11 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self.edit(("rotate", degrees % 360))
 
     def undo(self) -> None:
-        if self.edits is not None and self.edits.undo():
+        if not self._saving and self.edits is not None and self.edits.undo():
             self._show_edits()
 
     def revert(self) -> None:
-        if self.edits is not None:
+        if not self._saving and self.edits is not None:
             self.edits.revert()
             self._show_edits()
 
@@ -591,9 +617,6 @@ class PreviewWindow(Gtk.ApplicationWindow):
                 return False
 
         def write(path):
-            if os.path.splitext(path)[1].lower() not in {".jpg": (".jpg", ".jpeg"),
-                                                         ".tiff": (".tiff", ".tif")}.get(ext, (ext,)):
-                path += ext
             try:
                 ed.write(path, fmt, quality)
             except Exception as e:
@@ -601,15 +624,22 @@ class PreviewWindow(Gtk.ApplicationWindow):
                                 parent=self)
                 return False
             return True
+
+        def chosen(path):
+            final = path
+            if os.path.splitext(path)[1].lower() not in {".jpg": (".jpg", ".jpeg"),
+                                                         ".tiff": (".tiff", ".tif")}.get(ext, (ext,)):
+                final = path + ext
+            return self._confirm_replace(path, final, write)
         if target:
-            return write(target)
+            return chosen(target)
         from ..files.chooser import ChooserWindow
         base = os.path.splitext(os.path.basename(self.path))[0]
 
         def done(uris, _i):
             target = Gio.File.new_for_uri(uris[0]).get_path() if uris else None
             if target:
-                write(target)
+                chosen(target)
         dlg = ChooserWindow(self.get_application(), mode="save", title="Export As",
                             folder=Gio.File.new_for_path(os.path.dirname(self.path)).get_uri(), name=base + ext,
                             filters=[("Images", [(0, "*" + ext)])], on_done=done)
@@ -629,15 +659,50 @@ class PreviewWindow(Gtk.ApplicationWindow):
         if not Edits.writable(self.path):
             self.save_as(then)
             return
-        try:
-            ed.save(self.path)
-        except Exception as e:                     # never lose the edits silently
-            ui.dialog.alert("The picture couldn't be saved.", str(e), [("ok", "OK", "default")], parent=self)
+        path = self.path
+
+        def done():
+            self._show_edits()
+            self.thumbs.refresh(path)              # its thumbnail is made again (new mtime)
+            if then:
+                then()
+        self._save_async(ed, path, done)
+
+    def _save_async(self, ed, path: str, done) -> None:
+        """Render and write the full-size picture off the main loop; edits,
+        ← / → wait meanwhile. done() on success; an alert on failure."""
+        if self._saving:
             return
-        self._show_edits()
-        self.thumbs.refresh(self.path)             # its thumbnail is made again (new mtime)
-        if then:
-            then()
+        from ..backend.system import run_async
+        self._saving = True
+
+        def work():
+            try:
+                ed.save(path)
+            except Exception as e:                 # never lose the edits silently
+                return e
+            return None
+
+        def finished(err):
+            self._saving = False
+            if err is not None:
+                ui.dialog.alert("The picture couldn't be saved.", str(err), [("ok", "OK", "default")],
+                                parent=self)
+                return
+            done()
+        run_async(work, finished)
+
+    def _confirm_replace(self, chosen: str, final: str, write):
+        """Save As / Export add the extension after the Save panel checked
+        the name: a file with the final name is asked about here."""
+        if final == chosen or not os.path.lexists(final):
+            return write(final)
+        name = os.path.basename(final)
+        ui.dialog.alert(f"“{name}” already exists. Do you want to replace it?",
+                        "A file with the same name already exists. Replacing it will overwrite its contents.",
+                        [("cancel", "Cancel", ""), ("replace", "Replace", "destructive")],
+                        lambda rid: rid == "replace" and write(final), parent=self)
+        return False
 
     def save_as(self, then=None) -> None:
         if self.edits is None and self._editor() is None:
@@ -653,18 +718,19 @@ class PreviewWindow(Gtk.ApplicationWindow):
             target = Gio.File.new_for_uri(uris[0]).get_path()
             if not target:
                 return
+            final = target
             if os.path.splitext(target)[1].lower() not in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif",
                                                            ".tiff"):
-                target += ".png"
-            try:
-                self.edits.save(target)
-            except Exception as e:
-                ui.dialog.alert("The picture couldn't be saved.", str(e), [("ok", "OK", "default")], parent=self)
-                return
-            self.edits = None
-            self.open(target)
-            if then:
-                then()
+                final += ".png"
+            self._confirm_replace(target, final, write)
+
+        def write(target):
+            def saved():
+                self.edits = None
+                self.open(target)
+                if then:
+                    then()
+            self._save_async(self.edits, target, saved)
         dlg = ChooserWindow(self.get_application(), mode="save", title="Save As",
                             folder=Gio.File.new_for_path(os.path.dirname(self.path)).get_uri(), name=base + ext,
                             filters=[("Images", [(0, "*.png"), (0, "*.jpg"), (0, "*.jpeg"), (0, "*.webp")])],

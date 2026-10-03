@@ -347,11 +347,12 @@ class Sidebar(Gtk.Box):
         if mount.can_eject():
             mount.eject_with_operation(flags, op, None, self._ejected)
         else:
-            mount.unmount_with_operation(flags, op, None, self._ejected)
+            mount.unmount_with_operation(flags, op, None, lambda m, r: self._ejected(m, r, False))
 
-    def _ejected(self, mount, res) -> None:
+    def _ejected(self, mount, res, eject=True) -> None:
+        # finish what was started: can_eject() may have changed once the drive is gone
         try:
-            (mount.eject_with_operation_finish if mount.can_eject() else mount.unmount_with_operation_finish)(res)
+            (mount.eject_with_operation_finish if eject else mount.unmount_with_operation_finish)(res)
         except GLib.Error as e:
             ui.dialog.alert(f"The disk “{mount.get_name()}” wasn't ejected.", e.message,
                             [("ok", "OK", "default")], parent=self.get_root())

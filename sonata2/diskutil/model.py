@@ -10,9 +10,12 @@ U = "org.freedesktop.UDisks2."
 DRIVE, ATA, NVME = U + "Drive", U + "Drive.Ata", U + "NVMe.Controller"
 BLOCK, PART, TABLE = U + "Block", U + "Partition", U + "PartitionTable"
 FS, CRYPT, LOOP, SWAP = U + "Filesystem", U + "Encrypted", U + "Loop", U + "Swapspace"
+MDRAID = U + "MDRaid"
 
 # mount points Disk Utility never erases (the running system)
 PROTECTED_MOUNTS = ("/", "/boot", "/boot/efi", "/efi", "/home", "/usr", "/var")
+# members of pooled storage UDisks can't map to their mounts: never erased here
+POOL_MEMBERS = ("LVM2_member", "zfs_member", "bcache")
 EXTERNAL_BUSES = ("usb", "ieee1394", "sdio")
 FREE_MIN = 16 * 1024 * 1024            # unallocated gaps smaller than this don't show on the bar
 
@@ -78,6 +81,7 @@ class Volume:
         self.name = self.label or b.get("HintName", "") or self.part_name or ("Swap" if self.swap else "") or \
             ("Untitled" if self.has_fs else (self.device.rsplit("/", 1)[-1] or "Volume"))
         self.disk = None
+        self.system_member = False               # part of the running system's storage (parse)
 
     @property
     def mounted(self) -> bool:
@@ -94,7 +98,7 @@ class Volume:
     @property
     def protected(self) -> bool:
         """The running system's volumes: never erased."""
-        return self.swap or self.fs_type in ("swap", "LVM2_member") or \
+        return self.swap or self.system_member or self.fs_type in ("swap",) + POOL_MEMBERS or \
             any(m in PROTECTED_MOUNTS for m in self.mounts)
 
     @property
@@ -142,6 +146,7 @@ class Disk:
             name = self.image.rsplit("/", 1)[-1] or self.device.rsplit("/", 1)[-1]
         self.name = name or b.get("HintName", "") or self.device.rsplit("/", 1)[-1] or "Disk"
         self.volumes = []
+        self.system_member = False               # the whole disk is a system storage member (parse)
 
     @property
     def external(self) -> bool:
@@ -153,7 +158,7 @@ class Disk:
 
     @property
     def protected(self) -> bool:
-        return any(v.protected for v in self.volumes)
+        return self.system_member or any(v.protected for v in self.volumes)
 
     @property
     def kind(self) -> str:
@@ -197,6 +202,40 @@ def smart_status(ifaces: dict) -> str:
     return ""
 
 
+def _system_member(ifaces: dict, uuids: set, arrays: set) -> bool:
+    """A block belonging to the running system's storage even though UDisks
+    reports the mount elsewhere: another device of the same multi-device
+    filesystem (btrfs RAID: same UUID), a member of a running md array that
+    holds it, or a pooled-storage member (LVM, zfs, bcache)."""
+    b = ifaces.get(BLOCK, {})
+    if b.get("IdUUID") and b.get("IdUUID") in uuids:
+        return True
+    if b.get("IdType") in POOL_MEMBERS:
+        return True
+    md = b.get("MDRaidMember", "/")
+    return bool(md and md != "/" and md in arrays)
+
+
+def _system_storage(objects: dict):
+    """(filesystem UUIDs mounted at a system mount point, md arrays that are
+    running or hold such a mount)."""
+    uuids, arrays = set(), set()
+    for ifaces in objects.values():
+        mounts = [text(m) for m in ifaces.get(FS, {}).get("MountPoints", [])]
+        if not any(m in PROTECTED_MOUNTS for m in mounts):
+            continue
+        b = ifaces.get(BLOCK, {})
+        if b.get("IdUUID"):
+            uuids.add(b["IdUUID"])
+        if b.get("MDRaid", "/") not in ("", "/"):
+            arrays.add(b["MDRaid"])
+        backing = objects.get(b.get("CryptoBackingDevice", "/"), {}).get(BLOCK, {})
+        if backing.get("MDRaid", "/") not in ("", "/"):        # LUKS on md
+            arrays.add(backing["MDRaid"])
+    arrays |= {p for p, ifaces in objects.items() if ifaces.get(MDRAID, {}).get("Running")}
+    return uuids, arrays
+
+
 def parse(objects: dict) -> list:
     """GetManagedObjects' reply -> [Disk] with their volumes, sorted by
     section then name. Blocks UDisks marks to ignore and loop devices with
@@ -220,6 +259,7 @@ def parse(objects: dict) -> list:
             v = Volume(path, ifaces, objects)
             v.disk = disk
             disk.volumes.append(v)
+    uuids, arrays = _system_storage(objects)
     for disk in disks.values():
         disk.volumes.sort(key=lambda v: (v.offset, v.number))
         whole = objects.get(disk.block_path, {})
@@ -227,6 +267,10 @@ def parse(objects: dict) -> list:
             v = Volume(disk.block_path, whole, objects)
             v.disk = disk
             disk.volumes.append(v)
+        disk.system_member = _system_member(whole, uuids, arrays)       # e.g. a whole-disk RAID member
+        for v in disk.volumes:
+            v.system_member = _system_member(objects.get(v.path, {}), uuids, arrays) or \
+                (v.cleartext is not None and _system_member(objects.get(v.cleartext, {}), uuids, arrays))
     order = {"Internal": 0, "External": 1, "Disk Images": 2}
     return sorted(disks.values(), key=lambda d: (order[d.section], d.device))
 

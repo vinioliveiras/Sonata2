@@ -30,8 +30,13 @@ def options(**extra) -> GLib.Variant:
 def error_text(err) -> str:
     """A GLib.Error from UDisks as a sentence (the D-Bus error name stripped)."""
     if isinstance(err, GLib.Error):
-        Gio.DBusError.strip_remote_error(err)
-        return err.message
+        # strip_remote_error() changes a C copy in PyGObject: strip it here
+        msg = err.message or ""
+        if msg.startswith("GDBus.Error:"):
+            name, sep, rest = msg.partition(": ")
+            if sep and " " not in name:
+                return rest
+        return msg
     return str(err)
 
 
@@ -98,6 +103,17 @@ class Client:
             self._on_error(error_text(e))
             return
         self._on_objects(self.objects)
+
+    def fetch(self, done) -> None:
+        """done(objects or None): a fresh tree straight from UDisks (the last
+        signal may still be debounced), for checks right before erasing."""
+        def finish(conn, res):
+            try:
+                done(conn.call_finish(res).unpack()[0])
+            except GLib.Error:
+                done(None)
+        self.conn.call(NAME, ROOT, "org.freedesktop.DBus.ObjectManager", "GetManagedObjects", None,
+                       GLib.VariantType("(a{oa{sa{sv}}})"), Gio.DBusCallFlags.NONE, 10000, None, finish)
 
     # -- methods ---------------------------------------------------------------------------------
     def call(self, path: str, iface: str, method: str, args: GLib.Variant, done=None, timeout=30000) -> None:

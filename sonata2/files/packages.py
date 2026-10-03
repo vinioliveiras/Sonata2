@@ -142,7 +142,51 @@ def install(path: str, parent=None) -> None:
                         parent=parent)
 
 
+def _appimage_stamp(path: str):
+    """What makes an AppImage "the same file" for the first-run question:
+    its real path, size and mtime (a replaced file is asked about again)."""
+    st = os.stat(path)
+    return os.path.realpath(path), f"{st.st_size}:{st.st_mtime_ns}"
+
+
+def _appimage_trusted(path: str) -> bool:
+    from .. import config
+    try:
+        key, stamp = _appimage_stamp(path)
+    except OSError:
+        return False
+    return config.load("files", {"trusted_appimages": {}})["trusted_appimages"].get(key) == stamp
+
+
+def _trust_appimage(path: str) -> None:
+    from .. import config
+    try:
+        key, stamp = _appimage_stamp(path)
+    except OSError:
+        return
+    trusted = dict(config.load("files", {"trusted_appimages": {}})["trusted_appimages"] or {})
+    trusted[key] = stamp
+    config.update("files", trusted_appimages=trusted)
+
+
 def run_appimage(path: str, parent=None) -> None:
+    """Run an AppImage; the first time (per file) only after the user
+    confirms (Gatekeeper's "downloaded from the Internet" question)."""
+    if _appimage_trusted(path):
+        _launch_appimage(path, parent)
+        return
+
+    def answer(rid):
+        if rid == "open":
+            _trust_appimage(path)
+            _launch_appimage(path, parent)
+    ui.dialog.alert(f"Are you sure you want to open “{os.path.basename(path)}”?",
+                    "This app will run with your permissions and can access your files. "
+                    "Only open apps from developers you trust.",
+                    [("cancel", "Cancel", ""), ("open", "Open", "default")], answer, parent=parent)
+
+
+def _launch_appimage(path: str, parent=None) -> None:
     try:
         mode = os.stat(path).st_mode
         if not mode & 0o100:
@@ -190,14 +234,11 @@ def extract(path: str, parent=None, done=None) -> None:
                     t.extractall(target, filter="data")      # no absolute paths / links out of the folder
         except (OSError, tarfile.TarError, zipfile.BadZipFile, ValueError) as e:
             err = str(e)
+            shutil.rmtree(target, ignore_errors=True)      # no half-extracted folder left behind
         GLib.idle_add(finish, err)
 
     def finish(err):
         if err:
-            try:
-                os.rmdir(target)
-            except OSError:
-                pass
             ui.dialog.alert(f"Unable to expand “{os.path.basename(path)}”.", err, [("ok", "OK", "default")],
                             parent=parent)
         elif done:

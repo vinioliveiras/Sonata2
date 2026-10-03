@@ -70,6 +70,7 @@ class Folder:
         self.show_hidden = False
         self._on_loaded, self._on_error = on_loaded, on_error
         self._keys = []            # sort keys, parallel to store
+        self._key_of = {}          # file name -> its sort key (find an item by bisect, not a scan)
         self._cancel = None
         self._monitor = None
 
@@ -139,6 +140,7 @@ class Folder:
         if not keep_order:
             items.sort(key=sort_key)
         self._keys = [sort_key(i) for i in items]
+        self._key_of = {i.get_name(): k for i, k in zip(items, self._keys)}
         self.uri = uri
         self.store.splice(0, self.store.get_n_items(), items)
         self._on_loaded(uri)
@@ -222,7 +224,20 @@ class Folder:
             self._add(f, replace=True)
 
     def _index(self, name: str) -> int:
-        for i in range(self.store.get_n_items()):
+        """O(log n) while the store is name-sorted (a big copy sends one
+        event per file: a linear scan each made it O(n²))."""
+        n = self.store.get_n_items()
+        if self._keys and len(self._keys) == n:
+            k = self._key_of.get(name)
+            if k is None:
+                return -1
+            i = bisect.bisect_left(self._keys, k)
+            while i < n and self._keys[i] == k:
+                if self.store.get_item(i).get_name() == name:
+                    return i
+                i += 1
+            return -1
+        for i in range(n):                         # Recents: not name-sorted
             if self.store.get_item(i).get_name() == name:
                 return i
         return -1
@@ -233,6 +248,7 @@ class Folder:
             self.store.remove(i)
             if self._keys:
                 del self._keys[i]
+            self._key_of.pop(name, None)
 
     def _add(self, f: Gio.File, replace=False) -> None:
         uri = self.uri
@@ -249,13 +265,16 @@ class Folder:
                 if not replace:
                     return
                 self.store.remove(i)
-                del self._keys[i]
+                if self._keys:
+                    del self._keys[i]
+                self._key_of.pop(info.get_name(), None)
             if not self._visible(info):
                 return
             info.set_attribute_object("sonata::file", f)
             k = sort_key(info)
             at = bisect.bisect(self._keys, k)
             self._keys.insert(at, k)
+            self._key_of[info.get_name()] = k
             self.store.insert(at, info)
         f.query_info_async(ATTRS, Gio.FileQueryInfoFlags.NONE, GLib.PRIORITY_DEFAULT, None, got)
 

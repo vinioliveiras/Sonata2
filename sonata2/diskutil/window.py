@@ -552,14 +552,10 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         v = self.selected
         if not isinstance(v, Volume) or not v.has_fs:
             return
-        entry = Gtk.Entry(text=v.label, activates_default=True, css_classes=["du-form"])
-        dlg = ui.dialog.alert(f"Rename “{v.name}”", "Enter a new name for this volume.",
-                              [("cancel", "Cancel", ""), ("rename", "Rename", "default")],
-                              lambda rid: rid == "rename" and self.client.set_label(
-                                  v.fs_path, entry.get_text().strip(),
-                                  lambda _o, e: self._failed(f"“{v.name}” couldn't be renamed.", e)), parent=self)
-        dlg.set_extra_child(entry)
-        GLib.idle_add(lambda: (entry.grab_focus(), entry.select_region(0, -1), False)[2])
+        return ui.dialog.ask_text(f"Rename “{v.name}”", v.label, "Rename",
+                                  lambda text: self.client.set_label(
+                                      v.fs_path, text, lambda _o, e: self._failed(f"“{v.name}” couldn't be renamed.", e)),
+                                  body="Enter a new name for this volume.", parent=self)
 
     # erase ----------------------------------------------------------------------------------------
     def _query_formats(self) -> None:
@@ -576,9 +572,7 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         item = self.selected
         if item is None or item.protected:
             if item is not None:
-                ui.dialog.alert(f"“{item.name}” can't be erased.",
-                                "It holds the running system (/, /boot, /home or swap).",
-                                [("ok", "OK", "default")], parent=self)
+                self._refuse_erase(item)
             return
         is_disk = isinstance(item, Disk)
         choices = self.format_choices()
@@ -619,9 +613,35 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
                         [("cancel", "Cancel", ""), ("erase", "Erase", "destructive")],
                         lambda rid: rid == "erase" and self._do_erase(item, label, fs_type, table), parent=self)
 
+    def _refuse_erase(self, item) -> None:
+        ui.dialog.alert(f"“{item.name}” can't be erased.",
+                        "It holds the running system (/, /boot, /home, swap or one of their devices).",
+                        [("ok", "OK", "default")], parent=self)
+
+    def _find(self, disks, item):
+        """`item` (a Disk or Volume) in another parse of the tree, or None."""
+        key = self._item_key(item)
+        for d in disks:
+            for it in [d] + d.volumes:
+                if type(it) is type(item) and self._item_key(it) == key:
+                    return it
+        return None
+
     def _do_erase(self, item, label: str, fs_type: str, table) -> None:
-        if item.protected:                  # checked again: the tree may have changed meanwhile
-            return
+        """Checked again on a fresh tree (not the object the sheet was
+        opened with: it may have been mounted as a system volume since)."""
+        def check(objects):
+            cur = self._find(model.parse(objects), item) if objects else None
+            if cur is None or cur.protected:
+                self._refuse_erase(cur or item)
+                return
+            self._erase_now(cur, label, fs_type, table)
+        if callable(getattr(type(self.client), "fetch", None)):
+            self.client.fetch(check)
+        else:
+            check(getattr(self.client, "objects", None))
+
+    def _erase_now(self, item, label: str, fs_type: str, table) -> None:
         c = self.client
         heading = f"“{item.name}” couldn't be erased."
         self._set_busy(f"Erasing “{item.name}”…")

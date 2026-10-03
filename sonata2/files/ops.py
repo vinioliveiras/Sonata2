@@ -104,52 +104,74 @@ def is_trash(uri: str) -> bool:
     return (uri or "").startswith("trash:")
 
 
-def put_back(files, on_error=None) -> None:
-    """Finder "Put Back": move each item to where it was trashed from."""
-    for f in files:
-        try:
-            orig = f.query_info("trash::orig-path", NOFOLLOW, None).get_attribute_byte_string("trash::orig-path")
-            if not orig:
-                raise GLib.Error("The original location is unknown.")
-            dest = Gio.File.new_for_path(orig)
-            parent = dest.get_parent()
-            if parent and not parent.query_exists(None):
-                parent.make_directory_with_parents(None)
-            if dest.query_exists(None):
-                dest = parent.get_child(free_name(parent, dest.get_basename()))
-            f.move(dest, Gio.FileCopyFlags.NOFOLLOW_SYMLINKS, None, None, None)
-        except GLib.Error as e:
-            if on_error:
-                on_error(f, e)
-
-
-def delete_now(files, on_done=None, on_error=None) -> None:
-    """Delete Immediately / Empty Trash, in a thread (big folders)."""
-    import threading
+def _in_thread(work, on_done=None, on_error=None) -> None:
+    """Run work(report) in a thread (gvfs / big folders must never block the
+    GTK thread); report(f, e) and on_done() reach the GTK thread."""
+    def report(f, e):
+        if on_error:
+            GLib.idle_add(lambda: (on_error(f, e), False)[1])
 
     def run():
-        for f in files:
-            try:
-                _delete(f, None)
-            except GLib.Error as e:
-                if on_error:
-                    GLib.idle_add(lambda f=f, e=e: (on_error(f, e), False)[1])
+        work(report)
         if on_done:
             GLib.idle_add(lambda: (on_done(), False)[1])
     threading.Thread(target=run, daemon=True).start()
 
 
+def put_back(files, on_error=None, on_done=None) -> None:
+    """Finder "Put Back": move each item to where it was trashed from."""
+    files = list(files)
+
+    def work(report):
+        for f in files:
+            try:
+                orig = f.query_info("trash::orig-path", NOFOLLOW, None).get_attribute_byte_string("trash::orig-path")
+                if not orig:
+                    raise GLib.Error("The original location is unknown.")
+                dest = Gio.File.new_for_path(orig)
+                parent = dest.get_parent()
+                if parent and not parent.query_exists(None):
+                    parent.make_directory_with_parents(None)
+                if dest.query_exists(None):
+                    dest = parent.get_child(free_name(parent, dest.get_basename()))
+                f.move(dest, Gio.FileCopyFlags.NOFOLLOW_SYMLINKS, None, None, None)
+            except GLib.Error as e:
+                report(f, e)
+    _in_thread(work, on_done, on_error)
+
+
+def _delete_all(files, report) -> int:
+    """Delete each of `files` (recursive); how many went."""
+    n = 0
+    for f in files:
+        try:
+            _delete(f, None)
+            n += 1
+        except GLib.Error as e:
+            report(f, e)
+    return n
+
+
+def delete_now(files, on_done=None, on_error=None) -> None:
+    """Delete Immediately / Empty Trash, in a thread (big folders)."""
+    files = list(files)
+    _in_thread(lambda report: _delete_all(files, report), on_done, on_error)
+
+
 def empty_trash(on_done=None, on_error=None) -> None:
-    from .. import sounds
-    sounds.play("empty-trash")
-    t = Gio.File.new_for_uri(TRASH)
-    try:
-        kids = [t.get_child(i.get_name()) for i in t.enumerate_children("standard::name", NOFOLLOW, None)]
-    except GLib.Error as e:
-        if on_error:
-            on_error(t, e)
-        return
-    delete_now(kids, on_done, on_error)
+    """Listing and deleting both run in the thread (gvfs); the sound plays
+    once something was really erased."""
+    def work(report):
+        from .. import sounds
+        t = Gio.File.new_for_uri(TRASH)
+        try:
+            kids = [t.get_child(i.get_name()) for i in t.enumerate_children("standard::name", NOFOLLOW, None)]
+        except GLib.Error as e:
+            report(t, e)
+            return
+        if _delete_all(kids, report):
+            GLib.idle_add(lambda: (sounds.play("empty-trash"), False)[1])
+    _in_thread(work, on_done, on_error)
 
 
 # -- copy / move -------------------------------------------------------------------------------
@@ -256,7 +278,42 @@ class Transfer:
                 if answer == "keep":
                     target = self.dest.get_child(free_name(self.dest, name, is_dir))
                 else:                                   # replace
-                    _delete(target, self.cancel)
+                    aside = self._set_aside(src, target, name)
+                    try:
+                        self._transfer(src, target, is_dir, info)
+                    except BaseException:
+                        self._restore(target, aside)
+                        raise
+                    _delete(aside, None)                # only once the new item is in place
+                    return
+        self._transfer(src, target, is_dir, info)
+
+    def _set_aside(self, src, target, name):
+        """Replace: rename the old item to a hidden temp name in the same
+        folder (deleting it first lost data when the copy then failed, or
+        when it contained the item being moved)."""
+        if _inside(_real(src, True), _real(target, True)):
+            verb = "moving" if self.move else "copying"
+            raise GLib.Error.new_literal(
+                Gio.io_error_quark(), f"“{name}” can’t be replaced because it contains the item you’re {verb}.",
+                Gio.IOErrorEnum.FAILED)
+        aside = self.dest.get_child(free_name(self.dest, f".{name}.sonata-replaced", True, style="number"))
+        target.move(aside, Gio.FileCopyFlags.NOFOLLOW_SYMLINKS | Gio.FileCopyFlags.NO_FALLBACK_FOR_MOVE,
+                    self.cancel, None, None)
+        return aside
+
+    @staticmethod
+    def _restore(target, aside):
+        """Undo _set_aside after a failed transfer: drop the partial copy,
+        put the old item back."""
+        try:
+            if target.query_exists(None):
+                _delete(target, None)
+            aside.move(target, Gio.FileCopyFlags.NOFOLLOW_SYMLINKS, None, None, None)
+        except GLib.Error:
+            pass                                        # the old item stays under its hidden name
+
+    def _transfer(self, src, target, is_dir, info):
         if self.move:
             try:
                 src.move(target, Gio.FileCopyFlags.NOFOLLOW_SYMLINKS | Gio.FileCopyFlags.NO_FALLBACK_FOR_MOVE,
@@ -402,7 +459,7 @@ def _image_png(f):
         return None
 
 
-def paste_image(widget, dest, done=None) -> bool:
+def paste_image(widget, dest, done=None, on_error=None) -> bool:
     """A picture on the clipboard (copied in a browser, a screenshot...)
     becomes "Pasted Image <date> at <time>.png" in `dest`. False when the
     clipboard holds no picture."""
@@ -418,10 +475,15 @@ def paste_image(widget, dest, done=None) -> bool:
         if tex is None:
             return
         name = GLib.DateTime.new_now_local().format("Pasted Image %Y-%m-%d at %H.%M.%S.png")
-        target = dest.get_child(name)
+        target = dest.get_child(free_name(dest, name, style="number"))   # two pastes in one second
         try:
-            tex.save_to_png(target.get_path())
+            ok = tex.save_to_png(target.get_path())
         except (GLib.Error, TypeError):
+            ok = False
+        if not ok:
+            if on_error:
+                on_error(GLib.Error.new_literal(Gio.io_error_quark(), "The picture couldn’t be saved.",
+                                                Gio.IOErrorEnum.FAILED))
             return
         if done:
             done(target)

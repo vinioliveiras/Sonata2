@@ -8,6 +8,7 @@ touches the real home or a real disk.
 import os
 import shlex
 import tarfile
+import threading
 import tempfile
 import unittest
 import zipfile
@@ -21,7 +22,7 @@ import gi  # noqa: E402
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import Adw, GdkPixbuf, Gio, GLib  # noqa: E402
+from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 from sonata2 import ui  # noqa: E402
 from sonata2.diskutil import model, udisks  # noqa: E402
@@ -187,17 +188,41 @@ class TransferTest(_Base):
         self.assertEqual(read(self.p("src.txt")), "keep me")
         self.assertEqual(self.alerts, ["The operation can’t be completed."])
 
-    @unittest.expectedFailure
     def test_replace_never_deletes_the_source(self):
         """Moving dir/x/x up into dir and answering Replace must not destroy
         the item being moved."""
-        # BUG: ops.Transfer._one deletes the conflicting target (dir/x) before
-        # moving, and dir/x contains the source dir/x/x -> its data is lost.
         write(self.p("x", "x", "precious.txt"), "data")
         self.answer = "replace"
         self.transfer([self.p("x", "x")], self.d, move=True)
         found = [os.path.join(r, n) for r, _d, fs in os.walk(self.d) for n in fs]
         self.assertTrue(any(read(f) == "data" for f in found), "the moved file was deleted")
+
+
+class ReplaceSafetyTest(_Base):
+    def test_failed_replace_keeps_the_old_item(self):
+        """Replace whose copy fails part-way puts the old item back (it was
+        deleted before the copy) and leaves no hidden temp behind."""
+        write(self.p("src", "a.txt"), "new")
+        write(self.p("dst", "a.txt"), "old")
+        src = Wrapped(Gio.File.new_for_path(self.p("src", "a.txt")))
+
+        def copy(*_a):
+            raise GLib.Error.new_literal(Gio.io_error_quark(), "disk full", Gio.IOErrorEnum.NO_SPACE)
+        src.copy = copy
+        self.answer = "replace"
+        self.transfer([src], self.p("dst"))
+        self.assertEqual(read(self.p("dst", "a.txt")), "old")
+        self.assertEqual(os.listdir(self.p("dst")), ["a.txt"])
+        self.assertEqual(self.alerts[-1], "The operation can’t be completed.")
+
+    def test_replace_success_leaves_no_temp(self):
+        """A successful Replace swaps the item and removes the old one."""
+        write(self.p("src", "a.txt"), "new")
+        write(self.p("dst", "a.txt"), "old")
+        self.answer = "replace"
+        self.transfer([self.p("src", "a.txt")], self.p("dst"))
+        self.assertEqual(read(self.p("dst", "a.txt")), "new")
+        self.assertEqual(os.listdir(self.p("dst")), ["a.txt"])
 
 
 # -- ops: Trash / delete ------------------------------------------------------------------------
@@ -214,14 +239,19 @@ class TrashTest(_Base):
 
     def test_put_back_recreates_parent_and_never_overwrites(self):
         """Put Back recreates a deleted parent folder, and when the original
-        name is taken again it restores as "x copy" instead of overwriting."""
+        name is taken again it restores as "x copy" instead of overwriting.
+        It runs off the GTK thread and calls on_done at the end."""
         write(self.p("trash", "a.txt"), "trashed")
         orig = self.p("gone", "deeper", "a.txt")
-        ops.put_back([self._trashed(self.p("trash", "a.txt"), orig)], lambda f, e: self.fail(e.message))
+        done = []
+        ops.put_back([self._trashed(self.p("trash", "a.txt"), orig)], lambda f, e: self.fail(e.message),
+                     lambda: done.append(1))
+        self.assertTrue(spin(lambda: done))
         self.assertEqual(read(orig), "trashed")
         write(self.p("trash", "b.txt"), "second")
         write(self.p("home", "b.txt"), "current")
-        ops.put_back([self._trashed(self.p("trash", "b.txt"), self.p("home", "b.txt"))])
+        ops.put_back([self._trashed(self.p("trash", "b.txt"), self.p("home", "b.txt"))], on_done=lambda: done.append(2))
+        self.assertTrue(spin(lambda: 2 in done))
         self.assertEqual(read(self.p("home", "b.txt")), "current")
         self.assertEqual(read(self.p("home", "b copy.txt")), "second")
 
@@ -230,8 +260,28 @@ class TrashTest(_Base):
         write(self.p("trash", "a.txt"))
         errors = []
         ops.put_back([self._trashed(self.p("trash", "a.txt"), "")], lambda f, e: errors.append(e))
+        self.assertTrue(spin(lambda: errors))
         self.assertEqual(len(errors), 1)
         self.assertTrue(os.path.exists(self.p("trash", "a.txt")))
+
+    def test_empty_trash_off_main_loop_sound_after_success(self):
+        """Empty Trash lists and deletes in a thread and plays its sound only
+        once something was erased (not before, not on failure)."""
+        from sonata2 import sounds
+        main = threading.current_thread()
+        listed_on = []
+
+        class FakeTrash:
+            def enumerate_children(self, *_a):
+                listed_on.append(threading.current_thread())
+                raise GLib.Error.new_literal(Gio.io_error_quark(), "no trash", Gio.IOErrorEnum.NOT_SUPPORTED)
+        errors, played = [], []
+        with mock.patch.object(Gio.File, "new_for_uri", return_value=FakeTrash()), \
+                mock.patch.object(sounds, "play", side_effect=played.append):
+            ops.empty_trash(None, lambda f, e: errors.append(e))
+            self.assertTrue(spin(lambda: errors))
+        self.assertIsNot(listed_on[0], main)
+        self.assertEqual(played, [])
 
     def test_delete_now_never_follows_symlinks(self):
         """Delete Immediately removes a folder holding a symlink to another
@@ -250,11 +300,8 @@ class TrashTest(_Base):
         self.assertTrue(spin(lambda: errors))
         self.assertEqual(errors, ["missing"])
 
-    @unittest.expectedFailure
     def test_paste_image_never_overwrites(self):
         """Two pictures pasted in the same second must not overwrite each other."""
-        # BUG: ops.paste_image builds "Pasted Image <date> at <time>.png" and
-        # saves without checking it exists (no free_name) -> silent overwrite.
         saved = []
 
         class Tex:
@@ -280,6 +327,65 @@ class TrashTest(_Base):
             ops.paste_image(widget, self.g)
         self.assertEqual(len(saved), 2)
         self.assertNotEqual(saved[0], saved[1])
+
+
+class ReportsTest(_Base):
+    def test_paste_image_failure_is_reported(self):
+        """A picture that can't be written is reported, not dropped silently."""
+        class Tex:
+            def save_to_png(self, _path):
+                return False
+
+        class Clip:
+            def get_formats(self):
+                return mock.Mock(contain_gtype=lambda _t: True)
+
+            def read_texture_async(self, _c, cb):
+                cb(self, None)
+
+            def read_texture_finish(self, _r):
+                return Tex()
+        errors = []
+        ops.paste_image(mock.Mock(get_clipboard=lambda: Clip()), self.g, on_error=errors.append)
+        self.assertEqual(len(errors), 1)
+
+    def test_drop_on_trash_reports_errors(self):
+        """Dropping on the Trash passes an error handler (USB/NFS without a
+        Trash used to fail silently)."""
+        from sonata2.files.window import FilesWindow
+        fake = mock.Mock()
+        f = Gio.File.new_for_path(self.p("x"))
+        with mock.patch.object(ops, "trash") as trash:
+            self.assertTrue(FilesWindow.drop(fake, [f], Gio.File.new_for_uri("trash:///")))
+        files, on_error = trash.call_args[0]
+        self.assertEqual(files, [f])
+        on_error(f, GLib.Error.new_literal(Gio.io_error_quark(), "no trash", Gio.IOErrorEnum.NOT_SUPPORTED))
+        fake._error.assert_called_once()
+
+
+class FolderIndexTest(unittest.TestCase):
+    def test_index_by_bisect_matches_scan(self):
+        """The monitor's lookup by name (bisect over the sort keys) finds the
+        same items as a scan, after inserts and removals too."""
+        from sonata2.files import folder
+        f = folder.Folder(lambda _u: None, lambda _u, _e: None)
+        names = [f"file {i}.txt" for i in range(200)] + ["Zed", "alpha", "Alpha"]
+        items = []
+        for n in names:
+            i = Gio.FileInfo()
+            i.set_name(n)
+            i.set_display_name(n)
+            items.append(i)
+        f._fill("file:///x", items)
+        store = [f.store.get_item(i).get_name() for i in range(f.store.get_n_items())]
+        for n in names:
+            self.assertEqual(f._index(n), store.index(n))
+        self.assertEqual(f._index("missing"), -1)
+        f._remove("file 7.txt")
+        self.assertEqual(f._index("file 7.txt"), -1)
+        store = [f.store.get_item(i).get_name() for i in range(f.store.get_n_items())]
+        self.assertEqual(f._index("file 70.txt"), store.index("file 70.txt"))
+        self.assertEqual(len(f._keys), f.store.get_n_items())
 
 
 # -- search ----------------------------------------------------------------------------------
@@ -425,6 +531,49 @@ class PackagesTest(_Base):
         self.assertFalse(os.path.exists(self.p("escaped-tar.txt")))
         self.assertFalse(os.path.exists(os.path.join(os.path.dirname(self.d), "escaped-tar.txt")))
 
+    def test_extract_failure_removes_partial_folder(self):
+        """An archive that breaks half-way leaves no half-extracted folder."""
+        t = self.p("half.tar")
+        write(self.p("one.txt"), "1" * 4000)
+        write(self.p("two.txt"), "2" * 40000)
+        with tarfile.open(t, "w") as tf:
+            tf.add(self.p("one.txt"), "one.txt")
+            tf.add(self.p("two.txt"), "two.txt")
+        with open(t, "r+b") as fh:
+            fh.truncate(12000)                       # one.txt complete, two.txt cut
+        packages.extract(t)
+        self.assertTrue(spin(lambda: self.alerts))
+        self.assertFalse(os.path.exists(self.p("half")))
+
+    def test_appimage_asks_once_per_file(self):
+        """The first run of an AppImage asks first (Cancel: nothing runs, no
+        chmod); after Open it runs without asking; a changed file asks again."""
+        app = self.p("Tool.AppImage")
+        write(app, "#!/bin/sh\n")
+        os.chmod(app, 0o644)
+        runs = []
+        with mock.patch.object(packages, "_launch_appimage", side_effect=lambda p, _w=None: runs.append(p)):
+            self.answer = None
+            responses = []
+            self._alert_resp = "cancel"
+
+            def alert(heading, body, rs, on_response=None, parent=None, check=None):
+                responses.append(heading)
+                on_response(self._alert_resp)
+            with mock.patch.object(ui.dialog, "alert", side_effect=alert):
+                packages.open_path(app)
+                self.assertEqual((len(responses), runs), (1, []))
+                self.assertEqual(os.stat(app).st_mode & 0o777, 0o644)
+                self._alert_resp = "open"
+                packages.open_path(app)
+                self.assertEqual((len(responses), runs), (2, [app]))
+                packages.open_path(app)                      # remembered: no question
+                self.assertEqual((len(responses), runs), (2, [app, app]))
+                write(app, "#!/bin/sh\necho changed\n")       # another file now: asked again
+                os.utime(app, ns=(1, 1))
+                packages.open_path(app)
+                self.assertEqual(len(responses), 3)
+
     def test_extract_corrupt_archive_cleans_up(self):
         """A broken archive shows an alert and leaves no empty folder behind."""
         write(self.p("broken.zip"), "garbage")
@@ -448,13 +597,9 @@ class SidebarTest(_Base):
             self.assertEqual([u for u, _l in sidebar.read_bookmarks()], ["file:///b", "file:///c"])
         self.assertFalse(os.path.exists(bm + ".new"))
 
-    @unittest.expectedFailure
     def test_eject_finish_matches_the_started_operation(self):
         """The finish call must match the operation that was started, even if
         can_eject() changes once the drive is gone."""
-        # BUG: sidebar._ejected re-asks mount.can_eject() to pick the _finish
-        # function; when it flips after the eject, unmount_with_operation_finish
-        # is called on an eject result -> a bogus "wasn't ejected" alert.
         state = {"ejected": False}
 
         class Mount:
@@ -585,16 +730,76 @@ class DiskModelTest(unittest.TestCase):
         self.assertEqual([s[0] for s in segs], ["Free Space", "Untitled", "Free Space", "Untitled", "Free Space"])
         self.assertLessEqual(sum(s[1] for s in segs), sdb.size)
 
-    @unittest.expectedFailure
     def test_member_of_mounted_root_filesystem_is_protected(self):
         """A second device of a multi-device filesystem mounted at / (btrfs
         RAID: same UUID) must be protected from Erase."""
-        # BUG: model.Volume.protected only looks at the volume's own
-        # MountPoints; UDisks reports the mount on one member only, so the
-        # other member of the running root filesystem can be erased.
         sdb = model.parse(self.tree())[1]
         sdb6 = [v for v in sdb.volumes if v.device == "/dev/sdb6"][0]
         self.assertTrue(sdb6.protected)
+
+
+class DiskMembersTest(unittest.TestCase):
+    O = "/org/freedesktop/UDisks2/"
+    G = 1000 ** 3
+
+    def test_pool_and_md_members_protected(self):
+        """Members of a running md array, zfs/bcache members and a whole-disk
+        RAID member can't be erased; an unrelated disk still can."""
+        o, G = self.O, self.G
+        dc, dd, de = o + "drives/C", o + "drives/D", o + "drives/E"
+        md = o + "mdraid/root"
+        member = blk("/dev/sdc", 100 * G, dc, "linux_raid_member", "R1")
+        member[U + "Block"]["MDRaidMember"] = md
+        tree = {
+            dc: {U + "Drive": {"Size": 100 * G}}, dd: {U + "Drive": {"Size": 100 * G}},
+            de: {U + "Drive": {"Size": 100 * G}},
+            md: {U + "MDRaid": {"Running": True}},
+            o + "block_devices/sdc": member,                                   # whole-disk RAID member
+            o + "block_devices/md0": {**blk("/dev/md0", 100 * G, "/", "ext4", "M"), **fs("/")},
+            o + "block_devices/sdd": {**blk("/dev/sdd", 100 * G, dd), U + "PartitionTable": {"Type": "gpt"}},
+            o + "block_devices/sdd1": {**blk("/dev/sdd1", 90 * G, dd, "zfs_member", "Z"), **fs(),
+                                       **prt(o + "block_devices/sdd", 1, 1 << 20, 90 * G)},
+            o + "block_devices/sde": {**blk("/dev/sde", 100 * G, de), U + "PartitionTable": {"Type": "gpt"}},
+            o + "block_devices/sde1": {**blk("/dev/sde1", 90 * G, de, "ext4", "E"), **fs(),
+                                       **prt(o + "block_devices/sde", 1, 1 << 20, 90 * G)},
+        }
+        disks = {d.device: d for d in model.parse(tree)}
+        self.assertTrue(disks["/dev/sdc"].protected)
+        self.assertTrue(disks["/dev/sdd"].protected)
+        self.assertTrue(disks["/dev/sdd"].volumes[0].protected)
+        self.assertFalse(disks["/dev/sde"].protected)
+
+    def test_erase_rechecks_a_fresh_tree(self):
+        """The final Erase reads the tree again: a volume mounted at / since
+        the sheet opened is refused (the old object said it was free)."""
+        from sonata2.diskutil.window import DiskUtilityWindow
+        o, G = self.O, self.G
+        da = o + "drives/A"
+
+        def tree(*mounts):
+            return {da: {U + "Drive": {"Size": 100 * G}},
+                    o + "block_devices/sda": {**blk("/dev/sda", 100 * G, da), U + "PartitionTable": {"Type": "gpt"}},
+                    o + "block_devices/sda1": {**blk("/dev/sda1", 90 * G, da, "ext4", "X"), **fs(*mounts),
+                                               **prt(o + "block_devices/sda", 1, 1 << 20, 90 * G)}}
+        stale = model.parse(tree())[0].volumes[0]
+        self.assertFalse(stale.protected)
+        calls, alerts = [], []
+
+        class Client:
+            objects = tree("/")
+
+            def fetch(self, done):
+                done(tree("/"))
+
+            def format(self, *a, **k):
+                calls.append(a)
+        fake = mock.Mock(client=Client(), _item_key=lambda it: DiskUtilityWindow._item_key(None, it))
+        fake._find = lambda disks, item: DiskUtilityWindow._find(fake, disks, item)
+        fake._refuse_erase = lambda item: alerts.append(item.name)
+        DiskUtilityWindow._do_erase(fake, stale, "x", "ext4", None)
+        self.assertEqual(calls, [])
+        self.assertEqual(len(alerts), 1)
+        fake._erase_now.assert_not_called()
 
 
 class UDisksHelpersTest(unittest.TestCase):
@@ -611,12 +816,8 @@ class UDisksHelpersTest(unittest.TestCase):
         self.assertFalse(udisks.dismissed(ValueError("x")))
         self.assertEqual(udisks.error_text(ValueError("plain")), "plain")
 
-    @unittest.expectedFailure
     def test_error_text_strips_dbus_prefix(self):
         """Alerts show UDisks' sentence, not "GDBus.Error:org...: ..."."""
-        # BUG: udisks.error_text calls Gio.DBusError.strip_remote_error(err),
-        # which in PyGObject strips a C copy; err.message keeps the prefix, so
-        # every Disk Utility error alert shows the raw D-Bus error name.
         other = Gio.DBusError.new_for_dbus_error("org.freedesktop.UDisks2.Error.Failed", "Device is busy")
         self.assertEqual(udisks.error_text(other), "Device is busy")
 
@@ -682,12 +883,9 @@ class PreviewEditsTest(unittest.TestCase):
         self.assertFalse(Edits.writable("/x/a.svg"))
         self.assertFalse(Edits.writable("/x/a.cr2"))
 
-    @unittest.expectedFailure
     def test_save_keeps_file_permissions(self):
         """Saving an edit keeps the file's permissions (a private 0600 photo
         must not become world-readable)."""
-        # BUG: Edits.write saves a new temp file and os.replace()s it over the
-        # original, so the mode becomes the umask default (0644).
         from sonata2.preview.edit import Edits
         os.chmod(self.path, 0o600)
         ed = Edits.load(self.path)
@@ -695,12 +893,9 @@ class PreviewEditsTest(unittest.TestCase):
         ed.save(self.path)
         self.assertEqual(os.stat(self.path).st_mode & 0o777, 0o600)
 
-    @unittest.expectedFailure
     def test_save_through_symlink_keeps_link(self):
         """Saving a picture opened through a symlink updates the target and
         keeps the link."""
-        # BUG: Edits.write os.replace()s the link itself with a regular file;
-        # the real picture is left unedited and the link is gone.
         from sonata2.preview.edit import Edits
         link = os.path.join(self.d, "link.png")
         os.symlink(self.path, link)
@@ -709,11 +904,8 @@ class PreviewEditsTest(unittest.TestCase):
         ed.save(link)
         self.assertTrue(os.path.islink(link))
 
-    @unittest.expectedFailure
     def test_save_keeps_exif(self):
         """Saving a JPEG keeps its camera metadata (date taken, camera)."""
-        # BUG: Edits.write calls im.save() without exif=, so EXIF (and the ICC
-        # profile) are stripped from the photo on every in-place save.
         from sonata2.preview.edit import Edits
         p = os.path.join(self.d, "cam.jpg")
         ex = self.Image.Exif()
@@ -725,11 +917,8 @@ class PreviewEditsTest(unittest.TestCase):
         with self.Image.open(p) as im:
             self.assertEqual(im.getexif().get(0x010F), "Canon")
 
-    @unittest.expectedFailure
     def test_info_dimensions_follow_orientation(self):
         """Info's Dimensions match the picture as shown (EXIF orientation applied)."""
-        # BUG: info._pillow reports im.size before exif_transpose; a portrait
-        # phone photo (Orientation 6) is listed as landscape.
         from sonata2.preview import info
         p = os.path.join(self.d, "rot.jpg")
         ex = self.Image.Exif()
@@ -753,3 +942,159 @@ class PreviewEditsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# -- Preview / Quick Look: off the main loop, overwrite check --------------------------------------
+class OffMainLoopTest(_Base):
+    def test_quicklook_decodes_pictures_in_a_thread(self):
+        """Quick Look shows the panel at once and decodes the picture in a
+        worker thread (a big photo froze Files)."""
+        from sonata2 import imageload
+        from sonata2.files.quicklook import QuickLook
+        threads = []
+        tex = Gdk.MemoryTexture.new(2, 2, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(b"\0" * 16), 8)
+
+        def texture(_path):
+            threads.append(threading.current_thread())
+            return tex
+        f = Gio.File.new_for_path(self.p("pic.png"))
+        info = Gio.FileInfo()
+        info.set_name("pic.png")
+        info.set_size(10)
+        ql = QuickLook(None)
+        with mock.patch.object(imageload, "texture", side_effect=texture):
+            pic = ql._preview(info, f, "image/png")
+            ql.body.append(pic)
+            self.assertTrue(spin(lambda: pic.get_paintable() is tex))
+        self.assertIsNot(threads[0], threading.main_thread())
+        ql.destroy()
+
+    def test_save_as_extension_asks_before_replacing(self):
+        """Save As / Export add the extension after the Save panel's own
+        check: an existing "name.png" is asked about, Cancel writes nothing."""
+        from sonata2.preview.window import PreviewWindow
+        write(self.p("photo.png"), "keep")
+        writes = []
+        self.assertTrue(PreviewWindow._confirm_replace(None, self.p("new"), self.p("new.png"),
+                                                       lambda t: writes.append(t) or True))
+        self.assertEqual(writes, [self.p("new.png")])
+        writes.clear()
+        PreviewWindow._confirm_replace(None, self.p("photo"), self.p("photo.png"), writes.append)
+        self.assertEqual(len(self.alerts), 1)
+        self.assertEqual(writes, [])                     # the test alert answers its first response: Cancel
+        self.assertEqual(read(self.p("photo.png")), "keep")
+
+
+# -- animations -------------------------------------------------------------------------------------
+class AnimationTests(unittest.TestCase):
+    """The main user actions of Files, Disk Utility and Preview animate:
+    the real code paths start an Adw animation or set a Revealer/Stack
+    transition (xvfb)."""
+
+    @classmethod
+    def setUpClass(cls):
+        Adw.init()
+        ui.setup()
+        cls.app = Adw.Application(application_id="io.github.vinioliveiras.sonata2.reviewanim")
+        cls.app.register(None)
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        for n in ("A", "B"):
+            os.mkdir(os.path.join(self.d, n))
+        self.wins = []
+
+    def tearDown(self):
+        for w in self.wins:
+            w.destroy()
+
+    def _files(self):
+        from sonata2.files.window import FilesWindow
+        w = FilesWindow(self.app, Gio.File.new_for_path(self.d).get_uri())
+        w.present()
+        self.wins.append(w)
+        self.assertTrue(spin(lambda: w.folder.store.get_n_items() == 2))
+        spin(lambda: False, 200)
+        return w
+
+    def test_files_folder_change_cross_fades(self):
+        """Going into a folder cross-fades the view (Adw.TimedAnimation)."""
+        w = self._files()
+        fade = w.tab.fade
+        w.go(Gio.File.new_for_path(os.path.join(self.d, "A")).get_uri())
+        self.assertTrue(spin(lambda: isinstance(fade._anim, Adw.TimedAnimation)), "no cross-fade ran")
+        self.assertGreater(fade.duration, 0)
+
+    def test_files_tab_strip_and_search_slide(self):
+        """New Tab reveals the tab strip and Search slides its field in."""
+        w = self._files()
+        self.assertEqual(w.strip.get_transition_type(), Gtk.RevealerTransitionType.SLIDE_DOWN)
+        self.assertGreater(w.strip.get_transition_duration(), 0)
+        w.new_tab()
+        self.assertTrue(w.strip.get_reveal_child())
+        self.assertEqual(w.search_rev.get_transition_type(), Gtk.RevealerTransitionType.SLIDE_LEFT)
+        self.assertGreater(w.search_rev.get_transition_duration(), 0)
+        w._open_search()
+        self.assertTrue(w.search_rev.get_reveal_child())
+
+    @unittest.skipUnless(HAVE_PIL, "needs Pillow")
+    def test_preview_zoom_sidebar_info_and_next_picture(self):
+        """Preview: zoom steps glide (TimedAnimation), Thumbnails / Info
+        slide (Revealers), the slideshow's next picture cross-fades."""
+        from PIL import Image
+        from sonata2.preview.window import PreviewWindow
+        a, b = os.path.join(self.d, "a.png"), os.path.join(self.d, "b.png")
+        Image.new("RGB", (800, 600), (10, 20, 30)).save(a)
+        Image.new("RGB", (800, 600), (90, 20, 30)).save(b)
+        w = PreviewWindow(self.app, a)
+        w.set_default_size(400, 300)
+        w.present()
+        self.wins.append(w)
+        spin(lambda: False, 300)
+        w.step_zoom(1)
+        self.assertIsInstance(w.canvas._anim, Adw.TimedAnimation)
+        for rev, kind in ((w.sidebar, Gtk.RevealerTransitionType.SLIDE_RIGHT),
+                          (w.info_rev, Gtk.RevealerTransitionType.SLIDE_LEFT)):
+            self.assertEqual(rev.get_transition_type(), kind)
+            self.assertGreater(rev.get_transition_duration(), 0)
+        w.toggle_sidebar()
+        w.toggle_info()
+        self.assertTrue(w.sidebar.get_reveal_child() and w.info_rev.get_reveal_child())
+        self.assertTrue(spin(lambda: len(w.pics) == 2))
+        w.go(1, fade=True)
+        self.assertTrue(spin(lambda: w.path == b))
+        self.assertIsNotNone(w.canvas._fade)
+
+    def test_disk_utility_detail_cross_fades_and_sheets_are_dialogs(self):
+        """Disk Utility: the detail pane cross-fades; Erase opens an
+        Adw.AlertDialog (libadwaita animates it in and out)."""
+        from sonata2.diskutil.window import DiskUtilityWindow
+        O, G = "/org/freedesktop/UDisks2/", 1000 ** 3
+        da = O + "drives/A"
+        tree = {da: {U + "Drive": {"Size": 100 * G, "ConnectionBus": "usb"}},
+                O + "block_devices/sda": {**blk("/dev/sda", 100 * G, da), U + "PartitionTable": {"Type": "gpt"}},
+                O + "block_devices/sda1": {**blk("/dev/sda1", 90 * G, da, "exfat", "X", "STICK"), **fs(),
+                                           **prt(O + "block_devices/sda", 1, 1 << 20, 90 * G)}}
+
+        class Client:
+            objects = tree
+
+            def start(self, on_objects, _on_error):
+                on_objects(tree)
+
+            def stop(self):
+                pass
+
+            def can(self, _w, _t, done):
+                done(True, "")
+        w = DiskUtilityWindow(self.app, client=Client())
+        w.present()
+        self.wins.append(w)
+        spin(lambda: False, 200)
+        self.assertEqual(w.stack.get_transition_type(), Gtk.StackTransitionType.CROSSFADE)
+        self.assertGreater(w.stack.get_transition_duration(), 0)
+        # (a real Adw.AlertDialog crashes under xvfb here, see test_preview: the call is checked)
+        with mock.patch.object(ui.dialog, "alert", return_value=mock.Mock()) as alert:
+            w.erase()
+        self.assertEqual(alert.call_count, 1)
+        self.assertTrue(alert.call_args[0][0].startswith("Erase"))
