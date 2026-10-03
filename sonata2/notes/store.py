@@ -18,6 +18,7 @@ import time
 import uuid
 
 from . import markup
+from ..config import atomic_write
 
 ALL = "all"                  # All Notes (every folder)
 DELETED = "deleted"          # Recently Deleted
@@ -35,22 +36,25 @@ def data_dir() -> str:
 
 
 def write_json(path: str, data) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=1)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+    atomic_write(path, json.dumps(data, ensure_ascii=False, indent=1).encode("utf-8"))
 
 
 def _read(path: str) -> dict:
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except (OSError, ValueError):
+        if isinstance(data, dict):
+            return data
+    except OSError:
         return {}
+    except ValueError:
+        pass
+    # damaged or wrongly shaped: keep it aside so the next save can't destroy it
+    try:
+        os.replace(path, f"{path}.corrupt-{int(time.time())}")
+    except OSError:
+        pass
+    return {}
 
 
 def new_id() -> str:
@@ -297,7 +301,9 @@ class Store:
 
     def update_reminder(self, r: dict, **changes) -> None:
         if "completed" in changes:
-            changes["completed_at"] = time.time() if changes["completed"] else None
+            # re-completing a done reminder keeps its original completion time
+            changes["completed_at"] = (None if not changes["completed"] else
+                                       r.get("completed_at") if r.get("completed") else time.time())
         if all(r.get(k) == v for k, v in changes.items()):
             return
         r.update(changes)

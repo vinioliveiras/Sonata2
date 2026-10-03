@@ -23,6 +23,7 @@ _PREFIX = (("### ", "subheading"), ("## ", "heading"), ("# ", "title"), ("- [ ] 
 _NUMBER = re.compile(r"^\d+\. ")
 _LOOKS_LIKE_PREFIX = re.compile(r"^(#|- |\d+\. )")
 _ESCAPE = re.compile(r"([\\*_~])")
+_CHECKBOX = re.compile(r"^\[[ xX]\] ")     # a bullet's text that would reload as a checklist
 
 
 def parse_inline(s: str) -> list:
@@ -91,6 +92,8 @@ def serialize_line(kind: str, checked: bool, runs) -> str:
     body = serialize_runs(runs)
     if kind == "body":
         return ("\\" + body) if _LOOKS_LIKE_PREFIX.match(body) else body
+    if kind == "bullet" and _CHECKBOX.match(body):
+        body = "\\" + body                       # written "- \[ ] x": stays a bullet
     prefix = {"title": "# ", "heading": "## ", "subheading": "### ", "bullet": "- ", "number": "1. ",
               "check": "- [x] " if checked else "- [ ] "}[kind]
     return prefix + body

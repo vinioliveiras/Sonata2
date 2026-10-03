@@ -14,6 +14,8 @@ import json
 import os
 import re
 
+from ..config import atomic_write
+
 VERSION = 1
 _ID = re.compile(r"^[0-9a-f]{8,64}$")
 
@@ -28,11 +30,9 @@ def _buffers() -> str:
 
 
 def _atomic_write(path: str, data: bytes) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "wb") as f:
-        f.write(data)
-    os.replace(tmp, path)
+    # written from a main-loop timer every few seconds: no fsync (the
+    # rename still makes it all-or-nothing)
+    atomic_write(path, data, fsync=False)
 
 
 def load() -> list:

@@ -52,6 +52,7 @@ SIZES = (9, 10, 11, 12, 13, 14, 16, 18, 20, 24, 28, 32, 40, 48)
 FONTS = (("auto", "Automatic"), ("sans", "Sans-Serif"), ("serif", "Serif"), ("mono", "Monospace"))
 SAVE_DELAY_MS = 1000             # session autosave debounce
 STATS_DELAY_MS = 300             # word count debounce
+CHANGED_ON_DISK = "changed on disk"   # Document.write(): another program changed the file
 MAX_STATS = 4 * 1024 * 1024      # no word count above this many characters
 PROSE = (None, "Markdown", "Text", "reStructuredText", "AsciiDoc", "Plain Text")   # Automatic font: not monospaced
 
@@ -135,6 +136,7 @@ class Document:
         self.win = win
         self.id = uuid.uuid4().hex
         self.file = None
+        self.etag = None                       # the file's etag when read/saved (on-disk change check)
         self.untitled = _untitled_name()
         self.encoding, self.bom, self.newline = "utf-8", False, "LF"
         self.readonly = False                  # converted .docx/.odt/.rtf
@@ -200,7 +202,7 @@ class Document:
     def read(self, f: Gio.File):
         """Load a file; returns None or an error message."""
         try:
-            _ok, data, _etag = f.load_contents(None)
+            _ok, data, etag = f.load_contents(None)
         except GLib.Error as e:
             return e.message
         name = f.get_basename() or ""
@@ -218,6 +220,7 @@ class Document:
             return f"The document is damaged ({e})."
         self.set_text(dec.text)
         self.file = f
+        self.etag = etag
         self.encoding, self.bom, self.newline = dec.encoding, dec.bom, dec.newline
         self.readonly = readonly
         self.view.set_editable(not readonly)
@@ -232,12 +235,17 @@ class Document:
         self.buffer.place_cursor(self.buffer.get_start_iter())
         self.buffer.set_modified(modified)
 
-    def write(self):
-        """Save to self.file; None or an error message (UnicodeEncodeError raised)."""
+    def write(self, force: bool = False):
+        """Save to self.file; None or an error message (UnicodeEncodeError raised;
+        CHANGED_ON_DISK when another program changed the file since it was read,
+        unless force)."""
         data = document.encode(self.text(), self.encoding, self.bom, self.newline)
         try:
-            self.file.replace_contents(data, None, False, Gio.FileCreateFlags.NONE, None)
+            _ok, self.etag = self.file.replace_contents(data, None if force else self.etag, False,
+                                                        Gio.FileCreateFlags.NONE, None)
         except GLib.Error as e:
+            if e.matches(Gio.io_error_quark(), Gio.IOErrorEnum.WRONG_ETAG):
+                return CHANGED_ON_DISK
             return e.message
         self.buffer.set_modified(False)
         Gtk.RecentManager.get_default().add_item(self.file.get_uri())
@@ -661,13 +669,13 @@ class TextEditWindow(Gtk.ApplicationWindow):
         else:                      # an alert on a window not on screen yet never appears
             GLib.timeout_add(150, show)
 
-    def save(self, doc: Document = None, then=None) -> None:
+    def save(self, doc: Document = None, then=None, force: bool = False) -> None:
         doc = doc or self.doc
         if doc.file is None or doc.readonly:
             self.save_as(doc, then)
             return
         try:
-            err = doc.write()
+            err = doc.write(force)
         except UnicodeEncodeError:
             def answer(rid):
                 if rid == "utf8":
@@ -677,6 +685,15 @@ class TextEditWindow(Gtk.ApplicationWindow):
             ui.dialog.alert(f"“{doc.name}” can't be saved using {document.label(doc.encoding)}.",
                             "Some characters can't be written in that encoding. Save it as Unicode (UTF-8)?",
                             [("cancel", "Cancel", ""), ("utf8", "Save as UTF-8", "default")], answer, parent=self)
+            return
+        if err is CHANGED_ON_DISK:
+            def overwrite(rid):
+                if rid == "overwrite":
+                    self.save(doc, then, force=True)
+            ui.dialog.alert(f"“{doc.name}” has been changed by another application.",
+                            "Saving now replaces those changes with this document.",
+                            [("cancel", "Cancel", "default"), ("overwrite", "Save Anyway", "destructive")],
+                            overwrite, parent=self)
             return
         if err:
             self._tell(f"“{doc.name}” couldn't be saved.", err)
@@ -703,6 +720,8 @@ class TextEditWindow(Gtk.ApplicationWindow):
                     doc.readonly = False
                     doc.view.set_editable(True)
                     doc.encoding, doc.bom, doc.newline = "utf-8", False, "LF"
+                if doc.file is None or not doc.file.equal(f):
+                    doc.etag = None               # another file: the chooser already asked to replace it
                 doc.file = f
                 doc.language = source.guess_language(doc.buffer, f.get_basename(), b"")
                 doc.apply_look()
@@ -777,10 +796,11 @@ class TextEditWindow(Gtk.ApplicationWindow):
 
         def reopen(enc):
             try:
-                _ok, data, _e = doc.file.load_contents(None)
+                _ok, data, etag = doc.file.load_contents(None)
             except GLib.Error as e:
                 self._tell(f"“{doc.name}” couldn't be reopened.", e.message)
                 return
+            doc.etag = etag
             text = bytes(data).decode(enc, errors="replace")
             doc.set_text(document.normalize(text))
             doc.encoding, doc.bom, doc.newline = enc, False, document.detect_newline(text)

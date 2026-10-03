@@ -2,14 +2,16 @@
 .ics file each), the macOS calendar colour palette, month grids, week
 start, and how overlapping events share a column (timeline) or a lane
 (month rows, all-day strip)."""
+import collections
 import datetime as dt
 import os
 import re
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from . import ics
+from ..config import atomic_write
 
 # macOS Calendar's colour palette: (id, name, token or colour). The Apple
 # system colours already are tokens (sys_*); yellow and brown are not, so
@@ -136,6 +138,7 @@ class Calendar:
     id: str
     name: str
     color: str = "blue"
+    extra: list = field(default_factory=list)   # the file's other blocks (VTIMEZONE...), kept
 
 
 def _slug(name: str) -> str:
@@ -150,8 +153,13 @@ class Store:
         self.folder = folder
         self.calendars: List[Calendar] = []
         self.events: Dict[str, ics.Event] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()        # held while a file is written or removed
         self.async_writes = False            # the window writes files off the main loop
+        # async: one worker runs the file jobs in the order they were made,
+        # so an older text never wins and a delete can't be undone by a write
+        self._jobs = collections.deque()
+        self._jobs_lock = threading.Lock()
+        self._worker = None
 
     def load(self) -> None:
         os.makedirs(self.folder, exist_ok=True)
@@ -165,7 +173,8 @@ class Store:
                 continue
             color = info.get("color") if info.get("color") in PALETTE_IDS else \
                 color_from_hex(info["hex"]) if info.get("hex") else "blue"
-            self.calendars.append(Calendar(n[:-4], info.get("name") or n[:-4].title(), color))
+            self.calendars.append(Calendar(n[:-4], info.get("name") or n[:-4].title(), color,
+                                           info.get("extra", [])))
             for ev in events:
                 self.events[ev.uid] = ev
         if not self.calendars:
@@ -180,20 +189,35 @@ class Store:
         if cal is None:
             return
         text = ics.serialize(sorted((e for e in self.events.values() if e.calendar == cal_id),
-                                    key=lambda e: e.start), cal.name, cal.color, PALETTE_HEX.get(cal.color, ""))
+                                    key=lambda e: e.start), cal.name, cal.color, PALETTE_HEX.get(cal.color, ""),
+                             cal.extra)
         path = os.path.join(self.folder, cal_id + ".ics")
+        self._submit(lambda: atomic_write(path, text.encode("utf-8")))
 
-        def write():
+    def _submit(self, job) -> None:
+        if not self.async_writes:
             with self._lock:
-                os.makedirs(self.folder, exist_ok=True)
-                tmp = path + ".tmp"
-                with open(tmp, "w", encoding="utf-8", newline="") as f:
-                    f.write(text)
-                os.replace(tmp, path)
-        if self.async_writes:
-            threading.Thread(target=write, daemon=True).start()
-        else:
-            write()
+                job()
+            return
+        with self._jobs_lock:
+            self._jobs.append(job)
+            if self._worker is None:
+                # not a daemon: quitting waits for the last write (the worker ends when idle)
+                self._worker = threading.Thread(target=self._run_jobs, daemon=False)
+                self._worker.start()
+
+    def _run_jobs(self) -> None:
+        while True:
+            with self._jobs_lock:
+                if not self._jobs:
+                    self._worker = None
+                    return
+                job = self._jobs.popleft()
+            with self._lock:
+                try:
+                    job()
+                except OSError as e:
+                    print(f"sonata2 calendar: not saved: {e}")
 
     # calendars
     def add_calendar(self, name: str, color: str = None) -> Calendar:
@@ -223,10 +247,14 @@ class Store:
     def delete_calendar(self, cal_id: str) -> None:
         self.calendars = [c for c in self.calendars if c.id != cal_id]
         self.events = {u: e for u, e in self.events.items() if e.calendar != cal_id}
-        try:
-            os.remove(os.path.join(self.folder, cal_id + ".ics"))
-        except OSError:
-            pass
+        path = os.path.join(self.folder, cal_id + ".ics")
+
+        def remove():
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
+        self._submit(remove)             # after the writes queued before it
 
     # events
     def put(self, ev: ics.Event) -> None:
@@ -249,7 +277,11 @@ class Store:
 
     def import_text(self, text: str, cal_id: str) -> int:
         """Add the events of an .ics text to a calendar (same UID: replaced)."""
-        _info, events = ics.parse(text, cal_id)
+        info, events = ics.parse(text, cal_id)
+        cal = self.calendar(cal_id)
+        if cal is not None:                  # zone definitions the imported events refer to
+            cal.extra += [b for b in info.get("extra", [])
+                          if b and b[0].upper() == "BEGIN:VTIMEZONE" and b not in cal.extra]
         for ev in events:
             old = self.events.get(ev.uid)
             if old is not None and old.calendar != cal_id:

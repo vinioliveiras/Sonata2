@@ -107,28 +107,21 @@ class IcsParseTest(unittest.TestCase):
         self.assertEqual(starts(back, D(2026, 10, 1), D(2026, 11, 1)),
                          [D(2026, 10, d) for d in (1, 2, 4, 5)])
 
-    @unittest.expectedFailure
     def test_all_day_until_is_written_as_date(self):
         """RFC 5545: UNTIL must be a DATE when DTSTART is a DATE (other apps reject the datetime form)."""
-        # BUG: event_lines always writes UNTIL as YYYYMMDDTHHMMSS, even for all-day series
         ev = ics.Event(uid="u", start=D(2026, 10, 1), end=D(2026, 10, 2), all_day=True, freq="DAILY",
                        until=D(2026, 10, 5, 23, 59, 59, 999999))
         self.assertIn("UNTIL=20261005;", ics.serialize([ev]).replace("\r\n", ";"))
 
-    @unittest.expectedFailure
     def test_unsupported_rrule_parts_survive_round_trip(self):
         """A foreign weekly BYDAY rule must not be silently reduced to 'weekly on DTSTART only' on save."""
-        # BUG: _parse_rrule drops BYDAY/BYMONTHDAY/... and serialize() rewrites the rule without them
         text = ("BEGIN:VEVENT\nUID:w\nDTSTART:20261005T090000\nDTEND:20261005T100000\n"
                 "RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR\nEND:VEVENT\n")
         ev = ics.parse(text)[1][0]
         self.assertIn("BYDAY=MO,WE,FR", ics.serialize([ev]))
 
-    @unittest.expectedFailure
     def test_recurring_utc_event_follows_local_dst(self):
         """A weekly 13:00Z meeting is 14:00 in Berlin in winter and 15:00 after the DST switch."""
-        # BUG: UTC/TZID starts are converted to local wall time once, then recurrence runs on naive
-        # local times, so occurrences after a DST change are an hour off
         with _TZ("Europe/Berlin"):
             text = "BEGIN:VEVENT\nUID:z\nDTSTART:20260305T130000Z\nDURATION:PT1H\nRRULE:FREQ=WEEKLY\nEND:VEVENT\n"
             ev = ics.parse(text)[1][0]
@@ -212,11 +205,8 @@ class CalendarStoreReviewTest(unittest.TestCase):
         st2.load()
         self.assertEqual((st2.events["dup"].summary, st2.events["dup"].calendar), ("New", a.id))
 
-    @unittest.expectedFailure
     def test_recurrence_id_override_does_not_replace_master(self):
         """A modified instance (RECURRENCE-ID, same UID) must not wipe out the recurring master."""
-        # BUG: Store keys events by UID only and ics.parse ignores RECURRENCE-ID, so the override
-        # replaces the master series in memory and the next write drops the series from disk
         st = model.Store(self.dir)
         st.load()
         cal = st.calendars[0].id
@@ -225,11 +215,8 @@ class CalendarStoreReviewTest(unittest.TestCase):
                        "SUMMARY:Moved one\nDTSTART:20261003T120000\nDURATION:PT1H\nEND:VEVENT\n", cal)
         self.assertEqual(st.events["s"].freq, "DAILY")
 
-    @unittest.expectedFailure
     def test_delete_calendar_wins_over_pending_async_write(self):
         """Deleting a calendar right after an edit must not have the queued write resurrect its file."""
-        # BUG: delete_calendar removes the file without taking _lock; a write thread still waiting
-        # for the lock recreates <id>.ics afterwards, so the deleted calendar comes back on next load
         st = model.Store(self.dir)
         st.load()
         st.async_writes = True
@@ -276,10 +263,8 @@ class MarkupReviewTest(unittest.TestCase):
             for checked in ((False, True) if kind == "check" else (False,)):
                 self.assertEqual(markup.parse_line(markup.serialize_line(kind, checked, runs)), (kind, checked, runs))
 
-    @unittest.expectedFailure
     def test_bullet_text_starting_with_checkbox_stays_bullet(self):
         """A bullet whose text begins with '[ ] ' must not reload as a checklist item."""
-        # BUG: serialize_line writes '- ' + '[ ] buy', which parse_line reads as an unchecked check item
         runs = [("[ ] buy", frozenset())]
         self.assertEqual(markup.parse_line(markup.serialize_line("bullet", False, runs))[0], "bullet")
 
@@ -332,10 +317,8 @@ class NotesStoreReviewTest(unittest.TestCase):
         st.recover_note(n)
         self.assertEqual((n["folder"], n["deleted"]), (S.DEFAULT_FOLDER, None))
 
-    @unittest.expectedFailure
     def test_corrupt_notes_file_is_not_overwritten(self):
         """A damaged notes.json must be kept aside, not silently replaced by an empty store on next save."""
-        # BUG: _read() returns {} on ValueError and the next save_notes() overwrites the user's file
         path = os.path.join(self.dir, "notes.json")
         damaged = '{"folders": [], "notes": [{"id": "a", "body": "precious'
         with open(path, "w", encoding="utf-8") as f:
@@ -347,11 +330,8 @@ class NotesStoreReviewTest(unittest.TestCase):
                 kept.append(f.read())
         self.assertIn(damaged, kept)
 
-    @unittest.expectedFailure
     def test_completing_twice_keeps_completed_at(self):
         """Marking an already-completed reminder completed again keeps its original completion time."""
-        # BUG: update_reminder always sets completed_at = now when 'completed' is passed, so the
-        # equality short-circuit never triggers and the completion time is bumped (and the file rewritten)
         st = S.Store(self.dir)
         r = st.new_reminder(title="x")
         st.update_reminder(r, completed=True)
@@ -393,11 +373,8 @@ class TextEditFormatsReviewTest(unittest.TestCase):
         d = document.decode("ação çé".encode("utf-8"))
         self.assertEqual((d.text, d.encoding), ("ação çé", "utf-8"))
 
-    @unittest.expectedFailure
     def test_nul_after_sniff_window_is_not_corrupted_on_save(self):
         """A file with NUL bytes beyond the 8 KB sniff window must not be silently altered on save."""
-        # BUG: decode() only looks for NUL in the first 8 KB and then replaces every NUL with U+FFFD,
-        # so open + save rewrites those bytes as EF BF BD (data loss) instead of refusing the file
         data = b"a" * 9000 + b"\0tail"
         try:
             d = document.decode(data)
@@ -453,6 +430,345 @@ class SessionReviewTest(unittest.TestCase):
             with open(os.path.join(self.dir, "session.json"), "w") as f:
                 f.write(raw)
             self.assertIn(session.load(), ([], [{"tabs": []}]))
+
+# -- regression tests for the fixes ----------------------------------------------------------------
+class CalendarFixesTest(unittest.TestCase):
+    SERIES = ("BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTIMEZONE\nTZID:Custom Zone\nBEGIN:STANDARD\n"
+              "DTSTART:19700101T000000\nTZOFFSETFROM:+0100\nTZOFFSETTO:+0100\nEND:STANDARD\nEND:VTIMEZONE\n"
+              "BEGIN:VEVENT\nUID:s\nSUMMARY:Series\nDTSTART:20261001T090000\nDURATION:PT1H\n"
+              "RRULE:FREQ=DAILY\nATTENDEE;CN=Ana:mailto:ana@x.org\nX-FOO:bar\nEND:VEVENT\n"
+              "BEGIN:VEVENT\nUID:s\nRECURRENCE-ID:20261003T090000\nSUMMARY:Moved one\n"
+              "DTSTART:20261003T120000\nDURATION:PT1H\nEND:VEVENT\nEND:VCALENDAR\n")
+
+    def test_override_replaces_its_slot(self):
+        """A RECURRENCE-ID instance shows at its new time and hides the series' original slot."""
+        ev = ics.parse(self.SERIES)[1][0]
+        occ = ics.expand([ev], D(2026, 10, 2), D(2026, 10, 5))
+        self.assertEqual([(o.start, o.event.summary) for o in occ],
+                         [(D(2026, 10, 2, 9), "Series"), (D(2026, 10, 3, 12), "Moved one"),
+                          (D(2026, 10, 4, 9), "Series")])
+
+    def test_foreign_properties_and_overrides_survive_store_edit(self):
+        """Editing an event keeps ATTENDEE/X- properties, its RECURRENCE-ID instances and the VTIMEZONE."""
+        folder = tempfile.mkdtemp()
+        st = model.Store(folder)
+        st.load()
+        cal = st.calendars[0].id
+        st.import_text(self.SERIES, cal)
+        ev = st.events["s"].copy()
+        ev.summary = "Renamed"
+        st.put(ev)
+        with open(os.path.join(folder, cal + ".ics"), encoding="utf-8") as f:
+            text = ics._unfold(f.read())
+        for line in ("ATTENDEE;CN=Ana:mailto:ana@x.org", "X-FOO:bar", "TZID:Custom Zone",
+                     "RECURRENCE-ID:20261003T090000", "SUMMARY:Moved one", "SUMMARY:Renamed"):
+            self.assertIn(line, text)
+        st2 = model.Store(folder)
+        st2.load()
+        self.assertEqual(len(st2.events["s"].overrides), 1)
+
+    def test_unknown_valarm_kept(self):
+        """A VALARM Calendar can't show (absolute trigger) is written back verbatim."""
+        text = ("BEGIN:VEVENT\nUID:a\nDTSTART:20261001T100000\nBEGIN:VALARM\nACTION:AUDIO\n"
+                "TRIGGER;VALUE=DATE-TIME:20261001T090000Z\nEND:VALARM\nEND:VEVENT\n")
+        out = ics._unfold(ics.serialize(ics.parse(text)[1]))
+        self.assertIn("TRIGGER;VALUE=DATE-TIME:20261001T090000Z", out)
+        self.assertEqual(out.count("BEGIN:VALARM"), 1)
+
+    def test_weekly_byday_expands(self):
+        """FREQ=WEEKLY;BYDAY=MO,WE,FR repeats on those three days (COUNT counts each)."""
+        text = ("BEGIN:VEVENT\nUID:w\nDTSTART:20261005T090000\nDTEND:20261005T100000\n"
+                "RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=4\nEND:VEVENT\n")
+        ev = ics.parse(text)[1][0]
+        self.assertEqual(starts(ev, D(2026, 10, 1), D(2026, 11, 1)),
+                         [D(2026, 10, 5, 9), D(2026, 10, 7, 9), D(2026, 10, 9, 9), D(2026, 10, 12, 9)])
+
+    def test_changed_freq_drops_foreign_rule_parts(self):
+        """BYDAY belongs to the rule it came with: switching to monthly writes a plain monthly rule."""
+        ev = ics.parse("BEGIN:VEVENT\nUID:w\nDTSTART:20261005T090000\n"
+                       "RRULE:FREQ=WEEKLY;BYDAY=MO,WE\nEND:VEVENT\n")[1][0]
+        ev.freq = "MONTHLY"
+        self.assertNotIn("BYDAY", ics.serialize([ev]))
+
+    def test_tzid_written_back_in_its_zone(self):
+        """A TZID / UTC event is written in its own zone, UNTIL in UTC, and re-reads the same."""
+        with _TZ("America/Sao_Paulo"):
+            text = ("BEGIN:VEVENT\nUID:z\nDTSTART;TZID=Europe/Berlin:20260301T100000\nDURATION:PT1H\n"
+                    "RRULE:FREQ=WEEKLY;UNTIL=20260501T000000Z\nEXDATE;TZID=Europe/Berlin:20260308T100000\n"
+                    "END:VEVENT\n")
+            ev = ics.parse(text)[1][0]
+            out = ics.serialize([ev])
+            self.assertIn("DTSTART;TZID=Europe/Berlin:20260301T100000", out)
+            self.assertIn("UNTIL=20260501T000000Z", out)
+            self.assertIn("EXDATE;TZID=Europe/Berlin:20260308T100000", out)
+            back = ics.parse(out)[1][0]
+            a, b = D(2026, 3, 1), D(2026, 5, 2)
+            self.assertEqual(starts(back, a, b), starts(ev, a, b))
+            # Berlin 10:00 is 06:00 in São Paulo before 29 March and 05:00 after
+            self.assertEqual(starts(ev, D(2026, 3, 15), D(2026, 3, 16)), [D(2026, 3, 15, 6)])
+            self.assertEqual(starts(ev, D(2026, 4, 5), D(2026, 4, 6)), [D(2026, 4, 5, 5)])
+
+    def test_async_writes_keep_order(self):
+        """Queued writes run in order on one worker: the last edit is what ends up on disk."""
+        st = model.Store(self.dir if hasattr(self, "dir") else tempfile.mkdtemp())
+        st.load()
+        st.async_writes = True
+        cal = st.calendars[0].id
+        before = set(threading.enumerate())
+        with st._lock:                       # hold the worker: everything queues up
+            for i in range(20):
+                st.put(ics.Event(uid="o", summary=f"v{i}", start=D(2026, 1, 1, 9), end=D(2026, 1, 1, 10),
+                                 calendar=cal))
+            self.assertLessEqual(len(set(threading.enumerate()) - before), 1)   # one worker, not 20 threads
+        for t in set(threading.enumerate()) - before:
+            t.join(5)
+        st2 = model.Store(st.folder)
+        st2.load()
+        self.assertEqual(st2.events["o"].summary, "v19")
+
+    def test_store_uses_shared_atomic_write(self):
+        """Calendar files go through config.atomic_write (unique temp + fsync + rename)."""
+        st = model.Store(tempfile.mkdtemp())
+        with mock.patch.object(model, "atomic_write") as w:
+            st.add_calendar("X")
+        w.assert_called_once()
+
+
+class NotesFixesTest(unittest.TestCase):
+    def test_wrong_shape_notes_file_kept_aside(self):
+        """A notes.json that is valid JSON but not an object is moved aside too, never overwritten."""
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "notes.json"), "w", encoding="utf-8") as f:
+            f.write("[1, 2, 3]")
+        S.Store(d).new_note(body="new")
+        aside = [n for n in os.listdir(d) if n.startswith("notes.json.corrupt-")]
+        self.assertEqual(len(aside), 1)
+
+    def test_missing_file_is_not_moved(self):
+        """A first start (no notes.json yet) creates nothing aside."""
+        d = tempfile.mkdtemp()
+        S.Store(d).new_note(body="x")
+        self.assertFalse([n for n in os.listdir(d) if ".corrupt-" in n])
+
+    def test_uncompleting_clears_time(self):
+        """Un-checking a reminder clears completed_at; checking again sets a new one."""
+        st = S.Store(tempfile.mkdtemp())
+        r = st.new_reminder(title="x")
+        st.update_reminder(r, completed=True)
+        st.update_reminder(r, completed=False)
+        self.assertIsNone(r["completed_at"])
+        st.update_reminder(r, completed=True)
+        self.assertIsNotNone(r["completed_at"])
+
+    def test_notes_use_shared_atomic_write(self):
+        """notes.json goes through config.atomic_write."""
+        with mock.patch.object(S, "atomic_write") as w:
+            S.write_json(os.path.join(tempfile.mkdtemp(), "n.json"), {"a": 1})
+        w.assert_called_once()
+
+
+class TextEditFixesTest(unittest.TestCase):
+    def test_nul_inside_sniff_window_still_binary(self):
+        """NUL bytes anywhere make a non-UTF-16 file binary (never decoded with U+FFFD)."""
+        for data in (b"x" * 20000 + b"\0", "utf8 é".encode() + b"\0" * 3):
+            with self.assertRaises(document.BinaryFile):
+                document.decode(data)
+
+    def test_session_uses_shared_atomic_write(self):
+        """Session buffers are written with config.atomic_write (unique temp file)."""
+        d = tempfile.mkdtemp()
+        with mock.patch.object(session, "data_dir", lambda: d), \
+                mock.patch.object(session, "atomic_write") as w:
+            session.write_buffer("abcdef12", "x")
+        w.assert_called_once()
+
+
+# -- GTK: on-disk change check, async import, animations ------------------------------------------
+_GTK = {}
+
+
+def _gtk():
+    if not _GTK:
+        os.environ.setdefault("GDK_BACKEND", "x11")
+        import gi
+        gi.require_version("Gtk", "4.0")
+        gi.require_version("Adw", "1")
+        from gi.repository import Adw, Gio, GLib, Gtk
+        from sonata2 import ui
+        Adw.init()
+        ui.setup()
+        app = Adw.Application(application_id="io.test.reviewdocs")
+        app.register(None)
+        _GTK.update(Adw=Adw, Gio=Gio, GLib=GLib, Gtk=Gtk, ui=ui, app=app)
+    return _GTK
+
+
+def _settle(ms=150):
+    GLib = _gtk()["GLib"]
+    end = GLib.get_monotonic_time() + ms * 1000
+    while GLib.get_monotonic_time() < end:
+        GLib.MainContext.default().iteration(False)
+
+
+class GtkFixesTest(unittest.TestCase):
+    def test_textedit_asks_before_overwriting_outside_change(self):
+        """Saving over a file another program changed asks first; Cancel keeps their text, Save Anyway writes."""
+        g = _gtk()
+        from sonata2.textedit import window as TW
+        path = os.path.join(tempfile.mkdtemp(), "e.txt")
+        with open(path, "w") as f:
+            f.write("mine\n")
+        w = TW.TextEditWindow(g["app"], path)
+        _settle()
+        w.buffer.insert(w.buffer.get_end_iter(), "edit\n")
+        with open(path, "w") as f:
+            f.write("theirs\n")
+        st = os.stat(path)
+        os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 2_000_000_000))
+        asked = []
+        with mock.patch.object(TW.ui.dialog, "alert", lambda h, b, r, cb=None, **k: asked.append((h, cb))):
+            w.save()
+        self.assertEqual(len(asked), 1)
+        self.assertIn("changed by another application", asked[0][0])
+        with open(path) as f:
+            self.assertEqual(f.read(), "theirs\n")
+        asked[0][1]("cancel")
+        with open(path) as f:
+            self.assertEqual(f.read(), "theirs\n")
+        asked[0][1]("overwrite")
+        with open(path) as f:
+            self.assertEqual(f.read(), "mine\nedit\n")
+        w.buffer.insert(w.buffer.get_end_iter(), "more\n")
+        with mock.patch.object(TW.ui.dialog, "alert") as a:
+            w.save()                          # our own last save: no question
+        a.assert_not_called()
+        w.buffer.set_modified(False)
+        w.destroy()
+
+    def test_calendar_import_reads_off_main_loop(self):
+        """Importing an .ics file reads it asynchronously (no load_contents on the main loop)."""
+        g = _gtk()
+        from sonata2.calendar.window import CalendarWindow
+        path = os.path.join(tempfile.mkdtemp(), "x.ics")
+        with open(path, "w") as f:
+            f.write("BEGIN:VEVENT\nUID:i\nDTSTART:20261001T090000\nEND:VEVENT\n")
+        win = CalendarWindow(g["app"], folder=tempfile.mkdtemp())
+        win.store.async_writes = False
+        got = []
+        with mock.patch.object(win, "_ask_import", lambda f, text: got.append(text)):
+            win.import_files([g["Gio"].File.new_for_path(path)])
+            self.assertEqual(got, [])
+            _settle(300)
+        self.assertEqual(len(got), 1)
+        self.assertIn("UID:i", got[0])
+        win.destroy()
+
+    def test_calendar_delete_only_changed_instance(self):
+        """Deleting a changed instance removes it and its slot, the series stays."""
+        g = _gtk()
+        from sonata2.calendar.window import CalendarWindow
+        win = CalendarWindow(g["app"], folder=tempfile.mkdtemp())
+        win.store.async_writes = False
+        cal = win.store.calendars[0].id
+        win.store.import_text(CalendarFixesTest.SERIES, cal)
+        win.data_changed()
+        occ = next(o for o in ics.expand(win.store.visible_events(), D(2026, 10, 3), D(2026, 10, 4))
+                   if o.event.recurrence_id)
+        win.select(occ)
+        with mock.patch("sonata2.ui.dialog.alert", lambda h, b, r, cb=None, **k: cb("this")):
+            win.delete_selected()
+        ev = win.store.events["s"]
+        self.assertEqual((ev.freq, ev.overrides, ev.exdates), ("DAILY", [], [D(2026, 10, 3, 9)]))
+        self.assertEqual(starts(ev, D(2026, 10, 3), D(2026, 10, 4)), [])
+        win.destroy()
+
+
+class AnimationTests(unittest.TestCase):
+    """Every main user action of Calendar, Notes and TextEdit runs an animation."""
+
+    def _revealer_ok(self, rev):
+        Gtk = _gtk()["Gtk"]
+        self.assertIsInstance(rev, Gtk.Revealer)
+        self.assertNotEqual(rev.get_transition_type(), Gtk.RevealerTransitionType.NONE)
+        self.assertGreater(rev.get_transition_duration(), 0)
+
+    def test_popovers_open_animated(self):
+        """Popovers (the event editor, menus) fade+grow in through the shared CSS keyframes."""
+        g = _gtk()
+        css = g["ui"].theme._templates["motion-open"][0]
+        self.assertIn("popover > contents { animation: sonata-open", css)
+
+    def test_calendar_view_switch_sidebar_search(self):
+        """Day/Week/Month/Year cross-fade; the sidebar and search results slide."""
+        g = _gtk()
+        Gtk = g["Gtk"]
+        from sonata2.calendar.window import CalendarWindow
+        win = CalendarWindow(g["app"], folder=tempfile.mkdtemp())
+        win.store.async_writes = False
+        win.present()
+        _settle()
+        self.assertEqual(win.stack.get_transition_type(), Gtk.StackTransitionType.CROSSFADE)
+        self.assertGreater(win.stack.get_transition_duration(), 0)
+        win.set_view("month")
+        win.set_view("day")
+        self.assertTrue(win.stack.get_transition_running() or win.stack.get_visible_child_name() == "day")
+        self._revealer_ok(win.sidebar_rev)
+        self._revealer_ok(win.results_rev)
+        win.destroy()
+
+    def test_calendar_new_event_opens_popover(self):
+        """A new event opens its editor in an (animated) popover."""
+        g = _gtk()
+        Gtk = g["Gtk"]
+        from sonata2.calendar.window import CalendarWindow
+        win = CalendarWindow(g["app"], folder=tempfile.mkdtemp())
+        win.store.async_writes = False
+        win.present()
+        _settle()
+        win.new_event()
+        _settle()
+        self.assertIsNotNone(win.editor)
+        self.assertIsInstance(win.editor.pop, Gtk.Popover)
+        win.editor.pop.popdown()
+        win.destroy()
+
+    def test_notes_notes_reminders_switch(self):
+        """Switching between notes and reminders cross-fades."""
+        g = _gtk()
+        Gtk = g["Gtk"]
+        from sonata2.notes.window import NotesWindow
+        w = NotesWindow(g["app"], store=S.Store(tempfile.mkdtemp()))
+        self.assertEqual(w.stack.get_transition_type(), Gtk.StackTransitionType.CROSSFADE)
+        self.assertGreater(w.stack.get_transition_duration(), 0)
+        w.destroy()
+
+    def test_textedit_tabs_find_bar_and_save_sheet(self):
+        """The tab strip and find bar slide in; reordering tabs glides; the save question is a kit (Adw) sheet."""
+        g = _gtk()
+        from sonata2.textedit import window as TW
+        w = TW.TextEditWindow(g["app"])
+        self._revealer_ok(w.tabs_rev)
+        self._revealer_ok(w.find_bar)
+        w._show_find()
+        self.assertTrue(w.find_bar.get_reveal_child())
+        w._hide_find()
+        a = w.doc
+        b = w.new_tab()
+        self.assertTrue(w.tabs_rev.get_reveal_child())
+        with mock.patch.object(TW.ui.transition, "glide_play") as glide:
+            w.tabs.move(b, 0)
+        glide.assert_called_once()
+        # the sheet itself is an Adw.AlertDialog (libadwaita animates it in); building
+        # one segfaults under this xvfb, so only the kit call is checked here
+        got = []
+        a.buffer.set_text("unsaved")
+        with mock.patch.object(TW.ui.dialog, "alert", lambda *args, **kw: got.append(args)):
+            w.close_tab(a)
+        self.assertEqual(len(got), 1)
+        self.assertTrue(TW.ui.dialog._MODERN or hasattr(g["Adw"], "MessageDialog"))
+        for d in w.docs:
+            d.buffer.set_modified(False)
+        w.destroy()
 
 
 if __name__ == "__main__":

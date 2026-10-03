@@ -90,7 +90,7 @@ def decode(data: bytes) -> Decoded:
         if data.startswith(mark):
             enc, bom, data = name, True, data[len(mark):]
             break
-    if enc is None and b"\0" in data[:8192]:
+    if enc is None and b"\0" in data:      # anywhere: a NUL past the sniff window is binary too
         enc = _utf16_guess(data)
         if enc is None:
             raise BinaryFile("binary data")
@@ -103,7 +103,10 @@ def decode(data: bytes) -> Decoded:
                 break
             except UnicodeDecodeError:
                 continue
-    text = text.replace("\0", "\ufffd")          # GtkTextBuffer stops at NUL
+    if "\0" in text:
+        # GtkTextBuffer stops at NUL and a replacement char would be saved
+        # in its place: refuse rather than change the file's bytes
+        raise BinaryFile("NUL characters")
     nl = detect_newline(text)
     return Decoded(normalize(text), enc, bom, nl)
 

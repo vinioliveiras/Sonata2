@@ -563,6 +563,10 @@ class CalendarWindow(Gtk.ApplicationWindow):
             new.end = new.start
         if new.exdates and dstart:
             new.exdates = [d + dstart for d in new.exdates]
+        if dstart:                         # changed instances move with their series
+            for o in new.overrides:
+                o.recurrence_id += dstart
+                o.start, o.end = o.start + dstart, o.end + dstart
         self.apply([(ev.copy(), new)])
         moved = ics.Occurrence(self.store.events[ev.uid], occ.start + dstart, occ.end + dend)
         self.select(moved)
@@ -584,7 +588,13 @@ class CalendarWindow(Gtk.ApplicationWindow):
                 self.apply([(ev.copy(), None)])
             elif rid == "this":
                 new = ev.copy()
-                new.exdates.append(occ.start)
+                # a changed instance (also when the selection was rebound to the series):
+                # drop it and exclude its slot
+                rec = occ.event.recurrence_id or next(
+                    (o.recurrence_id for o in ev.overrides if o.start == occ.start), None)
+                if rec is not None:
+                    new.overrides = [o for o in new.overrides if o.recurrence_id != rec]
+                new.exdates.append(occ.start if rec is None else rec)
                 self.apply([(ev.copy(), new)])
             elif rid == "future":
                 new = ev.copy()
@@ -688,14 +698,16 @@ class CalendarWindow(Gtk.ApplicationWindow):
         return True
 
     def import_files(self, files) -> None:
-        for f in files:
+        def loaded(f, res):                # read off the main loop
             try:
-                ok, data, _e = f.load_contents(None)
+                _ok, data, _e = f.load_contents_finish(res)
             except GLib.Error as e:
                 ui.dialog.alert(f"“{f.get_basename()}” couldn't be imported.", e.message,
                                 [("ok", "OK", "default")], parent=self)
-                continue
+                return
             self._ask_import(f, bytes(data).decode("utf-8", errors="replace"))
+        for f in files:
+            f.load_contents_async(None, loaded)
 
     def _ask_import(self, f, text) -> None:
         info, events = ics.parse(text)
