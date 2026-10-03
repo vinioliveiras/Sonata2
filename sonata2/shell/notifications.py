@@ -38,6 +38,47 @@ def app_key(desktop: str, app_name: str) -> str:
     return (desktop or app_name or "").strip()
 
 
+_LOCKED = {"stamp": None, "ids": set(), "names": set()}
+
+
+def _locked_ids() -> set:
+    """Desktop ids of apps kept in a locked folder: the Dock's locked folders
+    and Apps' hidden (locked) ones."""
+    ids = set()
+    for name, key in (("dock", "folders"), ("launchpad", "pages")):
+        data = config.load(name, {key: {} if key == "folders" else []}).get(key) or ({} if key == "folders" else [])
+        folders = data.values() if isinstance(data, dict) else [it for page in data for it in page
+                                                                 if isinstance(it, dict)]
+        for f in folders:
+            if isinstance(f, dict) and f.get("locked"):
+                ids.update(a for a in f.get("apps", []) if isinstance(a, str))
+    ids.update(a for a in config.load("launchpad", {"hidden": []}).get("hidden", []) if isinstance(a, str))
+    return ids
+
+
+def locked(desktop: str, app_name: str) -> bool:
+    """A notification from an app in a locked folder: shown nowhere (Vini) --
+    the folder keeps its apps private. Matched by the sender's desktop entry,
+    else by the app's name."""
+    stamp = []
+    for name in ("dock", "launchpad"):
+        try:
+            stamp.append(os.path.getmtime(os.path.join(config.CONFIG_DIR, name + ".json")))
+        except OSError:
+            stamp.append(0)
+    if stamp != _LOCKED["stamp"]:                  # the folders changed: read them again
+        ids = _locked_ids()
+        names = set()
+        for i in ids:
+            info = apps.lookup(i)
+            if info is not None:
+                names.add((info.get_name() or "").casefold())
+        _LOCKED.update(stamp=stamp, ids={i.casefold() for i in ids}, names=names - {""})
+    d = (desktop or "").casefold()                 # "org.telegram.desktop" is an id itself
+    ids = {d, d.removesuffix(".desktop")} - {""}
+    return bool((ids & _LOCKED["ids"]) or ((app_name or "").casefold() in _LOCKED["names"]))
+
+
 def app_settings(cfg: dict, key: str) -> dict:
     return dict(APP_DEFAULTS, **(cfg.get("apps", {}).get(key) or {}))
 
@@ -234,6 +275,8 @@ class Notifications:
         n = Note(nid, app_name or "", app_icon or "", summary or "", body or "", pairs,
                  hints.get("desktop-entry", "") or "", int(urgency) if isinstance(urgency, int) else 1, timeout,
                  image if image.startswith("/") else "")
+        if locked(n.desktop, n.app):                    # its folder is locked: no banner, not in the list
+            return nid
         key = app_key(n.desktop, n.app)
         per = app_settings(self.cfg, key)
         if key and key not in self.cfg.get("apps", {}):      # listed in Settings > Notifications
