@@ -927,7 +927,7 @@ def _wifi_list():
 
 
 def _cc_state():
-    return (system.wifi_enabled(), system.wifi_current(), system.bluetooth_state())
+    return (system.wifi_enabled(), system.wifi_current(), system.bluetooth_state(), system.airplane_mode())
 
 
 PREFETCH = {"wifi": _wifi_list, "bluetooth": lambda: system.bluetooth_devices(), "cc": _cc_state}
@@ -1103,7 +1103,10 @@ class ControlCenter(Gtk.Box):
                                     caption="…")
         self.bt = ui.panel.toggle("bluetooth-active-symbolic", "Bluetooth", False,
                                   lambda on: system.run_async(system.set_bluetooth, None, on), caption="…")
-        conn = ui.panel.module(self.wifi, self.bt, spacing=12)
+        # where macOS has AirDrop (Vini): Airplane Mode -- every radio off, and back as they were
+        self.plane = ui.panel.toggle("airplane-mode-symbolic", "Airplane Mode", False, self._set_airplane, caption="…")
+        conn = ui.panel.module(self.wifi, self.bt, self.plane, spacing=2)
+        conn.add_css_class("cc-conn")                           # three rows in its 2x2 cells
         conn.set_valign(Gtk.Align.FILL)
         dark = Adw.StyleManager.get_default().get_dark()
         nc = getattr(bar, "notifications", None)
@@ -1308,9 +1311,24 @@ class ControlCenter(Gtk.Box):
     def _fill_toggles(self, res):
         if not res:
             return
-        wifi_on, (ssid, _sig, _wired), bt = res
+        wifi_on, (ssid, _sig, _wired), bt = res[:3]
+        plane = res[3] if len(res) > 3 else None
         ui.panel.set_toggle(self.wifi, bool(wifi_on), ssid or ("Not Connected" if wifi_on else "Off"))
         ui.panel.set_toggle(self.bt, bool(bt), "On" if bt else "Off" if bt is not None else "Unavailable")
+        ui.panel.set_toggle(self.plane, bool(plane), "On" if plane else "Off" if plane is not None else "Unavailable")
+        self.plane.button.set_sensitive(plane is not None)
+
+    def _set_airplane(self, on: bool) -> None:
+        """Every radio off (or back as it was); Wi-Fi and Bluetooth show it."""
+        ui.panel.set_toggle(self.plane, on, "On" if on else "Off")
+        if on:                                   # they go off with it, at once
+            ui.panel.set_toggle(self.wifi, False, "Off")
+            ui.panel.set_toggle(self.bt, False, "Off")
+
+        def done(_ok):
+            self.bar._poll()
+            system.run_async(_cc_state, self._fill_toggles)
+        system.run_async(system.set_airplane_mode, done, on)
 
     def _fill_sliders(self, res):
         if not res:

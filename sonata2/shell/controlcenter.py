@@ -336,4 +336,5 @@ ui.register("""
 .cc-slot-arriving { animation: cc-slot-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .cc-drag-icon { opacity: 0.92; }
 .cc-edit-bar { margin-top: 2px; }
+.panel-module.cc-conn { padding-top: 8px; padding-bottom: 8px; }
 """, key="controlcenter")

@@ -347,6 +347,38 @@ def set_bluetooth(on: bool) -> bool:
     return _run(["bluetoothctl", "power", "on" if on else "off"], timeout=8)[0] == 0
 
 
+# -- Airplane Mode (rfkill) ------------------------------------------------------------
+_RADIOS_BEFORE = {}           # Wi-Fi / Bluetooth before Airplane Mode: given back when it ends
+
+
+def airplane_mode() -> Optional[bool]:
+    """True when every radio is blocked, None without any (or without rfkill)."""
+    rc, out = _run(["rfkill", "list"])
+    if rc != 0:
+        return None
+    blocked = re.findall(r"Soft blocked:\s*(yes|no)", out)
+    return all(b == "yes" for b in blocked) if blocked else None
+
+
+def set_airplane_mode(on: bool) -> bool:
+    """Every radio off (rfkill), or back on: Wi-Fi and Bluetooth return as
+    they were before (macOS)."""
+    if on:
+        _RADIOS_BEFORE.update(wifi=wifi_enabled(), bluetooth=bool(bluetooth_state()))
+        ok = _run(["rfkill", "block", "all"])[0] == 0
+        if not ok:                                  # no access to /dev/rfkill: through the services
+            ok = _run(["nmcli", "radio", "all", "off"])[0] == 0
+            _run(["bluetoothctl", "power", "off"], timeout=8)
+        return ok
+    ok = _run(["rfkill", "unblock", "all"])[0] == 0
+    if _RADIOS_BEFORE.get("wifi", True):
+        ok = set_wifi_enabled(True) and ok
+    if _RADIOS_BEFORE.get("bluetooth", True):
+        set_bluetooth(True)
+    _RADIOS_BEFORE.clear()
+    return ok
+
+
 # -- sound (PipeWire / WirePlumber) ---------------------------------------------------
 def volume() -> Optional[Tuple[int, bool]]:
     """(percent, muted) of the default output, None without wpctl."""
