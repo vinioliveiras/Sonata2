@@ -1034,13 +1034,15 @@ def now_playing_module(p, header=False) -> Gtk.Widget:
 
 
 class ControlCenter(Gtk.Box):
-    """Big Sur Control Center: connectivity module (Wi-Fi, Bluetooth) beside
-    Dark Mode and two small modules (Screenshot, Lock Screen); Display and
-    Sound sliders; Now Playing (MPRIS) when a player runs. Opens at once;
+    """Control Center: modules on a 4-column grid (controlcenter.py) -- the
+    connectivity module (Wi-Fi, Bluetooth), Do Not Disturb, Dark Mode,
+    Screenshot, Display and Sound sliders, Now Playing. Which ones, their
+    order: the user's (Edit Controls…, like Launchpad). Opens at once;
     states fill in from background reads."""
 
     def __init__(self, bar: Bar):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8, width_request=320)
+        from . import controlcenter as CCL
         self.bar = bar
         self.wifi = ui.panel.toggle("network-wireless-symbolic", "Wi-Fi", False,
                                     lambda on: system.run_async(system.set_wifi_enabled, lambda _r: bar._poll(), on),
@@ -1050,23 +1052,14 @@ class ControlCenter(Gtk.Box):
         conn = ui.panel.module(self.wifi, self.bt, spacing=12)
         conn.set_valign(Gtk.Align.FILL)
         dark = Adw.StyleManager.get_default().get_dark()
-        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         nc = getattr(bar, "notifications", None)
-        right.append(ui.panel.module(ui.panel.toggle("weather-clear-night-symbolic", "Do Not Disturb",
-                                                     bool(nc and nc.dnd),
-                                                     lambda on: nc and nc.set_dnd(on))))
-        smalls = Gtk.Box(spacing=8, homogeneous=True)
+        dnd = ui.panel.module(ui.panel.toggle("weather-clear-night-symbolic", "Do Not Disturb",
+                                              bool(nc and nc.dnd), lambda on: nc and nc.set_dnd(on)))
         self.dark_btn = self._small("sonata-dark-mode-symbolic", "Dark Mode",
                                     lambda: self._set_dark(not Adw.StyleManager.get_default().get_dark()),
                                     close=False)
         (self.dark_btn.add_css_class if dark else self.dark_btn.remove_css_class)("on")
-        smalls.append(self.dark_btn)
-        smalls.append(self._small("sonata-screenshot-symbolic", "Screenshot", self._screenshot))   # opens the toolbar
-        right.append(smalls)
-        row = Gtk.Box(spacing=8, homogeneous=True)
-        row.append(conn)
-        row.append(right)
-        self.append(row)
+        shot = self._small("sonata-screenshot-symbolic", "Screenshot", self._screenshot)   # opens the toolbar
         # the brightness of the display this menu bar is on: the laptop panel,
         # or an external monitor over DDC/CI
         self.output = self._output()
@@ -1086,8 +1079,8 @@ class ControlCenter(Gtk.Box):
         ns.set_child(ns_box)
         ns.connect("toggled", lambda b: nightshift.set_manual(b.get_active()))
         ns.set_sensitive(shutil.which("wlsunset") is not None)
-        self.append(ui.panel.module(Gtk.Label(label="Display", xalign=0, css_classes=["panel-module-title"]),
-                                    disp, ns))
+        display = ui.panel.module(Gtk.Label(label="Display", xalign=0, css_classes=["panel-module-title"]),
+                                  disp, ns)
         snd, self.vol = _slider_with_icon(
             _speaker_icon, 50, bar._set_volume,
             button=_round_button("sonata-audio-output-symbolic", "Output",
@@ -1098,13 +1091,49 @@ class ControlCenter(Gtk.Box):
             lambda v: system.run_async(system.set_input_volume, None, int(v), False),
             button=_round_button("audio-input-microphone-symbolic", "Input",
                                  lambda b: _device_menu(b, "Input", system.audio_inputs, system.select_input)))
-        self.append(ui.panel.module(Gtk.Label(label="Sound", xalign=0, css_classes=["panel-module-title"]),
-                                    snd, mic))
+        sound = ui.panel.module(Gtk.Label(label="Sound", xalign=0, css_classes=["panel-module-title"]), snd, mic)
+        from . import mpris
         self.np = None
+        self.modules = {"connectivity": conn, "dnd": dnd, "darkmode": self.dark_btn, "screenshot": shot,
+                        "display": display, "sound": sound,
+                        "nowplaying": now_playing_module(mpris.players())}   # always, like Big Sur ("Not Playing")
+        self.grid = CCL.ModuleGrid(self.modules, CCL.load(), on_change=lambda _o: self._edit_bar_update())
+        self.append(self.grid)
+        self.append(self._edit_bar())
         cached("cc", _cc_state, self._fill_toggles)             # Wi-Fi / Bluetooth: last known at once
         system.run_async(lambda: (system.brightness(out), system.volume(), system.input_volume()),
                          self._fill_sliders)                  # levels: always the live ones
-        self._now_playing()
+
+    # -- Edit Controls (like Launchpad's jiggle mode) -----------------------------------------
+    def _edit_bar(self) -> Gtk.Widget:
+        from . import controlcenter as CCL
+        self.edit_btn = ui.controls.push_button("Edit Controls…", lambda: self.grid.set_editing(True))
+        self.add_btn = ui.controls.push_button("Add Controls", lambda: self._add_menu(self.add_btn))
+        self.done_btn = ui.controls.push_button("Done", lambda: self.grid.set_editing(False), style="default")
+        self._CCL = CCL
+        bar = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER, css_classes=["cc-edit-bar"])
+        for b in (self.edit_btn, self.add_btn, self.done_btn):
+            bar.append(b)
+        self._edit_bar_update()
+        return bar
+
+    def _edit_bar_update(self) -> None:
+        if not hasattr(self, "done_btn"):
+            return
+        on = self.grid.editing
+        self.edit_btn.set_visible(not on)
+        self.done_btn.set_visible(on)
+        self.add_btn.set_visible(on)
+        self.add_btn.set_sensitive(bool(self._CCL.hidden(self.grid.order)))
+
+    def _add_menu(self, btn) -> None:
+        """What was taken out, to put back (at the end)."""
+        Item = ui.menu.Item
+        CCL = self._CCL
+        items = [Item(CCL.CATALOG[m][0], lambda m=m: (self.grid.add_module(m), self._edit_bar_update()))
+                 for m in CCL.hidden(self.grid.order)]
+        if items:
+            ui.menu.popup(btn, [items], position=Gtk.PositionType.TOP)
 
     def _output(self):
         """Connector name of the display this menu bar is on (None: unknown,
@@ -1165,10 +1194,6 @@ class ControlCenter(Gtk.Box):
         cap = getattr(self.bar, "capture", None)
         if cap:
             GLib.timeout_add(300, lambda: (cap.show_toolbar(), False)[1])
-
-    def _now_playing(self):
-        from . import mpris
-        self.append(now_playing_module(mpris.players()))      # always, like Big Sur ("Not Playing")
 
     def _set_dark(self, on: bool) -> None:
         """Dark Mode is a Linux setting (freedesktop colour-scheme), so every

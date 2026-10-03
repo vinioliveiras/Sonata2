@@ -27,7 +27,7 @@ from .. import launchpad_model as M  # noqa: E402
 from . import layer  # noqa: E402
 
 OPEN_MS, CLOSE_MS = 230, 170
-FOLDER_HOLD_MS, FLIP_HOLD_MS, JIGGLE_HOLD_MS = 400, 650, 800
+FOLDER_HOLD_MS, FLIP_HOLD_MS = 400, 650            # (the jiggle hold: ui.edit.HOLD_MS)
 REORDER_HOLD_MS = 220       # icons make way only after a short pause (so you can reach an icon to make a folder)
 ZOOM_FROM = 1.12            # icons zoom in from 112 % while fading in (Big Sur)
 USER_APPS = os.path.join(GLib.get_user_data_dir(), "applications")
@@ -58,12 +58,8 @@ window.sonata-launchpad *:drop(active) { box-shadow: none; outline: none; border
   background: %(field_on_scrim)s; color: %(on_scrim)s; }
 .lp-more:hover { background: %(tile_on_scrim)s; }
 .lp-more .lp-more-dots { font-size: 15px; letter-spacing: 1px; margin-top: -4px; }
-.lp-badge { min-width: 20px; min-height: 20px; padding: 0; border-radius: 99px; border: none;
-  background: rgba(60, 60, 64, 0.92); color: white; box-shadow: 0 1px 3px rgba(0,0,0,0.4);
-  -gtk-icon-size: 10px; }
-@keyframes lp-jiggle { 0%% { transform: rotate(-1.6deg); } 50%% { transform: rotate(1.6deg); }
-                       100%% { transform: rotate(-1.6deg); } }
-.jiggle .lp-item .lp-icon, .jiggle .lp-item .lp-folder { animation: lp-jiggle 260ms ease-in-out infinite; }
+/* edit mode (jiggle, the x): ui.edit, shared with Control Center */
+.jiggle .lp-item .lp-icon, .jiggle .lp-item .lp-folder { animation: sonata-jiggle 260ms ease-in-out infinite; }
 .jiggle .lp-item.odd .lp-icon, .jiggle .lp-item.odd .lp-folder { animation-delay: -130ms; }
 .lp-lock { color: %(on_scrim)s; }
 .lp-lock-text { color: %(on_scrim)s; font-family: %(font)s; font-size: %(text_body)s; }
@@ -223,9 +219,7 @@ class LaunchItem(Gtk.Button):
                             else Gio.ThemedIcon.new("application-x-executable"))
             over.set_child(img)
             if info and _removable(info):
-                badge = Gtk.Button(icon_name="window-close-symbolic", css_classes=["lp-badge"],
-                                   halign=Gtk.Align.START, valign=Gtk.Align.START, can_focus=False)
-                badge.connect("clicked", lambda _b: pad.ask_delete(item))
+                badge = ui.edit.badge(lambda: pad.ask_delete(item), tooltip="Delete")
                 badge.set_visible(pad.jiggling)
                 self.badge = badge
                 over.add_overlay(badge)
@@ -235,9 +229,7 @@ class LaunchItem(Gtk.Button):
         col.append(self.label)
         self.set_child(col)
         self.connect("clicked", lambda _b: pad.activate_item(self))
-        hold = Gtk.GestureLongPress(delay_factor=JIGGLE_HOLD_MS / 500)
-        hold.connect("pressed", lambda *_: pad.set_jiggle(True))
-        self.add_controller(hold)
+        ui.edit.hold(self, lambda: pad.set_jiggle(True))
         menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
         menu.connect("pressed", lambda _g, _n, x, y: pad.item_menu(self, x, y))
         self.add_controller(menu)
