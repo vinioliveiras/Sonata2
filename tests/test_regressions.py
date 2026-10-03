@@ -865,7 +865,7 @@ class CaptureTargetsTests(unittest.TestCase):
         picked, done = [], []
         cap._pick = lambda title, items, action, then: picked.append((title, items, action, then))
         cap._record = lambda geo, cfg, output=None: done.append(("rec", geo, output))
-        cap._shoot = lambda geo, cfg, output=None: done.append(("shot", geo, output))
+        cap._shoot = lambda geo, cfg, output=None, frozen=None: done.append(("shot", geo, output))
         try:
             cap._run("rec-display", {})
             title, items, action, then = picked[-1]

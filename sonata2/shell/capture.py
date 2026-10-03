@@ -171,6 +171,129 @@ def _slurp(args, stdin=None):
     return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
 
 
+def _slurp_async(args, done) -> None:
+    """slurp without blocking the menu bar (the frozen screen must draw
+    under it); done("x,y wxh" or None)."""
+    try:
+        proc = Gio.Subprocess.new(["slurp"] + args, Gio.SubprocessFlags.STDOUT_PIPE |
+                                  Gio.SubprocessFlags.STDERR_SILENCE)
+    except GLib.Error:
+        done(None)
+        return
+
+    def finished(p, res):
+        try:
+            _ok, out, _err = p.communicate_utf8_finish(res)
+        except GLib.Error:
+            out = None
+        out = (out or "").strip()
+        done(out if p.get_successful() and out else None)
+    proc.communicate_utf8_async(None, None, finished)
+
+
+def _box(geo: str):
+    """"x,y wxh" -> (x, y, w, h), None when it isn't one."""
+    try:
+        xy, wh = geo.split(" ")
+        x, y = (float(n) for n in xy.split(","))
+        w, h = (float(n) for n in wh.split("x"))
+        return x, y, w, h
+    except (AttributeError, ValueError):
+        return None
+
+
+class Frozen:
+    """Every display as it was when a screenshot started. Picking a portion
+    or a window takes the keyboard, and an open menu (the menu bar's, a
+    right-click one) closed before it was in the picture (Vini): the
+    picture now comes from this, not from the live screen."""
+
+    def __init__(self, pixbuf, outs):
+        self.pb = pixbuf
+        geos = [o.get("geometry") or {} for o in outs] or [{"width": pixbuf.get_width(),
+                                                           "height": pixbuf.get_height()}]
+        self.x0 = min(g.get("x", 0) for g in geos)
+        self.y0 = min(g.get("y", 0) for g in geos)
+        width = max(g.get("x", 0) + g.get("width", 0) for g in geos) - self.x0
+        self.scale = pixbuf.get_width() / width if width > 0 else 1.0     # grim: the largest display scale
+        self.outs = {o.get("name"): o.get("geometry") or {} for o in outs}
+
+    @classmethod
+    def take(cls):
+        """None without grim (or when it fails): the live screen then."""
+        if not shutil.which("grim"):
+            return None
+        path = os.path.join(GLib.get_user_runtime_dir() or GLib.get_tmp_dir(), "sonata2-frozen.png")
+        try:
+            if subprocess.run(["grim", "-l", "0", path], timeout=5).returncode != 0:     # no compression: fast
+                return None
+            pb = GdkPixbuf.Pixbuf.new_from_file(path)
+        except (OSError, subprocess.SubprocessError, GLib.Error):
+            return None
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        return cls(pb, outputs())
+
+    def crop(self, geo: str):
+        """The part "x,y wxh" (layout coordinates), None when it's off screen."""
+        box = _box(geo)
+        if box is None:
+            return None
+        s = self.scale
+        x, y = round((box[0] - self.x0) * s), round((box[1] - self.y0) * s)
+        x2, y2 = round((box[0] + box[2] - self.x0) * s), round((box[1] + box[3] - self.y0) * s)
+        x, y = max(0, x), max(0, y)
+        x2, y2 = min(self.pb.get_width(), x2), min(self.pb.get_height(), y2)
+        if x2 <= x or y2 <= y:
+            return None
+        return self.pb.new_subpixbuf(x, y, x2 - x, y2 - y).copy()
+
+    def output(self, name: str):
+        g = self.outs.get(name)
+        if not g:
+            return None
+        return self.crop(f"{g.get('x', 0)},{g.get('y', 0)} {g.get('width', 0)}x{g.get('height', 0)}")
+
+
+class _FrozenCover:
+    """The frozen screen shown under the portion selection, so what one
+    selects (an open menu too) is what lands in the picture."""
+
+    def __init__(self, app, frozen: Frozen):
+        self.wins = []
+        LS = layer.layer_shell()
+        display = Gdk.Display.get_default()
+        if not LS or display is None:
+            return
+        mons = display.get_monitors()
+        for i in range(mons.get_n_items()):
+            mon = mons.get_item(i)
+            pb = frozen.output(mon.get_connector())
+            if pb is None:
+                continue
+            w = Gtk.Window(application=app, decorated=False, css_classes=["sonata-capture"])
+            w.set_child(Gtk.Picture(paintable=Gdk.Texture.new_for_pixbuf(pb), content_fit=Gtk.ContentFit.FILL,
+                                    can_shrink=True))
+            LS.init_for_window(w)
+            LS.set_namespace(w, "sonata2-capture-frozen")
+            LS.set_layer(w, LS.Layer.OVERLAY)
+            for e in (LS.Edge.TOP, LS.Edge.BOTTOM, LS.Edge.LEFT, LS.Edge.RIGHT):
+                LS.set_anchor(w, e, True)
+            LS.set_exclusive_zone(w, -1)
+            LS.set_keyboard_mode(w, LS.KeyboardMode.NONE)
+            LS.set_monitor(w, mon)
+            w.present()
+            self.wins.append(w)
+
+    def close(self) -> None:
+        for w in self.wins:
+            w.destroy()
+        self.wins = []
+
+
 def audio_device(kind: str):
     """PulseAudio / PipeWire name to record: what the speakers play (the
     default output's monitor) or the default microphone. None: no audio."""
@@ -368,9 +491,11 @@ class Capture:
 
     def run(self, mode: str, cfg: dict):
         """mode: screen | area | rec-screen | rec-area."""
-        if self.toolbar is not None:
+        shown = self.toolbar is not None and self.toolbar.get_visible()
+        if shown:
             self.toolbar.set_visible(False)
-        delay = int(cfg.get("timer", 0)) * 1000 + 250        # let the toolbar disappear first
+        # the toolbar: let it disappear first; a shortcut: at once (an open menu still there)
+        delay = int(cfg.get("timer", 0)) * 1000 + (250 if shown else 0)
         GLib.timeout_add(delay, lambda: (self._run(mode, cfg), False)[1])
 
     def _run(self, mode, cfg):
@@ -379,9 +504,15 @@ class Capture:
         A display or a window is picked from a list (thumbnails)."""
         rec = mode.startswith("rec-")
         what = mode[4:] if rec else mode
+        # a picture of a portion / window / display: the screen as it is now,
+        # before a list or the selection takes the keyboard (and closes menus)
+        frozen = Frozen.take() if not rec and what != "screen" else None
 
         def go(geo=None, output=None):
-            (self._record if rec else self._shoot)(geo, cfg, output)
+            if rec:
+                self._record(geo, cfg, output)
+            else:
+                self._shoot(geo, cfg, output, frozen=frozen)
         if what == "display":
             outs = outputs()
             if len(outs) <= 1:
@@ -409,9 +540,16 @@ class Capture:
             if not shutil.which("slurp"):
                 self._missing("slurp")
                 return
-            geo = _slurp([])
-            if geo is not None:
-                go(geo=geo)
+            cover = _FrozenCover(self.app, frozen) if frozen is not None else None
+
+            def picked(geo):
+                if cover is not None:
+                    cover.close()
+                if geo is not None:
+                    go(geo=geo)
+            # once the frozen screen is up (slurp maps over it)
+            GLib.timeout_add(60 if cover is not None and cover.wins else 0,
+                             lambda: (_slurp_async([], picked), False)[1])
         else:                                           # screen: all displays; rec-screen: the focused one
             go(output=focused_output() if rec else None)
 
@@ -424,15 +562,24 @@ class Capture:
                 GLib.timeout_add(250, lambda: (then(value), False)[1])     # not in the picture
         Picker(self.app, title, None, items, action, done).present()
 
-    def _shoot(self, geo, cfg, output=None):
+    def _shoot(self, geo, cfg, output=None, frozen=None):
         if not shutil.which("grim"):
             self._missing("grim")
             return
         to_clip = cfg.get("shots_to") == "clipboard"
         path = os.path.join(GLib.get_tmp_dir() if to_clip else shots_dir(cfg), _name("Screenshot", "png"))
-        cmd = ["grim"] + (["-g", geo] if geo else ["-o", output] if output else []) + [path]
-        if subprocess.run(cmd).returncode != 0:
-            return
+        if frozen is not None:
+            pb = frozen.crop(geo) if geo else frozen.output(output) if output else frozen.pb
+            if pb is None:
+                return
+            try:
+                pb.savev(path, "png", [], [])
+            except GLib.Error:
+                return
+        else:
+            cmd = ["grim"] + (["-g", geo] if geo else ["-o", output] if output else []) + [path]
+            if subprocess.run(cmd).returncode != 0:
+                return
         from .. import sounds
         sounds.play("screenshot")
         if to_clip and shutil.which("wl-copy"):
