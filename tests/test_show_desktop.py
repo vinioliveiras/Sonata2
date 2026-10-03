@@ -189,9 +189,9 @@ class DockDisplayTest(unittest.TestCase):
 
 
 class DockDotsTest(unittest.TestCase):
-    """Vini: up to two dots, then a small + for more windows."""
+    """Vini: one dot per window, up to three (a + after two looked off)."""
 
-    def test_two_dots_then_plus(self):
+    def test_up_to_three_dots(self):
         import gi
         gi.require_version("Gtk", "4.0")
         from gi.repository import Gio, Gtk
@@ -202,11 +202,8 @@ class DockDotsTest(unittest.TestCase):
         with mock.patch.object(D.ui.label, "HoverLabel"):
             t = D.DockTile(dock, "x", Gio.ThemedIcon.new("folder"), lambda *_: 0)
         on = lambda: [d.has_css_class("on") for d in t.dots]
-        t.set_running(1)
-        self.assertEqual((on(), t.plus.get_visible()), ([True, False], False))
         t.set_running(2)
-        self.assertEqual((on(), t.plus.get_visible()), ([True, True], False))
+        self.assertEqual(on(), [True, True, False])
         t.set_running(5)
-        self.assertEqual((on(), t.plus.get_visible()), ([True, True], True))
-        t.set_running(0)
-        self.assertFalse(t.plus.get_visible())
+        self.assertEqual(on(), [True, True, True])
+        self.assertFalse(hasattr(t, "plus"))
