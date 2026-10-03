@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.1-alpha -- 2026-10-03
+
+Gaming and everyday apps share the graphics card better, and Steam opens
+every time.
+
+### Gaming
+- Lighter Effects While Gaming (Settings > Displays > Graphics, on): when a
+  full-screen game fills the graphics card, blur and window animations
+  pause until you leave the game.
+- Everyday Apps on the Integrated Graphics (same place, off for now):
+  browsers, chat and office apps use the integrated GPU and the computer's
+  memory; games and creative apps keep the graphics card.
+- The wallpaper takes much less graphics memory (decoded at the display's
+  size).
+- Steam opens every time on computers with an NVIDIA card (its window
+  sometimes never showed).
+- "Use Discrete Graphics" is now "Use High-Performance Graphics".
+
+### Desktop
+- The emoji picker closes with Esc or a click outside it.
+- New Web App… is only in Apps' right-click menu.
+
+### Project page
+- Ko-fi support, credits for the icons, themes and software Sonata uses,
+  and a favicon.
+
 ## 0.4.0-alpha -- 2026-10-02
 
 Wallpapers, a fresh look for the project page, and a steadier session
