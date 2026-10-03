@@ -670,6 +670,15 @@ def host() -> Host:
 
 
 # -- menu bar ------------------------------------------------------------------------------------
+def double_click_ms() -> int:
+    """The desktop's double-click time (GTK's setting), kept snappy."""
+    try:
+        ms = Gtk.Settings.get_default().get_property("gtk-double-click-time")
+    except Exception:
+        ms = 400
+    return max(150, min(int(ms or 400), 400))
+
+
 class TrayBox(Gtk.Box):
     """One menu bar's tray icons (placed left of the status items)."""
 
@@ -738,6 +747,23 @@ class TrayBox(Gtk.Box):
         return (int(pt.x), int(pt.y)) if ok else (0, 0)
 
     def _left(self, btn, item) -> None:
+        """A left click. Its Activate / menu waits the double-click time: a
+        second click is a double-click (open_app) -- straight away, the
+        first click's menu took the second (Steam: a menu item was picked)
+        and a toggling Activate hid the window again (Spotify) (Vini)."""
+        if getattr(self, "_skip_click", False):           # the double-click's second release
+            self._skip_click = False
+            return
+        if getattr(self, "_single", 0):
+            GLib.source_remove(self._single)
+        self._single = GLib.timeout_add(double_click_ms(), self._single_click, btn, item)
+
+    def _single_click(self, btn, item) -> bool:
+        self._single = 0
+        self._click(btn, item)
+        return False
+
+    def _click(self, btn, item) -> None:
         if item is None:
             return
         if item.item_is_menu:
@@ -752,6 +778,10 @@ class TrayBox(Gtk.Box):
         n = gest.get_current_button()
         if n == 1 and n_press == 2:
             gest.set_state(Gtk.EventSequenceState.CLAIMED)
+            if getattr(self, "_single", 0):               # the first click's action never runs
+                GLib.source_remove(self._single)
+                self._single = 0
+            self._skip_click = True
             self.open_app(btn, item)
         elif n == 3:
             gest.set_state(Gtk.EventSequenceState.CLAIMED)

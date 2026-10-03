@@ -67,7 +67,7 @@ class OpenAppTest(unittest.TestCase):
         """A single left click keeps its Activate / menu; the second press opens the app."""
         calls = []
         box = types.SimpleNamespace(open_app=lambda b, i: calls.append("open"),
-                                    show_menu=lambda *a: calls.append("menu"))
+                                    show_menu=lambda *a: calls.append("menu"), _single=0)
         gest = mock.Mock()
         gest.get_current_button.return_value = 1
         T.TrayBox._press(box, gest, Gtk.Button(), 0, 0, mock.Mock(), 1)
@@ -75,6 +75,37 @@ class OpenAppTest(unittest.TestCase):
         T.TrayBox._press(box, gest, Gtk.Button(), 0, 0, mock.Mock(), 2)
         self.assertEqual(calls, ["open"])
         gest.set_state.assert_called_with(Gtk.EventSequenceState.CLAIMED)   # no second Activate
+
+
+    def test_first_click_waits_for_a_second(self):
+        """Vini: double-clicking Steam's icon picked an item of the menu the
+        first click had opened; Spotify's window came and went (its Activate
+        toggles). The single click now waits the double-click time."""
+        from gi.repository import GLib
+        calls = []
+        box = types.SimpleNamespace(open_app=lambda b, i: calls.append("open"),
+                                    _click=lambda b, i: calls.append("single"), _single=0)
+        box._single_click = lambda b, i: T.TrayBox._single_click(box, b, i)
+        gest = mock.Mock()
+        gest.get_current_button.return_value = 1
+        btn, item = Gtk.Button(), mock.Mock()
+
+        def settle(ms):
+            end = GLib.get_monotonic_time() + ms * 1000
+            while GLib.get_monotonic_time() < end:
+                GLib.MainContext.default().iteration(False)
+        # double-click: press, release (clicked), press #2, release (clicked)
+        T.TrayBox._press(box, gest, btn, 0, 0, item, 1)
+        T.TrayBox._left(box, btn, item)
+        T.TrayBox._press(box, gest, btn, 0, 0, item, 2)
+        T.TrayBox._left(box, btn, item)
+        settle(T.double_click_ms() + 100)
+        self.assertEqual(calls, ["open"])                 # no Activate, no menu
+        # a single click: its action, once the double-click time is over
+        T.TrayBox._left(box, btn, item)
+        self.assertEqual(calls, ["open"])
+        settle(T.double_click_ms() + 100)
+        self.assertEqual(calls, ["open", "single"])
 
 
 if __name__ == "__main__":
