@@ -7,8 +7,14 @@ stops with the last one. Reads run off the main loop (system.run_async).
     stats.subscribe(callback)        # callback(Reading) about every second
     stats.unsubscribe(callback)
 
-Reading fields: cpu %, gpu % (None: no card reports it), ram used/total
-bytes, down/up bytes per second, fps (None: no reading; see fps_state)."""
+Reading fields: cpu %, gpu % (the busiest card; None: no card reports it),
+gpus {card key: %} (each card, Vini: "with two, an option for each"), ram
+used/total bytes, down/up bytes per second, fps (None: no reading; see
+fps_state).
+
+KINDS: what can be shown -- cpu, gpu (one card) or gpu_<card> for each
+card ("gpu_amd", "gpu_nvidia"), ram, net, fps."""
+import glob
 import os
 import threading
 from dataclasses import dataclass, field
@@ -20,10 +26,41 @@ INTERVAL_MS = 1000
 HISTORY = 30                       # samples kept for the little graphs
 
 
+def gpu_cards(sys: str = "/sys") -> list:
+    """[(key, maker, cardN)] of the graphics cards, in card order: key
+    "amd", "nvidia", "intel" ("amd2" for a second card of one maker)."""
+    out, seen = [], {}
+    for card in sorted(glob.glob(os.path.join(sys, "class/drm/card[0-9]*"))):
+        name = os.path.basename(card)
+        if not name[4:].isdigit():
+            continue                                    # a connector (card1-HDMI-A-1)
+        drv = os.path.basename(os.path.realpath(os.path.join(card, "device", "driver")))
+        maker = procfs.CARD_NAMES.get(drv)
+        if not maker:
+            continue
+        base = maker.lower()
+        seen[base] = seen.get(base, 0) + 1
+        out.append((base if seen[base] == 1 else f"{base}{seen[base]}", maker, name))
+    return out
+
+
+def kinds(cards=None) -> tuple:
+    """The figures that can be shown: one GPU, or one per card when there are two or more."""
+    cards = gpu_cards() if cards is None else cards
+    gpus = ["gpu"] if len(cards) < 2 else ["gpu_" + key for key, _m, _c in cards]
+    return ("cpu", *gpus, "ram", "net", "fps")
+
+
+CARDS = gpu_cards()
+KINDS = kinds(CARDS)
+GPU_MAKERS = {"gpu_" + key: maker for key, maker, _c in CARDS}     # "gpu_nvidia" -> "NVIDIA"
+
+
 @dataclass
 class Reading:
     cpu: float = 0.0
     gpu: Optional[float] = None
+    gpus: dict = field(default_factory=dict)        # card key -> % (None: no reading)
     ram_used: int = 0
     ram_total: int = 0
     down: float = 0.0
@@ -47,7 +84,9 @@ class Sampler:
         self._ipc = ipc
         self._nvidia = None
         self._nv_pct = None
+        self._nv_list = []                 # nvidia-smi's figures, one per NVIDIA card in order
         self._nv_busy = False
+        self._cards = None
 
     def cpu(self) -> float:
         line = procfs._read(os.path.join(self.proc, "stat")).split("\n", 1)[0]
@@ -73,20 +112,33 @@ class Sampler:
             return 0.0, 0.0
         return max(0.0, (rx - prev[0]) / dt), max(0.0, (tx - prev[1]) / dt)
 
-    def gpu(self) -> Optional[float]:
-        """The busiest card: amdgpu reports gpu_busy_percent; NVIDIA through
-        nvidia-smi, only while the card is awake (asking wakes it otherwise)."""
-        vals = list(procfs.Sampler.gpus(self).values())        # (it only needs .sys)
+    def gpus(self) -> dict:
+        """{card key: busy %} for every card: amdgpu/Intel from gpu_busy_percent;
+        NVIDIA through nvidia-smi, only while the card is awake (asking would
+        wake it), else None."""
+        if self._cards is None:
+            self._cards = gpu_cards(self.sys)
         if self._nvidia is None:
             self._nvidia = procfs.NvidiaUsage(self.sys)
         nv = self._nvidia
-        if nv.tool and nv.devices:
-            if nv.awake():
-                self._nvidia_refresh()
-                if self._nv_pct is not None:
-                    vals.append(self._nv_pct)
+        awake = bool(nv.tool and nv.devices and nv.awake())
+        if awake:
+            self._nvidia_refresh()
+        else:
+            self._nv_pct, self._nv_list = None, []
+        out, nth = {}, 0
+        for key, maker, card in self._cards:
+            if maker == "NVIDIA":
+                out[key] = self._nv_list[nth] if awake and nth < len(self._nv_list) else None
+                nth += 1
             else:
-                self._nv_pct = None
+                v = procfs._read(os.path.join(self.sys, "class/drm", card, "device/gpu_busy_percent")).strip()
+                out[key] = float(v) if v.isdigit() else None
+        return out
+
+    def gpu(self, each: dict = None) -> Optional[float]:
+        """The busiest card (from gpus())."""
+        vals = [v for v in (self.gpus() if each is None else each).values() if v is not None]
         return max(vals) if vals else None
 
     def _nvidia_refresh(self) -> None:
@@ -100,6 +152,7 @@ class Sampler:
                 out = subprocess.run([self._nvidia.tool, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
                                      capture_output=True, text=True, timeout=3).stdout
                 nums = [float(x) for x in out.split() if x.replace(".", "").isdigit()]
+                self._nv_list = nums
                 self._nv_pct = max(nums) if nums else None
             except (OSError, ValueError, Exception):
                 self._nv_pct = None
@@ -138,7 +191,7 @@ class Stats:
     def __init__(self, sampler: Sampler = None):
         self.sampler = sampler or Sampler()
         self.listeners = []
-        self.history = {k: [] for k in ("cpu", "gpu", "ram", "down", "up", "fps")}
+        self.history = {k: [] for k in ("cpu", "gpu", "ram", "down", "up", "fps")}      # (+ gpu_<card>)
         self.last = None
         self._timer = 0
         self._busy = False
@@ -181,16 +234,17 @@ class Stats:
         used, total = s.ram()
         down, up = s.net(dt)
         fps, state = s.fps()
-        return Reading(cpu=s.cpu(), gpu=s.gpu(), ram_used=used, ram_total=total, down=down, up=up,
-                       fps=fps, fps_state=state)
+        each = s.gpus()
+        return Reading(cpu=s.cpu(), gpu=s.gpu(each), gpus=each, ram_used=used, ram_total=total, down=down,
+                       up=up, fps=fps, fps_state=state)
 
     def _deliver(self, r: Optional[Reading]) -> None:
         self._busy = False
         if r is None:
             return
         for k, v in (("cpu", r.cpu), ("gpu", r.gpu), ("ram", r.ram_pct), ("down", r.down), ("up", r.up),
-                     ("fps", r.fps)):
-            h = self.history[k]
+                     ("fps", r.fps), *(("gpu_" + key, pct) for key, pct in r.gpus.items())):
+            h = self.history.setdefault(k, [])
             h.append(v if v is not None else 0.0)
             del h[:-HISTORY]
         r.history = self.history
@@ -215,6 +269,10 @@ def text(kind: str, r: Reading) -> str:
         return f"CPU {r.cpu:.0f}%"
     if kind == "gpu":
         return "GPU –" if r.gpu is None else f"GPU {r.gpu:.0f}%"
+    if kind.startswith("gpu_"):                     # one card: its maker
+        v = r.gpus.get(kind[4:])
+        maker = GPU_MAKERS.get(kind, kind[4:].upper())
+        return f"{maker} –" if v is None else f"{maker} {v:.0f}%"
     if kind == "ram":
         return f"RAM {r.ram_pct:.0f}%"
     if kind == "net":

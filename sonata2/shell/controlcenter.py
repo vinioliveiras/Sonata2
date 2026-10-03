@@ -30,12 +30,12 @@ CATALOG = {
     "sound": ("Sound", (4, 2)),
     "nowplaying": ("Now Playing", (4, 1)),
     # performance (statsui.py): not in the default layout, offered by Add Controls
-    "stat_cpu": ("CPU", (2, 2)),
-    "stat_gpu": ("GPU", (2, 2)),
-    "stat_ram": ("Memory", (2, 2)),
-    "stat_net": ("Network", (2, 2)),
-    "stat_fps": ("FPS", (2, 2)),
 }
+from ..backend import stats as _stats  # noqa: E402
+_GPU_TITLES = {k: f"GPU ({m})" for k, m in _stats.GPU_MAKERS.items()}
+for _k in _stats.KINDS:                    # one GPU, or one module per card
+    CATALOG["stat_" + _k] = ({"cpu": "CPU", "gpu": "GPU", "ram": "Memory", "net": "Network",
+                              "fps": "FPS"}.get(_k) or _GPU_TITLES.get(_k, _k), (2, 2))
 DEFAULT_ORDER = ["connectivity", "dnd", "darkmode", "screenshot", "display", "sound", "nowplaying"]
 DEFAULTS = {"modules": None}            # None: DEFAULT_ORDER (new modules join it in later versions)
 

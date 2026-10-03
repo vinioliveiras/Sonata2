@@ -66,16 +66,46 @@ class SamplerTest(unittest.TestCase):
         self.f.write("proc/net/dev", NETDEV.format(lo=99999999, rx=3048, tx=1524))
         self.assertEqual(self.s.net(2.0), (1024.0, 512.0))         # loopback traffic never counts
 
+    def card(self, n, driver):
+        d = os.path.join(self.f.sys, f"class/drm/card{n}/device")
+        os.makedirs(d, exist_ok=True)
+        drv = os.path.join(self.f.root, "drivers", driver)
+        os.makedirs(drv, exist_ok=True)
+        os.symlink(drv, os.path.join(d, "driver"))
+        return d
+
+    def no_nvidia_tool(self):
+        return mock.patch.object(S.procfs.NvidiaUsage, "__init__",
+                                 lambda nv, sys="": setattr(nv, "tool", None) or setattr(nv, "devices", []))
+
     def test_gpu_from_amdgpu_busy_percent(self):
+        self.card(1, "amdgpu")
         self.f.write("sys/class/drm/card1/device/gpu_busy_percent", "37\n")
-        with mock.patch.object(S.procfs.NvidiaUsage, "__init__", lambda nv, sys="": setattr(nv, "tool", None)
-                               or setattr(nv, "devices", [])):
+        with self.no_nvidia_tool():
+            self.assertEqual(self.s.gpus(), {"amd": 37.0})
             self.assertEqual(self.s.gpu(), 37.0)
 
     def test_no_gpu_reading(self):
-        with mock.patch.object(S.procfs.NvidiaUsage, "__init__", lambda nv, sys="": setattr(nv, "tool", None)
-                               or setattr(nv, "devices", [])):
+        with self.no_nvidia_tool():
             self.assertIsNone(self.s.gpu())
+
+    def test_each_card_on_its_own(self):
+        """Vini: with two cards, one figure each (AMD from sysfs, NVIDIA from nvidia-smi)."""
+        self.card(0, "amdgpu")
+        self.card(1, "nvidia")
+        os.makedirs(os.path.join(self.f.sys, "class/drm/card1-HDMI-A-1"))       # a connector: no card
+        self.f.write("sys/class/drm/card0/device/gpu_busy_percent", "12\n")
+        self.assertEqual([k for k, _m, _c in S.gpu_cards(self.f.sys)], ["amd", "nvidia"])
+        nv = mock.Mock(tool="/usr/bin/nvidia-smi", devices=["x"])
+        nv.awake.return_value = True
+        self.s._nvidia = nv
+        self.s._nv_list = [64.0]
+        with mock.patch.object(self.s, "_nvidia_refresh"):
+            self.assertEqual(self.s.gpus(), {"amd": 12.0, "nvidia": 64.0})
+        nv.awake.return_value = False                              # asleep: never woken to ask
+        with mock.patch.object(self.s, "_nvidia_refresh") as refresh:
+            self.assertEqual(self.s.gpus(), {"amd": 12.0, "nvidia": None})
+        refresh.assert_not_called()
 
     def test_fps_states(self):
         ipc = self.s._ipc
@@ -113,6 +143,23 @@ class StatsTest(unittest.TestCase):
             st._deliver(S.Reading(cpu=i))
         self.assertEqual(len(st.history["cpu"]), S.HISTORY)
         self.assertEqual(st.history["cpu"][-1], S.HISTORY + 9)
+
+
+class KindsTest(unittest.TestCase):
+    def test_one_gpu_option_or_one_per_card(self):
+        self.assertEqual(S.kinds([("amd", "AMD", "card0")]), ("cpu", "gpu", "ram", "net", "fps"))
+        self.assertEqual(S.kinds([]), ("cpu", "gpu", "ram", "net", "fps"))
+        self.assertEqual(S.kinds([("amd", "AMD", "card0"), ("nvidia", "NVIDIA", "card1")]),
+                         ("cpu", "gpu_amd", "gpu_nvidia", "ram", "net", "fps"))
+
+    def test_card_text_and_history(self):
+        with mock.patch.dict(S.GPU_MAKERS, {"gpu_nvidia": "NVIDIA"}):
+            r = S.Reading(gpus={"nvidia": 64.4, "amd": None})
+            self.assertEqual(S.text("gpu_nvidia", r), "NVIDIA 64%")
+            self.assertEqual(S.text("gpu_amd", r), "AMD –")
+        st = S.Stats(sampler=mock.Mock())
+        st._deliver(S.Reading(gpus={"nvidia": 50.0}))
+        self.assertEqual(st.history["gpu_nvidia"], [50.0])
 
 
 class TextTest(unittest.TestCase):

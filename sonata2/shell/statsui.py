@@ -13,13 +13,20 @@ from gi.repository import Gsk, Gtk, Pango  # noqa: E402
 from .. import ui  # noqa: E402
 from ..backend import stats as S  # noqa: E402
 
-KINDS = ("cpu", "gpu", "ram", "net", "fps")
+KINDS = S.KINDS                            # cpu, gpu or gpu_<card> for each card, ram, net, fps
 TITLES = {"cpu": "CPU", "gpu": "GPU", "ram": "Memory", "net": "Network", "fps": "FPS"}
 CAPTIONS = {"cpu": "CPU", "gpu": "GPU", "ram": "RAM", "net": "NET", "fps": "FPS"}     # beside a menu bar graph
 ICONS = {"cpu": "cpu-symbolic", "gpu": "gpu-symbolic", "ram": "media-memory-symbolic",
          "net": "network-transmit-receive-symbolic", "fps": "speedometer-symbolic"}
 SERIES = {"cpu": ("cpu",), "gpu": ("gpu",), "ram": ("ram",), "net": ("down", "up"), "fps": ("fps",)}
 PERCENT = {"cpu", "gpu", "ram"}            # 0..100 scale; the others scale to their own peak
+SHORT = {"NVIDIA": "NV", "Intel": "INT"}   # a card's maker beside a menu bar graph
+for _k, _maker in S.GPU_MAKERS.items():    # two cards or more: one of each per card
+    TITLES[_k] = f"GPU ({_maker})"
+    CAPTIONS[_k] = SHORT.get(_maker, _maker)
+    ICONS[_k] = "gpu-symbolic"
+    SERIES[_k] = (_k,)
+    PERCENT.add(_k)
 
 ui.register("""
 .stat-item label { font-feature-settings: "tnum"; }
@@ -125,7 +132,7 @@ def module(kind: str) -> Gtk.Widget:
 
     def update(r):
         t = S.text(kind, r)
-        value.set_label(t.split(" ", 1)[1] if kind in ("cpu", "gpu", "ram") else
+        value.set_label(t.split(" ", 1)[1] if kind in PERCENT else
                         (t.replace("  ", " ") if kind == "net" else ("–" if r.fps is None else str(r.fps))))
         graph.push(r.history)
         h = S.FPS_HINTS.get(r.fps_state, "") if kind == "fps" else ""
