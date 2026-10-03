@@ -73,6 +73,13 @@ class EverydayIntegratedTest(unittest.TestCase):
             self.assertEqual(gpu.launch_env(self.info("org.gimp.GIMP.desktop", "Graphics;2DGraphics;RasterGraphics;")), {})
             self.assertEqual(gpu.launch_env(self.info("heroic.desktop", "")), {})
 
+    def test_spotify_keeps_the_screens_gpu(self):
+        """Vini: on the integrated GPU Spotify's window opened empty."""
+        with mock.patch.object(gpu, "everyday_integrated", return_value=True), \
+                mock.patch.object(gpu, "_cards", return_value=["amdgpu", "nvidia"]):
+            for did in ("spotify-launcher.desktop", "spotify.desktop", "com.spotify.Client.desktop"):
+                self.assertEqual(gpu.launch_env(self.info(did, "Audio;Music;Player;AudioVideo;")), {})
+
     def test_nothing_without_an_integrated_gpu(self):
         with mock.patch.object(gpu, "everyday_integrated", return_value=True), \
                 mock.patch.object(gpu, "_cards", return_value=["nvidia"]):

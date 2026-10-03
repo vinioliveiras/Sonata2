@@ -308,6 +308,13 @@ def heavy(info) -> bool:
     return bool(cats & HEAVY_CATEGORIES)
 
 
+# Apps drawn through Xwayland by Chromium's CEF (Spotify): moved to the
+# integrated GPU while the screens are driven by the NVIDIA card, the window
+# opened but stayed empty -- its frames never crossed to the other card
+# (Vini). They keep the card that draws the screen.
+SAME_GPU_APPS = {"spotify", "spotify-launcher", "com.spotify.Client"}
+
+
 def integrated_env() -> dict:
     """Mesa (the integrated GPU) for GL/EGL/Vulkan, {} when there is none to use."""
     cards = _cards()
@@ -327,7 +334,7 @@ def launch_env(info) -> dict:
     """The GPU environment Sonata launches `info` with ({} = the default)."""
     if wants_discrete(info):
         return discrete_env()
-    if everyday_integrated() and not heavy(info):
+    if everyday_integrated() and not heavy(info) and _key(info) not in SAME_GPU_APPS:
         return integrated_env()
     return {}
 
