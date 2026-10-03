@@ -275,6 +275,7 @@ class Proc:
     state: str = "S"
     gpu: float = 0.0              # % of its busiest GPU engine since the previous sample
     steam: str = ""               # the Steam game it belongs to (SteamAppId), "" for others
+    gpu_on: str = ""              # the graphics card(s) it uses: "NVIDIA", "AMD", "AMD, NVIDIA"; "" none
 
     @property
     def status(self) -> str:
@@ -304,7 +305,9 @@ class Snapshot:
 # engine was busy for it. NVIDIA's own driver doesn't fill that in: its
 # numbers come from `nvidia-smi pmon` (NvidiaUsage), only while the card is
 # awake anyway -- asking would wake a sleeping laptop GPU.
-FD_RESCAN_S = 5.0                 # which fds of a process are GPU files: looked up again this often
+FD_RESCAN_S = 5.0
+CARD_NAMES = {"amdgpu": "AMD", "radeon": "AMD", "i915": "Intel", "xe": "Intel", "nvidia": "NVIDIA",
+              "nvidia-drm": "NVIDIA", "nouveau": "NVIDIA"}      # driver -> the card's maker (Task Manager)                 # which fds of a process are GPU files: looked up again this often
 
 
 def parse_drm_fdinfo(text: str) -> Optional[tuple]:
@@ -399,6 +402,8 @@ class Sampler:
         self._prev_disk_tot = None
         self._gpu_fds = {}                 # (pid, start) -> [fdinfo paths of its /dev/dri files]
         self._gpu_scan = {}                # (pid, start) -> when its fds were last looked at
+        self._gpu_cards = {}               # (pid, start) -> {card names} its open GPU files belong to
+        self._pdev_names = {}              # PCI address -> "AMD" / "NVIDIA" / "Intel"
         self._prev_gpu = {}                # DRM client -> {engine: busy ns}
         self.nvidia = NvidiaUsage(sys)
         self.boot_time = self._boot_time()
@@ -472,25 +477,46 @@ class Sampler:
                 fds = os.listdir(os.path.join(d, "fd"))
             except OSError:
                 fds = []                                   # another user's process
+            cards = set()
             for fd in fds:
                 try:
-                    if os.readlink(os.path.join(d, "fd", fd)).startswith("/dev/dri/"):
-                        paths.append(os.path.join(d, "fdinfo", fd))
+                    target = os.readlink(os.path.join(d, "fd", fd))
                 except OSError:
-                    pass
-            self._gpu_fds[key], self._gpu_scan[key] = paths, now
+                    continue
+                if target.startswith("/dev/dri/"):
+                    paths.append(os.path.join(d, "fdinfo", fd))
+                elif target.startswith("/dev/nvidia") and target[11:].isdigit():   # NVIDIA's own driver
+                    cards.add("NVIDIA")
+            self._gpu_fds[key], self._gpu_scan[key], self._gpu_cards[key] = paths, now, cards
         return self._gpu_fds.get(key, [])
+
+    def _card_name(self, pdev: str) -> str:
+        """A GPU's maker from its PCI address (the driver bound to it)."""
+        if pdev not in self._pdev_names:
+            link = os.path.join(self.sys, "bus/pci/devices", pdev, "driver")
+            drv = os.path.basename(os.path.realpath(link)) if pdev and os.path.exists(link) else ""
+            self._pdev_names[pdev] = CARD_NAMES.get(drv, drv)
+        return self._pdev_names[pdev]
 
     def gpu_usage(self, procs: Dict[int, "Proc"], dt: float, now: float) -> None:
         """Fills each process's .gpu (see the GPU section above)."""
         clients, owner = {}, {}
         for p in procs.values():
             key = (p.pid, p.start_ticks)
+            cards = set(self._gpu_cards.get(key, ()))
             for path in self._drm_fdinfos(key, os.path.join(self.proc, str(p.pid)), now):
-                parsed = parse_drm_fdinfo(_read(path))
+                text = _read(path)
+                parsed = parse_drm_fdinfo(text)
+                drv = next((ln.split(":", 1)[1].strip() for ln in text.splitlines() if ln.startswith("drm-driver:")),
+                           "")
+                if drv:
+                    cards.add(CARD_NAMES.get(drv, drv))
+                elif parsed and parsed[0][0]:
+                    cards.add(self._card_name(parsed[0][0]))
                 if parsed and parsed[0] not in clients:    # dup'ed fds share one client
                     clients[parsed[0]] = parsed[1]
                     owner[parsed[0]] = p
+            p.gpu_on = ", ".join(sorted(cards - {""}))
         for client, engines in clients.items():
             prev = self._prev_gpu.get(client)
             if prev is None or dt <= 0:
@@ -502,10 +528,13 @@ class Sampler:
         live = {(p.pid, p.start_ticks) for p in procs.values()}
         self._gpu_fds = {k: v for k, v in self._gpu_fds.items() if k in live}
         self._gpu_scan = {k: v for k, v in self._gpu_scan.items() if k in live}
+        self._gpu_cards = {k: v for k, v in self._gpu_cards.items() if k in live}
         self.nvidia.refresh()
         for pid, pct in self.nvidia.pids.items():
             if pid in procs:
                 procs[pid].gpu = max(procs[pid].gpu, pct)
+                if "NVIDIA" not in procs[pid].gpu_on:
+                    procs[pid].gpu_on = ", ".join(sorted(set(filter(None, procs[pid].gpu_on.split(", "))) | {"NVIDIA"}))
 
     def _disk_info(self, name: str) -> tuple:
         if name not in self._disk_static:

@@ -40,6 +40,7 @@ class RowBase(GObject.Object):
     disk = GObject.Property(type=float, default=0.0)         # bytes/s
     net = GObject.Property(type=float, default=-1.0)        # bytes/s; -1: not measured per process
     gpu = GObject.Property(type=float, default=0.0)         # % of its busiest GPU engine
+    gpu_on = GObject.Property(type=str, default="")         # which graphics card(s): "NVIDIA", "AMD"...
     group = GObject.Property(type=int, default=0)
     icon = None
 
@@ -47,6 +48,7 @@ class RowBase(GObject.Object):
         super().__init__(**kw)
         self.sv = {k: v for k, v in kw.items()}
         self.sv.setdefault("name", "")
+        self.sv.setdefault("gpu_on", "")
 
     def set_values(self, vals: dict) -> None:
         sv = self.sv
@@ -80,7 +82,8 @@ class ProcessRow(RowBase):
         self.ppid = p.ppid
         self.set_values({"cpu": round(p.cpu, 1), "cpu_time": round(p.cpu_time, 2), "threads": p.threads,
                          "mem": p.rss, "read_bytes": p.read_bytes, "write_bytes": p.write_bytes,
-                         "disk": round(p.read_ps + p.write_ps), "gpu": round(p.gpu, 1), "status": p.status})
+                         "disk": round(p.read_ps + p.write_ps), "gpu": round(p.gpu, 1), "status": p.status,
+                         "gpu_on": getattr(p, "gpu_on", "")})
 
 
 class AppNode(RowBase):
@@ -323,7 +326,7 @@ class ProcessesPage(Page):
         hf.connect("unbind", lambda _f, h: self.headers.pop(h.get_child(), None))
         self.view.set_header_factory(hf)
         dummy = lambda: Gtk.CustomSorter.new(lambda *_a: 0)      # noqa: E731  (headers clickable; _compare sorts)
-        self.cols = {"name": name_column(self.view, "Name", 300, tree=True, sorter=dummy())}
+        self.cols = {"name": name_column(self.view, "Name", 240, tree=True, sorter=dummy())}
         self.cols["status"] = text_column(self.view, "Status", "status", None, 90, numeric=False, sorter=dummy(),
                                           dim=True)
         self.cols["cpu"] = text_column(self.view, "CPU", "cpu", fmt_cpu, 80, heat=heat_cpu, sorter=dummy())
@@ -331,6 +334,9 @@ class ProcessesPage(Page):
         self.cols["disk"] = text_column(self.view, "Disk", "disk", fmt_disk, 90, heat=heat_disk, sorter=dummy())
         self.cols["net"] = text_column(self.view, "Network", "net", fmt_net, 90, heat=heat_net, sorter=dummy())
         self.cols["gpu"] = text_column(self.view, "GPU", "gpu", fmt_gpu, 70, heat=heat_gpu, sorter=dummy())
+        # which card draws it (Vini): two-GPU laptops, the integrated card for everyday apps
+        self.cols["gpu_on"] = text_column(self.view, "GPU Engine", "gpu_on", None, 96, numeric=False,
+                                          sorter=dummy(), dim=True)
         for cid, c in self.cols.items():
             c.cid = cid
         self._order = ("cpu", True)
@@ -427,6 +433,8 @@ class ProcessesPage(Page):
                              "mem": sum(m.sv["mem"] for m in node.members),
                              "disk": sum(m.sv["disk"] for m in node.members),
                              "gpu": round(min(100.0, sum(m.sv.get("gpu", 0) for m in node.members)), 1),
+                             "gpu_on": ", ".join(sorted({c for m in node.members
+                                                         for c in m.sv.get("gpu_on", "").split(", ") if c})),
                              "status": next((m.sv["status"] for m in node.members if m.sv["status"]), "")})
             wanted.append(node)
         for key in [k for k in self.nodes if k not in win.groups[0]]:

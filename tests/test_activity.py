@@ -302,13 +302,16 @@ class GpuColumnTest(unittest.TestCase):
         smp = Sampler.__new__(Sampler)
         smp.proc, smp.sys = proc, os.path.join(root, "sys")
         smp._gpu_fds, smp._gpu_scan, smp._prev_gpu = {}, {}, {}
+        smp._gpu_cards, smp._pdev_names = {}, {}
         smp.nvidia = procfs.NvidiaUsage(smp.sys)
         mk = lambda: {300: procfs.Proc(pid=300, name="game", comm="game", cmdline="", exe="game", uid=0,  # noqa: E731
                                        user="", ppid=1, threads=1, rss=0, ticks=0, start_ticks=5)}
         for fd in ("7", "8"):
             with open(os.path.join(info, fd), "w") as f:
                 f.write(self.FDINFO.format(gfx=1_000_000_000))
-        smp.gpu_usage(mk(), 0.0, 0.0)                                       # first sample: no rate yet
+        first = mk()
+        smp.gpu_usage(first, 0.0, 0.0)                                       # first sample: no rate yet
+        self.assertEqual(first[300].gpu_on, "AMD")         # which card (Vini): from the fdinfo's driver
         for fd in ("7", "8"):
             with open(os.path.join(info, fd), "w") as f:
                 f.write(self.FDINFO.format(gfx=1_400_000_000))
