@@ -251,7 +251,7 @@ class SettingsAppearanceTest(unittest.TestCase):
         page = self.w.pages["appearance"]
         names = [r.get_title() for r in rows_of(page, Adw.PreferencesRow)]
         self.assertNotIn("Menu bar logo", names)                       # -> Menu Bar
-        self.assertNotIn("Default web browser", names)                 # -> Desktop & Dock
+        self.assertNotIn("Default web browser", names)                 # -> Default Apps
         self.w.select("dock", from_sidebar=True)
         settle(200)
         names = [r.get_title() for r in rows_of(self.w.pages["dock"], Adw.PreferencesRow)]

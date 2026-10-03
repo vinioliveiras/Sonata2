@@ -41,6 +41,7 @@ SECTIONS = [  # id, title, icon, badge colour, group (colours varied, not mostly
     ("launchpad", names.APPS, "view-app-grid-symbolic", "graphite", "sonata"),
     ("notifications", "Notifications", "preferences-system-notifications-symbolic", "red", "sonata"),
     ("users", "Users & Groups", "system-users-symbolic", "orange", "system"),
+    ("defaults", "Default Apps", "emblem-default-symbolic", "purple", "system"),
     ("privacy", "Security & Privacy", "security-high-symbolic", "indigo", "system"),
     ("accessibility", "Accessibility", "preferences-desktop-accessibility-symbolic", "blue", "system"),
     ("datetime", "Date & Time", "preferences-system-time-symbolic", "green", "system"),
@@ -109,7 +110,9 @@ KEYWORDS = {
     "sharing": "file sharing remote", "accessibility": "zoom contrast reduce transparency motion graphics gpu hardware acceleration renderer",
     "appearance": "app icons regenerate frame generated dark light mode accent color theme icons font "
                   "glass transparency translucent blur frosted title bars corners radius",
-    "dock": "magnification size position autohide recent apps displays minimize default web browser",
+    "dock": "magnification size position autohide recent apps displays minimize",
+    "defaults": "default apps open with web browser chrome firefox mail email calendar music player video "
+                "photos pictures images viewer pdf text editor folders file manager",
     "appicons": "icon icons app shape squircle circle rounded custom picture image package theme",
     "menubar": "clock battery percentage bluetooth sound now playing logo text automatically hide show wifi wi-fi search input source keyboard background apps cpu gpu memory ram network fps performance",
     "launchpad": "apps grid folders launchpad", "hidden": "hide hidden protected private lock password apps", "updates": "software update upgrade packages",
@@ -1468,6 +1471,28 @@ class Settings(Adw.ApplicationWindow):
         clock.add(switch_row("Show the date", "%d" in fmt, lambda on: set_clock(date=on)))
         return [auto, zone, clock]
 
+    def _page_defaults(self):
+        """Which app opens each kind of file and link (Vini: one place for all)."""
+        from .. import defaultapps as DA
+        apps_ = group("Default Apps")
+        for k in DA.KINDS:
+            options = DA.candidates(k.id)
+            if not options:
+                continue
+            row = combo_row(k.title, options, options[0][0],
+                            lambda v, kid=k.id: system.run_async(DA.set_default, None, kid, v))
+            row.add_prefix(Gtk.Image(icon_name=k.icon))
+            apps_.add(row)
+            if k.id == "web":           # xdg-settings is a slow shell script: read it off the main loop
+                row.set_sensitive(False)
+                system.run_async(system.default_browser,
+                                 lambda cur, r=row: (show_quietly(r, cur), r.set_sensitive(True)))
+            else:
+                show_quietly(row, DA.current(k.id))
+        hint = group(description="Apps can also be chosen for one file: right-click it in Files, "
+                                 "then Open With.")
+        return [apps_, hint]
+
     def _page_users(self):
         """Big Sur Users & Groups: your account (picture, name, password),
         other users (+ add, administrator, delete) and Login Items.
@@ -2434,15 +2459,6 @@ class Settings(Adw.ApplicationWindow):
         behave.add(switch_row("Show indicators for open applications", cfg["indicators"],
                               lambda on: self._save("dock", "indicators", on)))
         wins = group("Windows & Apps")
-        browsers = [(a.get_id(), a.get_display_name()) for a in Gio.AppInfo.get_all_for_type("x-scheme-handler/https")
-                    if a.get_id()]
-        if browsers:
-            # xdg-settings is a slow shell script: read it off the main loop
-            row = combo_row("Default web browser", browsers, browsers[0][0],
-                            lambda v: system.run_async(system.set_default_browser, None, v))
-            row.set_sensitive(False)
-            wins.add(row)
-            system.run_async(system.default_browser, lambda cur: (show_quietly(row, cur), row.set_sensitive(True)))
         wins.add(combo_row("Minimize windows using", [("genie", "Genie effect"), ("scale", "Scale effect")],
                            cfg["minimize_effect"], self._set_minimize_effect))
         dbl = system.gsetting("org.gnome.desktop.wm.preferences", "action-double-click-titlebar") or "toggle-maximize"
