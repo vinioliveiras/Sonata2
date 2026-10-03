@@ -179,3 +179,30 @@ class FrameStats:
             return
         print(f"sonata2-frames: {self.label}: {len(t)} frames, {base:.1f} ms "
               f"({1000 / base:.0f} Hz), {late} late, worst {gaps[-1]:.1f} ms", flush=True)
+
+
+def tween(owner, key: str, start: float, end: float, ms: int, step, label: str,
+          easing=Adw.Easing.EASE_IN_OUT_CUBIC):
+    """Animate one value of `owner` (step(v) each frame) with its FrameStats.
+    A new tween with the same key replaces the running one and stops its
+    stats: a paused Adw animation never emits "done", so its stats would tick
+    forever (the Dock's and the menu bar's auto-hide slides)."""
+    running = getattr(owner, "_tweens", None)
+    if running is None:
+        running = owner._tweens = {}
+    old = running.pop(key, None)
+    if old is not None:
+        old[0].pause()
+        old[1].stop()
+    anim = Adw.TimedAnimation.new(owner, start, end, ms, Adw.CallbackAnimationTarget.new(step))
+    anim.set_easing(easing)
+    stats = FrameStats(owner, label)
+
+    def done(*_a):
+        stats.stop()
+        if running.get(key, (None,))[0] is anim:
+            del running[key]
+    anim.connect("done", done)
+    running[key] = (anim, stats)
+    anim.play()
+    return anim

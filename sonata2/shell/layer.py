@@ -77,6 +77,10 @@ def layer_shell():
     return LS
 
 
+# px strip at a screen edge that brings back an auto-hidden surface (Dock, menu bar)
+EDGE_TRIGGER = 2
+
+
 def anchor_edge(win, namespace: str, edge: str, exclusive: int) -> bool:
     """Make `win` a layer surface spanning the whole `edge` ("bottom", "left",
     "right"), so its content can grow (magnification) without resizing the

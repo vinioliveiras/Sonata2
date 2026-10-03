@@ -111,7 +111,7 @@ KEYWORDS = {
                   "glass transparency translucent blur frosted title bars corners radius",
     "dock": "magnification size position autohide recent apps displays minimize default web browser",
     "appicons": "icon icons app shape squircle circle rounded custom picture image package theme",
-    "menubar": "clock battery percentage bluetooth sound now playing logo text",
+    "menubar": "clock battery percentage bluetooth sound now playing logo text automatically hide show",
     "launchpad": "apps grid folders launchpad", "hidden": "hide hidden protected private lock password apps", "updates": "software update upgrade packages",
     "about": "computer system version restart sonata",
 }
@@ -2437,6 +2437,9 @@ class Settings(Adw.ApplicationWindow):
         from ..shell import topbar as T
         cfg = config.load("topbar", T.DEFAULTS)
         g = group("Menu Bar")
+        g.add(switch_row("Automatically hide and show the menu bar", cfg.get("autohide", False),
+                         lambda on: self._save("topbar", "autohide", on),
+                         subtitle="It slides back down when the pointer reaches the top of the screen"))
         g.add(switch_row("Show battery percentage", cfg["battery_percent"],
                          lambda on: self._save("topbar", "battery_percent", on)))
         g.add(combo_row("Clock", [("%a %-d %b  %H:%M", "Mon 28 Sep  21:41"), ("%a %H:%M", "Mon 21:41"),

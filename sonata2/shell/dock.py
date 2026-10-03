@@ -72,7 +72,7 @@ FOLDER_ZONE = 0.3           # the middle: within this part of a cell from the ic
 MAG_RADIUS = 3.0            # magnification reaches this many icons away
 MAG_IN_MS, MAG_OUT_MS = 120, 250
 HIDE_MS = 250               # auto-hide slide
-TRIGGER = 2                 # px strip at the screen edge that reveals a hidden Dock
+TRIGGER = layer.EDGE_TRIGGER  # px strip at the screen edge that reveals a hidden Dock
 
 # Plate padding and running dot, in px. Unlike macOS (where it sits low),
 # the dot is centred between the icon's visible artwork and the plate edge.
@@ -2191,19 +2191,11 @@ class DockWindow(Gtk.ApplicationWindow):
 
     def _slide(self, hide: bool) -> None:
         self._hidden = hide
-        if self._hide_anim:
-            self._hide_anim.pause()          # no "done" for a paused one: stop its stats here
-        if getattr(self, "_hide_stats", None):
-            self._hide_stats.stop()
         dock = self.dock
 
         def step(v):
             dock.hide_amount = v
             dock.queue_draw()
-        self._hide_anim = Adw.TimedAnimation.new(self, dock.hide_amount, 1.0 if hide else 0.0,
-                                                 HIDE_MS, Adw.CallbackAnimationTarget.new(step))
-        self._hide_anim.set_easing(Adw.Easing.EASE_IN_OUT_CUBIC)
-        stats = self._hide_stats = ui.transition.FrameStats(self, "dock " + ("hide" if hide else "show"))
-        self._hide_anim.connect("done", lambda *_: stats.stop())
-        self._hide_anim.play()
+        self._hide_anim = ui.transition.tween(self, "hide", dock.hide_amount, 1.0 if hide else 0.0, HIDE_MS,
+                                              step, "dock " + ("hide" if hide else "show"))
         self._update_input()

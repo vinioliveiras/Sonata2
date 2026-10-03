@@ -37,7 +37,10 @@ CC_W = 320
 # optional (Settings > Menu Bar), off by default (Vini).
 LOGO_PX = 12            # the Sonata menu's logo / shape / symbol (under the 16 px status icons; Vini's call)
 DEFAULTS = {"battery_percent": False, "clock_format": "%a %-d %b  %H:%M", "show_bluetooth": True,
-            "show_sound": False, "show_now_playing": False, "show_tray": True}
+            "show_sound": False, "show_now_playing": False, "show_tray": True,
+            "autohide": False}                  # Settings > Menu Bar: hide it like the Dock (Vini)
+HIDE_MS = 250                                   # auto-hide slide (the Dock's)
+REVEAL_MS = 150                                 # pointer at the top edge -> the bar comes down
 POLL_S = 10
 
 ui.register("""
@@ -220,6 +223,8 @@ class Bar(Gtk.CenterBox):
         self._bt_update()
         self._extras_visibility()
         self.tray.set_shown(self.cfg.get("show_tray", True))
+        if getattr(self, "on_autohide", None):
+            self.on_autohide()
         now = GLib.DateTime.new_now_local()
         self._set_text(self.clock, now.format(self.cfg["clock_format"]) or now.format("%a %H:%M"))
 
@@ -267,6 +272,9 @@ class Bar(Gtk.CenterBox):
             child.set_from_icon_name(name)
 
     def _open(self, btn, builder) -> None:
+        reveal = getattr(self, "reveal", None)
+        if reveal:                                # a hidden bar comes down for its menu
+            reveal()
         btn.add_css_class("open")
         pop = builder(btn)
         if pop is None:
@@ -1387,8 +1395,11 @@ class TopBarWindow(Gtk.ApplicationWindow):
                     LS.set_anchor(self, e, True)
                 LS.set_exclusive_zone(self, BAR_H)
                 LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND)
+                self._init_autohide()
                 from . import intro
-                if intro.pending():                 # login: slides down once the welcome screen fades
+                if self._hidden:                    # auto-hide: it starts out of sight
+                    pass
+                elif intro.pending():               # login: slides down once the welcome screen fades
                     # (the bar's drawing moves, not the surface: a surface
                     # moved off-screen gets no frames and would never come back)
                     self._intro_offset = float(BAR_H)
@@ -1403,6 +1414,69 @@ class TopBarWindow(Gtk.ApplicationWindow):
         snap.translate(Graphene.Point().init(0, -off))
         Gtk.ApplicationWindow.do_snapshot(self, snap)
         snap.restore()
+
+    # -- auto-hide (Settings > Menu Bar), the Dock's way ---------------------------------
+    def _init_autohide(self) -> None:
+        self._hidden = False
+        self._inside = False
+        self._hide_timer = 0
+        motion = Gtk.EventControllerMotion()
+        motion.connect("enter", lambda *_a: self._pointer(True))
+        motion.connect("leave", lambda *_a: self._pointer(False))
+        self.add_controller(motion)
+        ui.menu.on_closed.append(lambda: self._pointer(self._inside))
+        self.bar.on_autohide = self._apply_autohide
+        self.bar.reveal = lambda: self._hidden and self._slide(False)
+        if self.bar.cfg.get("autohide"):
+            self._hidden = True
+            self._intro_offset = float(BAR_H)
+            layer.set_exclusive(self, 0)
+        self.connect("realize", lambda *_a: self._update_input())
+        self.connect("notify::default-width", lambda *_a: self._update_input())
+
+    def _apply_autohide(self) -> None:
+        """topbar.json changed: windows get the top of the screen while the bar hides."""
+        on = bool(self.bar.cfg.get("autohide"))
+        layer.set_exclusive(self, 0 if on else BAR_H)
+        if not on and self._hidden:
+            self._slide(False)
+        else:
+            self._pointer(self._inside)
+
+    def _pointer(self, inside: bool) -> None:
+        self._inside = inside
+        if self._hide_timer:
+            GLib.source_remove(self._hide_timer)
+            self._hide_timer = 0
+        if not self.bar.cfg.get("autohide"):
+            return
+        if inside and self._hidden:
+            self._hide_timer = GLib.timeout_add(REVEAL_MS, self._timed, False)
+        elif not inside and not self._hidden and not ui.menu.OPEN:      # a menu open: it stays
+            self._hide_timer = GLib.timeout_add(400, self._timed, True)
+
+    def _timed(self, hide: bool) -> bool:
+        self._hide_timer = 0
+        self._slide(hide)
+        return False
+
+    def _slide(self, hide: bool) -> None:
+        self._hidden = hide
+
+        def step(v):
+            self._intro_offset = v
+            self.queue_draw()
+        ui.transition.tween(self, "hide", getattr(self, "_intro_offset", 0.0), float(BAR_H) if hide else 0.0,
+                            HIDE_MS, step, "menu bar " + ("hide" if hide else "show"))
+        self._update_input()
+
+    def _update_input(self) -> None:
+        """Hidden: only a thin strip at the top edge takes the pointer; the
+        clicks under it go to the windows."""
+        if not layer.layer_shell() or not self.get_surface():
+            return
+        w = self.get_width() or 10000
+        layer.set_input_region(self, [(0, 0, w, layer.EDGE_TRIGGER if self._hidden else BAR_H)])
 
     def _slide_in(self, ms: int = 420) -> None:
         import time
