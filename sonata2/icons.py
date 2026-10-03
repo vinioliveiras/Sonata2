@@ -552,6 +552,41 @@ def for_appearance(gicon):
     return gicon
 
 
+def warm_images(images, chunk: int = 6) -> None:
+    """Decode these Gtk.Images' pictures ahead of time, a few per idle moment
+    (an SVG app icon with soft shadows costs milliseconds to draw the first
+    time): the first open that shows them doesn't stutter (Vini: warm the
+    system at login). Kept by the icon theme's / the images' own caches."""
+    from gi.repository import GLib
+    todo = list(images)
+
+    def one(img):
+        size = img.get_pixel_size() if img.get_pixel_size() > 0 else 48
+        scale = max(1, img.get_scale_factor())
+        p = None
+        if img.get_storage_type() == Gtk.ImageType.PAINTABLE:
+            p = img.get_paintable()
+        elif img.get_storage_type() == Gtk.ImageType.GICON and img.get_gicon() is not None:
+            theme = Gtk.IconTheme.get_for_display(img.get_display())
+            p = theme.lookup_by_gicon(img.get_gicon(), size, scale, Gtk.TextDirection.NONE, 0)
+        elif img.get_storage_type() == Gtk.ImageType.ICON_NAME and img.get_icon_name():
+            theme = Gtk.IconTheme.get_for_display(img.get_display())
+            p = theme.lookup_icon(img.get_icon_name(), None, size, scale, Gtk.TextDirection.NONE, 0)
+        if p is not None:
+            p.snapshot(Gtk.Snapshot(), size, size)
+
+    def work():
+        for _ in range(chunk):
+            if not todo:
+                return False
+            try:
+                one(todo.pop())
+            except Exception:                     # a warm-up only
+                pass
+        return True
+    GLib.idle_add(work, priority=GLib.PRIORITY_LOW)
+
+
 def set_image(image: Gtk.Image, gicon) -> None:
     """Show `gicon` from Sonata's theme, or from the system theme if only
     that one has it (apps from app_icon() without artwork: on the plate)."""

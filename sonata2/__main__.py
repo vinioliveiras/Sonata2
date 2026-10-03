@@ -243,9 +243,11 @@ def run_launchpad(app, args, ui, state):
             if LW.style() == "window":             # the Apps Menu layout
                 win._set_mode("menu")
                 layer.prewarm(win, before=lambda: (win.menu._size(), win.menu._build_tabs(), win.render()))
-            else:
-                layer.prewarm(win, before=lambda: setattr(win.bin, "progress", 1.0),
+            else:                                  # the opening animation, frame by frame
+                layer.prewarm(win, before=lambda: setattr(win.bin, "progress", 0.0), frames=14,
+                              step=lambda t: (setattr(win.bin, "progress", t), win.bin.queue_draw()),
                               after=lambda: setattr(win.bin, "progress", 0.0))
+            _later(4000, lambda: launchpad.warm_icons(win))       # every page's icons, not only the first
         return
     win.open_launchpad()
     if args.search:
@@ -589,6 +591,43 @@ def run_topbar(app, args, ui):
     act = Gio.SimpleAction.new("capture", GLib.VariantType.new("s"))
     act.connect("activate", capture)
     app.add_action(act)
+
+    # Warm-up after login (Vini: no lag the first time): the switcher, emoji,
+    # clipboard and volume panels made and drawn once invisibly, and the
+    # Control Center built once (its icons and modules loaded), one every
+    # couple of seconds so the login itself stays light.
+    def warm(step=0):
+        try:
+            if step == 0 and win.bar.manager is not None and "w" not in sw:
+                from .shell.switcher import Switcher
+                if not hasattr(win.bar, "mru"):
+                    win.bar.mru = []
+                sw["w"] = Switcher(app, win.bar.manager, win.bar.mru)
+                win.bar.switcher_win = sw["w"]
+                layer.prewarm(sw["w"], delay_ms=1)
+            elif step == 1 and "w" not in emo:
+                from .shell.emoji import EmojiPicker
+                emo["w"] = EmojiPicker(app)                    # its first category: the emoji font loaded
+                layer.prewarm(emo["w"], delay_ms=1)
+            elif step == 2 and "c" not in emo:
+                from .shell.clip_picker import ClipboardPicker
+                emo["c"] = ClipboardPicker(app, win.bar.clip)
+                layer.prewarm(emo["c"], delay_ms=1)
+            elif step == 3 and "w" not in osd:
+                from .shell.osd import OSD
+                osd["w"] = OSD(app)
+                LS = layer.layer_shell()
+                if LS:
+                    osd["w"].keyboard_mode = LS.KeyboardMode.NONE     # (prewarm gives it back)
+                layer.prewarm(osd["w"], delay_ms=1)
+            elif step == 4:
+                from .shell.topbar import ControlCenter
+                ControlCenter(win.bar)                           # built and dropped: icons, modules
+        except Exception as e:                                   # a warm-up only
+            print(f"sonata2: warm-up {step}: {e!r}", flush=True)
+        if step < 4:
+            _later(1500, lambda: warm(step + 1))
+    _later(8000, warm)
     if args.menu >= 0:
         _later(600, lambda: win.bar.open_menu(args.menu))
 

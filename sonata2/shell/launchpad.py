@@ -85,6 +85,30 @@ window.sonata-launchpad *:drop(active) { box-shadow: none; outline: none; border
 """, key="launchpad", lp_label="12px", fold_in=ui.tokens.ms(240), fold_out=ui.tokens.ms(160))
 
 
+def warm_icons(win) -> None:
+    """Every app's tile made and its icon decoded ahead of time, page after
+    page (the first open drew only the first page warm)."""
+    if win.get_visible():
+        return
+    imgs = []
+    for page in win.model.pages:
+        for item in page:
+            try:
+                w = win._item_widget(item)
+            except Exception:
+                continue
+            stack = [w]
+            while stack:                          # the tile's Gtk.Image(s)
+                c = stack.pop()
+                if isinstance(c, Gtk.Image):
+                    imgs.append(c)
+                ch = c.get_first_child()
+                while ch is not None:
+                    stack.append(ch)
+                    ch = ch.get_next_sibling()
+    icons.warm_images(imgs)
+
+
 def installed_apps() -> dict:
     """desktop id -> Gio.DesktopAppInfo of the apps a launcher should list."""
     out = {}

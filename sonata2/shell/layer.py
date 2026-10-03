@@ -148,13 +148,16 @@ def overlay_fullscreen(win, namespace: str) -> bool:
     return True
 
 
-def prewarm(win, before=None, after=None, frames: int = 3, delay_ms: int = 1500) -> None:
+def prewarm(win, before=None, after=None, frames: int = 3, delay_ms: int = 1500, step=None) -> None:
     """Draw a hidden surface once, invisibly, shortly after start: the first
     real open then doesn't pay for building the widgets' render nodes,
     loading icons/fonts and compiling the GPU shaders (the lag of the first
     Launchpad animation after a restart). The surface is mapped at 1 %
     opacity, takes no keyboard or clicks, and is hidden again after a few
-    frames. before()/after() put the content in its "open" state and back."""
+    frames. before()/after() put the content in its "open" state and back;
+    step(t), t from 0 to 1 over the frames, plays its opening animation too
+    (Vini: the first open still lagged -- the in-between frames had never
+    been drawn)."""
     from gi.repository import GLib
 
     def start():
@@ -176,6 +179,11 @@ def prewarm(win, before=None, after=None, frames: int = 3, delay_ms: int = 1500)
 
         def tick(_w, _clock):
             count["n"] += 1
+            if step is not None:
+                try:
+                    step(min(1.0, count["n"] / max(1, frames - 1)))
+                except Exception as e:
+                    print(f"sonata2: prewarm: {e!r}", flush=True)
             if count["n"] < frames:
                 return GLib.SOURCE_CONTINUE
             win.set_visible(False)
