@@ -3,7 +3,7 @@
 Some apps (GitHub Desktop, games, 3D tools) don't start, or run badly, on
 the integrated GPU. GNOME calls it "Launch using Discrete Graphics Card";
 in Sonata it's an option each app keeps: right-click it in the Dock or in
-Launchpad -> "Use Discrete Graphics". Apps whose desktop entry asks for it
+Launchpad -> "Use High-Performance Graphics". Apps whose desktop entry asks for it
 (PrefersNonDefaultGPU=true) get it on their own. Every Sonata launch goes
 through apps.py, which adds the environment below when the app wants it.
 
@@ -325,4 +325,4 @@ def menu_item(info, Item):
     """The checkmark item for right-click menus (None on one-GPU machines)."""
     if info is None or not has_dual_gpu():
         return None
-    return Item("Use Discrete Graphics", lambda on: set_discrete(info, on), checked=wants_discrete(info))
+    return Item("Use High-Performance Graphics", lambda on: set_discrete(info, on), checked=wants_discrete(info))

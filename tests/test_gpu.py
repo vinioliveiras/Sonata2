@@ -37,3 +37,17 @@ class GpuTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MenuNameTest(unittest.TestCase):
+    def test_plain_name(self):
+        """Vini: "Use Discrete Graphics" didn't say it meant the stronger
+        (NVIDIA) card."""
+        from unittest import mock
+        Item = mock.Mock()
+        info = mock.Mock()
+        info.get_id.return_value = "x.desktop"
+        info.has_key.return_value = False
+        with mock.patch.object(gpu, "has_dual_gpu", return_value=True):
+            gpu.menu_item(info, Item)
+        self.assertEqual(Item.call_args[0][0], "Use High-Performance Graphics")

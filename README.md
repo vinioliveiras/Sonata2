@@ -352,7 +352,7 @@ picked in Settings → Appearance.
   icons → Regenerate.
 - **Laptops with two graphics cards** (integrated + NVIDIA): Sonata draws
   the desktop with the integrated card, like GNOME and KDE; games and apps
-  set to "Use Discrete Graphics" (right-click in the Dock or Apps) run on
+  set to "Use High-Performance Graphics" (right-click in the Dock or Apps) run on
   the NVIDIA card. Settings → Displays → Graphics can draw the desktop with
   the card the displays are wired to (smoother on a fast external display),
   but NVIDIA's driver can refuse memory there and end the session: if that
