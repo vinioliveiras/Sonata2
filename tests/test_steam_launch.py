@@ -59,3 +59,30 @@ class SteamArgsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SteamKeepsTheGraphicsCardTest(unittest.TestCase):
+    """Vini: with Everyday Apps on the Integrated Graphics on, Steam saw only
+    the AMD GPU (its games too) -- the copy made to add its args had no
+    desktop id and was taken for an everyday app."""
+
+    def test_no_integrated_env_for_steam(self):
+        from gi.repository import GLib
+        text = "[Desktop Entry]\nType=Application\nName=Steam\nCategories=Network;FileTransfer;Game;\nExec=true %U\n"
+        kf = GLib.KeyFile()
+        kf.load_from_data(text, len(text), GLib.KeyFileFlags.NONE)
+        info = Gio.DesktopAppInfo.new_from_keyfile(kf)
+        envs = []
+        real_setenv = Gio.AppLaunchContext.setenv
+
+        def setenv(ctx, k, v):
+            envs.append(k)
+            return real_setenv(ctx, k, v)
+        with mock.patch.object(gpu, "_cards", return_value=["amdgpu", "nvidia"]), \
+                mock.patch.object(gpu, "everyday_integrated", return_value=True), \
+                mock.patch.object(gpu, "wants_discrete", return_value=False), \
+                mock.patch.object(Gio.AppLaunchContext, "setenv", setenv), \
+                mock.patch.object(info, "get_id", return_value="steam.desktop"):
+            info.launch([], None)
+        self.assertNotIn("__GLX_VENDOR_LIBRARY_NAME", envs)
+        self.assertNotIn("VK_ICD_FILENAMES", envs)

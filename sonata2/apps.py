@@ -45,6 +45,8 @@ def _gpu_aware(method):
     for apps that want it (gpu.py); never a GTK_THEME (apps read the theme
     from Sonata's settings)."""
     def wrapper(self, arg, context=None, *rest):
+        if getattr(self, "_sonata_env_set", False):   # Sonata's own copy (Steam + its args): already set up
+            return method(self, arg, context, *rest)
         try:
             from . import gpu
             gpu_env = gpu.launch_env(self)       # discrete, integrated (everyday apps) or none
@@ -71,6 +73,10 @@ def _gpu_aware(method):
                 flags = Gio.AppInfoCreateFlags.SUPPORTS_URIS if "%U" in cmd or "%u" in cmd \
                     else Gio.AppInfoCreateFlags.NONE
                 other = Gio.AppInfo.create_from_commandline(cmd, self.get_name(), flags)
+                # the copy has no desktop id: it must not be judged again -- it
+                # looked like an everyday app and Steam (and its games) went to
+                # the integrated GPU (Vini)
+                other._sonata_env_set = True
                 return getattr(other, method.__name__)(arg, context, *rest)
         except Exception as e:                    # never keep an app from opening
             print(f"sonata2: discrete GPU: {e}")
