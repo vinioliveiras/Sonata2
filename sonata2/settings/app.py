@@ -2833,7 +2833,8 @@ class Settings(Adw.ApplicationWindow):
             if kind == "sonata":
                 system.restart_sonata()
             else:
-                system.power_action("logout" if kind == "session" else "restart")
+                from ..shell import quitapps                 # the apps quit first (Chrome's tabs)
+                self._quitting = quitapps.end_session("logout" if kind == "session" else "restart")
         return ui.dialog.alert(heading, body.format(what), [("later", "Later", ""), ("now", action, "default")],
                                answered, parent=self)
 

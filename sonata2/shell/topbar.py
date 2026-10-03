@@ -388,7 +388,12 @@ class Bar(Gtk.CenterBox):
                 "shutdown": ("Are you sure you want to shut down your computer now?", "Shut Down"),
                 "logout": ("Are you sure you want to quit all applications and log out now?", "Log Out")}[kind]
         ui.dialog.alert(text[0], "", [("cancel", "Cancel", ""), (kind, text[1], "default")],
-                        lambda r: system.power_action(kind) if r == kind else None)
+                        lambda r: self._end_session(kind) if r == kind else None)
+
+    def _end_session(self, kind: str) -> None:
+        """The apps quit first (Chrome kept asking to restore its tabs)."""
+        from . import quitapps
+        self._quitting = quitapps.end_session(kind, self.manager)
 
     # -- active app ------------------------------------------------------------------
     def _active(self):

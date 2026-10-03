@@ -127,10 +127,12 @@ class SettingsTest(unittest.TestCase):
         """Settings that need a restart ask: Later / Restart Sonata, Log Out, Restart."""
         from unittest import mock
         win = S.Settings(None)
-        for kind, action in (("sonata", "restart_sonata"), ("session", "power_action"),
-                             ("system", "power_action")):
+        from sonata2.shell import quitapps
+        for kind, owner, action in (("sonata", S.system, "restart_sonata"),
+                                    ("session", quitapps, "end_session"),     # the apps quit first
+                                    ("system", quitapps, "end_session")):
             with mock.patch("sonata2.ui.dialog.alert") as alert, \
-                    mock.patch.object(S.system, action) as act:
+                    mock.patch.object(owner, action) as act:
                 win.ask_restart(kind, "It")
                 heading, body, responses, answered = alert.call_args[0][:4]
                 self.assertEqual([r[0] for r in responses], ["later", "now"])
@@ -138,7 +140,7 @@ class SettingsTest(unittest.TestCase):
                 act.assert_not_called()
                 answered("now")
                 act.assert_called_once()
-                if action == "power_action":
+                if action == "end_session":
                     self.assertEqual(act.call_args[0][0], "logout" if kind == "session" else "restart")
         src = open(S.__file__).read()
         for setting in ('"renderer", v)', '"icon_theme", v)', "set_compositor_on_display_gpu(on)",
