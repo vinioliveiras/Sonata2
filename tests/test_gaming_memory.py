@@ -61,25 +61,28 @@ class EverydayIntegratedTest(unittest.TestCase):
         i.has_key.return_value = False
         return i
 
-    def test_off_by_default(self):
-        self.assertFalse(gpu.everyday_integrated())
+    def test_smart_switching_on_by_default(self):
+        """Vini: Smart Graphics Switching comes on."""
+        self.assertTrue(gpu.smart())
 
     def test_everyday_apps_move_games_stay(self):
-        with mock.patch.object(gpu, "everyday_integrated", return_value=True), \
+        with mock.patch.object(gpu, "smart", return_value=True), \
                 mock.patch.object(gpu, "_cards", return_value=["amdgpu", "nvidia"]):
             with mock.patch.object(gpu, "render_gpu", return_value="amdgpu"):
                 chrome = gpu.launch_env(self.info("google-chrome.desktop", "Network;WebBrowser;"))
             self.assertEqual(chrome.get("__GLX_VENDOR_LIBRARY_NAME"), "mesa")
-            self.assertEqual(gpu.launch_env(self.info("steam.desktop", "Network;FileTransfer;Game;")), {})
-            self.assertEqual(gpu.launch_env(self.info("org.gimp.GIMP.desktop", "Graphics;2DGraphics;RasterGraphics;")), {})
-            self.assertEqual(gpu.launch_env(self.info("heroic.desktop", "")), {})
+            with mock.patch.object(gpu, "discrete_env", return_value={"NV": "1"}):   # games: the strong card
+                self.assertEqual(gpu.launch_env(self.info("steam.desktop", "Network;FileTransfer;Game;")), {"NV": "1"})
+                self.assertEqual(gpu.launch_env(self.info("org.gimp.GIMP.desktop",
+                                                          "Graphics;2DGraphics;RasterGraphics;")), {"NV": "1"})
+                self.assertEqual(gpu.launch_env(self.info("heroic.desktop", "")), {"NV": "1"})
 
     def test_apps_follow_the_gpu_that_draws_the_screens(self):
         """Vini: with the screens on the NVIDIA card, Spotify sent to the
         integrated GPU opened empty -- everyday apps stay with the screens' GPU."""
         chrome = self.info("google-chrome.desktop", "WebBrowser;")
         spotify = self.info("spotify-launcher.desktop", "Audio;Music;")
-        with mock.patch.object(gpu, "everyday_integrated", return_value=True), \
+        with mock.patch.object(gpu, "smart", return_value=True), \
                 mock.patch.object(gpu, "_cards", return_value=["amdgpu", "nvidia"]):
             with mock.patch.object(gpu, "render_gpu", return_value="nvidia"):
                 self.assertEqual(gpu.launch_env(spotify), {})
@@ -102,16 +105,42 @@ class EverydayIntegratedTest(unittest.TestCase):
                 self.assertEqual(gpu.render_gpu(), "amdgpu")
 
     def test_nothing_without_an_integrated_gpu(self):
-        with mock.patch.object(gpu, "everyday_integrated", return_value=True), \
+        with mock.patch.object(gpu, "smart", return_value=True), \
                 mock.patch.object(gpu, "_cards", return_value=["nvidia"]):
             self.assertEqual(gpu.launch_env(self.info("google-chrome.desktop", "WebBrowser;")), {})
 
-    def test_choice_per_app_keeps_other_keys(self):
+    def test_an_apps_own_choice_wins_and_can_be_given_back(self):
+        """Right-click: unchecking Smart Graphics Switching keeps what the app
+        gets now as its own choice; checking it again lets Sonata pick."""
         from sonata2 import config
-        gpu.set_everyday_integrated(True)
-        gpu.set_discrete(self.info("firefox.desktop"), True)
-        self.assertTrue(config.load(gpu.NAME, gpu.DEFAULTS)["everyday_integrated"])
-        gpu.set_everyday_integrated(False)
+        game = self.info("heroic.desktop", "Game;")
+        with mock.patch.object(gpu, "has_dual_gpu", return_value=True):
+            self.assertTrue(gpu.wants_discrete(game))
+            self.assertFalse(gpu.chosen(game))
+            gpu.set_smart_for(game, False)
+            self.assertTrue(gpu.chosen(game))
+            self.assertTrue(gpu.wants_discrete(game))                 # nothing changed
+            gpu.set_discrete(game, False)
+            self.assertFalse(gpu.wants_discrete(game))                # its own choice wins
+            gpu.set_smart_for(game, True)
+            self.assertFalse(gpu.chosen(game))
+            self.assertTrue(gpu.wants_discrete(game))
+            gpu.set_smart(False)
+            self.assertFalse(gpu.wants_discrete(game))                # off: the default GPU
+            gpu.set_smart(True)
+        self.assertTrue(config.load(gpu.NAME, gpu.DEFAULTS)["smart"])
+
+    def test_menu_section(self):
+        Item = lambda label, cb, checked=None: (label, checked)  # noqa: E731
+        app = self.info("google-chrome.desktop", "WebBrowser;")
+        with mock.patch.object(gpu, "has_dual_gpu", return_value=True):
+            self.assertEqual(gpu.menu_items(app, Item), [("Smart Graphics Switching", True),
+                                                         ("Use High-Performance Graphics", False)])
+            gpu.set_smart(False)
+            self.assertEqual([i[0] for i in gpu.menu_items(app, Item)], ["Use High-Performance Graphics"])
+            gpu.set_smart(True)
+        with mock.patch.object(gpu, "has_dual_gpu", return_value=False):
+            self.assertEqual(gpu.menu_items(app, Item), [])
 
 
 if __name__ == "__main__":

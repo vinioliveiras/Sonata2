@@ -120,9 +120,9 @@ def app_menu(dock, key: str, tile):
                       checked=opens_at_login(info.get_id()[:-8]))],
                 [Item("Open File Location", lambda: show_in_files(app_file(info)))]]
         from .. import gpu
-        g = gpu.menu_item(info, Item)
+        g = gpu.menu_items(info, Item)
         if g:
-            opts.append([g])
+            opts.append(g)
         from .. import webapps
         if webapps.is_webapp(key):
             opts.append([Item("Edit Web App…", lambda: webapps.edit(webapps.id_of(key)))])

@@ -49,8 +49,8 @@ class MenuNameTest(unittest.TestCase):
         info.get_id.return_value = "x.desktop"
         info.has_key.return_value = False
         with mock.patch.object(gpu, "has_dual_gpu", return_value=True):
-            gpu.menu_item(info, Item)
-        self.assertEqual(Item.call_args[0][0], "Use High-Performance Graphics")
+            gpu.menu_items(info, Item)
+        self.assertIn("Use High-Performance Graphics", [c[0][0] for c in Item.call_args_list])
 
 
 class NotifyOnceTest(unittest.TestCase):

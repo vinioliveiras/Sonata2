@@ -79,7 +79,7 @@ class SteamKeepsTheGraphicsCardTest(unittest.TestCase):
             envs.append(k)
             return real_setenv(ctx, k, v)
         with mock.patch.object(gpu, "_cards", return_value=["amdgpu", "nvidia"]), \
-                mock.patch.object(gpu, "everyday_integrated", return_value=True), \
+                mock.patch.object(gpu, "smart", return_value=True), \
                 mock.patch.object(gpu, "wants_discrete", return_value=False), \
                 mock.patch.object(Gio.AppLaunchContext, "setenv", setenv), \
                 mock.patch.object(info, "get_id", return_value="steam.desktop"):

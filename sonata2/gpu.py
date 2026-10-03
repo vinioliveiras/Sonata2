@@ -20,9 +20,11 @@ NAME = "gpu"
 # off it -- an app whose entry asks for it (PrefersNonDefaultGPU) is on it
 # unless the user said no
 DEFAULTS = {"discrete": [], "integrated": [],
-            # everyday apps (browsers, chat, office) drawn by the integrated GPU, which uses
-            # the computer's memory: the NVIDIA card's stays for games (off until tested)
-            "everyday_integrated": False,
+            # Smart Graphics Switching (Vini; on by default): each app without a choice of
+            # its own gets the GPU that suits it -- games and creative apps the
+            # high-performance card, everyday apps the GPU that draws the screens
+            "smart": True,
+            "everyday_integrated": False,      # (before Smart Graphics Switching; no longer read)
             "light_effects": True}             # gamemode.LightEffects
 NVIDIA_ENV = {"__NV_PRIME_RENDER_OFFLOAD": "1", "__GLX_VENDOR_LIBRARY_NAME": "nvidia",
               "__VK_LAYER_NV_optimus": "NVIDIA_only", "__EGL_VENDOR_LIBRARY_FILENAMES":
@@ -96,9 +98,39 @@ def wants_discrete(info) -> bool:
     if _key(info) in cfg.get("discrete", []):
         return True
     try:
-        return bool(info.has_key("PrefersNonDefaultGPU") and info.get_boolean("PrefersNonDefaultGPU"))
+        if info.has_key("PrefersNonDefaultGPU") and info.get_boolean("PrefersNonDefaultGPU"):
+            return True
     except Exception:
-        return False
+        pass
+    return smart() and has_dual_gpu() and heavy(info)      # a game or a creative app
+
+
+def smart() -> bool:
+    """Smart Graphics Switching (Settings > Displays > Graphics), on by default."""
+    return bool(config.load(NAME, DEFAULTS).get("smart", True))
+
+
+def set_smart(on: bool) -> None:
+    config.update(NAME, smart=bool(on))
+
+
+def chosen(info) -> bool:
+    """The user picked this app's GPU himself: Smart Graphics Switching leaves it alone."""
+    cfg = config.load(NAME, DEFAULTS)
+    return _key(info) in cfg.get("discrete", []) or _key(info) in cfg.get("integrated", [])
+
+
+def set_smart_for(info, on: bool) -> None:
+    """On: Sonata picks this app's GPU again (its own choice forgotten). Off:
+    the GPU it gets now becomes its choice -- nothing changes until the user
+    picks another one."""
+    if on:
+        cfg = config.load(NAME, DEFAULTS)
+        key = _key(info)
+        config.update(NAME, discrete=[k for k in cfg.get("discrete", []) if k != key],
+                      integrated=[k for k in cfg.get("integrated", []) if k != key])
+    else:
+        set_discrete(info, wants_discrete(info))
 
 
 def set_discrete(info, on: bool) -> None:
@@ -289,14 +321,6 @@ HEAVY_APPS = STEAM_APPS | {"com.heroicgameslauncher.hgl", "heroic", "net.lutris.
 MESA_EGL = "/usr/share/glvnd/egl_vendor.d/50_mesa.json"
 
 
-def everyday_integrated() -> bool:
-    return bool(config.load(NAME, DEFAULTS).get("everyday_integrated"))
-
-
-def set_everyday_integrated(on: bool) -> None:
-    config.update(NAME, everyday_integrated=bool(on))
-
-
 def heavy(info) -> bool:
     """A game or a graphics/video tool: it keeps the NVIDIA card."""
     if _key(info) in HEAVY_APPS:
@@ -350,19 +374,27 @@ def open_text(path: str) -> str:
 
 def launch_env(info) -> dict:
     """The GPU environment Sonata launches `info` with ({} = the default).
-    Everyday apps go to the integrated GPU only while Wayfire draws with it:
+    With Smart Graphics Switching, everyday apps go to the integrated GPU
+    only while Wayfire draws with it:
     with the screens on the NVIDIA card (a MUX in dGPU mode, or a session
     drawn by it), their frames would have to cross cards, and apps drawn
     through Xwayland (Spotify, CEF) opened empty (Vini)."""
     if wants_discrete(info):
         return discrete_env()
-    if everyday_integrated() and not heavy(info) and render_gpu() in INTEGRATED:
+    if smart() and not heavy(info) and render_gpu() in INTEGRATED:
         return integrated_env()
     return {}
 
 
-def menu_item(info, Item):
-    """The checkmark item for right-click menus (None on one-GPU machines)."""
+def menu_items(info, Item) -> list:
+    """The right-click menu section (empty on one-GPU machines): "Smart
+    Graphics Switching" (checked while Sonata picks) and "Use
+    High-Performance Graphics" (what it gets; picking it is the app's own
+    choice from then on)."""
     if info is None or not has_dual_gpu():
-        return None
-    return Item("Use High-Performance Graphics", lambda on: set_discrete(info, on), checked=wants_discrete(info))
+        return []
+    items = [Item("Use High-Performance Graphics", lambda on: set_discrete(info, on), checked=wants_discrete(info))]
+    if smart():
+        items.insert(0, Item("Smart Graphics Switching", lambda on: set_smart_for(info, on),
+                             checked=not chosen(info)))
+    return items

@@ -1078,13 +1078,12 @@ class Settings(Adw.ApplicationWindow):
                                         lambda on: config.update("gpu", light_effects=bool(on)),
                                         subtitle="When a full-screen game fills the graphics card, blur and "
                                                  "window animations pause until you leave the game."))
-            if nvidia and gpu.has_dual_gpu() and gpu.integrated_env():
-                graphics.add(switch_row("Everyday Apps on the Integrated Graphics", gpu.everyday_integrated(),
-                                        gpu.set_everyday_integrated,
-                                        subtitle="Browsers, chat and office apps use the integrated graphics "
-                                                 "and the computer's memory; games and creative apps keep "
-                                                 "the graphics card. Only while the screens are drawn by the "
-                                                 "integrated graphics. For apps opened after the change."))
+            if gpu.has_dual_gpu():
+                graphics.add(switch_row("Smart Graphics Switching", gpu.smart(), gpu.set_smart,
+                                        subtitle="Games and creative apps use the high-performance graphics; "
+                                                 "everyday apps use the graphics that draw the screens. An app "
+                                                 "can have its own choice: right-click it in the Dock or "
+                                                 "Launchpad. For apps opened after the change."))
             pages.append(graphics)
         return pages
 
