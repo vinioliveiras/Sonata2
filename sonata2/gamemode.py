@@ -95,6 +95,79 @@ class PowerBoost:
             self.run(self.get, lower)
 
 
+# -- lighter effects while a game fills the graphics card ----------------------------------------
+# Blur and window animations each need graphics memory of their own; with a
+# game holding nearly all of it they only failed (skipped frames) and left
+# other apps less. While a full-screen game plays and the card is >= 90 %
+# full, they're turned off in the running session; back when the game leaves
+# full screen. Only the session's own copy of the config is changed (made
+# again at login), so a crash can't keep them off.
+LIGHT_AT = 0.90
+LIGHT = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "sonata2-light-effects.json")
+LIGHT_OPTIONS = (("blur", "blur_by_default", 'app_id is "sonata2-no-blur"'),
+                 ("animate", "open_animation", "none"), ("animate", "close_animation", "none"),
+                 ("animate", "minimize_animation", "none"))
+
+
+def light_effects_wanted() -> bool:
+    """Settings > Displays > Graphics (on by default)."""
+    from . import config, gpu
+    return bool(config.load(gpu.NAME, gpu.DEFAULTS).get("light_effects", True))
+
+
+class LightEffects:
+    """get/set: wfconfig.wayfire_get / runtime_set (tests pass fakes)."""
+
+    def __init__(self, get=None, set_=None, wanted=None):
+        from . import wfconfig
+        self.get = get or wfconfig.wayfire_get
+        self.set = set_ or wfconfig.runtime_set
+        self.wanted = wanted or light_effects_wanted
+        self.full = False
+        self.ratio = 0.0
+
+    def on(self) -> bool:
+        return os.path.exists(LIGHT)
+
+    def update(self, full=None, used=None, total=None) -> None:
+        if full is not None:
+            self.full = full
+        if used is not None and total:
+            self.ratio = used / total
+        if not self.full:
+            self._restore()                              # the game left full screen
+        elif self.ratio >= LIGHT_AT and not self.on() and self.wanted():
+            self._lighten()
+
+    def _lighten(self) -> None:
+        import json
+        saved = {f"{s}/{k}": self.get(s, k, "") for s, k, _v in LIGHT_OPTIONS}
+        try:
+            with open(LIGHT, "w", encoding="utf-8") as f:
+                json.dump(saved, f)
+        except OSError:
+            return
+        for s, k, v in LIGHT_OPTIONS:
+            self.set(s, k, v)
+
+    def _restore(self) -> None:
+        import json
+        if not self.on():
+            return
+        try:
+            with open(LIGHT, encoding="utf-8") as f:
+                saved = json.load(f)
+        except (OSError, ValueError):
+            saved = {}
+        for s, k, _v in LIGHT_OPTIONS:
+            if saved.get(f"{s}/{k}"):
+                self.set(s, k, saved[f"{s}/{k}"])
+        try:
+            os.remove(LIGHT)
+        except OSError:
+            pass
+
+
 class Watcher:
     """Lives in the menu bar process (it already talks to Wayfire)."""
 
@@ -108,6 +181,8 @@ class Watcher:
         self._write(False)
         self.power = PowerBoost()
         self.power.full = boosted()          # restarted while raised: lowered once nothing is full screen
+        self.light = LightEffects()          # (fed the card's memory by the menu bar's VramWatch)
+        self.light.update(full=False)        # restarted while lightened: effects back until a game fills the card
         if self.ipc.available:
             self.ipc.watch(["view-focused", "view-fullscreen", "view-unmapped", "view-mapped", "view-minimized"],
                            lambda _ev: self._soon())
@@ -131,6 +206,7 @@ class Watcher:
         self.power.update(any(isinstance(v, dict) and v.get("fullscreen") and v.get("mapped", True)
                               and not v.get("minimized") and v.get("role", "toplevel") == "toplevel"
                               for v in views))
+        self.light.update(full=full)
         if full != self.active or pid != self.pid:
             self._gamemode(self.pid, False)
             self.active, self.pid = full, pid

@@ -19,7 +19,11 @@ NAME = "gpu"
 # desktop ids (without .desktop) the user put on the discrete GPU, or took
 # off it -- an app whose entry asks for it (PrefersNonDefaultGPU) is on it
 # unless the user said no
-DEFAULTS = {"discrete": [], "integrated": []}
+DEFAULTS = {"discrete": [], "integrated": [],
+            # everyday apps (browsers, chat, office) drawn by the integrated GPU, which uses
+            # the computer's memory: the NVIDIA card's stays for games (off until tested)
+            "everyday_integrated": False,
+            "light_effects": True}             # gamemode.LightEffects
 NVIDIA_ENV = {"__NV_PRIME_RENDER_OFFLOAD": "1", "__GLX_VENDOR_LIBRARY_NAME": "nvidia",
               "__VK_LAYER_NV_optimus": "NVIDIA_only", "__EGL_VENDOR_LIBRARY_FILENAMES":
               "/usr/share/glvnd/egl_vendor.d/10_nvidia.json"}
@@ -105,7 +109,7 @@ def set_discrete(info, on: bool) -> None:
     discrete = [k for k in cfg.get("discrete", []) if k != key]
     integrated = [k for k in cfg.get("integrated", []) if k != key]
     (discrete if on else integrated).append(key)
-    config.save(NAME, {"discrete": discrete, "integrated": integrated})
+    config.update(NAME, discrete=discrete, integrated=integrated)      # the other keys stay
 
 
 def display_gpu_flag() -> str:
@@ -258,6 +262,63 @@ def with_args(commandline: str, args) -> str:
     words = shlex.split(commandline)
     at = next((i for i, w in enumerate(words) if w.startswith("%") or w.startswith("@@")), len(words))
     return shlex.join(words[:at] + list(args) + words[at:]).replace("'%U'", "%U").replace("'%u'", "%u")
+
+
+# -- everyday apps on the integrated GPU ----------------------------------------------------------
+# NVIDIA's driver on Linux doesn't lend the computer's memory to the card when
+# it's full (Windows does): a game using most of it left browsers starved and
+# crawling (Vini). With this on, apps launched by Sonata that aren't games or
+# graphics tools are drawn by the integrated GPU (AMD/Intel, Mesa), whose
+# memory is the computer's; games and creative apps stay on the NVIDIA card.
+HEAVY_CATEGORIES = {"Game", "Graphics", "3DGraphics", "RasterGraphics", "VectorGraphics", "Photography",
+                    "VideoEditing", "Emulator", "Engineering"}
+HEAVY_APPS = STEAM_APPS | {"com.heroicgameslauncher.hgl", "heroic", "net.lutris.Lutris", "lutris",
+                           "com.usebottles.bottles", "org.prismlauncher.PrismLauncher", "obs",
+                           "com.obsproject.Studio", "org.blender.Blender", "blender", "davinci-resolve"}
+MESA_EGL = "/usr/share/glvnd/egl_vendor.d/50_mesa.json"
+
+
+def everyday_integrated() -> bool:
+    return bool(config.load(NAME, DEFAULTS).get("everyday_integrated"))
+
+
+def set_everyday_integrated(on: bool) -> None:
+    config.update(NAME, everyday_integrated=bool(on))
+
+
+def heavy(info) -> bool:
+    """A game or a graphics/video tool: it keeps the NVIDIA card."""
+    if _key(info) in HEAVY_APPS:
+        return True
+    try:
+        cats = set(filter(None, (info.get_categories() or "").split(";")))
+    except Exception:
+        cats = set()
+    return bool(cats & HEAVY_CATEGORIES)
+
+
+def integrated_env() -> dict:
+    """Mesa (the integrated GPU) for GL/EGL/Vulkan, {} when there is none to use."""
+    cards = _cards()
+    if "nvidia" not in cards or not any(c in ("amdgpu", "i915", "xe", "radeon") for c in cards):
+        return {}
+    env = {"__GLX_VENDOR_LIBRARY_NAME": "mesa"}
+    if os.path.exists(MESA_EGL):
+        env["__EGL_VENDOR_LIBRARY_FILENAMES"] = MESA_EGL
+    icds = sorted(glob.glob("/usr/share/vulkan/icd.d/radeon_icd*.json") +
+                  glob.glob("/usr/share/vulkan/icd.d/intel_icd*.json"))
+    if icds:
+        env["VK_DRIVER_FILES"] = env["VK_ICD_FILENAMES"] = ":".join(icds)
+    return env
+
+
+def launch_env(info) -> dict:
+    """The GPU environment Sonata launches `info` with ({} = the default)."""
+    if wants_discrete(info):
+        return discrete_env()
+    if everyday_integrated() and not heavy(info):
+        return integrated_env()
+    return {}
 
 
 def menu_item(info, Item):

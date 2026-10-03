@@ -1294,6 +1294,8 @@ class TopBarWindow(Gtk.ApplicationWindow):
             GLib.timeout_add_seconds(4, _gpu_notice)
             from ..vram import VramWatch                          # a full NVIDIA card: who, and a warning
             self.bar.vram = VramWatch(notify=gpu.notify)
+            light = self.bar.fullscreen_first.light                # lighter effects while a game fills it
+            self.bar.vram.listeners.append(lambda used, total: light.update(used=used, total=total))
             self.bar.vram.start()
             from ..backend.screenshare import ScreenSharing             # Settings > Sharing > Screen Sharing
             self.bar.screenshare = ScreenSharing()

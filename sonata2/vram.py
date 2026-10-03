@@ -70,6 +70,7 @@ class VramWatch:
         self.run = run or self._run_tool
         self.warned = False
         self._busy = False
+        self.listeners = []                    # callback(used MiB, total MiB) on the main loop, every look
 
     def start(self) -> None:
         if not self.usage.tool or not self.usage.devices:
@@ -101,6 +102,9 @@ class VramWatch:
         if not got:
             return None
         used, total = got
+        if self.listeners:
+            from gi.repository import GLib
+            GLib.idle_add(lambda: [cb(used, total) for cb in list(self.listeners)] and False)
         if used < total * REARM:
             self.warned = False
         if used < total * WARN:

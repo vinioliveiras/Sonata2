@@ -1035,12 +1035,26 @@ class Settings(Adw.ApplicationWindow):
                             subtitle="The corners of every display rounded (the lock screen too)"))
         pages = [bright, screens, look, self._night_shift_group()]
         from .. import gpu
-        if gpu.has_dual_gpu():
+        nvidia = "nvidia" in gpu._cards()
+        if gpu.has_dual_gpu() or nvidia:
             graphics = group("Graphics")
-            graphics.add(switch_row("Draw with the Displays' Graphics Card", gpu.compositor_on_display_gpu(),
-                                    lambda on: (gpu.set_compositor_on_display_gpu(on),
-                                                self.ask_restart("session", "The graphics card change")),
-                                    subtitle=self._gpu_subtitle(gpu)))
+            if gpu.has_dual_gpu():
+                graphics.add(switch_row("Draw with the Displays' Graphics Card", gpu.compositor_on_display_gpu(),
+                                        lambda on: (gpu.set_compositor_on_display_gpu(on),
+                                                    self.ask_restart("session", "The graphics card change")),
+                                        subtitle=self._gpu_subtitle(gpu)))
+            if nvidia:
+                from .. import gamemode
+                graphics.add(switch_row("Lighter Effects While Gaming", gamemode.light_effects_wanted(),
+                                        lambda on: config.update("gpu", light_effects=bool(on)),
+                                        subtitle="When a full-screen game fills the graphics card, blur and "
+                                                 "window animations pause until you leave the game."))
+            if nvidia and gpu.has_dual_gpu() and gpu.integrated_env():
+                graphics.add(switch_row("Everyday Apps on the Integrated Graphics", gpu.everyday_integrated(),
+                                        gpu.set_everyday_integrated,
+                                        subtitle="Browsers, chat and office apps use the integrated graphics "
+                                                 "and the computer's memory; games and creative apps keep "
+                                                 "the graphics card. For apps opened after the change."))
             pages.append(graphics)
         return pages
 

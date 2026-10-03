@@ -47,10 +47,11 @@ def _gpu_aware(method):
     def wrapper(self, arg, context=None, *rest):
         try:
             from . import gpu
-            if gpu.wants_discrete(self):
+            gpu_env = gpu.launch_env(self)       # discrete, integrated (everyday apps) or none
+            if gpu_env:
                 if context is None:
                     context = Gio.AppLaunchContext()
-                for k, v in gpu.discrete_env().items():
+                for k, v in gpu_env.items():
                     context.setenv(k, v)
             for k, v in gpu.extra_env(self).items():
                 if context is None:

@@ -83,9 +83,22 @@ def wayfire_set(section: str, key: str, value) -> bool:
         return _set(section, key, value)
 
 
-def _set(section: str, key: str, value) -> bool:
+def runtime_set(section: str, key: str, value) -> bool:
+    """Like wayfire_set, for this session only: the resolved copy Wayfire
+    reads (made again at every login), never Sonata's overrides -- for
+    temporary changes (lighter effects while gaming) a crash can't keep."""
+    if isinstance(value, bool):
+        value = "true" if value else "false"
+    run = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "sonata2-wayfire.ini")
+    if not os.path.exists(run):
+        return False
+    with _LOCK:
+        return _set(section, key, value, [run])
+
+
+def _set(section: str, key: str, value, files=None) -> bool:
     ok = False
-    for path in _wayfire_files():
+    for path in files or _wayfire_files():
         try:
             with open(path, encoding="utf-8") as f:
                 lines = f.readlines()
