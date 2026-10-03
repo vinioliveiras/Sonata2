@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """README screenshots: renders Sonata's apps with invented demo data and
-saves framed PNGs (wallpaper, macOS-like title bar, rounded corners, drop
+saves framed WebP pictures (wallpaper, macOS-like title bar, rounded corners, drop
 shadow) to docs/screenshots/.
 
 Usage (from the repository root; needs Xvfb, GTK 4, libadwaita, Pillow):
@@ -1125,13 +1125,17 @@ def place(canvas, wall, layer, pos, dark: bool) -> None:
 
 
 def save_png(im, path: str, limit: int = MAX_BYTES) -> int:
-    """Optimized PNG; palette-quantized (dithered) when too big."""
+    """Full colour, by the file's extension: WebP (quality 90) for the
+    published shots, lossless PNG for the work files. (The PNGs used to be cut
+    to 256 colours when big: with photo wallpapers the colours looked off --
+    Vini.)"""
     im = im.convert("RGB")
-    im.save(path, optimize=True)
-    if os.path.getsize(path) > limit:
-        from PIL import Image
-        q = im.quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.FLOYDSTEINBERG)
-        q.save(path, optimize=True)
+    if path.endswith(".webp"):
+        im.save(path, "WEBP", quality=90, method=6)
+    elif path.endswith(".jpg"):
+        im.save(path, "JPEG", quality=88, optimize=True, progressive=True)
+    else:
+        im.save(path, optimize=True)
     return os.path.getsize(path)
 
 
@@ -1221,7 +1225,7 @@ def main(argv) -> int:
                 continue
             raws[name] = raw
             if name in wanted and name not in INTERNAL:
-                out = os.path.join(OUT_DIR, name + ".png")
+                out = os.path.join(OUT_DIR, name + ".webp")
                 report.append(f"{name}: {frame(raw, out) // 1024} KB")
         for name in SCENES:
             if name not in need:
@@ -1241,10 +1245,13 @@ def main(argv) -> int:
             size = finish_scene(raw, final)
             raws[name] = final
             if name in wanted:
-                shutil.copy(final, os.path.join(OUT_DIR, name + ".png"))
+                from PIL import Image
+                size = save_png(Image.open(final), os.path.join(OUT_DIR, name + ".webp"))
+                if name == "desktop":                    # link previews (og:image) want a JPEG
+                    save_png(Image.open(final), os.path.join(OUT_DIR, name + ".jpg"))
                 report.append(f"{name}: {size // 1024} KB")
         if "hero" in wanted:
-            report.append(f"hero: {hero(raws, os.path.join(OUT_DIR, 'hero.png')) // 1024} KB")
+            report.append(f"hero: {hero(raws, os.path.join(OUT_DIR, 'hero.webp')) // 1024} KB")
         print("\n".join(report))
     finally:
         shutil.rmtree(base, ignore_errors=True) if not os.environ.get("KEEP_RAW") else print("raw:", base)

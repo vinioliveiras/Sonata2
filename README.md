@@ -19,31 +19,31 @@ doesn't need GNOME or KDE.
 > History (decisions, bugs, root causes): [DEVLOG.md](DEVLOG.md).
 > Roadmap: [ROADMAP.md](ROADMAP.md). This README describes the current state.
 
-![The Sonata desktop: menu bar, desktop icons and the Dock](docs/screenshots/desktop.png)
-<sub>The desktop: menu bar, desktop icons and the Dock ([in Dark Mode](docs/screenshots/desktop-dark.png)).</sub>
+![The Sonata desktop: menu bar, desktop icons and the Dock](docs/screenshots/desktop.webp)
+<sub>The desktop: menu bar, desktop icons and the Dock ([in Dark Mode](docs/screenshots/desktop-dark.webp)).</sub>
 
-![Launchpad: every app in a grid over the blurred desktop](docs/screenshots/launchpad.png)
+![Launchpad: every app in a grid over the blurred desktop](docs/screenshots/launchpad.webp)
 <sub>**Launchpad**: every app over the blurred desktop, with search, pages and folders.</sub>
 
-![Control Center open under the menu bar](docs/screenshots/controlcenter.png)
+![Control Center open under the menu bar](docs/screenshots/controlcenter.webp)
 <sub>**Control Center**: Wi-Fi, Bluetooth, Dark Mode, display and sound, Now Playing.</sub>
 
-![Files zoomed between the menu bar and the Dock](docs/screenshots/files-full.png)
+![Files zoomed between the menu bar and the Dock](docs/screenshots/files-full.webp)
 <sub>**Files** with tabs; the menu bar follows the app in front.</sub>
 
-![System Settings on the desktop](docs/screenshots/settings-full.png)
+![System Settings on the desktop](docs/screenshots/settings-full.webp)
 <sub>**System Settings**: Sonata's own settings and the Linux ones, side by side.</sub>
 
 | | |
 |---|---|
-| ![Files, icon view with two tabs](docs/screenshots/files.png)<br>**Files**: icon view, tabs | ![Files in Dark Mode](docs/screenshots/files-dark.png)<br>**Files** in Dark Mode |
-| ![Notes with a checklist](docs/screenshots/notes.png)<br>**Notes** | ![Notes in Dark Mode](docs/screenshots/notes-dark.png)<br>**Notes** in Dark Mode |
-| ![Reminders: the Today list](docs/screenshots/reminders.png)<br>**Reminders**, in the Notes window | ![Calendar, month view](docs/screenshots/calendar.png)<br>**Calendar**: month view |
-| ![Music, albums view](docs/screenshots/music.png)<br>**Music**: albums | ![Music in Dark Mode](docs/screenshots/music-dark.png)<br>**Music** in Dark Mode |
-| ![Task Manager, Processes page](docs/screenshots/taskmanager.png)<br>**Task Manager**: processes | ![Task Manager, Performance page](docs/screenshots/taskmanager-performance.png)<br>**Task Manager**: performance |
-| ![Task Manager in Dark Mode](docs/screenshots/taskmanager-dark.png)<br>**Task Manager** in Dark Mode | ![Disk Manager](docs/screenshots/diskmanager.png)<br>**Disk Manager** |
-| ![TextEdit with three tabs](docs/screenshots/textedit.png)<br>**TextEdit**: tabs | ![Preview with the thumbnail sidebar](docs/screenshots/preview.png)<br>**Preview**: thumbnails |
-| ![Settings, General page](docs/screenshots/settings.png)<br>**Settings**: General | ![Calculator](docs/screenshots/calculator.png)<br>**Calculator** |
+| ![Files, icon view with two tabs](docs/screenshots/files.webp)<br>**Files**: icon view, tabs | ![Files in Dark Mode](docs/screenshots/files-dark.webp)<br>**Files** in Dark Mode |
+| ![Notes with a checklist](docs/screenshots/notes.webp)<br>**Notes** | ![Notes in Dark Mode](docs/screenshots/notes-dark.webp)<br>**Notes** in Dark Mode |
+| ![Reminders: the Today list](docs/screenshots/reminders.webp)<br>**Reminders**, in the Notes window | ![Calendar, month view](docs/screenshots/calendar.webp)<br>**Calendar**: month view |
+| ![Music, albums view](docs/screenshots/music.webp)<br>**Music**: albums | ![Music in Dark Mode](docs/screenshots/music-dark.webp)<br>**Music** in Dark Mode |
+| ![Task Manager, Processes page](docs/screenshots/taskmanager.webp)<br>**Task Manager**: processes | ![Task Manager, Performance page](docs/screenshots/taskmanager-performance.webp)<br>**Task Manager**: performance |
+| ![Task Manager in Dark Mode](docs/screenshots/taskmanager-dark.webp)<br>**Task Manager** in Dark Mode | ![Disk Manager](docs/screenshots/diskmanager.webp)<br>**Disk Manager** |
+| ![TextEdit with three tabs](docs/screenshots/textedit.webp)<br>**TextEdit**: tabs | ![Preview with the thumbnail sidebar](docs/screenshots/preview.webp)<br>**Preview**: thumbnails |
+| ![Settings, General page](docs/screenshots/settings.webp)<br>**Settings**: General | ![Calculator](docs/screenshots/calculator.webp)<br>**Calculator** |
 
 <sub>Screenshots use invented demo data; `tools/readme-shots.py` makes them.</sub>
 
