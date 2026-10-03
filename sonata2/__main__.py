@@ -1192,6 +1192,12 @@ def main() -> int:
     app_id = APP_IDS[args.component]
     GLib.set_prgname(app_id)     # Wayland app_id, also without a session bus
     app = Adw.Application(application_id=app_id)
+    if args.component == "wallpaper":
+        # a restart starts the new wallpaper while the old one still shows (no
+        # black flash): as a unique app it only woke the old one and quit, and
+        # the screen went grey when the old one went (Vini)
+        from gi.repository import Gio
+        app.set_flags(Gio.ApplicationFlags.NON_UNIQUE)
     state = {}
     if args.component == "files":
         from gi.repository import Gio

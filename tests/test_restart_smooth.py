@@ -56,6 +56,14 @@ class RestartTest(unittest.TestCase):
         self.assertGreater(i_wall_kill, i_wall_start)                 # old wallpaper goes after the new one is up
         self.assertFalse(os.path.exists(intro.RESTART_MARK))          # and the marker is gone at the end
 
+    def test_new_wallpaper_runs_beside_the_old_one(self):
+        """Vini: after the first restart the screen went grey -- the new
+        wallpaper, a unique app, handed over to the old one and quit."""
+        import inspect
+        src = inspect.getsource(M.main)
+        i = src.index('if args.component == "wallpaper":')
+        self.assertIn("NON_UNIQUE", src[i:i + 400])
+
     def test_new_component_slides_in_soon_after_ready(self):
         open(intro.RESTART_MARK, "w").close()
         hits = []
