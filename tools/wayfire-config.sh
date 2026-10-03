@@ -17,6 +17,12 @@ sed -e "s|@SONATA@|$here|g" "$in" > "$out"
 if [ -n "$pix" ]; then
     sed -i -E '/^plugins *=/ s/(^| )decoration( |$)/\1pixdecor\2/' "$out"
 fi
+# Apps asking for focus (xdg-activation: a link from a chat app raises the
+# browser -- Vini's links opened in Chrome behind the web app). Also for a
+# wayfire.ini kept from before (its plugins line edited by hand).
+if ! grep -qE '^plugins *=.*(^| )xdg-activation( |$)' "$out"; then
+    sed -i -E '/^plugins *=/ s/$/ xdg-activation/' "$out"
+fi
 # Sonata's own plugin (install.sh builds it): rounded corners for windows
 # Wayfire decorates. Loaded only when built, like pixdecor.
 corners="${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install/lib/wayfire/libsonata-corners.so"

@@ -88,6 +88,56 @@ def open_outside(win, uri: str) -> None:
                            [("cancel", "Cancel", ""), ("open", "Open", "default")], answer, parent=win)
 
 
+IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+               ".webp": "image/webp", ".bmp": "image/bmp", ".avif": "image/avif", ".heic": "image/heic",
+               ".mp4": "video/mp4", ".webm": "video/webm", ".pdf": "application/pdf"}
+PASTE_MAX = 64 * 1024 * 1024          # a pasted file the page gets (bigger: the page's own attach button)
+
+
+def paste_kind(mimes) -> str:
+    """What Ctrl+V should hand the page itself: "image" (a picture, e.g. a
+    screenshot), "files" (files copied in Files), or "" -- text, and
+    anything else, WebKit pastes by itself."""
+    mimes = set(mimes or ())
+    if "text/uri-list" in mimes or "application/vnd.portal.files" in mimes:
+        return "files"
+    if any(m.startswith("image/") for m in mimes) and "text/plain" not in mimes \
+            and "text/plain;charset=utf-8" not in mimes:
+        return "image"
+    return ""
+
+
+def paste_script(files) -> str:
+    """JavaScript that pastes `files` [(name, mime, bytes)] into the focused
+    element, as the browser's own paste would: WhatsApp, Telegram, Discord...
+    read ClipboardEvent.clipboardData.files. (WebKitGTK hands pages only
+    text from the clipboard: pictures never arrived -- Vini.)"""
+    import base64
+    import json
+    items = [{"name": n, "type": t, "b64": base64.b64encode(b).decode("ascii")} for n, t, b in files]
+    return ("(function(files){const dt=new DataTransfer();"
+            "for(const f of files){const s=atob(f.b64);const a=new Uint8Array(s.length);"
+            "for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i);"
+            "dt.items.add(new File([a],f.name,{type:f.type}));}"
+            "const t=document.activeElement||document.body;"
+            "t.dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true}));"
+            "})(" + json.dumps(items) + ");")
+
+
+def read_pasted_files(paths) -> list:
+    """[(name, mime, bytes)] of the copied files a page can take."""
+    out = []
+    for path in paths:
+        mime = IMAGE_TYPES.get(os.path.splitext(path)[1].lower())
+        try:
+            if mime and os.path.getsize(path) <= PASTE_MAX:
+                with open(path, "rb") as f:
+                    out.append((os.path.basename(path), mime, f.read()))
+        except OSError:
+            pass
+    return out
+
+
 class WebAppWindow(Gtk.ApplicationWindow):
     def __init__(self, app, wid: str, entry: dict):
         gi.require_version("WebKit", "6.0")
@@ -175,9 +225,51 @@ class WebAppWindow(Gtk.ApplicationWindow):
             self.view.set_zoom_level(max(0.3, self.view.get_zoom_level() - 0.1))
         elif ctrl and keyval == Gdk.KEY_0:
             self.view.set_zoom_level(1.0)
+        elif ctrl and keyval in (Gdk.KEY_v, Gdk.KEY_V):
+            return self._paste()
         else:
             return False
         return True
+
+    def _paste(self) -> bool:
+        """Ctrl+V with a picture or copied files: handed to the page (True);
+        text goes on to WebKit's own paste (False)."""
+        clip = self.get_clipboard()
+        kind = paste_kind(clip.get_formats().get_mime_types() or [])
+        if kind == "image":
+            def got(c, res):
+                try:
+                    tex = c.read_texture_finish(res)
+                except GLib.Error:
+                    tex = None
+                self._send_paste([("image.png", "image/png", tex.save_to_png_bytes().get_data())]
+                                 if tex is not None else [])
+            clip.read_texture_async(None, got)
+            return True
+        if kind == "files":
+            def got(c, res):
+                try:
+                    stream, _mime = c.read_finish(res)
+                    data = stream.read_bytes(1 << 20, None).get_data()     # a list of URIs: small
+                    stream.close(None)
+                except GLib.Error:
+                    data = b""
+                from gi.repository import Gio
+                uris = [u.strip() for u in data.decode("utf-8", "replace").splitlines()
+                        if u.strip().startswith("file://")]
+                self._send_paste(read_pasted_files([p for p in (Gio.File.new_for_uri(u).get_path()
+                                                                for u in uris) if p]))
+            clip.read_async(["text/uri-list"], GLib.PRIORITY_DEFAULT, None, got)
+            return True
+        return False
+
+    def _send_paste(self, files) -> None:
+        """The files to the page; none it can take (a text file, a folder):
+        WebKit's own paste, as if we had never stepped in."""
+        if files:
+            self.view.evaluate_javascript(paste_script(files), -1, None, None, None, None, None)
+        else:
+            self.view.execute_editing_command(self.WebKit.EDITING_COMMAND_PASTE)
 
     def _title(self, *_a) -> None:
         self.set_title(self.view.get_title() or self.entry["name"])

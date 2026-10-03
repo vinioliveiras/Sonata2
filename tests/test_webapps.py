@@ -432,3 +432,42 @@ class MenusTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PasteAndLinksTest(unittest.TestCase):
+    """Vini: pictures in the clipboard never pasted into WhatsApp (WebKitGTK
+    hands pages only text); links opened in the browser behind the web app."""
+
+    def test_what_ctrl_v_hands_the_page(self):
+        from sonata2.webapps import window as WW
+        self.assertEqual(WW.paste_kind(["image/png"]), "image")                 # a screenshot
+        self.assertEqual(WW.paste_kind(["text/uri-list", "x-special/gnome-copied-files"]), "files")
+        self.assertEqual(WW.paste_kind(["text/plain;charset=utf-8", "text/plain"]), "")
+        self.assertEqual(WW.paste_kind(["text/html", "text/plain", "image/png"]), "")   # copied web text
+
+    def test_script_pastes_files_into_the_focused_element(self):
+        from sonata2.webapps import window as WW
+        js = WW.paste_script([("a.png", "image/png", b"\x89PNG")])
+        self.assertIn("new ClipboardEvent('paste'", js)
+        self.assertIn("document.activeElement", js)
+        self.assertIn('"type": "image/png"', js)
+        self.assertIn('"b64": "iVBORw=="', js)
+
+    def test_only_files_a_page_can_take(self):
+        import tempfile
+        from sonata2.webapps import window as WW
+        d = tempfile.mkdtemp()
+        for n in ("p.JPG", "notes.txt"):
+            with open(os.path.join(d, n), "wb") as f:
+                f.write(b"x")
+        got = WW.read_pasted_files([os.path.join(d, "p.JPG"), os.path.join(d, "notes.txt"), "/nope.png"])
+        self.assertEqual(got, [("p.JPG", "image/jpeg", b"x")])
+
+    def test_apps_may_raise_their_windows(self):
+        """xdg-activation: the browser comes forward when a link opens."""
+        import pathlib
+        root = pathlib.Path(__file__).resolve().parent.parent
+        plugins = next(ln for ln in (root / "config" / "wayfire.ini").read_text().splitlines()
+                       if ln.startswith("plugins"))
+        self.assertIn("xdg-activation", plugins.split())
+        self.assertIn("xdg-activation", (root / "tools" / "wayfire-config.sh").read_text())
