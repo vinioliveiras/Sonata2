@@ -39,13 +39,13 @@ class PackTest(unittest.TestCase):
         self.assertEqual(p["dnd"], (2, 0, 2, 1))
         self.assertEqual(p["darkmode"], (2, 1, 1, 1))
         self.assertEqual(p["screenshot"], (3, 1, 1, 1))
-        self.assertEqual([p[m][1] for m in ("display", "sound", "nowplaying")], [2, 3, 4])
+        self.assertEqual([p[m][1] for m in ("display", "sound", "nowplaying")], [2, 4, 6])
 
     def test_small_modules_fill_holes_first(self):
         """First free place where it fits, left to right, top to bottom."""
         p = C.pack(["darkmode", "display", "screenshot"])
         self.assertEqual(p["darkmode"], (0, 0, 1, 1))
-        self.assertEqual(p["display"], (0, 1, 4, 1))               # doesn't fit beside: next row
+        self.assertEqual(p["display"], (0, 1, 4, 2))               # doesn't fit beside: next row
         self.assertEqual(p["screenshot"], (1, 0, 1, 1))            # back into the hole on row 0
 
     def test_never_overlaps(self):
@@ -186,6 +186,45 @@ class FixedSizeTest(TempConfig):
                 settle(80)
                 self.assertEqual((cc.get_width(), cc.get_height()), sizes[name])
                 win.destroy()
-        self.assertEqual({w for w, _h in sizes.values()}, {T.CC_GRID_W})      # never wider
+        self.assertEqual({w for w, _h in sizes.values()}, {cc.width})          # never wider
         self.assertGreater(sizes["all"][1], sizes["default"][1])              # taller with more
         self.assertLess(sizes["one"][1], sizes["default"][1])
+
+
+class ResponsiveTest(unittest.TestCase):
+    def test_width_follows_the_display(self):
+        """A share of the display's width, never narrower than the default layout, never huge."""
+        self.assertEqual(C.width_for(0), C.WIDTH_MIN)
+        self.assertEqual(C.width_for(1366), C.WIDTH_MIN)
+        self.assertEqual(C.width_for(2048), round(2048 * C.WIDTH_SHARE))
+        self.assertEqual(C.width_for(3840), C.WIDTH_MAX)
+        self.assertLessEqual(C.width_for(1920), C.width_for(2560))
+
+
+class SameSizeModulesTest(TempConfig):
+    """Vini: modules keep their standard size always -- a module is a whole
+    number of grid rows, whatever else is in Control Center."""
+
+    def test_each_module_is_its_span(self):
+        import types
+        from sonata2.shell import topbar as T
+        bar = types.SimpleNamespace(_poll=lambda: None, _set_volume=lambda v: None, notifications=None,
+                                    monitor=None, get_native=lambda: None)
+        seen = {}
+        with mock.patch.object(T.system, "run_async"), mock.patch.object(T, "cached"):
+            for order in (C.DEFAULT_ORDER, list(C.CATALOG), ["stat_cpu", "darkmode"]):
+                config.save("controlcenter", {"modules": order})
+                cc = T.ControlCenter(bar)
+                win = Gtk.Window()
+                win.set_child(cc)
+                win.present()
+                settle(150)
+                col = (cc.width - (C.COLS - 1) * C.SPACING) / C.COLS
+                for mid in order:
+                    slot = cc.grid.slots[mid]
+                    w, h = C.CATALOG[mid][1]
+                    self.assertEqual(slot.get_height(), C.span_height(h), mid)
+                    self.assertAlmostEqual(slot.get_width(), w * col + (w - 1) * C.SPACING, delta=2)
+                    seen.setdefault(mid, set()).add((slot.get_width(), slot.get_height()))
+                win.destroy()
+        self.assertTrue(all(len(v) == 1 for v in seen.values()), seen)      # the same in every layout

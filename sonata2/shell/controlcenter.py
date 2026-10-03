@@ -12,30 +12,44 @@ The modules themselves are built by topbar.ControlCenter."""
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, GObject, Graphene, Gtk  # noqa: E402
+from gi.repository import Gdk, GObject, Graphene, Gsk, Gtk  # noqa: E402
 
 from .. import config, ui  # noqa: E402
 
 COLS = 4
 SPACING = 8
+UNIT_H = 56                    # one grid row: every module is a whole number of these, always
+WIDTH_MIN, WIDTH_MAX, WIDTH_SHARE = 344, 400, 0.18   # Control Center's width from the display's
 # id -> (title in Add Controls, (columns, rows))
 CATALOG = {
     "connectivity": ("Wi-Fi & Bluetooth", (2, 2)),
     "dnd": ("Do Not Disturb", (2, 1)),
     "darkmode": ("Dark Mode", (1, 1)),
     "screenshot": ("Screenshot", (1, 1)),
-    "display": ("Display", (4, 1)),
-    "sound": ("Sound", (4, 1)),
+    "display": ("Display", (4, 2)),
+    "sound": ("Sound", (4, 2)),
     "nowplaying": ("Now Playing", (4, 1)),
     # performance (statsui.py): not in the default layout, offered by Add Controls
-    "stat_cpu": ("CPU", (2, 1)),
-    "stat_gpu": ("GPU", (2, 1)),
-    "stat_ram": ("Memory", (2, 1)),
-    "stat_net": ("Network", (2, 1)),
-    "stat_fps": ("FPS", (2, 1)),
+    "stat_cpu": ("CPU", (2, 2)),
+    "stat_gpu": ("GPU", (2, 2)),
+    "stat_ram": ("Memory", (2, 2)),
+    "stat_net": ("Network", (2, 2)),
+    "stat_fps": ("FPS", (2, 2)),
 }
 DEFAULT_ORDER = ["connectivity", "dnd", "darkmode", "screenshot", "display", "sound", "nowplaying"]
 DEFAULTS = {"modules": None}            # None: DEFAULT_ORDER (new modules join it in later versions)
+
+
+def width_for(screen_width: int) -> int:
+    """Control Center's width on a display this wide (logical px): the same
+    share of the screen, never narrower than the default layout needs."""
+    if not screen_width:
+        return WIDTH_MIN
+    return max(WIDTH_MIN, min(WIDTH_MAX, round(screen_width * WIDTH_SHARE)))
+
+
+def span_height(rows: int) -> int:
+    return rows * UNIT_H + (rows - 1) * SPACING
 
 
 def load() -> list:
@@ -86,6 +100,9 @@ class _Slot(Gtk.Overlay):
         super().__init__(css_classes=["cc-slot", "sonata-jiggle"] + (["odd"] if odd else [])
                          + (["wide"] if CATALOG[mid][1][0] > 2 else []))
         self.mid = mid
+        # the module fills its cells: the same size for the same span, always
+        child.set_vexpand(True)
+        child.set_valign(Gtk.Align.FILL)
         self.set_child(child)
         self.cover = Gtk.Box(hexpand=True, vexpand=True, visible=False)    # the module doesn't react
         self.add_overlay(self.cover)
@@ -103,23 +120,51 @@ class _Slot(Gtk.Overlay):
         self.badge.set_visible(on)
 
 
-class ModuleGrid(Gtk.Grid):
-    """The modules on the 4-column grid; edit mode reorders and removes."""
+class ModuleGrid(Gtk.Widget):
+    """The modules on the 4-column grid; edit mode reorders and removes.
+    Each module gets exactly its cells (its span x the column width and
+    UNIT_H): the same size in any layout, whatever is around it."""
 
-    def __init__(self, widgets: dict, order: list, on_change=None):
-        super().__init__(column_homogeneous=True, row_spacing=SPACING, column_spacing=SPACING,
-                         css_classes=["cc-grid"])
+    def __init__(self, widgets: dict, order: list, on_change=None, width: int = WIDTH_MIN):
+        super().__init__(css_classes=["cc-grid"])
+        self.width = width
+        self.col_w = (width - (COLS - 1) * SPACING) / COLS
         self.widgets = widgets              # id -> module widget (built by ControlCenter)
         self.order = [m for m in order if m in widgets]
         self.on_change = on_change
         self.editing = False
         self.slots = {}
+        self._places = {}
         self._dragging = None
         target = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
         target.connect("motion", lambda _t, x, y: self._drag_over(x, y))
         target.connect("drop", lambda *_a: self._drop())
         self.add_controller(target)
+        self.connect("destroy", lambda *_a: [s.unparent() for s in self.slots.values() if s.get_parent() is self])
         self._layout()
+
+    # -- layout: every module in its cells ----------------------------------------------------
+    def rect(self, mid: str) -> tuple:
+        col, row, w, h = self._places[mid]
+        return (round(col * (self.col_w + SPACING)), row * (UNIT_H + SPACING),
+                round(w * self.col_w + (w - 1) * SPACING), span_height(h))
+
+    def do_measure(self, orientation, for_size):
+        if orientation == Gtk.Orientation.HORIZONTAL:
+            return self.width, self.width, -1, -1
+        rows = max([r + h for _c, r, _w, h in self._places.values()] or [0])
+        size = span_height(rows) if rows else 0
+        return size, size, -1, -1
+
+    def do_size_allocate(self, width, height, baseline):
+        for mid in self.order:
+            slot = self.slots.get(mid)
+            if slot is None or slot.get_parent() is not self:
+                continue
+            x, y, w, h = self.rect(mid)
+            slot.measure(Gtk.Orientation.HORIZONTAL, -1)      # (GTK wants a measure before allocate)
+            t = Gsk.Transform.new().translate(Graphene.Point().init(x, y))
+            slot.allocate(w, h, -1, t)
 
     def do_snapshot(self, snap) -> None:
         ui.transition.snapshot_children(self, snap)      # modules glide when re-ordered
@@ -132,21 +177,15 @@ class ModuleGrid(Gtk.Grid):
 
     def _layout(self, glide: bool = False) -> None:
         before = ui.transition.glide_record(list(self.slots.values()), self) if glide else {}
-        places = pack(self.order)
+        self._places = pack(self.order)
         for mid, slot in list(self.slots.items()):
-            if mid not in places and slot.get_parent() is self:
-                self.remove(slot)
+            if mid not in self._places and slot.get_parent() is self:
+                slot.unparent()
         for mid in self.order:
-            col, row, w, h = places[mid]
             slot = self._slot(mid)
-            if slot.get_parent() is self:              # moved in place: it stays mapped (it glides)
-                lc = self.get_layout_manager().get_layout_child(slot)
-                lc.set_column(col)
-                lc.set_row(row)
-                lc.set_column_span(w)
-                lc.set_row_span(h)
-            else:
-                self.attach(slot, col, row, w, h)
+            if slot.get_parent() is not self:
+                slot.set_parent(self)
+        self.queue_resize()
         if before:
             ui.transition.glide_play(before, self)
 
@@ -184,7 +223,7 @@ class ModuleGrid(Gtk.Grid):
         self.order.remove(mid)
         slot = self.slots.pop(mid, None)
         if slot is not None and slot.get_parent() is self:
-            self.remove(slot)
+            slot.unparent()
         self._layout(glide=True)
         self._changed()
 

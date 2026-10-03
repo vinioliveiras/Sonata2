@@ -32,10 +32,8 @@ PANEL_GAP = 2
 # fixed content widths of the menu bar's panels: a long network, device or
 # song name ellipsizes, never widens a panel (ui/fixed.py)
 STATUS_W = 280
-CC_W = 320
-# Control Center's modules area: always this wide, whatever is added (Vini) -- the
-# default layout's width; it grows downwards with more modules, up to the screen
-CC_GRID_W = 344
+# Control Center: as wide as controlcenter.width_for() gives for its display, whatever
+# is added (Vini); it grows downwards with more modules, up to the screen
 # Sound and Now Playing live in the Control Center; the menu bar items are
 # optional (Settings > Menu Bar), off by default (Vini).
 LOGO_PX = 12            # the Sonata menu's logo / shape / symbol (under the 16 px status icons; Vini's call)
@@ -822,7 +820,7 @@ class Bar(Gtk.CenterBox):
 
     def _control_center(self, btn):
         cc = ControlCenter(self)
-        return ui.panel.popup(btn, cc, gap=PANEL_GAP, width=CC_W)
+        return ui.panel.popup(btn, cc, gap=PANEL_GAP, width=getattr(cc, "width", None))
 
     def _poll_soon(self) -> None:
         GLib.timeout_add(600, lambda: (self._poll(), False)[1])
@@ -869,7 +867,7 @@ ui.register("""
 .cc-round { min-width: 26px; min-height: 26px; padding: 0; border-radius: 99px; border: none; box-shadow: none;
   background: %(module_button)s; color: %(label)s; }
 .cc-round:hover { background: alpha(%(label)s, 0.18); }
-.cc-np-art { border-radius: 6px; background: %(module_button)s; min-width: 40px; min-height: 40px; }
+.cc-np-art { border-radius: 6px; background: %(module_button)s; min-width: 36px; min-height: 36px; }
 .cc-np-art image { color: %(label_tertiary)s; }
 .cc-np-title { font-weight: 700; }
 .cc-np-artist { color: %(label_secondary)s; font-size: %(text_small)s; }
@@ -1030,8 +1028,8 @@ def now_playing_module(p, header=False) -> Gtk.Widget:
     row = Gtk.Box(spacing=10, css_classes=["cc-np"])
     art_box = Gtk.Box(css_classes=["cc-np-art"], valign=Gtk.Align.CENTER, halign=Gtk.Align.START,
                       overflow=Gtk.Overflow.HIDDEN, hexpand=False)
-    art_box.set_size_request(40, 40)
-    art = Gtk.Image(pixel_size=40, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER, hexpand=True, vexpand=True)
+    art_box.set_size_request(36, 36)               # one Control Center row (controlcenter.UNIT_H)
+    art = Gtk.Image(pixel_size=36, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER, hexpand=True, vexpand=True)
     art_box.append(art)
     row.append(art_box)
     texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True, valign=Gtk.Align.CENTER)
@@ -1065,7 +1063,7 @@ def now_playing_module(p, header=False) -> Gtk.Widget:
         url = p.art if p.active else ""
         if url != state["art"]:
             state["art"] = url
-            _load_art(url, art, 40)
+            _load_art(url, art, 36)
     update()
     p.listeners.append(update)
     row.connect("unrealize", lambda *_: update in p.listeners and p.listeners.remove(update))
@@ -1140,23 +1138,33 @@ class ControlCenter(Gtk.Box):
         from . import statsui                                   # performance (Add Controls; read only when shown)
         for kind in statsui.KINDS:
             self.modules["stat_" + kind] = statsui.module(kind)
-        self.grid = CCL.ModuleGrid(self.modules, CCL.load(), on_change=lambda _o: self._edit_bar_update())
+        mon = self._monitor()
+        self.width = CCL.width_for(mon.get_geometry().width if mon is not None else 0)   # by display size
+        self.grid = CCL.ModuleGrid(self.modules, CCL.load(),
+                                   on_change=lambda _o: (self._edit_bar_update(), self._fit_height()),
+                                   width=self.width)
         # fixed width (EXTERNAL keeps a too-wide child from widening it, and shows no bar);
         # the height follows the modules, and scrolls only past what the screen holds
         self.scroller = Gtk.ScrolledWindow(child=self.grid, hscrollbar_policy=Gtk.PolicyType.EXTERNAL,
                                            vscrollbar_policy=Gtk.PolicyType.AUTOMATIC, overlay_scrolling=True,
                                            propagate_natural_width=False, propagate_natural_height=True,
-                                           max_content_height=self._max_height(), width_request=CC_GRID_W,
+                                           max_content_height=self._max_height(), width_request=self.width,
                                            css_classes=["cc-scroller"])
         self.append(self.scroller)
+        self._fit_height()
         self.append(self._edit_bar())
         cached("cc", _cc_state, self._fill_toggles)             # Wi-Fi / Bluetooth: last known at once
         system.run_async(lambda: (system.brightness(out), system.volume(), system.input_volume()),
                          self._fill_sliders)                  # levels: always the live ones
 
-    def _max_height(self) -> int:
-        """The tallest the modules area may get: the display's height under the
-        menu bar, less room for the edit bar and the panel's margins."""
+    def _fit_height(self) -> None:
+        """As tall as the modules (never squeezed by the panel), up to the screen."""
+        if hasattr(self, "scroller"):
+            h = self.grid.measure(Gtk.Orientation.VERTICAL, -1)[1]
+            self.scroller.set_min_content_height(min(h, self.scroller.get_max_content_height()))
+
+    def _monitor(self):
+        """The display this menu bar is on (else the first one)."""
         mon = getattr(self.bar, "monitor", None)
         if mon is None:
             try:
@@ -1165,6 +1173,12 @@ class ControlCenter(Gtk.Box):
                 mon = mons.get_item(0) if mons and mons.get_n_items() else None
             except Exception:
                 mon = None
+        return mon
+
+    def _max_height(self) -> int:
+        """The tallest the modules area may get: the display's height under the
+        menu bar, less room for the edit bar and the panel's margins."""
+        mon = self._monitor()
         h = mon.get_geometry().height if mon is not None else 900
         return max(300, h - BAR_H - 120)
 

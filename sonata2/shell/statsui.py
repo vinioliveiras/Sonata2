@@ -108,6 +108,8 @@ def module(kind: str) -> Gtk.Widget:
                       width_chars=1, max_width_chars=12)
     graph = Graph(SERIES[kind], 1, 26, kind in PERCENT)        # as wide as the module, never wider
     graph.set_hexpand(True)
+    graph.set_vexpand(True)                                     # and as tall as its cells leave
+    graph.set_valign(Gtk.Align.FILL)
     hint = Gtk.Label(label="", xalign=0, css_classes=["cc-stat-hint"], visible=False, wrap=True,
                      width_chars=1, natural_wrap_mode=Gtk.NaturalWrapMode.WORD)
     if kind == "net":                    # two speeds: a line of their own under the title

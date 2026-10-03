@@ -999,7 +999,7 @@ class FixedWidthRegressions(unittest.TestCase):
                             ("shell/notifications.py", "FixedWidth(cal,"),
                             ("shell/spotlight.py", "FixedWidth(panel, WIDTH"),
                             ("shell/clip_picker.py", "FixedWidth(panel, WIDTH)"),
-                            ("shell/topbar.py", "width=CC_W"), ("ui/panel.py", "FixedWidth(child, width)")):
+                            ("shell/topbar.py", "width=getattr(cc, \"width\", None)"), ("ui/panel.py", "FixedWidth(child, width)")):
             self.assertIn(needle, (root / rel).read_text(), rel)
         topbar = (root / "shell/topbar.py").read_text()
         self.assertEqual(topbar.count("gap=PANEL_GAP)"), 0)       # every menu bar panel has a width
