@@ -14,7 +14,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw  # noqa: E402
+from gi.repository import Adw, Gtk  # noqa: E402
 
 from . import theme  # noqa: E402
 
@@ -33,7 +33,7 @@ window.messagedialog.sonata-alert, window.messagedialog.sonata-alert > contents 
 }
 window.messagedialog.sonata-alert .heading { font-size: %(text_body)s; font-weight: 700; }
 window.messagedialog.sonata-alert .body { font-size: %(text_small)s; color: %(label_secondary)s; }
-/* standalone alerts (Log Out, Restart...): frosted glass like About/Dock */
+/* every alert is its own window: frosted glass like About/Dock */
 window.dialog-window.sonata-glass-window { box-shadow: none; }
 dialog.alert.sonata-alert.glass, dialog.alert.sonata-alert.glass > * { background: transparent; box-shadow: none; }
 window.messagedialog.sonata-alert checkbutton { font-size: %(text_small)s; }
@@ -73,7 +73,6 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None,
                                 css_classes=["sonata-alert"])
     box = None
     if check:
-        from gi.repository import Gtk
         box = Gtk.CheckButton(label=check, halign=Gtk.Align.CENTER)
         dlg.set_extra_child(box)
     default = None
@@ -97,11 +96,18 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None,
         else:
             dlg.connect("response", lambda _d, rid: on_response(rid))
     if _MODERN:
-        dlg.present(parent)
-        root = dlg.get_root() if parent is None else None
-        if root is not None and root is not parent:     # own window: glass
+        # always its own window, so the compositor's blur shows through its
+        # glass (Vini: every alert in glass; inside the parent window it was
+        # opaque) -- still in front of its window and modal to it
+        owner = parent.get_root() if parent is not None and hasattr(parent, "get_root") else None
+        dlg.present(None)
+        root = dlg.get_root()
+        if root is not None and root is not owner:      # own window: glass
             dlg.add_css_class("glass")
             root.add_css_class("sonata-glass-window")
+            if isinstance(owner, Gtk.Window) and hasattr(root, "set_transient_for"):
+                root.set_transient_for(owner)
+                root.set_modal(True)
             # a fixed-size (min = max) window made the compositor and GTK
             # disagree on its size every frame: the alert "wobbled" sideways
             if hasattr(root, "set_resizable"):
