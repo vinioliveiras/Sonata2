@@ -14,6 +14,10 @@
 #include <wayfire/render-manager.hpp>
 #include <wayfire/view-transform.hpp>
 #include <wayfire/util/duration.hpp>
+#include <wayfire/scene-render.hpp>
+#include <wayfire/scene-operations.hpp>
+#include <wayfire/opengl.hpp>
+#include <wayfire/core.hpp>
 #include "wayfire/geometry.hpp"
 #include "wayfire/plugins/common/input-grab.hpp"
 #include "wayfire/scene-input.hpp"
@@ -30,6 +34,141 @@
 #include <wayfire/plugins/wobbly/wobbly-signal.hpp>
 #include <wayfire/nonstd/wlroots-full.hpp>
 #include <wlr/util/edges.h>
+
+/* -- the window's background while it is resized without its contents --------------- */
+namespace
+{
+const char *GHOST_VS = R"(
+#version 100
+attribute highp vec2 position;
+varying highp vec2 pos;
+uniform mat4 mvp;
+void main() {
+   gl_Position = mvp * vec4(position.xy, 0.0, 1.0);
+   pos = position.xy;
+}
+)";
+
+/* A rounded rectangle (the window's corner radius) in the window background,
+ * a 1 px hairline inside its edge and a soft shadow below it, like the window
+ * it stands for. Colours are straight alpha; output premultiplied. */
+const char *GHOST_FS = R"(
+#version 100
+precision highp float;
+varying highp vec2 pos;
+uniform vec4 rect;
+uniform float radius;
+uniform vec4 fill;
+uniform vec4 border;
+uniform float alpha;
+float sdf(vec2 p) {
+    vec2 h = rect.zw * 0.5;
+    vec2 d = abs(p - (rect.xy + h)) - (h - vec2(radius));
+    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - radius;
+}
+void main() {
+    float d = sdf(pos);
+    float inside = clamp(0.5 - d, 0.0, 1.0);
+    float ring = clamp(1.0 - abs(d + 0.5), 0.0, 1.0) * inside;
+    float ds = max(sdf(pos - vec2(0.0, 10.0)), 0.0);
+    float shadow = 0.32 * exp(-pow(ds / 22.0, 2.0)) * (1.0 - inside);
+    vec4 c = vec4(0.0, 0.0, 0.0, shadow);
+    vec4 f = vec4(fill.rgb * fill.a, fill.a) * inside;
+    c = f + c * (1.0 - f.a);
+    vec4 b = vec4(border.rgb * border.a, border.a) * ring;
+    c = b + c * (1.0 - b.a);
+    gl_FragColor = c * alpha;
+}
+)";
+
+const int GHOST_MARGIN = 48;           // room for the shadow around the panel
+
+struct ghost_program_t : public wf::custom_data_t
+{
+    OpenGL::program_t program;
+};
+}
+
+class ghost_node_t : public wf::scene::node_t
+{
+    class instance_t : public wf::scene::simple_render_instance_t<ghost_node_t>
+    {
+      public:
+        using simple_render_instance_t::simple_render_instance_t;
+
+        void render(const wf::scene::render_instruction_t& data) override
+        {
+            auto box = self->get_bounding_box();
+            auto r   = self->rect;
+            const float x1 = box.x, y1 = box.y, x2 = box.x + box.width, y2 = box.y + box.height;
+            const float verts[] = {x1, y2, x2, y2, x2, y1, x1, y1};
+            auto prog = wf::get_core().get_data<ghost_program_t>();
+            data.pass->custom_gles_subpass(data.target, [&]
+            {
+                if (!prog->program.get_program_id(wf::TEXTURE_TYPE_RGBA))
+                {
+                    prog->program.compile(GHOST_VS, GHOST_FS);
+                }
+
+                prog->program.use(wf::TEXTURE_TYPE_RGBA);
+                prog->program.uniformMatrix4f("mvp", wf::gles::render_target_orthographic_projection(data.target));
+                prog->program.uniform4f("rect", glm::vec4{r.x, r.y, r.width, r.height});
+                prog->program.uniform1f("radius", self->radius);
+                prog->program.uniform4f("fill", glm::vec4{self->fill.r, self->fill.g, self->fill.b, self->fill.a});
+                prog->program.uniform4f("border",
+                    glm::vec4{self->border.r, self->border.g, self->border.b, self->border.a});
+                prog->program.uniform1f("alpha", self->alpha);
+                prog->program.attrib_pointer("position", 2, 0, verts);
+                wf::gles::bind_render_buffer(data.target);
+                GL_CALL(glEnable(GL_BLEND));
+                GL_CALL(glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA));
+                for (const auto& b : data.damage)
+                {
+                    wf::gles::render_target_logic_scissor(data.target, b);
+                    GL_CALL(glDrawArrays(GL_TRIANGLE_FAN, 0, 4));
+                }
+
+                GL_CALL(glDisable(GL_BLEND));
+                prog->program.deactivate();
+            });
+        }
+    };
+
+  public:
+    wf::geometry_t rect{0, 0, 1, 1};
+    wf::color_t fill{0.93, 0.93, 0.93, 0.95};
+    wf::color_t border{0, 0, 0, 0.2};
+    float radius = 10;
+    float alpha  = 1;
+
+    ghost_node_t() : node_t(false)
+    {}
+
+    void gen_render_instances(std::vector<wf::scene::render_instance_uptr>& instances,
+        wf::scene::damage_callback push_damage, wf::output_t *output) override
+    {
+        instances.push_back(std::make_unique<instance_t>(this, push_damage, output));
+    }
+
+    wf::geometry_t get_bounding_box() override
+    {
+        return wf::geometry_t{rect.x - GHOST_MARGIN, rect.y - GHOST_MARGIN,
+            rect.width + 2 * GHOST_MARGIN, rect.height + 2 * GHOST_MARGIN};
+    }
+
+    void set(wf::geometry_t r)
+    {
+        auto before = get_bounding_box();
+        rect = r;
+        wf::scene::damage_node(shared_from_this(), before);
+        wf::scene::damage_node(shared_from_this(), get_bounding_box());
+    }
+
+    void damage()
+    {
+        wf::scene::damage_node(shared_from_this(), get_bounding_box());
+    }
+};
 
 class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::pointer_interaction_t,
     public wf::touch_interaction_t
@@ -99,7 +238,8 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     wf::option_wrapper_t<wf::color_t> fill{"sonata-resize/fill"};
     wf::option_wrapper_t<wf::color_t> border{"sonata-resize/border"};
     static constexpr const char *FADE = "sonata-resize";
-    std::shared_ptr<wf::color_rect_view_t> ghost;        // the background following the pointer
+    std::shared_ptr<ghost_node_t> ghost;                 // the background following the pointer
+    wf::option_wrapper_t<int> corner_radius{"sonata-corners/radius"};
     wf::geometry_t ghost_geometry;
     bool outline = false;                                // this drag resizes the background only
     wayfire_toplevel_view fading;                        // contents fading in at the new size
@@ -531,7 +671,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
             ghost_geometry = desired;
             if (ghost)
             {
-                ghost->set_geometry(desired);
+                ghost->set(desired);
             }
 
             return;
@@ -569,12 +709,20 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     {
         finish_fade();
         ghost_geometry = view->get_geometry();
-        ghost = wf::color_rect_view_t::create(wf::VIEW_ROLE_DESKTOP_ENVIRONMENT, output, wf::scene::layer::TOP);
-        ghost->set_color(fill);
-        ghost->set_border_color(border);
-        ghost->set_border(1);
-        ghost->set_geometry(ghost_geometry);
+        if (!wf::get_core().get_data<ghost_program_t>())
+        {
+            wf::get_core().store_data(std::make_unique<ghost_program_t>());
+        }
+
+        ghost = std::make_shared<ghost_node_t>();
+        ghost->fill   = fill;
+        ghost->border = border;
+        ghost->radius = std::max(0, (int)corner_radius);
+        ghost->rect   = ghost_geometry;
+        wf::scene::add_front(output->node_for_layer(wf::scene::layer::TOP), ghost);
+        ghost->damage();
         set_alpha(view, 0.0);                            // only the background shows while dragging
+        LOGI("sonata-resize: contents hidden while resizing ", ghost_geometry);
     }
 
     void end_outline()
@@ -624,13 +772,8 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
             set_alpha(fading, a);
             if (ghost)
             {
-                auto c = (wf::color_t)fill;
-                c.a *= (1.0 - a);
-                auto b = (wf::color_t)border;
-                b.a *= (1.0 - a);
-                ghost->set_color(c);
-                ghost->set_border_color(b);
-                ghost->set_geometry(fading->get_geometry());
+                ghost->alpha = 1.0 - a;                  // the background gives way to the window
+                ghost->set(fading->get_geometry());
             }
 
             if (!fade.running())
@@ -661,7 +804,8 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     {
         if (ghost)
         {
-            ghost->close();
+            ghost->damage();
+            wf::scene::remove_child(ghost);
             ghost = nullptr;
         }
     }

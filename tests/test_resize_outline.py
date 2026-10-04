@@ -15,7 +15,9 @@ class PluginTest(unittest.TestCase):
     def test_plugin_source(self):
         src = (ROOT / "wayfire-plugin" / "src" / "sonata-resize.cpp").read_text()
         self.assertIn('live{"sonata-resize/live"}', src)
-        self.assertIn("ghost->set_geometry(desired);", src)              # only the background follows
+        self.assertIn("ghost->set(desired);", src)                         # only the background follows
+        self.assertIn("uniform float radius;", src)                       # rounded, like the window
+        self.assertIn("float shadow = ", src)                             # with its shadow
         self.assertIn("set_alpha(view, 0.0);", src)
         self.assertIn("view_geometry_changed_signal", src)                # contents fade once redrawn
         self.assertIn("> 400", src)                                       # a frozen app: shown anyway
