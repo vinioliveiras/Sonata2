@@ -252,11 +252,15 @@ class SettingsAppearanceTest(unittest.TestCase):
         names = [r.get_title() for r in rows_of(page, Adw.PreferencesRow)]
         self.assertNotIn("Menu bar logo", names)                       # -> Menu Bar
         self.assertNotIn("Default web browser", names)                 # -> Default Apps
+        self.w.select("menubar", from_sidebar=True)                    # its own section (Vini)
+        settle(200)
+        names = [r.get_title() for r in rows_of(self.w.pages["menubar"], Adw.PreferencesRow)]
+        self.assertIn("Menu bar logo", names)
+        self.assertNotIn("Translucent glass", names)                   # -> Appearance, per part
         self.w.select("dock", from_sidebar=True)
         settle(200)
         names = [r.get_title() for r in rows_of(self.w.pages["dock"], Adw.PreferencesRow)]
-        self.assertIn("Menu bar logo", names)
-        self.assertNotIn("Translucent glass", names)                   # -> Appearance, per part
+        self.assertNotIn("Translucent glass", names)
 
     def test_switch_saves_and_greys_the_slider(self):
         sw, sl = self.w.glass_rows["menus"]

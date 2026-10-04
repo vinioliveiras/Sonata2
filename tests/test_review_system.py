@@ -495,22 +495,26 @@ class DiscreteEnvTest(unittest.TestCase):
     def tearDown(self):
         gpu._env = None
 
-    def test_switcheroo_then_nvidia_then_mesa(self):
-        """switcheroo-control's variables win; else NVIDIA's offload set
-        (without the EGL vendor file when it isn't installed); else DRI_PRIME."""
-        with mock.patch.object(gpu, "_switcheroo", return_value=(True, {"DRI_PRIME": "pci-0000_01_00_0"})):
-            self.assertEqual(gpu.discrete_env(), {"DRI_PRIME": "pci-0000_01_00_0"})
-        gpu._env = None
-        with mock.patch.object(gpu, "_switcheroo", return_value=None), \
-                mock.patch.object(gpu, "_cards", return_value=["amdgpu", "nvidia"]), \
+    def test_discrete_env_from_the_card(self):
+        """The high-performance card decides (not switcheroo's non-default GPU,
+        the integrated one with a MUX in dGPU mode -- Vini): NVIDIA's offload
+        set (without the EGL vendor file when it isn't installed), a Mesa
+        card's own DRI_PRIME address, else DRI_PRIME=1."""
+        nv = gpu.Card("pci-0000_01_00_0", "0000:01:00.0", "nvidia", True, 0)
+        apu = gpu.Card("pci-0000_36_00_0", "0000:36:00.0", "amdgpu", False, 1 << 29)
+        rx = gpu.Card("pci-0000_03_00_0", "0000:03:00.0", "amdgpu", True, 8 << 30)
+        cfg = {"games_gpu": "", "apps_gpu": ""}
+        with mock.patch.object(gpu, "_card_list", [apu, nv]), mock.patch.object(gpu.config, "load", return_value=cfg), \
+                mock.patch.object(gpu, "_switcheroo", return_value=(True, {"DRI_PRIME": apu.tag})), \
                 mock.patch.object(gpu.os.path, "exists", return_value=False):
             env = gpu.discrete_env()
         self.assertEqual(env["__NV_PRIME_RENDER_OFFLOAD"], "1")
+        self.assertNotIn("DRI_PRIME", env)
         self.assertNotIn("__EGL_VENDOR_LIBRARY_FILENAMES", env)
         self.assertIn("__EGL_VENDOR_LIBRARY_FILENAMES", gpu.NVIDIA_ENV)        # the constant stays whole
-        gpu._env = None
-        with mock.patch.object(gpu, "_switcheroo", return_value=None), \
-                mock.patch.object(gpu, "_cards", return_value=["amdgpu", "i915"]):
+        with mock.patch.object(gpu, "_card_list", [apu, rx]), mock.patch.object(gpu.config, "load", return_value=cfg):
+            self.assertEqual(gpu.discrete_env(), {"DRI_PRIME": rx.tag})
+        with mock.patch.object(gpu, "_card_list", [apu]), mock.patch.object(gpu.config, "load", return_value=cfg):
             self.assertEqual(gpu.discrete_env(), {"DRI_PRIME": "1"})
 
     def test_users_no_beats_prefers_non_default_gpu(self):
