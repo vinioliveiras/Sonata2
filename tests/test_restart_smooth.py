@@ -64,16 +64,38 @@ class RestartTest(unittest.TestCase):
         i = src.index('if args.component == "wallpaper":')
         self.assertIn("NON_UNIQUE", src[i:i + 400])
 
-    def test_new_component_slides_in_soon_after_ready(self):
+    def test_dock_and_bar_slide_in_together(self):
+        """Vini: each slid in when it was ready; now both wait for the other."""
         open(intro.RESTART_MARK, "w").close()
         hits = []
         with mock.patch.object(intro, "MARK", intro.RESTART_MARK + ".none"):
             self.assertTrue(intro.entering())
-            intro.wait(lambda: hits.append(1))
-            settle(intro.ARRIVE_MS // 2)
+            intro.wait(lambda: hits.append("dock"), name="dock")
+            settle(300)
+            self.assertTrue(os.path.exists(intro.ready_file("dock")))          # it says it's ready
+            self.assertEqual(hits, [])                                         # but waits for the bar
+            intro.wait(lambda: hits.append("topbar"), name="topbar")
+            settle(200)
             self.assertEqual(hits, [])
-            settle(intro.ARRIVE_MS)
-        self.assertEqual(hits, [1])
+            os.unlink(intro.RESTART_MARK)                                      # restart: both ready
+            settle(intro.ARRIVE_MS + 300)
+        self.assertEqual(sorted(hits), ["dock", "topbar"])
+
+    def test_restart_lets_them_in_once_both_are_ready(self):
+        made = {}
+        real_exists = os.path.exists
+
+        def exists(p):
+            if p.endswith(".dock") or p.endswith(".topbar"):
+                made[p] = made.get(p, 0) + 1
+                return made[p] > 2                                             # ready a moment later
+            return real_exists(p)
+        with mock.patch.object(M, "_pids", return_value=[5]), mock.patch.object(M, "_signal"), \
+                mock.patch("subprocess.run"), mock.patch("subprocess.Popen"), mock.patch("time.sleep"), \
+                mock.patch.object(M.os.path, "exists", side_effect=exists):
+            M.restart(["dock", "topbar"])
+        self.assertTrue(made)
+        self.assertFalse(real_exists(intro.RESTART_MARK))
 
     def test_dock_and_bar_leave_on_the_signal(self):
         import inspect

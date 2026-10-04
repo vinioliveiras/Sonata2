@@ -1979,7 +1979,7 @@ class DockWindow(Gtk.ApplicationWindow):
             # of Sonata: the same, as soon as it's ready
             self.dock.hide_amount = 1.0
             self.dock.queue_draw()
-            intro.wait(lambda: self._slide(False))
+            intro.wait(lambda: self._slide(False), name="dock")
         intro.leave_on_signal(lambda: self._slide(True))      # restart: the old Dock slides away
 
     def rebuild(self) -> None:

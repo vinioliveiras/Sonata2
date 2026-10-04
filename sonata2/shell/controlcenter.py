@@ -143,6 +143,8 @@ class ModuleGrid(Gtk.Widget):
         self.widgets = widgets              # id -> module widget (built by ControlCenter)
         self.order = [m for m in order if m in widgets]
         self.on_change = on_change
+        self.on_height = None                # each frame of a size change (Control Center's height)
+        self._height = None                  # the height drawn while it changes
         self.editing = False
         self.slots = {}
         self._places = {}
@@ -188,9 +190,28 @@ class ModuleGrid(Gtk.Widget):
     def do_measure(self, orientation, for_size):
         if orientation == Gtk.Orientation.HORIZONTAL:
             return self.width, self.width, -1, -1
-        rows = max([r + h for _c, r, _w, h in self._places.values()] or [0])
-        size = span_height(rows) if rows else 0
+        size = self.target_height() if getattr(self, "_height", None) is None else round(self._height)
         return size, size, -1, -1
+
+    def target_height(self) -> int:
+        rows = max([r + h for _c, r, _w, h in self._places.values()] or [0])
+        return span_height(rows) if rows else 0
+
+    def _resize_to(self, old: int) -> None:
+        """Control Center grows or shrinks to the modules smoothly (Vini: a
+        module taken out made it jump); on_height() follows each frame."""
+        new = self.target_height()
+        if old == new or not self.get_mapped():
+            self._height = None
+            return
+
+        def step(v):
+            self._height = None if v == new else v
+            self.queue_resize()
+            if self.on_height:
+                self.on_height()
+        self._height = float(old)
+        ui.transition.tween(self, "height", float(old), float(new), 240, step, "control center size")
 
     def do_size_allocate(self, width, height, baseline):
         for mid in self.order:
@@ -213,6 +234,7 @@ class ModuleGrid(Gtk.Widget):
 
     def _layout(self, glide: bool = False) -> None:
         before = ui.transition.glide_record(list(self.slots.values()), self) if glide else {}
+        old_h = self.measure(Gtk.Orientation.VERTICAL, -1)[1] if self._places else None
         self._places = pack(self.order, rows=self.rows)
         for mid, slot in list(self.slots.items()):
             if mid not in self._places and slot.get_parent() is self:
@@ -222,6 +244,8 @@ class ModuleGrid(Gtk.Widget):
             if slot.get_parent() is not self:
                 slot.set_parent(self)
         self.queue_resize()
+        if glide and old_h is not None:
+            self._resize_to(old_h)
         if before:
             ui.transition.glide_play(before, self)
 

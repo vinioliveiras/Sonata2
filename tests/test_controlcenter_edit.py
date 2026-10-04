@@ -292,6 +292,36 @@ class MixerModuleTest(TempConfig):
         self.assertEqual(cc.grid.measure(Gtk.Orientation.HORIZONTAL, -1)[1], cc.width)
         win.destroy()
 
+    def test_size_change_animates(self):
+        """Vini: taking a module out made Control Center jump to its new size;
+        it shrinks smoothly now, and the panel follows every frame."""
+        cc, _service = self.build()
+        win = Gtk.Window()
+        win.set_child(cc)
+        win.present()
+        settle(150)
+        grid = cc.grid
+        before = grid.measure(Gtk.Orientation.VERTICAL, -1)[1]
+        seen = []
+        real = cc._fit_height
+        with mock.patch.object(cc, "_fit_height", side_effect=lambda: (seen.append(
+                grid.measure(Gtk.Orientation.VERTICAL, -1)[1]), real())):
+            grid.on_height = cc._fit_height
+            with mock.patch.object(C.ui.transition, "tween") as tween:
+                grid._take_out("nowplaying")
+            self.assertEqual(tween.call_args[0][1], "height")
+            start, end = tween.call_args[0][2:4]
+            self.assertEqual(start, before)
+            self.assertEqual(end, grid.target_height())
+            self.assertLess(end, start)
+            step = tween.call_args[0][5]
+            step((start + end) / 2)                      # mid-way: the grid (and the panel) in between
+            self.assertEqual(grid.measure(Gtk.Orientation.VERTICAL, -1)[1], round((start + end) / 2))
+            step(end)
+            self.assertEqual(grid.measure(Gtk.Orientation.VERTICAL, -1)[1], end)
+        self.assertGreaterEqual(len(seen), 2)                # every frame
+        win.destroy()
+
     def test_rows_for(self):
         self.assertEqual(C.rows_for(10), 1)
         self.assertEqual(C.rows_for(C.span_height(2)), 2)

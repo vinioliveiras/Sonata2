@@ -16,7 +16,8 @@ from gi.repository import Gio, GLib
 MARK = os.path.join(GLib.get_user_runtime_dir() or "/tmp", "sonata2-intro")
 RESTART_MARK = os.path.join(GLib.get_user_runtime_dir() or "/tmp", "sonata2-restarting")
 TIMEOUT_S = 12            # never keep the Dock hidden longer than this
-ARRIVE_MS = 220           # after a restart: from ready to sliding in (its first frames drawn)
+ARRIVE_MS = 120           # after a restart: from all ready to sliding in (first frames drawn)
+RESTART_TIMEOUT_S = 6     # never wait longer than this for the other one
 _leaving = []
 
 
@@ -49,15 +50,31 @@ def finish() -> None:
         pass
 
 
-def wait(callback) -> None:
-    """callback() once the intro is over (right away without one; a
-    moment after this component is ready after a restart)."""
+def ready_file(name: str) -> str:
+    """Left by a restarted component once it's ready (restart waits for both)."""
+    return f"{RESTART_MARK}.{name}"
+
+
+def wait(callback, name: str = None) -> None:
+    """callback() once the intro is over (right away without one). After a
+    restart: once every restarted component is ready -- the Dock and the
+    menu bar slide in together (Vini); `name` tells restart this one is."""
     if not pending():
-        if restarting():
-            GLib.timeout_add(ARRIVE_MS, lambda: (callback(), False)[1])
-        else:
+        if not restarting():
             GLib.idle_add(lambda: (callback(), False)[1])
+            return
+        if name:
+            try:
+                open(ready_file(name), "w").close()
+            except OSError:
+                pass
+        _when_gone(RESTART_MARK, restarting, lambda: GLib.timeout_add(ARRIVE_MS, lambda: (callback(), False)[1]),
+                   RESTART_TIMEOUT_S)
         return
+    _when_gone(MARK, pending, callback, TIMEOUT_S)
+
+
+def _when_gone(path, still, callback, timeout_s) -> None:
     state = {"done": False}
 
     def fire(*_a):
@@ -66,9 +83,9 @@ def wait(callback) -> None:
             mon.cancel()
             callback()
         return False
-    mon = Gio.File.new_for_path(MARK).monitor_file(Gio.FileMonitorFlags.NONE, None)
+    mon = Gio.File.new_for_path(path).monitor_file(Gio.FileMonitorFlags.NONE, None)
     mon.connect("changed", lambda _m, _f, _o, ev: ev == Gio.FileMonitorEvent.DELETED and fire())
     state["mon"] = mon                         # keep it alive
-    GLib.timeout_add_seconds(TIMEOUT_S, fire)
-    if not pending():                          # removed before the monitor existed: no event will come
+    GLib.timeout_add_seconds(timeout_s, fire)
+    if not still():                            # removed before the monitor existed: no event will come
         GLib.idle_add(fire)

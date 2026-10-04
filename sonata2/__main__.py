@@ -741,11 +741,17 @@ def restart(names) -> int:
         for pid in children["wallpaper"]:
             _signal(pid, signal.SIGTERM)
     if visible:
-        time.sleep(4)                      # a component started later than that just shows
-        try:
-            os.unlink(intro.RESTART_MARK)
-        except OSError:
-            pass
+        # the Dock and the menu bar slide in together: once both are ready
+        want = [n for n in ("dock", "topbar") if n in names]
+        for _ in range(50):
+            if all(os.path.exists(intro.ready_file(n)) for n in want):
+                break
+            time.sleep(0.1)
+        for path in [intro.RESTART_MARK] + [intro.ready_file(n) for n in want]:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
     return 0
 
 

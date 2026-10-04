@@ -458,6 +458,11 @@ class Bar(Gtk.CenterBox):
             [Item("Computer", lambda: open_folder("file:///")), Item("Trash", lambda: open_folder("trash:///"))],
         ])
 
+    def _quit_app(self, wins, key) -> None:
+        """Quit: the whole app, like the Dock's Quit (quitapps.quit_app)."""
+        from . import quitapps
+        self._quitting = quitapps.quit_app(self.manager, wins, key)
+
     def _app_menu(self, btn):
         Item = ui.menu.Item
         key, wins = self._active()
@@ -471,7 +476,7 @@ class Bar(Gtk.CenterBox):
             [Item(f"Hide {name}", lambda: [m.minimize(t) for t in wins], enabled=bool(wins)),
              Item("Hide Others", lambda: [m.minimize(t) for t in others], enabled=bool(others)),
              Item("Show All", lambda: [m.unminimize(t) for t in (m.toplevels if m else [])], enabled=bool(m))],
-            [Item(f"Quit {name}", lambda: [m.close(t) for t in wins], enabled=bool(wins))],
+            [Item(f"Quit {name}", lambda: self._quit_app(wins, key), enabled=bool(wins))],
         ])
 
     def _window_menu(self, btn):
@@ -1176,6 +1181,7 @@ class ControlCenter(Gtk.Box):
                                            max_content_height=self._max_height(), width_request=self.width,
                                            css_classes=["cc-scroller"])
         self.append(self.scroller)
+        self.grid.on_height = self._fit_height                  # its size changes smoothly
         self._fit_height()
         self.append(self._edit_bar())
         cached("cc", _cc_state, self._fill_toggles)             # Wi-Fi / Bluetooth: last known at once
@@ -1599,7 +1605,7 @@ class TopBarWindow(Gtk.ApplicationWindow):
                     # (the bar's drawing moves, not the surface: a surface
                     # moved off-screen gets no frames and would never come back)
                     self._intro_offset = float(BAR_H)
-                    intro.wait(self._slide_in)
+                    intro.wait(self._slide_in, name="topbar")
                 intro.leave_on_signal(lambda: self._slide(True))   # restart: the old bar slides away
 
     def do_snapshot(self, snap) -> None:
