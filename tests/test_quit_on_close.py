@@ -22,13 +22,32 @@ class Mgr:
             cb()
 
 
+class TreeTest(unittest.TestCase):
+    def test_root_stops_at_what_launched_it(self):
+        t = {10: (1, "systemd", "/usr/lib/systemd/systemd --user"), 20: (10, "chrome", "chrome"),
+             21: (20, "chrome", "chrome --type=gpu")}
+        self.assertEqual(Q.app_root(21, t), 20)
+        self.assertEqual(Q.subtree(20, t), [20, 21])
+        t[20] = (30, "chrome", "chrome")                      # started from a terminal's shell
+        t[30] = (40, "fish", "fish")
+        t[40] = (1, "python3", "python3 -m sonata2 terminal")
+        self.assertEqual(Q.app_root(21, t), 20)                 # the shell (and terminal) stay
+
+
 class QuitOnCloseTest(unittest.TestCase):
-    def make(self, views, enabled=True, parents=lambda w: set()):
+    # dock (sonata2) -> steam.sh -> steam -> steamwebhelper (the window) ; steam -> game
+    TABLE = {100: (1, "python3", "python3 -m sonata2 dock"), 400: (100, "steam.sh", "bash steam.sh"),
+             450: (400, "steam", "steam"), 500: (450, "steamwebhelper", "steamwebhelper"),
+             900: (450, "game.exe", "game.exe")}
+
+    def make(self, views, enabled=True, table=None):
         self.killed, self.timers = [], []
         m = Mgr()
         with mock.patch.object(Q.QuitOnClose, "key_of", staticmethod(lambda a: a)):
             q = Q.QuitOnClose(m, views=lambda: views, kill=lambda p, s: self.killed.append((p, s)),
-                              alive=lambda p: True, enabled=lambda: enabled, parents=parents,
+                              alive=lambda p: True, enabled=lambda: enabled,
+                              table=lambda: dict(table if table is not None else {
+                                  k: v for k, v in self.TABLE.items() if k != 900}),
                               later=lambda ms, fn: self.timers.append(fn))
         q.key_of = lambda a: a
         return m, q
@@ -45,7 +64,10 @@ class QuitOnCloseTest(unittest.TestCase):
         views.clear()
         m.change()
         self.run_timers()
-        self.assertEqual(self.killed, [(500, signal.SIGTERM)])
+        # the whole app, not just its window's process: Steam restarted its web
+        # helper (the window's process) and the window came back (Vini)
+        self.assertEqual(sorted(p for p, _s in self.killed), [400, 450, 500])
+        self.assertNotIn(100, [p for p, _s in self.killed])                    # never Sonata
 
     def test_a_window_back_within_the_grace_keeps_it(self):
         """Steam swaps its sign-in window for the main one."""
@@ -58,7 +80,7 @@ class QuitOnCloseTest(unittest.TestCase):
         self.run_timers()
         self.assertEqual(self.killed, [])
 
-    def test_turned_off_nothing_quits(self):
+    def test_off_by_default_nothing_quits(self):
         m, q = self.make([], enabled=False)
         with mock.patch.object(Q.quitapps, "app_pids", return_value={500}):
             m.change("steam")
@@ -68,7 +90,7 @@ class QuitOnCloseTest(unittest.TestCase):
 
     def test_a_game_it_started_keeps_it_running(self):
         views = [{"type": "toplevel", "pid": 900, "app-id": "steam_app_1"}]          # the game's window
-        m, q = self.make(views, parents=lambda w: {500, 1} if w == 900 else set())
+        m, q = self.make(views, table=self.TABLE)
         with mock.patch.object(Q.quitapps, "app_pids", return_value={500}):
             m.change("steam", "steam_app_1")
         m.change("steam_app_1")
@@ -82,7 +104,7 @@ class QuitOnCloseTest(unittest.TestCase):
 
     def test_setting_and_default(self):
         from sonata2.shell import dock
-        self.assertTrue(dock.DEFAULTS["quit_on_close"])                 # on by default (Vini)
+        self.assertTrue(dock.DEFAULTS["quit_on_close"])
         src = open(Q.__file__.replace("shell/quitonclose.py", "settings/app.py")).read()
         self.assertIn('"Quit apps when their last window closes"', src)
         main = open(Q.__file__.replace("shell/quitonclose.py", "__main__.py")).read()
