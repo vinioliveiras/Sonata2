@@ -1916,6 +1916,19 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         self.assertIn('if [ "$ran_long" = 1 ]; then record_crash "$code" "$started"; else kernel_log "$started"; fi',
                       gpu)                                                # a fast failure is no crash report
 
+    def test_wayfire_cursor_not_frozen_on_a_game(self):
+        """Vini: after Alt+Tab, the switcher's cursor stayed frozen on a
+        full-screen game (pointer locked, the game never set its hidden
+        cursor again) until a game menu changed it."""
+        root = pathlib.Path(__file__).resolve().parent.parent
+        patch = (root / "wayfire-plugin" / "wayfire-cursor-focus.patch").read_text()
+        self.assertIn("if (view && view->pending_fullscreen())", patch)
+        self.assertIn("+    wlr_cursor_unset_image(cursor);", patch)
+        self.assertIn("+    last_cursor_name.clear();", patch)          # Wayfire sets "default" again later
+        self.assertIn("if (!can_client_set_cursor())", patch)             # hidden on purpose: left alone
+        build = (root / "tools" / "build-wayfire.sh").read_text()
+        self.assertIn('"$SRC/wayfire-plugin/wayfire-cursor-focus.patch"', build)
+
     def test_wayfire_patch_covers_the_snapshot(self):
         """15:39 crash: the close animation's snapshot (view.cpp take_snapshot)
         rendered into a buffer the full card refused."""

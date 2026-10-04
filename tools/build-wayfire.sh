@@ -41,6 +41,8 @@ step git clone -q --filter=blob:none https://github.com/WayfireWM/wayfire.git "$
 step git -C "$wdir/src" checkout -q "$commit"
 step git -C "$wdir/src" submodule update -q --init subprojects/wf-json subprojects/wf-utils subprojects/wf-touch subprojects/wf-config
 step patch -d "$wdir/src" -p1 -i "$SRC/wayfire-plugin/wayfire-buffer-failures.patch"
+# no cursor image left frozen on a full-screen game after Alt+Tab (Vini)
+step patch -d "$wdir/src" -p1 -i "$SRC/wayfire-plugin/wayfire-cursor-focus.patch"
 step meson setup "$wdir/build" "$wdir/src" --prefix "$PREFIX" --libdir lib --buildtype release \
     -Duse_system_wlroots=enabled -Duse_system_wfconfig=disabled -Dtests=disabled \
     -Dcpp_link_args="-Wl,-rpath,$PREFIX/lib" -Dc_link_args="-Wl,-rpath,$PREFIX/lib"

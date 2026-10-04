@@ -1,0 +1,63 @@
+diff --git a/src/core/seat/cursor.cpp b/src/core/seat/cursor.cpp
+index c61dd3d9..7ed54659 100644
+--- a/src/core/seat/cursor.cpp
++++ b/src/core/seat/cursor.cpp
+@@ -202,6 +202,18 @@ void wf::cursor_t::unhide_cursor()
+     set_cursor("default");
+ }
+ 
++void wf::cursor_t::clear_for_new_focus()
++{
++    if (!can_client_set_cursor())
++    {
++        return;
++    }
++
++    idle_set_cursor.disconnect();
++    wlr_cursor_unset_image(cursor);
++    last_cursor_name.clear();
++}
++
+ void wf::cursor_t::hide_cursor()
+ {
+     idle_set_cursor.disconnect();
+diff --git a/src/core/seat/cursor.hpp b/src/core/seat/cursor.hpp
+index b0c0298d..23ce095a 100644
+--- a/src/core/seat/cursor.hpp
++++ b/src/core/seat/cursor.hpp
+@@ -29,6 +29,8 @@ struct cursor_t
+     bool can_client_set_cursor();
+     void unhide_cursor();
+     void hide_cursor();
++    /** No image until the newly focused client sets one (see pointer.cpp) */
++    void clear_for_new_focus();
+     int hide_ref_counter = 0;
+ 
+     /**
+diff --git a/src/core/seat/pointer.cpp b/src/core/seat/pointer.cpp
+index 90c001ae..be821a5d 100644
+--- a/src/core/seat/pointer.cpp
++++ b/src/core/seat/pointer.cpp
+@@ -1,4 +1,5 @@
+ #include "pointer.hpp"
++#include <wayfire/toplevel-view.hpp>
+ #include <wayfire/bindings-repository.hpp>
+ #include "cursor.hpp"
+ #include "pointing-device.hpp"
+@@ -217,6 +218,16 @@ void wf::pointer_t::update_cursor_focus(wf::scene::node_ptr new_focus)
+ 
+     if (cursor_focus)
+     {
++        // A full-screen app (a game) gets no image left over from the previous
++        // surface (a switcher, another app): one that hides its cursor and
++        // doesn't set it again on enter (Xwayland) showed that image frozen
++        // on screen while it held the pointer locked.
++        auto view = wf::toplevel_cast(wf::get_core().get_cursor_focus_view());
++        if (view && view->pending_fullscreen())
++        {
++            seat->priv->cursor->clear_for_new_focus();
++        }
++
+         send_enter_to_focus();
+     } else
+     {
