@@ -504,7 +504,7 @@ class SettingsHelperTests(TempConfig):
         """Merged parts open their section; _Pages finds a section by a part's id."""
         self.assertEqual(S.section_of("wallpaper"), "displays")
         self.assertEqual(S.section_of("wifi"), "wifi")
-        self.assertEqual(S.parts_of("about"), ("about", "updates"))
+        self.assertEqual(S.parts_of("about"), ("about", "sonataupdate", "updates"))
         self.assertEqual(S.parts_of("wifi"), ("wifi",))
         pages = S._Pages()
         pages["displays"] = "page"

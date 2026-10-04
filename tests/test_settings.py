@@ -330,7 +330,8 @@ class SettingsTest(unittest.TestCase):
         ids = [x[0] for x in S.SECTIONS]
         self.assertEqual(len(ids), 24)          # 19 + App Icons, Default Apps, Menu Bar, Control Center, Desktop
         built = [p for sid in ids for p in S.parts_of(sid)]
-        self.assertEqual(sorted(built), sorted(old_ids + ["appicons", "defaults", "controlcenter", "desktop"]))
+        self.assertEqual(sorted(built), sorted(old_ids + ["appicons", "defaults", "controlcenter", "desktop",
+                                                          "sonataupdate"]))
         for old in old_ids:
             self.assertIn(S.section_of(old), ids, old)
             self.assertTrue(hasattr(S.Settings, f"_page_{old}"), old)

@@ -104,11 +104,33 @@ class InstallTest(unittest.TestCase):
             S.main(["--check"])
         p.assert_not_called()                                  # up to date: nothing listed
 
-    def test_source_is_last(self):
+    def test_sonata_apart_from_the_system_update(self):
+        """Vini: Sonata's update is its own (About > Sonata Update), not one of
+        the system's sources; its notification opens it."""
         from sonata2.backend import updates
-        srcs = updates.sources()
-        self.assertEqual(srcs[-1].id, "sonata")                # its update restarts Sonata: after the rest
-        self.assertIsNone(srcs[-1].install)                    # in a terminal (sudo may be asked)
+        self.assertNotIn("sonata", [s.id for s in updates.sources()])
+        from sonata2.settings import app as st
+        self.assertEqual(st.parts_of("about"), ("about", "sonataupdate", "updates"))
+        self.assertEqual(st.section_of("sonataupdate"), "about")
+        src = open(updates.__file__.replace("backend/updates.py", "shell/updatenotify.py")).read()
+        self.assertIn('"--page", "sonataupdate"', src)
+
+    def test_sonata_update_group_states(self):
+        import gi
+        gi.require_version("Adw", "1")
+        from gi.repository import Adw
+        Adw.init()
+        from unittest import mock
+        from sonata2.settings import app as st
+        win = st.Settings.__new__(st.Settings)
+        with mock.patch.object(st.system, "run_async"):
+            g = st.Settings._page_sonataupdate(win)[0]
+        g.found({"tag": "v99.0.0", "url": "https://example.invalid", "tarball": ""})
+        self.assertEqual(g.status_row.get_title(), "Sonata 99.0.0 is available")
+        g.found({"tag": "v0.0.1", "url": "", "tarball": ""})
+        self.assertEqual(g.status_row.get_title(), "Sonata is up to date")
+        g.found(None)
+        self.assertEqual(g.status_row.get_title(), "Couldn't check for a new Sonata")
 
 
 class NotifierTest(unittest.TestCase):

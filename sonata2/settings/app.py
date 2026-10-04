@@ -62,11 +62,11 @@ PARTS = {
     "mouse": ("trackpad", "mouse"),
     "launchpad": ("launchpad", "hidden"),
     "privacy": ("privacy", "sharing"),
-    "about": ("about", "updates"),
+    "about": ("about", "sonataupdate", "updates"),     # Sonata's own update, then the system's (Vini)
 }
 PART_TITLES = {"wallpaper": "Wallpaper", "shortcuts": "Keyboard Shortcuts", "trackpad": "Trackpad",
                "hidden": "Hidden & Protected Apps", "sharing": "Sharing",
-               "updates": "Software Update"}
+               "updates": "Software Update", "sonataupdate": "Sonata Update"}
 
 
 def section_of(sid: str) -> str:
@@ -126,6 +126,7 @@ KEYWORDS = {
     "menubar": "clock battery percentage bluetooth sound now playing logo text automatically hide show wifi wi-fi search input source keyboard background apps cpu gpu memory ram network fps performance",
     "launchpad": "apps grid folders launchpad", "hidden": "hide hidden protected private lock password apps", "updates": "software update upgrade packages",
     "about": "computer system version restart sonata",
+    "sonataupdate": "sonata update new version release what's new",
 }
 
 for _sec, _parts in PARTS.items():           # a merged section is found by its parts' words and titles
@@ -1792,7 +1793,7 @@ class Settings(Adw.ApplicationWindow):
         an unattended mode, or a failed update, go to a terminal."""
         from .. import icons
         from ..backend import updates as U
-        head = group()
+        head = group("System Update", "Packages, AUR and Flatpak apps. Sonata updates itself above.")
         status = Adw.ActionRow(title="Checking for updates…", use_markup=False)
         logo = Gtk.Image(pixel_size=40, valign=Gtk.Align.CENTER)
         icons.set_logo(logo)
@@ -2843,6 +2844,62 @@ class Settings(Adw.ApplicationWindow):
         for name, values in pend.items():
             config.update(name, **values)
         return False
+
+    def _page_sonataupdate(self):
+        """About > Sonata Update: Sonata's own releases (backend/selfupdate.py),
+        apart from the system's packages (Vini). Checks on open; What's New
+        opens the release, Update runs its installer in a terminal (it may
+        ask for sudo), Check Again asks GitHub again."""
+        from .. import __version__
+        from ..backend import selfupdate as SU
+        g = group("Sonata Update")
+        row = Adw.ActionRow(title="Checking for a new Sonata…", subtitle=f"Installed: Sonata {__version__}",
+                            use_markup=False)
+        icon = Gtk.Image(icon_name="sonata-launchpad", pixel_size=40, valign=Gtk.Align.CENTER)
+        row.add_prefix(icon)
+        spin = Gtk.Spinner(spinning=True, valign=Gtk.Align.CENTER)
+        buttons = Gtk.Box(spacing=8, valign=Gtk.Align.CENTER)
+        row.add_suffix(spin)
+        row.add_suffix(buttons)
+        g.add(row)
+
+        def clear():
+            while (c := buttons.get_first_child()):
+                buttons.remove(c)
+
+        def button(label, cb, suggested=False):
+            buttons.append(ui.controls.push_button(label, cb, style="default" if suggested else ""))
+
+        def check():
+            clear()
+            spin.set_visible(True)
+            row.set_title("Checking for a new Sonata…")
+            system.run_async(SU.latest_release, found)
+
+        def found(rel):
+            spin.set_visible(False)
+            clear()
+            when = GLib.DateTime.new_now_local().format("%H:%M")
+            if rel is None:
+                row.set_title("Couldn't check for a new Sonata")
+                row.set_subtitle(f"Installed: Sonata {__version__} · GitHub couldn't be reached")
+                button("Check Again", check)
+            elif SU.newer(rel["tag"]):
+                version = rel["tag"].lstrip("vV")
+                row.set_title(f"Sonata {version} is available")
+                row.set_subtitle(f"Installed: Sonata {__version__} · checked at {when}")
+                button("What's New", lambda: Gtk.UriLauncher.new(rel["url"]).launch(self, None, None, None)
+                       if hasattr(Gtk, "UriLauncher") else Gio.AppInfo.launch_default_for_uri(rel["url"], None))
+                button("Update", lambda: system.run_in_terminal(SU.terminal_command(rel["tag"]))
+                       or self.toast("No terminal found"), suggested=True)
+            else:
+                row.set_title("Sonata is up to date")
+                row.set_subtitle(f"Sonata {__version__} · checked at {when}")
+                button("Check Again", check)
+        g.status_row = row                          # (tests)
+        g.found = found
+        check()
+        return [g]
 
     # -- About ------------------------------------------------------------------------
     def _page_about(self):

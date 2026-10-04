@@ -129,7 +129,7 @@ def sources() -> List[Source]:
         out.append(Source("flatpak", "Flatpak", ["flatpak", "remote-ls", "--updates",
                                                  "--columns=name,application,version"],
                           ["flatpak", "update", "-y", "--noninteractive"], "flatpak update", parse_flatpak))
-    out.append(sonata_source())         # last: its update restarts Sonata
+    # (Sonata itself: About > Sonata Update, apart from the system's -- Vini)
     return out
 
 

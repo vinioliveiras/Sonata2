@@ -79,5 +79,5 @@ def open_updates() -> None:
     """Settings > About (Software Update)."""
     import subprocess
     from ..__main__ import self_argv
-    subprocess.Popen(self_argv() + ["settings", "--page", "updates"], start_new_session=True,
+    subprocess.Popen(self_argv() + ["settings", "--page", "sonataupdate"], start_new_session=True,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
