@@ -19,6 +19,7 @@ from gi.repository import GLib
 from . import quitapps
 
 GRACE_MS = 1500
+KILL_MS = 3000           # then whatever is left of it goes (Vini: "just kill the process")
 CLK = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
 
 
@@ -191,11 +192,12 @@ class QuitOnClose:
             return False
         windows = {v.get("pid") for v in self.views() if v.get("type") == "toplevel"}
         table = self.table()
-        targets = []
+        targets, roots = [], []
         for pid in pids:
             if not self.alive(pid) or pid in windows:
                 continue
-            tree = subtree(app_root(pid, table), table)
+            root = app_root(pid, table)
+            tree = subtree(root, table)
             if windows & set(tree):
                 log(f"{key}: a window under it (a game it started), kept")
                 return False
@@ -203,14 +205,37 @@ class QuitOnClose:
                 log(f"{key}: a process started after it closed (opened again), kept")
                 return False
             targets += [p for p in tree if p not in targets]
+            if root not in roots:
+                roots.append(root)
+        targets = [p for p in targets if quitapps.OWN not in table.get(p, (0, "", ""))[2]]
+        # SIGTERM to the app itself (a launcher script: the program it runs),
+        # which closes its own helpers: SIGTERM to every helper at once left
+        # Claude's main process alive without its GPU process, and it couldn't
+        # be opened again until killed by hand (Vini)
+        first = list(roots)
+        for r in roots:
+            if table.get(r, (0, "", ""))[1].endswith(".sh") or table.get(r, (0, "", ""))[1] in BOUNDARY:
+                first += [p for p, (pp, _c, _m) in table.items() if pp == r and p not in first]
+        first = [p for p in first if p in targets]
+        log(f"{key}: quit {first} (then all of {targets} after {KILL_MS} ms)")
         quit_any = False
-        log(f"{key}: quit {targets}")
-        for pid in targets:
-            if quitapps.OWN in table.get(pid, (0, "", ""))[2]:
-                continue
+        for pid in first:
             try:
                 self.kill(pid, signal.SIGTERM)
                 quit_any = True
             except OSError:
                 pass
+
+        def finish():
+            left = [p for p in targets if self.alive(p) and self.table().get(p, (0, "", ""))[2] ==
+                    table.get(p, (0, "", ""))[2]]          # the same process, not a reused pid
+            if left:
+                log(f"{key}: killed {left}")
+            for pid in left:
+                try:
+                    self.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
+            return False
+        self.later(KILL_MS, finish)
         return quit_any

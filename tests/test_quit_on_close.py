@@ -67,7 +67,10 @@ class QuitOnCloseTest(unittest.TestCase):
         self.run_timers()
         # the whole app, not just its window's process: Steam restarted its web
         # helper (the window's process) and the window came back (Vini)
-        self.assertEqual(sorted(p for p, _s in self.killed), [400, 450, 500])
+        # SIGTERM to the app (a launcher script: its program) -- every helper at
+        # once left Claude half-alive; what's left after KILL_MS gets SIGKILL
+        self.assertEqual(sorted(p for p, sg in self.killed if sg == signal.SIGTERM), [400, 450])
+        self.assertEqual(sorted(p for p, sg in self.killed if sg == signal.SIGKILL), [400, 450, 500])
         self.assertNotIn(100, [p for p, _s in self.killed])                    # never Sonata
 
     def test_a_window_back_within_the_grace_keeps_it(self):
