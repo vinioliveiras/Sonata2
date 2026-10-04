@@ -192,6 +192,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
 
         was_client_request = true;
         preserve_aspect    = false;
+        LOGI("sonata-resize: resize asked by the app, edges ", request->edges);
         initiate(request->view, request->edges);
     };
 
@@ -284,6 +285,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         };
 
         output->connect(&on_resize_request);
+        LOGI("sonata-resize: ready on ", output->to_string(), ", live=", (bool)live);
         output->connect(&on_view_disappeared);
     }
 
@@ -466,6 +468,13 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
 
         start_wobbly(view, anchor_x, anchor_y);
         wf::get_core().set_cursor(wlr_xcursor_get_resize_name((wlr_edges)edges));
+        // Sonata: without its contents (the option off), only the background follows
+        outline = !live;
+        LOGI("sonata-resize: start, live=", (bool)live, " client=", was_client_request);
+        if (outline)
+        {
+            begin_outline();
+        }
 
         return true;
     }
@@ -699,12 +708,6 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     }
 
     // -- Sonata ------------------------------------------------------------------------
-    /** Client-initiated drags (CSD title bars) resize the same way. */
-    bool was_client_request_live_only() const
-    {
-        return false;
-    }
-
     void begin_outline()
     {
         finish_fade();

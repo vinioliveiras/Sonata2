@@ -15,6 +15,10 @@ class PluginTest(unittest.TestCase):
     def test_plugin_source(self):
         src = (ROOT / "wayfire-plugin" / "src" / "sonata-resize.cpp").read_text()
         self.assertIn('live{"sonata-resize/live"}', src)
+        # Vini: it never kicked in -- the switch was read but nothing set the mode
+        start = src[src.index("bool initiate("):src.index("void input_pressed(")]
+        self.assertIn("outline = !live;", start)
+        self.assertIn("begin_outline();", start)
         self.assertIn("ghost->set(desired);", src)                         # only the background follows
         self.assertIn("uniform float radius;", src)                       # rounded, like the window
         self.assertIn("float shadow = ", src)                             # with its shadow
