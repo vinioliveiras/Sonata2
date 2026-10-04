@@ -107,6 +107,32 @@ class SamplerTest(unittest.TestCase):
             self.assertEqual(self.s.gpus(), {"amd": 12.0, "nvidia": None})
         refresh.assert_not_called()
 
+    def test_video_memory_of_each_card(self):
+        """Vini: VRAM per card -- AMD from sysfs, NVIDIA from the same nvidia-smi
+        call as its busy %, none while it sleeps; Intel's iGPU has none."""
+        self.card(0, "amdgpu")
+        self.card(1, "nvidia")
+        self.card(2, "i915")
+        self.f.write("sys/class/drm/card0/device/mem_info_vram_used", str(256 << 20))
+        self.f.write("sys/class/drm/card0/device/mem_info_vram_total", str(512 << 20))
+        cards = S.gpu_cards(self.f.sys)
+        self.assertEqual(S.vram_kinds(cards), {"vram_amd": "amd", "vram_nvidia": "nvidia"})
+        self.assertEqual(S.vram_kinds(cards[1:]), {"vram": "nvidia"})                 # one card: "vram"
+        self.assertIn("vram_nvidia", S.kinds(cards))
+        self.assertEqual(S.parse_nvidia("45, 3072, 8188\n"), ([45.0], [(3072 << 20, 8188 << 20)]))
+        self.assertEqual(S.parse_nvidia("[N/A], 1, 2\n"), ([], []))
+        self.s._nv_mem = [(3 << 30, 8 << 30)]
+        self.assertEqual(self.s.vrams(), {"amd": (256 << 20, 512 << 20), "nvidia": (3 << 30, 8 << 30)})
+        self.s._nv_mem = []                                        # asleep
+        self.assertIsNone(self.s.vrams()["nvidia"])
+        r = S.Reading(vrams={"nvidia": (int(3.2 * (1 << 30)), 8 << 30), "amd": None})
+        with mock.patch.object(S, "VRAM_KINDS", {"vram_nvidia": "nvidia", "vram_amd": "amd"}), \
+                mock.patch.object(S, "VRAM_MAKERS_BY_KIND", {"vram_nvidia": "NVIDIA", "vram_amd": "AMD"}):
+            self.assertEqual(S.text("vram_nvidia", r), "NVIDIA VRAM 3.2 GB")
+            self.assertEqual(S.text("vram_amd", r), "AMD VRAM –")
+        self.assertEqual(S.vram_text(r, "nvidia"), "3.2 / 8.0 GB")
+        self.assertAlmostEqual(S.vram_pct(r, "nvidia"), 40.0, places=3)
+
     def test_fps_states(self):
         ipc = self.s._ipc
         ipc.call.return_value = {"result": "ok", "fps": 143, "ready": True, "app-id": "steam_app_1", "fullscreen": True}
@@ -147,10 +173,11 @@ class StatsTest(unittest.TestCase):
 
 class KindsTest(unittest.TestCase):
     def test_one_gpu_option_or_one_per_card(self):
-        self.assertEqual(S.kinds([("amd", "AMD", "card0")]), ("cpu", "gpu", "ram", "net", "fps"))
+        self.assertEqual(S.kinds([("amd", "AMD", "card0")]), ("cpu", "gpu", "vram", "ram", "net", "fps"))
+        self.assertEqual(S.kinds([("intel", "Intel", "card0")]), ("cpu", "gpu", "ram", "net", "fps"))
         self.assertEqual(S.kinds([]), ("cpu", "gpu", "ram", "net", "fps"))
         self.assertEqual(S.kinds([("amd", "AMD", "card0"), ("nvidia", "NVIDIA", "card1")]),
-                         ("cpu", "gpu_amd", "gpu_nvidia", "ram", "net", "fps"))
+                         ("cpu", "gpu_amd", "gpu_nvidia", "vram_amd", "vram_nvidia", "ram", "net", "fps"))
 
     def test_card_text_and_history(self):
         with mock.patch.dict(S.GPU_MAKERS, {"gpu_nvidia": "NVIDIA"}):

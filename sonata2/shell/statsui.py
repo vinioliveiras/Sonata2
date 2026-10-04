@@ -2,7 +2,7 @@
 (Vini; off by default). The figures come from backend/stats.py, read only
 while one of these is on screen.
 
-    KINDS                               # cpu gpu ram net fps
+    KINDS                               # cpu gpu vram ram net fps
     menu_item(kind, style, on_click)    # menu bar: "text" or "graph"
     module(kind)                        # Control Center module (2x1)"""
 import gi
@@ -26,6 +26,13 @@ for _k, _maker in S.GPU_MAKERS.items():    # two cards or more: one of each per 
     CAPTIONS[_k] = SHORT.get(_maker, _maker)
     ICONS[_k] = "gpu-symbolic"
     SERIES[_k] = (_k,)
+    PERCENT.add(_k)
+for _k, _key in S.VRAM_KINDS.items():      # each card's video memory (Vini)
+    _maker = S.VRAM_MAKERS_BY_KIND[_k]
+    TITLES[_k] = "Video Memory" if _k == "vram" else f"Video Memory ({_maker})"
+    CAPTIONS[_k] = "VRAM" if _k == "vram" else f"VRAM {SHORT.get(_maker, _maker)}"
+    ICONS[_k] = "media-memory-symbolic"
+    SERIES[_k] = (_k,)                     # history: % of the card's memory
     PERCENT.add(_k)
 
 ui.register("""
@@ -132,7 +139,8 @@ def module(kind: str) -> Gtk.Widget:
 
     def update(r):
         t = S.text(kind, r)
-        value.set_label(t.split(" ", 1)[1] if kind in PERCENT else
+        value.set_label(S.vram_text(r, S.VRAM_KINDS[kind]) if kind in S.VRAM_KINDS else
+                        t.split(" ", 1)[1] if kind in PERCENT else
                         (t.replace("  ", " ") if kind == "net" else ("–" if r.fps is None else str(r.fps))))
         graph.push(r.history)
         h = S.FPS_HINTS.get(r.fps_state, "") if kind == "fps" else ""

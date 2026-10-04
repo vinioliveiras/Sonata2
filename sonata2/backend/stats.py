@@ -8,12 +8,14 @@ stops with the last one. Reads run off the main loop (system.run_async).
     stats.unsubscribe(callback)
 
 Reading fields: cpu %, gpu % (the busiest card; None: no card reports it),
-gpus {card key: %} (each card, Vini: "with two, an option for each"), ram
+gpus {card key: %} (each card, Vini: "with two, an option for each"),
+vrams {card key: (used, total) bytes or None} (each card's video memory), ram
 used/total bytes, down/up bytes per second, fps (None: no reading; see
 fps_state).
 
 KINDS: what can be shown -- cpu, gpu (one card) or gpu_<card> for each
-card ("gpu_amd", "gpu_nvidia"), ram, net, fps."""
+card ("gpu_amd", "gpu_nvidia"), vram or vram_<card> (cards that report their
+video memory: NVIDIA, AMD), ram, net, fps."""
 import glob
 import os
 import threading
@@ -44,16 +46,29 @@ def gpu_cards(sys: str = "/sys") -> list:
     return out
 
 
+VRAM_MAKERS = ("NVIDIA", "AMD")        # Intel's integrated GPU has no memory of its own to show
+
+
+def vram_kinds(cards=None) -> dict:
+    """{kind: card key} of the cards whose video memory can be shown: "vram"
+    for one, "vram_<card>" each when there are two or more."""
+    cards = gpu_cards() if cards is None else cards
+    keys = [key for key, maker, _c in cards if maker in VRAM_MAKERS]
+    return {"vram": keys[0]} if len(keys) == 1 else {"vram_" + k: k for k in keys}
+
+
 def kinds(cards=None) -> tuple:
     """The figures that can be shown: one GPU, or one per card when there are two or more."""
     cards = gpu_cards() if cards is None else cards
     gpus = ["gpu"] if len(cards) < 2 else ["gpu_" + key for key, _m, _c in cards]
-    return ("cpu", *gpus, "ram", "net", "fps")
+    return ("cpu", *gpus, *vram_kinds(cards), "ram", "net", "fps")
 
 
 CARDS = gpu_cards()
 KINDS = kinds(CARDS)
 GPU_MAKERS = {"gpu_" + key: maker for key, maker, _c in CARDS}     # "gpu_nvidia" -> "NVIDIA"
+VRAM_KINDS = vram_kinds(CARDS)                                      # "vram_nvidia" -> "nvidia"
+VRAM_MAKERS_BY_KIND = {k: dict((c[0], c[1]) for c in CARDS)[key] for k, key in VRAM_KINDS.items()}
 
 
 @dataclass
@@ -61,6 +76,7 @@ class Reading:
     cpu: float = 0.0
     gpu: Optional[float] = None
     gpus: dict = field(default_factory=dict)        # card key -> % (None: no reading)
+    vrams: dict = field(default_factory=dict)       # card key -> (used, total) bytes (None: no reading)
     ram_used: int = 0
     ram_total: int = 0
     down: float = 0.0
@@ -85,6 +101,7 @@ class Sampler:
         self._nvidia = None
         self._nv_pct = None
         self._nv_list = []                 # nvidia-smi's figures, one per NVIDIA card in order
+        self._nv_mem = []                  # (used, total) bytes, one per NVIDIA card in order
         self._nv_busy = False
         self._cards = None
 
@@ -125,7 +142,7 @@ class Sampler:
         if awake:
             self._nvidia_refresh()
         else:
-            self._nv_pct, self._nv_list = None, []
+            self._nv_pct, self._nv_list, self._nv_mem = None, [], []
         out, nth = {}, 0
         for key, maker, card in self._cards:
             if maker == "NVIDIA":
@@ -134,6 +151,24 @@ class Sampler:
             else:
                 v = procfs._read(os.path.join(self.sys, "class/drm", card, "device/gpu_busy_percent")).strip()
                 out[key] = float(v) if v.isdigit() else None
+        return out
+
+    def vrams(self) -> dict:
+        """{card key: (used, total) bytes} of each card in VRAM_MAKERS: AMD
+        from mem_info_vram_*, NVIDIA from the nvidia-smi read of gpus()
+        (None while the card sleeps). Call after gpus()."""
+        if self._cards is None:
+            self._cards = gpu_cards(self.sys)
+        out, nth = {}, 0
+        for key, maker, card in self._cards:
+            if maker == "NVIDIA":
+                out[key] = self._nv_mem[nth] if nth < len(self._nv_mem) else None
+                nth += 1
+            elif maker in VRAM_MAKERS:
+                dev = os.path.join(self.sys, "class/drm", card, "device")
+                used = procfs._read(os.path.join(dev, "mem_info_vram_used")).strip()
+                total = procfs._read(os.path.join(dev, "mem_info_vram_total")).strip()
+                out[key] = (int(used), int(total)) if used.isdigit() and total.isdigit() and int(total) else None
         return out
 
     def gpu(self, each: dict = None) -> Optional[float]:
@@ -149,11 +184,11 @@ class Sampler:
         def run():
             import subprocess
             try:
-                out = subprocess.run([self._nvidia.tool, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
+                out = subprocess.run([self._nvidia.tool, "--query-gpu=utilization.gpu,memory.used,memory.total",
+                                      "--format=csv,noheader,nounits"],
                                      capture_output=True, text=True, timeout=3).stdout
-                nums = [float(x) for x in out.split() if x.replace(".", "").isdigit()]
-                self._nv_list = nums
-                self._nv_pct = max(nums) if nums else None
+                self._nv_list, self._nv_mem = parse_nvidia(out)
+                self._nv_pct = max(self._nv_list) if self._nv_list else None
             except (OSError, ValueError, Exception):
                 self._nv_pct = None
             self._nv_busy = False
@@ -176,6 +211,24 @@ class Sampler:
         if not r.get("ready"):
             return None, "starting"
         return int(r["fps"]), "ok"
+
+
+def parse_nvidia(out: str) -> tuple:
+    """([busy %], [(used, total) bytes]) from nvidia-smi's
+    utilization.gpu,memory.used,memory.total (MiB) rows, one per card."""
+    pcts, mems = [], []
+    for line in out.splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        try:
+            pcts.append(float(parts[0]))
+        except (ValueError, IndexError):
+            continue
+        try:
+            used, total = int(parts[1]) << 20, int(parts[2]) << 20
+            mems.append((used, total) if total else None)
+        except (ValueError, IndexError):
+            mems.append(None)
+    return pcts, mems
 
 
 class Stats:
@@ -235,7 +288,7 @@ class Stats:
         down, up = s.net(dt)
         fps, state = s.fps()
         each = s.gpus()
-        return Reading(cpu=s.cpu(), gpu=s.gpu(each), gpus=each, ram_used=used, ram_total=total, down=down,
+        return Reading(cpu=s.cpu(), gpu=s.gpu(each), gpus=each, vrams=s.vrams(), ram_used=used, ram_total=total, down=down,
                        up=up, fps=fps, fps_state=state)
 
     def _deliver(self, r: Optional[Reading]) -> None:
@@ -243,7 +296,8 @@ class Stats:
         if r is None:
             return
         for k, v in (("cpu", r.cpu), ("gpu", r.gpu), ("ram", r.ram_pct), ("down", r.down), ("up", r.up),
-                     ("fps", r.fps), *(("gpu_" + key, pct) for key, pct in r.gpus.items())):
+                     ("fps", r.fps), *(("gpu_" + key, pct) for key, pct in r.gpus.items()),
+                     *((kind, vram_pct(r, key)) for kind, key in VRAM_KINDS.items())):
             h = self.history.setdefault(k, [])
             h.append(v if v is not None else 0.0)
             del h[:-HISTORY]
@@ -263,6 +317,23 @@ def rate(n: float) -> str:
     return f"{n / 1024 ** 3:.2f} GB/s"
 
 
+def vram_pct(r: Reading, key: str):
+    v = r.vrams.get(key)
+    return 100.0 * v[0] / v[1] if v else None
+
+
+def gib(n: int) -> str:
+    """Video memory, short: "0.4", "3.2", "12" (GB)."""
+    g = n / 1024 ** 3
+    return f"{g:.1f}" if g < 10 else f"{g:.0f}"
+
+
+def vram_text(r: Reading, key: str) -> str:
+    """"3.2 / 8.0 GB", "–" without a reading (an NVIDIA card asleep)."""
+    v = r.vrams.get(key)
+    return "–" if not v else f"{gib(v[0])} / {gib(v[1])} GB"
+
+
 def text(kind: str, r: Reading) -> str:
     """The menu bar's text for one figure."""
     if kind == "cpu":
@@ -273,6 +344,10 @@ def text(kind: str, r: Reading) -> str:
         v = r.gpus.get(kind[4:])
         maker = GPU_MAKERS.get(kind, kind[4:].upper())
         return f"{maker} –" if v is None else f"{maker} {v:.0f}%"
+    if kind in VRAM_KINDS:                          # "VRAM 3.2 GB", "NVIDIA VRAM 3.2 GB"
+        v = r.vrams.get(VRAM_KINDS[kind])
+        name = "VRAM" if kind == "vram" else f"{VRAM_MAKERS_BY_KIND[kind]} VRAM"
+        return f"{name} –" if not v else f"{name} {gib(v[0])} GB"
     if kind == "ram":
         return f"RAM {r.ram_pct:.0f}%"
     if kind == "net":

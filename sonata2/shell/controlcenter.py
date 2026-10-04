@@ -36,7 +36,8 @@ from ..backend import stats as _stats  # noqa: E402
 _GPU_TITLES = {k: f"GPU ({m})" for k, m in _stats.GPU_MAKERS.items()}
 for _k in _stats.KINDS:                    # one GPU, or one module per card
     CATALOG["stat_" + _k] = ({"cpu": "CPU", "gpu": "GPU", "ram": "Memory", "net": "Network",
-                              "fps": "FPS"}.get(_k) or _GPU_TITLES.get(_k, _k), (2, 2))
+                              "fps": "FPS", "vram": "Video Memory"}.get(_k) or _GPU_TITLES.get(_k)
+                             or f"Video Memory ({_stats.VRAM_MAKERS_BY_KIND.get(_k, _k)})", (2, 2))
 DEFAULT_ORDER = ["connectivity", "dnd", "darkmode", "screenshot", "display", "sound", "nowplaying"]
 DEFAULTS = {"modules": None}            # None: DEFAULT_ORDER (new modules join it in later versions)
 
