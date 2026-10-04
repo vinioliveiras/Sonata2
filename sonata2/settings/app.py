@@ -1087,8 +1087,28 @@ class Settings(Adw.ApplicationWindow):
                                                  "everyday apps use the graphics that draw the screens. An app "
                                                  "can have its own choice: right-click it in the Dock or "
                                                  "Launchpad. For apps opened after the change."))
+                self._gpu_card_rows(graphics, gpu)
             pages.append(graphics)
         return pages
+
+    @staticmethod
+    def _gpu_card_rows(graphics, gpu) -> None:
+        """Which card games and everyday apps use: Automatic (Sonata's pick,
+        named) or one forced by the user (Vini: in case Sonata guesses wrong)."""
+        cs = gpu.cards()
+        if len(cs) < 2:
+            return
+        names = {c.tag: gpu.card_name(c) for c in cs}
+        best = gpu.best_discrete()
+        auto = f"Automatic ({names[best.tag]})" if best else "Automatic"
+        cfg = config.load(gpu.NAME, gpu.DEFAULTS)
+        graphics.add(combo_row("Graphics for Games", [("", auto)] + list(names.items()),
+                               cfg.get("games_gpu", ""), lambda tag: gpu.set_card("games", tag),
+                               subtitle="Games, creative apps and apps set to use high-performance graphics."))
+        graphics.add(combo_row("Graphics for Apps", [("", "Automatic")] + list(names.items()),
+                               cfg.get("apps_gpu", ""), lambda tag: gpu.set_card("apps", tag),
+                               subtitle="Everyday apps, while Smart Graphics Switching is on. A card without "
+                                        "displays of its own can keep some apps from opening."))
 
     @staticmethod
     def _gpu_subtitle(gpu) -> str:

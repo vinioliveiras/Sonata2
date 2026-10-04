@@ -7,11 +7,14 @@ Launchpad -> "Use High-Performance Graphics". Apps whose desktop entry asks for 
 (PrefersNonDefaultGPU=true) get it on their own. Every Sonata launch goes
 through apps.py, which adds the environment below when the app wants it.
 
-The environment comes from switcheroo-control when it runs (it knows each
-GPU's variables); otherwise NVIDIA's PRIME render offload variables, or
-DRI_PRIME=1 for two Mesa GPUs."""
+Which card is the high-performance one: scan_cards() (switcheroo-control's
+"Discrete" when it says, else each card's driver, address and memory). Its
+environment: NVIDIA's PRIME render offload variables, or DRI_PRIME with the
+card's address."""
 import glob
 import os
+import re
+from collections import namedtuple
 
 from . import config
 
@@ -25,7 +28,9 @@ DEFAULTS = {"discrete": [], "integrated": [],
             # high-performance card, everyday apps the GPU that draws the screens
             "smart": True,
             "everyday_integrated": False,      # (before Smart Graphics Switching; no longer read)
-            "light_effects": True}             # gamemode.LightEffects
+            "light_effects": True,
+            # Settings > Displays > Graphics: a card's DRI_PRIME tag, "" = Sonata decides
+            "games_gpu": "", "apps_gpu": ""}             # gamemode.LightEffects
 NVIDIA_ENV = {"__NV_PRIME_RENDER_OFFLOAD": "1", "__GLX_VENDOR_LIBRARY_NAME": "nvidia",
               "__VK_LAYER_NV_optimus": "NVIDIA_only", "__EGL_VENDOR_LIBRARY_FILENAMES":
               "/usr/share/glvnd/egl_vendor.d/10_nvidia.json"}
@@ -72,19 +77,147 @@ def has_dual_gpu() -> bool:
 
 
 def discrete_env() -> dict:
-    global _env
-    if _env is None:
-        # the NVIDIA card first: with a MUX in dGPU mode it is the default GPU,
-        # switcheroo's "other" one is then the integrated -- Steam and its games
-        # went there and couldn't draw on the NVIDIA screens (Vini)
-        if "nvidia" in _cards():
-            _env = dict(NVIDIA_ENV)
-            if not os.path.exists(_env["__EGL_VENDOR_LIBRARY_FILENAMES"]):
-                _env.pop("__EGL_VENDOR_LIBRARY_FILENAMES")
+    """The environment that puts an app on the high-performance card."""
+    if _env is not None:                                   # tests
+        return _env
+    c = high_performance()
+    return env_for(c) if c else {"DRI_PRIME": "1"}
+
+
+# -- which card is which --------------------------------------------------------------------------
+# Not "the NVIDIA one" nor switcheroo's non-default GPU: with a MUX in dGPU
+# mode that is the integrated one, and Steam's games went there (Vini). Each
+# card is judged by itself, so an APU + Radeon, Intel + Arc or Intel + NVIDIA
+# machine gets it right too; Settings > Displays > Graphics can force either.
+Card = namedtuple("Card", "tag addr driver discrete vram")      # tag: DRI_PRIME's "pci-0000_01_00_0"
+NVIDIA_DRIVERS = ("nvidia", "nouveau")
+_card_list = None
+
+
+def _read_int(path: str) -> int:
+    try:
+        return int(open_text(path) or "0", 0)
+    except ValueError:
+        return 0
+
+
+def _switcheroo_discrete() -> dict:
+    """{DRI_PRIME tag: discrete} from switcheroo-control (versions with "Discrete")."""
+    try:
+        from gi.repository import Gio, GLib
+        bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        props = bus.call_sync("net.hadess.SwitcherooControl", "/net/hadess/SwitcherooControl",
+                              "org.freedesktop.DBus.Properties", "GetAll",
+                              GLib.Variant("(s)", ("net.hadess.SwitcherooControl",)),
+                              None, Gio.DBusCallFlags.NONE, 800, None).unpack()[0]
+    except Exception:
+        return {}
+    out = {}
+    for g in props.get("GPUs", []):
+        e = list(g.get("Environment", []))
+        tag = dict(zip(e[::2], e[1::2])).get("DRI_PRIME", "")
+        if tag and "Discrete" in g:
+            out[tag] = bool(g["Discrete"])
+    return out
+
+
+def scan_cards(sys: str = "/sys", told=None) -> list:
+    """The GPUs, in card order. told: switcheroo's {tag: discrete}, which wins.
+    Otherwise: NVIDIA is discrete; Intel's integrated GPU is always 00:02.0
+    (Arc is elsewhere); an AMD card is discrete beside an Intel iGPU, not
+    beside NVIDIA, and of two AMD cards the APU has the smaller memory."""
+    raw = []
+    for card in sorted(glob.glob(os.path.join(sys, "class/drm/card[0-9]*"))):
+        if not os.path.basename(card)[4:].isdigit():
+            continue                                      # a connector (card1-HDMI-A-1)
+        dev = os.path.realpath(os.path.join(card, "device"))
+        drv = os.path.realpath(os.path.join(dev, "driver"))
+        if not os.path.isdir(drv):
+            continue
+        addr = os.path.basename(dev)
+        raw.append((addr, os.path.basename(drv), _read_int(os.path.join(dev, "mem_info_vram_total"))))
+    told = _switcheroo_discrete() if told is None else told
+    out = []
+    for addr, drv, vram in raw:
+        tag = "pci-" + addr.replace(":", "_").replace(".", "_")
+        if tag in told:
+            disc = told[tag]
+        elif drv.startswith(NVIDIA_DRIVERS):
+            disc = True
+        elif drv in ("i915", "xe"):
+            disc = not addr.endswith(":00:02.0")
+        elif drv in ("amdgpu", "radeon"):
+            amd = [v for a, d, v in raw if a != addr and d in ("amdgpu", "radeon")]
+            if amd:
+                disc = vram > max(amd)
+            else:
+                disc = any(d in ("i915", "xe") and a.endswith(":00:02.0") for a, d, _v in raw)
         else:
-            sw = _switcheroo()
-            _env = sw[1] if sw and sw[1] else {"DRI_PRIME": "1"}
-    return _env
+            disc = False
+        out.append(Card(tag, addr, drv, disc, vram))
+    return out
+
+
+def cards() -> list:
+    global _card_list
+    if _card_list is None:
+        _card_list = scan_cards()
+    return _card_list
+
+
+def _by_tag(tag):
+    return next((c for c in cards() if c.tag == tag), None) if tag else None
+
+
+def best_discrete(cs=None):
+    """The most capable discrete card (NVIDIA first, then the most memory)."""
+    disc = [c for c in (cards() if cs is None else cs) if c.discrete]
+    return max(disc, key=lambda c: (c.driver.startswith(NVIDIA_DRIVERS), c.vram)) if disc else None
+
+
+def high_performance():
+    """The card games and creative apps get: the user's (Settings) or the best discrete one."""
+    return _by_tag(config.load(NAME, DEFAULTS).get("games_gpu")) or best_discrete()
+
+
+def everyday():
+    """The card the user picked for everyday apps (Settings), None = Sonata decides."""
+    return _by_tag(config.load(NAME, DEFAULTS).get("apps_gpu"))
+
+
+def set_card(kind: str, tag: str) -> None:
+    """kind: "games" or "apps"; tag "" = automatic."""
+    config.update(NAME, **{f"{kind}_gpu": tag or ""})
+
+
+def env_for(card) -> dict:
+    """NVIDIA's offload variables, or DRI_PRIME with the card's own address
+    (two AMD cards told apart); a Mesa card beside NVIDIA also needs Mesa's
+    GL/EGL/Vulkan, or NVIDIA's libraries answer anyway."""
+    if card.driver.startswith(NVIDIA_DRIVERS):
+        env = dict(NVIDIA_ENV)
+        if not os.path.exists(env["__EGL_VENDOR_LIBRARY_FILENAMES"]):
+            env.pop("__EGL_VENDOR_LIBRARY_FILENAMES")
+        return env
+    env = integrated_env() if any(c.driver.startswith(NVIDIA_DRIVERS) for c in cards()) else {}
+    env["DRI_PRIME"] = card.tag
+    return env
+
+
+def card_name(card) -> str:
+    """"NVIDIA GeForce RTX 4060 ..." from lspci (Settings only)."""
+    import subprocess
+    from .backend.system import _gpu_name
+    try:
+        out = subprocess.run(["lspci", "-mm", "-s", card.addr], capture_output=True, text=True,
+                             timeout=2).stdout
+        f = re.findall(r'"([^"]*)"', out)
+        if len(f) >= 3:
+            return _gpu_name(f[1], f[2])
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return {"nvidia": "NVIDIA", "nouveau": "NVIDIA", "amdgpu": "AMD", "radeon": "AMD"}.get(
+        card.driver, "Intel" if card.driver in ("i915", "xe") else card.driver) + " graphics"
 
 
 def _key(info) -> str:
@@ -382,8 +515,12 @@ def launch_env(info) -> dict:
     through Xwayland (Spotify, CEF) opened empty (Vini)."""
     if wants_discrete(info):
         return discrete_env()
-    if smart() and not heavy(info) and render_gpu() in INTEGRATED:
-        return integrated_env()
+    if smart() and not heavy(info):
+        picked = everyday()
+        if picked:                                          # forced in Settings
+            return env_for(picked)
+        if render_gpu() in INTEGRATED:
+            return integrated_env()
     return {}
 
 

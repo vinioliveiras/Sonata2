@@ -13,20 +13,96 @@ config.CONFIG_DIR = os.path.join(os.environ["XDG_CONFIG_HOME"], "sonata2")
 
 
 class GpuTest(unittest.TestCase):
-    def test_discrete_is_nvidia_with_a_mux(self):
-        """MUX in dGPU mode: switcheroo's non-default GPU is the integrated one;
-        Steam got DRI_PRIME / *radeon* and its games couldn't draw (Vini)."""
+    @staticmethod
+    def _sys(*cards):
+        """A fake /sys: cards = (pci address, driver, VRAM bytes)."""
+        root = tempfile.mkdtemp()
+        drm = os.path.join(root, "class/drm")
+        os.makedirs(drm)
+        for i, (addr, drv, vram) in enumerate(cards):
+            dev = os.path.join(root, "devices", addr)
+            os.makedirs(dev)
+            os.makedirs(os.path.join(root, "drivers", drv), exist_ok=True)
+            os.symlink(os.path.join(root, "drivers", drv), os.path.join(dev, "driver"))
+            if vram:
+                with open(os.path.join(dev, "mem_info_vram_total"), "w") as f:
+                    f.write(str(vram))
+            os.makedirs(os.path.join(drm, f"card{i}"))
+            os.symlink(dev, os.path.join(drm, f"card{i}", "device"))
+            os.makedirs(os.path.join(drm, f"card{i}-HDMI-A-1"))       # a connector: skipped
+        return root
+
+    def _best(self, *cards, told=None):
+        cs = gpu.scan_cards(self._sys(*cards), told={} if told is None else told)
+        self.assertEqual(len(cs), len(cards))
+        return gpu.best_discrete(cs)
+
+    def test_high_performance_card(self):
+        """MUX in dGPU mode: switcheroo's non-default GPU was the integrated
+        one and Steam's games went there (Vini). Each machine kind:"""
+        G = 1 << 30
+        apu, nv = ("0000:36:00.0", "amdgpu", 512 << 20), ("0000:01:00.0", "nvidia", 0)
+        self.assertEqual(self._best(apu, nv).driver, "nvidia")                      # AMD APU + NVIDIA
+        self.assertEqual(self._best(apu, ("0000:03:00.0", "amdgpu", 8 * G)).addr, "0000:03:00.0")  # APU + Radeon
+        igpu = ("0000:00:02.0", "i915", 0)
+        self.assertEqual(self._best(igpu, ("0000:03:00.0", "amdgpu", 8 * G)).driver, "amdgpu")   # Intel + Radeon
+        self.assertEqual(self._best(igpu, ("0000:04:00.0", "xe", 0)).addr, "0000:04:00.0")       # Intel + Arc
+        self.assertEqual(self._best(igpu, nv).driver, "nvidia")                                  # Intel + NVIDIA
+        self.assertIsNone(self._best(apu))                                                       # one APU
+        # switcheroo's "Discrete" wins over the guess
+        self.assertEqual(self._best(apu, ("0000:03:00.0", "amdgpu", 256 << 20),
+                                    told={"pci-0000_36_00_0": False, "pci-0000_03_00_0": True}).addr,
+                         "0000:03:00.0")
+
+    def test_env_for_card(self):
         from unittest import mock
-        radeon = (True, {"DRI_PRIME": "pci-0000_36_00_0", "VK_LOADER_DRIVERS_SELECT": "*radeon*"})
-        with mock.patch.object(gpu, "_env", None), mock.patch.object(gpu, "_switcheroo", return_value=radeon), \
-                mock.patch.object(gpu, "_cards", return_value=["nvidia", "amdgpu"]):
-            env = gpu.discrete_env()
-        self.assertEqual(env["__NV_PRIME_RENDER_OFFLOAD"], "1")
-        self.assertNotIn("DRI_PRIME", env)
-        self.assertNotIn("VK_LOADER_DRIVERS_SELECT", env)
-        with mock.patch.object(gpu, "_env", None), mock.patch.object(gpu, "_switcheroo", return_value=radeon), \
-                mock.patch.object(gpu, "_cards", return_value=["amdgpu", "amdgpu"]):
-            self.assertEqual(gpu.discrete_env(), radeon[1])     # no NVIDIA: switcheroo decides
+        nv = gpu.Card("pci-0000_01_00_0", "0000:01:00.0", "nvidia", True, 0)
+        amd = gpu.Card("pci-0000_36_00_0", "0000:36:00.0", "amdgpu", False, 0)
+        with mock.patch.object(gpu, "_card_list", [nv, amd]):
+            self.assertEqual(gpu.env_for(nv)["__NV_PRIME_RENDER_OFFLOAD"], "1")
+            self.assertNotIn("DRI_PRIME", gpu.env_for(nv))
+            self.assertEqual(gpu.env_for(amd)["DRI_PRIME"], "pci-0000_36_00_0")
+            # Settings can force either kind of app onto a card
+            gpu.set_card("games", amd.tag)
+            self.assertEqual(gpu.high_performance(), amd)
+            gpu.set_card("games", "")
+            self.assertEqual(gpu.high_performance(), nv)
+            self.assertIsNone(gpu.everyday())
+            gpu.set_card("apps", nv.tag)
+            self.assertEqual(gpu.everyday(), nv)
+            gpu.set_card("apps", "")
+
+    def test_settings_card_rows(self):
+        """Settings > Displays > Graphics: two pickers, Automatic named after Sonata's pick."""
+        from unittest import mock
+        import gi
+        gi.require_version("Adw", "1")
+        from gi.repository import Adw
+        Adw.init()
+        from sonata2.settings import app as settings
+        nv = gpu.Card("pci-0000_01_00_0", "0000:01:00.0", "nvidia", True, 0)
+        amd = gpu.Card("pci-0000_36_00_0", "0000:36:00.0", "amdgpu", False, 0)
+        g = settings.group("Graphics")
+        with mock.patch.object(gpu, "_card_list", [nv, amd]), \
+                mock.patch.object(gpu, "card_name", lambda c: "RTX" if c is nv else "680M"):
+            settings.Settings._gpu_card_rows(g, gpu)
+            rows = []
+            w = g.get_first_child()
+            stack = [w]
+            while stack:
+                w = stack.pop()
+                if w is None:
+                    continue
+                if isinstance(w, Adw.ComboRow):
+                    rows.append(w)
+                stack += [w.get_first_child(), w.get_next_sibling()]
+            self.assertEqual(sorted(r.get_title() for r in rows), ["Graphics for Apps", "Graphics for Games"])
+            games = next(r for r in rows if r.get_title() == "Graphics for Games")
+            self.assertEqual(games.get_model().get_string(0), "Automatic (RTX)")
+            games.set_selected(2)                                  # the 680M, forced
+            self.assertEqual(gpu.high_performance(), amd)
+            games.set_selected(0)
+            self.assertEqual(gpu.high_performance(), nv)
 
     def test_launch_env(self):
         d = tempfile.mkdtemp()
