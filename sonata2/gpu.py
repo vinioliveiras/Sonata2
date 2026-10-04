@@ -429,7 +429,34 @@ def extra_args(info) -> list:
     """Arguments an app needs to open here (added to its Exec line)."""
     if _key(info) in STEAM_APPS and "nvidia" in _cards():
         return list(STEAM_ARGS)
+    if _key(info) in X11_APPS:
+        return ["--ozone-platform=x11"]          # wins over the hint its launcher sets
     return []
+
+
+# The Flatpak (io.github.shiftey.Desktop) sets ELECTRON_OZONE_PLATFORM_HINT=auto
+# itself, over ours, and gets no X11 socket while Wayland is there: forced to
+# X11 it said "Missing X server" (Vini). Options for `flatpak run` itself.
+FLATPAK_X11 = ["--socket=x11", "--env=ELECTRON_OZONE_PLATFORM_HINT=x11"]
+
+
+def launcher_args(info, commandline: str) -> list:
+    """Options for the launcher (`flatpak run ...`), not the app."""
+    if _key(info) in X11_APPS and " run " in f" {commandline} " and "flatpak" in commandline:
+        return list(FLATPAK_X11)
+    return []
+
+
+def with_launcher_args(commandline: str, args) -> str:
+    """`args` right after `flatpak run` (its own options); unchanged otherwise."""
+    import shlex
+    if not args:
+        return commandline
+    words = shlex.split(commandline)
+    if "run" not in words or not any(w.endswith("flatpak") for w in words[:words.index("run")]):
+        return commandline
+    at = words.index("run") + 1
+    return shlex.join(words[:at] + list(args) + words[at:]).replace("'%U'", "%U").replace("'%u'", "%u")
 
 
 def with_args(commandline: str, args) -> str:

@@ -104,6 +104,24 @@ class GpuTest(unittest.TestCase):
             games.set_selected(0)
             self.assertEqual(gpu.high_performance(), nv)
 
+    def test_github_desktop_flatpak_opens_under_xwayland(self):
+        """Vini: GitHub Desktop (Flatpak) never opened -- its GPU process failed
+        on Wayland, and our X11 hint was overridden by the Flatpak's own (no X11
+        socket either: "Missing X server"). flatpak run gets the socket and the
+        hint, the app --ozone-platform=x11."""
+        from unittest import mock
+        info = mock.Mock()
+        info.get_id.return_value = "io.github.shiftey.Desktop.desktop"
+        line = ("/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=start-github-desktop "
+                "--file-forwarding io.github.shiftey.Desktop @@u %U @@")
+        cmd = gpu.with_launcher_args(gpu.with_args(line, gpu.extra_args(info)), gpu.launcher_args(info, line))
+        self.assertTrue(cmd.startswith("/usr/bin/flatpak run --socket=x11 --env=ELECTRON_OZONE_PLATFORM_HINT=x11 "))
+        self.assertIn("io.github.shiftey.Desktop --ozone-platform=x11 @@u %U @@", cmd)
+        other = mock.Mock()
+        other.get_id.return_value = "org.gnome.Calculator.desktop"
+        self.assertEqual(gpu.launcher_args(other, line), [])
+        self.assertEqual(gpu.with_launcher_args("/usr/bin/foo %U", gpu.FLATPAK_X11), "/usr/bin/foo %U")   # no flatpak
+
     def test_launch_env(self):
         d = tempfile.mkdtemp()
         out = os.path.join(d, "env.txt")

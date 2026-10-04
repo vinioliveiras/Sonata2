@@ -68,8 +68,10 @@ def _gpu_aware(method):
                         context = Gio.AppLaunchContext()
                     context.unsetenv(name)
             args = gpu.extra_args(self)
-            if args:                              # the same app with its Exec line + args (Steam)
-                cmd = gpu.with_args(self.get_commandline() or "", args)
+            line = self.get_commandline() or ""
+            run_args = gpu.launcher_args(self, line)
+            if args or run_args:                  # the same app with its Exec line + args (Steam)
+                cmd = gpu.with_launcher_args(gpu.with_args(line, args), run_args)
                 flags = Gio.AppInfoCreateFlags.SUPPORTS_URIS if "%U" in cmd or "%u" in cmd \
                     else Gio.AppInfoCreateFlags.NONE
                 other = Gio.AppInfo.create_from_commandline(cmd, self.get_name(), flags)
