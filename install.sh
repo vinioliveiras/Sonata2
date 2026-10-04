@@ -307,6 +307,7 @@ if command -v meson >/dev/null && command -v ninja >/dev/null && pkg-config --ex
         echo "  installed to $PLUG_PREFIX (log out and back in to load a new version)"
     else
         echo "  couldn't build it (window corners stay square); log: $bdir.log"
+        grep -m8 -E "error|FAILED" "$bdir.log" | sed 's/^/    /'      # the reason, right here
     fi
     # pixdecor with long titles cut before the buttons (wayfire-plugin/pixdecor-title.patch):
     # built into the same user folder, which Wayfire searches before the system's

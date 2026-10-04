@@ -57,6 +57,7 @@
 #include <wayfire/render.hpp>
 #include <wayfire/util.hpp>
 #include <wayfire/seat.hpp>
+#include <wayfire/nonstd/wlroots-full.hpp>     // wlr_surface (the FPS counter watches its commits)
 #include <wayfire/plugins/ipc/ipc-method-repository.hpp>
 #include <wayfire/plugins/ipc/ipc-helpers.hpp>
 #include <wayfire/plugins/common/shared-core-data.hpp>
@@ -543,7 +544,7 @@ class corners_node_t : public wf::scene::transformer_base_node_t, public wf::sce
         wf::geometry_t f{g.x + inset, g.y + inset, g.width - 2 * inset, g.height - 2 * inset};
         /* the corners as drawn: the real radius (+1 for the antialiased
          * edge), never more than half the frame */
-        int c = std::min((int)std::ceil(corner_radius()) + 1, std::min(f.width, f.height) / 2);
+        int c = std::min<int>((int)std::ceil(corner_radius()) + 1, (int)(std::min(f.width, f.height) / 2));
         for (auto corner : {wf::geometry_t{f.x, f.y, c, c}, wf::geometry_t{f.x + f.width - c, f.y, c, c},
                             wf::geometry_t{f.x, f.y + f.height - c, c, c},
                             wf::geometry_t{f.x + f.width - c, f.y + f.height - c, c, c}})

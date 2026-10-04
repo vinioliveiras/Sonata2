@@ -27,6 +27,17 @@ class PluginTest(unittest.TestCase):
         self.assertIn("shared_module('sonata-resize'", meson)
         self.assertIn("metadata/sonata-resize.xml", meson)
 
+    def test_plugins_build_on_wayfire_0_12(self):
+        """Vini: the new resize did nothing -- Sonata's plugins had stopped
+        building (sonata-corners: wlr_surface incomplete, min(int, double)),
+        so neither the new one nor the FPS counter got installed, and
+        install.sh only said "couldn't build it"."""
+        src = (ROOT / "wayfire-plugin" / "src" / "sonata-corners.cpp").read_text()
+        self.assertIn("#include <wayfire/nonstd/wlroots-full.hpp>", src)
+        self.assertNotIn("std::min(f.width, f.height) / 2);", src)
+        inst = (ROOT / "install.sh").read_text()
+        self.assertIn('grep -m8 -E "error|FAILED" "$bdir.log"', inst)       # the reason, right there
+
     def test_replaces_resize_once_built(self):
         d = tempfile.mkdtemp()
         with open(os.path.join(d, "in.ini"), "w") as f:
