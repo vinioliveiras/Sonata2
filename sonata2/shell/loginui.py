@@ -79,7 +79,11 @@ def power_bar(action) -> Gtk.Widget:
                                 ("Restart", "view-refresh-symbolic", "Reboot"),
                                 ("Shut Down", "system-shutdown-symbolic", "PowerOff")):
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        b = Gtk.Button(icon_name=icon, css_classes=["gr-power"], halign=Gtk.Align.CENTER, tooltip_text=label)
+        # the pointer only (macOS): never keyboard focus -- while the password was
+        # checked the field gave its focus away, and the next Enter restarted the
+        # computer (Vini, lock screen)
+        b = Gtk.Button(icon_name=icon, css_classes=["gr-power"], halign=Gtk.Align.CENTER, tooltip_text=label,
+                       focusable=False, focus_on_click=False)
         b.connect("clicked", lambda _b, m=method: (power_log(f"{m}: button clicked"), action(m)))
         col.append(b)
         col.append(Gtk.Label(label=label, css_classes=["gr-power-label"]))

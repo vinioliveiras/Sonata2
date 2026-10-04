@@ -1822,6 +1822,22 @@ class PowerButtonsRegressions(unittest.TestCase):
                 col = col.get_next_sibling()
         self.assertEqual(asked, ["Suspend", "Reboot", "PowerOff"])
 
+    def test_power_buttons_never_take_the_keyboard(self):
+        """Vini: the lock screen restarted the computer while he logged in --
+        the field gave its focus away during the password check, and Enter
+        pressed the focused Restart button. Pointer only, like macOS."""
+        from sonata2.shell import loginui
+        bar = loginui.power_bar(lambda m: None)
+        col = bar.get_first_child()
+        n = 0
+        while col is not None:
+            b = col.get_first_child()
+            self.assertFalse(b.get_focusable(), b.get_tooltip_text())
+            self.assertFalse(b.get_focus_on_click(), b.get_tooltip_text())
+            n += 1
+            col = col.get_next_sibling()
+        self.assertEqual(n, 3)
+
 
 class DisplayGpuOnlyRegressions(unittest.TestCase):
     """Vini: with the MUX in dGPU mode every screen is on the NVIDIA card, yet
