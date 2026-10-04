@@ -15,7 +15,8 @@ fps_state).
 
 KINDS: what can be shown -- cpu, gpu (one card) or gpu_<card> for each
 card ("gpu_amd", "gpu_nvidia"), vram or vram_<card> (cards that report their
-video memory: NVIDIA, AMD), ram, net, fps."""
+video memory: NVIDIA, AMD), temp_cpu and temp_gpu or temp_<card>
+(temperatures, °C), ram, net, fps."""
 import glob
 import os
 import threading
@@ -57,11 +58,40 @@ def vram_kinds(cards=None) -> dict:
     return {"vram": keys[0]} if len(keys) == 1 else {"vram_" + k: k for k in keys}
 
 
-def kinds(cards=None) -> tuple:
+TEMP_MAKERS = ("NVIDIA", "AMD")        # cards whose temperature can be read (Intel's iGPU: the CPU's)
+CPU_SENSORS = ("k10temp", "zenpower", "coretemp", "cpu_thermal")
+CPU_LABELS = ("Tctl", "Tdie", "Package id 0")          # the whole chip, before a single core
+
+
+def cpu_temp_path(sys: str = "/sys") -> str:
+    """The CPU's temperature file (hwmon), "" when there is none."""
+    for hw in sorted(glob.glob(os.path.join(sys, "class/hwmon/hwmon*"))):
+        if procfs._read(os.path.join(hw, "name")).strip() not in CPU_SENSORS:
+            continue
+        inputs = sorted(glob.glob(os.path.join(hw, "temp*_input")))
+        labels = {procfs._read(i.replace("_input", "_label")).strip(): i for i in inputs}
+        for want in CPU_LABELS:
+            if want in labels:
+                return labels[want]
+        if inputs:
+            return inputs[0]
+    return ""
+
+
+def temp_kinds(cards=None) -> dict:
+    """{kind: card key} of the cards whose temperature can be shown:
+    "temp_gpu" for one, "temp_<card>" each when there are two or more."""
+    cards = gpu_cards() if cards is None else cards
+    keys = [key for key, maker, _c in cards if maker in TEMP_MAKERS]
+    return {"temp_gpu": keys[0]} if len(keys) == 1 else {"temp_" + k: k for k in keys}
+
+
+def kinds(cards=None, cpu_temp=None) -> tuple:
     """The figures that can be shown: one GPU, or one per card when there are two or more."""
     cards = gpu_cards() if cards is None else cards
     gpus = ["gpu"] if len(cards) < 2 else ["gpu_" + key for key, _m, _c in cards]
-    return ("cpu", *gpus, *vram_kinds(cards), "ram", "net", "fps")
+    temps = (["temp_cpu"] if (cpu_temp_path() if cpu_temp is None else cpu_temp) else []) + list(temp_kinds(cards))
+    return ("cpu", *gpus, *vram_kinds(cards), *temps, "ram", "net", "fps")
 
 
 CARDS = gpu_cards()
@@ -69,6 +99,8 @@ KINDS = kinds(CARDS)
 GPU_MAKERS = {"gpu_" + key: maker for key, maker, _c in CARDS}     # "gpu_nvidia" -> "NVIDIA"
 VRAM_KINDS = vram_kinds(CARDS)                                      # "vram_nvidia" -> "nvidia"
 VRAM_MAKERS_BY_KIND = {k: dict((c[0], c[1]) for c in CARDS)[key] for k, key in VRAM_KINDS.items()}
+TEMP_KINDS = temp_kinds(CARDS)                                      # "temp_nvidia" -> "nvidia"
+TEMP_MAKERS_BY_KIND = {k: dict((c[0], c[1]) for c in CARDS)[key] for k, key in TEMP_KINDS.items()}
 
 
 @dataclass
@@ -77,6 +109,8 @@ class Reading:
     gpu: Optional[float] = None
     gpus: dict = field(default_factory=dict)        # card key -> % (None: no reading)
     vrams: dict = field(default_factory=dict)       # card key -> (used, total) bytes (None: no reading)
+    cpu_temp: Optional[float] = None                # °C
+    temps: dict = field(default_factory=dict)       # card key -> °C (None: no reading)
     ram_used: int = 0
     ram_total: int = 0
     down: float = 0.0
@@ -102,6 +136,8 @@ class Sampler:
         self._nv_pct = None
         self._nv_list = []                 # nvidia-smi's figures, one per NVIDIA card in order
         self._nv_mem = []                  # (used, total) bytes, one per NVIDIA card in order
+        self._nv_temp = []                 # °C, one per NVIDIA card in order
+        self._cpu_temp = None              # its hwmon file ("" none)
         self._nv_busy = False
         self._cards = None
 
@@ -142,7 +178,7 @@ class Sampler:
         if awake:
             self._nvidia_refresh()
         else:
-            self._nv_pct, self._nv_list, self._nv_mem = None, [], []
+            self._nv_pct, self._nv_list, self._nv_mem, self._nv_temp = None, [], [], []
         out, nth = {}, 0
         for key, maker, card in self._cards:
             if maker == "NVIDIA":
@@ -171,6 +207,29 @@ class Sampler:
                 out[key] = (int(used), int(total)) if used.isdigit() and total.isdigit() and int(total) else None
         return out
 
+    def cpu_temp(self):
+        """The CPU's °C (k10temp's Tctl, coretemp's package), None without a sensor."""
+        if self._cpu_temp is None:
+            self._cpu_temp = cpu_temp_path(self.sys)
+        v = procfs._read(self._cpu_temp).strip() if self._cpu_temp else ""
+        return int(v) / 1000 if v.lstrip("-").isdigit() else None
+
+    def temps(self) -> dict:
+        """{card key: °C} of each card in TEMP_MAKERS: AMD from its hwmon
+        (edge), NVIDIA from the nvidia-smi read of gpus(). Call after gpus()."""
+        if self._cards is None:
+            self._cards = gpu_cards(self.sys)
+        out, nth = {}, 0
+        for key, maker, card in self._cards:
+            if maker == "NVIDIA":
+                out[key] = self._nv_temp[nth] if nth < len(self._nv_temp) else None
+                nth += 1
+            elif maker in TEMP_MAKERS:
+                files = sorted(glob.glob(os.path.join(self.sys, "class/drm", card, "device/hwmon/hwmon*/temp1_input")))
+                v = procfs._read(files[0]).strip() if files else ""
+                out[key] = int(v) / 1000 if v.lstrip("-").isdigit() else None
+        return out
+
     def gpu(self, each: dict = None) -> Optional[float]:
         """The busiest card (from gpus())."""
         vals = [v for v in (self.gpus() if each is None else each).values() if v is not None]
@@ -184,10 +243,10 @@ class Sampler:
         def run():
             import subprocess
             try:
-                out = subprocess.run([self._nvidia.tool, "--query-gpu=utilization.gpu,memory.used,memory.total",
+                out = subprocess.run([self._nvidia.tool, "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu",
                                       "--format=csv,noheader,nounits"],
                                      capture_output=True, text=True, timeout=3).stdout
-                self._nv_list, self._nv_mem = parse_nvidia(out)
+                self._nv_list, self._nv_mem, self._nv_temp = parse_nvidia(out)
                 self._nv_pct = max(self._nv_list) if self._nv_list else None
             except (OSError, ValueError, Exception):
                 self._nv_pct = None
@@ -214,9 +273,10 @@ class Sampler:
 
 
 def parse_nvidia(out: str) -> tuple:
-    """([busy %], [(used, total) bytes]) from nvidia-smi's
-    utilization.gpu,memory.used,memory.total (MiB) rows, one per card."""
-    pcts, mems = [], []
+    """([busy %], [(used, total) bytes], [°C]) from nvidia-smi's
+    utilization.gpu,memory.used,memory.total (MiB),temperature.gpu rows,
+    one per card."""
+    pcts, mems, temps = [], [], []
     for line in out.splitlines():
         parts = [p.strip() for p in line.split(",")]
         try:
@@ -228,7 +288,11 @@ def parse_nvidia(out: str) -> tuple:
             mems.append((used, total) if total else None)
         except (ValueError, IndexError):
             mems.append(None)
-    return pcts, mems
+        try:
+            temps.append(float(parts[3]))
+        except (ValueError, IndexError):
+            temps.append(None)
+    return pcts, mems, temps
 
 
 class Stats:
@@ -288,7 +352,7 @@ class Stats:
         down, up = s.net(dt)
         fps, state = s.fps()
         each = s.gpus()
-        return Reading(cpu=s.cpu(), gpu=s.gpu(each), gpus=each, vrams=s.vrams(), ram_used=used, ram_total=total, down=down,
+        return Reading(cpu=s.cpu(), gpu=s.gpu(each), gpus=each, vrams=s.vrams(), cpu_temp=s.cpu_temp(), temps=s.temps(), ram_used=used, ram_total=total, down=down,
                        up=up, fps=fps, fps_state=state)
 
     def _deliver(self, r: Optional[Reading]) -> None:
@@ -297,7 +361,8 @@ class Stats:
             return
         for k, v in (("cpu", r.cpu), ("gpu", r.gpu), ("ram", r.ram_pct), ("down", r.down), ("up", r.up),
                      ("fps", r.fps), *(("gpu_" + key, pct) for key, pct in r.gpus.items()),
-                     *((kind, vram_pct(r, key)) for kind, key in VRAM_KINDS.items())):
+                     *((kind, vram_pct(r, key)) for kind, key in VRAM_KINDS.items()),
+                     ("temp_cpu", r.cpu_temp), *((kind, r.temps.get(key)) for kind, key in TEMP_KINDS.items())):
             h = self.history.setdefault(k, [])
             h.append(v if v is not None else 0.0)
             del h[:-HISTORY]
@@ -348,6 +413,12 @@ def text(kind: str, r: Reading) -> str:
         v = r.vrams.get(VRAM_KINDS[kind])
         name = "VRAM" if kind == "vram" else f"{VRAM_MAKERS_BY_KIND[kind]} VRAM"
         return f"{name} –" if not v else f"{name} {gib(v[0])} GB"
+    if kind == "temp_cpu":                          # "CPU 62°C"
+        return "CPU –" if r.cpu_temp is None else f"CPU {r.cpu_temp:.0f}°C"
+    if kind in TEMP_KINDS:                          # "GPU 55°C", "NVIDIA 55°C"
+        v = r.temps.get(TEMP_KINDS[kind])
+        name = "GPU" if kind == "temp_gpu" else TEMP_MAKERS_BY_KIND[kind]
+        return f"{name} –" if v is None else f"{name} {v:.0f}°C"
     if kind == "ram":
         return f"RAM {r.ram_pct:.0f}%"
     if kind == "net":

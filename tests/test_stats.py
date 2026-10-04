@@ -118,9 +118,9 @@ class SamplerTest(unittest.TestCase):
         cards = S.gpu_cards(self.f.sys)
         self.assertEqual(S.vram_kinds(cards), {"vram_amd": "amd", "vram_nvidia": "nvidia"})
         self.assertEqual(S.vram_kinds(cards[1:]), {"vram": "nvidia"})                 # one card: "vram"
-        self.assertIn("vram_nvidia", S.kinds(cards))
-        self.assertEqual(S.parse_nvidia("45, 3072, 8188\n"), ([45.0], [(3072 << 20, 8188 << 20)]))
-        self.assertEqual(S.parse_nvidia("[N/A], 1, 2\n"), ([], []))
+        self.assertIn("vram_nvidia", S.kinds(cards, cpu_temp=""))
+        self.assertEqual(S.parse_nvidia("45, 3072, 8188, 61\n"), ([45.0], [(3072 << 20, 8188 << 20)], [61.0]))
+        self.assertEqual(S.parse_nvidia("[N/A], 1, 2, 3\n"), ([], [], []))
         self.s._nv_mem = [(3 << 30, 8 << 30)]
         self.assertEqual(self.s.vrams(), {"amd": (256 << 20, 512 << 20), "nvidia": (3 << 30, 8 << 30)})
         self.s._nv_mem = []                                        # asleep
@@ -132,6 +132,36 @@ class SamplerTest(unittest.TestCase):
             self.assertEqual(S.text("vram_amd", r), "AMD VRAM –")
         self.assertEqual(S.vram_text(r, "nvidia"), "3.2 / 8.0 GB")
         self.assertAlmostEqual(S.vram_pct(r, "nvidia"), 40.0, places=3)
+
+    def test_temperatures(self):
+        """Vini: temperatures like CPU/GPU use -- the CPU's chip sensor
+        (k10temp Tctl, not a single core), AMD's hwmon, NVIDIA from nvidia-smi."""
+        hw = os.path.join(self.f.sys, "class/hwmon")
+        for n, name, files in ((0, "acpitz", {"temp1_input": "30000"}),
+                               (1, "k10temp", {"temp1_input": "61500", "temp1_label": "Tctl",
+                                               "temp3_input": "50000", "temp3_label": "Tccd1"})):
+            d = os.path.join(hw, f"hwmon{n}")
+            os.makedirs(d)
+            self.f.write(f"sys/class/hwmon/hwmon{n}/name", name + "\n")
+            for k, v in files.items():
+                self.f.write(f"sys/class/hwmon/hwmon{n}/{k}", v + "\n")
+        self.assertEqual(S.cpu_temp_path(self.f.sys), os.path.join(hw, "hwmon1", "temp1_input"))
+        self.assertEqual(self.s.cpu_temp(), 61.5)
+        self.assertIsNone(S.Sampler(self.f.proc, os.path.join(self.f.root, "none")).cpu_temp())   # no sensor
+        d = self.card(0, "amdgpu")
+        os.makedirs(os.path.join(d, "hwmon/hwmon5"))
+        self.f.write("sys/class/drm/card0/device/hwmon/hwmon5/temp1_input", "48000\n")
+        self.card(1, "nvidia")
+        self.s._nv_temp = [55.0]
+        self.assertEqual(self.s.temps(), {"amd": 48.0, "nvidia": 55.0})
+        self.s._nv_temp = []                                       # asleep: never woken
+        self.assertIsNone(self.s.temps()["nvidia"])
+        r = S.Reading(cpu_temp=61.5, temps={"nvidia": 55.0, "amd": None})
+        self.assertEqual(S.text("temp_cpu", r), "CPU 62°C")
+        with mock.patch.object(S, "TEMP_KINDS", {"temp_nvidia": "nvidia", "temp_amd": "amd"}), \
+                mock.patch.object(S, "TEMP_MAKERS_BY_KIND", {"temp_nvidia": "NVIDIA", "temp_amd": "AMD"}):
+            self.assertEqual(S.text("temp_nvidia", r), "NVIDIA 55°C")
+            self.assertEqual(S.text("temp_amd", r), "AMD –")
 
     def test_fps_states(self):
         ipc = self.s._ipc
@@ -173,11 +203,14 @@ class StatsTest(unittest.TestCase):
 
 class KindsTest(unittest.TestCase):
     def test_one_gpu_option_or_one_per_card(self):
-        self.assertEqual(S.kinds([("amd", "AMD", "card0")]), ("cpu", "gpu", "vram", "ram", "net", "fps"))
-        self.assertEqual(S.kinds([("intel", "Intel", "card0")]), ("cpu", "gpu", "ram", "net", "fps"))
-        self.assertEqual(S.kinds([]), ("cpu", "gpu", "ram", "net", "fps"))
-        self.assertEqual(S.kinds([("amd", "AMD", "card0"), ("nvidia", "NVIDIA", "card1")]),
-                         ("cpu", "gpu_amd", "gpu_nvidia", "vram_amd", "vram_nvidia", "ram", "net", "fps"))
+        self.assertEqual(S.kinds([("amd", "AMD", "card0")], cpu_temp=""),
+                         ("cpu", "gpu", "vram", "temp_gpu", "ram", "net", "fps"))
+        self.assertEqual(S.kinds([("intel", "Intel", "card0")], cpu_temp="x"),
+                         ("cpu", "gpu", "temp_cpu", "ram", "net", "fps"))
+        self.assertEqual(S.kinds([], cpu_temp=""), ("cpu", "gpu", "ram", "net", "fps"))
+        self.assertEqual(S.kinds([("amd", "AMD", "card0"), ("nvidia", "NVIDIA", "card1")], cpu_temp="x"),
+                         ("cpu", "gpu_amd", "gpu_nvidia", "vram_amd", "vram_nvidia", "temp_cpu", "temp_amd",
+                          "temp_nvidia", "ram", "net", "fps"))
 
     def test_card_text_and_history(self):
         with mock.patch.dict(S.GPU_MAKERS, {"gpu_nvidia": "NVIDIA"}):

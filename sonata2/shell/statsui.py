@@ -2,7 +2,7 @@
 (Vini; off by default). The figures come from backend/stats.py, read only
 while one of these is on screen.
 
-    KINDS                               # cpu gpu vram ram net fps
+    KINDS                               # cpu gpu vram temp ram net fps
     menu_item(kind, style, on_click)    # menu bar: "text" or "graph"
     module(kind)                        # Control Center module (2x1)"""
 import gi
@@ -25,6 +25,16 @@ for _k, _maker in S.GPU_MAKERS.items():    # two cards or more: one of each per 
     TITLES[_k] = f"GPU ({_maker})"
     CAPTIONS[_k] = SHORT.get(_maker, _maker)
     ICONS[_k] = "gpu-symbolic"
+    SERIES[_k] = (_k,)
+    PERCENT.add(_k)
+TITLES["temp_cpu"], CAPTIONS["temp_cpu"] = "CPU Temperature", "CPU°"
+ICONS["temp_cpu"], SERIES["temp_cpu"] = "temperature-symbolic", ("temp_cpu",)
+PERCENT.add("temp_cpu")                    # °C on a 0..100 scale
+for _k in S.TEMP_KINDS:                    # each card's temperature (Vini)
+    _maker = S.TEMP_MAKERS_BY_KIND[_k]
+    TITLES[_k] = "GPU Temperature" if _k == "temp_gpu" else f"GPU Temperature ({_maker})"
+    CAPTIONS[_k] = "GPU°" if _k == "temp_gpu" else f"{SHORT.get(_maker, _maker)}°"
+    ICONS[_k] = "freon-gpu-temperature-symbolic"
     SERIES[_k] = (_k,)
     PERCENT.add(_k)
 for _k, _key in S.VRAM_KINDS.items():      # each card's video memory (Vini)
