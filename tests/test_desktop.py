@@ -101,9 +101,22 @@ class DesktopDisplaysTest(unittest.TestCase):
             entry = item.lbl.get_next_sibling()
             self.assertEqual(type(entry).__name__, "Entry")                 # typing the name right away
             self.assertEqual(took[-1], (True, "on_demand"))                # the desktop takes the keyboard
+            main.items["untitled folder"].info = item.info.dup()            # a refresh while typing:
+            main._sync()                                                    # the field stays
+            settle(100)
+            self.assertIs(main.items["untitled folder"], item)
             entry.emit("activate")
             settle(100)
         self.assertEqual(took[-1], (False, "on_demand"))                   # and gives it back
+        # the folder's info refreshed (a second monitor event): a new icon for it, at its spot,
+        # never gliding in from the top-left corner (Vini)
+        main.items["untitled folder"].info = main.items["untitled folder"].info.dup()
+        main._sync()
+        fresh = main.items["untitled folder"]                            # before any layout ran:
+        t = main.get_layout_manager().get_layout_child(fresh).get_transform()
+        self.assertEqual(tuple(round(v) for v in t.to_translate()), main.cell_xy(3, 2))
+        settle(300)
+        self.assertIsNone(getattr(fresh, "_glide_anim", None))
 
     def test_every_display_has_a_desktop(self):
         from sonata2.shell.wallpaper import WallpaperWindow

@@ -233,12 +233,16 @@ class Desktop(Gtk.Fixed):
                 placed[name] = next(slots, (self.cols() - 1, rows - 1))
         # icons that already had a spot slide to their new one (new ones just appear)
         old = getattr(self, "_placed", {}) or {}
-        before = ui.transition.glide_record([it for n, it in self.items.items() if n in old], self)
+        # (only icons already drawn at a spot: one just added sits at 0,0 until
+        # now -- it glided in from the top-left corner (Vini))
+        before = ui.transition.glide_record([it for n, it in self.items.items()
+                                             if n in old and getattr(it, "_laid", False)], self)
         for name, (c, r) in placed.items():
             item = self.items.get(name)
             if item:
                 x, y = self.cell_xy(c, r)
                 self.move(item, x, y)
+                item._laid = True
         self._placed = placed
         ui.transition.glide_play(before, self)
 
@@ -273,11 +277,18 @@ class Desktop(Gtk.Fixed):
             old = self.items.get(name)
             if old is not None and old.info is info:
                 continue
-            if old is not None:
+            if old is not None and not old.lbl.get_visible():   # its name being typed: keep the field
+                old.info = info
+                continue
+            at = (0, 0)
+            if old is not None:                       # the same file, fresh info: same spot
+                spot = (getattr(self, "_placed", None) or {}).get(name)
+                at = self.cell_xy(*spot) if spot and getattr(old, "_laid", False) else at
                 self.remove(old)
             item = DesktopItem(self, info)
+            item._laid = old is not None and getattr(old, "_laid", False)
             self.items[name] = item
-            self.put(item, 0, 0)
+            self.put(item, *at)
         GLib.idle_add(lambda: (self._layout(), False)[1])
 
     def _config_changed(self) -> None:
