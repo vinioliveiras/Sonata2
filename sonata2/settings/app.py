@@ -116,6 +116,7 @@ KEYWORDS = {
                   "glass transparency translucent blur frosted title bars corners radius",
     "dock": "magnification size position autohide recent apps displays indicators bounce edge",
     "desktop": "windows minimize genie scale resize resizing window contents title bar double-click zoom "
+               "quit close background last window "
                "desktop icons sort name kind date",
     "controlcenter": "control center modules controls layout add remove reset cpu gpu memory network fps "
                      "temperature video memory vram mixer",
@@ -2505,6 +2506,10 @@ class Settings(Adw.ApplicationWindow):
                             lambda on: system.run_async(system.wayfire_set, None, "sonata-resize", "live", bool(on)),
                             subtitle="Off: only the window's background follows the pointer, and its contents "
                                      "fade in when you let go -- smoother with heavy apps"))
+        wins.add(switch_row("Quit apps when their last window closes", cfg.get("quit_on_close", False),
+                            lambda on: self._save("dock", "quit_on_close", on),
+                            subtitle="Closing an app's last window quits it, also Steam, Discord and "
+                                     "others that keep running in the background"))
         wins.add(combo_row("Minimize windows using", [("genie", "Genie effect"), ("scale", "Scale effect")],
                            cfg["minimize_effect"], self._set_minimize_effect))
         dbl = system.gsetting("org.gnome.desktop.wm.preferences", "action-double-click-titlebar") or "toggle-maximize"
@@ -2664,6 +2669,7 @@ class Settings(Adw.ApplicationWindow):
     def reset_desktop(self) -> None:
         from ..shell import dock as D
         self._save("dock", "minimize_effect", D.DEFAULTS["minimize_effect"])
+        self._save("dock", "quit_on_close", D.DEFAULTS["quit_on_close"])
 
         def apply():
             system.wayfire_set("animate", "minimize_animation",

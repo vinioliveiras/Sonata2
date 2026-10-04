@@ -150,6 +150,9 @@ def run_dock(app, args, ui):
             cfg[k] = v
     dock.load_css(cfg)
     manager = ToplevelManager(Gdk.Display.get_default(), ignore_app_ids=SHELL_IDS)
+    if manager.available and not args.preview:      # Desktop & Windows: quit with the last window
+        from .shell.quitonclose import QuitOnClose
+        app._quit_on_close = QuitOnClose(manager)
     if args.preview:
         from .shell.preview import PreviewWindow
         win = PreviewWindow(app, dock.Dock(cfg, manager))
