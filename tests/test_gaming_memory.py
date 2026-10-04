@@ -131,11 +131,17 @@ class EverydayIntegratedTest(unittest.TestCase):
         self.assertTrue(config.load(gpu.NAME, gpu.DEFAULTS)["smart"])
 
     def test_menu_section(self):
-        Item = lambda label, cb, checked=None: (label, checked)  # noqa: E731
+        Item = lambda label, cb, checked=None, enabled=True: (label, checked, enabled)  # noqa: E731
         app = self.info("google-chrome.desktop", "WebBrowser;")
         with mock.patch.object(gpu, "has_dual_gpu", return_value=True):
-            self.assertEqual(gpu.menu_items(app, Item), [("Smart Graphics Switching", True),
-                                                         ("Use High-Performance Graphics", False)])
+            # Vini (Spotify): Smart came out unchecked "by itself" -- unchecking High-Performance
+            # made the app's own choice. While Smart picks, High-Performance only shows its choice.
+            self.assertEqual(gpu.menu_items(app, Item), [("Smart Graphics Switching", True, True),
+                                                         ("Use High-Performance Graphics", False, False)])
+            gpu.set_smart_for(app, False)                   # the user unchecks Smart: now it's theirs
+            self.assertEqual(gpu.menu_items(app, Item), [("Smart Graphics Switching", False, True),
+                                                         ("Use High-Performance Graphics", False, True)])
+            gpu.set_smart_for(app, True)
             gpu.set_smart(False)
             self.assertEqual([i[0] for i in gpu.menu_items(app, Item)], ["Use High-Performance Graphics"])
             gpu.set_smart(True)

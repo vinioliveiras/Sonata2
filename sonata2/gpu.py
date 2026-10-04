@@ -389,12 +389,15 @@ def launch_env(info) -> dict:
 def menu_items(info, Item) -> list:
     """The right-click menu section (empty on one-GPU machines): "Smart
     Graphics Switching" (checked while Sonata picks) and "Use
-    High-Performance Graphics" (what it gets; picking it is the app's own
-    choice from then on)."""
+    High-Performance Graphics" -- greyed out while Sonata picks, showing
+    its choice: unchecking it used to make the app's own choice by the way,
+    and Smart came out unchecked as if by itself (Vini: Spotify). To choose
+    yourself, uncheck Smart first."""
     if info is None or not has_dual_gpu():
         return []
-    items = [Item("Use High-Performance Graphics", lambda on: set_discrete(info, on), checked=wants_discrete(info))]
+    auto = smart() and not chosen(info)
+    items = [Item("Use High-Performance Graphics", lambda on: set_discrete(info, on), checked=wants_discrete(info),
+                  enabled=not auto)]
     if smart():
-        items.insert(0, Item("Smart Graphics Switching", lambda on: set_smart_for(info, on),
-                             checked=not chosen(info)))
+        items.insert(0, Item("Smart Graphics Switching", lambda on: set_smart_for(info, on), checked=auto))
     return items
