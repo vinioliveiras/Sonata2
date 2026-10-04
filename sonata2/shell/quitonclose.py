@@ -1,4 +1,4 @@
-"""Settings > Desktop & Windows > "Quit apps when their last window closes"
+"""Settings > Desktop & Windows > "Quit apps when their last window closes" (on by default)
 (Vini: closing Steam with its window's X left it running in the background).
 
 When an app's last window goes and none comes back within GRACE_MS (Steam
@@ -12,12 +12,71 @@ Steam started) is left alone, and so is Sonata itself.
     QuitOnClose(manager)          # manager: wl.toplevels.ToplevelManager"""
 import os
 import signal
+import time
 
 from gi.repository import GLib
 
 from . import quitapps
 
 GRACE_MS = 1500
+CLK = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
+
+
+def _cache(*parts) -> str:
+    return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "sonata2", *parts)
+
+
+def norm(did: str) -> str:
+    did = did or ""
+    return did[:-8] if did.endswith(".desktop") else did
+
+
+def mark_launch(desktop_id: str) -> None:
+    """Sonata opened this app (apps.py, any Sonata process): a quit pending
+    for it is called off -- opened again right after closing it, the app
+    was quit while it came back (Vini: apps didn't open)."""
+    if not desktop_id:
+        return
+    try:
+        os.makedirs(_cache("launched"), exist_ok=True)
+        with open(_cache("launched", norm(desktop_id).replace("/", "_")), "w") as f:
+            f.write(str(time.time()))
+    except OSError:
+        pass
+
+
+def launched_at(key: str) -> float:
+    try:
+        return os.path.getmtime(_cache("launched", norm(key).replace("/", "_")))
+    except OSError:
+        return 0.0
+
+
+def log(text: str) -> None:
+    """~/.cache/sonata2/quit.log: what was quit and why not (small, rotated)."""
+    path = _cache("quit.log")
+    try:
+        if os.path.getsize(path) > 200_000:
+            os.replace(path, path + ".old")
+    except OSError:
+        pass
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%H:%M:%S')} {text}\n")
+    except OSError:
+        pass
+
+
+def started_at(pid: int) -> float:
+    """When pid started (epoch seconds), 0 unknown."""
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8", errors="replace") as f:
+            ticks = int(f.read().rsplit(")", 1)[1].split()[19])
+        with open("/proc/stat", encoding="utf-8") as f:
+            btime = next(int(ln.split()[1]) for ln in f if ln.startswith("btime "))
+        return btime + ticks / CLK
+    except (OSError, ValueError, IndexError, StopIteration):
+        return 0.0
 
 
 def wanted() -> bool:
@@ -82,9 +141,12 @@ def subtree(root: int, table: dict) -> list:
 
 class QuitOnClose:
     def __init__(self, manager, views=quitapps._views, kill=os.kill, alive=quitapps._alive,
-                 enabled=wanted, table=proc_table, later=GLib.timeout_add):
+                 enabled=wanted, table=proc_table, later=GLib.timeout_add, launched=launched_at,
+                 started=started_at, now=time.time):
         self.manager, self.views, self.kill, self.alive = manager, views, kill, alive
         self.enabled, self.table, self.later = enabled, table, later
+        self.launched, self.started, self.now = launched, started, now
+        self.closed_at = {}
         self.open = set()                 # apps (keys) with a window now
         self.pids = {}                    # key -> its processes, read while it had a window
         manager.listeners.append(self.changed)
@@ -102,11 +164,15 @@ class QuitOnClose:
     def changed(self) -> None:
         now = self._keys()
         new, gone = now - self.open, self.open - now
-        if new:                                         # (not on every title change: one IPC call per new app)
+        # new apps, and open ones whose window the compositor hadn't listed yet
+        # (the Claude app kept running: no process was known for it)
+        need = new | {k for k in now if not self.pids.get(k)}
+        if need:                                        # (not on every title change)
             views = self.views()
-            for k in new:
+            for k in need:
                 self.pids[k] = quitapps.app_pids(views, key=k) or self.pids.get(k, set())
         for k in gone:
+            self.closed_at[k] = self.now()
             self.later(GRACE_MS, lambda k=k: self.maybe_quit(k) and False)
         self.open = now
 
@@ -114,7 +180,14 @@ class QuitOnClose:
         if key in self._keys():                         # a window came back
             return False
         pids = self.pids.pop(key, set())
+        closed = self.closed_at.pop(key, self.now())
         if not self.enabled():
+            return False
+        if self.launched(key) >= closed:                # opened again meanwhile
+            log(f"{key}: opened again, kept")
+            return False
+        if not pids:
+            log(f"{key}: no process known, nothing quit")
             return False
         windows = {v.get("pid") for v in self.views() if v.get("type") == "toplevel"}
         table = self.table()
@@ -124,9 +197,14 @@ class QuitOnClose:
                 continue
             tree = subtree(app_root(pid, table), table)
             if windows & set(tree):
-                return False                            # a game it started still shows
+                log(f"{key}: a window under it (a game it started), kept")
+                return False
+            if any(self.started(p) > closed for p in tree):
+                log(f"{key}: a process started after it closed (opened again), kept")
+                return False
             targets += [p for p in tree if p not in targets]
         quit_any = False
+        log(f"{key}: quit {targets}")
         for pid in targets:
             if quitapps.OWN in table.get(pid, (0, "", ""))[2]:
                 continue

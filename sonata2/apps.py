@@ -48,6 +48,11 @@ def _gpu_aware(method):
         if getattr(self, "_sonata_env_set", False):   # Sonata's own copy (Steam + its args): already set up
             return method(self, arg, context, *rest)
         try:
+            from .shell.quitonclose import mark_launch
+            mark_launch(self.get_id() or "")          # a quit pending for it is called off
+        except Exception:
+            pass
+        try:
             from . import gpu
             gpu_env = gpu.launch_env(self)       # discrete, integrated (everyday apps) or none
             if gpu_env:
