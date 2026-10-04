@@ -1934,6 +1934,11 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         # into it instead of crashing; the effects we handle still skip
         self.assertIn("static wlr_buffer *fallback_buffer()", patch)
         self.assertIn("use_fallback();", patch)
+        # 04:26 crash (a game filled the card, blur reallocated): free() dropped
+        # the shared 1x1 buffer a second time -- assert in wlr_buffer_drop.
+        # Holders only unlock their reference to it.
+        self.assertIn("if (buffer.get_buffer() && (buffer.get_buffer() == fallback_buffer()))", patch)
+        self.assertIn("+        wlr_buffer_unlock(buffer.get_buffer());", patch)
         self.assertIn("aux_buffers[i][j].free();", patch)
         self.assertIn("if (!self->snapshot.get_buffer())", patch)
         self.assertIn("if (saved_pixels->pixels.allocate(target.get_size()) == wf::buffer_reallocation_result_t::FAILED)",

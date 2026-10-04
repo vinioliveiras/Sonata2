@@ -385,7 +385,7 @@ index 3192e0d0..f59823ca 100644
      wlr_gles2_texture_attribs attribs;
      wlr_gles2_texture_get_attribs(texture, &attribs);
 diff --git a/src/render.cpp b/src/render.cpp
-index 78697fd8..c434d065 100644
+index 78697fd8..4e328edc 100644
 --- a/src/render.cpp
 +++ b/src/render.cpp
 @@ -236,12 +236,12 @@ wlr_texture*wf::texture_t::get_wlr_texture() const
@@ -470,7 +470,20 @@ index 78697fd8..c434d065 100644
  void wf::auxilliary_buffer_t::free()
  {
      if (texture)
-@@ -890,13 +926,22 @@ void wf::render_pass_t::clear(const wf::regionf_t& region, const wf::color_t& co
+@@ -479,7 +515,11 @@ void wf::auxilliary_buffer_t::free()
+ 
+     texture = NULL;
+ 
+-    if (buffer.get_buffer())
++    if (buffer.get_buffer() && (buffer.get_buffer() == fallback_buffer()))
++    {
++        // Shared: only our reference goes (dropping it twice would assert)
++        wlr_buffer_unlock(buffer.get_buffer());
++    } else if (buffer.get_buffer())
+     {
+         wlr_buffer_drop(buffer.get_buffer());
+     }
+@@ -890,13 +930,22 @@ void wf::render_pass_t::clear(const wf::regionf_t& region, const wf::color_t& co
          .a = static_cast<float>(color.a),
      };
  
@@ -494,7 +507,7 @@ index 78697fd8..c434d065 100644
      if (wlr_renderer_is_gles2(this->get_wlr_renderer()))
      {
          // This is a hack to make sure that plugins can do whatever they want and we render on the correct
-@@ -949,7 +994,10 @@ void wf::render_pass_t::add_texture(const std::shared_ptr<wf::texture_t>& textur
+@@ -949,7 +998,10 @@ void wf::render_pass_t::add_texture(const std::shared_ptr<wf::texture_t>& textur
          opts.luminance_multiplier = &luminance_multiplier;
      }
  
@@ -506,7 +519,7 @@ index 78697fd8..c434d065 100644
  }
  
  void wf::render_pass_t::add_rect(const wf::color_t& color, const wf::render_target_t& adjusted_target,
-@@ -968,7 +1016,10 @@ void wf::render_pass_t::add_rect(const wf::color_t& color, const wf::render_targ
+@@ -968,7 +1020,10 @@ void wf::render_pass_t::add_rect(const wf::color_t& color, const wf::render_targ
      opts.box  = adjusted_target.framebuffer_texture_dst_box_from_geometry_box(geometry);
      wf::dassert(opts.box.width >= 0);
      wf::dassert(opts.box.height >= 0);
