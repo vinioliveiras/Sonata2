@@ -86,6 +86,7 @@ if [ "$UNINSTALL" = 1 ]; then
     sudo rm -f /usr/share/xdg-desktop-portal/portals/sonata.portal 2>/dev/null || true
     rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services/org.freedesktop.FileManager1.service" \
           "$BIN/sonata-filemanager1"
+    grep -qs "Sonata's Terminal" "$BIN/xdg-terminal-exec" && $SUDO rm -f "$BIN/xdg-terminal-exec"
     rm -f "$HOME/.local/share/applications/sonata2-launchpad.desktop" \
           "$HOME/.local/share/applications/sonata2-settings.desktop" \
           "$HOME/.local/share/applications/sonata2-screenshot.desktop"
@@ -260,6 +261,24 @@ EOF
 $SUDO install -m 755 "$tmp/sonata2-launcher" "$BIN/sonata2"
 $SUDO install -m 755 "$tmp/sonata-session-launcher" "$BIN/sonata-session"
 $SUDO chmod 755 "$SHARE/tools/sonata-session" "$SHARE/tools/session-env.sh" "$SHARE/tools/wayfire-config.sh"
+
+# -- a terminal for apps that need one (xdg-terminal-exec) -----------------------------------------
+# Apps with Terminal=true (CachyOS' update: its tray icon and "Run"
+# notification did nothing) and GLib/GIO look for xdg-terminal-exec, then a
+# fixed list Sonata's Terminal isn't on. Only when the system has none.
+if ! command -v xdg-terminal-exec >/dev/null || [ "$(command -v xdg-terminal-exec)" = "$BIN/xdg-terminal-exec" ]; then
+    cat > "$tmp/xdg-terminal-exec" <<'EOF'
+#!/bin/sh
+# Sonata's Terminal for "run this in a terminal" (install.sh): xdg-terminal-exec [-e] [cmd args...]
+case "${1:-}" in -e|--) shift ;; esac
+[ $# -eq 0 ] && exec "@BIN@/sonata2" terminal --new-window
+cmd=""
+for a in "$@"; do cmd="$cmd '$(printf %s "$a" | sed "s/'/'\\\\''/g")'"; done
+exec "@BIN@/sonata2" terminal --exec "$cmd"
+EOF
+    sed -i "s|@BIN@|$BIN|g" "$tmp/xdg-terminal-exec"
+    $SUDO install -m 755 "$tmp/xdg-terminal-exec" "$BIN/xdg-terminal-exec"
+fi
 
 # -- "Show in Folder" (org.freedesktop.FileManager1) opens Sonata's Files -------------------------
 # In the Sonata session only; any other desktop still gets its own file manager.
