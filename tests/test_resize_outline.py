@@ -86,7 +86,7 @@ class PluginTest(unittest.TestCase):
         with mock.patch.object(S.system, "wayfire_get", return_value="true"), \
                 mock.patch.object(S.system, "run_async") as ra, mock.patch.object(S.system, "default_browser",
                                                                                    return_value=""):
-            groups = S.Settings._page_dock(win)
+            groups = S.Settings._page_desktop(win)
             rows = []
 
             def walk(w):

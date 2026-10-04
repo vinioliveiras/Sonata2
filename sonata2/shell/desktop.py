@@ -29,6 +29,7 @@ CELL_W, CELL_H = 96, 104          # Big Sur's default desktop grid (64 px icons)
 ICON = 64
 TOP, EDGE = 34, 14                # below the menu bar; off the screen edges
 DEFAULTS = {"positions": {}, "sort": "none"}
+SORTS = (("none", "None"), ("name", "Name"), ("kind", "Kind"), ("date", "Date Modified"))   # Sort By (and Settings)
 
 ui.register("""
 .desk-item { padding: 4px 2px; }
@@ -502,8 +503,7 @@ class Desktop(Gtk.Fixed):
             [Item("Change Desktop Background…", lambda: _open_settings("wallpaper"))],
             [Item("Clean Up", self.clean_up),
              Item("Sort By", submenu=[[Item(label, lambda s=key: self.set_sort(s), checked=sort == key)
-                                       for key, label in (("none", "None"), ("name", "Name"),
-                                                          ("kind", "Kind"), ("date", "Date Modified"))]])],
+                                       for key, label in SORTS]])],
         ], at=(x, y))
 
     # -- drag and drop --------------------------------------------------------------------------

@@ -18,6 +18,20 @@ from sonata2 import config, ui  # noqa: E402
 from sonata2.settings import app as S  # noqa: E402
 
 
+def walk(w, kind):
+    """Every descendant of w that is a `kind`."""
+    out, stack = [], [w]
+    while stack:
+        x = stack.pop()
+        if isinstance(x, kind):
+            out.append(x)
+        c = x.get_first_child()
+        while c is not None:
+            stack.append(c)
+            c = c.get_next_sibling()
+    return out
+
+
 def settle(ms=300):
     end = GLib.get_monotonic_time() + ms * 1000
     while GLib.get_monotonic_time() < end:
@@ -194,25 +208,78 @@ class SettingsTest(unittest.TestCase):
         win.select("dock", from_sidebar=True)
         settle(150)
         before = win.pages["dock"]
-        with mock.patch("sonata2.ui.dialog.alert") as alert, mock.patch.object(S.system, "run_async") as run:
+        with mock.patch("sonata2.ui.dialog.alert") as alert, mock.patch.object(S.system, "run_async"):
             win.ask_reset_dock()
             answered = alert.call_args[0][3]
             answered("cancel")
             self.assertEqual(config.load("dock", D.DEFAULTS)["icon_size"], 90)
             answered("reset")
-            run.assert_called()
         d = config.load("dock", D.DEFAULTS)
         for k in S.Settings.DOCK_RESET:
             self.assertEqual(d[k], D.DEFAULTS[k], k)
         self.assertEqual((d["pinned"], d["folders"]), (pins, folders))           # the Dock's contents stay
+        self.assertEqual(d["minimize_effect"], "scale")                          # Desktop & Windows' now
+        self.assertEqual(config.load("topbar", T.DEFAULTS)["clock_format"], "%H:%M")      # Menu Bar's own
+        settle(150)
+        self.assertIsNot(win.pages["dock"], before)
+        with mock.patch("sonata2.ui.dialog.alert") as alert:                     # Menu Bar: its own reset
+            win.ask_reset_menubar()
+            alert.call_args[0][3]("reset")
         self.assertEqual(config.load("topbar", T.DEFAULTS), T.DEFAULTS)
         a = config.load("appearance", icons.APPEARANCE_DEFAULTS)
         self.assertEqual((a["menu_text"], a["menu_logo"]), ("", icons.APPEARANCE_DEFAULTS["menu_logo"]))
         self.assertEqual(a["accent"], "pink")                                      # another section's
-        settle(150)
-        self.assertIsNot(win.pages["dock"], before)
+        with mock.patch("sonata2.ui.dialog.alert") as alert, mock.patch.object(S.system, "run_async") as run:
+            win.ask_reset_desktop()                                              # Desktop & Windows
+            alert.call_args[0][3]("reset")
+            run.assert_called()
+        self.assertEqual(config.load("dock", D.DEFAULTS)["minimize_effect"], D.DEFAULTS["minimize_effect"])
+        self.assertEqual(config.load("dock", D.DEFAULTS)["pinned"], pins)
         win.destroy()
         config.save("dock", {})
+
+    def test_sonata_sections_split(self):
+        """Vini: Dock, Menu Bar, Control Center and Desktop & Windows each a
+        section of its own, side by side; looks stay in Appearance."""
+        from unittest import mock
+        from sonata2.shell import controlcenter as CCL
+        ids = [x[0] for x in S.SECTIONS]
+        at = ids.index("dock")
+        self.assertEqual(ids[at:at + 4], ["dock", "menubar", "controlcenter", "desktop"])
+        self.assertNotIn("dock", S.PARTS)
+        titles = {x[0]: x[1] for x in S.SECTIONS}
+        self.assertEqual([titles[i] for i in ids[at:at + 4]],
+                         ["Dock", "Menu Bar", "Control Center", "Desktop & Windows"])
+        config.save("controlcenter", {"modules": ["dnd", "sound"]})
+        config.save("desktop", {"sort": "none"})
+        win = S.Settings(None, "controlcenter")
+        win.present()
+        settle(150)
+        rows = {r.get_title(): r for r in walk(win.pages["controlcenter"], Adw.SwitchRow)}
+        self.assertTrue(rows["Do Not Disturb"].get_active())
+        self.assertFalse(rows["Dark Mode"].get_active())
+        rows["Dark Mode"].set_active(True)                                      # added at the end
+        rows["Do Not Disturb"].set_active(False)
+        self.assertEqual(CCL.load(), ["sound", "darkmode"])
+        with mock.patch("sonata2.ui.dialog.alert") as alert:
+            win.ask_reset_controlcenter()
+            alert.call_args[0][3]("reset")
+        self.assertEqual(CCL.load(), CCL.DEFAULT_ORDER)
+        win.select("desktop")
+        settle(150)
+        page = win.pages["desktop"]
+        titles = {r.get_title() for r in walk(page, Adw.PreferencesRow)}
+        for t in ("Show window contents while resizing", "Minimize windows using",
+                  "Double-click a window's title bar to", "Sort icons by"):
+            self.assertIn(t, titles)
+        sort = next(r for r in walk(page, Adw.ComboRow) if r.get_title() == "Sort icons by")
+        sort.set_selected(sort.values.index("name"))
+        self.assertEqual(config.load("desktop", {"sort": ""})["sort"], "name")
+        win.select("dock")
+        settle(150)
+        dock_titles = {r.get_title() for r in walk(win.pages["dock"], Adw.PreferencesRow)}
+        self.assertNotIn("Minimize windows using", dock_titles)                 # windows: not the Dock's
+        win.destroy()
         config.save("topbar", {})
         config.save("appearance", {})
 
@@ -261,16 +328,16 @@ class SettingsTest(unittest.TestCase):
                    "privacy", "sharing", "accessibility", "appearance", "dock", "menubar", "launchpad", "hidden",
                    "updates", "about"]
         ids = [x[0] for x in S.SECTIONS]
-        self.assertEqual(len(ids), 21)                         # 19 + App Icons + Default Apps (new)
+        self.assertEqual(len(ids), 24)          # 19 + App Icons, Default Apps, Menu Bar, Control Center, Desktop
         built = [p for sid in ids for p in S.parts_of(sid)]
-        self.assertEqual(sorted(built), sorted(old_ids + ["appicons", "defaults"]))      # every builder, once
+        self.assertEqual(sorted(built), sorted(old_ids + ["appicons", "defaults", "controlcenter", "desktop"]))
         for old in old_ids:
             self.assertIn(S.section_of(old), ids, old)
             self.assertTrue(hasattr(S.Settings, f"_page_{old}"), old)
         self.assertEqual(S.section_of("wallpaper"), "displays")
         self.assertEqual(S.section_of("updates"), "about")
         self.assertIn("wallpaper", S.KEYWORDS["displays"].casefold())
-        self.assertIn("topbar", S.PAGE_CONFIGS["dock"])                       # Menu Bar's file still watched
+        self.assertIn("topbar", S.PAGE_CONFIGS["menubar"])                    # Menu Bar's file still watched
         win = S.Settings(None, "wallpaper")                                   # an old id (menu bar shortcuts)
         win.present()
         settle(200)

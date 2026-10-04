@@ -6,7 +6,7 @@ The sidebar keeps Vini's split:
   Linux  -- Wi-Fi, Bluetooth, Sound, Displays, Battery, Wallpaper: read and
             written through the system services (backend/system.py),
             nothing stored by Sonata;
-  Sonata -- Appearance, Desktop & Dock, Menu Bar, Launchpad: Sonata's own
+  Sonata -- Appearance, Dock, Menu Bar, Control Center, Desktop & Windows, Launchpad: Sonata's own
             settings (~/.config/sonata2/*.json); the shell components watch
             those files and apply changes live;
   About.
@@ -37,7 +37,12 @@ SECTIONS = [  # id, title, icon, badge colour, group (colours varied, not mostly
     ("printers", "Printers & Scanners", "printer-symbolic", "gray", "input"),
     ("appearance", "Appearance", "preferences-desktop-appearance-symbolic", "indigo", "sonata"),
     ("appicons", "App Icons", "applications-graphics-symbolic", "pink", "sonata"),
-    ("dock", "Desktop & Dock", "view-grid-symbolic", "black", "sonata"),
+    # Dock, Menu Bar, Control Center, Desktop & Windows: what each does (Vini);
+    # how they look (glass, transparency, corners) stays in Appearance
+    ("dock", "Dock", "view-grid-symbolic", "black", "sonata"),
+    ("menubar", "Menu Bar", "panel-top-symbolic", "blue", "sonata"),
+    ("controlcenter", "Control Center", "sonata-control-center-symbolic", "purple", "sonata"),
+    ("desktop", "Desktop & Windows", "user-desktop-symbolic", "teal", "sonata"),
     ("launchpad", names.APPS, "view-app-grid-symbolic", "graphite", "sonata"),
     ("notifications", "Notifications", "preferences-system-notifications-symbolic", "red", "sonata"),
     ("users", "Users & Groups", "system-users-symbolic", "orange", "system"),
@@ -55,13 +60,12 @@ PARTS = {
     "displays": ("displays", "wallpaper"),
     "keyboard": ("keyboard", "shortcuts"),
     "mouse": ("trackpad", "mouse"),
-    "dock": ("dock", "menubar"),
     "launchpad": ("launchpad", "hidden"),
     "privacy": ("privacy", "sharing"),
     "about": ("about", "updates"),
 }
 PART_TITLES = {"wallpaper": "Wallpaper", "shortcuts": "Keyboard Shortcuts", "trackpad": "Trackpad",
-               "menubar": "Menu Bar", "hidden": "Hidden & Protected Apps", "sharing": "Sharing",
+               "hidden": "Hidden & Protected Apps", "sharing": "Sharing",
                "updates": "Software Update"}
 
 
@@ -110,7 +114,11 @@ KEYWORDS = {
     "sharing": "file sharing remote", "accessibility": "zoom contrast reduce transparency motion graphics gpu hardware acceleration renderer",
     "appearance": "app icons regenerate frame generated dark light mode accent color theme icons font "
                   "glass transparency translucent blur frosted title bars corners radius",
-    "dock": "magnification size position autohide recent apps displays minimize resize resizing window contents",
+    "dock": "magnification size position autohide recent apps displays indicators bounce edge",
+    "desktop": "windows minimize genie scale resize resizing window contents title bar double-click zoom "
+               "desktop icons sort name kind date",
+    "controlcenter": "control center modules controls layout add remove reset cpu gpu memory network fps "
+                     "temperature video memory vram mixer",
     "defaults": "default apps open with web browser chrome firefox mail email calendar music player video "
                 "photos pictures images viewer pdf text editor folders file manager",
     "appicons": "icon icons app shape squircle circle rounded custom picture image package theme",
@@ -131,6 +139,7 @@ PAGE_CONFIGS = {
     "datetime": ("topbar",), "notifications": ("notifications",), "privacy": ("security", "system"),
     "accessibility": ("appearance", "system"), "appearance": ("appearance", "dock", "system"),
     "dock": ("dock", "system"), "menubar": ("topbar", "appearance"), "gamepad": ("gamepad",),
+    "desktop": ("dock", "desktop", "system"), "controlcenter": ("controlcenter",),
 }
 for _sec, _parts in PARTS.items():           # a merged section: every part's files
     PAGE_CONFIGS[_sec] = tuple(dict.fromkeys(n for p in _parts for n in PAGE_CONFIGS.get(p, ())))
@@ -2478,7 +2487,19 @@ class Settings(Adw.ApplicationWindow):
                               lambda on: self._save("dock", "bounce", on)))
         behave.add(switch_row("Show indicators for open applications", cfg["indicators"],
                               lambda on: self._save("dock", "indicators", on)))
-        wins = group("Windows & Apps")
+        look = group("Look")
+        # (its glass: Appearance > Glass & Transparency)
+        look.add(slider_row("Distance from the screen edge", cfg["edge_gap"], 0, 24,    # and from zoomed windows
+                            lambda v: self._save_live("dock", "edge_gap", int(v)), default=D.DEFAULTS["edge_gap"]))
+        reset = self._reset_group("Reset Dock", "The Dock's options back to the defaults; your apps and "
+                                  "folders in the Dock stay", self.ask_reset_dock)
+        return [size, behave, look, reset]
+
+    def _page_desktop(self):
+        """Desktop & Windows: how windows behave, the desktop's icons."""
+        from ..shell import desktop as DK, dock as D
+        cfg = config.load("dock", D.DEFAULTS)
+        wins = group("Windows")
         live = (system.wayfire_get("sonata-resize", "live", "true") or "true").lower() != "false"
         wins.add(switch_row("Show window contents while resizing", live,
                             lambda on: system.run_async(system.wayfire_set, None, "sonata-resize", "live", bool(on)),
@@ -2492,11 +2513,13 @@ class Settings(Adw.ApplicationWindow):
                            dbl if dbl in ("toggle-maximize", "minimize", "none") else "toggle-maximize",
                            lambda v: system.set_gsetting("org.gnome.desktop.wm.preferences",
                                                          "action-double-click-titlebar", v)))
-        look = group("Look")
-        # (its glass: Appearance > Glass & Transparency)
-        look.add(slider_row("Distance from the screen edge", cfg["edge_gap"], 0, 24,    # and from zoomed windows
-                            lambda v: self._save_live("dock", "edge_gap", int(v)), default=D.DEFAULTS["edge_gap"]))
-        return [size, behave, wins, look]
+        desk = group("Desktop")
+        desk.add(combo_row("Sort icons by", list(DK.SORTS), config.load("desktop", DK.DEFAULTS).get("sort", "none"),
+                           lambda v: self._save("desktop", "sort", v),
+                           subtitle="None: icons stay where you put them"))
+        reset = self._reset_group("Reset Desktop & Windows", "Window options back to the defaults; your "
+                                  "desktop icons stay where they are", self.ask_reset_desktop)
+        return [wins, desk, reset]
 
     def _set_minimize_effect(self, v):
         self._save("dock", "minimize_effect", v)
@@ -2553,45 +2576,104 @@ class Settings(Adw.ApplicationWindow):
                            subtitle="The menu at the left end of the menu bar"))
         logo.add(text_row)                                # text:custom: your words (emoji drawn in one colour)
         logo.menu_text_row = text_row                     # (tests)
-        reset = self._reset_group("Reset Desktop & Dock", "The Dock's and menu bar's options back to the "
-                                  "defaults; your apps and folders in the Dock stay", self.ask_reset_dock)
+        reset = self._reset_group("Reset Menu Bar", "The menu bar's options and logo back to the defaults",
+                                  self.ask_reset_menubar)
         return [g, items, perf, logo, reset]
+
+    def _page_controlcenter(self):
+        """Control Center: which modules it shows (also: hold one in Control
+        Center to move or remove it, Add Controls to add)."""
+        from ..shell import controlcenter as CCL, statsui
+        order = CCL.load()
+
+        def toggle(mid, on):
+            now = CCL.load()
+            if on and mid not in now:
+                now.append(mid)
+            elif not on and mid in now:
+                now.remove(mid)
+            CCL.save(now)
+        perf_ids = {"stat_" + k for k in statsui.KINDS}
+        groups = []
+        for title, desc, ids in (("Controls", "Hold a module in Control Center to move it.",
+                                  [m for m in CCL.CATALOG if m not in perf_ids]),
+                                 ("Performance", "Read only while Control Center is open.",
+                                  [m for m in CCL.CATALOG if m in perf_ids])):
+            g = group(title, desc)
+            for mid in ids:
+                g.add(switch_row(CCL.CATALOG[mid][0], mid in order, lambda on, m=mid: toggle(m, on)))
+            groups.append(g)
+        reset = self._reset_group("Reset Control Center", "Its modules and their order back to the defaults",
+                                  self.ask_reset_controlcenter)
+        return groups + [reset]
+
+    def ask_reset_controlcenter(self):
+        return ui.dialog.alert("Reset Control Center?", "Its modules and their order go back to the defaults.",
+                               [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
+                               lambda rid: rid == "reset" and self.reset_controlcenter(), parent=self)
+
+    def reset_controlcenter(self) -> None:
+        from ..shell import controlcenter as CCL
+        self._save("controlcenter", "modules", CCL.DEFAULTS["modules"])
+        self.rebuild_page("controlcenter")
+        self.toast("Control Center reset")
 
     def _set_stat(self, kind: str, value: str) -> None:
         if value != "off":
             config.update("topbar", **{f"{kind}_style": value})
         self._save("topbar", f"show_{kind}", value != "off")
 
-    # what Reset Desktop & Dock puts back: options, never what's in the Dock
+    # what Reset Dock puts back: options, never what's in the Dock
     # (pinned apps, folders, stacks, recents) nor the default browser
     DOCK_RESET = ("icon_size", "magnification", "magnified_size", "position", "autohide", "all_displays",
-                  "show_recents", "click_minimizes", "bounce", "indicators", "minimize_effect", "edge_gap")
+                  "show_recents", "click_minimizes", "bounce", "indicators", "edge_gap")
+
+    def _ask_reset(self, title, body, then):
+        return ui.dialog.alert(title, body, [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
+                               lambda rid: rid == "reset" and then(), parent=self)
 
     def ask_reset_dock(self):
-        return ui.dialog.alert("Reset Desktop & Dock?",
-                               "The Dock's and menu bar's options go back to the defaults. The apps and folders "
-                               "in your Dock stay.",
-                               [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
-                               lambda rid: rid == "reset" and self.reset_dock(), parent=self)
+        return self._ask_reset("Reset Dock?", "The Dock's options go back to the defaults. The apps and folders "
+                               "in your Dock stay.", self.reset_dock)
 
     def reset_dock(self) -> None:
         import copy
-        from ..shell import dock as D, topbar as T
+        from ..shell import dock as D
         for k in self.DOCK_RESET:
             self._save("dock", k, copy.deepcopy(D.DEFAULTS[k]))
+        self.rebuild_page("dock")
+        self.toast("Dock reset")
+
+    def ask_reset_menubar(self):
+        return self._ask_reset("Reset Menu Bar?", "The menu bar's options and logo go back to the defaults.",
+                               self.reset_menubar)
+
+    def reset_menubar(self) -> None:
+        from ..shell import topbar as T
         for k, v in T.DEFAULTS.items():
             self._save("topbar", k, v)
         for k in ("menu_logo", "menu_text"):
             self._save("appearance", k, icons.APPEARANCE_DEFAULTS[k])
+        self.rebuild_page("menubar")
+        self.toast("Menu Bar reset")
+
+    def ask_reset_desktop(self):
+        return self._ask_reset("Reset Desktop & Windows?", "Window options go back to the defaults. Your desktop "
+                               "icons stay where they are.", self.reset_desktop)
+
+    def reset_desktop(self) -> None:
+        from ..shell import dock as D
+        self._save("dock", "minimize_effect", D.DEFAULTS["minimize_effect"])
 
         def apply():
             system.wayfire_set("animate", "minimize_animation",
                                "squeezimize" if D.DEFAULTS["minimize_effect"] == "genie" else "zoom")
             system.set_gsetting("org.gnome.desktop.wm.preferences", "action-double-click-titlebar",
                                 "toggle-maximize")
+            system.wayfire_set("sonata-resize", "live", True)
         system.run_async(apply, None)
-        self.rebuild_page("dock")
-        self.toast("Desktop & Dock reset")
+        self.rebuild_page("desktop")
+        self.toast("Desktop & Windows reset")
 
     def _page_launchpad(self):
         g = group(names.APPS)
