@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.3-alpha -- 2026-10-04
+
+A fix for a crash while a game fills the graphics card.
+
+### Stability
+- Wayfire no longer crashes when a game fills the graphics card's memory
+  and window blur has to give way: the shared 1x1 buffer it falls back to
+  is released correctly.
+
 ## 0.5.2-alpha -- 2026-10-04
 
 Graphics that pick the right card on any laptop, video memory figures,
