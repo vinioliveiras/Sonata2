@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.4-alpha -- 2026-10-04
+
+Temperatures in the menu bar and Control Center, and no frozen cursor on
+games after Alt+Tab.
+
+### Performance
+- CPU and GPU temperatures, in the menu bar (text or graph) and as Control
+  Center modules: the CPU's whole chip, and each graphics card on its own.
+
+### Games
+- After Alt+Tab, the cursor no longer stays frozen on a full-screen game
+  (Sonata's Wayfire: run tools/build-wayfire.sh).
+
 ## 0.5.3-alpha -- 2026-10-04
 
 A fix for a crash while a game fills the graphics card.
