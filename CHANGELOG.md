@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.5.2-alpha -- 2026-10-04
+
+Graphics that pick the right card on any laptop, video memory figures,
+resizing without the window's contents, and smoother details.
+
+### Graphics
+- The high-performance card is found on any machine: AMD + NVIDIA, AMD +
+  Radeon, Intel + Arc, Intel + NVIDIA, and laptops with a MUX in dGPU
+  mode (Steam and its games went to the integrated GPU there and didn't
+  open).
+- Settings > Displays > Graphics: "Graphics for Games" and "Graphics for
+  Apps" -- Automatic, or a card of your choice.
+- Smart Graphics Switching no longer unchecks itself for an app.
+
+### Performance
+- Video memory of each card, in the menu bar (text or graph) and as a
+  Control Center module.
+
+### Windows
+- "Show window contents while resizing" (Settings > Desktop & Dock): off,
+  a rounded panel with the window's shadow follows the pointer and the
+  window fades back in at its new size.
+- Quit quits the whole app, also when it keeps running without a window.
+
+### Desktop
+- Restart Sonata: the Dock and menu bar slide back in together.
+- Control Center resizes smoothly when a module is added or removed.
+- A new desktop folder no longer glides in from the top-left corner.
+
+### Stability
+- Sonata's Wayfire plugins build again (rounded corners, FPS, resize).
+- Wayfire survives a failed buffer allocation with a shared 1x1 buffer.
+
 ## 0.5.1-alpha -- 2026-10-03
 
 Airplane Mode, a smooth Restart Sonata, and fixes for web apps and the
