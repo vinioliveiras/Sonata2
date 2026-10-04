@@ -110,7 +110,7 @@ KEYWORDS = {
     "sharing": "file sharing remote", "accessibility": "zoom contrast reduce transparency motion graphics gpu hardware acceleration renderer",
     "appearance": "app icons regenerate frame generated dark light mode accent color theme icons font "
                   "glass transparency translucent blur frosted title bars corners radius",
-    "dock": "magnification size position autohide recent apps displays minimize",
+    "dock": "magnification size position autohide recent apps displays minimize resize resizing window contents",
     "defaults": "default apps open with web browser chrome firefox mail email calendar music player video "
                 "photos pictures images viewer pdf text editor folders file manager",
     "appicons": "icon icons app shape squircle circle rounded custom picture image package theme",
@@ -2459,6 +2459,11 @@ class Settings(Adw.ApplicationWindow):
         behave.add(switch_row("Show indicators for open applications", cfg["indicators"],
                               lambda on: self._save("dock", "indicators", on)))
         wins = group("Windows & Apps")
+        live = (system.wayfire_get("sonata-resize", "live", "true") or "true").lower() != "false"
+        wins.add(switch_row("Show window contents while resizing", live,
+                            lambda on: system.run_async(system.wayfire_set, None, "sonata-resize", "live", bool(on)),
+                            subtitle="Off: only the window's background follows the pointer, and its contents "
+                                     "fade in when you let go -- smoother with heavy apps"))
         wins.add(combo_row("Minimize windows using", [("genie", "Genie effect"), ("scale", "Scale effect")],
                            cfg["minimize_effect"], self._set_minimize_effect))
         dbl = system.gsetting("org.gnome.desktop.wm.preferences", "action-double-click-titlebar") or "toggle-maximize"

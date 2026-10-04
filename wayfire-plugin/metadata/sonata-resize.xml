@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="sonata-resize">
+		<_short>Sonata Resize</_short>
+		<_long>Resize windows (Wayfire's resize, uses its options). With live off, only the window's background follows the pointer and the contents fade in at the new size on release.</_long>
+		<category>Window Management</category>
+		<option name="live" type="bool">
+			<_short>Show window contents while resizing</_short>
+			<default>true</default>
+		</option>
+		<option name="fill" type="color">
+			<_short>Background while resizing</_short>
+			<_long>Sonata sets it per appearance (the window background).</_long>
+			<default>#ECECECF2</default>
+		</option>
+		<option name="border" type="color">
+			<_short>Outline while resizing</_short>
+			<default>#00000033</default>
+		</option>
+	</plugin>
+</wayfire>

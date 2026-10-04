@@ -16,5 +16,11 @@ shared_module('sonata-corners', 'src/sonata-corners.cpp',
   dependencies: [wayfire, wlroots, libdrm],
   install: true, install_dir: get_option('libdir') / 'wayfire')
 
-install_data('metadata/sonata-corners.xml',
+# Wayfire's resize with "Show window contents while resizing" (off: the
+# window's background follows the pointer, its contents fade in on release)
+shared_module('sonata-resize', 'src/sonata-resize.cpp',
+  dependencies: [wayfire, wlroots],
+  install: true, install_dir: get_option('libdir') / 'wayfire')
+
+install_data('metadata/sonata-corners.xml', 'metadata/sonata-resize.xml',
   install_dir: get_option('datadir') / 'wayfire' / 'metadata')

@@ -29,6 +29,12 @@ corners="${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install/lib
 if [ -f "$corners" ]; then
     sed -i -E '/^plugins *=/ s/$/ sonata-corners/' "$out"
 fi
+# Sonata's resize (Wayfire's, plus "Show window contents while resizing"):
+# in place of "resize" once built (it reads resize's own options)
+sresize="${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install/lib/wayfire/libsonata-resize.so"
+if [ -f "$sresize" ]; then
+    sed -i -E '/^plugins *=/ s/(^| )resize( |$)/\1sonata-resize\2/' "$out"
+fi
 # Window frame (corners, traffic lights) from tokens.FRAME -- one place for
 # every window: the title bars Wayfire draws follow Sonata's own windows.
 PYTHONPATH="$here" python3 - "$out" <<'PY' || true

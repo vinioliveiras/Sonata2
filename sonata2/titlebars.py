@@ -275,6 +275,9 @@ def apply_colors(dark: bool) -> None:
     system.wayfire_set("blur", "kawase_offset", str(G.blur_offset(gcfg["blur"])))   # one strength for all
     system.wayfire_set("blur", "alpha_threshold", str(G.blur_threshold(gcfg)))   # see-through parts stay frosted
     system.wayfire_set("sonata-corners", "outline", "\\" + tokens.wayfire_color(t["window_outline"]))
+    # the window's background while it's resized without its contents (sonata-resize)
+    system.wayfire_set("sonata-resize", "fill", "\\" + tokens.wayfire_color(t["window_bg"]))
+    system.wayfire_set("sonata-resize", "border", "\\" + tokens.wayfire_color(t["window_outline"]))
     fg, bg, text, dim = (tokens.wayfire_color(t[k], premultiplied=True) for k in keys)
     for k, v in (("fg_color", fg), ("bg_color", bg), ("fg_text_color", text), ("bg_text_color", dim)):
         system.wayfire_set("pixdecor", k, "\\" + v)
