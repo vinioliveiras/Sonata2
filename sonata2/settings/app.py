@@ -2506,7 +2506,7 @@ class Settings(Adw.ApplicationWindow):
                             lambda on: system.run_async(system.wayfire_set, None, "sonata-resize", "live", bool(on)),
                             subtitle="Off: only the window's background follows the pointer, and its contents "
                                      "fade in when you let go -- smoother with heavy apps"))
-        wins.add(switch_row("Quit apps when their last window closes", cfg.get("quit_on_close", False),
+        wins.add(switch_row("Quit apps when their last window closes", cfg.get("quit_on_close", True),
                             lambda on: self._save("dock", "quit_on_close", on),
                             subtitle="Closing an app's last window quits it, also Steam, Discord and "
                                      "others that keep running in the background"))

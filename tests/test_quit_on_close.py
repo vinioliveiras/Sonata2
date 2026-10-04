@@ -58,7 +58,7 @@ class QuitOnCloseTest(unittest.TestCase):
         self.run_timers()
         self.assertEqual(self.killed, [])
 
-    def test_off_by_default_nothing_quits(self):
+    def test_turned_off_nothing_quits(self):
         m, q = self.make([], enabled=False)
         with mock.patch.object(Q.quitapps, "app_pids", return_value={500}):
             m.change("steam")
@@ -82,7 +82,7 @@ class QuitOnCloseTest(unittest.TestCase):
 
     def test_setting_and_default(self):
         from sonata2.shell import dock
-        self.assertFalse(dock.DEFAULTS["quit_on_close"])
+        self.assertTrue(dock.DEFAULTS["quit_on_close"])                 # on by default (Vini)
         src = open(Q.__file__.replace("shell/quitonclose.py", "settings/app.py")).read()
         self.assertIn('"Quit apps when their last window closes"', src)
         main = open(Q.__file__.replace("shell/quitonclose.py", "__main__.py")).read()

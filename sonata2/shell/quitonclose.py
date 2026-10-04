@@ -1,4 +1,4 @@
-"""Settings > Desktop & Windows > "Quit apps when their last window closes"
+"""Settings > Desktop & Windows > "Quit apps when their last window closes" (on by default)
 (Vini: closing Steam with its window's X left it running in the background).
 
 When an app's last window goes and none comes back within GRACE_MS (Steam

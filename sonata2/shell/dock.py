@@ -36,7 +36,7 @@ DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "window_gap": 6, "gl
             "magnification": False, "magnified_size": 80, "position": "bottom",
             "autohide": False, "autohide_delay_ms": 300, "show_recents": True,
             "recent": [], "stacks": None, "all_displays": False, "folders": {},
-            "quit_on_close": False}            # Desktop & Windows: closing the last window quits the app
+            "quit_on_close": True}             # Desktop & Windows: closing the last window quits the app (Vini: on)
 EDGES = ("left", "bottom", "right")
 MIN_SIZE, MAX_SIZE = 16, 128
 PIN_MIN_SIZE = 36           # pins must still fit at this size: more can't be kept in the Dock
