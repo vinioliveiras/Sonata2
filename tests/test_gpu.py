@@ -13,6 +13,21 @@ config.CONFIG_DIR = os.path.join(os.environ["XDG_CONFIG_HOME"], "sonata2")
 
 
 class GpuTest(unittest.TestCase):
+    def test_discrete_is_nvidia_with_a_mux(self):
+        """MUX in dGPU mode: switcheroo's non-default GPU is the integrated one;
+        Steam got DRI_PRIME / *radeon* and its games couldn't draw (Vini)."""
+        from unittest import mock
+        radeon = (True, {"DRI_PRIME": "pci-0000_36_00_0", "VK_LOADER_DRIVERS_SELECT": "*radeon*"})
+        with mock.patch.object(gpu, "_env", None), mock.patch.object(gpu, "_switcheroo", return_value=radeon), \
+                mock.patch.object(gpu, "_cards", return_value=["nvidia", "amdgpu"]):
+            env = gpu.discrete_env()
+        self.assertEqual(env["__NV_PRIME_RENDER_OFFLOAD"], "1")
+        self.assertNotIn("DRI_PRIME", env)
+        self.assertNotIn("VK_LOADER_DRIVERS_SELECT", env)
+        with mock.patch.object(gpu, "_env", None), mock.patch.object(gpu, "_switcheroo", return_value=radeon), \
+                mock.patch.object(gpu, "_cards", return_value=["amdgpu", "amdgpu"]):
+            self.assertEqual(gpu.discrete_env(), radeon[1])     # no NVIDIA: switcheroo decides
+
     def test_launch_env(self):
         d = tempfile.mkdtemp()
         out = os.path.join(d, "env.txt")

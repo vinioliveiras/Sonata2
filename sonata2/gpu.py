@@ -74,15 +74,16 @@ def has_dual_gpu() -> bool:
 def discrete_env() -> dict:
     global _env
     if _env is None:
-        sw = _switcheroo()
-        if sw and sw[1]:
-            _env = sw[1]
-        elif "nvidia" in _cards():
+        # the NVIDIA card first: with a MUX in dGPU mode it is the default GPU,
+        # switcheroo's "other" one is then the integrated -- Steam and its games
+        # went there and couldn't draw on the NVIDIA screens (Vini)
+        if "nvidia" in _cards():
             _env = dict(NVIDIA_ENV)
             if not os.path.exists(_env["__EGL_VENDOR_LIBRARY_FILENAMES"]):
                 _env.pop("__EGL_VENDOR_LIBRARY_FILENAMES")
         else:
-            _env = {"DRI_PRIME": "1"}
+            sw = _switcheroo()
+            _env = sw[1] if sw and sw[1] else {"DRI_PRIME": "1"}
     return _env
 
 
