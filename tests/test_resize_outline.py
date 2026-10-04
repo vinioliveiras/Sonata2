@@ -33,6 +33,21 @@ class PluginTest(unittest.TestCase):
         self.assertIn("shared_module('sonata-resize'", meson)
         self.assertIn("metadata/sonata-resize.xml", meson)
 
+    def test_panel_is_the_window_as_seen(self):
+        """Vini: on a terminal (pixdecor) the panel came out bigger than the
+        window -- pixdecor's shadow is inside its geometry. Inset like
+        sonata-corners; a window with its own frame (no margins) is not."""
+        src = (ROOT / "wayfire-plugin" / "src" / "sonata-resize.cpp").read_text()
+        for use in ("ghost->set(visible(view, desired));", "ghost->rect   = visible(view, ghost_geometry);",
+                    "ghost->set(visible(fading, fading->get_geometry()));"):
+            self.assertIn(use, src)
+        self.assertNotIn("ghost->set(desired);", src)
+        self.assertIn('engine->get_value_str() != "rounded_corners"', src)
+        self.assertIn("int inset = 2 * std::max(0, std::atoi(radius->get_value_str().c_str()));", src)
+        self.assertIn("return g;                                    // its own frame", src)
+        corners = (ROOT / "wayfire-plugin" / "src" / "sonata-corners.cpp").read_text()
+        self.assertIn("return 2.0 * o.shadow_radius;", corners)          # the same inset
+
     def test_plugins_build_on_wayfire_0_12(self):
         """Vini: the new resize did nothing -- Sonata's plugins had stopped
         building (sonata-corners: wlr_surface incomplete, min(int, double)),

@@ -24,6 +24,8 @@
 #include "wayfire/txn/transaction-manager.hpp"
 #include <wayfire/toplevel.hpp>
 #include <cmath>
+#include <cstdlib>
+#include <wayfire/config/config-manager.hpp>
 #include <wayfire/per-output-plugin.hpp>
 #include <wayfire/output.hpp>
 #include <wayfire/view.hpp>
@@ -680,7 +682,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
             ghost_geometry = desired;
             if (ghost)
             {
-                ghost->set(desired);
+                ghost->set(visible(view, desired));
             }
 
             return;
@@ -708,6 +710,40 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     }
 
     // -- Sonata ------------------------------------------------------------------------
+    /* The window as seen: a window pixdecor decorates (terminals, X11 apps)
+     * has its shadow inside its geometry -- the panel came out that much
+     * bigger than the window (Vini). The same inset as sonata-corners. */
+    static wf::geometry_t visible(wayfire_toplevel_view v, wf::geometry_t g)
+    {
+        auto m = v->toplevel()->current().margins;
+        if ((m.left <= 0) && (m.top <= 0))
+        {
+            return g;                                    // its own frame: geometry is the window
+        }
+
+        auto& cfg     = wf::get_core().config;
+        auto engine   = cfg->get_option("pixdecor/overlay_engine");
+        auto radius   = cfg->get_option("pixdecor/shadow_radius");
+        auto max_shad = cfg->get_option("pixdecor/maximized_shadows");
+        if (!engine || !radius || (engine->get_value_str() != "rounded_corners"))
+        {
+            return g;
+        }
+
+        if ((v->pending_tiled_edges() != 0) && (!max_shad || (max_shad->get_value_str() != "true")))
+        {
+            return g;
+        }
+
+        int inset = 2 * std::max(0, std::atoi(radius->get_value_str().c_str()));
+        if ((g.width <= 2 * inset) || (g.height <= 2 * inset))
+        {
+            return g;
+        }
+
+        return {g.x + inset, g.y + inset, g.width - 2 * inset, g.height - 2 * inset};
+    }
+
     void begin_outline()
     {
         finish_fade();
@@ -721,7 +757,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         ghost->fill   = fill;
         ghost->border = border;
         ghost->radius = std::max(0, (int)corner_radius);
-        ghost->rect   = ghost_geometry;
+        ghost->rect   = visible(view, ghost_geometry);
         wf::scene::add_front(output->node_for_layer(wf::scene::layer::TOP), ghost);
         ghost->damage();
         set_alpha(view, 0.0);                            // only the background shows while dragging
@@ -776,7 +812,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
             if (ghost)
             {
                 ghost->alpha = 1.0 - a;                  // the background gives way to the window
-                ghost->set(fading->get_geometry());
+                ghost->set(visible(fading, fading->get_geometry()));
             }
 
             if (!fade.running())
