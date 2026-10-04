@@ -47,3 +47,13 @@ class TerminalExecTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CaptureToolbarFromAppsTest(unittest.TestCase):
+    def test_toolbar_waits_for_what_opened_it(self):
+        """Vini: Screenshot from Apps didn't open (from a terminal it did):
+        Apps closing took the toolbar away. It opens after a short wait, like
+        Control Center's button."""
+        src = (ROOT / "sonata2" / "__main__.py").read_text()
+        self.assertIn("GLib.timeout_add(TOOLBAR_DELAY_MS, lambda: (cap.show_toolbar(), False)[1])", src)
+        self.assertIn("TOOLBAR_DELAY_MS = 300", src)

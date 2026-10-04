@@ -582,7 +582,10 @@ def run_topbar(app, args, ui):
         from .shell.capture import DEFAULTS
         what, cap = param.get_string(), win.bar.capture
         if what == "toolbar":
-            cap.show_toolbar()
+            # after whatever opened it has gone (Apps, Search, a menu): straight
+            # away, their closing took the toolbar's keyboard focus and it shut
+            # again -- from Apps "it didn't open" (Vini); Control Center waits too
+            GLib.timeout_add(TOOLBAR_DELAY_MS, lambda: (cap.show_toolbar(), False)[1])
         elif what == "stop":
             cap.stop_recording()
         else:                          # the keyboard shortcuts never wait for the timer
@@ -843,6 +846,9 @@ def key(name: str) -> int:
     except GLib.Error:
         pass                            # no menu bar: the level still changed
     return 0
+
+
+TOOLBAR_DELAY_MS = 300      # the capture toolbar opens after the panel that asked for it closed
 
 
 def _topbar_action(name: str, param: str) -> bool:
