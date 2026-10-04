@@ -72,6 +72,34 @@ class QuitterTest(unittest.TestCase):
         with mock.patch.object(Q, "_cmdline", side_effect=lambda p: cmd.get(p, "")):
             self.assertEqual(Q.app_pids(views, {12}), {12})
 
+    def test_quit_quits_the_whole_app(self):
+        """Vini: Quit in the Dock closed the windows but Chrome kept running
+        in the background; it quits the app now, and only that app."""
+        chrome, chrome2, notes = Win("google-chrome", 100), Win("google-chrome", 100), Win("org.gnome.TextEditor", 200)
+        mgr = FakeManager([chrome, chrome2, notes])
+        running, killed, done = {100, 200}, [], []
+
+        def views():
+            return [{"type": "toplevel", "pid": t.pid, "app-id": t.app_id} for t in mgr.toplevels]
+        with mock.patch.object(Q, "_cmdline", return_value="/opt/app"), \
+                mock.patch.object(Q, "_app_of_view", side_effect=lambda v: v["app-id"]):
+            q = Q.Quitter("quit", mgr, lambda k: done.append(k), lambda k, t: done.append("no"), views=views,
+                          tray=lambda: {300}, alive=lambda p: p in running,
+                          kill=lambda p, s: (killed.append((p, s)), running.discard(p)),
+                          only=[chrome, chrome2], key="google-chrome")
+            while q.tick():
+                q.waited_ms += Q.POLL_MS
+        self.assertEqual(mgr.closed, ["google-chrome", "google-chrome"])
+        self.assertEqual(killed, [(100, signal.SIGTERM)])                   # the app itself, nothing else
+        self.assertEqual(mgr.toplevels, [notes])
+        self.assertEqual(done, ["quit"])
+
+    def test_menus_quit_through_it(self):
+        import pathlib
+        root = pathlib.Path(Q.__file__).resolve().parent
+        self.assertIn('Item("Quit", lambda: _quit(dock, wins, key))', (root / "dock_menu.py").read_text())
+        self.assertIn("self._quit_app(wins, key)", (root / "topbar.py").read_text())
+
     def test_power_menu_goes_through_it(self):
         import pathlib
         root = pathlib.Path(Q.__file__).resolve().parent.parent

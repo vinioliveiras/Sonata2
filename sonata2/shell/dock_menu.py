@@ -146,11 +146,17 @@ def app_menu(dock, key: str, tile):
             first = Item("Minimize", lambda: [dock.manager.minimize(t) for t in wins])
         sections.append([first,
                          Item("Force Quit", lambda: force_quit(key)),
-                         Item("Quit", lambda: [dock.manager.close(t) for t in wins])])
+                         Item("Quit", lambda: _quit(dock, wins, key))])
     elif info:
         sections.append([Item("Open", lambda: dock.launch(tile))])
     tile.label.popdown()
     return ui.menu.popup(tile, sections, position=dock.away)
+
+
+def _quit(dock, wins, key) -> None:
+    """macOS Quit: the whole app, not only its windows (quitapps.quit_app)."""
+    from . import quitapps
+    dock._quitting = quitapps.quit_app(dock.manager, wins, key)
 
 
 def force_quit(key) -> bool:

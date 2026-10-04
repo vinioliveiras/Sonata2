@@ -8,7 +8,8 @@ its tabs at every start (Vini).
 An app that keeps a window open (its "Save changes?" question) stops it,
 like on macOS: nothing else happens, and Sonata says which app.
 
-    end_session("restart", manager)     # manager: wl.toplevels.ToplevelManager"""
+    end_session("restart", manager)     # manager: wl.toplevels.ToplevelManager
+    quit_app(manager, windows, key)     # Quit in the Dock / app menu: one app, all of it"""
 import os
 import signal
 
@@ -65,12 +66,18 @@ def _alive(pid: int) -> bool:
     return True
 
 
-def app_pids(views, tray=()) -> set:
+def _app_of_view(v) -> str:
+    from .. import apps
+    aid = v.get("app-id") or ""
+    return apps.match_app_id(aid) or aid
+
+
+def app_pids(views, tray=(), key=None) -> set:
     """The apps' processes to quit: each app window's and tray icon's, never
-    Sonata's own shell nor this process."""
+    Sonata's own shell nor this process. key: only that app's windows."""
     pids = {v.get("pid") for v in views
             if v.get("type") == "toplevel" and isinstance(v.get("pid"), int) and v["pid"] > 1
-            and OWN not in (v.get("app-id") or "")}
+            and OWN not in (v.get("app-id") or "") and (key is None or _app_of_view(v) == key)}
     pids |= {p for p in tray if isinstance(p, int) and p > 1}
     pids.discard(os.getpid())
     # (an X11 window's pid can be Xwayland's: it goes with the session, never before)
@@ -82,18 +89,22 @@ class Quitter:
     injectable for the tests."""
 
     def __init__(self, kind, manager, on_done, on_cancel, views=_views, tray=tray_pids,
-                 alive=_alive, kill=os.kill, timeout_ms=TIMEOUT_MS):
+                 alive=_alive, kill=os.kill, timeout_ms=TIMEOUT_MS, only=None, key=None):
         self.kind, self.manager = kind, manager
         self.on_done, self.on_cancel = on_done, on_cancel
         self.views, self.alive, self.kill = views, alive, kill
-        self.pids = app_pids(views(), tray())
+        self.only = None if only is None else {id(t) for t in only}     # just these windows (one app)
+        self.pids = app_pids(views(), tray() if key is None else (), key=key)
         self.signalled = set()
         self.asked = set()                   # windows asked to close (once each)
         self.left_ms = timeout_ms
         self.waited_ms = 0
 
     def windows(self) -> list:
-        return [t for t in (self.manager.toplevels if self.manager else []) if OWN not in (t.app_id or "")]
+        ts = self.manager.toplevels if self.manager else []
+        if self.only is not None:                 # one app's windows, Sonata's own apps included
+            return [t for t in ts if id(t) in self.only]
+        return [t for t in ts if OWN not in (t.app_id or "")]
 
     def start(self) -> None:
         if self.tick():
@@ -143,6 +154,16 @@ def _cancelled(kind, t) -> None:
     name = info.get_display_name() if info else (t.title or t.app_id or "An app")
     ui.dialog.alert(f"{name} canceled {CANCELLED.get(kind, kind)}.",
                     "Quit it, then try again.", [("ok", "OK", "default")])
+
+
+def quit_app(manager, windows, key: str) -> Quitter:
+    """Quit (the Dock's menu, the app menu): the app's windows close, then
+    the app itself gets SIGTERM if it's still running without one (Chrome in
+    the background) -- macOS quits the whole app (Vini). One that keeps a
+    window ("Save changes?") just stays, nothing else happens."""
+    q = Quitter("quit", manager, lambda _k: None, lambda _k, _t: None, only=list(windows), key=key)
+    q.start()
+    return q
 
 
 def end_session(kind: str, manager=None) -> Quitter:
