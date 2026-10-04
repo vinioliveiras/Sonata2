@@ -1929,6 +1929,12 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
                      "plugins/grid/wayfire/plugins/crossfade.hpp"):
             self.assertIn("+++ b/" + part, patch)
         self.assertIn("wf::buffer_reallocation_result_t::FAILED", patch)
+        # upstream review (ammen99, WayfireWM/wayfire#3152): a failed allocation
+        # holds a shared 1x1 buffer, so code that ignores the failure renders
+        # into it instead of crashing; the effects we handle still skip
+        self.assertIn("static wlr_buffer *fallback_buffer()", patch)
+        self.assertIn("use_fallback();", patch)
+        self.assertIn("aux_buffers[i][j].free();", patch)
         self.assertIn("if (!self->snapshot.get_buffer())", patch)
         self.assertIn("if (saved_pixels->pixels.allocate(target.get_size()) == wf::buffer_reallocation_result_t::FAILED)",
                       patch)

@@ -1,5 +1,5 @@
 diff --git a/plugins/animate/squeezimize.hpp b/plugins/animate/squeezimize.hpp
-index 7657a42..7c2b9ac 100644
+index 7657a425..447df271 100644
 --- a/plugins/animate/squeezimize.hpp
 +++ b/plugins/animate/squeezimize.hpp
 @@ -282,7 +282,13 @@ class squeezimize_transformer : public wf::scene::view_2d_transformer_t
@@ -10,7 +10,7 @@ index 7657a42..7c2b9ac 100644
 +            auto contents = this->get_texture(1.0);
 +            if (!contents)
 +            {
-+                return; // Sonata: no buffer this frame (graphics memory full)
++                return; // no buffer this frame (out of GPU memory)
 +            }
 +
 +            auto src_tex = wf::gles_texture_t{contents};
@@ -18,7 +18,7 @@ index 7657a42..7c2b9ac 100644
              {
                  self->program.use(wf::TEXTURE_TYPE_RGBA);
 diff --git a/plugins/animate/unmapped-view-node.hpp b/plugins/animate/unmapped-view-node.hpp
-index 3ae9968..ff3a4b0 100644
+index 3ae9968a..ff3a4b0f 100644
 --- a/plugins/animate/unmapped-view-node.hpp
 +++ b/plugins/animate/unmapped-view-node.hpp
 @@ -50,6 +50,11 @@ class unmapped_view_snapshot_node : public wf::scene::node_t
@@ -34,7 +34,7 @@ index 3ae9968..ff3a4b0 100644
              data.pass->add_texture(texture, data.target, self->get_bounding_box(), data.damage);
          }
 diff --git a/plugins/blur/blur-base.cpp b/plugins/blur/blur-base.cpp
-index a20d24c..c243632 100644
+index a20d24cf..c2436326 100644
 --- a/plugins/blur/blur-base.cpp
 +++ b/plugins/blur/blur-base.cpp
 @@ -112,7 +112,11 @@ void wf_blur_base::render_iteration(wf::region_t blur_region,
@@ -106,7 +106,7 @@ index a20d24c..c243632 100644
  
  static wf::pointf_t get_center(wf::geometry_t g)
 diff --git a/plugins/blur/blur.cpp b/plugins/blur/blur.cpp
-index 4c27a41..2c69a58 100644
+index 4c27a419..2c69a583 100644
 --- a/plugins/blur/blur.cpp
 +++ b/plugins/blur/blur.cpp
 @@ -178,7 +178,21 @@ class blur_render_instance_t : public transformer_render_instance_t<blur_node_t>
@@ -168,7 +168,7 @@ index 4c27a41..2c69a58 100644
  
              GL_CALL(glDisable(GL_SCISSOR_TEST));
 diff --git a/plugins/blur/blur.hpp b/plugins/blur/blur.hpp
-index ed6a885..857a0b2 100644
+index ed6a8850..857a0b2d 100644
 --- a/plugins/blur/blur.hpp
 +++ b/plugins/blur/blur.hpp
 @@ -94,6 +94,8 @@ class wf_blur_base
@@ -191,7 +191,7 @@ index ed6a885..857a0b2 100644
      /**
       * Render a view with a blended background as prepared from @prepare_blur.
 diff --git a/plugins/common/workspace-wall.cpp b/plugins/common/workspace-wall.cpp
-index 2d15ffb..6f47c9e 100644
+index 2d15ffb1..2956d609 100644
 --- a/plugins/common/workspace-wall.cpp
 +++ b/plugins/common/workspace-wall.cpp
 @@ -158,7 +158,7 @@ class workspace_wall_t::workspace_wall_node_t : public scene::node_t
@@ -214,8 +214,25 @@ index 2d15ffb..6f47c9e 100644
  
                      float dim = self->wall->get_color_for_workspace({i, j});
                      const auto& subbox = self->aux_buffer_current_subbox[i][j];
+@@ -260,11 +264,14 @@ class workspace_wall_t::workspace_wall_node_t : public scene::node_t
+ 
+                 auto bbox = workspaces[i][j]->get_bounding_box();
+ 
+-                aux_buffers[i][j].allocate(wf::dimensions(bbox), wall->output->handle->scale,
++                if (aux_buffers[i][j].allocate(wf::dimensions(bbox), wall->output->handle->scale,
+                     wf::buffer_allocation_hints_t{
+                         .needs_alpha = false,
+                         .hdr_linear  = wall->output && wall->output->is_hdr(),
+-                    });
++                    }) == wf::buffer_reallocation_result_t::FAILED)
++                {
++                    aux_buffers[i][j].free();     // refused: that workspace stays blank, not the 1x1 placeholder
++                }
+                 aux_buffer_damage[i][j] |= bbox;
+                 aux_buffer_current_scale[i][j]  = 1.0;
+                 aux_buffer_current_subbox[i][j] = std::nullopt;
 diff --git a/plugins/grid/wayfire/plugins/crossfade.hpp b/plugins/grid/wayfire/plugins/crossfade.hpp
-index 6e52e4b..bd9ee07 100644
+index 6e52e4b9..bd9ee071 100644
 --- a/plugins/grid/wayfire/plugins/crossfade.hpp
 +++ b/plugins/grid/wayfire/plugins/crossfade.hpp
 @@ -58,8 +58,13 @@ class crossfade_node_t : public scene::view_2d_transformer_t
@@ -247,7 +264,7 @@ index 6e52e4b..bd9ee07 100644
              self->original_buffer.get_buffer(), self->original_buffer.get_texture());
          data.pass->add_texture(tex, data.target, self->displayed_geometry, data.damage, 1.0 - ra);
 diff --git a/src/api/wayfire/opengl.hpp b/src/api/wayfire/opengl.hpp
-index 0983b68..ef412b7 100644
+index 0983b681..ef412b7e 100644
 --- a/src/api/wayfire/opengl.hpp
 +++ b/src/api/wayfire/opengl.hpp
 @@ -141,7 +141,7 @@ struct gles_texture_t
@@ -259,8 +276,35 @@ index 0983b68..ef412b7 100644
  
      /** Invert Y? */
      bool invert_y = false;
+diff --git a/src/api/wayfire/render.hpp b/src/api/wayfire/render.hpp
+index 9d11768b..c916f5f6 100644
+--- a/src/api/wayfire/render.hpp
++++ b/src/api/wayfire/render.hpp
+@@ -308,7 +308,11 @@ enum class buffer_reallocation_result_t
+     SAME,
+     /** Buffer was successfully reallocated to the new size. */
+     REALLOCATED,
+-    /** Buffer reallocation failed. */
++    /**
++     * Buffer reallocation failed. The buffer then holds a shared 1x1
++     * placeholder, so rendering into it is safe (but shows nothing useful):
++     * callers should skip their effect when they can.
++     */
+     FAILED,
+ };
+ 
+@@ -373,6 +377,9 @@ struct auxilliary_buffer_t
+   private:
+     render_buffer_t buffer;
+ 
++    /** After a failed allocation: hold the shared 1x1 placeholder. */
++    void use_fallback();
++
+     // The wlr_texture creating from this framebuffer.
+     wlr_texture *texture = NULL;
+ };
 diff --git a/src/api/wayfire/view-transform.hpp b/src/api/wayfire/view-transform.hpp
-index 8c2a422..4a6e90d 100644
+index 8c2a422b..4a6e90dd 100644
 --- a/src/api/wayfire/view-transform.hpp
 +++ b/src/api/wayfire/view-transform.hpp
 @@ -78,6 +78,9 @@ class transformer_base_node_t : public scene::floating_inner_node_t
@@ -295,7 +339,7 @@ index 8c2a422..4a6e90d 100644
          {
              *out_logical_size = wf::dimensionsf_t{
 diff --git a/src/core/img.cpp b/src/core/img.cpp
-index aaf9b0a..dd4be96 100644
+index aaf9b0a0..dd4be968 100644
 --- a/src/core/img.cpp
 +++ b/src/core/img.cpp
 @@ -413,6 +413,11 @@ void write_to_file(std::string name, uint8_t *pixels, int w, int h, std::string
@@ -311,7 +355,7 @@ index aaf9b0a..dd4be96 100644
      std::vector<char> buffer(tex->width * tex->height * 4);
      wlr_texture_read_pixels_options opts{};
 diff --git a/src/core/opengl.cpp b/src/core/opengl.cpp
-index 3192e0d..ac691e9 100644
+index 3192e0d0..f59823ca 100644
 --- a/src/core/opengl.cpp
 +++ b/src/core/opengl.cpp
 @@ -468,12 +468,22 @@ wf::gles_texture_t::gles_texture_t(GLuint tex)
@@ -323,7 +367,7 @@ index 3192e0d..ac691e9 100644
 -{}
 +wf::gles_texture_t::gles_texture_t(const std::shared_ptr<wf::texture_t>& tex)
 +{
-+    // Sonata: no texture (the GPU refused its buffer) -> texture 0, draws nothing
++    // No texture (its buffer could not be allocated): texture 0, draws nothing
 +    if (tex && tex->get_wlr_texture())
 +    {
 +        *this = wf::gles_texture_t(tex->get_wlr_texture(), tex->get_source_box());
@@ -334,14 +378,14 @@ index 3192e0d..ac691e9 100644
  {
 +    if (!texture)
 +    {
-+        return; // Sonata: texture 0 (see above)
++        return; // texture 0, see above
 +    }
 +
      wf::dassert(wlr_texture_is_gles2(texture));
      wlr_gles2_texture_attribs attribs;
      wlr_gles2_texture_get_attribs(texture, &attribs);
 diff --git a/src/render.cpp b/src/render.cpp
-index 78697fd..2b4d6be 100644
+index 78697fd8..c434d065 100644
 --- a/src/render.cpp
 +++ b/src/render.cpp
 @@ -236,12 +236,12 @@ wlr_texture*wf::texture_t::get_wlr_texture() const
@@ -359,12 +403,79 @@ index 78697fd..2b4d6be 100644
  }
  
  wf::render_buffer_t::render_buffer_t(wlr_buffer *buffer, wf::dimensions_t size)
-@@ -890,13 +890,22 @@ void wf::render_pass_t::clear(const wf::regionf_t& region, const wf::color_t& co
+@@ -421,9 +421,34 @@ static wf::dimensions_t sanitize_buffer_size(wf::dimensions_t size, float max_al
+     return size;
+ }
+ 
++/**
++ * A 1x1 buffer, allocated once while there is still memory (the first
++ * allocate() call, at startup). An auxilliary buffer whose allocation fails
++ * holds a reference to it instead of nothing: code which does not check the
++ * result renders into a valid (if tiny) target instead of crashing. The
++ * effect looks wrong until memory is available again; the next allocate()
++ * with the real size tries again.
++ */
++static wlr_buffer *fallback_buffer()
++{
++    static wlr_buffer *buffer = nullptr;
++    if (!buffer)
++    {
++        auto format = choose_format(wf::get_core().renderer, {});
++        if (format)
++        {
++            buffer = wlr_allocator_create_buffer(wf::get_core_impl().allocator, 1, 1, format);
++        }
++    }
++
++    return buffer;
++}
++
+ wf::buffer_reallocation_result_t wf::auxilliary_buffer_t::allocate(wf::dimensions_t size, float scale,
+     buffer_allocation_hints_t hints)
+ {
++    fallback_buffer();
++
+     // From 16k x 16k upwards, we very often hit various limits so there is no point in allocating larger
+     // buffers. Plus, we never really need buffers that big in practice, so these usually indicate bugs in
+     // the code.
+@@ -445,6 +470,7 @@ wf::buffer_reallocation_result_t wf::auxilliary_buffer_t::allocate(wf::dimension
+     if (!format)
+     {
+         LOGE("Failed to find supported render format!");
++        use_fallback();
+         return buffer_reallocation_result_t::FAILED;
+     }
+ 
+@@ -463,6 +489,7 @@ wf::buffer_reallocation_result_t wf::auxilliary_buffer_t::allocate(wf::dimension
+     if (!buffer.buffer)
+     {
+         LOGE("Failed to allocate auxilliary buffer! Size ", size, " format ", format->format);
++        use_fallback();
+         return buffer_reallocation_result_t::FAILED;
+     }
+ 
+@@ -470,6 +497,15 @@ wf::buffer_reallocation_result_t wf::auxilliary_buffer_t::allocate(wf::dimension
+     return buffer_reallocation_result_t::REALLOCATED;
+ }
+ 
++void wf::auxilliary_buffer_t::use_fallback()
++{
++    if (auto fallback = fallback_buffer())
++    {
++        buffer.buffer = wlr_buffer_lock(fallback);
++        buffer.size   = {1, 1};
++    }
++}
++
+ void wf::auxilliary_buffer_t::free()
+ {
+     if (texture)
+@@ -890,13 +926,22 @@ void wf::render_pass_t::clear(const wf::regionf_t& region, const wf::color_t& co
          .a = static_cast<float>(color.a),
      };
  
 -    wlr_render_pass_add_rect(_get_pass(), &opts);
-+    // Sonata: no pass when the buffer couldn't be set up (graphics memory full) -- skip
++    // No pass when the target buffer could not be set up (out of GPU memory): skip
 +    if (auto pass = _get_pass())
 +    {
 +        wlr_render_pass_add_rect(pass, &opts);
@@ -377,13 +488,13 @@ index 78697fd..2b4d6be 100644
  {
 +    if (!texture || !texture->get_wlr_texture())
 +    {
-+        return; // Sonata: the GPU refused the texture's buffer
++        return; // the texture could not be created (out of GPU memory)
 +    }
 +
      if (wlr_renderer_is_gles2(this->get_wlr_renderer()))
      {
          // This is a hack to make sure that plugins can do whatever they want and we render on the correct
-@@ -949,7 +958,10 @@ void wf::render_pass_t::add_texture(const std::shared_ptr<wf::texture_t>& textur
+@@ -949,7 +994,10 @@ void wf::render_pass_t::add_texture(const std::shared_ptr<wf::texture_t>& textur
          opts.luminance_multiplier = &luminance_multiplier;
      }
  
@@ -395,7 +506,7 @@ index 78697fd..2b4d6be 100644
  }
  
  void wf::render_pass_t::add_rect(const wf::color_t& color, const wf::render_target_t& adjusted_target,
-@@ -968,7 +980,10 @@ void wf::render_pass_t::add_rect(const wf::color_t& color, const wf::render_targ
+@@ -968,7 +1016,10 @@ void wf::render_pass_t::add_rect(const wf::color_t& color, const wf::render_targ
      opts.box  = adjusted_target.framebuffer_texture_dst_box_from_geometry_box(geometry);
      wf::dassert(opts.box.width >= 0);
      wf::dassert(opts.box.height >= 0);
@@ -408,7 +519,7 @@ index 78697fd..2b4d6be 100644
  
  bool wf::render_pass_t::submit()
 diff --git a/src/view/view-3d.cpp b/src/view/view-3d.cpp
-index a2e6b77..f91370a 100644
+index a2e6b77d..4a5e92f7 100644
 --- a/src/view/view-3d.cpp
 +++ b/src/view/view-3d.cpp
 @@ -264,6 +264,11 @@ class view_2d_render_instance_t :
@@ -507,7 +618,7 @@ index a2e6b77..f91370a 100644
 +    auto texture = wf::texture_t::from_aux(inner_content);
 +    if (!texture->get_wlr_texture())
 +    {
-+        cached_damage |= bbox; // Sonata: no texture for the buffer (graphics memory full)
++        cached_damage |= bbox; // no texture for the buffer (out of GPU memory)
 +        return nullptr;
 +    }
 +
@@ -516,7 +627,7 @@ index a2e6b77..f91370a 100644
  
  void transformer_base_node_t::release_buffers()
 diff --git a/src/view/view.cpp b/src/view/view.cpp
-index daa50db..749bd38 100644
+index daa50dbf..749bd38a 100644
 --- a/src/view/view.cpp
 +++ b/src/view/view.cpp
 @@ -96,8 +96,16 @@ void wf::view_interface_t::take_snapshot(wf::auxilliary_buffer_t& buffer)
