@@ -66,11 +66,11 @@ class AddressTest(unittest.TestCase):
         self.assertIsNone(bar.entry)
         self.assertIs(bar.stack.get_visible_child(), bar.box)  # the folders are back
 
-    def test_hidden_files_shown_by_default(self):
+    def test_hidden_files_wiring(self):
         from sonata2.files import window
-        self.assertTrue(window.DEFAULTS["show_hidden"])
+        self.assertFalse(window.DEFAULTS["show_hidden"])         # hidden by default (Vini)
         src = inspect.getsource(window.FilesWindow)
-        self.assertIn('config.update("files", show_hidden=', src)
+        self.assertIn("folderprefs.remember(tab.uri, hidden=on)", src)
         self.assertIn('"Show Hidden Files"', src)
 
 

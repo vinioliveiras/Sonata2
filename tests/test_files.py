@@ -151,6 +151,24 @@ class TabsTest(unittest.TestCase):
         w.go(self.uri("A"))
         self.assertEqual(lv.sort_state(), ("Size", True))
 
+    def test_hidden_files_per_folder(self):
+        """Vini: an eye in the toolbar shows this folder's hidden files; off by
+        default, remembered for the folder."""
+        w = self.win
+        open(os.path.join(self.d, ".secret"), "w").close()
+        names = lambda: {w.folder.store.get_item(i).get_name() for i in range(w.folder.store.get_n_items())}
+        spin(lambda: False, 300)
+        self.assertNotIn(".secret", names())
+        self.assertFalse(w.hidden_btn.get_active())
+        w.hidden_btn.set_active(True)                              # the eye
+        self.assertTrue(spin(lambda: ".secret" in names()))
+        w.go(self.uri("A"))
+        self.assertTrue(spin(lambda: w.folder.uri == self.uri("A")))
+        self.assertFalse(w.hidden_btn.get_active())                # another folder: off
+        w.go_back()
+        self.assertTrue(spin(lambda: ".secret" in names()))      # remembered here
+        self.assertTrue(w.hidden_btn.get_active())
+
     def test_sort_by_in_icons(self):
         """View > Sort By works in icons too, and is the folder's one order (list included)."""
         w = self.win

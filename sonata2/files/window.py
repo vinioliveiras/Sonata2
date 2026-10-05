@@ -33,7 +33,7 @@ VIEWS = (("icons", "view-grid-symbolic", "as Icons"), ("list", "view-list-symbol
          ("columns", "view-dual-symbolic", "as Columns"))
 DEFAULTS = {"view": "icons", "list_columns": {}, "path_bar": True,    # list_columns: views.py
             "list_shown": None, "count_sizes": False,           # the list's columns; folder sizes
-            "show_hidden": True}                                # hidden files shown, dimmed (Vini)
+            "show_hidden": False}               # hidden files: off, except in folders where the eye is on (Vini)
 
 ui.register("""
 window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
@@ -225,6 +225,14 @@ class FilesWindow(Adw.ApplicationWindow):
             seg.append(b)
             self.view_buttons[vid] = b
         bar.append(seg)
+        # hidden files in this folder, on or off (Vini): remembered per folder
+        eye = Gtk.Box(css_classes=["fs-seg"], valign=Gtk.Align.CENTER)
+        self.hidden_btn = Gtk.ToggleButton(icon_name="view-reveal-symbolic", tooltip_text="Show Hidden Files",
+                                           focus_on_click=False)
+        self.hidden_btn.connect("toggled", lambda b: not self._syncing and
+                                b.get_active() != self.tab.folder.show_hidden and self.toggle_hidden())
+        eye.append(self.hidden_btn)
+        bar.insert_child_after(eye, self.empty_btn)
         self.search = Gtk.SearchEntry(placeholder_text="Search", width_chars=16, valign=Gtk.Align.CENTER)
         self.search.connect("search-changed", lambda *_: self._search_changed())
         self.search.connect("stop-search", lambda *_: self._close_search())
@@ -363,7 +371,7 @@ class FilesWindow(Adw.ApplicationWindow):
             "icons": IconsView(tab.filtered, self.open_item),
             "list": ListView(tab.filtered, self.open_item),
             "columns": ColumnsView(tab.filtered, self.open_item, lambda uri: self._column_location(tab, uri),
-                                   lambda: self.show_hidden),
+                                   lambda: tab.folder.show_hidden),
         }
         cfg = config.load("files", DEFAULTS)
         views["list"].show_columns(cfg.get("list_shown"))
@@ -407,6 +415,9 @@ class FilesWindow(Adw.ApplicationWindow):
         """Before a folder shows: its own view and sort, if you chose them
         there; else the default view and Name, ascending."""
         p = folderprefs.get(uri)
+        tab.folder.show_hidden = p.get("hidden", self.show_hidden)      # before it lists
+        if tab is self.tab:
+            self._sync_hidden_button()
         vid = p.get("view") or config.load("files", DEFAULTS)["view"]
         if vid in tab.views and vid != tab.view_id and not getattr(self, "_in_results", False):
             if tab is self.tab:
@@ -579,6 +590,7 @@ class FilesWindow(Adw.ApplicationWindow):
         self.tab_stack.set_visible_child(tab.widget)
         self.strip.set_active(tab)
         self._sync_view_buttons()
+        self._sync_hidden_button()
         self._update_nav()
         if tab.uri:
             self.empty_btn.set_visible(ops.is_trash(tab.uri))
@@ -782,7 +794,8 @@ class FilesWindow(Adw.ApplicationWindow):
                                                 for vid, _i, label in VIEWS],
                                                [Item("Hide Path Bar" if self.pathbar.get_visible() else "Show Path Bar",
                                                      self.toggle_path_bar),
-                                                Item("Hide Hidden Files" if self.show_hidden else "Show Hidden Files",
+                                                Item("Hide Hidden Files" if self.tab.folder.show_hidden
+                                                     else "Show Hidden Files",
                                                      self.toggle_hidden)]])]]
             if self.view is not self.views["columns"]:
                 cur = self.view.sort_state()[0]
@@ -1110,12 +1123,30 @@ class FilesWindow(Adw.ApplicationWindow):
         server.dialog(self, self.go)
 
     def toggle_hidden(self):
-        """View > Show / Hide Hidden Files (Ctrl+Shift+.), remembered."""
-        self.show_hidden = not self.show_hidden
-        config.update("files", show_hidden=self.show_hidden)
-        for t in self.tabs:
-            t.folder.show_hidden = self.show_hidden
-            t.folder.reload()
+        """The toolbar's eye, View > Show / Hide Hidden Files, Ctrl+Shift+.:
+        this folder's hidden files, remembered for it (Vini)."""
+        tab = self.tab
+        on = not tab.folder.show_hidden
+        tab.folder.show_hidden = on
+        if tab.uri and tab.uri not in VIRTUAL:
+            folderprefs.remember(tab.uri, hidden=on)
+        self._sync_hidden_button()
+        tab.folder.reload()
+        for col in tab.views["columns"].columns[1:]:          # the folders open to the right too
+            if col.owner is not None:
+                col.owner.show_hidden = on
+                col.owner.reload()
+
+    def _sync_hidden_button(self):
+        on = bool(self.tab and self.tab.folder.show_hidden)
+        self.hidden_btn.set_tooltip_text("Hide Hidden Files" if on else "Show Hidden Files")
+        self.hidden_btn.set_icon_name("view-conceal-symbolic" if on else "view-reveal-symbolic")
+        if self.hidden_btn.get_active() != on:
+            self._syncing = True
+            try:
+                self.hidden_btn.set_active(on)
+            finally:
+                self._syncing = False
 
     def _home_dir(self, kind=None):
         if kind is None:

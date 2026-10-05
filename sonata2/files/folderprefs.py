@@ -1,5 +1,6 @@
 """Per-folder view settings (Finder keeps them per folder too): the view
-(icons / list / columns) and the list's sort column and direction, saved
+(icons / list / columns), the list's sort column and direction, and
+whether hidden files show (the toolbar's eye, Vini), saved
 only for folders where you chose them. Other folders use the default view
 (files.json "view") and Name, ascending.
 
@@ -27,6 +28,8 @@ def get(uri: str) -> dict:
     out = {}
     if p.get("view") in VIEWS:
         out["view"] = p["view"]
+    if isinstance(p.get("hidden"), bool):
+        out["hidden"] = p["hidden"]
     s = p.get("sort")
     if isinstance(s, (list, tuple)) and len(s) == 2 and isinstance(s[0], str):
         out["sort"] = (s[0], bool(s[1]))
