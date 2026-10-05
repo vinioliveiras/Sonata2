@@ -80,6 +80,9 @@ window.sonata-topbar, window.sonata-topbar > contents { background: none; box-sh
 .topbar-item.battery > box > image { -gtk-icon-size: 24px; }       /* wide battery, macOS proportions */
 .topbar-item.input-src > box > label { font-size: 10px; font-weight: 700; padding: 0 3px; border-radius: 3px;
   box-shadow: inset 0 0 0 1.2px %(label)s; }
+/* digits all one width (macOS' clock): a new minute no longer nudges the
+   items to its left ("10:11" is narrower than "10:08" in proportional digits) */
+.topbar-item.clock > box > label, .topbar-item > box > label.percent { font-feature-settings: "tnum"; }
 .topbar-item > box > label.percent { margin-right: 5px; font-size: %(text_body)s; }
 .about-box { padding: 4px 36px 24px 36px; font-family: %(font)s; color: %(label)s; }
 .about-name { font-family: %(font_display)s; font-size: 26px; font-weight: 700; }
@@ -225,7 +228,7 @@ class Bar(Gtk.CenterBox):
         self.inuse_btn.get_child().set_spacing(3)
         self.inuse.listeners.append(self._inuse_changed)
         self._inuse_changed()
-        self.clock = self._item(right, text="", on_click=self._calendar)
+        self.clock = self._item(right, text="", on_click=self._calendar, css="clock")
         right.set_margin_end(8)
         self.set_end_widget(right)
 
