@@ -107,7 +107,12 @@ class CaptureHiddenTest(unittest.TestCase):
         self.assertIn("capture_rendering = true;", cpp)
         self.assertIn("return g != their_global;", cpp)
         self.assertIn("paint_cursors()", cpp)                 # the pointer still shows
-        self.assertIn("-DSONATA_OUTPUT_CAPTURE", (root / "wayfire-plugin" / "meson.build").read_text())
+        meson = (root / "wayfire-plugin" / "meson.build").read_text()
+        self.assertIn("-DSONATA_OUTPUT_CAPTURE", meson)
+        # the capture-source code names ext_foreign_toplevel_handle_v1_interface:
+        # without our own copy the plugin didn't load at all ("undefined
+        # symbol") and every window lost its rounded corners (Vini: Steam's)
+        self.assertIn("ext-foreign-toplevel-list-v1-protocol.c", meson)
         ini = (root / "config" / "wayfire.ini").read_text()
         self.assertIn(f"capture_hidden = {livedraw.PALETTE_NS}", ini)
         self.assertIn('name="capture_hidden"', (root / "wayfire-plugin" / "metadata" / "sonata-corners.xml").read_text())

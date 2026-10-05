@@ -30,6 +30,13 @@ if wl_protocols.found() and wl_scanner.found() and wlroots.found() and has_captu
     output: 'ext-image-capture-source-v1-protocol.h', command: [wl_scanner, 'server-header', '@INPUT@', '@OUTPUT@'])
   corners_src += custom_target('ext-image-capture-source-v1-protocol.c', input: capture_xml,
     output: 'ext-image-capture-source-v1-protocol.c', command: [wl_scanner, 'private-code', '@INPUT@', '@OUTPUT@'])
+  # its code names ext_foreign_toplevel_handle_v1_interface: wlroots keeps its
+  # own copy private, so the plugin failed to load ("undefined symbol") and
+  # every window lost its rounded corners -- our own copy, private to us too
+  toplevel_xml = wl_protocols.get_variable('pkgdatadir') / 'staging' / 'ext-foreign-toplevel-list' / \
+    'ext-foreign-toplevel-list-v1.xml'
+  corners_src += custom_target('ext-foreign-toplevel-list-v1-protocol.c', input: toplevel_xml,
+    output: 'ext-foreign-toplevel-list-v1-protocol.c', command: [wl_scanner, 'private-code', '@INPUT@', '@OUTPUT@'])
   corners_args += ['-DSONATA_OUTPUT_CAPTURE']
 endif
 
