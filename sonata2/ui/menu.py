@@ -51,6 +51,10 @@ popover.menu modelbutton check, popover.menu modelbutton radio { min-width: 0; m
 popover.menu modelbutton image.sonata-menu-check { -gtk-icon-size: 12px; margin-left: 12px; color: inherit; }
 popover.menu modelbutton arrow { -gtk-icon-size: 12px; color: inherit; }
 popover.menu separator { margin: 5px 10px; min-height: 1px; background-color: %(separator)s; }
+/* the menu's (never shown) scrollbar has a minimum length: a one-item menu
+   was that tall, with a gap under the item (Vini) */
+popover.menu scrollbar, popover.menu scrollbar range, popover.menu scrollbar trough,
+popover.menu scrollbar slider { min-height: 0; min-width: 0; margin: 0; padding: 0; border: none; }
 /* pop-up buttons' lists (Gtk.DropDown: Settings, Control Center's sound
    devices...) are the same glass menu: no opaque list behind the rows */
 popover.menu listview, popover.menu listview.view, popover.menu scrolledwindow { background: none; }
