@@ -21,7 +21,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, names, ui  # noqa: E402
-from . import folder, folderprefs, ops, packages, undo  # noqa: E402
+from . import actions, folder, folderprefs, ops, packages, undo  # noqa: E402
 from .search import Search  # noqa: E402
 from .folder import APPS, RECENTS, VIRTUAL, file_of, is_dir  # noqa: E402
 from .views import SORT_BY, ColumnsView, IconsView, ListView  # noqa: E402
@@ -712,8 +712,17 @@ class FilesWindow(Adw.ApplicationWindow):
                              Item(f"Quick Look {what}", self.toggle_quicklook)])
             sections.append([Item("Rename", lambda: self.rename_selection(), enabled=n == 1 and
                                   self._writable_sel(sel)),
+                             Item(f"Compress {what}", self.compress_selection, enabled=self._writable_here()),
                              Item("Duplicate", self.duplicate_selection, enabled=self._writable_here())])
-            sections.append([Item(f"Copy {what}", self.copy_selection)])
+            sections.append([Item(f"Copy {what}", self.copy_selection),
+                             Item("Copy Path" if n == 1 else "Copy Paths", self.copy_path_selection)])
+            pics = [(file_of(i), actions.picture_kind(i)) for i in sel]
+            if all(k for _f, k in pics) and self._writable_sel(sel):          # Finder's Quick Actions
+                sections.append([Item("Quick Actions", submenu=[[
+                    Item("Rotate Left", lambda p=pics: self._rotate(p, False)),
+                    Item("Rotate Right", lambda p=pics: self._rotate(p, True))], [
+                    Item("Convert to PNG", lambda p=pics: self._convert(p, "png")),
+                    Item("Convert to JPEG", lambda p=pics: self._convert(p, "jpeg"))]])])
             if self.history[self.pos] in VIRTUAL or self.search.get_text():
                 sections.append([Item("Show in Enclosing Folder", lambda: self._reveal(sel[0]))])
             if n == 1 and is_dir(sel[0]):
@@ -900,6 +909,23 @@ class FilesWindow(Adw.ApplicationWindow):
                 ops.Transfer(fs, Gio.File.new_for_uri(parent), duplicate=True, parent=self,
                              on_done=self.sidebar.refresh_space)
 
+    def compress_selection(self):
+        files = self._selected_files()
+        if files and self._writable_here():
+            actions.compress(files, lambda z: self._select_when_listed(z.get_basename()),
+                             lambda f, e: self._error("The items can’t be compressed.", e))
+
+    def copy_path_selection(self):
+        actions.copy_paths(self, self._selected_files())
+
+    def _rotate(self, pics, clockwise):
+        actions.rotate(pics, clockwise, lambda: [t.folder.reload() for t in self.tabs],
+                       lambda f, e: self._error(f"“{f.get_basename()}” can’t be rotated.", e))
+
+    def _convert(self, pics, kind):
+        actions.convert([f for f, _k in pics], kind, None,
+                        lambda f, e: self._error(f"“{f.get_basename()}” can’t be converted.", e))
+
     def copy_selection(self, cut=False):
         files = self._selected_files()
         if files:
@@ -999,6 +1025,7 @@ class FilesWindow(Adw.ApplicationWindow):
              else self.view.unselect_all()),
             ("<Control><Shift>n", self.new_folder),
             ("<Control>c", self.copy_selection),
+            ("<Control><Alt>c", self.copy_path_selection),               # Finder: Copy as Pathname (⌥⌘C)
             ("<Control>x", lambda: self.copy_selection(cut=True)),
             ("<Control>v", self.paste),
             ("<Control><Alt>v", lambda: self.paste(move=True)),        # Finder: Move Item Here
