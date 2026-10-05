@@ -99,12 +99,60 @@ def kind(info) -> str:
 
 
 def size(info) -> str:
-    return "--" if is_dir(info) else ui.fmt.size(info.get_size())
+    if is_dir(info):
+        n = dir_size(info)
+        return ui.fmt.size(n) if n is not None else "--"
+    return ui.fmt.size(info.get_size())
 
 
-def date(info) -> str:
+# -- folder sizes (Finder: View Options > Calculate all sizes) ----------------------------------
+DIR_SIZE = "sonata::dir-size"           # bytes, set once counted ("" while unknown)
+_sizer = {"queue": [], "busy": False, "listeners": []}
+
+
+def dir_size(info):
+    """A folder's counted size, or None (not counted / not asked)."""
+    v = info.get_attribute_string(DIR_SIZE) if info.has_attribute(DIR_SIZE) else ""
+    return int(v) if v and v.isdigit() else None
+
+
+def count_dir(info, on_done) -> None:
+    """Count a folder's size in the background (one at a time, newest asked first);
+    on_done(info) on the main loop."""
+    f = info.get_attribute_object("sonata::file") if info.has_attribute("sonata::file") else None
+    path = f.get_path() if f is not None else None
+    if not path or info.has_attribute(DIR_SIZE):
+        return
+    info.set_attribute_string(DIR_SIZE, "")                     # asked: not again
+    _sizer["queue"].append((info, path, on_done))
+    if not _sizer["busy"]:
+        _sizer["busy"] = True
+        import threading
+        threading.Thread(target=_count_all, daemon=True).start()
+
+
+def _count_all():
+    import os
+    while _sizer["queue"]:
+        info, path, on_done = _sizer["queue"].pop()
+        total = 0
+        for root, _dirs, files in os.walk(path, onerror=lambda e: None):
+            for n in files:
+                try:
+                    total += os.lstat(os.path.join(root, n)).st_size
+                except OSError:
+                    pass
+        GLib.idle_add(lambda i=info, t=total, cb=on_done: (i.set_attribute_string(DIR_SIZE, str(t)), cb(i), False)[2])
+    _sizer["busy"] = False
+
+
+def date(info, attr: str = "time::modified") -> str:
     """"Today at 14:32", "Yesterday at 09:10", "28 Sep 2026 at 10:00"."""
-    dt = info.get_modification_date_time()
+    if attr == "time::modified":
+        dt = info.get_modification_date_time()
+    else:
+        secs = info.get_attribute_uint64(attr) if info.has_attribute(attr) else 0
+        dt = GLib.DateTime.new_from_unix_utc(secs) if secs else None
     if dt is None:
         return "--"
     dt = dt.to_local()
@@ -518,8 +566,22 @@ SORTS = {
     "Kind": lambda a, b: _cmp(kind(a).casefold(), kind(b).casefold()) or _cmp(sort_key(a), sort_key(b)),
     "Date Modified": lambda a, b: _cmp(a.get_attribute_uint64("time::modified"),
                                        b.get_attribute_uint64("time::modified")),
-    "Size": lambda a, b: _cmp(-1 if is_dir(a) else a.get_size(), -1 if is_dir(b) else b.get_size()),
+    "Size": lambda a, b: _cmp(_size_key(a), _size_key(b)),
+    "Date Created": lambda a, b: _cmp(a.get_attribute_uint64("time::created"), b.get_attribute_uint64("time::created")),
+    "Date Last Opened": lambda a, b: _cmp(a.get_attribute_uint64("time::access"), b.get_attribute_uint64("time::access")),
 }
+
+
+def _size_key(info):
+    if is_dir(info):
+        n = dir_size(info)
+        return -1 if n is None else n
+    return info.get_size()
+
+
+# the list's columns: (title, default width, shown at first); Name always shows
+LIST_COLUMNS = (("Date Modified", 190, True), ("Date Created", 190, False), ("Date Last Opened", 190, False),
+                ("Size", 90, True), ("Kind", 160, True))
 # Sort By's direction for each (Finder: newest and biggest first)
 SORT_BY = (("Name", False), ("Kind", False), ("Date Modified", True), ("Size", True))
 
@@ -571,12 +633,22 @@ class ListView(_Cells):
         # are remembered.
         name = self._column("Name", self._setup_name, self._bind_name, SORTS["Name"], width=NAME_W,
                             unbind=lambda _f, it: self._untrack(it.get_child()))
-        self._column("Date Modified", self._setup_text, lambda _f, it: self._bind_text(it, date(it.get_item())),
-                     SORTS["Date Modified"], width=190)
-        self._column("Size", lambda f, it: self._setup_text(f, it, xalign=1),
-                     lambda _f, it: self._bind_text(it, size(it.get_item())), SORTS["Size"], width=90)
-        self._column("Kind", self._setup_text, lambda _f, it: self._bind_text(it, kind(it.get_item())),
-                     SORTS["Kind"], width=160)
+        attrs = {"Date Modified": "time::modified", "Date Created": "time::created",
+                 "Date Last Opened": "time::access"}
+        self.columns = {}
+        for title, width, _shown in LIST_COLUMNS:
+            if title in attrs:
+                bind = (lambda a: lambda _f, it: self._bind_text(it, date(it.get_item(), a)))(attrs[title])
+                self.columns[title] = self._column(title, self._setup_text, bind, SORTS[title], width=width)
+            elif title == "Size":
+                self.columns[title] = self._column(title, lambda f, it: self._setup_text(f, it, xalign=1),
+                                                   self._bind_size, SORTS["Size"], width=width)
+            else:
+                self.columns[title] = self._column(title, self._setup_text,
+                                                   lambda _f, it: self._bind_text(it, kind(it.get_item())),
+                                                   SORTS["Kind"], width=width)
+        self.count_sizes = False                # Finder: Calculate all sizes (window: View menu)
+        self.show_columns(None)
         self.view.sort_by_column(name, Gtk.SortType.ASCENDING)
         self.on_sort = None                     # callback((title, descending)) when you click a header
         self._sorting = False
@@ -651,6 +723,21 @@ class ListView(_Cells):
         lbl = item.get_child()
         lbl.set_label(text)
         lbl.info = item.get_item()                 # right-click anywhere on the row
+
+    def show_columns(self, shown) -> None:
+        """Which columns show (None: the defaults); Name always does."""
+        for title, _w, default in LIST_COLUMNS:
+            self.columns[title].set_visible(default if shown is None else title in shown)
+
+    def shown_columns(self) -> list:
+        return [t for t, _w, _d in LIST_COLUMNS if self.columns[t].get_visible()]
+
+    def _bind_size(self, _f, item):
+        info = item.get_item()
+        self._bind_text(item, size(info))
+        if self.count_sizes and is_dir(info) and not info.has_attribute(DIR_SIZE):
+            lbl = item.get_child()
+            count_dir(info, lambda i: getattr(lbl, "info", None) is i and lbl.set_label(size(i)))
 
     def selected(self):
         return _selected(self.selection, self.sorted)

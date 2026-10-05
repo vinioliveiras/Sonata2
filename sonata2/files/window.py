@@ -31,7 +31,8 @@ from .pathbar import PathBar  # noqa: E402
 
 VIEWS = (("icons", "view-grid-symbolic", "as Icons"), ("list", "view-list-symbolic", "as List"),
          ("columns", "view-dual-symbolic", "as Columns"))
-DEFAULTS = {"view": "icons", "list_columns": {}, "path_bar": True}   # list_columns: views.py
+DEFAULTS = {"view": "icons", "list_columns": {}, "path_bar": True,    # list_columns: views.py
+            "list_shown": None, "count_sizes": False}           # the list's columns; folder sizes
 
 ui.register("""
 window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
@@ -264,7 +265,10 @@ class FilesWindow(Adw.ApplicationWindow):
             bar.append(w)
         self.search_status = Gtk.Label(css_classes=["fs-scope-status"], hexpand=True, xalign=1)
         bar.append(self.search_status)
-        self.scope_rev = Gtk.Revealer(child=bar, transition_duration=150)
+        # the criteria never set the window's minimum width: a narrow window scrolls them
+        scroll = Gtk.ScrolledWindow(child=bar, hscrollbar_policy=Gtk.PolicyType.EXTERNAL,
+                                    vscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True)
+        self.scope_rev = Gtk.Revealer(child=scroll, transition_duration=150)
         self.searcher = Search()
         self.results = Gio.ListStore(item_type=Gio.FileInfo)
         self._search_src = 0
@@ -359,6 +363,9 @@ class FilesWindow(Adw.ApplicationWindow):
             "columns": ColumnsView(tab.filtered, self.open_item, lambda uri: self._column_location(tab, uri),
                                    lambda: self.show_hidden),
         }
+        cfg = config.load("files", DEFAULTS)
+        views["list"].show_columns(cfg.get("list_shown"))
+        views["list"].count_sizes = bool(cfg.get("count_sizes"))
         # a header click sorts this folder that way from now on
         views["list"].on_sort = lambda state: (views["icons"].set_sort(*state),
                                                 tab.uri and folderprefs.remember(tab.uri, sort=state))
@@ -772,6 +779,14 @@ class FilesWindow(Adw.ApplicationWindow):
                 cur = self.view.sort_state()[0]
                 sections[-1].append(Item("Sort By", submenu=[[Item(t, lambda t=t: self.sort_by(t),
                                                                    checked=t == cur) for t, _d in SORT_BY]]))
+            if self.view is self.views["list"]:                    # Finder's View Options for the list
+                from .views import LIST_COLUMNS
+                shown = self.views["list"].shown_columns()
+                sections[-1].append(Item("Show Columns", submenu=[[Item(t, lambda on, t=t: self.show_column(t, on),
+                                                                        checked=t in shown)
+                                                                   for t, _w, _d in LIST_COLUMNS]]))
+                sections[-1].append(Item("Calculate All Sizes", lambda on: self.set_count_sizes(on),
+                                         checked=self.views["list"].count_sizes))
             if self._in_trash():
                 sections.insert(0, [Item("Empty Trash", self.empty_trash)])
             if here:
@@ -1018,6 +1033,19 @@ class FilesWindow(Adw.ApplicationWindow):
     # -- window ------------------------------------------------------------------------
     def _zoom(self):
         self.unmaximize() if self.is_maximized() else self.maximize()
+
+    def show_column(self, title, on):
+        shown = [t for t in self.views["list"].shown_columns() if t != title] + ([title] if on else [])
+        for t in self.tabs:
+            t.views["list"].show_columns(shown)
+        config.update("files", list_shown=shown)
+
+    def set_count_sizes(self, on):
+        for t in self.tabs:
+            t.views["list"].count_sizes = bool(on)
+            if on:
+                t.folder.reload()                       # rows bound again: their sizes counted
+        config.update("files", count_sizes=bool(on))
 
     def toggle_path_bar(self):
         on = not self.pathbar.get_visible()
