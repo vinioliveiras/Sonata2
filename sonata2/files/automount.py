@@ -6,8 +6,8 @@ the volume monitor (udisks) already leaves them out.
 
 Mounting an internal disk is a system action: install.sh adds a polkit
 rule so the logged-in administrator isn't asked for a password each time.
-A disk that can't be mounted (Windows hibernated / Fast Startup) is left
-alone and logged."""
+A Windows disk left dirty (Fast Startup, hibernation) is mounted read-only
+(rodisk.py); one that can't be mounted at all is left alone and logged."""
 from gi.repository import Gio
 
 _monitor = None
@@ -27,7 +27,15 @@ def _mount(vol) -> None:
             v.mount_finish(res)
             _tried.discard(key)
         except Exception as e:          # GLib.Error: hibernated NTFS, cancelled password...
-            print(f"sonata2-files: couldn't mount {v.get_name()}: {getattr(e, 'message', e)}", flush=True)
+            msg = getattr(e, "message", str(e))
+            from . import rodisk
+            dev = v.get_identifier("unix-device")
+            if dev and rodisk.try_readonly(dev, msg):        # a Windows disk left dirty: shown, read-only
+                rodisk.mount_readonly(dev, lambda path, err: print(
+                    f"sonata2-files: {v.get_name()} " + ("mounted read-only (dirty)" if path is not None
+                                                          else f"couldn't be mounted read-only: {err}"), flush=True))
+                return
+            print(f"sonata2-files: couldn't mount {v.get_name()}: {msg}", flush=True)
     from .. import ui                    # an encrypted disk plugged in: Sonata's password alert
     vol.mount(Gio.MountMountFlags.NONE, ui.mountop.MountOperation(None), None, done)
 

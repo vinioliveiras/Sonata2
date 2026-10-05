@@ -320,6 +320,11 @@ class Sidebar(Gtk.Box):
                 try:
                     v.mount_finish(res)
                 except GLib.Error as e:
+                    from . import rodisk
+                    dev = v.get_identifier("unix-device")
+                    if dev and rodisk.try_readonly(dev, e.message):        # a Windows disk left dirty: read-only
+                        self._open_readonly(v, dev, e.message)
+                        return
                     ui.dialog.alert(f"“{v.get_name()}” couldn't be opened.", e.message,
                                     [("ok", "OK", "default")], parent=self.get_root())
                     return
@@ -329,6 +334,23 @@ class Sidebar(Gtk.Box):
             vol.mount(Gio.MountMountFlags.NONE, ui.mountop.MountOperation(self.get_root()), None, done)
             return
         self._on_open(row.uri)
+
+    def _open_readonly(self, vol, device, why) -> None:
+        """Opened read-only (rodisk), and said why -- once, when it opens."""
+        from . import rodisk
+
+        def mounted(path, err):
+            if path is None:
+                ui.dialog.alert(f"“{vol.get_name()}” couldn't be opened.", err or why,
+                                [("ok", "OK", "default")], parent=self.get_root())
+                return
+            m = vol.get_mount()
+            uri = m.get_root().get_uri() if m is not None else (Gio.File.new_for_path(path).get_uri() if path else None)
+            if uri:
+                self._on_open(uri)
+            ui.dialog.alert(f"“{vol.get_name()}” is read-only.", rodisk.NOTE, [("ok", "OK", "default")],
+                            parent=self.get_root())
+        rodisk.mount_readonly(device, mounted)
 
     def select(self, uri) -> None:
         """Highlight the place showing `uri` (none if it isn't one)."""
