@@ -64,6 +64,16 @@ def users() -> list:
     return sorted([u for u in found if u.name], key=lambda u: u.real.casefold())
 
 
+USER_TILE = 96 + 2 * 8 + 18          # a user's picture, its button's padding, the gap
+
+
+def user_grid(n: int, screen_w: int) -> tuple:
+    """(users per row, picture size) for n users on a display screen_w wide."""
+    per_row = max(1, min(n or 1, int(screen_w * 0.8) // USER_TILE))
+    rows = -(-max(n, 1) // per_row)
+    return per_row, (96 if rows <= 2 else 72)
+
+
 class Session:
     def __init__(self, key, name, cmd, desktops):
         self.key, self.name, self.cmd, self.desktops = key, name, cmd, desktops
@@ -252,17 +262,29 @@ class Greeter:
         return None
 
     def _users_page(self):
-        row = Gtk.Box(spacing=18, halign=Gtk.Align.CENTER, homogeneous=True, css_classes=["gr-rise"])
+        """The users, in rows that fit the display (Vini: many users ran off a
+        small screen): as many per row as fit, smaller pictures from 3 rows on,
+        scrolling past ~half the display's height."""
+        screen = ui.window.screen_size() or (1920, 1080)
+        per_row, px = user_grid(len(self.users), screen[0])
+        grid = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True, column_spacing=18,
+                           row_spacing=12, max_children_per_line=per_row,
+                           min_children_per_line=min(len(self.users), per_row) or 1,
+                           halign=Gtk.Align.CENTER, valign=Gtk.Align.START)
         for u in self.users:
             b = Gtk.Button(css_classes=["gr-user"])
             col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-            col.append(avatar(96, u.name, u.real, u.icon))
+            col.append(avatar(px, u.name, u.real, u.icon))
             col.append(Gtk.Label(label=u.real, css_classes=["lk-name"], max_width_chars=16,
                                  ellipsize=Pango.EllipsizeMode.END))
             b.set_child(col)
             b.connect("clicked", lambda _b, u=u: self._pick(u))
-            row.append(b)
-        return row
+            grid.append(b)
+        scroll = Gtk.ScrolledWindow(child=grid, hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                    propagate_natural_width=True, propagate_natural_height=True,
+                                    max_content_height=int(screen[1] * 0.55), css_classes=["gr-rise"])
+        scroll.grid = grid                            # (tests)
+        return scroll
 
     def _pick(self, user):
         if getattr(self, "_busy", False):          # logging in: the page must stay until it ends

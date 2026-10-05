@@ -286,5 +286,22 @@ class LoginScreenTests(Base):
             self.assertEqual(seen[0], want)
 
 
+    def test_greeter_users_fit_small_displays(self):
+        """Vini: many users ran off a small display -- they wrap into rows that
+        fit, with smaller pictures from 3 rows on, and scroll past half the height."""
+        from sonata2.shell import greeter as G
+        self.assertEqual(G.user_grid(3, 1920), (3, 96))
+        per_row, px = G.user_grid(12, 1280)
+        self.assertLessEqual(per_row * G.USER_TILE, 1280 * 0.8)
+        self.assertEqual(G.user_grid(30, 1280)[1], 72)
+        g = G.Greeter.__new__(G.Greeter)
+        g.users = [G.User(f"u{i}", f"User {i}") for i in range(12)]
+        g._pick = lambda u: None
+        with mock.patch.object(ui.window, "screen_size", return_value=(1280, 720)):
+            page = g._users_page()
+        self.assertEqual(page.grid.get_max_children_per_line(), per_row)
+        self.assertLessEqual(page.get_max_content_height(), 720 * 0.6)
+
+
 if __name__ == "__main__":
     unittest.main()
