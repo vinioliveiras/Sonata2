@@ -605,11 +605,47 @@ def run_chromium(app: str) -> int:
     memory guard) until the browser is gone."""
     from gi.repository import GLib
     browser = chromium_browser()
+    # DevTools' pipe (fd 3: to the browser, fd 4: from it): new tabs and windows
+    # go to the default browser (chromeguard.py)
+    import fcntl
+    to_r, to_w = os.pipe()
+    from_r, from_w = os.pipe()
+    # kept above 3 and 4 (and closed on exec): the child puts them there itself
+    hi_r, hi_w = fcntl.fcntl(to_r, fcntl.F_DUPFD_CLOEXEC, 20), fcntl.fcntl(from_w, fcntl.F_DUPFD_CLOEXEC, 20)
+    os.close(to_r)
+    os.close(from_w)
+    to_r, from_w = hi_r, hi_w
+
+    def fds():
+        os.dup2(to_r, 3)
+        os.dup2(from_w, 4)
+    cmd = chromium_command(app, get(app), browser[0]) + ["--remote-debugging-pipe"]
     try:
-        proc = subprocess.Popen(chromium_command(app, get(app), browser[0]), stdin=subprocess.DEVNULL)
+        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, pass_fds=(3, 4), preexec_fn=fds)
     except OSError as e:
         print(f"sonata2 webapp: {e}", file=sys.stderr)
         return 1
+    os.close(to_r)
+    os.close(from_w)
+    from .chromeguard import Guard
+
+    def write(data: bytes) -> None:
+        try:
+            os.write(to_w, data)
+        except OSError:
+            pass
+    guard = Guard(get(app).get("url", ""), write, log=lambda m: print(f"sonata2 webapp {app}: {m}", flush=True))
+
+    def readable(fd, _cond):
+        try:
+            data = os.read(fd, 65536)
+        except OSError:
+            data = b""
+        if not data:
+            return False
+        guard.feed(data)
+        return True
+    GLib.io_add_watch(from_r, GLib.PRIORITY_DEFAULT, GLib.IOCondition.IN | GLib.IOCondition.HUP, readable)
     from .. import winsize
     loop = GLib.MainLoop()
     wm, last = window_class(app, get(app)), {"size": None}

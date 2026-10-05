@@ -7,7 +7,6 @@ Notifications are allowed (a chat app's whole point); the camera and the
 microphone are asked for. Downloads go to Downloads.
 
 `sonata2 webapp new`: the form (name and address), then the web app opens."""
-import ipaddress
 import os
 import sys
 import urllib.parse
@@ -78,40 +77,7 @@ ui.register("""
 """, key="webapp")
 
 
-def site(url: str) -> str:
-    """The part of a host that is "the same site": web.whatsapp.com -> whatsapp.com."""
-    host = (urllib.parse.urlsplit(url or "").hostname or "").lower()
-    try:
-        ipaddress.ip_address(host)
-        return host                                  # an IP is a site of its own (no labels to share)
-    except ValueError:
-        pass
-    base = _base_domain(host)
-    if base:
-        return base
-    parts = host.split(".")
-    if len(parts) > 2 and len(parts[-2]) <= 3 and len(parts[-1]) == 2:      # example.co.uk
-        return ".".join(parts[-3:])
-    return ".".join(parts[-2:])
-
-
-def _base_domain(host: str):
-    """libsoup's public suffix list (WebKit's own): a.github.io and b.github.io
-    are different sites. None without it (or for localhost and the like)."""
-    try:
-        gi.require_version("Soup", "3.0")
-        from gi.repository import Soup
-        return Soup.tld_get_base_domain(host)
-    except (ValueError, ImportError, GLib.Error):
-        return None
-
-
-def stays_inside(app_url: str, target: str) -> bool:
-    if not target or target.startswith(("about:", "blob:", "data:")):
-        return True
-    if urllib.parse.urlsplit(target).scheme not in ("http", "https"):
-        return False
-    return site(target) == site(app_url)
+from .links import _base_domain, site, stays_inside  # noqa: E402,F401  (shared with chromeguard)
 
 
 SAFE_SCHEMES = ("http", "https", "mailto", "tel")

@@ -9,6 +9,7 @@ MixerService (menu bar process) puts the saved level back on every new
 stream of that app, so a level set once stays even after the app quits.
 Sonata's own short sounds (pw-play, paplay...) and event sounds are left out."""
 import json
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -81,9 +82,34 @@ def app_key(props: dict) -> str:
     return ""
 
 
-def parse(text: str) -> List[Stream]:
+_WEBAPP_RE = re.compile(r"(?:/webapps/([\w.-]+)/chromium\b|\bsonata2 webapp ([\w.-]+)\b)")
+
+
+def webapp_of(pid: int, proc: str = "/proc"):
+    """The Sonata web app (its id) whose browser or window plays a stream,
+    from the process or its parents: a Chromium web app's profile folder
+    (--user-data-dir=.../webapps/<id>/chromium), a WebKit one's
+    `sonata2 webapp <id>`. Vini: web apps' sound showed as Chrome's."""
+    p = pid
+    for _ in range(PARENTS):
+        if p <= 1:
+            return None
+        try:
+            with open(f"{proc}/{p}/cmdline", "rb") as f:
+                cmd = f.read().replace(b"\0", b" ").decode("utf-8", "replace")
+        except OSError:
+            return None
+        m = _WEBAPP_RE.search(cmd)
+        if m:
+            return m.group(1) or m.group(2)
+        p = _parent(p, proc)
+    return None
+
+
+def parse(text: str, webapp=webapp_of) -> List[Stream]:
     """`pactl -f json list sink-inputs` -> the apps' streams (Sonata's own
-    sounds and event sounds left out)."""
+    sounds and event sounds left out). A web app's stream is its own (its
+    desktop id as key, its name), not its browser's."""
     try:
         items = json.loads(text or "[]")
     except ValueError:
@@ -98,11 +124,17 @@ def parse(text: str) -> List[Stream]:
         if not key:
             continue
         name = props.get("application.name") or binary or key
+        pid = int(props.get("application.process.id") or 0) \
+            if str(props.get("application.process.id") or "").isdigit() else 0
+        icon = props.get("application.icon_name") or ""
+        wid = webapp(pid) if (webapp and pid) else None
+        if wid:
+            from .. import webapps
+            entry = webapps.get(wid) or {}
+            key, name, icon = webapps.desktop_id(wid), entry.get("name") or name, ""
         out.append(Stream(index=int(it.get("index", -1)), key=key, name=name,
-                          icon=props.get("application.icon_name") or "", volume=_percent(it.get("volume")),
-                          muted=bool(it.get("mute")), corked=bool(it.get("corked")),
-                          pid=int(props.get("application.process.id") or 0)
-                          if str(props.get("application.process.id") or "").isdigit() else 0))
+                          icon=icon, volume=_percent(it.get("volume")),
+                          muted=bool(it.get("mute")), corked=bool(it.get("corked")), pid=pid))
     return out
 
 
