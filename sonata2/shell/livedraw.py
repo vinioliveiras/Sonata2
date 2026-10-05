@@ -27,6 +27,7 @@ FADE_AFTER_S, FADE_S = 3.0, 0.8          # fading marks: shown this long, then f
 TOOLS = (("pen", "Pen"), ("hl", "Highlighter"), ("shape", "Shapes"), ("text", "Text"), ("emoji", "Emoji"))
 COLORS = ("#ff3b30", "#ffcc00", "#34c759", "#007aff", "#ffffff")
 PALETTE_NS, OVERLAY_NS = "sonata2-draw-palette", "sonata2-draw"
+PALETTE_SIZE = (560, 62)                 # before the palette has been laid out
 
 ui.register("""
 window.sonata-draw, window.sonata-draw > contents { background: none; box-shadow: none; }
@@ -47,6 +48,7 @@ class Overlay(Gtk.Window):
         super().__init__(application=app, title="Drawing", decorated=False, css_classes=["sonata-draw"])
         from ..preview.markup import MarkupLayer
         self.owner = owner
+        self.monitor = monitor
         self.layer = MarkupLayer(self._rect, lambda: None, on_change=owner.changed)
         self.layer.follow = owner._sync
         self.layer.set_cursor(Gdk.Cursor.new_from_name("crosshair"))
@@ -64,11 +66,30 @@ class Overlay(Gtk.Window):
     def _rect(self):
         return 0, 0, self.get_width(), self.get_height()
 
+    def region(self, on: bool) -> list:
+        """Where the pointer comes to the drawing while it's on: the whole
+        display (its own size, known before GTK has laid the window out -- at
+        map it was 0 x 0, and only one pixel took the clicks: "the screen
+        stays clickable", Vini), less the menu bar (the pill's pen turns it
+        off) and the palette."""
+        if not on:
+            return []
+        g = self.monitor.get_geometry() if self.monitor is not None else None
+        W, H = (g.width, g.height) if g else (self.get_width(), self.get_height())
+        from .menubar_size import height
+        top = height()
+        pal = self.owner.palette
+        pw, ph = PALETTE_SIZE
+        if pal is not None and pal.get_mapped() and pal.get_width() > 0:
+            pw, ph = pal.get_width(), pal.get_height()
+        x0, band = (W - pw) // 2, top + ph
+        return [(0, band, W, H - band), (0, top, x0, ph), (x0 + pw, top, W - x0 - pw, ph)]
+
     def pointer(self, on: bool) -> None:
         """Drawing: the pointer comes here; off: clicks go through to the apps."""
         if not self.get_mapped():
             return
-        layer.set_input_region(self, [(0, 0, self.get_width(), self.get_height())] if on else [])
+        layer.set_input_region(self, self.region(on))
         LS = layer.layer_shell()
         if LS and LS.is_layer_window(self):
             LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND if on else LS.KeyboardMode.NONE)
@@ -96,8 +117,10 @@ class Palette(Gtk.Window):
             LS.set_layer(self, LS.Layer.OVERLAY)
             LS.set_anchor(self, LS.Edge.TOP, True)
             LS.set_exclusive_zone(self, -1)
-            LS.set_margin(self, LS.Edge.TOP, 30)          # under the menu bar's pill
+            from .menubar_size import height
+            LS.set_margin(self, LS.Edge.TOP, height())   # right under the menu bar's pill
             LS.set_keyboard_mode(self, LS.KeyboardMode.NONE)
+        self.connect("map", lambda *_: GLib.timeout_add(50, lambda: (owner.regions(), False)[1]))
 
     def show_on(self, monitor) -> None:
         LS = layer.layer_shell()
@@ -144,6 +167,11 @@ class LiveDraw:
     def _monitor(self, output=None):
         mons = self._monitors()
         return next((m for m in mons if m.get_connector() == output), mons[0] if mons else None)
+
+    def regions(self) -> None:
+        """The overlays' input again (the palette's real size is known now)."""
+        for ov in self.overlays.values():
+            ov.pointer(self.on)
 
     def toggle(self, output=None) -> None:
         self.set_on(not self.on, output)

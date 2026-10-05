@@ -67,6 +67,26 @@ class LiveDrawTest(unittest.TestCase):
         self.assertEqual(lay.items, [])
         self.assertFalse(d.on)
 
+    def test_input_region_covers_the_display(self):
+        """Vini: drawing didn't work, the screen stayed clickable -- the input
+        region was taken from the window's size at map (0 x 0). It comes from
+        the display: all of it while drawing (less the menu bar and the
+        palette), nothing when off."""
+        from unittest import mock
+        from sonata2.shell import livedraw as L
+        d = L.LiveDraw(self.app)
+        geo = mock.Mock(width=1920, height=1080)
+        mon = mock.Mock(get_geometry=lambda: geo)
+        ov = L.Overlay.__new__(L.Overlay)
+        ov.monitor, ov.owner = mon, d
+        with mock.patch("sonata2.shell.menubar_size.height", lambda: 32):
+            rects = ov.region(True)
+            self.assertEqual(ov.region(False), [])
+        pw, ph = L.PALETTE_SIZE
+        self.assertIn((0, 32 + ph, 1920, 1080 - 32 - ph), rects)       # everything under the palette
+        area = sum(w * h for _x, _y, w, h in rects)
+        self.assertEqual(area, 1920 * (1080 - 32) - pw * ph)           # all but the menu bar and palette
+
     def test_pills_have_the_pen(self):
         import inspect
         from sonata2.shell import capture, sharing
