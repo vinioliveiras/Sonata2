@@ -451,11 +451,9 @@ class Bar(Gtk.CenterBox):
             info = apps.lookup(key)
             if info:
                 name = info.get_display_name()
-            else:                                 # a Steam game, a Windows program (Proton): not its app_id
-                from .. import steamgames
-                act = next((t for t in _wins if t.activated), _wins[0] if _wins else None)
-                game = steamgames.shown(key, getattr(act, "title", "") or "")
-                name = game[0] if game else key
+            else:                                 # no desktop entry: named as in the Dock (windowapps)
+                from .. import windowapps
+                name = windowapps.describe(key, windowapps.window_title(_wins))[0]
             self._set_text(self.app_btn, name)
         else:
             self._set_text(self.app_btn, "Files")

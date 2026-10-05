@@ -185,24 +185,21 @@ class Switcher(Gtk.Window):
         while self.panel.get_first_child():
             self.panel.remove(self.panel.get_first_child())
         self.items = []
-        from .. import steamgames
+        from .. import windowapps
         # (the smallest display: the compositor picks the focused one, unknown here)
         size = icon_size(len(self.keys), (ui.window.screen_size() or (0, 0))[0])
         for key in self.keys:
             info = apps.lookup(key)
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["sw-item"])
             img = Gtk.Image(pixel_size=size)
-            # a Steam game: its name and icon, as in the Dock (Vini: "steam_app_…")
-            game = None if info or not (steamgames.appid(key) or steamgames.is_proton_app(key)) else steamgames.shown(
-                key, next((t.title for t in self.groups[key] if getattr(t, "title", "")), ""))
+            # no desktop entry (a Steam game, a Windows program, any app): named as in the Dock
+            other = None if info else windowapps.describe(key, windowapps.window_title(self.groups[key]))
             if info:
                 icons.set_image(img, icons.app_icon(info))
-            elif game:
-                icons.set_image(img, game[1])
             else:
-                img.set_from_icon_name("application-x-executable")
+                icons.set_image(img, other[1])
             box.append(img)
-            box.name = info.get_display_name() if info else game[0] if game else key
+            box.name = info.get_display_name() if info else other[0]
             self.panel.append(box)
             self.items.append(box)
         if not self.keys:

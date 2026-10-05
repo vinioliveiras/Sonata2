@@ -1648,9 +1648,11 @@ class SteamGameDockTests(unittest.TestCase):
             name, _icon = self.sg.shown("steam_app_999", "Ravage  ")
             self.assertEqual(name, "Ravage")                           # not in a library: the window's title
         self.assertIsNone(self.sg.shown("firefox"))
-        root = pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "shell"
-        self.assertIn("steamgames.shown(", (root / "switcher.py").read_text())
-        self.assertIn("steamgames.shown(", (root / "dock.py").read_text())
+        # one answer for every app without a desktop entry (windowapps), Steam games included
+        root = pathlib.Path(__file__).resolve().parent.parent / "sonata2"
+        self.assertIn("steamgames.shown(", (root / "windowapps.py").read_text())
+        self.assertIn("windowapps.describe(", (root / "shell" / "switcher.py").read_text())
+        self.assertIn("windowapps.describe(", (root / "shell" / "dock.py").read_text())
 
     def test_shortcut_icon_wins(self):
         big = os.path.join(os.environ["XDG_DATA_HOME"], "icons", "hicolor", "256x256", "apps")

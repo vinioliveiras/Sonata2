@@ -27,7 +27,7 @@ gi.require_version("Gsk", "4.0")
 gi.require_version("Graphene", "1.0")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
-from .. import apps, config, icons, logs, steamgames  # noqa: E402
+from .. import apps, config, icons, logs, steamgames, windowapps  # noqa: E402
 from .. import ui  # noqa: E402
 from . import dock_drop, dock_folder, dock_menu, dock_stack, layer  # noqa: E402
 
@@ -1612,14 +1612,19 @@ class Dock(Gtk.Box):
             if key not in self.tiles:
                 if self._add_known_tile(key):        # a desktop entry, or a Steam game
                     pass
-                elif steamgames.appid(key) or steamgames.is_proton_app(key):
-                    # a Steam game Steam doesn't list, or a Windows program run with
-                    # Proton (Faugus): its window's title
-                    self._add_tile(key, *steamgames.shown(key, next((t.title for t in groups[key] if t.title), "")))
-                else:   # no .desktop: generic icon, app_id as name
-                    # (logged: a window that should have matched an app is easy to spot)
+                else:
+                    # no desktop entry: a Steam game, a Windows program (Proton, Wine),
+                    # any other app -- named by windowapps (logged: a window that should
+                    # have matched an app is easy to spot)
                     print(f"sonata2-dock: no app for window app_id {key!r}", flush=True)
-                    self._add_tile(key, key, Gio.ThemedIcon.new("application-x-executable"))
+                    name, gicon, dynamic = windowapps.describe(key, windowapps.window_title(groups[key]))
+                    self._add_tile(key, name, gicon).dynamic = dynamic
+        for key, tile in self.tiles.items():               # names that follow their window's title
+            if getattr(tile, "dynamic", False) and key in groups:
+                name = windowapps.describe(key, windowapps.window_title(groups[key]))[0]
+                if name != tile.name:
+                    tile.name = name
+                    tile.label.set_text(name)
         for key, tile in self.tiles.items():
             tile.set_running(len(groups.get(key, ())))
         self._relayout()

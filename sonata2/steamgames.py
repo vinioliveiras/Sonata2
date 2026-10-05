@@ -20,16 +20,6 @@ _names = {}                 # aid -> (name or None, when looked up)
 UNKNOWN_RETRY_S = 60        # a game not found yet (installing, library mounted later) is looked up again
 
 
-# Windows programs run with Proton outside Steam (Faugus Launcher, umu,
-# Lutris...) all get this app_id: no game behind it (Vini: the Dock showed
-# "steam_app_default" for an installer run with Faugus)
-PROTON_APPS = ("steam_app_default", "steam_app_0")
-
-
-def is_proton_app(app_id: str) -> bool:
-    return (app_id or "") in PROTON_APPS
-
-
 def appid(app_id: str):
     m = re.fullmatch(r"steam_app_(\d+)", app_id or "")
     return m.group(1) if m else None
@@ -122,8 +112,6 @@ def shown(key: str, fallback_name: str = ""):
     one answer for the Dock and the app switcher (Vini: Alt+Tab showed
     "steam_app_3219630" with a generic icon). Not in a library: the window's
     title (fallback_name) and Steam's icon."""
-    if is_proton_app(key):
-        return _proton_shown(fallback_name)
     aid = appid(key)
     if not aid:
         return None
@@ -133,26 +121,3 @@ def shown(key: str, fallback_name: str = ""):
     gicon = (icons.picture_icon(pic) if pic else None) or Gio.ThemedIcon.new("steam")
     return name(aid) or (fallback_name or "").strip() or key, gicon
 
-
-def _proton_shown(title: str):
-    """A Windows program run with Proton outside Steam: its launcher's
-    shortcut when one is named like the window (Faugus makes them: "FL
-    Studio 2026" for "FL Studio 2026 - project"), else the window's title
-    and a Windows-program icon."""
-    from gi.repository import Gio
-    from . import apps, icons
-    title = (title or "").strip()
-    low = title.casefold()
-    if low:
-        best = None
-        for info in (apps._scan or apps.scan()).values():
-            name = (info.get_display_name() or "").strip()
-            exe = (info.get_commandline() or "").casefold()
-            if name and low.startswith(name.casefold()) and any(w in exe for w in ("faugus", "umu", "proton", "wine")):
-                if best is None or len(name) > len(best.get_display_name()):
-                    best = info                        # the longest (most specific) name wins
-        if best is not None:
-            return best.get_display_name(), icons.app_icon(best)
-    gicon = Gio.ThemedIcon.new_from_names(["faugus-launcher", "io.github.Faugus.faugus-launcher", "wine",
-                                           "application-x-ms-dos-executable", "application-x-executable"])
-    return title or "Windows App", gicon
