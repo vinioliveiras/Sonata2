@@ -275,6 +275,11 @@ def apply_colors(dark: bool) -> None:
     system.wayfire_set("blur", "kawase_offset", str(G.blur_offset(gcfg["blur"])))   # one strength for all
     system.wayfire_set("blur", "alpha_threshold", str(G.blur_threshold(gcfg)))   # see-through parts stay frosted
     system.wayfire_set("sonata-corners", "outline", "\\" + tokens.wayfire_color(t["window_outline"]))
+    try:                                         # the buttons' pictures for this look (trafficlights.py)
+        from . import trafficlights
+        trafficlights.apply_wayfire(bool(dark))
+    except Exception as e:
+        print(f"sonata2: button colours (Wayfire): {e}")
     # the window's background while it's resized without its contents (sonata-resize)
     system.wayfire_set("sonata-resize", "fill", "\\" + tokens.wayfire_color(t["window_bg"]))
     system.wayfire_set("sonata-resize", "border", "\\" + tokens.wayfire_color(t["window_outline"]))

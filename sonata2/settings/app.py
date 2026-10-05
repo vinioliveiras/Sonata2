@@ -2462,6 +2462,7 @@ class Settings(Adw.ApplicationWindow):
         bars.add(combo_row("Window buttons", [("left", "Left"), ("right", "Right")],
                            app.get("buttons_side", "left"), self._set_buttons_side,
                            subtitle="Where close, minimize and zoom sit on every window"))
+        self._button_colour_rows(bars, app)
         bars.add(switch_row("Sonata title bars for all apps", app["system_titlebars"],
                             lambda on: (self._save("appearance", "system_titlebars", on),
                                         system.run_async(__import__("sonata2.titlebars", fromlist=["apply"]).apply,
@@ -2492,13 +2493,54 @@ class Settings(Adw.ApplicationWindow):
     # what Reset Appearance puts back (Vini: the theme's defaults); light/dark is
     # the system's setting and stays
     APPEARANCE_RESET = ("accent", "theme", "icon_theme", "flatpak_theme", "system_titlebars",
-                        "glass_titlebars", "glass", "radius", "buttons_side")
+                        "glass_titlebars", "glass", "radius", "buttons_side", "buttons_style", "buttons_colors")
+
     def _set_steam_theme(self, on):
         """Settings > Appearance > Sonata look for Steam (steamtheme.py)."""
         from .. import steamtheme
         self._save("appearance", "steam_theme", bool(on))
         system.run_async(lambda: steamtheme.apply(force=True) if on else steamtheme.remove(), None)
         self.toast("Steam shows it the next time it opens")
+
+    BUTTON_STYLES = [("color", "Colourful"), ("graphite", "Graphite"), ("mono", "Black & White"),
+                     ("custom", "Custom")]
+
+    def _button_colour_rows(self, bars, app) -> None:
+        """Settings > Appearance > Button Colours (Vini): colourful, graphite,
+        black & white (black on light, white on dark) or a colour per button."""
+        from .. import trafficlights
+        look = app.get("buttons_style", "color")
+        row = combo_row("Button colours", self.BUTTON_STYLES, look if look in trafficlights.STYLES else "color",
+                        self._set_button_style, subtitle="Close, minimize and zoom on every window")
+        bars.add(row)
+        custom = Adw.ActionRow(title="Custom colours", subtitle="Close, minimize, zoom",
+                               visible=look == "custom")
+        box = Gtk.Box(spacing=8, valign=Gtk.Align.CENTER)
+        self.button_dots = {}
+        for name, tip in (("close", "Close"), ("minimize", "Minimize"), ("maximize", "Zoom")):
+            dot = ui.colorpicker.ColorDot(trafficlights.custom()[name], tooltip=tip)
+
+            def picked(hexc, n=name, d=dot):
+                d.set_color(hexc)
+                cols = dict(config.load("appearance", icons.APPEARANCE_DEFAULTS).get("buttons_colors") or {})
+                cols[n] = hexc
+                self._save("appearance", "buttons_colors", cols)
+                system.run_async(trafficlights.apply, None)
+            dot.connect("clicked", lambda b, n=name, f=picked, t=tip: setattr(b, "picker", ui.colorpicker.popup(
+                b, b.swatch.color, f, title=f"{t} Button")))
+            box.append(dot)
+            self.button_dots[name] = dot
+        custom.add_suffix(box)
+        bars.add(custom)
+        self.button_custom_row = custom                           # (tests)
+
+    def _set_button_style(self, look):
+        from .. import trafficlights
+        self._save("appearance", "buttons_style", look)
+        if getattr(self, "button_custom_row", None) is not None:
+            self.button_custom_row.set_visible(look == "custom")
+        system.run_async(trafficlights.apply, None)
+        self.toast("Other apps pick it up when they open again")
 
     def _set_buttons_side(self, side):
         """Settings > Appearance > Window buttons: left (macOS) or right. The
@@ -2529,6 +2571,7 @@ class Settings(Adw.ApplicationWindow):
             self._save("appearance", k, copy.deepcopy(icons.APPEARANCE_DEFAULTS[k]))
         dark = Adw.StyleManager.get_default().get_dark()
         flatpak = old.get(flatpak_theme.KEY) != icons.APPEARANCE_DEFAULTS[flatpak_theme.KEY]
+        buttons = old.get("buttons_style", "color") != "color"
 
         def apply():
             for sec, k, v in wfconfig.frame_options(tokens.frame()):
@@ -2539,6 +2582,9 @@ class Settings(Adw.ApplicationWindow):
             titlebars.apply_colors(dark)
             if flatpak:
                 flatpak_theme.apply()
+            if buttons:                                    # Steam's and GTK apps' buttons too
+                from .. import trafficlights
+                trafficlights.apply()
         system.run_async(apply, None)
         self.rebuild_page("appearance")
         if old.get("icon_theme") != icons.APPEARANCE_DEFAULTS["icon_theme"]:

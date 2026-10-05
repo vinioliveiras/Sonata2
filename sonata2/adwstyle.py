@@ -68,6 +68,20 @@ def media_queries() -> bool:
 ADW_HEADER_H = 47      # libadwaita's header bar height: the see-through band of a glass window
 
 
+def dark_dots(w: str, url) -> str:
+    """Black & White buttons are white on dark apps (their own picture set)."""
+    try:
+        from . import trafficlights
+        if trafficlights.style() != "mono":
+            return ""
+    except Exception:
+        return ""
+    rules = "".join(f"{w}.{n} {{ background-image: {url(n + '-dark')}; }}\n"
+                    f"{w}.{n}:hover {{ background-image: {url(n + '-hover-dark')}; }}\n"
+                    for n in ("close", "minimize", "maximize"))
+    return "@media (prefers-color-scheme: dark) {\n" + rules + "}\n"
+
+
 def css(folder: str = None, bars: bool = True, glass: bool = False) -> str:
     """The stylesheet (pictures from `folder`; bars: the title bar colour;
     glass: Settings > Appearance > "Glass title bars", experimental here --
@@ -123,6 +137,7 @@ def css(folder: str = None, bars: bool = True, glass: bool = False) -> str:
             f"{w}.maximize:hover {{ background-image: {url('maximize-hover')}; }}\n"
             f"{w}:active {{ filter: brightness(0.85); }}\n"
             f"window:not(.sonata-window) headerbar .title {{ font-weight: 700; }}\n"
+            + (dark_dots(w, url) if bars else "")
             + ((bar(LIGHT) + "@media (prefers-color-scheme: dark) {\n" + bar(DARK) + "}\n") if bars else ""))
 
 
@@ -131,9 +146,12 @@ def write(on: bool = True, glass: bool = None) -> str:
     folder = runtime_dir()
     os.makedirs(folder, exist_ok=True)
     if on:
-        for n in LIGHTS:
-            shutil.copyfile(os.path.join(_icons_src(), f"sonata-tl-{n}.svg"),
-                            os.path.join(folder, f"sonata-tl-{n}.svg"))
+        from . import trafficlights                       # Settings' button colours
+        for dark, suffix in ((False, ""), (True, "-dark")):
+            src = trafficlights.folder(dark)
+            for n in LIGHTS:
+                shutil.copyfile(os.path.join(src, f"sonata-tl-{n}.svg"),
+                                os.path.join(folder, f"sonata-tl-{n}{suffix}.svg"))
     tmp = css_path() + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         if glass is None:

@@ -66,6 +66,30 @@ headerbar .traffic { margin-left: %(tl_hb_left)s; margin-top: %(tl_hb_top)s; }  
 """, key="traffic-lights", **traffic_metrics())
 
 
+# Settings > Appearance > Button Colours (trafficlights.py): the dots of
+# another look, over the bundled ones; again when it or light/dark changes
+_traffic_css = {"css": None}
+
+
+def _traffic_look() -> None:
+    try:
+        from .. import trafficlights
+        css = trafficlights.css_rules(theme.is_dark())
+    except Exception as e:                       # the buttons are never worth a broken window
+        print(f"sonata2: button colours: {e}")
+        css = ""
+    if css != _traffic_css["css"]:               # (registering reloads, which calls this again)
+        _traffic_css["css"] = css
+        theme.register(css.replace("%", "%%"), key="traffic-look")
+
+
+try:
+    _traffic_look()
+except Exception:
+    pass
+theme.on_change(_traffic_look)
+
+
 # Standard title bar: every Sonata window puts the traffic lights at the
 # same spot (first dot centred 13 px from the left edge and 14 px from the
 # top, in a 52 px bar), whatever the window. Use it instead of placing

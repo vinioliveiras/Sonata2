@@ -34,6 +34,8 @@ APPEARANCE_DEFAULTS = {"flatpak_theme": True, "icon_theme": "Sonata", "theme": "
                        "menu_text": "", "glass_titlebars": False,
                        "screen_corners": True, "radius": {}, "glass": {},
                        "buttons_side": "left",           # window buttons: left (macOS) / right (Vini)
+                       "buttons_style": "color",         # their colours: color / graphite / mono / custom
+                       "buttons_colors": {},             # custom: {"close", "minimize", "maximize"} (trafficlights.py)
                        "steam_theme": True}              # Steam in Sonata's look (steamtheme.py)
 
 _system = None     # Gtk.IconTheme with the system's theme, for fallbacks

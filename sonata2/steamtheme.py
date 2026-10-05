@@ -84,13 +84,13 @@ def window_css() -> str:
     pictures as every window's), close / minimize / maximize from the
     window's edge inwards, on the user's side, at Sonata's place. Nothing
     else in Steam changes."""
-    from .icons import ICONS_DIR
     from .ui import tokens
     f = tokens.frame()
     left = f["buttons_side"] == "left"
     dot, gap = f["dot"], f["dot_gap"]
     edge, top = f["dot_left"] - dot // 2, f["dot_top"] - dot // 2
-    pics = os.path.join(ICONS_DIR, "Sonata", "apps", "scalable")
+    from . import trafficlights
+    pics = trafficlights.folder(True)          # Settings' button colours (Steam is dark)
     # in the row, left to right: on the right side close is at the edge (Windows' order);
     # on the left, close first (macOS). Only the main window's buttons move to
     # the user's side; Steam's other windows (Friends, Settings) keep them on
