@@ -281,7 +281,7 @@ def generated(gicon, shape: str = "squircle", reshape: bool = False, scale=None)
     return Gio.FileIcon.new(Gio.File.new_for_path(png))
 
 
-PLATE_VERSION = 3       # bump when the plate's look changes: every icon is made again (3: own tiles fill the frame)
+PLATE_VERSION = 5       # bump when the plate's look changes: every icon is made again (4: own tiles)
 
 
 def picture_icon(path: str, shape: str = "squircle", artwork: bool = False, scale=None):
@@ -357,6 +357,7 @@ PLATE_INSET = 0.055
 PLATE_EXPONENT = 4.0
 PLATE_ARTWORK = 0.62
 TILE_BLEED = 1.06                     # an icon's own tile: this much past the frame (its edge cut off)
+WHITE_TILE_SIZE = 0.56                # what's on an icon's own white tile: this share of the frame
 PLATE_WHITE = "#ffffff"
 # the sheen over the whole plate *and* the icon on it (drawn last, so an
 # icon's own tile and the plate shade the same way): top, bottom
@@ -443,6 +444,18 @@ class _Plate(GObject.Object, Gdk.Paintable):
         # (a white tile too: Claude's icon is a white squircle around its orange one)
         own = tone or (None if full else _solid_edge(inner, allow_white=True))
         self.tile = _tile_of(inner) if own and scale is None else None
+        # a white tile keeps the usual size of what's on it (filling the frame
+        # made Claude's logo too big -- Vini): its own edge is cut off instead,
+        # on a plate of exactly its white
+        self.white_tile = None
+        if own and not tone and self.tile:
+            self.color = own
+            f = inner.get_file() if hasattr(inner, "get_file") else None
+            try:
+                pb = pixbuf_at(f.get_path(), 96) if f is not None else None
+                self.white_tile = content_box(pb, own) if pb is not None else None
+            except (GLib.Error, ValueError, ImportError, AttributeError):
+                self.white_tile = None
 
     def do_get_intrinsic_width(self):
         return self.size
@@ -462,6 +475,22 @@ class _Plate(GObject.Object, Gdk.Paintable):
         snap.append_color(_rgba(self.color), rect)
         if self.full:
             snap.append_scaled_texture(self.inner, Gsk.ScalingFilter.TRILINEAR, rect)
+        elif self.white_tile is not None and self.white_tile[2] > 0.2 and self.white_tile[3] > 0.2:
+            # only what's on the white tile (its own white, edge and shadow left out),
+            # at WHITE_TILE_SIZE of the frame, on the plate's white
+            cx0, cy0, cw, ch = self.white_tile
+            a = pw * WHITE_TILE_SIZE / max(cw, ch)
+            ox, oy = w / 2 - (cx0 + cw / 2) * a, h / 2 - (cy0 + ch / 2) * a
+            cut = min(cw, ch) * a * 0.01
+            clip = Gsk.RoundedRect()
+            clip.init_from_rect(Graphene.Rect().init(ox + cx0 * a + cut, oy + cy0 * a + cut,
+                                                     cw * a - 2 * cut, ch * a - 2 * cut), min(cw, ch) * a * 0.22)
+            snap.push_rounded_clip(clip)
+            snap.save()
+            snap.translate(Graphene.Point().init(ox, oy))
+            self.inner.snapshot(snap, a, a)
+            snap.restore()
+            snap.pop()
         elif self.tile is not None and self.tile[2] > 0.3 and self.tile[3] > 0.3:
             tx, ty, tw, th = self.tile
             a = pw * TILE_BLEED / min(tw, th)             # the tile a little bigger than the frame
@@ -500,6 +529,20 @@ def tile_box(pb):
 
 
 _boxes = {}
+
+
+def content_box(pb, tone: str):
+    """(x, y, w, h) fractions: what sits on a tile of colour `tone` (what differs from it)."""
+    w, h, n, stride = pb.get_width(), pb.get_height(), pb.get_n_channels(), pb.get_rowstride()
+    px = pb.get_pixels()
+    t = [int(tone[i:i + 2], 16) for i in (1, 3, 5)]
+    pts = [(x, y) for y in range(h) for x in range(w)
+           if (n < 4 or px[y * stride + x * n + 3] > 200)
+           and sum(abs(px[y * stride + x * n + i] - t[i]) for i in range(3)) > 90]
+    if not pts:
+        return None
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    return min(xs) / w, min(ys) / h, (max(xs) + 1 - min(xs)) / w, (max(ys) + 1 - min(ys)) / h
 
 
 def _tile_of(inner):

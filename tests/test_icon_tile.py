@@ -50,9 +50,10 @@ class TileTest(unittest.TestCase):
         d.rounded_rectangle((60, 60, 196, 196), radius=30, fill=(217, 119, 87, 255))
         im.save(p)
         plate = icons._Plate(Gtk.IconPaintable.new_for_file(Gio.File.new_for_path(p), 256, 1), 128)
-        self.assertEqual(plate.color, icons.PLATE_WHITE)
-        self.assertIsNotNone(plate.tile)
-        self.assertGreaterEqual(icons.PLATE_VERSION, 3)            # cached plates made again
+        self.assertIsNotNone(plate.white_tile)                      # what's on it, its white left out
+        self.assertAlmostEqual(plate.white_tile[0], 60 / 256, places=1)
+        self.assertLess(icons.WHITE_TILE_SIZE, 0.62)                # Vini: the logo filled too much
+        self.assertGreaterEqual(icons.PLATE_VERSION, 5)            # cached plates made again
 
     def test_logo_on_transparency_untouched(self):
         import tempfile
