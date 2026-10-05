@@ -169,6 +169,25 @@ class TabsTest(unittest.TestCase):
         self.assertTrue(spin(lambda: ".secret" in names()))      # remembered here
         self.assertTrue(w.hidden_btn.get_active())
 
+    def test_rename_the_folder_from_its_title(self):
+        """Vini: a click on the folder's name in the toolbar renames it."""
+        w = self.win
+        w.go(self.uri("A"))
+        self.assertTrue(spin(lambda: w.folder.uri == self.uri("A")))
+        w.rename_folder()
+        entry = w._title_entry
+        self.assertIsNotNone(entry)
+        entry.set_text("Renamed")
+        entry.emit("activate")
+        self.assertTrue(spin(lambda: w.folder.uri == self.uri("Renamed")))
+        self.assertTrue(os.path.isdir(os.path.join(self.d, "Renamed")))
+        self.assertEqual(w.history, [self.uri(), self.uri("Renamed")])      # back still works
+        self.assertTrue(w.title.get_visible())
+        w.go(folder.RECENTS)
+        self.assertTrue(spin(lambda: w.folder.uri == folder.RECENTS))
+        w.rename_folder()                                                  # not a folder you can rename
+        self.assertIsNone(getattr(w, "_title_entry", None))
+
     def test_sort_by_in_icons(self):
         """View > Sort By works in icons too, and is the folder's one order (list included)."""
         w = self.win

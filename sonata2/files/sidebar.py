@@ -83,6 +83,14 @@ def pin(uris, before: str = None) -> None:
     _changed()
 
 
+def moved(old: str, new: str) -> None:
+    """A pinned folder renamed: the pin follows it (and keeps its place)."""
+    marks = read_bookmarks()
+    if any(u == old for u, _l in marks):
+        write_bookmarks([(new if u == old else u, l) for u, l in marks])
+        _changed()
+
+
 def unpin(uri) -> None:
     write_bookmarks([(u, l) for u, l in read_bookmarks() if u != uri])
     _changed()

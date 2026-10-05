@@ -36,6 +36,14 @@ def get(uri: str) -> dict:
     return out
 
 
+def moved(old: str, new: str) -> None:
+    """A folder renamed: its settings follow it."""
+    folders = _all()
+    if old in folders:
+        folders[new] = folders.pop(old)
+        config.save(NAME, {"folders": folders})
+
+
 def remember(uri: str, **values) -> None:
     """Save view= and/or sort= for this folder (moved to the newest end)."""
     if not uri:

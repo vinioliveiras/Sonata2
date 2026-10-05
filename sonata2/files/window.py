@@ -45,6 +45,7 @@ window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text
 .fs-toolbar { min-height: 52px; padding: 0 10px 0 8px; background: %(content_bg)s;
   box-shadow: inset 0 -1px %(separator)s; }
 .fs-toolbar .fs-title { font-weight: 700; font-size: %(text_title)s; color: %(label)s; }
+.fs-toolbar entry.fs-title-rename { font-weight: 700; font-size: %(text_title)s; min-height: 24px; margin-left: 2px; }
 .fs-toolbar button { min-width: 28px; min-height: 26px; padding: 0 4px; border-radius: %(r_button)s;
   background: none; box-shadow: none; border: none; color: %(tool_icon)s;
   transition: background-color %(t_fast)s, color %(t_fast)s; }
@@ -208,8 +209,13 @@ class FilesWindow(Adw.ApplicationWindow):
         bar.append(self.back)
         bar.append(self.fwd)
         self.title = Gtk.Label(css_classes=["fs-title"], margin_start=6, ellipsize=Pango.EllipsizeMode.END,
-                               xalign=0, hexpand=True)
+                               xalign=0, hexpand=False)
         bar.append(self.title)
+        # a click on the folder's name renames it (Vini); the space after it still drags the window
+        click = Gtk.GestureClick(button=1)
+        click.connect("released", lambda g, n, x, y: n == 1 and self.title.contains(x, y) and self.rename_folder())
+        self.title.add_controller(click)
+        bar.append(Gtk.Box(hexpand=True))
         # Trash: Finder's "Empty" button
         self.empty_btn = Gtk.Button(label="Empty", valign=Gtk.Align.CENTER, visible=False,
                                     css_classes=["fs-text-btn"])
@@ -883,6 +889,88 @@ class FilesWindow(Adw.ApplicationWindow):
         elif len(sel) > 1:                                 # Finder: Rename N Items…
             from . import batchrename
             batchrename.dialog(self, [file_of(i) for i in sel])
+
+    def _renamable_folder(self):
+        """The window's folder, when its name can be changed here (not a
+        place like Recents, the Trash, your home or the disk's top)."""
+        if self.pos < 0 or self._in_results or self.view is self.views["columns"]:
+            return None
+        uri = self.history[self.pos]
+        if uri in VIRTUAL or ops.is_trash(uri):
+            return None
+        f = Gio.File.new_for_uri(uri)
+        path = f.get_path()
+        if not path or path in ("/", GLib.get_home_dir()) or f.get_parent() is None:
+            return None
+        try:
+            info = f.query_info("access::can-rename", Gio.FileQueryInfoFlags.NONE, None)
+        except GLib.Error:
+            return None
+        if info.has_attribute("access::can-rename") and not info.get_attribute_boolean("access::can-rename"):
+            return None
+        return f
+
+    def rename_folder(self):
+        """The toolbar's folder name becomes a field (Return renames the
+        folder you're in, Escape keeps it)."""
+        f = self._renamable_folder()
+        if f is None or getattr(self, "_title_entry", None) is not None:
+            return
+        old = f.get_basename()
+        entry = Gtk.Entry(text=old, css_classes=["fs-rename", "fs-title-rename"], valign=Gtk.Align.CENTER,
+                          width_chars=max(8, min(len(old) + 2, 32)))
+        self._title_entry = entry
+        self.title.set_visible(False)
+        self.title.get_parent().insert_child_after(entry, self.title)
+        done = {"v": False}
+
+        def finish(commit):
+            if done["v"]:
+                return
+            done["v"] = True
+            new = entry.get_text().strip()
+            self._title_entry = None
+            if entry.get_parent() is not None:
+                entry.get_parent().remove(entry)
+            self.title.set_visible(True)
+            if not commit or not new or new == old:
+                return
+            if "/" in new:
+                self._error(f"The name “{new}” can’t be used.", None,
+                            "Try using a name with fewer characters, or with no punctuation marks.")
+                return
+
+            def renamed(nf):
+                from . import sidebar
+                undo.renamed(nf, old)
+                tags.moved([(f, nf)])
+                folderprefs.moved(f.get_uri(), nf.get_uri())
+                sidebar.moved(f.get_uri(), nf.get_uri())
+                self._folder_moved(f.get_uri(), nf.get_uri())
+            ops.rename(f, new, renamed, lambda e: self._error(f"The name “{new}” can’t be used.", e))
+        entry.connect("activate", lambda *_: finish(True))
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", lambda _c, k, *_: (finish(False), True)[1] if k == Gdk.KEY_Escape else False)
+        entry.add_controller(keys)
+        focus = Gtk.EventControllerFocus()
+        focus.connect("leave", lambda *_: GLib.idle_add(lambda: (finish(True), False)[1]))
+        entry.add_controller(focus)
+        entry.grab_focus()
+        entry.select_region(0, -1)
+
+    def _folder_moved(self, old_uri, new_uri):
+        """A folder you're in (or inside) got a new name: every tab's history
+        follows, and the window shows it under its new name."""
+        def moved(u):
+            if u == old_uri:
+                return new_uri
+            if u.startswith(old_uri.rstrip("/") + "/"):
+                return new_uri.rstrip("/") + u[len(old_uri.rstrip("/")):]
+            return u
+        for t in self.tabs:
+            t.history = [moved(u) for u in t.history]
+        if self.pos >= 0:
+            self.go(self.history[self.pos], record=False)
 
     def _commit_rename(self, info, new_name):
         if "/" in new_name:
