@@ -40,6 +40,23 @@ def _cleaned(method):
     return wrapper
 
 
+def launch_context():
+    """The display's launch context when there is one: GTK gives the app an
+    xdg-activation token (seat, serial, the surface clicked), so Wayfire lets
+    it come to the front. A plain Gio.AppLaunchContext gives none: an app
+    already running (Files, Chrome, Steam) was asked to show itself without
+    one and stayed behind (Wayfire: "token was rejected at creation")."""
+    try:
+        gi.require_version("Gdk", "4.0")
+        from gi.repository import Gdk
+        display = Gdk.Display.get_default()
+        if display is not None:
+            return display.get_app_launch_context()
+    except (ValueError, ImportError, AttributeError):
+        pass
+    return Gio.AppLaunchContext()
+
+
 def _gpu_aware(method):
     """Every Sonata launch path goes here: the discrete GPU's environment
     for apps that want it (gpu.py); never a GTK_THEME (apps read the theme
@@ -52,6 +69,8 @@ def _gpu_aware(method):
             mark_launch(self.get_id() or "")          # a quit pending for it is called off
         except Exception:
             pass
+        if context is None:
+            context = launch_context()           # the app may come to the front (xdg-activation)
         try:
             from . import gpu
             gpu_env = gpu.launch_env(self)       # discrete, integrated (everyday apps) or none
@@ -110,6 +129,18 @@ for _cls in {DesktopAppInfo, Gio.DesktopAppInfo}:
             _w = _cleaned(getattr(_cls, _m))
             _w._sonata_clean = True
             setattr(_cls, _m, _w)
+
+def _with_context(fn):
+    """Gio.AppInfo.launch_default_for_uri(uri, None) the same: the display's context."""
+    def wrapper(uri, context=None, *rest):
+        return fn(uri, context if context is not None else launch_context(), *rest)
+    wrapper._sonata_ctx = True
+    return wrapper
+
+
+if not getattr(Gio.AppInfo.launch_default_for_uri, "_sonata_ctx", False):
+    Gio.AppInfo.launch_default_for_uri = _with_context(Gio.AppInfo.launch_default_for_uri)
+
 
 # Default pins, macOS order: Finder, browser, Mail, ..., Terminal, Settings.
 # Each slot lists candidate desktop ids across distros/desktops; the first one
