@@ -7,7 +7,8 @@ All views are virtualised (only visible rows/cells exist)."""
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
+gi.require_version("Adw", "1")
+from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk, Pango  # noqa: E402
 
 from .. import icons, ui  # noqa: E402
 from . import folder, tags, thumbs  # noqa: E402
@@ -493,6 +494,91 @@ def _inline_rename(box, info, on_commit, on_end=None):
     entry.select_region(start, end)
 
 
+# -- items moving when others come and go -------------------------------------------------
+REFLOW_MAX = 60            # bigger changes (a folder loading, a big paste) just appear
+FADE_MS = 180
+
+
+class _Cell(Gtk.Box):
+    """A grid cell drawn shifted by its glide offset (ui.transition), so an
+    item can slide from its old place to its new one."""
+
+    def do_snapshot(self, snap):
+        dx, dy = getattr(self, "_glide", (0, 0))
+        if dx or dy:
+            snap.save()
+            snap.translate(Graphene.Point().init(dx, dy))
+            Gtk.Box.do_snapshot(self, snap)
+            snap.restore()
+        else:
+            Gtk.Box.do_snapshot(self, snap)
+
+
+class Reflow:
+    """Vini: deleting, moving or adding items made the others jump. When the
+    grid's items change, the ones still there slide from their old place to
+    the new one and the new ones fade in (Finder). Places come from the
+    items' order (every cell has one size), so recycled cells don't matter."""
+
+    def __init__(self, view):
+        self.view = view
+        self.order = []
+        self._pending = None           # first places of a change not drawn yet
+        view.model.connect("items-changed", self._changed)
+
+    def _changed(self, model, pos, removed, added):
+        old = self.order
+        self.order = [model.get_item(i) for i in range(model.get_n_items())]
+        if not old or removed > REFLOW_MAX or added > REFLOW_MAX or not self.view.widget.get_mapped():
+            return
+        if self._pending is not None:          # several changes before a frame: one move, from the first places
+            return
+        clock = self.view.widget.get_frame_clock()
+        if clock is None:
+            return
+        self._pending = {id(info): i for i, info in enumerate(old)}
+        state = {}
+
+        def on_layout(_clock):
+            clock.disconnect(state.pop("id"))
+            was, self._pending = self._pending, None
+            self._play(was)
+        state["id"] = clock.connect("layout", on_layout)
+        self.view.widget.queue_allocate()
+
+    def _grid(self):
+        """(columns, cell width, cell height) of the grid as drawn now."""
+        kids = [b.get_parent() for b in self.view._cells.values() if b.get_parent() is not None]
+        kids = [k for k in kids if k.get_mapped() and k.get_width() > 0]
+        if not kids:
+            return None
+        xs = sorted({round(k.compute_point(self.view.widget, Graphene.Point().init(0, 0))[1].x) for k in kids})
+        cw = (xs[1] - xs[0]) if len(xs) > 1 else kids[0].get_width()
+        return len(xs), cw, kids[0].get_height()
+
+    def _play(self, was):
+        g = self._grid()
+        if g is None:
+            return
+        cols, cw, ch = g
+        from ..ui import transition
+        now = {id(info): i for i, info in enumerate(self.order)}
+        for info, box in list(self.view._cells.items()):
+            new_i = now.get(id(info))
+            if new_i is None:
+                continue
+            old_i = was.get(id(info))
+            if old_i is None:                                  # new here: fades in
+                box.set_opacity(0)
+                anim = Adw.TimedAnimation.new(box, 0, 1, FADE_MS, Adw.CallbackAnimationTarget.new(box.set_opacity))
+                anim.play()
+                box._fade = anim
+            elif old_i != new_i:
+                dx = (old_i % cols - new_i % cols) * cw
+                dy = (old_i // cols - new_i // cols) * ch
+                transition._start(box, dx, dy, transition.GLIDE_MS)
+
+
 # -- Icons --------------------------------------------------------------------------------
 class IconsView(_Cells):
     """Icons in a grid, sorted by name unless View > Sort By says otherwise
@@ -513,9 +599,10 @@ class IconsView(_Cells):
                                    enable_rubberband=True, css_classes=["fs-icons"])
         self._dnd_list(self.widget, rubberband=True)
         self.widget.connect("activate", lambda _g, pos: on_open(model.get_item(pos)))
+        self.reflow = Reflow(self)
 
     def _setup(self, _f, item):
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3, halign=Gtk.Align.CENTER)
+        box = _Cell(orientation=Gtk.Orientation.VERTICAL, spacing=3, halign=Gtk.Align.CENTER)
         box.set_size_request(CELL_W, -1)
         box.img = Gtk.Image(pixel_size=ICON_SIZE, css_classes=["fs-icon"], halign=Gtk.Align.CENTER)
         box.lbl = Gtk.Label(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, lines=2, max_width_chars=12,
@@ -541,6 +628,13 @@ class IconsView(_Cells):
 
     def _bind(self, _f, item):
         info, box = item.get_item(), item.get_child()
+        if getattr(box, "info", None) is not info:          # a recycled cell: no glide / fade left over
+            for a in ("_glide_anim", "_fade"):
+                if getattr(box, a, None) is not None:
+                    getattr(box, a).pause()
+                    setattr(box, a, None)
+            box._glide = (0, 0)
+            box.set_opacity(1)
         set_icon(box.img, info)
         box.lbl.set_label(label(info))
         tags.show(box.tags, tags.of_info(info))
