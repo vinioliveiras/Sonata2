@@ -451,10 +451,19 @@ class _Cells:
 def _inline_rename(box, info, on_commit, on_end=None):
     from .ops import rename_selection
     name = info.get_display_name()
-    entry = Gtk.Entry(text=name, css_classes=["fs-rename"], hexpand=True,
-                      halign=box.lbl.get_halign(), width_chars=max(8, min(len(name) + 2, 24)))
-    box.lbl.set_visible(False)
-    box.insert_child_after(entry, box.lbl)
+    over = getattr(box, "over", None)
+    if over is not None:
+        # icons: the field over the name's (always two-line) place -- the cell
+        # and the grid keep their size (Vini: the grid jumped while renaming)
+        entry = Gtk.Entry(text=name, css_classes=["fs-rename"], halign=Gtk.Align.FILL,
+                          valign=Gtk.Align.START, width_chars=1, max_width_chars=1)
+        box.lbl.set_opacity(0)
+        over.add_overlay(entry)
+    else:
+        entry = Gtk.Entry(text=name, css_classes=["fs-rename"], hexpand=True,
+                          halign=box.lbl.get_halign(), width_chars=max(8, min(len(name) + 2, 24)))
+        box.lbl.set_visible(False)
+        box.insert_child_after(entry, box.lbl)
     done = {"v": False}
 
     def finish(commit):
@@ -464,7 +473,10 @@ def _inline_rename(box, info, on_commit, on_end=None):
         new = entry.get_text().strip()
         if entry.get_parent() is box:
             box.remove(entry)
+        elif over is not None and entry.get_parent() is over:
+            over.remove_overlay(entry)
         box.lbl.set_visible(True)
+        box.lbl.set_opacity(1)
         if on_end is not None:
             on_end()
         if commit and new and new != name:
@@ -508,12 +520,22 @@ class IconsView(_Cells):
         box.img = Gtk.Image(pixel_size=ICON_SIZE, css_classes=["fs-icon"], halign=Gtk.Align.CENTER)
         box.lbl = Gtk.Label(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, lines=2, max_width_chars=12,
                             ellipsize=Pango.EllipsizeMode.MIDDLE, justify=Gtk.Justification.CENTER,
-                            halign=Gtk.Align.CENTER, css_classes=["fs-name"])
-        box.append(box.img)
-        box.append(box.lbl)
-        box.tags = tags.dots_box()
+                            halign=Gtk.Align.CENTER, valign=Gtk.Align.START, css_classes=["fs-name"])
+        # every cell the same height (Finder's grid): two lines of name are kept
+        # (an invisible two-line label sets it) and the tag dots' row too, so a
+        # rename or a tag never moves the grid (Vini)
+        space = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3, can_target=False)
+        space.append(Gtk.Label(label="X\nX", css_classes=["fs-name"], opacity=0))
+        space.append(tags.dots_box(reserve=True))
+        name = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3, valign=Gtk.Align.START)
+        box.tags = tags.dots_box()                  # right under the name, in the kept place
         box.tags.set_halign(Gtk.Align.CENTER)
-        box.append(box.tags)
+        name.append(box.lbl)
+        name.append(box.tags)
+        box.over = Gtk.Overlay(child=space)
+        box.over.add_overlay(name)
+        box.append(box.img)
+        box.append(box.over)
         self._dnd_cell(box)
         item.set_child(box)
 

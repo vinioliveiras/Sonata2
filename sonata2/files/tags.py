@@ -211,11 +211,16 @@ def dot(name: str, size: int = 8):
     return d
 
 
-def dots_box():
-    """The colours next to a name (empty: takes no room)."""
+def dots_box(reserve: bool = False):
+    """The colours next to a name. Empty, it takes no room -- unless
+    `reserve` (the icons' grid: the row is always there, Vini)."""
     from gi.repository import Gtk
     _css()
-    return Gtk.Box(css_classes=["fs-tags"], valign=Gtk.Align.CENTER, visible=False)
+    box = Gtk.Box(css_classes=["fs-tags"], valign=Gtk.Align.CENTER, visible=reserve)
+    box.reserve = reserve
+    if reserve:
+        box.set_size_request(-1, 8)
+    return box
 
 
 def show(box, tag_list) -> None:
@@ -228,7 +233,7 @@ def show(box, tag_list) -> None:
         box.remove(c)
     for n in names:
         box.append(dot(n))
-    box.set_visible(bool(names))
+    box.set_visible(bool(names) or getattr(box, "reserve", False))
 
 
 def menu_row(pop, states: dict, pick):
