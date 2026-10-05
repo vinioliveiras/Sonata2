@@ -7,7 +7,9 @@ While locked:
   open under the lock) no longer keeps the display on;
 - with wlopm installed, the lock screen also turns the displays off itself
   after LOCKED_DPMS_S without input -- an app holding the display awake
-  (idle inhibit) can't keep it on behind the lock.
+  (idle inhibit) can't keep it on behind the lock;
+- the keyboard's backlight (and RGB devices) go dark then too, whatever
+  keeps the session awake, and come back on any input.
 The values from before are kept in $XDG_RUNTIME_DIR and put back on unlock
 (or by the menu bar when it starts, after a lock screen that crashed)."""
 import json
@@ -74,3 +76,21 @@ def displays(on: bool) -> bool:
         return True
     except OSError:
         return False
+
+
+def lights(on: bool) -> None:
+    """The keyboard's backlight (and RGB devices, with OpenRGB) off / back
+    as they were -- with the displays (Vini: the keyboard stayed lit with
+    the screen locked, an app in the background keeping the session awake)."""
+    from . import idlelock
+    cmds = []
+    if idlelock.keyboard_light():
+        cmds.append(idlelock.KBD_ON if on else idlelock.KBD_OFF)
+    if idlelock.rgb_lights():
+        cmds.append(idlelock.RGB_ON if on else idlelock.RGB_OFF)
+    for c in cmds:
+        try:
+            subprocess.Popen(["sh", "-c", c], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        except OSError:
+            pass

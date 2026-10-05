@@ -53,6 +53,18 @@ class LockDisplayTest(unittest.TestCase):
         self.assertIn("lockdisplay.displays(False)", src)
         self.assertIn("lockdisplay.unlocked()", inspect.getsource(idlelock.IdleLock.__init__))
 
+    def test_keyboard_goes_dark_with_the_lock(self):
+        from sonata2.shell import idlelock
+        ran = []
+        with mock.patch.object(idlelock, "keyboard_light", return_value=True), \
+                mock.patch.object(idlelock, "rgb_lights", return_value=False), \
+                mock.patch.object(LD.subprocess, "Popen", lambda argv, **k: ran.append(argv[-1])):
+            LD.lights(False)
+            LD.lights(True)
+        self.assertEqual(ran, [idlelock.KBD_OFF, idlelock.KBD_ON])
+        from sonata2.shell import lock
+        self.assertIn("lockdisplay.lights(False)", inspect.getsource(lock.LockScreen._input))
+
     def test_displays_without_wlopm(self):
         with mock.patch.object(LD.shutil, "which", return_value=None):
             self.assertFalse(LD.displays(False))

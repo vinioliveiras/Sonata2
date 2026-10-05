@@ -59,7 +59,9 @@ class LockScreen:
                 GLib.source_remove(self._idle_src)
                 self._idle_src = 0
             if self._off:
+                self._off = False
                 lockdisplay.displays(True)
+                lockdisplay.lights(True)
 
     def _input(self, *_a) -> None:
         """A key or a move on the lock screen: the displays on, the countdown again."""
@@ -67,12 +69,15 @@ class LockScreen:
         if self._off:
             self._off = False
             lockdisplay.displays(True)
+            lockdisplay.lights(True)
         if self._idle_src:
             GLib.source_remove(self._idle_src)
 
         def dark():
             self._idle_src = 0
-            self._off = lockdisplay.displays(False)
+            lockdisplay.displays(False)
+            lockdisplay.lights(False)             # the keyboard too, whatever keeps the session awake
+            self._off = True
             return False
         self._idle_src = GLib.timeout_add_seconds(lockdisplay.LOCKED_DPMS_S, dark)
 
