@@ -58,6 +58,7 @@ SHORTCUTS = [
     Shortcut("space_right", "Next Space", "Spaces", "vswitch", "binding_right"),
     Shortcut("shot", "Screenshot", "Screenshots", "command", "binding_screenshot"),
     Shortcut("shot_area", "Screenshot of a Selection", "Screenshots", "command", "binding_screenshot_area"),
+    Shortcut("draw", "Draw on the Screen", "Screenshots", "command", "binding_draw"),
     Shortcut("capture", "Screenshot and Recording Options", "Screenshots", "command", "binding_capture"),
     Shortcut("lock", "Lock Screen", "System", "command", "binding_lock"),
 ]

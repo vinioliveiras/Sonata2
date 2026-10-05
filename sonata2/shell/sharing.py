@@ -68,6 +68,8 @@ class SharingControl(BarPill):
         what.add_controller(click)
         what.set_cursor_from_name("pointer")
         self.box.append(what)
+        from .livedraw import pen_button                 # draw on the shared screen (livedraw.py)
+        self.box.append(pen_button(app))
         # Stop Sharing (Vini), like the recording pill's stop button
         stop = stop_button("Stop Sharing")
         stop.connect("clicked", lambda *_: self._stop())
@@ -88,6 +90,8 @@ class SharingControl(BarPill):
                 self.show_on()
         elif self.get_visible():
             self.set_visible(False)
+            from . import livedraw                       # the sharing ended: the drawing goes too
+            livedraw.get(self.get_application()).stop()
 
     def _stop(self):
         from ..backend import system

@@ -622,6 +622,13 @@ def run_topbar(app, args, ui):
     act = Gio.SimpleAction.new("clipboard", None)
     act.connect("activate", clipboard)
     app.add_action(act)
+    # Draw on the screen (Super+Shift+D; the recording / sharing pills' pen)
+    def draw(*_a):
+        from .shell import livedraw
+        livedraw.get(app).toggle()
+    act = Gio.SimpleAction.new("draw", None)
+    act.connect("activate", draw)
+    app.add_action(act)
     act = Gio.SimpleAction.new("capture", GLib.VariantType.new("s"))
     act.connect("activate", capture)
     app.add_action(act)

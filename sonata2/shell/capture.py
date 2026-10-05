@@ -464,6 +464,9 @@ class RecordingControl(BarPill):
         box.append(self.time)
         self.sound = Gtk.Image(css_classes=["rec-sound"])
         box.append(self.sound)
+        from .livedraw import pen_button                 # draw on the screen (livedraw.py)
+        self.output = None
+        box.append(pen_button(app, lambda: self.output))
         stop = stop_button("Stop Recording")
         stop.connect("clicked", lambda *_: self.owner.stop_recording())
         box.append(stop)
@@ -472,6 +475,7 @@ class RecordingControl(BarPill):
         self.sound.set_visible(audio)
         self.sound.set_from_icon_name("audio-input-microphone-symbolic" if kind == "mic"
                                       else "audio-volume-high-symbolic")
+        self.output = output
         self._t0 = GLib.get_monotonic_time()
         self._tick()
         if not self._src:
@@ -488,6 +492,8 @@ class RecordingControl(BarPill):
             GLib.source_remove(self._src)
             self._src = 0
         self.set_visible(False)
+        from . import livedraw                           # the recording ended: the drawing goes too
+        livedraw.get(self.get_application()).stop()
 
 
 class Capture:

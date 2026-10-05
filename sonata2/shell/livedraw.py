@@ -1,0 +1,265 @@
+"""Draw on the screen while recording or sharing it (Vini; also any time:
+Super+Shift+D). The recording / sharing pill gets a pen: a click turns
+drawing on and shows the palette under the menu bar, another click (or Esc)
+gives the pointer back to the apps -- the marks stay until Clear, or fade
+away by themselves (the palette's clock).
+
+    draw = livedraw.get(app)          # one per menu bar process
+    draw.toggle(output=None)          # on / off (the pill's pen, the shortcut)
+    draw.stop()                       # off and cleared (the recording or sharing ended)
+
+One transparent surface per display above everything (layer-shell overlay,
+"sonata2-draw"): it takes the pointer only while drawing is on, otherwise
+clicks go through it to the apps. The marks are Preview's Markup marks
+(preview/markup.py: the same tools and renderer). The palette is its own
+surface ("sonata2-draw-palette") so it can be left out of what's captured."""
+import time
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gdk, GLib, Gtk  # noqa: E402
+
+from .. import ui  # noqa: E402
+from . import layer  # noqa: E402
+
+FADE_AFTER_S, FADE_S = 3.0, 0.8          # fading marks: shown this long, then fade out
+TOOLS = (("pen", "Pen"), ("hl", "Highlighter"), ("shape", "Shapes"), ("text", "Text"), ("emoji", "Emoji"))
+COLORS = ("#ff3b30", "#ffcc00", "#34c759", "#007aff", "#ffffff")
+PALETTE_NS, OVERLAY_NS = "sonata2-draw-palette", "sonata2-draw"
+
+ui.register("""
+window.sonata-draw, window.sonata-draw > contents { background: none; box-shadow: none; }
+window.sonata-draw-palette, window.sonata-draw-palette > contents { background: none; box-shadow: none; }
+.draw-palette { background: %(panel_material)s; border-radius: %(r_dialog)s; margin: 6px 12px 16px 12px;
+  box-shadow: 0 0 0 0.5px %(hairline)s, 0 10px 30px rgba(0,0,0,0.3); }
+.draw-palette .pv-markup { border-bottom: none; padding: 4px 6px; }
+.rec-pill button.rec-pen { min-width: 18px; min-height: 18px; padding: 0; margin: 1px 0; border-radius: 6px;
+  background: none; border: none; box-shadow: none; color: %(label)s; }
+.rec-pill button.rec-pen.on { background: %(accent)s; color: %(label_on_accent)s; }
+""", key="livedraw")
+
+
+class Overlay(Gtk.Window):
+    """One display's drawing surface."""
+
+    def __init__(self, app, monitor, owner):
+        super().__init__(application=app, title="Drawing", decorated=False, css_classes=["sonata-draw"])
+        from ..preview.markup import MarkupLayer
+        self.owner = owner
+        self.layer = MarkupLayer(self._rect, lambda: None, on_change=owner.changed)
+        self.layer.follow = owner._sync
+        self.layer.set_cursor(Gdk.Cursor.new_from_name("crosshair"))
+        self.set_child(self.layer)
+        LS = layer.layer_shell()
+        if LS:
+            layer.overlay_fullscreen(self, OVERLAY_NS)
+            LS.set_keyboard_mode(self, LS.KeyboardMode.NONE)
+            LS.set_monitor(self, monitor)
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", lambda _c, kv, _k, st: kv == Gdk.KEY_Escape and (owner.set_on(False), True)[1])
+        self.add_controller(keys)
+        self.connect("map", lambda *_: self.pointer(owner.on))
+
+    def _rect(self):
+        return 0, 0, self.get_width(), self.get_height()
+
+    def pointer(self, on: bool) -> None:
+        """Drawing: the pointer comes here; off: clicks go through to the apps."""
+        if not self.get_mapped():
+            return
+        layer.set_input_region(self, [(0, 0, self.get_width(), self.get_height())] if on else [])
+        LS = layer.layer_shell()
+        if LS and LS.is_layer_window(self):
+            LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND if on else LS.KeyboardMode.NONE)
+
+
+class Palette(Gtk.Window):
+    def __init__(self, app, owner):
+        super().__init__(application=app, title="Drawing Tools", decorated=False, resizable=False,
+                         css_classes=["sonata-draw-palette"])
+        from ..preview.markup import MarkupBar
+        self.owner = owner
+        actions = (("fade", "Marks fade away by themselves", owner.toggle_fade),
+                   ("undo", "Undo", owner.undo), ("trash", "Clear the screen", owner.clear),
+                   ("close", "Stop drawing (Esc)", lambda: owner.set_on(False)))
+        self.bar = MarkupBar(owner.proto, tools=TOOLS, colors=COLORS, actions=actions)
+        frame = Gtk.Box(css_classes=["draw-palette"])
+        frame.append(self.bar)
+        self.set_child(frame)
+        self.fade_btn = [c for c in _children(self.bar.box) if c.get_tooltip_text() ==
+                         "Marks fade away by themselves"][0]
+        LS = layer.layer_shell()
+        if LS:
+            LS.init_for_window(self)
+            LS.set_namespace(self, PALETTE_NS)
+            LS.set_layer(self, LS.Layer.OVERLAY)
+            LS.set_anchor(self, LS.Edge.TOP, True)
+            LS.set_exclusive_zone(self, -1)
+            LS.set_margin(self, LS.Edge.TOP, 30)          # under the menu bar's pill
+            LS.set_keyboard_mode(self, LS.KeyboardMode.NONE)
+
+    def show_on(self, monitor) -> None:
+        LS = layer.layer_shell()
+        if LS and monitor is not None:
+            LS.set_monitor(self, monitor)
+        (self.fade_btn.add_css_class if self.owner.fade else self.fade_btn.remove_css_class)("on")
+        self.present()
+
+
+def _children(w):
+    c = w.get_first_child()
+    while c is not None:
+        yield c
+        c = c.get_next_sibling()
+
+
+class LiveDraw:
+    def __init__(self, app):
+        from ..preview.markup import MarkupLayer
+        self.app = app
+        self.on = False
+        self.fade = False
+        self.overlays = {}                 # connector -> Overlay
+        # the palette's settings live on a layer of no display: every
+        # overlay's layer takes its tool, colour and width from it
+        self.proto = MarkupLayer(lambda: None, lambda: None)
+        self.palette = None
+        self.listeners = []                # fn(on): the pills' pens
+        self._fade_src = 0
+
+    # -- the palette's choices: each display's layer takes them before a mark -----------------------
+    def _each(self):
+        return [o.layer for o in self.overlays.values()]
+
+    def _sync(self, lay):
+        p = self.proto
+        lay.tool, lay.shape, lay.emoji, lay.color, lay.width = p.tool, p.shape, p.emoji, p.color, p.width
+
+    # -- on / off -------------------------------------------------------------------------------
+    def _monitors(self):
+        mons = Gdk.Display.get_default().get_monitors()
+        return [mons.get_item(i) for i in range(mons.get_n_items())]
+
+    def _monitor(self, output=None):
+        mons = self._monitors()
+        return next((m for m in mons if m.get_connector() == output), mons[0] if mons else None)
+
+    def toggle(self, output=None) -> None:
+        self.set_on(not self.on, output)
+
+    def set_on(self, on: bool, output=None) -> None:
+        self.on = on
+        if on:
+            for m in self._monitors():
+                key = m.get_connector() or str(id(m))
+                if key not in self.overlays:
+                    self.overlays[key] = Overlay(self.app, m, self)
+                ov = self.overlays[key]
+                self._sync(ov.layer)
+                ov.present()
+                ov.pointer(True)
+            if self.palette is None:
+                self.palette = Palette(self.app, self)
+            self.palette.show_on(self._monitor(output))
+        else:
+            for ov in self.overlays.values():
+                ov.pointer(False)
+                if not ov.layer.items:
+                    ov.set_visible(False)          # nothing drawn: nothing left over the screen
+            if self.palette is not None:
+                self.palette.set_visible(False)
+        for fn in list(self.listeners):
+            fn(on)
+
+    def stop(self) -> None:
+        """The recording or sharing ended: off, and the screen clean."""
+        self.clear()
+        self.set_on(False)
+
+    def clear(self) -> None:
+        for ov in self.overlays.values():
+            if ov.layer.items:
+                ov.layer._snapshot()
+                ov.layer.items = []
+                ov.layer.sel = None
+                ov.layer.queue_draw()
+            if not self.on:
+                ov.set_visible(False)
+
+    def undo(self) -> None:
+        for ov in self.overlays.values():
+            ov.layer.undo()
+
+    # -- fading -----------------------------------------------------------------------------------
+    def toggle_fade(self) -> None:
+        self.fade = not self.fade
+        if self.palette is not None:
+            (self.palette.fade_btn.add_css_class if self.fade else self.palette.fade_btn.remove_css_class)("on")
+        if self.fade:
+            now = time.monotonic()
+            for lay in self._each():
+                for it in lay.items:
+                    it["ts"] = now
+            self._arm_fade()
+
+    def changed(self) -> None:
+        """A mark was added (or changed): stamped, so it can fade."""
+        now = time.monotonic()
+        for lay in self._each():
+            for it in lay.items:
+                it.setdefault("ts", now)
+        if self.fade:
+            self._arm_fade()
+
+    def _arm_fade(self) -> None:
+        if not self._fade_src:
+            self._fade_src = GLib.timeout_add(33, self._fade_tick)
+
+    def _fade_tick(self) -> bool:
+        if not self.fade:
+            self._fade_src = 0
+            return False
+        now, alive = time.monotonic(), False
+        for ov in self.overlays.values():
+            lay, keep = ov.layer, []
+            for it in lay.items:
+                age = now - it.get("ts", now)
+                if age < FADE_AFTER_S + FADE_S:
+                    it["o"] = 1.0 if age < FADE_AFTER_S else max(0.0, 1 - (age - FADE_AFTER_S) / FADE_S)
+                    keep.append(it)
+            if len(keep) != len(lay.items) or keep:
+                lay.items = keep
+                lay.queue_draw()
+            alive = alive or bool(keep)
+            if not keep and not self.on:
+                ov.set_visible(False)
+        if not alive:
+            self._fade_src = 0
+            return False
+        return True
+
+
+_INSTANCE = {}
+
+
+def get(app) -> LiveDraw:
+    if "d" not in _INSTANCE:
+        _INSTANCE["d"] = LiveDraw(app)
+    return _INSTANCE["d"]
+
+
+def pen_button(app, output_fn=lambda: None) -> Gtk.Button:
+    """The pills' pen: drawing on / off (blue while on)."""
+    from ..preview.markup import _glyph
+    b = Gtk.Button(css_classes=["rec-pen"], tooltip_text="Draw on the screen (Super+Shift+D)", can_focus=False,
+                   valign=Gtk.Align.CENTER)
+    b.set_child(_glyph("pen", 12))
+    d = get(app)
+    b.connect("clicked", lambda *_: d.toggle(output_fn()))
+
+    def follow(on):
+        (b.add_css_class if on else b.remove_css_class)("on")
+    d.listeners.append(follow)
+    follow(d.on)
+    return b

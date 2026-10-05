@@ -278,7 +278,14 @@ def draw(cr, items, W, H, source=None) -> None:
     """Every mark, in order, on a context where the picture spans 0..W x 0..H.
     source: a Cairo surface of the picture at that size (pixelate samples it)."""
     for it in items:
-        _draw_item(cr, it, W, H, source)
+        o = it.get("o", 1.0)                     # fading (live drawing's strokes that go away)
+        if o >= 0.999:
+            _draw_item(cr, it, W, H, source)
+        elif o > 0.001:
+            cr.push_group()
+            _draw_item(cr, it, W, H, source)
+            cr.pop_group_to_source()
+            cr.paint_with_alpha(o)
 
 
 def _pil_to_surface(im):
@@ -334,6 +341,7 @@ class MarkupLayer(Gtk.DrawingArea):
         self.cur = None                          # the mark being drawn
         self._undo, self._redo = [], []
         self._src = None                         # (texture, surface, buffer) for pixelate
+        self.follow = None                       # fn(layer) before each mark: its tool from elsewhere (live drawing)
         self.set_draw_func(self._draw)
         drag = Gtk.GestureDrag()
         drag.connect("drag-begin", self._begin)
@@ -443,6 +451,8 @@ class MarkupLayer(Gtk.DrawingArea):
 
     # -- input ------------------------------------------------------------------------------------
     def _begin(self, _g, x, y) -> None:
+        if self.follow:
+            self.follow(self)
         self.grab_focus()
         if not self._pic():
             return
@@ -735,7 +745,17 @@ def _g_shape_of(kind):
     return g
 
 
-GLYPHS = {"select": _g_select, "pen": _g_pen, "hl": _g_hl, "shape": _g_shape, "text": _g_text, "step": _g_step,
+def _g_fade(cr):
+    cr.arc(8, 9, 5.3, 0, 2 * math.pi); cr.stroke()  # noqa: E702
+    cr.move_to(8, 6); cr.line_to(8, 9); cr.line_to(10.2, 10.3); cr.move_to(6, 1.8); cr.line_to(10, 1.8)  # noqa: E702
+    cr.stroke()
+
+
+def _g_close(cr):
+    cr.move_to(4, 4); cr.line_to(12, 12); cr.move_to(12, 4); cr.line_to(4, 12); cr.stroke()  # noqa: E702
+
+
+GLYPHS = {"fade": _g_fade, "close": _g_close, "select": _g_select, "pen": _g_pen, "hl": _g_hl, "shape": _g_shape, "text": _g_text, "step": _g_step,
           "pixelate": _g_pixel, "undo": _g_undo, "redo": _g_redo, "width": _g_width, "trash": _g_trash}
 for _k in SHAPES:
     GLYPHS["shape-" + _k] = _g_shape_of(_k)
@@ -747,12 +767,14 @@ class MarkupBar(Gtk.Box):
              ("hl", "Highlighter"), ("shape", "Shapes"), ("text", "Text"), ("emoji", "Emoji"),
              ("step", "Numbered steps"), ("pixelate", "Pixelate (hide something)"))
 
-    def __init__(self, layer: MarkupLayer, on_done, on_cancel):
+    def __init__(self, layer: MarkupLayer, on_done=None, on_cancel=None, tools=None, colors=COLORS, actions=None):
+        """tools: [(name, tooltip)] (TOOLS); actions: [(glyph, tooltip, fn)] after
+        the width (undo, redo, delete); no on_done: no Cancel / Done (live drawing)."""
         super().__init__(spacing=2, css_classes=["pv-markup"], halign=Gtk.Align.FILL)
         self.layer = layer
         self.tools = {}
         box = Gtk.Box(spacing=2, hexpand=True, halign=Gtk.Align.CENTER)
-        for name, tip in self.TOOLS:
+        for name, tip in tools or self.TOOLS:
             b = Gtk.Button(css_classes=["mk"], tooltip_text=tip, can_focus=False)
             b.set_child(Gtk.Label(label=layer.emoji) if name == "emoji" else _glyph(name))
             b.connect("clicked", lambda _b, n=name: self._tool(n))
@@ -760,7 +782,7 @@ class MarkupBar(Gtk.Box):
             self.tools[name] = b
         box.append(Gtk.Box(css_classes=["mk-sep"]))
         self.swatches = {}
-        for c in COLORS:
+        for c in colors:
             b = Gtk.Button(css_classes=["mk-color"], can_focus=False, tooltip_text=c)
             sw = Gtk.DrawingArea(content_width=16, content_height=16, can_target=False)
             sw.set_draw_func(lambda _a, cr, w, h, c=c: self._swatch(cr, w, h, c))
@@ -773,19 +795,22 @@ class MarkupBar(Gtk.Box):
         wb.set_child(_glyph("width"))
         wb.connect("clicked", lambda b: self._widths(b))
         box.append(wb)
-        for name, tip, fn in (("undo", "Undo", layer.undo), ("redo", "Redo", layer.redo),
-                              ("trash", "Delete the selected mark", layer.delete_selected)):
+        for name, tip, fn in actions if actions is not None else (
+                ("undo", "Undo", layer.undo), ("redo", "Redo", layer.redo),
+                ("trash", "Delete the selected mark", layer.delete_selected)):
             b = Gtk.Button(css_classes=["mk"], tooltip_text=tip, can_focus=False)
             b.set_child(_glyph(name))
             b.connect("clicked", lambda _b, f=fn: f())
             box.append(b)
         self.append(box)
-        cancel = ui.controls.push_button("Cancel", on_cancel, valign=Gtk.Align.CENTER)
-        cancel.add_css_class("mk-done")
-        done = ui.controls.push_button("Done", on_done, style="default", valign=Gtk.Align.CENTER)
-        done.add_css_class("mk-done")
-        self.append(cancel)
-        self.append(done)
+        self.box = box
+        if on_done is not None:
+            cancel = ui.controls.push_button("Cancel", on_cancel, valign=Gtk.Align.CENTER)
+            cancel.add_css_class("mk-done")
+            done = ui.controls.push_button("Done", on_done, style="default", valign=Gtk.Align.CENTER)
+            done.add_css_class("mk-done")
+            self.append(cancel)
+            self.append(done)
         self._tool(layer.tool)
 
     def _swatch(self, cr, w, h, c) -> None:
