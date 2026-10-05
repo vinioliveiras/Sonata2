@@ -330,7 +330,7 @@ def apply_buttons_side() -> None:
 
 def minimize_animation(effect: str) -> str:
     """Settings' minimize effect -> Wayfire's animate/minimize_animation."""
-    return {"genie": "squeezimize", "scale": "zoom"}.get(effect, "fade")
+    return "squeezimize" if effect == "genie" else "zoom"
 
 
 def combo_row(title, options, selected, on_change, subtitle="") -> Adw.ComboRow:
@@ -2661,8 +2661,7 @@ class Settings(Adw.ApplicationWindow):
                             lambda on: self._save("dock", "quit_on_close", on),
                             subtitle="Closing an app's last window quits it, also Steam, Discord and "
                                      "others that keep running in the background"))
-        wins.add(combo_row("Minimize windows using", [("fade", "Fade effect"), ("genie", "Genie effect"),
-                                                            ("scale", "Scale effect")],
+        wins.add(combo_row("Minimize windows using", [("genie", "Genie effect"), ("scale", "Scale effect")],
                            cfg["minimize_effect"], self._set_minimize_effect))
         dbl = system.gsetting("org.gnome.desktop.wm.preferences", "action-double-click-titlebar") or "toggle-maximize"
         wins.add(combo_row("Double-click a window's title bar to",
