@@ -111,6 +111,7 @@ class Reading:
     vrams: dict = field(default_factory=dict)       # card key -> (used, total) bytes (None: no reading)
     cpu_temp: Optional[float] = None                # °C
     temps: dict = field(default_factory=dict)       # card key -> °C (None: no reading)
+    top: dict = field(default_factory=dict)         # "cpu" / "gpu" / "gpu_<card>" -> [(name, %)], busiest first
     ram_used: int = 0
     ram_total: int = 0
     down: float = 0.0
@@ -295,6 +296,54 @@ def parse_nvidia(out: str) -> tuple:
     return pcts, mems, temps
 
 
+TOP_N = 5
+
+
+def top_list(rows, n: int = TOP_N) -> list:
+    """[(name, %)] summed per program name (Chrome's many processes are one),
+    busiest first, the n busiest above 0.5 %."""
+    total = {}
+    for name, pct in rows:
+        if pct > 0:
+            total[name] = total.get(name, 0.0) + pct
+    return sorted(((k, v) for k, v in total.items() if v >= 0.5), key=lambda kv: -kv[1])[:n]
+
+
+class TopProcs:
+    """The busiest programs for CPU and each GPU (Task Manager's reader,
+    procfs.Sampler: DRM fdinfo for AMD/Intel, nvidia-smi pmon for NVIDIA
+    while it's awake). Read only while a module showing them is open."""
+
+    def __init__(self, sampler=None, clock=None):
+        import time
+        self.s = sampler or procfs.Sampler()
+        self.clock = clock or time.monotonic
+        self._prev = {}
+        self._t = None
+
+    def read(self) -> dict:
+        now = self.clock()
+        dt = now - self._t if self._t is not None else 0.0
+        procs = self.s.processes(want=())
+        ticks = {}
+        for p in procs.values():
+            key = (p.pid, p.start_ticks)
+            ticks[key] = p.ticks
+            prev = self._prev.get(key)
+            if prev is not None and dt > 0:
+                p.cpu = max(0.0, 100.0 * (p.ticks - prev) / procfs.CLK_TCK / dt)
+        self._prev, self._t = ticks, now
+        try:
+            self.s.gpu_usage(procs, dt, now)
+        except Exception:
+            pass
+        out = {"cpu": top_list((p.name, p.cpu) for p in procs.values()),
+               "gpu": top_list((p.name, p.gpu) for p in procs.values())}
+        for key, maker, _c in CARDS:
+            out["gpu_" + key] = top_list((p.name, p.gpu) for p in procs.values() if maker in (p.gpu_on or ""))
+        return out
+
+
 class Stats:
     """One per process: reads while anyone subscribes."""
     _shared = None
@@ -310,6 +359,8 @@ class Stats:
         self.listeners = []
         self.history = {k: [] for k in ("cpu", "gpu", "ram", "down", "up", "fps")}      # (+ gpu_<card>)
         self.last = None
+        self.top_watchers = 0              # modules showing the busiest programs (TopProcs read only then)
+        self._top = None
         self._timer = 0
         self._busy = False
         self._t = None
@@ -352,7 +403,16 @@ class Stats:
         down, up = s.net(dt)
         fps, state = s.fps()
         each = s.gpus()
-        return Reading(cpu=s.cpu(), gpu=s.gpu(each), gpus=each, vrams=s.vrams(), cpu_temp=s.cpu_temp(), temps=s.temps(), ram_used=used, ram_total=total, down=down,
+        top = {}
+        if self.top_watchers > 0:
+            if self._top is None:
+                self._top = TopProcs()
+            try:
+                top = self._top.read()
+            except Exception:
+                top = {}
+        return Reading(cpu=s.cpu(), gpu=s.gpu(each), gpus=each, vrams=s.vrams(), cpu_temp=s.cpu_temp(), temps=s.temps(),
+                       top=top, ram_used=used, ram_total=total, down=down,
                        up=up, fps=fps, fps_state=state)
 
     def _deliver(self, r: Optional[Reading]) -> None:

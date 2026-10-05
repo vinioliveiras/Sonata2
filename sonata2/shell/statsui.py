@@ -51,7 +51,10 @@ ui.register("""
 .cc-stat .cc-stat-value { font-feature-settings: "tnum"; font-weight: 600; }
 .cc-stat .cc-stat-speeds { font-size: %(text_small)s; }
 .cc-stat .cc-stat-hint { font-size: %(text_small)s; opacity: 0.6; }
-.cc-stat .cc-stat-maker { font-size: 9px; font-weight: 700; opacity: 0.55; margin: 1px 0 0 2px; }
+.cc-stat .cc-stat-side { margin: 1px 0 0 2px; }
+.cc-stat .cc-stat-side label { text-shadow: 0 0 3px %(window_bg)s, 0 0 1px %(window_bg)s; }   /* readable over the graph */
+.cc-stat .cc-stat-maker { font-size: 9px; font-weight: 700; opacity: 0.55; }
+.cc-stat .cc-stat-top { font-size: 9px; font-feature-settings: "tnum"; opacity: 0.75; }
 """, key="statsui")
 
 
@@ -95,10 +98,16 @@ class Graph(Gtk.Widget):
 class _Live:
     """Subscribes to the figures while its widget is on screen."""
 
-    def __init__(self, widget, update):
-        self.update = update
-        widget.connect("map", lambda *_a: S.Stats.shared().subscribe(self.update))
-        widget.connect("unmap", lambda *_a: S.Stats.shared().unsubscribe(self.update))
+    def __init__(self, widget, update, top=False):
+        self.update, self.top = update, top
+        widget.connect("map", lambda *_a: self._on(True))
+        widget.connect("unmap", lambda *_a: self._on(False))
+
+    def _on(self, on: bool) -> None:
+        st = S.Stats.shared()
+        if self.top:                       # the per-program reading runs only while one is shown
+            st.top_watchers = max(0, st.top_watchers + (1 if on else -1))
+        (st.subscribe if on else st.unsubscribe)(self.update)
 
 
 def menu_item(kind: str, style: str) -> Gtk.Box:
@@ -122,6 +131,9 @@ def menu_item(kind: str, style: str) -> Gtk.Box:
     return box
 
 
+TOP_KINDS = {"cpu", "gpu", *S.GPU_MAKERS}      # modules with the busiest programs in them
+
+
 def card_maker(kind: str) -> str:
     """The card's maker for a per-card figure ("gpu_nvidia" -> "NVIDIA"), "" otherwise."""
     return (S.GPU_MAKERS.get(kind) or S.VRAM_MAKERS_BY_KIND.get(kind) or S.TEMP_MAKERS_BY_KIND.get(kind) or "")
@@ -142,14 +154,21 @@ def module(kind: str) -> Gtk.Widget:
     graph.set_valign(Gtk.Align.FILL)
     shown = graph
     maker = card_maker(kind)
-    if maker:                            # two cards: whose graph it is, inside it (the title gets cut -- Vini)
+    box_tag, top_rows = None, []
+    if maker or kind in TOP_KINDS:       # text inside the graph, at its left
         shown = Gtk.Overlay(child=graph, hexpand=True, vexpand=True)
-        tag = Gtk.Label(label=maker, css_classes=["cc-stat-maker"], halign=Gtk.Align.START,
-                        valign=Gtk.Align.START, can_target=False)
-        shown.add_overlay(tag)
-        box_tag = tag
-    else:
-        box_tag = None
+        side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0, halign=Gtk.Align.START,
+                       valign=Gtk.Align.START, can_target=False, css_classes=["cc-stat-side"])
+        if maker:                        # two cards: whose graph it is (the title gets cut -- Vini)
+            box_tag = Gtk.Label(label=maker, xalign=0, css_classes=["cc-stat-maker"])
+            side.append(box_tag)
+        if kind in TOP_KINDS:            # the busiest programs (Vini), small, read only while shown
+            for _i in range(S.TOP_N):
+                lbl = Gtk.Label(label="", xalign=0, css_classes=["cc-stat-top"], visible=False,
+                                ellipsize=Pango.EllipsizeMode.END, max_width_chars=14, width_chars=1)
+                side.append(lbl)
+                top_rows.append(lbl)
+        shown.add_overlay(side)
     hint = Gtk.Label(label="", xalign=0, css_classes=["cc-stat-hint"], visible=False, wrap=True,
                      width_chars=1, natural_wrap_mode=Gtk.NaturalWrapMode.WORD)
     if kind == "net":                    # two speeds: a line of their own under the title
@@ -173,5 +192,12 @@ def module(kind: str) -> Gtk.Widget:
         h = S.FPS_HINTS.get(r.fps_state, "") if kind == "fps" else ""
         hint.set_label(h)
         hint.set_visible(bool(h))
-    box._live = _Live(box, update)
+        if top_rows:
+            rows = r.top.get(kind, [])
+            for lbl, row in zip(top_rows, list(rows) + [None] * len(top_rows)):
+                lbl.set_visible(row is not None)
+                if row is not None:
+                    lbl.set_label(f"{row[1]:.0f}%  {row[0]}")
+    box._live = _Live(box, update, top=bool(top_rows))
+    box.top_rows = top_rows                   # (tests)
     return box

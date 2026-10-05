@@ -27,7 +27,7 @@ class MakerTagTest(unittest.TestCase):
             for kind, maker in (("gpu_nvidia", "NVIDIA"), ("vram_amd", "AMD"), ("temp_nvidia", "NVIDIA")):
                 m = statsui.module(kind)
                 self.assertEqual(m.maker_tag.get_label(), maker)
-                self.assertFalse(m.maker_tag.get_can_target())          # clicks go through to the module
+                self.assertFalse(m.maker_tag.get_parent().get_can_target())   # clicks go through to the module
         self.assertIsNone(statsui.module("cpu").maker_tag)              # one of a kind: no tag
 
 
