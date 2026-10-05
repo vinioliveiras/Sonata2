@@ -36,7 +36,11 @@ def enabled(event: str) -> bool:
 
 
 def _player(path):
-    for cmd in (["pw-play", path], ["paplay", path], ["canberra-gtk-play", "-f", path],
+    """Played as an event sound named Sonata: never an app in the sound mixer."""
+    for cmd in (["pw-play", "--media-role", "Event", "-P", '{ application.name = "Sonata" media.role = "Event" }',
+                 path],
+                ["paplay", "--client-name=Sonata", "--property=media.role=event", path],
+                ["canberra-gtk-play", "-f", path],
                 ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path]):
         if shutil.which(cmd[0]):
             return cmd

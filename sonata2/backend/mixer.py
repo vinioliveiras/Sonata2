@@ -74,6 +74,19 @@ def _percent(volume: dict) -> int:
     return max(vals) if vals else 100
 
 
+def system_sound(props: dict) -> bool:
+    """A sound of the system, not an app's (Vini: the volume feedback flashed
+    a "pw-play" row): Sonata's own (its players -- named by the binary or,
+    without one, by the application name -- or marked "Sonata"), and any
+    event / notification / accessibility sound (media.role, or the
+    "event" media.category libcanberra and pw-play set)."""
+    binary = (props.get("application.process.binary") or "").lower()
+    name = (props.get("application.name") or "").lower()
+    role = (props.get("media.role") or props.get("media.category") or "").lower()
+    return (binary in OWN_PLAYERS or name in OWN_PLAYERS or name.startswith("sonata")
+            or role in SKIP_ROLES or (props.get("event.id") or "") != "")
+
+
 def app_key(props: dict) -> str:
     for k in ("application.id", "pipewire.access.portal.app_id", "application.process.binary", "application.name"):
         v = (props.get(k) or "").strip()
@@ -117,9 +130,9 @@ def parse(text: str, webapp=webapp_of) -> List[Stream]:
     out = []
     for it in items if isinstance(items, list) else []:
         props = it.get("properties") or {}
-        binary = (props.get("application.process.binary") or "").lower()
-        if binary in OWN_PLAYERS or (props.get("media.role") or "").lower() in SKIP_ROLES:
+        if system_sound(props):
             continue
+        binary = (props.get("application.process.binary") or "").lower()
         key = app_key(props)
         if not key:
             continue

@@ -213,3 +213,32 @@ class MixerUiTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SystemSoundsTest(unittest.TestCase):
+    """Vini: changing the volume flashed a row in the mixer for the feedback
+    sound -- system sounds never show there."""
+
+    def streams(self, *props):
+        import json as _json
+        from sonata2.backend import mixer as M
+        return M.parse(_json.dumps([{"index": i, "volume": {}, "mute": False, "properties": p}
+                                    for i, p in enumerate(props)]), webapp=None)
+
+    def test_left_out(self):
+        got = self.streams(
+            {"application.name": "pw-play", "media.name": "audio-volume-change.oga"},   # no binary
+            {"application.name": "Sonata", "media.role": "Event", "application.process.binary": "pw-cat"},
+            {"application.name": "Firefox", "media.role": "event"},
+            {"application.name": "GNOME Settings", "event.id": "bell-window-system"},
+            {"application.name": "Some App", "media.category": "Event"},
+            {"application.name": "Spotify", "application.process.binary": "spotify"})
+        self.assertEqual([s.name for s in got], ["Spotify"])
+
+    def test_player_marks_sonatas_sounds(self):
+        from unittest import mock
+        from sonata2 import sounds
+        with mock.patch("shutil.which", lambda n: "/usr/bin/" + n):
+            cmd = sounds._player("/x.oga")
+        self.assertEqual(cmd[:3], ["pw-play", "--media-role", "Event"])
+        self.assertIn('application.name = "Sonata"', cmd[4])
