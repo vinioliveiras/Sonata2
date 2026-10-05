@@ -45,6 +45,18 @@ class LearnTest(unittest.TestCase):
             svc._changed()
         self.assertEqual(sorted(c.args[0] for c in ta.call_args_list), sorted(M.RECHECK_MS))
 
+    def test_new_stream_handled_at_once(self):
+        """Vini: Spotify opened at 100 for a moment, then went to its level.
+        A new stream skips the 150 ms burst wait, and the first recheck is quick."""
+        svc = M.MixerService.__new__(M.MixerService)
+        svc.listeners, svc._new, svc._src, svc.proc, svc._fresh, svc._learn_src = [], set(), 9, None, {}, 0
+        with mock.patch.object(M.GLib, "timeout_add", return_value=3) as ta, \
+                mock.patch.object(M.GLib, "source_remove") as rm:
+            svc._line("Event 'new' on sink-input #42")
+        rm.assert_called_once_with(9)
+        self.assertEqual(ta.call_args_list[0].args[0], 0)
+        self.assertLessEqual(min(M.RECHECK_MS), 150)
+
 
 if __name__ == "__main__":
     unittest.main()

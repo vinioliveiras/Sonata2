@@ -27,7 +27,7 @@ SKIP_ROLES = {"event", "notification", "a11y"}
 MAX_PERCENT = 100
 # an app that sets its own level right after its stream starts (Spotify:
 # its saved level went back every time -- Vini) gets ours again at these
-RECHECK_MS = (700, 2000, 4000)
+RECHECK_MS = (120, 300, 700, 2000, 4000)   # an app that sets its own level on start (Spotify): put ours back fast
 FRESH_S = 5.0          # ...and only then: afterwards, a level the app sets is the user's (learned)
 LEARN_MS = 1500        # changes made outside Sonata (Spotify's own slider) saved this long after
 
@@ -274,8 +274,11 @@ class MixerService:
             self._fresh[idx] = time.monotonic()
         elif "'change' on sink-input" in text and not self._learn_src:
             self._learn_src = GLib.timeout_add(LEARN_MS, self._learn)
+        if idx is not None and self._src:
+            GLib.source_remove(self._src)                # a new stream: no waiting for the burst to end
+            self._src = 0
         if not self._src:
-            self._src = GLib.timeout_add(150, self._changed)        # a burst: one read
+            self._src = GLib.timeout_add(0 if idx is not None else 150, self._changed)   # a burst: one read
 
     def _changed(self) -> bool:
         """A burst of stream events: restore new streams' levels; tell an
