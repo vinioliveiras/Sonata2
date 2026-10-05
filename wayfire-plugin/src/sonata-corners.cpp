@@ -130,6 +130,7 @@ varying highp vec2 uvpos;
 void main()
 {
     vec4 c = get_pixel(uvpos);
+    float content_a = c.a;        /* the window's own pixel, before anything here */
     vec2 p = vec2(uvpos.x * size.x, (1.0 - uvpos.y) * size.y);
     vec2 lo = rect.xy;
     vec2 hi = rect.xy + rect.zw;
@@ -214,6 +215,9 @@ void main()
         vec2 dd = abs(p - (lo + half_size)) - (half_size - vec2(radius));
         float sd = length(max(dd, 0.0)) + min(max(dd.x, dd.y), 0.0) - radius;
         float ring = clamp(1.0 - abs(sd + 0.5), 0.0, 1.0) * step(sd, 0.5);
+        /* only around something drawn: Steam clears its window (transparent)
+         * for ~2 s before it goes, and the hairline alone stayed (Vini) */
+        ring *= smoothstep(0.0, 0.3, content_a);
         c = outline * ring + c * (1.0 - outline.a * ring);
     }
     gl_FragColor = c;

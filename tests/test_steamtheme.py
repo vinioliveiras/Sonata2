@@ -93,6 +93,8 @@ class SteamThemeTest(unittest.TestCase):
         cpp = (root / "wayfire-plugin" / "src" / "sonata-corners.cpp").read_text()
         self.assertIn("|| own_frame_app(view)", cpp)
         self.assertIn("(m.left <= 0) && (m.top <= 0)", cpp)          # no decoration shadow inset for it
+        # Steam clears a closing window for ~2 s: no hairline around nothing (Vini)
+        self.assertIn("ring *= smoothstep(0.0, 0.3, content_a);", cpp)
 
     def test_wired(self):
         import inspect
