@@ -197,12 +197,25 @@ class Desktop(Gtk.Fixed):
     def cols(self) -> int:
         return max(1, (self._size[0] - self._margins[0] - self._margins[1]) // CELL_W)
 
+    def cell_size(self):
+        """(width, height) of a grid cell: the free area shared out evenly, so
+        the grid reaches both edges (Vini: the left side had a strip no icon
+        could go to) -- never smaller than Big Sur's grid."""
+        w = self._size[0] - self._margins[0] - self._margins[1]
+        h = self._size[1] - TOP - self._margins[2]
+        return max(CELL_W, w / self.cols()), max(CELL_H, h / self.rows())
+
     def cell_xy(self, col, row):
-        return self._size[0] - self._margins[1] - (col + 1) * CELL_W, TOP + row * CELL_H
+        """Where an icon (CELL_W wide) sits: centred in its cell; columns
+        counted from the right (macOS)."""
+        cw, ch = self.cell_size()
+        x = self._size[0] - self._margins[1] - (col + 1) * cw + (cw - CELL_W) / 2
+        return int(round(x)), int(round(TOP + row * ch))
 
     def cell_at(self, x, y):
-        col = int((self._size[0] - self._margins[1] - x) // CELL_W)
-        row = int((y - TOP) // CELL_H)
+        cw, ch = self.cell_size()
+        col = int((self._size[0] - self._margins[1] - x) // cw)
+        row = int((y - TOP) // ch)
         return max(0, min(self.cols() - 1, col)), max(0, min(self.rows() - 1, row))
 
     def _sorted_names(self):

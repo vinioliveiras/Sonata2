@@ -312,7 +312,7 @@ class DesktopGridTest(unittest.TestCase):
         from sonata2.shell import desktop as DK
         ns = types.SimpleNamespace(_size=(w, h), _margins=margins, cfg={"sort": "none", "positions": {}},
                                    screen="DP-1", main=True)
-        for name in ("rows", "cols", "cell_xy", "cell_at", "_display_of", "mine"):
+        for name in ("rows", "cols", "cell_size", "cell_xy", "cell_at", "_display_of", "mine"):
             setattr(ns, name, getattr(DK.Desktop, name).__get__(ns))
         return DK, ns
 
@@ -326,6 +326,19 @@ class DesktopGridTest(unittest.TestCase):
                 x, y = g.cell_xy(c, r)
                 self.assertEqual(g.cell_at(x + 1, y + 1), (c, r))
         self.assertEqual(g.cell_at(-500, 99999), (g.cols() - 1, g.rows() - 1))     # clamped
+
+    def test_grid_is_symmetric(self):
+        """Vini: the left side had a strip no icon could go to. The cells share
+        the free width: the first column's cell starts at the left margin, as
+        the last one ends at the right margin, on any display size."""
+        for w, h in ((1920, 1080), (1366, 768), (2560, 1440), (1280, 800)):
+            _DK, g = self.grid(w, h)
+            cw, _ch = g.cell_size()
+            left = g.cell_xy(g.cols() - 1, 0)[0] - (cw - 96) / 2
+            right = g.cell_xy(0, 0)[0] - (cw - 96) / 2 + cw
+            self.assertAlmostEqual(left, 14, delta=1, msg=(w, h))
+            self.assertAlmostEqual(right, w - 14, delta=1, msg=(w, h))
+            self.assertEqual(g.cell_at(20, 200)[0], g.cols() - 1)          # the left strip is a cell
 
     def test_icons_follow_their_display(self):
         """A spot naming an unplugged display shows on the main desktop only."""
