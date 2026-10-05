@@ -17,7 +17,7 @@
   </defs>
   <rect x="12" y="12" width="232" height="232" rx="54" fill="url(#bg)"/>
   <rect x="12.5" y="12.5" width="231" height="231" rx="53.5" fill="none" stroke="#fff" stroke-opacity=".3"/>
-  <g filter="url(#sh)" transform="translate(128 140) scale(.82) translate(-128 -140)">
+  <g filter="url(#sh)" transform="translate(128 128) scale(.82) translate(-128 -149)">
     <!-- the handle: a glass tube -->
     <path d="M100 98 v-12 a28 28 0 0 1 56 0 v12" fill="none" stroke="url(#edge)" stroke-width="12" stroke-linecap="round"/>
     <path d="M100 98 v-12 a28 28 0 0 1 56 0 v12" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="3"
