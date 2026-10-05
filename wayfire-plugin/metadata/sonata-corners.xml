@@ -15,5 +15,10 @@
 			<_long>Hairline along the rounded frame (Sonata sets it per appearance).</_long>
 			<default>#00000024</default>
 		</option>
+		<option name="own_frame_apps" type="string">
+			<_short>Apps with their own square frame</_short>
+			<_long>Exact app_ids of undecorated apps rounded too (Steam draws its own title bar).</_long>
+			<default>steam</default>
+		</option>
 	</plugin>
 </wayfire>

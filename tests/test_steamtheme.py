@@ -1,6 +1,6 @@
-"""Vini: Steam in Sonata's window look. Adwaita-for-Steam's installer patches
-Steam's interface CSS with Sonata's colours, buttons' side and its own
-traffic-light pictures; Sonata puts it back after Steam updates."""
+"""Vini: Steam keeps its own theme, but in Sonata's window layout: only its
+window buttons become Sonata's round traffic lights, on Sonata's side; an
+earlier full Adwaita skin is taken out; Steam updates are patched again."""
 import os
 import tempfile
 import unittest
@@ -14,55 +14,78 @@ class SteamThemeTest(unittest.TestCase):
         self.home = tempfile.mkdtemp()
         self.root = os.path.join(self.home, ".steam", "steam")
         os.makedirs(os.path.join(self.root, "steamui", "css"))
+        self.original = ".x{color:red}\n" + "/* steam */\n" * 284 + "." * (4000 - 14 - 12 * 284)
         for f in ("library", "gamerecording", "gamenotes"):
             with open(os.path.join(self.root, "steamui", "css", f + ".css"), "w") as fh:
-                fh.write(".x{}\n")
+                fh.write(self.original)
         cfg = tempfile.mkdtemp()
         for p in (mock.patch.dict(os.environ, {"HOME": self.home, "XDG_CACHE_HOME": os.path.join(self.home, "c")}),
                   mock.patch.object(config, "CONFIG_DIR", cfg)):
             p.start()
             self.addCleanup(p.stop)
 
-    def patch(self):
-        os.makedirs(os.path.join(self.root, "steamui", "adwaita"), exist_ok=True)
-        with open(os.path.join(self.root, "steamui", "css", "library.css"), "w") as fh:
-            fh.write(S.PATCH_HEADER + "\n@import url('../adwaita/base.css');\n")
+    def css(self, name):
+        with open(os.path.join(self.root, "steamui", "css", name), encoding="utf-8") as fh:
+            return fh.read()
 
-    def test_css_has_sonatas_look(self):
-        css = S.custom_css()
-        self.assertEqual(css.count("svg+xml"), 12)                   # close/min/max/restore x plain/hover/active
-        self.assertIn("--adw-headerbar-bg: light-dark(", css)
-        opts = S.options("/x.css")
-        self.assertEqual(opts[opts.index("--windowcontrols-layout") + 1], "close,minimize,maximize:")
+    def test_css_is_only_sonatas_window_buttons(self):
+        css = S.window_css()
+        self.assertEqual(css.count("svg+xml"), 8)                    # close/min/max/restore x plain/hover
+        self.assertIn("border-radius: 50%", css)                     # round, not Steam's squares
+        self.assertNotIn("--adw-", css)                              # Steam's own colours stay
+        self.assertIn("left: 7px", css)                              # Sonata's place, on the left
+        self.assertIn("margin-left:", css)                           # Steam's menu moved clear of them
         config.update("appearance", buttons_side="right")
-        opts = S.options("/x.css")
-        self.assertEqual(opts[opts.index("--windowcontrols-layout") + 1], ":maximize,minimize,close")
+        css = S.window_css()
+        self.assertIn("right: 7px", css)
+        self.assertNotIn("margin-left:", css)
 
-    def test_installs_once_and_again_after_a_steam_update(self):
-        runs = []
+    def test_patches_once_and_again_after_a_steam_update(self):
+        self.assertEqual(list(S.targets()), ["default"])
+        self.assertFalse(S.installed(self.root))
+        self.assertTrue(S.ensure())
+        self.assertTrue(S.installed(self.root))
+        lib = self.css("library.css")
+        self.assertTrue(lib.startswith(S.HEADER))
+        self.assertEqual(len(lib), 4000)                             # padded to the original's size
+        self.assertIn('@import url("library.original.css")', lib)
+        self.assertEqual(self.css("library.original.css"), self.original)
+        S.ensure()                                                   # again: nothing changes
+        self.assertEqual(self.css("library.original.css"), self.original)
+        with open(os.path.join(self.root, "steamui", "css", "library.css"), "w") as fh:
+            fh.write(self.original)                                  # Steam updated itself
+        self.assertFalse(S.installed(self.root))
+        S.ensure()
+        self.assertTrue(S.installed(self.root))
+        config.update("appearance", steam_theme=False)               # turned off: left alone by ensure
+        self.assertFalse(S.ensure())
+        S.remove()
+        self.assertEqual(self.css("library.css"), self.original)
+        self.assertFalse(os.path.exists(os.path.join(self.root, "steamui", "css", "library.original.css")))
+        self.assertFalse(os.path.isdir(os.path.join(self.root, "steamui", S.SKIN_DIR)))
 
-        def run(args):
-            runs.append(args)
-            self.patch()
-            return True
-        with mock.patch.object(S, "_run", run):
-            self.assertEqual(list(S.targets()), ["default"])
-            self.assertFalse(S.installed(self.root))
-            self.assertTrue(S.ensure())
-            self.assertTrue(S.installed(self.root))
-            S.ensure()
-            self.assertEqual(len(runs), 1)                           # nothing changed: not again
-            with open(os.path.join(self.root, "steamui", "css", "library.css"), "w") as fh:
-                fh.write(".x{}\n")                                   # Steam updated itself
-            S.ensure()
-            self.assertEqual(len(runs), 2)
-            config.update("appearance", accent="green")              # the accent changed
-            S.ensure()
-            self.assertEqual(len(runs), 3)
-            self.assertIn("#62ba46", runs[-1])
-            config.update("appearance", steam_theme=False)           # turned off: left alone
-            S.ensure()
-            self.assertEqual(len(runs), 3)
+    def test_earlier_adwaita_skin_is_taken_out(self):
+        css = os.path.join(self.root, "steamui", "css")
+        os.makedirs(os.path.join(self.root, "steamui", "adwaita"))
+        for f in ("library", "gamerecording", "gamenotes"):
+            os.replace(os.path.join(css, f + ".css"), os.path.join(css, f + ".original.css"))
+            with open(os.path.join(css, f + ".css"), "w") as fh:
+                fh.write(S.ADWAITA_HEADER + "\n@import url('../adwaita/base.css');\n")
+        S.apply()
+        self.assertFalse(os.path.isdir(os.path.join(self.root, "steamui", "adwaita")))
+        self.assertEqual(self.css("gamerecording.original.css"), self.original)   # Steam's own, not Adwaita's
+        self.assertTrue(S.installed(self.root))
+
+    def test_steam_window_corners_rounded(self):
+        """Steam draws its own square frame: sonata-corners rounds it too
+        (exact app_id: its games, steam_app_<id>, keep theirs)."""
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent
+        self.assertIn("own_frame_apps = steam", (root / "config" / "wayfire.ini").read_text())
+        self.assertIn('name="own_frame_apps"', (root / "wayfire-plugin" / "metadata" / "sonata-corners.xml").read_text())
+        cpp = (root / "wayfire-plugin" / "src" / "sonata-corners.cpp").read_text()
+        self.assertIn("|| own_frame_app(view)", cpp)
+        self.assertIn("(m.left <= 0) && (m.top <= 0)", cpp)          # no decoration shadow inset for it
 
     def test_wired(self):
         import inspect

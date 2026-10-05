@@ -37,6 +37,7 @@
 #include <wayfire/render-manager.hpp>
 #include <wayfire/output-layout.hpp>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <chrono>
 #include <memory>
@@ -276,6 +277,7 @@ struct corners_options_t
     float radius = 10;             /* corner radius drawn */
     glm::vec4 fg_fill{0, 0, 0, 0}, bg_fill{0, 0, 0, 0};   /* stored premultiplied by Sonata */
     glm::vec4 outline{0, 0, 0, 0}; /* premultiplied */
+    std::vector<std::string> own_frame_apps;   /* sonata-corners/own_frame_apps */
 
     void load()
     {
@@ -289,6 +291,25 @@ struct corners_options_t
         fg_fill = option_color("pixdecor/fg_color", false);
         bg_fill = option_color("pixdecor/bg_color", false);
         outline = option_color("sonata-corners/outline", true);
+        own_frame_apps.clear();
+        std::string list = option_str("sonata-corners/own_frame_apps"), word;
+        for (char c : list + " ")
+        {
+            if ((c == ' ') || (c == ','))
+            {
+                if (!word.empty())
+                {
+                    std::transform(word.begin(), word.end(), word.begin(),
+                        [] (unsigned char ch) { return std::tolower(ch); });
+                    own_frame_apps.push_back(word);
+                }
+
+                word.clear();
+            } else
+            {
+                word += c;
+            }
+        }
     }
 };
 
@@ -312,9 +333,10 @@ static const corners_options_t& options()
 static double decoration_shadow(wayfire_toplevel_view view)
 {
     auto& o = options();
-    if (!o.rounded_engine)
+    auto m  = view->toplevel()->current().margins;
+    if (!o.rounded_engine || ((m.left <= 0) && (m.top <= 0)))
     {
-        return 0;
+        return 0;               /* no decoration (an app drawing its own frame: Steam) */
     }
 
     bool tiled = view->pending_tiled_edges() != 0;
@@ -886,7 +908,17 @@ class sonata_corners_t : public wf::plugin_interface_t
     wf::wl_idle_call idle_update;
     wf::wl_timer<false> late_update;
 
-    /* Decorated by the compositor (margins) and not fullscreen. */
+    /* An app that draws its own square frame (Steam: sonata-corners/own_frame_apps,
+     * exact app_ids -- its games, "steam_app_<id>", are not rounded). */
+    static bool own_frame_app(wayfire_toplevel_view view)
+    {
+        auto& apps = options().own_frame_apps;
+        std::string id = view->get_app_id();
+        std::transform(id.begin(), id.end(), id.begin(), [] (unsigned char c) { return std::tolower(c); });
+        return std::find(apps.begin(), apps.end(), id) != apps.end();
+    }
+
+    /* Decorated by the compositor (margins), or an own-frame app; not fullscreen. */
     static bool wanted(wayfire_toplevel_view view)
     {
         if (!view || !view->is_mapped() || (view->role != wf::VIEW_ROLE_TOPLEVEL))
@@ -900,7 +932,7 @@ class sonata_corners_t : public wf::plugin_interface_t
         }
 
         auto m = view->toplevel()->current().margins;
-        return (m.left > 0) || (m.top > 0);
+        return (m.left > 0) || (m.top > 0) || own_frame_app(view);
     }
 
     void update(wayfire_toplevel_view view)

@@ -1,47 +1,48 @@
-"""Steam in Sonata's look (Vini): Steam draws its own title bar and window
-buttons (its UI is a web page), so a window manager can't frame it. Steam
-loads its interface from CSS files in its own folder; Adwaita-for-Steam
-(github.com/tkashkin/Adwaita-for-Steam, MIT) patches them with a clean
-header bar and window controls on either side. Sonata runs that installer
-with Sonata's colours, its window buttons' side and its own traffic-light
-pictures (custom CSS), so Steam's title bar matches every other window.
+"""Steam in Sonata's window layout (Vini: "keep Steam's own theme, but fit
+Sonata's window layout"). Steam draws its own title bar and window buttons
+(its interface is a web page), so the window manager can't frame it. Steam
+loads that interface from CSS files in its own folder: Sonata adds a small
+stylesheet of its own to them -- Steam's colours and layout stay as they are,
+only the window buttons become Sonata's round traffic lights, on Sonata's
+side (Settings > Appearance > Window buttons). The rounded corners are
+Wayfire's (sonata-corners/own_frame_apps).
 
-    steamtheme.apply()            # install / update (a thread: it downloads once)
+    steamtheme.apply()            # add it (cheap; idempotent)
     steamtheme.ensure()           # at login, and when Steam updates itself: again if it was undone
     steamtheme.remove()
 
-Steam updates put its CSS back: Sonata looks again at login and whenever
-Steam's interface folder changes (the menu bar watches it). Steam shows the
-new look the next time it starts. Settings > Appearance > "Sonata look for
-Steam" (on by default) turns it off (and uninstalls)."""
+How Steam's files are patched (the way Adwaita-for-Steam does it, MIT): the
+file Steam loads (library.css...) is renamed X.original.css, and a new X.css
+imports it and then Sonata's stylesheet, padded with spaces to the original's
+size. Steam updates put its files back: Sonata looks again at login and
+whenever Steam's interface folder changes (the menu bar watches it). Steam
+shows it the next time it starts. Settings > Appearance > "Sonata look for
+Steam" (on by default) turns it off (and takes it out).
+
+An earlier Sonata installed the whole Adwaita-for-Steam skin (grey, GNOME
+colours): it is taken out the first time this runs."""
 import base64
-import hashlib
-import io
-import json
 import os
-import subprocess
-import sys
-import tarfile
-import urllib.request
+import shutil
 
 from . import config
 
 KEY = "steam_theme"
-# a known version of the installer (its options and Steam's patched files change with it)
-COMMIT = "1e92107a51f6ed53c59c38646444c9eb3a52b030"            # Adwaita-for-Steam 4.4
-URL = f"https://codeload.github.com/tkashkin/Adwaita-for-Steam/tar.gz/{COMMIT}"
 STEAM_ROOTS = {"default": "~/.steam/steam", "flatpak": "~/.var/app/com.valvesoftware.Steam/.steam/steam"}
-PATCH_HEADER = "/* Adwaita-for-Steam */"
+PATCH_FILES = ("library.css", "gamerecording.css", "gamenotes.css")   # login/dialogs, main windows, notes
+HEADER = "/* Sonata 2 */"
+SKIN_DIR = "sonata"                                  # steamui/sonata/window.css
+ADWAITA_HEADER = "/* Adwaita-for-Steam */"           # the skin an earlier Sonata installed
 TL = ("close", "minimize", "maximize", "restore")
+# Steam's main window: its top bar (with the Steam / View / Friends... menu).
+# Class names from Steam's current interface (as Adwaita-for-Steam 4.4 uses them).
+TOPBAR = "div._3Z7VQ1IMk4E3HsHvrkLNgo"
+MENUBAR = "div._3s0lkohH8wU2do0K1il28Y"
 
 
 def enabled() -> bool:
     from .icons import APPEARANCE_DEFAULTS
     return bool(config.load("appearance", APPEARANCE_DEFAULTS).get(KEY, True))
-
-
-def _cache(*p) -> str:
-    return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "sonata2", *p)
 
 
 def targets() -> dict:
@@ -54,133 +55,127 @@ def targets() -> dict:
     return out
 
 
-def installed(root: str) -> bool:
-    """Steam's interface patched (an update puts the original files back)."""
-    css = os.path.join(root, "steamui", "css")
-    if not os.path.isdir(os.path.join(root, "steamui", "adwaita")):
-        return False
+def _first_line(path: str) -> str:
     try:
-        names = [n for n in os.listdir(css) if n.endswith(".css") and not n.endswith(".original.css")]
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.readline().strip()
     except OSError:
-        return False
-    for n in names:
-        try:
-            with open(os.path.join(css, n), encoding="utf-8", errors="replace") as f:
-                if f.readline().strip().startswith(PATCH_HEADER):
-                    return True
-        except OSError:
-            continue
-    return False
+        return ""
 
 
-# -- Sonata's look, as Adwaita-for-Steam options + custom CSS ---------------------------------
+def installed(root: str) -> bool:
+    """Every Steam interface file Sonata patches is patched (an update puts the originals back)."""
+    css = os.path.join(root, "steamui", "css")
+    files = [n for n in PATCH_FILES if os.path.isfile(os.path.join(css, n))]
+    return (bool(files) and os.path.isfile(os.path.join(root, "steamui", SKIN_DIR, "window.css")) and
+            all(_first_line(os.path.join(css, n)) == HEADER for n in files))
+
+
+# -- Sonata's window buttons, as CSS ------------------------------------------------------------
 def _data_uri(path: str) -> str:
     with open(path, "rb") as f:
         return "url('data:image/svg+xml;base64," + base64.b64encode(f.read()).decode() + "')"
 
 
-def custom_css() -> str:
-    """Sonata's traffic lights (the same pictures as every window's), its
-    title bar colours and the buttons' place."""
+def window_css() -> str:
+    """Steam's window buttons as Sonata's: round traffic lights (the same
+    pictures as every window's), close / minimize / maximize from the
+    window's edge inwards, on the user's side, at Sonata's place. Nothing
+    else in Steam changes."""
     from .icons import ICONS_DIR
     from .ui import tokens
     f = tokens.frame()
+    left = f["buttons_side"] == "left"
+    dot, gap = f["dot"], f["dot_gap"]
+    edge, top = f["dot_left"] - dot // 2, f["dot_top"] - dot // 2
     pics = os.path.join(ICONS_DIR, "Sonata", "apps", "scalable")
-    lines = [":root {",
-             f"  --adw-windowcontrols-button-width: {f['dot']}px !important;",
-             f"  --adw-windowcontrols-button-height: {f['dot']}px !important;",
-             f"  --adw-windowcontrols-button-gap: {f['dot_gap']}px !important;",
-             f"  --adw-windowcontrols-buttons-margin-outer: {f['dot_left'] - f['dot'] // 2}px !important;"]
+    order = {b: i for i, b in enumerate(f["buttons"])}
+    order["restore"] = order["maximize"]
+    if not left:                                     # from the right edge inwards: reversed in the row
+        order = {b: len(f["buttons"]) - 1 - i for b, i in order.items()}
+    sel = "body.DesktopUI .title-bar-actions.window-controls, html.client_chat_frame .title-bar-actions.window-controls"
+    out = [HEADER,
+           f"/* window buttons: {tokens.button_layout(f)} */",
+           f":is({sel}) {{ display: flex !important; flex-direction: row !important; align-items: center !important;"
+           f" gap: {gap}px !important; -webkit-app-region: no-drag !important; }}",
+           f":is({sel}) .title-area-icon {{ width: {dot}px !important; height: {dot}px !important;"
+           f" min-width: {dot}px !important; min-height: {dot}px !important; max-width: {dot}px !important;"
+           f" padding: 0 !important; margin: 0 !important; border: none !important; border-radius: 50% !important;"
+           f" box-shadow: none !important; background: no-repeat center / {dot}px {dot}px transparent !important; }}",
+           f":is({sel}) .title-area-icon > * {{ display: none !important; }}"]
     for name in TL:
         plain = os.path.join(pics, f"sonata-tl-{name}.svg")
         hover = os.path.join(pics, f"sonata-tl-{name}-hover.svg")
-        if os.path.isfile(plain) and os.path.isfile(hover):
-            lines += [f"  --adw-icon-macos-window-{name}: {_data_uri(plain)} !important;",
-                      f"  --adw-icon-macos-window-{name}-hover: {_data_uri(hover)} !important;",
-                      f"  --adw-icon-macos-window-{name}-active: {_data_uri(hover)} !important;"]
-    light, dark = tokens.palette(False), tokens.palette(True)
-    for var, key in (("--adw-headerbar-bg", "titlebar_bg"), ("--adw-headerbar-backdrop", "titlebar_bg_inactive")):
-        lines.append(f"  {var}: light-dark({light[key]}, {dark[key]}) !important;")
-    lines.append("}")
-    return "\n".join(lines) + "\n"
+        if not (os.path.isfile(plain) and os.path.isfile(hover)):
+            continue
+        b = f".title-area-icon.{name}Button"
+        out += [f":is({sel}) {b} {{ order: {order[name]} !important; background-image: {_data_uri(plain)} !important; }}",
+                f":is({sel}):hover {b} {{ background-image: {_data_uri(hover)} !important; }}"]
+    # the main window: the buttons at Sonata's place, Steam's menu moved clear of them
+    width = 3 * dot + 2 * gap
+    side = "left" if left else "right"
+    main = f"body.DesktopUI:has({TOPBAR})"
+    out.append(f"{main} .title-bar-actions.window-controls {{ position: fixed !important; top: {top}px !important;"
+               f" {side}: {edge}px !important; {'right' if left else 'left'}: auto !important; bottom: auto !important;"
+               f" height: {dot}px !important; z-index: 1000 !important; }}")
+    if left:
+        out.append(f"{main} {TOPBAR} {MENUBAR} {{ margin-left: {edge + width + 12}px !important; }}")
+    return "\n".join(out) + "\n"
 
 
-def accent() -> str:
-    from .icons import APPEARANCE_DEFAULTS
-    from .ui import tokens
-    name = config.load("appearance", APPEARANCE_DEFAULTS).get("accent", "blue")
-    return tokens.accent_tokens(name, False).get("accent") or tokens.palette(False)["accent"]
+# -- Steam's files --------------------------------------------------------------------------------
+def _patch_text(name: str) -> str:
+    return (f'{HEADER}\n@import url("{name[:-4]}.original.css");\n'
+            f'@import url("../{SKIN_DIR}/window.css");\n')
 
 
-def options(css_path: str) -> list:
-    from .ui import tokens
-    return ["--color-theme", "adwaita", "--color-scheme", "auto", "--accent-color", accent(),
-            "--windowcontrols-theme", "macos", "--windowcontrols-layout", tokens.button_layout(tokens.frame()),
-            "--font", "system", "--custom-css", css_path]
+def _drop_adwaita(root: str) -> None:
+    """The whole Adwaita-for-Steam skin an earlier Sonata installed: Steam's own files back."""
+    css = os.path.join(root, "steamui", "css")
+    for n in PATCH_FILES:
+        p, orig = os.path.join(css, n), os.path.join(css, n[:-4] + ".original.css")
+        if _first_line(p) == ADWAITA_HEADER and os.path.isfile(orig):
+            os.replace(orig, p)
+    shutil.rmtree(os.path.join(root, "steamui", "adwaita"), ignore_errors=True)
 
 
-# -- the installer ------------------------------------------------------------------------------
-def installer_dir() -> str:
-    """Adwaita-for-Steam at COMMIT, downloaded once into the cache."""
-    d = _cache("adwaita-for-steam", COMMIT)
-    if os.path.isfile(os.path.join(d, "install.py")):
-        return d
-    with urllib.request.urlopen(URL, timeout=60) as r:
-        data = r.read()
-    os.makedirs(d, exist_ok=True)
-    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as t:
-        top = t.getmembers()[0].name.split("/")[0]
-        for m in t.getmembers():
-            if not m.name.startswith(top + "/"):
-                continue
-            m.name = m.name[len(top) + 1:]
-            if m.name:
-                t.extract(m, d, filter="data")
-    return d
-
-
-def _stamp_path() -> str:
-    return _cache("steam-theme.json")
-
-
-def _wanted() -> str:
-    """What the last install was made with: a change installs again."""
-    return hashlib.sha1((COMMIT + custom_css() + " ".join(options(""))).encode()).hexdigest()
-
-
-def _run(args: list) -> bool:
-    d = installer_dir()
-    r = subprocess.run([sys.executable, "install.py"] + args, cwd=d, capture_output=True, text=True, timeout=180,
-                       stdin=subprocess.DEVNULL)
-    if r.returncode:
-        print(f"sonata2: Steam theme: {(r.stderr or r.stdout).strip()[-400:]}", flush=True)
-    return r.returncode == 0
+def _patch_root(root: str, css_text: str) -> bool:
+    css = os.path.join(root, "steamui", "css")
+    _drop_adwaita(root)
+    skin = os.path.join(root, "steamui", SKIN_DIR)
+    os.makedirs(skin, exist_ok=True)
+    path = os.path.join(skin, "window.css")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            same = fh.read() == css_text
+    except OSError:
+        same = False
+    if not same:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(css_text)
+    ok = True
+    for n in PATCH_FILES:
+        p, orig = os.path.join(css, n), os.path.join(css, n[:-4] + ".original.css")
+        if not os.path.isfile(p) or _first_line(p) == HEADER:
+            continue
+        text = _patch_text(n).encode()
+        size = os.path.getsize(p)
+        if len(text) > size:                         # (Steam reads a file of the original's size)
+            ok = False
+            continue
+        os.replace(p, orig)
+        with open(p, "wb") as fh:
+            fh.write(text + b" " * (size - len(text)))
+    return ok
 
 
 def apply(force: bool = False) -> bool:
-    """Install (or update) Sonata's look in every Steam here. Blocking: call in a thread."""
+    """Sonata's window buttons in every Steam here (cheap: only what's missing is written)."""
     found = targets()
     if not found:
         return False
-    wanted = _wanted()
-    try:
-        with open(_stamp_path()) as f:
-            stamp = json.load(f)
-    except (OSError, ValueError):
-        stamp = {}
-    todo = [n for n, root in found.items() if force or stamp.get(n) != wanted or not installed(root)]
-    if not todo:
-        return True
-    os.makedirs(_cache(), exist_ok=True)
-    css = _cache("steam-sonata.css")
-    with open(css, "w", encoding="utf-8") as f:
-        f.write(custom_css())
-    ok = _run(["--target"] + [found[n] for n in todo] + options(css))
-    if ok:
-        stamp.update({n: wanted for n in todo})
-        with open(_stamp_path(), "w") as f:
-            json.dump(stamp, f)
-    return ok
+    text = window_css()
+    return all([_patch_root(root, text) for root in found.values()])
 
 
 def ensure() -> bool:
@@ -189,27 +184,28 @@ def ensure() -> bool:
         return False
     try:
         return apply()
-    except Exception as e:                        # (offline the first time: next login)
+    except Exception as e:
         print(f"sonata2: Steam theme: {e}", flush=True)
         return False
 
 
 def remove() -> bool:
-    found = {n: r for n, r in targets().items() if installed(r)}
-    if not found:
-        return True
-    ok = _run(["--uninstall", "--target"] + list(found.values()))
-    try:
-        os.unlink(_stamp_path())
-    except OSError:
-        pass
-    return ok
+    """Steam's own files back (and an earlier Adwaita skin out)."""
+    for root in targets().values():
+        css = os.path.join(root, "steamui", "css")
+        _drop_adwaita(root)
+        for n in PATCH_FILES:
+            p, orig = os.path.join(css, n), os.path.join(css, n[:-4] + ".original.css")
+            if _first_line(p) == HEADER and os.path.isfile(orig):
+                os.replace(orig, p)
+        shutil.rmtree(os.path.join(root, "steamui", SKIN_DIR), ignore_errors=True)
+    return True
 
 
 class Watch:
     """The menu bar's side: at login, and after Steam rewrites its interface
-    files (an update), the look is put back -- quietly, in a thread. Also
-    when the accent or the window buttons' side change (appearance.json)."""
+    files (an update), the buttons are put back -- quietly, in a thread. Also
+    when the window buttons' side changes (appearance.json)."""
     SETTLE_S = 60
 
     def __init__(self, first_s: int = 20):
