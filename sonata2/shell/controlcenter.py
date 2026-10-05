@@ -30,7 +30,7 @@ CATALOG = {
     "sound": ("Sound", (4, 2)),
     "nowplaying": ("Now Playing", (4, 1)),
     "mixer": ("Volume Mixer", (4, 2)),            # each app's volume; grows a row per app (set_rows)
-    "fpslimit": ("FPS Limit", (4, 1)),            # games' frame rate (fpsmodule.py; Add Controls)
+    "fpslimit": ("FPS Limit", (4, 2)),            # games' frame rate + frame-time graph (fpsmodule.py; Add Controls)
     # performance (statsui.py): not in the default layout, offered by Add Controls
 }
 from ..backend import stats as _stats  # noqa: E402

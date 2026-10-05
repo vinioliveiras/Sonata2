@@ -1273,7 +1273,16 @@ class fps_counter_t
     wf::wl_listener_wrapper on_commit, on_destroy;
     wf::wl_idle_call idle;
     std::deque<int64_t> stamps;
+    std::deque<int64_t> micros;            /* the commits' times in µs, last FRAMETIME_US (the graph) */
     int64_t last_ask = 0, since = 0;
+    static constexpr int64_t FRAMETIME_US = 4000000;
+
+    static int64_t now_us()
+    {
+        timespec t;
+        clock_gettime(CLOCK_MONOTONIC, &t);
+        return (int64_t)t.tv_sec * 1000000 + t.tv_nsec / 1000;
+    }
 
     void unwatch()
     {
@@ -1281,6 +1290,7 @@ class fps_counter_t
         on_destroy.disconnect();
         surface = nullptr;
         stamps.clear();
+        micros.clear();
     }
 
     void trim(int64_t now)
@@ -1318,6 +1328,12 @@ class fps_counter_t
 
             stamps.push_back(now);
             trim(now);
+            int64_t us = now_us();
+            micros.push_back(us);
+            while (!micros.empty() && (us - micros.front() > FRAMETIME_US))
+            {
+                micros.pop_front();
+            }
         });
         on_commit.connect(&s->events.commit);
         on_destroy.set_callback([this] (void*) { unwatch(); });
@@ -1325,7 +1341,9 @@ class fps_counter_t
     }
 
   public:
-    wf::json_t ask()
+    /* data {"frametimes": true}: also each frame's time (ms) of the last
+     * seconds, oldest first (Control Center's frame-time graph) */
+    wf::json_t ask(const wf::json_t& data = wf::json_t())
     {
         int64_t now = wf::get_current_time();
         last_ask = now;
@@ -1338,6 +1356,17 @@ class fps_counter_t
         response["app-id"] = view ? view->get_app_id() : std::string("");
         auto toplevel = wf::toplevel_cast(view);
         response["fullscreen"] = (bool)(toplevel && toplevel->pending_fullscreen());
+        if (data.is_object() && data.has_member("frametimes"))
+        {
+            wf::json_t times = wf::json_t::array();
+            for (size_t i = 1; i < micros.size(); i++)
+            {
+                times.append((double)(micros[i] - micros[i - 1]) / 1000.0);
+            }
+
+            response["frametimes"] = times;
+        }
+
         return response;
     }
 
@@ -1641,9 +1670,9 @@ class sonata_corners_t : public wf::plugin_interface_t
 #endif
     fps_counter_t fps;
     wf::shared_data::ref_ptr_t<wf::ipc::method_repository_t> ipc_repo;
-    wf::ipc::method_callback ipc_fps = [=] (wf::json_t)
+    wf::ipc::method_callback ipc_fps = [=] (wf::json_t data)
     {
-        return fps.ask();
+        return fps.ask(data);
     };
     /* which windows are rounded here, by view id (`sonata2 doctor windows`) */
     wf::ipc::method_callback ipc_rounded = [=] (wf::json_t)

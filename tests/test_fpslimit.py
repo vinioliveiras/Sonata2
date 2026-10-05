@@ -82,9 +82,34 @@ class FpsModuleTest(unittest.TestCase):
             self.assertTrue(m.buttons["60"].has_css_class("on"))
             m.buttons["30"].emit("clicked")
         self.assertEqual(sets, ["30"])
-        # one Control Center row: nothing cut at the bottom (Vini: it needed 59 px of 56)
+        # two Control Center rows, with the graph (Vini: as tall as the others): nothing cut
         from sonata2.shell import controlcenter as CC
-        self.assertLessEqual(m.measure(Gtk.Orientation.VERTICAL, 344)[1], CC.UNIT_H)
+        self.assertEqual(CC.CATALOG["fpslimit"][1], (4, 2))
+        self.assertLessEqual(m.measure(Gtk.Orientation.VERTICAL, 344)[1], CC.span_height(2))
+
+    def test_frame_time_graph(self):
+        """Vini: a frame-time graph under the choices -- each frame's time, the
+        average and the 1 % low; a note when there's nothing to show."""
+        import gi
+        gi.require_version("Gtk", "4.0")
+        from sonata2 import ui
+        ui.setup()
+        from sonata2.shell import fpsmodule
+        avg, low = fpsmodule.summary([16.7] * 99 + [50.0])
+        self.assertAlmostEqual(avg, 16.7 * 0.99 + 0.5, places=2)
+        self.assertEqual(low, 20)                                   # the slowest 1 %: 50 ms
+        with mock.patch.object(F, "installed", lambda: True), mock.patch.object(F, "get", lambda: "60"):
+            m = fpsmodule.module()
+            m.update()
+        self.assertAlmostEqual(m.graph.target, 1000 / 60, places=3)
+        m.show_frames({"fps": 58, "app-id": "steam_app_1", "frametimes": [16.6, 16.8, 33.0, 16.7]})
+        self.assertEqual(m.live.get_label(), "58 fps")
+        self.assertEqual(len(m.graph.times), 4)
+        self.assertGreaterEqual(m.graph.scale(), 33.0)
+        m.show_frames({"fps": 0, "app-id": "", "frametimes": []})
+        self.assertEqual(m.graph.note, "No app drawing in front")
+        m.show_frames({"fps": 60, "app-id": "x"})                  # an older plugin: no frame times
+        self.assertIn("install.sh", m.graph.note)
 
 
 if __name__ == "__main__":
