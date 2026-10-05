@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.6.0-alpha -- 2026-10-05
+
+A much bigger Files, apps that really quit with their last window, web
+apps on Chromium, and glass in more places.
+
+### Files
+- Undo and Redo (Ctrl+Z, Ctrl+Shift+Z): renames, moves, copies, new
+  folders and Move to Trash.
+- Colour tags: dots next to the names, a row of colours in the right-click
+  menu, and Tags in the sidebar.
+- Connect to Server (Ctrl+K): Windows shares, SFTP, WebDAV, FTP and NFS;
+  Network in the sidebar.
+- A path bar, and Go to Folder (Ctrl+Shift+G, Ctrl+L).
+- Rename N Items: replace text, add text, or number them.
+- Search by contents, kind and date.
+- Compress, Copy Path, and Quick Actions for pictures (rotate, convert to
+  PNG / JPEG).
+- RAR and 7-Zip archives expand like a .zip; protected archives ask for
+  their password.
+- Get Info: change the app a file opens with, and its permissions.
+- List view: choose the columns (Date Created, Date Last Opened), and
+  Calculate All Sizes for folders.
+- Folders always come first.
+- Items glide to their new place when others come and go; renaming or
+  tagging never resizes the grid.
+- A dirty Windows disk opens read-only instead of failing.
+- Long names are cut in the right-click menu, the extension kept.
+
+### Apps and windows
+- Apps quit when their last window closes (Settings > Desktop & Windows,
+  on by default) -- the whole app, so Steam doesn't come back.
+- Apps opened from Sonata come to the front.
+- Long window titles keep a margin from the title bar buttons.
+- Closing apps: the Dock no longer re-reads every process many times.
+
+### Web apps
+- Chromium or WebKit, chosen per app; every app keeps its window size.
+- Sending a video works, and can't freeze the computer.
+
+### Memory and security
+- Apps run in their own scopes; background apps give memory back.
+- Privileged protocols for Sonata only, app permissions, firewall.
+- A new user account needs a password.
+
+### Desktop
+- The menu bar is taller, like the newest MacBooks' (Settings > Menu Bar
+  to go back to 24 px).
+- Glass for every alert, Files' Copy window, pop-up lists, Dock folder
+  stacks and hover labels.
+- Screen sharing: a menu bar pill with Stop, and window thumbnails to pick
+  from.
+- Screenshots go to the clipboard and the Screenshots folder at once.
+- Control Center: each card's maker in its graph, the five busiest
+  programs in the CPU and GPU graphs.
+- Volume per app keeps the levels set in the app itself.
+- Menus with a single item no longer have a gap under it.
+- Icons with a tile of their own fill the frame; Bazaar wears the App
+  Store icon; a new Disk Manager icon.
+- Login screen: users wrap into rows that fit the display; the power
+  buttons never take the keyboard.
+- Settings: Dock, Menu Bar, Control Center and Desktop & Windows on pages
+  of their own.
+
 ## 0.5.4-alpha -- 2026-10-04
 
 Temperatures in the menu bar and Control Center, and no frozen cursor on
