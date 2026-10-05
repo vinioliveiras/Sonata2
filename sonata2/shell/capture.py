@@ -55,12 +55,12 @@ window.sonata-rec, window.sonata-rec > contents { background: none; box-shadow: 
 @keyframes rec-blink { 50%% { opacity: 0.3; } }
 .rec-pill image.share-icon { -gtk-icon-size: 13px; color: %(label)s; }
 .rec-pill image.rec-sound { -gtk-icon-size: 12px; opacity: 0.7; }
-.rec-pill button { min-width: 18px; min-height: 18px; padding: 0; margin: 1px 0; border-radius: 99px;
+.rec-pill button { min-width: 14px; min-height: 14px; padding: 0; margin: 3px 0; border-radius: 99px;
   border: none; box-shadow: none; background: %(sys_red)s; color: white;
   transition: opacity 120ms ease-out, transform 120ms ease-out; }
 .rec-pill button:hover { opacity: 0.85; }
 .rec-pill button:active { transform: scale(0.92); }
-.rec-pill button .stop-glyph { min-width: 7px; min-height: 7px; border-radius: 1.5px; background: white; }
+.rec-pill button .stop-glyph { min-width: 5px; min-height: 5px; border-radius: 1px; background: white; }
 .shot-thumb { border-radius: 6px; box-shadow: 0 0 0 0.5px rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.35); }
 """, key="capture")
 
