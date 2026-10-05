@@ -15,7 +15,7 @@ popover.hover-label { background: none; box-shadow: none; padding: 0; }
 popover.hover-label > contents {
   padding: 3px 10px; border-radius: %(r_label)s; min-height: 0;
   font-family: %(font)s; font-size: %(text_body)s; font-weight: 400;
-  color: %(label)s; background-color: %(menu_bg)s;
+  color: %(label)s; background-color: %(panel_material)s;     /* glass, like menus (Vini) */
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_label)s;
 }
 """)
