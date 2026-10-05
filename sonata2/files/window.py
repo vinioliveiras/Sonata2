@@ -27,10 +27,11 @@ from .folder import APPS, RECENTS, VIRTUAL, file_of, is_dir  # noqa: E402
 from .views import SORT_BY, ColumnsView, IconsView, ListView  # noqa: E402
 from .sidebar import Sidebar  # noqa: E402
 from .tabs import TabStrip  # noqa: E402
+from .pathbar import PathBar  # noqa: E402
 
 VIEWS = (("icons", "view-grid-symbolic", "as Icons"), ("list", "view-list-symbolic", "as List"),
          ("columns", "view-dual-symbolic", "as Columns"))
-DEFAULTS = {"view": "icons", "list_columns": {}}   # list_columns: views.py
+DEFAULTS = {"view": "icons", "list_columns": {}, "path_bar": True}   # list_columns: views.py
 
 ui.register("""
 window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
@@ -180,6 +181,10 @@ class FilesWindow(Adw.ApplicationWindow):
         content.append(self._scope_bar())
         self.tab_stack = Gtk.Stack(vexpand=True, transition_type=Gtk.StackTransitionType.NONE)
         content.append(self.tab_stack)
+        # where you are, at the bottom (Finder's path bar; on by default, like Windows' address bar)
+        self.pathbar = PathBar(self.go, lambda files, dest, copy: self.drop(files, dest, copy))
+        self.pathbar.set_visible(config.load("files", DEFAULTS)["path_bar"])
+        content.append(self.pathbar)
         split.append(content)
         self.set_content(split)
         self._shortcuts()
@@ -405,6 +410,7 @@ class FilesWindow(Adw.ApplicationWindow):
         if tab is self.tab:
             self.title.set_label(tab.name)
             self.set_title(tab.name)
+            self.pathbar.set_uri(uri)
 
     def _match(self, info) -> bool:
         if getattr(self, "_in_results", False):
@@ -474,6 +480,7 @@ class FilesWindow(Adw.ApplicationWindow):
         self.title.set_label(name)
         self.set_title(name)
         self.sidebar.select(uri)
+        self.pathbar.set_uri(uri)
         self._update_empty()
 
     def _tab_failed(self, tab, uri, err):
@@ -545,6 +552,7 @@ class FilesWindow(Adw.ApplicationWindow):
         if tab.uri:
             self.empty_btn.set_visible(ops.is_trash(tab.uri))
             self.sidebar.select(tab.uri)
+            self.pathbar.set_uri(tab.uri)
         self.title.set_label(tab.title())
         self.set_title(tab.title())
         self._update_empty()
@@ -735,7 +743,9 @@ class FilesWindow(Adw.ApplicationWindow):
                               enabled=here and ops.clipboard_has_files(self))],
                         [Item("View", submenu=[[Item(label, lambda v=vid: self.set_view(v),
                                                      checked=self.view is self.views[vid])
-                                                for vid, _i, label in VIEWS]])]]
+                                                for vid, _i, label in VIEWS],
+                                               [Item("Hide Path Bar" if self.pathbar.get_visible() else "Show Path Bar",
+                                                     self.toggle_path_bar)]])]]
             if self.view is not self.views["columns"]:
                 cur = self.view.sort_state()[0]
                 sections[-1].append(Item("Sort By", submenu=[[Item(t, lambda t=t: self.sort_by(t),
@@ -984,6 +994,28 @@ class FilesWindow(Adw.ApplicationWindow):
     def _zoom(self):
         self.unmaximize() if self.is_maximized() else self.maximize()
 
+    def toggle_path_bar(self):
+        on = not self.pathbar.get_visible()
+        self.pathbar.set_visible(on)
+        config.update("files", path_bar=on)
+
+    def go_to_folder(self):
+        """Finder's Go to Folder (Ctrl+Shift+G, Ctrl+L): a path typed, gone to."""
+        from .pathbar import resolve
+        here = self.location() if self.pos >= 0 else None
+        start = (Gio.File.new_for_uri(here).get_path() or "") if here and here not in VIRTUAL else ""
+
+        def go(text):
+            found = resolve(text, here)
+            if found is None:
+                self._error("The folder can’t be found.", None, f"“{text}” doesn’t exist.")
+                return
+            uri, name = found
+            self.go(uri)
+            if name:
+                self._select_when_listed(name)
+        ui.dialog.ask_text("Go to Folder", start, "Go", go, parent=self)
+
     def toggle_hidden(self):
         self.show_hidden = not self.show_hidden
         for t in self.tabs:
@@ -1032,6 +1064,8 @@ class FilesWindow(Adw.ApplicationWindow):
             ("<Control>d", self.duplicate_selection),
             ("<Control>i", self.get_info),
             ("<Control>y", self.toggle_quicklook),
+            ("<Control><Shift>g|<Control>l", self.go_to_folder),
+            ("<Control><Alt>p", self.toggle_path_bar),                  # Finder: ⌥⌘P
             ("<Control>z", self.undo),
             ("<Control><Shift>z", self.redo),
         ]
