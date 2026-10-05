@@ -12,9 +12,9 @@ from sonata2.shell import menubar_size as M
 class TallMenuBarTest(unittest.TestCase):
     def test_height_from_the_setting(self):
         with mock.patch.object(config, "CONFIG_DIR", tempfile.mkdtemp()):
+            self.assertEqual(M.height(), 32)                     # taller by default (Vini)
+            config.update("topbar", tall=False)
             self.assertEqual(M.height(), 24)
-            config.update("topbar", tall=True)
-            self.assertEqual(M.height(), 32)
 
     def test_everything_under_it_follows(self):
         from sonata2.shell import desktop, notifications, topbar

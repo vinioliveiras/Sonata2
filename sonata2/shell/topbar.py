@@ -27,7 +27,7 @@ from ..backend import power, system  # noqa: E402
 from . import layer  # noqa: E402
 
 from . import menubar_size  # noqa: E402
-BAR_H = menubar_size.height()           # 24 px, or 32 like a notch MacBook's (Settings > Menu Bar)
+BAR_H = menubar_size.height()           # 32 px like a notch MacBook's (the default), or 24 (Settings > Menu Bar)
 # the menu bar's panels (Control Center, Wi-Fi, clock...) open this far below it
 PANEL_GAP = 2
 # fixed content widths of the menu bar's panels: a long network, device or
@@ -49,7 +49,7 @@ DEFAULTS = {"battery_percent": False, "clock_format": "%a %-d %b  %H:%M", "show_
             "cpu_style": "text", "gpu_style": "text", "ram_style": "text", "net_style": "text",
             "fps_style": "text",
             "autohide": False,                  # Settings > Menu Bar: hide it like the Dock (Vini)
-            "tall": False}                      # the taller menu bar of new MacBooks (menubar_size.py)
+            "tall": True}                       # the taller menu bar of new MacBooks (menubar_size.py; on by default, Vini)
 # a key per graphics card when there are two or more (stats.KINDS: gpu_amd, gpu_nvidia...)
 from ..backend import stats as _stats  # noqa: E402
 for _k in _stats.KINDS:
