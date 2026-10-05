@@ -400,7 +400,115 @@ def write_all(command: str = None) -> None:
         write_desktop(app, command)
 
 
+SCOPED_ENV = "SONATA_WEBAPP_SCOPED"
+# A web app (with its WebKit processes) runs in a systemd scope whose memory
+# cap follows what the computer has free: the cap is what it uses plus what
+# is free, less RESERVE_MB for the rest of the system, never under FLOOR_MB.
+# A site that runs away (WhatsApp decoding a video: 50 GB) is killed alone
+# instead of freezing the computer; with memory to spare it is never in the way.
+RESERVE_MB = 1536
+FLOOR_MB = 1024
+GUARD_S = 2
+STEP_MB = 128              # smaller moves are not written (no cgroup write every tick)
+
+
+def _meminfo(path="/proc/meminfo") -> dict:
+    out = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                k, _, v = line.partition(":")
+                if k in ("MemTotal", "MemAvailable"):
+                    out[k] = int(v.split()[0]) // 1024             # MB
+    except (OSError, ValueError, IndexError):
+        pass
+    return out
+
+
+def memory_cap(used_mb: int, available_mb: int) -> int:
+    """The web app's cap in MB: its use plus what is free, less the reserve."""
+    return max(FLOOR_MB, used_mb + available_mb - RESERVE_MB)
+
+
+def _own_cgroup(proc_self="/proc/self/cgroup") -> str:
+    try:
+        with open(proc_self) as f:
+            for line in f:
+                if line.startswith("0::"):
+                    return "/sys/fs/cgroup" + line[3:].strip()
+    except OSError:
+        pass
+    return ""
+
+
+class MemoryGuard:
+    """Moves the scope's memory.max with the free memory (every GUARD_S)."""
+
+    def __init__(self, cgroup: str = None):
+        self.cgroup = cgroup if cgroup is not None else _own_cgroup()
+        self.last = None
+
+    def ok(self) -> bool:
+        return self.cgroup.endswith(".scope") and os.access(os.path.join(self.cgroup, "memory.max"), os.W_OK)
+
+    def tick(self) -> bool:
+        info = _meminfo()
+        try:
+            with open(os.path.join(self.cgroup, "memory.current")) as f:
+                used = int(f.read()) // (1024 * 1024)
+        except (OSError, ValueError):
+            return False
+        if "MemAvailable" not in info:
+            return True
+        cap = memory_cap(used, info["MemAvailable"])
+        if self.last is None or abs(cap - self.last) >= STEP_MB:
+            try:
+                with open(os.path.join(self.cgroup, "memory.max"), "w") as f:
+                    f.write(str(cap * 1024 * 1024))
+                self.last = cap
+            except OSError:
+                return False
+        return True
+
+    def start(self) -> bool:
+        if not self.ok() or not self.tick():
+            return False
+        from gi.repository import GLib
+        GLib.timeout_add_seconds(GUARD_S, self.tick)
+        return True
+
+
+# WebKit's video through the GPU's decoders failed ("Media failed to decode":
+# WhatsApp could not read a screen recording to send it); web apps decode
+# video on the CPU. GStreamer's ranks: 0 = never picked.
+HW_VIDEO_DECODERS = ("nvh264dec", "nvh265dec", "nvav1dec", "nvvp9dec", "nvvp8dec", "nvmpeg2videodec",
+                     "vulkanh264dec", "vulkanh265dec", "vulkanav1dec",
+                     "vah264dec", "vah265dec", "vaav1dec", "vavp9dec", "vavp8dec", "vampeg2dec")
+
+
+def gst_ranks(existing: str = "") -> str:
+    """GST_PLUGIN_FEATURE_RANK with the GPU decoders off (what was set stays)."""
+    have = {part.split(":", 1)[0] for part in (existing or "").split(",") if part}
+    extra = [f"{d}:0" for d in HW_VIDEO_DECODERS if d not in have]
+    return ",".join([p for p in (existing or "").split(",") if p] + extra)
+
+
+def scoped_command(argv, exe=None) -> list:
+    """The command that runs this web app in a systemd scope of its own."""
+    return ["systemd-run", "--user", "--scope", "--quiet", "--collect", "-p", "MemorySwapMax=0",
+            exe or sys.executable, "-m", "sonata2", "webapp"] + list(argv)
+
+
 def main(argv) -> int:
+    os.environ["GST_PLUGIN_FEATURE_RANK"] = gst_ranks(os.environ.get("GST_PLUGIN_FEATURE_RANK", ""))
+    if argv and argv[0] not in ("new", "edit") and not os.environ.get(SCOPED_ENV) and shutil.which("systemd-run"):
+        os.environ[SCOPED_ENV] = "1"
+        try:
+            os.execvp("systemd-run", scoped_command(argv))
+        except OSError:
+            pass                                  # no user systemd: run as is
+    if os.environ.get(SCOPED_ENV):
+        MemoryGuard().start()
     from . import window
     return window.main(argv)
 

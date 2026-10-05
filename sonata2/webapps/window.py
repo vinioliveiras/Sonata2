@@ -23,6 +23,53 @@ from .. import ui, webapps as W  # noqa: E402
 NEW_APP_ID = "io.github.vinioliveiras.sonata2.webapps"
 SIZE = (1200, 820)
 QUIT_DELAY_MS = 2500           # after its window closes: WebKit writes what the site saved
+# WebKitGTK decodes a video given to an <img> (or createImageBitmap) frame by
+# frame into memory: WhatsApp checks a 44 s mp4 that way -> 50 GB, killed.
+# Chrome refuses a video there; so do web apps, and sites go on to <video>.
+NO_VIDEO_IMAGES_JS = r"""(() => {
+  const videos = new Set();
+  const make = URL.createObjectURL;
+  URL.createObjectURL = function (obj) {
+    const url = make.apply(this, arguments);
+    if (obj && typeof obj.type === "string" && obj.type.startsWith("video/")) videos.add(url);
+    return url;
+  };
+  const drop = URL.revokeObjectURL;
+  URL.revokeObjectURL = function (url) { videos.delete(url); return drop.apply(this, arguments); };
+  const BAD = "data:,";
+  const desc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+  Object.defineProperty(HTMLImageElement.prototype, "src", {
+    configurable: true, enumerable: desc.enumerable, get: desc.get,
+    set(v) { desc.set.call(this, videos.has(String(v)) ? BAD : v); },
+  });
+  const setAttr = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function (name, v) {
+    if (this instanceof HTMLImageElement && String(name).toLowerCase() === "src" && videos.has(String(v))) v = BAD;
+    return setAttr.call(this, name, v);
+  };
+  const bitmap = window.createImageBitmap;
+  if (bitmap) window.createImageBitmap = function (src) {
+    if (src instanceof Blob && src.type.startsWith("video/"))
+      return Promise.reject(new DOMException("The source image could not be decoded.", "InvalidStateError"));
+    return bitmap.apply(this, arguments);
+  };
+})();"""
+
+
+def content_manager(WebKit):
+    """The scripts every page of a web app gets (NO_VIDEO_IMAGES_JS)."""
+    ucm = WebKit.UserContentManager()
+    ucm.add_script(WebKit.UserScript.new(NO_VIDEO_IMAGES_JS, WebKit.UserContentInjectedFrames.ALL_FRAMES,
+                                         WebKit.UserScriptInjectionTime.START, None, None))
+    extra = os.environ.get(DEBUG_JS_ENV)           # a site's problem looked into: a script of one's own
+    if extra and os.path.isfile(extra):
+        with open(extra, encoding="utf-8") as f:
+            ucm.add_script(WebKit.UserScript.new(f.read(), WebKit.UserContentInjectedFrames.ALL_FRAMES,
+                                                 WebKit.UserScriptInjectionTime.START, None, None))
+    return ucm
+
+
+DEBUG_JS_ENV = "SONATA_WEBAPP_JS"        # set: that script on every page, the console printed out
 
 ui.register("""
 .wa-form { margin-top: 6px; }
@@ -154,9 +201,11 @@ class WebAppWindow(Gtk.ApplicationWindow):
                                                             WebKit.CookiePersistentStorage.SQLITE)
         session.get_website_data_manager().set_favicons_enabled(True)
         session.connect("download-started", self._download)
-        self.view = WebKit.WebView(network_session=session, vexpand=True, hexpand=True)
+        self.view = WebKit.WebView(network_session=session, user_content_manager=content_manager(WebKit),
+                                   vexpand=True, hexpand=True)
         s = self.view.get_settings()
         s.set_enable_developer_extras(False)
+        s.set_enable_write_console_messages_to_stdout(bool(os.environ.get(DEBUG_JS_ENV)))
         s.set_javascript_can_open_windows_automatically(False)
         s.set_enable_back_forward_navigation_gestures(True)
         self.view.connect("decide-policy", self._policy)
