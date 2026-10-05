@@ -112,12 +112,38 @@ class IdleLock:
     def __init__(self):
         from gi.repository import GLib
         self.proc, self.cmd = None, None
+        self.policy = self._policy()            # input idle: only media keeps it awake (idlepolicy.py)
         self._mon = config.watch("security", self.apply)
         if not is_locked():                     # a lock screen that crashed: the display's timeout back
             from . import lockdisplay
             lockdisplay.unlocked()
         self.apply()
         GLib.timeout_add_seconds(60, lambda: (self.apply(), True)[1])   # dpms timeout changed in Settings
+
+    def _policy(self):
+        """Sonata's own idle handling when the compositor tells input idle
+        apart from apps keeping the session awake (else None: swayidle)."""
+        try:
+            from ..wl.idlewatch import IdleWatch
+            w = IdleWatch()
+        except Exception:
+            return None
+        if not (w.ok and w.input_idle):
+            w.close()
+            return None
+        from . import idlepolicy, lockdisplay
+
+        def dark(on):
+            lockdisplay.lights(not on)              # the keyboard's light (and RGB) with the displays
+            w.displays(not on)
+
+        def lock():
+            try:
+                subprocess.Popen(["sh", "-c", LOCK], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, start_new_session=True)
+            except OSError:
+                pass
+        return idlepolicy.IdlePolicy(w, dark, lock)
 
     def apply(self, *_a) -> None:
         from . import lockdisplay
@@ -126,8 +152,13 @@ class IdleLock:
                        wfconfig.wayfire_get("idle", "dpms_timeout", "600") or 600)
         except ValueError:
             dpms = 600
-        cmd = (command(config.load("security", DEFAULTS), dpms, keyboard_light(), rgb_lights())
-               if shutil.which("swayidle") else [])
+        cfg = config.load("security", DEFAULTS)
+        if self.policy is not None:             # timeouts here; swayidle only locks before sleep
+            self.policy.apply(dpms, int(cfg.get("lock_after", -1)))
+            cmd = (["swayidle", "-w", "before-sleep", LOCK]
+                   if cfg.get("lock_before_sleep") and shutil.which("swayidle") else [])
+        else:
+            cmd = command(cfg, dpms, keyboard_light(), rgb_lights()) if shutil.which("swayidle") else []
         if cmd == self.cmd and (not cmd or (self.proc and self.proc.poll() is None)):
             return
         self.stop()

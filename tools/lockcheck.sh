@@ -19,6 +19,13 @@ try:
 except Exception as e:
     print("ipc:", e)
 PY
+echo "== Sonata's own idle watch (input idle, ignoring apps)"
+python3 -c "
+from sonata2.wl.idlewatch import IdleWatch
+w = IdleWatch()
+print('connected', w.ok, '| input idle (v2):', w.input_idle, '| display power:', w.can_power())
+print('-> Sonata handles idle itself' if w.ok and w.input_idle else '-> falls back to swayidle (apps can keep it awake)')
+"
 echo "== logind inhibitors"; systemd-inhibit --list --no-pager 2>&1 | head -20
 echo "== lock log"; journalctl --user --since "-12h" --no-pager 2>/dev/null | grep -i -E "swayidle|sonata2-lock|lock-wait" | tail -20
 } > "$out" 2>&1
