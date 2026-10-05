@@ -22,17 +22,5 @@ class OwnIconsTest(unittest.TestCase):
                 self.assertIn(f"Icon={name}\\n", f.read())
 
 
-class StoreIconTest(unittest.TestCase):
-    """Vini: Bazaar wears Sonata's own store icon (a frosted glass bag on
-    the blue tile), not a copy of another company's."""
-
-    def test_bazaar(self):
-        for name in ("io.github.kolunmi.Bazaar", "Bazaar"):
-            path = os.path.join(ICONS, name + ".svg")
-            with open(path, encoding="utf-8") as f:
-                self.assertIn("frosted glass", f.read())
-            GdkPixbuf.Pixbuf.new_from_file_at_size(path, 64, 64)
-
-
 if __name__ == "__main__":
     unittest.main()

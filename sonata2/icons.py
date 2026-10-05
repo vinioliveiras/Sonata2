@@ -282,7 +282,7 @@ def generated(gicon, shape: str = "squircle", reshape: bool = False, scale=None)
     return Gio.FileIcon.new(Gio.File.new_for_path(png))
 
 
-PLATE_VERSION = 8       # bump when the plate's look changes: every icon is made again (4: own tiles)
+PLATE_VERSION = 9       # bump when the plate's look changes: every icon is made again (4: own tiles)
 
 
 def picture_icon(path: str, shape: str = "squircle", artwork: bool = False, scale=None):
