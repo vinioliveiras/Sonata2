@@ -65,7 +65,7 @@ def siblings(path: str) -> list:
 
 
 class PreviewWindow(Gtk.ApplicationWindow):
-    def __init__(self, app, path: str, paths=None):
+    def __init__(self, app, path: str, paths=None, markup: bool = False):
         """paths: the pictures opened together (their thumbnails show);
         None: the folder's pictures, sidebar hidden."""
         if not GLib.get_application_name():
@@ -95,11 +95,13 @@ class PreviewWindow(Gtk.ApplicationWindow):
             ("zoom-out-symbolic", "Zoom Out", lambda: self.step_zoom(-1)),
             ("zoom-in-symbolic", "Zoom In", lambda: self.step_zoom(1)),
             ("object-rotate-left-symbolic", "Rotate Left", lambda: self.rotate(-90)),
+            ("sonata-markup-symbolic", "Markup", self.markup_button),
             ("sonata-crop-symbolic", "Crop", self.crop_button),
             ("sonata-adjust-symbolic", "Adjust Color", self.adjust_panel)))
         tools = self.toolbar.get_child().get_end_widget()
         self.adjust_btn = tools.get_last_child()
         self.crop_btn = self.adjust_btn.get_prev_sibling()
+        self.markup_btn = self.crop_btn.get_prev_sibling()
         self.info_btn = tools.get_first_child()
         self.sidebar_btn = self.toolbar.get_child().get_start_widget().get_first_child()
         self.canvas = Canvas()
@@ -108,6 +110,11 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self.crop_area = Gtk.DrawingArea(visible=False, can_target=True)
         self.crop_area.set_draw_func(self._draw_crop)
         self.overlay.add_overlay(self.crop_area)
+        # Markup: marks drawn over the picture, its own toolbar under the main one
+        self.markup = None                # markup.MarkupLayer while Markup is on
+        self._markup_on_open = markup     # a screenshot's thumbnail: straight into Markup
+        self.markup_rev = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
+                                       transition_duration=tokens.ms(200), reveal_child=False)
         # thumbnails | picture | info
         dur = tokens.ms(250)
         self.thumbs = Thumbnails(self._pick)
@@ -122,6 +129,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         body.append(self.info_rev)
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col.append(self.toolbar)
+        col.append(self.markup_rev)
         col.append(body)
         self.set_child(col)
         self._input()
@@ -204,6 +212,9 @@ class PreviewWindow(Gtk.ApplicationWindow):
             return
         self.size_text = f"{tex.get_width()} × {tex.get_height()}"
         self.canvas.set_texture(tex, fade=fade)
+        if self._markup_on_open:
+            self._markup_on_open = False
+            GLib.idle_add(lambda: (self.markup is None and self.markup_button(), False)[1])
         Gtk.RecentManager.get_default().add_item(Gio.File.new_for_path(path).get_uri())
         if not self.get_realized():               # the window takes the picture's shape
             w, h = tex.get_width(), tex.get_height()
@@ -356,6 +367,35 @@ class PreviewWindow(Gtk.ApplicationWindow):
         if not self._saving and self.edits is not None:
             self.edits.revert()
             self._show_edits()
+
+    # markup: draw on the picture (markup.py); Done bakes the marks in as one edit
+    def markup_button(self) -> None:
+        if self.markup is not None:
+            self.end_markup(keep=True)
+            return
+        if self._editor() is None:
+            return
+        if self.crop_area.get_visible():
+            self._end_crop()
+        from .markup import MarkupBar, MarkupLayer
+        self.set_zoom(None)                         # the whole picture
+        self.markup = MarkupLayer(self._picture_rect, lambda: self.texture)
+        self.overlay.add_overlay(self.markup)
+        self.markup_rev.set_child(MarkupBar(self.markup, lambda: self.end_markup(keep=True),
+                                            lambda: self.end_markup(keep=False)))
+        self.markup_rev.set_reveal_child(True)
+        self.markup_btn.add_css_class("on")
+        self.markup.grab_focus()
+
+    def end_markup(self, keep: bool) -> None:
+        layer, self.markup = self.markup, None
+        if layer is None:
+            return
+        self.overlay.remove_overlay(layer)
+        self.markup_rev.set_reveal_child(False)
+        self.markup_btn.remove_css_class("on")
+        if keep and layer.items:
+            self.edit(("markup", layer.items))
 
     # crop: drag a selection over the picture, then Crop (or Return)
     def crop_button(self) -> None:
@@ -825,6 +865,23 @@ class PreviewWindow(Gtk.ApplicationWindow):
         shift = state & Gdk.ModifierType.SHIFT_MASK
         alt = state & Gdk.ModifierType.ALT_MASK
         k = Gdk.keyval_to_lower(keyval)
+        if self.markup is not None:                      # Markup: its own keys, no navigation
+            lay = self.markup
+            if cmd and k == Gdk.KEY_z:
+                act = lay.redo if shift else lay.undo
+            elif cmd and k == Gdk.KEY_y:
+                act = lay.redo
+            elif keyval in (Gdk.KEY_Delete, Gdk.KEY_BackSpace):
+                act = lay.delete_selected
+            elif keyval == Gdk.KEY_Escape:
+                act = (lambda: (setattr(lay, "sel", None), lay.queue_draw())) if lay.sel is not None \
+                    else (lambda: self.end_markup(keep=True))
+            elif keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter) and lay.sel is None:
+                act = lambda: self.end_markup(keep=True)   # noqa: E731
+            else:
+                return False
+            act()
+            return True
         if self._slides is not None and not cmd:         # slideshow keys
             act = {Gdk.KEY_Left: lambda: (self.go(-1, fade=True), self._arm_slides()),
                    Gdk.KEY_Up: lambda: (self.go(-1, fade=True), self._arm_slides()),
@@ -869,6 +926,17 @@ class PreviewWindow(Gtk.ApplicationWindow):
         full = not self.is_fullscreen()
         self.fullscreen() if full else self.unfullscreen()
         self.toolbar.set_visible(not full)
+
+
+def open_markup(app, path: str) -> None:
+    """A screenshot's thumbnail clicked: the picture in Markup (Vini: draw on a print)."""
+    same = next((w for w in app.get_windows() if isinstance(w, PreviewWindow) and w.path == path), None)
+    if same is not None:
+        same.present()
+        if same.markup is None:
+            same.markup_button()
+        return
+    PreviewWindow(app, path, markup=True).present()
 
 
 def open_paths(app, paths) -> None:

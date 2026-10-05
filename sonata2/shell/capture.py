@@ -402,9 +402,15 @@ class Thumbnail(Gtk.Window):
         return False
 
     def _open(self):
+        """A screenshot: Preview in Markup, to draw on it (Vini); a movie: its player."""
         if self.path:
             try:
-                Gio.AppInfo.launch_default_for_uri(Gio.File.new_for_path(self.path).get_uri(), None)
+                if self.path.lower().endswith(".png") and os.path.isfile(self.path):
+                    from ..__main__ import self_argv
+                    GLib.spawn_async(self_argv() + ["preview", "--markup", self.path],
+                                     flags=GLib.SpawnFlags.SEARCH_PATH)
+                else:
+                    Gio.AppInfo.launch_default_for_uri(Gio.File.new_for_path(self.path).get_uri(), None)
             except GLib.Error:
                 pass
         self._hide()

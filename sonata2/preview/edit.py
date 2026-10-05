@@ -34,7 +34,8 @@ class Edits:
         self.exif, self.icc = exif, icc          # kept on save (camera data, colour profile)
         self.proxy = image.copy()
         self.proxy.thumbnail((PROXY, PROXY))
-        # [("rotate", 90) | ("flip", "h"|"v") | ("crop", (x0, y0, x1, y1)) | ("resize", (fx, fy))]
+        # [("rotate", 90) | ("flip", "h"|"v") | ("crop", (x0, y0, x1, y1)) | ("resize", (fx, fy))
+        #  | ("markup", [marks])]
         self.ops = []
         self.adjust = {k: 0.0 for k, _t in ADJUSTMENTS}
 
@@ -121,6 +122,9 @@ class Edits:
                 box = (round(x0 * w), round(y0 * h), max(round(x0 * w) + 1, round(x1 * w)),
                        max(round(y0 * h) + 1, round(y1 * h)))
                 im = im.crop(box)
+            elif kind == "markup":               # drawn marks (markup.py), at this size
+                from .markup import apply as draw_marks
+                im = draw_marks(im, arg)
             elif kind == "resize":
                 w, h = im.size
                 im = im.resize((max(1, round(w * arg[0])), max(1, round(h * arg[1]))), Image.Resampling.LANCZOS)

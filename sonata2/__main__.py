@@ -1194,6 +1194,7 @@ def main() -> int:
     p.add_argument("--page", default="", help="settings: section to open (wifi, dock, ...)")
     p.add_argument("path", nargs="*", help="files: folders to open")
     p.add_argument("--new-window", action="store_true", help="terminal, textedit: open another window")
+    p.add_argument("--markup", action="store_true", help="preview: open the picture in Markup (draw on it)")
     p.add_argument("--exec", help="terminal: run this shell command in a new window (it stays open)")
     args = p.parse_intermixed_args()
     from . import trace
@@ -1354,6 +1355,24 @@ def main() -> int:
                     app.activate_action("new-window", None)
                     return 0
                 app.connect("activate", new_window)
+                return app.run([sys.argv[0]])
+        if args.component == "preview":
+            # Markup (a screenshot's thumbnail): in the running Preview, or a new one
+            def markup(_a, param):
+                te_start()
+                from .preview.window import open_markup
+                open_markup(app, param.get_string())
+            from gi.repository import GLib as _GLib
+            act = Gio.SimpleAction.new("markup", _GLib.VariantType.new("s"))
+            act.connect("activate", markup)
+            app.add_action(act)
+            if args.markup and args.path:
+                path = os.path.abspath(args.path[0])
+                app.register(None)
+                if app.get_is_remote():
+                    app.activate_action("markup", _GLib.Variant("s", path))
+                    return 0
+                app.connect("activate", lambda a: markup(a, _GLib.Variant("s", path)))
                 return app.run([sys.argv[0]])
         app.connect("activate", lambda a: te_start()(a, []))
         app.connect("open", lambda a, files, _n, _h: te_start()(a, [f.get_uri() for f in files]))
