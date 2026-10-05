@@ -13,11 +13,12 @@ from .. import fpslimit, ui  # noqa: E402
 LABELS = {"off": "Off", "max": "Max"}
 
 ui.register("""
-.cc-fps { padding-top: 6px; padding-bottom: 6px; }
+/* one grid row (56 px): padding 5 + title 19 + 3 + choices 24 + 5 (Vini: it was 59, the bottom cut) */
+.cc-fps { padding-top: 5px; padding-bottom: 5px; }
 .cc-fps .cc-fps-cap { font-size: %(text_small)s; color: %(label_secondary)s; }
 .cc-fps .cc-fps-install { min-height: 0; padding: 0 8px; font-size: %(text_small)s; border-radius: 6px; }
 .fps-seg { background: alpha(%(label)s, 0.08); border-radius: 9px; padding: 2px; }
-.fps-seg button { min-height: 24px; min-width: 0; padding: 0 6px; border-radius: 7px; background: none;
+.fps-seg button { min-height: 20px; min-width: 0; padding: 0 6px; border-radius: 7px; background: none;
   box-shadow: none; border: none; color: %(label)s; font-size: 12px; font-weight: 600;
   transition: background-color %(t_fast)s, color %(t_fast)s; }
 .fps-seg button:hover { background: alpha(%(label)s, 0.08); }
@@ -38,7 +39,7 @@ def refresh_hz() -> float:
 
 class FpsModule(Gtk.Box):
     def __init__(self):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=5, css_classes=["panel-module", "cc-fps"])
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=3, css_classes=["panel-module", "cc-fps"])
         head = Gtk.Box(spacing=6)
         head.append(Gtk.Label(label="FPS Limit", xalign=0, hexpand=True, css_classes=["panel-module-title"],
                               ellipsize=Pango.EllipsizeMode.END, width_chars=1))

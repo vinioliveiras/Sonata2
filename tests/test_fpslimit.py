@@ -64,8 +64,10 @@ class FpsModuleTest(unittest.TestCase):
     def test_module(self):
         import gi
         gi.require_version("Gtk", "4.0")
+        from gi.repository import Gtk
         from sonata2 import ui
         ui.setup()
+        from sonata2.shell import topbar  # noqa: F401  (Control Center's styles)
         from sonata2.shell import fpsmodule
         sets = []
         with mock.patch.object(F, "installed", lambda: False), mock.patch.object(F, "get", lambda: "off"):
@@ -80,6 +82,9 @@ class FpsModuleTest(unittest.TestCase):
             self.assertTrue(m.buttons["60"].has_css_class("on"))
             m.buttons["30"].emit("clicked")
         self.assertEqual(sets, ["30"])
+        # one Control Center row: nothing cut at the bottom (Vini: it needed 59 px of 56)
+        from sonata2.shell import controlcenter as CC
+        self.assertLessEqual(m.measure(Gtk.Orientation.VERTICAL, 344)[1], CC.UNIT_H)
 
 
 if __name__ == "__main__":
