@@ -1130,7 +1130,49 @@ class Settings(Adw.ApplicationWindow):
                                                  "Launchpad. For apps opened after the change."))
                 self._gpu_card_rows(graphics, gpu)
             pages.append(graphics)
+        pages.append(self._fps_group())
         return pages
+
+    def _fps_group(self):
+        """Displays > Games: limit games' frame rate (frame-pacer; off by default,
+        the same choice as Control Center > FPS Limit)."""
+        from .. import fpslimit
+        from ..shell.fpsmodule import refresh_hz
+        g = group("Games")
+        ok = fpslimit.installed()
+        cfg = fpslimit.settings()
+        choices = [(c, "Off" if c == "off" else "Display's rate" if c == "max" else f"{c} FPS")
+                   for c in fpslimit.CHOICES]
+        limit = combo_row("Limit Frame Rate", choices, fpslimit.get(), lambda v: fpslimit.set(v, refresh_hz()),
+                          subtitle="Vulkan and Proton games opened from Steam, Faugus, Lutris, Heroic or "
+                                   "Bottles (frame-pacer). Also in Control Center (Add Controls).")
+        hud = switch_row("Show frame-pacer's Overlay", cfg.get("hud", False),
+                         lambda on: fpslimit.set(fpslimit.get(), refresh_hz(), hud=on),
+                         subtitle="Its frame rate and timings in the corner of the game")
+        for r in (limit, hud):
+            r.set_sensitive(ok)
+            g.add(r)
+        if not ok:
+            row = Adw.ActionRow(title="frame-pacer isn't installed",
+                                subtitle="Downloaded from its GitHub releases into your home folder (no "
+                                         "password). Steam picks it up the next time it opens.")
+            btn = ui.controls.push_button("Install", valign=Gtk.Align.CENTER)
+
+            def done(err):
+                btn.set_label("Install")
+                btn.set_sensitive(True)
+                if err:
+                    row.set_subtitle(f"Couldn't install: {err}")
+                else:
+                    row.set_visible(False)
+                    for r in (limit, hud):
+                        r.set_sensitive(True)
+            btn.connect("clicked", lambda _b: (btn.set_label("Installing…"), btn.set_sensitive(False),
+                                               fpslimit.install(done)))
+            row.add_suffix(btn)
+            g.add(row)
+        g.fps_rows = (limit, hud)                                   # (tests)
+        return g
 
     @staticmethod
     def _gpu_card_rows(graphics, gpu) -> None:

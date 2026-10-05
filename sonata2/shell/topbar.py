@@ -1202,6 +1202,8 @@ class ControlCenter(Gtk.Box):
         mixer_mod = self._mixer_module()                       # each app's volume (Add Controls)
         if mixer_mod is not None:
             self.modules["mixer"] = mixer_mod
+        from . import fpsmodule                                 # games' FPS limit (Add Controls)
+        self.modules["fpslimit"] = fpsmodule.module()
         from . import statsui                                   # performance (Add Controls; read only when shown)
         for kind in statsui.KINDS:
             self.modules["stat_" + kind] = statsui.module(kind)

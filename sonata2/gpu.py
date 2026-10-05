@@ -414,7 +414,11 @@ def extra_env(info) -> dict:
     """Environment an app needs to open here, besides the GPU's."""
     if _key(info) in X11_APPS:
         return {"ELECTRON_OZONE_PLATFORM_HINT": "x11"}
-    return {}
+    try:                                     # game launchers: frame-pacer's FPS limit (fpslimit.py)
+        from . import fpslimit
+        return fpslimit.env_for(info)
+    except Exception:
+        return {}
 
 
 # Steam's own window (its web helper, CEF) never mapped here when CEF drew
