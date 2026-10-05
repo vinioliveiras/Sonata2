@@ -328,6 +328,11 @@ def apply_buttons_side() -> None:
     titlebars.apply()
 
 
+def minimize_animation(effect: str) -> str:
+    """Settings' minimize effect -> Wayfire's animate/minimize_animation."""
+    return {"genie": "squeezimize", "scale": "zoom"}.get(effect, "fade")
+
+
 def combo_row(title, options, selected, on_change, subtitle="") -> Adw.ComboRow:
     """options: [(value, label)]"""
     row = Adw.ComboRow(title=title, subtitle=subtitle, model=Gtk.StringList.new([o[1] for o in options]),
@@ -2299,8 +2304,8 @@ class Settings(Adw.ApplicationWindow):
         anim = system.gsetting(I, "enable-animations")
         disp.add(switch_row("Reduce motion", anim == "false", lambda on: (
             system.set_gsetting(I, "enable-animations", "false" if on else "true"),
-            system.run_async(system.wayfire_set, None, "animate", "open_animation", "fade" if on else "zoom"),
-            system.run_async(system.wayfire_set, None, "animate", "close_animation", "fade" if on else "zoom"))))
+            system.run_async(system.wayfire_set, None, "animate", "open_animation", "fade"),
+            system.run_async(system.wayfire_set, None, "animate", "close_animation", "fade"))))
         app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
         disp.add(switch_row("Reduce transparency", app.get("reduce_transparency", False),
                             lambda on: (self._save("appearance", "reduce_transparency", on),
@@ -2656,7 +2661,8 @@ class Settings(Adw.ApplicationWindow):
                             lambda on: self._save("dock", "quit_on_close", on),
                             subtitle="Closing an app's last window quits it, also Steam, Discord and "
                                      "others that keep running in the background"))
-        wins.add(combo_row("Minimize windows using", [("genie", "Genie effect"), ("scale", "Scale effect")],
+        wins.add(combo_row("Minimize windows using", [("fade", "Fade effect"), ("genie", "Genie effect"),
+                                                            ("scale", "Scale effect")],
                            cfg["minimize_effect"], self._set_minimize_effect))
         dbl = system.gsetting("org.gnome.desktop.wm.preferences", "action-double-click-titlebar") or "toggle-maximize"
         wins.add(combo_row("Double-click a window's title bar to",
@@ -2674,8 +2680,7 @@ class Settings(Adw.ApplicationWindow):
 
     def _set_minimize_effect(self, v):
         self._save("dock", "minimize_effect", v)
-        system.run_async(system.wayfire_set, None, "animate", "minimize_animation",
-                         "squeezimize" if v == "genie" else "zoom")
+        system.run_async(system.wayfire_set, None, "animate", "minimize_animation", minimize_animation(v))
 
     def _set_tall_menubar(self, on):
         """The menu bar's height is set when it starts: it starts again (~1 s)."""
@@ -2827,8 +2832,7 @@ class Settings(Adw.ApplicationWindow):
         self._save("dock", "quit_on_close", D.DEFAULTS["quit_on_close"])
 
         def apply():
-            system.wayfire_set("animate", "minimize_animation",
-                               "squeezimize" if D.DEFAULTS["minimize_effect"] == "genie" else "zoom")
+            system.wayfire_set("animate", "minimize_animation", minimize_animation(D.DEFAULTS["minimize_effect"]))
             system.set_gsetting("org.gnome.desktop.wm.preferences", "action-double-click-titlebar",
                                 "toggle-maximize")
             system.wayfire_set("sonata-resize", "live", True)

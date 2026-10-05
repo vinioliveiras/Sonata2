@@ -32,9 +32,14 @@ class SteamThemeTest(unittest.TestCase):
         css = S.window_css()
         self.assertEqual(css.count("svg+xml"), 8)                    # close/min/max/restore x plain/hover
         self.assertIn("border-radius: 50%", css)                     # round, not Steam's squares
+        self.assertIn("div._3LKQ3S_yqrebeNLF6aeiog { display: none", css)   # no Big Picture button
         self.assertNotIn("--adw-", css)                              # Steam's own colours stay
         self.assertIn("left: 7px", css)                              # Sonata's place, on the left
         self.assertIn("margin-left:", css)                           # Steam's menu moved clear of them
+        # Friends / Settings keep the buttons on the right: close at the edge (Windows' order)
+        self.assertRegex(css, r"closeButton \{ order: 2 !important; background-image")
+        self.assertRegex(css, r"maximizeButton \{ order: 0 !important; background-image")
+        self.assertRegex(css, r":has\(div\._3Z7VQ1IMk4E3HsHvrkLNgo\) .*\.closeButton \{ order: 0")   # main window: macOS
         config.update("appearance", buttons_side="right")
         css = S.window_css()
         self.assertIn("right: 7px", css)

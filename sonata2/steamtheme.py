@@ -38,6 +38,7 @@ TL = ("close", "minimize", "maximize", "restore")
 # Class names from Steam's current interface (as Adwaita-for-Steam 4.4 uses them).
 TOPBAR = "div._3Z7VQ1IMk4E3HsHvrkLNgo"
 MENUBAR = "div._3s0lkohH8wU2do0K1il28Y"
+BIG_PICTURE = "div._3LKQ3S_yqrebeNLF6aeiog"            # the top bar's Big Picture button (GamepadUIToggle)
 
 
 def enabled() -> bool:
@@ -89,10 +90,15 @@ def window_css() -> str:
     dot, gap = f["dot"], f["dot_gap"]
     edge, top = f["dot_left"] - dot // 2, f["dot_top"] - dot // 2
     pics = os.path.join(ICONS_DIR, "Sonata", "apps", "scalable")
-    order = {b: i for i, b in enumerate(f["buttons"])}
-    order["restore"] = order["maximize"]
-    if not left:                                     # from the right edge inwards: reversed in the row
-        order = {b: len(f["buttons"]) - 1 - i for b, i in order.items()}
+    # in the row, left to right: on the right side close is at the edge (Windows' order);
+    # on the left, close first (macOS). Only the main window's buttons move to
+    # Sonata's side; Steam's other windows (Friends, Settings) keep them on the
+    # right, so there they always use the right side's order (Vini: close
+    # first on the right was confusing).
+    n = len(f["buttons"])
+    left_order = {b: i for i, b in enumerate(f["buttons"])}
+    left_order["restore"] = left_order["maximize"]
+    right_order = {b: n - 1 - i for b, i in left_order.items()}
     sel = "body.DesktopUI .title-bar-actions.window-controls, html.client_chat_frame .title-bar-actions.window-controls"
     out = [HEADER,
            f"/* window buttons: {tokens.button_layout(f)} */",
@@ -109,7 +115,7 @@ def window_css() -> str:
         if not (os.path.isfile(plain) and os.path.isfile(hover)):
             continue
         b = f".title-area-icon.{name}Button"
-        out += [f":is({sel}) {b} {{ order: {order[name]} !important; background-image: {_data_uri(plain)} !important; }}",
+        out += [f":is({sel}) {b} {{ order: {right_order[name]} !important; background-image: {_data_uri(plain)} !important; }}",
                 f":is({sel}):hover {b} {{ background-image: {_data_uri(hover)} !important; }}"]
     # the main window: the buttons at Sonata's place, Steam's menu moved clear of them
     width = 3 * dot + 2 * gap
@@ -118,7 +124,10 @@ def window_css() -> str:
     out.append(f"{main} .title-bar-actions.window-controls {{ position: fixed !important; top: {top}px !important;"
                f" {side}: {edge}px !important; {'right' if left else 'left'}: auto !important; bottom: auto !important;"
                f" height: {dot}px !important; z-index: 1000 !important; }}")
+    out.append(f"body.DesktopUI {TOPBAR} {BIG_PICTURE} {{ display: none !important; }}")   # Vini: not used
     if left:
+        out += [f"{main} .title-bar-actions.window-controls .title-area-icon.{name}Button {{ order: {i} !important; }}"
+                for name, i in left_order.items()]
         out.append(f"{main} {TOPBAR} {MENUBAR} {{ margin-left: {edge + width + 12}px !important; }}")
     return "\n".join(out) + "\n"
 

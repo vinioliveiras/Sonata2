@@ -32,7 +32,7 @@ from .. import ui  # noqa: E402
 from . import dock_drop, dock_folder, dock_menu, dock_stack, layer  # noqa: E402
 
 DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "window_gap": 6, "glass": True,
-            "indicators": True, "bounce": True, "minimize_effect": "genie", "click_minimizes": True,
+            "indicators": True, "bounce": True, "minimize_effect": "fade", "click_minimizes": True,
             "magnification": False, "magnified_size": 80, "position": "bottom",
             "autohide": False, "autohide_delay_ms": 300, "show_recents": True,
             "recent": [], "stacks": None, "all_displays": False, "folders": {},
