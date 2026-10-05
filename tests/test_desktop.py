@@ -91,9 +91,16 @@ class DesktopDisplaysTest(unittest.TestCase):
                     seen.append((x, y))
                 real(item, x, y)
             with mock.patch.object(main, "move", side_effect=move):
-                for _ in range(20):
-                    settle(100)
-                    main._config_changed()
+                # (the config watch late or not at all: the spot is known already --
+                # Vini's video: it showed elsewhere first, then glided to the click)
+                put = []
+                real_put = main.put
+                with mock.patch.object(main, "put", side_effect=lambda it, x, y: (put.append((x, y)), real_put(it, x, y))):
+                    for _ in range(20):
+                        settle(100)
+                self.assertEqual(set(put), {main.cell_xy(3, 2)})
+                main._config_changed()
+                settle(100)
             self.assertTrue(seen)
             self.assertEqual(set(seen), {main.cell_xy(3, 2)})              # never anywhere else first
             settle(400)

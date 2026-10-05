@@ -258,6 +258,7 @@ class Desktop(Gtk.Fixed):
                 x, y = self.cell_xy(c, r)
                 self.move(item, x, y)
                 item._laid = True
+                item.set_opacity(1)
         self._placed = placed
         ui.transition.glide_play(before, self)
 
@@ -302,6 +303,12 @@ class Desktop(Gtk.Fixed):
                 self.remove(old)
             item = DesktopItem(self, info)
             item._laid = old is not None and getattr(old, "_laid", False)
+            if not item._laid:
+                p = self.cfg.get("positions", {}).get(name) if self.cfg.get("sort", "none") == "none" else None
+                if p and p[0] < self.cols() and p[1] < self.rows():
+                    at = self.cell_xy(p[0], p[1])           # its spot is known: drawn there from the start
+                else:
+                    item.set_opacity(0)                     # shown once the layout has given it a spot
             self.items[name] = item
             self.put(item, *at)
         GLib.idle_add(lambda: (self._layout(), False)[1])
@@ -328,6 +335,9 @@ class Desktop(Gtk.Fixed):
         if cfg.get("sort", "none") != "none":
             cfg["sort"] = "none"                    # moving an icon by hand (Finder does the same)
         config.save("desktop", cfg)
+        # known here at once: the folder being made can be listed before the
+        # config watch reads this back (Vini: it showed elsewhere, then glided over)
+        self.cfg = cfg
 
     # -- selection ----------------------------------------------------------------------------
     def select(self, items) -> None:
