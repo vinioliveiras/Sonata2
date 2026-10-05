@@ -57,3 +57,14 @@ class CaptureToolbarFromAppsTest(unittest.TestCase):
         src = (ROOT / "sonata2" / "__main__.py").read_text()
         self.assertIn("GLib.timeout_add(TOOLBAR_DELAY_MS, lambda: (cap.show_toolbar(), False)[1])", src)
         self.assertIn("TOOLBAR_DELAY_MS = 300", src)
+
+
+class WatchdogTest(unittest.TestCase):
+    def test_apps_stop_the_startup_watchdog(self):
+        """Videos (and every app) dumped "Timeout (0:00:08)!" stacks into the
+        log every 8 s while open: only the shell's activate ended the watchdog."""
+        src = (ROOT / "sonata2" / "__main__.py").read_text()
+        at = src.index("    app = Adw.Application(application_id=app_id)\n")
+        after = src[at:at + 600]
+        self.assertIn('for _sig in ("activate", "open"):', after)
+        self.assertIn('trace.ready("first idle")', after)

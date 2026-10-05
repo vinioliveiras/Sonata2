@@ -1207,6 +1207,11 @@ def main() -> int:
     app_id = APP_IDS[args.component]
     GLib.set_prgname(app_id)     # Wayland app_id, also without a session bus
     app = Adw.Application(application_id=app_id)
+    # every component, apps too (Files, Videos, Settings return before the
+    # shell's activate): the start-up watchdog stops once running -- it
+    # dumped a stack into the log every 8 s for as long as an app was open
+    for _sig in ("activate", "open"):
+        app.connect(_sig, lambda *_a: GLib.idle_add(lambda: (trace.ready("first idle"), False)[1]))
     if args.component == "wallpaper":
         # a restart starts the new wallpaper while the old one still shows (no
         # black flash): as a unique app it only woke the old one and quit, and
