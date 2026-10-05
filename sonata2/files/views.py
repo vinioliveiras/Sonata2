@@ -531,7 +531,7 @@ class IconsView(_Cells):
     def _compare(self, a, b) -> int:
         title, desc = self._sort
         c = SORTS.get(title, SORTS["Name"])(a, b)
-        return -c if desc else c
+        return folders_first(a, b) or (-c if desc else c)
 
     def sort_state(self) -> tuple:
         return self._sort
@@ -562,6 +562,11 @@ class IconsView(_Cells):
 # -- List ---------------------------------------------------------------------------------
 def _cmp(a, b):
     return (a > b) - (a < b)
+
+
+def folders_first(a, b) -> int:
+    """Folders before files whatever the sort and its direction (Vini)."""
+    return _cmp(not is_dir(a), not is_dir(b))
 
 
 # Sort By (icons) and the list's headers: column title -> compare(a, b), ascending
@@ -617,15 +622,19 @@ def _save_column_width(title, width) -> None:
 
 
 class ListView(_Cells):
-    """Name / Date Modified / Size / Kind, sortable by clicking a header
-    (Finder: folders are sorted with the files)."""
+    """Name / Date Modified / Size / Kind, sortable by clicking a header;
+    folders always first (Vini), in either direction."""
 
     def __init__(self, model, on_open):
         self._init_cells()
         self.view = Gtk.ColumnView(show_column_separators=False, show_row_separators=False,
                                    enable_rubberband=True, reorderable=True, css_classes=["fs-list"])
         ui.columns.fill_last(self.view)
-        self.sorted = Gtk.SortListModel(model=model, sorter=self.view.get_sorter())
+        # folders first, then the clicked column's order (its direction never moves them)
+        both = Gtk.MultiSorter()
+        both.append(Gtk.CustomSorter.new(lambda a, b, _d: folders_first(a, b)))
+        both.append(self.view.get_sorter())
+        self.sorted = Gtk.SortListModel(model=model, sorter=both)
         self.model = self.sorted
         self.selection = Gtk.MultiSelection(model=self.sorted)
         self.view.set_model(self.selection)

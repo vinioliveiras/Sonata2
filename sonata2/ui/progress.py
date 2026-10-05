@@ -33,8 +33,7 @@ progressbar.sonata-progress.meter > trough,
 progressbar.sonata-progress.meter > trough > progress { min-height: 4px; border-radius: 2px; }
 progressbar.sonata-progress.full > trough > progress { background: %(destructive)s; }
 spinner.sonata-spinner { color: %(label_secondary)s; }
-window.sonata-progress-window { background: %(window_bg)s; color: %(label)s; font-family: %(font)s;
-  font-size: %(text_body)s; }
+window.sonata-progress-window { color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
 .sp-row { padding: 10px 16px 12px 16px; }
 .sp-row + .sp-row { box-shadow: inset 0 1px %(separator)s; }
 .sp-title { color: %(label)s; }
@@ -140,7 +139,8 @@ class _Window(Adw.Window):
 
     def __init__(self):
         super().__init__(title="Copy", default_width=460, resizable=False, hide_on_close=True)
-        self.add_css_class("sonata-progress-window")
+        for c in ("sonata-progress-window", "sonata-glass-window"):     # frosted glass, like Get Info
+            self.add_css_class(c)
         window.standard(self)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         head = window.titlebar(self, "Copy")

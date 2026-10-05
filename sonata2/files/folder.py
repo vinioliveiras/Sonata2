@@ -43,11 +43,12 @@ def is_dir(info: Gio.FileInfo) -> bool:
 
 
 def sort_key(info: Gio.FileInfo) -> str:
-    """Finder name order; cached on the info ("sonata::key") for the views' sorters."""
+    """Name order, folders first (Vini; Finder's "Keep folders on top");
+    cached on the info ("sonata::key") for the views' sorters."""
     k = info.get_attribute_string("sonata::key")
     if k is None:
         name = info.get_display_name()      # case-insensitive in every locale, like Finder
-        k = GLib.utf8_collate_key_for_filename(name.casefold(), -1) + "\x00" + name
+        k = ("0" if is_dir(info) else "1") + GLib.utf8_collate_key_for_filename(name.casefold(), -1) + "\x00" + name
         info.set_attribute_string("sonata::key", k)
     return k
 

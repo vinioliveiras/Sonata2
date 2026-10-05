@@ -159,14 +159,14 @@ class TabsTest(unittest.TestCase):
         icons = w.views["icons"]
         names = lambda: [icons.model.get_item(i).get_name() for i in range(icons.model.get_n_items())]
         self.assertEqual(names(), ["A", "B", "big.txt", "f.txt"])
-        w.sort_by("Size")                                          # biggest first
-        self.assertEqual(names()[0], "big.txt")
+        w.sort_by("Size")                  # biggest first, after the folders (Vini: folders always first)
+        self.assertEqual(names()[:3], ["A", "B", "big.txt"])
         self.assertEqual(w.views["list"].sort_state(), ("Size", True))
         w.go(self.uri("A"))
         self.assertEqual(icons.sort_state(), ("Name", False))
         w.go_back()
         self.assertEqual(icons.sort_state(), ("Size", True))
-        self.assertEqual(names()[0], "big.txt")
+        self.assertEqual(names()[2], "big.txt")
 
     def test_keys_and_background_tab(self):
         w = self.win
