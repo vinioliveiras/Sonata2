@@ -58,10 +58,19 @@ def start(label: str) -> None:
     main_id = threading.get_ident()
 
     def run():
+        on = False
         while True:
             if os.path.exists(flag_path()):
+                if not on:                 # the report shows which processes were watched
+                    on = True
+                    try:
+                        with open(log_path(), "a", encoding="utf-8") as f:
+                            f.write(f"{time.strftime('%H:%M:%S')} watching {label} pid {os.getpid()}\n")
+                    except OSError:
+                        pass
                 _probe(label, main_id)
                 time.sleep(0.05)
             else:
+                on = False
                 time.sleep(1)
     threading.Thread(target=run, daemon=True, name="stallwatch").start()

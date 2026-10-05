@@ -27,7 +27,8 @@ from ..files.folder import file_of, is_dir  # noqa: E402
 
 CELL_W, CELL_H = 96, 104          # Big Sur's default desktop grid (64 px icons)
 ICON = 64
-TOP, EDGE = 34, 14                # below the menu bar; off the screen edges
+from ..shell import menubar_size  # noqa: E402
+TOP, EDGE = menubar_size.height() + 10, 14        # below the menu bar; off the screen edges
 DEFAULTS = {"positions": {}, "sort": "none"}
 SORTS = (("none", "None"), ("name", "Name"), ("kind", "Kind"), ("date", "Date Modified"))   # Sort By (and Settings)
 

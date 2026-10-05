@@ -11,7 +11,7 @@ trap 'rm -f "$cache/stallwatch"' EXIT
 echo "Recording 60 s: open and close apps (Chrome, Files, Steam...) a few times now."
 {
     echo "== CPU (top, every 0.5 s) =="
-    top -b -d 0.5 -n 120 -w 160 | awk '/^top -/{print "--", $3} /^ *[0-9]+ /{if ($9+0 > 5) print}'
+    top -b -c -d 0.5 -n 120 -w 220 | awk '/^top -/{print "--", $3} /^ *[0-9]+ /{if ($9+0 > 5) print}'
 } > "$out.cpu" 2>&1
 rm -f "$cache/stallwatch"
 {

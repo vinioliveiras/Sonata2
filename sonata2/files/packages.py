@@ -217,37 +217,71 @@ def _extract_dir(path: str) -> str:
     return target
 
 
-def tool_command(path: str, target: str):
-    """argv that extracts a .rar / .7z into `target` (None: no tool for it)."""
+class PasswordNeeded(OSError):
+    """The archive is protected: ask for its password (wrong: a wrong one was given)."""
+
+    def __init__(self, wrong=False):
+        super().__init__("The archive is protected by a password.")
+        self.wrong = wrong
+
+
+_PASSWORD_WORDS = ("password", "passphrase", "encrypted")
+
+
+def tool_command(path: str, target: str, password: str = None):
+    """argv that extracts a .rar / .7z into `target` (None: no tool for it).
+    With no password, a tool never stops to ask for one: it fails."""
     ext = os.path.splitext(path.lower())[1]
     for tool in _TOOLS.get(ext, ()):
         exe = shutil.which(tool)
         if not exe:
             continue
         if tool in ("7z", "7zz"):
-            return [exe, "x", "-y", "-bso0", "-bsp0", "-o" + target, "--", path]
+            return [exe, "x", "-y", "-bso0", "-bsp0", "-p" + (password or ""), "-o" + target, "--", path]
         if tool == "unrar":
-            return [exe, "x", "-o+", "-y", "--", path, target + os.sep]
-        return [exe, "-xf", path, "-C", target]          # bsdtar: never writes outside target
+            return [exe, "x", "-o+", "-y", "-p" + (password or "-"), "--", path, target + os.sep]
+        pw = ["--passphrase", password] if password else []
+        return [exe, "-xf", path, *pw, "-C", target]          # bsdtar: never writes outside target
     return None
 
 
-def _run_tool(path: str, target: str) -> None:
+def _run_tool(path: str, target: str, password: str = None) -> None:
     import subprocess
-    argv = tool_command(path, target)
+    argv = tool_command(path, target, password)
     if argv is None:
         raise OSError("Expanding this kind of archive needs 7-Zip (the 7zip package) or bsdtar (libarchive).")
-    # no stdin: a password-protected archive fails instead of waiting for a password
+    # no stdin: nothing waits for a password typed in a terminal
     r = subprocess.run(argv, capture_output=True, text=True, stdin=subprocess.DEVNULL)
     if r.returncode:
         msg = (r.stderr or r.stdout).strip()
-        if any(w in msg.lower() for w in ("password", "encrypted")):
-            raise OSError("The archive is protected by a password.")
+        if any(w in msg.lower() for w in _PASSWORD_WORDS):
+            raise PasswordNeeded(wrong=bool(password))
         raise OSError(msg.splitlines()[-1] if msg else f"{os.path.basename(argv[0])} failed")
 
 
-def extract(path: str, parent=None, done=None) -> None:
-    """Into a folder named after the archive, next to it (in a thread)."""
+def ask_password(path: str, parent, wrong: bool, on_done) -> None:
+    """Finder's Archive Utility: the archive's password, typed in a secure
+    field; on_done(password) unless cancelled."""
+    from gi.repository import GLib as _GLib
+    field = ui.controls.text_field(placeholder="Password", secret=True)
+    field.set_property("activates-default", True)
+    name = os.path.basename(path)
+    heading = "The password is incorrect." if wrong else f"“{name}” is protected by a password."
+    body = f"Enter the password for “{name}”." if wrong else "Enter its password to expand it."
+
+    def answered(rid):
+        if rid == "ok" and field.get_text():
+            on_done(field.get_text())
+    dlg = ui.dialog.alert(heading, body, [("cancel", "Cancel", ""), ("ok", "Expand", "default")], answered,
+                          parent=parent)
+    dlg.set_extra_child(field)
+    _GLib.idle_add(lambda: (field.grab_focus(), False)[1])
+    return dlg
+
+
+def extract(path: str, parent=None, done=None, password: str = None) -> None:
+    """Into a folder named after the archive, next to it (in a thread). A
+    protected archive asks for its password (and again when it's wrong)."""
     target = _extract_dir(path)
 
     def work():
@@ -255,10 +289,15 @@ def extract(path: str, parent=None, done=None) -> None:
         try:
             os.makedirs(target)
             if path.lower().endswith((".rar", ".7z")):
-                _run_tool(path, target)
+                _run_tool(path, target, password)
             elif path.lower().endswith(".zip"):
                 with zipfile.ZipFile(path) as z:
-                    z.extractall(target)
+                    try:
+                        z.extractall(target, pwd=password.encode() if password else None)
+                    except RuntimeError as e:                    # ZipCrypto: "password required" / "Bad password"
+                        if "password" in str(e).lower():
+                            raise PasswordNeeded(wrong=bool(password))
+                        raise OSError(str(e))
             elif path.lower().endswith(".tar.zst") and shutil.which("tar"):
                 import subprocess
                 r = subprocess.run(["tar", "--zstd", "-xf", path, "-C", target], capture_output=True, text=True)
@@ -267,13 +306,18 @@ def extract(path: str, parent=None, done=None) -> None:
             else:
                 with tarfile.open(path) as t:
                     t.extractall(target, filter="data")      # no absolute paths / links out of the folder
-        except (OSError, tarfile.TarError, zipfile.BadZipFile, ValueError) as e:
+        except PasswordNeeded as e:
+            err = e
+            shutil.rmtree(target, ignore_errors=True)
+        except (OSError, tarfile.TarError, zipfile.BadZipFile, ValueError, NotImplementedError) as e:
             err = str(e)
             shutil.rmtree(target, ignore_errors=True)      # no half-extracted folder left behind
         GLib.idle_add(finish, err)
 
     def finish(err):
-        if err:
+        if isinstance(err, PasswordNeeded):
+            ask_password(path, parent, err.wrong, lambda pw: extract(path, parent, done, pw))
+        elif err:
             ui.dialog.alert(f"Unable to expand “{os.path.basename(path)}”.", err, [("ok", "OK", "default")],
                             parent=parent)
         elif done:

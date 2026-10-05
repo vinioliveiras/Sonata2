@@ -2631,6 +2631,13 @@ class Settings(Adw.ApplicationWindow):
         system.run_async(system.wayfire_set, None, "animate", "minimize_animation",
                          "squeezimize" if v == "genie" else "zoom")
 
+    def _set_tall_menubar(self, on):
+        """The menu bar's height is set when it starts: it starts again (~1 s)."""
+        self._save("topbar", "tall", bool(on))
+        import subprocess
+        from ..__main__ import self_argv
+        system.run_async(lambda: subprocess.run(self_argv() + ["restart", "topbar"], check=False))
+
     def _page_menubar(self):
         from ..shell import topbar as T
         cfg = config.load("topbar", T.DEFAULTS)
@@ -2638,6 +2645,8 @@ class Settings(Adw.ApplicationWindow):
         g.add(switch_row("Automatically hide and show the menu bar", cfg.get("autohide", False),
                          lambda on: self._save("topbar", "autohide", on),
                          subtitle="It slides back down when the pointer reaches the top of the screen"))
+        g.add(switch_row("Taller menu bar", cfg.get("tall", False), self._set_tall_menubar,
+                         subtitle="Like the menu bar of the newest MacBooks"))
         g.add(combo_row("Clock", [("%a %-d %b  %H:%M", "Mon 28 Sep  21:41"), ("%a %H:%M", "Mon 21:41"),
                                   ("%a %-d %b  %-I:%M %p", "Mon 28 Sep  9:41 PM"), ("%a %-I:%M %p", "Mon 9:41 PM"),
                                   ("%H:%M", "21:41")],

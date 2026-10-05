@@ -27,7 +27,8 @@ from . import layer  # noqa: E402
 
 BANNER_W = 344
 BANNER_MS = 5000
-TOP_GAP = 30                # under the 24 px menu bar
+from . import menubar_size  # noqa: E402
+TOP_GAP = menubar_size.height() + 6                # under the menu bar
 MAX_BANNERS = 3
 MAX_NOTES = 100            # kept in the Notification Center (it shows the newest 40)
 DEFAULTS = {"dnd": False, "apps": {}}

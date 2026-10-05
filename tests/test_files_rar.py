@@ -62,5 +62,38 @@ class RarTest(unittest.TestCase):
                 P._run_tool(self.rar, target)
 
 
+class RarPasswordTest(RarTest):
+    """Vini: a RAR with a password didn't ask for it, only showed an error
+    (bsdtar says "Passphrase required", not "password")."""
+
+    def test_asks_then_retries_with_it(self):
+        from gi.repository import GLib
+        # bsdtar: no passphrase -> asks for one; the right one -> extracts
+        _fake_tool(self.bin, "bsdtar", 'if [ "$3" = "--passphrase" ] && [ "$4" = "segredo" ]; then\n'
+                   '  touch "$6/ok.txt"; exit 0; fi\n'
+                   'if [ "$3" = "--passphrase" ]; then echo "Incorrect passphrase" >&2; exit 1; fi\n'
+                   'echo "Passphrase required for this entry" >&2; exit 1\n')
+        asked, done = [], []
+
+        def ask(path, parent, wrong, on_done):
+            asked.append(wrong)
+            on_done("errada" if len(asked) == 1 else "segredo")
+        with mock.patch.object(P.shutil, "which", self.which({"bsdtar"})), \
+                mock.patch.object(P, "ask_password", ask):
+            P.extract(self.rar, None, done.append)
+            end = GLib.get_monotonic_time() + 5_000_000
+            while not done and GLib.get_monotonic_time() < end:
+                GLib.MainContext.default().iteration(False)
+        self.assertEqual(asked, [False, True])            # asked, then "the password is incorrect"
+        self.assertTrue(os.path.exists(os.path.join(done[0], "ok.txt")))
+
+    def test_tools_never_wait_for_a_password(self):
+        with mock.patch.object(P.shutil, "which", self.which({"unrar"})):
+            self.assertIn("-p-", P.tool_command(self.rar, "/t"))
+            self.assertIn("-pabc", P.tool_command(self.rar, "/t", "abc"))
+        with mock.patch.object(P.shutil, "which", self.which({"7z"})):
+            self.assertIn("-p", P.tool_command(self.rar, "/t"))
+
+
 if __name__ == "__main__":
     unittest.main()
