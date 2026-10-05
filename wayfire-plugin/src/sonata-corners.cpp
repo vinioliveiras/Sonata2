@@ -1341,13 +1341,45 @@ class fps_counter_t
     }
 
   public:
+    /* The app in front: the focused window -- or, while Control Center (a
+     * panel) has the keyboard, the window focused last before it ("No app
+     * drawing in front" with a game open, Vini). */
+    static wayfire_view front_view()
+    {
+        auto active = wf::get_core().seat->get_active_view();
+        if (wf::toplevel_cast(active))
+        {
+            return active;
+        }
+
+        wayfire_view best = nullptr;
+        uint64_t best_ts  = 0;
+        for (auto& v : wf::get_core().get_all_views())
+        {
+            auto t = wf::toplevel_cast(v);
+            if (!t || !v->is_mapped() || t->minimized || (v->role != wf::VIEW_ROLE_TOPLEVEL))
+            {
+                continue;
+            }
+
+            uint64_t ts = v->get_surface_root_node()->keyboard_interaction().last_focus_timestamp;
+            if (ts > best_ts)
+            {
+                best_ts = ts;
+                best    = v;
+            }
+        }
+
+        return best;
+    }
+
     /* data {"frametimes": true}: also each frame's time (ms) of the last
      * seconds, oldest first (Control Center's frame-time graph) */
     wf::json_t ask(const wf::json_t& data = wf::json_t())
     {
         int64_t now = wf::get_current_time();
         last_ask = now;
-        auto view = wf::get_core().seat->get_active_view();
+        auto view = front_view();
         watch(view ? view->get_wlr_surface() : nullptr);
         trim(now);
         auto response = wf::ipc::json_ok();

@@ -229,6 +229,7 @@ class Bar(Gtk.CenterBox):
         self.inuse.listeners.append(self._inuse_changed)
         self._inuse_changed()
         self.clock = self._item(right, text="", on_click=self._calendar, css="clock")
+        self.clock.get_child().get_last_child().connect("map", lambda *_: self._clock_room())
         right.set_margin_end(8)
         self.set_end_widget(right)
 
@@ -290,6 +291,15 @@ class Bar(Gtk.CenterBox):
             self.on_autohide()
         now = GLib.DateTime.new_now_local()
         self._set_text(self.clock, now.format(self.cfg["clock_format"]) or now.format("%a %H:%M"))
+        self._clock_room()
+
+    def _clock_room(self) -> None:
+        """The clock keeps one width all year (Vini: no nudge when the minute,
+        the day or the month changes): as wide as its widest text in this
+        format, the text against the right edge."""
+        lbl = self.clock.get_child().get_last_child()
+        lbl.set_size_request(clock_width(lbl, self.cfg["clock_format"]), -1)
+        lbl.set_xalign(1.0)
 
     # -- drawing -------------------------------------------------------------------
     def do_snapshot(self, snap) -> None:
@@ -1537,6 +1547,28 @@ def _open_recent(uri: str) -> None:
         Gio.AppInfo.launch_default_for_uri(uri, None)
     except GLib.Error:
         pass
+
+
+def clock_width(label, fmt: str) -> int:
+    """The widest the clock gets in `fmt`, measured on the label itself (its
+    font and tabular digits): every weekday, day and month name of a year,
+    morning and evening (AM / PM)."""
+    texts = set()
+    start = GLib.DateTime.new_local(2026, 1, 1, 0, 0, 0)
+    for day in range(366):
+        d = start.add_days(day)
+        for h in (0, 12, 23):
+            t = GLib.DateTime.new_local(d.get_year(), d.get_month(), d.get_day_of_month(), h, 59, 59)
+            texts.add(t.format(fmt) or t.format("%a %H:%M"))
+    shown, req = label.get_label(), label.get_size_request()[0]
+    label.set_size_request(-1, -1)
+    best = 0
+    for text in texts:
+        label.set_label(text)
+        best = max(best, label.measure(Gtk.Orientation.HORIZONTAL, -1)[1])
+    label.set_label(shown)
+    label.set_size_request(req, -1)
+    return best
 
 
 class TopBarWindow(Gtk.ApplicationWindow):
