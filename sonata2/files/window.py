@@ -61,6 +61,8 @@ window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text
   background: none; color: %(label)s; font-weight: 500; }
 .fs-scope button:checked { background: %(tool_hover)s; }
 .fs-scope .fs-scope-status { color: %(label_tertiary)s; font-size: %(text_small)s; }
+.fs-scope .fs-scope-sep { min-width: 1px; background: %(separator)s; margin-top: 3px; margin-bottom: 3px; }
+.fs-scope dropdown button { min-height: 20px; padding: 0 6px; }
 .fs-toolbar button.fs-text-btn { padding: 0 10px; color: %(label)s; background: %(tool_hover)s; }
 .fs-empty { color: %(label_tertiary)s; font-size: %(text_title)s; }
 """, key="files-window")
@@ -244,6 +246,22 @@ class FilesWindow(Adw.ApplicationWindow):
         for b in (self.scope_home, self.scope_here):
             b.connect("toggled", lambda b: b.get_active() and self._run_search())
             bar.append(b)
+        # Finder's search criteria: the words in names or contents, a kind, a date
+        from .search import DATES, KINDS
+        bar.append(Gtk.Box(css_classes=["fs-scope-sep"], margin_start=6, margin_end=6))
+        self.match_name = Gtk.ToggleButton(label="Name", active=True, focus_on_click=False)
+        self.match_contents = Gtk.ToggleButton(label="Contents", group=self.match_name, focus_on_click=False)
+        for b in (self.match_name, self.match_contents):
+            b.connect("toggled", lambda b: b.get_active() and self._run_search())
+            bar.append(b)
+        self.search_kind = ui.controls.popup_button([label for _k, label in KINDS], 0,
+                                                    lambda _i: self._run_search())
+        self.search_date = ui.controls.popup_button([label for _k, label, _d in DATES], 0,
+                                                    lambda _i: self._run_search())
+        for w in (self.search_kind, self.search_date):
+            w.set_valign(Gtk.Align.CENTER)
+            w.set_margin_start(6)
+            bar.append(w)
         self.search_status = Gtk.Label(css_classes=["fs-scope-status"], hexpand=True, xalign=1)
         bar.append(self.search_status)
         self.scope_rev = Gtk.Revealer(child=bar, transition_duration=150)
@@ -296,7 +314,11 @@ class FilesWindow(Adw.ApplicationWindow):
         self.search_status.set_label("Searching…")
         scope = names.THIS_COMPUTER if not self.scope_here.get_active() else folder.display_name(here)
         self.title.set_label(f"Searching “{scope}”")
-        self.searcher.start(root, q, self._got_results, self._search_done)
+        from .search import DATES, KINDS
+        self.searcher.start(root, q, self._got_results, self._search_done,
+                            kind=KINDS[self.search_kind.get_selected()][0],
+                            date=DATES[self.search_date.get_selected()][0],
+                            contents=self.match_contents.get_active())
 
     def _got_results(self, items):
         self.results.splice(self.results.get_n_items(), 0, items)
