@@ -20,6 +20,7 @@ LIGHT = {
     # accents
     "accent": "#007aff",
     "accent_selected": "#0a64e1",               # selected menu row
+    "accent_halo": "none",                      # a glow behind accent text/icons too dark to read
     "destructive": "#ff3b30",
     # materials (backgrounds)
     "menu_bg": "rgba(236, 236, 236, 0.97)",     # menus, hover labels
@@ -83,6 +84,7 @@ DARK = {
     "highlight": "rgba(255, 255, 255, 0.15)",
     "accent": "#0a84ff",
     "accent_selected": "#0a84ff",
+    "accent_halo": "none",
     "destructive": "#ff453a",
     "menu_bg": "rgba(44, 44, 46, 0.97)",
     "window_bg": "#18181a",                   # darker than macOS' #1e1e1e (Vini)
@@ -257,14 +259,36 @@ def accent_hex(name, dark: bool = False) -> str:
     return custom_accent(name) or ACCENTS.get(name, ACCENTS["blue"])[1 if dark else 0]
 
 
+def _luminance(hex_color: str) -> float:
+    h = hex_color.lstrip("#")
+    ch = [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    ch = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in ch]
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
+
+
+DARK_BG = "#1e1e1e"
+HALO_BELOW = 2.0             # contrast against a dark background under which accent text gets a halo
+ACCENT_HALO = "0 0 2px rgba(255,255,255,0.45)"
+
+
+def contrast(a: str, b: str) -> float:
+    la, lb = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
 def accent_tokens(name: str, dark: bool) -> dict:
-    """Token overrides for an accent colour (empty for the default blue)."""
+    """Token overrides for an accent colour (empty for the default blue).
+    A very dark accent (black, Vini's) stays itself in Dark Mode -- its text
+    and icons get a light halo so they can still be read (accent_halo)."""
     c = custom_accent(name)
     if c is None:
         if name not in ACCENTS or name == "blue":
             return {}
         c = ACCENTS[name][1 if dark else 0]
-    return {"accent": c, "accent_selected": c if dark else _darker(c)}
+    out = {"accent": c, "accent_selected": c if dark else _darker(c)}
+    if dark and contrast(c, DARK_BG) < HALO_BELOW:
+        out["accent_halo"] = ACCENT_HALO
+    return out
 
 
 # Spacing scale (px) for layout code.

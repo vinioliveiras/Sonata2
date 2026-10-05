@@ -56,7 +56,7 @@ window.sonata-music { color: %(label)s; font-family: %(font)s; font-size: %(text
 .mu-player button.tool image { -gtk-icon-size: 16px; }
 .mu-player button.tool.mu-big image { -gtk-icon-size: 22px; }
 .mu-player button.tool.mu-toggle { color: %(label_secondary)s; }
-.mu-player button.tool.mu-toggle.on { color: %(accent)s; }
+.mu-player button.tool.mu-toggle.on { color: %(accent)s; text-shadow: %(accent_halo)s; -gtk-icon-shadow: %(accent_halo)s; }
 .mu-player button.tool:disabled { color: %(label_tertiary)s; }
 .mu-player .mu-vol-icon { color: %(label_secondary)s; -gtk-icon-size: 14px; }
 .mu-lcd { min-height: 40px; margin: 6px 0; border-radius: %(r_button)s; background: alpha(%(label)s, 0.04);
@@ -88,7 +88,7 @@ scale.mu-scrub > trough > slider { min-width: 0; min-height: 0; margin: 0; paddi
 .mu-sidebar list row:selected { background: %(sidebar_selected)s; color: %(label)s; }
 .mu-sidebar list row.mu-head { min-height: 22px; margin-top: 10px; }
 .mu-sidebar .mu-head label { font-size: %(text_small)s; font-weight: 700; color: %(label_tertiary)s; }
-.mu-sidebar row image.mu-src { color: %(accent)s; }
+.mu-sidebar row image.mu-src { color: %(accent)s; text-shadow: %(accent_halo)s; -gtk-icon-shadow: %(accent_halo)s; }
 .mu-sidebar row entry { min-height: 20px; padding: 0 4px; border-radius: 4px; background: %(content_bg)s;
   box-shadow: inset 0 0 0 1px %(accent)s, 0 0 0 3px alpha(%(accent)s, 0.3); }
 
@@ -127,7 +127,7 @@ columnview.mu-songs > listview > row > cell { padding: 0 8px; }
 columnview.mu-songs .mu-dim { color: %(label_secondary)s; font-feature-settings: "tnum"; }
 columnview.mu-songs > listview > row:selected .mu-dim,
 columnview.mu-songs > listview > row:selected .mu-now { color: inherit; }
-.mu-now { color: %(accent)s; }
+.mu-now { color: %(accent)s; text-shadow: %(accent_halo)s; -gtk-icon-shadow: %(accent_halo)s; }
 
 /* artists */
 .mu-artists { background: %(content_bg)s; box-shadow: inset -1px 0 %(separator)s; }
@@ -143,7 +143,7 @@ columnview.mu-songs > listview > row:selected .mu-now { color: inherit; }
 .mu-album-head { padding: 24px 28px 18px 28px; }
 .mu-album-name { font-family: %(font_display)s; font-size: 24px; font-weight: 700; color: %(label)s; }
 .mu-block-name { font-size: %(text_title)s; font-weight: 700; color: %(label)s; }
-.mu-album-artist { font-family: %(font_display)s; font-size: 20px; font-weight: 500; color: %(accent)s; }
+.mu-album-artist { font-family: %(font_display)s; font-size: 20px; font-weight: 500; color: %(accent)s; text-shadow: %(accent_halo)s; -gtk-icon-shadow: %(accent_halo)s; }
 .mu-album-meta { font-size: %(text_small)s; font-weight: 600; color: %(label_secondary)s; }
 button.mu-pill { min-height: 28px; min-width: 96px; padding: 0 16px; border-radius: %(r_label)s; border: none;
   font-weight: 600; color: %(label_on_accent)s; background: %(accent)s; box-shadow: %(shadow_control)s;

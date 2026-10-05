@@ -85,7 +85,7 @@ textview.te-page gutter { font-family: %(font_mono)s; font-size: 0.85em; }
   border: none; background: none; box-shadow: none; color: %(label_secondary)s;
   font-size: %(text_small)s; font-weight: 700; font-family: %(font_mono)s; }
 .te-find button.te-opt:hover { background: %(tool_hover)s; color: %(label)s; }
-.te-find button.te-opt:checked { background: alpha(%(accent)s, 0.18); color: %(accent)s; }
+.te-find button.te-opt:checked { background: alpha(%(accent)s, 0.18); color: %(accent)s; text-shadow: %(accent_halo)s; -gtk-icon-shadow: %(accent_halo)s; }
 .te-find button.te-nav { min-height: 24px; min-width: 26px; padding: 0 4px; border: none;
   background: %(control_bg)s; color: %(label)s; box-shadow: inset 0 0 0 1px %(separator)s, %(shadow_control)s; }
 .te-find button.te-nav:active { background: %(control_pressed)s; }

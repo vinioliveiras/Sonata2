@@ -77,8 +77,8 @@ window.sonata-assistant { color: %(label)s; font-family: %(font)s; font-size: %(
 .as-meter-value { font-size: %(text_small)s; color: %(label_tertiary)s; font-feature-settings: "tnum"; }
 .as-tool { color: %(label_secondary)s; font-size: %(text_small)s; margin: 2px 0; }
 .as-tool image { color: %(label_secondary)s; }
-.as-tool.as-wait { color: %(accent)s; }
-.as-tool.as-wait image { color: %(accent)s; }
+.as-tool.as-wait { color: %(accent)s; text-shadow: %(accent_halo)s; -gtk-icon-shadow: %(accent_halo)s; }
+.as-tool.as-wait image { color: %(accent)s; text-shadow: %(accent_halo)s; -gtk-icon-shadow: %(accent_halo)s; }
 .as-tool.as-denied, .as-tool.as-denied image { color: %(label_tertiary)s; }
 .as-settings { padding: 2px 0 6px 0; }
 .as-settings .as-field-row { padding: 2px 10px 4px 10px; }
