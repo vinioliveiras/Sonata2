@@ -74,6 +74,24 @@ class ConfigRowsTest(unittest.TestCase):
             rows = {r[1]: r for r in SC.config_rows()}
         self.assertEqual(rows["Code"][0], SC.FAIL)
 
+    def test_official_claude_is_not_ok(self):
+        """The official Claude Desktop ignores CLAUDE_NATIVE_TITLEBAR (only the
+        community package reads it): not reported as styled."""
+        d = tempfile.mkdtemp()
+        launcher = os.path.join(d, "claude-desktop")
+        with open(launcher, "w") as f:
+            f.write("#!/bin/sh\nexec electron /usr/lib/claude-desktop/app.asar\n")
+        os.chmod(launcher, 0o755)
+        cfg = tempfile.mkdtemp()
+        with mock.patch.dict(os.environ, {"PATH": d, "CLAUDE_NATIVE_TITLEBAR": "1"}), \
+                mock.patch("gi.repository.GLib.get_user_config_dir", lambda: cfg), \
+                mock.patch("sonata2.titlebars.enabled", lambda: True), \
+                mock.patch("sonata2.titlebars.chromium_roots", lambda c: []), \
+                mock.patch.object(SC, "steam_rows", lambda: []):
+            rows = {r[1]: r for r in SC.config_rows()}
+        self.assertEqual(rows["Claude Desktop"][0], SC.WARN)
+        self.assertIn("official", rows["Claude Desktop"][2])
+
     def test_wired(self):
         import inspect
         from sonata2 import __main__ as M

@@ -94,10 +94,16 @@ def config_rows() -> list:
                 ok = False
             rows.append((OK if ok else FAIL, "Vesktop", "system title bar" if ok else "its own title bar"))
     import shutil
-    if shutil.which("claude-desktop") or os.path.isdir("/usr/lib/claude-desktop"):
-        ok = os.environ.get("CLAUDE_NATIVE_TITLEBAR") == "1"
-        rows.append((OK if ok else WARN, "Claude Desktop", "native title bar" if ok else
-                     "CLAUDE_NATIVE_TITLEBAR not set in this session (tools/session-env.sh)"))
+    launcher = shutil.which("claude-desktop")
+    if launcher:
+        # only the community package (claude-desktop-bin / -extra) reads the
+        # variable; Anthropic's official build draws its own title bar (Vini)
+        if "CLAUDE_NATIVE_TITLEBAR" not in _read(os.path.realpath(launcher)):
+            rows.append((WARN, "Claude Desktop", "the official build: its own title bar (no setting for Sonata's)"))
+        else:
+            ok = os.environ.get("CLAUDE_NATIVE_TITLEBAR") == "1"
+            rows.append((OK if ok else WARN, "Claude Desktop", "native title bar" if ok else
+                         "CLAUDE_NATIVE_TITLEBAR not set in this session (tools/session-env.sh)"))
     try:
         from . import adwstyle
         css, user = adwstyle.css_path(), _read(adwstyle.user_css())
