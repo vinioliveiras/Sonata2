@@ -58,6 +58,12 @@ REVEAL_MS = 150                                 # pointer at the top edge -> the
 POLL_S = 10
 
 ui.register("""
+.topbar-item.inuse { padding-left: 4px; padding-right: 4px; }
+.inuse-dot { min-width: 7px; min-height: 7px; border-radius: 4px; }
+.inuse-dot.mic { background: %(sys_orange)s; }
+.inuse-dot.cam { background: %(sys_green)s; }
+""", key="topbar-inuse")
+ui.register("""
 window.sonata-topbar, window.sonata-topbar > contents { background: none; box-shadow: none; }
 .topbar { min-height: %(bar_h)dpx; padding: 0; font-family: %(font)s; font-size: %(text_body)s;
   color: %(label)s; }
@@ -205,6 +211,18 @@ class Bar(Gtk.CenterBox):
         self.spotlight.set_visible(self.cfg.get("show_spotlight", True))
         self.cc = self._item(right, icon="sonata-control-center-symbolic", on_click=self._control_center,
                              css="icon")
+        # microphone / camera in use (macOS: the orange and green dots, right of Control Center)
+        from ..backend import inuse
+        self.inuse = _shared("inuse", inuse.Watcher)
+        self.inuse_btn = self._item(right, on_click=self._control_center, css="icon")
+        self.inuse_btn.add_css_class("inuse")
+        self.mic_dot = Gtk.Box(css_classes=["inuse-dot", "mic"], valign=Gtk.Align.CENTER)
+        self.cam_dot = Gtk.Box(css_classes=["inuse-dot", "cam"], valign=Gtk.Align.CENTER)
+        self.inuse_btn.get_child().append(self.cam_dot)
+        self.inuse_btn.get_child().append(self.mic_dot)
+        self.inuse_btn.get_child().set_spacing(3)
+        self.inuse.listeners.append(self._inuse_changed)
+        self._inuse_changed()
         self.clock = self._item(right, text="", on_click=self._calendar)
         right.set_margin_end(8)
         self.set_end_widget(right)
@@ -230,11 +248,22 @@ class Bar(Gtk.CenterBox):
         if self in _BARS:
             _BARS.remove(self)
         for owner, cb in ((self.manager, self._active_changed), (self.players, self._extras_visibility),
-                          (self.fullscreen_first, self._fullscreen_cb), (self._bt, self._bt_update)):
+                          (self.fullscreen_first, self._fullscreen_cb), (self._bt, self._bt_update),
+                          (self.inuse, self._inuse_changed)):
             if owner is not None and cb in owner.listeners:
                 owner.listeners.remove(cb)
         ui.theme.off_change(self._theme_cb)
         self._cfg_mon.cancel()
+
+    def _inuse_changed(self) -> None:
+        """The dots: green while the camera records, orange the microphone; who, on hover."""
+        st = self.inuse.state
+        self.cam_dot.set_visible(bool(st["camera"]))
+        self.mic_dot.set_visible(bool(st["mic"]) and not st["camera"])   # macOS: the camera's dot covers both
+        self.inuse_btn.set_visible(bool(st["camera"] or st["mic"]))
+        lines = ([f"Camera: {', '.join(st['camera'])}"] if st["camera"] else []) + \
+                ([f"Microphone: {', '.join(st['mic'])}"] if st["mic"] else [])
+        self.inuse_btn.set_tooltip_text("\n".join(lines) or None)
 
     def _extras_visibility(self) -> None:
         self.nowplaying.set_visible(self.cfg["show_now_playing"] and self.players.active)
@@ -1523,6 +1552,25 @@ class TopBarWindow(Gtk.ApplicationWindow):
             self.bar.nightshift = NightShift()
             from .idlelock import IdleLock
             self.bar.idlelock = IdleLock()
+            try:                                                    # a browser sharing the screen: a pill
+                from .sharing import SharingControl
+                self.bar.sharing = SharingControl(app, self.manager)
+            except Exception as e:
+                print(f"sonata2-topbar: sharing: {e}")
+            def usb_check():                                        # a lock screen gone without unblocking USB
+                try:
+                    from ..backend import usbprotect
+                    from .idlelock import is_locked
+                    usbprotect.restore_if_stale(is_locked)
+                except Exception as e:
+                    print(f"sonata2-topbar: USB protection: {e}")
+                return True
+            GLib.timeout_add_seconds(30, usb_check)
+            try:                                                    # background apps give memory back; last resort: the alert
+                from .memorywatch import MemoryWatch
+                self.bar.memorywatch = MemoryWatch(app)
+            except Exception as e:
+                print(f"sonata2-topbar: memory watch: {e}")
             try:                                                    # macOS' rounded screen corners
                 from .screencorners import ScreenCorners
                 self.bar.screen_corners = ScreenCorners(app)

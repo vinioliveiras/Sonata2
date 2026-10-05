@@ -45,14 +45,19 @@ window.sonata-share, window.sonata-share > contents { background: none; box-shad
 
 
 def _parse(line: str):
-    """(kind, name to show, output name for the thumbnail)"""
+    """(kind, name to show, output name / toplevel identifier for the thumbnail).
+    xdg-desktop-portal-wlr: "Monitor: HDMI-A-1 Acer KG241Y ...", "Window: <title> (<identifier>)"."""
     if line.startswith("Monitor: "):
-        name = line[len("Monitor: "):].strip()
+        name = line[len("Monitor: "):].strip().split(" ", 1)[0]
         return "screen", name, name
     if line.startswith("Window: "):
-        rest = line[len("Window: "):]
-        title = rest.split(": ", 1)[1] if ": " in rest else rest
-        return "window", title.strip() or "Window", None
+        rest = line[len("Window: "):].strip()
+        if rest.endswith(")") and " (" in rest:
+            title, ident = rest[:-1].rsplit(" (", 1)
+            return "window", title.strip() or "Window", ident.strip()
+        if ": " in rest:                            # older versions: "Window: <id>: <title>"
+            return "window", rest.split(": ", 1)[1].strip() or "Window", None
+        return "window", "Window", rest or None     # only the identifier
     return "screen", line.strip(), line.strip()
 
 
@@ -106,6 +111,32 @@ def _thumb(output):
     if not output or not shutil.which("grim"):
         return None
     return _grim_texture(["-o", output, "-s", "0.25"])
+
+
+def _window_thumb(ident):
+    """A window's own picture (grim -T: the toplevel capture xdg-desktop-portal-wlr shares), even when covered."""
+    if not ident or not shutil.which("grim"):
+        return None
+    return _grim_texture(["-T", ident, "-s", "0.25"])
+
+
+def _views_by_title() -> dict:
+    """{title: app id} of the open windows (the app's icon on a window's thumbnail)."""
+    try:
+        from .capture import _ipc
+        return {v.get("title"): v.get("app-id") for v in _ipc().call("window-rules/list-views") or []
+                if isinstance(v, dict) and v.get("title")}
+    except Exception:
+        return {}
+
+
+def _textures(jobs):
+    """[fn(arg)...] at once (one grim per window: six windows waited 1 s one by one)."""
+    from concurrent.futures import ThreadPoolExecutor
+    if not jobs:
+        return []
+    with ThreadPoolExecutor(max_workers=min(6, len(jobs))) as ex:
+        return list(ex.map(lambda j: j[0](j[1]), jobs))
 
 
 class Picker(Gtk.Window):
@@ -209,11 +240,17 @@ class SharePicker(Picker):
 
     def __init__(self, app, lines):
         self.lines, self.result = lines, None
+        parsed = [_parse(line) for line in lines]
+        textures = _textures([(_thumb if kind == "screen" else _window_thumb, ref) for kind, _l, ref in parsed])
+        apps = _views_by_title() if any(kind == "window" for kind, _l, _r in parsed) else {}
         items = []
-        for line in lines:
-            kind, label, output = _parse(line)
+        for line, (kind, label, _ref), tex in zip(lines, parsed, textures):
+            badge = None
+            if kind == "window" and apps.get(label):
+                from .capture import _app_gicon
+                badge = _app_gicon(apps[label])
             items.append({"name": _display_name(label) if kind == "screen" else label,
-                          "texture": _thumb(output) if kind == "screen" else None,
+                          "texture": tex, "badge": badge,
                           "icon": "video-display-symbolic" if kind == "screen" else "window-symbolic",
                           "value": line})
         super().__init__(app, "Choose what to share", "The app will see everything on the screen you pick.",

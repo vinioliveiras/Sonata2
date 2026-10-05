@@ -28,7 +28,8 @@ THUMB_MS = 5000
 THUMB_W = 200
 # shots_to: pictures | desktop | documents | clipboard | other (shots_dir)
 # movies_to: videos | desktop | documents | other (movies_dir); audio: none | system | mic
-DEFAULTS = {"shots_to": "pictures", "shots_dir": "", "movies_to": "videos", "movies_dir": "",
+# shots_copy: also on the clipboard when saved to a folder (Vini: both at once)
+DEFAULTS = {"shots_to": "pictures", "shots_dir": "", "shots_copy": False, "movies_to": "videos", "movies_dir": "",
             "timer": 0, "audio": "system", "mode": "display",     # mode: the toolbar's last one (Vini)
             "encoder": ""}                                         # the recorder encoder that worked last
 
@@ -43,20 +44,23 @@ window.sonata-shot, window.sonata-shot > contents { background: none; box-shadow
 .cap-bar button:checked { background: alpha(%(label)s, 0.16); }
 .cap-bar button.cap-go { padding: 0 12px; font-weight: 600; }
 .cap-bar .cap-sep { min-width: 1px; background: %(separator)s; margin: 4px 6px; }
-/* the recording control: a pill over the middle of the menu bar */
+/* the recording / screen sharing control over the middle of the menu bar:
+   bare, in the menu bar's own text colour (light and dark); the stop button
+   is the only colour (Vini) */
 window.sonata-rec, window.sonata-rec > contents { background: none; box-shadow: none; }
-.rec-pill { background: %(panel_material)s; color: %(label)s; border-radius: 99px; padding: 0 2px 0 9px;
-  margin: 2px 8px 10px 8px;                                       /* room for the outline and shadow */
-  min-height: 20px; box-shadow: 0 0 0 1px %(hairline)s, inset 0 0 0 1px %(highlight)s, 0 2px 8px rgba(0,0,0,0.25); font-family: %(font)s;
-  font-size: 12px; font-weight: 600; font-feature-settings: "tnum"; }
-.rec-dot { min-width: 8px; min-height: 8px; border-radius: 4px; background: %(sys_red)s;
+.rec-pill { background: none; box-shadow: none; color: %(label)s; padding: 0 2px 0 4px; margin: 2px 8px;
+  min-height: 20px; font-family: %(font)s; font-size: 12px; font-weight: 600; font-feature-settings: "tnum"; }
+.rec-dot { min-width: 7px; min-height: 7px; border-radius: 4px; background: %(label)s;
   animation: rec-blink 1.4s ease-in-out infinite; }
 @keyframes rec-blink { 50%% { opacity: 0.3; } }
+.rec-pill image.share-icon { -gtk-icon-size: 13px; color: %(label)s; }
 .rec-pill image.rec-sound { -gtk-icon-size: 12px; opacity: 0.7; }
 .rec-pill button { min-width: 18px; min-height: 18px; padding: 0; margin: 1px 0; border-radius: 99px;
-  border: none; box-shadow: none; background: alpha(%(label)s, 0.1); color: %(label)s; }
-.rec-pill button:hover { background: alpha(%(label)s, 0.2); }
-.rec-pill button image { -gtk-icon-size: 12px; }
+  border: none; box-shadow: none; background: %(sys_red)s; color: white;
+  transition: opacity 120ms ease-out, transform 120ms ease-out; }
+.rec-pill button:hover { opacity: 0.85; }
+.rec-pill button:active { transform: scale(0.92); }
+.rec-pill button .stop-glyph { min-width: 7px; min-height: 7px; border-radius: 1.5px; background: white; }
 .shot-thumb { border-radius: 6px; box-shadow: 0 0 0 0.5px rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.35); }
 """, key="capture")
 
@@ -406,41 +410,59 @@ class Thumbnail(Gtk.Window):
         self._hide()
 
 
-class RecordingControl(Gtk.Window):
-    """While recording: a red dot, the time, the sound being recorded and a
-    stop button, over the middle of the recorded display's menu bar."""
+def stop_button(tooltip: str) -> Gtk.Button:
+    """The pills' stop button: a white square on red (the pills' only colour)."""
+    b = Gtk.Button(tooltip_text=tooltip, valign=Gtk.Align.CENTER)
+    b.set_child(Gtk.Box(css_classes=["stop-glyph"], halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER))
+    return b
 
-    def __init__(self, app, owner):
-        super().__init__(application=app, title="Screen Recording", decorated=False, resizable=False)
+
+class BarPill(Gtk.Window):
+    """A pill over the middle of the menu bar (macOS' recording / screen
+    sharing controls): put `box` (a .rec-pill) in, then show_on(output)."""
+
+    def __init__(self, app, title, namespace):
+        super().__init__(application=app, title=title, decorated=False, resizable=False)
         self.add_css_class("sonata-rec")
-        self.owner, self._src, self._t0 = owner, 0, 0
-        box = Gtk.Box(spacing=6, css_classes=["rec-pill"], valign=Gtk.Align.CENTER)
-        box.append(Gtk.Box(css_classes=["rec-dot"], valign=Gtk.Align.CENTER))
-        self.time = Gtk.Label(label="0:00")
-        box.append(self.time)
-        self.sound = Gtk.Image(css_classes=["rec-sound"])
-        box.append(self.sound)
-        stop = Gtk.Button(icon_name="media-playback-stop-symbolic", tooltip_text="Stop Recording",
-                          valign=Gtk.Align.CENTER)
-        stop.connect("clicked", lambda *_: self.owner.stop_recording())
-        box.append(stop)
-        self.set_child(box)
+        self.box = Gtk.Box(spacing=6, css_classes=["rec-pill"], valign=Gtk.Align.CENTER)
+        self.set_child(self.box)
         LS = layer.layer_shell()
         self.LS = LS
         if LS:
             LS.init_for_window(self)
-            LS.set_namespace(self, "sonata2-recording")
+            LS.set_namespace(self, namespace)
             LS.set_layer(self, LS.Layer.OVERLAY)
             LS.set_anchor(self, LS.Edge.TOP, True)
             LS.set_exclusive_zone(self, -1)           # over the menu bar, not below it
             LS.set_keyboard_mode(self, LS.KeyboardMode.NONE)
 
-    def start(self, output, audio: bool, kind=None):
+    def show_on(self, output=None):
         if self.LS and output:
             mons = Gdk.Display.get_default().get_monitors()
             for i in range(mons.get_n_items()):
                 if mons.get_item(i).get_connector() == output:
                     self.LS.set_monitor(self, mons.get_item(i))
+        self.present()
+
+
+class RecordingControl(BarPill):
+    """While recording: a red dot, the time, the sound being recorded and a
+    stop button, over the middle of the recorded display's menu bar."""
+
+    def __init__(self, app, owner):
+        super().__init__(app, "Screen Recording", "sonata2-recording")
+        self.owner, self._src, self._t0 = owner, 0, 0
+        box = self.box
+        box.append(Gtk.Box(css_classes=["rec-dot"], valign=Gtk.Align.CENTER))
+        self.time = Gtk.Label(label="0:00")
+        box.append(self.time)
+        self.sound = Gtk.Image(css_classes=["rec-sound"])
+        box.append(self.sound)
+        stop = stop_button("Stop Recording")
+        stop.connect("clicked", lambda *_: self.owner.stop_recording())
+        box.append(stop)
+
+    def start(self, output, audio: bool, kind=None):
         self.sound.set_visible(audio)
         self.sound.set_from_icon_name("audio-input-microphone-symbolic" if kind == "mic"
                                       else "audio-volume-high-symbolic")
@@ -448,7 +470,7 @@ class RecordingControl(Gtk.Window):
         self._tick()
         if not self._src:
             self._src = GLib.timeout_add(1000, self._tick)
-        self.present()
+        self.show_on(output)
 
     def _tick(self) -> bool:
         s = int((GLib.get_monotonic_time() - self._t0) / 1_000_000)
@@ -571,10 +593,11 @@ class Capture:
         if not shutil.which("grim"):
             self._missing("grim")
             return
-        to_clip = cfg.get("shots_to") == "clipboard"
-        # clipboard: one reused file in the runtime dir (tmpfs, gone at logout), not a new one in /tmp per shot
+        clip_only = cfg.get("shots_to") == "clipboard"
+        to_clip = clip_only or bool(cfg.get("shots_copy"))        # in the folder and on the clipboard (Vini)
+        # clipboard only: one reused file in the runtime dir (tmpfs, gone at logout), not a new one in /tmp per shot
         path = os.path.join(GLib.get_user_runtime_dir() or GLib.get_tmp_dir(), "sonata2-clipboard-shot.png") \
-            if to_clip else os.path.join(shots_dir(cfg), _name("Screenshot", "png"))
+            if clip_only else os.path.join(shots_dir(cfg), _name("Screenshot", "png"))
         if frozen is not None:
             pb = frozen.crop(geo) if geo else frozen.output(output) if output else frozen.pb
             if pb is None:
@@ -818,6 +841,10 @@ class _Toolbar(Gtk.Window):
         pop = ui.menu.popup(button, [
             [Item("Save Screenshots To", submenu=places("shots", ("pictures", "Pictures"),
                                                         [("clipboard", "Clipboard")])),
+             # saved to a folder and copied too (Vini); "Clipboard" above is the clipboard alone
+             Item("Also Copy Screenshots to Clipboard", lambda on: setv("shots_copy", bool(on)),
+                  checked=bool(c.get("shots_copy")) or c.get("shots_to") == "clipboard",
+                  enabled=c.get("shots_to") != "clipboard"),
              Item("Save Recordings To", submenu=places("movies", ("videos", "Videos")))],
             [Item("Timer: None", lambda _on: setv("timer", 0), checked=c["timer"] == 0),
              Item("Timer: 5 Seconds", lambda _on: setv("timer", 5), checked=c["timer"] == 5),

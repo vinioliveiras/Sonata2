@@ -21,6 +21,14 @@ XML = os.path.join(os.path.dirname(__file__), "protocols",
 
 # zwlr_foreign_toplevel_handle_v1.state values
 MAXIMIZED, MINIMIZED, ACTIVATED, FULLSCREEN = 0, 1, 2, 3
+# a browser's "<site> is sharing your screen." bar: no app id, a window of
+# its own. Not an app (no Dock icon, no Alt+Tab): the menu bar shows the sharing.
+SHARE_BAR_TEXT = (" is sharing ", " está compartilhando ", " compartilhando ")
+
+
+def is_share_bar(app_id: str, title: str) -> bool:
+    # no app id: "" over Wayfire's IPC, "unknown" over foreign-toplevel
+    return app_id in ("", "unknown", None) and any(t in (title or "") for t in SHARE_BAR_TEXT)
 
 
 def _load_protocol():
@@ -103,6 +111,7 @@ class ToplevelManager:
 
     def __init__(self, display: Gdk.Display, ignore_app_ids=()):
         self.toplevels = []
+        self.share_bars = []            # browsers' "is sharing your screen" bars (is_share_bar)
         self.listeners = []
         self.available = False
         self._ignore = set(ignore_app_ids)
@@ -160,14 +169,19 @@ class ToplevelManager:
             for k, v in pending.items():
                 setattr(t, k, v)
             pending.clear()
-            if t not in self.toplevels and t.app_id not in self._ignore:
-                self.toplevels.append(t)
+            bar = is_share_bar(t.app_id, t.title)
+            mine, other = (self.share_bars, self.toplevels) if bar else (self.toplevels, self.share_bars)
+            if t in other:
+                other.remove(t)
+            if t not in mine and (bar or t.app_id not in self._ignore):
+                mine.append(t)
             self._notify()
 
         def closed(_h):
-            if t in self.toplevels:
-                self.toplevels.remove(t)
-                self._notify()
+            for lst in (self.toplevels, self.share_bars):
+                if t in lst:
+                    lst.remove(t)
+                    self._notify()
             handle.destroy()
 
         for ev, fn in (("title", title), ("app_id", app_id), ("state", state),

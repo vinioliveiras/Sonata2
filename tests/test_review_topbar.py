@@ -512,6 +512,7 @@ class SharePickerTest(unittest.TestCase):
         self.assertEqual(sharepicker._parse("HDMI-A-1"), ("screen", "HDMI-A-1", "HDMI-A-1"))
         self.assertEqual(sharepicker._parse("Monitor: DP-2"), ("screen", "DP-2", "DP-2"))
         self.assertEqual(sharepicker._parse("Window: 42: Firefox: Docs"), ("window", "Firefox: Docs", None))
+        self.assertEqual(sharepicker._parse("Window: Docs (a1b2)"), ("window", "Docs", "a1b2"))
         self.assertEqual(sharepicker._parse("Window: "), ("window", "Window", None))
         self.assertEqual(sharepicker._display_name("eDP-1"), "Built-in Display")
 
