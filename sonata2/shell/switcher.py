@@ -193,7 +193,7 @@ class Switcher(Gtk.Window):
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["sw-item"])
             img = Gtk.Image(pixel_size=size)
             # a Steam game: its name and icon, as in the Dock (Vini: "steam_app_…")
-            game = None if info or not steamgames.appid(key) else steamgames.shown(
+            game = None if info or not (steamgames.appid(key) or steamgames.is_proton_app(key)) else steamgames.shown(
                 key, next((t.title for t in self.groups[key] if getattr(t, "title", "")), ""))
             if info:
                 icons.set_image(img, icons.app_icon(info))

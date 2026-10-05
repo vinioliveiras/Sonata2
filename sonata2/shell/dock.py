@@ -1612,7 +1612,9 @@ class Dock(Gtk.Box):
             if key not in self.tiles:
                 if self._add_known_tile(key):        # a desktop entry, or a Steam game
                     pass
-                elif steamgames.appid(key):          # a Steam game Steam doesn't list: its window's title
+                elif steamgames.appid(key) or steamgames.is_proton_app(key):
+                    # a Steam game Steam doesn't list, or a Windows program run with
+                    # Proton (Faugus): its window's title
                     self._add_tile(key, *steamgames.shown(key, next((t.title for t in groups[key] if t.title), "")))
                 else:   # no .desktop: generic icon, app_id as name
                     # (logged: a window that should have matched an app is easy to spot)

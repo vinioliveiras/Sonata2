@@ -449,7 +449,14 @@ class Bar(Gtk.CenterBox):
         self.go_btn.set_visible(desktop)
         if key:
             info = apps.lookup(key)
-            self._set_text(self.app_btn, info.get_display_name() if info else key)
+            if info:
+                name = info.get_display_name()
+            else:                                 # a Steam game, a Windows program (Proton): not its app_id
+                from .. import steamgames
+                act = next((t for t in _wins if t.activated), _wins[0] if _wins else None)
+                game = steamgames.shown(key, getattr(act, "title", "") or "")
+                name = game[0] if game else key
+            self._set_text(self.app_btn, name)
         else:
             self._set_text(self.app_btn, "Files")
 
