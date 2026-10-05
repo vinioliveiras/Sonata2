@@ -168,6 +168,42 @@ class QuickLook(Adw.Window):
         self.close()
 
 
+# -- Get Info: Sharing & Permissions (Finder), Open With ----------------------------------------
+LEVELS = ("Read & Write", "Read only", "No Access")
+WHO = (("owner", 6), ("group", 3), ("other", 0))       # the shift of each one's rwx bits
+
+
+def perm_level(mode: int, shift: int) -> int:
+    """0 Read & Write, 1 Read only, 2 No Access."""
+    bits = (mode >> shift) & 0o7
+    if bits & 0o2:
+        return 0
+    return 1 if bits & 0o4 else 2
+
+
+def set_level(mode: int, shift: int, level: int, is_dir: bool) -> int:
+    """`mode` with that one's access changed; a folder's x follows its r, a
+    file keeps whatever x it had (a program stays a program)."""
+    old = (mode >> shift) & 0o7
+    x = 0o1 if (is_dir and level < 2) else (old & 0o1 if level < 2 else 0)
+    new = {0: 0o6, 1: 0o4, 2: 0}[level] | x
+    return (mode & ~(0o7 << shift)) | (new << shift)
+
+
+def _owner_names(st):
+    import grp
+    import pwd
+    try:
+        owner = pwd.getpwuid(st.st_uid).pw_name
+    except KeyError:
+        owner = str(st.st_uid)
+    try:
+        group = grp.getgrgid(st.st_gid).gr_name
+    except KeyError:
+        group = str(st.st_gid)
+    return owner, group
+
+
 class GetInfo(Adw.Window):
     def __init__(self, parent, info):
         super().__init__(transient_for=None, default_width=300,
@@ -206,6 +242,10 @@ class GetInfo(Adw.Window):
             if k == "Size:":
                 self.size_row = val
         col.append(grid)
+        if not is_dir(info):
+            self._open_with(col, info, f)
+        if f.get_path():
+            self._permissions(col, f.get_path(), is_dir(info))
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         outer.append(ui.window.titlebar(self, zoom=True))    # traffic lights where every window has them
         outer.append(Gtk.ScrolledWindow(child=col, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER,
@@ -216,6 +256,73 @@ class GetInfo(Adw.Window):
             threading.Thread(target=self._count, args=(f.get_path(),), daemon=True).start()
         elif not is_dir(info):
             self.size_row.set_label(f"{info.get_size():,} bytes ({size(info)} on disk)")
+
+    def _open_with(self, col, info, f):
+        """Finder's "Open with:" -- this file, or every file of its kind (Change All)."""
+        ct = info.get_content_type() or ""
+        apps = Gio.AppInfo.get_all_for_type(ct) if ct else []
+        if not apps:
+            return
+        default = Gio.AppInfo.get_default_for_type(ct, False)
+        cur = next((i for i, a in enumerate(apps) if default and a.equal(default)), 0)
+        col.append(Gtk.Separator())
+        col.append(Gtk.Label(label="Open with:", xalign=0, css_classes=["gi-key"]))
+        row = Gtk.Box(spacing=8)
+        pick = ui.controls.popup_button([a.get_display_name() for a in apps], cur)
+        pick.set_hexpand(True)
+        row.append(pick)
+        change = ui.controls.push_button("Change All…", lambda: self._change_all(apps[pick.get_selected()], ct))
+        row.append(change)
+        col.append(row)
+        self.open_with = pick                                     # (tests)
+
+    def _change_all(self, app, ct):
+        desc = (Gio.content_type_get_description(ct) if ct else "") or "such"
+
+        def answer(rid):
+            if rid == "change":
+                try:
+                    app.set_as_default_for_type(ct)
+                except GLib.Error as e:
+                    ui.dialog.alert("The default app can’t be changed.", e.message, [("ok", "OK", "default")],
+                                    parent=self)
+        ui.dialog.alert(f"Do you want to change all similar documents to open with “{app.get_display_name()}”?",
+                        f"This change will apply to every {desc} file.",
+                        [("cancel", "Cancel", ""), ("change", "Continue", "default")], answer, parent=self)
+
+    def _permissions(self, col, path, folder):
+        """Finder's Sharing & Permissions: you, the group, everyone -- Read &
+        Write, Read only or No Access. Only the owner can change them."""
+        try:
+            st = os.lstat(path)
+        except OSError:
+            return
+        owner, group = _owner_names(st)
+        mine = st.st_uid == os.getuid()
+        col.append(Gtk.Separator())
+        col.append(Gtk.Label(label="Sharing & Permissions:", xalign=0, css_classes=["gi-key"]))
+        if not mine:
+            col.append(Gtk.Label(label="Only its owner can change them.", xalign=0, css_classes=["gi-val"]))
+        grid = Gtk.Grid(column_spacing=10, row_spacing=4)
+        self.perm_picks = {}
+        for r, (who, shift) in enumerate(WHO):
+            name = {"owner": f"{owner} (Me)" if mine else owner, "group": group, "other": "everyone"}[who]
+            grid.attach(Gtk.Label(label=name, xalign=0, css_classes=["gi-val"], hexpand=True,
+                                  ellipsize=Pango.EllipsizeMode.END), 0, r, 1, 1)
+            pick = ui.controls.popup_button(list(LEVELS), perm_level(st.st_mode, shift),
+                                            lambda lvl, s=shift: self._set_perm(path, s, lvl, folder))
+            pick.set_sensitive(mine)
+            grid.attach(pick, 1, r, 1, 1)
+            self.perm_picks[who] = pick
+        col.append(grid)
+
+    def _set_perm(self, path, shift, level, folder):
+        try:
+            mode = os.lstat(path).st_mode
+            os.chmod(path, set_level(mode, shift, level, folder) & 0o7777)
+        except OSError as e:
+            ui.dialog.alert("The permissions can’t be changed.", e.strerror or str(e), [("ok", "OK", "default")],
+                            parent=self)
 
     def _count(self, path):
         total = items = 0
