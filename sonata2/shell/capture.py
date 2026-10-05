@@ -327,10 +327,20 @@ ENCODERS = {
 }
 
 
+# wl-screenrec first when it's there (Vini: the drawing palette must stay out
+# of recordings): it captures over ext-image-copy-capture -- sonata-corners'
+# capture, without Sonata's controls -- where wf-recorder only knows
+# wlr-screencopy (the screen as shown). Its GPU encoder (VA-API), else the CPU.
+SCREENREC = ("screenrec", "screenrec-sw")
+
+
 def encoders(preferred=None) -> list:
-    """The encoders to try, in order (the one that worked last time first)."""
-    found = [e for e, ok in (("nvenc", os.path.exists("/dev/nvidia0")),
-                             ("vaapi", os.path.exists(RENDER_NODE)), ("x264", True)) if ok]
+    """The encoders to try, in order (the one that worked last time first);
+    "screenrec*" are wl-screenrec's, the others wf-recorder's."""
+    found = list(SCREENREC) if shutil.which("wl-screenrec") else []
+    if shutil.which("wf-recorder") or not found:
+        found += [e for e, ok in (("nvenc", os.path.exists("/dev/nvidia0")),
+                                  ("vaapi", os.path.exists(RENDER_NODE)), ("x264", True)) if ok]
     if preferred in found:
         found.remove(preferred)
         found.insert(0, preferred)
@@ -339,7 +349,18 @@ def encoders(preferred=None) -> list:
 
 def recorder_command(path: str, geo=None, output=None, audio=None, encoder="x264") -> list:
     """wf-recorder at a constant FPS with a low CPU priority: the game or
-    app being recorded goes first."""
+    app being recorded goes first. "screenrec*": wl-screenrec instead."""
+    if encoder in SCREENREC:
+        cmd = (["nice", "-n", "10"] if shutil.which("nice") else []) + ["wl-screenrec", "-f", path]
+        if encoder == "screenrec-sw":
+            cmd.append("--no-hw")
+        if geo:
+            cmd += ["-g", geo]
+        elif output:
+            cmd += ["-o", output]
+        if audio:
+            cmd += ["--audio", "--audio-device", audio]
+        return cmd
     cmd = (["nice", "-n", "10"] if shutil.which("nice") else []) + \
         ["wf-recorder", "-y", "-f", path, "-r", str(FPS)] + ENCODERS.get(encoder, ENCODERS["x264"])
     if geo:
@@ -631,7 +652,7 @@ class Capture:
         self.shot_taken(path)
 
     def _record(self, geo, cfg, output=None):
-        if not shutil.which("wf-recorder"):
+        if not shutil.which("wf-recorder") and not shutil.which("wl-screenrec"):
             self._missing("wf-recorder")
             return
         self.rec_path = os.path.join(movies_dir(cfg), _name("Screen Recording", "mp4"))

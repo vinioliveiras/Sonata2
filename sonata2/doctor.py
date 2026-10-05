@@ -44,6 +44,8 @@ TOOLS = [
     ("grim", "screenshots, Dock window previews", "grim", "grim", "grim"),
     ("slurp", "screenshot of an area", "slurp", "slurp", "slurp"),
     ("wf-recorder", "screen recording", "wf-recorder", "wf-recorder", "wf-recorder"),
+    ("wl-screenrec", "screen recording without the drawing palette (AUR: wl-screenrec)", "wl-screenrec",
+     "wl-screenrec", "wl-screenrec"),
     ("wl-copy", "clipboard from the shell", "wl-clipboard", "wl-clipboard", "wl-clipboard"),
     ("wlsunset", "Night Shift", "wlsunset", "wlsunset", "wlsunset"),
     ("swayidle", "lock after the display sleeps", "swayidle", "swayidle", "swayidle"),

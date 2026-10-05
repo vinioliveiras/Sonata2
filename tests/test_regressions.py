@@ -890,6 +890,24 @@ class CaptureTargetsTests(unittest.TestCase):
         self.assertEqual(C.movies_dir({"movies_to": "other", "movies_dir": os.path.join(other, "new")}),
                          os.path.join(other, "new"))                                # made when missing
 
+    def test_screenrec_first(self):
+        """Vini: the drawing palette stays out of recordings -- wl-screenrec
+        (ext-image-copy-capture) goes first when installed; wf-recorder after."""
+        from unittest import mock
+        from sonata2.shell import capture as C
+        with mock.patch("shutil.which", lambda n: "/usr/bin/" + n):
+            order = C.encoders()
+        self.assertEqual(order[:2], ["screenrec", "screenrec-sw"])
+        self.assertEqual(order[-1], "x264")
+        with mock.patch("shutil.which", lambda n: None if n == "wl-screenrec" else "/usr/bin/" + n):
+            self.assertNotIn("screenrec", C.encoders())
+        cmd = C.recorder_command("/tmp/x.mp4", None, "HDMI-A-1", "spk.monitor", "screenrec-sw")
+        self.assertIn("wl-screenrec", cmd)
+        self.assertEqual(cmd[cmd.index("-o") + 1], "HDMI-A-1")
+        self.assertIn("--no-hw", cmd)
+        self.assertEqual(cmd[cmd.index("--audio-device") + 1], "spk.monitor")
+        self.assertNotIn("--no-hw", C.recorder_command("/tmp/x.mp4", "1,1 9x9", None, None, "screenrec"))
+
     def test_encoder_order_and_fallback(self):
         from sonata2.shell import capture as C
         order = C.encoders()

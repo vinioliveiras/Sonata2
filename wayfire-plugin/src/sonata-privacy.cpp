@@ -66,7 +66,7 @@ static const std::set<std::string> PRIVILEGED = {
 
 /* tools Sonata runs: trusted only when Sonata (or the portal) started them */
 static const std::set<std::string> HELPERS = {
-    "grim", "slurp", "wf-recorder", "wl-copy", "wl-paste", "wtype", "wlsunset",
+    "grim", "slurp", "wf-recorder", "wl-screenrec", "wl-copy", "wl-paste", "wtype", "wlsunset",
     "wlr-randr", "swayidle", "wayvnc",
 };
 
