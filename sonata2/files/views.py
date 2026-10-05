@@ -10,7 +10,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import icons, ui  # noqa: E402
-from . import folder, thumbs  # noqa: E402
+from . import folder, tags, thumbs  # noqa: E402
 from .folder import is_dir, sort_key  # noqa: E402
 
 ui.register("""
@@ -511,6 +511,9 @@ class IconsView(_Cells):
                             halign=Gtk.Align.CENTER, css_classes=["fs-name"])
         box.append(box.img)
         box.append(box.lbl)
+        box.tags = tags.dots_box()
+        box.tags.set_halign(Gtk.Align.CENTER)
+        box.append(box.tags)
         self._dnd_cell(box)
         item.set_child(box)
 
@@ -518,6 +521,7 @@ class IconsView(_Cells):
         info, box = item.get_item(), item.get_child()
         set_icon(box.img, info)
         box.lbl.set_label(label(info))
+        tags.show(box.tags, tags.of_info(info))
         (box.add_css_class if _hidden(info) else box.remove_css_class)("fs-hidden")
         self._track(box, info)
 
@@ -701,8 +705,10 @@ class ListView(_Cells):
         box = Gtk.Box(spacing=6)
         box.img = Gtk.Image(pixel_size=16)
         box.lbl = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE, hexpand=True)
+        box.tags = tags.dots_box()
         box.append(box.img)
         box.append(box.lbl)
+        box.append(box.tags)
         self._dnd_cell(box)
         item.set_child(box)
 
@@ -710,6 +716,7 @@ class ListView(_Cells):
         info, box = item.get_item(), item.get_child()
         set_icon(box.img, info, small=True)
         box.lbl.set_label(label(info))
+        tags.show(box.tags, tags.of_info(info))
         (box.add_css_class if _hidden(info) else box.remove_css_class)("fs-hidden")
         self._track(box, info)
 
@@ -796,7 +803,8 @@ class _Column(Gtk.ScrolledWindow, _Cells):
         box.img = Gtk.Image(pixel_size=16)
         box.lbl = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE, hexpand=True)
         box.chev = Gtk.Image(icon_name="go-next-symbolic", css_classes=["fs-chevron"])
-        for w in (box.img, box.lbl, box.chev):
+        box.tags = tags.dots_box()
+        for w in (box.img, box.lbl, box.tags, box.chev):
             box.append(w)
         self._dnd_cell(box)
         item.set_child(box)
@@ -805,6 +813,7 @@ class _Column(Gtk.ScrolledWindow, _Cells):
         info, box = item.get_item(), item.get_child()
         set_icon(box.img, info, small=True)
         box.lbl.set_label(label(info))
+        tags.show(box.tags, tags.of_info(info))
         box.chev.set_visible(is_dir(info))
         (box.add_css_class if _hidden(info) else box.remove_css_class)("fs-hidden")
         self._track(box, info)

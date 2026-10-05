@@ -92,6 +92,7 @@ class Item:
     enabled: bool = True
     submenu: list = field(default_factory=list)  # list of sections
     on_close: Optional[Callable] = None         # a small x at the right (e.g. close that window)
+    widget: Optional[Callable] = None           # widget(popover) -> a row of its own (Files' tag colours)
 
 
 def _build(sections, group, prefix="i", customs=None) -> Gio.Menu:
@@ -103,7 +104,8 @@ def _build(sections, group, prefix="i", customs=None) -> Gio.Menu:
             if item.submenu:
                 sec.append_submenu(item.label, _build(item.submenu, group, name + "_", customs))
                 continue
-            if item.on_close is not None and customs is not None:     # a row with its own x
+            if (item.on_close is not None or item.widget is not None) and customs is not None:
+                # a row with its own x, or a widget of its own
                 mi = Gio.MenuItem.new(None, None)
                 mi.set_attribute_value("custom", GLib.Variant("s", name))
                 sec.append_item(mi)
@@ -173,7 +175,7 @@ def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
     # (and their closures) for good, and two menus on one anchor clashed
     pop.insert_action_group("m", group)
     for name, item in customs:
-        pop.add_child(_closable_row(pop, item), name)
+        pop.add_child(item.widget(pop) if item.widget is not None else _closable_row(pop, item), name)
     pop.set_has_arrow(False)
     if glass:
         pop.add_css_class("glass")

@@ -21,7 +21,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, names, ui  # noqa: E402
-from . import actions, folder, folderprefs, ops, packages, undo  # noqa: E402
+from . import actions, folder, folderprefs, ops, packages, tags, undo  # noqa: E402
 from .search import Search  # noqa: E402
 from .folder import APPS, RECENTS, VIRTUAL, file_of, is_dir  # noqa: E402
 from .views import SORT_BY, ColumnsView, IconsView, ListView  # noqa: E402
@@ -753,6 +753,11 @@ class FilesWindow(Adw.ApplicationWindow):
                              Item("Duplicate", self.duplicate_selection, enabled=self._writable_here())])
             sections.append([Item(f"Copy {what}", self.copy_selection),
                              Item("Copy Path" if n == 1 else "Copy Paths", self.copy_path_selection)])
+            paths = [file_of(i).get_path() for i in sel]
+            if all(paths) and self._writable_sel(sel):                    # Finder's tag colours
+                states = {t: tags.state(paths, t) for t in tags.NAMES}
+                sections.append([Item("Tags", widget=lambda pop, p=paths, st=states: tags.menu_row(
+                    pop, st, lambda t, on: self.tag_files(p, t, on)))])
             pics = [(file_of(i), actions.picture_kind(i)) for i in sel]
             if all(k for _f, k in pics) and self._writable_sel(sel):          # Finder's Quick Actions
                 sections.append([Item("Quick Actions", submenu=[[
@@ -871,6 +876,7 @@ class FilesWindow(Adw.ApplicationWindow):
 
         def renamed(f):
             undo.renamed(f, old_name)
+            tags.moved([(f.get_parent().get_child(old_name), f)])
             self._select_when_listed(f.get_basename())
         ops.rename(file_of(info), new_name, renamed, lambda e: self._error(f"The name “{new_name}” can’t be used.", e))
 
@@ -967,6 +973,17 @@ class FilesWindow(Adw.ApplicationWindow):
 
     def copy_path_selection(self):
         actions.copy_paths(self, self._selected_files())
+
+    def tag_files(self, paths, tag, on):
+        """Add / remove a colour tag (tags.py); a folder showing that tag lists them again."""
+        failed = tags.toggle(paths, tag, on)
+        if failed:
+            p, e = failed[0]
+            self._error(f"“{os.path.basename(p)}” can’t be tagged.", None,
+                        e.strerror or "The disk it’s on can’t keep tags.")
+        for t in self.tabs:
+            if tags.tag_of(t.folder.uri):
+                t.folder.reload()
 
     def _rotate(self, pics, clockwise):
         actions.rotate(pics, clockwise, lambda: [t.folder.reload() for t in self.tabs],

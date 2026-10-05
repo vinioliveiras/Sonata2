@@ -393,6 +393,8 @@ class Transfer:
             from . import undo
             if self.move:
                 undo.moved(self.record)
+                from . import tags
+                tags.moved(self.record)              # the sidebar's Tags follow them
             else:
                 undo.copied(t for _s, t in self.record)
         from .. import sounds

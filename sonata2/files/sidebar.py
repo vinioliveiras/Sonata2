@@ -172,6 +172,10 @@ class Sidebar(Gtk.Box):
             self._place(vol.get_name(), vol.get_symbolic_icon() or "drive-harddisk-symbolic", uri, disk=True)
             self._rows[uri].volume = vol
         self._place("Trash", "user-trash-symbolic", "trash:///")      # (Vini: Trash in the sidebar)
+        from . import tags                                              # Finder's Tags
+        self._head("Tags")
+        for name in tags.NAMES:
+            self._place(name, None, tags.uri(name), tag=name)
         if self._current:
             self.select(self._current)
 
@@ -206,16 +210,22 @@ class Sidebar(Gtk.Box):
         i = rows.index(row) + (1 if zone == "after" else 0)
         return next((r.uri for r in rows[i:] if r.pinned), None)
 
-    def _place(self, title, icon, uri, mount=None, disk=False, favorite=False, pinned=False) -> None:
+    def _place(self, title, icon, uri, mount=None, disk=False, favorite=False, pinned=False, tag=None) -> None:
         row = Gtk.ListBoxRow()
         row.uri = uri
         row.favorite, row.pinned = favorite, pinned
         box = Gtk.Box(spacing=7)
-        img = Gtk.Image(pixel_size=16, css_classes=["fs-place"])
-        if isinstance(icon, str):
-            img.set_from_icon_name(icon)
+        if tag:
+            from . import tags
+            img = tags.dot(tag, 10)
+            img.set_margin_start(3)                   # 16 px wide: lined up with the icons above
+            img.set_margin_end(3)
         else:
-            img.set_from_gicon(icon)
+            img = Gtk.Image(pixel_size=16, css_classes=["fs-place"])
+            if isinstance(icon, str):
+                img.set_from_icon_name(icon)
+            else:
+                img.set_from_gicon(icon)
         box.append(img)
         name = Gtk.Label(label=title, xalign=0, hexpand=True, ellipsize=3, css_classes=["fs-place"])
         if disk:
@@ -240,7 +250,9 @@ class Sidebar(Gtk.Box):
             eject.connect("clicked", lambda _b, m=mount: self._eject(m))
             box.append(eject)
         row.set_child(box)
-        if uri not in folder.VIRTUAL or favorite:
+        if tag:
+            self._tag_target(row, tag)
+        elif uri not in folder.VIRTUAL or favorite:
             self._drop_target(row, uri, favorite)
         if pinned:
             menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
@@ -285,6 +297,25 @@ class Sidebar(Gtk.Box):
         tgt.connect("enter", motion)
         tgt.connect("motion", motion)
         tgt.connect("leave", lambda *_a: show(None))
+        tgt.connect("drop", drop)
+        row.add_controller(tgt)
+
+    def _tag_target(self, row, tag) -> None:
+        """Files dropped on a tag get it (Finder)."""
+        tgt = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY | Gdk.DragAction.MOVE | Gdk.DragAction.LINK)
+
+        def drop(_t, value, *_a):
+            row.remove_css_class("drop-target")
+            paths = [f.get_path() for f in value.get_files() if f.get_path()]
+            win = self.get_root()
+            if paths and hasattr(win, "tag_files"):
+                win.tag_files(paths, tag, True)
+                return True
+            return False
+        # (COPY: the files stay where they are -- a copy drop makes the source do nothing)
+        tgt.connect("enter", lambda *_a: (row.add_css_class("drop-target"), Gdk.DragAction.COPY)[1])
+        tgt.connect("motion", lambda *_a: Gdk.DragAction.COPY)
+        tgt.connect("leave", lambda *_a: row.remove_css_class("drop-target"))
         tgt.connect("drop", drop)
         row.add_controller(tgt)
 

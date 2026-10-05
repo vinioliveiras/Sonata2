@@ -55,6 +55,8 @@ history = History()
 # -- the actions Files records ---------------------------------------------------------------
 def _move(src: Gio.File, dest: Gio.File) -> None:
     src.move(dest, Gio.FileCopyFlags.NOFOLLOW_SYMLINKS, None, None, None)
+    from . import tags
+    tags.moved([(src, dest)])                # the sidebar's Tags follow it back
 
 
 def renamed(new: Gio.File, old_name: str) -> None:

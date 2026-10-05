@@ -69,7 +69,8 @@ def rename(files, new, on_done=None, on_error=None) -> None:
 
     def finish():
         if done:
-            from . import undo
+            from . import tags, undo
+            tags.moved([(nf.get_parent().get_child(old), nf) for nf, old in done])
             undo.history.push(undo.Action(
                 f"Rename {len(done)} Items",
                 lambda: [nf.set_display_name(old, None) for nf, old in done],

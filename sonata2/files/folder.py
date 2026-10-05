@@ -17,10 +17,20 @@ ATTRS = ",".join((
     "standard::name", "standard::display-name", "standard::icon", "standard::symbolic-icon",
     "standard::type", "standard::is-hidden", "standard::is-backup", "standard::content-type",
     "standard::size", "standard::target-uri", "time::modified", "time::created", "time::access", "access::can-write",
-    "thumbnail::path", "thumbnail::failed"))
+    "thumbnail::path", "thumbnail::failed", "xattr::xdg.tags"))       # (the last: tags.py)
 RECENTS = "sonata:recents"
 APPS = "sonata:applications"      # the installed apps, like Finder's Applications folder
-VIRTUAL = (RECENTS, APPS)
+
+
+class _Virtual:
+    """The places that aren't folders: Recents, Applications and the sidebar's
+    Tags (sonata:tag/<name>) -- `uri in VIRTUAL`."""
+
+    def __contains__(self, uri) -> bool:
+        return uri in (RECENTS, APPS) or (isinstance(uri, str) and uri.startswith("sonata:tag/"))
+
+
+VIRTUAL = _Virtual()
 BATCH = 500
 
 
@@ -47,6 +57,8 @@ def display_name(uri: str) -> str:
         return "Recents"
     if uri == APPS:
         return "Applications"
+    if uri.startswith("sonata:tag/"):
+        return uri[len("sonata:tag/"):]
     if uri.rstrip("/") == "trash:":
         return "Trash"
     f = Gio.File.new_for_uri(uri)
@@ -87,6 +99,9 @@ class Folder:
             return
         if uri == APPS:
             self._load_apps(uri, cancel)
+            return
+        if uri in VIRTUAL:
+            self._load_tagged(uri, cancel)
             return
         d = Gio.File.new_for_uri(uri)
         items = []
@@ -167,6 +182,29 @@ class Folder:
             if not cancel.is_cancelled():
                 self._fill(uri, items or [], keep_order=True)
                 self._keys = []           # not name-sorted: live inserts go last
+        from ..backend.system import run_async
+        run_async(work, done)
+
+    def _load_tagged(self, uri, cancel) -> None:
+        """A sidebar tag: every item that has it (tags.py)."""
+        from . import tags
+        tag = tags.tag_of(uri)
+
+        def work():
+            out = []
+            for path in tags.tagged(tag):
+                f = Gio.File.new_for_path(path)
+                try:
+                    info = f.query_info(ATTRS, Gio.FileQueryInfoFlags.NONE, None)
+                except GLib.Error:
+                    continue
+                info.set_attribute_object("sonata::file", f)
+                out.append(info)
+            return out
+
+        def done(items):
+            if not cancel.is_cancelled():
+                self._fill(uri, items or [])
         from ..backend.system import run_async
         run_async(work, done)
 
