@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.1-alpha -- 2026-10-05
+
+A fix for 0.7.0: Bazaar's icon files were stored in a way that broke
+downloading the code (and the website's build).
+
+### Fixes
+- Bazaar's App Store icon is a plain file again: checkouts, updates and
+  the GitHub Pages build work.
+
 ## 0.7.0-alpha -- 2026-10-05
 
 The session locks and goes dark when you leave it, whatever apps ask;
