@@ -95,10 +95,26 @@ def ensure_slice() -> bool:
     return True
 
 
+# the newest scope of each app opened from Sonata: {desktop id: unit name}
+# (the Dock stops one whose app never showed a window -- stuck while starting)
+launched = {}
+
+
+def stop(app_id: str) -> bool:
+    """Stop the app's newest scope (every process of that launch). False: none known."""
+    unit = launched.pop(app_id or "", None)
+    bus = _bus()
+    if not unit or bus is None:
+        return False
+    _manager(bus, "StopUnit", GLib.Variant("(ss)", (unit, "replace")))
+    return True
+
+
 def move(pid: int, app_id: str) -> bool:
     """The launched app's process into its scope (asynchronous)."""
     if not pid or any((app_id or "").startswith(p) for p in OWN_SCOPE):
         return False
+    launched[app_id or ""] = unit_name(app_id, pid)
     bus = _bus()
     if bus is None:
         return False

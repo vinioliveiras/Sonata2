@@ -18,6 +18,7 @@ lives in DockWindow."""
 import json
 import math
 import os
+import time
 
 import gi
 
@@ -62,6 +63,8 @@ def merge_order(pinned: list, tile_keys: list) -> list:
 PERMANENT = ("io.github.vinioliveiras.sonata2.files", "sonata2-launchpad")
 NO_BOUNCE = {"sonata2-launchpad"}   # shell toggles open instantly: no launch bounce
 BOUNCE_MS = 620             # one bounce
+STUCK_S = 4                 # clicked again this long after a launch that never showed a window: stuck
+RELAUNCH_MS = 900           # its processes stopped, then the app opens again
 # a launch bounces until the app's first window shows up, 10 bounces at most
 # (Vini: it went on ~30 s when no window came, e.g. an app already running)
 LAUNCH_MAX_BOUNCES = 10
@@ -503,6 +506,7 @@ class Dock(Gtk.Box):
         self.manager = manager if manager and manager.available else None
         self.tiles = {}       # desktop id (or bare app_id) -> DockTile (apps only)
         self.windows = {}     # same keys -> [Toplevel]
+        self._starting = {}   # key -> when it was opened from here, until a window of it shows
         self.backdrop = None  # preview only: blurred wallpaper texture under the plate
         self.on_geometry = []  # callbacks when size/magnification changes
         self.on_rebuild = None  # host callback: position changed -> rebuild the Dock
@@ -1627,6 +1631,8 @@ class Dock(Gtk.Box):
                     tile.label.set_text(name)
         for key, tile in self.tiles.items():
             tile.set_running(len(groups.get(key, ())))
+            if groups.get(key):
+                self._starting.pop(key, None)      # its window showed: the launch went well
         self._relayout()
         GLib.idle_add(self._update_rectangles_bg)
         return False
@@ -1854,7 +1860,22 @@ class Dock(Gtk.Box):
             tile.bounce(LAUNCH_MAX_MS)
 
     def launch(self, tile: DockTile) -> None:
+        """Open the app. Clicked again while the last launch never showed a
+        window (Vini: Spotify started with Chrome stayed running, its window
+        created but never shown, and further clicks only woke that stuck
+        copy): that launch is stopped and the app opened afresh."""
+        from .. import appscope
         info = tile.info
+        key = tile.key
+        since = self._starting.get(key)
+        if (since is not None and time.monotonic() - since >= STUCK_S and not self.windows.get(key)
+                and appscope.stop(info.get_id() or "")):
+            print(f"sonata2-dock: {key} never showed a window: stopped, opened again", flush=True)
+            self._starting.pop(key, None)
+            self.launch_feedback(tile)
+            GLib.timeout_add(RELAUNCH_MS, lambda: (self.launch(tile), False)[1])
+            return
+        self._starting[key] = time.monotonic()
         self.launch_feedback(tile)
         ctx = tile.get_display().get_app_launch_context()
         try:
