@@ -622,8 +622,9 @@ def run_chromium(app: str) -> int:
             size = view_size(WayfireIPC().call("window-rules/list-views"), wm)
         except Exception:
             size = None
-        if size:
+        if size and size != last["size"]:
             last["size"] = size
+            winsize.save(size_key(app), *size)      # kept now: a restart ends it without a goodbye
         return True
     src = GLib.timeout_add_seconds(SIZE_POLL_S, poll)
 

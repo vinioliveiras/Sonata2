@@ -8,7 +8,7 @@ can repaint them."""
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk  # noqa: E402
+from gi.repository import GLib, Gtk  # noqa: E402
 
 from . import theme  # noqa: E402
 
@@ -201,6 +201,9 @@ def fit_default_size(win, w: int, h: int) -> None:
     win.set_default_size(*fit_size(w, h, screen_size(win if win.get_realized() else None)))
 
 
+SAVE_SIZE_MS = 600          # a resize settles, then its size is kept
+
+
 def remember_size(win, key: str, w: int, h: int) -> None:
     """The window opens at the size it last had (winsize; first time: w x h,
     never bigger than the display) and maximized if it was; that size is
@@ -223,6 +226,23 @@ def remember_size(win, key: str, w: int, h: int) -> None:
         return False
     win.connect("close-request", keep)            # connected first: runs before an app's own handler
     win.connect("unrealize", keep)                # the app quit without closing it
+    # also while it's open, shortly after a resize: a restart or log out ends
+    # the app without closing its window (Vini: sizes were lost on restart)
+    pending = {"src": 0}
+
+    def soon(*_a):
+        if pending["src"]:
+            GLib.source_remove(pending["src"])
+
+        def run():
+            pending["src"] = 0
+            if win.get_realized():
+                keep()
+            return False
+        pending["src"] = GLib.timeout_add(SAVE_SIZE_MS, run)
+    for prop in ("default-width", "default-height", "maximized"):
+        win.connect(f"notify::{prop}", soon)
+    win.connect("destroy", lambda *_a: pending["src"] and GLib.source_remove(pending["src"]))
 
 
 def standard(win) -> None:
