@@ -718,8 +718,8 @@ class FilesWindow(Adw.ApplicationWindow):
             sections.append([Item("Move to Trash", self.trash_selection, enabled=self._writable_sel(sel))])
             sections.append([Item("Get Info", self.get_info),
                              Item(f"Quick Look {what}", self.toggle_quicklook)])
-            sections.append([Item("Rename", lambda: self.rename_selection(), enabled=n == 1 and
-                                  self._writable_sel(sel)),
+            sections.append([Item("Rename" if n == 1 else f"Rename {n} Items…", lambda: self.rename_selection(),
+                                  enabled=self._writable_sel(sel)),
                              Item(f"Compress {what}", self.compress_selection, enabled=self._writable_here()),
                              Item("Duplicate", self.duplicate_selection, enabled=self._writable_here())])
             sections.append([Item(f"Copy {what}", self.copy_selection),
@@ -821,6 +821,9 @@ class FilesWindow(Adw.ApplicationWindow):
         sel = self.view.selected()
         if len(sel) == 1:
             self.view.begin_rename(sel[0], self._commit_rename)
+        elif len(sel) > 1:                                 # Finder: Rename N Items…
+            from . import batchrename
+            batchrename.dialog(self, [file_of(i) for i in sel])
 
     def _commit_rename(self, info, new_name):
         if "/" in new_name:
@@ -1090,7 +1093,7 @@ class FilesWindow(Adw.ApplicationWindow):
             return False
         ctrl = bool(state & Gdk.ModifierType.CONTROL_MASK)
         if keyval == Gdk.KEY_F2 and not ctrl:
-            if len(self.view.selected()) == 1:
+            if self.view.selected():
                 self.rename_selection()
                 return True
             return False
