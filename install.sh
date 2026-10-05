@@ -230,12 +230,18 @@ for f in "$SRC"/LICENSE* "$SRC/README.md"; do [ -e "$f" ] && items+=("$(basename
 ( cd "$SRC" && tar --exclude=__pycache__ -cf - "${items[@]}" ) | tar -xf - -C "$tmp/sonata2"
 cp "$SRC/tools/session-env.sh" "$SRC/tools/sonata-session" "$SRC/tools/wayfire-config.sh" "$tmp/sonata2/tools/"
 carry_data
-$SUDO rm -rf "$SHARE"
 $SUDO mkdir -p "$(dirname "$SHARE")"
 if [ "$DEV" = 1 ]; then
+    $SUDO rm -rf "$SHARE"
     $SUDO ln -s "$SRC" "$SHARE"          # the session runs this clone's code
     echo "Dev install: $SHARE -> $SRC"
+elif [ -d "$SHARE" ] && [ ! -L "$SHARE" ]; then
+    # updated in place: unchanged files (the bundled font, icons, sounds) keep
+    # their inode -- the running Dock lost its font when the copy was deleted
+    # and every name label went blank (Vini)
+    $SUDO python3 "$SRC/tools/sync-tree.py" "$tmp/sonata2" "$SHARE"
 else
+    $SUDO rm -rf "$SHARE"
     $SUDO cp -a "$tmp/sonata2" "$SHARE"
 fi
 

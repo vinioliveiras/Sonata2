@@ -1589,7 +1589,10 @@ class UserDataOutsideTheInstallTests(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(os.environ["XDG_DATA_HOME"], "sonata2-data", "notes",
                                                     "notes.json")))
         self.assertTrue(os.path.isdir(os.path.join(share, "sonata2", "notes")))
-        self.assertLess(sh.index("carry_data\n$SUDO rm -rf \"$SHARE\""), sh.index('$SUDO cp -a "$tmp/sonata2"'))
+        # the data is carried out before the old copy is replaced (in place since sync-tree.py)
+        carried = sh.index("carry_data\n$SUDO mkdir")
+        self.assertLess(carried, sh.index('tools/sync-tree.py" "$tmp/sonata2" "$SHARE"'))
+        self.assertLess(carried, sh.index('$SUDO cp -a "$tmp/sonata2"'))
 
     def test_apps_use_it(self):
         root = pathlib.Path(__file__).resolve().parent.parent / "sonata2"
