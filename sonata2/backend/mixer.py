@@ -25,6 +25,29 @@ DEFAULTS = {"volumes": {}, "muted": {}}
 OWN_PLAYERS = {"pw-play", "paplay", "canberra-gtk-play", "ffplay", "pw-cat", "aplay"}
 SKIP_ROLES = {"event", "notification", "a11y"}
 MAX_PERCENT = 100
+# an app that sets its own level right after its stream starts (Spotify:
+# its saved level went back every time -- Vini) gets ours again at these
+RECHECK_MS = (700, 2000, 4000)
+FRESH_S = 5.0          # ...and only then: afterwards, a level the app sets is the user's (learned)
+LEARN_MS = 1500        # changes made outside Sonata (Spotify's own slider) saved this long after
+
+
+def learn(ss: "List[Stream]", data: dict, skip=()) -> dict:
+    """{key: (percent, muted)} of apps whose level changed outside Sonata
+    (Spotify's own slider: Sonata kept putting back its old level at every
+    start -- Vini). Apps with several streams at different levels are left."""
+    by = {}
+    for s in ss:
+        if s.index not in skip and s.key:
+            by.setdefault(s.key, []).append(s)
+    out = {}
+    for key, group_ in by.items():
+        if len({(s.volume, s.muted) for s in group_}) != 1:
+            continue
+        s = group_[0]
+        if data["volumes"].get(key) != s.volume or data["muted"].get(key, False) != s.muted:
+            out[key] = (s.volume, s.muted)
+    return out
 
 
 @dataclass
@@ -234,6 +257,8 @@ class MixerService:
             return
         self._src = 0
         self._new = set()
+        self._fresh = {}                 # new stream index -> when it appeared (its level is ours then)
+        self._learn_src = 0
         self.proc = pactl_watch.watch(self._line)       # the shared `pactl subscribe` reader
         if self.proc is None:
             return
@@ -245,6 +270,10 @@ class MixerService:
         idx = new_stream_index(text)
         if idx is not None:
             self._new.add(idx)
+            import time
+            self._fresh[idx] = time.monotonic()
+        elif "'change' on sink-input" in text and not self._learn_src:
+            self._learn_src = GLib.timeout_add(LEARN_MS, self._learn)
         if not self._src:
             self._src = GLib.timeout_add(150, self._changed)        # a burst: one read
 
@@ -266,6 +295,33 @@ class MixerService:
             return ss
         from . import system
         system.run_async(work, lambda ss: [cb(ss) for cb in list(self.listeners)])
+        if new:
+            for ms in RECHECK_MS:
+                GLib.timeout_add(ms, self._recheck, set(new))
+        return False
+
+    def _learn(self) -> bool:
+        """Levels changed outside Sonata become the apps' saved levels."""
+        import time
+        self._learn_src = 0
+        now = time.monotonic()
+        self._fresh = {i: t for i, t in self._fresh.items() if now - t < FRESH_S}
+        skip = set(self._fresh)
+
+        def work():
+            for key, (pct, muted) in learn(streams(), saved(), skip).items():
+                remember(key, pct, muted)
+        from . import system
+        system.run_async(work, None)
+        return False
+
+    def _recheck(self, indexes: set) -> bool:
+        """The saved level again on these new streams, if the app changed it."""
+        def work():
+            data = saved()
+            return [restore(s, data) for s in streams() if s.index in indexes]
+        from . import system
+        system.run_async(work, None)
         return False
 
     def _restore_all(self) -> None:
