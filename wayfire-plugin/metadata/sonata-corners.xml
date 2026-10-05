@@ -20,5 +20,10 @@
 			<_long>Exact app_ids of undecorated apps rounded too (Steam draws its own title bar).</_long>
 			<default>steam</default>
 		</option>
+		<option name="capture_hidden" type="string">
+			<_short>Left out of screen captures</_short>
+			<_long>App ids of surfaces shown on screen but never in a recording or a screen share (ext-image-copy-capture).</_long>
+			<default>sonata2-draw-palette</default>
+		</option>
 	</plugin>
 </wayfire>

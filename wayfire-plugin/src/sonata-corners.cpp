@@ -75,6 +75,9 @@ extern "C"
 #include <wlr/types/wlr_ext_image_capture_source_v1.h>
 #include <wlr/interfaces/wlr_ext_image_capture_source_v1.h>
 #include <wlr/types/wlr_ext_image_copy_capture_v1.h>
+#ifdef SONATA_OUTPUT_CAPTURE
+    #include "ext-image-capture-source-v1-protocol.h"   /* generated (meson.build) */
+#endif
 }
 
 static const char *vertex_shader =
@@ -822,6 +825,444 @@ class window_capture_t
     }
 };
 
+
+#ifdef SONATA_OUTPUT_CAPTURE
+/* ---- Screen capture without Sonata's own controls ---------------------------------------------
+ * Vini: the drawing palette (livedraw, "sonata2-draw-palette") is on screen
+ * while recording or sharing, never in what's recorded or shared. Captures
+ * of a whole display (ext-image-copy-capture: xdg-desktop-portal-wlr,
+ * grim, wf-recorder) come from this plugin's own per-display source instead
+ * of wlroots' (whose global is hidden): it renders the display's scene
+ * again into a buffer of its own, with the surfaces named in
+ * sonata-corners/capture_hidden left out (a transformer around them that
+ * draws nothing while this capture renders), and the pointer painted in
+ * when the capture asks for it. wlr-screencopy (older tools) still copies
+ * the screen as shown. */
+
+static bool capture_rendering = false;      /* the hidden surfaces draw nothing meanwhile */
+
+static std::vector<std::string> capture_hidden_ids()
+{
+    std::vector<std::string> out;
+    std::string list = option_str("sonata-corners/capture_hidden"), word;
+    for (char c : list + " ")
+    {
+        if ((c == ' ') || (c == ','))
+        {
+            if (!word.empty())
+            {
+                out.push_back(word);
+            }
+
+            word.clear();
+        } else
+        {
+            word += c;
+        }
+    }
+
+    return out;
+}
+
+class capture_hide_instance_t : public wf::scene::render_instance_t
+{
+    std::vector<wf::scene::render_instance_uptr> kids;
+
+  public:
+    capture_hide_instance_t(std::vector<wf::scene::render_instance_uptr> kids) : kids(std::move(kids))
+    {}
+
+    void schedule_instructions(std::vector<wf::scene::render_instruction_t>& instructions,
+        const wf::render_target_t& target, wf::regionf_t& damage) override
+    {
+        if (capture_rendering)
+        {
+            return;                         /* left out of the capture */
+        }
+
+        for (auto& k : kids)
+        {
+            k->schedule_instructions(instructions, target, damage);
+        }
+    }
+
+    void presentation_feedback(wf::output_t *output) override
+    {
+        for (auto& k : kids)
+        {
+            k->presentation_feedback(output);
+        }
+    }
+
+    wf::scene::direct_scanout try_scanout(wf::output_t *output) override
+    {
+        for (auto& k : kids)
+        {
+            auto r = k->try_scanout(output);
+            if (r != wf::scene::direct_scanout::SKIP)
+            {
+                return r;
+            }
+        }
+
+        return wf::scene::direct_scanout::SKIP;
+    }
+
+    void compute_visibility(wf::output_t *output, wf::regionf_t& visible) override
+    {
+        for (auto& k : kids)
+        {
+            k->compute_visibility(output, visible);
+        }
+    }
+};
+
+class capture_hide_node_t : public wf::scene::transformer_base_node_t
+{
+  public:
+    capture_hide_node_t() : wf::scene::transformer_base_node_t(false)
+    {}
+
+    std::string stringify() const override
+    {
+        return "sonata capture-hidden";
+    }
+
+    void gen_render_instances(std::vector<wf::scene::render_instance_uptr>& instances,
+        wf::scene::damage_callback push_damage, wf::output_t *shown_on) override
+    {
+        std::vector<wf::scene::render_instance_uptr> kids;
+        for (auto& ch : get_children())
+        {
+            ch->gen_render_instances(kids, push_damage, shown_on);
+        }
+
+        instances.push_back(std::make_unique<capture_hide_instance_t>(std::move(kids)));
+    }
+};
+
+static const std::string capture_hide_name = "sonata-capture-hidden";
+
+/* a view named in capture_hidden: kept out of the display captures */
+static void capture_hide_update(wayfire_view view)
+{
+    if (!view || !view->get_transformed_node())
+    {
+        return;
+    }
+
+    auto ids  = capture_hidden_ids();
+    bool want = std::find(ids.begin(), ids.end(), view->get_app_id()) != ids.end();
+    auto tnode = view->get_transformed_node();
+    auto have  = tnode->get_transformer(capture_hide_name);
+    if (want && !have)
+    {
+        tnode->add_transformer(std::make_shared<capture_hide_node_t>(), 0, capture_hide_name);
+    } else if (!want && have)
+    {
+        tnode->rem_transformer(have);
+    }
+}
+
+struct output_source_t
+{
+    wlr_ext_image_capture_source_v1 base; /* first: wl_container_of */
+    wf::output_t *output = nullptr;
+    wf::auxilliary_buffer_t buffer;
+    int started    = 0;
+    bool cursors   = false;
+    bool pending   = false;
+    wf::wl_idle_call idle;
+
+    static output_source_t *from(wlr_ext_image_capture_source_v1 *b)
+    {
+        return reinterpret_cast<output_source_t*>(b);
+    }
+
+    /* the capture's size (the display's, in its pixels) and formats: the
+     * display's own (dma-buf and shared memory) when its swapchain is known */
+    void constraints(int w, int h)
+    {
+        auto wo = output->handle;
+        if (!wo->swapchain ||
+            !wlr_ext_image_capture_source_v1_set_constraints_from_swapchain(&base, wo->swapchain,
+                wf::get_core().renderer) || !base.shm_formats)
+        {
+            if (!base.shm_formats)
+            {
+                base.shm_formats     = (uint32_t*)calloc(2, sizeof(uint32_t));
+                base.shm_formats[0]  = DRM_FORMAT_ARGB8888;
+                base.shm_formats[1]  = DRM_FORMAT_XRGB8888;
+                base.shm_formats_len = 2;
+            }
+        }
+
+        base.width  = std::max(1, w);
+        base.height = std::max(1, h);
+        wl_signal_emit_mutable(&base.events.constraints_update, nullptr);
+    }
+
+    wf::dimensions_t expected_size() const
+    {
+        auto og = output->get_layout_geometry();
+        float scale = output->handle->scale;
+        return {(int)std::round(og.width * scale), (int)std::round(og.height * scale)};
+    }
+
+    /* the display's picture without the hidden surfaces, then a frame event */
+    void produce()
+    {
+        pending = false;
+        if (!output || !started)
+        {
+            return;
+        }
+
+        auto og    = output->get_layout_geometry();
+        float scale = output->handle->scale;
+        if (buffer.allocate(wf::dimensions(og), scale) == wf::buffer_reallocation_result_t::FAILED)
+        {
+            buffer.free();
+            return;
+        }
+
+        auto size = buffer.get_size();
+        if (((int)base.width != size.width) || ((int)base.height != size.height))
+        {
+            constraints(size.width, size.height);
+        }
+
+        wf::render_target_t target{buffer};
+        target.geometry = og;
+        target.scale    = scale;
+        std::vector<wf::scene::render_instance_uptr> instances;
+        wf::get_core().scene()->gen_render_instances(instances, [] (auto) {}, output);
+        wf::render_pass_params_t params;
+        params.background_color = {0, 0, 0, 1};
+        params.damage    = og;
+        params.target    = target;
+        params.instances = &instances;
+        params.flags     = wf::RPASS_CLEAR_BACKGROUND;
+        capture_rendering = true;
+        wf::render_pass_t::run(params);
+        capture_rendering = false;
+        if (cursors)
+        {
+            paint_cursors();
+        }
+
+        pixman_region32_t damage;
+        pixman_region32_init_rect(&damage, 0, 0, size.width, size.height);
+        wlr_ext_image_capture_source_v1_frame_event ev{};
+        ev.damage = &damage;
+        wl_signal_emit_mutable(&base.events.frame, &ev);
+        pixman_region32_fini(&damage);
+    }
+
+    /* the pointer, as the display shows it (it's on its own plane, not in the scene) */
+    void paint_cursors()
+    {
+        auto wo = output->handle;
+        auto pass = wlr_renderer_begin_buffer_pass(wf::get_core().renderer, buffer.get_buffer(), nullptr);
+        if (!pass)
+        {
+            return;
+        }
+
+        wlr_output_cursor *c;
+        wl_list_for_each(c, &wo->cursors, link)
+        {
+            if (!c->enabled || !c->visible || !c->texture)
+            {
+                continue;
+            }
+
+            wlr_render_texture_options opts{};
+            opts.texture = c->texture;
+            opts.src_box = c->src_box;
+            opts.dst_box = {(int)(c->x - c->hotspot_x), (int)(c->y - c->hotspot_y), (int)c->width, (int)c->height};
+            opts.transform = c->transform;
+            wlr_render_pass_add_texture(pass, &opts);
+        }
+
+        wlr_render_pass_submit(pass);
+    }
+};
+
+static void output_source_start(wlr_ext_image_capture_source_v1 *b, bool with_cursors)
+{
+    auto s = output_source_t::from(b);
+    s->started++;
+    s->cursors = s->cursors || with_cursors;
+}
+
+static void output_source_stop(wlr_ext_image_capture_source_v1 *b)
+{
+    auto s = output_source_t::from(b);
+    s->started = std::max(0, s->started - 1);
+    if (!s->started)
+    {
+        s->cursors = false;
+    }
+}
+
+static void output_source_request_frame(wlr_ext_image_capture_source_v1 *b, bool)
+{
+    auto s = output_source_t::from(b);
+    if (!s->pending)
+    {
+        s->pending = true;
+        s->idle.run_once([s] () { s->produce(); });
+    }
+}
+
+static void output_source_copy_frame(wlr_ext_image_capture_source_v1 *b,
+    wlr_ext_image_copy_capture_frame_v1 *frame, wlr_ext_image_capture_source_v1_frame_event*)
+{
+    auto s = output_source_t::from(b);
+    if (s->buffer.get_buffer() &&
+        wlr_ext_image_copy_capture_frame_v1_copy_buffer(frame, s->buffer.get_buffer(), wf::get_core().renderer))
+    {
+        timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        wlr_ext_image_copy_capture_frame_v1_ready(frame, WL_OUTPUT_TRANSFORM_NORMAL, &now);
+    }
+}
+
+static const wlr_ext_image_capture_source_v1_interface output_source_impl = {
+    .start = output_source_start,
+    .stop  = output_source_stop,
+    .request_frame = output_source_request_frame,
+    .copy_frame    = output_source_copy_frame,
+    .get_pointer_cursor = nullptr,
+};
+
+class output_capture_t
+{
+    wl_global *global = nullptr;
+    std::unique_ptr<wf::wayland_global_filter_t> filter;
+    std::map<wf::output_t*, std::unique_ptr<output_source_t>> sources;
+    std::vector<std::unique_ptr<output_source_t>> retired;
+    wf::wl_idle_call free_retired;
+
+    static output_capture_t*& instance()
+    {
+        static output_capture_t *self = nullptr;
+        return self;
+    }
+
+    static void handle_destroy(wl_client*, wl_resource *resource)
+    {
+        wl_resource_destroy(resource);
+    }
+
+    static void handle_create_source(wl_client *client, wl_resource*, uint32_t new_id, wl_resource *output_res)
+    {
+        auto self = instance();
+        wlr_output *wo = wlr_output_from_resource(output_res);
+        wf::output_t *out = (self && wo) ? wf::get_core().output_layout->find_output(wo) : nullptr;
+        if (!out)
+        {
+            wlr_ext_image_capture_source_v1_create_resource(nullptr, client, new_id);   /* inert */
+            return;
+        }
+
+        auto it = self->sources.find(out);
+        if (it == self->sources.end())
+        {
+            auto src = std::make_unique<output_source_t>();
+            wlr_ext_image_capture_source_v1_init(&src->base, &output_source_impl);
+            src->output = out;
+            auto sz = src->expected_size();
+            src->constraints(sz.width, sz.height);
+            it = self->sources.emplace(out, std::move(src)).first;
+        }
+
+        wlr_ext_image_capture_source_v1_create_resource(&it->second->base, client, new_id);
+    }
+
+    static const struct ext_output_image_capture_source_manager_v1_interface *impl()
+    {
+        static const struct ext_output_image_capture_source_manager_v1_interface i = {
+            .create_source = handle_create_source,
+            .destroy = handle_destroy,
+        };
+        return &i;
+    }
+
+    static void bind(wl_client *client, void*, uint32_t version, uint32_t id)
+    {
+        wl_resource *res = wl_resource_create(client, &ext_output_image_capture_source_manager_v1_interface,
+            version, id);
+        if (!res)
+        {
+            wl_client_post_no_memory(client);
+            return;
+        }
+
+        wl_resource_set_implementation(res, impl(), nullptr, nullptr);
+    }
+
+  public:
+    wf::signal::connection_t<wf::output_removed_signal> on_output_removed =
+        [=] (wf::output_removed_signal *ev)
+    {
+        auto it = sources.find(ev->output);
+        if (it != sources.end())
+        {
+            it->second->output = nullptr;
+            wlr_ext_image_capture_source_v1_finish(&it->second->base);
+            retired.push_back(std::move(it->second));
+            sources.erase(it);
+            free_retired.run_once([=] () { retired.clear(); });
+        }
+    };
+
+    void init()
+    {
+        if (capture_hidden_ids().empty())
+        {
+            return;                         /* nothing to leave out: wlroots' own captures */
+        }
+
+        instance() = this;
+        global = wl_global_create(wf::get_core().display, &ext_output_image_capture_source_manager_v1_interface,
+            1, nullptr, bind);
+        /* wlroots' own per-display source is hidden: ours stands in for it */
+        auto theirs = wf::get_core().protocols.output_image_capture_source;
+        wl_global *their_global = theirs ? theirs->global : nullptr;
+        filter = wf::get_core().create_global_filter();
+        filter->set_filter([their_global] (const wl_client*, const wl_global *g) { return g != their_global; });
+        wf::get_core().output_layout->connect(&on_output_removed);
+        LOGI("sonata-corners: display capture without Sonata's controls ready");
+    }
+
+    void fini()
+    {
+        filter.reset();
+        if (global)
+        {
+            wl_global_destroy(global);
+            global = nullptr;
+        }
+
+        for (auto& [o, src] : sources)
+        {
+            src->output = nullptr;
+            wlr_ext_image_capture_source_v1_finish(&src->base);
+        }
+
+        sources.clear();
+        free_retired.disconnect();
+        retired.clear();
+        if (instance() == this)
+        {
+            instance() = nullptr;
+        }
+    }
+};
+#endif
+
 /* FPS of the app in front (Control Center / menu bar "FPS", Vini): the
  * commits of the focused view's surface in the last second -- the frames a
  * game really hands over. Counted only while someone asks (IPC
@@ -1016,7 +1457,13 @@ class sonata_corners_t : public wf::plugin_interface_t
     wf::signal::connection_t<wf::reload_config_signal> on_reload =
         [=] (wf::reload_config_signal*) { options_valid = false; };
     wf::signal::connection_t<wf::view_mapped_signal> on_map =
-        [=] (wf::view_mapped_signal*) { update_soon(); };
+        [=] (wf::view_mapped_signal *ev)
+    {
+#ifdef SONATA_OUTPUT_CAPTURE
+        capture_hide_update(ev->view);
+#endif
+        update_soon();
+    };
     wf::signal::connection_t<wf::view_fullscreen_signal> on_fullscreen =
         [=] (wf::view_fullscreen_signal*) { update_soon(); };
     wf::signal::connection_t<wf::view_decoration_state_updated_signal> on_decoration =
@@ -1189,6 +1636,9 @@ class sonata_corners_t : public wf::plugin_interface_t
     };
 
     window_capture_t window_capture;
+#ifdef SONATA_OUTPUT_CAPTURE
+    output_capture_t output_capture;
+#endif
     fps_counter_t fps;
     wf::shared_data::ref_ptr_t<wf::ipc::method_repository_t> ipc_repo;
     wf::ipc::method_callback ipc_fps = [=] (wf::json_t)
@@ -1221,6 +1671,13 @@ class sonata_corners_t : public wf::plugin_interface_t
         /* which build runs (session.log): a fix is only in once install.sh rebuilt it */
         LOGI("sonata-corners: build ", SONATA_CORNERS_BUILD);
         window_capture.init();
+#ifdef SONATA_OUTPUT_CAPTURE
+        output_capture.init();
+        for (auto& v : wf::get_core().get_all_views())
+        {
+            capture_hide_update(v);
+        }
+#endif
         if (!wf::get_core().is_gles2())
         {
             LOGE("sonata-corners needs the GLES2 renderer");
@@ -1261,6 +1718,9 @@ class sonata_corners_t : public wf::plugin_interface_t
         ipc_repo->unregister_method("sonata/rounded");
         fps.fini();
         window_capture.fini();
+#ifdef SONATA_OUTPUT_CAPTURE
+        output_capture.fini();
+#endif
         for (auto& [o, p] : perf)
         {
             o->render->rem_effect(&p->pre_hook);
