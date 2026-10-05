@@ -27,9 +27,11 @@ class LockScreen:
         self.app = app
         self.lock = SL.Instance.new()
         from .idlelock import mark_locked
-        self.lock.connect("locked", lambda *_: (mark_locked(True), self._usb(True)))   # `sonata2 lock-wait` returns
+        self.lock.connect("locked", lambda *_: (mark_locked(True), self._usb(True), self._dark(True)))   # `sonata2 lock-wait` returns
         self.lock.connect("failed", lambda *_: (mark_locked(False), app.quit()))   # another locker is active
-        self.lock.connect("unlocked", lambda *_: (self._usb(False), mark_locked(False), app.quit()))
+        self.lock.connect("unlocked", lambda *_: (self._dark(False), self._usb(False), mark_locked(False), app.quit()))
+        self._idle_src = 0
+        self._off = False
         self.texture = wallpaper_texture()
         self.windows = []
         self.entry = None
@@ -42,6 +44,54 @@ class LockScreen:
             self._window(monitors.get_item(i), primary=(monitors.get_item(i) is main))
         monitors.connect("items-changed", lambda m, pos, _r, added: [
             self._window(m.get_item(pos + k), primary=False) for k in range(added)])
+
+    # -- the display goes dark soon after locking (lockdisplay.py) ----------------------------
+    def _dark(self, locked: bool) -> None:
+        from . import lockdisplay
+        try:
+            (lockdisplay.locked if locked else lockdisplay.unlocked)()
+        except Exception as e:                   # never in the way of locking or unlocking
+            print(f"sonata2-lock: display: {e}", flush=True)
+        if locked:
+            self._input()
+        else:
+            if self._idle_src:
+                GLib.source_remove(self._idle_src)
+                self._idle_src = 0
+            if self._off:
+                lockdisplay.displays(True)
+
+    def _input(self, *_a) -> None:
+        """A key or a move on the lock screen: the displays on, the countdown again."""
+        from . import lockdisplay
+        if self._off:
+            self._off = False
+            lockdisplay.displays(True)
+        if self._idle_src:
+            GLib.source_remove(self._idle_src)
+
+        def dark():
+            self._idle_src = 0
+            self._off = lockdisplay.displays(False)
+            return False
+        self._idle_src = GLib.timeout_add_seconds(lockdisplay.LOCKED_DPMS_S, dark)
+
+    def _watch_input(self, win) -> None:
+        keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        keys.connect("key-pressed", lambda *_a: (self._input(), False)[1])
+        win.add_controller(keys)
+        motion = Gtk.EventControllerMotion()
+        motion.connect("motion", self._moved)
+        win.add_controller(motion)
+        click = Gtk.GestureClick(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        click.connect("pressed", self._input)
+        win.add_controller(click)
+
+    def _moved(self, _c, x, y) -> None:
+        last = getattr(self, "_last_xy", None)
+        self._last_xy = (round(x), round(y))
+        if last is not None and last != self._last_xy:       # (a real move, not the surface appearing)
+            self._input()
 
     def _usb(self, locked: bool) -> None:
         """New USB devices blocked while locked (USBGuard; usbprotect.py)."""
@@ -72,6 +122,7 @@ class LockScreen:
         if enabled():                                     # the desktop's corners hide under the lock
             over.add_overlay(CornersOverlay())
         win.set_child(over)
+        self._watch_input(win)
         self.lock.assign_window_to_monitor(win, monitor)
         win.present()
         self.windows.append(win)

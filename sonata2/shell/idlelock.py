@@ -112,12 +112,17 @@ class IdleLock:
         from gi.repository import GLib
         self.proc, self.cmd = None, None
         self._mon = config.watch("security", self.apply)
+        if not is_locked():                     # a lock screen that crashed: the display's timeout back
+            from . import lockdisplay
+            lockdisplay.unlocked()
         self.apply()
         GLib.timeout_add_seconds(60, lambda: (self.apply(), True)[1])   # dpms timeout changed in Settings
 
     def apply(self, *_a) -> None:
-        try:
-            dpms = int(wfconfig.wayfire_get("idle", "dpms_timeout", "600") or 600)
+        from . import lockdisplay
+        try:                                    # (locked: the timeout from before the lock)
+            dpms = int(lockdisplay.saved().get("idle/dpms_timeout") or
+                       wfconfig.wayfire_get("idle", "dpms_timeout", "600") or 600)
         except ValueError:
             dpms = 600
         cmd = (command(config.load("security", DEFAULTS), dpms, keyboard_light(), rgb_lights())
