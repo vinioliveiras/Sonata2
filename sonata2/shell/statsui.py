@@ -51,6 +51,7 @@ ui.register("""
 .cc-stat .cc-stat-value { font-feature-settings: "tnum"; font-weight: 600; }
 .cc-stat .cc-stat-speeds { font-size: %(text_small)s; }
 .cc-stat .cc-stat-hint { font-size: %(text_small)s; opacity: 0.6; }
+.cc-stat .cc-stat-maker { font-size: 9px; font-weight: 700; opacity: 0.55; margin: 1px 0 0 2px; }
 """, key="statsui")
 
 
@@ -121,6 +122,11 @@ def menu_item(kind: str, style: str) -> Gtk.Box:
     return box
 
 
+def card_maker(kind: str) -> str:
+    """The card's maker for a per-card figure ("gpu_nvidia" -> "NVIDIA"), "" otherwise."""
+    return (S.GPU_MAKERS.get(kind) or S.VRAM_MAKERS_BY_KIND.get(kind) or S.TEMP_MAKERS_BY_KIND.get(kind) or "")
+
+
 def module(kind: str) -> Gtk.Widget:
     """Control Center module: icon, title, value and the graph."""
     head = Gtk.Box(spacing=8)
@@ -134,6 +140,16 @@ def module(kind: str) -> Gtk.Widget:
     graph.set_hexpand(True)
     graph.set_vexpand(True)                                     # and as tall as its cells leave
     graph.set_valign(Gtk.Align.FILL)
+    shown = graph
+    maker = card_maker(kind)
+    if maker:                            # two cards: whose graph it is, inside it (the title gets cut -- Vini)
+        shown = Gtk.Overlay(child=graph, hexpand=True, vexpand=True)
+        tag = Gtk.Label(label=maker, css_classes=["cc-stat-maker"], halign=Gtk.Align.START,
+                        valign=Gtk.Align.START, can_target=False)
+        shown.add_overlay(tag)
+        box_tag = tag
+    else:
+        box_tag = None
     hint = Gtk.Label(label="", xalign=0, css_classes=["cc-stat-hint"], visible=False, wrap=True,
                      width_chars=1, natural_wrap_mode=Gtk.NaturalWrapMode.WORD)
     if kind == "net":                    # two speeds: a line of their own under the title
@@ -141,11 +157,12 @@ def module(kind: str) -> Gtk.Widget:
         value.set_ellipsize(Pango.EllipsizeMode.END)
         value.set_max_width_chars(-1)
         value.add_css_class("cc-stat-speeds")
-        box = ui.panel.module(head, value, graph, hint, spacing=4)
+        box = ui.panel.module(head, value, shown, hint, spacing=4)
     else:
         head.append(value)
-        box = ui.panel.module(head, graph, hint, spacing=6)
+        box = ui.panel.module(head, shown, hint, spacing=6)
     box.add_css_class("cc-stat")
+    box.maker_tag = box_tag                   # (tests)
 
     def update(r):
         t = S.text(kind, r)
