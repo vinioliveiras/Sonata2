@@ -25,6 +25,7 @@ from .. import config, ui  # noqa: E402
 from . import layer  # noqa: E402
 
 THUMB_MS = 5000
+CLIPBOARD_SHOT = "sonata2-clipboard-shot.png"   # a clipboard-only screenshot's one reused file
 THUMB_W = 200
 # shots_to: pictures | desktop | documents | clipboard | other (shots_dir)
 # movies_to: videos | desktop | documents | other (movies_dir); audio: none | system | mic
@@ -608,7 +609,7 @@ class Capture:
         clip_only = cfg.get("shots_to") == "clipboard"
         to_clip = clip_only or bool(cfg.get("shots_copy"))        # in the folder and on the clipboard (Vini)
         # clipboard only: one reused file in the runtime dir (tmpfs, gone at logout), not a new one in /tmp per shot
-        path = os.path.join(GLib.get_user_runtime_dir() or GLib.get_tmp_dir(), "sonata2-clipboard-shot.png") \
+        path = os.path.join(GLib.get_user_runtime_dir() or GLib.get_tmp_dir(), CLIPBOARD_SHOT) \
             if clip_only else os.path.join(shots_dir(cfg), _name("Screenshot", "png"))
         if frozen is not None:
             pb = frozen.crop(geo) if geo else frozen.output(output) if output else frozen.pb

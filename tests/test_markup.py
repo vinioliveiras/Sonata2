@@ -147,6 +147,7 @@ class PreviewMarkupTest(unittest.TestCase):
         self.assertIsNotNone(w.markup)                             # opened straight into Markup
         self.assertTrue(w.markup_rev.get_reveal_child())
         w.markup.items = [{"t": "rect", "c": "#ff0000", "w": 0.02, "p": [[0.1, 0.1], [0.9, 0.9]]}]
+        w.from_shot = False                                        # (a picture, not a fresh screenshot)
         w.end_markup(keep=True)
         self.assertIsNone(w.markup)
         self.assertEqual([o[0] for o in w.edits.ops], ["markup"])
@@ -158,6 +159,34 @@ class PreviewMarkupTest(unittest.TestCase):
         w.markup_button()
         w.end_markup(keep=False)                                   # Cancel: nothing
         self.assertEqual(w.edits.ops, [])
+        w.destroy()
+
+    def test_screenshot_done_saves_and_copies(self):
+        """From a screenshot's thumbnail, Done saves the marks into the file;
+        a clipboard screenshot goes back to the clipboard marked."""
+        from unittest import mock
+        from PIL import Image
+        from sonata2 import ui
+        from sonata2.preview import window as PW
+        from sonata2.shell.capture import CLIPBOARD_SHOT
+        Adw.init()
+        ui.setup()
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, CLIPBOARD_SHOT)
+        Image.new("RGB", (200, 100), "white").save(path)
+        app = Adw.Application(application_id="io.github.vinioliveiras.sonata2.markuptest2")
+        app.register(None)
+        w = PW.PreviewWindow(app, path, markup=True)
+        w.present()
+        spin(1200)
+        copied = []
+        w.markup.items = [{"t": "rect", "c": "#ff0000", "w": 0.03, "p": [[0.1, 0.1], [0.9, 0.9]]}]
+        with mock.patch("subprocess.Popen", lambda cmd, stdin=None: copied.append(cmd)), \
+                mock.patch("shutil.which", lambda _n: "/usr/bin/wl-copy"):
+            w.end_markup(keep=True)
+            spin(1500)
+        self.assertGreater(Image.open(path).convert("RGB").getpixel((100, 10))[0], 200)   # saved, marked
+        self.assertEqual(copied, [["wl-copy", "--type", "image/png"]])
         w.destroy()
 
     def test_thumbnail_opens_markup(self):

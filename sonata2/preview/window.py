@@ -113,6 +113,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         # Markup: marks drawn over the picture, its own toolbar under the main one
         self.markup = None                # markup.MarkupLayer while Markup is on
         self._markup_on_open = markup     # a screenshot's thumbnail: straight into Markup
+        self.from_shot = markup           # ... and Done saves it (and puts it on the clipboard, if it was)
         self.markup_rev = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
                                        transition_duration=tokens.ms(200), reveal_child=False)
         # thumbnails | picture | info
@@ -396,6 +397,20 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self.markup_btn.remove_css_class("on")
         if keep and layer.items:
             self.edit(("markup", layer.items))
+            if self.from_shot:                     # a screenshot: Done saves it, like macOS
+                self.save(then=self._shot_to_clipboard)
+
+    def _shot_to_clipboard(self) -> None:
+        """A screenshot that went to the clipboard (only, or also): the marked one goes there too."""
+        from ..shell.capture import CLIPBOARD_SHOT, DEFAULTS
+        from .. import config
+        import shutil
+        import subprocess
+        on_clip = os.path.basename(self.path or "") == CLIPBOARD_SHOT or \
+            bool(config.load("capture", DEFAULTS).get("shots_copy"))
+        if on_clip and self.path and shutil.which("wl-copy"):
+            with open(self.path, "rb") as f:
+                subprocess.Popen(["wl-copy", "--type", "image/png"], stdin=f)
 
     # crop: drag a selection over the picture, then Crop (or Return)
     def crop_button(self) -> None:
