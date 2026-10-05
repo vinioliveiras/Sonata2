@@ -122,6 +122,26 @@ class DockTest(unittest.TestCase):
         dx, dy = getattr(tile, "_glide", (0, 0))
         self.assertTrue(abs(dx) > 0.5 or abs(dy) > 0.5)        # still on its way into the slot
 
+    def test_drag_to_trash_uninstalls(self):
+        """Vini: a Dock icon dragged onto the Trash is uninstalled (asked
+        first); it stays in the Dock until that's done."""
+        key = self.removable()[0]
+        self.start_drag(key)
+        ok, b = self.dock.trash.compute_bounds(self.dock)
+        x, y = b.get_x() + b.get_width() / 2, b.get_y() + b.get_height() / 2
+        asked = []
+        self.dock._uninstall_dropped = lambda t: asked.append(t.key)
+        self.assertEqual(self.dock._drag_motion(None, x, y), Gdk.DragAction.MOVE)
+        self.assertTrue(self.dock.trash.has_css_class("drop-hover"))
+        self.assertEqual(self.keys().index(key), self.dock._drag["index"])   # kept its place
+        self.assertTrue(self.dock._drag_drop(None, None, x, y))
+        self.assertEqual(asked, [key])
+        self.assertIn(key, self.dock.cfg["pinned"])                         # until uninstalled
+        self.assertFalse(self.dock.trash.has_css_class("drop-hover"))
+        files = self.dock.tiles[D.PERMANENT[0]] if D.PERMANENT[0] in self.dock.tiles else None
+        if files is not None:
+            self.assertFalse(self.dock.can_uninstall(files))                 # Files never
+
     def test_drag_out_closes_up(self):
         key = self.removable()[0]
         self.start_drag(key)

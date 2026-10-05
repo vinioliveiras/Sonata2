@@ -1397,6 +1397,16 @@ class Dock(Gtk.Box):
         tile = self.tiles[self._drag["key"]]
         if not tile.get_visible():                 # back over the Dock: its slot opens again
             self._set_tile_shown(tile, True)
+        if self._over_trash(x, y) and self.can_uninstall(tile):
+            # over the Trash: let go to uninstall it (macOS); the icon keeps its place meanwhile
+            self._hold_over(None)
+            self._drag["trash"] = True
+            self.trash.add_css_class(dock_drop.HOVER)
+            if self.app_tiles().index(tile) != self._drag["index"]:
+                self._move_to_slot(tile, self._drag["index"])
+            return Gdk.DragAction.MOVE
+        self._drag["trash"] = False
+        self.trash.remove_css_class(dock_drop.HOVER)
         over = self._folder_candidate(tile, x, y)
         if over is not None:                       # over another app's middle: no reordering
             self._hold_over(over)
@@ -1406,6 +1416,27 @@ class Dock(Gtk.Box):
         if self.app_tiles().index(tile) != slot:
             self._move_to_slot(tile, slot)
         return Gdk.DragAction.MOVE
+
+    def _over_trash(self, x, y) -> bool:
+        ok, b = self.trash.compute_bounds(self)
+        return bool(ok) and b.get_x() <= x <= b.get_x() + b.get_width() and \
+            b.get_y() <= y <= b.get_y() + b.get_height()
+
+    @staticmethod
+    def can_uninstall(tile) -> bool:
+        """A Dock icon dropped on the Trash is uninstalled (asked first): an
+        installed app -- not a folder, a Steam game or Sonata's own apps."""
+        from ..apps import PROTECTED
+        key = tile.key or ""
+        return (tile.info is not None and not dock_folder.is_folder(key) and key not in PERMANENT
+                and not key.startswith(PROTECTED) and not (tile.info.get_id() or "").startswith(PROTECTED))
+
+    def _uninstall_dropped(self, tile) -> None:
+        """Dropped on the Trash: asked, then uninstalled; it leaves the Dock
+        only once that's done (Vini)."""
+        from .uninstall_ui import ask
+        key = tile.key
+        ask(tile.info, done=lambda ok: ok and self.set_pinned(key, False))
 
     def _folder_candidate(self, tile, x, y):
         """The pinned tile whose middle is under the pointer, if the dragged
@@ -1470,7 +1501,9 @@ class Dock(Gtk.Box):
             self.make_folder([target.key, key], at_key=target.key)
 
     def _drag_leave(self, _target) -> None:
+        self.trash.remove_css_class(dock_drop.HOVER)
         if self._drag:
+            self._drag["trash"] = False
             self._hold_over(None)
             self._drag["left"] = True
             key = self._drag["key"]
@@ -1490,6 +1523,13 @@ class Dock(Gtk.Box):
         key = self._drag["key"]
         target = self._drag.get("target")
         self._hold_over(None)
+        if self._drag.get("trash"):                # on the Trash: uninstall (asked first)
+            self.trash.remove_css_class(dock_drop.HOVER)
+            tile = self.tiles.get(key)
+            if tile is not None:
+                self._settle(tile, _x, _y)
+                self._uninstall_dropped(tile)
+            return True
         if target is not None and target.key in self.cfg["pinned"]:
             self._drop_into_folder(key, target)
             return True
