@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.7.0-alpha -- 2026-10-05
+
+The session locks and goes dark when you leave it, whatever apps ask;
+window buttons on either side; and more of Files.
+
+### Lock and sleep
+- Automatic locking is on by default: when the display turns off, and
+  before sleep.
+- Only something playing keeps the session awake (a player, a video, a
+  sound): an app asking to stay awake no longer keeps the screen on or
+  stops the lock (Sonata watches keyboard and mouse idle itself).
+- Locked, the display and the keyboard's light turn off after 30 seconds,
+  and come back on any key or move.
+
+### Files
+- Type the address in the path bar: Ctrl+L, or a click on its empty part.
+- An eye in the toolbar shows a folder's hidden files, remembered per
+  folder; hidden everywhere else.
+- Click the folder's name in the toolbar to rename it.
+
+### Windows
+- Settings > Appearance > Window buttons: on the left (the default) or on
+  the right.
+- Window sizes are kept across a restart.
+- Windows programs run with Proton or Wine outside Steam (Faugus, Lutris,
+  Bottles) show their name, not "steam_app_default"; any app without a
+  desktop entry gets a readable name.
+
+### Desktop
+- The desktop's grid is symmetric and reaches both edges on any display.
+- A new folder appears where you clicked, without gliding in.
+- Calculator and Videos have new icons.
+
 ## 0.6.0-alpha -- 2026-10-05
 
 A much bigger Files, apps that really quit with their last window, web
