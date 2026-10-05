@@ -16,6 +16,7 @@ from . import layer  # noqa: E402
 
 ICON = 96
 MODS_POLL_MS = 60        # while open: is Alt / Super still held?
+NO_KEYBOARD_MS = 500     # never got the keyboard by then (a drag holds it): switch at once
 MODS_GRACE_MS = 120      # (after opening: the keyboard's state arrives with the focus)
 
 ui.register("""
@@ -232,7 +233,16 @@ class Switcher(Gtk.Window):
         if not self.get_visible() or self.panel.has_css_class("closing"):
             self._mods_src = 0
             return False
-        if not self.is_active() or GLib.get_monotonic_time() - self._opened_at < MODS_GRACE_MS * 1000:
+        waited = GLib.get_monotonic_time() - self._opened_at
+        if not self.is_active() and waited >= NO_KEYBOARD_MS * 1000:
+            # Vini: Alt+Tab while dragging a video to WhatsApp left the switcher
+            # open for good -- the drag keeps the keyboard, so Alt's release and
+            # the held keys never reach it. The app picked comes forward (the
+            # drag goes on and can be dropped there).
+            self._mods_src = 0
+            self._switch()
+            return False
+        if not self.is_active() or waited < MODS_GRACE_MS * 1000:
             return True
         mods = self._held_modifiers()
         if mods is not None and not (mods & self.HELD):
