@@ -34,9 +34,27 @@ class TileTest(unittest.TestCase):
         p = tempfile.mktemp(suffix=".png")
         tile_png(p)
         plate = icons._Plate(Gtk.IconPaintable.new_for_file(Gio.File.new_for_path(p), 256, 1), 128)
-        self.assertNotEqual(plate.color, icons.PLATE_WHITE)
+        self.assertNotEqual(plate.color, icons.PLATE_WHITE)       # the plate takes the tile's colour
         self.assertIsNotNone(plate.tile)
-        self.assertGreater(icons.TILE_BLEED, 1.0)
+
+    def test_logo_keyed_out_of_its_tile(self):
+        """Vini: the orange filling the frame is good, but the logo was too big --
+        only the logo is drawn now, at TILE_LOGO_SIZE, with no rim or seam."""
+        import tempfile
+        from PIL import Image, ImageDraw
+        p = tempfile.mktemp(suffix=".png")
+        im = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        d.rounded_rectangle((27, 27, 229, 229), radius=50, fill=(217, 112, 78, 255), outline=(195, 95, 64, 255), width=2)
+        d.rectangle((108, 108, 148, 148), fill=(250, 245, 240, 255))
+        im.save(p)
+        plate = icons._Plate(Gtk.IconPaintable.new_for_file(Gio.File.new_for_path(p), 256, 1), 128)
+        self.assertIsNotNone(plate.logo)
+        tex, box = plate.logo
+        self.assertAlmostEqual(box[0], 108 / 256, places=1)              # the logo, not the rim
+        self.assertAlmostEqual(box[2], 41 / 256, places=1)
+        self.assertLess(icons.TILE_LOGO_SIZE, 0.5)
+        self.assertGreaterEqual(icons.PLATE_VERSION, 6)
 
     def test_white_tile_fills_too(self):
         """Claude's real icon: a white squircle around its orange tile (the white

@@ -281,7 +281,7 @@ def generated(gicon, shape: str = "squircle", reshape: bool = False, scale=None)
     return Gio.FileIcon.new(Gio.File.new_for_path(png))
 
 
-PLATE_VERSION = 5       # bump when the plate's look changes: every icon is made again (4: own tiles)
+PLATE_VERSION = 6       # bump when the plate's look changes: every icon is made again (4: own tiles)
 
 
 def picture_icon(path: str, shape: str = "squircle", artwork: bool = False, scale=None):
@@ -358,6 +358,7 @@ PLATE_EXPONENT = 4.0
 PLATE_ARTWORK = 0.62
 TILE_BLEED = 1.06                     # an icon's own tile: this much past the frame (its edge cut off)
 WHITE_TILE_SIZE = 0.56                # what's on an icon's own white tile: this share of the frame
+TILE_LOGO_SIZE = 0.42                 # the logo on an icon's own coloured tile: this share of the frame
 PLATE_WHITE = "#ffffff"
 # the sheen over the whole plate *and* the icon on it (drawn last, so an
 # icon's own tile and the plate shade the same way): top, bottom
@@ -447,6 +448,13 @@ class _Plate(GObject.Object, Gdk.Paintable):
         # a white tile keeps the usual size of what's on it (filling the frame
         # made Claude's logo too big -- Vini): its own edge is cut off instead,
         # on a plate of exactly its white
+        # a coloured tile (Claude's orange): the plate takes its colour and only
+        # its logo is drawn, at TILE_LOGO_SIZE of the frame (filling the frame
+        # with the whole tile made the logo too big -- Vini)
+        self.logo = None
+        if tone and self.tile:
+            f = inner.get_file() if hasattr(inner, "get_file") else None
+            self.logo = keyed_content(f.get_path(), tone) if f is not None and f.get_path() else None
         self.white_tile = None
         if own and not tone and self.tile:
             self.color = own
@@ -475,6 +483,11 @@ class _Plate(GObject.Object, Gdk.Paintable):
         snap.append_color(_rgba(self.color), rect)
         if self.full:
             snap.append_scaled_texture(self.inner, Gsk.ScalingFilter.TRILINEAR, rect)
+        elif self.logo is not None:
+            tex, (lx, ly, lw, lh) = self.logo
+            a = pw * TILE_LOGO_SIZE / max(lw, lh)          # the picture's size: its logo at that share
+            ox, oy = w / 2 - (lx + lw / 2) * a, h / 2 - (ly + lh / 2) * a
+            snap.append_scaled_texture(tex, Gsk.ScalingFilter.TRILINEAR, Graphene.Rect().init(ox, oy, a, a))
         elif self.white_tile is not None and self.white_tile[2] > 0.2 and self.white_tile[3] > 0.2:
             # only what's on the white tile (its own white, edge and shadow left out),
             # at WHITE_TILE_SIZE of the frame, on the plate's white
@@ -543,6 +556,54 @@ def content_box(pb, tone: str):
         return None
     xs, ys = [p[0] for p in pts], [p[1] for p in pts]
     return min(xs) / w, min(ys) / h, (max(xs) + 1 - min(xs)) / w, (max(ys) + 1 - min(ys)) / h
+
+
+_keyed = {}
+
+
+def keyed_content(path: str, tone: str, size: int = 256):
+    """(Gdk.Texture, box) of what sits on an icon's own tile of colour `tone`:
+    the tile's colour (and what's outside it) made transparent, so only the
+    logo is left -- drawn at any size on a plate of that colour, no edge, no
+    seam. box: the logo's place in the picture (fractions). None if nothing is left."""
+    key = (path, tone, size)
+    if key in _keyed:
+        return _keyed[key]
+    out = None
+    try:
+        pb = pixbuf_at(path, size)
+        if pb is not None and pb.get_n_channels() == 4:
+            w, h, stride = pb.get_width(), pb.get_height(), pb.get_rowstride()
+            src = pb.get_pixels()
+            t = [int(tone[i:i + 2], 16) for i in (1, 3, 5)]
+            dst = bytearray(w * h * 4)
+            xs, ys = [], []
+            # only inside the tile, clear of its edge (a rim or shading there isn't the logo)
+            bx, by, bw, bh = tile_box(pb)
+            m = 0.08 * min(bw, bh)
+            x0, x1 = int((bx + m) * w), int((bx + bw - m) * w)
+            y0, y1 = int((by + m) * h), int((by + bh - m) * h)
+            for y in range(y0, y1):
+                for x in range(x0, x1):
+                    o = y * stride + x * 4
+                    r, g, b, a = src[o], src[o + 1], src[o + 2], src[o + 3]
+                    d = abs(r - t[0]) + abs(g - t[1]) + abs(b - t[2])
+                    k = min(1.0, max(0.0, (d - 30) / 90.0)) * (a / 255.0)   # soft key: smooth edges
+                    if k <= 0:
+                        continue
+                    q = (y * w + x) * 4
+                    dst[q:q + 4] = bytes((r, g, b, int(k * 255)))
+                    if k > 0.5:
+                        xs.append(x)
+                        ys.append(y)
+            if xs:
+                tex = Gdk.MemoryTexture.new(w, h, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(bytes(dst)), w * 4)
+                box = (min(xs) / w, min(ys) / h, (max(xs) + 1 - min(xs)) / w, (max(ys) + 1 - min(ys)) / h)
+                out = (tex, box)
+    except (GLib.Error, ValueError, ImportError):
+        out = None
+    _keyed[key] = out
+    return out
 
 
 def _tile_of(inner):
