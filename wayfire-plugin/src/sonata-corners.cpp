@@ -1195,11 +1195,29 @@ class sonata_corners_t : public wf::plugin_interface_t
     {
         return fps.ask();
     };
+    /* which windows are rounded here, by view id (`sonata2 doctor windows`) */
+    wf::ipc::method_callback ipc_rounded = [=] (wf::json_t)
+    {
+        auto response = wf::ipc::json_ok();
+        wf::json_t ids = wf::json_t::array();
+        for (auto& v : wf::get_core().get_all_views())
+        {
+            auto t = wf::toplevel_cast(v);
+            if (t && t->get_transformed_node()->get_transformer(transformer_name))
+            {
+                ids.append((int)v->get_id());
+            }
+        }
+
+        response["rounded"] = ids;
+        return response;
+    };
 
   public:
     void init() override
     {
         ipc_repo->register_method("sonata/fps", ipc_fps);
+        ipc_repo->register_method("sonata/rounded", ipc_rounded);
         /* which build runs (session.log): a fix is only in once install.sh rebuilt it */
         LOGI("sonata-corners: build ", SONATA_CORNERS_BUILD);
         window_capture.init();
@@ -1240,6 +1258,7 @@ class sonata_corners_t : public wf::plugin_interface_t
     void fini() override
     {
         ipc_repo->unregister_method("sonata/fps");
+        ipc_repo->unregister_method("sonata/rounded");
         fps.fini();
         window_capture.fini();
         for (auto& [o, p] : perf)

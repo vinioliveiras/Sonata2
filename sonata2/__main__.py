@@ -17,6 +17,7 @@ Development / screenshots:
   sonata2 key play-pause|next|previous                        (media player keys, MPRIS)
   sonata2 keep <component> [args]                             (session: restart it if it crashes)
   sonata2 doctor                                              (is this computer ready for Sonata?)
+  sonata2 doctor windows                                      (are the window styles on other apps in place?)
   sonata2 screenshot [area]                                    (Super+Shift+3 / 4)
   sonata2 webapp new | <id>                                    (New Web App form / open a web app)
   sonata2 show-desktop                                         (Super+D: every window away, and back)"""
@@ -1141,6 +1142,9 @@ def keep(argv) -> int:
 
 
 def main() -> int:
+    if len(sys.argv) > 2 and sys.argv[1] == "doctor" and sys.argv[2] == "windows":
+        from . import stylecheck
+        return stylecheck.main()
     if len(sys.argv) > 1 and sys.argv[1] == "doctor":
         from . import doctor
         return doctor.main()

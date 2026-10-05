@@ -1579,6 +1579,11 @@ class TopBarWindow(Gtk.ApplicationWindow):
                 self.bar.steamtheme = steamtheme.Watch()
             except Exception as e:
                 print(f"sonata2-topbar: Steam theme: {e}")
+            try:                                                    # window styles still in place (stylecheck.py)
+                from .. import stylecheck
+                self.bar.stylecheck = stylecheck.Watch()
+            except Exception as e:
+                print(f"sonata2-topbar: style check: {e}")
             try:                                                    # background apps give memory back; last resort: the alert
                 from .memorywatch import MemoryWatch
                 self.bar.memorywatch = MemoryWatch(app)
