@@ -38,6 +38,22 @@ class TileTest(unittest.TestCase):
         self.assertIsNotNone(plate.tile)
         self.assertGreater(icons.TILE_BLEED, 1.0)
 
+    def test_white_tile_fills_too(self):
+        """Claude's real icon: a white squircle around its orange tile (the white
+        squircle showed as a second border inside the frame)."""
+        import tempfile
+        from PIL import Image, ImageDraw
+        p = tempfile.mktemp(suffix=".png")
+        im = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        d.rounded_rectangle((16, 16, 240, 240), radius=56, fill=(250, 250, 250, 255))
+        d.rounded_rectangle((60, 60, 196, 196), radius=30, fill=(217, 119, 87, 255))
+        im.save(p)
+        plate = icons._Plate(Gtk.IconPaintable.new_for_file(Gio.File.new_for_path(p), 256, 1), 128)
+        self.assertEqual(plate.color, icons.PLATE_WHITE)
+        self.assertIsNotNone(plate.tile)
+        self.assertGreaterEqual(icons.PLATE_VERSION, 3)            # cached plates made again
+
     def test_logo_on_transparency_untouched(self):
         import tempfile
         from PIL import Image, ImageDraw

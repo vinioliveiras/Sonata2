@@ -281,7 +281,7 @@ def generated(gicon, shape: str = "squircle", reshape: bool = False, scale=None)
     return Gio.FileIcon.new(Gio.File.new_for_path(png))
 
 
-PLATE_VERSION = 1       # bump when the plate's look changes: every icon is made again
+PLATE_VERSION = 3       # bump when the plate's look changes: every icon is made again (3: own tiles fill the frame)
 
 
 def picture_icon(path: str, shape: str = "squircle", artwork: bool = False, scale=None):
@@ -440,7 +440,9 @@ class _Plate(GObject.Object, Gdk.Paintable):
         # an icon with a tile of its own (Claude's orange) fills the frame: drawn
         # small on a plate of its colour, its own rounded edge showed as a thin
         # border (Vini) -- now that edge falls outside the frame's outline
-        self.tile = _tile_of(inner) if tone and scale is None else None
+        # (a white tile too: Claude's icon is a white squircle around its orange one)
+        own = tone or (None if full else _solid_edge(inner, allow_white=True))
+        self.tile = _tile_of(inner) if own and scale is None else None
 
     def do_get_intrinsic_width(self):
         return self.size
@@ -515,7 +517,7 @@ def _tile_of(inner):
     return _boxes[path]
 
 
-def _solid_edge(inner):
+def _solid_edge(inner, allow_white: bool = False):
     """The colour of an icon whose outer edge is one solid colour (a tile
     of its own, like Claude's), as "#rrggbb"; None otherwise (logos on
     transparency, gradients, white tiles). Cached per icon file."""
@@ -525,19 +527,20 @@ def _solid_edge(inner):
         path = f.get_path()
     if path is None:
         return None
-    if path in _tones:
-        return _tones[path]
+    key = (path, allow_white)
+    if key in _tones:
+        return _tones[key]
     tone = None
     try:
         pb = pixbuf_at(path, 48)
-        tone = _edge_tone(pb) if pb is not None else None
+        tone = _edge_tone(pb, allow_white) if pb is not None else None
     except (GLib.Error, ValueError, ImportError):
         pass
-    _tones[path] = tone
+    _tones[key] = tone
     return tone
 
 
-def _edge_tone(pb):
+def _edge_tone(pb, allow_white: bool = False):
     if not pb.get_has_alpha() and pb.get_n_channels() < 3:
         return None
     w, h, n, stride = pb.get_width(), pb.get_height(), pb.get_n_channels(), pb.get_rowstride()
@@ -559,7 +562,7 @@ def _edge_tone(pb):
         return None
     med = [sorted(c[i] for c in ring)[len(ring) // 2] for i in range(3)]
     close = sum(1 for c in ring if sum(abs(c[i] - med[i]) for i in range(3)) < 48)
-    if close < len(ring) * 0.85 or min(med) > 225:
+    if close < len(ring) * 0.85 or (min(med) > 225 and not allow_white):
         return None                                  # not one colour, or white already
     return "#%02x%02x%02x" % tuple(med)
 
