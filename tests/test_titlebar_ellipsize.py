@@ -11,6 +11,8 @@ class TitleTest(unittest.TestCase):
             patch = f.read()
         self.assertIn("pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_MIDDLE)", patch)
         self.assertIn("buttons_width", patch)
+        # Vini: a margin after the buttons, the title not touching the green one
+        self.assertIn("buttons_width + border + 40", patch)
         added = sum(1 for ln in patch.splitlines() if ln.startswith("+") and not ln.startswith("+++"))
         self.assertIn(f"+159,{6 + added} @@", patch)                 # the hunk header matches its lines
 

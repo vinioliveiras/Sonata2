@@ -1,13 +1,14 @@
 --- a/src/deco-theme.cpp
 +++ b/src/deco-theme.cpp
-@@ -159,6 +159,12 @@
+@@ -159,6 +159,13 @@
      layout = pango_cairo_create_layout(cr);
      pango_layout_set_font_description(layout, font_desc.get());
      pango_layout_set_text(layout, text.c_str(), text.size());
 +    /* Sonata: a long title is cut ("…" in the middle) before it reaches the
-+     * buttons -- the same room both sides, so it stays centred; 24 px for the
-+     * gaps between and around the buttons (buttons_width is only their own) */
-+    int room = t_width - 2 * (buttons_width + border + 24);
++     * buttons -- the same room both sides, so it stays centred; 40 px for the
++     * gaps between and around the buttons and a margin after them (Vini: the
++     * title touched the green button) -- buttons_width is only their own */
++    int room = t_width - 2 * (buttons_width + border + 40);
 +    pango_layout_set_width(layout, (room > 1 ? room : 1) * PANGO_SCALE);
 +    pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_MIDDLE);
      cairo_set_source_rgba(cr, active ? fg_text.r : bg_text.r, active ? fg_text.g : bg_text.g,
