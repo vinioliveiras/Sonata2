@@ -124,7 +124,7 @@ class TaskManagerWindow(Gtk.ApplicationWindow):
         for c in ("sonata-activity", "sonata-glass"):
             self.add_css_class(c)
         ui.window.standard(self)
-        ui.window.fit_default_size(self, 1040, 680)  # never bigger than the display (laptops)
+        ui.window.remember_size(self, "activity", 1040, 680)  # its last size (never bigger than the display)
         self.set_size_request(720, 460)
         self.settings = config.load("activity", DEFAULTS)
         self.sampler = sampler or procfs.Sampler()

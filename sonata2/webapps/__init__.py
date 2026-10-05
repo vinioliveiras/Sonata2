@@ -118,6 +118,84 @@ def webkit_available() -> bool:
         return False
 
 
+# The engine each web app runs on (its form): Chromium (a browser of that
+# family, as an app window with a profile of its own: sites made for Chrome
+# just work -- WhatsApp's videos) or WebKit (Sonata's own window, lighter).
+ENGINES = ("chromium", "webkit")
+CHROMIUM_BROWSERS = (("google-chrome-stable", "Google Chrome"), ("google-chrome", "Google Chrome"),
+                     ("chromium", "Chromium"), ("chromium-browser", "Chromium"), ("brave", "Brave"),
+                     ("brave-browser", "Brave"), ("microsoft-edge-stable", "Microsoft Edge"),
+                     ("vivaldi-stable", "Vivaldi"))
+
+
+def chromium_browser():
+    """(command path, name) of the first Chromium-family browser installed, or None."""
+    for cmd, name in CHROMIUM_BROWSERS:
+        path = shutil.which(cmd)
+        if path:
+            return path, name
+    return None
+
+
+def default_engine() -> str:
+    return "chromium" if chromium_browser() else "webkit"
+
+
+def engine(entry: dict) -> str:
+    """A web app's engine: what its form says (made before the choice: WebKit,
+    its login is there); Chromium without a browser for it: WebKit."""
+    e = (entry or {}).get("engine") or "webkit"
+    return "chromium" if e == "chromium" and chromium_browser() else "webkit"
+
+
+def chromium_app_id(url: str) -> str:
+    """The Wayland app id Chrome gives an --app window ("--class" is ignored):
+    https://web.whatsapp.com/ -> chrome-web.whatsapp.com__-Default."""
+    u = urllib.parse.urlsplit(url or "")
+    return "chrome-" + (u.hostname or "") + "_" + (u.path or "/").replace("/", "_") + "-Default"
+
+
+def window_class(app: str, entry: dict) -> str:
+    """The app id its windows have (the desktop entry's StartupWMClass: the Dock's icon)."""
+    return chromium_app_id(entry.get("url", "")) if engine(entry) == "chromium" else app_id(app)
+
+
+DEFAULT_SIZE = (1200, 820)
+MIN_SIZE = (420, 360)
+SIZE_POLL_S = 2
+
+
+def size_key(app: str) -> str:
+    return "webapp-" + app
+
+
+def window_size(app: str) -> tuple:
+    """The size its window opens at: the last one it had (winsize), else DEFAULT_SIZE."""
+    from .. import winsize
+    w, h = winsize.size_or(size_key(app), *DEFAULT_SIZE)
+    return max(MIN_SIZE[0], w), max(MIN_SIZE[1], h)
+
+
+def view_size(views, wm_class: str):
+    """(w, h) of its window in Wayfire's list (not when maximized, tiled or full screen)."""
+    for v in views or []:
+        if not isinstance(v, dict) or v.get("app-id") != wm_class or v.get("role", "toplevel") != "toplevel":
+            continue
+        if v.get("fullscreen") or v.get("maximized") or v.get("tiled-edges"):
+            return None
+        g = v.get("geometry") or {}
+        if g.get("width", 0) > 0 and g.get("height", 0) > 0:
+            return g["width"], g["height"]
+    return None
+
+
+def chromium_command(app: str, entry: dict, browser: str) -> list:
+    """The browser as this web app's window: its own profile, its own app id."""
+    return [browser, f"--user-data-dir={os.path.join(data_dir(app), 'chromium')}",
+            "--no-first-run", "--no-default-browser-check", "--ozone-platform-hint=auto",
+            "--window-size={},{}".format(*window_size(app)), f"--app={entry['url']}"]
+
+
 MISSING_WEBKIT = ("Web apps need WebKitGTK 6.",
                   "Install it with your package manager (Arch / CachyOS: sudo pacman -S webkitgtk-6.0; "
                   "Ubuntu: gir1.2-webkit-6.0; Fedora: webkitgtk6.0), then open the web app again.")
@@ -187,7 +265,7 @@ def desktop_text(app: str, entry: dict, command: str = None) -> str:
     return ("[Desktop Entry]\nType=Application\n"
             f"Name={name}\nComment={_desktop_value(entry.get('url', ''))}\nIcon={icon}\n"
             "Categories=Network;WebApps;\nKeywords=web;app;site;\n"
-            f"StartupWMClass={app_id(app)}\nStartupNotify=true\n"
+            f"StartupWMClass={window_class(app, entry)}\nStartupNotify=true\n"
             f"X-Sonata-WebApp={app}\n"
             f"Exec={command or _command()} webapp {app}\n")
 
@@ -200,7 +278,8 @@ def write_desktop(app: str, command: str = None) -> str:
     return write_desktop_file(desktop_id(app) + ".desktop", desktop_text(app, entry, command))
 
 
-def create(name: str, url: str, command: str = None, fetch: bool = True, background: bool = False) -> str:
+def create(name: str, url: str, command: str = None, fetch: bool = True, background: bool = False,
+           engine_name: str = None) -> str:
     url = normalize_url(url)
     if not url:
         raise ValueError("not a web address")
@@ -209,6 +288,7 @@ def create(name: str, url: str, command: str = None, fetch: bool = True, backgro
     data.setdefault("apps", {})[app] = {"name": (name or "").strip() or default_name(url), "url": url}
     if background:
         data["apps"][app]["background"] = True
+    data["apps"][app]["engine"] = engine_name if engine_name in ENGINES else default_engine()
     config.save(NAME, data)
     os.makedirs(data_dir(app), exist_ok=True)
     update_theme_icon(app)
@@ -218,8 +298,10 @@ def create(name: str, url: str, command: str = None, fetch: bool = True, backgro
     return app
 
 
-def update(app: str, name: str = None, url: str = None, background: bool = None, command: str = None) -> bool:
-    """Edit a web app (its form): name, address, keep running. Its login stays."""
+def update(app: str, name: str = None, url: str = None, background: bool = None, command: str = None,
+           engine_name: str = None) -> bool:
+    """Edit a web app (its form): name, address, keep running, engine. Its
+    login stays (each engine keeps its own: switching asks to sign in once)."""
     data = config.load(NAME, DEFAULTS)
     entry = data.get("apps", {}).get(app)
     if entry is None:
@@ -235,6 +317,8 @@ def update(app: str, name: str = None, url: str = None, background: bool = None,
             entry["background"] = True
         else:
             entry.pop("background", None)
+    if engine_name in ENGINES:
+        entry["engine"] = engine_name
     config.save(NAME, data)
     update_theme_icon(app)                       # a new name may have its own icon in the pack
     write_desktop(app, command)
@@ -495,7 +579,8 @@ def gst_ranks(existing: str = "") -> str:
 
 def scoped_command(argv, exe=None) -> list:
     """The command that runs this web app in a systemd scope of its own."""
-    return ["systemd-run", "--user", "--scope", "--quiet", "--collect", "-p", "MemorySwapMax=0",
+    return ["systemd-run", "--user", "--scope", "--quiet", "--collect", "--slice=sonata-apps.slice",
+            "-p", "MemorySwapMax=0",
             exe or sys.executable, "-m", "sonata2", "webapp"] + list(argv)
 
 
@@ -509,8 +594,56 @@ def main(argv) -> int:
             pass                                  # no user systemd: run as is
     if os.environ.get(SCOPED_ENV):
         MemoryGuard().start()
+    if argv and argv[0] not in ("new", "edit") and engine(get(argv[0])) == "chromium":
+        return run_chromium(argv[0])
     from . import window
     return window.main(argv)
+
+
+def run_chromium(app: str) -> int:
+    """The browser as the web app's window; this process stays (its scope's
+    memory guard) until the browser is gone."""
+    from gi.repository import GLib
+    browser = chromium_browser()
+    try:
+        proc = subprocess.Popen(chromium_command(app, get(app), browser[0]), stdin=subprocess.DEVNULL)
+    except OSError as e:
+        print(f"sonata2 webapp: {e}", file=sys.stderr)
+        return 1
+    from .. import winsize
+    loop = GLib.MainLoop()
+    wm, last = window_class(app, get(app)), {"size": None}
+
+    def poll() -> bool:
+        """Its window's size, kept while it's open (saved once it's gone:
+        Chrome doesn't keep an --app window's size itself)."""
+        try:
+            from ..wl.wfipc import WayfireIPC
+            size = view_size(WayfireIPC().call("window-rules/list-views"), wm)
+        except Exception:
+            size = None
+        if size:
+            last["size"] = size
+        return True
+    src = GLib.timeout_add_seconds(SIZE_POLL_S, poll)
+
+    def gone(*_a):
+        GLib.source_remove(src)
+        if last["size"]:
+            winsize.save(size_key(app), *last["size"])
+        loop.quit()
+    GLib.child_watch_add(GLib.PRIORITY_DEFAULT, proc.pid, gone)
+
+    def stop():
+        """Closed by Sonata (quit on last window): the size kept, the browser asked to quit."""
+        if last["size"]:
+            winsize.save(size_key(app), *last["size"])
+        proc.terminate()
+        return True
+    import signal
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, stop)
+    loop.run()
+    return proc.returncode or 0
 
 
 if __name__ == "__main__":

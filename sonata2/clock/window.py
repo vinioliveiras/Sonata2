@@ -49,7 +49,7 @@ class ClockWindow(Gtk.ApplicationWindow):
             GLib.set_application_name("Clock")
         super().__init__(application=app, title="Clock", css_classes=["sonata-clock"])
         ui.window.standard(self)
-        self.set_default_size(460, 560)
+        ui.window.remember_size(self, "clock", 460, 560)
         self.set_size_request(380, 360)
         self.toolbar = ui.window.glass_toolbar(self, end=(("list-add-symbolic", "New Alarm", self.add),))
         self.add_btn = self.toolbar.get_child().get_end_widget().get_first_child()

@@ -201,6 +201,30 @@ def fit_default_size(win, w: int, h: int) -> None:
     win.set_default_size(*fit_size(w, h, screen_size(win if win.get_realized() else None)))
 
 
+def remember_size(win, key: str, w: int, h: int) -> None:
+    """The window opens at the size it last had (winsize; first time: w x h,
+    never bigger than the display) and maximized if it was; that size is
+    kept when it closes (Vini: every app should remember it)."""
+    from .. import winsize
+    st = winsize.saved(key)
+    fit_default_size(win, *((st["width"], st["height"]) if st else (w, h)))
+    if st and st["maximized"]:
+        win.maximize()
+
+    def keep(*_a):
+        if win.is_fullscreen():
+            return False
+        if win.is_maximized() or not win.get_realized():
+            dw, dh = win.get_default_size()         # GTK keeps it as the unmaximized size
+        else:
+            dw, dh = win.get_width(), win.get_height()
+        if dw > 0 and dh > 0:
+            winsize.save(key, dw, dh, win.is_maximized())
+        return False
+    win.connect("close-request", keep)            # connected first: runs before an app's own handler
+    win.connect("unrealize", keep)                # the app quit without closing it
+
+
 def standard(win) -> None:
     """Give an app window Sonata's standard frame (call once, any time)."""
     from gi.repository import Gtk as _Gtk

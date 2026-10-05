@@ -21,7 +21,7 @@ from gi.repository import Adw, GLib, Gtk  # noqa: E402
 from .. import ui, webapps as W  # noqa: E402
 
 NEW_APP_ID = "io.github.vinioliveiras.sonata2.webapps"
-SIZE = (1200, 820)
+SIZE = W.DEFAULT_SIZE
 QUIT_DELAY_MS = 2500           # after its window closes: WebKit writes what the site saved
 # WebKitGTK decodes a video given to an <img> (or createImageBitmap) frame by
 # frame into memory: WhatsApp checks a 44 s mp4 that way -> 50 GB, killed.
@@ -193,8 +193,8 @@ class WebAppWindow(Gtk.ApplicationWindow):
         super().__init__(application=app, title=entry["name"], css_classes=["sonata-webapp"])
         ui.window.standard(self)
         self.wid, self.entry = wid, entry
-        ui.window.fit_default_size(self, *SIZE)  # never bigger than the display (laptops)
-        self.set_size_request(420, 360)
+        ui.window.remember_size(self, W.size_key(wid), *W.DEFAULT_SIZE)  # its last size (Vini)
+        self.set_size_request(*W.MIN_SIZE)
         base = W.data_dir(wid)
         session = WebKit.NetworkSession.new(os.path.join(base, "data"), os.path.join(base, "cache"))
         session.get_cookie_manager().set_persistent_storage(os.path.join(base, "cookies.sqlite"),
@@ -422,8 +422,30 @@ def form(on_done=None, parent=None, wid=None):
     grid.icon_box = icon_box                                 # (tests)
     # closing its window keeps it running (a chat's notifications keep coming)
     background = Gtk.CheckButton(label="Keep running when its window is closed")
-    grid.attach(background, 1, 3, 1, 1)
+    grid.attach(background, 1, 4, 1, 1)
     grid.background = background
+    # the engine (Vini): Chromium (sites made for Chrome just work) or WebKit
+    browser = W.chromium_browser()
+    engines = [("chromium", browser[1] if browser else "Chromium"), ("webkit", "WebKit")]
+    if not browser:
+        engines = engines[1:]                                # none installed: WebKit only
+    current = W.engine(entry0) if entry0 else W.default_engine()
+    picked = {"engine": current}
+
+    def engine_changed(i):
+        picked["engine"] = engines[i][0]
+        background.set_sensitive(picked["engine"] == "webkit")   # the browser keeps its own windows
+    engine_row = Gtk.Box(spacing=8)
+    engine_pick = ui.controls.popup_button([label for _e, label in engines],
+                                           [e for e, _l in engines].index(current), engine_changed)
+    engine_row.append(engine_pick)
+    if entry0:
+        engine_row.append(Gtk.Label(label="Switching asks you to sign in again.", xalign=0,
+                                    css_classes=["wa-icon-note"], wrap=True, hexpand=True))
+    grid.attach(Gtk.Label(label="Engine:", xalign=1), 0, 3, 1, 1)
+    grid.attach(engine_row, 1, 3, 1, 1)
+    grid.engine = engine_pick                                # (tests)
+    engine_changed([e for e, _l in engines].index(current))
     if entry0:
         url.set_text(entry0["url"])
         name.set_text(entry0["name"])
@@ -437,10 +459,12 @@ def form(on_done=None, parent=None, wid=None):
             target = W.normalize_url(url.get_text())
             if target:
                 if entry0:
-                    W.update(wid, name=name.get_text(), url=target, background=background.get_active())
+                    W.update(wid, name=name.get_text(), url=target, background=background.get_active(),
+                             engine_name=picked["engine"])
                     done = wid
                 else:
-                    done = W.create(name.get_text(), target, background=background.get_active())
+                    done = W.create(name.get_text(), target, background=background.get_active(),
+                                    engine_name=picked["engine"])
                 if state["icon"]:
                     W.set_custom_icon(done, state["icon"])
                 if on_done:

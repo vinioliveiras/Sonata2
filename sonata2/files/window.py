@@ -151,7 +151,8 @@ class FilesWindow(Adw.ApplicationWindow):
     def __init__(self, app, uri: str = None):
         # (classes added, not passed: passing css_classes drops GTK's "csd"
         # class, and with it the rounded corners and the shadow)
-        super().__init__(application=app, title="Files", default_width=920, default_height=560)
+        super().__init__(application=app, title="Files")
+        ui.window.remember_size(self, "files", 920, 560)        # its last size
         for c in ("sonata-files", "sonata-glass"):
             self.add_css_class(c)
         self.set_size_request(560, 320)

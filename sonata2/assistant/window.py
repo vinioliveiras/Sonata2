@@ -222,7 +222,7 @@ def _action_of(block: dict) -> tools.Action:
 class AssistantWindow(Gtk.ApplicationWindow):
     def __init__(self, app, store: S.Store = None):
         super().__init__(application=app, title="Assistant")
-        ui.window.fit_default_size(self, 1000, 680)  # never bigger than the display (laptops)
+        ui.window.remember_size(self, "assistant", 1000, 680)  # its last size (never bigger than the display)
         self.add_css_class("sonata-assistant")
         self.set_size_request(600, 400)
         ui.window.standard(self)

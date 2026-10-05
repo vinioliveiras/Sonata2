@@ -484,7 +484,7 @@ class MusicWindow(Gtk.ApplicationWindow):
         if not GLib.get_application_name():
             GLib.set_application_name("Music")
         super().__init__(application=app, title="Music")
-        ui.window.fit_default_size(self, 1120, 720)  # never bigger than the display (laptops)
+        ui.window.remember_size(self, "music", 1120, 720)  # its last size (never bigger than the display)
         self.add_css_class("sonata-music")
         self.set_size_request(760, 460)
         ui.window.standard(self)

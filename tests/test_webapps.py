@@ -134,7 +134,8 @@ class WindowTest(unittest.TestCase):
             self.assertTrue(dlg.enabled["create"])
             self.assertEqual(name.get_text(), "Whatsapp")                     # suggested from the address
             dlg.on("create")
-        create.assert_called_once_with("Whatsapp", "https://web.whatsapp.com/", background=False)
+        create.assert_called_once_with("Whatsapp", "https://web.whatsapp.com/", background=False,
+                                       engine_name=W.default_engine())
         self.assertEqual(done, ["w0123456789"])
 
     def test_window_has_its_own_storage(self):
@@ -329,7 +330,8 @@ class EditTest(unittest.TestCase):
             name.set_text("WhatsApp")
             dlg.child.background.set_active(True)
             dlg.on("create")
-        update.assert_called_once_with(wid, name="WhatsApp", url="https://web.whatsapp.com/", background=True)
+        update.assert_called_once_with(wid, name="WhatsApp", url="https://web.whatsapp.com/", background=True,
+                                       engine_name="webkit")
         create.assert_not_called()
 
     def test_menus_offer_it(self):

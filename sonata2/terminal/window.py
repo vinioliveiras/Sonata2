@@ -339,7 +339,7 @@ class TerminalWindow(Gtk.ApplicationWindow):
         self.add_controller(keys)
         self.connect("close-request", self._close_request)
         first = self.adopt(tab) if tab else self.new_tab(cwd, command)
-        self.set_default_size(*first.size_for(80, 24))
+        ui.window.remember_size(self, "terminal", *first.size_for(80, 24))
         # the titles follow `cd` and the program in front even without OSC 7
         GLib.timeout_add_seconds(1, self._tick)
 

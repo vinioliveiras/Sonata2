@@ -148,7 +148,7 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
             GLib.set_application_name("Disk Manager")
         super().__init__(application=app, title="Disk Manager", css_classes=["sonata-diskutil"])
         ui.window.standard(self)
-        self.set_default_size(900, 600)
+        ui.window.remember_size(self, "diskutil", 900, 600)
         self.disks = []
         self.selected = None               # a Disk or a Volume
         self._sel_key = None               # its block path: kept across reloads
