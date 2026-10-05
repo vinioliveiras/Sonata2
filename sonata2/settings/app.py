@@ -2419,6 +2419,9 @@ class Settings(Adw.ApplicationWindow):
                                                          None, on),
                                         self.toast("Apps pick it up when they open again")),
                             subtitle="Chrome, VS Code and others use Sonata's title bar instead of their own"))
+        bars.add(switch_row("Sonata look for Steam", app.get("steam_theme", True), self._set_steam_theme,
+                            subtitle="Steam's title bar and window buttons like every other window's "
+                                     "(Adwaita for Steam, set up with Sonata's colours)"))
         bars.add(switch_row("Glass title bars", app.get("glass_titlebars", False), self._set_glass_titlebars,
                             subtitle="See-through, blurred title bars on every window, GNOME apps too "
                                      "(experimental; heavier on the graphics card)"))
@@ -2441,6 +2444,13 @@ class Settings(Adw.ApplicationWindow):
     # the system's setting and stays
     APPEARANCE_RESET = ("accent", "theme", "icon_theme", "flatpak_theme", "system_titlebars",
                         "glass_titlebars", "glass", "radius", "buttons_side")
+    def _set_steam_theme(self, on):
+        """Settings > Appearance > Sonata look for Steam (steamtheme.py)."""
+        from .. import steamtheme
+        self._save("appearance", "steam_theme", bool(on))
+        system.run_async(lambda: steamtheme.apply(force=True) if on else steamtheme.remove(), None)
+        self.toast("Steam shows it the next time it opens")
+
     def _set_buttons_side(self, side):
         """Settings > Appearance > Window buttons: left (macOS) or right. The
         title bars Wayfire draws change at once; GTK apps follow GNOME's

@@ -1574,6 +1574,11 @@ class TopBarWindow(Gtk.ApplicationWindow):
                     print(f"sonata2-topbar: USB protection: {e}")
                 return True
             GLib.timeout_add_seconds(30, usb_check)
+            try:                                                    # Steam in Sonata's look (steamtheme.py)
+                from .. import steamtheme
+                self.bar.steamtheme = steamtheme.Watch()
+            except Exception as e:
+                print(f"sonata2-topbar: Steam theme: {e}")
             try:                                                    # background apps give memory back; last resort: the alert
                 from .memorywatch import MemoryWatch
                 self.bar.memorywatch = MemoryWatch(app)
