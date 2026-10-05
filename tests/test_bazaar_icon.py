@@ -1,5 +1,6 @@
 """Vini: Bazaar (the Flatpak store) should wear the App Store icon -- the
-Sonata theme (looked up first) links its names to MacTahoe's softwarecenter."""
+Sonata theme (looked up first) carries MacTahoe's softwarecenter under its
+names (copies: a symlink didn't survive every checkout / install)."""
 import os
 import unittest
 
@@ -12,9 +13,8 @@ class BazaarIconTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(store))
         for name in ("io.github.kolunmi.Bazaar.svg", "Bazaar.svg"):
             path = os.path.join(ICONS, "Sonata", "apps", "scalable", name)
-            self.assertTrue(os.path.islink(path), name)
-            self.assertFalse(os.path.isabs(os.readlink(path)))           # relative: works wherever installed
-            self.assertEqual(os.path.realpath(path), store)
+            with open(path, "rb") as a, open(store, "rb") as b:
+                self.assertEqual(a.read(), b.read(), name)
 
 
 if __name__ == "__main__":
