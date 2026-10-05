@@ -68,14 +68,23 @@ def log(text: str) -> None:
         pass
 
 
+_btime = []
+
+
+def _boot_time() -> int:
+    """When the system booted (read once: it never changes)."""
+    if not _btime:
+        with open("/proc/stat", encoding="utf-8") as f:
+            _btime.append(next(int(ln.split()[1]) for ln in f if ln.startswith("btime ")))
+    return _btime[0]
+
+
 def started_at(pid: int) -> float:
     """When pid started (epoch seconds), 0 unknown."""
     try:
         with open(f"/proc/{pid}/stat", encoding="utf-8", errors="replace") as f:
             ticks = int(f.read().rsplit(")", 1)[1].split()[19])
-        with open("/proc/stat", encoding="utf-8") as f:
-            btime = next(int(ln.split()[1]) for ln in f if ln.startswith("btime "))
-        return btime + ticks / CLK
+        return _boot_time() + ticks / CLK
     except (OSError, ValueError, IndexError, StopIteration):
         return 0.0
 
@@ -227,7 +236,10 @@ class QuitOnClose:
                 pass
 
         def finish():
-            left = [p for p in targets if self.alive(p) and self.table().get(p, (0, "", ""))[2] ==
+            # every process read once (Vini: closing apps lagged -- the Dock read all
+            # of /proc again for each of the app's processes, on its main loop)
+            now = self.table()
+            left = [p for p in targets if self.alive(p) and now.get(p, (0, "", ""))[2] ==
                     table.get(p, (0, "", ""))[2]]          # the same process, not a reused pid
             if left:
                 log(f"{key}: killed {left}")

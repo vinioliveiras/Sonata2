@@ -146,3 +146,32 @@ class QuitOnCloseTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class QuitCostTest(unittest.TestCase):
+    """Vini: closing apps lagged. The final check read the whole process
+    table once per process of the app (Chrome: dozens) on the Dock's main loop."""
+
+    def test_finish_reads_the_table_once(self):
+        from sonata2.shell import quitonclose as Q
+
+        class Mgr:
+            listeners = []
+            toplevels = []
+        calls = []
+        table = {10: (1, "chrome", "chrome")}
+        table.update({p: (10, "chrome", f"chrome --type=r{p}") for p in range(11, 41)})
+
+        def tbl():
+            calls.append(1)
+            return dict(table)
+        later = []
+        q = Q.QuitOnClose(Mgr(), views=lambda: [], kill=lambda p, s: None, alive=lambda p: True,
+                          enabled=lambda: True, table=tbl, later=lambda ms, f: later.append(f),
+                          launched=lambda k: 0.0, started=lambda p: 0.0, now=lambda: 100.0)
+        q.pids["chrome"] = {10}
+        q.closed_at["chrome"] = 100.0
+        self.assertTrue(q.maybe_quit("chrome"))
+        calls.clear()
+        later[-1]()                                   # finish(): SIGKILL what's left
+        self.assertEqual(len(calls), 1)

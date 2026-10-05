@@ -418,6 +418,9 @@ def setup() -> None:
     _animation_speed()
     _load()
     _sliders_ignore_wheel()
+    import sys
+    from .. import stallwatch                 # what freezes this process, when asked (tools/closelag.sh)
+    stallwatch.start(" ".join(a for a in sys.argv[1:3] if not a.startswith("-")) or "sonata2")
 
 
 def _sliders_ignore_wheel() -> None:
