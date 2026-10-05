@@ -1086,6 +1086,11 @@ class FilesWindow(Adw.ApplicationWindow):
                 self._select_when_listed(name)
         ui.dialog.ask_text("Go to Folder", start, "Go", go, parent=self)
 
+    def connect_to_server(self):
+        """Finder's Go > Connect to Server (Ctrl+K): server.py; opened here once connected."""
+        from . import server
+        server.dialog(self, self.go)
+
     def toggle_hidden(self):
         self.show_hidden = not self.show_hidden
         for t in self.tabs:
@@ -1136,6 +1141,7 @@ class FilesWindow(Adw.ApplicationWindow):
             ("<Control>y", self.toggle_quicklook),
             ("<Control><Shift>g|<Control>l", self.go_to_folder),
             ("<Control><Alt>p", self.toggle_path_bar),                  # Finder: ⌥⌘P
+            ("<Control>k", self.connect_to_server),                     # Finder: ⌘K
             ("<Control>z", self.undo),
             ("<Control><Shift>z", self.redo),
         ]

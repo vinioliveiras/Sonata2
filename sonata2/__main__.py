@@ -328,6 +328,11 @@ def run_files(app, uris, ui):
     from gi.repository import Gio
     for uri in uris or [None]:
         reveal = None
+        if uri == "sonata:connect":                     # the menu bar's Go > Connect to Server
+            win = FilesWindow(app, None)
+            win.present()
+            win.connect_to_server()
+            continue
         if uri:
             f = Gio.File.new_for_uri(uri)
             if f.query_file_type(Gio.FileQueryInfoFlags.NONE, None) not in (Gio.FileType.DIRECTORY,

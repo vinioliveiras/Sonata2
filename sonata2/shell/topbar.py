@@ -485,6 +485,7 @@ class Bar(Gtk.CenterBox):
             [Item(name, lambda u=uri: open_folder(u)) for name, uri in rows[:1]],
             [Item(name, lambda u=uri: open_folder(u), enabled=bool(uri)) for name, uri in rows[1:]],
             [Item("Computer", lambda: open_folder("file:///")), Item("Trash", lambda: open_folder("trash:///"))],
+            [Item("Connect to Server…", lambda: open_folder("sonata:connect"))],
         ])
 
     def _quit_app(self, wins, key) -> None:

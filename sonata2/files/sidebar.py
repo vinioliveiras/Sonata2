@@ -171,6 +171,9 @@ class Sidebar(Gtk.Box):
                 continue
             self._place(vol.get_name(), vol.get_symbolic_icon() or "drive-harddisk-symbolic", uri, disk=True)
             self._rows[uri].volume = vol
+        from . import server
+        if server.can_browse_network():                                # Finder's Network
+            self._place("Network", "network-workgroup-symbolic", server.NETWORK)
         self._place("Trash", "user-trash-symbolic", "trash:///")      # (Vini: Trash in the sidebar)
         from . import tags                                              # Finder's Tags
         self._head("Tags")
