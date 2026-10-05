@@ -164,15 +164,15 @@ def set_password(user: User, password: str, hint: str = "") -> Optional[str]:
 
 
 def create_user(name: str, real_name: str, admin: bool, password: str) -> Optional[str]:
+    if not password:          # without one the account is locked: no login, not on the login screen
+        return "A password is needed"
     try:
         path = _bus().call_sync(BUS, PATH, IFACE, "CreateUser", GLib.Variant("(ssi)", (name, real_name, 1 if admin else 0)),
                                 None, INTERACTIVE, 120000, None).unpack()[0]
     except GLib.Error as e:
         return e.message
-    if password:
-        u = User(path, -1, name, real_name, "", admin, False)
-        return set_password(u, password)
-    return None
+    u = User(path, -1, name, real_name, "", admin, False)
+    return set_password(u, password)
 
 
 def delete_user(user: User, remove_files: bool) -> Optional[str]:

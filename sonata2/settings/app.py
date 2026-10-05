@@ -1727,6 +1727,15 @@ class Settings(Adw.ApplicationWindow):
                               answer, parent=self)
         dlg.set_extra_child(grid)
 
+        # a password is needed (Vini: an account made without one was locked --
+        # it never showed on the login screen and couldn't log in)
+        def check(*_a):
+            dlg.set_response_enabled("create", U.valid_name(acct.get_text().strip()) and bool(pw.get_text())
+                                     and pw.get_text() == verify.get_text())
+        for e in (acct, pw, verify, full):
+            e.connect("changed", check)
+        check()
+
     def _delete_user(self, u):
         from ..backend import users as U
         ui.dialog.alert(f"Delete the user “{u.real_name or u.name}”?",
