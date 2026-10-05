@@ -38,6 +38,7 @@ TL = ("close", "minimize", "maximize", "restore")
 # Class names from Steam's current interface (as Adwaita-for-Steam 4.4 uses them).
 TOPBAR = "div._3Z7VQ1IMk4E3HsHvrkLNgo"
 MENUBAR = "div._3s0lkohH8wU2do0K1il28Y"
+CONTROLS_SLOT = "div.qP17eBPXkfezFfexZ4hC3"          # the top bar's room for Steam's own window buttons
 BIG_PICTURE = "div._3LKQ3S_yqrebeNLF6aeiog"            # the top bar's Big Picture button (GamepadUIToggle)
 
 
@@ -92,9 +93,9 @@ def window_css() -> str:
     pics = os.path.join(ICONS_DIR, "Sonata", "apps", "scalable")
     # in the row, left to right: on the right side close is at the edge (Windows' order);
     # on the left, close first (macOS). Only the main window's buttons move to
-    # Sonata's side; Steam's other windows (Friends, Settings) keep them on the
-    # right, so there they always use the right side's order (Vini: close
-    # first on the right was confusing).
+    # the user's side; Steam's other windows (Friends, Settings) keep them on
+    # the right (their own content is at the left), so there they always use
+    # the right side's order (Vini: close first on the right was confusing).
     n = len(f["buttons"])
     left_order = {b: i for i, b in enumerate(f["buttons"])}
     left_order["restore"] = left_order["maximize"]
@@ -117,13 +118,21 @@ def window_css() -> str:
         b = f".title-area-icon.{name}Button"
         out += [f":is({sel}) {b} {{ order: {right_order[name]} !important; background-image: {_data_uri(plain)} !important; }}",
                 f":is({sel}):hover {b} {{ background-image: {_data_uri(hover)} !important; }}"]
-    # the main window: the buttons at Sonata's place, Steam's menu moved clear of them
+    # every window: the buttons at Sonata's place (its distance from the top and
+    # the side edge), out of Steam's layout -- in Friends / Settings they sat
+    # wherever Steam's own (bigger) buttons had been, against the corner (Vini)
     width = 3 * dot + 2 * gap
     side = "left" if left else "right"
+    out.append(f":is({sel}) {{ position: fixed !important; top: {top}px !important; right: {edge}px !important;"
+               f" left: auto !important; bottom: auto !important; height: {dot}px !important;"
+               f" margin: 0 !important; padding: 0 !important; z-index: 1000 !important; }}")
+    # the main window: on the user's side; the room Steam kept for its own buttons
+    # (after the profile) goes, so its top bar reaches the edge (Vini)
     main = f"body.DesktopUI:has({TOPBAR})"
-    out.append(f"{main} .title-bar-actions.window-controls {{ position: fixed !important; top: {top}px !important;"
-               f" {side}: {edge}px !important; {'right' if left else 'left'}: auto !important; bottom: auto !important;"
-               f" height: {dot}px !important; z-index: 1000 !important; }}")
+    if left:
+        out.append(f"{main} .title-bar-actions.window-controls {{ left: {edge}px !important; right: auto !important; }}")
+    out.append(f"{main} {TOPBAR} {CONTROLS_SLOT} {{ flex: 0 0 {8 if left else edge + width + 12}px !important;"
+               f" width: {8 if left else edge + width + 12}px !important; min-width: 0 !important; }}")
     out.append(f"body.DesktopUI {TOPBAR} {BIG_PICTURE} {{ display: none !important; }}")   # Vini: not used
     if left:
         out += [f"{main} .title-bar-actions.window-controls .title-area-icon.{name}Button {{ order: {i} !important; }}"

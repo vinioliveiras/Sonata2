@@ -35,6 +35,8 @@ class SteamThemeTest(unittest.TestCase):
         self.assertIn("div._3LKQ3S_yqrebeNLF6aeiog { display: none", css)   # no Big Picture button
         self.assertNotIn("--adw-", css)                              # Steam's own colours stay
         self.assertIn("left: 7px", css)                              # Sonata's place, on the left
+        self.assertRegex(css, r"window-controls\) \{ position: fixed !important; top: 8px !important; right: 7px")  # Friends...
+        self.assertIn("div.qP17eBPXkfezFfexZ4hC3 { flex: 0 0 8px", css)   # no empty room after the profile
         self.assertIn("margin-left:", css)                           # Steam's menu moved clear of them
         # Friends / Settings keep the buttons on the right: close at the edge (Windows' order)
         self.assertRegex(css, r"closeButton \{ order: 2 !important; background-image")
