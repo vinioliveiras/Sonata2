@@ -44,9 +44,34 @@ class PathBarTest(unittest.TestCase):
     def test_wired(self):
         from sonata2.files import window
         src = inspect.getsource(window)
-        for k in ('"<Control><Shift>g|<Control>l"', '"<Control><Alt>p"', "Show Path Bar", "self.pathbar.set_uri("):
+        for k in ('"<Control><Shift>g"', '"<Control>l", self.edit_address', '"<Control><Alt>p"', "Show Path Bar", "self.pathbar.set_uri("):
             self.assertIn(k, src)
         self.assertTrue(window.DEFAULTS["path_bar"])
+
+
+class AddressTest(unittest.TestCase):
+    """Vini: Files had no way to type the address. Ctrl+L or a click on the
+    path bar's empty part turns it into a field; Return goes there."""
+
+    def test_edit_then_go(self):
+        bar = P.PathBar(lambda u: None)
+        d = tempfile.mkdtemp()
+        bar.set_uri(Gio.File.new_for_path(d).get_uri())
+        went = []
+        bar.edit(d, went.append)
+        self.assertIs(bar.stack.get_visible_child(), bar.entry)
+        bar.entry.set_text("/tmp")
+        bar.entry.emit("activate")
+        self.assertEqual(went, ["/tmp"])
+        self.assertIsNone(bar.entry)
+        self.assertIs(bar.stack.get_visible_child(), bar.box)  # the folders are back
+
+    def test_hidden_files_shown_by_default(self):
+        from sonata2.files import window
+        self.assertTrue(window.DEFAULTS["show_hidden"])
+        src = inspect.getsource(window.FilesWindow)
+        self.assertIn('config.update("files", show_hidden=', src)
+        self.assertIn('"Show Hidden Files"', src)
 
 
 if __name__ == "__main__":

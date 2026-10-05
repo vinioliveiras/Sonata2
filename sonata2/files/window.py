@@ -32,7 +32,8 @@ from .pathbar import PathBar  # noqa: E402
 VIEWS = (("icons", "view-grid-symbolic", "as Icons"), ("list", "view-list-symbolic", "as List"),
          ("columns", "view-dual-symbolic", "as Columns"))
 DEFAULTS = {"view": "icons", "list_columns": {}, "path_bar": True,    # list_columns: views.py
-            "list_shown": None, "count_sizes": False}           # the list's columns; folder sizes
+            "list_shown": None, "count_sizes": False,           # the list's columns; folder sizes
+            "show_hidden": True}                                # hidden files shown, dimmed (Vini)
 
 ui.register("""
 window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
@@ -162,7 +163,7 @@ class FilesWindow(Adw.ApplicationWindow):
         self.set_size_request(560, 320)
         ui.window.standard(self)
         self.tabs, self.tab = [], None
-        self.show_hidden = False
+        self.show_hidden = bool(config.load("files", DEFAULTS)["show_hidden"])
         self._syncing = False                # toolbar being set to the tab in front
         self._dragged = []                   # files of a drag started here (spring-load guard)
 
@@ -187,6 +188,7 @@ class FilesWindow(Adw.ApplicationWindow):
         # where you are, at the bottom (Finder's path bar; on by default, like Windows' address bar)
         self.pathbar = PathBar(self.go, lambda files, dest, copy: self.drop(files, dest, copy))
         self.pathbar.set_visible(config.load("files", DEFAULTS)["path_bar"])
+        self.pathbar.on_edit = self.edit_address
         content.append(self.pathbar)
         split.append(content)
         self.set_content(split)
@@ -779,7 +781,9 @@ class FilesWindow(Adw.ApplicationWindow):
                                                      checked=self.view is self.views[vid])
                                                 for vid, _i, label in VIEWS],
                                                [Item("Hide Path Bar" if self.pathbar.get_visible() else "Show Path Bar",
-                                                     self.toggle_path_bar)]])]]
+                                                     self.toggle_path_bar),
+                                                Item("Hide Hidden Files" if self.show_hidden else "Show Hidden Files",
+                                                     self.toggle_hidden)]])]]
             if self.view is not self.views["columns"]:
                 cur = self.view.sort_state()[0]
                 sections[-1].append(Item("Sort By", submenu=[[Item(t, lambda t=t: self.sort_by(t),
@@ -1069,22 +1073,36 @@ class FilesWindow(Adw.ApplicationWindow):
         self.pathbar.set_visible(on)
         config.update("files", path_bar=on)
 
-    def go_to_folder(self):
-        """Finder's Go to Folder (Ctrl+Shift+G, Ctrl+L): a path typed, gone to."""
-        from .pathbar import resolve
+    def _typed_location(self):
+        """(where you are, its path to start typing from)."""
         here = self.location() if self.pos >= 0 else None
-        start = (Gio.File.new_for_uri(here).get_path() or "") if here and here not in VIRTUAL else ""
+        return here, (Gio.File.new_for_uri(here).get_path() or "") if here and here not in VIRTUAL else ""
 
-        def go(text):
-            found = resolve(text, here)
-            if found is None:
-                self._error("The folder can’t be found.", None, f"“{text}” doesn’t exist.")
-                return
-            uri, name = found
-            self.go(uri)
-            if name:
-                self._select_when_listed(name)
-        ui.dialog.ask_text("Go to Folder", start, "Go", go, parent=self)
+    def _go_typed(self, text, here):
+        from .pathbar import resolve
+        found = resolve(text, here)
+        if found is None:
+            self._error("The folder can’t be found.", None, f"“{text}” doesn’t exist.")
+            return
+        uri, name = found
+        self.go(uri)
+        if name:
+            self._select_when_listed(name)
+
+    def go_to_folder(self):
+        """Finder's Go to Folder (Ctrl+Shift+G): a path typed, gone to."""
+        here, start = self._typed_location()
+        ui.dialog.ask_text("Go to Folder", start, "Go", lambda t: self._go_typed(t, here), parent=self)
+
+    def edit_address(self):
+        """Ctrl+L, or a click on the path bar's empty part: type the address
+        in the path bar (Windows' address bar, Vini); the Go to Folder
+        dialog when the path bar is hidden."""
+        if not self.pathbar.get_visible():
+            self.go_to_folder()
+            return
+        here, start = self._typed_location()
+        self.pathbar.edit(start, lambda t: self._go_typed(t, here))
 
     def connect_to_server(self):
         """Finder's Go > Connect to Server (Ctrl+K): server.py; opened here once connected."""
@@ -1092,7 +1110,9 @@ class FilesWindow(Adw.ApplicationWindow):
         server.dialog(self, self.go)
 
     def toggle_hidden(self):
+        """View > Show / Hide Hidden Files (Ctrl+Shift+.), remembered."""
         self.show_hidden = not self.show_hidden
+        config.update("files", show_hidden=self.show_hidden)
         for t in self.tabs:
             t.folder.show_hidden = self.show_hidden
             t.folder.reload()
@@ -1139,7 +1159,8 @@ class FilesWindow(Adw.ApplicationWindow):
             ("<Control>d", self.duplicate_selection),
             ("<Control>i", self.get_info),
             ("<Control>y", self.toggle_quicklook),
-            ("<Control><Shift>g|<Control>l", self.go_to_folder),
+            ("<Control><Shift>g", self.go_to_folder),
+            ("<Control>l", self.edit_address),                          # type the address (path bar)
             ("<Control><Alt>p", self.toggle_path_bar),                  # Finder: ⌥⌘P
             ("<Control>k", self.connect_to_server),                     # Finder: ⌘K
             ("<Control>z", self.undo),

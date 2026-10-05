@@ -26,6 +26,7 @@ ui.register("""
 .fs-pathbar button.drop { background: alpha(%(accent)s, 0.22); }
 .fs-pathbar button image { -gtk-icon-size: 13px; }
 .fs-pathbar .fs-path-sep { color: %(label_tertiary)s; font-size: %(text_small)s; margin: 0 1px; }
+.fs-pathbar entry { min-height: 18px; margin: 2px 0; padding: 0 6px; font-size: %(text_small)s; }
 """, key="files-pathbar")
 
 
@@ -59,8 +60,55 @@ class PathBar(Gtk.ScrolledWindow):
                          css_classes=["fs-pathbar"])
         self.go, self.drop = go, drop
         self.box = Gtk.Box(spacing=0, valign=Gtk.Align.CENTER)
-        self.set_child(self.box)
+        # the folders, or the address being typed in their place
+        self.stack = Gtk.Stack(hhomogeneous=False, vhomogeneous=True)
+        self.stack.add_named(self.box, "path")
+        self.set_child(self.stack)
         self.uri = None
+        self.entry = None                    # the address being typed (edit())
+        # a click on the bar's empty part: type the address (Windows' address bar, Vini)
+        click = Gtk.GestureClick()
+        click.connect("released", lambda *_a: self.on_edit and self.on_edit())
+        self.add_controller(click)
+        self.on_edit = None                  # set by the window: starts edit() with the folder's path
+
+    def edit(self, text: str, on_go) -> None:
+        """The bar becomes a field with `text` (selected): Return calls
+        on_go(text), Escape or a click elsewhere puts the folders back."""
+        if self.entry is not None:
+            self.entry.grab_focus()
+            return
+        entry = ui.controls.text_field(text, hexpand=True)
+        self.entry = entry
+        self.stack.add_named(entry, "edit")
+        self.stack.set_visible_child(entry)
+        done = {"v": False}
+
+        def finish(go):
+            if done["v"]:
+                return
+            done["v"] = True
+            value = entry.get_text().strip()
+            self.entry = None
+            self.stack.set_visible_child(self.box)
+            GLib.idle_add(lambda: (entry.get_parent() is self.stack and self.stack.remove(entry), False)[1])
+            GLib.idle_add(self._scroll_end)
+            if go and value:
+                on_go(value)
+        entry.connect("activate", lambda *_a: finish(True))
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", lambda _c, k, *_a: (finish(False), True)[1] if k == Gdk.KEY_Escape else False)
+        entry.add_controller(keys)
+        focus = Gtk.EventControllerFocus()
+        focus.connect("leave", lambda *_a: GLib.idle_add(lambda: (finish(False), False)[1]))
+        entry.add_controller(focus)
+
+        def grab():
+            entry.grab_focus()
+            if hasattr(entry, "select_region"):
+                entry.select_region(0, -1)
+            return False
+        GLib.idle_add(grab)
 
     def set_uri(self, uri: str) -> None:
         if not uri or uri == self.uri:
