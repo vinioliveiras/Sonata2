@@ -1,6 +1,6 @@
 """Linux app packages and archives, opened the way people expect:
 double-click an installer (.pkg.tar.zst, .deb, .rpm, .flatpak(ref),
-.snap) to install it, an AppImage to run it, an archive (.tar.gz, .zip...)
+.snap) to install it, an AppImage to run it, an archive (.tar.gz, .zip, .rar, .7z...)
 to extract it next to itself (macOS Archive Utility). The same actions
 are in the right-click menus (Files, desktop).
 
@@ -24,7 +24,11 @@ from ..backend import system
 _FORMATS = [(".pkg.tar.zst", "arch"), (".pkg.tar.xz", "arch"), (".deb", "debian"), (".rpm", "rpm"),
             (".flatpakref", "flatpakref"), (".flatpak", "flatpak"), (".snap", "snap"),
             (".appimage", "appimage")]
-_ARCHIVES = (".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2", ".tar.zst", ".tar", ".zip")
+_ARCHIVES = (".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2", ".tar.zst", ".tar", ".zip", ".rar", ".7z")
+# RAR and 7-Zip (Vini): through the first tool there is -- 7-Zip, unrar, or
+# libarchive's bsdtar (installed with pacman itself on Arch / CachyOS: RAR 4
+# and 5 work with nothing more installed)
+_TOOLS = {".rar": ("7z", "7zz", "unrar", "bsdtar"), ".7z": ("7z", "7zz", "bsdtar")}
 FAMILY_NAMES = {"arch": "Arch Linux (.pkg.tar.zst)", "debian": "Debian and Ubuntu (.deb)",
                 "rpm": "Fedora, openSUSE and RHEL (.rpm)"}
 
@@ -213,6 +217,35 @@ def _extract_dir(path: str) -> str:
     return target
 
 
+def tool_command(path: str, target: str):
+    """argv that extracts a .rar / .7z into `target` (None: no tool for it)."""
+    ext = os.path.splitext(path.lower())[1]
+    for tool in _TOOLS.get(ext, ()):
+        exe = shutil.which(tool)
+        if not exe:
+            continue
+        if tool in ("7z", "7zz"):
+            return [exe, "x", "-y", "-bso0", "-bsp0", "-o" + target, "--", path]
+        if tool == "unrar":
+            return [exe, "x", "-o+", "-y", "--", path, target + os.sep]
+        return [exe, "-xf", path, "-C", target]          # bsdtar: never writes outside target
+    return None
+
+
+def _run_tool(path: str, target: str) -> None:
+    import subprocess
+    argv = tool_command(path, target)
+    if argv is None:
+        raise OSError("Expanding this kind of archive needs 7-Zip (the 7zip package) or bsdtar (libarchive).")
+    # no stdin: a password-protected archive fails instead of waiting for a password
+    r = subprocess.run(argv, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    if r.returncode:
+        msg = (r.stderr or r.stdout).strip()
+        if any(w in msg.lower() for w in ("password", "encrypted")):
+            raise OSError("The archive is protected by a password.")
+        raise OSError(msg.splitlines()[-1] if msg else f"{os.path.basename(argv[0])} failed")
+
+
 def extract(path: str, parent=None, done=None) -> None:
     """Into a folder named after the archive, next to it (in a thread)."""
     target = _extract_dir(path)
@@ -221,7 +254,9 @@ def extract(path: str, parent=None, done=None) -> None:
         err = None
         try:
             os.makedirs(target)
-            if path.lower().endswith(".zip"):
+            if path.lower().endswith((".rar", ".7z")):
+                _run_tool(path, target)
+            elif path.lower().endswith(".zip"):
                 with zipfile.ZipFile(path) as z:
                     z.extractall(target)
             elif path.lower().endswith(".tar.zst") and shutil.which("tar"):
