@@ -53,6 +53,10 @@ window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text
 .fs-toolbar button:hover { background: %(tool_hover)s; }
 .fs-toolbar button:disabled { color: %(label_tertiary)s; background: none; }
 .fs-toolbar button:checked { background: %(tool_hover)s; color: %(label)s; }
+/* the window buttons on the right (Settings > Appearance): dots, not toolbar buttons */
+.fs-toolbar .traffic button, .fs-toolbar .traffic button:hover, .fs-toolbar .traffic button:active {
+  min-width: 12px; min-height: 12px; padding: 0; margin: 0 4px; border-radius: 999px;
+  background-color: transparent; }
 .fs-toolbar .fs-seg { border-radius: %(r_button)s; }
 .fs-toolbar .fs-seg button { border-radius: 0; min-width: 30px; }
 .fs-toolbar .fs-seg button:first-child { border-radius: %(r_button)s 0 0 %(r_button)s; }
@@ -168,7 +172,10 @@ class FilesWindow(Adw.ApplicationWindow):
         self._syncing = False                # toolbar being set to the tab in front
         self._dragged = []                   # files of a drag started here (spring-load guard)
 
-        self.sidebar = Sidebar(self.go, ui.window.traffic_lights(self.close, self.minimize, self._zoom))
+        lights = ui.window.traffic_lights(self.close, self.minimize, self._zoom)
+        right = ui.window.buttons_side() == "right"          # Settings > Appearance > Window buttons
+        self.sidebar = Sidebar(self.go, Gtk.Box() if right else lights)
+        self._right_lights = lights if right else None       # (at the toolbar's end: _toolbar)
         self.sidebar.on_drop = lambda files, dest, copy: self.drop(files, dest, copy)
         # one sidebar width, no divider to drag (Vini: resizing it got in
         # the way of the list's columns)
@@ -247,6 +254,10 @@ class FilesWindow(Adw.ApplicationWindow):
         self.search_btn = _icon_button("system-search-symbolic", "Search", self._open_search)
         bar.append(self.search_btn)
         bar.append(self.search_rev)
+        if getattr(self, "_right_lights", None) is not None:          # the window buttons on the right
+            self._right_lights.set_valign(Gtk.Align.CENTER)
+            self._right_lights.set_margin_start(8)
+            bar.append(self._right_lights)
         return bar
 
     def _open_search(self):

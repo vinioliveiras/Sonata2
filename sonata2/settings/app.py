@@ -308,6 +308,24 @@ def switch_row(title, active, on_change, subtitle="") -> Adw.SwitchRow:
     return row
 
 
+BUTTON_KEYS = ("button_layout", "button_order", "left_button_spacing", "left_button_x_offset",
+               "right_button_spacing", "right_button_x_offset")
+
+
+def apply_buttons_side() -> None:
+    """The window buttons' side (appearance.json) for everything drawn outside
+    Sonata's own windows: Wayfire's title bars (pixdecor, decoration), GNOME's
+    button-layout (GTK 3/4 apps), libadwaita apps' style (adwstyle)."""
+    from .. import prefs, titlebars, wfconfig
+    from ..ui import tokens
+    f = tokens.frame()
+    for sec, k, v in wfconfig.frame_options(f):
+        if k in BUTTON_KEYS:
+            system.wayfire_set(sec, k, v)
+    prefs.set("org.gnome.desktop.wm.preferences", "button-layout", tokens.button_layout(f))
+    titlebars.apply()
+
+
 def combo_row(title, options, selected, on_change, subtitle="") -> Adw.ComboRow:
     """options: [(value, label)]"""
     row = Adw.ComboRow(title=title, subtitle=subtitle, model=Gtk.StringList.new([o[1] for o in options]),
@@ -430,13 +448,16 @@ class Settings(Adw.ApplicationWindow):
     def toast(self, text: str) -> None:
         self.toasts.add_toast(Adw.Toast(title=GLib.markup_escape_text(text), timeout=3))
 
+    def _lights(self):
+        return ui.window.traffic_lights(self.close, self.minimize,
+                                        lambda: self.unmaximize() if self.is_maximized() else self.maximize())
+
     # -- sidebar -------------------------------------------------------------------
     def _sidebar(self):
         tv = Adw.ToolbarView()
         hb = Adw.HeaderBar(show_title=False, show_start_title_buttons=False, show_end_title_buttons=False)
-        hb.pack_start(ui.window.traffic_lights(self.close, self.minimize,
-                                                  lambda: self.unmaximize() if self.is_maximized()
-                                                  else self.maximize()))
+        if ui.window.buttons_side() == "left":            # on the right: each pane's header (_show)
+            hb.pack_start(self._lights())
         tv.add_top_bar(hb)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         card = Gtk.Box(spacing=10, css_classes=["st-card"])
@@ -527,6 +548,8 @@ class Settings(Adw.ApplicationWindow):
             tv = Adw.ToolbarView()
             hb = Adw.HeaderBar(show_start_title_buttons=False, show_end_title_buttons=False)
             hb.set_title_widget(Gtk.Label(label=title, css_classes=["st-pane-title"]))
+            if ui.window.buttons_side() == "right":       # the window buttons at the right edge
+                hb.pack_end(self._lights())
             tv.add_top_bar(hb)
             tv.set_content(page)
             self.pages[sid] = tv
@@ -2387,6 +2410,9 @@ class Settings(Adw.ApplicationWindow):
                                          self.toast("Flatpak apps pick it up when they open again")),
                              subtitle="Also changes Flatpak apps in other desktops' sessions while on"))
         bars = group("Title Bars")
+        bars.add(combo_row("Window buttons", [("left", "Left"), ("right", "Right")],
+                           app.get("buttons_side", "left"), self._set_buttons_side,
+                           subtitle="Where close, minimize and zoom sit on every window"))
         bars.add(switch_row("Sonata title bars for all apps", app["system_titlebars"],
                             lambda on: (self._save("appearance", "system_titlebars", on),
                                         system.run_async(__import__("sonata2.titlebars", fromlist=["apply"]).apply,
@@ -2414,7 +2440,14 @@ class Settings(Adw.ApplicationWindow):
     # what Reset Appearance puts back (Vini: the theme's defaults); light/dark is
     # the system's setting and stays
     APPEARANCE_RESET = ("accent", "theme", "icon_theme", "flatpak_theme", "system_titlebars",
-                        "glass_titlebars", "glass", "radius")
+                        "glass_titlebars", "glass", "radius", "buttons_side")
+    def _set_buttons_side(self, side):
+        """Settings > Appearance > Window buttons: left (macOS) or right. The
+        title bars Wayfire draws change at once; GTK apps follow GNOME's
+        button-layout; Sonata's apps place theirs when their windows open."""
+        self._save("appearance", "buttons_side", side)
+        system.run_async(apply_buttons_side, None)
+        self.toast("Open windows pick it up when they open again")
 
     def ask_reset_appearance(self):
         return ui.dialog.alert("Reset Appearance?",
@@ -2442,6 +2475,7 @@ class Settings(Adw.ApplicationWindow):
             for sec, k, v in wfconfig.frame_options(tokens.frame()):
                 if k in ("rounded_corner_radius", "radius"):
                     system.wayfire_set(sec, k, v)
+            apply_buttons_side()
             titlebars.apply(icons.APPEARANCE_DEFAULTS["system_titlebars"])
             titlebars.apply_colors(dark)
             if flatpak:

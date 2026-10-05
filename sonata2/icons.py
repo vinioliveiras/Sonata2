@@ -32,7 +32,8 @@ ICONS_DIR = os.path.join(os.path.dirname(__file__), "data", "icons")
 APPEARANCE_DEFAULTS = {"flatpak_theme": True, "icon_theme": "Sonata", "theme": "mac", "accent": "blue", "reduce_transparency": False,
                        "renderer": "gl", "system_titlebars": True, "menu_logo": "distro",
                        "menu_text": "", "glass_titlebars": False,
-                       "screen_corners": True, "radius": {}, "glass": {}}
+                       "screen_corners": True, "radius": {}, "glass": {},
+                       "buttons_side": "left"}           # window buttons: left (macOS) / right (Vini)
 
 _system = None     # Gtk.IconTheme with the system's theme, for fallbacks
 

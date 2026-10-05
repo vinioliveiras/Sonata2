@@ -100,7 +100,11 @@ def titlebar(win, title: str = None, end: Gtk.Widget = None, zoom=None) -> Gtk.W
     if zoom is True:
         zoom = lambda: toggle_zoom(win)     # noqa: E731
     bar = Gtk.CenterBox(css_classes=["sonata-titlebar"])
-    bar.set_start_widget(traffic_lights(win.close, win.minimize, zoom))
+    lights = traffic_lights(win.close, win.minimize, zoom)
+    if buttons_side() == "right":
+        bar.set_end_widget(lights)                  # (an end widget given below goes before them)
+    else:
+        bar.set_start_widget(lights)
     handle = Gtk.WindowHandle(child=bar)
     handle.title_label = None
     if title is not None:
@@ -111,7 +115,14 @@ def titlebar(win, title: str = None, end: Gtk.Widget = None, zoom=None) -> Gtk.W
         bar.set_center_widget(handle.title_label)
     if end is not None:
         end.set_valign(Gtk.Align.CENTER)
-        bar.set_end_widget(end)
+        if buttons_side() == "right":              # the end widget, then the buttons at the edge
+            bar.set_end_widget(None)
+            both = Gtk.Box(spacing=8)
+            both.append(end)
+            both.append(lights)
+            bar.set_end_widget(both)
+        else:
+            bar.set_end_widget(end)
     handle.bar = bar
     return handle
 
@@ -252,13 +263,23 @@ def standard(win) -> None:
     win.set_overflow(_Gtk.Overflow.HIDDEN)      # children clipped to the rounded corners
 
 
+def buttons_side() -> str:
+    """"left" (macOS, the default) or "right": where windows keep their buttons."""
+    from . import tokens
+    return tokens.user_buttons_side()
+
+
 def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
     """Close / minimize / zoom as macOS-style coloured dots. on_zoom=None greys the
-    green one out (fixed-size windows, like System Settings)."""
+    green one out (fixed-size windows, like System Settings). On the right
+    (Settings > Appearance), mirrored: close at the window's edge."""
     box = Gtk.Box(css_classes=["traffic"], valign=Gtk.Align.START)
-    for css, tip, cb in (("tl-close", "Close", on_close),
-                         ("tl-min", "Minimize", on_minimize),
-                         ("tl-zoom", "Zoom" if on_zoom else None, on_zoom)):
+    dots = (("tl-close", "Close", on_close),
+            ("tl-min", "Minimize", on_minimize),
+            ("tl-zoom", "Zoom" if on_zoom else None, on_zoom))
+    if buttons_side() == "right":
+        dots = tuple(reversed(dots))
+    for css, tip, cb in dots:
         b = Gtk.Button(tooltip_text=tip, css_classes=[css], valign=Gtk.Align.CENTER,
                        focus_on_click=False, can_focus=False)
         if cb:

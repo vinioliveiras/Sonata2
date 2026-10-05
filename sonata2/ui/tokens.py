@@ -393,9 +393,28 @@ def user_radii() -> dict:
     return out
 
 
+def user_buttons_side() -> str:
+    """Where the window buttons are: "left" (macOS, the default) or "right"
+    (Settings > Appearance > Window buttons, Vini). No GTK: wayfire-config.sh
+    reads it too."""
+    import json
+    import os
+    try:
+        from .. import config
+        folder = config.CONFIG_DIR
+    except ImportError:                        # loaded on its own (wayfire-config.sh, prefs.py)
+        folder = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "sonata2")
+    try:
+        with open(os.path.join(folder, "appearance.json"), encoding="utf-8") as f:
+            side = (json.load(f) or {}).get("buttons_side")
+    except (OSError, ValueError, AttributeError):
+        side = None
+    return side if side in ("left", "right") else FRAME["buttons_side"]
+
+
 def frame() -> dict:
-    """FRAME with the user's window radius."""
-    return dict(FRAME, radius=user_radii()["window"])
+    """FRAME with the user's window radius and buttons side."""
+    return dict(FRAME, radius=user_radii()["window"], buttons_side=user_buttons_side())
 
 
 def radius_tokens(r: dict) -> dict:

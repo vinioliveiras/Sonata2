@@ -35,7 +35,7 @@ def _frame() -> dict:
                                                   os.path.join(os.path.dirname(__file__), "ui", "tokens.py"))
     t = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(t)
-    return {"layout": t.button_layout(t.FRAME), "font": t.FRAME["title_font"]}
+    return {"layout": t.button_layout(t.frame()), "font": t.FRAME["title_font"]}      # (the user's side)
 
 
 def _wallpaper() -> tuple:

@@ -92,7 +92,7 @@ def css(folder: str = None, bars: bool = True, glass: bool = False) -> str:
                     f"{t['window_bg']} {ADW_HEADER_H}px); }}\n")
         return out
     w = "window:not(.sonata-window) windowcontrols > button"
-    side = FRAME["buttons_side"]                         # the header bar's start (left) or end box
+    side = tokens_frame()["buttons_side"]                # the header bar's start (left) or end box
     wc = f"window:not(.sonata-window) headerbar windowcontrols.{'start' if side == 'left' else 'end'}"
     edge = "first-child" if side == "left" else "last-child"
     # Sonata's place for the dots (ui/window.py): 12 px, centres 20 px apart,
