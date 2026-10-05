@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="sonata-privacy">
+		<_short>Sonata Privacy</_short>
+		<_long>Screen capture, window control, the clipboard, virtual input, the lock screen and overlays only for Sonata (and the screen-sharing portal). Apps go through the portals, which ask first.</_long>
+		<category>Utility</category>
+		<option name="enabled" type="bool">
+			<_short>Protect privileged protocols</_short>
+			<default>true</default>
+		</option>
+		<option name="enforce" type="bool">
+			<_short>Hide them (off: only log what would be hidden)</_short>
+			<default>false</default>
+		</option>
+		<option name="trusted" type="string">
+			<_short>Also trusted</_short>
+			<_long>Program names (space separated) that get them too: input methods, a VNC server, a status bar of one's own.</_long>
+			<default>fcitx5 ibus-daemon</default>
+		</option>
+	</plugin>
+</wayfire>

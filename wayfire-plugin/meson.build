@@ -22,5 +22,11 @@ shared_module('sonata-resize', 'src/sonata-resize.cpp',
   dependencies: [wayfire, wlroots],
   install: true, install_dir: get_option('libdir') / 'wayfire')
 
-install_data('metadata/sonata-corners.xml', 'metadata/sonata-resize.xml',
+# Privileged Wayland protocols (screen capture, window control, clipboard,
+# virtual input...) only for Sonata and the portal (GNOME / KDE do the same)
+shared_module('sonata-privacy', 'src/sonata-privacy.cpp',
+  dependencies: [wayfire],
+  install: true, install_dir: get_option('libdir') / 'wayfire')
+
+install_data('metadata/sonata-corners.xml', 'metadata/sonata-resize.xml', 'metadata/sonata-privacy.xml',
   install_dir: get_option('datadir') / 'wayfire' / 'metadata')

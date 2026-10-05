@@ -27,9 +27,9 @@ class LockScreen:
         self.app = app
         self.lock = SL.Instance.new()
         from .idlelock import mark_locked
-        self.lock.connect("locked", lambda *_: mark_locked(True))   # `sonata2 lock-wait` returns
+        self.lock.connect("locked", lambda *_: (mark_locked(True), self._usb(True)))   # `sonata2 lock-wait` returns
         self.lock.connect("failed", lambda *_: (mark_locked(False), app.quit()))   # another locker is active
-        self.lock.connect("unlocked", lambda *_: (mark_locked(False), app.quit()))
+        self.lock.connect("unlocked", lambda *_: (self._usb(False), mark_locked(False), app.quit()))
         self.texture = wallpaper_texture()
         self.windows = []
         self.entry = None
@@ -42,6 +42,21 @@ class LockScreen:
             self._window(monitors.get_item(i), primary=(monitors.get_item(i) is main))
         monitors.connect("items-changed", lambda m, pos, _r, added: [
             self._window(m.get_item(pos + k), primary=False) for k in range(added)])
+
+    def _usb(self, locked: bool) -> None:
+        """New USB devices blocked while locked (USBGuard; usbprotect.py)."""
+        try:
+            from ..backend import usbprotect
+            if not locked:
+                usbprotect.restore()             # before quitting: never left blocked
+                return
+            from .. import config
+            from .idlelock import DEFAULTS
+            if config.load("security", DEFAULTS).get("usb_protection"):
+                from ..backend import system
+                system.run_async(usbprotect.block)
+        except Exception as e:                   # never in the way of locking or unlocking
+            print(f"sonata2-lock: USB protection: {e}", flush=True)
 
     def _window(self, monitor, primary):
         win = Gtk.Window(application=self.app)

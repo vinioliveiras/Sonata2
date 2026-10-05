@@ -380,7 +380,7 @@ class Settings(Adw.ApplicationWindow):
         for c in ("sonata-settings", "sonata-glass"):      # added, not passed (keeps GTK's "csd")
             self.add_css_class(c)
         # Resizable with a working Zoom button (Vini's call; macOS keeps it fixed).
-        ui.window.fit_default_size(self, 920, 640)  # never bigger than the display (laptops)
+        ui.window.remember_size(self, "settings", 920, 640)  # its last size (never bigger than the display)
         self.set_size_request(760, 480)
         # Bluetooth's search for nearby devices ends with the window
         self.connect("close-request", lambda *_: (getattr(self, "_bt_scan_src", 0) and self._bt_scan(False), False)[1])
@@ -2022,7 +2022,97 @@ class Settings(Adw.ApplicationWindow):
                                 lambda on: system.set_gsetting("org.gnome.system.location", "enabled",
                                                                "true" if on else "false"),
                                 subtitle="Apps may ask for your location (GeoClue)"))
-        return [gen, priv, self._keyring_group()]
+        return [gen, priv, self._permissions_group(), self._firewall_group(), self._encryption_group(),
+                self._usb_group(sec), self._keyring_group()]
+
+    def _permissions_group(self):
+        """macOS' Privacy list: what sandboxed (Flatpak) apps were allowed through
+        the portals; a switch per app (permstore.py)."""
+        from ..backend import permstore
+        from .. import apps
+        grp = group("App Permissions", "Apps installed with Flatpak ask before using these. "
+                                       "Other apps aren't sandboxed.")
+        for key, title, entries in permstore.all_permissions():
+            exp = Adw.ExpanderRow(title=title, use_markup=False,
+                                  subtitle=(f"{len(entries)} app" + ("s" if len(entries) != 1 else ""))
+                                  if entries else "No app has asked")
+            exp.set_enable_expansion(bool(entries))
+            for app_id, on in entries:
+                info = apps.lookup(app_id)
+                row = switch_row(info.get_display_name() if info else app_id, on,
+                                 lambda v, k=key, a=app_id: permstore.set_allowed(k, a, v))
+                if info is not None and info.get_icon() is not None:
+                    row.add_prefix(Gtk.Image(gicon=info.get_icon(), pixel_size=24))
+                exp.add_row(row)
+            grp.add(exp)
+        return grp
+
+    def _firewall_group(self):
+        """macOS' Firewall: ufw or firewalld, on or off (pkexec asks the password)."""
+        from ..backend import security
+        fw = security.firewall()
+        grp = group("Firewall")
+        if fw["kind"] is None:
+            row = Adw.ActionRow(title="No firewall installed", use_markup=False,
+                                subtitle="Install ufw (sudo pacman -S ufw) to turn it on here")
+            row.set_subtitle_lines(0)
+            grp.add(row)
+            return grp
+        row = switch_row("Firewall", fw["on"], lambda _on: None,
+                         subtitle=f"Blocks connections from other computers to this one ({fw['kind']})")
+
+        def changed(r, _p):
+            if getattr(r, "quiet", False):
+                return
+            want = r.get_active()
+            r.set_sensitive(False)
+
+            def done(ok):
+                r.set_sensitive(True)
+                if not ok:                                   # cancelled or failed: the switch shows the truth
+                    r.quiet = True
+                    r.set_active(security.firewall()["on"])
+                    r.quiet = False
+                self.toast(("Firewall on" if want else "Firewall off") if ok else "Firewall not changed")
+            system.run_async(lambda: security.set_firewall(fw["kind"], want), done)
+        row.connect("notify::active", changed)
+        grp.add(row)
+        return grp
+
+    def _encryption_group(self):
+        """macOS' FileVault: shown only (Linux encrypts a disk when it's installed)."""
+        from ..backend import security
+        enc = security.encryption()
+        grp = group("Disk Encryption")
+        if enc.get("/"):
+            title, sub = "The startup disk is encrypted", "Its data can't be read without your disk password (LUKS)"
+            if enc.get("/home") is False:
+                sub = "The home folder is on a disk that isn't encrypted"
+        elif enc.get("/") is False:
+            title, sub = "The startup disk isn't encrypted", ("Anyone with the disk can read its files. Linux "
+                                                              "encrypts a disk when it's installed: choose "
+                                                              "encryption in the installer.")
+        else:
+            title, sub = "Unknown", "The startup disk couldn't be checked"
+        row = Adw.ActionRow(title=title, subtitle=sub, use_markup=False)
+        row.add_prefix(Gtk.Image(icon_name="object-locked-symbolic" if enc.get("/") else "object-unlocked-symbolic"))
+        row.set_subtitle_lines(0)
+        grp.add(row)
+        return grp
+
+    def _usb_group(self, sec):
+        """GNOME's USB protection: devices plugged in while locked are blocked (USBGuard)."""
+        from ..backend import usbprotect
+        grp = group("USB")
+        ok = usbprotect.available()
+        row = switch_row("Block new USB devices while locked", ok and sec.get("usb_protection", True),
+                         lambda on: self._save("security", "usb_protection", on),
+                         subtitle="Devices already plugged in keep working" if ok else
+                         "Needs USBGuard: sudo pacman -S usbguard, then sudo systemctl enable --now usbguard-dbus")
+        row.set_subtitle_lines(0)
+        row.set_sensitive(ok)
+        grp.add(row)
+        return grp
 
     def _keyring_group(self):
         """Where saved passwords live (keyring.py): the login keyring (no

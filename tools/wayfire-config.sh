@@ -35,6 +35,12 @@ sresize="${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install/lib
 if [ -f "$sresize" ]; then
     sed -i -E '/^plugins *=/ s/(^| )resize( |$)/\1sonata-resize\2/' "$out"
 fi
+# Privileged protocols (screen capture, window control, clipboard, virtual
+# input, overlays) only for Sonata and the portal: sonata-privacy, once built
+sprivacy="${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install/lib/wayfire/libsonata-privacy.so"
+if [ -f "$sprivacy" ] && ! grep -qE '^plugins *=.*(^| )sonata-privacy( |$)' "$out"; then
+    sed -i -E '/^plugins *=/ s/$/ sonata-privacy/' "$out"
+fi
 # Window frame (corners, traffic lights) from tokens.FRAME -- one place for
 # every window: the title bars Wayfire draws follow Sonata's own windows.
 PYTHONPATH="$here" python3 - "$out" <<'PY' || true

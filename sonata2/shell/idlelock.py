@@ -20,7 +20,7 @@ import time
 from .. import config, wfconfig
 
 # lock_after: seconds after the display turns off (0 = immediately), -1 = never
-DEFAULTS = {"lock_after": -1, "lock_before_sleep": False}
+DEFAULTS = {"lock_after": -1, "lock_before_sleep": False, "usb_protection": True}
 # swayidle -w waits for its command: `sonata2 lock` itself only quits on
 # unlock, so every idle timeout / before-sleep that came meanwhile waited in
 # line and locked again right after each unlock (Vini: the password 3 times
