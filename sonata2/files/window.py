@@ -725,7 +725,7 @@ class FilesWindow(Adw.ApplicationWindow):
             view.ensure_selected(info)
             sel = view.selected() or [info]
             n = len(sel)
-            what = f"“{sel[0].get_display_name()}”" if n == 1 else f"{n} Items"
+            what = f"“{folder.short_name(sel[0].get_display_name())}”" if n == 1 else f"{n} Items"
             if self._in_trash():                 # Finder's Trash menu
                 ui.menu.popup(widget, [[Item("Put Back", self.put_back_selection)],
                                        [Item("Delete Immediately…", self.delete_selection_now)],

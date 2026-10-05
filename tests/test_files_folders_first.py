@@ -54,3 +54,17 @@ class FoldersFirstTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShortNameTest(unittest.TestCase):
+    """Vini: a long name made the right-click menu very wide."""
+
+    def test_cut_keeps_extension(self):
+        import inspect
+        from sonata2.files import folder, window
+        s = folder.short_name("Um video muito muito grande do whatsapp de 2024.mp4")
+        self.assertTrue(s.endswith("….mp4"))
+        self.assertLessEqual(len(s), folder.MENU_NAME_MAX)
+        self.assertEqual(folder.short_name("a.mp4"), "a.mp4")
+        self.assertTrue(folder.short_name("x" * 60).endswith("…"))
+        self.assertIn("folder.short_name(", inspect.getsource(window.FilesWindow._context_menu))

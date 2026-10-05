@@ -53,6 +53,20 @@ def sort_key(info: Gio.FileInfo) -> str:
     return k
 
 
+MENU_NAME_MAX = 30
+
+
+def short_name(name: str, limit: int = MENU_NAME_MAX) -> str:
+    """A long name cut for a menu, its extension kept (Vini): "A very long
+    video na….mp4" -- the right-click menu no longer grows with the name."""
+    if len(name) <= limit:
+        return name
+    base, dot, ext = name.rpartition(".")
+    ext = "." + ext if dot and base and 0 < len(ext) <= 6 else ""
+    keep = max(1, limit - len(ext) - 1)
+    return (name[:-len(ext)] if ext else name)[:keep].rstrip() + "…" + ext
+
+
 def display_name(uri: str) -> str:
     if uri == RECENTS:
         return "Recents"
