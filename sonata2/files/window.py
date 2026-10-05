@@ -21,7 +21,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, names, ui  # noqa: E402
-from . import folder, folderprefs, ops, packages  # noqa: E402
+from . import folder, folderprefs, ops, packages, undo  # noqa: E402
 from .search import Search  # noqa: E402
 from .folder import APPS, RECENTS, VIRTUAL, file_of, is_dir  # noqa: E402
 from .views import SORT_BY, ColumnsView, IconsView, ListView  # noqa: E402
@@ -784,7 +784,7 @@ class FilesWindow(Adw.ApplicationWindow):
         if not self._writable_here():
             return
         where = Gio.File.new_for_uri(self.location())
-        ops.new_folder(where, lambda f: self._select_when_listed(f.get_basename(), rename=True),
+        ops.new_folder(where, lambda f: (undo.new_folder(f), self._select_when_listed(f.get_basename(), rename=True)),
                        lambda e: self._error("The folder can’t be created.", e))
 
     def _select_when_listed(self, name, rename=False, tries=40):
@@ -808,8 +808,12 @@ class FilesWindow(Adw.ApplicationWindow):
             self._error(f"The name “{new_name}” can’t be used.", None,
                         "Try using a name with fewer characters, or with no punctuation marks.")
             return
-        ops.rename(file_of(info), new_name, lambda f: self._select_when_listed(f.get_basename()),
-                   lambda e: self._error(f"The name “{new_name}” can’t be used.", e))
+        old_name = file_of(info).get_basename()
+
+        def renamed(f):
+            undo.renamed(f, old_name)
+            self._select_when_listed(f.get_basename())
+        ops.rename(file_of(info), new_name, renamed, lambda e: self._error(f"The name “{new_name}” can’t be used.", e))
 
     # drag and drop (Finder: same disk moves, another disk copies, Ctrl copies)
     def files_for_drag(self, view, info):
@@ -882,7 +886,8 @@ class FilesWindow(Adw.ApplicationWindow):
     def trash_selection(self):
         files = self._selected_files()
         if files:
-            ops.trash(files, lambda f, e: self._error(f"“{f.get_basename()}” can’t be moved to the Trash.", e))
+            ops.trash(files, lambda f, e: self._error(f"“{f.get_basename()}” can’t be moved to the Trash.", e),
+                      undo.trashed)
             GLib.timeout_add(600, lambda: (self.sidebar.refresh_space(), False)[1])
 
     def duplicate_selection(self):
@@ -914,6 +919,37 @@ class FilesWindow(Adw.ApplicationWindow):
                 ops.paste_image(self, dest,                     # a copied picture becomes a file
                                 on_error=lambda e: self._error("The picture can’t be pasted.", e))
         ops.read_clipboard(self, got)
+
+    # Edit > Undo / Redo (undo.py: one history for every Files window)
+    def _editing(self) -> bool:
+        focus = self.get_focus()
+        return isinstance(focus, Gtk.Editable) or bool(focus and focus.get_ancestor(Gtk.Entry))
+
+    def undo(self):
+        if self._editing():
+            return False                        # the text field's own undo
+        self._run_history(undo.history.take_undo(), "undo", "Undo")
+        return True
+
+    def redo(self):
+        if self._editing():
+            return False
+        self._run_history(undo.history.take_redo(), "redo", "Redo")
+        return True
+
+    def _run_history(self, action, which, verb):
+        if action is None:
+            self.get_display().beep()
+            return
+        fn = getattr(action, which)
+
+        def work(report):
+            try:
+                fn()
+            except GLib.Error as e:
+                report(None, e)
+        ops._in_thread(work, lambda: [t.folder.reload() for t in self.tabs],
+                       lambda _f, e: self._error(f"{verb} {action.label} can’t be completed.", e))
 
     def _error(self, heading, err, body=None):
         ui.dialog.alert(heading, body or (err.message if err else ""), [("ok", "OK", "default")], parent=self)
@@ -969,11 +1005,13 @@ class FilesWindow(Adw.ApplicationWindow):
             ("<Control>d", self.duplicate_selection),
             ("<Control>i", self.get_info),
             ("<Control>y", self.toggle_quicklook),
+            ("<Control>z", self.undo),
+            ("<Control><Shift>z", self.redo),
         ]
         ctl = Gtk.ShortcutController(scope=Gtk.ShortcutScope.GLOBAL)
         for trig, cb in keys:
             ctl.add_shortcut(Gtk.Shortcut(trigger=Gtk.ShortcutTrigger.parse_string(trig),
-                                          action=Gtk.CallbackAction.new(lambda *_a, f=cb: (f(), True)[1])))
+                                          action=Gtk.CallbackAction.new(lambda *_a, f=cb: f() is not False)))
         self.add_controller(ctl)
         # Return renames (Finder), F2 too; Delete / Ctrl+Backspace move to the
         # Trash. Captured before the views (Return would open), never while

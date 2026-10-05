@@ -84,19 +84,26 @@ def rename(f: Gio.File, new_name: str, on_done, on_error) -> None:
     f.set_display_name_async(new_name, GLib.PRIORITY_DEFAULT, None, done)
 
 
-def trash(files, on_error=None) -> None:
+def trash(files, on_error=None, on_done=None) -> None:
+    """on_done(trashed files) once every one has been tried (Undo records them)."""
     from .. import sounds
+    files = list(files)
     played = {"done": False}
+    state = {"left": len(files), "ok": []}
     for f in files:
         def done(src, res):
             try:
                 src.trash_finish(res)
+                state["ok"].append(src)
                 if not played["done"]:           # only once something really went to the Trash
                     played["done"] = True
                     sounds.play("trash")
             except GLib.Error as e:
                 if on_error:
                     on_error(src, e)
+            state["left"] -= 1
+            if state["left"] == 0 and on_done and state["ok"]:
+                on_done(state["ok"])
         f.trash_async(GLib.PRIORITY_DEFAULT, None, done)
 
 
@@ -223,6 +230,7 @@ class Transfer:
         self.duplicate = duplicate           # copies next to the originals ("x copy")
         self.parent, self.on_done = parent, on_done
         self.cancel = Gio.Cancellable()
+        self.record = []                     # (source, where it went) of each item done: Undo
         self.total = self.done_bytes = 0
         self._last_ui = 0.0
         self._apply_all = None               # remembered conflict answer
@@ -289,8 +297,9 @@ class Transfer:
                         self._restore(target, aside)
                         raise
                     _delete(aside, None)                # only once the new item is in place
-                    return
+                    return                              # (replaced: not undoable -- the old one is gone)
         self._transfer(src, target, is_dir, info)
+        self.record.append((src, target))
 
     def _set_aside(self, src, target, name):
         """Replace: rename the old item to a hidden temp name in the same
@@ -380,6 +389,12 @@ class Transfer:
     # -- GTK thread ---------------------------------------------------------------------
     def _finish(self, err):
         self.op.finish()
+        if self.record:                                  # Edit > Undo (undo.py)
+            from . import undo
+            if self.move:
+                undo.moved(self.record)
+            else:
+                undo.copied(t for _s, t in self.record)
         from .. import sounds
         sounds.play("done" if err is None else "error")
         if err is not None:
