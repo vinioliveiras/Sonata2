@@ -356,6 +356,7 @@ def clear_generated() -> None:
 PLATE_INSET = 0.055
 PLATE_EXPONENT = 4.0
 PLATE_ARTWORK = 0.62
+TILE_BLEED = 1.06                     # an icon's own tile: this much past the frame (its edge cut off)
 PLATE_WHITE = "#ffffff"
 # the sheen over the whole plate *and* the icon on it (drawn last, so an
 # icon's own tile and the plate shade the same way): top, bottom
@@ -436,6 +437,10 @@ class _Plate(GObject.Object, Gdk.Paintable):
         self.shape = shape if shape in SHAPES else "squircle"
         tone = None if full else _solid_edge(inner)
         self.color = tone or PLATE_WHITE               # flat: the icon's own tile blends in
+        # an icon with a tile of its own (Claude's orange) fills the frame: drawn
+        # small on a plate of its colour, its own rounded edge showed as a thin
+        # border (Vini) -- now that edge falls outside the frame's outline
+        self.tile = _tile_of(inner) if tone and scale is None else None
 
     def do_get_intrinsic_width(self):
         return self.size
@@ -455,6 +460,14 @@ class _Plate(GObject.Object, Gdk.Paintable):
         snap.append_color(_rgba(self.color), rect)
         if self.full:
             snap.append_scaled_texture(self.inner, Gsk.ScalingFilter.TRILINEAR, rect)
+        elif self.tile is not None and self.tile[2] > 0.3 and self.tile[3] > 0.3:
+            tx, ty, tw, th = self.tile
+            a = pw * TILE_BLEED / min(tw, th)             # the tile a little bigger than the frame
+            cx, cy = (tx + tw / 2) * a, (ty + th / 2) * a  # the tile's centre on the frame's
+            snap.save()
+            snap.translate(Graphene.Point().init(w / 2 - cx, h / 2 - cy))
+            self.inner.snapshot(snap, a, a)
+            snap.restore()
         else:
             # the usual size, or the chosen one (up to the whole frame: cut to its shape)
             a = w * PLATE_ARTWORK if self.scale is None else pw * self.scale
@@ -469,6 +482,37 @@ class _Plate(GObject.Object, Gdk.Paintable):
 
 
 _tones = {}
+
+
+def tile_box(pb):
+    """(x, y, w, h) as fractions of the picture: where its opaque tile is."""
+    w, h, n, stride = pb.get_width(), pb.get_height(), pb.get_n_channels(), pb.get_rowstride()
+    if n < 4:
+        return 0.0, 0.0, 1.0, 1.0
+    px = pb.get_pixels()
+    pts = [(x, y) for y in range(h) for x in range(w) if px[y * stride + x * n + 3] > 200]
+    if not pts:
+        return 0.0, 0.0, 1.0, 1.0
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    return min(xs) / w, min(ys) / h, (max(xs) + 1 - min(xs)) / w, (max(ys) + 1 - min(ys)) / h
+
+
+_boxes = {}
+
+
+def _tile_of(inner):
+    """The tile's box in an icon with a tile of its own (cached per file), or None."""
+    f = inner.get_file() if hasattr(inner, "get_file") else None
+    path = f.get_path() if f is not None else None
+    if path is None:
+        return None
+    if path not in _boxes:
+        try:
+            pb = pixbuf_at(path, 96)
+            _boxes[path] = tile_box(pb) if pb is not None else None
+        except (GLib.Error, ValueError, ImportError):
+            _boxes[path] = None
+    return _boxes[path]
 
 
 def _solid_edge(inner):
