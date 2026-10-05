@@ -1,8 +1,8 @@
 """Security & Privacy > "Require password after the display turns off":
 the menu bar process keeps swayidle running with the matching timeout
 (ext-idle-notify; Wayfire's idle plugin only blanks the display) and
-locks before sleep. Off by default until the lock screen is proven on
-the user's hardware (see ROADMAP open questions).
+locks before sleep. On by default: the display off, then the lock
+screen (macOS's "Require password immediately").
 
 The same swayidle turns the keyboard's backlight off when the display
 turns off and back to its level when you come back (brightnessctl saves
@@ -19,8 +19,9 @@ import time
 
 from .. import config, wfconfig
 
-# lock_after: seconds after the display turns off (0 = immediately), -1 = never
-DEFAULTS = {"lock_after": -1, "lock_before_sleep": False, "usb_protection": True}
+# lock_after: seconds after the display turns off (0 = immediately), -1 = never.
+# On by default (Vini): locked when the display turns off and before sleep, like macOS
+DEFAULTS = {"lock_after": 0, "lock_before_sleep": True, "usb_protection": True}
 # swayidle -w waits for its command: `sonata2 lock` itself only quits on
 # unlock, so every idle timeout / before-sleep that came meanwhile waited in
 # line and locked again right after each unlock (Vini: the password 3 times

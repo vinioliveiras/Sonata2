@@ -90,3 +90,16 @@ class LockWaitTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LockByDefaultTest(unittest.TestCase):
+    """Vini: the session never locked on its own -- automatic locking was off
+    by default. Now on: when the display turns off, and before sleep."""
+
+    def test_defaults(self):
+        from sonata2.shell import idlelock as I
+        self.assertEqual(I.DEFAULTS["lock_after"], 0)
+        self.assertTrue(I.DEFAULTS["lock_before_sleep"])
+        cmd = I.command(I.DEFAULTS, 600)
+        self.assertIn("before-sleep", cmd)
+        self.assertEqual(cmd[cmd.index(I.LOCK) - 1], "600")
