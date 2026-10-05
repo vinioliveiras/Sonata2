@@ -130,7 +130,7 @@ class Sidebar(Gtk.Box):
         self.append(handle)
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
         self.list.connect("row-activated", self._activated)
-        self.append(Gtk.ScrolledWindow(child=self.list, vexpand=True,
+        self.append(Gtk.ScrolledWindow(child=ui.transition.SlidingSelection(self.list), vexpand=True,
                                        hscrollbar_policy=Gtk.PolicyType.NEVER))
         self._volumes = Gio.VolumeMonitor.get()
         for sig in ("mount-added", "mount-removed", "mount-changed", "volume-added", "volume-removed"):

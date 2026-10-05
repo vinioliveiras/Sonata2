@@ -15,12 +15,15 @@ a picture of the old content, over the new, fading out.
     ui.transition.glide_play(before, container)             # they slide into place
     # container.do_snapshot draws with ui.transition.snapshot_children()
 
+    side = ui.transition.SlidingSelection(listbox)          # in place of the list
+    # (a sidebar: the selection slides from the old row to the clicked one)
+
 Cheap: one texture or one offset per item; nothing runs when idle."""
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Graphene, Gtk  # noqa: E402
+from gi.repository import Adw, Graphene, Gsk, Gtk  # noqa: E402
 
 from . import theme  # noqa: E402
 
@@ -28,6 +31,16 @@ theme.register("""
 @keyframes sonata-open { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
 popover > contents { animation: sonata-open %(t_open)s %(ease_out)s; }
 """, key="motion-open")
+
+theme.register("""
+/* a source list's selection sliding to the clicked row (SlidingSelection):
+   the rows' own selected background is off while the pill moves, and never
+   fades (it would show twice at the start, and flash at the end) */
+list.sonata-sliding-list > row:selected, list.sonata-sliding-list.sliding > row { transition: none; }
+list.sonata-sliding-list.sliding > row:selected, list.sonata-sliding-list.sliding > row:selected:hover,
+list.sonata-sliding-list.sliding > row:selected:active { background: none; transition: none; }
+.sonata-sel-pill { background: %(sidebar_selected)s; border-radius: %(r_menu)s; }
+""", key="sliding-selection")
 
 DURATION_MS = 200
 
@@ -74,6 +87,90 @@ class CrossFade(Gtk.Overlay):
         if self._pic is not None:
             self.remove_overlay(self._pic)
             self._pic = None
+
+
+# -- sliding selection: a sidebar's highlight moves to the clicked row (macOS) -----------------
+SLIDE_MS = 220
+
+
+class _Under(Gtk.Widget):
+    """Draws the pill under the list: no size of its own; the pill is placed
+    by allocation only (a move per frame re-lays out nothing else)."""
+
+    def __init__(self, pill):
+        super().__init__(can_target=False)
+        self.pill = pill
+        self.rect = (0.0, 0.0, 0.0, 0.0)
+        pill.set_parent(self)
+
+    def do_measure(self, orientation, for_size):
+        return 0, 0, -1, -1
+
+    def do_size_allocate(self, width, height, baseline):
+        x, y, w, h = self.rect
+        if self.pill.get_visible():
+            t = Gsk.Transform().translate(Graphene.Point().init(x, y))
+            self.pill.allocate(max(1, round(w)), max(1, round(h)), -1, t)
+
+    def do_dispose(self):
+        if self.pill.get_parent() is self:
+            self.pill.unparent()
+
+
+class SlidingSelection(Gtk.Overlay):
+    """A Gtk.ListBox (a sidebar) whose selection slides from the old row to
+    the new one instead of jumping: a pill (.sonata-sel-pill, styled like the
+    selected row) drawn under the rows moves and resizes between them, and
+    the row's own selected background takes over when it arrives. Clicking
+    again mid-slide starts from where the pill is. Nothing runs when idle."""
+
+    def __init__(self, listbox: Gtk.ListBox, ms: int = SLIDE_MS, **props):
+        self.pill = Gtk.Box(css_classes=["sonata-sel-pill"], visible=False)
+        self.under = _Under(self.pill)
+        super().__init__(child=self.under, **props)
+        self.list, self.ms = listbox, ms
+        self.add_overlay(listbox)
+        self.set_measure_overlay(listbox, True)
+        listbox.add_css_class("sonata-sliding-list")
+        self._prev = listbox.get_selected_row()
+        self._anim = None
+        listbox.connect("row-selected", self._selected)
+
+    def _bounds(self, row):
+        if row is None or not row.get_mapped() or row.get_parent() is not self.list:
+            return None
+        ok, r = row.compute_bounds(self.under)
+        return (r.get_x(), r.get_y(), r.get_width(), r.get_height()) if ok else None
+
+    def _selected(self, _lb, row) -> None:
+        old, self._prev = self._prev, row
+        if self._anim is not None:                       # mid-slide: from where the pill is
+            start = self.under.rect
+            self._anim.pause()
+            self._anim = None
+        else:
+            start = self._bounds(old)
+        end = self._bounds(row)
+        if not self.get_mapped() or start is None or end is None or row is old or start[2] <= 0:
+            self._finish()
+            return
+        self.pill.set_visible(True)
+        self.list.add_css_class("sliding")
+
+        def step(v, a=start, b=end):
+            self.under.rect = tuple(a[i] + (b[i] - a[i]) * v for i in range(4))
+            self.under.queue_allocate()
+        step(0.0)
+        anim = Adw.TimedAnimation.new(self, 0.0, 1.0, self.ms, Adw.CallbackAnimationTarget.new(step))
+        anim.set_easing(Adw.Easing.EASE_OUT_CUBIC)
+        anim.connect("done", lambda a: a is self._anim and self._finish())
+        self._anim = anim
+        anim.play()
+
+    def _finish(self) -> None:
+        self._anim = None
+        self.pill.set_visible(False)
+        self.list.remove_css_class("sliding")
 
 
 # -- glide: items that change place slide there (Launchpad, Dock) -------------------------

@@ -184,6 +184,8 @@ entry.st-search, .st-search { margin: 0 10px 6px 10px; min-height: 26px; border-
   background: alpha(%(label)s, 0.07); box-shadow: none; font-size: %(text_body)s; }
 .st-card-title { font-weight: 700; }
 .st-card-sub { color: %(label_secondary)s; font-size: %(text_small)s; }
+/* the sliding selection (ui.transition.SlidingSelection): like the clicked row (Adwaita's sidebar) */
+.st-sidebar .sonata-sel-pill { background: alpha(currentColor, 0.13); border-radius: 6px; }
 .st-gap-row, .st-gap-row:hover { min-height: 8px; padding: 0; margin: 0; background: none; }
 .st-pane-title { font-weight: 700; font-size: %(text_title)s; color: %(label)s; }
 .st-about-name { font-family: %(font_display)s; font-weight: 700; font-size: 26px; color: %(label)s; }
@@ -500,7 +502,7 @@ class Settings(Adw.ApplicationWindow):
             self.rows[sid] = row
         self.listbox.connect("row-selected", lambda _lb, r: r and getattr(r, "sid", None) and
                              self.select(r.sid, from_sidebar=True))
-        box.append(self.listbox)
+        box.append(ui.transition.SlidingSelection(self.listbox, vexpand=True))    # the selection slides
         tv.set_content(Gtk.ScrolledWindow(child=box, hscrollbar_policy=Gtk.PolicyType.NEVER))
         return Adw.NavigationPage(title="System Settings", child=tv, css_classes=["st-sidebar", "sonata-sidebar"])
 
