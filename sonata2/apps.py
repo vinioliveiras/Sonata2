@@ -72,6 +72,13 @@ def _gpu_aware(method):
                     if context is None:
                         context = Gio.AppLaunchContext()
                     context.unsetenv(name)
+            try:                                  # its own scope: systemd-oomd closes it alone (appscope)
+                from . import appscope
+                if context is None:
+                    context = Gio.AppLaunchContext()
+                appscope.watch(context, self.get_id() or "")
+            except Exception as e:
+                print(f"sonata2: app scope: {e}")
             args = gpu.extra_args(self)
             line = self.get_commandline() or ""
             run_args = gpu.launcher_args(self, line)

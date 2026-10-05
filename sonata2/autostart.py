@@ -142,4 +142,9 @@ def run() -> int:
             started += 1
         except GLib.Error as e:
             print(f"sonata2-autostart: {name}: {e.message}")
+    try:                                   # login items in their own scopes too (appscope) before this exits
+        from . import appscope
+        appscope.flush()
+    except Exception as e:
+        print(f"sonata2-autostart: app scopes: {e}")
     return started

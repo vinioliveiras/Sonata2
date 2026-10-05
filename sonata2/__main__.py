@@ -110,6 +110,11 @@ def run_dock(app, args, ui):
     from .shell import dock, dock_menu, launchpad
     from .wl.toplevels import ToplevelManager
     launchpad.launchpad_desktop_file(self_command())   # Launchpad as a Dock app
+    try:
+        from . import appscope
+        appscope.ensure_slice()                       # apps opened from Sonata: watched by systemd-oomd
+    except Exception as e:
+        print(f"sonata2: app slice: {e}")
     from .settings.app import settings_desktop_file
     settings_desktop_file(self_command())             # System Settings in Launchpad
     from .files import files_desktop_file
@@ -1038,6 +1043,25 @@ def _same_session(sock: str, session) -> bool:
     return session is not None and _socket_id(sock) == session and _compositor_alive(sock)
 
 
+def component_limit_mb(total_mb: int) -> int:
+    """The most memory a shell component may hold before `keep` starts it
+    again (a leak over a long day): 5% of the RAM, 1-2 GB (a healthy Dock
+    or menu bar uses a few hundred MB)."""
+    return int(min(2048, max(1024, total_mb * 0.05)))
+
+
+def rss_mb(pid: int) -> int:
+    """A process' resident memory in MB (0: gone)."""
+    try:
+        with open(f"/proc/{int(pid)}/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) // 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0
+
+
 def keep(argv) -> int:
     """`sonata2 keep dock` (session autostart): run a shell component and
     start it again if it crashes -- a desktop must never lose its Dock or
@@ -1058,8 +1082,11 @@ def keep(argv) -> int:
     sock = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), os.environ.get("WAYLAND_DISPLAY", "wayland-0"))
     session = _socket_id(sock)                 # the compositor this component belongs to
     crashes = []
+    from .webapps import _meminfo
+    limit = component_limit_mb(_meminfo().get("MemTotal", 0))
     while True:
         started = time.monotonic()
+        too_big = 0
         with open(log_path, "a", buffering=1) as log:
             log.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} {' '.join(argv)}\n")
             child = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
@@ -1070,6 +1097,24 @@ def keep(argv) -> int:
                 except subprocess.TimeoutExpired:
                     from . import logs
                     logs.trim(log_path)
+                # a leak over a long day: started again before it weighs on the apps
+                too_big = rss_mb(child.pid)
+                if too_big > limit:
+                    log.write(f"sonata2 keep: {argv[0]} holds {too_big} MB (limit {limit} MB); restarting\n")
+                    child.terminate()
+                    try:
+                        child.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        child.kill()
+                        child.wait()
+                    code = None
+                    break
+        if code is None:                      # restarted for its memory: not a crash, not a stop
+            print(f"sonata2 keep: {argv[0]} used {too_big} MB; started again", file=sys.stderr, flush=True)
+            time.sleep(1)
+            if not _same_session(sock, session):
+                return 0
+            continue
         # on purpose, or the session ended -- also when Sonata already started
         # again on a new compositor (the same socket name): its own Dock and
         # menu bar are coming (Vini: two Docks and two menu bars after a crash)
