@@ -385,7 +385,7 @@ class Spotlight(Gtk.ApplicationWindow):
         if kind == "app":
             icons.set_image(img, icons.app_icon(self.apps[payload]))
         elif kind == "calc":
-            img.set_from_icon_name("accessories-calculator")
+            img.set_from_icon_name("sonata-calculator")
         else:
             f = Gio.File.new_for_path(payload)
             try:

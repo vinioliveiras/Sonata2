@@ -146,6 +146,6 @@ def calculator_desktop_file(command: str) -> str:
     return write_desktop_file(APP_ID + ".desktop",
                               "[Desktop Entry]\nType=Application\nName=Calculator\n"
                               "Comment=Add, subtract, multiply and divide\n"
-                              "Icon=accessories-calculator\nCategories=Utility;Calculator;\n"
+                              "Icon=sonata-calculator\nCategories=Utility;Calculator;\n"
                               "StartupNotify=true\n"
                               f"Exec={command} calculator\n")

@@ -546,7 +546,7 @@ def videos_desktop_file(command: str) -> str:
     from ..apps import write_desktop_file
     return write_desktop_file(APP_ID + ".desktop",
                               "[Desktop Entry]\nType=Application\nName=Videos\nComment=Watch movies\n"
-                              "Icon=multimedia-video-player\nCategories=AudioVideo;Video;Player;\n"
+                              "Icon=sonata-videos\nCategories=AudioVideo;Video;Player;\n"
                               "MimeType=" + "".join(t + ";" for t in MIME_TYPES) + "\n"
                               "StartupNotify=true\n"
                               f"Exec={command} videos %F\n")

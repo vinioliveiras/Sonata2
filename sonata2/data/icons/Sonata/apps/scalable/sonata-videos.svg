@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#46464e"/><stop offset="1" stop-color="#18181c"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d9d9e0"/>
+    </linearGradient>
+    <linearGradient id="play" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c9c9d4"/>
+    </linearGradient>
+    <clipPath id="sq"><rect x="12" y="12" width="232" height="232" rx="54"/></clipPath>
+    <clipPath id="clap"><rect x="0" y="0" width="236" height="44" rx="10"/></clipPath>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="4"/><feOffset dy="5"/>
+      <feComponentTransfer><feFuncA type="linear" slope=".45"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="12" y="12" width="232" height="232" rx="54" fill="url(#bg)"/>
+  <g clip-path="url(#sq)">
+    <!-- the clapper, tilted open -->
+    <g transform="translate(10 24) rotate(-8 118 22)" filter="url(#sh)">
+      <g clip-path="url(#clap)">
+        <rect x="0" y="0" width="236" height="44" fill="url(#bar)"/>
+        <path d="M14 0 h30 l-24 44 h-30z M74 0 h30 l-24 44 h-30z M134 0 h30 l-24 44 h-30z M194 0 h30 l-24 44 h-30z"
+              fill="#26262b"/>
+      </g>
+    </g>
+    <!-- the board's top band -->
+    <rect x="12" y="84" width="232" height="10" fill="#000" opacity=".25"/>
+  </g>
+  <path d="M108 120 q0-14 12-7 l52 30 q12 7 0 14 l-52 30 q-12 7-12-7z" fill="url(#play)" filter="url(#sh)"/>
+  <rect x="12.5" y="12.5" width="231" height="231" rx="53.5" fill="none" stroke="#fff" stroke-opacity=".12"/>
+</svg>
