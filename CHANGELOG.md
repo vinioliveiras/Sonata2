@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.8.0-alpha -- 2026-10-05
+
+Draw on screenshots and on the screen, an FPS limit for games, Steam in
+Sonata's window layout, and window buttons in your colours.
+
+### Screenshots and recording
+- Markup in Preview: pen, highlighter, shapes, arrows, text, emoji,
+  numbered steps and pixelate. A screenshot's thumbnail opens straight
+  into it; Done saves the marks, and a clipboard screenshot goes back to
+  the clipboard marked.
+- Draw on the screen while recording or sharing it: the pen in the
+  recording pill, or Super+Shift+D. Marks can fade away by themselves;
+  the palette stays out of the recording.
+- Screen recording uses wl-screenrec when it's installed.
+
+### Games
+- FPS Limit in Control Center (Add Controls) and Settings, through
+  frame-pacer: Off, 30, 60, 90, 120 or the display's rate. Off by default.
+- A frame-time graph under the choices: each frame of the app in front,
+  the target, the average and the 1 % low.
+- Steam keeps its own theme with Sonata's window layout: round buttons on
+  Sonata's side in every window, rounded corners, no Big Picture button.
+
+### Windows
+- Settings > Appearance > Button colours: Colourful, Graphite, Black &
+  White (black on light, white on dark) or a colour per button. Sonata's
+  windows, other GTK 4 apps, title bars and Steam all follow.
+- Windows fade in and out when they open and close; minimize keeps the
+  genie.
+- `sonata2 doctor windows` checks that the window style reaches other
+  apps, and a notification says when one doesn't.
+
+### Dock and apps
+- Drag an app's icon from the Dock onto the Trash to uninstall it.
+- An app stuck while starting opens again on the next click.
+- Web apps get their own row in the mixer, and their links open in your
+  browser instead of new tabs or windows.
+- System sounds (like the volume feedback) never show in the mixer.
+
+### Menu bar and sidebars
+- The clock keeps one width: a new minute or a new day no longer nudges
+  the items next to it.
+- In Files and Settings, the sidebar's selection slides to the row you
+  click.
+
+### Fixes
+- Rounded window corners are back (Sonata's Wayfire plugin failed to load).
+
 ## 0.7.1-alpha -- 2026-10-05
 
 A fix for 0.7.0: Bazaar's icon files were stored in a way that broke
