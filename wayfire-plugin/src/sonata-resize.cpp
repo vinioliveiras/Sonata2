@@ -33,6 +33,8 @@
 #include <wayfire/render-manager.hpp>
 #include <wayfire/view-transform.hpp>
 #include <wayfire/util/duration.hpp>
+#include <wayfire/util.hpp>
+#include <wayfire/workarea.hpp>
 #include <wayfire/scene-render.hpp>
 #include <wayfire/scene-operations.hpp>
 #include <wayfire/opengl.hpp>
@@ -378,6 +380,13 @@ uint32_t band_edges(int x, int y, int w, int h, double px, double py)
     return (l ? WLR_EDGE_LEFT : r ? WLR_EDGE_RIGHT : 0) | (t ? WLR_EDGE_TOP : b ? WLR_EDGE_BOTTOM : 0);
 }
 
+/** A maximized window reaching past the work area (x, y, w, h) -- e.g.
+ * behind the Dock. */
+bool past_workarea(int gx, int gy, int gw, int gh, int wx, int wy, int ww, int wh)
+{
+    return (gx < wx) || (gy < wy) || (gx + gw > wx + ww) || (gy + gh > wy + wh);
+}
+
 /* The last press on a window's top edge (every display's plugin shares it). */
 static struct
 {
@@ -491,6 +500,50 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         wf::animation::smoothing::circle};
     wf::effect_hook_t zoom_hook = [=] () { zoom_step(); };
 
+    /* Vini: out of full screen (a video in Chrome), a maximized window
+     * sometimes kept the whole display -- under the Dock. Maximized windows
+     * are put back inside the work area once full screen ends and whenever
+     * the work area changes. */
+    wf::wl_timer<false> refit_timer;
+    wf::signal::connection_t<wf::view_fullscreen_signal> on_fullscreen = [=] (wf::view_fullscreen_signal *ev)
+    {
+        if (!ev->state)
+        {
+            refit_soon();
+        }
+    };
+    wf::signal::connection_t<wf::workarea_changed_signal> on_workarea = [=] (wf::workarea_changed_signal*)
+    {
+        refit_soon();
+    };
+
+    void refit_soon()
+    {
+        refit_timer.disconnect();
+        refit_timer.set_timeout(150, [=] () { refit_maximized(); });   // after the window took its new state
+    }
+
+    void refit_maximized()
+    {
+        auto wa = output->workarea->get_workarea();
+        for (auto& v : output->wset()->get_views(wf::WSET_MAPPED_ONLY))
+        {
+            if ((v->pending_tiled_edges() != wf::TILED_EDGES_ALL) || v->pending_fullscreen() ||
+                (v.get() == zooming.get()))
+            {
+                continue;
+            }
+
+            auto g = v->get_geometry();
+            if (past_workarea(g.x, g.y, g.width, g.height, wa.x, wa.y, wa.width, wa.height))
+            {
+                LOGI("sonata-resize: a maximized window back inside the work area");
+                v->toplevel()->pending().geometry = wa;
+                wf::get_core().tx_manager->schedule_object(v->toplevel());
+            }
+        }
+    }
+
     wf::signal::connection_t<wf::view_mapped_signal> on_view_mapped = [=] (wf::view_mapped_signal *ev)
     {
         add_edge_grab(toplevel_cast(ev->view));
@@ -552,6 +605,8 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         output->connect(&on_resize_request);
         LOGI("sonata-resize: ready on ", output->to_string(), ", live=", (bool)live);
         output->connect(&on_view_mapped);
+        output->connect(&on_fullscreen);
+        output->connect(&on_workarea);
         for (auto& v : wf::get_core().get_all_views())
         {
             if (auto t = toplevel_cast(v); t && t->is_mapped() && (t->get_output() == output))
@@ -1017,6 +1072,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
 
         output->rem_binding(&activate_binding);
         output->rem_binding(&activate_binding_preserve_aspect);
+        refit_timer.disconnect();
         for (auto& v : wf::get_core().get_all_views())
         {
             if (auto t = toplevel_cast(v); t && (t->get_output() == output))

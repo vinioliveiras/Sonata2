@@ -13,6 +13,8 @@
   bar) showed a frame the size of its shadow, not of the window.
 - Fix: zoomed from its title bar, a window with Sonata's title bar could
   keep the title bar cut at its old width.
+- Fix: out of full screen (a video in Chrome), a maximized window could
+  keep the whole display, behind the Dock.
 
 ### Login screen
 - The display goes dark at the login screen too, after the time chosen in
