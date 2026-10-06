@@ -105,6 +105,9 @@ def _shared(key, make):
 def _power_changed() -> None:
     for b in list(_BARS):
         b._poll_battery()
+    from .. import powerprofile                    # plugged in again: the energy mode you chose
+    follow = _shared("powerfollow", powerprofile.Follow)
+    system.run_async(follow.changed, lambda back: back and [b._poll_battery() for b in list(_BARS)])
 
 
 class _Bluetooth:
@@ -244,6 +247,8 @@ class Bar(Gtk.CenterBox):
         GLib.timeout_add_seconds(POLL_S, lambda: (self.alive and self._poll(), self.alive)[1])
         _BARS.append(self)
         # plug / charge / level: at once (subscribed once; it calls every live bar)
+        from .. import powerprofile                     # (made now: it knows plugged in or not from here)
+        _shared("powerfollow", powerprofile.Follow)
         _shared("power", lambda: power.watch(_power_changed))
         from ..backend import audiofollow                # new headphones / headsets used at once
         _shared("audiofollow", audiofollow.start)
@@ -779,6 +784,8 @@ class Bar(Gtk.CenterBox):
                 if key == "balanced":
                     return                      # already Automatic
                 gamemode.set_boosted(False)     # the user's own pick: kept after the game
+            from .. import powerprofile
+            powerprofile.remember(key)          # (back to it when the adapter is plugged in again)
             system.run_async(system.set_power_profile, lambda _r: self._poll_battery(), key)
 
         def fill_modes(current):

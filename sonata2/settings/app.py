@@ -1266,6 +1266,8 @@ class Settings(Adw.ApplicationWindow):
                         if p == "balanced":
                             return
                         gamemode.set_boosted(False)
+                    from .. import powerprofile
+                    powerprofile.remember(p)            # back to it when plugged in again
                     system.run_async(system.set_power_profile, None, p)
                 shown = "balanced" if prof == "performance" and gamemode.boosted() else prof
                 mode.add(combo_row("Energy mode", list(system.POWER_PROFILES), shown, pick))
