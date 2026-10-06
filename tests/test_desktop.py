@@ -166,6 +166,36 @@ class DesktopDisplaysTest(unittest.TestCase):
         self.assertEqual(main._placed[name], (3, 2))                      # where it was made
         self.assertEqual(config.load("desktop", D.DEFAULTS)["positions"][name][:2], [3, 2])
 
+    def test_new_folder_opens_its_name_field_at_once(self):
+        """Vini: the new folder showed its name first and turned into the
+        field 300 ms later (an animation), and typing needed a click. The
+        field is there as soon as the icon is, and the desktop asks for the
+        keyboard."""
+        from gi.repository import Gtk
+        main, _other = self.desks()
+        win = Gtk.Window(child=main, default_width=1920, default_height=1080)
+        win.present()
+        self.addCleanup(win.destroy)
+        settle(300)
+        with mock.patch("sonata2.shell.layer.take_keyboard") as kb:
+            main.new_folder((2, 1))
+            end = GLib.get_monotonic_time() + 3_000_000
+            while "untitled folder" not in main.items and GLib.get_monotonic_time() < end:
+                GLib.MainContext.default().iteration(False)
+            appeared = GLib.get_monotonic_time()
+            while main.items["untitled folder"].lbl.get_opacity() != 0 and \
+                    GLib.get_monotonic_time() - appeared < 1_000_000:
+                GLib.MainContext.default().iteration(False)
+            waited_ms = (GLib.get_monotonic_time() - appeared) / 1000
+            item = main.items["untitled folder"]
+            self.assertEqual(item.lbl.get_opacity(), 0)                    # the field is over the name
+            self.assertLess(waited_ms, 100)                                # at once, not 300 ms later
+            entry = item.lbl.get_next_sibling()
+            self.assertIsInstance(entry, Gtk.Entry)
+            focus = win.get_focus()
+            self.assertTrue(focus is entry or (focus is not None and focus.is_ancestor(entry)))   # typing goes there
+            self.assertEqual(kb.call_args_list[0][0][1:], (True,))         # the keyboard asked for
+
     def test_every_display_has_a_desktop(self):
         from sonata2.shell.wallpaper import WallpaperWindow
         import inspect

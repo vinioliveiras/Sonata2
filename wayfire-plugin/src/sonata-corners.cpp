@@ -534,7 +534,7 @@ class corners_render_instance_t :
  * used before, maps input through its own transform). */
 /* the top of a window that is always blurred: title bar + a toolbar */
 /* bumped with every change of the plugin (tests/test_regressions.py checks it) */
-#define SONATA_CORNERS_BUILD "2026-10-06.1 own capture only for recorders"
+#define SONATA_CORNERS_BUILD "2026-10-06.2 keyboard for the desktop"
 static const int TOP_GLASS = 96;
 
 class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
@@ -1838,9 +1838,40 @@ class sonata_corners_t : public wf::plugin_interface_t
         return response;
     };
 
+    /* The keyboard for a layer surface below the windows (the desktop, while
+     * a name is typed): Wayfire only gives it to "exclusive" ones in the top
+     * layers (Vini: a new folder's name had to be clicked before typing).
+     * {"namespace": "sonata2-wallpaper", "output": "eDP-1"} */
+    wf::ipc::method_callback ipc_focus_layer = [=] (wf::json_t data)
+    {
+        std::string ns  = wf::ipc::json_get_string(data, "namespace");
+        std::string out = (data.is_object() && data.has_member("output")) ?
+            wf::ipc::json_get_string(data, "output") : "";
+        for (auto& v : wf::get_core().get_all_views())
+        {
+            if ((v->role != wf::VIEW_ROLE_DESKTOP_ENVIRONMENT) || !v->is_mapped() || (v->get_app_id() != ns))
+            {
+                continue;
+            }
+
+            if (!out.empty() && (!v->get_output() || (v->get_output()->to_string() != out)))
+            {
+                continue;
+            }
+
+            wf::get_core().seat->focus_view(v);
+            auto response = wf::ipc::json_ok();
+            response["id"] = (int)v->get_id();
+            return response;
+        }
+
+        return wf::ipc::json_error("no such layer surface");
+    };
+
   public:
     void init() override
     {
+        ipc_repo->register_method("sonata/focus-layer", ipc_focus_layer);
         ipc_repo->register_method("sonata/fps", ipc_fps);
         ipc_repo->register_method("sonata/rounded", ipc_rounded);
         /* which build runs (session.log): a fix is only in once install.sh rebuilt it */
@@ -1889,6 +1920,7 @@ class sonata_corners_t : public wf::plugin_interface_t
 
     void fini() override
     {
+        ipc_repo->unregister_method("sonata/focus-layer");
         ipc_repo->unregister_method("sonata/fps");
         ipc_repo->unregister_method("sonata/rounded");
         fps.fini();

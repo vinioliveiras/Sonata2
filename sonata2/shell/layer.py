@@ -122,7 +122,27 @@ def take_keyboard(win, on: bool, rest: str = "none") -> bool:
         return False
     idle = LS.KeyboardMode.ON_DEMAND if rest == "on_demand" else LS.KeyboardMode.NONE
     LS.set_keyboard_mode(win, LS.KeyboardMode.EXCLUSIVE if on else idle)
+    win.queue_draw()                                   # (the new mode comes with the next frame)
+    if on and LS.get_layer(win) in (LS.Layer.BACKGROUND, LS.Layer.BOTTOM):
+        # under the windows Wayfire gives "exclusive" no keyboard (only the top
+        # layers get it): sonata-corners hands it over once the mode is in
+        mon = LS.get_monitor(win)
+        data = {"namespace": LS.get_namespace(win) or ""}
+        if mon is not None and mon.get_connector():
+            data["output"] = mon.get_connector()
+        from gi.repository import GLib
+        GLib.timeout_add(FOCUS_AFTER_MS, lambda: (focus_layer(data), False)[1])
     return True
+
+
+FOCUS_AFTER_MS = 60
+
+
+def focus_layer(data: dict) -> bool:
+    """Ask sonata-corners for the keyboard ({"namespace", "output"})."""
+    from ..wl.wfipc import WayfireIPC
+    reply = WayfireIPC().call("sonata/focus-layer", data)
+    return bool(reply) and reply.get("result") == "ok"
 
 
 def set_input_region(win, rects) -> None:

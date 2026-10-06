@@ -318,6 +318,8 @@ class Desktop(Gtk.Fixed):
                     item.set_opacity(0)                     # shown once the layout has given it a spot
             self.items[name] = item
             self.put(item, *at)
+            if name == getattr(self, "_rename_next", None):    # a new folder: its name field at once
+                GLib.idle_add(lambda n=name: (self._maybe_rename(n), False)[1])
         GLib.idle_add(lambda: (self._layout(), False)[1])
 
     def _config_changed(self) -> None:
@@ -480,12 +482,19 @@ class Desktop(Gtk.Fixed):
         def spot(child):
             # its spot is saved before it exists: it appears where it was asked
             # for (Vini: it showed in the first free cell, top right, and glided over)
+            self._rename_next = child.get_basename()
             if at is not None:
                 self._save_positions({child.get_basename(): at})
 
-        def done(child):
-            GLib.timeout_add(300, lambda: (self._rename_new(child.get_basename()), False)[1])
-        ops.new_folder(self.dir, done, lambda _e: None, before=spot)
+        # the name field opens as soon as the icon is there (Vini: the name
+        # showed first, then turned into the field 300 ms later)
+        ops.new_folder(self.dir, lambda child: self._maybe_rename(child.get_basename()), lambda _e: None,
+                       before=spot)
+
+    def _maybe_rename(self, name) -> None:
+        if getattr(self, "_rename_next", None) == name and name in self.items:
+            self._rename_next = None
+            self._rename_new(name)
 
     def _rename_new(self, name) -> None:
         item = self.items.get(name)
