@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.10.0-alpha -- 2026-10-06
+
+Stopwatch and Timers in Clock, Trim and Crop in Videos, windows that zoom
+like macOS and resize from their own edge, and fixes.
+
 ### Windows
 - Zoom (maximize / restore) animates like macOS: the window's frame grows
   or shrinks to its new place and the contents fade in there -- no more
