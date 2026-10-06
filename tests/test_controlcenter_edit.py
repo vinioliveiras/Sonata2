@@ -192,6 +192,47 @@ class FixedSizeTest(TempConfig):
         self.assertLess(sizes["one"][1], sizes["default"][1])
 
 
+class AddControlsInPanelTest(TempConfig):
+    """Vini: after Add Controls, Control Center couldn't be closed (neither
+    its icon nor the other menu bar icons). The choices were a menu -- a
+    pop-up inside the panel's pop-up -- and once it closed, Wayfire stopped
+    telling GTK about clicks elsewhere. They are a list in the panel now."""
+
+    def test_add_controls_is_a_list_in_the_panel(self):
+        import types
+        from sonata2.shell import topbar as T
+        bar = types.SimpleNamespace(_poll=lambda: None, _set_volume=lambda v: None, notifications=None,
+                                    monitor=None, get_native=lambda: None)
+        config.save("controlcenter", {"modules": list(C.DEFAULT_ORDER)})
+        with mock.patch.object(T.system, "run_async"), mock.patch.object(T, "cached"), \
+                mock.patch.object(T.ui.menu, "popup", side_effect=AssertionError("no menu inside the panel")):
+            cc = T.ControlCenter(bar)
+            win = Gtk.Window(child=cc)
+            win.present()
+            settle(100)
+            self.assertFalse(cc.add_btn.get_visible())
+            cc.grid.set_editing(True)
+            cc.add_btn.emit("clicked")
+            self.assertTrue(cc.add_reveal.get_reveal_child())
+            labels = [c.get_child().get_label() for c in _children(cc.add_list)]
+            self.assertIn("CPU", labels)
+            cpu = [c for c in _children(cc.add_list) if c.get_child().get_label() == "CPU"][0]
+            cpu.get_child().emit("clicked")
+            self.assertIn("stat_cpu", cc.grid.order)
+            labels = [c.get_child().get_label() for c in _children(cc.add_list)]
+            self.assertNotIn("CPU", labels)                         # gone from the list
+            cc.grid.set_editing(False)                              # Done: the list goes
+            self.assertFalse(cc.add_reveal.get_reveal_child())
+            win.destroy()
+
+
+def _children(w):
+    c = w.get_first_child()
+    while c is not None:
+        yield c
+        c = c.get_next_sibling()
+
+
 class ResponsiveTest(unittest.TestCase):
     def test_width_follows_the_display(self):
         """A share of the display's width, never narrower than the default layout, never huge."""

@@ -1315,14 +1315,30 @@ class ControlCenter(Gtk.Box):
     def _edit_bar(self) -> Gtk.Widget:
         from . import controlcenter as CCL
         self.edit_btn = ui.controls.push_button("Edit Controls…", lambda: self.grid.set_editing(True))
-        self.add_btn = ui.controls.push_button("Add Controls", lambda: self._add_menu(self.add_btn))
+        self.add_btn = ui.controls.push_button("Add Controls", self._toggle_add_list)
         self.done_btn = ui.controls.push_button("Done", lambda: self.grid.set_editing(False), style="default")
         self._CCL = CCL
         bar = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER, css_classes=["cc-edit-bar"])
         for b in (self.edit_btn, self.add_btn, self.done_btn):
             bar.append(b)
+        # what was taken out, to put back: a list in the panel itself. A menu
+        # opened from the panel was a pop-up inside a pop-up; once it closed,
+        # Wayfire no longer told GTK about clicks elsewhere and GTK kept the
+        # menu bar blocked: Control Center couldn't be closed (Vini).
+        self.add_list = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=False,
+                                    column_spacing=6, row_spacing=6, min_children_per_line=2,
+                                    max_children_per_line=4, halign=Gtk.Align.FILL, css_classes=["cc-add-list"])
+        self.add_reveal = Gtk.Revealer(child=self.add_list, reveal_child=False,
+                                       transition_type=Gtk.RevealerTransitionType.SLIDE_UP,
+                                       transition_duration=200)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.append(self.add_reveal)
+        box.append(bar)
         self._edit_bar_update()
-        return bar
+        return box
+
+    def _hidden_modules(self) -> list:
+        return [m for m in self._CCL.hidden(self.grid.order) if m in self.modules]
 
     def _edit_bar_update(self) -> None:
         if not hasattr(self, "done_btn"):
@@ -1331,16 +1347,29 @@ class ControlCenter(Gtk.Box):
         self.edit_btn.set_visible(not on)
         self.done_btn.set_visible(on)
         self.add_btn.set_visible(on)
-        self.add_btn.set_sensitive(any(m in self.modules for m in self._CCL.hidden(self.grid.order)))
+        left = self._hidden_modules()
+        self.add_btn.set_sensitive(bool(left))
+        if not on or not left:
+            self.add_reveal.set_reveal_child(False)
+            self.add_btn.remove_css_class("on")
+        if self.add_reveal.get_reveal_child():
+            self._fill_add_list()
 
-    def _add_menu(self, btn) -> None:
-        """What was taken out, to put back (at the end)."""
-        Item = ui.menu.Item
+    def _toggle_add_list(self) -> None:
+        show = not self.add_reveal.get_reveal_child()
+        if show:
+            self._fill_add_list()
+        self.add_reveal.set_reveal_child(show)
+        (self.add_btn.add_css_class if show else self.add_btn.remove_css_class)("on")
+
+    def _fill_add_list(self) -> None:
+        """One button per control that can come back (at the end of the grid)."""
         CCL = self._CCL
-        items = [Item(CCL.CATALOG[m][0], lambda m=m: (self.grid.add_module(m), self._edit_bar_update()))
-                 for m in CCL.hidden(self.grid.order) if m in self.modules]
-        if items:
-            ui.menu.popup(btn, [items], position=Gtk.PositionType.TOP)
+        while (child := self.add_list.get_first_child()) is not None:
+            self.add_list.remove(child)
+        for m in self._hidden_modules():
+            self.add_list.append(ui.controls.push_button(
+                CCL.CATALOG[m][0], lambda m=m: (self.grid.add_module(m), self._edit_bar_update())))
 
     def _output(self):
         """Connector name of the display this menu bar is on (None: unknown,
