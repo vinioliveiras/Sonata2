@@ -55,6 +55,36 @@ class GuardTest(unittest.TestCase):
         self.g.feed(data[17:])
         self.assertEqual(self.opened, ["https://x.org/"])
 
+    def test_odd_messages_and_repeats(self):
+        """Review: a message that isn't an object raised out of the pipe's
+        watch (the guard stopped); a handled tab isn't closed or opened twice;
+        the app's own page is never closed, wherever it goes."""
+        self.g.feed(b"[1,2]\0" + b"\"x\"\0" + b"{bad\0")
+        self.feed(target("A", "https://web.whatsapp.com/"))
+        self.feed({"method": "Target.targetInfoChanged",
+                   "params": {"targetInfo": {"targetId": "A", "type": "page", "url": "https://elsewhere.org/"}}})
+        self.feed(target("B", "https://x.org/"))
+        self.feed({"method": "Target.targetInfoChanged",
+                   "params": {"targetInfo": {"targetId": "B", "type": "page", "url": "https://x.org/2"}}})
+        self.feed(target("M", "mailto:a@b.c"))
+        self.assertEqual(self.opened, ["https://x.org/", "mailto:a@b.c"])
+        closed = [m["params"]["targetId"] for m in self.msgs() if m["method"] == "Target.closeTarget"]
+        self.assertEqual(closed, ["B", "M"])
+
+    def test_browser_opened_in_its_own_scope(self):
+        """Review: the default browser started from a web app stayed in the
+        web app's scope (its memory cap; it died with the web app)."""
+        from unittest import mock
+        from sonata2 import appscope
+        from sonata2.webapps import chromeguard as CG
+        seen = {}
+        with mock.patch.object(appscope, "watch", lambda ctx, app_id: seen.setdefault("ctx", ctx)), \
+                mock.patch("gi.repository.Gio.AppInfo.launch_default_for_uri",
+                           lambda url, ctx: seen.setdefault("launched", ctx)):
+            CG._open_default("https://example.org/")
+        self.assertIsNotNone(seen.get("ctx"))
+        self.assertIs(seen["launched"], seen["ctx"])
+
 
 class MixerWebAppTest(unittest.TestCase):
     def fake_proc(self, tree):

@@ -91,6 +91,42 @@ class PicturesTest(unittest.TestCase):
         self.assertEqual(opts[("pixdecor", "button_close_image")], os.path.join(d, "close.png"))
         self.assertEqual(len(opts), 2 * len(T.NAMES))
 
+    def test_pictures_made_again_when_their_drawing_changes(self):
+        """Review: the folder only hashed the colours -- an update drawing the
+        buttons differently (or at another size) kept the old pictures."""
+        from unittest import mock
+        look("graphite")
+        a = T.folder(False)
+        with mock.patch.object(T, "DRAW_VERSION", T.DRAW_VERSION + 1):
+            b = T.folder(False)
+        from sonata2.ui import tokens
+        with mock.patch.dict(tokens.FRAME, {"dot": tokens.FRAME["dot"] + 2}):
+            c = T.folder(False)
+        self.assertEqual(len({a, b, c}), 3)
+        self.assertTrue(os.path.isfile(os.path.join(c, "close.png")))
+
+    def test_apply_takes_dark_from_its_caller_and_runs_one_at_a_time(self):
+        """Review: apply() asked GTK whether it's dark from Settings' worker
+        thread, and quick picks wrote the same files together."""
+        import threading
+        from unittest import mock
+        look("mono")
+        seen, inside, overlap = [], [0], [False]
+
+        def fake(dark):
+            inside[0] += 1
+            overlap[0] = overlap[0] or inside[0] > 1
+            seen.append(dark)
+            threading.Event().wait(0.05)
+            inside[0] -= 1
+        with mock.patch.object(T, "_apply", fake), \
+                mock.patch("sonata2.ui.theme.is_dark", side_effect=AssertionError("GTK from a thread")):
+            ts = [threading.Thread(target=T.apply, args=(True,)) for _ in range(3)]
+            [t.start() for t in ts]
+            [t.join() for t in ts]
+        self.assertEqual(seen, [True, True, True])
+        self.assertFalse(overlap[0])
+
 
 class WiringTest(unittest.TestCase):
     def test_every_place_uses_the_look(self):
@@ -104,6 +140,7 @@ class WiringTest(unittest.TestCase):
         src = inspect.getsource(app)
         self.assertIn('"buttons_style", "buttons_colors"', src)
         self.assertIn("Button colours", src)
+        self.assertNotIn("run_async(trafficlights.apply, None)", src)      # dark passed from the main loop
 
 
 class SettingsRowTest(unittest.TestCase):

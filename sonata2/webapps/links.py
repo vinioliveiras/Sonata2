@@ -1,5 +1,6 @@
-"""Which links stay in a web app (the same site), shared by its WebKit
-window and its Chromium guard (chromeguard.py)."""
+"""Which links stay in a web app (the same site): its WebKit window.
+(A Chromium web app -- chromeguard.py -- sends every new tab or window to
+the default browser: Chromium has no way to open one inside the app.)"""
 import ipaddress
 import urllib.parse
 

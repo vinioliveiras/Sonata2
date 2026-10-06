@@ -142,7 +142,7 @@ class LockScreen:
         self.lock.assign_window_to_monitor(win, monitor)
         win.present()
         self.windows.append(win)
-        if primary:
+        if primary or len(self.windows) == 1:      # (the only display: after all of them came back)
             GLib.idle_add(lambda: (parts["entry"].grab_focus(), False)[1])
         # unplugged (or gone for a moment in sleep): its copy goes; it comes back as a new display
         monitor.connect("invalidate", lambda *_: self._gone(win, parts))

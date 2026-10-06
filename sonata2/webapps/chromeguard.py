@@ -37,9 +37,11 @@ class Guard:
         while b"\0" in self._buf:
             msg, self._buf = self._buf.split(b"\0", 1)
             try:
-                self.message(json.loads(msg))
+                m = json.loads(msg)
             except ValueError:
                 continue
+            if isinstance(m, dict):                # (anything else: not a message; the watch goes on)
+                self.message(m)
 
     def message(self, msg: dict) -> None:
         method = msg.get("method")
@@ -71,9 +73,14 @@ class Guard:
 
 
 def _open_default(url: str) -> None:
-    """In the default browser (or mail app): Chrome when it's the default."""
+    """In the default browser (or mail app): Chrome when it's the default.
+    A browser started from here goes to a scope of its own (appscope): it
+    stayed in the web app's, under its memory cap, and lived and died with it."""
     from gi.repository import Gio, GLib
+    from .. import appscope
+    ctx = Gio.AppLaunchContext()
+    appscope.watch(ctx, "")
     try:
-        Gio.AppInfo.launch_default_for_uri(url, None)
+        Gio.AppInfo.launch_default_for_uri(url, ctx)
     except GLib.Error as e:
         print(f"sonata2 webapp: can't open {url}: {e.message}", flush=True)

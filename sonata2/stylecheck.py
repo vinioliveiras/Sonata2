@@ -177,7 +177,8 @@ def window_rows(views=None, rounded=_ASK) -> list:
             frame, ok = "Sonata's title bar", True
         elif app.lower() in own:
             frame, ok = "its own frame, styled by Sonata", True
-        elif any(app.lower().startswith(c) for c in CHROMIUM_IDS):
+        elif any(app.lower().startswith(c) for c in CHROMIUM_IDS) or app.startswith("chrome-"):
+            # (chrome-<site>-Default: a Chromium web app -- Sonata's own, or a browser's)
             frame, ok = "browser frame (GTK mode: Sonata's traffic lights)", True
         elif _uses_lib(pid, "libadwaita-1"):
             frame, ok = "libadwaita frame, Sonata's style", True
@@ -230,6 +231,12 @@ def _seen_path() -> str:
                         "stylecheck.json")
 
 
+def _subject(what: str) -> str:
+    """The app (or setting) a row is about: a window's title left out -- it
+    changes (a browser tab, an unread count) and made the same problem new."""
+    return what.split(" -- ")[0]
+
+
 def problems(rows) -> list:
     """What to tell: FAILs, and windows drawing their own title bar (one line per app)."""
     out = []
@@ -237,9 +244,13 @@ def problems(rows) -> list:
         if len(r) != 3 or r[0] == OK:
             continue
         if r[0] == FAIL:
-            out.append(r[1])
+            p = _subject(r[1]) + (" (corners)" if " -- " in r[1] else "")
         elif "draws its own title bar" in r[2]:
-            out.append(r[1].split(" -- ")[0] + " (own title bar)")
+            p = _subject(r[1]) + " (own title bar)"
+        else:
+            continue
+        if p not in out:
+            out.append(p)
     return out
 
 
@@ -253,10 +264,14 @@ def new_problems(rows, seen_path: str = None) -> list:
         seen = set()
     now = problems(rows)
     new = [p for p in now if p not in seen]
+    # forgotten only once it's seen fixed: an app that is simply closed now
+    # keeps its problem (each reopening told it again)
+    present = {_subject(r[1]) for r in rows if len(r) == 3}
+    kept = {p for p in seen if p.split(" (")[0] not in present}
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(sorted(set(now)), f)
+            json.dump(sorted(set(now) | kept), f)
     except OSError:
         pass
     return new

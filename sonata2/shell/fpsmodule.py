@@ -122,13 +122,13 @@ class FpsModule(Gtk.Box):
 
     def show_frames(self, r) -> None:
         """r: the plugin's answer (None: no plugin / no Wayfire)."""
-        times = [t for t in (r or {}).get("frametimes") or [] if isinstance(t, (int, float)) and t > 0]
         if not isinstance(r, dict) or "frametimes" not in r:
             self.graph.set_times([], "Update Sonata's Wayfire plugin (./install.sh)" if r is not None else "")
             self.live.set_label("")
             self.avg.set_label("")
             self.low.set_label("")
             return
+        times = [t for t in r.get("frametimes") or [] if isinstance(t, (int, float)) and t > 0]
         if not r.get("app-id") or len(times) < 2:
             self.graph.set_times([], "No app drawing in front")
             self.live.set_label("")

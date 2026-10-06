@@ -64,6 +64,7 @@ PERMANENT = ("io.github.vinioliveiras.sonata2.files", "sonata2-launchpad")
 NO_BOUNCE = {"sonata2-launchpad"}   # shell toggles open instantly: no launch bounce
 BOUNCE_MS = 620             # one bounce
 STUCK_S = 4                 # clicked again this long after a launch that never showed a window: stuck
+STUCK_MAX_S = 90            # ... but not later than this: a slow app long since started isn't stopped
 RELAUNCH_MS = 900           # its processes stopped, then the app opens again
 # a launch bounces until the app's first window shows up, 10 bounces at most
 # (Vini: it went on ~30 s when no window came, e.g. an app already running)
@@ -468,6 +469,30 @@ def toggle_show_desktop(manager) -> str:
 _DOCKS = []
 _WATCH = {"on": False}
 _ASK = object()       # "fetch Wayfire's window list now" (_update_rectangles / _windows_here)
+
+
+def scope_has_window(unit) -> bool:
+    """A window of that launch's processes is open (Wayfire's list: each
+    window's pid, then its cgroup) -- the app is running, maybe grouped under
+    another icon (its app id names another entry): never "stuck"."""
+    if not unit:
+        return False
+    try:
+        from ..wl.wfipc import WayfireIPC
+        views = WayfireIPC().call("window-rules/list-views")
+    except Exception:
+        return False
+    for v in views if isinstance(views, list) else []:
+        pid = v.get("pid") if isinstance(v, dict) else None
+        if not isinstance(pid, int) or pid <= 0:
+            continue
+        try:
+            with open(f"/proc/{pid}/cgroup", encoding="utf-8") as f:
+                if unit in f.read():
+                    return True
+        except OSError:
+            continue
+    return False
 
 
 def _watch_outputs() -> None:
@@ -1906,7 +1931,8 @@ class Dock(Gtk.Box):
         info = tile.info
         key = tile.key
         since = self._starting.get(key)
-        if (since is not None and time.monotonic() - since >= STUCK_S and not self.windows.get(key)
+        if (since is not None and STUCK_S <= time.monotonic() - since <= STUCK_MAX_S
+                and not self.windows.get(key) and not scope_has_window(appscope.launched.get(info.get_id() or ""))
                 and appscope.stop(info.get_id() or "")):
             print(f"sonata2-dock: {key} never showed a window: stopped, opened again", flush=True)
             self._starting.pop(key, None)

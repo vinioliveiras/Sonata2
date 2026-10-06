@@ -59,6 +59,22 @@ class ClockWidthTest(unittest.TestCase):
             self.assertLessEqual(lbl.measure(Gtk.Orientation.HORIZONTAL, -1)[1], room, t)
         w.destroy()
 
+    def test_measured_once_per_format(self):
+        """Review: a thousand measurements on every reveal of the bar."""
+        from unittest import mock
+        from sonata2 import ui
+        from sonata2.shell import topbar
+        Adw.init()
+        ui.setup()
+        lbl = Gtk.Label(label="x")
+        w = Gtk.Window(child=lbl)
+        topbar._CLOCK_WIDTHS.clear()
+        a = topbar.clock_width(lbl, "%H:%M")
+        with mock.patch.object(lbl, "measure", side_effect=AssertionError("measured again")):
+            self.assertEqual(topbar.clock_width(lbl, "%H:%M"), a)
+        self.assertGreater(topbar.clock_width(lbl, "%a %-d %b  %H:%M"), a)     # another format: measured
+        w.destroy()
+
     def test_the_menu_bar_clock_has_the_class(self):
         import inspect
         from sonata2.shell import topbar

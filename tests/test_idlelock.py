@@ -67,6 +67,39 @@ class KeyboardLightTest(unittest.TestCase):
         self.assertIn("lockdisplay.lights(True)", src)
 
 
+class RgbLightTest(unittest.TestCase):
+    """Review: RGB_OFF wrote its mark into ~/.cache/sonata2 without making
+    the folder (a fresh profile never restored the lights); and the full
+    swayidle form (sh -c '<quoted>' &) must run as written."""
+
+    def test_off_off_on_with_no_cache_folder(self):
+        import importlib
+        import os
+        import subprocess
+        import tempfile
+        d = tempfile.mkdtemp()
+        cache = os.path.join(d, "new cache")                  # (doesn't exist yet; a space in it)
+        log = os.path.join(d, "log")
+        fake = os.path.join(d, "openrgb")
+        with open(fake, "w") as f:
+            f.write(f'#!/bin/sh\necho "$*" >> "{log}"\n')
+        os.chmod(fake, 0o755)
+        env = dict(os.environ, PATH=d + ":" + os.environ["PATH"])
+        with mock.patch.dict("os.environ", {"XDG_CACHE_HOME": cache}):
+            mod = importlib.reload(I)
+            off, on = mod.RGB_OFF, mod.RGB_ON
+            cmd = mod.command({"lock_after": -1}, 300, kbd=False, rgb=True)
+        importlib.reload(I)
+        for c in (off, off, on):
+            subprocess.run(["sh", "-c", c], env=env, check=False)
+        lines = open(log).read().split("\n")
+        self.assertEqual(sum("--save-profile" in ln for ln in lines), 1)    # saved once
+        self.assertEqual(sum(ln.startswith("--profile") for ln in lines), 1)  # restored
+        self.assertFalse(os.path.exists(os.path.join(cache, "sonata2", "rgb-before-dark")))
+        for c in (cmd[4], cmd[6]):                         # swayidle's own form
+            self.assertEqual(subprocess.run(["sh", "-n", "-c", c]).returncode, 0, c)
+
+
 class CommandTest(unittest.TestCase):
     def test_keyboard_light_follows_the_display(self):
         cmd = I.command({"lock_after": -1}, 300, kbd=True)

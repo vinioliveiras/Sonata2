@@ -47,7 +47,7 @@ RGB_PROFILE = "sonata-idle"
 _RGB_MARK = shlex.quote(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
                                      "sonata2", "rgb-before-dark"))
 RGB_OFF = (f"[ -e {_RGB_MARK} ] || {{ openrgb --save-profile {RGB_PROFILE} >/dev/null 2>&1 && "
-           f"touch {_RGB_MARK}; }}; openrgb --mode off >/dev/null 2>&1")
+           f"mkdir -p \"$(dirname {_RGB_MARK})\" && touch {_RGB_MARK}; }}; openrgb --mode off >/dev/null 2>&1")
 RGB_ON = f"[ -e {_RGB_MARK} ] && openrgb --profile {RGB_PROFILE} >/dev/null 2>&1; rm -f {_RGB_MARK}"
 
 

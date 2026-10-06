@@ -49,7 +49,7 @@ class Overlay(Gtk.Window):
         from ..preview.markup import MarkupLayer
         self.owner = owner
         self.monitor = monitor
-        self.layer = MarkupLayer(self._rect, lambda: None, on_change=owner.changed)
+        self.layer = MarkupLayer(self._rect, lambda: None, on_change=lambda: owner.changed(self.layer))
         self.layer.follow = owner._sync
         self.layer.set_cursor(Gdk.Cursor.new_from_name("crosshair"))
         self.set_child(self.layer)
@@ -79,6 +79,8 @@ class Overlay(Gtk.Window):
         from .menubar_size import height
         top = height()
         pal = self.owner.palette
+        if getattr(self.owner, "palette_on", None) is not self.monitor:
+            return [(0, top, W, H - top)]          # the palette is on another display: all of this one
         pw, ph = PALETTE_SIZE
         if pal is not None and pal.get_mapped() and pal.get_width() > 0:
             pw, ph = pal.get_width(), pal.get_height()
@@ -150,6 +152,8 @@ class LiveDraw:
         self.palette = None
         self.listeners = []                # fn(on): the pills' pens
         self._fade_src = 0
+        self.palette_on = None             # the display showing the palette
+        self.history = []                  # the overlays in the order their marks were made (Undo)
 
     # -- the palette's choices: each display's layer takes them before a mark -----------------------
     def _each(self):
@@ -189,7 +193,9 @@ class LiveDraw:
                 ov.pointer(True)
             if self.palette is None:
                 self.palette = Palette(self.app, self)
-            self.palette.show_on(self._monitor(output))
+            self.palette_on = self._monitor(output)
+            self.palette.show_on(self.palette_on)
+            self.regions()                         # (the overlays above asked before it was placed)
         else:
             for ov in self.overlays.values():
                 ov.pointer(False)
@@ -216,12 +222,21 @@ class LiveDraw:
                 ov.set_visible(False)
 
     def undo(self) -> None:
-        for ov in self.overlays.values():
-            ov.layer.undo()
+        """The last mark made, on whichever display (it undid one on every display)."""
+        while self.history:
+            lay = self.history.pop()
+            if any(ov.layer is lay for ov in self.overlays.values()) and lay._undo:
+                lay.undo()
+                return
 
     # -- fading -----------------------------------------------------------------------------------
     def toggle_fade(self) -> None:
         self.fade = not self.fade
+        if not self.fade:                          # off mid-fade: the marks whole again
+            for lay in self._each():
+                for it in lay.items:
+                    it.pop("o", None)
+                lay.queue_draw()
         if self.palette is not None:
             (self.palette.fade_btn.add_css_class if self.fade else self.palette.fade_btn.remove_css_class)("on")
         if self.fade:
@@ -231,9 +246,14 @@ class LiveDraw:
                     it["ts"] = now
             self._arm_fade()
 
-    def changed(self) -> None:
+    def changed(self, lay=None) -> None:
         """A mark was added (or changed): stamped, so it can fade."""
         now = time.monotonic()
+        if lay is not None:
+            n = len(lay._undo)                     # a new step on this display (not an undo)
+            if n > getattr(lay, "_steps_seen", 0):
+                self.history.append(lay)
+            lay._steps_seen = n
         for lay in self._each():
             for it in lay.items:
                 it.setdefault("ts", now)

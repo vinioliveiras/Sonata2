@@ -79,13 +79,52 @@ class LiveDrawTest(unittest.TestCase):
         mon = mock.Mock(get_geometry=lambda: geo)
         ov = L.Overlay.__new__(L.Overlay)
         ov.monitor, ov.owner = mon, d
+        d.palette_on = mon
         with mock.patch("sonata2.shell.menubar_size.height", lambda: 32):
             rects = ov.region(True)
             self.assertEqual(ov.region(False), [])
+            d.palette_on = object()                  # the palette on another display: all of this one
+            self.assertEqual(ov.region(True), [(0, 32, 1920, 1080 - 32)])
         pw, ph = L.PALETTE_SIZE
         self.assertIn((0, 32 + ph, 1920, 1080 - 32 - ph), rects)       # everything under the palette
         area = sum(w * h for _x, _y, w, h in rects)
         self.assertEqual(area, 1920 * (1080 - 32) - pw * ph)           # all but the menu bar and palette
+
+    def test_undo_takes_back_the_last_mark_only(self):
+        """Review: Undo undid a mark on every display at once."""
+        from types import SimpleNamespace
+        from sonata2.preview.markup import MarkupLayer
+        from sonata2.shell import livedraw as L
+        d = L.LiveDraw(self.app)
+        a = MarkupLayer(lambda: (0, 0, 400, 200), lambda: None, on_change=lambda: d.changed(a))
+        b = MarkupLayer(lambda: (0, 0, 400, 200), lambda: None, on_change=lambda: d.changed(b))
+        d.overlays = {"A": SimpleNamespace(layer=a), "B": SimpleNamespace(layer=b)}
+
+        def stroke(lay, x):
+            lay.set_tool("pen")
+            lay._begin(None, x, 10)
+            lay._update(None, 40, 30)
+            lay._end(None, 40, 30)
+        stroke(a, 10)
+        stroke(a, 100)
+        stroke(b, 10)
+        d.undo()
+        self.assertEqual((len(a.items), len(b.items)), (2, 0))
+        d.undo()
+        self.assertEqual((len(a.items), len(b.items)), (1, 0))
+
+    def test_fade_off_makes_marks_whole_again(self):
+        """Review: fade turned off mid-fade left the marks half transparent."""
+        from types import SimpleNamespace
+        from sonata2.preview.markup import MarkupLayer
+        from sonata2.shell import livedraw as L
+        d = L.LiveDraw(self.app)
+        lay = MarkupLayer(lambda: (0, 0, 400, 200), lambda: None)
+        lay.items = [{"t": "pen", "c": "#f00", "w": 0.01, "p": [[0.1, 0.1], [0.2, 0.2]], "o": 0.4}]
+        d.overlays = {"A": SimpleNamespace(layer=lay)}
+        d.fade = True
+        d.toggle_fade()
+        self.assertNotIn("o", lay.items[0])
 
     def test_pills_have_the_pen(self):
         import inspect

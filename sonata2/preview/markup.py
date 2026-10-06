@@ -31,6 +31,7 @@ BOXED = set(SHAPES) | {"pixelate"}               # drawn from a drag: two corner
 EMOJI = ("😀", "😂", "😍", "🤔", "😮", "😢", "😡", "👍", "👎", "👏", "🙏", "💪", "👀", "🔥", "✨", "🎉",
          "❤️", "💯", "✅", "❌", "⚠️", "❓", "❗", "💡", "📌", "⭐", "🚀", "🐛", "👉", "👆", "👇", "👈")
 TEXT_SIZE, EMOJI_SIZE, STEP_SIZE = 0.03, 0.06, 0.035
+DOUBLE_CLICK_MS = 300                      # a pen click waits this long: half of a double click leaves no dot
 PIXEL = 0.012                                    # pixelate: a block, of the picture's longer side
 
 ui.register("""
@@ -306,7 +307,11 @@ def apply(image, items):
     import cairo
     cr = cairo.Context(surf)
     W, H = image.size
-    draw(cr, items, W, H, source=surf)
+    # pixelate samples the picture as it was (as on screen), not the marks
+    # drawn into it so far (a stroke under a pixelated box showed through)
+    clean, _keep2 = (_pil_to_surface(image) if any(it.get("t") == "pixelate" for it in items)
+                     else (surf, None))
+    draw(cr, items, W, H, source=clean)
     surf.flush()
     out = Image.frombuffer("RGBA", (W, H), bytes(surf.get_data()), "raw", "BGRa", 0, 1)
     return out if mode == "RGBA" else out.convert(mode)
@@ -349,7 +354,7 @@ class MarkupLayer(Gtk.DrawingArea):
         drag.connect("drag-end", self._end)
         self.add_controller(drag)
         dbl = Gtk.GestureClick()
-        dbl.connect("pressed", lambda _g, n, x, y: n == 2 and self._edit_text_at(x, y))
+        dbl.connect("pressed", lambda _g, n, x, y: n == 2 and self._double_click(x, y))
         self.add_controller(dbl)
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._key)
@@ -460,19 +465,25 @@ class MarkupLayer(Gtk.DrawingArea):
         t = self.tool
         self._drag = {"x": x, "y": y}
         if t == "select":
+            # the undo step is taken on the first real move: a click that only
+            # selects is no edit (it pushed one, and cleared Redo)
             h = self._handle()
             if h and abs(x - h[0]) < 10 and abs(y - h[1]) < 10:
-                self._snapshot()
-                self._drag.update(mode="resize", orig=copy.deepcopy(self.items[self.sel]))
+                self._drag.update(mode="resize", orig=copy.deepcopy(self.items[self.sel]), moved=False)
                 return
             self.sel = self.hit(x, y)
             if self.sel is not None:
-                self._snapshot()
-                self._drag.update(mode="move", orig=copy.deepcopy(self.items[self.sel]))
+                self._drag.update(mode="move", orig=copy.deepcopy(self.items[self.sel]), moved=False)
             self.queue_draw()
             return
         if t == "text":
-            self._ask_text(x, y)
+            if getattr(self, "_text_pop", None) is not None:
+                return                                # its field is open (a double click's second press)
+            i = self.hit(x, y)
+            if i is not None and self.items[i]["t"] == "text":
+                self._edit_text_at(x, y)              # a click on a text edits it
+            else:
+                self._ask_text(x, y)
             return
         if t in ("emoji", "step"):
             self._snapshot()
@@ -497,6 +508,11 @@ class MarkupLayer(Gtk.DrawingArea):
         if not d or not pic:
             return
         x, y = d["x"] + dx, d["y"] + dy
+        if d.get("mode") and not d.get("moved"):
+            if abs(dx) + abs(dy) < 1:
+                return
+            self._snapshot()                          # before the first change
+            d["moved"] = True
         if d.get("mode") == "move" and self.sel is not None:
             fx, fy = dx / pic[2], dy / pic[3]
             self.items[self.sel]["p"] = [[p[0] + fx, p[1] + fy] for p in d["orig"]["p"]]
@@ -541,12 +557,23 @@ class MarkupLayer(Gtk.DrawingArea):
     def _end(self, _g, _dx, _dy) -> None:
         d, self._drag = getattr(self, "_drag", None), None
         if d and d.get("mode"):
-            self._changed()
+            if d.get("moved"):
+                self._changed()
             return
         cur, self.cur = self.cur, None
         if cur is None:
             return
         pic = self._pic()
+        if not pic:
+            self.queue_draw()
+            return
+        if cur["t"] not in BOXED and len(cur["p"]) == 1:
+            # a click with the pen: a dot -- unless it's half of a double
+            # click on a text (to edit it), which must leave no dots behind
+            self._dots = getattr(self, "_dots", [])
+            src = GLib.timeout_add(DOUBLE_CLICK_MS, lambda: (self._commit_dot(cur), False)[1])
+            self._dots.append((src, cur))
+            return
         if cur["t"] in BOXED:
             x0, y0, x1, y1 = _box(cur, pic[2], pic[3])
             if x1 - x0 < 3 and y1 - y0 < 3:
@@ -555,6 +582,24 @@ class MarkupLayer(Gtk.DrawingArea):
         self._snapshot()
         self.items.append(cur)
         self._changed()
+
+    def _commit_dot(self, cur) -> None:
+        self._dots = [(s, c) for s, c in getattr(self, "_dots", []) if c is not cur]
+        self._snapshot()
+        self.items.append(cur)
+        self._changed()
+
+    def _drop_dots(self) -> None:
+        for src, _c in getattr(self, "_dots", []):
+            GLib.source_remove(src)
+        self._dots = []
+
+    def _double_click(self, x, y) -> None:
+        i = self.hit(x, y)
+        if i is not None and self.items[i]["t"] == "text":
+            self._drop_dots()                         # the clicks were to edit it, not to draw
+            if getattr(self, "_text_pop", None) is None:
+                self._edit_text_at(x, y)
 
     def _key(self, _c, keyval, _code, state) -> bool:
         if keyval in (Gdk.KEY_Delete, Gdk.KEY_BackSpace) and self.sel is not None:
@@ -576,10 +621,19 @@ class MarkupLayer(Gtk.DrawingArea):
         r.x, r.y, r.width, r.height = int(x), int(y), 1, 1
         pop.set_pointing_to(r)
         f = self.to_frac(x, y)
+        self._text_pop = pop
+        state = {"done": False}
 
         def done(*_a):
+            # Return, or the field closed by a click elsewhere (macOS keeps
+            # the text then too -- it was thrown away)
+            if state["done"]:
+                return
+            state["done"] = True
             text = entry.get_text().strip()
             pop.popdown()
+            if index is not None and (index >= len(self.items) or self.items[index].get("t") != "text"):
+                return                                # (the mark went meanwhile)
             if index is not None:
                 self._snapshot()
                 if text:
@@ -593,7 +647,13 @@ class MarkupLayer(Gtk.DrawingArea):
                 self.items.append({"t": "text", "c": self.color, "p": [f], "text": text, "s": TEXT_SIZE})
                 self._changed()
         entry.connect("activate", done)
-        pop.connect("closed", lambda *_: GLib.idle_add(lambda: (pop.unparent(), False)[1]))
+
+        def closed(*_a):
+            done()
+            if getattr(self, "_text_pop", None) is pop:
+                self._text_pop = None
+            GLib.idle_add(lambda: (pop.unparent(), False)[1])
+        pop.connect("closed", closed)
         pop.popup()
         entry.grab_focus()
 

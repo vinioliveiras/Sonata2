@@ -2525,7 +2525,7 @@ class Settings(Adw.ApplicationWindow):
                 cols = dict(config.load("appearance", icons.APPEARANCE_DEFAULTS).get("buttons_colors") or {})
                 cols[n] = hexc
                 self._save("appearance", "buttons_colors", cols)
-                system.run_async(trafficlights.apply, None)
+                system.run_async(trafficlights.apply, None, Adw.StyleManager.get_default().get_dark())
             dot.connect("clicked", lambda b, n=name, f=picked, t=tip: setattr(b, "picker", ui.colorpicker.popup(
                 b, b.swatch.color, f, title=f"{t} Button")))
             box.append(dot)
@@ -2539,7 +2539,7 @@ class Settings(Adw.ApplicationWindow):
         self._save("appearance", "buttons_style", look)
         if getattr(self, "button_custom_row", None) is not None:
             self.button_custom_row.set_visible(look == "custom")
-        system.run_async(trafficlights.apply, None)
+        system.run_async(trafficlights.apply, None, Adw.StyleManager.get_default().get_dark())
         self.toast("Other apps pick it up when they open again")
 
     def _set_buttons_side(self, side):
@@ -2584,7 +2584,7 @@ class Settings(Adw.ApplicationWindow):
                 flatpak_theme.apply()
             if buttons:                                    # Steam's and GTK apps' buttons too
                 from .. import trafficlights
-                trafficlights.apply()
+                trafficlights.apply(dark)
         system.run_async(apply, None)
         self.rebuild_page("appearance")
         if old.get("icon_theme") != icons.APPEARANCE_DEFAULTS["icon_theme"]:

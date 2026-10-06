@@ -44,6 +44,12 @@ class WindowRowsTest(unittest.TestCase):
         self.assertEqual(r["code"][0], SC.FAIL)
         self.assertEqual(r["steam"][0], SC.FAIL)
 
+    def test_chromium_web_apps_are_styled(self):
+        """Review: Sonata's Chromium web apps (chrome-<site>-Default) were
+        reported as drawing their own title bar."""
+        r = self.rows([view(1, "chrome-mail.google.com__mail_u_0_-Default", sonata_bar=False)], rounded=set())
+        self.assertEqual(r["chrome-mail.google.com__mail_u_0_-Default"][0], SC.OK)
+
     def test_old_plugin_build(self):
         rows = SC.window_rows([view(1, "code")], rounded=None)
         self.assertEqual(rows[0][0], SC.OK)                           # can't tell: not a failure
@@ -56,8 +62,21 @@ class NotifyOnceTest(unittest.TestCase):
         bad = [(SC.FAIL, "VS Code", "x"), (SC.WARN, "Spotify -- Spotify", "draws its own title bar: not ...")]
         self.assertEqual(SC.new_problems(bad, path), ["VS Code", "Spotify (own title bar)"])
         self.assertEqual(SC.new_problems(bad, path), [])              # not twice
-        self.assertEqual(SC.new_problems([], path), [])               # fixed: forgotten
+        fixed = [(SC.OK, "VS Code", "x"), (SC.OK, "Spotify -- Spotify", "y")]
+        self.assertEqual(SC.new_problems(fixed, path), [])            # fixed: forgotten
         self.assertEqual(SC.new_problems(bad[:1], path), ["VS Code"])  # back: told again
+
+    def test_a_new_title_or_a_closed_window_is_not_new(self):
+        """Review: a window's title (a browser tab, an unread count) was part of
+        the problem's name -- each change told it again; and a closed app's
+        problem was forgotten, so each reopening told it again."""
+        path = os.path.join(tempfile.mkdtemp(), "seen.json")
+        a = [(SC.FAIL, "code -- main.py - VS Code", "corners NOT rounded")]
+        b = [(SC.FAIL, "code -- other.py - VS Code", "corners NOT rounded")]
+        self.assertEqual(SC.new_problems(a, path), ["code (corners)"])
+        self.assertEqual(SC.new_problems(b, path), [])                # another title: the same problem
+        self.assertEqual(SC.new_problems([], path), [])               # closed: still remembered
+        self.assertEqual(SC.new_problems(a, path), [])                # reopened: not told again
 
 
 class ConfigRowsTest(unittest.TestCase):

@@ -17,6 +17,7 @@ import hashlib
 import json
 import math
 import os
+import threading
 
 from . import config
 
@@ -26,6 +27,8 @@ GRAPHITE = "#8e8e93"
 MONO = {False: "#1d1d1f", True: "#f5f5f7"}               # black on light, white on dark
 RIM = (0, 0, 0, 0.18)
 SS = 8                                                   # PNGs: drawn 8x larger, then averaged down
+DRAW_VERSION = 1                                         # bump when dot() draws differently: pictures made again
+_APPLY = threading.Lock()                                # one apply at a time (quick picks in Settings)
 
 
 def _settings() -> dict:
@@ -148,9 +151,14 @@ def _bundled(dark: bool) -> tuple:
 
 
 def _key(dark: bool) -> str:
+    """The pictures' folder name: the look, its colours, the size and how
+    they're drawn -- a Sonata update that draws them differently (or at
+    another size) makes them again instead of keeping the old ones."""
+    from .ui.tokens import FRAME
     look = style()
     cols = colors(dark, look)
-    return look + "-" + hashlib.sha1(json.dumps(cols, sort_keys=True).encode()).hexdigest()[:10]
+    what = json.dumps({"c": cols, "size": FRAME["dot"], "v": DRAW_VERSION}, sort_keys=True)
+    return look + "-" + hashlib.sha1(what.encode()).hexdigest()[:10]
 
 
 def folder(dark: bool) -> str:
@@ -210,10 +218,18 @@ def apply_wayfire(dark: bool) -> None:
         system.wayfire_set(section, key, value)
 
 
-def apply() -> None:
-    """After a change in Settings (in a thread): the pictures, then each place."""
-    from .ui import theme
-    dark = theme.is_dark() if hasattr(theme, "is_dark") else False
+def apply(dark: bool = None) -> None:
+    """After a change in Settings (in a thread: `dark` taken on the main
+    loop and passed in -- GTK isn't asked from here): the pictures, then
+    each place. One at a time: quick picks wrote the same files together."""
+    if dark is None:
+        from .ui import theme
+        dark = theme.is_dark() if hasattr(theme, "is_dark") else False
+    with _APPLY:
+        _apply(bool(dark))
+
+
+def _apply(dark: bool) -> None:
     for d in (False, True):
         folder(d)
     apply_wayfire(dark)

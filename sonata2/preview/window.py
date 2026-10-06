@@ -113,7 +113,9 @@ class PreviewWindow(Gtk.ApplicationWindow):
         # Markup: marks drawn over the picture, its own toolbar under the main one
         self.markup = None                # markup.MarkupLayer while Markup is on
         self._markup_on_open = markup     # a screenshot's thumbnail: straight into Markup
-        self.from_shot = markup           # ... and Done saves it (and puts it on the clipboard, if it was)
+        # ... and Done saves it (and puts it on the clipboard, if it was): that
+        # picture only -- another one opened in this window is saved when asked
+        self.from_shot = path if markup else None
         self.markup_rev = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
                                        transition_duration=tokens.ms(200), reveal_child=False)
         # thumbnails | picture | info
@@ -163,6 +165,10 @@ class PreviewWindow(Gtk.ApplicationWindow):
     def open(self, path: str, fade: bool = False) -> None:
         if self._saving:
             return
+        if self.markup is not None:            # marks on this picture: they become its edit (asked below)
+            self.end_markup(keep=True)
+            if self._saving:                   # a screenshot saving its marks: the other picture after
+                return
         if self.edits is not None and self.edits.edited:       # ← / → with unsaved edits: ask first
             self._ask_save(lambda: (setattr(self, "edits", None), self.open(path, fade)))
             return
@@ -388,17 +394,22 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self.markup_btn.add_css_class("on")
         self.markup.grab_focus()
 
-    def end_markup(self, keep: bool) -> None:
+    def end_markup(self, keep: bool, then=None) -> None:
         layer, self.markup = self.markup, None
         if layer is None:
+            if then:
+                then()
             return
         self.overlay.remove_overlay(layer)
         self.markup_rev.set_reveal_child(False)
         self.markup_btn.remove_css_class("on")
         if keep and layer.items:
             self.edit(("markup", layer.items))
-            if self.from_shot:                     # a screenshot: Done saves it, like macOS
-                self.save(then=self._shot_to_clipboard)
+            if self.from_shot and self.from_shot == self.path:   # a screenshot: Done saves it, like macOS
+                self.save(then=lambda: (self._shot_to_clipboard(), then and then()))
+                return
+        if then:
+            then()
 
     def _shot_to_clipboard(self) -> None:
         """A screenshot that went to the clipboard (only, or also): the marked one goes there too."""
@@ -816,6 +827,13 @@ class PreviewWindow(Gtk.ApplicationWindow):
                                        ("save", "Save", "default")], answer, parent=self)
 
     def _close_request(self, _w) -> bool:
+        if self.markup is not None and self.markup.items:
+            # marks not Done yet: they count as an edit (a screenshot saves
+            # them, as Done would; another picture asks) -- never lost silently
+            shot = self.from_shot and self.from_shot == self.path
+            self.end_markup(keep=True, then=self.destroy if shot else None)
+            if shot:
+                return True
         if self.edits is not None and self.edits.edited:
             self._ask_save(self.destroy)
             return True
@@ -893,6 +911,8 @@ class PreviewWindow(Gtk.ApplicationWindow):
                     else (lambda: self.end_markup(keep=True))
             elif keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter) and lay.sel is None:
                 act = lambda: self.end_markup(keep=True)   # noqa: E731
+            elif cmd and k in (Gdk.KEY_w, Gdk.KEY_s):     # close and save still work (marks Done first)
+                act = self.close if k == Gdk.KEY_w else lambda: self.end_markup(keep=True, then=self.save)
             else:
                 return False
             act()
@@ -946,6 +966,17 @@ class PreviewWindow(Gtk.ApplicationWindow):
 def open_markup(app, path: str) -> None:
     """A screenshot's thumbnail clicked: the picture in Markup (Vini: draw on a print)."""
     same = next((w for w in app.get_windows() if isinstance(w, PreviewWindow) and w.path == path), None)
+    if same is not None and not (same.edits is not None and same.edits.edited) and same.markup is None:
+        # a new screenshot under the same name (the clipboard's): the new
+        # picture, not the one this window still showed (Vini's marks went
+        # onto the previous screenshot)
+        same.from_shot = path
+        same._markup_on_open = True
+        same.present()
+        same.edits = None
+        same._opened(path, load_texture(path), False)
+        same.thumbs.refresh(path)
+        return
     if same is not None:
         same.present()
         if same.markup is None:

@@ -1582,6 +1582,13 @@ def clock_width(label, fmt: str) -> int:
     """The widest the clock gets in `fmt`, measured on the label itself (its
     font and tabular digits): every weekday, day and month name of a year,
     morning and evening (AM / PM)."""
+    # measured once per format, font and scale (each takes a thousand
+    # measurements; a bar that reveals itself measured again every time)
+    ctx = label.get_pango_context()
+    fd = ctx.get_font_description() if ctx else None
+    key = (fmt, fd.to_string() if fd else "", label.get_scale_factor())
+    if key in _CLOCK_WIDTHS:
+        return _CLOCK_WIDTHS[key]
     texts = set()
     start = GLib.DateTime.new_local(2026, 1, 1, 0, 0, 0)
     for day in range(366):
@@ -1597,7 +1604,11 @@ def clock_width(label, fmt: str) -> int:
         best = max(best, label.measure(Gtk.Orientation.HORIZONTAL, -1)[1])
     label.set_label(shown)
     label.set_size_request(req, -1)
+    _CLOCK_WIDTHS[key] = best
     return best
+
+
+_CLOCK_WIDTHS = {}
 
 
 class TopBarWindow(Gtk.ApplicationWindow):

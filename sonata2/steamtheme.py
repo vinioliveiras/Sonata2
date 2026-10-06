@@ -22,6 +22,8 @@ Steam" (on by default) turns it off (and takes it out).
 An earlier Sonata installed the whole Adwaita-for-Steam skin (grey, GNOME
 colours): it is taken out the first time this runs."""
 import base64
+import contextlib
+import fcntl
 import os
 import shutil
 
@@ -187,13 +189,29 @@ def _patch_root(root: str, css_text: str) -> bool:
     return ok
 
 
+@contextlib.contextmanager
+def _locked():
+    """One patcher at a time, across processes (Settings and the menu bar
+    both patch): two at once could move the patch over X.original.css and
+    lose Steam's own file."""
+    d = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "sonata2")
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "steam-theme.lock"), "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
 def apply(force: bool = False) -> bool:
     """Sonata's window buttons in every Steam here (cheap: only what's missing is written)."""
     found = targets()
     if not found:
         return False
     text = window_css()
-    return all([_patch_root(root, text) for root in found.values()])
+    with _locked():
+        return all([_patch_root(root, text) for root in found.values()])
 
 
 def ensure() -> bool:
@@ -209,6 +227,11 @@ def ensure() -> bool:
 
 def remove() -> bool:
     """Steam's own files back (and an earlier Adwaita skin out)."""
+    with _locked():
+        return _remove()
+
+
+def _remove() -> bool:
     for root in targets().values():
         css = os.path.join(root, "steamui", "css")
         _drop_adwaita(root)

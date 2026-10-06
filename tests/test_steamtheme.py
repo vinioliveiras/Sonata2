@@ -104,5 +104,41 @@ class SteamThemeTest(unittest.TestCase):
         self.assertIn('"Sonata look for Steam"', inspect.getsource(app))
 
 
+
+
+class PatchLockTest(unittest.TestCase):
+    """Review: Settings and the menu bar can patch at the same moment; two
+    patchers could move the patch over X.original.css (Steam's own file
+    lost). Both apply and remove run under one lock across processes."""
+
+    def test_apply_and_remove_hold_the_lock(self):
+        import fcntl
+        import os
+        import tempfile
+        from unittest import mock
+        from sonata2 import steamtheme as S
+        d = tempfile.mkdtemp()
+        held = []
+        with mock.patch.dict("os.environ", {"XDG_CACHE_HOME": d}), \
+                mock.patch.object(S, "targets", lambda: {"x": d}), \
+                mock.patch.object(S, "_patch_root", lambda *a: held.append(self._locked(d)) or True), \
+                mock.patch.object(S, "_drop_adwaita", lambda root: held.append(self._locked(d))):
+            S.apply()
+            S.remove()
+        self.assertEqual(held, [True, True])
+
+    @staticmethod
+    def _locked(d):
+        import fcntl
+        import os
+        with open(os.path.join(d, "sonata2", "steam-theme.lock")) as fh:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return True
+            fcntl.flock(fh, fcntl.LOCK_UN)
+            return False
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -11,7 +11,7 @@ import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib  # noqa: E402
+from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from sonata2.preview import markup as M  # noqa: E402
 
@@ -57,6 +57,17 @@ class ApplyTest(unittest.TestCase):
         out = M.apply(im, [{"t": "pixelate", "c": "#000", "p": [[0, 0], [1, 1]]}])
         row = [out.getpixel((x, 50))[0] for x in range(40, 60)]
         self.assertLess(max(row) - min(row), 60)                   # the stripes became flat blocks
+
+    def test_pixelate_hides_marks_under_it(self):
+        """Review: on screen pixelate shows the plain picture; saved, a pen
+        stroke drawn before it showed through as coloured blocks."""
+        from PIL import Image
+        base = Image.new("RGB", (200, 100), "white")
+        items = [{"t": "pen", "c": "#ff0000", "w": 0.05, "p": [[0.1, 0.5], [0.9, 0.5]]},
+                 {"t": "pixelate", "c": "#000", "p": [[0.0, 0.0], [1.0, 1.0]]}]
+        out = M.apply(base, items)
+        r, g, b = out.getpixel((100, 50))
+        self.assertGreater(g, 200)                                  # white, not red blocks
 
     def test_no_line_joins_two_marks(self):
         """A text's pen position must not join the next mark (a white line ran
@@ -116,6 +127,64 @@ class LayerTest(unittest.TestCase):
         self.assertAlmostEqual(lay.items[1]["p"][0][0], 0.5)       # back before the move
         lay.redo()
         self.assertAlmostEqual(lay.items[1]["p"][0][0], 0.6)
+
+    def test_a_select_click_is_no_edit(self):
+        """Review: clicking a mark to select it pushed an undo step and
+        cleared Redo; only a real move is an edit."""
+        lay = self.layer()
+        lay.set_tool("shape")
+        lay.shape = "rect"
+        self.drag(lay, 100, 50, 80, 40)
+        lay.undo()
+        lay.redo()
+        undo, redo = len(lay._undo), len(lay._redo)
+        lay.set_tool("select")
+        lay._begin(None, 140, 70)
+        lay._end(None, 0, 0)
+        self.assertEqual(lay.sel, 0)
+        self.assertEqual((len(lay._undo), len(lay._redo)), (undo, redo))
+        lay._begin(None, 140, 70)
+        lay._update(None, 20, 0)
+        lay._end(None, 20, 0)
+        self.assertEqual(len(lay._undo), undo + 1)              # a move is one step
+
+    def test_double_click_on_a_text_leaves_no_dots(self):
+        """Review: with the pen, a double click on a text (to edit it) left two dots."""
+        lay = self.layer()
+        win = Gtk.Window(child=lay)
+        win.present()
+        spin(200)
+        self.addCleanup(win.destroy)
+        lay.items = [{"t": "text", "c": "#000", "p": [[0.25, 0.25]], "text": "Hello", "s": 0.1}]
+        lay.set_tool("pen")
+        x0, y0, x1, y1 = M.bounds(lay.items[0], 400, 200)
+        x, y = (x0 + x1) / 2, (y0 + y1) / 2
+        for _ in range(2):
+            lay._begin(None, x, y)
+            lay._end(None, 0, 0)
+        lay._double_click(x, y)
+        spin(M.DOUBLE_CLICK_MS + 150)
+        self.assertEqual(len(lay.items), 1)
+        if lay._text_pop is not None:
+            lay._text_pop.popdown()
+        lay._begin(None, 10, 10)                                # a single click: a dot, after the wait
+        lay._end(None, 0, 0)
+        spin(M.DOUBLE_CLICK_MS + 150)
+        self.assertEqual(lay.items[-1]["t"], "pen")
+
+    def test_text_kept_when_its_field_closes_without_return(self):
+        lay = self.layer()
+        win = Gtk.Window(child=lay)
+        win.present()
+        spin(200)
+        lay.set_tool("text")
+        lay._begin(None, 50, 50)
+        pop = lay._text_pop
+        pop.get_child().set_text("Note")
+        pop.popdown()                                           # a click elsewhere
+        spin(100)
+        self.assertEqual([it.get("text") for it in lay.items], ["Note"])
+        win.destroy()
 
     def test_steps_count_up_and_emoji_centre(self):
         lay = self.layer()
@@ -193,6 +262,102 @@ class PreviewMarkupTest(unittest.TestCase):
         import inspect
         from sonata2.shell import capture
         self.assertIn('"preview", "--markup"', inspect.getsource(capture.Thumbnail._open))
+
+
+class MarkupLifecycleTest(unittest.TestCase):
+    """Review fixes: the marks never land on another picture, are never lost
+    on close, and only a screenshot is saved without asking."""
+
+    @classmethod
+    def setUpClass(cls):
+        from sonata2 import ui
+        Adw.init()
+        ui.setup()
+
+    def window(self, name, paths, markup=True):
+        from sonata2.preview import window as PW
+        app = Adw.Application(application_id=f"io.github.vinioliveiras.sonata2.mlife.{name}")
+        app.register(None)
+        w = PW.PreviewWindow(app, paths[0], markup=markup)
+        w.pics = list(paths)
+        w.present()
+        spin(900)
+        self.addCleanup(lambda: w.destroy() if w.get_root() is not None else None)
+        return app, w
+
+    def pics(self, n=2, colour="white"):
+        from PIL import Image
+        d = tempfile.mkdtemp()
+        out = []
+        for i in range(n):
+            p = os.path.join(d, f"p{i}.png")
+            Image.new("RGB", (200, 100), colour).save(p)
+            out.append(p)
+        return out
+
+    def test_another_picture_is_never_saved_as_the_shot(self):
+        from unittest import mock
+        a, b = self.pics()
+        _app, w = self.window("other", [a, b])
+        self.assertEqual(w.from_shot, a)
+        w.end_markup(keep=False)
+        w.from_shot = a
+        w._opened(b, w.texture, False)                         # moved on to another picture
+        w.markup_button()
+        w.markup.items = [{"t": "rect", "c": "#ff0000", "w": 0.02, "p": [[0.1, 0.1], [0.9, 0.9]]}]
+        with mock.patch.object(w, "save") as save:
+            w.end_markup(keep=True)
+        save.assert_not_called()                               # only asked when leaving, like any edit
+        self.assertTrue(w.edits.edited)
+
+    def test_opening_another_picture_mid_markup_keeps_the_marks_on_this_one(self):
+        from unittest import mock
+        a, b = self.pics()
+        _app, w = self.window("pick", [a, b], markup=False)
+        w.markup_button()
+        w.markup.items = [{"t": "rect", "c": "#ff0000", "w": 0.02, "p": [[0.1, 0.1], [0.9, 0.9]]}]
+        asked = []
+        with mock.patch.object(w, "_ask_save", lambda then: asked.append(then)):
+            w.open(b)
+        self.assertIsNone(w.markup)
+        self.assertEqual(w.path, a)                            # stays until the marks are saved or dropped
+        self.assertEqual([o[0] for o in w.edits.ops], ["markup"])
+        self.assertEqual(len(asked), 1)
+
+    def test_closing_a_shot_mid_markup_saves_the_marks(self):
+        from PIL import Image
+        a, = self.pics(1)
+        _app, w = self.window("close", [a])
+        w.markup.items = [{"t": "rect", "c": "#ff0000", "w": 0.03, "p": [[0.1, 0.1], [0.9, 0.9]]}]
+        self.assertTrue(w._close_request(w))                    # not yet: saving first
+        spin(1500)
+        self.assertGreater(Image.open(a).convert("RGB").getpixel((100, 10))[0], 200)
+
+    def test_closing_another_picture_mid_markup_asks(self):
+        from unittest import mock
+        a, = self.pics(1)
+        _app, w = self.window("closeask", [a], markup=False)
+        w.markup_button()
+        w.markup.items = [{"t": "rect", "c": "#ff0000", "w": 0.03, "p": [[0.1, 0.1], [0.9, 0.9]]}]
+        with mock.patch.object(w, "_ask_save") as ask:
+            self.assertTrue(w._close_request(w))
+        ask.assert_called_once()
+
+    def test_a_new_clipboard_shot_replaces_the_old_one_in_its_window(self):
+        from PIL import Image
+        from sonata2.preview import window as PW
+        from sonata2.shell.capture import CLIPBOARD_SHOT
+        d = tempfile.mkdtemp()
+        p = os.path.join(d, CLIPBOARD_SHOT)
+        Image.new("RGB", (200, 100), "white").save(p)
+        app, w = self.window("clip", [p])
+        w.end_markup(keep=False)
+        Image.new("RGB", (300, 150), "black").save(p)          # the next screenshot, same name
+        PW.open_markup(app, p)
+        spin(600)
+        self.assertEqual((w.texture.get_width(), w.texture.get_height()), (300, 150))
+        self.assertEqual(w.from_shot, p)
+        self.assertIsNotNone(w.markup)
 
 
 if __name__ == "__main__":

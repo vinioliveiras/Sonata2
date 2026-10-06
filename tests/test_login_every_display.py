@@ -128,6 +128,28 @@ class GreeterEveryDisplayTest(unittest.TestCase):
         g.entry.items[0].set_text("pw")
         self.assertEqual(g.entry.items[1].get_text(), "pw")
 
+    def test_focus_follows_the_display_with_the_keyboard(self):
+        """Review: after picking a user, the field on the first display took
+        focus -- with the keyboard on another display, typing went nowhere."""
+        from sonata2.shell import greeter as G
+        d = tempfile.mkdtemp()
+        for name, value in (("STATE", os.path.join(d, "state.json")), ("WAITS", os.path.join(d, "waits.json")),
+                            ("users", lambda: [G.User("vini", "Vini"), G.User("ana", "Ana")]),
+                            ("sessions", lambda: [G.Session("sonata", "Sonata", ["sonata"], "Sonata")])):
+            p = mock.patch.object(G, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        g = G.Greeter(app("greeterkeys"))
+        self.addCleanup(lambda: [w.destroy() for w in list(g.windows)])
+        mon = Gdk.Display.get_default().get_monitors().get_item(0)
+        second = g._window(mon)
+        g.keys_win = second                                  # the keyboard is on the second display
+        focused = []
+        with mock.patch.object(GLib, "idle_add", lambda fn, *a: fn() and 0), \
+                mock.patch.object(Gtk.PasswordEntry, "grab_focus", lambda e: focused.append(e)):
+            g._pick(g.users[0])
+        self.assertTrue(focused)
+        self.assertEqual({e.get_root() for e in focused}, {second})
 
 if __name__ == "__main__":
     unittest.main()

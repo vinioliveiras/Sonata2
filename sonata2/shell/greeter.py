@@ -273,9 +273,18 @@ class Greeter:
                 LS = layer.layer_shell()
                 if self.keys_win is not None and LS and LS.is_layer_window(self.keys_win):
                     LS.set_keyboard_mode(self.keys_win, LS.KeyboardMode.EXCLUSIVE)
+                self._focus_keys()
             win.destroy()
         monitor.connect("invalidate", gone)
         return win
+
+    def _focus_keys(self) -> None:
+        """The field (if shown) on the display with the keyboard takes the keys."""
+        keys = getattr(self, "keys_win", None)
+        for e in self.entry:
+            if e.get_root() is keys:
+                GLib.idle_add(lambda e=e: (e.grab_focus(), False)[1])
+                return
 
     def _fill(self, center, focus=False) -> None:
         """One display's page (the login or the users), in place of the one it shows."""
@@ -290,8 +299,11 @@ class Greeter:
         for m in (self.entry, self.progress, self.slot, self.links, self.hint, self.column, self.session_buttons):
             m.clear()
         self.guard = None
+        keys = getattr(self, "keys_win", None)
         for i, center in enumerate(self.center):
-            self._fill(center, focus=(i == 0))
+            # the field on the display that has the keyboard (the first one
+            # could be a display that gets no keys: typing went nowhere)
+            self._fill(center, focus=(center.get_root() is keys) if keys is not None else (i == 0))
         tex = self._wallpaper()
         for bd in self.backdrops:
             bd.texture = tex

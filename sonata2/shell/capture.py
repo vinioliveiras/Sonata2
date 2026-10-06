@@ -342,8 +342,13 @@ def encoders(preferred=None) -> list:
         found += [e for e, ok in (("nvenc", os.path.exists("/dev/nvidia0")),
                                   ("vaapi", os.path.exists(RENDER_NODE)), ("x264", True)) if ok]
     if preferred in found:
+        # within its own group only: wl-screenrec stays ahead of wf-recorder
+        # (a stored "vaapi" -- older settings, or one fallback -- put
+        # wf-recorder first, and the drawing palette was in the video again)
+        group = [e for e in found if (e in SCREENREC) == (preferred in SCREENREC)]
+        start = found.index(group[0])
         found.remove(preferred)
-        found.insert(0, preferred)
+        found.insert(start, preferred)
     return found
 
 

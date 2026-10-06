@@ -83,7 +83,9 @@ def system_sound(props: dict) -> bool:
     binary = (props.get("application.process.binary") or "").lower()
     name = (props.get("application.name") or "").lower()
     role = (props.get("media.role") or props.get("media.category") or "").lower()
-    return (binary in OWN_PLAYERS or name in OWN_PLAYERS or name.startswith("sonata")
+    # "Sonata" exactly (sounds.py marks its sounds so): a web app the user
+    # named "Sonata …", or "Sonatype", is an app with its own row
+    return (binary in OWN_PLAYERS or name in OWN_PLAYERS or name in ("sonata", "sonata2")
             or role in SKIP_ROLES or (props.get("event.id") or "") != "")
 
 

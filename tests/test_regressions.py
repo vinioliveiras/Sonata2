@@ -907,12 +907,22 @@ class CaptureTargetsTests(unittest.TestCase):
         self.assertIn("--no-hw", cmd)
         self.assertEqual(cmd[cmd.index("--audio-device") + 1], "spk.monitor")
         self.assertNotIn("--no-hw", C.recorder_command("/tmp/x.mp4", "1,1 9x9", None, None, "screenrec"))
+        # a stored wf-recorder encoder (older settings, or after one fallback)
+        # reorders wf-recorder's encoders only: wl-screenrec stays first
+        with mock.patch("shutil.which", lambda n: "/usr/bin/" + n):
+            for pref in ("vaapi", "x264", "nvenc"):
+                order = C.encoders(pref)
+                self.assertEqual(order[:2], ["screenrec", "screenrec-sw"], pref)
+                self.assertEqual(order[2], pref if pref in order else order[2])
+            self.assertEqual(C.encoders("screenrec-sw")[:2], ["screenrec-sw", "screenrec"])
 
     def test_encoder_order_and_fallback(self):
         from sonata2.shell import capture as C
-        order = C.encoders()
-        self.assertEqual(order[-1], "x264")                       # the CPU one always works, last
-        self.assertEqual(C.encoders("x264")[0], "x264")           # the one that worked first
+        from unittest import mock
+        with mock.patch("shutil.which", lambda n: None if n == "wl-screenrec" else "/usr/bin/" + n):
+            order = C.encoders()
+            self.assertEqual(order[-1], "x264")                   # the CPU one always works, last
+            self.assertEqual(C.encoders("x264")[0], "x264")       # the one that worked first
         cmd = C.recorder_command("/tmp/x.mp4", output="eDP-1", encoder="nvenc")
         self.assertIn("h264_nvenc", cmd)
         if cmd[0] == "nice":

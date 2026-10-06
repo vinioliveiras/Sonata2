@@ -235,6 +235,14 @@ class SystemSoundsTest(unittest.TestCase):
             {"application.name": "Spotify", "application.process.binary": "spotify"})
         self.assertEqual([s.name for s in got], ["Spotify"])
 
+    def test_apps_named_like_sonata_stay(self):
+        """Review: any name starting with "sonata" was hidden -- a web app the
+        user named "Sonata Radio", or Sonatype."""
+        got = self.streams({"application.name": "Sonata Radio", "application.process.binary": "WebKitWebProcess"},
+                           {"application.name": "Sonatype", "application.process.binary": "java"},
+                           {"application.name": "Sonata", "application.process.binary": "paplay"})
+        self.assertEqual(sorted(s.name for s in got), ["Sonata Radio", "Sonatype"])
+
     def test_player_marks_sonatas_sounds(self):
         from unittest import mock
         from sonata2 import sounds

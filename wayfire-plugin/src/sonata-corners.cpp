@@ -704,8 +704,14 @@ static void window_source_copy_frame(wlr_ext_image_capture_source_v1 *b,
     wlr_ext_image_copy_capture_frame_v1 *frame, wlr_ext_image_capture_source_v1_frame_event*)
 {
     auto s = window_source_t::from(b);
-    if (s->buffer.get_buffer() &&
-        wlr_ext_image_copy_capture_frame_v1_copy_buffer(frame, s->buffer.get_buffer(), wf::get_core().renderer))
+    if (!s->buffer.get_buffer())
+    {
+        /* nothing to copy: say so, or the client waits for this frame forever */
+        wlr_ext_image_copy_capture_frame_v1_fail(frame, EXT_IMAGE_COPY_CAPTURE_FRAME_V1_FAILURE_REASON_UNKNOWN);
+        return;
+    }
+
+    if (wlr_ext_image_copy_capture_frame_v1_copy_buffer(frame, s->buffer.get_buffer(), wf::get_core().renderer))
     {
         timespec now;
         clock_gettime(CLOCK_MONOTONIC, &now);
@@ -972,7 +978,18 @@ struct output_source_t
     int started    = 0;
     bool cursors   = false;
     bool pending   = false;
+    bool first     = true;
     wf::wl_idle_call idle;
+    /* frames at the display's pace: one per repaint it was asked for (a
+     * request re-rendered at once, and a recorder asking again at once got
+     * hundreds of identical frames a second) */
+    wf::signal::connection_t<wf::frame_done_signal> on_frame = [=] (wf::frame_done_signal*)
+    {
+        if (pending)
+        {
+            idle.run_once([this] () { produce(); });   /* after the frame, not inside it */
+        }
+    };
 
     static output_source_t *from(wlr_ext_image_capture_source_v1 *b)
     {
@@ -1023,6 +1040,7 @@ struct output_source_t
         if (buffer.allocate(wf::dimensions(og), scale) == wf::buffer_reallocation_result_t::FAILED)
         {
             buffer.free();
+            frame_event(0, 0);                /* no picture: copy_frame fails the client's frame */
             return;
         }
 
@@ -1051,8 +1069,13 @@ struct output_source_t
             paint_cursors();
         }
 
+        frame_event(size.width, size.height);
+    }
+
+    void frame_event(int w, int h)
+    {
         pixman_region32_t damage;
-        pixman_region32_init_rect(&damage, 0, 0, size.width, size.height);
+        pixman_region32_init_rect(&damage, 0, 0, w, h);
         wlr_ext_image_capture_source_v1_frame_event ev{};
         ev.damage = &damage;
         wl_signal_emit_mutable(&base.events.frame, &ev);
@@ -1092,7 +1115,11 @@ struct output_source_t
 static void output_source_start(wlr_ext_image_capture_source_v1 *b, bool with_cursors)
 {
     auto s = output_source_t::from(b);
-    s->started++;
+    if (!s->started++)
+    {
+        s->first = true;                /* a new capture: its first picture at once */
+    }
+
     s->cursors = s->cursors || with_cursors;
 }
 
@@ -1109,10 +1136,19 @@ static void output_source_stop(wlr_ext_image_capture_source_v1 *b)
 static void output_source_request_frame(wlr_ext_image_capture_source_v1 *b, bool)
 {
     auto s = output_source_t::from(b);
-    if (!s->pending)
+    if (s->pending)
     {
-        s->pending = true;
+        return;
+    }
+
+    s->pending = true;
+    if (s->first || !s->output)
+    {
+        s->first = false;               /* the first picture at once */
         s->idle.run_once([s] () { s->produce(); });
+    } else
+    {
+        s->output->render->schedule_redraw();     /* the next one with the display's next frame */
     }
 }
 
@@ -1120,8 +1156,14 @@ static void output_source_copy_frame(wlr_ext_image_capture_source_v1 *b,
     wlr_ext_image_copy_capture_frame_v1 *frame, wlr_ext_image_capture_source_v1_frame_event*)
 {
     auto s = output_source_t::from(b);
-    if (s->buffer.get_buffer() &&
-        wlr_ext_image_copy_capture_frame_v1_copy_buffer(frame, s->buffer.get_buffer(), wf::get_core().renderer))
+    if (!s->buffer.get_buffer())
+    {
+        /* nothing to copy: say so, or the client waits for this frame forever */
+        wlr_ext_image_copy_capture_frame_v1_fail(frame, EXT_IMAGE_COPY_CAPTURE_FRAME_V1_FAILURE_REASON_UNKNOWN);
+        return;
+    }
+
+    if (wlr_ext_image_copy_capture_frame_v1_copy_buffer(frame, s->buffer.get_buffer(), wf::get_core().renderer))
     {
         timespec now;
         clock_gettime(CLOCK_MONOTONIC, &now);
@@ -1173,6 +1215,7 @@ class output_capture_t
             auto src = std::make_unique<output_source_t>();
             wlr_ext_image_capture_source_v1_init(&src->base, &output_source_impl);
             src->output = out;
+            out->connect(&src->on_frame);
             auto sz = src->expected_size();
             src->constraints(sz.width, sz.height);
             it = self->sources.emplace(out, std::move(src)).first;
@@ -1211,6 +1254,7 @@ class output_capture_t
         if (it != sources.end())
         {
             it->second->output = nullptr;
+            it->second->on_frame.disconnect();
             wlr_ext_image_capture_source_v1_finish(&it->second->base);
             retired.push_back(std::move(it->second));
             sources.erase(it);
@@ -1249,6 +1293,7 @@ class output_capture_t
         for (auto& [o, src] : sources)
         {
             src->output = nullptr;
+            src->on_frame.disconnect();
             wlr_ext_image_capture_source_v1_finish(&src->base);
         }
 
@@ -1382,6 +1427,14 @@ class fps_counter_t
         auto view = front_view();
         watch(view ? view->get_wlr_surface() : nullptr);
         trim(now);
+        /* frames only age out on the next commit: an app that stopped drawing
+         * (paused, frozen) kept its last seconds on the graph for good */
+        int64_t us = now_us();
+        while (!micros.empty() && (us - micros.front() > FRAMETIME_US))
+        {
+            micros.pop_front();
+        }
+
         auto response = wf::ipc::json_ok();
         response["fps"]   = (int)stamps.size();
         response["ready"] = (bool)(surface && (now - since >= 1000));    /* a full second counted */
@@ -1792,6 +1845,13 @@ class sonata_corners_t : public wf::plugin_interface_t
         for (auto& v : wf::get_core().get_all_views())
         {
             if (auto t = v->get_transformed_node()->get_transformer(transformer_name))
+            {
+                v->get_transformed_node()->rem_transformer(t);
+            }
+
+            /* the palette's: its node's code goes with this library (a
+             * reload would render through freed code) */
+            if (auto t = v->get_transformed_node()->get_transformer(capture_hide_name))
             {
                 v->get_transformed_node()->rem_transformer(t);
             }
