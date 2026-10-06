@@ -1275,14 +1275,12 @@ class Settings(Adw.ApplicationWindow):
                 mode.add(Adw.ActionRow(title="Energy mode", subtitle="power-profiles-daemon not available"))
         system.run_async(lambda: (system.battery(), system.on_ac(), system.power_profile()), fill)
         screen = group("Display")
-        try:
-            cur = int(system.wayfire_get("idle", "dpms_timeout", "600") or 600)
-        except ValueError:
-            cur = 600
+        from .. import displaysleep
+        cur = displaysleep.seconds()          # Sonata's own (Wayfire's display timeout stays off)
         opts = [(60, "1 minute"), (120, "2 minutes"), (300, "5 minutes"), (600, "10 minutes"),
                 (1200, "20 minutes"), (1800, "30 minutes"), (-1, "Never")]
         screen.add(combo_row("Turn display off after", opts, min((o[0] for o in opts), key=lambda v: abs(v - cur)),
-                             lambda v: system.run_async(system.wayfire_set, None, "idle", "dpms_timeout", v)))
+                             lambda v: system.run_async(displaysleep.set_seconds, None, v)))
         return [info, mode, screen]
 
     def _page_wallpaper(self):

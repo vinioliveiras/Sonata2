@@ -22,6 +22,10 @@ class LockDisplayTest(unittest.TestCase):
         p = mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": self.run, "XDG_CONFIG_HOME": cfg})
         p.start()
         self.addCleanup(p.stop)
+        from sonata2 import config
+        c = mock.patch.object(config, "CONFIG_DIR", cfg)          # (displaysleep's own choice)
+        c.start()
+        self.addCleanup(c.stop)
 
     def ini_text(self):
         with open(self.ini) as f:
@@ -79,6 +83,37 @@ class LockDisplayTest(unittest.TestCase):
         self.assertIsNone(LD.dark_seconds())                 # (from what was saved at the lock)
         LD.unlocked()
         self.assertIn("dpms_timeout = -1", self.ini_text())
+
+    def test_wayfire_never_powers_the_display_off(self):
+        """Vini: the screen went black and came back only with the lid --
+        Wayfire's own display timeout (10 min) powered the panel off outside
+        the lock too. It stays off; the time is Sonata's own, kept from
+        what Wayfire had."""
+        from sonata2 import displaysleep as DS
+        self.assertEqual(DS.seconds(), 600)                        # taken over from Wayfire's
+        self.assertTrue(DS.compositor_off())
+        self.assertIn("dpms_timeout = -1", self.ini_text())
+        self.assertFalse(DS.compositor_off())                      # already off
+        self.assertEqual(DS.seconds(), 600)                        # still yours
+        DS.set_seconds(300)
+        self.assertEqual(DS.seconds(), 300)
+        self.assertIn("dpms_timeout = -1", self.ini_text())
+        self.assertEqual(LD.dark_seconds(), LD.LOCKED_DPMS_S)
+        DS.set_seconds(-1)
+        self.assertIsNone(LD.dark_seconds())                       # never: never, locked too
+
+    def test_everything_reads_sonatas_time(self):
+        import pathlib
+        from sonata2.shell import idlelock
+        from sonata2.settings import app
+        self.assertIn("displaysleep.compositor_off()", inspect.getsource(idlelock.IdleLock.__init__))
+        self.assertIn("displaysleep.seconds()", inspect.getsource(idlelock.IdleLock.apply))
+        self.assertNotIn('"idle", "dpms_timeout"', inspect.getsource(idlelock.IdleLock.apply))
+        src = inspect.getsource(app)
+        self.assertIn("displaysleep.set_seconds", src)
+        self.assertNotIn('wayfire_set, None, "idle", "dpms_timeout"', src)
+        ini = (pathlib.Path(__file__).resolve().parent.parent / "config" / "wayfire.ini").read_text()
+        self.assertRegex(ini, r"\[idle\][^\[]*dpms_timeout = -1")
 
     def test_displays_without_wlopm(self):
         with mock.patch.object(LD.shutil, "which", return_value=None):

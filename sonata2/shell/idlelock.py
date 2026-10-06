@@ -19,7 +19,7 @@ import subprocess
 import sys
 import time
 
-from .. import config, wfconfig
+from .. import config
 
 # lock_after: seconds after the display turns off (0 = immediately), -1 = never.
 # On by default (Vini): locked when the display turns off and before sleep, like macOS
@@ -151,6 +151,8 @@ class IdleLock:
     def __init__(self):
         from gi.repository import GLib
         self.proc, self.cmd = None, None
+        from .. import displaysleep
+        displaysleep.compositor_off()           # Sonata darkens the display itself (displaysleep.py)
         self.policy = self._policy()            # input idle: only media keeps it awake (idlepolicy.py)
         self._mon = config.watch("security", self.apply)
         if not is_locked():                     # a lock screen that crashed: the display's timeout back
@@ -193,12 +195,8 @@ class IdleLock:
         return idlepolicy.IdlePolicy(w, dark, lock)
 
     def apply(self, *_a) -> None:
-        from . import lockdisplay
-        try:                                    # (locked: the timeout from before the lock)
-            dpms = int(lockdisplay.saved().get("idle/dpms_timeout") or
-                       wfconfig.wayfire_get("idle", "dpms_timeout", "600") or 600)
-        except ValueError:
-            dpms = 600
+        from .. import displaysleep
+        dpms = displaysleep.seconds()           # Sonata's own: Wayfire's timeout stays off
         cfg = config.load("security", DEFAULTS)
         if self.policy is not None:             # timeouts here; swayidle only locks before sleep
             self.policy.apply(dpms, int(cfg.get("lock_after", -1)))

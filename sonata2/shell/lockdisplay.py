@@ -49,11 +49,8 @@ def dark_seconds():
     """How long the locked screen stays lit: LOCKED_DPMS_S, or your own
     shorter time; None when you chose that the display never turns off
     (Vini: set to never, it went dark behind the lock anyway)."""
-    try:
-        prev = int(saved().get("idle/dpms_timeout") or
-                   wfconfig.wayfire_get("idle", "dpms_timeout", "600") or 600)
-    except ValueError:
-        prev = 600
+    from .. import displaysleep
+    prev = displaysleep.seconds()
     if prev <= 0:
         return None
     return min(prev, LOCKED_DPMS_S)
