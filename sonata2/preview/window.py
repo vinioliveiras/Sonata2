@@ -388,8 +388,9 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self.set_zoom(None)                         # the whole picture
         self.markup = MarkupLayer(self._picture_rect, lambda: self.texture)
         self.overlay.add_overlay(self.markup)
-        self.markup_rev.set_child(MarkupBar(self.markup, lambda: self.end_markup(keep=True),
-                                            lambda: self.end_markup(keep=False)))
+        bar = MarkupBar(self.markup, lambda: self.end_markup(keep=True), lambda: self.end_markup(keep=False))
+        bar.add_css_class("docked")                       # opaque, like the toolbar above it
+        self.markup_rev.set_child(bar)
         self.markup_rev.set_reveal_child(True)
         self.markup_btn.add_css_class("on")
         self.markup.grab_focus()

@@ -80,6 +80,16 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual(out.getpixel((200, 200)), (0, 0, 0))       # nothing in between
 
 
+def _buttons(w):
+    out, c = [], w.get_first_child()
+    while c is not None:
+        if isinstance(c, Gtk.Button):
+            out.append(c)
+        out += _buttons(c)
+        c = c.get_next_sibling()
+    return out
+
+
 class LayerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -96,6 +106,27 @@ class LayerTest(unittest.TestCase):
         lay._update(None, dx / 2, dy / 2)
         lay._update(None, dx, dy)
         lay._end(None, dx, dy)
+
+    def test_trash_deletes_every_mark(self):
+        """Vini: the trash button only removed the selected mark (none
+        selected: nothing). It clears them all; Undo brings them back."""
+        lay = self.layer()
+        lay.items = [{"t": "rect", "c": "#ff0000", "w": 0.02, "p": [[0.1, 0.1], [0.4, 0.4]]},
+                     {"t": "line", "c": "#00ff00", "w": 0.02, "p": [[0.5, 0.5], [0.9, 0.9]]}]
+        bar = M.MarkupBar(lay, lambda: None, lambda: None)
+        win = Gtk.Window(child=bar)
+        win.present()
+        self.addCleanup(win.destroy)
+        trash = [b for b in _buttons(bar) if b.get_tooltip_text() == "Delete all marks"]
+        self.assertEqual(len(trash), 1)
+        trash[0].emit("clicked")
+        self.assertEqual(lay.items, [])
+        lay.undo()
+        self.assertEqual(len(lay.items), 2)
+        trash[0].emit("clicked")
+        trash[0].emit("clicked")                                  # nothing left: no empty undo step
+        lay.undo()
+        self.assertEqual(len(lay.items), 2)
 
     def test_draw_select_move_recolour_delete_undo(self):
         lay = self.layer()
@@ -228,6 +259,32 @@ class PreviewMarkupTest(unittest.TestCase):
         w.markup_button()
         w.end_markup(keep=False)                                   # Cancel: nothing
         self.assertEqual(w.edits.ops, [])
+        w.destroy()
+
+    def test_markup_bar_is_opaque(self):
+        """Vini: the bar with the drawing tools was see-through (the window
+        paints no background of its own): it is as opaque as the toolbar."""
+        from PIL import Image
+        from sonata2 import ui
+        from sonata2.preview.window import PreviewWindow
+        import layoutcheck as LC
+        Adw.init()
+        ui.setup()
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "shot.png")
+        Image.new("RGB", (600, 400), "magenta").save(path)
+        app = Adw.Application(application_id="io.github.vinioliveiras.sonata2.markupopaque")
+        app.register(None)
+        w = PreviewWindow(app, path, markup=True)
+        w.present()
+        spin(1200)
+        bar = w.markup_rev.get_child()
+        for dark in (False, True):
+            Adw.StyleManager.get_default().set_color_scheme(
+                Adw.ColorScheme.FORCE_DARK if dark else Adw.ColorScheme.FORCE_LIGHT)
+            spin(200)
+            self.assertEqual(LC.see_through(bar), 0.0, f"dark={dark}")
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.DEFAULT)
         w.destroy()
 
     def test_screenshot_done_saves_and_copies(self):

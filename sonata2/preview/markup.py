@@ -36,6 +36,10 @@ PIXEL = 0.012                                    # pixelate: a block, of the pic
 
 ui.register("""
 .pv-markup { padding: 4px 8px; border-bottom: 1px solid %(separator)s; }
+/* under Preview's toolbar: the window paints no background of its own (the
+ * title bar's glass): without one the picture showed through (Vini) */
+.pv-markup.docked { background: %(titlebar_bg)s; }
+window:backdrop .pv-markup.docked { background: %(titlebar_bg_inactive)s; }
 .pv-markup button.mk { min-width: 30px; min-height: 26px; padding: 0; border-radius: 7px; background: none;
   border: none; box-shadow: none; color: %(label)s; }
 .pv-markup button.mk:hover { background: %(tool_hover)s; }
@@ -427,6 +431,14 @@ class MarkupLayer(Gtk.DrawingArea):
         if self.sel is not None:
             self._snapshot()
             del self.items[self.sel]
+            self.sel = None
+            self._changed()
+
+    def clear(self) -> None:
+        """Every mark goes (the trash button, Vini); one Undo brings them back."""
+        if self.items:
+            self._snapshot()
+            self.items = []
             self.sel = None
             self._changed()
 
@@ -822,7 +834,8 @@ for _k in SHAPES:
 
 
 class MarkupBar(Gtk.Box):
-    """Tools | colours | width | undo redo delete | Cancel Done, for a MarkupLayer."""
+    """Tools | colours | width | undo redo clear | Cancel Done, for a MarkupLayer
+    (the Delete key removes the selected mark; the trash, all of them)."""
     TOOLS = (("select", "Select (move, resize, recolour; Delete removes)"), ("pen", "Pen"),
              ("hl", "Highlighter"), ("shape", "Shapes"), ("text", "Text"), ("emoji", "Emoji"),
              ("step", "Numbered steps"), ("pixelate", "Pixelate (hide something)"))
@@ -857,7 +870,7 @@ class MarkupBar(Gtk.Box):
         box.append(wb)
         for name, tip, fn in actions if actions is not None else (
                 ("undo", "Undo", layer.undo), ("redo", "Redo", layer.redo),
-                ("trash", "Delete the selected mark", layer.delete_selected)):
+                ("trash", "Delete all marks", layer.clear)):
             b = Gtk.Button(css_classes=["mk"], tooltip_text=tip, can_focus=False)
             b.set_child(_glyph(name))
             b.connect("clicked", lambda _b, f=fn: f())

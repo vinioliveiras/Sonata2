@@ -186,3 +186,23 @@ def shot(widget, filename: str):
     out = os.path.join(folder, filename + ".png")
     tex.save_to_png(out)
     return out
+
+
+def picture(widget):
+    """The widget drawn on its own (no window behind it), as a PIL RGBA image."""
+    import io
+    from PIL import Image
+    w, h = widget.get_width(), widget.get_height()
+    snap = Gtk.Snapshot()
+    Gtk.WidgetPaintable(widget=widget).snapshot(snap, w, h)
+    node = snap.to_node()
+    tex = widget.get_native().get_renderer().render_texture(node, None)
+    return Image.open(io.BytesIO(tex.save_to_png_bytes().get_data())).convert("RGBA")
+
+
+def see_through(widget, min_alpha: int = 250) -> float:
+    """Share of the widget's pixels the window behind would show through (a
+    bar that should be opaque: 0)."""
+    im = picture(widget)
+    alpha = im.getchannel("A").getdata()
+    return sum(1 for a in alpha if a < min_alpha) / max(1, len(alpha))
