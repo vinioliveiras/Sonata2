@@ -315,7 +315,7 @@ class SettingsTest(unittest.TestCase):
         self.assertIn("win.select(DEFAULT_SETTINGS_PAGE)", src)
         self.assertEqual(ui.window.SIDEBAR_W, 280)
         root = os.path.join(os.path.dirname(S.__file__), "..")
-        for f in ("settings/app.py", "files/window.py", "diskutil/window.py", "music/window.py",
+        for f in ("settings/app.py", "files/window.py", "diskutil/window.py",
                   "calendar/window.py", "notes/window.py", "activity/performance.py"):
             self.assertIn("SIDEBAR_W", open(os.path.join(root, f)).read(), f)
         self.assertFalse(_re.search(r"sidebar\.set_size_request\(\d", open(os.path.join(root, "diskutil/window.py")).read()))

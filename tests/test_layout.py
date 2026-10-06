@@ -152,7 +152,8 @@ class MenuBarLayout(Base):
                 what = f"menu bar {width} ({theme})"
                 self.assertEqual((bar.get_width(), bar.get_height()), (width, T.BAR_H), what)
                 self.clean(bar, what)
-                cut = [p for p in LC.ellipsized(bar) if "topbar-item.app" not in p]
+                cut = [f"{LC.name(w)} is cut" for w in LC.walk(bar) if isinstance(w, Gtk.Label)
+                       and w.get_layout().is_ellipsized() and not w.is_ancestor(bar.app_btn)]
                 self.assertEqual(cut, [], f"{what}: only the app name may shorten")
                 for w in LC.walk(bar):                                # everything on one middle line
                     if w.has_css_class("topbar-item"):

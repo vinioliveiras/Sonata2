@@ -182,6 +182,26 @@ def write_desktop_file(filename: str, text: str) -> str:
     return path
 
 
+# Sonata apps that were removed: their launchers go from Launchpad and Open With
+# (Music: songs play in Videos; better music apps are one click away in Bazaar)
+RETIRED = ("io.github.vinioliveiras.sonata2.music.desktop",)
+
+
+def remove_retired() -> list:
+    """Delete the launchers RETIRED lists; the paths removed."""
+    import os
+    from gi.repository import GLib
+    gone = []
+    for name in RETIRED:
+        path = os.path.join(GLib.get_user_data_dir(), "applications", name)
+        try:
+            os.unlink(path)
+            gone.append(path)
+        except OSError:
+            pass
+    return gone
+
+
 def app_dirs() -> list:
     """Every applications folder, highest priority first: the user's, the
     XDG_DATA_DIRS ones, and Flatpak's exports even when the session's

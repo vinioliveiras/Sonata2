@@ -168,6 +168,115 @@ class WindowTest(unittest.TestCase):
         self.assertIn("Name=Videos", text)
         self.assertIn("video/mp4;", text)
         self.assertIn("Exec=sonata2 videos %F", text)
+        self.assertIn("audio/mpeg;", text)                     # songs too (Music was removed)
+        self.assertIn("audio/flac;", text)
+
+
+def _wav(path, seconds=1.0, rate=8000):
+    import struct
+    data = b"\0\0" * int(rate * seconds)
+    with open(path, "wb") as f:
+        f.write(b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt " +
+                struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16) + b"data" +
+                struct.pack("<I", len(data)) + data)
+
+
+class SongTest(unittest.TestCase):
+    """Vini: Music was removed; MP3s (and other songs) play in Videos, like
+    QuickTime -- a square window with the cover, controls always shown."""
+
+    @classmethod
+    def setUpClass(cls):
+        Adw.init()
+        ui.setup()
+        cls.app = Adw.Application(application_id="io.test.videos.songs")
+        cls.app.register(None)
+
+    def test_kinds_and_titles(self):
+        self.assertTrue(vw.is_audio("/m/a.mp3"))
+        self.assertTrue(vw.is_audio("/m/a.flac"))
+        self.assertTrue(vw.is_audio("/m/a.m4a"))
+        self.assertFalse(vw.is_audio("/m/a.mp4"))
+        self.assertFalse(vw.is_audio("/m/a.mkv"))
+        self.assertEqual(vw.song_title({"title": "Song", "artist": "Band"}, "/m/a.mp3"), "Band — Song")
+        self.assertEqual(vw.song_title({"title": "Song"}, "/m/a.mp3"), "Song")
+        self.assertEqual(vw.song_title({}, "/m/a.mp3"), "a.mp3")
+
+    def test_songs_play_through_classic_playbin(self):
+        """GTK's backend (playbin3) aborted the app on some MP3s: songs use playbin."""
+        from sonata2.videos import gststream
+        if not gststream.available():
+            self.skipTest("no GStreamer here")
+        path = os.path.join(tempfile.mkdtemp(), "beep.wav")
+        _wav(path)
+        s = vw.media_file(path)
+        self.assertIsInstance(s, gststream.PlaybinStream)
+        self.assertEqual(s.bin.get_factory().get_name(), "playbin")
+        end = GLib.get_monotonic_time() + 3_000_000
+        while not s.is_prepared() and GLib.get_monotonic_time() < end:
+            settle(50)
+        self.assertTrue(s.is_prepared())
+        self.assertAlmostEqual(s.get_duration() / 1e6, 1.0, delta=0.05)
+        s.set_volume(0)
+        s.seek(500_000)
+        self.assertEqual(s.get_timestamp(), 500_000)
+        s.play()
+        self.assertTrue(s.get_playing())
+        s.pause()
+        s.close()
+
+    def test_song_window(self):
+        import shutil
+        from test_audiotags import make_mp3
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "song.mp3")
+        import io
+        from PIL import Image
+        png = io.BytesIO()
+        Image.new("RGB", (8, 8), (200, 40, 90)).save(png, "PNG")
+        make_mp3(path, title="Song", artist="Band", cover=png.getvalue())
+        plain = os.path.join(d, "plain.mp3")
+        shutil.copy(path, plain)
+        make_mp3(plain, title="Plain", artist="", cover=None)
+        win = vw.VideoWindow(self.app, path, stream_factory=fake)
+        win.present()
+        settle(400)
+        self.assertTrue(win.audio)
+        self.assertTrue(win.has_css_class("vd-audio"))
+        self.assertEqual(tuple(win.get_default_size()), (vw.AUDIO_SIZE, vw.AUDIO_SIZE))
+        self.assertEqual(win.get_title(), "Band — Song")
+        self.assertIsInstance(win.picture.get_paintable(), Gdk.Texture)       # the cover
+        self.assertFalse(win.art.get_visible())
+        self.assertFalse(win.full_btn.get_visible())
+        win.toggle_fullscreen()                                                # no full screen for a song
+        settle(50)
+        self.assertFalse(win.is_fullscreen())
+        win.toggle_play()
+        self.assertEqual(win._hide_src, 0)                                     # controls never fade
+        win._hide_now()
+        self.assertFalse(win.hud.has_css_class("hidden"))
+        win.open(plain)                                                        # no cover: the note
+        settle(400)
+        self.assertEqual(win.get_title(), "Plain")
+        self.assertIsNone(win.picture.get_paintable())
+        self.assertTrue(win.art.get_visible())
+        win.open("/movies/clip.mp4")                                           # a movie again
+        settle(100)
+        self.assertFalse(win.audio)
+        self.assertFalse(win.art.get_visible())
+        self.assertTrue(win.full_btn.get_visible())
+        self.assertIs(win.picture.get_paintable(), win.stream)
+        win.destroy()
+
+    def test_music_launcher_goes(self):
+        from sonata2 import apps
+        apps_dir = os.path.join(GLib.get_user_data_dir(), "applications")
+        os.makedirs(apps_dir, exist_ok=True)
+        old = os.path.join(apps_dir, "io.github.vinioliveiras.sonata2.music.desktop")
+        open(old, "w").close()
+        self.assertEqual(apps.remove_retired(), [old])
+        self.assertFalse(os.path.exists(old))
+        self.assertEqual(apps.remove_retired(), [])
 
 
 if __name__ == "__main__":

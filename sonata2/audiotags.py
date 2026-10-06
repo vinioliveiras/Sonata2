@@ -1,5 +1,5 @@
-"""Audio tags for Music: title, artist, album, album artist, track number,
-year, genre, duration and embedded cover art.
+"""Audio tags (Videos shows them for a song): title, artist, album, album
+artist, track number, year, genre, duration and embedded cover art.
 
 mutagen reads every format when it is installed. Without it a small
 built-in reader covers the common cases: ID3v2.2/2.3/2.4 (MP3, with the

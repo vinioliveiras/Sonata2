@@ -6,7 +6,7 @@ shadow) to docs/screenshots/.
 Usage (from the repository root; needs Xvfb, GTK 4, libadwaita, Pillow):
 
     xvfb-run -a -s "-screen 0 1920x1200x24" python3 tools/readme-shots.py
-    xvfb-run -a -s "-screen 0 1920x1200x24" python3 tools/readme-shots.py files music-dark
+    xvfb-run -a -s "-screen 0 1920x1200x24" python3 tools/readme-shots.py files notes-dark
     python3 tools/readme-shots.py --list
 
 Privacy: nothing of the machine it runs on may show. Every capture runs in
@@ -69,8 +69,6 @@ SHOTS = {
     "notes-dark": ("dark", (1080, 660)),
     "reminders": ("light", (1080, 660)),
     "calendar": ("light", (1120, 720)),
-    "music": ("light", (1120, 700)),
-    "music-dark": ("dark", (1120, 700)),
     "taskmanager": ("light", (1060, 680)),
     "taskmanager-dark": ("dark", (1060, 680)),
     "taskmanager-performance": ("light", (1060, 680)),
@@ -498,41 +496,6 @@ def shot_calendar(app, name, size):
     return win, False
 
 
-def shot_music(app, name, size):
-    import time
-    from sonata2.music import library as lib
-    from sonata2.music import player
-    from sonata2.music import window as mw
-    player.backend_available = lambda: True               # no "media backend missing" banner
-    home = os.environ["HOME"]
-    art = os.path.join(home, ".cache", "demo-art")
-    os.makedirs(art, exist_ok=True)
-    library = lib.Library(os.path.join(home, "Music"), cache=os.path.join(art, "cache.json"),
-                          data=os.path.join(art, "data"), art=art)
-    tracks, t0 = {}, time.time() - 30 * 86400
-    for a, (album, artist, year, genre, cols, motif, songs) in enumerate(ALBUMS):
-        pic = os.path.join(art, f"cover{a}.jpg")
-        if not os.path.exists(pic):
-            cover(pic, a, cols[0], cols[1], motif)
-        for i, title in enumerate(songs):
-            p = os.path.join(library.root, artist, album, f"{i + 1:02d} {title}.flac")
-            tracks[p] = {"path": p, "title": title, "artist": artist, "album": album, "album_artist": artist,
-                         "track": i + 1, "disc": 1, "year": year, "genre": genre, "duration": 170 + 23 * i,
-                         "art": pic, "thumb": pic, "added": t0 + a * 3600 + i, "mtime": 0, "size": 0}
-    library.tracks = tracks
-    win = mw.MusicWindow(app, library=library, scan=False, mpris=False)
-    win.populate()
-    win.show("albums")
-    first = library.albums()[0]["tracks"]                  # a song in the player (paused)
-    win.queue.set([t["path"] for t in first], 3)
-    win.player.path = win.queue.current                    # loaded, not playing (nothing to decode)
-    win._update_lcd()
-    win._update_time(83)
-    _present(win, size)
-    settle(1200)
-    return win, False
-
-
 # -- Task Manager: an invented desktop session instead of this machine's /proc -----------------------
 MY_UID = 1000
 # (pid, ppid, comm, exe, cmdline, owner, threads, MB, cpu % of one core)
@@ -565,7 +528,7 @@ PROCS = [
     (2050, 2001, "RDD Process", "firefox", "/usr/lib/firefox/firefox -contentproc rdd", "user", 6, 44, 0.8),
     (2051, 2001, "Socket Process", "firefox", "/usr/lib/firefox/firefox -contentproc socket", "user", 5, 28, 0.1),
     (2300, 1230, "python3", "python3", "python3 -m sonata2 files", "user", 7, 118, 0.3),
-    (2320, 1230, "python3", "python3", "python3 -m sonata2 music", "user", 9, 142, 1.9),
+    (2320, 1230, "python3", "python3", "python3 -m sonata2 videos", "user", 9, 142, 1.9),
     (2340, 1230, "python3", "python3", "python3 -m sonata2 notes", "user", 5, 96, 0.1),
     (2360, 1230, "python3", "python3", "python3 -m sonata2 terminal", "user", 5, 84, 0.2),
     (2361, 2360, "zsh", "zsh", "-zsh", "user", 1, 6, 0.0),
@@ -577,7 +540,7 @@ APPS = {  # app key -> (icon name, display name)
     "firefox": ("firefox", "Firefox"), "telegram-desktop": ("telegram", "Telegram"),
     "thunderbird": ("thunderbird", "Thunderbird"),
     "io.github.vinioliveiras.sonata2.files": ("system-file-manager", "Files"),
-    "io.github.vinioliveiras.sonata2.music": ("gnome-music", "Music"),
+    "io.github.vinioliveiras.sonata2.videos": ("sonata-videos", "Videos"),
     "io.github.vinioliveiras.sonata2.notes": ("sonata-notes", "Notes"),
     "io.github.vinioliveiras.sonata2.terminal": ("utilities-terminal", "Terminal"),
     "io.github.vinioliveiras.sonata2.activity": ("utilities-system-monitor", "Task Manager"),
@@ -781,9 +744,9 @@ SCENES = {
 }
 SCENE_ACTIVE = {"files-full": SONATA + "files", "settings-full": "sonata2-settings"}
 DOCK_PINS = [SONATA + "files", "sonata2-launchpad", "firefox", "thunderbird", SONATA + "calendar", SONATA + "notes",
-             SONATA + "music", SONATA + "preview", SONATA + "textedit", SONATA + "terminal", SONATA + "activity",
+             SONATA + "videos", SONATA + "preview", SONATA + "textedit", SONATA + "terminal", SONATA + "activity",
              "sonata2-settings"]
-RUNNING = [SONATA + "files", SONATA + "files", SONATA + "files", "firefox", SONATA + "music", SONATA + "music",
+RUNNING = [SONATA + "files", SONATA + "files", SONATA + "files", "firefox", SONATA + "videos", SONATA + "videos",
            SONATA + "notes"]                    # windows: 3 Files, 2 Music, 1 each (the dots)
 # other apps in the demo's Launchpad: (desktop id, name, icon, categories)
 DEMO_APPS = [
@@ -818,7 +781,7 @@ def install_demo_apps() -> None:
                     ("textedit.window", "textedit_desktop_file"), ("preview.window", "preview_desktop_file"),
                     ("terminal.window", "terminal_desktop_file"), ("notes.window", "notes_desktop_file"),
                     ("activity.window", "activity_desktop_file"), ("videos.window", "videos_desktop_file"),
-                    ("music.window", "music_desktop_file"), ("diskutil.window", "diskutil_desktop_file"),
+                    ("diskutil.window", "diskutil_desktop_file"),
                     ("calendar.window", "calendar_desktop_file")):
         getattr(importlib.import_module("sonata2." + mod), fn)("sonata2")
     for did, name, icon, cats in DEMO_APPS:
@@ -1158,7 +1121,7 @@ def hero(raws: dict, out_path: str) -> int:
     size = (1400, 860)
     bg = wall(size)
     canvas = bg.copy()
-    plan = (("music", .62, (40, 40)), ("calendar", .60, (690, 56)), ("notes", .60, (716, 400)),
+    plan = (("taskmanager", .62, (40, 40)), ("calendar", .60, (690, 56)), ("notes", .60, (716, 400)),
             ("files", .74, (170, 370)))
     for name, s, pos in plan:
         if name not in raws:
@@ -1209,7 +1172,7 @@ def main(argv) -> int:
         bus = ["dbus-run-session", "--"] if shutil.which("dbus-run-session") else []
         need = set(wanted)
         if "hero" in need:
-            need |= {"music", "calendar", "notes", "files"}
+            need |= {"taskmanager", "calendar", "notes", "files"}
         for name in reversed(list(SCENES)):              # what the full-screen shots are made from
             if name in need:
                 need.add(SCENES[name][1])

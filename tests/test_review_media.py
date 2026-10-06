@@ -1,11 +1,10 @@
 """Review tests for the media area: Task Manager's /proc parsing and pages
-data (sonata2/activity), Music's tags / library / queue / MPRIS (sonata2/music),
+data (sonata2/activity),
 Camera helpers (sonata2/camera) and game controllers (sonata2/gamepad).
 Headless and fast; everything on temp dirs and fakes.
 Run: xvfb-run -a python3 -m unittest tests.test_review_media -v"""
 import os
 import shutil
-import struct
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -26,8 +25,6 @@ from sonata2 import gamemode  # noqa: E402
 from sonata2.activity import manage, procfs  # noqa: E402
 from sonata2.activity.procfs import CLK_TCK, Sampler  # noqa: E402
 from sonata2.gamepad import evdev as E, service as S  # noqa: E402
-from sonata2.music import library as lib, mpris, tags  # noqa: E402
-from sonata2.music.queue import REPEAT_ALL, REPEAT_OFF, Queue  # noqa: E402
 
 
 def _write(path, text, mode="w"):
@@ -214,208 +211,6 @@ class ManageEdgeTest(unittest.TestCase):
         store.splice(0, 0, objs[:3])
         sync_store(store, [objs[2], objs[3], objs[0]])
         self.assertEqual([store.get_item(i) for i in range(store.get_n_items())], [objs[0], objs[2], objs[3]])
-
-
-# == Music =====================================================================================
-def _atom(kind: bytes, payload: bytes) -> bytes:
-    return struct.pack(">I", 8 + len(payload)) + kind + payload
-
-
-def _mp4(title="Mp4 Song", track=5, seconds=12, cover=b"\x89PNGxx"):
-    mvhd = _atom(b"mvhd", b"\x00\x00\x00\x00" + b"\x00" * 8 + struct.pack(">II", 1000, seconds * 1000) + b"\x00" * 80)
-    data = lambda v: _atom(b"data", b"\x00\x00\x00\x01\x00\x00\x00\x00" + v)  # noqa: E731
-    ilst = _atom(b"ilst", _atom(b"\xa9nam", data(title.encode())) + _atom(b"\xa9ART", data(b"Mp4 Artist"))
-                 + _atom(b"trkn", data(struct.pack(">HHHH", 0, track, 10, 0))) + _atom(b"gnre", data(b"\x00\x0a"))
-                 + _atom(b"covr", data(cover)))
-    moov = _atom(b"moov", mvhd + _atom(b"udta", _atom(b"meta", b"\x00\x00\x00\x00" + ilst)))
-    return _atom(b"ftyp", b"M4A \x00\x00\x00\x00") + _atom(b"mdat", b"\x00" * 64) + moov
-
-
-class TagEdgeTest(unittest.TestCase):
-    def setUp(self):
-        self.dir = tempfile.mkdtemp(dir=_TMP)
-
-    def path(self, name, data: bytes):
-        p = os.path.join(self.dir, name)
-        _write(p, data, "wb")
-        return p
-
-    def test_mp4_ilst_and_duration(self):
-        """M4A tags (title, artist, track, numeric genre, cover) and mvhd duration with moov after mdat."""
-        t = tags.read(self.path("a.m4a", _mp4()))
-        self.assertEqual((t["title"], t["artist"], t["track"], t["genre"]), ("Mp4 Song", "Mp4 Artist", 5, "Metal"))
-        self.assertAlmostEqual(t["duration"], 12.0)
-        self.assertEqual(t["cover"], (b"\x89PNGxx", "image/png"))
-
-    def test_wav_duration(self):
-        """WAV length = data size / byte rate (from the fmt chunk)."""
-        fmt = struct.pack("<HHIIHH", 1, 2, 44100, 176400, 4, 16)
-        body = b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt + b"data" + struct.pack("<I", 176400 * 3)
-        p = self.path("01 Intro.wav", b"RIFF" + struct.pack("<I", len(body)) + body)
-        t = tags.read(p)
-        self.assertAlmostEqual(t["duration"], 3.0)
-        self.assertEqual((t["title"], t["track"]), ("Intro", 1))
-
-    def test_mp3_xing_vbr_and_id3v1(self):
-        """A VBR MP3 without ID3v2 takes its length from the Xing frame count and its tags from ID3v1."""
-        frame = b"\xff\xfb\x90\x64" + b"\x00" * 32 + b"Xing" + struct.pack(">II", 1, 1000) + b"\x00" * 400
-        v1 = (b"TAG" + b"V1 Title".ljust(30, b"\0") + b"V1 Artist".ljust(30, b"\0") + b"V1 Album".ljust(30, b"\0")
-              + b"1999" + b"\0" * 28 + b"\x00\x07" + bytes([17]))
-        t = tags.read(self.path("x.mp3", frame + b"\x00" * 5000 + v1))
-        self.assertAlmostEqual(t["duration"], 1000 * 1152 / 44100, places=2)
-        self.assertEqual((t["title"], t["artist"], t["album"], t["year"], t["track"], t["genre"]),
-                         ("V1 Title", "V1 Artist", "V1 Album", 1999, 7, "Rock"))
-
-    def test_number_genre_and_filename_helpers(self):
-        """'3/12', dates, ID3 numeric genres and disc-track file names parse; years in names aren't tracks."""
-        self.assertEqual((tags._num("3/12"), tags._num("2004-05-01"), tags._num(None), tags._num("x")),
-                         (3, 2004, 0, 0))
-        self.assertEqual((tags._genre("(9)"), tags._genre("(9)Death Thrash"), tags._genre("13"), tags._genre("Indie")),
-                         ("Metal", "Death Thrash", "Pop", "Indie"))
-        self.assertEqual(tags._genre("(250)"), "")
-        self.assertEqual(tags.from_filename("/m/1-05 Song Name.flac"), {"track": 5, "title": "Song Name"})
-        self.assertEqual(tags.from_filename("/m/1984.mp3"), {"track": 0, "title": "1984"})
-        self.assertEqual(tags.from_filename("/m/2001 - A Space Odyssey.mp3")["track"], 0)
-
-
-class LibraryEdgeTest(unittest.TestCase):
-    def setUp(self):
-        self.base = tempfile.mkdtemp(dir=_TMP)
-        self.root = os.path.join(self.base, "Music")
-        os.makedirs(self.root)
-        self.art = os.path.join(self.base, "art")
-
-    def test_hidden_and_non_audio_skipped_and_folder_fallback(self):
-        """Hidden files/folders and non-audio are ignored; untagged songs take Artist/Album from the folders
-        and the folder's cover.jpg."""
-        album = os.path.join(self.root, "The Band", "First Album")
-        _write(os.path.join(album, "02 Second.mp3"), b"\x00" * 64, "wb")
-        _write(os.path.join(album, "cover.jpg"), b"\xff\xd8\xff", "wb")
-        _write(os.path.join(album, ".03 hidden.mp3"), b"\x00", "wb")
-        _write(os.path.join(album, "notes.txt"), "x")
-        _write(os.path.join(self.root, ".trash", "x.mp3"), b"\x00", "wb")
-        got = lib.scan(self.root, {}, self.art)
-        self.assertEqual(list(got), [os.path.join(album, "02 Second.mp3")])
-        t = next(iter(got.values()))
-        self.assertEqual((t["artist"], t["album"], t["title"], t["track"]), ("The Band", "First Album", "Second", 2))
-        self.assertEqual(t["art"], os.path.join(album, "cover.jpg"))
-
-    def test_album_key_compilation_by_folder(self):
-        """Without an album artist, same-titled albums in different folders stay apart; same folder groups."""
-        a = {"path": "/m/x/Greatest Hits/1.mp3", "album": "Greatest Hits", "artist": "X"}
-        b = {"path": "/m/y/Greatest Hits/1.mp3", "album": "Greatest Hits", "artist": "Y"}
-        c = {"path": "/m/x/Greatest Hits/2.mp3", "album": "greatest hits", "artist": "X"}
-        self.assertNotEqual(lib.album_key(a), lib.album_key(b))
-        self.assertEqual(lib.album_key(a), lib.album_key(c))
-        albums = lib.group_albums([a, b, c])
-        self.assertEqual(sorted(len(x["tracks"]) for x in albums), [1, 2])
-
-    def test_symlink_loop_scans_each_song_once(self):
-        """A symlink pointing back up the Music folder must not list every song dozens of times."""
-        _write(os.path.join(self.root, "a.mp3"), b"\x00" * 64, "wb")
-        os.symlink(self.root, os.path.join(self.root, "loop"))
-        self.assertEqual(len(lib.scan(self.root, {}, self.art)), 1)
-
-
-class QueueEdgeTest(unittest.TestCase):
-    def test_empty_queue_is_safe(self):
-        """Next / Previous / jump / shuffle on an empty queue do nothing and never raise."""
-        q = Queue()
-        self.assertIsNone(q.next())
-        self.assertIsNone(q.previous())
-        q.jump(3)
-        q.set_shuffle(True)
-        q.set([])
-        self.assertEqual((q.current, q.pos, q.upcoming()), (None, -1, []))
-
-    def test_shuffle_off_returns_to_queued_order(self):
-        """Turning shuffle off keeps the current song and continues in the queued order after it."""
-        import random
-        q = Queue(random.Random(3))
-        q.set(list("abcdef"), 0)
-        q.set_shuffle(True)
-        q.next()
-        cur = q.current
-        q.set_shuffle(False)
-        self.assertEqual(q.current, cur)
-        self.assertEqual(q.upcoming(), list("abcdef")[list("abcdef").index(cur) + 1:])
-
-    def test_repeat_all_shuffle_wrap_avoids_same_song(self):
-        """At the end of a shuffled repeat-all queue the reshuffle never plays the last song again first."""
-        import random
-        for seed in range(20):
-            q = Queue(random.Random(seed))
-            q.repeat = REPEAT_ALL
-            q.set(list("abcd"), 0)
-            q.set_shuffle(True)
-            for _ in range(3):
-                q.next()
-            last = q.current
-            self.assertNotEqual(q.next(), last)
-            self.assertEqual(sorted(q.items[i] for i in q.order), list("abcd"))
-
-    def test_upcoming_wraps_with_repeat_all(self):
-        """Up Next under repeat-all lists the rest, then the start of the queue (not the current song)."""
-        q = Queue()
-        q.set(list("abcd"), 2)
-        self.assertEqual(q.upcoming(), ["d"])
-        q.repeat = REPEAT_ALL
-        self.assertEqual(q.upcoming(), ["d", "a", "b"])
-        q.repeat = REPEAT_OFF
-        q.jump(1)
-        self.assertIsNone(q.next())                              # end of the queue, repeat off
-
-
-class _Invocation:
-    def __init__(self):
-        self.result = self.error = None
-
-    def return_value(self, v):
-        self.result = ("ok", v)
-
-    def return_dbus_error(self, name, msg):
-        self.error = (name, msg)
-
-
-class MprisServerTest(unittest.TestCase):
-    def setUp(self):
-        self.calls = []
-        track = {"path": "/m/a.mp3", "title": "A"}
-        c = SimpleNamespace(player=SimpleNamespace(position=30.0, status="Playing", volume=0.5),
-                            queue=SimpleNamespace(repeat="all", shuffle=True, __len__=lambda: 1),
-                            current_track=lambda: track, can_next=lambda: True)
-        for name in ("seek_to", "set_volume", "set_shuffle", "set_repeat", "next", "previous", "toggle", "play",
-                     "pause", "stop", "raise_window", "quit", "open_uris"):
-            setattr(c, name, (lambda n: lambda *a: self.calls.append((n,) + a))(name))
-        self.srv = mpris.Server.__new__(mpris.Server)          # no session bus in tests
-        self.srv.c, self.srv.bus, self.srv._ids, self.srv._owner = c, None, [], 0
-
-    def call(self, method, sig="()", args=()):
-        inv = _Invocation()
-        self.srv._call(None, None, None, None, method, GLib.Variant(sig, args), inv)
-        return inv
-
-    def test_seek_setposition_and_unknown(self):
-        """Seek is relative; SetPosition with a stale track id is ignored; unknown methods get a D-Bus error."""
-        self.call("Seek", "(x)", (-10_000_000,))
-        self.call("SetPosition", "(ox)", ("/stale/track", 5_000_000))
-        self.call("SetPosition", "(ox)", (mpris.track_id("/m/a.mp3"), 5_000_000))
-        self.assertEqual(self.calls, [("seek_to", 20.0), ("seek_to", 5.0)])
-        inv = self.call("Bogus")
-        self.assertEqual(inv.error[0], "org.freedesktop.DBus.Error.UnknownMethod")
-        self.assertIsNone(inv.result)
-        self.assertEqual(self.call("PlayPause").result, ("ok", None))
-
-    def test_set_properties(self):
-        """LoopStatus/Shuffle/Volume writes from the menu bar reach the controller with Music's names."""
-        self.srv._set(None, None, None, mpris.PLAYER_IFACE, "LoopStatus", GLib.Variant("s", "Track"))
-        self.srv._set(None, None, None, mpris.PLAYER_IFACE, "LoopStatus", GLib.Variant("s", "Weird"))
-        self.srv._set(None, None, None, mpris.PLAYER_IFACE, "Shuffle", GLib.Variant("b", False))
-        self.srv._set(None, None, None, mpris.PLAYER_IFACE, "Volume", GLib.Variant("d", 0.25))
-        self.assertEqual(self.calls, [("set_repeat", "one"), ("set_repeat", "off"), ("set_shuffle", False),
-                                      ("set_volume", 0.25)])
-        self.assertEqual(self.srv._get(None, None, None, mpris.PLAYER_IFACE, "LoopStatus").unpack(), "Playlist")
-        self.srv.changed()                                     # no bus yet: a no-op, never raises
 
 
 # == Camera ====================================================================================
@@ -610,66 +405,6 @@ class TaskManagerFixTest(unittest.TestCase):
         self.assertEqual(TaskManagerWindow._props(win, row)[-1][2], "/usr/bin/x")
 
 
-class MusicFixTest(unittest.TestCase):
-    def setUp(self):
-        self.base = tempfile.mkdtemp(dir=_TMP)
-        self.lib = lib.Library(os.path.join(self.base, "Music"), cache=os.path.join(self.base, "c.json"),
-                               data=os.path.join(self.base, "d"), art=os.path.join(self.base, "art"))
-        self.lib.tracks = {"/m/a.mp3": {"path": "/m/a.mp3", "title": "A"},
-                           "/m/b.mp3": {"path": "/m/b.mp3", "title": "B"}}
-
-    def test_learnt_durations_coalesce_into_one_write(self):
-        """Every song played learns its length: the library JSON is written once later, not each time."""
-        with mock.patch.object(lib, "_save_json") as save:
-            self.lib.set_duration("/m/a.mp3", 100.0)
-            self.lib.set_duration("/m/b.mp3", 200.0)
-            self.assertEqual(save.call_count, 0)
-            self.lib.flush()                                            # the window closes
-            self.assertEqual(save.call_count, 1)
-            self.lib.flush()
-            self.assertEqual(save.call_count, 1)                        # nothing pending
-        self.lib.set_duration("/m/a.mp3", 1.0)                          # already known: no write planned
-        self.assertEqual(self.lib._save_src, 0)
-
-    def test_pending_write_happens_by_itself(self):
-        """Without a close, the pending cache write lands a few seconds later."""
-        with mock.patch.object(GLib, "timeout_add_seconds", lambda _s, fn: (fn(), 1)[1]), \
-                mock.patch.object(GLib, "source_remove"):
-            self.lib.set_duration("/m/a.mp3", 100.0)
-        with open(self.lib.cache, encoding="utf-8") as f:
-            self.assertIn("100.0", f.read())
-
-    def test_json_saves_use_unique_temp(self):
-        """Library files go through config.atomic_write (no shared "<file>.tmp" between two processes)."""
-        with mock.patch("sonata2.config.atomic_write") as aw:
-            lib._save_json(os.path.join(self.base, "x.json"), {"a": 1})
-        self.assertEqual(aw.call_args[0][1], b'{"a":1}')
-
-    def test_opened_files_read_off_the_main_loop(self):
-        """Files opened from Files are parsed in a worker thread; playback starts when they're read."""
-        from sonata2.music import window as mw
-        threads = []
-        fake = SimpleNamespace(library=self.lib, extra={}, _closed=False, played=[])
-        fake._play_opened = lambda paths: fake.played.append(list(paths))
-        path = os.path.join(self.base, "x.mp3")
-        _write(path, b"\x00" * 64, "wb")
-
-        def fake_async(fn, cb, *a):
-            import threading
-            threads.append(threading.current_thread())
-            cb(fn(*a))
-        with mock.patch.object(mw, "run_async", fake_async), \
-                mock.patch.object(mw.lib, "read_track", return_value={"path": path, "title": "X"}) as rt:
-            mw.MusicWindow.open_files(fake, [path])
-        self.assertEqual(rt.call_count, 1)
-        self.assertEqual(len(threads), 1)
-        self.assertEqual(fake.played, [[path]])
-        self.assertIn(path, fake.extra)
-        fake.played.clear()
-        with mock.patch.object(mw, "run_async", side_effect=AssertionError("no read needed")):
-            mw.MusicWindow.open_files(fake, [path])                    # already read: plays at once
-        self.assertEqual(fake.played, [[path]])
-
 
 class CameraFixTest(unittest.TestCase):
     def test_last_capture_with_dangling_link(self):
@@ -810,28 +545,6 @@ class AnimationTests(unittest.TestCase):
         w.destroy()
         _settle(50)
 
-    def test_music_view_switch_and_now_playing_crossfade(self):
-        """Albums / Songs / Artists switches and the LCD's idle -> track change crossfade."""
-        from sonata2.music import window as mw
-        Gtk = self.Gtk
-        base = tempfile.mkdtemp(dir=_TMP)
-        library = lib.Library(os.path.join(base, "Music"), cache=os.path.join(base, "c.json"),
-                              data=os.path.join(base, "d"), art=os.path.join(base, "art"))
-        library.tracks = {"/m/a.mp3": {"path": "/m/a.mp3", "title": "A", "artist": "X", "album": "Y",
-                                       "duration": 10, "track": 1}}
-        win = mw.MusicWindow(self.app, library=library, scan=False, mpris=False)
-        win.populate()
-        win.present()
-        _settle(300)
-        for st in (win.stack, win.lcd_stack):
-            self.assertEqual(st.get_transition_type(), Gtk.StackTransitionType.CROSSFADE)
-            self.assertGreater(st.get_transition_duration(), 0)
-        win.show("songs")
-        self.assertTrue(win.stack.get_transition_running())
-        self.assertEqual(win.banner.get_transition_type(), Gtk.RevealerTransitionType.SLIDE_DOWN)
-        win.show("albums")                                              # the saved view, as other tests expect
-        win.close()
-        _settle(50)
 
     def test_videos_hud_fades(self):
         """The video controls fade out / in (CSS opacity transition on the .hidden class)."""

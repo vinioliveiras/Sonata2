@@ -197,10 +197,6 @@ class IconRegressions(unittest.TestCase):
                   "apps/scalable/sonata-launchpad-light.svg", "actions/symbolic/sonata-screenshot-symbolic.svg"):
             self.assertTrue(os.path.exists(os.path.join(base, f)), f)
 
-    def test_music_icon_is_the_pink_one(self):
-        from sonata2.music import window
-        self.assertIn("Icon=gnome-music", pathlib.Path(window.__file__).read_text())
-
     def test_tray_icons_are_one_tone(self):
         """Menu bar tray icons must never be coloured: a two-tone icon becomes
         a silhouette with its light details cut out."""
@@ -240,39 +236,15 @@ class IconRegressions(unittest.TestCase):
         self.assertEqual(px[0 * stride + 0 * 4 + 3], 0)          # outside stays clear
 
 
-class MusicRegressions(unittest.TestCase):
-    def test_plays_through_classic_playbin(self):
-        """Music crashed on MP3s: GTK's media backend uses playbin3, whose
-        decodebin3 aborts ("assertion failed: (collection)")."""
-        from sonata2.music import player
-        Gst = player._gst()
-        if Gst is None:
-            self.skipTest("no GStreamer typelib here")
-        path = os.path.join(_home, "silence.wav")
-        import struct
-        with open(path, "wb") as f:               # 0.2 s of silence
-            data = b"\0" * 8820
-            f.write(b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt " +
-                    struct.pack("<IHHIIHH", 16, 1, 1, 22050, 44100, 2, 16) + b"data" +
-                    struct.pack("<I", len(data)) + data)
-        p = player.Player()
-        p.set_volume(0)
-        self.assertTrue(p.load(path, play=False))
-        self.assertIsInstance(p.stream, player.GstStream)
-        self.assertEqual(p.stream.bin.get_factory().get_name(), "playbin")
-        p.stop()
-
+class SongsInVideosRegressions(unittest.TestCase):
     def test_songs_and_videos_open_in_sonata_apps(self):
-        """Opening an MP3 from Files did nothing: no default app for audio."""
+        """Opening an MP3 from Files did nothing: no default app for audio.
+        Music was removed (Vini): songs open in Videos, and the old Music
+        entries move there too."""
         env = pathlib.Path(__file__).parent.parent.joinpath("tools", "session-env.sh").read_text()
         self.assertIn("audio/mpeg", env)
-        self.assertIn("sonata2.music.desktop", env)
-        self.assertIn("sonata2.videos.desktop", env)
-
-    def test_volume_icons_have_room(self):
-        """The small volume icon sat against the LCD."""
-        src = pathlib.Path(__file__).parent.parent.joinpath("sonata2", "music", "window.py").read_text()
-        self.assertRegex(src, r"vol = Gtk.Box\(spacing=6, valign=Gtk.Align.CENTER, margin_start=\d+")
+        self.assertNotIn("a $t=io.github.vinioliveiras.sonata2.music.desktop", env)
+        self.assertIn(r"sonata2\.music\.desktop$/=io.github.vinioliveiras.sonata2.videos.desktop/", env)
 
 
 class ButtonRegressions(unittest.TestCase):
@@ -1390,8 +1362,7 @@ class FilesSidebarTests(unittest.TestCase):
         next to a glass pane needs an opaque base under its hairline."""
         import re
         root = pathlib.Path(__file__).resolve().parent.parent / "sonata2"
-        for f, cls in (("files/window.py", r"\.fs-divider"), ("settings/app.py", r"\.st-divider"),
-                       ("music/window.py", r"\.mu-paned > separator")):
+        for f, cls in (("files/window.py", r"\.fs-divider"), ("settings/app.py", r"\.st-divider")):
             rule = re.search(cls + r" \{([^}]*)\}", (root / f).read_text()).group(1)
             self.assertRegex(rule, r"background: %\((content_bg|pane_bg)\)s", f)
             self.assertIn("inset 1px 0 %(separator)s", rule, f)
@@ -2181,24 +2152,15 @@ class BufferFailureRegressions(unittest.TestCase):
         self.assertLess(sched.index("FAILED"), sched.index("instructions.push_back"))
 
 
-class MusicTitleAndSeamRegressions(unittest.TestCase):
-    """Music showed the song twice (title bar + LCD), and the seam fix under
-    the title bar altered the top of the LCD's text (a 12-row band)."""
-
-    def test_music_title_stays_music(self):
-        src = (pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "music" / "window.py").read_text()
-        self.assertNotIn('— Music"', src)
+class TitleSeamRegressions(unittest.TestCase):
+    """The seam fix under the title bar altered the content below it (a
+    12-row band): the band stays small."""
 
     def test_seam_band_clears_toolbar_content(self):
         root = pathlib.Path(__file__).resolve().parent.parent
         cpp = (root / "wayfire-plugin" / "src" / "sonata-corners.cpp").read_text()
         band = float(re.search(r"const float SEAM_BAND = ([0-9.]+);", cpp).group(1))
         self.assertNotIn("seam + 12.0", cpp)
-        css = (root / "sonata2" / "ui" / "window.py").read_text()
-        pad_top = int(re.search(r"\.sonata-toolbar \{ min-height: 34px; padding: (\d+)px", css).group(1))
-        music = (root / "sonata2" / "music" / "window.py").read_text()
-        lcd_margin = int(re.search(r"\.mu-lcd \{ min-height: 40px; margin: (\d+)px", music).group(1))
-        self.assertGreaterEqual(pad_top + lcd_margin, band)         # the LCD starts below the band
         self.assertGreater(band, 5)                                # still covers the maximized overlap
 
     def test_overlap_rows_take_the_title_bar_colour(self):

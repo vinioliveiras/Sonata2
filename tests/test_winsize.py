@@ -13,7 +13,7 @@ from gi.repository import Gtk  # noqa: E402
 from sonata2 import config, winsize  # noqa: E402
 from sonata2.ui import window as UW  # noqa: E402
 
-APPS = {"files/window.py": "files", "notes/window.py": "notes", "music/window.py": "music",
+APPS = {"files/window.py": "files", "notes/window.py": "notes",
         "settings/app.py": "settings", "activity/window.py": "activity", "calendar/window.py": "calendar",
         "camera/window.py": "camera", "assistant/window.py": "assistant", "diskutil/window.py": "diskutil",
         "clock/window.py": "clock", "terminal/window.py": "terminal", "feedback/window.py": "feedback",
@@ -36,7 +36,7 @@ class WinsizeTest(unittest.TestCase):
         self.assertFalse(winsize.save("notes", 10, 10))                      # a glitch
         winsize.save("files", 700, 500)
         self.assertEqual(winsize.size_or("notes", 1, 1), (900, 600))         # each app its own
-        self.assertEqual(winsize.size_or("music", 1100, 720), (1100, 720))
+        self.assertEqual(winsize.size_or("calendar", 1100, 720), (1100, 720))
 
     def test_window_opens_at_it_and_keeps_it(self):
         winsize.save("t", 700, 500)

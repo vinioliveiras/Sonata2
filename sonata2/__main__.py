@@ -47,7 +47,6 @@ APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
            "assistant": "io.github.vinioliveiras.sonata2.assistant",
            "activity": "io.github.vinioliveiras.sonata2.activity",
            "videos": "io.github.vinioliveiras.sonata2.videos",
-           "music": "io.github.vinioliveiras.sonata2.music",
            "camera": "io.github.vinioliveiras.sonata2.camera",
            "diskutil": "io.github.vinioliveiras.sonata2.diskutil",
            "calendar": "io.github.vinioliveiras.sonata2.calendar",
@@ -129,7 +128,7 @@ def run_dock(app, args, ui):
     from .terminal.window import terminal_desktop_file
     terminal_desktop_file(self_command())
     for mod, fn in (("notes", "notes_desktop_file"), ("activity", "activity_desktop_file"),
-                    ("videos", "videos_desktop_file"), ("music", "music_desktop_file"),
+                    ("videos", "videos_desktop_file"),
                     ("diskutil", "diskutil_desktop_file"), ("calendar", "calendar_desktop_file"),
                     ("camera", "camera_desktop_file"), ("feedback", "feedback_desktop_file"),
                     ("clock", "clock_desktop_file"), ("assistant", "assistant_desktop_file")):
@@ -138,6 +137,8 @@ def run_dock(app, args, ui):
             getattr(importlib.import_module(f".{mod}.window", __package__), fn)(self_command())
         except Exception as e:
             print(f"sonata2-dock: {mod} desktop entry: {e}", file=sys.stderr)
+    from .apps import remove_retired
+    remove_retired()                                   # removed apps (Music) leave Launchpad
     from .shell.capture import capture_desktop_file
     capture_desktop_file(self_command())               # Screenshot (the capture toolbar)
     from . import webapps
@@ -1326,7 +1327,7 @@ def main() -> int:
         uris = [Gio.File.new_for_commandline_arg(x).get_uri() for x in args.path]
         return app.run([sys.argv[0]] + uris)
 
-    if args.component in ("textedit", "preview", "terminal", "notes", "activity", "videos", "music", "diskutil",
+    if args.component in ("textedit", "preview", "terminal", "notes", "activity", "videos", "diskutil",
                           "calendar", "camera", "feedback", "clock", "assistant"):   # files/folders open in the running one
         from gi.repository import Gio
         import importlib

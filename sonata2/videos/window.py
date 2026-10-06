@@ -14,9 +14,14 @@ moves the window. Right-click: play/pause, loop, mute, full screen,
 Show in Files. Each file's position is remembered and playback resumes
 there next time (config videos.json).
 
-Playback goes through Gtk.MediaFile (GTK's GStreamer media backend); with
-no backend, or a file it can't decode, the window says why. Playback
-speed is not offered: Gtk.MediaStream has no rate API."""
+Songs (MP3, FLAC, Ogg, M4A, WAV -- QuickTime plays them too; Sonata has
+no Music app): a square window with the album cover (or a note), the
+controls always shown, no full screen; title "Artist — Title".
+
+Movies go through Gtk.MediaFile (GTK's GStreamer media backend); songs
+through GStreamer's classic playbin (gststream.py). With no backend, or a
+file it can't decode, the window says why. Playback speed is not
+offered: Gtk.MediaStream has no rate API."""
 import os
 
 import gi
@@ -35,6 +40,10 @@ HIDE_AFTER = 2500          # ms without motion before the controls fade (playing
 MIME_TYPES = ("video/mp4", "video/x-matroska", "video/webm", "video/x-msvideo", "video/avi", "video/quicktime",
               "video/mpeg", "video/ogg", "video/x-ogm+ogg", "video/x-flv", "video/3gpp", "video/3gpp2",
               "video/x-m4v", "video/mp2t", "video/x-ms-wmv")
+AUDIO_TYPES = ("audio/mpeg", "audio/mp3", "audio/flac", "audio/x-flac", "audio/ogg", "audio/x-vorbis+ogg",
+               "audio/vorbis", "audio/opus", "audio/x-opus+ogg", "audio/mp4", "audio/x-m4a", "audio/aac",
+               "audio/x-aac", "audio/wav", "audio/x-wav", "audio/vnd.wave")
+AUDIO_SIZE = 420           # px: a song's window (square, the cover's shape)
 
 ui.register("""
 .vd-canvas { background: %(sys_black)s; }
@@ -61,6 +70,8 @@ ui.register("""
 .vd-hud scale.sonata-slider slider { min-width: 12px; min-height: 12px; margin: -4px; }
 .vd-hud scale.vd-volume { min-width: 64px; }
 .vd-message { font-family: %(font)s; }
+.vd-art { background: linear-gradient(160deg, %(control_off)s, %(sys_black)s); }
+.vd-art image { color: %(on_scrim_secondary)s; -gtk-icon-size: 96px; }
 .vd-message label.vd-msg-title { color: %(on_scrim)s; font-size: %(text_title)s; font-weight: 600; }
 .vd-message label.vd-msg-body { color: %(on_scrim_secondary)s; font-size: %(text_body)s; }
 """, key="videos")
@@ -112,8 +123,26 @@ def volume_icon(volume: float, muted: bool) -> str:
     return "sonata-volume-%d-symbolic" % (1 if volume < 0.34 else 2 if volume < 0.67 else 3)
 
 
+def is_audio(path: str) -> bool:
+    """A song (by its name, as Files guesses it): MP3, FLAC, Ogg, M4A..."""
+    kind, _uncertain = Gio.content_type_guess(path, None)
+    return Gio.content_type_get_mime_type(kind or "").startswith("audio/")
+
+
+def song_title(tags: dict, path: str) -> str:
+    """'Artist — Title', or the title, or the file name."""
+    title = (tags or {}).get("title") or os.path.basename(path)
+    artist = (tags or {}).get("artist")
+    return f"{artist} — {title}" if artist else title
+
+
 def media_file(path: str):
-    """The movie as a Gtk.MediaStream (GTK's media backend)."""
+    """The file as a Gtk.MediaStream: a song through classic playbin (GTK's
+    backend can abort the app on some MP3s), a movie through GTK's."""
+    if is_audio(path):
+        from . import gststream
+        if gststream.available():
+            return gststream.PlaybinStream(path)
     return Gtk.MediaFile.new_for_filename(path)
 
 
@@ -135,6 +164,7 @@ class VideoWindow(Gtk.ApplicationWindow):
         self._last_xy = None
         self._syncing = False
         self._shown_secs = (-1, -1)
+        self.audio = False
         cfg = config.load(CONFIG, DEFAULTS)
         self.volume = max(0.0, min(1.0, float(cfg.get("volume", 1.0) or 0)))
         self.muted = bool(cfg.get("muted"))
@@ -142,6 +172,9 @@ class VideoWindow(Gtk.ApplicationWindow):
         self.picture = Gtk.Picture(content_fit=Gtk.ContentFit.CONTAIN, can_shrink=True, hexpand=True, vexpand=True)
         handle = Gtk.WindowHandle(child=self.picture)            # drag the movie: the window moves
         self.overlay = Gtk.Overlay(child=handle, css_classes=["vd-canvas"])
+        self.art = Gtk.Box(css_classes=["vd-art"], visible=False, can_target=False)      # a song without a cover
+        self.art.append(Gtk.Image(icon_name="audio-x-generic-symbolic", hexpand=True, vexpand=True))
+        self.overlay.add_overlay(self.art)
         self.message = self._build_message()
         self.overlay.add_overlay(self.message)
         self.hud = self._build_hud()
@@ -209,7 +242,8 @@ class VideoWindow(Gtk.ApplicationWindow):
     def _build_message(self) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["vd-message"],
                       halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER, visible=False, can_target=False)
-        box.append(Gtk.Label(label="This video can't be played", css_classes=["vd-msg-title"]))
+        self.msg_title = Gtk.Label(label="This video can't be played", css_classes=["vd-msg-title"])
+        box.append(self.msg_title)
         self.reason = Gtk.Label(wrap=True, justify=Gtk.Justification.CENTER, max_width_chars=60,
                                 css_classes=["vd-msg-body"])
         box.append(self.reason)
@@ -223,19 +257,22 @@ class VideoWindow(Gtk.ApplicationWindow):
         self.set_title(os.path.basename(path))
         self.message.set_visible(False)
         self.hud.set_visible(True)
+        self._set_audio(is_audio(path))
         try:
             stream = self._stream_factory(path)
         except Exception as e:                       # never crash on a broken backend
             self._fail(str(e))
             return
         self.stream = stream
+        self.picture.set_content_fit(Gtk.ContentFit.CONTAIN)
         stream.set_volume(self.volume)
         stream.set_muted(self.muted)
         for sig, cb in (("notify::prepared", self._prepared), ("notify::error", self._errored),
                         ("notify::playing", self._playing_changed), ("notify::ended", self._ended),
                         ("notify::timestamp", self._tick), ("notify::duration", self._tick)):
             self._handlers.append(stream.connect(sig, cb))
-        self.picture.set_paintable(stream)
+        if not self.audio:                           # a song shows its cover instead
+            self.picture.set_paintable(stream)
         if os.path.exists(path):
             Gtk.RecentManager.get_default().add_item(Gio.File.new_for_path(path).get_uri())
         if stream.get_error() is not None:
@@ -244,6 +281,40 @@ class VideoWindow(Gtk.ApplicationWindow):
             self._prepared()
         self._playing_changed()
         self._show_hud()
+
+    def _set_audio(self, audio: bool) -> None:
+        """A song: a square window, its cover (read off the main loop), the
+        controls always there, no full screen."""
+        self.audio = audio
+        (self.add_css_class if audio else self.remove_css_class)("vd-audio")
+        self.full_btn.set_visible(not audio)
+        self.msg_title.set_label("This song can't be played" if audio else "This video can't be played")
+        self.art.set_visible(audio)
+        if not audio:
+            return
+        self.picture.set_paintable(None)             # (the last song's cover)
+        if self.is_fullscreen():
+            self.toggle_fullscreen()
+        self._sized = True
+        self.set_default_size(AUDIO_SIZE, AUDIO_SIZE)
+        from .. import audiotags
+        from ..backend import system
+        path = self.path
+        system.run_async(audiotags.read, lambda t: self._tags(path, t), path)
+
+    def _tags(self, path: str, tags) -> None:
+        if path != self.path or not tags:
+            return                                   # another file since
+        self.set_title(song_title(tags, path))
+        cover = tags.get("cover")
+        if cover:
+            try:
+                texture = Gdk.Texture.new_from_bytes(GLib.Bytes.new(cover[0]))
+            except GLib.Error:
+                return                               # a broken picture: the note stays
+            self.picture.set_paintable(texture)
+            self.picture.set_content_fit(Gtk.ContentFit.COVER)
+            self.art.set_visible(False)
 
     def _release(self) -> None:
         """Let go of the current stream (remembering where it was)."""
@@ -257,6 +328,8 @@ class VideoWindow(Gtk.ApplicationWindow):
         s.pause()
         if isinstance(s, Gtk.MediaFile):
             s.clear()
+        elif hasattr(s, "close"):                    # a song's playbin
+            s.close()
         self.picture.set_paintable(None)
         self.stream = None
 
@@ -409,12 +482,12 @@ class VideoWindow(Gtk.ApplicationWindow):
         if self._hide_src:
             GLib.source_remove(self._hide_src)
             self._hide_src = 0
-        if self.stream is not None and self.stream.get_playing():
+        if self.stream is not None and self.stream.get_playing() and not self.audio:   # a song: always there
             self._hide_src = GLib.timeout_add(HIDE_AFTER, self._hide_now)
 
     def _hide_now(self) -> bool:
         self._hide_src = 0
-        if self._over_hud or not (self.stream and self.stream.get_playing()):
+        if self._over_hud or self.audio or not (self.stream and self.stream.get_playing()):
             return False
         self.hud.add_css_class("hidden")
         self.hud.set_can_target(False)
@@ -425,6 +498,8 @@ class VideoWindow(Gtk.ApplicationWindow):
         self.overlay.set_cursor(None if visible else Gdk.Cursor.new_from_name("none"))
 
     def toggle_fullscreen(self) -> None:
+        if self.audio and not self.is_fullscreen():
+            return                                   # a song: no full screen (QuickTime)
         full = not self.is_fullscreen()
         self.fullscreen() if full else self.unfullscreen()
         self.full_btn.set_icon_name("view-restore-symbolic" if full else "view-fullscreen-symbolic")
@@ -471,7 +546,8 @@ class VideoWindow(Gtk.ApplicationWindow):
             [Item("Pause" if playing else "Play", self.toggle_play, enabled=ok)],
             [Item("Loop", lambda _v=None: self.toggle_loop(), checked=bool(ok and s.get_loop()), enabled=ok),
              Item("Mute", lambda _v=None: self.toggle_mute(), checked=self.muted, enabled=ok)],
-            [Item("Exit Full Screen" if self.is_fullscreen() else "Enter Full Screen", self.toggle_fullscreen)],
+            [Item("Exit Full Screen" if self.is_fullscreen() else "Enter Full Screen", self.toggle_fullscreen,
+                  enabled=not self.audio)],
             [Item("Show in Files", self.show_in_files), Item("Open…", self.open_dialog)],
         ], at=(x, y), glass=True, passthrough=True)
 
@@ -514,13 +590,13 @@ class VideoWindow(Gtk.ApplicationWindow):
 
 
 def choose(app, parent=None) -> None:
-    """Files' Open dialog, movies only."""
+    """Files' Open dialog, movies and songs."""
     from ..files.chooser import ChooserWindow
 
     def done(uris, _i):
         open_paths(app, uris or [])
     dlg = ChooserWindow(app, mode="open", title="Open", multiple=True,
-                        filters=[("Movies", [(1, "video/*")])], on_done=done)
+                        filters=[("Movies & Songs", [(1, "video/*"), (1, "audio/*")])], on_done=done)
     if parent is not None:
         dlg.set_transient_for(parent)
         dlg.set_modal(True)
@@ -546,7 +622,7 @@ def videos_desktop_file(command: str) -> str:
     from ..apps import write_desktop_file
     return write_desktop_file(APP_ID + ".desktop",
                               "[Desktop Entry]\nType=Application\nName=Videos\nComment=Watch movies\n"
-                              "Icon=sonata-videos\nCategories=AudioVideo;Video;Player;\n"
-                              "MimeType=" + "".join(t + ";" for t in MIME_TYPES) + "\n"
+                              "Icon=sonata-videos\nCategories=AudioVideo;Video;Audio;Player;\n"
+                              "MimeType=" + "".join(t + ";" for t in MIME_TYPES + AUDIO_TYPES) + "\n"
                               "StartupNotify=true\n"
                               f"Exec={command} videos %F\n")

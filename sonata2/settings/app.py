@@ -3295,8 +3295,8 @@ class Settings(Adw.ApplicationWindow):
                          "folders, protected apps and your apps' data stay."),
             "everything": ("Reset Sonata?",
                            "Sonata goes back to how it was just installed: every setting, the Dock and "
-                           "Launchpad layout, history and caches are removed. Notes, calendars, TextEdit and "
-                           "Music data are moved to the Trash."),
+                           "Launchpad layout, history and caches are removed. Notes, calendars and TextEdit "
+                           "data are moved to the Trash."),
         }[what]
         return ui.dialog.alert(title, body, [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
                                lambda rid: rid == "reset" and self.factory_reset(what), parent=self)

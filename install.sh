@@ -53,7 +53,7 @@ CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
 if [ "$MODE" = system ]; then PORTAL_DIR=/usr/share/xdg-desktop-portal; else PORTAL_DIR="$CFG/xdg-desktop-portal"; fi
 
 say() { printf '\033[1m%s\033[0m\n' "$*"; }
-# Your data (notes, calendars, TextEdit's open tabs, Music's playlists) used to
+# Your data (notes, calendars, TextEdit's open tabs) used to
 # live inside the install folder ($SHARE), which an update replaces (and a dev
 # install links to the git clone): carry it to ~/.local/share/sonata2-data
 # (sonata2/userdata.py) before $SHARE goes.
@@ -62,7 +62,7 @@ carry_data() {
     [ "$SHARE" = "$HOME/.local/share/sonata2" ] || [ "$SHARE" = "$data/sonata2" ] || return 0
     src="$(readlink -f "$SHARE" 2>/dev/null || true)"
     [ -n "$src" ] && [ -d "$src" ] || return 0
-    for app in notes calendar textedit music; do
+    for app in notes calendar textedit; do
         if [ -d "$src/$app" ] && [ ! -e "$data/sonata2-data/$app" ]; then
             mkdir -p "$data/sonata2-data" && mv "$src/$app" "$data/sonata2-data/$app" &&
                 echo "  your $app data is in $data/sonata2-data/$app"

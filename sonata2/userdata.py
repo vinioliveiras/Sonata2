@@ -1,5 +1,5 @@
 """Where Sonata's apps keep your data: notes, calendars, TextEdit's open
-tabs, Music's playlists -- ~/.local/share/sonata2-data/<app>.
+tabs, web apps -- ~/.local/share/sonata2-data/<app>.
 
 They used to live in ~/.local/share/sonata2/<app>, the folder Sonata itself
 is installed in: install.sh replaces that folder on every update (your
@@ -15,7 +15,7 @@ import shutil
 from gi.repository import GLib
 
 NAME = "sonata2-data"
-APPS = ("notes", "calendar", "textedit", "music", "webapps")      # what install.sh carries over too
+APPS = ("notes", "calendar", "textedit", "webapps")      # what install.sh carries over too
 
 
 def root() -> str:

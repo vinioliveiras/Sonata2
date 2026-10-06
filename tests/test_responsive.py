@@ -78,13 +78,12 @@ class WindowSizeTests(Base):
         from sonata2.assistant.window import AssistantWindow
         from sonata2.calendar.window import CalendarWindow
         from sonata2.camera.window import CameraWindow
-        from sonata2.music.window import MusicWindow
         from sonata2.notes.window import NotesWindow
         from sonata2.settings.app import Settings
         app = _app("windows")
         return [lambda: Settings(app), lambda: NotesWindow(app), lambda: AssistantWindow(app),
                 lambda: CalendarWindow(app, folder=tempfile.mkdtemp()), lambda: TaskManagerWindow(app),
-                lambda: MusicWindow(app, scan=False, mpris=False), lambda: CameraWindow(app)]
+                lambda: CameraWindow(app)]
 
     def test_app_windows_open_inside_a_small_laptop(self):
         """Regression: Music / Calendar (720 px tall), Camera, Task Manager,
@@ -100,9 +99,9 @@ class WindowSizeTests(Base):
 
     def test_app_windows_keep_their_size_on_big_displays(self):
         with mock.patch.object(W, "screen_size", return_value=(1920, 1080)):
-            from sonata2.music.window import MusicWindow
-            win = MusicWindow(_app("bigmusic"), scan=False, mpris=False)
-            self.assertEqual(tuple(win.get_default_size()), (1120, 720))
+            from sonata2.calendar.window import CalendarWindow
+            win = CalendarWindow(_app("bigcal"), folder=tempfile.mkdtemp())
+            self.assertEqual(tuple(win.get_default_size()), (1100, 720))
             win.destroy()
 
     def test_textedit_restores_a_big_window_inside_a_small_display(self):
