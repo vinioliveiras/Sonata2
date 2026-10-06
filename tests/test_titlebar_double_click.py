@@ -85,6 +85,26 @@ class TopEdgeTest(unittest.TestCase):
         self.assertTrue(re.search(r"static constexpr int DEAD_ZONE = [2-5];", SRC))
 
 
+class ClickIsNotAResizeTest(unittest.TestCase):
+    """Vini: maximized by a double-click near the top, the title bar was cut
+    at the old width. With "Show window contents while resizing" off, a
+    click on the edge already hid the window behind a ghost at its old size
+    (and took a maximized window out of its tiling): the double-click zoomed
+    it in the middle of that. Both wait for the first real move now."""
+
+    def test_nothing_happens_before_the_pointer_moves(self):
+        init = SRC[SRC.index("bool initiate("):SRC.index("void start_resizing()")]
+        self.assertNotIn("begin_outline()", init)
+        self.assertNotIn("tiled_edges = 0", init)
+        start = SRC[SRC.index("void start_resizing()"):SRC.index("void input_pressed(")]
+        self.assertIn("tiled_edges = 0", start)
+        self.assertIn("begin_outline()", start)
+        motion = SRC[SRC.index("void input_motion()"):]
+        self.assertLess(motion.index("DEAD_ZONE"), motion.index("start_resizing()"))   # only past it
+        released = SRC[SRC.index("void input_pressed("):SRC.index("// Convert resize edges")]
+        self.assertIn("if (view && outline && moved)", released)                   # no ghost to end
+
+
 class SettingsTest(unittest.TestCase):
     def test_choice_goes_to_gtk_and_the_top_edge(self):
         from sonata2.settings import app as S

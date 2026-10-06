@@ -48,7 +48,9 @@ Fedora and Ubuntu from scratch.
 
 ### Fixes
 - Screenshots work again; the Screenshot icon no longer bounces.
-- Double-clicking a title bar zooms wherever you click it.
+- Double-clicking a title bar zooms wherever you click it; a click on a
+  window's edge no longer starts a resize (zooming right after it left the
+  title bar cut at the old width).
 - The screen-sharing pill's Stop really stops the share.
 - Drawing on the screen follows the palette.
 - New headphones and headsets are used at once; your energy mode comes

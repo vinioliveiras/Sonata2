@@ -498,10 +498,10 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         grab_start = get_input_coords();
         moved = false;
         grabbed_geometry = view->get_geometry();
-        if (view->pending_tiled_edges())
-        {
-            view->toplevel()->pending().tiled_edges = 0;
-        }
+        /* (no longer tiled, the outline: on the first real move, start_resizing --
+         * a click alone left a maximized window "unmaximized" and, with live off,
+         * hid it behind a ghost at its old size: the double-click that followed
+         * zoomed it with half a title bar, Vini) */
 
         this->view = view;
 
@@ -524,12 +524,21 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         // Sonata: without its contents (the option off), only the background follows
         outline = !live;
         LOGI("sonata-resize: start, live=", (bool)live, " client=", was_client_request);
+        return true;
+    }
+
+    /** The pointer really moves: the window leaves its tiling, the outline shows. */
+    void start_resizing()
+    {
+        if (view->pending_tiled_edges())
+        {
+            view->toplevel()->pending().tiled_edges = 0;
+        }
+
         if (outline)
         {
             begin_outline();
         }
-
-        return true;
     }
 
     void input_pressed(uint32_t state)
@@ -542,7 +551,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         input_grab->ungrab_input();
         output->deactivate_plugin(&grab_interface);
 
-        if (view && outline)
+        if (view && outline && moved)
         {
             end_outline();                               // the app gets its size now, once
         }
@@ -677,6 +686,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
             }
 
             moved = true;
+            start_resizing();
         }
 
         wf::geometry_t desired = grabbed_geometry;
