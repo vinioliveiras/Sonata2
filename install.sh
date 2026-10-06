@@ -32,6 +32,8 @@
 # config -> ~/.config/sonata2/wayfire.ini (an edited copy is kept), portal
 # preferences for the "Sonata" desktop.
 set -euo pipefail
+# a step that fails stops the install: say which (a friend's install ended without a word)
+trap 's=$?; echo "install.sh stopped at line $LINENO (exit $s): $BASH_COMMAND" >&2; echo "Please send this line to the Sonata developers." >&2' ERR
 SRC="$(cd "$(dirname "$0")" && pwd)"
 MODE=user DEPS=1 YES=0 UNINSTALL=0 DEV=0 GREETER=ask MOUNTRULE=ask
 for a in "$@"; do

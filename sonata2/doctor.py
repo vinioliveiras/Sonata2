@@ -5,6 +5,7 @@ helper programs each feature uses, the lock screen's PAM service, the GPU
 setup and the keyboard layout; prints what's missing with the command that
 fixes it, and saves the report to ~/.cache/sonata2/doctor.txt (plus the
 last session's errors, for bug reports)."""
+import glob
 import os
 import re
 import shutil
@@ -115,6 +116,11 @@ def check_python(r: Report) -> None:
 def _plugin_dirs():
     dirs = [_run(["pkg-config", "--variable=plugindir", "wayfire"])]
     dirs += ["/usr/lib/wayfire", "/usr/lib64/wayfire", "/usr/local/lib/wayfire", "/usr/lib/x86_64-linux-gnu/wayfire"]
+    # what install.sh builds for you: pixdecor and Sonata's plugins, Wayfire with Sonata's fix
+    # (a fresh install warned "pixdecor missing" right after building it)
+    dirs += [os.path.expanduser("~/.local/share/wayfire/plugin-manager/install/lib/wayfire")]
+    dirs += glob.glob(os.path.expanduser("~/.local/opt/sonata-wayfire/lib*/wayfire")) + \
+        glob.glob(os.path.expanduser("~/.local/opt/sonata-wayfire/lib/*/wayfire"))
     return [d for d in dirs if d and os.path.isdir(d)]
 
 
@@ -177,8 +183,7 @@ def check_install(r: Report) -> None:
     if os.path.islink(share):
         r.add(OK, "dev install", os.path.realpath(share))
     elif os.path.isdir(share):
-        r.add(WARN, "installed copy (not linked to the repo)", "code edits need ./install.sh again",
-              fix="./install.sh --dev")
+        r.add(OK, "installed", share)                # (a dev install links the repo: ./install.sh --dev)
     cfg = os.path.expanduser("~/.config/sonata2/wayfire.ini")
     if os.path.exists(cfg + ".new"):
         r.add(WARN, "session config edited by you; a newer default is next to it", cfg + ".new")

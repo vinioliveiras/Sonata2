@@ -16,6 +16,7 @@
 #                                       session so the login screen shows it
 #   /var/cache/sonata-greeter/          last user and session (greeter's)
 set -euo pipefail
+trap 's=$?; echo "greeter-setup.sh stopped at line $LINENO (exit $s): $BASH_COMMAND" >&2' ERR
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 ACTION="${1:-install}"
 SHARE=/usr/local/share/sonata2-greeter
@@ -71,8 +72,11 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/share"
 tar -C "$SRC" --exclude='__pycache__' --exclude='*.pyc' -cf - sonata2 | tar -C "$tmp/share" -xf -
-layout="$(localectl status 2>/dev/null | sed -n 's/.*X11 Layout: *//p')"
-variant="$(localectl status 2>/dev/null | sed -n 's/.*X11 Variant: *//p')"
+# (no systemd-localed to ask: "us" -- under pipefail a failing localectl
+#  stopped the whole install without a word)
+loc="$(localectl status 2>/dev/null || true)"
+layout="$(printf '%s\n' "$loc" | sed -n 's/.*X11 Layout: *//p')"
+variant="$(printf '%s\n' "$loc" | sed -n 's/.*X11 Variant: *//p')"
 cat > "$tmp/share/wayfire.ini" <<EOF
 # Wayfire for the login screen only (tools/greeter-setup.sh)
 [core]

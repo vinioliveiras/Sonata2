@@ -178,6 +178,8 @@ class IdleLock:
 
         def dark(on):
             lockdisplay.lights(not on)              # the keyboard's light (and RGB) with the displays
+            from . import blackout                  # black, no pointer (Vini: it only dimmed)
+            blackout.show() if on else blackout.hide()
             if lockdisplay.has_backlight():
                 # a laptop: the backlight to zero, the display stays on -- powering
                 # it off and on again failed on Vini's (NVIDIA: the screen came
