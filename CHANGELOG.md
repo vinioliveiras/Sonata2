@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.9.1-alpha -- 2026-10-06
+
+A fix for 0.9.0: zooming a window from its title bar.
 
 ### Fixes
 - A click on a window's edge no longer starts a resize: zooming right
