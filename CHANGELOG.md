@@ -5,7 +5,7 @@
 ### Apps
 - Terminal, Files and TextEdit show their tab bar (and +) even with one
   tab: Settings > Appearance > Always show the tab bar (on by default).
-- Terminal and Files: the tab in front has the window's own colour, the
+- Terminal, Files and TextEdit: the tab in front has the window's own colour, the
   others the bar's (no more grey).
 
 ### Fixes

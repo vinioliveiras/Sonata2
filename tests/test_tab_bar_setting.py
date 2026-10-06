@@ -44,6 +44,13 @@ class TabBarSettingTest(unittest.TestCase):
         self.assertIn(".fs-tab { background: none;", css)
         self.assertIn(".fs-tab.active, .fs-tab.active:hover { background: %(content_bg)s; }", css)
 
+    def test_textedit_tabs_like_the_others(self):
+        """Vini: every system app's tabs follow the same pattern."""
+        from sonata2.textedit import tabs
+        css = inspect.getsource(tabs)
+        self.assertIn(".te-tab.selected, window:backdrop .te-tab.selected { background-color: %(content_bg)s;", css)
+        self.assertNotIn("alpha(%(label)s, 0.075)", css)                # the grey of the others
+
     def test_settings_switch(self):
         from sonata2.settings import app
         src = inspect.getsource(app)

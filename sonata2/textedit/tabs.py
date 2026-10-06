@@ -1,6 +1,6 @@
 """macOS-style tab bar (Safari / TextEdit / Finder): equal-width tabs under the
-glass toolbar, the selected one lighter (the toolbar's own glass), the
-others a shade darker; a close button fades in at a tab's left edge on
+glass toolbar, the selected one in the document's own background, the
+others in the bar's (like Terminal's and Files'); a close button fades in at a tab's left edge on
 hover, where an edited document shows a dot; "+" at the right. Tabs are
 dragged sideways to reorder (they glide into place), middle-click closes,
 right-click asks the owner for a menu."""
@@ -13,15 +13,17 @@ from .. import ui  # noqa: E402
 
 ui.register("""
 .te-tabs { box-shadow: inset 0 -1px %(separator)s; }
+/* like Terminal's and Files': the tab in front is the document's own
+   background, the others sit in the bar, no grey of their own (Vini) */
 .te-tab, .te-tabs button.te-tab-new {
-  min-height: 28px; background-color: %(titlebar_bg)s;
-  background-image: linear-gradient(alpha(%(label)s, 0.075), alpha(%(label)s, 0.075));
+  min-height: 28px; background-color: %(titlebar_bg)s; background-image: none;
   box-shadow: inset -1px 0 %(separator)s, inset 0 -1px %(separator)s;
   transition: background-image %(t_fast)s %(ease_out)s, color %(t_fast)s; }
 window:backdrop .te-tab, window:backdrop .te-tabs button.te-tab-new { background-color: %(titlebar_bg_inactive)s; }
 .te-tab { min-width: 64px; color: %(label_secondary)s; font-size: %(text_body)s; }
-.te-tab:hover { background-image: linear-gradient(alpha(%(label)s, 0.045), alpha(%(label)s, 0.045)); color: %(label)s; }
-.te-tab.selected { background-image: none; color: %(label)s; box-shadow: inset -1px 0 %(separator)s; }
+.te-tab:hover { background-image: linear-gradient(%(tool_hover)s, %(tool_hover)s); color: %(label)s; }
+.te-tab.selected, window:backdrop .te-tab.selected { background-color: %(content_bg)s; background-image: none;
+  color: %(label)s; box-shadow: inset -1px 0 %(separator)s; }
 .te-tab.dragging { background-image: none; box-shadow: inset 1px 0 %(separator)s, inset -1px 0 %(separator)s,
   %(shadow_control)s; }
 .te-tab label { padding: 0 26px; }
