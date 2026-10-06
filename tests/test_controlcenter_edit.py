@@ -67,7 +67,7 @@ class OrderTest(TempConfig):
 
     def test_hidden_is_what_add_controls_offers(self):
         # FPS Limit: off by default, only through Add Controls (Vini)
-        self.assertEqual(C.hidden(C.DEFAULT_ORDER), [m for m in C.CATALOG if m.startswith("stat_") or m in ("mixer", "fpslimit")])
+        self.assertEqual(C.hidden(C.DEFAULT_ORDER), [m for m in C.CATALOG if m.startswith("stat_") or m in ("mixer", "fpslimit", "keyboard")])
         self.assertEqual(C.hidden(["dnd"]), [m for m in C.CATALOG if m != "dnd"])
 
 

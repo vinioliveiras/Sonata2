@@ -24,13 +24,6 @@ ui.register("""
 .cc-fps { padding-top: 5px; padding-bottom: 5px; }
 .cc-fps .cc-fps-cap { font-size: %(text_small)s; color: %(label_secondary)s; }
 .cc-fps .cc-fps-install { min-height: 0; padding: 0 8px; font-size: %(text_small)s; border-radius: 6px; }
-.fps-seg { background: alpha(%(label)s, 0.08); border-radius: 9px; padding: 2px; }
-.fps-seg button { min-height: 20px; min-width: 0; padding: 0 6px; border-radius: 7px; background: none;
-  box-shadow: none; border: none; color: %(label)s; font-size: 12px; font-weight: 600;
-  transition: background-color %(t_fast)s, color %(t_fast)s; }
-.fps-seg button:hover { background: alpha(%(label)s, 0.08); }
-.fps-seg button.on, .fps-seg button.on:hover { background: %(accent)s; color: %(label_on_accent)s; }
-.fps-seg:disabled { opacity: 0.45; }
 .cc-fps .cc-fps-live { font-size: %(text_small)s; font-weight: 600; font-feature-settings: "tnum"; }
 .cc-fps .ft-cap { font-size: 10px; color: %(label_secondary)s; font-feature-settings: "tnum"; margin: 2px 6px; }
 """, key="fpsmodule")
@@ -61,13 +54,8 @@ class FpsModule(Gtk.Box):
         self.install_btn.connect("clicked", lambda _b: self._install())
         head.append(self.install_btn)
         self.append(head)
-        self.seg = Gtk.Box(css_classes=["fps-seg"], spacing=2, homogeneous=True)
-        self.buttons = {}
-        for c in fpslimit.CHOICES:
-            b = Gtk.Button(label=LABELS.get(c, c), can_focus=False)
-            b.connect("clicked", lambda _b, c=c: self.choose(c))
-            self.seg.append(b)
-            self.buttons[c] = b
+        self.seg = ui.controls.segmented([(c, LABELS.get(c, c)) for c in fpslimit.CHOICES], None, self.choose)
+        self.buttons = self.seg.buttons
         self.append(self.seg)
         self.graph = FrameTimeGraph()
         over = Gtk.Overlay(child=self.graph, vexpand=True, margin_top=1)

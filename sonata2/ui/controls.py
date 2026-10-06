@@ -429,3 +429,35 @@ def centred_editable_label(text: str, **kw) -> Gtk.EditableLabel:
     walk(el.get_first_child())
     el.connect("notify::editing", lambda *_a: walk(el.get_first_child()))
     return el
+
+
+theme.register("""
+.seg { background: alpha(%(label)s, 0.08); border-radius: 9px; padding: 2px; }
+.seg button { min-height: 20px; min-width: 0; padding: 0 6px; border-radius: 7px; background: none;
+  box-shadow: none; border: none; color: %(label)s; font-size: 12px; font-weight: 600;
+  transition: background-color %(t_fast)s, color %(t_fast)s; }
+.seg button:hover { background: alpha(%(label)s, 0.08); }
+.seg button.on, .seg button.on:hover { background: %(accent)s; color: %(label_on_accent)s; }
+.seg:disabled { opacity: 0.45; }
+""", key="controls-seg")
+
+
+def segmented(choices, current=None, on_pick=None, tooltips=None) -> Gtk.Box:
+    """A row of choices, the current one in the accent (Control Center's FPS
+    Limit and Keyboard). choices: [(value, label)]. box.buttons: value ->
+    button; box.select(value) marks one without calling on_pick."""
+    box = Gtk.Box(css_classes=["seg"], spacing=2, homogeneous=True)
+    box.buttons = {}
+    for value, label in choices:
+        b = Gtk.Button(label=label, can_focus=False, tooltip_text=(tooltips or {}).get(value))
+        if on_pick:
+            b.connect("clicked", lambda _b, v=value: on_pick(v))
+        box.append(b)
+        box.buttons[value] = b
+
+    def select(value):
+        for v, b in box.buttons.items():
+            (b.add_css_class if v == value else b.remove_css_class)("on")
+    box.select = select
+    select(current)
+    return box

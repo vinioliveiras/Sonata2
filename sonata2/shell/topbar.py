@@ -1265,6 +1265,8 @@ class ControlCenter(Gtk.Box):
             self.modules["mixer"] = mixer_mod
         from . import fpsmodule                                 # games' FPS limit (Add Controls)
         self.modules["fpslimit"] = fpsmodule.module()
+        from . import kbdmodule                                 # input sources (Add Controls)
+        self.modules["keyboard"] = kbdmodule.module(self.bar, lambda: self._close())
         from . import statsui                                   # performance (Add Controls; read only when shown)
         for kind in statsui.KINDS:
             self.modules["stat_" + kind] = statsui.module(kind)
