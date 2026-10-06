@@ -2,11 +2,16 @@
 
 ## Unreleased
 
+## 0.11.0-alpha -- 2026-10-06
+
+Tabs always at hand in Terminal, Files and TextEdit, a real sleep for
+plugged-in monitors and keyboards, and Dock folders that come and go.
+
 ### Apps
 - Terminal, Files and TextEdit show their tab bar (and +) even with one
   tab: Settings > Appearance > Always show the tab bar (on by default).
-- Terminal, Files and TextEdit: the tab in front has the window's own colour, the
-  others the bar's (no more grey).
+- Terminal, Files and TextEdit: the tab in front has the window's own
+  colour, the others the bar's (no more grey).
 
 ### Fixes
 - Away from the computer, monitors plugged into a laptop really turn off
