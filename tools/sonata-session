@@ -23,7 +23,12 @@ run_cfg="${XDG_RUNTIME_DIR:-/tmp}/sonata2-wayfire.ini"
 WAYFIRE=wayfire
 own="${SONATA_WAYFIRE_PREFIX:-$HOME/.local/opt/sonata-wayfire}"
 # ($own/failed: it couldn't start once -- the system's until it's built again)
-if [ -x "$own/bin/wayfire" ] && [ -s "$own/sonata-commit" ] && [ ! -e "$own/failed" ] &&
+# ($own/standalone: Wayfire 0.12 built where the distro's is older --
+#  tools/build-wayfire-stack.sh -- used whatever the system's version is)
+if [ -x "$own/bin/wayfire" ] && [ -s "$own/standalone" ] && [ ! -e "$own/failed" ] &&
+        [ "${SONATA_SYSTEM_WAYFIRE:-}" != 1 ]; then
+    WAYFIRE="$own/bin/wayfire"           # (never the system's plugins: they're for its older Wayfire)
+elif [ -x "$own/bin/wayfire" ] && [ -s "$own/sonata-commit" ] && [ ! -e "$own/failed" ] &&
         [ "${SONATA_SYSTEM_WAYFIRE:-}" != 1 ] &&
         wayfire --version 2>/dev/null | grep -q -- "-$(head -n1 "$own/sonata-commit") "; then
     WAYFIRE="$own/bin/wayfire"

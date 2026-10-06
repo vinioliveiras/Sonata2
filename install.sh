@@ -160,6 +160,27 @@ case "$family" in
               OPT="vte3-gtk4 networkmanager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer ffmpeg wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb" ;;
     *)        PM=""; PKGS=""; OPT="" ;;
 esac
+# What building Wayfire 0.12 with its wlroots (tools/build-wayfire-stack.sh),
+# Sonata's plugins and pixdecor needs, where the distro's Wayfire is older
+# than Sonata's plugins (Fedora 44: 0.10; Debian 13, Ubuntu 25.04: 0.9).
+# Checked by building in each distro's container (tools/test-install.sh).
+case "$family" in
+    *debian*|*ubuntu*) BUILD_DEPS="git patch meson ninja-build g++ pkg-config cmake bison flex gettext \
+        libwayland-dev wayland-protocols libffi-dev libexpat1-dev libinput-dev libxkbcommon-dev \
+        libpixman-1-dev libdrm-dev libegl-dev libgbm-dev libgles-dev libvulkan-dev glslang-tools \
+        libseat-dev hwdata libdisplay-info-dev libliftoff-dev libsystemd-dev libxcb1-dev \
+        libxcb-icccm4-dev libxcb-render-util0-dev libxcb-errors-dev libxcb-composite0-dev \
+        libxcb-ewmh-dev libxcb-res0-dev xwayland libcairo2-dev libpango1.0-dev libglm-dev \
+        libjpeg-dev libpng-dev libevdev-dev libxml2-dev nlohmann-json3-dev libyyjson-dev" ;;
+    *fedora*|*rhel*) BUILD_DEPS="git patch meson ninja-build gcc-c++ pkgconf-pkg-config cmake gettext \
+        wayland-devel wayland-protocols-devel libinput-devel libxkbcommon-devel pixman-devel \
+        libdrm-devel mesa-libEGL-devel mesa-libgbm-devel mesa-libGLES-devel libglvnd-devel \
+        vulkan-loader-devel vulkan-headers glslang libseat-devel hwdata-devel libdisplay-info-devel \
+        libliftoff-devel systemd-devel libxcb-devel xcb-util-wm-devel xcb-util-renderutil-devel \
+        xcb-util-errors-devel xorg-x11-server-Xwayland-devel cairo-devel pango-devel glm-devel \
+        libjpeg-turbo-devel libpng-devel libevdev-devel libxml2-devel nlohmann-json-devel yyjson-devel" ;;
+    *)        BUILD_DEPS="" ;;
+esac
 
 [ "$DEPS" = 1 ] && [ -n "$PM" ] && [ "$(id -u)" != 0 ] && { say "Dependencies need your password (sudo)"; sudo -v || DEPS=0; }
 if [ -n "$missing" ]; then
@@ -227,7 +248,14 @@ if [ -n "$OPT" ]; then
         # all at once (one transaction); if the distro lacks one of them, one by
         # one so the others still get installed
         if ! $PM $NI $OPT; then
-            for p in $OPT; do $PM $NI "$p" >/dev/null 2>&1 || echo "  (not available here: $p)"; done
+            for p in $OPT; do
+                mkdir -p "$HOME/.cache"; $PM $NI "$p" >"$HOME/.cache/sonata-opt.log" 2>&1 && continue
+                echo "  (not available here: $p)"
+                grep -iE "^(E|Error|dpkg):" "$HOME/.cache/sonata-opt.log" | head -n 3 | sed 's/^/    /' || true
+                # a package whose setup script failed leaves dpkg "interrupted",
+                # and every later apt install (greetd, the Wayfire build's tools) refuses
+                command -v dpkg >/dev/null && { sudo dpkg --configure -a >/dev/null 2>&1 || true; }
+            done
         fi
         # services those features talk to
         for svc in NetworkManager bluetooth power-profiles-daemon; do
@@ -340,6 +368,27 @@ printf '[D-BUS Service]\nName=org.freedesktop.FileManager1\nExec=%s\n' "$BIN/son
 # Built against the installed Wayfire; a Wayfire update needs a rebuild (run
 # ./install.sh again) -- until then Wayfire skips it and corners stay square.
 PLUG_PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install"
+own_wf="$HOME/.local/opt/sonata-wayfire"
+# The distro's Wayfire older than 0.11 (Sonata's plugins need its API and
+# wlroots 0.20; Arch's 0.11.0 has them):
+# Wayfire 0.12 and its wlroots built from source into their own folder, the
+# session starts that one (tools/sonata-session), and Sonata's plugins and
+# pixdecor are built against it. Without them: no Sonata title bars, round
+# corners, zoom, outline resize... (Vini: a friend's Fedora had none).
+wf_ver="$(wayfire --version 2>/dev/null | sed -n 's/^\([0-9]*\)\.\([0-9]*\).*/\1 \2/p' | head -n1)"
+if [ -n "$wf_ver" ] && [ "$(echo "$wf_ver" | awk '{print ($1 * 1000 + $2 < 11) ? 1 : 0}')" = 1 ] &&
+        [ -n "$BUILD_DEPS" ] && [ ! -s "$own_wf/standalone" ] && [ "$DEPS" = 1 ] &&
+        ask "Your Wayfire is $(echo "$wf_ver" | tr ' ' .); build Wayfire 0.12 for Sonata's title bars, corners and window effects (10-20 minutes)?"; then
+    say "Building Wayfire 0.12 (its own folder: $own_wf)"
+    $PM $NI $BUILD_DEPS >/dev/null 2>&1 || $PM $NI $BUILD_DEPS || true
+    bash "$SRC/tools/build-wayfire-stack.sh" || echo "  (the system's Wayfire is used; retry: tools/build-wayfire-stack.sh)"
+elif [ -s "$own_wf/standalone" ] && [ "$DEPS" = 1 ] && [ -n "$BUILD_DEPS" ]; then
+    bash "$SRC/tools/build-wayfire-stack.sh"      # (a newer pin in this Sonata: built again; else nothing to do)
+fi
+if [ -s "$own_wf/standalone" ]; then
+    # Sonata's plugins and pixdecor against that Wayfire, not the system's
+    export PKG_CONFIG_PATH="$own_wf/lib/pkgconfig:$own_wf/share/pkgconfig:${PKG_CONFIG_PATH:-}"
+fi
 if [ "$DEPS" = 1 ] && [[ "$family" == *arch* ]] && ! command -v meson >/dev/null; then
     $PM $NI meson ninja >/dev/null 2>&1 || true
 fi
@@ -371,8 +420,7 @@ if command -v meson >/dev/null && command -v ninja >/dev/null && pkg-config --ex
     bash "$SRC/tools/build-pixdecor.sh" || echo "  (the installed pixdecor stays; retry: tools/build-pixdecor.sh)"
     # Wayfire itself with Sonata's fix for buffers the GPU refuses (its own folder;
     # tools/sonata-session uses it while it matches the installed Wayfire)
-    own_wf="$HOME/.local/opt/sonata-wayfire"
-    if ! wayfire --version 2>/dev/null | grep -qs -- "-$(head -n1 "$own_wf/sonata-commit" 2>/dev/null) " &&
+    if [ ! -s "$own_wf/standalone" ] && ! wayfire --version 2>/dev/null | grep -qs -- "-$(head -n1 "$own_wf/sonata-commit" 2>/dev/null) " &&
             ask "Build Wayfire with Sonata's crash fix (a few minutes)?"; then
         say "Building Wayfire with Sonata's fix"
         bash "$SRC/tools/build-wayfire.sh" || echo "  (the system's Wayfire is used; retry: tools/build-wayfire.sh)"

@@ -25,7 +25,9 @@ prepare_of() {   # root: the CA, sudo, a user "friend" with sudo
     case "$1" in
         arch) echo "$ca; sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf && pacman -Syu --noconfirm sudo git base-devel" ;;
         fedora) echo "$ca; dnf -y install sudo git" ;;
-        debian|ubuntu) echo "$ca; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y sudo git ca-certificates" ;;
+        # (the CA again once ca-certificates is there: Debian's image has no update-ca-certificates
+        #  before it, and git then refused the proxy -- the Wayfire build's clones failed)
+        debian|ubuntu) echo "$ca; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y sudo git ca-certificates && $ca" ;;
     esac
 }
 fail=0

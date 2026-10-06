@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Install
+- Fedora, Debian and Ubuntu (whose Wayfire is older than 0.11) get Sonata's
+  title bars, round corners and window effects too: the installer builds
+  Wayfire 0.12 with its wlroots in its own folder (~/.local/opt/sonata-wayfire,
+  10-20 minutes, asked first) and the session uses it. The system's Wayfire
+  is left alone.
+- A distro package that fails to set up no longer blocks the rest of the
+  install (apt), and the installer says why a package was skipped.
+
 ## 0.11.0-alpha -- 2026-10-06
 
 Tabs always at hand in Terminal, Files and TextEdit, a real sleep for

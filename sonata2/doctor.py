@@ -115,7 +115,21 @@ def check_python(r: Report) -> None:
             r.add(FAIL, f"{mod} missing", fix=f"install {pkg}")
 
 
+OWN_WAYFIRE = os.path.expanduser("~/.local/opt/sonata-wayfire")
+
+
+def _standalone() -> bool:
+    """Wayfire 0.12 built by install.sh where the distro's is older
+    (tools/build-wayfire-stack.sh): the session runs that one."""
+    return os.path.isfile(os.path.join(OWN_WAYFIRE, "standalone")) and \
+        os.access(os.path.join(OWN_WAYFIRE, "bin", "wayfire"), os.X_OK)
+
+
 def _plugin_dirs():
+    if _standalone():                        # (the system's plugins are for its older Wayfire)
+        dirs = [os.path.expanduser("~/.local/share/wayfire/plugin-manager/install/lib/wayfire")]
+        dirs += glob.glob(os.path.join(OWN_WAYFIRE, "lib*/wayfire"))
+        return [d for d in dirs if os.path.isdir(d)]
     dirs = [_run(["pkg-config", "--variable=plugindir", "wayfire"])]
     dirs += ["/usr/lib/wayfire", "/usr/lib64/wayfire", "/usr/local/lib/wayfire", "/usr/lib/x86_64-linux-gnu/wayfire"]
     # what install.sh builds for you: pixdecor and Sonata's plugins, Wayfire with Sonata's fix
@@ -130,7 +144,16 @@ def check_wayfire(r: Report, repo: str) -> None:
     if not shutil.which("wayfire"):
         r.add(FAIL, "Wayfire missing", fix="install wayfire (0.9+)")
         return
-    r.add(OK, "Wayfire " + (_run(["wayfire", "--version"]).splitlines() or ["?"])[0])
+    if _standalone():
+        own = (_run([os.path.join(OWN_WAYFIRE, "bin", "wayfire"), "--version"]).splitlines() or ["?"])[0]
+        r.add(OK, f"Wayfire {own} (built for Sonata; the system's is older)")
+    else:
+        version = (_run(["wayfire", "--version"]).splitlines() or ["?"])[0]
+        r.add(OK, "Wayfire " + version)
+        m = re.match(r"(\d+)\.(\d+)", version)
+        if m and (int(m.group(1)), int(m.group(2))) < (0, 11):
+            r.add(WARN, "Wayfire older than 0.11: no Sonata title bars, round corners or window effects",
+                  fix="./install.sh   (builds Wayfire 0.12 in its own folder)")
     dirs = _plugin_dirs()
     have = {f[3:-3] for d in dirs for f in os.listdir(d) if f.startswith("lib") and f.endswith(".so")}
     cfg = os.path.join(repo, "config", "wayfire.ini")
