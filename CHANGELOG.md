@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixes
+- Away from the computer, monitors plugged into a laptop really turn off
+  (they only went black), the pointer hides, and every keyboard's light
+  goes off -- USB ones too, not only the laptop's.
+
 ## 0.10.0-alpha -- 2026-10-06
 
 Stopwatch and Timers in Clock, Trim and Crop in Videos, windows that zoom

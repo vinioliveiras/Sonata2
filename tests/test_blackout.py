@@ -13,6 +13,9 @@ from gi.repository import GLib  # noqa: E402
 from sonata2 import ui  # noqa: E402
 from sonata2.shell import blackout as B  # noqa: E402
 
+import pathlib  # noqa: E402
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+
 
 def spin(ms):
     end = GLib.get_monotonic_time() + ms * 1000
@@ -53,6 +56,20 @@ class BlackoutTest(unittest.TestCase):
         B.hide()
         spin(B.FADE_OUT_MS + 150)
         self.assertEqual(B._WINDOWS, [])
+
+    def test_no_pointer_while_dark(self):
+        """Vini: black screen, the pointer still in the middle. The compositor
+        hides it (sonata-corners' sonata/cursor) and shows it again."""
+        from unittest import mock
+        with mock.patch.object(B, "pointer") as ptr, mock.patch.object(B, "_window"), \
+                mock.patch.object(B.GLib, "timeout_add"):
+            B.show()
+            B.hide()
+        B._WINDOWS.clear()                                   # (the mock windows: not left for the next test)
+        self.assertEqual([c.args for c in ptr.call_args_list], [(True,), (False,)])
+        src = (ROOT / "wayfire-plugin" / "src" / "sonata-corners.cpp").read_text()
+        self.assertIn('register_method("sonata/cursor", ipc_cursor)', src)
+        self.assertIn("wf::get_core().hide_cursor()", src)
 
     def test_idle_dark_uses_it(self):
         from sonata2.shell import idlelock

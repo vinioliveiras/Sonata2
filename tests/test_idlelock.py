@@ -14,16 +14,32 @@ class KeyboardLightTest(unittest.TestCase):
         import os
         import tempfile
         self.d = tempfile.mkdtemp()
-        self.level = os.path.join(self.d, "level")
-        with open(self.level, "w") as f:
-            f.write("3")
+        # the laptop's keyboard, a USB one, and a Caps Lock light (not a backlight)
+        self.devs = {"asus::kbd_backlight": "3", "usb-0003::kbd_backlight": "2", "input3::capslock": "1"}
+        for name, v in self.devs.items():
+            self.set(name, v)
         fake = os.path.join(self.d, "brightnessctl")
-        with open(fake, "w") as f:      # g: the level; set N: the new level
-            f.write('#!/bin/sh\nfor a; do last2="$last"; last="$a"; done\n'
-                    f'if [ "$last" = g ]; then cat {self.level}; '
-                    f'elif [ "$last2" = set ]; then echo "$last" > {self.level}; fi\n')
+        with open(fake, "w") as f:      # -l -m: the list; -d NAME g: its level; -d NAME set N
+            f.write('#!/bin/sh\ndev=""; prev=""; last=""; list=""\n'
+                    'for a; do [ "$prev" = -d ] && dev="$a"; [ "$a" = -l ] && list=1; prev2="$prev"; prev="$a"; '
+                    'last2="$last"; last="$a"; done\n'
+                    f'if [ -n "$list" ]; then for f in {self.d}/lvl-*; do n=${{f##*/lvl-}}; '
+                    'echo "$n,leds,$(cat "$f"),100%,3"; done; exit 0; fi\n'
+                    f'case "$dev" in "*::kbd_backlight") dev=asus::kbd_backlight;; esac\n'
+                    f'if [ "$last" = g ]; then cat "{self.d}/lvl-$dev"; '
+                    f'elif [ "$last2" = set ]; then echo "$last" > "{self.d}/lvl-$dev"; fi\n')
         os.chmod(fake, 0o755)
         self.env = dict(os.environ, PATH=self.d + ":" + os.environ["PATH"], XDG_CACHE_HOME=self.d)
+        self.level = os.path.join(self.d, "lvl-asus::kbd_backlight")
+
+    def set(self, name, v):
+        import os
+        with open(os.path.join(self.d, "lvl-" + name), "w") as f:
+            f.write(v)
+
+    def get(self, name):
+        import os
+        return open(os.path.join(self.d, "lvl-" + name)).read().strip()
 
     def run_cmd(self, which):
         import importlib
@@ -60,6 +76,23 @@ class KeyboardLightTest(unittest.TestCase):
         self.run_cmd("KBD_OFF")
         self.run_cmd("KBD_ON")
         self.assertEqual(self.now(), "0")
+
+    def test_every_keyboard_goes_dark_and_comes_back(self):
+        """Vini: USB keyboards stayed lit, only the laptop's went dark."""
+        self.run_cmd("KBD_OFF")
+        self.assertEqual((self.get("asus::kbd_backlight"), self.get("usb-0003::kbd_backlight")), ("0", "0"))
+        self.assertEqual(self.get("input3::capslock"), "1")          # not a backlight: left alone
+        self.run_cmd("KBD_ON")
+        self.assertEqual((self.get("asus::kbd_backlight"), self.get("usb-0003::kbd_backlight")), ("3", "2"))
+
+    def test_level_saved_by_an_older_sonata_comes_back(self):
+        import os
+        os.makedirs(os.path.join(self.d, "sonata2"), exist_ok=True)
+        with open(os.path.join(self.d, "sonata2", "lights-before-dark"), "w") as f:
+            f.write("3")
+        self.set("asus::kbd_backlight", "0")
+        self.run_cmd("KBD_ON")
+        self.assertEqual(self.get("asus::kbd_backlight"), "3")
 
     def test_session_start_gives_lights_back(self):
         import inspect

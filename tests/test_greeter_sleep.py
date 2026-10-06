@@ -63,7 +63,8 @@ class DarkenTest(unittest.TestCase):
         lights.assert_called_once_with(False)
         show.assert_called_once()
         dim.assert_called_once_with(True)                  # the backlight, never the panel's power
-        watch.displays.assert_not_called()
+        only = watch.displays.call_args.kwargs["only"]     # plugged-in monitors really go off
+        self.assertEqual((only("eDP-1"), only("HDMI-A-1")), (False, True))
         watch, lights, dim, show, hide = self.run_darken(False, laptop=True)
         hide.assert_called_once()
         dim.assert_called_once_with(False)

@@ -39,11 +39,19 @@ KBD = "*::kbd_backlight"
 # own save kept 0 the second time, and was lost on restart).
 _STATE = shlex.quote(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
                                   "sonata2", "lights-before-dark"))
-KBD_OFF = (f"b=$(brightnessctl -d '{KBD}' g 2>/dev/null); "
-           f"if [ \"${{b:-0}}\" -gt 0 ] 2>/dev/null; then mkdir -p \"$(dirname {_STATE})\"; "
-           f"echo \"$b\" > {_STATE}; brightnessctl -q -d '{KBD}' set 0; fi")
-KBD_ON = (f"if [ -s {_STATE} ]; then brightnessctl -q -d '{KBD}' set \"$(cat {_STATE})\"; "
-          f"rm -f {_STATE}; fi")
+# every keyboard's light, the laptop's and the ones plugged in (Vini: only the
+# laptop's went dark -- "-d '*::kbd_backlight'" picks the first one only),
+# each saved in a file of its own (named after the light) under _KBD_DIR
+_KBD_DIR = shlex.quote(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
+                                    "sonata2", "keyboards-before-dark"))
+_KBD_LIST = "brightnessctl -l -m -c leds 2>/dev/null | cut -d, -f1 | grep 'kbd_backlight'"
+KBD_OFF = (f"for d in $({_KBD_LIST}); do b=$(brightnessctl -d \"$d\" g 2>/dev/null); "
+           f"if [ \"${{b:-0}}\" -gt 0 ] 2>/dev/null; then mkdir -p {_KBD_DIR}; "
+           f"echo \"$b\" > {_KBD_DIR}/\"$d\"; brightnessctl -q -d \"$d\" set 0; fi; done")
+KBD_ON = (f"for f in {_KBD_DIR}/*; do [ -s \"$f\" ] || continue; "
+          f"brightnessctl -q -d \"$(basename \"$f\")\" set \"$(cat \"$f\")\"; rm -f \"$f\"; done; "
+          # (saved by an older Sonata: the first keyboard's level)
+          f"if [ -s {_STATE} ]; then brightnessctl -q -d '{KBD}' set \"$(cat {_STATE})\"; rm -f {_STATE}; fi")
 # the panel's backlight while the lock screen is dark (lockdisplay.dim): the same
 # once-saved level, in a file of its own
 _BL_STATE = shlex.quote(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
@@ -152,14 +160,17 @@ def darken(watch, on: bool) -> None:
     light, a black overlay with no pointer, and the panel's backlight (a
     laptop) or every display off. The session's idle policy and the login
     screen (greeter.py) both use it."""
+    from ..backend import system
     from . import blackout, lockdisplay
     lockdisplay.lights(not on)              # the keyboard's light (and RGB) with the displays
     blackout.show() if on else blackout.hide()     # black, no pointer (Vini: it only dimmed)
     if lockdisplay.has_backlight():
-        # a laptop: the backlight to zero, the display stays on -- powering
-        # it off and on again failed on Vini's (NVIDIA: the screen came
-        # back only by closing and opening the lid)
+        # a laptop: its panel's backlight to zero, the panel stays on --
+        # powering it off and on again failed on Vini's (NVIDIA: the screen
+        # came back only by closing and opening the lid). Monitors plugged
+        # in really go off (Vini: they only went black, the pointer on them)
         lockdisplay.dim(on)
+        watch.displays(not on, only=lambda name: bool(name) and not system.is_builtin(name))
     else:
         watch.displays(not on)
 

@@ -111,6 +111,8 @@ class IdleWatchTest(unittest.TestCase):
         w = IdleWatch(os.path.join(run, name))
         self.assertTrue(w.ok)
         self.assertTrue(w.can_power())
+        self.assertEqual(sorted(w.output_names.values()), ["HEADLESS-1"])      # names: which are plugged in
+        self.assertTrue(w.displays(False, only=lambda n: n != "HEADLESS-1"))     # (none picked)
         ev = []
         w.watch(0.5, lambda: ev.append("idle"), lambda: ev.append("back"))
         self.assertTrue(w.displays(False))
@@ -145,10 +147,18 @@ class LaptopDarkTest(unittest.TestCase):
             made["dark"](False)
         return w, dim
 
-    def test_laptop_dims_never_powers_off(self):
+    def test_laptop_dims_its_panel_and_turns_monitors_off(self):
+        """Vini: plugged-in monitors only went black, the pointer on them.
+        The laptop's own panel is never powered off (only its backlight);
+        every other display is."""
         w, dim = self.dark_fn(True)
         self.assertEqual([c.args for c in dim.call_args_list], [(True,), (False,)])
-        w.displays.assert_not_called()
+        self.assertEqual([c.args for c in w.displays.call_args_list], [(False,), (True,)])
+        only = w.displays.call_args_list[0].kwargs["only"]
+        self.assertFalse(only("eDP-1"))                      # the panel: never
+        self.assertTrue(only("HDMI-A-1"))
+        self.assertTrue(only("DP-2"))
+        self.assertFalse(only(""))                           # unknown: left alone
 
     def test_desktop_still_powers_off(self):
         w, dim = self.dark_fn(False)

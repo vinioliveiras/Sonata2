@@ -36,6 +36,17 @@ def _window(monitor) -> Gtk.Window:
     return win
 
 
+def pointer(hidden: bool) -> None:
+    """The pointer off / back, by the compositor (sonata-corners): the
+    blackout's own "no cursor" only applies once the pointer moves onto it,
+    and a still pointer stayed in the middle of the dark screen (Vini)."""
+    try:
+        from ..wl.wfipc import WayfireIPC
+        WayfireIPC().call("sonata/cursor", {"hidden": bool(hidden)})
+    except Exception:
+        pass
+
+
 def showing() -> bool:
     return any(w.black.has_css_class("on") for w in _WINDOWS)
 
@@ -49,11 +60,13 @@ def show() -> None:
         w = _window(mons.get_item(i))
         _WINDOWS.append(w)
         w.present()
+    pointer(True)
     # one frame transparent, then black: the fade shows (as the lock screen's)
     GLib.timeout_add(50, lambda: ([w.black.add_css_class("on") for w in _WINDOWS], False)[1])
 
 
 def hide() -> None:
+    pointer(False)
     for w in _WINDOWS:
         w.black.remove_css_class("on")
     gone = list(_WINDOWS)

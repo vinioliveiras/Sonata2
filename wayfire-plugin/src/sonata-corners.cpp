@@ -534,7 +534,7 @@ class corners_render_instance_t :
  * used before, maps input through its own transform). */
 /* the top of a window that is always blurred: title bar + a toolbar */
 /* bumped with every change of the plugin (tests/test_regressions.py checks it) */
-#define SONATA_CORNERS_BUILD "2026-10-06.2 keyboard for the desktop"
+#define SONATA_CORNERS_BUILD "2026-10-06.3 no pointer on a dark screen"
 static const int TOP_GLASS = 96;
 
 class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
@@ -1868,10 +1868,22 @@ class sonata_corners_t : public wf::plugin_interface_t
         return wf::ipc::json_error("no such layer surface");
     };
 
+    /* No pointer while the screen is dark (Vini: black, with the pointer in
+     * the middle -- a surface mapped under a still pointer never gets it,
+     * so its own "no cursor" can't apply). {"hidden": true | false} */
+    wf::ipc::method_callback ipc_cursor = [=] (wf::json_t data)
+    {
+        bool hidden = data.is_object() && data.has_member("hidden") && data["hidden"].is_bool() &&
+            data["hidden"].as_bool();
+        hidden ? wf::get_core().hide_cursor() : wf::get_core().unhide_cursor();
+        return wf::ipc::json_ok();
+    };
+
   public:
     void init() override
     {
         ipc_repo->register_method("sonata/focus-layer", ipc_focus_layer);
+        ipc_repo->register_method("sonata/cursor", ipc_cursor);
         ipc_repo->register_method("sonata/fps", ipc_fps);
         ipc_repo->register_method("sonata/rounded", ipc_rounded);
         /* which build runs (session.log): a fix is only in once install.sh rebuilt it */
@@ -1921,6 +1933,8 @@ class sonata_corners_t : public wf::plugin_interface_t
     void fini() override
     {
         ipc_repo->unregister_method("sonata/focus-layer");
+        ipc_repo->unregister_method("sonata/cursor");
+        wf::get_core().unhide_cursor();
         ipc_repo->unregister_method("sonata/fps");
         ipc_repo->unregister_method("sonata/rounded");
         fps.fini();

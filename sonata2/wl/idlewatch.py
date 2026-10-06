@@ -40,6 +40,7 @@ class IdleWatch:
         self.globals = {}                  # interface -> [(name, version)]
         self.seat = self.notifier = self.power = None
         self.outputs = []                  # output object ids
+        self.output_names = {}             # output object id -> "eDP-1", "HDMI-A-1" (wl_output v4)
         self._powers = {}                  # output id -> output power object id
         self._watches = {}                 # notification id -> (on_idle, on_back)
         name = display or os.environ.get("WAYLAND_DISPLAY") or "wayland-0"
@@ -66,7 +67,11 @@ class IdleWatch:
         if self.globals.get(POWER):
             self.power = self._bind(self.globals[POWER][0], POWER, 1, lambda *_a: None)
         for g in self.globals.get("wl_output", []):
-            self.outputs.append(self._bind(g, "wl_output", 1, lambda *_a: None))
+            oid = self._new(None)
+            self._handlers[oid] = lambda op, payload, oid=oid: self._on_output(oid, op, payload)
+            self._send(self._registry, 0, struct.pack("=I", g[0]) + _string("wl_output") +
+                       struct.pack("=II", min(4, g[1]), oid))            # v4: its name
+            self.outputs.append(oid)
         self._roundtrip()
         self.ok = True
         self._src = GLib.io_add_watch(self.sock.fileno(), GLib.PRIORITY_DEFAULT,
@@ -157,6 +162,11 @@ class IdleWatch:
         self._watches[oid] = (on_idle, on_back)
         return oid
 
+    def _on_output(self, oid: int, opcode: int, payload: bytes) -> None:
+        if opcode == 4 and len(payload) >= 4:                        # wl_output.name
+            n = struct.unpack_from("=I", payload)[0]
+            self.output_names[oid] = payload[4:4 + n].rstrip(b"\0").decode(errors="replace")
+
     def unwatch(self, oid: int) -> None:
         if self.ok and oid in self._watches:
             self._send(oid, 0)                                       # ext_idle_notification_v1.destroy
@@ -165,11 +175,14 @@ class IdleWatch:
     def can_power(self) -> bool:
         return self.ok and self.power is not None and bool(self.outputs)
 
-    def displays(self, on: bool) -> bool:
-        """Every display on / off (wlr-output-power-management)."""
+    def displays(self, on: bool, only=None) -> bool:
+        """Every display on / off (wlr-output-power-management); only(name):
+        just the displays it picks by name ("HDMI-A-1")."""
         if not self.can_power():
             return False
         for out in self.outputs:
+            if only is not None and not only(self.output_names.get(out, "")):
+                continue
             p = self._powers.get(out)
             if p is None:
                 p = self._powers[out] = self._new(lambda *_a: None)
