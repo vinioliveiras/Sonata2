@@ -100,10 +100,47 @@ class RgbLightTest(unittest.TestCase):
             self.assertEqual(subprocess.run(["sh", "-n", "-c", c]).returncode, 0, c)
 
 
+class LightsOrderTest(unittest.TestCase):
+    """Vini: after the lock, the keyboard went dark and never came back.
+    OpenRGB takes seconds to save the colours; waking meanwhile ran "back on"
+    before "off" had made its mark, then "off" finished. Each command waits
+    for the one before it now."""
+
+    def test_on_waits_for_a_slow_off(self):
+        import importlib
+        import os
+        import shutil
+        import subprocess
+        import tempfile
+        import time
+        if not shutil.which("flock"):
+            self.skipTest("no flock here")
+        d = tempfile.mkdtemp()
+        log = os.path.join(d, "log")
+        fake = os.path.join(d, "openrgb")
+        with open(fake, "w") as f:      # saving takes a while, like the real one
+            f.write(f'#!/bin/sh\ncase "$*" in *save-profile*) sleep 1;; esac\necho "$*" >> "{log}"\n')
+        os.chmod(fake, 0o755)
+        env = dict(os.environ, PATH=d + ":" + os.environ["PATH"])
+        with mock.patch.dict("os.environ", {"XDG_CACHE_HOME": os.path.join(d, "cache")}):
+            mod = importlib.reload(I)
+            off, on = mod.serial(mod.RGB_OFF), mod.serial(mod.RGB_ON)
+        importlib.reload(I)
+        p1 = subprocess.Popen(["sh", "-c", off], env=env)
+        time.sleep(0.2)                                        # woken while it still saves
+        p2 = subprocess.Popen(["sh", "-c", on], env=env)
+        p1.wait(10)
+        p2.wait(10)
+        lines = [ln for ln in open(log).read().split("\n") if ln]
+        self.assertEqual(lines[-1], f"--profile {I.RGB_PROFILE}")   # the colours back, last
+        self.assertFalse(os.path.exists(os.path.join(d, "cache", "sonata2", "rgb-before-dark")))
+
+
 class CommandTest(unittest.TestCase):
     def test_keyboard_light_follows_the_display(self):
         cmd = I.command({"lock_after": -1}, 300, kbd=True)
-        self.assertEqual(cmd, ["swayidle", "-w", "timeout", "300", I.KBD_OFF, "resume", I.KBD_ON])
+        self.assertEqual(cmd, ["swayidle", "-w", "timeout", "300", I.serial(I.KBD_OFF), "resume",
+                               I.serial(I.KBD_ON)])
         self.assertIn("set 0", I.KBD_OFF)                 # level saved before turning off
         self.assertIn("$(cat ", I.KBD_ON)                 # and restored on resume (KeyboardLightTest)
 
@@ -114,7 +151,7 @@ class CommandTest(unittest.TestCase):
     def test_lock_kept(self):
         cmd = I.command({"lock_after": 5, "lock_before_sleep": True}, 300, kbd=True)
         self.assertEqual(cmd[-5:], ["timeout", "305", I.LOCK, "before-sleep", I.LOCK])
-        self.assertIn(I.KBD_OFF, cmd)
+        self.assertIn(I.serial(I.KBD_OFF), cmd)
 
     def test_rgb_devices_go_dark(self):
         """A USB HyperX keyboard stayed lit: OpenRGB turns every RGB device off and back."""

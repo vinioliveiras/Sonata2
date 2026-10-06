@@ -92,7 +92,10 @@ def displays(on: bool) -> bool:
 def lights(on: bool) -> None:
     """The keyboard's backlight (and RGB devices, with OpenRGB) off / back
     as they were -- with the displays (Vini: the keyboard stayed lit with
-    the screen locked, an app in the background keeping the session awake)."""
+    the screen locked, an app in the background keeping the session awake).
+    Each runs on its own (it outlives the lock screen, which quits right after
+    unlocking) and waits for the one before it (idlelock.serial): "back on"
+    ran while OpenRGB was still saving for "off", and the keyboard stayed dark."""
     from . import idlelock
     cmds = []
     if idlelock.keyboard_light():
@@ -101,7 +104,7 @@ def lights(on: bool) -> None:
         cmds.append(idlelock.RGB_ON if on else idlelock.RGB_OFF)
     for c in cmds:
         try:
-            subprocess.Popen(["sh", "-c", c], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, start_new_session=True)
+            subprocess.Popen(["sh", "-c", idlelock.serial(c)], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         except OSError:
             pass

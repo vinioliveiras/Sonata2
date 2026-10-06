@@ -49,6 +49,18 @@ _RGB_MARK = shlex.quote(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path
 RGB_OFF = (f"[ -e {_RGB_MARK} ] || {{ openrgb --save-profile {RGB_PROFILE} >/dev/null 2>&1 && "
            f"mkdir -p \"$(dirname {_RGB_MARK})\" && touch {_RGB_MARK}; }}; openrgb --mode off >/dev/null 2>&1")
 RGB_ON = f"[ -e {_RGB_MARK} ] && openrgb --profile {RGB_PROFILE} >/dev/null 2>&1; rm -f {_RGB_MARK}"
+_LIGHTS_LOCK = shlex.quote(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
+                                        "sonata2", "lights.lock"))
+
+
+def serial(cmd: str) -> str:
+    """One lights command at a time, whoever runs it (the lock screen, the
+    idle timer, swayidle): OpenRGB takes seconds to save the colours, and a
+    wake-up meanwhile ran "back on" before there was anything to put back
+    -- then "off" finished, and the keyboard stayed dark (Vini)."""
+    if not shutil.which("flock"):
+        return cmd
+    return f"mkdir -p \"$(dirname {_LIGHTS_LOCK})\" && flock {_LIGHTS_LOCK} sh -c {shlex.quote(cmd)}"
 
 
 def marker() -> str:
@@ -109,9 +121,10 @@ def keyboard_light() -> bool:
 def command(cfg: dict, dpms: int, kbd: bool = False, rgb: bool = False) -> list:
     args = []
     if kbd and dpms > 0:                          # with the display: off, then back on any input
-        args += ["timeout", str(dpms), KBD_OFF, "resume", KBD_ON]
+        args += ["timeout", str(dpms), serial(KBD_OFF), "resume", serial(KBD_ON)]
     if rgb and dpms > 0:                          # (in the background: OpenRGB takes a few seconds)
-        args += ["timeout", str(dpms), f"sh -c {shlex.quote(RGB_OFF)} &", "resume", f"sh -c {shlex.quote(RGB_ON)} &"]
+        args += ["timeout", str(dpms), f"sh -c {shlex.quote(serial(RGB_OFF))} &", "resume",
+                 f"sh -c {shlex.quote(serial(RGB_ON))} &"]
     after = int(cfg.get("lock_after", -1))
     if after >= 0:
         base = dpms if dpms > 0 else 600          # display never sleeps: count from 10 min idle

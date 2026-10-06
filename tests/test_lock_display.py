@@ -61,7 +61,7 @@ class LockDisplayTest(unittest.TestCase):
                 mock.patch.object(LD.subprocess, "Popen", lambda argv, **k: ran.append(argv[-1])):
             LD.lights(False)
             LD.lights(True)
-        self.assertEqual(ran, [idlelock.KBD_OFF, idlelock.KBD_ON])
+        self.assertEqual(ran, [idlelock.serial(idlelock.KBD_OFF), idlelock.serial(idlelock.KBD_ON)])
         from sonata2.shell import lock
         self.assertIn("lockdisplay.lights(False)", inspect.getsource(lock.LockScreen._go_dark))
 
