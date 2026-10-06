@@ -49,12 +49,9 @@ def _downloads() -> str:
 
 
 def gone(path: str) -> bool:
-    """The folder was deleted or moved away (Vini: it stayed in the Dock).
-    Not when the drive it is on isn't there (unplugged): it comes back."""
-    if not path or os.path.isdir(path):
-        return False
-    parent = os.path.dirname(path.rstrip("/"))
-    return os.path.isdir(parent)
+    """The folder isn't there any more: deleted, moved away, or on a drive
+    that was unplugged (Vini: it stayed in the Dock; a pen drive's too)."""
+    return bool(path) and not os.path.isdir(path)
 
 
 def default_stacks() -> list:
@@ -123,6 +120,18 @@ class StackRow:
         self.dock = dock
         self._tiles = []
         self._monitors = []
+        self._drives()
+
+    def _drives(self) -> None:
+        """A drive unplugged: its folders leave the Dock (inotify may say
+        nothing when the mount goes away)."""
+        self._volumes = Gio.VolumeMonitor.get()
+        self._volumes_id = self._volumes.connect("mount-removed", lambda *_a: GLib.timeout_add(
+            REFRESH_MS, lambda: (self.drop_gone(), False)[1]))
+
+    def drop_gone(self) -> None:
+        for tile in [t for t in self._tiles if gone(t.spec["path"])]:
+            self.remove(tile)
 
     def tiles(self) -> list:
         return list(self._tiles)
@@ -197,6 +206,9 @@ class StackRow:
         """The Dock is replaced: stop watching every stack's folder."""
         for tile in self._tiles:
             self._unwatch(tile)
+        if getattr(self, "_volumes_id", 0):
+            self._volumes.disconnect(self._volumes_id)
+            self._volumes_id = 0
 
     def refresh_icon(self, tile) -> None:
         spec = tile.spec

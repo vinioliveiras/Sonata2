@@ -298,9 +298,12 @@ class DockTest(unittest.TestCase):
         from sonata2.shell import dock_stack
         folder = os.path.join(os.environ["XDG_CONFIG_HOME"], "fromdesktop")
         os.makedirs(folder, exist_ok=True)
-        win = Gtk.Window(child=self.dock)
-        win.present()
+        if self.dock.get_root() is None:
+            win = Gtk.Window(child=self.dock)
+            win.present()
+            self.addCleanup(win.destroy)
         settle()
+        self.assertTrue(self.dock.get_mapped())
         self.dock.stacks.add(folder)
         tile = self.dock.stacks.tiles()[-1]
         self.assertFalse(tile.get_visible())                         # its place opens first
@@ -315,15 +318,28 @@ class DockTest(unittest.TestCase):
             GLib.MainContext.default().iteration(False)
         self.assertNotIn(tile, self.dock.stacks.tiles())
         self.assertNotIn(folder, [s["path"] for s in self.cfg["stacks"]])
-        win.set_child(None)
-        win.destroy()
 
     def test_folder_deleted_while_the_dock_was_off(self):
         from sonata2.shell import dock_stack
         missing = os.path.join(os.environ["XDG_CONFIG_HOME"], "deleted-meanwhile")
         self.assertTrue(dock_stack.gone(missing))
-        self.assertFalse(dock_stack.gone("/media/unplugged-drive/Photos"))   # its drive away: kept
+        self.assertTrue(dock_stack.gone("/media/unplugged-drive/Photos"))    # its drive unplugged: gone too
         self.assertFalse(dock_stack.gone(os.environ["XDG_CONFIG_HOME"]))
+
+    def test_unplugged_drive_folder_leaves(self):
+        """Vini: a pen drive's / external disk's folder leaves the Dock when
+        the drive is unplugged."""
+        import shutil
+        folder = os.path.join(os.environ["XDG_CONFIG_HOME"], "pendrive")
+        os.makedirs(folder, exist_ok=True)
+        self.dock.stacks.add(folder)
+        tile = self.dock.stacks.tiles()[-1]
+        shutil.rmtree(folder)                                        # (the mount gone)
+        self.dock.stacks.drop_gone()                                 # what mount-removed runs
+        self.assertNotIn(tile, self.dock.stacks.tiles())
+        import inspect
+        from sonata2.shell import dock_stack
+        self.assertIn('"mount-removed"', inspect.getsource(dock_stack.StackRow._drives))
 
     def test_keep_in_dock_toggle(self):
         key = self.removable()[0]
