@@ -18,6 +18,11 @@
 			<_long>As a double-click on its title bar: toggle-maximize, minimize or none (Settings sets it with the title bar's).</_long>
 			<default>toggle-maximize</default>
 		</option>
+		<option name="zoom" type="bool">
+			<_short>Animate zoom</_short>
+			<_long>Maximize / restore: the window's frame grows or shrinks to its new place, its contents fade in there (in place of grid's crossfade).</_long>
+			<default>true</default>
+		</option>
 		<option name="border" type="color">
 			<_short>Outline while resizing</_short>
 			<default>#00000033</default>

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Windows
+- Zoom (maximize / restore) animates like macOS: the window's frame grows
+  or shrinks to its new place and the contents fade in there -- no more
+  smear of two title bars over each other.
+
 ## 0.9.1-alpha -- 2026-10-06
 
 A fix for 0.9.0: zooming a window from its title bar.

@@ -73,6 +73,13 @@ spec.loader.exec_module(tokens)
 wfconfig._wayfire_files = lambda: [sys.argv[1]]       # write only the resolved copy
 for sec, key, val in wfconfig.frame_options(tokens.frame()):     # the user's radius
     wfconfig.wayfire_set(sec, key, val)
+# zoom (maximize / restore): sonata-resize animates the frame; grid's crossfade
+# showed two title bars over each other (Vini) -- off when sonata-resize is in
+import re
+with open(sys.argv[1], encoding="utf-8") as f:
+    m = re.search(r"^plugins *=(.*)$", f.read(), re.M)
+if m and "sonata-resize" in m.group(1).split():
+    wfconfig.wayfire_set("grid", "type", "none")
 PY
 over="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/wayfire-overrides.ini"
 # Keyboard: the system's layout (localectl) until one is picked in Settings.

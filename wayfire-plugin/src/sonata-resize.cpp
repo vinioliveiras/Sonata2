@@ -16,6 +16,15 @@
  * double-click on the title bar does (sonata-resize/double_click, set with
  * Settings' "Double-click a window's title bar to": Zoom, Minimize or
  * nothing), and a click that doesn't move (< DEAD_ZONE px) never resizes.
+ *
+ * And zoom (maximize / restore): Wayfire's grid crossfaded a picture of the
+ * window at its old size into the new one -- two title bars over each other
+ * for a moment (Vini: "a smear"). Like macOS, the window's frame (the same
+ * background panel the outline resize uses) grows or shrinks to its new
+ * place in ZOOM_MS, and the window's contents fade in there once the app
+ * has drawn itself at that size (the outline resize's fade). Grid's own
+ * animation is off (config/wayfire.ini: [grid] type = none);
+ * sonata-resize/zoom turns this one off.
  */
 #include <wayfire/compositor-view.hpp>
 #include <wayfire/render-manager.hpp>
@@ -179,6 +188,7 @@ class ghost_node_t : public wf::scene::node_t
     }
 };
 
+static constexpr int ZOOM_MS = 250;
 static constexpr int DEAD_ZONE = 3;                  // px: less is a click, not a resize
 static constexpr int64_t DOUBLE_CLICK_MS = 400;
 static constexpr double DOUBLE_CLICK_PX = 6.0;
@@ -256,6 +266,11 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
             finish_fade();
             close_ghost();
         }
+
+        if (zooming && (ev->view == zooming))
+        {
+            end_zoom(false);
+        }
     };
 
     wf::button_callback activate_binding;
@@ -281,6 +296,20 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     // -- Sonata: resize with the window's background only, contents fade in after --
     wf::option_wrapper_t<bool> live{"sonata-resize/live"};
     wf::option_wrapper_t<std::string> double_click{"sonata-resize/double_click"};
+    wf::option_wrapper_t<bool> zoom_enabled{"sonata-resize/zoom"};
+
+    // -- zoom: the frame grows / shrinks, the contents fade in at the new size --
+    wayfire_toplevel_view zooming;
+    wf::geometry_t zoom_from, zoom_hint;
+    wf::animation::simple_animation_t zoom{wf::create_option(ZOOM_MS),
+        wf::animation::smoothing::circle};
+    wf::effect_hook_t zoom_hook = [=] () { zoom_step(); };
+
+    wf::signal::connection_t<wf::view_tile_request_signal> on_tile_request =
+        [=] (wf::view_tile_request_signal *ev)
+    {
+        start_zoom(ev->view, ev->desired_size);
+    };
     bool moved = false;                                  // past the dead zone this drag
     wf::option_wrapper_t<wf::color_t> fill{"sonata-resize/fill"};
     wf::option_wrapper_t<wf::color_t> border{"sonata-resize/border"};
@@ -333,6 +362,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         output->connect(&on_resize_request);
         LOGI("sonata-resize: ready on ", output->to_string(), ", live=", (bool)live);
         output->connect(&on_view_disappeared);
+        output->connect(&on_tile_request);
     }
 
     bool activate(bool should_preserve_aspect)
@@ -789,8 +819,115 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
 
         output->rem_binding(&activate_binding);
         output->rem_binding(&activate_binding_preserve_aspect);
+        end_zoom(false);
         finish_fade();
         close_ghost();
+    }
+
+    /** Maximize / restore asked (before the window gets its new geometry). */
+    void start_zoom(wayfire_toplevel_view v, wf::geometry_t hint)
+    {
+        if (!zoom_enabled || !v || !v->is_mapped() || view || v->pending_fullscreen() ||
+            (v->get_output() != output) || output->is_plugin_active("move"))
+        {
+            return;      // (a resize keeps its own ghost; a maximized window dragged off its place follows the pointer)
+        }
+
+        end_zoom(false);
+        finish_fade();
+        close_ghost();
+        zooming   = v;
+        zoom_from = v->get_geometry();
+        zoom_hint = hint;
+        if (!wf::get_core().get_data<ghost_program_t>())
+        {
+            wf::get_core().store_data(std::make_unique<ghost_program_t>());
+        }
+
+        ghost = std::make_shared<ghost_node_t>();
+        ghost->fill   = fill;
+        ghost->border = border;
+        ghost->radius = std::max(0, (int)corner_radius);
+        ghost->rect   = zoom_from;
+        wf::scene::add_front(output->node_for_layer(wf::scene::layer::TOP), ghost);
+        ghost->damage();
+        set_alpha(v, 0.0);                               // only the frame shows while it moves
+        zoom.animate(0.0, 1.0);
+        output->render->add_effect(&zoom_hook, wf::OUTPUT_EFFECT_PRE);
+        output->render->schedule_redraw();
+    }
+
+    /** Where the window goes: its pending geometry once the tile is decided. */
+    wf::geometry_t zoom_target()
+    {
+        auto g = zooming->toplevel()->pending().geometry;
+        if ((g.width <= 0) || (g.height <= 0) || (g == zoom_from))
+        {
+            return (zoom_hint.width > 0) ? zoom_hint : g;
+        }
+
+        return g;
+    }
+
+    void zoom_step()
+    {
+        if (!zooming)
+        {
+            return;
+        }
+
+        double t = zoom;
+        auto to  = zoom_target();
+        wf::geometry_t r{
+            (int)std::round(zoom_from.x + (to.x - zoom_from.x) * t),
+            (int)std::round(zoom_from.y + (to.y - zoom_from.y) * t),
+            std::max(1, (int)std::round(zoom_from.width + (to.width - zoom_from.width) * t)),
+            std::max(1, (int)std::round(zoom_from.height + (to.height - zoom_from.height) * t))};
+        if (ghost)
+        {
+            ghost->set(r);
+        }
+
+        if (!zoom.running())
+        {
+            end_zoom(true);
+            return;
+        }
+
+        output->render->schedule_redraw();
+    }
+
+    /** The frame has arrived: the contents fade in when the app has drawn
+     * itself at the new size (the outline resize's fade, at most 400 ms later). */
+    void end_zoom(bool fade_in)
+    {
+        if (!zooming)
+        {
+            return;
+        }
+
+        output->render->rem_effect(&zoom_hook);
+        auto v = zooming;
+        zooming = nullptr;
+        if (!fade_in)
+        {
+            set_alpha(v, 1.0);
+            v->get_transformed_node()->rem_transformer(FADE);
+            close_ghost();
+            return;
+        }
+
+        fading = v;
+        fade_started = false;
+        fade_requested_at = wf::get_current_time();
+        fading->connect(&on_new_size);
+        output->render->add_effect(&fade_hook, wf::OUTPUT_EFFECT_PRE);
+        if (wf::dimensions(v->get_geometry()) == wf::dimensions(v->toplevel()->pending().geometry))
+        {
+            start_fade();                                // already drawn at its new size
+        }
+
+        output->render->schedule_redraw();
     }
 
     // -- Sonata ------------------------------------------------------------------------
