@@ -476,6 +476,9 @@ class MarkupLayer(Gtk.DrawingArea):
         f = self.to_frac(x, y)
         t = self.tool
         self._drag = {"x": x, "y": y}
+        if t != "select" and not inside(f):
+            self._drag = None                         # marks only on the picture (Vini), not around it
+            return
         if t == "select":
             # the undo step is taken on the first real move: a click that only
             # selects is no edit (it pushed one, and cleared Redo)
@@ -535,7 +538,7 @@ class MarkupLayer(Gtk.DrawingArea):
             return
         if self.cur is None:
             return
-        f = self.to_frac(x, y)
+        f = clamp(self.to_frac(x, y))                 # a stroke stops at the picture's edge
         if self.cur["t"] in BOXED:
             self.cur["p"][-1] = f
         else:
@@ -831,6 +834,15 @@ GLYPHS = {"fade": _g_fade, "close": _g_close, "select": _g_select, "pen": _g_pen
           "pixelate": _g_pixel, "undo": _g_undo, "redo": _g_redo, "width": _g_width, "trash": _g_trash}
 for _k in SHAPES:
     GLYPHS["shape-" + _k] = _g_shape_of(_k)
+
+
+def inside(f) -> bool:
+    """A point (picture fractions) on the picture."""
+    return 0.0 <= f[0] <= 1.0 and 0.0 <= f[1] <= 1.0
+
+
+def clamp(f) -> list:
+    return [min(1.0, max(0.0, f[0])), min(1.0, max(0.0, f[1]))]
 
 
 class MarkupBar(Gtk.Box):

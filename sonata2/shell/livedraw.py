@@ -101,6 +101,11 @@ class Overlay(Gtk.Window):
         LS = layer.layer_shell()
         if LS and LS.is_layer_window(self):
             LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND if on else LS.KeyboardMode.NONE)
+        # Wayland takes a new input region with the surface's next frame: with
+        # nothing to redraw it waited for the next on/off, one step behind
+        # (Vini's video: drawing with the palette closed, not with it open)
+        self.layer.queue_draw()
+        self.queue_draw()
 
 
 class Palette(Gtk.Window):

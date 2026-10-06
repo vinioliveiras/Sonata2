@@ -132,6 +132,20 @@ class LiveDrawTest(unittest.TestCase):
             self.assertEqual(seen, [True])
         d.stop()
 
+    def test_new_input_region_gets_a_frame(self):
+        """Wayland takes a surface's new input region with its next frame:
+        with nothing to redraw, on/off was one step behind (Vini's video:
+        drawing with the palette closed, not with it open)."""
+        from sonata2.shell import livedraw as L
+        d = L.LiveDraw(self.app)
+        d.set_on(True)
+        spin(300)
+        ov = next(iter(d.overlays.values()))
+        with mock.patch.object(ov.layer, "queue_draw") as frame:
+            ov.pointer(False)
+            frame.assert_called()
+        d.stop()
+
     def test_undo_takes_back_the_last_mark_only(self):
         """Review: Undo undid a mark on every display at once."""
         from types import SimpleNamespace

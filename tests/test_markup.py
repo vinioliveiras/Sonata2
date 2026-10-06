@@ -107,6 +107,26 @@ class LayerTest(unittest.TestCase):
         lay._update(None, dx, dy)
         lay._end(None, dx, dy)
 
+    def test_marks_only_on_the_picture(self):
+        """Vini: no drawing outside the picture. A mark can't start around it,
+        and a stroke that leaves it stops at its edge."""
+        lay = M.MarkupLayer(lambda: (50, 50, 300, 100), lambda: None)      # picture inside the view
+        for tool in ("pen", "hl", "shape", "emoji", "step"):
+            lay.set_tool(tool)
+            lay.shape = "arrow"
+            self.drag(lay, 10, 10, 30, 30)                                 # all of it outside
+            self.assertEqual(lay.items, [], tool)
+        lay.set_tool("shape")
+        lay.shape = "rect"
+        self.drag(lay, 100, 80, 600, 400)                                  # starts inside, ends far out
+        self.assertEqual(len(lay.items), 1)
+        for x, y in lay.items[0]["p"]:
+            self.assertTrue(0 <= x <= 1 and 0 <= y <= 1, (x, y))
+        self.assertEqual(lay.items[0]["p"][-1], [1.0, 1.0])               # stopped at the corner
+        lay.set_tool("select")                                             # selecting is not drawing
+        lay._begin(None, 10, 10)
+        lay._end(None, 0, 0)
+
     def test_trash_deletes_every_mark(self):
         """Vini: the trash button only removed the selected mark (none
         selected: nothing). It clears them all; Undo brings them back."""
