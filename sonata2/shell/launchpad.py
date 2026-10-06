@@ -461,6 +461,12 @@ class Launchpad(Gtk.ApplicationWindow):
         self._select(self.selected)
         ui.transition.glide_play(before, self)
 
+    def clean_up(self) -> None:
+        """No empty places between the apps: they glide up into them (render)."""
+        if self.model.close_gaps():
+            self.render()
+            self.save()
+
     def save(self) -> None:
         data = self.model.to_json()
         config.save("launchpad", data)

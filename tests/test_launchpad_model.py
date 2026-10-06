@@ -127,3 +127,41 @@ class GridRepackTest(unittest.TestCase):
         src = (pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "shell" / "launchpad.py").read_text()
         self.assertIn("if M.set_grid(cols, rows) or self.model.grid != (M.COLS, M.ROWS):", src)
         self.assertNotIn('config.load("launchpad", {"pages": [], "hidden": []})', src)
+
+
+class CleanUpTest(unittest.TestCase):
+    """Vini: moving apps between pages leaves empty places; the "•••" menu's
+    Clean Up moves the apps up into them, in their order."""
+
+    def test_gaps_closed_in_order(self):
+        old = (M.COLS, M.ROWS)
+        try:
+            M.set_grid(7, 5)
+            names = installed(60)
+            ids = sorted(names)
+            folder = {"folder": "Games", "apps": [ids[58], ids[59]]}
+            m = M.Model({"pages": [ids[:20], ids[20:50] + [folder], ids[50:58]], "grid": [7, 5]}, names)
+            self.assertTrue(m.has_gaps())
+            self.assertTrue(m.close_gaps())
+            self.assertEqual([len(p) for p in m.pages], [35, 24])
+            flat = [it for p in m.pages for it in p]
+            self.assertEqual(flat[:50], ids[:50])                # the same order
+            self.assertEqual(flat[50], folder)                   # folders move as they are
+            self.assertFalse(m.has_gaps())
+            self.assertFalse(m.close_gaps())                     # nothing to do: nothing changes
+        finally:
+            M.set_grid(*old)
+
+    def test_a_short_last_page_is_no_gap(self):
+        m = M.Model({}, installed(40))
+        self.assertEqual([len(p) for p in m.pages], [35, 5])
+        self.assertFalse(m.has_gaps())
+
+    def test_menu_offers_it(self):
+        import inspect
+        from sonata2.shell import launchpad, launchpad_window
+        src = inspect.getsource(launchpad_window.options_menu)
+        self.assertIn('Item("Clean Up", pad.clean_up, enabled=pad.model.has_gaps())', src)
+        body = inspect.getsource(launchpad.Launchpad.clean_up) if hasattr(launchpad, "Launchpad") else \
+            inspect.getsource(launchpad)
+        self.assertIn("self.model.close_gaps()", body)

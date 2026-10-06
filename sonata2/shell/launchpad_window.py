@@ -122,7 +122,9 @@ def options_menu(pad, btn) -> None:
     Item = ui.menu.Item
     other = (Item(f"Use Full-Screen {names.APPS}", lambda: set_style(pad, "fullscreen"))
              if pad.mode == "menu" else Item(f"Use {names.APPS_MENU}", lambda: set_style(pad, "window")))
-    ui.menu.popup(btn, [[other], [Item(f"{names.APPS} Settings\u2026", lambda: open_style_settings(pad))]],
+    # Clean Up (Vini): the empty places apps left behind, filled in order
+    tidy = Item("Clean Up", pad.clean_up, enabled=pad.model.has_gaps())
+    ui.menu.popup(btn, [[other], [tidy], [Item(f"{names.APPS} Settings\u2026", lambda: open_style_settings(pad))]],
                   position=Gtk.PositionType.BOTTOM)
 
 

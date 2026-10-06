@@ -107,6 +107,18 @@ class Model:
         self.pages = [items[i:i + PER_PAGE] for i in range(0, len(items), PER_PAGE)] or [[]]
         self.grid = (COLS, ROWS)
 
+    def has_gaps(self) -> bool:
+        """A page before the last one with empty places (apps moved off it)."""
+        return any(len(p) < PER_PAGE for p in self.pages[:-1])
+
+    def close_gaps(self) -> bool:
+        """The "•••" menu's Clean Up (Vini): every app moved up into the empty
+        places, in the order they're in, page after page. True if anything moved."""
+        if not self.has_gaps():
+            return False
+        self.repack()
+        return True
+
     def normalize(self) -> None:
         """Cascade overflow to the next pages; drop empty pages (keep one)."""
         i = 0
