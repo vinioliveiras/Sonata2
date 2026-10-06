@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.9.0-alpha -- 2026-10-06
+
+Songs play in Videos (the Music app is gone), tabs and shortcuts from the
+menu bar, Windows-style shortcuts, and an installer tested on Arch,
+Fedora and Ubuntu from scratch.
+
+### Install
+- The installer was run from scratch in clean Arch, Fedora and Ubuntu
+  (tools/test-install.sh) and fixed where it broke: it no longer stops
+  without a word when the system keyboard layout can't be read; Fedora
+  gets the GTK typelib it needs (Sonata didn't open); Ubuntu gets the
+  gtk4-layer-shell library and pywayland's missing cffi backend.
+- If a step fails, the installer says at which line; if Sonata still
+  can't start once the packages are in, it says what's missing and stops.
+- Wayfire plugins your Wayfire doesn't have are left out of the session.
+
+### Display and lock
+- Wayfire never powers the display off anymore (on an NVIDIA laptop it
+  didn't come back until the lid was closed): Sonata darkens it itself,
+  black with the backlight at zero, the pointer hidden; any key or move
+  brings it back.
+- Login and lock screen on every display; the keyboard light comes back
+  after the lock.
+
+### Menu bar
+- File for every app (New Window, Close Window); Window has New Tab, Show
+  Previous / Next Tab and Close Tab, for any app with tabs (browsers,
+  terminals, Files, editors).
+- The keyboard layout is always in the menu bar; Ctrl+Space switches back.
+- Window > a window's name, and checked items in many menus (Notes,
+  Calendar, Sort By, the login screen) work again.
+
+### Files and desktop
+- Create Shortcut (and on the Desktop), like Windows; Add to Desktop for
+  apps in Launchpad and the Dock. Shortcuts show an arrow.
+- A new folder's name can be typed at once.
+- Windows keep the size you give them.
+
+### Apps
+- Videos plays songs (MP3, FLAC, Ogg, M4A, WAV) with their cover; the
+  Music app was removed (better ones are in Bazaar).
+- Preview: the Markup bar is opaque, the trash clears every mark, marks
+  stay on the picture.
+- Control Center: Keyboard module; Wi-Fi and Bluetooth lists in the
+  panel; Add Controls closes again.
+
+### Fixes
+- Screenshots work again; the Screenshot icon no longer bounces.
+- Double-clicking a title bar zooms wherever you click it.
+- The screen-sharing pill's Stop really stops the share.
+- Drawing on the screen follows the palette.
+- New headphones and headsets are used at once; your energy mode comes
+  back on AC; a layout per keyboard.
+
 ## 0.8.0-alpha -- 2026-10-05
 
 Draw on screenshots and on the screen, an FPS limit for games, Steam in
