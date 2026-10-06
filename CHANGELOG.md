@@ -20,6 +20,10 @@
 - Fix: Date & Time's "Show the date" (and 24-hour) switches showed off
   while the menu bar clock had them on.
 
+### Menu bar
+- The clock keeps room for today's date only (it may change width at
+  midnight): no gap beside it most days.
+
 ### Launchpad
 - Fix: the first full-screen open after using the Apps Menu glitched (its
   grid was worked out again for the menu's size).

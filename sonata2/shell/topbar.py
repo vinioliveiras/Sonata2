@@ -317,11 +317,14 @@ class Bar(Gtk.CenterBox):
         self._clock_room()
 
     def _clock_room(self) -> None:
-        """The clock keeps one width all year (Vini: no nudge when the minute,
-        the day or the month changes): as wide as its widest text in this
-        format, the text against the right edge."""
+        """The clock keeps one width all day (Vini: no nudge when the minute
+        changes, and no gap for dates wider than today's): as wide as its
+        widest text today in this format, the text against the right edge.
+        Measured again when the day changes (_tick_clock)."""
         lbl = self.clock.get_child().get_last_child()
-        lbl.set_size_request(clock_width(lbl, self.cfg["clock_format"]), -1)
+        now = GLib.DateTime.new_now_local()
+        self._clock_day = (now.get_year(), now.get_day_of_year())
+        lbl.set_size_request(clock_width(lbl, self.cfg["clock_format"], now), -1)
         lbl.set_xalign(1.0)
 
     # -- drawing -------------------------------------------------------------------
@@ -602,6 +605,8 @@ class Bar(Gtk.CenterBox):
         now = GLib.DateTime.new_now_local()
         fmt = self.cfg["clock_format"]
         self._set_text(self.clock, now.format(fmt) or now.format("%a %H:%M"))
+        if getattr(self, "_clock_day", None) not in (None, (now.get_year(), now.get_day_of_year())):
+            self._clock_room()                          # a new day: its own width
         if self.alive:
             GLib.timeout_add_seconds(max(1, 60 - now.get_second()), self._tick_clock)
         return False
@@ -1723,24 +1728,27 @@ def _open_recent(uri: str) -> None:
         pass
 
 
-def clock_width(label, fmt: str) -> int:
-    """The widest the clock gets in `fmt`, measured on the label itself (its
-    font and tabular digits): every weekday, day and month name of a year,
-    morning and evening (AM / PM)."""
-    # measured once per format, font and scale (each takes a thousand
-    # measurements; a bar that reveals itself measured again every time)
+def clock_width(label, fmt: str, day=None) -> int:
+    """The widest the clock gets in `fmt` on `day` (a GLib.DateTime; today by
+    default), measured on the label itself (its font and tabular digits):
+    every hour of that day, AM and PM. Vini: a room for the widest date of
+    the whole year left a gap beside the clock most days; now the clock
+    keeps one width all day and may change it at midnight (like macOS)."""
+    day = day or GLib.DateTime.new_now_local()
+    # measured once per day, format, font and scale (a bar that reveals
+    # itself measured again every time)
     ctx = label.get_pango_context()
     fd = ctx.get_font_description() if ctx else None
-    key = (fmt, fd.to_string() if fd else "", label.get_scale_factor())
+    date = (day.get_year(), day.get_month(), day.get_day_of_month())
+    key = (fmt, fd.to_string() if fd else "", label.get_scale_factor(), date)
     if key in _CLOCK_WIDTHS:
         return _CLOCK_WIDTHS[key]
+    for k in [k for k in _CLOCK_WIDTHS if k[3] != date]:
+        del _CLOCK_WIDTHS[k]                         # other days: not needed again
     texts = set()
-    start = GLib.DateTime.new_local(2026, 1, 1, 0, 0, 0)
-    for day in range(366):
-        d = start.add_days(day)
-        for h in (0, 12, 23):
-            t = GLib.DateTime.new_local(d.get_year(), d.get_month(), d.get_day_of_month(), h, 59, 59)
-            texts.add(t.format(fmt) or t.format("%a %H:%M"))
+    for h in range(24):
+        t = GLib.DateTime.new_local(*date, h, 59, 59)
+        texts.add(t.format(fmt) or t.format("%a %H:%M"))
     shown, req = label.get_label(), label.get_size_request()[0]
     label.set_size_request(-1, -1)
     best = 0
