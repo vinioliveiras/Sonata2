@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+- A click on a window's edge no longer starts a resize: zooming right
+  after it (a double-click near the top of the title bar) left the title
+  bar cut at the old width.
+
 ## 0.9.0-alpha -- 2026-10-06
 
 Songs play in Videos (the Music app is gone), tabs and shortcuts from the
@@ -48,9 +55,7 @@ Fedora and Ubuntu from scratch.
 
 ### Fixes
 - Screenshots work again; the Screenshot icon no longer bounces.
-- Double-clicking a title bar zooms wherever you click it; a click on a
-  window's edge no longer starts a resize (zooming right after it left the
-  title bar cut at the old width).
+- Double-clicking a title bar zooms wherever you click it.
 - The screen-sharing pill's Stop really stops the share.
 - Drawing on the screen follows the palette.
 - New headphones and headsets are used at once; your energy mode comes
