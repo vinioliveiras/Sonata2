@@ -1622,10 +1622,10 @@ class Settings(Adw.ApplicationWindow):
 
         def set_clock(date=None, h24=None):
             cur = config.load("topbar", T.DEFAULTS)["clock_format"]      # now, not when the page was built
-            self._save("topbar", "clock_format", clock_format("%d" in cur if date is None else date,
-                                                              "%H" in cur if h24 is None else h24))
-        clock.add(switch_row("Use a 24-hour clock", "%H" in fmt, lambda on: set_clock(h24=on)))
-        clock.add(switch_row("Show the date", "%d" in fmt, lambda on: set_clock(date=on)))
+            self._save("topbar", "clock_format", clock_format(T.shows_date(cur) if date is None else date,
+                                                              T.is_24h(cur) if h24 is None else h24))
+        clock.add(switch_row("Use a 24-hour clock", T.is_24h(fmt), lambda on: set_clock(h24=on)))
+        clock.add(switch_row("Show the date", T.shows_date(fmt), lambda on: set_clock(date=on)))
         return [auto, zone, clock]
 
     def _page_defaults(self):

@@ -13,6 +13,7 @@ don't export on Wayland; the bar offers what wlr-foreign-toplevel allows.
 Menus hang from the title's left edge like macOS. Linux state comes from
 backend/system.py (async)."""
 import os
+import re
 import shutil
 
 import gi
@@ -51,6 +52,20 @@ DEFAULTS = {"battery_percent": False, "clock_format": "%a %-d %b  %H:%M", "show_
             "fps_style": "text",
             "autohide": False,                  # Settings > Menu Bar: hide it like the Dock (Vini)
             "tall": True}                       # the taller menu bar of new MacBooks (menubar_size.py; on by default, Vini)
+
+
+def shows_date(fmt: str) -> bool:
+    """The clock format shows the date (%-d, %d, %e: the day of the month).
+    Vini: Settings' "Show the date" looked for "%d" only and stayed off
+    with the default "%-d"."""
+    return bool(re.search(r"%[-_0^#]?[de]", fmt or ""))
+
+
+def is_24h(fmt: str) -> bool:
+    """The clock format is 24-hour (%H, %-H, %k)."""
+    return bool(re.search(r"%[-_0^#]?[Hk]", fmt or ""))
+
+
 # a key per graphics card when there are two or more (stats.KINDS: gpu_amd, gpu_nvidia...)
 from ..backend import stats as _stats  # noqa: E402
 for _k in _stats.KINDS:

@@ -762,29 +762,19 @@ class AnimationTests(TempConfig):
         finally:
             win.destroy()
 
-    def test_settings_page_switch_crossfades(self):
-        """Choosing another section: the old page fades out (Adw.TimedAnimation)."""
+    def test_settings_page_switch_is_instant(self):
+        """Choosing another section shows it at once (Vini: no animation; it
+        used to cross-fade)."""
         w = S.Settings(None, "appearance")
         w.present()
         settle(200)
         try:
-            started = []
-            real = ui.transition.CrossFade.play
-
-            def spy(fade):
-                real(fade)
-                started.append(fade._anim)
-            def capture(fade):                          # (this xvfb can't render a frame: a stand-in)
-                fade._finish()
-                fade._pic = Gtk.Picture()
-                fade.add_overlay(fade._pic)
-            with mock.patch.object(ui.transition.CrossFade, "play", spy), \
-                    mock.patch.object(ui.transition.CrossFade, "capture", capture):
+            with mock.patch.object(ui.transition.CrossFade, "play") as play, \
+                    mock.patch.object(ui.transition.CrossFade, "capture") as capture:
                 w.select("dock", from_sidebar=True)
-            self.assertTrue(started)
-            self.assertIsInstance(started[-1], Adw.TimedAnimation)
-            self.assertEqual(started[-1].get_state(), Adw.AnimationState.PLAYING)
-            settle(300)
+            play.assert_not_called()
+            capture.assert_not_called()
+            self.assertIs(w.content.get_visible_child(), w.pages[w.current])
         finally:
             w.destroy()
 

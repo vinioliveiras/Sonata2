@@ -17,6 +17,8 @@
 ### Files and System Settings
 - Picking an item in the sidebar switches at once: no sliding selection,
   no fade.
+- Fix: Date & Time's "Show the date" (and 24-hour) switches showed off
+  while the menu bar clock had them on.
 
 ### Launchpad
 - Fix: the first full-screen open after using the Apps Menu glitched (its

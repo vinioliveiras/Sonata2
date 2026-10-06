@@ -39,8 +39,8 @@ window.sonata-clock .ck-main { background: %(content_bg)s; }
 
 def h24() -> bool:
     from .. import config
-    from ..shell.topbar import DEFAULTS
-    return "%H" in (config.load("topbar", DEFAULTS).get("clock_format") or "%H")
+    from ..shell.topbar import DEFAULTS, is_24h
+    return is_24h(config.load("topbar", DEFAULTS).get("clock_format") or "%H")
 
 
 class ClockWindow(Gtk.ApplicationWindow):

@@ -123,8 +123,8 @@ class AlarmCard(Gtk.Window):
 
 def h24() -> bool:
     from .. import config
-    from .topbar import DEFAULTS
-    return "%H" in (config.load("topbar", DEFAULTS).get("clock_format") or "%H")
+    from .topbar import DEFAULTS, is_24h
+    return is_24h(config.load("topbar", DEFAULTS).get("clock_format") or "%H")
 
 
 class AlarmService:
