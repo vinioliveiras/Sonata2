@@ -866,10 +866,15 @@ class Bar(Gtk.CenterBox):
                 enumerate(zip(lays, vars_ + [""] * len(lays)))]
 
     def _update_input(self):
+        """The layout in use, always (Vini: like macOS' input menu, even with
+        one layout -- it showed only with two or more)."""
         lays = self._layouts()
-        self.input_btn.set_visible(len(lays) > 1 and self.cfg.get("show_input", True))
+        self.input_btn.set_visible(bool(lays) and self.cfg.get("show_input", True))
         if lays:
-            self._set_text(self.input_btn, lays[0].split("(")[0].upper()[:3])
+            self._set_text(self.input_btn, layout_badge(lays[0]))
+            names = dict(system.XKB_LAYOUTS)
+            self.input_btn.set_tooltip_text(names.get(lays[0], lays[0]) +
+                                            ("  (Ctrl+Space: the previous one)" if len(lays) > 1 else ""))
 
     def _input_panel(self, btn):
         names = dict(system.XKB_LAYOUTS)
@@ -882,9 +887,15 @@ class Bar(Gtk.CenterBox):
             r.icon.set_opacity(1 if i == 0 else 0)
             col.append(r)
         col.append(ui.panel.separator())
-        col.append(self._prefs_row(pop, "Open Keyboard Preferences…", "keyboard"))
+        col.append(self._prefs_row(pop, "Add Input Source…" if len(lays) < 2 else "Open Keyboard Preferences…",
+                                   "keyboard"))
         ui.panel.align_to_start(pop, btn, 2)
         return pop
+
+    def next_layout(self) -> None:
+        """Ctrl+Space (macOS): back to the layout used before this one."""
+        if len(self._layouts()) > 1:
+            self._use_layout(1)
 
     def _use_layout(self, i):
         """Wayland has no "switch layout" request: the chosen one becomes the
@@ -894,7 +905,7 @@ class Bar(Gtk.CenterBox):
         system.run_async(lambda: (system.wayfire_set("input", "xkb_layout", ",".join(x.split("(")[0] for x in lays)),
                                   system.wayfire_set("input", "xkb_variant", ",".join(
                                       x.split("(")[1].rstrip(")") if "(" in x else "" for x in lays))),
-                         lambda _r: self._update_input())
+                         lambda _r: [b._update_input() for b in list(_BARS) or [self]])
 
     def _spotlight(self, btn):
         """Big Sur's magnifier: Spotlight."""
@@ -912,6 +923,11 @@ class Bar(Gtk.CenterBox):
 
     def _poll_soon(self) -> None:
         GLib.timeout_add(600, lambda: (self._poll(), False)[1])
+
+
+def layout_badge(layout: str) -> str:
+    """The menu bar's short name of a layout: "br(abnt2)" -> "BR", "us(intl)" -> "US"."""
+    return (layout.split("(")[0] or "?").upper()[:3]
 
 
 def _bt_icon(name: str) -> str:

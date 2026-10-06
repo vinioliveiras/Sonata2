@@ -1384,7 +1384,8 @@ class Settings(Adw.ApplicationWindow):
         # Delay Until Repeat: Long (left) .. Short (right), like macOS
         rep.add(slider_row("Delay Until Repeat", 1150 - delay, 150, 1000,
                            lambda v: self._wf("kb_repeat_delay", int(1150 - v)), ends=("Long", "Short"), default=750))
-        src = group("Input Sources", "The first one is in use; switch from the input menu in the menu bar.")
+        src = group("Input Sources", "The first one is in use; switch from the input menu in the menu bar, "
+                    "or with Ctrl+Space (the one used before).")
         names = dict(system.XKB_LAYOUTS)
         lays = system.keyboard_layouts()
         for i, lay in enumerate(lays):
@@ -2794,7 +2795,7 @@ class Settings(Adw.ApplicationWindow):
         for key, title, sub in (("show_tray", "Background apps", "Status icons of apps running in the background "
                                  "(Discord, Steam…)"),
                                 ("show_now_playing", "Now Playing", "While something plays"),
-                                ("show_input", "Input source", "With two or more keyboard layouts"),
+                                ("show_input", "Input source", "The keyboard layout in use (Ctrl+Space: the previous one)"),
                                 ("show_sound", "Sound", "Volume and outputs are always in Control Center"),
                                 ("show_battery", "Battery", ""),
                                 ("battery_percent", "Battery percentage", ""),

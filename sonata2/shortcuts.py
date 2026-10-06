@@ -40,6 +40,7 @@ SHORTCUTS = [
     Shortcut("activity", "Open Task Manager", "Apps and Search", "command", "binding_activity"),
     Shortcut("terminal", "Open a Terminal", "Apps and Search", "command", "binding_terminal"),
     Shortcut("emoji", "Emoji and Symbols", "Apps and Search", "command", "binding_emoji"),
+    Shortcut("input", "Previous Input Source", "Apps and Search", "command", "binding_input"),
     Shortcut("clipboard", "Clipboard History", "Apps and Search", "command", "binding_clipboard"),
     Shortcut("close", "Close Window", "Windows", "core", "close_top_view"),
     Shortcut("minimize", "Minimize", "Windows", "wm-actions", "minimize"),
