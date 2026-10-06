@@ -224,8 +224,9 @@ class LaunchItem(Gtk.Button):
                 self.badge = badge
                 over.add_overlay(badge)
         col.append(over)
+        # every tile as wide as a long name (cells >= 128 px fit it): the selection box is one size
         self.label = Gtk.Label(label=self.name, css_classes=["lp-label"], ellipsize=Pango.EllipsizeMode.END,
-                               max_width_chars=14, width_chars=1, justify=Gtk.Justification.CENTER)
+                               max_width_chars=14, width_chars=14, justify=Gtk.Justification.CENTER)
         col.append(self.label)
         self.set_child(col)
         self.connect("clicked", lambda _b: pad.activate_item(self))
