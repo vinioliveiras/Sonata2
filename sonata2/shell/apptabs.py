@@ -2,8 +2,9 @@
 menu bar like macOS -- File > New Tab, Window > Show Previous / Next Tab).
 
 Apps keep their own tabs; the menu bar presses the app's own shortcut once
-its menu has closed and the keyboard is back on the app (wtype, a virtual
-keyboard). Which shortcuts depends on the kind of app: terminals use
+its menu has closed and the keyboard is back on the app (wl/vkeyboard: real
+keycodes -- wtype's made-up ones reached Wayfire as Ctrl+Shift+Esc and
+opened Task Manager). Which shortcuts depends on the kind of app: terminals use
 Ctrl+Shift (Ctrl+T, Ctrl+W belong to the shell), the rest Ctrl.
 
     kind(app_id)            # "terminal" | "tabbed" | None (no tabs known)
@@ -59,6 +60,5 @@ def press(app_id: str, action: str) -> bool:
     combo = keys(app_id, action)
     if combo is None:
         return False
-    from ..gamepad import vpointer
-    vpointer.key(combo[0], combo[1])
-    return True
+    from ..wl import vkeyboard
+    return vkeyboard.press(combo[0], combo[1])

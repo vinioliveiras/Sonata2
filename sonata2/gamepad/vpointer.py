@@ -5,38 +5,18 @@ only requests are sent, nothing has to be dispatched.
     vp = VirtualPointer()      # None-safe: vp.ok is False without the protocol
     vp.move(dx, dy); vp.button(BTN_LEFT, True); vp.scroll(dx, dy)
     key("Return")              # wtype -k Return"""
-import importlib.util
-import os
 import shutil
 import subprocess
 import sys
 import time
 
 PROTO = "wlr_virtual_pointer_unstable_v1"
-XML = os.path.join(os.path.dirname(os.path.dirname(__file__)), "wl", "protocols",
-                   "wlr-virtual-pointer-unstable-v1.xml")
 BTN_LEFT, BTN_RIGHT, BTN_MIDDLE = 0x110, 0x111, 0x112
 
 
 def _load_protocol():
-    import pywayland
-    from pywayland.scanner import Protocol
-    cache = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
-                         "sonata2", "pywayland-" + pywayland.__version__)
-    path = os.path.join(cache, PROTO + ".py")
-    if not os.path.exists(path):
-        os.makedirs(cache, exist_ok=True)
-        proto = Protocol.parse_file(XML)
-        proto.output(cache, {i.name: proto.name for i in proto.interface}
-                     | {"wl_seat": "wayland", "wl_output": "wayland", "wl_pointer": "wayland"})
-        with open(path, encoding="utf-8") as f:
-            src = f.read()
-        with open(path, "w", encoding="utf-8") as f:           # core interfaces from pywayland
-            f.write(src.replace("from .wayland import", "from pywayland.protocol.wayland import"))
-    spec = importlib.util.spec_from_file_location("sonata2_" + PROTO, path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    from ..wl import scan
+    return scan.load("wlr-virtual-pointer-unstable-v1.xml", PROTO)
 
 
 def _ms() -> int:
@@ -121,7 +101,11 @@ class VirtualPointer:
 
 
 def key(name: str, mods=()) -> None:
-    """Press a key (xkb name: Return, Escape, Up...) with modifiers held."""
+    """Press a key (xkb name: Return, Escape, Up...) with modifiers held:
+    with its real keycode (wl/vkeyboard); wtype only for a key it doesn't know."""
+    from ..wl import vkeyboard
+    if name in vkeyboard.CODES and vkeyboard.press(name, tuple(mods)):
+        return
     if not shutil.which("wtype"):
         return
     args = ["wtype"]

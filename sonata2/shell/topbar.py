@@ -496,15 +496,10 @@ class Bar(Gtk.CenterBox):
 
         def press(action):
             return lambda: self._after_menu(lambda: apptabs.press(app_id, action))
-        tabs = apptabs.kind(app_id) is not None
-        first = [Item("New Window", press("new_window"), enabled=apptabs.keys(app_id, "new_window") is not None)]
-        if tabs:
-            first.append(Item("New Tab", press("new_tab")))
-        last = []
-        if tabs:
-            last.append(Item("Close Tab", press("close_tab")))
-        last.append(Item("Close Window", lambda: m.close(act), enabled=bool(act)))
-        return self._menu(btn, [first, last])
+        # (the tabs are in Window, Vini)
+        return self._menu(btn, [
+            [Item("New Window", press("new_window"), enabled=apptabs.keys(app_id, "new_window") is not None)],
+            [Item("Close Window", lambda: m.close(act), enabled=bool(act))]])
 
     # -- Files' menus on the desktop -------------------------------------------------------
     def _files_file_menu(self, btn):
@@ -573,11 +568,13 @@ class Bar(Gtk.CenterBox):
         act = next((t for t in wins if t.activated), None)
         sections = [[Item("Minimize", lambda: self._after_menu(lambda: m.minimize(act)), enabled=bool(act)),
                      Item("Zoom", lambda: m.set_maximized(act, not act.maximized), enabled=bool(act))]]
-        if act is not None and apptabs.kind(act.app_id) is not None:   # the app's tabs (apptabs)
-            sections.append([Item("Show Previous Tab", lambda: self._after_menu(
-                                  lambda: apptabs.press(act.app_id, "prev_tab"))),
-                             Item("Show Next Tab", lambda: self._after_menu(
-                                  lambda: apptabs.press(act.app_id, "next_tab")))])
+        if act is not None and apptabs.kind(act.app_id) is not None:   # the app's tabs (apptabs; Vini: here)
+            def tab(action):
+                return lambda: self._after_menu(lambda: apptabs.press(act.app_id, action))
+            sections.append([Item("New Tab", tab("new_tab")),
+                             Item("Show Previous Tab", tab("prev_tab")),
+                             Item("Show Next Tab", tab("next_tab")),
+                             Item("Close Tab", tab("close_tab"))])
         if wins:
             # (a checked item's callback gets the new state first: the window is t=)
             sections.append([Item(t.title or "Untitled", lambda _on=None, t=t: m.activate(t), checked=t is act)

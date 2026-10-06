@@ -178,31 +178,37 @@ class TabsTest(unittest.TestCase):
         self.assertEqual(A.keys("foot", "new_window"), ("n", ("ctrl", "shift")))
         self.assertIsNone(A.keys("foot", "new_tab"))
 
-    def test_terminal_new_tab_from_the_menu_bar(self):
+    def test_terminal_tabs_are_in_window(self):
+        """Vini: the tabs belong in Window, not File."""
         bar = self.bar("io.github.vinioliveiras.sonata2.terminal")
-        sections = bar._file_menu(None)
-        self.assertEqual(self.labels(sections), ["New Window", "New Tab", "Close Tab", "Close Window"])
-        with mock.patch("sonata2.gamepad.vpointer.key") as key:
-            run(sections, "New Tab")
+        self.assertEqual(self.labels(bar._file_menu(None)), ["New Window", "Close Window"])
+        win = bar._window_menu(None)
+        tabs = next(sec for sec in win if sec[0].label == "New Tab")
+        self.assertEqual([i.label for i in tabs], ["New Tab", "Show Previous Tab", "Show Next Tab", "Close Tab"])
+        with mock.patch("sonata2.wl.vkeyboard.press", return_value=True) as key:
+            run(win, "New Tab")
             key.assert_not_called()                                         # not while the menu closes
             settle(self.T.MENU_SETTLE_MS + 100)
             key.assert_called_once_with("t", ("ctrl", "shift"))
             run(bar._window_menu(None), "Show Next Tab")
             settle(self.T.MENU_SETTLE_MS + 100)
             self.assertEqual(key.call_args[0], ("Page_Down", ("ctrl",)))
+            run(bar._file_menu(None), "New Window")
+            settle(self.T.MENU_SETTLE_MS + 100)
+            self.assertEqual(key.call_args[0], ("n", ("ctrl", "shift")))
         run(bar._file_menu(None), "Close Window")
         self.assertEqual(self.log, [("close", "Win")])
 
     def test_browser_and_an_app_without_tabs(self):
         bar = self.bar("firefox")
-        with mock.patch("sonata2.gamepad.vpointer.key") as key:
-            run(bar._file_menu(None), "New Tab")
+        with mock.patch("sonata2.wl.vkeyboard.press", return_value=True) as key:
+            run(bar._window_menu(None), "New Tab")
             run(bar._window_menu(None), "Show Previous Tab")
             settle(self.T.MENU_SETTLE_MS + 100)
             self.assertEqual([c[0] for c in key.call_args_list], [("t", ("ctrl",)), ("Tab", ("ctrl", "shift"))])
         bar = self.bar("org.gnome.Calculator")
         self.assertEqual(self.labels(bar._file_menu(None)), ["New Window", "Close Window"])
-        self.assertNotIn("Show Next Tab", self.labels(bar._window_menu(None)))
+        self.assertNotIn("New Tab", self.labels(bar._window_menu(None)))
 
     def test_desktop_keeps_files_menu(self):
         bar = self.bar("x")
