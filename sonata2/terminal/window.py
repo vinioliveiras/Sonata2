@@ -50,10 +50,12 @@ window.sonata-terminal { background: %(term_bg)s; }
 /* tab strip: macOS Terminal's, equal-width tabs under the title bar */
 .tm-tabs { background: %(window_bg)s; box-shadow: inset 0 -1px %(separator)s, inset 0 1px %(separator)s;
            min-height: 26px; }
-.tm-tab { background: %(tool_hover)s; box-shadow: inset -1px 0 %(separator)s;
+/* the tab in front is the terminal itself (its background, light or dark);
+   the others sit in the bar, darker (Vini: it was grey) */
+.tm-tab { background: none; box-shadow: inset -1px 0 %(separator)s;
           transition: background %(t_fast)s %(ease_out)s; }
-.tm-tab:hover { background: %(separator)s; }
-.tm-tab.active, .tm-tab.active:hover { background: %(control_bg)s; box-shadow: inset -1px 0 %(separator)s; }
+.tm-tab:hover { background: %(tool_hover)s; }
+.tm-tab.active, .tm-tab.active:hover { background: %(term_bg)s; box-shadow: inset -1px 0 %(separator)s; }
 .tm-tab-label { font-size: %(text_small)s; color: %(label_secondary)s; margin: 0 22px; }
 .tm-tab.active .tm-tab-label { color: %(label)s; }
 .tm-tab-close, .tm-tab-add { min-width: 16px; min-height: 16px; padding: 0; margin: 0 5px;

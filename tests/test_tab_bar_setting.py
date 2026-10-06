@@ -30,6 +30,14 @@ class TabBarSettingTest(unittest.TestCase):
             self.assertIn("ui.window.follow_tab_bar(", src, mod.__name__)       # live, from Settings
             self.assertNotIn("> 1)", src.split("def _show")[1][:200] if "def _show" in src else "", mod.__name__)
 
+    def test_terminal_tab_is_the_terminal(self):
+        """Vini: the Terminal's tab was grey; the one in front is the
+        terminal's own background (near black in dark, white in light)."""
+        from sonata2.terminal import window as term
+        css = inspect.getsource(term)
+        self.assertIn(".tm-tab.active, .tm-tab.active:hover { background: %(term_bg)s;", css)
+        self.assertNotIn("background: %(control_bg)s", css)
+
     def test_settings_switch(self):
         from sonata2.settings import app
         src = inspect.getsource(app)
