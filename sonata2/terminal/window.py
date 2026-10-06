@@ -324,6 +324,7 @@ class TerminalWindow(Gtk.ApplicationWindow):
             self.set_default_size(640, 400)
             return
         self.strip = Gtk.Box(css_classes=["tm-tabs"], visible=False)
+        ui.window.follow_tab_bar(self, self._show_strip)
         self.tab_row = Gtk.Box(homogeneous=True, hexpand=True)
         self.strip.append(self.tab_row)
         add = Gtk.Button(icon_name="list-add-symbolic", css_classes=["tm-tab-add"], tooltip_text="New Tab",
@@ -398,7 +399,10 @@ class TerminalWindow(Gtk.ApplicationWindow):
             child = nxt
         for t in self.tabs:
             self.tab_row.append(t.button)
-        self.strip.set_visible(len(self.tabs) > 1)
+        self._show_strip()
+
+    def _show_strip(self) -> None:
+        self.strip.set_visible(ui.window.tab_bar_shown(len(self.tabs)))
 
     def select_tab(self, tab) -> None:
         if tab not in self.tabs:

@@ -348,6 +348,7 @@ class TextEditWindow(Gtk.ApplicationWindow):
         self.tabs_rev = Gtk.Revealer(child=self.tabs, reveal_child=False, transition_duration=150,
                                      transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN)
         col.append(self.tabs_rev)
+        ui.window.follow_tab_bar(self, self._show_tabs)
         self.find_bar = self._find_bar()
         col.append(self.find_bar)
         self.stack = Gtk.Stack(vexpand=True, hexpand=True, css_classes=["te-stack"])
@@ -465,14 +466,17 @@ class TextEditWindow(Gtk.ApplicationWindow):
         self.stack.add_child(doc.scroll)
         self.tabs.add(doc, index)
         self._update_tab(doc)
-        self.tabs_rev.set_reveal_child(len(self.docs) > 1)
+        self._show_tabs()
+
+    def _show_tabs(self) -> None:
+        self.tabs_rev.set_reveal_child(ui.window.tab_bar_shown(len(self.docs)))
 
     def _detach(self, doc: Document) -> None:
         i = self.docs.index(doc)
         self.docs.remove(doc)
         self.tabs.remove(doc)
         self.stack.remove(doc.scroll)
-        self.tabs_rev.set_reveal_child(len(self.docs) > 1)
+        self._show_tabs()
         if self.doc is doc:
             self.doc = None
             if self.docs:

@@ -77,6 +77,9 @@ def app():
 
 class TabsTest(unittest.TestCase):
     def setUp(self):
+        from sonata2 import config
+        config.update("appearance", always_show_tabs=False)          # (the one-tab cases below)
+        self.addCleanup(config.update, "appearance", always_show_tabs=True)
         self.dirs = [tempfile.mkdtemp(prefix=f"tm{i}_") for i in range(3)]
         self.w = T.TerminalWindow(app(), self.dirs[0], factory=StubTerminal)
         self.w.present()
@@ -90,6 +93,18 @@ class TabsTest(unittest.TestCase):
 
     def names(self, w=None):
         return [os.path.basename(t.cwd()) for t in (w or self.w).tabs]
+
+    def test_tab_bar_always_shown_when_chosen(self):
+        """Vini: apps open with their tab bar showing (Settings > Appearance >
+        Always show the tab bar, on by default); off: only with 2+ tabs."""
+        from sonata2 import config, icons
+        self.assertTrue(icons.APPEARANCE_DEFAULTS["always_show_tabs"])
+        config.update("appearance", always_show_tabs=True)
+        settle(300)                                                   # (the change is watched)
+        self.assertTrue(self.w.strip.get_visible())
+        config.update("appearance", always_show_tabs=False)
+        settle(300)
+        self.assertFalse(self.w.strip.get_visible())
 
     def test_one_tab_hides_strip(self):
         w = self.w

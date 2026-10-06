@@ -394,3 +394,21 @@ def glass_toolbar(win, start=(), end=()) -> Gtk.CenterBox:
             box.append(b)
         setter(box)
     return Gtk.WindowHandle(child=bar)
+
+
+# -- tab bars (Terminal, Files, TextEdit) ---------------------------------------------------------
+TABS_KEY = "always_show_tabs"
+
+
+def tab_bar_shown(count: int) -> bool:
+    """A window's tab bar shows with more than one tab -- or always, the
+    Settings > Appearance choice (Vini: on by default, like Safari's
+    "Always show tab bar")."""
+    from .. import config, icons
+    return count > 1 or bool(config.load("appearance", icons.APPEARANCE_DEFAULTS).get(TABS_KEY, True))
+
+
+def follow_tab_bar(widget, refresh) -> None:
+    """refresh() again whenever that choice changes (the monitor kept on `widget`)."""
+    from .. import config
+    widget._tab_bar_mon = config.watch("appearance", refresh)

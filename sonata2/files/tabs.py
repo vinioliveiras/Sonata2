@@ -148,6 +148,7 @@ class TabStrip(Gtk.Revealer):
         add.connect("clicked", lambda *_: win.new_tab())
         bar.append(add)
         self.set_child(bar)
+        ui.window.follow_tab_bar(self, self._show)
 
     def add(self, tab, index: int) -> None:
         tab.button = _TabButton(self, tab)
@@ -173,7 +174,10 @@ class TabStrip(Gtk.Revealer):
                 self.row.append(b)
             self.row.reorder_child_after(b, prev)
             prev = b
-        self.set_reveal_child(len(self.buttons) > 1)
+        self._show()
+
+    def _show(self) -> None:
+        self.set_reveal_child(ui.window.tab_bar_shown(len(self.buttons)))
 
     def set_active(self, tab) -> None:
         for b in self.buttons:

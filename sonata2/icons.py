@@ -36,7 +36,8 @@ APPEARANCE_DEFAULTS = {"flatpak_theme": True, "icon_theme": "Sonata", "theme": "
                        "buttons_side": "left",           # window buttons: left (macOS) / right (Vini)
                        "buttons_style": "color",         # their colours: color / graphite / mono / custom
                        "buttons_colors": {},             # custom: {"close", "minimize", "maximize"} (trafficlights.py)
-                       "steam_theme": True}              # Steam in Sonata's look (steamtheme.py)
+                       "steam_theme": True,              # Steam in Sonata's look (steamtheme.py)
+                       "always_show_tabs": True}         # the tab bar even with one tab (Vini; ui.window)
 
 _system = None     # Gtk.IconTheme with the system's theme, for fallbacks
 

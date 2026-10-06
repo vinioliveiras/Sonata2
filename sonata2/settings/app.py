@@ -2530,6 +2530,9 @@ class Settings(Adw.ApplicationWindow):
                                                          None, on),
                                         self.toast("Apps pick it up when they open again")),
                             subtitle="Chrome, VS Code and others use Sonata's title bar instead of their own"))
+        bars.add(switch_row("Always show the tab bar", app.get("always_show_tabs", True),
+                            lambda on: self._save("appearance", "always_show_tabs", on),
+                            subtitle="Terminal, Files and TextEdit show their tabs and + even with one tab"))
         bars.add(switch_row("Sonata look for Steam", app.get("steam_theme", True), self._set_steam_theme,
                             subtitle="Steam keeps its own look, with Sonata's round window buttons "
                                      "and corners"))
@@ -2554,7 +2557,8 @@ class Settings(Adw.ApplicationWindow):
     # what Reset Appearance puts back (Vini: the theme's defaults); light/dark is
     # the system's setting and stays
     APPEARANCE_RESET = ("accent", "theme", "icon_theme", "flatpak_theme", "system_titlebars",
-                        "glass_titlebars", "glass", "radius", "buttons_side", "buttons_style", "buttons_colors")
+                        "glass_titlebars", "glass", "radius", "buttons_side", "buttons_style", "buttons_colors",
+                        "always_show_tabs")
 
     def _set_steam_theme(self, on):
         """Settings > Appearance > Sonata look for Steam (steamtheme.py)."""

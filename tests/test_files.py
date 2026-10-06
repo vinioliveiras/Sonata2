@@ -82,7 +82,10 @@ class TabsTest(unittest.TestCase):
         cls.app.register(None)
 
     def setUp(self):
+        from sonata2 import config
         from sonata2.files.window import FilesWindow
+        config.update("appearance", always_show_tabs=False)          # (the one-tab cases below)
+        self.addCleanup(config.update, "appearance", always_show_tabs=True)
         self.d = tempfile.mkdtemp()
         for n in ("A", "B"):
             os.mkdir(os.path.join(self.d, n))
@@ -94,6 +97,13 @@ class TabsTest(unittest.TestCase):
 
     def tearDown(self):
         self.win.destroy()
+
+    def test_tab_bar_follows_the_setting(self):
+        """Vini: the tab bar showing with one tab too (Settings > Appearance)."""
+        from sonata2 import config
+        config.update("appearance", always_show_tabs=True)
+        self.assertTrue(spin(lambda: self.win.strip.get_reveal_child()))
+        self.assertTrue(self.win.strip.get_reveal_child())
 
     def test_tabs_keep_their_own_state(self):
         w = self.win

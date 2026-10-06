@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Apps
+- Terminal, Files and TextEdit show their tab bar (and +) even with one
+  tab: Settings > Appearance > Always show the tab bar (on by default).
+
 ### Fixes
 - Away from the computer, monitors plugged into a laptop really turn off
   (they only went black), the pointer hides, and every keyboard's light
