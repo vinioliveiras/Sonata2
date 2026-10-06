@@ -45,7 +45,8 @@ TOOLS = [
     ("grim", "screenshots, Dock window previews", "grim", "grim", "grim"),
     ("slurp", "screenshot of an area", "slurp", "slurp", "slurp"),
     ("wf-recorder", "screen recording", "wf-recorder", "wf-recorder", "wf-recorder"),
-    ("wl-screenrec", "screen recording without the drawing palette (AUR: wl-screenrec)", "wl-screenrec",
+    # (None: not in that family's own repositories -- never in the one-command fix)
+    ("wl-screenrec", "screen recording without the drawing palette (AUR: wl-screenrec)", None,
      "wl-screenrec", "wl-screenrec"),
     ("wl-copy", "clipboard from the shell", "wl-clipboard", "wl-clipboard", "wl-clipboard"),
     ("wlsunset", "Night Shift", "wlsunset", "wlsunset", "wlsunset"),
@@ -139,8 +140,9 @@ def check_wayfire(r: Report, repo: str) -> None:
         wanted = []
     missing = [p for p in wanted if p not in have and not (p == "decoration" and "pixdecor" in have)]
     if have and missing:
-        r.add(FAIL, "Wayfire plugins missing: " + " ".join(missing),
-              fix="install wayfire's full plugin set (plus wayfire-plugins-extra if listed)")
+        # left out of the session's config (tools/wayfire-config.sh): those features are off
+        r.add(WARN, "this Wayfire lacks: " + " ".join(missing) + " (left out)",
+              fix="a newer Wayfire (or wayfire-plugins-extra) has them")
     elif have:
         r.add(OK, "Wayfire plugins")
     corners = os.path.expanduser("~/.local/share/wayfire/plugin-manager/install/lib/wayfire/libsonata-corners.so")
@@ -203,7 +205,8 @@ def check_tools(r: Report) -> None:
             r.add(OK, f"{cmd} ({what})")
         else:
             r.add(WARN, f"{cmd} missing", what)
-            missing.append(row[col])
+            if row[col]:
+                missing.append(row[col])
     import glob
     own = any(glob.glob(d + "/PolkitAgent-1.0.typelib") for d in
               ("/usr/lib/girepository-1.0", "/usr/lib64/girepository-1.0", "/usr/lib/*/girepository-1.0"))

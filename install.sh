@@ -100,15 +100,20 @@ if [ "$UNINSTALL" = 1 ]; then
 fi
 
 # -- dependencies ------------------------------------------------------------------------------
-missing_py="$(python3 - <<'PY' 2>/dev/null || echo "python3"
-import gi
+# what Sonata needs from Python (also asked again once the packages are in)
+missing_python() {
+    python3 - <<'PY' 2>/dev/null || echo "python3"
+import gi, sys
 missing = []
 for ns, v in (("Gtk", "4.0"), ("Adw", "1"), ("Gtk4LayerShell", "1.0")):
     try:
         gi.require_version(ns, v)
-        __import__("gi.repository." + ns)
-    except (ValueError, ImportError):
+        mod = __import__("gi.repository." + ns, fromlist=[ns])
+        if ns == "Gtk4LayerShell":
+            mod.get_major_version()   # the library itself (Ubuntu: its gir package came without it)
+    except Exception as e:
         missing.append(f"{ns}-{v}")
+        print(f"  {ns} {v}: {e}", file=sys.stderr)
 for mod in ("pywayland", "cairo"):
     try:
         __import__(mod)
@@ -120,7 +125,8 @@ except ImportError:
     missing.append("gi-cairo")
 print(" ".join(missing))
 PY
-)"
+}
+missing_py="$(missing_python)"
 missing="$missing_py"
 command -v wayfire >/dev/null || missing="$missing wayfire"
 missing="$(echo "$missing" | xargs)"
@@ -138,11 +144,11 @@ case "$family" in
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python-gobject python-cairo python-pywayland"
               OPT="vte4 networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gnome-keyring libsecret keepassxc libpulse xorg-xwayland grim slurp wl-clipboard ffmpegthumbnailer webp-pixbuf-loader gamemode gtksourceview5 gst-plugins-good gst-plugins-bad gst-libav python-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl meson ninja ddcutil openrgb webkitgtk-6.0 wayvnc" ;;
     *debian*|*ubuntu*) PM="sudo apt install"; NI="-y"
-              PKGS="wayfire gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtk4layershell-1.0 python3-gi python3-gi-cairo python3-pywayland"
-              OPT="gir1.2-vte-3.91 network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gir1.2-polkit-1.0 keepassxc pulseaudio-utils xwayland grim slurp wl-clipboard ffmpegthumbnailer webp-pixbuf-loader gamemode gir1.2-gtksource-5 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav python3-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb gir1.2-webkit-6.0 wayvnc" ;;
+              PKGS="wayfire gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtk4layershell-1.0 libgtk4-layer-shell0 python3-gi python3-gi-cairo python3-pywayland python3-cffi-backend"
+              OPT="gir1.2-vte-3.91 network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gir1.2-polkit-1.0 gnome-keyring keepassxc pulseaudio-utils xwayland grim slurp wl-clipboard ffmpegthumbnailer webp-pixbuf-loader gamemode gir1.2-gtksource-5 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav python3-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb gir1.2-webkit-6.0 wayvnc" ;;
     *fedora*|*rhel*) PM="sudo dnf install"; NI="-y"
-              PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python3-gobject python3-cairo python3-pywayland"
-              OPT="vte291-gtk4 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk keepassxc pulseaudio-utils xorg-x11-server-Xwayland grim slurp wl-clipboard ffmpegthumbnailer webp-pixbuf-loader gamemode gtksourceview5 gstreamer1-plugins-good gstreamer1-plugins-bad-free python3-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb webkitgtk6.0 wayvnc" ;;
+              PKGS="wayfire gtk4 libadwaita gtk4-layer-shell gobject-introspection python3-gobject python3-cairo python3-pywayland"
+              OPT="vte291-gtk4 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gnome-keyring keepassxc pulseaudio-utils xorg-x11-server-Xwayland grim slurp wl-clipboard ffmpegthumbnailer webp-pixbuf-loader gamemode gtksourceview5 gstreamer1-plugins-good gstreamer1-plugins-bad-free python3-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb webkitgtk6.0 wayvnc" ;;
     *suse*)   PM="sudo zypper install"; NI="-y"
               PKGS="wayfire gtk4 libadwaita-1-0 typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 gtk4-layer-shell python3-gobject python3-gobject-cairo python3-pywayland"
               OPT="typelib-1_0-Vte-3_91 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb typelib-1_0-WebKit-6_0" ;;
@@ -165,12 +171,35 @@ if [ -n "$missing" ]; then
         echo "Install Wayfire, GTK 4, libadwaita, gtk4-layer-shell (+ GObject introspection),"
         echo "PyGObject with cairo support and pywayland with your package manager."
     fi
-    # pywayland isn't packaged everywhere: pip, for this user
+    # pywayland isn't packaged everywhere: pip, for this user -- it builds a
+    # part of it, so pip and the build tools first. (Ubuntu 25.04's package
+    # lacks its python3-cffi-backend dependency: "No module named
+    # pywayland._ffi" -- it's in PKGS above.)
     if ! python3 -c "import pywayland" 2>/dev/null; then
         say "pywayland from PyPI (this user only)"
+        if [ "$DEPS" = 1 ]; then
+            case "$family" in
+                *debian*|*ubuntu*) $PM $NI python3-pip python3-dev python3-cffi libwayland-dev gcc pkg-config || true ;;
+                *fedora*|*rhel*) $PM $NI python3-pip python3-devel python3-cffi wayland-devel gcc pkgconf || true ;;
+                *arch*) $PM $NI python-pip python-cffi wayland gcc pkgconf || true ;;
+            esac
+        fi
         python3 -m pip install --user pywayland 2>/dev/null || \
             python3 -m pip install --user --break-system-packages pywayland || true
     fi
+fi
+# still missing once the packages are in: Sonata can't start -- say so and stop
+# (Fedora: GTK needs the cairo typelib from gobject-introspection; the install
+#  said it was done and Sonata wouldn't open)
+if [ -n "$missing" ] && [ "$DEPS" = 1 ]; then
+    still="$(missing_python 2>/tmp/sonata-missing.$$ | xargs)"
+    if [ -n "$still" ]; then
+        say "Sonata can't start without: $still"
+        cat /tmp/sonata-missing.$$ >&2 2>/dev/null; rm -f /tmp/sonata-missing.$$
+        echo "Install them with your package manager and run ./install.sh again."
+        exit 1
+    fi
+    rm -f /tmp/sonata-missing.$$
 fi
 # Versions (older ones are the usual reason something doesn't show up)
 python3 - <<'PY' || true

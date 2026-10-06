@@ -41,6 +41,27 @@ sprivacy="${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install/li
 if [ -f "$sprivacy" ] && ! grep -qE '^plugins *=.*(^| )sonata-privacy( |$)' "$out"; then
     sed -i -E '/^plugins *=/ s/$/ sonata-privacy/' "$out"
 fi
+# Plugins this Wayfire doesn't have (Fedora's 0.10 has no ext-toplevel): left
+# out, not a load error at every login. Only when the plugin folders are
+# known (some plugin found there), so nothing is dropped by mistake.
+pdirs=("${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install/lib/wayfire"
+       $(pkg-config --variable=plugindir wayfire 2>/dev/null || true) /usr/lib/wayfire /usr/lib64/wayfire
+       /usr/local/lib/wayfire /usr/lib/x86_64-linux-gnu/wayfire
+       "$HOME"/.local/opt/sonata-wayfire/lib*/wayfire "$HOME"/.local/opt/sonata-wayfire/lib/*/wayfire)
+has_plugin() {
+    local d
+    for d in "${pdirs[@]}"; do
+        if [ -f "$d/lib$1.so" ]; then return 0; fi
+    done
+    return 1
+}
+if has_plugin autostart; then
+    keep=""
+    for p in $(sed -n -E 's/^plugins *= *//p' "$out" | head -n1); do
+        if has_plugin "$p"; then keep="$keep $p"; fi
+    done
+    sed -i -E "0,/^plugins *=.*/ s//plugins =$keep/" "$out"
+fi
 # Window frame (corners, traffic lights) from tokens.FRAME -- one place for
 # every window: the title bars Wayfire draws follow Sonata's own windows.
 PYTHONPATH="$here" python3 - "$out" <<'PY' || true

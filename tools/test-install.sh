@@ -45,16 +45,18 @@ USER friend
 WORKDIR /home/friend/sonata2
 EOF
     echo "== $d ($img)"
-    if ! docker build -q -t "$tag" "$ctx" > "$OUT/$d.build.log" 2>&1; then
+    if ! DOCKER_BUILDKIT=0 docker build -q -t "$tag" "$ctx" > "$OUT/$d.build.log" 2>&1; then
         echo "   image failed: $OUT/$d.build.log"; fail=1; rm -rf "$ctx"; continue
     fi
     rm -rf "$ctx"
-    docker run --rm "$tag" bash -c './install.sh --yes 2>&1; echo "INSTALL EXIT=$?"' > "$OUT/$d.log" 2>&1
+    docker run --rm ${CA:+-e PIP_CERT=/ca.crt -e REQUESTS_CA_BUNDLE=/ca.crt} "$tag" bash -c './install.sh --yes 2>&1; echo "INSTALL EXIT=$?"' > "$OUT/$d.log" 2>&1
     if grep -q "INSTALL EXIT=0" "$OUT/$d.log"; then
         echo "   installed"
     else
         echo "   INSTALL FAILED:"; grep -E "stopped at line|INSTALL EXIT" "$OUT/$d.log" | sed 's/^/     /'; fail=1
     fi
     grep -E "^\[(warn|FAIL)\]" "$OUT/$d.log" | sed 's/^/   /'
+    # installed but doctor says it can't run (Fedora: GTK without its cairo typelib)
+    grep -q "^\[FAIL\]" "$OUT/$d.log" && { echo "   DOCTOR FAILED"; fail=1; }
 done
 exit $fail
