@@ -122,5 +122,39 @@ class IdleWatchTest(unittest.TestCase):
         w.close()
 
 
+class LaptopDarkTest(unittest.TestCase):
+    """Vini: after the idle timeout the laptop's screen came back only by
+    closing and opening the lid (the NVIDIA driver refused to turn it on
+    again). On a laptop it goes dark by its backlight; the display stays on."""
+
+    def dark_fn(self, backlight):
+        from unittest import mock
+        from sonata2.shell import idlelock as I, lockdisplay as LD
+        w = mock.Mock(ok=True, input_idle=True)
+        made = {}
+
+        class Policy:
+            def __init__(self, watch, dark, lock):
+                made["dark"] = dark
+        with mock.patch("sonata2.wl.idlewatch.IdleWatch", lambda: w), \
+                mock.patch("sonata2.shell.idlepolicy.IdlePolicy", Policy), \
+                mock.patch.object(LD, "has_backlight", return_value=backlight), \
+                mock.patch.object(LD, "lights"), mock.patch.object(LD, "dim") as dim:
+            I.IdleLock._policy(object())
+            made["dark"](True)
+            made["dark"](False)
+        return w, dim
+
+    def test_laptop_dims_never_powers_off(self):
+        w, dim = self.dark_fn(True)
+        self.assertEqual([c.args for c in dim.call_args_list], [(True,), (False,)])
+        w.displays.assert_not_called()
+
+    def test_desktop_still_powers_off(self):
+        w, dim = self.dark_fn(False)
+        self.assertEqual([c.args for c in w.displays.call_args_list], [(False,), (True,)])
+        dim.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

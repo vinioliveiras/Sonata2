@@ -42,6 +42,15 @@ KBD_OFF = (f"b=$(brightnessctl -d '{KBD}' g 2>/dev/null); "
            f"echo \"$b\" > {_STATE}; brightnessctl -q -d '{KBD}' set 0; fi")
 KBD_ON = (f"if [ -s {_STATE} ]; then brightnessctl -q -d '{KBD}' set \"$(cat {_STATE})\"; "
           f"rm -f {_STATE}; fi")
+# the panel's backlight while the lock screen is dark (lockdisplay.dim): the same
+# once-saved level, in a file of its own
+_BL_STATE = shlex.quote(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
+                                     "sonata2", "backlight-before-dark"))
+BL_OFF = (f"b=$(brightnessctl -c backlight g 2>/dev/null); "
+          f"if [ \"${{b:-0}}\" -gt 0 ] 2>/dev/null; then mkdir -p \"$(dirname {_BL_STATE})\"; "
+          f"echo \"$b\" > {_BL_STATE}; brightnessctl -q -c backlight set 0; fi")
+BL_ON = (f"if [ -s {_BL_STATE} ]; then brightnessctl -q -c backlight set \"$(cat {_BL_STATE})\"; "
+         f"rm -f {_BL_STATE}; fi")
 
 RGB_PROFILE = "sonata-idle"
 _RGB_MARK = shlex.quote(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
@@ -144,6 +153,7 @@ class IdleLock:
             from . import lockdisplay
             lockdisplay.unlocked()
             lockdisplay.lights(True)            # and the lights, left dark by a restart while locked
+            lockdisplay.dim(False)              # and the panel's backlight
         self.apply()
         GLib.timeout_add_seconds(60, lambda: (self.apply(), True)[1])   # dpms timeout changed in Settings
 
@@ -162,7 +172,13 @@ class IdleLock:
 
         def dark(on):
             lockdisplay.lights(not on)              # the keyboard's light (and RGB) with the displays
-            w.displays(not on)
+            if lockdisplay.has_backlight():
+                # a laptop: the backlight to zero, the display stays on -- powering
+                # it off and on again failed on Vini's (NVIDIA: the screen came
+                # back only by closing and opening the lid)
+                lockdisplay.dim(on)
+            else:
+                w.displays(not on)
 
         def lock():
             try:

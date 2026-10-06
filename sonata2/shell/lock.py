@@ -92,10 +92,11 @@ class LockScreen:
         w.watch(self._dark_after, self._go_dark, self._wake)
 
     def _go_dark(self) -> None:
+        """Black and the backlight at zero -- the display itself stays on:
+        powering it off and on again failed on Vini's laptop (lockdisplay.py)."""
         from . import lockdisplay
-        w = getattr(self, "_iw", None)
-        if not (w is not None and w.displays(False)):
-            lockdisplay.displays(False)
+        self._blackout(True)
+        lockdisplay.dim(True)
         lockdisplay.lights(False)                # the keyboard too, whatever keeps the session awake
         self._off = True
 
@@ -104,11 +105,13 @@ class LockScreen:
             return
         from . import lockdisplay
         self._off = False
-        w = getattr(self, "_iw", None)
-        if w is not None:
-            w.displays(True)
-        lockdisplay.displays(True)               # (both: whichever turned them off)
+        self._blackout(False)
+        lockdisplay.dim(False)
         lockdisplay.lights(True)
+
+    def _blackout(self, on: bool) -> None:
+        for b in getattr(self, "blackouts", []):
+            (b.add_css_class if on else b.remove_css_class)("on")
 
     def _input(self, *_a) -> None:
         """A key or a move on the lock screen: the displays on, the countdown
@@ -175,6 +178,12 @@ class LockScreen:
         from .screencorners import CornersOverlay, enabled
         if enabled():                                     # the desktop's corners hide under the lock
             over.add_overlay(CornersOverlay())
+        black = Gtk.Box(css_classes=["lk-blackout"], can_target=False)   # dark while idle (_go_dark)
+        if getattr(self, "_off", False):
+            black.add_css_class("on")
+        over.add_overlay(black)
+        self.blackouts = getattr(self, "blackouts", []) + [black]
+        parts["blackout"] = black
         win.set_child(over)
         self._watch_input(win)
         self.lock.assign_window_to_monitor(win, monitor)
@@ -188,6 +197,10 @@ class LockScreen:
 
     def _gone(self, win, parts) -> None:
         for name, w in parts.items():
+            if name == "blackout":
+                if w in getattr(self, "blackouts", []):
+                    self.blackouts.remove(w)
+                continue
             getattr(self, name).remove(w)
         if win in self.windows:
             self.windows.remove(win)

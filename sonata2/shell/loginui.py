@@ -19,6 +19,8 @@ from .. import ui  # noqa: E402
 
 ui.register("""
 window.sonata-lock { background: black; font-family: %(font)s; }
+.lk-blackout { background: black; opacity: 0; transition: opacity 600ms ease-in-out; }
+.lk-blackout.on { opacity: 1; transition: opacity 1200ms ease-in; }
 .lk-name { color: white; font-size: 17px; font-weight: 600; text-shadow: 0 1px 3px rgba(0,0,0,0.4); }
 .lk-hint { color: rgba(255,255,255,0.75); font-size: %(text_small)s; text-shadow: 0 1px 2px rgba(0,0,0,0.4); }
 .lk-clock { color: white; font-size: %(text_body)s; font-weight: 500; text-shadow: 0 1px 3px rgba(0,0,0,0.4); }

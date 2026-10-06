@@ -1,17 +1,14 @@
-"""The display turns off soon after the screen is locked (macOS), and
-comes back on any key or move (Vini: locked, the screen stayed on).
+"""The screen goes dark soon after it is locked (macOS), and comes back on
+any key or move (Vini: locked, the screen stayed on).
 
-While locked:
-- Wayfire's idle timeout is LOCKED_DPMS_S (this session only: the copy of
-  wayfire.ini Wayfire reads), and a full-screen app (a video, a game left
-  open under the lock) no longer keeps the display on;
-- with wlopm installed, the lock screen also turns the displays off itself
-  after LOCKED_DPMS_S without input -- an app holding the display awake
-  (idle inhibit) can't keep it on behind the lock;
-- the keyboard's backlight (and RGB devices) go dark then too, whatever
-  keeps the session awake, and come back on any input.
-The values from before are kept in $XDG_RUNTIME_DIR and put back on unlock
-(or by the menu bar when it starts, after a lock screen that crashed)."""
+Dark, not off: the lock screen fades to black and the panel's backlight
+goes to zero (and the keyboard's lights). Turning the display itself off
+and on again (DPMS) failed on Vini's laptop (the NVIDIA driver refused the
+mode set: "Atomic commit failed: Permission denied") and the screen came
+back only by closing and opening the lid. So while locked Wayfire's own
+display timeout is off too; your setting is put back on unlock (kept in
+$XDG_RUNTIME_DIR, also put back by the menu bar after a lock screen that
+crashed). Set to never turn off: it stays lit."""
 import json
 import os
 import shutil
@@ -44,10 +41,8 @@ def locked() -> None:
                 json.dump({f"{s}/{k}": wfconfig.wayfire_get(s, k) for s, k in KEYS}, f)
         except OSError:
             return
-    secs = dark_seconds()
-    if secs is not None:                          # sooner, never later than you chose
-        wfconfig.runtime_set("idle", "dpms_timeout", secs)
-    wfconfig.runtime_set("idle", "disable_on_fullscreen", False)
+    # the lock screen darkens it itself (dim()): Wayfire never powers it off meanwhile
+    wfconfig.runtime_set("idle", "dpms_timeout", -1)
 
 
 def dark_seconds():
@@ -72,6 +67,26 @@ def unlocked() -> None:
         wfconfig.runtime_set(s, k, old.get(f"{s}/{k}") or None)     # (none set before: Wayfire's default)
     try:
         os.unlink(_state())
+    except OSError:
+        pass
+
+
+def has_backlight() -> bool:
+    """A built-in panel whose backlight can go to zero (a laptop)."""
+    import glob
+    return bool(glob.glob("/sys/class/backlight/*")) and bool(shutil.which("brightnessctl"))
+
+
+def dim(dark: bool) -> None:
+    """The built-in panel's backlight to zero / back to its level (in the
+    background, after any lights command before it)."""
+    from . import idlelock
+    if not shutil.which("brightnessctl"):
+        return
+    try:
+        subprocess.Popen(["sh", "-c", idlelock.serial(idlelock.BL_OFF if dark else idlelock.BL_ON)],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
     except OSError:
         pass
 
