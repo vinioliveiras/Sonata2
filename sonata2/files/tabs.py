@@ -21,9 +21,11 @@ SPRING_MS = 700            # a drag held over a tab brings it to the front
 ui.register("""
 .fs-tabs { background: %(window_bg)s; min-height: 26px;
   box-shadow: inset 0 -1px %(separator)s; }
-.fs-tab { background: %(tool_hover)s; box-shadow: inset -1px 0 %(separator)s;
+/* like the Terminal's: the tab in front is the folder's own background, the
+   others sit in the bar (no grey of their own, Vini) */
+.fs-tab { background: none; box-shadow: inset -1px 0 %(separator)s;
   transition: background-color %(t_fast)s; }
-.fs-tab:hover { background: %(separator)s; }
+.fs-tab:hover { background: %(tool_hover)s; }
 .fs-tab.active, .fs-tab.active:hover { background: %(content_bg)s; }
 .fs-tab.drop-target { background: alpha(%(accent)s, 0.25); }
 .fs-tab-label { font-size: %(text_small)s; color: %(label_secondary)s; margin: 0 24px; }

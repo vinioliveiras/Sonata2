@@ -38,6 +38,12 @@ class TabBarSettingTest(unittest.TestCase):
         self.assertIn(".tm-tab.active, .tm-tab.active:hover { background: %(term_bg)s;", css)
         self.assertNotIn("background: %(control_bg)s", css)
 
+    def test_files_tabs_like_the_terminals(self):
+        from sonata2.files import tabs
+        css = inspect.getsource(tabs)
+        self.assertIn(".fs-tab { background: none;", css)
+        self.assertIn(".fs-tab.active, .fs-tab.active:hover { background: %(content_bg)s; }", css)
+
     def test_settings_switch(self):
         from sonata2.settings import app
         src = inspect.getsource(app)
