@@ -43,6 +43,19 @@ class ZoomPluginTest(unittest.TestCase):
         vis = body("static wf::geometry_t visible(", "void begin_outline()")
         self.assertIn("uint32_t edges = (tiled < 0) ? v->pending_tiled_edges() : (uint32_t)tiled;", vis)
 
+    def test_title_bar_drawn_at_the_new_size(self):
+        """Vini (video): zoomed by a double-click on a pixdecor title bar
+        (Claude, terminals), the window stayed with its title bar cut at the
+        old width. The frame is told to work itself out again when the
+        contents fade in and when they're done."""
+        start = body("void start_fade()", "void fade_step()")
+        self.assertLess(start.index("fade_started = true;"), start.index("redraw_frame(fading);"))   # no loop
+        finish = body("void finish_fade()", "void redraw_frame(")
+        self.assertLess(finish.index("on_new_size.disconnect();"), finish.index("redraw_frame(fading);"))
+        redraw = body("void redraw_frame(", "void close_ghost()")
+        self.assertIn("wf::view_geometry_changed_signal ev;", redraw)
+        self.assertIn("v->emit(&ev);", redraw)
+
     def test_not_while_dragging_or_resizing(self):
         start = body("void start_zoom(", "wf::geometry_t zoom_target()")
         self.assertIn('output->is_plugin_active("move")', start)       # a maximized window dragged off

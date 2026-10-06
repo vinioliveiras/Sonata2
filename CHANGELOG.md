@@ -11,6 +11,8 @@
   the space just outside it.
 - Fix: resizing or zooming a terminal (or another app with Sonata's title
   bar) showed a frame the size of its shadow, not of the window.
+- Fix: zoomed from its title bar, a window with Sonata's title bar could
+  keep the title bar cut at its old width.
 
 ### Login screen
 - The display goes dark at the login screen too, after the time chosen in

@@ -1184,7 +1184,12 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
 
     void start_fade()
     {
-        fade_started = true;
+        fade_started = true;                             // (first: redraw_frame's signal comes back here)
+        if (fading)
+        {
+            redraw_frame(fading);                        // its frame at the new size as it fades in
+        }
+
         fade.animate(0.0, 1.0);
     }
 
@@ -1227,12 +1232,26 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         if (fading)
         {
             fading->get_transformed_node()->rem_transformer(FADE);
-            fading->damage();
             on_new_size.disconnect();
+            redraw_frame(fading);
             fading = nullptr;
         }
 
         output->render->rem_effect(&fade_hook);
+    }
+
+    /** The title bar drawn again at the window's size, now. Vini: zoomed
+     * from its title bar, a terminal / Claude (pixdecor) kept its title bar
+     * cut at the old width -- pixdecor redraws only the part of its frame it
+     * worked out for the size it last saw; telling it the geometry changed
+     * makes it work it out again, at the size the window has now. */
+    void redraw_frame(wayfire_toplevel_view v)
+    {
+        wf::view_geometry_changed_signal ev;
+        ev.view = v;
+        ev.old_geometry = v->get_geometry();
+        v->emit(&ev);
+        v->damage();
     }
 
     void close_ghost()
