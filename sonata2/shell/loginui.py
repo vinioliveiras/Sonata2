@@ -215,6 +215,67 @@ def password_field(placeholder="Enter Password") -> Gtk.PasswordEntry:
                              halign=Gtk.Align.CENTER, show_peek_icon=False)
 
 
+class Mirror:
+    """One control shown on every display (Vini: the login and lock screens
+    on all monitors, not just one). Calls go to every copy; a getter answers
+    from the first. Password fields keep the same text, so typing on any
+    display is typing in all of them."""
+
+    def __init__(self, *items):
+        self.items = []
+        self._syncing = False
+        for w in items:
+            self.add(w)
+
+    def add(self, w):
+        self.items.append(w)
+        if isinstance(w, Gtk.Editable):
+            w.connect("changed", self._changed)
+        return w
+
+    def remove(self, w) -> None:
+        if w in self.items:
+            self.items.remove(w)
+
+    def clear(self) -> None:
+        self.items = []
+
+    def __bool__(self) -> bool:
+        return bool(self.items)
+
+    def __iter__(self):
+        return iter(list(self.items))
+
+    def _changed(self, src) -> None:
+        if self._syncing:
+            return
+        self._syncing = True
+        try:
+            text = src.get_text()
+            for w in self.items:
+                if w is not src and w.get_text() != text:
+                    w.set_text(text)
+                    w.set_position(-1)
+        finally:
+            self._syncing = False
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        if not self.items:                       # no display shows it (yet): nothing to do
+            return lambda *a, **kw: None
+        first = getattr(self.items[0], name)
+        if not callable(first):
+            return first
+        if name.startswith(("get_", "has_", "is_")):
+            return first
+
+        def every(*a, **kw):
+            out = [getattr(w, name)(*a, **kw) for w in list(self.items)]
+            return out[0] if out else None
+        return every
+
+
 def shake(entry: Gtk.Widget) -> None:
     """Wrong password (macOS): the field shakes, empties and keeps focus."""
     entry.set_sensitive(True)

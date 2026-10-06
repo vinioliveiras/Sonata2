@@ -25,7 +25,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import greetd, ui  # noqa: E402
-from .loginui import Backdrop, WaitGuard, avatar, password_field, top_clock, logind, power_bar, shake  # noqa: E402
+from .loginui import Backdrop, Mirror, WaitGuard, avatar, password_field, top_clock, logind, power_bar, shake  # noqa: E402
 
 STATE = "/var/cache/sonata-greeter/state.json"
 WAITS = "/var/cache/sonata-greeter/password-waits.json"     # waits after wrong passwords, per user
@@ -201,9 +201,21 @@ class Greeter:
         main = displays.main(displays.login_main([n for n in names if n]))
         for i in range(monitors.get_n_items()):
             self._window(monitors.get_item(i), primary=(monitors.get_item(i) is main))
+        # a display plugged in later (or back after its cable moved) gets the login too
+        monitors.connect("items-changed", lambda m, pos, _r, added: [
+            self._window(m.get_item(pos + k), primary=False) for k in range(added)])
 
-    # windows: one per display, the login column on the first
-    def _window(self, monitor, primary):
+    def _mirrors(self) -> None:
+        """The login's controls, one copy per display (Vini: on every monitor)."""
+        if not isinstance(getattr(self, "center", None), Mirror):
+            self.center, self.power = Mirror(), Mirror()
+            self.entry, self.progress, self.slot = Mirror(), Mirror(), Mirror()
+            self.links, self.hint, self.column, self.session_buttons = Mirror(), Mirror(), Mirror(), Mirror()
+
+    # windows: one per display, each with the whole login (Vini: the column
+    # was on one display only, and gone when that display came back)
+    def _window(self, monitor, primary=False):
+        self._mirrors()
         win = Gtk.Window(application=self.app, decorated=False)
         win.add_css_class("sonata-lock")
         over = Gtk.Overlay(css_classes=["gr-fade-in"])
@@ -211,15 +223,15 @@ class Greeter:
         self.backdrops.append(bd)
         over.set_child(bd)
         over.add_overlay(top_clock())                 # like the lock screen: top, centred (Vini)
-        if primary:
-            self.center = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=220,
-                                    halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
-            over.add_overlay(self.center)
-            self.power = self._power()
-            over.add_overlay(self.power)
-            if not self.fake:
-                over.add_overlay(self._display_button())
-            self._show()
+        center = self.center.add(Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE,
+                                           transition_duration=220, halign=Gtk.Align.CENTER,
+                                           valign=Gtk.Align.CENTER))
+        over.add_overlay(center)
+        power = self.power.add(self._power())
+        over.add_overlay(power)
+        if not self.fake:
+            over.add_overlay(self._display_button())
+        self._fill(center, focus=primary)
         from .screencorners import CornersOverlay        # (always: the login screen has no settings)
         over.add_overlay(CornersOverlay())
         win.set_child(over)
@@ -232,20 +244,54 @@ class Greeter:
         if layer.overlay_fullscreen(win, "sonata2-greeter"):       # a layer surface per display
             LS = layer.layer_shell()
             LS.set_monitor(win, monitor)
-            if not primary:
+            # one display holds the keyboard; every display's field shows what's typed
+            if primary or getattr(self, "keys_win", None) is None:
+                if getattr(self, "keys_win", None) is not None:
+                    LS.set_keyboard_mode(self.keys_win, LS.KeyboardMode.NONE)
+                self.keys_win = win                       # (overlay_fullscreen: exclusive keyboard)
+            else:
                 LS.set_keyboard_mode(win, LS.KeyboardMode.NONE)
         else:
             win.fullscreen_on_monitor(monitor)
         win.present()
         self.windows.append(win)
 
-    def _show(self):
-        page = self._login_page() if self.user else self._users_page()
-        old = self.center.get_visible_child()
-        self.center.add_child(page)
-        self.center.set_visible_child(page)
+        def gone(*_a):
+            for m in (self.entry, self.progress, self.slot, self.links, self.hint, self.column,
+                      self.session_buttons):
+                for w in m:
+                    if w.is_ancestor(center):
+                        m.remove(w)
+            self.center.remove(center)
+            self.power.remove(power)
+            if bd in self.backdrops:
+                self.backdrops.remove(bd)
+            if win in self.windows:
+                self.windows.remove(win)
+            if getattr(self, "keys_win", None) is win:     # the keyboard moves to a display still there
+                self.keys_win = self.windows[0] if self.windows else None
+                LS = layer.layer_shell()
+                if self.keys_win is not None and LS and LS.is_layer_window(self.keys_win):
+                    LS.set_keyboard_mode(self.keys_win, LS.KeyboardMode.EXCLUSIVE)
+            win.destroy()
+        monitor.connect("invalidate", gone)
+        return win
+
+    def _fill(self, center, focus=False) -> None:
+        """One display's page (the login or the users), in place of the one it shows."""
+        page = self._login_page(focus) if self.user else self._users_page()
+        old = center.get_visible_child()
+        center.add_child(page)
+        center.set_visible_child(page)
         if old is not None:
-            GLib.timeout_add(260, lambda: (self.center.remove(old), False)[1])
+            GLib.timeout_add(260, lambda: (center.remove(old), False)[1])
+
+    def _show(self):
+        for m in (self.entry, self.progress, self.slot, self.links, self.hint, self.column, self.session_buttons):
+            m.clear()
+        self.guard = None
+        for i, center in enumerate(self.center):
+            self._fill(center, focus=(i == 0))
         tex = self._wallpaper()
         for bd in self.backdrops:
             bd.texture = tex
@@ -292,24 +338,27 @@ class Greeter:
         self.user = user
         self._show()
 
-    def _login_page(self):
+    def _login_page(self, focus=True):
         u = self.user
-        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, halign=Gtk.Align.CENTER,
-                      css_classes=["gr-rise"])
-        self.column = col
+        col = self.column.add(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10,
+                                      halign=Gtk.Align.CENTER, css_classes=["gr-rise"]))
         col.append(avatar(108, u.name, u.real, u.icon))
         col.append(Gtk.Label(label=u.real, css_classes=["lk-name"]))
-        self.entry = password_field()
-        self.entry.connect("activate", lambda *_: self._login())
+        entry = password_field()
+        if self.entry:                                 # another display's field: the same text
+            entry.set_text(self.entry.get_text())
+            entry.set_sensitive(self.entry.get_sensitive())
+        self.entry.add(entry)
+        entry.connect("activate", lambda *_: self._login())
         # the field turns into a spinner while logging in (macOS)
-        self.progress = Gtk.Spinner(css_classes=["gr-spinner"], halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
-        self.slot = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=220,
-                              halign=Gtk.Align.CENTER)
-        self.slot.add_named(self.entry, "field")
-        self.slot.add_named(self.progress, "progress")
-        col.append(self.slot)
-        links = Gtk.Box(spacing=4, halign=Gtk.Align.CENTER)
-        self.links = links
+        progress = self.progress.add(Gtk.Spinner(css_classes=["gr-spinner"], halign=Gtk.Align.CENTER,
+                                                 valign=Gtk.Align.CENTER))
+        slot = self.slot.add(Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE,
+                                       transition_duration=220, halign=Gtk.Align.CENTER))
+        slot.add_named(entry, "field")
+        slot.add_named(progress, "progress")
+        col.append(slot)
+        links = self.links.add(Gtk.Box(spacing=4, halign=Gtk.Align.CENTER))
         if len(self.users) > 1:
             other = Gtk.Button(label="Other Users", css_classes=["gr-link"])
             other.connect("clicked", lambda *_: self._pick(None))
@@ -317,12 +366,16 @@ class Greeter:
         if len(self.sessions) > 1:
             links.append(self._session_menu())
         col.append(links)
-        self.hint = Gtk.Label(css_classes=["lk-hint"])
-        col.append(self.hint)
-        from ..throttle import Throttle
-        self.guard = WaitGuard(self.entry, self.hint, Throttle(WAITS))
-        self.guard.blocked(u.name)
-        GLib.idle_add(lambda: (self.entry.grab_focus(), False)[1])
+        hint = self.hint.add(Gtk.Label(css_classes=["lk-hint"]))
+        col.append(hint)
+        if getattr(self, "guard", None) is None:
+            from ..throttle import Throttle
+            self.guard = WaitGuard(self.entry, self.hint, Throttle(WAITS))
+            self.guard.blocked(u.name)
+        elif len(self.hint.items) > 1:
+            hint.set_label(self.hint.items[0].get_label())
+        if focus:
+            GLib.idle_add(lambda: (entry.grab_focus(), False)[1])
         return col
 
     def _session(self):
@@ -330,12 +383,12 @@ class Greeter:
         return next((s for s in self.sessions if s.key == key), self.sessions[0] if self.sessions else None)
 
     def _session_menu(self):
-        btn = Gtk.Button(css_classes=["gr-link"])
+        btn = self.session_buttons.add(Gtk.Button(css_classes=["gr-link"]))
         btn.set_label(self._session().name + "  ▾")
 
         def choose(s):
             self.state.setdefault("sessions", {})[self.user.name] = s.key
-            btn.set_label(s.name + "  ▾")
+            self.session_buttons.set_label(s.name + "  ▾")         # every display's
         btn.connect("clicked", lambda b: ui.menu.popup(
             b, [[ui.menu.Item(s.name, lambda s=s: choose(s), checked=(s is self._session()))
                  for s in self.sessions]], position=Gtk.PositionType.BOTTOM, glass=True))

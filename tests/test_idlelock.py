@@ -5,12 +5,74 @@ from unittest import mock
 from sonata2.shell import idlelock as I
 
 
+class KeyboardLightTest(unittest.TestCase):
+    """Vini: the laptop's keyboard stayed unlit. The idle timeout and the
+    lock screen both turned it off; the second "off" saved the dark level
+    over the real one, and a restart while dark lost the saved level."""
+
+    def setUp(self):
+        import os
+        import tempfile
+        self.d = tempfile.mkdtemp()
+        self.level = os.path.join(self.d, "level")
+        with open(self.level, "w") as f:
+            f.write("3")
+        fake = os.path.join(self.d, "brightnessctl")
+        with open(fake, "w") as f:      # g: the level; set N: the new level
+            f.write('#!/bin/sh\nfor a; do last2="$last"; last="$a"; done\n'
+                    f'if [ "$last" = g ]; then cat {self.level}; '
+                    f'elif [ "$last2" = set ]; then echo "$last" > {self.level}; fi\n')
+        os.chmod(fake, 0o755)
+        self.env = dict(os.environ, PATH=self.d + ":" + os.environ["PATH"], XDG_CACHE_HOME=self.d)
+
+    def run_cmd(self, which):
+        import importlib
+        import subprocess
+        with mock.patch.dict("os.environ", {"XDG_CACHE_HOME": self.d}):
+            mod = importlib.reload(I)
+        try:
+            subprocess.run(["sh", "-c", getattr(mod, which)], env=self.env, check=False)
+        finally:
+            importlib.reload(I)
+
+    def now(self):
+        return open(self.level).read().strip()
+
+    def test_two_offs_then_on_gives_the_light_back(self):
+        self.run_cmd("KBD_OFF")
+        self.assertEqual(self.now(), "0")
+        self.run_cmd("KBD_OFF")                             # the lock screen too
+        self.run_cmd("KBD_ON")
+        self.assertEqual(self.now(), "3")
+
+    def test_restart_while_dark_restores_at_the_next_session(self):
+        self.run_cmd("KBD_OFF")
+        with open(self.level, "w") as f:                  # the restart: still 0
+            f.write("0")
+        self.run_cmd("KBD_ON")                              # the next session's start (IdleLock)
+        self.assertEqual(self.now(), "3")
+        self.run_cmd("KBD_ON")                              # nothing saved any more: left as it is
+        self.assertEqual(self.now(), "3")
+
+    def test_on_never_lights_a_keyboard_you_turned_off(self):
+        with open(self.level, "w") as f:
+            f.write("0")
+        self.run_cmd("KBD_OFF")
+        self.run_cmd("KBD_ON")
+        self.assertEqual(self.now(), "0")
+
+    def test_session_start_gives_lights_back(self):
+        import inspect
+        src = inspect.getsource(I.IdleLock.__init__)
+        self.assertIn("lockdisplay.lights(True)", src)
+
+
 class CommandTest(unittest.TestCase):
     def test_keyboard_light_follows_the_display(self):
         cmd = I.command({"lock_after": -1}, 300, kbd=True)
         self.assertEqual(cmd, ["swayidle", "-w", "timeout", "300", I.KBD_OFF, "resume", I.KBD_ON])
-        self.assertIn("-s set 0", I.KBD_OFF)              # level saved before turning off
-        self.assertIn(" -r", I.KBD_ON)                    # and restored on resume
+        self.assertIn("set 0", I.KBD_OFF)                 # level saved before turning off
+        self.assertIn("$(cat ", I.KBD_ON)                 # and restored on resume (KeyboardLightTest)
 
     def test_no_keyboard_light(self):
         self.assertEqual(I.command({"lock_after": -1}, 300, kbd=False), [])

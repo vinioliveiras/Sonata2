@@ -1739,13 +1739,13 @@ class Dock(Gtk.Box):
                 GLib.timeout_add(1000, lambda: (self._update_rectangles_bg(), False)[1])
             return False
         self._rects_tries = 0
-        # Wayfire adds the Dock surface's *layout* position to the rectangle
-        # but animates in the display's own coordinates: on a display that
-        # isn't at the layout's origin (a second screen to the right) the
-        # genie aimed that far off. Take the display's origin back out.
-        mon = self._monitor_of(surface)
-        g = mon.get_geometry() if mon else None
-        ox, oy = (g.x, g.y) if g else (0, 0)
+        # The rectangle is relative to the Dock's surface, and Wayfire adds
+        # only the Dock's place *on its display* (foreign-toplevel.cpp:
+        # get_surface_root_node()->to_global, one level up) -- the display's
+        # own coordinates, the ones the genie runs in. Nothing to take out:
+        # taking the display's layout origin out aimed every genie that far
+        # off (Vini: the laptop's panel at x = 1920, windows flew to the left).
+        ox, oy = 0, 0
         my_apps = {a for a, _t in mine}
         # apps with a window on another display: a title Wayfire hadn't seen
         # yet can't tell which of their windows is here
@@ -1787,9 +1787,7 @@ class Dock(Gtk.Box):
         ok, b = tile.compute_bounds(native) if surface and tile else (False, None)
         if not ok:
             return
-        mon = self._monitor_of(surface)
-        g = mon.get_geometry() if mon else None
-        ox, oy = (g.x, g.y) if g else (0, 0)            # (as _update_rectangles)
+        ox, oy = 0, 0                                     # (as _update_rectangles: display coordinates)
         for t in wins:
             self.manager.set_rectangle(t, surface, b.get_x() - ox, b.get_y() - oy, b.get_width(), b.get_height())
 

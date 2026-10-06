@@ -13,6 +13,7 @@ off, the profile loaded back on input."""
 import glob
 import os
 import shutil
+import shlex
 import signal
 import subprocess
 import time
@@ -29,13 +30,25 @@ DEFAULTS = {"lock_after": 0, "lock_before_sleep": True, "usb_protection": True}
 LOCK = "sonata2 lock-wait"
 LEDS = "/sys/class/leds"
 KBD = "*::kbd_backlight"
-KBD_OFF = f"brightnessctl -q -d '{KBD}' -s set 0"
-KBD_ON = f"brightnessctl -q -d '{KBD}' -r"
-
+# The lights' level before Sonata turned them off, in a file that outlives a
+# restart. Two "off"s in a row (the idle timeout and the lock screen both go
+# dark) must not save the dark level over the real one, and a restart while
+# dark must not leave them off (Vini: the keyboard stayed unlit -- brightnessctl's
+# own save kept 0 the second time, and was lost on restart).
+_STATE = shlex.quote(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
+                                  "sonata2", "lights-before-dark"))
+KBD_OFF = (f"b=$(brightnessctl -d '{KBD}' g 2>/dev/null); "
+           f"if [ \"${{b:-0}}\" -gt 0 ] 2>/dev/null; then mkdir -p \"$(dirname {_STATE})\"; "
+           f"echo \"$b\" > {_STATE}; brightnessctl -q -d '{KBD}' set 0; fi")
+KBD_ON = (f"if [ -s {_STATE} ]; then brightnessctl -q -d '{KBD}' set \"$(cat {_STATE})\"; "
+          f"rm -f {_STATE}; fi")
 
 RGB_PROFILE = "sonata-idle"
-RGB_OFF = f"openrgb --save-profile {RGB_PROFILE} >/dev/null 2>&1; openrgb --mode off >/dev/null 2>&1"
-RGB_ON = f"openrgb --profile {RGB_PROFILE} >/dev/null 2>&1"
+_RGB_MARK = shlex.quote(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
+                                     "sonata2", "rgb-before-dark"))
+RGB_OFF = (f"[ -e {_RGB_MARK} ] || {{ openrgb --save-profile {RGB_PROFILE} >/dev/null 2>&1 && "
+           f"touch {_RGB_MARK}; }}; openrgb --mode off >/dev/null 2>&1")
+RGB_ON = f"[ -e {_RGB_MARK} ] && openrgb --profile {RGB_PROFILE} >/dev/null 2>&1; rm -f {_RGB_MARK}"
 
 
 def marker() -> str:
@@ -98,7 +111,7 @@ def command(cfg: dict, dpms: int, kbd: bool = False, rgb: bool = False) -> list:
     if kbd and dpms > 0:                          # with the display: off, then back on any input
         args += ["timeout", str(dpms), KBD_OFF, "resume", KBD_ON]
     if rgb and dpms > 0:                          # (in the background: OpenRGB takes a few seconds)
-        args += ["timeout", str(dpms), f"sh -c '{RGB_OFF}' &", "resume", f"sh -c '{RGB_ON}' &"]
+        args += ["timeout", str(dpms), f"sh -c {shlex.quote(RGB_OFF)} &", "resume", f"sh -c {shlex.quote(RGB_ON)} &"]
     after = int(cfg.get("lock_after", -1))
     if after >= 0:
         base = dpms if dpms > 0 else 600          # display never sleeps: count from 10 min idle
@@ -117,6 +130,7 @@ class IdleLock:
         if not is_locked():                     # a lock screen that crashed: the display's timeout back
             from . import lockdisplay
             lockdisplay.unlocked()
+            lockdisplay.lights(True)            # and the lights, left dark by a restart while locked
         self.apply()
         GLib.timeout_add_seconds(60, lambda: (self.apply(), True)[1])   # dpms timeout changed in Settings
 

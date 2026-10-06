@@ -138,6 +138,27 @@ class BringHereTest(unittest.TestCase):
         surface = d.get_native.return_value.get_surface.return_value
         d.manager.set_rectangle.assert_called_once_with(t, surface, 300, 10, 64, 64)
 
+    def test_aim_on_a_display_away_from_the_layouts_origin(self):
+        """Vini: the laptop's panel at x = 1920 (the external screen at 0,
+        unplugged): minimizing flew 1920 px to the left. Wayfire adds only
+        the Dock's place on its display -- the icon's own coordinates go
+        as they are, whatever the display's position in the layout."""
+        from unittest import mock
+        d = mock.Mock()
+        b = mock.Mock()
+        b.get_x.return_value, b.get_y.return_value = 900, 1020
+        b.get_width.return_value, b.get_height.return_value = 64, 64
+        tile = mock.Mock()
+        tile.compute_bounds.return_value = (True, b)
+        d._monitor_of.return_value.get_geometry.return_value = mock.Mock(x=1920, y=1)
+        t = mock.Mock()
+        D.Dock._aim_at(d, tile, [t])
+        surface = d.get_native.return_value.get_surface.return_value
+        d.manager.set_rectangle.assert_called_once_with(t, surface, 900, 1020, 64, 64)
+        src = open(D.__file__).read()
+        body = src[src.index("    def _update_rectangles(self"):src.index("    def _monitor_of(")]
+        self.assertNotIn("g.x, g.y", body)
+
 
 class MinimizeAimTest(unittest.TestCase):
     """Vini: on the second display, minimizing from the Dock still flew to
