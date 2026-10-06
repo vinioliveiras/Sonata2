@@ -615,8 +615,17 @@ class Bar(Gtk.CenterBox):
         return ui.panel.row(None, title, on_click=lambda: (pop.popdown(), open_settings(page)))
 
     def _wifi_panel(self, btn):
-        """Big Sur Wi-Fi menu: switch, the joined network, other networks
-        (round signal badges, lock), Wi-Fi Preferences…"""
+        """Big Sur Wi-Fi menu (the menu bar's Wi-Fi icon)."""
+        held = {}
+        col = self.wifi_column(lambda: held["pop"].popdown())
+        pop = held["pop"] = ui.panel.popup(btn, col, gap=PANEL_GAP, width=STATUS_W)
+        ui.panel.align_to_start(pop, btn, 2)
+        return pop
+
+    def wifi_column(self, close) -> Gtk.Widget:
+        """Switch, the joined network, other networks (round signal badges,
+        lock), Wi-Fi Preferences… -- in the menu bar's Wi-Fi menu, and in
+        Control Center when its Wi-Fi row is clicked. close(): the panel goes."""
         on = Gtk.Switch(css_classes=["sonata-switch"], valign=Gtk.Align.CENTER)
         col = ui.panel.column(ui.panel.header("Wi-Fi", on))
         cur_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -627,9 +636,8 @@ class Bar(Gtk.CenterBox):
         nets.append(ui.panel.row(None, "Searching…"))
         col.append(nets)
         col.append(ui.panel.separator())
-        pop = ui.panel.popup(btn, col, gap=PANEL_GAP, width=STATUS_W)
-        col.append(self._prefs_row(pop, "Wi-Fi Preferences…", "wifi"))
-        ui.panel.align_to_start(pop, btn, 2)
+        col.append(ui.panel.row(None, "Wi-Fi Preferences…", on_click=lambda: (close(), open_settings("wifi"))))
+        col.nets = nets                                         # (tests)
 
         def badge(n):
             level = 3 if n.signal > 60 else 2 if n.signal > 30 else 1
@@ -644,7 +652,7 @@ class Bar(Gtk.CenterBox):
             if n.secure:
                 trailing.append(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=12,
                                           css_classes=["dim-label"]))
-            row = ui.panel.row(None, n.ssid, trailing, on_click=lambda n=n: (pop.popdown(), self._join(n)))
+            row = ui.panel.row(None, n.ssid, trailing, on_click=lambda n=n: (close(), self._join(n)))
             content = row.get_child() if isinstance(row, Gtk.Button) else row
             content.prepend(badge(n))
             return row
@@ -667,7 +675,7 @@ class Bar(Gtk.CenterBox):
         cached("wifi", _wifi_list, fill)
         on.connect("state-set", lambda _s, st: (system.run_async(system.set_wifi_enabled, lambda _r: self._poll(), st),
                                                 False)[1])
-        return pop
+        return col
 
     # -- Bluetooth (BlueZ over D-Bus: the icon follows the adapter, no polling) --------------
     def _watch_bluetooth(self) -> None:
@@ -684,8 +692,17 @@ class Bar(Gtk.CenterBox):
         self._set_icon(self.bt, "sonata-bluetooth-symbolic" if powered else "sonata-bluetooth-off-symbolic")
 
     def _bluetooth_panel(self, btn):
-        """Big Sur Bluetooth menu: switch, Devices (paired, connected ones
-        highlighted; click to connect/disconnect), Bluetooth Preferences…"""
+        """Big Sur Bluetooth menu (the menu bar's Bluetooth icon)."""
+        held = {}
+        col = self.bluetooth_column(lambda: held["pop"].popdown())
+        pop = held["pop"] = ui.panel.popup(btn, col, gap=PANEL_GAP, width=STATUS_W)
+        ui.panel.align_to_start(pop, btn, 2)
+        return pop
+
+    def bluetooth_column(self, close) -> Gtk.Widget:
+        """Switch, Devices (paired, connected ones highlighted; click to
+        connect/disconnect), Bluetooth Preferences… -- in the menu bar's menu
+        and in Control Center. close(): the panel goes."""
         on = Gtk.Switch(css_classes=["sonata-switch"], valign=Gtk.Align.CENTER,
                         active=bool(self._bt_powered()))
         col = ui.panel.column(ui.panel.header("Bluetooth", on))
@@ -695,9 +712,9 @@ class Bar(Gtk.CenterBox):
         devs.append(ui.panel.row(None, "Searching…"))
         col.append(devs)
         col.append(ui.panel.separator())
-        pop = ui.panel.popup(btn, col, gap=PANEL_GAP, width=STATUS_W)
-        col.append(self._prefs_row(pop, "Bluetooth Preferences…", "bluetooth"))
-        ui.panel.align_to_start(pop, btn, 2)
+        col.append(ui.panel.row(None, "Bluetooth Preferences…",
+                                on_click=lambda: (close(), open_settings("bluetooth"))))
+        col.devs = devs                                         # (tests)
 
         def badge(d):
             b = Gtk.Box(css_classes=["wifi-badge"] + (["on"] if d.connected else []), valign=Gtk.Align.CENTER,
@@ -712,7 +729,7 @@ class Bar(Gtk.CenterBox):
             paired = [d for d in lst or [] if d.paired]
             for d in paired[:12]:
                 row = ui.panel.row(None, d.name, on_click=lambda d=d: (
-                    pop.popdown(), system.run_async(system.bluetooth_connect, None, d.mac, not d.connected)))
+                    close(), system.run_async(system.bluetooth_connect, None, d.mac, not d.connected)))
                 content = row.get_child() if isinstance(row, Gtk.Button) else row
                 content.prepend(badge(d))
                 devs.append(row)
@@ -720,7 +737,7 @@ class Bar(Gtk.CenterBox):
                 devs.append(ui.panel.row(None, "No devices" if self._bt_powered() else "Bluetooth: Off"))
         cached("bluetooth", lambda: system.bluetooth_devices(), fill)
         on.connect("state-set", lambda _s, st: (system.run_async(system.set_bluetooth, None, st), False)[1])
-        return pop
+        return col
 
     def _join(self, net) -> None:
         if net.connected:
@@ -923,6 +940,12 @@ def open_settings(page: str = "") -> None:
 
 ui.register("""
 .cc-small { padding: 8px; }
+.cc-more { border-radius: %(r_menu_row)s; padding: 0 4px; margin-left: -4px;
+  transition: background-color %(t_fast)s; }
+.cc-more:hover { background: alpha(%(label)s, 0.08); }
+.cc-back { min-width: 26px; min-height: 26px; padding: 0; border-radius: 99px; border: none; box-shadow: none;
+  background: none; color: %(label)s; margin: 2px 0 0 4px; }
+.cc-back:hover { background: alpha(%(label)s, 0.1); }
 .wifi-badge { min-width: 26px; min-height: 26px; border-radius: 99px; background: %(toggle_off)s;
   color: %(label)s; margin-right: 2px; }
 .wifi-badge > image { margin: 0 6px; }          /* 26 px circle: 14 px glyph + 2 x 6 px */
@@ -1232,13 +1255,56 @@ class ControlCenter(Gtk.Box):
                                            propagate_natural_width=False, propagate_natural_height=True,
                                            max_content_height=self._max_height(), width_request=self.width,
                                            css_classes=["cc-scroller"])
-        self.append(self.scroller)
+        # the controls, and a page of their own for Wi-Fi / Bluetooth (macOS:
+        # a click beside the toggle shows the networks / devices in the panel)
+        self.main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.main.append(self.scroller)
         self.grid.on_height = self._fit_height                  # its size changes smoothly
         self._fit_height()
-        self.append(self._edit_bar())
+        self.main.append(self._edit_bar())
+        self.pages = Gtk.Stack(transition_type=Gtk.StackTransitionType.SLIDE_LEFT_RIGHT,
+                               transition_duration=220, vhomogeneous=False, interpolate_size=True)
+        self.pages.add_named(self.main, "main")
+        self.append(self.pages)
+        for row, kind in ((self.wifi, "wifi"), (self.bt, "bluetooth")):
+            self._opens_details(row, kind)
         cached("cc", _cc_state, self._fill_toggles)             # Wi-Fi / Bluetooth: last known at once
         system.run_async(lambda: (system.brightness(out), system.volume(), system.input_volume()),
                          self._fill_sliders)                  # levels: always the live ones
+
+    def _opens_details(self, row, kind: str) -> None:
+        """The row beside its toggle (its name and state) shows the list; the
+        round button still turns it on and off."""
+        texts = row.get_last_child()
+        texts.add_css_class("cc-more")
+        texts.set_hexpand(True)
+        texts.set_cursor(Gdk.Cursor.new_from_name("pointer"))
+        click = Gtk.GestureClick(button=1)
+        click.connect("released", lambda *_a: self.show_details(kind))
+        texts.add_controller(click)
+        row.details = click                                      # (tests)
+
+    def show_details(self, kind: str) -> None:
+        """Wi-Fi's networks or Bluetooth's devices in the panel, a back
+        button above them."""
+        old = self.pages.get_child_by_name("details")
+        back = Gtk.Button(icon_name="go-previous-symbolic", css_classes=["cc-back"], halign=Gtk.Align.START,
+                          can_focus=False, tooltip_text="Control Center")
+        back.connect("clicked", lambda *_a: self.hide_details())
+        build = self.bar.wifi_column if kind == "wifi" else self.bar.bluetooth_column
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, css_classes=["cc-details"])
+        page.append(back)
+        page.append(build(self._close))
+        page.kind = kind
+        if old is not None:
+            self.pages.remove(old)
+        self.pages.add_named(page, "details")
+        self.pages.set_visible_child_name("details")
+
+    def hide_details(self) -> None:
+        self.pages.set_transition_type(Gtk.StackTransitionType.SLIDE_RIGHT)
+        self.pages.set_visible_child_name("main")
+        self.pages.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
 
     def _fit_height(self) -> None:
         """As tall as the modules (never squeezed by the panel), up to the screen."""

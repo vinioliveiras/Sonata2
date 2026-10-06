@@ -226,6 +226,50 @@ class AddControlsInPanelTest(TempConfig):
             win.destroy()
 
 
+class ConnectionDetailsTest(TempConfig):
+    """Vini: a click beside the Wi-Fi / Bluetooth toggle shows the networks /
+    devices (in the panel, macOS); the round button still turns it on/off."""
+
+    def test_details_in_the_panel(self):
+        import types
+        from sonata2.shell import topbar as T
+        built = []
+
+        def column(kind):
+            def build(close):
+                built.append((kind, close))
+                return Gtk.Label(label=kind)
+            return build
+        bar = types.SimpleNamespace(_poll=lambda: None, _set_volume=lambda v: None, notifications=None,
+                                    monitor=None, get_native=lambda: None,
+                                    wifi_column=column("wifi"), bluetooth_column=column("bluetooth"))
+        with mock.patch.object(T.system, "run_async") as run, mock.patch.object(T, "cached"), \
+                mock.patch.object(T.ui.panel, "popup", side_effect=AssertionError("no pop-up inside the panel")):
+            cc = T.ControlCenter(bar)
+            win = Gtk.Window(child=cc)
+            win.present()
+            settle(100)
+            cc.wifi.details.emit("released", 1, 5, 5)           # beside the toggle
+            self.assertEqual(cc.pages.get_visible_child_name(), "details")
+            self.assertEqual(built[-1][0], "wifi")
+            self.assertEqual(cc.pages.get_visible_child().kind, "wifi")
+            cc.hide_details()
+            self.assertEqual(cc.pages.get_visible_child_name(), "main")
+            cc.bt.details.emit("released", 1, 5, 5)
+            self.assertEqual(cc.pages.get_visible_child().kind, "bluetooth")
+            run.reset_mock()
+            cc.wifi.button.emit("clicked")                      # the round button: on/off, no list
+            self.assertTrue(run.called)
+            self.assertEqual(cc.pages.get_visible_child().kind, "bluetooth")
+            win.destroy()
+
+    def test_menu_bar_menus_share_the_lists(self):
+        import inspect
+        from sonata2.shell import topbar as T
+        self.assertIn("self.wifi_column(", inspect.getsource(T.Bar._wifi_panel))
+        self.assertIn("self.bluetooth_column(", inspect.getsource(T.Bar._bluetooth_panel))
+
+
 def _children(w):
     c = w.get_first_child()
     while c is not None:
