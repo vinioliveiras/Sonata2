@@ -279,6 +279,32 @@ def remember_size(win, key: str, w: int, h: int) -> None:
         win.connect(f"notify::{prop}", soon)
     win.connect("destroy", lambda *_a: pending["src"] and GLib.source_remove(pending["src"]))
 
+    # the size the user gives it becomes its default size too (Vini: Files'
+    # size reset by itself): GTK goes back to its default size whenever the
+    # compositor lets it choose (a configure without a size), and that was
+    # still the size it opened at
+    def resized(*_a):
+        GLib.idle_add(lambda: (follow_size(win), False)[1])
+    win.connect("realize", lambda *_a: win.get_surface().connect("layout", resized))
+    if win.get_realized():
+        win.get_surface().connect("layout", resized)
+
+
+def follow_size(win) -> bool:
+    """The window's current size as its default size (unmaximized, not tiled
+    or full screen); True when it changed."""
+    from gi.repository import Gdk
+    surf = win.get_surface()
+    state = surf.get_state() if isinstance(surf, Gdk.Toplevel) else 0
+    tiled = Gdk.ToplevelState.TILED | Gdk.ToplevelState.MAXIMIZED | Gdk.ToplevelState.FULLSCREEN
+    if win.is_maximized() or win.is_fullscreen() or (state & tiled):
+        return False
+    w, h = win.get_width(), win.get_height()
+    if w <= 1 or h <= 1 or (w, h) == tuple(win.get_default_size()):
+        return False
+    win.set_default_size(w, h)
+    return True
+
 
 def standard(win) -> None:
     """Give an app window Sonata's standard frame (call once, any time)."""

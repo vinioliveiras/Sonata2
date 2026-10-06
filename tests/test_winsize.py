@@ -20,6 +20,13 @@ APPS = {"files/window.py": "files", "notes/window.py": "notes",
         "textedit/window.py": "textedit"}
 
 
+def spin(ms):
+    from gi.repository import GLib
+    end = GLib.get_monotonic_time() + ms * 1000
+    while GLib.get_monotonic_time() < end:
+        GLib.MainContext.default().iteration(False)
+
+
 class WinsizeTest(unittest.TestCase):
     def setUp(self):
         self.p = mock.patch.object(config, "CONFIG_DIR", tempfile.mkdtemp())
@@ -57,6 +64,27 @@ class WinsizeTest(unittest.TestCase):
             win2 = Gtk.Window()
             UW.remember_size(win2, "new", 1000, 800)
         self.assertEqual(win2.get_default_size(), (1000, 800))
+
+    def test_a_size_given_by_hand_becomes_the_default(self):
+        """Vini: Files' size reset by itself. GTK goes back to its default
+        size when the compositor lets it choose, and that was still the size
+        it opened at: every resize now becomes the default (and is kept)."""
+        from gi.repository import GLib
+        winsize.save("r", 700, 500)
+        win = Gtk.Window()
+        with mock.patch.object(UW, "screen_size", return_value=(1920, 1080)):
+            UW.remember_size(win, "r", 1000, 800)
+        win.present()
+        self.addCleanup(win.destroy)
+        spin(200)
+        win.get_width, win.get_height = (lambda: 1201), (lambda: 832)        # resized by the user
+        win.get_surface().emit("layout", 1201, 832)
+        spin(UW.SAVE_SIZE_MS + 200)
+        self.assertEqual(tuple(win.get_default_size()), (1201, 832))
+        self.assertEqual((winsize.saved("r")["width"], winsize.saved("r")["height"]), (1201, 832))
+        win.maximize()                                                         # maximized: not a size
+        spin(200)
+        self.assertFalse(UW.follow_size(win) and not win.is_maximized())
 
     def test_every_app_uses_it(self):
         root = os.path.join(os.path.dirname(__file__), "..", "sonata2")
