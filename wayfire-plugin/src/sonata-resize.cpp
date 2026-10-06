@@ -25,6 +25,9 @@
  * has drawn itself at that size (the outline resize's fade). Grid's own
  * animation is off (config/wayfire.ini: [grid] type = none);
  * sonata-resize/zoom turns this one off.
+ *
+ * And the edge (Vini): a band just inside every window's edge resizes it
+ * (edge_grab_node_t), not only the space outside the frame.
  */
 #include <wayfire/compositor-view.hpp>
 #include <wayfire/render-manager.hpp>
@@ -190,10 +193,190 @@ class ghost_node_t : public wf::scene::node_t
     }
 };
 
+/* The window as seen: a window pixdecor decorates (terminals, X11 apps)
+ * has its shadow inside its geometry -- the panel came out that much
+ * bigger than the window (Vini). The same inset as sonata-corners.
+ * `tiled`: the tiling to judge by (-1: the window's own now). */
+static wf::geometry_t visible(wayfire_toplevel_view v, wf::geometry_t g, int tiled = -1)
+{
+    auto m = v->toplevel()->current().margins;
+    if ((m.left <= 0) && (m.top <= 0))
+    {
+        return g;                                    // its own frame: geometry is the window
+    }
+
+    auto& cfg     = wf::get_core().config;
+    auto engine   = cfg->get_option("pixdecor/overlay_engine");
+    auto radius   = cfg->get_option("pixdecor/shadow_radius");
+    auto max_shad = cfg->get_option("pixdecor/maximized_shadows");
+    if (!engine || !radius || (engine->get_value_str() != "rounded_corners"))
+    {
+        return g;
+    }
+
+    uint32_t edges = (tiled < 0) ? v->pending_tiled_edges() : (uint32_t)tiled;
+    if ((edges != 0) && (!max_shad || (max_shad->get_value_str() != "true")))
+    {
+        return g;
+    }
+
+    int inset = 2 * std::max(0, std::atoi(radius->get_value_str().c_str()));
+    if ((g.width <= 2 * inset) || (g.height <= 2 * inset))
+    {
+        return g;
+    }
+
+    return {g.x + inset, g.y + inset, g.width - 2 * inset, g.height - 2 * inset};
+}
+
+
+/* -- holding the window's edge itself ------------------------------------------------
+ * Vini: resizing, the pointer had to be just outside the window -- on its
+ * shadow, never on the window: pixdecor's and GTK's handles are outside the
+ * frame. Each window gets a band EDGE_IN px wide just inside its visible edge
+ * (a node over the window, in its own stacking place) that shows the resize
+ * pointer and starts the resize; corners are CORNER px long. Not on a
+ * maximized, tiled or full-screen window. */
+uint32_t band_edges(int x, int y, int w, int h, double px, double py);
+
+class edge_grab_node_t : public wf::scene::node_t, public wf::pointer_interaction_t
+{
+    wayfire_toplevel_view view;
+    uint32_t hovered = 0;
+
+  public:
+    edge_grab_node_t(wayfire_toplevel_view v) : wf::scene::node_t(false), view(v)
+    {}
+
+    uint32_t edges_at(wf::pointf_t at)
+    {
+        if (!view || !view->is_mapped() || view->pending_fullscreen() || view->pending_tiled_edges() ||
+            !(view->get_allowed_actions() & wf::VIEW_ALLOW_RESIZE) ||
+            (view->role == wf::VIEW_ROLE_DESKTOP_ENVIRONMENT))
+        {
+            return 0;
+        }
+
+        auto g = visible(view, view->get_geometry());
+        return band_edges(g.x, g.y, g.width, g.height, at.x, at.y);
+    }
+
+    std::optional<wf::scene::input_node_t> find_node_at(const wf::pointf_t& at) override
+    {
+        if (edges_at(at))
+        {
+            return wf::scene::input_node_t{.node = this, .local_coords = at};
+        }
+
+        return {};
+    }
+
+    wf::pointer_interaction_t& pointer_interaction() override
+    {
+        return *this;
+    }
+
+    std::string stringify() const override
+    {
+        return "sonata-resize edge";
+    }
+
+    void show(wf::pointf_t at)
+    {
+        uint32_t e = edges_at(at);
+        if (e && (e != hovered))
+        {
+            wf::get_core().set_cursor(wlr_xcursor_get_resize_name((wlr_edges)e));
+        }
+
+        hovered = e;
+    }
+
+    void handle_pointer_enter(wf::pointf_t at) override
+    {
+        hovered = 0;
+        show(at);
+    }
+
+    void handle_pointer_motion(wf::pointf_t at, uint32_t) override
+    {
+        show(at);
+    }
+
+    void handle_pointer_leave() override
+    {
+        hovered = 0;
+    }
+
+    void handle_pointer_button(const wlr_pointer_button_event& ev) override
+    {
+        if ((ev.button == BTN_LEFT) && (ev.state == WL_POINTER_BUTTON_STATE_PRESSED) && hovered)
+        {
+            wf::get_core().default_wm->resize_request(view, hovered);   // sonata-resize takes it from here
+        }
+    }
+};
+
+static const char *EDGE_DATA = "sonata-resize-edge";
+
+struct edge_grab_data_t : public wf::custom_data_t
+{
+    std::shared_ptr<edge_grab_node_t> node;
+};
+
+/** The edge band on a window (once). */
+static void add_edge_grab(wayfire_toplevel_view v)
+{
+    if (!v || v->has_data(EDGE_DATA) || (v->role != wf::VIEW_ROLE_TOPLEVEL))
+    {
+        return;
+    }
+
+    auto data  = std::make_unique<edge_grab_data_t>();
+    data->node = std::make_shared<edge_grab_node_t>(v);
+    wf::scene::add_front(v->get_root_node(), data->node);
+    v->store_data(std::move(data), EDGE_DATA);
+}
+
+static void remove_edge_grab(wayfire_toplevel_view v)
+{
+    if (auto data = v ? v->get_data<edge_grab_data_t>(EDGE_DATA) : nullptr)
+    {
+        wf::scene::remove_child(data->node);
+        v->erase_data(EDGE_DATA);
+    }
+}
+
 static constexpr int ZOOM_MS = 250;
 static constexpr int DEAD_ZONE = 3;                  // px: less is a click, not a resize
+static constexpr int EDGE_IN = 4;                    // px inside the window's edge that resize it
+static constexpr int CORNER = 14;                    // px along an edge from a corner: the corner
 static constexpr int64_t DOUBLE_CLICK_MS = 400;
 static constexpr double DOUBLE_CLICK_PX = 6.0;
+
+/** The edges a point EDGE_IN px or less inside the window (x, y, w, h)
+ * resizes: one side, or a corner near one; 0 elsewhere (and outside). */
+uint32_t band_edges(int x, int y, int w, int h, double px, double py)
+{
+    if ((px < x) || (py < y) || (px >= x + w) || (py >= y + h) || (w <= 2 * EDGE_IN) || (h <= 2 * EDGE_IN))
+    {
+        return 0;
+    }
+
+    bool l = px < x + EDGE_IN, r = px >= x + w - EDGE_IN;
+    bool t = py < y + EDGE_IN, b = py >= y + h - EDGE_IN;
+    if (!(l || r || t || b))
+    {
+        return 0;
+    }
+
+    // on an edge near a corner: that corner
+    l = l || ((t || b) && (px < x + CORNER));
+    r = r || ((t || b) && (px >= x + w - CORNER));
+    t = t || ((l || r) && (py < y + CORNER));
+    b = b || ((l || r) && (py >= y + h - CORNER));
+    return (l ? WLR_EDGE_LEFT : r ? WLR_EDGE_RIGHT : 0) | (t ? WLR_EDGE_TOP : b ? WLR_EDGE_BOTTOM : 0);
+}
 
 /* The last press on a window's top edge (every display's plugin shares it). */
 static struct
@@ -308,6 +491,10 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         wf::animation::smoothing::circle};
     wf::effect_hook_t zoom_hook = [=] () { zoom_step(); };
 
+    wf::signal::connection_t<wf::view_mapped_signal> on_view_mapped = [=] (wf::view_mapped_signal *ev)
+    {
+        add_edge_grab(toplevel_cast(ev->view));
+    };
     wf::signal::connection_t<wf::view_tile_request_signal> on_tile_request =
         [=] (wf::view_tile_request_signal *ev)
     {
@@ -364,6 +551,14 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
 
         output->connect(&on_resize_request);
         LOGI("sonata-resize: ready on ", output->to_string(), ", live=", (bool)live);
+        output->connect(&on_view_mapped);
+        for (auto& v : wf::get_core().get_all_views())
+        {
+            if (auto t = toplevel_cast(v); t && t->is_mapped() && (t->get_output() == output))
+            {
+                add_edge_grab(t);
+            }
+        }
         output->connect(&on_view_disappeared);
         output->connect(&on_tile_request);
     }
@@ -822,6 +1017,14 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
 
         output->rem_binding(&activate_binding);
         output->rem_binding(&activate_binding_preserve_aspect);
+        for (auto& v : wf::get_core().get_all_views())
+        {
+            if (auto t = toplevel_cast(v); t && (t->get_output() == output))
+            {
+                remove_edge_grab(t);
+            }
+        }
+
         end_zoom(false);
         finish_fade();
         close_ghost();
@@ -936,41 +1139,6 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     }
 
     // -- Sonata ------------------------------------------------------------------------
-    /* The window as seen: a window pixdecor decorates (terminals, X11 apps)
-     * has its shadow inside its geometry -- the panel came out that much
-     * bigger than the window (Vini). The same inset as sonata-corners.
-     * `tiled`: the tiling to judge by (-1: the window's own now). */
-    static wf::geometry_t visible(wayfire_toplevel_view v, wf::geometry_t g, int tiled = -1)
-    {
-        auto m = v->toplevel()->current().margins;
-        if ((m.left <= 0) && (m.top <= 0))
-        {
-            return g;                                    // its own frame: geometry is the window
-        }
-
-        auto& cfg     = wf::get_core().config;
-        auto engine   = cfg->get_option("pixdecor/overlay_engine");
-        auto radius   = cfg->get_option("pixdecor/shadow_radius");
-        auto max_shad = cfg->get_option("pixdecor/maximized_shadows");
-        if (!engine || !radius || (engine->get_value_str() != "rounded_corners"))
-        {
-            return g;
-        }
-
-        uint32_t edges = (tiled < 0) ? v->pending_tiled_edges() : (uint32_t)tiled;
-        if ((edges != 0) && (!max_shad || (max_shad->get_value_str() != "true")))
-        {
-            return g;
-        }
-
-        int inset = 2 * std::max(0, std::atoi(radius->get_value_str().c_str()));
-        if ((g.width <= 2 * inset) || (g.height <= 2 * inset))
-        {
-            return g;
-        }
-
-        return {g.x + inset, g.y + inset, g.width - 2 * inset, g.height - 2 * inset};
-    }
 
     void begin_outline()
     {

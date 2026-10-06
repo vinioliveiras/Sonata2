@@ -7,6 +7,8 @@
   or shrinks to its new place and the contents fade in there -- no more
   smear of two title bars over each other.
 - Window shadows are almost gone.
+- A window's edge itself resizes it (a few pixels inside it), not only
+  the space just outside it.
 - Fix: resizing or zooming a terminal (or another app with Sonata's title
   bar) showed a frame the size of its shadow, not of the window.
 
