@@ -59,7 +59,7 @@ class DesktopItem(Gtk.Box):
     def __init__(self, desk, info):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=2, css_classes=["desk-item"],
                          width_request=CELL_W, halign=Gtk.Align.CENTER)
-        from ..files.views import set_icon
+        from ..files.views import icon_with_badge, set_icon, show_badge
         self.desk, self.info = desk, info
         self.img = Gtk.Image(pixel_size=ICON, css_classes=["desk-icon"], halign=Gtk.Align.CENTER)
         self.app = _launcher(info)                     # an app shortcut (.desktop): its icon and name
@@ -68,7 +68,8 @@ class DesktopItem(Gtk.Box):
             icons.set_image(self.img, icons.app_icon(self.app))
         else:
             set_icon(self.img, info)
-        self.append(self.img)
+        self.append(icon_with_badge(self.img))
+        show_badge(self.img, info)
         self.lbl = Gtk.Label(label=self.app.get_display_name() if self.app else info.get_display_name(), wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR,
                              lines=2, ellipsize=Pango.EllipsizeMode.MIDDLE, justify=Gtk.Justification.CENTER,
                              max_width_chars=13, halign=Gtk.Align.CENTER, valign=Gtk.Align.START)
@@ -461,6 +462,10 @@ class Desktop(Gtk.Fixed):
         if files:
             ops.Transfer(files, self.dir, duplicate=True)
 
+    def shortcut_selection(self) -> list:
+        """Shortcuts to the selection, here (Vini, like Windows)."""
+        return ops.make_shortcuts(self.selected_files(), self.dir)
+
     def copy_selection(self) -> None:
         if self.selection:
             ops.copy_to_clipboard(self, self.selected_files())
@@ -530,7 +535,8 @@ class Desktop(Gtk.Fixed):
             first,
             [Item("Move to Trash", self.trash_selection)],
             [Item("Get Info", self.get_info), Item("Rename", self.rename_selection, enabled=n == 1),
-             Item("Duplicate", self.duplicate_selection)],
+             Item("Duplicate", self.duplicate_selection),
+             Item("Create Shortcut", self.shortcut_selection)],
             [Item(f"Quick Look {what}", self.quick_look)],
             [Item(f"Copy {what}", self.copy_selection)],
         ], at=(pt.x, pt.y) if ok else (x, y))

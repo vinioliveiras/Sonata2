@@ -1,96 +1,124 @@
-"""Keyboard shortcuts (sonata2/shortcuts.py, Settings > Keyboard Shortcuts).
-Run: xvfb-run -a python3 -m unittest tests.test_shortcuts"""
+"""Shortcuts, like Windows (Vini): "Create Shortcut" in Files and on the
+desktop, "Create Shortcut on Desktop" in Files, "Add to Desktop" for apps in
+Launchpad and the Dock. A shortcut is a link named "x - Shortcut" with an
+arrow on its icon; a shortcut to a shortcut leads to the original."""
 import os
+import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
-os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp()
-os.environ["XDG_RUNTIME_DIR"] = tempfile.mkdtemp()
-os.environ["GDK_BACKEND"] = "x11"
+os.environ.setdefault("XDG_CONFIG_HOME", tempfile.mkdtemp())
 
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
-from gi.repository import Adw  # noqa: E402
+from gi.repository import Gio, GLib  # noqa: E402
 
-from sonata2 import shortcuts as S  # noqa: E402
+from sonata2.files import ops  # noqa: E402
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent / "sonata2"
 
 
-class ShortcutsTest(unittest.TestCase):
+def settle(ms=300):
+    end = GLib.get_monotonic_time() + ms * 1000
+    while GLib.get_monotonic_time() < end:
+        GLib.MainContext.default().iteration(False)
+
+
+class MakeShortcutsTest(unittest.TestCase):
     def setUp(self):
-        path = os.path.join(os.environ["XDG_CONFIG_HOME"], "sonata2", "wayfire-overrides.ini")
-        if os.path.exists(path):
-            os.remove(path)
+        self.src = tempfile.mkdtemp()
+        self.dest = tempfile.mkdtemp()
+        self.file = os.path.join(self.src, "report.pdf")
+        open(self.file, "w").close()
+        self.folder = os.path.join(self.src, "Photos")
+        os.mkdir(self.folder)
 
-    def test_every_shortcut_has_a_default_and_no_combo_is_shared(self):
-        seen = {}
-        for s in S.SHORTCUTS:
-            self.assertTrue(S.default(s), s.id)
-            for combo in S.split(S.default(s)):
-                self.assertNotIn(combo, seen, f"{combo}: {s.id} and {seen.get(combo)}")
-                seen[combo] = s.id
+    def make(self, *paths, dest=None):
+        return [f.get_path() for f in ops.make_shortcuts([Gio.File.new_for_path(p) for p in paths],
+                                                         Gio.File.new_for_path(dest or self.dest))]
 
-    def test_windows_shortcuts_are_there(self):
-        by_id = {s.id: S.split(S.default(s)) for s in S.SHORTCUTS}
-        self.assertIn("<super> KEY_D", by_id["desktop"])
-        self.assertIn("<super> KEY_E", by_id["files"])
-        self.assertIn("<super> KEY_L", by_id["lock"])
-        self.assertIn("<super> KEY_I", by_id["settings"])
-        self.assertIn("<ctrl> <shift> KEY_ESC", by_id["activity"])
-        self.assertIn("<super> <shift> KEY_S", by_id["shot_area"])
-        self.assertIn("<super> KEY_LEFT", by_id["snap_left"])
-        self.assertIn("<ctrl> <super> KEY_RIGHT", by_id["space_right"])
+    def test_names_and_targets(self):
+        a, b = self.make(self.file, self.folder)
+        self.assertEqual(os.path.basename(a), "report.pdf - Shortcut")
+        self.assertEqual(os.readlink(a), self.file)
+        self.assertEqual(os.path.basename(b), "Photos - Shortcut")
+        self.assertTrue(os.path.isdir(b))                                   # opens as the folder
+        again, = self.make(self.file)
+        self.assertEqual(os.path.basename(again), "report.pdf - Shortcut 2")
 
-    def test_words_and_key_caps(self):
-        self.assertEqual(S.describe("<super> <shift> KEY_S"), "Super+Shift+S")
-        self.assertEqual(S.describe("<super>"), "Super")                  # pressed and released alone
-        self.assertEqual(S.describe("swipe up 3"), "Swipe up with 3 fingers")
-        self.assertEqual(S.accelerator("<ctrl> <super> KEY_LEFT"), "<Control><Super>Left")
-        self.assertEqual(S.accelerator("<super> KEY_DOT"), "<Super>period")
-        self.assertIsNone(S.accelerator("swipe up 3"))
-        self.assertEqual(S.split("<super> KEY_Q | <alt>  KEY_F4"), ["<super> KEY_Q", "<alt> KEY_F4"])
+    def test_a_shortcut_to_a_shortcut_leads_to_the_original(self):
+        first, = self.make(self.file)
+        second, = self.make(first, dest=tempfile.mkdtemp())
+        self.assertEqual(os.readlink(second), self.file)
 
-    def test_pressed_keys_become_wayfire_text(self):
-        self.assertEqual(S.combo_from_key(32 + 8, super_=True), "<super> KEY_D")          # evdev 32 = D
-        self.assertEqual(S.combo_from_key(1 + 8, ctrl=True, shift=True), "<ctrl> <shift> KEY_ESC")
-        self.assertIsNone(S.combo_from_key(125 + 8, super_=True))                        # Super alone: wait
+    def test_an_apps_launcher_keeps_its_name(self):
+        app = os.path.join(self.src, "org.example.App.desktop")
+        with open(app, "w") as f:
+            f.write("[Desktop Entry]\nType=Application\nName=Example\nExec=true\n")
+        link, = self.make(app)
+        self.assertEqual(os.path.basename(link), "org.example.App.desktop")
+        self.assertEqual(ops.shortcut_name("a.desktop"), "a.desktop")
+        self.assertEqual(ops.shortcut_name("a.txt"), "a.txt - Shortcut")
 
-    def test_change_add_turn_off_reset(self):
-        s = next(x for x in S.SHORTCUTS if x.id == "desktop")
-        S.set_binding(s, ["<super> KEY_H"])
-        self.assertEqual(S.current(s), "<super> KEY_H")
-        S.set_binding(s, S.split(S.current(s)) + ["<super> KEY_J"])
-        self.assertEqual(S.split(S.current(s)), ["<super> KEY_H", "<super> KEY_J"])
-        S.set_binding(s, [])
-        self.assertEqual(S.split(S.current(s)), [])
-        S.reset(s)
-        self.assertEqual(S.current(s), S.default(s))
+    def test_is_shortcut_reads_the_link(self):
+        link, = self.make(self.file)
+        info = Gio.File.new_for_path(link).query_info("standard::is-symlink", Gio.FileQueryInfoFlags.NONE, None)
+        self.assertTrue(ops.is_shortcut(info))
+        plain = Gio.File.new_for_path(self.file).query_info("standard::is-symlink", Gio.FileQueryInfoFlags.NONE,
+                                                            None)
+        self.assertFalse(ops.is_shortcut(plain))
+        self.assertFalse(ops.is_shortcut(Gio.FileInfo()))                      # not asked: no arrow, no error
+
+    def test_files_lists_links(self):
+        from sonata2.files import folder
+        self.assertIn("standard::is-symlink", folder.ATTRS)
 
 
-class ShortcutsPageTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        Adw.init()
-        from sonata2 import ui
+class AddToDesktopTest(unittest.TestCase):
+    def test_app_shortcut_on_the_desktop(self):
+        from sonata2.shell import dock_menu
+        desk = tempfile.mkdtemp()
+        app = os.path.join(tempfile.mkdtemp(), "org.example.App.desktop")
+        with open(app, "w") as f:
+            f.write("[Desktop Entry]\nType=Application\nName=Example\nExec=true\n")
+        with mock.patch("sonata2.shell.desktop.desktop_dir", return_value=Gio.File.new_for_path(desk)):
+            made = dock_menu.add_to_desktop(app)
+        self.assertEqual([f.get_basename() for f in made], ["org.example.App.desktop"])
+        self.assertEqual(os.readlink(os.path.join(desk, "org.example.App.desktop")), app)
+        self.assertEqual(dock_menu.add_to_desktop(""), [])
+
+    def test_menus_offer_it(self):
+        self.assertIn('Item("Add to Desktop", lambda: add_to_desktop(path))', (ROOT / "shell/launchpad.py").read_text())
+        self.assertIn('Item("Add to Desktop", lambda: add_to_desktop(app_file(info)))',
+                      (ROOT / "shell/dock_menu.py").read_text())
+        files = (ROOT / "files/window.py").read_text()
+        self.assertIn('Item("Create Shortcut", self.shortcut_selection', files)
+        self.assertIn('Item("Create Shortcut on Desktop"', files)
+        self.assertIn('Item("Create Shortcut", self.shortcut_selection)', (ROOT / "shell/desktop.py").read_text())
+
+
+class DesktopBadgeTest(unittest.TestCase):
+    def test_desktop_shortcut_shows_the_arrow(self):
+        from sonata2 import config, ui
+        from sonata2.shell import desktop as D
         ui.setup()
-
-    def test_page_builds_and_a_used_combo_moves(self):
-        from sonata2.settings.shortcuts_page import ShortcutsPage
-        toasts = []
-        win = type("W", (), {"toast": lambda s, t: toasts.append(t)})()
-        page = ShortcutsPage(win)
-        groups = page.groups()
-        self.assertEqual(len(page.rows), len(S.SHORTCUTS))
-        self.assertGreater(len(groups), len(S.GROUPS))
-        files = next(x for x in S.SHORTCUTS if x.id == "files")
-        desktop = next(x for x in S.SHORTCUTS if x.id == "desktop")
-        page._apply(desktop, "<super> KEY_E", add=False)         # Super+E belonged to Files
-        self.assertEqual(S.split(S.current(desktop)), ["<super> KEY_E"])
-        self.assertNotIn("<super> KEY_E", S.split(S.current(files)))
-        self.assertTrue(toasts and "Open Files" in toasts[0])
-        S.reset(files)
-        S.reset(desktop)
+        d = tempfile.mkdtemp()
+        open(os.path.join(d, "a.txt"), "w").close()
+        config.save("desktop", {"positions": {}, "sort": "none"})
+        with mock.patch.object(D, "desktop_dir", return_value=Gio.File.new_for_path(d)), \
+                mock.patch.object(D, "_connected", return_value={"eDP-1"}):
+            desk = D.Desktop(screen="eDP-1", main=True)
+            desk.resized(1920, 1080)
+            settle(400)
+            desk.select([desk.items["a.txt"]])
+            made = desk.shortcut_selection()
+            self.assertEqual([f.get_basename() for f in made], ["a.txt - Shortcut"])
+            settle(600)
+            self.assertIn("a.txt - Shortcut", desk.items)
+            self.assertTrue(desk.items["a.txt - Shortcut"].img.badge.get_visible())     # the arrow
+            self.assertFalse(desk.items["a.txt"].img.badge.get_visible())
 
 
 if __name__ == "__main__":

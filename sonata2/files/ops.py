@@ -75,6 +75,41 @@ def new_folder(folder: Gio.File, on_done, on_error, before=None) -> None:
     child.make_directory_async(GLib.PRIORITY_DEFAULT, None, done)
 
 
+SHORTCUT_SUFFIX = " - Shortcut"
+
+
+def shortcut_name(name: str) -> str:
+    """What a shortcut to `name` is called (Windows: "report.pdf - Shortcut");
+    an app's launcher keeps its name (it shows the app's own)."""
+    return name if name.endswith(".desktop") else name + SHORTCUT_SUFFIX
+
+
+def make_shortcuts(files, dest: Gio.File) -> list:
+    """Shortcuts (Vini, like Windows) to `files` in `dest`: links to what they
+    point at -- a shortcut to a shortcut leads to the original. Returns the
+    shortcuts made (Gio.File); one that can't be made is skipped."""
+    made = []
+    for f in files:
+        target = f.get_path()
+        if not target:
+            continue
+        target = os.path.realpath(target)
+        name = shortcut_name(os.path.basename(f.get_path()))
+        # numbered after the whole name ("x.pdf - Shortcut 2"), a launcher before ".desktop"
+        child = dest.get_child(free_name(dest, name, not name.endswith(".desktop"), style="number"))
+        try:
+            child.make_symbolic_link(target, None)
+        except GLib.Error:
+            continue
+        made.append(child)
+    return made
+
+
+def is_shortcut(info) -> bool:
+    """A link (a shortcut): its icon gets the arrow."""
+    return bool(info.has_attribute("standard::is-symlink") and info.get_is_symlink())
+
+
 def rename(f: Gio.File, new_name: str, on_done, on_error) -> None:
     def done(src, res):
         try:

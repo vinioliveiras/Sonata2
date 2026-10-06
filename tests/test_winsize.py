@@ -77,11 +77,18 @@ class WinsizeTest(unittest.TestCase):
         win.present()
         self.addCleanup(win.destroy)
         spin(200)
-        win.get_width, win.get_height = (lambda: 1201), (lambda: 832)        # resized by the user
-        win.get_surface().emit("layout", 1201, 832)
+        win.get_surface().emit("layout", 700, 500)                         # opened at its default size
+        spin(100)
+        dx, dy = win._size_delta                                            # its decorations
+        win.get_width, win.get_height = (lambda: 1101 + dx), (lambda: 732 + dy)   # resized by the user
+        win.get_surface().emit("layout", 1101, 732)
         spin(UW.SAVE_SIZE_MS + 200)
-        self.assertEqual(tuple(win.get_default_size()), (1201, 832))
-        self.assertEqual((winsize.saved("r")["width"], winsize.saved("r")["height"]), (1201, 832))
+        self.assertEqual(tuple(win.get_default_size()), (1101, 732))
+        self.assertEqual((winsize.saved("r")["width"], winsize.saved("r")["height"]), (1101, 732))
+        for _ in range(3):                                                  # laid out again: no drift
+            win.get_surface().emit("layout", 1101, 732)
+            spin(50)
+        self.assertEqual(tuple(win.get_default_size()), (1101, 732))
         win.maximize()                                                         # maximized: not a size
         spin(200)
         self.assertFalse(UW.follow_size(win) and not win.is_maximized())

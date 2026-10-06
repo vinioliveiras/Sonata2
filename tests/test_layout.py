@@ -207,8 +207,9 @@ class LaunchpadLayout(Base):
                 root = pad.get_child()
                 for _ in range(20):                                   # the grid sized (icons come in late)
                     LC.settle(100)
-                    sizes = {(w.get_width(), w.get_height()) for w in LC.walk(root) if w.has_css_class("lp-item")}
-                    if len(sizes) == 1:
+                    shown = [w for w in LC.walk(root) if w.has_css_class("lp-item")
+                             and 0 <= LC.rect(w, root)[0] < root.get_width()]
+                    if len(shown) > 20 and len({(w.get_width(), w.get_height()) for w in shown}) == 1:
                         break
                 what = f"Launchpad ({theme})"
                 self.clean(root, what, ("lp-more-dots",))           # the dots are nudged up to look centred

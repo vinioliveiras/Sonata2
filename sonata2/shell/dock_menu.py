@@ -31,6 +31,15 @@ def app_file(info) -> str:
     return app_filename(info)
 
 
+def add_to_desktop(path: str) -> list:
+    """A shortcut to an app (its launcher) on the desktop (Vini, like Windows)."""
+    if not path:
+        return []
+    from ..files import ops
+    from .desktop import desktop_dir
+    return ops.make_shortcuts([Gio.File.new_for_path(path)], desktop_dir())
+
+
 def show_in_files(path: str) -> None:
     """Open the folder containing `path` in Sonata's Files, the file
     selected (never another file manager: Vini's call)."""
@@ -118,7 +127,8 @@ def app_menu(dock, key: str, tile):
         opts = [[Item("Keep in Dock", lambda on: dock.set_pinned(key, on), checked=pinned),
                  Item("Open at Login", lambda on: set_open_at_login(info, on),
                       checked=opens_at_login(info.get_id()[:-8]))],
-                [Item("Open File Location", lambda: show_in_files(app_file(info)))]]
+                [Item("Open File Location", lambda: show_in_files(app_file(info))),
+                 Item("Add to Desktop", lambda: add_to_desktop(app_file(info)))]]
         from .. import gpu
         g = gpu.menu_items(info, Item)
         if g:

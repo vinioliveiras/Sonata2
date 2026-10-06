@@ -300,9 +300,19 @@ def follow_size(win) -> bool:
     if win.is_maximized() or win.is_fullscreen() or (state & tiled):
         return False
     w, h = win.get_width(), win.get_height()
-    if w <= 1 or h <= 1 or (w, h) == tuple(win.get_default_size()):
+    if w <= 1 or h <= 1:
         return False
-    win.set_default_size(w, h)
+    dw, dh = win.get_default_size()
+    # the window's size and its default size differ by its decorations
+    # (title bar, shadows): measured once, while it still has its default size
+    delta = getattr(win, "_size_delta", None)
+    if delta is None:
+        win._size_delta = (w - dw, h - dh)
+        return False
+    nw, nh = w - delta[0], h - delta[1]
+    if (nw, nh) == (dw, dh) or nw <= 1 or nh <= 1:
+        return False
+    win.set_default_size(nw, nh)
     return True
 
 

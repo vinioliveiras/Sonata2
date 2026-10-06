@@ -1053,9 +1053,10 @@ class Launchpad(Gtk.ApplicationWindow):
                 sections.append(g)
             path = apps.app_filename(info) if info else ""
             if path:
-                from .dock_menu import show_in_files
+                from .dock_menu import add_to_desktop, show_in_files
                 sections.append([Item("Show in Files", lambda: self.close_launchpad(
-                    lambda: show_in_files(path)))])
+                    lambda: show_in_files(path))),
+                                 Item("Add to Desktop", lambda: add_to_desktop(path))])
             hide = [Item("Hide", lambda: self.hide_app(item))]      # into the Hidden folder
             if info and not (info.get_id() or "").startswith(PROTECTED):
                 hide.append(Item("Move to Trash", lambda: self.ask_delete(item)))

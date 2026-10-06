@@ -749,6 +749,12 @@ class FilesWindow(Adw.ApplicationWindow):
     def _selected_files(self):
         return [file_of(i) for i in self.view.selected()]
 
+    def shortcut_selection(self, desktop: bool = False) -> list:
+        """Shortcuts to the selection, here or on the desktop (Vini, like Windows)."""
+        from ..shell.desktop import desktop_dir
+        dest = desktop_dir() if desktop else Gio.File.new_for_uri(self.history[self.pos])
+        return ops.make_shortcuts(self._selected_files(), dest)
+
     def _context_menu(self, view, widget, x, y):
         Item = ui.menu.Item
         info = view.info_at(widget, x, y)
@@ -782,6 +788,8 @@ class FilesWindow(Adw.ApplicationWindow):
                                   enabled=self._writable_sel(sel)),
                              Item(f"Compress {what}", self.compress_selection, enabled=self._writable_here()),
                              Item("Duplicate", self.duplicate_selection, enabled=self._writable_here())])
+            sections.append([Item("Create Shortcut", self.shortcut_selection, enabled=self._writable_here()),
+                             Item("Create Shortcut on Desktop", lambda: self.shortcut_selection(desktop=True))])
             sections.append([Item(f"Copy {what}", self.copy_selection),
                              Item("Copy Path" if n == 1 else "Copy Paths", self.copy_path_selection)])
             paths = [file_of(i).get_path() for i in sel]

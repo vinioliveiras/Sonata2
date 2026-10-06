@@ -15,6 +15,9 @@ from . import folder, tags, thumbs  # noqa: E402
 from .folder import is_dir, sort_key  # noqa: E402
 
 ui.register("""
+/* a shortcut's arrow (Windows), at the icon's bottom left */
+image.fs-link-badge { -gtk-icon-size: 12px; min-width: 16px; min-height: 16px; padding: 1px; border-radius: 4px;
+  background: %(control_bg)s; color: %(accent)s; box-shadow: 0 0 0 0.5px %(hairline)s, 0 1px 2px rgba(0,0,0,0.25); }
 gridview.fs-icons { background: %(content_bg)s; padding: 10px 14px; }
 gridview.fs-icons > child { padding: 4px 2px 6px 2px; background: none; border-radius: 0; outline: none; }
 gridview.fs-icons > child:selected, gridview.fs-icons > child:focus { background: none; }
@@ -166,6 +169,22 @@ def date(info, attr: str = "time::modified") -> str:
     if days == 1:
         return f"Yesterday at {t}"
     return dt.format("%-d %b %Y at %H:%M")
+
+
+def icon_with_badge(image: Gtk.Image) -> Gtk.Overlay:
+    """The icon with a shortcut's arrow over its corner (hidden; show_badge)."""
+    over = Gtk.Overlay(child=image, halign=image.get_halign())
+    image.badge = Gtk.Image(icon_name="emblem-symbolic-link-symbolic", css_classes=["fs-link-badge"],
+                            halign=Gtk.Align.START, valign=Gtk.Align.END, visible=False, can_target=False)
+    over.add_overlay(image.badge)
+    return over
+
+
+def show_badge(image: Gtk.Image, info) -> None:
+    from .ops import is_shortcut
+    badge = getattr(image, "badge", None)
+    if badge is not None:
+        badge.set_visible(is_shortcut(info))
 
 
 def set_icon(image: Gtk.Image, info, small=False) -> None:
@@ -621,7 +640,7 @@ class IconsView(_Cells):
         name.append(box.tags)
         box.over = Gtk.Overlay(child=space)
         box.over.add_overlay(name)
-        box.append(box.img)
+        box.append(icon_with_badge(box.img))
         box.append(box.over)
         self._dnd_cell(box)
         item.set_child(box)
@@ -636,6 +655,7 @@ class IconsView(_Cells):
             box._glide = (0, 0)
             box.set_opacity(1)
         set_icon(box.img, info)
+        show_badge(box.img, info)
         box.lbl.set_label(label(info))
         tags.show(box.tags, tags.of_info(info))
         (box.add_css_class if _hidden(info) else box.remove_css_class)("fs-hidden")
