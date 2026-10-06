@@ -402,7 +402,7 @@ class Greeter:
             self.state.setdefault("sessions", {})[self.user.name] = s.key
             self.session_buttons.set_label(s.name + "  ▾")         # every display's
         btn.connect("clicked", lambda b: ui.menu.popup(
-            b, [[ui.menu.Item(s.name, lambda s=s: choose(s), checked=(s is self._session()))
+            b, [[ui.menu.Item(s.name, lambda _on=None, s=s: choose(s), checked=(s is self._session()))
                  for s in self.sessions]], position=Gtk.PositionType.BOTTOM, glass=True))
         return btn
 
@@ -436,7 +436,7 @@ class Greeter:
             cur = o["current"]
             for m in best_modes(o["modes"])[:14]:
                 label = f"{m[0]} \u00d7 {m[1]}  \u00b7  {round(m[2])} Hz"
-                items.append(ui.menu.Item(label, lambda o=o, m=m: self._try_mode(o, m),
+                items.append(ui.menu.Item(label, lambda _on=None, o=o, m=m: self._try_mode(o, m),
                                           checked=bool(cur) and cur[:2] == m[:2]))
             sections.append(items)
         if sections:

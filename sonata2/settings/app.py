@@ -2822,8 +2822,7 @@ class Settings(Adw.ApplicationWindow):
         wins.add(combo_row("Double-click a window's title bar to",
                            [("toggle-maximize", "Zoom"), ("minimize", "Minimize"), ("none", "Do Nothing")],
                            dbl if dbl in ("toggle-maximize", "minimize", "none") else "toggle-maximize",
-                           lambda v: system.set_gsetting("org.gnome.desktop.wm.preferences",
-                                                         "action-double-click-titlebar", v)))
+                           self._set_double_click))
         desk = group("Desktop")
         desk.add(combo_row("Sort icons by", list(DK.SORTS), config.load("desktop", DK.DEFAULTS).get("sort", "none"),
                            lambda v: self._save("desktop", "sort", v),
@@ -2831,6 +2830,12 @@ class Settings(Adw.ApplicationWindow):
         reset = self._reset_group("Reset Desktop & Windows", "Window options back to the defaults; your "
                                   "desktop icons stay where they are", self.ask_reset_desktop)
         return [wins, desk, reset]
+
+    def _set_double_click(self, v):
+        """GTK's title bars (the gsetting) and the top edge of every window
+        (sonata-resize: a double-click there used to resize it a little)."""
+        system.set_gsetting("org.gnome.desktop.wm.preferences", "action-double-click-titlebar", v)
+        system.run_async(system.wayfire_set, None, "sonata-resize", "double_click", v)
 
     def _set_minimize_effect(self, v):
         self._save("dock", "minimize_effect", v)

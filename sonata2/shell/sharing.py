@@ -4,8 +4,15 @@ A browser sharing the screen opens a bar of its own ("<site> is sharing your
 screen.", no app id): wl.toplevels keeps it out of the Dock and Alt+Tab
 (ToplevelManager.share_bars). While one is open, a pill over the middle of
 the menu bar names the site; a click brings the browser's bar to the front,
-its stop button ends the sharing (stop_sharing)."""
-from gi.repository import Gtk, Pango
+its stop button ends the sharing -- by force (Vini: Chrome kept sharing):
+
+  1. the browser's bar is closed: for Chrome that is its own "Stop sharing";
+  2. the sharing streams are removed from PipeWire (stop_sharing);
+  3. still sharing STOP_CHECK_MS later: the portal's capture service starts
+     again, which ends every share (restart_portal)."""
+from gi.repository import GLib, Gtk, Pango
+
+STOP_CHECK_MS = 2500
 
 from .capture import BarPill, stop_button
 
@@ -29,6 +36,18 @@ def cast_nodes(dump) -> list:
     return [i for i in out if isinstance(i, int)]
 
 
+def restart_portal() -> bool:
+    """The portal's capture service starts again: every share ends."""
+    import subprocess
+    try:
+        ok = subprocess.run(["systemctl", "--user", "restart", "xdg-desktop-portal-wlr"],
+                            capture_output=True, timeout=10).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        ok = False
+    print(f"sonata2-sharing: portal restarted: {ok}", flush=True)
+    return ok
+
+
 def stop_sharing() -> bool:
     """Ends every screen share: its PipeWire stream goes away (the app sees
     the share end, as with its own Stop button); if that can't be done, the
@@ -45,13 +64,8 @@ def stop_sharing() -> bool:
                                     timeout=5).returncode == 0 or ok
         except (OSError, subprocess.SubprocessError, ValueError):
             pass
-    if not ok:
-        try:
-            ok = subprocess.run(["systemctl", "--user", "restart", "xdg-desktop-portal-wlr"],
-                                capture_output=True, timeout=10).returncode == 0
-        except (OSError, subprocess.SubprocessError):
-            ok = False
-    return ok
+    print(f"sonata2-sharing: streams removed: {ok}", flush=True)
+    return ok or restart_portal()
 
 
 class SharingControl(BarPill):
@@ -95,7 +109,20 @@ class SharingControl(BarPill):
 
     def _stop(self):
         from ..backend import system
+        bars = list(self.manager.share_bars)
+        print(f"sonata2-sharing: stop ({len(bars)} bars)", flush=True)
+        for b in bars:                                   # Chrome: closing its bar is its Stop
+            self.manager.close(b)
         system.run_async(stop_sharing)
+        GLib.timeout_add(STOP_CHECK_MS, self._still_sharing)
+
+    def _still_sharing(self) -> bool:
+        """Stopped yet? Otherwise the portal starts again (that ends it)."""
+        if self.manager.share_bars:
+            from ..backend import system
+            print("sonata2-sharing: still sharing after Stop: restarting the portal", flush=True)
+            system.run_async(restart_portal)
+        return False
 
     def _front(self):
         for b in self.manager.share_bars:

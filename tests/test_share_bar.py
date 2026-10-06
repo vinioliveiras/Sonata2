@@ -122,7 +122,37 @@ class StopSharingTest(unittest.TestCase):
             if isinstance(w, Gtk.Button):
                 buttons.append(w)
             w = w.get_next_sibling()
-        self.assertEqual([b.get_tooltip_text() for b in buttons], ["Stop Sharing"])
+        self.assertEqual([b.get_tooltip_text() for b in buttons][-1], "Stop Sharing")   # (the pen before it)
+
+    def test_stop_forces_the_end(self):
+        """Vini: the pill's stop didn't stop Chrome's sharing. Its bar is
+        closed (Chrome's own Stop), the streams go, and if it still shares a
+        moment later the portal starts again."""
+        from unittest import mock
+        from gi.repository import GLib
+        from sonata2.shell import sharing
+        app = Gtk.Application(application_id="io.github.test.shareforce")
+        app.register(None)
+        m = manager()
+        closed = []
+        m.close = lambda t: closed.append(t)
+        pill = sharing.SharingControl(app, m)
+        bar = object()
+        m.share_bars.append(bar)
+        later = []
+        with mock.patch("sonata2.backend.system.run_async") as ra, \
+                mock.patch.object(GLib, "timeout_add", lambda ms, fn: later.append((ms, fn))):
+            pill._stop()
+            self.assertEqual(closed, [bar])                          # the browser's bar: its Stop
+            self.assertIs(ra.call_args_list[0][0][0], sharing.stop_sharing)
+            self.assertEqual(later[0][0], sharing.STOP_CHECK_MS)
+            ra.reset_mock()
+            later[0][1]()                                            # still sharing a moment later
+            self.assertIs(ra.call_args[0][0], sharing.restart_portal)
+            ra.reset_mock()
+            m.share_bars.clear()
+            later[0][1]()                                            # stopped: nothing more
+            ra.assert_not_called()
 
 
 if __name__ == "__main__":

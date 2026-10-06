@@ -582,7 +582,7 @@ class NotesWindow(Gtk.ApplicationWindow):
             sections = [[ui.menu.Item("Recover", lambda: self.recover(note))],
                         [ui.menu.Item("Delete Immediately", lambda: self.delete_note(note))]]
         else:
-            moves = [[ui.menu.Item(f["name"], (lambda fid=f["id"]: self.move_note(note, fid)),
+            moves = [[ui.menu.Item(f["name"], (lambda _on=None, fid=f["id"]: self.move_note(note, fid)),
                                    checked=note.get("folder") == f["id"]) for f in self.store.folders]]
             sections = [[ui.menu.Item("Unpin Note" if note.get("pinned") else "Pin Note",
                                       lambda: self.pin(note, not note.get("pinned")))],

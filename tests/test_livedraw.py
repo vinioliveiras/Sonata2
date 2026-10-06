@@ -138,13 +138,14 @@ class CaptureHiddenTest(unittest.TestCase):
     def test_palette_left_out_of_display_captures(self):
         """The palette is on screen, never in a screen share: sonata-corners
         serves the display captures itself, without the surfaces in
-        capture_hidden, and hides wlroots' own source."""
+        capture_hidden, for recorders and screen sharing (screenshots keep
+        wlroots' own source: grim failed on ours)."""
         from pathlib import Path
         from sonata2.shell import livedraw
         root = Path(__file__).resolve().parent.parent
         cpp = (root / "wayfire-plugin" / "src" / "sonata-corners.cpp").read_text()
         self.assertIn("capture_rendering = true;", cpp)
-        self.assertIn("return g != their_global;", cpp)
+        self.assertIn("return (g == ours) ? recorder : !recorder;", cpp)
         self.assertIn("paint_cursors()", cpp)                 # the pointer still shows
         meson = (root / "wayfire-plugin" / "meson.build").read_text()
         self.assertIn("-DSONATA_OUTPUT_CAPTURE", meson)

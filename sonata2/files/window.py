@@ -816,7 +816,7 @@ class FilesWindow(Adw.ApplicationWindow):
                                                      self.toggle_hidden)]])]]
             if self.view is not self.views["columns"]:
                 cur = self.view.sort_state()[0]
-                sections[-1].append(Item("Sort By", submenu=[[Item(t, lambda t=t: self.sort_by(t),
+                sections[-1].append(Item("Sort By", submenu=[[Item(t, lambda _on=None, t=t: self.sort_by(t),
                                                                    checked=t == cur) for t, _d in SORT_BY]]))
             if self.view is self.views["list"]:                    # Finder's View Options for the list
                 from .views import LIST_COLUMNS

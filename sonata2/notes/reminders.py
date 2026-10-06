@@ -297,7 +297,7 @@ class ReminderRow(Gtk.ListBoxRow):
 
     def _menu(self, gest, _n, x, y) -> None:
         r, v = self.r, self.view
-        lists = [[ui.menu.Item(x_["name"], (lambda lid=x_["id"]: (v.store.update_reminder(r, list=lid),
+        lists = [[ui.menu.Item(x_["name"], (lambda _on=None, lid=x_["id"]: (v.store.update_reminder(r, list=lid),
                                                                    v.changed())),
                                checked=r.get("list") == x_["id"]) for x_ in v.store.lists]]
         ui.menu.popup(self, [

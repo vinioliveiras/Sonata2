@@ -9,6 +9,13 @@
  *
  * Loaded instead of "resize" (tools/wayfire-config.sh); reads resize's own
  * options (resize/activate...), plus sonata-resize/{live,fill,border}.
+ *
+ * And the title bar's top edge (Vini): a double-click there did two tiny
+ * resizes -- the window grew or shrank a little, depending on where on the
+ * title bar you clicked. A double-click on the top edge now does what a
+ * double-click on the title bar does (sonata-resize/double_click, set with
+ * Settings' "Double-click a window's title bar to": Zoom, Minimize or
+ * nothing), and a click that doesn't move (< DEAD_ZONE px) never resizes.
  */
 #include <wayfire/compositor-view.hpp>
 #include <wayfire/render-manager.hpp>
@@ -23,9 +30,8 @@
 #include "wayfire/scene-input.hpp"
 #include "wayfire/txn/transaction-manager.hpp"
 #include <wayfire/toplevel.hpp>
+#include <wayfire/window-manager.hpp>
 #include <cmath>
-#include <cstdlib>
-#include <wayfire/config/config-manager.hpp>
 #include <wayfire/per-output-plugin.hpp>
 #include <wayfire/output.hpp>
 #include <wayfire/view.hpp>
@@ -36,6 +42,7 @@
 #include <wayfire/plugins/wobbly/wobbly-signal.hpp>
 #include <wayfire/nonstd/wlroots-full.hpp>
 #include <wlr/util/edges.h>
+#include <chrono>
 
 /* -- the window's background while it is resized without its contents --------------- */
 namespace
@@ -172,6 +179,41 @@ class ghost_node_t : public wf::scene::node_t
     }
 };
 
+static constexpr int DEAD_ZONE = 3;                  // px: less is a click, not a resize
+static constexpr int64_t DOUBLE_CLICK_MS = 400;
+static constexpr double DOUBLE_CLICK_PX = 6.0;
+
+/* The last press on a window's top edge (every display's plugin shares it). */
+static struct
+{
+    int64_t at_ms = 0;
+    wf::pointf_t where{0, 0};
+    uint32_t view_id = 0;
+} last_top_press;
+
+static int64_t now_ms()
+{
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+}
+
+/** A press on the top edge only (not a corner) that is the second of a
+ * double-click on the same window, at the same spot. Remembers this one. */
+bool top_edge_double_click(uint32_t edges, uint32_t view_id, wf::pointf_t at, int64_t when_ms)
+{
+    if (edges != WLR_EDGE_TOP)
+    {
+        last_top_press.at_ms = 0;
+        return false;
+    }
+
+    bool twice = last_top_press.at_ms && (last_top_press.view_id == view_id) &&
+        (when_ms - last_top_press.at_ms <= DOUBLE_CLICK_MS) &&
+        (std::hypot(at.x - last_top_press.where.x, at.y - last_top_press.where.y) <= DOUBLE_CLICK_PX);
+    last_top_press = {twice ? 0 : when_ms, at, view_id};
+    return twice;
+}
+
 class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::pointer_interaction_t,
     public wf::touch_interaction_t
 {
@@ -238,6 +280,8 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
 
     // -- Sonata: resize with the window's background only, contents fade in after --
     wf::option_wrapper_t<bool> live{"sonata-resize/live"};
+    wf::option_wrapper_t<std::string> double_click{"sonata-resize/double_click"};
+    bool moved = false;                                  // past the dead zone this drag
     wf::option_wrapper_t<wf::color_t> fill{"sonata-resize/fill"};
     wf::option_wrapper_t<wf::color_t> border{"sonata-resize/border"};
     static constexpr const char *FADE = "sonata-resize";
@@ -437,6 +481,12 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
             return false;
         }
 
+        if (!is_using_touch && top_edge_double_click(edges, view->get_id(), get_input_coords(), now_ms()))
+        {
+            title_bar_double_click(view);                // the title bar's action, not a resize
+            return false;
+        }
+
         if (!output->activate_plugin(&grab_interface))
         {
             return false;
@@ -446,6 +496,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         input_grab->grab_input(wf::scene::layer::OVERLAY);
 
         grab_start = get_input_coords();
+        moved = false;
         grabbed_geometry = view->get_geometry();
         if (view->pending_tiled_edges())
         {
@@ -599,11 +650,34 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         }
     }
 
+    void title_bar_double_click(wayfire_toplevel_view v)
+    {
+        std::string what = double_click;
+        LOGI("sonata-resize: double-click on the top edge: ", what);
+        if (what == "minimize")
+        {
+            wf::get_core().default_wm->minimize_request(v, true);
+        } else if (what != "none")
+        {
+            bool zoomed = v->pending_tiled_edges() == wf::TILED_EDGES_ALL;
+            wf::get_core().default_wm->tile_request(v, zoomed ? 0 : wf::TILED_EDGES_ALL);
+        }
+    }
+
     void input_motion()
     {
         auto input = get_input_coords();
         int dx     = (int)input.x - (int)grab_start.x;
         int dy     = (int)input.y - (int)grab_start.y;
+        if (!moved)
+        {
+            if ((std::abs(dx) < DEAD_ZONE) && (std::abs(dy) < DEAD_ZONE))
+            {
+                return;                                  // a click: the size stays
+            }
+
+            moved = true;
+        }
 
         wf::geometry_t desired = grabbed_geometry;
         double ratio = 1.0;
@@ -682,7 +756,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
             ghost_geometry = desired;
             if (ghost)
             {
-                ghost->set(visible(view, desired));
+                ghost->set(desired);
             }
 
             return;
@@ -710,40 +784,6 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     }
 
     // -- Sonata ------------------------------------------------------------------------
-    /* The window as seen: a window pixdecor decorates (terminals, X11 apps)
-     * has its shadow inside its geometry -- the panel came out that much
-     * bigger than the window (Vini). The same inset as sonata-corners. */
-    static wf::geometry_t visible(wayfire_toplevel_view v, wf::geometry_t g)
-    {
-        auto m = v->toplevel()->current().margins;
-        if ((m.left <= 0) && (m.top <= 0))
-        {
-            return g;                                    // its own frame: geometry is the window
-        }
-
-        auto& cfg     = wf::get_core().config;
-        auto engine   = cfg->get_option("pixdecor/overlay_engine");
-        auto radius   = cfg->get_option("pixdecor/shadow_radius");
-        auto max_shad = cfg->get_option("pixdecor/maximized_shadows");
-        if (!engine || !radius || (engine->get_value_str() != "rounded_corners"))
-        {
-            return g;
-        }
-
-        if ((v->pending_tiled_edges() != 0) && (!max_shad || (max_shad->get_value_str() != "true")))
-        {
-            return g;
-        }
-
-        int inset = 2 * std::max(0, std::atoi(radius->get_value_str().c_str()));
-        if ((g.width <= 2 * inset) || (g.height <= 2 * inset))
-        {
-            return g;
-        }
-
-        return {g.x + inset, g.y + inset, g.width - 2 * inset, g.height - 2 * inset};
-    }
-
     void begin_outline()
     {
         finish_fade();
@@ -757,7 +797,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         ghost->fill   = fill;
         ghost->border = border;
         ghost->radius = std::max(0, (int)corner_radius);
-        ghost->rect   = visible(view, ghost_geometry);
+        ghost->rect   = ghost_geometry;
         wf::scene::add_front(output->node_for_layer(wf::scene::layer::TOP), ghost);
         ghost->damage();
         set_alpha(view, 0.0);                            // only the background shows while dragging
@@ -812,7 +852,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
             if (ghost)
             {
                 ghost->alpha = 1.0 - a;                  // the background gives way to the window
-                ghost->set(visible(fading, fading->get_geometry()));
+                ghost->set(fading->get_geometry());
             }
 
             if (!fade.running())

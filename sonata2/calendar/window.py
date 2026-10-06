@@ -377,7 +377,7 @@ class CalendarWindow(Gtk.ApplicationWindow):
         sections = [[Item("New Calendar", self.new_calendar)]]
         if row is not None:
             cal = self.store.calendar(row.cal_id)
-            colors = [Item(name, lambda cid=cid, c=cal.id: self.recolor_calendar(c, cid), checked=cal.color == cid)
+            colors = [Item(name, lambda _on=None, cid=cid, c=cal.id: self.recolor_calendar(c, cid), checked=cal.color == cid)
                       for cid, name, _r in model.PALETTE]
             sections = [[Item("Rename", lambda r=row: self.rename_calendar(r)),
                          Item("Color", submenu=[colors])],
@@ -621,7 +621,7 @@ class CalendarWindow(Gtk.ApplicationWindow):
         ev = self.store.events.get(occ.event.uid)
         if ev is None:
             return
-        cals = [Item(c.name, lambda cid=c.id: self._move_to_calendar(occ, cid), checked=c.id == ev.calendar)
+        cals = [Item(c.name, lambda _on=None, cid=c.id: self._move_to_calendar(occ, cid), checked=c.id == ev.calendar)
                 for c in self.store.calendars]
         r = Gdk.Rectangle()
         r.x, r.y, r.width, r.height = int(x), int(y), 1, 1

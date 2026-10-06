@@ -30,6 +30,7 @@ from . import menubar_size  # noqa: E402
 BAR_H = menubar_size.height()           # 32 px like a notch MacBook's (the default), or 24 (Settings > Menu Bar)
 # the menu bar's panels (Control Center, Wi-Fi, clock...) open this far below it
 PANEL_GAP = 2
+MENU_SETTLE_MS = 150                  # a menu closes before its Minimize / Hide happens
 # fixed content widths of the menu bar's panels: a long network, device or
 # song name ellipsizes, never widens a panel (ui/fixed.py)
 STATUS_W = 280
@@ -394,6 +395,12 @@ class Bar(Gtk.CenterBox):
         if 0 <= index < len(self.items):
             self.items[index].emit("clicked")
 
+    @staticmethod
+    def _after_menu(fn) -> None:
+        """Once the menu has gone: its closing hands the keyboard back to the
+        window, which must not undo a Minimize / Hide."""
+        GLib.timeout_add(MENU_SETTLE_MS, lambda: (fn(), False)[1])
+
     def _menu(self, btn, sections):
         pop = ui.menu.popup(btn, sections, position=Gtk.PositionType.BOTTOM, gap=PANEL_GAP, glass=True)
         ui.panel.align_to_start(pop, btn, 2)
@@ -530,8 +537,10 @@ class Bar(Gtk.CenterBox):
         others = [t for t in (m.toplevels if m else []) if t not in wins]
         return self._menu(btn, [
             [Item(f"About {name}", lambda: AboutAppWindow(info, name).present(), enabled=bool(info))],
-            [Item(f"Hide {name}", lambda: [m.minimize(t) for t in wins], enabled=bool(wins)),
-             Item("Hide Others", lambda: [m.minimize(t) for t in others], enabled=bool(others)),
+            [Item(f"Hide {name}", lambda: self._after_menu(lambda: [m.minimize(t) for t in wins]),
+                  enabled=bool(wins)),
+             Item("Hide Others", lambda: self._after_menu(lambda: [m.minimize(t) for t in others]),
+                  enabled=bool(others)),
              Item("Show All", lambda: [m.unminimize(t) for t in (m.toplevels if m else [])], enabled=bool(m))],
             [Item(f"Quit {name}", lambda: self._quit_app(wins, key), enabled=bool(wins))],
         ])
@@ -541,10 +550,11 @@ class Bar(Gtk.CenterBox):
         key, wins = self._active()
         m = self.manager
         act = next((t for t in wins if t.activated), None)
-        sections = [[Item("Minimize", lambda: m.minimize(act), enabled=bool(act)),
+        sections = [[Item("Minimize", lambda: self._after_menu(lambda: m.minimize(act)), enabled=bool(act)),
                      Item("Zoom", lambda: m.set_maximized(act, not act.maximized), enabled=bool(act))]]
         if wins:
-            sections.append([Item(t.title or "Untitled", lambda t=t: m.activate(t), checked=t is act)
+            # (a checked item's callback gets the new state first: the window is t=)
+            sections.append([Item(t.title or "Untitled", lambda _on=None, t=t: m.activate(t), checked=t is act)
                              for t in wins])
         sections.append([Item("Bring All to Front", lambda: [m.activate(t) for t in wins], enabled=bool(wins))])
         return self._menu(btn, sections)

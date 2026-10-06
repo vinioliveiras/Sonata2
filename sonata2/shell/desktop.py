@@ -539,7 +539,7 @@ class Desktop(Gtk.Fixed):
             [Item("Paste Item", self.paste, enabled=ops.clipboard_has_files(self))],
             [Item("Change Desktop Background…", lambda: _open_settings("wallpaper"))],
             [Item("Clean Up", self.clean_up),
-             Item("Sort By", submenu=[[Item(label, lambda s=key: self.set_sort(s), checked=sort == key)
+             Item("Sort By", submenu=[[Item(label, lambda _on=None, s=key: self.set_sort(s), checked=sort == key)
                                        for key, label in SORTS]])],
         ], at=(x, y))
 

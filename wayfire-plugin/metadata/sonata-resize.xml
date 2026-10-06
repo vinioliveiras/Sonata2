@@ -13,6 +13,11 @@
 			<_long>Sonata sets it per appearance (the window background).</_long>
 			<default>#ECECECF2</default>
 		</option>
+		<option name="double_click" type="string">
+			<_short>Double-click on a window's top edge</_short>
+			<_long>As a double-click on its title bar: toggle-maximize, minimize or none (Settings sets it with the title bar's).</_long>
+			<default>toggle-maximize</default>
+		</option>
 		<option name="border" type="color">
 			<_short>Outline while resizing</_short>
 			<default>#00000033</default>
