@@ -371,8 +371,24 @@ class Launchpad(Gtk.ApplicationWindow):
         self.render()
 
     # -- geometry / rendering ----------------------------------------------------
+    def screen_size(self, w: int, h: int) -> tuple:
+        """The full screen's size: its display's. Vini: the first full-screen
+        open after the Apps Menu glitched -- the window still had the menu's
+        size (inside the menu bar and the Dock) for a frame or two, and the
+        grid was worked out for it (pages re-packed), then again for the
+        display. w x h when the display isn't known."""
+        surface = self.get_surface() if getattr(self, "layer", False) else None    # (a plain window: its own size)
+        mon = surface and Gdk.Display.get_default().get_monitor_at_surface(surface)
+        if mon is None:
+            return w, h
+        g = mon.get_geometry()
+        return (g.width, g.height) if g.width > 0 and g.height > 0 else (w, h)
+
     def do_size_allocate(self, w, h, baseline) -> None:
         Gtk.ApplicationWindow.do_size_allocate(self, w, h, baseline)
+        if getattr(self, "mode", "fullscreen") == "menu":
+            return              # the Apps Menu lays out its own panel: the full screen's grid stays as it is
+        w, h = self.screen_size(w, h)
         if getattr(self, "bin", None) and (w, h) != self.bin._size:
             self.bin._size = (w, h)
             self.bin.invalidate()

@@ -18,6 +18,10 @@
 - Picking an item in the sidebar switches at once: no sliding selection,
   no fade.
 
+### Launchpad
+- Fix: the first full-screen open after using the Apps Menu glitched (its
+  grid was worked out again for the menu's size).
+
 ## 0.9.1-alpha -- 2026-10-06
 
 A fix for 0.9.0: zooming a window from its title bar.

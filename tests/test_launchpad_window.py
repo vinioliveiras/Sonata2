@@ -129,6 +129,27 @@ class MenuModeTest(unittest.TestCase):
     def tile(self, item):
         return next(t for t in self.menu.visible_items() if t.item == item)
 
+    def test_back_to_full_screen_without_a_new_grid(self):
+        """Vini: the first full-screen open after the Apps Menu glitched --
+        the menu's window size (inside the menu bar and the Dock) re-made the
+        full screen's grid, and the display's size made it again on opening.
+        The Apps Menu leaves the grid alone; the full screen uses its display's size."""
+        from sonata2 import launchpad_model as M
+        grid = (M.COLS, M.ROWS)
+        with mock.patch.object(M, "set_grid", wraps=M.set_grid) as set_grid:
+            self.pad.set_default_size(900, 500)
+            settle(200)
+            set_grid.assert_not_called()                       # menu mode: nothing re-made
+        self.assertEqual((M.COLS, M.ROWS), grid)
+        self.pad.layer = True                                  # a layer surface: its display's size
+        mon = mock.Mock()
+        mon.get_geometry.return_value = mock.Mock(width=1920, height=1080)
+        disp = mock.Mock(get_monitor_at_surface=mock.Mock(return_value=mon))
+        with mock.patch.object(Gdk.Display, "get_default", return_value=disp):
+            self.assertEqual(self.pad.screen_size(900, 500), (1920, 1080))
+        self.pad.layer = False
+        self.assertEqual(self.pad.screen_size(900, 500), (900, 500))     # a plain window: its own
+
     def test_same_component(self):
         self.assertEqual(self.pad.mode, "menu")
         self.assertIs(self.pad.get_child(), self.menu.root)
