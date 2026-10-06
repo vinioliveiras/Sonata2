@@ -90,6 +90,48 @@ class LiveDrawTest(unittest.TestCase):
         area = sum(w * h for _x, _y, w, h in rects)
         self.assertEqual(area, 1920 * (1080 - 32) - pw * ph)           # all but the menu bar and palette
 
+    def test_input_follows_on_off_after_relayouts(self):
+        """Vini (video): with the palette closed he could draw, with it open
+        he couldn't -- the input region went stale. It is set again on every
+        layout of the surface and once more after each on/off."""
+        from sonata2.shell import livedraw as L
+        d = L.LiveDraw(self.app)
+        seen = []
+        real = L.layer.set_input_region
+        with mock.patch.object(L.layer, "set_input_region",
+                               side_effect=lambda w, rects: (seen.append(bool(rects)), real(w, rects))):
+            for _ in range(3):                                   # on / off quickly, a few times
+                d.set_on(True)
+                spin(30)
+                d.set_on(False)
+                spin(30)
+            d.set_on(True)
+            spin(300)
+            ov = next(iter(d.overlays.values()))
+            d.proto.tool = "shape"
+            d.proto.shape = "arrow"
+            ov.layer._begin(None, 5, 5)                          # a mark: the surface stays when off
+            ov.layer._update(None, 30, 30)
+            ov.layer._end(None, 30, 30)
+            self.assertTrue(ov.layer.items)
+            spin(L.SETTLE_MS + 100)
+            self.assertTrue(seen[-1], "on: the display takes the pointer")
+            d.set_on(False)
+            spin(L.SETTLE_MS + 100)
+            self.assertFalse(seen[-1], "off: clicks go through")
+            seen.clear()
+            surf = ov.get_surface()
+            surf.emit("layout", ov.get_width(), ov.get_height())   # laid out again while off
+            spin(100)
+            self.assertEqual(seen, [False])                      # still nothing
+            d.set_on(True)
+            spin(L.SETTLE_MS + 100)
+            seen.clear()
+            surf.emit("layout", ov.get_width(), ov.get_height())   # and while on
+            spin(100)
+            self.assertEqual(seen, [True])
+        d.stop()
+
     def test_undo_takes_back_the_last_mark_only(self):
         """Review: Undo undid a mark on every display at once."""
         from types import SimpleNamespace

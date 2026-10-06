@@ -28,6 +28,7 @@ TOOLS = (("pen", "Pen"), ("hl", "Highlighter"), ("shape", "Shapes"), ("text", "T
 COLORS = ("#ff3b30", "#ffcc00", "#34c759", "#007aff", "#ffffff")
 PALETTE_NS, OVERLAY_NS = "sonata2-draw-palette", "sonata2-draw"
 PALETTE_SIZE = (560, 62)                 # before the palette has been laid out
+SETTLE_MS = 150                          # the input once more after on/off (surfaces map late)
 
 ui.register("""
 window.sonata-draw, window.sonata-draw > contents { background: none; box-shadow: none; }
@@ -62,6 +63,11 @@ class Overlay(Gtk.Window):
         keys.connect("key-pressed", lambda _c, kv, _k, st: kv == Gdk.KEY_Escape and (owner.set_on(False), True)[1])
         self.add_controller(keys)
         self.connect("map", lambda *_: self.pointer(owner.on))
+        # Vini: drawing worked with the palette closed and not with it open.
+        # The input region was set once per on/off, and went stale when the
+        # surface was laid out again (or mapped late): every layout sets it again.
+        self.connect("realize", lambda *_: self.get_surface().connect(
+            "layout", lambda *_a: GLib.idle_add(lambda: (self.pointer(owner.on), False)[1])))
 
     def _rect(self):
         return 0, 0, self.get_width(), self.get_height()
@@ -205,6 +211,7 @@ class LiveDraw:
                 self.palette.set_visible(False)
         for fn in list(self.listeners):
             fn(on)
+        GLib.timeout_add(SETTLE_MS, lambda: (self.regions(), False)[1])   # whatever mapped since
 
     def stop(self) -> None:
         """The recording or sharing ended: off, and the screen clean."""
