@@ -99,7 +99,7 @@ def confirm_empty_trash() -> None:
     items = "the item" if n == 1 else f"the {n} items" if n else "the items"
     ui.dialog.alert(f"Are you sure you want to permanently erase {items} in the Trash?",
                     "You can't undo this action.",
-                    [("cancel", "Cancel", ""), ("empty", "Empty Trash", "destructive")],
+                    [("cancel", "Cancel", ""), ("empty", "Empty Trash", "destructive")], default="empty",
                     on_response=lambda r: empty_trash() if r == "empty" else None)
 
 

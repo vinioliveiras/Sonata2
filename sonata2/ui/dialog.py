@@ -59,9 +59,12 @@ def _breakable(text: str) -> str:
 
 
 def alert(heading: str, body: str, responses, on_response=None, parent=None,
-          check: str = None, close: str = None):
+          check: str = None, close: str = None, default: str = None):
     """close: the response Escape gives (default: "cancel", else the first
-    non-destructive one; it needn't be one of `responses`)."""
+    non-destructive one; it needn't be one of `responses`). default: the one
+    Return gives -- chosen on purpose, it may be destructive (macOS' Empty
+    Trash: Return empties, Vini); otherwise never a destructive one."""
+    chosen = default
     heading, body = _breakable(heading), _breakable(body)
     if _MODERN:
         dlg = Adw.AlertDialog(heading=heading, body=body)
@@ -82,6 +85,7 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None,
             dlg.set_response_appearance(rid, _STYLE[style])
         if style != "destructive":
             default = rid if default is None or style == "default" else default
+    default = chosen or default
     if default:
         dlg.set_default_response(default)
     # Escape = "cancel", else the first non-destructive response: never a

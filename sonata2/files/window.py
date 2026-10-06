@@ -729,7 +729,8 @@ class FilesWindow(Adw.ApplicationWindow):
                                 lambda f, e: self._error("The Trash can’t be emptied.", e))
         ui.dialog.alert("Are you sure you want to permanently erase the items in the Trash?",
                         "You can’t undo this action.",
-                        [("cancel", "Cancel", ""), ("empty", "Empty Trash", "destructive")], answer, parent=self)
+                        [("cancel", "Cancel", ""), ("empty", "Empty Trash", "destructive")], answer, parent=self,
+                        default="empty")            # Return empties (macOS)
 
     def delete_selection_now(self):
         files = self._selected_files()

@@ -29,6 +29,7 @@
 - Fix: the Trash stayed full after Empty Trash when it held leftovers the
   Trash doesn't list (files without their .trashinfo); Empty Trash now
   clears those too.
+- Return in "Empty Trash?" empties it (Esc cancels), like macOS.
 
 ### Clock
 - Stopwatch (laps, fastest and slowest marked) and Timers (quick choices,
