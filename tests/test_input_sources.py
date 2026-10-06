@@ -35,6 +35,14 @@ class InputSourcesTest(unittest.TestCase):
         T.Bar._update_input(bar)
         self.assertFalse(bar.shown)
 
+    def test_settings_toggle_on_by_default(self):
+        """Vini: a toggle in Settings to show it or not, on by default."""
+        import inspect
+        from sonata2.settings import app
+        self.assertTrue(T.DEFAULTS["show_input"])
+        self.assertIn('("show_input", "Keyboard layout"', inspect.getsource(app))
+        self.assertIn("self._update_input()", inspect.getsource(T.Bar._config_changed))   # live
+
     def test_badges(self):
         self.assertEqual([T.layout_badge(x) for x in ("br(abnt2)", "us(intl)", "pt", "")], ["BR", "US", "PT", "?"])
 

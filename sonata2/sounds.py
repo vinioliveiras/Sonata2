@@ -16,7 +16,8 @@ import time
 from . import config
 
 DIR = os.path.join(os.path.dirname(__file__), "data", "sounds")
-DEFAULTS = {"effects": True, "volume_feedback": True}
+DEFAULTS = {"effects": True, "volume_feedback": True,
+            "follow_new_devices": True}          # new headphones/headsets used at once (audiofollow.py)
 EVENTS = {                           # event -> bundled file (without .oga)
     "trash": "trash-empty",          # Move to Trash
     "empty-trash": "trash-empty",

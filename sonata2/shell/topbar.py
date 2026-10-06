@@ -245,6 +245,8 @@ class Bar(Gtk.CenterBox):
         _BARS.append(self)
         # plug / charge / level: at once (subscribed once; it calls every live bar)
         _shared("power", lambda: power.watch(_power_changed))
+        from ..backend import audiofollow                # new headphones / headsets used at once
+        _shared("audiofollow", audiofollow.start)
 
     def stop(self) -> None:
         """Its display was unplugged: no more polling or listening (the shared

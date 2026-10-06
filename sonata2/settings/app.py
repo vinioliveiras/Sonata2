@@ -906,6 +906,12 @@ class Settings(Adw.ApplicationWindow):
                 cur = next((s.key for s in sources if s.default), ins[0][0])
                 out.add(combo_row("Input device", ins, cur,
                                   lambda k: system.run_async(system.select_input, None, k)))
+            from ..sounds import DEFAULTS as SND_D
+            out.add(switch_row("Use new headphones right away",
+                               config.load("sounds", SND_D).get("follow_new_devices", True),
+                               lambda on: self._save("sounds", "follow_new_devices", on),
+                               subtitle="USB and Bluetooth headphones and headsets, their microphone too; "
+                                        "the device before comes back when they go"))
             out.set_visible(bool(options or ins))
         eq = group("Equalizer", "Each output keeps its own settings")
 
@@ -2795,7 +2801,7 @@ class Settings(Adw.ApplicationWindow):
         for key, title, sub in (("show_tray", "Background apps", "Status icons of apps running in the background "
                                  "(Discord, Steam…)"),
                                 ("show_now_playing", "Now Playing", "While something plays"),
-                                ("show_input", "Input source", "The keyboard layout in use (Ctrl+Space: the previous one)"),
+                                ("show_input", "Keyboard layout", "The layout in use (BR, US…); Ctrl+Space: the previous one"),
                                 ("show_sound", "Sound", "Volume and outputs are always in Control Center"),
                                 ("show_battery", "Battery", ""),
                                 ("battery_percent", "Battery percentage", ""),
