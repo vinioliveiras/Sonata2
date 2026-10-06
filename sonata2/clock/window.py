@@ -1,7 +1,8 @@
-"""Clock (macOS Ventura Clock): Alarms.
+"""Clock (macOS Ventura Clock): Alarms, Stopwatch, Timers.
 
-The glass toolbar continues the compositor's title bar, with + (new
-alarm) at its end. Each alarm is a row: the time in large light figures,
+The glass toolbar continues the compositor's title bar: the three pages as
+tabs in its middle, + (new alarm) at its end on Alarms. Stopwatch and
+Timers: clock/pages.py. Each alarm is a row: the time in large light figures,
 its name and repeat days under it, a switch to turn it on or off. A click
 edits it in a popover (time, repeat days, name, snooze, Delete);
 right-click deletes. Alarms ring from the menu bar process
@@ -16,6 +17,7 @@ from .. import ui  # noqa: E402
 from . import alarms as A  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.clock"
+PAGES = (("alarms", "Alarms"), ("stopwatch", "Stopwatch"), ("timers", "Timers"))
 
 ui.register("""
 window.sonata-clock .ck-main { background: %(content_bg)s; }
@@ -53,8 +55,12 @@ class ClockWindow(Gtk.ApplicationWindow):
         self.set_size_request(380, 360)
         self.toolbar = ui.window.glass_toolbar(self, end=(("list-add-symbolic", "New Alarm", self.add),))
         self.add_btn = self.toolbar.get_child().get_end_widget().get_first_child()
+        self.tabs = ui.controls.segmented(PAGES, on_pick=self.show_page, plain=True)
+        self.toolbar.get_child().set_center_widget(self.tabs)
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col.append(self.toolbar)
+        self.pages = Gtk.Stack(vexpand=True)               # (no animation between them, Vini)
+        col.append(self.pages)
         main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, vexpand=True, css_classes=["ck-main"])
         main.append(Gtk.Label(label="Alarms", xalign=0, css_classes=["ck-title"]))
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["ck-list"])
@@ -62,8 +68,15 @@ class ClockWindow(Gtk.ApplicationWindow):
         self.empty = Gtk.Label(label="No Alarms", css_classes=["ck-empty"], vexpand=True, valign=Gtk.Align.CENTER)
         main.append(self.empty)
         main.append(Gtk.ScrolledWindow(child=self.list, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER))
-        col.append(main)
+        self.pages.add_named(main, "alarms")
+        from . import pages as P
+        state = P._State()
+        self.stopwatch, self.timer = P.StopwatchPage(state), P.TimerPage(state)
+        self.pages.add_named(self.stopwatch.root, "stopwatch")
+        self.pages.add_named(self.timer.root, "timers")
         self.set_child(col)
+        from .. import config
+        self.show_page(config.load("clock", {"page": "alarms"}).get("page"), remember=False)
         self.alarms = []
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._key)
@@ -73,9 +86,21 @@ class ClockWindow(Gtk.ApplicationWindow):
         self._mon.connect("changed", lambda *_a: self.refresh())     # a one-time alarm went off
         self.refresh()
 
+    def show_page(self, name: str, remember: bool = True) -> None:
+        name = name if name in dict(PAGES) else "alarms"
+        self.pages.set_visible_child_name(name)
+        self.tabs.select(name)
+        self.add_btn.set_visible(name == "alarms")
+        if remember:
+            from .. import config
+            config.update("clock", page=name)            # opens where you left it (macOS)
+
     def _key(self, _c, keyval, _code, state) -> bool:
         cmd = state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SUPER_MASK)
-        if cmd and keyval in (Gdk.KEY_n, Gdk.KEY_N):
+        if cmd and keyval in (Gdk.KEY_1, Gdk.KEY_2, Gdk.KEY_3):     # Cmd+1..3: the tabs
+            self.show_page(PAGES[keyval - Gdk.KEY_1][0])
+            return True
+        if cmd and keyval in (Gdk.KEY_n, Gdk.KEY_N) and self.pages.get_visible_child_name() == "alarms":
             self.add()
             return True
         if cmd and keyval in (Gdk.KEY_w, Gdk.KEY_W):
@@ -233,7 +258,7 @@ def clock_desktop_file(command: str) -> str:
     from ..apps import write_desktop_file
     return write_desktop_file(APP_ID + ".desktop",
                               "[Desktop Entry]\nType=Application\nName=Clock\n"
-                              "Comment=Alarms that ring even with Do Not Disturb on\nIcon=sonata-clock\n"
+                              "Comment=Alarms, stopwatch and timer\nIcon=sonata-clock\n"
                               "Categories=Utility;Clock;\nKeywords=alarm;clock;wake;timer;stopwatch;\n"
                               "StartupNotify=true\n"
                               f"Exec={command} clock\n")

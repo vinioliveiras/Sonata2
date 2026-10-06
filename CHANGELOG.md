@@ -20,6 +20,11 @@
 - Fix: Date & Time's "Show the date" (and 24-hour) switches showed off
   while the menu bar clock had them on.
 
+### Clock
+- Stopwatch (laps, fastest and slowest marked) and Timers (quick choices,
+  pause, a ring of what's left), as tabs beside Alarms. Both keep going
+  with Clock closed; the timer rings like an alarm.
+
 ### Menu bar
 - The clock keeps room for today's date only (it may change width at
   midnight): no gap beside it most days.

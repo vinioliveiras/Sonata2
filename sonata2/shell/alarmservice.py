@@ -6,7 +6,10 @@ check runs at once and a missed alarm still rings, once). Ringing: the
 alarm sound in a loop and a card at the top right (Snooze / Stop) above
 everything -- Do Not Disturb never holds an alarm back (it isn't a
 notification). Nobody stops it: quiet after RING_MAX_S. A one-time alarm
-turns itself off; Snooze rings it again SNOOZE_MIN minutes later."""
+turns itself off; Snooze rings it again SNOOZE_MIN minutes later.
+
+Clock's timer (clock/timers.py) rings here too, the same way: its card
+says TIMER, with Stop only; the timer goes back to idle."""
 import datetime as dt
 import os
 import shutil
@@ -20,6 +23,7 @@ from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
 from ..clock import alarms as A  # noqa: E402
+from ..clock import timers as T  # noqa: E402
 from . import layer  # noqa: E402
 
 CHECK_MAX_S = 30
@@ -86,18 +90,18 @@ class Ringer:
 class AlarmCard(Gtk.Window):
     """Top right, above everything: the alarm's name and time, Snooze and Stop."""
 
-    def __init__(self, app, alarm: dict, on_snooze, on_stop):
-        super().__init__(application=app, title="Alarm", decorated=False, css_classes=["sonata-alarm"])
+    def __init__(self, app, alarm: dict, on_snooze, on_stop, head: str = "ALARM", time_text: str = None):
+        super().__init__(application=app, title=head.title(), decorated=False, css_classes=["sonata-alarm"])
         self.alarm = alarm
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, css_classes=["alarm-card"])
         card.set_size_request(320, -1)
-        head = Gtk.Box(spacing=6)
-        head.append(Gtk.Image(icon_name="alarm-symbolic", pixel_size=14))
-        head.append(Gtk.Label(label="ALARM", xalign=0, css_classes=["alarm-app"]))
-        card.append(head)
+        top = Gtk.Box(spacing=6)
+        top.append(Gtk.Image(icon_name="alarm-symbolic", pixel_size=14))
+        top.append(Gtk.Label(label=head, xalign=0, css_classes=["alarm-app"]))
+        card.append(top)
         row = Gtk.Box(spacing=10, margin_top=4)
         texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
-        texts.append(Gtk.Label(label=A.time_text(alarm, h24()), xalign=0, css_classes=["alarm-time"]))
+        texts.append(Gtk.Label(label=time_text or A.time_text(alarm, h24()), xalign=0, css_classes=["alarm-time"]))
         texts.append(Gtk.Label(label=alarm.get("label") or "Alarm", xalign=0, css_classes=["alarm-label"],
                                ellipsize=3))
         row.append(texts)
@@ -139,15 +143,20 @@ class AlarmService:
         self.timer = 0
         self.quiet = 0                   # RING_MAX_S timeout
         self.rung = []                   # (tests, log)
-        try:
-            self._mon = Gio.File.new_for_path(A.path()).monitor_file(Gio.FileMonitorFlags.WATCH_MOVES, None)
-            self._mon.connect("changed", lambda *_a: self.reload())
-        except GLib.Error:
-            self._mon = None
+        self.clock_timer = T.load()[1]  # Clock's timer (timers.py)
+        self._mons = []
+        for path in (A.path(), T.path()):
+            try:
+                mon = Gio.File.new_for_path(path).monitor_file(Gio.FileMonitorFlags.WATCH_MOVES, None)
+                mon.connect("changed", lambda *_a: self.reload())
+                self._mons.append(mon)
+            except GLib.Error:
+                pass
         self.schedule()
 
     def reload(self) -> None:
         self.alarms = A.load()
+        self.clock_timer = T.load()[1]
         self.schedule()
 
     def schedule(self) -> None:
@@ -155,6 +164,8 @@ class AlarmService:
             GLib.source_remove(self.timer)
         nxt = A.next_any(self.alarms, self.last)
         times = [t for t in [nxt] + [w for w, _a in self.snoozed] if t]
+        if self.clock_timer["state"] == "running":
+            times.append(dt.datetime.fromtimestamp(self.clock_timer["ends"]))
         secs = min(((min(times) - dt.datetime.now()).total_seconds() + 0.5) if times else CHECK_MAX_S,
                    CHECK_MAX_S)
         self.timer = GLib.timeout_add(int(max(0.2, secs) * 1000), self._tick)
@@ -179,8 +190,28 @@ class AlarmService:
             A.save(self.alarms)
         for a in due:
             self.ring(a)
+        if T.due(self.clock_timer, now.timestamp()):
+            self.ring_timer()
         self.schedule()
         return due
+
+    def ring_timer(self) -> None:
+        """Clock's timer is done: it goes back to idle (Clock shows it ready
+        to start again) and rings like an alarm, with Stop only."""
+        sw, tm = T.load()
+        if tm["state"] != "running":
+            tm = self.clock_timer
+        tm = T.tm_cancel(dict(tm))
+        T.save(sw, tm)
+        self.clock_timer = tm
+        self.rung.append("timer")
+        self.dismiss(stop_sound=False)
+        self.current = {"label": tm["label"] or "Timer", "snooze": False}
+        self.card = AlarmCard(self.app, self.current, self.snooze, self.stop, head="TIMER",
+                              time_text=T.duration_text(tm["duration"]))
+        self.card.present()
+        self.ringer.start(tm["sound"])
+        self.quiet = GLib.timeout_add_seconds(A.RING_MAX_S, lambda: (self.stop(), False)[1])
 
     def ring(self, alarm: dict) -> None:
         self.rung.append(alarm["id"])

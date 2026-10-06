@@ -401,6 +401,24 @@ class TextArea(Gtk.Box):
         return False
 
 
+TONES = ("grey", "green", "red", "orange")
+
+
+def circle_button(label: str, on_click=None, tone: str = "grey") -> Gtk.Button:
+    """A big round button with a word in it, tinted (macOS Clock's Start,
+    Stop, Lap). b.set_tone("red") changes the tint."""
+    b = Gtk.Button(label=label, css_classes=["sonata-circle", tone], can_focus=False,
+                   valign=Gtk.Align.CENTER, halign=Gtk.Align.CENTER)
+
+    def set_tone(t):
+        for x in TONES:
+            (b.add_css_class if x == t else b.remove_css_class)(x)
+    b.set_tone = set_tone
+    if on_click:
+        b.connect("clicked", lambda _b: on_click())
+    return b
+
+
 def round_button(icon_name: str, tooltip: str = "", on_click=None) -> Gtk.Button:
     """A round accent icon button (a text area's Send)."""
     b = Gtk.Button(icon_name=icon_name, css_classes=["sonata-round"], tooltip_text=tooltip, can_focus=False)
@@ -439,14 +457,30 @@ theme.register("""
 .seg button:hover { background: alpha(%(label)s, 0.08); }
 .seg button.on, .seg button.on:hover { background: %(accent)s; color: %(label_on_accent)s; }
 .seg:disabled { opacity: 0.45; }
+/* plain: a toolbar's tabs (Clock: Alarms | Stopwatch | Timers) -- the chosen
+   one raised in the control colour, like macOS, not in the accent */
+.seg.plain button { padding: 0 12px; font-weight: 500; }
+.seg.plain button.on, .seg.plain button.on:hover { background: %(control_bg)s; color: %(label)s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(0, 0, 0, 0.06); }
+/* circle_button: Clock's Start / Stop / Lap (macOS Clock) */
+.sonata-circle { min-width: 72px; min-height: 72px; padding: 0; border-radius: 999px; border: none;
+  font-size: 15px; font-weight: 500; box-shadow: inset 0 0 0 2px %(content_bg)s;
+  transition: background-color %(t_fast)s, color %(t_fast)s, opacity %(t_fast)s; }
+.sonata-circle:active { opacity: 0.75; }
+.sonata-circle:disabled { opacity: 0.4; }
+.sonata-circle.grey { background: alpha(%(label)s, 0.10); color: %(label)s; }
+.sonata-circle.green { background: alpha(%(sys_green)s, 0.22); color: shade(%(sys_green)s, 0.8); }
+.sonata-circle.red { background: alpha(%(sys_red)s, 0.20); color: %(sys_red)s; }
+.sonata-circle.orange { background: alpha(%(sys_orange)s, 0.22); color: shade(%(sys_orange)s, 0.85); }
 """, key="controls-seg")
 
 
-def segmented(choices, current=None, on_pick=None, tooltips=None) -> Gtk.Box:
+def segmented(choices, current=None, on_pick=None, tooltips=None, plain=False) -> Gtk.Box:
     """A row of choices, the current one in the accent (Control Center's FPS
-    Limit and Keyboard). choices: [(value, label)]. box.buttons: value ->
+    Limit and Keyboard) -- or, plain, raised in the control colour (a
+    toolbar's tabs). choices: [(value, label)]. box.buttons: value ->
     button; box.select(value) marks one without calling on_pick."""
-    box = Gtk.Box(css_classes=["seg"], spacing=2, homogeneous=True)
+    box = Gtk.Box(css_classes=["seg"] + (["plain"] if plain else []), spacing=2, homogeneous=True)
     box.buttons = {}
     for value, label in choices:
         b = Gtk.Button(label=label, can_focus=False, tooltip_text=(tooltips or {}).get(value))

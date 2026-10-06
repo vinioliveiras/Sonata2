@@ -318,3 +318,49 @@ class DesktopLayout(Base):
             self.assertEqual(after, before, f"{what}: renaming moved icons")
             LC.shot(desk, f"desktop-{theme}")
             win.destroy()
+
+
+# -- Clock ----------------------------------------------------------------------------------------------
+class ClockLayout(Base):
+    def test_every_page_and_state_fits(self):
+        """Clock's Alarms, Stopwatch (with laps) and Timers (setting up,
+        running), at its smallest size and its usual one."""
+        import time
+        os.environ["XDG_DATA_HOME"] = tempfile.mkdtemp()
+        from sonata2.clock import timers as T
+        from sonata2.clock.window import ClockWindow
+        app = Adw.Application(application_id="io.test.layout.clock")
+        app.register(None)
+        for theme, dark in themes():
+            set_dark(dark)
+            for size in ((380, 360), (460, 560)):
+                sw = T.new_stopwatch()
+                sw.update(running=True, since=time.time() - 83.45, laps=[12.08, 19.74, 28.30])
+                tm = T.tm_start(T.new_timer(), 392, "Pasta")
+                T.save(sw, T.new_timer())
+                win = ClockWindow(app)
+                win.set_default_size(*size)
+                win.present()
+                LC.settle(250)
+                for page in ("alarms", "stopwatch", "timers"):
+                    win.show_page(page, remember=False)
+                    LC.settle(150)
+                    what = f"Clock > {page} {size} ({theme})"
+                    self.clean(win, what)
+                    LC.shot(win, f"clock-{page}-{size[0]}-{theme}")
+                # the time pickers' figures are readable (light: they were white on white)
+                fg = win.timer.spins[0].get_color()
+                bg_dark = dark
+                self.assertTrue((fg.red > 0.5) == bg_dark, f"Clock > timers ({theme}): picker figures unreadable")
+                # the quick choices fit the window
+                chips = win.timer.spins[0].get_ancestor(Gtk.Stack)
+                self.assertEqual(LC.overflows(chips), [], f"Clock > timers {size} ({theme})")
+                win.stopwatch.state.sw, win.stopwatch.state.tm = sw, tm
+                win.stopwatch.state.save()
+                for page in ("stopwatch", "timers"):
+                    win.show_page(page, remember=False)
+                    LC.settle(150)
+                    what = f"Clock > {page} running {size} ({theme})"
+                    self.clean(win, what)
+                    LC.shot(win, f"clock-{page}-running-{size[0]}-{theme}")
+                win.destroy()
