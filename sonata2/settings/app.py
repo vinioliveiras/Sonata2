@@ -2200,6 +2200,13 @@ class Settings(Adw.ApplicationWindow):
         row.set_subtitle_lines(0)
         row.set_sensitive(ok)
         grp.add(row)
+        import shutil as _sh
+        rgb = switch_row("Turn RGB lights off with the screen", bool(sec.get("rgb_dark", False)),
+                         lambda on: self._save("security", "rgb_dark", on),
+                         subtitle="USB keyboards, mice and other RGB devices, through OpenRGB" if _sh.which("openrgb")
+                         else "Needs OpenRGB")
+        rgb.set_sensitive(bool(_sh.which("openrgb")))
+        grp.add(rgb)
         return grp
 
     def _keyring_group(self):

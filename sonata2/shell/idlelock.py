@@ -16,13 +16,15 @@ import shutil
 import shlex
 import signal
 import subprocess
+import sys
 import time
 
 from .. import config, wfconfig
 
 # lock_after: seconds after the display turns off (0 = immediately), -1 = never.
 # On by default (Vini): locked when the display turns off and before sleep, like macOS
-DEFAULTS = {"lock_after": 0, "lock_before_sleep": True, "usb_protection": True}
+DEFAULTS = {"lock_after": 0, "lock_before_sleep": True, "usb_protection": True,
+            "rgb_dark": False}       # RGB lights (OpenRGB) dark too: chosen in Settings (rgblights.py)
 # swayidle -w waits for its command: `sonata2 lock` itself only quits on
 # unlock, so every idle timeout / before-sleep that came meanwhile waited in
 # line and locked again right after each unlock (Vini: the password 3 times
@@ -53,11 +55,12 @@ BL_ON = (f"if [ -s {_BL_STATE} ]; then brightnessctl -q -c backlight set \"$(cat
          f"rm -f {_BL_STATE}; fi")
 
 RGB_PROFILE = "sonata-idle"
-_RGB_MARK = shlex.quote(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
-                                     "sonata2", "rgb-before-dark"))
-RGB_OFF = (f"[ -e {_RGB_MARK} ] || {{ openrgb --save-profile {RGB_PROFILE} >/dev/null 2>&1 && "
-           f"mkdir -p \"$(dirname {_RGB_MARK})\" && touch {_RGB_MARK}; }}; openrgb --mode off >/dev/null 2>&1")
-RGB_ON = f"[ -e {_RGB_MARK} ] && openrgb --profile {RGB_PROFILE} >/dev/null 2>&1; rm -f {_RGB_MARK}"
+# OpenRGB through rgblights.py: it never keeps dark colours to put back
+# (Vini: the laptop keyboard was saved black, and stayed black)
+_PKG = shlex.quote(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+_PY = shlex.quote(sys.executable or "python3")
+RGB_OFF = f"PYTHONPATH={_PKG} {_PY} -m sonata2.rgblights off"
+RGB_ON = f"PYTHONPATH={_PKG} {_PY} -m sonata2.rgblights on"
 _LIGHTS_LOCK = shlex.quote(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
                                         "sonata2", "lights.lock"))
 
@@ -118,8 +121,9 @@ def lock_and_wait(argv: list, timeout: float = 5.0) -> int:
 
 
 def rgb_lights() -> bool:
-    """OpenRGB installed: USB keyboards' and mice's RGB can go dark."""
-    return bool(shutil.which("openrgb"))
+    """RGB lights go dark too: OpenRGB installed and chosen in Settings
+    (off by default -- the laptop's own keyboard goes dark by its backlight)."""
+    return bool(shutil.which("openrgb")) and bool(config.load("security", DEFAULTS).get("rgb_dark"))
 
 
 def keyboard_light() -> bool:

@@ -69,8 +69,8 @@ class IdleWatch:
             self.outputs.append(self._bind(g, "wl_output", 1, lambda *_a: None))
         self._roundtrip()
         self.ok = True
-        GLib.io_add_watch(self.sock.fileno(), GLib.PRIORITY_DEFAULT, GLib.IOCondition.IN | GLib.IOCondition.HUP,
-                          self._readable)
+        self._src = GLib.io_add_watch(self.sock.fileno(), GLib.PRIORITY_DEFAULT,
+                                      GLib.IOCondition.IN | GLib.IOCondition.HUP, self._readable)
 
     # -- wire -----------------------------------------------------------------------------------
     def _new(self, handler) -> int:
@@ -122,8 +122,9 @@ class IdleWatch:
                 break
 
     def _readable(self, *_a) -> bool:
-        if not self._read(False):
+        if self.sock is None or self.sock.fileno() < 0 or not self._read(False):
             self.ok = False
+            self._src = 0
             return False
         return True
 
@@ -177,6 +178,9 @@ class IdleWatch:
         return True
 
     def close(self) -> None:
+        src, self._src = getattr(self, "_src", 0), 0
+        if src:
+            GLib.source_remove(src)                  # (it read a closed socket: Bad file descriptor)
         if self.sock is not None:
             try:
                 self.sock.close()
