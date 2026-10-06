@@ -44,13 +44,24 @@ def locked() -> None:
                 json.dump({f"{s}/{k}": wfconfig.wayfire_get(s, k) for s, k in KEYS}, f)
         except OSError:
             return
+    secs = dark_seconds()
+    if secs is not None:                          # sooner, never later than you chose
+        wfconfig.runtime_set("idle", "dpms_timeout", secs)
+    wfconfig.runtime_set("idle", "disable_on_fullscreen", False)
+
+
+def dark_seconds():
+    """How long the locked screen stays lit: LOCKED_DPMS_S, or your own
+    shorter time; None when you chose that the display never turns off
+    (Vini: set to never, it went dark behind the lock anyway)."""
     try:
-        prev = int(saved().get("idle/dpms_timeout") or 600)
+        prev = int(saved().get("idle/dpms_timeout") or
+                   wfconfig.wayfire_get("idle", "dpms_timeout", "600") or 600)
     except ValueError:
         prev = 600
-    # sooner, never later than you chose (a shorter one stays); "never" too: locked, it goes dark
-    wfconfig.runtime_set("idle", "dpms_timeout", prev if 0 < prev < LOCKED_DPMS_S else LOCKED_DPMS_S)
-    wfconfig.runtime_set("idle", "disable_on_fullscreen", False)
+    if prev <= 0:
+        return None
+    return min(prev, LOCKED_DPMS_S)
 
 
 def unlocked() -> None:

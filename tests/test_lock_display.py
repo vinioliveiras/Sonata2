@@ -63,11 +63,80 @@ class LockDisplayTest(unittest.TestCase):
             LD.lights(True)
         self.assertEqual(ran, [idlelock.KBD_OFF, idlelock.KBD_ON])
         from sonata2.shell import lock
-        self.assertIn("lockdisplay.lights(False)", inspect.getsource(lock.LockScreen._input))
+        self.assertIn("lockdisplay.lights(False)", inspect.getsource(lock.LockScreen._go_dark))
+
+    def test_never_stays_never_when_locked(self):
+        """Vini: the display set to never turn off went dark behind the lock."""
+        with open(self.ini, "w") as f:
+            f.write("[idle]\ndpms_timeout = -1\n")
+        self.assertIsNone(LD.dark_seconds())
+        LD.locked()
+        self.assertIn("dpms_timeout = -1", self.ini_text())
+        self.assertIsNone(LD.dark_seconds())                 # (from what was saved at the lock)
+        LD.unlocked()
+        self.assertIn("dpms_timeout = -1", self.ini_text())
 
     def test_displays_without_wlopm(self):
         with mock.patch.object(LD.shutil, "which", return_value=None):
             self.assertFalse(LD.displays(False))
+
+
+class LockWakeTest(unittest.TestCase):
+    """Vini: the locked display went black and came back only by closing and
+    opening the lid. Dark and back now follow the compositor's own input idle
+    (any key or move), not only what the lock's windows see."""
+
+    def lock(self, dark_after):
+        from sonata2.shell import lock as L
+        ls = L.LockScreen.__new__(L.LockScreen)
+        ls._idle_src, ls._off = 0, False
+        return L, ls
+
+    def fake_watch(self):
+        class W:
+            ok = input_idle = True
+            def __init__(s):
+                s.calls, s.watched, s.closed = [], None, False
+            def watch(s, secs, idle, back):
+                s.watched = (secs, idle, back)
+                return 1
+            def displays(s, on):
+                s.calls.append(on)
+                return True
+            def close(s):
+                s.closed = True
+        return W()
+
+    def test_input_idle_darkens_and_any_input_wakes(self):
+        L, ls = self.lock(30)
+        w = self.fake_watch()
+        lights = []
+        with mock.patch.object(LD, "locked"), mock.patch.object(LD, "unlocked"), \
+                mock.patch.object(LD, "dark_seconds", return_value=30), \
+                mock.patch("sonata2.wl.idlewatch.IdleWatch", lambda: w), \
+                mock.patch.object(LD, "lights", lights.append), mock.patch.object(LD, "displays") as wlopm:
+            ls._dark(True)
+            secs, idle, back = w.watched
+            self.assertEqual(secs, 30)
+            self.assertEqual(ls._idle_src, 0)                    # no GTK timer: the compositor counts
+            idle()
+            self.assertEqual((w.calls, lights), ([False], [False]))
+            back()                                               # a key or a move, anywhere
+            self.assertEqual((w.calls, lights), ([False, True], [False, True]))
+            wlopm.assert_called_with(True)
+            idle()
+            ls._dark(False)                                      # unlocked while dark: lit again
+            self.assertEqual(w.calls[-1], True)
+            self.assertTrue(w.closed)
+
+    def test_never_means_no_dark_at_all(self):
+        L, ls = self.lock(None)
+        with mock.patch.object(LD, "locked"), mock.patch.object(LD, "dark_seconds", return_value=None), \
+                mock.patch("sonata2.wl.idlewatch.IdleWatch", side_effect=AssertionError("no watch")), \
+                mock.patch.object(L.GLib, "timeout_add_seconds", side_effect=AssertionError("no timer")):
+            ls._dark(True)
+            ls._input()
+        self.assertFalse(ls._off)
 
 
 if __name__ == "__main__":

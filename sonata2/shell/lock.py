@@ -60,33 +60,71 @@ class LockScreen:
         except Exception as e:                   # never in the way of locking or unlocking
             print(f"sonata2-lock: display: {e}", flush=True)
         if locked:
+            self._dark_after = lockdisplay.dark_seconds()      # None: you chose "never"
+            self._idle_watch()
             self._input()
         else:
             if self._idle_src:
                 GLib.source_remove(self._idle_src)
                 self._idle_src = 0
-            if self._off:
-                self._off = False
-                lockdisplay.displays(True)
-                lockdisplay.lights(True)
+            self._wake()                         # (through the watch, before it closes)
+            w = getattr(self, "_iw", None)
+            if w is not None:
+                w.close()
+                self._iw = None
+
+    def _idle_watch(self) -> None:
+        """Dark and back by the compositor's own input idle (ext-idle-notify):
+        any key or move wakes the display, whether or not a lock window sees
+        it (Vini: it stayed black until the lid was closed and opened)."""
+        self._iw = None
+        if self._dark_after is None:
+            return
+        try:
+            from ..wl.idlewatch import IdleWatch
+            w = IdleWatch()
+        except Exception:
+            return
+        if not (w.ok and w.input_idle):
+            w.close()
+            return
+        self._iw = w
+        w.watch(self._dark_after, self._go_dark, self._wake)
+
+    def _go_dark(self) -> None:
+        from . import lockdisplay
+        w = getattr(self, "_iw", None)
+        if not (w is not None and w.displays(False)):
+            lockdisplay.displays(False)
+        lockdisplay.lights(False)                # the keyboard too, whatever keeps the session awake
+        self._off = True
+
+    def _wake(self) -> None:
+        if not self._off:
+            return
+        from . import lockdisplay
+        self._off = False
+        w = getattr(self, "_iw", None)
+        if w is not None:
+            w.displays(True)
+        lockdisplay.displays(True)               # (both: whichever turned them off)
+        lockdisplay.lights(True)
 
     def _input(self, *_a) -> None:
-        """A key or a move on the lock screen: the displays on, the countdown again."""
-        from . import lockdisplay
-        if self._off:
-            self._off = False
-            lockdisplay.displays(True)
-            lockdisplay.lights(True)
+        """A key or a move on the lock screen: the displays on, the countdown
+        again (the compositor's idle watch does both when it can)."""
+        self._wake()
         if self._idle_src:
             GLib.source_remove(self._idle_src)
+            self._idle_src = 0
+        if getattr(self, "_iw", None) is not None or getattr(self, "_dark_after", None) is None:
+            return
 
         def dark():
             self._idle_src = 0
-            lockdisplay.displays(False)
-            lockdisplay.lights(False)             # the keyboard too, whatever keeps the session awake
-            self._off = True
+            self._go_dark()
             return False
-        self._idle_src = GLib.timeout_add_seconds(lockdisplay.LOCKED_DPMS_S, dark)
+        self._idle_src = GLib.timeout_add_seconds(self._dark_after, dark)
 
     def _watch_input(self, win) -> None:
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
