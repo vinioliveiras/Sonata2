@@ -214,12 +214,18 @@ class AddControlsInPanelTest(TempConfig):
             cc.grid.set_editing(True)
             cc.add_btn.emit("clicked")
             self.assertTrue(cc.add_reveal.get_reveal_child())
-            labels = [c.get_child().get_label() for c in _children(cc.add_list)]
+            labels = [c.get_child().get_child().get_label() for c in _children(cc.add_list)]
             self.assertIn("CPU", labels)
-            cpu = [c for c in _children(cc.add_list) if c.get_child().get_label() == "CPU"][0]
+            with mock.patch.dict(C.CATALOG, {m: (f"Video Memory Temperature (NVIDIA) {m}", C.CATALOG[m][1])
+                                             for m in C.CATALOG if m.startswith("stat_")}):
+                cc._fill_add_list()
+                settle(150)
+                self.assertLessEqual(cc.get_width(), cc.width + 2)   # long names never widen the panel
+            cc._fill_add_list()
+            cpu = [c for c in _children(cc.add_list) if c.get_child().get_child().get_label() == "CPU"][0]
             cpu.get_child().emit("clicked")
             self.assertIn("stat_cpu", cc.grid.order)
-            labels = [c.get_child().get_label() for c in _children(cc.add_list)]
+            labels = [c.get_child().get_child().get_label() for c in _children(cc.add_list)]
             self.assertNotIn("CPU", labels)                         # gone from the list
             cc.grid.set_editing(False)                              # Done: the list goes
             self.assertFalse(cc.add_reveal.get_reveal_child())

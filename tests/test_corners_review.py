@@ -34,12 +34,26 @@ class CornersReviewTest(unittest.TestCase):
         self.assertLess(i, ask.index('response["frametimes"]'))
 
     def test_display_capture_paced_by_the_display(self):
+        """At most one picture per refresh; the first one at once (waiting for
+        the display's own frame broke screenshots)."""
         req = body(self.src, "static void output_source_request_frame", "\n}\n")
-        self.assertIn("schedule_redraw()", req)
-        self.assertNotRegex(req, r"else\s*\{\s*s->idle\.run_once")
-        self.assertIn("wf::signal::connection_t<wf::frame_done_signal> on_frame", self.src)
-        self.assertIn("out->connect(&src->on_frame);", self.src)
-        self.assertEqual(self.src.count("on_frame.disconnect();"), 2)       # display gone, plugin unloaded
+        self.assertIn("1000000000LL / mhz", req)
+        self.assertIn("s->idle.run_once", req)
+        self.assertIn("s->later.set_timeout", req)
+        self.assertNotIn("frame_done_signal", self.src)
+        self.assertEqual(self.src.count("later.disconnect();"), 2)          # display gone, plugin unloaded
+
+    def test_screenshots_keep_the_compositors_own_capture(self):
+        """Vini: screenshots failed ("failed to copy output") once Sonata's
+        display capture stood in for wlroots' for every program. Only
+        recorders and screen sharing get it now."""
+        flt = body(self.src, "filter->set_filter(", "});")
+        self.assertIn("capture_client(c)", flt)
+        self.assertIn("(g == ours) ? recorder : !recorder", flt)
+        xml = open(os.path.join(os.path.dirname(SRC), "..", "metadata", "sonata-corners.xml")).read()
+        self.assertIn('<option name="capture_clients"', xml)
+        self.assertIn("wl-screenrec xdg-desktop-portal-wlr", xml)
+        self.assertNotIn("grim", xml.split('name="capture_clients"')[1].split("</option>")[0])
 
     def test_frames_without_a_picture_fail(self):
         for name in ("static void window_source_copy_frame", "static void output_source_copy_frame"):

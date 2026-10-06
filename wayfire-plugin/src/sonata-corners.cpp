@@ -847,10 +847,62 @@ class window_capture_t
 
 static bool capture_rendering = false;      /* the hidden surfaces draw nothing meanwhile */
 
+static std::vector<std::string> option_words(const std::string& name);
+
 static std::vector<std::string> capture_hidden_ids()
 {
+    return option_words("sonata-corners/capture_hidden");
+}
+
+/* The programs that get Sonata's display capture (recorders, screen sharing):
+ * every other one -- screenshots (grim) -- keeps wlroots' own. Vini: with
+ * Sonata's for everyone, screenshots failed ("failed to copy output"). */
+static bool capture_client(const wl_client *client)
+{
+    pid_t pid = 0;
+    wl_client_get_credentials(const_cast<wl_client*>(client), &pid, nullptr, nullptr);
+    if (pid <= 0)
+    {
+        return false;
+    }
+
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%d/comm", (int)pid);
+    FILE *f = fopen(path, "r");
+    if (!f)
+    {
+        return false;
+    }
+
+    char comm[64] = {0};
+    if (!fgets(comm, sizeof(comm), f))
+    {
+        comm[0] = 0;
+    }
+
+    fclose(f);
+    std::string name = comm;
+    while (!name.empty() && ((name.back() == '\n') || (name.back() == ' ')))
+    {
+        name.pop_back();
+    }
+
+    for (auto& want : option_words("sonata-corners/capture_clients"))
+    {
+        /* /proc's comm is cut at 15 characters */
+        if (!name.empty() && (want.compare(0, name.size(), name) == 0) && (name.size() >= std::min<size_t>(15, want.size())))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static std::vector<std::string> option_words(const std::string& name)
+{
     std::vector<std::string> out;
-    std::string list = option_str("sonata-corners/capture_hidden"), word;
+    std::string list = option_str(name), word;
     for (char c : list + " ")
     {
         if ((c == ' ') || (c == ','))
@@ -978,18 +1030,12 @@ struct output_source_t
     int started    = 0;
     bool cursors   = false;
     bool pending   = false;
-    bool first     = true;
+    int64_t last_us = 0;                  /* when the last picture was made */
     wf::wl_idle_call idle;
-    /* frames at the display's pace: one per repaint it was asked for (a
-     * request re-rendered at once, and a recorder asking again at once got
-     * hundreds of identical frames a second) */
-    wf::signal::connection_t<wf::frame_done_signal> on_frame = [=] (wf::frame_done_signal*)
-    {
-        if (pending)
-        {
-            idle.run_once([this] () { produce(); });   /* after the frame, not inside it */
-        }
-    };
+    /* at most one picture per display refresh: a recorder asking again at
+     * once got hundreds of identical frames a second. (Waiting for the
+     * display's own next frame instead broke screenshots: grim's copy failed.) */
+    wf::wl_timer<false> later;
 
     static output_source_t *from(wlr_ext_image_capture_source_v1 *b)
     {
@@ -1035,6 +1081,9 @@ struct output_source_t
             return;
         }
 
+        timespec t;
+        clock_gettime(CLOCK_MONOTONIC, &t);
+        last_us = (int64_t)t.tv_sec * 1000000 + t.tv_nsec / 1000;
         auto og    = output->get_layout_geometry();
         float scale = output->handle->scale;
         if (buffer.allocate(wf::dimensions(og), scale) == wf::buffer_reallocation_result_t::FAILED)
@@ -1115,11 +1164,7 @@ struct output_source_t
 static void output_source_start(wlr_ext_image_capture_source_v1 *b, bool with_cursors)
 {
     auto s = output_source_t::from(b);
-    if (!s->started++)
-    {
-        s->first = true;                /* a new capture: its first picture at once */
-    }
-
+    s->started++;
     s->cursors = s->cursors || with_cursors;
 }
 
@@ -1142,13 +1187,18 @@ static void output_source_request_frame(wlr_ext_image_capture_source_v1 *b, bool
     }
 
     s->pending = true;
-    if (s->first || !s->output)
+    timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    int64_t now = (int64_t)t.tv_sec * 1000000 + t.tv_nsec / 1000;
+    int mhz     = (s->output && s->output->handle->refresh > 0) ? s->output->handle->refresh : 60000;
+    int64_t gap = 1000000000LL / mhz;                       /* one refresh, in µs */
+    int64_t wait = s->last_us + gap - now;
+    if (wait <= 1000)
     {
-        s->first = false;               /* the first picture at once */
-        s->idle.run_once([s] () { s->produce(); });
+        s->idle.run_once([s] () { s->produce(); });          /* after this request returns */
     } else
     {
-        s->output->render->schedule_redraw();     /* the next one with the display's next frame */
+        s->later.set_timeout((uint32_t)((wait + 999) / 1000), [s] () { s->produce(); });
     }
 }
 
@@ -1215,7 +1265,6 @@ class output_capture_t
             auto src = std::make_unique<output_source_t>();
             wlr_ext_image_capture_source_v1_init(&src->base, &output_source_impl);
             src->output = out;
-            out->connect(&src->on_frame);
             auto sz = src->expected_size();
             src->constraints(sz.width, sz.height);
             it = self->sources.emplace(out, std::move(src)).first;
@@ -1254,7 +1303,7 @@ class output_capture_t
         if (it != sources.end())
         {
             it->second->output = nullptr;
-            it->second->on_frame.disconnect();
+            it->second->later.disconnect();
             wlr_ext_image_capture_source_v1_finish(&it->second->base);
             retired.push_back(std::move(it->second));
             sources.erase(it);
@@ -1276,7 +1325,19 @@ class output_capture_t
         auto theirs = wf::get_core().protocols.output_image_capture_source;
         wl_global *their_global = theirs ? theirs->global : nullptr;
         filter = wf::get_core().create_global_filter();
-        filter->set_filter([their_global] (const wl_client*, const wl_global *g) { return g != their_global; });
+        /* recorders and screen sharing see ours (without Sonata's controls),
+         * everything else (screenshots) wlroots' own */
+        wl_global *ours = global;
+        filter->set_filter([their_global, ours] (const wl_client *c, const wl_global *g)
+        {
+            if ((g != their_global) && (g != ours))
+            {
+                return true;
+            }
+
+            bool recorder = capture_client(c);
+            return (g == ours) ? recorder : !recorder;
+        });
         wf::get_core().output_layout->connect(&on_output_removed);
         LOGI("sonata-corners: display capture without Sonata's controls ready");
     }
@@ -1293,7 +1354,7 @@ class output_capture_t
         for (auto& [o, src] : sources)
         {
             src->output = nullptr;
-            src->on_frame.disconnect();
+            src->later.disconnect();
             wlr_ext_image_capture_source_v1_finish(&src->base);
         }
 

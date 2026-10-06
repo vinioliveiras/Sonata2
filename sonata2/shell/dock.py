@@ -61,7 +61,10 @@ def merge_order(pinned: list, tile_keys: list) -> list:
 
 
 PERMANENT = ("io.github.vinioliveiras.sonata2.files", "sonata2-launchpad")
-NO_BOUNCE = {"sonata2-launchpad"}   # shell toggles open instantly: no launch bounce
+# shell tools that open instantly and have no app window (layer surfaces: the
+# screenshot toolbar): no launch bounce, and never "stuck" -- the Dock bounced
+# the Screenshot icon on and on, then stopped it as stuck (Vini)
+NO_BOUNCE = {"sonata2-launchpad", "sonata2-screenshot"}
 BOUNCE_MS = 620             # one bounce
 STUCK_S = 4                 # clicked again this long after a launch that never showed a window: stuck
 STUCK_MAX_S = 90            # ... but not later than this: a slow app long since started isn't stopped
@@ -1931,7 +1934,7 @@ class Dock(Gtk.Box):
         info = tile.info
         key = tile.key
         since = self._starting.get(key)
-        if (since is not None and STUCK_S <= time.monotonic() - since <= STUCK_MAX_S
+        if (since is not None and key not in NO_BOUNCE and STUCK_S <= time.monotonic() - since <= STUCK_MAX_S
                 and not self.windows.get(key) and not scope_has_window(appscope.launched.get(info.get_id() or ""))
                 and appscope.stop(info.get_id() or "")):
             print(f"sonata2-dock: {key} never showed a window: stopped, opened again", flush=True)

@@ -1418,9 +1418,11 @@ class ControlCenter(Gtk.Box):
         # opened from the panel was a pop-up inside a pop-up; once it closed,
         # Wayfire no longer told GTK about clicks elsewhere and GTK kept the
         # menu bar blocked: Control Center couldn't be closed (Vini).
-        self.add_list = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=False,
+        # two per row, names cut short if need be: never wider than the panel
+        # (long names -- "GPU Temperature (NVIDIA)" -- widened it, an empty band on the left, Vini)
+        self.add_list = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True,
                                     column_spacing=6, row_spacing=6, min_children_per_line=2,
-                                    max_children_per_line=4, halign=Gtk.Align.FILL, css_classes=["cc-add-list"])
+                                    max_children_per_line=2, halign=Gtk.Align.FILL, css_classes=["cc-add-list"])
         self.add_reveal = Gtk.Revealer(child=self.add_list, reveal_child=False,
                                        transition_type=Gtk.RevealerTransitionType.SLIDE_UP,
                                        transition_duration=200)
@@ -1461,8 +1463,10 @@ class ControlCenter(Gtk.Box):
         while (child := self.add_list.get_first_child()) is not None:
             self.add_list.remove(child)
         for m in self._hidden_modules():
-            self.add_list.append(ui.controls.push_button(
-                CCL.CATALOG[m][0], lambda m=m: (self.grid.add_module(m), self._edit_bar_update())))
+            b = ui.controls.push_button("", lambda m=m: (self.grid.add_module(m), self._edit_bar_update()),
+                                        tooltip_text=CCL.CATALOG[m][0])
+            b.set_child(Gtk.Label(label=CCL.CATALOG[m][0], ellipsize=Pango.EllipsizeMode.END, width_chars=4))
+            self.add_list.append(b)
 
     def _output(self):
         """Connector name of the display this menu bar is on (None: unknown,

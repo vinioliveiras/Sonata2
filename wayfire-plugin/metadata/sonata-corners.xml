@@ -25,5 +25,10 @@
 			<_long>App ids of surfaces shown on screen but never in a recording or a screen share (ext-image-copy-capture).</_long>
 			<default>sonata2-draw-palette</default>
 		</option>
+		<option name="capture_clients" type="string">
+			<_short>Captures without the hidden surfaces</_short>
+			<_long>Programs (process names) that capture the displays without the surfaces above: recorders and screen sharing. Others, screenshots included, use the compositor's own capture.</_long>
+			<default>wl-screenrec xdg-desktop-portal-wlr obs</default>
+		</option>
 	</plugin>
 </wayfire>

@@ -125,6 +125,47 @@ class DesktopDisplaysTest(unittest.TestCase):
         settle(300)
         self.assertIsNone(getattr(fresh, "_glide_anim", None))
 
+    def test_renamed_new_folder_stays_where_it_was_made(self):
+        """Vini: a new folder renamed went to the top right on a click outside
+        (the folder watch listed the new name before the rename's own callback,
+        and by then the old name's spot was gone), and on Enter it moved a
+        little (the field was wider than the name)."""
+        from gi.repository import Gtk
+        main, _other = self.desks()
+        win = Gtk.Window(child=main, default_width=1920, default_height=1080)
+        win.present()
+        self.addCleanup(win.destroy)
+        settle(300)
+        with mock.patch("sonata2.shell.layer.take_keyboard"):
+            main.new_folder((3, 2))
+            settle(1200)
+            item = main.items["untitled folder"]
+            w0 = item.get_width()
+            self.assertGreater(w0, 0)
+            entry = item.lbl.get_next_sibling()
+            self.assertEqual(type(entry).__name__, "Entry")
+            entry.set_text("A much longer folder name than before")
+            settle(150)
+            self.assertEqual(item.get_width(), w0)                       # the field doesn't widen it
+            done = []
+
+            def rename(f, new, ok, _err):                                # the watch first, the callback after
+                f.set_display_name(new, None)
+                done.append(lambda: ok(f))
+            with mock.patch.object(D.ops, "rename", rename):
+                entry.emit("activate")
+                for _ in range(10):
+                    settle(100)
+                main._sync()
+                main._layout()
+                for fn in done:
+                    fn()
+            settle(300)
+        name = "A much longer folder name than before"
+        self.assertIn(name, main.items)
+        self.assertEqual(main._placed[name], (3, 2))                      # where it was made
+        self.assertEqual(config.load("desktop", D.DEFAULTS)["positions"][name][:2], [3, 2])
+
     def test_every_display_has_a_desktop(self):
         from sonata2.shell.wallpaper import WallpaperWindow
         import inspect

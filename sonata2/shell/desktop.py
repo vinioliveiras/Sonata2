@@ -71,8 +71,14 @@ class DesktopItem(Gtk.Box):
         self.append(self.img)
         self.lbl = Gtk.Label(label=self.app.get_display_name() if self.app else info.get_display_name(), wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR,
                              lines=2, ellipsize=Pango.EllipsizeMode.MIDDLE, justify=Gtk.Justification.CENTER,
-                             max_width_chars=13, halign=Gtk.Align.CENTER)
-        self.append(self.lbl)
+                             max_width_chars=13, halign=Gtk.Align.CENTER, valign=Gtk.Align.START)
+        # the name in a kept two-line place, the rename field over it (as in
+        # Files): the icon never shifts while or after it's renamed (Vini: it
+        # moved a little on Enter -- the field was wider than the name)
+        space = Gtk.Label(label="X\nX", lines=2, opacity=0, can_target=False, max_width_chars=13)
+        self.over = Gtk.Overlay(child=space)
+        self.over.add_overlay(self.lbl)
+        self.append(self.over)
         click = Gtk.GestureClick(button=0)
         click.connect("pressed", self._pressed)
         self.add_controller(click)
@@ -293,7 +299,8 @@ class Desktop(Gtk.Fixed):
             old = self.items.get(name)
             if old is not None and old.info is info:
                 continue
-            if old is not None and not old.lbl.get_visible():   # its name being typed: keep the field
+            if old is not None and (not old.lbl.get_visible() or old.lbl.get_opacity() == 0):
+                # its name being typed (the field over it): keep the field
                 old.info = info
                 continue
             at = (0, 0)
@@ -412,7 +419,13 @@ class Desktop(Gtk.Fixed):
 
         def commit(info, new):
             old = info.get_name()
-            ops.rename(file_of(info), new, lambda _f: self._renamed(old, new), lambda _e: None)
+            # the new name keeps the spot before the file is renamed: the folder
+            # watch can list it first, and it went to the first free cell
+            # (top right) -- the old name's spot was gone by then (Vini)
+            spot = (getattr(self, "_placed", None) or {}).get(old)
+            if spot and self.cfg.get("sort", "none") == "none":
+                self._save_positions({new: spot})
+            ops.rename(file_of(info), new, lambda _f: self._renamed(old, new, spot), lambda _e: None)
         # the desktop sits under the windows and gets the keyboard only when
         # clicked: it takes it while the name is typed (Vini: a new folder's
         # name had to be clicked before typing), then gives it back
@@ -421,8 +434,8 @@ class Desktop(Gtk.Fixed):
         layer.take_keyboard(win, True, rest="on_demand")
         _inline_rename(item, item.info, commit, on_end=lambda: layer.take_keyboard(win, False, rest="on_demand"))
 
-    def _renamed(self, old, new) -> None:
-        p = self._placed.get(old)
+    def _renamed(self, old, new, spot=None) -> None:
+        p = spot or (getattr(self, "_placed", None) or {}).get(old)
         if p:
             self._save_positions({new: p})
 

@@ -98,6 +98,21 @@ class StuckLaunchTest(unittest.TestCase):
         d.launch(tile)
         self.assertEqual(self.stopped, [])
 
+    def test_screenshot_toolbar_never_bounces_or_is_stuck(self):
+        """Vini: the Screenshot icon kept bouncing after the toolbar showed
+        (a layer surface, no app window), then the Dock stopped it as stuck."""
+        d, tile, _ = fake_dock()
+        tile.key = "sonata2-screenshot"
+        bounced = []
+        d.launch_feedback = lambda t: D.Dock.launch_feedback(types.SimpleNamespace(cfg={"bounce": True}), t)
+        tile.bounce = lambda ms: bounced.append(ms)
+        d.launch(tile)
+        appscope.launched["spotify-launcher.desktop"] = "x.scope"
+        self.clock[0] += D.STUCK_S + 1
+        d.launch(tile)
+        self.assertEqual(self.stopped, [])
+        self.assertEqual(bounced, [])
+
     def test_scope_window_lookup(self):
         import os
         import tempfile
