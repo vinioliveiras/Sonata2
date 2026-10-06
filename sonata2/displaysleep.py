@@ -41,6 +41,11 @@ def seconds() -> int:
 def set_seconds(value: int) -> None:
     config.update(NAME, off_after=int(value))
     compositor_off()
+    try:
+        from .shell import monitors
+        monitors.share_with_login_screen()       # the login screen goes dark after the same time
+    except Exception:
+        pass
 
 
 def compositor_off() -> bool:

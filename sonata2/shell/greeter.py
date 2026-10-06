@@ -198,12 +198,32 @@ class Greeter:
         # the password on the main display the user chose in Settings (their
         # session shares it, see monitors.share_with_login_screen), else the built-in panel
         names = [self.user.name] if self.user else [self.state.get("user")] + [u.name for u in self.users]
-        main = displays.main(displays.login_main([n for n in names if n]))
+        names = [n for n in names if n]
+        main = displays.main(displays.login_main(names))
         for i in range(monitors.get_n_items()):
             self._window(monitors.get_item(i), primary=(monitors.get_item(i) is main))
         # a display plugged in later (or back after its cable moved) gets the login too
         monitors.connect("items-changed", lambda m, pos, _r, added: [
             self._window(m.get_item(pos + k), primary=False) for k in range(added)])
+        self.idle = self._sleep(displays.login_off_after(names))
+
+    def _sleep(self, seconds):
+        """Vini: left at the login screen, the display never went dark. After
+        `seconds` without input (the user's Settings > Battery choice) it goes
+        dark like the session's (idlelock.darken); any key or move brings it back."""
+        if seconds <= 0 or self.fake:
+            return None
+        try:
+            from ..wl.idlewatch import IdleWatch
+            w = IdleWatch()
+        except Exception:
+            return None
+        if not w.ok:
+            w.close()
+            return None
+        from . import idlelock
+        w.watch(seconds, lambda: idlelock.darken(w, True), lambda: idlelock.darken(w, False))
+        return w
 
     def _mirrors(self) -> None:
         """The login's controls, one copy per display (Vini: on every monitor)."""

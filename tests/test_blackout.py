@@ -56,8 +56,8 @@ class BlackoutTest(unittest.TestCase):
 
     def test_idle_dark_uses_it(self):
         from sonata2.shell import idlelock
-        src = inspect.getsource(idlelock.IdleLock._policy)
-        self.assertIn("blackout.show() if on else blackout.hide()", src)
+        self.assertIn("darken(w, on)", inspect.getsource(idlelock.IdleLock._policy))
+        self.assertIn("blackout.show() if on else blackout.hide()", inspect.getsource(idlelock.darken))
 
 
 if __name__ == "__main__":

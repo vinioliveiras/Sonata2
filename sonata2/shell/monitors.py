@@ -56,26 +56,41 @@ def share_with_login_screen() -> None:
     folder = os.path.join(GREETER, GLib.get_user_name())
     if not os.access(folder, os.W_OK):
         return
-    data = json.dumps({"main": config.load("displays", DEFAULTS)["main"]}).encode()
+    from .. import displaysleep
+    data = json.dumps({"main": config.load("displays", DEFAULTS)["main"],
+                       "off_after": displaysleep.seconds()}).encode()   # the login screen goes dark too
     try:
         config.atomic_write(os.path.join(folder, "displays.json"), data, fsync=False)
     except OSError:
         pass
 
 
-def login_main(users) -> str:
-    """The main display a user chose (the first of `users` that has one), for the login screen."""
+def _login_shared(users, key, ok):
+    """`key` from what the first of `users` shared (share_with_login_screen), or None."""
     import json
     import os
     for name in users:
         try:
             with open(os.path.join(GREETER, name, "displays.json"), encoding="utf-8") as f:
-                want = json.load(f).get("main")
-            if isinstance(want, str) and want:
+                want = json.load(f).get(key)
+            if ok(want):
                 return want
         except (OSError, ValueError, AttributeError):
             continue
-    return ""
+    return None
+
+
+def login_main(users) -> str:
+    """The main display a user chose (the first of `users` that has one), for the login screen."""
+    return _login_shared(users, "main", lambda v: isinstance(v, str) and v) or ""
+
+
+def login_off_after(users) -> int:
+    """Seconds before the login screen goes dark: what the user chose in
+    Settings (<= 0 never), else Sonata's default."""
+    from .. import displaysleep
+    v = _login_shared(users, "off_after", lambda v: isinstance(v, int) and not isinstance(v, bool))
+    return displaysleep.DEFAULT if v is None else v
 
 
 class Surfaces:

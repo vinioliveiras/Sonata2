@@ -7,6 +7,10 @@
   or shrinks to its new place and the contents fade in there -- no more
   smear of two title bars over each other.
 
+### Login screen
+- The display goes dark at the login screen too, after the time chosen in
+  Settings > Battery; any key or move brings it back.
+
 ## 0.9.1-alpha -- 2026-10-06
 
 A fix for 0.9.0: zooming a window from its title bar.

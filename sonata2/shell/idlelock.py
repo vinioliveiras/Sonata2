@@ -147,6 +147,23 @@ def command(cfg: dict, dpms: int, kbd: bool = False, rgb: bool = False) -> list:
     return ["swayidle", "-w"] + args if args else []
 
 
+def darken(watch, on: bool) -> None:
+    """The display dark while nobody's there (on) / back (off): the keyboard's
+    light, a black overlay with no pointer, and the panel's backlight (a
+    laptop) or every display off. The session's idle policy and the login
+    screen (greeter.py) both use it."""
+    from . import blackout, lockdisplay
+    lockdisplay.lights(not on)              # the keyboard's light (and RGB) with the displays
+    blackout.show() if on else blackout.hide()     # black, no pointer (Vini: it only dimmed)
+    if lockdisplay.has_backlight():
+        # a laptop: the backlight to zero, the display stays on -- powering
+        # it off and on again failed on Vini's (NVIDIA: the screen came
+        # back only by closing and opening the lid)
+        lockdisplay.dim(on)
+    else:
+        watch.displays(not on)
+
+
 class IdleLock:
     def __init__(self):
         from gi.repository import GLib
@@ -174,19 +191,10 @@ class IdleLock:
         if not (w.ok and w.input_idle):
             w.close()
             return None
-        from . import idlepolicy, lockdisplay
+        from . import idlepolicy
 
         def dark(on):
-            lockdisplay.lights(not on)              # the keyboard's light (and RGB) with the displays
-            from . import blackout                  # black, no pointer (Vini: it only dimmed)
-            blackout.show() if on else blackout.hide()
-            if lockdisplay.has_backlight():
-                # a laptop: the backlight to zero, the display stays on -- powering
-                # it off and on again failed on Vini's (NVIDIA: the screen came
-                # back only by closing and opening the lid)
-                lockdisplay.dim(on)
-            else:
-                w.displays(not on)
+            darken(w, on)
 
         def lock():
             try:
