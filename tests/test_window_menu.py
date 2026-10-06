@@ -99,8 +99,9 @@ class WindowMenuTest(unittest.TestCase):
 
     def test_picking_a_window_brings_it_forward(self):
         sections = self.window_menu()
-        self.assertEqual([i.label for i in sections[1]], ["Notes.txt", "Todo.txt"])   # this app's windows
-        self.assertEqual([i.checked for i in sections[1]], [True, False])
+        wins = next(sec for sec in sections if sec[0].label == "Notes.txt")
+        self.assertEqual([i.label for i in wins], ["Notes.txt", "Todo.txt"])   # this app's windows
+        self.assertEqual([i.checked for i in wins], [True, False])
         run(sections, "Todo.txt")
         self.assertIn(("activate", "Todo.txt"), self.log)
         self.log.clear()
@@ -136,6 +137,80 @@ class WindowMenuTest(unittest.TestCase):
             run(self.bar._app_menu(None), "Show All")
             self.assertEqual(sorted(n for r, n in self.log if r == "unset_minimized"),
                              ["Notes.txt", "Todo.txt", "Web"])
+
+
+class TabsTest(unittest.TestCase):
+    """Vini: tabs from the menu bar, for every app with tabs (macOS: File >
+    New Tab, Window > Show Previous / Next Tab). The app's own shortcut is
+    pressed once the menu has closed."""
+
+    @classmethod
+    def setUpClass(cls):
+        Adw.init()
+        ui.setup()
+
+    def bar(self, app_id):
+        from sonata2.shell import topbar as T
+        self.T = T
+        self.log = []
+        bar = T.Bar(None)
+        bar.manager = manager(self.log, (app_id, "Win", {TL.ACTIVATED}))
+        bar._menu = lambda _btn, sections: sections
+        return bar
+
+    def labels(self, sections):
+        return [i.label for sec in sections for i in sec]
+
+    def test_kinds(self):
+        from sonata2.shell import apptabs as A
+        self.assertEqual(A.kind("io.github.vinioliveiras.sonata2.terminal"), "terminal")
+        self.assertEqual(A.kind("org.gnome.Console"), "terminal")
+        self.assertEqual(A.kind("kitty"), "terminal")
+        self.assertIsNone(A.kind("foot"))                                  # a terminal without tabs
+        for a in ("firefox", "google-chrome", "brave-browser", "io.github.vinioliveiras.sonata2.files",
+                  "io.github.vinioliveiras.sonata2.textedit", "org.gnome.TextEditor", "org.gnome.Nautilus",
+                  "zen", "microsoft-edge"):
+            self.assertEqual(A.kind(a), "tabbed", a)
+        for a in ("org.gnome.Calculator", "steam", "io.github.vinioliveiras.sonata2.notes", "zenity", ""):
+            self.assertIsNone(A.kind(a), a)
+        self.assertEqual(A.keys("kitty", "new_tab"), ("t", ("ctrl", "shift")))   # Ctrl+T is the shell's
+        self.assertEqual(A.keys("firefox", "new_tab"), ("t", ("ctrl",)))
+        self.assertEqual(A.keys("foot", "new_window"), ("n", ("ctrl", "shift")))
+        self.assertIsNone(A.keys("foot", "new_tab"))
+
+    def test_terminal_new_tab_from_the_menu_bar(self):
+        bar = self.bar("io.github.vinioliveiras.sonata2.terminal")
+        sections = bar._file_menu(None)
+        self.assertEqual(self.labels(sections), ["New Window", "New Tab", "Close Tab", "Close Window"])
+        with mock.patch("sonata2.gamepad.vpointer.key") as key:
+            run(sections, "New Tab")
+            key.assert_not_called()                                         # not while the menu closes
+            settle(self.T.MENU_SETTLE_MS + 100)
+            key.assert_called_once_with("t", ("ctrl", "shift"))
+            run(bar._window_menu(None), "Show Next Tab")
+            settle(self.T.MENU_SETTLE_MS + 100)
+            self.assertEqual(key.call_args[0], ("Page_Down", ("ctrl",)))
+        run(bar._file_menu(None), "Close Window")
+        self.assertEqual(self.log, [("close", "Win")])
+
+    def test_browser_and_an_app_without_tabs(self):
+        bar = self.bar("firefox")
+        with mock.patch("sonata2.gamepad.vpointer.key") as key:
+            run(bar._file_menu(None), "New Tab")
+            run(bar._window_menu(None), "Show Previous Tab")
+            settle(self.T.MENU_SETTLE_MS + 100)
+            self.assertEqual([c[0] for c in key.call_args_list], [("t", ("ctrl",)), ("Tab", ("ctrl", "shift"))])
+        bar = self.bar("org.gnome.Calculator")
+        self.assertEqual(self.labels(bar._file_menu(None)), ["New Window", "Close Window"])
+        self.assertNotIn("Show Next Tab", self.labels(bar._window_menu(None)))
+
+    def test_desktop_keeps_files_menu(self):
+        bar = self.bar("x")
+        for t in bar.manager.toplevels:
+            t.states = frozenset()
+        with mock.patch.object(bar, "_files_file_menu", return_value="files") as files:
+            self.assertEqual(bar._file_menu(None), "files")
+            files.assert_called_once()
 
 
 class CheckedItemsTest(unittest.TestCase):

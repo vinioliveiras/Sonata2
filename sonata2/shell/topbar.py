@@ -24,7 +24,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk, Pango  # noqa: E40
 
 from .. import apps, config, ui  # noqa: E402
 from ..backend import power, system  # noqa: E402
-from . import layer  # noqa: E402
+from . import apptabs, layer  # noqa: E402
 
 from . import menubar_size  # noqa: E402
 BAR_H = menubar_size.height()           # 32 px like a notch MacBook's (the default), or 24 (Settings > Menu Bar)
@@ -167,7 +167,7 @@ class Bar(Gtk.CenterBox):
         name.set_ellipsize(Pango.EllipsizeMode.END)
         name.set_max_width_chars(APP_NAME_CHARS)
         # on the desktop (nothing focused) the menus are Files' own, like Finder's
-        self.file_btn = self._item(left, text="File", on_click=self._files_file_menu)
+        self.file_btn = self._item(left, text="File", on_click=self._file_menu)
         self.go_btn = self._item(left, text="Go", on_click=self._files_go_menu)
         self.win_btn = self._item(left, text="Window", on_click=self._window_menu)
         left.set_margin_start(8)       # no CSS padding: the bar is painted over the whole allocation
@@ -472,8 +472,7 @@ class Bar(Gtk.CenterBox):
         if key:                                   # most recently used apps (app switcher)
             self.mru = [key] + [k for k in getattr(self, "mru", []) if k != key]
         desktop = not key
-        self.file_btn.set_visible(desktop)
-        self.go_btn.set_visible(desktop)
+        self.go_btn.set_visible(desktop)                 # File: every app's (New Window, tabs)
         if key:
             info = apps.lookup(key)
             if info:
@@ -484,6 +483,28 @@ class Bar(Gtk.CenterBox):
             self._set_text(self.app_btn, name)
         else:
             self._set_text(self.app_btn, "Files")
+
+    # -- File: the app's windows and tabs (apptabs: the app's own shortcuts) ---------------
+    def _file_menu(self, btn):
+        key, wins = self._active()
+        if not key:
+            return self._files_file_menu(btn)            # the desktop: Files' own, like Finder's
+        Item = ui.menu.Item
+        m = self.manager
+        act = next((t for t in wins if t.activated), None)
+        app_id = act.app_id if act else key
+
+        def press(action):
+            return lambda: self._after_menu(lambda: apptabs.press(app_id, action))
+        tabs = apptabs.kind(app_id) is not None
+        first = [Item("New Window", press("new_window"), enabled=apptabs.keys(app_id, "new_window") is not None)]
+        if tabs:
+            first.append(Item("New Tab", press("new_tab")))
+        last = []
+        if tabs:
+            last.append(Item("Close Tab", press("close_tab")))
+        last.append(Item("Close Window", lambda: m.close(act), enabled=bool(act)))
+        return self._menu(btn, [first, last])
 
     # -- Files' menus on the desktop -------------------------------------------------------
     def _files_file_menu(self, btn):
@@ -552,6 +573,11 @@ class Bar(Gtk.CenterBox):
         act = next((t for t in wins if t.activated), None)
         sections = [[Item("Minimize", lambda: self._after_menu(lambda: m.minimize(act)), enabled=bool(act)),
                      Item("Zoom", lambda: m.set_maximized(act, not act.maximized), enabled=bool(act))]]
+        if act is not None and apptabs.kind(act.app_id) is not None:   # the app's tabs (apptabs)
+            sections.append([Item("Show Previous Tab", lambda: self._after_menu(
+                                  lambda: apptabs.press(act.app_id, "prev_tab"))),
+                             Item("Show Next Tab", lambda: self._after_menu(
+                                  lambda: apptabs.press(act.app_id, "next_tab")))])
         if wins:
             # (a checked item's callback gets the new state first: the window is t=)
             sections.append([Item(t.title or "Untitled", lambda _on=None, t=t: m.activate(t), checked=t is act)

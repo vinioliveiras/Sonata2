@@ -21,8 +21,7 @@ WIDTH = 380
 PREVIEW_LINES = 3
 THUMB_H = 110
 # app ids where Ctrl+V is not "paste" (terminals: Ctrl+Shift+V)
-TERMINALS = ("terminal", "konsole", "kitty", "alacritty", "foot", "ghostty", "wezterm", "xterm", "tilix",
-             "terminator", "kgx", "console", "ptyxis", "blackbox", "rio", "warp")
+from .apptabs import TERMINALS  # noqa: E402  (one list for the menu bar's tabs and pasting)
 
 ui.register("""
 window.sonata-clip-picker, window.sonata-clip-picker > contents { background: none; box-shadow: none; }
