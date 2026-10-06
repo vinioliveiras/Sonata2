@@ -14,6 +14,10 @@
 - The display goes dark at the login screen too, after the time chosen in
   Settings > Battery; any key or move brings it back.
 
+### Files and System Settings
+- Picking an item in the sidebar switches at once: no sliding selection,
+  no fade.
+
 ## 0.9.1-alpha -- 2026-10-06
 
 A fix for 0.9.0: zooming a window from its title bar.

@@ -174,7 +174,7 @@ class FilesWindow(Adw.ApplicationWindow):
 
         lights = ui.window.traffic_lights(self.close, self.minimize, self._zoom)
         right = ui.window.buttons_side() == "right"          # Settings > Appearance > Window buttons
-        self.sidebar = Sidebar(self.go, Gtk.Box() if right else lights)
+        self.sidebar = Sidebar(lambda uri: self.go(uri, fade=False), Gtk.Box() if right else lights)
         self._right_lights = lights if right else None       # (at the toolbar's end: _toolbar)
         self.sidebar.on_drop = lambda files, dest, copy: self.drop(files, dest, copy)
         # one sidebar width, no divider to drag (Vini: resizing it got in
@@ -489,7 +489,8 @@ class FilesWindow(Adw.ApplicationWindow):
         self.empty.set_visible(empty and searching and not busy)
 
     # -- navigation ------------------------------------------------------------------
-    def go(self, uri: str, record=True) -> None:
+    def go(self, uri: str, record=True, fade=True) -> None:
+        """fade: cross-fade into the folder (not from the sidebar: at once, Vini)."""
         if record:
             if self.pos >= 0 and self.history[self.pos] == uri:
                 return
@@ -498,7 +499,7 @@ class FilesWindow(Adw.ApplicationWindow):
             self.pos = len(self.history) - 1
         if self.search.get_text():
             self._close_search()
-        if self.view is not self.views["columns"]:        # columns slide on their own
+        if fade and self.view is not self.views["columns"]:        # columns slide on their own
             self.fade.capture()
         self._apply_folder_prefs(self.tab, uri)
         self.folder.load(uri)

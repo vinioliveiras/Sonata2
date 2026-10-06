@@ -65,12 +65,21 @@ class SlidingSelectionTest(unittest.TestCase):
         self.assertTrue(spin(lambda: not side.pill.get_visible()))
         win.destroy()
 
-    def test_files_and_settings_sidebars_use_it(self):
+    def test_files_and_settings_sidebars_switch_at_once(self):
+        """Vini: no animation when a sidebar item is picked in Files and
+        Settings -- no sliding selection, no cross-fade of the page."""
         import inspect
         from sonata2.files import sidebar
+        from sonata2.files import window as FW
         from sonata2.settings import app
-        self.assertIn("SlidingSelection(self.list)", inspect.getsource(sidebar))
-        self.assertIn("SlidingSelection(self.listbox", inspect.getsource(app))
+        self.assertNotIn("SlidingSelection", inspect.getsource(sidebar))
+        self.assertNotIn("SlidingSelection", inspect.getsource(app))
+        self.assertIn("Sidebar(lambda uri: self.go(uri, fade=False)", inspect.getsource(FW))
+        go = inspect.getsource(FW)
+        self.assertIn("if fade and self.view is not", go)
+        select = inspect.getsource(app.Settings.select)
+        self.assertNotIn("self.fade.capture()", select)
+        self.assertNotIn("self.fade.play()", select)
 
 
 if __name__ == "__main__":
