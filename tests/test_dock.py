@@ -291,6 +291,40 @@ class DockTest(unittest.TestCase):
         pop.popdown()
         dock_stack.stack_menu(self.dock.stacks, tile).popdown()
 
+    def test_dropped_folder_opens_its_place_and_leaves_when_deleted(self):
+        """Vini: a folder dragged onto the Dock (from the desktop) just popped
+        in, and once deleted it stayed in the Dock."""
+        import shutil
+        from sonata2.shell import dock_stack
+        folder = os.path.join(os.environ["XDG_CONFIG_HOME"], "fromdesktop")
+        os.makedirs(folder, exist_ok=True)
+        win = Gtk.Window(child=self.dock)
+        win.present()
+        settle()
+        self.dock.stacks.add(folder)
+        tile = self.dock.stacks.tiles()[-1]
+        self.assertFalse(tile.get_visible())                         # its place opens first
+        end = GLib.get_monotonic_time() + (D.OPEN_UP_MS * 2 + 400) * 1000
+        while GLib.get_monotonic_time() < end:
+            GLib.MainContext.default().iteration(False)
+        self.assertTrue(tile.get_visible())
+        self.assertAlmostEqual(tile.get_opacity(), 1.0, places=2)    # faded in
+        shutil.rmtree(folder)                                        # deleted
+        end = GLib.get_monotonic_time() + (dock_stack.REFRESH_MS + 1500) * 1000
+        while tile in self.dock.stacks.tiles() and GLib.get_monotonic_time() < end:
+            GLib.MainContext.default().iteration(False)
+        self.assertNotIn(tile, self.dock.stacks.tiles())
+        self.assertNotIn(folder, [s["path"] for s in self.cfg["stacks"]])
+        win.set_child(None)
+        win.destroy()
+
+    def test_folder_deleted_while_the_dock_was_off(self):
+        from sonata2.shell import dock_stack
+        missing = os.path.join(os.environ["XDG_CONFIG_HOME"], "deleted-meanwhile")
+        self.assertTrue(dock_stack.gone(missing))
+        self.assertFalse(dock_stack.gone("/media/unplugged-drive/Photos"))   # its drive away: kept
+        self.assertFalse(dock_stack.gone(os.environ["XDG_CONFIG_HOME"]))
+
     def test_keep_in_dock_toggle(self):
         key = self.removable()[0]
         self.dock.set_pinned(key, False)

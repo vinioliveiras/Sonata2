@@ -74,6 +74,7 @@ RELAUNCH_MS = 900           # its processes stopped, then the app opens again
 LAUNCH_MAX_BOUNCES = 10
 LAUNCH_MAX_MS = LAUNCH_MAX_BOUNCES * BOUNCE_MS
 CLOSE_UP_MS = 260           # a removed icon's place closes up
+OPEN_UP_MS = 260            # a new icon's place opens, then it fades in
 SETTLE_MS = 200             # a dropped icon glides into its slot
 FOLDER_HOLD_MS = 350        # held this long over another app's middle: drop makes a folder
 FOLDER_ZONE = 0.3           # the middle: within this part of a cell from the icon's centre
@@ -987,10 +988,15 @@ class Dock(Gtk.Box):
         if getattr(tile, "folder_pop", None) is not None:      # a folder's kept panel
             tile.folder_pop.unparent()
             tile.folder_pop = None
+        self.close_up(tile, relayout=True)
+
+    def close_up(self, tile, relayout: bool = False) -> None:
+        """`tile` leaves the Dock and its place closes up (apps, stacks)."""
         prev = tile.get_prev_sibling()
         cell = (tile.get_height() if self.vertical else tile.get_width()) if tile.get_mapped() else 0
         self.remove(tile)
-        self._relayout()
+        if relayout:
+            self._relayout()
         if cell <= 0 or prev is None or prev.get_parent() is not self or not self.get_mapped():
             return
         slot = Gtk.Box(can_target=False, css_classes=["dock-closing-slot"])
@@ -1009,6 +1015,39 @@ class Dock(Gtk.Box):
         anim.connect("done", done)
         slot._anim = anim              # kept alive while it runs
         anim.play()
+
+    def open_up(self, tile) -> None:
+        """A new icon (a folder dropped on the Dock): its place opens, the
+        neighbours sliding aside, then it fades in (Vini: it just popped in)."""
+        if not self.get_mapped():
+            return
+        tiles = [t for t in self.app_tiles() + self.stacks.tiles() if t is not tile and t.get_mapped()]
+        cell = ((tiles[0].get_height() if self.vertical else tiles[0].get_width()) if tiles
+                else self.cfg["icon_size"] + 2 * TILE_PAD)
+        slot = Gtk.Box(can_target=False, css_classes=["dock-closing-slot"])
+        self.insert_child_after(slot, tile.get_prev_sibling())
+        tile.set_visible(False)
+
+        def size(v, slot=slot):
+            n = max(0, int(round(cell * v)))
+            slot.set_size_request(-1 if self.vertical else n, n if self.vertical else -1)
+        size(0.0)
+        grow = Adw.TimedAnimation.new(slot, 0.0, 1.0, OPEN_UP_MS, Adw.CallbackAnimationTarget.new(size))
+        grow.set_easing(Adw.Easing.EASE_OUT_CUBIC)
+
+        def opened(_a, slot=slot):
+            if slot.get_parent() is self:
+                self.remove(slot)
+            tile.set_opacity(0.0)
+            tile.set_visible(True)
+            fade = Adw.TimedAnimation.new(tile, 0.0, 1.0, OPEN_UP_MS,
+                                          Adw.CallbackAnimationTarget.new(tile.set_opacity))
+            tile._fade_in = fade                     # kept alive while it runs
+            fade.connect("done", lambda *_a: tile.set_opacity(1.0))
+            fade.play()
+        grow.connect("done", opened)
+        slot._anim = grow
+        grow.play()
 
     def app_tiles(self) -> list:
         """App tiles in Dock order (pinned, then recent/running)."""

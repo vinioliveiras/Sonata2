@@ -6,6 +6,8 @@
 - Away from the computer, monitors plugged into a laptop really turn off
   (they only went black), the pointer hides, and every keyboard's light
   goes off -- USB ones too, not only the laptop's.
+- A folder dropped on the Dock opens its place and fades in; deleted (or
+  put in the Trash), it leaves the Dock.
 
 ## 0.10.0-alpha -- 2026-10-06
 

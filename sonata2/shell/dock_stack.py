@@ -48,6 +48,15 @@ def _downloads() -> str:
             or os.path.expanduser("~/Downloads"))
 
 
+def gone(path: str) -> bool:
+    """The folder was deleted or moved away (Vini: it stayed in the Dock).
+    Not when the drive it is on isn't there (unplugged): it comes back."""
+    if not path or os.path.isdir(path):
+        return False
+    parent = os.path.dirname(path.rstrip("/"))
+    return os.path.isdir(parent)
+
+
 def default_stacks() -> list:
     d = _downloads()
     return [dict(STACK_DEFAULTS, path=d)] if d and os.path.isdir(d) else []
@@ -119,8 +128,12 @@ class StackRow:
         return list(self._tiles)
 
     def load(self) -> None:
-        for spec in self.dock.cfg["stacks"] or []:
+        specs = self.dock.cfg["stacks"] or []
+        kept = [spec for spec in specs if not gone(spec.get("path", ""))]
+        for spec in kept:
             self._add_tile(dict(STACK_DEFAULTS, **spec))
+        if len(kept) != len(specs):                  # deleted while the Dock wasn't running
+            self._save()
 
     def _save(self) -> None:
         self.dock.cfg["stacks"] = [t.spec for t in self._tiles]
@@ -129,14 +142,15 @@ class StackRow:
     def add(self, path: str) -> None:
         if not os.path.isdir(path) or any(t.spec["path"] == path for t in self._tiles):
             return
-        self._add_tile(dict(STACK_DEFAULTS, path=path))
+        tile = self._add_tile(dict(STACK_DEFAULTS, path=path))
         self._save()
+        self.dock.open_up(tile)                      # its place opens, then it fades in
 
     def remove(self, tile) -> None:
         self._unwatch(tile)
         self._tiles.remove(tile)
         tile.label.unparent()
-        self.dock.remove(tile)
+        self.dock.close_up(tile)                     # its place closes up, like an app's
         self._save()
 
     def _add_tile(self, spec) -> None:
@@ -154,12 +168,16 @@ class StackRow:
         mon.connect("changed", lambda *_: self._refresh_later(tile))
         tile.stack_monitor, tile.stack_src = mon, 0
         self._monitors.append(mon)
+        return tile
 
     def _refresh_later(self, tile) -> None:
         """A burst of changes (a download writing) re-lists the folder once."""
         if not tile.stack_src:
             def run():
                 tile.stack_src = 0
+                if tile in self._tiles and gone(tile.spec["path"]):
+                    self.remove(tile)                # the folder was deleted (or put in the Trash)
+                    return False
                 self.refresh_icon(tile)
                 return False
             tile.stack_src = GLib.timeout_add(REFRESH_MS, run)
