@@ -7,6 +7,11 @@ play/pause, forward 10 s, elapsed / remaining time and a scrubber). It
 fades in when the pointer moves and fades out after 2.5 s without motion
 while the movie plays (the pointer hides too); paused, it stays.
 
+Trim (QuickTime: Edit > Trim, ⌘T; right-click > Trim…): a filmstrip with
+a yellow frame takes the controls' place; drag its ends, then Trim saves
+the part kept as a new file beside the original and opens it (trimbar.py,
+edit.py; needs ffmpeg). Return trims, Esc cancels.
+
 Keys: Space or K play/pause, ← / → 5 s back/forward, J / L 10 s,
 ↑ / ↓ volume, M mute, F or ⌘F full screen, Esc leaves full screen,
 ⌘O open, ⌘W close. Double-click the movie: full screen. Dragging the movie
@@ -165,6 +170,8 @@ class VideoWindow(Gtk.ApplicationWindow):
         self._syncing = False
         self._shown_secs = (-1, -1)
         self.audio = False
+        self.trim_bar = None                # while trimming (trimbar.TrimBar)
+        self._export = None
         cfg = config.load(CONFIG, DEFAULTS)
         self.volume = max(0.0, min(1.0, float(cfg.get("volume", 1.0) or 0)))
         self.muted = bool(cfg.get("muted"))
@@ -251,6 +258,8 @@ class VideoWindow(Gtk.ApplicationWindow):
 
     # -- file ----------------------------------------------------------------------------------
     def open(self, path: str) -> None:
+        if getattr(self, "trim_bar", None) is not None:
+            self.cancel_trim()
         self._release()
         self.path = path
         self._sized = False
@@ -281,6 +290,82 @@ class VideoWindow(Gtk.ApplicationWindow):
             self._prepared()
         self._playing_changed()
         self._show_hud()
+
+    # -- trim -------------------------------------------------------------------------------------
+    def can_edit(self) -> bool:
+        from . import edit
+        s = self.stream
+        return bool(edit.available() and s is not None and s.get_error() is None and s.is_prepared()
+                    and s.get_duration() > 0 and s.is_seekable() and os.path.exists(self.path))
+
+    def start_trim(self) -> None:
+        if self.trim_bar is not None or not self.can_edit():
+            return
+        from . import edit
+        from .trimbar import TrimBar
+        s = self.stream
+        s.pause()
+        dur = s.get_duration() / 1e6
+        self.trim_bar = TrimBar(dur, self._trim_seek, self.cancel_trim, self.do_trim)
+        self.trim_bar.set_position(s.get_timestamp() / 1e6)
+        self.hud.set_visible(False)
+        self.overlay.add_overlay(self.trim_bar)
+        self._set_cursor(True)
+        bar = self.trim_bar
+        if not self.audio:                           # a song has no frames: a plain strip
+            edit.thumbnails(self.path, dur, len(bar.strip.thumbs), 48,
+                            lambda i, png: self._thumb(bar, i, png), stop=lambda: self.trim_bar is not bar)
+
+    def _thumb(self, bar, i: int, png: bytes) -> bool:
+        try:
+            bar.set_thumbnail(i, Gdk.Texture.new_from_bytes(GLib.Bytes.new(png)))
+        except GLib.Error:
+            pass
+        return False
+
+    def _trim_seek(self, seconds: float) -> None:
+        s = self.stream
+        if s is not None and s.is_seekable():
+            s.seek(int(seconds * 1e6))               # the movie shows the frame at the handle (QuickTime)
+        if self.trim_bar is not None:
+            self.trim_bar.set_position(seconds)
+
+    def cancel_trim(self) -> None:
+        if self._export is not None:
+            self._export.cancel()
+            self._export = None
+        if self.trim_bar is not None:
+            self.overlay.remove_overlay(self.trim_bar)
+            self.trim_bar = None
+        self.hud.set_visible(not self.message.get_visible())
+        self._show_hud()
+
+    def do_trim(self, start: float, end: float) -> None:
+        from . import edit
+        if self.trim_bar is None or self._export is not None:
+            return
+        s = self.stream
+        dur = s.get_duration() / 1e6 if s is not None else end
+        if start <= 0.01 and end >= dur - 0.01:
+            self.cancel_trim()                       # nothing cut off: nothing to save
+            return
+        s and s.pause()
+        out = edit.output_path(self.path, "Trimmed", audio=self.audio)
+        bar = self.trim_bar
+        bar.exporting(0.0)
+
+        def done(ok, message):
+            self._export = None
+            if self.trim_bar is not bar:
+                return
+            if ok:
+                self.cancel_trim()
+                self.open(out)                       # the trimmed movie, like QuickTime's document
+            else:
+                bar.exporting(None)
+                bar.times.set_label("Couldn't trim" + (f": {message}" if message else ""))
+        self._export = edit.Export(edit.trim_command(self.path, out, start, end, self.audio), end - start,
+                                   lambda p: (bar.exporting(p), False)[1], done)
 
     def _set_audio(self, audio: bool) -> None:
         """A song: a square window, its cover (read off the main loop), the
@@ -452,6 +537,12 @@ class VideoWindow(Gtk.ApplicationWindow):
     def _tick(self, *_a) -> None:
         """Clock and scrubber follow the stream (only while they show)."""
         s = self.stream
+        if s is not None and self.trim_bar is not None:
+            ts = s.get_timestamp() / 1e6
+            self.trim_bar.set_position(ts)
+            if s.get_playing() and ts >= self.trim_bar.strip.end:
+                s.pause()                            # trimming: plays the part kept only
+            return
         if s is None or self.hud.has_css_class("hidden"):
             return
         ts, dur = s.get_timestamp() / 1e6, s.get_duration() / 1e6
@@ -487,7 +578,8 @@ class VideoWindow(Gtk.ApplicationWindow):
 
     def _hide_now(self) -> bool:
         self._hide_src = 0
-        if self._over_hud or self.audio or not (self.stream and self.stream.get_playing()):
+        if self._over_hud or self.audio or self.trim_bar is not None or \
+                not (self.stream and self.stream.get_playing()):
             return False
         self.hud.add_css_class("hidden")
         self.hud.set_can_target(False)
@@ -548,6 +640,7 @@ class VideoWindow(Gtk.ApplicationWindow):
              Item("Mute", lambda _v=None: self.toggle_mute(), checked=self.muted, enabled=ok)],
             [Item("Exit Full Screen" if self.is_fullscreen() else "Enter Full Screen", self.toggle_fullscreen,
                   enabled=not self.audio)],
+            [Item("Trim…", self.start_trim, enabled=self.can_edit() and self.trim_bar is None)],
             [Item("Show in Files", self.show_in_files), Item("Open…", self.open_dialog)],
         ], at=(x, y), glass=True, passthrough=True)
 
@@ -561,8 +654,15 @@ class VideoWindow(Gtk.ApplicationWindow):
     def _key(self, _c, keyval, _code, state) -> bool:
         cmd = state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SUPER_MASK)
         k = Gdk.keyval_to_lower(keyval)
+        if self.trim_bar is not None and not cmd and k in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_Escape):
+            if k == Gdk.KEY_Escape:
+                self.cancel_trim()
+            else:
+                self.do_trim(self.trim_bar.strip.start, self.trim_bar.strip.end)
+            return True
         if cmd:
-            act = {Gdk.KEY_w: self.close, Gdk.KEY_o: self.open_dialog, Gdk.KEY_f: self.toggle_fullscreen}.get(k)
+            act = {Gdk.KEY_w: self.close, Gdk.KEY_o: self.open_dialog, Gdk.KEY_f: self.toggle_fullscreen,
+                   Gdk.KEY_t: self.start_trim}.get(k)
         else:
             act = {Gdk.KEY_space: self.toggle_play, Gdk.KEY_k: self.toggle_play,
                    Gdk.KEY_Left: lambda: self.skip(-5), Gdk.KEY_Right: lambda: self.skip(5),
@@ -579,6 +679,9 @@ class VideoWindow(Gtk.ApplicationWindow):
         return True
 
     def _close_request(self, _w) -> bool:
+        if self._export is not None:                # closed while saving: stopped, nothing half-made left
+            self._export.cancel()
+            self._export = None
         if self._hide_src:
             GLib.source_remove(self._hide_src)
             self._hide_src = 0

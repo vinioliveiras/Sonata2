@@ -20,6 +20,11 @@
 - Fix: Date & Time's "Show the date" (and 24-hour) switches showed off
   while the menu bar clock had them on.
 
+### Videos
+- Trim (right-click > Trim…, or Ctrl+T), like QuickTime: a filmstrip with
+  a yellow frame; the part kept is saved as a new file beside the original
+  and opened. Needs ffmpeg (now installed with Sonata).
+
 ### Clock
 - Stopwatch (laps, fastest and slowest marked) and Timers (quick choices,
   pause, a ring of what's left), as tabs beside Alarms. Both keep going
