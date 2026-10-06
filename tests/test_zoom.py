@@ -21,19 +21,27 @@ class ZoomPluginTest(unittest.TestCase):
     def test_follows_every_tile_request(self):
         self.assertIn("wf::signal::connection_t<wf::view_tile_request_signal> on_tile_request", SRC)
         self.assertIn("output->connect(&on_tile_request);", SRC)
-        self.assertIn("start_zoom(ev->view, ev->desired_size);", SRC)
+        self.assertIn("start_zoom(ev->view, ev->desired_size, ev->edges);", SRC)
 
     def test_frame_moves_contents_hidden_then_faded_in(self):
         start = body("void start_zoom(", "wf::geometry_t zoom_target()")
-        self.assertIn("zoom_from = v->get_geometry();", start)          # from where it is now
+        self.assertIn("zoom_from  = v->get_geometry();", start)         # from where it is now
         self.assertIn("set_alpha(v, 0.0);", start)                      # no picture of the old size
         self.assertIn("ghost = std::make_shared<ghost_node_t>();", start)   # the outline resize's frame
         step = body("void zoom_step()", "void end_zoom(")
-        self.assertIn("ghost->set(r);", step)
+        self.assertIn("auto a = zoom_seen, b = visible(zooming, to, zoom_tiled);", step)
+        self.assertIn("zoom_seen     = visible(v, zoom_from);", start)
         self.assertIn("end_zoom(true);", step)
         end = body("void end_zoom(bool fade_in)", "};\n\nDECLARE")
         self.assertIn("fading->connect(&on_new_size);", end)            # the outline resize's fade
         self.assertIn("start_fade();", end)
+
+    def test_frame_is_the_window_as_seen(self):
+        """Vini: on a terminal (pixdecor) the frame was the shadow's size --
+        the shadow is inside its geometry. From the window as seen to the
+        window as it will be seen (maximized: no shadow to take off)."""
+        vis = body("static wf::geometry_t visible(", "void begin_outline()")
+        self.assertIn("uint32_t edges = (tiled < 0) ? v->pending_tiled_edges() : (uint32_t)tiled;", vis)
 
     def test_not_while_dragging_or_resizing(self):
         start = body("void start_zoom(", "wf::geometry_t zoom_target()")

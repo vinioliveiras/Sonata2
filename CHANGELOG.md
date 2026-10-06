@@ -6,6 +6,9 @@
 - Zoom (maximize / restore) animates like macOS: the window's frame grows
   or shrinks to its new place and the contents fade in there -- no more
   smear of two title bars over each other.
+- Window shadows are almost gone.
+- Fix: resizing or zooming a terminal (or another app with Sonata's title
+  bar) showed a frame the size of its shadow, not of the window.
 
 ### Login screen
 - The display goes dark at the login screen too, after the time chosen in

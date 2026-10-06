@@ -41,6 +41,8 @@
 #include <wayfire/toplevel.hpp>
 #include <wayfire/window-manager.hpp>
 #include <cmath>
+#include <cstdlib>
+#include <wayfire/config/config-manager.hpp>
 #include <wayfire/per-output-plugin.hpp>
 #include <wayfire/output.hpp>
 #include <wayfire/view.hpp>
@@ -88,8 +90,8 @@ void main() {
     float d = sdf(pos);
     float inside = clamp(0.5 - d, 0.0, 1.0);
     float ring = clamp(1.0 - abs(d + 0.5), 0.0, 1.0) * inside;
-    float ds = max(sdf(pos - vec2(0.0, 10.0)), 0.0);
-    float shadow = 0.32 * exp(-pow(ds / 22.0, 2.0)) * (1.0 - inside);
+    float ds = max(sdf(pos - vec2(0.0, 1.0)), 0.0);              /* almost none, like the windows' */
+    float shadow = 0.14 * exp(-pow(ds / 4.0, 2.0)) * (1.0 - inside);
     vec4 c = vec4(0.0, 0.0, 0.0, shadow);
     vec4 f = vec4(fill.rgb * fill.a, fill.a) * inside;
     c = f + c * (1.0 - f.a);
@@ -300,7 +302,8 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
 
     // -- zoom: the frame grows / shrinks, the contents fade in at the new size --
     wayfire_toplevel_view zooming;
-    wf::geometry_t zoom_from, zoom_hint;
+    wf::geometry_t zoom_from, zoom_hint, zoom_seen;     // zoom_seen: where it started, as seen
+    int zoom_tiled = -1;                                 // the tiling it goes to
     wf::animation::simple_animation_t zoom{wf::create_option(ZOOM_MS),
         wf::animation::smoothing::circle};
     wf::effect_hook_t zoom_hook = [=] () { zoom_step(); };
@@ -308,7 +311,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     wf::signal::connection_t<wf::view_tile_request_signal> on_tile_request =
         [=] (wf::view_tile_request_signal *ev)
     {
-        start_zoom(ev->view, ev->desired_size);
+        start_zoom(ev->view, ev->desired_size, ev->edges);
     };
     bool moved = false;                                  // past the dead zone this drag
     wf::option_wrapper_t<wf::color_t> fill{"sonata-resize/fill"};
@@ -796,7 +799,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
             ghost_geometry = desired;
             if (ghost)
             {
-                ghost->set(desired);
+                ghost->set(visible(view, desired));
             }
 
             return;
@@ -825,7 +828,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     }
 
     /** Maximize / restore asked (before the window gets its new geometry). */
-    void start_zoom(wayfire_toplevel_view v, wf::geometry_t hint)
+    void start_zoom(wayfire_toplevel_view v, wf::geometry_t hint, uint32_t to_tiled)
     {
         if (!zoom_enabled || !v || !v->is_mapped() || view || v->pending_fullscreen() ||
             (v->get_output() != output) || output->is_plugin_active("move"))
@@ -837,8 +840,9 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         finish_fade();
         close_ghost();
         zooming   = v;
-        zoom_from = v->get_geometry();
-        zoom_hint = hint;
+        zoom_from  = v->get_geometry();
+        zoom_hint  = hint;
+        zoom_tiled = (int)to_tiled;
         if (!wf::get_core().get_data<ghost_program_t>())
         {
             wf::get_core().store_data(std::make_unique<ghost_program_t>());
@@ -848,7 +852,8 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         ghost->fill   = fill;
         ghost->border = border;
         ghost->radius = std::max(0, (int)corner_radius);
-        ghost->rect   = zoom_from;
+        zoom_seen     = visible(v, zoom_from);           // the window as seen, not its shadow
+        ghost->rect   = zoom_seen;
         wf::scene::add_front(output->node_for_layer(wf::scene::layer::TOP), ghost);
         ghost->damage();
         set_alpha(v, 0.0);                               // only the frame shows while it moves
@@ -878,14 +883,14 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
 
         double t = zoom;
         auto to  = zoom_target();
-        wf::geometry_t r{
-            (int)std::round(zoom_from.x + (to.x - zoom_from.x) * t),
-            (int)std::round(zoom_from.y + (to.y - zoom_from.y) * t),
-            std::max(1, (int)std::round(zoom_from.width + (to.width - zoom_from.width) * t)),
-            std::max(1, (int)std::round(zoom_from.height + (to.height - zoom_from.height) * t))};
         if (ghost)
         {
-            ghost->set(r);
+            // from the window as seen to the window as it will be seen (tiled: no shadow)
+            auto a = zoom_seen, b = visible(zooming, to, zoom_tiled);
+            ghost->set({
+                (int)std::round(a.x + (b.x - a.x) * t), (int)std::round(a.y + (b.y - a.y) * t),
+                std::max(1, (int)std::round(a.width + (b.width - a.width) * t)),
+                std::max(1, (int)std::round(a.height + (b.height - a.height) * t))});
         }
 
         if (!zoom.running())
@@ -931,6 +936,42 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     }
 
     // -- Sonata ------------------------------------------------------------------------
+    /* The window as seen: a window pixdecor decorates (terminals, X11 apps)
+     * has its shadow inside its geometry -- the panel came out that much
+     * bigger than the window (Vini). The same inset as sonata-corners.
+     * `tiled`: the tiling to judge by (-1: the window's own now). */
+    static wf::geometry_t visible(wayfire_toplevel_view v, wf::geometry_t g, int tiled = -1)
+    {
+        auto m = v->toplevel()->current().margins;
+        if ((m.left <= 0) && (m.top <= 0))
+        {
+            return g;                                    // its own frame: geometry is the window
+        }
+
+        auto& cfg     = wf::get_core().config;
+        auto engine   = cfg->get_option("pixdecor/overlay_engine");
+        auto radius   = cfg->get_option("pixdecor/shadow_radius");
+        auto max_shad = cfg->get_option("pixdecor/maximized_shadows");
+        if (!engine || !radius || (engine->get_value_str() != "rounded_corners"))
+        {
+            return g;
+        }
+
+        uint32_t edges = (tiled < 0) ? v->pending_tiled_edges() : (uint32_t)tiled;
+        if ((edges != 0) && (!max_shad || (max_shad->get_value_str() != "true")))
+        {
+            return g;
+        }
+
+        int inset = 2 * std::max(0, std::atoi(radius->get_value_str().c_str()));
+        if ((g.width <= 2 * inset) || (g.height <= 2 * inset))
+        {
+            return g;
+        }
+
+        return {g.x + inset, g.y + inset, g.width - 2 * inset, g.height - 2 * inset};
+    }
+
     void begin_outline()
     {
         finish_fade();
@@ -944,7 +985,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         ghost->fill   = fill;
         ghost->border = border;
         ghost->radius = std::max(0, (int)corner_radius);
-        ghost->rect   = ghost_geometry;
+        ghost->rect   = visible(view, ghost_geometry);
         wf::scene::add_front(output->node_for_layer(wf::scene::layer::TOP), ghost);
         ghost->damage();
         set_alpha(view, 0.0);                            // only the background shows while dragging
@@ -999,7 +1040,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
             if (ghost)
             {
                 ghost->alpha = 1.0 - a;                  // the background gives way to the window
-                ghost->set(fading->get_geometry());
+                ghost->set(visible(fading, fading->get_geometry()));
             }
 
             if (!fade.running())

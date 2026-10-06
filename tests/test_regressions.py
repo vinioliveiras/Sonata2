@@ -142,11 +142,21 @@ class WindowRegressions(unittest.TestCase):
         win.destroy()
 
     def test_window_shadows_soft_and_from_frame(self):
-        """Window shadows were too strong (24 px, 33 %): softer, one place (tokens.FRAME)."""
+        """Window shadows were too strong (24 px, 33 %; then Vini: "almost
+        none"): one place (tokens.FRAME), the same in Wayfire's config."""
+        import configparser
+        import re
         from sonata2 import wfconfig
         F = ui.tokens.FRAME
-        self.assertLessEqual(F["shadow_radius"], 16)
-        self.assertLessEqual(int(F["shadow_color"][-2:], 16), 0x40)
+        self.assertLessEqual(F["shadow_radius"], 4)
+        self.assertLessEqual(int(F["shadow_color"][-2:], 16), 0x20)
+        for shadow in (F["shadow"], F["shadow_backdrop"]):
+            y, blur = map(int, re.match(r"0 (\d+)px (\d+)px", shadow).groups())
+            self.assertLessEqual((y, blur), (1, 4))
+        ini = configparser.ConfigParser(interpolation=None, strict=False)
+        ini.read(os.path.join(os.path.dirname(os.path.dirname(ui.__file__)), "..", "config", "wayfire.ini"))
+        self.assertEqual(ini.get("pixdecor", "shadow_radius"), str(F["shadow_radius"]))
+        self.assertEqual(ini.get("pixdecor", "shadow_color").lstrip("\\"), F["shadow_color"])
         opts = dict(((sec, key), val) for sec, key, val in wfconfig.frame_options(F))
         self.assertEqual(opts[("pixdecor", "shadow_radius")], str(F["shadow_radius"]))
         css = open(os.path.join(os.path.dirname(ui.__file__), "window.py")).read()

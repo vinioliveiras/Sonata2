@@ -19,7 +19,7 @@ class PluginTest(unittest.TestCase):
         start = src[src.index("bool initiate("):src.index("void input_pressed(")]
         self.assertIn("outline = !live;", start)
         self.assertIn("begin_outline();", start)
-        self.assertIn("ghost->set(desired);", src)                         # only the background follows
+        self.assertIn("ghost->set(visible(view, desired));", src)                         # only the background follows
         self.assertIn("uniform float radius;", src)                       # rounded, like the window
         self.assertIn("float shadow = ", src)                             # with its shadow
         self.assertIn("set_alpha(view, 0.0);", src)

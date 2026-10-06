@@ -143,12 +143,12 @@ DARK = {
 FRAME = {
     # corners and shadow
     "radius": 10,                       # window corners, px
-    # softer than they were (24 px, 33 %: too strong, Vini)
-    "shadow_radius": 14,                # the shadow Wayfire draws around other apps' windows
-    "shadow_color": "#00000033",
+    # almost none (Vini; 24 px 33 %, then 14 px 20 %, were too strong)
+    "shadow_radius": 3,                 # the shadow Wayfire draws around other apps' windows
+    "shadow_color": "#0000001f",
     # Sonata's own windows (CSS box-shadow): focused / in the background
-    "shadow": "0 8px 24px rgba(0, 0, 0, 0.20)",
-    "shadow_backdrop": "0 5px 16px rgba(0, 0, 0, 0.12)",
+    "shadow": "0 1px 4px rgba(0, 0, 0, 0.14)",
+    "shadow_backdrop": "0 1px 3px rgba(0, 0, 0, 0.08)",
     # window buttons
     "buttons": ("close", "minimize", "maximize"),   # from the window's edge inwards
     "buttons_side": "left",             # "left" (macOS) / "right" (Windows)
