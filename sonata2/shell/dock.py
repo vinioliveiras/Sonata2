@@ -1957,10 +1957,8 @@ class Dock(Gtk.Box):
         return os.path.join(data, "Trash", "files")
 
     def _update_trash(self, *_a) -> None:
-        try:
-            full = any(os.scandir(self._trash_dir()))
-        except OSError:
-            full = False
+        from ..files import ops
+        full = bool(ops.trash_items())               # what the Trash shows, not leftovers
         self.trash.set_gicon(Gio.ThemedIcon.new("user-trash-full" if full else "user-trash"))
 
     def refresh_icons(self) -> None:

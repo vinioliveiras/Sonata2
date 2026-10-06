@@ -25,6 +25,11 @@
   a yellow frame; the part kept is saved as a new file beside the original
   and opened. Needs ffmpeg (now installed with Sonata).
 
+### Dock
+- Fix: the Trash stayed full after Empty Trash when it held leftovers the
+  Trash doesn't list (files without their .trashinfo); Empty Trash now
+  clears those too.
+
 ### Clock
 - Stopwatch (laps, fastest and slowest marked) and Timers (quick choices,
   pause, a ring of what's left), as tabs beside Alarms. Both keep going

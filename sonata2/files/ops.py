@@ -204,6 +204,46 @@ def delete_now(files, on_done=None, on_error=None) -> None:
     _in_thread(lambda report: _delete_all(files, report), on_done, on_error)
 
 
+def home_trash() -> str:
+    data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return os.path.join(data, "Trash")
+
+
+def trash_items() -> list:
+    """What the home Trash holds as the Trash window shows it: files with
+    their .trashinfo. A file without one (left by a crash or another tool)
+    is invisible there -- the Dock counted it, and its Trash stayed full
+    after Empty Trash (Vini)."""
+    t = home_trash()
+    try:
+        names = [e.name for e in os.scandir(os.path.join(t, "files"))]
+    except OSError:
+        return []
+    return [n for n in names if os.path.exists(os.path.join(t, "info", n + ".trashinfo"))]
+
+
+def clear_orphans() -> None:
+    """Empty Trash leaves nothing behind: files with no .trashinfo (never
+    listed, so never erased) and .trashinfo with no file."""
+    import shutil
+    t = home_trash()
+    files, info = os.path.join(t, "files"), os.path.join(t, "info")
+    for d, other, strip in ((files, info, None), (info, files, ".trashinfo")):
+        try:
+            entries = list(os.scandir(d))
+        except OSError:
+            continue
+        for e in entries:
+            name = e.name[:-len(strip)] if strip and e.name.endswith(strip) else e.name
+            partner = os.path.join(other, name if strip else name + ".trashinfo")
+            if os.path.exists(partner):
+                continue
+            try:
+                (shutil.rmtree if e.is_dir(follow_symlinks=False) else os.remove)(e.path)
+            except OSError:
+                pass
+
+
 def empty_trash(on_done=None, on_error=None) -> None:
     """Listing and deleting both run in the thread (gvfs); the sound plays
     once something was really erased."""
@@ -215,7 +255,9 @@ def empty_trash(on_done=None, on_error=None) -> None:
         except GLib.Error as e:
             report(t, e)
             return
-        if _delete_all(kids, report):
+        erased = _delete_all(kids, report)
+        clear_orphans()
+        if erased:
             GLib.idle_add(lambda: (sounds.play("empty-trash"), False)[1])
     _in_thread(work, on_done, on_error)
 

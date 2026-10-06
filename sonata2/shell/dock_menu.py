@@ -72,11 +72,8 @@ def set_open_at_login(info, on: bool) -> None:
 
 
 def _trash_count() -> int:
-    data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
-    try:
-        return sum(1 for _ in os.scandir(os.path.join(data, "Trash", "files")))
-    except OSError:
-        return 0
+    from ..files import ops
+    return len(ops.trash_items())
 
 
 def empty_trash() -> None:
@@ -94,7 +91,7 @@ def empty_trash() -> None:
                     (shutil.rmtree if e.is_dir(follow_symlinks=False) else os.remove)(e.path)
                 except OSError:
                     pass
-    ops.empty_trash(on_error=lambda *_a: plain())
+    ops.empty_trash(on_error=lambda *_a: (plain(), ops.clear_orphans()))
 
 
 def confirm_empty_trash() -> None:
