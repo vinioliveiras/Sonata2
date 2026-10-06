@@ -1380,7 +1380,10 @@ class Settings(Adw.ApplicationWindow):
 
     # -- input (Wayfire [input]; applied live) --------------------------------------------------
     def _wf(self, key, value):
-        self._latest(("input", key), system.wayfire_set, "input", key, value)
+        def both(k, v):                          # (keyboards with a layout of their own: theirs too)
+            system.wayfire_set("input", k, v)
+            system.sync_keyboard_option(k, v)
+        self._latest(("input", key), both, key, value)
 
     def _page_keyboard(self):
         get = system.wayfire_get
@@ -1408,7 +1411,55 @@ class Settings(Adw.ApplicationWindow):
         src.add(combo_row("Add", add_opts, "", lambda v: v and self._set_layouts(system.keyboard_layouts() + [v])))
         test = Adw.EntryRow(title="Type here to test")
         src.add(test)
-        return [rep, src]
+        return [rep, src, self._keyboards_group(names)]
+
+    def _keyboards_group(self, names):
+        """A layout per keyboard (Vini: a U.S. International USB keyboard on a
+        Portuguese laptop): each connected keyboard follows Input Sources, or
+        has one of its own."""
+        grp = group("Keyboards", "Each keyboard can have a layout of its own; "
+                                 "the others follow Input Sources.")
+        grp.add(Adw.ActionRow(title="Looking for keyboards…"))
+        options = [("", "Same as Input Sources")] + [(k, v) for k, v in system.XKB_LAYOUTS]
+
+        def fill(found):
+            kbds, own = found or ([], {})
+            child = grp.get_first_child()
+            rows = []
+            self._walk_rows(child, rows)
+            for r in rows:
+                grp.remove(r)
+            if not kbds:
+                grp.add(Adw.ActionRow(title="No keyboards found"))
+                return
+            for name in kbds:
+                cur = own.get(name, "")
+                if cur and cur not in dict(options):
+                    options.append((cur, cur))
+
+                def changed(v, name=name, was=cur):
+                    system.run_async(system.set_keyboard_device_layout, None, name, v)
+                    if bool(v) != bool(was):            # Wayfire takes a keyboard's own section when it appears
+                        self.toast("Unplug the keyboard and plug it in again (or log in again) to use it")
+                shown = "Built-in Keyboard" if "AT Translated" in name or "i8042" in name else name
+                row = combo_row(shown, options, cur, changed)
+                grp.add(row)
+
+        def look():
+            kbds = system.keyboards()
+            return kbds, {n: system.keyboard_device_layout(n) for n in kbds}
+        system.run_async(look, fill)
+        return grp
+
+    @staticmethod
+    def _walk_rows(child, rows):
+        """The rows a preferences group holds (its list box's children)."""
+        while child is not None:
+            if isinstance(child, Adw.PreferencesRow):
+                rows.append(child)
+            else:
+                Settings._walk_rows(child.get_first_child(), rows)
+            child = child.get_next_sibling()
 
     def _set_layouts(self, lays):
         system.run_async(system.set_keyboard_layouts, lambda _r: self._reload_page("keyboard"), lays)

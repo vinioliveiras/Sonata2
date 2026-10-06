@@ -1037,6 +1037,94 @@ def set_keyboard_layouts(layouts: List[str]) -> bool:
     return wayfire_set("input", "xkb_layout", ",".join(lays)) and wayfire_set("input", "xkb_variant", ",".join(vars_))
 
 
+# -- a layout per keyboard (Vini: a U.S. International USB keyboard on a
+# Portuguese laptop). Wayfire reads [input:<device name>] for a keyboard
+# instead of [input] -- when the keyboard appears (plugged in, or the next
+# login), so the other keyboard options are copied there too and kept in step.
+PER_KEYBOARD_KEYS = ("kb_repeat_rate", "kb_repeat_delay", "xkb_options", "xkb_model", "xkb_rules")
+NOT_KEYBOARDS = ("video bus", "power button", "sleep button", "lid switch", "wmi hotkeys", "sonata",
+                 "virtual", "consumer control", "system control", "headset", "speaker")
+
+
+def keyboards() -> List[str]:
+    """The keyboards connected now (Wayfire's input devices; else the
+    kernel's list), the system's buttons and switches left out."""
+    names = []
+    try:
+        from ..wl.wfipc import WayfireIPC
+        devs = WayfireIPC().call("input/list-devices")
+        for d in devs if isinstance(devs, list) else []:
+            if isinstance(d, dict) and d.get("type") == "keyboard" and d.get("name"):
+                names.append(d["name"])
+    except Exception:
+        pass
+    if not names:
+        try:
+            with open("/proc/bus/input/devices", encoding="utf-8", errors="replace") as f:
+                blocks = f.read().split("\n\n")
+        except OSError:
+            blocks = []
+        for b in blocks:
+            name = re.search(r'^N: Name="(.*)"$', b, re.M)
+            ev = re.search(r"^B: EV=(\w+)$", b, re.M)
+            if name and ev and int(ev.group(1), 16) & 0x120013 == 0x120013:     # keys + LEDs + repeat
+                names.append(name.group(1))
+    out = []
+    for n in names:
+        if n not in out and not any(x in n.lower() for x in NOT_KEYBOARDS):
+            out.append(n)
+    return out
+
+
+def keyboard_device_layout(name: str) -> str:
+    """This keyboard's own layout ("us(intl)"), "" when it follows Input Sources."""
+    lay = wayfire_get(f"input:{name}", "xkb_layout", "")
+    if not lay:
+        return ""
+    var = wayfire_get(f"input:{name}", "xkb_variant", "")
+    lay, var = lay.split(",")[0], var.split(",")[0]
+    return f"{lay}({var})" if var else lay
+
+
+def set_keyboard_device_layout(name: str, layout: str) -> bool:
+    """layout "": the keyboard follows Input Sources again."""
+    from .. import wfconfig
+    sec = f"input:{name}"
+    if not layout:
+        return wfconfig.remove_section(sec)
+    lay, _, var = layout.partition("(")
+    ok = wayfire_set(sec, "xkb_layout", lay) and wayfire_set(sec, "xkb_variant", var.rstrip(")"))
+    for k in PER_KEYBOARD_KEYS:                          # the rest as for every keyboard
+        v = wayfire_get("input", k, "")
+        if v:
+            ok = wayfire_set(sec, k, v) and ok
+    return ok
+
+
+def keyboard_sections() -> List[str]:
+    """The keyboards that have a layout of their own (their section names' device part)."""
+    from .. import wfconfig
+    found = []
+    for path in wfconfig._wayfire_read_files():
+        try:
+            with open(path, encoding="utf-8") as f:
+                for line in f:
+                    s = line.strip()
+                    if s.startswith("[input:") and s.endswith("]") and s[7:-1] not in found:
+                        found.append(s[7:-1])
+        except OSError:
+            continue
+    return [n for n in found if keyboard_device_layout(n)]
+
+
+def sync_keyboard_option(key: str, value) -> None:
+    """A keyboard option changed in Settings: the keyboards with a layout of
+    their own get it too (Wayfire reads only their section)."""
+    if key in PER_KEYBOARD_KEYS:
+        for n in keyboard_sections():
+            wayfire_set(f"input:{n}", key, value)
+
+
 def keyboard_layout() -> str:
     lay = wayfire_get("input", "xkb_layout", "us") or "us"
     var = wayfire_get("input", "xkb_variant", "")

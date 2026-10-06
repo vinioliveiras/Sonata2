@@ -163,3 +163,32 @@ def _set(section: str, key: str, value, files=None) -> bool:
     return ok
 
 
+def remove_section(section: str) -> bool:
+    """[section] and its keys out of the session's Wayfire config(s) (an empty
+    one left behind would still be used -- with Wayfire's defaults)."""
+    with _locked():
+        ok = False
+        for path in _wayfire_files():
+            try:
+                with open(path, encoding="utf-8") as f:
+                    lines = f.readlines()
+            except OSError:
+                continue
+            out, skip = [], False
+            for line in lines:
+                s = line.strip()
+                if s.startswith("[") and s.endswith("]"):
+                    skip = s[1:-1] == section
+                if not skip:
+                    out.append(line)
+            while len(out) > 1 and not out[-1].strip() and not out[-2].strip():
+                out.pop()
+            if out == lines:
+                ok = True
+                continue
+            try:
+                config.atomic_write(path, "".join(out).encode("utf-8"), fsync=False)
+                ok = True
+            except OSError:
+                pass
+        return ok
