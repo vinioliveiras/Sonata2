@@ -54,7 +54,7 @@ TOOLS = [
     ("wtype", "typing emoji from the Character Viewer", "wtype", "wtype", "wtype"),
     ("ffmpegthumbnailer", "video thumbnails in Files", "ffmpegthumbnailer", "ffmpegthumbnailer",
      "ffmpegthumbnailer"),
-    ("ffmpeg", "Trim in Videos", "ffmpeg", "ffmpeg", "ffmpeg-free"),
+    ("ffmpeg", "Trim and Crop in Videos", "ffmpeg", "ffmpeg", "ffmpeg-free"),
     ("Xwayland", "X11 apps (Steam, older apps)", "xorg-xwayland", "xwayland", "xorg-x11-server-Xwayland"),
 ]
 POLKIT_AGENTS = ["/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1",

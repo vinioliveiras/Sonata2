@@ -26,6 +26,8 @@
 - Trim (right-click > Trim…, or Ctrl+T), like QuickTime: a filmstrip with
   a yellow frame; the part kept is saved as a new file beside the original
   and opened. Needs ffmpeg (now installed with Sonata).
+- Crop (right-click > Crop…): a frame over the movie, its shape free or
+  16:9, 4:3, 1:1, 9:16; saved the same way.
 
 ### Dock
 - Fix: the Trash stayed full after Empty Trash when it held leftovers the

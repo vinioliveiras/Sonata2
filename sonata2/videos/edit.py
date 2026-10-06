@@ -156,3 +156,86 @@ def thumbnails(path: str, duration: float, count: int, height: int, on_thumb, st
             if r.stdout:
                 GLib.idle_add(on_thumb, i, r.stdout)
     threading.Thread(target=work, daemon=True).start()
+
+
+# -- crop geometry (video pixels) -------------------------------------------------------------
+RATIOS = (("free", "Free", None), ("16:9", "16:9", 16 / 9), ("4:3", "4:3", 4 / 3), ("1:1", "1:1", 1.0),
+          ("9:16", "9:16", 9 / 16))
+MIN_CROP = 32               # px of the movie: the smallest crop
+
+
+def video_rect(iw: int, ih: int, w: float, h: float) -> tuple:
+    """Where a movie iw x ih shows in a w x h area, letterboxed (Gtk.Picture
+    CONTAIN): (x, y, scale)."""
+    s = min(w / max(1, iw), h / max(1, ih))
+    return (w - iw * s) / 2, (h - ih * s) / 2, s
+
+
+def ratio_rect(iw: int, ih: int, ratio) -> tuple:
+    """The biggest rectangle of `ratio` (w / h; None: the whole picture), centred."""
+    if not ratio:
+        return 0, 0, iw, ih
+    w, h = iw, iw / ratio
+    if h > ih:
+        w, h = ih * ratio, ih
+    w, h = int(round(w)), int(round(h))
+    return (iw - w) // 2, (ih - h) // 2, w, h
+
+
+def drag_crop(rect: tuple, part: str, dx: float, dy: float, iw: int, ih: int, ratio=None) -> tuple:
+    """The crop `rect` (x, y, w, h) with `part` dragged by (dx, dy): "move",
+    an edge ("l", "r", "t", "b") or a corner ("tl", "tr", "bl", "br"). Stays
+    inside the picture, at least MIN_CROP, and keeps `ratio` when set (the
+    corner or edge opposite the one dragged stays put)."""
+    x, y, w, h = rect
+    if part == "move":
+        return (int(max(0, min(iw - w, x + dx))), int(max(0, min(ih - h, y + dy))), w, h)
+    left, top, right, bottom = x, y, x + w, y + h
+    if "l" in part:
+        left = min(max(0, left + dx), right - MIN_CROP)
+    if "r" in part:
+        right = max(min(iw, right + dx), left + MIN_CROP)
+    if "t" in part:
+        top = min(max(0, top + dy), bottom - MIN_CROP)
+    if "b" in part:
+        bottom = max(min(ih, bottom + dy), top + MIN_CROP)
+    if ratio:
+        nw, nh = right - left, bottom - top
+        if part in ("t", "b"):
+            nw = nh * ratio
+        elif part in ("l", "r"):
+            nh = nw / ratio
+        else:
+            nh = nw / ratio                          # a corner: the width leads
+        # the space there is from the corner / edge that stays
+        ax = right if "l" in part else left
+        ay = bottom if "t" in part else top
+        room_w = ax if "l" in part else (iw - ax if part not in ("t", "b") else min(x + w / 2, iw - x - w / 2) * 2)
+        room_h = ay if "t" in part else (ih - ay if part not in ("l", "r") else min(y + h / 2, ih - y - h / 2) * 2)
+        k = min(1.0, room_w / max(1, nw), room_h / max(1, nh))
+        nw, nh = max(MIN_CROP, nw * k), max(MIN_CROP / ratio if ratio < 1 else MIN_CROP, nh * k)
+        if part in ("t", "b"):
+            left = x + w / 2 - nw / 2
+        else:
+            left = ax - nw if "l" in part else ax
+        if part in ("l", "r"):
+            top = y + h / 2 - nh / 2
+        else:
+            top = ay - nh if "t" in part else ay
+        right, bottom = left + nw, top + nh
+    left, top = max(0, left), max(0, top)
+    right, bottom = min(iw, right), min(ih, bottom)
+    return int(round(left)), int(round(top)), int(round(right - left)), int(round(bottom - top))
+
+
+def crop_part(rect: tuple, px: float, py: float, grab: float) -> str:
+    """What a press at (px, py) (video pixels) takes: a corner, an edge,
+    "move" inside, or "" outside. grab: how close counts, in video pixels."""
+    x, y, w, h = rect
+    if not (x - grab <= px <= x + w + grab and y - grab <= py <= y + h + grab):
+        return ""
+    l, r = abs(px - x) <= grab, abs(px - (x + w)) <= grab
+    t, b = abs(py - y) <= grab, abs(py - (y + h)) <= grab
+    v = "t" if t else "b" if b else ""
+    hz = "l" if l else "r" if r else ""
+    return (v + hz) or "move"

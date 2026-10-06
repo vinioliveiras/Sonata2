@@ -10,7 +10,9 @@ while the movie plays (the pointer hides too); paused, it stays.
 Trim (QuickTime: Edit > Trim, ⌘T; right-click > Trim…): a filmstrip with
 a yellow frame takes the controls' place; drag its ends, then Trim saves
 the part kept as a new file beside the original and opens it (trimbar.py,
-edit.py; needs ffmpeg). Return trims, Esc cancels.
+edit.py; needs ffmpeg). Return trims, Esc cancels. Crop (right-click >
+Crop…): a frame over the movie with its shape to choose (cropbar.py), saved
+the same way.
 
 Keys: Space or K play/pause, ← / → 5 s back/forward, J / L 10 s,
 ↑ / ↓ volume, M mute, F or ⌘F full screen, Esc leaves full screen,
@@ -171,6 +173,7 @@ class VideoWindow(Gtk.ApplicationWindow):
         self._shown_secs = (-1, -1)
         self.audio = False
         self.trim_bar = None                # while trimming (trimbar.TrimBar)
+        self.crop_bar = self.crop_frame = None   # while cropping (cropbar.py)
         self._export = None
         cfg = config.load(CONFIG, DEFAULTS)
         self.volume = max(0.0, min(1.0, float(cfg.get("volume", 1.0) or 0)))
@@ -260,6 +263,8 @@ class VideoWindow(Gtk.ApplicationWindow):
     def open(self, path: str) -> None:
         if getattr(self, "trim_bar", None) is not None:
             self.cancel_trim()
+        if getattr(self, "crop_bar", None) is not None:
+            self.cancel_crop()
         self._release()
         self.path = path
         self._sized = False
@@ -299,7 +304,7 @@ class VideoWindow(Gtk.ApplicationWindow):
                     and s.get_duration() > 0 and s.is_seekable() and os.path.exists(self.path))
 
     def start_trim(self) -> None:
-        if self.trim_bar is not None or not self.can_edit():
+        if self._editing() or not self.can_edit():
             return
         from . import edit
         from .trimbar import TrimBar
@@ -315,6 +320,78 @@ class VideoWindow(Gtk.ApplicationWindow):
         if not self.audio:                           # a song has no frames: a plain strip
             edit.thumbnails(self.path, dur, len(bar.strip.thumbs), 48,
                             lambda i, png: self._thumb(bar, i, png), stop=lambda: self.trim_bar is not bar)
+
+    def _editing(self) -> bool:
+        return self.trim_bar is not None or self.crop_bar is not None
+
+    # -- crop ---------------------------------------------------------------------------------------
+    def start_crop(self) -> None:
+        if self._editing() or self.audio or not self.can_edit():
+            return
+        from .cropbar import CropBar, CropFrame
+        s = self.stream
+        iw, ih = s.get_intrinsic_width(), s.get_intrinsic_height()
+        if iw <= 0 or ih <= 0:
+            return
+        s.pause()
+        self.crop_frame = CropFrame(iw, ih)
+        self.crop_bar = CropBar(self.crop_frame, self.cancel_crop, self.do_crop)
+        # the movie moves up out of the bar's way, the frame with it: every
+        # corner can be reached
+        self._crop_room(True)
+        self.hud.set_visible(False)
+        self.overlay.add_overlay(self.crop_frame)
+        self.overlay.add_overlay(self.crop_bar)
+        self._set_cursor(True)
+
+    CROP_ROOM = (16, 16, 84, 16)        # top, sides, bottom (the bar's room), px
+
+    def _crop_room(self, on: bool) -> None:
+        t, side, b, _ = self.CROP_ROOM if on else (0, 0, 0, 0)
+        for w in (self.picture, self.crop_frame):
+            if w is not None:
+                w.set_margin_top(t)
+                w.set_margin_bottom(b)
+                w.set_margin_start(side)
+                w.set_margin_end(side)
+
+    def cancel_crop(self) -> None:
+        if self._export is not None:
+            self._export.cancel()
+            self._export = None
+        for w in (self.crop_frame, self.crop_bar):
+            if w is not None:
+                self.overlay.remove_overlay(w)
+        self.crop_bar = self.crop_frame = None
+        self._crop_room(False)
+        self.hud.set_visible(not self.message.get_visible())
+        self._show_hud()
+
+    def do_crop(self, rect) -> None:
+        from . import edit
+        if self.crop_bar is None or self._export is not None:
+            return
+        x, y, w, h = rect
+        frame = self.crop_frame
+        if (x, y, w, h) == (0, 0, frame.iw, frame.ih):
+            self.cancel_crop()                       # the whole picture: nothing to save
+            return
+        out = edit.output_path(self.path, "Cropped")
+        bar = self.crop_bar
+        bar.exporting(0.0)
+
+        def done(ok, message):
+            self._export = None
+            if self.crop_bar is not bar:
+                return
+            if ok:
+                self.cancel_crop()
+                self.open(out)
+            else:
+                bar.exporting(None)
+                bar.size.set_label("Couldn't crop" + (f": {message}" if message else ""))
+        self._export = edit.Export(edit.crop_command(self.path, out, x, y, w, h),
+                                   self.stream.get_duration() / 1e6, lambda p: (bar.exporting(p), False)[1], done)
 
     def _thumb(self, bar, i: int, png: bytes) -> bool:
         try:
@@ -578,7 +655,7 @@ class VideoWindow(Gtk.ApplicationWindow):
 
     def _hide_now(self) -> bool:
         self._hide_src = 0
-        if self._over_hud or self.audio or self.trim_bar is not None or \
+        if self._over_hud or self.audio or self._editing() or \
                 not (self.stream and self.stream.get_playing()):
             return False
         self.hud.add_css_class("hidden")
@@ -640,7 +717,8 @@ class VideoWindow(Gtk.ApplicationWindow):
              Item("Mute", lambda _v=None: self.toggle_mute(), checked=self.muted, enabled=ok)],
             [Item("Exit Full Screen" if self.is_fullscreen() else "Enter Full Screen", self.toggle_fullscreen,
                   enabled=not self.audio)],
-            [Item("Trim…", self.start_trim, enabled=self.can_edit() and self.trim_bar is None)],
+            [Item("Trim…", self.start_trim, enabled=self.can_edit() and not self._editing()),
+             Item("Crop…", self.start_crop, enabled=self.can_edit() and not self.audio and not self._editing())],
             [Item("Show in Files", self.show_in_files), Item("Open…", self.open_dialog)],
         ], at=(x, y), glass=True, passthrough=True)
 
@@ -654,8 +732,10 @@ class VideoWindow(Gtk.ApplicationWindow):
     def _key(self, _c, keyval, _code, state) -> bool:
         cmd = state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SUPER_MASK)
         k = Gdk.keyval_to_lower(keyval)
-        if self.trim_bar is not None and not cmd and k in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_Escape):
-            if k == Gdk.KEY_Escape:
+        if self._editing() and not cmd and k in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_Escape):
+            if self.crop_bar is not None:
+                self.cancel_crop() if k == Gdk.KEY_Escape else self.do_crop(self.crop_frame.rect)
+            elif k == Gdk.KEY_Escape:
                 self.cancel_trim()
             else:
                 self.do_trim(self.trim_bar.strip.start, self.trim_bar.strip.end)
