@@ -10,6 +10,11 @@
   one to lock it, clear its data (to the Trash), uninstall it, and -- for
   Flatpak apps -- turn camera, microphone, network, location, running in
   the background, notifications and the home folder on or off.
+- Ask before apps use things (Settings > Security & Privacy, on by
+  default): a newly installed Flatpak app shows, the first time it opens,
+  what it wants of the microphone, network and home folder (uncheck to
+  refuse); the camera and location ask in a Sonata alert when first used.
+  Off: apps get access without asking.
 
 ### Dock
 - An app opened from a Dock folder stays in it: the folder shows the

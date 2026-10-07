@@ -61,6 +61,20 @@ SETTINGS_XML = """<node>
 </node>"""
 APPEARANCE = "org.freedesktop.appearance"
 # accent colours as the portal spec wants them (sRGB 0..1), from Sonata's tokens
+# Access: "Allow X to use the camera / your location?" (camera and location
+# portals), Sonata's alert -- or granted at once when Settings > Security &
+# Privacy doesn't ask (appperms.py)
+ACCESS_XML = """<node>
+<interface name="org.freedesktop.impl.portal.Access">
+  <method name="AccessDialog">
+    <arg type="o" name="handle" direction="in"/><arg type="s" name="app_id" direction="in"/>
+    <arg type="s" name="parent_window" direction="in"/><arg type="s" name="title" direction="in"/>
+    <arg type="s" name="subtitle" direction="in"/><arg type="s" name="body" direction="in"/>
+    <arg type="a{sv}" name="options" direction="in"/>
+    <arg type="u" name="response" direction="out"/><arg type="a{sv}" name="results" direction="out"/>
+  </method>
+</interface>
+</node>"""
 REQUEST_XML = """<node><interface name="org.freedesktop.impl.portal.Request">
   <method name="Close"/></interface></node>"""
 
@@ -157,6 +171,8 @@ class Portal:
         snode = Gio.DBusNodeInfo.new_for_xml(SETTINGS_XML)
         conn.register_object(PATH, snode.interfaces[0], self._settings_call,
                              lambda *_a: GLib.Variant("u", 2), None)
+        anode = Gio.DBusNodeInfo.new_for_xml(ACCESS_XML)
+        conn.register_object(PATH, anode.interfaces[0], self._access_call, None, None)
         self._last = settings_values()
         from . import config, prefs
         self._mons = [prefs.watch(self._settings_changed), config.watch("appearance", self._settings_changed)]
@@ -180,6 +196,18 @@ class Portal:
                 invocation.return_value(GLib.Variant.new_tuple(GLib.Variant("v", vals[ns][key])))
             else:
                 invocation.return_dbus_error("org.freedesktop.portal.Error.NotFound", f"{ns} {key}")
+
+    def _access_call(self, _conn, _sender, _path, _iface, method, params, invocation):
+        _handle, _app, _parent, title, subtitle, body, options = params.unpack()
+        from . import appperms
+
+        def done(response):
+            invocation.return_value(GLib.Variant("(ua{sv})", (response, {})))
+        try:
+            appperms.access_answer(title, subtitle, body, options, done)
+        except Exception as e:                     # never leave the app waiting
+            print(f"sonata2 portal: access: {e}", flush=True)
+            done(2)
 
     def _settings_changed(self, *_a):
         """Tell apps what changed (they switch Dark Mode, fonts... live)."""

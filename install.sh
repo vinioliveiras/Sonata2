@@ -443,12 +443,12 @@ cp "$def" "$mark"
 
 # -- portals (file chooser, screenshots/screen sharing) for XDG_CURRENT_DESKTOP=Sonata ---------------
 $SUDO mkdir -p "$PORTAL_DIR"
-printf '[preferred]\ndefault=sonata;gtk\norg.freedesktop.impl.portal.FileChooser=sonata\norg.freedesktop.impl.portal.Settings=sonata\norg.freedesktop.impl.portal.Screenshot=wlr\norg.freedesktop.impl.portal.ScreenCast=wlr\n' \
+printf '[preferred]\ndefault=sonata;gtk\norg.freedesktop.impl.portal.FileChooser=sonata\norg.freedesktop.impl.portal.Settings=sonata\norg.freedesktop.impl.portal.Access=sonata\norg.freedesktop.impl.portal.Screenshot=wlr\norg.freedesktop.impl.portal.ScreenCast=wlr\n' \
     > "$tmp/sonata-portals.conf"
 $SUDO install -m 644 "$tmp/sonata-portals.conf" "$PORTAL_DIR/sonata-portals.conf"
 # Sonata's Open/Save panels (sonata2/portal.py): a portal backend D-Bus starts
 # on demand; xdg-desktop-portal lists backends only from its system folder
-printf '[portal]\nDBusName=org.freedesktop.impl.portal.desktop.sonata\nInterfaces=org.freedesktop.impl.portal.FileChooser;org.freedesktop.impl.portal.Settings;\nUseIn=Sonata\n' \
+printf '[portal]\nDBusName=org.freedesktop.impl.portal.desktop.sonata\nInterfaces=org.freedesktop.impl.portal.FileChooser;org.freedesktop.impl.portal.Settings;org.freedesktop.impl.portal.Access;\nUseIn=Sonata\n' \
     > "$tmp/sonata.portal"
 sudo install -D -m 644 "$tmp/sonata.portal" /usr/share/xdg-desktop-portal/portals/sonata.portal || true
 printf '[D-BUS Service]\nName=org.freedesktop.impl.portal.desktop.sonata\nExec=%s portal\n' "$BIN/sonata2" \

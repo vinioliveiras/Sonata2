@@ -2205,6 +2205,12 @@ class Settings(Adw.ApplicationWindow):
         from .. import apps
         grp = group("App Permissions", "Apps installed with Flatpak ask before using these. "
                                        "Other apps aren't sandboxed.")
+        from .. import appperms
+        ask = switch_row("Ask before apps use the camera, microphone, network…", appperms.asking(),
+                         appperms.set_asking,
+                         subtitle="A new app asks the first time it opens; off: apps get access without asking")
+        ask.set_subtitle_lines(0)
+        grp.add(ask)
         for key, title, entries in permstore.all_permissions():
             exp = Adw.ExpanderRow(title=title, use_markup=False,
                                   subtitle=(f"{len(entries)} app" + ("s" if len(entries) != 1 else ""))

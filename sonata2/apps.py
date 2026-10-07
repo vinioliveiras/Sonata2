@@ -70,6 +70,12 @@ def _gpu_aware(method):
                 return True
         except Exception as e:
             print(f"sonata2: app lock: {e}")
+        try:                                      # a new Flatpak app: what it may use, at its first open
+            from . import appperms
+            if appperms.review_gate(self, lambda: wrapper(self, arg, context, *rest)):
+                return True
+        except Exception as e:
+            print(f"sonata2: app permissions: {e}")
         try:
             from .shell.quitonclose import mark_launch
             mark_launch(self.get_id() or "")          # a quit pending for it is called off
