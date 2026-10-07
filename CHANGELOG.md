@@ -7,6 +7,9 @@
   bar, Control Center, volume keys, Settings > Sound) is set again when
   that device comes back -- a headset's microphone left at the maximum
   stays there after it reconnects.
+- Settings > Sound > "Don't let apps change the volume" (off by default):
+  an app turning a speaker or microphone down -- automatic gain in a call
+  -- is put back at once.
 
 ### Fixes
 - Alerts no longer crash with libadwaita 1.5 (Ubuntu 24.04): their fixed

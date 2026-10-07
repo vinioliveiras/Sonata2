@@ -7,8 +7,9 @@ makes a new microphone), Sonata sets it again, after WirePlumber has
 put its own back.
 
 Only what you set from Sonata is remembered: an app turning the
-microphone down by itself (automatic gain in a call) isn't saved, nor
-fought.
+microphone down by itself (automatic gain in a call) isn't saved -- and,
+with Settings > Sound > "Don't let apps change the volume" on, it is put
+back at once (keep()).
 
     remember("source", 100)          # system.set_volume does it
     restore("source", "bluez_input.XX")   # audiofollow's "new" events
@@ -24,7 +25,10 @@ SAVE_AFTER_S = 0.8                   # a slider dragged: one write when it stops
 RESTORE_AFTER_S = 1.5                # after WirePlumber has restored its own
 MAX_DEVICES = 40                     # the most recently set ones
 
+LOCK_GRACE_S = 2.0                   # a change this soon after Sonata set one is Sonata's
+
 _pending = {}                        # kind -> percent not written yet
+_set_at = {}                         # kind -> when Sonata last set it (monotonic)
 _timer = None
 _lock = threading.Lock()
 
@@ -47,6 +51,7 @@ def remember(kind: str, percent: int) -> None:
         return
     with _lock:
         _pending[kind] = max(0, min(100, int(percent)))
+        _set_at[kind] = time.monotonic()
         if _timer is not None:
             _timer.cancel()
         _timer = threading.Timer(SAVE_AFTER_S, flush)
@@ -98,3 +103,67 @@ def restore(kind: str, name: str, wait: float = RESTORE_AFTER_S, set_volume=None
         time.sleep(wait)
     (set_volume or (lambda k, n, p: _pactl(f"set-{k}-volume", n, f"{p}%")))(kind, name, pct)
     return True
+
+
+# -- "Don't let apps change the volume" ---------------------------------------------------
+def locked() -> bool:
+    from ..sounds import DEFAULTS
+    return bool(config.load("sounds", DEFAULTS).get("lock_volumes", False))
+
+
+def node_volume(kind: str, index: int):
+    """(name, percent) of sink/source #index -- its loudest channel -- else None."""
+    import json
+    try:
+        nodes = json.loads(_pactl("-f", "json", "list", kind + "s") or "[]")
+    except ValueError:
+        return None
+    for n in nodes if isinstance(nodes, list) else []:
+        if n.get("index") == index:
+            pcts = []
+            for ch in (n.get("volume") or {}).values():
+                try:
+                    pcts.append(int(str(ch.get("value_percent", "")).rstrip("%")))
+                except (ValueError, AttributeError):
+                    pass
+            return (n.get("name", ""), max(pcts)) if pcts else None
+    return None
+
+
+def keep(kind: str, index: int, state=None, set_volume=None, now=None) -> bool:
+    """Blocking: sink/source #index changed. With the lock on, a volume
+    nobody set from Sonata goes back to the device's own (its first
+    volume seen counts as its own when none was set yet). True: put back."""
+    if kind not in KINDS or not locked():
+        return False
+    now = time.monotonic() if now is None else now
+    with _lock:
+        if now - _set_at.get(kind, -1e9) < LOCK_GRACE_S or kind in _pending:
+            return False                          # Sonata's own change
+    got = (state or node_volume)(kind, index)
+    if not got or not usable(got[0]):
+        return False
+    name, pct = got
+    want = wanted(kind, name)
+    if want is None:                              # first seen: this is its volume
+        data = saved()
+        data[kind][name] = pct
+        config.save(NAME, data)
+        return False
+    if abs(want - pct) < 1:
+        return False
+    (set_volume or (lambda k, n, p: _pactl(f"set-{k}-volume", n, f"{p}%")))(kind, name, want)
+    return True
+
+
+def lock_defaults(get=None, volume=None) -> None:
+    """Turning the lock on: the devices in use keep the volume they have now."""
+    get = get or (lambda kind: _pactl("get-default-" + kind).strip())
+    from . import system
+    volume = volume or (lambda kind: (system.volume() if kind == "sink" else system.input_volume()))
+    data = saved()
+    for kind in KINDS:
+        name, v = get(kind), volume(kind)
+        if usable(name) and v and name not in data[kind]:
+            data[kind][name] = v[0]
+    config.save(NAME, data)

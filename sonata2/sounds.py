@@ -17,7 +17,8 @@ from . import config
 
 DIR = os.path.join(os.path.dirname(__file__), "data", "sounds")
 DEFAULTS = {"effects": True, "volume_feedback": True,
-            "follow_new_devices": True}          # new headphones/headsets used at once (audiofollow.py)
+            "follow_new_devices": True,          # new headphones/headsets used at once (audiofollow.py)
+            "lock_volumes": False}               # apps can't change a device's volume (devicevolume.py)
 EVENTS = {                           # event -> bundled file (without .oga)
     "trash": "trash-empty",          # Move to Trash
     "empty-trash": "trash-empty",

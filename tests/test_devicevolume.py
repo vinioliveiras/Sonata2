@@ -3,6 +3,7 @@ Each device keeps the volume set from Sonata; it is set again when the
 device comes back (a Bluetooth headset reconnecting / switching profile
 makes a new microphone)."""
 import os
+import pathlib
 import tempfile
 import unittest
 from unittest import mock
@@ -76,6 +77,74 @@ class DeviceVolumeTest(unittest.TestCase):
             system.set_volume(None, True)                                   # mute only: nothing
             system.set_volume(20, node="55")                                # a given node: not "in use"
         self.assertEqual(rem.call_args_list, [mock.call("source", 100), mock.call("sink", 35)])
+
+
+class LockTest(unittest.TestCase):
+    """Settings > Sound > "Don't let apps change the volume": a volume
+    nobody set from Sonata goes back (Vini: apps turning the mic down)."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.p = mock.patch.object(config, "CONFIG_DIR", self.dir)
+        self.p.start()
+        DV._pending.clear()
+        DV._set_at.clear()
+        config.update("sounds", lock_volumes=True)
+        data = DV.saved()
+        data["source"]["bluez_input.AA"] = 100
+        config.save(DV.NAME, data)
+        self.calls = []
+
+    def tearDown(self):
+        self.p.stop()
+
+    def keep(self, pct, name="bluez_input.AA", now=1000.0):
+        return DV.keep("source", 5, state=lambda k, i: (name, pct),
+                       set_volume=lambda *a: self.calls.append(a), now=now)
+
+    def test_an_app_turning_it_down_is_put_back(self):
+        self.assertTrue(self.keep(62))
+        self.assertEqual(self.calls, [("source", "bluez_input.AA", 100)])
+        self.assertFalse(self.keep(100, now=1001.0))              # our own put-back: nothing more
+
+    def test_off_by_default_and_when_off(self):
+        from sonata2 import sounds
+        self.assertFalse(sounds.DEFAULTS["lock_volumes"])
+        config.update("sounds", lock_volumes=False)
+        self.assertFalse(self.keep(10))
+        self.assertEqual(self.calls, [])
+
+    def test_sonata_own_changes_are_not_fought(self):
+        DV._set_at["source"] = 999.5                              # set from Sonata half a second ago
+        self.assertFalse(self.keep(50))
+        DV._set_at.clear()
+        DV._pending["source"] = 50                                # still being dragged
+        self.assertFalse(self.keep(50))
+        self.assertEqual(self.calls, [])
+
+    def test_first_seen_volume_is_its_own(self):
+        self.assertFalse(self.keep(70, name="alsa_input.laptop"))
+        self.assertEqual(DV.wanted("source", "alsa_input.laptop"), 70)
+        self.assertTrue(self.keep(30, name="alsa_input.laptop", now=1002.0))
+        self.assertEqual(self.calls[-1], ("source", "alsa_input.laptop", 70))
+
+    def test_turning_it_on_keeps_the_current_volumes(self):
+        DV.lock_defaults(get=lambda k: {"sink": "alsa_output.spk", "source": "bluez_input.AA"}[k],
+                         volume=lambda k: (55, False) if k == "sink" else (20, False))
+        self.assertEqual(DV.wanted("sink", "alsa_output.spk"), 55)
+        self.assertEqual(DV.wanted("source", "bluez_input.AA"), 100)     # the one you set stays
+
+    def test_change_events_reach_it(self):
+        seen = []
+        f = audiofollow.AudioFollow(info=lambda *a: None, get_default=lambda k: "", set_default=lambda *a: None,
+                                    enabled=lambda: True, restore=lambda *a: None, keep=lambda *a: seen.append(a))
+        f.event("Event 'change' on source #5")
+        self.assertEqual(seen, [("source", 5)])
+
+    def test_settings_switch(self):
+        src = (pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "settings" / "app.py").read_text()
+        self.assertIn('switch_row("Don\'t let apps change the volume"', src)
+        self.assertIn("devicevolume.lock_defaults", src)
 
 
 if __name__ == "__main__":

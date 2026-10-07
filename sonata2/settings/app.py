@@ -915,6 +915,12 @@ class Settings(Adw.ApplicationWindow):
         if proc is not None:
             anchor.connect("destroy", lambda *_: proc.kill())
 
+    def _lock_volumes(self, on) -> None:
+        self._save("sounds", "lock_volumes", on)
+        if on:                                   # the devices in use keep what they have now
+            from ..backend import devicevolume
+            system.run_async(devicevolume.lock_defaults, None)
+
     def _page_sound(self):
         out = group("Output")
         vol = group("Volume")
@@ -936,6 +942,11 @@ class Settings(Adw.ApplicationWindow):
                 mic_row = slider_row("Input volume", mic[0], 0, 100,
                                      lambda x: self._latest("mic", system.set_input_volume, int(x)))
                 vol.add(mic_row)
+            from ..sounds import DEFAULTS as SND_L
+            vol.add(switch_row("Don't let apps change the volume",
+                               config.load("sounds", SND_L).get("lock_volumes", False), self._lock_volumes,
+                               subtitle="Each speaker and microphone stays where you set it in Sonata; "
+                                        "an app turning it down (automatic gain in a call) is put back"))
             self._follow_levels(vol, out_row, mic_row)
             options = [(s.key, s.name) for s in sinks]
             if options:

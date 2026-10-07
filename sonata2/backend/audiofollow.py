@@ -19,7 +19,7 @@ import threading
 
 from gi.repository import GLib
 
-EVENT = re.compile(r"Event '(new|remove)' on (sink|source) #(\d+)")
+EVENT = re.compile(r"Event '(new|remove|change)' on (sink|source) #(\d+)")
 EXTERNAL_BUSES = ("bluetooth", "usb")
 
 
@@ -53,9 +53,11 @@ def external(name: str, props: dict) -> bool:
 
 
 class AudioFollow:
-    def __init__(self, info=node_info, get_default=None, set_default=None, enabled=None, restore=None):
+    def __init__(self, info=node_info, get_default=None, set_default=None, enabled=None, restore=None,
+                 keep=None):
         self.info = info
         self.restore = restore or _restore_volume
+        self.keep = keep or _keep_volume
         self.get_default = get_default or (lambda kind: _pactl("get-default-" + kind).strip())
         self.set_default = set_default or (lambda kind, name: _pactl("set-default-" + kind, name))
         self.enabled = enabled or _enabled
@@ -66,6 +68,9 @@ class AudioFollow:
         if not m:
             return
         what, kind, index = m.group(1), m.group(2), int(m.group(3))
+        if what == "change":
+            self.keep(kind, index)                    # an app turned it down? (devicevolume.py)
+            return
         if what == "new":
             self.added(kind, index)
             found = self.info(kind, index)
@@ -108,6 +113,11 @@ def _restore_volume(kind: str, name: str) -> None:
     from . import devicevolume
     if devicevolume.wanted(kind, name) is not None:
         threading.Thread(target=devicevolume.restore, args=(kind, name), daemon=True).start()
+
+
+def _keep_volume(kind: str, index: int) -> None:
+    from . import devicevolume
+    devicevolume.keep(kind, index)
 
 
 def _enabled() -> bool:
