@@ -58,7 +58,8 @@ def restricted_command(info, refused, uris=()) -> list:
     network (its own empty network), camera (/dev/video*, /dev/media*
     hidden), microphone (and sound: the PipeWire / PulseAudio sockets and
     /dev/snd hidden), files (a home of its own, kept between opens, in
-    ~/.local/share/sonata2/app-homes/<app>)."""
+    Sonata's data folder, userdata.folder("app-homes")/<app> -- never the
+    install, which ./install.sh replaces)."""
     import glob
     argv = exec_args(info.get_commandline() or "", uris)
     if not argv:
@@ -80,8 +81,8 @@ def restricted_command(info, refused, uris=()) -> list:
             out += ["--tmpfs", "/dev/snd"]
     if "files" in refused:
         home = GLib.get_home_dir()
-        own = os.path.join(GLib.get_user_data_dir(), "sonata2", "app-homes",
-                           (info.get_id() or "app").removesuffix(".desktop"))
+        from . import userdata
+        own = os.path.join(userdata.folder("app-homes"), (info.get_id() or "app").removesuffix(".desktop"))
         os.makedirs(own, mode=0o700, exist_ok=True)
         out += ["--bind", own, home]
     return out + ["--", *argv]

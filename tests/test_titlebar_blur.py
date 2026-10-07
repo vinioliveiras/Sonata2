@@ -33,7 +33,10 @@ class BlurTest(unittest.TestCase):
                 mock.patch.object(titlebars, "glass_bars", return_value=False):
             for dark in (False, True):
                 titlebars.apply_colors(dark)
-                self.assertEqual(calls[("blur", "blur_by_default")], titlebars.BLUR)
+                # each glass part's own rule (Settings > Appearance > Glass); never every window
+                from sonata2.ui import glass as G
+                self.assertEqual(calls[("blur", "blur_by_default")], G.blur_rule(G.settings()))
+                self.assertNotIn('type is "toplevel"', calls[("blur", "blur_by_default")])
 
     def test_glass_title_bars_toggle(self):
         """Settings > Appearance > Glass title bars (off by default): every window
@@ -46,7 +49,8 @@ class BlurTest(unittest.TestCase):
                         side_effect=lambda sec, key, val: calls.__setitem__((sec, key), val)), \
                 mock.patch.object(titlebars, "glass_bars", return_value=True):
             titlebars.apply_colors(True)
-        self.assertEqual(calls[("blur", "blur_by_default")], titlebars.BLUR_GLASS)
+        from sonata2.ui import glass as G
+        self.assertEqual(calls[("blur", "blur_by_default")], G.blur_rule(G.settings()) + ' | type is "toplevel"')
         glass = tokens.wayfire_color(tokens.palette(True)["titlebar_glass"], premultiplied=True)
         self.assertEqual(calls[("pixdecor", "fg_color")], "\\" + glass)
         css = adwstyle.css("/x", bars=True, glass=True)

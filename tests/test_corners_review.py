@@ -69,6 +69,8 @@ class FpsModuleRepliesTest(unittest.TestCase):
         import types
         from sonata2.shell import fpsmodule as F
         m = types.SimpleNamespace(graph=types.SimpleNamespace(set_times=lambda *a: setattr(m, "note", a)),
+                                  app=types.SimpleNamespace(set_label=lambda *_: None),      # (the app's name)
+                                  history=[], _app_id=None,
                                   live=types.SimpleNamespace(set_label=lambda *_: None),
                                   avg=types.SimpleNamespace(set_label=lambda *_: None),
                                   low=types.SimpleNamespace(set_label=lambda *_: None),

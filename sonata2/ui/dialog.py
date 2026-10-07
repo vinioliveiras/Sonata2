@@ -47,6 +47,10 @@ ALERT_WIDTH = 372     # px: the alert's own width, fixed
 
 # libadwaita >= 1.5: AlertDialog (MessageDialog is deprecated since 1.6)
 _MODERN = hasattr(Adw, "AlertDialog")
+# set_content_width on an alert segfaults with libadwaita 1.5.0 (Ubuntu
+# 24.04's; seen in the test run: every alert would take its app down) --
+# the alert's own width there
+_CONTENT_WIDTH_OK = (Adw.get_major_version(), Adw.get_minor_version()) >= (1, 6)
 
 
 def _breakable(text: str) -> str:
@@ -69,7 +73,7 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None,
     if _MODERN:
         dlg = Adw.AlertDialog(heading=heading, body=body)
         dlg.add_css_class("sonata-alert")
-        if hasattr(dlg, "set_content_width"):
+        if _CONTENT_WIDTH_OK:
             dlg.set_content_width(ALERT_WIDTH)      # one width: the wrapped text can't make it shake
     else:
         dlg = Adw.MessageDialog(heading=heading, body=body, transient_for=parent,

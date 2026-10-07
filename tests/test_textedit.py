@@ -214,7 +214,9 @@ class TextEditTest(unittest.TestCase):
         w = tw.TextEditWindow(app())
         w.present()
         settle(50)
-        self.assertFalse(w.tabs_rev.get_reveal_child())             # one tab: no tab bar
+        # one tab: the tab bar shows anyway (Settings' "always show tabs", on by
+        # default since 0.11 -- tests/test_tab_bar_setting.py covers it off)
+        self.assertTrue(w.tabs_rev.get_reveal_child())
         tw.open_paths(app(), [a, b])                                  # files -> tabs of the front window
         self.assertEqual([d.name for d in w.docs], ["a.txt", "b.txt"])   # the empty Untitled took a.txt
         self.assertTrue(w.tabs_rev.get_reveal_child())
@@ -251,7 +253,7 @@ class TextEditTest(unittest.TestCase):
         other = tw._S["windows"][0]
         self.assertIsNot(other, w)
         self.assertEqual([d.name for d in other.docs], ["b.txt"])
-        self.assertFalse(w.tabs_rev.get_reveal_child())
+        self.assertTrue(w.tabs_rev.get_reveal_child())               # (always shown: see above)
 
     def test_find_replace(self):
         w = self.tw.TextEditWindow(app())

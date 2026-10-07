@@ -714,7 +714,8 @@ class SettingsWindowTests(TempConfig):
             def get_commandline(self): return "testapp"
             def get_startup_wm_class(self): return None
         icons.forget_prefs()
-        with mock.patch.object(P, "app_list", return_value=[("org.test.App", Info())]):
+        from sonata2.settings import applist                     # (the shared app list)
+        with mock.patch.object(applist, "app_list", return_value=[("org.test.App", Info())]):
             w = S.Settings(None, "appicons")
             w.present()
             w.select("appicons", from_sidebar=True)

@@ -2313,7 +2313,11 @@ class SettingsAuditRegressions(unittest.TestCase):
     def test_group_titles_with_ampersand_show(self):
         """Trackpad's "Point & Click" / "Scroll & Zoom" titles were blank
         (group titles are markup)."""
-        self.assertEqual(self.st.group("Point & Click").get_title(), "Point &amp; Click")
+        # (passed escaped; how libadwaita hands the title back varies: 1.5 unescapes it)
+        from unittest import mock
+        with mock.patch.object(self.st.Adw, "PreferencesGroup") as G:
+            self.st.group("Point & Click", "A & B")
+        self.assertEqual(G.call_args.kwargs, {"title": "Point &amp; Click", "description": "A &amp; B"})
 
     def test_mouse_and_trackpad_groups_say_which(self):
         """Mouse & Trackpad: both devices' options in one pane -- every group

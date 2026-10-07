@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Fixes
+- Alerts no longer crash with libadwaita 1.5 (Ubuntu 24.04): their fixed
+  width is set only from libadwaita 1.6.
+- The displays turn off with the lock again where wlopm does it: Sonata's
+  privacy plugin let it use output power management.
+- Open with limits (Settings > Apps): an app's own home folder is kept in
+  Sonata's data folder, not inside the install that ./install.sh replaces.
+- Files: a shortcut's arrow stays visible with a very dark accent in Dark
+  Mode.
+
 ## 0.12.1-alpha -- 2026-10-07
 
 Windows keep their size and frame through maximize, restore and resize,

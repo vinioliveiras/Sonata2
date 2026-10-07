@@ -68,6 +68,7 @@ static const std::set<std::string> PRIVILEGED = {
 static const std::set<std::string> HELPERS = {
     "grim", "slurp", "wf-recorder", "wl-screenrec", "wl-copy", "wl-paste", "wtype", "wlsunset",
     "wlr-randr", "swayidle", "wayvnc",
+    "wlopm",                                         /* displays off / on with the lock (lockdisplay.py) */
 };
 
 static const std::set<std::string> SERVICES = {"xdg-desktop-portal-wlr"};

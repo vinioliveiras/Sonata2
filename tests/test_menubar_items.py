@@ -79,7 +79,7 @@ class ItemsTest(unittest.TestCase):
             for g in groups:
                 walk(g)
             titles = {r.get_title(): r for r in rows}
-            for t in ("Background apps", "Now Playing", "Input source", "Sound", "Battery", "Battery percentage",
+            for t in ("Background apps", "Now Playing", "Keyboard layout", "Sound", "Battery", "Battery percentage",
                       "Bluetooth", "Wi-Fi", "Search"):
                 self.assertIn(t, titles)
             titles["Wi-Fi"].set_active(False)
