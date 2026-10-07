@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Fixes
+- The menu bar no longer stops responding when a menu opened over another
+  one can't show: that menu is closed again.
 - Add to Desktop (an app's menu in the Dock) makes a shortcut to the app --
   its icon and name -- not to its program, which showed as a text file.
 - A shortcut to an app dragged to the Trash just goes there: only an

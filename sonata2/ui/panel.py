@@ -123,6 +123,7 @@ def popup(anchor: Gtk.Widget, child: Gtk.Widget, position=Gtk.PositionType.BOTTO
     menu.OPEN.add(pop)
     hold_hover(pop)
     pop.popup()
+    menu.watch_shown(pop)
     return pop
 
 

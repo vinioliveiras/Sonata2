@@ -86,6 +86,20 @@ popover.menu .sonata-menu-x:hover { opacity: 1; background: alpha(currentColor, 
 # (e.g. an auto-hiding Dock). `on_closed` callbacks run after any closes.
 OPEN = set()
 on_closed = []
+SHOWN_WITHIN_MS = 400
+
+
+def watch_shown(pop) -> None:
+    """A menu or panel that never shows (GTK: "Tried to map a grabbing popup
+    with a non-top most parent" -- opened over another one) is closed
+    again: it held the menu bar's clicks while invisible (Vini: the menu
+    bar stopped responding)."""
+    def check():
+        if pop in OPEN and pop.get_visible() and not pop.get_mapped():
+            print("sonata2: a menu that couldn't show was closed", flush=True)
+            pop.popdown()
+        return False
+    GLib.timeout_add(SHOWN_WITHIN_MS, check)
 
 
 @dataclass
@@ -209,6 +223,7 @@ def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
     _hover_only(pop)
     pop.connect("map", _checks_after_text)
     pop.popup()
+    watch_shown(pop)
     return pop
 
 
