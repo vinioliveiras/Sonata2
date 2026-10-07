@@ -63,6 +63,7 @@ class TapClickTest(unittest.TestCase):
         self.assertIn("post_input_event_signal<wlr_pointer_button_event>", part)
         self.assertIn("keyboard_focus_changed_signal", part)                 # games ignore unfocused clicks
         self.assertIn("seat->get_active_view()", part)
+        self.assertIn("node->stringify()", part)                            # a frame over the app took it?
         meta = (ROOT / "wayfire-plugin" / "metadata" / "sonata-corners.xml").read_text()
         self.assertIn('<option name="debug_input" type="bool">', meta)
 

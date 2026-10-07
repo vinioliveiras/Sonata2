@@ -534,7 +534,7 @@ class corners_render_instance_t :
  * used before, maps input through its own transform). */
 /* the top of a window that is always blurred: title bar + a toolbar */
 /* bumped with every change of the plugin (tests/test_regressions.py checks it) */
-#define SONATA_CORNERS_BUILD "2026-10-07.3 debug_input: keyboard focus too"
+#define SONATA_CORNERS_BUILD "2026-10-07.4 debug_input: the node clicked"
 static const int TOP_GLASS = 96;
 
 class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
@@ -1627,12 +1627,14 @@ struct short_click_stretch_t
 
         auto view = wf::get_core().get_cursor_focus_view();
         auto keys = wf::get_core().seat->get_active_view();     /* games ignore clicks when not focused */
+        auto node = wf::get_core().get_cursor_focus();          /* the app itself, or a frame / edge over it */
         LOGI("sonata-input ", when, ": ", (ev->pointer && ev->pointer->base.name) ? ev->pointer->base.name : "?",
             " button ", ev->button, (ev->state == WL_POINTER_BUTTON_STATE_PRESSED) ? " down" : " up",
             " t=", ev->time_msec, " mode=", (int)mode, " -> ",
             view ? view->get_app_id() : std::string("(nothing)"),
             view ? (" \"" + view->get_title() + "\"") : std::string(""),
-            " keyboard: ", keys ? keys->get_app_id() : std::string("(nothing)"));
+            " keyboard: ", keys ? keys->get_app_id() : std::string("(nothing)"),
+            " node: ", node ? node->stringify() : std::string("(nothing)"));
     }
 
     wf::signal::connection_t<wf::keyboard_focus_changed_signal> on_focus =
