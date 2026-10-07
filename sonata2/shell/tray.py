@@ -228,6 +228,8 @@ class TrayItem:
             self.menu = None
         if not self.menu and menu and menu != "/":
             self.menu = DBusMenu(self.conn, self.name, menu)
+        if self.menu is not None:
+            self.menu.steam = "steam" in (props.get("Id") or "").lower()
         self.ready = True
         self.host.changed(self)
 
@@ -489,10 +491,11 @@ def _file_texture(path: str):
 
 
 # -- menus (com.canonical.dbusmenu) ---------------------------------------------------------
-def layout_to_sections(layout, on_click):
+def layout_to_sections(layout, on_click, labels=None):
     """A GetLayout node (id, props, children) -> ui.menu sections; separators
     start a new section, children-display=submenu nodes become submenus.
-    on_click(id) is called when an item is chosen."""
+    on_click(id) is called when an item is chosen; labels (a dict) gets
+    each item's label by id."""
     Item = ui.menu.Item
     sections, cur = [], []
     for child in layout[2]:
@@ -505,9 +508,11 @@ def layout_to_sections(layout, on_click):
             cur = []
             continue
         label = _strip_mnemonic(props.get("label", ""))
+        if labels is not None:
+            labels[cid] = label
         enabled = bool(props.get("enabled", True))
         if props.get("children-display") == "submenu" or kids:
-            sub = layout_to_sections((cid, props, kids), on_click)
+            sub = layout_to_sections((cid, props, kids), on_click, labels)
             cur.append(Item(label, submenu=sub or [[Item("", enabled=False)]], enabled=enabled))
             continue
         checked = None
@@ -519,12 +524,54 @@ def layout_to_sections(layout, on_click):
     return sections
 
 
+# Steam's tray menu ignores the clicks it gets (Vini: Library, Store...
+# opened nothing -- whatever the Event looked like): its items are opened
+# with Steam's own steam:// links instead. Labels in English and Portuguese.
+STEAM_LINKS = (
+    (("library", "biblioteca"), "steam://open/games"),
+    (("store", "loja"), "steam://store"),
+    (("community", "comunidade"), "steam://url/CommunityHome"),
+    (("friends", "amigos"), "steam://open/friends"),
+    (("settings", "configura", "preferenc"), "steam://open/settings"),
+    (("big picture",), "steam://open/bigpicture"),
+    (("servers", "servidores"), "steam://open/servers"),
+    (("news", "notícias", "noticias"), "steam://open/news"),
+    (("screenshots", "capturas"), "steam://open/screenshots"),
+    (("downloads",), "steam://open/downloads"),
+    (("exit", "sair"), "-shutdown"),
+)
+
+
+def steam_link(label: str):
+    """The steam:// link (or -shutdown) for a Steam tray menu item, None if unknown."""
+    low = (label or "").lower()
+    for words, link in STEAM_LINKS:
+        if any(w in low for w in words):
+            return link
+    return None
+
+
+def run_steam(link: str) -> bool:
+    import shutil
+    steam = shutil.which("steam")
+    if not steam:
+        return False
+    try:
+        GLib.spawn_async([steam, link], flags=GLib.SpawnFlags.SEARCH_PATH | GLib.SpawnFlags.STDOUT_TO_DEV_NULL
+                         | GLib.SpawnFlags.STDERR_TO_DEV_NULL)
+        return True
+    except GLib.Error:
+        return False
+
+
 class DBusMenu:
     """An item's exported menu: layout on demand, clicks as Events."""
 
     def __init__(self, conn, name, path):
         self.conn, self.name, self.path = conn, name, path
         self.open = None                        # (popover, widget) while shown
+        self.steam = False                      # Steam's (STEAM_LINKS)
+        self.labels = {}
         self._sub = conn.signal_subscribe(name, MENU_IFACE, None, path, None, Gio.DBusSignalFlags.NONE,
                                           self._signal)
 
@@ -570,11 +617,15 @@ class DBusMenu:
         self._call("AboutToShow", GLib.Variant("(i)", (0,)), None, lambda _r: layout(first))
 
     def event(self, item_id: int, kind: str = "clicked") -> None:
+        link = steam_link(self.labels.get(item_id, "")) if self.steam and kind == "clicked" else None
+        if link and run_steam(link):
+            return
         self._call("Event", GLib.Variant("(isvu)", (item_id, kind, GLib.Variant("i", 0),
                                                      GLib.get_real_time() // 1000 & 0xFFFFFFFF)))
 
     def sections(self, layout):
-        return layout_to_sections(layout, self.event)
+        self.labels = {}
+        return layout_to_sections(layout, self.event, self.labels)
 
     def _signal(self, _c, _s, _p, _i, sig, *_a):
         # LayoutUpdated / ItemsPropertiesUpdated while open: redraw in place

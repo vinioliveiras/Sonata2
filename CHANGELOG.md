@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Fixes
+- Steam's menu in the menu bar works: Library, Store, Community, Friends,
+  Settings, Big Picture and Exit Steam open with Steam's own links (Steam
+  ignored the clicks).
 - The menu bar no longer stops responding when a menu opened over another
   one can't show: that menu is closed again.
 - Add to Desktop (an app's menu in the Dock) makes a shortcut to the app --
