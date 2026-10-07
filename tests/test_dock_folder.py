@@ -5,6 +5,7 @@ xvfb-run python3 -m unittest tests.test_dock_folder"""
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp()
 os.environ["GDK_BACKEND"] = "x11"
@@ -658,6 +659,31 @@ class DockFolderTest(unittest.TestCase):
         self.assertNotIn(fkey, d.cfg["pinned"])
         self.assertIn(a, d.cfg["pinned"])
         self.assertIn(b, d.cfg["pinned"])
+
+    def test_undone_folder_pops_its_app_out(self):
+        """Vini: the last app dragged out undid the folder with no animation --
+        the app left behind pops out in the folder's place."""
+        d, a, b = self.dock, *self.apps[:2]
+        fkey = d.make_folder([a, b])
+        settle()
+        self._drag_out(fkey, a)
+        d.folder_app_drag_end(fkey, a)
+        settle(30)
+        tile = d.tiles[b]
+        self.assertLess(tile.icon.pop, 1.0)                   # small and faint at first
+        self.assertLess(tile.get_opacity(), 1.0)
+        settle(D.UNGROUP_MS + 300)
+        self.assertEqual(tile.icon.pop, 1.0)
+        self.assertEqual(tile.get_opacity(), 1.0)
+        self.assertIs(d.tiles[b].get_prev_sibling() is not None, True)
+
+    def test_ungroup_staggers(self):
+        d = self.dock
+        fkey = d.make_folder(self.apps[:3])
+        settle()
+        with mock.patch.object(D.Dock, "pop_in") as pop:
+            d.ungroup(fkey)
+        self.assertEqual([c[0][1] for c in pop.call_args_list], [0, D.UNGROUP_STAGGER_MS, 2 * D.UNGROUP_STAGGER_MS])
 
     def test_drag_out_refused_while_another_drag(self):
         d, a, b = self.dock, *self.apps[:2]

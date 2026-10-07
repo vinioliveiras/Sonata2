@@ -75,6 +75,8 @@ LAUNCH_MAX_BOUNCES = 10
 LAUNCH_MAX_MS = LAUNCH_MAX_BOUNCES * BOUNCE_MS
 CLOSE_UP_MS = 260           # a removed icon's place closes up
 OPEN_UP_MS = 260            # a new icon's place opens, then it fades in
+UNGROUP_MS = 340            # a folder undone: its apps pop out in its place
+UNGROUP_STAGGER_MS = 45
 SETTLE_MS = 200             # a dropped icon glides into its slot
 FOLDER_HOLD_MS = 350        # held this long over another app's middle: drop makes a folder
 FOLDER_ZONE = 0.3           # the middle: within this part of a cell from the icon's centre
@@ -259,6 +261,7 @@ class DockIcon(Gtk.Widget):
 
     badge = ""        # macOS notification badge ("3", "99+"); set_badge()
     locked = False    # a locked app (applock.py): a padlock at the bottom right
+    pop = 1.0         # drawn at this scale (Dock.pop_in)
     sandboxed = False  # a copy runs in a sandbox (sandbox.py): an orange "S"
 
     def set_sandboxed(self, on: bool) -> None:
@@ -280,6 +283,11 @@ class DockIcon(Gtk.Widget):
         dock = self.get_ancestor(Dock)
         base = dock.cfg["icon_size"] if dock else self._size
         size = self._size if self._size == base else max(self._size, max_icon(dock.cfg))
+        if self.pop != 1.0:                    # popping out of an undone folder (Dock.pop_in)
+            c = self._size / 2
+            snap.translate(Graphene.Point().init(c, c))
+            snap.scale(self.pop, self.pop)
+            snap.translate(Graphene.Point().init(-c, -c))
         self._paintable(size).snapshot(snap, self._size, self._size)
         if self.locked:
             dock_folder.draw_lock_badge(snap, self._size)
@@ -1377,22 +1385,55 @@ class Dock(Gtk.Box):
         GLib.idle_add(last)
 
     def ungroup(self, fkey) -> None:
-        """The folder's apps go back to the Dock in its place."""
+        """The folder's apps go back to the Dock in its place, popping out of
+        it one after the other (Vini: the last app dragged out undid it
+        with no animation)."""
         f = self.folder(fkey)
         pins = self.cfg["pinned"]
         if f is None or fkey not in pins:
             return
         at = pins.index(fkey)
         pins.remove(fkey)
+        came = []
         for k in [k for k in f["apps"] if k not in pins]:
             pins.insert(at, k)
             at += 1
+            fresh = k not in self.tiles
             self._add_known_tile(k)
+            if fresh and k in self.tiles:
+                came.append(self.tiles[k])
         self.cfg["folders"].pop(dock_folder.folder_id(fkey), None)
         if fkey in self.tiles:
             self._remove_tile(fkey)
         self.save_cfg()
         self._relayout()
+        for i, t in enumerate(came):
+            self.pop_in(t, i * UNGROUP_STAGGER_MS)
+
+    def pop_in(self, tile, delay: int = 0) -> None:
+        """The icon grows out of a point and fades in, overshooting a little."""
+        icon = tile.icon
+        if not hasattr(icon, "pop") or not self.get_mapped():
+            return
+        icon.pop = 0.4
+        tile.set_opacity(0.0)
+
+        def step(v):
+            icon.pop = 0.4 + 0.6 * v
+            tile.set_opacity(max(0.0, min(1.0, v * 1.6)))
+            icon.queue_draw()
+
+        def start():
+            anim = Adw.TimedAnimation.new(tile, 0.0, 1.0, UNGROUP_MS, Adw.CallbackAnimationTarget.new(step))
+            anim.set_easing(Adw.Easing.EASE_OUT_BACK)
+            anim.connect("done", lambda _a: (setattr(icon, "pop", 1.0), tile.set_opacity(1.0), icon.queue_draw()))
+            tile._pop_in = anim                     # kept alive while it runs
+            anim.play()
+            return False
+        if delay:
+            GLib.timeout_add(delay, start)
+        else:
+            start()
 
     def _folder_changed(self, fkey) -> None:
         f, tile = self.folder(fkey), self.tiles.get(fkey)

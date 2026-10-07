@@ -30,6 +30,8 @@
 - An app opened from a Dock folder stays in it: the folder shows the
   running dot, and so does the app inside its panel. Clicking it there
   brings its windows forward; minimized windows go into the folder.
+- A folder undone (its last app dragged out, or Ungroup) no longer just
+  vanishes: its apps pop out in its place, one after the other.
 
 ### Install
 - Fedora, Debian and Ubuntu (whose Wayfire is older than 0.11) get Sonata's
