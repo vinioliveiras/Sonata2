@@ -32,6 +32,19 @@ STATE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "sonata2-notes.j
 TITLE_COUNT = re.compile(r"^\s*[(\[](\d{1,5})\+?[)\]]\s")
 
 
+def allowed(cfg: dict, key: str, name: str = "") -> bool:
+    """Settings > Notifications: Badge App Icons (all apps) and each app's
+    own Badge App Icon (Vini). cfg: notifications.json."""
+    if not (cfg or {}).get("badges", True):
+        return False
+    k, nm = _norm(key), (name or "").casefold()
+    for akey, a in ((cfg or {}).get("apps") or {}).items():
+        if isinstance(a, dict) and (_norm(akey) == k or (nm and (a.get("name") or "").casefold() == nm)):
+            if not a.get("badge", True):
+                return False
+    return True
+
+
 def label(n) -> str:
     try:
         n = int(n)

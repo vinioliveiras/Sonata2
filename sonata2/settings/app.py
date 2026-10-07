@@ -1943,6 +1943,9 @@ class Settings(Adw.ApplicationWindow):
         dnd = group("Do Not Disturb", "Banners stay hidden; notifications still collect in the "
                                       "Notification Center.")
         dnd.add(switch_row("Do Not Disturb", cfg.get("dnd"), lambda on: self._save("notifications", "dnd", on)))
+        dnd.add(switch_row("Badge App Icons", cfg.get("badges", True),
+                           lambda on: self._save("notifications", "badges", on),
+                           subtitle="A red count on an app's icon in the Dock"))
         lst = group("Application Notifications")
 
         def set_app(key, field, value, row=None):
@@ -1976,6 +1979,8 @@ class Settings(Adw.ApplicationWindow):
                                   subtitle="Banners appear at the top right and go away automatically"))
             row.add_row(switch_row("Show in Notification Center", a["center"],
                                    lambda on, k=key, r=row: set_app(k, "center", on, r)))
+            row.add_row(switch_row("Badge App Icon", a["badge"],
+                                   lambda on, k=key: set_app(k, "badge", on)))
             lst.add(row)
         if not entries:
             lst.add(Adw.ActionRow(title="No notifications yet",

@@ -36,6 +36,15 @@ class PureTest(unittest.TestCase):
         self.assertTrue(B.counted_title("x", WEB))
         self.assertFalse(B.counted_title("org.gnome.TextEditor", "org.gnome.TextEditor"))
 
+    def test_allowed_all_and_per_app(self):
+        """Vini: a switch for badges in general and per app."""
+        self.assertTrue(B.allowed({}, WEB, "WhatsApp"))
+        self.assertFalse(B.allowed({"badges": False}, WEB, "WhatsApp"))
+        off = {"apps": {WEB + ".desktop": {"name": "WhatsApp", "badge": False}}}
+        self.assertFalse(B.allowed(off, WEB, "x"))
+        self.assertFalse(B.allowed({"apps": {"zz": {"name": "whatsapp", "badge": False}}}, "k", "WhatsApp"))
+        self.assertTrue(B.allowed(off, "discord", "Discord"))
+
     def test_label(self):
         self.assertEqual([B.label(x) for x in (0, 7, 120, None)], ["", "7", "99+", ""])
 
@@ -204,6 +213,18 @@ class DockTest(unittest.TestCase):
         self.dock._launcher_update(None, None, None, None, None, V("(sa{sv})", (
             f"application://{WEB}.desktop", {"count": V("x", 0), "count-visible": V("b", False)})))
         self.assertEqual(self.tile.icon.badge, "")
+
+    def test_switches_hide_badges(self):
+        self.notes(1, 2)
+        self.dock._badge_cfg = {"badges": False}
+        self.dock.refresh_badges()
+        self.assertEqual(self.tile.icon.badge, "")
+        self.dock._badge_cfg = {"apps": {WEB: {"badge": False}}}
+        self.dock.refresh_badges()
+        self.assertEqual(self.tile.icon.badge, "")
+        self.dock._badge_cfg = {}
+        self.dock.refresh_badges()
+        self.assertEqual(self.tile.icon.badge, "2")
 
     def test_new_menu_bar_resets_seen(self):
         D._SEEN.update(server=99, ids={WEB: 50})

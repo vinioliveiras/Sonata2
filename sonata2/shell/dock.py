@@ -621,6 +621,8 @@ class Dock(Gtk.Box):
         self.title_counts = {}  # key -> a web app's unread count from its title (badges.py)
         self._notes = badges.load()
         self._notes_mon = badges.watch(self._notes_changed)
+        self._badge_cfg = config.load("notifications", {})
+        self._badge_cfg_mon = config.watch("notifications", self._badge_cfg_changed)
         self._launcher_entries()
         drop = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
         # only the Dock's own icon drags: a Launchpad app (which also offers
@@ -668,9 +670,10 @@ class Dock(Gtk.Box):
         if self._apps_src:
             GLib.source_remove(self._apps_src)
             self._apps_src = 0
-        if getattr(self, "_notes_mon", None) is not None:
-            self._notes_mon.cancel()
-            self._notes_mon = None
+        for attr in ("_notes_mon", "_badge_cfg_mon"):
+            if getattr(self, attr, None) is not None:
+                getattr(self, attr).cancel()
+                setattr(self, attr, None)
         bus, sub = getattr(self, "_launcher_sub", (None, 0))
         if sub:
             bus.signal_unsubscribe(sub)
@@ -930,8 +933,16 @@ class Dock(Gtk.Box):
         self._notes = badges.load()
         self.refresh_badges()
 
+    def _badge_cfg_changed(self, *_a) -> None:
+        self._badge_cfg = config.load("notifications", {})
+        self.refresh_badges()
+
     def badge_text(self, key: str, note_counts: dict) -> str:
-        """The app's own count, else its web page's, else its unseen notifications."""
+        """The app's own count, else its web page's, else its unseen notifications
+        -- none when badges are off (Settings > Notifications)."""
+        tile = self.tiles.get(key)
+        if not badges.allowed(getattr(self, "_badge_cfg", {}), key, tile.name if tile else ""):
+            return ""
         own = self.badges.get(key)
         if own is None:
             own = next((v for k, v in self.badges.items() if k.lower() == key.lower()), None)

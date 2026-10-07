@@ -2,7 +2,15 @@
 
 ## Unreleased
 
+## 0.14.0-alpha -- 2026-10-07
+
+Dock badges for every app (WhatsApp too), web app notifications as their
+own app, settings backup and restore, windows cut to their frame, and
+smoother full-screen games.
+
 ### Changes
+- Settings > Notifications > Badge App Icons, and Badge App Icon on each
+  app: badges off for every app, or for one.
 - Dock badges for apps that send none: a web app's unread count from its
   page ("(3) WhatsApp"), else the app's notifications that came in since
   it was last in front. A new badge pops in.

@@ -32,9 +32,9 @@ from . import menubar_size  # noqa: E402
 TOP_GAP = menubar_size.height() + 6                # under the menu bar
 MAX_BANNERS = 3
 MAX_NOTES = 100            # kept in the Notification Center (it shows the newest 40)
-DEFAULTS = {"dnd": False, "apps": {}}
+DEFAULTS = {"dnd": False, "badges": True, "apps": {}}
 # per app (System Preferences > Notifications): key = desktop entry or app name
-APP_DEFAULTS = {"name": "", "allow": True, "style": "banners", "center": True, "sound": True}
+APP_DEFAULTS = {"name": "", "allow": True, "style": "banners", "center": True, "sound": True, "badge": True}
 
 
 def app_key(desktop: str, app_name: str) -> str:
