@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixes
+- Full-screen games run smoother: the rounded screen corners leave the
+  display a full-screen app is on, so Wayfire can hand the game's picture
+  to the display instead of composing every frame.
+
 ### Changes
 - Settings > About > Backup: export Sonata's settings -- and, if you like,
   the data of Notes, Calendar and Reminders -- to one .sonata-backup file,

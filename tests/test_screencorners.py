@@ -26,6 +26,23 @@ class CornersTest(unittest.TestCase):
     def setUpClass(cls):
         ui.setup()
 
+    def test_none_over_a_full_screen_game(self):
+        """Vini: frame drops and a laggy mouse in a full-screen game -- the
+        corners kept Wayfire composing every frame. None on that display."""
+        sc = C.ScreenCorners.__new__(C.ScreenCorners)
+        sc.wins, sc.full_on = [], None
+        a, b = mock.Mock(connector="HDMI-A-1"), mock.Mock(connector="eDP-1")
+        sc.wins = [a, b]
+        sc.fullscreen_on("HDMI-A-1")
+        a.set_visible.assert_called_with(False)
+        b.set_visible.assert_called_with(True)
+        sc.fullscreen_on(None)
+        a.set_visible.assert_called_with(True)
+        src = open(os.path.join(os.path.dirname(__file__), "..", "sonata2", "shell", "topbar.py")).read()
+        self.assertIn("c.fullscreen_on(f.output if full else None)", src)
+        gm = open(os.path.join(os.path.dirname(__file__), "..", "sonata2", "gamemode.py")).read()
+        self.assertIn('output = front.get("output-name") if full else None', gm)
+
     def test_on_by_default(self):
         self.assertTrue(icons.APPEARANCE_DEFAULTS["screen_corners"])
         config.save("appearance", {"theme": "mac"})

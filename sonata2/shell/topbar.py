@@ -1821,7 +1821,10 @@ class TopBarWindow(Gtk.ApplicationWindow):
                 print(f"sonata2-topbar: memory watch: {e}")
             try:                                                    # macOS' rounded screen corners
                 from .screencorners import ScreenCorners
-                self.bar.screen_corners = ScreenCorners(app)
+                corners = self.bar.screen_corners = ScreenCorners(app)
+                ff = self.bar.fullscreen_first                      # none over a full-screen game
+                ff.listeners.append(lambda full, c=corners, f=ff: c.fullscreen_on(f.output if full else None))
+                corners.fullscreen_on(ff.output if ff.active else None)
             except Exception as e:                                  # never keeps the menu bar from starting
                 print(f"sonata2-topbar: screen corners: {e}")
             try:                                                    # Clock's alarms ring from here

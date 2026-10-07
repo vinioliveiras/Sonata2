@@ -178,6 +178,7 @@ class Watcher:
         self.ipc = WayfireIPC()
         self.listeners = []
         self.active = False
+        self.output = None               # the display the full-screen app is on (its connector)
         self.pid = None                  # the fullscreen app registered with GameMode
         self._src = 0
         self._write(False)
@@ -203,15 +204,16 @@ class Watcher:
         front = next((v for v in views if isinstance(v, dict) and v.get("activated")), None)
         full = bool(front and front.get("fullscreen") and front.get("role", "toplevel") == "toplevel")
         pid = front.get("pid") if full else None
+        output = front.get("output-name") if full else None
         # a full-screen window that's minimized isn't being played: Balanced again
         # until it's back (Alt+Tab away keeps it: the game still runs on screen)
         self.power.update(any(isinstance(v, dict) and v.get("fullscreen") and v.get("mapped", True)
                               and not v.get("minimized") and v.get("role", "toplevel") == "toplevel"
                               for v in views))
         self.light.update(full=full)
-        if full != self.active or pid != self.pid:
+        if full != self.active or pid != self.pid or output != self.output:
             self._gamemode(self.pid, False)
-            self.active, self.pid = full, pid
+            self.active, self.pid, self.output = full, pid, output
             self._gamemode(pid, True)
             self._write(full)
             for cb in list(self.listeners):

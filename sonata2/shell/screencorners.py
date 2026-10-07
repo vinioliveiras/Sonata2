@@ -84,6 +84,8 @@ class CornerWindow(Gtk.Window):
 
     def __init__(self, app, monitor, corner, radius=RADIUS):
         super().__init__(application=app, decorated=False, css_classes=["sonata-screen-corner"])
+        from .monitors import connector
+        self.connector = connector(monitor)
         self.set_child(_Corner(corner, radius))
         self.set_default_size(radius, radius)
         from . import layer
@@ -108,6 +110,8 @@ class ScreenCorners:
         from . import monitors
         self.app = app
         self.surfaces = None
+        self.wins = []
+        self.full_on = None                     # a full-screen app's display: no corners there
         self._mon = config.watch("appearance", self.apply)
         self.monitors = monitors
         self.apply()
@@ -117,13 +121,25 @@ class ScreenCorners:
             return []
         wins = [CornerWindow(self.app, m, c) for c in CORNERS]
         for w in wins:
-            w.present()
+            if w.connector != self.full_on:
+                w.present()
+        self.wins += wins
         return wins
 
-    @staticmethod
-    def _destroy(wins):
+    def _destroy(self, wins):
         for w in wins:
+            if w in self.wins:
+                self.wins.remove(w)
             w.destroy()
+
+    def fullscreen_on(self, output) -> None:
+        """A full-screen app (a game) on `output` (a connector; None: none):
+        no corners over it. Vini: frame drops and a laggy mouse in a game --
+        a surface over a full-screen window keeps Wayfire composing every
+        frame instead of handing the game's own picture to the display."""
+        self.full_on = output
+        for w in self.wins:
+            w.set_visible(w.connector != output)
 
     def apply(self, *_a) -> None:
         on = enabled()
