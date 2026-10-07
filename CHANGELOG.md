@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.12.1-alpha -- 2026-10-07
+
+Windows keep their size and frame through maximize, restore and resize,
+the spinners are back, and Sonata's logs are off unless you turn them on.
+
 ### Changes
 - Logs are off by default: Settings > About > Logs. Off, only errors are
   logged, in memory, until you log out; on, detailed logs are kept in
@@ -16,7 +21,7 @@
   again for its size, and draws itself at the window's size.
 - Spinners are back (the lock and login screens', Settings'...): Sonata
   draws its own instead of the icon theme's, which adwaita-icon-theme 51
-  no longer has.
+  no longer has. The login screen's is small again (16 px).
 - Maximized or restored, a slow app's title bar (Claude, other Electron
   apps) no longer stays at the old width: its frame is redrawn again a
   while after the zoom.
