@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Fixes
+- FPS measures the app in front again (as before 0.13.0), not only games
+  and full-screen windows.
 - Full-screen games run smoother: the rounded screen corners leave the
   display a full-screen app is on, so Wayfire can hand the game's picture
   to the display instead of composing every frame.

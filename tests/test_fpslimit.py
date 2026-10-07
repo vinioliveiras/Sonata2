@@ -108,7 +108,7 @@ class FpsModuleTest(unittest.TestCase):
         self.assertEqual(len(m.graph.times), 1)                     # one point per read (slower: Vini)
         self.assertEqual(m.app.get_label(), "Hades")                # the app measured (Vini)
         m.show_frames({"fps": 0, "app-id": "", "frametimes": []})
-        self.assertEqual(m.graph.note, "No game or full-screen app")
+        self.assertEqual(m.graph.note, "No app drawing in front")
         self.assertEqual(m.app.get_label(), "")
         m.show_frames({"fps": 60, "app-id": "x"})                  # an older plugin: no frame times
         self.assertIn("install.sh", m.graph.note)

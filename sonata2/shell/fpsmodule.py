@@ -127,7 +127,7 @@ class FpsModule(Gtk.Box):
             return
         times = [t for t in r.get("frametimes") or [] if isinstance(t, (int, float)) and t > 0]
         if not r.get("app-id") or len(times) < 2:
-            self.graph.set_times([], "No game or full-screen app")
+            self.graph.set_times([], "No app drawing in front")
             self.history, self._app_id = [], None
             self.app.set_label("")
             self.live.set_label("")
