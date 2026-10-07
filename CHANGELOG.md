@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.12.0-alpha -- 2026-10-07
+
+Your apps under your control: lock them, sandbox them, decide what they
+may use, clear their data or uninstall them from Settings > Apps. And
+Fedora, Debian and Ubuntu get the full Sonata look.
+
 ### Apps
 - Lock App (an app's menu in the Dock, Options, or in Launchpad): opening
   it asks for your password first; its icon shows a padlock. Unlocking
