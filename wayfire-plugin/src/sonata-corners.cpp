@@ -534,7 +534,7 @@ class corners_render_instance_t :
  * used before, maps input through its own transform). */
 /* the top of a window that is always blurred: title bar + a toolbar */
 /* bumped with every change of the plugin (tests/test_regressions.py checks it) */
-#define SONATA_CORNERS_BUILD "2026-10-07.7 apps drawn past their window asked again"
+#define SONATA_CORNERS_BUILD "2026-10-07.8 touchpad gestures in debug_input"
 static const int TOP_GLASS = 96;
 
 class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
@@ -1581,11 +1581,47 @@ struct input_debug_t
         }
     };
 
+    /* Touchpad gestures around a click (Vini: the USB mouse clicks in the
+     * game, the touchpad doesn't; a finger resting on the pad starts a
+     * "hold" gesture, sent to the game too) */
+    static void log_gesture(const char *what, wlr_pointer *pointer, uint32_t fingers, uint32_t time)
+    {
+        if (option_str("sonata-corners/debug_input") == "true")
+        {
+            auto view = wf::get_core().get_cursor_focus_view();
+            LOGI("sonata-input gesture: ", (pointer && pointer->base.name) ? pointer->base.name : "?", " ", what,
+                " fingers=", fingers, " t=", time, " -> ", view ? view->get_app_id() : std::string("(nothing)"));
+        }
+    }
+
+#define SONATA_GESTURE(name, type, fingers) \
+    wf::signal::connection_t<wf::post_input_event_signal<type>> on_ ## name = \
+        [=] (wf::post_input_event_signal<type> *sig) \
+    { \
+        if (sig->event) \
+        { \
+            log_gesture(#name, sig->event->pointer, fingers, sig->event->time_msec); \
+        } \
+    };
+    SONATA_GESTURE(hold_begin, wlr_pointer_hold_begin_event, sig->event->fingers)
+    SONATA_GESTURE(hold_end, wlr_pointer_hold_end_event, (uint32_t)sig->event->cancelled)
+    SONATA_GESTURE(swipe_begin, wlr_pointer_swipe_begin_event, sig->event->fingers)
+    SONATA_GESTURE(swipe_end, wlr_pointer_swipe_end_event, (uint32_t)sig->event->cancelled)
+    SONATA_GESTURE(pinch_begin, wlr_pointer_pinch_begin_event, sig->event->fingers)
+    SONATA_GESTURE(pinch_end, wlr_pointer_pinch_end_event, (uint32_t)sig->event->cancelled)
+#undef SONATA_GESTURE
+
     void init()
     {
         wf::get_core().connect(&on_button);
         wf::get_core().connect(&on_button_post);
         wf::get_core().connect(&on_focus);
+        wf::get_core().connect(&on_hold_begin);
+        wf::get_core().connect(&on_hold_end);
+        wf::get_core().connect(&on_swipe_begin);
+        wf::get_core().connect(&on_swipe_end);
+        wf::get_core().connect(&on_pinch_begin);
+        wf::get_core().connect(&on_pinch_end);
     }
 
     void fini()
@@ -1593,6 +1629,13 @@ struct input_debug_t
         on_button.disconnect();
         on_button_post.disconnect();
         on_focus.disconnect();
+        for (wf::signal::connection_base_t *c : {(wf::signal::connection_base_t*)&on_hold_begin,
+            (wf::signal::connection_base_t*)&on_hold_end, (wf::signal::connection_base_t*)&on_swipe_begin,
+            (wf::signal::connection_base_t*)&on_swipe_end, (wf::signal::connection_base_t*)&on_pinch_begin,
+            (wf::signal::connection_base_t*)&on_pinch_end})
+        {
+            c->disconnect();
+        }
     }
 };
 

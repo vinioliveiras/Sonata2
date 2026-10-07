@@ -26,6 +26,16 @@ class ClicksTest(unittest.TestCase):
         self.assertIn("node->stringify()", part)
         self.assertIn("input_debug.init();", SRC)
         self.assertIn("input_debug.fini();", SRC)
+
+    def test_gestures_logged(self):
+        """Vini: the USB mouse clicks in the game, the touchpad doesn't -- a
+        finger on the pad starts a "hold" gesture the game gets too: logged
+        around each click."""
+        part = SRC[SRC.index("struct input_debug_t"):SRC.index("class sonata_corners_t")]
+        for name in ("hold_begin", "hold_end", "swipe_begin", "swipe_end", "pinch_begin", "pinch_end"):
+            self.assertIn(f"wf::get_core().connect(&on_{name});", part)
+            self.assertIn(f"&on_{name}", part[part.index("void fini()"):])
+        self.assertIn('LOGI("sonata-input gesture: "', part)
         meta = (ROOT / "wayfire-plugin" / "metadata" / "sonata-corners.xml").read_text()
         self.assertIn('<option name="debug_input" type="bool">', meta)
 
