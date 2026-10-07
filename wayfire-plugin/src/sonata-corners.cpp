@@ -99,9 +99,12 @@ void main() {
 
 /* The window's frame is `rect` (x, y, w, h in logical pixels, from the top
  * left of the texture); pixels inside it but beyond a corner's arc become
- * transparent (antialiased over one pixel). Pixels outside the frame (the
- * decoration's shadow) are left as they are. The shape is symmetric, so the
- * texture's vertical orientation doesn't matter as long as the shadow is. */
+ * transparent (antialiased over one pixel). Outside the frame there is only
+ * the decoration's shadow -- drawn here, the same way as beyond the arcs:
+ * whatever else the window has there (an app drawing itself bigger than
+ * its window: Claude after a resize, Vini) is cut off. The shape is
+ * symmetric, so the texture's vertical orientation doesn't matter as long
+ * as the shadow is. */
 static const char *fragment_shader =
     R"(
 #version 100
@@ -191,7 +194,15 @@ void main()
         }
     }
     bool top = p.y < lo.y + radius;
-    if (square_top > 0.5 && top && p.x >= lo.x && p.x <= hi.x && p.y >= lo.y)
+    if (p.x < lo.x || p.y < lo.y || p.x > hi.x || p.y > hi.y)
+    {
+        /* outside the frame: the shadow only, never the app's own pixels */
+        vec2 q = clamp(p, lo + vec2(radius), hi - vec2(radius));
+        float da = max(0.0, length(p - q) - radius);
+        float k = shadow_radius > 0.0 ? exp(-pow(da / shadow_radius, 2.0)) : 0.0;
+        c = shadow * k;
+    }
+    else if (square_top > 0.5 && top && p.x >= lo.x && p.x <= hi.x && p.y >= lo.y)
     {
         /* maximized: square top corners, so the title bar and the menu bar
          * read as one glass -- fill the hole pixdecor's rounded frame left */
@@ -534,7 +545,7 @@ class corners_render_instance_t :
  * used before, maps input through its own transform). */
 /* the top of a window that is always blurred: title bar + a toolbar */
 /* bumped with every change of the plugin (tests/test_regressions.py checks it) */
-#define SONATA_CORNERS_BUILD "2026-10-07.11 no size nudge while resizing"
+#define SONATA_CORNERS_BUILD "2026-10-07.12 apps cut to their frame"
 static const int TOP_GLASS = 96;
 
 class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
@@ -590,6 +601,9 @@ class corners_node_t : public wf::scene::transformer_base_node_t, public wf::sce
          * the glass title bar and a glass toolbar (Preview, Notes). The
          * strip is cheap to blur; the window body below stays skipped. */
         region ^= wf::regionf_t{wf::geometry_t{f.x, f.y, f.width, TOP_GLASS}};
+        /* nothing outside the frame is drawn (the shader cuts an app drawing
+         * itself bigger): never opaque there */
+        region &= wf::regionf_t{f};
 
         return region;
     }

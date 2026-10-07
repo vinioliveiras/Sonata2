@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Fixes
+- Windows are cut to their frame: an app that draws itself bigger than its
+  window (Claude, after or while resizing) never shows past the frame --
+  only the frame's shadow is drawn outside it.
 - Resizing Claude (or another app drawing ahead of its window) no longer
   gets stuck: an app isn't asked for its size while a window is being
   resized, nor just after.
