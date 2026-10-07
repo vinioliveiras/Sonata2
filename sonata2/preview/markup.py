@@ -852,7 +852,8 @@ class MarkupBar(Gtk.Box):
              ("hl", "Highlighter"), ("shape", "Shapes"), ("text", "Text"), ("emoji", "Emoji"),
              ("step", "Numbered steps"), ("pixelate", "Pixelate (hide something)"))
 
-    def __init__(self, layer: MarkupLayer, on_done=None, on_cancel=None, tools=None, colors=COLORS, actions=None):
+    def __init__(self, layer: MarkupLayer, on_done=None, on_cancel=None, tools=None, colors=COLORS, actions=None,
+                 on_copy=None):
         """tools: [(name, tooltip)] (TOOLS); actions: [(glyph, tooltip, fn)] after
         the width (undo, redo, delete); no on_done: no Cancel / Done (live drawing)."""
         super().__init__(spacing=2, css_classes=["pv-markup"], halign=Gtk.Align.FILL)
@@ -889,6 +890,12 @@ class MarkupBar(Gtk.Box):
             box.append(b)
         self.append(box)
         self.box = box
+        self.copy_btn = None
+        if on_copy is not None:                    # the picture with its marks on the clipboard (Vini)
+            self.copy_btn = ui.controls.push_button("Copy", lambda: on_copy(self.copied), valign=Gtk.Align.CENTER)
+            self.copy_btn.add_css_class("mk-done")
+            self.copy_btn.set_tooltip_text("Copy the picture with its marks")
+            self.append(self.copy_btn)
         if on_done is not None:
             cancel = ui.controls.push_button("Cancel", on_cancel, valign=Gtk.Align.CENTER)
             cancel.add_css_class("mk-done")
@@ -897,6 +904,14 @@ class MarkupBar(Gtk.Box):
             self.append(cancel)
             self.append(done)
         self._tool(layer.tool)
+
+    def copied(self, ok: bool) -> None:
+        """The Copy button says so for a moment."""
+        b = self.copy_btn
+        if b is None:
+            return
+        b.set_label("Copied" if ok else "Couldn't Copy")
+        GLib.timeout_add(1400, lambda: (b.set_label("Copy"), False)[1])
 
     def _swatch(self, cr, w, h, c) -> None:
         r, g, b, _a = _rgba(c)

@@ -388,7 +388,8 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self.set_zoom(None)                         # the whole picture
         self.markup = MarkupLayer(self._picture_rect, lambda: self.texture)
         self.overlay.add_overlay(self.markup)
-        bar = MarkupBar(self.markup, lambda: self.end_markup(keep=True), lambda: self.end_markup(keep=False))
+        bar = MarkupBar(self.markup, lambda: self.end_markup(keep=True), lambda: self.end_markup(keep=False),
+                        on_copy=self.copy_marked)
         bar.add_css_class("docked")                       # opaque, like the toolbar above it
         self.markup_rev.set_child(bar)
         self.markup_rev.set_reveal_child(True)
@@ -411,6 +412,18 @@ class PreviewWindow(Gtk.ApplicationWindow):
                 return
         if then:
             then()
+
+    def copy_marked(self, done=None) -> None:
+        """Markup's Copy: the picture as it is now -- its edits and the marks
+        not Done yet -- on the clipboard (PNG); Markup stays open."""
+        ed = self._editor()
+        if ed is None:
+            if done:
+                done(False)
+            return
+        items = [dict(it) for it in (self.markup.items if self.markup else [])]
+        from ..backend.system import run_async
+        run_async(lambda: copy_picture(ed, items), lambda ok: done and done(bool(ok)))
 
     def _shot_to_clipboard(self) -> None:
         """A screenshot that went to the clipboard (only, or also): the marked one goes there too."""
@@ -1015,3 +1028,23 @@ def preview_desktop_file(command: str) -> str:
                               + "".join(t + ";" for t in RAW_TYPES) + "\n"
                               "StartupNotify=true\n"
                               f"Exec={command} preview %F\n")
+
+
+def copy_picture(ed, items, run=None) -> bool:
+    """Blocking: ed's full-size picture with `items` (marks) drawn in, as a
+    PNG on the clipboard (wl-copy)."""
+    import io
+    import shutil
+    import subprocess
+    from .markup import apply
+    if run is None and not shutil.which("wl-copy"):
+        return False
+    im = apply(ed.render(ed.full), items)
+    buf = io.BytesIO()
+    im.save(buf, "PNG")
+    run = run or (lambda data: subprocess.run(["wl-copy", "--type", "image/png"], input=data,
+                                              timeout=10).returncode == 0)
+    try:
+        return bool(run(buf.getvalue()))
+    except (OSError, subprocess.SubprocessError):
+        return False

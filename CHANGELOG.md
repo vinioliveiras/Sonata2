@@ -13,6 +13,8 @@
 - Settings > Apps > Location Services: off, no app gets your location
   (Flatpak or not); and a Location switch on each packaged app's page.
   Sonata writes GeoClue's settings (your password is asked).
+- Preview > Markup: Copy puts the picture with its marks on the clipboard
+  (a screenshot's too), Markup staying open.
 
 ### Fixes
 - FPS (Control Center, the menu bar) measures a game or a full-screen
