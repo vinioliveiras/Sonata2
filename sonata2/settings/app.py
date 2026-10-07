@@ -46,7 +46,6 @@ SECTIONS = [  # id, title, icon, badge colour, group (colours varied, not mostly
     ("launchpad", names.APPS, "view-app-grid-symbolic", "graphite", "sonata"),
     ("notifications", "Notifications", "preferences-system-notifications-symbolic", "red", "sonata"),
     ("users", "Users & Groups", "system-users-symbolic", "orange", "system"),
-    ("apps", "Installed Apps", "system-software-install-symbolic", "teal", "system"),   # ("Apps": Launchpad's)
     ("defaults", "Default Apps", "emblem-default-symbolic", "purple", "system"),
     ("privacy", "Security & Privacy", "security-high-symbolic", "indigo", "system"),
     ("accessibility", "Accessibility", "preferences-desktop-accessibility-symbolic", "blue", "system"),
@@ -61,12 +60,12 @@ PARTS = {
     "displays": ("displays", "wallpaper"),
     "keyboard": ("keyboard", "shortcuts"),
     "mouse": ("trackpad", "mouse"),
-    "launchpad": ("launchpad", "hidden"),
+    "launchpad": ("launchpad", "hidden", "apps"),      # Apps: the grid, hidden apps, installed apps (Vini)
     "privacy": ("privacy", "sharing"),
     "about": ("about", "sonataupdate", "updates"),     # Sonata's own update, then the system's (Vini)
 }
 PART_TITLES = {"wallpaper": "Wallpaper", "shortcuts": "Keyboard Shortcuts", "trackpad": "Trackpad",
-               "hidden": "Hidden & Protected Apps", "sharing": "Sharing",
+               "hidden": "Hidden & Protected Apps", "apps": "Installed Apps", "sharing": "Sharing",
                "updates": "Software Update", "sonataupdate": "Sonata Update"}
 
 
@@ -540,6 +539,7 @@ class Settings(Adw.ApplicationWindow):
     def select(self, sid, from_sidebar=False):
         if "/" in sid:                    # "appicons/<desktop id>": that app's icon form (a web app's menu)
             sid, self._focus_app = sid.split("/", 1)
+            self._focus_part = sid
         sid = section_of(sid)
         if not from_sidebar:
             self.listbox.select_row(self.rows[sid])
@@ -574,9 +574,10 @@ class Settings(Adw.ApplicationWindow):
         self.current = sid                          # at once, no fade (Vini)
         self.content.set_visible_child(self.pages[sid])
         focus = getattr(self, "_focus_app", None)
-        if focus and sid in ("appicons", "apps") and getattr(self, sid + "_page", None):
+        part = getattr(self, "_focus_part", None)
+        if focus and part in ("appicons", "apps") and getattr(self, part + "_page", None):
             self._focus_app = None
-            getattr(self, sid + "_page").focus(focus)
+            getattr(self, part + "_page").focus(focus)
 
     def push_detail(self, title: str, groups) -> Adw.PreferencesPage:
         """One item of the section in its place (Settings > Apps > an app),

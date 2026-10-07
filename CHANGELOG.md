@@ -6,7 +6,7 @@
 - Lock App (an app's menu in the Dock, Options, or in Launchpad): opening
   it asks for your password first; its icon shows a padlock. Unlocking
   asks too. Login items and apps reopened after a crash don't ask.
-- Settings > Installed Apps: every app with its size and its data. Open
+- Settings > Apps > Installed Apps: every app with its size and its data. Open
   one to lock it, clear its data (to the Trash), uninstall it, and -- for
   Flatpak apps -- turn camera, microphone, network, location, running in
   the background, notifications and the home folder on or off.

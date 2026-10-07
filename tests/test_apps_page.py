@@ -143,7 +143,7 @@ class PageTest(unittest.TestCase):
             p.start()
         self.w = st.Settings(None, "apps")
         self.w.present()
-        self.w.select("apps", from_sidebar=True)
+        self.w.select("apps", from_sidebar=True)          # (an old id: the Apps section)
         settle(300)
         self.page = self.w.apps_page
 
@@ -159,13 +159,21 @@ class PageTest(unittest.TestCase):
         with mock.patch.object(self.page, "_look", return_value=res):
             self.page.open(self.page.rows["org.test.App"])
             settle(300)
-        return self.w.pages["apps"]
+        return self.w.pages["launchpad"]
 
-    def test_section_listed_and_not_launchpads(self):
+    def test_one_apps_section(self):
+        """Vini: Installed Apps and Apps are one section, Apps."""
         from sonata2.settings import app as st
-        titles = {s[0]: s[1] for s in st.SECTIONS}
-        self.assertEqual(titles["apps"], "Installed Apps")
-        self.assertNotEqual(titles["apps"], titles["launchpad"])
+        self.assertNotIn("apps", [s[0] for s in st.SECTIONS])
+        self.assertEqual(st.section_of("apps"), "launchpad")
+        self.assertIn("apps", st.parts_of("launchpad"))
+        self.assertEqual(self.w.current, "launchpad")
+        self.assertIn("uninstall", st.KEYWORDS["launchpad"])
+
+    def test_focus_an_app(self):
+        with mock.patch.object(self.page, "focus") as focus:
+            self.w.select("apps/org.test.App", from_sidebar=True)
+        focus.assert_called_once_with("org.test.App")
 
     def test_detail_and_back(self):
         tv = self.open()
@@ -179,7 +187,7 @@ class PageTest(unittest.TestCase):
         self.assertTrue(self.page.rm_btn.get_sensitive())
         tv.back.emit("clicked")
         self.assertIs(tv.get_content(), tv.main)
-        self.assertEqual(tv.title.get_label(), "Installed Apps")
+        self.assertEqual(tv.title.get_label(), "Apps")
         self.assertFalse(tv.back.get_visible())
 
     def test_permission_switch_changes_it(self):
@@ -230,7 +238,12 @@ class PageTest(unittest.TestCase):
     def test_another_section_returns_to_the_list(self):
         tv = self.open()
         self.w.select("dock", from_sidebar=True)
-        self.assertIs(tv.get_content(), tv.main)
+        settle(100)
+        # (Apps is rebuilt when left: its Hidden part locks again) -- either way, the list
+        self.assertTrue("launchpad" not in self.w.pages or tv.get_content() is tv.main)
+        self.w.select("launchpad", from_sidebar=True)
+        new = self.w.pages["launchpad"]
+        self.assertIs(new.get_content(), new.main)
 
 
 if __name__ == "__main__":
