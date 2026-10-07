@@ -72,7 +72,11 @@ class ZoomPluginTest(unittest.TestCase):
     def test_not_while_dragging_or_resizing(self):
         start = body("void start_zoom(", "wf::geometry_t zoom_target()")
         self.assertIn('output->is_plugin_active("move")', start)       # a maximized window dragged off
-        self.assertIn("|| view ||", start)                               # a resize under way
+        # a resize under way: the grab -- `view` stays set after the release
+        # (Vini's log: "no zoom (resizing)" for every zoom once a window was resized)
+        self.assertIn("bool resizing = input_grab->is_grabbed();", start)
+        self.assertIn("|| resizing ||", start)
+        self.assertNotIn("|| view ||", start)
         self.assertIn("v->pending_fullscreen()", start)
 
     def test_cleaned_up(self):

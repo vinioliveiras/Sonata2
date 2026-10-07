@@ -14,6 +14,8 @@
 - A window brought back from maximized fits the work area (between the
   menu bar and the Dock; the whole display when they hide): one bigger
   than it no longer comes back under them -- and zooms like the others.
+- Maximize / restore zoom again after a window was resized: once any
+  window had been resized by its edge, every zoom was skipped.
 
 ## 0.12.0-alpha -- 2026-10-07
 

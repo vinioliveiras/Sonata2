@@ -1144,13 +1144,17 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     /** Maximize / restore asked (before the window gets its new geometry). */
     void start_zoom(wayfire_toplevel_view v, wf::geometry_t hint, uint32_t to_tiled)
     {
-        if (!zoom_enabled || !v || !v->is_mapped() || view || v->pending_fullscreen() ||
+        /* resizing now: the grab, never `view` -- it keeps the last window
+         * resized after the release (Vini: once a window had been resized,
+         * maximize / restore never zoomed again; "no zoom (resizing)") */
+        bool resizing = input_grab->is_grabbed();
+        if (!zoom_enabled || !v || !v->is_mapped() || resizing || v->pending_fullscreen() ||
             (v->get_output() != output) || output->is_plugin_active("move"))
         {
             /* (Vini: some sizes never zoomed -- which reason, in session.log) */
             if (v && zoom_enabled)
             {
-                LOGI("sonata-resize: no zoom (", view ? "resizing" : "",
+                LOGI("sonata-resize: no zoom (", resizing ? "resizing" : "",
                     v->pending_fullscreen() ? "fullscreen" : "", (v->get_output() != output) ? "other display" : "",
                     output->is_plugin_active("move") ? "moving" : "", ")");
             }
