@@ -1385,6 +1385,12 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         }
 
         redraw_frame(v);
+        /* (Vini: after a resize, Claude's frame stayed at the old size while
+         * the app drew itself bigger -- what Wayfire and the app each say) */
+        auto s  = v->get_wlr_surface();
+        auto pg = v->toplevel()->pending().geometry;
+        LOGI("sonata-resize: frame check ", frame_checks, " ", v->get_app_id(), " geometry ", v->get_geometry(),
+            " pending ", pg, " surface ", s ? s->current.width : -1, "x", s ? s->current.height : -1);
         if (++frame_checks < (int)(sizeof(FRAME_CHECKS_MS) / sizeof(FRAME_CHECKS_MS[0])))
         {
             frame_timer.set_timeout(FRAME_CHECKS_MS[frame_checks] - FRAME_CHECKS_MS[frame_checks - 1],
