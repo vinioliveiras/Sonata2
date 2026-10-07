@@ -291,6 +291,9 @@ class edge_grab_node_t : public wf::scene::node_t, public wf::pointer_interactio
         if (e && (e != hovered))
         {
             wf::get_core().set_cursor(wlr_xcursor_get_resize_name((wlr_edges)e));
+        } else if (!e && hovered)
+        {
+            wf::get_core().set_cursor("default");
         }
 
         hovered = e;
@@ -307,8 +310,17 @@ class edge_grab_node_t : public wf::scene::node_t, public wf::pointer_interactio
         show(at);
     }
 
+    /* Our resize arrow put back to the normal pointer when it leaves the
+     * edge. Vini: with Control Center (a menu's pop-up) open, the arrow
+     * stayed over the windows and the Dock -- while a pop-up holds the
+     * pointer, nothing else under it sets its own cursor. */
     void handle_pointer_leave() override
     {
+        if (hovered)
+        {
+            wf::get_core().set_cursor("default");
+        }
+
         hovered = 0;
     }
 
