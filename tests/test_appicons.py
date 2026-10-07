@@ -169,7 +169,8 @@ class SettingsPageTest(unittest.TestCase):
         from unittest import mock
         from sonata2.settings import app as st, appicons_page as P
         self.P = P
-        self.patch = mock.patch.object(P, "app_list", return_value=[("org.test.App", FakeInfo()),
+        from sonata2.settings import applist          # (the list App Icons and Apps share)
+        self.patch = mock.patch.object(applist, "app_list", return_value=[("org.test.App", FakeInfo()),
                                                                     ("org.test.Two", FakeInfo("org.test.Two"))])
         self.patch.start()
         self.w = st.Settings(None, "appicons")

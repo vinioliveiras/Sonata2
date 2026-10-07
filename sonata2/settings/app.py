@@ -46,6 +46,7 @@ SECTIONS = [  # id, title, icon, badge colour, group (colours varied, not mostly
     ("launchpad", names.APPS, "view-app-grid-symbolic", "graphite", "sonata"),
     ("notifications", "Notifications", "preferences-system-notifications-symbolic", "red", "sonata"),
     ("users", "Users & Groups", "system-users-symbolic", "orange", "system"),
+    ("apps", "Installed Apps", "system-software-install-symbolic", "teal", "system"),   # ("Apps": Launchpad's)
     ("defaults", "Default Apps", "emblem-default-symbolic", "purple", "system"),
     ("privacy", "Security & Privacy", "security-high-symbolic", "indigo", "system"),
     ("accessibility", "Accessibility", "preferences-desktop-accessibility-symbolic", "blue", "system"),
@@ -122,6 +123,8 @@ KEYWORDS = {
                      "temperature video memory vram mixer",
     "defaults": "default apps open with web browser chrome firefox mail email calendar music player video "
                 "photos pictures images viewer pdf text editor folders file manager",
+    "apps": "apps applications uninstall remove delete clear data storage size permissions camera microphone "
+            "network location background notifications flatpak lock",
     "appicons": "icon icons app shape squircle circle rounded custom picture image package theme",
     "menubar": "clock battery percentage bluetooth sound now playing logo text automatically hide show wifi wi-fi search input source keyboard background apps cpu gpu memory ram network fps performance",
     "launchpad": "apps grid folders launchpad", "hidden": "hide hidden protected private lock password apps", "updates": "software update upgrade packages",
@@ -558,6 +561,7 @@ class Settings(Adw.ApplicationWindow):
                 hb.pack_end(self._lights())
             tv.add_top_bar(hb)
             tv.set_content(page)
+            tv.hb, tv.title, tv.main, tv.back = hb, hb.get_title_widget(), page, None
             self.pages[sid] = tv
             self.built[sid] = time.time()
             self.content.add_named(tv, sid)
@@ -565,12 +569,41 @@ class Settings(Adw.ApplicationWindow):
         if self.current == hid and sid != hid and hid in self.pages:
             old = self.pages.pop(hid)               # Hidden & Protected Apps locks again
             GLib.idle_add(lambda: (self.content.remove(old), False)[1])
+        if self.current in self.pages and self.current != sid:
+            self.pop_detail(self.current)           # a section opens on its list again
         self.current = sid                          # at once, no fade (Vini)
         self.content.set_visible_child(self.pages[sid])
         focus = getattr(self, "_focus_app", None)
-        if focus and sid == "appicons" and getattr(self, "appicons_page", None):
+        if focus and sid in ("appicons", "apps") and getattr(self, sid + "_page", None):
             self._focus_app = None
-            self.appicons_page.focus(focus)
+            getattr(self, sid + "_page").focus(focus)
+
+    def push_detail(self, title: str, groups) -> Adw.PreferencesPage:
+        """One item of the section in its place (Settings > Apps > an app),
+        with a back button (‹) and its name as the pane's title."""
+        tv = self.pages[self.current]
+        page = Adw.PreferencesPage()
+        for g in groups:
+            page.add(g)
+        if tv.back is None:
+            tv.back = Gtk.Button(icon_name="go-previous-symbolic", tooltip_text="Back",
+                                 css_classes=["flat", "st-back"], valign=Gtk.Align.CENTER)
+            tv.back.connect("clicked", lambda _b, sid=self.current: self.pop_detail(sid))
+            tv.hb.pack_start(tv.back)
+        tv.back.set_visible(True)
+        tv.title.set_label(title)
+        tv.set_content(page)
+        tv.detail = page
+        return page
+
+    def pop_detail(self, sid=None) -> None:
+        tv = self.pages.get(sid or self.current)
+        if tv is None or getattr(tv, "detail", None) is None:
+            return
+        tv.detail = None
+        tv.set_content(tv.main)
+        tv.back.set_visible(False)
+        tv.title.set_label(next(s[1] for s in SECTIONS if s[0] == section_of(sid or self.current)))
 
     def _stale(self, sid) -> bool:
         """A config file the section shows changed after it was built."""
@@ -1511,6 +1544,11 @@ class Settings(Adw.ApplicationWindow):
                         get("input", "left_handed_mode", "false") == "true",
                         lambda v: self._wf("left_handed_mode", v)))
         return [g]
+
+    def _page_apps(self):
+        from .apps_page import AppsPage
+        self.apps_page = AppsPage(self)
+        return self.apps_page.groups()
 
     def _page_appicons(self):
         from .appicons_page import AppIconsPage

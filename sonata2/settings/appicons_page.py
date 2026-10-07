@@ -9,12 +9,10 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk, Pango  # noqa: E402
 
-from .. import apps, icons, ui  # noqa: E402
+from .. import icons, ui  # noqa: E402
 
 SOURCE_TITLES = {"auto": "Sonata (default)", "package": "The app's own", "file": "Custom picture",
                  "theme": "Theme icon"}
-BATCH = 24             # rows built per idle step: a long list doesn't freeze the window
-ROW_ICON = 32
 
 ui.register("""
 .ai-panel { padding: 4px 4px 8px 4px; }
@@ -27,12 +25,6 @@ entry.ai-name { min-height: %(control_h)s; }
 """, key="appicons")
 
 
-def app_list() -> list:
-    """[(desktop id, info)] of the apps a launcher lists, by name."""
-    out = [(did[:-8], info) for did, info in apps.scan().items() if info.should_show()]
-    return sorted(out, key=lambda p: p[1].get_display_name().casefold())
-
-
 def describe(pref: dict, default_shape: str) -> str:
     text = SOURCE_TITLES[pref["source"]]
     if pref["shape"] != default_shape:
@@ -43,8 +35,6 @@ def describe(pref: dict, default_shape: str) -> str:
 class AppIconsPage:
     def __init__(self, settings):
         self.settings = settings
-        self.rows = {}
-        self._focus = None
 
     def groups(self) -> list:
         from .app import combo_row, group
@@ -68,60 +58,21 @@ class AppIconsPage:
         rb.set_valign(Gtk.Align.CENTER)
         reset.add_suffix(rb)
         shape.add(reset)
-        lst = group("Apps", "Click an app to change its icon.")
-        search = Adw.EntryRow(title="Search apps", use_markup=False)
-        search.connect("changed", lambda e: self._filter(e.get_text()))
-        lst.add(search)
-        self.list_group, self.search = lst, search
-        self._pending = app_list()
-        GLib.timeout_add(16, self._build_some)        # between frames (an idle can wait behind redraws)
-        return [shape, lst]
-
-    # -- the list (built a little at a time) -------------------------------------------------
-    def _build_some(self) -> bool:
-        batch, self._pending = self._pending[:BATCH], self._pending[BATCH:]
-        for did, info in batch:
-            self._add_row(did, info)
-        if self.search.get_text():
-            self._filter(self.search.get_text())
-        if self._focus in self.rows:
-            self.focus(self._focus)
-        return bool(self._pending)
+        from .applist import AppList
+        self.list = AppList("Apps", "Click an app to change its icon.", self.edit,
+                            lambda row: describe(icons.app_pref(row.info), icons.prefs()["shape"]))
+        self.rows, self.search, self.list_group = self.list.rows, self.list.search, self.list.group
+        return [shape, self.list.group]
 
     def focus(self, did: str) -> None:
-        """Open one app's form (Launchpad's "Change Icon…"); its row may
-        still be on its way (the list is built a little at a time)."""
-        did = did.removesuffix(".desktop")
-        row = self.rows.get(did)
-        if row is None:
-            self._focus = did
-            return
-        self._focus = None
-        GLib.idle_add(lambda: (row.grab_focus(), self.edit(row), False)[2])
-
-    def _add_row(self, did, info):
-        row = Adw.ActionRow(title=info.get_display_name(), use_markup=False, activatable=True)
-        img = Gtk.Image(pixel_size=ROW_ICON)
-        row.add_prefix(img)
-        row.add_suffix(Gtk.Image(icon_name="go-next-symbolic", css_classes=["dim-label"]))
-        row.did, row.info, row.image = did, info, img
-        row.connect("activated", lambda r: self.edit(r))
-        self.rows[did] = row
-        self._refresh_row(row)
-        self.list_group.add(row)
+        """Open one app's form (Launchpad's "Change Icon…")."""
+        self.list.focus(did)
 
     def _refresh_row(self, row) -> None:
-        icons.set_image(row.image, icons.app_icon(row.info))
-        row.set_subtitle(describe(icons.app_pref(row.info), icons.prefs()["shape"]))
+        self.list.refresh_row(row)
 
     def refresh(self) -> None:
-        for row in self.rows.values():
-            self._refresh_row(row)
-
-    def _filter(self, text: str) -> None:
-        q = text.strip().casefold()
-        for row in self.rows.values():
-            row.set_visible(not q or q in row.get_title().casefold() or q in row.did.casefold())
+        self.list.refresh()
 
     # -- changes ---------------------------------------------------------------------------
     def set_shape(self, shape: str) -> None:
