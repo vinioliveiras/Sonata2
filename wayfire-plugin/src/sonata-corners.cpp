@@ -534,7 +534,7 @@ class corners_render_instance_t :
  * used before, maps input through its own transform). */
 /* the top of a window that is always blurred: title bar + a toolbar */
 /* bumped with every change of the plugin (tests/test_regressions.py checks it) */
-#define SONATA_CORNERS_BUILD "2026-10-06.3 no pointer on a dark screen"
+#define SONATA_CORNERS_BUILD "2026-10-07.1 taps games can see"
 static const int TOP_GLASS = 96;
 
 class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
@@ -1522,11 +1522,118 @@ class fps_counter_t
     }
 };
 
+/* Taps that games miss (Vini: the touchpad moved the pointer in games but a
+ * tap never clicked; a USB mouse did). libinput sends a tap's press and
+ * release together; games read the button once per frame (Wine / Proton
+ * polling) and never see it down. A release that comes sooner than
+ * MIN_CLICK_MS after its press is held back until then -- a real click
+ * (always longer) is untouched; a new press of that button first lets the
+ * held release through (double taps keep their order). */
+static constexpr uint32_t MIN_CLICK_MS = 60;
+
+/* How long a release must wait (0: it goes now) -- msec clocks wrap */
+static uint32_t click_hold_ms(uint32_t pressed, uint32_t released)
+{
+    uint32_t took = released - pressed;
+    return (took < MIN_CLICK_MS) ? (MIN_CLICK_MS - took) : 0;
+}
+
+struct short_click_stretch_t
+{
+    struct held_t
+    {
+        wlr_pointer_button_event ev;
+        std::unique_ptr<wf::wl_timer<false>> timer;
+        wf::wl_listener_wrapper on_destroy;
+    };
+    std::map<std::pair<wlr_pointer*, uint32_t>, uint32_t> pressed_at;
+    std::map<std::pair<wlr_pointer*, uint32_t>, std::unique_ptr<held_t>> held;
+    bool replaying = false;
+
+    void release(std::pair<wlr_pointer*, uint32_t> key)
+    {
+        auto it = held.find(key);
+        if (it == held.end())
+        {
+            return;
+        }
+
+        auto h = std::move(it->second);
+        held.erase(it);
+        wlr_pointer_button_event ev = h->ev;
+        ev.time_msec = std::max(ev.time_msec, pressed_at[key] + MIN_CLICK_MS);
+        replaying = true;
+        wl_signal_emit_mutable(&key.first->events.button, &ev);   /* the usual way in, through wlr_cursor */
+        replaying = false;
+    }
+
+    wf::signal::connection_t<wf::input_event_signal<wlr_pointer_button_event>> on_button =
+        [=] (wf::input_event_signal<wlr_pointer_button_event> *sig)
+    {
+        auto ev = sig->event;
+        if (replaying || !ev || !ev->pointer)
+        {
+            return;
+        }
+
+        auto key = std::make_pair(ev->pointer, ev->button);
+        if (ev->state == WL_POINTER_BUTTON_STATE_PRESSED)
+        {
+            release(key);                                         /* a held one first */
+            pressed_at[key] = ev->time_msec;
+            return;
+        }
+
+        auto at = pressed_at.find(key);
+        uint32_t wait = (at == pressed_at.end()) ? 0 : click_hold_ms(at->second, ev->time_msec);
+        if (!wait)
+        {
+            return;
+        }
+
+        sig->mode = wf::input_event_processing_mode_t::IGNORE;   /* later, see release() */
+        auto h = std::make_unique<held_t>();
+        h->ev = *ev;
+        h->timer = std::make_unique<wf::wl_timer<false>>();
+        auto ptr = ev->pointer;
+        h->on_destroy.set_callback([this, ptr] (void*)
+        {
+            for (auto it = held.begin(); it != held.end();)
+            {
+                it = (it->first.first == ptr) ? held.erase(it) : std::next(it);
+            }
+
+            for (auto it = pressed_at.begin(); it != pressed_at.end();)
+            {
+                it = (it->first.first == ptr) ? pressed_at.erase(it) : std::next(it);
+            }
+        });
+        h->on_destroy.connect(&ptr->base.events.destroy);
+        h->timer->set_timeout(wait, [this, key] { release(key); });
+        held[key] = std::move(h);
+    };
+
+    void init()
+    {
+        wf::get_core().connect(&on_button);
+    }
+
+    void fini()
+    {
+        on_button.disconnect();
+        while (!held.empty())
+        {
+            release(held.begin()->first);
+        }
+    }
+};
+
 class sonata_corners_t : public wf::plugin_interface_t
 {
     const std::string transformer_name = "sonata-corners";
     wf::wl_idle_call idle_update;
     wf::wl_timer<false> late_update;
+    short_click_stretch_t short_clicks;      /* taps games can see */
 
     /* An app that draws its own square frame (Steam: sonata-corners/own_frame_apps,
      * exact app_ids -- its games, "steam_app_<id>", are not rounded). */
@@ -1888,6 +1995,7 @@ class sonata_corners_t : public wf::plugin_interface_t
         ipc_repo->register_method("sonata/rounded", ipc_rounded);
         /* which build runs (session.log): a fix is only in once install.sh rebuilt it */
         LOGI("sonata-corners: build ", SONATA_CORNERS_BUILD);
+        short_clicks.init();
         window_capture.init();
 #ifdef SONATA_OUTPUT_CAPTURE
         output_capture.init();
@@ -1938,6 +2046,7 @@ class sonata_corners_t : public wf::plugin_interface_t
         ipc_repo->unregister_method("sonata/fps");
         ipc_repo->unregister_method("sonata/rounded");
         fps.fini();
+        short_clicks.fini();
         window_capture.fini();
 #ifdef SONATA_OUTPUT_CAPTURE
         output_capture.fini();

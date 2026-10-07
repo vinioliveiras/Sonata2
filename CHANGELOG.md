@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixes
+- Touchpad taps click in games: a tap's press and release came at once and
+  games (Proton, Wine) never saw the button down; a release that quick is
+  now held back to 60 ms.
+
 ## 0.12.0-alpha -- 2026-10-07
 
 Your apps under your control: lock them, sandbox them, decide what they
