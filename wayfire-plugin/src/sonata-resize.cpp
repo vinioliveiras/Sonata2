@@ -381,6 +381,14 @@ static constexpr int OVERSIZE_WAIT_MS = 400;         // still so after this: not
 static constexpr int NUDGES = 3;
 static constexpr int NUDGE_WINDOW_MS = 20000;
 static constexpr int NUDGE_BACK_MS = 80;
+static constexpr int AFTER_RESIZE_MS = 1500;          // the app's own redraw after a resize: left alone
+
+/* A window being resized by its edge (any output), and when the last
+ * resize ended. Vini: "I get stuck, I can't resize the window" -- Claude
+ * draws itself at the size it's being dragged to while the outline moves,
+ * and being asked for its old size mid-drag snapped it back. */
+static int g_resizing = 0;
+static int64_t g_resize_ended = 0;
 
 /** The app's own window geometry: Wayfire's (which follows what the app
  * says its window is) less Sonata's frame. */
@@ -398,6 +406,11 @@ static int oversize(wayfire_toplevel_view v)
     if (!v || !v->is_mapped() || !v->toplevel() || v->pending_fullscreen())
     {
         return 0;
+    }
+
+    if (g_resizing || (wf::get_current_time() - g_resize_ended < AFTER_RESIZE_MS))
+    {
+        return 0;                                    // being resized now, or just was
     }
 
     auto m = v->toplevel()->current().margins;
@@ -1002,6 +1015,11 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
 
         input_grab->set_wants_raw_input(true);
         input_grab->grab_input(wf::scene::layer::OVERLAY);
+        if (!counted_resize)
+        {
+            counted_resize = true;
+            g_resizing++;
+        }
 
         grab_start = get_input_coords();
         moved = false;
@@ -1049,6 +1067,18 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         }
     }
 
+    bool counted_resize = false;
+
+    void uncount_resize()
+    {
+        if (counted_resize)
+        {
+            counted_resize = false;
+            g_resizing = std::max(0, g_resizing - 1);
+            g_resize_ended = wf::get_current_time();
+        }
+    }
+
     void input_pressed(uint32_t state)
     {
         if (state != WLR_BUTTON_RELEASED)
@@ -1058,6 +1088,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
 
         input_grab->ungrab_input();
         output->deactivate_plugin(&grab_interface);
+        uncount_resize();
 
         if (view && outline && moved)
         {
@@ -1290,6 +1321,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
 
     void fini() override
     {
+        uncount_resize();
         if (input_grab->is_grabbed())
         {
             input_pressed(WLR_BUTTON_RELEASED);

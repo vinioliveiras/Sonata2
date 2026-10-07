@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Fixes
+- Resizing Claude (or another app drawing ahead of its window) no longer
+  gets stuck: an app isn't asked for its size while a window is being
+  resized, nor just after.
 - Steam's menu in the menu bar works: Library, Store, Community, Friends,
   Settings, Big Picture and Exit Steam open with Steam's own links (Steam
   ignored the clicks).

@@ -62,6 +62,20 @@ class OversizeTest(unittest.TestCase):
         self.assertIn("add_size_watch(toplevel_cast(ev->view));", SRC)      # each map
         self.assertIn("remove_size_watch(t);", SRC)                         # plugin unloaded
 
+    def test_never_while_resizing(self):
+        """Vini: "I get stuck, I can't resize the window" -- Claude draws at
+        the size it's dragged to; asked for its old size mid-drag, it snapped
+        back. Nothing while any window is resized, nor just after."""
+        part = SRC[SRC.index("static int oversize("):SRC.index("struct size_watch_t")]
+        self.assertIn("g_resizing || (wf::get_current_time() - g_resize_ended < AFTER_RESIZE_MS)", part)
+        init = SRC[SRC.index("bool initiate("):SRC.index("void uncount_resize()")]
+        self.assertIn("g_resizing++", init)
+        unc = SRC[SRC.index("void uncount_resize()"):SRC.index("void input_pressed(")]
+        self.assertIn("g_resize_ended = wf::get_current_time()", unc)
+        rel = SRC[SRC.index("void input_pressed("):SRC.index("// Convert resize edges to gravity")]
+        self.assertIn("uncount_resize();", rel)
+        self.assertGreaterEqual(const("AFTER_RESIZE_MS"), 1000)
+
     def test_frame_check_logs_the_apps_size(self):
         self.assertIn('" app geometry ", xg.width', SRC)
 
