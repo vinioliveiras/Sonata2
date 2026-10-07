@@ -3,9 +3,11 @@
 ## Unreleased
 
 ### Fixes
-- Touchpad taps click in games: a tap's press and release came at once and
-  games (Proton, Wine) never saw the button down; a release that quick is
-  now held back to 60 ms.
+- Clicks in games: a touchpad tap's press and release came at once, and a
+  game keeping the GPU busy made Sonata read input late, in bursts -- even
+  mouse clicks reached the game as press + release together, and games
+  (Proton, Wine) never saw the button down. A release is now held until
+  80 ms after its press was handed on.
 - Maximized or restored, a slow app's title bar (Claude, other Electron
   apps) no longer stays at the old width: its frame is redrawn again a
   while after the zoom.

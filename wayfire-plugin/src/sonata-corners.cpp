@@ -534,7 +534,7 @@ class corners_render_instance_t :
  * used before, maps input through its own transform). */
 /* the top of a window that is always blurred: title bar + a toolbar */
 /* bumped with every change of the plugin (tests/test_regressions.py checks it) */
-#define SONATA_CORNERS_BUILD "2026-10-07.4 debug_input: the node clicked"
+#define SONATA_CORNERS_BUILD "2026-10-07.5 clicks read in a burst held apart"
 static const int TOP_GLASS = 96;
 
 class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
@@ -1529,7 +1529,7 @@ class fps_counter_t
  * MIN_CLICK_MS after its press is held back until then -- a real click
  * (always longer) is untouched; a new press of that button first lets the
  * held release through (double taps keep their order). */
-static constexpr uint32_t MIN_CLICK_MS = 60;
+static constexpr uint32_t MIN_CLICK_MS = 80;
 
 /* How long a release must wait (0: it goes now) -- msec clocks wrap */
 static uint32_t click_hold_ms(uint32_t pressed, uint32_t released)
@@ -1547,6 +1547,11 @@ struct short_click_stretch_t
         wf::wl_listener_wrapper on_destroy;
     };
     std::map<std::pair<wlr_pointer*, uint32_t>, uint32_t> pressed_at;
+    /* when the press was handed on (Wayfire's clock): a busy compositor (a
+     * game keeping the GPU busy) reads input late, in bursts -- a 100 ms
+     * click then went out as a press and a release together (Vini's log:
+     * mouse clicks too, in Ravage) */
+    std::map<std::pair<wlr_pointer*, uint32_t>, uint32_t> sent_at;
     std::map<std::pair<wlr_pointer*, uint32_t>, std::unique_ptr<held_t>> held;
     bool replaying = false;
 
@@ -1582,11 +1587,14 @@ struct short_click_stretch_t
         {
             release(key);                                         /* a held one first */
             pressed_at[key] = ev->time_msec;
+            sent_at[key]    = wf::get_current_time();
             return;
         }
 
         auto at = pressed_at.find(key);
-        uint32_t wait = (at == pressed_at.end()) ? 0 : click_hold_ms(at->second, ev->time_msec);
+        uint32_t wait = (at == pressed_at.end()) ? 0 :
+            std::max(click_hold_ms(at->second, ev->time_msec),                 /* a tap */
+                click_hold_ms(sent_at[key], wf::get_current_time()));          /* read in one burst */
         if (!wait)
         {
             return;
@@ -1607,6 +1615,11 @@ struct short_click_stretch_t
             for (auto it = pressed_at.begin(); it != pressed_at.end();)
             {
                 it = (it->first.first == ptr) ? pressed_at.erase(it) : std::next(it);
+            }
+
+            for (auto it = sent_at.begin(); it != sent_at.end();)
+            {
+                it = (it->first.first == ptr) ? sent_at.erase(it) : std::next(it);
             }
         });
         h->on_destroy.connect(&ptr->base.events.destroy);

@@ -24,7 +24,7 @@ int main()
     CHECK(click_hold_ms(1000, 1000) == MIN_CLICK_MS);       // a tap: press and release together
     CHECK(click_hold_ms(1000, 1020) == MIN_CLICK_MS - 20);
     CHECK(click_hold_ms(1000, 1000 + MIN_CLICK_MS) == 0);   // long enough: now
-    CHECK(click_hold_ms(1000, 1120) == 0);                  // a real click
+    CHECK(click_hold_ms(1000, 1150) == 0);                  // a real click
     CHECK(click_hold_ms(0xFFFFFFF0u, 5) == MIN_CLICK_MS - 21);   // the clock wrapped
     return fails;
 }
@@ -53,7 +53,16 @@ class TapClickTest(unittest.TestCase):
         self.assertIn("on_destroy.connect(&ptr->base.events.destroy)", part)          # unplugged meanwhile
         self.assertIn("short_clicks.init();", SRC)
         self.assertIn("short_clicks.fini();", SRC)
-        self.assertIn("debug_input", SRC[SRC.index("#define SONATA_CORNERS_BUILD"):][:120])
+        self.assertIn("burst", SRC[SRC.index("#define SONATA_CORNERS_BUILD"):][:120])
+
+    def test_burst(self):
+        """Vini's log: a game kept the compositor busy, input came in bursts --
+        a 100 ms mouse click went out as press + release together. The hold
+        also counts from when the press was handed on (Wayfire's clock)."""
+        part = SRC[SRC.index("struct short_click_stretch_t"):SRC.index("class sonata_corners_t")]
+        self.assertIn("sent_at[key]    = wf::get_current_time();", part)
+        self.assertIn("click_hold_ms(sent_at[key], wf::get_current_time())", part)
+        self.assertIn("sent_at.erase(it)", part)
 
     def test_debug_log(self):
         """[sonata-corners] debug_input: each button, its device and the window that gets it."""
