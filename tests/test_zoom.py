@@ -50,11 +50,24 @@ class ZoomPluginTest(unittest.TestCase):
         contents fade in and when they're done."""
         start = body("void start_fade()", "void fade_step()")
         self.assertLess(start.index("fade_started = true;"), start.index("redraw_frame(fading);"))   # no loop
-        finish = body("void finish_fade()", "void redraw_frame(")
+        finish = body("void finish_fade()", "static constexpr int FRAME_CHECKS_MS")
         self.assertLess(finish.index("on_new_size.disconnect();"), finish.index("redraw_frame(fading);"))
         redraw = body("void redraw_frame(", "void close_ghost()")
         self.assertIn("wf::view_geometry_changed_signal ev;", redraw)
         self.assertIn("v->emit(&ev);", redraw)
+
+    def test_title_bar_checked_again_for_slow_apps(self):
+        """Vini (video, again): maximized, Claude's title bar stayed at the
+        restored width for seconds -- Electron draws itself at the new size
+        after the fade. The frame is redrawn again a while later, a few times."""
+        finish = body("void finish_fade()", "static constexpr int FRAME_CHECKS_MS")
+        self.assertIn("check_frame_later(fading);", finish)
+        check = body("void check_frame_later(", "void redraw_frame(")
+        self.assertIn("frame_view   = v->shared_from_this();", check)        # never a stale pointer
+        self.assertIn("auto v = toplevel_cast(frame_view.lock());", check)
+        self.assertIn("redraw_frame(v);", check)
+        self.assertIn("static constexpr int FRAME_CHECKS_MS[] = {250, 750, 2000};", SRC)
+        self.assertIn("frame_timer.disconnect();", body("void fini() override", "void start_zoom("))
 
     def test_not_while_dragging_or_resizing(self):
         start = body("void start_zoom(", "wf::geometry_t zoom_target()")

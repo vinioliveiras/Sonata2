@@ -6,6 +6,9 @@
 - Touchpad taps click in games: a tap's press and release came at once and
   games (Proton, Wine) never saw the button down; a release that quick is
   now held back to 60 ms.
+- Maximized or restored, a slow app's title bar (Claude, other Electron
+  apps) no longer stays at the old width: its frame is redrawn again a
+  while after the zoom.
 
 ## 0.12.0-alpha -- 2026-10-07
 

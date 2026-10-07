@@ -505,6 +505,12 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
      * are put back inside the work area once full screen ends and whenever
      * the work area changes. */
     wf::wl_timer<false> refit_timer;
+    /* Vini: maximized, Claude's title bar stayed at the restored width
+     * (and restored, its frame a strip too wide) -- an app slower than the
+     * fade (Electron) gets its frame redrawn again a while after it ends */
+    wf::wl_timer<false> frame_timer;
+    std::weak_ptr<wf::view_interface_t> frame_view;
+    int frame_checks = 0;
     wf::signal::connection_t<wf::view_fullscreen_signal> on_fullscreen = [=] (wf::view_fullscreen_signal *ev)
     {
         if (!ev->state)
@@ -1073,6 +1079,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         output->rem_binding(&activate_binding);
         output->rem_binding(&activate_binding_preserve_aspect);
         refit_timer.disconnect();
+        frame_timer.disconnect();
         for (auto& v : wf::get_core().get_all_views())
         {
             if (auto t = toplevel_cast(v); t && (t->get_output() == output))
@@ -1290,10 +1297,39 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
             fading->get_transformed_node()->rem_transformer(FADE);
             on_new_size.disconnect();
             redraw_frame(fading);
+            check_frame_later(fading);
             fading = nullptr;
         }
 
         output->render->rem_effect(&fade_hook);
+    }
+
+    /** redraw_frame again FRAME_CHECKS_MS later (each), for apps that draw
+     * themselves at the new size only after the fade */
+    static constexpr int FRAME_CHECKS_MS[] = {250, 750, 2000};
+
+    void check_frame_later(wayfire_toplevel_view v)
+    {
+        frame_view   = v->shared_from_this();
+        frame_checks = 0;
+        frame_timer.disconnect();
+        frame_timer.set_timeout(FRAME_CHECKS_MS[0], [=] { frame_check(); });
+    }
+
+    void frame_check()
+    {
+        auto v = toplevel_cast(frame_view.lock());
+        if (!v || !v->is_mapped())
+        {
+            return;
+        }
+
+        redraw_frame(v);
+        if (++frame_checks < (int)(sizeof(FRAME_CHECKS_MS) / sizeof(FRAME_CHECKS_MS[0])))
+        {
+            frame_timer.set_timeout(FRAME_CHECKS_MS[frame_checks] - FRAME_CHECKS_MS[frame_checks - 1],
+                [=] { frame_check(); });
+        }
     }
 
     /** The title bar drawn again at the window's size, now. Vini: zoomed
