@@ -533,6 +533,8 @@ def run_topbar(app, args, ui):
             if m is monitors.main():
                 return None
             w = topbar.TopBarWindow(app, monitor=m, manager=win.manager, secondary=True)
+            # the same Notification Center (and Do Not Disturb) from its clock (Vini)
+            w.bar.notifications = getattr(win.bar, "notifications", None)
             w.present()
             return w
 

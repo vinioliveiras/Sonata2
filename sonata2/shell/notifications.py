@@ -481,7 +481,10 @@ class Notifications:
             img.set_from_icon_name("dialog-information")
 
     # -- Notification Center ------------------------------------------------------------------
-    def toggle_center(self):
+    def toggle_center(self, monitor=None):
+        """Open / close Notification Center -- on `monitor`, the display of
+        the menu bar whose clock was clicked (Vini: every display's clock
+        opens the same one, not a bare calendar)."""
         if self.nc and self.nc.get_visible():
             self.nc.hide_center()
             return
@@ -489,7 +492,7 @@ class Notifications:
             self._hide_banner(nid, animate=False)
         if self.nc is None:
             self.nc = _Center(self.app, self)
-        self.nc.show_center()
+        self.nc.show_center(monitor)
 
 
 class _BannerWindow(Gtk.Window):
@@ -562,7 +565,12 @@ class _Center(Gtk.Window):
         if w is None:
             self.hide_center()
 
-    def show_center(self):
+    def show_center(self, monitor=None):
+        if monitor is not None and monitor is not getattr(self, "monitor", None):
+            LS = layer.layer_shell()
+            if LS:                                   # (closed, so it can move to that display)
+                LS.set_monitor(self, monitor)
+            self.monitor = monitor
         # already built (at start, and on every change while closed): only a new
         # day needs the calendar redrawn -- opening is then instant
         if getattr(self, "_built_for", None) != self._state_key():

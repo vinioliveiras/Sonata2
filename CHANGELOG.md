@@ -9,6 +9,8 @@
   behind seven clicks otherwise).
 
 ### Fixes
+- The clock on every display opens Notification Center (with your
+  notifications) on that display, not a plain calendar.
 - An app that draws itself bigger than its window (Claude, after a
   resize: its picture went on past the frame over the desktop) is asked
   again for its size, and draws itself at the window's size.

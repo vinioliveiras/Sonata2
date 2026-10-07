@@ -615,7 +615,7 @@ class Bar(Gtk.CenterBox):
         """Big Sur: the clock opens Notification Center."""
         nc = getattr(self, "notifications", None)
         if nc is not None:
-            nc.toggle_center()
+            nc.toggle_center(getattr(self, "monitor", None))
             return None
         cal = Gtk.Calendar()
         return ui.panel.popup(btn, ui.panel.column(cal), gap=PANEL_GAP, width=STATUS_W)
