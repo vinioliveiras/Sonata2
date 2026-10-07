@@ -2,18 +2,26 @@
 
 ## Unreleased
 
-### Fixes
-- Full-screen games run smoother: the rounded screen corners leave the
-  display a full-screen app is on, so Wayfire can hand the game's picture
-  to the display instead of composing every frame.
-
 ### Changes
+- Dock badges for apps that send none: a web app's unread count from its
+  page ("(3) WhatsApp"), else the app's notifications that came in since
+  it was last in front. A new badge pops in.
+- A Sonata web app's notifications are its own (WhatsApp's name and icon,
+  not Chrome's); clicking one brings WhatsApp forward, or opens it.
+- Notifications are all the same size: a picture is a small square,
+  blank lines and Chrome's site line go, and Chrome's Settings button
+  isn't shown.
 - Settings > About > Backup: export Sonata's settings -- and, if you like,
   the data of Notes, Calendar and Reminders -- to one .sonata-backup file,
   and import it back (on this computer or another one; your current
   settings go to the Trash first).
 
 ### Fixes
+- No resize arrow over the Dock or the menu bar where a window's edge
+  passes under them.
+- Full-screen games run smoother: the rounded screen corners leave the
+  display a full-screen app is on, so Wayfire can hand the game's picture
+  to the display instead of composing every frame.
 - Windows are cut to their frame: an app that draws itself bigger than its
   window (Claude, after or while resizing) never shows past the frame --
   only the frame's shadow is drawn outside it.

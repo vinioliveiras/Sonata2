@@ -14,6 +14,7 @@
   critical), the ones on screen go away when it's turned on; notifications
   still collect in the Notification Center."""
 import os
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -201,6 +202,42 @@ class Note:
     at: float = field(default_factory=time.time)
 
 
+THUMB = 40                 # a notification's picture: a square this size (macOS), every card alike
+BODY_LINES = 3
+_HOST_LINE = re.compile(r"^\s*(?:<a [^>]*>)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:</a>)?\s*(?:\n|$)", re.I)
+
+
+BROWSERS = ("chrome", "chromium", "brave", "edge", "vivaldi", "opera")
+
+
+def tidy(body: str, actions: list, web: bool, browser: bool = False):
+    """(body, actions) as a card shows them: no blank lines; a web app's
+    without the browser's site line ("web.whatsapp.com"); no browser's own
+    Settings button (Vini: not needed -- Settings > Notifications is ours)."""
+    if web:
+        body = _HOST_LINE.sub("", body or "", count=1)
+    if web or browser:
+        actions = [(k, lbl) for k, lbl in actions if k.lower() != "settings" and lbl.lower() != "settings"]
+    lines = [ln for ln in (body or "").splitlines() if ln.strip()]
+    return "\n".join(lines), actions
+
+
+def thumbnail(path: str, size: int = THUMB, scale: int = 2):
+    """The picture cut to a square (centre), `size` px: a texture, None if unreadable."""
+    from gi.repository import GdkPixbuf
+    try:
+        w, h = GdkPixbuf.Pixbuf.get_file_info(path)[1:]
+        if not w or not h:
+            return None
+        px = size * scale
+        k = px / min(w, h)
+        pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, max(px, round(w * k)), max(px, round(h * k)), False)
+        x, y = (pb.get_width() - px) // 2, (pb.get_height() - px) // 2
+        return Gdk.Texture.new_for_pixbuf(pb.new_subpixbuf(x, y, px, px))
+    except (GLib.Error, TypeError):
+        return None
+
+
 def _markup(text: str) -> str:
     """Notification bodies may carry simple markup (<b>, <i>, <a>); keep what
     Pango understands, escape the rest."""
@@ -236,6 +273,8 @@ class Notifications:
         self.win = _BannerWindow(app)
         self.nc = None
         self.listeners = []        # called when the list changes (NC open)
+        from .. import badges
+        badges.publish([], os.getpid())     # a previous menu bar's list is gone with it
         Gio.bus_own_name(Gio.BusType.SESSION, "org.freedesktop.Notifications",
                          Gio.BusNameOwnerFlags.DO_NOT_QUEUE, self._bus_acquired, None, None)
         GLib.timeout_add(2500, self._prewarm)
@@ -294,13 +333,40 @@ class Notifications:
             invocation.return_value(None)
         elif method == "Notify":
             try:
-                nid = self.notify(*params.unpack())
+                args = list(params.unpack())
+                web = self._webapp_sender(conn, sender)
+                if web:                     # a web app on Chromium: its own name and icon, not Chrome's
+                    args[0], args[6] = web[1] or args[0], dict(args[6], **{"desktop-entry": web[0]})
+                nid = self.notify(*args)
             except Exception:           # always answer: apps wait on the reply (freeze)
                 import traceback
                 traceback.print_exc()
                 nid = self._next
                 self._next += 1
             invocation.return_value(GLib.Variant("(u)", (nid,)))
+
+    def _webapp_sender(self, conn, sender):
+        """(desktop id, name) of the Sonata web app whose process sent this
+        (WhatsApp notifies as "Google Chrome": its badge, icon and click
+        belong to WhatsApp), else None. Once per sender."""
+        cache = self.__dict__.setdefault("_senders", {})
+        if sender in cache:
+            return cache[sender]
+        from .. import badges, webapps
+        found = None
+        try:
+            pid = conn.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                                 "GetConnectionUnixProcessID", GLib.Variant("(s)", (sender,)),
+                                 GLib.VariantType("(u)"), Gio.DBusCallFlags.NONE, 300, None).unpack()[0]
+            app = badges.webapp_of(badges.cmdline(pid))
+            if app and apps.lookup(webapps.desktop_id(app)):
+                found = (webapps.desktop_id(app), (webapps.get(app) or {}).get("name", ""))
+        except (GLib.Error, TypeError, ValueError):
+            pass
+        if len(cache) > 200:
+            cache.clear()
+        cache[sender] = found
+        return found
 
     def notify(self, app_name, replaces, app_icon, summary, body, actions, hints, timeout) -> int:
         # any id handed out before is replaced in place, listed or not (a banner-only
@@ -316,6 +382,9 @@ class Notifications:
         n = Note(nid, app_name or "", app_icon or "", summary or "", body or "", pairs,
                  hints.get("desktop-entry", "") or "", int(urgency) if isinstance(urgency, int) else 1, timeout,
                  image if image.startswith("/") else "")
+        from .. import webapps
+        browser = any(b in (n.desktop + " " + n.app).lower() for b in BROWSERS)
+        n.body, n.actions = tidy(n.body, n.actions, webapps.is_webapp(n.desktop), browser)
         if locked(n.desktop, n.app):                    # its folder is locked: no banner, not in the list
             return nid
         key = app_key(n.desktop, n.app)
@@ -356,7 +425,11 @@ class Notifications:
             # a click on it: its app comes forward -- its window restored and
             # focused when open, else the app opened (Vini). An app that opens
             # itself for the click (its own "default" action) isn't opened twice.
-            if not bring_forward(n.desktop, n.app) and not has_default and n.desktop:
+            # A web app (Chrome answers the click itself but can't raise its
+            # window on Wayland): its window comes forward, or it opens (Vini).
+            from .. import webapps
+            web = webapps.is_webapp(n.desktop)
+            if not bring_forward(n.desktop, n.app) and (web or not has_default) and n.desktop:
                 info = apps.lookup(n.desktop)
                 if info:
                     try:
@@ -370,6 +443,8 @@ class Notifications:
             self.close(n.id, 2)
 
     def _changed(self):
+        from .. import badges
+        badges.publish(self.notes, os.getpid())     # the Dock's badges (badges.py)
         for cb in list(self.listeners):
             cb()
 
@@ -434,7 +509,7 @@ class Notifications:
         col.append(top)
         if n.body:
             col.append(Gtk.Label(label=_markup(n.body), use_markup=True, xalign=0, wrap=True,
-                                 wrap_mode=Pango.WrapMode.WORD_CHAR, lines=3 if banner else 5,
+                                 wrap_mode=Pango.WrapMode.WORD_CHAR, lines=BODY_LINES,
                                  ellipsize=Pango.EllipsizeMode.END, max_width_chars=36, css_classes=["nt-body"]))
         acts = [(k, lbl) for k, lbl in n.actions if k != "default" and lbl]
         if acts:
@@ -445,10 +520,10 @@ class Notifications:
                 row.append(b)
             col.append(row)
         box.append(col)
-        if n.image:
-            pic = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, valign=Gtk.Align.CENTER, css_classes=["nt-image"])
-            pic.set_filename(n.image)
-            pic.set_size_request(64, 40)
+        thumb = thumbnail(n.image) if n.image else None
+        if thumb is not None:                       # (a full-size picture made the card huge: Vini)
+            pic = Gtk.Image(paintable=thumb, pixel_size=THUMB, valign=Gtk.Align.CENTER,
+                            overflow=Gtk.Overflow.HIDDEN, css_classes=["nt-image"])
             box.append(pic)
         from ..ui.fixed import FixedWidth
         over.set_child(FixedWidth(box, BANNER_W))            # a long title or body never widens it

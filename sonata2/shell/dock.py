@@ -28,7 +28,7 @@ gi.require_version("Gsk", "4.0")
 gi.require_version("Graphene", "1.0")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
-from .. import applock, apps, config, icons, logs, steamgames, windowapps  # noqa: E402
+from .. import applock, apps, badges, config, icons, logs, steamgames, windowapps  # noqa: E402
 from .. import ui  # noqa: E402
 from . import dock_drop, dock_folder, dock_menu, dock_stack, layer  # noqa: E402
 
@@ -274,9 +274,21 @@ class DockIcon(Gtk.Widget):
             self.locked = on
             self.queue_draw()
 
+    badge_k = 1.0     # the badge's scale while it pops in (BADGE_POP_MS)
+
     def set_badge(self, text: str) -> None:
         if text != self.badge:
+            grew = bool(text) and (not self.badge or _badge_n(text) > _badge_n(self.badge))
             self.badge = text
+            if grew and self.get_mapped():          # a new message: the badge pops (macOS)
+                def step(v):
+                    self.badge_k = v
+                    self.queue_draw()
+                anim = Adw.TimedAnimation.new(self, 0.3, 1.0, BADGE_POP_MS, Adw.CallbackAnimationTarget.new(step))
+                anim.set_easing(Adw.Easing.EASE_OUT_BACK)
+                self._badge_anim = anim
+                self.badge_k = 0.3
+                anim.play()
             self.queue_draw()
 
     def do_snapshot(self, snap) -> None:
@@ -308,6 +320,12 @@ class DockIcon(Gtk.Widget):
         h = max(s * 0.38, th + 2)
         w = max(h, tw + h * 0.55)
         x, y = s - w * 0.78, -h * 0.12
+        k = self.badge_k if text is None else 1.0
+        if k != 1.0:
+            snap.save()
+            snap.translate(Graphene.Point().init(x + w / 2, y + h / 2))
+            snap.scale(k, k)
+            snap.translate(Graphene.Point().init(-(x + w / 2), -(y + h / 2)))
         rr = _rounded(_rect(x, y, w, h), h / 2)
         snap.append_outset_shadow(rr, _rgba("rgba(0,0,0,0.25)"), 0, 1, 0, 2)
         snap.push_rounded_clip(rr)
@@ -317,6 +335,8 @@ class DockIcon(Gtk.Widget):
         snap.translate(Graphene.Point().init(x + (w - tw) / 2, y + (h - th) / 2))
         snap.append_layout(layout, _rgba(ink))
         snap.restore()
+        if k != 1.0:
+            snap.restore()
 
 
 class DockTile(Gtk.Button):
@@ -495,6 +515,12 @@ def toggle_show_desktop(manager) -> str:
 # Docks of this process (one per display with all_displays) and the Wayfire
 # events that move windows between displays: their genie targets follow.
 _DOCKS = []
+BADGE_POP_MS = 320
+
+
+def _badge_n(text: str) -> int:
+    return 100 if text == "99+" else (int(text) if text.isdigit() else 0)
+_SEEN = {"server": None, "ids": {}}   # notification ids seen per app, all Docks (badges.py)
 _WATCH = {"on": False}
 _ASK = object()       # "fetch Wayfire's window list now" (_update_rectangles / _windows_here)
 
@@ -592,6 +618,9 @@ class Dock(Gtk.Box):
         self.append(self._spacer())
         self._drag = None     # (key, original index) while an icon is dragged
         self.badges = {}      # desktop id -> badge text (Unity LauncherEntry)
+        self.title_counts = {}  # key -> a web app's unread count from its title (badges.py)
+        self._notes = badges.load()
+        self._notes_mon = badges.watch(self._notes_changed)
         self._launcher_entries()
         drop = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
         # only the Dock's own icon drags: a Launchpad app (which also offers
@@ -639,6 +668,9 @@ class Dock(Gtk.Box):
         if self._apps_src:
             GLib.source_remove(self._apps_src)
             self._apps_src = 0
+        if getattr(self, "_notes_mon", None) is not None:
+            self._notes_mon.cancel()
+            self._notes_mon = None
         bus, sub = getattr(self, "_launcher_sub", (None, 0))
         if sub:
             bus.signal_unsubscribe(sub)
@@ -887,13 +919,40 @@ class Dock(Gtk.Box):
         if count is not None or visible is not None:
             n = int(count if count is not None else 0)
             show = visible if visible is not None else bool(self.badges.get(key))
-            self.badges[key] = ("99+" if n > 99 else str(n)) if show and n > 0 else ""
+            self.badges[key] = badges.label(n) if show else ""
+        self.refresh_badges()
         tile = self.tiles.get(key) or next((t for k, t in self.tiles.items()
                                             if k.lower() == key.lower()), None)
-        if tile is not None:
-            tile.icon.set_badge(self.badges.get(key, ""))
-            if props.get("urgent"):
-                tile.bounce(3 * BOUNCE_MS)
+        if tile is not None and props.get("urgent"):
+            tile.bounce(3 * BOUNCE_MS)
+
+    def _notes_changed(self) -> None:
+        self._notes = badges.load()
+        self.refresh_badges()
+
+    def badge_text(self, key: str, note_counts: dict) -> str:
+        """The app's own count, else its web page's, else its unseen notifications."""
+        own = self.badges.get(key)
+        if own is None:
+            own = next((v for k, v in self.badges.items() if k.lower() == key.lower()), None)
+        if own is not None:                          # the app sends counts: its word goes (0 too)
+            return own
+        return badges.label(self.title_counts.get(key)) or badges.label(note_counts.get(key))
+
+    def refresh_badges(self) -> None:
+        server, notes = self._notes
+        if server != _SEEN["server"]:                 # another menu bar: its ids start again
+            _SEEN["server"], _SEEN["ids"] = server, {}
+        names = {k: t.name for k, t in self.tiles.items()}
+        for key in self._front_keys():                # in front now: what it showed is seen
+            _SEEN["ids"][key] = max(_SEEN["ids"].get(key, 0), badges.newest(notes, names, key))
+        counts = badges.note_counts(notes, names, _SEEN["ids"])
+        for key, tile in self.tiles.items():
+            if hasattr(tile.icon, "set_badge"):
+                tile.icon.set_badge(self.badge_text(key, counts))
+
+    def _front_keys(self) -> list:
+        return [k for k, wins in getattr(self, "windows", {}).items() if any(t.activated for t in wins)]
 
     def all_tiles(self) -> list:
         return self.app_tiles() + self.stacks.tiles() + [self.trash]
@@ -934,8 +993,9 @@ class Dock(Gtk.Box):
                         else (lambda t: dock_menu.app_menu(self, key, t)), icon=icon)
         tile.key = key
         self.tiles[key] = tile
-        if self.badges.get(key):                  # a badge that arrived before the tile
-            tile.icon.set_badge(self.badges[key])
+        if hasattr(tile.icon, "set_badge"):       # a badge that arrived before the tile
+            tile.icon.set_badge(self.badge_text(key, badges.note_counts(
+                self._notes[1], {key: name}, _SEEN["ids"])))
         self.insert_child_after(tile, self.sep.get_prev_sibling())   # before the divider
         src = Gtk.DragSource(actions=Gdk.DragAction.MOVE)
         src.connect("prepare", lambda *_: Gdk.ContentProvider.new_for_value(self._drag_text(key)))
@@ -1833,6 +1893,9 @@ class Dock(Gtk.Box):
                 if name != tile.name:
                     tile.name = name
                     tile.label.set_text(name)
+        self.title_counts = {k: badges.title_count([t.title for t in wins]) for k, wins in groups.items()
+                             if any(badges.counted_title(t.app_id, k) for t in wins)}
+        self.refresh_badges()
         for key, tile in self.tiles.items():
             tile.set_running(self.window_count(key))
             if groups.get(key):

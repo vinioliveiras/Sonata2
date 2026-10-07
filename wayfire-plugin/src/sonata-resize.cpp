@@ -51,6 +51,7 @@
 #include <wayfire/per-output-plugin.hpp>
 #include <wayfire/output.hpp>
 #include <wayfire/view.hpp>
+#include <wayfire/view-helpers.hpp>
 #include <wayfire/core.hpp>
 #include <wayfire/workspace-set.hpp>
 #include <linux/input.h>
@@ -243,6 +244,29 @@ static wf::geometry_t visible(wayfire_toplevel_view v, wf::geometry_t g, int til
  * maximized, tiled or full-screen window. */
 uint32_t band_edges(int x, int y, int w, int h, double px, double py);
 
+/* Over the Dock or the menu bar (a shell surface above the windows), even its
+ * see-through part: never a window's edge. Vini: the resize arrow showed
+ * over the Dock where a window's bottom edge passed under it. */
+static bool under_shell(wf::pointf_t at)
+{
+    for (auto& v : wf::get_core().get_all_views())
+    {
+        if (!v->is_mapped() || (v->role != wf::VIEW_ROLE_DESKTOP_ENVIRONMENT))
+        {
+            continue;
+        }
+
+        auto layer = wf::get_view_layer(v);
+        if (layer && (*layer >= wf::scene::layer::TOP) && (*layer != wf::scene::layer::LOCK) &&
+            (v->get_bounding_box() & wf::point_t{(int)std::floor(at.x), (int)std::floor(at.y)}))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 class edge_grab_node_t : public wf::scene::node_t, public wf::pointer_interaction_t
 {
     wayfire_toplevel_view view;
@@ -262,7 +286,8 @@ class edge_grab_node_t : public wf::scene::node_t, public wf::pointer_interactio
         }
 
         auto g = visible(view, view->get_geometry());
-        return band_edges(g.x, g.y, g.width, g.height, at.x, at.y);
+        uint32_t e = band_edges(g.x, g.y, g.width, g.height, at.x, at.y);
+        return (e && under_shell(at)) ? 0 : e;
     }
 
     std::optional<wf::scene::input_node_t> find_node_at(const wf::pointf_t& at) override

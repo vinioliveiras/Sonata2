@@ -25,5 +25,16 @@ class EdgeCursorTest(unittest.TestCase):
         self.assertIn('set_cursor("default")', show)
 
 
+    def test_no_edge_over_the_dock_or_menu_bar(self):
+        """Vini: the arrow still showed over the Dock -- a window's bottom
+        edge passing under it. A shell surface above the windows wins."""
+        fn = SRC[SRC.index("static bool under_shell"):SRC.index("class edge_grab_node_t")]
+        self.assertIn("VIEW_ROLE_DESKTOP_ENVIRONMENT", fn)
+        self.assertIn("wf::scene::layer::TOP", fn)
+        self.assertIn("get_bounding_box()", fn)
+        edges = self.part()[self.part().index("uint32_t edges_at"):self.part().index("find_node_at")]
+        self.assertIn("under_shell(at)", edges)
+
+
 if __name__ == "__main__":
     unittest.main()
