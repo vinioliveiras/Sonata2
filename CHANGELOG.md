@@ -15,6 +15,9 @@
   Sonata writes GeoClue's settings (your password is asked).
 
 ### Fixes
+- FPS (Control Center, the menu bar) measures a game or a full-screen
+  window -- Steam's, a Windows program's, gamescope's -- not whatever app
+  is in front (it measured Claude).
 - With Control Center (or any menu) open, the pointer no longer stays a
   resize arrow over the windows and the Dock after passing a window's edge.
 - Alerts no longer crash with libadwaita 1.5 (Ubuntu 24.04): their fixed
