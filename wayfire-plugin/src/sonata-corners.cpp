@@ -534,7 +534,7 @@ class corners_render_instance_t :
  * used before, maps input through its own transform). */
 /* the top of a window that is always blurred: title bar + a toolbar */
 /* bumped with every change of the plugin (tests/test_regressions.py checks it) */
-#define SONATA_CORNERS_BUILD "2026-10-07.1 taps games can see"
+#define SONATA_CORNERS_BUILD "2026-10-07.2 taps games can see, debug_input"
 static const int TOP_GLASS = 96;
 
 class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
@@ -1576,6 +1576,7 @@ struct short_click_stretch_t
             return;
         }
 
+        log_button("in", ev, sig->mode);
         auto key = std::make_pair(ev->pointer, ev->button);
         if (ev->state == WL_POINTER_BUTTON_STATE_PRESSED)
         {
@@ -1613,14 +1614,44 @@ struct short_click_stretch_t
         held[key] = std::move(h);
     };
 
+    /* [sonata-corners] debug_input = true: every button in session.log --
+     * which device, which window gets it, and what Wayfire did with it
+     * (Vini: touchpad clicks never reached a Proton game) */
+    static void log_button(const char *when, wlr_pointer_button_event *ev,
+        wf::input_event_processing_mode_t mode)
+    {
+        if (option_str("sonata-corners/debug_input") != "true")
+        {
+            return;
+        }
+
+        auto view = wf::get_core().get_cursor_focus_view();
+        LOGI("sonata-input ", when, ": ", (ev->pointer && ev->pointer->base.name) ? ev->pointer->base.name : "?",
+            " button ", ev->button, (ev->state == WL_POINTER_BUTTON_STATE_PRESSED) ? " down" : " up",
+            " t=", ev->time_msec, " mode=", (int)mode, " -> ",
+            view ? view->get_app_id() : std::string("(nothing)"),
+            view ? (" \"" + view->get_title() + "\"") : std::string(""));
+    }
+
+    wf::signal::connection_t<wf::post_input_event_signal<wlr_pointer_button_event>> on_button_post =
+        [=] (wf::post_input_event_signal<wlr_pointer_button_event> *sig)
+    {
+        if (sig->event)
+        {
+            log_button(replaying ? "post(replayed)" : "post", sig->event, wf::input_event_processing_mode_t::FULL);
+        }
+    };
+
     void init()
     {
         wf::get_core().connect(&on_button);
+        wf::get_core().connect(&on_button_post);
     }
 
     void fini()
     {
         on_button.disconnect();
+        on_button_post.disconnect();
         while (!held.empty())
         {
             release(held.begin()->first);

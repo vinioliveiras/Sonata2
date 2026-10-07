@@ -55,6 +55,15 @@ class TapClickTest(unittest.TestCase):
         self.assertIn("short_clicks.fini();", SRC)
         self.assertIn("taps games can see", SRC[SRC.index("#define SONATA_CORNERS_BUILD"):][:120])
 
+    def test_debug_log(self):
+        """[sonata-corners] debug_input: each button, its device and the window that gets it."""
+        part = SRC[SRC.index("struct short_click_stretch_t"):SRC.index("class sonata_corners_t")]
+        self.assertIn('option_str("sonata-corners/debug_input") != "true"', part)
+        self.assertIn("ev->pointer->base.name", part)
+        self.assertIn("post_input_event_signal<wlr_pointer_button_event>", part)
+        meta = (ROOT / "wayfire-plugin" / "metadata" / "sonata-corners.xml").read_text()
+        self.assertIn('<option name="debug_input" type="bool">', meta)
+
 
 if __name__ == "__main__":
     unittest.main()

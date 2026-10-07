@@ -15,6 +15,11 @@
 			<_long>Hairline along the rounded frame (Sonata sets it per appearance).</_long>
 			<default>#00000024</default>
 		</option>
+		<option name="debug_input" type="bool">
+			<_short>Log pointer buttons</_short>
+			<_long>Every pointer button in the session log: the device, the window under the pointer and what Wayfire did with it.</_long>
+			<default>false</default>
+		</option>
 		<option name="own_frame_apps" type="string">
 			<_short>Apps with their own square frame</_short>
 			<_long>Exact app_ids of undecorated apps rounded too (Steam draws its own title bar).</_long>
