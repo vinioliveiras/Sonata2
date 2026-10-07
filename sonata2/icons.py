@@ -286,7 +286,7 @@ def generated(gicon, shape: str = "squircle", reshape: bool = False, scale=None)
     return Gio.FileIcon.new(Gio.File.new_for_path(png))
 
 
-PLATE_VERSION = 10       # bump when the plate's look changes: every icon is made again (4: own tiles)
+PLATE_VERSION = 11       # bump when the plate's look changes: every icon is made again (4: own tiles)
 
 
 def picture_icon(path: str, shape: str = "squircle", artwork: bool = False, scale=None):
@@ -460,6 +460,16 @@ class _Plate(GObject.Object, Gdk.Paintable):
         if tone and self.tile:
             f = inner.get_file() if hasattr(inner, "get_file") else None
             self.logo = keyed_content(f.get_path(), tone) if f is not None and f.get_path() else None
+        self.circle = None
+        if not full and scale is None and self.tile is None:
+            got = _shape(inner)                   # its own tile, square or disc: fills the frame
+            if got is not None:
+                kind, colour = got
+                self.color = colour
+                if kind == "circle":
+                    self.circle = _tile_of(inner)
+                else:
+                    self.tile = _tile_of(inner)
         self.white_tile = None
         if own and not tone and self.tile:
             self.color = own
@@ -509,6 +519,15 @@ class _Plate(GObject.Object, Gdk.Paintable):
             self.inner.snapshot(snap, a, a)
             snap.restore()
             snap.pop()
+        elif self.circle is not None and self.circle[2] > 0.3 and self.circle[3] > 0.3:
+            # a disc: centred at CIRCLE_SIZE of the frame, on a plate of its edge's colour
+            tx, ty, tw, th = self.circle
+            a = pw * CIRCLE_SIZE / max(tw, th)
+            cx, cy = (tx + tw / 2) * a, (ty + th / 2) * a
+            snap.save()
+            snap.translate(Graphene.Point().init(w / 2 - cx, h / 2 - cy))
+            self.inner.snapshot(snap, a, a)
+            snap.restore()
         elif self.tile is not None and self.tile[2] > 0.3 and self.tile[3] > 0.3:
             tx, ty, tw, th = self.tile
             a = pw * TILE_BLEED / min(tw, th)             # the tile a little bigger than the frame
@@ -624,6 +643,84 @@ def _tile_of(inner):
         except (GLib.Error, ValueError, ImportError):
             _boxes[path] = None
     return _boxes[path]
+
+
+# -- an icon's own shape (Vini: tiles and circles looked tiny on the white plate) ----------
+CIRCLE_SIZE = 0.94                    # a round icon: its circle this share of the frame
+_shapes = {}
+
+
+def shape_of(pb):
+    """What an icon's picture is, from its transparency: ("square", colour)
+    -- no transparency; ("tile", colour) -- a rounded square or squircle of
+    its own; ("circle", colour) -- a disc; None -- anything else (a logo,
+    an object: it stays on the plate). colour: the one just inside its edge
+    ("#rrggbb", the plate behind it)."""
+    w, h, n, stride = pb.get_width(), pb.get_height(), pb.get_n_channels(), pb.get_rowstride()
+    px = pb.get_pixels()
+
+    def at(x, y):
+        o = y * stride + x * n
+        return px[o], px[o + 1], px[o + 2], (px[o + 3] if n == 4 else 255)
+    if n < 4:
+        return "square", _median_colour([at(x, y) for x in range(w) for y in (1, h - 2)])
+    opaque = [(x, y) for y in range(h) for x in range(w) if at(x, y)[3] > 200]
+    if len(opaque) < w * h * 0.3:
+        return None
+    xs, ys = [p[0] for p in opaque], [p[1] for p in opaque]
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    bw, bh = x1 - x0 + 1, y1 - y0 + 1
+    if not 0.88 <= bw / bh <= 1.14 or bw < w * 0.5:
+        return None                                   # not square-ish, or small on its canvas
+    cover = len(opaque) / (bw * bh)
+    corners = [at(x, y)[3] for x, y in ((x0, y0), (x1, y0), (x0, y1), (x1, y1))]
+    cx, cy, r = (x0 + x1) / 2, (y0 + y1) / 2, min(bw, bh) / 2
+
+    def ring(frac):
+        pts = []
+        for i in range(48):
+            import math
+            a = 2 * math.pi * i / 48
+            x, y = int(round(cx + math.cos(a) * r * frac)), int(round(cy + math.sin(a) * r * frac))
+            if 0 <= x < w and 0 <= y < h:
+                pts.append(at(x, y))
+        return pts
+    if cover > 0.985 and min(corners) > 200:
+        edge = [at(x, y) for x in range(x0, x1 + 1) for y in (y0 + 1, y1 - 1)]
+        return "square", _median_colour(edge)
+    if all(a < 120 for a in corners):
+        if cover >= 0.86:                             # a rounded square / squircle
+            m = max(2, bw // 8)
+            edge = [at(x, y) for x in range(x0 + m, x1 - m + 1) for y in (y0 + 2, y1 - 2)] + \
+                   [at(x, y) for y in range(y0 + m, y1 - m + 1) for x in (x0 + 2, x1 - 2)]
+            return "tile", _median_colour([c for c in edge if c[3] > 200])
+        inside = ring(0.9)
+        if 0.72 <= cover <= 0.84 and all(c[3] > 200 for c in inside):   # a disc: its whole rim opaque
+            return "circle", _median_colour(inside)
+    return None
+
+
+def _median_colour(cols):
+    cols = [c for c in cols if c[3] > 200] if cols and len(cols[0]) > 3 else cols
+    if not cols:
+        return PLATE_WHITE
+    med = [sorted(c[i] for c in cols)[len(cols) // 2] for i in range(3)]
+    return "#%02x%02x%02x" % tuple(med)
+
+
+def _shape(inner):
+    """shape_of() an icon's file (cached), None for anything else."""
+    f = inner.get_file() if hasattr(inner, "get_file") else None
+    path = f.get_path() if f is not None else None
+    if path is None:
+        return None
+    if path not in _shapes:
+        try:
+            pb = pixbuf_at(path, 64)
+            _shapes[path] = shape_of(pb) if pb is not None else None
+        except (GLib.Error, ValueError, ImportError):
+            _shapes[path] = None
+    return _shapes[path]
 
 
 def _solid_edge(inner, allow_white: bool = False):

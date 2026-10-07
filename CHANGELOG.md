@@ -13,6 +13,10 @@
 - Settings > Apps > Location Services: off, no app gets your location
   (Flatpak or not); and a Location switch on each packaged app's page.
   Sonata writes GeoClue's settings (your password is asked).
+- App icons with a shape of their own fill the frame: a rounded square or
+  squircle tile (FilmCraft) or a full square is enlarged and cut to the
+  frame; a disc sits on a plate of its edge's colour. Other icons stay on
+  the white plate.
 - Preview > Markup: Copy puts the picture with its marks on the clipboard
   (a screenshot's too), Markup staying open.
 
