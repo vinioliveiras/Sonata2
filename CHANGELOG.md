@@ -21,6 +21,8 @@
   (a screenshot's too), Markup staying open.
 
 ### Fixes
+- A menu bar tray icon never goes blank: an app sending an empty picture
+  (Claude's, for a moment) keeps its last icon.
 - FPS (Control Center, the menu bar) measures a game or a full-screen
   window -- Steam's, a Windows program's, gamescope's -- not whatever app
   is in front (it measured Claude).

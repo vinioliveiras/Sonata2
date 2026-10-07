@@ -379,7 +379,14 @@ class MonoIcon(Gtk.Widget):
             ic = ("paintable", theme.lookup_icon(ic[1], None, ICON_PX, scale, Gtk.TextDirection.NONE,
                                                  Gtk.IconLookupFlags.FORCE_REGULAR))
         elif isinstance(ic[1], Gdk.Texture):
-            ic = ("paintable", _silhouette(ic[1]))
+            shape = _silhouette(ic[1])
+            if shape is None:                    # a blank picture (Vini: Claude's icon went invisible)
+                if self.paintable is not None:
+                    return                       # the last one stays
+                theme = Gtk.IconTheme.get_for_display(self.get_display())
+                shape = theme.lookup_icon("application-x-executable-symbolic", None, ICON_PX, scale,
+                                          Gtk.TextDirection.NONE, Gtk.IconLookupFlags.FORCE_REGULAR)
+            ic = ("paintable", shape)
         self.paintable = ic[1]
         self.queue_draw()
 
@@ -402,7 +409,7 @@ def _silhouette(tex):
     images macOS apps give their menu extras. The shape is then made fully
     solid: icons drawn half see-through (Discord's grey tray logo) came out
     grey instead of white in Dark Mode / black in Light. Returns a texture
-    whose alpha is the shape."""
+    whose alpha is the shape; None for a blank picture (nothing to show)."""
     try:
         d = Gdk.TextureDownloader.new(tex)
         d.set_format(Gdk.MemoryFormat.R8G8B8A8)
@@ -411,7 +418,7 @@ def _silhouette(tex):
     except (AttributeError, GLib.Error, TypeError):
         return tex
     w, h = tex.get_width(), tex.get_height()
-    return mono_mask(px, stride, w, h) or tex
+    return mono_mask(px, stride, w, h)
 
 
 def mono_mask(px, stride: int, w: int, h: int):
