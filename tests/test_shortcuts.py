@@ -91,7 +91,8 @@ class AddToDesktopTest(unittest.TestCase):
 
     def test_menus_offer_it(self):
         self.assertIn('Item("Add to Desktop", lambda: add_to_desktop(path))', (ROOT / "shell/launchpad.py").read_text())
-        self.assertIn('Item("Add to Desktop", lambda: add_to_desktop(app_file(info)))',
+        # the app's launcher (.desktop), never its program: that showed as a text file (Vini)
+        self.assertIn('Item("Add to Desktop", lambda: add_to_desktop(app_filename(info)))',
                       (ROOT / "shell/dock_menu.py").read_text())
         files = (ROOT / "files/window.py").read_text()
         self.assertIn('Item("Create Shortcut", self.shortcut_selection', files)

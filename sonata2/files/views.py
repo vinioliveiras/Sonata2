@@ -16,7 +16,7 @@ from .folder import is_dir, sort_key  # noqa: E402
 
 ui.register("""
 /* a shortcut's arrow (Windows), at the icon's bottom left */
-image.fs-link-badge { -gtk-icon-size: 12px; min-width: 16px; min-height: 16px; padding: 1px; border-radius: 4px;
+image.fs-link-badge { -gtk-icon-size: 11px; min-width: 14px; min-height: 14px; padding: 0; border-radius: 4px;
   background: %(control_bg)s; color: %(accent)s; -gtk-icon-shadow: %(accent_halo)s;
   box-shadow: 0 0 0 0.5px %(hairline)s, 0 1px 2px rgba(0,0,0,0.25); }
 gridview.fs-icons { background: %(content_bg)s; padding: 10px 14px; }
@@ -175,7 +175,7 @@ def date(info, attr: str = "time::modified") -> str:
 def icon_with_badge(image: Gtk.Image) -> Gtk.Overlay:
     """The icon with a shortcut's arrow over its corner (hidden; show_badge)."""
     over = Gtk.Overlay(child=image, halign=image.get_halign())
-    image.badge = Gtk.Image(icon_name="emblem-symbolic-link-symbolic", css_classes=["fs-link-badge"],
+    image.badge = Gtk.Image(icon_name="sonata-shortcut-arrow-symbolic", css_classes=["fs-link-badge"],
                             halign=Gtk.Align.START, valign=Gtk.Align.END, visible=False, can_target=False)
     over.add_overlay(image.badge)
     return over

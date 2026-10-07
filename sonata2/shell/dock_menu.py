@@ -19,6 +19,9 @@ AUTOSTART_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expand
 
 
 # -- helpers ---------------------------------------------------------------------
+from ..apps import app_filename  # noqa: E402
+
+
 def app_file(info) -> str:
     """The file behind an app: its real executable (AppImage, script, binary),
     or its .desktop file for Flatpak/Snap and unresolvable commands."""
@@ -142,7 +145,8 @@ def app_menu(dock, key: str, tile):
                       checked=opens_at_login(info.get_id()[:-8])),
                  lock_item(info)],
                 [Item("Open File Location", lambda: show_in_files(app_file(info))),
-                 Item("Add to Desktop", lambda: add_to_desktop(app_file(info)))]]
+                 # its launcher, not its program (Vini: the shortcut showed as a text file)
+                 Item("Add to Desktop", lambda: add_to_desktop(app_filename(info)))]]
         from .. import gpu
         g = gpu.menu_items(info, Item)
         if g:

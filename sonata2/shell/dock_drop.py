@@ -32,6 +32,15 @@ def _is_app(f: Gio.File) -> bool:
     return (f.get_path() or "").endswith(".desktop")
 
 
+def _installed(f: Gio.File) -> bool:
+    """An installed app's own entry (in an applications folder: the system's,
+    yours, Flatpak's) -- not a shortcut to it on the Desktop or in a folder,
+    which only goes to the Trash (Vini: deleting a shortcut asked to
+    uninstall the app)."""
+    parent = f.get_parent()
+    return _is_app(f) and parent is not None and parent.get_basename() == "applications"
+
+
 def _folders(files) -> list:
     """Launchpad folders in the drop ({"folder", "apps"}), see
     launchpad_model.encode_folder."""
@@ -264,16 +273,16 @@ def attach_trash(dock, tile) -> None:
         dropped = _files(value)
         if _folders(dropped):
             return False
-        if dropped and all(_is_app(f) for f in dropped):     # an app (from Launchpad, Files): uninstall it
+        if dropped and all(_installed(f) for f in dropped):  # an app (from Launchpad, Files): uninstall it
             if dock._drag:
                 # a Dock icon: it stays until the uninstall is confirmed and done
                 dock._drag["dropped"] = True
             _uninstall_apps(dock, dropped)
             return True
+        # shortcuts (and files) with them: only those trashed -- an installed
+        # app's own entry never is (Sonata's own apps among them)
+        files = [f for f in dropped if not _installed(f)]
         moved = False
-        # Sonata's own apps (Files, Settings, Launchpad) never go to the Trash
-        from ..apps import PROTECTED
-        files = [f for f in _files(value) if not (_is_app(f) and (f.get_basename() or "").startswith(PROTECTED))]
         if not files:
             return False
         for f in files:

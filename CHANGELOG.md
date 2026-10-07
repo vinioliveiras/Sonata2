@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixes
+- Add to Desktop (an app's menu in the Dock) makes a shortcut to the app --
+  its icon and name -- not to its program, which showed as a text file.
+- A shortcut to an app dragged to the Trash just goes there: only an
+  installed app asks to be uninstalled.
+- A shortcut's arrow is smaller, with a shorter shaft, centred on its badge.
+
 ## 0.13.0-alpha -- 2026-10-07
 
 Your devices keep their volume -- and apps can be kept from changing it --,
