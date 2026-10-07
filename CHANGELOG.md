@@ -9,6 +9,9 @@
   behind seven clicks otherwise).
 
 ### Fixes
+- An app that draws itself bigger than its window (Claude, after a
+  resize: its picture went on past the frame over the desktop) is asked
+  again for its size, and draws itself at the window's size.
 - Spinners are back (the lock and login screens', Settings'...): Sonata
   draws its own instead of the icon theme's, which adwaita-icon-theme 51
   no longer has.

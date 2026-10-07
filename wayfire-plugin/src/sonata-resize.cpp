@@ -58,7 +58,9 @@
 #include <wayfire/plugins/wobbly/wobbly-signal.hpp>
 #include <wayfire/nonstd/wlroots-full.hpp>
 #include <wlr/util/edges.h>
+#include <algorithm>
 #include <chrono>
+#include <vector>
 
 /* -- the window's background while it is resized without its contents --------------- */
 namespace
@@ -349,6 +351,162 @@ static void remove_edge_grab(wayfire_toplevel_view v)
     }
 }
 
+/* -- an app drawing bigger than its window -------------------------------------------
+ * Vini: Claude (Electron) went on drawing itself at an old, bigger width
+ * after a resize -- the frame at 1187 px, the app's picture 1811 px wide
+ * over the desktop beside it (frame checks: "surface 1811x665" in a
+ * 1187x704 window, the app's own window size unchanged, ~2 s after the
+ * resize).
+ * The app never asked for that size: Wayfire keeps the window as it is and
+ * shows the whole picture. Asked again for its size (a configure, 1 px
+ * wider and back), the app draws itself at the window's size. Only for
+ * windows Sonata frames (an app's own frame may draw shadows outside its
+ * geometry), never while a resize is in flight, at most NUDGES times in
+ * NUDGE_WINDOW_MS. */
+static const char *SIZE_DATA = "sonata-resize-size";
+static constexpr int OVERSIZE_PX = 4;                // more than this past its window geometry
+static constexpr int OVERSIZE_WAIT_MS = 400;         // still so after this: not a frame in passing
+static constexpr int NUDGES = 3;
+static constexpr int NUDGE_WINDOW_MS = 20000;
+static constexpr int NUDGE_BACK_MS = 80;
+
+/** The app's own window geometry: Wayfire's (which follows what the app
+ * says its window is) less Sonata's frame. */
+static wf::dimensions_t content_size(wayfire_toplevel_view v)
+{
+    auto& c = v->toplevel()->current();
+    auto g  = wf::shrink_geometry_by_margins(c.geometry, c.margins);
+    return {(int)std::lround(g.width), (int)std::lround(g.height)};
+}
+
+/** How far (px) the app's picture goes past its window geometry, 0 when it
+ * doesn't (or the window isn't one to look at). */
+static int oversize(wayfire_toplevel_view v)
+{
+    if (!v || !v->is_mapped() || !v->toplevel() || v->pending_fullscreen())
+    {
+        return 0;
+    }
+
+    auto m = v->toplevel()->current().margins;
+    if (m.left + m.right + m.top + m.bottom == 0)
+    {
+        return 0;                                    // the app's own frame (shadows outside its geometry)
+    }
+
+    auto& tx = wf::get_core().tx_manager;
+    if (tx->is_object_pending(v->toplevel()) || tx->is_object_committed(v->toplevel()))
+    {
+        return 0;                                    // a resize on its way
+    }
+
+    auto s = v->get_wlr_surface();
+    auto g = content_size(v);
+    if (!s || (g.width <= 0) || (g.height <= 0))
+    {
+        return 0;
+    }
+
+    int over = std::max(s->current.width - g.width, s->current.height - g.height);
+    return (over > OVERSIZE_PX) ? over : 0;
+}
+
+struct size_watch_t : public wf::custom_data_t
+{
+    std::weak_ptr<wf::view_interface_t> view;
+    wf::wl_listener_wrapper on_commit, on_gone;
+    wf::wl_timer<false> wait, back;
+    std::vector<std::chrono::steady_clock::time_point> nudged;
+
+    void committed()
+    {
+        if (wait.is_connected() || back.is_connected() || !oversize(toplevel_cast(view.lock())))
+        {
+            return;
+        }
+
+        wait.set_timeout(OVERSIZE_WAIT_MS, [this] { check(); });
+    }
+
+    void check()
+    {
+        auto v = toplevel_cast(view.lock());
+        int over = oversize(v);
+        if (!over)
+        {
+            return;
+        }
+
+        auto now = std::chrono::steady_clock::now();
+        nudged.erase(std::remove_if(nudged.begin(), nudged.end(), [&] (auto t)
+        {
+            return now - t > std::chrono::milliseconds(NUDGE_WINDOW_MS);
+        }), nudged.end());
+        auto s = v->get_wlr_surface();
+        auto g = content_size(v);
+        if ((int)nudged.size() >= NUDGES)
+        {
+            return;                                  // (it keeps doing it: leave it be)
+        }
+
+        nudged.push_back(now);
+        LOGI("sonata-resize: ", v->get_app_id(), " drew ", s->current.width, "x", s->current.height,
+            " in a ", g.width, "x", g.height, " window: asked again for its size");
+        auto pg = v->toplevel()->pending().geometry;
+        v->toplevel()->pending().geometry.width = pg.width + 1;
+        wf::get_core().tx_manager->schedule_object(v->toplevel());
+        back.set_timeout(NUDGE_BACK_MS, [this, pg]
+        {
+            auto t = toplevel_cast(view.lock());
+            if (t && t->is_mapped() && (t->toplevel()->pending().geometry.width == pg.width + 1))
+            {
+                t->toplevel()->pending().geometry.width = pg.width;
+                wf::get_core().tx_manager->schedule_object(t->toplevel());
+            }
+        });
+    }
+};
+
+/** Watch a window for that: at each map (the app's surface may be a new
+ * one), let go when the surface goes (wlroots wants no listener left). */
+static void add_size_watch(wayfire_toplevel_view v)
+{
+    auto surface = v ? v->get_wlr_surface() : nullptr;
+    if (!surface || (v->role != wf::VIEW_ROLE_TOPLEVEL))
+    {
+        return;
+    }
+
+    if (!v->has_data(SIZE_DATA))
+    {
+        auto data = std::make_unique<size_watch_t>();
+        data->view = v->shared_from_this();
+        v->store_data(std::move(data), SIZE_DATA);
+    }
+
+    auto raw = v->get_data<size_watch_t>(SIZE_DATA);
+    raw->on_commit.disconnect();
+    raw->on_gone.disconnect();
+    raw->on_commit.set_callback([raw] (void*) { raw->committed(); });
+    raw->on_gone.set_callback([raw] (void*)
+    {
+        raw->on_commit.disconnect();
+        raw->on_gone.disconnect();
+        raw->wait.disconnect();
+        raw->back.disconnect();
+    });
+    raw->on_commit.connect(&surface->events.commit);
+    raw->on_gone.connect(&surface->events.destroy);
+}
+
+static void remove_size_watch(wayfire_toplevel_view v)
+{
+    if (v && v->has_data(SIZE_DATA))
+    {
+        v->erase_data(SIZE_DATA);                    // (its listener and timers go with it)
+    }
+}
+
 static constexpr int ZOOM_MS = 250;
 static constexpr int DEAD_ZONE = 3;                  // px: less is a click, not a resize
 static constexpr int EDGE_IN = 4;                    // px inside the window's edge that resize it
@@ -565,6 +723,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     wf::signal::connection_t<wf::view_mapped_signal> on_view_mapped = [=] (wf::view_mapped_signal *ev)
     {
         add_edge_grab(toplevel_cast(ev->view));
+        add_size_watch(toplevel_cast(ev->view));
     };
     wf::signal::connection_t<wf::view_tile_request_signal> on_tile_request =
         [=] (wf::view_tile_request_signal *ev)
@@ -665,6 +824,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
             if (auto t = toplevel_cast(v); t && t->is_mapped() && (t->get_output() == output))
             {
                 add_edge_grab(t);
+                add_size_watch(t);
             }
         }
         output->connect(&on_view_disappeared);
@@ -1133,6 +1293,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
             if (auto t = toplevel_cast(v); t && (t->get_output() == output))
             {
                 remove_edge_grab(t);
+                remove_size_watch(t);
             }
         }
 
@@ -1390,8 +1551,10 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
          * the app drew itself bigger -- what Wayfire and the app each say) */
         auto s  = v->get_wlr_surface();
         auto pg = v->toplevel()->pending().geometry;
+        auto xg = content_size(v);
         LOGI("sonata-resize: frame check ", frame_checks, " ", v->get_app_id(), " geometry ", v->get_geometry(),
-            " pending ", pg, " surface ", s ? s->current.width : -1, "x", s ? s->current.height : -1);
+            " pending ", pg, " surface ", s ? s->current.width : -1, "x", s ? s->current.height : -1,
+            " app geometry ", xg.width, "x", xg.height);
         if (++frame_checks < (int)(sizeof(FRAME_CHECKS_MS) / sizeof(FRAME_CHECKS_MS[0])))
         {
             frame_timer.set_timeout(FRAME_CHECKS_MS[frame_checks] - FRAME_CHECKS_MS[frame_checks - 1],
