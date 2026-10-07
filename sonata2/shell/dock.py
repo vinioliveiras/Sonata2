@@ -28,7 +28,7 @@ gi.require_version("Gsk", "4.0")
 gi.require_version("Graphene", "1.0")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
-from .. import apps, config, icons, logs, steamgames, windowapps  # noqa: E402
+from .. import applock, apps, config, icons, logs, steamgames, windowapps  # noqa: E402
 from .. import ui  # noqa: E402
 from . import dock_drop, dock_folder, dock_menu, dock_stack, layer  # noqa: E402
 
@@ -258,6 +258,12 @@ class DockIcon(Gtk.Widget):
         return self._paint[key]
 
     badge = ""        # macOS notification badge ("3", "99+"); set_badge()
+    locked = False    # a locked app (applock.py): a padlock at the bottom right
+
+    def set_locked(self, on: bool) -> None:
+        if on != self.locked:
+            self.locked = on
+            self.queue_draw()
 
     def set_badge(self, text: str) -> None:
         if text != self.badge:
@@ -269,6 +275,8 @@ class DockIcon(Gtk.Widget):
         base = dock.cfg["icon_size"] if dock else self._size
         size = self._size if self._size == base else max(self._size, max_icon(dock.cfg))
         self._paintable(size).snapshot(snap, self._size, self._size)
+        if self.locked:
+            dock_folder.draw_lock_badge(snap, self._size)
         if self.badge:
             self._draw_badge(snap)
 
@@ -926,10 +934,18 @@ class Dock(Gtk.Box):
         tile.add_controller(middle)
         if folder:
             return tile
+        if hasattr(tile.icon, "set_locked"):
+            tile.icon.set_locked(applock.locked(key))
         dock_drop.attach_app(self, tile)
         from . import dock_preview
         dock_preview.attach(tile, self)           # minimized windows: previews on hover
         return tile
+
+    def refresh_locks(self) -> None:
+        """Locked apps' padlocks (applock.json changed)."""
+        for key, tile in self.tiles.items():
+            if hasattr(tile.icon, "set_locked"):
+                tile.icon.set_locked(applock.locked(key))
 
     def _middle_click(self, key, tile) -> None:
         if not tile.info:
@@ -2130,6 +2146,7 @@ class DockWindow(Gtk.ApplicationWindow):
         self._cfg_mon = config.watch("dock", self._config_changed)
         # Settings > App Icons: new icons / shapes, live
         self._icons_mon = config.watch("icons", lambda: self.dock is not None and self.dock.refresh_icons())
+        self._lock_mon = config.watch("applock", lambda: self.dock is not None and self.dock.refresh_locks())
         self.rebuild()
         from . import intro
         if intro.entering() and not self.cfg["autohide"]:

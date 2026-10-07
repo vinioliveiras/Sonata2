@@ -279,6 +279,42 @@ def lock_paths(s: float) -> list:
     return [(body.to_path(), True), (sh.to_path(), False)]
 
 
+def draw_lock_badge(snap, s: float) -> None:
+    """A locked app (applock.py): a small dark disc with a padlock at the
+    icon's bottom right (s: the icon's size). The Dock and Launchpad."""
+    d = s * 0.38
+    x = y = s - d * 0.9
+    rr = _rounded_rect(x, y, d, d, d / 2)
+    snap.append_outset_shadow(rr, _rgba("rgba(0,0,0,0.30)"), 0, 1, 0, 2)
+    snap.push_rounded_clip(rr)
+    snap.append_color(_rgba("rgba(36,36,40,0.94)"), Graphene.Rect().init(x, y, d, d))
+    snap.pop()
+    snap.append_border(rr, [d * 0.04] * 4, [_rgba("rgba(255,255,255,0.22)")] * 4)
+    snap.save()
+    snap.translate(Graphene.Point().init(x, y + d * 0.04))
+    ink = _rgba("rgba(255,255,255,0.95)")
+    for path, fill in lock_paths(d):
+        if fill:
+            snap.append_fill(path, Gsk.FillRule.WINDING, ink)
+        else:
+            snap.append_stroke(path, Gsk.Stroke.new(d * 0.075), ink)
+    snap.restore()
+
+
+class LockBadge(Gtk.Widget):
+    """draw_lock_badge over an icon of `size` px (an overlay; never takes clicks)."""
+
+    def __init__(self, size: int):
+        super().__init__(can_target=False, halign=Gtk.Align.CENTER, valign=Gtk.Align.START)
+        self.size = size
+
+    def do_measure(self, _orientation, _for_size):
+        return self.size, self.size, -1, -1
+
+    def do_snapshot(self, snap) -> None:
+        draw_lock_badge(snap, self.size)
+
+
 def _rounded_rect(x, y, w, h, r) -> Gsk.RoundedRect:
     rr = Gsk.RoundedRect()
     rr.init_from_rect(Graphene.Rect().init(x, y, w, h), r)
@@ -287,13 +323,8 @@ def _rounded_rect(x, y, w, h, r) -> Gsk.RoundedRect:
 
 def check_password(password: str, done) -> None:
     """The login password (PAM) in a thread; done(ok) on the main loop."""
-    import threading
     from .. import pam
-    user = GLib.get_user_name()
-    def work():
-        ok = pam.authenticate(user, password)         # PAM (and its fail delay) off the main loop
-        GLib.idle_add(lambda: (done(ok), False)[1])
-    threading.Thread(target=work, daemon=True).start()
+    pam.check_async(password, done)
 
 
 # -- the open folder ---------------------------------------------------------------------------

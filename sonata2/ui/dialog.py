@@ -148,3 +148,51 @@ def ask_text(heading: str, text: str, ok: str, on_done, body: str = "", parent=N
     GLib.idle_add(focus)
     dlg.entry = entry                                   # (tests)
     return dlg
+
+
+def ask_password(heading: str, body: str, on_ok, parent=None, ok: str = "Open", wrong: bool = False):
+    """The login password, checked (PAM) before on_ok() runs; a wrong one
+    asks again ("Wrong password"). Return in the field checks it without
+    closing the alert; the button closes it, then checks."""
+    from gi.repository import GLib
+    from . import controls
+    from .. import pam
+    entry = controls.text_field("", "Password", secret=True, hexpand=True)
+    hint = Gtk.Label(label="Wrong password" if wrong else
+                     ("" if pam.available() else "Passwords can't be checked (PAM missing)"),
+                     css_classes=["dim-label", "caption"], visible=wrong or not pam.available())
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+    box.append(entry)
+    box.append(hint)
+    state = {"busy": False}
+
+    def checked(ok_, dlg, closed):
+        state["busy"] = False
+        entry.set_sensitive(True)
+        if ok_:
+            if not closed:
+                dlg.close() if hasattr(dlg, "close") else dlg.destroy()
+            on_ok()
+        elif closed:
+            ask_password(heading, body, on_ok, parent, ok, wrong=True)
+        else:
+            hint.set_label("Wrong password")
+            hint.set_visible(True)
+            entry.set_text("")
+            entry.grab_focus()
+
+    def check(closed):
+        pw = entry.get_text()
+        if not pw or state["busy"]:
+            return
+        state["busy"] = True
+        entry.set_sensitive(False)
+        pam.check_async(pw, lambda r: checked(r, dlg, closed))
+
+    dlg = alert(heading, body, [("cancel", "Cancel", ""), ("ok", ok, "default")],
+                lambda rid: rid == "ok" and check(True), parent=parent)
+    dlg.set_extra_child(box)
+    entry.connect("activate", lambda _e: check(False))
+    GLib.idle_add(lambda: (entry.grab_focus(), False)[1])
+    dlg.entry, dlg.hint = entry, hint                   # (tests)
+    return dlg

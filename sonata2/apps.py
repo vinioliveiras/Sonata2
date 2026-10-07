@@ -64,6 +64,12 @@ def _gpu_aware(method):
     def wrapper(self, arg, context=None, *rest):
         if getattr(self, "_sonata_env_set", False):   # Sonata's own copy (Steam + its args): already set up
             return method(self, arg, context, *rest)
+        try:                                      # a locked app: the password first (applock.py)
+            from . import applock
+            if applock.gate(self, lambda: wrapper(self, arg, context, *rest)):
+                return True
+        except Exception as e:
+            print(f"sonata2: app lock: {e}")
         try:
             from .shell.quitonclose import mark_launch
             mark_launch(self.get_id() or "")          # a quit pending for it is called off

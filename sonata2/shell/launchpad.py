@@ -218,6 +218,11 @@ class LaunchItem(Gtk.Button):
             icons.set_image(img, icons.app_icon(info) if info
                             else Gio.ThemedIcon.new("application-x-executable"))
             over.set_child(img)
+            from .. import applock
+            if info and applock.locked(info.get_id()):          # Lock App: a padlock
+                from .dock_folder import LockBadge
+                self.lock = LockBadge(size)
+                over.add_overlay(self.lock)
             if info and _removable(info):
                 badge = ui.edit.badge(lambda: pad.ask_delete(item), tooltip="Delete")
                 badge.set_visible(pad.jiggling)
@@ -356,6 +361,7 @@ class Launchpad(Gtk.ApplicationWindow):
         Gio.AppInfoMonitor.get().connect("changed", lambda *_: self._apps_changed())
         self._cfg_mon = config.watch("launchpad", self._config_changed)
         self._icons_mon = config.watch("icons", lambda: (icons.forget_prefs(), self.widgets.clear(), self.render()))   # App Icons
+        self._lock_mon = config.watch("applock", lambda: (self.widgets.clear(), self.render()))      # padlocks
         # dock.json read once, again only when it changes (the grid math needs
         # the Dock's size on every allocation)
         self._dock_cfg = None
@@ -1073,6 +1079,9 @@ class Launchpad(Gtk.ApplicationWindow):
                 sections.append([Item("Show in Files", lambda: self.close_launchpad(
                     lambda: show_in_files(path))),
                                  Item("Add to Desktop", lambda: add_to_desktop(path))])
+            if info:
+                from .dock_menu import lock_item
+                sections.append([lock_item(info, self.close_launchpad)])
             hide = [Item("Hide", lambda: self.hide_app(item))]      # into the Hidden folder
             if info and not (info.get_id() or "").startswith(PROTECTED):
                 hide.append(Item("Move to Trash", lambda: self.ask_delete(item)))

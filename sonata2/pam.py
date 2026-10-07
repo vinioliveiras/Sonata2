@@ -103,3 +103,16 @@ def authenticate(user: str, password: str) -> bool:
         lib.pam_setcred(handle, 0x8)          # PAM_REINITIALIZE_CRED (refresh Kerberos etc.)
     lib.pam_end(handle, rc)
     return rc == 0
+
+
+def check_async(password: str, done) -> None:
+    """The user's login password checked in a thread (PAM's fail delay off
+    the main loop); done(ok) on the main loop."""
+    import threading
+    from gi.repository import GLib
+    user = GLib.get_user_name()
+
+    def work():
+        ok = authenticate(user, password)
+        GLib.idle_add(lambda: (done(ok), False)[1])
+    threading.Thread(target=work, daemon=True).start()

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Apps
+- Lock App (an app's menu in the Dock, Options, or in Launchpad): opening
+  it asks for your password first; its icon shows a padlock. Unlocking
+  asks too. Login items and apps reopened after a crash don't ask.
+
 ### Dock
 - An app opened from a Dock folder stays in it: the folder shows the
   running dot, and so does the app inside its panel. Clicking it there

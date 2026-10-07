@@ -115,7 +115,9 @@ def reopen(ids, launch=None) -> int:
 
     def start(info):
         try:
-            (launch or (lambda inf: inf.launch([], None)))(info)
+            from . import applock
+            with applock.trusted():        # reopened as they were: a locked app doesn't ask
+                (launch or (lambda inf: inf.launch([], None)))(info)
         except Exception as e:
             print(f"sonata2: reopen {info.get_id()}: {e}")
         return False

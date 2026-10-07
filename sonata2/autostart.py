@@ -138,7 +138,9 @@ def run() -> int:
     for name, info in entries():
         try:
             mark(f"autostart: {name}")
-            info.launch([], None)
+            from . import applock
+            with applock.trusted():        # just logged in: a locked app doesn't ask again
+                info.launch([], None)
             started += 1
         except GLib.Error as e:
             print(f"sonata2-autostart: {name}: {e.message}")

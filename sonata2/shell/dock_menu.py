@@ -104,6 +104,16 @@ def confirm_empty_trash() -> None:
 
 
 # -- menus -----------------------------------------------------------------------
+def lock_item(info, around=None):
+    """Lock App / Unlock App… (applock.py): the Dock's and Launchpad's menus.
+    around(fn): runs fn (Launchpad closes first: its alert is a window of its own)."""
+    from .. import applock
+    if applock.locked(info.get_id()):
+        return ui.menu.Item("Unlock App\u2026", lambda: (around or (lambda f: f()))(
+            lambda: applock.ask_unlock(info)))
+    return ui.menu.Item("Lock App", lambda: applock.set_locked(info.get_id(), True))
+
+
 def app_menu(dock, key: str, tile):
     info = tile.info
     wins = dock.windows.get(key, [])
@@ -123,7 +133,8 @@ def app_menu(dock, key: str, tile):
     elif info:
         opts = [[Item("Keep in Dock", lambda on: dock.set_pinned(key, on), checked=pinned),
                  Item("Open at Login", lambda on: set_open_at_login(info, on),
-                      checked=opens_at_login(info.get_id()[:-8]))],
+                      checked=opens_at_login(info.get_id()[:-8])),
+                 lock_item(info)],
                 [Item("Open File Location", lambda: show_in_files(app_file(info))),
                  Item("Add to Desktop", lambda: add_to_desktop(app_file(info)))]]
         from .. import gpu
