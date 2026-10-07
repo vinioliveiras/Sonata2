@@ -117,14 +117,17 @@ class Spinner(Gtk.Widget):
         if not self.props.spinning:
             return
         w, h = self.get_width(), self.get_height()
-        size = min(w, h)
+        # its own size (width_request / CSS min-width), even when a stack or a
+        # box hands it more room (Vini: huge on the login screen)
+        size = min(w, h, max(self.get_size_request()[0], self.measure(Gtk.Orientation.HORIZONTAL, -1)[0]))
         if size <= 0:
             return
         color = self.get_color()
-        cr = snap.append_cairo(Graphene.Rect().init(0, 0, w, h))
+        x, y = (w - size) / 2, (h - size) / 2              # centred in its room
+        cr = snap.append_cairo(Graphene.Rect().init(x, y, size, size))
         cr.translate(w / 2, h / 2)
         cr.set_line_cap(1)                        # round ends (cairo.LINE_CAP_ROUND)
-        cr.set_line_width(max(1.0, size * 0.09))
+        cr.set_line_width(max(1.0, size * 0.08))
         outer = size / 2 - size * 0.05
         inner = outer - size * 0.24
         for i in range(self.SPOKES):

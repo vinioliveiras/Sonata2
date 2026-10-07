@@ -54,6 +54,29 @@ class SpinnerTest(unittest.TestCase):
         sp.start()
         self.assertTrue(sp.get_spinning())
 
+    def test_never_bigger_than_its_size(self):
+        """Vini: the login screen's spinner came out huge -- stretched to the
+        room it was given. It draws at its own size, centred."""
+        sp = progress.Spinner(spinning=True, width_request=16, height_request=16,
+                              halign=Gtk.Align.FILL, valign=Gtk.Align.FILL)
+        win = Gtk.Window(default_width=300, default_height=300)
+        win.set_child(sp)
+        win.present()
+        ctx = GLib.MainContext.default()
+        for _ in range(50):
+            ctx.iteration(False)
+        self.assertGreater(sp.get_width(), 100)                 # given far more room
+        snap = Gtk.Snapshot()
+        sp.do_snapshot(snap)
+        b = snap.to_node().get_bounds()
+        self.assertLessEqual(max(b.get_width(), b.get_height()), 17)
+        win.destroy()
+
+    def test_login_spinner_is_small(self):
+        css = (ROOT / "sonata2" / "shell" / "loginui.py").read_text()
+        line = next(l for l in css.splitlines() if l.startswith("spinner.gr-spinner"))
+        self.assertIn("min-width: 16px", line)
+
     def test_css_node_is_spinner(self):
         # the existing "spinner.gr-spinner" / "spinner.sonata-spinner" CSS still styles it
         self.assertEqual(progress.Spinner().get_css_name(), "spinner")
