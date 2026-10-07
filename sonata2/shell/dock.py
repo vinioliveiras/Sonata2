@@ -259,6 +259,12 @@ class DockIcon(Gtk.Widget):
 
     badge = ""        # macOS notification badge ("3", "99+"); set_badge()
     locked = False    # a locked app (applock.py): a padlock at the bottom right
+    sandboxed = False  # a copy runs in a sandbox (sandbox.py): an orange "S"
+
+    def set_sandboxed(self, on: bool) -> None:
+        if on != self.sandboxed:
+            self.sandboxed = on
+            self.queue_draw()
 
     def set_locked(self, on: bool) -> None:
         if on != self.locked:
@@ -279,12 +285,14 @@ class DockIcon(Gtk.Widget):
             dock_folder.draw_lock_badge(snap, self._size)
         if self.badge:
             self._draw_badge(snap)
+        elif self.sandboxed:                  # Open in Sandbox: an orange "S" where a badge goes
+            self._draw_badge(snap, "S", "#ff9f0a", "#000000")
 
-    def _draw_badge(self, snap) -> None:
+    def _draw_badge(self, snap, text=None, fill="#ff3b30", ink="#ffffff") -> None:
         """Red pill at the icon's top right, white number (scales with the
         icon, so it grows with magnification like macOS)."""
         s = self._size
-        layout = self.create_pango_layout(self.badge)
+        layout = self.create_pango_layout(text or self.badge)
         fd = Pango.FontDescription.from_string(f"Sans Bold {max(6, s * 0.2):.1f}px")
         fd.set_absolute_size(max(7, s * 0.24) * Pango.SCALE)
         layout.set_font_description(fd)
@@ -295,11 +303,11 @@ class DockIcon(Gtk.Widget):
         rr = _rounded(_rect(x, y, w, h), h / 2)
         snap.append_outset_shadow(rr, _rgba("rgba(0,0,0,0.25)"), 0, 1, 0, 2)
         snap.push_rounded_clip(rr)
-        snap.append_color(_rgba("#ff3b30"), _rect(x, y, w, h))
+        snap.append_color(_rgba(fill), _rect(x, y, w, h))
         snap.pop()
         snap.save()
         snap.translate(Graphene.Point().init(x + (w - tw) / 2, y + (h - th) / 2))
-        snap.append_layout(layout, _rgba("#ffffff"))
+        snap.append_layout(layout, _rgba(ink))
         snap.restore()
 
 
@@ -935,11 +943,19 @@ class Dock(Gtk.Box):
         if folder:
             return tile
         if hasattr(tile.icon, "set_locked"):
+            from .. import sandbox
             tile.icon.set_locked(applock.locked(key))
+            tile.icon.set_sandboxed(sandbox.running(key))
         dock_drop.attach_app(self, tile)
         from . import dock_preview
         dock_preview.attach(tile, self)           # minimized windows: previews on hover
         return tile
+
+    def refresh_sandboxes(self) -> None:
+        from .. import sandbox
+        for key, tile in self.tiles.items():
+            if hasattr(tile.icon, "set_sandboxed"):
+                tile.icon.set_sandboxed(sandbox.running(key))
 
     def refresh_locks(self) -> None:
         """Locked apps' padlocks (applock.json changed)."""
@@ -2147,6 +2163,8 @@ class DockWindow(Gtk.ApplicationWindow):
         # Settings > App Icons: new icons / shapes, live
         self._icons_mon = config.watch("icons", lambda: self.dock is not None and self.dock.refresh_icons())
         self._lock_mon = config.watch("applock", lambda: self.dock is not None and self.dock.refresh_locks())
+        from .. import sandbox
+        sandbox.listeners.append(lambda: self.dock is not None and self.dock.refresh_sandboxes())
         self.rebuild()
         from . import intro
         if intro.entering() and not self.cfg["autohide"]:

@@ -114,6 +114,12 @@ def lock_item(info, around=None):
     return ui.menu.Item("Lock App", lambda: applock.set_locked(info.get_id(), True))
 
 
+def sandbox_item(info, around=None):
+    """Open in Sandbox (sandbox.py): an empty home of its own, nothing kept."""
+    from .. import sandbox
+    return ui.menu.Item("Open in Sandbox", lambda: (around or (lambda f: f()))(lambda: sandbox.ask_open(info)))
+
+
 def app_menu(dock, key: str, tile):
     info = tile.info
     wins = dock.windows.get(key, [])
@@ -124,7 +130,7 @@ def app_menu(dock, key: str, tile):
                               on_close=lambda t=t: dock.manager.close(t))       # the x closes that window
                          for t in wins])
     if info and wins:
-        sections.append([Item("New Window", lambda: new_window(dock, tile))])
+        sections.append([Item("New Window", lambda: new_window(dock, tile)), sandbox_item(info)])
     pinned = key in dock.cfg["pinned"]
     from .dock import PERMANENT
     opts = []
@@ -166,7 +172,7 @@ def app_menu(dock, key: str, tile):
                          Item("Force Quit", lambda: force_quit(key)),
                          Item("Quit", lambda: _quit(dock, wins, key))])
     elif info:
-        sections.append([Item("Open", lambda: dock.launch(tile))])
+        sections.append([Item("Open", lambda: dock.launch(tile)), sandbox_item(info)])
     tile.label.popdown()
     return ui.menu.popup(tile, sections, position=dock.away)
 

@@ -55,6 +55,7 @@ TOOLS = [
     ("ffmpegthumbnailer", "video thumbnails in Files", "ffmpegthumbnailer", "ffmpegthumbnailer",
      "ffmpegthumbnailer"),
     ("ffmpeg", "Trim and Crop in Videos", "ffmpeg", "ffmpeg", "ffmpeg-free"),
+    ("bwrap", "Open in Sandbox", "bubblewrap", "bubblewrap", "bubblewrap"),
     ("Xwayland", "X11 apps (Steam, older apps)", "xorg-xwayland", "xwayland", "xorg-x11-server-Xwayland"),
 ]
 POLKIT_AGENTS = ["/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1",

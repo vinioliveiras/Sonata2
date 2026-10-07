@@ -15,6 +15,11 @@
   what it wants of the microphone, network and home folder (uncheck to
   refuse); the camera and location ask in a Sonata alert when first used.
   Off: apps get access without asking.
+- Open in Sandbox (an app's menu in the Dock or Launchpad): the app opens
+  with an empty home folder of its own -- none of your files, sign-ins or
+  settings -- and everything it saved is deleted when it quits. The Dock
+  shows an orange "S" on it meanwhile. Needs bubblewrap (installed by
+  ./install.sh).
 
 ### Dock
 - An app opened from a Dock folder stays in it: the folder shows the

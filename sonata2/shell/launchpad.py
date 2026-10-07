@@ -1053,6 +1053,9 @@ class Launchpad(Gtk.ApplicationWindow):
         else:
             info = self.installed.get(item)
             sections = [[Item("Open", lambda: self.activate_item(widget))]]
+            if info:
+                from .dock_menu import sandbox_item
+                sections[0].append(sandbox_item(info, self.close_launchpad))
             dock = config.load("dock", {"pinned": None})
             pins = dock.get("pinned")
             from .dock import PERMANENT
