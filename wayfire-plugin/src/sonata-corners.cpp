@@ -545,7 +545,7 @@ class corners_render_instance_t :
  * used before, maps input through its own transform). */
 /* the top of a window that is always blurred: title bar + a toolbar */
 /* bumped with every change of the plugin (tests/test_regressions.py checks it) */
-#define SONATA_CORNERS_BUILD "2026-10-07.13 FPS: the app in front again"
+#define SONATA_CORNERS_BUILD "2026-10-07.14 FPS: games and full screen only"
 static const int TOP_GLASS = 96;
 
 class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
@@ -1461,29 +1461,33 @@ class fps_counter_t
     }
 
   public:
-    /* The app in front: the focused window -- or, while Control Center (a
-     * panel) has the keyboard, the window focused last before it ("No app
-     * drawing in front" with a game open, Vini). */
-    static wayfire_view front_view()
+    /* A game's window: Steam's (steam_app_<id>), a Windows program's (Wine,
+     * Proton: <name>.exe) or gamescope's. */
+    static bool game_like(wayfire_view v)
     {
-        auto active = wf::get_core().seat->get_active_view();
-        if (wf::toplevel_cast(active))
-        {
-            return active;
-        }
+        std::string app = v->get_app_id();
+        std::transform(app.begin(), app.end(), app.begin(), [] (unsigned char c) { return std::tolower(c); });
+        return (app.rfind("steam_app_", 0) == 0) || (app == "gamescope") ||
+               ((app.size() > 4) && (app.compare(app.size() - 4, 4, ".exe") == 0));
+    }
 
+    /* What FPS measures (Vini: it measured Claude): a full-screen window or a
+     * game, the one focused last -- nothing when there is neither. */
+    static wayfire_view measured_view()
+    {
         wayfire_view best = nullptr;
         uint64_t best_ts  = 0;
         for (auto& v : wf::get_core().get_all_views())
         {
             auto t = wf::toplevel_cast(v);
-            if (!t || !v->is_mapped() || t->minimized || (v->role != wf::VIEW_ROLE_TOPLEVEL))
+            if (!t || !v->is_mapped() || t->minimized || (v->role != wf::VIEW_ROLE_TOPLEVEL) ||
+                !(t->pending_fullscreen() || game_like(v)))
             {
                 continue;
             }
 
             uint64_t ts = v->get_surface_root_node()->keyboard_interaction().last_focus_timestamp;
-            if (ts > best_ts)
+            if (!best || (ts > best_ts))
             {
                 best_ts = ts;
                 best    = v;
@@ -1499,7 +1503,7 @@ class fps_counter_t
     {
         int64_t now = wf::get_current_time();
         last_ask = now;
-        auto view = front_view();
+        auto view = measured_view();
         watch(view ? view->get_wlr_surface() : nullptr);
         trim(now);
         /* frames only age out on the next commit: an app that stopped drawing
