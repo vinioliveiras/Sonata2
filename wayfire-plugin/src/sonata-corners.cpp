@@ -1805,6 +1805,16 @@ class sonata_corners_t : public wf::plugin_interface_t
 #ifdef SONATA_OUTPUT_CAPTURE
         capture_hide_update(ev->view);
 #endif
+        /* every window that opens, where (Vini: Steam "didn't open" -- was it
+         * there at all, and where?) */
+        if (auto t = wf::toplevel_cast(ev->view))
+        {
+            LOGI("sonata-corners: mapped ", t->get_app_id(), " \"", t->get_title(), "\" ", t->get_geometry(),
+                " on ", t->get_output() ? t->get_output()->to_string() : std::string("(no display)"),
+                " workspace ", t->get_output() ? t->get_output()->wset()->get_view_main_workspace(t) :
+                wf::point_t{-1, -1});
+        }
+
         update_soon();
     };
     wf::signal::connection_t<wf::view_fullscreen_signal> on_fullscreen =

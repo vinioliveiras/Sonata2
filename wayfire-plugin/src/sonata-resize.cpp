@@ -1165,6 +1165,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         end_zoom(false);
         finish_fade();
         close_ghost();
+        LOGI("sonata-resize: zoom ", v->get_app_id(), " to edges ", to_tiled);
         zooming   = v;
         zoom_from  = v->get_geometry();
         zoom_hint  = hint;
