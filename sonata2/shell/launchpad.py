@@ -1104,16 +1104,8 @@ class Launchpad(Gtk.ApplicationWindow):
         question is a glass alert of its own (Vini: it came inside Launchpad,
         without the glass)."""
         from .. import webapps
-        wid = webapps.id_of(item)
-        entry = webapps.get(wid) or {}
-
-        def answer(rid):
-            if rid == "delete":
-                webapps.remove(wid)           # its entry goes: Launchpad drops it (AppInfoMonitor)
-        self.close_launchpad(lambda: ui.dialog.alert(
-            f"Delete “{entry.get('name', 'this web app')}”?",
-            "Its login and everything it saved on this computer are deleted too.",
-            [("cancel", "Cancel", ""), ("delete", "Delete", "destructive")], answer))
+        from . import uninstall_ui
+        self.close_launchpad(lambda: uninstall_ui.ask_webapp(webapps.id_of(item)))
 
     def _save_dock_pins(self, pins) -> None:
         """Only the "pinned" key of dock.json (the Dock reloads it live)."""

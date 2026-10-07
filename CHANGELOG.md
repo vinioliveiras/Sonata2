@@ -20,6 +20,8 @@
   folder of its own instead of yours.
 - App permissions all live in Settings > Apps (no longer in Security &
   Privacy). Clicking the section you're in goes back to its first page.
+- Web apps can be uninstalled like any app: Settings > Apps > the web app >
+  Uninstall, or dropped on the Dock's Trash (its login and data go too).
 - Settings: every search field looks like the sidebar's (App Icons,
   Installed Apps, Hide an App).
 - Open in Sandbox (an app's menu in the Dock or Launchpad): the app opens

@@ -92,7 +92,9 @@ class AppsPage:
         from .app import switch_row, _clear_group
         o = res["owner"]
         app.update(owner=o, dirs=res["dirs"])
-        bits = [KIND.get(o.kind, "") if o else "Part of the system"]
+        from .. import webapps
+        web = webapps.is_webapp(app["info"].get_id() or "")
+        bits = ["Web App" if web else KIND.get(o.kind, "") if o else "Part of Sonata"]
         if res["size"]:
             bits.append(size_text(res["size"]) + " app")
         bits.append(size_text(res["data"]) + " data")
@@ -112,14 +114,15 @@ class AppsPage:
                     "Home Folder off: it gets a folder of its own instead of yours."
                     + ("" if sandbox.available() else " Needs bubblewrap (./install.sh installs it)."))
         else:
-            note = Adw.ActionRow(title="Part of Sonata", use_markup=False,
-                                 subtitle="Sonata's own apps can use what Sonata uses.")
+            note = Adw.ActionRow(title="Asked by the site" if web else "Part of Sonata", use_markup=False,
+                                 subtitle="The site asks before it uses the camera, microphone or location."
+                                 if web else "Sonata's own apps can use what Sonata uses.")
             note.set_subtitle_lines(0)
             app["perms"].add(note)
         app["clear"].set_subtitle(", ".join(home_path(d) for d in res["dirs"]) if res["dirs"]
                                   else "No data of its own found")
         self.clear_btn.set_sensitive(bool(res["dirs"]))
-        self.rm_btn.set_sensitive(o is not None)
+        self.rm_btn.set_sensitive(o is not None or web)          # (web apps: Vini)
 
     # -- changes -----------------------------------------------------------------------------------
     def _lock(self, info, row, on) -> None:

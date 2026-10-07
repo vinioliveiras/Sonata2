@@ -25,7 +25,31 @@ def _notify(summary: str, body: str = "") -> None:
         pass
 
 
+def ask_webapp(wid: str, parent=None, done=None):
+    """A web app: deleted with its login and data (Launchpad, the Dock's
+    Trash, Settings > Apps -- Vini: web apps can be uninstalled too)."""
+    from .. import webapps
+    entry = webapps.get(wid) or {}
+
+    def answer(rid):
+        if rid != "delete":
+            return
+        webapps.remove(wid)                # its entry goes: Launchpad and the Dock drop it
+        from .. import sounds
+        sounds.play("trash")
+        if done:
+            done(True)
+    return ui.dialog.alert(f"Delete “{entry.get('name', 'this web app')}”?",
+                           "Its login and everything it saved on this computer are deleted too.",
+                           [("cancel", "Cancel", ""), ("delete", "Delete", "destructive")], answer,
+                           parent=parent)
+
+
 def ask(info, parent=None, done=None) -> None:
+    from .. import webapps
+    if webapps.is_webapp(info.get_id() or ""):
+        ask_webapp(webapps.id_of(info.get_id()), parent, done)
+        return
     name = info.get_display_name()
 
     def looked(res):

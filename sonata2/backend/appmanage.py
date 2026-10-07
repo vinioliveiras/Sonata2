@@ -178,6 +178,10 @@ def data_dirs(info, o=None) -> list:
     """The app's own folders: Flatpak's ~/.var/app/<id>, else the ones named
     like it in ~/.config, ~/.local/share, ~/.local/state, ~/.cache.
     Sonata's own apps: none (their settings are Sonata's)."""
+    from .. import webapps
+    if webapps.is_webapp(info.get_id() or ""):           # its login and storage
+        p = webapps.data_dir(webapps.id_of(info.get_id()))
+        return [p] if os.path.isdir(p) else []
     if (info.get_id() or "").startswith(("io.github.vinioliveiras.sonata2.", "sonata2-")):
         return []
     home = GLib.get_home_dir()

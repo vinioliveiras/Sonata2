@@ -201,6 +201,36 @@ class PageTest(unittest.TestCase):
         self.open(owner=PACKAGE, perms=[])
         self.assertIn("Part of Sonata", self._texts(self.page.app["perms"]))
 
+    def test_web_app_can_be_uninstalled(self):
+        """Vini: web apps can be uninstalled too (from Settings > Apps, the Dock's Trash...)."""
+        from sonata2 import webapps
+        info = FakeInfo(webapps.desktop_id("wabc1234567"))
+        row = self.page.rows["org.test.App"]
+        row.info = info
+        res = {"owner": None, "size": None, "dirs": [], "data": 0, "perms": []}
+        with mock.patch.object(self.page, "_look", return_value=res):
+            self.page.open(row)
+            settle(300)
+        self.assertTrue(self.page.rm_btn.get_sensitive())
+        self.assertIn("Web App", self.page.app["hero"].get_subtitle())
+        self.assertIn("Asked by the site", self._texts(self.page.app["perms"]))
+        from sonata2.shell import uninstall_ui
+        with mock.patch("sonata2.ui.dialog.alert") as alert, \
+                mock.patch.object(webapps, "remove") as remove, mock.patch("sonata2.sounds.play"):
+            self.page.ask_uninstall()
+            self.assertIn("Delete", alert.call_args[0][0])
+            alert.call_args[0][3]("delete")
+        remove.assert_called_once_with("wabc1234567")
+        self.assertNotIn("org.test.App", self.page.rows)            # gone from the list
+        self.assertIsNone(getattr(self.w.pages["launchpad"], "detail", None))
+        self.assertTrue(uninstall_ui.ask_webapp)
+
+    def test_web_app_data_is_its_own(self):
+        from sonata2 import webapps
+        d = tempfile.mkdtemp()
+        with mock.patch.object(webapps, "data_dir", return_value=d):
+            self.assertEqual(A.data_dirs(FakeInfo(webapps.desktop_id("wabc1234567")), None), [d])
+
     def test_packaged_app_permissions(self):
         """Vini: an app's permissions managed in it -- packaged apps too."""
         self.open(owner=PACKAGE, perms=A.permissions(PACKAGE, FakeInfo()))
