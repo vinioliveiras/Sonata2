@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changes
+- Settings > About > Backup: export Sonata's settings -- and, if you like,
+  the data of Notes, Calendar and Reminders -- to one .sonata-backup file,
+  and import it back (on this computer or another one; your current
+  settings go to the Trash first).
+
 ### Fixes
 - Windows are cut to their frame: an app that draws itself bigger than its
   window (Claude, after or while resizing) never shows past the frame --

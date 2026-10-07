@@ -3346,6 +3346,7 @@ class Settings(Adw.ApplicationWindow):
                                        "Off, only errors are logged, in memory, until you log out.")
         shell.add(logs_row)
         sub.logs_row = logs_row                    # (tests)
+        backup = self._backup_group()
         reset = group("Reset", "Both ask first, then you log out and back in.")
         for title, subtitle, what in (
                 ("Reset Settings", "Every Sonata setting back to the defaults. Your Dock and Launchpad "
@@ -3358,7 +3359,102 @@ class Settings(Adw.ApplicationWindow):
             rb.set_valign(Gtk.Align.CENTER)
             row.add_suffix(rb)
             reset.add(row)
-        return [hero, specs, shell, reset]
+        return [hero, specs, shell, backup, reset]
+
+    # -- backup (sonata2/backup.py) ----------------------------------------------------------------
+    def _backup_group(self):
+        from .. import backup
+        g = group("Backup", "Your Sonata settings in one file: to keep, or to set up another computer "
+                            "the same way.")
+        self.backup_export = Adw.ActionRow(title="Export Settings", use_markup=False,
+                                           subtitle=self._last_export_text(backup.last_export()))
+        b = ui.controls.push_button("Export\u2026", self.export_settings, valign=Gtk.Align.CENTER)
+        self.backup_export.add_suffix(b)
+        g.add(self.backup_export)
+        self.backup_data = switch_row("Include Notes, Calendar and Reminders", True, lambda _on: None,
+                                      subtitle="The data of Sonata's own apps, with the settings")
+        g.add(self.backup_data)
+        imp = Adw.ActionRow(title="Import Settings", use_markup=False,
+                            subtitle="Replaces your settings with the file's (yours go to the Trash)")
+        imp.add_suffix(ui.controls.push_button("Import\u2026", self.import_settings, valign=Gtk.Align.CENTER))
+        g.add(imp)
+        return g
+
+    @staticmethod
+    def _last_export_text(ts) -> str:
+        if not ts:
+            return "Last exported: never"
+        return "Last exported: " + GLib.DateTime.new_from_unix_local(int(ts)).format("%-d %b %Y at %H:%M")
+
+    def export_settings(self) -> None:
+        from .. import backup
+        dlg = Gtk.FileDialog(title="Export Settings", modal=True, initial_name=backup.default_name())
+        data = self.backup_data.get_active()
+
+        def chosen(d, res):
+            try:
+                f = d.save_finish(res)
+            except GLib.Error:
+                return                                   # cancelled
+            path = f.get_path() if f else None
+            if not path:
+                return
+            if not path.endswith(backup.EXT):
+                path += backup.EXT
+
+            def done(n):
+                if isinstance(n, Exception):
+                    ui.dialog.alert("The settings couldn't be exported.", str(n), [("ok", "OK", "default")],
+                                    parent=self)
+                    return
+                self.backup_export.set_subtitle(self._last_export_text(backup.last_export()))
+                self.toast(f"Settings exported ({n} files)")
+            system.run_async(lambda: _try(backup.export, path, data), done)
+        dlg.save(self, None, chosen)
+
+    def import_settings(self) -> None:
+        from .. import backup
+        filt = Gtk.FileFilter(name="Sonata Settings")
+        filt.add_pattern("*" + backup.EXT)
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        filters.append(filt)
+        dlg = Gtk.FileDialog(title="Import Settings", modal=True, filters=filters, default_filter=filt)
+
+        def chosen(d, res):
+            try:
+                f = d.open_finish(res)
+            except GLib.Error:
+                return
+            path = f.get_path() if f else None
+            if path:
+                self.ask_import(path)
+        dlg.open(self, None, chosen)
+
+    def ask_import(self, path: str):
+        from .. import backup
+        m = backup.read_manifest(path)
+        if m is None:
+            return ui.dialog.alert("This isn't a Sonata settings file.", os.path.basename(path),
+                                   [("ok", "OK", "default")], parent=self)
+        what = "settings, Notes, Calendar and Reminders" if m.get("data") else "settings"
+        when = GLib.DateTime.new_from_unix_local(int(m.get("created") or 0)).format("%-d %b %Y")
+        return ui.dialog.alert(
+            "Replace your settings with the file's?",
+            f"Its {what} (Sonata {m.get('sonata', '?')}, {when}) replace yours; yours go to the Trash "
+            "first, so they can be put back. Then you log out and back in.",
+            [("cancel", "Cancel", ""), ("import", "Replace", "destructive")],
+            lambda rid: rid == "import" and self.import_now(path), parent=self)
+
+    def import_now(self, path: str) -> None:
+        from .. import backup
+
+        def done(ok):
+            if ok is True:
+                self.ask_restart("session", "The imported settings")
+            else:
+                ui.dialog.alert("The settings couldn't be imported.", str(ok) if ok else "",
+                                [("ok", "OK", "default")], parent=self)
+        system.run_async(lambda: _try(backup.restore, path), done)
 
     def ask_factory_reset(self, what: str):
         title, body = {
@@ -3476,3 +3572,11 @@ def settings_desktop_file(command: str) -> str:
                               "Comment=Sonata and system settings\nIcon=preferences-system\n"
                               "Categories=Settings;System;\nStartupWMClass=io.github.vinioliveiras.sonata2.settings\n"
                               f"Exec={command} settings\n")
+
+
+def _try(fn, *args):
+    """fn(*args), or the exception it raised (shown by the caller)."""
+    try:
+        return fn(*args)
+    except Exception as e:                       # (a full disk, no permission...)
+        return e
