@@ -495,6 +495,9 @@ def _app_button(dock, tile, key, pop) -> Gtk.Button:
     box.append(Gtk.Image(gicon=icons.app_icon(info), pixel_size=PANEL_ICON))
     box.append(Gtk.Label(label=info.get_display_name(), wrap=True, lines=2, justify=Gtk.Justification.CENTER,
                          ellipsize=Pango.EllipsizeMode.END, max_width_chars=12, width_chars=12))
+    # open: the Dock's running dot under its name (Vini: the app stays in its folder)
+    b.dot = Gtk.Box(css_classes=["dock-dot", "on"], halign=Gtk.Align.CENTER, visible=bool(dock.windows.get(key)))
+    box.append(b.dot)
     b.set_child(box)
     b.key = key
     b.connect("clicked", lambda _b: close_panel(pop, lambda: dock.open_app(key, tile)))
@@ -512,6 +515,16 @@ def _app_button(dock, tile, key, pop) -> Gtk.Button:
     src.connect("drag-end", lambda *_: dock.folder_app_drag_end(tile.key, key))
     b.add_controller(src)
     return b
+
+
+def show_running(dock, pop) -> None:
+    """The panel's dots follow the apps' windows."""
+    child = pop.flow.get_first_child() if pop.flow is not None else None
+    while child is not None:
+        b = child.get_child()
+        if hasattr(b, "dot"):
+            b.dot.set_visible(bool(dock.windows.get(b.key)))
+        child = child.get_next_sibling()
 
 
 def _drag_out(dock, tile, key, pop, drag) -> None:

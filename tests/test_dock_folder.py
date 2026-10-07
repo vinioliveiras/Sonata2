@@ -181,6 +181,57 @@ class DockFolderTest(unittest.TestCase):
         settle(F.CLOSE_MS + 400)
         self.assertFalse(pop.get_visible())
 
+    # -- an open app stays in its folder (Vini: its icon came out of it) -----------
+    def _open(self, *keys):
+        from types import SimpleNamespace
+        from unittest import mock
+        d = self.dock
+        d.manager = SimpleNamespace(toplevels=[SimpleNamespace(app_id=k, title=k, minimized=False,
+                                                               activated=False) for k in keys])
+        with mock.patch.object(D.apps, "match_app_id", lambda a: a), \
+                mock.patch.object(D.Dock, "_update_rectangles_bg", lambda self: False):
+            d._sync()
+            settle()
+
+    def test_open_app_stays_in_its_folder(self):
+        d, a, b = self.dock, self.apps[0], self.apps[1]
+        fkey = d.make_folder([a, b], name="Work")
+        settle()
+        pop = F.open_panel(d, d.tiles[fkey])
+        settle()
+        self._open(a)
+        self.assertNotIn(a, d.tiles)                          # no icon of its own
+        self.assertTrue(d.tiles[fkey].has_css_class("running"))   # the folder's dot
+        dots = {}
+        child = pop.flow.get_first_child()
+        while child is not None:
+            dots[child.get_child().key] = child.get_child().dot.get_visible()
+            child = child.get_next_sibling()
+        self.assertEqual(dots, {a: True, b: False})           # and the app's, inside
+        self._open()
+        self.assertFalse(d.tiles[fkey].has_css_class("running"))
+        self.assertFalse(dots and pop.flow.get_first_child().get_child().dot.get_visible())
+
+    def test_running_app_moved_into_folder_leaves_the_row(self):
+        d, a, b = self.dock, self.apps[0], self.apps[1]
+        self._open(a)
+        fkey = d.make_folder([a, b], name="Work")
+        settle()
+        self.assertNotIn(a, d.tiles)
+        self.assertTrue(d.tiles[fkey].has_css_class("running"))
+        d.remove_from_folder(fkey, a)                          # out again: its own icon, running
+        self.assertTrue(d.tiles[a].has_css_class("running"))
+
+    def test_open_from_folder_brings_it_forward(self):
+        from unittest import mock
+        d, a, b = self.dock, self.apps[0], self.apps[1]
+        fkey = d.make_folder([a, b], name="Work")
+        settle()
+        self._open(a)
+        with mock.patch.object(d, "_clicked") as clicked:
+            d.open_app(a, d.tiles[fkey])
+        clicked.assert_called_once_with(a, d.tiles[fkey])     # never a second copy
+
     # -- part 2: drop an app on another --------------------------------------------
     def _drag(self, key):
         d = self.dock

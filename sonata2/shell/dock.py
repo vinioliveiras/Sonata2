@@ -1229,6 +1229,20 @@ class Dock(Gtk.Box):
             return None
         return (self.cfg.get("folders") or {}).get(dock_folder.folder_id(key))
 
+    def folder_tile_of(self, key):
+        """The Dock icon of the folder `key` lives in (None: in none)."""
+        for fid, f in (self.cfg.get("folders") or {}).items():
+            if key in f.get("apps", ()):
+                return self.tiles.get(dock_folder.PREFIX + fid)
+        return None
+
+    def window_count(self, key) -> int:
+        """Open windows of the app -- of all its apps for a folder."""
+        f = self.folder(key)
+        if f is not None:
+            return sum(len(self.windows.get(k, ())) for k in f["apps"])
+        return len(self.windows.get(key, ()))
+
     def in_folder(self, key) -> bool:
         return any(key in f.get("apps", ()) for f in (self.cfg.get("folders") or {}).values())
 
@@ -1249,16 +1263,20 @@ class Dock(Gtk.Box):
         for k in keys:
             self._unpin_into_folder(k)
         self._add_known_tile(fkey)
+        if fkey in self.tiles:
+            self.tiles[fkey].set_running(self.window_count(fkey))
         self.save_cfg()
         self._relayout()
         return fkey
 
     def _unpin_into_folder(self, key) -> None:
         """The app's own icon leaves the pinned row (it now lives in a folder);
-        a running app keeps its icon among the running ones."""
+        a running one too: its windows show on the folder (Vini)."""
         if key in self.cfg["pinned"]:
             self.cfg["pinned"].remove(key)
-        if key in self.tiles and key not in self.windows and not self._is_recent(key):
+        if key in self.cfg["recent"]:
+            self.cfg["recent"].remove(key)
+        if key in self.tiles:
             self._remove_tile(key)
 
     def add_to_folder(self, fkey, key) -> None:
@@ -1281,6 +1299,8 @@ class Dock(Gtk.Box):
         if key not in pins:
             pins.insert(pins.index(fkey) + 1 if fkey in pins else len(pins), key)
             self._add_known_tile(key)
+            if key in self.tiles:
+                self.tiles[key].set_running(self.window_count(key))
         if len(f["apps"]) <= 1 and ungroup_last:
             self.ungroup(fkey)
             return
@@ -1349,6 +1369,7 @@ class Dock(Gtk.Box):
             tile.icon.set_locked(f.get("locked", False))
             tile.name = f["name"]
             tile.label.set_text(f["name"])
+            tile.set_running(self.window_count(fkey))
         self.save_cfg()
         self._relayout()
 
@@ -1413,6 +1434,9 @@ class Dock(Gtk.Box):
         tile = self.tiles.get(key)
         if tile is not None:
             self._clicked(key, tile)
+            return
+        if self.windows.get(key) and near is not None:      # running (from its folder): forward
+            self._clicked(key, near)
             return
         info = apps.lookup(key)
         if not info:
@@ -1716,11 +1740,11 @@ class Dock(Gtk.Box):
         for key in started:
             self._note_recent(key)
         pinned = set(self.cfg["pinned"])
-        for key in [k for k in self.tiles
-                    if k not in pinned and k not in groups and not self._is_recent(k)]:
-            self._remove_tile(key)                 # unpinned app quit
+        for key in [k for k in self.tiles if k not in pinned and
+                    ((k not in groups and not self._is_recent(k)) or self.folder_tile_of(k))]:
+            self._remove_tile(key)                 # unpinned app quit (or it lives in a folder)
         for key in groups:
-            if key not in self.tiles:
+            if key not in self.tiles and not self.folder_tile_of(key):   # (Vini: it left its folder)
                 if self._add_known_tile(key):        # a desktop entry, or a Steam game
                     pass
                 else:
@@ -1737,9 +1761,11 @@ class Dock(Gtk.Box):
                     tile.name = name
                     tile.label.set_text(name)
         for key, tile in self.tiles.items():
-            tile.set_running(len(groups.get(key, ())))
+            tile.set_running(self.window_count(key))
             if groups.get(key):
                 self._starting.pop(key, None)      # its window showed: the launch went well
+            if getattr(tile, "folder_pop", None) is not None:
+                dock_folder.show_running(self, tile.folder_pop)
         self._relayout()
         GLib.idle_add(self._update_rectangles_bg)
         return False
@@ -1818,7 +1844,7 @@ class Dock(Gtk.Box):
         # yet can't tell which of their windows is here
         elsewhere = {a for a, _t in (placed or set()) - mine}
         for key, wins in self.windows.items():
-            tile = self.tiles.get(key)
+            tile = self.tiles.get(key) or self.folder_tile_of(key)    # (in a folder: minimize into it)
             ok, b = tile.compute_bounds(native) if tile else (False, None)
             if not ok:
                 continue

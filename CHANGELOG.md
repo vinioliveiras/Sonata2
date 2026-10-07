@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Dock
+- An app opened from a Dock folder stays in it: the folder shows the
+  running dot, and so does the app inside its panel. Clicking it there
+  brings its windows forward; minimized windows go into the folder.
+
 ### Install
 - Fedora, Debian and Ubuntu (whose Wayfire is older than 0.11) get Sonata's
   title bars, round corners and window effects too: the installer builds
