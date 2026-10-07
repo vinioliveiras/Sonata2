@@ -259,7 +259,7 @@ class DoctorTest(unittest.TestCase):
         home = tempfile.mkdtemp()
         lines = [f"Error {i}" for i in range(30)] + ["all good"]
         write(os.path.join(home, ".cache", "sonata2", "dock.log"), "\n".join(lines))
-        with mock.patch.dict(os.environ, {"HOME": home}):
+        with mock.patch.dict(os.environ, {"HOME": home, "SONATA_DEBUG": "1"}):     # logs on (sonata2/logs.py)
             out = doctor.last_session_errors(n=5).splitlines()
         self.assertEqual(out, ["--- dock.log ---"] + [f"Error {i}" for i in range(25, 30)])
 
@@ -274,7 +274,7 @@ class DoctorTest(unittest.TestCase):
         """The doctor reads the logs in $XDG_CACHE_HOME/sonata2, where `sonata2 keep` writes them."""
         home, cache = tempfile.mkdtemp(), tempfile.mkdtemp()
         write(os.path.join(cache, "sonata2", "dock.log"), "Traceback (most recent call last):")
-        with mock.patch.dict(os.environ, {"HOME": home, "XDG_CACHE_HOME": cache}):
+        with mock.patch.dict(os.environ, {"HOME": home, "XDG_CACHE_HOME": cache, "SONATA_DEBUG": "1"}):
             self.assertIn("Traceback", doctor.last_session_errors())
 
 
@@ -463,7 +463,7 @@ class MainTest(unittest.TestCase):
         import subprocess
         d = tempfile.mkdtemp()
         write(os.path.join(d, "wayland-1"))
-        env = {"XDG_RUNTIME_DIR": d, "XDG_CACHE_HOME": d, "WAYLAND_DISPLAY": "wayland-1"}
+        env = {"XDG_RUNTIME_DIR": d, "XDG_CACHE_HOME": d, "WAYLAND_DISPLAY": "wayland-1", "SONATA_DEBUG": "1"}
         with mock.patch.dict(os.environ, env), mock.patch.object(subprocess, "Popen", child_cls), \
                 mock.patch.object(main, "share_session_env"), \
                 mock.patch.object(main, "_compositor_alive", return_value=True), \
@@ -485,7 +485,7 @@ class MainTest(unittest.TestCase):
         d = tempfile.mkdtemp()
         write(os.path.join(d, "sonata2", "dock.log"), "previous run\n")
         write(os.path.join(d, "wayland-1"))
-        env = {"XDG_RUNTIME_DIR": d, "XDG_CACHE_HOME": d, "WAYLAND_DISPLAY": "wayland-1"}
+        env = {"XDG_RUNTIME_DIR": d, "XDG_CACHE_HOME": d, "WAYLAND_DISPLAY": "wayland-1", "SONATA_DEBUG": "1"}
         with mock.patch.dict(os.environ, env), mock.patch.object(subprocess, "Popen", Child), \
                 mock.patch.object(main, "share_session_env"):
             self.assertEqual(main.keep(["dock", "--background"]), 0)

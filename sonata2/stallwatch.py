@@ -25,7 +25,8 @@ def flag_path() -> str:
 
 
 def log_path() -> str:
-    return _cache("stalls.log")
+    from . import logs
+    return logs.path("stalls.log")
 
 
 def write(label: str, ms: float, stack: list) -> None:

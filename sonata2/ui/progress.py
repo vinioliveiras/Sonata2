@@ -11,13 +11,14 @@ window that lists running file operations.
 The window appears only if an operation is still running after
 SHOW_DELAY_MS (quick copies never flash a window), hides when the last one
 ends, and closing it leaves the operations running (like Finder)."""
+import math
 import time
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Adw, GLib, GObject, Graphene, Gtk, Pango  # noqa: E402
 
 from . import fmt, theme, window  # noqa: E402
 
@@ -53,11 +54,97 @@ def bar(fraction=None) -> Gtk.ProgressBar:
     return b
 
 
-def spinner(spinning=True, size=16) -> Gtk.Spinner:
+class Spinner(Gtk.Widget):
+    """The macOS spinner: 12 rounded spokes fading behind the leading one,
+    stepping round once a second. Drawn by Sonata, not taken from the icon
+    theme: Gtk.Spinner draws "process-working-symbolic", which
+    adwaita-icon-theme 51 dropped -- every spinner (the lock screen's too)
+    went blank after a system update (Vini). Same API as Gtk.Spinner
+    (spinning, start(), stop()) and the same CSS node ("spinner", :checked
+    while spinning), so its colour and size still come from CSS."""
+    __gtype_name__ = "SonataSpinner"
+    SPOKES = 12
+    PERIOD_US = 1_000_000                    # one turn a second
+    TAIL = 0.22                              # the faintest spoke's opacity
+    spinning = GObject.Property(type=bool, default=False)
+
+    def __init__(self, spinning=False, **kw):
+        super().__init__(**kw)
+        self.step = 0
+        self._tick = 0
+        self.connect("notify::spinning", lambda *_: self._sync())
+        self.connect("map", lambda *_: self._sync())
+        self.connect("unmap", lambda *_: self._sync())
+        self.props.spinning = spinning
+
+    def start(self):
+        self.props.spinning = True
+
+    def stop(self):
+        self.props.spinning = False
+
+    def set_spinning(self, on):
+        self.props.spinning = bool(on)
+
+    def get_spinning(self) -> bool:
+        return self.props.spinning
+
+    def _sync(self):
+        on = self.props.spinning
+        if on:                                    # (the theme shows a spinner only while :checked)
+            self.set_state_flags(Gtk.StateFlags.CHECKED, False)
+        else:
+            self.unset_state_flags(Gtk.StateFlags.CHECKED)
+        run = on and self.get_mapped()
+        if run and not self._tick:                # ticks only while seen and spinning
+            self._tick = self.add_tick_callback(self._on_tick)
+        elif not run and self._tick:
+            self.remove_tick_callback(self._tick)
+            self._tick = 0
+        self.queue_draw()
+
+    def _on_tick(self, _w, clock):
+        step = int(clock.get_frame_time() * self.SPOKES // self.PERIOD_US) % self.SPOKES
+        if step != self.step:                     # redrawn 12 times a second, not every frame
+            self.step = step
+            self.queue_draw()
+        return GLib.SOURCE_CONTINUE
+
+    def do_measure(self, _orientation, _for_size):
+        return 16, 16, -1, -1                     # (width/height_request and CSS min sizes go on top)
+
+    def do_snapshot(self, snap):
+        if not self.props.spinning:
+            return
+        w, h = self.get_width(), self.get_height()
+        size = min(w, h)
+        if size <= 0:
+            return
+        color = self.get_color()
+        cr = snap.append_cairo(Graphene.Rect().init(0, 0, w, h))
+        cr.translate(w / 2, h / 2)
+        cr.set_line_cap(1)                        # round ends (cairo.LINE_CAP_ROUND)
+        cr.set_line_width(max(1.0, size * 0.09))
+        outer = size / 2 - size * 0.05
+        inner = outer - size * 0.24
+        for i in range(self.SPOKES):
+            age = (self.step - i) % self.SPOKES     # 0: the leading spoke
+            a = math.tau * i / self.SPOKES
+            cr.set_source_rgba(color.red, color.green, color.blue,
+                               color.alpha * (1.0 - (1.0 - self.TAIL) * age / (self.SPOKES - 1)))
+            cr.move_to(math.sin(a) * inner, -math.cos(a) * inner)
+            cr.line_to(math.sin(a) * outer, -math.cos(a) * outer)
+            cr.stroke()
+
+
+Spinner.set_css_name("spinner")
+
+
+def spinner(spinning=True, size=16) -> Spinner:
     """A small spinner, centred where it is put (a stack or a box would
     otherwise stretch it over the whole page)."""
-    return Gtk.Spinner(spinning=spinning, css_classes=["sonata-spinner"], width_request=size,
-                       height_request=size, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+    return Spinner(spinning=spinning, css_classes=["sonata-spinner"], width_request=size,
+                   height_request=size, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
 
 
 def meter(fraction: float) -> Gtk.ProgressBar:

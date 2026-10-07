@@ -453,7 +453,8 @@ class FeedbackReviewTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         home = self.tmp.name
-        self.env = mock.patch.dict(os.environ, {"HOME": home, "XDG_CACHE_HOME": os.path.join(home, ".cache")})
+        self.env = mock.patch.dict(os.environ, {"HOME": home, "XDG_CACHE_HOME": os.path.join(home, ".cache"),
+                                                "SONATA_DEBUG": "1"})     # logs on: kept in ~/.cache/sonata2
         self.env.start()
         self.logs = os.path.join(home, ".cache", "sonata2")
         os.makedirs(self.logs)

@@ -66,8 +66,16 @@ if [ "$keyring_backend" != keepassxc ] && command -v gnome-keyring-daemon >/dev/
     export SSH_AUTH_SOCK
 fi
 # Session log (Wayfire + every Sonata component started from it); the
-# previous one is kept as session.old.log.
-logs="${XDG_CACHE_HOME:-$HOME/.cache}/sonata2"; mkdir -p "$logs"
+# previous one is kept as session.old.log. Logs off (the default, Settings >
+# About > Logs; sonata2/logs.py): in memory, gone at logout; on: kept in
+# ~/.cache/sonata2. The GPU markers below stay there either way.
+state="${XDG_CACHE_HOME:-$HOME/.cache}/sonata2"; mkdir -p "$state"
+if [ "${SONATA_DEBUG:-}" = 1 ] || [ -e "${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/debug-logging" ]; then
+    logs="$state"
+else
+    logs="${XDG_RUNTIME_DIR:-/tmp}/sonata2-logs"
+fi
+mkdir -p "$logs"
 [ -f "$logs/session.log" ] && mv -f "$logs/session.log" "$logs/session.old.log"
 # The login intro (sonata2/shell/intro.py): the welcome screen, then the
 # Dock and menu bar slide in. Only at login, never on a restart of Sonata.
@@ -207,7 +215,7 @@ if [ -n "$gpu_set" ]; then
     if [ -n "$display_gpu" ] && [ "$code" -ne 0 ] && grep -qs -e "gbm_bo_create failed" -e "Failed to allocate auxilliary buffer" \
             "$logs/session.log" && ! grep -qs "NV_ERR_NO_MEMORY" "$logs/kernel-at-crash.log"; then
         rm -f "$gpu_flag"
-        touch "$logs/display-gpu-crashed"
+        touch "$state/display-gpu-crashed"
     fi
     if [ "$ran_long" = 1 ]; then
         finish "$code" "$started"
@@ -216,7 +224,7 @@ if [ -n "$gpu_set" ]; then
     unset WLR_DRM_DEVICES
     # the last resort (wlroots' choice may be the other GPU): said once by the
     # menu bar (gpu.fallback_notice), never silently (Vini)
-    printf '%s\n' "$(date +%s)" > "$logs/gpu-start-failed"
+    printf '%s\n' "$(date +%s)" > "$state/gpu-start-failed"
 fi
 run_wayfire
 record_crash "$code" "$started"

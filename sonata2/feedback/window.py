@@ -138,7 +138,7 @@ class FeedbackWindow(Gtk.ApplicationWindow):
         col.append(page)
 
         bottom = Gtk.Box(spacing=8, css_classes=["fb-bottom"])
-        self.spinner = Gtk.Spinner(visible=False)
+        self.spinner = ui.progress.Spinner(visible=False)
         bottom.append(self.spinner)
         bottom.append(Gtk.Box(hexpand=True))
         self.save_btn = ui.controls.push_button("Save Report", lambda: self.submit(False))

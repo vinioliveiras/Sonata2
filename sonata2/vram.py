@@ -57,7 +57,8 @@ def app_name(pid: int, fallback: str) -> str:
 
 
 def log_path() -> str:
-    return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "sonata2", LOG)
+    from . import logs
+    return logs.path(LOG)
 
 
 class VramWatch:

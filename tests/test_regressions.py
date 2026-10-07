@@ -1900,7 +1900,7 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         block = sess[sess.index('"$WAYFIRE" -c "$cfg" > "$logs/session.log" 2>&1\n    code=$?'):]
         self.assertIn("gbm_bo_create failed", block)
         self.assertIn('rm -f "$gpu_flag"', block)
-        self.assertIn('touch "$logs/display-gpu-crashed"', block)
+        self.assertIn('touch "$state/display-gpu-crashed"', block)
 
     def test_an_app_filling_the_cards_memory_keeps_it(self):
         """Vini: WhatsApp's web app filled the NVIDIA memory with a video; the
@@ -2047,7 +2047,7 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         sess = (pathlib.Path(__file__).resolve().parent.parent / "tools" / "sonata-session").read_text()
         self.assertIn('[ "$other_n" -eq 0 ] && [ "$best_n" -gt 0 ] && no_screens_gpu=1', sess)
         self.assertIn('{ [ -e "$gpu_flag" ] || [ -n "$no_screens_gpu" ]; }', sess)
-        self.assertIn('printf \'%s\\n\' "$(date +%s)" > "$logs/gpu-start-failed"', sess)
+        self.assertIn('printf \'%s\\n\' "$(date +%s)" > "$state/gpu-start-failed"', sess)
 
     def test_last_resort_gpu_is_said(self):
         from unittest import mock

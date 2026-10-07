@@ -1,26 +1,38 @@
-"""How much Sonata writes to its logs (~/.cache/sonata2).
+"""Sonata's logs: off by default (Vini), Settings > About > Logs.
 
-Normal installs keep them small: errors and crashes only, what `sonata2
-doctor` and bug reports need. Detailed logs (window log, frame timings,
-start-up timings, component chatter, Wayfire's info lines) are for
-development: a dev install (a git clone, `install.sh --dev`), the flag
-file below (Settings > About: click the version 7 times) or SONATA_DEBUG=1.
-Logs never leave the computer.
+Off: the parts still log, but to memory ($XDG_RUNTIME_DIR/sonata2-logs,
+gone at logout) and only errors -- `sonata2 doctor`, crash recovery and
+a bug report sent during the session still have them; nothing is kept on
+disk. On (the flag file below, or SONATA_DEBUG=1): detailed logs (window
+log, frame timings, start-up timings, component chatter, Wayfire's info
+lines) in ~/.cache/sonata2, kept between sessions. Logs never leave the
+computer.
 
     from sonata2 import logs
     if logs.verbose(): ...
 """
 import os
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CAP = 1 << 20                     # a component's log, normal installs (bytes)
 CAP_VERBOSE = 32 << 20
 
 
 def log_dir() -> str:
-    """Where components log ($XDG_CACHE_HOME/sonata2): `keep` writes there,
-    the doctor and bug reports read there."""
-    return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "sonata2")
+    """Where everything logs: ~/.cache/sonata2 with logs on, else memory
+    (tools/sonata-session picks the same folder)."""
+    if verbose():
+        return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "sonata2")
+    return os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "sonata2-logs")
+
+
+def path(name: str) -> str:
+    """A log file's path (its folder made)."""
+    d = log_dir()
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        pass
+    return os.path.join(d, name)
 
 
 def flag_path() -> str:
@@ -28,16 +40,14 @@ def flag_path() -> str:
                         "sonata2", "debug-logging")
 
 
-def dev_install() -> bool:
-    return os.path.isdir(os.path.join(REPO, ".git"))
-
-
 def verbose() -> bool:
-    return (os.environ.get("SONATA_DEBUG") == "1" or os.path.exists(flag_path()) or dev_install())
+    """Logs on (Settings > About). A dev install too used to force them on:
+    no more -- off by default everywhere (Vini)."""
+    return os.environ.get("SONATA_DEBUG") == "1" or os.path.exists(flag_path())
 
 
 def set_verbose(on: bool) -> None:
-    """Settings > About: detailed logs on / off (from the next start of each part)."""
+    """Settings > About > Logs on / off (from the next start of each part)."""
     path = flag_path()
     try:
         if on:

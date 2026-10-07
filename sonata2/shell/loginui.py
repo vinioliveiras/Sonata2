@@ -101,9 +101,8 @@ def power_log(text: str) -> None:
     Restart did nothing on the lock and login screens, and nothing said why)."""
     import time
     try:
-        d = os.path.join(GLib.get_user_cache_dir(), "sonata2")
-        os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, "power.log"), "a", encoding="utf-8") as f:
+        from .. import logs
+        with open(logs.path("power.log"), "a", encoding="utf-8") as f:
             f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {text}\n")
     except OSError:
         pass

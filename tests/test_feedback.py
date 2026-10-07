@@ -15,10 +15,11 @@ class ReportTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         home = self.tmp.name
         self.env = mock.patch.dict(os.environ, {"HOME": home, "XDG_CACHE_HOME": os.path.join(home, ".cache"),
-                                                "XDG_CONFIG_HOME": os.path.join(home, ".config")})
+                                                "XDG_CONFIG_HOME": os.path.join(home, ".config"),
+                                                "XDG_RUNTIME_DIR": os.path.join(home, "run")})
         self.env.start()
-        logs = os.path.join(home, ".cache", "sonata2")
-        os.makedirs(logs)
+        logs = report.log_dir()                  # (logs off: in memory -- sonata2/logs.py)
+        os.makedirs(logs, exist_ok=True)
         for name in ("session.log", "dock.old.log", "doctor.txt", "preview.png"):
             with open(os.path.join(logs, name), "w") as f:
                 f.write(name)
@@ -52,8 +53,7 @@ class ReportTest(unittest.TestCase):
         self.assertLessEqual(len(long), report.URL_MAX)
 
     def test_monitoring_is_detailed_logging(self):
-        with mock.patch("sonata2.logs.dev_install", return_value=False), \
-                mock.patch.dict(os.environ, {"SONATA_DEBUG": ""}):
+        with mock.patch.dict(os.environ, {"SONATA_DEBUG": ""}):
             report.set_monitoring(False)
             self.assertFalse(report.monitoring())
             report.set_monitoring(True)
@@ -68,9 +68,10 @@ class CrashTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.env = mock.patch.dict(os.environ, {"HOME": self.tmp.name,
-                                                "XDG_CACHE_HOME": os.path.join(self.tmp.name, ".cache")})
+                                                "XDG_CACHE_HOME": os.path.join(self.tmp.name, ".cache"),
+                                                "XDG_RUNTIME_DIR": os.path.join(self.tmp.name, "run")})
         self.env.start()
-        os.makedirs(report.log_dir())
+        os.makedirs(report.log_dir(), exist_ok=True)
 
     def tearDown(self):
         self.env.stop()

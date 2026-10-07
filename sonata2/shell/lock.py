@@ -18,6 +18,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 from .. import pam  # noqa: E402
+from ..ui.progress import Spinner  # noqa: E402
 from .loginui import Backdrop, Mirror, WaitGuard, avatar, logind, top_clock, menu_bar_format, password_field, power_bar, shake, wallpaper_texture  # noqa: E402
 
 
@@ -217,7 +218,7 @@ class LockScreen:
             entry.set_sensitive(self.entry.get_sensitive())
         self.entry.add(entry)
         entry.connect("activate", lambda *_: self._check())
-        spinner = self.spinner.add(Gtk.Spinner(css_classes=["gr-spinner"], halign=Gtk.Align.CENTER,
+        spinner = self.spinner.add(Spinner(css_classes=["gr-spinner"], halign=Gtk.Align.CENTER,
                                                valign=Gtk.Align.CENTER))
         slot = self.slot.add(Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=220,
                                        halign=Gtk.Align.CENTER))

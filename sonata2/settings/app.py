@@ -1984,7 +1984,7 @@ class Settings(Adw.ApplicationWindow):
         logo = Gtk.Image(pixel_size=40, valign=Gtk.Align.CENTER)
         icons.set_logo(logo)
         status.add_prefix(logo)
-        spin = Gtk.Spinner(spinning=True, valign=Gtk.Align.CENTER)
+        spin = ui.progress.Spinner(spinning=True, valign=Gtk.Align.CENTER)
         buttons = Gtk.Box(spacing=8, valign=Gtk.Align.CENTER)
         status.add_suffix(spin)
         status.add_suffix(buttons)
@@ -3229,7 +3229,7 @@ class Settings(Adw.ApplicationWindow):
                             use_markup=False)
         icon = Gtk.Image(icon_name="sonata-launchpad", pixel_size=40, valign=Gtk.Align.CENTER)
         row.add_prefix(icon)
-        spin = Gtk.Spinner(spinning=True, valign=Gtk.Align.CENTER)
+        spin = ui.progress.Spinner(spinning=True, valign=Gtk.Align.CENTER)
         buttons = Gtk.Box(spacing=8, valign=Gtk.Align.CENTER)
         row.add_suffix(spin)
         row.add_suffix(buttons)
@@ -3310,29 +3310,12 @@ class Settings(Adw.ApplicationWindow):
         row.add_suffix(btn)
         row.set_activatable_widget(btn)
         shell.add(row)
-        # detailed logs (sonata2/logs.py): hidden until the "Sonata 2 desktop"
-        # line is clicked 7 times, like Android's build number
+        # logs (sonata2/logs.py): off by default (Vini); on, kept in ~/.cache/sonata2
         from .. import logs
-        dev = logs.dev_install()
-        logs_row = switch_row("Detailed Logs", logs.verbose(), lambda on: self._set_detailed_logs(on, logs_row),
-                              subtitle="Always on: development install" if dev else
-                              "For finding problems: window, timing and component logs in ~/.cache/sonata2")
-        logs_row.set_sensitive(not dev)
-        logs_row.set_visible(logs.verbose())
+        logs_row = switch_row("Logs", logs.verbose(), lambda on: self._set_logs(on, logs_row),
+                              subtitle="Keep detailed logs in ~/.cache/sonata2 for finding problems. "
+                                       "Off, only errors are logged, in memory, until you log out.")
         shell.add(logs_row)
-        taps = {"n": 0, "t": 0.0}
-
-        def tapped(*_a):
-            now = time.monotonic()
-            taps["n"] = taps["n"] + 1 if now - taps["t"] < 1.5 else 1
-            taps["t"] = now
-            if taps["n"] >= 7 and not logs_row.get_visible():
-                taps["n"] = 0
-                logs_row.set_visible(True)
-                self.toast("Detailed Logs is now in About")
-        click = Gtk.GestureClick()
-        click.connect("released", tapped)
-        sub.add_controller(click)
         sub.logs_row = logs_row                    # (tests)
         reset = group("Reset", "Both ask first, then you log out and back in.")
         for title, subtitle, what in (
@@ -3450,10 +3433,10 @@ class Settings(Adw.ApplicationWindow):
         system.run_async(apply, None)
         self.toast("Apps pick it up when they open again")
 
-    def _set_detailed_logs(self, on, row):
+    def _set_logs(self, on, row):
         from .. import logs
         logs.set_verbose(on)
-        self.ask_restart("sonata", "Detailed logs " + ("on" if on else "off"))
+        self.ask_restart("sonata", "Logs " + ("on" if on else "off"))
 
 
 def settings_desktop_file(command: str) -> str:

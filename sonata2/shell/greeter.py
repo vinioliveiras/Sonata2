@@ -383,7 +383,7 @@ class Greeter:
         self.entry.add(entry)
         entry.connect("activate", lambda *_: self._login())
         # the field turns into a spinner while logging in (macOS)
-        progress = self.progress.add(Gtk.Spinner(css_classes=["gr-spinner"], halign=Gtk.Align.CENTER,
+        progress = self.progress.add(ui.progress.Spinner(css_classes=["gr-spinner"], halign=Gtk.Align.CENTER,
                                                  valign=Gtk.Align.CENTER))
         slot = self.slot.add(Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE,
                                        transition_duration=220, halign=Gtk.Align.CENTER))

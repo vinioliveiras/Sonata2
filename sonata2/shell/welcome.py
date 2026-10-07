@@ -14,6 +14,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import intro, layer  # noqa: E402
+from ..ui.progress import Spinner  # noqa: E402
 from .loginui import Backdrop, avatar, wallpaper_texture  # noqa: E402
 
 WAIT_FOR = ("wallpaper", "topbar", "dock", "launchpad")
@@ -50,7 +51,7 @@ class Welcome:
                           valign=Gtk.Align.CENTER, css_classes=["gr-fade-in"])
             col.append(avatar())
             col.append(Gtk.Label(label=GLib.get_real_name() or GLib.get_user_name(), css_classes=["lk-name"]))
-            spin = Gtk.Spinner(css_classes=["gr-spinner"], halign=Gtk.Align.CENTER, margin_top=8, spinning=True)
+            spin = Spinner(css_classes=["gr-spinner"], halign=Gtk.Align.CENTER, margin_top=8, spinning=True)
             col.append(spin)                    # macOS: a spinner while the desktop loads
             over.add_overlay(col)
         win.set_child(over)

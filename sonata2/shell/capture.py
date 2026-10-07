@@ -66,6 +66,11 @@ window.sonata-rec, window.sonata-rec > contents { background: none; box-shadow: 
 """, key="capture")
 
 
+def _logs_path(name: str) -> str:
+    from .. import logs
+    return logs.path(name)
+
+
 _SPECIAL = {"desktop": GLib.UserDirectory.DIRECTORY_DESKTOP, "documents": GLib.UserDirectory.DIRECTORY_DOCUMENTS,
             "pictures": GLib.UserDirectory.DIRECTORY_PICTURES, "videos": GLib.UserDirectory.DIRECTORY_VIDEOS}
 
@@ -680,7 +685,8 @@ class Capture:
         r["encoder"] = encoder
         cmd = recorder_command(self.rec_path, r["geo"], r["output"], r["audio"], encoder)
         try:
-            log = open(os.path.join(GLib.get_user_cache_dir(), "sonata2", "recorder.log"),
+            from .. import logs
+            log = open(logs.path("recorder.log"),
                        "a" if r.get("retry") else "w", encoding="utf-8")       # every try of this recording
         except OSError:
             log = subprocess.DEVNULL
@@ -735,7 +741,7 @@ class Capture:
         nc = getattr(self.bar, "notifications", None)
         if nc:
             nc.notify("Screen Recording", 0, "dialog-warning", "Screen recording didn't start",
-                      "Details in ~/.cache/sonata2/recorder.log", [], {}, -1)
+                      "Details in " + _logs_path("recorder.log"), [], {}, -1)
         return False
 
     def stop_recording(self):

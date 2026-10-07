@@ -31,7 +31,7 @@ def folder() -> str:
 
 
 def log_dir() -> str:
-    return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "sonata2")
+    return logs.log_dir()
 
 
 CRASH = "last-crash"                 # written by tools/sonata-session: "<epoch> <exit code>"

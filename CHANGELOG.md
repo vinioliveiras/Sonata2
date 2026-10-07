@@ -2,7 +2,16 @@
 
 ## Unreleased
 
+### Changes
+- Logs are off by default: Settings > About > Logs. Off, only errors are
+  logged, in memory, until you log out; on, detailed logs are kept in
+  ~/.cache/sonata2 (it used to be always on in a git clone, and hidden
+  behind seven clicks otherwise).
+
 ### Fixes
+- Spinners are back (the lock and login screens', Settings'...): Sonata
+  draws its own instead of the icon theme's, which adwaita-icon-theme 51
+  no longer has.
 - Maximized or restored, a slow app's title bar (Claude, other Electron
   apps) no longer stays at the old width: its frame is redrawn again a
   while after the zoom.

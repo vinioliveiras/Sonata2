@@ -148,8 +148,8 @@ class ScreenSharing:
         cmd = ["wayvnc", "-C", write_config()]
         if want["output"]:
             cmd += ["-o", want["output"]]
-        log = open(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
-                                "sonata2", "screen-sharing.log"), "a")
+        from .. import logs
+        log = open(logs.path("screen-sharing.log"), "a")
         try:
             self.proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
         except OSError as e:

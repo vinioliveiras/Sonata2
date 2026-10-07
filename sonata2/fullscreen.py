@@ -75,7 +75,7 @@ def looks_like_game(view, screen) -> bool:
     return bool(fixed and w >= MIN_GAME[0] and h >= MIN_GAME[1])
 
 
-LOG = os.path.join(GLib.get_user_cache_dir(), "sonata2", "windows.log")
+LOG = os.path.join(logs.log_dir(), "windows.log")
 LOG_LINES = 400
 
 

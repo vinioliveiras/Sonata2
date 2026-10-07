@@ -25,6 +25,7 @@ import sys
 from gi.repository import GLib
 
 from .. import config
+from .. import logs as _logs
 from . import pactl_watch
 
 BANDS = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
@@ -58,7 +59,7 @@ DEFAULTS = {"outputs": {}}      # key -> {"on": bool, "preset": str, "gains": [1
 PREFIX = "sonata-eq"            # node names; system.py hides them from the output lists
 RUN_CONF = os.path.join(GLib.get_user_runtime_dir() or "/tmp", "sonata2-equalizer.conf")
 # the chain process's own output (errors loading the chain, WirePlumber links)
-LOG = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "sonata2", "equalizer.log")
+LOG = os.path.join(_logs.log_dir(), "equalizer.log")
 
 
 def _log(*a, error=False) -> None:

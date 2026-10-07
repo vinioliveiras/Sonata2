@@ -55,7 +55,8 @@ def launched_at(key: str) -> float:
 
 def log(text: str) -> None:
     """~/.cache/sonata2/quit.log: what was quit and why not (small, rotated)."""
-    path = _cache("quit.log")
+    from .. import logs
+    path = logs.path("quit.log")
     try:
         if os.path.getsize(path) > 200_000:
             os.replace(path, path + ".old")

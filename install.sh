@@ -315,9 +315,14 @@ EOF
 cat > "$tmp/sonata-session-launcher" <<EOF
 #!/bin/sh
 # Starts a Sonata session (the login screen's "Sonata" entry runs this).
-# Everything up to Wayfire's start is traced to ~/.cache/sonata2/login.log
-# (Wayfire and the shell then log to session.log next to it).
-logdir="\${XDG_CACHE_HOME:-\$HOME/.cache}/sonata2"; mkdir -p "\$logdir"
+# Everything up to Wayfire's start is traced to login.log (Wayfire and the
+# shell then log to session.log next to it): in memory, or ~/.cache/sonata2
+# with Settings > About > Logs on (sonata2/logs.py).
+logdir="\${XDG_RUNTIME_DIR:-/tmp}/sonata2-logs"
+if [ "\${SONATA_DEBUG:-}" = 1 ] || [ -e "\${XDG_CONFIG_HOME:-\$HOME/.config}/sonata2/debug-logging" ]; then
+    logdir="\${XDG_CACHE_HOME:-\$HOME/.cache}/sonata2"
+fi
+mkdir -p "\$logdir"
 exec > "\$logdir/login.log" 2>&1
 date; echo "XDG_SESSION_TYPE=\$XDG_SESSION_TYPE WAYLAND_DISPLAY=\$WAYLAND_DISPLAY"
 export PATH="$BIN:\$PATH" SONATA2_LAUNCHER="$BIN/sonata2"
