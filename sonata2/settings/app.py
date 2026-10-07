@@ -2227,14 +2227,21 @@ class Settings(Adw.ApplicationWindow):
         the portals; a switch per app (permstore.py)."""
         from ..backend import permstore
         from .. import apps
-        grp = group("App Permissions", "Apps installed with Flatpak ask before using these. "
-                                       "Other apps aren't sandboxed.")
+        grp = group("App Permissions", "Apps installed with Flatpak ask before using these. Other apps: "
+                                       "open one below to choose what it may use.")
         from .. import appperms
         ask = switch_row("Ask before apps use the camera, microphone, network…", appperms.asking(),
                          appperms.set_asking,
                          subtitle="A new app asks the first time it opens; off: apps get access without asking")
         ask.set_subtitle_lines(0)
         grp.add(ask)
+        from ..backend import location
+        if location.available():
+            loc = switch_row("Location Services", location.enabled(), lambda on: self._set_location(loc, on),
+                             subtitle="Off: no app gets your location, installed from packages or Flatpak "
+                                      "(asks for your password)")
+            loc.set_subtitle_lines(0)
+            grp.add(loc)
         for key, title, entries in permstore.all_permissions():
             exp = Adw.ExpanderRow(title=title, use_markup=False,
                                   subtitle=(f"{len(entries)} app" + ("s" if len(entries) != 1 else ""))
@@ -2249,6 +2256,17 @@ class Settings(Adw.ApplicationWindow):
                 exp.add_row(row)
             grp.add(exp)
         return grp
+
+    def _set_location(self, row, on) -> None:
+        from ..backend import location
+
+        def done(ok):
+            if not ok:                               # cancelled or failed: the switch as it is
+                row.quiet = True
+                row.set_active(not on)
+                row.quiet = False
+                self.toast("Location Services wasn't changed")
+        system.run_async(location.set_enabled, done, on)
 
     def _firewall_group(self):
         """macOS' Firewall: ufw or firewalld, on or off (pkexec asks the password)."""

@@ -81,8 +81,12 @@ def permissions(o, info=None) -> list:
         if info is None or o is None:
             return []
         from .. import appperms
+        from . import location
         refused = appperms.limits(info.get_id())
-        return [(k, t, k not in refused) for k, t in NATIVE]
+        out = [(k, t, k not in refused) for k, t in NATIVE]
+        if location.available():                  # GeoClue's own per-app setting (location.py)
+            out.append(("location", "Location", location.allowed(info.get_id())))
+        return out
     ctx = _context(_run(["flatpak", "info", "--show-permissions", o.name]))
     out = []
     for key, title, how in PERMISSIONS:
@@ -109,6 +113,9 @@ def set_permission(o, key: str, on: bool, info=None) -> bool:
     if o is None or o.kind != "flatpak":
         if o is None or info is None:
             return False
+        if key == "location":
+            from . import location
+            return location.set_app(info.get_id(), on)
         from .. import appperms
         appperms.set_limit(info.get_id(), key, not on)
         return True

@@ -10,6 +10,9 @@
 - Settings > Sound > "Don't let apps change the volume" (off by default):
   an app turning a speaker or microphone down -- automatic gain in a call
   -- is put back at once.
+- Settings > Apps > Location Services: off, no app gets your location
+  (Flatpak or not); and a Location switch on each packaged app's page.
+  Sonata writes GeoClue's settings (your password is asked).
 
 ### Fixes
 - Alerts no longer crash with libadwaita 1.5 (Ubuntu 24.04): their fixed

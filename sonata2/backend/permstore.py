@@ -13,7 +13,7 @@ TIMEOUT_MS = 2000
 
 # (key, title, table, id, "allowed" value)
 KINDS = (("camera", "Camera", "devices", "camera", "yes"),
-         ("location", "Location Services", "location", "location", None),
+         ("location", "Location", "location", "location", None),
          ("screenshot", "Screenshots", "screenshot", "screenshot", "yes"),
          ("notifications", "Notifications", "notifications", "notification", "yes"),
          ("background", "Running in the Background", "background", "background", "yes"))

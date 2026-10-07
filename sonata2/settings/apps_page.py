@@ -112,6 +112,8 @@ class AppsPage:
                 app["perms"].set_description(
                     "Applied when the app is opened from Sonata (the Dock, Apps, search) the next time. "
                     "Home Folder off: it gets a folder of its own instead of yours."
+                    + (" Location changes at once (asks for your password)."
+                       if any(k == "location" for k, _t, _o in res["perms"]) else "")
                     + ("" if sandbox.available() else " Needs bubblewrap (./install.sh installs it)."))
         else:
             note = Adw.ActionRow(title="Asked by the site" if web else "Part of Sonata", use_markup=False,
@@ -140,8 +142,32 @@ class AppsPage:
         applock.ask_unlock(info, done)
 
     def set_permission(self, app, key, on) -> None:
-        system.run_async(lambda: appmanage.set_permission(app["owner"], key, on, app["info"]),
-                         lambda ok: ok or self.settings.toast("Couldn't change that permission"))
+        def done(ok):
+            if ok:
+                return
+            self.settings.toast("Couldn't change that permission")
+            row = next((r for r in self._perm_rows(app) if getattr(r, "key", None) == key), None)
+            if row is not None and app is self.app:      # (Location: the password cancelled)
+                row.quiet = True
+                row.set_active(not on)
+                row.quiet = False
+        system.run_async(lambda: appmanage.set_permission(app["owner"], key, on, app["info"]), done)
+
+    @staticmethod
+    def _perm_rows(app) -> list:
+        out, c = [], None
+        listbox = app["perms"]
+        stack = [listbox]
+        while stack:                                        # the switch rows inside the group
+            w = stack.pop()
+            c = w.get_first_child()
+            while c is not None:
+                if getattr(c, "key", None) is not None:
+                    out.append(c)
+                else:
+                    stack.append(c)
+                c = c.get_next_sibling()
+        return out
 
     def ask_clear(self):
         app = self.app
