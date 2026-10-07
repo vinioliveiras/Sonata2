@@ -507,6 +507,9 @@ class Settings(Adw.ApplicationWindow):
             self.rows[sid] = row
         self.listbox.connect("row-selected", lambda _lb, r: r and getattr(r, "sid", None) and
                              self.select(r.sid, from_sidebar=True))
+        # the section you're in, clicked again: back to its first page (Vini: from an app in Apps)
+        self.listbox.connect("row-activated", lambda _lb, r: getattr(r, "sid", None) == self.current and
+                             self.pop_detail(r.sid))
         box.append(self.listbox)                    # the selection jumps: no slide (Vini)
         self.listbox.set_vexpand(True)
         tv.set_content(Gtk.ScrolledWindow(child=box, hscrollbar_policy=Gtk.PolicyType.NEVER))
@@ -1549,7 +1552,8 @@ class Settings(Adw.ApplicationWindow):
     def _page_apps(self):
         from .apps_page import AppsPage
         self.apps_page = AppsPage(self)
-        return self.apps_page.groups()
+        # what apps may use lives here, with the apps (Vini) -- not in Security & Privacy
+        return [self._permissions_group()] + self.apps_page.groups()
 
     def _page_appicons(self):
         from .appicons_page import AppIconsPage
@@ -2196,7 +2200,7 @@ class Settings(Adw.ApplicationWindow):
                                 lambda on: system.set_gsetting("org.gnome.system.location", "enabled",
                                                                "true" if on else "false"),
                                 subtitle="Apps may ask for your location (GeoClue)"))
-        return [gen, priv, self._permissions_group(), self._firewall_group(), self._encryption_group(),
+        return [gen, priv, self._firewall_group(), self._encryption_group(),
                 self._usb_group(sec), self._keyring_group()]
 
     def _permissions_group(self):

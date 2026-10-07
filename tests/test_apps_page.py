@@ -195,11 +195,34 @@ class PageTest(unittest.TestCase):
         with mock.patch.object(A, "set_permission", return_value=True) as setp:
             self.page.set_permission(self.page.app, "network", False)
             settle(200)
-        setp.assert_called_once_with(FLATPAK, "network", False)
+        self.assertEqual(setp.call_args[0][:3], (FLATPAK, "network", False))
 
-    def test_not_sandboxed_says_so(self):
+    def test_sonatas_own_apps_have_none(self):
         self.open(owner=PACKAGE, perms=[])
-        self.assertIn("Flatpak", self._texts(self.page.app["perms"]))
+        self.assertIn("Part of Sonata", self._texts(self.page.app["perms"]))
+
+    def test_packaged_app_permissions(self):
+        """Vini: an app's permissions managed in it -- packaged apps too."""
+        self.open(owner=PACKAGE, perms=A.permissions(PACKAGE, FakeInfo()))
+        texts = self._texts(self.page.app["perms"])
+        for t in ("Camera", "Sound & Microphone", "Network", "Home Folder"):
+            self.assertIn(t, texts)
+        self.assertIn("opened from Sonata", self.page.app["perms"].get_description())
+        with mock.patch.object(A, "set_permission", wraps=A.set_permission) as setp:
+            self.page.set_permission(self.page.app, "network", False)
+            settle(200)
+        self.assertEqual(setp.call_args[0][:3], (PACKAGE, "network", False))
+        from sonata2 import appperms
+        self.assertEqual(appperms.limits("org.test.App.desktop"), ["network"])
+        appperms.set_limit("org.test.App", "network", False)
+        self.assertEqual(appperms.limits("org.test.App"), [])
+
+    def test_permissions_live_in_apps(self):
+        """Vini: app permission options belong in Apps, not Security & Privacy."""
+        import inspect
+        from sonata2.settings import app as st
+        self.assertIn("_permissions_group", inspect.getsource(st.Settings._page_apps))
+        self.assertNotIn("_permissions_group", inspect.getsource(st.Settings._page_privacy))
 
     def _texts(self, grp):
         out, stack = [], [grp]
@@ -234,6 +257,13 @@ class PageTest(unittest.TestCase):
         self.assertTrue(lock.get_active())                    # stays on until the password
         ask.call_args[0][1]()
         self.assertFalse(lock.get_active())
+
+    def test_same_section_clicked_again_returns_to_the_list(self):
+        """Vini: in an app's page, clicking Apps in the sidebar goes back to Apps."""
+        tv = self.open()
+        self.w.listbox.emit("row-activated", self.w.rows["launchpad"])
+        self.assertIs(tv.get_content(), tv.main)
+        self.assertFalse(tv.back.get_visible())
 
     def test_another_section_returns_to_the_list(self):
         tv = self.open()

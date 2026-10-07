@@ -1,4 +1,4 @@
-"""Ask before apps use things (Vini): Settings > Security & Privacy >
+"""Ask before apps use things (Vini): Settings > Apps >
 "Ask before apps use the camera, microphone, network…", on by default.
 
 On: a newly installed Flatpak app, the first time it opens, shows what
@@ -16,7 +16,7 @@ Apps already installed when this came are taken as reviewed.
 from . import config
 
 NAME = "appperms"
-DEFAULTS = {"ask": True, "reviewed": None}
+DEFAULTS = {"ask": True, "reviewed": None, "limits": {}}
 ASKED = ("microphone", "network", "files")        # asked at the first open (overrides)
 
 
@@ -32,9 +32,30 @@ def set_asking(on: bool) -> None:
     config.update(NAME, ask=bool(on))
 
 
+def limits(app_id: str) -> list:
+    """What a packaged app may not use (Settings > Apps > the app): camera,
+    microphone, network, files -- enforced when Sonata opens it."""
+    did = (app_id or "").removesuffix(".desktop")
+    got = (_load().get("limits") or {}).get(did, [])
+    return [k for k in got if isinstance(k, str)] if isinstance(got, list) else []
+
+
+def set_limit(app_id: str, key: str, refused: bool) -> None:
+    did = (app_id or "").removesuffix(".desktop")
+    data = _load()
+    allm = dict(data.get("limits") or {})
+    keep = [k for k in limits(did) if k != key] + ([key] if refused else [])
+    if keep:
+        allm[did] = keep
+    else:
+        allm.pop(did, None)
+    config.update(NAME, limits=allm)
+
+
 def flatpak_id(info) -> str:
     from .backend import uninstall
-    path = (info.get_filename() or "") if hasattr(info, "get_filename") else ""
+    from .apps import app_filename                # (GioUnix binds get_filename unbound)
+    path = app_filename(info)
     if not path:
         return ""
     import os

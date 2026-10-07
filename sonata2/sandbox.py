@@ -53,10 +53,64 @@ def command(info, home: str) -> list:
             "--setenv", "HOME", real_home, "--chdir", real_home, "--", *argv]
 
 
-def exec_args(line: str) -> list:
-    """An Exec line opening no file: its field codes (%U, %f, --uri=%U...) out."""
+def restricted_command(info, refused, uris=()) -> list:
+    """argv: a packaged app kept from what it may not use (appperms.limits):
+    network (its own empty network), camera (/dev/video*, /dev/media*
+    hidden), microphone (and sound: the PipeWire / PulseAudio sockets and
+    /dev/snd hidden), files (a home of its own, kept between opens, in
+    ~/.local/share/sonata2/app-homes/<app>)."""
+    import glob
+    argv = exec_args(info.get_commandline() or "", uris)
+    if not argv:
+        return []
+    out = ["bwrap", "--dev-bind", "/", "/"]
+    if "network" in refused:
+        out.append("--unshare-net")
+    if "camera" in refused:
+        for dev in sorted(glob.glob("/dev/video*") + glob.glob("/dev/media*")):
+            out += ["--ro-bind", "/dev/null", dev]
+    if "microphone" in refused:
+        rt = GLib.get_user_runtime_dir() or ""
+        for sock in glob.glob(os.path.join(rt, "pipewire-*")):
+            if not sock.endswith(".lock"):
+                out += ["--ro-bind", "/dev/null", sock]
+        if os.path.isdir(os.path.join(rt, "pulse")):
+            out += ["--tmpfs", os.path.join(rt, "pulse")]
+        if os.path.isdir("/dev/snd"):
+            out += ["--tmpfs", "/dev/snd"]
+    if "files" in refused:
+        home = GLib.get_home_dir()
+        own = os.path.join(GLib.get_user_data_dir(), "sonata2", "app-homes",
+                           (info.get_id() or "app").removesuffix(".desktop"))
+        os.makedirs(own, mode=0o700, exist_ok=True)
+        out += ["--bind", own, home]
+    return out + ["--", *argv]
+
+
+def run_restricted(info, refused, uris=(), launch_env=None) -> bool:
+    argv = restricted_command(info, refused, uris)
+    if not argv or not available():
+        return False
+    launcher = Gio.SubprocessLauncher.new(Gio.SubprocessFlags.NONE)
+    for k, v in (launch_env or {}).items():
+        launcher.setenv(k, v, True)
+    try:
+        launcher.spawnv(argv)
+        return True
+    except GLib.Error as e:
+        print(f"sonata2: restricted launch: {e.message}", flush=True)
+        return False
+
+
+def exec_args(line: str, uris=()) -> list:
+    """An Exec line with its field codes (%U, %f, --uri=%U...) filled with
+    `uris` (file paths for %f/%F), or out when there are none."""
     out = []
     for a in shlex.split(line):
+        if a in ("%U", "%F", "%u", "%f") and uris:
+            files = [Gio.File.new_for_uri(u).get_path() or u if "%f" in a.lower() else u for u in uris]
+            out += files if a in ("%U", "%F") else files[:1]
+            continue
         b = re.sub(r"%[fFuUdDnNickvm]", "", a).replace("%%", "%")
         if b and not (b != a and b.endswith("=")):
             out.append(b)

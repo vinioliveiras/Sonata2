@@ -86,7 +86,7 @@ def owner(info) -> Optional[Owner]:
     did = info.get_id() or ""
     if did.startswith(apps.PROTECTED):
         return None                                   # Files, Settings, Launchpad...: part of Sonata
-    listed = info.get_filename() or ""
+    listed = apps.app_filename(info)                  # (GioUnix binds get_filename unbound)
     if not listed:
         return None
     path = os.path.realpath(listed)

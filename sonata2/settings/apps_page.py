@@ -84,7 +84,7 @@ class AppsPage:
         o = U.owner(info)
         dirs = appmanage.data_dirs(info, o)
         return {"owner": o, "size": appmanage.app_size(o), "dirs": dirs,
-                "data": appmanage.folder_size(dirs), "perms": appmanage.permissions(o)}
+                "data": appmanage.folder_size(dirs), "perms": appmanage.permissions(o, info)}
 
     def _looked(self, app, res) -> None:
         if app is not self.app or res is None:          # another app opened meanwhile
@@ -103,11 +103,17 @@ class AppsPage:
                 row = switch_row(title, on, lambda v, k=key: self.set_permission(app, k, v))
                 row.key = key
                 app["perms"].add(row)
-            app["perms"].set_description("Changes take effect the next time the app opens.")
+            if o.kind == "flatpak":
+                app["perms"].set_description("Changes take effect the next time the app opens.")
+            else:                                  # a packaged app: Sonata keeps it out when it opens it
+                from .. import sandbox
+                app["perms"].set_description(
+                    "Applied when the app is opened from Sonata (the Dock, Apps, search) the next time. "
+                    "Home Folder off: it gets a folder of its own instead of yours."
+                    + ("" if sandbox.available() else " Needs bubblewrap (./install.sh installs it)."))
         else:
-            note = Adw.ActionRow(title="Not sandboxed", use_markup=False,
-                                 subtitle="Only Flatpak apps can be kept from the camera, microphone, "
-                                          "network, location or your files; this one uses them freely.")
+            note = Adw.ActionRow(title="Part of Sonata", use_markup=False,
+                                 subtitle="Sonata's own apps can use what Sonata uses.")
             note.set_subtitle_lines(0)
             app["perms"].add(note)
         app["clear"].set_subtitle(", ".join(home_path(d) for d in res["dirs"]) if res["dirs"]
@@ -131,7 +137,7 @@ class AppsPage:
         applock.ask_unlock(info, done)
 
     def set_permission(self, app, key, on) -> None:
-        system.run_async(lambda: appmanage.set_permission(app["owner"], key, on),
+        system.run_async(lambda: appmanage.set_permission(app["owner"], key, on, app["info"]),
                          lambda ok: ok or self.settings.toast("Couldn't change that permission"))
 
     def ask_clear(self):

@@ -27,8 +27,8 @@ class UninstallTest(unittest.TestCase):
         self.assertIn("--user", o.steps()[0])
         # system Flatpak: the exported entry is a link into flatpak/app/<id>/...
         root = tempfile.mkdtemp()
-        real = entry(os.path.join(root, "flatpak", "app", "org.gimp.GIMP", "current", "active", "export",
-                                  "share", "applications"), "org.gimp.GIMP").get_filename()
+        real = apps.app_filename(entry(os.path.join(root, "flatpak", "app", "org.gimp.GIMP", "current", "active",
+                                                "export", "share", "applications"), "org.gimp.GIMP"))
         exports = os.path.join(root, "flatpak", "exports", "share", "applications")
         os.makedirs(exports)
         os.symlink(real, os.path.join(exports, "org.gimp.GIMP.desktop"))

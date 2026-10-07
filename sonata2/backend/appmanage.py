@@ -26,7 +26,8 @@ from . import permstore
 # used), else a Flatpak override (context key, value)
 PERMISSIONS = (
     ("camera", "Camera", "store"),
-    ("microphone", "Microphone", ("sockets", "pulseaudio")),
+    # (one socket for both: no microphone means no sound either -- said so)
+    ("microphone", "Sound & Microphone", ("sockets", "pulseaudio")),
     ("network", "Network", ("shared", "network")),
     ("location", "Location", "store"),
     ("background", "Running in the Background", "store"),
@@ -67,10 +68,21 @@ def _has(ctx: dict, key: str, value: str) -> bool:
     return value in vals
 
 
-def permissions(o) -> list:
-    """[(key, title, on)] for a Flatpak app; [] for any other."""
+# Apps from packages: what Sonata can keep from them when it opens them
+# (appperms.limits, enforced by sandbox.restricted_command)
+NATIVE = (("camera", "Camera"), ("microphone", "Sound & Microphone"), ("network", "Network"),
+          ("files", "Home Folder"))
+
+
+def permissions(o, info=None) -> list:
+    """[(key, title, on)]: a Flatpak app's; a packaged app's (given its
+    info) the ones Sonata enforces when it opens it; [] for Sonata's own."""
     if o is None or o.kind != "flatpak":
-        return []
+        if info is None or o is None:
+            return []
+        from .. import appperms
+        refused = appperms.limits(info.get_id())
+        return [(k, t, k not in refused) for k, t in NATIVE]
     ctx = _context(_run(["flatpak", "info", "--show-permissions", o.name]))
     out = []
     for key, title, how in PERMISSIONS:
@@ -93,9 +105,13 @@ def override_args(key: str, on: bool) -> list:
     return [f"--{(FLAG if on else NOT_FLAG)[ctx]}={value}"]
 
 
-def set_permission(o, key: str, on: bool) -> bool:
+def set_permission(o, key: str, on: bool, info=None) -> bool:
     if o is None or o.kind != "flatpak":
-        return False
+        if o is None or info is None:
+            return False
+        from .. import appperms
+        appperms.set_limit(info.get_id(), key, not on)
+        return True
     how = next(h for k, _t, h in PERMISSIONS if k == key)
     if how == "store":
         return permstore.set_allowed(key, o.name, on)

@@ -76,6 +76,16 @@ def _gpu_aware(method):
                 return True
         except Exception as e:
             print(f"sonata2: app permissions: {e}")
+        try:                                      # a packaged app kept from the camera, network... (Settings > Apps)
+            from . import appperms, sandbox
+            refused = appperms.limits(self.get_id() or "")
+            if refused and not appperms.flatpak_id(self):
+                uris = [f.get_uri() if hasattr(f, "get_uri") else f for f in (arg or [])]
+                if sandbox.run_restricted(self, refused, uris):
+                    return True
+                print(f"sonata2: {self.get_id()}: limits not applied (bubblewrap missing?)")
+        except Exception as e:
+            print(f"sonata2: app limits: {e}")
         try:
             from .shell.quitonclose import mark_launch
             mark_launch(self.get_id() or "")          # a quit pending for it is called off

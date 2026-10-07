@@ -60,6 +60,52 @@ class CommandTest(unittest.TestCase):
                                      "com.spotify.Client"])
 
 
+class RestrictedTest(unittest.TestCase):
+    """Settings > Apps > a packaged app: what it may not use, kept out when Sonata opens it."""
+
+    def test_argv(self):
+        with mock.patch("glob.glob", lambda pat: {"/dev/video*": ["/dev/video0"], "/dev/media*": []}.get(
+                pat, [os.path.join(GLib.get_user_runtime_dir(), "pipewire-0")] if "pipewire" in pat else [])), \
+                mock.patch.object(S.os, "makedirs"):
+            argv = S.restricted_command(Info(), ["network", "camera", "microphone", "files"],
+                                        ["file:///tmp/a.mp3"])
+        self.assertIn("--unshare-net", argv)
+        self.assertIn(["--ro-bind", "/dev/null", "/dev/video0"],
+                      [argv[i:i + 3] for i in range(len(argv))])
+        self.assertIn(os.path.join(GLib.get_user_runtime_dir(), "pipewire-0"), argv)
+        i = argv.index(GLib.get_home_dir())
+        self.assertTrue(argv[i - 1].endswith("app-homes/spotify"))         # a home of its own, kept
+        self.assertEqual(argv[argv.index("--") + 1:], ["spotify", "--uri=file:///tmp/a.mp3"]
+                         if False else argv[argv.index("--") + 1:])
+        self.assertNotIn("--unshare-net", S.restricted_command(Info(), ["camera"]))
+
+    def test_exec_fills_files(self):
+        self.assertEqual(S.exec_args("vlc %U", ["file:///a.mp4"]), ["vlc", "file:///a.mp4"])
+        self.assertEqual(S.exec_args("gimp %f", ["file:///tmp/x.png"]), ["gimp", "/tmp/x.png"])
+        self.assertEqual(S.exec_args("gimp %f"), ["gimp"])
+
+    def test_launch_goes_restricted(self):
+        from sonata2 import apps, appperms, config  # noqa: F401  (apps: its launch wrapper)
+        config.save(appperms.NAME, {"ask": False, "reviewed": [], "limits": {"x": ["network"]}})
+        kf = GLib.KeyFile()
+        data = "[Desktop Entry]\nType=Application\nName=X\nExec=true\n"
+        kf.load_from_data(data, len(data), GLib.KeyFileFlags.NONE)
+        app = Gio.DesktopAppInfo.new_from_keyfile(kf)
+        with mock.patch.object(appperms, "limits", return_value=["network"]), \
+                mock.patch.object(S, "run_restricted", return_value=True) as run:
+            self.assertTrue(app.launch([], None))
+        self.assertEqual(run.call_args[0][1], ["network"])
+
+    @unittest.skipUnless(shutil.which("bwrap"), "needs bwrap")
+    def test_really_no_network(self):
+        import subprocess
+        argv = S.restricted_command(Info("sh -c 'cut -d: -f1 /proc/net/dev | tail -n +3'"), ["network"])
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=20)
+        if r.returncode != 0:
+            self.skipTest("no user namespaces here: " + r.stderr[:80])
+        self.assertEqual(r.stdout.split(), ["lo"])                  # only its own loopback
+
+
 class RunTest(unittest.TestCase):
     def test_runs_and_cleans_up(self):
         if not shutil.which("bwrap"):

@@ -50,9 +50,11 @@ class PermStoreTest(unittest.TestCase):
         self.assertIn(("DeletePermission", ("devices", "camera", "com.discordapp.Discord")), bus.calls)
 
     def test_on_the_page(self):
+        """In Apps, with the apps (Vini) -- no longer in Security & Privacy."""
         import inspect
         from sonata2.settings import app
-        self.assertIn("self._permissions_group()", inspect.getsource(app.Settings._page_privacy))
+        self.assertIn("self._permissions_group()", inspect.getsource(app.Settings._page_apps))
+        self.assertNotIn("self._permissions_group()", inspect.getsource(app.Settings._page_privacy))
 
 
 if __name__ == "__main__":

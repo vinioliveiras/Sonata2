@@ -62,8 +62,8 @@ SETTINGS_XML = """<node>
 APPEARANCE = "org.freedesktop.appearance"
 # accent colours as the portal spec wants them (sRGB 0..1), from Sonata's tokens
 # Access: "Allow X to use the camera / your location?" (camera and location
-# portals), Sonata's alert -- or granted at once when Settings > Security &
-# Privacy doesn't ask (appperms.py)
+# portals), Sonata's alert -- or granted at once when Settings > Apps
+# isn't set to ask (appperms.py)
 ACCESS_XML = """<node>
 <interface name="org.freedesktop.impl.portal.Access">
   <method name="AccessDialog">

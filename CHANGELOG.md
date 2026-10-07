@@ -10,11 +10,16 @@
   one to lock it, clear its data (to the Trash), uninstall it, and -- for
   Flatpak apps -- turn camera, microphone, network, location, running in
   the background, notifications and the home folder on or off.
-- Ask before apps use things (Settings > Security & Privacy, on by
-  default): a newly installed Flatpak app shows, the first time it opens,
+- Ask before apps use things (Settings > Apps, on by default): a newly installed Flatpak app shows, the first time it opens,
   what it wants of the microphone, network and home folder (uncheck to
   refuse); the camera and location ask in a Sonata alert when first used.
   Off: apps get access without asking.
+- Apps from the distro's packages get permissions too (Settings > Apps >
+  the app): camera, sound & microphone, network and home folder, kept from
+  the app when Sonata opens it (bubblewrap). Home Folder off: it gets a
+  folder of its own instead of yours.
+- App permissions all live in Settings > Apps (no longer in Security &
+  Privacy). Clicking the section you're in goes back to its first page.
 - Open in Sandbox (an app's menu in the Dock or Launchpad): the app opens
   with an empty home folder of its own -- none of your files, sign-ins or
   settings -- and everything it saved is deleted when it quits. The Dock
@@ -34,6 +39,10 @@
   is left alone.
 - A distro package that fails to set up no longer blocks the rest of the
   install (apt), and the installer says why a package was skipped.
+
+### Fixes
+- Uninstalling a Flatpak app, and its permissions, failed to find it on
+  GLib 2.80+ (its .desktop file wasn't read).
 
 ## 0.11.0-alpha -- 2026-10-06
 
