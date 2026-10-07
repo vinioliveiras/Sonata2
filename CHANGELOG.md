@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.13.0-alpha -- 2026-10-07
+
+Your devices keep their volume -- and apps can be kept from changing it --,
+Location Services gets a switch for every app, app icons fill their frame,
+and FPS measures your game.
+
 ### Changes
 - Each sound device keeps its own volume: what you set from Sonata (menu
   bar, Control Center, volume keys, Settings > Sound) is set again when
