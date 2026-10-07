@@ -11,6 +11,9 @@
 - Maximized or restored, a slow app's title bar (Claude, other Electron
   apps) no longer stays at the old width: its frame is redrawn again a
   while after the zoom.
+- A window brought back from maximized fits the work area (between the
+  menu bar and the Dock; the whole display when they hide): one bigger
+  than it no longer comes back under them -- and zooms like the others.
 
 ## 0.12.0-alpha -- 2026-10-07
 

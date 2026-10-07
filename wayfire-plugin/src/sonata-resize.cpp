@@ -387,6 +387,18 @@ bool past_workarea(int gx, int gy, int gw, int gh, int wx, int wy, int ww, int w
     return (gx < wx) || (gy < wy) || (gx + gw > wx + ww) || (gy + gh > wy + wh);
 }
 
+/* A window brought back from maximized fits the work area (Vini: one bigger
+ * than it came back under the Dock and the menu bar -- and, its size not
+ * changing on screen, without the zoom): no bigger than it, moved inside. */
+template<class N, class M>
+void fit_inside(N& gx, N& gy, N& gw, N& gh, M wx, M wy, M ww, M wh)
+{
+    gw = std::min<N>(gw, ww);
+    gh = std::min<N>(gh, wh);
+    gx = std::max<N>(wx, std::min<N>(gx, wx + ww - gw));
+    gy = std::max<N>(wy, std::min<N>(gy, wy + wh - gh));
+}
+
 /* The last press on a window's top edge (every display's plugin shares it). */
 static struct
 {
@@ -557,8 +569,43 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     wf::signal::connection_t<wf::view_tile_request_signal> on_tile_request =
         [=] (wf::view_tile_request_signal *ev)
     {
+        if ((ev->edges == 0) && ev->view && (ev->desired_size.width > 0))
+        {
+            auto wa = output->workarea->get_workarea();     // (the Dock hidden: the whole display)
+            auto& d = ev->desired_size;
+            fit_inside(d.x, d.y, d.width, d.height, wa.x, wa.y, wa.width, wa.height);
+            fit_restored_soon(ev->view);                     // in case another plugin took it first
+        }
+
         start_zoom(ev->view, ev->desired_size, ev->edges);
     };
+
+    wf::wl_timer<false> fit_timer;
+    std::weak_ptr<wf::view_interface_t> fit_view;
+
+    void fit_restored_soon(wayfire_toplevel_view v)
+    {
+        fit_view = v->shared_from_this();
+        fit_timer.disconnect();
+        fit_timer.set_timeout(50, [=] ()
+        {
+            auto t = toplevel_cast(fit_view.lock());
+            if (!t || !t->is_mapped() || t->pending_tiled_edges() || t->pending_fullscreen())
+            {
+                return;
+            }
+
+            auto wa = output->workarea->get_workarea();
+            auto g  = t->toplevel()->pending().geometry;
+            if (past_workarea(g.x, g.y, g.width, g.height, wa.x, wa.y, wa.width, wa.height))
+            {
+                fit_inside(g.x, g.y, g.width, g.height, wa.x, wa.y, wa.width, wa.height);
+                LOGI("sonata-resize: a restored window fitted into the work area ", g);
+                t->toplevel()->pending().geometry = g;
+                wf::get_core().tx_manager->schedule_object(t->toplevel());
+            }
+        });
+    }
     bool moved = false;                                  // past the dead zone this drag
     wf::option_wrapper_t<wf::color_t> fill{"sonata-resize/fill"};
     wf::option_wrapper_t<wf::color_t> border{"sonata-resize/border"};
@@ -1080,6 +1127,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         output->rem_binding(&activate_binding_preserve_aspect);
         refit_timer.disconnect();
         frame_timer.disconnect();
+        fit_timer.disconnect();
         for (auto& v : wf::get_core().get_all_views())
         {
             if (auto t = toplevel_cast(v); t && (t->get_output() == output))
@@ -1099,6 +1147,14 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         if (!zoom_enabled || !v || !v->is_mapped() || view || v->pending_fullscreen() ||
             (v->get_output() != output) || output->is_plugin_active("move"))
         {
+            /* (Vini: some sizes never zoomed -- which reason, in session.log) */
+            if (v && zoom_enabled)
+            {
+                LOGI("sonata-resize: no zoom (", view ? "resizing" : "",
+                    v->pending_fullscreen() ? "fullscreen" : "", (v->get_output() != output) ? "other display" : "",
+                    output->is_plugin_active("move") ? "moving" : "", ")");
+            }
+
             return;      // (a resize keeps its own ghost; a maximized window dragged off its place follows the pointer)
         }
 
