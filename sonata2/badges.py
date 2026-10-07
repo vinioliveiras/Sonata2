@@ -138,6 +138,28 @@ def webapp_of(argv) -> str:
     return ""
 
 
+def _host(s: str) -> str:
+    s = re.sub(r"<[^>]+>", "", s or "").strip().lower()
+    if "://" in s:
+        from urllib.parse import urlsplit
+        s = urlsplit(s).hostname or ""
+    return s.removeprefix("www.")
+
+
+def webapp_for_site(body: str, entries: dict) -> str:
+    """The web app (id) a browser notification came from, by the site line
+    Chrome puts first in its body ("web.whatsapp.com") -- when the sending
+    process can't tell (Chrome hands the notification to its own helper)."""
+    first = (body or "").strip().split("\n", 1)[0]
+    host = _host(first)
+    if not host or " " in host or "." not in host:
+        return ""
+    for app, entry in (entries or {}).items():
+        if isinstance(entry, dict) and _host(entry.get("url", "")) == host:
+            return app
+    return ""
+
+
 def cmdline(pid: int) -> list:
     try:
         with open(f"/proc/{int(pid)}/cmdline", "rb") as f:

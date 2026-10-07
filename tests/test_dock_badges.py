@@ -64,6 +64,35 @@ class PureTest(unittest.TestCase):
         self.assertEqual(B.webapp_of(["/opt/google/chrome/chrome", "--user-data-dir=/home/v/.config/chrome"]), "")
 
 
+class SiteTest(unittest.TestCase):
+    ENTRIES = {"waee32c088c": {"name": "WhatsApp", "url": "https://web.whatsapp.com/"},
+               "g1": {"name": "Gmail", "url": "https://mail.google.com/"}}
+
+    def test_site_line_finds_the_web_app(self):
+        """Vini: WhatsApp's notifications went to Chrome (badge 8 on Chrome)."""
+        self.assertEqual(B.webapp_for_site("web.whatsapp.com\n\nTava a dormir", self.ENTRIES), "waee32c088c")
+        self.assertEqual(B.webapp_for_site('<a href="https://web.whatsapp.com/">web.whatsapp.com</a>\n\nx',
+                                           self.ENTRIES), "waee32c088c")
+        self.assertEqual(B.webapp_for_site("www.mail.google.com\nhi", self.ENTRIES), "g1")
+        self.assertEqual(B.webapp_for_site("Hello there.\nweb.whatsapp.com", self.ENTRIES), "")
+        self.assertEqual(B.webapp_for_site("example.com\nhi", self.ENTRIES), "")
+
+    def test_chrome_notification_becomes_whatsapp(self):
+        s = N.Notifications.__new__(N.Notifications)
+        s.cfg = {"apps": {}}
+        s.notes, s._next, s._banners, s.nc, s.listeners = [], 1, {}, None, []
+        s._banner = mock.Mock()
+        with mock.patch("sonata2.webapps.apps", return_value=self.ENTRIES), \
+                mock.patch.object(N.apps, "lookup", return_value=object()), \
+                mock.patch.object(N.config, "save"), mock.patch.object(N.config, "load", return_value={"apps": {}}), \
+                mock.patch.object(B, "publish"):
+            s.notify("Google Chrome", 0, "", "Bruna", "web.whatsapp.com\n\nTava a dormir jaaa",
+                     ["default", "", "settings", "Settings"], {"desktop-entry": "google-chrome"}, -1)
+        n = s.notes[0]
+        self.assertEqual((n.desktop, n.app, n.body), (WEB, "WhatsApp", "Tava a dormir jaaa"))
+        self.assertEqual(n.actions, [("default", "")])
+
+
 class CardTest(unittest.TestCase):
     def test_tidy_web_app(self):
         body, acts = N.tidy("web.whatsapp.com\n\nTava a dormir jaaa", [("default", ""), ("settings", "Settings")], True)

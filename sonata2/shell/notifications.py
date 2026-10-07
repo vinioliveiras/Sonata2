@@ -384,6 +384,11 @@ class Notifications:
                  image if image.startswith("/") else "")
         from .. import webapps
         browser = any(b in (n.desktop + " " + n.app).lower() for b in BROWSERS)
+        if browser and not webapps.is_webapp(n.desktop):     # (Vini: WhatsApp's went to Chrome)
+            from .. import badges
+            web = badges.webapp_for_site(n.body, webapps.apps())
+            if web and apps.lookup(webapps.desktop_id(web)):
+                n.desktop, n.app = webapps.desktop_id(web), (webapps.get(web) or {}).get("name") or n.app
         n.body, n.actions = tidy(n.body, n.actions, webapps.is_webapp(n.desktop), browser)
         if locked(n.desktop, n.app):                    # its folder is locked: no banner, not in the list
             return nid
