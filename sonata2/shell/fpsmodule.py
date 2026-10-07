@@ -4,10 +4,12 @@ the default layout -- Add Controls). Games' frame rate through frame-pacer
 Without frame-pacer the choices are greyed out and the module offers to
 install it.
 
-Under the choices, a frame-time graph of the app in front (Vini: as tall as
-the other two-row modules): each frame's time over the last seconds, the
-limit's target as a dashed line, the average and the 1 % low. From
-sonata-corners (IPC sonata/fps with frametimes), read only while shown."""
+Under the choices, a frame-time graph of the app in front, named in the
+title row (Vini: as tall as the other two-row modules): its frame time over
+the last half minute -- one point per read, the average of the frames since
+the one before (Vini: frame by frame it ran by too fast) -- the limit's
+target as a dashed line, the average and the 1 % low. From sonata-corners
+(IPC sonata/fps with frametimes), read only while shown."""
 import math
 import statistics
 import gi
@@ -24,6 +26,7 @@ ui.register("""
 .cc-fps { padding-top: 5px; padding-bottom: 5px; }
 .cc-fps .cc-fps-cap { font-size: %(text_small)s; color: %(label_secondary)s; }
 .cc-fps .cc-fps-install { min-height: 0; padding: 0 8px; font-size: %(text_small)s; border-radius: 6px; }
+.cc-fps .cc-fps-app { font-size: %(text_small)s; color: %(label_secondary)s; }
 .cc-fps .cc-fps-live { font-size: %(text_small)s; font-weight: 600; font-feature-settings: "tnum"; }
 .cc-fps .ft-cap { font-size: 10px; color: %(label_secondary)s; font-feature-settings: "tnum"; margin: 2px 6px; }
 """, key="fpsmodule")
@@ -43,8 +46,11 @@ class FpsModule(Gtk.Box):
     def __init__(self):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=3, css_classes=["panel-module", "cc-fps"])
         head = Gtk.Box(spacing=6)
-        head.append(Gtk.Label(label="FPS Limit", xalign=0, hexpand=True, css_classes=["panel-module-title"],
-                              ellipsize=Pango.EllipsizeMode.END, width_chars=1))
+        head.append(Gtk.Label(label="FPS Limit", xalign=0, css_classes=["panel-module-title"]))
+        # the app being measured (Vini)
+        self.app = Gtk.Label(label="", xalign=0, hexpand=True, css_classes=["cc-fps-app"],
+                             ellipsize=Pango.EllipsizeMode.END, width_chars=1)
+        head.append(self.app)
         self.live = Gtk.Label(label="", css_classes=["cc-fps-live"])          # "58 fps"
         head.append(self.live)
         self.cap = Gtk.Label(label="games", css_classes=["cc-fps-cap"])
@@ -68,6 +74,7 @@ class FpsModule(Gtk.Box):
         self.append(over)
         self._poll = 0
         self._busy = False
+        self.history, self._app_id = [], None       # one point per read (the graph)
         self.connect("map", lambda *_: (self.update(), self._start()))
         self.connect("unmap", lambda *_: self._stop())
 
@@ -112,6 +119,8 @@ class FpsModule(Gtk.Box):
         """r: the plugin's answer (None: no plugin / no Wayfire)."""
         if not isinstance(r, dict) or "frametimes" not in r:
             self.graph.set_times([], "Update Sonata's Wayfire plugin (./install.sh)" if r is not None else "")
+            self.history, self._app_id = [], None
+            self.app.set_label("")
             self.live.set_label("")
             self.avg.set_label("")
             self.low.set_label("")
@@ -119,12 +128,18 @@ class FpsModule(Gtk.Box):
         times = [t for t in r.get("frametimes") or [] if isinstance(t, (int, float)) and t > 0]
         if not r.get("app-id") or len(times) < 2:
             self.graph.set_times([], "No app drawing in front")
+            self.history, self._app_id = [], None
+            self.app.set_label("")
             self.live.set_label("")
             self.cap.set_visible(fpslimit.installed())
             self.avg.set_label("")
             self.low.set_label("")
             return
-        self.graph.set_times(times)
+        if r["app-id"] != self._app_id:                  # another app in front: its own graph
+            self.history, self._app_id = [], r["app-id"]
+            self.app.set_label(app_name(r["app-id"]))
+        self.history = (self.history + [recent_average(times)])[-SHOWN:]
+        self.graph.set_times(self.history)
         avg, low = summary(times)
         self.live.set_label(f"{int(r.get('fps') or 0)} fps")
         self.avg.set_label(f"{avg:.1f} ms")
@@ -147,7 +162,32 @@ class FpsModule(Gtk.Box):
 
 
 POLL_MS = 250
-SHOWN = 240                        # frames on the graph (newest at the right)
+SHOWN = 120                        # points on the graph, one per read: 30 s (newest at the right)
+
+
+def recent_average(times) -> float:
+    """The average frame time of the frames drawn since the last read (the
+    newest ones adding up to POLL_MS)."""
+    total, picked = 0.0, []
+    for t in reversed(times):
+        picked.append(t)
+        total += t
+        if total >= POLL_MS:
+            break
+    return statistics.fmean(picked)
+
+
+def app_name(app_id: str) -> str:
+    """The app's name for a window's app_id (Steam games too)."""
+    from .. import apps, windowapps
+    did = apps.match_app_id(app_id)
+    info = apps.lookup(did) if did else None
+    if info is not None:
+        return info.get_display_name()
+    try:
+        return windowapps.describe(app_id)[0] or app_id
+    except Exception:
+        return app_id
 
 
 def read_frames():

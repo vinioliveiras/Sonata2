@@ -30,6 +30,10 @@
   shows an orange "S" on it meanwhile. Needs bubblewrap (installed by
   ./install.sh).
 
+### Control Center
+- FPS Limit names the app it's measuring, and its graph moves slower: the
+  last 30 seconds, a point every quarter second (it was frame by frame).
+
 ### Dock
 - An app opened from a Dock folder stays in it: the folder shows the
   running dot, and so does the app inside its panel. Clicking it there
