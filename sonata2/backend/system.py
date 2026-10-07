@@ -392,6 +392,10 @@ def set_volume(percent: Optional[int] = None, muted: Optional[bool] = None,
     ok = True
     if percent is not None:
         ok = _run(["wpctl", "set-volume", "-l", "1.0", node, f"{max(0, min(100, int(percent)))}%"])[0] == 0
+        kind = {"@DEFAULT_AUDIO_SINK@": "sink", "@DEFAULT_AUDIO_SOURCE@": "source"}.get(node)
+        if ok and kind:                          # kept for this device (devicevolume.py)
+            from . import devicevolume
+            devicevolume.remember(kind, percent)
     if muted is not None:
         ok = _run(["wpctl", "set-mute", node, "1" if muted else "0"])[0] == 0 and ok
     return ok

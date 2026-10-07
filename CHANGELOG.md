@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changes
+- Each sound device keeps its own volume: what you set from Sonata (menu
+  bar, Control Center, volume keys, Settings > Sound) is set again when
+  that device comes back -- a headset's microphone left at the maximum
+  stays there after it reconnects.
+
 ### Fixes
 - Alerts no longer crash with libadwaita 1.5 (Ubuntu 24.04): their fixed
   width is set only from libadwaita 1.6.

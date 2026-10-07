@@ -53,8 +53,9 @@ def external(name: str, props: dict) -> bool:
 
 
 class AudioFollow:
-    def __init__(self, info=node_info, get_default=None, set_default=None, enabled=None):
+    def __init__(self, info=node_info, get_default=None, set_default=None, enabled=None, restore=None):
         self.info = info
+        self.restore = restore or _restore_volume
         self.get_default = get_default or (lambda kind: _pactl("get-default-" + kind).strip())
         self.set_default = set_default or (lambda kind, name: _pactl("set-default-" + kind, name))
         self.enabled = enabled or _enabled
@@ -67,6 +68,9 @@ class AudioFollow:
         what, kind, index = m.group(1), m.group(2), int(m.group(3))
         if what == "new":
             self.added(kind, index)
+            found = self.info(kind, index)
+            if found:
+                self.restore(kind, found[0])          # its own volume again (devicevolume.py)
         else:
             self.removed(kind, index)
 
@@ -97,6 +101,13 @@ class AudioFollow:
         # only if it was in use (you may have chosen another meanwhile)
         if before and self.enabled() and self.get_default(kind) in (name, ""):
             self.set_default(kind, before)        # (gone too: WirePlumber picks one itself)
+
+
+def _restore_volume(kind: str, name: str) -> None:
+    """In its own thread: it waits for WirePlumber to restore its own first."""
+    from . import devicevolume
+    if devicevolume.wanted(kind, name) is not None:
+        threading.Thread(target=devicevolume.restore, args=(kind, name), daemon=True).start()
 
 
 def _enabled() -> bool:
