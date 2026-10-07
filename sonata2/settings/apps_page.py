@@ -35,7 +35,7 @@ class AppsPage:
 
     def groups(self) -> list:
         from .applist import AppList
-        self.list = AppList("Installed Apps", "Click an app to see its size, its data and what it may use.",
+        self.list = AppList("Installed Apps", "Click one for its size, data and permissions.",
                             self.open)
         self.rows = self.list.rows
         return [self.list.group]

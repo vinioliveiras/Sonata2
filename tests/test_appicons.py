@@ -188,6 +188,9 @@ class SettingsPageTest(unittest.TestCase):
         self.assertIn("appicons", [s[0] for s in st.SECTIONS])
 
     def test_rows_and_search(self):
+        """(the sidebar's search look: Vini)"""
+        self.assertIsInstance(self.page.search, __import__("gi.repository.Gtk", fromlist=["Gtk"]).SearchEntry)
+        self.assertTrue(self.page.search.has_css_class("st-search"))
         self.assertEqual(set(self.page.rows), {"org.test.App", "org.test.Two"})
         self.page.search.set_text("two")
         self.assertFalse(self.page.rows["org.test.App"].get_visible())

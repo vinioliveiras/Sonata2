@@ -20,6 +20,8 @@
   folder of its own instead of yours.
 - App permissions all live in Settings > Apps (no longer in Security &
   Privacy). Clicking the section you're in goes back to its first page.
+- Settings: every search field looks like the sidebar's (App Icons,
+  Installed Apps, Hide an App).
 - Open in Sandbox (an app's menu in the Dock or Launchpad): the app opens
   with an empty home folder of its own -- none of your files, sign-ins or
   settings -- and everything it saved is deleted when it quits. The Dock

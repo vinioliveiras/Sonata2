@@ -24,14 +24,16 @@ class AppList:
     on_activate(row); subtitle(row) -> text (None: no subtitle)."""
 
     def __init__(self, title, description, on_activate, subtitle=None):
-        from .app import group
+        from .app import group, search_entry
         self.on_activate, self.subtitle = on_activate, subtitle
         self.rows = {}
         self._focus = None
         self.group = group(title, description)
-        self.search = Adw.EntryRow(title="Search apps", use_markup=False)
+        # the sidebar's search look (Vini), at the list's top right
+        self.search = search_entry("Search apps")
+        self.search.set_valign(Gtk.Align.END)
         self.search.connect("changed", lambda e: self.filter(e.get_text()))
-        self.group.add(self.search)
+        self.group.set_header_suffix(self.search)
         self._pending = app_list()
         GLib.timeout_add(16, self._build_some)        # between frames (an idle can wait behind redraws)
 

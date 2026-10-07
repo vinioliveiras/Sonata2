@@ -184,6 +184,7 @@ row.st-sub-row { transition: opacity %(t_fast)s ease-out; }
 .st-card { padding: 10px 12px 6px 12px; }
 entry.st-search, .st-search { margin: 0 10px 6px 10px; min-height: 26px; border-radius: 7px; border: none;
   background: alpha(%(label)s, 0.07); box-shadow: none; font-size: %(text_body)s; }
+entry.st-search.inline, .st-search.inline { margin: 0 0 0 12px; min-width: 200px; }
 .st-card-title { font-weight: 700; }
 .st-card-sub { color: %(label_secondary)s; font-size: %(text_small)s; }
 .st-gap-row, .st-gap-row:hover { min-height: 8px; padding: 0; margin: 0; background: none; }
@@ -284,6 +285,13 @@ def _set_login_item(name, on) -> None:
     kf.set_boolean("Desktop Entry", "X-GNOME-Autostart-enabled", on)
     os.makedirs(user_dir, exist_ok=True)
     kf.save_to_file(os.path.join(user_dir, name))
+
+
+def search_entry(placeholder: str = "Search", inline: bool = True) -> Gtk.SearchEntry:
+    """Settings' search field: the sidebar's look everywhere (Vini) -- a
+    rounded grey field with the magnifier. inline: inside a section."""
+    return Gtk.SearchEntry(placeholder_text=placeholder,
+                           css_classes=["st-search"] + (["inline"] if inline else []))
 
 
 def badge(icon, color, big=False) -> Gtk.Box:
@@ -484,7 +492,7 @@ class Settings(Adw.ApplicationWindow):
         box.append(card)
         # Search, macOS Ventura style: filters the sections as you type;
         # Return opens the first match
-        self.search = Gtk.SearchEntry(placeholder_text="Search", css_classes=["st-search"])
+        self.search = search_entry("Search", inline=False)
         self.search.connect("search-changed", lambda *_: self._filter_sections())
         self.search.connect("activate", lambda *_: self._open_first_match())
         box.prepend(self.search)
@@ -3135,7 +3143,7 @@ class Settings(Adw.ApplicationWindow):
 
     def _pick_app_to_hide(self, anchor, installed, hidden) -> None:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        search = Gtk.SearchEntry(placeholder_text="Search")
+        search = search_entry("Search")
         box.append(search)
         lb = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
         names = sorted(((i.get_display_name(), d) for d, i in installed.items() if d not in hidden),
