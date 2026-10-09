@@ -1210,6 +1210,11 @@ class Settings(Adw.ApplicationWindow):
         for r in (limit, hud):
             r.set_sensitive(ok)
             g.add(r)
+        from .. import browsergpu
+        g.add(switch_row("WebGPU in Browsers", browsergpu.enabled(),
+                         browsergpu.set_enabled,
+                         subtitle="3D browser games in Chrome, Chromium and Brave. They then run through "
+                                  "XWayland (Vulkan). Restart the browser after changing it."))
         if not ok:
             row = Adw.ActionRow(title="frame-pacer isn't installed",
                                 subtitle="Downloaded from its GitHub releases into your home folder (no "

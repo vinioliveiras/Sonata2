@@ -190,9 +190,14 @@ def view_size(views, wm_class: str):
 
 
 def chromium_command(app: str, entry: dict, browser: str) -> list:
-    """The browser as this web app's window: its own profile, its own app id."""
+    """The browser as this web app's window: its own profile, its own app id.
+    With WebGPU for browser games on (browsergpu.py: X11 and Vulkan in the
+    browsers' flag files), a web app stays a Wayland window, without Vulkan
+    (it would draw nothing there) -- given after those flags, so it wins."""
+    from .. import browsergpu
+    keep = ["--ozone-platform=wayland", "--disable-features=Vulkan"] if browsergpu.enabled() else []
     return [browser, f"--user-data-dir={os.path.join(data_dir(app), 'chromium')}",
-            "--no-first-run", "--no-default-browser-check", "--ozone-platform-hint=auto",
+            "--no-first-run", "--no-default-browser-check", "--ozone-platform-hint=auto", *keep,
             "--window-size={},{}".format(*window_size(app)), f"--app={entry['url']}"]
 
 
