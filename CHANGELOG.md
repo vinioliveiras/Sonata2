@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixes
+- Sharing or recording the screen no longer slows the computer down: a
+  picture is made only when the screen changed (or the pointer moved), at
+  most 60 a second -- it was every refresh (180 on a 180 Hz display), with
+  the whole screen drawn again each time.
+
 ## 0.14.0-alpha -- 2026-10-07
 
 Dock badges for every app (WhatsApp too), web app notifications as their

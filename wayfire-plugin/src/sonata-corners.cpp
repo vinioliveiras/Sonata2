@@ -545,7 +545,7 @@ class corners_render_instance_t :
  * used before, maps input through its own transform). */
 /* the top of a window that is always blurred: title bar + a toolbar */
 /* bumped with every change of the plugin (tests/test_regressions.py checks it) */
-#define SONATA_CORNERS_BUILD "2026-10-07.14 FPS: games and full screen only"
+#define SONATA_CORNERS_BUILD "2026-10-09.1 capture only what changed, 60 fps at most"
 static const int TOP_GLASS = 96;
 
 class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
@@ -861,6 +861,13 @@ class window_capture_t
 
 static bool capture_rendering = false;      /* the hidden surfaces draw nothing meanwhile */
 
+/* Vini: sharing the screen slowed the whole computer, animations too. Each
+ * captured picture renders the display's scene a second time -- it was done
+ * for every frame asked, up to the display's refresh (180 Hz), even with
+ * nothing moving. Now: only when the display changed (or the pointer moved,
+ * when it's captured), at most CAPTURE_MAX_FPS a second. */
+static const int CAPTURE_MAX_FPS = 60;
+
 static std::vector<std::string> option_words(const std::string& name);
 
 static std::vector<std::string> capture_hidden_ids()
@@ -1045,6 +1052,10 @@ struct output_source_t
     bool cursors   = false;
     bool pending   = false;
     int64_t last_us = 0;                  /* when the last picture was made */
+    bool changed = true;                  /* the display repainted since the last picture */
+    wf::pointf_t last_cursor{-1e9, -1e9};
+    bool hooked = false;
+    wf::effect_hook_t on_repaint = [this] () { changed = true; };
     wf::wl_idle_call idle;
     /* at most one picture per display refresh: a recorder asking again at
      * once got hundreds of identical frames a second. (Waiting for the
@@ -1084,6 +1095,53 @@ struct output_source_t
         auto og = output->get_layout_geometry();
         float scale = output->handle->scale;
         return {(int)std::round(og.width * scale), (int)std::round(og.height * scale)};
+    }
+
+    void hook(bool on)
+    {
+        if (!output || (on == hooked))
+        {
+            return;
+        }
+
+        if (on)
+        {
+            output->render->add_effect(&on_repaint, wf::OUTPUT_EFFECT_PRE);
+        } else
+        {
+            output->render->rem_effect(&on_repaint);
+        }
+
+        hooked = on;
+        changed = true;
+    }
+
+    /* A picture when something changed; else asked again a little later
+     * (the client keeps waiting for this frame meanwhile). */
+    void produce_if_changed()
+    {
+        if (!output || !started)
+        {
+            pending = false;
+            return;
+        }
+
+        bool moved = false;
+        if (cursors)
+        {
+            auto c = wf::get_core().get_cursor_position();
+            moved = (c.x != last_cursor.x) || (c.y != last_cursor.y);
+            last_cursor = c;
+        }
+
+        if (changed || moved || !buffer.get_buffer())
+        {
+            changed = false;
+            produce();
+        } else
+        {
+            later.set_timeout(1000 / CAPTURE_MAX_FPS, [this] () { produce_if_changed(); });
+        }
     }
 
     /* the display's picture without the hidden surfaces, then a frame event */
@@ -1180,6 +1238,7 @@ static void output_source_start(wlr_ext_image_capture_source_v1 *b, bool with_cu
     auto s = output_source_t::from(b);
     s->started++;
     s->cursors = s->cursors || with_cursors;
+    s->hook(true);
 }
 
 static void output_source_stop(wlr_ext_image_capture_source_v1 *b)
@@ -1189,6 +1248,9 @@ static void output_source_stop(wlr_ext_image_capture_source_v1 *b)
     if (!s->started)
     {
         s->cursors = false;
+        s->hook(false);
+        s->later.disconnect();
+        s->pending = false;
     }
 }
 
@@ -1205,14 +1267,14 @@ static void output_source_request_frame(wlr_ext_image_capture_source_v1 *b, bool
     clock_gettime(CLOCK_MONOTONIC, &t);
     int64_t now = (int64_t)t.tv_sec * 1000000 + t.tv_nsec / 1000;
     int mhz     = (s->output && s->output->handle->refresh > 0) ? s->output->handle->refresh : 60000;
-    int64_t gap = 1000000000LL / mhz;                       /* one refresh, in µs */
+    int64_t gap = std::max<int64_t>(1000000000LL / mhz, 1000000 / CAPTURE_MAX_FPS);   /* µs */
     int64_t wait = s->last_us + gap - now;
     if (wait <= 1000)
     {
-        s->idle.run_once([s] () { s->produce(); });          /* after this request returns */
+        s->idle.run_once([s] () { s->produce_if_changed(); });   /* after this request returns */
     } else
     {
-        s->later.set_timeout((uint32_t)((wait + 999) / 1000), [s] () { s->produce(); });
+        s->later.set_timeout((uint32_t)((wait + 999) / 1000), [s] () { s->produce_if_changed(); });
     }
 }
 
@@ -1316,6 +1378,7 @@ class output_capture_t
         auto it = sources.find(ev->output);
         if (it != sources.end())
         {
+            it->second->hook(false);
             it->second->output = nullptr;
             it->second->later.disconnect();
             wlr_ext_image_capture_source_v1_finish(&it->second->base);

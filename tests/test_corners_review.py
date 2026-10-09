@@ -41,7 +41,27 @@ class CornersReviewTest(unittest.TestCase):
         self.assertIn("s->idle.run_once", req)
         self.assertIn("s->later.set_timeout", req)
         self.assertNotIn("frame_done_signal", self.src)
-        self.assertEqual(self.src.count("later.disconnect();"), 2)          # display gone, plugin unloaded
+        self.assertEqual(self.src.count("later.disconnect();"), 3)          # stopped, display gone, unloaded
+
+    def test_capture_only_what_changed(self):
+        """Vini: sharing the screen slowed everything. A picture renders the
+        whole display again: only when it repainted (or the captured pointer
+        moved), and at most CAPTURE_MAX_FPS a second (it went at 180 Hz)."""
+        self.assertIn("static const int CAPTURE_MAX_FPS = 60;", self.src)
+        req = body(self.src, "static void output_source_request_frame", "\n}\n")
+        self.assertIn("1000000 / CAPTURE_MAX_FPS", req)
+        self.assertIn("produce_if_changed()", req)
+        self.assertNotIn("s->produce()", req)
+        fn = body(self.src, "    void produce_if_changed()", "    /* the display's picture")
+        self.assertIn("if (changed || moved || !buffer.get_buffer())", fn)
+        self.assertIn("get_cursor_position()", fn)
+        hook = body(self.src, "    void hook(bool on)", "    /* A picture when")
+        self.assertIn("add_effect(&on_repaint, wf::OUTPUT_EFFECT_PRE)", hook)
+        self.assertIn("rem_effect(&on_repaint)", hook)
+        stop = body(self.src, "static void output_source_stop", "\n}\n")
+        self.assertIn("s->hook(false)", stop)
+        gone = body(self.src, "on_output_removed =", "};")
+        self.assertLess(gone.index("hook(false)"), gone.index("output = nullptr"))
 
     def test_screenshots_keep_the_compositors_own_capture(self):
         """Vini: screenshots failed ("failed to copy output") once Sonata's
