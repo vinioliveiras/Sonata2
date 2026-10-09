@@ -4,9 +4,10 @@
 
 ### Changes
 - Settings > Displays > Games > WebGPU in Browsers (off by default): 3D
-  browser games in Chrome, Chromium and Brave. The browsers then run
-  through XWayland with Vulkan (on Wayland, Chrome's Vulkan draws an empty
-  window); Sonata's web apps stay on Wayland.
+  browser games in Chrome, Chromium, Brave and Firefox. Chromium browsers
+  then run through XWayland with Vulkan (on Wayland, Chrome's Vulkan draws
+  an empty window); Sonata's web apps stay on Wayland. Firefox gets
+  dom.webgpu.enabled.
 
 ### Fixes
 - An app being updated stays in the Dock: an app leaves it only when its

@@ -57,6 +57,31 @@ class ApplyTest(unittest.TestCase):
             self.assertEqual(open(os.path.join(cfg, "brave-flags.conf")).read(), "--enable-features=X\n")
 
 
+class MozillaTest(unittest.TestCase):
+    def test_firefox_user_js(self):
+        """Vini: the switch for Firefox too (dom.webgpu.enabled)."""
+        with tempfile.TemporaryDirectory() as prof:
+            open(os.path.join(prof, "prefs.js"), "w").write('user_pref("a", 1);\n')
+            open(os.path.join(prof, "user.js"), "w").write('user_pref("mine", 2);\n')
+            G.apply_mozilla(True, [prof])
+            self.assertEqual(open(os.path.join(prof, "user.js")).read(),
+                             'user_pref("mine", 2);\n' + G.MOZ_LINE + "\n")
+            G.apply_mozilla(True, [prof])                                   # once
+            self.assertEqual(open(os.path.join(prof, "user.js")).read().count("Sonata WebGPU"), 1)
+            with open(os.path.join(prof, "prefs.js"), "a") as f:            # Firefox copied it
+                f.write('user_pref("dom.webgpu.enabled", true);\n')
+            G.apply_mozilla(False, [prof])
+            self.assertEqual(open(os.path.join(prof, "user.js")).read(), 'user_pref("mine", 2);\n')
+            self.assertEqual(open(os.path.join(prof, "prefs.js")).read(), 'user_pref("a", 1);\n')
+
+    def test_profiles_found_by_prefs_js(self):
+        with tempfile.TemporaryDirectory() as base:
+            os.makedirs(os.path.join(base, "abc.default"))
+            open(os.path.join(base, "abc.default", "prefs.js"), "w").close()
+            os.makedirs(os.path.join(base, "Crash Reports"))
+            self.assertEqual(G.mozilla_profiles((base,)), [os.path.join(base, "abc.default")])
+
+
 class WebAppTest(unittest.TestCase):
     def test_web_apps_stay_on_wayland(self):
         from sonata2 import webapps as W

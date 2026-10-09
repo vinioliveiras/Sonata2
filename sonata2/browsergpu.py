@@ -14,6 +14,10 @@ get, in a block of Sonata's own:
 Turned off, all of it goes again; the user's own lines stay. Sonata's web
 apps (webapps.chromium_command) stay on Wayland without Vulkan either way.
 
+Firefox (and LibreWolf, Floorp) draw WebGPU on Wayland themselves: their
+profiles' user.js get dom.webgpu.enabled; turned off, that line goes and
+prefs.js forgets the value Firefox copied there (once it is closed).
+
     enabled() / set_enabled(on)
     apply(on, cfg_dir=None)       # the flag files of the installed browsers
 """
@@ -71,6 +75,49 @@ def edit(lines: list, on: bool, appended: bool = False):
     return out, appended
 
 
+MOZ_KEY = "dom.webgpu.enabled"
+MOZ_LINE = 'user_pref("dom.webgpu.enabled", true);  // Sonata WebGPU (Settings > Displays > Games)'
+MOZILLA = ("~/.mozilla/firefox", "~/.config/mozilla/firefox", "~/.librewolf", "~/.floorp",
+           "~/.var/app/org.mozilla.firefox/.mozilla/firefox")
+
+
+def mozilla_profiles(bases=MOZILLA) -> list:
+    out = []
+    for base in bases:
+        base = os.path.expanduser(base)
+        try:
+            names = os.listdir(base)
+        except OSError:
+            continue
+        out += [os.path.join(base, n) for n in names if os.path.isfile(os.path.join(base, n, "prefs.js"))]
+    return out
+
+
+def apply_mozilla(on: bool, profiles=None) -> None:
+    from . import titlebars
+    for prof in mozilla_profiles() if profiles is None else profiles:
+        user = os.path.join(prof, "user.js")
+        try:
+            with open(user, encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        except OSError:
+            lines = []
+        new = [ln for ln in lines if "Sonata WebGPU" not in ln] + ([MOZ_LINE] if on else [])
+        if new != lines:
+            titlebars._write(user, "\n".join(new) + ("\n" if new else ""))
+        if on or os.path.lexists(os.path.join(prof, "lock")):
+            continue                                      # running: it writes prefs.js back on quit
+        prefs = os.path.join(prof, "prefs.js")
+        try:
+            with open(prefs, encoding="utf-8") as f:
+                plines = f.read().splitlines()
+        except OSError:
+            continue
+        kept = [ln for ln in plines if f'"{MOZ_KEY}"' not in ln]
+        if kept != plines:
+            titlebars._write(prefs, "\n".join(kept) + "\n")
+
+
 def apply(on: bool, cfg_dir=None) -> None:
     from . import titlebars
     cfg = cfg_dir or GLib.get_user_config_dir()
@@ -93,3 +140,5 @@ def apply(on: bool, cfg_dir=None) -> None:
         if appended != bool(done.get(name)):
             done[name] = appended
             config.update(NAME, appended=done)
+    if cfg_dir is None:
+        apply_mozilla(on)
