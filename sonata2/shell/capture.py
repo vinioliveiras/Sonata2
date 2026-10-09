@@ -467,6 +467,10 @@ class BarPill(Gtk.Window):
         self.add_css_class("sonata-rec")
         self.box = Gtk.Box(spacing=6, css_classes=["rec-pill"], valign=Gtk.Align.CENTER)
         self.set_child(self.box)
+        # as tall as the menu bar, the pill centred in it (Vini: with the taller
+        # 32 px bar it sat at the top, its own height under the bar's middle)
+        from . import menubar_size
+        self.set_size_request(-1, menubar_size.height())
         LS = layer.layer_shell()
         self.LS = LS
         if LS:

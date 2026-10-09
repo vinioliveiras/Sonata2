@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixes
+- The recording / screen-sharing pill is centred in the taller menu bar.
+
 ### Performance
 - Windows behind an opaque window are no longer drawn again with it (the
   rounded-corner effect hid that from Wayfire): scrolling or a video in a
