@@ -5,6 +5,7 @@ and nothing uses Gtk.Spinner any more."""
 import pathlib
 import re
 import unittest
+import unittest.mock
 
 import gi
 
@@ -53,6 +54,27 @@ class SpinnerTest(unittest.TestCase):
         self.assertEqual(sp._tick, 0)
         sp.start()
         self.assertTrue(sp.get_spinning())
+
+    def test_turns_on_a_timer_not_the_frame_clock(self):
+        """Memory/power review: a tick callback kept the frame clock (and the
+        compositor) at the display's refresh rate for 12 redraws a second."""
+        sp = progress.spinner(size=22)
+        with unittest.mock.patch.object(Gtk.Widget, "add_tick_callback") as tick:
+            win = Gtk.Window()
+            win.set_child(sp)
+            win.present()
+            ctx = GLib.MainContext.default()
+            steps = set()
+            end = GLib.get_monotonic_time() + 400_000
+            while GLib.get_monotonic_time() < end:
+                ctx.iteration(False)
+                steps.add(sp.step)
+            tick.assert_not_called()
+        self.assertTrue(sp._tick)
+        self.assertGreaterEqual(len(steps), 3)                  # it turns (~5 spokes in 0.4 s)
+        win.destroy()
+        ctx.iteration(False)
+        self.assertEqual(sp._tick, 0)                           # unmapped: the timer is gone
 
     def test_never_bigger_than_its_size(self):
         """Vini: the login screen's spinner came out huge -- stretched to the

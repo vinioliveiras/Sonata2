@@ -39,8 +39,9 @@ class RestartTest(unittest.TestCase):
         with mock.patch.object(M, "_pids", side_effect=pgrep), \
                 mock.patch.object(M, "_signal", side_effect=lambda p, s: events.append(("kill", p, s))), \
                 mock.patch("subprocess.run"), mock.patch.object(M, "_reload_wayfire_config"), \
-                mock.patch("subprocess.Popen", side_effect=lambda a, **k: events.append(
-                    ("start", a[-1] if a[-1] != "--background" else a[-2], os.path.exists(intro.RESTART_MARK)))), \
+                mock.patch("subprocess.Popen", side_effect=lambda a, **k: events.extend(
+                    ("start", spec.split(",")[0], os.path.exists(intro.RESTART_MARK))
+                    for spec in a[a.index("keep-all") + 1:])), \
                 mock.patch("time.sleep", side_effect=lambda s: events.append(("sleep", s))):
             M.restart(["wallpaper", "dock", "topbar"])
         kills = [e for e in events if e[0] == "kill"]

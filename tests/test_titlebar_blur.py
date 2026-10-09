@@ -23,8 +23,10 @@ class BlurTest(unittest.TestCase):
         b = cp["blur"]
         it, deg, off = int(b["kawase_iterations"]), int(b["kawase_degrade"]), float(b["kawase_offset"])
         self.assertLessEqual(it, 2)
-        self.assertGreaterEqual(deg, 3)
-        self.assertAlmostEqual(off * 2 ** it * deg, 3.5 * 8 * 2, delta=6)      # about the same frosting
+        self.assertGreaterEqual(deg, 4)                                       # Vini: blur made cheaper
+        self.assertAlmostEqual(off * 2 ** it * deg, 4.5 * 4 * 3, delta=1)      # the same frosting
+        from sonata2.ui import glass as G
+        self.assertEqual(off, G.blur_offset(G.BLUR_DEFAULT))                  # Settings' default = the ini's
 
     def test_apply_colors_sets_it(self):
         calls = {}

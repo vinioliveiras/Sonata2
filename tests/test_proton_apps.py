@@ -64,7 +64,8 @@ class WindowAppsTest(unittest.TestCase):
         from sonata2.shell import dock, switcher, topbar
         src = inspect.getsource(dock.Dock._sync)
         self.assertIn("windowapps.describe(", src)
-        self.assertIn("tile.label.set_text(name)", src)               # renamed with its window
+        self.assertIn("_sync_titles(", src)
+        self.assertIn("tile.label.set_text(name)", inspect.getsource(dock.Dock._sync_titles))   # renamed with its window
         self.assertIn("windowapps.describe(", inspect.getsource(switcher))
         self.assertIn("windowapps.describe(", inspect.getsource(topbar.Bar._active_changed))
 

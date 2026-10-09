@@ -22,6 +22,22 @@ from .loginui import Backdrop, wallpaper_texture  # noqa: E402
 
 FADE_MS = 260
 PLUGINS = ("scale", "expo")          # expo (all Spaces) gets the same backdrop
+BACKDROP_MIN = 480                   # decode size bounds (backdrop_size)
+BACKDROP_FALLBACK = 1280             # no display known
+
+
+def backdrop_size(monitors_=None) -> int:
+    """Pixels on the longest side to decode the backdrop's wallpaper at: a
+    quarter of the largest display's (device pixels). Blur 40 (a Gaussian
+    of ~20 px) leaves nothing finer than that to see."""
+    side = 0
+    try:
+        for m in (monitors._list() if monitors_ is None else monitors_):
+            g = m.get_geometry()
+            side = max(side, max(g.width, g.height) * max(1, m.get_scale_factor()))
+    except Exception:
+        side = 0
+    return max(BACKDROP_MIN, side // 4) if side else BACKDROP_FALLBACK
 
 
 class MissionBackdrop:
@@ -30,7 +46,7 @@ class MissionBackdrop:
         self.windows = {}             # connector -> window
         self.active = set()           # (plugin, connector)
         self.ipc = WayfireIPC()
-        self._textures = {}           # dark? -> decoded wallpaper (kept until system.json changes)
+        self._textures = {}           # dark? -> decoded wallpaper (only the current one; until system.json changes)
         self._prefs_mon = None
         if layer.layer_shell() and self.ipc.available:
             self.ipc.watch(["plugin-activation-state-changed"], self._event)
@@ -87,13 +103,18 @@ class MissionBackdrop:
 
     def _wallpaper(self):
         """The wallpaper texture, decoded once per Light/Dark picture (not
-        on every Mission Control open); a wallpaper change drops the cache."""
+        on every Mission Control open); a wallpaper change drops the cache.
+        Memory review: decoded at a quarter of the largest display (it is
+        drawn under blur 40: the same picture on screen -- test_mission_mem)
+        and only the current Light/Dark one kept: full size, both variants
+        held ~80 MB for the whole session."""
         if self._prefs_mon is None:
             from .. import prefs
             self._prefs_mon = prefs.watch(lambda *_a: self._textures.clear())
         dark = Adw.StyleManager.get_default().get_dark()
         if dark not in self._textures:
-            self._textures[dark] = wallpaper_texture()
+            self._textures.clear()
+            self._textures[dark] = wallpaper_texture(max_size=backdrop_size())
         return self._textures[dark]
 
     def _hide(self, name):

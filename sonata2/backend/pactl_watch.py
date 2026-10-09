@@ -1,5 +1,6 @@
-"""One `pactl subscribe` reader for Sonata's audio watchers (Settings' Sound
-page, the menu bar's mixer and equalizer).
+"""One `pactl subscribe` reader per process for Sonata's audio watchers
+(Settings' Sound page, the menu bar's mixer, equalizer, in-use indicator and
+new-device follow): watch() adds a callback to it.
 
 Lines arrive through linereader on the GTK main loop (no buffered
 readline inside an fd watch, which could block or miss lines kept in the
@@ -79,9 +80,65 @@ class PactlWatch:
     kill = terminate = stop
 
 
+class _Handle:
+    """One watcher's subscription to the shared reader. stop() (or kill(),
+    terminate()) unsubscribes it; the reader ends with the last one."""
+
+    def __init__(self, hub, on_line):
+        self._hub = hub
+        self.on_line = on_line
+
+    def stop(self) -> None:
+        hub, self._hub = self._hub, None
+        if hub is not None:
+            hub.unwatch(self)
+
+    kill = terminate = stop
+
+
+class _Hub:
+    """The one `pactl subscribe` of this process, its lines fanned out to
+    every watcher. Each watcher used to start its own pactl (system's
+    watch_audio, mixer, equalizer, inuse, audiofollow: five readers and five
+    wake-ups per event in the menu bar process)."""
+
+    def __init__(self):
+        self.handles = []
+        self.reader = None
+
+    def _fan(self, text) -> None:
+        for h in list(self.handles):
+            try:
+                h.on_line(text)
+            except Exception as e:          # one broken watcher doesn't starve the others
+                print(f"sonata2: pactl watcher failed: {e}")
+
+    def watch(self, on_line):
+        if self.reader is None or self.reader.stopped:
+            reader = PactlWatch(self._fan)
+            if not reader.start():
+                return None
+            self.reader = reader
+        h = _Handle(self, on_line)
+        self.handles.append(h)
+        return h
+
+    def unwatch(self, h) -> None:
+        if h in self.handles:
+            self.handles.remove(h)
+        if not self.handles and self.reader is not None:
+            self.reader.stop()
+            self.reader = None
+
+
+_HUB = _Hub()
+
+
 def watch(on_line):
-    """A running PactlWatch, None without pactl."""
+    """on_line(text) for every `pactl subscribe` line, from the process's
+    one shared reader (started on the first watch, restarted if pactl dies,
+    ended when the last watcher stops). Returns the watcher (stop()/kill()
+    it), None without pactl."""
     if not shutil.which("pactl"):
         return None
-    w = PactlWatch(on_line)
-    return w if w.start() else None
+    return _HUB.watch(on_line)

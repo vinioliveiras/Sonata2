@@ -18,6 +18,12 @@ import time
 STEAM_DIRS = ("~/.local/share/Steam", "~/.steam/steam", "~/.var/app/com.valvesoftware.Steam/.local/share/Steam")
 _names = {}                 # aid -> (name or None, when looked up)
 UNKNOWN_RETRY_S = 60        # a game not found yet (installing, library mounted later) is looked up again
+# aid -> (Gio.Icon, when): shown() is asked on every window event of the game
+# (the Dock's sync, the app switcher) and each time globbed Steam's icon
+# folders and re-read the picture's stamp; the icon is looked at again after
+# ICON_RETRY_S (a shortcut made meanwhile: its bigger icon)
+_icons = {}
+ICON_RETRY_S = 60
 
 
 def appid(app_id: str):
@@ -115,9 +121,14 @@ def shown(key: str, fallback_name: str = ""):
     aid = appid(key)
     if not aid:
         return None
-    from gi.repository import Gio
-    from . import icons
-    pic = icon_path(aid)
-    gicon = (icons.picture_icon(pic) if pic else None) or Gio.ThemedIcon.new("steam")
+    hit = _icons.get(aid)
+    if hit and time.monotonic() - hit[1] < ICON_RETRY_S:
+        gicon = hit[0]
+    else:
+        from gi.repository import Gio
+        from . import icons
+        pic = icon_path(aid)
+        gicon = (icons.picture_icon(pic) if pic else None) or Gio.ThemedIcon.new("steam")
+        _icons[aid] = (gicon, time.monotonic())
     return name(aid) or (fallback_name or "").strip() or key, gicon
 

@@ -31,7 +31,9 @@ MATERIALS = {"dock": ("glass_tint", "solid_tint"), "menubar": ("bar_bg", "window
 ALPHA_RANGE = (0.0, 0.97)        # most see-through: clear glass (Vini); under ~0.36 the frost fades
 THRESHOLD, THRESHOLD_MIN = 0.5, 0.36
 BLUR_DEFAULT = 50
-OFFSET_RANGE = (1.5, 7.5)          # kawase_offset at strength 0 / 100 (50 -> 4.5, the default)
+# kawase_offset at strength 0 / 100 (50 -> 3.38, the default): for kawase_degrade 4 -- the
+# frosting of 1.5 .. 7.5 on the earlier third-size picture (x 3/4)
+OFFSET_RANGE = (1.1, 5.66)
 
 
 def settings(cfg: dict = None) -> dict:

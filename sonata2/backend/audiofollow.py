@@ -11,13 +11,9 @@ process; on/off: sounds.json "follow_new_devices" (Settings > Sound).
     AudioFollow(run=..., defaults=...).event("Event 'new' on sink #57")
 """
 import json
-import os
 import re
-import shutil
 import subprocess
 import threading
-
-from gi.repository import GLib
 
 EVENT = re.compile(r"Event '(new|remove|change)' on (sink|source) #(\d+)")
 EXTERNAL_BUSES = ("bluetooth", "usb")
@@ -127,38 +123,19 @@ def _enabled() -> bool:
 
 
 def start():
-    """`pactl subscribe` read on the GLib loop; None without pactl."""
-    if not shutil.which("pactl"):
-        return None
-    try:
-        proc = subprocess.Popen(["pactl", "subscribe"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                stdin=subprocess.DEVNULL, bufsize=0)
-    except OSError:
-        return None
+    """Events from the shared `pactl subscribe` reader (pactl_watch: no pactl
+    of its own any more, and it is restarted if pactl dies); None without
+    pactl."""
+    from . import pactl_watch, system
     follow = AudioFollow()
-    follow.proc = proc
     lock = threading.Lock()                               # events one at a time, in order
-    buf = {"b": b""}
-    from . import system
 
     def handle(line):
         with lock:
             follow.event(line)
 
-    def readable(_ch, cond):
-        try:
-            data = os.read(proc.stdout.fileno(), 4096)
-        except OSError:
-            data = b""
-        if not data:
-            return False
-        buf["b"] += data
-        *lines, buf["b"] = buf["b"].split(b"\n")
-        for raw in lines:
-            line = raw.decode(errors="replace")
-            if EVENT.search(line):
-                system.run_async(handle, None, line)     # pactl calls off the main loop
-        return True
-    ch = GLib.IOChannel.unix_new(proc.stdout.fileno())
-    GLib.io_add_watch(ch, GLib.PRIORITY_DEFAULT, GLib.IOCondition.IN | GLib.IOCondition.HUP, readable)
-    return follow
+    def line(text):
+        if EVENT.search(text):
+            system.run_async(handle, None, text)          # pactl calls off the main loop
+    follow.proc = pactl_watch.watch(line)
+    return follow if follow.proc is not None else None

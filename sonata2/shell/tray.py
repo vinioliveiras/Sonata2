@@ -166,6 +166,22 @@ def _pixmaps(pixmaps):
         yield w, h, data if isinstance(data, GLib.Bytes) else GLib.Bytes.new(bytes(data))
 
 
+# the properties each StatusNotifierItem signal announces: only those are
+# read again (a tooltip or title update re-read everything, pixmaps
+# included, and dropped the icon textures -- apps tick their tooltip often)
+SIGNAL_PROPS = {"NewTitle": ("Title",), "NewToolTip": ("ToolTip",), "NewStatus": ("Status",),
+                "NewIcon": ("IconName", "IconPixmap"), "NewAttentionIcon": ("AttentionIconName", "AttentionIconPixmap"),
+                "NewOverlayIcon": ("OverlayIconName", "OverlayIconPixmap"), "NewIconThemePath": ("IconThemePath",),
+                "NewMenu": ("Menu",)}
+ICON_PROPS = {"IconName", "IconPixmap", "AttentionIconName", "AttentionIconPixmap", "IconThemePath", "Status"}
+
+
+def _same(a, b) -> bool:
+    if isinstance(a, GLib.Variant) and isinstance(b, GLib.Variant):
+        return a.get_type_string() == b.get_type_string() and a.equal(b)
+    return a == b
+
+
 class TrayItem:
     """A registered StatusNotifierItem: its properties, icon and actions."""
 
@@ -177,6 +193,8 @@ class TrayItem:
         self.menu = None
         self._tex = {}                   # scale -> paintable
         self._refresh_id = 0
+        self._want = set()               # properties announced changed since the last read
+        self._full = False               # an unknown signal: read them all
         self._subs = [conn.signal_subscribe(self.name, ITEM_IFACE, None, self.path, None,
                                             Gio.DBusSignalFlags.NONE, self._signal)]
         self.refresh()
@@ -193,15 +211,62 @@ class TrayItem:
             self.menu = None
 
     # -- properties ------------------------------------------------------------------
-    def _signal(self, *_a):
+    def _signal(self, _conn=None, _sender=None, _path=None, _iface=None, signal=None, _params=None, *_rest):
         # NewIcon/NewStatus/NewTitle/NewToolTip... come in bursts: one read
+        props = SIGNAL_PROPS.get(signal)
+        if props is None or not self.ready:
+            self._full = True
+        else:
+            self._want.update(props)
         if not self._refresh_id:
             self._refresh_id = GLib.timeout_add(60, self._refresh_now)
 
     def _refresh_now(self):
         self._refresh_id = 0
-        self.refresh()
+        want, full = self._want, self._full
+        self._want, self._full = set(), False
+        if full or not want:
+            self.refresh()
+        else:
+            self._fetch(sorted(want))
         return False
+
+    def _fetch(self, names) -> None:
+        """Read just these properties, then apply them together."""
+        got, left = {}, {"n": len(names)}
+
+        def done(conn, res, name):
+            try:
+                v = conn.call_finish(res).get_child_value(0).get_variant()
+                got[name] = v if name.endswith("Pixmap") else v.unpack()
+            except GLib.Error:
+                got[name] = None                        # not set by this app
+            left["n"] -= 1
+            if not left["n"]:
+                self._apply(got)
+        for name in names:
+            self.conn.call(self.name, self.path, PROPS, "Get", GLib.Variant("(ss)", (ITEM_IFACE, name)),
+                           GLib.VariantType("(v)"), Gio.DBusCallFlags.NONE, TIMEOUT, None, done, name)
+
+    def _apply(self, got: dict) -> None:
+        if not self._subs:
+            return                                      # removed meanwhile
+        changed = icon = False
+        for k, v in got.items():
+            if _same(self.props.get(k), v):
+                continue
+            changed = True
+            icon = icon or k in ICON_PROPS
+            if v is None:
+                self.props.pop(k, None)
+            else:
+                self.props[k] = v
+        if not changed:
+            return                                      # the same tooltip again: nothing to redraw
+        if icon:
+            self._tex.clear()
+        self._sync_menu()
+        self.host.changed(self)
 
     def refresh(self) -> None:
         self.conn.call(self.name, self.path, PROPS, "GetAll", GLib.Variant("(s)", (ITEM_IFACE,)),
@@ -220,18 +285,22 @@ class TrayItem:
             k, v = e.get_child_value(0).get_string(), e.get_child_value(1).get_variant()
             # pixmaps stay variants (read without a Python copy)
             props[k] = v if k.endswith("Pixmap") else v.unpack()
+        if not self.ready or any(not _same(self.props.get(k), props.get(k)) for k in ICON_PROPS):
+            self._tex.clear()                           # (the icon itself unchanged: textures kept)
         self.props = props
-        self._tex.clear()
-        menu = props.get("Menu") or ""
+        self._sync_menu()
+        self.ready = True
+        self.host.changed(self)
+
+    def _sync_menu(self) -> None:
+        menu = self.props.get("Menu") or ""
         if self.menu and self.menu.path != menu:
             self.menu.close()
             self.menu = None
         if not self.menu and menu and menu != "/":
             self.menu = DBusMenu(self.conn, self.name, menu)
         if self.menu is not None:
-            self.menu.steam = "steam" in (props.get("Id") or "").lower()
-        self.ready = True
-        self.host.changed(self)
+            self.menu.steam = "steam" in (self.props.get("Id") or "").lower()
 
     @property
     def id(self) -> str:

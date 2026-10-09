@@ -25,7 +25,11 @@ SIZE = 256                       # "large" thumbnails
 MAX_IMAGE_BYTES = 150 * 1000 ** 2
 CACHE_DIR = os.path.join(GLib.get_user_cache_dir(), "thumbnails", "large")
 FAIL_DIR = os.path.join(GLib.get_user_cache_dir(), "thumbnails", "fail", "sonata2")
-MEMORY = 400                     # textures kept in RAM
+MEMORY = 400                     # textures kept in RAM, at most...
+# ...and at most this many bytes of pixels (memory review: 400 large
+# thumbnails were up to ~100 MB in the resident Files process); a folder's
+# worth of 256 px thumbnails still fits (~130)
+MEMORY_BYTES = 32 << 20
 
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sonata2-thumbs")
 _mem = OrderedDict()             # key -> Gdk.Texture or None (failed)
@@ -72,10 +76,20 @@ def _work(key, uri, path, mtime, ct, size, existing):
     GLib.idle_add(_deliver, key, tex)
 
 
+def _bytes(tex) -> int:
+    try:
+        return tex.get_width() * tex.get_height() * 4 if tex is not None else 0
+    except AttributeError:
+        return 0
+
+
 def _deliver(key, tex):
     _mem[key] = tex
-    while len(_mem) > MEMORY:
-        _mem.popitem(last=False)
+    _mem.move_to_end(key)
+    used = sum(_bytes(t) for t in _mem.values())       # (a few hundred entries at most)
+    while len(_mem) > 1 and (len(_mem) > MEMORY or used > MEMORY_BYTES):
+        _k, old = _mem.popitem(last=False)
+        used -= _bytes(old)
     for cb in _pending.pop(key, []):
         if tex is not None:
             cb(tex)

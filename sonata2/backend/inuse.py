@@ -5,19 +5,32 @@ a real input, not a monitor of the speakers (a screen recording's system
 sound) nor a level meter; looked at again on every `pactl subscribe`
 source-output event, nothing in between.
 Camera: a process with a /dev/video* device open (PipeWire holds it while
-an app records through it; it lets it go a few seconds after). Looked at
-every CAMERA_S seconds in a thread, only this user's processes.
+an app records through it; it lets it go a few seconds after). Looked for
+(every /proc/*/fd of this user's processes, in a thread) only when a camera
+node is opened or closed -- inotify on the /dev/video* nodes, new ones
+followed through /dev -- instead of every 4 s (that scan was the menu
+bar's biggest idle cost). Without inotify: every CAMERA_S seconds as
+before. Never while the screen is locked or a fullscreen game has the
+focus (quiet.py): a look once that ends.
 
 Watcher.state = {"mic": [app names], "camera": [app names]}; listeners()
 are called when it changes."""
+import ctypes
 import json
 import os
 import shutil
+import struct
 import subprocess
 
 from gi.repository import GLib
 
 CAMERA_S = 4
+SETTLE_MS = 300                 # a burst of opens/closes (an app probing every node): one look
+PAUSED_RETRY_S = 30             # a node event while paused: looked at again (the pause may end unseen)
+IN_OPEN, IN_CLOSE_WRITE, IN_CLOSE_NOWRITE = 0x20, 0x08, 0x10
+IN_CREATE, IN_DELETE, IN_MOVED_TO = 0x100, 0x200, 0x80
+IN_NONBLOCK, IN_CLOEXEC = 0o4000, 0o2000000
+_EVENT = struct.Struct("iIII")
 METER_NAMES = ("peak detect", "level meter", "peak")
 CAMERA_HOLDERS = ("pipewire", "wireplumber")        # hold the device for the app actually recording
 
@@ -107,17 +120,113 @@ def camera_users(proc: str = "/proc") -> list:
     return apps or (["An app"] if found else [])
 
 
+class VideoNodes:
+    """inotify on every /dev/video* node (open and close: a camera taken or
+    let go) and on /dev for nodes coming and going; on_event() for each.
+    ok False when inotify can't be used (then the caller polls)."""
+
+    def __init__(self, on_event, dev: str = "/dev"):
+        self.on_event, self.dev = on_event, dev
+        self.fd, self.src, self.ok = -1, 0, False
+        self._dev_wd = -1
+        try:
+            self._libc = ctypes.CDLL(None, use_errno=True)
+            fd = self._libc.inotify_init1(IN_NONBLOCK | IN_CLOEXEC)
+        except (OSError, AttributeError):
+            return
+        if fd < 0:
+            return
+        self.fd = fd
+        self._dev_wd = self._add(dev, IN_CREATE | IN_DELETE | IN_MOVED_TO)
+        if self._dev_wd < 0:
+            self.close()
+            return
+        for n in _dev_names(dev):
+            if n.startswith("video"):
+                self._add_node(n)
+        self.src = GLib.unix_fd_add_full(GLib.PRIORITY_DEFAULT, fd, GLib.IOCondition.IN, self._readable)
+        self.ok = True
+
+    def _add(self, path: str, mask: int) -> int:
+        return self._libc.inotify_add_watch(self.fd, os.fsencode(path), mask)
+
+    def _add_node(self, name: str) -> None:
+        self._add(os.path.join(self.dev, name), IN_OPEN | IN_CLOSE_WRITE | IN_CLOSE_NOWRITE)
+
+    def _readable(self, *_a) -> bool:
+        fire = False
+        while True:
+            try:
+                buf = os.read(self.fd, 4096)
+            except BlockingIOError:
+                break
+            except OSError:
+                return True
+            if not buf:
+                break
+            off = 0
+            while off + _EVENT.size <= len(buf):
+                wd, mask, _cookie, ln = _EVENT.unpack_from(buf, off)
+                name = buf[off + _EVENT.size: off + _EVENT.size + ln].split(b"\0", 1)[0].decode(errors="replace")
+                off += _EVENT.size + ln
+                if wd == self._dev_wd:
+                    if not name.startswith("video"):
+                        continue                         # another device (a USB stick...): not ours
+                    if mask & (IN_CREATE | IN_MOVED_TO):
+                        self._add_node(name)             # a camera plugged in
+                fire = True
+        if fire:
+            self.on_event()
+        return True
+
+    def close(self) -> None:
+        if self.src:
+            GLib.source_remove(self.src)
+            self.src = 0
+        if self.fd >= 0:
+            os.close(self.fd)
+            self.fd = -1
+        self.ok = False
+
+
 class Watcher:
     def __init__(self):
         self.state = {"mic": [], "camera": []}
         self.listeners = []
         self._mic_busy = self._cam_busy = False
         self.proc = None
+        self._soon_src = self._retry_src = 0
+        self._dirty = False                          # a node event came while paused
         if shutil.which("pactl"):
             from . import pactl_watch
             self.proc = pactl_watch.watch(self._line)
             self._read_mic()
-        GLib.timeout_add_seconds(CAMERA_S, self._tick_camera)
+        from .. import quiet
+        self._gate = quiet.watch(lambda paused: paused or (self._dirty and self._tick_camera()))
+        self.nodes = VideoNodes(self._camera_soon)
+        if self.nodes.ok:
+            self._tick_camera()                      # once: an app already recording at start
+        else:
+            GLib.timeout_add_seconds(CAMERA_S, self._poll_camera)
+
+    def _retry(self) -> bool:
+        self._retry_src = 0
+        if self._dirty:
+            self._tick_camera()
+        return False
+
+    def _camera_soon(self) -> None:
+        if not self._soon_src:
+            self._soon_src = GLib.timeout_add(SETTLE_MS, self._camera_now)
+
+    def _camera_now(self) -> bool:
+        self._soon_src = 0
+        self._tick_camera()
+        return False
+
+    def _poll_camera(self) -> bool:
+        self._tick_camera()
+        return True
 
     def _set(self, kind, names):
         if names != self.state[kind]:
@@ -141,7 +250,15 @@ class Watcher:
         system.run_async(read_mic, done)
 
     def _tick_camera(self) -> bool:
+        from .. import quiet
+        if quiet.paused():                           # locked / a game in front: looked at once that ends
+            self._dirty = True
+            if not self._retry_src:
+                self._retry_src = GLib.timeout_add_seconds(PAUSED_RETRY_S, self._retry)
+            return True
+        self._dirty = False
         if self._cam_busy:
+            self._camera_soon()                      # an event during a look: once more after it
             return True
         if not any(n.startswith("video") for n in _dev_names()):
             self._set("camera", [])                  # no camera at all: nothing to look for
@@ -156,8 +273,8 @@ class Watcher:
         return True
 
 
-def _dev_names() -> list:
+def _dev_names(dev: str = "/dev") -> list:
     try:
-        return os.listdir("/dev")
+        return os.listdir(dev)
     except OSError:
         return []

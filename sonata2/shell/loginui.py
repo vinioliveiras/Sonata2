@@ -143,20 +143,41 @@ def logind(method: str) -> None:
         fallback(e.message)
 
 
-def wallpaper_texture():
+def wallpaper_texture(max_size: int = 0):
+    """The wallpaper of the moment (Light/Dark picture) as a texture, None if
+    there is none. `max_size` > 0: decoded to fit that many pixels on its
+    longest side -- for backdrops drawn under a heavy blur (Mission Control),
+    where a 3840x2560 picture held ~39 MB for detail the blur wipes out. The
+    lock / login screens keep the default (full size)."""
     override = os.environ.get("SONATA_LOCK_WALLPAPER")        # previews
     if override:
-        return Gdk.Texture.new_from_filename(override)
+        return _decode_wallpaper(Gio.File.new_for_path(override), max_size)
     try:
         from .. import prefs
         dark = Adw.StyleManager.get_default().get_dark()
         uri = prefs.get(prefs.BG, "picture-uri-dark" if dark else "picture-uri") or prefs.get(prefs.BG, "picture-uri")
         f = Gio.File.new_for_uri(uri) if uri else None
         if f and f.query_exists(None):
-            return Gdk.Texture.new_from_file(f)
+            return _decode_wallpaper(f, max_size)
     except GLib.Error:
         pass
     return None
+
+
+def _decode_wallpaper(f, max_size: int):
+    path = f.get_path() if max_size > 0 else None
+    if path:
+        try:
+            from gi.repository import GdkPixbuf
+            _fmt, w, h = GdkPixbuf.Pixbuf.get_file_info(path)
+            if _fmt is not None and max(w, h) > max_size:          # (never scaled up)
+                # (no EXIF rotation: Gdk.Texture.new_from_file below applies none either)
+                pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, max_size, max_size, True)
+                if pb is not None:
+                    return Gdk.Texture.new_for_pixbuf(pb)
+        except GLib.Error:
+            pass                                           # a format only GTK reads: full size
+    return Gdk.Texture.new_from_file(f)
 
 
 class Backdrop(Gtk.Widget):

@@ -277,6 +277,7 @@ def scan() -> dict:
                     info = None
                 out[did] = info
     _scan = {k: v for k, v in out.items() if v is not None}
+    _MISSES.clear()                                # (new entries: unknown app_ids may match now)
     return dict(_scan)
 
 
@@ -311,6 +312,12 @@ def default_pins() -> list:
 _INDEX = None
 _INDEX_AT = 0.0
 INDEX_RETRY_S = 5.0          # an unknown app_id rebuilds the index at most this often
+# app_id -> when it last matched nothing. A Steam game or a Wine program never
+# has a .desktop: the Dock asks on every window event, and each answer was a
+# lookup + (every INDEX_RETRY_S) Gio.AppInfo.get_all() and a rebuilt index.
+# Forgotten by refresh() / scan() (apps installed), retried after MISS_RETRY_S.
+_MISSES = {}
+MISS_RETRY_S = 60.0
 
 
 # a desktop entry that starts a launcher or wrapper: its window has the app's
@@ -376,6 +383,19 @@ def match_app_id(app_id: str):
     global _INDEX
     if not app_id:
         return None
+    missed = _MISSES.get(app_id)
+    if missed is not None and time.monotonic() - missed < MISS_RETRY_S:
+        return None
+    found = _match(app_id)
+    if found is None:
+        _MISSES[app_id] = time.monotonic()
+    else:
+        _MISSES.pop(app_id, None)
+    return found
+
+
+def _match(app_id: str):
+    global _INDEX
     if lookup(app_id):
         return app_id[:-8] if app_id.endswith(".desktop") else app_id
     from . import webapps                           # a Sonata web app: its own entry, by its id
@@ -400,3 +420,4 @@ def refresh() -> None:
     """Forget the app_id index (call when apps are installed/removed)."""
     global _INDEX
     _INDEX = None
+    _MISSES.clear()

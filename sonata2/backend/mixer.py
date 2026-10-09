@@ -12,6 +12,7 @@ import json
 import re
 import shutil
 import subprocess
+import threading
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -306,6 +307,7 @@ class MixerService:
         self._new = set()
         self._fresh = {}                 # new stream index -> when it appeared (its level is ours then)
         self._learn_src = 0
+        self._levels = {}                # sink-input index -> (volume, muted) at the last learn
         self.proc = pactl_watch.watch(self._line)       # the shared `pactl subscribe` reader
         if self.proc is None:
             return
@@ -350,6 +352,8 @@ class MixerService:
                 GLib.timeout_add(ms, self._recheck, set(new))
         return False
 
+    _learn_lock = threading.Lock()      # (class default: tests build the service without __init__)
+
     def _learn(self) -> bool:
         """Levels changed outside Sonata become the apps' saved levels."""
         import time
@@ -359,8 +363,17 @@ class MixerService:
         skip = set(self._fresh)
 
         def work():
-            for key, (pct, muted) in learn(streams(), saved(), skip).items():
-                remember(key, pct, muted)
+            # A playing app sends 'change' events all the time (title, corked,
+            # latency) with no level change: only a stream whose volume or mute
+            # differs from the last read reads the config and learns.
+            with self._learn_lock:
+                ss = streams()
+                last = getattr(self, "_levels", None) or {}
+                self._levels = {s.index: (s.volume, s.muted) for s in ss}
+                if all(last.get(s.index) == self._levels[s.index] for s in ss):
+                    return
+                for key, (pct, muted) in learn(ss, saved(), skip).items():
+                    remember(key, pct, muted)
         from . import system
         system.run_async(work, None)
         return False

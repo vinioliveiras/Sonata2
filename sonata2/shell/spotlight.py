@@ -7,10 +7,12 @@ Escape closes. Resident and hidden between uses (instant opening); files
 come from an index of the home folders built in the background (no
 tracker/locate needed), refreshed when older than a few minutes."""
 import ast
+import bisect
 import operator
 import os
 import threading
 import time
+from array import array
 
 import gi
 
@@ -127,11 +129,46 @@ def layout_for(screen_h: int) -> tuple:
 
 # -- file index ------------------------------------------------------------------------------------
 
+class _Names:
+    """One build of the index, never changed once made (the search on the
+    GTK thread reads one while the next is built on another)."""
+    __slots__ = ("roots", "parent", "dirs", "names", "starts", "lower", "lstarts")
+
+    def __init__(self, roots=(), parent=None, names=(), lowers=(), dirs=None):
+        self.roots, self.parent, self.dirs = list(roots), parent or array("I"), dirs or bytearray()
+        # "\nname\nname...": entry i's name begins at starts[i] (after its "\n")
+        self.names, self.starts = self._join(names)
+        self.lower, self.lstarts = self._join(lowers)
+
+    @staticmethod
+    def _join(names):
+        starts, pos = array("I"), 1
+        for n in names:
+            starts.append(pos)
+            pos += len(n) + 1
+        return ("\n" + "\n".join(names) if names else ""), starts
+
+    def entry(self, i: int):
+        end = self.starts[i + 1] - 1 if i + 1 < len(self.starts) else len(self.names)
+        return os.path.join(self.roots[self.parent[i]], self.names[self.starts[i]:end]), bool(self.dirs[i])
+
+
 class Index:
+    """Your files by name (home, INDEX_DEPTH folders deep, MAX_FILES at most).
+
+    Memory review: kept as 60k (name lower, path, is_dir) tuples it held
+    ~15 MB for the session. Now compact (_Names): each folder's path once,
+    the names as one string per case with their offsets, small arrays --
+    a few MB -- and str.find over the joined names is faster than the old
+    loop over tuples."""
+
     def __init__(self):
-        self.entries = []        # (name lower, path, is_dir)
+        self.data = _Names()
         self.built = 0.0
         self._busy = False
+
+    def __len__(self) -> int:
+        return len(self.data.dirs)
 
     def refresh(self):
         if self._busy or time.time() - self.built < INDEX_TTL:
@@ -141,37 +178,75 @@ class Index:
 
     def _build(self):
         home = GLib.get_home_dir()
-        out = []
+        roots, parent, names, lowers, dirs = [], array("I"), [], [], bytearray()
         base_depth = home.rstrip("/").count("/")
-        for root, dirs, files in os.walk(home, onerror=lambda e: None):
-            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "__pycache__")]
+
+        def add(name, is_dir):
+            if "\n" in name:                          # (the separator; such a name isn't searchable)
+                return
+            parent.append(len(roots) - 1)
+            names.append(name)
+            lowers.append(name.lower())
+            dirs.append(is_dir)
+        for root, subdirs, files in os.walk(home, onerror=lambda e: None):
+            subdirs[:] = [d for d in subdirs if not d.startswith(".") and d not in ("node_modules", "__pycache__")]
             depth = root.count("/") - base_depth
             if depth >= INDEX_DEPTH:
-                dirs[:] = []
-            for d in dirs:
-                out.append((d.lower(), os.path.join(root, d), True))
+                subdirs[:] = []
+            roots.append(root)
+            for d in subdirs:
+                add(d, True)
             for f in files:
                 if not f.startswith("."):
-                    out.append((f.lower(), os.path.join(root, f), False))
-            if len(out) > MAX_FILES:
+                    add(f, False)
+            if len(dirs) > MAX_FILES:
                 break
-        self.entries = out
+        self.data = _Names(roots, parent, names, lowers, dirs)      # one swap: never half built
         self.built = time.time()
         self._busy = False
 
     def search(self, q: str):
+        """Names starting with q first, then names containing it, each
+        shortest first (then by path) -- the 201st name starting with it
+        ends the scan, in index order, as the old loop over tuples did."""
         q = q.lower()
-        pre, sub = [], []
-        for name, path, d in self.entries:
-            if name.startswith(q):
-                pre.append((len(name), path, d))
-            elif q in name:
-                sub.append((len(name), path, d))
-            if len(pre) > 200:
+        d = self.data
+        lower, ls, n = d.lower, d.lstarts, len(d.dirs)
+        if not n or "\n" in q:
+            return []
+
+        def line(pos):                                  # the entry whose name holds `pos`
+            return bisect.bisect_right(ls, pos) - 1
+        pre, at, last = [], 0, n - 1
+        while True:
+            at = lower.find("\n" + q, at)
+            if at < 0:
                 break
-        pre.sort()
-        sub.sort()
-        return [(p, d) for _n, p, d in pre + sub]
+            i = line(at + 1)
+            pre.append(i)
+            if len(pre) > 200:
+                last = i
+                break
+            at += 1
+        prefix, sub = set(pre), []
+        stop = ls[last + 1] - 1 if last + 1 < n else len(lower)
+        at = 1
+        while q:
+            at = lower.find(q, at, stop)
+            if at < 0:
+                break
+            i = line(at)
+            if i not in prefix:
+                sub.append(i)
+            if i + 1 >= n:
+                break
+            at = ls[i + 1]                              # one hit per name is enough
+
+        def ranked(idx):
+            rows = [((ls[i + 1] if i + 1 < n else len(lower) + 1) - ls[i] - 1,) + d.entry(i) for i in idx]
+            rows.sort()
+            return [(p, is_dir) for _n, p, is_dir in rows]
+        return ranked(pre) + ranked(sub)
 
 
 class Spotlight(Gtk.ApplicationWindow):

@@ -30,6 +30,7 @@ DEFAULTS = {"lock_after": 0, "lock_before_sleep": True, "usb_protection": True,
 # line and locked again right after each unlock (Vini: the password 3 times
 # on waking). lock-wait starts the lock on its own and returns once locked.
 LOCK = "sonata2 lock-wait"
+RESPAWN_CHECK_S = 60
 LEDS = "/sys/class/leds"
 KBD = "*::kbd_backlight"
 # The lights' level before Sonata turned them off, in a file that outlives a
@@ -188,8 +189,19 @@ class IdleLock:
             lockdisplay.unlocked()
             lockdisplay.lights(True)            # and the lights, left dark by a restart while locked
             lockdisplay.dim(False)              # and the panel's backlight
+        # the display's timeout changed in Settings: display.json's own watch
+        # (was a config read and PATH search every minute, all day long)
+        from .. import displaysleep
+        self._display_mon = config.watch(displaysleep.NAME, self.apply)
         self.apply()
-        GLib.timeout_add_seconds(60, lambda: (self.apply(), True)[1])   # dpms timeout changed in Settings
+        GLib.timeout_add_seconds(RESPAWN_CHECK_S, self._check_alive)
+
+    def _check_alive(self) -> bool:
+        """swayidle died (crashed, killed): started again. Only a waitpid
+        here; the settings are read again only then."""
+        if self.proc is not None and self.proc.poll() is not None:
+            self.apply()
+        return True
 
     def _policy(self):
         """Sonata's own idle handling when the compositor tells input idle

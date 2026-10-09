@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### Performance
+- Windows behind an opaque window are no longer drawn again with it (the
+  rounded-corner effect hid that from Wayfire): scrolling or a video in a
+  maximized window costs only that window.
+- A minimized or hidden window frees its picture's video memory after a few
+  seconds; sharing one window is paced like sharing the screen.
+- The blur is as strong and looks the same, for about half the GPU work
+  (worked on a quarter-size picture instead of a third).
+- While the screen is locked or a full-screen game has the focus, Sonata's
+  background checks pause (Wi-Fi, battery, camera, USB, graphics card).
+- The menu bar checks Wi-Fi and battery once for every display, without
+  making Wi-Fi scan every half minute; the volume comes from events.
+- The camera check reads /proc only when a camera is opened or closed.
+- One `pactl subscribe` per process instead of four; the equalizer no
+  longer runs pw-dump and pw-cli on every sound event (nor at all when
+  it's off), and doesn't wake itself up again.
+- The Dock: a window's title changing (browser tabs, terminals) updates
+  only names and badges; apps without an entry and Steam icons are looked
+  up once; the Downloads stack refreshes at most once a second during a
+  download.
+- The tray updates only what an app changed (tooltips no longer reload
+  its icons).
+- Memory: one supervisor for the shell instead of five (`keep-all`), the
+  Mission Control backdrop decoded at a quarter size (~78 MB -> ~1 MB),
+  icon and thumbnail caches limited, a smaller Spotlight index, the emoji
+  and clipboard pickers built on first use, and Docks, menu bars and
+  desktop icons of a removed display no longer kept in memory.
+- The spinner and the recording dot no longer redraw at the display's rate.
+
 ### Changes
 - Settings > Displays > Games > WebGPU in Browsers (off by default): 3D
   browser games in Chrome, Chromium, Brave and Firefox. Chromium browsers

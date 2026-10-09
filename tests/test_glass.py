@@ -37,7 +37,7 @@ class GlassModelTest(unittest.TestCase):
         for item in G.ITEMS:
             self.assertEqual(s[item], {"on": True, "alpha": None})
         self.assertEqual(s["blur"], G.BLUR_DEFAULT)
-        self.assertEqual(G.blur_offset(G.BLUR_DEFAULT), 4.5)          # wayfire.ini's own value
+        self.assertEqual(G.blur_offset(G.BLUR_DEFAULT), 3.38)         # wayfire.ini's own value
 
     def test_old_translucent_switch_off_means_all_solid(self):
         config.save("dock", {"glass": False})
@@ -115,7 +115,7 @@ class BlurRuleTest(unittest.TestCase):
                 mock.patch.object(titlebars, "glass_bars", return_value=False):
             titlebars.apply_colors(False)
         self.assertNotIn("sonata2-dock", calls[("blur", "blur_by_default")])
-        self.assertEqual(calls[("blur", "kawase_offset")], "4.5")
+        self.assertEqual(calls[("blur", "kawase_offset")], "3.38")
         config.save("appearance", {})
 
 

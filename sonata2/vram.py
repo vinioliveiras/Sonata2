@@ -47,6 +47,44 @@ def parse_processes(text: str) -> list:
     return sorted(out, key=lambda p: -p[2])
 
 
+# -- one nvidia-smi reading per process ------------------------------------------------------
+# The menu bar's figures (backend/stats.py, every second while shown) and
+# this watch (every EVERY_S) asked nvidia-smi separately -- each run costs
+# tens of ms of CPU and wakes the driver. Both now read one query, kept for
+# a moment: whoever comes second within NV_FRESH_S gets the same answer.
+NV_QUERY = ["--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu",
+            "--format=csv,noheader,nounits"]
+USAGE_ARGS = ["--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"]
+NV_FRESH_S = 0.9
+_nv = {"t": None, "tool": None, "out": ""}
+_nv_lock = threading.Lock()
+
+
+def nvidia_read(tool: str, max_age: float = NV_FRESH_S, clock=time.monotonic) -> str:
+    """nvidia-smi's NV_QUERY rows (one per card), from cache when younger
+    than max_age. Blocking: call it off the main loop."""
+    with _nv_lock:
+        now = clock()
+        if _nv["tool"] == tool and _nv["t"] is not None and now - _nv["t"] < max_age:
+            return _nv["out"]
+        try:
+            out = subprocess.run([tool] + NV_QUERY, capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ""
+        _nv.update(t=clock(), tool=tool, out=out)
+        return out
+
+
+def usage_rows(query_out: str) -> str:
+    """NV_QUERY rows -> "used, total" rows (what parse_usage reads)."""
+    rows = []
+    for line in query_out.splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) >= 3:
+            rows.append(f"{parts[1]}, {parts[2]}")
+    return "\n".join(rows)
+
+
 def app_name(pid: int, fallback: str) -> str:
     """A readable name: the process' own name (comm) when the table cut it."""
     try:
@@ -80,7 +118,11 @@ class VramWatch:
         GLib.timeout_add_seconds(EVERY_S, self._tick)
 
     def _tick(self) -> bool:
-        if not self._busy and self.usage.awake():
+        # (paused only while locked: in a fullscreen game this reading is what
+        #  turns blur and animations off when the game fills the card --
+        #  gamemode.LightEffects)
+        from . import quiet
+        if not self._busy and not quiet.locked() and self.usage.awake():
             self._busy = True
             threading.Thread(target=self._check_safe, daemon=True).start()
         return True
@@ -92,6 +134,8 @@ class VramWatch:
             self._busy = False
 
     def _run_tool(self, args) -> str:
+        if args == USAGE_ARGS:                 # the shared reading (stats.py may have just made it)
+            return usage_rows(nvidia_read(self.usage.tool, max_age=EVERY_S / 3))
         try:
             return subprocess.run([self.usage.tool] + args, capture_output=True, text=True, timeout=5).stdout
         except (OSError, subprocess.SubprocessError):
@@ -99,7 +143,7 @@ class VramWatch:
 
     def check(self):
         """One look; returns (used, total, procs) when it's nearly full, else None."""
-        got = parse_usage(self.run(["--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"]))
+        got = parse_usage(self.run(USAGE_ARGS))
         if not got:
             return None
         used, total = got

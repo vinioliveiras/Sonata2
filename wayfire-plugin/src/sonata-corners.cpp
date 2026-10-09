@@ -296,6 +296,7 @@ struct corners_options_t
     glm::vec4 fg_fill{0, 0, 0, 0}, bg_fill{0, 0, 0, 0};   /* stored premultiplied by Sonata */
     glm::vec4 outline{0, 0, 0, 0}; /* premultiplied */
     std::vector<std::string> own_frame_apps;   /* sonata-corners/own_frame_apps */
+    bool opaque_visibility = false;  /* workarounds/enable_opaque_region_damage_optimizations */
 
     void load()
     {
@@ -309,6 +310,7 @@ struct corners_options_t
         fg_fill = option_color("pixdecor/fg_color", false);
         bg_fill = option_color("pixdecor/bg_color", false);
         outline = option_color("sonata-corners/outline", true);
+        opaque_visibility = option_str("workarounds/enable_opaque_region_damage_optimizations") == "true";
         own_frame_apps.clear();
         std::string list = option_str("sonata-corners/own_frame_apps"), word;
         for (char c : list + " ")
@@ -380,8 +382,129 @@ static float corner_radius()
     return options().radius;
 }
 
+/* A plain transformer node: no geometric transform at all, so pointer
+ * input reaches the window exactly where it is drawn (view_2d_transformer_t,
+ * used before, maps input through its own transform). */
+/* the top of a window that is always blurred: title bar + a toolbar */
+/* bumped with every change of the plugin (tests/test_regressions.py checks it) */
+#define SONATA_CORNERS_BUILD "2026-10-09.2 occlusion, hidden windows free their buffer, paced window capture"
+static const int TOP_GLASS = 96;
+
+/* a hidden window's buffer is freed when it wasn't drawn for this long */
+static const int IDLE_FREE_MS = 5000;
+
+class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
+{
+    wayfire_toplevel_view view;
+    int64_t last_drawn = 0;            /* ms, wf::get_current_time() */
+    wf::wl_timer<true> idle_check;
+
+    /* not on screen: minimized, unmapped, or on another workspace */
+    bool hidden() const
+    {
+        auto out = view->get_output();
+        return !view->is_mapped() || view->minimized || !out ||
+               !(out->get_relative_geometry() & view->get_bounding_box());
+    }
+
+  public:
+    corners_node_t(wayfire_toplevel_view view) : wf::scene::transformer_base_node_t(false)
+    {
+        this->view = view;
+    }
+
+    /* Each window kept a buffer of its own size (a maximized 4K window:
+     * ~33 MB) even minimized or on another workspace. Freed once it hasn't
+     * been drawn for IDLE_FREE_MS while hidden; the next draw allocates it
+     * again and renders it whole (REALLOCATED: cached_damage |= bbox). A
+     * visible window keeps it, even when the display doesn't repaint. Freed
+     * from a timer only, never between scheduling and rendering a frame. */
+    void note_drawn()
+    {
+        last_drawn = wf::get_current_time();
+        if (!idle_check.is_connected())
+        {
+            idle_check.set_timeout(IDLE_FREE_MS, [this] ()
+            {
+                if (!inner_content.get_buffer())
+                {
+                    return false;       /* already freed: the next draw re-arms */
+                }
+
+                if ((wf::get_current_time() - last_drawn >= IDLE_FREE_MS) && hidden())
+                {
+                    release_buffers();
+                    cached_damage |= get_children_bounding_box();
+                    return false;
+                }
+
+                return true;
+            });
+        }
+    }
+
+    /* Pass the window's opaque region on (minus the rounded corners): the
+     * blur transformer around this one only blurs behind what isn't opaque.
+     * Without it every decorated window was blurred whole, every frame --
+     * a maximized browser cost the compositor ~8 ms a frame. */
+    wf::regionf_t get_opaque_region() const override
+    {
+        if (get_children().empty())
+        {
+            return {};
+        }
+
+        auto inner = dynamic_cast<wf::scene::opaque_region_node_t*>(get_children().front().get());
+        if (!inner)
+        {
+            return {};
+        }
+
+        wf::regionf_t region = inner->get_opaque_region();
+
+        /* the frame as drawn (the rounded corners are cut out of it, not
+         * out of the shadow around it) */
+        auto g = view->get_geometry();
+        int inset = (int)decoration_shadow(view);
+        wf::geometry_t f{g.x + inset, g.y + inset, g.width - 2 * inset, g.height - 2 * inset};
+        /* the corners as drawn: the real radius (+1 for the antialiased
+         * edge), never more than half the frame */
+        int c = std::min<int>((int)std::ceil(corner_radius()) + 1, (int)(std::min(f.width, f.height) / 2));
+        for (auto corner : {wf::geometry_t{f.x, f.y, c, c}, wf::geometry_t{f.x + f.width - c, f.y, c, c},
+                            wf::geometry_t{f.x, f.y + f.height - c, c, c},
+                            wf::geometry_t{f.x + f.width - c, f.y + f.height - c, c, c}})
+        {
+            if (c > 0)
+            {
+                region ^= wf::regionf_t{corner};
+            }
+        }
+
+        /* Title bar and toolbar always go through the blur: a few pixels
+         * there were reported opaque but drawn see-through, and with the
+         * wallpaper culled behind them they showed as a dark band between
+         * the glass title bar and a glass toolbar (Preview, Notes). The
+         * strip is cheap to blur; the window body below stays skipped. */
+        region ^= wf::regionf_t{wf::geometry_t{f.x, f.y, f.width, TOP_GLASS}};
+        /* nothing outside the frame is drawn (the shader cuts an app drawing
+         * itself bigger): never opaque there */
+        region &= wf::regionf_t{f};
+
+        return region;
+    }
+
+    std::string stringify() const override
+    {
+        return "sonata-corners";
+    }
+
+    void gen_render_instances(std::vector<render_instance_uptr>& instances,
+        damage_callback push_damage, wf::output_t *shown_on) override;
+};
+
+
 class corners_render_instance_t :
-    public wf::scene::transformer_render_instance_t<transformer_base_node_t>
+    public wf::scene::transformer_render_instance_t<corners_node_t>
 {
     wf::signal::connection_t<node_damage_signal> on_node_damaged =
         [=] (node_damage_signal *ev)
@@ -389,15 +512,15 @@ class corners_render_instance_t :
         push_to_parent(ev->region);
     };
 
-    transformer_base_node_t *self;
+    corners_node_t *self;
     wayfire_toplevel_view view;
     damage_callback push_to_parent;
     bool alloc_failed = false;     /* logged once per failure streak */
 
   public:
-    corners_render_instance_t(transformer_base_node_t *self, damage_callback push_damage,
+    corners_render_instance_t(corners_node_t *self, damage_callback push_damage,
         wayfire_toplevel_view view) :
-        wf::scene::transformer_render_instance_t<transformer_base_node_t>(self, push_damage,
+        wf::scene::transformer_render_instance_t<corners_node_t>(self, push_damage,
             view->get_output())
     {
         this->self = self;
@@ -440,11 +563,39 @@ class corners_render_instance_t :
         }
 
         alloc_failed = false;
+        self->note_drawn();
         instructions.push_back(render_instruction_t{
                         .instance = this,
                         .target   = target,
                         .damage   = damage & self->get_bounding_box(),
                     });
+        /* Occlusion: what this window covers opaquely needs no repaint below
+         * it. Wayfire's surfaces do this themselves (damage ^= opaque), but
+         * this transformer stood in front of them: every window, the
+         * wallpaper too, was redrawn behind an opaque window. Same space as
+         * damage (no transform here); corners and the glass top are already
+         * carved out of the region. */
+        damage ^= self->get_opaque_region();
+    }
+
+    /* The children see the whole window as visible: they draw into this
+     * node's buffer, and a surface drops damage outside its visible region
+     * -- the buffer would keep stale pixels where another window was. The
+     * windows below lose what this one covers opaquely (their frame
+     * callbacks and damage stop there, as without the transformer). */
+    void compute_visibility(wf::output_t *output, wf::regionf_t& visible) override
+    {
+        if ((visible & self->get_bounding_box()).empty())
+        {
+            return;
+        }
+
+        wf::regionf_t whole{self->get_children_bounding_box()};
+        wf::scene::compute_visibility_from_list(this->children, output, whole, {0, 0});
+        if (options().opaque_visibility)
+        {
+            visible ^= self->get_opaque_region();
+        }
     }
 
     void render(const wf::scene::render_instruction_t& data) override
@@ -540,86 +691,11 @@ class corners_render_instance_t :
     }
 };
 
-/* A plain transformer node: no geometric transform at all, so pointer
- * input reaches the window exactly where it is drawn (view_2d_transformer_t,
- * used before, maps input through its own transform). */
-/* the top of a window that is always blurred: title bar + a toolbar */
-/* bumped with every change of the plugin (tests/test_regressions.py checks it) */
-#define SONATA_CORNERS_BUILD "2026-10-09.1 capture only what changed, 60 fps at most"
-static const int TOP_GLASS = 96;
-
-class corners_node_t : public wf::scene::transformer_base_node_t, public wf::scene::opaque_region_node_t
+void corners_node_t::gen_render_instances(std::vector<render_instance_uptr>& instances,
+    damage_callback push_damage, wf::output_t *shown_on)
 {
-    wayfire_toplevel_view view;
-
-  public:
-    corners_node_t(wayfire_toplevel_view view) : wf::scene::transformer_base_node_t(false)
-    {
-        this->view = view;
-    }
-
-    /* Pass the window's opaque region on (minus the rounded corners): the
-     * blur transformer around this one only blurs behind what isn't opaque.
-     * Without it every decorated window was blurred whole, every frame --
-     * a maximized browser cost the compositor ~8 ms a frame. */
-    wf::regionf_t get_opaque_region() const override
-    {
-        if (get_children().empty())
-        {
-            return {};
-        }
-
-        auto inner = dynamic_cast<wf::scene::opaque_region_node_t*>(get_children().front().get());
-        if (!inner)
-        {
-            return {};
-        }
-
-        wf::regionf_t region = inner->get_opaque_region();
-
-        /* the frame as drawn (the rounded corners are cut out of it, not
-         * out of the shadow around it) */
-        auto g = view->get_geometry();
-        int inset = (int)decoration_shadow(view);
-        wf::geometry_t f{g.x + inset, g.y + inset, g.width - 2 * inset, g.height - 2 * inset};
-        /* the corners as drawn: the real radius (+1 for the antialiased
-         * edge), never more than half the frame */
-        int c = std::min<int>((int)std::ceil(corner_radius()) + 1, (int)(std::min(f.width, f.height) / 2));
-        for (auto corner : {wf::geometry_t{f.x, f.y, c, c}, wf::geometry_t{f.x + f.width - c, f.y, c, c},
-                            wf::geometry_t{f.x, f.y + f.height - c, c, c},
-                            wf::geometry_t{f.x + f.width - c, f.y + f.height - c, c, c}})
-        {
-            if (c > 0)
-            {
-                region ^= wf::regionf_t{corner};
-            }
-        }
-
-        /* Title bar and toolbar always go through the blur: a few pixels
-         * there were reported opaque but drawn see-through, and with the
-         * wallpaper culled behind them they showed as a dark band between
-         * the glass title bar and a glass toolbar (Preview, Notes). The
-         * strip is cheap to blur; the window body below stays skipped. */
-        region ^= wf::regionf_t{wf::geometry_t{f.x, f.y, f.width, TOP_GLASS}};
-        /* nothing outside the frame is drawn (the shader cuts an app drawing
-         * itself bigger): never opaque there */
-        region &= wf::regionf_t{f};
-
-        return region;
-    }
-
-    std::string stringify() const override
-    {
-        return "sonata-corners";
-    }
-
-    void gen_render_instances(std::vector<render_instance_uptr>& instances,
-        damage_callback push_damage, wf::output_t *shown_on) override
-    {
-        instances.push_back(std::make_unique<corners_render_instance_t>(this, push_damage, view));
-    }
-};
-
+    instances.push_back(std::make_unique<corners_render_instance_t>(this, push_damage, view));
+}
 
 /* ---- Window sharing ---------------------------------------------------------------------------
  * Screen sharing apps (through xdg-desktop-portal-wlr) can share a single
@@ -630,6 +706,14 @@ class corners_node_t : public wf::scene::transformer_base_node_t, public wf::sce
  * buffer whenever the capture asks for a frame; wlroots copies that into
  * the app's buffer. Needs Wayfire's ext-toplevel plugin (the window list
  * the portal picks from). */
+/* Vini: sharing the screen slowed the whole computer, animations too. Each
+ * captured picture renders the display's scene a second time -- it was done
+ * for every frame asked, up to the display's refresh (180 Hz), even with
+ * nothing moving. Now: only when the display changed (or the pointer moved,
+ * when it's captured), at most CAPTURE_MAX_FPS a second. A shared window
+ * the same: only when it changed. */
+static const int CAPTURE_MAX_FPS = 60;
+
 struct window_source_t
 {
     wlr_ext_image_capture_source_v1 base; /* first: wl_container_of */
@@ -637,8 +721,15 @@ struct window_source_t
     wf::auxilliary_buffer_t buffer;
     int started = 0;
     bool pending = false;
+    int64_t last_us = 0;                  /* when the last picture was made */
+    bool changed = true;                  /* the window was damaged since the last picture */
     wf::wl_idle_call idle;
+    wf::wl_timer<false> paced;            /* the next picture, CAPTURE_MAX_FPS at most */
     wf::signal::connection_t<wf::view_unmapped_signal> on_unmap;
+    /* The window's surfaces' render instances, only to hear their damage
+     * (commits, subsurfaces too): a new picture only when it changed. Vini:
+     * sharing one window rendered it again for every frame asked. */
+    std::vector<wf::scene::render_instance_uptr> watch;
 
     static window_source_t *from(wlr_ext_image_capture_source_v1 *b)
     {
@@ -662,10 +753,46 @@ struct window_source_t
         wl_signal_emit_mutable(&base.events.constraints_update, nullptr);
     }
 
+    void watch_damage(bool on)
+    {
+        watch.clear();
+        auto v = view.lock();
+        if (on && v && v->get_surface_root_node())
+        {
+            /* no output: these never draw, enter or leave a display */
+            v->get_surface_root_node()->gen_render_instances(watch, [this] (auto) { changed = true; }, nullptr);
+        }
+
+        changed = true;
+    }
+
+    /* A picture when the window changed; else asked again a little later
+     * (the client keeps waiting for this frame meanwhile). */
+    void produce_if_changed()
+    {
+        if (!started)
+        {
+            pending = false;
+            return;
+        }
+
+        if (changed || !buffer.get_buffer())
+        {
+            changed = false;
+            produce();
+        } else
+        {
+            paced.set_timeout(1000 / CAPTURE_MAX_FPS, [this] () { produce_if_changed(); });
+        }
+    }
+
     /* the window's current picture, then a frame event (full damage) */
     void produce()
     {
         pending = false;
+        timespec t;
+        clock_gettime(CLOCK_MONOTONIC, &t);
+        last_us = (int64_t)t.tv_sec * 1000000 + t.tv_nsec / 1000;
         auto v = view.lock();
         if (!v || !v->is_mapped() || !v->get_output() || !started)
         {
@@ -695,22 +822,46 @@ struct window_source_t
 
 static void window_source_start(wlr_ext_image_capture_source_v1 *b, bool)
 {
-    window_source_t::from(b)->started++;
+    auto s = window_source_t::from(b);
+    if (!s->started++)
+    {
+        s->watch_damage(true);
+    }
 }
 
 static void window_source_stop(wlr_ext_image_capture_source_v1 *b)
 {
     auto s = window_source_t::from(b);
     s->started = std::max(0, s->started - 1);
+    if (!s->started)
+    {
+        s->watch_damage(false);
+        s->paced.disconnect();
+        s->pending = false;
+    }
 }
 
+/* paced like the display capture: at most CAPTURE_MAX_FPS pictures a
+ * second, the first at once, and only of a window that changed */
 static void window_source_request_frame(wlr_ext_image_capture_source_v1 *b, bool)
 {
     auto s = window_source_t::from(b);
-    if (!s->pending)
+    if (s->pending)
     {
-        s->pending = true;              /* after this request returns */
-        s->idle.run_once([s] () { s->produce(); });
+        return;
+    }
+
+    s->pending = true;
+    timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    int64_t now  = (int64_t)t.tv_sec * 1000000 + t.tv_nsec / 1000;
+    int64_t wait = s->last_us + 1000000 / CAPTURE_MAX_FPS - now;    /* µs */
+    if (wait <= 1000)
+    {
+        s->idle.run_once([s] () { s->produce_if_changed(); });   /* after this request returns */
+    } else
+    {
+        s->paced.set_timeout((uint32_t)((wait + 999) / 1000), [s] () { s->produce_if_changed(); });
     }
 }
 
@@ -795,6 +946,8 @@ class window_capture_t
                 auto found = self->sources.find(raw);
                 if (found != self->sources.end())
                 {
+                    found->second->watch_damage(false);
+                    found->second->paced.disconnect();
                     wlr_ext_image_capture_source_v1_finish(&found->second->base);
                     /* this lambda lives in the source's on_unmap: destroying the
                      * source now would destroy the running callback (UB).
@@ -861,12 +1014,6 @@ class window_capture_t
 
 static bool capture_rendering = false;      /* the hidden surfaces draw nothing meanwhile */
 
-/* Vini: sharing the screen slowed the whole computer, animations too. Each
- * captured picture renders the display's scene a second time -- it was done
- * for every frame asked, up to the display's refresh (180 Hz), even with
- * nothing moving. Now: only when the display changed (or the pointer moved,
- * when it's captured), at most CAPTURE_MAX_FPS a second. */
-static const int CAPTURE_MAX_FPS = 60;
 
 static std::vector<std::string> option_words(const std::string& name);
 
@@ -1061,6 +1208,8 @@ struct output_source_t
      * once got hundreds of identical frames a second. (Waiting for the
      * display's own next frame instead broke screenshots: grim's copy failed.) */
     wf::wl_timer<false> later;
+    /* while capturing; dropped when stopped or the display goes */
+    std::unique_ptr<wf::scene::render_instance_manager_t> scene_instances;
 
     static output_source_t *from(wlr_ext_image_capture_source_v1 *b)
     {
@@ -1174,13 +1323,21 @@ struct output_source_t
         wf::render_target_t target{buffer};
         target.geometry = og;
         target.scale    = scale;
-        std::vector<wf::scene::render_instance_uptr> instances;
-        wf::get_core().scene()->gen_render_instances(instances, [] (auto) {}, output);
+        /* The scene's render instances, kept between pictures (regenerated
+         * by the manager when the scene changes, as Wayfire's own outputs
+         * do): building them for the whole scene on every picture cost a
+         * walk of every node and an enter/leave of every surface. */
+        if (!scene_instances)
+        {
+            scene_instances = std::make_unique<wf::scene::render_instance_manager_t>(
+                std::vector<wf::scene::node_ptr>{wf::get_core().scene()}, [] (auto) {}, output);
+        }
+
         wf::render_pass_params_t params;
         params.background_color = {0, 0, 0, 1};
         params.damage    = og;
         params.target    = target;
-        params.instances = &instances;
+        params.instances = &scene_instances->get_instances();
         params.flags     = wf::RPASS_CLEAR_BACKGROUND;
         capture_rendering = true;
         wf::render_pass_t::run(params);
@@ -1251,6 +1408,7 @@ static void output_source_stop(wlr_ext_image_capture_source_v1 *b)
         s->hook(false);
         s->later.disconnect();
         s->pending = false;
+        s->scene_instances.reset();
     }
 }
 
@@ -1381,6 +1539,7 @@ class output_capture_t
             it->second->hook(false);
             it->second->output = nullptr;
             it->second->later.disconnect();
+            it->second->scene_instances.reset();    /* they refer to the display */
             wlr_ext_image_capture_source_v1_finish(&it->second->base);
             retired.push_back(std::move(it->second));
             sources.erase(it);
@@ -1432,6 +1591,7 @@ class output_capture_t
         {
             src->output = nullptr;
             src->later.disconnect();
+            src->scene_instances.reset();
             wlr_ext_image_capture_source_v1_finish(&src->base);
         }
 

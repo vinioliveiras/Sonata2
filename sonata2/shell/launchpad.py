@@ -481,8 +481,25 @@ class Launchpad(Gtk.ApplicationWindow):
             grid.fill(widgets)
         if menu is not None:
             menu.show()
+        self._prune_widgets(pages)
         self._select(self.selected)
         ui.transition.glide_play(before, self)
+
+    def _prune_widgets(self, pages) -> None:
+        """Tiles of what is no longer in the grid let go (memory review: a
+        removed folder's tile stayed in self.widgets under id(folder) for the
+        whole session). The apps inside folders stay: the Apps Menu's tabs
+        show them through _item_widget too."""
+        live = set()
+        for page in pages:
+            for it in page:
+                if M.is_folder(it):
+                    live.add(id(it))
+                    live.update(a for a in it["apps"] if isinstance(a, str))
+                else:
+                    live.add(it)
+        for key in [k for k in self.widgets if k not in live]:
+            del self.widgets[key]
 
     def clean_up(self) -> None:
         """No empty places between the apps: they glide up into them (render)."""

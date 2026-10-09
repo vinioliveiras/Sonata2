@@ -6,6 +6,7 @@ Right-click: Sort by, Display as (Folder / Stack = newest item's icon),
 View content as, Remove from Dock, Open "<folder>".
 A folder dropped on the Dock becomes a stack. Default: Downloads."""
 import os
+import threading
 
 import gi
 
@@ -19,7 +20,11 @@ SORTS = (("name", "Name"), ("added", "Date Added"), ("modified", "Date Modified"
          ("kind", "Kind"))
 MAX_ITEMS = 60
 GRID_COLS, GRID_ICON = 5, 48
-REFRESH_MS = 300       # monitor events coalesced before the folder is listed again
+# monitor events coalesced before the folder is listed again: a download
+# writing fires them all the time, and at 300 ms the folder was listed (and
+# every item stat-ed) on the main loop ~3 times a second until it finished
+REFRESH_MS = 1000
+MOUNT_MS = 300         # a drive unplugged: its folders leave this long after
 
 ui.register("""
 popover.stack-panel { background: none; box-shadow: none; padding: 0; }
@@ -94,6 +99,26 @@ def _icon(info) -> Gio.Icon:
     return info.get_icon() or Gio.ThemedIcon.new("text-x-generic")
 
 
+def _stack_icon(spec) -> Gio.Icon:
+    """The stack's icon: its first item's (display "stack"), else the folder's.
+    Safe off the main thread (Gio only)."""
+    if spec["display"] == "stack":
+        items = _items(spec["path"], spec["sort"])
+        if items:
+            return _icon(items[0][0])
+    return Gio.ThemedIcon.new_from_names(
+        ["folder-download", "folder"] if spec["path"] == _downloads() else ["folder"])
+
+
+def _set_icon(tile, icon) -> None:
+    """Only a different icon: set_gicon drops the tile's rendered icon and
+    repaints the (blurred) Dock -- every refresh of a downloading folder did."""
+    old = getattr(tile, "gicon", None)
+    if old is not None and icon is not None and old.equal(icon):
+        return
+    tile.set_gicon(icon)
+
+
 def _open(gfile: Gio.File) -> None:
     """Folders open in Sonata's Files, files in their default app."""
     from ..files import open_folder
@@ -127,7 +152,7 @@ class StackRow:
         nothing when the mount goes away)."""
         self._volumes = Gio.VolumeMonitor.get()
         self._volumes_id = self._volumes.connect("mount-removed", lambda *_a: GLib.timeout_add(
-            REFRESH_MS, lambda: (self.drop_gone(), False)[1]))
+            MOUNT_MS, lambda: (self.drop_gone(), False)[1]))
 
     def drop_gone(self) -> None:
         for tile in [t for t in self._tiles if gone(t.spec["path"])]:
@@ -187,7 +212,7 @@ class StackRow:
                 if tile in self._tiles and gone(tile.spec["path"]):
                     self.remove(tile)                # the folder was deleted (or put in the Trash)
                     return False
-                self.refresh_icon(tile)
+                self.refresh_icon_bg(tile)
                 return False
             tile.stack_src = GLib.timeout_add(REFRESH_MS, run)
 
@@ -211,15 +236,30 @@ class StackRow:
             self._volumes_id = 0
 
     def refresh_icon(self, tile) -> None:
-        spec = tile.spec
-        if spec["display"] == "stack":
-            items = _items(spec["path"], spec["sort"])
-            if items:
-                tile.set_gicon(_icon(items[0][0]))
-                return
-        downloads = _downloads()
-        tile.set_gicon(Gio.ThemedIcon.new_from_names(
-            ["folder-download", "folder"] if spec["path"] == downloads else ["folder"]))
+        _set_icon(tile, _stack_icon(tile.spec))
+
+    def refresh_icon_bg(self, tile) -> None:
+        """As refresh_icon, the folder listed in a thread (a big Downloads
+        folder: every item stat-ed). One listing at a time per tile; changes
+        meanwhile list it once more."""
+        if getattr(tile, "stack_busy", False):
+            tile.stack_again = True
+            return
+        tile.stack_busy, tile.stack_again = True, False
+        spec = dict(tile.spec)
+
+        def work():
+            GLib.idle_add(done, _stack_icon(spec))
+
+        def done(icon):
+            tile.stack_busy = False
+            if tile in self._tiles and tile.spec == spec:     # (not removed / changed meanwhile)
+                _set_icon(tile, icon)
+            if tile.stack_again and tile in self._tiles:
+                tile.stack_again = False
+                self._refresh_later(tile)
+            return False
+        threading.Thread(target=work, daemon=True).start()
 
     def set_spec(self, tile, key, value) -> None:
         tile.spec[key] = value

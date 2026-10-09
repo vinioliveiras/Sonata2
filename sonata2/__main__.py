@@ -16,6 +16,7 @@ Development / screenshots:
   sonata2 key volume-up|volume-down|volume-mute|brightness-up|brightness-down  (media keys + HUD)
   sonata2 key play-pause|next|previous                        (media player keys, MPRIS)
   sonata2 keep <component> [args]                             (session: restart it if it crashes)
+  sonata2 keep-all <component>[,args] ...                     (the same, several in one process)
   sonata2 doctor                                              (is this computer ready for Sonata?)
   sonata2 doctor windows                                      (are the window styles on other apps in place?)
   sonata2 screenshot [area]                                    (Super+Shift+3 / 4)
@@ -26,8 +27,10 @@ import json
 import os
 import sys
 
-from .shell import layer
-from . import apps  # noqa: F401,E402  (cleans app names everywhere: "Spotify (Launcher)")
+# No GTK / Gio at module level: `sonata2 keep` / `keep-all` (the session's
+# supervisors) import only this file and stay a ~9 MB process each; the
+# shell's layer and apps (the Gio app-name cleaning) are imported in main()
+# once a component that draws is started.
 
 APP_IDS = {"dock": "io.github.vinioliveiras.sonata2.dock",
            "autostart": "io.github.vinioliveiras.sonata2.autostart",
@@ -229,6 +232,7 @@ def run_dock(app, args, ui):
 
 def run_launchpad(app, args, ui, state):
     from gi.repository import Gdk
+    from .shell import layer
     from .shell import launchpad, launchpad_window as LW
     win = state.get("win")
     if win is not None:            # second launch: toggle
@@ -405,6 +409,7 @@ def _serve_file_manager(app, ui) -> None:
 
 def run_spotlight(app, args, ui, state):
     """Single instance, resident: running it again toggles it."""
+    from .shell import layer
     from .shell.spotlight import Spotlight
     win = state.get("win")
     if win is not None:
@@ -640,10 +645,13 @@ def run_topbar(app, args, ui):
     act.connect("activate", capture)
     app.add_action(act)
 
-    # Warm-up after login (Vini: no lag the first time): the switcher, emoji,
-    # clipboard and volume panels made and drawn once invisibly, and the
-    # Control Center built once (its icons and modules loaded), one every
-    # couple of seconds so the login itself stays light.
+    # Warm-up after login (Vini: no lag the first time): the switcher and
+    # volume panels made and drawn once invisibly, and the Control Center
+    # built once (its icons and modules loaded), one every couple of seconds
+    # so the login itself stays light. The emoji and clipboard pickers are
+    # not among them (memory review): kept for the whole session they held
+    # the emoji font's glyphs and the clipboard's previews though most days
+    # neither is opened -- emoji() / clipboard() above build them on first use.
     def warm(step=0):
         try:
             if step == 0 and win.bar.manager is not None and "w" not in sw:
@@ -653,27 +661,19 @@ def run_topbar(app, args, ui):
                 sw["w"] = Switcher(app, win.bar.manager, win.bar.mru)
                 win.bar.switcher_win = sw["w"]
                 layer.prewarm(sw["w"], delay_ms=1)
-            elif step == 1 and "w" not in emo:
-                from .shell.emoji import EmojiPicker
-                emo["w"] = EmojiPicker(app)                    # its first category: the emoji font loaded
-                layer.prewarm(emo["w"], delay_ms=1)
-            elif step == 2 and "c" not in emo:
-                from .shell.clip_picker import ClipboardPicker
-                emo["c"] = ClipboardPicker(app, win.bar.clip)
-                layer.prewarm(emo["c"], delay_ms=1)
-            elif step == 3 and "w" not in osd:
+            elif step == 1 and "w" not in osd:
                 from .shell.osd import OSD
                 osd["w"] = OSD(app)
                 LS = layer.layer_shell()
                 if LS:
                     osd["w"].keyboard_mode = LS.KeyboardMode.NONE     # (prewarm gives it back)
                 layer.prewarm(osd["w"], delay_ms=1)
-            elif step == 4:
+            elif step == 2:
                 from .shell.topbar import ControlCenter
                 ControlCenter(win.bar)                           # built and dropped: icons, modules
         except Exception as e:                                   # a warm-up only
             print(f"sonata2: warm-up {step}: {e!r}", flush=True)
-        if step < 4:
+        if step < 2:
             _later(1500, lambda: warm(step + 1))
     _later(8000, warm)
     if args.menu >= 0:
@@ -746,6 +746,12 @@ def restart(names) -> int:
     for n in names:                       # the keepers first, so they don't start it again
         for pid in keepers[n]:
             _signal(pid, signal.SIGTERM)
+    # a `keep-all` supervising only components being restarted goes too; one
+    # that also keeps others (polkit, ...) stays: their children end with
+    # SIGTERM below, which it takes as "stopped on purpose" (keep's rules)
+    for pid in _pids(r"-m sonata2 keep-all "):
+        if set(_keep_all_names(pid)) <= set(names):
+            _signal(pid, signal.SIGTERM)
     visible = [p for n in ("dock", "topbar") if n in names for p in children[n]]
     if visible:
         for pid in visible:                # they slide away
@@ -762,10 +768,11 @@ def restart(names) -> int:
                 _signal(pid, signal.SIGTERM)
     time.sleep(0.3)
     cmd = self_argv()
+    # one supervisor for them all (keep-all), as the session starts them
+    specs = [n + (",--background" if n in ("launchpad", "spotlight") else "") for n in names]
+    subprocess.Popen(cmd + (["keep-all"] + specs if len(specs) > 1 else ["keep"] + specs[0].split(",")),
+                     start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for n in names:
-        extra = ["--background"] if n in ("launchpad", "spotlight") else []
-        subprocess.Popen(cmd + ["keep", n] + extra, start_new_session=True,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(f"restarted {n}")
     if "wallpaper" in names and children["wallpaper"]:
         time.sleep(1.5)                    # the new wallpaper is up under the old one
@@ -784,6 +791,18 @@ def restart(names) -> int:
             except OSError:
                 pass
     return 0
+
+
+def _keep_all_names(pid: int) -> list:
+    """The components a running `keep-all` supervises (its command line)."""
+    try:
+        with open(f"/proc/{int(pid)}/cmdline", "rb") as f:
+            argv = f.read().decode(errors="replace").split("\0")
+    except OSError:
+        return []
+    if "keep-all" not in argv:
+        return []
+    return [a.split(",")[0] for a in argv[argv.index("keep-all") + 1:] if a.split(",")[0]]
 
 
 def _signal(pid: int, sig) -> None:
@@ -1082,59 +1101,80 @@ def rss_mb(pid: int) -> int:
     return 0
 
 
-def keep(argv) -> int:
-    """`sonata2 keep dock` (session autostart): run a shell component and
-    start it again if it crashes -- a desktop must never lose its Dock or
-    menu bar. Stopped on purpose (exit 0, SIGTERM from `sonata2 restart`,
-    logout) it stays stopped; crashing over and over, it gives up."""
-    import subprocess
-    import time
-    cmd = self_argv() + argv
-    # each component logs to ~/.cache/sonata2/<name>.log (the previous run's
-    # kept as .old.log) -- what `sonata2 doctor` and bug reports read
-    from .logs import log_dir
-    logdir = log_dir()
-    os.makedirs(logdir, exist_ok=True)
-    log_path = os.path.join(logdir, f"{argv[0]}.log")
-    if os.path.exists(log_path):
-        os.replace(log_path, log_path[:-4] + ".old.log")
+def _mem_total_mb() -> int:
+    """The computer's RAM in MB, without importing webapps (its _meminfo
+    pulls urllib/html.parser into every supervisor)."""
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") // (1 << 20)
+    except (ValueError, OSError):
+        return 0
+
+
+def _keep_session():
+    """What every supervisor needs once: the display handed to D-Bus, the
+    compositor it belongs to and the components' memory limit."""
     share_session_env()
     sock = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), os.environ.get("WAYLAND_DISPLAY", "wayland-0"))
     session = _socket_id(sock)                 # the compositor this component belongs to
-    crashes = []
-    from .webapps import _meminfo
-    limit = component_limit_mb(_meminfo().get("MemTotal", 0))
-    while True:
-        started = time.monotonic()
-        too_big = 0
-        with open(log_path, "a", buffering=1) as log:
-            log.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} {' '.join(argv)}\n")
-            child = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
-            while True:                      # the log stays under its cap (logs.py) however long it runs
-                try:
-                    code = child.wait(timeout=60)
-                    break
-                except subprocess.TimeoutExpired:
-                    from . import logs
-                    logs.trim(log_path)
-                # a leak over a long day: started again before it weighs on the apps
-                too_big = rss_mb(child.pid)
-                if too_big > limit:
-                    log.write(f"sonata2 keep: {argv[0]} holds {too_big} MB (limit {limit} MB); restarting\n")
-                    child.terminate()
-                    try:
-                        child.wait(timeout=10)
-                    except subprocess.TimeoutExpired:
-                        child.kill()
-                        child.wait()
-                    code = None
-                    break
+    return sock, session, component_limit_mb(_mem_total_mb())
+
+
+class _Kept:
+    """One supervised component: its log, its crash history and what to do
+    when it ends -- the rules of `keep`, shared by `keep-all` (several
+    components, one supervisor process)."""
+
+    def __init__(self, argv, sock, session, limit):
+        self.argv, self.name = list(argv), argv[0]
+        self.sock, self.session, self.limit = sock, session, limit
+        self.cmd = self_argv() + self.argv
+        self.crashes, self.child, self.log, self.started, self.too_big = [], None, None, 0.0, 0
+        # each component logs to ~/.cache/sonata2/<name>.log (the previous run's
+        # kept as .old.log) -- what `sonata2 doctor` and bug reports read
+        from .logs import log_dir
+        logdir = log_dir()
+        os.makedirs(logdir, exist_ok=True)
+        self.log_path = os.path.join(logdir, f"{self.name}.log")
+        if os.path.exists(self.log_path):
+            os.replace(self.log_path, self.log_path[:-4] + ".old.log")
+
+    def start(self) -> None:
+        import subprocess
+        import time
+        self.started, self.too_big = time.monotonic(), 0
+        self.log = open(self.log_path, "a", buffering=1)
+        self.log.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} {' '.join(self.argv)}\n")
+        self.child = subprocess.Popen(self.cmd, stdout=self.log, stderr=subprocess.STDOUT)
+
+    def tick(self) -> bool:
+        """The once-a-minute check: the log stays under its cap (logs.py)
+        however long it runs, and a leak over a long day is stopped before
+        it weighs on the apps. True: stopped for its memory."""
+        import subprocess
+        from . import logs
+        logs.trim(self.log_path)
+        self.too_big = rss_mb(self.child.pid)
+        if self.too_big <= self.limit:
+            return False
+        self.log.write(f"sonata2 keep: {self.name} holds {self.too_big} MB (limit {self.limit} MB); restarting\n")
+        self.child.terminate()
+        try:
+            self.child.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            self.child.kill()
+            self.child.wait()
+        return True
+
+    def ended(self, code):
+        """It exited with `code` (None: stopped for its memory) -> ("again",
+        seconds to wait before starting it again) or ("stop", exit code)."""
+        import time
+        if self.log is not None:
+            self.log.close()
+            self.log = None
         if code is None:                      # restarted for its memory: not a crash, not a stop
-            print(f"sonata2 keep: {argv[0]} used {too_big} MB; started again", file=sys.stderr, flush=True)
-            time.sleep(1)
-            if not _same_session(sock, session):
-                return 0
-            continue
+            print(f"sonata2 keep: {self.name} used {self.too_big} MB; started again", file=sys.stderr, flush=True)
+            return "again", 1
         # on purpose, or the session ended -- also when Sonata already started
         # again on a new compositor (the same socket name): its own Dock and
         # menu bar are coming (Vini: two Docks and two menu bars after a crash)
@@ -1142,17 +1182,111 @@ def keep(argv) -> int:
         # it, so ask whether anyone listens -- and again after the pause
         # (Vini, 18:53: restarted a second too late, the old Dock landed on
         # the new compositor next to the new session's own)
-        if code in (0, -15, -2, 130, 143) or not _same_session(sock, session):
-            return 0
+        if code in (0, -15, -2, 130, 143) or not _same_session(self.sock, self.session):
+            return "stop", 0
         now = time.monotonic()
-        crashes = [t for t in crashes if now - t < 60] + [now]
-        print(f"sonata2 keep: {' '.join(argv)} exited with {code}; restarting", file=sys.stderr, flush=True)
-        if len(crashes) >= 5:
-            print(f"sonata2 keep: {argv[0]} keeps crashing; giving up", file=sys.stderr)
-            return 1
-        time.sleep(1 if now - started > 10 else 3)
-        if not _same_session(sock, session):
+        self.crashes = [t for t in self.crashes if now - t < 60] + [now]
+        print(f"sonata2 keep: {' '.join(self.argv)} exited with {code}; restarting", file=sys.stderr, flush=True)
+        if len(self.crashes) >= 5:
+            print(f"sonata2 keep: {self.name} keeps crashing; giving up", file=sys.stderr)
+            return "stop", 1
+        return "again", 1 if now - self.started > 10 else 3
+
+
+def keep(argv) -> int:
+    """`sonata2 keep dock` (session autostart): run a shell component and
+    start it again if it crashes -- a desktop must never lose its Dock or
+    menu bar. Stopped on purpose (exit 0, SIGTERM from `sonata2 restart`,
+    logout) it stays stopped; crashing over and over, it gives up."""
+    import subprocess
+    import time
+    k = _Kept(argv, *_keep_session())
+    while True:
+        k.start()
+        while True:
+            try:
+                code = k.child.wait(timeout=60)
+                break
+            except subprocess.TimeoutExpired:
+                if k.tick():
+                    code = None
+                    break
+        verdict, n = k.ended(code)
+        if verdict == "stop":
+            return n
+        time.sleep(n)
+        if not _same_session(k.sock, k.session):
             return 0
+
+
+def _wait_sigchld(fd: int, timeout: float) -> None:
+    """Sleep until a child ends (SIGCHLD's wakeup byte on `fd`) or `timeout`
+    seconds -- no polling: the supervisor wakes once a minute otherwise."""
+    import select
+    select.select([fd], [], [], max(0.0, timeout))
+    try:
+        while os.read(fd, 512):
+            pass
+    except (BlockingIOError, OSError):
+        pass
+
+
+def keep_all(specs) -> int:
+    """`sonata2 keep-all wallpaper dock launchpad,--background ...` (session
+    autostart): `keep` for several components in one process -- each one
+    started again on its own with keep's rules (memory limit, crash pauses,
+    giving up, its own log); a component's arguments follow it after commas.
+    Memory review: five `keep` processes held ~9-40 MB each for the whole
+    session to do nothing but wait."""
+    import signal
+    import time
+    sock, session, limit = _keep_session()
+    kept = [_Kept([a for a in spec.split(",") if a], sock, session, limit) for spec in specs if spec.strip(",")]
+    r, w = os.pipe()
+    os.set_blocking(r, False)
+    os.set_blocking(w, False)
+    signal.signal(signal.SIGCHLD, lambda *_a: None)    # (a Python handler: reset to default in the children)
+    signal.set_wakeup_fd(w)
+    running, due, results = set(), {}, []
+
+    def finished(k, code):
+        running.discard(k)
+        verdict, n = k.ended(code)
+        if verdict == "stop":
+            results.append(n)
+        else:
+            due[k] = time.monotonic() + n
+    for k in kept:
+        k.start()
+        running.add(k)
+    next_tick = time.monotonic() + 60
+    try:
+        while running or due:
+            now = time.monotonic()
+            _wait_sigchld(r, min([next_tick] + list(due.values())) - now)
+            for k in list(running):
+                code = k.child.poll()
+                if code is not None:
+                    finished(k, code)
+            now = time.monotonic()
+            if now >= next_tick:
+                next_tick = now + 60
+                for k in list(running):
+                    if k.tick():
+                        finished(k, None)
+            for k, at in list(due.items()):
+                if now >= at:
+                    del due[k]
+                    if not _same_session(sock, session):
+                        results.append(0)
+                        continue
+                    k.start()
+                    running.add(k)
+    finally:
+        signal.set_wakeup_fd(-1)
+        os.close(r)
+        os.close(w)
+    return max(results, default=0)
 
 
 def main() -> int:
@@ -1164,6 +1298,10 @@ def main() -> int:
         return doctor.main()
     if len(sys.argv) > 2 and sys.argv[1] == "keep":
         return keep(sys.argv[2:])
+    if len(sys.argv) > 2 and sys.argv[1] == "keep-all":
+        return keep_all(sys.argv[2:])
+    from .shell import layer
+    from . import apps  # noqa: F401  (cleans app names everywhere: "Spotify (Launcher)")
     if len(sys.argv) > 1 and sys.argv[1] == "keyring":         # backend (session script) / pam (root)
         from . import keyring
         return keyring.main(sys.argv[2:])

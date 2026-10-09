@@ -177,8 +177,40 @@ class Desktop(Gtk.Fixed):
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._key)
         self.add_controller(keys)
-        self._mon = config.watch("desktop", self._config_changed)
-        self._dock_mon = config.watch("dock", self._dock_changed)      # the Dock moved / resized
+        self._mon = self._dock_mon = None
+        self._released = False
+        self._watch()
+
+    # -- watches: held while on screen ----------------------------------------------------------
+    # Memory review: the wallpaper windows (and this layer) are made again on
+    # every main-display change (walls.rebuild()); the two config monitors and
+    # ~/Desktop's directory monitor were never cancelled, and their callbacks
+    # kept every old Desktop -- its icons and thumbnails -- alive. The window's
+    # destroy unrealizes its children: that lets go of them (a realize again
+    # watches again).
+    def _watch(self) -> None:
+        if self._mon is None:
+            self._mon = config.watch("desktop", self._config_changed)
+            self._dock_mon = config.watch("dock", self._dock_changed)      # the Dock moved / resized
+        if self._released:
+            self._released = False
+            self.folder.load(self.dir.get_uri())
+
+    def release(self) -> None:
+        for mon in (self._mon, self._dock_mon):
+            if mon is not None:
+                mon.cancel()
+        self._mon = self._dock_mon = None
+        self.folder.cancel()
+        self._released = True
+
+    def do_realize(self) -> None:
+        Gtk.Fixed.do_realize(self)
+        self._watch()
+
+    def do_unrealize(self) -> None:
+        self.release()
+        Gtk.Fixed.do_unrealize(self)
 
     # -- layout -------------------------------------------------------------------------------
     def resized(self, w, h) -> None:

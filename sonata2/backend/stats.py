@@ -166,7 +166,7 @@ class Sampler:
             return 0.0, 0.0
         return max(0.0, (rx - prev[0]) / dt), max(0.0, (tx - prev[1]) / dt)
 
-    def gpus(self) -> dict:
+    def gpus(self, nvidia: bool = True) -> dict:
         """{card key: busy %} for every card: amdgpu/Intel from gpu_busy_percent;
         NVIDIA through nvidia-smi, only while the card is awake (asking would
         wake it), else None."""
@@ -175,7 +175,8 @@ class Sampler:
         if self._nvidia is None:
             self._nvidia = procfs.NvidiaUsage(self.sys)
         nv = self._nvidia
-        awake = bool(nv.tool and nv.devices and nv.awake())
+        # nvidia=False: no figure shown needs the NVIDIA card (no nvidia-smi run)
+        awake = bool(nvidia and nv.tool and nv.devices and nv.awake())
         if awake:
             self._nvidia_refresh()
         else:
@@ -242,11 +243,9 @@ class Sampler:
         self._nv_busy = True
 
         def run():
-            import subprocess
+            from .. import vram
             try:
-                out = subprocess.run([self._nvidia.tool, "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu",
-                                      "--format=csv,noheader,nounits"],
-                                     capture_output=True, text=True, timeout=3).stdout
+                out = vram.nvidia_read(self._nvidia.tool)       # shared with the VRAM watch (one run)
                 self._nv_list, self._nv_mem, self._nv_temp = parse_nvidia(out)
                 self._nv_pct = max(self._nv_list) if self._nv_list else None
             except (OSError, ValueError, Exception):
@@ -271,6 +270,18 @@ class Sampler:
         if not r.get("ready"):
             return None, "starting"
         return int(r["fps"]), "ok"
+
+
+def needs_nvidia(kinds) -> bool:
+    """Any of these figures read from an NVIDIA card (nvidia-smi)."""
+    makers = {key: maker for key, maker, _c in CARDS}
+    for k in kinds:
+        if k == "gpu" and "NVIDIA" in makers.values():
+            return True
+        key = (k[4:] if k.startswith("gpu_") else VRAM_KINDS.get(k) or TEMP_KINDS.get(k))
+        if makers.get(key) == "NVIDIA":
+            return True
+    return False
 
 
 def parse_nvidia(out: str) -> tuple:
@@ -364,10 +375,23 @@ class Stats:
         self._timer = 0
         self._busy = False
         self._t = None
+        self._kinds = {}                   # id(listener) -> frozenset of kinds, None (all)
 
-    def subscribe(self, cb) -> None:
+    def wanted(self):
+        """The kinds some subscriber shows, None when one wants all."""
+        out = set()
+        for k in self._kinds.values():
+            if k is None:
+                return None
+            out |= k
+        return out
+
+    def subscribe(self, cb, kinds=None) -> None:
+        """kinds: the figures cb shows (KINDS names); None = all of them.
+        Only what some subscriber shows is read (nvidia-smi, sensors...)."""
         if cb not in self.listeners:
             self.listeners.append(cb)
+        self._kinds[id(cb)] = None if kinds is None else frozenset(kinds)
         if self.last is not None:
             cb(self.last)
         if not self._timer:
@@ -378,6 +402,7 @@ class Stats:
     def unsubscribe(self, cb) -> None:
         if cb in self.listeners:
             self.listeners.remove(cb)
+        self._kinds.pop(id(cb), None)
         if not self.listeners and self._timer:
             from gi.repository import GLib
             GLib.source_remove(self._timer)
@@ -387,7 +412,8 @@ class Stats:
         if not self.listeners:
             self._timer = 0
             return False
-        if not self._busy:
+        from .. import quiet
+        if not self._busy and not quiet.locked():      # nobody sees the figures behind the lock screen
             self._busy = True
             from . import system
             system.run_async(self.read, self._deliver)
@@ -399,10 +425,19 @@ class Stats:
         dt = now - self._t if self._t is not None else 0.0
         self._t = now
         s = self.sampler
-        used, total = s.ram()
-        down, up = s.net(dt)
-        fps, state = s.fps()
-        each = s.gpus()
+        want = self.wanted()
+        has = (lambda *ks: True) if want is None else (lambda *ks: any(k in want for k in ks))
+        gpu_kinds = [k for k in want or () if k == "gpu" or k.startswith(("gpu_", "vram", "temp_"))
+                     and k != "temp_cpu"]
+        used, total = s.ram() if has("ram") else (0, 0)
+        down, up = s.net(dt) if has("net") else (0.0, 0.0)
+        if not has("net"):
+            s._net = None                  # shown again later: its first rate from then, not a spike
+        if not has("cpu"):
+            s._cpu = None
+        fps, state = s.fps() if has("fps") else (None, "off")
+        cards = want is None or bool(gpu_kinds) or self.top_watchers > 0
+        each = s.gpus(nvidia=want is None or self.top_watchers > 0 or needs_nvidia(gpu_kinds)) if cards else {}
         top = {}
         if self.top_watchers > 0:
             if self._top is None:
@@ -411,7 +446,9 @@ class Stats:
                 top = self._top.read()
             except Exception:
                 top = {}
-        return Reading(cpu=s.cpu(), gpu=s.gpu(each), gpus=each, vrams=s.vrams(), cpu_temp=s.cpu_temp(), temps=s.temps(),
+        return Reading(cpu=s.cpu() if has("cpu") else 0.0, gpu=s.gpu(each), gpus=each,
+                       vrams=s.vrams() if cards else {}, cpu_temp=s.cpu_temp() if has("temp_cpu") else None,
+                       temps=s.temps() if cards else {},
                        top=top, ram_used=used, ram_total=total, down=down,
                        up=up, fps=fps, fps_state=state)
 

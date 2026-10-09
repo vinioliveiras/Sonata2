@@ -118,6 +118,66 @@ def _shared(key, make):
     return _SHARED[key]
 
 
+class _StatusPoll:
+    """Wi-Fi, battery and volume for every display's bar: read once per tick
+    and handed to each live bar (it was one set of nmcli/wpctl runs per bar,
+    every POLL_S). Nothing runs while the screen is locked or a fullscreen
+    game has the focus (quiet.py); it catches up the moment that ends. The
+    volume is read only while a bar shows the Sound item, and then from
+    `pactl subscribe` events when pactl is there (no polling)."""
+
+    def __init__(self):
+        from .. import quiet
+        self._busy = set()                       # reads in flight: a second ask while one runs is dropped
+        self._audio = None                       # the volume's event watch, while a bar shows Sound
+        self._gate = quiet.watch(lambda paused: paused or self.poll())
+        GLib.timeout_add_seconds(POLL_S, self._tick)
+
+    def _tick(self) -> bool:
+        self.poll()
+        return True
+
+    def _run(self, key, fn, deliver) -> None:
+        if key in self._busy:
+            return
+        self._busy.add(key)
+
+        def done(res):
+            self._busy.discard(key)
+            for b in list(_BARS):
+                deliver(b, res)
+        system.run_async(fn, done)
+
+    def poll(self) -> None:
+        from .. import quiet
+        if quiet.paused():
+            return                      # locked, or a fullscreen game/video has the focus: stay out of its way
+        self._run("wifi", system.wifi_status, lambda b, res: b._wifi_state(res))
+        self.battery()
+        self._volume()
+
+    def battery(self) -> None:
+        self._run("battery", lambda: (*system.battery(), system.on_ac(), system.power_profile_fast()),
+                  lambda b, res: b._battery_state(res))
+
+    def _volume(self) -> None:
+        if not any(b.cfg.get("show_sound") for b in _BARS):
+            if self._audio is not None:          # nobody shows Sound: no reads, no subscription
+                self._audio.kill()
+                self._audio = None
+            for b in list(_BARS):
+                b._sound_state(None)
+            return
+        if self._audio is None:
+            self._audio = system.watch_audio(self._read_volume) or False     # False: no pactl, keep polling
+            self._read_volume()
+        elif self._audio is False:
+            self._read_volume()
+
+    def _read_volume(self) -> None:
+        self._run("volume", system.volume, lambda b, res: b._sound_state(res))
+
+
 def _power_changed() -> None:
     for b in list(_BARS):
         b._poll_battery()
@@ -257,11 +317,11 @@ class Bar(Gtk.CenterBox):
         if self.manager:
             self.manager.listeners.append(self._active_changed)
         self.alive = True                        # False once its display is gone (timers stop)
+        self.on_stop = []                        # undo hooks of its window (TopBarWindow), run by stop()
         self._tick_clock()
         self._active_changed()
-        self._poll()
-        GLib.timeout_add_seconds(POLL_S, lambda: (self.alive and self._poll(), self.alive)[1])
         _BARS.append(self)
+        self._poll()                             # (one shared poller for every bar: _StatusPoll)
         # plug / charge / level: at once (subscribed once; it calls every live bar)
         from .. import powerprofile                     # (made now: it knows plugged in or not from here)
         _shared("powerfollow", powerprofile.Follow)
@@ -273,6 +333,9 @@ class Bar(Gtk.CenterBox):
         """Its display was unplugged: no more polling or listening (the shared
         watchers stay for the other bars)."""
         self.alive = False
+        for cb in self.on_stop:
+            cb()
+        self.on_stop.clear()
         self.tray.stop()
         if self in _BARS:
             _BARS.remove(self)
@@ -622,16 +685,11 @@ class Bar(Gtk.CenterBox):
 
     # -- status polling ------------------------------------------------------------------
     def _poll(self) -> None:
-        if self.fullscreen_first.active:
-            return                      # a fullscreen game/video has the focus: stay out of its way
-        system.run_async(lambda: (system.wifi_available(), system.wifi_enabled(), system.wifi_current()),
-                         self._wifi_state)
-        self._poll_battery()
-        system.run_async(system.volume, self._sound_state)
+        if self.alive:
+            _shared("status", _StatusPoll).poll()
 
     def _poll_battery(self) -> None:
-        system.run_async(lambda: (*system.battery(), system.on_ac(), system.power_profile_fast()),
-                         self._battery_state)
+        _shared("status", _StatusPoll).battery()
 
     def _wifi_state(self, res) -> None:
         if not res:
@@ -1796,6 +1854,9 @@ class TopBarWindow(Gtk.ApplicationWindow):
             except Exception as e:
                 print(f"sonata2-topbar: sharing: {e}")
             def usb_check():                                        # a lock screen gone without unblocking USB
+                from .. import quiet
+                if quiet.paused():
+                    return True                     # locked (nothing stale then) or a game in front: next look
                 try:
                     from ..backend import usbprotect
                     from .idlelock import is_locked
@@ -1926,7 +1987,13 @@ class TopBarWindow(Gtk.ApplicationWindow):
         motion.connect("enter", lambda *_a: self._pointer(True))
         motion.connect("leave", lambda *_a: self._pointer(False))
         self.add_controller(motion)
-        ui.menu.on_closed.append(lambda: self._pointer(self._inside))
+        # taken off again when the bar's display goes (Bar.stop): the list
+        # held every unplugged display's window alive (a leak per hotplug)
+        closed = lambda: self._pointer(self._inside)  # noqa: E731
+        ui.menu.on_closed.append(closed)
+        hooks = getattr(self.bar, "on_stop", None)
+        if hooks is not None:
+            hooks.append(lambda: closed in ui.menu.on_closed and ui.menu.on_closed.remove(closed))
         self.bar.on_autohide = self._apply_autohide
         self.bar.reveal = lambda: self._hidden and self._slide(False)
         if self.bar.cfg.get("autohide"):

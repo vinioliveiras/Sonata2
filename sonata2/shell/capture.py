@@ -51,8 +51,11 @@ window.sonata-shot, window.sonata-shot > contents { background: none; box-shadow
 window.sonata-rec, window.sonata-rec > contents { background: none; box-shadow: none; }
 .rec-pill { background: none; box-shadow: none; color: %(label)s; padding: 0 2px 0 4px; margin: 2px 8px;
   min-height: 20px; font-family: %(font)s; font-size: 12px; font-weight: 600; font-feature-settings: "tnum"; }
+/* the dot blinks in two steps: a smooth fade repainted the menu bar on
+   every frame for as long as a recording ran (GPU busy the whole time);
+   steps(1) changes it twice a cycle, so only two repaints */
 .rec-dot { min-width: 7px; min-height: 7px; border-radius: 4px; background: %(label)s;
-  animation: rec-blink 1.4s ease-in-out infinite; }
+  animation: rec-blink 1.4s steps(1) infinite; }
 @keyframes rec-blink { 50%% { opacity: 0.3; } }
 .rec-pill image.share-icon { -gtk-icon-size: 13px; color: %(label)s; }
 .rec-pill image.rec-sound { -gtk-icon-size: 12px; opacity: 0.7; }

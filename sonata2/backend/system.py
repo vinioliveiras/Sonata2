@@ -108,18 +108,42 @@ def set_wifi_enabled(on: bool) -> bool:
     return _run(["nmcli", "radio", "wifi", "on" if on else "off"])[0] == 0
 
 
-def wifi_current() -> Tuple[str, int, bool]:
-    """(ssid, signal 0-100, wired connected)."""
-    rc, out = _run(["nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL", "device", "wifi"])
-    ssid, sig = "", 0
+# `nmcli device wifi [list]` alone asks NetworkManager to rescan when its
+# list is older than 30 s: the menu bar's 10 s poll kept the Wi-Fi radio
+# scanning all day. The current network only needs the list NM already has.
+_NO_RESCAN = ["--rescan", "no"]
+
+
+def _wifi_active() -> Tuple[str, int]:
+    rc, out = _run(["nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL", "device", "wifi", "list"] + _NO_RESCAN)
     for line in out.splitlines() if rc == 0 else []:
         parts = _split_nmcli(line)
         if len(parts) >= 3 and parts[0] == "yes":
-            ssid, sig = parts[1], _int(parts[2])
-            break
+            return parts[1], _int(parts[2])
+    return "", 0
+
+
+def _wired(out: str) -> bool:
+    return any(ln.startswith("ethernet:connected") for ln in out.splitlines())
+
+
+def wifi_current() -> Tuple[str, int, bool]:
+    """(ssid, signal 0-100, wired connected)."""
+    ssid, sig = _wifi_active()
     rc, out = _run(["nmcli", "-t", "-f", "TYPE,STATE", "device"])
-    wired = rc == 0 and any(ln.startswith("ethernet:connected") for ln in out.splitlines())
-    return ssid, sig, wired
+    return ssid, sig, rc == 0 and _wired(out)
+
+
+def wifi_status() -> Tuple[bool, bool, Tuple[str, int, bool]]:
+    """(Wi-Fi hardware, radio on, (ssid, signal, wired)) for the menu bar's
+    poll: one device list answers both "Wi-Fi there" and "cable in", and the
+    network list is only read with the radio on (was 4 nmcli runs a tick)."""
+    rc, out = _run(["nmcli", "-t", "-f", "TYPE,STATE", "device"])
+    types = [ln.split(":", 1)[0] for ln in out.splitlines()] if rc == 0 else []
+    avail, wired = "wifi" in types, rc == 0 and _wired(out)
+    on = avail and wifi_enabled()
+    ssid, sig = _wifi_active() if on else ("", 0)
+    return avail, on, (ssid, sig, wired)
 
 
 def wifi_scan(rescan: bool = False) -> List[WifiNetwork]:
@@ -315,9 +339,10 @@ def run_in_terminal(command: str) -> bool:
     """Run a shell command in a terminal window that stays open at the end."""
     import shutil
     try:                                    # Sonata's own Terminal first (needs VTE for GTK 4)
+        # only asked for, not imported: importing loaded libvte into the
+        # menu bar / Settings for good, and the Terminal is another process
         import gi
         gi.require_version("Vte", "3.91")
-        from gi.repository import Vte  # noqa: F401
         from ..__main__ import self_argv
         subprocess.Popen(self_argv() + ["terminal", "--exec", command], start_new_session=True,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

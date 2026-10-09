@@ -183,7 +183,7 @@ class ColourHelperTests(unittest.TestCase):
         """Blur strength 0..100 maps onto Wayfire's kawase_offset range, clamped."""
         self.assertEqual(G.blur_offset(-20), G.OFFSET_RANGE[0])
         self.assertEqual(G.blur_offset(500), G.OFFSET_RANGE[1])
-        self.assertEqual(G.blur_offset(50), 4.5)
+        self.assertEqual(G.blur_offset(50), 3.38)
 
     def test_picker_mix(self):
         """Picker shades: 0 keeps the hue, + tints to white, - shades to black."""

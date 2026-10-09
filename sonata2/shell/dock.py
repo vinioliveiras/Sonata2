@@ -1904,6 +1904,21 @@ class Dock(Gtk.Box):
 
     def _sync(self) -> bool:
         self._sync_src = 0
+        # Every `done` runs this, pure title changes too (a browser's tab, a
+        # terminal's prompt: several a second). What depends on titles alone
+        # is the dynamic names and the title badges; regrouping, the dots, the
+        # relayout and Wayfire's window list (a new IPC socket in a thread +
+        # set_rectangle per window) only when windows or their states changed.
+        tops = list(self.manager.toplevels)
+        sig = frozenset((id(t), t.app_id, getattr(t, "states", None)) for t in tops)
+        if sig == getattr(self, "_sync_sig", None):
+            self._sync_titles(self.windows)
+            if getattr(self, "_rects_unsure", None):
+                # a window Wayfire's list didn't know by its title (which
+                # display it's on): its new title may tell now
+                GLib.idle_add(self._update_rectangles_bg)
+            return False
+        self._sync_sig, self._sync_tops = sig, tops       # (kept: no id reused while compared)
         groups = {}
         for t in self.manager.toplevels:
             key = apps.match_app_id(t.app_id) or t.app_id or "?"
@@ -1930,15 +1945,7 @@ class Dock(Gtk.Box):
                     print(f"sonata2-dock: no app for window app_id {key!r}", flush=True)
                     name, gicon, dynamic = windowapps.describe(key, windowapps.window_title(groups[key]))
                     self._add_tile(key, name, gicon).dynamic = dynamic
-        for key, tile in self.tiles.items():               # names that follow their window's title
-            if getattr(tile, "dynamic", False) and key in groups:
-                name = windowapps.describe(key, windowapps.window_title(groups[key]))[0]
-                if name != tile.name:
-                    tile.name = name
-                    tile.label.set_text(name)
-        self.title_counts = {k: badges.title_count([t.title for t in wins]) for k, wins in groups.items()
-                             if any(badges.counted_title(t.app_id, k) for t in wins)}
-        self.refresh_badges()
+        self._sync_titles(groups, badges_too=True)   # (who is in front: its badge is seen)
         for key, tile in self.tiles.items():
             tile.set_running(self.window_count(key))
             if groups.get(key):
@@ -1948,6 +1955,20 @@ class Dock(Gtk.Box):
         self._relayout()
         GLib.idle_add(self._update_rectangles_bg)
         return False
+
+    def _sync_titles(self, groups, badges_too=False) -> None:
+        """What follows the windows' titles: dynamic names, title badges."""
+        for key, tile in self.tiles.items():               # names that follow their window's title
+            if getattr(tile, "dynamic", False) and key in groups:
+                name = windowapps.describe(key, windowapps.window_title(groups[key]))[0]
+                if name != tile.name:
+                    tile.name = name
+                    tile.label.set_text(name)
+        counts = {k: badges.title_count([t.title for t in wins]) for k, wins in groups.items()
+                  if any(badges.counted_title(t.app_id, k) for t in wins)}
+        if badges_too or counts != self.title_counts:                   # (a title change is usually not a count's)
+            self.title_counts = counts
+            self.refresh_badges()
 
     def _rects_soon(self) -> None:
         """Minimize targets again once the icons settle (not while magnified:
@@ -2022,6 +2043,8 @@ class Dock(Gtk.Box):
         # apps with a window on another display: a title Wayfire hadn't seen
         # yet can't tell which of their windows is here
         elsewhere = {a for a, _t in (placed or set()) - mine}
+        self._rects_unsure = placed is not None and any(
+            (t.app_id, t.title) not in placed for wins in self.windows.values() for t in wins)
         for key, wins in self.windows.items():
             tile = self.tiles.get(key) or self.folder_tile_of(key)    # (in a folder: minimize into it)
             ok, b = tile.compute_bounds(native) if tile else (False, None)
@@ -2305,13 +2328,19 @@ class DockWindow(Gtk.ApplicationWindow):
         motion.connect("enter", lambda *_: self._pointer(True))
         motion.connect("leave", lambda *_: self._pointer(False))
         self.add_controller(motion)
-        ui.menu.on_closed.append(lambda: self._pointer(self._inside))
+        # module-wide lists and file monitors that point back at this window:
+        # all undone on "destroy" (_forget), or every display hotplug (an
+        # extra Dock destroyed, a new one made) leaked a whole Dock
+        self._menu_closed = lambda: self._pointer(self._inside)
+        ui.menu.on_closed.append(self._menu_closed)
         self._cfg_mon = config.watch("dock", self._config_changed)
         # Settings > App Icons: new icons / shapes, live
         self._icons_mon = config.watch("icons", lambda: self.dock is not None and self.dock.refresh_icons())
         self._lock_mon = config.watch("applock", lambda: self.dock is not None and self.dock.refresh_locks())
         from .. import sandbox
-        sandbox.listeners.append(lambda: self.dock is not None and self.dock.refresh_sandboxes())
+        self._sandbox_cb = lambda: self.dock is not None and self.dock.refresh_sandboxes()
+        sandbox.listeners.append(self._sandbox_cb)
+        self.connect("destroy", lambda *_: self._forget())     # (a destroy from C)
         self.rebuild()
         from . import intro
         if intro.entering() and not self.cfg["autohide"]:
@@ -2322,6 +2351,27 @@ class DockWindow(Gtk.ApplicationWindow):
             self.dock.queue_draw()
             intro.wait(lambda: self._slide(False), name="dock")
         intro.leave_on_signal(lambda: self._slide(True))      # restart: the old Dock slides away
+
+    def destroy(self) -> None:
+        # The lists above hold the window: GTK's "destroy" (on dispose) would
+        # never come while they do -- undone here first
+        self._forget()
+        super().destroy()
+
+    def _forget(self) -> None:
+        """Undo __init__'s registrations (the window is going away)."""
+        from .. import sandbox
+        if self._menu_closed in ui.menu.on_closed:
+            ui.menu.on_closed.remove(self._menu_closed)
+        if self._sandbox_cb in sandbox.listeners:
+            sandbox.listeners.remove(self._sandbox_cb)
+        for attr in ("_cfg_mon", "_icons_mon", "_lock_mon"):
+            mon = getattr(self, attr, None)
+            if mon is not None:
+                mon.cancel()
+                setattr(self, attr, None)
+        if self.dock is not None:
+            self.dock.detach()
 
     def rebuild(self) -> None:
         if self.dock:

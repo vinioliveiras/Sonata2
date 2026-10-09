@@ -98,8 +98,8 @@ class Graph(Gtk.Widget):
 class _Live:
     """Subscribes to the figures while its widget is on screen."""
 
-    def __init__(self, widget, update, top=False):
-        self.update, self.top = update, top
+    def __init__(self, widget, update, top=False, kinds=None):
+        self.update, self.top, self.kinds = update, top, kinds
         widget.connect("map", lambda *_a: self._on(True))
         widget.connect("unmap", lambda *_a: self._on(False))
 
@@ -107,7 +107,10 @@ class _Live:
         st = S.Stats.shared()
         if self.top:                       # the per-program reading runs only while one is shown
             st.top_watchers = max(0, st.top_watchers + (1 if on else -1))
-        (st.subscribe if on else st.unsubscribe)(self.update)
+        if on:                             # only what it shows is read (nvidia-smi, sensors...)
+            st.subscribe(self.update, kinds=self.kinds)
+        else:
+            st.unsubscribe(self.update)
 
 
 def menu_item(kind: str, style: str) -> Gtk.Box:
@@ -127,7 +130,7 @@ def menu_item(kind: str, style: str) -> Gtk.Box:
 
         def update(r):
             label.set_label(S.text(kind, r))
-    box._live = _Live(box, update)
+    box._live = _Live(box, update, kinds=[kind])
     return box
 
 

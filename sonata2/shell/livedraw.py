@@ -320,6 +320,19 @@ def pen_button(app, output_fn=lambda: None) -> Gtk.Button:
 
     def follow(on):
         (b.add_css_class if on else b.remove_css_class)("on")
-    d.listeners.append(follow)
-    follow(d.on)
+
+    # listened to while on screen: a pill's window destroyed unrealizes the
+    # pen, which lets go of it (memory review: the shared LiveDraw kept every
+    # pen ever made, and its window, through this callback)
+    def attach(*_a):
+        if follow not in d.listeners:
+            d.listeners.append(follow)
+        follow(d.on)
+
+    def detach(*_a):
+        if follow in d.listeners:
+            d.listeners.remove(follow)
+    b.connect("realize", attach)
+    b.connect("unrealize", detach)
+    attach()
     return b

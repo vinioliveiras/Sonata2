@@ -582,7 +582,22 @@ def content_box(pb, tone: str):
     return min(xs) / w, min(ys) / h, (max(xs) + 1 - min(xs)) / w, (max(ys) + 1 - min(ys)) / h
 
 
-_keyed = {}
+# (path, tone, size) -> (texture, box) or None, least recently used first.
+# Memory review: unbounded, it kept a 256 px texture (256 KB) per icon with a
+# coloured tile for the whole session in every shell process; a byte LRU like
+# _rendered's (a plate keeps its own reference while it is shown).
+_keyed = OrderedDict()
+_KEYED_MAX = 8 << 20
+_keyed_bytes = 0
+
+
+def _keyed_put(key, out) -> None:
+    global _keyed_bytes
+    _keyed[key] = out
+    _keyed_bytes += out[0].get_width() * out[0].get_height() * 4 if out else 0
+    while _keyed_bytes > _KEYED_MAX and len(_keyed) > 1:
+        _k, old = _keyed.popitem(last=False)
+        _keyed_bytes -= old[0].get_width() * old[0].get_height() * 4 if old else 0
 
 
 def keyed_content(path: str, tone: str, size: int = 256):
@@ -592,6 +607,7 @@ def keyed_content(path: str, tone: str, size: int = 256):
     seam. box: the logo's place in the picture (fractions). None if nothing is left."""
     key = (path, tone, size)
     if key in _keyed:
+        _keyed.move_to_end(key)
         return _keyed[key]
     out = None
     try:
@@ -626,7 +642,7 @@ def keyed_content(path: str, tone: str, size: int = 256):
                 out = (tex, box)
     except (GLib.Error, ValueError, ImportError):
         out = None
-    _keyed[key] = out
+    _keyed_put(key, out)
     return out
 
 

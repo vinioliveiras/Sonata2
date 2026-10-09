@@ -96,15 +96,19 @@ class Spinner(Gtk.Widget):
         else:
             self.unset_state_flags(Gtk.StateFlags.CHECKED)
         run = on and self.get_mapped()
-        if run and not self._tick:                # ticks only while seen and spinning
-            self._tick = self.add_tick_callback(self._on_tick)
+        # ticks only while seen and spinning; a timer at the spokes' pace, not
+        # a tick callback (memory/power review: that kept the frame clock --
+        # and the compositor -- running at the display's 180 Hz to redraw 12
+        # times a second)
+        if run and not self._tick:
+            self._tick = GLib.timeout_add(self.PERIOD_US // self.SPOKES // 1000, self._on_tick)
         elif not run and self._tick:
-            self.remove_tick_callback(self._tick)
+            GLib.source_remove(self._tick)
             self._tick = 0
         self.queue_draw()
 
-    def _on_tick(self, _w, clock):
-        step = int(clock.get_frame_time() * self.SPOKES // self.PERIOD_US) % self.SPOKES
+    def _on_tick(self):
+        step = int(GLib.get_monotonic_time() * self.SPOKES // self.PERIOD_US) % self.SPOKES
         if step != self.step:                     # redrawn 12 times a second, not every frame
             self.step = step
             self.queue_draw()

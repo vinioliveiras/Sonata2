@@ -163,13 +163,30 @@ def _run(cmd, timeout=4):
 
 def _sinks():
     """[(sink name, active port name)] of the real outputs."""
+    return _sink_state()[0]
+
+
+def _sink_state():
+    """(real outputs as in _sinks(), pactl indexes of our own filter sinks)."""
     rc, out = _run(["pactl", "-f", "json", "list", "sinks"])
     try:
         nodes = json.loads(out) if rc == 0 else []
     except ValueError:
         nodes = []
-    return [(n.get("name", ""), n.get("active_port") or "") for n in nodes
+    real = [(n.get("name", ""), n.get("active_port") or "") for n in nodes
             if n.get("name") and not n["name"].startswith(PREFIX)]
+    own = frozenset(n["index"] for n in nodes if isinstance(n.get("index"), int)
+                    and (n.get("name") or "").startswith(PREFIX))
+    return real, own
+
+
+def _read_state():
+    """Worker thread: the outputs, our filter sinks and every output's curve."""
+    sinks, own = _sink_state()
+    return sinks, own, {f"{s}|{p}": curve(f"{s}|{p}") for s, p in sinks}
+
+
+_SINK_EVENT = re.compile(r"Event '(\w+)' on sink #(\d+)")
 
 
 class Equalizer:
@@ -182,6 +199,11 @@ class Equalizer:
         self._events = None
         self._src = 0
         self._cfg_mon = None
+        self._own = frozenset()       # pactl indexes of our filter sinks (their events are ours)
+        self._plan = {}               # sink name -> gains the chains should have
+        self._applied = None          # (chain pid, plan) last set with pw-cli: not again
+        self._busy = self._again = False                  # a sync / apply in its thread
+        self._applying = self._apply_again = False
 
     def start(self) -> None:
         if not available():
@@ -194,11 +216,21 @@ class Equalizer:
     def _subscribe(self) -> None:
         """pactl subscribe: a sink appeared/changed (port, plugged headphones)."""
         def line(text):
+            if self.own_event(text):
+                return                       # set-param on our filter: no sync (it fed itself)
             if " sink " in text or "'server'" in text or " card " in text:
                 self.sync_soon()
             elif "'new' on sink-input" in text and self.chains:
                 self._links_soon()           # an app started playing: does it go through us?
         self._events = pactl_watch.watch(line)
+
+    def own_event(self, text) -> bool:
+        """A 'change' on one of our own filter sinks: every pw-cli set-param
+        makes one, and syncing on it ran pactl + pw-dump + pw-cli again, a
+        loop in the menu bar process. (new/remove still sync: a chain
+        process that died must be noticed.)"""
+        m = _SINK_EVENT.search(text)
+        return bool(m and m.group(1) == "change" and int(m.group(2)) in self._own)
 
     def _links_soon(self) -> None:
         if not getattr(self, "_links_src", 0):
@@ -219,15 +251,34 @@ class Equalizer:
         return False
 
     def sync(self) -> None:
-        sinks = _sinks()
-        want = tuple(sorted(s for s, port in sinks if curve(f"{s}|{port}")["on"]))
+        """pactl and the config read in a thread (it ran on the menu bar's
+        main loop for every sink event); one at a time, the last one wins."""
+        if self._busy:
+            self._again = True
+            return
+        self._busy = True
+        from . import system
+        system.run_async(_read_state, self._synced)
+
+    def _synced(self, state) -> None:
+        self._busy = False
+        if state:
+            self._decide(*state)
+        if self._again:
+            self._again = False
+            self.sync()
+
+    def _decide(self, sinks, own, curves) -> None:
+        self._own = own
+        want = tuple(sorted(s for s, port in sinks if curves[f"{s}|{port}"]["on"]))
+        self._plan = {s: curves[f"{s}|{port}"]["gains"] for s, port in sinks if s in want}
         _log("outputs", [f"{s}|{p}" for s, p in sinks], "on:", list(want))
         if want != self.chains or (want and (self.proc is None or self.proc.poll() is not None)):
-            self._restart({s: curve(f"{s}|{port}")["gains"] for s, port in sinks if s in want})
-            GLib.timeout_add(700, lambda: (self._apply(sinks), False)[1])   # nodes need a moment
+            self._restart(dict(self._plan))
+            GLib.timeout_add(700, lambda: (self._apply(), False)[1])   # nodes need a moment
             GLib.timeout_add(3000, lambda: (_log_links(), False)[1])
             return
-        self._apply(sinks)
+        self._apply()
 
     def _restart(self, sinks) -> None:
         if self.proc and self.proc.poll() is None:
@@ -236,7 +287,7 @@ class Equalizer:
                 self.proc.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 self.proc.kill()
-        self.proc, self.chains = None, tuple(sorted(sinks))
+        self.proc, self.chains, self._applied = None, tuple(sorted(sinks)), None
         _kill_stale_chains()
         if not sinks:
             return
@@ -252,18 +303,29 @@ class Equalizer:
             _log("can't start pipewire:", e, error=True)
             self.proc = None
 
-    def _apply(self, sinks) -> None:
-        ids = _node_ids()
-        for sink, port in sinks:
-            nids = ids.get(f"{PREFIX}.{_slug(sink)}")
-            if not nids:
-                _log("no filter node for", sink, "(chain process",
-                     "exited)" if self.proc is None or self.proc.poll() is not None else "running)")
-                continue
-            gains = curve(f"{sink}|{port}")["gains"]
-            params = " ".join(f'"b{i}:Gain" {g:.1f}' for i, g in enumerate(gains))
-            for nid in nids:              # every copy (there should be one)
-                _run(["pw-cli", "set-param", str(nid), "Props", "{ params = [ " + params + " ] }"])
+    def _apply(self) -> None:
+        """Gains of the plan onto the running filters (pw-dump + pw-cli, in a
+        thread). Nothing when no equalizer is on, or when the same plan was
+        already set on the same chain process."""
+        plan = dict(self._plan)
+        pid = self.proc.pid if self.proc is not None and self.proc.poll() is None else None
+        key = (pid, tuple(sorted((s, tuple(g)) for s, g in plan.items())))
+        if not plan or pid is None or key == self._applied:
+            return
+        if self._applying:
+            self._apply_again = True
+            return
+        self._applying = True
+
+        def done(ok):
+            self._applying = False
+            if ok:
+                self._applied = key
+            if self._apply_again:
+                self._apply_again = False
+                self._apply()
+        from . import system
+        system.run_async(_set_gains, done, plan)
 
     def stop(self) -> None:
         self._restart({})
@@ -292,6 +354,22 @@ def _kill_stale_chains() -> None:
                 _log("stopped a stale chain process", pid)
             except OSError:
                 pass
+
+
+def _set_gains(plan) -> bool:
+    """Worker thread: plan's gains onto every copy of each sink's filter;
+    False when a filter node isn't there (yet), so the next sync tries again."""
+    ids, ok = _node_ids(), True
+    for sink, gains in plan.items():
+        nids = ids.get(f"{PREFIX}.{_slug(sink)}")
+        if not nids:
+            _log("no filter node for", sink)
+            ok = False
+            continue
+        params = " ".join(f'"b{i}:Gain" {g:.1f}' for i, g in enumerate(gains))
+        for nid in nids:              # every copy (there should be one)
+            _run(["pw-cli", "set-param", str(nid), "Props", "{ params = [ " + params + " ] }"])
+    return ok
 
 
 def _node_ids() -> dict:

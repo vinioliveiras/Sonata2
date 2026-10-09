@@ -19,6 +19,7 @@ from .. import config
 
 DEFAULTS = {"schedule": "off", "from": "22:00", "to": "07:00", "warmth": 50, "manual_until": ""}
 DAY_K = 6500
+RESPAWN_CHECK_S = 60
 ZONE_TAB = "/usr/share/zoneinfo/zone1970.tab"
 
 
@@ -159,9 +160,34 @@ class NightShift:
         self._waiting = False
         from gi.repository import GLib
         self._pending = 0
+        self._expiry = 0
         self._mon = config.watch("nightshift", self._later)
         self.apply()
-        GLib.timeout_add_seconds(60, lambda: (self.apply(), True)[1])   # "until tomorrow" expiring
+        # wlsunset died: started again (a waitpid only; it was a config read
+        # and a PATH search every minute). "Until tomorrow" ends on its own
+        # one-shot timer (apply -> _expire_at)
+        GLib.timeout_add_seconds(RESPAWN_CHECK_S, self._check_alive)
+
+    def _check_alive(self) -> bool:
+        if self.proc is not None and not self._waiting and self.proc.poll() is not None:
+            self.apply()
+        return True
+
+    def _expire_at(self, cfg: dict) -> None:
+        """A one-shot timer at manual_until (Turn On Until Tomorrow ending)."""
+        from gi.repository import GLib
+        if getattr(self, "_expiry", 0):
+            GLib.source_remove(self._expiry)
+            self._expiry = 0
+        if not manual_active(cfg):
+            return
+        left = (datetime.datetime.fromisoformat(cfg["manual_until"]) - datetime.datetime.now()).total_seconds()
+
+        def fire():
+            self._expiry = 0
+            self.apply()
+            return False
+        self._expiry = GLib.timeout_add_seconds(max(1, int(left) + 1), fire)
 
     def _later(self, *_a) -> None:
         """Debounced: the warmth slider saves on every step."""
@@ -180,7 +206,9 @@ class NightShift:
         return shutil.which("wlsunset") is not None
 
     def apply(self) -> None:
-        cmd = command(config.load("nightshift", DEFAULTS)) if self.available else []
+        cfg = config.load("nightshift", DEFAULTS)
+        self._expire_at(cfg)
+        cmd = command(cfg) if self.available else []
         if cmd == self.cmd and (not cmd or self._waiting or (self.proc and self.proc.poll() is None)):
             return
         self.cmd = cmd

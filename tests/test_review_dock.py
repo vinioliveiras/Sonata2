@@ -598,7 +598,7 @@ class DockWidgetTest(unittest.TestCase):
         d = self.dock
         d.stacks.add(tempfile.mkdtemp())
         tile = d.stacks.tiles()[-1]
-        with mock.patch.object(d.stacks, "refresh_icon") as refresh:
+        with mock.patch.object(d.stacks, "refresh_icon_bg") as refresh:
             for _ in range(5):
                 d.stacks._refresh_later(tile)
             settle(dock_stack.REFRESH_MS + 150)
