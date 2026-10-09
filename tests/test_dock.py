@@ -392,6 +392,30 @@ class DockTest(unittest.TestCase):
         self.assertNotIn(key, self.keys())
         self.assertNotIn(key, self.cfg["pinned"])
 
+    def test_updating_app_stays(self):
+        """Vini: an app being updated left the Dock -- its entry is gone for a
+        moment. It goes only if still gone GONE_CONFIRM_MS later, and not
+        while pacman is still at work."""
+        key = self.removable()[0]
+        from unittest import mock
+        real = D.apps.lookup
+        gone = {"on": True}
+        with mock.patch.object(D.apps, "lookup", lambda k: None if (k == key and gone["on"]) else real(k)), \
+                mock.patch.object(D, "GONE_CONFIRM_MS", 50):
+            self.dock._missing_soon()
+            self.assertIn(key, self.cfg["pinned"])              # not at once
+            gone["on"] = False                                   # the new entry is written
+            settle(200)
+            self.assertIn(key, self.cfg["pinned"])
+            self.assertIn(key, self.keys())
+            gone["on"] = True
+            with mock.patch.object(D, "package_manager_busy", return_value=True):
+                self.dock._missing_soon()
+                settle(200)
+                self.assertIn(key, self.cfg["pinned"])          # pacman still running
+            settle(200)
+        self.assertNotIn(key, self.cfg["pinned"])               # really uninstalled
+
 
 if __name__ == "__main__":
     unittest.main()

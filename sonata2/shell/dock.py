@@ -515,6 +515,13 @@ def toggle_show_desktop(manager) -> str:
 # Docks of this process (one per display with all_displays) and the Wayfire
 # events that move windows between displays: their genie targets follow.
 _DOCKS = []
+GONE_CONFIRM_MS = 20000      # an app's entry still missing this long later: uninstalled, not updating
+PACKAGE_LOCKS = ("/var/lib/pacman/db.lck",)
+
+
+def package_manager_busy() -> bool:
+    """pacman is installing or updating (its database is locked)."""
+    return any(os.path.exists(p) for p in PACKAGE_LOCKS)
 BADGE_POP_MS = 320
 
 
@@ -597,7 +604,7 @@ class Dock(Gtk.Box):
             apps.refresh()                   # a new app's windows find their entry (app_id index)
             if not self._apps_src:
                 self._apps_src = GLib.timeout_add(800, lambda: (setattr(self, "_apps_src", 0),
-                                                                self.forget_missing(), False)[2])
+                                                                self._missing_soon(), False)[2])
         hid = mon.connect("changed", apps_changed)
         self._apps_mon = (mon, hid)          # undone by detach() (a rebuilt Dock isn't destroyed)
         self.connect("destroy", lambda *_: self._drop_apps_mon())
@@ -667,6 +674,9 @@ class Dock(Gtk.Box):
         from ..ui import theme
         theme.off_change(getattr(self, "_theme_handle", None))
         self._drop_apps_mon()
+        if getattr(self, "_gone_src", 0):
+            GLib.source_remove(self._gone_src)
+            self._gone_src = 0
         if self._apps_src:
             GLib.source_remove(self._apps_src)
             self._apps_src = 0
@@ -1078,6 +1088,28 @@ class Dock(Gtk.Box):
             return self.folder(key) is not None
         aid = steamgames.appid(key)
         return bool(apps.lookup(key) or (aid and steamgames.name(aid)))
+
+    def missing(self) -> list:
+        """Pinned or shown apps whose entry is gone."""
+        apps.scan()
+        return [k for k in dict.fromkeys(list(self.cfg["pinned"]) + list(self.tiles))
+                if k not in PERMANENT and not self._known(k)
+                and (k in self.cfg["pinned"] or k not in self.windows)]
+
+    def _missing_soon(self) -> None:
+        """An app's entry vanished: gone for good only if it's still gone a
+        while later. Vini: an app being updated left the Dock -- the package
+        manager removes the old entry and writes the new one a moment later."""
+        if not self.missing() or getattr(self, "_gone_src", 0):
+            return
+
+        def confirm():
+            if package_manager_busy():       # still updating: look again later
+                return True
+            self._gone_src = 0
+            self.forget_missing()
+            return False
+        self._gone_src = GLib.timeout_add(GONE_CONFIRM_MS, confirm)
 
     def forget_missing(self) -> None:
         """Apps uninstalled (from the Trash, Launchpad, a package manager):

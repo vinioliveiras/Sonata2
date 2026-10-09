@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Fixes
+- An app being updated stays in the Dock: an app leaves it only when its
+  entry is still gone 20 seconds later, and not while pacman is running.
 - Sharing or recording the screen no longer slows the computer down: a
   picture is made only when the screen changed (or the pointer moved), at
   most 60 a second -- it was every refresh (180 on a 180 Hz display), with
