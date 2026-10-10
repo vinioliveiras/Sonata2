@@ -849,7 +849,9 @@ class Launchpad(Gtk.ApplicationWindow):
         info = self.installed.get(widget.item)
         if info:
             ctx = self.get_display().get_app_launch_context()
-            self.close_launchpad(lambda: info.launch([], ctx))
+            # opened again if no window comes (launchwatch: Vini, Steam)
+            from .. import launchwatch
+            self.close_launchpad(lambda: launchwatch.open(info, lambda: info.launch([], ctx)))
 
     def _open_folder(self, folder) -> None:
         self._close_folder()

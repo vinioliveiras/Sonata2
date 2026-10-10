@@ -71,10 +71,12 @@ STUCK_MAX_S = 90            # ... but not later than this: a slow app long since
 RELAUNCH_MS = 900           # its processes stopped, then the app opens again
 # Vini: an app sometimes fails to open (Steam above all): no window this long
 # after a launch, its processes are killed and it's opened again, up to
-# LAUNCH_RETRIES times; then a notification says so
-LAUNCH_WATCH_S = 30
-LAUNCH_WATCH_SLOW_S = {"steam": 90, "steam-native": 90, "steam-runtime": 90}    # updates itself first
-LAUNCH_RETRIES = 3
+# LAUNCH_RETRIES times; then a notification says so (launchwatch.py: the
+# same for Launchpad and Files)
+from .. import launchwatch  # noqa: E402
+LAUNCH_WATCH_S = launchwatch.WATCH_S
+LAUNCH_WATCH_SLOW_S = launchwatch.SLOW_S
+LAUNCH_RETRIES = launchwatch.RETRIES
 # a launch bounces until the app's first window shows up, 10 bounces at most
 # (Vini: it went on ~30 s when no window came, e.g. an app already running)
 LAUNCH_MAX_BOUNCES = 10
@@ -2266,12 +2268,7 @@ class Dock(Gtk.Box):
         GLib.timeout_add_seconds(wait, check)
 
     def _launch_failed(self, tile, why: str) -> None:
-        from .. import notify
-        info = tile.info
-        name = info.get_display_name() if info is not None else tile.name
-        icon = info.get_icon() if info is not None else None
-        notify.send(f"“{name}” couldn't open", why + " Try opening it again in a moment.", app="Dock",
-                    icon=icon.to_string() if icon is not None else "", desktop=(info.get_id() or "") if info else "")
+        launchwatch.failed(tile.info, why)
 
     # -- Trash -----------------------------------------------------------------
     def _trash_dir(self) -> str:

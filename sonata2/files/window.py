@@ -737,7 +737,9 @@ class FilesWindow(Adw.ApplicationWindow):
             try:
                 app = DesktopAppInfo.new_from_filename(f.get_path())
                 if app is not None:
-                    app.launch([], self.get_display().get_app_launch_context())
+                    from .. import launchwatch          # opened again if no window comes (Vini)
+                    ctx = self.get_display().get_app_launch_context()
+                    launchwatch.open(app, lambda: app.launch([], ctx))
                     return
             except (TypeError, GLib.Error):
                 pass
@@ -751,6 +753,11 @@ class FilesWindow(Adw.ApplicationWindow):
             self.quick_look_item(info)
             return
         ctx = self.get_display().get_app_launch_context()
+        app = Gio.AppInfo.get_default_for_type(ct, False) if ct and not target else None
+        if app is not None:                     # its app, watched: opened again if no window comes (Vini)
+            from .. import launchwatch
+            launchwatch.open(app, lambda: app.launch([f], ctx))
+            return
         Gio.AppInfo.launch_default_for_uri_async(target or f.get_uri(), ctx, None, self._launched, info)
 
     def _launched(self, _src, res, info):
@@ -913,11 +920,9 @@ class FilesWindow(Adw.ApplicationWindow):
         return items
 
     def _open_with(self, app, info):
-        try:
-            app.launch([file_of(info)], self.get_display().get_app_launch_context())
-        except GLib.Error as e:
-            ui.dialog.alert(f"“{app.get_display_name()}” can’t be opened.", e.message,
-                            [("ok", "OK", "default")], parent=self)
+        from .. import launchwatch                       # opened again if no window comes (Vini)
+        ctx = self.get_display().get_app_launch_context()
+        launchwatch.open(app, lambda: app.launch([file_of(info)], ctx))
 
     def _reveal(self, info):
         f = file_of(info)

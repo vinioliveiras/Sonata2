@@ -21,6 +21,8 @@
   updates itself first) is force-closed and opened again, up to 3 times;
   then a notification says it couldn't open. An app that can't be started
   at all says so at once.
+- The same for apps opened from Launchpad and Files (an app, or a file in
+  its app; not when the app was already open).
 - Open in Sandbox is only in the Dock's menu (not Launchpad / Apps Menu),
   and not offered for web apps (they couldn't open there).
 
