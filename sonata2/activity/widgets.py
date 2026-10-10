@@ -20,7 +20,7 @@ ui.register("""
   color: %(label)s; transition: background-color %(t_fast)s; }
 .tm-sidebar list row:active { background: %(tool_hover)s; transition: none; }
 .tm-sidebar list row:selected { background: %(sidebar_selected)s; color: %(label)s; }
-.tm-sidebar list row image { color: %(accent)s; text-shadow: %(accent_halo)s; -gtk-icon-shadow: %(accent_halo)s; }
+.tm-sidebar list row image { color: %(accent_ink)s; }
 .tm-sidebar list row label { font-family: %(font)s; font-size: %(text_body)s; }
 .tm-side-head { font-size: %(text_small)s; font-weight: 700; color: %(label_tertiary)s; padding: 4px 6px; }
 

@@ -17,7 +17,7 @@ from .folder import is_dir, sort_key  # noqa: E402
 ui.register("""
 /* a shortcut's arrow (Windows), at the icon's bottom left */
 image.fs-link-badge { -gtk-icon-size: 11px; min-width: 14px; min-height: 14px; padding: 0; border-radius: 4px;
-  background: %(control_bg)s; color: %(accent)s; -gtk-icon-shadow: %(accent_halo)s;
+  background: %(control_bg)s; color: %(accent_ink)s;
   box-shadow: 0 0 0 0.5px %(hairline)s, 0 1px 2px rgba(0,0,0,0.25); }
 gridview.fs-icons { background: %(content_bg)s; padding: 10px 14px; }
 gridview.fs-icons > child { padding: 4px 2px 6px 2px; background: none; border-radius: 0; outline: none; }

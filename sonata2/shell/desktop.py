@@ -555,7 +555,8 @@ class Desktop(Gtk.Fixed):
         Item = ui.menu.Item
         n = len(self.selection)
         what = f"“{item.info.get_display_name()}”" if n == 1 else f"{n} Items"
-        pkg = packages.menu_items(file_of(item.info).get_path()) if n == 1 and item.app is None else []
+        # (its alerts parented to the desktop: in front of it, not behind)
+        pkg = packages.menu_items(file_of(item.info).get_path(), self.get_root()) if n == 1 and item.app is None else []
         # anchored to the desktop, not the icon: the selected icon's styles
         # (blue label...) would otherwise reach into the menu's rows
         ok, pt = item.compute_point(self, Graphene.Point().init(x, y))

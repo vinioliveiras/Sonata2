@@ -62,7 +62,7 @@ checkbutton.rem-check check { min-width: 18px; min-height: 18px; border-radius: 
 checkbutton.rem-check check:checked { box-shadow: inset 0 0 0 3px %(content_bg)s; }
 checkbutton.rem-check:active check { filter: brightness(0.85); transition: filter %(t_press)s; }
 button.rem-info { min-width: 22px; min-height: 22px; padding: 0; border-radius: 99px; border: none;
-  background: none; box-shadow: none; color: %(accent)s; text-shadow: %(accent_halo)s; -gtk-icon-shadow: %(accent_halo)s; opacity: 0; transition: opacity %(t_fast)s; }
+  background: none; box-shadow: none; color: %(accent_ink)s; opacity: 0; transition: opacity %(t_fast)s; }
 .nt-rem list row:hover button.rem-info, .nt-rem list row:selected button.rem-info { opacity: 1; }
 .nt-rem-empty { color: %(label_tertiary)s; font-size: %(text_title)s; }
 .rem-detail { padding: 6px 4px; }

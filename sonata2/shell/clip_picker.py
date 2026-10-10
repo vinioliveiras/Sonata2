@@ -30,7 +30,7 @@ window.sonata-clip-picker, window.sonata-clip-picker > contents { background: no
   color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
 .clip-panel .clip-head { margin: 10px 12px 2px; }
 .clip-panel .clip-title { font-weight: 700; }
-.clip-panel .clip-clear { font-size: %(text_small)s; color: %(accent)s; text-shadow: %(accent_halo)s; -gtk-icon-shadow: %(accent_halo)s; background: none; border: none;
+.clip-panel .clip-clear { font-size: %(text_small)s; color: %(accent_ink)s; background: none; border: none;
   box-shadow: none; padding: 0 2px; min-height: 0; }
 .clip-panel .clip-clear:hover { text-decoration: underline; }
 .clip-panel entry { margin: 6px 10px 6px; min-height: 26px; border-radius: 7px; }

@@ -30,7 +30,7 @@ ui.register("""
 .fs-sidebar list row.pin-after { box-shadow: inset 0 -2px %(accent)s; }
 .fs-sidebar list row.fs-head { min-height: 22px; margin-top: 8px; }
 .fs-sidebar .fs-head label { font-size: %(text_small)s; font-weight: 700; color: %(label_tertiary)s; }
-.fs-sidebar row image.fs-place { color: %(accent)s; text-shadow: %(accent_halo)s; -gtk-icon-shadow: %(accent_halo)s; }
+.fs-sidebar row image.fs-place { color: %(accent_ink)s; }
 .fs-sidebar row label.fs-place { font-size: %(text_body)s; }
 .fs-sidebar button.fs-eject { min-width: 18px; min-height: 18px; padding: 0; background: none;
   box-shadow: none; border: none; color: %(label_secondary)s; }

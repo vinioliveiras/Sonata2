@@ -20,7 +20,8 @@ LIGHT = {
     # accents
     "accent": "#007aff",
     "accent_selected": "#0a64e1",               # selected menu row
-    "accent_halo": "none",                      # a glow behind accent text/icons too dark to read
+    "accent_halo": "none",                      # (no longer used: accent_ink instead)
+    "accent_ink": "#007aff",                    # accent text, icons and bars: readable on the background
     "destructive": "#ff3b30",
     # materials (backgrounds)
     "menu_bg": "rgba(236, 236, 236, 0.97)",     # menus, hover labels
@@ -85,6 +86,7 @@ DARK = {
     "accent": "#0a84ff",
     "accent_selected": "#0a84ff",
     "accent_halo": "none",
+    "accent_ink": "#0a84ff",
     "destructive": "#ff453a",
     "menu_bg": "rgba(44, 44, 46, 0.97)",
     "window_bg": "#18181a",                   # darker than macOS' #1e1e1e (Vini)
@@ -267,8 +269,20 @@ def _luminance(hex_color: str) -> float:
 
 
 DARK_BG = "#1e1e1e"
-HALO_BELOW = 2.0             # contrast against a dark background under which accent text gets a halo
-ACCENT_HALO = "0 0 2px rgba(255,255,255,0.45)"
+INK_MIN = 3.0                # accent icons, text and bars at least this contrast with a dark background
+
+
+def lighter_until(hex_color: str, bg: str = DARK_BG, minimum: float = INK_MIN) -> str:
+    """`hex_color` mixed with white just enough to reach `minimum` contrast
+    with `bg` -- the same hue, lighter (black becomes a mid grey)."""
+    h = hex_color.lstrip("#")
+    rgb = [int(h[i:i + 2], 16) for i in (0, 2, 4)]
+    for step in range(0, 101, 2):
+        t = step / 100
+        c = "#%02x%02x%02x" % tuple(round(v + (255 - v) * t) for v in rgb)
+        if contrast(c, bg) >= minimum:
+            return c
+    return "#ffffff"
 
 
 def contrast(a: str, b: str) -> float:
@@ -278,16 +292,17 @@ def contrast(a: str, b: str) -> float:
 
 def accent_tokens(name: str, dark: bool) -> dict:
     """Token overrides for an accent colour (empty for the default blue).
-    A very dark accent (black, Vini's) stays itself in Dark Mode -- its text
-    and icons get a light halo so they can still be read (accent_halo)."""
+    A very dark accent (black, Vini's) stays itself where it fills (selected
+    rows, buttons); in Dark Mode its icons, text and progress bars use a
+    lighter tone of it (accent_ink) -- Vini: no glow behind them any more."""
     c = custom_accent(name)
     if c is None:
         if name not in ACCENTS or name == "blue":
             return {}
         c = ACCENTS[name][1 if dark else 0]
-    out = {"accent": c, "accent_selected": c if dark else _darker(c)}
-    if dark and contrast(c, DARK_BG) < HALO_BELOW:
-        out["accent_halo"] = ACCENT_HALO
+    out = {"accent": c, "accent_selected": c if dark else _darker(c), "accent_ink": c}
+    if dark and contrast(c, DARK_BG) < INK_MIN:
+        out["accent_ink"] = lighter_until(c)
     return out
 
 

@@ -23,6 +23,11 @@
   at all says so at once.
 - The same for apps opened from Launchpad and Files (an app, or a file in
   its app; not when the app was already open).
+- A dark accent colour in Dark Mode: icons, accent text, progress bars and
+  sliders use a lighter tone of it automatically -- no glow behind them
+  any more. The accent itself stays where it fills (selected rows,
+  buttons).
+- The desktop's Install / Extract alerts come in front of the desktop.
 - Open in Sandbox is only in the Dock's menu (not Launchpad / Apps Menu),
   and not offered for web apps (they couldn't open there).
 

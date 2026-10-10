@@ -31,7 +31,7 @@ ui.register("""
 .fs-tab-label { font-size: %(text_small)s; color: %(label_secondary)s; margin: 0 24px; }
 .fs-tab.active .fs-tab-label { color: %(label)s; font-weight: 500; }
 .fs-tab-icon { color: %(label_secondary)s; -gtk-icon-size: 12px; }
-.fs-tab.active .fs-tab-icon { color: %(accent)s; text-shadow: %(accent_halo)s; -gtk-icon-shadow: %(accent_halo)s; }
+.fs-tab.active .fs-tab-icon { color: %(accent_ink)s; }
 button.fs-tab-close, button.fs-tab-add { min-width: 16px; min-height: 16px; padding: 0; margin: 0 5px;
   border-radius: 4px; background: none; box-shadow: none; border: none;
   color: %(label_secondary)s; -gtk-icon-size: 10px; }

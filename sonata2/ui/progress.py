@@ -29,7 +29,7 @@ theme.register("""
 progressbar.sonata-progress > trough { min-height: 6px; border-radius: 3px; background: %(control_off)s;
   border: none; box-shadow: none; }
 progressbar.sonata-progress > trough > progress { min-height: 6px; border-radius: 3px;
-  background: %(accent)s; border: none; box-shadow: none; }
+  background: %(accent_ink)s; border: none; box-shadow: none; }
 progressbar.sonata-progress.meter > trough,
 progressbar.sonata-progress.meter > trough > progress { min-height: 4px; border-radius: 2px; }
 progressbar.sonata-progress.full > trough > progress { background: %(destructive)s; }

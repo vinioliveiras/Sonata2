@@ -25,7 +25,7 @@ theme.register("""
 @define-color accent_fg_color %(label_on_accent)s;
 """, key="adw-accent")
 theme.register("""
-:root { --accent-bg-color: %(accent)s; --accent-color: %(accent)s; --accent-fg-color: %(label_on_accent)s; }
+:root { --accent-bg-color: %(accent)s; --accent-color: %(accent_ink)s; --accent-fg-color: %(label_on_accent)s; }
 """, key="adw-accent-vars")
 
 theme.register("""
@@ -90,7 +90,7 @@ switch.sonata-switch image { opacity: 0; }   /* no I/O glyphs */
 /* slider (Big Sur menu slider: thin track, accent fill, white knob) */
 scale.sonata-slider { padding: 6px 0; min-width: 160px; }
 scale.sonata-slider trough { min-height: 4px; border-radius: 99px; background: %(control_off)s; border: none; }
-scale.sonata-slider highlight { border-radius: 99px; background: %(accent)s; border: none; }
+scale.sonata-slider highlight { border-radius: 99px; background: %(accent_ink)s; border: none; }
 scale.sonata-slider slider { min-width: 18px; min-height: 18px; margin: -7px; border-radius: 99px;
   border: none; background: #ffffff; box-shadow: 0 0 0 0.5px rgba(0,0,0,0.16), 0 0 2px rgba(0,0,0,0.22); }
 

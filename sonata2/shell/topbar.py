@@ -1124,7 +1124,7 @@ ui.register("""
 .wifi-badge > image { margin: 0 6px; }          /* 26 px circle: 14 px glyph + 2 x 6 px */
 .wifi-badge.on { background: %(accent)s; color: %(label_on_accent)s; }
 .cc-small label { font-size: %(text_small)s; font-weight: 400; }
-.cc-small.on image { color: %(accent)s; text-shadow: %(accent_halo)s; -gtk-icon-shadow: %(accent_halo)s; }
+.cc-small.on image { color: %(accent_ink)s; }
 .cc-ns { background: none; box-shadow: none; border: none; padding: 2px 0; min-height: 0; color: %(label)s; }
 .cc-ns .cc-ns-icon { min-width: 26px; min-height: 26px; border-radius: 13px; background: alpha(%(label)s, 0.1); }
 .cc-ns:checked .cc-ns-icon { background: %(accent)s; color: %(label_on_accent)s; }

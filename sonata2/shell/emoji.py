@@ -43,7 +43,7 @@ window.sonata-emoji, window.sonata-emoji > contents { background: none; box-shad
 .emoji-tabs { border-top: 0.5px solid %(separator)s; padding: 4px 6px; }
 .emoji-tabs button { min-width: 26px; min-height: 24px; padding: 0; border: none; box-shadow: none;
   background: none; color: %(label_secondary)s; border-radius: 6px; }
-.emoji-tabs button:checked { color: %(accent)s; text-shadow: %(accent_halo)s; -gtk-icon-shadow: %(accent_halo)s; background: alpha(%(label)s, 0.08); }
+.emoji-tabs button:checked { color: %(accent_ink)s; background: alpha(%(label)s, 0.08); }
 """, key="emoji")
 
 
