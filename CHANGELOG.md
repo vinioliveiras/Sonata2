@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.16.1-alpha -- 2026-10-10
+
+Fixes for installing Sonata on other computers: the login screen, title bars and the wallpaper.
+
 ### Fixes
 - install.sh: Sonata's login screen replaces whichever login manager the
   system uses (Plasma Login on CachyOS stopped the install: "display-
