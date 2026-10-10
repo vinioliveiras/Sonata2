@@ -114,6 +114,8 @@ class Folder:
         self._key_of = {}          # file name -> its sort key (find an item by bisect, not a scan)
         self._cancel = None
         self._monitor = None
+        self._app_monitors = []    # Applications: the apps' folders (an app uninstalled leaves the list)
+        self._app_reload = 0
 
     # -- loading ---------------------------------------------------------------------
     def load(self, uri: str) -> None:
@@ -123,6 +125,8 @@ class Folder:
         if self._monitor:
             self._monitor.cancel()
             self._monitor = None
+        if uri != APPS:
+            self._unwatch_apps()
         if uri == RECENTS:
             self._load_recents(uri, cancel)
             return
@@ -245,7 +249,7 @@ class Folder:
         def work():
             out = []
             for info in apps.scan().values():
-                path = info.get_filename()
+                path = apps.app_filename(info)            # (GioUnix binds get_filename unbound)
                 if not path or not info.should_show():
                     continue
                 f = Gio.File.new_for_path(path)
@@ -268,6 +272,44 @@ class Folder:
             self._fill(uri, items or [])
         from ..backend.system import run_async
         run_async(work, done)
+        self._watch_apps()
+
+    APPS_RELOAD_MS = 400          # a package removes several files: one reload
+
+    def _watch_apps(self) -> None:
+        """Vini: an app uninstalled (dragged from here to the Trash) stayed
+        listed. Every applications folder is watched while this shows."""
+        if self._app_monitors:
+            return
+        from .. import apps
+        for d in apps.app_dirs():
+            try:
+                m = Gio.File.new_for_path(d).monitor_directory(Gio.FileMonitorFlags.WATCH_MOVES, None)
+            except GLib.Error:
+                continue
+            m.connect("changed", self._apps_changed)
+            self._app_monitors.append(m)
+
+    def _apps_changed(self, _mon, f, _other, _event) -> None:
+        if not (f.get_basename() or "").endswith(".desktop") or self.uri != APPS:
+            return
+        if self._app_reload:
+            GLib.source_remove(self._app_reload)
+
+        def again():
+            self._app_reload = 0
+            if self.uri == APPS:
+                self.load(APPS)
+            return False
+        self._app_reload = GLib.timeout_add(self.APPS_RELOAD_MS, again)
+
+    def _unwatch_apps(self) -> None:
+        for m in self._app_monitors:
+            m.cancel()
+        self._app_monitors = []
+        if self._app_reload:
+            GLib.source_remove(self._app_reload)
+            self._app_reload = 0
 
     # -- live updates -------------------------------------------------------------------
     def _watch(self, d: Gio.File) -> None:

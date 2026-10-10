@@ -243,6 +243,40 @@ class PagesTest(unittest.TestCase):
         self.assertEqual(self.rows(g), [])
 
 
+class BazaarTest(unittest.TestCase):
+    """Vini: Bazaar (the app store) comes with Sonata."""
+    def run_block(self, installed, flag="1"):
+        import pathlib
+        src = (pathlib.Path(__file__).resolve().parent.parent / "install.sh").read_text()
+        start = src.index("# -- Bazaar, the app store")
+        block = src[start:src.index("# -- Sonata's login screen", start)]
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "flatpak"), "w") as f:
+                f.write(f'#!/bin/sh\necho "flatpak $*" >> {d}/log\n'
+                        f'[ "$1" = info ] && exit {0 if installed else 1}\nexit 0\n')
+            with open(os.path.join(d, "sudo"), "w") as f:
+                f.write('#!/bin/sh\nexec "$@"\n')
+            for n in ("flatpak", "sudo"):
+                os.chmod(os.path.join(d, n), 0o755)
+            r = subprocess.run(["bash", "-c", f"set -euo pipefail\nBAZAAR={flag}\n" + block],
+                               env=dict(os.environ, PATH=d + ":" + os.environ["PATH"]), capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            log = open(os.path.join(d, "log")).read() if os.path.exists(os.path.join(d, "log")) else ""
+            return r.stdout, log
+
+    def test_installed_from_flathub(self):
+        out, log = self.run_block(False)
+        self.assertIn("remote-add --if-not-exists flathub", log)
+        self.assertIn("install -y --noninteractive flathub io.github.kolunmi.Bazaar", log)
+        self.assertIn("Bazaar: installed", out)
+
+    def test_already_there_or_skipped(self):
+        out, log = self.run_block(True)
+        self.assertNotIn("install", log.replace("info", ""))
+        out, log = self.run_block(False, "0")
+        self.assertEqual(log, "")
+
+
 class InstallShTest(unittest.TestCase):
     """Vini: what Settings would ask to install comes with install.sh."""
     def setUp(self):
@@ -252,12 +286,12 @@ class InstallShTest(unittest.TestCase):
 
     def test_packages(self):
         arch = next(ln for ln in self.src.splitlines() if ln.strip().startswith('OPT="vte4 '))
-        for p in ("wlsunset", "swayidle", "ufw", "cups", "wayvnc", "usbguard", "openrgb"):
+        for p in ("wlsunset", "swayidle", "ufw", "cups", "wayvnc", "usbguard", "openrgb", "flatpak"):
             self.assertIn(f" {p}", arch, p)
 
     def test_usb_setup_block(self):
         start = self.src.index("# -- what Settings would otherwise ask to install")
-        block = self.src[start:self.src.index("# -- Sonata's login screen", start)]
+        block = self.src[start:self.src.index("# -- Bazaar", start)]
         self.assertIn("keyboard and mouse included", block)          # warned
         self.assertIn("from sonata2.backend.usbprotect import SETUP", block)   # one set-up, not a copy
         with tempfile.TemporaryDirectory() as d:

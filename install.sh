@@ -25,6 +25,7 @@
 #                             system LUKS without a password (a polkit rule;
 #                             otherwise asked, default No; --yes never adds it)
 #   ./install.sh --no-mount-without-password  remove that rule again
+#   ./install.sh --no-bazaar  don't install Bazaar (the app store, from Flathub)
 #   ./install.sh --no-usbguard  leave USBGuard as it is (otherwise, when it's
 #                             installed, set up like Settings' Set Up: every
 #                             device allowed while unlocked, new ones blocked
@@ -39,11 +40,11 @@ set -euo pipefail
 # a step that fails stops the install: say which (a friend's install ended without a word)
 trap 's=$?; echo "install.sh stopped at line $LINENO (exit $s): $BASH_COMMAND" >&2; echo "Please send this line to the Sonata developers." >&2' ERR
 SRC="$(cd "$(dirname "$0")" && pwd)"
-MODE=user DEPS=1 YES=0 UNINSTALL=0 DEV=0 GREETER=ask MOUNTRULE=ask USBGUARD=1
+MODE=user DEPS=1 YES=0 UNINSTALL=0 DEV=0 GREETER=ask MOUNTRULE=ask USBGUARD=1 BAZAAR=1
 for a in "$@"; do
     case "$a" in
         --system) MODE=system ;; --deps) DEPS=1 ;; --no-deps) DEPS=0 ;; --yes|-y) YES=1 ;; --uninstall) UNINSTALL=1 ;; --dev) DEV=1 ;;
-        --greeter) GREETER=1 ;; --no-greeter) GREETER=0 ;; --no-usbguard) USBGUARD=0 ;;
+        --greeter) GREETER=1 ;; --no-greeter) GREETER=0 ;; --no-usbguard) USBGUARD=0 ;; --no-bazaar) BAZAAR=0 ;;
         --mount-without-password) MOUNTRULE=1 ;; --no-mount-without-password) MOUNTRULE=0 ;; --gdm) exec "$(dirname "$0")/tools/greeter-setup.sh" revert ;;
         -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 0 ;;
         *) echo "unknown option: $a (see --help)"; exit 2 ;;
@@ -146,22 +147,22 @@ NI=""      # the package manager's "don't ask" flag, for optional packages one b
 case "$family" in
     *arch*)   PM="sudo pacman -S --needed"; NI="--noconfirm"
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python-gobject python-cairo python-pywayland"
-              OPT="vte4 networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gnome-keyring libsecret keepassxc libpulse xorg-xwayland grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap webp-pixbuf-loader gamemode gtksourceview5 gst-plugins-good gst-plugins-bad gst-libav python-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl meson ninja ddcutil openrgb webkitgtk-6.0 wayvnc ufw cups usbguard" ;;
+              OPT="vte4 networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gnome-keyring libsecret keepassxc libpulse xorg-xwayland grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap webp-pixbuf-loader gamemode gtksourceview5 gst-plugins-good gst-plugins-bad gst-libav python-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl meson ninja ddcutil openrgb webkitgtk-6.0 wayvnc ufw cups usbguard flatpak" ;;
     *debian*|*ubuntu*) PM="sudo apt install"; NI="-y"
               PKGS="wayfire gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtk4layershell-1.0 libgtk4-layer-shell0 python3-gi python3-gi-cairo python3-pywayland python3-cffi-backend"
-              OPT="gir1.2-vte-3.91 network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gir1.2-polkit-1.0 gnome-keyring keepassxc pulseaudio-utils xwayland grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap webp-pixbuf-loader gamemode gir1.2-gtksource-5 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav python3-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb gir1.2-webkit-6.0 wayvnc ufw cups usbguard" ;;
+              OPT="gir1.2-vte-3.91 network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gir1.2-polkit-1.0 gnome-keyring keepassxc pulseaudio-utils xwayland grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap webp-pixbuf-loader gamemode gir1.2-gtksource-5 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav python3-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb gir1.2-webkit-6.0 wayvnc ufw cups usbguard flatpak" ;;
     *fedora*|*rhel*) PM="sudo dnf install"; NI="-y"
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell gobject-introspection python3-gobject python3-cairo python3-pywayland"
-              OPT="vte291-gtk4 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gnome-keyring keepassxc pulseaudio-utils xorg-x11-server-Xwayland grim slurp wl-clipboard ffmpegthumbnailer ffmpeg-free bubblewrap webp-pixbuf-loader gamemode gtksourceview5 gstreamer1-plugins-good gstreamer1-plugins-bad-free python3-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb webkitgtk6.0 wayvnc ufw cups usbguard" ;;
+              OPT="vte291-gtk4 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gnome-keyring keepassxc pulseaudio-utils xorg-x11-server-Xwayland grim slurp wl-clipboard ffmpegthumbnailer ffmpeg-free bubblewrap webp-pixbuf-loader gamemode gtksourceview5 gstreamer1-plugins-good gstreamer1-plugins-bad-free python3-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb webkitgtk6.0 wayvnc ufw cups usbguard flatpak" ;;
     *suse*)   PM="sudo zypper install"; NI="-y"
               PKGS="wayfire gtk4 libadwaita-1-0 typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 gtk4-layer-shell python3-gobject python3-gobject-cairo python3-pywayland"
-              OPT="typelib-1_0-Vte-3_91 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb typelib-1_0-WebKit-6_0 cups usbguard" ;;
+              OPT="typelib-1_0-Vte-3_91 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb typelib-1_0-WebKit-6_0 cups usbguard flatpak" ;;
     *void*)   PM="sudo xbps-install"; NI="-y"
               PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python3-gobject python3-cairo python3-pywayland"
-              OPT="vte3-gtk4 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb ufw cups usbguard" ;;
+              OPT="vte3-gtk4 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb ufw cups usbguard flatpak" ;;
     *alpine*) PM="sudo apk add"; NI=""
               PKGS="wayfire gtk4.0 libadwaita gtk4-layer-shell py3-gobject3 py3-cairo py3-pywayland"
-              OPT="vte3-gtk4 networkmanager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb ufw cups usbguard" ;;
+              OPT="vte3-gtk4 networkmanager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb ufw cups usbguard flatpak" ;;
     *)        PM=""; PKGS=""; OPT="" ;;
 esac
 # What building Wayfire 0.12 with its wlroots (tools/build-wayfire-stack.sh),
@@ -558,6 +559,19 @@ if command -v systemctl >/dev/null 2>&1; then
         else
             echo "USB protection: not set up -- Settings > Security & Privacy > USB > Set Up."
         fi
+    fi
+fi
+
+# -- Bazaar, the app store (Flatpak apps from Flathub) ----------------------------------------------
+BAZAAR_ID=io.github.kolunmi.Bazaar
+if [ "$BAZAAR" != 0 ] && command -v flatpak >/dev/null 2>&1; then
+    if flatpak info "$BAZAAR_ID" >/dev/null 2>&1; then
+        :
+    elif sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo && \
+            sudo flatpak install -y --noninteractive flathub "$BAZAAR_ID"; then
+        echo "Bazaar: installed (the app store; --no-bazaar skips it)."
+    else
+        echo "Bazaar: couldn't be installed now -- flatpak install flathub $BAZAAR_ID"
     fi
 fi
 

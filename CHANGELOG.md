@@ -40,6 +40,10 @@
   permission) and Set Up does all of it -- installs it, allows every
   device while unlocked (USBGuard's default blocked them all), lets your
   account block new devices while locked, starts it now and at boot.
+- Files > Applications updates itself when an app is uninstalled (dragged
+  to the Trash) or installed.
+- install.sh installs Bazaar, the app store (Flatpak apps from Flathub;
+  --no-bazaar skips it).
 - Removed "Turn RGB lights off with the screen" (it left the keyboard
   dark); install.sh still installs the OpenRGB app.
 - install.sh installs what Settings would ask for (ufw, CUPS, USBGuard
