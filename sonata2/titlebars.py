@@ -59,6 +59,7 @@ def apply(on: bool = None) -> None:
         from . import adwstyle
         adwstyle.write(on)
         adwstyle.link()
+        adwstyle.link(adwstyle.user_css3(), adwstyle.css_path3())     # GTK 3 apps, Chrome's GTK mode
     except Exception as e:
         print(f"sonata2: libadwaita style: {e}")
     cfg = GLib.get_user_config_dir()

@@ -141,6 +141,40 @@ def css(folder: str = None, bars: bool = True, glass: bool = False) -> str:
             + ((bar(LIGHT) + "@media (prefers-color-scheme: dark) {\n" + bar(DARK) + "}\n") if bars else ""))
 
 
+def css_path3() -> str:
+    return os.path.join(runtime_dir(), "gtk3.css")
+
+
+def user_css3() -> str:
+    return os.path.join(os.path.dirname(user_css()).replace("gtk-4.0", "gtk-3.0"), "gtk.css")
+
+
+def css3(folder: str = None) -> str:
+    """GTK 3 apps' title bar buttons -- Chrome / Chromium in GTK mode draw
+    theirs from these rules too: the colours chosen in Settings (Vini: they
+    kept the theme's), and room at the edge they're on (on the right, the
+    close button came out cut by the window's edge)."""
+    D, G = FRAME["dot"], FRAME["dot_gap"]
+    folder = folder or runtime_dir()
+    side = tokens_frame()["buttons_side"]
+    box = "left" if side == "left" else "right"
+    edge_pad = max(0, TL_LEFT - D / 2 - G / 2)
+
+    def url(name):
+        return f'url("file://{os.path.join(folder, "sonata-tl-" + name + ".svg")}")'
+    w = "headerbar button.titlebutton"
+    out = ["/* Sonata's window buttons for GTK 3 apps -- written by sonata2/adwstyle.py at login */",
+           f"headerbar > box.{box} {{ padding-{side}: {edge_pad:g}px; }}",
+           f"{w}.close, {w}.minimize, {w}.maximize {{ min-width: {D}px; min-height: {D}px; padding: 0;",
+           f"  margin: 0 {G / 2:g}px; border: none; box-shadow: none; background-color: transparent;",
+           f"  background-repeat: no-repeat; background-position: center; background-size: {D}px {D}px; }}"]
+    for n in ("close", "minimize", "maximize"):
+        out += [f"{w}.{n}, {w}.{n}:backdrop {{ background-image: {url(n)}; }}",
+                f"{w}.{n}:hover, {w}.{n}:backdrop:hover {{ background-image: {url(n + '-hover')}; }}"]
+    out.append(f"{w}:active {{ opacity: 0.85; }}")
+    return "\n".join(out) + "\n"
+
+
 def write(on: bool = True, glass: bool = None) -> str:
     """At login: the pictures and the stylesheet (empty when turned off)."""
     folder = runtime_dir()
@@ -159,14 +193,18 @@ def write(on: bool = True, glass: bool = None) -> str:
             glass = glass_bars()
         f.write(css(folder, bars=media_queries(), glass=glass) if on else "/* off: Settings > Appearance */\n")
     os.replace(tmp, css_path())
+    tmp = css_path3() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(css3(folder) if on else "/* off: Settings > Appearance */\n")
+    os.replace(tmp, css_path3())
     return css_path()
 
 
-def link(path: str = None) -> None:
+def link(path: str = None, target: str = None) -> None:
     """Sonata's one line at the top of ~/.config/gtk-4.0/gtk.css (an @import
     must come first); anything else in the file is kept as it is."""
     path = path or user_css()
-    block = f'{BEGIN}\n@import url("file://{css_path()}");\n{END}\n'
+    block = f'{BEGIN}\n@import url("file://{target or css_path()}");\n{END}\n'
     try:
         with open(path, encoding="utf-8") as f:
             text = f.read()
@@ -190,11 +228,13 @@ def install() -> None:
     from . import titlebars
     write(titlebars.enabled())
     link()
+    link(user_css3(), css_path3())             # GTK 3 apps, Chrome's GTK mode
 
 
 def stop() -> None:
     """The session ends: other desktops' apps never see it."""
-    try:
-        os.remove(css_path())
-    except OSError:
-        pass
+    for p in (css_path(), css_path3()):
+        try:
+            os.remove(p)
+        except OSError:
+            pass

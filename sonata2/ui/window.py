@@ -88,6 +88,7 @@ try:
 except Exception:
     pass
 theme.on_change(_traffic_look)
+theme.on_buttons_change(_traffic_look)          # Button colours: open windows too (Vini: Files, Settings)
 
 
 # Standard title bar: every Sonata window puts the traffic lights at the
@@ -124,11 +125,6 @@ def titlebar(win, title: str = None, end: Gtk.Widget = None, zoom=None) -> Gtk.W
     if zoom is True:
         zoom = lambda: toggle_zoom(win)     # noqa: E731
     bar = Gtk.CenterBox(css_classes=["sonata-titlebar"])
-    lights = traffic_lights(win.close, win.minimize, zoom)
-    if buttons_side() == "right":
-        bar.set_end_widget(lights)                  # (an end widget given below goes before them)
-    else:
-        bar.set_start_widget(lights)
     handle = Gtk.WindowHandle(child=bar)
     handle.title_label = None
     if title is not None:
@@ -139,14 +135,31 @@ def titlebar(win, title: str = None, end: Gtk.Widget = None, zoom=None) -> Gtk.W
         bar.set_center_widget(handle.title_label)
     if end is not None:
         end.set_valign(Gtk.Align.CENTER)
+
+    def place():
+        """The buttons on their side (again when Window buttons changes)."""
+        lights = traffic_lights(win.close, win.minimize, zoom)
+        for slot in (bar.get_start_widget(), bar.get_end_widget()):
+            if slot is not None and slot is not end:
+                if isinstance(slot, Gtk.Box) and end is not None and end.get_parent() is slot:
+                    slot.remove(end)
+        bar.set_start_widget(None)
+        bar.set_end_widget(None)
         if buttons_side() == "right":              # the end widget, then the buttons at the edge
-            bar.set_end_widget(None)
-            both = Gtk.Box(spacing=8)
-            both.append(end)
-            both.append(lights)
-            bar.set_end_widget(both)
+            if end is not None:
+                both = Gtk.Box(spacing=8)
+                both.append(end)
+                both.append(lights)
+                bar.set_end_widget(both)
+            else:
+                bar.set_end_widget(lights)
         else:
+            bar.set_start_widget(lights)
             bar.set_end_widget(end)
+        handle.lights = lights
+    place()
+    handle.place = place
+    theme.on_buttons_change(place, owner=handle)
     handle.bar = bar
     return handle
 

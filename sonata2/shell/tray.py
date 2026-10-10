@@ -628,13 +628,56 @@ def run_steam(link: str) -> bool:
     try:
         GLib.spawn_async([steam, link], flags=GLib.SpawnFlags.SEARCH_PATH | GLib.SpawnFlags.STDOUT_TO_DEV_NULL
                          | GLib.SpawnFlags.STDERR_TO_DEV_NULL)
-        return True
     except GLib.Error:
         return False
+    if link != "-shutdown":
+        front_steam()
+    return True
+
+
+# A steam:// link is handed to the running Steam with no xdg-activation token:
+# its window stayed minimized / behind (Vini). Steam's window is brought
+# forward once it shows (it may first have to map, coming from the tray).
+FRONT_EVERY_MS, FRONT_TRIES = 300, 20
+
+
+def front_steam() -> None:
+    from .notifications import bring_forward
+    left = {"n": FRONT_TRIES}
+
+    def poll():
+        left["n"] -= 1
+        if bring_forward("steam", "Steam"):
+            return False
+        return left["n"] > 0
+    GLib.timeout_add(FRONT_EVERY_MS, poll)
+
+
+def _shape(node):
+    """A layout without its ids: what the menu shows."""
+    out = []
+    for child in node[2]:
+        cid, props, kids = child if isinstance(child, tuple) else child.unpack()
+        out.append((tuple(sorted((k, repr(v)) for k, v in props.items())), _shape((cid, props, kids))))
+    return tuple(out)
+
+
+def _ids(node, out=None):
+    """Every item's id, in the order _shape walks them."""
+    out = [] if out is None else out
+    for child in node[2]:
+        cid, props, kids = child if isinstance(child, tuple) else child.unpack()
+        out.append(cid)
+        _ids((cid, props, kids), out)
+    return out
 
 
 class DBusMenu:
     """An item's exported menu: layout on demand, clicks as Events."""
+    shown = None                                # the layout the open menu was built from
+    ids = {}                                    # its ids -> the app's current ones (renumbered)
+    _pending = 0
+    _busy = _again = False
 
     def __init__(self, conn, name, path):
         self.conn, self.name, self.path = conn, name, path
@@ -648,6 +691,9 @@ class DBusMenu:
         if self._sub:
             self.conn.signal_unsubscribe(self._sub)
             self._sub = 0
+        if self._pending:
+            GLib.source_remove(self._pending)
+            self._pending = 0
 
     def _call(self, method, args, rtype=None, cb=None):
         def done(conn, res):
@@ -686,25 +732,55 @@ class DBusMenu:
         self._call("AboutToShow", GLib.Variant("(i)", (0,)), None, lambda _r: layout(first))
 
     def event(self, item_id: int, kind: str = "clicked") -> None:
+        if kind == "clicked":
+            self.open = None                    # the menu is closing: no more redraws in it
         link = steam_link(self.labels.get(item_id, "")) if self.steam and kind == "clicked" else None
         if link and run_steam(link):
             return
-        self._call("Event", GLib.Variant("(isvu)", (item_id, kind, GLib.Variant("i", 0),
+        self._call("Event", GLib.Variant("(isvu)", (self.ids.get(item_id, item_id), kind, GLib.Variant("i", 0),
                                                      GLib.get_real_time() // 1000 & 0xFFFFFFFF)))
 
     def sections(self, layout):
-        self.labels = {}
+        self.labels, self.shown, self.ids = {}, layout, {}
         return layout_to_sections(layout, self.event, self.labels)
 
+    # Vini: Steam's menu did nothing and the menu bar froze after it. Steam
+    # (Chromium's dbusmenu) rebuilds its menu -- new ids, LayoutUpdated -- on
+    # every AboutToShow / "opened": the redraw sent AboutToShow again, an
+    # endless loop that swapped the open menu's rows under the pointer (the
+    # click was lost, the menu's grab left behind). Redraws now only re-read
+    # the layout (no AboutToShow), one at a time, and an unchanged menu keeps
+    # its rows: only its ids are mapped to the new ones.
     def _signal(self, _c, _s, _p, _i, sig, *_a):
-        # LayoutUpdated / ItemsPropertiesUpdated while open: redraw in place
-        if self.open and sig in ("LayoutUpdated", "ItemsPropertiesUpdated"):
-            self.fetch(self._update_open)
+        if self.open and sig in ("LayoutUpdated", "ItemsPropertiesUpdated") and not self._pending:
+            self._pending = GLib.timeout_add(80, self._refetch)
+
+    def _refetch(self):
+        self._pending = 0
+        if self._busy:
+            self._again = True
+            return False
+        self._busy = True
+
+        def got(r):
+            self._busy = False
+            self._update_open(r.unpack()[1] if r else None)
+            if self._again:
+                self._again = False
+                if self.open and not self._pending:
+                    self._pending = GLib.timeout_add(80, self._refetch)
+        self._call("GetLayout", GLib.Variant("(iias)", (0, -1, [])), "(u(ia{sv}av))", got)
+        return False
 
     def _update_open(self, lay):
         if not self.open or lay is None:
             return
         pop, widget = self.open
+        if not pop.get_visible():
+            return
+        if self.shown is not None and _shape(lay) == _shape(self.shown):
+            self.ids = dict(zip(_ids(self.shown), _ids(lay)))
+            return
         group = Gio.SimpleActionGroup()
         model = ui.menu._build(self.sections(lay), group)
         pop.insert_action_group("m", group)              # on the menu, like ui.menu (not left on the anchor)

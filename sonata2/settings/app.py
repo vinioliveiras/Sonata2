@@ -535,8 +535,11 @@ class Settings(Adw.ApplicationWindow):
     def _sidebar(self):
         tv = Adw.ToolbarView()
         hb = Adw.HeaderBar(show_title=False, show_start_title_buttons=False, show_end_title_buttons=False)
+        self._side_hb, self._side_lights = hb, None
+        ui.theme.on_buttons_change(self._place_lights)     # changed elsewhere too: this window follows
         if ui.window.buttons_side() == "left":            # on the right: each pane's header (_show)
-            hb.pack_start(self._lights())
+            self._side_lights = self._lights()
+            hb.pack_start(self._side_lights)
         tv.add_top_bar(hb)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         card = Gtk.Box(spacing=10, css_classes=["st-card"])
@@ -632,8 +635,10 @@ class Settings(Adw.ApplicationWindow):
             tv = Adw.ToolbarView()
             hb = Adw.HeaderBar(show_start_title_buttons=False, show_end_title_buttons=False)
             hb.set_title_widget(Gtk.Label(label=title, css_classes=["st-pane-title"]))
+            tv.lights = None
             if ui.window.buttons_side() == "right":       # the window buttons at the right edge
-                hb.pack_end(self._lights())
+                tv.lights = self._lights()
+                hb.pack_end(tv.lights)
             tv.add_top_bar(hb)
             tv.set_content(page)
             tv.hb, tv.title, tv.main, tv.back = hb, hb.get_title_widget(), page, None
@@ -2805,8 +2810,27 @@ class Settings(Adw.ApplicationWindow):
         title bars Wayfire draws change at once; GTK apps follow GNOME's
         button-layout; Sonata's apps place theirs when their windows open."""
         self._save("appearance", "buttons_side", side)
+        self._place_lights()                           # Vini: Settings itself didn't move them
         system.run_async(apply_buttons_side, None)
-        self.toast("Open windows pick it up when they open again")
+        self.toast("Other open windows pick it up when they open again")
+
+    def _place_lights(self) -> None:
+        """This window's buttons where Window buttons says, now: the sidebar's
+        header (left) or each pane's (right), in that side's order."""
+        right = ui.window.buttons_side() == "right"
+        if getattr(self, "_side_lights", None) is not None:
+            self._side_hb.remove(self._side_lights)
+            self._side_lights = None
+        if not right and getattr(self, "_side_hb", None) is not None:
+            self._side_lights = self._lights()
+            self._side_hb.pack_start(self._side_lights)
+        for tv in self.pages.values():
+            if getattr(tv, "lights", None) is not None:
+                tv.hb.remove(tv.lights)
+                tv.lights = None
+            if right and getattr(tv, "hb", None) is not None:
+                tv.lights = self._lights()
+                tv.hb.pack_end(tv.lights)
 
     def ask_reset_appearance(self):
         return ui.dialog.alert("Reset Appearance?",

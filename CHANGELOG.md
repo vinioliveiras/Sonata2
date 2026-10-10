@@ -55,6 +55,13 @@
 - Settings > Apps: a spinner while an app's permissions are read.
 - No "Manage Printing" app (CUPS' web page): printers are in Settings,
   which offers Turn On when CUPS is installed but not running.
+- Window buttons on the right / Button colours: windows already open
+  follow at once (Settings itself, Files, every Sonata app); GTK 3 apps
+  and Chrome's GTK mode get Sonata's buttons in the chosen colours, with
+  room at the edge (the close button was cut on the right).
+- Steam's menu in the menu bar: its items work again and the menu bar no
+  longer freezes after a click; Store / Library / ... bring Steam's window
+  to the front.
 - Removed "Turn RGB lights off with the screen" (it left the keyboard
   dark); install.sh still installs the OpenRGB app.
 - install.sh installs what Settings would ask for (ufw, CUPS, USBGuard

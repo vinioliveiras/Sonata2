@@ -68,7 +68,7 @@ class ButtonsSideTest(unittest.TestCase):
         from sonata2.files import window as FW
         src = inspect.getsource(FW.FilesWindow)
         self.assertIn('buttons_side() == "right"', src)
-        self.assertIn("bar.append(self._right_lights)", src)
+        self.assertIn("self._toolbar_bar.append(lights)", src)              # (live: test_buttons_live)
 
 
 if __name__ == "__main__":

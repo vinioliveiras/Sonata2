@@ -184,6 +184,7 @@ def _appearance_changed() -> None:
     from . import glass as G
     gl = G.settings()
     switched = _glass_seen is not None and any(gl[i]["on"] != _glass_seen[i]["on"] for i in G.ITEMS)
+    _buttons_changed()
     big = _accent() != old or bars != _glass_bars_on or radii != _radii_seen or switched
     if big or gl != _glass_seen:
         _glass_bars_on = bars
@@ -333,6 +334,59 @@ def on_change(callback, owner=None):
     return handle
 
 
+# The window buttons (Settings > Appearance: Window buttons, Button colours)
+# changed: windows already open follow at once (Vini: Settings itself, Files
+# and the custom colours waited for the app to open again).
+_buttons_listeners = []
+_buttons_seen = None
+
+
+def on_buttons_change(callback, owner=None):
+    """`callback()` when the buttons' side or look changes in appearance.json
+    (held like on_change's)."""
+    if getattr(callback, "__self__", None) is not None:
+        handle = weakref.WeakMethod(callback)
+    else:
+        handle = (lambda cb=callback: cb)
+    _buttons_listeners.append(handle)
+    if isinstance(owner, Gtk.Widget):
+        owner.connect("destroy", lambda *_a: _buttons_listeners.remove(handle) if handle in _buttons_listeners
+                      else None)
+    return handle
+
+
+def _buttons_sig():
+    import json
+    from .. import config
+    try:
+        from ..icons import APPEARANCE_DEFAULTS
+        a = config.load("appearance", APPEARANCE_DEFAULTS) or {}       # (load keeps only known keys)
+    except Exception:
+        return None
+    return (a.get("buttons_side"), a.get("buttons_style"), json.dumps(a.get("buttons_colors"), sort_keys=True))
+
+
+def _buttons_changed() -> None:
+    global _buttons_seen
+    sig = _buttons_sig()
+    if sig == _buttons_seen:
+        return
+    first = _buttons_seen is None
+    _buttons_seen = sig
+    if first:
+        return
+    for handle in list(_buttons_listeners):
+        cb = handle()
+        if cb is None:
+            if handle in _buttons_listeners:
+                _buttons_listeners.remove(handle)
+            continue
+        try:
+            cb()
+        except Exception as e:                    # one window's buttons never stop the others'
+            print(f"sonata2: window buttons: {e}")
+
+
 def off_change(handle) -> None:
     try:
         _listeners.remove(handle)
@@ -430,6 +484,7 @@ def setup() -> None:
     global _dock_mon
     _dock_mon = config.watch("dock", _appearance_changed)       # its old "glass" switch (ui/glass.py)
     _remember_appearance()
+    _buttons_changed()                        # (the first look: remembered, nothing to follow)
     _follow_color_scheme()
     _animation_speed()
     _load()
