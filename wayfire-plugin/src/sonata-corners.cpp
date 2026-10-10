@@ -387,7 +387,7 @@ static float corner_radius()
  * used before, maps input through its own transform). */
 /* the top of a window that is always blurred: title bar + a toolbar */
 /* bumped with every change of the plugin (tests/test_regressions.py checks it) */
-#define SONATA_CORNERS_BUILD "2026-10-09.2 occlusion, hidden windows free their buffer, paced window capture"
+#define SONATA_CORNERS_BUILD "2026-10-10.1 capture-hidden outside the blur"
 static const int TOP_GLASS = 96;
 
 /* a hidden window's buffer is freed when it wasn't drawn for this long */
@@ -1168,6 +1168,7 @@ class capture_hide_node_t : public wf::scene::transformer_base_node_t
 };
 
 static const std::string capture_hide_name = "sonata-capture-hidden";
+static const int CAPTURE_HIDE_Z = wf::TRANSFORMER_BLUR + 100;
 
 /* a view named in capture_hidden: kept out of the display captures */
 static void capture_hide_update(wayfire_view view)
@@ -1183,7 +1184,11 @@ static void capture_hide_update(wayfire_view view)
     auto have  = tnode->get_transformer(capture_hide_name);
     if (want && !have)
     {
-        tnode->add_transformer(std::make_shared<capture_hide_node_t>(), 0, capture_hide_name);
+        /* outermost (above blur's TRANSFORMER_BLUR): while the capture renders,
+         * the surface's blur is left out with it. Vini: inside the blur, the
+         * capture pass ran the palette's blur on its own picture, and the
+         * palette's icons flickered on screen while sharing. */
+        tnode->add_transformer(std::make_shared<capture_hide_node_t>(), CAPTURE_HIDE_Z, capture_hide_name);
     } else if (!want && have)
     {
         tnode->rem_transformer(have);

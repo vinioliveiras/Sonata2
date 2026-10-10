@@ -18,6 +18,7 @@
 - With Control Center (or any pop-up) open, the pointer is the normal
   arrow over the Dock and other apps, not an app's resize arrow.
 - Settings > Wi-Fi: a spinner while the networks are read.
+- The drawing palette's icons no longer flicker while sharing the screen.
 
 ### Performance
 - Windows behind an opaque window are no longer drawn again with it (the

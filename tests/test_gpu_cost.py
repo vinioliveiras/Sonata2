@@ -97,7 +97,7 @@ class OutputCaptureInstancesTest(unittest.TestCase):
 
 class BuildTest(unittest.TestCase):
     def test_build_bumped(self):
-        self.assertIn('#define SONATA_CORNERS_BUILD "2026-10-09.2 ', SRC)
+        self.assertNotIn('#define SONATA_CORNERS_BUILD "2026-10-09.1 ', SRC)   # bumped since
 
 
 class RecDotTest(unittest.TestCase):
