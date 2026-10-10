@@ -60,6 +60,8 @@ class WelcomeMatchesLoginTest(unittest.TestCase):
             g.slot.set_visible_child_name("progress")          # the password accepted: the spinner turns
             settle(1500)                                        # (the column rises in: measured once it stops)
             login = avatar_y(g.windows[0])
+            ok, sb = g.slot.items[0].compute_bounds(g.windows[0])
+            block_mid = (login + sb.get_y() + sb.get_height()) / 2
             w = Gtk.Window(decorated=False)
             over = Gtk.Overlay()
             over.set_child(Gtk.Box())
@@ -74,6 +76,8 @@ class WelcomeMatchesLoginTest(unittest.TestCase):
         self.assertIsNotNone(login)
         self.assertGreater(login, 100)
         self.assertAlmostEqual(welcome, login, delta=2)
+        # Vini: picture, name and field centred as one block, 3% above the middle
+        self.assertAlmostEqual(block_mid, 1080 / 2 - 0.03 * 1080, delta=3)
 
     def test_one_user(self):
         from sonata2.shell import greeter as G

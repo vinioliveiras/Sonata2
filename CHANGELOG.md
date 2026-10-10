@@ -62,6 +62,9 @@
 - Steam's menu in the menu bar: its items work again and the menu bar no
   longer freezes after a click; Store / Library / ... bring Steam's window
   to the front.
+- Login, lock and "loading the desktop" screens: the picture, name and
+  password field (or spinner) are centred as one block, 3% above the
+  middle of the display.
 - Removed "Turn RGB lights off with the screen" (it left the keyboard
   dark); install.sh still installs the OpenRGB app.
 - install.sh installs what Settings would ask for (ufw, CUPS, USBGuard

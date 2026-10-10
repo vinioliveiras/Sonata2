@@ -180,7 +180,10 @@ def _decode_wallpaper(f, max_size: int):
     return Gdk.Texture.new_from_file(f)
 
 
-COLUMN_LIFT = 0.14      # bottom margin, a share of the display height: the column sits 7% above centre
+# bottom margin, a share of the display height (it moves a centred widget up
+# by half of it): the picture, name and field, centred as one block, sit 3%
+# of the display above its middle (Vini, after trying 0 and 7%)
+COLUMN_LIFT = 0.06
 
 
 def lift(widget: Gtk.Widget, monitor) -> Gtk.Widget:
@@ -193,6 +196,33 @@ def lift(widget: Gtk.Widget, monitor) -> Gtk.Widget:
         h = 0
     widget.set_margin_bottom(int(h * COLUMN_LIFT))
     return widget
+
+
+class Balance(Gtk.Widget):
+    """Empty, as tall as `other`: put above a column, it balances the rows
+    hanging below (links, hint) so the picture, name and field are centred
+    as one block (Vini)."""
+
+    def __init__(self, other: Gtk.Widget):
+        super().__init__(can_target=False)
+        self.other = other
+
+    def do_measure(self, orientation, _for_size):
+        if orientation == Gtk.Orientation.VERTICAL and self.other.get_visible():
+            mn, nat, _b, _b2 = self.other.measure(orientation, -1)
+            return mn, nat, -1, -1
+        return 0, 0, -1, -1
+
+
+def balanced(col: Gtk.Box, *below) -> Gtk.Box:
+    """`below` (the rows under the field) in one box at the column's end,
+    an equal empty space at its start: the rest is centred."""
+    extra = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=col.get_spacing(), halign=Gtk.Align.CENTER)
+    for w in below:
+        extra.append(w)
+    col.prepend(Balance(extra))
+    col.append(extra)
+    return extra
 
 
 BLUR_SCALE = 4          # the wallpaper blurred at a quarter of the display's size (looks the same)

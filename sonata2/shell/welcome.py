@@ -15,7 +15,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import intro, layer  # noqa: E402
 from ..ui.progress import Spinner  # noqa: E402
-from .loginui import Backdrop, avatar, lift, password_field, wallpaper_texture  # noqa: E402
+from .loginui import Backdrop, avatar, balanced, lift, password_field, wallpaper_texture  # noqa: E402
 
 WAIT_FOR = ("wallpaper", "topbar", "dock", "launchpad")
 MIN_S, MAX_S = 1.2, 9.0          # shown at least / at most
@@ -48,8 +48,7 @@ def login_column() -> Gtk.Box:
             links.append(Gtk.Button(label="Other Users", css_classes=["gr-link"], can_focus=False))
     except Exception:
         pass
-    col.append(links)
-    col.append(Gtk.Label(css_classes=["lk-hint"], opacity=0))
+    balanced(col, links, Gtk.Label(css_classes=["lk-hint"], opacity=0))
     col.spinner = spin
     return col
 

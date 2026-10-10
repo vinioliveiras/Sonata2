@@ -25,7 +25,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import greetd, ui  # noqa: E402
-from .loginui import Backdrop, Mirror, WaitGuard, avatar, lift, password_field, top_clock, logind, power_bar, shake  # noqa: E402
+from .loginui import Backdrop, Mirror, WaitGuard, avatar, balanced, lift, password_field, top_clock, logind, power_bar, shake  # noqa: E402
 
 STATE = "/var/cache/sonata-greeter/state.json"
 WAITS = "/var/cache/sonata-greeter/password-waits.json"     # waits after wrong passwords, per user
@@ -397,9 +397,8 @@ class Greeter:
             links.append(other)
         if len(self.sessions) > 1:
             links.append(self._session_menu())
-        col.append(links)
         hint = self.hint.add(Gtk.Label(css_classes=["lk-hint"]))
-        col.append(hint)
+        balanced(col, links, hint)                    # picture, name and field centred as one
         if getattr(self, "guard", None) is None:
             from ..throttle import Throttle
             self.guard = WaitGuard(self.entry, self.hint, Throttle(WAITS))
