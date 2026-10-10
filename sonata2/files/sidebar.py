@@ -241,17 +241,27 @@ class Sidebar(Gtk.Box):
         box.append(img)
         name = Gtk.Label(label=title, xalign=0, hexpand=True, ellipsize=3, css_classes=["fs-place"])
         if disk:
+            # name and free space on one line, the meter under them with the
+            # eject button beside it (Vini): the free space ends where the
+            # meter does
             row.add_css_class("fs-disk")
-            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3, hexpand=True, valign=Gtk.Align.CENTER)
-            col.append(name)
-            line = Gtk.Box(spacing=6)
+            grid = Gtk.Grid(column_spacing=6, row_spacing=3, hexpand=True, valign=Gtk.Align.CENTER)
             row.meter = ui.progress.meter(0)
             row.meter.set_hexpand(True)
-            row.free = Gtk.Label(css_classes=["fs-free"])
-            line.append(row.meter)
-            line.append(row.free)
-            col.append(line)
-            box.append(col)
+            row.meter.set_valign(Gtk.Align.CENTER)
+            row.free = Gtk.Label(css_classes=["fs-free"], xalign=1, valign=Gtk.Align.BASELINE)
+            name.set_valign(Gtk.Align.BASELINE)
+            grid.attach(name, 0, 0, 1, 1)
+            grid.attach(row.free, 1, 0, 1, 1)
+            grid.attach(row.meter, 0, 1, 2, 1)
+            if mount is not None:
+                eject = Gtk.Button(icon_name="media-eject-symbolic", css_classes=["fs-eject"],
+                                   tooltip_text="Eject", valign=Gtk.Align.CENTER)
+                eject.connect("clicked", lambda _b, m=mount: self._eject(m))
+                grid.attach(eject, 2, 1, 1, 1)
+                row.eject = eject
+                mount = None                       # (placed: not again at the row's end)
+            box.append(grid)
             self._disks.append(row)
             self._read_space(row)
         else:

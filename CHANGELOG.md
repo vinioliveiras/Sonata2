@@ -5,6 +5,8 @@
 ### Changes
 - Control Center: the whole Do Not Disturb square turns it on and off,
   not only its round button.
+- Files sidebar: a disk's free space sits on its name's line, and the
+  eject button beside its capacity bar.
 
 ## 0.15.0-alpha -- 2026-10-10
 
