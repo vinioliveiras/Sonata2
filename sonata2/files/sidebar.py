@@ -238,11 +238,13 @@ class Sidebar(Gtk.Box):
                 img.set_from_icon_name(icon)
             else:
                 img.set_from_gicon(icon)
+        if disk and mount is not None:
+            img = self._eject_icon(row, img, mount)      # the disk's icon turns into Eject on hover
         box.append(img)
         name = Gtk.Label(label=title, xalign=0, hexpand=True, ellipsize=3, css_classes=["fs-place"])
         if disk:
-            # name and free space on one line, the meter under them (Vini); the
-            # eject button beside both, centred like the disk's icon
+            # name and free space on one line, the meter under them (Vini);
+            # Eject is the disk's own icon on hover (_eject_icon)
             row.add_css_class("fs-disk")
             grid = Gtk.Grid(column_spacing=6, row_spacing=3, hexpand=True, valign=Gtk.Align.CENTER)
             row.meter = ui.progress.meter(0)
@@ -253,14 +255,12 @@ class Sidebar(Gtk.Box):
             grid.attach(name, 0, 0, 1, 1)
             grid.attach(row.free, 1, 0, 1, 1)
             grid.attach(row.meter, 0, 1, 2, 1)
-            if mount is not None:
-                eject = Gtk.Button(icon_name="media-eject-symbolic", css_classes=["fs-eject"],
-                                   tooltip_text="Eject", valign=Gtk.Align.CENTER)
-                eject.connect("clicked", lambda _b, m=mount: self._eject(m))
-                grid.attach(eject, 2, 0, 1, 2)
-                row.eject = eject
-                mount = None                       # (placed: not again at the row's end)
             box.append(grid)
+            row.mount = mount
+            menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
+            menu.connect("pressed", lambda _g, _n, x, y, r=row, t=title: self._disk_menu(r, t, x, y))
+            row.add_controller(menu)
+            mount = None                           # (its Eject is the icon: no button at the row's end)
             self._disks.append(row)
             self._read_space(row)
         else:
@@ -414,6 +414,70 @@ class Sidebar(Gtk.Box):
         else:
             self.list.unselect_all()
         self._quiet = False
+
+    EJECT_FADE_MS = 160
+
+    def _eject_icon(self, row, img, mount) -> Gtk.Widget:
+        """The disk's icon, crossfading to Eject while the pointer is on it
+        (Vini: no separate button); a click on it then ejects."""
+        stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE,
+                          transition_duration=self.EJECT_FADE_MS, valign=Gtk.Align.CENTER,
+                          css_classes=["fs-eject-icon"], tooltip_text="Eject")
+        stack.add_named(img, "disk")
+        stack.add_named(Gtk.Image(icon_name="media-eject-symbolic", pixel_size=16, css_classes=["fs-place"]),
+                        "eject")
+        hover = Gtk.EventControllerMotion()
+        hover.connect("enter", lambda *_a: stack.set_visible_child_name("eject"))
+        hover.connect("leave", lambda *_a: stack.set_visible_child_name("disk"))
+        stack.add_controller(hover)
+        click = Gtk.GestureClick(button=Gdk.BUTTON_PRIMARY)
+
+        def pressed(g, *_a):
+            g.set_state(Gtk.EventSequenceState.CLAIMED)    # ejecting, not opening the disk
+            self._eject(mount)
+        click.connect("pressed", pressed)
+        stack.add_controller(click)
+        row.eject = stack
+        return stack
+
+    def _disk_menu(self, row, title, x, y) -> None:
+        """A disk's menu (Finder's sidebar): open it in a new tab, Get Info,
+        Eject, Disk Utility."""
+        win = self.get_root()
+        mount = getattr(row, "mount", None)
+        first = []
+        if getattr(win, "TABS", False) and hasattr(win, "new_tab"):
+            first.append(ui.menu.Item("Open in New Tab", lambda: win.new_tab(row.uri)))
+        first.append(ui.menu.Item("Get Info", lambda: self._disk_info(row.uri)))
+        sections = [first]
+        if mount is not None:
+            verb = "Eject" if mount.can_eject() else "Unmount"
+            sections.append([ui.menu.Item(f"{verb} “{title}”", lambda: self._eject(mount))])
+        sections.append([ui.menu.Item("Open Disk Utility", self._disk_utility)])
+        ui.menu.popup(row, sections, at=(x, y), passthrough=True)
+
+    def _disk_info(self, uri) -> None:
+        f = Gio.File.new_for_uri(uri)
+
+        def got(_f, res):
+            try:
+                info = f.query_info_finish(res)
+            except GLib.Error:
+                return
+            info.set_attribute_object("sonata::file", f)
+            from .quicklook import GetInfo
+            GetInfo(self.get_root(), info).present()
+        f.query_info_async("*", Gio.FileQueryInfoFlags.NONE, GLib.PRIORITY_DEFAULT, None, got)
+
+    @staticmethod
+    def _disk_utility() -> None:
+        from .. import apps
+        info = apps.lookup("io.github.vinioliveiras.sonata2.diskutil")
+        if info is not None:
+            try:
+                info.launch([], None)
+            except GLib.Error:
+                pass
 
     def _eject(self, mount) -> None:
         op = ui.mountop.MountOperation(self.get_root())

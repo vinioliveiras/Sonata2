@@ -5,8 +5,10 @@
 ### Changes
 - Control Center: the whole Do Not Disturb square turns it on and off,
   not only its round button.
-- Files sidebar: a disk's free space sits on its name's line, and the
-  eject button centred on the row, like its icon.
+- Files sidebar: a disk's free space sits on its name's line; the disk's
+  icon turns into Eject (a short crossfade) while the pointer is on it, and
+  a click there ejects it. A right click on a disk: Open in New Tab, Get
+  Info, Eject / Unmount, Open Disk Utility.
 
 ## 0.15.0-alpha -- 2026-10-10
 
