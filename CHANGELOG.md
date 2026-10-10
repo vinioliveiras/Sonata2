@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixes
+- install.sh: Sonata's login screen replaces whichever login manager the
+  system uses (Plasma Login on CachyOS stopped the install: "display-
+  manager.service already exists"); `install.sh --gdm` puts it back.
+
 ## 0.16.0-alpha -- 2026-10-10
 
 Vulkan and WebGPU per app, window buttons that follow your choice in every

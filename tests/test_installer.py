@@ -150,3 +150,43 @@ class DoctorTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AnyLoginManagerTest(unittest.TestCase):
+    """A friend's CachyOS ran Plasma Login (plasmalogin): it wasn't in the list,
+    stayed enabled, and enabling greetd failed ("display-manager.service already
+    exists"). The one display-manager.service points to is taken over now."""
+    def block(self):
+        src = (ROOT / "tools/greeter-setup.sh").read_text()
+        start = src.index("DMS=")
+        end = src.index("\n", src.index("DMS=")) + 1
+        fn = src[src.index("DM_LINK="):src.index("if [ \"$ACTION\" = revert ]")]
+        return src[start:end] + fn
+
+    def run_it(self, link_target, enabled=""):
+        d = tempfile.mkdtemp()
+        if link_target:
+            unit = os.path.join(d, link_target + ".service")
+            open(unit, "w").close()
+            os.symlink(unit, os.path.join(d, "display-manager.service"))
+        with open(os.path.join(d, "systemctl"), "w") as f:
+            f.write(f'#!/bin/sh\n[ "$1" = is-enabled ] && [ "$2" = "{enabled}.service" ] && exit 0\nexit 1\n')
+        os.chmod(os.path.join(d, "systemctl"), 0o755)
+        script = "set -euo pipefail\n" + self.block() + "\ncurrent_dm || true\n"
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                           env={**os.environ, "PATH": d + ":" + os.environ["PATH"],
+                                "DM_LINK": os.path.join(d, "display-manager.service")})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout.strip()
+
+    def test_plasma_login_found(self):
+        self.assertEqual(self.run_it("plasmalogin"), "plasmalogin")
+        self.assertEqual(self.run_it("some-new-dm"), "some-new-dm")          # any, by its link
+
+    def test_by_name_without_the_link(self):
+        self.assertEqual(self.run_it(None, enabled="sddm"), "sddm")
+        self.assertEqual(self.run_it(None), "")
+
+    def test_greetd_takes_the_link(self):
+        src = (ROOT / "tools/greeter-setup.sh").read_text()
+        self.assertIn("systemctl enable --force greetd.service", src)

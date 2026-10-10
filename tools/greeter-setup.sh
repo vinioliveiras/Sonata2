@@ -23,13 +23,24 @@ SHARE=/usr/local/share/sonata2-greeter
 LAUNCHER=/usr/local/bin/sonata-greeter
 GREETD=/etc/greetd/config.toml
 MARK=/var/lib/sonata-greeter/previous-dm
-DMS="gdm sddm lightdm lxdm ly"
+DMS="gdm sddm plasmalogin lightdm lxdm ly lemurs cosmic-greeter"
 
 say() { printf '\033[1m%s\033[0m\n' "$*"; }
 SUDO=sudo; [ "$(id -u)" = 0 ] && SUDO=""
 ME="${SUDO_USER:-$(id -un)}"
 
+# whichever login manager the system starts: the one display-manager.service
+# points to (any of them -- a friend's CachyOS had Plasma Login, plasmalogin,
+# and enabling greetd failed: "display-manager.service already exists"),
+# else the known ones by name
+DM_LINK="${DM_LINK:-/etc/systemd/system/display-manager.service}"
 current_dm() {
+    local target
+    target="$(readlink -f "$DM_LINK" 2>/dev/null || true)"
+    if [ -n "$target" ] && [ -e "$target" ]; then
+        target="$(basename "$target" .service)"
+        [ -n "$target" ] && [ "$target" != display-manager ] && { echo "$target"; return; }
+    fi
     for dm in $DMS; do
         systemctl is-enabled "$dm.service" >/dev/null 2>&1 && { echo "$dm"; return; }
     done
@@ -163,8 +174,9 @@ fi
 prev="$(current_dm || true)"
 if [ -n "$prev" ] && [ "$prev" != greetd ]; then
     echo "$prev" | $SUDO tee "$MARK" >/dev/null
-    $SUDO systemctl disable "$prev.service"
+    $SUDO systemctl disable "$prev.service" || true
 fi
-$SUDO systemctl enable greetd.service
+# --force: display-manager.service is greetd's now, whatever still held it
+$SUDO systemctl enable --force greetd.service
 say "Sonata's login screen is set up. Restart the computer to see it."
 say "To go back: ./install.sh --gdm"
