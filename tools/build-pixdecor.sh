@@ -52,4 +52,14 @@ step meson install -C "$pdir/build" --destdir "$pdir/stage"
     mkdir -p "$(dirname "$PLUG_PREFIX/$f")"
     cp "$pdir/stage$PLUG_PREFIX/$f" "$PLUG_PREFIX/$f.new" && mv -f "$PLUG_PREFIX/$f.new" "$PLUG_PREFIX/$f"
 done
+# pixdecor puts its settings (pixdecor.xml) where the installed Wayfire keeps
+# metadata (/usr/share/wayfire/metadata), outside the prefix: copied in next
+# to the plugin. Without it Wayfire aborted as pixdecor loaded -- every login
+# went back to the login screen (a friend's laptop; with a system pixdecor
+# installed, its own pixdecor.xml had hidden it).
+find "$pdir/stage" -name '*.xml' -path '*/wayfire/metadata/*' ! -path "$pdir/stage$PLUG_PREFIX/*" | while read -r f; do
+    mkdir -p "$PLUG_PREFIX/share/wayfire/metadata"
+    cp "$f" "$PLUG_PREFIX/share/wayfire/metadata/${f##*/}.new" &&
+        mv -f "$PLUG_PREFIX/share/wayfire/metadata/${f##*/}.new" "$PLUG_PREFIX/share/wayfire/metadata/${f##*/}"
+done
 echo "  pixdecor installed to $PLUG_PREFIX (log out and back in to load it)"

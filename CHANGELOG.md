@@ -6,6 +6,13 @@
 - install.sh: Sonata's login screen replaces whichever login manager the
   system uses (Plasma Login on CachyOS stopped the install: "display-
   manager.service already exists"); `install.sh --gdm` puts it back.
+- install.sh refuses `sudo ./install.sh` (Sonata then went to root's home
+  and every login went back to the login screen); it asks for the password
+  itself. `--system` still installs it for every user.
+- pixdecor built by install.sh gets its settings file (pixdecor.xml):
+  without a system pixdecor, Wayfire aborted as it loaded and every login
+  went back to the login screen. And if Wayfire still ends at once, the
+  session starts it again without the plugins built here.
 
 ## 0.16.0-alpha -- 2026-10-10
 

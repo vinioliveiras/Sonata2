@@ -54,6 +54,14 @@ for a in "$@"; do
     esac
 done
 
+# `sudo ./install.sh` installed Sonata for root: the login screen then found
+# none for the user, and every login went straight back to it (a friend's
+# laptop). It asks for the password itself when it needs it.
+if [ "$(id -u)" = 0 ] && [ "$MODE" != system ] && [ "$UNINSTALL" != 1 ]; then
+    echo "Run ./install.sh without sudo: Sonata is installed for your user (it asks for your password when needed)." >&2
+    echo "(--system installs it for every user, as root.)" >&2
+    exit 1
+fi
 if [ "$MODE" = system ]; then PREFIX=/usr/local; SUDO=sudo; else PREFIX="$HOME/.local"; SUDO=""; fi
 [ "$(id -u)" = 0 ] && SUDO=""
 SHARE="$PREFIX/share/sonata2"

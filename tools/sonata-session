@@ -41,6 +41,11 @@ elif [ -x "$own/bin/wayfire" ] && [ -s "$own/sonata-commit" ] && [ ! -e "$own/fa
         done
     done
 fi
+# The settings of the plugins install.sh builds (pixdecor.xml...) next to
+# them: without its settings a plugin aborts Wayfire as it loads (a friend's
+# laptop had no system pixdecor to lend it its pixdecor.xml)
+plug_home="${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install"
+export WAYFIRE_PLUGIN_XML_PATH="$plug_home/share/wayfire/metadata${WAYFIRE_PLUGIN_XML_PATH:+:$WAYFIRE_PLUGIN_XML_PATH}"
 # Polkit authentication agent (password prompts for system actions):
 # Sonata's own (started by `sonata2 autostart`) when polkit's
 # introspection data is there; otherwise the first other agent installed.
@@ -179,6 +184,23 @@ run_wayfire() {
         WAYFIRE=wayfire
         started=$(date +%s)
         wayfire -c "$cfg" > "$logs/session.log" 2>&1
+        code=$?
+    fi
+    # Still ending at once: a plugin built here (pixdecor, Sonata's own) that
+    # this Wayfire can't load aborts it before anything shows (a friend's
+    # laptop: every login went back to the login screen). Once more without
+    # them -- Wayfire's own title bars and resize -- rather than no session.
+    if [ "$code" -ne 0 ] && [ "$code" -ne 143 ] && [ $(( $(date +%s) - started )) -lt 15 ] && [ -z "${safe_tried:-}" ]; then
+        safe_tried=1
+        mv -f "$logs/session.log" "$logs/session.plugins-failed.log"
+        safe_cfg="${cfg%.ini}-safe.ini"
+        sed -E -e '/^plugins *=/ s/(^| )pixdecor( |$)/\1decoration\2/' \
+               -e '/^plugins *=/ s/(^| )sonata-resize( |$)/\1resize\2/' \
+               -e '/^plugins *=/ s/ sonata-(corners|privacy)( |$)/\2/g' "$cfg" > "$safe_cfg"
+        echo "sonata-session: Wayfire ended at once (code $code); started again without the plugins built here" \
+            > "$logs/session.log"
+        started=$(date +%s)
+        wayfire -c "$safe_cfg" >> "$logs/session.log" 2>&1
         code=$?
     fi
 }

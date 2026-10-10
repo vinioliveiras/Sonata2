@@ -190,3 +190,73 @@ class AnyLoginManagerTest(unittest.TestCase):
     def test_greetd_takes_the_link(self):
         src = (ROOT / "tools/greeter-setup.sh").read_text()
         self.assertIn("systemctl enable --force greetd.service", src)
+
+
+class NotAsRootTest(unittest.TestCase):
+    """A friend ran `sudo ./install.sh`: Sonata went to root's home, the login
+    screen found none for him and every login went back to it."""
+    def test_refused_as_root(self):
+        src = (ROOT / "install.sh").read_text()
+        start = src.index("# `sudo ./install.sh` installed Sonata for root")
+        block = src[start:src.index("if [ \"$MODE\" = system ]", start)]
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "id"), "w") as f:
+            f.write("#!/bin/sh\necho 0\n")
+        os.chmod(os.path.join(d, "id"), 0o755)
+        env = {**os.environ, "PATH": d + ":" + os.environ["PATH"]}
+        for mode, uninstall, code in (("user", 0, 1), ("system", 0, 0), ("user", 1, 0)):
+            r = subprocess.run(["bash", "-c", f"set -euo pipefail\nMODE={mode}\nUNINSTALL={uninstall}\n{block}\nexit 0"],
+                               capture_output=True, text=True, env=env)
+            self.assertEqual(r.returncode, code, (mode, uninstall, r.stderr))
+        self.assertIn("without sudo", subprocess.run(["bash", "-c", f"MODE=user\nUNINSTALL=0\n{block}"],
+                                                     capture_output=True, text=True, env=env).stderr)
+
+
+class PixdecorSettingsTest(unittest.TestCase):
+    """A friend's laptop: every login went back to the login screen -- Wayfire
+    aborted loading pixdecor, built here without its pixdecor.xml (meson put
+    it in the system's metadata folder, outside the prefix, and only the
+    prefix was copied)."""
+    def copy_block(self):
+        src = (ROOT / "tools/build-pixdecor.sh").read_text()
+        start = src.index('(cd "$pdir/stage$PLUG_PREFIX" && find . -type f)')
+        return src[start:src.index('echo "  pixdecor installed', start)]
+
+    def test_xml_lands_next_to_the_plugin(self):
+        d = tempfile.mkdtemp()
+        prefix = os.path.join(d, "home", ".local", "share", "wayfire", "plugin-manager", "install")
+        pdir = os.path.join(d, "build")
+        lib = os.path.join(pdir, "stage" + prefix, "lib", "wayfire")
+        os.makedirs(lib)
+        open(os.path.join(lib, "libpixdecor.so"), "w").write("so")
+        meta = os.path.join(pdir, "stage", "usr", "share", "wayfire", "metadata")
+        os.makedirs(meta)
+        open(os.path.join(meta, "pixdecor.xml"), "w").write("<wayfire/>")
+        script = f'set -uo pipefail\npdir="{pdir}"\nPLUG_PREFIX="{prefix}"\n' + self.copy_block()
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(os.path.exists(os.path.join(prefix, "lib", "wayfire", "libpixdecor.so")))
+        self.assertEqual(open(os.path.join(prefix, "share", "wayfire", "metadata", "pixdecor.xml")).read(), "<wayfire/>")
+
+
+class SessionSafeModeTest(unittest.TestCase):
+    """Wayfire still ending at once: once more without the plugins built here."""
+    def test_retry_without_built_plugins(self):
+        src = (ROOT / "tools/sonata-session").read_text()
+        start = src.index("run_wayfire() {")
+        fn = src[start:src.index("\n}\n", start) + 3]
+        d = tempfile.mkdtemp()
+        cfg = os.path.join(d, "wayfire.ini")
+        open(cfg, "w").write("[core]\nplugins = autostart pixdecor sonata-corners sonata-resize move sonata-privacy\n")
+        with open(os.path.join(d, "wayfire"), "w") as f:      # aborts with pixdecor in its config
+            f.write(f'#!/bin/sh\necho "$*" >> {d}/runs\ngrep -q pixdecor "$2" && exit 134\nexit 0\n')
+        os.chmod(os.path.join(d, "wayfire"), 0o755)
+        script = (f'WAYFIRE=wayfire\nown={d}/own\nlogs={d}\ncfg={cfg}\n' + fn +
+                  '\nrun_wayfire\necho "code=$code"\n')
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                           env={**os.environ, "PATH": d + ":" + os.environ["PATH"]})
+        self.assertIn("code=0", r.stdout, r.stderr)
+        safe = open(os.path.join(d, "wayfire-safe.ini")).read()
+        self.assertIn("plugins = autostart decoration resize move\n", safe)
+        self.assertTrue(os.path.exists(os.path.join(d, "session.plugins-failed.log")))
+        self.assertEqual(len(open(os.path.join(d, "runs")).read().splitlines()), 2)
