@@ -131,7 +131,7 @@ class WallpaperWindow(Gtk.ApplicationWindow):
     def update(self, force: bool = False) -> None:
         from .. import prefs
         dark = Adw.StyleManager.get_default().get_dark()
-        uri = prefs.get(prefs.BG, "picture-uri-dark" if dark else "picture-uri") or prefs.get(prefs.BG, "picture-uri")
+        uri = prefs.wallpaper_uri(dark)
         if uri == self._uri and not force:
             return
         self._uri = uri

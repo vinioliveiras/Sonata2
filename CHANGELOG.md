@@ -13,6 +13,9 @@
   without a system pixdecor, Wayfire aborted as it loaded and every login
   went back to the login screen. And if Wayfire still ends at once, the
   session starts it again without the plugins built here.
+- A first login shows Sonata's "Mountains" when the picture taken over
+  from the previous desktop can't be shown (missing, or a format like
+  .jxl): it showed a bare gradient.
 
 ## 0.16.0-alpha -- 2026-10-10
 

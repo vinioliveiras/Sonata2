@@ -155,7 +155,7 @@ def wallpaper_texture(max_size: int = 0):
     try:
         from .. import prefs
         dark = Adw.StyleManager.get_default().get_dark()
-        uri = prefs.get(prefs.BG, "picture-uri-dark" if dark else "picture-uri") or prefs.get(prefs.BG, "picture-uri")
+        uri = prefs.wallpaper_uri(dark)
         f = Gio.File.new_for_uri(uri) if uri else None
         if f and f.query_exists(None):
             return _decode_wallpaper(f, max_size)

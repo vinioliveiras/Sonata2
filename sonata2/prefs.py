@@ -130,6 +130,27 @@ def _mirror(schema, key, value) -> None:
         pass
 
 
+def usable_picture(uri: str) -> bool:
+    """A picture that's there and can be shown (GNOME's / KDE's default can
+    be a .jxl no pixbuf loader reads, or a file another desktop removed)."""
+    if not uri:
+        return False
+    try:
+        from gi.repository import Gio, GdkPixbuf
+        path = Gio.File.new_for_uri(uri).get_path()
+        return bool(path) and os.path.isfile(path) and GdkPixbuf.Pixbuf.get_file_info(path)[0] is not None
+    except Exception:
+        return False
+
+
+def wallpaper_uri(dark: bool) -> str:
+    """The desktop picture for Light / Dark: the chosen one, else Sonata's
+    "Mountains" (Vini: a friend's first login showed the bare gradient --
+    the picture taken over from his old desktop couldn't be shown)."""
+    uri = get(BG, "picture-uri-dark" if dark else "picture-uri") or get(BG, "picture-uri")
+    return uri if usable_picture(uri) else _WALL[1 if dark else 0]
+
+
 def set_wallpaper(uri: str) -> None:
     """Finder's "Set Desktop Picture": the same picture in Light and Dark."""
     for key in ("picture-uri", "picture-uri-dark"):
@@ -191,7 +212,7 @@ def session_env() -> str:
         for k in (f"{BG}/picture-uri", f"{BG}/picture-uri-dark", f"{I}/color-scheme"):
             schema, _s, key = k.rpartition("/")
             old = _from_gsettings(schema, key)
-            if old:
+            if old and (key == "color-scheme" or usable_picture(old)):   # a picture that can be shown
                 seed[k] = old
         config.update(NAME, **seed)
         for k, v in {**DEFAULTS, **seed}.items():          # apps that read GSettings see the same look
