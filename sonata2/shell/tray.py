@@ -625,10 +625,13 @@ def run_steam(link: str) -> bool:
     steam = shutil.which("steam")
     if not steam:
         return False
+    import subprocess
     try:
-        GLib.spawn_async([steam, link], flags=GLib.SpawnFlags.SEARCH_PATH | GLib.SpawnFlags.STDOUT_TO_DEV_NULL
-                         | GLib.SpawnFlags.STDERR_TO_DEV_NULL)
-    except GLib.Error:
+        # (not GLib.spawn_async with *_TO_DEV_NULL: PyGObject 3.5x on Python
+        # 3.14 asserts there, the click raised and Steam never opened -- Vini)
+        subprocess.Popen([steam, link], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError:
         return False
     if link != "-shutdown":
         front_steam()

@@ -111,10 +111,30 @@ class SteamMenuLoopTest(unittest.TestCase):
 
     def test_link_brings_steam_forward(self):
         with mock.patch("shutil.which", return_value="/usr/bin/steam"), \
-                mock.patch.object(tray.GLib, "spawn_async"), mock.patch.object(tray, "front_steam") as front:
+                mock.patch("subprocess.Popen"), mock.patch.object(tray, "front_steam") as front:
             self.assertTrue(tray.run_steam("steam://open/games"))
             self.assertTrue(tray.run_steam("-shutdown"))
         self.assertEqual(front.call_count, 1)
+
+    def test_link_really_starts_steam(self):
+        """Vini's log: GLib.spawn_async(..., *_TO_DEV_NULL) raised AssertionError
+        in PyGObject on Python 3.14 -- the click died there. A real program runs now."""
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            fake = os.path.join(d, "steam")
+            out = os.path.join(d, "ran")
+            with open(fake, "w") as f:
+                f.write(f'#!/bin/sh\necho "$1" > {out}\n')
+            os.chmod(fake, 0o755)
+            with mock.patch("shutil.which", return_value=fake), mock.patch.object(tray, "front_steam"):
+                self.assertTrue(tray.run_steam("steam://open/games"))
+            end = GLib.get_monotonic_time() + 3_000_000
+            while not os.path.exists(out) and GLib.get_monotonic_time() < end:
+                GLib.usleep(20000)
+            self.assertEqual(open(out).read().strip(), "steam://open/games")
+        import inspect
+        self.assertNotIn("GLib.spawn_async(", inspect.getsource(tray.run_steam))
 
     def test_front_steam_polls_until_shown(self):
         from sonata2.shell import notifications
