@@ -338,6 +338,46 @@ class FirewallDefaultTest(unittest.TestCase):
             self.assertNotIn("ufw", log)
 
 
+class PrintingTest(PagesTest):
+    """Vini: "Manage Printing" opened a localhost:631 that refused (CUPS not running)."""
+    def page(self, printers, running):
+        s = self.settings()
+        with mock.patch.object(system, "printers", return_value=printers), \
+                mock.patch.object(system, "cups_running", return_value=running), \
+                mock.patch("sonata2.files.packages.family", return_value="arch"), \
+                mock.patch.object(system, "run_async", side_effect=lambda fn, cb, *a: cb(fn(*a))):
+            return s._page_printers()
+
+    def test_off_offers_turn_on(self):
+        rows = self.rows(self.page([], False))
+        self.assertEqual([r.command for r in rows], [system.CUPS_ON])
+        self.assertEqual(rows[0].button.get_label(), "Turn On…")
+
+    def test_missing_offers_install(self):
+        rows = self.rows(self.page(None, False))
+        self.assertEqual([r.command for r in rows], ["sudo pacman -S --needed cups && " + system.CUPS_ON])
+
+    def test_running_lists(self):
+        self.assertEqual(self.rows(self.page([], True)), [])
+
+    def test_running_check(self):
+        with mock.patch.object(system.shutil, "which", return_value="/usr/bin/lpstat"), \
+                mock.patch.object(system, "_run", return_value=(0, "scheduler is running")):
+            self.assertTrue(system.cups_running())
+        with mock.patch.object(system.shutil, "which", return_value="/usr/bin/lpstat"), \
+                mock.patch.object(system, "_run", return_value=(1, "scheduler is not running")):
+            self.assertFalse(system.cups_running())
+
+    def test_manage_printing_not_an_app(self):
+        from sonata2 import apps
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(apps, "app_dirs", return_value=[d]):
+            for n in ("cups", "x"):
+                with open(os.path.join(d, n + ".desktop"), "w") as f:
+                    f.write(f"[Desktop Entry]\nType=Application\nName={n}\nExec=true\n")
+            shown = {k: v.should_show() for k, v in apps.scan().items()}
+        self.assertEqual(shown, {"cups.desktop": False, "x.desktop": True})
+
+
 class InstallShTest(unittest.TestCase):
     """Vini: what Settings would ask to install comes with install.sh."""
     def setUp(self):

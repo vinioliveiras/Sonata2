@@ -315,6 +315,15 @@ def printers() -> Optional[List[Printer]]:
     return out_list
 
 
+def cups_running() -> bool:
+    """CUPS' scheduler is up (installed isn't enough: "Manage Printing" and
+    Add Printer went to a localhost:631 that refused -- Vini)."""
+    return shutil.which("lpstat") is not None and "is running" in _run(["lpstat", "-r"])[1]
+
+
+CUPS_ON = "sudo systemctl enable --now cups.socket cups.service"
+
+
 def set_default_printer(name: str) -> bool:
     return _run(["lpoptions", "-d", name])[0] == 0
 

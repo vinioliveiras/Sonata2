@@ -152,6 +152,24 @@ for _cls in {DesktopAppInfo, Gio.DesktopAppInfo}:
             _w._sonata_clean = True
             setattr(_cls, _m, _w)
 
+# Entries that aren't apps here: a service's web page Sonata has its own
+# place for (Vini: "Manage Printing" -- CUPS' localhost:631, refused when the
+# service isn't running; printers are in Settings > Printers & Scanners).
+NOT_APPS = {"cups.desktop"}
+
+
+def _shown_here(method):
+    def wrapper(self, *a):
+        return method(self, *a) and (self.get_id() or "") not in NOT_APPS
+    wrapper._sonata_shown = True
+    return wrapper
+
+
+for _cls in {DesktopAppInfo, Gio.DesktopAppInfo}:
+    if not getattr(getattr(_cls, "should_show", None), "_sonata_shown", False):
+        _cls.should_show = _shown_here(getattr(_cls, "should_show"))
+
+
 def _with_context(fn):
     """Gio.AppInfo.launch_default_for_uri(uri, None) the same: the display's context."""
     def wrapper(uri, context=None, *rest):

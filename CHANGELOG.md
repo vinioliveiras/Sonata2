@@ -50,6 +50,11 @@
   unasked; from the local network only Screen Sharing and printer
   discovery.
 - Web apps never show Chrome's "unsupported command-line flag" bar.
+- The "loading the desktop" screen after logging in keeps the picture
+  where the login screen had it (it dropped back down).
+- Settings > Apps: a spinner while an app's permissions are read.
+- No "Manage Printing" app (CUPS' web page): printers are in Settings,
+  which offers Turn On when CUPS is installed but not running.
 - Removed "Turn RGB lights off with the screen" (it left the keyboard
   dark); install.sh still installs the OpenRGB app.
 - install.sh installs what Settings would ask for (ufw, CUPS, USBGuard

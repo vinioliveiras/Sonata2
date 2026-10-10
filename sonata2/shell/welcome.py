@@ -15,13 +15,43 @@ from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import intro, layer  # noqa: E402
 from ..ui.progress import Spinner  # noqa: E402
-from .loginui import Backdrop, avatar, wallpaper_texture  # noqa: E402
+from .loginui import Backdrop, avatar, lift, password_field, wallpaper_texture  # noqa: E402
 
 WAIT_FOR = ("wallpaper", "topbar", "dock", "launchpad")
 MIN_S, MAX_S = 1.2, 9.0          # shown at least / at most
 FADE_MS = 520
 
 
+
+
+def login_column() -> Gtk.Box:
+    """The login screen's column as it was when the password was accepted
+    -- picture, name, the field's slot turning (the spinner), the links
+    and hint rows -- so the picture stays exactly where it was (Vini: it
+    rose on the login screen and dropped back down here). Same sizes,
+    same lift (loginui.lift); the rows below the spinner are kept but
+    unseen."""
+    col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, halign=Gtk.Align.CENTER,
+                  valign=Gtk.Align.CENTER, css_classes=["gr-fade-in"])
+    col.append(avatar(108))
+    col.append(Gtk.Label(label=GLib.get_real_name() or GLib.get_user_name(), css_classes=["lk-name"]))
+    slot = Gtk.Stack(halign=Gtk.Align.CENTER)              # as tall as the password field
+    slot.add_named(password_field(), "field")
+    spin = Spinner(css_classes=["gr-spinner"], halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER, spinning=True)
+    slot.add_named(spin, "progress")
+    slot.set_visible_child_name("progress")                # macOS: a spinner while the desktop loads
+    col.append(slot)
+    links = Gtk.Box(spacing=4, halign=Gtk.Align.CENTER, opacity=0, can_target=False)
+    try:
+        from .greeter import sessions, users
+        if len(users()) > 1 or len(sessions()) > 1:        # the login screen had a link row there
+            links.append(Gtk.Button(label="Other Users", css_classes=["gr-link"], can_focus=False))
+    except Exception:
+        pass
+    col.append(links)
+    col.append(Gtk.Label(css_classes=["lk-hint"], opacity=0))
+    col.spinner = spin
+    return col
 
 
 class Welcome:
@@ -47,13 +77,7 @@ class Welcome:
         over = Gtk.Overlay()
         over.set_child(Backdrop(tex))
         if primary:
-            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, halign=Gtk.Align.CENTER,
-                          valign=Gtk.Align.CENTER, css_classes=["gr-fade-in"])
-            col.append(avatar())
-            col.append(Gtk.Label(label=GLib.get_real_name() or GLib.get_user_name(), css_classes=["lk-name"]))
-            spin = Spinner(css_classes=["gr-spinner"], halign=Gtk.Align.CENTER, margin_top=8, spinning=True)
-            col.append(spin)                    # macOS: a spinner while the desktop loads
-            over.add_overlay(col)
+            over.add_overlay(lift(login_column(), monitor))
         win.set_child(over)
         if layer.overlay_fullscreen(win, "sonata2-welcome"):
             LS = layer.layer_shell()

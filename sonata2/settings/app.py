@@ -325,6 +325,14 @@ USB_CONFIRM = ("USBGuard on its own blocks every USB device it has no rule for, 
                "included. Set Up allows every device while the screen is unlocked and blocks only the ones "
                "plugged in while it's locked; devices already plugged in keep working.\n\n"
                "Terminal opens and asks for your password. Don't turn USBGuard on yourself in another way.")
+def loading_row(title: str) -> Adw.ActionRow:
+    """A row saying what is being read, with a spinner (Vini: Wi-Fi, an
+    app's permissions -- lists that take a moment)."""
+    row = Adw.ActionRow(title=title, use_markup=False)
+    row.add_prefix(ui.progress.Spinner(spinning=True, valign=Gtk.Align.CENTER))
+    return row
+
+
 INSTALL_POLL_S = 2
 INSTALL_WAIT_S = 15 * 60
 
@@ -800,8 +808,7 @@ class Settings(Adw.ApplicationWindow):
         if spin is not None:
             spin.set_visible(True)
         if not self._wifi_rows:                            # the first time: a row saying so
-            row = Adw.ActionRow(title="Looking for networks…")
-            row.add_prefix(ui.progress.Spinner(spinning=True, valign=Gtk.Align.CENTER))
+            row = loading_row("Looking for networks…")
             self._wifi_nets.add(row)
             self._wifi_rows.append(row)
 
@@ -2489,12 +2496,19 @@ class Settings(Adw.ApplicationWindow):
         add.connect("clicked", lambda *_: system.add_printer())
         g.set_header_suffix(add)
 
-        def fill(lst):
+        def fill(res):
+            lst, running = res
             _clear_group(g)
+            if lst is not None and not running:
+                g.add(install_row("Printing is off", "CUPS is installed but not running",
+                                  system.CUPS_ON, system.cups_running, lambda: self._reload_page("printers"),
+                                  label="Turn On…"))
+                add.set_sensitive(False)
+                return
             if lst is None:
                 cups = system.install_command("cups")
                 g.add(install_row("Printing isn't set up", "Install CUPS to add printers",
-                                  cups and cups + " && sudo systemctl enable --now cups.socket cups.service",
+                                  cups and cups + " && " + system.CUPS_ON,
                                   lambda: system.printers() is not None, lambda: self._reload_page("printers")))
                 add.set_sensitive(False)
                 return
@@ -2510,7 +2524,7 @@ class Settings(Adw.ApplicationWindow):
                 g.add(row)
             if not lst:
                 g.add(Adw.ActionRow(title="No printers available", subtitle="Click + to add a printer"))
-        system.run_async(system.printers, fill)
+        system.run_async(lambda: (system.printers(), system.cups_running()), fill)
         return [g]
 
     def _page_sharing(self):

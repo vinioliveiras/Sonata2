@@ -45,7 +45,7 @@ class AppsPage:
 
     # -- one app ---------------------------------------------------------------------------------
     def open(self, row) -> None:
-        from .app import group, switch_row
+        from .app import group, loading_row, switch_row
         info = row.info
         name = info.get_display_name()
         app = self.app = {"info": info, "did": row.did, "owner": None, "dirs": []}
@@ -58,7 +58,7 @@ class AppsPage:
         hero.add_css_class("st-app-hero")
         head.add(hero)
         perms = group("Permissions")
-        perms.add(Adw.ActionRow(title="…", use_markup=False))
+        perms.add(loading_row("Checking permissions…"))          # Vini: they take a moment
         manage = group()
         lock = switch_row("Lock App", applock.locked(info.get_id()), lambda on: self._lock(info, lock, on),
                           subtitle="Ask for your password when it opens")

@@ -308,3 +308,34 @@ class PageTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PermissionsSpinnerTest(PageTest):
+    """Vini: an app's permissions took a moment -- a spinner meanwhile."""
+    def test_spinner_until_read(self):
+        from sonata2.backend import system
+        from sonata2.ui.progress import Spinner
+        pending = []
+        with mock.patch.object(system, "run_async", side_effect=lambda fn, cb, *a: pending.append((fn, cb, a))):
+            self.page.open(self.page.rows["org.test.App"])
+            settle(200)
+        perms = self.page.app["perms"]
+
+        def find(kind):
+            out, stack = [], [perms]
+            while stack:
+                w = stack.pop()
+                if isinstance(w, kind):
+                    out.append(w)
+                c = w.get_first_child()
+                while c is not None:
+                    stack.append(c)
+                    c = c.get_next_sibling()
+            return out
+        self.assertTrue(find(Spinner))
+        self.assertIn("Checking permissions…", [r.get_title() for r in find(Adw.ActionRow)])
+        res = {"owner": FLATPAK, "size": 1, "dirs": [], "data": 0, "perms": [("camera", "Camera", False)]}
+        pending[0][1](res)
+        settle(200)
+        self.assertFalse(find(Spinner))
+        self.assertIn("Camera", [r.get_title() for r in find(Adw.ActionRow)])
