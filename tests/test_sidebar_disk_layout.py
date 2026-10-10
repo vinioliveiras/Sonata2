@@ -1,5 +1,6 @@
 """Files sidebar disks (Vini): the free space on the name's line, ending
-where the meter ends; the eject button beside the meter."""
+where the meter ends; the eject button beside both, centred like the disk's
+icon."""
 import unittest
 from unittest import mock
 
@@ -25,8 +26,9 @@ class DiskLayoutTest(unittest.TestCase):
         self.assertIsInstance(grid, Gtk.Grid)
         self.assertIs(grid.get_child_at(1, 0), row.free)
         self.assertIs(grid.get_child_at(0, 1), row.meter)
+        self.assertIs(grid.get_child_at(2, 0), row.eject)     # both lines: centred on the row
         self.assertIs(grid.get_child_at(2, 1), row.eject)
-        self.assertIsNone(grid.get_child_at(2, 0))
+        self.assertEqual(row.eject.get_valign(), Gtk.Align.CENTER)
         self.assertIs(row.eject.get_parent(), grid)          # not again at the row's end
 
 

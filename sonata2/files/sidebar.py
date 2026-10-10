@@ -241,9 +241,8 @@ class Sidebar(Gtk.Box):
         box.append(img)
         name = Gtk.Label(label=title, xalign=0, hexpand=True, ellipsize=3, css_classes=["fs-place"])
         if disk:
-            # name and free space on one line, the meter under them with the
-            # eject button beside it (Vini): the free space ends where the
-            # meter does
+            # name and free space on one line, the meter under them (Vini); the
+            # eject button beside both, centred like the disk's icon
             row.add_css_class("fs-disk")
             grid = Gtk.Grid(column_spacing=6, row_spacing=3, hexpand=True, valign=Gtk.Align.CENTER)
             row.meter = ui.progress.meter(0)
@@ -258,7 +257,7 @@ class Sidebar(Gtk.Box):
                 eject = Gtk.Button(icon_name="media-eject-symbolic", css_classes=["fs-eject"],
                                    tooltip_text="Eject", valign=Gtk.Align.CENTER)
                 eject.connect("clicked", lambda _b, m=mount: self._eject(m))
-                grid.attach(eject, 2, 1, 1, 1)
+                grid.attach(eject, 2, 0, 1, 2)
                 row.eject = eject
                 mount = None                       # (placed: not again at the row's end)
             box.append(grid)
