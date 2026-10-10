@@ -663,7 +663,13 @@ class Settings(Adw.ApplicationWindow):
         rescan = Gtk.Button(icon_name="view-refresh-symbolic", css_classes=["flat"], valign=Gtk.Align.CENTER,
                             tooltip_text="Scan again")
         rescan.connect("clicked", lambda *_: self._refresh("wifi", rescan=True))
-        nets.set_header_suffix(rescan)
+        # Vini: the list took a moment to come -- a spinner while it's read
+        spin = ui.progress.Spinner(spinning=True, valign=Gtk.Align.CENTER, visible=False)
+        head = Gtk.Box(spacing=6, valign=Gtk.Align.CENTER)
+        head.append(spin)
+        head.append(rescan)
+        nets.set_header_suffix(head)
+        self._wifi_spin = spin
         self._wifi_nets = nets
         self._wifi_rows = []
         self._wifi_switch = sw
@@ -734,7 +740,18 @@ class Settings(Adw.ApplicationWindow):
         def work():
             return system.wifi_enabled(), system.wifi_scan(rescan)
 
+        spin = getattr(self, "_wifi_spin", None)
+        if spin is not None:
+            spin.set_visible(True)
+        if not self._wifi_rows:                            # the first time: a row saying so
+            row = Adw.ActionRow(title="Looking for networks…")
+            row.add_prefix(ui.progress.Spinner(spinning=True, valign=Gtk.Align.CENTER))
+            self._wifi_nets.add(row)
+            self._wifi_rows.append(row)
+
         def fill(res):
+            if spin is not None:
+                spin.set_visible(False)
             enabled, networks = res or (False, [])
             show_quietly(self._wifi_switch, enabled)       # read back: no second `nmcli radio wifi`
             for r in self._wifi_rows:

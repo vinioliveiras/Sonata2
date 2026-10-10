@@ -1,6 +1,6 @@
 """Task Manager's Performance page (Windows 11 layout, macOS look): a list
 of resources with sparklines -- CPU, Memory, each disk, each network
-interface, GPUs that report their load -- and, for the selected one, a
+interface, every GPU (a sleeping one too) -- and, for the selected one, a
 big 60-second graph with its details."""
 import gi
 
@@ -259,17 +259,27 @@ class PerformancePage(Page):
                 r.b.push(send)
         for key in [k for k in self.resources if k.startswith("net:") and k[4:] not in snap.interfaces]:
             self._remove(key)
-        # GPUs that tell their load
-        for i, (card, busy) in enumerate(sorted(snap.gpus.items())):
+        # Every GPU (Vini: "only one GPU shows" with the Radeon 680M + NVIDIA):
+        # a card without a reading still gets its row -- "Sleeping" when runtime
+        # PM has it suspended (never woken to ask), else "N/A".
+        infos = getattr(snap, "gpu_info", {}) or {}
+        for i, (card, busy) in enumerate(sorted(snap.gpus.items(), key=lambda kv: (len(kv[0]), kv[0]))):
             key = "gpu:" + card
+            gi = infos.get(card, {})
             if key not in self.resources:
                 self._add(Resource(key, "gpu", f"GPU {i}", card))
             r = self.resources[key]
-            r.subtitle = f"{busy:.0f}%"
-            r.stats = {"caption": "Utilization", "top": "100%", "big": [("Utilization", f"{busy:.0f}%")],
-                       "small": [("Card", card)]}
+            r.detail = f"{gi['maker']} ({card})" if gi.get("maker") else card
+            state = f"{busy:.0f}%" if busy is not None else ("Sleeping" if gi.get("asleep") else "N/A")
+            vram = gi.get("vram")
+            small = [("Card", card)] + ([("Maker", gi["maker"])] if gi.get("maker") else [])
+            big = [("Utilization", state)]
+            if vram:
+                big.append(("Dedicated memory", f"{fmt_gb(vram[0])}/{fmt_gb(vram[1])}"))
+            r.subtitle = (f"{gi['maker']}  {state}" if gi.get("maker") else state)
+            r.stats = {"caption": "Utilization", "top": "100%", "big": big, "small": small}
             if not first:
-                r.a.push(busy)
+                r.a.push(busy or 0.0)                         # a sleeping card does no work: 0
         for key in [k for k in self.resources if k.startswith("gpu:")]:
             if key[4:] in snap.gpus:
                 self._gpu_missing.pop(key, None)

@@ -460,6 +460,19 @@ class Bar(Gtk.CenterBox):
         if child is not None and child.get_icon_name() != name:
             child.set_from_icon_name(name)
 
+    @staticmethod
+    def _refresh_icon(btn) -> None:
+        """Look the item's icon up again and draw it anew (GTK clears the
+        image first, even for the same name). Vini: the Control Center icon
+        vanished after its panel and an app window came and went, and only
+        came back when clicked -- a stale picture of it was kept."""
+        child = btn.get_child().get_first_child() if btn.get_child() else None
+        while child is not None and not isinstance(child, Gtk.Image):
+            child = child.get_next_sibling()
+        name = child.get_icon_name() if child is not None else None
+        if name:
+            child.set_from_icon_name(name)
+
     def _open(self, btn, builder) -> None:
         reveal = getattr(self, "reveal", None)
         if reveal:                                # a hidden bar comes down for its menu
@@ -469,7 +482,11 @@ class Bar(Gtk.CenterBox):
         if pop is None:
             btn.remove_css_class("open")
             return
-        pop.connect("closed", lambda *_: btn.remove_css_class("open"))
+
+        def closed(*_a):
+            btn.remove_css_class("open")
+            self._refresh_icon(btn)               # never left without its icon (Vini)
+        pop.connect("closed", closed)
 
     def open_menu(self, index: int) -> None:
         """Open the N-th item (screenshots)."""
@@ -1831,6 +1848,16 @@ class TopBarWindow(Gtk.ApplicationWindow):
     def __init__(self, app, preview: bool = False, monitor=None, manager=None, secondary: bool = False):
         super().__init__(application=app, title="Menu Bar", css_classes=["sonata-topbar"], decorated=False,
                          resizable=True)
+        # No picture cross-fade on appearance changes (ui.theme): its material
+        # already blends old and new colours itself (ui.theme.on_change), and
+        # that fade moves the whole bar into a new Gtk.Overlay. The Dock
+        # writes dock.json whenever an app is used (its recents), and the
+        # first such write counted as an appearance change in every Sonata
+        # process: opening and closing Feedbacker re-rooted the menu bar
+        # under the Control Center button's feet -- Vini: its icon vanished
+        # until clicked; on a virtual display GTK even crashed
+        # (gdk_surface_request_motion) once its panel had been used.
+        self.sonata_no_fade = True
         if manager is None:
             from ..wl.toplevels import ToplevelManager
             manager = ToplevelManager(Gdk.Display.get_default(),
@@ -1894,6 +1921,11 @@ class TopBarWindow(Gtk.ApplicationWindow):
                 app.connect("shutdown", lambda *_: self.bar.alarms.ringer.stop())
             except Exception as e:                                  # never keeps the menu bar from starting
                 print(f"sonata2-topbar: alarms: {e}")
+            try:                                                    # reminders notify with Notes closed (Vini)
+                from ..notes.notifier import ReminderWatch
+                self.bar.reminders = ReminderWatch()
+            except Exception as e:                                  # never keeps the menu bar from starting
+                print(f"sonata2-topbar: reminders: {e}")
             try:                                                    # a new Sonata release: say so
                 from .updatenotify import UpdateNotifier
                 self.bar.update_notifier = UpdateNotifier()

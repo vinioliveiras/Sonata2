@@ -10,17 +10,16 @@ notes and due date (red when overdue), priority (!, !!, !!!) and flag.
 The ⓘ button (or a click on the date) opens the detail panel: notes, a
 date (calendar) and time (spin buttons), flag, priority, list.
 
-Alerts: while Sonata runs, a reminder reaching its due time (all-day ones
-at 9:00) is announced through org.freedesktop.Notifications. One timer
-aims at the next due time (re-aimed on every change, at most 5 minutes
-ahead so a suspend can't make it late); nothing polls."""
+Alerts (notifier.py): a reminder reaching its due time (all-day ones at
+9:00) is announced through org.freedesktop.Notifications -- by this window
+while open and by the menu bar's ReminderWatch with Notes closed, once."""
 import datetime
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gio, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Adw, GLib, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
 from ..ui import tokens  # noqa: E402
@@ -106,68 +105,8 @@ def day_heading(d: datetime.date, today: datetime.date = None) -> str:
 
 
 # -- alerts -------------------------------------------------------------------------------------------
-class Notifier:
-    """Desktop notifications for reminders falling due while Sonata runs."""
-
-    def __init__(self, store):
-        self.store = store
-        self.last = datetime.datetime.now()
-        self.timer = 0
-        self.sent = []                     # (title, body): for tests and the log
-        self.schedule()
-
-    def schedule(self) -> None:
-        if self.timer:
-            GLib.source_remove(self.timer)
-            self.timer = 0
-        nxt = self.store.next_due_after(self.last)
-        if nxt is None:
-            return
-        secs = (nxt - datetime.datetime.now()).total_seconds()
-        self.timer = GLib.timeout_add_seconds(int(max(1, min(300, secs + 0.5))), self._fire)
-
-    def _fire(self) -> bool:
-        self.timer = 0
-        self.check()
-        return False
-
-    def check(self, now: datetime.datetime = None) -> list:
-        now = now or datetime.datetime.now()
-        due = self.store.due_between(self.last, now)
-        self.last = now
-        for r in due:
-            lst = self.store.rlist(r.get("list"))
-            body = r.get("notes") or (lst["name"] if lst else "")
-            self.notify(r.get("title") or "New Reminder", body)
-        self.schedule()
-        return due
-
-    def notify(self, title: str, body: str) -> None:
-        self.sent.append((title, body))
-
-        def got_bus(_src, res):
-            try:
-                bus = Gio.bus_get_finish(res)
-            except GLib.Error:
-                return
-            bus.call("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
-                     "org.freedesktop.Notifications", "Notify",
-                     GLib.Variant("(susssasa{sv}i)", ("Reminders", 0, "x-office-calendar", title, body, [],
-                                                      {"urgency": GLib.Variant("y", 1)}, -1)),
-                     None, Gio.DBusCallFlags.NONE, -1, None, lambda b, r: _finish(b, r))
-        Gio.bus_get(Gio.BusType.SESSION, None, got_bus)
-
-    def stop(self) -> None:
-        if self.timer:
-            GLib.source_remove(self.timer)
-            self.timer = 0
-
-
-def _finish(bus, res) -> None:
-    try:
-        bus.call_finish(res)
-    except GLib.Error as e:
-        print(f"sonata2 notes: notification failed: {e.message}")
+# Notifier lives in notifier.py (no Gtk): the menu bar runs the same one with Notes closed.
+from .notifier import Notifier  # noqa: E402,F401
 
 
 # -- rows ---------------------------------------------------------------------------------------------

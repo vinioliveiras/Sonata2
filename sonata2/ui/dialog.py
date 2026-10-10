@@ -110,6 +110,8 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None,
         owner = parent.get_root() if parent is not None and hasattr(parent, "get_root") else None
         dlg.present(None)
         root = dlg.get_root()
+        if root is owner:
+            root = None              # drawn inside its window: nothing to raise
         if root is not None and root is not owner:      # own window: glass
             dlg.add_css_class("glass")
             root.add_css_class("sonata-glass-window")
@@ -120,9 +122,34 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None,
             # disagree on its size every frame: the alert "wobbled" sideways
             if hasattr(root, "set_resizable"):
                 root.set_resizable(True)
+        _raise_when_owner_shows(owner, root)
     else:
         dlg.present()
+        _raise_when_owner_shows(parent.get_root() if parent is not None and hasattr(parent, "get_root") else None,
+                                dlg)
     return dlg
+
+
+def _raise_when_owner_shows(owner, win) -> None:
+    """An alert raised while its window is still opening (Files: a folder
+    that fails to load as the window appears, Go > Recents) reached the
+    screen first, and the window then opened on top of it: the error hid
+    behind Files (Vini). Once the owner window becomes active, present the
+    alert again so the compositor stacks it above its parent."""
+    if not isinstance(owner, Gtk.Window) or not isinstance(win, Gtk.Window) or owner.is_active():
+        return
+    ids = []
+
+    def shown(*_a):
+        if not owner.is_active():
+            return
+        for i in ids:
+            owner.disconnect(i)
+        ids.clear()
+        if win.get_visible():
+            win.present()
+    ids.append(owner.connect("notify::is-active", shown))
+    win.connect("destroy", lambda *_a: [owner.disconnect(i) for i in ids] and ids.clear())
 
 
 def ask_text(heading: str, text: str, ok: str, on_done, body: str = "", parent=None):

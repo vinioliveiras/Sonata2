@@ -462,7 +462,7 @@ class ProcessesPage(Page):
         self.cols["disk"].set_title(f"{active:.0f}%\nDisk")
         self.cols["net"].set_title(f"{fmt_bits(8 * (snap.net.get('rx_bytes_ps', 0) + snap.net.get('tx_bytes_ps', 0)))}"
                                    "\nNetwork")
-        gpu = max(snap.gpus.values(), default=None)
+        gpu = max((v for v in snap.gpus.values() if v is not None), default=None)   # a sleeping dGPU: None
         self.cols["gpu"].set_title(f"{gpu:.0f}%\nGPU" if gpu is not None else "GPU")
         self._buttons()
 

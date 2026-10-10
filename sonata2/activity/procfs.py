@@ -292,7 +292,8 @@ class Snapshot:
     disks: Dict[str, Dict[str, float]] = field(default_factory=dict)   # per disk + *_ps, active %, capacity, model
     net: Dict[str, float] = field(default_factory=dict)
     interfaces: Dict[str, Dict[str, float]] = field(default_factory=dict)
-    gpus: Dict[str, float] = field(default_factory=dict)       # card -> busy %
+    gpus: Dict[str, Optional[float]] = field(default_factory=dict)   # card -> busy % (None: no reading)
+    gpu_info: Dict[str, dict] = field(default_factory=dict)   # card -> {maker, asleep, vram}
     battery: Optional[dict] = None
     cpu_mhz: float = 0.0
     uptime: float = 0.0
@@ -398,6 +399,8 @@ class Sampler:
         self._prev_disks = {}
         self._prev_net = None
         self._prev_t = None
+        self._stats = None                 # backend.stats.Sampler, made on the first NVIDIA card
+        self.gpu_info = {}                 # card -> {maker, asleep, vram} (gpus())
         self._disk_static = {}             # name -> (capacity, model)
         self._cpu_info = None
         self._prev_disk_tot = None
@@ -456,20 +459,58 @@ class Sampler:
             return sum(freqs) / len(freqs)
         return parse_cpuinfo(_read(os.path.join(self.proc, "cpuinfo")))["mhz"]
 
-    def gpus(self) -> Dict[str, float]:
-        """card -> busy % for GPUs that report it (amdgpu, some others)."""
+    def gpus(self) -> Dict[str, Optional[float]]:
+        """card -> busy % (None: no reading right now) for every graphics card.
+        Vini: "only one GPU shows" on his Radeon 680M + NVIDIA laptop -- the
+        NVIDIA driver has no gpu_busy_percent, so reading only that file hid
+        the dGPU. NVIDIA's load comes from the menu bar's stats reader
+        (nvidia-smi, run only while the card is awake: asking would wake it).
+        Fills self.gpu_info {card: {"maker", "asleep", "vram"}} on the way."""
         base = os.path.join(self.sys, "class/drm")
-        out = {}
+        out, info = {}, {}
+        self.gpu_info = info
         try:
             names = sorted(os.listdir(base))
         except OSError:
             return out
+        nv = None                                          # {cardN: (busy, vram)} from the stats reader
         for n in names:
-            if n.startswith("card") and n[4:].isdigit():
-                v = _read(os.path.join(base, n, "device/gpu_busy_percent")).strip()
-                if v.isdigit():
-                    out[n] = float(v)
+            if not (n.startswith("card") and n[4:].isdigit()):
+                continue                                   # a connector (card1-HDMI-A-1)
+            dev = os.path.join(base, n, "device")
+            maker = CARD_NAMES.get(os.path.basename(os.path.realpath(os.path.join(dev, "driver"))))
+            v = _read(os.path.join(dev, "gpu_busy_percent")).strip()
+            busy = float(v) if v.isdigit() else None
+            if busy is None and not maker:
+                continue                                   # not a GPU we can say anything about
+            asleep = _read(os.path.join(dev, "power/runtime_status")).strip() == "suspended"
+            vram = None
+            if maker == "NVIDIA":
+                if nv is None:
+                    nv = self._nvidia_cards()
+                busy, vram = nv.get(n, (None, None))
+            else:
+                used = _read(os.path.join(dev, "mem_info_vram_used")).strip()
+                total = _read(os.path.join(dev, "mem_info_vram_total")).strip()
+                if used.isdigit() and total.isdigit() and int(total):
+                    vram = (int(used), int(total))
+            out[n] = busy
+            info[n] = {"maker": maker or "", "asleep": asleep, "vram": vram}
         return out
+
+    def _nvidia_cards(self) -> dict:
+        """{cardN: (busy %, (used, total) VRAM)} of the NVIDIA cards, through
+        the menu bar's reader (backend.stats) so nvidia-smi's awake check and
+        its cached run are shared, not duplicated; (None, None) while asleep."""
+        if self._stats is None:
+            from ..backend import stats                    # imports this module: not at the top
+            self._stats = stats.Sampler(proc=self.proc, sys=self.sys)
+        try:
+            busy, vram = self._stats.gpus(), self._stats.vrams()
+            cards = self._stats._cards or []
+        except Exception:
+            return {}
+        return {card: (busy.get(key), vram.get(key)) for key, maker, card in cards if maker == "NVIDIA"}
 
     def _drm_fdinfos(self, key, d: str, now: float) -> list:
         listed, resolved, old_hash = self._gpu_scan.get(key, (-1e9, -1e9, None))
@@ -671,6 +712,7 @@ class Sampler:
         self._prev_net = ifaces
 
         snap.gpus = self.gpus()
+        snap.gpu_info = dict(self.gpu_info)
         self.gpu_usage(procs, dt, now)
         snap.battery = battery_info(self.sys)
         self._prev_t = now

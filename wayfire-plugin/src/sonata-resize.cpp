@@ -388,6 +388,45 @@ static void remove_edge_grab(wayfire_toplevel_view v)
     }
 }
 
+/* -- the pointer under a pop-up's grab ------------------------------------------------
+ * Vini: with Control Center (a menu bar pop-up) open, the pointer stayed a
+ * resize arrow over the Dock. While a pop-up holds the pointer, wlroots
+ * enters no other app's surface, so nothing there sets its cursor: the
+ * last one set -- an app's own resize border (GTK's, Chrome's) passed on
+ * the way -- stayed. When the pointer moves to a surface the grab keeps it
+ * from entering, the normal pointer is put back. */
+static bool grabbed_elsewhere()
+{
+    auto seat = wf::get_core().get_current_seat();
+    if (!seat || !seat->pointer_state.grab || (seat->pointer_state.grab == seat->pointer_state.default_grab))
+    {
+        return false;                       /* no pop-up grab: apps set their own cursor */
+    }
+
+    return seat->pointer_state.focused_surface == nullptr;      /* the grab kept it out */
+}
+
+static wf::signal::connection_t<wf::pointer_focus_changed_signal> on_grabbed_focus =
+    [] (wf::pointer_focus_changed_signal*)
+{
+    if (grabbed_elsewhere())
+    {
+        wf::get_core().set_cursor("default");
+    }
+};
+static int grabbed_focus_users = 0;
+
+static void watch_grabbed_focus(bool on)
+{
+    if (on && (grabbed_focus_users++ == 0))
+    {
+        wf::get_core().connect(&on_grabbed_focus);
+    } else if (!on && (grabbed_focus_users > 0) && (--grabbed_focus_users == 0))
+    {
+        on_grabbed_focus.disconnect();
+    }
+}
+
 /* -- an app drawing bigger than its window -------------------------------------------
  * Vini: Claude (Electron) went on drawing itself at an old, bigger width
  * after a resize -- the frame at 1187 px, the app's picture 1811 px wide
@@ -846,6 +885,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     void init() override
     {
         input_grab = std::make_unique<wf::input_grab_t>("resize", output, nullptr, this, this);
+        watch_grabbed_focus(true);
 
         activate_binding = [=] (auto)
         {
@@ -1346,6 +1386,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
 
     void fini() override
     {
+        watch_grabbed_focus(false);
         uncount_resize();
         if (input_grab->is_grabbed())
         {

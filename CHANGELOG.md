@@ -4,6 +4,20 @@
 
 ### Fixes
 - The recording / screen-sharing pill is centred in the taller menu bar.
+- Files: New Terminal at Folder opens Sonata's Terminal there (other
+  terminals as a fallback, and a message when there is none).
+- Files: Go > Recents and Go > Connect to Server work again with gvfs
+  installed; an alert shown while its window opens comes in front of it.
+- Task Manager lists every graphics card (the NVIDIA one too, "Sleeping"
+  when powered down -- not woken up to be read).
+- Reminders notify at their time with Notes closed (from the menu bar),
+  once each, without a burst of old ones at login.
+- The Control Center icon no longer goes blank after an app opens or
+  closes: the first Dock or appearance save no longer cross-fades every
+  Sonata window.
+- With Control Center (or any pop-up) open, the pointer is the normal
+  arrow over the Dock and other apps, not an app's resize arrow.
+- Settings > Wi-Fi: a spinner while the networks are read.
 
 ### Performance
 - Windows behind an opaque window are no longer drawn again with it (the

@@ -155,6 +155,51 @@ def _tab_state(name):
                     lambda self, value: setattr(self.tab, name, value))
 
 
+# a terminal app -> how it's told the folder to start in (the process' own
+# working directory isn't enough for every one: gnome-terminal's server and
+# wezterm's mux keep theirs)
+TERMINAL_DIR_FLAGS = (("kgx", lambda p: [f"--working-directory={p}"]),
+                      ("gnome-terminal", lambda p: [f"--working-directory={p}"]),
+                      ("konsole", lambda p: ["--workdir", p]),
+                      ("kitty", lambda p: ["--directory", p]),
+                      ("alacritty", lambda p: ["--working-directory", p]),
+                      ("foot", lambda p: [f"--working-directory={p}"]),
+                      ("ghostty", lambda p: [f"--working-directory={p}"]),
+                      ("wezterm", lambda p: ["start", "--cwd", p]),
+                      ("xfce4-terminal", lambda p: [f"--working-directory={p}"]),
+                      ("tilix", lambda p: [f"--working-directory={p}"]),
+                      ("terminator", lambda p: [f"--working-directory={p}"]),
+                      ("x-terminal-emulator", lambda p: []),
+                      ("xterm", lambda p: []))
+
+
+def _sonata_terminal_ok() -> bool:
+    """Sonata's Terminal needs VTE for GTK 4 (asked for, not imported: it'd
+    load libvte into Files for good)."""
+    try:
+        gi.require_version("Vte", "3.91")
+        return True
+    except ValueError:
+        return False
+
+
+def terminal_commands(path: str) -> list:
+    """Every way to open a terminal at `path`, best first (each also spawned
+    with `path` as its working directory)."""
+    out = []
+    if _sonata_terminal_ok():
+        from ..__main__ import self_argv
+        out.append(self_argv() + ["terminal", path])      # a tab at the folder (terminal.window.open_windows)
+    flags = dict(TERMINAL_DIR_FLAGS)
+    env = os.environ.get("TERMINAL", "").strip()
+    names = ([env] if env else []) + [t for t, _f in TERMINAL_DIR_FLAGS if t != env]
+    for name in names:
+        exe = GLib.find_program_in_path(name)
+        if exe:
+            out.append([exe] + flags.get(os.path.basename(name), lambda p: [])(path))
+    return out
+
+
 class FilesWindow(Adw.ApplicationWindow):
     TABS = True              # the Open/Save panel (chooser.py) has no tabs
 
@@ -205,8 +250,16 @@ class FilesWindow(Adw.ApplicationWindow):
         self._typed = ""                     # type to select
         ui.drag.follow(self, lambda: self.drag_icon)
         self.connect("notify::is-active", lambda w, _p: w.is_active() and self.sidebar.refresh_space())
+        uri = folder.canonical(uri)
+        if uri == folder.CONNECT:            # Go > Connect to Server from the menu bar (via gvfs: run_files missed it)
+            uri = None
+            self._connect_once = self.connect("map", self._connect_on_map)
         self._add_tab(uri or Gio.File.new_for_path(GLib.get_home_dir()).get_uri(),
                       config.load("files", DEFAULTS)["view"], select=True)
+
+    def _connect_on_map(self, *_a):
+        self.disconnect(self._connect_once)
+        GLib.idle_add(lambda: (self.connect_to_server(), False)[1])
 
     # -- toolbar ---------------------------------------------------------------------
     def _toolbar(self):
@@ -491,6 +544,7 @@ class FilesWindow(Adw.ApplicationWindow):
     # -- navigation ------------------------------------------------------------------
     def go(self, uri: str, record=True, fade=True) -> None:
         """fade: cross-fade into the folder (not from the sidebar: at once, Vini)."""
+        uri = folder.canonical(uri)
         if record:
             if self.pos >= 0 and self.history[self.pos] == uri:
                 return
@@ -565,6 +619,7 @@ class FilesWindow(Adw.ApplicationWindow):
 
     # -- tabs (Finder) -----------------------------------------------------------------
     def _add_tab(self, uri, view_id=None, index=None, select=True):
+        uri = folder.canonical(uri)
         tab = Tab(self, view_id or (self.tab.view_id if self.tab else "icons"))
         if index is None:
             index = self.tabs.index(self.tab) + 1 if self.tab in self.tabs else len(self.tabs)
@@ -872,17 +927,21 @@ class FilesWindow(Adw.ApplicationWindow):
             self._select_when_listed(f.get_basename())
 
     def _terminal(self, gfile):
-        path = gfile.get_path()
+        """New Terminal at Folder: Sonata's own Terminal first (Vini: the
+        old list skipped it, so on a Sonata-only machine nothing opened and
+        nothing said why), then $TERMINAL and the common ones."""
+        path = gfile.get_path() if gfile else None
         if not path:
             return
-        for term in (os.environ.get("TERMINAL"), "kgx", "gnome-terminal", "konsole", "kitty", "alacritty",
-                     "foot", "ghostty", "wezterm", "xfce4-terminal", "xterm"):
-            if term and GLib.find_program_in_path(term):
-                try:
-                    GLib.spawn_async([term], working_directory=path, flags=GLib.SpawnFlags.SEARCH_PATH)
-                except GLib.Error:
-                    continue
+        for argv in terminal_commands(path):
+            try:
+                GLib.spawn_async(argv, working_directory=path, flags=GLib.SpawnFlags.SEARCH_PATH)
                 return
+            except GLib.Error:
+                continue
+        ui.dialog.alert("No terminal app was found.",
+                        "Install a terminal app, like kitty or Konsole, to open folders in it.",
+                        [("ok", "OK", "default")], parent=self)
 
     # new folder / rename
     def new_folder(self):

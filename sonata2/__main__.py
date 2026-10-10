@@ -332,8 +332,10 @@ def run_files(app, uris, ui):
     """A new Files window per launch (like Finder's File > New Window)."""
     from .files.window import FilesWindow
     from gi.repository import Gio
+    from .files import folder
     for uri in uris or [None]:
         reveal = None
+        uri = folder.canonical(uri) if uri else uri        # sonata:///connect (gvfs) -> sonata:connect
         if uri == "sonata:connect":                     # the menu bar's Go > Connect to Server
             win = FilesWindow(app, None)
             win.present()

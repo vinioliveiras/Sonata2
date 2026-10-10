@@ -156,6 +156,21 @@ def _accent() -> str:
     return _accent_name
 
 
+def _remember_appearance() -> None:
+    """What the look is now, so the first appearance.json / dock.json write
+    compares with it. Vini: opening an app the Dock hadn't pinned (it
+    writes its recents to dock.json) cross-faded every Sonata window --
+    nothing had been seen yet, so everything counted as changed -- and the
+    menu bar's Control Center icon went blank after that fade."""
+    global _radii_seen, _glass_bars_on
+    _accent()
+    _glass_cfg()
+    if _radii_seen is None:
+        _radii_seen = tokens.user_radii()
+    if _glass_bars_on is None:
+        _glass_bars_on = glass_titlebars()
+
+
 def _appearance_changed() -> None:
     """appearance.json changed (Settings): new accent, re-style everything."""
     global _accent_name
@@ -414,6 +429,7 @@ def setup() -> None:
     _appearance_mon = config.watch("appearance", _appearance_changed)
     global _dock_mon
     _dock_mon = config.watch("dock", _appearance_changed)       # its old "glass" switch (ui/glass.py)
+    _remember_appearance()
     _follow_color_scheme()
     _animation_speed()
     _load()

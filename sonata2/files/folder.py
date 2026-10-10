@@ -31,6 +31,20 @@ class _Virtual:
 
 
 VIRTUAL = _Virtual()
+CONNECT = "sonata:connect"        # the menu bar's Go > Connect to Server (not a place: the dialog)
+
+
+def canonical(uri):
+    """Our sonata: places as Files names them. Handed to another process they
+    pass through a GFile, and with gvfs installed (GDaemonVfs) "sonata:recents"
+    comes back as "sonata:///recents" -- no longer Recents, so Go > Recents
+    showed "can't be opened" and Go > Connect to Server opened nothing (Vini)."""
+    if isinstance(uri, str) and uri.startswith("sonata:/"):
+        from urllib.parse import unquote
+        return "sonata:" + unquote(uri[len("sonata:"):].lstrip("/"))
+    return uri
+
+
 BATCH = 500
 
 

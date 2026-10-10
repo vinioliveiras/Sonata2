@@ -36,5 +36,18 @@ class EdgeCursorTest(unittest.TestCase):
         self.assertIn("under_shell(at)", edges)
 
 
+    def test_grabbed_pointer_gets_the_normal_cursor(self):
+        """Vini: Control Center open, the pointer stayed a resize arrow over
+        the Dock -- under a pop-up's grab no other app sets its cursor, so
+        the last app's resize border cursor stayed."""
+        fn = SRC[SRC.index("static bool grabbed_elsewhere"):SRC.index("static void watch_grabbed_focus")]
+        self.assertIn("pointer_state.default_grab", fn)
+        self.assertIn("focused_surface == nullptr", fn)
+        self.assertIn('set_cursor("default")', fn)
+        self.assertIn("pointer_focus_changed_signal", fn)
+        self.assertIn("watch_grabbed_focus(true);", SRC)
+        self.assertIn("watch_grabbed_focus(false);", SRC)
+
+
 if __name__ == "__main__":
     unittest.main()
