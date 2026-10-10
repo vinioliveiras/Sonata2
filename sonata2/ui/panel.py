@@ -255,6 +255,29 @@ def toggle(icon_name: str, title: str, on: bool, on_change, caption: str = "") -
     return box
 
 
+def click_anywhere(area: Gtk.Widget, toggle_box) -> Gtk.Widget:
+    """The whole `area` (a Control Center module) toggles `toggle_box`, not
+    only its round button (Vini: Do Not Disturb's whole square). A click on
+    the button itself is the button's; none while the grid is being edited."""
+    btn = toggle_box.button
+    g = Gtk.GestureClick(button=1)
+
+    def released(_g, _n, x, y):
+        w = area.pick(x, y, Gtk.PickFlags.DEFAULT)
+        if w is not None and (w is btn or w.is_ancestor(btn)):
+            return
+        p = area.get_parent()
+        while p is not None:                       # Edit Controls: the modules don't react
+            if getattr(p, "editing", False):
+                return
+            p = p.get_parent()
+        btn.emit("clicked")
+    g.connect("released", released)
+    area.add_controller(g)
+    area.toggle_click = g                          # (tests)
+    return area
+
+
 def set_toggle(box, on: bool, caption: str = None) -> None:
     """Update a toggle() without calling its callback."""
     (box.button.add_css_class if on else box.button.remove_css_class)("on")

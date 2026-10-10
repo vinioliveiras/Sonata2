@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changes
+- Control Center: the whole Do Not Disturb square turns it on and off,
+  not only its round button.
+
 ## 0.15.0-alpha -- 2026-10-10
 
 A lighter Sonata -- less work for the CPU, the GPU and memory, the same

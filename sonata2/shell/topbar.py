@@ -1344,8 +1344,9 @@ class ControlCenter(Gtk.Box):
         conn.set_valign(Gtk.Align.FILL)
         dark = Adw.StyleManager.get_default().get_dark()
         nc = getattr(bar, "notifications", None)
-        dnd = ui.panel.module(ui.panel.toggle("weather-clear-night-symbolic", "Do Not Disturb",
-                                              bool(nc and nc.dnd), lambda on: nc and nc.set_dnd(on)))
+        dnd_toggle = ui.panel.toggle("weather-clear-night-symbolic", "Do Not Disturb",
+                                     bool(nc and nc.dnd), lambda on: nc and nc.set_dnd(on))
+        dnd = ui.panel.click_anywhere(ui.panel.module(dnd_toggle), dnd_toggle)
         self.dark_btn = self._small("sonata-dark-mode-symbolic", "Dark Mode",
                                     lambda: self._set_dark(not Adw.StyleManager.get_default().get_dark()),
                                     close=False)
