@@ -356,6 +356,7 @@ class Bar(Gtk.CenterBox):
         lines = ([f"Camera: {', '.join(st['camera'])}"] if st["camera"] else []) + \
                 ([f"Microphone: {', '.join(st['mic'])}"] if st["mic"] else [])
         self.inuse_btn.set_tooltip_text("\n".join(lines) or None)
+        self._icons_soon()
 
     def _extras_visibility(self) -> None:
         self.nowplaying.set_visible(self.cfg["show_now_playing"] and self.players.active)
@@ -563,9 +564,28 @@ class Bar(Gtk.CenterBox):
         wins = [t for t in self.manager.toplevels if (apps.match_app_id(t.app_id) or t.app_id) == key]
         return key, wins
 
+    def _icons_soon(self) -> None:
+        """The icon items drawn anew once things settle. Vini: the Control
+        Center icon went blank after closing Chrome (an app window gone, the
+        items beside it shown or hidden) and came back only when clicked --
+        GTK kept a stale picture of it; looking it up again redraws it."""
+        if getattr(self, "_icons_src", 0):
+            return
+
+        def run():
+            self._icons_src = 0
+            if not getattr(self, "alive", True):
+                return False
+            for b in (getattr(self, "cc", None), getattr(self, "wifi", None), getattr(self, "spotlight", None)):
+                if b is not None:
+                    self._refresh_icon(b)
+            return False
+        self._icons_src = GLib.timeout_add(120, run)
+
     def _active_changed(self) -> None:
         """App name + menus follow the focused app; on the desktop (nothing
         focused) they are Files' -- File, Go, Window -- like Finder's."""
+        self._icons_soon()
         key, _wins = self._active()
         if key:                                   # most recently used apps (app switcher)
             self.mru = [key] + [k for k in getattr(self, "mru", []) if k != key]

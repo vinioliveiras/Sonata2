@@ -103,5 +103,28 @@ class ControlCenterIconTest(unittest.TestCase):
         bar.stop()
 
 
+    def test_icons_drawn_anew_after_an_app_window_goes(self):
+        """Vini: the Control Center icon went blank after closing Chrome."""
+        win = Gtk.Window()
+        bar = topbar.Bar(None)
+        win.set_child(bar)
+        win.present()
+        settle(300)
+        img = _image(bar.cc)
+        changes = []
+        img.connect("notify::storage-type", lambda i, _p: changes.append(1))
+        bar._active_changed()                                # focus moved: an app window closed
+        bar._active_changed()                                # (a burst: one redraw)
+        settle(400)
+        self.assertTrue(changes, "looked up again")
+        self.assertEqual(img.get_icon_name(), "sonata-control-center-symbolic")
+        n = len(changes)
+        bar._inuse_changed()                                 # the in-use dots beside it
+        settle(400)
+        self.assertGreater(len(changes), n)
+        bar.stop()
+        win.destroy()
+
+
 if __name__ == "__main__":
     unittest.main()

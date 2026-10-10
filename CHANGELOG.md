@@ -9,6 +9,9 @@
   icon turns into Eject (a short crossfade) while the pointer is on it, and
   a click there ejects it. A right click on a disk: Open in New Tab, Get
   Info, Eject / Unmount, Open Disk Utility.
+- The menu bar's icons are drawn anew when an app's window goes or the
+  in-use dots change (the Control Center icon went blank after closing
+  Chrome).
 - Open in Sandbox is only in the Dock's menu (not Launchpad / Apps Menu),
   and not offered for web apps (they couldn't open there).
 
