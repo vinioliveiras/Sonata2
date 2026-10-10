@@ -118,6 +118,55 @@ def apply_mozilla(on: bool, profiles=None) -> None:
             titlebars._write(prefs, "\n".join(kept) + "\n")
 
 
+# launchers that are programs, not scripts: (their browser, their flag file)
+KNOWN_LAUNCHERS = {"chromium": ("/usr/lib/chromium/chromium", "chromium-flags.conf")}
+
+
+def web_app_browser(browser: str, cfg_dir=None) -> list:
+    """The start of a web app's command (webapps.chromium_command). With
+    WebGPU on, the browser's own program -- past the launcher, which would
+    add the flag file's WebGPU flags (Vini: WhatsApp showed "unsupported
+    command-line flag: --enable-unsafe-webgpu") -- with the user's own flags
+    from that file, Sonata's taken out. Unknown launchers: as they are."""
+    if not enabled():
+        return [browser]
+    import re
+    import shlex
+    target, flags_file = KNOWN_LAUNCHERS.get(os.path.basename(browser), (None, None))
+    if target is None:
+        try:
+            with open(browser, "rb") as f:
+                head = f.read(8192)
+        except OSError:
+            return [browser]
+        if not head.startswith(b"#!"):
+            return [browser]
+        text = head.decode("utf-8", "replace")
+        m = re.search(r"([\w.+-]+\.conf)\b", text)
+        x = re.search(r"^\s*exec\s+[\"']?(/[^\s\"']+)", text, re.M)
+        if not (m and x):
+            return [browser]
+        target, flags_file = x.group(1), m.group(1)
+    if not (os.path.isfile(target) and os.access(target, os.X_OK)):
+        return [browser]
+    path = os.path.join(cfg_dir or GLib.get_user_config_dir(), flags_file)
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        lines = []
+    done = config.load(NAME, DEFAULTS).get("appended") or {}
+    kept, _a = edit(lines, False, bool(done.get(flags_file)))
+    flags = []
+    for ln in kept:
+        if ln.strip() and not ln.lstrip().startswith("#"):
+            try:
+                flags += shlex.split(ln)
+            except ValueError:
+                flags += ln.split()
+    return [target, *flags]
+
+
 def apply(on: bool, cfg_dir=None) -> None:
     from . import titlebars
     cfg = cfg_dir or GLib.get_user_config_dir()

@@ -28,6 +28,9 @@
   any more. The accent itself stays where it fills (selected rows,
   buttons).
 - The desktop's Install / Extract alerts come in front of the desktop.
+- Web apps on Chromium no longer get the browsers' WebGPU flags (they
+  showed "unsupported command-line flag: --enable-unsafe-webgpu"): they
+  start the browser's own program with the user's other flags.
 - Open in Sandbox is only in the Dock's menu (not Launchpad / Apps Menu),
   and not offered for web apps (they couldn't open there).
 

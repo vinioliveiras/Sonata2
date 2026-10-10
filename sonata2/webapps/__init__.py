@@ -196,7 +196,7 @@ def chromium_command(app: str, entry: dict, browser: str) -> list:
     (it would draw nothing there) -- given after those flags, so it wins."""
     from .. import browsergpu
     keep = ["--ozone-platform=wayland", "--disable-features=Vulkan"] if browsergpu.enabled() else []
-    return [browser, f"--user-data-dir={os.path.join(data_dir(app), 'chromium')}",
+    return [*browsergpu.web_app_browser(browser), f"--user-data-dir={os.path.join(data_dir(app), 'chromium')}",
             "--no-first-run", "--no-default-browser-check", "--ozone-platform-hint=auto", *keep,
             "--window-size={},{}".format(*window_size(app)), f"--app={entry['url']}"]
 
