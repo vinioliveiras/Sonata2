@@ -131,3 +131,13 @@ class LaunchRetryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoKillOnAGuessTest(unittest.TestCase):
+    """Wayfire's list can't be read: the Dock never kills an app on a guess
+    (the same rule as launchwatch.has_window)."""
+    def test_ipc_down(self):
+        from sonata2.shell import dock as D
+        with mock.patch("sonata2.wl.wfipc.WayfireIPC", side_effect=OSError("no socket")):
+            self.assertTrue(D.scope_has_window("app-x-1.scope"))
+        self.assertFalse(D.scope_has_window(None))

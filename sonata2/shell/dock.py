@@ -566,7 +566,7 @@ def scope_has_window(unit) -> bool:
         from ..wl.wfipc import WayfireIPC
         views = WayfireIPC().call("window-rules/list-views")
     except Exception:
-        return False
+        return True                    # can't tell: never killed on a guess (launchwatch.has_window)
     for v in views if isinstance(views, list) else []:
         pid = v.get("pid") if isinstance(v, dict) else None
         if not isinstance(pid, int) or pid <= 0:
