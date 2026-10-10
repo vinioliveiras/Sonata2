@@ -2,23 +2,18 @@
 
 ## Unreleased
 
-### Fixes
-- The recording / screen-sharing pill is centred in the taller menu bar.
-- Files: New Terminal at Folder opens Sonata's Terminal there (other
-  terminals as a fallback, and a message when there is none).
-- Files: Go > Recents and Go > Connect to Server work again with gvfs
-  installed; an alert shown while its window opens comes in front of it.
-- Task Manager lists every graphics card (the NVIDIA one too, "Sleeping"
-  when powered down -- not woken up to be read).
-- Reminders notify at their time with Notes closed (from the menu bar),
-  once each, without a burst of old ones at login.
-- The Control Center icon no longer goes blank after an app opens or
-  closes: the first Dock or appearance save no longer cross-fades every
-  Sonata window.
-- With Control Center (or any pop-up) open, the pointer is the normal
-  arrow over the Dock and other apps, not an app's resize arrow.
-- Settings > Wi-Fi: a spinner while the networks are read.
-- The drawing palette's icons no longer flicker while sharing the screen.
+## 0.15.0-alpha -- 2026-10-10
+
+A lighter Sonata -- less work for the CPU, the GPU and memory, the same
+look -- WebGPU for browser games, reminders that notify, every GPU in Task
+Manager, and many fixes.
+
+### Changes
+- Settings > Displays > Games > WebGPU in Browsers (off by default): 3D
+  browser games in Chrome, Chromium, Brave and Firefox. Chromium browsers
+  then run through XWayland with Vulkan (on Wayland, Chrome's Vulkan draws
+  an empty window); Sonata's web apps stay on Wayland. Firefox gets
+  dom.webgpu.enabled.
 
 ### Performance
 - Windows behind an opaque window are no longer drawn again with it (the
@@ -49,14 +44,23 @@
   desktop icons of a removed display no longer kept in memory.
 - The spinner and the recording dot no longer redraw at the display's rate.
 
-### Changes
-- Settings > Displays > Games > WebGPU in Browsers (off by default): 3D
-  browser games in Chrome, Chromium, Brave and Firefox. Chromium browsers
-  then run through XWayland with Vulkan (on Wayland, Chrome's Vulkan draws
-  an empty window); Sonata's web apps stay on Wayland. Firefox gets
-  dom.webgpu.enabled.
-
 ### Fixes
+- The recording / screen-sharing pill is centred in the taller menu bar.
+- Files: New Terminal at Folder opens Sonata's Terminal there (other
+  terminals as a fallback, and a message when there is none).
+- Files: Go > Recents and Go > Connect to Server work again with gvfs
+  installed; an alert shown while its window opens comes in front of it.
+- Task Manager lists every graphics card (the NVIDIA one too, "Sleeping"
+  when powered down -- not woken up to be read).
+- Reminders notify at their time with Notes closed (from the menu bar),
+  once each, without a burst of old ones at login.
+- The Control Center icon no longer goes blank after an app opens or
+  closes: the first Dock or appearance save no longer cross-fades every
+  Sonata window.
+- With Control Center (or any pop-up) open, the pointer is the normal
+  arrow over the Dock and other apps, not an app's resize arrow.
+- Settings > Wi-Fi: a spinner while the networks are read.
+- The drawing palette's icons no longer flicker while sharing the screen.
 - An app being updated stays in the Dock: an app leaves it only when its
   entry is still gone 20 seconds later, and not while pacman is running.
 - Sharing or recording the screen no longer slows the computer down: a
