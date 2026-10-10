@@ -9,6 +9,8 @@
   icon turns into Eject (a short crossfade) while the pointer is on it, and
   a click there ejects it. A right click on a disk: Open in New Tab, Get
   Info, Eject / Unmount, Open Disk Utility.
+- Open in Sandbox is only in the Dock's menu (not Launchpad / Apps Menu),
+  and not offered for web apps (they couldn't open there).
 
 ## 0.15.0-alpha -- 2026-10-10
 

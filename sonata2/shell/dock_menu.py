@@ -118,8 +118,12 @@ def lock_item(info, around=None):
 
 
 def sandbox_item(info, around=None):
-    """Open in Sandbox (sandbox.py): an empty home of its own, nothing kept."""
-    from .. import sandbox
+    """Open in Sandbox (sandbox.py): an empty home of its own, nothing kept.
+    None for a Sonata web app (Vini: it didn't open -- it runs Sonata itself,
+    whose web app settings are in the home the sandbox hides)."""
+    from .. import sandbox, webapps
+    if info is None or webapps.is_webapp(info.get_id() or ""):
+        return None
     return ui.menu.Item("Open in Sandbox", lambda: (around or (lambda f: f()))(lambda: sandbox.ask_open(info)))
 
 
@@ -133,7 +137,7 @@ def app_menu(dock, key: str, tile):
                               on_close=lambda t=t: dock.manager.close(t))       # the x closes that window
                          for t in wins])
     if info and wins:
-        sections.append([Item("New Window", lambda: new_window(dock, tile)), sandbox_item(info)])
+        sections.append([i for i in (Item("New Window", lambda: new_window(dock, tile)), sandbox_item(info)) if i])
     pinned = key in dock.cfg["pinned"]
     from .dock import PERMANENT
     opts = []
@@ -176,7 +180,7 @@ def app_menu(dock, key: str, tile):
                          Item("Force Quit", lambda: force_quit(key)),
                          Item("Quit", lambda: _quit(dock, wins, key))])
     elif info:
-        sections.append([Item("Open", lambda: dock.launch(tile)), sandbox_item(info)])
+        sections.append([i for i in (Item("Open", lambda: dock.launch(tile)), sandbox_item(info)) if i])
     tile.label.popdown()
     return ui.menu.popup(tile, sections, position=dock.away)
 

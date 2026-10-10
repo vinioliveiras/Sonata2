@@ -1069,10 +1069,8 @@ class Launchpad(Gtk.ApplicationWindow):
                         [Item(f"Show in {names.APPS}", lambda: self.unhide_app(item))]]
         else:
             info = self.installed.get(item)
+            # (no Open in Sandbox here: the Dock's menu only -- Vini)
             sections = [[Item("Open", lambda: self.activate_item(widget))]]
-            if info:
-                from .dock_menu import sandbox_item
-                sections[0].append(sandbox_item(info, self.close_launchpad))
             dock = config.load("dock", {"pinned": None})
             pins = dock.get("pinned")
             from .dock import PERMANENT

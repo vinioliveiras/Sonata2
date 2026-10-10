@@ -172,6 +172,21 @@ class DockTest(unittest.TestCase):
             around[0]()
         ask.assert_called_once()
 
+    def test_not_for_web_apps(self):
+        """Vini: Open in Sandbox didn't work with web apps -- not offered there."""
+        from sonata2.shell import dock_menu
+        web = mock.Mock()
+        web.get_id.return_value = "sonata2-webapp-waee32c088c.desktop"
+        self.assertIsNone(dock_menu.sandbox_item(web))
+        self.assertIsNone(dock_menu.sandbox_item(None))
+
+    def test_only_in_the_dock(self):
+        """Vini: not in the Apps menu / Launchpad's (nor Files') right-click menu."""
+        import inspect
+        from sonata2.shell import launchpad
+        self.assertNotIn("sandbox_item", inspect.getsource(launchpad.Launchpad.item_menu)
+                         if hasattr(launchpad, "Launchpad") else inspect.getsource(launchpad))
+
 
 if __name__ == "__main__":
     unittest.main()
