@@ -132,8 +132,8 @@ class WifiTest(unittest.TestCase):
 
         def run(cmd, timeout=10):
             runs.append(cmd)
-            if cmd[:4] == ["nmcli", "-t", "-f", "TYPE,STATE"]:
-                return 0, "wifi:connected\nethernet:unavailable\n"
+            if cmd == system.DEVICES:
+                return 0, "wifi:connected:Home\nethernet:unavailable:\n"
             if cmd[:3] == ["nmcli", "radio", "wifi"]:
                 return 0, "disabled\n" if off else "enabled\n"
             return 0, "yes:Home:77\nno:Other:30\n"
@@ -375,3 +375,28 @@ class TrayTooltipTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WifiConnectedNotScannedTest(unittest.TestCase):
+    """Vini's friend: connected, yet the icon greyed out until Wi-Fi was turned
+    off and on -- the scan list didn't have the network in use yet."""
+    def test_device_state_counts(self):
+        def run(cmd, timeout=10):
+            if cmd == system.DEVICES:
+                return 0, "wifi:connected:Casa 5G\nethernet:unavailable:\nloopback:connected (externally):lo\n"
+            if cmd[:3] == ["nmcli", "radio", "wifi"]:
+                return 0, "enabled\n"
+            return 0, ""                                        # empty scan list
+        with mock.patch.object(system, "_run", side_effect=run):
+            self.assertEqual(system.wifi_status(), (True, True, ("Casa 5G", system.UNKNOWN_SIGNAL, False)))
+            self.assertEqual(system.wifi_current()[:2], ("Casa 5G", system.UNKNOWN_SIGNAL))
+
+    def test_not_connected_stays_empty(self):
+        def run(cmd, timeout=10):
+            if cmd == system.DEVICES:
+                return 0, "wifi:disconnected:\n"
+            if cmd[:3] == ["nmcli", "radio", "wifi"]:
+                return 0, "enabled\n"
+            return 0, ""
+        with mock.patch.object(system, "_run", side_effect=run):
+            self.assertEqual(system.wifi_status(), (True, True, ("", 0, False)))

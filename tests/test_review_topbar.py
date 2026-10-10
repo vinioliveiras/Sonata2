@@ -10,6 +10,7 @@ import datetime
 import io
 import os
 import tempfile
+import inspect
 import types
 import unittest
 from unittest import mock
@@ -1008,11 +1009,14 @@ class AnimationTests(unittest.TestCase):
         n.win.destroy()
 
     def test_notification_center_slides(self):
-        """The Notification Center slides in and out (Revealer)."""
+        """The Notification Center slides in and out -- moved and faded by CSS,
+        not a Revealer (Vini: it re-laid out every card each frame and lagged)."""
         owner = types.SimpleNamespace(notes=[], listeners=[], card=None, clear=None)
         c = N._Center(None, owner)
-        self.assertEqual(c.rev.get_transition_type(), Gtk.RevealerTransitionType.SLIDE_LEFT)
-        self.assertGreater(c.rev.get_transition_duration(), 0)
+        self.assertNotIsInstance(c.rev, Gtk.Revealer)
+        self.assertIn("nc-slide", c.rev.get_css_classes())
+        self.assertFalse(c.rev.has_css_class("instant"))         # animated
+        self.assertIn("transform: translateX", inspect.getsource(N))
         c.show_center()
         spin(20)
         self.assertTrue(c.rev.get_reveal_child())

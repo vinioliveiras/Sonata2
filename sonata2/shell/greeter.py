@@ -86,6 +86,12 @@ def _kf(kf, getter, key, default):
         return default
 
 
+# Wayfire on its own, without Sonata: its package installs it as a session,
+# and it showed in the login screen's list after every install (Vini) --
+# a bare compositor nobody picks on purpose
+HIDDEN_SESSIONS = {"wayfire", "wayfire-uwsm"}
+
+
 def sessions() -> list:
     out, seen = [], set()
     for d in SESSION_DIRS:
@@ -94,7 +100,7 @@ def sessions() -> list:
         except OSError:
             continue
         for fn in files:
-            if not fn.endswith(".desktop") or fn in seen:
+            if not fn.endswith(".desktop") or fn in seen or fn[:-8] in HIDDEN_SESSIONS:
                 continue
             kf = GLib.KeyFile()
             try:

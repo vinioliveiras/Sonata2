@@ -143,6 +143,28 @@ XML = """
   </interface>
 </node>"""
 
+NC_SLIDE_PX = BANNER_W + 40         # off the right edge: the column's width and its margins
+
+
+class _Slide(Gtk.Box):
+    """The Notification Center column, sliding in and out (CSS .nc-slide).
+    Keeps a Revealer's two calls (prewarm and show/hide use them)."""
+
+    def __init__(self, child):
+        super().__init__(css_classes=["nc-slide"], halign=Gtk.Align.END, valign=Gtk.Align.FILL)
+        self.append(child)
+
+    def set_reveal_child(self, on: bool) -> None:
+        (self.add_css_class if on else self.remove_css_class)("shown")
+        self.set_can_target(on)
+
+    def get_reveal_child(self) -> bool:
+        return self.has_css_class("shown")
+
+    def set_transition_duration(self, ms: int) -> None:
+        (self.remove_css_class if ms else self.add_css_class)("instant")
+
+
 ui.register("""
 window.sonata-banners, window.sonata-banners > contents,
 window.sonata-nc, window.sonata-nc > contents { background: none; box-shadow: none; }
@@ -150,6 +172,13 @@ window.sonata-nc, window.sonata-nc > contents { background: none; box-shadow: no
    fades while its row collapses */
 .nc-slot > * { transition: opacity 220ms %(ease_out)s, transform 220ms %(ease_out)s; }
 .nc-slot.leaving > * { opacity: 0; transform: translateX(60px); }
+/* Notification Center sliding in: moved and faded, never laid out again
+   each frame (a Revealer re-measured every card and the calendar per frame --
+   Vini: the opening lagged) */
+.nc-slide { opacity: 0; transform: translateX(%(nc_slide)spx);
+  transition: transform 250ms %(ease_out)s, opacity 200ms %(ease_out)s; }
+.nc-slide.shown { opacity: 1; transform: none; }
+.nc-slide.instant { transition: none; }
 .nt-card { background: %(glass_tint)s; border-radius: calc(%(r_dialog)s * 1.08); padding: 10px 12px 11px 10px;
   color: %(label)s; font-family: %(font)s;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, 0 8px 22px rgba(0,0,0,0.18); }
@@ -184,7 +213,7 @@ button.nc-clear { min-height: 20px; padding: 0 9px; border-radius: 99px; border:
 .nc-event-title { font-size: %(text_small)s; font-weight: 600; color: %(label)s; }
 .nc-event-time { font-size: 11px; color: %(label_secondary)s; }
 .nc-event-day { font-size: 10px; font-weight: 700; color: %(label_secondary)s; margin-top: 8px; }
-""", key="notifications")
+""", key="notifications", nc_slide=NC_SLIDE_PX)
 
 
 @dataclass
@@ -606,13 +635,11 @@ class _Center(Gtk.Window):
         super().__init__(application=app, title="Notification Center", decorated=False)
         self.add_css_class("sonata-nc")
         self.owner = owner
-        self.rev = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_LEFT, transition_duration=250,
-                                halign=Gtk.Align.END, valign=Gtk.Align.FILL)
         scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_width=True)
         self.col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=TOP_GAP - 4,
                            margin_end=10, margin_bottom=12, margin_start=6)
         scroller.set_child(self.col)
-        self.rev.set_child(scroller)
+        self.rev = _Slide(scroller)
         self.set_child(self.rev)
         outside = Gtk.GestureClick()
         outside.connect("released", self._clicked)

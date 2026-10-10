@@ -127,22 +127,47 @@ def _wired(out: str) -> bool:
     return any(ln.startswith("ethernet:connected") for ln in out.splitlines())
 
 
+DEVICES = ["nmcli", "-t", "-f", "TYPE,STATE,CONNECTION", "device"]
+UNKNOWN_SIGNAL = 70          # connected, its strength not in NetworkManager's list yet
+
+
+def _joined(out: str) -> str:
+    """The Wi-Fi connection a device is on ("" for none), from DEVICES."""
+    for ln in out.splitlines():
+        parts = _split_nmcli(ln)
+        if len(parts) >= 3 and parts[0] == "wifi" and parts[1] == "connected":
+            return parts[2]
+    return ""
+
+
+def _wifi_now(devices_out: str) -> Tuple[str, int]:
+    """(ssid, signal). The scan list can lack the network in use (after a
+    boot, before a scan): the icon stayed greyed out, connected, until Wi-Fi
+    was turned off and on (Vini's friend). The device's own state counts."""
+    ssid, sig = _wifi_active()
+    if not ssid:
+        ssid = _joined(devices_out)
+        sig = UNKNOWN_SIGNAL if ssid else 0
+    return ssid, sig
+
+
 def wifi_current() -> Tuple[str, int, bool]:
     """(ssid, signal 0-100, wired connected)."""
-    ssid, sig = _wifi_active()
-    rc, out = _run(["nmcli", "-t", "-f", "TYPE,STATE", "device"])
-    return ssid, sig, rc == 0 and _wired(out)
+    rc, out = _run(DEVICES)
+    out = out if rc == 0 else ""
+    ssid, sig = _wifi_now(out)
+    return ssid, sig, _wired(out)
 
 
 def wifi_status() -> Tuple[bool, bool, Tuple[str, int, bool]]:
     """(Wi-Fi hardware, radio on, (ssid, signal, wired)) for the menu bar's
     poll: one device list answers both "Wi-Fi there" and "cable in", and the
     network list is only read with the radio on (was 4 nmcli runs a tick)."""
-    rc, out = _run(["nmcli", "-t", "-f", "TYPE,STATE", "device"])
+    rc, out = _run(DEVICES)
     types = [ln.split(":", 1)[0] for ln in out.splitlines()] if rc == 0 else []
     avail, wired = "wifi" in types, rc == 0 and _wired(out)
     on = avail and wifi_enabled()
-    ssid, sig = _wifi_active() if on else ("", 0)
+    ssid, sig = _wifi_now(out if rc == 0 else "") if on else ("", 0)
     return avail, on, (ssid, sig, wired)
 
 
