@@ -13,7 +13,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Graphene", "1.0")
-from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gsk, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
 
@@ -180,6 +180,60 @@ def _decode_wallpaper(f, max_size: int):
     return Gdk.Texture.new_from_file(f)
 
 
+COLUMN_LIFT = 0.14      # bottom margin, a share of the display height: the column sits 7% above centre
+
+
+def lift(widget: Gtk.Widget, monitor) -> Gtk.Widget:
+    """The login / lock column a little above the middle of its display
+    (Vini: higher up, like macOS): a bottom margin of COLUMN_LIFT x height
+    moves a centred widget up by half of it."""
+    try:
+        h = monitor.get_geometry().height if monitor is not None else 0
+    except Exception:
+        h = 0
+    widget.set_margin_bottom(int(h * COLUMN_LIFT))
+    return widget
+
+
+BLUR_SCALE = 4          # the wallpaper blurred at a quarter of the display's size (looks the same)
+BLUR_MARGIN = 40        # the picture reaches this far past each edge (the blur's edges stay off screen)
+
+
+def blurred(texture, w: int, h: int, blur: float):
+    """The wallpaper cover-fit to w x h and blurred on the CPU, at 1/BLUR_SCALE
+    size (drawn scaled up), or None (no Pillow): the backdrop then blurs on
+    the GPU. Vini: the lock screen's background once showed a ghost of the
+    Claude window -- the GPU blur's scratch picture with another app's old
+    pixels; a ready picture has none (and the GPU does no blur pass)."""
+    try:
+        from PIL import Image, ImageFilter
+    except ImportError:
+        return None
+    try:
+        dl = Gdk.TextureDownloader.new(texture)
+        dl.set_format(Gdk.MemoryFormat.R8G8B8A8)
+        data, stride = dl.download_bytes()
+        img = Image.frombuffer("RGBA", (texture.get_width(), texture.get_height()), data.get_data(),
+                               "raw", "RGBA", stride, 1)
+    except Exception:
+        return None
+    sw, sh = max(1, int(w / BLUR_SCALE)), max(1, int(h / BLUR_SCALE))
+    # cover-fit to the display plus BLUR_MARGIN each side, like the GPU path (blur edges off screen)
+    scale = max((w + 2 * BLUR_MARGIN) / BLUR_SCALE / img.width, (h + 2 * BLUR_MARGIN) / BLUR_SCALE / img.height)
+    factor = max(1, int(1 / scale) // 2)          # a fast box reduce first, then a smooth resize
+    if factor > 1:
+        img = img.reduce(factor)
+        scale = max((w + 2 * BLUR_MARGIN) / BLUR_SCALE / img.width, (h + 2 * BLUR_MARGIN) / BLUR_SCALE / img.height)
+    img = img.convert("RGB").resize((max(sw, round(img.width * scale)), max(sh, round(img.height * scale))),
+                                    Image.BILINEAR)
+    x, y = (img.width - sw) // 2, (img.height - sh) // 2
+    img = img.crop((x, y, x + sw, y + sh))
+    # GSK's blur radius r is a Gaussian of sigma r / 2; at this size, / BLUR_SCALE
+    img = img.filter(ImageFilter.GaussianBlur(blur / 2 / BLUR_SCALE))
+    data = GLib.Bytes.new(img.tobytes())
+    return Gdk.MemoryTexture.new(sw, sh, Gdk.MemoryFormat.R8G8B8, data, sw * 3)
+
+
 class Backdrop(Gtk.Widget):
     """The wallpaper, cover-fit, blurred and dimmed (drawn once per size)."""
 
@@ -187,6 +241,7 @@ class Backdrop(Gtk.Widget):
         super().__init__(hexpand=True, vexpand=True)
         self.texture = texture
         self.dim, self.blur = dim, blur
+        self._ready = None              # (texture, w, h, blurred picture)
 
     def do_snapshot(self, snap):
         w, h = self.get_width(), self.get_height()
@@ -196,13 +251,23 @@ class Backdrop(Gtk.Widget):
             c.parse("#2a3550")
             snap.append_color(c, rect)
             return
+        if self.blur:
+            r = self._ready
+            if r is None or r[0] is not self.texture or r[1:3] != (w, h):
+                r = self._ready = (self.texture, w, h, blurred(self.texture, w, h, self.blur))
+            if r[3] is not None:
+                snap.append_scaled_texture(r[3], Gsk.ScalingFilter.LINEAR, rect)
+                dim = Gdk.RGBA()
+                dim.parse(f"rgba(0,0,0,{self.dim})")
+                snap.append_color(dim, rect)
+                return
         tw, th = self.texture.get_width(), self.texture.get_height()
         scale = max(w / tw, h / th)
         dw, dh = tw * scale, th * scale
         snap.push_clip(rect)
         snap.push_blur(self.blur)
-        snap.append_texture(self.texture, Graphene.Rect().init((w - dw) / 2 - 40, (h - dh) / 2 - 40,
-                                                              dw + 80, dh + 80))
+        snap.append_texture(self.texture, Graphene.Rect().init((w - dw) / 2 - BLUR_MARGIN, (h - dh) / 2 - BLUR_MARGIN,
+                                                              dw + 2 * BLUR_MARGIN, dh + 2 * BLUR_MARGIN))
         snap.pop()
         dim = Gdk.RGBA()
         dim.parse(f"rgba(0,0,0,{self.dim})")

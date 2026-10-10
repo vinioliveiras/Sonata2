@@ -93,7 +93,7 @@ class MissionMemoryTest(unittest.TestCase):
         full = render(loginui._decode_wallpaper(f, 0), w, h)
         small = render(loginui._decode_wallpaper(f, mission.backdrop_size([FakeMonitor(w, h)])), w, h)
         diffs = [abs(a - b) for a, b in zip(full[::31], small[::31])]
-        self.assertLessEqual(max(diffs), 4)                    # of 255: invisible
+        self.assertLessEqual(max(diffs), 6)                    # of 255: invisible (CPU-blurred, lock_backdrop)
         self.assertLess(sum(diffs) / len(diffs), 0.5)
 
     def test_only_the_current_variant_kept(self):

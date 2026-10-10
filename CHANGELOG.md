@@ -12,6 +12,11 @@
 - The menu bar's icons are drawn anew when an app's window goes or the
   in-use dots change (the Control Center icon went blank after closing
   Chrome).
+- Lock and login screens: the picture, name and password sit a little
+  higher (7% of the display above the middle).
+- The lock screen's background is blurred once, as a small finished
+  picture (it once showed a ghost of another window; no GPU blur pass
+  any more -- Mission Control's backdrop too).
 - Open in Sandbox is only in the Dock's menu (not Launchpad / Apps Menu),
   and not offered for web apps (they couldn't open there).
 

@@ -12,6 +12,8 @@ at the top right. A wrong password shakes the field; while it's checked
 success everything fades before the desktop shows."""
 import threading
 
+LOCK_WALLPAPER_PX = 1280     # the wallpaper's longest side for the (blurred) backdrop
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -19,7 +21,7 @@ from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 from .. import pam  # noqa: E402
 from ..ui.progress import Spinner  # noqa: E402
-from .loginui import Backdrop, Mirror, WaitGuard, avatar, logind, top_clock, menu_bar_format, password_field, power_bar, shake, wallpaper_texture  # noqa: E402
+from .loginui import Backdrop, Mirror, lift, WaitGuard, avatar, logind, top_clock, menu_bar_format, password_field, power_bar, shake, wallpaper_texture  # noqa: E402
 
 
 class LockScreen:
@@ -34,7 +36,7 @@ class LockScreen:
         self.lock.connect("unlocked", lambda *_: (self._dark(False), self._usb(False), mark_locked(False), app.quit()))
         self._idle_src = 0
         self._off = False
-        self.texture = wallpaper_texture()
+        self.texture = wallpaper_texture(LOCK_WALLPAPER_PX)   # shown only blurred: no full-size picture
         self.windows = []
         self.entry = None
         self.lock.lock()
@@ -172,7 +174,7 @@ class LockScreen:
         over.set_child(Backdrop(self.texture))
         over.add_overlay(top_clock(menu_bar_format()))     # the menu bar's place, size and format (Vini)
         parts = self._login()
-        over.add_overlay(parts["column"])
+        over.add_overlay(lift(parts["column"], monitor))
         power = self.power.add(power_bar(self._power))
         parts["power"] = power
         over.add_overlay(power)

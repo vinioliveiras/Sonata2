@@ -25,7 +25,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import greetd, ui  # noqa: E402
-from .loginui import Backdrop, Mirror, WaitGuard, avatar, password_field, top_clock, logind, power_bar, shake  # noqa: E402
+from .loginui import Backdrop, Mirror, WaitGuard, avatar, lift, password_field, top_clock, logind, power_bar, shake  # noqa: E402
 
 STATE = "/var/cache/sonata-greeter/state.json"
 WAITS = "/var/cache/sonata-greeter/password-waits.json"     # waits after wrong passwords, per user
@@ -246,7 +246,7 @@ class Greeter:
         center = self.center.add(Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE,
                                            transition_duration=220, halign=Gtk.Align.CENTER,
                                            valign=Gtk.Align.CENTER))
-        over.add_overlay(center)
+        over.add_overlay(lift(center, monitor))
         power = self.power.add(self._power())
         over.add_overlay(power)
         if not self.fake:
