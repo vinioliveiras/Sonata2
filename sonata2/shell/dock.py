@@ -69,6 +69,12 @@ BOUNCE_MS = 620             # one bounce
 STUCK_S = 4                 # clicked again this long after a launch that never showed a window: stuck
 STUCK_MAX_S = 90            # ... but not later than this: a slow app long since started isn't stopped
 RELAUNCH_MS = 900           # its processes stopped, then the app opens again
+# Vini: an app sometimes fails to open (Steam above all): no window this long
+# after a launch, its processes are killed and it's opened again, up to
+# LAUNCH_RETRIES times; then a notification says so
+LAUNCH_WATCH_S = 30
+LAUNCH_WATCH_SLOW_S = {"steam": 90, "steam-native": 90, "steam-runtime": 90}    # updates itself first
+LAUNCH_RETRIES = 3
 # a launch bounces until the app's first window shows up, 10 bounces at most
 # (Vini: it went on ~30 s when no window came, e.g. an app already running)
 LAUNCH_MAX_BOUNCES = 10
@@ -593,6 +599,7 @@ class Dock(Gtk.Box):
         self.tiles = {}       # desktop id (or bare app_id) -> DockTile (apps only)
         self.windows = {}     # same keys -> [Toplevel]
         self._starting = {}   # key -> when it was opened from here, until a window of it shows
+        self._retries = {}    # key -> launches retried since the click (no window came)
         self.backdrop = None  # preview only: blurred wallpaper texture under the plate
         self.on_geometry = []  # callbacks when size/magnification changes
         self.on_rebuild = None  # host callback: position changed -> rebuild the Dock
@@ -1950,6 +1957,7 @@ class Dock(Gtk.Box):
             tile.set_running(self.window_count(key))
             if groups.get(key):
                 self._starting.pop(key, None)      # its window showed: the launch went well
+                self._retries.pop(key, None)
             if getattr(tile, "folder_pop", None) is not None:
                 dock_folder.show_running(self, tile.folder_pop)
         self._relayout()
@@ -2217,6 +2225,53 @@ class Dock(Gtk.Box):
         except GLib.Error as e:
             tile._stop_bounce()
             print(f"sonata2-dock: cannot launch {info.get_id()}: {e.message}")
+            self._retries.pop(key, None)
+            self._launch_failed(tile, e.message)
+            return
+        self._watch_launch(tile)
+
+    def _watch_launch(self, tile) -> None:
+        """No window of it LAUNCH_WATCH_S after the launch: its processes
+        killed and it opened again (LAUNCH_RETRIES times), then a
+        notification (Vini)."""
+        key = tile.key
+        if key in NO_BOUNCE:
+            return
+        started = self._starting.get(key)
+        wait = LAUNCH_WATCH_SLOW_S.get(key.removesuffix(".desktop"), LAUNCH_WATCH_S)
+
+        def check():
+            from .. import appscope
+            if self._starting.get(key) != started or self.windows.get(key):
+                return False                       # it showed a window, or was clicked again since
+            app_id = tile.info.get_id() or ""
+            if scope_has_window(appscope.launched.get(app_id)):
+                self._starting.pop(key, None)      # its window is under another icon: it's open
+                self._retries.pop(key, None)
+                return False
+            tries = self._retries.get(key, 0) + 1
+            self._starting.pop(key, None)
+            appscope.kill(app_id, tile.info)               # forced closed, then (maybe) again (Vini)
+            if tries > LAUNCH_RETRIES:
+                self._retries.pop(key, None)
+                tile._stop_bounce()
+                self._launch_failed(tile, f"It was closed and opened again {LAUNCH_RETRIES} times "
+                                          "and still didn't show a window.")
+                return False
+            self._retries[key] = tries
+            print(f"sonata2-dock: {key} showed no window in {wait} s: killed, opening it again "
+                  f"({tries}/{LAUNCH_RETRIES})", flush=True)
+            GLib.timeout_add(RELAUNCH_MS, lambda: (self.launch(tile), False)[1])
+            return False
+        GLib.timeout_add_seconds(wait, check)
+
+    def _launch_failed(self, tile, why: str) -> None:
+        from .. import notify
+        info = tile.info
+        name = info.get_display_name() if info is not None else tile.name
+        icon = info.get_icon() if info is not None else None
+        notify.send(f"“{name}” couldn't open", why + " Try opening it again in a moment.", app="Dock",
+                    icon=icon.to_string() if icon is not None else "", desktop=(info.get_id() or "") if info else "")
 
     # -- Trash -----------------------------------------------------------------
     def _trash_dir(self) -> str:

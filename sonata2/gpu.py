@@ -309,29 +309,10 @@ def set_compositor_on_display_gpu(on: bool) -> None:
 
 
 def notify(summary: str, body: str, icon: str = "video-display") -> bool:
-    """An urgent notification from "Sonata" (False when no server is there).
-
-    Sent without waiting for the answer: Sonata's notification server lives
-    in the menu bar process, the one that calls this -- a call waiting for
-    its own reply blocked the menu bar for 2 s, timed out and looked failed,
-    so the notice was sent again and again (Vini: four copies of the same
-    one at login, after a plain restart)."""
-    try:
-        from gi.repository import Gio, GLib
-        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-        owned = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
-                              "NameHasOwner", GLib.Variant("(s)", ("org.freedesktop.Notifications",)),
-                              GLib.VariantType.new("(b)"), Gio.DBusCallFlags.NONE, 1000, None).unpack()[0]
-        if not owned:
-            return False                          # no server yet (login): tried again later
-        bus.call("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
-                 "org.freedesktop.Notifications", "Notify",
-                 GLib.Variant("(susssasa{sv}i)", ("Sonata", 0, icon, summary, body, [],
-                                                  {"urgency": GLib.Variant("y", 2)}, -1)),
-                 None, Gio.DBusCallFlags.NONE, -1, None, None, None)
-        return True
-    except Exception:
-        return False
+    """An urgent notification from "Sonata" (False when no server is there
+    yet: tried again later). notify.send: sent without waiting for the answer."""
+    from . import notify as N
+    return N.send(summary, body, icon=icon, urgent=True)
 
 
 def fallback_marker() -> str:

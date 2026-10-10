@@ -110,6 +110,64 @@ def stop(app_id: str) -> bool:
     return True
 
 
+# an app's processes besides its launcher's name (Steam's own runs from ~/.local/share/Steam)
+EXTRA_PROCESSES = {"steam": ("steam", "steamwebhelper", "steam.sh")}
+
+
+def process_names(info) -> set:
+    """The process names (/proc/<pid>/comm, 15 characters) an app runs as:
+    its command's program, and the known extra ones (Steam's)."""
+    from .sandbox import exec_args
+    names = set()
+    argv = exec_args((info.get_commandline() if info is not None else "") or "")
+    if argv:
+        prog = os.path.basename(argv[0])
+        if prog not in ("env", "sh", "bash", "flatpak", "python3", "python"):
+            names.add(prog[:15])
+    key = ((info.get_id() if info is not None else "") or "").removesuffix(".desktop")
+    names.update(n[:15] for n in EXTRA_PROCESSES.get(key, ()))
+    return names
+
+
+def kill(app_id: str, info=None, proc="/proc") -> int:
+    """Force the app closed (Vini: before opening it again when it didn't
+    open): every process of its launch's scope, and the user's own processes
+    running as the app's program (one left by an earlier launch, outside the
+    scope -- Steam's). SIGKILL. Returns how many processes were signalled."""
+    import signal
+    n = 0
+    unit = launched.pop(app_id or "", None)
+    bus = _bus()
+    if unit and bus is not None:
+        _manager(bus, "KillUnit", GLib.Variant("(ssi)", (unit, "all", int(signal.SIGKILL))))
+        n += 1
+    names = process_names(info)
+    if not names:
+        return n
+    me, uid = os.getpid(), os.getuid()
+    try:
+        pids = [int(p) for p in os.listdir(proc) if p.isdigit()]
+    except OSError:
+        return n
+    for pid in pids:
+        if pid == me:
+            continue
+        try:
+            if os.stat(os.path.join(proc, str(pid))).st_uid != uid:
+                continue
+            with open(os.path.join(proc, str(pid), "comm"), encoding="utf-8") as f:
+                comm = f.read().strip()
+        except OSError:
+            continue
+        if comm in names:
+            try:
+                os.kill(pid, signal.SIGKILL)
+                n += 1
+            except OSError:
+                pass
+    return n
+
+
 def move(pid: int, app_id: str) -> bool:
     """The launched app's process into its scope (asynchronous)."""
     if not pid or any((app_id or "").startswith(p) for p in OWN_SCOPE):

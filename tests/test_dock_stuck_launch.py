@@ -28,7 +28,8 @@ class FakeInfo:
 
 def fake_dock():
     later = []
-    d = types.SimpleNamespace(_starting={}, windows={}, launch_feedback=lambda t: None)
+    d = types.SimpleNamespace(_starting={}, windows={}, launch_feedback=lambda t: None, _retries={},
+                              _watch_launch=lambda t: None, _launch_failed=lambda t, why: None)
     d.launch = lambda tile: D.Dock.launch(d, tile)
     tile = types.SimpleNamespace(key="spotify-launcher", info=FakeInfo(), _stop_bounce=lambda: None,
                                  get_display=lambda: types.SimpleNamespace(get_app_launch_context=lambda: None))

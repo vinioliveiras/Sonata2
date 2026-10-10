@@ -17,6 +17,10 @@
 - The lock screen's background is blurred once, as a small finished
   picture (it once showed a ghost of another window; no GPU blur pass
   any more -- Mission Control's backdrop too).
+- An app opened from the Dock that shows no window (30 s; Steam 90 s, it
+  updates itself first) is force-closed and opened again, up to 3 times;
+  then a notification says it couldn't open. An app that can't be started
+  at all says so at once.
 - Open in Sandbox is only in the Dock's menu (not Launchpad / Apps Menu),
   and not offered for web apps (they couldn't open there).
 
