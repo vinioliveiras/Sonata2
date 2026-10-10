@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.16.0-alpha -- 2026-10-10
+
+Vulkan and WebGPU per app, window buttons that follow your choice in every
+window, Settings that installs what it needs, USB protection that works,
+the Dock's badges in your accent colour, and many fixes.
+
 ### Changes
 - Control Center: the whole Do Not Disturb square turns it on and off,
   not only its round button.
