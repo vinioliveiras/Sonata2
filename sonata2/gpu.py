@@ -393,13 +393,21 @@ X11_APPS = {"io.github.shiftey.Desktop", "github-desktop", "GitHub Desktop"}
 
 def extra_env(info) -> dict:
     """Environment an app needs to open here, besides the GPU's."""
+    env = {}
+    try:                                     # the app's Vulkan choice (browsergpu.py)
+        from . import browsergpu
+        env.update(browsergpu.launch_env(info))
+    except Exception:
+        pass
     if _key(info) in X11_APPS:
-        return {"ELECTRON_OZONE_PLATFORM_HINT": "x11"}
+        env["ELECTRON_OZONE_PLATFORM_HINT"] = "x11"
+        return env
     try:                                     # game launchers: frame-pacer's FPS limit (fpslimit.py)
         from . import fpslimit
-        return fpslimit.env_for(info)
+        env.update(fpslimit.env_for(info))
     except Exception:
-        return {}
+        pass
+    return env
 
 
 # Steam's own window (its web helper, CEF) never mapped here when CEF drew
@@ -416,7 +424,11 @@ def extra_args(info) -> list:
         return list(STEAM_ARGS)
     if _key(info) in X11_APPS:
         return ["--ozone-platform=x11"]          # wins over the hint its launcher sets
-    return []
+    try:                                         # Vulkan / WebGPU flags (Electron, Flatpak browsers)
+        from . import browsergpu
+        return browsergpu.launch_args(info)
+    except Exception:
+        return []
 
 
 # The Flatpak (io.github.shiftey.Desktop) sets ELECTRON_OZONE_PLATFORM_HINT=auto

@@ -318,6 +318,45 @@ def switch_row(title, active, on_change, subtitle="") -> Adw.SwitchRow:
     return row
 
 
+INSTALL_POLL_S = 2
+INSTALL_WAIT_S = 15 * 60
+
+
+def install_row(title, subtitle, command, ready=None, on_ready=None, label="Install…") -> Adw.ActionRow:
+    """A row for something Settings needs installed (Vini): its button opens
+    Terminal with the command running (the password asked there). With
+    ready/on_ready the page refreshes itself once it's done. command None
+    (unknown package manager): the subtitle alone."""
+    row = Adw.ActionRow(title=title, subtitle=subtitle, use_markup=False)
+    row.set_subtitle_lines(0)
+    if not command:
+        return row
+    btn = ui.controls.push_button(label, valign=Gtk.Align.CENTER)
+    btn.set_tooltip_text(command if "\n" not in command else None)
+    row.add_suffix(btn)
+    row.command = command
+
+    def watch():
+        waited = [0]
+
+        def tick():
+            waited[0] += INSTALL_POLL_S
+            if row.get_root() is None or waited[0] > INSTALL_WAIT_S:
+                return False
+            if not ready():
+                return True
+            on_ready()
+            return False
+        GLib.timeout_add_seconds(INSTALL_POLL_S, tick)
+
+    def clicked(_b):
+        if system.run_in_terminal(command) and ready and on_ready:
+            watch()
+    btn.connect("clicked", clicked)
+    row.button = btn
+    return row
+
+
 BUTTON_KEYS = ("button_layout", "button_order", "left_button_spacing", "left_button_x_offset",
                "right_button_spacing", "right_button_x_offset")
 
@@ -1227,11 +1266,6 @@ class Settings(Adw.ApplicationWindow):
         for r in (limit, hud):
             r.set_sensitive(ok)
             g.add(r)
-        from .. import browsergpu
-        g.add(switch_row("WebGPU in Browsers", browsergpu.enabled(),
-                         browsergpu.set_enabled,
-                         subtitle="3D browser games in Chrome, Chromium, Brave and Firefox. Chromium browsers then run through "
-                                  "XWayland (Vulkan). Restart the browser after changing it."))
         if not ok:
             row = Adw.ActionRow(title="frame-pacer isn't installed",
                                 subtitle="Downloaded from its GitHub releases into your home folder (no "
@@ -1291,9 +1325,11 @@ class Settings(Adw.ApplicationWindow):
         from ..shell import nightshift
         cfg = config.load("nightshift", nightshift.DEFAULTS)
         g = group("Night Shift", "Night Shift shifts the colours of your display to the warmer end of the "
-                                 "spectrum after dark." + ("" if shutil.which("wlsunset") else
-                                                          " Needs wlsunset (not installed)."))
-        g.set_sensitive(shutil.which("wlsunset") is not None)
+                                 "spectrum after dark.")
+        if not shutil.which("wlsunset"):
+            g.add(install_row("Night Shift needs wlsunset", "Not installed", system.install_command("wlsunset"),
+                              lambda: bool(shutil.which("wlsunset")), lambda: self._reload_page("displays")))
+            return g
 
         def save(**kw):
             config.update("nightshift", **kw)
@@ -2209,15 +2245,19 @@ class Settings(Adw.ApplicationWindow):
         import shutil
         from ..shell.idlelock import DEFAULTS as SEC
         sec = config.load("security", SEC)
-        gen = group("General", "" if shutil.which("swayidle") else "Automatic locking needs swayidle "
-                                                                    "(not installed).")
+        gen = group("General")
+        idle = shutil.which("swayidle") is not None
+        if not idle:
+            gen.add(install_row("Automatic locking needs swayidle", "Not installed", system.install_command("swayidle"),
+                                lambda: bool(shutil.which("swayidle")), lambda: self._reload_page("privacy")))
         opts = [(-1, "Never"), (0, "Immediately"), (5, "5 seconds"), (60, "1 minute"), (300, "5 minutes"),
                 (900, "15 minutes"), (3600, "1 hour")]
-        gen.add(combo_row("Require password after the display turns off", opts, sec["lock_after"],
-                          lambda v: self._save("security", "lock_after", v)))
-        gen.add(switch_row("Lock before sleep", sec["lock_before_sleep"],
-                           lambda on: self._save("security", "lock_before_sleep", on)))
-        gen.set_sensitive(shutil.which("swayidle") is not None)
+        for r in (combo_row("Require password after the display turns off", opts, sec["lock_after"],
+                            lambda v: self._save("security", "lock_after", v)),
+                  switch_row("Lock before sleep", sec["lock_before_sleep"],
+                             lambda on: self._save("security", "lock_before_sleep", on))):
+            r.set_sensitive(idle)
+            gen.add(r)
         P = "org.gnome.desktop.privacy"
         priv = group("Privacy")
         rec = system.gsetting(P, "remember-recent-files")
@@ -2301,10 +2341,9 @@ class Settings(Adw.ApplicationWindow):
         fw = security.firewall()
         grp = group("Firewall")
         if fw["kind"] is None:
-            row = Adw.ActionRow(title="No firewall installed", use_markup=False,
-                                subtitle="Install ufw (sudo pacman -S ufw) to turn it on here")
-            row.set_subtitle_lines(0)
-            grp.add(row)
+            grp.add(install_row("No firewall installed", "Install ufw to turn it on here",
+                                system.install_command("ufw"), lambda: security.firewall()["kind"] is not None,
+                                lambda: self._reload_page("privacy")))
             return grp
         row = switch_row("Firewall", fw["on"], lambda _on: None,
                          subtitle=f"Blocks connections from other computers to this one ({fw['kind']})")
@@ -2351,22 +2390,32 @@ class Settings(Adw.ApplicationWindow):
     def _usb_group(self, sec):
         """GNOME's USB protection: devices plugged in while locked are blocked (USBGuard)."""
         from ..backend import usbprotect
+        from ..files.packages import family
         grp = group("USB")
-        ok = usbprotect.available()
-        row = switch_row("Block new USB devices while locked", ok and sec.get("usb_protection", True),
-                         lambda on: self._save("security", "usb_protection", on),
-                         subtitle="Devices already plugged in keep working" if ok else
-                         "Needs USBGuard: sudo pacman -S usbguard, then sudo systemctl enable --now usbguard-dbus")
+        row = switch_row("Block new USB devices while locked", False,
+                         lambda on: self._save("security", "usb_protection", on), subtitle="Checking USBGuard…")
         row.set_subtitle_lines(0)
-        row.set_sensitive(ok)
+        row.set_sensitive(False)
         grp.add(row)
-        import shutil as _sh
-        rgb = switch_row("Turn RGB lights off with the screen", bool(sec.get("rgb_dark", False)),
-                         lambda on: self._save("security", "rgb_dark", on),
-                         subtitle="USB keyboards, mice and other RGB devices, through OpenRGB" if _sh.which("openrgb")
-                         else "Needs OpenRGB")
-        rgb.set_sensitive(bool(_sh.which("openrgb")))
-        grp.add(rgb)
+        why = {"missing": ("Needs USBGuard", "Not installed"),
+               "off": ("USBGuard isn't set up", "Installed, but its services aren't running"),
+               "denied": ("USBGuard isn't set up", "This account can't change its policy yet")}
+
+        def fill(state):
+            if state == "ready":
+                row.quiet = True
+                row.set_active(bool(sec.get("usb_protection", True)))
+                row.quiet = False
+                row.set_sensitive(True)
+                row.set_subtitle("Devices already plugged in keep working")
+                return
+            row.set_subtitle("Devices already plugged in keep working, all others are allowed while unlocked")
+            title, sub = why.get(state, why["off"])
+            grp.add(install_row(title, sub + ". Set Up installs it if needed, starts it and lets your "
+                                "account block devices while locked.",
+                                usbprotect.setup_command(family()), lambda: usbprotect.status() == "ready",
+                                lambda: self._reload_page("privacy"), label="Set Up…"))
+        system.run_async(usbprotect.status, fill)
         return grp
 
     def _keyring_group(self):
@@ -2426,7 +2475,10 @@ class Settings(Adw.ApplicationWindow):
         def fill(lst):
             _clear_group(g)
             if lst is None:
-                g.add(Adw.ActionRow(title="Printing isn't set up", subtitle="Install CUPS to add printers"))
+                cups = system.install_command("cups")
+                g.add(install_row("Printing isn't set up", "Install CUPS to add printers",
+                                  cups and cups + " && sudo systemctl enable --now cups.socket cups.service",
+                                  lambda: system.printers() is not None, lambda: self._reload_page("printers")))
                 add.set_sensitive(False)
                 return
             for p in lst:
@@ -2464,11 +2516,8 @@ class Settings(Adw.ApplicationWindow):
         g = group("Screen Sharing", "Others can see and control this screen with a VNC viewer "
                                     "(RealVNC Viewer, TigerVNC) and the password below.")
         if not S.installed():
-            row = Adw.ActionRow(title="Screen Sharing needs wayvnc", use_markup=False,
-                                subtitle="Install it with your package manager (Arch / CachyOS: "
-                                         "sudo pacman -S wayvnc), then open this page again.")
-            row.set_subtitle_lines(0)
-            g.add(row)
+            g.add(install_row("Screen Sharing needs wayvnc", "Not installed", system.install_command("wayvnc"),
+                              S.installed, lambda: self._reload_page("sharing")))
             return g
         cfg = config.load(S.NAME, S.DEFAULTS)
         details = []

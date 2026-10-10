@@ -67,6 +67,7 @@ class EverydayIntegratedTest(unittest.TestCase):
 
     def test_everyday_apps_move_games_stay(self):
         with mock.patch.object(gpu, "smart", return_value=True), \
+                mock.patch.object(gpu, "has_dual_gpu", return_value=True), \
                 mock.patch.object(gpu, "_cards", return_value=["amdgpu", "nvidia"]):
             with mock.patch.object(gpu, "render_gpu", return_value="amdgpu"):
                 chrome = gpu.launch_env(self.info("google-chrome.desktop", "Network;WebBrowser;"))

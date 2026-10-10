@@ -66,7 +66,6 @@ class LockDisplayTest(unittest.TestCase):
         from sonata2.shell import idlelock
         ran = []
         with mock.patch.object(idlelock, "keyboard_light", return_value=True), \
-                mock.patch.object(idlelock, "rgb_lights", return_value=False), \
                 mock.patch.object(LD.subprocess, "Popen", lambda argv, **k: ran.append(argv[-1])):
             LD.lights(False)
             LD.lights(True)

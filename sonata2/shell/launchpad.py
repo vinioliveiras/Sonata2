@@ -1090,9 +1090,10 @@ class Launchpad(Gtk.ApplicationWindow):
                     self._save_dock_pins(cfg["pinned"])
                 sections.append([Item("Remove from Dock" if kept else "Keep in Dock", toggle_dock)])
             from .. import gpu
-            g = gpu.menu_items(info, Item) if info else []
-            if g:
-                sections.append(g)
+            from .. import browsergpu
+            for g in (gpu.menu_items(info, Item), browsergpu.menu_items(info, Item)) if info else ():
+                if g:
+                    sections.append(g)
             path = apps.app_filename(info) if info else ""
             if path:
                 from .dock_menu import add_to_desktop, show_in_files

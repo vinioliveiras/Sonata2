@@ -316,9 +316,13 @@ class DockIcon(Gtk.Widget):
         elif self.sandboxed:                  # Open in Sandbox: an orange "S" where a badge goes
             self._draw_badge(snap, "S", "#ff9f0a", "#000000")
 
-    def _draw_badge(self, snap, text=None, fill="#ff3b30", ink="#ffffff") -> None:
-        """Red pill at the icon's top right, white number (scales with the
-        icon, so it grows with magnification like macOS)."""
+    def _draw_badge(self, snap, text=None, fill=None, ink=None) -> None:
+        """A pill at the icon's top right in the accent colour (Vini; its
+        lighter tone on a dark accent in Dark Mode), its number white or
+        black, whichever reads better (scales with the icon, so it grows
+        with magnification like macOS)."""
+        if fill is None:
+            fill, ink = badge_colors()
         s = self._size
         layout = self.create_pango_layout(text or self.badge)
         fd = Pango.FontDescription.from_string(f"Sans Bold {max(6, s * 0.2):.1f}px")
@@ -337,14 +341,26 @@ class DockIcon(Gtk.Widget):
         rr = _rounded(_rect(x, y, w, h), h / 2)
         snap.append_outset_shadow(rr, _rgba("rgba(0,0,0,0.25)"), 0, 1, 0, 2)
         snap.push_rounded_clip(rr)
-        snap.append_color(_rgba(fill), _rect(x, y, w, h))
+        snap.append_color(fill if isinstance(fill, Gdk.RGBA) else _rgba(fill), _rect(x, y, w, h))
         snap.pop()
         snap.save()
         snap.translate(Graphene.Point().init(x + (w - tw) / 2, y + (h - th) / 2))
-        snap.append_layout(layout, _rgba(ink))
+        snap.append_layout(layout, ink if isinstance(ink, Gdk.RGBA) else _rgba(ink))
         snap.restore()
         if k != 1.0:
             snap.restore()
+
+
+BADGE_WHITE_MIN = 1.9         # a white number down to this contrast (macOS: white on green); else black
+
+
+def badge_colors():
+    """(fill, ink) of the Dock's count badges: the accent the user picked."""
+    from ..ui import theme, tokens
+    fill = theme.rgba("accent_ink")
+    hexed = "#%02x%02x%02x" % tuple(round(c * 255) for c in (fill.red, fill.green, fill.blue))
+    ink = "#ffffff" if tokens.contrast(hexed, "#ffffff") >= BADGE_WHITE_MIN else "#000000"
+    return fill, _rgba(ink)
 
 
 class DockTile(Gtk.Button):
@@ -923,7 +939,7 @@ class Dock(Gtk.Box):
 
     def _launcher_entries(self) -> None:
         """Badges and attention from apps (com.canonical.Unity.LauncherEntry:
-        Telegram, Thunderbird, Discord, Signal...): the count as a red badge,
+        Telegram, Thunderbird, Discord, Signal...): the count as an accent badge,
         "urgent" as the attention bounce -- macOS Dock behaviour."""
         try:
             bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)

@@ -100,117 +100,16 @@ class KeyboardLightTest(unittest.TestCase):
         self.assertIn("lockdisplay.lights(True)", src)
 
 
-LIT = ('{"controllers": [{"name": "ASUS TUF Laptop Keyboard", "active_mode": 1, "modes": [{"name": "Direct"},'
-       ' {"name": "Static"}], "colors": [16777215]}]}')
-DARK = ('{"controllers": [{"name": "ASUS TUF Laptop Keyboard", "active_mode": 0, "modes": [{"name": "Direct"}],'
-        ' "colors": [0]}, {"name": "HyperX", "active_mode": 0, "modes": [{"name": "Direct"}], "colors": [0, 0]}]}')
-
-
-def fake_openrgb(d, lit=True, slow=0):
-    """An openrgb that logs its arguments and saves a profile (lit or dark)."""
-    import os
-    log = os.path.join(d, "log")
-    prof = os.path.join(d, "config", "OpenRGB", "profiles")
-    os.makedirs(prof, exist_ok=True)
-    body = LIT if lit else DARK
-    fake = os.path.join(d, "openrgb")
-    with open(fake, "w") as f:
-        f.write("#!/bin/sh\n"
-                f'case "$*" in --save-profile*) sleep {slow}; echo \'{body}\' > "{prof}/$2.json";; esac\n'
-                f'echo "$*" >> "{log}"\n')
-    os.chmod(fake, 0o755)
-    env = dict(os.environ, PATH=d + ":" + os.environ["PATH"], XDG_CONFIG_HOME=os.path.join(d, "config"),
-               XDG_CACHE_HOME=os.path.join(d, "new cache"))
-    return env, log, prof
-
-
-def logged(log):
-    import os
-    return [ln for ln in open(log).read().split("\n") if ln] if os.path.exists(log) else []
-
-
-class RgbLightTest(unittest.TestCase):
-    """Vini: the laptop keyboard stayed dark after the lock, even after a
-    restart and the Fn keys -- OpenRGB's colours had been saved while they
-    were already off (black), and every "back on" put black back. A dark
-    profile is never kept now; and RGB is only touched when chosen."""
-
-    def run_cmds(self, env, *cmds):
-        import subprocess
-        for c in cmds:
-            subprocess.run(["sh", "-c", c], env=env, check=False)
-
-    def test_off_off_on_saves_once_and_restores(self):
-        import os
-        import tempfile
-        d = tempfile.mkdtemp()
-        env, log, prof = fake_openrgb(d)
-        self.run_cmds(env, I.RGB_OFF, I.RGB_OFF, I.RGB_ON)
-        lines = logged(log)
-        self.assertEqual(sum("--save-profile" in ln for ln in lines), 1)    # saved once
-        self.assertEqual(lines[-1], f"--profile {I.RGB_PROFILE}")             # restored
-        self.assertTrue(os.path.exists(os.path.join(prof, "sonata-idle.json")))
-        self.assertFalse(os.path.exists(os.path.join(d, "new cache", "sonata2", "rgb-before-dark")))
-
-    def test_dark_colours_are_never_kept(self):
-        import os
-        import tempfile
-        d = tempfile.mkdtemp()
-        env, log, prof = fake_openrgb(d, lit=False)
-        good = os.path.join(prof, "sonata-idle.json")
-        with open(good, "w") as f:
-            f.write(LIT)                                        # the colours kept from before
-        self.run_cmds(env, I.RGB_OFF)
-        self.assertEqual(open(good).read(), LIT)                # not replaced by the dark ones
-        self.assertFalse(os.path.exists(os.path.join(prof, "sonata-idle-new.json")))
-        self.run_cmds(env, I.RGB_ON)
-        self.assertEqual(logged(log)[-1], f"--profile {I.RGB_PROFILE}")
-
-    def test_nothing_good_to_put_back_leaves_them_alone(self):
-        import tempfile
-        d = tempfile.mkdtemp()
-        env, log, _prof = fake_openrgb(d, lit=False)
-        self.run_cmds(env, I.RGB_OFF, I.RGB_ON)
-        self.assertNotIn("--mode off", logged(log))              # never turned off with no way back
-
-    def test_off_by_default(self):
-        from unittest import mock
-        self.assertFalse(I.DEFAULTS["rgb_dark"])
-        with mock.patch("shutil.which", return_value="/usr/bin/openrgb"), \
-                mock.patch.object(I.config, "load", return_value=dict(I.DEFAULTS)):
-            self.assertFalse(I.rgb_lights())
-        with mock.patch("shutil.which", return_value="/usr/bin/openrgb"), \
-                mock.patch.object(I.config, "load", return_value=dict(I.DEFAULTS, rgb_dark=True)):
-            self.assertTrue(I.rgb_lights())
-
-    def test_swayidle_form_parses(self):
-        import subprocess
-        cmd = I.command({"lock_after": -1}, 300, kbd=False, rgb=True)
-        for c in (cmd[4], cmd[6]):
-            self.assertEqual(subprocess.run(["sh", "-n", "-c", c]).returncode, 0, c)
-
-
-class LightsOrderTest(unittest.TestCase):
-    """Vini: after the lock, the keyboard went dark and never came back.
-    OpenRGB takes seconds to save the colours; waking meanwhile ran "back on"
-    before "off" had made its mark. Each command waits for the one before it."""
-
-    def test_on_waits_for_a_slow_off(self):
-        import shutil
-        import subprocess
-        import tempfile
-        import time
-        if not shutil.which("flock"):
-            self.skipTest("no flock here")
-        d = tempfile.mkdtemp()
-        env, log, _prof = fake_openrgb(d, slow=1)
-        off, on = I.serial(I.RGB_OFF), I.serial(I.RGB_ON)
-        p1 = subprocess.Popen(["sh", "-c", off], env=env)
-        time.sleep(0.2)                                        # woken while it still saves
-        p2 = subprocess.Popen(["sh", "-c", on], env=env)
-        p1.wait(20)
-        p2.wait(20)
-        self.assertEqual(logged(log)[-1], f"--profile {I.RGB_PROFILE}")   # the colours back, last
+class NoRgbOptionTest(unittest.TestCase):
+    """Vini: the "Turn RGB lights off with the screen" option removed."""
+    def test_gone(self):
+        import importlib.util
+        import pathlib
+        self.assertIsNone(importlib.util.find_spec("sonata2.rgblights"))
+        self.assertNotIn("rgb_dark", I.DEFAULTS)
+        root = pathlib.Path(__file__).resolve().parent.parent
+        self.assertNotIn("RGB lights", (root / "sonata2" / "settings" / "app.py").read_text())
+        self.assertNotIn("openrgb", (root / "install.sh").read_text())
 
 
 class CommandTest(unittest.TestCase):
@@ -229,15 +128,6 @@ class CommandTest(unittest.TestCase):
         cmd = I.command({"lock_after": 5, "lock_before_sleep": True}, 300, kbd=True)
         self.assertEqual(cmd[-5:], ["timeout", "305", I.LOCK, "before-sleep", I.LOCK])
         self.assertIn(I.serial(I.KBD_OFF), cmd)
-
-    def test_rgb_devices_go_dark(self):
-        """A USB HyperX keyboard stayed lit: OpenRGB turns every RGB device off and back."""
-        cmd = I.command({"lock_after": -1}, 300, kbd=False, rgb=True)
-        self.assertEqual(cmd[2:4], ["timeout", "300"])
-        self.assertIn("sonata2.rgblights off", cmd[4])              # (rgblights: never keeps dark colours)
-        self.assertEqual(cmd[5], "resume")
-        self.assertIn("sonata2.rgblights on", cmd[6])
-        self.assertEqual(I.command({"lock_after": -1}, 0, rgb=True), [])
 
     def test_detection(self):
         with mock.patch("glob.glob", return_value=["/sys/class/leds/asus::kbd_backlight"]), \

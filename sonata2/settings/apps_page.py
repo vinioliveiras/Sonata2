@@ -74,9 +74,39 @@ class AppsPage:
         self.rm_btn.set_sensitive(False)
         rm.add_suffix(self.rm_btn)
         manage.add(rm)
-        app.update(hero=hero, perms=perms, clear=clear, lock=lock)
-        self.settings.push_detail(name, [head, perms, manage])
+        gfx = self.graphics(info)
+        app.update(hero=hero, perms=perms, clear=clear, lock=lock, graphics=gfx)
+        self.settings.push_detail(name, [head, perms, gfx, manage])
         system.run_async(self._look, lambda res, a=app: self._looked(a, res), info)
+
+    @staticmethod
+    def graphics(info):
+        """Vulkan / WebGPU for this app (browsergpu.py; also in its right-click menu)."""
+        from .. import browsergpu as B
+        from .app import group, switch_row
+        g = group("Graphics", B.NOTE)
+        vk_ok, wg_ok = B.supports(info)
+        rows = {}
+
+        def sync():
+            r = rows.get("vulkan")
+            if r is not None:
+                r.quiet = True
+                r.set_active(B.vulkan(info))
+                r.quiet = False
+                r.set_sensitive(not B.vulkan_forced(info))
+
+        if vk_ok:
+            rows["vulkan"] = switch_row("Use Vulkan", B.vulkan(info), lambda on: (B.set_vulkan(info, on), sync()),
+                                        subtitle=B.vulkan_note(info))
+            g.add(rows["vulkan"])
+        if wg_ok:
+            rows["webgpu"] = switch_row("Allow WebGPU", B.webgpu(info), lambda on: (B.set_webgpu(info, on), sync()),
+                                        subtitle=B.webgpu_note(info))
+            g.add(rows["webgpu"])
+        sync()
+        g.rows = rows
+        return g
 
     @staticmethod
     def _look(info):

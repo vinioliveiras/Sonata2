@@ -152,9 +152,10 @@ def app_menu(dock, key: str, tile):
                  # its launcher, not its program (Vini: the shortcut showed as a text file)
                  Item("Add to Desktop", lambda: add_to_desktop(app_filename(info)))]]
         from .. import gpu
-        g = gpu.menu_items(info, Item)
-        if g:
-            opts.append(g)
+        from .. import browsergpu
+        for g in (gpu.menu_items(info, Item), browsergpu.menu_items(info, Item)):
+            if g:
+                opts.append(g)
         from .. import webapps
         if webapps.is_webapp(key):
             opts.append([Item("Edit Web App…", lambda: webapps.edit(webapps.id_of(key)))])

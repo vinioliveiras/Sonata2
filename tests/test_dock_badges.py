@@ -241,3 +241,40 @@ class DockTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AccentBadgeTest(unittest.TestCase):
+    """Vini: the count badge in the accent colour he picked (it was red)."""
+    def colors(self, accent, dark):
+        from sonata2.ui import theme, tokens
+        vals = {**tokens.palette(dark), **tokens.accent_tokens(accent, dark)}
+        with mock.patch.object(theme, "values", return_value=vals), \
+                mock.patch.object(theme, "is_dark", return_value=dark), mock.patch.dict(theme._parsed, clear=True):
+            fill, ink = D.badge_colors()
+        hexed = "#%02x%02x%02x" % tuple(round(c * 255) for c in (fill.red, fill.green, fill.blue))
+        return hexed, (round(ink.red), round(ink.green), round(ink.blue)), vals
+
+    def test_accent_fill(self):
+        for accent in ("blue", "green", "pink", "#7b2cbf"):
+            hexed, ink, vals = self.colors(accent, False)
+            self.assertEqual(hexed, vals.get("accent_ink", vals["accent"]).lower(), accent)
+            self.assertNotEqual(hexed, "#ff3b30")
+
+    def test_black_accent_in_dark_mode_readable(self):
+        from sonata2.ui import tokens
+        hexed, ink, _v = self.colors("#000000", True)
+        self.assertGreaterEqual(tokens.contrast(hexed, tokens.DARK_BG), tokens.INK_MIN)
+        self.assertEqual(ink, (1, 1, 1))
+
+    def test_number_reads_on_light_accent(self):
+        _h, ink, _v = self.colors("#ffd60a", False)
+        self.assertEqual(ink, (0, 0, 0))
+        for accent in ("blue", "green", "red"):
+            _h, ink, _v = self.colors(accent, False)
+            self.assertEqual(ink, (1, 1, 1), accent)
+
+    def test_drawn_with_it(self):
+        import inspect
+        src = inspect.getsource(D.DockIcon._draw_badge)
+        self.assertIn("badge_colors()", src)
+        self.assertNotIn("#ff3b30", src)

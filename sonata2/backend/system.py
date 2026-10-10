@@ -335,6 +335,20 @@ TERMINALS = (("kgx", ["--"]), ("gnome-terminal", ["--"]), ("konsole", ["-e"]), (
              ("xfce4-terminal", ["-x"]), ("xterm", ["-e"]))
 
 
+INSTALLERS = {"arch": "sudo pacman -S --needed", "debian": "sudo apt install", "rpm": "sudo dnf install"}
+
+
+def install_command(packages, family: str = None):
+    """The command that installs `packages` (a name, or {family: names}) on
+    this system, None when its package manager is unknown."""
+    if family is None:
+        from ..files.packages import family as fam
+        family = fam()
+    names = packages.get(family) if isinstance(packages, dict) else packages
+    pm = INSTALLERS.get(family)
+    return f"{pm} {names}" if pm and names else None
+
+
 def run_in_terminal(command: str) -> bool:
     """Run a shell command in a terminal window that stays open at the end."""
     import shutil

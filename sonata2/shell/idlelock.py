@@ -6,25 +6,20 @@ screen (macOS's "Require password immediately").
 
 The same swayidle turns the keyboard's backlight off when the display
 turns off and back to its level when you come back (brightnessctl saves
-and restores it; logind lets it write the LED without root). RGB devices
-(USB keyboards, mice: their light isn't the system's) go dark too through
-OpenRGB when it is installed: the current look saved as a profile, all
-off, the profile loaded back on input."""
+and restores it; logind lets it write the LED without root)."""
 import glob
 import os
 import shutil
 import shlex
 import signal
 import subprocess
-import sys
 import time
 
 from .. import config
 
 # lock_after: seconds after the display turns off (0 = immediately), -1 = never.
 # On by default (Vini): locked when the display turns off and before sleep, like macOS
-DEFAULTS = {"lock_after": 0, "lock_before_sleep": True, "usb_protection": True,
-            "rgb_dark": False}       # RGB lights (OpenRGB) dark too: chosen in Settings (rgblights.py)
+DEFAULTS = {"lock_after": 0, "lock_before_sleep": True, "usb_protection": True}
 # swayidle -w waits for its command: `sonata2 lock` itself only quits on
 # unlock, so every idle timeout / before-sleep that came meanwhile waited in
 # line and locked again right after each unlock (Vini: the password 3 times
@@ -63,22 +58,14 @@ BL_OFF = (f"b=$(brightnessctl -c backlight g 2>/dev/null); "
 BL_ON = (f"if [ -s {_BL_STATE} ]; then brightnessctl -q -c backlight set \"$(cat {_BL_STATE})\"; "
          f"rm -f {_BL_STATE}; fi")
 
-RGB_PROFILE = "sonata-idle"
-# OpenRGB through rgblights.py: it never keeps dark colours to put back
-# (Vini: the laptop keyboard was saved black, and stayed black)
-_PKG = shlex.quote(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-_PY = shlex.quote(sys.executable or "python3")
-RGB_OFF = f"PYTHONPATH={_PKG} {_PY} -m sonata2.rgblights off"
-RGB_ON = f"PYTHONPATH={_PKG} {_PY} -m sonata2.rgblights on"
 _LIGHTS_LOCK = shlex.quote(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
                                         "sonata2", "lights.lock"))
 
 
 def serial(cmd: str) -> str:
     """One lights command at a time, whoever runs it (the lock screen, the
-    idle timer, swayidle): OpenRGB takes seconds to save the colours, and a
-    wake-up meanwhile ran "back on" before there was anything to put back
-    -- then "off" finished, and the keyboard stayed dark (Vini)."""
+    idle timer, swayidle): a wake-up while "off" still ran put "back on"
+    before there was anything to put back (Vini: the keyboard stayed dark)."""
     if not shutil.which("flock"):
         return cmd
     return f"mkdir -p \"$(dirname {_LIGHTS_LOCK})\" && flock {_LIGHTS_LOCK} sh -c {shlex.quote(cmd)}"
@@ -129,24 +116,15 @@ def lock_and_wait(argv: list, timeout: float = 5.0) -> int:
     return 1
 
 
-def rgb_lights() -> bool:
-    """RGB lights go dark too: OpenRGB installed and chosen in Settings
-    (off by default -- the laptop's own keyboard goes dark by its backlight)."""
-    return bool(shutil.which("openrgb")) and bool(config.load("security", DEFAULTS).get("rgb_dark"))
-
-
 def keyboard_light() -> bool:
     """A keyboard backlight brightnessctl can dim (asus::kbd_backlight...)."""
     return bool(glob.glob(f"{LEDS}/{KBD}")) and bool(shutil.which("brightnessctl"))
 
 
-def command(cfg: dict, dpms: int, kbd: bool = False, rgb: bool = False) -> list:
+def command(cfg: dict, dpms: int, kbd: bool = False) -> list:
     args = []
     if kbd and dpms > 0:                          # with the display: off, then back on any input
         args += ["timeout", str(dpms), serial(KBD_OFF), "resume", serial(KBD_ON)]
-    if rgb and dpms > 0:                          # (in the background: OpenRGB takes a few seconds)
-        args += ["timeout", str(dpms), f"sh -c {shlex.quote(serial(RGB_OFF))} &", "resume",
-                 f"sh -c {shlex.quote(serial(RGB_ON))} &"]
     after = int(cfg.get("lock_after", -1))
     if after >= 0:
         base = dpms if dpms > 0 else 600          # display never sleeps: count from 10 min idle
@@ -163,7 +141,7 @@ def darken(watch, on: bool) -> None:
     screen (greeter.py) both use it."""
     from ..backend import system
     from . import blackout, lockdisplay
-    lockdisplay.lights(not on)              # the keyboard's light (and RGB) with the displays
+    lockdisplay.lights(not on)              # the keyboard's light with the displays
     blackout.show() if on else blackout.hide()     # black, no pointer (Vini: it only dimmed)
     if lockdisplay.has_backlight():
         # a laptop: its panel's backlight to zero, the panel stays on --
@@ -236,7 +214,7 @@ class IdleLock:
             cmd = (["swayidle", "-w", "before-sleep", LOCK]
                    if cfg.get("lock_before_sleep") and shutil.which("swayidle") else [])
         else:
-            cmd = command(cfg, dpms, keyboard_light(), rgb_lights()) if shutil.which("swayidle") else []
+            cmd = command(cfg, dpms, keyboard_light()) if shutil.which("swayidle") else []
         if cmd == self.cmd and (not cmd or (self.proc and self.proc.poll() is None)):
             return
         self.stop()

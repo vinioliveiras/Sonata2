@@ -31,6 +31,25 @@
 - Web apps on Chromium no longer get the browsers' WebGPU flags (they
   showed "unsupported command-line flag: --enable-unsafe-webgpu"): they
   start the browser's own program with the user's other flags.
+- Settings: everything that needs installing has a button that opens
+  Terminal with the command running (Night Shift's wlsunset, automatic
+  locking's swayidle, the firewall, CUPS, Screen Sharing's wayvnc), and
+  the page updates itself once it's there.
+- USB protection works once USBGuard is installed: Security & Privacy >
+  USB tells what's missing (not installed, services not running, no
+  permission) and Set Up does all of it -- installs it, allows every
+  device while unlocked (USBGuard's default blocked them all), lets your
+  account block new devices while locked, starts it now and at boot.
+- Removed "Turn RGB lights off with the screen" (OpenRGB).
+- The Dock's count badges use your accent colour (a lighter tone of a
+  dark accent in Dark Mode), the number white or black, whichever reads.
+- Vulkan and WebGPU per app: right-click an app in the Dock or Launchpad >
+  Use Vulkan / Allow WebGPU, or Settings > Apps > the app > Graphics.
+  Chromium browsers, web apps and Electron apps: Vulkan through XWayland,
+  WebGPU for 3D web games; Firefox: WebGPU; Steam, Lutris, Heroic,
+  Bottles: Vulkan (DXVK) or WineD3D; other apps: GTK 4 / Qt 6 draw with
+  Vulkan. Replaces Settings > Displays > Games > WebGPU in Browsers (the
+  browsers it was on for keep it).
 - Open in Sandbox is only in the Dock's menu (not Launchpad / Apps Menu),
   and not offered for web apps (they couldn't open there).
 
