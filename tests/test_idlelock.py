@@ -109,7 +109,7 @@ class NoRgbOptionTest(unittest.TestCase):
         self.assertNotIn("rgb_dark", I.DEFAULTS)
         root = pathlib.Path(__file__).resolve().parent.parent
         self.assertNotIn("RGB lights", (root / "sonata2" / "settings" / "app.py").read_text())
-        self.assertNotIn("openrgb", (root / "install.sh").read_text())
+        self.assertIn(" openrgb ", (root / "install.sh").read_text())      # the OpenRGB app itself stays (Vini)
 
 
 class CommandTest(unittest.TestCase):

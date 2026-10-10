@@ -40,7 +40,12 @@
   permission) and Set Up does all of it -- installs it, allows every
   device while unlocked (USBGuard's default blocked them all), lets your
   account block new devices while locked, starts it now and at boot.
-- Removed "Turn RGB lights off with the screen" (OpenRGB).
+- Removed "Turn RGB lights off with the screen" (it left the keyboard
+  dark); install.sh still installs the OpenRGB app.
+- install.sh installs what Settings would ask for (ufw, CUPS, USBGuard
+  too), turns printing on and sets USBGuard up the safe way, with a
+  warning (--no-usbguard leaves it alone). Set Up in Settings warns first
+  too: USBGuard on its own blocks every USB device, keyboard included.
 - The Dock's count badges use your accent colour (a lighter tone of a
   dark accent in Dark Mode), the number white or black, whichever reads.
 - Vulkan and WebGPU per app: right-click an app in the Dock or Launchpad >

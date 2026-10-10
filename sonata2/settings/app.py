@@ -318,15 +318,24 @@ def switch_row(title, active, on_change, subtitle="") -> Adw.SwitchRow:
     return row
 
 
+# Vini: warn about USBGuard's own default before anyone turns it on
+USB_WARNING = ("Careful: USBGuard on its own blocks every USB device it has no rule for -- your keyboard and "
+               "mouse too.")
+USB_CONFIRM = ("USBGuard on its own blocks every USB device it has no rule for, your keyboard and mouse "
+               "included. Set Up allows every device while the screen is unlocked and blocks only the ones "
+               "plugged in while it's locked; devices already plugged in keep working.\n\n"
+               "Terminal opens and asks for your password. Don't turn USBGuard on yourself in another way.")
 INSTALL_POLL_S = 2
 INSTALL_WAIT_S = 15 * 60
 
 
-def install_row(title, subtitle, command, ready=None, on_ready=None, label="Install…") -> Adw.ActionRow:
+def install_row(title, subtitle, command, ready=None, on_ready=None, label="Install…",
+                confirm=None) -> Adw.ActionRow:
     """A row for something Settings needs installed (Vini): its button opens
     Terminal with the command running (the password asked there). With
     ready/on_ready the page refreshes itself once it's done. command None
-    (unknown package manager): the subtitle alone."""
+    (unknown package manager): the subtitle alone. confirm: (heading, body,
+    button) asked first."""
     row = Adw.ActionRow(title=title, subtitle=subtitle, use_markup=False)
     row.set_subtitle_lines(0)
     if not command:
@@ -349,9 +358,17 @@ def install_row(title, subtitle, command, ready=None, on_ready=None, label="Inst
             return False
         GLib.timeout_add_seconds(INSTALL_POLL_S, tick)
 
-    def clicked(_b):
+    def run():
         if system.run_in_terminal(command) and ready and on_ready:
             watch()
+
+    def clicked(_b):
+        if confirm is None:
+            run()
+            return
+        heading, body, ok = confirm
+        row.confirm = ui.dialog.alert(heading, body, [("cancel", "Cancel", ""), ("go", ok, "suggested")],
+                                      lambda r: r == "go" and run(), parent=row.get_root())
     btn.connect("clicked", clicked)
     row.button = btn
     return row
@@ -2411,10 +2428,10 @@ class Settings(Adw.ApplicationWindow):
                 return
             row.set_subtitle("Devices already plugged in keep working, all others are allowed while unlocked")
             title, sub = why.get(state, why["off"])
-            grp.add(install_row(title, sub + ". Set Up installs it if needed, starts it and lets your "
-                                "account block devices while locked.",
+            grp.add(install_row(title, sub + ". " + USB_WARNING + " Set Up turns it on the safe way.",
                                 usbprotect.setup_command(family()), lambda: usbprotect.status() == "ready",
-                                lambda: self._reload_page("privacy"), label="Set Up…"))
+                                lambda: self._reload_page("privacy"), label="Set Up…",
+                                confirm=("Set up USBGuard?", USB_CONFIRM, "Open Terminal")))
         system.run_async(usbprotect.status, fill)
         return grp
 

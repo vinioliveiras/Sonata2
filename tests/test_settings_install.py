@@ -24,6 +24,14 @@ def settle(ms=200):
         GLib.MainContext.default().iteration(False)
 
 
+def close(dlg):
+    """emit("response") alone leaves it open (a click closes it)."""
+    for m in ("force_close", "close", "destroy"):
+        if hasattr(dlg, m):
+            getattr(dlg, m)()
+            return
+
+
 class InstallCommandTest(unittest.TestCase):
     def test_families(self):
         self.assertEqual(system.install_command("ufw", "arch"), "sudo pacman -S --needed ufw")
@@ -138,7 +146,9 @@ class InstallRowTest(unittest.TestCase):
             row.button.emit("clicked")
             rt.assert_called_once_with("sudo pacman -S --needed x")
             state["ok"] = True
-            settle(1500)
+            end = GLib.get_monotonic_time() + 5_000_000      # timeout_add_seconds is coarse
+            while not done and GLib.get_monotonic_time() < end:
+                GLib.MainContext.default().iteration(False)
         self.assertEqual(done, [1])
         win.destroy()
 
@@ -198,10 +208,77 @@ class PagesTest(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].command, U.setup_command("arch"))
         self.assertEqual(rows[0].button.get_label(), "Set Up…")
+        self.assertIn("keyboard and mouse too", rows[0].get_subtitle())      # Vini: warned up front
+
+    def test_usb_set_up_asks_first(self):
+        """Vini: a warning before it runs -- USBGuard alone blocks the keyboard too."""
+        s = self.settings()
+        with mock.patch.object(U, "status", return_value="missing"), \
+                mock.patch("sonata2.files.packages.family", return_value="arch"), \
+                mock.patch.object(system, "run_async", side_effect=lambda fn, cb, *a: cb(fn(*a))):
+            g = s._usb_group({})
+        win = Gtk.Window()
+        win.set_child(g)
+        win.present()
+        row = self.rows(g)[0]
+        with mock.patch.object(system, "run_in_terminal", return_value=True) as rt:
+            row.button.emit("clicked")
+            settle(300)
+            rt.assert_not_called()
+            self.assertIn("keyboard and mouse", row.confirm.get_body())
+            row.confirm.emit("response", "cancel")
+            close(row.confirm)
+            settle(100)
+            rt.assert_not_called()
+            row.button.emit("clicked")
+            settle(300)
+            row.confirm.emit("response", "go")
+            close(row.confirm)
+            settle(100)
+            rt.assert_called_once_with(U.setup_command("arch"))
+        win.destroy()
         with mock.patch.object(U, "status", return_value="ready"), \
                 mock.patch.object(system, "run_async", side_effect=lambda fn, cb, *a: cb(fn(*a))):
             g = s._usb_group({"usb_protection": True})
         self.assertEqual(self.rows(g), [])
+
+
+class InstallShTest(unittest.TestCase):
+    """Vini: what Settings would ask to install comes with install.sh."""
+    def setUp(self):
+        import pathlib
+        self.root = pathlib.Path(__file__).resolve().parent.parent
+        self.src = (self.root / "install.sh").read_text()
+
+    def test_packages(self):
+        arch = next(ln for ln in self.src.splitlines() if ln.strip().startswith('OPT="vte4 '))
+        for p in ("wlsunset", "swayidle", "ufw", "cups", "wayvnc", "usbguard", "openrgb"):
+            self.assertIn(f" {p}", arch, p)
+
+    def test_usb_setup_block(self):
+        start = self.src.index("# -- what Settings would otherwise ask to install")
+        block = self.src[start:self.src.index("# -- Sonata's login screen", start)]
+        self.assertIn("keyboard and mouse included", block)          # warned
+        self.assertIn("from sonata2.backend.usbprotect import SETUP", block)   # one set-up, not a copy
+        with tempfile.TemporaryDirectory() as d:
+            for name, body in (("sudo", f'echo "$*" >> {d}/sudo.log'), ("usbguard", "true"),
+                               ("systemctl", "exit 1")):
+                with open(os.path.join(d, name), "w") as f:
+                    f.write("#!/bin/sh\n" + body + "\n")
+                os.chmod(os.path.join(d, name), 0o755)
+            import sys
+            os.symlink(sys.executable, os.path.join(d, "python3"))     # the one with PyGObject, as on a desktop
+            script = f'set -euo pipefail\nSRC={self.root}\nUSBGUARD=1\n' + block.replace(
+                "USB_RULE=/etc/", f"USB_RULE={d}/")
+            env = dict(os.environ, PATH=d + ":" + os.environ["PATH"])
+            r = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("USB protection: on", r.stdout)
+            log = open(os.path.join(d, "sudo.log")).read()
+            self.assertIn("ImplicitPolicyTarget=allow", log)
+            r = subprocess.run(["bash", "-c", script.replace("USBGUARD=1", "USBGUARD=0")], env=env,
+                               capture_output=True, text=True)
+            self.assertNotIn("USB protection", r.stdout)                # --no-usbguard
 
 
 if __name__ == "__main__":
