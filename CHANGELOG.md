@@ -44,6 +44,12 @@
   to the Trash) or installed.
 - install.sh installs Bazaar, the app store (Flatpak apps from Flathub;
   --no-bazaar skips it).
+- Block new USB devices while locked is off until you turn it on.
+- install.sh turns the firewall on (ufw, the first time only: turned off
+  in Settings it stays off; --no-firewall skips it). Nothing comes in
+  unasked; from the local network only Screen Sharing and printer
+  discovery.
+- Web apps never show Chrome's "unsupported command-line flag" bar.
 - Removed "Turn RGB lights off with the screen" (it left the keyboard
   dark); install.sh still installs the OpenRGB app.
 - install.sh installs what Settings would ask for (ufw, CUPS, USBGuard

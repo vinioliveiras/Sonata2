@@ -191,11 +191,14 @@ def view_size(views, wm_class: str):
 
 def chromium_command(app: str, entry: dict, browser: str) -> list:
     """The browser as this web app's window: its own profile, its own app id,
-    its own Vulkan / WebGPU choice (browsergpu.web_app_command)."""
+    its own Vulkan / WebGPU choice (browsergpu.web_app_command). --test-type:
+    no "unsupported command-line flag" bar over the page (Vini: WhatsApp),
+    whatever flags reach the browser (the user's own, a launcher's, its
+    own WebGPU)."""
     from .. import browsergpu
     start = browsergpu.web_app_command(app, browser)
     return [start[0], f"--user-data-dir={os.path.join(data_dir(app), 'chromium')}",
-            "--no-first-run", "--no-default-browser-check", "--ozone-platform-hint=auto", *start[1:],
+            "--no-first-run", "--no-default-browser-check", "--test-type", "--ozone-platform-hint=auto", *start[1:],
             "--window-size={},{}".format(*window_size(app)), f"--app={entry['url']}"]
 
 

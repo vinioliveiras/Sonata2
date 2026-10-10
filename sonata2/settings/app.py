@@ -2421,7 +2421,7 @@ class Settings(Adw.ApplicationWindow):
         def fill(state):
             if state == "ready":
                 row.quiet = True
-                row.set_active(bool(sec.get("usb_protection", True)))
+                row.set_active(bool(sec.get("usb_protection", False)))
                 row.quiet = False
                 row.set_sensitive(True)
                 row.set_subtitle("Devices already plugged in keep working")

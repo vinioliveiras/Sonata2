@@ -19,7 +19,8 @@ from .. import config
 
 # lock_after: seconds after the display turns off (0 = immediately), -1 = never.
 # On by default (Vini): locked when the display turns off and before sleep, like macOS
-DEFAULTS = {"lock_after": 0, "lock_before_sleep": True, "usb_protection": True}
+DEFAULTS = {"lock_after": 0, "lock_before_sleep": True,
+            "usb_protection": False}     # off until turned on in Settings (Vini)
 # swayidle -w waits for its command: `sonata2 lock` itself only quits on
 # unlock, so every idle timeout / before-sleep that came meanwhile waited in
 # line and locked again right after each unlock (Vini: the password 3 times

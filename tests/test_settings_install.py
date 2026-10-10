@@ -242,6 +242,29 @@ class PagesTest(unittest.TestCase):
             g = s._usb_group({"usb_protection": True})
         self.assertEqual(self.rows(g), [])
 
+    def test_usb_off_by_default(self):
+        """Vini: Block new USB devices while locked is off until turned on."""
+        from sonata2.settings.app import Gtk as _G  # noqa: F401
+        from sonata2.shell.idlelock import DEFAULTS
+        s = self.settings()
+        with mock.patch.object(U, "status", return_value="ready"), \
+                mock.patch.object(system, "run_async", side_effect=lambda fn, cb, *a: cb(fn(*a))):
+            g = s._usb_group(dict(DEFAULTS))
+        sw = [w for w in self.all(g) if isinstance(w, Adw.SwitchRow)][0]
+        self.assertFalse(sw.get_active())
+        self.assertTrue(sw.get_sensitive())
+
+    def all(self, root):
+        out, stack = [], [root]
+        while stack:
+            w = stack.pop()
+            out.append(w)
+            c = w.get_first_child()
+            while c is not None:
+                stack.append(c)
+                c = c.get_next_sibling()
+        return out
+
 
 class BazaarTest(unittest.TestCase):
     """Vini: Bazaar (the app store) comes with Sonata."""
@@ -277,6 +300,44 @@ class BazaarTest(unittest.TestCase):
         self.assertEqual(log, "")
 
 
+class FirewallDefaultTest(unittest.TestCase):
+    """Vini: the firewall on by default -- once, so turning it off sticks."""
+    def run_block(self, d, flag="1"):
+        import pathlib
+        src = (pathlib.Path(__file__).resolve().parent.parent / "install.sh").read_text()
+        start = src.index("# -- what Settings would otherwise ask to install")
+        block = src[start:src.index("# -- Bazaar", start)]
+        r = subprocess.run(["bash", "-c", f"set -euo pipefail\nFIREWALL={flag}\nUSBGUARD=0\nSRC=/x\n" + block],
+                           env=dict(os.environ, PATH=d + ":" + os.environ["PATH"], HOME=d,
+                                    XDG_CONFIG_HOME=os.path.join(d, "cfg")), capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        log = os.path.join(d, "log")
+        out = open(log).read() if os.path.exists(log) else ""
+        if os.path.exists(log):
+            os.unlink(log)
+        return r.stdout, out
+
+    def test_on_once(self):
+        with tempfile.TemporaryDirectory() as d:
+            for n, body in (("ufw", f'echo "ufw $*" >> {d}/log'), ("systemctl", f'echo "systemctl $*" >> {d}/log'),
+                            ("sudo", 'exec "$@"')):
+                with open(os.path.join(d, n), "w") as f:
+                    f.write("#!/bin/sh\n" + body + "\n")
+                os.chmod(os.path.join(d, n), 0o755)
+            out, log = self.run_block(d)
+            self.assertIn("Firewall: on", out)
+            self.assertIn("ufw default deny incoming", log)
+            self.assertIn("ufw --force enable", log)
+            self.assertIn("systemctl enable --now ufw", log)
+            self.assertIn("port 5900 proto tcp", log)                       # Screen Sharing still reachable
+            self.assertNotIn("from 0.0.0.0", log)
+            out, log = self.run_block(d)                                    # again: left as the user set it
+            self.assertNotIn("ufw", log)
+            os.unlink(os.path.join(d, "cfg", "sonata2", ".firewall-default"))
+            out, log = self.run_block(d, "0")                               # --no-firewall
+            self.assertNotIn("ufw", log)
+
+
 class InstallShTest(unittest.TestCase):
     """Vini: what Settings would ask to install comes with install.sh."""
     def setUp(self):
@@ -302,7 +363,7 @@ class InstallShTest(unittest.TestCase):
                 os.chmod(os.path.join(d, name), 0o755)
             import sys
             os.symlink(sys.executable, os.path.join(d, "python3"))     # the one with PyGObject, as on a desktop
-            script = f'set -euo pipefail\nSRC={self.root}\nUSBGUARD=1\n' + block.replace(
+            script = f'set -euo pipefail\nSRC={self.root}\nUSBGUARD=1\nFIREWALL=0\n' + block.replace(
                 "USB_RULE=/etc/", f"USB_RULE={d}/")
             env = dict(os.environ, PATH=d + ":" + os.environ["PATH"])
             r = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True)

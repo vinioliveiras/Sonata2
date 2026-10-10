@@ -247,6 +247,12 @@ class WebAppTest(Base):
         self.assertIn("--x", cmd)
         self.assertEqual(cmd[-1], "--app=https://web.whatsapp.com/")
 
+    def test_no_unsupported_flag_bar(self):
+        """Vini (twice): the bar still showed in WhatsApp -- --test-type hides it, whatever flags come."""
+        from sonata2 import webapps as W
+        cmd = W.chromium_command("a", {"url": "https://web.whatsapp.com/"}, "/usr/bin/google-chrome-stable")
+        self.assertIn("--test-type", cmd)
+
 
 class MenuTest(Base):
     def test_menu_items(self):

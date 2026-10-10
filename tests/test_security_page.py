@@ -92,7 +92,7 @@ class UsbTest(unittest.TestCase):
     def test_wired(self):
         import inspect
         from sonata2.shell import idlelock, lock, topbar
-        self.assertTrue(idlelock.DEFAULTS["usb_protection"])
+        self.assertFalse(idlelock.DEFAULTS["usb_protection"])     # Vini: off by default
         src = inspect.getsource(lock.LockScreen)
         self.assertIn("usbprotect.restore()", src)
         self.assertIn("usbprotect.block", src)

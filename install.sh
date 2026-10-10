@@ -25,6 +25,9 @@
 #                             system LUKS without a password (a polkit rule;
 #                             otherwise asked, default No; --yes never adds it)
 #   ./install.sh --no-mount-without-password  remove that rule again
+#   ./install.sh --no-firewall  don't turn the firewall on (otherwise on the
+#                             first install: ufw, nothing comes in unasked;
+#                             turned off later in Settings, it stays off)
 #   ./install.sh --no-bazaar  don't install Bazaar (the app store, from Flathub)
 #   ./install.sh --no-usbguard  leave USBGuard as it is (otherwise, when it's
 #                             installed, set up like Settings' Set Up: every
@@ -40,11 +43,11 @@ set -euo pipefail
 # a step that fails stops the install: say which (a friend's install ended without a word)
 trap 's=$?; echo "install.sh stopped at line $LINENO (exit $s): $BASH_COMMAND" >&2; echo "Please send this line to the Sonata developers." >&2' ERR
 SRC="$(cd "$(dirname "$0")" && pwd)"
-MODE=user DEPS=1 YES=0 UNINSTALL=0 DEV=0 GREETER=ask MOUNTRULE=ask USBGUARD=1 BAZAAR=1
+MODE=user DEPS=1 YES=0 UNINSTALL=0 DEV=0 GREETER=ask MOUNTRULE=ask USBGUARD=1 BAZAAR=1 FIREWALL=1
 for a in "$@"; do
     case "$a" in
         --system) MODE=system ;; --deps) DEPS=1 ;; --no-deps) DEPS=0 ;; --yes|-y) YES=1 ;; --uninstall) UNINSTALL=1 ;; --dev) DEV=1 ;;
-        --greeter) GREETER=1 ;; --no-greeter) GREETER=0 ;; --no-usbguard) USBGUARD=0 ;; --no-bazaar) BAZAAR=0 ;;
+        --greeter) GREETER=1 ;; --no-greeter) GREETER=0 ;; --no-usbguard) USBGUARD=0 ;; --no-bazaar) BAZAAR=0 ;; --no-firewall) FIREWALL=0 ;;
         --mount-without-password) MOUNTRULE=1 ;; --no-mount-without-password) MOUNTRULE=0 ;; --gdm) exec "$(dirname "$0")/tools/greeter-setup.sh" revert ;;
         -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 0 ;;
         *) echo "unknown option: $a (see --help)"; exit 2 ;;
@@ -544,6 +547,22 @@ fi
 if command -v systemctl >/dev/null 2>&1; then
     if [ -e /usr/lib/systemd/system/cups.socket ] && ! systemctl is-enabled cups.socket >/dev/null 2>&1; then
         sudo systemctl enable --now cups.socket >/dev/null 2>&1 && echo "Printing: CUPS on (Settings > Printers)."
+    fi
+    # The firewall on by default (Vini), once: turned off later in Settings, a new install leaves it
+    # off. Nothing comes in unasked; from the local network (and Tailscale) only Screen Sharing (VNC,
+    # its own password, off until turned on) and printer discovery (mDNS).
+    FW_DONE="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/.firewall-default"
+    if [ "$FIREWALL" != 0 ] && command -v ufw >/dev/null 2>&1 && [ ! -e "$FW_DONE" ]; then
+        if sudo sh -c 'ufw default deny incoming && ufw default allow outgoing &&
+                for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10; do
+                    ufw allow from "$net" to any port 5900 proto tcp comment "Sonata Screen Sharing" &&
+                    ufw allow from "$net" to any port 5353 proto udp comment "printers (mDNS)" || exit 1
+                done && systemctl enable --now ufw && ufw --force enable' >/dev/null; then
+            echo "Firewall: on (Settings > Security & Privacy; --no-firewall skips this)."
+        else
+            echo "Firewall: couldn't be turned on -- Settings > Security & Privacy > Firewall."
+        fi
+        mkdir -p "$(dirname "$FW_DONE")" && touch "$FW_DONE"
     fi
     # USBGuard on its own blocks every USB device it has no rule for -- the keyboard and mouse too.
     # Sonata's set-up (backend/usbprotect.py) allows them all while unlocked and blocks only the ones
