@@ -2786,8 +2786,7 @@ class Settings(Adw.ApplicationWindow):
         from ..shell import launchpad_window as LW          # Vini: with the rest of the look
         s.add(combo_row(_("{apps} style").format(apps=_(names.APPS)), [(k, _(v)) for k, v in LW.STYLES], LW.style(),
                         lambda v: config.update(LW.NAME, style=v),
-                        subtitle=_("Full Screen: over the whole screen. {apps_menu}: a panel in the middle, "
-                                   "apps by category").format(apps_menu=_(names.APPS_MENU))))
+                        subtitle=_("Full Screen or {apps_menu}: a panel by category").format(apps_menu=_(names.APPS_MENU))))
         s.add(combo_row(_("Icons"), [(t, t) for t in themes], app["icon_theme"],
                         lambda v: (self._save("appearance", "icon_theme", v),
                                    self.ask_restart("sonata", _("The new icons")))))
