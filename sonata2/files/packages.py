@@ -5,9 +5,9 @@ to extract it next to itself (macOS Archive Utility). The same actions
 are in the right-click menus (Files, desktop), and a shell script's Run
 (right-click only: a double-click still opens it to read).
 
-Installs run in a terminal window: the package manager asks for the
-password and shows what it does (dependencies, conflicts), as on any
-Linux system. A package for another distro family isn't forced in; an
+Installs run in a terminal window that shows what the package manager does
+(dependencies, conflicts); the password is asked first by Sonata's own
+prompt (pkexec), not inside the terminal. A package for another distro family isn't forced in; an
 alert says what this system installs instead."""
 import os
 import shlex
@@ -66,11 +66,18 @@ def family() -> str:
     return ""
 
 
+def _root() -> str:
+    """How an install becomes root: pkexec, so Sonata's own password prompt
+    asks first (Vini: sudo asked inside the terminal and the install could
+    fail there); sudo where there's no pkexec."""
+    return "pkexec" if shutil.which("pkexec") else "sudo"
+
+
 def _debtap_command(path: str) -> str:
     """Convert a .deb into an Arch package with debtap, then install it."""
     d, q = shlex.quote(os.path.dirname(path) or "."), shlex.quote(path)
     return (f"cd {d} && debtap -Q {q} && "
-            f"sudo pacman -U \"$(ls -t -- *.pkg.tar.zst | head -n 1)\"")
+            f"{_root()} pacman -U \"$(ls -t -- *.pkg.tar.zst | head -n 1)\"")
 
 
 def aur_helper():
@@ -85,17 +92,17 @@ def install_command(path: str):
     if k in ("arch", "debian", "rpm") and k != family():
         return None
     if k == "arch":
-        return f"sudo pacman -U {q}"
+        return f"{_root()} pacman -U {q}"
     if k == "debian":
-        return f"sudo apt install {q}"
+        return f"{_root()} apt install {q}"
     if k == "rpm":
-        return f"sudo dnf install {q}" if shutil.which("dnf") else f"sudo zypper install {q}"
+        return f"{_root()} dnf install {q}" if shutil.which("dnf") else f"{_root()} zypper install {q}"
     if k == "flatpakref" and shutil.which("flatpak"):
         return f"flatpak install --user {q}"
     if k == "flatpak" and shutil.which("flatpak"):
         return f"flatpak install --user --bundle {q}"
     if k == "snap" and shutil.which("snap"):
-        return f"sudo snap install --dangerous {q}"
+        return f"{_root()} snap install --dangerous {q}"
     return None
 
 
@@ -124,7 +131,7 @@ def install(path: str, parent=None) -> None:
             # debtap (AUR) converts .deb packages for Arch; offer to get it
             def answer(r):
                 if r == "debtap":
-                    system.run_in_terminal(f"{helper} -S debtap && sudo debtap -u && {_debtap_command(path)}")
+                    system.run_in_terminal(f"{helper} -S debtap && {_root()} debtap -u && {_debtap_command(path)}")
             ui.dialog.alert(f"“{name}” is a package for Debian and Ubuntu.",
                             "It can be converted into an Arch package with debtap, which isn't installed yet. "
                             "Converted packages usually work, but a version made for this system, a Flatpak or "

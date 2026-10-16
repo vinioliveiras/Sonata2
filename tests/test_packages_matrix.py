@@ -61,6 +61,17 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(self.cmd("c.rpm", "rpm", ("dnf",)), "sudo dnf install /home/v/Downloads/c.rpm")
         self.assertEqual(self.cmd("c.rpm", "rpm", ("zypper",)), "sudo zypper install /home/v/Downloads/c.rpm")
 
+    def test_password_asked_first(self):
+        """Vini: sudo asked inside the terminal, and the install could fail
+        there. With pkexec, Sonata's own prompt asks first."""
+        self.assertEqual(self.cmd("yay-1.pkg.tar.zst", "arch", ("pkexec",)),
+                         "pkexec pacman -U /home/v/Downloads/yay-1.pkg.tar.zst")
+        self.assertEqual(self.cmd("a.deb", "debian", ("pkexec",)), "pkexec apt install /home/v/Downloads/a.deb")
+        self.assertEqual(self.cmd("x.snap", "debian", ("snap", "pkexec")),
+                         "pkexec snap install --dangerous /home/v/Downloads/x.snap")
+        self.assertTrue(self.cmd("a.deb", "arch", ("debtap", "pkexec")).endswith(
+            'pkexec pacman -U "$(ls -t -- *.pkg.tar.zst | head -n 1)"'))
+
     def test_quotes_in_names(self):
         c = self.cmd("it's (1).pkg.tar.zst", "arch")
         self.assertEqual(c, "sudo pacman -U '/home/v/Downloads/it'\"'\"'s (1).pkg.tar.zst'")

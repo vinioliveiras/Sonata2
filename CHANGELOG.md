@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changes
+- Right-click > Install (and a package's double-click) asks for the
+  password first, in Sonata's own prompt (pkexec), instead of sudo asking
+  inside the terminal; the terminal still shows the install.
 - Every Sonata dialog (Edit Web App, errors, confirmations...) and the
   panels that work as forms (Change Icon, Get Info, Disk Info, Resize,
   Export, Adjust Color, the Assistant's settings, a Calendar event) have
