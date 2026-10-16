@@ -41,6 +41,8 @@ opens at once, with its sliders where they are.
   DDC/CI, seconds of `ddcutil`), which also hid its opening animation.
   Sound reads no longer wait for an external display's brightness; a
   computer without DDC/CI displays isn't probed again on every opening.
+- Faster: the app a window belongs to is remembered a few seconds instead of
+  its .desktop file being read again on every window event.
 - Faster: every sound stream's events no longer read the volume again (many
   a second while something played); quit-on-close no longer lists every
   window on each title change of an app whose process it never found.

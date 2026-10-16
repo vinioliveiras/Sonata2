@@ -4,7 +4,9 @@
 - no DDC/CI display found was asked again on every Control Center opening
   (`ddcutil detect`: seconds);
 - quit-on-close listed every window on every title change for an app whose
-  process it never found.
+  process it never found;
+- an app_id matched read and parsed its .desktop file again each time
+  (~60 us, many times per window event).
 
     python3 -m unittest tests.test_perf_regressions
 """
@@ -51,6 +53,23 @@ class QuitOnCloseRetryTest(unittest.TestCase):
             clock[0] += Q.RETRY_S
             q.changed()
             self.assertEqual(views.call_count, 3)
+
+
+class MatchAppIdTest(unittest.TestCase):
+    def test_a_match_is_kept_a_while(self):
+        from sonata2 import apps
+        apps.refresh()
+        with mock.patch.object(apps, "_match", return_value="org.gnome.Calculator") as match:
+            for _ in range(50):
+                self.assertEqual(apps.match_app_id("gnome-calculator"), "org.gnome.Calculator")
+            match.assert_called_once()
+            with mock.patch.object(apps.time, "monotonic", return_value=apps.time.monotonic() + apps.HIT_KEEP_S + 1):
+                apps.match_app_id("gnome-calculator")
+            self.assertEqual(match.call_count, 2)                         # asked again after a while
+            apps.refresh()                                                # apps installed / removed
+            apps.match_app_id("gnome-calculator")
+            self.assertEqual(match.call_count, 3)
+        apps.refresh()
 
 
 if __name__ == "__main__":

@@ -330,7 +330,8 @@ def scan() -> dict:
                     info = None
                 out[did] = info
     _scan = {k: v for k, v in out.items() if v is not None}
-    _MISSES.clear()                                # (new entries: unknown app_ids may match now)
+    _MISSES.clear()
+    _HITS.clear()
     return dict(_scan)
 
 
@@ -371,6 +372,10 @@ INDEX_RETRY_S = 5.0          # an unknown app_id rebuilds the index at most this
 # Forgotten by refresh() / scan() (apps installed), retried after MISS_RETRY_S.
 _MISSES = {}
 MISS_RETRY_S = 60.0
+# app_id -> (desktop id, when): a match is kept a while too -- each one read
+# and parsed its .desktop file again (~60 us), many times per window event
+_HITS = {}
+HIT_KEEP_S = 10.0
 
 
 # a desktop entry that starts a launcher or wrapper: its window has the app's
@@ -436,14 +441,20 @@ def match_app_id(app_id: str):
     global _INDEX
     if not app_id:
         return None
+    now = time.monotonic()
     missed = _MISSES.get(app_id)
-    if missed is not None and time.monotonic() - missed < MISS_RETRY_S:
+    if missed is not None and now - missed < MISS_RETRY_S:
         return None
+    hit = _HITS.get(app_id)
+    if hit is not None and now - hit[1] < HIT_KEEP_S:
+        return hit[0]
     found = _match(app_id)
     if found is None:
-        _MISSES[app_id] = time.monotonic()
+        _MISSES[app_id] = now
+        _HITS.pop(app_id, None)
     else:
         _MISSES.pop(app_id, None)
+        _HITS[app_id] = (found, now)
     return found
 
 
@@ -488,3 +499,4 @@ def refresh() -> None:
     global _INDEX
     _INDEX = None
     _MISSES.clear()
+    _HITS.clear()
