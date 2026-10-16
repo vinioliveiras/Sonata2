@@ -481,7 +481,7 @@ def _speed(v) -> float:
 
 class Settings(Adw.ApplicationWindow):
     def __init__(self, app, start: str = "appearance"):
-        super().__init__(application=app, title=_("System Settings"))
+        super().__init__(application=app, title=_("Settings"))
         for c in ("sonata-settings", "sonata-glass"):      # added, not passed (keeps GTK's "csd")
             self.add_css_class(c)
         # Resizable with a working Zoom button (Vini's call; macOS keeps it fixed).
@@ -505,7 +505,7 @@ class Settings(Adw.ApplicationWindow):
         # One content page; sections are stack children, cross-faded on switch.
         self.content = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE)
         self.fade = ui.transition.CrossFade(self.content)
-        self.split.append(Adw.NavigationPage(title=_("System Settings"), child=self.fade, hexpand=True,
+        self.split.append(Adw.NavigationPage(title=_("Settings"), child=self.fade, hexpand=True,
                                              css_classes=["st-content"]))
         self.current = None
         self.toasts.set_child(self.split)
@@ -596,7 +596,7 @@ class Settings(Adw.ApplicationWindow):
         box.append(self.listbox)                    # the selection jumps: no slide (Vini)
         self.listbox.set_vexpand(True)
         tv.set_content(Gtk.ScrolledWindow(child=box, hscrollbar_policy=Gtk.PolicyType.NEVER))
-        return Adw.NavigationPage(title=_("System Settings"), child=tv, css_classes=["st-sidebar", "sonata-sidebar"])
+        return Adw.NavigationPage(title=_("Settings"), child=tv, css_classes=["st-sidebar", "sonata-sidebar"])
 
     def _matches(self, sid, title, q) -> bool:
         words = f"{title} {KEYWORDS.get(sid, '')}".casefold()
@@ -3793,10 +3793,10 @@ class Settings(Adw.ApplicationWindow):
 
 
 def settings_desktop_file(command: str) -> str:
-    """sonata2-settings.desktop (shown in Launchpad as "System Settings")."""
+    """sonata2-settings.desktop (shown in Apps as "Settings": Vini)."""
     from ..apps import write_desktop_file
     return write_desktop_file("sonata2-settings.desktop",
-                              "[Desktop Entry]\nType=Application\nName=System Settings\n"
+                              "[Desktop Entry]\nType=Application\nName=Settings\n"
                               "Comment=Sonata and system settings\nIcon=preferences-system\n"
                               "Categories=Settings;System;\nStartupWMClass=io.github.vinioliveiras.sonata2.settings\n"
                               f"Exec={command} settings\n")

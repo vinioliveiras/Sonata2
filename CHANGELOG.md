@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Changes
+- Sonata's apps are named in the system's language (Arquivos / Ficheiros,
+  Calendário...): their launchers carry the Portuguese names and
+  descriptions too, so the Dock, Apps and the menu bar show them.
+- System Settings is now just Settings (Ajustes / Definições).
 - Dock: while the Apps Menu is open, Launchpad's icon has the dot an open
   app has.
 - Dialogs and panels with a Cancel, Close or Quit button no longer get the

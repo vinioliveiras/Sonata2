@@ -528,7 +528,7 @@ class Bar(Gtk.CenterBox):
         user = GLib.get_real_name() or GLib.get_user_name()
         return self._menu(btn, [
             [Item(_("About This Computer"), lambda: AboutWindow().present())],
-            [Item(_("System Settings…"), lambda: open_settings())],
+            [Item(_("Settings…"), lambda: open_settings())],
             [Item(_("Recent Items"), submenu=self._recent_items())],
             [Item(_("Restart Sonata"), system.restart_sonata)],      # reload the shell; apps stay open
             [Item(_("Sleep"), lambda: system.power_action("sleep")),
