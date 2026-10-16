@@ -2,7 +2,16 @@
 
 ## Unreleased
 
+## 0.18.0-alpha -- 2026-10-16
+
+Mission Control with desktops on Super+Tab, videos as wallpapers, Switch
+User on the lock screen, every window of an app in the Dock and in Alt+Tab,
+Sonata in Portuguese (Brazil and Portugal), and Electron apps that resize.
+
 ### Changes
+- install.sh builds Wayfire with Sonata's fixes (and Wayfire 0.12 on
+  systems with an older one) without asking: it says what it builds and
+  how long it takes.
 - A new wired network icon, an Ethernet port: in the menu bar when the
   connection is a cable, not Wi-Fi, and on Settings' Network section.
 - Lock screen: Switch User, when the computer has another user. Your
