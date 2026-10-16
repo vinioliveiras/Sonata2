@@ -84,7 +84,7 @@ if m and "sonata-resize" in m.group(1).split():
 # the app switcher); scale keeps room for the desktops bar (spaces.py)
 with open(sys.argv[1], encoding="utf-8") as f:
     text = f.read()
-moved = wfconfig.migrate_mission_control(text, 56)
+moved = wfconfig.migrate_mission_control(text, 134)
 if moved != text:
     with open(sys.argv[1], "w", encoding="utf-8") as f:
         f.write(moved)

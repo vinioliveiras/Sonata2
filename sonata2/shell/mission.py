@@ -1,11 +1,12 @@
-"""Mission Control's backdrop (macOS: the desktop darkens and blurs behind
-the windows laid out side by side).
+"""Mission Control's backdrop: the desktop darkens behind the windows laid
+out side by side. Only darkens (Vini: blur is too heavy) -- a translucent
+black layer over the real desktop, nothing decoded or blurred.
 
 Wayfire's `scale` plugin lays the windows out (Ctrl+Up, F3, three fingers
 up); its look is set in config/wayfire.ini [scale]: no dimming of the
 windows, the app's title in a pill under the one under the pointer. This
-module, run by the menu bar's services, puts the blurred, darkened
-wallpaper behind them: a layer surface on the bottom layer of the display
+module, run by the menu bar's services, puts that dark layer behind
+them: a layer surface on the bottom layer of the display
 where scale is active, faded in and out with it. Wayfire IPC reports when
 scale starts and stops ("plugin-activation-state-changed").
 
@@ -19,11 +20,17 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
+from .. import ui  # noqa: E402
 from ..wl.wfipc import WayfireIPC  # noqa: E402
 from . import layer, monitors  # noqa: E402
-from .loginui import Backdrop, wallpaper_texture  # noqa: E402
+from .loginui import wallpaper_texture  # noqa: E402
 
 FADE_MS = 260
+DIM = 0.45                           # how dark the desktop goes behind the windows
+
+ui.register("""
+window.sonata-mission, window.sonata-mission > contents { background: rgba(0, 0, 0, %(dim)s); box-shadow: none; }
+""", key="mission", dim=DIM)
 PLUGINS = ("scale", "expo")          # expo (all Spaces) gets the same backdrop
 BACKDROP_MIN = 480                   # decode size bounds (backdrop_size)
 BACKDROP_FALLBACK = 1280             # no display known
@@ -84,9 +91,8 @@ class MissionBackdrop:
         if mon is None:
             return None
         win = Gtk.Window(application=self.app, decorated=False, can_target=False)
-        win.add_css_class("sonata-lock")
-        win.backdrop = Backdrop(None, dim=0.32, blur=40)
-        win.set_child(win.backdrop)
+        win.add_css_class("sonata-mission")           # translucent black: the desktop shows through, darker
+        win.set_child(Gtk.Box())
         LS = layer.layer_shell()
         LS.init_for_window(win)
         LS.set_namespace(win, "sonata2-mission")
@@ -103,10 +109,6 @@ class MissionBackdrop:
         win = self._window(name)
         if win is None:
             return
-        tex = self._wallpaper()                         # the wallpaper of the moment (Dark Mode...)
-        if win.backdrop.texture is not tex:
-            win.backdrop.texture = tex
-            win.backdrop.queue_draw()
         if not win.get_visible():
             win.set_opacity(0.0)
             win.present()

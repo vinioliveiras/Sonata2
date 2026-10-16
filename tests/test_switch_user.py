@@ -148,35 +148,79 @@ class LockScreenTest(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("DISPLAY"), "needs a display (xvfb-run)")
 class GreeterResumeTest(unittest.TestCase):
-    """Picking a user who's already logged in goes back to that session."""
+    """Vini: lock, Switch User, back to the same user -- the password was
+    asked twice (the login screen, then the lock screen). Now the login
+    screen checks it once and the session comes back unlocked; a wrong one
+    never unlocks anything."""
 
-    def greeter(self):
+    def greeter(self, name="vini"):
+        from sonata2 import greetd
         from sonata2.shell import greeter as G
         g = G.Greeter.__new__(G.Greeter)
-        g.fake, g._busy = False, False
+        g.fake, g._busy, g.state = False, False, {}
+        g.user = G.User(name, name.title())
+        g.entry, g.links, g.progress, g.slot, g.hint, g.power = (mock.Mock() for _ in range(6))
+        g.guard = mock.Mock(blocked=mock.Mock(return_value=False))
+        g._session = mock.Mock(return_value=mock.Mock(key="sonata", desktops="Sonata", cmd=["sonata-session"]))
         g._show = mock.Mock()
-        return G, g
+        return G, g, greetd
 
-    def test_running_session_is_resumed(self):
-        G, g = self.greeter()
-        with mock.patch.object(U, "sessions", return_value=[sess("2", "vini")]), \
+    def run_login(self, g, G, greetd, pw, listed):
+        g.entry.get_text.return_value = pw
+        from gi.repository import GLib
+        with mock.patch.object(G.greetd, "Client", side_effect=lambda: greetd.Fake()), \
+                mock.patch.object(U, "sessions", return_value=listed), \
+                mock.patch.object(U, "unlock", return_value=True) as unlock, \
                 mock.patch.object(U, "activate", return_value=True) as act, \
-                mock.patch.dict(os.environ, {U.SWITCH_ENV: "1"}), \
-                mock.patch.object(U, "leave_switch_greeter") as leave:
-            g._pick(G.User("vini", "Vini"))
-            import time
-            time.sleep(0.2)
-        act.assert_called_once_with("2")
-        leave.assert_called_once()
-        g._show.assert_not_called()                                              # no password page
+                mock.patch.object(U, "leave_switch_greeter") as leave, \
+                mock.patch.object(g, "_started", return_value=False) as started, \
+                mock.patch.object(g, "_failed", return_value=False) as failed, \
+                mock.patch.object(g, "_resumed", return_value=False):
+            g._login()
+            ctx, end = GLib.MainContext.default(), GLib.get_monotonic_time() + 1_500_000
+            while GLib.get_monotonic_time() < end and not (act.called or started.called or failed.called):
+                ctx.iteration(False)
+            ctx.iteration(False)
+        return unlock, act, leave, started, failed
 
-    def test_not_logged_in_asks_the_password(self):
-        G, g = self.greeter()
-        with mock.patch.object(U, "sessions", return_value=[sess("2", "vini")]), \
-                mock.patch.object(U, "activate") as act:
-            g._pick(G.User("ana", "Ana"))
+    def test_running_session_one_password(self):
+        G, g, greetd = self.greeter()
+        unlock, act, leave, started, failed = self.run_login(g, G, greetd, "sonata", [sess("2", "vini")])
+        unlock.assert_called_once_with("2", mock.ANY)                      # its lock screen goes
+        act.assert_called_once_with("2", mock.ANY)
+        started.assert_not_called()                                        # no second session
+        failed.assert_not_called()
+
+    def test_wrong_password_unlocks_nothing(self):
+        G, g, greetd = self.greeter()
+        unlock, act, _leave, started, failed = self.run_login(g, G, greetd, "nope", [sess("2", "vini")])
+        failed.assert_called_once()
+        unlock.assert_not_called()
         act.assert_not_called()
+
+    def test_not_logged_in_logs_in(self):
+        G, g, greetd = self.greeter("ana")
+        unlock, act, _leave, started, failed = self.run_login(g, G, greetd, "sonata", [sess("2", "vini")])
+        started.assert_called_once()
+        unlock.assert_not_called()
+
+    def test_picking_a_logged_in_user_asks_the_password(self):
+        G, g, _greetd = self.greeter()
+        with mock.patch.object(U, "activate") as act:
+            g._pick(G.User("vini", "Vini"))
+        act.assert_not_called()                                            # (it used to go back without one)
         g._show.assert_called_once()
+
+    def test_lock_screen_follows_logind_unlock(self):
+        from sonata2.shell import lock as L
+        src = open(L.__file__).read()
+        self.assertIn('"org.freedesktop.login1.Session", "Unlock"', src)
+        ls = L.LockScreen.__new__(L.LockScreen)
+        ls.column, ls.power, ls.lock = mock.Mock(), mock.Mock(), mock.Mock()
+        with mock.patch.object(L.GLib, "timeout_add", side_effect=lambda ms, fn: fn()):
+            ls._unlocked_elsewhere()
+            ls._unlocked_elsewhere()                                        # (twice: once)
+        ls.lock.unlock.assert_called_once()
 
 
 class SetupTest(unittest.TestCase):

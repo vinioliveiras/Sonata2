@@ -2,8 +2,9 @@
 switch to them). macOS's fast user switching: this session stays as it is,
 locked, while another user logs in or goes back to theirs.
 
-- That user already has a session on this seat: logind brings it to the
-  front (ActivateSession); it shows its own lock screen.
+- That user already has a session on this seat: the login screen asks the
+  password once, then logind unlocks it and brings it to the front
+  (UnlockSession, ActivateSession) -- no second prompt on its lock screen.
 - Otherwise the login screen comes up on a free VT:
   - Sonata's (greetd): a second greetd, sonata-greeter-switch.service,
     set up by tools/greeter-setup.sh with a polkit rule that lets the
@@ -81,6 +82,24 @@ def activate(session_id: str, bus=None) -> bool:
     except GLib.Error as e:
         print(f"sonata2: switch user: can't activate session {session_id}: {e.message}", flush=True)
         return False
+
+
+def unlock(session_id: str, bus=None) -> bool:
+    """logind's Unlock for that session: its lock screen goes away (the
+    login screen checked the password already -- Vini: asked twice)."""
+    try:
+        _call(bus or _bus(), *LOGIN1, "UnlockSession", GLib.Variant("(s)", (session_id,)))
+        return True
+    except GLib.Error as e:
+        print(f"sonata2: switch user: can't unlock session {session_id}: {e.message}", flush=True)
+        return False
+
+
+def resume(session_id: str, bus=None) -> bool:
+    """Back to a running session, its password just checked: unlocked, then
+    in front -- the password asked once."""
+    unlock(session_id, bus)                      # (each asks for the bus itself: an error is caught there)
+    return activate(session_id, bus)
 
 
 def login_method(exists=os.path.exists, which=shutil.which):

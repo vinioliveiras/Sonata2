@@ -17,7 +17,7 @@ LOCK_WALLPAPER_PX = 1280     # the wallpaper's longest side for the (blurred) ba
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from .. import pam  # noqa: E402
 from ..i18n import _  # noqa: E402
@@ -41,6 +41,7 @@ class LockScreen:
         self.windows = []
         self.entry = None
         self.lock.lock()
+        self._listen_for_unlock()
         display = Gdk.Display.get_default()
         monitors = display.get_monitors()
         from . import monitors as displays
@@ -298,6 +299,37 @@ class LockScreen:
         self.slot.set_visible_child_name("field")
         shake(self.entry)
         self.guard.failed(user)
+        return False
+
+    def _listen_for_unlock(self) -> None:
+        """logind "Unlock" for this session: the login screen let you back in
+        (Switch User, your password checked there) -- this lock goes too,
+        without asking again (Vini: asked twice). Only logind and processes
+        polkit allows to unlock sessions can send it."""
+        import os
+
+        def unlock(*_a):
+            GLib.idle_add(self._unlocked_elsewhere)
+        try:
+            bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+            sid = os.environ.get("XDG_SESSION_ID")
+            method, arg = ("GetSession", GLib.Variant("(s)", (sid,))) if sid else \
+                ("GetSessionByPID", GLib.Variant("(u)", (os.getpid(),)))
+            path = bus.call_sync("org.freedesktop.login1", "/org/freedesktop/login1",
+                                 "org.freedesktop.login1.Manager", method, arg, None,
+                                 Gio.DBusCallFlags.NONE, 2000, None).unpack()[0]
+            bus.signal_subscribe("org.freedesktop.login1", "org.freedesktop.login1.Session", "Unlock", path, None,
+                                 Gio.DBusSignalFlags.NONE, unlock)
+        except GLib.Error:
+            pass                                   # no logind: the password here, as before
+
+    def _unlocked_elsewhere(self) -> bool:
+        if getattr(self, "_leaving", False):
+            return False
+        self._leaving = True
+        for w in (self.column, self.power):           # the same fade as a password typed here
+            w.add_css_class("gr-leave")
+        GLib.timeout_add(400, lambda: (self.lock.unlock(), False)[1])
         return False
 
     def _can_switch(self) -> bool:

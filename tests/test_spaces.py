@@ -7,6 +7,7 @@ built from a fake Wayfire, Super+Tab bound to scale.
 import configparser
 import os
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("GDK_BACKEND", "x11")
@@ -59,6 +60,17 @@ class ConfigTest(unittest.TestCase):
         self.assertNotIn("<super> KEY_TAB", binds)
         self.assertIn("<alt> KEY_TAB", binds)                                   # Alt+Tab: as it was
 
+    def test_one_desktop_to_start_with(self):
+        """Vini: one desktop by default; more only when you add them."""
+        cfg = configparser.ConfigParser(interpolation=None, strict=False)
+        cfg.read(os.path.join(ROOT, "config", "wayfire.ini"))
+        self.assertEqual((cfg["core"]["vwidth"], cfg["core"]["vheight"]), ("1", "1"))
+
+    def test_room_for_the_whole_bar(self):
+        """Vini: the desktops covered the windows -- scale keeps the bar's height free."""
+        self.assertGreaterEqual(spaces.SCALE_MARGIN, spaces.BAR_H + spaces.BAR_GAP)
+        self.assertGreaterEqual(spaces.BAR_H, spaces.THUMB_H + spaces.PILL_H)
+
 
 class MigrationTest(unittest.TestCase):
     OLD = """[command]
@@ -70,6 +82,10 @@ binding_switcher_alt = <alt> KEY_TAB
 command_switcher_alt = gdbus call switcher next
 binding_term = <super> KEY_T
 command_term = terminal
+
+[core]
+vwidth = 4
+vheight = 1
 
 [scale]
 toggle = <ctrl> KEY_UP | KEY_F3 | swipe up 3
@@ -87,7 +103,12 @@ outer_margin = 28
         self.assertEqual(cfg["command"]["command_term"], "terminal")
         self.assertEqual(cfg["scale"]["toggle"], "<super> KEY_TAB | <ctrl> KEY_UP | KEY_F3 | swipe up 3")
         self.assertEqual(int(cfg["scale"]["outer_margin"]), spaces.SCALE_MARGIN)
+        self.assertEqual(cfg["core"]["vwidth"], "1")                                  # the old four: one
         self.assertEqual(wfconfig.migrate_mission_control(new, spaces.SCALE_MARGIN), new)   # once
+        again = self.OLD.replace("outer_margin = 28", "outer_margin = 56").replace("vwidth = 4", "vwidth = 3")
+        cfg.read_string(wfconfig.migrate_mission_control(again, spaces.SCALE_MARGIN))
+        self.assertEqual(int(cfg["scale"]["outer_margin"]), spaces.SCALE_MARGIN)       # the bar's first margin too
+        self.assertEqual(cfg["core"]["vwidth"], "3")                                  # one's own choice stays
 
     def test_new_config_untouched(self):
         from sonata2 import wfconfig
@@ -98,6 +119,18 @@ outer_margin = 28
     def test_login_script_margin(self):
         with open(os.path.join(ROOT, "tools", "wayfire-config.sh"), encoding="utf-8") as f:
             self.assertIn(f"migrate_mission_control(text, {spaces.SCALE_MARGIN})", f.read())
+
+
+def walk(w):
+    out, stack = [], [w]
+    while stack:
+        x = stack.pop()
+        out.append(x)
+        c = x.get_last_child()
+        while c is not None:
+            stack.append(c)
+            c = c.get_prev_sibling()
+    return out
 
 
 class FakeIPC:
@@ -123,44 +156,66 @@ class BarTest(unittest.TestCase):
         from sonata2 import ui
         Adw.init()
         ui.setup()
+        global Gtk
+        from gi.repository import Gtk
         self.bar = spaces.SpacesBar(None, None, "DP-1", None)
         self.bar.ipc = FakeIPC()
         self.bar.refresh()
 
     def children(self):
-        out, c = [], self.bar.row.get_first_child()
-        while c:
-            out.append(c)
-            c = c.get_next_sibling()
-        return out
+        return self.bar.children()
 
-    def test_one_name_per_desktop_and_add(self):
+    def test_pictures_names_and_add_centred(self):
+        """Vini: the pictures always there, the row centred, + beside them,
+        centred on the pictures."""
         kids = self.children()
         self.assertEqual(len(kids), 3)
-        self.assertTrue(kids[1].has_css_class("current"))
-        self.assertTrue(self.bar.add.has_css_class("sp-add") and self.bar.add.get_visible())
+        self.assertTrue(kids[1].desk_button.has_css_class("current"))
+        self.assertEqual(self.bar.row.get_halign(), Gtk.Align.CENTER)
+        self.assertIs(self.bar.row.get_last_child(), self.bar.add)                   # in the row, after them
         self.assertEqual(self.bar.add.get_icon_name(), "list-add-symbolic")
-        self.assertEqual(self.bar.strip.get_end_widget(), self.bar.add)            # at the right edge
-
-    def test_pictures_only_on_hover(self):
-        kids = self.children()
-        self.assertFalse(any(k.revealer.get_reveal_child() for k in kids))       # names only
-        self.bar._reveal(True)
-        self.assertTrue(all(k.revealer.get_reveal_child() for k in kids))
-        self.bar.refresh()                                                         # rebuilt meanwhile: still open
-        self.assertTrue(all(k.revealer.get_reveal_child() for k in self.children()))
+        self.assertEqual(self.bar.add.get_margin_top() + spaces.ADD_SIZE // 2,
+                         spaces.RING + spaces.THUMB_H // 2)                         # centred on the pictures
+        thumbs = [w for w in walk(self.bar.row) if isinstance(w, spaces._Thumb)]
+        self.assertEqual(len(thumbs), 3)                                             # not only on hover
+        src = open(os.path.join(ROOT, "sonata2", "shell", "spaces.py")).read()
+        self.assertIn("LS.set_anchor(self, LS.Edge.TOP, True)", src)
+        self.assertNotIn("LS.Edge.LEFT", src)                                        # centred, not stretched
 
     def test_one_desktop_is_just_desktop(self):
         from sonata2.i18n import _
         OUT["workspace"]["grid_width"], OUT["workspace"]["x"] = 1, 0
         try:
             self.bar.refresh()
-            label = self.children()[0].get_child().get_last_child()
-            self.assertEqual(label.get_label(), _("Desktop"))
-            self.assertIsNone(self.children()[0].revealer.get_child().get_last_child()
-                              .get_css_classes() == ["sp-close"] or None)       # no x on the only one
+            labels = [w.get_label() for w in walk(self.bar.row) if isinstance(w, Gtk.Label)]
+            self.assertEqual(labels, [_("Desktop")])
+            closes = [w for w in walk(self.bar.row) if isinstance(w, Gtk.Button) and w.has_css_class("sp-close")]
+            self.assertEqual(len(closes), 1)                                         # its apps can be closed
+            with mock.patch.object(spaces, "_views", return_value=[]):
+                self.bar.refresh()
+            closes = [w for w in walk(self.bar.row) if isinstance(w, Gtk.Button) and w.has_css_class("sp-close")]
+            self.assertEqual(closes, [])                                             # nothing on it: no x
         finally:
             OUT["workspace"]["grid_width"], OUT["workspace"]["x"] = 3, 1
+
+    def test_go_closes_mission_control_then_switches(self):
+        """Vini: the desktops did nothing -- vswitch can't switch while scale
+        holds the output; scale closes first."""
+        self.bar.ipc.calls.clear()
+        self.bar.go(2)
+        self.assertEqual([m for m, _d in self.bar.ipc.calls if m != "window-rules/list-outputs"],
+                         ["scale/toggle", "vswitch/set-workspace"])
+        self.assertEqual(self.bar.ipc.calls[-1][1], {"x": 2, "y": 0, "output-id": 1})
+        self.bar.ipc.calls.clear()
+        self.bar.go(1)                                                               # the current one: just closes
+        self.assertEqual([m for m, _d in self.bar.ipc.calls if m != "window-rules/list-outputs"], ["scale/toggle"])
+
+    def test_close_x_works_on_a_picture(self):
+        x = [w for w in walk(self.bar.row) if isinstance(w, Gtk.Button) and w.has_css_class("sp-close")]
+        self.assertEqual(len(x), 3)
+        with mock.patch.object(self.bar, "close_desktop") as close:
+            x[2].emit("clicked")
+        close.assert_called_once_with(2)
 
     def test_thumbnails_paint_the_wallpaper(self):
         """Every picture shows the wallpaper, cropped and rounded, at its fixed
@@ -200,10 +255,61 @@ class BarTest(unittest.TestCase):
         finally:
             spaces.set_count = old
         sent = [d for m, d in self.bar.ipc.calls if m == "vswitch/send-view"]
-        self.assertEqual(sorted((d["view-id"], d["x"]) for d in sent), [(1, 0), (2, 0), (3, 0), (4, 1)])
-        self.assertEqual(self.bar.ipc.calls[-1][0], "vswitch/set-workspace")
+        self.assertEqual(sorted((d["view-id"], d["x"]) for d in sent), [(2, 0), (3, 0), (4, 1)])
+        # (Vini: desktop 1 closes its apps -- none before it to take them)
+        self.assertEqual([d for m, d in self.bar.ipc.calls if m == "window-rules/close-view"], [{"id": 1}])
+        # (Mission Control stays open, on the desktop that was the current one)
+        self.assertEqual(self.bar.ipc.calls[-1], ("sonata/set-workspace", {"x": 0, "y": 0, "output-id": 1}))
         self.assertEqual(set_to, [2])
+
+    def test_close_the_only_desktop_closes_its_apps(self):
+        OUT["workspace"]["grid_width"], OUT["workspace"]["x"] = 1, 0
+        try:
+            with mock.patch.object(spaces, "set_count") as count:
+                self.bar.close_desktop(0)
+            closed = sorted(d["id"] for m, d in self.bar.ipc.calls if m == "window-rules/close-view")
+            self.assertEqual(closed, [2, 3])                                         # the ones on it
+            count.assert_not_called()                                                # the desktop stays
+            self.assertNotIn("vswitch/send-view", [m for m, _d in self.bar.ipc.calls])
+        finally:
+            OUT["workspace"]["grid_width"], OUT["workspace"]["x"] = 3, 1
+
+    def test_close_without_sonatas_plugin(self):
+        """An older plugin: the vswitch way (Mission Control closes)."""
+        ipc = self.bar.ipc
+        real = ipc.call
+        ipc.call = lambda m, d=None: (ipc.calls.append((m, d)), {"error": "No such method"})[1] \
+            if m == "sonata/set-workspace" else real(m, d)
+        with mock.patch.object(spaces, "set_count") as count:
+            self.bar.close_desktop(0)
+        tail = [m for m, _d in ipc.calls[-3:]]
+        self.assertEqual(tail, ["sonata/set-workspace", "scale/toggle", "vswitch/set-workspace"])
+        count.assert_called_once_with(2)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EmptyDesktopTest(unittest.TestCase):
+    """Vini: an empty desktop couldn't be left -- Wayfire's scale refused to
+    open with no window. Sonata's Wayfire opens it anyway (a patch), and it
+    stays open when the last window closes."""
+
+    def test_patch_is_built(self):
+        patch = os.path.join(ROOT, "wayfire-plugin", "wayfire-scale-empty-desktop.patch")
+        text = open(patch).read()
+        self.assertIn("-            output->deactivate_plugin(&grab_interface);\n-            return false;", text)
+        for script in ("build-wayfire.sh", "build-wayfire-stack.sh"):
+            src = open(os.path.join(ROOT, "tools", script)).read()
+            self.assertIn("wayfire-plugin/wayfire-*.patch", src, script)
+
+
+class DimBackdropTest(unittest.TestCase):
+    """Vini: Mission Control only darkens the desktop -- blur is too heavy."""
+
+    def test_no_blur(self):
+        src = open(os.path.join(ROOT, "sonata2", "shell", "mission.py")).read()
+        self.assertNotIn("Backdrop(", src)
+        self.assertNotIn("blur=", src)
+        self.assertIn('add_css_class("sonata-mission")', src)

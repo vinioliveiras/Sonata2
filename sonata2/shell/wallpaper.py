@@ -191,9 +191,9 @@ class WallpaperWindow(Gtk.ApplicationWindow):
                         media.disconnect(self._frame_id)
                         self._frame_id = 0
                     if self._video is not None and self._video.media is media:
-                        show(media)
+                        show(self._video.cover)
                 if media.get_current_image() is not None and media.get_intrinsic_width() > 0:
-                    show(media)                   # (another display already plays it)
+                    show(self._video.cover)       # (another display already plays it)
                 else:
                     self._frame_id = media.connect("invalidate-contents", framed)
             if self.main and still_file:

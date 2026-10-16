@@ -36,6 +36,17 @@ def ensure_preload() -> None:
     os.execve(sys.executable, sys.orig_argv, env)   # orig_argv keeps "-m sonata2"
 
 
+def whole_input(surface) -> None:
+    """The surface takes input everywhere again. GDK's "no region" is None,
+    which some PyGObject versions refuse ("does not allow None"): then a
+    region bigger than any display (the rest of the warm-up never ran)."""
+    try:
+        surface.set_input_region(None)
+    except TypeError:
+        import cairo
+        surface.set_input_region(cairo.Region(cairo.RectangleInt(0, 0, 1 << 15, 1 << 15)))
+
+
 _reported = False
 
 
@@ -247,7 +258,7 @@ def prewarm(win, before=None, after=None, frames: int = 3, delay_ms: int = 1500,
                 LS.set_keyboard_mode(win, getattr(win, "keyboard_mode", LS.KeyboardMode.EXCLUSIVE))
             surface = win.get_surface()
             if surface is not None:
-                surface.set_input_region(None)            # the whole surface again
+                whole_input(surface)                     # the whole surface again
             if after:
                 after()
             return GLib.SOURCE_REMOVE
