@@ -25,6 +25,8 @@ gi.require_version("GstVideo", "1.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, GObject, Gst, GstVideo  # noqa: E402
 
+from ..i18n import N_, _  # noqa: E402
+
 Gst.init(None)
 
 # a webcam's usual best: 1280x720 (MJPEG or raw), else whatever it has
@@ -48,7 +50,7 @@ def devices() -> list:
         for dev in mon.get_devices() or []:
             props = dev.get_properties()
             api = (props.get_string("device.api") if props else "") or ""
-            found.append(Cam(dev.get_display_name() or "Camera", dev, api))
+            found.append(Cam(dev.get_display_name() or _("Camera"), dev, api))
         mon.stop()
     v4l2 = [c for c in found if c.api == "v4l2"]
     pick = v4l2 or found
@@ -78,7 +80,7 @@ class Camera:
         self.mirror = mirror
         src = self.source() if self.source else (cam.device.create_element(None) if cam and cam.device else None)
         if src is None:
-            self._error("No camera")
+            self._error(N_("No camera"))
             return False
         p = Gst.Pipeline.new("camera")
         caps = Gst.ElementFactory.make("capsfilter")
@@ -118,7 +120,7 @@ class Camera:
         bus.connect("message::error", self._bus_error)
         self.pipeline = p
         if p.set_state(Gst.State.PLAYING) == Gst.StateChangeReturn.FAILURE:
-            self._error("The camera couldn't start (it may be in use by another app)")
+            self._error(N_("The camera couldn't start (it may be in use by another app)"))
             self.stop()
             return False
         return True
@@ -224,7 +226,7 @@ class Camera:
             return None
         enc = pick_encoders()
         if enc is None:
-            self._error("No video encoder is installed (GStreamer: x264 or openh264, or VP8)")
+            self._error(N_("No video encoder is installed (GStreamer: x264 or openh264, or VP8)"))
             return None
         venc_name, parse_name, mux_name, aenc_name, ext = enc
         path = base + ext
@@ -321,7 +323,8 @@ class Camera:
         err, _debug = msg.parse_error()
         self.stop()
         busy = "busy" in (err.message or "").lower() or "resource" in (err.message or "").lower()
-        self._error("The camera is in use by another app" if busy else f"The camera stopped ({err.message})")
+        self._error(N_("The camera is in use by another app") if busy else
+                    _("The camera stopped ({error})").format(error=err.message))
 
     def _error(self, text):
         if self.on_error:

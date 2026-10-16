@@ -39,6 +39,7 @@ except (ValueError, ImportError):
     Vte = None
 
 from .. import config, ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.terminal"
 DEFAULTS = {"font_size": 10, "scrollback": 10000}
@@ -179,7 +180,8 @@ class TerminalTab:
 
         def done(pid, error):
             if error:
-                self.term.feed(f"\r\nCouldn't start {argv[0]}: {error}\r\n".encode())
+                self.term.feed(("\r\n" + _("Couldn't start {command}: {error}").format(command=argv[0], error=error)
+                                + "\r\n").encode())
             else:
                 self.pid = pid
                 self.update_title()
@@ -200,7 +202,7 @@ class TerminalTab:
             with open(f"/proc/{fg}/comm", encoding="utf-8") as f:
                 return f.read().strip()
         except OSError:
-            return "a process"
+            return _("a process")
 
     def cwd(self):
         """The shell's folder: what it reports (OSC 7), else /proc."""
@@ -249,11 +251,11 @@ class TerminalTab:
     def _context_menu(self, gesture, _n, x, y) -> None:
         gesture.set_state(Gtk.EventSequenceState.CLAIMED)
         w = self.win
-        sections = [[ui.menu.Item("Copy", self.copy, enabled=self.term.get_has_selection()),
-                     ui.menu.Item("Paste", self.paste)],
-                    [ui.menu.Item("Clear", self.clear)],
-                    [ui.menu.Item("New Tab", lambda: w.new_tab(self.cwd())),
-                     ui.menu.Item("Move Tab to New Window", lambda: w.move_to_new_window(self),
+        sections = [[ui.menu.Item(_("Copy"), self.copy, enabled=self.term.get_has_selection()),
+                     ui.menu.Item(_("Paste"), self.paste)],
+                    [ui.menu.Item(_("Clear"), self.clear)],
+                    [ui.menu.Item(_("New Tab"), lambda: w.new_tab(self.cwd())),
+                     ui.menu.Item(_("Move Tab to New Window"), lambda: w.move_to_new_window(self),
                                   enabled=len(w.tabs) > 1)]]
         ui.menu.popup(self.term, sections, at=(x, y), glass=True, passthrough=True)
 
@@ -269,7 +271,7 @@ class _TabButton(Gtk.Box):
                                ellipsize=Pango.EllipsizeMode.MIDDLE, hexpand=True, width_chars=1)
         over.set_child(self.label)
         close = Gtk.Button(icon_name="window-close-symbolic", css_classes=["tm-tab-close"],
-                           tooltip_text="Close Tab", halign=Gtk.Align.START, valign=Gtk.Align.CENTER,
+                           tooltip_text=_("Close Tab"), halign=Gtk.Align.START, valign=Gtk.Align.CENTER,
                            focusable=False)
         close.connect("clicked", lambda *_: win.close_tab(tab))
         over.add_overlay(close)
@@ -307,12 +309,12 @@ class _TabButton(Gtk.Box):
 
 class TerminalWindow(Gtk.ApplicationWindow):
     def __init__(self, app, cwd: str = None, command=None, factory=None, tab: TerminalTab = None):
-        super().__init__(application=app, title="Terminal", css_classes=["sonata-terminal"])
+        super().__init__(application=app, title=_("Terminal"), css_classes=["sonata-terminal"])
         ui.window.standard(self)
         self.cfg = config.load("terminal", DEFAULTS)
         # the title bar is the glass one the compositor draws (pixdecor): no
         # second bar; this one only carries the title label
-        self.bar = ui.window.titlebar(self, "Terminal", zoom=True)
+        self.bar = ui.window.titlebar(self, _("Terminal"), zoom=True)
         self.bar.add_css_class("tm-bar")
         self.factory = factory or (tab.factory if tab else new_terminal)
         self.tabs = []
@@ -321,7 +323,7 @@ class TerminalWindow(Gtk.ApplicationWindow):
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.set_child(col)
         if self.factory is None:
-            col.append(Gtk.Label(label="Terminal needs VTE for GTK 4 (package vte4 / gir1.2-vte-3.91).",
+            col.append(Gtk.Label(label=_("Terminal needs VTE for GTK 4 (package vte4 / gir1.2-vte-3.91)."),
                                  css_classes=["tm-missing"], vexpand=True, wrap=True))
             self.set_default_size(640, 400)
             return
@@ -329,7 +331,7 @@ class TerminalWindow(Gtk.ApplicationWindow):
         ui.window.follow_tab_bar(self, self._show_strip)
         self.tab_row = Gtk.Box(homogeneous=True, hexpand=True)
         self.strip.append(self.tab_row)
-        add = Gtk.Button(icon_name="list-add-symbolic", css_classes=["tm-tab-add"], tooltip_text="New Tab",
+        add = Gtk.Button(icon_name="list-add-symbolic", css_classes=["tm-tab-add"], tooltip_text=_("New Tab"),
                          valign=Gtk.Align.CENTER, focusable=False)
         add.connect("clicked", lambda *_: self.new_tab(self.current and self.current.cwd()))
         self.strip.append(add)
@@ -440,9 +442,9 @@ class TerminalWindow(Gtk.ApplicationWindow):
         if not busy:
             self._remove(tab)
             return
-        ui.dialog.alert("Do you want to terminate running processes in this tab?",
-                        f"Closing this tab will terminate “{busy}”.",
-                        [("cancel", "Cancel", ""), ("close", "Terminate", "destructive")],
+        ui.dialog.alert(_("Do you want to terminate running processes in this tab?"),
+                        _("Closing this tab will terminate “{name}”.").format(name=busy),
+                        [("cancel", _("Cancel"), ""), ("close", _("Terminate"), "destructive")],
                         lambda rid: rid == "close" and self._remove(tab), parent=self)
 
     def _remove(self, tab, keep=False) -> None:
@@ -544,9 +546,9 @@ class TerminalWindow(Gtk.ApplicationWindow):
             self._closing = True
             return False
         names = "”, “".join(dict.fromkeys(busy))
-        ui.dialog.alert("Do you want to terminate running processes in this window?",
-                        f"Closing this window will terminate “{names}”.",
-                        [("cancel", "Cancel", ""), ("close", "Terminate", "destructive")],
+        ui.dialog.alert(_("Do you want to terminate running processes in this window?"),
+                        _("Closing this window will terminate “{names}”.").format(names=names),
+                        [("cancel", _("Cancel"), ""), ("close", _("Terminate"), "destructive")],
                         lambda rid: rid == "close" and self._really_close(), parent=self)
         return True
 
