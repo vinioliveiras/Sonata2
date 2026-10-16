@@ -71,6 +71,28 @@ class PathBar(Gtk.ScrolledWindow):
         click.connect("released", lambda *_a: self.on_edit and self.on_edit())
         self.add_controller(click)
         self.on_edit = None                  # set by the window: starts edit() with the folder's path
+        # right-click: Copy Path -- of the folder clicked, or the one shown (Vini)
+        menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
+        menu.connect("pressed", self._menu)
+        self.add_controller(menu)
+
+    def uri_at(self, x: float, y: float):
+        """The folder under (x, y): a crumb's, else the one shown."""
+        w = self.pick(x, y, Gtk.PickFlags.DEFAULT)
+        while w is not None and w is not self:
+            if getattr(w, "crumb_uri", None):
+                return w.crumb_uri
+            w = w.get_parent()
+        return self.uri
+
+    def _menu(self, g, _n, x, y) -> None:
+        uri = self.uri_at(x, y)
+        if not uri or self.entry is not None:          # (typing an address: the field's own menu)
+            return
+        g.set_state(Gtk.EventSequenceState.CLAIMED)
+        from .actions import copy_paths
+        ui.menu.popup(self, [[ui.menu.Item("Copy Path", lambda: copy_paths(self, [Gio.File.new_for_uri(uri)]))]],
+                      at=(x, y))
 
     def edit(self, text: str, on_go) -> None:
         """The bar becomes a field with `text` (selected): Return calls
@@ -127,6 +149,7 @@ class PathBar(Gtk.ScrolledWindow):
             b.set_child(row)
             if i == len(items) - 1:
                 b.add_css_class("current")
+            b.crumb_uri = u                               # (its right-click: Copy Path)
             b.connect("clicked", lambda _b, u=u: self.go(u))
             if self.drop is not None:
                 self._drop_target(b, u)

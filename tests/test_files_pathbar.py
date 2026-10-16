@@ -31,6 +31,45 @@ class PathBarTest(unittest.TestCase):
         b.set_uri(Gio.File.new_for_path(os.path.expanduser("~")).get_uri())
         self.assertIsNotNone(b.box.get_first_child())
 
+    def test_right_click_copy_path(self):
+        """Vini: right-click the path bar > Copy Path -- the folder under the
+        pointer, or the one shown on the bar's empty part."""
+        from unittest import mock
+        from gi.repository import GLib, Gtk
+        from sonata2 import ui
+        d = tempfile.mkdtemp()
+        sub = os.path.join(d, "Docs")
+        os.mkdir(sub)
+        win = Gtk.Window()
+        b = P.PathBar(lambda u: None)
+        win.set_child(b)
+        win.present()
+        b.set_uri(Gio.File.new_for_path(sub).get_uri())
+        crumbs = []
+        c = b.box.get_first_child()
+        while c is not None:
+            if getattr(c, "crumb_uri", None):
+                crumbs.append(c)
+            c = c.get_next_sibling()
+        menus = []
+        g = Gtk.GestureClick()
+        with mock.patch.object(ui.menu, "popup", lambda w, sections, **kw: menus.append(sections)):
+            with mock.patch.object(b, "pick", return_value=crumbs[-2].get_child()):      # the parent folder
+                b._menu(g, 1, 5, 5)
+            with mock.patch.object(b, "pick", return_value=b):                           # the empty part
+                b._menu(g, 1, 300, 5)
+        self.assertEqual([m[0][0].label for m in menus], ["Copy Path", "Copy Path"])
+        got = []
+        for m in menus:
+            m[0][0].on_activate()
+            b.get_clipboard().read_text_async(None, lambda cb, r: got.append(cb.read_text_finish(r)))
+            ctx, end = GLib.MainContext.default(), GLib.get_monotonic_time() + 1_000_000
+            n = len(got)
+            while len(got) == n and GLib.get_monotonic_time() < end:
+                ctx.iteration(False)
+        self.assertEqual(got, [d, sub])
+        win.destroy()
+
     def test_resolve(self):
         d = tempfile.mkdtemp()
         open(os.path.join(d, "f.txt"), "w").close()
