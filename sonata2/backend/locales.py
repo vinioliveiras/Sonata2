@@ -99,10 +99,6 @@ def normalise(name: str) -> str:
     return out + ("@" + mod if mod else "")
 
 
-def _names(table) -> dict:
-    return dict(table)
-
-
 def languages():
     return list(LANGUAGES)
 
