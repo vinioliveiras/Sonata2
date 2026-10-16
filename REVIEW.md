@@ -29,7 +29,7 @@ animate.
 - Disk Utility rename can't clear a label to empty any more (`ask_text` disables OK on empty text).
 
 ### Actions with no animation today (owner to decide)
-- Dock: stack panel opening; removing a stack; a new icon appearing (neighbours glide, no grow-in); new desktop icons.
+- Dock: stack panel opening; removing a stack; new desktop icons. (A new app icon now opens its place and fades in.)
 - Menu bar: menus/popovers closing; emoji picker open/close; share/capture/clipboard picker close; capture toolbar and recording control.
 - UI kit/Settings: panels closing; Settings sidebar search; slider double-click reset.
 - Files: Icons/List/Columns switch; Quick Look open/close; copy progress; Disk Utility sidebar rebuild. Preview: rotate/flip/crop/adjust; ←/→ outside the slideshow.
