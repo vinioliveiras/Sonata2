@@ -37,6 +37,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from .. import config, ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.videos"
 CONFIG = "videos"
@@ -213,7 +214,7 @@ class VideoWindow(Gtk.ApplicationWindow):
         hud.set_size_request(440, -1)
         top = Gtk.CenterBox()
         vol = Gtk.Box(spacing=2, valign=Gtk.Align.CENTER)
-        self.mute_btn = self._button(volume_icon(self.volume, self.muted), "Mute", self.toggle_mute, ["vd-small"])
+        self.mute_btn = self._button(volume_icon(self.volume, self.muted), _("Mute"), self.toggle_mute, ["vd-small"])
         vol.append(self.mute_btn)
         self.volume_scale = ui.controls.slider(self.volume * 100, self._volume_changed, lower=0, upper=100)
         self.volume_scale.add_css_class("vd-volume")
@@ -223,12 +224,12 @@ class VideoWindow(Gtk.ApplicationWindow):
         vol.append(self.volume_scale)
         top.set_start_widget(vol)
         transport = Gtk.Box(spacing=10, valign=Gtk.Align.CENTER)
-        transport.append(self._button("media-seek-backward-symbolic", "Back 10 Seconds", lambda: self.skip(-10)))
-        self.play_btn = self._button("media-playback-start-symbolic", "Play", self.toggle_play, ["vd-play"])
+        transport.append(self._button("media-seek-backward-symbolic", _("Back 10 Seconds"), lambda: self.skip(-10)))
+        self.play_btn = self._button("media-playback-start-symbolic", _("Play"), self.toggle_play, ["vd-play"])
         transport.append(self.play_btn)
-        transport.append(self._button("media-seek-forward-symbolic", "Forward 10 Seconds", lambda: self.skip(10)))
+        transport.append(self._button("media-seek-forward-symbolic", _("Forward 10 Seconds"), lambda: self.skip(10)))
         top.set_center_widget(transport)
-        self.full_btn = self._button("view-fullscreen-symbolic", "Enter Full Screen", self.toggle_fullscreen,
+        self.full_btn = self._button("view-fullscreen-symbolic", _("Enter Full Screen"), self.toggle_fullscreen,
                                      ["vd-small"])
         self.full_btn.set_valign(Gtk.Align.CENTER)
         top.set_end_widget(self.full_btn)
@@ -252,7 +253,7 @@ class VideoWindow(Gtk.ApplicationWindow):
     def _build_message(self) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["vd-message"],
                       halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER, visible=False, can_target=False)
-        self.msg_title = Gtk.Label(label="This video can't be played", css_classes=["vd-msg-title"])
+        self.msg_title = Gtk.Label(label=_("This video can't be played"), css_classes=["vd-msg-title"])
         box.append(self.msg_title)
         self.reason = Gtk.Label(wrap=True, justify=Gtk.Justification.CENTER, max_width_chars=60,
                                 css_classes=["vd-msg-body"])
@@ -376,7 +377,7 @@ class VideoWindow(Gtk.ApplicationWindow):
         if (x, y, w, h) == (0, 0, frame.iw, frame.ih):
             self.cancel_crop()                       # the whole picture: nothing to save
             return
-        out = edit.output_path(self.path, "Cropped")
+        out = edit.output_path(self.path, _("Cropped"))
         bar = self.crop_bar
         bar.exporting(0.0)
 
@@ -389,7 +390,7 @@ class VideoWindow(Gtk.ApplicationWindow):
                 self.open(out)
             else:
                 bar.exporting(None)
-                bar.size.set_label("Couldn't crop" + (f": {message}" if message else ""))
+                bar.size.set_label(_("Couldn't crop: {error}").format(error=message) if message else _("Couldn't crop"))
         self._export = edit.Export(edit.crop_command(self.path, out, x, y, w, h),
                                    self.stream.get_duration() / 1e6, lambda p: (bar.exporting(p), False)[1], done)
 
@@ -427,7 +428,7 @@ class VideoWindow(Gtk.ApplicationWindow):
             self.cancel_trim()                       # nothing cut off: nothing to save
             return
         s and s.pause()
-        out = edit.output_path(self.path, "Trimmed", audio=self.audio)
+        out = edit.output_path(self.path, _("Trimmed"), audio=self.audio)
         bar = self.trim_bar
         bar.exporting(0.0)
 
@@ -440,7 +441,7 @@ class VideoWindow(Gtk.ApplicationWindow):
                 self.open(out)                       # the trimmed movie, like QuickTime's document
             else:
                 bar.exporting(None)
-                bar.times.set_label("Couldn't trim" + (f": {message}" if message else ""))
+                bar.times.set_label(_("Couldn't trim: {error}").format(error=message) if message else _("Couldn't trim"))
         self._export = edit.Export(edit.trim_command(self.path, out, start, end, self.audio), end - start,
                                    lambda p: (bar.exporting(p), False)[1], done)
 
@@ -450,7 +451,7 @@ class VideoWindow(Gtk.ApplicationWindow):
         self.audio = audio
         (self.add_css_class if audio else self.remove_css_class)("vd-audio")
         self.full_btn.set_visible(not audio)
-        self.msg_title.set_label("This song can't be played" if audio else "This video can't be played")
+        self.msg_title.set_label(_("This song can't be played") if audio else _("This video can't be played"))
         self.art.set_visible(audio)
         if not audio:
             return
@@ -513,7 +514,7 @@ class VideoWindow(Gtk.ApplicationWindow):
             return
         msg = err.message or str(err)
         if "media module" in msg or "backend" in msg.lower():
-            msg = "No media backend is installed (GTK's GStreamer module and its plugins)."
+            msg = _("No media backend is installed (GTK's GStreamer module and its plugins).")
         self._fail(msg)
 
     def _prepared(self, *_a) -> None:
@@ -577,7 +578,7 @@ class VideoWindow(Gtk.ApplicationWindow):
             self.stream.set_volume(self.volume)
             self.stream.set_muted(self.muted)
         self.mute_btn.set_icon_name(volume_icon(self.volume, self.muted))
-        self.mute_btn.set_tooltip_text("Unmute" if self.muted else "Mute")
+        self.mute_btn.set_tooltip_text(_("Unmute") if self.muted else _("Mute"))
         # Saved once the slider rests (like Music): a drag would rewrite the file every step.
         if self._vol_src:
             GLib.source_remove(self._vol_src)
@@ -595,7 +596,7 @@ class VideoWindow(Gtk.ApplicationWindow):
     def _playing_changed(self, *_a) -> None:
         playing = bool(self.stream and self.stream.get_playing())
         self.play_btn.set_icon_name("media-playback-pause-symbolic" if playing else "media-playback-start-symbolic")
-        self.play_btn.set_tooltip_text("Pause" if playing else "Play")
+        self.play_btn.set_tooltip_text(_("Pause") if playing else _("Play"))
         if playing:
             self._arm_hide()
         else:
@@ -672,7 +673,7 @@ class VideoWindow(Gtk.ApplicationWindow):
         full = not self.is_fullscreen()
         self.fullscreen() if full else self.unfullscreen()
         self.full_btn.set_icon_name("view-restore-symbolic" if full else "view-fullscreen-symbolic")
-        self.full_btn.set_tooltip_text("Exit Full Screen" if full else "Enter Full Screen")
+        self.full_btn.set_tooltip_text(_("Exit Full Screen") if full else _("Enter Full Screen"))
 
     # -- input ---------------------------------------------------------------------------------
     def _input(self) -> None:
@@ -712,14 +713,14 @@ class VideoWindow(Gtk.ApplicationWindow):
         ok = s is not None and s.get_error() is None
         playing = bool(ok and s.get_playing())
         ui.menu.popup(self.overlay, [
-            [Item("Pause" if playing else "Play", self.toggle_play, enabled=ok)],
-            [Item("Loop", lambda _v=None: self.toggle_loop(), checked=bool(ok and s.get_loop()), enabled=ok),
-             Item("Mute", lambda _v=None: self.toggle_mute(), checked=self.muted, enabled=ok)],
-            [Item("Exit Full Screen" if self.is_fullscreen() else "Enter Full Screen", self.toggle_fullscreen,
+            [Item(_("Pause") if playing else _("Play"), self.toggle_play, enabled=ok)],
+            [Item(_("Loop"), lambda _v=None: self.toggle_loop(), checked=bool(ok and s.get_loop()), enabled=ok),
+             Item(_("Mute"), lambda _v=None: self.toggle_mute(), checked=self.muted, enabled=ok)],
+            [Item(_("Exit Full Screen") if self.is_fullscreen() else _("Enter Full Screen"), self.toggle_fullscreen,
                   enabled=not self.audio)],
-            [Item("Trim…", self.start_trim, enabled=self.can_edit() and not self._editing()),
-             Item("Crop…", self.start_crop, enabled=self.can_edit() and not self.audio and not self._editing())],
-            [Item("Show in Files", self.show_in_files), Item("Open…", self.open_dialog)],
+            [Item(_("Trim…"), self.start_trim, enabled=self.can_edit() and not self._editing()),
+             Item(_("Crop…"), self.start_crop, enabled=self.can_edit() and not self.audio and not self._editing())],
+            [Item(_("Show in Files"), self.show_in_files), Item(_("Open…"), self.open_dialog)],
         ], at=(x, y), glass=True, passthrough=True)
 
     def show_in_files(self) -> None:
@@ -778,8 +779,8 @@ def choose(app, parent=None) -> None:
 
     def done(uris, _i):
         open_paths(app, uris or [])
-    dlg = ChooserWindow(app, mode="open", title="Open", multiple=True,
-                        filters=[("Movies & Songs", [(1, "video/*"), (1, "audio/*")])], on_done=done)
+    dlg = ChooserWindow(app, mode="open", title=_("Open"), multiple=True,
+                        filters=[(_("Movies & Songs"), [(1, "video/*"), (1, "audio/*")])], on_done=done)
     if parent is not None:
         dlg.set_transient_for(parent)
         dlg.set_modal(True)

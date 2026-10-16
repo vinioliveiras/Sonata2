@@ -406,8 +406,8 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
             n = sum(1 for v in d.volumes if v.listed)
             return [(_("Location"), _("Disk Image") if d.is_image else (_("External") if d.external else _("Internal"))),
                     (_("Capacity"), ui.fmt.size(d.size)),
-                    (_("Connection"), _(model.BUS_NAMES.get(d.bus, d.bus.upper()) or
-                                        (N_("Loop") if d.is_image else N_("Internal")))),
+                    (_("Connection"), _(model.BUS_NAMES.get(d.bus, d.bus.upper())) or
+                     ("Loop" if d.is_image else _("Internal"))),
                     (_("Child count"), str(n)),
                     (_("Partition Map"), _(model.TABLE_NAMES.get(d.table, d.table.upper()) or N_("None"))),
                     (_("Type"), d.media_kind),
@@ -420,8 +420,8 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
                 (_("Capacity"), ui.fmt.size(v.size)),
                 (_("Label"), v.label or dash),
                 (_("Available"), ui.fmt.size(free) if free is not None else dash),
-                (_("Connection"), _(model.BUS_NAMES.get(d.bus, d.bus.upper()) or
-                                    (N_("Loop") if d.is_image else N_("Internal")))),
+                (_("Connection"), _(model.BUS_NAMES.get(d.bus, d.bus.upper())) or
+                 ("Loop" if d.is_image else _("Internal"))),
                 (_("Used"), ui.fmt.size(used) if used is not None else dash),
                 (_("Device"), v.device),
                 ("UUID", v.uuid or dash),

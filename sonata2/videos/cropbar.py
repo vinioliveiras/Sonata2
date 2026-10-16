@@ -13,6 +13,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Graphene, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from . import edit as E  # noqa: E402
 from .trimbar import _rgba  # noqa: E402
 
@@ -117,7 +118,7 @@ class CropBar(Gtk.Box):
         super().__init__(spacing=10, css_classes=["vd-trim"], halign=Gtk.Align.CENTER, valign=Gtk.Align.END,
                          margin_bottom=22, margin_start=22, margin_end=22)
         self.frame = frame
-        self.shapes = ui.controls.segmented([(k, label) for k, label, _r in E.RATIOS], current="free",
+        self.shapes = ui.controls.segmented([(k, _(label)) for k, label, _r in E.RATIOS], current="free",
                                             on_pick=self.pick)
         self.shapes.set_valign(Gtk.Align.CENTER)
         self.append(self.shapes)
@@ -126,8 +127,8 @@ class CropBar(Gtk.Box):
         self.progress = Gtk.LevelBar(min_value=0, max_value=1, visible=False, valign=Gtk.Align.CENTER)
         self.progress.set_size_request(120, -1)
         self.append(self.progress)
-        self.cancel_btn = ui.controls.push_button("Cancel", on_cancel)
-        self.crop_btn = ui.controls.push_button("Crop", lambda: on_crop(self.frame.rect), style="default")
+        self.cancel_btn = ui.controls.push_button(_("Cancel"), on_cancel)
+        self.crop_btn = ui.controls.push_button(_("Crop"), lambda: on_crop(self.frame.rect), style="default")
         self.append(self.cancel_btn)
         self.append(self.crop_btn)
         frame.on_change = self._changed
