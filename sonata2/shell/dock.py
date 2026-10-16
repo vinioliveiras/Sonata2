@@ -62,6 +62,7 @@ def merge_order(pinned: list, tile_keys: list) -> list:
 
 
 PERMANENT = ("io.github.vinioliveiras.sonata2.files", "sonata2-launchpad")
+LAUNCHPAD_KEY = PERMANENT[1]
 # shell tools that open instantly and have no app window (layer surfaces: the
 # screenshot toolbar): no launch bounce, and never "stuck" -- the Dock bounced
 # the Screenshot icon on and on, then stopped it as stuck (Vini)
@@ -617,6 +618,7 @@ class Dock(Gtk.Box):
         self.manager = manager if manager and manager.available else None
         self.tiles = {}       # desktop id (or bare app_id) -> DockTile (apps only)
         self.windows = {}     # same keys -> [Toplevel]
+        self.launcher_open = False   # the Apps Menu is open: Launchpad's dot (Vini, like an app's)
         self._starting = {}   # key -> when it was opened from here, until a window of it shows
         self._retries = {}    # key -> launches retried since the click (no window came)
         self.backdrop = None  # preview only: blurred wallpaper texture under the plate
@@ -654,6 +656,8 @@ class Dock(Gtk.Box):
         self.title_counts = {}  # key -> a web app's unread count from its title (badges.py)
         self._notes = badges.load()
         self._notes_mon = badges.watch(self._notes_changed)
+        # a Chromium web app's page title (its window's is the site's name): its count
+        self._pages_mon = badges.watch(lambda: self._sync_titles(self.windows), badges.PAGE_TITLES)
         self._badge_cfg = config.load("notifications", {})
         self._badge_cfg_mon = config.watch("notifications", self._badge_cfg_changed)
         self._launcher_entries()
@@ -706,7 +710,7 @@ class Dock(Gtk.Box):
         if self._apps_src:
             GLib.source_remove(self._apps_src)
             self._apps_src = 0
-        for attr in ("_notes_mon", "_badge_cfg_mon"):
+        for attr in ("_notes_mon", "_badge_cfg_mon", "_pages_mon"):
             if getattr(self, attr, None) is not None:
                 getattr(self, attr).cancel()
                 setattr(self, attr, None)
@@ -1407,7 +1411,15 @@ class Dock(Gtk.Box):
         f = self.folder(key)
         if f is not None:
             return sum(len(self.windows.get(k, ())) for k in f["apps"])
-        return len(self.windows.get(key, ()))
+        return len(self.windows.get(key, ())) + (key == LAUNCHPAD_KEY and self.launcher_open)
+
+    def set_launcher_open(self, on: bool) -> None:
+        """The Apps Menu opened or closed (Launchpad's process tells): the
+        dot under Launchpad's icon, as under an app with a window."""
+        self.launcher_open = bool(on)
+        tile = self.tiles.get(LAUNCHPAD_KEY)
+        if tile is not None:
+            tile.set_running(self.window_count(LAUNCHPAD_KEY))
 
     def in_folder(self, key) -> bool:
         return any(key in f.get("apps", ()) for f in (self.cfg.get("folders") or {}).values())
@@ -1988,7 +2000,8 @@ class Dock(Gtk.Box):
                 if name != tile.name:
                     tile.name = name
                     tile.label.set_text(name)
-        counts = {k: badges.title_count([t.title for t in wins]) for k, wins in groups.items()
+        pages = badges.page_titles()                                    # (Chromium web apps: their page's)
+        counts = {k: badges.title_count(badges.window_titles(wins, pages)) for k, wins in groups.items()
                   if any(badges.counted_title(t.app_id, k) for t in wins)}
         if badges_too or counts != self.title_counts:                   # (a title change is usually not a count's)
             self.title_counts = counts
@@ -2547,6 +2560,10 @@ class DockWindow(Gtk.ApplicationWindow):
         layer.layer_shell().set_monitor(self, monitor)
         self.shown_on = monitor
         self.set_visible(visible)
+
+    def set_launcher_open(self, on: bool) -> None:
+        if self.dock is not None:
+            self.dock.set_launcher_open(on)
 
     def set_above(self, on: bool) -> None:
         """Over Launchpad (OVERLAY) while it is open, TOP otherwise (fullscreen

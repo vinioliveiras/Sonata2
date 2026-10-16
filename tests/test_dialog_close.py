@@ -1,6 +1,7 @@
 """Vini: every Sonata dialog (alerts: Edit Web App, errors, confirmations)
 and the panels that are forms (Change Icon, Get Info, Resize...) have the
 windows' close dot, in their look and on their side; it closes like Escape.
+Not where a Cancel / Close / Quit button already closes them (Vini).
 xvfb-run -a python3 -m unittest tests.test_dialog_close"""
 import os
 import tempfile
@@ -47,7 +48,7 @@ class AlertCloseTest(unittest.TestCase):
 
     def _alert(self, answers, **kw):
         dlg = ui.dialog.alert("Edit Web App", "Changes show the next time it opens.",
-                              [("cancel", "Cancel", ""), ("create", "Save", "default")], answers.append, **kw)
+                              [("later", "Not Now", ""), ("create", "Save", "default")], answers.append, **kw)
         settle()
         return dlg, (dlg.get_root() or dlg)
 
@@ -60,7 +61,7 @@ class AlertCloseTest(unittest.TestCase):
         self.assertIn("has-close", dlg.get_css_classes())
         find(box, "tl-close").emit("clicked")
         settle(800)
-        self.assertEqual(answers, ["cancel"])                        # what Escape answers
+        self.assertEqual(answers, ["later"])                         # what Escape answers
         self.assertFalse(win.get_visible())
 
     def test_on_the_windows_side(self):
@@ -123,7 +124,7 @@ class PanelCloseTest(unittest.TestCase):
         self.assertIsNone(find(pop, "traffic-close-only"))
         win.destroy()
         answers = []
-        dlg = ui.dialog.alert("T", "b", [("cancel", "Cancel", "")], answers.append)
+        dlg = ui.dialog.alert("T", "b", [("ok", "OK", "")], answers.append)
         settle()
         ui.dialog._add_close(dlg)                                     # again: still one
         boxes, stack = [], [dlg]
@@ -138,6 +139,40 @@ class PanelCloseTest(unittest.TestCase):
         self.assertEqual(len(boxes), 1)
         ui.dialog._close(dlg)
         settle(600)
+
+    def test_none_next_to_cancel_or_quit(self):
+        """Vini: a close dot beside Cancel or Quit makes no sense."""
+        for responses in ([("cancel", "Cancel", ""), ("create", "Save", "default")],
+                          [("no", "Quit", ""), ("yes", "Keep Open", "default")],
+                          [("x", "Close", "")]):
+            dlg = ui.dialog.alert("T", "b", responses, lambda *_a: None)
+            settle()
+            self.assertIsNone(find(dlg.get_root() or dlg, "traffic-close-only"), responses)
+            self.assertNotIn("has-close", dlg.get_css_classes())
+            ui.dialog._close(dlg)
+            settle(600)
+        win = Gtk.Window()
+        anchor = Gtk.Button(label="x")
+        win.set_child(anchor)
+        win.present()
+        settle(200)
+        form = Gtk.Box()
+        form.append(Gtk.Button(label="Cancel"))
+        form.append(Gtk.Button(label="Resize"))
+        self.assertIsNone(find(ui.panel.popup(anchor, form, close=True), "traffic-close-only"))
+        win.destroy()
+
+    def test_dismiss_labels(self):
+        from sonata2 import i18n
+        try:
+            for lang in ("en", "pt_BR", "pt_PT"):
+                i18n.use(lang)
+                for t in (i18n._("Cancel"), i18n._("Quit") + "…", "_Close"):
+                    self.assertTrue(W.dismiss_label(t), (lang, t))
+                for t in ("Save", "OK", "", None, i18n._("Delete")):
+                    self.assertFalse(W.dismiss_label(t), (lang, t))
+        finally:
+            i18n.use(None)
 
     def test_forms_ask_for_it(self):
         import re

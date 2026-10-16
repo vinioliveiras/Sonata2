@@ -641,8 +641,11 @@ def run_chromium(app: str) -> int:
             os.write(to_w, data)
         except OSError:
             pass
+    from .. import badges
+    wm = window_class(app, get(app))
+    # its page's title for the Dock's count (Chrome titles the window with the site's name)
     guard = Guard(get(app).get("url", ""), write, log=lambda m: print(f"sonata2 webapp {app}: {m}", flush=True),
-                  name=get(app).get("name", ""))
+                  name=get(app).get("name", ""), on_title=lambda t: badges.publish_page_title(wm, t))
 
     def readable(fd, _cond):
         try:
@@ -656,7 +659,7 @@ def run_chromium(app: str) -> int:
     GLib.io_add_watch(from_r, GLib.PRIORITY_DEFAULT, GLib.IOCondition.IN | GLib.IOCondition.HUP, readable)
     from .. import winsize
     loop = GLib.MainLoop()
-    wm, last = window_class(app, get(app)), {"size": None}
+    last = {"size": None}
 
     def poll() -> bool:
         """Its window's size, kept while it's open (saved once it's gone:
@@ -674,6 +677,7 @@ def run_chromium(app: str) -> int:
 
     def gone(*_a):
         GLib.source_remove(src)
+        badges.publish_page_title(wm, None)
         if last["size"]:
             winsize.save(size_key(app), *last["size"])
         loop.quit()

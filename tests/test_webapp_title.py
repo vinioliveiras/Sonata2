@@ -3,6 +3,8 @@ Chrome's stand-in for a page without a title) while a tab of it read
 "WhatsApp": the page's title is set again through DevTools' pipe, the web
 app's name when it has none. python3 -m unittest tests.test_webapp_title"""
 import json
+import os
+import types
 import unittest
 
 from sonata2.webapps.chromeguard import Guard, is_address
@@ -62,6 +64,46 @@ class TitleTest(unittest.TestCase):
         for t in ("WhatsApp", "(2) WhatsApp", "whatsapp"):
             self.assertFalse(is_address(t, URL), t)
         self.assertTrue(is_address("instagram.com", "https://www.instagram.com/"))
+
+
+class PageTitleCountTest(unittest.TestCase):
+    """Vini: WhatsApp's count never showed -- Chrome titles its window
+    "web.whatsapp.com"; the page's own title ("(3) WhatsApp") comes over
+    DevTools' pipe, is published, and the Dock counts it."""
+
+    def setUp(self):
+        import tempfile
+        self.path = os.path.join(tempfile.mkdtemp(), "titles.json")
+
+    def test_published_and_counted(self):
+        from sonata2 import badges
+        wm = "chrome-web.whatsapp.com__-Default"
+        badges.publish_page_title(wm, "(3) WhatsApp", self.path)
+        badges.publish_page_title("chrome-other__-Default", "Other", self.path)
+        pages = badges.page_titles(self.path)
+        win = types.SimpleNamespace(app_id=wm, title="web.whatsapp.com")
+        self.assertEqual(badges.window_titles([win], pages), ["(3) WhatsApp"])
+        self.assertEqual(badges.title_count(badges.window_titles([win], pages)), 3)
+        plain = types.SimpleNamespace(app_id="org.gnome.App", title="(1) draft")
+        self.assertEqual(badges.window_titles([plain], pages), ["(1) draft"])      # its own title
+        badges.publish_page_title(wm, None, self.path)                         # its window gone
+        self.assertNotIn(wm, badges.page_titles(self.path))
+        self.assertIn("chrome-other__-Default", badges.page_titles(self.path))
+
+    def test_guard_reports_the_page_title(self):
+        got = []
+        g = Guard(URL, lambda _b: None, open_outside=lambda u: None, on_title=got.append)
+        g.feed(json.dumps(info("A", URL, "WhatsApp", "Target.targetCreated")).encode() + b"\0")
+        g.feed(json.dumps(info("A", URL, "(2) WhatsApp")).encode() + b"\0")
+        g.feed(json.dumps(info("B", "https://x.org/", "(9) X")).encode() + b"\0")    # another page: no
+        self.assertEqual(got, ["WhatsApp", "(2) WhatsApp"])
+
+    def test_dock_follows_the_file(self):
+        import inspect
+        from sonata2.shell import dock
+        src = inspect.getsource(dock.Dock)
+        self.assertIn("badges.watch(lambda: self._sync_titles(self.windows), badges.PAGE_TITLES)", src)
+        self.assertIn("badges.window_titles(wins, pages)", src)
 
 
 if __name__ == "__main__":

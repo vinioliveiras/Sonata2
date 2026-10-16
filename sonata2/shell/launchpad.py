@@ -375,6 +375,8 @@ class Launchpad(Gtk.ApplicationWindow):
         press.connect("pressed", lambda *_a: self._overlay and GLib.timeout_add(20, lambda: (
             self.get_visible() and self._dock_above(True), False)[1]))
         self.add_controller(press)
+        # hidden any other way (style changed, the panel gone): the dot goes too
+        self.connect("notify::visible", lambda *_a: self.get_visible() or self._dock_dot(False))
         self.render()
 
     # -- geometry / rendering ----------------------------------------------------
@@ -679,16 +681,28 @@ class Launchpad(Gtk.ApplicationWindow):
         self._set_mode("menu")
         self._check_apps()
         self.menu.open()
+        self._dock_dot(True)
 
     def _dock_above(self, on: bool) -> None:
         """Ask the Dock (its own process) to sit above Launchpad."""
+        self._tell_dock("above", on)
+
+    def _dock_dot(self, on: bool) -> None:
+        """The Apps Menu open or closed: the Dock's dot under Launchpad's icon
+        (Vini: like an open app's). Only on a change."""
+        on = bool(on)
+        if getattr(self, "_dot_on", False) != on:
+            self._dot_on = on
+            self._tell_dock("launcher-open", on)
+
+    def _tell_dock(self, action: str, on: bool) -> None:
         try:
             bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         except GLib.Error:
             return
         app_id = "io.github.vinioliveiras.sonata2.dock"
         bus.call(app_id, "/" + app_id.replace(".", "/"), "org.freedesktop.Application", "ActivateAction",
-                 GLib.Variant("(sava{sv})", ("above", [GLib.Variant("b", on)], {})), None,
+                 GLib.Variant("(sava{sv})", (action, [GLib.Variant("b", on)], {})), None,
                  Gio.DBusCallFlags.NONE, 1000, None, None)
 
     def _check_apps(self) -> None:
@@ -767,6 +781,7 @@ class Launchpad(Gtk.ApplicationWindow):
         if self.mode == "menu" and self.menu is not None:
             self._close_folder()
             self.set_jiggle(False)
+            self._dock_dot(False)                # (off as it starts going)
             self.menu.close(then)
             return
         self._dock_above(False)

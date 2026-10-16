@@ -24,9 +24,10 @@ KEEP_SCHEMES = ("devtools:", "chrome-extension:")
 class Guard:
     TITLE_TRIES = 3                        # per page loaded (never a loop with the page)
 
-    def __init__(self, app_url: str, write, open_outside=None, log=None, name: str = ""):
+    def __init__(self, app_url: str, write, open_outside=None, log=None, name: str = "", on_title=None):
         self.app_url = app_url
         self.name = name
+        self.on_title = on_title           # on_title(title): the app's page's (badges.py)
         self.write = write
         self.open_outside = open_outside or _open_default
         self.log = log or (lambda _m: None)
@@ -74,6 +75,8 @@ class Guard:
         if self.main is None:
             self.main = tid                # the --app window's page
         if tid == self.main:
+            if self.on_title and isinstance(info.get("title"), str):
+                self.on_title(info["title"])
             self._check_title(info)
             return
         if tid in self.handled:

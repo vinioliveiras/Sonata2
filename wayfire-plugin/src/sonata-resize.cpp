@@ -62,6 +62,9 @@
 #include <algorithm>
 #include <chrono>
 #include <vector>
+#ifdef SONATA_GLASS
+    #include <wayfire/plugins/blur/blur.hpp>
+#endif
 
 /* -- the window's background while it is resized without its contents --------------- */
 namespace
@@ -89,6 +92,7 @@ uniform float radius;
 uniform vec4 fill;
 uniform vec4 border;
 uniform float alpha;
+uniform float shade;
 float sdf(vec2 p) {
     vec2 h = rect.zw * 0.5;
     vec2 d = abs(p - (rect.xy + h)) - (h - vec2(radius));
@@ -99,7 +103,7 @@ void main() {
     float inside = clamp(0.5 - d, 0.0, 1.0);
     float ring = clamp(1.0 - abs(d + 0.5), 0.0, 1.0) * inside;
     float ds = max(sdf(pos - vec2(0.0, 1.0)), 0.0);              /* almost none, like the windows' */
-    float shadow = 0.14 * exp(-pow(ds / 4.0, 2.0)) * (1.0 - inside);
+    float shadow = shade * 0.14 * exp(-pow(ds / 4.0, 2.0)) * (1.0 - inside);
     vec4 c = vec4(0.0, 0.0, 0.0, shadow);
     vec4 f = vec4(fill.rgb * fill.a, fill.a) * inside;
     c = f + c * (1.0 - f.a);
@@ -124,40 +128,184 @@ class ghost_node_t : public wf::scene::node_t
       public:
         using simple_render_instance_t::simple_render_instance_t;
 
-        void render(const wf::scene::render_instruction_t& data) override
+        /* Draws the panel (fill, hairline; shade: its shadow) over `box` into
+         * whatever is bound, clipped to `damage` when given. */
+        void draw(const wf::render_target_t& target, wf::geometry_t box, const wf::regionf_t *damage,
+            glm::vec4 fill, glm::vec4 border, float shade, float alpha)
         {
-            auto box = self->get_bounding_box();
-            auto r   = self->rect;
+            auto r = self->rect;
             const float x1 = box.x, y1 = box.y, x2 = box.x + box.width, y2 = box.y + box.height;
             const float verts[] = {x1, y2, x2, y2, x2, y1, x1, y1};
             auto prog = wf::get_core().get_data<ghost_program_t>();
-            data.pass->custom_gles_subpass(data.target, [&]
+            if (!prog->program.get_program_id(wf::TEXTURE_TYPE_RGBA))
             {
-                if (!prog->program.get_program_id(wf::TEXTURE_TYPE_RGBA))
-                {
-                    prog->program.compile(GHOST_VS, GHOST_FS);
-                }
+                prog->program.compile(GHOST_VS, GHOST_FS);
+            }
 
-                prog->program.use(wf::TEXTURE_TYPE_RGBA);
-                prog->program.uniformMatrix4f("mvp", wf::gles::render_target_orthographic_projection(data.target));
-                prog->program.uniform4f("rect", glm::vec4{r.x, r.y, r.width, r.height});
-                prog->program.uniform1f("radius", self->radius);
-                prog->program.uniform4f("fill", glm::vec4{self->fill.r, self->fill.g, self->fill.b, self->fill.a});
-                prog->program.uniform4f("border",
-                    glm::vec4{self->border.r, self->border.g, self->border.b, self->border.a});
-                prog->program.uniform1f("alpha", self->alpha);
-                prog->program.attrib_pointer("position", 2, 0, verts);
-                wf::gles::bind_render_buffer(data.target);
-                GL_CALL(glEnable(GL_BLEND));
-                GL_CALL(glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA));
-                for (const auto& b : data.damage)
+            prog->program.use(wf::TEXTURE_TYPE_RGBA);
+            prog->program.uniformMatrix4f("mvp", wf::gles::render_target_orthographic_projection(target));
+            prog->program.uniform4f("rect", glm::vec4{r.x, r.y, r.width, r.height});
+            prog->program.uniform1f("radius", self->radius);
+            prog->program.uniform4f("fill", fill);
+            prog->program.uniform4f("border", border);
+            prog->program.uniform1f("alpha", alpha);
+            prog->program.uniform1f("shade", shade);
+            prog->program.attrib_pointer("position", 2, 0, verts);
+            wf::gles::bind_render_buffer(target);
+            GL_CALL(glEnable(GL_BLEND));
+            GL_CALL(glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA));
+            if (damage)
+            {
+                for (const auto& b : *damage)
                 {
-                    wf::gles::render_target_logic_scissor(data.target, b);
+                    wf::gles::render_target_logic_scissor(target, b);
                     GL_CALL(glDrawArrays(GL_TRIANGLE_FAN, 0, 4));
                 }
+            } else
+            {
+                GL_CALL(glDisable(GL_SCISSOR_TEST));
+                GL_CALL(glDrawArrays(GL_TRIANGLE_FAN, 0, 4));
+            }
 
-                GL_CALL(glDisable(GL_BLEND));
-                prog->program.deactivate();
+            GL_CALL(glDisable(GL_BLEND));
+            prog->program.deactivate();
+        }
+
+        glm::vec4 fill() const
+        {
+            return {self->fill.r, self->fill.g, self->fill.b, self->fill.a};
+        }
+
+        glm::vec4 border() const
+        {
+            return {self->border.r, self->border.g, self->border.b, self->border.a};
+        }
+
+#ifdef SONATA_GLASS
+        /* Glass (Vini: the resize panel frosted like the windows): the
+         * background behind the panel blurred with Wayfire's own blur (its
+         * method and strength: Settings > Appearance), the panel's
+         * see-through colour over it. As the blur plugin does, the damage is
+         * padded (blurring samples around it) and the padding's old pixels
+         * are put back afterwards. */
+        std::unique_ptr<wf_blur_base> blur;
+        bool blur_failed = false;
+        wf::auxilliary_buffer_t saved, panel;
+        wf::region_t saved_region;
+        bool glass_frame = false;
+
+        wf_blur_base *provider()
+        {
+            if (!blur && !blur_failed)
+            {
+                try {
+                    auto method = wf::get_core().config->get_option("blur/method");
+                    blur = create_blur_from_name(method ? method->get_value_str() : "kawase");
+                } catch (...)
+                {
+                    blur = nullptr;
+                }
+
+                blur_failed = !blur;
+            }
+
+            return blur.get();
+        }
+
+        void schedule_instructions(std::vector<wf::scene::render_instruction_t>& instructions,
+            const wf::render_target_t& target, wf::regionf_t& damage) override
+        {
+            glass_frame = false;
+            auto bbox = self->get_bounding_box();
+            wf::regionf_t panel_damage = damage & wf::regionf_t{wf::region_t{self->rect}};
+            if (!self->glass() || panel_damage.empty() || !provider())
+            {
+                simple_render_instance_t::schedule_instructions(instructions, target, damage);
+                return;
+            }
+
+            float scale = target.scale;
+            if (target.subbuffer)
+            {
+                scale *= std::max(1.0 * target.subbuffer->width / target.geometry.width,
+                    1.0 * target.subbuffer->height / target.geometry.height);
+            }
+
+            const int padding = std::ceil(blur->calculate_blur_radius() / scale);
+            wf::regionf_t padded = panel_damage;
+            padded.expand_edges(padding);
+            padded &= wf::regionf_t{wf::region_t{target.geometry}};
+            saved_region = target.framebuffer_region_from_geometry_region(padded) ^
+                target.framebuffer_region_from_geometry_region(damage);
+            wf::regionf_t repaint = (damage & bbox) | padded;
+            damage |= padded;                           // (what is below draws the padding again)
+            saved.allocate(target.get_size());
+            wf::gles::run_in_context_if_gles([&]
+            {
+                GLuint target_fb = wf::gles::ensure_render_buffer_fb_id(target);
+                wf::gles::bind_render_buffer(saved.get_renderbuffer());
+                GL_CALL(glBindFramebuffer(GL_READ_FRAMEBUFFER, target_fb));
+                for (const auto& b : saved_region)
+                {
+                    GL_CALL(glBlitFramebuffer(b.x1, b.y1, b.x2, b.y2, b.x1, b.y1, b.x2, b.y2,
+                        GL_COLOR_BUFFER_BIT, GL_LINEAR));
+                }
+            });
+            glass_frame = true;
+            instructions.push_back(wf::scene::render_instruction_t{
+                        .instance = this,
+                        .target   = target,
+                        .damage   = repaint,
+                    });
+        }
+
+#endif
+
+        void render(const wf::scene::render_instruction_t& data) override
+        {
+            auto box = self->get_bounding_box();
+            data.pass->custom_gles_subpass(data.target, [&]
+            {
+#ifdef SONATA_GLASS
+                if (glass_frame && blur)
+                {
+                    glass_frame = false;
+                    auto r = self->rect;
+                    // the panel itself (rounded, its see-through colour and hairline), no shadow
+                    float s = data.target.scale;
+                    panel.allocate({std::max(1, (int)std::ceil(r.width * s)),
+                        std::max(1, (int)std::ceil(r.height * s))}, s);
+                    wf::render_target_t pt{panel};
+                    pt.geometry = r;
+                    pt.scale    = s;
+                    wf::gles::bind_render_buffer(pt);
+                    GL_CALL(glDisable(GL_SCISSOR_TEST));
+                    GL_CALL(glClearColor(0, 0, 0, 0));
+                    GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
+                    draw(pt, r, nullptr, fill(), border(), 0.0, self->alpha);
+                    wf::regionf_t inside = data.damage & wf::regionf_t{wf::region_t{r}};
+                    blur->prepare_blur(data.target, inside);
+                    blur->render(wf::gles_texture_t::from_aux(panel), r, inside, data.target, data.target);
+                    // its shadow around it
+                    draw(data.target, box, &data.damage, glm::vec4{0, 0, 0, 0}, glm::vec4{0, 0, 0, 0},
+                        1.0, self->alpha);
+                    // the padding's old pixels back (blurring left artifacts there)
+                    GL_CALL(glDisable(GL_SCISSOR_TEST));
+                    GLuint saved_fb = wf::gles::ensure_render_buffer_fb_id(saved.get_renderbuffer());
+                    wf::gles::bind_render_buffer(data.target);
+                    GL_CALL(glBindFramebuffer(GL_READ_FRAMEBUFFER, saved_fb));
+                    for (const auto& b : saved_region)
+                    {
+                        GL_CALL(glBlitFramebuffer(b.x1, b.y1, b.x2, b.y2, b.x1, b.y1, b.x2, b.y2,
+                            GL_COLOR_BUFFER_BIT, GL_LINEAR));
+                    }
+
+                    saved_region.clear();
+                    return;
+                }
+
+#endif
+                draw(data.target, box, &data.damage, fill(), border(), 1.0, self->alpha);
             });
         }
     };
@@ -171,6 +319,17 @@ class ghost_node_t : public wf::scene::node_t
 
     ghost_node_t() : node_t(false)
     {}
+
+    /* Frosted when its colour is see-through (Settings > Appearance: the
+     * windows' glass on; Sonata sets the colour) and Wayfire's blur is there. */
+    bool glass() const
+    {
+#ifdef SONATA_GLASS
+        return fill.a < 0.999;
+#else
+        return false;
+#endif
+    }
 
     void gen_render_instances(std::vector<wf::scene::render_instance_uptr>& instances,
         wf::scene::damage_callback push_damage, wf::output_t *output) override

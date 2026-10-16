@@ -66,8 +66,9 @@ def popup(anchor: Gtk.Widget, child: Gtk.Widget, position=Gtk.PositionType.BOTTO
     if width:
         from .fixed import FixedWidth
         child = FixedWidth(child, width)
-    from .window import has_window_buttons
-    if close and not has_window_buttons(child):  # (one of its own already: none added)
+    from .window import has_dismiss_button, has_window_buttons
+    # (one of its own already, or a Cancel / Close / Quit button: none added -- Vini)
+    if close and not has_window_buttons(child) and not has_dismiss_button(child):
         from .window import close_button
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col.append(close_button(pop.popdown))

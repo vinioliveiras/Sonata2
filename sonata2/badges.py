@@ -21,6 +21,14 @@ $XDG_RUNTIME_DIR/sonata2-notes.json; the Dock follows it:
 
 A Sonata web app on Chromium notifies as "Google Chrome": webapp_of(argv)
 finds it by the sending process's own profile (notifications.py).
+
+Its window's title is no help there either: Chrome names an --app window
+after the site ("web.whatsapp.com", Vini: WhatsApp's count never showed).
+The web app's own process reads the page's title over DevTools' pipe and
+publishes it here (page_title); the Dock counts that one.
+
+    publish_page_title(window_class, title)   # the web app's process
+    page_titles() -> {window_class: title}    # the Dock
 """
 import json
 import os
@@ -29,6 +37,8 @@ import re
 from gi.repository import Gio
 
 STATE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "sonata2-notes.json")
+PAGE_TITLES = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "sonata2-webapp-titles.json")
+_page_cache = {"mtime": None, "value": {}}
 TITLE_COUNT = re.compile(r"^\s*[(\[](\d{1,5})\+?[)\]]\s")
 
 
@@ -68,6 +78,58 @@ def counted_title(app_id: str, key: str) -> bool:
     from . import webapps
     aid = (app_id or "").lower()
     return webapps.is_webapp(key) or aid.startswith(("chrome-", "chromium-", "brave-", "msedge-", "vivaldi-"))
+
+
+# -- web apps' page titles, between processes ------------------------------------------------
+def publish_page_title(window_class: str, title, path=None) -> None:
+    """The page's title of a web app (None: its window is gone)."""
+    path = path or PAGE_TITLES
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            data = {}
+    except (OSError, ValueError):
+        data = {}
+    if title is None:
+        if window_class not in data:
+            return
+        data.pop(window_class, None)
+    elif data.get(window_class) == title:
+        return
+    else:
+        data[window_class] = title
+    tmp = f"{path}.{os.getpid()}.new"               # (several web apps write it)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def page_titles(path=None) -> dict:
+    path = path or PAGE_TITLES
+    try:
+        mtime = os.stat(path).st_mtime_ns
+    except OSError:
+        return {}
+    if _page_cache["mtime"] != (path, mtime):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            value = {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
+        except (OSError, ValueError, AttributeError):
+            value = {}
+        _page_cache.update(mtime=(path, mtime), value=value)
+    return _page_cache["value"]
+
+
+def window_titles(wins, pages: dict = None) -> list:
+    """The titles that count: a web app's page title where its window's is
+    only the site's name."""
+    pages = page_titles() if pages is None else pages
+    return [pages.get(getattr(t, "app_id", "") or "") or t.title for t in wins]
 
 
 # -- the notification list, between processes ----------------------------------------------

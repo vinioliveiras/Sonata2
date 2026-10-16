@@ -205,10 +205,39 @@ DEFAULT_SLOTS = (
 PROTECTED = ("io.github.vinioliveiras.sonata2.", "sonata2-")
 
 
+LOCALIZED_KEYS = ("Name", "GenericName", "Comment")
+
+
+def localize_desktop(text: str) -> str:
+    """A Sonata app's desktop entry with its Name / Comment in Sonata's
+    languages too ("Name[pt_BR]=Arquivos"), read from Sonata's catalogs:
+    the Dock, Apps, the menu bar and other desktops show the app's name in
+    the session's language (Vini: the names stayed English). A web app's
+    name is its own (X-Sonata-WebApp): left as it is."""
+    if "X-Sonata-WebApp=" in text:
+        return text
+    from . import i18n
+    cats = [(lang, i18n._load(lang)) for lang in i18n.SUPPORTED]
+    out = []
+    for line in text.split("\n"):
+        out.append(line)
+        key, eq, value = line.partition("=")
+        if eq and key in LOCALIZED_KEYS and value:
+            for lang, cat in cats:
+                got = cat.get(value)
+                if isinstance(got, list):
+                    got = got[0]
+                if isinstance(got, str) and got:
+                    out.append(f"{key}[{lang}]={got}")
+    return "\n".join(out)
+
+
 def write_desktop_file(filename: str, text: str) -> str:
-    """Write ~/.local/share/applications/<filename> (only when it changed)."""
+    """Write ~/.local/share/applications/<filename> (only when it changed),
+    its Name and Comment in Sonata's languages too (localize_desktop)."""
     import os
     from gi.repository import GLib
+    text = localize_desktop(text)
     path = os.path.join(GLib.get_user_data_dir(), "applications", filename)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     try:
@@ -421,11 +450,25 @@ def _match(app_id: str):
         did = webapps.desktop_id(app_id[len(webapps.APP_ID_PREFIX):])
         if lookup(did):
             return did
+    if app_id.startswith("chrome-"):                # one on Chromium: its window is named by the site
+        for wid, entry in webapps.apps().items():
+            if isinstance(entry, dict) and webapps.window_class(wid, entry) == app_id:
+                did = webapps.desktop_id(wid)
+                if lookup(did) or did + ".desktop" in scan():
+                    return did
     global _INDEX_AT
     if _INDEX is None:
         _INDEX, _INDEX_AT = _build_index(), time.monotonic()
     a = app_id.lower()
     found = _INDEX.get(a) or _INDEX.get(a.rsplit(".", 1)[-1])
+    if found is not None and not lookup(found):
+        # an entry gone since the index was built (Vini: a web app made again
+        # has a new id -- the menu bar named WhatsApp "Sonata2 Webapp W6bf...",
+        # the old entry's id): built again now
+        _INDEX, _INDEX_AT = _build_index(), time.monotonic()
+        found = _INDEX.get(a) or _INDEX.get(a.rsplit(".", 1)[-1])
+        if found is not None and not lookup(found):
+            found = None
     if found is None and time.monotonic() - _INDEX_AT > INDEX_RETRY_S:
         # an app installed since the index was built (Vini: a new web app's
         # window had no icon or name in the Dock): built again, once in a while

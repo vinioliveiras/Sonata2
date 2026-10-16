@@ -281,8 +281,13 @@ def apply_colors(dark: bool) -> None:
         trafficlights.apply_wayfire(bool(dark))
     except Exception as e:
         print(f"sonata2: button colours (Wayfire): {e}")
-    # the window's background while it's resized without its contents (sonata-resize)
-    system.wayfire_set("sonata-resize", "fill", "\\" + tokens.wayfire_color(t["window_bg"]))
+    # the window's background while it's resized without its contents (sonata-resize):
+    # the windows' glass when it is on (Vini: frosted like the rest -- its colour,
+    # transparency and the blur's strength from Settings > Appearance), else solid
+    from .ui import theme
+    see_through = gcfg["windows"]["on"] and not theme.reduce_transparency_now()
+    resize_fill = G.material("windows", t, see_through, gcfg) if see_through else t["window_bg"]
+    system.wayfire_set("sonata-resize", "fill", "\\" + tokens.wayfire_color(resize_fill))
     system.wayfire_set("sonata-resize", "border", "\\" + tokens.wayfire_color(t["window_outline"]))
     fg, bg, text, dim = (tokens.wayfire_color(t[k], premultiplied=True) for k in keys)
     for k, v in (("fg_color", fg), ("bg_color", bg), ("fg_text_color", text), ("bg_text_color", dim)):
