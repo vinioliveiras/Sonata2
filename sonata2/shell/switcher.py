@@ -1,6 +1,6 @@
-"""App switcher (macOS Cmd+Tab): Super+Tab shows the open apps, most
+"""App switcher (macOS Cmd+Tab): Alt+Tab shows the open apps, most
 recently used first, as big icons on a glass panel in the middle of the
-screen; Tab / Shift+Tab (or the arrows) move, releasing Super switches to
+screen; Tab / Shift+Tab (or the arrows) move, releasing Alt switches to
 the app (all its windows come forward, minimized ones restored), Q quits
 it, Escape cancels. An app with several windows has one icon per window
 (Vini, like Windows), side by side, the window's title under the selected
@@ -165,7 +165,7 @@ class Switcher(Gtk.Window):
             LS.set_keyboard_mode(self, LS.KeyboardMode.EXCLUSIVE)
             LS.set_exclusive_zone(self, -1)
 
-    # -- driven by the Super+Tab binding ----------------------------------------------------
+    # -- driven by the Alt+Tab binding ----------------------------------------------------
     def step(self, direction: int) -> None:
         if not self.get_visible() or self.panel.has_css_class("closing"):
             self._open()

@@ -7,7 +7,10 @@ windows, the app's title in a pill under the one under the pointer. This
 module, run by the menu bar's services, puts the blurred, darkened
 wallpaper behind them: a layer surface on the bottom layer of the display
 where scale is active, faded in and out with it. Wayfire IPC reports when
-scale starts and stops ("plugin-activation-state-changed")."""
+scale starts and stops ("plugin-activation-state-changed").
+
+With scale (not expo) the desktops bar comes too (spaces.py): the desktops
+in a row at the top, + for a new one."""
 import time
 
 import gi
@@ -48,12 +51,21 @@ class MissionBackdrop:
         self.ipc = WayfireIPC()
         self._textures = {}           # dark? -> decoded wallpaper (only the current one; until system.json changes)
         self._prefs_mon = None
+        self.bars = {}                # connector -> spaces.SpacesBar
         if layer.layer_shell() and self.ipc.available:
-            self.ipc.watch(["plugin-activation-state-changed"], self._event)
+            self.ipc.watch(["plugin-activation-state-changed", "wset-workspace-changed", "view-mapped",
+                            "view-unmapped", "view-workspace-changed"], self._event)
 
     def _event(self, ev):
+        if ev.get("event") != "plugin-activation-state-changed":
+            for bar in self.bars.values():          # the desktops changed while the bar shows
+                if bar.get_visible():
+                    bar._refresh_soon()
+            return
         if ev.get("plugin") not in PLUGINS:
             return
+        if ev["plugin"] == "scale":
+            self._spaces((ev.get("output-data") or {}).get("name", ""), bool(ev.get("state")))
         name = (ev.get("output-data") or {}).get("name", "")
         key = (ev["plugin"], name)
         if ev.get("state"):
@@ -100,6 +112,22 @@ class MissionBackdrop:
             win.present()
             layer.set_input_region(win, [])
         self._fade(win, 1.0)
+
+    def _spaces(self, name, on: bool) -> None:
+        """The desktops bar with scale (Mission Control), on that display."""
+        bar = self.bars.get(name)
+        if not on:
+            if bar is not None:
+                bar.set_visible(False)
+            return
+        if bar is None:
+            mon = next((m for m in monitors._list() if monitors.connector(m) == name), None)
+            if mon is None:
+                return
+            from .spaces import SpacesBar
+            bar = self.bars[name] = SpacesBar(self.app, mon, name, self._wallpaper())
+        bar.wallpaper = self._wallpaper()
+        bar.show_bar()
 
     def _wallpaper(self):
         """The wallpaper texture, decoded once per Light/Dark picture (not

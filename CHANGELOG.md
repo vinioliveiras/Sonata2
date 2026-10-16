@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Changes
+- Super+Tab is Mission Control (Windows' Task View): every window laid out,
+  and desktops as on Windows -- their names at the top as in macOS Ventura,
+  the current one in a glass pill, each one's picture (wallpaper, its apps'
+  icons) while the pointer is over the bar. + (top right) adds a desktop,
+  x on a picture closes one (its windows go to the desktop before it), a
+  click goes there. Alt+Tab stays the app switcher; a wayfire.ini kept
+  from before is moved over at login.
 - Alt+Tab: an app with several windows has one icon per window, side by
   side, the window's title under the selected one; picking one brings that
   window alone forward. One press still goes to the previous app.

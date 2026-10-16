@@ -121,5 +121,8 @@
  "Yellow": "Amarelo",
  "You're All Set": "Tudo Pronto",
  "Your system has run out of application memory.": "Seu sistema está sem memória para aplicativos.",
- "{tool} is not installed": "O {tool} não está instalado"
+ "{tool} is not installed": "O {tool} não está instalado",
+ "Desktop {n}": "Mesa {n}",
+ "New Desktop": "Nova Mesa",
+ "Close Desktop": "Fechar Mesa"
 }
