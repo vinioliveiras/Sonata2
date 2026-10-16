@@ -973,8 +973,10 @@ class Dock(Gtk.Box):
         self.refresh_badges()
 
     def badge_text(self, key: str, note_counts: dict) -> str:
-        """The app's own count, else its web page's, else its unseen notifications
-        -- none when badges are off (Settings > Notifications)."""
+        """The app's own count, else its web page's, else its notifications
+        still in Notification Center (not read there yet: bringing the app
+        to the front no longer counts as read -- Vini) -- none when badges
+        are off (Settings > Notifications)."""
         tile = self.tiles.get(key)
         if not badges.allowed(getattr(self, "_badge_cfg", {}), key, tile.name if tile else ""):
             return ""
@@ -990,15 +992,10 @@ class Dock(Gtk.Box):
         if server != _SEEN["server"]:                 # another menu bar: its ids start again
             _SEEN["server"], _SEEN["ids"] = server, {}
         names = {k: t.name for k, t in self.tiles.items()}
-        for key in self._front_keys():                # in front now: what it showed is seen
-            _SEEN["ids"][key] = max(_SEEN["ids"].get(key, 0), badges.newest(notes, names, key))
         counts = badges.note_counts(notes, names, _SEEN["ids"])
         for key, tile in self.tiles.items():
             if hasattr(tile.icon, "set_badge"):
                 tile.icon.set_badge(self.badge_text(key, counts))
-
-    def _front_keys(self) -> list:
-        return [k for k, wins in getattr(self, "windows", {}).items() if any(t.activated for t in wins)]
 
     def all_tiles(self) -> list:
         return self.app_tiles() + self.stacks.tiles() + [self.trash]

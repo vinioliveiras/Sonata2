@@ -190,16 +190,19 @@ class DockTest(unittest.TestCase):
         B.publish([N.Note(i, "WhatsApp", "", "s", "b", [], WEB) for i in ids], 1, self.state)
         self.dock._notes_changed()
 
-    def test_notifications_count_until_app_in_front(self):
+    def test_notifications_count_until_read(self):
+        """Vini: the count cleared as the app came to the front, unread. It
+        now counts what is still in Notification Center: read there (clicked,
+        dismissed), it goes down."""
         self.notes(1, 2)
         self.assertEqual(self.tile.icon.badge, "2")
-        win = mock.Mock(activated=True)
-        self.dock.windows = {WEB: [win]}
-        self.dock.refresh_badges()                       # WhatsApp in front: seen
+        self.dock.windows = {WEB: [mock.Mock(activated=True)]}
+        self.dock.refresh_badges()                       # WhatsApp in front: still unread
+        self.assertEqual(self.tile.icon.badge, "2")
+        self.notes(2, 3)                                 # 1 read in Notification Center, 3 came
+        self.assertEqual(self.tile.icon.badge, "2")
+        self.notes()
         self.assertEqual(self.tile.icon.badge, "")
-        self.dock.windows = {WEB: [mock.Mock(activated=False)]}
-        self.notes(1, 2, 3)
-        self.assertEqual(self.tile.icon.badge, "1")
 
     def test_title_count_wins_over_notifications(self):
         self.notes(1, 2)

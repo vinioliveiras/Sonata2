@@ -440,8 +440,16 @@ class Notifications:
         return nid
 
     def close(self, nid: int, reason: int = 2) -> None:
-        """reason: 1 expired, 2 dismissed, 3 closed by the app."""
+        """reason: 1 expired, 2 dismissed, 3 closed by the app. A web app
+        taking its notification back (WhatsApp does as its window is
+        focused) only hides the banner: it stays in Notification Center
+        until it is read there -- clicked or dismissed (Vini)."""
         self._hide_banner(nid)
+        if reason == 3 and self._kept_when_withdrawn(nid):
+            if self._conn:                        # (the app forgets it; ours stays)
+                self._conn.emit_signal(None, "/org/freedesktop/Notifications", "org.freedesktop.Notifications",
+                                       "NotificationClosed", GLib.Variant("(uu)", (nid, reason)))
+            return
         before = len(self.notes)
         self.notes = [n for n in self.notes if n.id != nid]
         if len(self.notes) != before:
@@ -449,6 +457,11 @@ class Notifications:
         if self._conn:
             self._conn.emit_signal(None, "/org/freedesktop/Notifications", "org.freedesktop.Notifications",
                                    "NotificationClosed", GLib.Variant("(uu)", (nid, reason)))
+
+    def _kept_when_withdrawn(self, nid: int) -> bool:
+        from .. import webapps
+        n = next((x for x in self.notes if x.id == nid), None)
+        return n is not None and bool(n.desktop) and webapps.is_webapp(n.desktop)
 
     def invoke(self, n: Note, key: str = "default") -> None:
         has_default = any(k == "default" for k, _l in n.actions)

@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Changes
+- Notifications stay unread until read: bringing an app to the front no
+  longer clears its Dock count, and a web app (WhatsApp) taking its
+  notifications back as its window is focused only hides the banners --
+  they stay in Notification Center until clicked or dismissed. The app's
+  own count (LauncherEntry, the page's "(3)" title) still comes first.
 - The Sonata menu's logo (top left) is drawn anew with the other menu bar
   icons (an app window gone, its menu closed, Light/Dark, a new display
   scale): it could go blank.
