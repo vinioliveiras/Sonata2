@@ -1,0 +1,9 @@
+// Sonata: the password once per update (install.sh puts this in /etc/polkit-1/rules.d).
+// pkexec pacman -- Settings > Software Update, and the AUR helper's every step -- keeps the
+// administrator's "yes" for a few minutes, for that caller only, at their own active session.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.policykit.exec" &&
+        (action.lookup("program") == "/usr/bin/pacman" || action.lookup("program") == "/usr/sbin/pacman") &&
+        subject.local && subject.active && (subject.isInGroup("wheel") || subject.isInGroup("sudo")))
+        return polkit.Result.AUTH_ADMIN_KEEP;
+});

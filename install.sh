@@ -23,7 +23,8 @@
 #   ./install.sh --mount-without-password
 #                             let administrators mount system disks and unlock
 #                             system LUKS without a password (a polkit rule;
-#                             otherwise asked, default No; --yes never adds it)
+#                             otherwise asked once, default No, the answer
+#                             remembered; --yes never adds it)
 #   ./install.sh --no-mount-without-password  remove that rule again
 #   ./install.sh --no-firewall  don't turn the firewall on (otherwise on the
 #                             first install: ufw, nothing comes in unasked;
@@ -109,7 +110,8 @@ if [ "$UNINSTALL" = 1 ]; then
           "$HOME/.local/share/applications/sonata2-settings.desktop" \
           "$HOME/.local/share/applications/sonata2-screenshot.desktop"
     "$(dirname "$0")/tools/quiet-console.sh" revert || true
-    sudo rm -f /etc/polkit-1/rules.d/50-sonata2-mount.rules 2>/dev/null || true
+    sudo rm -f /etc/polkit-1/rules.d/50-sonata2-mount.rules /etc/polkit-1/rules.d/60-sonata2-updates.rules \
+        2>/dev/null || true
     rm -rf "$HOME/.local/opt/sonata-wayfire"
     say "Done. Your settings are still in $CFG/sonata2 (delete that folder to reset them)."
     exit 0
@@ -538,17 +540,33 @@ rule='polkit.addRule(function(action, subject) {
         subject.local && subject.active && (subject.isInGroup("wheel") || subject.isInGroup("sudo")))
         return polkit.Result.YES;
 });'
+# Asked once (Vini: not at every install): a "No" is remembered like the rule itself remembers a "Yes".
+MOUNT_ASKED="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/.mount-rule-asked"
 if [ "$MOUNTRULE" = 0 ]; then
     sudo rm -f "$MOUNT_RULES" 2>/dev/null && echo "Disks: system disks ask for a password again."
 elif [ -f "$MOUNT_RULES" ] && [ "$MOUNTRULE" = ask ]; then
     echo "Disks: system disks mount without a password (--no-mount-without-password removes that)."
-elif [ "$MOUNTRULE" = 1 ] || ask_no "Mount system disks and unlock encrypted system disks without asking for a password (administrators only; lowers security)?"; then
+elif [ "$MOUNTRULE" = ask ] && [ -e "$MOUNT_ASKED" ]; then
+    echo "Disks: system disks ask for the administrator password (--mount-without-password to change)."
+elif [ "$MOUNTRULE" = 1 ] || { [ "$YES" != 1 ] && mkdir -p "$(dirname "$MOUNT_ASKED")" && touch "$MOUNT_ASKED";
+        ask_no "Mount system disks and unlock encrypted system disks without asking for a password (administrators only; lowers security)?"; }; then
     if [ -d /etc/polkit-1/rules.d ] || sudo mkdir -p /etc/polkit-1/rules.d 2>/dev/null; then
         printf '%s\n' "$rule" | sudo tee "$MOUNT_RULES" >/dev/null && \
             echo "Disks: mounted at login without a password (polkit rule 50-sonata2-mount)."
     fi
 else
     echo "Disks: system disks ask for the administrator password (--mount-without-password to change)."
+fi
+
+# -- updates: the password once per update, not at every package (Vini) --------------------------------
+# pkexec pacman (Settings > Software Update, and the AUR helper's every step) asked each time; this rule
+# keeps the administrator's "yes" for a few minutes, for that caller only (backend/updates.py).
+UPDATE_RULE=/etc/polkit-1/rules.d/60-sonata2-updates.rules
+if command -v pacman >/dev/null 2>&1 && ! cmp -s "$SRC/config/polkit/60-sonata2-updates.rules" "$UPDATE_RULE"; then
+    if [ -d /etc/polkit-1/rules.d ] || sudo mkdir -p /etc/polkit-1/rules.d 2>/dev/null; then
+        sudo install -m 644 "$SRC/config/polkit/60-sonata2-updates.rules" "$UPDATE_RULE" && \
+            echo "Updates: the password is asked once per update (polkit rule 60-sonata2-updates)."
+    fi
 fi
 
 # -- what Settings would otherwise ask to install: printing on, USB protection set up -------------------
