@@ -219,6 +219,16 @@ class SmallPreviewsTest(unittest.TestCase):
             pop._close(8)
         down.assert_called_once()                                                  # the last one: the preview goes
 
+    def test_close_button_on_the_left(self):
+        """Vini: the window's close button at the left (as macOS puts close)."""
+        from gi.repository import Gtk
+        P, pop, _restore, _t = self.popover(mock.Mock())
+        item = pop.items[7]
+        x = [w for w in (item.get_first_child(), item.get_last_child()) if w.has_css_class("shot-close")]
+        self.assertEqual(len(x), 1)
+        self.assertEqual(x[0].get_halign(), Gtk.Align.START)
+        self.assertEqual(x[0].get_valign(), Gtk.Align.START)
+
     def test_close_asks_wayfire(self):
         from sonata2.shell import dock_preview as P
         fake = mock.Mock()

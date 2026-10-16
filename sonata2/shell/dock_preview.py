@@ -42,7 +42,7 @@ popover.dock-preview > contents { background: %(panel_material)s; border-radius:
 .dock-preview picture.shot-pic { border-radius: 5px; box-shadow: 0 0 0 0.5px %(hairline)s, 0 1px 3px rgba(0,0,0,0.2); }
 .dock-preview label { color: %(label)s; font-family: %(font)s; font-size: %(text_small)s; margin-top: 3px; }
 .dock-preview .minimized picture.shot-pic { opacity: 0.6; }
-/* close a window from its preview (Vini), as on Windows' taskbar: under the pointer only */
+/* close a window from its preview (Vini): at its top left, as macOS puts close; under the pointer only */
 .dock-preview button.shot-close { min-width: 18px; min-height: 18px; padding: 0; margin: 2px; border-radius: 99px;
   background: %(menu_bg)s; color: %(label)s; border: none; opacity: 0;
   box-shadow: 0 0 0 0.5px %(hairline)s, %(shadow_control)s; transition: opacity %(t_fast)s; }
@@ -216,7 +216,7 @@ class PreviewPopover(Gtk.Popover):
             item.set_child(b)
             if close is not None:
                 x = Gtk.Button(icon_name="window-close-symbolic", css_classes=["shot-close"], can_focus=False,
-                               halign=Gtk.Align.END, valign=Gtk.Align.START, tooltip_text=_("Close Window"))
+                               halign=Gtk.Align.START, valign=Gtk.Align.START, tooltip_text=_("Close Window"))
                 x.connect("clicked", lambda _b, v=w["id"]: self._close(v))
                 item.add_overlay(x)
             self.box.append(item)

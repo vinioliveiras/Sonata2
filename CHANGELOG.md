@@ -12,6 +12,8 @@
   Wayfire: wayfire-scale-sonata-events.patch.)
 
 ### Fixes
+- The Dock's window previews: the x that closes a window is at its top left
+  (as macOS puts close).
 - The Dock's window previews show the windows: their pictures came back
   empty (transparent) on some GPUs. Sonata's Wayfire plugin now has them
   drawn and read by the renderer itself.
