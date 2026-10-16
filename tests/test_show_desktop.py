@@ -73,7 +73,7 @@ class ShowDesktopTest(unittest.TestCase):
         self.assertIn("toggle_showdesktop = none", ini)              # Wayfire's own off
         from sonata2 import shortcuts
         src = open(shortcuts.__file__).read()
-        self.assertIn('Shortcut("desktop", "Show Desktop", "Windows", "command", "binding_showdesktop")', src)
+        self.assertIn('Shortcut("desktop", N_("Show Desktop"), N_("Windows"), "command", "binding_showdesktop")', src)
         main = open(os.path.join(root, "sonata2", "__main__.py")).read()
         self.assertIn('Gio.SimpleAction.new("show-desktop", None)', main)
 

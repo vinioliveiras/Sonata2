@@ -3,6 +3,19 @@
 ## Unreleased
 
 ### Changes
+- Settings > Language & Region (as on a first install): the system's
+  language, and apart from it the region of its formats -- dates, times,
+  numbers, money, measures, paper -- with an example, and the first day of
+  the week (the Calendar's). The keyboard stays in Keyboard (Portuguese
+  (Brazil) with a Portugal keyboard, say). Set for the whole system
+  (localectl, the locale generated first when missing; one password) and
+  in effect at the next login.
+- Sonata in Portuguese: Brazil's and Portugal's, following the system's
+  language by itself (English otherwise). Strings that read differently
+  by place have their own words ("Zerar" on the stopwatch); a few
+  subtitles were shortened so the longer Portuguese fits.
+- Files: the Trash no longer shows an item of itself inside
+  ("Wastebasket", after opening and closing it).
 - The Copy window is as tall as its copies: shorter when one ends, and
   new for the next batch (it came back as tall as it once was). About This
   Computer opens at its content's height.

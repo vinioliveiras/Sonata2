@@ -32,7 +32,7 @@ class ClockSwitchesTest(unittest.TestCase):
         import inspect
         from sonata2.settings import app
         src = inspect.getsource(app.Settings._page_datetime)
-        self.assertIn('switch_row("Show the date", T.shows_date(fmt)', src)
+        self.assertIn('switch_row(_("Show the date"), T.shows_date(fmt)', src)
         self.assertNotIn('"%d" in', src)
 
 

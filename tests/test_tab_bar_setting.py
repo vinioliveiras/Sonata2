@@ -54,7 +54,7 @@ class TabBarSettingTest(unittest.TestCase):
     def test_settings_switch(self):
         from sonata2.settings import app
         src = inspect.getsource(app)
-        self.assertIn('switch_row("Always show the tab bar"', src)
+        self.assertIn('switch_row(_("Always show the tab bar")', src)
         self.assertIn('"always_show_tabs")', src)                 # reset with the rest of Appearance
 
 

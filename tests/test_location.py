@@ -79,7 +79,7 @@ class LocationTest(unittest.TestCase):
 
     def test_settings_has_location_services(self):
         src = open(os.path.join(os.path.dirname(__file__), "..", "sonata2", "settings", "app.py")).read()
-        self.assertIn('switch_row("Location Services", location.enabled()', src)
+        self.assertIn('switch_row(_("Location Services"), location.enabled()', src)
         self.assertIn("location.set_enabled, done, on", src)
 
 

@@ -91,7 +91,7 @@ class BackupTest(unittest.TestCase):
         src = open(os.path.join(os.path.dirname(__file__), "..", "sonata2", "settings", "app.py")).read()
         self.assertIn("backup = self._backup_group()", src)
         self.assertIn("return [hero, specs, shell, backup, reset]", src)
-        self.assertIn('self.ask_restart("session", "The imported settings")', src)
+        self.assertIn('self.ask_restart("session", _("The imported settings"))', src)
 
 
 if __name__ == "__main__":
