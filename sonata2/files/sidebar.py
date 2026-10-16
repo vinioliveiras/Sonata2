@@ -186,7 +186,7 @@ class Sidebar(Gtk.Box):
             self._place(_("Network"), "network-workgroup-symbolic", server.NETWORK)
         self._place(_("Trash"), "user-trash-symbolic", "trash:///")      # (Vini: Trash in the sidebar)
         from . import tags                                              # Finder's Tags
-        self._head(N_("Tags"))
+        self._head("Tags")                                     # (_head translates it)
         for name in tags.NAMES:
             self._place(_(name), None, tags.uri(name), tag=name)
         if self._current:
