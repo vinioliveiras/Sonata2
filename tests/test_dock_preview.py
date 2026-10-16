@@ -228,16 +228,63 @@ class SmallPreviewsTest(unittest.TestCase):
 
 
 class HoverRulesTest(unittest.TestCase):
-    """Vini: previews only after 2 s on the icon, only for an app with more
+    """Vini: previews only after 1 s on the icon, only for an app with more
     than one window, and as far from the Dock as a maximized window."""
 
     def test_rules_in_the_code(self):
         from sonata2.shell import dock_preview as P
         src = open(P.__file__).read()
-        self.assertEqual(P.HOVER_MS, 2000)
+        self.assertEqual(P.HOVER_MS, 1000)
         self.assertIn("state[\"wait\"] = GLib.timeout_add(HOVER_MS, due)", src)
-        self.assertIn("if len(found) < 2:", src)
+        self.assertIn("if not found:", src)                                       # one window too (Vini)
         self.assertIn("gap_from_dock(pop, tile, dock)", src)
+
+    @unittest.skipUnless(os.environ.get("DISPLAY"), "needs a display (xvfb-run)")
+    def test_hover_shows_again_after_a_window_was_picked(self):
+        """Vini: "sometimes the hover doesn't show". Picking a window closed
+        the previews by themselves, they were still taken as open, and that
+        icon never showed them again."""
+        import types
+        from gi.repository import GObject, Gtk
+        from sonata2.shell import dock_preview as P
+
+        class Pop(GObject.Object):
+            __gsignals__ = {"closed": (GObject.SignalFlags.RUN_FIRST, None, ())}
+            made = []
+
+            def __init__(self, *_a):
+                super().__init__()
+                self.pics = {}
+                Pop.made.append(self)
+
+            def add_controller(self, _c):
+                pass
+
+            def popup(self):
+                pass
+
+            def popdown(self):
+                self.emit("closed")
+
+        added = []
+        tile = types.SimpleNamespace(key="files", label=mock.Mock(), add_controller=added.append)
+        dock = types.SimpleNamespace(windows={"files": [1]}, away=None)
+        shots = mock.Mock(enabled=True)
+        shots.open_windows.return_value = [{"id": 1, "title": "a", "minimized": False, "tex": None}]
+        now = lambda ms, fn, *a: (fn(*a) if ms == P.HOVER_MS else None) or 1      # noqa: E731
+        with mock.patch.object(P, "PreviewPopover", Pop), mock.patch.object(P, "gap_from_dock"), \
+                mock.patch.object(P, "shots", return_value=shots), \
+                mock.patch.object(P.GLib, "timeout_add", side_effect=now), \
+                mock.patch.object(P.GLib, "source_remove"), mock.patch.object(P.GLib, "idle_add"):
+            P.attach(tile, dock)
+            motion = added[0]
+            self.assertIsInstance(motion, Gtk.EventControllerMotion)
+            motion.emit("enter", 1.0, 1.0)
+            self.assertEqual(len(Pop.made), 1)
+            Pop.made[0].popdown()                                     # a window picked
+            motion.emit("leave")
+            motion.emit("enter", 1.0, 1.0)
+            self.assertEqual(len(Pop.made), 2)                        # shown again
 
     @unittest.skipUnless(os.environ.get("DISPLAY"), "needs a display (xvfb-run)")
     def test_gap_is_the_maximized_windows(self):

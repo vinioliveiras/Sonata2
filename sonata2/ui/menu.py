@@ -178,14 +178,17 @@ def _one_click(button: Gtk.Button, action) -> None:
 
 
 def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
-          gap: int = 6, at=None, glass: bool = False, passthrough: bool = False) -> Gtk.PopoverMenu:
+          gap: int = 6, at=None, glass: bool = False, passthrough: bool = False,
+          autohide: bool = True) -> Gtk.PopoverMenu:
     """Show a menu anchored to `widget`; it cleans itself up when closed.
     at=(x, y) in widget coordinates: a context menu that opens at the
     pointer, its top-left corner there (macOS).
     passthrough: (menus inside an app window, e.g. Files' right-click) a
     click elsewhere in the window closes the menu *and* does its own thing
     -- selects, opens, right-clicks another file -- instead of only
-    closing the menu."""
+    closing the menu.
+    autohide=False: on a surface that got no click of its own (a menu for
+    a window in Mission Control: layer.menu_at), which closes it itself."""
     group = Gio.SimpleActionGroup()
     customs = []
     model = _build(sections, group, customs=customs)
@@ -223,6 +226,7 @@ def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
     _no_scroll(pop)
     _hover_only(pop)
     pop.connect("map", _checks_after_text)
+    pop.set_autohide(autohide)
     pop.popup()
     watch_shown(pop)
     return pop

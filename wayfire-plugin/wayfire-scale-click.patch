@@ -1,0 +1,60 @@
+Sonata: a click on a window in Mission Control (scale) brings it forward
+even where the scene's lookup finds no window under the pointer -- the
+scaled window whose picture is there, or the one pressed (Vini: only
+minimized windows came forward on a click).
+
+--- a/plugins/scale/scale.cpp
++++ b/plugins/scale/scale.cpp
+@@ -446,6 +446,32 @@
+         }
+     }
+ 
++    /* Sonata: the window under `at` -- the scene's lookup, else the scaled
++     * window whose picture is there. Vini: in Mission Control a click only
++     * brought a minimized window forward; on the others the lookup found
++     * nothing and the click did nothing. */
++    wayfire_toplevel_view scaled_view_at(wf::pointf_t at)
++    {
++        if (auto view = scale_find_view_at(at, output))
++        {
++            return view;
++        }
++
++        auto offset = wf::origin(output->get_layout_geometry());
++        wf::pointf_t local{at.x - offset.x, at.y - offset.y};
++        for (auto& e : scale_data)
++        {
++            if (!e.first->parent &&
++                (e.second.visibility == view_scale_data::view_visibility_t::VISIBLE) &&
++                (e.first->get_transformed_node()->get_bounding_box() & local))
++            {
++                return e.first;
++            }
++        }
++
++        return nullptr;
++    }
++
+     /* Process button event */
+     void process_input(uint32_t button, uint32_t state, wf::pointf_t input_position)
+     {
+@@ -456,7 +482,7 @@
+ 
+         if (state == WLR_BUTTON_PRESSED)
+         {
+-            auto view = scale_find_view_at(input_position, output);
++            auto view = scaled_view_at(input_position);
+             if (view && should_scale_view(view))
+             {
+                 // Mark the view as the target of the next input release operation
+@@ -471,7 +497,9 @@
+         }
+ 
+         drag_helper->handle_input_released();
+-        auto view = scale_find_view_at(input_position, output);
++        // Sonata: still held (a drag past 20 px lets go of it) -- a click on
++        // the window pressed, even if the lookup now finds another or none
++        auto view = last_selected_view ? last_selected_view : scaled_view_at(input_position);
+         if (!view || (last_selected_view != view))
+         {
+             last_selected_view = nullptr;

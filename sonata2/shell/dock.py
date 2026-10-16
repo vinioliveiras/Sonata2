@@ -593,10 +593,14 @@ def _watch_outputs() -> None:
     ipc = WayfireIPC()
     _WATCH["ipc"] = ipc
 
-    def event(_msg):
+    def event(msg):
+        if msg.get("event") == "sonata-scale-menu#":         # a window right-clicked in Mission Control
+            if _DOCKS:
+                dock_menu.scale_menu(next(iter(_DOCKS)), msg)
+            return
         for d in list(_DOCKS):
             d._rects_soon()
-    if not ipc.watch(["view-mapped", "view-set-output"], event):
+    if not ipc.watch(["view-mapped", "view-set-output", "sonata-scale-menu#"], event):
         _WATCH["on"] = False
 
 

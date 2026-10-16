@@ -61,9 +61,14 @@ class MissionBackdrop:
         self.bars = {}                # connector -> spaces.SpacesBar
         if layer.layer_shell() and self.ipc.available:
             self.ipc.watch(["plugin-activation-state-changed", "wset-workspace-changed", "view-mapped",
-                            "view-unmapped", "view-workspace-changed"], self._event)
+                            "view-unmapped", "view-workspace-changed", "sonata-scale-drag#"], self._event)
 
     def _event(self, ev):
+        if ev.get("event") == "sonata-scale-drag#":   # a window dragged: maybe onto a desktop
+            bar = self.bars.get(ev.get("output", ""))
+            if bar is not None and bar.get_visible():
+                bar.dragging(ev)
+            return
         if ev.get("event", "plugin-activation-state-changed") != "plugin-activation-state-changed":
             for bar in self.bars.values():          # the desktops changed while the bar shows
                 if bar.get_visible():

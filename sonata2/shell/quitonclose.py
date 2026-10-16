@@ -19,6 +19,7 @@ from gi.repository import GLib
 from . import quitapps
 
 GRACE_MS = 1500
+RETRY_S = 30             # an app whose process wasn't found: asked again this often
 KILL_MS = 3000           # then whatever is left of it goes (Vini: "just kill the process")
 CLK = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
 
@@ -160,6 +161,8 @@ class QuitOnClose:
         self.closed_at = {}
         self.open = set()                 # apps (keys) with a window now
         self.pids = {}                    # key -> its processes, read while it had a window
+        self._seen = {}                   # key -> when its window came
+        self._asked = float("-inf")       # when list-views was last read for a late one
         manager.listeners.append(self.changed)
         self.changed()
 
@@ -177,12 +180,21 @@ class QuitOnClose:
         new, gone = now - self.open, self.open - now
         # new apps, and open ones whose window the compositor hadn't listed yet
         # (the Claude app kept running: no process was known for it)
-        need = new | {k for k in now if not self.pids.get(k)}
+        # (one whose process is still unknown RETRY_S after its window came --
+        # a Flatpak -- asked again only that often: it was a list-views on
+        # every title change)
+        t = self.now()
+        for k in new:
+            self._seen[k] = t
+        retry = t - self._asked >= RETRY_S
+        need = new | {k for k in now if not self.pids.get(k) and (retry or t - self._seen.get(k, t) < RETRY_S)}
         if need:                                        # (not on every title change)
+            self._asked = t
             views = self.views()
             for k in need:
                 self.pids[k] = quitapps.app_pids(views, key=k) or self.pids.get(k, set())
         for k in gone:
+            self._seen.pop(k, None)
             self.closed_at[k] = self.now()
             self.later(GRACE_MS, lambda k=k: self.maybe_quit(k) and False)
         self.open = now

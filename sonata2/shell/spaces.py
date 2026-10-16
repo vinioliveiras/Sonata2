@@ -44,6 +44,8 @@ BAR_GAP = 10                       # below the menu bar, and below the bar
 PILL_H = 22
 ADD_SIZE = 30
 RING = 4                           # room around a picture for its ring (the bar would clip it)
+APPEAR_MS = 240                    # a new desktop grows in
+VANISH_MS = 180                    # a closed one shrinks away, then the others glide over
 BAR_H = BAR_GAP + RING + THUMB_H + RING + 4 + PILL_H
 # what scale keeps free around the windows (config/wayfire.ini [scale] outer_margin):
 # the whole bar and a gap under it, so it never covers a window
@@ -79,7 +81,14 @@ window.sonata-spaces, window.sonata-spaces > contents { background: none; box-sh
 .sp-add:active { background: alpha(%(label)s, 0.22); transform: scale(0.94); }
 @keyframes sp-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 .sp-row.opening { animation: sp-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-""", key="spaces", gap=BAR_GAP, pill_h=PILL_H, add=ADD_SIZE)
+/* a desktop added grows in, a closed one shrinks away; the others glide */
+@keyframes sp-appear { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: none; } }
+.sp-desk-box.appearing { animation: sp-appear %(appear)dms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes sp-vanish { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.6); } }
+.sp-desk-box.vanishing { animation: sp-vanish %(vanish)dms ease-in both; }
+/* a window being dragged in Mission Control: the desktops take it */
+.sp-row.dropping .sp-thumb { box-shadow: 0 0 0 2px alpha(%(accent)s, 0.55), 0 2px 6px rgba(0,0,0,0.25); }
+""", key="spaces", gap=BAR_GAP, pill_h=PILL_H, add=ADD_SIZE, appear=APPEAR_MS, vanish=VANISH_MS)
 
 
 # -- the arithmetic ---------------------------------------------------------------------
@@ -158,6 +167,22 @@ def _views(ipc) -> list:
             if v.get("type") == "toplevel" and v.get("mapped", True) and not v.get("sticky")]
 
 
+def desktop_at(widget):
+    """The desktop index of the bar's widget `widget` is in, or None."""
+    while widget is not None:
+        if getattr(widget, "desk_index", None) is not None:
+            return widget.desk_index
+        widget = widget.get_parent()
+    return None
+
+
+class _GlideBox(Gtk.Box):
+    """A box whose children glide to their new places (ui.transition)."""
+
+    def do_snapshot(self, snap):
+        ui.transition.snapshot_children(self, snap)
+
+
 def set_count(n: int) -> None:
     from .. import wfconfig
     wfconfig.wayfire_set("core", "vwidth", max(1, min(MAX_DESKTOPS, int(n))))
@@ -173,8 +198,10 @@ class SpacesBar(Gtk.Window):
         self.connector, self.wallpaper = connector, wallpaper
         self.ipc = WayfireIPC()
         self.count = 1
-        self.row = Gtk.Box(spacing=14, halign=Gtk.Align.CENTER, valign=Gtk.Align.START, css_classes=["sp-row"])
-        self.desks = Gtk.Box(spacing=14)
+        self.monitor, self.top = monitor, 0
+        self._glide = None             # (the count it's for, new index -> old index or None): refresh()
+        self.row = _GlideBox(spacing=14, halign=Gtk.Align.CENTER, valign=Gtk.Align.START, css_classes=["sp-row"])
+        self.desks = _GlideBox(spacing=14)
         self.row.append(self.desks)
         self.add = Gtk.Button(icon_name="list-add-symbolic", css_classes=["sp-add"], valign=Gtk.Align.START,
                               tooltip_text=_("New Desktop"), can_focus=False,
@@ -187,7 +214,11 @@ class SpacesBar(Gtk.Window):
             LS.init_for_window(self)
             LS.set_namespace(self, "sonata2-spaces")
             LS.set_layer(self, LS.Layer.OVERLAY)
-            LS.set_anchor(self, LS.Edge.TOP, True)       # (top only: centred on the display, as wide as it needs)
+            # as wide as the display, the row centred in it: a desktop added or
+            # closed doesn't move the surface, so the others glide in place
+            for e in (LS.Edge.TOP, LS.Edge.LEFT, LS.Edge.RIGHT):
+                LS.set_anchor(self, e, True)
+            self.set_resizable(True)                     # (else it kept its own width, at the left)
             LS.set_exclusive_zone(self, -1)
             LS.set_keyboard_mode(self, LS.KeyboardMode.NONE)
             if monitor is not None:
@@ -202,7 +233,8 @@ class SpacesBar(Gtk.Window):
         LS = layer.layer_shell()
         if LS and out:
             top = (out.get("workarea") or {}).get("y", 0) - (out.get("geometry") or {}).get("y", 0)
-            LS.set_margin(self, LS.Edge.TOP, max(0, top))
+            self.top = max(0, top)
+            LS.set_margin(self, LS.Edge.TOP, self.top)
         self.row.remove_css_class("opening")
         self.present()
         self.row.add_css_class("opening")
@@ -216,12 +248,16 @@ class SpacesBar(Gtk.Window):
 
     def refresh(self) -> None:
         out = self._out()
+        ws = (out or {}).get("workspace") or {}
+        count, current = max(1, ws.get("grid_width", 1)), ws.get("x", 0)
+        glide, old = None, self.children()
+        if self._glide is not None and self._glide[0] == count:     # (the change it was for is in)
+            glide, self._glide = self._glide[1], None
+            before = ui.transition.glide_record(old + [self.add], self)     # (the row re-centres: the window)
         while self.desks.get_first_child():
             self.desks.remove(self.desks.get_first_child())
         if out is None:
             return
-        ws = out.get("workspace") or {}
-        count, current = max(1, ws.get("grid_width", 1)), ws.get("x", 0)
         self.count = count
         per = {i: [] for i in range(count)}
         for v in _views(self.ipc):
@@ -232,6 +268,17 @@ class SpacesBar(Gtk.Window):
         for i in range(count):
             self.desks.append(self._desktop(i, i == current, per[i], count))
         self.add.set_visible(count < MAX_DESKTOPS)
+        if glide is not None:
+            moved = {self.add: before[self.add]} if self.add in before else {}
+            for i, box in enumerate(self.children()):
+                j = glide(i)
+                if j is None:
+                    box.add_css_class("appearing")           # the new one
+                    GLib.timeout_add(APPEAR_MS + 50, lambda b=box: (b.remove_css_class("appearing"), False)[1])
+                elif 0 <= j < len(old) and old[j] in before:
+                    ox, oy, _p = before[old[j]]
+                    moved[box] = (ox, oy, self.desks)        # from where the one it replaces was
+            ui.transition.glide_play(moved, self)
 
     def _desktop(self, i, current, app_ids, count) -> Gtk.Widget:
         over = Gtk.Overlay(halign=Gtk.Align.CENTER, margin_start=RING, margin_end=RING, margin_top=RING,
@@ -262,6 +309,7 @@ class SpacesBar(Gtk.Window):
             x.connect("clicked", lambda _b: self.close_desktop(i))
             box.add_overlay(x)
         box.desk_button = b
+        box.desk_index = i
         return box
 
     # -- actions --------------------------------------------------------------------------
@@ -277,8 +325,9 @@ class SpacesBar(Gtk.Window):
             self.ipc.call("vswitch/set-workspace", {"x": i, "y": 0, "output-id": out["id"]})
 
     def add_desktop(self, count: int) -> None:
+        self._glide = (count + 1, lambda i: i if i < count else None)
         set_count(count + 1)
-        self._refresh_soon(250)                         # (Wayfire reads its config again)
+        self._refresh_when(count + 1)
 
     def switch_here(self, out, x: int) -> None:
         """Show desktop x, Mission Control staying open on it: Sonata's
@@ -289,6 +338,16 @@ class SpacesBar(Gtk.Window):
             self.ipc.call("vswitch/set-workspace", {"x": x, "y": 0, "output-id": out["id"]})
 
     def close_desktop(self, index: int) -> None:
+        """It shrinks away first (VANISH_MS), then goes; the others glide over."""
+        boxes = self.children()
+        if 0 <= index < len(boxes) and len(boxes) > 1:
+            boxes[index].add_css_class("vanishing")
+            boxes[index].set_sensitive(False)
+            GLib.timeout_add(VANISH_MS, lambda: (self._close_desktop(index), False)[1])
+        else:
+            self._close_desktop(index)
+
+    def _close_desktop(self, index: int) -> None:
         out = self._out()
         if out is None:
             return
@@ -308,12 +367,47 @@ class SpacesBar(Gtk.Window):
         moves, after, new_count = plan_close(index, count, views, current)
         if new_count == count:
             return
+        self._glide = (new_count, lambda i: i if i < index else i + 1)
         for vid, desk in moves:                         # every window straight to where it ends
             self.ipc.call("vswitch/send-view", {"view-id": vid, "x": desk, "y": 0})
         if after != current:
             self.switch_here(out, after)                # (before the last column goes: still valid)
         set_count(new_count)                            # the last column goes, empty now
-        self._refresh_soon(300)
+        self._refresh_when(new_count)
+
+    # -- a window dragged in Mission Control (Sonata's Wayfire tells: wayfire-scale-sonata-events.patch)
+    def dragging(self, msg: dict) -> None:
+        """Dragged: the desktops take it; dropped on one: it goes there (Vini)."""
+        if msg.get("state") != "drop":
+            self.row.add_css_class("dropping")
+            return
+        self.row.remove_css_class("dropping")
+        g = self.monitor.get_geometry() if self.monitor is not None else None
+        x, y = msg.get("x", 0) - (g.x if g else 0), msg.get("y", 0) - (g.y if g else 0) - self.top
+        target = desktop_at(self.pick(x, y, Gtk.PickFlags.DEFAULT)) if 0 <= y <= self.get_height() else None
+        out = self._out()
+        if target is None or out is None:
+            return
+        view = next((v for v in _views(self.ipc) if v.get("id") == msg.get("view-id")), None)
+        if view is None or desktop_of(view, out) == target:
+            return
+        self.ipc.call("vswitch/send-view", {"view-id": view["id"], "x": target, "y": 0})
+        self._refresh_soon(200)
+
+    def _refresh_when(self, count: int, tries: int = 20) -> None:
+        """Refreshed as soon as Wayfire has read its config again (it has
+        `count` desktops): the closed one's gap doesn't wait a fixed time."""
+        def check():
+            if not self.get_visible():
+                return False
+            out = self._out()
+            if (((out or {}).get("workspace") or {}).get("grid_width", 1) == count) or state["n"] >= tries:
+                self.refresh()
+                return False
+            state["n"] += 1
+            return True
+        state = {"n": 0}
+        GLib.timeout_add(40, check)
 
     def _refresh_soon(self, ms: int = 120) -> None:
         GLib.timeout_add(ms, lambda: (self.get_visible() and self.refresh(), False)[1])

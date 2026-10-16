@@ -132,6 +132,27 @@ def sandbox_item(info, around=None):
 
 
 def app_menu(dock, key: str, tile):
+    tile.label.popdown()
+    return ui.menu.popup(tile, app_sections(dock, key, tile), position=dock.away)
+
+
+def scale_menu(dock, msg: dict):
+    """Mission Control: a window right-clicked (Sonata's Wayfire tells:
+    wayfire-scale-sonata-events.patch) -- its app's Dock menu, at the
+    pointer (Vini)."""
+    from .. import apps
+    from . import layer
+    aid = msg.get("app-id") or ""
+    tile = dock.tiles.get(apps.match_app_id(aid) or aid)
+    if tile is None or tile.key is None:
+        return None
+    return layer.menu_at(tile.get_root().get_application(), msg.get("output", ""), msg.get("x", 0),
+                         msg.get("y", 0), app_sections(dock, tile.key, tile))
+
+
+def app_sections(dock, key: str, tile) -> list:
+    """The app's menu: its windows, Options, Minimize / Quit (the Dock's
+    right-click, and Mission Control's)."""
     info = tile.info
     wins = dock.windows.get(key, [])
     Item = ui.menu.Item
@@ -186,8 +207,7 @@ def app_menu(dock, key: str, tile):
                          Item(_("Quit"), lambda: _quit(dock, wins, key))])
     elif info:
         sections.append([i for i in (Item(_("Open"), lambda: dock.launch(tile)), sandbox_item(info)) if i])
-    tile.label.popdown()
-    return ui.menu.popup(tile, sections, position=dock.away)
+    return sections
 
 
 def _quit(dock, wins, key) -> None:

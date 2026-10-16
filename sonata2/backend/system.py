@@ -477,6 +477,9 @@ def set_volume(percent: Optional[int] = None, muted: Optional[bool] = None,
     return ok
 
 
+_AUDIO_EVENT = re.compile(r"on (sink|source) #")
+
+
 def watch_audio(callback):
     """callback() on the GTK main loop whenever a sink or source changes
     (volume, mute, devices), through `pactl subscribe`. Returns the
@@ -490,7 +493,8 @@ def watch_audio(callback):
         return False
 
     def line(text):
-        if "on sink" in text or "on source" in text or "'server'" in text:
+        # (not "on sink-input": every stream that plays sends those, many a second)
+        if _AUDIO_EVENT.search(text) or "'server'" in text:
             if not state["src"]:
                 state["src"] = GLib.timeout_add(120, fire)      # a burst of events: one read
     return watch(line)
@@ -650,7 +654,7 @@ def ddc_displays() -> list:
     """[{"bus", "connector", "mfg", "model", "serial"}] from `ddcutil detect
     --brief` (kept a few minutes: probing every bus takes seconds)."""
     import time
-    if _detected["displays"] and time.monotonic() - _detected["at"] < DETECT_TTL_S:
+    if _detected["at"] and time.monotonic() - _detected["at"] < DETECT_TTL_S:     # (none found: kept too)
         return _detected["displays"]
     rc, out = _run(["ddcutil", "detect", "--brief"], timeout=20)
     _detected.update(at=time.monotonic(), displays=parse_ddc_detect(out) if rc == 0 else [])
