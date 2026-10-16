@@ -161,7 +161,7 @@ class CleanUpTest(unittest.TestCase):
         import inspect
         from sonata2.shell import launchpad, launchpad_window
         src = inspect.getsource(launchpad_window.options_menu)
-        self.assertIn('Item("Clean Up", pad.clean_up, enabled=pad.model.has_gaps())', src)
+        self.assertIn('Item(_("Clean Up"), pad.clean_up, enabled=pad.model.has_gaps())', src)
         body = inspect.getsource(launchpad.Launchpad.clean_up) if hasattr(launchpad, "Launchpad") else \
             inspect.getsource(launchpad)
         self.assertIn("self.model.close_gaps()", body)
