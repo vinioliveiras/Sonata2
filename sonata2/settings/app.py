@@ -1230,7 +1230,9 @@ class Settings(Adw.ApplicationWindow):
                 screens.add(combo_row(d.name, opts, saved if saved in [o[0] for o in opts] else d.current,
                                       lambda m, d=d: system.run_async(system.set_display_mode, None, d.name, m),
                                       subtitle=d.description))
-                scales = [(1.0, "100 %"), (1.25, "125 %"), (1.5, "150 %"), (2.0, "200 %")]
+                scales = [(0.75, "75 %"), (1.0, "100 %"), (1.25, "125 %"), (1.5, "150 %"), (1.75, "175 %"),
+                          (2.0, "200 %"), (2.25, "225 %"), (2.5, "250 %"), (2.75, "275 %"),
+                          (3.0, "300 %")]                    # (every one monitors.auto_scale picks)
                 screens.add(combo_row("Scale", scales, nearest(scales, d.scale), lambda s, d=d: system.run_async(system.set_display_scale, None,
                                                                                d.name, s)))
             if not ds:

@@ -14,6 +14,10 @@
 - Software Update asks for the password once (once more for the AUR), not
   at every package: install.sh adds a polkit rule that keeps the
   administrator's "yes" to pacman for a few minutes, for that update only.
+- Displays nobody picked a scale for get one for their resolution, so
+  everything looks the size it does at 1080p: 4K at 200 %, 1440p at 125 %,
+  1366x768 at 75 % (the shorter side against 1080, in quarter steps). Set
+  once per display; Settings > Displays > Scale changes it (now 75-300 %).
 - install.sh no longer asks "mount system disks without a password": the
   rule is added for administrators by default (it lowers security: any app
   in the session can mount system disks and unlock system LUKS);

@@ -8,7 +8,8 @@ else an external monitor when one is connected, else the built-in panel.
     monitors.on_main_changed(cb)     # main display chosen elsewhere / unplugged
 
 Refresh rate: a display nobody picked a mode for runs at its highest
-refresh rate (Wayfire `mode = highrr`, written once per connector)."""
+refresh rate (Wayfire `mode = highrr`, written once per connector). Scale:
+one nobody picked a scale for gets auto_scale for its resolution (1080p = 1)."""
 from gi.repository import Gdk, GLib
 
 from .. import config
@@ -143,11 +144,29 @@ def on_main_changed(callback) -> None:
     Gdk.Display.get_default().get_monitors().connect("items-changed", lambda *_: GLib.timeout_add(250, check))
 
 
+# Sizes look right at 1080p (Vini): other resolutions get a scale that keeps
+# that look -- 4K twice as big, 1366x768 smaller -- in steps of a quarter.
+SCALE_REFERENCE = 1080
+SCALE_RANGE = (0.75, 3.0)
+
+
+def auto_scale(width: int, height: int) -> float:
+    """The scale for a display of width x height pixels: its shorter side
+    against 1080, to the nearest 0.25 (a portrait 1080x1920 stays at 1)."""
+    side = min(width, height)
+    if side <= 0:
+        return 1.0
+    s = round(side / SCALE_REFERENCE * 4) / 4
+    return min(SCALE_RANGE[1], max(SCALE_RANGE[0], s))
+
+
 def ensure_refresh() -> None:
-    """Displays without a mode of their own: highest refresh rate. Runs in
-    the menu bar (always there); again when a display is plugged in.
-    Never cap it to spare the GPU: some monitors glitch below their top
-    rate (Vini's external one does); a user's own mode in Settings wins."""
+    """Displays without a mode of their own: highest refresh rate; without
+    a scale of their own: auto_scale for their resolution (written once,
+    so Settings > Displays shows it and can change it). Runs in the menu
+    bar (always there); again when a display is plugged in. Never cap the
+    rate to spare the GPU: some monitors glitch below their top rate
+    (Vini's external one does); a user's own mode or scale in Settings wins."""
     from ..backend import system
 
     def apply(*_a):
@@ -155,6 +174,12 @@ def ensure_refresh() -> None:
             c = connector(m)
             if c and not system.wayfire_get(f"output:{c}", "mode", ""):
                 system.wayfire_set(f"output:{c}", "mode", "highrr")
+            if c and not system.wayfire_get(f"output:{c}", "scale", ""):
+                g = m.get_geometry()
+                k = m.get_scale() if hasattr(m, "get_scale") else m.get_scale_factor()    # (no scale yet: 1)
+                if g.width > 0 and g.height > 0:
+                    system.wayfire_set(f"output:{c}", "scale",
+                                       auto_scale(round(g.width * k), round(g.height * k)))
         return False
     apply()
     Gdk.Display.get_default().get_monitors().connect("items-changed", lambda *_: GLib.timeout_add(300, apply))
