@@ -641,7 +641,8 @@ def run_chromium(app: str) -> int:
             os.write(to_w, data)
         except OSError:
             pass
-    guard = Guard(get(app).get("url", ""), write, log=lambda m: print(f"sonata2 webapp {app}: {m}", flush=True))
+    guard = Guard(get(app).get("url", ""), write, log=lambda m: print(f"sonata2 webapp {app}: {m}", flush=True),
+                  name=get(app).get("name", ""))
 
     def readable(fd, _cond):
         try:

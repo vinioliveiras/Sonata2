@@ -14,6 +14,9 @@
   language by itself (English otherwise). Strings that read differently
   by place have their own words ("Zerar" on the stopwatch); a few
   subtitles were shortened so the longer Portuguese fits.
+- Web apps (Chrome): a window whose title read the site's address
+  ("web.whatsapp.com") shows the page's title again -- or the web app's
+  name, for a page without one.
 - Files: the Trash no longer shows an item of itself inside
   ("Wastebasket", after opening and closing it).
 - The Copy window is as tall as its copies: shorter when one ends, and
