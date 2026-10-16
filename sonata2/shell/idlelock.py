@@ -143,7 +143,16 @@ def darken(watch, on: bool) -> None:
     from ..backend import system
     from . import blackout, lockdisplay
     lockdisplay.lights(not on)              # the keyboard's light with the displays
+    lockdisplay.mark_dark(on)               # (a lock that follows starts dark: lock.py)
     blackout.show() if on else blackout.hide()     # black, no pointer (Vini: it only dimmed)
+    displays_dark(watch, on)
+
+
+def displays_dark(watch, on: bool) -> None:
+    """The panel's backlight (a laptop) or every display off, and back; the
+    session's darkening and the lock screen's (lock.py) alike."""
+    from ..backend import system
+    from . import lockdisplay
     if lockdisplay.has_backlight():
         # a laptop: its panel's backlight to zero, the panel stays on --
         # powering it off and on again failed on Vini's (NVIDIA: the screen

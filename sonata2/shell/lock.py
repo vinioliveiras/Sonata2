@@ -67,6 +67,8 @@ class LockScreen:
             self._dark_after = lockdisplay.dark_seconds()      # None: you chose "never"
             self._idle_watch()
             self._input()
+            if lockdisplay.was_dark() and self._dark_after is not None:
+                self._go_dark()                  # locked after the display went dark: it stays dark
         else:
             if self._idle_src:
                 GLib.source_remove(self._idle_src)
@@ -98,20 +100,37 @@ class LockScreen:
     def _go_dark(self) -> None:
         """Black and the backlight at zero -- the display itself stays on:
         powering it off and on again failed on Vini's laptop (lockdisplay.py)."""
-        from . import lockdisplay
+        from . import blackout, lockdisplay
+        if self._off:
+            return
         self._blackout(True)
-        lockdisplay.dim(True)
+        blackout.pointer(True)                   # no pointer in the middle of the dark screen (Vini)
         lockdisplay.lights(False)                # the keyboard too, whatever keeps the session awake
+        self._displays(False)                    # the panel's backlight, or the displays really off
         self._off = True
 
     def _wake(self) -> None:
         if not self._off:
             return
-        from . import lockdisplay
+        from . import blackout, lockdisplay
         self._off = False
+        self._displays(True)
         self._blackout(False)
-        lockdisplay.dim(False)
+        blackout.pointer(False)
         lockdisplay.lights(True)
+        lockdisplay.mark_dark(False)
+
+    def _displays(self, on: bool) -> None:
+        """As the session darkens them (idlelock.displays_dark): the panel's
+        backlight on a laptop, plugged-in monitors really off; the panel's
+        backlight only when there's no idle watch to power them."""
+        from . import lockdisplay
+        w = getattr(self, "_iw", None)
+        if w is not None:
+            from .idlelock import displays_dark
+            displays_dark(w, not on)
+        else:
+            lockdisplay.dim(not on)
 
     def _blackout(self, on: bool) -> None:
         for b in getattr(self, "blackouts", []):

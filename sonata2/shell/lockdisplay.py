@@ -68,6 +68,28 @@ def unlocked() -> None:
         pass
 
 
+def _dark_marker() -> str:
+    return os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "sonata2-idle-dark")
+
+
+def mark_dark(on: bool) -> None:
+    """The session went dark while idle (idlelock.darken) / came back: the lock
+    screen that follows starts dark too (Vini: locked after the display had
+    gone dark, it showed black with the pointer in the middle and went
+    really dark only its own 30 s later)."""
+    try:
+        if on:
+            open(_dark_marker(), "w").close()
+        else:
+            os.unlink(_dark_marker())
+    except OSError:
+        pass
+
+
+def was_dark() -> bool:
+    return os.path.exists(_dark_marker())
+
+
 def has_backlight() -> bool:
     """A built-in panel whose backlight can go to zero (a laptop)."""
     import glob

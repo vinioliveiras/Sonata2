@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Changes
+- Locked after the display went dark, it stays dark: the lock screen no
+  longer shows black with the pointer in the middle until its own 30 s
+  pass. Dark while locked also hides the pointer and turns plugged-in
+  monitors really off, as when unlocked (the laptop's panel: backlight only).
 - Electron apps (VS Code, Claude...) no longer snap back to their old size
   after a resize: a frame drawn before the app took its new size, coming
   late, was taken by Wayfire as the app resizing itself and its old size
