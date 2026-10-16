@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Changes
+- External monitors' brightness on NVIDIA cards: their DDC/CI bus is found
+  through ddcutil's own detection (by connector, else by the monitor's
+  EDID) when the driver links none to the display -- the slider did
+  nothing with DDC/CI on.
 - Locked after the display went dark, it stays dark: the lock screen no
   longer shows black with the pointer in the middle until its own 30 s
   pass. Dark while locked also hides the pointer and turns plugged-in
