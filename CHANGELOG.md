@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changes
+- Dock: hovering a running app shows every window it has open (minimized
+  ones too), live, drawn by Sonata's Wayfire plugin -- covered windows or
+  windows on another desktop as well; click one to bring it forward.
 - Settings no longer gets stuck on a section after adding (or deleting) a
   user: the page rebuilt in place left a picture of itself on top of every
   section opened after it.

@@ -39,6 +39,7 @@ class FakeWayfire(threading.Thread):
         self.srv.listen(8)
         self.watcher = None
         self.calls = []
+        self.shots = True
 
     def run(self):
         while True:
@@ -50,8 +51,25 @@ class FakeWayfire(threading.Thread):
                 self.watcher = c
             elif msg["method"] == "window-rules/view-info":
                 _send(c, {"result": "ok", "info": VIEW})
+            elif msg["method"] == "window-rules/list-views":
+                _send(c, VIEWS)
+            elif msg["method"] == "sonata/window-shot":
+                if not self.shots:
+                    _send(c, {"result": "error", "error": "No such method found!"})
+                    continue
+                d = msg["data"]
+                with open(d["path"], "wb") as f:
+                    f.write(bytes([255, 0, 0, 255]) * (4 * 2))       # 4 x 2, opaque red
+                _send(c, {"result": "ok", "width": 4, "height": 2})
             else:
                 _send(c, {"result": "ok"})
+
+
+VIEWS = [dict(VIEW, **{"last-focus-timestamp": 5, "mapped": True, "role": "toplevel"}),
+         dict(VIEW, **{"id": 8, "title": "todo.txt", "minimized": True, "last-focus-timestamp": 9,
+                       "mapped": True, "role": "toplevel"}),
+         {"id": 9, "app-id": "other.App", "type": "toplevel", "mapped": True, "title": "x"},
+         {"id": 10, "app-id": "sonata2-dock", "type": "panel", "mapped": True, "title": ""}]
 
 
 def settle(ms):
@@ -93,6 +111,45 @@ class PreviewTest(unittest.TestCase):
         _send(fake.watcher, {"event": "view-unmapped", "view": VIEW})
         settle(200)
         self.assertNotIn(7, s.shots)
+
+
+class CompositorShotTest(unittest.TestCase):
+    """Vini: hovering an app shows every window it has open, live -- drawn by
+    Sonata's Wayfire plugin (sonata/window-shot), not a screen grab."""
+
+    def setUp(self):
+        tmp = tempfile.mkdtemp()
+        self.sock = os.path.join(tmp, "wf.sock")
+        self.fake = FakeWayfire(self.sock)
+        self.fake.start()
+        os.environ["WAYFIRE_SOCKET"] = self.sock
+        os.environ["XDG_RUNTIME_DIR"] = tmp
+
+    def test_every_open_window_last_used_first(self):
+        from sonata2.shell import dock_preview as P
+        s = P.WindowShots()
+        key = P.apps.match_app_id(VIEW["app-id"]) or VIEW["app-id"]
+        wins = s.open_windows(key)
+        self.assertEqual([w["id"] for w in wins], [8, 7])              # the other app and the Dock left out
+        self.assertTrue(wins[0]["minimized"])
+
+    def test_picture_from_the_compositor(self):
+        from sonata2.shell import dock_preview as P
+        s = P.WindowShots()
+        got = []
+        s.snapshot(7, lambda vid, tex: got.append((vid, tex.get_width(), tex.get_height())))
+        settle(600)
+        self.assertEqual(got, [(7, 4, 2)])
+        self.assertTrue(s.compositor)
+        self.assertEqual([n for n in os.listdir(os.environ["XDG_RUNTIME_DIR"]) if n.startswith("sonata2-shot")], [])
+
+    def test_older_plugin_falls_back(self):
+        from sonata2.shell import dock_preview as P
+        self.fake.shots = False
+        s = P.WindowShots()
+        s.snapshot(7, lambda *a: self.fail("no picture expected"))
+        settle(500)
+        self.assertIs(s.compositor, False)
 
 
 if __name__ == "__main__":

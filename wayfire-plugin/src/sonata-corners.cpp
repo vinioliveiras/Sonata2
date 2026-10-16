@@ -2242,6 +2242,109 @@ class sonata_corners_t : public wf::plugin_interface_t
         return wf::ipc::json_error("no such layer surface");
     };
 
+    /* A window's picture, drawn by the compositor (the Dock's previews, Vini:
+     * hovering an app shows its open windows). Wayland gives no client the
+     * pictures of others; a screen grab caught whatever covered the window.
+     * The window is drawn alone (take_snapshot: covered, on another desktop),
+     * halved until near the size asked (a smooth thumbnail, no jaggies), and
+     * its pixels written to `path` -- only under $XDG_RUNTIME_DIR -- as RGBA,
+     * premultiplied, rows top to bottom.
+     * {"id": 42, "width": 280, "path": "/run/user/1000/sonata2-shot-42"} ->
+     * {"width": 280, "height": 175} */
+    wf::ipc::method_callback ipc_window_shot = [=] (wf::json_t data)
+    {
+        if (!data.is_object() || !data.has_member("id") || !data.has_member("path"))
+        {
+            return wf::ipc::json_error("id and path needed");
+        }
+
+        auto view = wf::ipc::find_view_by_id((uint32_t)wf::ipc::json_get_int64(data, "id"));
+        if (!view || !view->is_mapped() || !view->get_output())
+        {
+            return wf::ipc::json_error("no such window");
+        }
+
+        std::string path = wf::ipc::json_get_string(data, "path");
+        const char *rt   = getenv("XDG_RUNTIME_DIR");
+        if (!rt || (path.rfind(std::string(rt) + "/", 0) != 0) || (path.find("..") != std::string::npos))
+        {
+            return wf::ipc::json_error("path must be in XDG_RUNTIME_DIR");
+        }
+
+        int want = data.has_member("width") ? (int)wf::ipc::json_get_int64(data, "width") : 280;
+        want = std::clamp(want, 16, 2048);
+        wf::auxilliary_buffer_t full;
+        view->take_snapshot(full);
+        auto size = full.get_size();
+        if ((size.width <= 0) || (size.height <= 0))
+        {
+            return wf::ipc::json_error("nothing drawn");
+        }
+
+        int w = std::min(want, size.width);
+        int h = std::max(1, (int)std::lround(1.0 * size.height * w / size.width));
+        std::vector<uint8_t> px((size_t)w * h * 4);
+        bool ok = false;
+        wf::gles::run_in_context_if_gles([&]
+        {
+            // halved step by step (each step blends 2x2): one big scale-down skips pixels
+            std::vector<std::unique_ptr<wf::auxilliary_buffer_t>> steps;
+            wf::auxilliary_buffer_t *src = &full;
+            wf::dimensions_t cur = size;
+            while ((cur.width / 2 >= w) && (cur.height / 2 >= h))
+            {
+                wf::dimensions_t next{cur.width / 2, cur.height / 2};
+                steps.push_back(std::make_unique<wf::auxilliary_buffer_t>());
+                steps.back()->allocate(next);
+                GL_CALL(glBindFramebuffer(GL_READ_FRAMEBUFFER,
+                    wf::gles::ensure_render_buffer_fb_id(src->get_renderbuffer())));
+                GL_CALL(glBindFramebuffer(GL_DRAW_FRAMEBUFFER,
+                    wf::gles::ensure_render_buffer_fb_id(steps.back()->get_renderbuffer())));
+                GL_CALL(glBlitFramebuffer(0, 0, cur.width, cur.height, 0, 0, next.width, next.height,
+                    GL_COLOR_BUFFER_BIT, GL_LINEAR));
+                src = steps.back().get();
+                cur = next;
+            }
+
+            wf::auxilliary_buffer_t out;
+            out.allocate({w, h});
+            GL_CALL(glBindFramebuffer(GL_READ_FRAMEBUFFER,
+                wf::gles::ensure_render_buffer_fb_id(src->get_renderbuffer())));
+            GL_CALL(glBindFramebuffer(GL_DRAW_FRAMEBUFFER,
+                wf::gles::ensure_render_buffer_fb_id(out.get_renderbuffer())));
+            GL_CALL(glBlitFramebuffer(0, 0, cur.width, cur.height, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_LINEAR));
+            GL_CALL(glBindFramebuffer(GL_READ_FRAMEBUFFER,
+                wf::gles::ensure_render_buffer_fb_id(out.get_renderbuffer())));
+            GL_CALL(glPixelStorei(GL_PACK_ALIGNMENT, 1));
+            GL_CALL(glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px.data()));
+            ok = true;
+        });
+        if (!ok)
+        {
+            return wf::ipc::json_error("no GL renderer");
+        }
+
+        // GL reads bottom row first (as Wayfire's view-shot): rows turned over
+        std::string tmp = path + ".new";
+        FILE *f = fopen(tmp.c_str(), "wb");
+        if (!f)
+        {
+            return wf::ipc::json_error("can't write");
+        }
+
+        for (int y = h - 1; y >= 0; y--)
+        {
+            fwrite(px.data() + (size_t)y * w * 4, 1, (size_t)w * 4, f);
+        }
+
+        fclose(f);
+        rename(tmp.c_str(), path.c_str());
+        auto response = wf::ipc::json_ok();
+        response["width"]  = w;
+        response["height"] = h;
+        return response;
+    };
+
     /* No pointer while the screen is dark (Vini: black, with the pointer in
      * the middle -- a surface mapped under a still pointer never gets it,
      * so its own "no cursor" can't apply). {"hidden": true | false} */
@@ -2260,6 +2363,7 @@ class sonata_corners_t : public wf::plugin_interface_t
         ipc_repo->register_method("sonata/cursor", ipc_cursor);
         ipc_repo->register_method("sonata/fps", ipc_fps);
         ipc_repo->register_method("sonata/rounded", ipc_rounded);
+        ipc_repo->register_method("sonata/window-shot", ipc_window_shot);
         /* which build runs (session.log): a fix is only in once install.sh rebuilt it */
         LOGI("sonata-corners: build ", SONATA_CORNERS_BUILD);
         input_debug.init();
@@ -2308,6 +2412,7 @@ class sonata_corners_t : public wf::plugin_interface_t
     void fini() override
     {
         ipc_repo->unregister_method("sonata/focus-layer");
+        ipc_repo->unregister_method("sonata/window-shot");
         ipc_repo->unregister_method("sonata/cursor");
         wf::get_core().unhide_cursor();
         ipc_repo->unregister_method("sonata/fps");
