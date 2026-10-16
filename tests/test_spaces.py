@@ -179,8 +179,9 @@ class BarTest(unittest.TestCase):
         thumbs = [w for w in walk(self.bar.row) if isinstance(w, spaces._Thumb)]
         self.assertEqual(len(thumbs), 3)                                             # not only on hover
         src = open(os.path.join(ROOT, "sonata2", "shell", "spaces.py")).read()
-        self.assertIn("LS.set_anchor(self, LS.Edge.TOP, True)", src)
-        self.assertNotIn("LS.Edge.LEFT", src)                                        # centred, not stretched
+        # as wide as the display (a desktop added or closed doesn't move it:
+        # the others glide), the row centred in it
+        self.assertIn("for e in (LS.Edge.TOP, LS.Edge.LEFT, LS.Edge.RIGHT):", src)
 
     def test_one_desktop_is_just_desktop(self):
         from sonata2.i18n import _
@@ -251,7 +252,8 @@ class BarTest(unittest.TestCase):
         set_to = []
         spaces.set_count, old = (lambda n: set_to.append(n)), spaces.set_count
         try:
-            self.bar.close_desktop(0)
+            with mock.patch.object(spaces.GLib, "timeout_add", side_effect=lambda ms, fn: fn()):
+                self.bar.close_desktop(0)
         finally:
             spaces.set_count = old
         sent = [d for m, d in self.bar.ipc.calls if m == "vswitch/send-view"]
@@ -265,6 +267,7 @@ class BarTest(unittest.TestCase):
     def test_close_the_only_desktop_closes_its_apps(self):
         OUT["workspace"]["grid_width"], OUT["workspace"]["x"] = 1, 0
         try:
+            self.bar.refresh()
             with mock.patch.object(spaces, "set_count") as count:
                 self.bar.close_desktop(0)
             closed = sorted(d["id"] for m, d in self.bar.ipc.calls if m == "window-rules/close-view")
@@ -280,11 +283,98 @@ class BarTest(unittest.TestCase):
         real = ipc.call
         ipc.call = lambda m, d=None: (ipc.calls.append((m, d)), {"error": "No such method"})[1] \
             if m == "sonata/set-workspace" else real(m, d)
-        with mock.patch.object(spaces, "set_count") as count:
+        with mock.patch.object(spaces, "set_count") as count, \
+                mock.patch.object(spaces.GLib, "timeout_add", side_effect=lambda ms, fn: fn()):
             self.bar.close_desktop(0)
         tail = [m for m, _d in ipc.calls[-3:]]
         self.assertEqual(tail, ["sonata/set-workspace", "scale/toggle", "vswitch/set-workspace"])
         count.assert_called_once_with(2)
+
+    # -- Vini: creating and deleting desktops had no animation
+    def test_a_new_desktop_grows_in_the_others_glide(self):
+        with mock.patch.object(spaces, "set_count"), mock.patch.object(spaces.GLib, "timeout_add"):
+            self.bar.add_desktop(3)
+        old = self.children()
+        OUT["workspace"]["grid_width"] = 4
+        try:
+            with mock.patch.object(spaces.ui.transition, "glide_record",
+                                   return_value={w: (i * 10.0, 0.0, None) for i, w in enumerate(old)}), \
+                    mock.patch.object(spaces.ui.transition, "glide_play") as play:
+                self.bar.refresh()
+        finally:
+            OUT["workspace"]["grid_width"] = 3
+        kids = self.children()
+        self.assertTrue(kids[3].has_css_class("appearing"))
+        self.assertFalse(kids[0].has_css_class("appearing"))
+        moved = play.call_args[0][0]
+        self.assertEqual([moved[k][0] for k in kids[:3]], [0.0, 10.0, 20.0])         # from the old places
+        self.assertNotIn(kids[3], moved)
+
+    def test_a_closed_desktop_shrinks_away_first(self):
+        later = []
+        with mock.patch.object(spaces.GLib, "timeout_add", side_effect=lambda ms, fn: later.append((ms, fn))):
+            self.bar.close_desktop(2)
+        self.assertTrue(self.children()[2].has_css_class("vanishing"))
+        self.assertNotIn("vswitch/send-view", [m for m, _d in self.bar.ipc.calls])   # not yet
+        self.assertEqual(later[0][0], spaces.VANISH_MS)
+        self.assertEqual(self.bar._glide, None)
+        with mock.patch.object(spaces, "set_count"), mock.patch.object(spaces.GLib, "timeout_add"):
+            later[0][1]()
+        count, glide = self.bar._glide
+        self.assertEqual((count, [glide(i) for i in range(2)]), (2, [0, 1]))
+        with mock.patch.object(spaces, "set_count"), mock.patch.object(spaces.GLib, "timeout_add"):
+            self.bar._close_desktop(1)
+        count, glide = self.bar._glide
+        self.assertEqual((count, [glide(i) for i in range(2)]), (2, [0, 2]))         # the ones after: one over
+
+    # -- Vini: hold a window in Mission Control and drag it onto another desktop
+    def test_a_window_dropped_on_a_desktop_goes_there(self):
+        self.bar.dragging({"state": "start", "view-id": 2})
+        self.assertTrue(self.bar.row.has_css_class("dropping"))
+        target = self.children()[2].desk_button.get_child()
+        with mock.patch.object(self.bar, "pick", return_value=target), \
+                mock.patch.object(self.bar, "get_height", return_value=200), \
+                mock.patch.object(spaces.GLib, "timeout_add"):
+            self.bar.dragging({"state": "drop", "view-id": 2, "x": 900, "y": 60})
+        self.assertFalse(self.bar.row.has_css_class("dropping"))
+        self.assertIn(("vswitch/send-view", {"view-id": 2, "x": 2, "y": 0}), self.bar.ipc.calls)
+
+    def test_dropped_elsewhere_or_on_its_own_desktop_stays(self):
+        self.bar.ipc.calls.clear()
+        own = self.children()[1].desk_button                                         # view 2 is on desktop 1
+        with mock.patch.object(self.bar, "get_height", return_value=200):
+            for picked, y in ((own, 60), (None, 60), (own, 900)):
+                with mock.patch.object(self.bar, "pick", return_value=picked):
+                    self.bar.dragging({"state": "drop", "view-id": 2, "x": 900, "y": y})
+        self.assertNotIn("vswitch/send-view", [m for m, _d in self.bar.ipc.calls])
+
+
+class ScaleEventsTest(unittest.TestCase):
+    """Sonata's Wayfire tells what is done to a window in Mission Control:
+    a right click (the Dock's menu) and a drag (onto a desktop)."""
+
+    def test_patch_and_listeners(self):
+        patch = open(os.path.join(ROOT, "wayfire-plugin", "wayfire-scale-sonata-events.patch")).read()
+        for part in ("case BTN_RIGHT:", '"sonata-scale-menu#"', '"sonata-scale-drag#", last_selected_view, to_f, "start"',
+                     '"drop"', "wf::ipc_rules::send_event_to_subscribes(data, name);"):
+            self.assertIn(part, patch)
+        mission = open(os.path.join(ROOT, "sonata2", "shell", "mission.py")).read()
+        self.assertIn('"sonata-scale-drag#"', mission)
+        dock = open(os.path.join(ROOT, "sonata2", "shell", "dock.py")).read()
+        self.assertIn('"sonata-scale-menu#"', dock)
+
+    def test_right_click_is_the_docks_menu(self):
+        import types
+        from sonata2.shell import dock_menu, layer
+        tile = mock.Mock(key="org.gnome.Calculator")
+        dock = types.SimpleNamespace(tiles={"org.gnome.Calculator": tile})
+        with mock.patch.object(dock_menu, "app_sections", return_value=[["items"]]) as sections, \
+                mock.patch.object(layer, "menu_at") as at, \
+                mock.patch("sonata2.apps.match_app_id", side_effect=lambda a: a):
+            dock_menu.scale_menu(dock, {"app-id": "org.gnome.Calculator", "output": "DP-1", "x": 700.0, "y": 400.0})
+            dock_menu.scale_menu(dock, {"app-id": "unknown.app", "output": "DP-1", "x": 1, "y": 1})
+        sections.assert_called_once_with(dock, "org.gnome.Calculator", tile)
+        self.assertEqual(at.call_args[0][1:], ("DP-1", 700.0, 400.0, [["items"]]))
 
 
 if __name__ == "__main__":

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### New
+- Mission Control: right-click a window for its app's Dock menu (its
+  windows, Options, Minimize, Quit...); hold a window and drag it onto a
+  desktop in the bar to move it there. Desktops grow in when added and
+  shrink away when closed, the others gliding to their places. (Sonata's
+  Wayfire: wayfire-scale-sonata-events.patch.)
+
 ### Fixes
 - Faster: the Control Center opens at once with its sliders already at
   the last levels read, and only moves them to the live ones -- it set the

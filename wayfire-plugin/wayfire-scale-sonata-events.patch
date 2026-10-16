@@ -1,0 +1,82 @@
+Sonata: Mission Control (scale) tells sonata2 what is done to a window,
+through ipc-rules' custom events: a right click asks for its app menu
+(sonata-scale-menu#, the Dock's menu), a drag starts and drops
+(sonata-scale-drag#: dropped on a desktop of the desktops bar, the window
+goes there). sonata2/shell/spaces.py, sonata2/shell/dock_menu.py
+
+--- a/plugins/scale/scale.cpp
++++ b/plugins/scale/scale.cpp
+@@ -27,6 +27,7 @@
+ 
+ #include "wayfire/plugins/ipc/ipc-activator.hpp"
+ #include "scale.hpp"
++#include "../ipc-rules/ipc-rules-common.hpp"
+ #include "scale-title-overlay.hpp"
+ #include "wayfire/core.hpp"
+ #include "wayfire/debug.hpp"
+@@ -472,6 +473,32 @@
+         return nullptr;
+     }
+ 
++    /* Sonata: tell sonata2 (ipc-rules' custom events) what was done to a
++     * window -- its menu asked for, a drag started or dropped; `at` in the
++     * output layout's coordinates. */
++    void sonata_event(const std::string& name, wayfire_toplevel_view view, wf::pointf_t at,
++        const std::string& state = "")
++    {
++        if (!view)
++        {
++            return;
++        }
++
++        wf::json_t data;
++        data["view-id"]   = (int)view->get_id();
++        data["app-id"]    = view->get_app_id();
++        data["output-id"] = (int)output->get_id();
++        data["output"]    = output->to_string();
++        data["x"] = at.x;
++        data["y"] = at.y;
++        if (!state.empty())
++        {
++            data["state"] = state;
++        }
++
++        wf::ipc_rules::send_event_to_subscribes(data, name);
++    }
++
+     /* Process button event */
+     void process_input(uint32_t button, uint32_t state, wf::pointf_t input_position)
+     {
+@@ -522,6 +549,11 @@
+             deactivate();
+             break;
+ 
++          case BTN_RIGHT:
++            // Sonata: the window's app menu, the Dock's (sonata2/shell/dock_menu.py)
++            sonata_event("sonata-scale-menu#", view, input_position);
++            break;
++
+           case BTN_MIDDLE:
+             // Check kill the view
+             if (middle_click_close)
+@@ -549,6 +581,7 @@
+             // another output.
+             grab->set_wants_raw_input(true);
+             drag_helper->start_drag(last_selected_view, opts);
++            sonata_event("sonata-scale-drag#", last_selected_view, to_f, "start");
+             drag_helper->handle_motion(to_f);
+         } else if (drag_helper->view)
+         {
+@@ -1307,6 +1340,12 @@
+     wf::signal::connection_t<wf::move_drag::drag_done_signal> on_drag_done =
+         [=] (wf::move_drag::drag_done_signal *ev)
+     {
++        if (ev->focused_output == output)
++        {
++            // Sonata: dropped on a desktop of Mission Control's bar? (sonata2/shell/spaces.py)
++            sonata_event("sonata-scale-drag#", ev->main_view, wf::get_core().get_cursor_position(), "drop");
++        }
++
+         if ((ev->focused_output == output) && can_handle_drag() && !drag_helper->is_view_held_in_place())
+         {
+             if (ev->main_view->get_output() == ev->focused_output)

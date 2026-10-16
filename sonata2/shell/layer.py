@@ -185,6 +185,73 @@ def overlay_fullscreen(win, namespace: str) -> bool:
     return True
 
 
+_MENU_HOLDER = {}
+
+
+def menu_at(app, connector: str, x: float, y: float, sections):
+    """A menu at (x, y) of the screen (the output layout's coordinates) on
+    display `connector`, where no surface of ours is -- a window in Mission
+    Control (Vini: right-click it for the Dock's menu). A see-through
+    surface over the display holds it while it's open; a click anywhere
+    else, or Esc, closes it. None without the layer shell."""
+    from gi.repository import Gdk, GLib, Gtk
+    from .. import ui
+    from . import monitors
+    LS = layer_shell()
+    if not LS:
+        return None
+    mon = next((m for m in monitors._list() if monitors.connector(m) == connector), None) or monitors.main()
+    win = _MENU_HOLDER.get("win")
+    if win is None:
+        ui.register("window.sonata-menu-holder, window.sonata-menu-holder > contents "
+                    "{ background: none; box-shadow: none; }", key="menu-holder")
+        win = Gtk.Window(application=app, decorated=False, css_classes=["sonata-menu-holder"])
+        win.set_child(Gtk.Box(hexpand=True, vexpand=True))
+        overlay_fullscreen(win, "sonata2-menu")
+
+        def close(*_a):
+            pop = _MENU_HOLDER.get("pop")
+            if pop is not None:
+                pop.popdown()
+            return pop is not None
+        click = Gtk.GestureClick(button=0)
+        click.connect("pressed", close)
+        win.add_controller(click)
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", lambda _c, kv, *_a: kv == Gdk.KEY_Escape and close())
+        win.add_controller(keys)
+        _MENU_HOLDER["win"] = win
+    old = _MENU_HOLDER.pop("pop", None)
+    if old is not None:
+        old.popdown()
+    if mon is not None:
+        LS.set_monitor(win, mon)
+        g = mon.get_geometry()
+        x, y = x - g.x, y - g.y
+
+    def show(*_a):
+        pop = ui.menu.popup(win.get_child(), sections, at=(x, y), autohide=False)
+
+        def closed(p):
+            if _MENU_HOLDER.get("pop") is p:
+                _MENU_HOLDER.pop("pop")
+                win.set_visible(False)
+        pop.connect("closed", closed)
+        _MENU_HOLDER["pop"] = pop
+        return False
+    if win.get_mapped():
+        show()
+    else:
+        handler = {}
+
+        def mapped(*_a):
+            win.disconnect(handler.pop("id"))
+            GLib.idle_add(show)                   # (once the surface has its size)
+        handler["id"] = win.connect("map", mapped)
+        win.present()
+    return win
+
+
 PICKER_DROP = 140        # the pickers' panel sits this far below the middle of the screen (Vini)
 
 
