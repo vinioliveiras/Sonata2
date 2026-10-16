@@ -11,10 +11,12 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gsk, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 from ..backend import stats as S  # noqa: E402
 
 KINDS = S.KINDS                            # cpu, gpu or gpu_<card> for each card, ram, net, fps
-TITLES = {"cpu": "CPU", "gpu": "GPU", "ram": "Memory", "net": "Network", "fps": "FPS"}
+# shown through _(TITLES[kind]); a card's own title is translated here already
+TITLES = {"cpu": N_("CPU"), "gpu": N_("GPU"), "ram": N_("Memory"), "net": N_("Network"), "fps": N_("FPS")}
 CAPTIONS = {"cpu": "CPU", "gpu": "GPU", "ram": "RAM", "net": "NET", "fps": "FPS"}     # beside a menu bar graph
 ICONS = {"cpu": "cpu-symbolic", "gpu": "gpu-symbolic", "ram": "media-memory-symbolic",
          "net": "network-transmit-receive-symbolic", "fps": "speedometer-symbolic"}
@@ -22,24 +24,24 @@ SERIES = {"cpu": ("cpu",), "gpu": ("gpu",), "ram": ("ram",), "net": ("down", "up
 PERCENT = {"cpu", "gpu", "ram"}            # 0..100 scale; the others scale to their own peak
 SHORT = {"NVIDIA": "NV", "Intel": "INT"}   # a card's maker beside a menu bar graph
 for _k, _maker in S.GPU_MAKERS.items():    # two cards or more: one of each per card
-    TITLES[_k] = f"GPU ({_maker})"
+    TITLES[_k] = _("GPU ({maker})").format(maker=_maker)
     CAPTIONS[_k] = SHORT.get(_maker, _maker)
     ICONS[_k] = "gpu-symbolic"
     SERIES[_k] = (_k,)
     PERCENT.add(_k)
-TITLES["temp_cpu"], CAPTIONS["temp_cpu"] = "CPU Temperature", "CPU°"
+TITLES["temp_cpu"], CAPTIONS["temp_cpu"] = N_("CPU Temperature"), "CPU°"
 ICONS["temp_cpu"], SERIES["temp_cpu"] = "temperature-symbolic", ("temp_cpu",)
 PERCENT.add("temp_cpu")                    # °C on a 0..100 scale
 for _k in S.TEMP_KINDS:                    # each card's temperature (Vini)
     _maker = S.TEMP_MAKERS_BY_KIND[_k]
-    TITLES[_k] = "GPU Temperature" if _k == "temp_gpu" else f"GPU Temperature ({_maker})"
+    TITLES[_k] = N_("GPU Temperature") if _k == "temp_gpu" else _("GPU Temperature ({maker})").format(maker=_maker)
     CAPTIONS[_k] = "GPU°" if _k == "temp_gpu" else f"{SHORT.get(_maker, _maker)}°"
     ICONS[_k] = "freon-gpu-temperature-symbolic"
     SERIES[_k] = (_k,)
     PERCENT.add(_k)
 for _k, _key in S.VRAM_KINDS.items():      # each card's video memory (Vini)
     _maker = S.VRAM_MAKERS_BY_KIND[_k]
-    TITLES[_k] = "Video Memory" if _k == "vram" else f"Video Memory ({_maker})"
+    TITLES[_k] = N_("Video Memory") if _k == "vram" else _("Video Memory ({maker})").format(maker=_maker)
     CAPTIONS[_k] = "VRAM" if _k == "vram" else f"VRAM {SHORT.get(_maker, _maker)}"
     ICONS[_k] = "media-memory-symbolic"
     SERIES[_k] = (_k,)                     # history: % of the card's memory
@@ -147,7 +149,7 @@ def module(kind: str) -> Gtk.Widget:
     head = Gtk.Box(spacing=8)
     head.append(Gtk.Image(icon_name=ICONS[kind], pixel_size=16))
     # nothing here may widen Control Center (its size is fixed): texts shrink with an ellipsis
-    head.append(Gtk.Label(label=TITLES[kind], xalign=0, hexpand=True, css_classes=["panel-module-title"],
+    head.append(Gtk.Label(label=_(TITLES[kind]), xalign=0, hexpand=True, css_classes=["panel-module-title"],
                           ellipsize=Pango.EllipsizeMode.END, width_chars=1))
     value = Gtk.Label(label="–", xalign=1, css_classes=["cc-stat-value"], ellipsize=Pango.EllipsizeMode.START,
                       width_chars=1, max_width_chars=12)

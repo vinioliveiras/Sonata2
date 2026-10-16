@@ -15,6 +15,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from . import folder  # noqa: E402
 
 ui.register("""
@@ -97,11 +98,11 @@ def unpin(uri) -> None:
 
 
 def _favorites():
-    out = [("Recents", "document-open-recent-symbolic", folder.RECENTS),
-           ("Applications", "view-app-grid-symbolic", folder.APPS)]
-    for kind, title, icon in ((GLib.UserDirectory.DIRECTORY_DESKTOP, "Desktop", "user-desktop-symbolic"),
-                              (GLib.UserDirectory.DIRECTORY_DOCUMENTS, "Documents", "folder-documents-symbolic"),
-                              (GLib.UserDirectory.DIRECTORY_DOWNLOAD, "Downloads", "folder-download-symbolic")):
+    out = [(_("Recents"), "document-open-recent-symbolic", folder.RECENTS),
+           (_("Applications"), "view-app-grid-symbolic", folder.APPS)]
+    for kind, title, icon in ((GLib.UserDirectory.DIRECTORY_DESKTOP, _("Desktop"), "user-desktop-symbolic"),
+                              (GLib.UserDirectory.DIRECTORY_DOCUMENTS, _("Documents"), "folder-documents-symbolic"),
+                              (GLib.UserDirectory.DIRECTORY_DOWNLOAD, _("Downloads"), "folder-download-symbolic")):
         uri = folder.xdg_uri(kind)
         if uri:
             out.append((title, icon, uri))
@@ -156,13 +157,13 @@ class Sidebar(Gtk.Box):
         self.list.remove_all()
         self._rows = {}
         self._disks = []
-        head = self._head("Favorites")
+        head = self._head(_("Favorites"))
         self._pin_target(head, None)                  # on the heading: pinned at the end
         pinned = {u for u, _l in read_bookmarks()}
         for title, icon, uri in _favorites():
             self._place(title, icon, uri, favorite=True, pinned=uri in pinned)
-        self._head("Locations")
-        self._place("Computer", "drive-harddisk-symbolic", "file:///", disk=True)
+        self._head(_("Locations"))
+        self._place(_("Computer"), "drive-harddisk-symbolic", "file:///", disk=True)
         for mount in self._volumes.get_mounts():
             if mount.is_shadowed():
                 continue
@@ -182,12 +183,12 @@ class Sidebar(Gtk.Box):
             self._rows[uri].volume = vol
         from . import server
         if server.can_browse_network():                                # Finder's Network
-            self._place("Network", "network-workgroup-symbolic", server.NETWORK)
-        self._place("Trash", "user-trash-symbolic", "trash:///")      # (Vini: Trash in the sidebar)
+            self._place(_("Network"), "network-workgroup-symbolic", server.NETWORK)
+        self._place(_("Trash"), "user-trash-symbolic", "trash:///")      # (Vini: Trash in the sidebar)
         from . import tags                                              # Finder's Tags
-        self._head("Tags")
+        self._head(_("Tags"))
         for name in tags.NAMES:
-            self._place(name, None, tags.uri(name), tag=name)
+            self._place(_(name), None, tags.uri(name), tag=name)
         if self._current:
             self.select(self._current)
 
@@ -267,7 +268,7 @@ class Sidebar(Gtk.Box):
             box.append(name)
         if mount is not None:
             eject = Gtk.Button(icon_name="media-eject-symbolic", css_classes=["fs-eject"],
-                               tooltip_text="Eject", valign=Gtk.Align.CENTER)
+                               tooltip_text=_("Eject"), valign=Gtk.Align.CENTER)
             eject.connect("clicked", lambda _b, m=mount: self._eject(m))
             box.append(eject)
         row.set_child(box)
@@ -278,7 +279,7 @@ class Sidebar(Gtk.Box):
         if pinned:
             menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
             menu.connect("pressed", lambda _g, _n, x, y, r=row: ui.menu.popup(
-                r, [[ui.menu.Item("Remove from Sidebar", lambda: unpin(r.uri))]], at=(x, y), passthrough=True))
+                r, [[ui.menu.Item(_("Remove from Sidebar"), lambda: unpin(r.uri))]], at=(x, y), passthrough=True))
             row.add_controller(menu)
         self.list.append(row)
         self._rows[uri] = row
@@ -357,9 +358,9 @@ class Sidebar(Gtk.Box):
                 row.meter.get_parent().set_visible(False)
                 return
             ui.progress.set_meter(row.meter, (total - free) / total)
-            row.free.set_label(f"{ui.fmt.size(free)} free")
-            row.set_tooltip_text(f"{ui.fmt.size(free)} available of {ui.fmt.size(total)}\n"
-                                 f"{ui.fmt.size(total - free)} used")
+            row.free.set_label(_("{size} free").format(size=ui.fmt.size(free)))
+            row.set_tooltip_text(_("{free} available of {total}").format(free=ui.fmt.size(free), total=ui.fmt.size(total))
+                                 + "\n" + _("{size} used").format(size=ui.fmt.size(total - free)))
         Gio.File.new_for_uri(row.uri).query_filesystem_info_async(
             "filesystem::size,filesystem::free", GLib.PRIORITY_LOW, None, got)
 
@@ -377,7 +378,7 @@ class Sidebar(Gtk.Box):
                     if dev and rodisk.try_readonly(dev, e.message):        # a Windows disk left dirty: read-only
                         self._open_readonly(v, dev, e.message)
                         return
-                    ui.dialog.alert(f"“{v.get_name()}” couldn't be opened.", e.message,
+                    ui.dialog.alert(_("“{name}” couldn't be opened.").format(name=v.get_name()), e.message,
                                     [("ok", "OK", "default")], parent=self.get_root())
                     return
                 m = v.get_mount()
@@ -393,14 +394,14 @@ class Sidebar(Gtk.Box):
 
         def mounted(path, err):
             if path is None:
-                ui.dialog.alert(f"“{vol.get_name()}” couldn't be opened.", err or why,
+                ui.dialog.alert(_("“{name}” couldn't be opened.").format(name=vol.get_name()), err or why,
                                 [("ok", "OK", "default")], parent=self.get_root())
                 return
             m = vol.get_mount()
             uri = m.get_root().get_uri() if m is not None else (Gio.File.new_for_path(path).get_uri() if path else None)
             if uri:
                 self._on_open(uri)
-            ui.dialog.alert(f"“{vol.get_name()}” is read-only.", rodisk.NOTE, [("ok", "OK", "default")],
+            ui.dialog.alert(_("“{name}” is read-only.").format(name=vol.get_name()), rodisk.NOTE, [("ok", "OK", "default")],
                             parent=self.get_root())
         rodisk.mount_readonly(device, mounted)
 
@@ -422,7 +423,7 @@ class Sidebar(Gtk.Box):
         (Vini: no separate button); a click on it then ejects."""
         stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE,
                           transition_duration=self.EJECT_FADE_MS, valign=Gtk.Align.CENTER,
-                          css_classes=["fs-eject-icon"], tooltip_text="Eject")
+                          css_classes=["fs-eject-icon"], tooltip_text=_("Eject"))
         stack.add_named(img, "disk")
         stack.add_named(Gtk.Image(icon_name="media-eject-symbolic", pixel_size=16, css_classes=["fs-place"]),
                         "eject")
@@ -447,13 +448,13 @@ class Sidebar(Gtk.Box):
         mount = getattr(row, "mount", None)
         first = []
         if getattr(win, "TABS", False) and hasattr(win, "new_tab"):
-            first.append(ui.menu.Item("Open in New Tab", lambda: win.new_tab(row.uri)))
-        first.append(ui.menu.Item("Get Info", lambda: self._disk_info(row.uri)))
+            first.append(ui.menu.Item(_("Open in New Tab"), lambda: win.new_tab(row.uri)))
+        first.append(ui.menu.Item(_("Get Info"), lambda: self._disk_info(row.uri)))
         sections = [first]
         if mount is not None:
-            verb = "Eject" if mount.can_eject() else "Unmount"
-            sections.append([ui.menu.Item(f"{verb} “{title}”", lambda: self._eject(mount))])
-        sections.append([ui.menu.Item("Open Disk Utility", self._disk_utility)])
+            verb = _("Eject “{name}”") if mount.can_eject() else _("Unmount “{name}”")
+            sections.append([ui.menu.Item(verb.format(name=title), lambda: self._eject(mount))])
+        sections.append([ui.menu.Item(_("Open Disk Utility"), self._disk_utility)])
         ui.menu.popup(row, sections, at=(x, y), passthrough=True)
 
     def _disk_info(self, uri) -> None:
@@ -492,5 +493,5 @@ class Sidebar(Gtk.Box):
         try:
             (mount.eject_with_operation_finish if eject else mount.unmount_with_operation_finish)(res)
         except GLib.Error as e:
-            ui.dialog.alert(f"The disk “{mount.get_name()}” wasn't ejected.", e.message,
+            ui.dialog.alert(_("The disk “{name}” wasn't ejected.").format(name=mount.get_name()), e.message,
                             [("ok", "OK", "default")], parent=self.get_root())

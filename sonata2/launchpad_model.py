@@ -9,6 +9,8 @@ COLS, ROWS = 7, 5
 DEFAULTS = {"pages": [], "hidden": [], "grid": []}    # launchpad.json (config.load keeps only these keys)
 PER_PAGE = COLS * ROWS
 
+from .i18n import N_, _  # noqa: E402
+
 
 def set_grid(cols: int, rows: int) -> bool:
     """Page size for this display (responsive: 7 columns like macOS, fewer on
@@ -23,11 +25,11 @@ def set_grid(cols: int, rows: int) -> bool:
 # Folder names from freedesktop main categories (macOS names its new folders
 # after the apps' App Store category).
 CATEGORY_NAMES = (
-    ("Game", "Games"), ("Development", "Developer Tools"), ("Office", "Productivity"),
-    ("Graphics", "Creativity"), ("AudioVideo", "Entertainment"), ("Audio", "Music"),
-    ("Video", "Video"), ("Network", "Internet"), ("Education", "Education"),
-    ("Science", "Science"), ("Settings", "Settings"), ("System", "System"),
-    ("Utility", "Utilities"),
+    ("Game", N_("Games")), ("Development", N_("Developer Tools")), ("Office", N_("Productivity")),
+    ("Graphics", N_("Creativity")), ("AudioVideo", N_("Entertainment")), ("Audio", N_("Music")),
+    ("Video", N_("Video")), ("Network", N_("Internet")), ("Education", N_("Education")),
+    ("Science", N_("Science")), ("Settings", N_("Settings")), ("System", N_("System")),
+    ("Utility", N_("Utilities")),
 )
 
 
@@ -40,8 +42,8 @@ def folder_name(categories_a, categories_b) -> str:
     for cats in ((set(categories_a) & set(categories_b)), set(categories_a), set(categories_b)):
         for key, name in CATEGORY_NAMES:
             if key in cats:
-                return name
-    return "Untitled Folder"
+                return _(name)          # a new folder's name, in the session's language
+    return _("Untitled Folder")
 
 
 def _list(v) -> list:
@@ -81,7 +83,7 @@ class Model:
                     seen.update(apps)
                     if len(apps) > 1:
                         name = item.get("folder")
-                        f = {"folder": name if isinstance(name, str) and name else "Untitled Folder", "apps": apps}
+                        f = {"folder": name if isinstance(name, str) and name else _("Untitled Folder"), "apps": apps}
                         for k in KEPT_KEYS:             # the Dock link, the lock
                             if item.get(k):
                                 f[k] = item[k]
@@ -228,7 +230,7 @@ class Model:
             return None
         for a in keep:
             self._remove_app_anywhere(a)
-        item = {"folder": name or "Untitled Folder", "apps": keep} if len(keep) > 1 else keep[0]
+        item = {"folder": name or _("Untitled Folder"), "apps": keep} if len(keep) > 1 else keep[0]
         if is_folder(item):
             if link:
                 item["link"] = link

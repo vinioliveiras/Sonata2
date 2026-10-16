@@ -16,6 +16,7 @@ gi.require_version("Graphene", "1.0")
 from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gsk, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 ui.register("""
 window.sonata-lock { background: black; font-family: %(font)s; }
@@ -77,9 +78,9 @@ def power_bar(action) -> Gtk.Widget:
     screens); action(method) gets the logind method name."""
     bar = Gtk.Box(spacing=20, halign=Gtk.Align.CENTER, valign=Gtk.Align.END, margin_bottom=40,
                   homogeneous=True, css_classes=["gr-rise-late"])
-    for label, icon, method in (("Sleep", "weather-clear-night-symbolic", "Suspend"),
-                                ("Restart", "view-refresh-symbolic", "Reboot"),
-                                ("Shut Down", "system-shutdown-symbolic", "PowerOff")):
+    for label, icon, method in ((_("Sleep"), "weather-clear-night-symbolic", "Suspend"),
+                                (_("Restart"), "view-refresh-symbolic", "Reboot"),
+                                (_("Shut Down"), "system-shutdown-symbolic", "PowerOff")):
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         # the pointer only (macOS): never keyboard focus -- while the password was
         # checked the field gave its focus away, and the next Enter restarted the
@@ -327,8 +328,8 @@ def avatar(size=108, user=None, real_name=None, icon=None):
 
 
 
-def password_field(placeholder="Enter Password") -> Gtk.PasswordEntry:
-    return Gtk.PasswordEntry(placeholder_text=placeholder, css_classes=["lk-field"],
+def password_field(placeholder=None) -> Gtk.PasswordEntry:
+    return Gtk.PasswordEntry(placeholder_text=placeholder or _("Enter Password"), css_classes=["lk-field"],
                              halign=Gtk.Align.CENTER, show_peek_icon=False)
 
 

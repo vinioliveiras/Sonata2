@@ -6,6 +6,8 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib  # noqa: E402
 
+from ..i18n import _  # noqa: E402
+
 PREFIX = "org.mpris.MediaPlayer2."
 PATH = "/org/mpris/MediaPlayer2"
 IFACE = "org.mpris.MediaPlayer2.Player"
@@ -90,7 +92,7 @@ class Players:
     @property
     def title(self) -> str:
         meta = self._prop("Metadata") or {}
-        return meta.get("xesam:title") or "Not Playing"
+        return meta.get("xesam:title") or _("Not Playing")
 
     @property
     def artist(self) -> str:

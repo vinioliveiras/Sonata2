@@ -23,6 +23,7 @@ gi.require_version("PangoCairo", "1.0")
 from gi.repository import Gdk, GLib, Gtk, Pango, PangoCairo  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 
 COLORS = ("#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#007aff", "#af52de", "#1c1c1e", "#ffffff")
 WIDTHS = (0.0025, 0.005, 0.009)                 # thin / medium / thick, of the picture's longer side
@@ -628,7 +629,7 @@ class MarkupLayer(Gtk.DrawingArea):
 
     # -- text -------------------------------------------------------------------------------------
     def _ask_text(self, x, y, index=None) -> None:
-        entry = ui.controls.text_field(self.items[index]["text"] if index is not None else "", "Text")
+        entry = ui.controls.text_field(self.items[index]["text"] if index is not None else "", _("Text"))
         entry.set_size_request(220, -1)
         pop = Gtk.Popover(child=entry, has_arrow=False, position=Gtk.PositionType.BOTTOM)
         pop.set_parent(self)
@@ -848,9 +849,9 @@ def clamp(f) -> list:
 class MarkupBar(Gtk.Box):
     """Tools | colours | width | undo redo clear | Cancel Done, for a MarkupLayer
     (the Delete key removes the selected mark; the trash, all of them)."""
-    TOOLS = (("select", "Select (move, resize, recolour; Delete removes)"), ("pen", "Pen"),
-             ("hl", "Highlighter"), ("shape", "Shapes"), ("text", "Text"), ("emoji", "Emoji"),
-             ("step", "Numbered steps"), ("pixelate", "Pixelate (hide something)"))
+    TOOLS = (("select", N_("Select (move, resize, recolour; Delete removes)")), ("pen", N_("Pen")),
+             ("hl", N_("Highlighter")), ("shape", N_("Shapes")), ("text", N_("Text")), ("emoji", N_("Emoji")),
+             ("step", N_("Numbered steps")), ("pixelate", N_("Pixelate (hide something)")))
 
     def __init__(self, layer: MarkupLayer, on_done=None, on_cancel=None, tools=None, colors=COLORS, actions=None,
                  on_copy=None):
@@ -861,7 +862,7 @@ class MarkupBar(Gtk.Box):
         self.tools = {}
         box = Gtk.Box(spacing=2, hexpand=True, halign=Gtk.Align.CENTER)
         for name, tip in tools or self.TOOLS:
-            b = Gtk.Button(css_classes=["mk"], tooltip_text=tip, can_focus=False)
+            b = Gtk.Button(css_classes=["mk"], tooltip_text=_(tip), can_focus=False)
             b.set_child(Gtk.Label(label=layer.emoji) if name == "emoji" else _glyph(name))
             b.connect("clicked", lambda _b, n=name: self._tool(n))
             box.append(b)
@@ -877,14 +878,14 @@ class MarkupBar(Gtk.Box):
             box.append(b)
             self.swatches[c] = sw
         box.append(Gtk.Box(css_classes=["mk-sep"]))
-        wb = Gtk.Button(css_classes=["mk"], tooltip_text="Line width", can_focus=False)
+        wb = Gtk.Button(css_classes=["mk"], tooltip_text=_("Line width"), can_focus=False)
         wb.set_child(_glyph("width"))
         wb.connect("clicked", lambda b: self._widths(b))
         box.append(wb)
         for name, tip, fn in actions if actions is not None else (
-                ("undo", "Undo", layer.undo), ("redo", "Redo", layer.redo),
-                ("trash", "Delete all marks", layer.clear)):
-            b = Gtk.Button(css_classes=["mk"], tooltip_text=tip, can_focus=False)
+                ("undo", N_("Undo"), layer.undo), ("redo", N_("Redo"), layer.redo),
+                ("trash", N_("Delete all marks"), layer.clear)):
+            b = Gtk.Button(css_classes=["mk"], tooltip_text=_(tip), can_focus=False)
             b.set_child(_glyph(name))
             b.connect("clicked", lambda _b, f=fn: f())
             box.append(b)
@@ -892,14 +893,14 @@ class MarkupBar(Gtk.Box):
         self.box = box
         self.copy_btn = None
         if on_copy is not None:                    # the picture with its marks on the clipboard (Vini)
-            self.copy_btn = ui.controls.push_button("Copy", lambda: on_copy(self.copied), valign=Gtk.Align.CENTER)
+            self.copy_btn = ui.controls.push_button(_("Copy"), lambda: on_copy(self.copied), valign=Gtk.Align.CENTER)
             self.copy_btn.add_css_class("mk-done")
-            self.copy_btn.set_tooltip_text("Copy the picture with its marks")
+            self.copy_btn.set_tooltip_text(_("Copy the picture with its marks"))
             self.append(self.copy_btn)
         if on_done is not None:
-            cancel = ui.controls.push_button("Cancel", on_cancel, valign=Gtk.Align.CENTER)
+            cancel = ui.controls.push_button(_("Cancel"), on_cancel, valign=Gtk.Align.CENTER)
             cancel.add_css_class("mk-done")
-            done = ui.controls.push_button("Done", on_done, style="default", valign=Gtk.Align.CENTER)
+            done = ui.controls.push_button(_("Done"), on_done, style="default", valign=Gtk.Align.CENTER)
             done.add_css_class("mk-done")
             self.append(cancel)
             self.append(done)
@@ -910,8 +911,8 @@ class MarkupBar(Gtk.Box):
         b = self.copy_btn
         if b is None:
             return
-        b.set_label("Copied" if ok else "Couldn't Copy")
-        GLib.timeout_add(1400, lambda: (b.set_label("Copy"), False)[1])
+        b.set_label(_("Copied") if ok else _("Couldn't Copy"))
+        GLib.timeout_add(1400, lambda: (b.set_label(_("Copy")), False)[1])
 
     def _swatch(self, cr, w, h, c) -> None:
         r, g, b, _a = _rgba(c)
@@ -967,7 +968,7 @@ class MarkupBar(Gtk.Box):
         pop = Gtk.Popover(child=box, has_arrow=False)
         pop.set_parent(anchor)
         for i, w in enumerate(WIDTHS):
-            b = Gtk.Button(can_focus=False, tooltip_text=("Thin", "Medium", "Thick")[i])
+            b = Gtk.Button(can_focus=False, tooltip_text=(_("Thin"), _("Medium"), _("Thick"))[i])
             area = Gtk.DrawingArea(content_width=22, content_height=18, can_target=False)
 
             def paint(a, cr, ww, hh, i=i):

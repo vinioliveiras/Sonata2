@@ -22,36 +22,37 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, icons, names, ui  # noqa: E402
+from ..i18n import _, ngettext  # noqa: E402
 from ..backend import equalizer, system  # noqa: E402
 
 SECTIONS = [  # id, title, icon, badge colour, group (colours varied, not mostly grey: Vini)
     ("wifi", "Wi-Fi", "network-wireless-symbolic", "blue", "linux"),
-    ("network", "Network", "network-wired-symbolic", "indigo", "linux"),
+    ("network", _("Network"), "network-wired-symbolic", "indigo", "linux"),
     ("bluetooth", "Bluetooth", "bluetooth-active-symbolic", "blue", "linux"),
-    ("sound", "Sound", "audio-volume-high-symbolic", "pink", "linux"),
-    ("displays", "Displays", "video-display-symbolic", "teal", "linux"),
-    ("battery", "Battery", "battery-full-symbolic", "green", "linux"),
-    ("keyboard", "Keyboard", "input-keyboard-symbolic", "graphite", "input"),
-    ("mouse", "Mouse & Trackpad", "input-mouse-symbolic", "gray", "input"),
-    ("gamepad", "Game Controllers", "input-gaming-symbolic", "orange", "input"),
-    ("printers", "Printers & Scanners", "printer-symbolic", "gray", "input"),
-    ("appearance", "Appearance", "preferences-desktop-appearance-symbolic", "indigo", "sonata"),
-    ("appicons", "App Icons", "applications-graphics-symbolic", "pink", "sonata"),
+    ("sound", _("Sound"), "audio-volume-high-symbolic", "pink", "linux"),
+    ("displays", _("Displays"), "video-display-symbolic", "teal", "linux"),
+    ("battery", _("Battery"), "battery-full-symbolic", "green", "linux"),
+    ("keyboard", _("Keyboard"), "input-keyboard-symbolic", "graphite", "input"),
+    ("mouse", _("Mouse & Trackpad"), "input-mouse-symbolic", "gray", "input"),
+    ("gamepad", _("Game Controllers"), "input-gaming-symbolic", "orange", "input"),
+    ("printers", _("Printers & Scanners"), "printer-symbolic", "gray", "input"),
+    ("appearance", _("Appearance"), "preferences-desktop-appearance-symbolic", "indigo", "sonata"),
+    ("appicons", _("App Icons"), "applications-graphics-symbolic", "pink", "sonata"),
     # Dock, Menu Bar, Control Center, Desktop & Windows: what each does (Vini);
     # how they look (glass, transparency, corners) stays in Appearance
     ("dock", "Dock", "view-grid-symbolic", "black", "sonata"),
-    ("menubar", "Menu Bar", "panel-top-symbolic", "blue", "sonata"),
-    ("controlcenter", "Control Center", "sonata-control-center-symbolic", "purple", "sonata"),
-    ("desktop", "Desktop & Windows", "user-desktop-symbolic", "teal", "sonata"),
-    ("launchpad", names.APPS, "view-app-grid-symbolic", "graphite", "sonata"),
-    ("notifications", "Notifications", "preferences-system-notifications-symbolic", "red", "sonata"),
-    ("users", "Users & Groups", "system-users-symbolic", "orange", "system"),
-    ("defaults", "Default Apps", "emblem-default-symbolic", "purple", "system"),
-    ("privacy", "Security & Privacy", "security-high-symbolic", "indigo", "system"),
-    ("accessibility", "Accessibility", "preferences-desktop-accessibility-symbolic", "blue", "system"),
-    ("language", "Language & Region", "preferences-desktop-locale-symbolic", "blue", "system"),
-    ("datetime", "Date & Time", "preferences-system-time-symbolic", "green", "system"),
-    ("about", "About", "help-about-symbolic", "gray", "about"),
+    ("menubar", _("Menu Bar"), "panel-top-symbolic", "blue", "sonata"),
+    ("controlcenter", _("Control Center"), "sonata-control-center-symbolic", "purple", "sonata"),
+    ("desktop", _("Desktop & Windows"), "user-desktop-symbolic", "teal", "sonata"),
+    ("launchpad", _(names.APPS), "view-app-grid-symbolic", "graphite", "sonata"),
+    ("notifications", _("Notifications"), "preferences-system-notifications-symbolic", "red", "sonata"),
+    ("users", _("Users & Groups"), "system-users-symbolic", "orange", "system"),
+    ("defaults", _("Default Apps"), "emblem-default-symbolic", "purple", "system"),
+    ("privacy", _("Security & Privacy"), "security-high-symbolic", "indigo", "system"),
+    ("accessibility", _("Accessibility"), "preferences-desktop-accessibility-symbolic", "blue", "system"),
+    ("language", _("Language & Region"), "preferences-desktop-locale-symbolic", "blue", "system"),
+    ("datetime", _("Date & Time"), "preferences-system-time-symbolic", "green", "system"),
+    ("about", _("About"), "help-about-symbolic", "gray", "about"),
 ]
 
 # Sections made of several parts (each part one _page_<part> builder, shown
@@ -65,9 +66,9 @@ PARTS = {
     "privacy": ("privacy", "sharing"),
     "about": ("about", "sonataupdate", "updates"),     # Sonata's own update, then the system's (Vini)
 }
-PART_TITLES = {"wallpaper": "Wallpaper", "shortcuts": "Keyboard Shortcuts", "trackpad": "Trackpad",
-               "hidden": "Hidden & Protected Apps", "apps": "Installed Apps", "sharing": "Sharing",
-               "updates": "Software Update", "sonataupdate": "Sonata Update"}
+PART_TITLES = {"wallpaper": _("Wallpaper"), "shortcuts": _("Keyboard Shortcuts"), "trackpad": _("Trackpad"),
+               "hidden": _("Hidden & Protected Apps"), "apps": _("Installed Apps"), "sharing": _("Sharing"),
+               "updates": _("Software Update"), "sonataupdate": _("Sonata Update")}
 
 
 def section_of(sid: str) -> str:
@@ -294,10 +295,10 @@ def _set_login_item(name, on) -> None:
     kf.save_to_file(os.path.join(user_dir, name))
 
 
-def search_entry(placeholder: str = "Search", inline: bool = True) -> Gtk.SearchEntry:
+def search_entry(placeholder: str = None, inline: bool = True) -> Gtk.SearchEntry:
     """Settings' search field: the sidebar's look everywhere (Vini) -- a
     rounded grey field with the magnifier. inline: inside a section."""
-    return Gtk.SearchEntry(placeholder_text=placeholder,
+    return Gtk.SearchEntry(placeholder_text=_("Search") if placeholder is None else placeholder,
                            css_classes=["st-search"] + (["inline"] if inline else []))
 
 
@@ -326,12 +327,12 @@ def switch_row(title, active, on_change, subtitle="") -> Adw.SwitchRow:
 
 
 # Vini: warn about USBGuard's own default before anyone turns it on
-USB_WARNING = ("Careful: USBGuard on its own blocks every USB device it has no rule for -- your keyboard and "
-               "mouse too.")
-USB_CONFIRM = ("USBGuard on its own blocks every USB device it has no rule for, your keyboard and mouse "
-               "included. Set Up allows every device while the screen is unlocked and blocks only the ones "
-               "plugged in while it's locked; devices already plugged in keep working.\n\n"
-               "Terminal opens and asks for your password. Don't turn USBGuard on yourself in another way.")
+USB_WARNING = _("Careful: USBGuard on its own blocks every USB device it has no rule for -- your keyboard and "
+                "mouse too.")
+USB_CONFIRM = _("USBGuard on its own blocks every USB device it has no rule for, your keyboard and mouse "
+                "included. Set Up allows every device while the screen is unlocked and blocks only the ones "
+                "plugged in while it's locked; devices already plugged in keep working.\n\n"
+                "Terminal opens and asks for your password. Don't turn USBGuard on yourself in another way.")
 def loading_row(title: str) -> Adw.ActionRow:
     """A row saying what is being read, with a spinner (Vini: Wi-Fi, an
     app's permissions -- lists that take a moment)."""
@@ -344,7 +345,7 @@ INSTALL_POLL_S = 2
 INSTALL_WAIT_S = 15 * 60
 
 
-def install_row(title, subtitle, command, ready=None, on_ready=None, label="Install…",
+def install_row(title, subtitle, command, ready=None, on_ready=None, label=None,
                 confirm=None) -> Adw.ActionRow:
     """A row for something Settings needs installed (Vini): its button opens
     Terminal with the command running (the password asked there). With
@@ -355,7 +356,7 @@ def install_row(title, subtitle, command, ready=None, on_ready=None, label="Inst
     row.set_subtitle_lines(0)
     if not command:
         return row
-    btn = ui.controls.push_button(label, valign=Gtk.Align.CENTER)
+    btn = ui.controls.push_button(label or _("Install…"), valign=Gtk.Align.CENTER)
     btn.set_tooltip_text(command if "\n" not in command else None)
     row.add_suffix(btn)
     row.command = command
@@ -382,7 +383,7 @@ def install_row(title, subtitle, command, ready=None, on_ready=None, label="Inst
             run()
             return
         heading, body, ok = confirm
-        row.confirm = ui.dialog.alert(heading, body, [("cancel", "Cancel", ""), ("go", ok, "suggested")],
+        row.confirm = ui.dialog.alert(heading, body, [("cancel", _("Cancel"), ""), ("go", ok, "suggested")],
                                       lambda r: r == "go" and run(), parent=row.get_root())
     btn.connect("clicked", clicked)
     row.button = btn
@@ -480,7 +481,7 @@ def _speed(v) -> float:
 
 class Settings(Adw.ApplicationWindow):
     def __init__(self, app, start: str = "appearance"):
-        super().__init__(application=app, title="System Settings")
+        super().__init__(application=app, title=_("System Settings"))
         for c in ("sonata-settings", "sonata-glass"):      # added, not passed (keeps GTK's "csd")
             self.add_css_class(c)
         # Resizable with a working Zoom button (Vini's call; macOS keeps it fixed).
@@ -504,7 +505,7 @@ class Settings(Adw.ApplicationWindow):
         # One content page; sections are stack children, cross-faded on switch.
         self.content = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE)
         self.fade = ui.transition.CrossFade(self.content)
-        self.split.append(Adw.NavigationPage(title="System Settings", child=self.fade, hexpand=True,
+        self.split.append(Adw.NavigationPage(title=_("System Settings"), child=self.fade, hexpand=True,
                                              css_classes=["st-content"]))
         self.current = None
         self.toasts.set_child(self.split)
@@ -566,7 +567,7 @@ class Settings(Adw.ApplicationWindow):
         box.append(card)
         # Search, macOS Ventura style: filters the sections as you type;
         # Return opens the first match
-        self.search = search_entry("Search", inline=False)
+        self.search = search_entry(_("Search"), inline=False)
         self.search.connect("search-changed", lambda *_: self._filter_sections())
         self.search.connect("activate", lambda *_: self._open_first_match())
         box.prepend(self.search)
@@ -595,7 +596,7 @@ class Settings(Adw.ApplicationWindow):
         box.append(self.listbox)                    # the selection jumps: no slide (Vini)
         self.listbox.set_vexpand(True)
         tv.set_content(Gtk.ScrolledWindow(child=box, hscrollbar_policy=Gtk.PolicyType.NEVER))
-        return Adw.NavigationPage(title="System Settings", child=tv, css_classes=["st-sidebar", "sonata-sidebar"])
+        return Adw.NavigationPage(title=_("System Settings"), child=tv, css_classes=["st-sidebar", "sonata-sidebar"])
 
     def _matches(self, sid, title, q) -> bool:
         words = f"{title} {KEYWORDS.get(sid, '')}".casefold()
@@ -674,7 +675,7 @@ class Settings(Adw.ApplicationWindow):
         for g in groups:
             page.add(g)
         if tv.back is None:
-            tv.back = Gtk.Button(icon_name="go-previous-symbolic", tooltip_text="Back",
+            tv.back = Gtk.Button(icon_name="go-previous-symbolic", tooltip_text=_("Back"),
                                  css_classes=["flat", "st-back"], valign=Gtk.Align.CENTER)
             tv.back.connect("clicked", lambda _b, sid=self.current: self.pop_detail(sid))
             tv.hb.pack_start(tv.back)
@@ -721,7 +722,7 @@ class Settings(Adw.ApplicationWindow):
 
     def _async_rows(self, grp, work, fill) -> None:
         """Fill `grp` from work() (threaded); a placeholder while loading."""
-        holder = Adw.ActionRow(title="Loading…")
+        holder = Adw.ActionRow(title=_("Loading…"))
         grp.add(holder)
 
         def done(res):
@@ -735,9 +736,9 @@ class Settings(Adw.ApplicationWindow):
         sw = switch_row("Wi-Fi", False, lambda on: system.run_async(
             system.set_wifi_enabled, lambda _r: self._refresh("wifi"), on))
         top.add(sw)
-        nets = group("Networks")
+        nets = group(_("Networks"))
         rescan = Gtk.Button(icon_name="view-refresh-symbolic", css_classes=["flat"], valign=Gtk.Align.CENTER,
-                            tooltip_text="Scan again")
+                            tooltip_text=_("Scan again"))
         rescan.connect("clicked", lambda *_: self._refresh("wifi", rescan=True))
         # Vini: the list took a moment to come -- a spinner while it's read
         spin = ui.progress.Spinner(spinning=True, valign=Gtk.Align.CENTER, visible=False)
@@ -755,47 +756,47 @@ class Settings(Adw.ApplicationWindow):
     def _page_network(self):
         """Big Sur Network: the services (Ethernet, VPN, ...) with their
         status and address; VPNs are imported from .ovpn / WireGuard files."""
-        svc = group("Services")
-        svc.add(Adw.ActionRow(title="Loading…"))
+        svc = group(_("Services"))
+        svc.add(Adw.ActionRow(title=_("Loading…")))
         add = Gtk.Button(icon_name="list-add-symbolic", css_classes=["flat"], valign=Gtk.Align.CENTER,
-                         tooltip_text="Import VPN Configuration…")
+                         tooltip_text=_("Import VPN Configuration…"))
         add.connect("clicked", lambda *_: self._import_vpn())
         svc.set_header_suffix(add)
-        labels = {"ethernet": "Ethernet", "vpn": "VPN", "bridge": "Bridge", "bond": "Bond",
-                  "mobile": "Mobile Broadband", "bluetooth": "Bluetooth PAN"}
+        labels = {"ethernet": "Ethernet", "vpn": "VPN", "bridge": _("Bridge"), "bond": _("Bond"),
+                  "mobile": _("Mobile Broadband"), "bluetooth": _("Bluetooth PAN")}
 
         def fill(lst):
             _clear_group(svc)
             for n in lst or []:
                 row = Adw.ExpanderRow(title=n.name, use_markup=False,
                                       subtitle=f"{labels.get(n.kind, n.kind.title())} · "
-                                               + ("Connected" if n.active else "Not Connected"))
+                                               + (_("Connected") if n.active else _("Not Connected")))
                 dot = Gtk.Box(css_classes=["st-status", "on" if n.active else "off"], valign=Gtk.Align.CENTER)
                 row.add_prefix(dot)
-                row.add_row(switch_row("Connected", n.active, lambda on, n=n: system.run_async(
-                    system.net_service_set, lambda r: (self.toast(r[1] if r and not r[0] else "Done"),
+                row.add_row(switch_row(_("Connected"), n.active, lambda on, n=n: system.run_async(
+                    system.net_service_set, lambda r: (self.toast(r[1] if r and not r[0] else _("Done")),
                                                        self._reload_page("network")), n.uuid, on)))
-                for title, val in (("IP Address", n.address), ("Router", n.gateway), ("DNS Server", n.dns),
-                                   ("Device", n.device)):
+                for title, val in ((_("IP Address"), n.address), (_("Router"), n.gateway), (_("DNS Server"), n.dns),
+                                   (_("Device"), n.device)):
                     if val:
                         r = Adw.ActionRow(title=title, subtitle=val, use_markup=False, subtitle_selectable=True)
                         row.add_row(r)
                 if n.kind == "vpn":
-                    rm = Adw.ActionRow(title="Remove VPN", activatable=True)
+                    rm = Adw.ActionRow(title=_("Remove VPN"), activatable=True)
                     rm.add_css_class("error")
                     rm.connect("activated", lambda *_a, n=n: system.run_async(
                         system.net_service_delete, lambda _ok: self._reload_page("network"), n.uuid))
                     row.add_row(rm)
                 svc.add(row)
             if not lst:
-                svc.add(Adw.ActionRow(title="No network services",
-                                      subtitle="NetworkManager (nmcli) not available or nothing configured"))
+                svc.add(Adw.ActionRow(title=_("No network services"),
+                                      subtitle=_("NetworkManager (nmcli) not available or nothing configured")))
         system.run_async(system.net_services, fill)
         return [svc]
 
     def _import_vpn(self):
-        dlg = Gtk.FileDialog(title="Import VPN Configuration")
-        f = Gtk.FileFilter(name="VPN configurations")
+        dlg = Gtk.FileDialog(title=_("Import VPN Configuration"))
+        f = Gtk.FileFilter(name=_("VPN configurations"))
         for pat in ("*.ovpn", "*.conf"):
             f.add_pattern(pat)
         store = Gio.ListStore(item_type=Gtk.FileFilter)
@@ -807,8 +808,8 @@ class Settings(Adw.ApplicationWindow):
                 file = d.open_finish(res)
             except GLib.Error:
                 return
-            system.run_async(system.vpn_import, lambda r: (self.toast("VPN added" if r and r[0] else
-                                                                      "Couldn't import: " + (r[1] if r else "")),
+            system.run_async(system.vpn_import, lambda r: (self.toast(_("VPN added") if r and r[0] else
+                                                                      _("Couldn't import: {error}").format(error=r[1] if r else "")),
                                                            self._reload_page("network")), file.get_path())
         dlg.open(self, None, done)
 
@@ -820,7 +821,7 @@ class Settings(Adw.ApplicationWindow):
         if spin is not None:
             spin.set_visible(True)
         if not self._wifi_rows:                            # the first time: a row saying so
-            row = loading_row("Looking for networks…")
+            row = loading_row(_("Looking for networks…"))
             self._wifi_nets.add(row)
             self._wifi_rows.append(row)
 
@@ -834,7 +835,7 @@ class Settings(Adw.ApplicationWindow):
             self._wifi_rows = []
             for n in networks[:20]:
                 row = Adw.ActionRow(title=n.ssid, activatable=not n.connected, use_markup=False,
-                                    subtitle="Connected" if n.connected else "")
+                                    subtitle=_("Connected") if n.connected else "")
                 sig = "excellent" if n.signal > 75 else "good" if n.signal > 50 else "ok" if n.signal > 25 else "weak"
                 if n.secure:
                     row.add_suffix(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=12))
@@ -843,7 +844,7 @@ class Settings(Adw.ApplicationWindow):
                 self._wifi_nets.add(row)
                 self._wifi_rows.append(row)
             if not networks:
-                row = Adw.ActionRow(title="No networks found" if enabled else "Wi-Fi is off")
+                row = Adw.ActionRow(title=_("No networks found") if enabled else _("Wi-Fi is off"))
                 self._wifi_nets.add(row)
                 self._wifi_rows.append(row)
         system.run_async(work, fill)
@@ -851,14 +852,14 @@ class Settings(Adw.ApplicationWindow):
     def _join(self, n) -> None:
         def connect(pw=""):
             system.run_async(system.wifi_connect, lambda r: (self.toast(
-                f"Connected to {n.ssid}" if r and r[0] else (r[1] if r else "Couldn't connect")),
+                _("Connected to {name}").format(name=n.ssid) if r and r[0] else (r[1] if r else _("Couldn't connect"))),
                 self._refresh("wifi")), n.ssid, pw)
         if not n.secure:
             connect()
             return
         entry = ui.controls.text_field(secret=True)
-        dlg = ui.dialog.alert(f"The Wi-Fi network “{n.ssid}” requires a password.", "",
-                              [("cancel", "Cancel", ""), ("join", "Join", "default")],
+        dlg = ui.dialog.alert(_("The Wi-Fi network “{name}” requires a password.").format(name=n.ssid), "",
+                              [("cancel", _("Cancel"), ""), ("join", _("Join"), "default")],
                               lambda r: r == "join" and connect(entry.get_text()), parent=self)
         dlg.set_extra_child(entry)
 
@@ -868,25 +869,25 @@ class Settings(Adw.ApplicationWindow):
 
     def _page_bluetooth(self):
         top = group()
-        devs = group("My Devices")
-        near = group("Nearby Devices", "Put a device in pairing mode to see it here.")
+        devs = group(_("My Devices"))
+        near = group(_("Nearby Devices"), _("Put a device in pairing mode to see it here."))
 
         def device_row(d):
-            row = Adw.ActionRow(title=d.name, use_markup=False, subtitle="Connected" if d.connected else
-                                ("Not Connected" if d.paired else ""))
-            btn = ui.controls.push_button("Disconnect" if d.connected else "Connect", valign=Gtk.Align.CENTER)
+            row = Adw.ActionRow(title=d.name, use_markup=False, subtitle=_("Connected") if d.connected else
+                                (_("Not Connected") if d.paired else ""))
+            btn = ui.controls.push_button(_("Disconnect") if d.connected else _("Connect"), valign=Gtk.Align.CENTER)
 
             def done(res):
-                ok, msg = res or (False, "That didn't work")
+                ok, msg = res or (False, _("That didn't work"))
                 self.toast(msg)
                 self._reload_page("bluetooth")
             btn.connect("clicked", lambda b, d=d: (b.set_sensitive(False), b.set_label(
-                "Connecting…" if not d.connected else "Disconnecting…"), system.run_async(
+                _("Connecting…") if not d.connected else _("Disconnecting…")), system.run_async(
                 system.bluetooth_connect_result, done, d.mac, not d.connected)))
             row.add_suffix(btn)
             if d.paired:                       # macOS: the device's (i) menu
                 more = Gtk.Button(icon_name="view-more-horizontal-symbolic", valign=Gtk.Align.CENTER,
-                                  css_classes=["flat", "circular"], tooltip_text="Options")
+                                  css_classes=["flat", "circular"], tooltip_text=_("Options"))
                 more.connect("clicked", lambda b, d=d: self._bt_device_menu(b, d, done))
                 row.add_suffix(more)
             return row
@@ -894,7 +895,7 @@ class Settings(Adw.ApplicationWindow):
         def fill(res):
             state, devices = res or (None, [])
             if state is None:
-                top.add(Adw.ActionRow(title="Bluetooth", subtitle="No Bluetooth adapter found"))
+                top.add(Adw.ActionRow(title="Bluetooth", subtitle=_("No Bluetooth adapter found")))
                 devs.set_visible(False)
                 near.set_visible(False)
                 return
@@ -905,7 +906,7 @@ class Settings(Adw.ApplicationWindow):
             for d in paired:
                 devs.add(device_row(d))
             if not paired:
-                devs.add(Adw.ActionRow(title="No devices"))
+                devs.add(Adw.ActionRow(title=_("No devices")))
             self._bt_near = near
             self._bt_near_rows = {}
             self._bt_fill_near([d for d in devices if not d.paired])
@@ -921,16 +922,18 @@ class Settings(Adw.ApplicationWindow):
     def _bt_device_menu(self, anchor, d, done) -> None:
         """Forget This Device… / Forget and Pair Again…, each asked first."""
         def ask(title, body, label, fn):
-            ui.dialog.alert(title, body, [("cancel", "Cancel", ""), ("go", label, "destructive")],
+            ui.dialog.alert(title, body, [("cancel", _("Cancel"), ""), ("go", label, "destructive")],
                             lambda r: r == "go" and system.run_async(fn, done, d.mac), parent=self)
         I = ui.menu.Item
         ui.menu.popup(anchor, [[
-            I("Forget This Device…", lambda: ask(
-                f"Forget {d.name}?", "It won't connect by itself any more. To use it again, pair it from "
-                "Nearby Devices.", "Forget Device", system.bluetooth_forget)),
-            I("Forget and Pair Again…", lambda: ask(
-                f"Pair {d.name} again?", "Put the device in pairing mode first. Sonata forgets it and pairs "
-                "it anew (this fixes most devices that stopped connecting).", "Pair Again",
+            I(_("Forget This Device…"), lambda: ask(
+                _("Forget {name}?").format(name=d.name), _("It won't connect by itself any more. To use it "
+                                                           "again, pair it from Nearby Devices."),
+                _("Forget Device"), system.bluetooth_forget)),
+            I(_("Forget and Pair Again…"), lambda: ask(
+                _("Pair {name} again?").format(name=d.name), _("Put the device in pairing mode first. Sonata "
+                                                               "forgets it and pairs it anew (this fixes most "
+                                                               "devices that stopped connecting)."), _("Pair Again"),
                 system.bluetooth_pair_again))]], position=Gtk.PositionType.BOTTOM, glass=True)
 
     def _bt_fill_near(self, nearby) -> None:
@@ -944,16 +947,16 @@ class Settings(Adw.ApplicationWindow):
         for d in nearby:
             if d.mac not in self._bt_near_rows:
                 row = Adw.ActionRow(title=d.name, use_markup=False)
-                btn = ui.controls.push_button("Connect", valign=Gtk.Align.CENTER)
+                btn = ui.controls.push_button(_("Connect"), valign=Gtk.Align.CENTER)
 
                 def done(res):
-                    ok, msg = res or (False, "That didn't work")
+                    ok, msg = res or (False, _("That didn't work"))
                     self.toast(msg)
                     if ok:
                         self._reload_page("bluetooth")
                     else:
                         GLib.idle_add(lambda: (self._bt_poll(), False)[1])
-                btn.connect("clicked", lambda b, d=d: (b.set_sensitive(False), b.set_label("Connecting…"),
+                btn.connect("clicked", lambda b, d=d: (b.set_sensitive(False), b.set_label(_("Connecting…")),
                                                        system.run_async(system.bluetooth_connect_result, done,
                                                                         d.mac, True)))
                 row.add_suffix(btn)
@@ -1014,50 +1017,50 @@ class Settings(Adw.ApplicationWindow):
             system.run_async(devicevolume.lock_defaults, None)
 
     def _page_sound(self):
-        out = group("Output")
-        vol = group("Volume")
+        out = group(_("Output"))
+        vol = group(_("Volume"))
 
         def fill(res):
             v, sinks, sources, mic = res or (None, [], [], None)
             if v is None:
-                vol.add(Adw.ActionRow(title="Output volume", subtitle="PipeWire (wpctl) not found"))
+                vol.add(Adw.ActionRow(title=_("Output volume"), subtitle=_("PipeWire (wpctl) not found")))
                 out.set_visible(False)
                 return
-            out_row = slider_row("Output volume", v[0], 0, 100,
+            out_row = slider_row(_("Output volume"), v[0], 0, 100,
                                  lambda x: self._latest("volume", system.set_volume, int(x)))
             from .. import sounds
             ui.controls.on_release(out_row.slider, lambda: sounds.play_soon("volume"))   # feedback on release
             vol.add(out_row)
-            vol.add(switch_row("Mute", v[1], lambda on: system.run_async(system.set_volume, None, None, on)))
+            vol.add(switch_row(_("Mute"), v[1], lambda on: system.run_async(system.set_volume, None, None, on)))
             mic_row = None
             if mic is not None:
-                mic_row = slider_row("Input volume", mic[0], 0, 100,
+                mic_row = slider_row(_("Input volume"), mic[0], 0, 100,
                                      lambda x: self._latest("mic", system.set_input_volume, int(x)))
                 vol.add(mic_row)
             from ..sounds import DEFAULTS as SND_L
-            vol.add(switch_row("Don't let apps change the volume",
+            vol.add(switch_row(_("Don't let apps change the volume"),
                                config.load("sounds", SND_L).get("lock_volumes", False), self._lock_volumes,
-                               subtitle="Each speaker and microphone stays where you set it in Sonata; "
-                                        "an app turning it down (automatic gain in a call) is put back"))
+                               subtitle=_("Each speaker and microphone stays where you set it in Sonata; "
+                                        "an app turning it down (automatic gain in a call) is put back")))
             self._follow_levels(vol, out_row, mic_row)
             options = [(s.key, s.name) for s in sinks]
             if options:
                 cur = next((s.key for s in sinks if s.default), options[0][0])
-                out.add(combo_row("Output device", options, cur,
+                out.add(combo_row(_("Output device"), options, cur,
                                   lambda k: system.run_async(system.select_output, None, k)))
             ins = [(s.key, s.name) for s in sources]
             if ins:
                 cur = next((s.key for s in sources if s.default), ins[0][0])
-                out.add(combo_row("Input device", ins, cur,
+                out.add(combo_row(_("Input device"), ins, cur,
                                   lambda k: system.run_async(system.select_input, None, k)))
             from ..sounds import DEFAULTS as SND_D
-            out.add(switch_row("Use new headphones right away",
+            out.add(switch_row(_("Use new headphones right away"),
                                config.load("sounds", SND_D).get("follow_new_devices", True),
                                lambda on: self._save("sounds", "follow_new_devices", on),
-                               subtitle="USB and Bluetooth headphones and headsets, their microphone too; "
-                                        "the device before comes back when they go"))
+                               subtitle=_("USB and Bluetooth headphones and headsets, their microphone too; "
+                                        "the device before comes back when they go")))
             out.set_visible(bool(options or ins))
-        eq = group("Equalizer", "Each output keeps its own settings")
+        eq = group(_("Equalizer"), _("Each output keeps its own settings"))
 
         def fill_eq(sinks):
             if sinks:
@@ -1070,11 +1073,11 @@ class Settings(Adw.ApplicationWindow):
                                                                                            else None)))
         from ..sounds import DEFAULTS as SND
         snd = config.load("sounds", SND)
-        effects = group("Sound Effects")
-        effects.add(switch_row("Play user interface sound effects", snd["effects"],
+        effects = group(_("Sound Effects"))
+        effects.add(switch_row(_("Play user interface sound effects"), snd["effects"],
                                lambda on: self._save("sounds", "effects", on),
-                               subtitle="Moving to the Trash, emptying it, copies finished, screenshots"))
-        effects.add(switch_row("Play feedback when volume is changed", snd["volume_feedback"],
+                               subtitle=_("Moving to the Trash, emptying it, copies finished, screenshots")))
+        effects.add(switch_row(_("Play feedback when volume is changed"), snd["volume_feedback"],
                                lambda on: self._save("sounds", "volume_feedback", on)))
         return [vol, out, eq, effects]
 
@@ -1087,8 +1090,8 @@ class Settings(Adw.ApplicationWindow):
             return
         state = {"key": next((d.key for d in outputs if d.default and "|" in d.key), keys[0][0])}
         names = list(E.PRESETS) + ["Custom"]
-        on = Adw.SwitchRow(title="Equalizer")
-        preset = Adw.ComboRow(title="Preset", model=Gtk.StringList.new(names))
+        on = Adw.SwitchRow(title=_("Equalizer"))
+        preset = Adw.ComboRow(title=_("Preset"), model=Gtk.StringList.new([_(n) for n in names]))
         bands = Gtk.Box(homogeneous=True, spacing=6, margin_end=12)
         scales = []
         axis = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)          # dB scale, like Music's
@@ -1163,17 +1166,17 @@ class Settings(Adw.ApplicationWindow):
         for sc in scales:
             sc.connect("value-changed", changed_band)
         if len(keys) > 1:
-            grp.add(combo_row("Output", keys, state["key"], lambda k: (state.update(key=k), show())))
+            grp.add(combo_row(_("Output"), keys, state["key"], lambda k: (state.update(key=k), show())))
         grp.add(on)
         grp.add(preset)
         grp.add(row)
         show()
 
     def _page_displays(self):
-        bright = group("Brightness")
-        arranged = group("Arrangement")            # only with two displays or more
+        bright = group(_("Brightness"))
+        arranged = group(_("Arrangement"))            # only with two displays or more
         arranged.set_visible(False)
-        screens = group("Displays")
+        screens = group(_("Displays"))
 
         def fill(res):
             levels, ds = (res or ({}, []))[:2]
@@ -1184,7 +1187,7 @@ class Settings(Adw.ApplicationWindow):
                 names.insert(0, None)                       # a panel wlr-randr didn't list
             for n in names:
                 d = next((x for x in ds if x.name == n), None)
-                title = "Built-in Display" if system.is_builtin(n) else (d.description if d and d.description
+                title = _("Built-in Display") if system.is_builtin(n) else (d.description if d and d.description
                                                                            else n)
                 b = levels.get(n)
                 if b is not None:
@@ -1192,10 +1195,10 @@ class Settings(Adw.ApplicationWindow):
                                           lambda x, n=n: self._latest(("brightness", n), system.set_brightness,
                                                                       int(x), n)))
                 elif system.is_builtin(n):
-                    bright.add(Adw.ActionRow(title=title, subtitle="No backlight control (brightnessctl)"))
+                    bright.add(Adw.ActionRow(title=title, subtitle=_("No backlight control (brightnessctl)")))
                 else:
-                    bright.add(Adw.ActionRow(title=title, subtitle="Turn on DDC/CI in the monitor's own menu "
-                                                                   "to change its brightness here (needs ddcutil)"))
+                    bright.add(Adw.ActionRow(title=title, subtitle=_("Turn on DDC/CI in the monitor's own menu "
+                                                                   "to change its brightness here (needs ddcutil)")))
             if len(ds) > 1:
                 from ..shell.monitors import DEFAULTS as MON
                 from . import arrange
@@ -1208,9 +1211,9 @@ class Settings(Adw.ApplicationWindow):
                 def set_main(n):
                     config.save("displays", {"main": n})
                     share_with_login_screen()          # the login screen too (it can't read ~/.config)
-                main_row = combo_row("Main display", [(d.name, arrange.display_title(d)) for d in ds], main,
+                main_row = combo_row(_("Main display"), [(d.name, arrange.display_title(d)) for d in ds], main,
                                      set_main,
-                                     subtitle="Dock, desktop icons and notifications; every display gets a menu bar")
+                                     subtitle=_("Dock, desktop icons and notifications; every display gets a menu bar"))
 
                 def new_main(n):                      # the menu bar dragged to another display
                     set_main(n)
@@ -1220,8 +1223,8 @@ class Settings(Adw.ApplicationWindow):
                 art = arrange.Arrangement(ds, main,
                                           lambda pos: system.run_async(system.set_display_positions, None, pos),
                                           new_main, Gdk.Texture.new_for_pixbuf(thumb) if thumb else None)
-                hint = Gtk.Label(label="Drag the displays to arrange them. Drag the white menu bar to choose "
-                                       "the main display.", wrap=True, xalign=0, css_classes=["dim-label"],
+                hint = Gtk.Label(label=_("Drag the displays to arrange them. Drag the white menu bar to choose "
+                                       "the main display."), wrap=True, xalign=0, css_classes=["dim-label"],
                                  margin_top=6, margin_bottom=10)
                 frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["display-arrange-box"])
                 frame.append(art)
@@ -1232,7 +1235,7 @@ class Settings(Adw.ApplicationWindow):
                 self.arrangement = art                # (tests)
             for d in ds:
                 saved = system.display_mode_setting(d.name)
-                opts = [("highrr", "Highest refresh rate")] + \
+                opts = [("highrr", _("Highest refresh rate"))] + \
                     [(m, m.replace("@", " @ ").split(".")[0] + " Hz") for m in d.modes]
                 screens.add(combo_row(d.name, opts, saved if saved in [o[0] for o in opts] else d.current,
                                       lambda m, d=d: system.run_async(system.set_display_mode, None, d.name, m),
@@ -1240,10 +1243,10 @@ class Settings(Adw.ApplicationWindow):
                 scales = [(1.0, "100 %"), (1.25, "125 %"), (1.5, "150 %"), (1.75, "175 %"),
                           (2.0, "200 %"), (2.25, "225 %"), (2.5, "250 %"), (2.75, "275 %"),
                           (3.0, "300 %")]                    # (every one monitors.auto_scale picks; never under 100 %)
-                screens.add(combo_row("Scale", scales, nearest(scales, d.scale), lambda s, d=d: system.run_async(system.set_display_scale, None,
+                screens.add(combo_row(_("Scale"), scales, nearest(scales, d.scale), lambda s, d=d: system.run_async(system.set_display_scale, None,
                                                                                d.name, s)))
             if not ds:
-                screens.add(Adw.ActionRow(title="Displays", subtitle="wlr-randr not found or no outputs"))
+                screens.add(Adw.ActionRow(title=_("Displays"), subtitle=_("wlr-randr not found or no outputs")))
         def read():
             ds = system.displays()
             levels = {None: system.brightness()}
@@ -1252,34 +1255,34 @@ class Settings(Adw.ApplicationWindow):
             from . import arrange
             return levels, ds, (arrange.wallpaper_thumb() if len(ds) > 1 else None)
         system.run_async(read, fill)
-        look = group("Appearance")
+        look = group(_("Appearance"))
         from .. import icons as _icons
-        look.add(switch_row("Rounded screen corners",
+        look.add(switch_row(_("Rounded screen corners"),
                             config.load("appearance", _icons.APPEARANCE_DEFAULTS).get("screen_corners", True),
                             lambda on: self._save("appearance", "screen_corners", on),
-                            subtitle="The corners of every display rounded (the lock screen too)"))
+                            subtitle=_("The corners of every display rounded (the lock screen too)")))
         pages = [bright, arranged, screens, look, self._night_shift_group()]
         from .. import gpu
         nvidia = "nvidia" in gpu._cards()
         if gpu.has_dual_gpu() or nvidia:
-            graphics = group("Graphics")
+            graphics = group(_("Graphics"))
             if gpu.has_dual_gpu():
-                graphics.add(switch_row("Draw with the Displays' Graphics Card", gpu.compositor_on_display_gpu(),
+                graphics.add(switch_row(_("Draw with the Displays' Graphics Card"), gpu.compositor_on_display_gpu(),
                                         lambda on: (gpu.set_compositor_on_display_gpu(on),
-                                                    self.ask_restart("session", "The graphics card change")),
+                                                    self.ask_restart("session", _("The graphics card change"))),
                                         subtitle=self._gpu_subtitle(gpu)))
             if nvidia:
                 from .. import gamemode
-                graphics.add(switch_row("Lighter Effects While Gaming", gamemode.light_effects_wanted(),
+                graphics.add(switch_row(_("Lighter Effects While Gaming"), gamemode.light_effects_wanted(),
                                         lambda on: config.update("gpu", light_effects=bool(on)),
-                                        subtitle="When a full-screen game fills the graphics card, blur and "
-                                                 "window animations pause until you leave the game."))
+                                        subtitle=_("When a full-screen game fills the graphics card, blur and "
+                                                 "window animations pause until you leave the game.")))
             if gpu.has_dual_gpu():
-                graphics.add(switch_row("Smart Graphics Switching", gpu.smart(), gpu.set_smart,
-                                        subtitle="Games and creative apps use the high-performance graphics; "
+                graphics.add(switch_row(_("Smart Graphics Switching"), gpu.smart(), gpu.set_smart,
+                                        subtitle=_("Games and creative apps use the high-performance graphics; "
                                                  "everyday apps use the graphics that draw the screens. An app "
                                                  "can have its own choice: right-click it in the Dock or "
-                                                 "Launchpad. For apps opened after the change."))
+                                                 "Launchpad. For apps opened after the change.")))
                 self._gpu_card_rows(graphics, gpu)
             pages.append(graphics)
         pages.append(self._fps_group())
@@ -1290,36 +1293,36 @@ class Settings(Adw.ApplicationWindow):
         the same choice as Control Center > FPS Limit)."""
         from .. import fpslimit
         from ..shell.fpsmodule import refresh_hz
-        g = group("Games")
+        g = group(_("Games"))
         ok = fpslimit.installed()
         cfg = fpslimit.settings()
-        choices = [(c, "Off" if c == "off" else "Display's rate" if c == "max" else f"{c} FPS")
+        choices = [(c, _("Off") if c == "off" else _("Display's rate") if c == "max" else _("{n} FPS").format(n=c))
                    for c in fpslimit.CHOICES]
-        limit = combo_row("Limit Frame Rate", choices, fpslimit.get(), lambda v: fpslimit.set(v, refresh_hz()),
-                          subtitle="Vulkan and Proton games opened from Steam, Faugus, Lutris, Heroic or "
-                                   "Bottles (frame-pacer). Also in Control Center (Add Controls).")
-        hud = switch_row("Show frame-pacer's Overlay", cfg.get("hud", False),
+        limit = combo_row(_("Limit Frame Rate"), choices, fpslimit.get(), lambda v: fpslimit.set(v, refresh_hz()),
+                          subtitle=_("Vulkan and Proton games opened from Steam, Faugus, Lutris, Heroic or "
+                                   "Bottles (frame-pacer). Also in Control Center (Add Controls)."))
+        hud = switch_row(_("Show frame-pacer's Overlay"), cfg.get("hud", False),
                          lambda on: fpslimit.set(fpslimit.get(), refresh_hz(), hud=on),
-                         subtitle="Its frame rate and timings in the corner of the game")
+                         subtitle=_("Its frame rate and timings in the corner of the game"))
         for r in (limit, hud):
             r.set_sensitive(ok)
             g.add(r)
         if not ok:
-            row = Adw.ActionRow(title="frame-pacer isn't installed",
-                                subtitle="Downloaded from its GitHub releases into your home folder (no "
-                                         "password). Steam picks it up the next time it opens.")
-            btn = ui.controls.push_button("Install", valign=Gtk.Align.CENTER)
+            row = Adw.ActionRow(title=_("frame-pacer isn't installed"),
+                                subtitle=_("Downloaded from its GitHub releases into your home folder (no "
+                                         "password). Steam picks it up the next time it opens."))
+            btn = ui.controls.push_button(_("Install"), valign=Gtk.Align.CENTER)
 
             def done(err):
-                btn.set_label("Install")
+                btn.set_label(_("Install"))
                 btn.set_sensitive(True)
                 if err:
-                    row.set_subtitle(f"Couldn't install: {err}")
+                    row.set_subtitle(_("Couldn't install: {error}").format(error=err))
                 else:
                     row.set_visible(False)
                     for r in (limit, hud):
                         r.set_sensitive(True)
-            btn.connect("clicked", lambda _b: (btn.set_label("Installing…"), btn.set_sensitive(False),
+            btn.connect("clicked", lambda _b: (btn.set_label(_("Installing…")), btn.set_sensitive(False),
                                                fpslimit.install(done)))
             row.add_suffix(btn)
             g.add(row)
@@ -1335,77 +1338,77 @@ class Settings(Adw.ApplicationWindow):
             return
         names = {c.tag: gpu.card_name(c) for c in cs}
         best = gpu.best_discrete()
-        auto = f"Automatic ({names[best.tag]})" if best else "Automatic"
+        auto = _("Automatic ({card})").format(card=names[best.tag]) if best else _("Automatic")
         cfg = config.load(gpu.NAME, gpu.DEFAULTS)
-        graphics.add(combo_row("Graphics for Games", [("", auto)] + list(names.items()),
+        graphics.add(combo_row(_("Graphics for Games"), [("", auto)] + list(names.items()),
                                cfg.get("games_gpu", ""), lambda tag: gpu.set_card("games", tag),
-                               subtitle="Games, creative apps and apps set to use high-performance graphics."))
-        graphics.add(combo_row("Graphics for Apps", [("", "Automatic")] + list(names.items()),
+                               subtitle=_("Games, creative apps and apps set to use high-performance graphics.")))
+        graphics.add(combo_row(_("Graphics for Apps"), [("", _("Automatic"))] + list(names.items()),
                                cfg.get("apps_gpu", ""), lambda tag: gpu.set_card("apps", tag),
-                               subtitle="Everyday apps, while Smart Graphics Switching is on. A card without "
-                                        "displays of its own can keep some apps from opening."))
+                               subtitle=_("Everyday apps, while Smart Graphics Switching is on. A card without "
+                                        "displays of its own can keep some apps from opening.")))
 
     @staticmethod
     def _gpu_subtitle(gpu) -> str:
         """Why the switch is off when a crash turned it off (it looked like it
         turned itself off -- Vini)."""
-        base = ("Smoother on displays wired to the discrete card, but some NVIDIA drivers can end the "
-                "session. From the next login.")
+        base = _("Smoother on displays wired to the discrete card, but some NVIDIA drivers can end the "
+                 "session. From the next login.")
         when = gpu.crashed_at()
         if when is None or gpu.compositor_on_display_gpu():
             return base
         stamp = GLib.DateTime.new_from_unix_local(int(when)).format("%-d %b, %H:%M")
-        return f"Turned off after the session ended on {stamp}: the card refused memory. " + base
+        return _("Turned off after the session ended on {when}: the card refused memory.").format(when=stamp) + " " + base
     def _night_shift_group(self):
         """Displays > Night Shift (macOS sheet as a group): schedule, custom
         times, Turn On Until Tomorrow, Colour Temperature."""
         import shutil
         from ..shell import nightshift
         cfg = config.load("nightshift", nightshift.DEFAULTS)
-        g = group("Night Shift", "Night Shift shifts the colours of your display to the warmer end of the "
-                                 "spectrum after dark.")
+        g = group(_("Night Shift"), _("Night Shift shifts the colours of your display to the warmer end of the "
+                                 "spectrum after dark."))
         if not shutil.which("wlsunset"):
-            g.add(install_row("Night Shift needs wlsunset", "Not installed", system.install_command("wlsunset"),
+            g.add(install_row(_("Night Shift needs wlsunset"), _("Not installed"), system.install_command("wlsunset"),
                               lambda: bool(shutil.which("wlsunset")), lambda: self._reload_page("displays")))
             return g
 
         def save(**kw):
             config.update("nightshift", **kw)
         times = [(f"{h:02d}:{m:02d}", f"{h:02d}:{m:02d}") for h in range(24) for m in (0, 30)]
-        frm = combo_row("From", times, cfg["from"], lambda v: save(**{"from": v}))
-        to = combo_row("To", times, cfg["to"], lambda v: save(to=v))
+        frm = combo_row(_("From"), times, cfg["from"], lambda v: save(**{"from": v}))
+        to = combo_row(_("To"), times, cfg["to"], lambda v: save(to=v))
 
         def sched(v):
             save(schedule=v)
             frm.set_visible(v == "custom")
             to.set_visible(v == "custom")
-        g.add(combo_row("Schedule", [("off", "Off"), ("custom", "Custom"), ("sunset", "Sunset to Sunrise")],
+        g.add(combo_row(_("Schedule"), [("off", _("Off")), ("custom", _("Custom")), ("sunset", _("Sunset to Sunrise"))],
                         cfg["schedule"], sched))
         g.add(frm)
         g.add(to)
         frm.set_visible(cfg["schedule"] == "custom")
         to.set_visible(cfg["schedule"] == "custom")
-        g.add(switch_row("Turn On Until Tomorrow", nightshift.manual_active(cfg), nightshift.set_manual,
-                         subtitle="Manual"))
-        g.add(slider_row("Colour Temperature", cfg["warmth"], 0, 100,
+        g.add(switch_row(_("Turn On Until Tomorrow"), nightshift.manual_active(cfg), nightshift.set_manual,
+                         subtitle=_("Manual")))
+        g.add(slider_row(_("Colour Temperature"), cfg["warmth"], 0, 100,
                          lambda v: self._save_live("nightshift", "warmth", int(v)),
-                         ends=("Less Warm", "More Warm"), default=50))
+                         ends=(_("Less Warm"), _("More Warm")), default=50))
         return g
 
     def _page_battery(self):
         info = group()
-        mode = group("Energy Mode", "Automatic switches to High Performance while a game or another app is "
-                                    "full screen, and back when it closes.")
+        mode = group(_("Energy Mode"), _("Automatic switches to High Performance while a game or another app is "
+                                    "full screen, and back when it closes."))
 
         def fill(res):
             (pct, status), ac, prof = res or ((None, ""), False, None)
-            level = Adw.ActionRow(title="Battery level", subtitle=f"{pct}% · {status}" if pct is not None
-                                  else "No battery")
+            level = Adw.ActionRow(title=_("Battery level"), subtitle=f"{pct}% · {_(status)}" if pct is not None
+                                  else _("No battery"))
             if pct is not None or status:
                 from ..backend import power               # the menu bar's icon, same rule
                 level.add_prefix(Gtk.Image(icon_name=power.icon_name(pct, status, ac, prof), pixel_size=24))
             info.add(level)
-            info.add(Adw.ActionRow(title="Power source", subtitle="Power Adapter" if ac else "Battery"))
+            info.add(Adw.ActionRow(title=_("Power source"), subtitle=_("Power Adapter") if ac else _("Battery")))
             if prof:
                 from .. import gamemode
 
@@ -1418,22 +1421,22 @@ class Settings(Adw.ApplicationWindow):
                     powerprofile.remember(p)            # back to it when plugged in again
                     system.run_async(system.set_power_profile, None, p)
                 shown = "balanced" if prof == "performance" and gamemode.boosted() else prof
-                mode.add(combo_row("Energy mode", list(system.POWER_PROFILES), shown, pick))
+                mode.add(combo_row(_("Energy mode"), [(k, _(v)) for k, v in system.POWER_PROFILES], shown, pick))
             else:
-                mode.add(Adw.ActionRow(title="Energy mode", subtitle="power-profiles-daemon not available"))
+                mode.add(Adw.ActionRow(title=_("Energy mode"), subtitle=_("power-profiles-daemon not available")))
         system.run_async(lambda: (system.battery(), system.on_ac(), system.power_profile()), fill)
-        screen = group("Display")
+        screen = group(_("Display"))
         from .. import displaysleep
         cur = displaysleep.seconds()          # Sonata's own (Wayfire's display timeout stays off)
-        opts = [(60, "1 minute"), (120, "2 minutes"), (300, "5 minutes"), (600, "10 minutes"),
-                (1200, "20 minutes"), (1800, "30 minutes"), (-1, "Never")]
-        screen.add(combo_row("Turn display off after", opts, min((o[0] for o in opts), key=lambda v: abs(v - cur)),
+        opts = [(60, _("1 minute")), (120, _("2 minutes")), (300, _("5 minutes")), (600, _("10 minutes")),
+                (1200, _("20 minutes")), (1800, _("30 minutes")), (-1, _("Never"))]
+        screen.add(combo_row(_("Turn display off after"), opts, min((o[0] for o in opts), key=lambda v: abs(v - cur)),
                              lambda v: system.run_async(displaysleep.set_seconds, None, v)))
         return [info, mode, screen]
 
     def _page_wallpaper(self):
         from .. import wallpapers as W
-        g = group("Wallpaper", "Sonata draws it; apps that show the desktop picture get it too.")
+        g = group(_("Wallpaper"), _("Sonata draws it; apps that show the desktop picture get it too."))
         pic = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, css_classes=["st-wall"], height_request=180,
                           can_shrink=True, overflow=Gtk.Overflow.HIDDEN)
         g.add(pic)
@@ -1445,7 +1448,7 @@ class Settings(Adw.ApplicationWindow):
             return light, system.gsetting(BG, "picture-uri-dark") or light
 
         # Sonata's own pictures (Vini): a click sets them for Light and Dark
-        gallery = group("Sonata Wallpapers")
+        gallery = group(_("Sonata Wallpapers"))
         grid = Gtk.FlowBox(max_children_per_line=5, min_children_per_line=5, selection_mode=Gtk.SelectionMode.NONE,
                            row_spacing=12, column_spacing=12, homogeneous=True)
         tiles = {}
@@ -1453,19 +1456,19 @@ class Settings(Adw.ApplicationWindow):
             thumb = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, can_shrink=True, width_request=88,
                                 height_request=58, overflow=Gtk.Overflow.HIDDEN)
             thumb.set_filename(W.thumb(w))
-            tip = w.name + (" (changes with Light and Dark)" if w.light != w.dark else "")
+            tip = (_("{name} (changes with Light and Dark)").format(name=_(w.name)) if w.light != w.dark else _(w.name))
             b = Gtk.Button(child=thumb, css_classes=["st-wall-tile"], tooltip_text=tip)
             col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
             col.append(b)
-            col.append(Gtk.Label(label=w.name, css_classes=["st-wall-name"], ellipsize=3, max_width_chars=12))
+            col.append(Gtk.Label(label=_(w.name), css_classes=["st-wall-name"], ellipsize=3, max_width_chars=12))
             b.connect("clicked", lambda _b, w=w: use(W.uri(w.light), W.uri(w.dark)))
             tiles[w.id] = b
             grid.append(col)
         gallery.add(grid)
 
         chooser = group()                        # its own group: the page's standard gap below the picture
-        row = Adw.ActionRow(title="Picture")
-        choose = ui.controls.push_button("Choose…", valign=Gtk.Align.CENTER)
+        row = Adw.ActionRow(title=_("Picture"))
+        choose = ui.controls.push_button(_("Choose…"), valign=Gtk.Align.CENTER)
 
         # the widgets refresh() updates, emptied when the page goes: the tiles'
         # click closures hold refresh(), and refs to the page from it formed a
@@ -1482,8 +1485,8 @@ class Settings(Adw.ApplicationWindow):
             cur = W.current(light, dark)
             for wid, b in alive["tiles"].items():
                 (b.add_css_class if wid == cur else b.remove_css_class)("selected")
-            name = next((w.name for w in W.CATALOG if w.id == cur), None)
-            alive["row"].set_subtitle(name or (f.get_basename() if f else "None"))
+            name = next((_(w.name) for w in W.CATALOG if w.id == cur), None)
+            alive["row"].set_subtitle(name or (f.get_basename() if f else _("None")))
 
         def use(light, dark):
             system.set_gsetting(BG, "picture-uri", light)
@@ -1491,8 +1494,8 @@ class Settings(Adw.ApplicationWindow):
             refresh()
 
         def pick(*_):
-            dlg = Gtk.FileDialog(title="Choose a Picture")
-            filt = Gtk.FileFilter(name="Images")
+            dlg = Gtk.FileDialog(title=_("Choose a Picture"))
+            filt = Gtk.FileFilter(name=_("Images"))
             filt.add_mime_type("image/*")
             dlg.set_default_filter(filt)
 
@@ -1536,26 +1539,26 @@ class Settings(Adw.ApplicationWindow):
         rep = group()
         rate = int(get("input", "kb_repeat_rate", "40") or 40)
         delay = int(get("input", "kb_repeat_delay", "400") or 400)
-        rep.add(slider_row("Key Repeat", rate, 2, 80, lambda v: self._wf("kb_repeat_rate", int(v)),
-                           ends=("Slow", "Fast"), default=40))
+        rep.add(slider_row(_("Key Repeat"), rate, 2, 80, lambda v: self._wf("kb_repeat_rate", int(v)),
+                           ends=(_("Slow"), _("Fast")), default=40))
         # Delay Until Repeat: Long (left) .. Short (right), like macOS
-        rep.add(slider_row("Delay Until Repeat", 1150 - delay, 150, 1000,
-                           lambda v: self._wf("kb_repeat_delay", int(1150 - v)), ends=("Long", "Short"), default=750))
-        src = group("Input Sources", "The first one is in use; switch from the input menu in the menu bar, "
-                    "or with Ctrl+Space (the one used before).")
+        rep.add(slider_row(_("Delay Until Repeat"), 1150 - delay, 150, 1000,
+                           lambda v: self._wf("kb_repeat_delay", int(1150 - v)), ends=(_("Long"), _("Short")), default=750))
+        src = group(_("Input Sources"), _("The first one is in use; switch from the input menu in the menu bar, "
+                    "or with Ctrl+Space (the one used before)."))
         names = dict(system.XKB_LAYOUTS)
         lays = system.keyboard_layouts()
         for i, lay in enumerate(lays):
-            r = Adw.ActionRow(title=names.get(lay, lay), subtitle="In use" if i == 0 else "", use_markup=False)
+            r = Adw.ActionRow(title=names.get(lay, lay), subtitle=_("In use") if i == 0 else "", use_markup=False)
             rm = Gtk.Button(icon_name="list-remove-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"],
-                            tooltip_text="Remove", sensitive=len(lays) > 1)
+                            tooltip_text=_("Remove"), sensitive=len(lays) > 1)
             rm.connect("clicked", lambda _b, lay=lay: self._set_layouts([x for x in system.keyboard_layouts()
                                                                          if x != lay]))
             r.add_suffix(rm)
             src.add(r)
-        add_opts = [("", "Add Input Source…")] + [o for o in system.XKB_LAYOUTS if o[0] not in lays]
-        src.add(combo_row("Add", add_opts, "", lambda v: v and self._set_layouts(system.keyboard_layouts() + [v])))
-        test = Adw.EntryRow(title="Type here to test")
+        add_opts = [("", _("Add Input Source…"))] + [o for o in system.XKB_LAYOUTS if o[0] not in lays]
+        src.add(combo_row(_("Add"), add_opts, "", lambda v: v and self._set_layouts(system.keyboard_layouts() + [v])))
+        test = Adw.EntryRow(title=_("Type here to test"))
         src.add(test)
         return [rep, src, self._keyboards_group(names)]
 
@@ -1563,10 +1566,10 @@ class Settings(Adw.ApplicationWindow):
         """A layout per keyboard (Vini: a U.S. International USB keyboard on a
         Portuguese laptop): each connected keyboard follows Input Sources, or
         has one of its own."""
-        grp = group("Keyboards", "Each keyboard can have a layout of its own; "
-                                 "the others follow Input Sources.")
-        grp.add(Adw.ActionRow(title="Looking for keyboards…"))
-        options = [("", "Same as Input Sources")] + [(k, v) for k, v in system.XKB_LAYOUTS]
+        grp = group(_("Keyboards"), _("Each keyboard can have a layout of its own; "
+                                 "the others follow Input Sources."))
+        grp.add(Adw.ActionRow(title=_("Looking for keyboards…")))
+        options = [("", _("Same as Input Sources"))] + [(k, v) for k, v in system.XKB_LAYOUTS]
 
         def fill(found):
             kbds, own = found or ([], {})
@@ -1576,7 +1579,7 @@ class Settings(Adw.ApplicationWindow):
             for r in rows:
                 grp.remove(r)
             if not kbds:
-                grp.add(Adw.ActionRow(title="No keyboards found"))
+                grp.add(Adw.ActionRow(title=_("No keyboards found")))
                 return
             for name in kbds:
                 cur = own.get(name, "")
@@ -1586,8 +1589,8 @@ class Settings(Adw.ApplicationWindow):
                 def changed(v, name=name, was=cur):
                     system.run_async(system.set_keyboard_device_layout, None, name, v)
                     if bool(v) != bool(was):            # Wayfire takes a keyboard's own section when it appears
-                        self.toast("Unplug the keyboard and plug it in again (or log in again) to use it")
-                shown = "Built-in Keyboard" if "AT Translated" in name or "i8042" in name else name
+                        self.toast(_("Unplug the keyboard and plug it in again (or log in again) to use it"))
+                shown = _("Built-in Keyboard") if "AT Translated" in name or "i8042" in name else name
                 row = combo_row(shown, options, cur, changed)
                 grp.add(row)
 
@@ -1627,39 +1630,39 @@ class Settings(Adw.ApplicationWindow):
     def _page_trackpad(self):
         get = system.wayfire_get
         # one section shows both: every group says which device it's for (Vini)
-        g = group("Trackpad: Point & Click")
-        g.add(slider_row("Tracking speed", _speed(get("input", "touchpad_cursor_speed", "0")), 0, 100,
-                         lambda v: self._wf("touchpad_cursor_speed", round(v / 50 - 1, 2)), ends=("Slow", "Fast"),
+        g = group(_("Trackpad: Point & Click"))
+        g.add(slider_row(_("Tracking speed"), _speed(get("input", "touchpad_cursor_speed", "0")), 0, 100,
+                         lambda v: self._wf("touchpad_cursor_speed", round(v / 50 - 1, 2)), ends=(_("Slow"), _("Fast")),
                          default=50))
-        g.add(switch_row("Tap to click", get("input", "tap_to_click", "true") == "true",
-                         lambda on: self._wf("tap_to_click", on), subtitle="Tap with one finger"))
-        g.add(switch_row("Tap and drag", get("input", "tap_and_drag", "true") == "true",
+        g.add(switch_row(_("Tap to click"), get("input", "tap_to_click", "true") == "true",
+                         lambda on: self._wf("tap_to_click", on), subtitle=_("Tap with one finger")))
+        g.add(switch_row(_("Tap and drag"), get("input", "tap_and_drag", "true") == "true",
                          lambda on: self._wf("tap_and_drag", on)))
-        sc = group("Trackpad: Scrolling")
-        sc.add(switch_row("Natural scrolling", get("input", "natural_scroll", "false") == "true",
+        sc = group(_("Trackpad: Scrolling"))
+        sc.add(switch_row(_("Natural scrolling"), get("input", "natural_scroll", "false") == "true",
                           lambda on: self._wf("natural_scroll", on),
-                          subtitle="Content tracks finger movement"))
-        sc.add(switch_row("Ignore trackpad while typing", get("input", "disable_touchpad_while_typing", "false")
+                          subtitle=_("Content tracks finger movement")))
+        sc.add(switch_row(_("Ignore trackpad while typing"), get("input", "disable_touchpad_while_typing", "false")
                           == "true", lambda on: self._wf("disable_touchpad_while_typing", on)))
         return [g, sc]
 
     def _page_mouse(self):
         get = system.wayfire_get
-        g = group("Mouse")
-        g.add(slider_row("Tracking speed", _speed(get("input", "mouse_cursor_speed", "0")), 0, 100,
-                         lambda v: self._wf("mouse_cursor_speed", round(v / 50 - 1, 2)), ends=("Slow", "Fast"),
+        g = group(_("Mouse"))
+        g.add(slider_row(_("Tracking speed"), _speed(get("input", "mouse_cursor_speed", "0")), 0, 100,
+                         lambda v: self._wf("mouse_cursor_speed", round(v / 50 - 1, 2)), ends=(_("Slow"), _("Fast")),
                          default=50))
         try:
             scroll = float(get("input", "mouse_scroll_speed", "1") or 1)
         except ValueError:
             scroll = 1.0
-        g.add(slider_row("Scrolling speed", scroll * 50, 5, 150,
-                         lambda v: self._wf("mouse_scroll_speed", round(v / 50, 2)), ends=("Slow", "Fast"),
+        g.add(slider_row(_("Scrolling speed"), scroll * 50, 5, 150,
+                         lambda v: self._wf("mouse_scroll_speed", round(v / 50, 2)), ends=(_("Slow"), _("Fast")),
                          default=50))
-        g.add(switch_row("Natural scrolling", get("input", "mouse_natural_scroll", "false") == "true",
+        g.add(switch_row(_("Natural scrolling"), get("input", "mouse_natural_scroll", "false") == "true",
                          lambda on: self._wf("mouse_natural_scroll", on),
-                         subtitle="Content tracks finger movement"))
-        g.add(combo_row("Primary mouse button", [(False, "Left"), (True, "Right")],
+                         subtitle=_("Content tracks finger movement")))
+        g.add(combo_row(_("Primary mouse button"), [(False, _("Left")), (True, _("Right"))],
                         get("input", "left_handed_mode", "false") == "true",
                         lambda v: self._wf("left_handed_mode", v)))
         return [g]
@@ -1693,22 +1696,22 @@ class Settings(Adw.ApplicationWindow):
         from ..gamepad import evdev as E
         from ..gamepad.service import DEFAULTS as GP, LEGEND
         gp = config.load("gamepad", GP)
-        pads = group("Controllers")
+        pads = group(_("Controllers"))
 
         def fill():
             for r in getattr(pads, "_rows", ()):
                 pads.remove(r)
             pads._rows = []
-            found = [E.gamepad_name(p) or "Game Controller" for p in E.find_gamepads()]
+            found = [E.gamepad_name(p) or _("Game Controller") for p in E.find_gamepads()]
             for name in found:
-                row = Adw.ActionRow(title=GLib.markup_escape_text(name), subtitle="Connected")
+                row = Adw.ActionRow(title=GLib.markup_escape_text(name), subtitle=_("Connected"))
                 row.add_prefix(Gtk.Image(icon_name="input-gaming-symbolic", pixel_size=24))
                 pads.add(row)
                 pads._rows.append(row)
             if not found:
-                row = Adw.ActionRow(title="No controller connected",
-                                    subtitle="Plug one in with a cable, or pair it in Bluetooth")
-                bt = ui.controls.push_button("Bluetooth…", valign=Gtk.Align.CENTER)
+                row = Adw.ActionRow(title=_("No controller connected"),
+                                    subtitle=_("Plug one in with a cable, or pair it in Bluetooth"))
+                bt = ui.controls.push_button(_("Bluetooth…"), valign=Gtk.Align.CENTER)
                 bt.connect("clicked", lambda *_: self.select("bluetooth"))
                 row.add_suffix(bt)
                 pads.add(row)
@@ -1718,29 +1721,29 @@ class Settings(Adw.ApplicationWindow):
         mon.connect("changed", lambda *_a: GLib.timeout_add(700, lambda: (fill(), False)[1]))
         pads._mon = mon                                   # lives as long as the page
 
-        desk = group("Desktop Control", "Use a controller as mouse and keyboard when no game is running. "
-                                        "It pauses by itself while a game fills the screen.")
-        desk.add(switch_row("Control the desktop with a controller", gp["enabled"],
+        desk = group(_("Desktop Control"), _("Use a controller as mouse and keyboard when no game is running. "
+                                        "It pauses by itself while a game fills the screen."))
+        desk.add(switch_row(_("Control the desktop with a controller"), gp["enabled"],
                             lambda on: self._save("gamepad", "enabled", on)))
         from ..gamepad.service import TOGGLE_TAPS
-        hint = Adw.ActionRow(title="Shortcut on the controller",
-                             subtitle=f"Press the Xbox / PS button {TOGGLE_TAPS} times quickly to turn it on or off, "
-                                      "even in a game")
+        hint = Adw.ActionRow(title=_("Shortcut on the controller"),
+                             subtitle=_("Press the Xbox / PS button {n} times quickly to turn it on or off, "
+                                        "even in a game").format(n=TOGGLE_TAPS))
         hint.add_prefix(Gtk.Image(icon_name="input-gaming-symbolic", pixel_size=16))
         desk.add(hint)
-        desk.add(slider_row("Pointer speed", float(gp["speed"]) * 50, 10, 100,
-                            lambda v: self._save_live("gamepad", "speed", round(v / 50, 2)), ends=("Slow", "Fast"),
+        desk.add(slider_row(_("Pointer speed"), float(gp["speed"]) * 50, 10, 100,
+                            lambda v: self._save_live("gamepad", "speed", round(v / 50, 2)), ends=(_("Slow"), _("Fast")),
                             default=50))
-        desk.add(slider_row("Scrolling speed", float(gp["scroll"]) * 50, 10, 100,
-                            lambda v: self._save_live("gamepad", "scroll", round(v / 50, 2)), ends=("Slow", "Fast"),
+        desk.add(slider_row(_("Scrolling speed"), float(gp["scroll"]) * 50, 10, 100,
+                            lambda v: self._save_live("gamepad", "scroll", round(v / 50, 2)), ends=(_("Slow"), _("Fast")),
                             default=50))
-        desk.add(switch_row("Pause while Steam is open", gp["pause_steam"],
+        desk.add(switch_row(_("Pause while Steam is open"), gp["pause_steam"],
                             lambda on: self._save("gamepad", "pause_steam", on),
-                            subtitle="Steam has its own desktop controls: both would act on every press"))
-        keys = group("Buttons")
+                            subtitle=_("Steam has its own desktop controls: both would act on every press")))
+        keys = group(_("Buttons"))
         for button, does in LEGEND:
-            row = Adw.ActionRow(title=button)
-            row.add_suffix(Gtk.Label(label=does, xalign=1, css_classes=["dim-label"]))
+            row = Adw.ActionRow(title=_(button))
+            row.add_suffix(Gtk.Label(label=_(does), xalign=1, css_classes=["dim-label"]))
             keys.add(row)
         return [pads, desk, keys]
 
@@ -1748,8 +1751,8 @@ class Settings(Adw.ApplicationWindow):
     def _page_datetime(self):
         from ..shell import topbar as T
         auto = group()
-        clock = group("Clock")
-        zone = group("Time Zone")
+        clock = group(_("Clock"))
+        zone = group(_("Time Zone"))
 
         def fill(res):
             on, cur, zones = res or (None, "UTC", [])
@@ -1761,9 +1764,9 @@ class Settings(Adw.ApplicationWindow):
                     if ok:
                         state["ntp"] = v
                     else:                             # back to what the system still has
-                        self.toast("Couldn't change the setting")
+                        self.toast(_("Couldn't change the setting"))
                         show_quietly(ntp_row, state["ntp"])
-                ntp_row = switch_row("Set date and time automatically", on,
+                ntp_row = switch_row(_("Set date and time automatically"), on,
                                      lambda v: system.run_async(system.set_ntp, lambda ok: ntp_done(ok, v), v))
                 auto.add(ntp_row)
             if zones:
@@ -1772,16 +1775,16 @@ class Settings(Adw.ApplicationWindow):
                 def zone_done(ok, z):
                     if ok:
                         zstate["zone"] = z
-                        self.toast(f"Time zone: {z}")
+                        self.toast(_("Time zone: {zone}").format(zone=z))
                     else:
-                        self.toast("Couldn't change the time zone")
+                        self.toast(_("Couldn't change the time zone"))
                         show_quietly(row, zstate["zone"])
-                row = combo_row("Time zone", [(z, z.replace("_", " ")) for z in zones], cur,
+                row = combo_row(_("Time zone"), [(z, z.replace("_", " ")) for z in zones], cur,
                                 lambda z: system.run_async(system.set_timezone, lambda ok: zone_done(ok, z), z))
                 row.set_enable_search(True)
                 zone.add(row)
             else:
-                zone.add(Adw.ActionRow(title="Time zone", subtitle=cur))
+                zone.add(Adw.ActionRow(title=_("Time zone"), subtitle=cur))
         system.run_async(lambda: (system.ntp(), system.timezone(), system.timezones()), fill)
         fmt = config.load("topbar", T.DEFAULTS)["clock_format"]
 
@@ -1789,19 +1792,19 @@ class Settings(Adw.ApplicationWindow):
             cur = config.load("topbar", T.DEFAULTS)["clock_format"]      # now, not when the page was built
             self._save("topbar", "clock_format", clock_format(T.shows_date(cur) if date is None else date,
                                                               T.is_24h(cur) if h24 is None else h24))
-        clock.add(switch_row("Use a 24-hour clock", T.is_24h(fmt), lambda on: set_clock(h24=on)))
-        clock.add(switch_row("Show the date", T.shows_date(fmt), lambda on: set_clock(date=on)))
+        clock.add(switch_row(_("Use a 24-hour clock"), T.is_24h(fmt), lambda on: set_clock(h24=on)))
+        clock.add(switch_row(_("Show the date"), T.shows_date(fmt), lambda on: set_clock(date=on)))
         return [auto, zone, clock]
 
     def _page_defaults(self):
         """Which app opens each kind of file and link (Vini: one place for all)."""
         from .. import defaultapps as DA
-        apps_ = group("Default Apps")
+        apps_ = group(_("Default Apps"))
         for k in DA.KINDS:
             options = DA.candidates(k.id)
             if not options:
                 continue
-            row = combo_row(k.title, options, options[0][0],
+            row = combo_row(_(k.title), options, options[0][0],
                             lambda v, kid=k.id: system.run_async(DA.set_default, None, kid, v))
             row.add_prefix(Gtk.Image(icon_name=k.icon))
             apps_.add(row)
@@ -1811,8 +1814,8 @@ class Settings(Adw.ApplicationWindow):
                                  lambda cur, r=row: (show_quietly(r, cur), r.set_sensitive(True)))
             else:
                 show_quietly(row, DA.current(k.id))
-        hint = group(description="Apps can also be chosen for one file: right-click it in Files, "
-                                 "then Open With.")
+        hint = group(description=_("Apps can also be chosen for one file: right-click it in Files, "
+                                 "then Open With."))
         return [apps_, hint]
 
     def _page_users(self):
@@ -1821,45 +1824,45 @@ class Settings(Adw.ApplicationWindow):
         Accounts go through AccountsService; polkit asks for an admin
         password where needed."""
         from ..backend import users as U
-        me = group("Current User")
-        others = group("Other Users")
-        me.add(Adw.ActionRow(title="Loading…"))
+        me = group(_("Current User"))
+        others = group(_("Other Users"))
+        me.add(Adw.ActionRow(title=_("Loading…")))
 
         def fill(lst):
             for g in (me, others):
                 _clear_group(g)
             if not lst:
                 me.add(Adw.ActionRow(title=GLib.get_real_name() or GLib.get_user_name(), use_markup=False,
-                                     subtitle="AccountsService is not available: accounts can't be changed here"))
+                                     subtitle=_("AccountsService is not available: accounts can't be changed here")))
                 others.set_visible(False)
                 return
             for u in lst:
                 (me if u.current else others).add(self._user_row(u))
             if not any(not u.current for u in lst):
-                others.add(Adw.ActionRow(title="No other users"))
-            add = Adw.ButtonRow(title="Add User…", start_icon_name="list-add-symbolic") \
+                others.add(Adw.ActionRow(title=_("No other users")))
+            add = Adw.ButtonRow(title=_("Add User…"), start_icon_name="list-add-symbolic") \
                 if hasattr(Adw, "ButtonRow") else None
             if add is not None:
                 add.connect("activated", lambda *_: self._add_user_dialog())
                 others.add(add)
             else:
-                row = Adw.ActionRow(title="Add User…", activatable=True)
+                row = Adw.ActionRow(title=_("Add User…"), activatable=True)
                 row.add_prefix(Gtk.Image(icon_name="list-add-symbolic"))
                 row.connect("activated", lambda *_: self._add_user_dialog())
                 others.add(row)
         system.run_async(U.users, fill)
-        items = group("Login Items", "These apps open automatically when you log in.")
+        items = group(_("Login Items"), _("These apps open automatically when you log in."))
         login = _login_items()
         for name, title, enabled in login:
             items.add(switch_row(title, enabled, lambda on, n=name: _set_login_item(n, on)))
         if not login:
-            items.add(Adw.ActionRow(title="No login items", subtitle="Use Options > Open at Login in the Dock"))
+            items.add(Adw.ActionRow(title=_("No login items"), subtitle=_("Use Options > Open at Login in the Dock")))
         return [me, others, items]
 
     def _user_row(self, u):
         from ..backend import users as U
         row = Adw.ActionRow(title=u.real_name or u.name, use_markup=False,
-                            subtitle=f"{u.name} · {'Admin' if u.admin else 'Standard'}")
+                            subtitle=f"{u.name} · {_('Admin') if u.admin else _('Standard')}")
         av = Adw.Avatar(size=44 if u.current else 32, text=u.real_name or u.name, show_initials=True)
         if u.icon:
             try:
@@ -1867,14 +1870,14 @@ class Settings(Adw.ApplicationWindow):
             except GLib.Error:
                 pass
         pic = Gtk.Button(child=av, css_classes=["flat", "circular"], valign=Gtk.Align.CENTER,
-                         tooltip_text="Change picture")
+                         tooltip_text=_("Change picture"))
         pic.connect("clicked", lambda b: self._pick_picture(u, b))
         row.add_prefix(pic)
         if u.current:
-            name = ui.controls.push_button("Edit Name…", valign=Gtk.Align.CENTER)
+            name = ui.controls.push_button(_("Edit Name…"), valign=Gtk.Align.CENTER)
             name.connect("clicked", lambda *_: ui.dialog.ask_text(
-                "Full name", u.real_name, "OK", lambda v: self._user_op(U.set_real_name, u, v), parent=self))
-            pw = ui.controls.push_button("Change Password…", valign=Gtk.Align.CENTER)
+                _("Full name"), u.real_name, _("OK"), lambda v: self._user_op(U.set_real_name, u, v), parent=self))
+            pw = ui.controls.push_button(_("Change Password…"), valign=Gtk.Align.CENTER)
             pw.connect("clicked", lambda *_: self._password_dialog(u))
             row.add_suffix(name)
             row.add_suffix(pw)
@@ -1882,10 +1885,10 @@ class Settings(Adw.ApplicationWindow):
             Item = ui.menu.Item
             more = Gtk.Button(icon_name="view-more-symbolic", css_classes=["flat"], valign=Gtk.Align.CENTER)
             more.connect("clicked", lambda b: ui.menu.popup(b, [
-                [Item("Allow user to administer this computer", lambda on: self._user_op(U.set_admin, u, on),
+                [Item(_("Allow user to administer this computer"), lambda on: self._user_op(U.set_admin, u, on),
                       checked=u.admin)],
-                [Item("Reset Password…", lambda: self._password_dialog(u))],
-                [Item("Delete User…", lambda: self._delete_user(u))]], position=Gtk.PositionType.BOTTOM))
+                [Item(_("Reset Password…"), lambda: self._password_dialog(u))],
+                [Item(_("Delete User…"), lambda: self._delete_user(u))]], position=Gtk.PositionType.BOTTOM))
             row.add_suffix(more)
         return row
 
@@ -1922,13 +1925,13 @@ class Settings(Adw.ApplicationWindow):
         pop = Gtk.Popover(has_arrow=True, position=Gtk.PositionType.RIGHT)
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin_top=10, margin_bottom=10,
                       margin_start=10, margin_end=10)
-        col.append(Gtk.Label(label="Pictures", xalign=0, css_classes=["heading"]))
+        col.append(Gtk.Label(label=_("Pictures"), xalign=0, css_classes=["heading"]))
         grid = Gtk.FlowBox(max_children_per_line=6, min_children_per_line=6, selection_mode=Gtk.SelectionMode.NONE,
                            row_spacing=6, column_spacing=6, homogeneous=True)
 
         def use(path):
             pop.popdown()
-            self._user_op(U.set_picture, u, path, done_text="Picture changed")
+            self._user_op(U.set_picture, u, path, done_text=_("Picture changed"))
         for path in U.stock_pictures():
             av = Adw.Avatar(size=48)
             try:
@@ -1939,14 +1942,14 @@ class Settings(Adw.ApplicationWindow):
             b.connect("clicked", lambda _b, p=path: use(p))
             grid.append(b)
         col.append(grid)
-        other = ui.controls.push_button("Choose from Files…")
+        other = ui.controls.push_button(_("Choose from Files…"))
         col.append(other)
         pop.set_child(col)
 
         def from_file(*_):
             pop.popdown()
-            dlg = Gtk.FileDialog(title="Choose a picture", modal=True)
-            flt = Gtk.FileFilter(name="Pictures")
+            dlg = Gtk.FileDialog(title=_("Choose a picture"), modal=True)
+            flt = Gtk.FileFilter(name=_("Pictures"))
             flt.add_mime_type("image/*")
             store = Gio.ListStore(item_type=Gtk.FileFilter)
             store.append(flt)
@@ -1968,8 +1971,8 @@ class Settings(Adw.ApplicationWindow):
     def _password_dialog(self, u):
         from ..backend import users as U
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        new = ui.controls.text_field(placeholder="New password", secret=True)
-        verify = ui.controls.text_field(placeholder="Verify", secret=True)
+        new = ui.controls.text_field(placeholder=_("New password"), secret=True)
+        verify = ui.controls.text_field(placeholder=_("Verify"), secret=True)
         verify.set_property("activates-default", True)
         box.append(new)
         box.append(verify)
@@ -1978,11 +1981,11 @@ class Settings(Adw.ApplicationWindow):
             if r != "ok":
                 return
             if not new.get_text() or new.get_text() != verify.get_text():
-                self.toast("The passwords don't match")
+                self.toast(_("The passwords don't match"))
                 return
-            self._user_op(U.set_password, u, new.get_text(), done_text="Password changed")
-        dlg = ui.dialog.alert(f"Change the password for “{u.real_name or u.name}”", "",
-                              [("cancel", "Cancel", ""), ("ok", "Change Password", "default")], answer, parent=self)
+            self._user_op(U.set_password, u, new.get_text(), done_text=_("Password changed"))
+        dlg = ui.dialog.alert(_("Change the password for “{name}”").format(name=u.real_name or u.name), "",
+                              [("cancel", _("Cancel"), ""), ("ok", _("Change Password"), "default")], answer, parent=self)
         dlg.set_extra_child(box)
 
     def _add_user_dialog(self):
@@ -1992,12 +1995,12 @@ class Settings(Adw.ApplicationWindow):
         acct = ui.controls.text_field(hexpand=True)
         pw = ui.controls.text_field(secret=True, hexpand=True)
         verify = ui.controls.text_field(secret=True, hexpand=True)
-        admin = Gtk.CheckButton(label="Allow user to administer this computer")
+        admin = Gtk.CheckButton(label=_("Allow user to administer this computer"))
         edited = {"acct": False}
         full.connect("changed", lambda e: not edited["acct"] and acct.set_text(U.short_name(e.get_text())))
         acct.connect("changed", lambda e: e.has_focus() and edited.update(acct=True))
-        for r, (label, w) in enumerate((("Full Name:", full), ("Account Name:", acct), ("Password:", pw),
-                                        ("Verify:", verify))):
+        for r, (label, w) in enumerate(((_("Full Name:"), full), (_("Account Name:"), acct), (_("Password:"), pw),
+                                        (_("Verify:"), verify))):
             grid.attach(Gtk.Label(label=label, xalign=1), 0, r, 1, 1)
             grid.attach(w, 1, r, 1, 1)
         grid.attach(admin, 1, 4, 1, 1)
@@ -2007,14 +2010,14 @@ class Settings(Adw.ApplicationWindow):
                 return
             name = acct.get_text().strip()
             if not U.valid_name(name):
-                self.toast("The account name can use lowercase letters, numbers, - and _")
+                self.toast(_("The account name can use lowercase letters, numbers, - and _"))
                 return
             if pw.get_text() != verify.get_text():
-                self.toast("The passwords don't match")
+                self.toast(_("The passwords don't match"))
                 return
             self._user_op(U.create_user, name, full.get_text().strip() or name, admin.get_active(), pw.get_text(),
-                          done_text=f"User “{name}” created")
-        dlg = ui.dialog.alert("New Account", "", [("cancel", "Cancel", ""), ("create", "Create User", "default")],
+                          done_text=_("User “{name}” created").format(name=name))
+        dlg = ui.dialog.alert(_("New Account"), "", [("cancel", _("Cancel"), ""), ("create", _("Create User"), "default")],
                               answer, parent=self)
         dlg.set_extra_child(grid)
 
@@ -2029,12 +2032,12 @@ class Settings(Adw.ApplicationWindow):
 
     def _delete_user(self, u):
         from ..backend import users as U
-        ui.dialog.alert(f"Delete the user “{u.real_name or u.name}”?",
-                        "Their home folder can be kept or deleted.",
-                        [("cancel", "Cancel", ""), ("keep", "Keep Home Folder", ""),
-                         ("delete", "Delete Home Folder", "destructive")],
+        ui.dialog.alert(_("Delete the user “{name}”?").format(name=u.real_name or u.name),
+                        _("Their home folder can be kept or deleted."),
+                        [("cancel", _("Cancel"), ""), ("keep", _("Keep Home Folder"), ""),
+                         ("delete", _("Delete Home Folder"), "destructive")],
                         lambda r: r in ("keep", "delete") and self._user_op(U.delete_user, u, r == "delete",
-                                                                            done_text="User deleted"),
+                                                                            done_text=_("User deleted")),
                         parent=self)
 
     def _page_notifications(self):
@@ -2043,13 +2046,13 @@ class Settings(Adw.ApplicationWindow):
         from .. import apps
         from ..shell.notifications import APP_DEFAULTS, DEFAULTS
         cfg = config.load("notifications", DEFAULTS)
-        dnd = group("Do Not Disturb", "Banners stay hidden; notifications still collect in the "
-                                      "Notification Center.")
-        dnd.add(switch_row("Do Not Disturb", cfg.get("dnd"), lambda on: self._save("notifications", "dnd", on)))
-        dnd.add(switch_row("Badge App Icons", cfg.get("badges", True),
+        dnd = group(_("Do Not Disturb"), _("Banners stay hidden; notifications still collect in the "
+                                      "Notification Center."))
+        dnd.add(switch_row(_("Do Not Disturb"), cfg.get("dnd"), lambda on: self._save("notifications", "dnd", on)))
+        dnd.add(switch_row(_("Badge App Icons"), cfg.get("badges", True),
                            lambda on: self._save("notifications", "badges", on),
-                           subtitle="A red count on an app's icon in the Dock"))
-        lst = group("Application Notifications")
+                           subtitle=_("A red count on an app's icon in the Dock")))
+        lst = group(_("Application Notifications"))
 
         def set_app(key, field, value, row=None):
             c = config.load("notifications", DEFAULTS)
@@ -2061,8 +2064,9 @@ class Settings(Adw.ApplicationWindow):
 
         def summary(a):
             if not a["allow"]:
-                return "Off"
-            return "Banners" if a["style"] == "banners" else "Notification Center only" if a["center"] else "None"
+                return _("Off")
+            return (_("Banners") if a["style"] == "banners" else _("Notification Center only") if a["center"]
+                    else _("None"))
         entries = sorted((cfg.get("apps") or {}).items(), key=lambda kv: (kv[1].get("name") or kv[0]).lower())
         for key, a in entries:
             a = dict(APP_DEFAULTS, **a)
@@ -2075,19 +2079,19 @@ class Settings(Adw.ApplicationWindow):
             else:
                 img.set_from_icon_name("application-x-executable")
             row.add_prefix(img)
-            row.add_row(switch_row("Allow Notifications", a["allow"],
+            row.add_row(switch_row(_("Allow Notifications"), a["allow"],
                                    lambda on, k=key, r=row: set_app(k, "allow", on, r)))
-            row.add_row(combo_row("Alert style", [("banners", "Banners"), ("none", "None")], a["style"],
+            row.add_row(combo_row(_("Alert style"), [("banners", _("Banners")), ("none", _("None"))], a["style"],
                                   lambda v, k=key, r=row: set_app(k, "style", v, r),
-                                  subtitle="Banners appear at the top right and go away automatically"))
-            row.add_row(switch_row("Show in Notification Center", a["center"],
+                                  subtitle=_("Banners appear at the top right and go away automatically")))
+            row.add_row(switch_row(_("Show in Notification Center"), a["center"],
                                    lambda on, k=key, r=row: set_app(k, "center", on, r)))
-            row.add_row(switch_row("Badge App Icon", a["badge"],
+            row.add_row(switch_row(_("Badge App Icon"), a["badge"],
                                    lambda on, k=key: set_app(k, "badge", on)))
             lst.add(row)
         if not entries:
-            lst.add(Adw.ActionRow(title="No notifications yet",
-                                  subtitle="Apps appear here after they send their first notification"))
+            lst.add(Adw.ActionRow(title=_("No notifications yet"),
+                                  subtitle=_("Apps appear here after they send their first notification")))
         return [dnd, lst]
 
     def _page_updates(self):
@@ -2098,8 +2102,8 @@ class Settings(Adw.ApplicationWindow):
         an unattended mode, or a failed update, go to a terminal."""
         from .. import icons
         from ..backend import updates as U
-        head = group("System Update", "Packages, AUR and Flatpak apps. Sonata updates itself above.")
-        status = Adw.ActionRow(title="Checking for updates…", use_markup=False)
+        head = group(_("System Update"), _("Packages, AUR and Flatpak apps. Sonata updates itself above."))
+        status = Adw.ActionRow(title=_("Checking for updates…"), use_markup=False)
         logo = Gtk.Image(pixel_size=40, valign=Gtk.Align.CENTER)
         icons.set_logo(logo)
         status.add_prefix(logo)
@@ -2113,14 +2117,14 @@ class Settings(Adw.ApplicationWindow):
                               valign=Gtk.Align.CENTER)
         prog_row.set_child(bar)
         head.add(prog_row)
-        details = Adw.ExpanderRow(title="Details", visible=False)
+        details = Adw.ExpanderRow(title=_("Details"), visible=False)
         log = Gtk.TextView(editable=False, cursor_visible=False, monospace=True, css_classes=["st-log"],
                            wrap_mode=Gtk.WrapMode.WORD_CHAR, top_margin=8, bottom_margin=8,
                            left_margin=12, right_margin=12)
         scroll = Gtk.ScrolledWindow(child=log, min_content_height=180, max_content_height=180)
         details.add_row(Gtk.ListBoxRow(activatable=False, selectable=False, child=scroll))
         head.add(details)
-        lst = group("Updates Available")
+        lst = group(_("Updates Available"))
         lst.set_visible(False)
         state = {"srcs": [], "found": {}, "pending": 0, "rows": [], "pulse": 0, "runner": None}
 
@@ -2143,15 +2147,15 @@ class Settings(Adw.ApplicationWindow):
             state["rows"].clear()
             lst.set_visible(False)
             spin.set_visible(True)
-            status.set_title("Checking for updates…")
+            status.set_title(_("Checking for updates…"))
             status.set_subtitle("")
             state["srcs"] = U.sources()
             state["found"] = {}
             state["pending"] = len(state["srcs"])
             if not state["srcs"]:
                 spin.set_visible(False)
-                status.set_title("Updates can't be checked here")
-                status.set_subtitle("No supported package manager found (pacman, dnf, apt, zypper, Flatpak)")
+                status.set_title(_("Updates can't be checked here"))
+                status.set_subtitle(_("No supported package manager found (pacman, dnf, apt, zypper, Flatpak)"))
                 return
             for src in state["srcs"]:
                 system.run_async(U.check, lambda ups, s=src: checked(s, ups), src)
@@ -2167,7 +2171,7 @@ class Settings(Adw.ApplicationWindow):
         def add_list(src, ups):
             if ups:
                 exp = Adw.ExpanderRow(title=src.title, use_markup=False,
-                                      subtitle=f"{len(ups)} update{'s' if len(ups) != 1 else ''}")
+                                      subtitle=ngettext("{n} update", "{n} updates", len(ups)).format(n=len(ups)))
                 for u in ups[:300]:
                     r = Adw.ActionRow(title=u.name, use_markup=False)
                     if u.new:
@@ -2186,15 +2190,19 @@ class Settings(Adw.ApplicationWindow):
             n = total()
             when = GLib.DateTime.new_now_local().format("%H:%M")
             if n:
-                status.set_title(f"{n} update{'s' if n != 1 else ''} available")
-                status.set_subtitle(f"Checked at {when}" + (f" · {', '.join(failed)} couldn't be checked"
-                                                             if failed else ""))
-                button("Update Now", update, suggested=True)
+                status.set_title(ngettext("{n} update available", "{n} updates available", n).format(n=n))
+                status.set_subtitle(checked_text(when, failed))
+                button(_("Update Now"), update, suggested=True)
             else:
-                status.set_title("Your computer is up to date")
-                status.set_subtitle(f"Checked at {when}" + (f" · {', '.join(failed)} couldn't be checked"
-                                                             if failed else ""))
-                button("Check Again", check)
+                status.set_title(_("Your computer is up to date"))
+                status.set_subtitle(checked_text(when, failed))
+                button(_("Check Again"), check)
+
+        def checked_text(when, failed):
+            text = _("Checked at {time}").format(time=when)
+            if failed:
+                text += " · " + _("{names} couldn't be checked").format(names=", ".join(failed))
+            return text
 
         def todo():
             return [s for s in state["srcs"] if state["found"].get(s.id)]
@@ -2202,7 +2210,7 @@ class Settings(Adw.ApplicationWindow):
         def in_terminal():
             cmd = " && ".join(s.terminal for s in todo())
             if not system.run_in_terminal(cmd):
-                self.toast("No terminal found")
+                self.toast(_("No terminal found"))
 
         def say(text):
             buf = log.get_buffer()
@@ -2229,8 +2237,8 @@ class Settings(Adw.ApplicationWindow):
                 return
             clear_buttons()
             names = [s.title for s in srcs]
-            status.set_title("Updating…")
-            status.set_subtitle(", ".join(names) + " · you may be asked for your password")
+            status.set_title(_("Updating…"))
+            status.set_subtitle(_("{names} · you may be asked for your password").format(names=", ".join(names)))
             prog_row.set_visible(True)
             details.set_visible(True)
             log.get_buffer().set_text("")
@@ -2243,7 +2251,7 @@ class Settings(Adw.ApplicationWindow):
                 say(t)
                 i = state["runner"].index
                 if 0 <= i < len(srcs):
-                    status.set_title(f"Updating {srcs[i].title}…")
+                    status.set_title(_("Updating {name}…").format(name=srcs[i].title))
 
             def done(ok, failed_at):
                 fraction(0.0)
@@ -2255,20 +2263,20 @@ class Settings(Adw.ApplicationWindow):
                         lst.remove(r)
                     state["rows"].clear()
                     lst.set_visible(False)
-                    status.set_title("Your computer is up to date")
+                    status.set_title(_("Your computer is up to date"))
                     if kernel:
-                        status.set_subtitle("Restart to finish installing the system updates")
-                        button("Restart…", lambda: self.ask_restart("system", "The system update"),
+                        status.set_subtitle(_("Restart to finish installing the system updates"))
+                        button(_("Restart…"), lambda: self.ask_restart("system", _("The system update")),
                                suggested=True)
                     else:
-                        status.set_subtitle("Updated at " + GLib.DateTime.new_now_local().format("%H:%M"))
-                        button("Check Again", check)
+                        status.set_subtitle(_("Updated at {time}").format(time=GLib.DateTime.new_now_local().format("%H:%M")))
+                        button(_("Check Again"), check)
                 else:
-                    status.set_title(f"{srcs[failed_at].title} couldn't be updated")
-                    status.set_subtitle("See Details, or update in a terminal")
+                    status.set_title(_("{name} couldn't be updated").format(name=srcs[failed_at].title))
+                    status.set_subtitle(_("See Details, or update in a terminal"))
                     details.set_expanded(True)
-                    button("Open in Terminal", in_terminal)
-                    button("Try Again", update, suggested=True)
+                    button(_("Open in Terminal"), in_terminal)
+                    button(_("Try Again"), update, suggested=True)
             # the app stays alive (the log keeps being read) if the window closes mid-update:
             # a closed pipe would stop pacman halfway
             app = self.get_application()
@@ -2291,47 +2299,47 @@ class Settings(Adw.ApplicationWindow):
         import shutil
         from ..shell.idlelock import DEFAULTS as SEC
         sec = config.load("security", SEC)
-        gen = group("General")
+        gen = group(_("General"))
         idle = shutil.which("swayidle") is not None
         if not idle:
-            gen.add(install_row("Automatic locking needs swayidle", "Not installed", system.install_command("swayidle"),
+            gen.add(install_row(_("Automatic locking needs swayidle"), _("Not installed"), system.install_command("swayidle"),
                                 lambda: bool(shutil.which("swayidle")), lambda: self._reload_page("privacy")))
-        opts = [(-1, "Never"), (0, "Immediately"), (5, "5 seconds"), (60, "1 minute"), (300, "5 minutes"),
-                (900, "15 minutes"), (3600, "1 hour")]
-        for r in (combo_row("Require password after the display turns off", opts, sec["lock_after"],
+        opts = [(-1, _("Never")), (0, _("Immediately")), (5, _("5 seconds")), (60, _("1 minute")), (300, _("5 minutes")),
+                (900, _("15 minutes")), (3600, _("1 hour"))]
+        for r in (combo_row(_("Require password after the display turns off"), opts, sec["lock_after"],
                             lambda v: self._save("security", "lock_after", v)),
-                  switch_row("Lock before sleep", sec["lock_before_sleep"],
+                  switch_row(_("Lock before sleep"), sec["lock_before_sleep"],
                              lambda on: self._save("security", "lock_before_sleep", on))):
             r.set_sensitive(idle)
             gen.add(r)
         P = "org.gnome.desktop.privacy"
-        priv = group("Privacy")
+        priv = group(_("Privacy"))
         rec = system.gsetting(P, "remember-recent-files")
-        priv.add(switch_row("Remember recent files", rec != "false",
+        priv.add(switch_row(_("Remember recent files"), rec != "false",
                             lambda on: system.set_gsetting(P, "remember-recent-files", "true" if on else "false"),
-                            subtitle="Recents in Files and the Open dialogs"))
-        clear = Adw.ActionRow(title="Recent items", subtitle="Forget the files opened recently")
-        clear_btn = ui.controls.push_button("Clear", valign=Gtk.Align.CENTER)
+                            subtitle=_("Recents in Files and the Open dialogs")))
+        clear = Adw.ActionRow(title=_("Recent items"), subtitle=_("Forget the files opened recently"))
+        clear_btn = ui.controls.push_button(_("Clear"), valign=Gtk.Align.CENTER)
         clear.add_suffix(clear_btn)
 
         def do_clear(*_):
             try:
                 Gtk.RecentManager.get_default().purge_items()
-                self.toast("Recent items cleared")
+                self.toast(_("Recent items cleared"))
             except GLib.Error:
                 pass
         clear_btn.connect("clicked", do_clear)
         priv.add(clear)
         trash = system.gsetting(P, "remove-old-trash-files")
-        priv.add(switch_row("Remove items from the Trash after 30 days", trash == "true",
+        priv.add(switch_row(_("Remove items from the Trash after 30 days"), trash == "true",
                             lambda on: (system.set_gsetting(P, "remove-old-trash-files", "true" if on else "false"),
                                         system.set_gsetting(P, "old-files-age", "uint32 30"))))
         loc = system.gsetting("org.gnome.system.location", "enabled")
         if loc is not None:
-            priv.add(switch_row("Location Services", loc == "true",
+            priv.add(switch_row(_("Location Services"), loc == "true",
                                 lambda on: system.set_gsetting("org.gnome.system.location", "enabled",
                                                                "true" if on else "false"),
-                                subtitle="Apps may ask for your location (GeoClue)"))
+                                subtitle=_("Apps may ask for your location (GeoClue)")))
         return [gen, priv, self._firewall_group(), self._encryption_group(),
                 self._usb_group(sec), self._keyring_group()]
 
@@ -2340,25 +2348,25 @@ class Settings(Adw.ApplicationWindow):
         the portals; a switch per app (permstore.py)."""
         from ..backend import permstore
         from .. import apps
-        grp = group("App Permissions", "Apps installed with Flatpak ask before using these. Other apps: "
-                                       "open one below to choose what it may use.")
+        grp = group(_("App Permissions"), _("Apps installed with Flatpak ask before using these. Other apps: "
+                                       "open one below to choose what it may use."))
         from .. import appperms
-        ask = switch_row("Ask before apps use the camera, microphone, network…", appperms.asking(),
+        ask = switch_row(_("Ask before apps use the camera, microphone, network…"), appperms.asking(),
                          appperms.set_asking,
-                         subtitle="A new app asks the first time it opens; off: apps get access without asking")
+                         subtitle=_("A new app asks the first time it opens; off: apps get access without asking"))
         ask.set_subtitle_lines(0)
         grp.add(ask)
         from ..backend import location
         if location.available():
-            loc = switch_row("Location Services", location.enabled(), lambda on: self._set_location(loc, on),
-                             subtitle="Off: no app gets your location, installed from packages or Flatpak "
-                                      "(asks for your password)")
+            loc = switch_row(_("Location Services"), location.enabled(), lambda on: self._set_location(loc, on),
+                             subtitle=_("Off: no app gets your location, installed from packages or Flatpak "
+                                      "(asks for your password)"))
             loc.set_subtitle_lines(0)
             grp.add(loc)
         for key, title, entries in permstore.all_permissions():
-            exp = Adw.ExpanderRow(title=title, use_markup=False,
-                                  subtitle=(f"{len(entries)} app" + ("s" if len(entries) != 1 else ""))
-                                  if entries else "No app has asked")
+            exp = Adw.ExpanderRow(title=_(title), use_markup=False,
+                                  subtitle=ngettext("{n} app", "{n} apps", len(entries)).format(n=len(entries))
+                                  if entries else _("No app has asked"))
             exp.set_enable_expansion(bool(entries))
             for app_id, on in entries:
                 info = apps.lookup(app_id)
@@ -2378,21 +2386,22 @@ class Settings(Adw.ApplicationWindow):
                 row.quiet = True
                 row.set_active(not on)
                 row.quiet = False
-                self.toast("Location Services wasn't changed")
+                self.toast(_("Location Services wasn't changed"))
         system.run_async(location.set_enabled, done, on)
 
     def _firewall_group(self):
         """macOS' Firewall: ufw or firewalld, on or off (pkexec asks the password)."""
         from ..backend import security
         fw = security.firewall()
-        grp = group("Firewall")
+        grp = group(_("Firewall"))
         if fw["kind"] is None:
-            grp.add(install_row("No firewall installed", "Install ufw to turn it on here",
+            grp.add(install_row(_("No firewall installed"), _("Install ufw to turn it on here"),
                                 system.install_command("ufw"), lambda: security.firewall()["kind"] is not None,
                                 lambda: self._reload_page("privacy")))
             return grp
-        row = switch_row("Firewall", fw["on"], lambda _on: None,
-                         subtitle=f"Blocks connections from other computers to this one ({fw['kind']})")
+        row = switch_row(_("Firewall"), fw["on"], lambda _on: None,
+                         subtitle=_("Blocks connections from other computers to this one ({firewall})").format(
+                             firewall=fw["kind"]))
 
         def changed(r, _p):
             if getattr(r, "quiet", False):
@@ -2406,7 +2415,7 @@ class Settings(Adw.ApplicationWindow):
                     r.quiet = True
                     r.set_active(security.firewall()["on"])
                     r.quiet = False
-                self.toast(("Firewall on" if want else "Firewall off") if ok else "Firewall not changed")
+                self.toast((_("Firewall on") if want else _("Firewall off")) if ok else _("Firewall not changed"))
             system.run_async(lambda: security.set_firewall(fw["kind"], want), done)
         row.connect("notify::active", changed)
         grp.add(row)
@@ -2416,17 +2425,17 @@ class Settings(Adw.ApplicationWindow):
         """macOS' FileVault: shown only (Linux encrypts a disk when it's installed)."""
         from ..backend import security
         enc = security.encryption()
-        grp = group("Disk Encryption")
+        grp = group(_("Disk Encryption"))
         if enc.get("/"):
-            title, sub = "The startup disk is encrypted", "Its data can't be read without your disk password (LUKS)"
+            title, sub = _("The startup disk is encrypted"), _("Its data can't be read without your disk password (LUKS)")
             if enc.get("/home") is False:
-                sub = "The home folder is on a disk that isn't encrypted"
+                sub = _("The home folder is on a disk that isn't encrypted")
         elif enc.get("/") is False:
-            title, sub = "The startup disk isn't encrypted", ("Anyone with the disk can read its files. Linux "
-                                                              "encrypts a disk when it's installed: choose "
-                                                              "encryption in the installer.")
+            title, sub = _("The startup disk isn't encrypted"), _("Anyone with the disk can read its files. Linux "
+                                                                 "encrypts a disk when it's installed: choose "
+                                                                 "encryption in the installer.")
         else:
-            title, sub = "Unknown", "The startup disk couldn't be checked"
+            title, sub = _("Unknown"), _("The startup disk couldn't be checked")
         row = Adw.ActionRow(title=title, subtitle=sub, use_markup=False)
         row.add_prefix(Gtk.Image(icon_name="object-locked-symbolic" if enc.get("/") else "object-unlocked-symbolic"))
         row.set_subtitle_lines(0)
@@ -2438,14 +2447,14 @@ class Settings(Adw.ApplicationWindow):
         from ..backend import usbprotect
         from ..files.packages import family
         grp = group("USB")
-        row = switch_row("Block new USB devices while locked", False,
-                         lambda on: self._save("security", "usb_protection", on), subtitle="Checking USBGuard…")
+        row = switch_row(_("Block new USB devices while locked"), False,
+                         lambda on: self._save("security", "usb_protection", on), subtitle=_("Checking USBGuard…"))
         row.set_subtitle_lines(0)
         row.set_sensitive(False)
         grp.add(row)
-        why = {"missing": ("Needs USBGuard", "Not installed"),
-               "off": ("USBGuard isn't set up", "Installed, but its services aren't running"),
-               "denied": ("USBGuard isn't set up", "This account can't change its policy yet")}
+        why = {"missing": (_("Needs USBGuard"), _("Not installed")),
+               "off": (_("USBGuard isn't set up"), _("Installed, but its services aren't running")),
+               "denied": (_("USBGuard isn't set up"), _("This account can't change its policy yet"))}
 
         def fill(state):
             if state == "ready":
@@ -2453,14 +2462,15 @@ class Settings(Adw.ApplicationWindow):
                 row.set_active(bool(sec.get("usb_protection", False)))
                 row.quiet = False
                 row.set_sensitive(True)
-                row.set_subtitle("Devices already plugged in keep working")
+                row.set_subtitle(_("Devices already plugged in keep working"))
                 return
-            row.set_subtitle("Devices already plugged in keep working, all others are allowed while unlocked")
+            row.set_subtitle(_("Devices already plugged in keep working, all others are allowed while unlocked"))
             title, sub = why.get(state, why["off"])
-            grp.add(install_row(title, sub + ". " + USB_WARNING + " Set Up turns it on the safe way.",
+            grp.add(install_row(title, _("{reason}. {warning} Set Up turns it on the safe way.").format(
+                                    reason=sub, warning=USB_WARNING),
                                 usbprotect.setup_command(family()), lambda: usbprotect.status() == "ready",
-                                lambda: self._reload_page("privacy"), label="Set Up…",
-                                confirm=("Set up USBGuard?", USB_CONFIRM, "Open Terminal")))
+                                lambda: self._reload_page("privacy"), label=_("Set Up…"),
+                                confirm=(_("Set up USBGuard?"), USB_CONFIRM, _("Open Terminal"))))
         system.run_async(usbprotect.status, fill)
         return grp
 
@@ -2468,16 +2478,16 @@ class Settings(Adw.ApplicationWindow):
         """Where saved passwords live (keyring.py): the login keyring (no
         prompt after logging in) or KeePassXC (its own password each time)."""
         from .. import keyring
-        grp = group("Saved Passwords")
+        grp = group(_("Saved Passwords"))
         if keyring.backend() == "keepassxc":
-            row = Adw.ActionRow(title="Kept by KeePassXC", use_markup=False,
-                                subtitle="It asks for its own password at every login")
-            btn = ui.controls.push_button("Use Login Password…", valign=Gtk.Align.CENTER)
+            row = Adw.ActionRow(title=_("Kept by KeePassXC"), use_markup=False,
+                                subtitle=_("It asks for its own password at every login"))
+            btn = ui.controls.push_button(_("Use Login Password…"), valign=Gtk.Align.CENTER)
             btn.connect("clicked", lambda _b: self._switch_keyring())
             row.add_suffix(btn)
         else:
-            row = Adw.ActionRow(title="Login keyring", use_markup=False,
-                                subtitle="Unlocked by your login password: nothing asks after logging in")
+            row = Adw.ActionRow(title=_("Login keyring"), use_markup=False,
+                                subtitle=_("Unlocked by your login password: nothing asks after logging in"))
         row.set_subtitle_lines(0)
         grp.add(row)
         return grp
@@ -2491,30 +2501,31 @@ class Settings(Adw.ApplicationWindow):
             if rid != "switch":
                 return
             pw = entry.get_text()
-            self.toast("Moving your saved passwords… KeePassXC may ask to unlock its database")
+            self.toast(_("Moving your saved passwords… KeePassXC may ask to unlock its database"))
 
             def work():
                 try:
                     n = keyring.switch_to_gnome(pw, lambda t: GLib.idle_add(self.toast, t))
-                    return f"{n} saved passwords moved"
+                    return ngettext("{n} saved password moved", "{n} saved passwords moved", n).format(n=n)
                 except Exception as e:                       # noqa: BLE001 -- told, nothing lost
-                    return f"Not switched: {e}"
-            system.run_async(work, lambda msg: (self.toast(msg), self._reload_page("privacy"),
-                                                msg.startswith("Not") or
-                                                self.ask_restart("session", "The login keyring")))
-        dlg = ui.dialog.alert("Use your login password for saved passwords?",
-                              "Apps' saved passwords (Chrome, VS Code, Wi-Fi) move from KeePassXC to the "
+                    return False, _("Not switched: {error}").format(error=e)
+            system.run_async(work, lambda msg: (self.toast(msg[1] if isinstance(msg, tuple) else msg),
+                                                self._reload_page("privacy"),
+                                                isinstance(msg, tuple) or
+                                                self.ask_restart("session", _("The login keyring"))))
+        dlg = ui.dialog.alert(_("Use your login password for saved passwords?"),
+                              _("Apps' saved passwords (Chrome, VS Code, Wi-Fi) move from KeePassXC to the "
                               "login keyring, which your login unlocks: no password prompt after logging in. "
-                              "KeePassXC stays installed as a password manager. Type your login password:",
-                              [("cancel", "Cancel", ""), ("switch", "Use Login Password", "default")], go,
+                              "KeePassXC stays installed as a password manager. Type your login password:"),
+                              [("cancel", _("Cancel"), ""), ("switch", _("Use Login Password"), "default")], go,
                               parent=self)
         dlg.set_extra_child(entry)
 
     def _page_printers(self):
-        g = group("Printers")
-        g.add(Adw.ActionRow(title="Loading…"))
+        g = group(_("Printers"))
+        g.add(Adw.ActionRow(title=_("Loading…")))
         add = Gtk.Button(icon_name="list-add-symbolic", css_classes=["flat"], valign=Gtk.Align.CENTER,
-                         tooltip_text="Add Printer…")
+                         tooltip_text=_("Add Printer…"))
         add.connect("clicked", lambda *_: system.add_printer())
         g.set_header_suffix(add)
 
@@ -2522,43 +2533,43 @@ class Settings(Adw.ApplicationWindow):
             lst, running = res
             _clear_group(g)
             if lst is not None and not running:
-                g.add(install_row("Printing is off", "CUPS is installed but not running",
+                g.add(install_row(_("Printing is off"), _("CUPS is installed but not running"),
                                   system.CUPS_ON, system.cups_running, lambda: self._reload_page("printers"),
-                                  label="Turn On…"))
+                                  label=_("Turn On…")))
                 add.set_sensitive(False)
                 return
             if lst is None:
                 cups = system.install_command("cups")
-                g.add(install_row("Printing isn't set up", "Install CUPS to add printers",
+                g.add(install_row(_("Printing isn't set up"), _("Install CUPS to add printers"),
                                   cups and cups + " && " + system.CUPS_ON,
                                   lambda: system.printers() is not None, lambda: self._reload_page("printers")))
                 add.set_sensitive(False)
                 return
             for p in lst:
                 row = Adw.ActionRow(title=p.name, use_markup=False,
-                                    subtitle=p.state + (" · Default" if p.default else ""))
+                                    subtitle=_(p.state) + (" · " + _("Default") if p.default else ""))
                 row.add_prefix(Gtk.Image(icon_name="printer-symbolic", pixel_size=24))
                 if not p.default:
-                    b = ui.controls.push_button("Make Default", valign=Gtk.Align.CENTER)
+                    b = ui.controls.push_button(_("Make Default"), valign=Gtk.Align.CENTER)
                     b.connect("clicked", lambda *_a, p=p: system.run_async(
                         system.set_default_printer, lambda _ok: self._reload_page("printers"), p.name))
                     row.add_suffix(b)
                 g.add(row)
             if not lst:
-                g.add(Adw.ActionRow(title="No printers available", subtitle="Click + to add a printer"))
+                g.add(Adw.ActionRow(title=_("No printers available"), subtitle=_("Click + to add a printer")))
         system.run_async(lambda: (system.printers(), system.cups_running()), fill)
         return [g]
 
     def _page_sharing(self):
         g = group()
-        entry = Adw.EntryRow(title="Computer Name", show_apply_button=True)
+        entry = Adw.EntryRow(title=_("Computer Name"), show_apply_button=True)
         entry.set_text(GLib.get_host_name())
         system.run_async(system.computer_name, lambda n: n and entry.set_text(n))    # hostnamectl: off the main loop
         entry.connect("apply", lambda e: system.run_async(
-            system.set_computer_name, lambda ok: self.toast("Computer name changed" if ok else
-                                                            "Couldn't change the name"), e.get_text().strip()))
+            system.set_computer_name, lambda ok: self.toast(_("Computer name changed") if ok else
+                                                            _("Couldn't change the name")), e.get_text().strip()))
         g.add(entry)
-        g.add(Adw.ActionRow(title="Local hostname", subtitle=GLib.get_host_name() + ".local", use_markup=False))
+        g.add(Adw.ActionRow(title=_("Local hostname"), subtitle=GLib.get_host_name() + ".local", use_markup=False))
         return [g, self._screen_sharing_group()]
 
     def _screen_sharing_group(self):
@@ -2566,48 +2577,48 @@ class Settings(Adw.ApplicationWindow):
         (backend/screenshare.py: wayvnc). Vini: Chrome Remote Desktop can't
         show a Wayfire session."""
         from ..backend import screenshare as S
-        g = group("Screen Sharing", "Others can see and control this screen with a VNC viewer "
-                                    "(RealVNC Viewer, TigerVNC) and the password below.")
+        g = group(_("Screen Sharing"), _("Others can see and control this screen with a VNC viewer "
+                                    "(RealVNC Viewer, TigerVNC) and the password below."))
         if not S.installed():
-            g.add(install_row("Screen Sharing needs wayvnc", "Not installed", system.install_command("wayvnc"),
+            g.add(install_row(_("Screen Sharing needs wayvnc"), _("Not installed"), system.install_command("wayvnc"),
                               S.installed, lambda: self._reload_page("sharing")))
             return g
         cfg = config.load(S.NAME, S.DEFAULTS)
         details = []
-        g.add(switch_row("Screen Sharing", cfg["screen"],
+        g.add(switch_row(_("Screen Sharing"), cfg["screen"],
                          lambda on: (self._save(S.NAME, "screen", on), [d.set_visible(on) for d in details])))
-        shown = [("", "Main display")] + [(d.name, f"{d.name} — {d.description}" if d.description else d.name)
+        shown = [("", _("Main display"))] + [(d.name, f"{d.name} — {d.description}" if d.description else d.name)
                                           for d in system.displays()]
-        details.append(combo_row("Display", shown, cfg.get("output", ""),
-                                 lambda v: self._save(S.NAME, "output", v), subtitle="The one others see"))
-        where = Adw.ActionRow(title="Address", use_markup=False, subtitle="…")
+        details.append(combo_row(_("Display"), shown, cfg.get("output", ""),
+                                 lambda v: self._save(S.NAME, "output", v), subtitle=_("The one others see")))
+        where = Adw.ActionRow(title=_("Address"), use_markup=False, subtitle="…")
         where.set_subtitle_lines(0)
         details.append(where)
 
         def fill(addrs):
             where.set_subtitle("\n".join(f"{a}  ({'Tailscale' if i.startswith('tailscale') else i})"
-                                         for a, i in addrs) or "No network")
+                                         for a, i in addrs) or _("No network"))
         system.run_async(S.addresses, fill)
         user, pw = S.credentials()
-        login = Adw.ActionRow(title="User and password", use_markup=False, subtitle=f"{user}  ·  {pw}")
+        login = Adw.ActionRow(title=_("User and password"), use_markup=False, subtitle=f"{user}  ·  {pw}")
         box = Gtk.Box(spacing=8, valign=Gtk.Align.CENTER)
 
         def copy():
             self.get_clipboard().set(S.credentials()[1])
-            self.toast("Password copied")
+            self.toast(_("Password copied"))
 
         def renew():
             S.new_password()
             login.set_subtitle(f"{user}  ·  {S.credentials()[1]}")
             self._save(S.NAME, "rev", config.load(S.NAME, S.DEFAULTS).get("rev", 0) + 1)   # wayvnc restarts
-            self.toast("New password: viewers connected now are disconnected")
-        box.append(ui.controls.push_button("Copy", copy))
-        box.append(ui.controls.push_button("New Password", renew))
+            self.toast(_("New password: viewers connected now are disconnected"))
+        box.append(ui.controls.push_button(_("Copy"), copy))
+        box.append(ui.controls.push_button(_("New Password"), renew))
         login.add_suffix(box)
         details.append(login)
-        far = Adw.ActionRow(title="From outside your network", use_markup=False,
-                            subtitle="Install Tailscale on this computer and on the other device, then use the "
-                                     "Tailscale address. Never open port 5900 on your router.")
+        far = Adw.ActionRow(title=_("From outside your network"), use_markup=False,
+                            subtitle=_("Install Tailscale on this computer and on the other device, then use the "
+                                     "Tailscale address. Never open port 5900 on your router."))
         far.set_subtitle_lines(0)
         details.append(far)
         for d in details:
@@ -2618,36 +2629,36 @@ class Settings(Adw.ApplicationWindow):
 
     def _page_accessibility(self):
         I = "org.gnome.desktop.interface"
-        disp = group("Display")
+        disp = group(_("Display"))
         anim = system.gsetting(I, "enable-animations")
-        disp.add(switch_row("Reduce motion", anim == "false", lambda on: (
+        disp.add(switch_row(_("Reduce motion"), anim == "false", lambda on: (
             system.set_gsetting(I, "enable-animations", "false" if on else "true"),
             system.run_async(system.wayfire_set, None, "animate", "open_animation", "fade"),
             system.run_async(system.wayfire_set, None, "animate", "close_animation", "fade"))))
         app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
-        disp.add(switch_row("Reduce transparency", app.get("reduce_transparency", False),
+        disp.add(switch_row(_("Reduce transparency"), app.get("reduce_transparency", False),
                             lambda on: (self._save("appearance", "reduce_transparency", on),
                                         self._apply_titlebars()),
-                            subtitle="Solid sidebars, Dock and title bars instead of glass"))
-        disp.add(combo_row("Graphics", [("gl", "Hardware (OpenGL)"), ("vulkan", "Hardware (Vulkan)"),
-                                        ("software", "Software (no GPU)")],
+                            subtitle=_("Solid sidebars, Dock and title bars instead of glass")))
+        disp.add(combo_row(_("Graphics"), [("gl", _("Hardware (OpenGL)")), ("vulkan", _("Hardware (Vulkan)")),
+                                        ("software", _("Software (no GPU)"))],
                            app.get("renderer", "gl"),
                            lambda v: (self._save("appearance", "renderer", v),
-                                      self.ask_restart("sonata", "The new graphics setting")),
-                           subtitle="How Sonata draws its Dock, menu bar and windows"))
+                                      self.ask_restart("sonata", _("The new graphics setting"))),
+                           subtitle=_("How Sonata draws its Dock, menu bar and windows")))
         try:
             scale = float(system.gsetting(I, "text-scaling-factor") or 1)
         except ValueError:
             scale = 1.0
-        disp.add(combo_row("Text size", [(1.0, "Default"), (1.15, "Large"), (1.3, "Larger")],
+        disp.add(combo_row(_("Text size"), [(1.0, _("Default")), (1.15, _("Large")), (1.3, _("Larger"))],
                            min((1.0, 1.15, 1.3), key=lambda v: abs(v - scale)),
                            lambda v: system.set_gsetting(I, "text-scaling-factor", str(v))))
-        ptr = group("Pointer")
+        ptr = group(_("Pointer"))
         try:
             size = int(system.gsetting(I, "cursor-size") or 24)
         except ValueError:
             size = 24
-        ptr.add(combo_row("Pointer size", [(24, "Normal"), (32, "Large"), (48, "Larger")],
+        ptr.add(combo_row(_("Pointer size"), [(24, _("Normal")), (32, _("Large")), (48, _("Larger"))],
                           min((24, 32, 48), key=lambda v: abs(v - size)),
                           lambda v: (system.set_gsetting(I, "cursor-size", str(v)),
                                      system.run_async(system.wayfire_set, None, "input", "cursor_size", v))))
@@ -2656,7 +2667,7 @@ class Settings(Adw.ApplicationWindow):
     # -- Sonata sections ------------------------------------------------------------
     def _accent_row(self):
         """Big Sur "Accent colour": a row of colour dots (live everywhere)."""
-        row = Adw.ActionRow(title="Accent colour", subtitle="Buttons, selections, switches and menus")
+        row = Adw.ActionRow(title=_("Accent colour"), subtitle=_("Buttons, selections, switches and menus"))
         box = Gtk.Box(valign=Gtk.Align.CENTER)
         cur = config.load("appearance", icons.APPEARANCE_DEFAULTS)["accent"]
         buttons = {}
@@ -2670,7 +2681,7 @@ class Settings(Adw.ApplicationWindow):
             self._save("appearance", "accent", name)
         for name in ui.tokens.ACCENTS:
             b = Gtk.Button(css_classes=["st-accent", name] + (["selected"] if name == cur else []),
-                           tooltip_text=name.capitalize(), valign=Gtk.Align.CENTER)
+                           tooltip_text=_(name.capitalize()), valign=Gtk.Align.CENTER)
             b.connect("clicked", lambda _b, n=name: pick(n))
             buttons[name] = b
             box.append(b)
@@ -2694,9 +2705,9 @@ class Settings(Adw.ApplicationWindow):
         a few to pick from -- the first is the theme's own -- and any colour
         (Sonata's colour picker). Live everywhere: Sonata's windows, the title
         bars Wayfire draws and other GTK apps."""
-        title = "Light background" if mode == "light" else "Dark background"
-        row = Adw.ActionRow(title=title, subtitle="Windows, sidebars, menus and title bars in "
-                            + ("Light" if mode == "light" else "Dark") + " Mode")
+        title = _("Light background") if mode == "light" else _("Dark background")
+        row = Adw.ActionRow(title=title, subtitle=_("Windows, sidebars, menus and title bars in Light Mode")
+                            if mode == "light" else _("Windows, sidebars, menus and title bars in Dark Mode"))
         box = Gtk.Box(valign=Gtk.Align.CENTER)
         opts = ui.tokens.BACKGROUNDS[mode]
         default = opts[0][1]
@@ -2729,7 +2740,7 @@ class Settings(Adw.ApplicationWindow):
             self._bg_apply_src = GLib.timeout_add(400, apply)
         for i, (name, color) in enumerate(opts):
             b = Gtk.Button(css_classes=["st-accent", "st-bg", f"bg-{mode}-{i}"] + (["selected"] if color == cur else []),
-                           tooltip_text=name, valign=Gtk.Align.CENTER)
+                           tooltip_text=_(name), valign=Gtk.Align.CENTER)
             b.connect("clicked", lambda _b, c=color: pick(c))
             buttons[color] = b
             box.append(b)
@@ -2750,22 +2761,22 @@ class Settings(Adw.ApplicationWindow):
     def _page_appearance(self):
         """Everything about how Sonata looks (macOS Appearance): light/dark and
         accent, style and icons, title bars, glass, corners."""
-        g = group("Appearance")
+        g = group(_("Appearance"))
         scheme = system.gsetting("org.gnome.desktop.interface", "color-scheme") or "default"
-        g.add(combo_row("Appearance", [("default", "Light"), ("prefer-dark", "Dark")],
+        g.add(combo_row(_("Appearance"), [("default", _("Light")), ("prefer-dark", _("Dark"))],
                         "prefer-dark" if scheme == "prefer-dark" else "default",
                         lambda v: system.run_async(system.set_dark_mode, None, v == "prefer-dark"),
-                        subtitle="Linux setting: every app follows it"))
+                        subtitle=_("Linux setting: every app follows it")))
         g.add(self._accent_row())
         g.add(self._background_row("light"))
         g.add(self._background_row("dark"))
-        s = group("Style")
+        s = group(_("Style"))
         app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
         def style(v):
             self._save("appearance", "theme", "mac")
             if v != "mac":                     # not available yet: the pop-up goes back to what's in use
                 show_quietly(style_row, "mac")
-        style_row = combo_row("Style", [("mac", "Sonata"), ("windows", "Windows 11 (coming later)")], app["theme"],
+        style_row = combo_row(_("Style"), [("mac", "Sonata"), ("windows", _("Windows 11 (coming later)"))], app["theme"],
                               style)
         s.add(style_row)
         themes = sorted({d for base in GLib.get_system_data_dirs() + [GLib.get_user_data_dir()]
@@ -2773,56 +2784,56 @@ class Settings(Adw.ApplicationWindow):
                                    else []) if os.path.exists(os.path.join(base, "icons", d, "index.theme"))}
                         | {"Sonata"})
         from ..shell import launchpad_window as LW          # Vini: with the rest of the look
-        s.add(combo_row(f"{names.APPS} style", list(LW.STYLES), LW.style(),
+        s.add(combo_row(_("{apps} style").format(apps=_(names.APPS)), [(k, _(v)) for k, v in LW.STYLES], LW.style(),
                         lambda v: config.update(LW.NAME, style=v),
-                        subtitle=f"Full Screen: over the whole screen. {names.APPS_MENU}: a panel in the middle, "
-                                 "apps by category"))
-        s.add(combo_row("Icons", [(t, t) for t in themes], app["icon_theme"],
+                        subtitle=_("Full Screen: over the whole screen. {apps_menu}: a panel in the middle, "
+                                   "apps by category").format(apps_menu=_(names.APPS_MENU))))
+        s.add(combo_row(_("Icons"), [(t, t) for t in themes], app["icon_theme"],
                         lambda v: (self._save("appearance", "icon_theme", v),
-                                   self.ask_restart("sonata", "The new icons"))))
-        gen = Adw.ActionRow(title="App icons made by Sonata",
-                            subtitle="Apps without Sonata artwork get their icon on the standard frame, saved on disk")
-        regen = ui.controls.push_button("Regenerate", valign=Gtk.Align.CENTER)
+                                   self.ask_restart("sonata", _("The new icons")))))
+        gen = Adw.ActionRow(title=_("App icons made by Sonata"),
+                            subtitle=_("Apps without Sonata artwork get their icon on the standard frame, saved on disk"))
+        regen = ui.controls.push_button(_("Regenerate"), valign=Gtk.Align.CENTER)
         regen.connect("clicked", lambda *_: (icons.clear_generated(), system.restart_sonata(),
-                                             self.toast("Making the app icons again…")))
+                                             self.toast(_("Making the app icons again…"))))
         gen.add_suffix(regen)
         s.add(gen)
         from .. import flatpak_theme
         if shutil.which("flatpak"):
-            s.add(switch_row("Sonata style for Flatpak apps", flatpak_theme.enabled(),
+            s.add(switch_row(_("Sonata style for Flatpak apps"), flatpak_theme.enabled(),
                              lambda on: (self._save("appearance", flatpak_theme.KEY, on),
                                          system.run_async(flatpak_theme.apply if on else flatpak_theme.remove),
-                                         self.toast("Flatpak apps pick it up when they open again")),
-                             subtitle="Also changes Flatpak apps in other desktops' sessions while on"))
-        bars = group("Title Bars")
-        bars.add(combo_row("Window buttons", [("left", "Left"), ("right", "Right")],
+                                         self.toast(_("Flatpak apps pick it up when they open again"))),
+                             subtitle=_("Also changes Flatpak apps in other desktops' sessions while on")))
+        bars = group(_("Title Bars"))
+        bars.add(combo_row(_("Window buttons"), [("left", _("Left")), ("right", _("Right"))],
                            app.get("buttons_side", "left"), self._set_buttons_side,
-                           subtitle="Where close, minimize and zoom sit on every window"))
+                           subtitle=_("Where close, minimize and zoom sit on every window")))
         self._button_colour_rows(bars, app)
-        bars.add(switch_row("Sonata title bars for all apps", app["system_titlebars"],
+        bars.add(switch_row(_("Sonata title bars for all apps"), app["system_titlebars"],
                             lambda on: (self._save("appearance", "system_titlebars", on),
                                         system.run_async(__import__("sonata2.titlebars", fromlist=["apply"]).apply,
                                                          None, on),
-                                        self.toast("Apps pick it up when they open again")),
-                            subtitle="Chrome, VS Code and others use Sonata's title bar instead of their own"))
-        bars.add(switch_row("Always show the tab bar", app.get("always_show_tabs", True),
+                                        self.toast(_("Apps pick it up when they open again"))),
+                            subtitle=_("Chrome, VS Code and others use Sonata's title bar instead of their own")))
+        bars.add(switch_row(_("Always show the tab bar"), app.get("always_show_tabs", True),
                             lambda on: self._save("appearance", "always_show_tabs", on),
-                            subtitle="Terminal, Files and TextEdit show their tabs and + even with one tab"))
-        bars.add(switch_row("Sonata look for Steam", app.get("steam_theme", True), self._set_steam_theme,
-                            subtitle="Steam keeps its own look, with Sonata's round window buttons "
-                                     "and corners"))
-        bars.add(switch_row("Glass title bars", app.get("glass_titlebars", False), self._set_glass_titlebars,
-                            subtitle="See-through, blurred title bars on every window, GNOME apps too "
-                                     "(experimental; heavier on the graphics card)"))
-        reset = self._reset_group("Reset Appearance", "Accent colour, style, icons, title bars, glass and "
-                                  "corners back to the theme's defaults", self.ask_reset_appearance)
+                            subtitle=_("Terminal, Files and TextEdit show their tabs and + even with one tab")))
+        bars.add(switch_row(_("Sonata look for Steam"), app.get("steam_theme", True), self._set_steam_theme,
+                            subtitle=_("Steam keeps its own look, with Sonata's round window buttons "
+                                     "and corners")))
+        bars.add(switch_row(_("Glass title bars"), app.get("glass_titlebars", False), self._set_glass_titlebars,
+                            subtitle=_("See-through, blurred title bars on every window, GNOME apps too "
+                                     "(experimental; heavier on the graphics card)")))
+        reset = self._reset_group(_("Reset Appearance"), _("Accent colour, style, icons, title bars, glass and "
+                                  "corners back to the theme's defaults"), self.ask_reset_appearance)
         return [g, s, bars, self._glass_group(), self._corners_group(), reset]
 
     def _reset_group(self, title, subtitle, ask):
         """A section's last row: everything on it back to the defaults (asked first)."""
         g = group()
         row = Adw.ActionRow(title=title, subtitle=subtitle, use_markup=False)
-        rb = ui.controls.push_button("Reset\u2026", ask, style="destructive")
+        rb = ui.controls.push_button(_("Reset\u2026"), ask, style="destructive")
         rb.set_valign(Gtk.Align.CENTER)
         row.add_suffix(rb)
         g.add(row)
@@ -2840,24 +2851,24 @@ class Settings(Adw.ApplicationWindow):
         from .. import steamtheme
         self._save("appearance", "steam_theme", bool(on))
         system.run_async(lambda: steamtheme.apply(force=True) if on else steamtheme.remove(), None)
-        self.toast("Steam shows it the next time it opens")
+        self.toast(_("Steam shows it the next time it opens"))
 
-    BUTTON_STYLES = [("color", "Colourful"), ("graphite", "Graphite"), ("mono", "Black & White"),
-                     ("custom", "Custom")]
+    BUTTON_STYLES = [("color", _("Colourful")), ("graphite", _("Graphite")), ("mono", _("Black & White")),
+                     ("custom", _("Custom"))]
 
     def _button_colour_rows(self, bars, app) -> None:
         """Settings > Appearance > Button Colours (Vini): colourful, graphite,
         black & white (black on light, white on dark) or a colour per button."""
         from .. import trafficlights
         look = app.get("buttons_style", "color")
-        row = combo_row("Button colours", self.BUTTON_STYLES, look if look in trafficlights.STYLES else "color",
-                        self._set_button_style, subtitle="Close, minimize and zoom on every window")
+        row = combo_row(_("Button colours"), self.BUTTON_STYLES, look if look in trafficlights.STYLES else "color",
+                        self._set_button_style, subtitle=_("Close, minimize and zoom on every window"))
         bars.add(row)
-        custom = Adw.ActionRow(title="Custom colours", subtitle="Close, minimize, zoom",
+        custom = Adw.ActionRow(title=_("Custom colours"), subtitle=_("Close, minimize, zoom"),
                                visible=look == "custom")
         box = Gtk.Box(spacing=8, valign=Gtk.Align.CENTER)
         self.button_dots = {}
-        for name, tip in (("close", "Close"), ("minimize", "Minimize"), ("maximize", "Zoom")):
+        for name, tip in (("close", _("Close")), ("minimize", _("Minimize")), ("maximize", _("Zoom"))):
             dot = ui.colorpicker.ColorDot(trafficlights.custom()[name], tooltip=tip)
 
             def picked(hexc, n=name, d=dot):
@@ -2867,7 +2878,7 @@ class Settings(Adw.ApplicationWindow):
                 self._save("appearance", "buttons_colors", cols)
                 system.run_async(trafficlights.apply, None, Adw.StyleManager.get_default().get_dark())
             dot.connect("clicked", lambda b, n=name, f=picked, t=tip: setattr(b, "picker", ui.colorpicker.popup(
-                b, b.swatch.color, f, title=f"{t} Button")))
+                b, b.swatch.color, f, title=_("{name} Button").format(name=t))))
             box.append(dot)
             self.button_dots[name] = dot
         custom.add_suffix(box)
@@ -2880,7 +2891,7 @@ class Settings(Adw.ApplicationWindow):
         if getattr(self, "button_custom_row", None) is not None:
             self.button_custom_row.set_visible(look == "custom")
         system.run_async(trafficlights.apply, None, Adw.StyleManager.get_default().get_dark())
-        self.toast("Other apps pick it up when they open again")
+        self.toast(_("Other apps pick it up when they open again"))
 
     def _set_buttons_side(self, side):
         """Settings > Appearance > Window buttons: left (macOS) or right. The
@@ -2889,7 +2900,7 @@ class Settings(Adw.ApplicationWindow):
         self._save("appearance", "buttons_side", side)
         self._place_lights()                           # Vini: Settings itself didn't move them
         system.run_async(apply_buttons_side, None)
-        self.toast("Other open windows pick it up when they open again")
+        self.toast(_("Other open windows pick it up when they open again"))
 
     def _place_lights(self) -> None:
         """This window's buttons where Window buttons says, now: the sidebar's
@@ -2910,10 +2921,10 @@ class Settings(Adw.ApplicationWindow):
                 tv.hb.pack_end(tv.lights)
 
     def ask_reset_appearance(self):
-        return ui.dialog.alert("Reset Appearance?",
-                               "The accent and background colours, style, icons, title bars, glass and corners go back to "
-                               "the theme's defaults.",
-                               [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
+        return ui.dialog.alert(_("Reset Appearance?"),
+                               _("The accent and background colours, style, icons, title bars, glass and corners go back to "
+                               "the theme's defaults."),
+                               [("cancel", _("Cancel"), ""), ("reset", _("Reset"), "destructive")],
                                lambda rid: rid == "reset" and self.reset_appearance(), parent=self)
 
     def reset_appearance(self) -> None:
@@ -2947,9 +2958,9 @@ class Settings(Adw.ApplicationWindow):
         system.run_async(apply, None)
         self.rebuild_page("appearance")
         if old.get("icon_theme") != icons.APPEARANCE_DEFAULTS["icon_theme"]:
-            self.ask_restart("sonata", "Sonata's icons")
+            self.ask_restart("sonata", _("Sonata's icons"))
         else:
-            self.toast("Appearance reset")
+            self.toast(_("Appearance reset"))
 
     def rebuild_page(self, sid) -> None:
         """The section built again from its settings (shown as it is now)."""
@@ -2967,26 +2978,26 @@ class Settings(Adw.ApplicationWindow):
         from ..ui import glass as G
         cur = G.settings()
         vals = ui.theme.values()
-        g = group("Glass & Transparency",
-                  "Frosted, see-through backgrounds. Off: solid. "
-                  + ("Accessibility > Reduce transparency is on: everything is solid now."
-                     if ui.theme.reduce_transparency() else ""))
+        g = group(_("Glass & Transparency"),
+                  _("Frosted, see-through backgrounds. Off: solid.")
+                  + (" " + _("Accessibility > Reduce transparency is on: everything is solid now.")
+                     if ui.theme.reduce_transparency() else " "))
         self.glass_rows = {}
         for item in G.ITEMS:
-            sw = switch_row(G.TITLES[item], cur[item]["on"], lambda on, k=item: self._set_glass(k, on=on),
-                            subtitle=G.SUBTITLES.get(item, ""))
-            sl = slider_row("Transparency", self._alpha_to_slider(G.alpha_of(item, vals, cur)), 0, 100,
+            sw = switch_row(_(G.TITLES[item]), cur[item]["on"], lambda on, k=item: self._set_glass(k, on=on),
+                            subtitle=_(G.SUBTITLES.get(item, "")))
+            sl = slider_row(_("Transparency"), self._alpha_to_slider(G.alpha_of(item, vals, cur)), 0, 100,
                             lambda v, k=item: self._set_glass(k, alpha=self._slider_to_alpha(v)),
-                            ends=("Less", "More"),
+                            ends=(_("Less"), _("More")),
                             default=self._alpha_to_slider(G.css_alpha(vals[G.MATERIALS[item][0]])))
             sl.add_css_class("st-sub-row")
             sl.set_sensitive(cur[item]["on"])
             self.glass_rows[item] = (sw, sl)
             g.add(sw)
             g.add(sl)
-        blur = slider_row("Blur strength", cur["blur"], 0, 100, lambda v: self._set_glass("blur", blur=v),
-                          subtitle="How frosted every glass part is (one for all: Wayfire's blur)",
-                          ends=("Light", "Strong"), default=G.BLUR_DEFAULT)
+        blur = slider_row(_("Blur strength"), cur["blur"], 0, 100, lambda v: self._set_glass("blur", blur=v),
+                          subtitle=_("How frosted every glass part is (one for all: Wayfire's blur)"),
+                          ends=(_("Light"), _("Strong")), default=G.BLUR_DEFAULT)
         self.glass_rows["blur"] = blur
         g.add(blur)
         return g
@@ -3064,63 +3075,63 @@ class Settings(Adw.ApplicationWindow):
         from ..shell import dock as D
         cfg = config.load("dock", D.DEFAULTS)
         size = group("Dock")
-        size.add(slider_row("Size", cfg["icon_size"], D.MIN_SIZE, D.MAX_SIZE,
+        size.add(slider_row(_("Size"), cfg["icon_size"], D.MIN_SIZE, D.MAX_SIZE,
                             lambda v: self._save_live("dock", "icon_size", int(v)), default=D.DEFAULTS["icon_size"]))
-        size.add(switch_row("Magnification", cfg["magnification"], lambda on: self._save("dock", "magnification", on)))
-        size.add(slider_row("Magnified size", cfg["magnified_size"], D.MIN_SIZE, D.MAX_SIZE,
+        size.add(switch_row(_("Magnification"), cfg["magnification"], lambda on: self._save("dock", "magnification", on)))
+        size.add(slider_row(_("Magnified size"), cfg["magnified_size"], D.MIN_SIZE, D.MAX_SIZE,
                             lambda v: self._save_live("dock", "magnified_size", int(v)),
                             default=D.DEFAULTS["magnified_size"]))
-        size.add(combo_row("Position on screen", [("left", "Left"), ("bottom", "Bottom"), ("right", "Right")],
+        size.add(combo_row(_("Position on screen"), [("left", _("Left")), ("bottom", _("Bottom")), ("right", _("Right"))],
                            cfg["position"], lambda v: self._save("dock", "position", v)))
         behave = group()
-        behave.add(switch_row("Automatically hide and show the Dock", cfg["autohide"],
+        behave.add(switch_row(_("Automatically hide and show the Dock"), cfg["autohide"],
                               lambda on: self._save("dock", "autohide", on)))
-        behave.add(switch_row("Show the Dock on every display", cfg.get("all_displays", False),
+        behave.add(switch_row(_("Show the Dock on every display"), cfg.get("all_displays", False),
                               lambda on: self._save("dock", "all_displays", on),
-                              subtitle="Otherwise only on the main display (Displays)"))
-        behave.add(switch_row("Show suggested and recent apps in Dock", cfg["show_recents"],
+                              subtitle=_("Otherwise only on the main display (Displays)")))
+        behave.add(switch_row(_("Show suggested and recent apps in Dock"), cfg["show_recents"],
                               lambda on: self._save("dock", "show_recents", on)))
-        behave.add(switch_row("Click an app in front to minimize it", cfg["click_minimizes"],
+        behave.add(switch_row(_("Click an app in front to minimize it"), cfg["click_minimizes"],
                               lambda on: self._save("dock", "click_minimizes", on)))
-        behave.add(switch_row("Animate opening applications", cfg["bounce"],
+        behave.add(switch_row(_("Animate opening applications"), cfg["bounce"],
                               lambda on: self._save("dock", "bounce", on)))
-        behave.add(switch_row("Show indicators for open applications", cfg["indicators"],
+        behave.add(switch_row(_("Show indicators for open applications"), cfg["indicators"],
                               lambda on: self._save("dock", "indicators", on)))
-        look = group("Look")
+        look = group(_("Look"))
         # (its glass: Appearance > Glass & Transparency)
-        look.add(slider_row("Distance from the screen edge", cfg["edge_gap"], 0, 24,    # and from zoomed windows
+        look.add(slider_row(_("Distance from the screen edge"), cfg["edge_gap"], 0, 24,    # and from zoomed windows
                             lambda v: self._save_live("dock", "edge_gap", int(v)), default=D.DEFAULTS["edge_gap"]))
-        reset = self._reset_group("Reset Dock", "The Dock's options back to the defaults; your apps and "
-                                  "folders in the Dock stay", self.ask_reset_dock)
+        reset = self._reset_group(_("Reset Dock"), _("The Dock's options back to the defaults; your apps and "
+                                  "folders in the Dock stay"), self.ask_reset_dock)
         return [size, behave, look, reset]
 
     def _page_desktop(self):
         """Desktop & Windows: how windows behave, the desktop's icons."""
         from ..shell import desktop as DK, dock as D
         cfg = config.load("dock", D.DEFAULTS)
-        wins = group("Windows")
+        wins = group(_("Windows"))
         live = (system.wayfire_get("sonata-resize", "live", "true") or "true").lower() != "false"
-        wins.add(switch_row("Show window contents while resizing", live,
+        wins.add(switch_row(_("Show window contents while resizing"), live,
                             lambda on: system.run_async(system.wayfire_set, None, "sonata-resize", "live", bool(on)),
-                            subtitle="Off: only the window's background follows the pointer, and its contents "
-                                     "fade in when you let go -- smoother with heavy apps"))
-        wins.add(switch_row("Quit apps when their last window closes", cfg.get("quit_on_close", True),
+                            subtitle=_("Off: only the window's background follows the pointer, and its contents "
+                                     "fade in when you let go -- smoother with heavy apps")))
+        wins.add(switch_row(_("Quit apps when their last window closes"), cfg.get("quit_on_close", True),
                             lambda on: self._save("dock", "quit_on_close", on),
-                            subtitle="Closing an app's last window quits it, also Steam, Discord and "
-                                     "others that keep running in the background"))
-        wins.add(combo_row("Minimize windows using", [("genie", "Genie effect"), ("scale", "Scale effect")],
+                            subtitle=_("Closing an app's last window quits it, also Steam, Discord and "
+                                     "others that keep running in the background")))
+        wins.add(combo_row(_("Minimize windows using"), [("genie", _("Genie effect")), ("scale", _("Scale effect"))],
                            cfg["minimize_effect"], self._set_minimize_effect))
         dbl = system.gsetting("org.gnome.desktop.wm.preferences", "action-double-click-titlebar") or "toggle-maximize"
-        wins.add(combo_row("Double-click a window's title bar to",
-                           [("toggle-maximize", "Zoom"), ("minimize", "Minimize"), ("none", "Do Nothing")],
+        wins.add(combo_row(_("Double-click a window's title bar to"),
+                           [("toggle-maximize", "Zoom"), ("minimize", _("Minimize")), ("none", _("Do Nothing"))],
                            dbl if dbl in ("toggle-maximize", "minimize", "none") else "toggle-maximize",
                            self._set_double_click))
-        desk = group("Desktop")
-        desk.add(combo_row("Sort icons by", list(DK.SORTS), config.load("desktop", DK.DEFAULTS).get("sort", "none"),
+        desk = group(_("Desktop"))
+        desk.add(combo_row(_("Sort icons by"), [(k, _(v)) for k, v in DK.SORTS], config.load("desktop", DK.DEFAULTS).get("sort", "none"),
                            lambda v: self._save("desktop", "sort", v),
-                           subtitle="None: icons stay where you put them"))
-        reset = self._reset_group("Reset Desktop & Windows", "Window options back to the defaults; your "
-                                  "desktop icons stay where they are", self.ask_reset_desktop)
+                           subtitle=_("None: icons stay where you put them")))
+        reset = self._reset_group(_("Reset Desktop & Windows"), _("Window options back to the defaults; your "
+                                  "desktop icons stay where they are"), self.ask_reset_desktop)
         return [wins, desk, reset]
 
     def _set_double_click(self, v):
@@ -3143,56 +3154,57 @@ class Settings(Adw.ApplicationWindow):
     def _page_menubar(self):
         from ..shell import topbar as T
         cfg = config.load("topbar", T.DEFAULTS)
-        g = group("Menu Bar")
-        g.add(switch_row("Automatically hide and show the menu bar", cfg.get("autohide", False),
+        g = group(_("Menu Bar"))
+        g.add(switch_row(_("Automatically hide and show the menu bar"), cfg.get("autohide", False),
                          lambda on: self._save("topbar", "autohide", on),
-                         subtitle="It slides back down when the pointer reaches the top of the screen"))
-        g.add(switch_row("Taller menu bar", cfg.get("tall", True), self._set_tall_menubar,
-                         subtitle="Like the menu bar of the newest MacBooks"))
-        g.add(combo_row("Clock", [("%a %-d %b  %H:%M", "Mon 28 Sep  21:41"), ("%a %H:%M", "Mon 21:41"),
-                                  ("%a %-d %b  %-I:%M %p", "Mon 28 Sep  9:41 PM"), ("%a %-I:%M %p", "Mon 9:41 PM"),
+                         subtitle=_("It slides back down when the pointer reaches the top of the screen")))
+        g.add(switch_row(_("Taller menu bar"), cfg.get("tall", True), self._set_tall_menubar,
+                         subtitle=_("Like the menu bar of the newest MacBooks")))
+        g.add(combo_row(_("Clock"), [("%a %-d %b  %H:%M", _("Mon 28 Sep  21:41")), ("%a %H:%M", _("Mon 21:41")),
+                                  ("%a %-d %b  %-I:%M %p", _("Mon 28 Sep  9:41 PM")), ("%a %-I:%M %p", _("Mon 9:41 PM")),
                                   ("%H:%M", "21:41")],
                         cfg["clock_format"], lambda v: self._save("topbar", "clock_format", v)))
         # every status item, in the menu bar's order (Control Center and the clock always stay)
-        items = group("Show in Menu Bar")
-        for key, title, sub in (("show_tray", "Background apps", "Status icons of apps running in the background "
-                                 "(Discord, Steam…)"),
-                                ("show_now_playing", "Now Playing", "While something plays"),
-                                ("show_input", "Keyboard layout", "The layout in use (BR, US…); Ctrl+Space: the previous one"),
-                                ("show_sound", "Sound", "Volume and outputs are always in Control Center"),
-                                ("show_battery", "Battery", ""),
-                                ("battery_percent", "Battery percentage", ""),
+        items = group(_("Show in Menu Bar"))
+        for key, title, sub in (("show_tray", _("Background apps"), _("Status icons of apps running in the "
+                                                                     "background (Discord, Steam…)")),
+                                ("show_now_playing", _("Now Playing"), _("While something plays")),
+                                ("show_input", _("Keyboard layout"), _("The layout in use (BR, US…); Ctrl+Space: the "
+                                                                       "previous one")),
+                                ("show_sound", _("Sound"), _("Volume and outputs are always in Control Center")),
+                                ("show_battery", _("Battery"), ""),
+                                ("battery_percent", _("Battery percentage"), ""),
                                 ("show_bluetooth", "Bluetooth", ""),
                                 ("show_wifi", "Wi-Fi", ""),
-                                ("show_spotlight", "Search", "")):
+                                ("show_spotlight", _(names.SEARCH), "")):
             items.add(switch_row(title, cfg.get(key, T.DEFAULTS[key]),
                                  lambda on, k=key: self._save("topbar", k, on), subtitle=sub))
         # CPU, GPU, memory, network, FPS: off, as text or as a small graph (off by default)
         from ..shell import statsui
-        perf = group("Performance in Menu Bar")
+        perf = group(_("Performance in Menu Bar"))
         for kind in statsui.KINDS:
             now = cfg.get(f"{kind}_style", "text") if cfg.get(f"show_{kind}") else "off"
-            perf.add(combo_row(statsui.TITLES[kind], [("off", "Off"), ("text", "Text"), ("graph", "Graph")], now,
+            perf.add(combo_row(_(statsui.TITLES[kind]), [("off", _("Off")), ("text", _("Text")), ("graph", _("Graph"))], now,
                                lambda v, k=kind: self._set_stat(k, v),
-                               subtitle="Frames per second of the app in front" if kind == "fps" else ""))
+                               subtitle=_("Frames per second of the app in front") if kind == "fps" else ""))
         from ..ui import logo as L
         app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
         # always there, usable only for "Text: custom…": showing / hiding it
         # moved the rows under it, and a click meant for the next row landed
         # on it (it turned "Sonata title bars for all apps" off once)
-        text_row = Adw.EntryRow(title="Menu bar text", text=app.get("menu_text") or "", use_markup=False,
+        text_row = Adw.EntryRow(title=_("Menu bar text"), text=app.get("menu_text") or "", use_markup=False,
                                 sensitive=app["menu_logo"] == "text:custom", show_apply_button=True)
         if hasattr(text_row, "set_max_length"):         # libadwaita 1.5+
             text_row.set_max_length(L.TEXT_MAX)
         text_row.connect("apply", lambda r: self._save("appearance", "menu_text", r.get_text().strip()))
-        logo = group("Logo")
-        logo.add(combo_row("Menu bar logo", L.choices(), app["menu_logo"],
+        logo = group(_("Logo"))
+        logo.add(combo_row(_("Menu bar logo"), [(k, _(v)) for k, v in L.choices()], app["menu_logo"],
                            lambda v: (self._save("appearance", "menu_logo", v),
                                       text_row.set_sensitive(v == "text:custom")),
-                           subtitle="The menu at the left end of the menu bar"))
+                           subtitle=_("The menu at the left end of the menu bar")))
         logo.add(text_row)                                # text:custom: your words (emoji drawn in one colour)
         logo.menu_text_row = text_row                     # (tests)
-        reset = self._reset_group("Reset Menu Bar", "The menu bar's options and logo back to the defaults",
+        reset = self._reset_group(_("Reset Menu Bar"), _("The menu bar's options and logo back to the defaults"),
                                   self.ask_reset_menubar)
         return [g, items, perf, logo, reset]
 
@@ -3211,28 +3223,28 @@ class Settings(Adw.ApplicationWindow):
             CCL.save(now)
         perf_ids = {"stat_" + k for k in statsui.KINDS}
         groups = []
-        for title, desc, ids in (("Controls", "Hold a module in Control Center to move it.",
+        for title, desc, ids in ((_("Controls"), _("Hold a module in Control Center to move it."),
                                   [m for m in CCL.CATALOG if m not in perf_ids]),
-                                 ("Performance", "Read only while Control Center is open.",
+                                 (_("Performance"), _("Read only while Control Center is open."),
                                   [m for m in CCL.CATALOG if m in perf_ids])):
             g = group(title, desc)
             for mid in ids:
-                g.add(switch_row(CCL.CATALOG[mid][0], mid in order, lambda on, m=mid: toggle(m, on)))
+                g.add(switch_row(_(CCL.CATALOG[mid][0]), mid in order, lambda on, m=mid: toggle(m, on)))
             groups.append(g)
-        reset = self._reset_group("Reset Control Center", "Its modules and their order back to the defaults",
+        reset = self._reset_group(_("Reset Control Center"), _("Its modules and their order back to the defaults"),
                                   self.ask_reset_controlcenter)
         return groups + [reset]
 
     def ask_reset_controlcenter(self):
-        return ui.dialog.alert("Reset Control Center?", "Its modules and their order go back to the defaults.",
-                               [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
+        return ui.dialog.alert(_("Reset Control Center?"), _("Its modules and their order go back to the defaults."),
+                               [("cancel", _("Cancel"), ""), ("reset", _("Reset"), "destructive")],
                                lambda rid: rid == "reset" and self.reset_controlcenter(), parent=self)
 
     def reset_controlcenter(self) -> None:
         from ..shell import controlcenter as CCL
         self._save("controlcenter", "modules", CCL.DEFAULTS["modules"])
         self.rebuild_page("controlcenter")
-        self.toast("Control Center reset")
+        self.toast(_("Control Center reset"))
 
     def _set_stat(self, kind: str, value: str) -> None:
         if value != "off":
@@ -3245,12 +3257,12 @@ class Settings(Adw.ApplicationWindow):
                   "show_recents", "click_minimizes", "bounce", "indicators", "edge_gap")
 
     def _ask_reset(self, title, body, then):
-        return ui.dialog.alert(title, body, [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
+        return ui.dialog.alert(title, body, [("cancel", _("Cancel"), ""), ("reset", _("Reset"), "destructive")],
                                lambda rid: rid == "reset" and then(), parent=self)
 
     def ask_reset_dock(self):
-        return self._ask_reset("Reset Dock?", "The Dock's options go back to the defaults. The apps and folders "
-                               "in your Dock stay.", self.reset_dock)
+        return self._ask_reset(_("Reset Dock?"), _("The Dock's options go back to the defaults. The apps and folders "
+                               "in your Dock stay."), self.reset_dock)
 
     def reset_dock(self) -> None:
         import copy
@@ -3258,10 +3270,10 @@ class Settings(Adw.ApplicationWindow):
         for k in self.DOCK_RESET:
             self._save("dock", k, copy.deepcopy(D.DEFAULTS[k]))
         self.rebuild_page("dock")
-        self.toast("Dock reset")
+        self.toast(_("Dock reset"))
 
     def ask_reset_menubar(self):
-        return self._ask_reset("Reset Menu Bar?", "The menu bar's options and logo go back to the defaults.",
+        return self._ask_reset(_("Reset Menu Bar?"), _("The menu bar's options and logo go back to the defaults."),
                                self.reset_menubar)
 
     def reset_menubar(self) -> None:
@@ -3271,11 +3283,11 @@ class Settings(Adw.ApplicationWindow):
         for k in ("menu_logo", "menu_text"):
             self._save("appearance", k, icons.APPEARANCE_DEFAULTS[k])
         self.rebuild_page("menubar")
-        self.toast("Menu Bar reset")
+        self.toast(_("Menu Bar reset"))
 
     def ask_reset_desktop(self):
-        return self._ask_reset("Reset Desktop & Windows?", "Window options go back to the defaults. Your desktop "
-                               "icons stay where they are.", self.reset_desktop)
+        return self._ask_reset(_("Reset Desktop & Windows?"), _("Window options go back to the defaults. Your desktop "
+                               "icons stay where they are."), self.reset_desktop)
 
     def reset_desktop(self) -> None:
         from ..shell import dock as D
@@ -3289,18 +3301,18 @@ class Settings(Adw.ApplicationWindow):
             system.wayfire_set("sonata-resize", "live", True)
         system.run_async(apply, None)
         self.rebuild_page("desktop")
-        self.toast("Desktop & Windows reset")
+        self.toast(_("Desktop & Windows reset"))
 
     def _page_launchpad(self):
-        g = group(names.APPS)
-        reset = ui.controls.push_button("Reset…", valign=Gtk.Align.CENTER)
+        g = group(_(names.APPS))
+        reset = ui.controls.push_button(_("Reset…"), valign=Gtk.Align.CENTER)
         reset.connect("clicked", lambda *_: ui.dialog.alert(
-            f"Reset the {names.APPS} layout?", "Folders and your icon order are removed; apps are sorted by name.",
-            [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
+            _("Reset the {apps} layout?").format(apps=_(names.APPS)), _("Folders and your icon order are removed; apps are sorted by name."),
+            [("cancel", _("Cancel"), ""), ("reset", _("Reset"), "destructive")],
             lambda r: r == "reset" and (config.save("launchpad", {"pages": [], "hidden": config.load(
                 "launchpad", {"pages": [], "hidden": []}).get("hidden", [])}),
-                                        self.toast(f"{names.APPS} was reset")), parent=self))
-        row = Adw.ActionRow(title="Layout", subtitle="Pages, folders and order")
+                                        self.toast(_("{apps} was reset").format(apps=_(names.APPS)))), parent=self))
+        row = Adw.ActionRow(title=_("Layout"), subtitle=_("Pages, folders and order"))
         row.add_suffix(reset)
         g.add(row)
         return [g]
@@ -3310,15 +3322,16 @@ class Settings(Adw.ApplicationWindow):
         """Locked until the user's password (PAM, like the lock screen) is
         typed; locks again when another section is chosen."""
         from .. import pam
-        g = group("", f"Apps hidden from {names.APPS}, {names.SEARCH} and the Dock. Enter your password to see and edit them.")
-        row = Adw.ActionRow(title="Password")
+        g = group("", _("Apps hidden from {apps}, {search} and the Dock. Enter your password to see and edit "
+                       "them.").format(apps=_(names.APPS), search=_(names.SEARCH)))
+        row = Adw.ActionRow(title=_("Password"))
         row.add_prefix(Gtk.Image(icon_name="system-lock-screen-symbolic"))
         entry = ui.controls.text_field(secret=True)
         entry.set_valign(Gtk.Align.CENTER)
         entry.set_property("width-chars", 18)
         row.add_suffix(entry)
         g.add(row)
-        hint = Gtk.Label(label="" if pam.available() else "PAM is not available: can't check passwords",
+        hint = Gtk.Label(label="" if pam.available() else _("PAM is not available: can't check passwords"),
                          xalign=0, css_classes=["dim-label", "caption"])
         g.add(hint)
         self._hidden_lock = g
@@ -3329,7 +3342,7 @@ class Settings(Adw.ApplicationWindow):
             if ok:
                 self._show_hidden_apps()
             else:
-                hint.set_label("Wrong password")
+                hint.set_label(_("Wrong password"))
                 entry.set_text("")
                 entry.grab_focus()
             return False
@@ -3359,20 +3372,21 @@ class Settings(Adw.ApplicationWindow):
         installed = {d[:-8]: i for d, i in apps.scan().items() if i.should_show()}
         hidden = [a for a in config.load("launchpad", {"pages": [], "hidden": []}).get("hidden", [])
                   if a in installed]
-        h = group("Hidden apps", f"In the Hidden folder in {names.APPS} (opened with your password).")
+        h = group(_("Hidden apps"), _("In the Hidden folder in {apps} (opened with your password).").format(
+            apps=_(names.APPS)))
         for did in hidden:
             info = installed[did]
             r = Adw.ActionRow(title=info.get_display_name(), use_markup=False)
             img = Gtk.Image(pixel_size=32)
             icons.set_image(img, icons.app_icon(info))
             r.add_prefix(img)
-            b = ui.controls.push_button("Show", valign=Gtk.Align.CENTER)
+            b = ui.controls.push_button(_("Show"), valign=Gtk.Align.CENTER)
             b.connect("clicked", lambda _b, did=did: (self._set_hidden(did, False), self._show_hidden_apps()))
             r.add_suffix(b)
             h.add(r)
         if not hidden:
-            h.add(Adw.ActionRow(title="No hidden apps"))
-        add = ui.controls.push_button("Hide an App…", halign=Gtk.Align.START, margin_top=10)
+            h.add(Adw.ActionRow(title=_("No hidden apps")))
+        add = ui.controls.push_button(_("Hide an App…"), halign=Gtk.Align.START, margin_top=10)
         add.connect("clicked", lambda b: self._pick_app_to_hide(b, installed, hidden))
         h.add(add)
         page.add(h)
@@ -3380,7 +3394,7 @@ class Settings(Adw.ApplicationWindow):
 
     def _pick_app_to_hide(self, anchor, installed, hidden) -> None:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        search = search_entry("Search")
+        search = search_entry(_("Search"))
         box.append(search)
         lb = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
         names = sorted(((i.get_display_name(), d) for d, i in installed.items() if d not in hidden),
@@ -3461,8 +3475,8 @@ class Settings(Adw.ApplicationWindow):
         ask for sudo), Check Again asks GitHub again."""
         from .. import __version__
         from ..backend import selfupdate as SU
-        g = group("Sonata Update")
-        row = Adw.ActionRow(title="Checking for a new Sonata…", subtitle=f"Installed: Sonata {__version__}",
+        g = group(_("Sonata Update"))
+        row = Adw.ActionRow(title=_("Checking for a new Sonata…"), subtitle=_("Installed: Sonata {version}").format(version=__version__),
                             use_markup=False)
         icon = Gtk.Image(icon_name="sonata-launchpad", pixel_size=40, valign=Gtk.Align.CENTER)
         row.add_prefix(icon)
@@ -3482,7 +3496,7 @@ class Settings(Adw.ApplicationWindow):
         def check():
             clear()
             spin.set_visible(True)
-            row.set_title("Checking for a new Sonata…")
+            row.set_title(_("Checking for a new Sonata…"))
             system.run_async(SU.latest_release, found)
 
         def found(rel):
@@ -3490,21 +3504,23 @@ class Settings(Adw.ApplicationWindow):
             clear()
             when = GLib.DateTime.new_now_local().format("%H:%M")
             if rel is None:
-                row.set_title("Couldn't check for a new Sonata")
-                row.set_subtitle(f"Installed: Sonata {__version__} · GitHub couldn't be reached")
-                button("Check Again", check)
+                row.set_title(_("Couldn't check for a new Sonata"))
+                row.set_subtitle(_("Installed: Sonata {version} · GitHub couldn't be reached").format(
+                    version=__version__))
+                button(_("Check Again"), check)
             elif SU.newer(rel["tag"]):
                 version = rel["tag"].lstrip("vV")
-                row.set_title(f"Sonata {version} is available")
-                row.set_subtitle(f"Installed: Sonata {__version__} · checked at {when}")
-                button("What's New", lambda: Gtk.UriLauncher.new(rel["url"]).launch(self, None, None, None)
+                row.set_title(_("Sonata {version} is available").format(version=version))
+                row.set_subtitle(_("Installed: Sonata {version} · checked at {time}").format(
+                    version=__version__, time=when))
+                button(_("What's New"), lambda: Gtk.UriLauncher.new(rel["url"]).launch(self, None, None, None)
                        if hasattr(Gtk, "UriLauncher") else Gio.AppInfo.launch_default_for_uri(rel["url"], None))
-                button("Update", lambda: system.run_in_terminal(SU.terminal_command(rel["tag"]))
-                       or self.toast("No terminal found"), suggested=True)
+                button(_("Update"), lambda: system.run_in_terminal(SU.terminal_command(rel["tag"]))
+                       or self.toast(_("No terminal found")), suggested=True)
             else:
-                row.set_title("Sonata is up to date")
-                row.set_subtitle(f"Sonata {__version__} · checked at {when}")
-                button("Check Again", check)
+                row.set_title(_("Sonata is up to date"))
+                row.set_subtitle(_("Sonata {version} · checked at {time}").format(version=__version__, time=when))
+                button(_("Check Again"), check)
         g.status_row = row                          # (tests)
         g.found = found
         check()
@@ -3529,40 +3545,42 @@ class Settings(Adw.ApplicationWindow):
             if not a:
                 return
             name.set_label(a.os_name)
-            sub.set_label("Sonata 2 desktop")
+            sub.set_label(_("Sonata 2 desktop"))
             from .. import __version__
-            for k, v in (("Sonata", __version__), ("Computer", a.machine), ("Processor", a.cpu),
-                         ("Memory", f"{a.memory_gb} GB"),
-                         ("Graphics", ", ".join(a.gpus) or "—"), ("Kernel", a.kernel)):
+            for k, v in (("Sonata", __version__), (_("Computer"), a.machine), (_("Processor"), a.cpu),
+                         (_("Memory"), f"{a.memory_gb} GB"),
+                         (_("Graphics"), ", ".join(a.gpus) or "—"), (_("Kernel"), a.kernel)):
                 row = Adw.ActionRow(title=k)
                 row.add_suffix(Gtk.Label(label=v, css_classes=["st-value"], ellipsize=Pango.EllipsizeMode.END,
                                          max_width_chars=40))
                 specs.add(row)
         system.run_async(system.about, fill)
         shell = group("Sonata")
-        row = Adw.ActionRow(title="Restart Sonata",
-                            subtitle=f"Reloads the Dock, menu bar, {names.APPS} and wallpaper. Your apps stay open.")
-        btn = ui.controls.push_button("Restart", valign=Gtk.Align.CENTER)
-        btn.connect("clicked", lambda *_: (system.restart_sonata(), self.toast("Restarting Sonata…")))
+        row = Adw.ActionRow(title=_("Restart Sonata"),
+                            subtitle=_("Reloads the Dock, menu bar, {apps} and wallpaper. Your apps stay open.").format(
+                                apps=_(names.APPS)))
+        btn = ui.controls.push_button(_("Restart"), valign=Gtk.Align.CENTER)
+        btn.connect("clicked", lambda *_: (system.restart_sonata(), self.toast(_("Restarting Sonata…"))))
         row.add_suffix(btn)
         row.set_activatable_widget(btn)
         shell.add(row)
         # logs (sonata2/logs.py): off by default (Vini); on, kept in ~/.cache/sonata2
         from .. import logs
-        logs_row = switch_row("Logs", logs.verbose(), lambda on: self._set_logs(on, logs_row),
-                              subtitle="Keep detailed logs in ~/.cache/sonata2 for finding problems. "
-                                       "Off, only errors are logged, in memory, until you log out.")
+        logs_row = switch_row(_("Logs"), logs.verbose(), lambda on: self._set_logs(on, logs_row),
+                              subtitle=_("Keep detailed logs in ~/.cache/sonata2 for finding problems. "
+                                       "Off, only errors are logged, in memory, until you log out."))
         shell.add(logs_row)
         sub.logs_row = logs_row                    # (tests)
         backup = self._backup_group()
-        reset = group("Reset", "Both ask first, then you log out and back in.")
+        reset = group(_("Reset"), _("Both ask first, then you log out and back in."))
         for title, subtitle, what in (
-                ("Reset Settings", "Every Sonata setting back to the defaults. Your Dock and Launchpad "
-                                   "apps, folders and your apps' data stay.", "settings"),
-                ("Reset Sonata", "Sonata as just installed: settings, Dock and Launchpad layout, history and "
-                                 "caches. Notes, calendars and other app data go to the Trash.", "everything")):
+                (_("Reset Settings"), _("Every Sonata setting back to the defaults. Your Dock and Launchpad "
+                                        "apps, folders and your apps' data stay."), "settings"),
+                (_("Reset Sonata"), _("Sonata as just installed: settings, Dock and Launchpad layout, history "
+                                      "and caches. Notes, calendars and other app data go to the Trash."),
+                 "everything")):
             row = Adw.ActionRow(title=title, subtitle=subtitle, use_markup=False)
-            rb = ui.controls.push_button("Reset\u2026", lambda w=what: self.ask_factory_reset(w),
+            rb = ui.controls.push_button(_("Reset\u2026"), lambda w=what: self.ask_factory_reset(w),
                                          style="destructive")
             rb.set_valign(Gtk.Align.CENTER)
             row.add_suffix(rb)
@@ -3572,31 +3590,32 @@ class Settings(Adw.ApplicationWindow):
     # -- backup (sonata2/backup.py) ----------------------------------------------------------------
     def _backup_group(self):
         from .. import backup
-        g = group("Backup", "Your Sonata settings in one file: to keep, or to set up another computer "
-                            "the same way.")
-        self.backup_export = Adw.ActionRow(title="Export Settings", use_markup=False,
+        g = group(_("Backup"), _("Your Sonata settings in one file: to keep, or to set up another computer "
+                            "the same way."))
+        self.backup_export = Adw.ActionRow(title=_("Export Settings"), use_markup=False,
                                            subtitle=self._last_export_text(backup.last_export()))
-        b = ui.controls.push_button("Export\u2026", self.export_settings, valign=Gtk.Align.CENTER)
+        b = ui.controls.push_button(_("Export\u2026"), self.export_settings, valign=Gtk.Align.CENTER)
         self.backup_export.add_suffix(b)
         g.add(self.backup_export)
-        self.backup_data = switch_row("Include Notes, Calendar and Reminders", True, lambda _on: None,
-                                      subtitle="The data of Sonata's own apps, with the settings")
+        self.backup_data = switch_row(_("Include Notes, Calendar and Reminders"), True, lambda _on: None,
+                                      subtitle=_("The data of Sonata's own apps, with the settings"))
         g.add(self.backup_data)
-        imp = Adw.ActionRow(title="Import Settings", use_markup=False,
-                            subtitle="Replaces your settings with the file's (yours go to the Trash)")
-        imp.add_suffix(ui.controls.push_button("Import\u2026", self.import_settings, valign=Gtk.Align.CENTER))
+        imp = Adw.ActionRow(title=_("Import Settings"), use_markup=False,
+                            subtitle=_("Replaces your settings with the file's (yours go to the Trash)"))
+        imp.add_suffix(ui.controls.push_button(_("Import\u2026"), self.import_settings, valign=Gtk.Align.CENTER))
         g.add(imp)
         return g
 
     @staticmethod
     def _last_export_text(ts) -> str:
         if not ts:
-            return "Last exported: never"
-        return "Last exported: " + GLib.DateTime.new_from_unix_local(int(ts)).format("%-d %b %Y at %H:%M")
+            return _("Last exported: never")
+        stamp = GLib.DateTime.new_from_unix_local(int(ts))
+        return _("Last exported: {date} at {time}").format(date=stamp.format("%-d %b %Y"), time=stamp.format("%H:%M"))
 
     def export_settings(self) -> None:
         from .. import backup
-        dlg = Gtk.FileDialog(title="Export Settings", modal=True, initial_name=backup.default_name())
+        dlg = Gtk.FileDialog(title=_("Export Settings"), modal=True, initial_name=backup.default_name())
         data = self.backup_data.get_active()
 
         def chosen(d, res):
@@ -3612,21 +3631,21 @@ class Settings(Adw.ApplicationWindow):
 
             def done(n):
                 if isinstance(n, Exception):
-                    ui.dialog.alert("The settings couldn't be exported.", str(n), [("ok", "OK", "default")],
+                    ui.dialog.alert(_("The settings couldn't be exported."), str(n), [("ok", _("OK"), "default")],
                                     parent=self)
                     return
                 self.backup_export.set_subtitle(self._last_export_text(backup.last_export()))
-                self.toast(f"Settings exported ({n} files)")
+                self.toast(ngettext("Settings exported ({n} file)", "Settings exported ({n} files)", n).format(n=n))
             system.run_async(lambda: _try(backup.export, path, data), done)
         dlg.save(self, None, chosen)
 
     def import_settings(self) -> None:
         from .. import backup
-        filt = Gtk.FileFilter(name="Sonata Settings")
+        filt = Gtk.FileFilter(name=_("Sonata Settings"))
         filt.add_pattern("*" + backup.EXT)
         filters = Gio.ListStore.new(Gtk.FileFilter)
         filters.append(filt)
-        dlg = Gtk.FileDialog(title="Import Settings", modal=True, filters=filters, default_filter=filt)
+        dlg = Gtk.FileDialog(title=_("Import Settings"), modal=True, filters=filters, default_filter=filt)
 
         def chosen(d, res):
             try:
@@ -3642,15 +3661,17 @@ class Settings(Adw.ApplicationWindow):
         from .. import backup
         m = backup.read_manifest(path)
         if m is None:
-            return ui.dialog.alert("This isn't a Sonata settings file.", os.path.basename(path),
-                                   [("ok", "OK", "default")], parent=self)
-        what = "settings, Notes, Calendar and Reminders" if m.get("data") else "settings"
+            return ui.dialog.alert(_("This isn't a Sonata settings file."), os.path.basename(path),
+                                   [("ok", _("OK"), "default")], parent=self)
         when = GLib.DateTime.new_from_unix_local(int(m.get("created") or 0)).format("%-d %b %Y")
+        body = (_("Its settings, Notes, Calendar and Reminders (Sonata {version}, {date}) replace yours; yours go to "
+                  "the Trash first, so they can be put back. Then you log out and back in.") if m.get("data") else
+                _("Its settings (Sonata {version}, {date}) replace yours; yours go to the Trash first, so they can "
+                  "be put back. Then you log out and back in."))
         return ui.dialog.alert(
-            "Replace your settings with the file's?",
-            f"Its {what} (Sonata {m.get('sonata', '?')}, {when}) replace yours; yours go to the Trash "
-            "first, so they can be put back. Then you log out and back in.",
-            [("cancel", "Cancel", ""), ("import", "Replace", "destructive")],
+            _("Replace your settings with the file's?"),
+            body.format(version=m.get("sonata", "?"), date=when),
+            [("cancel", _("Cancel"), ""), ("import", _("Replace"), "destructive")],
             lambda rid: rid == "import" and self.import_now(path), parent=self)
 
     def import_now(self, path: str) -> None:
@@ -3658,23 +3679,23 @@ class Settings(Adw.ApplicationWindow):
 
         def done(ok):
             if ok is True:
-                self.ask_restart("session", "The imported settings")
+                self.ask_restart("session", _("The imported settings"))
             else:
-                ui.dialog.alert("The settings couldn't be imported.", str(ok) if ok else "",
-                                [("ok", "OK", "default")], parent=self)
+                ui.dialog.alert(_("The settings couldn't be imported."), str(ok) if ok else "",
+                                [("ok", _("OK"), "default")], parent=self)
         system.run_async(lambda: _try(backup.restore, path), done)
 
     def ask_factory_reset(self, what: str):
         title, body = {
-            "settings": ("Reset all settings?",
-                         "Every Sonata setting goes back to the default. Your Dock and Launchpad apps and "
-                         "folders, protected apps and your apps' data stay."),
-            "everything": ("Reset Sonata?",
-                           "Sonata goes back to how it was just installed: every setting, the Dock and "
-                           "Launchpad layout, history and caches are removed. Notes, calendars and TextEdit "
-                           "data are moved to the Trash."),
+            "settings": (_("Reset all settings?"),
+                         _("Every Sonata setting goes back to the default. Your Dock and Launchpad apps and "
+                           "folders, protected apps and your apps' data stay.")),
+            "everything": (_("Reset Sonata?"),
+                           _("Sonata goes back to how it was just installed: every setting, the Dock and "
+                             "Launchpad layout, history and caches are removed. Notes, calendars and TextEdit "
+                             "data are moved to the Trash.")),
         }[what]
-        return ui.dialog.alert(title, body, [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
+        return ui.dialog.alert(title, body, [("cancel", _("Cancel"), ""), ("reset", _("Reset"), "destructive")],
                                lambda rid: rid == "reset" and self.factory_reset(what), parent=self)
 
     def factory_reset(self, what: str) -> None:
@@ -3682,18 +3703,18 @@ class Settings(Adw.ApplicationWindow):
         from .. import factory_reset
         gone = (factory_reset.everything if what == "everything" else factory_reset.settings_only)()
         print(f"sonata2-settings: reset {what}: {len(gone)} items", flush=True)
-        self.ask_restart("session", "The reset")
+        self.ask_restart("session", _("The reset"))
 
     # Settings that take effect only after a restart (each asks "now or later"):
     #   sonata   Restart Sonata    Accessibility > Graphics, Appearance > Icons, About > Detailed Logs
     #   session  Log Out           Displays > Graphics card, Security & Privacy > Use Login Password
     #   system   Restart computer  Software Update (system packages; its own Restart… button)
-    RESTARTS = {"sonata": ("Restart Sonata now?", "{} takes effect when Sonata restarts. Open apps stay open.",
-                           "Restart Sonata"),
-                "session": ("Log out now?", "{} takes effect from the next login. Save your work first: "
-                                            "apps will quit.", "Log Out"),
-                "system": ("Restart the computer now?", "{} takes effect after a restart. Save your work "
-                                                         "first: apps will quit.", "Restart")}
+    RESTARTS = {"sonata": (_("Restart Sonata now?"), _("{} takes effect when Sonata restarts. Open apps stay open."),
+                           _("Restart Sonata")),
+                "session": (_("Log out now?"), _("{} takes effect from the next login. Save your work first: "
+                                                 "apps will quit."), _("Log Out")),
+                "system": (_("Restart the computer now?"), _("{} takes effect after a restart. Save your work "
+                                                             "first: apps will quit."), _("Restart"))}
 
     def ask_restart(self, kind: str, what: str):
         """Restart now or later (a setting that needs it was changed)."""
@@ -3701,31 +3722,31 @@ class Settings(Adw.ApplicationWindow):
 
         def answered(rid):
             if rid != "now":
-                self.toast("It takes effect after the next restart" if kind != "session"
-                           else "It takes effect from the next login")
+                self.toast(_("It takes effect after the next restart") if kind != "session"
+                           else _("It takes effect from the next login"))
                 return
             if kind == "sonata":
                 system.restart_sonata()
             else:
                 from ..shell import quitapps                 # the apps quit first (Chrome's tabs)
                 self._quitting = quitapps.end_session("logout" if kind == "session" else "restart")
-        return ui.dialog.alert(heading, body.format(what), [("later", "Later", ""), ("now", action, "default")],
+        return ui.dialog.alert(heading, body.format(what), [("later", _("Later"), ""), ("now", action, "default")],
                                answered, parent=self)
 
-    RADIUS_ROWS = (("window", "Windows", "Their corners and title bars, other apps' too"),
+    RADIUS_ROWS = (("window", _("Windows"), _("Their corners and title bars, other apps' too")),
                    ("dock", "Dock", ""),
-                   ("menu", "Menus and panels", "Menus, the menu bar's panels, notifications, alerts"))
+                   ("menu", _("Menus and panels"), _("Menus, the menu bar's panels, notifications, alerts")))
 
     def _corners_group(self):
         """Corner radii (tokens.user_radii): one slider per kind; a double-click resets it."""
         from ..ui import tokens
-        g = group("Corners", "How round Sonata's windows, Dock and menus are (not the screen's corners).")
+        g = group(_("Corners"), _("How round Sonata's windows, Dock and menus are (not the screen's corners)."))
         cur = tokens.user_radii()
         self.radius_rows = {}
         for key, title, sub in self.RADIUS_ROWS:
             lo, hi = tokens.RADIUS_RANGE[key]
             row = slider_row(title, cur[key], lo, hi, lambda v, k=key: self._set_radius(k, v), subtitle=sub,
-                             ends=("Square", "Round"), default=tokens.RADIUS_DEFAULTS[key])
+                             ends=(_("Square"), _("Round")), default=tokens.RADIUS_DEFAULTS[key])
             self.radius_rows[key] = row
             g.add(row)
         return g
@@ -3764,12 +3785,12 @@ class Settings(Adw.ApplicationWindow):
             titlebars.apply()                                # GNOME apps (adwstyle)
             titlebars.apply_colors(dark)                     # the bars Wayfire draws
         system.run_async(apply, None)
-        self.toast("Apps pick it up when they open again")
+        self.toast(_("Apps pick it up when they open again"))
 
     def _set_logs(self, on, row):
         from .. import logs
         logs.set_verbose(on)
-        self.ask_restart("sonata", "Logs " + ("on" if on else "off"))
+        self.ask_restart("sonata", _("Logs on") if on else _("Logs off"))
 
 
 def settings_desktop_file(command: str) -> str:

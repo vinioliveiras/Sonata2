@@ -15,6 +15,7 @@ import os
 from dataclasses import dataclass
 
 from . import names, wfconfig
+from .i18n import N_, _
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODS = ("<ctrl>", "<alt>", "<shift>", "<super>")          # Wayfire's order when written
@@ -33,37 +34,37 @@ class Shortcut:
 
 
 SHORTCUTS = [
-    Shortcut("apps", f"Open {names.APPS}", "Apps and Search", "command", "binding_launchpad"),
-    Shortcut("search", names.SEARCH, "Apps and Search", "command", "binding_spotlight"),
-    Shortcut("files", "Open Files", "Apps and Search", "command", "binding_files"),
-    Shortcut("settings", "Open Settings", "Apps and Search", "command", "binding_settings"),
-    Shortcut("activity", "Open Task Manager", "Apps and Search", "command", "binding_activity"),
-    Shortcut("terminal", "Open a Terminal", "Apps and Search", "command", "binding_terminal"),
-    Shortcut("emoji", "Emoji and Symbols", "Apps and Search", "command", "binding_emoji"),
-    Shortcut("input", "Previous Input Source", "Apps and Search", "command", "binding_input"),
-    Shortcut("clipboard", "Clipboard History", "Apps and Search", "command", "binding_clipboard"),
-    Shortcut("close", "Close Window", "Windows", "core", "close_top_view"),
-    Shortcut("minimize", "Minimize", "Windows", "wm-actions", "minimize"),
-    Shortcut("fullscreen", "Full Screen", "Windows", "command", "binding_fullscreen"),
-    Shortcut("maximize", "Maximize", "Windows", "grid", "slot_c"),
-    Shortcut("restore", "Restore Size", "Windows", "grid", "restore"),
-    Shortcut("snap_left", "Snap to the Left Half", "Windows", "grid", "slot_l"),
-    Shortcut("snap_right", "Snap to the Right Half", "Windows", "grid", "slot_r"),
-    Shortcut("desktop", "Show Desktop", "Windows", "command", "binding_showdesktop"),
-    Shortcut("switcher", "Switch Apps", "Windows", "command", "binding_switcher"),
-    Shortcut("switcher_back", "Switch Apps Backwards", "Windows", "command", "binding_switcher_back"),
-    Shortcut("overview", names.OVERVIEW, "Spaces", "scale", "toggle"),
-    Shortcut("overview_all", f"{names.OVERVIEW}: All Spaces", "Spaces", "scale", "toggle_all"),
-    Shortcut("spaces", "Show All Spaces", "Spaces", "expo", "toggle"),
-    Shortcut("space_left", "Previous Space", "Spaces", "vswitch", "binding_left"),
-    Shortcut("space_right", "Next Space", "Spaces", "vswitch", "binding_right"),
-    Shortcut("shot", "Screenshot", "Screenshots", "command", "binding_screenshot"),
-    Shortcut("shot_area", "Screenshot of a Selection", "Screenshots", "command", "binding_screenshot_area"),
-    Shortcut("draw", "Draw on the Screen", "Screenshots", "command", "binding_draw"),
-    Shortcut("capture", "Screenshot and Recording Options", "Screenshots", "command", "binding_capture"),
-    Shortcut("lock", "Lock Screen", "System", "command", "binding_lock"),
+    Shortcut("apps", N_("Open Apps"), N_("Apps and Search"), "command", "binding_launchpad"),
+    Shortcut("search", names.SEARCH, N_("Apps and Search"), "command", "binding_spotlight"),
+    Shortcut("files", N_("Open Files"), N_("Apps and Search"), "command", "binding_files"),
+    Shortcut("settings", N_("Open Settings"), N_("Apps and Search"), "command", "binding_settings"),
+    Shortcut("activity", N_("Open Task Manager"), N_("Apps and Search"), "command", "binding_activity"),
+    Shortcut("terminal", N_("Open a Terminal"), N_("Apps and Search"), "command", "binding_terminal"),
+    Shortcut("emoji", N_("Emoji and Symbols"), N_("Apps and Search"), "command", "binding_emoji"),
+    Shortcut("input", N_("Previous Input Source"), N_("Apps and Search"), "command", "binding_input"),
+    Shortcut("clipboard", N_("Clipboard History"), N_("Apps and Search"), "command", "binding_clipboard"),
+    Shortcut("close", N_("Close Window"), N_("Windows"), "core", "close_top_view"),
+    Shortcut("minimize", N_("Minimize"), N_("Windows"), "wm-actions", "minimize"),
+    Shortcut("fullscreen", N_("Full Screen"), N_("Windows"), "command", "binding_fullscreen"),
+    Shortcut("maximize", N_("Maximize"), N_("Windows"), "grid", "slot_c"),
+    Shortcut("restore", N_("Restore Size"), N_("Windows"), "grid", "restore"),
+    Shortcut("snap_left", N_("Snap to the Left Half"), N_("Windows"), "grid", "slot_l"),
+    Shortcut("snap_right", N_("Snap to the Right Half"), N_("Windows"), "grid", "slot_r"),
+    Shortcut("desktop", N_("Show Desktop"), N_("Windows"), "command", "binding_showdesktop"),
+    Shortcut("switcher", N_("Switch Apps"), N_("Windows"), "command", "binding_switcher"),
+    Shortcut("switcher_back", N_("Switch Apps Backwards"), N_("Windows"), "command", "binding_switcher_back"),
+    Shortcut("overview", names.OVERVIEW, N_("Spaces"), "scale", "toggle"),
+    Shortcut("overview_all", N_("Overview: All Spaces"), N_("Spaces"), "scale", "toggle_all"),
+    Shortcut("spaces", N_("Show All Spaces"), N_("Spaces"), "expo", "toggle"),
+    Shortcut("space_left", N_("Previous Space"), N_("Spaces"), "vswitch", "binding_left"),
+    Shortcut("space_right", N_("Next Space"), N_("Spaces"), "vswitch", "binding_right"),
+    Shortcut("shot", N_("Screenshot"), N_("Screenshots"), "command", "binding_screenshot"),
+    Shortcut("shot_area", N_("Screenshot of a Selection"), N_("Screenshots"), "command", "binding_screenshot_area"),
+    Shortcut("draw", N_("Draw on the Screen"), N_("Screenshots"), "command", "binding_draw"),
+    Shortcut("capture", N_("Screenshot and Recording Options"), N_("Screenshots"), "command", "binding_capture"),
+    Shortcut("lock", N_("Lock Screen"), N_("System"), "command", "binding_lock"),
 ]
-GROUPS = ["Apps and Search", "Windows", "Spaces", "Screenshots", "System"]
+GROUPS = [N_("Apps and Search"), N_("Windows"), N_("Spaces"), N_("Screenshots"), N_("System")]
 
 
 def _ini_value(path, section, key):
@@ -131,13 +132,14 @@ def describe(combo: str) -> str:
     """Words for one combo: "Super+Shift+S", "Super", "Swipe up with 3 fingers"."""
     parts = combo.split()
     if parts and parts[0] in ("swipe", "pinch", "edge-swipe"):
-        how = {"swipe": "Swipe", "pinch": "Pinch", "edge-swipe": "Swipe from the edge"}[parts[0]]
+        how = {"swipe": _("Swipe"), "pinch": _("Pinch"), "edge-swipe": _("Swipe from the edge")}[parts[0]]
         rest = parts[1:]
         fingers = rest[-1] if rest and rest[-1].isdigit() else ""
-        way = " ".join(rest[:-1] if fingers else rest)
-        return f"{how} {way} with {fingers} fingers".replace("  ", " ").strip()
+        way = " ".join(_(WAYS.get(w, w)) for w in (rest[:-1] if fingers else rest))
+        return _("{how} {way} with {fingers} fingers").format(how=how, way=way, fingers=fingers) \
+            .replace("  ", " ").strip()
     words = [MOD_LABEL.get(p, "") for p in parts if p in MOD_LABEL]
-    keys = [KEY_LABEL.get(p[4:], p[4:].title()) for p in parts if p.startswith("KEY_")]
+    keys = [_(KEY_LABEL.get(p[4:], p[4:].title())) for p in parts if p.startswith("KEY_")]
     return "+".join(words + keys)
 
 
@@ -157,11 +159,16 @@ def accelerator(combo: str):
 
 MODIFIER_KEYS = {"LEFTCTRL", "RIGHTCTRL", "LEFTSHIFT", "RIGHTSHIFT", "LEFTALT", "RIGHTALT", "LEFTMETA",
                  "RIGHTMETA", "CAPSLOCK", "NUMLOCK", "SCROLLLOCK", "COMPOSE"}
+# shown translated: _(label)
 KEY_LABEL = {"LEFT": "←", "RIGHT": "→", "UP": "↑", "DOWN": "↓", "ESC": "Esc", "DOT": ".", "COMMA": ",",
-             "SPACE": "Space", "TAB": "Tab", "ENTER": "Return", "BACKSPACE": "Backspace", "DELETE": "Delete",
-             "SYSRQ": "Print Screen", "PRINT": "Print Screen", "MINUS": "-", "EQUAL": "=", "SLASH": "/",
-             "SEMICOLON": ";", "APOSTROPHE": "'", "GRAVE": "`", "BACKSLASH": "\\", "LEFTBRACE": "[",
-             "RIGHTBRACE": "]", "PAGEUP": "Page Up", "PAGEDOWN": "Page Down", "DASHBOARD": "Dashboard key"}
+             "SPACE": N_("Space"), "TAB": "Tab", "ENTER": N_("Return"), "BACKSPACE": N_("Backspace"),
+             "DELETE": N_("Delete"), "SYSRQ": N_("Print Screen"), "PRINT": N_("Print Screen"), "MINUS": "-",
+             "EQUAL": "=", "SLASH": "/", "SEMICOLON": ";", "APOSTROPHE": "'", "GRAVE": "`", "BACKSLASH": "\\",
+             "LEFTBRACE": "[", "RIGHTBRACE": "]", "PAGEUP": N_("Page Up"), "PAGEDOWN": N_("Page Down"),
+             "DASHBOARD": N_("Dashboard key")}
+# a gesture's direction (Wayfire's word -> shown, translated)
+WAYS = {"up": N_("up"), "down": N_("down"), "left": N_("left"), "right": N_("right"), "in": N_("in"),
+        "out": N_("out")}
 GTK_KEY = {"LEFT": "Left", "RIGHT": "Right", "UP": "Up", "DOWN": "Down", "ESC": "Escape", "DOT": "period",
            "COMMA": "comma", "SPACE": "space", "TAB": "Tab", "ENTER": "Return", "BACKSPACE": "BackSpace",
            "DELETE": "Delete", "SYSRQ": "Print", "PRINT": "Print", "MINUS": "minus", "EQUAL": "equal",

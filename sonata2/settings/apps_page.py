@@ -14,13 +14,14 @@ from gi.repository import Adw, GLib, Gtk  # noqa: E402
 from .. import applock, ui  # noqa: E402
 from ..backend import appmanage, system  # noqa: E402
 from ..backend import uninstall as U  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 
-KIND = {"flatpak": "Flatpak", "package": "Package", "shortcut": "Shortcut"}
+KIND = {"flatpak": "Flatpak", "package": N_("Package"), "shortcut": N_("Shortcut")}
 HEAD_ICON = 56
 
 
 def size_text(n) -> str:
-    return GLib.format_size(n) if n else "Zero KB"
+    return GLib.format_size(n) if n else _("Zero KB")
 
 
 def home_path(p: str) -> str:
@@ -35,7 +36,7 @@ class AppsPage:
 
     def groups(self) -> list:
         from .applist import AppList
-        self.list = AppList("Installed Apps", "Click one for its size, data and permissions.",
+        self.list = AppList(_("Installed Apps"), _("Click one for its size, data and permissions."),
                             self.open)
         self.rows = self.list.rows
         return [self.list.group]
@@ -57,19 +58,19 @@ class AppsPage:
         hero.add_prefix(img)
         hero.add_css_class("st-app-hero")
         head.add(hero)
-        perms = group("Permissions")
-        perms.add(loading_row("Checking permissions…"))          # Vini: they take a moment
+        perms = group(_("Permissions"))
+        perms.add(loading_row(_("Checking permissions…")))          # Vini: they take a moment
         manage = group()
-        lock = switch_row("Lock App", applock.locked(info.get_id()), lambda on: self._lock(info, lock, on),
-                          subtitle="Ask for your password when it opens")
+        lock = switch_row(_("Lock App"), applock.locked(info.get_id()), lambda on: self._lock(info, lock, on),
+                          subtitle=_("Ask for your password when it opens"))
         manage.add(lock)
-        clear = Adw.ActionRow(title="Clear Data", use_markup=False, subtitle="…")
-        self.clear_btn = ui.controls.push_button("Clear…", lambda: self.ask_clear(), valign=Gtk.Align.CENTER)
+        clear = Adw.ActionRow(title=_("Clear Data"), use_markup=False, subtitle="…")
+        self.clear_btn = ui.controls.push_button(_("Clear…"), lambda: self.ask_clear(), valign=Gtk.Align.CENTER)
         self.clear_btn.set_sensitive(False)
         clear.add_suffix(self.clear_btn)
         manage.add(clear)
-        rm = Adw.ActionRow(title="Uninstall", use_markup=False)
-        self.rm_btn = ui.controls.push_button("Uninstall…", lambda: self.ask_uninstall(),
+        rm = Adw.ActionRow(title=_("Uninstall"), use_markup=False)
+        self.rm_btn = ui.controls.push_button(_("Uninstall…"), lambda: self.ask_uninstall(),
                                               style="destructive", valign=Gtk.Align.CENTER)
         self.rm_btn.set_sensitive(False)
         rm.add_suffix(self.rm_btn)
@@ -84,7 +85,7 @@ class AppsPage:
         """Vulkan / WebGPU for this app (browsergpu.py; also in its right-click menu)."""
         from .. import browsergpu as B
         from .app import group, switch_row
-        g = group("Graphics", B.NOTE)
+        g = group(_("Graphics"), B.NOTE)
         vk_ok, wg_ok = B.supports(info)
         rows = {}
 
@@ -97,11 +98,11 @@ class AppsPage:
                 r.set_sensitive(not B.vulkan_forced(info))
 
         if vk_ok:
-            rows["vulkan"] = switch_row("Use Vulkan", B.vulkan(info), lambda on: (B.set_vulkan(info, on), sync()),
+            rows["vulkan"] = switch_row(_("Use Vulkan"), B.vulkan(info), lambda on: (B.set_vulkan(info, on), sync()),
                                         subtitle=B.vulkan_note(info))
             g.add(rows["vulkan"])
         if wg_ok:
-            rows["webgpu"] = switch_row("Allow WebGPU", B.webgpu(info), lambda on: (B.set_webgpu(info, on), sync()),
+            rows["webgpu"] = switch_row(_("Allow WebGPU"), B.webgpu(info), lambda on: (B.set_webgpu(info, on), sync()),
                                         subtitle=B.webgpu_note(info))
             g.add(rows["webgpu"])
         sync()
@@ -124,10 +125,10 @@ class AppsPage:
         app.update(owner=o, dirs=res["dirs"])
         from .. import webapps
         web = webapps.is_webapp(app["info"].get_id() or "")
-        bits = ["Web App" if web else KIND.get(o.kind, "") if o else "Part of Sonata"]
+        bits = [_("Web App") if web else _(KIND.get(o.kind, "")) if o else _("Part of Sonata")]
         if res["size"]:
-            bits.append(size_text(res["size"]) + " app")
-        bits.append(size_text(res["data"]) + " data")
+            bits.append(_("{size} app").format(size=size_text(res["size"])))
+        bits.append(_("{size} data").format(size=size_text(res["data"])))
         app["hero"].set_subtitle(" · ".join(b for b in bits if b))
         _clear_group(app["perms"])
         if res["perms"]:
@@ -136,23 +137,23 @@ class AppsPage:
                 row.key = key
                 app["perms"].add(row)
             if o.kind == "flatpak":
-                app["perms"].set_description("Changes take effect the next time the app opens.")
+                app["perms"].set_description(_("Changes take effect the next time the app opens."))
             else:                                  # a packaged app: Sonata keeps it out when it opens it
                 from .. import sandbox
                 app["perms"].set_description(
-                    "Applied when the app is opened from Sonata (the Dock, Apps, search) the next time. "
-                    "Home Folder off: it gets a folder of its own instead of yours."
-                    + (" Location changes at once (asks for your password)."
+                    _("Applied when the app is opened from Sonata (the Dock, Apps, search) the next time. "
+                      "Home Folder off: it gets a folder of its own instead of yours.")
+                    + (" " + _("Location changes at once (asks for your password).")
                        if any(k == "location" for k, _t, _o in res["perms"]) else "")
-                    + ("" if sandbox.available() else " Needs bubblewrap (./install.sh installs it)."))
+                    + ("" if sandbox.available() else " " + _("Needs bubblewrap (./install.sh installs it).")))
         else:
-            note = Adw.ActionRow(title="Asked by the site" if web else "Part of Sonata", use_markup=False,
-                                 subtitle="The site asks before it uses the camera, microphone or location."
-                                 if web else "Sonata's own apps can use what Sonata uses.")
+            note = Adw.ActionRow(title=_("Asked by the site") if web else _("Part of Sonata"), use_markup=False,
+                                 subtitle=_("The site asks before it uses the camera, microphone or location.")
+                                 if web else _("Sonata's own apps can use what Sonata uses."))
             note.set_subtitle_lines(0)
             app["perms"].add(note)
         app["clear"].set_subtitle(", ".join(home_path(d) for d in res["dirs"]) if res["dirs"]
-                                  else "No data of its own found")
+                                  else _("No data of its own found"))
         self.clear_btn.set_sensitive(bool(res["dirs"]))
         self.rm_btn.set_sensitive(o is not None or web)          # (web apps: Vini)
 
@@ -175,7 +176,7 @@ class AppsPage:
         def done(ok):
             if ok:
                 return
-            self.settings.toast("Couldn't change that permission")
+            self.settings.toast(_("Couldn't change that permission"))
             row = next((r for r in self._perm_rows(app) if getattr(r, "key", None) == key), None)
             if row is not None and app is self.app:      # (Location: the password cancelled)
                 row.quiet = True
@@ -203,23 +204,24 @@ class AppsPage:
         app = self.app
         name = app["info"].get_display_name()
         listed = "\n".join(home_path(d) for d in app["dirs"])
-        return ui.dialog.alert(f"Clear “{name}”’s data?",
-                               f"Its sign-ins, settings and cache go to the Trash (you can put them back "
-                               f"from there):\n{listed}\nQuit the app first.",
-                               [("cancel", "Cancel", ""), ("clear", "Clear Data", "destructive")],
+        return ui.dialog.alert(_("Clear “{name}”’s data?").format(name=name),
+                               _("Its sign-ins, settings and cache go to the Trash (you can put them back "
+                                 "from there):\n{listed}\nQuit the app first.").format(listed=listed),
+                               [("cancel", _("Cancel"), ""), ("clear", _("Clear Data"), "destructive")],
                                lambda rid: rid == "clear" and self.clear(app), parent=self.settings)
 
     def clear(self, app) -> None:
         def done(failed):
             if failed:
-                self.settings.toast("Some of its data couldn't be moved to the Trash")
+                self.settings.toast(_("Some of its data couldn't be moved to the Trash"))
             app["dirs"] = [d for d in app["dirs"] if os.path.exists(d)]
             if app is self.app:
-                app["clear"].set_subtitle("No data of its own found" if not app["dirs"]
+                app["clear"].set_subtitle(_("No data of its own found") if not app["dirs"]
                                           else ", ".join(home_path(d) for d in app["dirs"]))
                 self.clear_btn.set_sensitive(bool(app["dirs"]))
                 sub = app["hero"].get_subtitle().rsplit(" · ", 1)[0]
-                app["hero"].set_subtitle(sub + " · " + size_text(appmanage.folder_size(app["dirs"])) + " data")
+                app["hero"].set_subtitle(sub + " · " + _("{size} data").format(
+                    size=size_text(appmanage.folder_size(app["dirs"]))))
         system.run_async(lambda: appmanage.clear_data(app["dirs"]), done)
 
     def ask_uninstall(self) -> None:

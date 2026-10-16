@@ -12,18 +12,20 @@ import re
 import zipfile
 from typing import NamedTuple
 
+from ..i18n import N_, _
+
 # encoding id (Python codec name) -> label shown in the status bar menu
 ENCODINGS = {
     "utf-8": "Unicode (UTF-8)",
     "utf-16-le": "Unicode (UTF-16 LE)",
     "utf-16-be": "Unicode (UTF-16 BE)",
-    "windows-1252": "Western (Windows Latin 1)",
-    "iso-8859-1": "Western (ISO Latin 1)",
+    "windows-1252": N_("Western (Windows Latin 1)"),
+    "iso-8859-1": N_("Western (ISO Latin 1)"),
 }
 SHORT = {"utf-8": "UTF-8", "utf-16-le": "UTF-16 LE", "utf-16-be": "UTF-16 BE",
          "windows-1252": "Windows-1252", "iso-8859-1": "ISO-8859-1"}
 NEWLINES = {"LF": "\n", "CRLF": "\r\n", "CR": "\r"}
-NEWLINE_LABELS = {"LF": "Linux / Unix (LF)", "CRLF": "Windows (CRLF)", "CR": "Old style (CR)"}
+NEWLINE_LABELS = {"LF": "Linux / Unix (LF)", "CRLF": "Windows (CRLF)", "CR": N_("Old style (CR)")}
 _BOMS = ((codecs.BOM_UTF8, "utf-8"), (codecs.BOM_UTF16_LE, "utf-16-le"), (codecs.BOM_UTF16_BE, "utf-16-be"))
 
 CONVERTED = (".docx", ".odt", ".rtf")
@@ -125,7 +127,8 @@ def encode(text: str, encoding: str = "utf-8", bom: bool = False, newline: str =
 
 
 def label(encoding: str, bom: bool = False) -> str:
-    return SHORT.get(encoding, encoding.upper()) + (" with BOM" if bom and encoding == "utf-8" else "")
+    short = SHORT.get(encoding, encoding.upper())
+    return _("{encoding} with BOM").format(encoding=short) if bom and encoding == "utf-8" else short
 
 
 # -- statistics ------------------------------------------------------------------------------

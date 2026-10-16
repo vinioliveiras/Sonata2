@@ -19,6 +19,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import theme  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 theme.register("""
 popover.menu { background: none; box-shadow: none; padding: 0; }
@@ -152,7 +153,7 @@ def _closable_row(pop, item) -> Gtk.Widget:
     main.set_sensitive(item.enabled)
     _one_click(main, lambda: (pop.popdown(), item.on_activate and item.on_activate()))
     x = Gtk.Button(icon_name="window-close-symbolic", css_classes=["sonata-menu-x"], valign=Gtk.Align.CENTER,
-                   tooltip_text="Close", can_focus=False)
+                   tooltip_text=_("Close"), can_focus=False)
     _one_click(x, lambda: (item.on_close(), row.set_visible(False)))
     row.append(main)
     row.append(x)

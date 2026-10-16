@@ -15,6 +15,8 @@ import signal
 
 from gi.repository import Gio, GLib
 
+from ..i18n import N_, _
+
 TIMEOUT_MS = 12000
 POLL_MS = 250
 OWN = "sonata2"                     # Sonata's shell: never signalled (its own apps' windows close)
@@ -145,15 +147,19 @@ class Quitter:
 
 
 CANCELLED = {"restart": "restart", "shutdown": "shut down", "logout": "log out"}
+CANCELLED_TEXT = {"restart": N_("{name} canceled restart."), "shutdown": N_("{name} canceled shut down."),
+                  "logout": N_("{name} canceled log out.")}
 
 
 def _cancelled(kind, t) -> None:
     from .. import apps, ui
     did = apps.match_app_id(t.app_id or "")
     info = apps.lookup(did) if did else None
-    name = info.get_display_name() if info else (t.title or t.app_id or "An app")
-    ui.dialog.alert(f"{name} canceled {CANCELLED.get(kind, kind)}.",
-                    "Quit it, then try again.", [("ok", "OK", "default")])
+    name = info.get_display_name() if info else (t.title or t.app_id or _("An app"))
+    text = (_(CANCELLED_TEXT[kind]).format(name=name) if kind in CANCELLED_TEXT
+            else f"{name} canceled {CANCELLED.get(kind, kind)}.")
+    ui.dialog.alert(text,
+                    _("Quit it, then try again."), [("ok", _("OK"), "default")])
 
 
 def quit_app(manager, windows, key: str) -> Quitter:

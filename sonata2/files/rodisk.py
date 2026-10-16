@@ -9,9 +9,11 @@ The read-only mount goes straight to UDisks (Filesystem.Mount with
 options=ro): GIO's volume mount has no way to ask for it."""
 from gi.repository import Gio, GLib
 
+from ..i18n import _
+
 DIRTY_WORDS = ("dirty", "unclean", "hibernat", "fast restart", "fast startup", "not cleanly unmounted")
-NOTE = ("Windows didn't shut it down cleanly, so it opened read-only: you can read and copy its files. "
-        "To change them, start Windows and shut it down (not restart), or run chkdsk there.")
+NOTE = _("Windows didn't shut it down cleanly, so it opened read-only: you can read and copy its files. "
+         "To change them, start Windows and shut it down (not restart), or run chkdsk there.")
 
 
 def is_dirty_error(message: str) -> bool:

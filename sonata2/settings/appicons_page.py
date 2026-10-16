@@ -10,9 +10,10 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import icons, ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 
-SOURCE_TITLES = {"auto": "Sonata (default)", "package": "The app's own", "file": "Custom picture",
-                 "theme": "Theme icon"}
+SOURCE_TITLES = {"auto": N_("Sonata (default)"), "package": N_("The app's own"), "file": N_("Custom picture"),
+                 "theme": N_("Theme icon")}
 
 ui.register("""
 .ai-panel { padding: 4px 4px 8px 4px; }
@@ -26,9 +27,9 @@ entry.ai-name { min-height: %(control_h)s; }
 
 
 def describe(pref: dict, default_shape: str) -> str:
-    text = SOURCE_TITLES[pref["source"]]
+    text = _(SOURCE_TITLES[pref["source"]])
     if pref["shape"] != default_shape:
-        text += " · " + icons.SHAPE_TITLES[pref["shape"]]
+        text += " · " + _(icons.SHAPE_TITLES[pref["shape"]])
     return text
 
 
@@ -39,27 +40,27 @@ class AppIconsPage:
     def groups(self) -> list:
         from .app import combo_row, group
         p = icons.prefs()
-        shape = group("All Apps", "The frame every app icon sits on, and where the icons come from. "
-                                  "One app can have its own (below).")
-        self.shape_row = combo_row("Icon shape", [(s, icons.SHAPE_TITLES[s]) for s in icons.SHAPES], p["shape"],
+        shape = group(_("All Apps"), _("The frame every app icon sits on, and where the icons come from. "
+                                    "One app can have its own (below)."))
+        self.shape_row = combo_row(_("Icon shape"), [(s, _(icons.SHAPE_TITLES[s])) for s in icons.SHAPES], p["shape"],
                                    self.set_shape)
         shape.add(self.shape_row)
         self.shape_group = shape
-        every = Adw.ActionRow(title="All apps' icons", use_markup=False,
-                              subtitle="Pictures and theme icons you chose for an app stay")
+        every = Adw.ActionRow(title=_("All apps' icons"), use_markup=False,
+                              subtitle=_("Pictures and theme icons you chose for an app stay"))
         btns = Gtk.Box(spacing=8, valign=Gtk.Align.CENTER)
-        btns.append(ui.controls.push_button("Sonata's", lambda: self.set_source_all("auto")))
-        btns.append(ui.controls.push_button("From Packages", lambda: self.set_source_all("package")))
+        btns.append(ui.controls.push_button(_("Sonata's"), lambda: self.set_source_all("auto")))
+        btns.append(ui.controls.push_button(_("From Packages"), lambda: self.set_source_all("package")))
         every.add_suffix(btns)
         shape.add(every)
-        reset = Adw.ActionRow(title="Reset app icons", use_markup=False,
-                              subtitle="Forget what you set for single apps; the shape and icons above stay")
-        rb = ui.controls.push_button("Reset\u2026", self.ask_reset_all, style="destructive")
+        reset = Adw.ActionRow(title=_("Reset app icons"), use_markup=False,
+                              subtitle=_("Forget what you set for single apps; the shape and icons above stay"))
+        rb = ui.controls.push_button(_("Reset…"), self.ask_reset_all, style="destructive")
         rb.set_valign(Gtk.Align.CENTER)
         reset.add_suffix(rb)
         shape.add(reset)
         from .applist import AppList
-        self.list = AppList("Apps", "Click an app to change its icon.", self.edit,
+        self.list = AppList(_("Apps"), _("Click an app to change its icon."), self.edit,
                             lambda row: describe(icons.app_pref(row.info), icons.prefs()["shape"]))
         self.rows, self.search, self.list_group = self.list.rows, self.list.search, self.list.group
         return [shape, self.list.group]
@@ -99,10 +100,10 @@ class AppIconsPage:
 
     def ask_reset_all(self):
         """Asked first: custom pictures and per-app shapes are forgotten."""
-        return ui.dialog.alert("Reset app icons?",
-                               "The pictures, theme icons, sizes and shapes you set for single apps are "
-                               "forgotten. The shape and icons chosen for all apps stay.",
-                               [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
+        return ui.dialog.alert(_("Reset app icons?"),
+                               _("The pictures, theme icons, sizes and shapes you set for single apps are "
+                                 "forgotten. The shape and icons chosen for all apps stay."),
+                               [("cancel", _("Cancel"), ""), ("reset", _("Reset"), "destructive")],
                                lambda rid: rid == "reset" and self.reset_all(), parent=self.settings)
 
     def reset_all(self) -> None:
@@ -154,16 +155,16 @@ class AppIconsPage:
             return rv
 
         srcs = list(icons.SOURCES)
-        source = ui.controls.popup_button([SOURCE_TITLES[x] for x in srcs], srcs.index(pref["source"]),
+        source = ui.controls.popup_button([_(SOURCE_TITLES[x]) for x in srcs], srcs.index(pref["source"]),
                                           lambda i: (self.set_app(row, source=srcs[i]), redraw()))
-        add("Icon", source)
+        add(_("Icon"), source)
         pick_box = Gtk.Box(spacing=8)
-        choose = ui.controls.push_button("Choose\u2026", lambda: self._pick_file(row, redraw))
+        choose = ui.controls.push_button(_("Choose…"), lambda: self._pick_file(row, redraw))
         file_lbl = Gtk.Label(xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.MIDDLE, css_classes=["ai-file"])
         pick_box.append(file_lbl)
         pick_box.append(choose)
-        file_rv = add("Picture", pick_box, reveal=True)
-        name = ui.controls.text_field(pref["name"] or "", "e.g. firefox")
+        file_rv = add(_("Picture"), pick_box, reveal=True)
+        name = ui.controls.text_field(pref["name"] or "", _("e.g. firefox"))
         name.add_css_class("ai-name")
 
         def commit(*_):
@@ -175,32 +176,33 @@ class AppIconsPage:
         leave = Gtk.EventControllerFocus()
         leave.connect("leave", commit)
         name.add_controller(leave)
-        name_rv = add("Name", name, reveal=True)
+        name_rv = add(_("Name"), name, reveal=True)
         cur_scale = pref["scale"] if pref["scale"] is not None else icons.default_scale()
         size = ui.controls.slider(cur_scale * 100, None, lower=icons.SCALE_RANGE[0] * 100,
                                   upper=icons.SCALE_RANGE[1] * 100, default=icons.default_scale() * 100)
         size.connect("value-changed", lambda sl: self._size_changed(row, sl.get_value(), redraw))
-        size_rv = add("Size", size, reveal=True)
+        size_rv = add(_("Size"), size, reveal=True)
         shapes = [None] + list(icons.SHAPES)
         own_shape = (icons.prefs()["apps"].get(row.did) or {}).get("shape")
         shape = ui.controls.popup_button(
-            [f"Default ({icons.SHAPE_TITLES[default_shape]})"] + [icons.SHAPE_TITLES[x] for x in icons.SHAPES],
+            [_("Default ({shape})").format(shape=_(icons.SHAPE_TITLES[default_shape]))]
+            + [_(icons.SHAPE_TITLES[x]) for x in icons.SHAPES],
             shapes.index(own_shape) if own_shape in shapes else 0,
             lambda i: (self.set_app(row, shape=shapes[i]), redraw()))
-        add("Shape", shape)
+        add(_("Shape"), shape)
 
         def redraw():
             icons.set_image(preview, icons.app_icon(row.info))
             p = icons.app_pref(row.info)
             file_rv.set_reveal_child(p["source"] == "file")
-            file_lbl.set_label(p["path"].rsplit("/", 1)[-1] if p["path"] else "No picture")
+            file_lbl.set_label(p["path"].rsplit("/", 1)[-1] if p["path"] else _("No picture"))
             name_rv.set_reveal_child(p["source"] == "theme")
             size_rv.set_reveal_child(icons.plated(row.info))
         btns = Gtk.Box(spacing=8, css_classes=["ai-buttons"], homogeneous=True)
-        btns.append(ui.controls.push_button("Use Default", lambda: (
+        btns.append(ui.controls.push_button(_("Use Default"), lambda: (
             icons.set_app_pref(row.did, source=None, path=None, name=None, shape=None, scale=None),
             self._refresh_row(row), pop.popdown())))
-        btns.append(ui.controls.push_button("Done", lambda: pop.popdown(), style="default"))
+        btns.append(ui.controls.push_button(_("Done"), lambda: pop.popdown(), style="default"))
         col = ui.panel.column(ui.panel.header(row.info.get_display_name()), preview, grid, btns)
         col.add_css_class("ai-panel")
         pop = ui.panel.popup(row, col, gap=4, width=self.PANEL_W, close=True)
@@ -233,8 +235,8 @@ class AppIconsPage:
 def pick_picture(parent, on_path) -> None:
     """A picture through the Open panel (Sonata's own, via the portal):
     on_path(path) when one was chosen. (App Icons; the New Web App form.)"""
-    dlg = Gtk.FileDialog(title="Choose an Icon", modal=True)
-    flt = Gtk.FileFilter(name="Images")
+    dlg = Gtk.FileDialog(title=_("Choose an Icon"), modal=True)
+    flt = Gtk.FileFilter(name=_("Images"))
     for pat in ("*.png", "*.svg", "*.jpg", "*.jpeg", "*.webp"):
         flt.add_pattern(pat)
     store = Gio.ListStore.new(Gtk.FileFilter)

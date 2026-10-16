@@ -23,6 +23,7 @@ import urllib.parse
 import uuid
 
 from .. import config
+from ..i18n import _
 
 NAME = "webapps"
 DEFAULTS = {"apps": {}}
@@ -202,9 +203,9 @@ def chromium_command(app: str, entry: dict, browser: str) -> list:
             "--window-size={},{}".format(*window_size(app)), f"--app={entry['url']}"]
 
 
-MISSING_WEBKIT = ("Web apps need WebKitGTK 6.",
-                  "Install it with your package manager (Arch / CachyOS: sudo pacman -S webkitgtk-6.0; "
-                  "Ubuntu: gir1.2-webkit-6.0; Fedora: webkitgtk6.0), then open the web app again.")
+MISSING_WEBKIT = (_("Web apps need WebKitGTK 6."),
+                  _("Install it with your package manager (Arch / CachyOS: sudo pacman -S webkitgtk-6.0; "
+                    "Ubuntu: gir1.2-webkit-6.0; Fedora: webkitgtk6.0), then open the web app again."))
 
 
 def icon_names(name: str, url: str) -> list:

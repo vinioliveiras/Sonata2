@@ -14,6 +14,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import intro, layer  # noqa: E402
+from ..i18n import _  # noqa: E402
 from ..ui.progress import Spinner  # noqa: E402
 from .loginui import Backdrop, avatar, balanced, lift, password_field, wallpaper_texture  # noqa: E402
 
@@ -45,7 +46,7 @@ def login_column() -> Gtk.Box:
     try:
         from .greeter import sessions, users
         if len(users()) > 1 or len(sessions()) > 1:        # the login screen had a link row there
-            links.append(Gtk.Button(label="Other Users", css_classes=["gr-link"], can_focus=False))
+            links.append(Gtk.Button(label=_("Other Users"), css_classes=["gr-link"], can_focus=False))
     except Exception:
         pass
     balanced(col, links, Gtk.Label(css_classes=["lk-hint"], opacity=0))

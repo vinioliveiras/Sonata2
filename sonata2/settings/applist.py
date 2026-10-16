@@ -8,6 +8,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from .. import apps, icons  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 BATCH = 24             # rows built per step
 ROW_ICON = 32
@@ -30,7 +31,7 @@ class AppList:
         self._focus = None
         self.group = group(title, description)
         # the sidebar's search look (Vini), at the list's top right
-        self.search = search_entry("Search apps")
+        self.search = search_entry(_("Search apps"))
         self.search.set_valign(Gtk.Align.END)
         self.search.connect("changed", lambda e: self.filter(e.get_text()))
         self.group.set_header_suffix(self.search)

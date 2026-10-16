@@ -18,6 +18,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from .. import ui, webapps as W  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 NEW_APP_ID = "io.github.vinioliveiras.sonata2.webapps"
 SIZE = W.DEFAULT_SIZE
@@ -90,15 +91,15 @@ def open_outside(win, uri: str) -> None:
     if scheme in SAFE_SCHEMES:
         Gtk.UriLauncher(uri=uri).launch(win, None, None, None)
         return
-    name = (getattr(win, "entry", None) or {}).get("name") or "This web app"
+    name = (getattr(win, "entry", None) or {}).get("name") or _("This web app")
 
     def answer(rid):
         if rid == "open":
             Gtk.UriLauncher(uri=uri).launch(win, None, None, None)
     shown = uri if len(uri) <= 200 else uri[:200] + "…"
-    return ui.dialog.alert(f"Open this link outside “{name}”?",
-                           f"{shown}\n\nIt opens in another program on this computer.",
-                           [("cancel", "Cancel", ""), ("open", "Open", "default")], answer, parent=win)
+    return ui.dialog.alert(_("Open this link outside “{name}”?").format(name=name),
+                           shown + "\n\n" + _("It opens in another program on this computer."),
+                           [("cancel", _("Cancel"), ""), ("open", _("Open"), "default")], answer, parent=win)
 
 
 IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
@@ -180,9 +181,9 @@ class WebAppWindow(Gtk.ApplicationWindow):
         self.view.connect("notify::title", self._title)
         self.view.connect("notify::favicon", self._favicon)
         self.view.connect("notify::uri", lambda *_a: self._buttons())
-        toolbar = ui.window.glass_toolbar(self, start=(("go-previous-symbolic", "Back", self.view.go_back),
-                                                       ("go-next-symbolic", "Forward", self.view.go_forward)),
-                                          end=(("view-refresh-symbolic", "Reload", self.view.reload),))
+        toolbar = ui.window.glass_toolbar(self, start=(("go-previous-symbolic", _("Back"), self.view.go_back),
+                                                       ("go-next-symbolic", _("Forward"), self.view.go_forward)),
+                                          end=(("view-refresh-symbolic", _("Reload"), self.view.reload),))
         # the title shows once, in the title bar (Vini: it was there and in the toolbar too)
         bar = toolbar.get_child()
         start = bar.get_start_widget()
@@ -331,14 +332,15 @@ class WebAppWindow(Gtk.ApplicationWindow):
             request.allow()
             return True
         if isinstance(request, WK.UserMediaPermissionRequest):
-            what = "the camera and the microphone" if request.props.is_for_video_device and \
-                request.props.is_for_audio_device else \
-                "the camera" if request.props.is_for_video_device else "the microphone"
+            heading = _("Allow “{name}” to use the camera and the microphone?") \
+                if request.props.is_for_video_device and request.props.is_for_audio_device else \
+                _("Allow “{name}” to use the camera?") if request.props.is_for_video_device else \
+                _("Allow “{name}” to use the microphone?")
 
             def answer(rid):
                 (request.allow if rid == "allow" else request.deny)()
-            ui.dialog.alert(f"Allow “{self.entry['name']}” to use {what}?", "",
-                            [("deny", "Don't Allow", ""), ("allow", "Allow", "default")], answer, parent=self)
+            ui.dialog.alert(heading.format(name=self.entry["name"]), "",
+                            [("deny", _("Don't Allow"), ""), ("allow", _("Allow"), "default")], answer, parent=self)
             return True
         request.deny()
         return True
@@ -362,10 +364,10 @@ def form(on_done=None, parent=None, wid=None):
     entry0 = W.get(wid) if wid else None
     grid = Gtk.Grid(row_spacing=8, column_spacing=8, css_classes=["wa-form"])
     url = ui.controls.text_field(placeholder="web.whatsapp.com", hexpand=True)     # the kit's fields
-    name = ui.controls.text_field(placeholder="Name", hexpand=True)
+    name = ui.controls.text_field(placeholder=_("Name"), hexpand=True)
     for e in (url, name):
         e.set_activates_default(True)
-    for row, (label, entry) in enumerate((("Address:", url), ("Name:", name))):
+    for row, (label, entry) in enumerate(((_("Address:"), url), (_("Name:"), name))):
         grid.attach(Gtk.Label(label=label, xalign=1), 0, row, 1, 1)
         grid.attach(entry, 1, row, 1, 1)
     # the icon: the site's own unless you choose a picture (Vini); the same
@@ -373,7 +375,7 @@ def form(on_done=None, parent=None, wid=None):
     state = {"typed": False, "icon": None}
     icon_box = Gtk.Box(spacing=8)
     icon_img = Gtk.Image(icon_name=W.FALLBACK_ICON, pixel_size=32)
-    icon_note = Gtk.Label(label="The site's own", xalign=0, hexpand=True, css_classes=["wa-icon-note"])
+    icon_note = Gtk.Label(label=_("The site's own"), xalign=0, hexpand=True, css_classes=["wa-icon-note"])
 
     def chosen(path):
         state["icon"] = path
@@ -382,12 +384,12 @@ def form(on_done=None, parent=None, wid=None):
     from ..settings.appicons_page import pick_picture
     icon_box.append(icon_img)
     icon_box.append(icon_note)
-    icon_box.append(ui.controls.push_button("Choose\u2026", lambda: pick_picture(parent, chosen)))
-    grid.attach(Gtk.Label(label="Icon:", xalign=1), 0, 2, 1, 1)
+    icon_box.append(ui.controls.push_button(_("Choose…"), lambda: pick_picture(parent, chosen)))
+    grid.attach(Gtk.Label(label=_("Icon:"), xalign=1), 0, 2, 1, 1)
     grid.attach(icon_box, 1, 2, 1, 1)
     grid.icon_box = icon_box                                 # (tests)
     # closing its window keeps it running (a chat's notifications keep coming)
-    background = Gtk.CheckButton(label="Keep running when its window is closed")
+    background = Gtk.CheckButton(label=_("Keep running when its window is closed"))
     grid.attach(background, 1, 4, 1, 1)
     grid.background = background
     # the engine (Vini): Chromium (sites made for Chrome just work) or WebKit
@@ -406,9 +408,9 @@ def form(on_done=None, parent=None, wid=None):
                                            [e for e, _l in engines].index(current), engine_changed)
     engine_row.append(engine_pick)
     if entry0:
-        engine_row.append(Gtk.Label(label="Switching asks you to sign in again.", xalign=0,
+        engine_row.append(Gtk.Label(label=_("Switching asks you to sign in again."), xalign=0,
                                     css_classes=["wa-icon-note"], wrap=True, hexpand=True))
-    grid.attach(Gtk.Label(label="Engine:", xalign=1), 0, 3, 1, 1)
+    grid.attach(Gtk.Label(label=_("Engine:"), xalign=1), 0, 3, 1, 1)
     grid.attach(engine_row, 1, 3, 1, 1)
     grid.engine = engine_pick                                # (tests)
     engine_changed([e for e, _l in engines].index(current))
@@ -439,10 +441,11 @@ def form(on_done=None, parent=None, wid=None):
         if on_done:
             on_done(None)
     if entry0:
-        heading, body, ok = "Edit Web App", "Changes show the next time it opens.", "Save"
+        heading, body, ok = _("Edit Web App"), _("Changes show the next time it opens."), _("Save")
     else:
-        heading, body, ok = "New Web App", "A website in a window of its own, with its own icon and login.", "Create"
-    dlg = ui.dialog.alert(heading, body, [("cancel", "Cancel", ""), ("create", ok, "default")], answer,
+        heading, body, ok = (_("New Web App"), _("A website in a window of its own, with its own icon and login."),
+                             _("Create"))
+    dlg = ui.dialog.alert(heading, body, [("cancel", _("Cancel"), ""), ("create", ok, "default")], answer,
                           parent=parent)
     dlg.set_extra_child(grid)
 
@@ -499,7 +502,7 @@ def edit_webapp(wid: str) -> int:
 
 def new_webapp(wid: str = None) -> int:
     GLib.set_prgname(NEW_APP_ID)
-    GLib.set_application_name("New Web App")
+    GLib.set_application_name(_("New Web App"))
     app = Adw.Application(application_id=NEW_APP_ID)
 
     def activate(a):

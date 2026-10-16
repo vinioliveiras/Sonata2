@@ -13,6 +13,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
+from ..i18n import _  # noqa: E402
+
 ATTRS = ",".join((
     "standard::name", "standard::display-name", "standard::icon", "standard::symbolic-icon",
     "standard::type", "standard::is-symlink", "standard::is-hidden", "standard::is-backup", "standard::content-type",
@@ -83,18 +85,18 @@ def short_name(name: str, limit: int = MENU_NAME_MAX) -> str:
 
 def display_name(uri: str) -> str:
     if uri == RECENTS:
-        return "Recents"
+        return _("Recents")
     if uri == APPS:
-        return "Applications"
+        return _("Applications")
     if uri.startswith("sonata:tag/"):
-        return uri[len("sonata:tag/"):]
+        return _(uri[len("sonata:tag/"):])          # a colour tag: N_() in tags.py
     if uri.rstrip("/") == "trash:":
-        return "Trash"
+        return _("Trash")
     f = Gio.File.new_for_uri(uri)
     if f.get_path() == GLib.get_home_dir():
         return GLib.get_user_name()
     if f.get_path() == "/":
-        return "Computer"
+        return _("Computer")
     try:
         return f.query_info("standard::display-name", Gio.FileQueryInfoFlags.NONE, None).get_display_name()
     except GLib.Error:

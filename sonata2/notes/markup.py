@@ -13,6 +13,8 @@ round-trips. A parsed line is (kind, checked, runs), runs being
 [(text, frozenset of inline tags)]."""
 import re
 
+from ..i18n import _
+
 KINDS = ("title", "heading", "subheading", "body", "bullet", "number", "check")
 LISTS = ("bullet", "number", "check")
 INLINE = ("bold", "italic", "underline", "strike")
@@ -111,4 +113,4 @@ def plain(md: str) -> list:
 def title_and_preview(md: str) -> tuple:
     """The first non-empty line (the note's title) and the next one."""
     lines = [s.strip() for s in plain(md) if s.strip()]
-    return (lines[0] if lines else "New Note"), (lines[1] if len(lines) > 1 else "No additional text")
+    return (lines[0] if lines else _("New Note")), (lines[1] if len(lines) > 1 else _("No additional text"))

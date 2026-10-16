@@ -24,6 +24,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk, Pang
 
 from .. import apps, config, icons, logs, names, ui  # noqa: E402
 from .. import launchpad_model as M  # noqa: E402
+from ..i18n import _  # noqa: E402
 from . import layer  # noqa: E402
 
 OPEN_MS, CLOSE_MS = 230, 170
@@ -224,7 +225,7 @@ class LaunchItem(Gtk.Button):
                 self.lock = LockBadge(size)
                 over.add_overlay(self.lock)
             if info and _removable(info):
-                badge = ui.edit.badge(lambda: pad.ask_delete(item), tooltip="Delete")
+                badge = ui.edit.badge(lambda: pad.ask_delete(item), tooltip=_("Delete"))
                 badge.set_visible(pad.jiggling)
                 self.badge = badge
                 over.add_overlay(badge)
@@ -314,7 +315,7 @@ class Launchpad(Gtk.ApplicationWindow):
         self.mode = "fullscreen"   # or "menu": the Apps Menu layout (launchpad_window.MenuView)
         self.menu = None
 
-        self.search = Gtk.SearchEntry(placeholder_text="Search", css_classes=["lp-search"],
+        self.search = Gtk.SearchEntry(placeholder_text=_("Search"), css_classes=["lp-search"],
                                       halign=Gtk.Align.CENTER, margin_top=40)
         self.search.connect("search-changed", lambda *_: self._search_changed())
         self.search.connect("activate", lambda *_: self._activate_selected())
@@ -338,7 +339,7 @@ class Launchpad(Gtk.ApplicationWindow):
         # the "•••" menu, as in the Apps Menu (Vini): the other layout, its settings
         self.more = Gtk.Button(child=Gtk.Label(label="\u2022\u2022\u2022", css_classes=["lp-more-dots"]),
                                css_classes=["lp-more"], can_focus=False, halign=Gtk.Align.END,
-                               valign=Gtk.Align.START, margin_top=40, margin_end=48, tooltip_text="Options")
+                               valign=Gtk.Align.START, margin_top=40, margin_end=48, tooltip_text=_("Options"))
         self.more.connect("clicked", lambda b: __import__("sonata2.shell.launchpad_window",
                                                           fromlist=["options_menu"]).options_menu(self, b))
         self.overlay.add_overlay(self.more)
@@ -517,7 +518,7 @@ class Launchpad(Gtk.ApplicationWindow):
             print(f"sonata2-launchpad: folders not shared with the Dock: {e}", flush=True)
 
     # -- Hidden: apps hidden from the grid, in a folder that asks for the password ----------
-    HIDDEN = "Hidden"
+    HIDDEN = _("Hidden")
 
     def _pages_with_hidden(self):
         """The model's pages plus the Hidden folder after the last item (not
@@ -578,10 +579,10 @@ class Launchpad(Gtk.ApplicationWindow):
         self._close_folder()
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, css_classes=["lp-panel", "lp-lock-panel"])
         panel.append(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=36, css_classes=["lp-lock"]))
-        panel.append(Gtk.Label(label="Enter your password to see hidden apps", css_classes=["lp-lock-text"]))
+        panel.append(Gtk.Label(label=_("Enter your password to see hidden apps"), css_classes=["lp-lock-text"]))
         entry = Gtk.PasswordEntry(show_peek_icon=True, halign=Gtk.Align.CENTER)
         panel.append(entry)
-        hint = Gtk.Label(label="" if pam.available() else "PAM is not available: can't check passwords",
+        hint = Gtk.Label(label="" if pam.available() else _("PAM is not available: can't check passwords"),
                          css_classes=["lp-lock-hint"])
         panel.append(hint)
         wrap = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18, halign=Gtk.Align.CENTER,
@@ -605,7 +606,7 @@ class Launchpad(Gtk.ApplicationWindow):
                 self._unlocked = True
                 self._open_folder(folder)
             else:
-                hint.set_label("Wrong password")
+                hint.set_label(_("Wrong password"))
                 entry.set_text("")
                 entry.grab_focus()
                 panel.remove_css_class("shake")
@@ -823,7 +824,7 @@ class Launchpad(Gtk.ApplicationWindow):
         gesture.set_state(Gtk.EventSequenceState.CLAIMED)
         from .. import webapps
         Item = ui.menu.Item
-        ui.menu.popup(root, [[Item("New Web App…", lambda: self.close_launchpad(webapps.open_new))]],
+        ui.menu.popup(root, [[Item(_("New Web App…"), lambda: self.close_launchpad(webapps.open_new))]],
                       at=(x, y))
 
     def _background_click(self, gesture, _n, x, y) -> None:
@@ -924,7 +925,7 @@ class Launchpad(Gtk.ApplicationWindow):
         found = M.search(self._search_meta(), q)
         results = menu.results if menu is not None else self.results
         results.fill([LaunchItem(self, a, self._tile_size()) for a in found] or
-                     [Gtk.Label(label="No Results", css_classes=["lp-empty"])])
+                     [Gtk.Label(label=_("No Results"), css_classes=["lp-empty"])])
         results.found = found
         self.stack.set_visible_child_name("results")
         if menu is not None:
@@ -1065,14 +1066,14 @@ class Launchpad(Gtk.ApplicationWindow):
         item = widget.item
         in_hidden = bool(self.folder_view and self.folder_view[1] and self.folder_view[1].get("locked"))
         if M.is_folder(item):
-            sections = [[Item("Open", lambda: self.activate_item(widget))]]
+            sections = [[Item(_("Open"), lambda: self.activate_item(widget))]]
         elif in_hidden:
-            sections = [[Item("Open", lambda: self.activate_item(widget))],
-                        [Item(f"Show in {names.APPS}", lambda: self.unhide_app(item))]]
+            sections = [[Item(_("Open"), lambda: self.activate_item(widget))],
+                        [Item(_("Show in {apps}").format(apps=_(names.APPS)), lambda: self.unhide_app(item))]]
         else:
             info = self.installed.get(item)
             # (no Open in Sandbox here: the Dock's menu only -- Vini)
-            sections = [[Item("Open", lambda: self.activate_item(widget))]]
+            sections = [[Item(_("Open"), lambda: self.activate_item(widget))]]
             dock = config.load("dock", {"pinned": None})
             pins = dock.get("pinned")
             from .dock import PERMANENT
@@ -1088,7 +1089,7 @@ class Launchpad(Gtk.ApplicationWindow):
                     elif not on and item in cfg["pinned"]:
                         cfg["pinned"].remove(item)
                     self._save_dock_pins(cfg["pinned"])
-                sections.append([Item("Remove from Dock" if kept else "Keep in Dock", toggle_dock)])
+                sections.append([Item(_("Remove from Dock") if kept else _("Keep in Dock"), toggle_dock)])
             from .. import gpu
             from .. import browsergpu
             for g in (gpu.menu_items(info, Item), browsergpu.menu_items(info, Item)) if info else ():
@@ -1097,23 +1098,23 @@ class Launchpad(Gtk.ApplicationWindow):
             path = apps.app_filename(info) if info else ""
             if path:
                 from .dock_menu import add_to_desktop, show_in_files
-                sections.append([Item("Show in Files", lambda: self.close_launchpad(
+                sections.append([Item(_("Show in Files"), lambda: self.close_launchpad(
                     lambda: show_in_files(path))),
-                                 Item("Add to Desktop", lambda: add_to_desktop(path))])
+                                 Item(_("Add to Desktop"), lambda: add_to_desktop(path))])
             if info:
                 from .dock_menu import lock_item
                 sections.append([lock_item(info, self.close_launchpad)])
-            hide = [Item("Hide", lambda: self.hide_app(item))]      # into the Hidden folder
+            hide = [Item(_("Hide"), lambda: self.hide_app(item))]      # into the Hidden folder
             if info and not (info.get_id() or "").startswith(PROTECTED):
-                hide.append(Item("Move to Trash", lambda: self.ask_delete(item)))
+                hide.append(Item(_("Move to Trash"), lambda: self.ask_delete(item)))
             from .. import webapps
             if webapps.is_webapp(item):
-                sections.append([Item("Edit Web App…", lambda: self.close_launchpad(
+                sections.append([Item(_("Edit Web App…"), lambda: self.close_launchpad(
                     lambda: webapps.edit(webapps.id_of(item))))])
-                sections.append([Item("Change Icon…", lambda: self.close_launchpad(
+                sections.append([Item(_("Change Icon…"), lambda: self.close_launchpad(
                     lambda: __import__("sonata2.shell.topbar", fromlist=["open_settings"]).open_settings(
                         "appicons/" + item)))])
-                hide.append(Item("Delete Web App…", lambda: self.ask_delete_webapp(item)))
+                hide.append(Item(_("Delete Web App…"), lambda: self.ask_delete_webapp(item)))
             sections.append(hide)
         ui.menu.popup(widget, sections, at=(x, y))
 

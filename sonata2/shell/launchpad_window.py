@@ -25,27 +25,28 @@ from gi.repository import Gdk, GLib, GObject, Gtk  # noqa: E402
 
 from .. import apps, config, names, ui  # noqa: E402
 from .. import launchpad_model as M  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 
 NAME = "launcher"                 # ~/.config/sonata2/launcher.json
 DEFAULTS = {"style": "fullscreen"}
-STYLES = (("fullscreen", "Full Screen"), ("window", names.APPS_MENU))
+STYLES = (("fullscreen", N_("Full Screen")), ("window", names.APPS_MENU))
 ICON = 64
 OPEN_MS, CLOSE_MS, FADE_MS = 220, 140, 150
 
 # tab id, title, freedesktop categories (first match wins, in this order)
 CATEGORIES = (
-    ("social", "Social", {"Chat", "InstantMessaging", "Email", "IRCClient", "Telephony", "VideoConference",
+    ("social", N_("Social"), {"Chat", "InstantMessaging", "Email", "IRCClient", "Telephony", "VideoConference",
                           "News", "Feed", "ContactManagement"}),
-    ("creativity", "Creativity", {"Graphics", "2DGraphics", "3DGraphics", "RasterGraphics", "VectorGraphics",
+    ("creativity", N_("Creativity"), {"Graphics", "2DGraphics", "3DGraphics", "RasterGraphics", "VectorGraphics",
                                   "Photography", "AudioVideoEditing", "Midi", "Mixer", "Sequencer", "Publishing"}),
-    ("entertainment", "Entertainment", {"Game", "AudioVideo", "Audio", "Video", "Player", "TV", "Music"}),
-    ("productivity", "Productivity & Finance", {"Office", "Finance", "Development", "Education", "Science",
+    ("entertainment", N_("Entertainment"), {"Game", "AudioVideo", "Audio", "Video", "Player", "TV", "Music"}),
+    ("productivity", N_("Productivity & Finance"), {"Office", "Finance", "Development", "Education", "Science",
                                                 "Calendar", "ProjectManagement", "WordProcessor", "Spreadsheet",
                                                 "Presentation", "IDE", "TextEditor"}),
-    ("utilities", "Utilities", {"Utility", "System", "Settings", "FileManager", "Accessibility", "Monitor",
+    ("utilities", N_("Utilities"), {"Utility", "System", "Settings", "FileManager", "Accessibility", "Monitor",
                                 "TerminalEmulator", "Network", "WebBrowser", "Security", "Archiving", "Core"}),
 )
-OTHER = ("other", "Other")
+OTHER = ("other", N_("Other"))
 
 ui.register("""
 .lpw-panel { background: %(launchpad_material)s; border-radius: 26px; padding: 18px 22px 0 22px;
@@ -120,11 +121,11 @@ def open_style_settings(pad) -> None:
 def options_menu(pad, btn) -> None:
     """The "•••" menu, in both layouts: the other layout, and its settings."""
     Item = ui.menu.Item
-    other = (Item(f"Use Full-Screen {names.APPS}", lambda: set_style(pad, "fullscreen"))
-             if pad.mode == "menu" else Item(f"Use {names.APPS_MENU}", lambda: set_style(pad, "window")))
+    other = (Item(_("Use Full-Screen {apps}").format(apps=_(names.APPS)), lambda: set_style(pad, "fullscreen"))
+             if pad.mode == "menu" else Item(_("Use {apps_menu}").format(apps_menu=_(names.APPS_MENU)), lambda: set_style(pad, "window")))
     # Clean Up (Vini): the empty places apps left behind, filled in order
-    tidy = Item("Clean Up", pad.clean_up, enabled=pad.model.has_gaps())
-    ui.menu.popup(btn, [[other], [tidy], [Item(f"{names.APPS} Settings\u2026", lambda: open_style_settings(pad))]],
+    tidy = Item(_("Clean Up"), pad.clean_up, enabled=pad.model.has_gaps())
+    ui.menu.popup(btn, [[other], [tidy], [Item(_("{apps} Settings\u2026").format(apps=_(names.APPS)), lambda: open_style_settings(pad))]],
                   position=Gtk.PositionType.BOTTOM)
 
 
@@ -150,7 +151,7 @@ class MenuView:
         self.head.append(Gtk.Image(icon_name="view-app-grid-symbolic", css_classes=["lpw-glyph"]))
         more = Gtk.Button(child=Gtk.Label(label="\u2022\u2022\u2022", css_classes=["lpw-dots"]),
                           css_classes=["lpw-more"], can_focus=False, valign=Gtk.Align.CENTER,
-                          tooltip_text="Options")
+                          tooltip_text=_("Options"))
         more.connect("clicked", lambda b: options_menu(self.pad, b))
         self.more = more
         self.head.append(more)                         # (Launchpad's search field goes before it: take_search)
@@ -185,7 +186,7 @@ class MenuView:
             e.unparent()
             e.remove_css_class("lp-search")
             e.add_css_class("lpw-search")
-            e.set_placeholder_text(names.APPS)
+            e.set_placeholder_text(_(names.APPS))
             e.set_hexpand(True)
             e.set_halign(Gtk.Align.FILL)
             e.set_margin_top(0)
@@ -200,7 +201,7 @@ class MenuView:
             self.head.remove(e)
             e.remove_css_class("lpw-search")
             e.add_css_class("lp-search")
-            e.set_placeholder_text("Search")
+            e.set_placeholder_text(_("Search"))
             e.set_hexpand(False)
             e.set_halign(Gtk.Align.CENTER)
             e.set_margin_top(40)
@@ -362,7 +363,7 @@ class MenuView:
         for cid, title in [(c[0], c[1]) for c in CATEGORIES] + [OTHER]:
             if not groups.get(cid):
                 continue
-            b = Gtk.ToggleButton(label=title, css_classes=["lpw-tab"], can_focus=False)
+            b = Gtk.ToggleButton(label=_(title), css_classes=["lpw-tab"], can_focus=False)
             b.connect("clicked", lambda _b, c=cid: self.set_tab(None if self.tab == c else c))
             self.tab_buttons[cid] = b
             self.tabs.append(b)

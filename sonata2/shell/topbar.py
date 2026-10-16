@@ -24,6 +24,7 @@ gi.require_version("Graphene", "1.0")
 from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk, Pango  # noqa: E402
 
 from .. import apps, config, ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from ..backend import power, system  # noqa: E402
 from . import apptabs, layer  # noqa: E402
 
@@ -242,9 +243,9 @@ class Bar(Gtk.CenterBox):
         name.set_ellipsize(Pango.EllipsizeMode.END)
         name.set_max_width_chars(APP_NAME_CHARS)
         # on the desktop (nothing focused) the menus are Files' own, like Finder's
-        self.file_btn = self._item(left, text="File", on_click=self._file_menu)
-        self.go_btn = self._item(left, text="Go", on_click=self._files_go_menu)
-        self.win_btn = self._item(left, text="Window", on_click=self._window_menu)
+        self.file_btn = self._item(left, text=_("File"), on_click=self._file_menu)
+        self.go_btn = self._item(left, text=_("Go"), on_click=self._files_go_menu)
+        self.win_btn = self._item(left, text=_("Window"), on_click=self._window_menu)
         left.set_margin_start(8)       # no CSS padding: the bar is painted over the whole allocation
         self.set_start_widget(left)
 
@@ -359,8 +360,8 @@ class Bar(Gtk.CenterBox):
         self.cam_dot.set_visible(bool(st["camera"]))
         self.mic_dot.set_visible(bool(st["mic"]) and not st["camera"])   # macOS: the camera's dot covers both
         self.inuse_btn.set_visible(bool(st["camera"] or st["mic"]))
-        lines = ([f"Camera: {', '.join(st['camera'])}"] if st["camera"] else []) + \
-                ([f"Microphone: {', '.join(st['mic'])}"] if st["mic"] else [])
+        lines = ([_("Camera: {apps}").format(apps=", ".join(st["camera"]))] if st["camera"] else []) + \
+                ([_("Microphone: {apps}").format(apps=", ".join(st["mic"]))] if st["mic"] else [])
         self.inuse_btn.set_tooltip_text("\n".join(lines) or None)
         self._icons_soon()
 
@@ -442,7 +443,7 @@ class Bar(Gtk.CenterBox):
         for kind, style in want:
             b = self._item(self.stats_box, on_click=self._open_task_manager, css="stat")
             b.set_child(statsui.menu_item(kind, style))
-            b.set_tooltip_text(statsui.TITLES[kind])
+            b.set_tooltip_text(_(statsui.TITLES[kind]))
             self._stat_items.append(b)
 
     def _open_task_manager(self, _btn):
@@ -526,15 +527,15 @@ class Bar(Gtk.CenterBox):
         Item = ui.menu.Item
         user = GLib.get_real_name() or GLib.get_user_name()
         return self._menu(btn, [
-            [Item("About This Computer", lambda: AboutWindow().present())],
-            [Item("System Settings…", lambda: open_settings())],
-            [Item("Recent Items", submenu=self._recent_items())],
-            [Item("Restart Sonata", system.restart_sonata)],      # reload the shell; apps stay open
-            [Item("Sleep", lambda: system.power_action("sleep")),
-             Item("Restart…", lambda: self._confirm("restart")),
-             Item("Shut Down…", lambda: self._confirm("shutdown"))],
-            [Item("Lock Screen", lambda: system.power_action("lock")),
-             Item(f"Log Out {user}…", lambda: self._confirm("logout"))],
+            [Item(_("About This Computer"), lambda: AboutWindow().present())],
+            [Item(_("System Settings…"), lambda: open_settings())],
+            [Item(_("Recent Items"), submenu=self._recent_items())],
+            [Item(_("Restart Sonata"), system.restart_sonata)],      # reload the shell; apps stay open
+            [Item(_("Sleep"), lambda: system.power_action("sleep")),
+             Item(_("Restart…"), lambda: self._confirm("restart")),
+             Item(_("Shut Down…"), lambda: self._confirm("shutdown"))],
+            [Item(_("Lock Screen"), lambda: system.power_action("lock")),
+             Item(_("Log Out {user}…").format(user=user), lambda: self._confirm("logout"))],
         ])
 
     def _recent_items(self):
@@ -554,13 +555,13 @@ class Bar(Gtk.CenterBox):
             sections.append(app_items)
         if docs:
             sections.append(docs)
-        return sections or [[Item("No recent items", enabled=False)]]
+        return sections or [[Item(_("No recent items"), enabled=False)]]
 
     def _confirm(self, kind: str) -> None:
-        text = {"restart": ("Are you sure you want to restart your computer now?", "Restart"),
-                "shutdown": ("Are you sure you want to shut down your computer now?", "Shut Down"),
-                "logout": ("Are you sure you want to quit all applications and log out now?", "Log Out")}[kind]
-        ui.dialog.alert(text[0], "", [("cancel", "Cancel", ""), (kind, text[1], "default")],
+        text = {"restart": (_("Are you sure you want to restart your computer now?"), _("Restart")),
+                "shutdown": (_("Are you sure you want to shut down your computer now?"), _("Shut Down")),
+                "logout": (_("Are you sure you want to quit all applications and log out now?"), _("Log Out"))}[kind]
+        ui.dialog.alert(text[0], "", [("cancel", _("Cancel"), ""), (kind, text[1], "default")],
                         lambda r: self._end_session(kind) if r == kind else None)
 
     def _end_session(self, kind: str) -> None:
@@ -633,8 +634,8 @@ class Bar(Gtk.CenterBox):
             return lambda: self._after_menu(lambda: apptabs.press(app_id, action))
         # (the tabs are in Window, Vini)
         return self._menu(btn, [
-            [Item("New Window", press("new_window"), enabled=apptabs.keys(app_id, "new_window") is not None)],
-            [Item("Close Window", lambda: m.close(act), enabled=bool(act))]])
+            [Item(_("New Window"), press("new_window"), enabled=apptabs.keys(app_id, "new_window") is not None)],
+            [Item(_("Close Window"), lambda: m.close(act), enabled=bool(act))]])
 
     # -- Files' menus on the desktop -------------------------------------------------------
     def _files_file_menu(self, btn):
@@ -647,10 +648,10 @@ class Bar(Gtk.CenterBox):
             from ..files import ops
             ops.new_folder(desktop_dir(), lambda _f: None, lambda _e: None)
         return self._menu(btn, [
-            [Item("New Files Window", lambda: open_folder(home)),
-             Item("New Folder", new_folder)],
-            [Item("Open Desktop in Files", lambda: open_folder(desktop_dir().get_uri()))],
-            [Item("Empty Trash…", lambda: open_folder("trash:///"))],
+            [Item(_("New Files Window"), lambda: open_folder(home)),
+             Item(_("New Folder"), new_folder)],
+            [Item(_("Open Desktop in Files"), lambda: open_folder(desktop_dir().get_uri()))],
+            [Item(_("Empty Trash…"), lambda: open_folder("trash:///"))],
         ])
 
     def _files_go_menu(self, btn):
@@ -663,14 +664,15 @@ class Bar(Gtk.CenterBox):
             p = userdirs.special(kind)
             return Gio.File.new_for_path(p).get_uri() if p else None
         home = Gio.File.new_for_path(GLib.get_home_dir()).get_uri()
-        rows = [("Recents", "sonata:recents"), ("Documents", place(U.DIRECTORY_DOCUMENTS)),
-                ("Desktop", place(U.DIRECTORY_DESKTOP)), ("Downloads", place(U.DIRECTORY_DOWNLOAD)),
-                ("Home", home), ("Pictures", place(U.DIRECTORY_PICTURES)), ("Music", place(U.DIRECTORY_MUSIC))]
+        rows = [(_("Recents"), "sonata:recents"), (_("Documents"), place(U.DIRECTORY_DOCUMENTS)),
+                (_("Desktop"), place(U.DIRECTORY_DESKTOP)), (_("Downloads"), place(U.DIRECTORY_DOWNLOAD)),
+                (_("Home"), home), (_("Pictures"), place(U.DIRECTORY_PICTURES)),
+                (_("Music"), place(U.DIRECTORY_MUSIC))]
         return self._menu(btn, [
             [Item(name, lambda u=uri: open_folder(u)) for name, uri in rows[:1]],
             [Item(name, lambda u=uri: open_folder(u), enabled=bool(uri)) for name, uri in rows[1:]],
-            [Item("Computer", lambda: open_folder("file:///")), Item("Trash", lambda: open_folder("trash:///"))],
-            [Item("Connect to Server…", lambda: open_folder("sonata:connect"))],
+            [Item(_("Computer"), lambda: open_folder("file:///")), Item(_("Trash"), lambda: open_folder("trash:///"))],
+            [Item(_("Connect to Server…"), lambda: open_folder("sonata:connect"))],
         ])
 
     def _quit_app(self, wins, key) -> None:
@@ -687,13 +689,13 @@ class Bar(Gtk.CenterBox):
         m = self.manager
         others = [t for t in (m.toplevels if m else []) if t not in wins]
         return self._menu(btn, [
-            [Item(f"About {name}", lambda: AboutAppWindow(info, name).present(), enabled=bool(info))],
-            [Item(f"Hide {name}", lambda: self._after_menu(lambda: [m.minimize(t) for t in wins]),
+            [Item(_("About {app}").format(app=name), lambda: AboutAppWindow(info, name).present(), enabled=bool(info))],
+            [Item(_("Hide {app}").format(app=name), lambda: self._after_menu(lambda: [m.minimize(t) for t in wins]),
                   enabled=bool(wins)),
-             Item("Hide Others", lambda: self._after_menu(lambda: [m.minimize(t) for t in others]),
+             Item(_("Hide Others"), lambda: self._after_menu(lambda: [m.minimize(t) for t in others]),
                   enabled=bool(others)),
-             Item("Show All", lambda: [m.unminimize(t) for t in (m.toplevels if m else [])], enabled=bool(m))],
-            [Item(f"Quit {name}", lambda: self._quit_app(wins, key), enabled=bool(wins))],
+             Item(_("Show All"), lambda: [m.unminimize(t) for t in (m.toplevels if m else [])], enabled=bool(m))],
+            [Item(_("Quit {app}").format(app=name), lambda: self._quit_app(wins, key), enabled=bool(wins))],
         ])
 
     def _window_menu(self, btn):
@@ -701,20 +703,20 @@ class Bar(Gtk.CenterBox):
         key, wins = self._active()
         m = self.manager
         act = next((t for t in wins if t.activated), None)
-        sections = [[Item("Minimize", lambda: self._after_menu(lambda: m.minimize(act)), enabled=bool(act)),
-                     Item("Zoom", lambda: m.set_maximized(act, not act.maximized), enabled=bool(act))]]
+        sections = [[Item(_("Minimize"), lambda: self._after_menu(lambda: m.minimize(act)), enabled=bool(act)),
+                     Item(_("Zoom"), lambda: m.set_maximized(act, not act.maximized), enabled=bool(act))]]
         if act is not None and apptabs.kind(act.app_id) is not None:   # the app's tabs (apptabs; Vini: here)
             def tab(action):
                 return lambda: self._after_menu(lambda: apptabs.press(act.app_id, action))
-            sections.append([Item("New Tab", tab("new_tab")),
-                             Item("Show Previous Tab", tab("prev_tab")),
-                             Item("Show Next Tab", tab("next_tab")),
-                             Item("Close Tab", tab("close_tab"))])
+            sections.append([Item(_("New Tab"), tab("new_tab")),
+                             Item(_("Show Previous Tab"), tab("prev_tab")),
+                             Item(_("Show Next Tab"), tab("next_tab")),
+                             Item(_("Close Tab"), tab("close_tab"))])
         if wins:
             # (a checked item's callback gets the new state first: the window is t=)
-            sections.append([Item(t.title or "Untitled", lambda _on=None, t=t: m.activate(t), checked=t is act)
+            sections.append([Item(t.title or _("Untitled"), lambda _on=None, t=t: m.activate(t), checked=t is act)
                              for t in wins])
-        sections.append([Item("Bring All to Front", lambda: [m.activate(t) for t in wins], enabled=bool(wins))])
+        sections.append([Item(_("Bring All to Front"), lambda: [m.activate(t) for t in wins], enabled=bool(wins))])
         return self._menu(btn, sections)
 
     # -- clock / calendar ----------------------------------------------------------------
@@ -804,11 +806,11 @@ class Bar(Gtk.CenterBox):
         nets = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col.append(ui.panel.separator())
         col.append(cur_box)
-        col.append(ui.panel.section_title("Other Networks"))
-        nets.append(ui.panel.row(None, "Searching…"))
+        col.append(ui.panel.section_title(_("Other Networks")))
+        nets.append(ui.panel.row(None, _("Searching…")))
         col.append(nets)
         col.append(ui.panel.separator())
-        col.append(ui.panel.row(None, "Wi-Fi Preferences…", on_click=lambda: (close(), open_settings("wifi"))))
+        col.append(ui.panel.row(None, _("Wi-Fi Preferences…"), on_click=lambda: (close(), open_settings("wifi"))))
         col.nets = nets                                         # (tests)
 
         def badge(n):
@@ -837,13 +839,13 @@ class Bar(Gtk.CenterBox):
                     box.remove(box.get_first_child())
             joined = [n for n in networks if n.connected]
             if joined:
-                cur_box.append(ui.panel.section_title("Known Network"))
+                cur_box.append(ui.panel.section_title(_("Known Network")))
                 cur_box.append(net_row(joined[0]))
             others = [n for n in networks if not n.connected][:10]
             for n in others:
                 nets.append(net_row(n))
             if not others:
-                nets.append(ui.panel.row(None, "No networks" if enabled else "Wi-Fi: Off"))
+                nets.append(ui.panel.row(None, _("No networks") if enabled else _("Wi-Fi: Off")))
         cached("wifi", _wifi_list, fill)
         on.connect("state-set", lambda _s, st: (system.run_async(system.set_wifi_enabled, lambda _r: self._poll(), st),
                                                 False)[1])
@@ -879,12 +881,12 @@ class Bar(Gtk.CenterBox):
                         active=bool(self._bt_powered()))
         col = ui.panel.column(ui.panel.header("Bluetooth", on))
         col.append(ui.panel.separator())
-        col.append(ui.panel.section_title("Devices"))
+        col.append(ui.panel.section_title(_("Devices")))
         devs = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        devs.append(ui.panel.row(None, "Searching…"))
+        devs.append(ui.panel.row(None, _("Searching…")))
         col.append(devs)
         col.append(ui.panel.separator())
-        col.append(ui.panel.row(None, "Bluetooth Preferences…",
+        col.append(ui.panel.row(None, _("Bluetooth Preferences…"),
                                 on_click=lambda: (close(), open_settings("bluetooth"))))
         col.devs = devs                                         # (tests)
 
@@ -906,7 +908,7 @@ class Bar(Gtk.CenterBox):
                 content.prepend(badge(d))
                 devs.append(row)
             if not paired:
-                devs.append(ui.panel.row(None, "No devices" if self._bt_powered() else "Bluetooth: Off"))
+                devs.append(ui.panel.row(None, _("No devices") if self._bt_powered() else _("Bluetooth: Off")))
         cached("bluetooth", lambda: system.bluetooth_devices(), fill)
         on.connect("state-set", lambda _s, st: (system.run_async(system.set_bluetooth, None, st), False)[1])
         return col
@@ -918,8 +920,8 @@ class Bar(Gtk.CenterBox):
             system.run_async(system.wifi_connect, lambda _r: self._poll(), net.ssid)
             return
         entry = Gtk.PasswordEntry(show_peek_icon=True, hexpand=True)
-        dlg = ui.dialog.alert(f"The Wi-Fi network “{net.ssid}” requires a password.", "",
-                              [("cancel", "Cancel", ""), ("join", "Join", "default")],
+        dlg = ui.dialog.alert(_("The Wi-Fi network “{ssid}” requires a password.").format(ssid=net.ssid), "",
+                              [("cancel", _("Cancel"), ""), ("join", _("Join"), "default")],
                               lambda r: r == "join" and system.run_async(
                                   system.wifi_connect, lambda _r: self._poll(), net.ssid, entry.get_text()))
         dlg.set_extra_child(entry)
@@ -928,18 +930,18 @@ class Bar(Gtk.CenterBox):
         """Big Sur battery menu: header with the level, power source,
         Show Percentage, Battery Preferences… (filled in the background)."""
         pct_lbl = Gtk.Label(css_classes=["dim-label"])
-        src_row = ui.panel.row(None, "Power Source: …")
+        src_row = ui.panel.row(None, _("Power Source: …"))
         percent_sw = ui.controls.switch(self.cfg["battery_percent"], self._toggle_percent)
         # Energy Mode (power-profiles-daemon), macOS Ventura: a checkmark on the current one
         modes = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         mode_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, visible=False)
-        mode_box.append(ui.panel.section_title("Energy Mode"))
+        mode_box.append(ui.panel.section_title(_("Energy Mode")))
         mode_box.append(modes)
         mode_box.append(ui.panel.separator())
-        col = ui.panel.column(ui.panel.header("Battery", pct_lbl), src_row, ui.panel.separator(), mode_box,
-                              ui.panel.row(None, "Show Percentage", percent_sw), ui.panel.separator())
+        col = ui.panel.column(ui.panel.header(_("Battery"), pct_lbl), src_row, ui.panel.separator(), mode_box,
+                              ui.panel.row(None, _("Show Percentage"), percent_sw), ui.panel.separator())
         pop = ui.panel.popup(btn, col, gap=PANEL_GAP, width=STATUS_W)
-        col.append(self._prefs_row(pop, "Battery Preferences…", "battery"))
+        col.append(self._prefs_row(pop, _("Battery Preferences…"), "battery"))
         ui.panel.align_to_start(pop, btn, 2)
 
         def pick(key):
@@ -960,7 +962,7 @@ class Bar(Gtk.CenterBox):
             if current == "performance" and gamemode.boosted():
                 current = "balanced"            # Automatic, running a game at full speed
             for key, label in system.POWER_PROFILES:
-                r = ui.panel.row("object-select-symbolic", label, on_click=lambda k=key: pick(k))
+                r = ui.panel.row("object-select-symbolic", _(label), on_click=lambda k=key: pick(k))
                 r.icon.set_opacity(1 if key == current else 0)       # checkmark column (menus)
                 modes.append(r)
             mode_box.set_visible(True)
@@ -969,8 +971,8 @@ class Bar(Gtk.CenterBox):
         def fill(res):
             (pct, status), ac = res or ((None, ""), False)
             pct_lbl.set_label(f"{pct}%" if pct is not None else "")
-            text = "Power Source: " + ("Power Adapter" if ac else "Battery")
-            src_row.label.set_label(text + (f" · {status}" if status and status not in ("Discharging", "Unknown")
+            text = _("Power Source: {source}").format(source=_("Power Adapter") if ac else _("Battery"))
+            src_row.label.set_label(text + (f" · {_(status)}" if status and status not in ("Discharging", "Unknown")
                                             else ""))
         system.run_async(lambda: (system.battery(), system.on_ac()), fill)
         return pop
@@ -989,14 +991,14 @@ class Bar(Gtk.CenterBox):
         holder = Gtk.Box(css_classes=["panel-header"])
         holder.append(box)
         outs = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        col = ui.panel.column(ui.panel.header("Sound"), holder, ui.panel.separator(),
-                              ui.panel.section_title("Output"), outs, ui.panel.separator())
+        col = ui.panel.column(ui.panel.header(_("Sound")), holder, ui.panel.separator(),
+                              ui.panel.section_title(_("Output")), outs, ui.panel.separator())
         from ..backend import mixer
         service = getattr(self, "mixer", None)
         if mixer.available():                                # every app's own volume, kept (Vini)
             from .mixer_ui import AppMixer
             apps_box = AppMixer()
-            col.append(ui.panel.section_title("Applications"))
+            col.append(ui.panel.section_title(_("Applications")))
             col.append(apps_box)
             col.append(ui.panel.separator())
             self.app_mixer = apps_box                        # (tests)
@@ -1006,7 +1008,7 @@ class Bar(Gtk.CenterBox):
             service.listeners.append(apps_box.set_streams)
             pop.connect("closed", lambda _p: apps_box.set_streams in service.listeners
                         and service.listeners.remove(apps_box.set_streams))
-        col.append(self._prefs_row(pop, "Sound Preferences…", "sound"))
+        col.append(self._prefs_row(pop, _("Sound Preferences…"), "sound"))
         ui.panel.align_to_start(pop, btn, 2)
 
         def fill(res):
@@ -1019,7 +1021,7 @@ class Bar(Gtk.CenterBox):
                 r.icon.set_opacity(1 if sk.default else 0)            # checkmark column (menus)
                 outs.append(r)
             if not sinks:
-                outs.append(ui.panel.row(None, "No output devices"))
+                outs.append(ui.panel.row(None, _("No output devices")))
         system.run_async(lambda: (system.volume(), system.audio_outputs()), fill)
         return pop
 
@@ -1047,8 +1049,8 @@ class Bar(Gtk.CenterBox):
         if lays:
             self._set_text(self.input_btn, layout_badge(lays[0]))
             names = dict(system.XKB_LAYOUTS)
-            self.input_btn.set_tooltip_text(names.get(lays[0], lays[0]) +
-                                            ("  (Ctrl+Space: the previous one)" if len(lays) > 1 else ""))
+            self.input_btn.set_tooltip_text(_(names.get(lays[0], lays[0])) +
+                                            ("  " + _("(Ctrl+Space: the previous one)") if len(lays) > 1 else ""))
 
     def _input_panel(self, btn):
         names = dict(system.XKB_LAYOUTS)
@@ -1056,12 +1058,12 @@ class Bar(Gtk.CenterBox):
         col = ui.panel.column()
         pop = ui.panel.popup(btn, col, gap=PANEL_GAP, width=STATUS_W)
         for i, l in enumerate(lays):
-            r = ui.panel.row("object-select-symbolic", names.get(l, l), on_click=lambda i=i: (
+            r = ui.panel.row("object-select-symbolic", _(names.get(l, l)), on_click=lambda i=i: (
                 pop.popdown(), self._use_layout(i)))
             r.icon.set_opacity(1 if i == 0 else 0)
             col.append(r)
         col.append(ui.panel.separator())
-        col.append(self._prefs_row(pop, "Add Input Source…" if len(lays) < 2 else "Open Keyboard Preferences…",
+        col.append(self._prefs_row(pop, _("Add Input Source…") if len(lays) < 2 else _("Open Keyboard Preferences…"),
                                    "keyboard"))
         ui.panel.align_to_start(pop, btn, 2)
         return pop
@@ -1247,7 +1249,7 @@ def _device_menu(btn, title, list_fn, set_fn) -> None:
         Item = ui.menu.Item
         items = [Item(d.name, lambda _on=None, d=d: system.run_async(set_fn, None, d.key), checked=d.default)
                  for d in devs or []]
-        ui.menu.popup(btn, [[Item(title, None, enabled=False)], items or [Item("No devices", None, enabled=False)]],
+        ui.menu.popup(btn, [[Item(title, None, enabled=False)], items or [Item(_("No devices"), None, enabled=False)]],
                       position=Gtk.PositionType.BOTTOM, gap=4, glass=True)
     system.run_async(list_fn, fill)
 
@@ -1308,7 +1310,7 @@ def now_playing_module(p, header=False) -> Gtk.Widget:
     next; follows the player live and says "Not Playing" when there is none."""
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
     if header:
-        box.append(Gtk.Label(label="Now Playing", xalign=0, css_classes=["panel-module-title"]))
+        box.append(Gtk.Label(label=_("Now Playing"), xalign=0, css_classes=["panel-module-title"]))
     row = Gtk.Box(spacing=10, css_classes=["cc-np"])
     art_box = Gtk.Box(css_classes=["cc-np-art"], valign=Gtk.Align.CENTER, halign=Gtk.Align.START,
                       overflow=Gtk.Overflow.HIDDEN, hexpand=False)
@@ -1338,7 +1340,7 @@ def now_playing_module(p, header=False) -> Gtk.Widget:
     state = {"art": None}
 
     def update():
-        title.set_label(p.title if p.active else "Not Playing")
+        title.set_label(p.title if p.active else _("Not Playing"))
         artist.set_label(p.artist if p.active else "")
         artist.set_visible(bool(p.active and p.artist))
         btns["play"].set_icon_name("media-playback-pause-symbolic" if p.playing else "media-playback-start-symbolic")
@@ -1366,13 +1368,13 @@ class ControlCenter(Gtk.Box):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8, width_request=320)
         from . import controlcenter as CCL
         self.bar = bar
-        self.wifi = ui.panel.toggle("network-wireless-symbolic", "Wi-Fi", False,
+        self.wifi = ui.panel.toggle("network-wireless-symbolic", _("Wi-Fi"), False,
                                     lambda on: system.run_async(system.set_wifi_enabled, lambda _r: bar._poll(), on),
                                     caption="…")
-        self.bt = ui.panel.toggle("bluetooth-active-symbolic", "Bluetooth", False,
+        self.bt = ui.panel.toggle("bluetooth-active-symbolic", _("Bluetooth"), False,
                                   lambda on: system.run_async(system.set_bluetooth, None, on), caption="…")
         # where macOS has AirDrop (Vini): Airplane Mode -- every radio off, and back as they were
-        self.plane = ui.panel.toggle("airplane-mode-symbolic", "Airplane Mode", False, self._set_airplane, caption="…")
+        self.plane = ui.panel.toggle("airplane-mode-symbolic", _("Airplane Mode"), False, self._set_airplane, caption="…")
         conn = ui.panel.module(self.wifi, self.bt, self.plane, spacing=2)
         conn.add_css_class("cc-conn")                           # three rows in its 2x2 cells,
         conn.set_homogeneous(True)                              # spread evenly over its height
@@ -1381,14 +1383,14 @@ class ControlCenter(Gtk.Box):
         conn.set_valign(Gtk.Align.FILL)
         dark = Adw.StyleManager.get_default().get_dark()
         nc = getattr(bar, "notifications", None)
-        dnd_toggle = ui.panel.toggle("weather-clear-night-symbolic", "Do Not Disturb",
+        dnd_toggle = ui.panel.toggle("weather-clear-night-symbolic", _("Do Not Disturb"),
                                      bool(nc and nc.dnd), lambda on: nc and nc.set_dnd(on))
         dnd = ui.panel.click_anywhere(ui.panel.module(dnd_toggle), dnd_toggle)
-        self.dark_btn = self._small("sonata-dark-mode-symbolic", "Dark Mode",
+        self.dark_btn = self._small("sonata-dark-mode-symbolic", _("Dark Mode"),
                                     lambda: self._set_dark(not Adw.StyleManager.get_default().get_dark()),
                                     close=False)
         (self.dark_btn.add_css_class if dark else self.dark_btn.remove_css_class)("on")
-        shot = self._small("sonata-screenshot-symbolic", "Screenshot", self._screenshot)   # opens the toolbar
+        shot = self._small("sonata-screenshot-symbolic", _("Screenshot"), self._screenshot)   # opens the toolbar
         # the brightness of the display this menu bar is on: the laptop panel,
         # or an external monitor over DDC/CI
         self.output = self._output()
@@ -1396,7 +1398,7 @@ class ControlCenter(Gtk.Box):
         disp, self.bright = _slider_with_icon(
             "display-brightness-symbolic", 50,
             lambda v: system.run_latest(("brightness", out), system.set_brightness, int(v), out),
-            button=_round_button("video-display-symbolic", "Displays Preferences",
+            button=_round_button("video-display-symbolic", _("Displays Preferences"),
                                  lambda _b: (self._close(), open_settings("displays"))))
         # Night Shift under the brightness slider (Big Sur's expanded Display module)
         from . import nightshift
@@ -1404,23 +1406,23 @@ class ControlCenter(Gtk.Box):
                               halign=Gtk.Align.START)
         ns_box = Gtk.Box(spacing=8)
         ns_box.append(Gtk.Image(icon_name="night-light-symbolic", css_classes=["cc-ns-icon"]))
-        ns_box.append(Gtk.Label(label="Night Shift"))
+        ns_box.append(Gtk.Label(label=_("Night Shift")))
         ns.set_child(ns_box)
         ns.connect("toggled", lambda b: nightshift.set_manual(b.get_active()))
         ns.set_sensitive(shutil.which("wlsunset") is not None)
-        display = ui.panel.module(Gtk.Label(label="Display", xalign=0, css_classes=["panel-module-title"]),
+        display = ui.panel.module(Gtk.Label(label=_("Display"), xalign=0, css_classes=["panel-module-title"]),
                                   disp, ns)
         snd, self.vol = _slider_with_icon(
             _speaker_icon, 50, bar._set_volume,
-            button=_round_button("sonata-audio-output-symbolic", "Output",
-                                 lambda b: _device_menu(b, "Output", system.audio_outputs, system.select_output)))
+            button=_round_button("sonata-audio-output-symbolic", _("Output"),
+                                 lambda b: _device_menu(b, _("Output"), system.audio_outputs, system.select_output)))
         _volume_feedback(self.vol)
         mic, self.mic = _slider_with_icon(
             lambda v: "microphone-disabled-symbolic" if v <= 0 else "audio-input-microphone-symbolic", 50,
             lambda v: system.run_async(system.set_input_volume, None, int(v), False),
-            button=_round_button("audio-input-microphone-symbolic", "Input",
-                                 lambda b: _device_menu(b, "Input", system.audio_inputs, system.select_input)))
-        sound = ui.panel.module(Gtk.Label(label="Sound", xalign=0, css_classes=["panel-module-title"]), snd, mic)
+            button=_round_button("audio-input-microphone-symbolic", _("Input"),
+                                 lambda b: _device_menu(b, _("Input"), system.audio_inputs, system.select_input)))
+        sound = ui.panel.module(Gtk.Label(label=_("Sound"), xalign=0, css_classes=["panel-module-title"]), snd, mic)
         from . import mpris
         self.np = None
         self.modules = {"connectivity": conn, "dnd": dnd, "darkmode": self.dark_btn, "screenshot": shot,
@@ -1482,7 +1484,7 @@ class ControlCenter(Gtk.Box):
         button above them."""
         old = self.pages.get_child_by_name("details")
         back = Gtk.Button(icon_name="go-previous-symbolic", css_classes=["cc-back"], halign=Gtk.Align.START,
-                          can_focus=False, tooltip_text="Control Center")
+                          can_focus=False, tooltip_text=_("Control Center"))
         back.connect("clicked", lambda *_a: self.hide_details())
         build = self.bar.wifi_column if kind == "wifi" else self.bar.bluetooth_column
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, css_classes=["cc-details"])
@@ -1536,7 +1538,7 @@ class ControlCenter(Gtk.Box):
         scroller = Gtk.ScrolledWindow(child=apps_box, hscrollbar_policy=Gtk.PolicyType.NEVER,
                                       vscrollbar_policy=Gtk.PolicyType.AUTOMATIC, vexpand=True,
                                       propagate_natural_height=False)
-        title = Gtk.Label(label="Volume Mixer", xalign=0, css_classes=["panel-module-title"])
+        title = Gtk.Label(label=_("Volume Mixer"), xalign=0, css_classes=["panel-module-title"])
         box = ui.panel.module(title, scroller, spacing=4)
         box.add_css_class("cc-mixer")
         self.app_mixer = apps_box                               # (tests)
@@ -1573,9 +1575,9 @@ class ControlCenter(Gtk.Box):
     # -- Edit Controls (like Launchpad's jiggle mode) -----------------------------------------
     def _edit_bar(self) -> Gtk.Widget:
         from . import controlcenter as CCL
-        self.edit_btn = ui.controls.push_button("Edit Controls…", lambda: self.grid.set_editing(True))
-        self.add_btn = ui.controls.push_button("Add Controls", self._toggle_add_list)
-        self.done_btn = ui.controls.push_button("Done", lambda: self.grid.set_editing(False), style="default")
+        self.edit_btn = ui.controls.push_button(_("Edit Controls…"), lambda: self.grid.set_editing(True))
+        self.add_btn = ui.controls.push_button(_("Add Controls"), self._toggle_add_list)
+        self.done_btn = ui.controls.push_button(_("Done"), lambda: self.grid.set_editing(False), style="default")
         self._CCL = CCL
         bar = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER, css_classes=["cc-edit-bar"])
         for b in (self.edit_btn, self.add_btn, self.done_btn):
@@ -1630,8 +1632,8 @@ class ControlCenter(Gtk.Box):
             self.add_list.remove(child)
         for m in self._hidden_modules():
             b = ui.controls.push_button("", lambda m=m: (self.grid.add_module(m), self._edit_bar_update()),
-                                        tooltip_text=CCL.CATALOG[m][0])
-            b.set_child(Gtk.Label(label=CCL.CATALOG[m][0], ellipsize=Pango.EllipsizeMode.END, width_chars=4))
+                                        tooltip_text=_(CCL.CATALOG[m][0]))
+            b.set_child(Gtk.Label(label=_(CCL.CATALOG[m][0]), ellipsize=Pango.EllipsizeMode.END, width_chars=4))
             self.add_list.append(b)
 
     def _output(self):
@@ -1666,17 +1668,18 @@ class ControlCenter(Gtk.Box):
             return
         wifi_on, (ssid, _sig, _wired), bt = res[:3]
         plane = res[3] if len(res) > 3 else None
-        ui.panel.set_toggle(self.wifi, bool(wifi_on), ssid or ("Not Connected" if wifi_on else "Off"))
-        ui.panel.set_toggle(self.bt, bool(bt), "On" if bt else "Off" if bt is not None else "Unavailable")
-        ui.panel.set_toggle(self.plane, bool(plane), "On" if plane else "Off" if plane is not None else "Unavailable")
+        ui.panel.set_toggle(self.wifi, bool(wifi_on), ssid or (_("Not Connected") if wifi_on else _("Off")))
+        ui.panel.set_toggle(self.bt, bool(bt), _("On") if bt else _("Off") if bt is not None else _("Unavailable"))
+        ui.panel.set_toggle(self.plane, bool(plane),
+                            _("On") if plane else _("Off") if plane is not None else _("Unavailable"))
         self.plane.button.set_sensitive(plane is not None)
 
     def _set_airplane(self, on: bool) -> None:
         """Every radio off (or back as it was); Wi-Fi and Bluetooth show it."""
-        ui.panel.set_toggle(self.plane, on, "On" if on else "Off")
+        ui.panel.set_toggle(self.plane, on, _("On") if on else _("Off"))
         if on:                                   # they go off with it, at once
-            ui.panel.set_toggle(self.wifi, False, "Off")
-            ui.panel.set_toggle(self.bt, False, "Off")
+            ui.panel.set_toggle(self.wifi, False, _("Off"))
+            ui.panel.set_toggle(self.bt, False, _("Off"))
 
         def done(_ok):
             self.bar._poll()
@@ -1690,8 +1693,8 @@ class ControlCenter(Gtk.Box):
         if b is None:
             self.bright.set_sensitive(False)
             if not system.is_builtin(self.output):
-                self.bright.set_tooltip_text("This display's brightness can't be changed from the computer "
-                                             "(turn on DDC/CI in its menu; needs ddcutil)")
+                self.bright.set_tooltip_text(_("This display's brightness can't be changed from the computer "
+                                               "(turn on DDC/CI in its menu; needs ddcutil)"))
         else:
             self.bright.set_value(b)
         if vol is None:
@@ -1722,7 +1725,7 @@ class AboutWindow(Adw.Window):
     Resizable; narrow, the logo goes above the text (breakpoint)."""
 
     def __init__(self):
-        super().__init__(title="About This Computer", default_width=720)    # its content's height
+        super().__init__(title=_("About This Computer"), default_width=720)    # its content's height
         for c in ("sonata-about", "sonata-glass-window"):       # frosted glass, like the Dock
             self.add_css_class(c)
         ui.window.standard(self)
@@ -1753,12 +1756,13 @@ class AboutWindow(Adw.Window):
     def _fill(self, a) -> None:
         if not a:
             return
-        name, _, version = a.os_name.partition(" ")
+        name, _sep, version = a.os_name.partition(" ")
         self.info.append(Gtk.Label(label=name, xalign=0, css_classes=["about-name"]))
-        self.info.append(Gtk.Label(label=version or f"Kernel {a.kernel}", xalign=0, css_classes=["about-version"]))
-        for key, value in (("Computer", a.machine), ("Processor", a.cpu),
-                           ("Memory", f"{a.memory_gb} GB"), ("Graphics", ", ".join(a.gpus) or "—"),
-                           ("Kernel", a.kernel), ("Desktop", "Sonata 2")):
+        self.info.append(Gtk.Label(label=version or _("Kernel {version}").format(version=a.kernel), xalign=0,
+                                   css_classes=["about-version"]))
+        for key, value in ((_("Computer"), a.machine), (_("Processor"), a.cpu),
+                           (_("Memory"), _("{n} GB").format(n=a.memory_gb)), (_("Graphics"), ", ".join(a.gpus) or "—"),
+                           (_("Kernel"), a.kernel), (_("Desktop"), "Sonata 2")):
             row = Gtk.Box(spacing=6)
             row.append(Gtk.Label(label=key, css_classes=["about-key"], valign=Gtk.Align.START))
             # wraps instead of cutting: the window can be narrow or wide
@@ -1775,7 +1779,7 @@ def _scroller(child) -> Gtk.ScrolledWindow:
 
 class AboutAppWindow(Adw.Window):
     def __init__(self, info, name):
-        super().__init__(title=f"About {name}", default_width=360)
+        super().__init__(title=_("About {app}").format(app=name), default_width=360)
         for c in ("sonata-about", "sonata-glass-window"):       # frosted glass, like the Dock
             self.add_css_class(c)
         ui.window.standard(self)

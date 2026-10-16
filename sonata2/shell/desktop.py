@@ -22,6 +22,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Graphene, Gtk, Pango  # noqa: E402
 
 from .. import config, ui  # noqa: E402
+from ..i18n import N_, _, ngettext  # noqa: E402
 from ..files import folder, ops, packages  # noqa: E402
 from ..files.folder import file_of, is_dir  # noqa: E402
 
@@ -30,7 +31,7 @@ ICON = 64
 from ..shell import menubar_size  # noqa: E402
 TOP, EDGE = menubar_size.height() + 10, 14        # below the menu bar; off the screen edges
 DEFAULTS = {"positions": {}, "sort": "none"}
-SORTS = (("none", "None"), ("name", "Name"), ("kind", "Kind"), ("date", "Date Modified"))   # Sort By (and Settings)
+SORTS = (("none", N_("None")), ("name", N_("Name")), ("kind", N_("Kind")), ("date", N_("Date Modified")))   # Sort By (and Settings)
 
 ui.register("""
 .desk-item { padding: 4px 2px; }
@@ -511,8 +512,8 @@ class Desktop(Gtk.Fixed):
             else:
                 ops.paste_image(self, self.dir,                 # a copied picture becomes a file
                                 on_error=lambda e: ui.dialog.alert(
-                                    "The picture couldn’t be pasted.", getattr(e, "message", str(e)),
-                                    [("ok", "OK", "suggested")]))
+                                    _("The picture couldn’t be pasted."), getattr(e, "message", str(e)),
+                                    [("ok", _("OK"), "suggested")]))
         ops.read_clipboard(self, got)
 
     def new_folder(self, at=None) -> None:
@@ -554,24 +555,29 @@ class Desktop(Gtk.Fixed):
     def item_menu(self, item, x, y) -> None:
         Item = ui.menu.Item
         n = len(self.selection)
-        what = f"“{item.info.get_display_name()}”" if n == 1 else f"{n} Items"
+        if n == 1:
+            name = item.info.get_display_name()
+            look, copy = (_("Quick Look “{name}”").format(name=name), _("Copy “{name}”").format(name=name))
+        else:
+            look = ngettext("Quick Look {n} Item", "Quick Look {n} Items", n).format(n=n)
+            copy = ngettext("Copy {n} Item", "Copy {n} Items", n).format(n=n)
         # (its alerts parented to the desktop: in front of it, not behind)
         pkg = packages.menu_items(file_of(item.info).get_path(), self.get_root()) if n == 1 and item.app is None else []
         # anchored to the desktop, not the icon: the selected icon's styles
         # (blue label...) would otherwise reach into the menu's rows
         ok, pt = item.compute_point(self, Graphene.Point().init(x, y))
         from .. import prefs
-        first = pkg + [Item("Open", self.open_selection)]
+        first = pkg + [Item(_("Open"), self.open_selection)]
         if n == 1 and item.app is None and prefs.is_picture(item.info.get_content_type() or ""):
-            first.append(Item("Set Desktop Picture", lambda f=file_of(item.info): prefs.set_wallpaper(f.get_uri())))
+            first.append(Item(_("Set Desktop Picture"), lambda f=file_of(item.info): prefs.set_wallpaper(f.get_uri())))
         ui.menu.popup(self, [
             first,
-            [Item("Move to Trash", self.trash_selection)],
-            [Item("Get Info", self.get_info), Item("Rename", self.rename_selection, enabled=n == 1),
-             Item("Duplicate", self.duplicate_selection),
-             Item("Create Shortcut", self.shortcut_selection)],
-            [Item(f"Quick Look {what}", self.quick_look)],
-            [Item(f"Copy {what}", self.copy_selection)],
+            [Item(_("Move to Trash"), self.trash_selection)],
+            [Item(_("Get Info"), self.get_info), Item(_("Rename"), self.rename_selection, enabled=n == 1),
+             Item(_("Duplicate"), self.duplicate_selection),
+             Item(_("Create Shortcut"), self.shortcut_selection)],
+            [Item(look, self.quick_look)],
+            [Item(copy, self.copy_selection)],
         ], at=(pt.x, pt.y) if ok else (x, y))
 
     def _background_menu(self, g, _n, x, y) -> None:
@@ -583,11 +589,11 @@ class Desktop(Gtk.Fixed):
         sort = self.cfg.get("sort", "none")
         cell = self.cell_at(x, y)
         ui.menu.popup(self, [
-            [Item("New Folder", lambda: self.new_folder(cell))],      # (New Web App…: Apps' menu only, Vini)
-            [Item("Paste Item", self.paste, enabled=ops.clipboard_has_files(self))],
-            [Item("Change Desktop Background…", lambda: _open_settings("wallpaper"))],
-            [Item("Clean Up", self.clean_up),
-             Item("Sort By", submenu=[[Item(label, lambda _on=None, s=key: self.set_sort(s), checked=sort == key)
+            [Item(_("New Folder"), lambda: self.new_folder(cell))],      # (New Web App…: Apps' menu only, Vini)
+            [Item(_("Paste Item"), self.paste, enabled=ops.clipboard_has_files(self))],
+            [Item(_("Change Desktop Background…"), lambda: _open_settings("wallpaper"))],
+            [Item(_("Clean Up"), self.clean_up),
+             Item(_("Sort By"), submenu=[[Item(_(label), lambda _on=None, s=key: self.set_sort(s), checked=sort == key)
                                        for key, label in SORTS]])],
         ], at=(x, y))
 

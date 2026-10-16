@@ -14,10 +14,11 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 
 STACK_DEFAULTS = {"display": "stack", "view": "grid", "sort": "added"}
-SORTS = (("name", "Name"), ("added", "Date Added"), ("modified", "Date Modified"),
-         ("kind", "Kind"))
+SORTS = (("name", N_("Name")), ("added", N_("Date Added")), ("modified", N_("Date Modified")),
+         ("kind", N_("Kind")))
 MAX_ITEMS = 60
 GRID_COLS, GRID_ICON = 5, 48
 # monitor events coalesced before the folder is listed again: a download
@@ -277,13 +278,13 @@ class StackRow:
         col.append(Gtk.Label(label=tile.name, xalign=0, css_classes=["stack-title"]))
         items = _items(spec["path"], spec["sort"])
         if not items:
-            col.append(Gtk.Label(label="No items", css_classes=["stack-empty"]))
+            col.append(Gtk.Label(label=_("No items"), css_classes=["stack-empty"]))
         elif spec["view"] == "list":
             col.append(self._list(items, pop))
         else:
             col.append(self._grid(items, pop))
         footer = Gtk.Box(css_classes=["stack-footer"], halign=Gtk.Align.END)
-        footer.append(ui.controls.push_button("Open in Files", lambda: (
+        footer.append(ui.controls.push_button(_("Open in Files"), lambda: (
             _open(Gio.File.new_for_path(spec["path"])), pop.popdown())))
         col.append(footer)
         pop.set_child(col)
@@ -342,14 +343,14 @@ def stack_menu(row: StackRow, tile):
     spec = tile.spec
     tile.label.popdown()
     return ui.menu.popup(tile, [
-        [Item("Sort by", submenu=[[Item(lbl, lambda on, k=k: on and row.set_spec(tile, "sort", k),
+        [Item(_("Sort by"), submenu=[[Item(_(lbl), lambda on, k=k: on and row.set_spec(tile, "sort", k),
                                         checked=spec["sort"] == k) for k, lbl in SORTS]]),
-         Item("Display as", submenu=[[Item(lbl, lambda on, k=k: on and row.set_spec(tile, "display", k),
+         Item(_("Display as"), submenu=[[Item(_(lbl), lambda on, k=k: on and row.set_spec(tile, "display", k),
                                            checked=spec["display"] == k)
-                                      for k, lbl in (("folder", "Folder"), ("stack", "Stack"))]]),
-         Item("View content as", submenu=[[Item(lbl, lambda on, k=k: on and row.set_spec(tile, "view", k),
+                                      for k, lbl in (("folder", N_("Folder")), ("stack", N_("Stack")))]]),
+         Item(_("View content as"), submenu=[[Item(_(lbl), lambda on, k=k: on and row.set_spec(tile, "view", k),
                                                 checked=spec["view"] == k)
-                                           for k, lbl in (("grid", "Grid"), ("list", "List"))]])],
-        [Item("Options", submenu=[[Item("Remove from Dock", lambda: row.remove(tile))]])],
-        [Item(f'Open "{tile.name}"', lambda: _open(Gio.File.new_for_path(spec["path"])))],
+                                           for k, lbl in (("grid", N_("Grid")), ("list", N_("List")))]])],
+        [Item(_("Options"), submenu=[[Item(_("Remove from Dock"), lambda: row.remove(tile))]])],
+        [Item(_("Open \"{name}\"").format(name=tile.name), lambda: _open(Gio.File.new_for_path(spec["path"])))],
     ], position=row.dock.away)

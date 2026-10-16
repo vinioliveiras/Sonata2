@@ -15,6 +15,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 
 INFO_W = 250
 
@@ -29,9 +30,9 @@ ui.register("""
 .pv-info-note { font-size: %(text_small)s; color: %(label_tertiary)s; margin-top: 12px; }
 """, key="preview-info")
 
-MODES = {"1": "Black & White", "L": "Gray", "LA": "Gray", "P": "Indexed", "RGB": "RGB", "RGBA": "RGB",
-         "CMYK": "CMYK", "YCbCr": "YCbCr", "LAB": "Lab", "HSV": "HSV", "I": "Gray (32-bit)", "F": "Gray (float)",
-         "I;16": "Gray (16-bit)"}
+MODES = {"1": N_("Black & White"), "L": N_("Gray"), "LA": N_("Gray"), "P": N_("Indexed"), "RGB": "RGB",
+         "RGBA": "RGB", "CMYK": "CMYK", "YCbCr": "YCbCr", "LAB": "Lab", "HSV": "HSV", "I": N_("Gray (32-bit)"),
+         "F": N_("Gray (float)"), "I;16": N_("Gray (16-bit)")}
 # EXIF tags (ids, so no Pillow import is needed to name them)
 MAKE, MODEL, DATETIME = 0x010F, 0x0110, 0x0132
 EXIF_IFD, GPS_IFD = 0x8769, 0x8825
@@ -84,7 +85,8 @@ def exif_date_text(v) -> str:
 
 
 def date_text(d: datetime.datetime) -> str:
-    return f"{d.strftime('%b')} {d.day}, {d.year} at {d.strftime('%H:%M')}"
+    return _("{month} {day}, {year} at {time}").format(month=d.strftime('%b'), day=d.day, year=d.year,
+                                                        time=d.strftime('%H:%M'))
 
 
 def read(path: str, texture_size=None) -> dict:
@@ -104,28 +106,28 @@ def read(path: str, texture_size=None) -> dict:
     im_info = _pillow(path)
     w, h = im_info.get("size") or texture_size or (0, 0)
     if w and h:
-        g.append(("Dimensions", f"{w} × {h} pixels"))
+        g.append((N_("Dimensions"), _("{w} × {h} pixels").format(w=w, h=h)))
         mp = w * h / 1e6
         if mp >= 1:
-            g.append(("Megapixels", f"{mp:.1f}"))
+            g.append((N_("Megapixels"), f"{mp:.1f}"))
     if st:
         from ..ui import fmt
-        g.append(("File Size", fmt.size(st.st_size)))
+        g.append((N_("File Size"), fmt.size(st.st_size)))
     fmt_name = im_info.get("format")
-    g.append(("Kind", f"{kind} ({fmt_name})" if fmt_name and kind and fmt_name.lower() not in kind.lower()
-              else kind or fmt_name or "Picture"))
+    g.append((N_("Kind"), f"{kind} ({fmt_name})" if fmt_name and kind and fmt_name.lower() not in kind.lower()
+              else kind or fmt_name or _("Picture")))
     if im_info.get("profile"):
-        g.append(("Color Space", im_info["profile"]))
+        g.append((N_("Color Space"), im_info["profile"]))
     if im_info.get("mode"):
-        g.append(("Color Model", MODES.get(im_info["mode"], im_info["mode"])))
-        g.append(("Alpha Channel", "Yes" if im_info.get("alpha") else "No"))
+        g.append((N_("Color Model"), _(MODES.get(im_info["mode"], im_info["mode"]))))
+        g.append((N_("Alpha Channel"), _("Yes") if im_info.get("alpha") else _("No")))
     if im_info.get("dpi"):
-        g.append(("Resolution", f"{round(im_info['dpi'])} ppi"))
+        g.append((N_("Resolution"), f"{round(im_info['dpi'])} ppi"))
     if st:
-        g.append(("Modified", date_text(datetime.datetime.fromtimestamp(st.st_mtime))))
+        g.append((N_("Modified"), date_text(datetime.datetime.fromtimestamp(st.st_mtime))))
     info["camera"] = im_info.get("camera", [])
     if im_info.get("missing"):
-        info["note"] = "Camera details need Pillow (python-pillow)."
+        info["note"] = _("Camera details need Pillow (python-pillow).")
     return info
 
 
@@ -173,7 +175,7 @@ def _profile_name(icc: bytes) -> str:
         from PIL import ImageCms
         return ImageCms.getProfileDescription(ImageCms.ImageCmsProfile(io.BytesIO(icc))).strip()
     except Exception:
-        return "Embedded profile"
+        return _("Embedded profile")
 
 
 def camera_rows(exif) -> list:
@@ -195,12 +197,12 @@ def camera_rows(exif) -> list:
     if model and make and not model.lower().startswith(make.split()[0].lower()):
         model = f"{make} {model}"
     if model or make:
-        rows.append(("Camera", model or make))
+        rows.append((N_("Camera"), model or make))
     lens = _text(tag(LENS))
     if lens:
-        rows.append(("Lens", lens))
-    for label, t, f in (("Exposure", EXPOSURE, exposure_text), ("Aperture", FNUMBER, fnumber_text),
-                        ("Focal Length", FOCAL, focal_text)):
+        rows.append((N_("Lens"), lens))
+    for label, t, f in ((N_("Exposure"), EXPOSURE, exposure_text), (N_("Aperture"), FNUMBER, fnumber_text),
+                        (N_("Focal Length"), FOCAL, focal_text)):
         v = f(tag(t))
         if v:
             rows.append((label, v))
@@ -211,9 +213,9 @@ def camera_rows(exif) -> list:
         rows.append(("ISO", str(iso)))
     taken = tag(TAKEN) or exif.get(DATETIME)
     if taken:
-        rows.append(("Date Taken", exif_date_text(taken)))
+        rows.append((N_("Date Taken"), exif_date_text(taken)))
     if gps:
-        rows.append(("Location", "GPS coordinates included"))
+        rows.append((N_("Location"), _("GPS coordinates included")))
     return rows
 
 
@@ -237,9 +239,9 @@ class InfoPanel(Gtk.ScrolledWindow):
         title.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         self.box.append(title)
         grid = Gtk.Grid(column_spacing=8, row_spacing=4)      # one grid: both sections' columns line up
-        self._section(grid, "General Info", data.get("general", []))
+        self._section(grid, _("General Info"), data.get("general", []))
         if data.get("camera"):
-            self._section(grid, "Camera", data["camera"])
+            self._section(grid, _("Camera"), data["camera"])
         self.box.append(grid)
         if data.get("note"):
             self.box.append(Gtk.Label(label=data["note"], xalign=0, wrap=True, css_classes=["pv-info-note"]))
@@ -251,7 +253,7 @@ class InfoPanel(Gtk.ScrolledWindow):
             top += 1
         grid.attach(Gtk.Label(label=name, xalign=0, css_classes=["pv-info-section"]), 0, top, 2, 1)
         for i, (k, v) in enumerate(rows, top + 1):
-            grid.attach(Gtk.Label(label=k, xalign=1, yalign=0, css_classes=["pv-info-key"]), 0, i, 1, 1)
+            grid.attach(Gtk.Label(label=_(k), xalign=1, yalign=0, css_classes=["pv-info-key"]), 0, i, 1, 1)
             val = Gtk.Label(label=v, xalign=0, wrap=True, hexpand=True, css_classes=["pv-info-value"])
             val.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
             grid.attach(val, 1, i, 1, 1)

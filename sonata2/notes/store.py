@@ -19,6 +19,7 @@ import uuid
 
 from . import markup
 from ..config import atomic_write
+from ..i18n import N_, _
 
 ALL = "all"                  # All Notes (every folder)
 DELETED = "deleted"          # Recently Deleted
@@ -26,6 +27,7 @@ DEFAULT_FOLDER = "notes"     # "Notes", always there
 DEFAULT_LIST = "reminders"   # "Reminders", always there
 SMART = ("today", "scheduled", "all", "completed")
 KEEP_DELETED = 30 * 86400
+DEFAULT_NAMES = {DEFAULT_FOLDER: N_("Notes"), DEFAULT_LIST: N_("Reminders")}   # as written in the data files
 LIST_COLORS = ("blue", "red", "orange", "green", "purple", "pink", "teal", "indigo", "graphite")
 ALL_DAY_HOUR = 9             # all-day reminders alert at 9:00 (macOS)
 
@@ -55,6 +57,18 @@ def _read(path: str) -> dict:
     except OSError:
         pass
     return {}
+
+
+
+def display_name(x) -> str:
+    """A folder's or list's name as shown: "Notes" and "Reminders" (the
+    built-in ones, never renamed) in the session's language."""
+    if not x:
+        return ""
+    name = x.get("name", "")
+    if DEFAULT_NAMES.get(x.get("id")) == name:
+        return _(name)
+    return name
 
 
 def new_id() -> str:

@@ -20,19 +20,20 @@ import subprocess
 
 from gi.repository import Gio, GLib
 
+from ..i18n import N_, _
 from . import permstore
 
 # (key, title, how): "store" = the portals' permission store (asked when
 # used), else a Flatpak override (context key, value)
 PERMISSIONS = (
-    ("camera", "Camera", "store"),
+    ("camera", N_("Camera"), "store"),
     # (one socket for both: no microphone means no sound either -- said so)
-    ("microphone", "Sound & Microphone", ("sockets", "pulseaudio")),
-    ("network", "Network", ("shared", "network")),
-    ("location", "Location", "store"),
-    ("background", "Running in the Background", "store"),
-    ("notifications", "Notifications", "store"),
-    ("files", "Home Folder", ("filesystems", "home")),
+    ("microphone", N_("Sound & Microphone"), ("sockets", "pulseaudio")),
+    ("network", N_("Network"), ("shared", "network")),
+    ("location", N_("Location"), "store"),
+    ("background", N_("Running in the Background"), "store"),
+    ("notifications", N_("Notifications"), "store"),
+    ("files", N_("Home Folder"), ("filesystems", "home")),
 )
 FLAG = {"sockets": "socket", "shared": "share", "filesystems": "filesystem"}
 NOT_FLAG = {"sockets": "nosocket", "shared": "unshare", "filesystems": "nofilesystem"}
@@ -70,8 +71,8 @@ def _has(ctx: dict, key: str, value: str) -> bool:
 
 # Apps from packages: what Sonata can keep from them when it opens them
 # (appperms.limits, enforced by sandbox.restricted_command)
-NATIVE = (("camera", "Camera"), ("microphone", "Sound & Microphone"), ("network", "Network"),
-          ("files", "Home Folder"))
+NATIVE = (("camera", N_("Camera")), ("microphone", N_("Sound & Microphone")), ("network", N_("Network")),
+          ("files", N_("Home Folder")))
 
 
 def permissions(o, info=None) -> list:
@@ -83,9 +84,9 @@ def permissions(o, info=None) -> list:
         from .. import appperms
         from . import location
         refused = appperms.limits(info.get_id())
-        out = [(k, t, k not in refused) for k, t in NATIVE]
+        out = [(k, _(t), k not in refused) for k, t in NATIVE]
         if location.available():                  # GeoClue's own per-app setting (location.py)
-            out.append(("location", "Location", location.allowed(info.get_id())))
+            out.append(("location", _("Location"), location.allowed(info.get_id())))
         return out
     ctx = _context(_run(["flatpak", "info", "--show-permissions", o.name]))
     out = []
@@ -97,7 +98,7 @@ def permissions(o, info=None) -> list:
             on = permstore.allowed(stored, yes) if stored else True
         else:
             on = _has(ctx, *how)
-        out.append((key, title, on))
+        out.append((key, _(title), on))
     return out
 
 

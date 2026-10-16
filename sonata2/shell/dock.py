@@ -30,6 +30,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk, Pang
 
 from .. import applock, apps, badges, config, icons, logs, steamgames, windowapps  # noqa: E402
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from . import dock_drop, dock_folder, dock_menu, dock_stack, layer  # noqa: E402
 
 DEFAULTS = {"pinned": None, "icon_size": 48, "edge_gap": 4, "window_gap": 6, "glass": True,
@@ -643,7 +644,7 @@ class Dock(Gtk.Box):
         self.sep = DockDivider(self)
         self.append(self.sep)
         self.stacks = dock_stack.StackRow(self)      # stack tiles live between divider and Trash
-        self.trash = DockTile(self, "Trash", Gio.ThemedIcon.new("user-trash"),
+        self.trash = DockTile(self, _("Trash"), Gio.ThemedIcon.new("user-trash"),
                               lambda _t: _open_trash(),
                               on_menu=dock_menu.trash_menu)
         self.append(self.trash)
@@ -2270,8 +2271,8 @@ class Dock(Gtk.Box):
             if tries > LAUNCH_RETRIES:
                 self._retries.pop(key, None)
                 tile._stop_bounce()
-                self._launch_failed(tile, f"It was closed and opened again {LAUNCH_RETRIES} times "
-                                          "and still didn't show a window.")
+                self._launch_failed(tile, _("It was closed and opened again {n} times and still didn't show a window.")
+                                  .format(n=LAUNCH_RETRIES))
                 return False
             self._retries[key] = tries
             print(f"sonata2-dock: {key} showed no window in {wait} s: killed, opening it again "

@@ -24,6 +24,7 @@ import time
 from gi.repository import Gio, GLib
 
 from .. import config, gamemode, logs, names
+from ..i18n import N_, _
 from . import evdev as E
 from .vpointer import BTN_LEFT, BTN_RIGHT, VirtualPointer, key
 
@@ -41,12 +42,13 @@ BUTTONS = {E.BTN_SOUTH: "primary", E.BTN_NORTH: "secondary", E.BTN_EAST: "back",
            E.BTN_SELECT: "mission", E.BTN_MODE: "guide", E.KEY_HOMEPAGE: "guide",
            E.BTN_DPAD_UP: "up", E.BTN_DPAD_DOWN: "down", E.BTN_DPAD_LEFT: "left", E.BTN_DPAD_RIGHT: "right"}
 ACTIONS = set(BUTTONS.values())
-# what each button does, as Settings lists it (Xbox / PlayStation names)
-LEGEND = [("Left stick", "Pointer (LT slower, RT faster)"),
-          ("Right stick", "Scroll"), ("A / Cross", "Click (hold to drag)"), ("X / Triangle", "Right-click"),
-          ("B / Circle", "Back (Esc)"), ("Y / Square", names.APPS), ("LB / RB", "Switch apps"),
-          ("D-pad", "Arrow keys"), ("Start / Options", names.SEARCH), ("View / Share", names.OVERVIEW),
-          ("Xbox / PS button", f"{names.OVERVIEW} · 5× quickly: on / off")]
+# what each button does, as Settings lists it (Xbox / PlayStation names; shown translated: _(text))
+LEGEND = [(N_("Left stick"), N_("Pointer (LT slower, RT faster)")),
+          (N_("Right stick"), N_("Scroll")), (N_("A / Cross"), N_("Click (hold to drag)")),
+          (N_("X / Triangle"), N_("Right-click")), (N_("B / Circle"), N_("Back (Esc)")),
+          (N_("Y / Square"), names.APPS), ("LB / RB", N_("Switch apps")), (N_("D-pad"), N_("Arrow keys")),
+          (N_("Start / Options"), names.SEARCH), (N_("View / Share"), names.OVERVIEW),
+          (N_("Xbox / PS button"), N_("Overview · 5× quickly: on / off"))]
 ARROWS = {"up": "Up", "down": "Down", "left": "Left", "right": "Right"}
 
 
@@ -231,7 +233,7 @@ class Gamepads:
         if not on:
             self.axes.clear()
             self._release_held()
-        self._notify("Controller: desktop control on" if on else "Controller: desktop control off")
+        self._notify(_("Controller: desktop control on") if on else _("Controller: desktop control off"))
 
     def _notify(self, text: str) -> None:
         try:

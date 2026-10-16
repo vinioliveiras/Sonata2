@@ -14,20 +14,21 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 from .. import config, ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 from . import layer  # noqa: E402
 
 DATA = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "emoji.tsv")
 RECENT_MAX = 16
-# (group in emoji.tsv, tab icon, title) in macOS order
-CATEGORIES = (("recent", "document-open-recent-symbolic", "Frequently Used"),
-              ("Smileys & Emotion", "face-smile-symbolic", "Smileys & People"),
-              ("Animals & Nature", "emoji-nature-symbolic", "Animals & Nature"),
-              ("Food & Drink", "emoji-food-symbolic", "Food & Drink"),
-              ("Activities", "emoji-activities-symbolic", "Activity"),
-              ("Travel & Places", "emoji-travel-symbolic", "Travel & Places"),
-              ("Objects", "emoji-objects-symbolic", "Objects"),
-              ("Symbols", "emoji-symbols-symbolic", "Symbols"),
-              ("Flags", "emoji-flags-symbolic", "Flags"))
+# (group in emoji.tsv, tab icon, title) in macOS order; the title shown through _()
+CATEGORIES = (("recent", "document-open-recent-symbolic", N_("Frequently Used")),
+              ("Smileys & Emotion", "face-smile-symbolic", N_("Smileys & People")),
+              ("Animals & Nature", "emoji-nature-symbolic", N_("Animals & Nature")),
+              ("Food & Drink", "emoji-food-symbolic", N_("Food & Drink")),
+              ("Activities", "emoji-activities-symbolic", N_("Activity")),
+              ("Travel & Places", "emoji-travel-symbolic", N_("Travel & Places")),
+              ("Objects", "emoji-objects-symbolic", N_("Objects")),
+              ("Symbols", "emoji-symbols-symbolic", N_("Symbols")),
+              ("Flags", "emoji-flags-symbolic", N_("Flags")))
 MERGE = {"People & Body": "Smileys & Emotion"}     # macOS: "Smileys & People"
 
 ui.register("""
@@ -62,7 +63,7 @@ def load() -> list:
 
 class EmojiPicker(Gtk.Window):
     def __init__(self, app):
-        super().__init__(application=app, title="Emoji & Symbols", decorated=False)
+        super().__init__(application=app, title=_("Emoji & Symbols"), decorated=False)
         self.add_css_class("sonata-emoji")
         self.all = load()
         self.names = {e: n for _g, e, n in self.all}
@@ -72,7 +73,7 @@ class EmojiPicker(Gtk.Window):
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["emoji-panel"])
         self.panel = panel
         panel.set_size_request(340, 380)
-        self.search = Gtk.SearchEntry(placeholder_text="Search")
+        self.search = Gtk.SearchEntry(placeholder_text=_("Search"))
         self.search.connect("search-changed", lambda *_: self._refill())
         self.search.connect("activate", lambda *_: self._pick_first())
         panel.append(self.search)
@@ -94,7 +95,7 @@ class EmojiPicker(Gtk.Window):
         self.tabs = {}
         first = None
         for key, icon, title in CATEGORIES:
-            b = Gtk.ToggleButton(icon_name=icon, tooltip_text=title, group=first, can_focus=False)
+            b = Gtk.ToggleButton(icon_name=icon, tooltip_text=_(title), group=first, can_focus=False)
             b.connect("toggled", lambda b, k=key: b.get_active() and self._set_group(k))
             first = first or b
             self.tabs[key] = b
@@ -132,13 +133,13 @@ class EmojiPicker(Gtk.Window):
         if q:
             words = q.split()
             items = [e for _g, e, n in self.all if all(w in n for w in words)]
-            title = "Search Results" if items else "No Results"
+            title = _("Search Results") if items else _("No Results")
         elif self.group == "recent":
             items = [e for e in self.cfg["recent"] if e in self.names]
-            title = "Frequently Used"
+            title = _("Frequently Used")
         else:
             items = [e for g, e, _n in self.all if g == self.group]
-            title = next(t for k, _i, t in CATEGORIES if k == self.group)
+            title = _(next(t for k, _i, t in CATEGORIES if k == self.group))
         self.title.set_label(title)
         self.store.splice(0, self.store.get_n_items(), items)
         self.scroll.get_vadjustment().set_value(0)

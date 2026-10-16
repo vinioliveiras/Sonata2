@@ -12,6 +12,7 @@ import time
 from gi.repository import GLib, Gtk, Pango
 
 from .. import ui
+from ..i18n import _
 from ..backend import memguard as MG
 
 CHECK_S = 5
@@ -30,7 +31,7 @@ def app_label(scope):
         path = webapps.icon_path(wid)
         import os
         icon = Gio.FileIcon.new(Gio.File.new_for_path(path)) if os.path.isfile(path) else None
-        return entry.get("name") or "Web App", icon
+        return entry.get("name") or _("Web App"), icon
     if did:
         from .. import apps
         info = apps.lookup(did if did.endswith(".desktop") else did + ".desktop")
@@ -122,7 +123,7 @@ class MemoryWatch:
             if rid == "quit" and sel is not None:
                 MG.kill(rows[sel.get_index()]["path"])
         self.alert = ui.dialog.alert(
-            "Your system has run out of application memory.",
-            "To avoid problems with your computer, quit any apps you're not using.",
-            [("resume", "Resume", ""), ("quit", "Force Quit", "destructive")], answer)
+            _("Your system has run out of application memory."),
+            _("To avoid problems with your computer, quit any apps you're not using."),
+            [("resume", _("Resume"), ""), ("quit", _("Force Quit"), "destructive")], answer)
         self.alert.set_extra_child(lb)

@@ -23,15 +23,16 @@ from gi.repository import Adw, GLib, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
 from ..ui import tokens  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 from . import store as S  # noqa: E402
 
 SMART_INFO = {  # key: (name, icon, colour)
-    "today": ("Today", "calendar-symbolic", "blue"),
-    "scheduled": ("Scheduled", "alarm-symbolic", "red"),
-    "all": ("All", "inbox-symbolic", "graphite"),
-    "completed": ("Completed", "object-select-symbolic", "gray"),
+    "today": (N_("Today"), "calendar-symbolic", "blue"),
+    "scheduled": (N_("Scheduled"), "alarm-symbolic", "red"),
+    "all": (N_("All"), "inbox-symbolic", "graphite"),
+    "completed": (N_("Completed"), "object-select-symbolic", "gray"),
 }
-PRIORITIES = ("None", "Low", "Medium", "High")
+PRIORITIES = (N_("None"), N_("Low"), N_("Medium"), N_("High"))
 
 _colors = "".join(
     f".c-{c} {{ color: %(sys_{c})s; }}\n.bg-{c} {{ background: %(sys_{c})s; }}\n"
@@ -80,7 +81,7 @@ def due_text(r: dict, today: datetime.date = None) -> str:
         return ""
     today = today or datetime.date.today()
     delta = (dt.date() - today).days
-    day = {0: "Today", 1: "Tomorrow", -1: "Yesterday"}.get(delta)
+    day = {0: _("Today"), 1: _("Tomorrow"), -1: _("Yesterday")}.get(delta)
     if day is None:
         day = GLib.DateTime.new_local(dt.year, dt.month, dt.day, 0, 0, 0).format("%x")
     return f"{day}, {dt:%H:%M}" if S.has_time(r) else day
@@ -97,11 +98,11 @@ def is_overdue(r: dict, now: datetime.datetime = None) -> bool:
 def day_heading(d: datetime.date, today: datetime.date = None) -> str:
     today = today or datetime.date.today()
     if d < today:
-        return "Overdue"
+        return _("Overdue")
     delta = (d - today).days
     if delta in (0, 1):
-        return ("Today", "Tomorrow")[delta]
-    return GLib.DateTime.new_local(d.year, d.month, d.day, 0, 0, 0).format("%A, %-d %B")
+        return (_("Today"), _("Tomorrow"))[delta]
+    return GLib.DateTime.new_local(d.year, d.month, d.day, 0, 0, 0).format(_("%A, %-d %B"))
 
 
 # -- alerts -------------------------------------------------------------------------------------------
@@ -128,7 +129,7 @@ class ReminderRow(Gtk.ListBoxRow):
         line = Gtk.Box(spacing=4)
         self.prio = Gtk.Label(css_classes=["rem-prio", f"c-{self.color}"], visible=False)
         line.append(self.prio)
-        self.title = Gtk.Text(css_classes=["rem-title"], hexpand=True, placeholder_text="New Reminder")
+        self.title = Gtk.Text(css_classes=["rem-title"], hexpand=True, placeholder_text=_("New Reminder"))
         self.title.get_buffer().set_text(r.get("title", ""), -1)
         self.title.connect("activate", lambda *_: self._commit_title(then_new=True))
         focus = Gtk.EventControllerFocus()
@@ -142,7 +143,7 @@ class ReminderRow(Gtk.ListBoxRow):
         line.append(over)
         self.flag = Gtk.Image(icon_name="flag-filled-symbolic", css_classes=["c-orange"], visible=False)
         line.append(self.flag)
-        info = Gtk.Button(icon_name="info-symbolic", css_classes=["rem-info"], tooltip_text="Show Details",
+        info = Gtk.Button(icon_name="info-symbolic", css_classes=["rem-info"], tooltip_text=_("Show Details"),
                           can_focus=False, valign=Gtk.Align.CENTER)
         info.connect("clicked", lambda b: detail_panel(b, view, r))
         line.append(info)
@@ -236,17 +237,17 @@ class ReminderRow(Gtk.ListBoxRow):
 
     def _menu(self, gest, _n, x, y) -> None:
         r, v = self.r, self.view
-        lists = [[ui.menu.Item(x_["name"], (lambda _on=None, lid=x_["id"]: (v.store.update_reminder(r, list=lid),
+        lists = [[ui.menu.Item(S.display_name(x_), (lambda _on=None, lid=x_["id"]: (v.store.update_reminder(r, list=lid),
                                                                    v.changed())),
                                checked=r.get("list") == x_["id"]) for x_ in v.store.lists]]
         ui.menu.popup(self, [
-            [ui.menu.Item("Show Details", lambda: detail_panel(self.due if self.due.get_visible() else self, v, r))],
-            [ui.menu.Item("Unflag" if r.get("flagged") else "Flag",
+            [ui.menu.Item(_("Show Details"), lambda: detail_panel(self.due if self.due.get_visible() else self, v, r))],
+            [ui.menu.Item(_("Unflag") if r.get("flagged") else _("Flag"),
                           lambda: (v.store.update_reminder(r, flagged=not r.get("flagged")), v.changed())),
-             ui.menu.Item("Mark as Not Completed" if r.get("completed") else "Mark as Completed",
+             ui.menu.Item(_("Mark as Not Completed") if r.get("completed") else _("Mark as Completed"),
                           lambda: self.check.set_active(not self.check.get_active())),
-             ui.menu.Item("Move to", submenu=lists)],
-            [ui.menu.Item("Delete", lambda: v.delete(r))],
+             ui.menu.Item(_("Move to"), submenu=lists)],
+            [ui.menu.Item(_("Delete"), lambda: v.delete(r))],
         ], at=(x, y), glass=True, passthrough=True)
 
 
@@ -255,9 +256,9 @@ def detail_panel(anchor: Gtk.Widget, view, r: dict) -> Gtk.Popover:
     """The ⓘ panel: notes, date & time, flag, priority, list."""
     st = view.store
     col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["rem-detail"])
-    title = Gtk.Entry(text=r.get("title", ""), placeholder_text="Title")
+    title = Gtk.Entry(text=r.get("title", ""), placeholder_text=_("Title"))
     title.add_css_class("rem-detail-title")
-    notes = Gtk.Entry(text=r.get("notes", ""), placeholder_text="Notes")
+    notes = Gtk.Entry(text=r.get("notes", ""), placeholder_text=_("Notes"))
     col.append(title)
     col.append(notes)
     col.append(ui.panel.separator())
@@ -316,18 +317,18 @@ def detail_panel(anchor: Gtk.Widget, view, r: dict) -> Gtk.Popover:
     cal.connect("day-selected", apply_due)
     hour.connect("value-changed", apply_due)
     minute.connect("value-changed", apply_due)
-    col.append(ui.panel.row("calendar-symbolic", "Date", date_sw))
+    col.append(ui.panel.row("calendar-symbolic", _("Date"), date_sw))
     col.append(cal_rev)
-    col.append(ui.panel.row("alarm-symbolic", "Time", time_sw))
+    col.append(ui.panel.row("alarm-symbolic", _("Time"), time_sw))
     col.append(time_rev)
     col.append(ui.panel.separator())
-    col.append(ui.panel.row("flag-symbolic", "Flag",
+    col.append(ui.panel.row("flag-symbolic", _("Flag"),
                             ui.controls.switch(bool(r.get("flagged")), lambda on: save(flagged=on))))
-    col.append(ui.panel.row(None, "Priority", ui.controls.popup_button(
-        PRIORITIES, int(r.get("priority") or 0), lambda i: save(priority=i))))
+    col.append(ui.panel.row(None, _("Priority"), ui.controls.popup_button(
+        [_(p) for p in PRIORITIES], int(r.get("priority") or 0), lambda i: save(priority=i))))
     ids = [x["id"] for x in st.lists]
-    col.append(ui.panel.row(None, "List", ui.controls.popup_button(
-        [x["name"] for x in st.lists], ids.index(r["list"]) if r.get("list") in ids else 0,
+    col.append(ui.panel.row(None, _("List"), ui.controls.popup_button(
+        [S.display_name(x) for x in st.lists], ids.index(r["list"]) if r.get("list") in ids else 0,
         lambda i: save(list=ids[i]))))
     pop = ui.panel.popup(anchor, col, position=Gtk.PositionType.LEFT if isinstance(anchor, Gtk.Button)
                          else Gtk.PositionType.BOTTOM)
@@ -388,11 +389,12 @@ class RemindersView(Gtk.Box):
                 self.list.select_row(row)
         if self.key in S.SMART:
             name, _icon, color = SMART_INFO[self.key]
+            name = _(name)
         else:
             lst = self.store.rlist(self.key) or {"name": "", "color": "blue"}
-            name, color = lst["name"], lst.get("color", "blue")
+            name, color = S.display_name(lst), lst.get("color", "blue")
         if self.query.strip():
-            name = f"Results for “{self.query.strip()}”"
+            name = _("Results for “{query}”").format(query=self.query.strip())
         self.title.set_label(name)
         for c in list(self.title.get_css_classes()):
             if c.startswith("c-"):
@@ -402,7 +404,7 @@ class RemindersView(Gtk.Box):
         self.title.add_css_class(f"c-{color}")
         self.count.add_css_class(f"c-{color}")
         self.count.set_label(str(len(items)) if self.key != "completed" else "")
-        self.empty.set_label("No Completed Reminders" if self.key == "completed" else "No Reminders")
+        self.empty.set_label(_("No Completed Reminders") if self.key == "completed" else _("No Reminders"))
         self.empty.set_visible(not items)
 
     def _header(self, row, before) -> None:
@@ -417,7 +419,7 @@ class RemindersView(Gtk.Box):
             lid = row.r.get("list")
             if before is None or before.r.get("list") != lid:
                 lst = self.store.rlist(lid)
-                text = lst["name"] if lst else None
+                text = S.display_name(lst) if lst else None
         if text is None:
             row.set_header(None)
             return

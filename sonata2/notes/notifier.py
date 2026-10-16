@@ -20,9 +20,10 @@ import time
 from gi.repository import Gio, GLib
 
 from ..config import atomic_write
+from ..i18n import N_, _
 from . import store as S
 
-APP_NAME = "Reminders"
+APP_NAME = N_("Reminders")
 DESKTOP_ENTRY = "io.github.vinioliveiras.sonata2.notes"     # Reminders lives in Notes
 GRACE = datetime.timedelta(minutes=5)
 MAX_WAIT = 300               # seconds: a suspend or a clock change can't make an alert late by more
@@ -72,8 +73,8 @@ class Notifier:
             due = self._claim(due)
         for r in due:
             lst = self.store.rlist(r.get("list"))
-            body = r.get("notes") or (lst["name"] if lst else "")
-            self.notify(r.get("title") or "New Reminder", body)
+            body = r.get("notes") or S.display_name(lst)
+            self.notify(r.get("title") or _("New Reminder"), body)
         self.schedule()
         return due
 
@@ -109,7 +110,7 @@ class Notifier:
                 return
             bus.call("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
                      "org.freedesktop.Notifications", "Notify",
-                     GLib.Variant("(susssasa{sv}i)", (APP_NAME, 0, "x-office-calendar", title, body, [],
+                     GLib.Variant("(susssasa{sv}i)", (_(APP_NAME), 0, "x-office-calendar", title, body, [],
                                                       {"urgency": GLib.Variant("y", 1),
                                                        "desktop-entry": GLib.Variant("s", DESKTOP_ENTRY)}, -1)),
                      None, Gio.DBusCallFlags.NONE, -1, None, lambda b, r: _finish(b, r))

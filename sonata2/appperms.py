@@ -14,6 +14,7 @@ Apps already installed when this came are taken as reviewed.
     review_gate(info, launch)     # apps.py's launch wrapper, after applock
 """
 from . import config
+from .i18n import _
 
 NAME = "appperms"
 DEFAULTS = {"ask": True, "reviewed": None, "limits": {}}
@@ -115,7 +116,7 @@ def ask(info, owner, wants, launch):
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, halign=Gtk.Align.CENTER)
     checks = {}
     for key, title in wants:
-        c = Gtk.CheckButton(label=title, active=True)
+        c = Gtk.CheckButton(label=_(title), active=True)
         checks[key] = c
         box.append(c)
 
@@ -133,9 +134,9 @@ def ask(info, owner, wants, launch):
                 launch()
         system.run_async(apply, opened)                   # overrides first: the app starts with them
     name = info.get_display_name()
-    dlg = dialog.alert(f"“{name}” wants to use", "Uncheck what it shouldn't use. You can change it later "
-                                                 "in Settings › Installed Apps.",
-                       [("cancel", "Don't Open", ""), ("open", "Open", "default")], answer)
+    dlg = dialog.alert(_("“{name}” wants to use").format(name=name),
+                       _("Uncheck what it shouldn't use. You can change it later in Settings › Installed Apps."),
+                       [("cancel", _("Don't Open"), ""), ("open", _("Open"), "default")], answer)
     dlg.set_extra_child(box)
     dlg.checks = checks                               # (tests)
     return dlg
@@ -148,9 +149,9 @@ def access_answer(title: str, subtitle: str, body: str, options: dict, done) -> 
         done(0)
         return
     from .ui import dialog
-    grant = options.get("grant_label") or "Allow"
-    deny = options.get("deny_label") or "Don't Allow"
+    grant = options.get("grant_label") or _("Allow")
+    deny = options.get("deny_label") or _("Don't Allow")
     text = "\n".join(t for t in (subtitle, body) if t) or \
-        "You can change this later in Settings › Installed Apps."
-    dialog.alert(title or "Allow access?", text, [("deny", deny, ""), ("grant", grant, "default")],
+        _("You can change this later in Settings › Installed Apps.")
+    dialog.alert(title or _("Allow access?"), text, [("deny", deny, ""), ("grant", grant, "default")],
                  lambda rid: done(0 if rid == "grant" else 1), close="deny")

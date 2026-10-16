@@ -11,6 +11,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk, Pango  # noqa: E402
 
 from .. import icons, ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 from . import folder, tags, thumbs  # noqa: E402
 from .folder import is_dir, sort_key  # noqa: E402
 
@@ -94,10 +95,10 @@ def content_type(info) -> str:
 
 def kind(info) -> str:
     if is_dir(info):
-        return "Folder"
+        return _("Folder")
     ct = content_type(info)
     if ct not in _kinds:
-        _kinds[ct] = Gio.content_type_get_description(ct) if ct else "Document"
+        _kinds[ct] = Gio.content_type_get_description(ct) if ct else _("Document")
         if _kinds[ct]:
             _kinds[ct] = _kinds[ct][:1].upper() + _kinds[ct][1:]
     return _kinds[ct]
@@ -166,10 +167,10 @@ def date(info, attr: str = "time::modified") -> str:
             - GLib.Date.new_dmy(dt.get_day_of_month(), GLib.DateMonth(dt.get_month()), dt.get_year()).get_julian())
     t = dt.format("%H:%M")
     if days == 0:
-        return f"Today at {t}"
+        return _("Today at {time}").format(time=t)
     if days == 1:
-        return f"Yesterday at {t}"
-    return dt.format("%-d %b %Y at %H:%M")
+        return _("Yesterday at {time}").format(time=t)
+    return dt.format(_("%-d %b %Y at %H:%M"))
 
 
 def icon_with_badge(image: Gtk.Image) -> Gtk.Overlay:
@@ -708,13 +709,13 @@ def folders_first(a, b) -> int:
 
 # Sort By (icons) and the list's headers: column title -> compare(a, b), ascending
 SORTS = {
-    "Name": lambda a, b: _cmp(sort_key(a), sort_key(b)),
-    "Kind": lambda a, b: _cmp(kind(a).casefold(), kind(b).casefold()) or _cmp(sort_key(a), sort_key(b)),
-    "Date Modified": lambda a, b: _cmp(a.get_attribute_uint64("time::modified"),
+    N_("Name"): lambda a, b: _cmp(sort_key(a), sort_key(b)),
+    N_("Kind"): lambda a, b: _cmp(kind(a).casefold(), kind(b).casefold()) or _cmp(sort_key(a), sort_key(b)),
+    N_("Date Modified"): lambda a, b: _cmp(a.get_attribute_uint64("time::modified"),
                                        b.get_attribute_uint64("time::modified")),
-    "Size": lambda a, b: _cmp(_size_key(a), _size_key(b)),
-    "Date Created": lambda a, b: _cmp(a.get_attribute_uint64("time::created"), b.get_attribute_uint64("time::created")),
-    "Date Last Opened": lambda a, b: _cmp(a.get_attribute_uint64("time::access"), b.get_attribute_uint64("time::access")),
+    N_("Size"): lambda a, b: _cmp(_size_key(a), _size_key(b)),
+    N_("Date Created"): lambda a, b: _cmp(a.get_attribute_uint64("time::created"), b.get_attribute_uint64("time::created")),
+    N_("Date Last Opened"): lambda a, b: _cmp(a.get_attribute_uint64("time::access"), b.get_attribute_uint64("time::access")),
 }
 
 
@@ -723,6 +724,16 @@ def _size_key(info):
         n = dir_size(info)
         return -1 if n is None else n
     return info.get_size()
+
+
+# a column's title as shown -> its English title (the key everything else uses: sort, widths)
+_KEY_OF = {}
+
+
+def _key(shown: str) -> str:
+    if not _KEY_OF:
+        _KEY_OF.update({_(t): t for t in SORTS})
+    return _KEY_OF.get(shown, shown)
 
 
 # the list's columns: (title, default width, shown at first); Name always shows
@@ -811,15 +822,15 @@ class ListView(_Cells):
         """(column title, descending) of the sort in effect."""
         s = self.view.get_sorter()
         col = s.get_primary_sort_column()
-        return ((col.get_title() if col else "Name"),
+        return ((_key(col.get_title()) if col else "Name"),
                 s.get_primary_sort_order() == Gtk.SortType.DESCENDING)
 
     def set_sort(self, title: str, descending: bool = False) -> None:
         """Sort by a column (an unknown title: Name), without reporting it as your choice."""
         cols = self.view.get_columns()
         col = next((cols.get_item(i) for i in range(cols.get_n_items())
-                    if cols.get_item(i).get_title() == title), None) or cols.get_item(0)
-        if self.sort_state() == (col.get_title(), bool(descending)):
+                    if _key(cols.get_item(i).get_title()) == title), None) or cols.get_item(0)
+        if self.sort_state() == (_key(col.get_title()), bool(descending)):
             return
         self._sorting = True
         try:
@@ -837,13 +848,13 @@ class ListView(_Cells):
         f.connect("bind", bind)
         if unbind:
             f.connect("unbind", unbind)
-        col = Gtk.ColumnViewColumn(title=title, factory=f, expand=expand, resizable=True,
+        col = Gtk.ColumnViewColumn(title=_(title), factory=f, expand=expand, resizable=True,
                                    sorter=Gtk.CustomSorter.new(lambda a, b, _d: cmp(a, b)))
         saved = _column_widths().get(title)
         width = saved if isinstance(saved, int) and saved > 0 else width
         if width > 0:
             col.set_fixed_width(width)
-        col.connect("notify::fixed-width", lambda c, _p: _save_column_width(c.get_title(), c.get_fixed_width()))
+        col.connect("notify::fixed-width", lambda c, _p: _save_column_width(title, c.get_fixed_width()))
         self.view.append_column(col)
         return col
 
@@ -1109,7 +1120,7 @@ def _preview(info) -> Gtk.Widget:
                          justify=Gtk.Justification.CENTER, css_classes=["fs-preview-name"]))
     box.append(Gtk.Label(label=f"{kind(info)} – {size(info)}", css_classes=["fs-preview-kind"]))
     grid = Gtk.Grid(column_spacing=8, row_spacing=2, margin_top=14, halign=Gtk.Align.CENTER)
-    for r, (k, v) in enumerate((("Modified", date(info)),)):
+    for r, (k, v) in enumerate(((_("Modified"), date(info)),)):
         grid.attach(Gtk.Label(label=k, xalign=1, css_classes=["fs-preview-key"]), 0, r, 1, 1)
         grid.attach(Gtk.Label(label=v, xalign=0, css_classes=["fs-preview-val"]), 1, r, 1, 1)
     box.append(grid)

@@ -29,6 +29,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, GObject, Gio, Gtk, Pango  # noqa: E402
 
 from .. import config, ui  # noqa: E402
+from ..i18n import _, ngettext  # noqa: E402
 from . import markup  # noqa: E402
 from . import store as S  # noqa: E402
 from .editor import NoteEditor, format_date  # noqa: E402
@@ -155,7 +156,7 @@ def _head(text: str) -> Gtk.ListBoxRow:
 
 class NotesWindow(Gtk.ApplicationWindow):
     def __init__(self, app, store: S.Store = None):
-        super().__init__(application=app, title="Notes")
+        super().__init__(application=app, title=_("Notes"))
         ui.window.remember_size(self, "notes", 1060, 640)  # its last size (never bigger than the display)
         self.add_css_class("sonata-notes")
         self.set_size_request(640, 380)
@@ -172,12 +173,12 @@ class NotesWindow(Gtk.ApplicationWindow):
         self._syncing = False
 
         self.toolbar = ui.window.glass_toolbar(self, start=(
-            ("sidebar-show-symbolic", "Show Sidebar", self.toggle_sidebar),), end=(
-            ("user-trash-symbolic", "Delete", self.delete_selected),
-            ("document-edit-symbolic", "New Note", self.new_note),
-            ("format-text-rich-symbolic", "Format", self.format_panel),
-            ("checkbox-checked-symbolic", "Make a Checklist", lambda: self._style("check")),
-            ("list-add-symbolic", "New Reminder", self.new_reminder)))
+            ("sidebar-show-symbolic", _("Show Sidebar"), self.toggle_sidebar),), end=(
+            ("user-trash-symbolic", _("Delete"), self.delete_selected),
+            ("document-edit-symbolic", _("New Note"), self.new_note),
+            ("format-text-rich-symbolic", _("Format"), self.format_panel),
+            ("checkbox-checked-symbolic", _("Make a Checklist"), lambda: self._style("check")),
+            ("list-add-symbolic", _("New Reminder"), self.new_reminder)))
         tools = self.toolbar.get_child().get_end_widget()
         btns = []
         child = tools.get_first_child()
@@ -185,7 +186,7 @@ class NotesWindow(Gtk.ApplicationWindow):
             btns.append(child)
             child = child.get_next_sibling()
         self.delete_btn, self.new_btn, self.format_btn, self.check_btn, self.rem_btn = btns
-        self.search = Gtk.SearchEntry(placeholder_text="Search", css_classes=["nt-search"])
+        self.search = Gtk.SearchEntry(placeholder_text=_("Search"), css_classes=["nt-search"])
         self.search.connect("search-changed", lambda e: self.set_query(e.get_text()))
         self.search.connect("stop-search", lambda e: (e.set_text(""), self._focus_content()))
         tools.append(self.search)
@@ -232,7 +233,7 @@ class NotesWindow(Gtk.ApplicationWindow):
         self.add_btn = Gtk.Button(can_focus=False)
         inner = Gtk.Box(spacing=6)
         inner.append(Gtk.Image(icon_name="list-add-symbolic"))
-        self.add_label = Gtk.Label(label="New Folder")
+        self.add_label = Gtk.Label(label=_("New Folder"))
         inner.append(self.add_label)
         self.add_btn.set_child(inner)
         self.add_btn.connect("clicked", lambda *_: self.new_folder() if self._notes_mode() else self.new_list())
@@ -244,19 +245,19 @@ class NotesWindow(Gtk.ApplicationWindow):
         self._syncing = True
         self.side.remove_all()
         st = self.store
-        self.side.append(_head("Notes"))
-        self.side.append(SideRow("n:" + S.ALL, "All Notes", "folder-symbolic"))
+        self.side.append(_head(_("Notes")))
+        self.side.append(SideRow("n:" + S.ALL, _("All Notes"), "folder-symbolic"))
         for f in st.folders:
-            self.side.append(SideRow("n:" + f["id"], f["name"], "folder-symbolic",
+            self.side.append(SideRow("n:" + f["id"], S.display_name(f), "folder-symbolic",
                                      editable=f["id"] != S.DEFAULT_FOLDER))
         if any(n.get("deleted") for n in st.notes):
-            self.side.append(SideRow("n:" + S.DELETED, "Recently Deleted", "user-trash-symbolic"))
-        self.side.append(_head("Reminders"))
+            self.side.append(SideRow("n:" + S.DELETED, _("Recently Deleted"), "user-trash-symbolic"))
+        self.side.append(_head(_("Reminders")))
         for k in S.SMART:
             name, icon, color = SMART_INFO[k]
-            self.side.append(SideRow("r:" + k, name, icon, badge=color))
+            self.side.append(SideRow("r:" + k, _(name), icon, badge=color))
         for x in st.lists:
-            self.side.append(SideRow("r:" + x["id"], x["name"], "view-list-bullet-symbolic",
+            self.side.append(SideRow("r:" + x["id"], S.display_name(x), "view-list-bullet-symbolic",
                                      badge=x.get("color", "blue"), editable=True))
         for row in self._side_rows():
             if isinstance(row.name, Gtk.EditableLabel):
@@ -298,8 +299,8 @@ class NotesWindow(Gtk.ApplicationWindow):
         for b in (self.format_btn, self.check_btn, self.new_btn):
             b.set_visible(notes)
         self.rem_btn.set_visible(not notes)
-        self.add_label.set_label("New Folder" if notes else "Add List")
-        self.search.set_placeholder_text("Search" if notes else "Search Reminders")
+        self.add_label.set_label(_("New Folder") if notes else _("Add List"))
+        self.search.set_placeholder_text(_("Search") if notes else _("Search Reminders"))
         if notes:
             self.reload_notes()
         else:
@@ -317,8 +318,8 @@ class NotesWindow(Gtk.ApplicationWindow):
         if key is None:
             in_notes = row is None or row.get_index() < (self._row("r:today").get_index() if self._row("r:today")
                                                           else 1 << 30)
-            sections = [[ui.menu.Item("New Folder", self.new_folder)]] if in_notes else \
-                [[ui.menu.Item("Add List", self.new_list)]]
+            sections = [[ui.menu.Item(_("New Folder"), self.new_folder)]] if in_notes else \
+                [[ui.menu.Item(_("Add List"), self.new_list)]]
             ui.menu.popup(self.side, sections, at=(x, y), glass=True, passthrough=True)
             return
         kind, ident = key.split(":", 1)
@@ -326,18 +327,18 @@ class NotesWindow(Gtk.ApplicationWindow):
         if kind == "n":
             f = st.folder(ident)
             deleted = ident == S.DELETED
-            sections = [[ui.menu.Item("New Folder", self.new_folder)],
-                        [ui.menu.Item("Rename Folder", lambda: row.name.start_editing(),
+            sections = [[ui.menu.Item(_("New Folder"), self.new_folder)],
+                        [ui.menu.Item(_("Rename Folder"), lambda: row.name.start_editing(),
                                       enabled=bool(f) and ident != S.DEFAULT_FOLDER),
-                         ui.menu.Item("Delete Folder", lambda: self.delete_folder(f),
+                         ui.menu.Item(_("Delete Folder"), lambda: self.delete_folder(f),
                                       enabled=bool(f) and ident != S.DEFAULT_FOLDER)]]
             if deleted:
-                sections = [[ui.menu.Item("Empty Recently Deleted", self.empty_deleted)]]
+                sections = [[ui.menu.Item(_("Empty Recently Deleted"), self.empty_deleted)]]
         else:
             x_ = st.rlist(ident)
-            sections = [[ui.menu.Item("Add List", self.new_list)],
-                        [ui.menu.Item("Rename List", lambda: row.name.start_editing(), enabled=bool(x_)),
-                         ui.menu.Item("Delete List", lambda: self.delete_list(x_),
+            sections = [[ui.menu.Item(_("Add List"), self.new_list)],
+                        [ui.menu.Item(_("Rename List"), lambda: row.name.start_editing(), enabled=bool(x_)),
+                         ui.menu.Item(_("Delete List"), lambda: self.delete_list(x_),
                                       enabled=bool(x_) and ident != S.DEFAULT_LIST)]]
         ui.menu.popup(self.side, sections, at=(x, y), glass=True, passthrough=True)
 
@@ -345,6 +346,9 @@ class NotesWindow(Gtk.ApplicationWindow):
         if label.get_editing():
             return
         kind, ident = row.key.split(":", 1)
+        x = self.store.folder(ident) if kind == "n" else self.store.rlist(ident)
+        if x is not None and label.get_text() == S.display_name(x):     # unchanged (a built-in name, translated)
+            return
         if kind == "n" and self.store.folder(ident):
             f = self.store.folder(ident)
             self.store.rename_folder(f, label.get_text())
@@ -361,14 +365,14 @@ class NotesWindow(Gtk.ApplicationWindow):
             label.set_text(name)
 
     def new_folder(self) -> None:
-        f = self.store.add_folder()
+        f = self.store.add_folder(_("New Folder"))
         self.rebuild_sidebar()
         self.select("n:" + f["id"])
         row = self._row("n:" + f["id"])
         GLib.idle_add(lambda: (row.name.start_editing(), False)[1])
 
     def new_list(self) -> None:
-        x = self.store.add_list()
+        x = self.store.add_list(_("New List"))
         self.rebuild_sidebar()
         self.select("r:" + x["id"])
         row = self._row("r:" + x["id"])
@@ -390,9 +394,10 @@ class NotesWindow(Gtk.ApplicationWindow):
         if not count:
             answer("delete")
             return
-        ui.dialog.alert(f"Are you sure you want to delete the folder “{f['name']}”?",
-                        f"Its {count} note{'s' if count != 1 else ''} will be moved to Recently Deleted.",
-                        [("cancel", "Cancel", ""), ("delete", "Delete", "destructive")], answer, parent=self)
+        ui.dialog.alert(_("Are you sure you want to delete the folder “{name}”?").format(name=S.display_name(f)),
+                        ngettext("Its {n} note will be moved to Recently Deleted.",
+                                 "Its {n} notes will be moved to Recently Deleted.", count).format(n=count),
+                        [("cancel", _("Cancel"), ""), ("delete", _("Delete"), "destructive")], answer, parent=self)
 
     def delete_list(self, x: dict) -> None:
         def answer(rid):
@@ -405,8 +410,9 @@ class NotesWindow(Gtk.ApplicationWindow):
             if was:
                 self.key = None
                 self.select("r:today")
-        ui.dialog.alert(f"Delete “{x['name']}”?", "This will delete all reminders in this list.",
-                        [("cancel", "Cancel", ""), ("delete", "Delete", "destructive")], answer, parent=self)
+        ui.dialog.alert(_("Delete “{name}”?").format(name=S.display_name(x)),
+                        _("This will delete all reminders in this list."),
+                        [("cancel", _("Cancel"), ""), ("delete", _("Delete"), "destructive")], answer, parent=self)
 
     def empty_deleted(self) -> None:
         def answer(rid):
@@ -414,9 +420,9 @@ class NotesWindow(Gtk.ApplicationWindow):
                 for n in self.store.notes_in(S.DELETED):
                     self.store.destroy_note(n)
                 self.after_notes_change()
-        ui.dialog.alert("Are you sure you want to permanently delete these notes?",
-                        "You can't undo this action.",
-                        [("cancel", "Cancel", ""), ("delete", "Delete", "destructive")], answer, parent=self)
+        ui.dialog.alert(_("Are you sure you want to permanently delete these notes?"),
+                        _("You can't undo this action."),
+                        [("cancel", _("Cancel"), ""), ("delete", _("Delete"), "destructive")], answer, parent=self)
 
     def toggle_sidebar(self) -> None:
         self.sidebar.set_visible(not self.sidebar.get_visible())
@@ -444,7 +450,7 @@ class NotesWindow(Gtk.ApplicationWindow):
         over = Gtk.Overlay(css_classes=["nt-list-pane"])
         over.set_child(Gtk.ScrolledWindow(child=self.listview, vexpand=True,
                                           hscrollbar_policy=Gtk.PolicyType.NEVER))
-        self.list_empty = Gtk.Label(label="No Notes", css_classes=["nt-empty"], can_target=False, visible=False)
+        self.list_empty = Gtk.Label(label=_("No Notes"), css_classes=["nt-empty"], can_target=False, visible=False)
         over.add_overlay(self.list_empty)
         over.set_size_request(200, -1)
         return over
@@ -479,7 +485,7 @@ class NotesWindow(Gtk.ApplicationWindow):
             show = self._folder() in (S.ALL, S.DELETED) or bool(self.query.strip())
             f = self.store.folder(item.note.get("folder"))
             folder.set_visible(show and f is not None)
-            fname.set_label(f["name"] if f else "")
+            fname.set_label(S.display_name(f))
         fill()
         box.handler = item.connect("changed", fill)
 
@@ -520,7 +526,7 @@ class NotesWindow(Gtk.ApplicationWindow):
             else:
                 self.selection.set_selected(pos)
             self._note_selected()
-        self.list_empty.set_label("No Results" if self.query.strip() else "No Notes")
+        self.list_empty.set_label(_("No Results") if self.query.strip() else _("No Notes"))
         self.list_empty.set_visible(not items)
         self.delete_btn.set_sensitive(bool(items))
 
@@ -568,7 +574,7 @@ class NotesWindow(Gtk.ApplicationWindow):
         while picked is not None and not (hasattr(picked, "parts")):
             picked = picked.get_parent() if picked is not self.listview else None
         if picked is None:
-            ui.menu.popup(self.listview, [[ui.menu.Item("New Note", self.new_note,
+            ui.menu.popup(self.listview, [[ui.menu.Item(_("New Note"), self.new_note,
                                                         enabled=self._folder() != S.DELETED)]],
                           at=(x, y), glass=True, passthrough=True)
             return
@@ -579,15 +585,15 @@ class NotesWindow(Gtk.ApplicationWindow):
         if note is None:
             return
         if note.get("deleted"):
-            sections = [[ui.menu.Item("Recover", lambda: self.recover(note))],
-                        [ui.menu.Item("Delete Immediately", lambda: self.delete_note(note))]]
+            sections = [[ui.menu.Item(_("Recover"), lambda: self.recover(note))],
+                        [ui.menu.Item(_("Delete Immediately"), lambda: self.delete_note(note))]]
         else:
-            moves = [[ui.menu.Item(f["name"], (lambda _on=None, fid=f["id"]: self.move_note(note, fid)),
+            moves = [[ui.menu.Item(S.display_name(f), (lambda _on=None, fid=f["id"]: self.move_note(note, fid)),
                                    checked=note.get("folder") == f["id"]) for f in self.store.folders]]
-            sections = [[ui.menu.Item("Unpin Note" if note.get("pinned") else "Pin Note",
+            sections = [[ui.menu.Item(_("Unpin Note") if note.get("pinned") else _("Pin Note"),
                                       lambda: self.pin(note, not note.get("pinned")))],
-                        [ui.menu.Item("Move to", submenu=moves)],
-                        [ui.menu.Item("Delete", lambda: self.delete_note(note))]]
+                        [ui.menu.Item(_("Move to"), submenu=moves)],
+                        [ui.menu.Item(_("Delete"), lambda: self.delete_note(note))]]
         ui.menu.popup(self.listview, sections, at=(x, y), glass=True, passthrough=True)
 
     # -- editor ------------------------------------------------------------------------------------------
@@ -596,7 +602,7 @@ class NotesWindow(Gtk.ApplicationWindow):
         self.editor.connect("edited", self._edited)
         over = Gtk.Overlay(css_classes=["nt-editor-pane"])
         over.set_child(self.editor)
-        self.editor_empty = Gtk.Label(label="No Note Selected", css_classes=["nt-empty"], visible=False,
+        self.editor_empty = Gtk.Label(label=_("No Note Selected"), css_classes=["nt-empty"], visible=False,
                                       can_target=False)
         over.add_overlay(self.editor_empty)
         over.set_size_request(280, -1)
@@ -646,8 +652,8 @@ class NotesWindow(Gtk.ApplicationWindow):
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         pop = None
         row = Gtk.Box(spacing=4, homogeneous=True, css_classes=["nt-fmt-row"])
-        for name, label, tip in (("bold", "B", "Bold"), ("italic", "I", "Italic"),
-                                 ("underline", "U", "Underline"), ("strike", "S", "Strikethrough")):
+        for name, label, tip in (("bold", "B", _("Bold")), ("italic", "I", _("Italic")),
+                                 ("underline", "U", _("Underline")), ("strike", "S", _("Strikethrough"))):
             b = Gtk.ToggleButton(active=name in active, tooltip_text=tip, can_focus=False)
             lab = Gtk.Label()
             lab.set_markup({"bold": "<b>B</b>", "italic": "<i>I</i>", "underline": "<u>U</u>",
@@ -656,9 +662,9 @@ class NotesWindow(Gtk.ApplicationWindow):
             b.connect("toggled", lambda _b, n=name: self._inline(n))
             row.append(b)
         col.append(row)
-        for k, label in (("title", "Title"), ("heading", "Heading"), ("subheading", "Subheading"),
-                         ("body", "Body"), (None, None), ("bullet", "•  Bulleted List"),
-                         ("number", "1.  Numbered List"), ("check", "Checklist")):
+        for k, label in (("title", _("Title")), ("heading", _("Heading")), ("subheading", _("Subheading")),
+                         ("body", _("Body")), (None, None), ("bullet", "•  " + _("Bulleted List")),
+                         ("number", "1.  " + _("Numbered List")), ("check", _("Checklist"))):
             if k is None:
                 col.append(ui.panel.separator())
                 continue
@@ -694,8 +700,8 @@ class NotesWindow(Gtk.ApplicationWindow):
             def answer(rid):
                 if rid == "delete":
                     self._do_delete(note)
-            ui.dialog.alert("Are you sure you want to delete this note?", "You can't undo this action.",
-                            [("cancel", "Cancel", ""), ("delete", "Delete", "destructive")], answer, parent=self)
+            ui.dialog.alert(_("Are you sure you want to delete this note?"), _("You can't undo this action."),
+                            [("cancel", _("Cancel"), ""), ("delete", _("Delete"), "destructive")], answer, parent=self)
             return
         self._do_delete(note)
 

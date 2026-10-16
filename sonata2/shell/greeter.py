@@ -25,6 +25,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import greetd, ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from .loginui import Backdrop, Mirror, WaitGuard, avatar, balanced, lift, password_field, top_clock, logind, power_bar, shake  # noqa: E402
 
 STATE = "/var/cache/sonata-greeter/state.json"
@@ -398,7 +399,7 @@ class Greeter:
         col.append(slot)
         links = self.links.add(Gtk.Box(spacing=4, halign=Gtk.Align.CENTER))
         if len(self.users) > 1:
-            other = Gtk.Button(label="Other Users", css_classes=["gr-link"])
+            other = Gtk.Button(label=_("Other Users"), css_classes=["gr-link"])
             other.connect("clicked", lambda *_: self._pick(None))
             links.append(other)
         if len(self.sessions) > 1:
@@ -449,7 +450,7 @@ class Greeter:
                 set_mode(o["name"], mode)
 
     def _display_button(self):
-        btn = Gtk.Button(icon_name="video-display-symbolic", css_classes=["gr-power"], tooltip_text="Displays",
+        btn = Gtk.Button(icon_name="video-display-symbolic", css_classes=["gr-power"], tooltip_text=_("Displays"),
                          halign=Gtk.Align.START, valign=Gtk.Align.END, margin_start=24, margin_bottom=24)
         btn.connect("clicked", lambda b: self._display_menu(b))
         return btn
@@ -488,8 +489,8 @@ class Greeter:
                 set_mode(o["name"], old)
 
         # in the login screen's own window: a separate one would open below it
-        dlg = ui.dialog.alert("Keep these display settings?", "Going back to the previous ones in 15 seconds.",
-                              [("revert", "Revert", ""), ("keep", "Keep", "default")],
+        dlg = ui.dialog.alert(_("Keep these display settings?"), _("Going back to the previous ones in 15 seconds."),
+                              [("revert", _("Revert"), ""), ("keep", _("Keep"), "default")],
                               lambda r: keep(r == "keep"), parent=self.windows[0] if self.windows else None)
 
         def expired():
@@ -545,7 +546,7 @@ class Greeter:
         self._stop_pulse()
         self.slot.set_visible_child_name("field")
         if err.error_type != "auth_error":
-            self.hint.set_label(str(err) or "Couldn't log in")
+            self.hint.set_label(str(err) or _("Couldn't log in"))
         shake(self.entry)
         if err.error_type == "auth_error":
             self.guard.failed(user)

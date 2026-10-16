@@ -19,11 +19,13 @@ import threading
 
 from gi.repository import GLib
 
+from ..i18n import N_, _
+
 XATTR = "user.xdg.tags"
 GIO_ATTR = "xattr::xdg.tags"          # how Gio's enumerations hand it over (in folder.ATTRS)
 PREFIX = "sonata:tag/"
-COLORS = (("Red", "#ff3b30"), ("Orange", "#ff9500"), ("Yellow", "#ffcc00"), ("Green", "#34c759"),
-          ("Blue", "#007aff"), ("Purple", "#af52de"), ("Gray", "#8e8e93"))
+COLORS = ((N_("Red"), "#ff3b30"), (N_("Orange"), "#ff9500"), (N_("Yellow"), "#ffcc00"), (N_("Green"), "#34c759"),
+          (N_("Blue"), "#007aff"), (N_("Purple"), "#af52de"), (N_("Gray"), "#8e8e93"))   # stored as is; shown _()
 NAMES = tuple(n for n, _c in COLORS)
 _lock = threading.Lock()
 
@@ -247,7 +249,7 @@ def menu_row(pop, states: dict, pick):
     for name, _c in COLORS:
         st = states.get(name, "none")
         b = Gtk.Button(css_classes=["fs-tag-pick"], can_focus=False,
-                       tooltip_text=("Remove " if st == "all" else "Add ") + f"“{name}” tag")
+                       tooltip_text=(_("Remove “{tag}” tag") if st == "all" else _("Add “{tag}” tag")).format(tag=_(name)))
         d = dot(name, 14)
         if st != "none":
             d.append(Gtk.Image(icon_name="object-select-symbolic" if st == "all" else "list-remove-symbolic",

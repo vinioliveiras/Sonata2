@@ -928,6 +928,7 @@ def screenshot(mode: str) -> int:
     import shutil
     import subprocess
     from gi.repository import Gio, GLib
+    from .i18n import _
     if not shutil.which("grim"):
         return 1
     desk = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DESKTOP) or GLib.get_home_dir()
@@ -947,7 +948,7 @@ def screenshot(mode: str) -> int:
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
                       "org.freedesktop.Notifications", "Notify",
-                      GLib.Variant("(susssasa{sv}i)", ("Screenshot", 0, path, "Screenshot", name, [],
+                      GLib.Variant("(susssasa{sv}i)", (_("Screenshot"), 0, path, _("Screenshot"), name, [],
                                                        {"desktop-entry": GLib.Variant("s", APP_IDS["files"]),
                                                         "image-path": GLib.Variant("s", path)}, -1)),
                       None, Gio.DBusCallFlags.NONE, 1000, None)

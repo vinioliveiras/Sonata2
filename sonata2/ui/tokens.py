@@ -452,11 +452,20 @@ def radius_tokens(r: dict) -> dict:
 # any colour. The window background takes it; the surfaces drawn around it
 # (content, panes, sidebars, menus, title bars) keep their distance to it,
 # so a tinted background tints them all alike.
+def N_(text: str) -> str:
+    """Marks a name for translation (i18n.N_; this file is also loaded on
+    its own, outside the package -- tools/wayfire-config.sh)."""
+    return text
+
+
+# names shown translated: _(name)
 BACKGROUNDS = {
-    "light": (("Default", "#ececec"), ("Paper", "#f5f3ee"), ("Sand", "#efe8dc"), ("Mist", "#e4e9f0"),
-              ("Mint", "#e3eee7"), ("Rose", "#f1e5e8"), ("Lavender", "#e9e5f2")),
-    "dark": (("Default", "#18181a"), ("Black", "#0b0b0c"), ("Graphite", "#26262a"), ("Navy", "#121826"),
-             ("Forest", "#121c16"), ("Plum", "#1d1420"), ("Espresso", "#1f1915")),
+    "light": ((N_("Default"), "#ececec"), (N_("Paper"), "#f5f3ee"), (N_("Sand"), "#efe8dc"),
+              (N_("Mist"), "#e4e9f0"), (N_("Mint"), "#e3eee7"), (N_("Rose"), "#f1e5e8"),
+              (N_("Lavender"), "#e9e5f2")),
+    "dark": ((N_("Default"), "#18181a"), (N_("Black"), "#0b0b0c"), (N_("Graphite"), "#26262a"),
+             (N_("Navy"), "#121826"), (N_("Forest"), "#121c16"), (N_("Plum"), "#1d1420"),
+             (N_("Espresso"), "#1f1915")),
 }
 # surfaces that follow the background (their own alpha, if any, is kept)
 BACKGROUND_FOLLOWERS = ("window_bg", "content_bg", "pane_bg", "sidebar_bg", "menu_bg", "solid_tint")

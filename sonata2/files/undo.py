@@ -9,6 +9,8 @@ Each action is a pair of callables run on the GTK thread; the file work
 itself runs in a thread (ops._in_thread) and reports errors the usual way."""
 from gi.repository import Gio, GLib
 
+from ..i18n import _
+
 LIMIT = 50
 
 
@@ -62,7 +64,7 @@ def _move(src: Gio.File, dest: Gio.File) -> None:
 def renamed(new: Gio.File, old_name: str) -> None:
     new_name = new.get_basename()
     parent = new.get_parent()
-    history.push(Action(f"Rename “{old_name}”",
+    history.push(Action(_("Rename “{name}”").format(name=old_name),
                         lambda: parent.get_child(new_name).set_display_name(old_name, None),
                         lambda: parent.get_child(old_name).set_display_name(new_name, None)))
 
@@ -71,7 +73,7 @@ def moved(pairs) -> None:
     """pairs: [(where it was, where it is now)]."""
     pairs = list(pairs)
     if pairs:
-        history.push(Action("Move" if len(pairs) > 1 else f"Move “{pairs[0][0].get_basename()}”",
+        history.push(Action(_("Move") if len(pairs) > 1 else _("Move “{name}”").format(name=pairs[0][0].get_basename()),
                             lambda: [_move(now, was) for was, now in reversed(pairs)],
                             lambda: [_move(was, now) for was, now in pairs]))
 
@@ -80,7 +82,7 @@ def copied(created) -> None:
     """created: the new copies (Copy, Duplicate, Paste): undone, they go to the Trash."""
     created = list(created)
     if created:
-        history.push(Action("Copy" if len(created) > 1 else f"Copy “{created[0].get_basename()}”",
+        history.push(Action(_("Copy") if len(created) > 1 else _("Copy “{name}”").format(name=created[0].get_basename()),
                             lambda: [f.trash(None) for f in created]))
 
 
@@ -90,14 +92,15 @@ def new_folder(child: Gio.File) -> None:
             child.delete(None)                       # only while empty
         except GLib.Error:
             child.trash(None)
-    history.push(Action("New Folder", undo, lambda: child.make_directory(None)))
+    history.push(Action(_("New Folder"), undo, lambda: child.make_directory(None)))
 
 
 def trashed(files) -> None:
     """Undo: each item back from the Trash to where it was."""
     paths = [f.get_path() for f in files if f.get_path()]
     if paths:
-        history.push(Action("Move to Trash" if len(paths) > 1 else f"Move “{files[0].get_basename()}” to Trash",
+        history.push(Action(_("Move to Trash") if len(paths) > 1 else
+                            _("Move “{name}” to Trash").format(name=files[0].get_basename()),
                             lambda: put_back_paths(paths),
                             lambda: [Gio.File.new_for_path(p).trash(None) for p in paths]))
 

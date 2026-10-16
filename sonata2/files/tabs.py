@@ -15,6 +15,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Graphene, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 SPRING_MS = 700            # a drag held over a tab brings it to the front
 
@@ -56,7 +57,7 @@ class _TabButton(Gtk.Box):
         mid.append(self.label)
         over.set_child(mid)
         close = Gtk.Button(icon_name="window-close-symbolic", css_classes=["fs-tab-close"],
-                           tooltip_text="Close Tab", halign=Gtk.Align.START, valign=Gtk.Align.CENTER,
+                           tooltip_text=_("Close Tab"), halign=Gtk.Align.START, valign=Gtk.Align.CENTER,
                            focusable=False)
         close.connect("clicked", lambda *_: strip.win.close_tab(tab))
         over.add_overlay(close)
@@ -145,7 +146,7 @@ class TabStrip(Gtk.Revealer):
         bar = Gtk.Box(css_classes=["fs-tabs"])
         self.row = Gtk.Box(homogeneous=True, hexpand=True)
         bar.append(self.row)
-        add = Gtk.Button(icon_name="list-add-symbolic", css_classes=["fs-tab-add"], tooltip_text="New Tab",
+        add = Gtk.Button(icon_name="list-add-symbolic", css_classes=["fs-tab-add"], tooltip_text=_("New Tab"),
                          valign=Gtk.Align.CENTER, focusable=False)
         add.connect("clicked", lambda *_: win.new_tab())
         bar.append(add)

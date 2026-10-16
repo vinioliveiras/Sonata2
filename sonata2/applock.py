@@ -13,6 +13,7 @@ Not asked: apps reopened at login (autostart) or after a crash
 import contextlib
 
 from . import config
+from .i18n import _
 
 NAME = "applock"
 DEFAULTS = {"apps": []}
@@ -69,7 +70,7 @@ def gate(info, launch) -> bool:
     def opened():
         with trusted():                            # (the launch comes back through gate)
             launch()
-    dialog.ask_password(f"“{name}” is locked", "Enter your password to open it.", opened)
+    dialog.ask_password(_("“{name}” is locked").format(name=name), _("Enter your password to open it."), opened)
     return True
 
 
@@ -82,5 +83,5 @@ def ask_unlock(info, done=None) -> None:
         set_locked(info.get_id(), False)
         if done:
             done()
-    dialog.ask_password(f"Unlock “{name}”?", "Enter your password to stop asking when it opens.",
-                        ok, ok="Unlock")
+    dialog.ask_password(_("Unlock “{name}”?").format(name=name),
+                        _("Enter your password to stop asking when it opens."), ok, ok=_("Unlock"))

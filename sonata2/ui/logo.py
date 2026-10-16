@@ -23,21 +23,25 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gsk", "4.0")
 from gi.repository import Gdk, GLib, Graphene, Gsk, Gtk  # noqa: E402
 
+from ..i18n import N_  # noqa: E402
+
 DEFAULT = "distro"
 EMOJI_EM = 0.85                     # an emoji's font size per pixel of logo height (its glyph is ~1.3 em tall)
 TEXT_MAX = 24                       # characters of custom text
-TEXTS = (("text:sonata", "Text: Sonata"), ("text:user", "Text: your name"), ("text:custom", "Text: custom…"))
-SHAPES = (("circle", "Circle"), ("square", "Square"), ("triangle", "Triangle"), ("diamond", "Diamond"),
-          ("hexagon", "Hexagon"), ("star", "Star"), ("ring", "Ring"))
-ICONS = (("starred-symbolic", "Star (outline)"), ("emblem-favorite-symbolic", "Heart"),
-         ("weather-clear-symbolic", "Sun"), ("weather-clear-night-symbolic", "Moon"),
-         ("audio-x-generic-symbolic", "Music"), ("applications-games-symbolic", "Game controller"),
-         ("utilities-terminal-symbolic", "Terminal"), ("face-smile-symbolic", "Smile"))
+# labels shown translated: _(label)
+TEXTS = (("text:sonata", N_("Text: Sonata")), ("text:user", N_("Text: your name")),
+         ("text:custom", N_("Text: custom…")))
+SHAPES = (("circle", N_("Circle")), ("square", N_("Square")), ("triangle", N_("Triangle")),
+          ("diamond", N_("Diamond")), ("hexagon", N_("Hexagon")), ("star", N_("Star")), ("ring", N_("Ring")))
+ICONS = (("starred-symbolic", N_("Star (outline)")), ("emblem-favorite-symbolic", N_("Heart")),
+         ("weather-clear-symbolic", N_("Sun")), ("weather-clear-night-symbolic", N_("Moon")),
+         ("audio-x-generic-symbolic", N_("Music")), ("applications-games-symbolic", N_("Game controller")),
+         ("utilities-terminal-symbolic", N_("Terminal")), ("face-smile-symbolic", N_("Smile")))
 
 
 def choices() -> list:
     """[(value, label)] for Settings."""
-    out = [("distro", "Distribution logo"), ("distro-colour", "Distribution logo, in colour"),
+    out = [("distro", N_("Distribution logo")), ("distro-colour", N_("Distribution logo, in colour")),
            ("sonata", "Sonata")]
     out += [(f"shape:{k}", label) for k, label in SHAPES]
     out += [(f"icon:{k}", label) for k, label in ICONS]

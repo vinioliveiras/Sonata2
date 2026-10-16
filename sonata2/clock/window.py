@@ -14,10 +14,11 @@ gi.require_version("Adw", "1")
 from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 from . import alarms as A  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.clock"
-PAGES = (("alarms", "Alarms"), ("stopwatch", "Stopwatch"), ("timers", "Timers"))
+PAGES = (("alarms", N_("Alarms")), ("stopwatch", N_("Stopwatch")), ("timers", N_("Timers")))
 
 ui.register("""
 window.sonata-clock .ck-main { background: %(content_bg)s; }
@@ -48,24 +49,24 @@ def h24() -> bool:
 class ClockWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         if not GLib.get_application_name():
-            GLib.set_application_name("Clock")
-        super().__init__(application=app, title="Clock", css_classes=["sonata-clock"])
+            GLib.set_application_name(_("Clock"))
+        super().__init__(application=app, title=_("Clock"), css_classes=["sonata-clock"])
         ui.window.standard(self)
         ui.window.remember_size(self, "clock", 460, 560)
         self.set_size_request(380, 360)
-        self.toolbar = ui.window.glass_toolbar(self, end=(("list-add-symbolic", "New Alarm", self.add),))
+        self.toolbar = ui.window.glass_toolbar(self, end=(("list-add-symbolic", _("New Alarm"), self.add),))
         self.add_btn = self.toolbar.get_child().get_end_widget().get_first_child()
-        self.tabs = ui.controls.segmented(PAGES, on_pick=self.show_page, plain=True)
+        self.tabs = ui.controls.segmented([(k, _(t)) for k, t in PAGES], on_pick=self.show_page, plain=True)
         self.toolbar.get_child().set_center_widget(self.tabs)
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col.append(self.toolbar)
         self.pages = Gtk.Stack(vexpand=True)               # (no animation between them, Vini)
         col.append(self.pages)
         main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, vexpand=True, css_classes=["ck-main"])
-        main.append(Gtk.Label(label="Alarms", xalign=0, css_classes=["ck-title"]))
+        main.append(Gtk.Label(label=_("Alarms"), xalign=0, css_classes=["ck-title"]))
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["ck-list"])
         self.list.connect("row-activated", lambda _l, row: self.edit(row.alarm, row))
-        self.empty = Gtk.Label(label="No Alarms", css_classes=["ck-empty"], vexpand=True, valign=Gtk.Align.CENTER)
+        self.empty = Gtk.Label(label=_("No Alarms"), css_classes=["ck-empty"], vexpand=True, valign=Gtk.Align.CENTER)
         main.append(self.empty)
         main.append(Gtk.ScrolledWindow(child=self.list, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER))
         self.pages.add_named(main, "alarms")
@@ -132,7 +133,7 @@ class ClockWindow(Gtk.ApplicationWindow):
         row.alarm, row.switch = a, sw
         menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
         menu.connect("pressed", lambda g, _n, x, y, r=row: ui.menu.popup(
-            r, [[ui.menu.Item("Delete Alarm", lambda: self.delete(r.alarm["id"]))]], at=(x, y)))
+            r, [[ui.menu.Item(_("Delete Alarm"), lambda: self.delete(r.alarm["id"]))]], at=(x, y)))
         row.add_controller(menu)
         return row
 
@@ -197,33 +198,33 @@ class ClockWindow(Gtk.ApplicationWindow):
         box.append(times)
         days = Gtk.Box(spacing=4, halign=Gtk.Align.CENTER)
         toggles = []
-        for i, d in enumerate(A.DAYS):
+        for i, d in enumerate(_(d) for d in A.DAYS):
             t = Gtk.ToggleButton(label=d[0], active=i in a["repeat"], css_classes=["ck-day"], tooltip_text=d)
             toggles.append(t)
             days.append(t)
         box.append(days)
-        label = Gtk.Entry(text=a["label"], placeholder_text="Alarm")
+        label = Gtk.Entry(text=a["label"], placeholder_text=_("Alarm"))
         box.append(label)
         snooze = Gtk.Box(spacing=8)
-        snooze.append(Gtk.Label(label="Snooze", hexpand=True, xalign=0))
+        snooze.append(Gtk.Label(label=_("Snooze"), hexpand=True, xalign=0))
         snooze_sw = Gtk.Switch(active=a["snooze"])
         snooze.append(snooze_sw)
         box.append(snooze)
         # the sound: picking one plays it once (a preview), like the iPhone
         keys = list(A.SOUNDS)
         sound = Gtk.Box(spacing=8)
-        sound.append(Gtk.Label(label="Sound", hexpand=True, xalign=0))
-        sound_dd = ui.controls.popup_button([A.SOUNDS[k][0] for k in keys],
+        sound.append(Gtk.Label(label=_("Sound"), hexpand=True, xalign=0))
+        sound_dd = ui.controls.popup_button([_(A.SOUNDS[k][0]) for k in keys],
                                             keys.index(a["sound"]) if a["sound"] in keys else 0,
                                             lambda i: self.preview(keys[i]))
         sound.append(sound_dd)
         box.append(sound)
         btns = Gtk.Box(spacing=8, margin_top=4)
         if not new:
-            btns.append(ui.controls.push_button("Delete", lambda: (pop.popdown(), self.delete(a["id"])),
+            btns.append(ui.controls.push_button(_("Delete"), lambda: (pop.popdown(), self.delete(a["id"])),
                                                 style="destructive"))
         btns.append(Gtk.Box(hexpand=True))
-        btns.append(ui.controls.push_button("Cancel", pop.popdown))
+        btns.append(ui.controls.push_button(_("Cancel"), pop.popdown))
 
         def save():
             a.update(hour=int(hour.get_value()), minute=int(minute.get_value()),
@@ -232,7 +233,7 @@ class ClockWindow(Gtk.ApplicationWindow):
                      sound=keys[sound_dd.get_selected()], enabled=True)
             pop.popdown()
             self.put(a)
-        btns.append(ui.controls.push_button("Save", save, style="default"))
+        btns.append(ui.controls.push_button(_("Save"), save, style="default"))
         box.append(btns)
         label.connect("activate", lambda _e: save())
         pop.set_child(box)

@@ -22,6 +22,7 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from . import layer  # noqa: E402
 
 THUMB_W = 240
@@ -54,17 +55,17 @@ def _parse(line: str):
         rest = line[len("Window: "):].strip()
         if rest.endswith(")") and " (" in rest:
             title, ident = rest[:-1].rsplit(" (", 1)
-            return "window", title.strip() or "Window", ident.strip()
+            return "window", title.strip() or _("Window"), ident.strip()
         if ": " in rest:                            # older versions: "Window: <id>: <title>"
-            return "window", rest.split(": ", 1)[1].strip() or "Window", None
-        return "window", "Window", rest or None     # only the identifier
+            return "window", rest.split(": ", 1)[1].strip() or _("Window"), None
+        return "window", _("Window"), rest or None     # only the identifier
     return "screen", line.strip(), line.strip()
 
 
 def _display_name(connector: str) -> str:
     """"Acer KG241Y" for HDMI-A-1 (the built-in panel: "Built-in Display")."""
     if connector.startswith(("eDP", "LVDS", "DSI")):
-        return "Built-in Display"
+        return _("Built-in Display")
     mons = Gdk.Display.get_default().get_monitors()
     for i in range(mons.get_n_items()):
         m = mons.get_item(i)
@@ -187,7 +188,7 @@ class Picker(Gtk.Window):
                                            max_content_height=grid_max_height(screen[1]) if screen else 520)
         panel.append(self.scroller)
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel", css_classes=["sonata-button"])
+        cancel = Gtk.Button(label=_("Cancel"), css_classes=["sonata-button"])
         cancel.connect("clicked", lambda *_: self._finish(None))
         go = Gtk.Button(label=action, css_classes=["sonata-button", "default"])
         go.connect("clicked", lambda *_: self._act())
@@ -253,8 +254,8 @@ class SharePicker(Picker):
                           "texture": tex, "badge": badge,
                           "icon": "video-display-symbolic" if kind == "screen" else "window-symbolic",
                           "value": line})
-        super().__init__(app, "Choose what to share", "The app will see everything on the screen you pick.",
-                         items, "Share", self._done)
+        super().__init__(app, _("Choose what to share"), _("The app will see everything on the screen you pick."),
+                         items, _("Share"), self._done)
 
     def _done(self, line):
         self.result = line

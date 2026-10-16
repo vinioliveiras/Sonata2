@@ -19,6 +19,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
 from .. import apps, icons, ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 PREFIX = "folder:"
 GRID = 3                  # mini icons per row on the folder's icon
@@ -359,7 +360,7 @@ def open_panel(dock, tile, then=None, rename=False) -> Gtk.Popover:
     # Dock's panel never got the keys (editing in place did nothing there)
     title = Gtk.Label(label=folder["name"], css_classes=["dock-folder-title"], halign=Gtk.Align.CENTER,
                       xalign=0.5, justify=Gtk.Justification.CENTER, max_width_chars=28,
-                      ellipsize=Pango.EllipsizeMode.END, tooltip_text="Rename")
+                      ellipsize=Pango.EllipsizeMode.END, tooltip_text=_("Rename"))
     title.editable = False
     click = Gtk.GestureClick()
     click.connect("released", lambda *_a: title.editable and ask_rename(dock, tile, pop))
@@ -418,12 +419,12 @@ def _lock_view(dock, tile, pop, then=None) -> None:
     from .. import pam
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, css_classes=["dock-folder-lock"])
     box.append(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=32))
-    box.append(Gtk.Label(label="Enter your password to open this folder" if then is None
-                         else "Enter your password to change this folder", wrap=True,
+    box.append(Gtk.Label(label=_("Enter your password to open this folder") if then is None
+                         else _("Enter your password to change this folder"), wrap=True,
                          justify=Gtk.Justification.CENTER, max_width_chars=30))
     entry = Gtk.PasswordEntry(show_peek_icon=True, halign=Gtk.Align.CENTER)
     box.append(entry)
-    hint = Gtk.Label(label="" if pam.available() else "Passwords can't be checked (PAM missing)",
+    hint = Gtk.Label(label="" if pam.available() else _("Passwords can't be checked (PAM missing)"),
                      css_classes=["hint"])
     box.append(hint)
     pop.view.append(box)
@@ -444,7 +445,7 @@ def _lock_view(dock, tile, pop, then=None) -> None:
             pop.view.remove_css_class("dock-folder-view")         # zoom in again, now with the apps
             GLib.idle_add(lambda: (pop.view.add_css_class("dock-folder-view"), False)[1])
         else:
-            hint.set_label("Wrong password")
+            hint.set_label(_("Wrong password"))
             entry.set_text("")
             entry.grab_focus()
             box.remove_css_class("shake")
@@ -498,7 +499,7 @@ def ask_rename(dock, tile, pop=None) -> None:
         return
 
     def ask():
-        ui.dialog.ask_text("Rename Folder", f["name"], "Rename", lambda name: dock.rename_folder(tile.key, name))
+        ui.dialog.ask_text(_("Rename Folder"), f["name"], _("Rename"), lambda name: dock.rename_folder(tile.key, name))
     if pop is not None and pop.get_visible():
         close_panel(pop, then=ask)
     else:
@@ -534,8 +535,8 @@ def _app_button(dock, tile, key, pop) -> Gtk.Button:
     b.connect("clicked", lambda _b: close_panel(pop, lambda: dock.open_app(key, tile)))
     menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
     menu.connect("pressed", lambda g, _n, x, y: ui.menu.popup(b, [[
-        ui.menu.Item("Open", lambda: close_panel(pop, lambda: dock.open_app(key, tile))),
-        ui.menu.Item("Remove from Folder", lambda: (pop.popdown(), dock.remove_from_folder(tile.key, key)))]],
+        ui.menu.Item(_("Open"), lambda: close_panel(pop, lambda: dock.open_app(key, tile))),
+        ui.menu.Item(_("Remove from Folder"), lambda: (pop.popdown(), dock.remove_from_folder(tile.key, key)))]],
         at=(x, y)))
     b.add_controller(menu)
     # dragged out of the panel: out of the folder, into the Dock (Vini)
@@ -570,17 +571,17 @@ def folder_menu(dock, tile):
     tile.label.popdown()
     locked = bool((dock.folder(tile.key) or {}).get("locked"))
     if locked:
-        lock = Item("Unlock Folder\u2026", lambda: open_panel(
+        lock = Item(_("Unlock Folder\u2026"), lambda: open_panel(
             dock, tile, then=lambda: dock.set_folder_locked(tile.key, False)))
-        ungroup = Item("Ungroup\u2026", lambda: open_panel(dock, tile, then=lambda: dock.ungroup(tile.key)))
+        ungroup = Item(_("Ungroup\u2026"), lambda: open_panel(dock, tile, then=lambda: dock.ungroup(tile.key)))
     else:
-        lock = Item("Lock Folder", lambda: dock.set_folder_locked(tile.key, True))
-        ungroup = Item("Ungroup", lambda: dock.ungroup(tile.key))
-    return ui.menu.popup(tile, [[Item("Open", lambda: open_panel(dock, tile)),
-                                 Item("Rename\u2026", lambda: open_panel(dock, tile, rename=True)
+        lock = Item(_("Lock Folder"), lambda: dock.set_folder_locked(tile.key, True))
+        ungroup = Item(_("Ungroup"), lambda: dock.ungroup(tile.key))
+    return ui.menu.popup(tile, [[Item(_("Open"), lambda: open_panel(dock, tile)),
+                                 Item(_("Rename\u2026"), lambda: open_panel(dock, tile, rename=True)
                                       if dock.folder(tile.key).get("locked") else ask_rename(dock, tile))],
                                 [lock],
-                                [ungroup, Item("Remove from Dock", lambda: remove_with_puff(dock, tile))]],
+                                [ungroup, Item(_("Remove from Dock"), lambda: remove_with_puff(dock, tile))]],
                          position=dock.away)
 
 
@@ -597,8 +598,8 @@ def app_items(dock, key) -> list:
     if is_folder(key) or key in PERMANENT or key not in dock.cfg["pinned"] or not apps.lookup(key):
         return []
     Item = ui.menu.Item
-    items = [Item("Add to New Folder", lambda: dock.make_folder([key]))]
+    items = [Item(_("Add to New Folder"), lambda: dock.make_folder([key]))]
     for fkey in [k for k in dock.cfg["pinned"] if is_folder(k) and dock.folder(k)]:
-        items.append(Item(f"Move to “{dock.folder(fkey)['name']}”",
+        items.append(Item(_("Move to “{name}”").format(name=dock.folder(fkey)['name']),
                           lambda f=fkey: dock.add_to_folder(f, key)))
     return items

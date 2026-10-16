@@ -43,13 +43,14 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from .. import config, ui  # noqa: E402
+from ..i18n import N_, _, language, ngettext  # noqa: E402
 from . import document, search, session, source  # noqa: E402
 from .tabs import TabStrip  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.textedit"
 DEFAULTS = {"font_size": 14, "wrap": True, "font": "auto", "line_numbers": False}
 SIZES = (9, 10, 11, 12, 13, 14, 16, 18, 20, 24, 28, 32, 40, 48)
-FONTS = (("auto", "Automatic"), ("sans", "Sans-Serif"), ("serif", "Serif"), ("mono", "Monospace"))
+FONTS = (("auto", N_("Automatic")), ("sans", N_("Sans-Serif")), ("serif", N_("Serif")), ("mono", N_("Monospace")))
 SAVE_DELAY_MS = 1000             # session autosave debounce
 STATS_DELAY_MS = 300             # word count debounce
 CHANGED_ON_DISK = "changed on disk"   # Document.write(): another program changed the file
@@ -215,9 +216,9 @@ class Document:
             else:
                 dec = document.decode(data)
         except document.BinaryFile:
-            return "It isn't a text document TextEdit can read."
+            return _("It isn't a text document TextEdit can read.")
         except ValueError as e:
-            return f"The document is damaged ({e})."
+            return _("The document is damaged ({error}).").format(error=e)
         self.set_text(dec.text)
         self.file = f
         self.etag = etag
@@ -309,9 +310,14 @@ def _untitled_name() -> str:
     for p in _S["parked"]:
         used |= {t.get("title") for t in p.get("tabs", []) if not t.get("uri")}
     n = 1
-    while ("Untitled" if n == 1 else f"Untitled {n}") in used:
+    while (_("Untitled") if n == 1 else _("Untitled {n}").format(n=n)) in used:
         n += 1
-    return "Untitled" if n == 1 else f"Untitled {n}"
+    return _("Untitled") if n == 1 else _("Untitled {n}").format(n=n)
+
+
+def _thousands(n: int) -> str:
+    """1,234 / 1.234 / 1 234: the language's digit grouping."""
+    return f"{n:,}".replace(",", {"pt_BR": ".", "pt_PT": "\u00a0"}.get(language(), ","))
 
 
 def _rgba(token, alpha=1.0):
@@ -332,7 +338,7 @@ class TextEditWindow(Gtk.ApplicationWindow):
     def __init__(self, app, path: str = None, restore: dict = None):
         if not GLib.get_application_name():
             GLib.set_application_name("TextEdit")          # Recent documents need it
-        super().__init__(application=app, title="Untitled", css_classes=["sonata-textedit"])
+        super().__init__(application=app, title=_("Untitled"), css_classes=["sonata-textedit"])
         ui.window.standard(self)
         _apply_size()
         ui.window.remember_size(self, "textedit", 760, 580)     # a session window: its own size (_restore)
@@ -386,11 +392,11 @@ class TextEditWindow(Gtk.ApplicationWindow):
     # -- chrome ------------------------------------------------------------------------------
     def _toolbar(self):
         handle = ui.window.glass_toolbar(self, end=(
-            ("edit-find-symbolic", "Find (⌘F)", lambda: self._show_find()),
-            ("tab-new-symbolic", "New Tab (⌘T)", lambda: self.new_tab())))
+            ("edit-find-symbolic", _("Find (⌘F)"), lambda: self._show_find()),
+            ("tab-new-symbolic", _("New Tab (⌘T)"), lambda: self.new_tab())))
         bar = handle.get_child()
         start = Gtk.Box(spacing=2, valign=Gtk.Align.CENTER, css_classes=["te-tools"])
-        self.font_btn = Gtk.Button(css_classes=["tool", "te-font"], can_focus=False, tooltip_text="Font")
+        self.font_btn = Gtk.Button(css_classes=["tool", "te-font"], can_focus=False, tooltip_text=_("Font"))
         fb = Gtk.Box()
         self.font_label = Gtk.Label()
         fb.append(self.font_label)
@@ -400,18 +406,18 @@ class TextEditWindow(Gtk.ApplicationWindow):
         start.append(self.font_btn)
         start.append(Gtk.Box(css_classes=["te-sep"], valign=Gtk.Align.CENTER))
         smaller = Gtk.Button(label="A", css_classes=["tool", "te-a-small"], can_focus=False,
-                             tooltip_text="Smaller (⌘−)")
+                             tooltip_text=_("Smaller (⌘−)"))
         smaller.connect("clicked", lambda *_: self._zoom(-1))
         self.size_label = Gtk.Label(css_classes=["te-size"])
-        bigger = Gtk.Button(label="A", css_classes=["tool", "te-a-big"], can_focus=False, tooltip_text="Bigger (⌘+)")
+        bigger = Gtk.Button(label="A", css_classes=["tool", "te-a-big"], can_focus=False, tooltip_text=_("Bigger (⌘+)"))
         bigger.connect("clicked", lambda *_: self._zoom(1))
         for w in (smaller, self.size_label, bigger):
             start.append(w)
         start.append(Gtk.Box(css_classes=["te-sep"], valign=Gtk.Align.CENTER))
         self.wrap_btn = Gtk.ToggleButton(icon_name="view-wrapped-symbolic", css_classes=["tool"], can_focus=False,
-                                         tooltip_text="Wrap Lines")
+                                         tooltip_text=_("Wrap Lines"))
         self.lines_btn = Gtk.ToggleButton(icon_name="view-list-ordered-symbolic", css_classes=["tool"],
-                                          can_focus=False, tooltip_text="Line Numbers")
+                                          can_focus=False, tooltip_text=_("Line Numbers"))
         self.wrap_btn.connect("toggled", lambda b: self._set_option("wrap", b.get_active()))
         self.lines_btn.connect("toggled", lambda b: self._set_option("line_numbers", b.get_active()))
         start.append(self.wrap_btn)
@@ -422,7 +428,7 @@ class TextEditWindow(Gtk.ApplicationWindow):
 
     def _sync_tools(self) -> None:
         cfg = _cfg()
-        self.font_label.set_label(dict(FONTS)[cfg["font"]])
+        self.font_label.set_label(_(dict(FONTS)[cfg["font"]]))
         self.size_label.set_label(str(cfg["font_size"]))
         self._syncing = True
         self.wrap_btn.set_active(bool(cfg["wrap"]))
@@ -431,18 +437,18 @@ class TextEditWindow(Gtk.ApplicationWindow):
 
     def _status_bar(self):
         bar = Gtk.Box(css_classes=["te-status"])
-        self.pos_btn = Gtk.Button(can_focus=False, tooltip_text="Go to Line (⌘L)")
+        self.pos_btn = Gtk.Button(can_focus=False, tooltip_text=_("Go to Line (⌘L)"))
         self.pos_btn.connect("clicked", lambda *_: self._goto_line())
         bar.append(self.pos_btn)
-        self.ro_label = Gtk.Label(label="Read-only (converted)", css_classes=["te-ro"], visible=False,
-                                  tooltip_text="Converted to plain text: Save writes a .txt copy")
+        self.ro_label = Gtk.Label(label=_("Read-only (converted)"), css_classes=["te-ro"], visible=False,
+                                  tooltip_text=_("Converted to plain text: Save writes a .txt copy"))
         bar.append(self.ro_label)
         bar.append(Gtk.Box(hexpand=True))
         self.lang_label = Gtk.Label(css_classes=["te-plain"])
         self.count_label = Gtk.Label(css_classes=["te-plain"])
-        self.enc_btn = Gtk.Button(can_focus=False, tooltip_text="Text Encoding")
+        self.enc_btn = Gtk.Button(can_focus=False, tooltip_text=_("Text Encoding"))
         self.enc_btn.connect("clicked", lambda b: self._encoding_menu(b))
-        self.nl_btn = Gtk.Button(can_focus=False, tooltip_text="Line Endings")
+        self.nl_btn = Gtk.Button(can_focus=False, tooltip_text=_("Line Endings"))
         self.nl_btn.connect("clicked", lambda b: self._newline_menu(b))
         for w in (self.lang_label, self.count_label, self.enc_btn, self.nl_btn):
             bar.append(w)
@@ -520,10 +526,10 @@ class TextEditWindow(Gtk.ApplicationWindow):
                 self._remove_tab(doc)
                 if then:
                     then()
-        ui.dialog.alert(f"Do you want to save the changes made to the document “{doc.name}”?",
-                        "Your changes will be lost if you don't save them.",
-                        [("discard", "Don't Save", "destructive"), ("cancel", "Cancel", ""),
-                         ("save", "Save…" if doc.file is None or doc.readonly else "Save", "default")],
+        ui.dialog.alert(_("Do you want to save the changes made to the document “{name}”?").format(name=doc.name),
+                        _("Your changes will be lost if you don't save them."),
+                        [("discard", _("Don't Save"), "destructive"), ("cancel", _("Cancel"), ""),
+                         ("save", _("Save…") if doc.file is None or doc.readonly else _("Save"), "default")],
                         answer, parent=self)
 
     def _remove_tab(self, doc: Document) -> None:
@@ -542,9 +548,9 @@ class TextEditWindow(Gtk.ApplicationWindow):
     def _tab_menu(self, doc, widget, x, y) -> None:
         others = [d for d in self.docs if d is not doc]
         ui.menu.popup(widget, [
-            [ui.menu.Item("Close Tab", lambda: self.close_tab(doc)),
-             ui.menu.Item("Close Other Tabs", lambda: self._close_many(others), enabled=bool(others))],
-            [ui.menu.Item("Move Tab to New Window", lambda: self.move_to_new_window(doc), enabled=bool(others))],
+            [ui.menu.Item(_("Close Tab"), lambda: self.close_tab(doc)),
+             ui.menu.Item(_("Close Other Tabs"), lambda: self._close_many(others), enabled=bool(others))],
+            [ui.menu.Item(_("Move Tab to New Window"), lambda: self.move_to_new_window(doc), enabled=bool(others))],
         ], at=(x, y), glass=True, passthrough=True)
 
     def _close_many(self, docs) -> None:
@@ -595,14 +601,15 @@ class TextEditWindow(Gtk.ApplicationWindow):
     def _cursor_moved(self, doc: Document) -> None:
         if doc is self.doc:
             it = doc.buffer.get_iter_at_mark(doc.buffer.get_insert())
-            self.pos_btn.set_label(f"Line {it.get_line() + 1}, Column {it.get_line_offset() + 1}")
+            self.pos_btn.set_label(_("Line {line}, Column {column}").format(line=it.get_line() + 1,
+                                                                          column=it.get_line_offset() + 1))
             schedule_save()
 
     def _update_title(self) -> None:
         doc = self.doc
         if doc is None:
             return
-        title = doc.name + (" — Edited" if doc.dirty else "")
+        title = _("{name} — Edited").format(name=doc.name) if doc.dirty else doc.name
         self.set_title(title)
         self.bar.title_label.set_label(title)
 
@@ -629,10 +636,11 @@ class TextEditWindow(Gtk.ApplicationWindow):
         if doc is None:
             return False
         n = doc.buffer.get_char_count()
-        chars = f"{n:,} character{'s' if n != 1 else ''}"
+        chars = ngettext("{n} character", "{n} characters", n).format(n=_thousands(n))
         if n <= MAX_STATS:
             w = document.words(doc.text())
-            self.count_label.set_label(f"{w:,} word{'s' if w != 1 else ''}, {chars}")
+            words = ngettext("{n} word", "{n} words", w).format(n=_thousands(w))
+            self.count_label.set_label(_("{words}, {characters}").format(words=words, characters=chars))
         else:
             self.count_label.set_label(chars)
         return False
@@ -653,7 +661,7 @@ class TextEditWindow(Gtk.ApplicationWindow):
         if err:
             if len(self.docs) > 1 and doc.blank:
                 self._remove_tab(doc)
-            self._tell(f"“{f.get_basename()}” couldn't be opened.", err)
+            self._tell(_("“{name}” couldn't be opened.").format(name=f.get_basename()), err)
             return False
         Gtk.RecentManager.get_default().add_item(f.get_uri())
         self._update_tab(doc)
@@ -666,7 +674,7 @@ class TextEditWindow(Gtk.ApplicationWindow):
 
     def _tell(self, heading: str, body: str) -> None:
         def show():
-            ui.dialog.alert(heading, body, [("ok", "OK", "default")], parent=self)
+            ui.dialog.alert(heading, body, [("ok", _("OK"), "default")], parent=self)
             return False
         if self.get_mapped():
             show()
@@ -686,21 +694,22 @@ class TextEditWindow(Gtk.ApplicationWindow):
                     doc.encoding, doc.bom = "utf-8", False
                     self._update_status(full=True)
                     self.save(doc, then)
-            ui.dialog.alert(f"“{doc.name}” can't be saved using {document.label(doc.encoding)}.",
-                            "Some characters can't be written in that encoding. Save it as Unicode (UTF-8)?",
-                            [("cancel", "Cancel", ""), ("utf8", "Save as UTF-8", "default")], answer, parent=self)
+            ui.dialog.alert(_("“{name}” can't be saved using {encoding}.").format(name=doc.name,
+                                                                               encoding=document.label(doc.encoding)),
+                            _("Some characters can't be written in that encoding. Save it as Unicode (UTF-8)?"),
+                            [("cancel", _("Cancel"), ""), ("utf8", _("Save as UTF-8"), "default")], answer, parent=self)
             return
         if err is CHANGED_ON_DISK:
             def overwrite(rid):
                 if rid == "overwrite":
                     self.save(doc, then, force=True)
-            ui.dialog.alert(f"“{doc.name}” has been changed by another application.",
-                            "Saving now replaces those changes with this document.",
-                            [("cancel", "Cancel", "default"), ("overwrite", "Save Anyway", "destructive")],
+            ui.dialog.alert(_("“{name}” has been changed by another application.").format(name=doc.name),
+                            _("Saving now replaces those changes with this document."),
+                            [("cancel", _("Cancel"), "default"), ("overwrite", _("Save Anyway"), "destructive")],
                             overwrite, parent=self)
             return
         if err:
-            self._tell(f"“{doc.name}” couldn't be saved.", err)
+            self._tell(_("“{name}” couldn't be saved.").format(name=doc.name), err)
             return
         self._update_tab(doc)
         schedule_save()
@@ -732,8 +741,8 @@ class TextEditWindow(Gtk.ApplicationWindow):
                 self._update_status(full=True)
                 self._update_title()
                 self.save(doc, then)
-        dlg = ChooserWindow(self.get_application(), mode="save", title="Save", folder=folder, name=name,
-                            filters=[("Plain Text", [(0, "*.txt")]), ("All Files", [(0, "*")])],
+        dlg = ChooserWindow(self.get_application(), mode="save", title=_("Save"), folder=folder, name=name,
+                            filters=[(_("Plain Text"), [(0, "*.txt")]), (_("All Files"), [(0, "*")])],
                             on_done=done)
         dlg.set_transient_for(self)
         dlg.set_modal(True)
@@ -745,8 +754,8 @@ class TextEditWindow(Gtk.ApplicationWindow):
         def done(uris, _i):
             for uri in uris or []:
                 self.open_file(Gio.File.new_for_uri(uri))
-        dlg = ChooserWindow(self.get_application(), mode="open", title="Open", multiple=True,
-                            filters=[("Text Documents", [(1, "text/*")]), ("All Files", [(0, "*")])],
+        dlg = ChooserWindow(self.get_application(), mode="open", title=_("Open"), multiple=True,
+                            filters=[(_("Text Documents"), [(1, "text/*")]), (_("All Files"), [(0, "*")])],
                             on_done=done)
         dlg.set_transient_for(self)
         dlg.present()
@@ -802,7 +811,7 @@ class TextEditWindow(Gtk.ApplicationWindow):
             try:
                 _ok, data, etag = doc.file.load_contents(None)
             except GLib.Error as e:
-                self._tell(f"“{doc.name}” couldn't be reopened.", e.message)
+                self._tell(_("“{name}” couldn't be reopened.").format(name=doc.name), e.message)
                 return
             doc.etag = etag
             text = bytes(data).decode(enc, errors="replace")
@@ -810,12 +819,12 @@ class TextEditWindow(Gtk.ApplicationWindow):
             doc.encoding, doc.bom, doc.newline = enc, False, document.detect_newline(text)
             self._update_status(full=True)
             self._update_title()
-        save_items = [ui.menu.Item(lbl, (lambda _on, e=e: use(e)), checked=doc.encoding == e)
+        save_items = [ui.menu.Item(_(lbl), (lambda _on, e=e: use(e)), checked=doc.encoding == e)
                       for e, lbl in document.ENCODINGS.items()]
-        reopen_items = [ui.menu.Item(lbl, (lambda e=e: reopen(e)))
+        reopen_items = [ui.menu.Item(_(lbl), (lambda e=e: reopen(e)))
                         for e, lbl in document.ENCODINGS.items()]
         ui.menu.popup(btn, [save_items,
-                            [ui.menu.Item("Reopen with Encoding", submenu=[reopen_items],
+                            [ui.menu.Item(_("Reopen with Encoding"), submenu=[reopen_items],
                                           enabled=doc.file is not None and not doc.dirty)]], glass=True)
 
     def _newline_menu(self, btn) -> None:
@@ -826,21 +835,21 @@ class TextEditWindow(Gtk.ApplicationWindow):
                 doc.newline = nl
                 doc.buffer.set_modified(True)
                 self._update_status(full=True)
-        ui.menu.popup(btn, [[ui.menu.Item(lbl, (lambda _on, n=n: use(n)), checked=doc.newline == n)
+        ui.menu.popup(btn, [[ui.menu.Item(_(lbl), (lambda _on, n=n: use(n)), checked=doc.newline == n)
                              for n, lbl in document.NEWLINE_LABELS.items()]], glass=True)
 
     def _font_menu(self, btn) -> None:
         cur = _cfg()["font"]
-        ui.menu.popup(btn, [[ui.menu.Item(lbl, (lambda _on, k=k: self._set_option("font", k)), checked=cur == k)
+        ui.menu.popup(btn, [[ui.menu.Item(_(lbl), (lambda _on, k=k: self._set_option("font", k)), checked=cur == k)
                              for k, lbl in FONTS[:1]],
-                            [ui.menu.Item(lbl, (lambda _on, k=k: self._set_option("font", k)), checked=cur == k)
+                            [ui.menu.Item(_(lbl), (lambda _on, k=k: self._set_option("font", k)), checked=cur == k)
                              for k, lbl in FONTS[1:]]], position=Gtk.PositionType.BOTTOM, glass=True)
 
     def _goto_line(self) -> None:
         doc = self.doc
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["te-goto"])
-        entry = Gtk.Entry(placeholder_text=f"Line (1–{doc.buffer.get_line_count()}), or line:column")
-        box.append(Gtk.Label(label="Go to Line", xalign=0))
+        entry = Gtk.Entry(placeholder_text=_("Line (1–{count}), or line:column").format(count=doc.buffer.get_line_count()))
+        box.append(Gtk.Label(label=_("Go to Line"), xalign=0))
         box.append(entry)
         pop = ui.panel.popup(self.pos_btn, box, position=Gtk.PositionType.TOP)
 
@@ -888,39 +897,39 @@ class TextEditWindow(Gtk.ApplicationWindow):
         self._replacing = False
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["te-find"])
         row = Gtk.Box(spacing=6)
-        self.find_entry = Gtk.SearchEntry(placeholder_text="Find", hexpand=False)
+        self.find_entry = Gtk.SearchEntry(placeholder_text=_("Find"), hexpand=False)
         self.find_entry.connect("search-changed", lambda *_: self._find(0))
         self.find_entry.connect("activate", lambda *_: self._find(1))
         self.find_entry.connect("stop-search", lambda *_: self._hide_find())
         self.case_btn = Gtk.ToggleButton(label="Aa", css_classes=["te-opt"], can_focus=False,
-                                         tooltip_text="Match Case")
+                                         tooltip_text=_("Match Case"))
         self.regex_btn = Gtk.ToggleButton(label=".*", css_classes=["te-opt"], can_focus=False,
-                                          tooltip_text="Regular Expression")
+                                          tooltip_text=_("Regular Expression"))
         self.word_btn = Gtk.ToggleButton(label="W", css_classes=["te-opt"], can_focus=False,
-                                         tooltip_text="Whole Words")
+                                         tooltip_text=_("Whole Words"))
         for b in (self.case_btn, self.regex_btn, self.word_btn):
             b.connect("toggled", lambda *_: self._find(0, move=False))
         nav = Gtk.Box(css_classes=["linked"])
-        prev = Gtk.Button(icon_name="go-previous-symbolic", css_classes=["te-nav"], tooltip_text="Previous (⇧⌘G)")
+        prev = Gtk.Button(icon_name="go-previous-symbolic", css_classes=["te-nav"], tooltip_text=_("Previous (⇧⌘G)"))
         prev.connect("clicked", lambda *_: self._find(-1))
-        nxt = Gtk.Button(icon_name="go-next-symbolic", css_classes=["te-nav"], tooltip_text="Next (⌘G)")
+        nxt = Gtk.Button(icon_name="go-next-symbolic", css_classes=["te-nav"], tooltip_text=_("Next (⌘G)"))
         nxt.connect("clicked", lambda *_: self._find(1))
         nav.append(prev)
         nav.append(nxt)
         self.find_count = Gtk.Label(css_classes=["te-count"])
-        self.replace_check = Gtk.CheckButton(label="Replace")
+        self.replace_check = Gtk.CheckButton(label=_("Replace"))
         self.replace_check.connect("toggled", lambda b: self.replace_rev.set_reveal_child(b.get_active()))
-        done = ui.controls.push_button("Done", self._hide_find)
+        done = ui.controls.push_button(_("Done"), self._hide_find)
         for w in (self.find_entry, self.case_btn, self.word_btn, self.regex_btn, nav, self.find_count,
                   Gtk.Box(hexpand=True), self.replace_check, done):
             row.append(w)
         col.append(row)
         rrow = Gtk.Box(spacing=6)
-        self.replace_entry = Gtk.Entry(placeholder_text="Replace", width_chars=24)
+        self.replace_entry = Gtk.Entry(placeholder_text=_("Replace"), width_chars=24)
         self.replace_entry.connect("activate", lambda *_: self.replace_one())
         rrow.append(self.replace_entry)
-        rrow.append(ui.controls.push_button("Replace", self.replace_one))
-        rrow.append(ui.controls.push_button("Replace All", self.replace_all))
+        rrow.append(ui.controls.push_button(_("Replace"), self.replace_one))
+        rrow.append(ui.controls.push_button(_("Replace All"), self.replace_all))
         self.replace_rev = Gtk.Revealer(child=rrow, reveal_child=False, transition_duration=120,
                                         transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN)
         col.append(self.replace_rev)
@@ -960,7 +969,7 @@ class TextEditWindow(Gtk.ApplicationWindow):
             return search.find_all(self.doc.text(), needle, **self._opts())
         except re.error:
             self.find_count.add_css_class("error")
-            self.find_count.set_label("Invalid pattern")
+            self.find_count.set_label(_("Invalid pattern"))
             return None
 
     def _find(self, direction: int, move: bool = True) -> None:
@@ -979,7 +988,7 @@ class TextEditWindow(Gtk.ApplicationWindow):
             buf.apply_tag(doc.found, buf.get_iter_at_offset(a), buf.get_iter_at_offset(b))
         n = len(spans)
         more = "+" if n >= search.MAX_MATCHES else ""
-        self.find_count.set_label(f"{n}{more} found" if n else "Not found")
+        self.find_count.set_label(ngettext("{n} found", "{n} found", n).format(n=f"{n}{more}") if n else _("Not found"))
         if not n or not move:
             return
         sel = buf.get_selection_bounds()
@@ -1030,7 +1039,7 @@ class TextEditWindow(Gtk.ApplicationWindow):
             self._spans()
             return 0
         if not spans:
-            self.find_count.set_label("Not found")
+            self.find_count.set_label(_("Not found"))
             return 0
         opts = self._opts()
         news = [search.expand(text, s, needle, repl, **opts) for s in spans] if opts["regex"] else None
@@ -1043,7 +1052,7 @@ class TextEditWindow(Gtk.ApplicationWindow):
         buf.end_user_action()
         self._replacing = False
         self._find(0, move=False)
-        self.find_count.set_label(f"{len(spans)} replaced")
+        self.find_count.set_label(ngettext("{n} replaced", "{n} replaced", len(spans)).format(n=len(spans)))
         return len(spans)
 
     # -- keys --------------------------------------------------------------------------------

@@ -24,6 +24,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import apps, config, icons, ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from . import layer  # noqa: E402
 
 BANNER_W = 344
@@ -280,11 +281,11 @@ def _markup(text: str) -> str:
 def _ago(t: float) -> str:
     s = time.time() - t
     if s < 60:
-        return "now"
+        return _("now")
     if s < 3600:
-        return f"{int(s // 60)}m ago"
+        return _("{n}m ago").format(n=int(s // 60))
     if s < 86400:
-        return f"{int(s // 3600)}h ago"
+        return _("{n}h ago").format(n=int(s // 3600))
     return time.strftime("%d %b", time.localtime(t))
 
 
@@ -751,10 +752,10 @@ class _Center(Gtk.Window):
             self.col.remove(self.col.get_first_child())
         notes = list(reversed(self.owner.notes))
         head = Gtk.Box()
-        head.append(Gtk.Label(label="Notifications" if notes else "No Notifications", xalign=0, hexpand=True,
+        head.append(Gtk.Label(label=_("Notifications") if notes else _("No Notifications"), xalign=0, hexpand=True,
                               css_classes=["nc-head"]))
         if notes:
-            clear = Gtk.Button(label="Clear All", css_classes=["nc-clear"], valign=Gtk.Align.CENTER)
+            clear = Gtk.Button(label=_("Clear All"), css_classes=["nc-clear"], valign=Gtk.Align.CENTER)
             clear.connect("clicked", lambda *_: self.owner.clear())
             head.append(clear)
         self.col.append(head)
@@ -835,14 +836,14 @@ def _up_next(events) -> Gtk.Widget:
     today = now.date()
     soon = [(o, c) for o, c in events if o.end > now and o.start.date() <= today + dt.timedelta(days=1)][:3]
     if not soon:
-        box.append(Gtk.Label(label="No more events today", xalign=0, css_classes=["nc-event-day"]))
+        box.append(Gtk.Label(label=_("No more events today"), xalign=0, css_classes=["nc-event-day"]))
         return box
     shown_day = None
     for o, color in soon:
         day = o.start.date() if o.start.date() >= today else today
         if day != shown_day:
             shown_day = day
-            box.append(Gtk.Label(label="TODAY" if day == today else "TOMORROW", xalign=0,
+            box.append(Gtk.Label(label=_("TODAY") if day == today else _("TOMORROW"), xalign=0,
                                  css_classes=["nc-event-day"]))
         row = Gtk.Box(css_classes=["nc-event"])
         bar = Gtk.Box(css_classes=["nc-event-bar"])
@@ -852,9 +853,9 @@ def _up_next(events) -> Gtk.Widget:
         bar.get_style_context().add_provider(prov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         row.append(bar)
         texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        texts.append(Gtk.Label(label=o.event.summary or "New Event", xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=1,
+        texts.append(Gtk.Label(label=o.event.summary or _("New Event"), xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=1,
                                hexpand=True, css_classes=["nc-event-title"]))
-        when = "All day" if o.event.all_day else \
+        when = _("All day") if o.event.all_day else \
             f"{o.start.strftime('%H:%M')} – {o.end.strftime('%H:%M')}"
         texts.append(Gtk.Label(label=when, xalign=0, css_classes=["nc-event-time"]))
         row.append(texts)
@@ -876,7 +877,8 @@ def _month(events=(), on_day=None) -> Gtk.Widget:
     first = pycal.SUNDAY
     cal = pycal.Calendar(firstweekday=first)
     busy = {o.start.day for o, _c in events if (o.start.year, o.start.month) == (y, m)}
-    for i, d in enumerate(("S", "M", "T", "W", "T", "F", "S")):
+    # the weekday initials, Sunday first (one string: "S" and "T" are two days each)
+    for i, d in enumerate(_("S M T W T F S").split()[:7]):
         grid.attach(Gtk.Label(label=d, css_classes=["nc-wd"]), i, 0, 1, 1)
     for r, week in enumerate(cal.monthdayscalendar(y, m), start=1):
         for c, day in enumerate(week):

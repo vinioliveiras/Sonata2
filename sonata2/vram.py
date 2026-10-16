@@ -16,7 +16,8 @@ import subprocess
 import threading
 import time
 
-from . import logs
+from . import i18n, logs
+from .i18n import _
 
 EVERY_S = 15
 WARN = 0.85                  # warn at 85 % ...
@@ -158,12 +159,14 @@ class VramWatch:
         self._log(used, total, procs)
         if not self.warned and self.notify:
             self.warned = True
-            body = "Closing apps you don't need keeps Sonata from stopping."
+            body = _("Closing apps you don't need keeps Sonata from stopping.")
             if procs:
                 pid, name, mib = procs[0]
-                body = f"{name} is using {mib / 1024:.1f} GB. " + body
+                size = f"{mib / 1024:.1f}"
+                size = size.replace(".", ",") if i18n.language() in ("pt_BR", "pt_PT") else size
+                body = _("{name} is using {size} GB.").format(name=name, size=size) + " " + body
             from gi.repository import GLib
-            GLib.idle_add(lambda: self.notify("Graphics memory almost full", body) and False)
+            GLib.idle_add(lambda: self.notify(_("Graphics memory almost full"), body) and False)
         return used, total, procs
 
     def _log(self, used, total, procs) -> None:

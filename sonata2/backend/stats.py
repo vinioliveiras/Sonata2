@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ..activity import procfs
+from ..i18n import _
 
 INTERVAL_MS = 1000
 HISTORY = 30                       # samples kept for the little graphs
@@ -525,5 +526,5 @@ def text(kind: str, r: Reading) -> str:
     return ""
 
 
-FPS_HINTS = {"no-plugin": "Rebuild Sonata's Wayfire plugin (install.sh) to read FPS",
-             "no-app": "No app in front", "starting": "Counting…", "ok": "", "off": ""}
+FPS_HINTS = {"no-plugin": _("Rebuild Sonata's Wayfire plugin (install.sh) to read FPS"),
+             "no-app": _("No app in front"), "starting": _("Counting…"), "ok": "", "off": ""}

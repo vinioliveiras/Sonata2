@@ -22,6 +22,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 from .. import config, ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 from . import layer  # noqa: E402
 
 THUMB_MS = 5000
@@ -177,7 +178,7 @@ def _app_gicon(app_id):
 
 def _app_name(app_id):
     info = _app_info(app_id)
-    return info.get_name() if info else (app_id or "Window")
+    return info.get_name() if info else (app_id or _("Window"))
 
 
 def _slurp(args, stdin=None):
@@ -495,7 +496,7 @@ class RecordingControl(BarPill):
     stop button, over the middle of the recorded display's menu bar."""
 
     def __init__(self, app, owner):
-        super().__init__(app, "Screen Recording", "sonata2-recording")
+        super().__init__(app, _("Screen Recording"), "sonata2-recording")
         self.owner, self._src, self._t0 = owner, 0, 0
         box = self.box
         box.append(Gtk.Box(css_classes=["rec-dot"], valign=Gtk.Align.CENTER))
@@ -506,7 +507,7 @@ class RecordingControl(BarPill):
         from .livedraw import pen_button                 # draw on the screen (livedraw.py)
         self.output = None
         box.append(pen_button(app, lambda: self.output))
-        stop = stop_button("Stop Recording")
+        stop = stop_button(_("Stop Recording"))
         stop.connect("clicked", lambda *_: self.owner.stop_recording())
         box.append(stop)
 
@@ -598,8 +599,8 @@ class Capture:
             items = [{"name": _display_name(o.get("name", "")),
                       "texture": fit_texture(frozen.output(o.get("name"))) if frozen else None,
                       "icon": "video-display-symbolic", "value": o.get("name")} for o in outs]
-            self._pick("Choose a display to " + ("record" if rec else "capture"), items,
-                       "Record" if rec else "Capture", lambda out: go(output=out))
+            self._pick(_("Choose a display to record") if rec else _("Choose a display to capture"), items,
+                       _("Record") if rec else _("Capture"), lambda out: go(output=out))
         elif what == "window":
             try:
                 views = _ipc().call("window-rules/list-views") or []
@@ -612,8 +613,8 @@ class Capture:
             items = [{"name": w["title"] or _app_name(w["app"]),
                       "texture": fit_texture(frozen.crop(w["geo"])) if frozen else None,
                       "badge": _app_gicon(w["app"]), "value": w["geo"]} for w in wins]
-            self._pick("Choose a window to " + ("record" if rec else "capture"), items,
-                       "Record" if rec else "Capture", lambda geo: go(geo=geo))
+            self._pick(_("Choose a window to record") if rec else _("Choose a window to capture"), items,
+                       _("Record") if rec else _("Capture"), lambda geo: go(geo=geo))
         elif what == "area":
             if not shutil.which("slurp"):
                 self._missing("slurp")
@@ -747,8 +748,8 @@ class Capture:
             self.pill.stop()
         nc = getattr(self.bar, "notifications", None)
         if nc:
-            nc.notify("Screen Recording", 0, "dialog-warning", "Screen recording didn't start",
-                      "Details in " + _logs_path("recorder.log"), [], {}, -1)
+            nc.notify("Screen Recording", 0, "dialog-warning", _("Screen recording didn't start"),
+                      _("Details in {path}").format(path=_logs_path("recorder.log")), [], {}, -1)
         return False
 
     def stop_recording(self):
@@ -778,7 +779,7 @@ class Capture:
             self._movie_thumbnail(path)
             nc = getattr(self.bar, "notifications", None)
             if nc:
-                nc.notify("Screen Recording", 0, "media-record", "Screen Recording saved",
+                nc.notify("Screen Recording", 0, "media-record", _("Screen Recording saved"),
                           os.path.basename(path), [], {"desktop-entry": "io.github.vinioliveiras.sonata2.files"},
                           -1)
 
@@ -806,17 +807,17 @@ class Capture:
     def _missing(self, tool):
         nc = getattr(self.bar, "notifications", None)
         if nc:
-            nc.notify("Screenshot", 0, "dialog-warning", f"{tool} is not installed",
-                      f"Install {tool} to use this capture mode.", [], {}, -1)
+            nc.notify("Screenshot", 0, "dialog-warning", _("{tool} is not installed").format(tool=tool),
+                      _("Install {tool} to use this capture mode.").format(tool=tool), [], {}, -1)
 
 
 class _Toolbar(Gtk.Window):
-    MODES = (("display", "sonata-capture-screen-symbolic", "Capture a Display"),
-             ("window", "sonata-capture-window-symbolic", "Capture a Window"),
-             ("area", "sonata-capture-area-symbolic", "Capture Selected Portion"),
-             ("rec-display", "sonata-record-screen-symbolic", "Record a Display"),
-             ("rec-window", "sonata-record-window-symbolic", "Record a Window"),
-             ("rec-area", "sonata-record-area-symbolic", "Record Selected Portion"))
+    MODES = (("display", "sonata-capture-screen-symbolic", N_("Capture a Display")),
+             ("window", "sonata-capture-window-symbolic", N_("Capture a Window")),
+             ("area", "sonata-capture-area-symbolic", N_("Capture Selected Portion")),
+             ("rec-display", "sonata-record-screen-symbolic", N_("Record a Display")),
+             ("rec-window", "sonata-record-window-symbolic", N_("Record a Window")),
+             ("rec-area", "sonata-record-area-symbolic", N_("Record Selected Portion")))
 
     def __init__(self, app, owner: Capture):
         super().__init__(application=app, title="Screenshot", decorated=False, resizable=False)
@@ -824,7 +825,7 @@ class _Toolbar(Gtk.Window):
         self.owner = owner
         self.cfg = config.load("capture", DEFAULTS)
         bar = Gtk.Box(spacing=2, css_classes=["cap-bar"])
-        close = Gtk.Button(icon_name="window-close-symbolic", tooltip_text="Close")
+        close = Gtk.Button(icon_name="window-close-symbolic", tooltip_text=_("Close"))
         close.connect("clicked", lambda *_: self.set_visible(False))
         bar.append(close)
         bar.append(Gtk.Box(css_classes=["cap-sep"]))
@@ -834,16 +835,16 @@ class _Toolbar(Gtk.Window):
         for i, (mode, icon, tip) in enumerate(self.MODES):
             if i == 3:
                 bar.append(Gtk.Box(css_classes=["cap-sep"]))
-            b = Gtk.ToggleButton(icon_name=icon, tooltip_text=tip, group=first, active=(mode == "display"))
+            b = Gtk.ToggleButton(icon_name=icon, tooltip_text=_(tip), group=first, active=(mode == "display"))
             b.connect("toggled", lambda b, m=mode: b.get_active() and self._set_mode(m))
             first = first or b
             bar.append(b)
             self.mode_buttons[mode] = b
         bar.append(Gtk.Box(css_classes=["cap-sep"]))
-        opts = Gtk.MenuButton(label="Options", direction=Gtk.ArrowType.UP)
+        opts = Gtk.MenuButton(label=_("Options"), direction=Gtk.ArrowType.UP)
         opts.set_create_popup_func(self._options)
         bar.append(opts)
-        self.go = Gtk.Button(label="Capture", css_classes=["cap-go"])
+        self.go = Gtk.Button(label=_("Capture"), css_classes=["cap-go"])
         self.go.connect("clicked", lambda *_: self._go())
         bar.append(self.go)
         self.set_child(bar)
@@ -862,7 +863,7 @@ class _Toolbar(Gtk.Window):
 
     def _set_mode(self, m):
         self.mode = m
-        self.go.set_label("Record" if m.startswith("rec") else "Capture")
+        self.go.set_label(_("Record") if m.startswith("rec") else _("Capture"))
         if self.cfg.get("mode") != m:                 # opened next time on the same one (Vini)
             self.cfg["mode"] = m
             config.update("capture", mode=m)
@@ -884,28 +885,28 @@ class _Toolbar(Gtk.Window):
 
         def places(key, first, extra=()):
             other = c.get(key + "_dir") if c.get(key + "_to") == "other" else ""
-            opts = [first, ("desktop", "Desktop"), ("documents", "Documents")] + list(extra)
+            opts = [first, ("desktop", _("Desktop")), ("documents", _("Documents"))] + list(extra)
             items = [Item(label, lambda _on, v=v: setv(key + "_to", v), checked=c.get(key + "_to") == v)
                      for v, label in opts]
-            items.append(Item(f"Other: {os.path.basename(other)}" if other else "Other Folder…",
+            items.append(Item(_("Other: {folder}").format(folder=os.path.basename(other)) if other else _("Other Folder…"),
                               lambda _on: self._pick_folder(key), checked=bool(other)))
             return [items]
         pop = ui.menu.popup(button, [
-            [Item("Save Screenshots To", submenu=places("shots", ("pictures", "Pictures"),
-                                                        [("clipboard", "Clipboard")])),
+            [Item(_("Save Screenshots To"), submenu=places("shots", ("pictures", _("Pictures")),
+                                                           [("clipboard", _("Clipboard"))])),
              # saved to a folder and copied too (Vini); "Clipboard" above is the clipboard alone
-             Item("Also Copy Screenshots to Clipboard", lambda on: setv("shots_copy", bool(on)),
+             Item(_("Also Copy Screenshots to Clipboard"), lambda on: setv("shots_copy", bool(on)),
                   checked=bool(c.get("shots_copy")) or c.get("shots_to") == "clipboard",
                   enabled=c.get("shots_to") != "clipboard"),
-             Item("Save Recordings To", submenu=places("movies", ("videos", "Videos")))],
-            [Item("Timer: None", lambda _on: setv("timer", 0), checked=c["timer"] == 0),
-             Item("Timer: 5 Seconds", lambda _on: setv("timer", 5), checked=c["timer"] == 5),
-             Item("Timer: 10 Seconds", lambda _on: setv("timer", 10), checked=c["timer"] == 10)],
+             Item(_("Save Recordings To"), submenu=places("movies", ("videos", _("Videos"))))],
+            [Item(_("Timer: None"), lambda _on: setv("timer", 0), checked=c["timer"] == 0),
+             Item(_("Timer: 5 Seconds"), lambda _on: setv("timer", 5), checked=c["timer"] == 5),
+             Item(_("Timer: 10 Seconds"), lambda _on: setv("timer", 10), checked=c["timer"] == 10)],
             # recordings: sound (macOS: Options > Microphone)
-            [Item("Record Without Sound", lambda _on: setv("audio", "none"), checked=c.get("audio") == "none"),
-             Item("Record System Sound", lambda _on: setv("audio", "system"),
+            [Item(_("Record Without Sound"), lambda _on: setv("audio", "none"), checked=c.get("audio") == "none"),
+             Item(_("Record System Sound"), lambda _on: setv("audio", "system"),
                   checked=c.get("audio", "system") == "system"),
-             Item("Record Microphone", lambda _on: setv("audio", "mic"), checked=c.get("audio") == "mic")]],
+             Item(_("Record Microphone"), lambda _on: setv("audio", "mic"), checked=c.get("audio") == "mic")]],
             position=Gtk.PositionType.TOP)
         button.set_active(False)
         return pop
@@ -913,8 +914,8 @@ class _Toolbar(Gtk.Window):
     def _pick_folder(self, key):
         """Another folder for screenshots (key "shots") or recordings ("movies")."""
         self.set_visible(False)                       # the dialog must not sit under the toolbar
-        dialog = Gtk.FileDialog(title="Save Screenshots To" if key == "shots" else "Save Recordings To",
-                                accept_label="Choose")
+        dialog = Gtk.FileDialog(title=_("Save Screenshots To") if key == "shots" else _("Save Recordings To"),
+                                accept_label=_("Choose"))
         cur = self.cfg.get(key + "_dir")
         if cur and os.path.isdir(cur):
             dialog.set_initial_folder(Gio.File.new_for_path(cur))

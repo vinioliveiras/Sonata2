@@ -21,6 +21,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, GObject, Graphene, Gtk, Pango  # noqa: E402
 
 from . import fmt, theme, window  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 SHOW_DELAY_MS = 700
 FULL = 0.9            # meter turns red above this
@@ -177,13 +178,13 @@ class Operation(Gtk.Box):
         self.title = Gtk.Label(label=title, xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE,
                                css_classes=["sp-title"])
         self.bar = bar()
-        self.detail = Gtk.Label(label="Preparing…", xalign=0, css_classes=["sp-detail"])
+        self.detail = Gtk.Label(label=_("Preparing…"), xalign=0, css_classes=["sp-detail"])
         for w in (self.title, self.bar, self.detail):
             col.append(w)
         self.append(col)
         self.on_cancel = on_cancel
         if on_cancel:
-            stop = Gtk.Button(icon_name="window-close-symbolic", tooltip_text="Stop", valign=Gtk.Align.CENTER,
+            stop = Gtk.Button(icon_name="window-close-symbolic", tooltip_text=_("Stop"), valign=Gtk.Align.CENTER,
                               css_classes=["sp-stop"])
             stop.connect("clicked", lambda *_: self._stop())
             self.append(stop)
@@ -200,12 +201,12 @@ class Operation(Gtk.Box):
             return
         f = min(1.0, done / total)
         self.bar.set_fraction(f)
-        text = f"{fmt.size(done)} of {fmt.size(total)}"
+        text = _("{done} of {total}").format(done=fmt.size(done), total=fmt.size(total))
         elapsed = time.monotonic() - self.started
         if f > 0.02 and elapsed > 1.0:
             text += " — " + fmt.eta(elapsed * (1 - f) / f)
         else:
-            text += " — Estimating time remaining…"
+            text += " — " + _("Estimating time remaining…")
         self.detail.set_label(text)
 
     def set_detail(self, text: str) -> None:
@@ -237,12 +238,12 @@ class _Window(Adw.Window):
         return cls._instance
 
     def __init__(self):
-        super().__init__(title="Copy", default_width=WIDTH, resizable=False, hide_on_close=True)
+        super().__init__(title=_("Copy"), default_width=WIDTH, resizable=False, hide_on_close=True)
         for c in ("sonata-progress-window", "sonata-glass-window"):     # frosted glass, like Get Info
             self.add_css_class(c)
         window.standard(self)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        head = window.titlebar(self, "Copy")
+        head = window.titlebar(self, _("Copy"))
         self.head_label = head.title_label
         box.append(head)
         self.rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -270,8 +271,9 @@ class _Window(Adw.Window):
         self.set_default_size(WIDTH, 1)                         # a row less: shorter again
 
 
-def start(title: str, on_cancel=None, heading: str = "Copy") -> Operation:
+def start(title: str, on_cancel=None, heading: str = None) -> Operation:
     """Add an operation to the progress window (shown after a short delay)."""
+    heading = _("Copy") if heading is None else heading
     op = Operation(title, on_cancel)
     w = _Window.get()
     w.set_title(heading)
