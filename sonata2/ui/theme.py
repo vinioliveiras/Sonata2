@@ -387,6 +387,40 @@ def _buttons_changed() -> None:
             print(f"sonata2: window buttons: {e}")
 
 
+def refresh_tree(root, icons: bool = True) -> None:
+    """Every widget under `root` drawn anew, and (icons) every named icon
+    looked up again. GTK keeps a widget's last picture until that widget
+    itself asks to redraw; once in a while a menu bar icon or a Dock badge
+    kept its Light Mode look in Dark Mode until clicked (Vini). Run once
+    an appearance change has settled (see settled())."""
+    stack = [root]
+    while stack:
+        w = stack.pop()
+        if icons and isinstance(w, Gtk.Image) and w.get_storage_type() == Gtk.ImageType.ICON_NAME:
+            name = w.get_icon_name()
+            if name:
+                w.set_from_icon_name(name)         # (GTK clears the image first, even for the same name)
+        w.queue_draw()
+        c = w.get_first_child()
+        while c is not None:
+            stack.append(c)
+            c = c.get_next_sibling()
+
+
+def settled(owner, callback, ms: int = 150) -> None:
+    """`callback()` once the appearance stops changing: `ms` after the last
+    call (an on_change listener is called on every frame of a cross-fade)."""
+    src = getattr(owner, "_sonata_settle_src", 0)
+    if src:
+        GLib.source_remove(src)
+
+    def run():
+        owner._sonata_settle_src = 0
+        callback()
+        return False
+    owner._sonata_settle_src = GLib.timeout_add(ms, run)
+
+
 def off_change(handle) -> None:
     try:
         _listeners.remove(handle)

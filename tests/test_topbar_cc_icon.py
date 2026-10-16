@@ -125,6 +125,29 @@ class ControlCenterIconTest(unittest.TestCase):
         bar.stop()
         win.destroy()
 
+    def test_icons_drawn_anew_after_dark_mode_switch(self):
+        """Vini: in Dark Mode a menu bar icon (often Control Center's) and the
+        Dock's count badges sometimes kept their Light Mode look until clicked.
+        Once an appearance change settles every item is looked up again."""
+        win = Gtk.Window()
+        bar = topbar.Bar(None)
+        win.set_child(bar)
+        win.present()
+        settle(300)
+        imgs = [_image(b) for b in (bar.cc, bar.spotlight, bar.sound)]
+        changes = []
+        for img in imgs:
+            img.connect("notify::storage-type", lambda i, _p: changes.append(i))
+        sm = Adw.StyleManager.get_default()
+        sm.set_color_scheme(Adw.ColorScheme.FORCE_DARK if not sm.get_dark() else Adw.ColorScheme.FORCE_LIGHT)
+        settle(900)                                          # the cross-fade (every frame notifies) and after
+        for img in imgs:
+            self.assertIn(img, changes, img.get_icon_name())
+        self.assertLessEqual(len(changes), 2 * len(imgs))    # once, not on every frame
+        self.assertEqual(_image(bar.cc).get_icon_name(), "sonata-control-center-symbolic")
+        bar.stop()
+        win.destroy()
+
 
 if __name__ == "__main__":
     unittest.main()

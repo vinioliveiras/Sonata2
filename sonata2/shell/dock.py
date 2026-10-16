@@ -2309,7 +2309,10 @@ class Dock(Gtk.Box):
 
     def _appearance_changed(self) -> None:
         """Light/Dark: redraw every icon (the Trash and Launchpad have one
-        version per appearance) and the Dock's own drawing."""
+        version per appearance) and the Dock's own drawing; once it has
+        settled, every widget anew (a count badge kept its Light Mode
+        colour in Dark Mode until clicked -- Vini)."""
+        ui.theme.settled(self, lambda: ui.theme.refresh_tree(self))
         stack = [self]
         while stack:
             w = stack.pop()

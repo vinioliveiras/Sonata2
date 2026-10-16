@@ -274,7 +274,7 @@ def apply_colors(dark: bool) -> None:
         rule += ' | type is "toplevel"'
     system.wayfire_set("blur", "blur_by_default", rule)
     system.wayfire_set("blur", "kawase_offset", str(G.blur_offset(gcfg["blur"])))   # one strength for all
-    system.wayfire_set("blur", "alpha_threshold", str(G.blur_threshold(gcfg)))   # see-through parts stay frosted
+    system.wayfire_set("blur", "alpha_threshold", str(G.blur_threshold(gcfg, t)))   # see-through parts stay frosted
     system.wayfire_set("sonata-corners", "outline", "\\" + tokens.wayfire_color(t["window_outline"]))
     try:                                         # the buttons' pictures for this look (trafficlights.py)
         from . import trafficlights

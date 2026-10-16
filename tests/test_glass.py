@@ -141,6 +141,18 @@ class ThresholdTest(unittest.TestCase):
         cfg = G.settings({"glass": {"dock": {"alpha": 0.40, "on": False}}})
         self.assertEqual(G.blur_threshold(cfg), 0.5)                                  # a solid part: no say
 
+    def test_light_theme_glass_stays_frosted(self):
+        """Vini: light glass was too opaque next to dark's. Its defaults went
+        under 0.5: the threshold follows them, or Wayfire would skip the blur."""
+        from sonata2.ui import tokens
+        config.save("dock", {})
+        cfg = G.settings({})
+        light, dark = tokens.palette(False, "mac"), tokens.palette(True, "mac")
+        for item in G.ITEMS:
+            self.assertLess(G.alpha_of(item, light, cfg), G.alpha_of(item, dark, cfg))
+            self.assertGreaterEqual(G.alpha_of(item, light, cfg), G.blur_threshold(cfg, light))
+        self.assertEqual(G.blur_threshold(cfg, dark), 0.5)                            # dark: as before
+
     def test_apply_colors_sets_it(self):
         from unittest import mock
         from sonata2 import titlebars

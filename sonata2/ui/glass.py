@@ -128,10 +128,12 @@ def blur_rule(cfg: dict = None) -> str:
     return rule or BLUR_NONE
 
 
-def blur_threshold(cfg: dict = None) -> float:
+def blur_threshold(cfg: dict = None, tokens: dict = None) -> float:
     """Wayfire's alpha_threshold for the alphas chosen: just under the most
-    see-through part that is on, 0.5 otherwise."""
+    see-through part that is on, 0.5 otherwise. With `tokens` (the palette)
+    a part left at the theme's own alpha counts too (light glass is under 0.5)."""
     s = cfg or settings()
-    alphas = [s[i]["alpha"] for i in ITEMS if s[i]["on"] and s[i]["alpha"] is not None]
+    alphas = [alpha_of(i, tokens, s) if tokens else s[i]["alpha"] for i in ITEMS if s[i]["on"]]
+    alphas = [a for a in alphas if a is not None]
     t = min([THRESHOLD] + [a - 0.02 for a in alphas])
     return round(max(THRESHOLD_MIN, t), 2)

@@ -31,15 +31,20 @@ LIGHT = {
     "control_off": "rgba(0, 0, 0, 0.09)",        # switch track off
     "knob": "#ffffff",
     "tl_disabled": "#d1d1d6",                    # greyed traffic light
-    "glass_tint": "rgba(228, 228, 234, 0.60)",   # blurred by the compositor
+    # light glass is more see-through than dark's: a pale tint at the same
+    # alpha reads milky, almost opaque (Vini). Under 0.5 Wayfire's blur needs
+    # a lower alpha_threshold: glass.blur_threshold counts these defaults.
+    "glass_tint": "rgba(228, 228, 234, 0.45)",   # blurred by the compositor
     "solid_tint": "rgba(236, 236, 240, 0.78)",   # same surface without blur
     "indicator": "rgba(0, 0, 0, 0.62)",          # Dock running dot
-    "bar_bg": "rgba(228, 228, 234, 0.60)",       # menu bar: the same glass as glass_tint
+    "bar_bg": "rgba(228, 228, 234, 0.45)",       # menu bar: the same glass as glass_tint
     # title bars Wayfire draws (Chrome, Spotify, X11 apps): the Dock's glass
     # windows' own glass (title bars, toolbars, sidebars): darker than the
-    # Dock/menu bar glass, so windows read apart from the desktop (Vini)
-    "window_glass": "rgba(210, 210, 218, 0.74)",
-    "titlebar_bg": "rgba(210, 210, 218, 0.74)",          # = window_glass
+    # Dock/menu bar glass, so windows read apart from the desktop (Vini);
+    # a darker grey at a lower alpha: over window_bg it gives the same opaque
+    # title bar as the old rgba(210, 210, 218, 0.74)
+    "window_glass": "rgba(203, 203, 213, 0.58)",
+    "titlebar_bg": "rgba(203, 203, 213, 0.58)",          # = window_glass
     "titlebar_bg_inactive": "rgba(224, 224, 230, 0.82)",
     "titlebar_text": "rgba(38, 38, 38, 1)",
     "titlebar_text_inactive": "rgba(154, 154, 154, 1)",
