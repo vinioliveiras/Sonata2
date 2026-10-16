@@ -14,6 +14,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from . import folder  # noqa: E402
 
 ui.register("""
@@ -47,7 +48,7 @@ def crumbs(uri: str, home: str = None) -> list:
     if path == home or path.startswith(home.rstrip("/") + "/"):
         top, top_name, top_icon = home, os.path.basename(home) or home, "user-home-symbolic"
     else:
-        top, top_name, top_icon = "/", "Computer", "drive-harddisk-symbolic"
+        top, top_name, top_icon = "/", _("Computer"), "drive-harddisk-symbolic"
     out = [(Gio.File.new_for_path(top).get_uri(), top_name, top_icon)]
     rel = os.path.relpath(path, top)
     if rel != ".":
@@ -95,7 +96,7 @@ class PathBar(Gtk.ScrolledWindow):
             return
         g.set_state(Gtk.EventSequenceState.CLAIMED)
         from .actions import copy_paths
-        ui.menu.popup(self, [[ui.menu.Item("Copy Path", lambda: copy_paths(self, [Gio.File.new_for_uri(uri)]))]],
+        ui.menu.popup(self, [[ui.menu.Item(_("Copy Path"), lambda: copy_paths(self, [Gio.File.new_for_uri(uri)]))]],
                       at=(x, y))
 
     def edit(self, text: str, on_go) -> None:

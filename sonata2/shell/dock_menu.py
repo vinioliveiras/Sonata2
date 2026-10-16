@@ -13,6 +13,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import N_, _, ngettext  # noqa: E402
 
 AUTOSTART_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
                              "autostart")
@@ -99,10 +100,13 @@ def empty_trash() -> None:
 
 def confirm_empty_trash() -> None:
     n = _trash_count()
-    items = "the item" if n == 1 else f"the {n} items" if n else "the items"
-    ui.dialog.alert(f"Are you sure you want to permanently erase {items} in the Trash?",
-                    "You can't undo this action.",
-                    [("cancel", "Cancel", ""), ("empty", "Empty Trash", "destructive")], default="empty",
+    title = (ngettext("Are you sure you want to permanently erase the {n} item in the Trash?",
+                      "Are you sure you want to permanently erase the {n} items in the Trash?", n).format(n=n)
+             if n > 1 else _("Are you sure you want to permanently erase the item in the Trash?") if n == 1
+             else _("Are you sure you want to permanently erase the items in the Trash?"))
+    ui.dialog.alert(title,
+                    _("You can't undo this action."),
+                    [("cancel", _("Cancel"), ""), ("empty", _("Empty Trash"), "destructive")], default="empty",
                     on_response=lambda r: empty_trash() if r == "empty" else None)
 
 
@@ -112,9 +116,9 @@ def lock_item(info, around=None):
     around(fn): runs fn (Launchpad closes first: its alert is a window of its own)."""
     from .. import applock
     if applock.locked(info.get_id()):
-        return ui.menu.Item("Unlock App\u2026", lambda: (around or (lambda f: f()))(
+        return ui.menu.Item(_("Unlock App\u2026"), lambda: (around or (lambda f: f()))(
             lambda: applock.ask_unlock(info)))
-    return ui.menu.Item("Lock App", lambda: applock.set_locked(info.get_id(), True))
+    return ui.menu.Item(_("Lock App"), lambda: applock.set_locked(info.get_id(), True))
 
 
 def sandbox_item(info, around=None):
@@ -124,7 +128,7 @@ def sandbox_item(info, around=None):
     from .. import sandbox, webapps
     if info is None or webapps.is_webapp(info.get_id() or ""):
         return None
-    return ui.menu.Item("Open in Sandbox", lambda: (around or (lambda f: f()))(lambda: sandbox.ask_open(info)))
+    return ui.menu.Item(_("Open in Sandbox"), lambda: (around or (lambda f: f()))(lambda: sandbox.ask_open(info)))
 
 
 def app_menu(dock, key: str, tile):
@@ -137,20 +141,20 @@ def app_menu(dock, key: str, tile):
                               on_close=lambda t=t: dock.manager.close(t))       # the x closes that window
                          for t in wins])
     if info and wins:
-        sections.append([i for i in (Item("New Window", lambda: new_window(dock, tile)), sandbox_item(info)) if i])
+        sections.append([i for i in (Item(_("New Window"), lambda: new_window(dock, tile)), sandbox_item(info)) if i])
     pinned = key in dock.cfg["pinned"]
     from .dock import PERMANENT
     opts = []
     if info and key in PERMANENT:                  # can't leave the Dock (like Finder)
-        opts = [[Item("Open File Location", lambda: show_in_files(app_file(info)))]]
+        opts = [[Item(_("Open File Location"), lambda: show_in_files(app_file(info)))]]
     elif info:
-        opts = [[Item("Keep in Dock", lambda on: dock.set_pinned(key, on), checked=pinned),
-                 Item("Open at Login", lambda on: set_open_at_login(info, on),
+        opts = [[Item(_("Keep in Dock"), lambda on: dock.set_pinned(key, on), checked=pinned),
+                 Item(_("Open at Login"), lambda on: set_open_at_login(info, on),
                       checked=opens_at_login(info.get_id()[:-8])),
                  lock_item(info)],
-                [Item("Open File Location", lambda: show_in_files(app_file(info))),
+                [Item(_("Open File Location"), lambda: show_in_files(app_file(info))),
                  # its launcher, not its program (Vini: the shortcut showed as a text file)
-                 Item("Add to Desktop", lambda: add_to_desktop(app_filename(info)))]]
+                 Item(_("Add to Desktop"), lambda: add_to_desktop(app_filename(info)))]]
         from .. import gpu
         from .. import browsergpu
         for g in (gpu.menu_items(info, Item), browsergpu.menu_items(info, Item)):
@@ -158,15 +162,15 @@ def app_menu(dock, key: str, tile):
                 opts.append(g)
         from .. import webapps
         if webapps.is_webapp(key):
-            opts.append([Item("Edit Web App…", lambda: webapps.edit(webapps.id_of(key)))])
+            opts.append([Item(_("Edit Web App…"), lambda: webapps.edit(webapps.id_of(key)))])
         from . import dock_folder
         f = dock_folder.app_items(dock, key)
         if f:
             opts.append(f)
     elif pinned:
-        opts = [[Item("Keep in Dock", lambda on: dock.set_pinned(key, on), checked=True)]]
+        opts = [[Item(_("Keep in Dock"), lambda on: dock.set_pinned(key, on), checked=True)]]
     if opts:
-        sections.append([Item("Options", submenu=opts)])
+        sections.append([Item(_("Options"), submenu=opts)])
     if wins:
         # Minimize; when every window already is: Maximize (brought back, full size)
         if all(t.minimized for t in wins):
@@ -174,14 +178,14 @@ def app_menu(dock, key: str, tile):
                 for t in wins:
                     dock.manager.activate(t)
                     dock.manager.set_maximized(t, True)
-            first = Item("Maximize", restore)
+            first = Item(_("Maximize"), restore)
         else:
-            first = Item("Minimize", lambda: [dock.manager.minimize(t) for t in wins])
+            first = Item(_("Minimize"), lambda: [dock.manager.minimize(t) for t in wins])
         sections.append([first,
-                         Item("Force Quit", lambda: force_quit(key)),
-                         Item("Quit", lambda: _quit(dock, wins, key))])
+                         Item(_("Force Quit"), lambda: force_quit(key)),
+                         Item(_("Quit"), lambda: _quit(dock, wins, key))])
     elif info:
-        sections.append([i for i in (Item("Open", lambda: dock.launch(tile)), sandbox_item(info)) if i])
+        sections.append([i for i in (Item(_("Open"), lambda: dock.launch(tile)), sandbox_item(info)) if i])
     tile.label.popdown()
     return ui.menu.popup(tile, sections, position=dock.away)
 
@@ -265,8 +269,8 @@ def trash_menu(tile):
     tile.label.popdown()
     away = getattr(tile.get_parent(), "away", Gtk.PositionType.TOP)
     return ui.menu.popup(tile, [
-        [Item("Open", lambda: _open_folder("trash:///"))],
-        [Item("Empty Trash…", confirm_empty_trash, enabled=_trash_count() > 0)],
+        [Item(_("Open"), lambda: _open_folder("trash:///"))],
+        [Item(_("Empty Trash…"), confirm_empty_trash, enabled=_trash_count() > 0)],
     ], position=away)
 
 
@@ -275,14 +279,14 @@ def divider_menu(dock, divider):
     Item = ui.menu.Item
     cfg = dock.cfg
     return ui.menu.popup(divider, [
-        [Item("Turn Hiding Off" if cfg["autohide"] else "Turn Hiding On",
+        [Item(_("Turn Hiding Off") if cfg["autohide"] else _("Turn Hiding On"),
               lambda: dock.set_option("autohide", not cfg["autohide"])),
-         Item("Turn Magnification Off" if cfg["magnification"] else "Turn Magnification On",
+         Item(_("Turn Magnification Off") if cfg["magnification"] else _("Turn Magnification On"),
               lambda: dock.set_magnification(not cfg["magnification"]))],
-        [Item("Position on Screen", submenu=[[
-            Item(label, lambda on, e=e: on and dock.set_option("position", e), checked=cfg["position"] == e)
-            for e, label in (("left", "Left"), ("bottom", "Bottom"), ("right", "Right"))]]),
-         Item("Show Recent Applications", lambda on: dock.set_option("show_recents", on),
+        [Item(_("Position on Screen"), submenu=[[
+            Item(_(label), lambda on, e=e: on and dock.set_option("position", e), checked=cfg["position"] == e)
+            for e, label in (("left", N_("Left")), ("bottom", N_("Bottom")), ("right", N_("Right")))]]),
+         Item(_("Show Recent Applications"), lambda on: dock.set_option("show_recents", on),
               checked=cfg["show_recents"])],
         # (New Web App… is only in Apps' menu: Vini)
     ], position=dock.away)

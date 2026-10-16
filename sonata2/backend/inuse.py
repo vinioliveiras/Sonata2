@@ -24,6 +24,8 @@ import subprocess
 
 from gi.repository import GLib
 
+from ..i18n import _
+
 CAMERA_S = 4
 SETTLE_MS = 300                 # a burst of opens/closes (an app probing every node): one look
 PAUSED_RETRY_S = 30             # a node event while paused: looked at again (the pause may end unseen)
@@ -46,7 +48,7 @@ def mic_users(outputs) -> list:
         source = str(o.get("source_name") or props.get("target.object") or props.get("node.target") or "")
         if source.endswith(".monitor") or props.get("stream.capture.sink") in ("true", True):
             continue                                 # the speakers' sound (screen recording), not the mic
-        name = props.get("application.name") or props.get("application.process.binary") or "An app"
+        name = props.get("application.name") or props.get("application.process.binary") or _("An app")
         if name not in names:
             names.append(name)
     return names
@@ -117,7 +119,7 @@ def camera_users(proc: str = "/proc") -> list:
                     found.append(name)
                 break
     apps = [n for n in found if n not in CAMERA_HOLDERS]
-    return apps or (["An app"] if found else [])
+    return apps or ([_("An app")] if found else [])
 
 
 class VideoNodes:

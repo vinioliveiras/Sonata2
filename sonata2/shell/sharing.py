@@ -15,6 +15,7 @@ from gi.repository import GLib, Gtk, Pango
 STOP_CHECK_MS = 2500
 
 from .capture import BarPill, stop_button
+from ..i18n import _
 
 
 def site_of(title: str) -> str:
@@ -70,7 +71,7 @@ def stop_sharing() -> bool:
 
 class SharingControl(BarPill):
     def __init__(self, app, manager):
-        super().__init__(app, "Screen Sharing", "sonata2-sharing")
+        super().__init__(app, _("Screen Sharing"), "sonata2-sharing")
         self.manager = manager
         self.box.add_css_class("share-pill")
         what = Gtk.Box(spacing=6)                        # the site: a click brings the browser's bar
@@ -85,7 +86,7 @@ class SharingControl(BarPill):
         from .livedraw import pen_button                 # draw on the shared screen (livedraw.py)
         self.box.append(pen_button(app))
         # Stop Sharing (Vini), like the recording pill's stop button
-        stop = stop_button("Stop Sharing")
+        stop = stop_button(_("Stop Sharing"))
         stop.connect("clicked", lambda *_: self._stop())
         self.box.append(stop)
         manager.listeners.append(self.update)
@@ -93,13 +94,13 @@ class SharingControl(BarPill):
 
     def text(self) -> str:
         sites = [s for s in (site_of(b.title) for b in self.manager.share_bars) if s]
-        return ", ".join(dict.fromkeys(sites)) or "Sharing Screen"
+        return ", ".join(dict.fromkeys(sites)) or _("Sharing Screen")
 
     def update(self):
         bars = self.manager.share_bars
         if bars:
             self.label.set_label(self.text())
-            self.set_tooltip_text("Sharing your screen. Click for the browser's controls.")
+            self.set_tooltip_text(_("Sharing your screen. Click for the browser's controls."))
             if not self.get_visible():
                 self.show_on()
         elif self.get_visible():

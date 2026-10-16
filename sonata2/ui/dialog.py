@@ -17,6 +17,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gtk  # noqa: E402
 
 from . import theme  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 theme.register("""
 dialog.alert.sonata-alert .heading-bin > label, dialog.alert.sonata-alert .heading,
@@ -202,7 +203,7 @@ def ask_text(heading: str, text: str, ok: str, on_done, body: str = "", parent=N
         value = entry.get_text().strip()
         if rid == "ok" and value:
             on_done(value)
-    dlg = alert(heading, body, [("cancel", "Cancel", ""), ("ok", ok, "default")], answer, parent=parent)
+    dlg = alert(heading, body, [("cancel", _("Cancel"), ""), ("ok", ok, "default")], answer, parent=parent)
     dlg.set_extra_child(entry)
     if hasattr(dlg, "set_response_enabled"):
         entry.connect("changed", lambda e: dlg.set_response_enabled("ok", bool(e.get_text().strip())))
@@ -217,16 +218,17 @@ def ask_text(heading: str, text: str, ok: str, on_done, body: str = "", parent=N
     return dlg
 
 
-def ask_password(heading: str, body: str, on_ok, parent=None, ok: str = "Open", wrong: bool = False):
+def ask_password(heading: str, body: str, on_ok, parent=None, ok: str = None, wrong: bool = False):
     """The login password, checked (PAM) before on_ok() runs; a wrong one
     asks again ("Wrong password"). Return in the field checks it without
     closing the alert; the button closes it, then checks."""
     from gi.repository import GLib
     from . import controls
     from .. import pam
-    entry = controls.text_field("", "Password", secret=True, hexpand=True)
-    hint = Gtk.Label(label="Wrong password" if wrong else
-                     ("" if pam.available() else "Passwords can't be checked (PAM missing)"),
+    ok = ok or _("Open")
+    entry = controls.text_field("", _("Password"), secret=True, hexpand=True)
+    hint = Gtk.Label(label=_("Wrong password") if wrong else
+                     ("" if pam.available() else _("Passwords can't be checked (PAM missing)")),
                      css_classes=["dim-label", "caption"], visible=wrong or not pam.available())
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
     box.append(entry)
@@ -243,7 +245,7 @@ def ask_password(heading: str, body: str, on_ok, parent=None, ok: str = "Open", 
         elif closed:
             ask_password(heading, body, on_ok, parent, ok, wrong=True)
         else:
-            hint.set_label("Wrong password")
+            hint.set_label(_("Wrong password"))
             hint.set_visible(True)
             entry.set_text("")
             entry.grab_focus()
@@ -256,7 +258,7 @@ def ask_password(heading: str, body: str, on_ok, parent=None, ok: str = "Open", 
         entry.set_sensitive(False)
         pam.check_async(pw, lambda r: checked(r, dlg, closed))
 
-    dlg = alert(heading, body, [("cancel", "Cancel", ""), ("ok", ok, "default")],
+    dlg = alert(heading, body, [("cancel", _("Cancel"), ""), ("ok", ok, "default")],
                 lambda rid: rid == "ok" and check(True), parent=parent)
     dlg.set_extra_child(box)
     entry.connect("activate", lambda _e: check(False))

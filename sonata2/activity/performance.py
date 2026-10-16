@@ -8,6 +8,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 from .pages import Page, fmt_bits  # noqa: E402
 from .procfs import fmt_bytes, fmt_count  # noqa: E402
 from .widgets import CompositionBar, Graph, Series  # noqa: E402
@@ -37,7 +38,7 @@ def iface_title(name: str) -> str:
     if name.startswith(("wl", "wlan")):
         return "Wi-Fi"
     if name == "lo":
-        return "Loopback"
+        return _("Loopback")
     if name.startswith(("tun", "wg", "tap")):
         return "VPN"
     return "Ethernet"
@@ -62,7 +63,7 @@ class Resource:
 
 
 class PerformancePage(Page):
-    id, title, icon = "performance", "Performance", "am-system-monitor-symbolic"
+    id, title, icon = "performance", N_("Performance"), "am-system-monitor-symbolic"
 
     def __init__(self, win):
         super().__init__(win)
@@ -81,7 +82,7 @@ class PerformancePage(Page):
         box.append(Gtk.ScrolledWindow(child=self.pane, hexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER))
         self.widget = box
         self._add(Resource("cpu", "cpu", "CPU"))
-        self._add(Resource("memory", "memory", "Memory"))
+        self._add(Resource("memory", "memory", _("Memory")))
 
     # -- list -----------------------------------------------------------------------------------
     def _add(self, res: Resource) -> None:
@@ -134,12 +135,12 @@ class PerformancePage(Page):
         self.graph = Graph(res.lines(), res.maximum if res.kind != "net" else None, height=220)
         self.pane.append(self.graph)
         foot = Gtk.Box()
-        foot.append(Gtk.Label(label="60 seconds", xalign=0, hexpand=True, css_classes=["tm-caption"]))
+        foot.append(Gtk.Label(label=_("60 seconds"), xalign=0, hexpand=True, css_classes=["tm-caption"]))
         foot.append(Gtk.Label(label="0", xalign=1, css_classes=["tm-caption"]))
         self.pane.append(foot)
         self.bar = None
         if res.kind == "memory":
-            self.pane.append(Gtk.Label(label="Memory composition", xalign=0, css_classes=["tm-caption"],
+            self.pane.append(Gtk.Label(label=_("Memory composition"), xalign=0, css_classes=["tm-caption"],
                                        margin_top=6))
             self.bar = CompositionBar()
             self.pane.append(self.bar)
@@ -190,14 +191,14 @@ class PerformancePage(Page):
         # CPU
         r = self.resources["cpu"]
         util = 100 - snap.cpu.get("idle", 100)
-        r.detail = info["model"]
+        r.detail = _(info["model"])
         r.subtitle = f"{util:.0f}%  {fmt_ghz(snap.cpu_mhz)}"
-        r.stats = {"caption": "% Utilization", "top": "100%",
-                   "big": [("Utilization", f"{util:.0f}%"), ("Speed", fmt_ghz(snap.cpu_mhz)), ("", ""),
-                           ("Processes", fmt_count(len(snap.procs))), ("Threads", fmt_count(snap.threads)),
-                           ("Up time", fmt_uptime(snap.uptime))],
-                   "small": [("Base speed", fmt_ghz(info["base_mhz"])), ("Sockets", str(info["sockets"])),
-                             ("Cores", str(info["cores"])), ("Logical processors", str(info["logical"]))]}
+        r.stats = {"caption": _("% Utilization"), "top": "100%",
+                   "big": [(_("Utilization"), f"{util:.0f}%"), (_("Speed"), fmt_ghz(snap.cpu_mhz)), ("", ""),
+                           (_("Processes"), fmt_count(len(snap.procs))), (_("Threads"), fmt_count(snap.threads)),
+                           (_("Up time"), fmt_uptime(snap.uptime))],
+                   "small": [(_("Base speed"), fmt_ghz(info["base_mhz"])), (_("Sockets"), str(info["sockets"])),
+                             (_("Cores"), str(info["cores"])), (_("Logical processors"), str(info["logical"]))]}
         if not first:
             r.a.push(util)
         # Memory
@@ -207,15 +208,15 @@ class PerformancePage(Page):
         r.maximum = total
         r.detail = fmt_gb(total)
         r.subtitle = f"{fmt_gb(m.get('used', 0))}/{fmt_gb(total)} ({100 * m.get('used', 0) / total:.0f}%)"
-        r.stats = {"caption": "Memory usage", "top": fmt_gb(total),
-                   "big": [("In use", fmt_gb(m.get("used", 0))), ("Available", fmt_gb(m.get("available", 0))),
-                           ("Committed", f"{fmt_gb(m.get('committed', 0))}/{fmt_gb(m.get('commit_limit', 0))}"),
-                           ("Cached", fmt_gb(m.get("cached", 0))),
-                           ("Swap used", f"{fmt_gb(m.get('swap', 0))}/{fmt_gb(m.get('swap_total', 0))}")],
-                   "small": [("Paged pool", fmt_bytes(m.get("paged_pool", 0))),
-                             ("Non-paged pool", fmt_bytes(m.get("non_paged_pool", 0))),
-                             ("Kernel", fmt_bytes(m.get("wired", 0))),
-                             ("Compressed", fmt_bytes(m.get("compressed", 0)))]}
+        r.stats = {"caption": _("Memory usage"), "top": fmt_gb(total),
+                   "big": [(_("In use"), fmt_gb(m.get("used", 0))), (_("Available"), fmt_gb(m.get("available", 0))),
+                           (_("Committed"), f"{fmt_gb(m.get('committed', 0))}/{fmt_gb(m.get('commit_limit', 0))}"),
+                           (_("Cached"), fmt_gb(m.get("cached", 0))),
+                           (_("Swap used"), f"{fmt_gb(m.get('swap', 0))}/{fmt_gb(m.get('swap_total', 0))}")],
+                   "small": [(_("Paged pool"), fmt_bytes(m.get("paged_pool", 0))),
+                             (_("Non-paged pool"), fmt_bytes(m.get("non_paged_pool", 0))),
+                             (_("Kernel"), fmt_bytes(m.get("wired", 0))),
+                             (_("Compressed"), fmt_bytes(m.get("compressed", 0)))]}
         r.composition = {"in_use": max(0, m.get("used", 0) - m.get("modified", 0)), "modified": m.get("modified", 0),
                          "standby": m.get("cached", 0), "free": m.get("free", 0)}
         if not first:
@@ -224,16 +225,16 @@ class PerformancePage(Page):
         for i, (name, d) in enumerate(sorted(snap.disks.items())):
             key = "disk:" + name
             if key not in self.resources:
-                self._add(Resource(key, "disk", f"Disk {i} ({name})"))
+                self._add(Resource(key, "disk", _("Disk {n} ({name})").format(n=i, name=name)))
             r = self.resources[key]
             r.detail = d.get("model") or name
             r.subtitle = f"{d.get('kind', '')} {d['active']:.0f}%".strip()
-            r.stats = {"caption": "Active time", "top": "100%",
-                       "big": [("Active time", f"{d['active']:.0f}%"),
-                               ("Read speed", fmt_bytes(d["read_bytes_ps"]) + "/s"),
-                               ("Write speed", fmt_bytes(d["write_bytes_ps"]) + "/s")],
-                       "small": [("Capacity", fmt_gb(d.get("capacity", 0))), ("Type", d.get("kind", "")),
-                                 ("Reads", fmt_count(d["reads"])), ("Writes", fmt_count(d["writes"]))]}
+            r.stats = {"caption": _("Active time"), "top": "100%",
+                       "big": [(_("Active time"), f"{d['active']:.0f}%"),
+                               (_("Read speed"), fmt_bytes(d["read_bytes_ps"]) + "/s"),
+                               (_("Write speed"), fmt_bytes(d["write_bytes_ps"]) + "/s")],
+                       "small": [(_("Capacity"), fmt_gb(d.get("capacity", 0))), (_("Type"), d.get("kind", "")),
+                                 (_("Reads"), fmt_count(d["reads"])), (_("Writes"), fmt_count(d["writes"]))]}
             if not first:
                 r.a.push(d["active"])
         for key in [k for k in self.resources if k.startswith("disk:") and k[5:] not in snap.disks]:
@@ -247,13 +248,13 @@ class PerformancePage(Page):
                 self._add(Resource(key, "net", f"{iface_title(name)} ({name})", name))
             r = self.resources[key]
             send, recv = 8 * n["tx_bytes_ps"], 8 * n["rx_bytes_ps"]
-            r.subtitle = f"S: {fmt_bits(send)}  R: {fmt_bits(recv)}"
-            r.stats = {"caption": "Throughput", "top": fmt_bits(max(max(r.a.values, default=0),
+            r.subtitle = _("S: {sent}  R: {received}").format(sent=fmt_bits(send), received=fmt_bits(recv))
+            r.stats = {"caption": _("Throughput"), "top": fmt_bits(max(max(r.a.values, default=0),
                                                                    max(r.b.values, default=0)) * 1.15),
-                       "big": [("Send", fmt_bits(send)), ("Receive", fmt_bits(recv))],
-                       "small": [("Adapter name", name), ("Sent", fmt_bytes(n["tx_bytes"])),
-                                 ("Received", fmt_bytes(n["rx_bytes"])),
-                                 ("Packets", f"{fmt_count(n['tx_packets'])} / {fmt_count(n['rx_packets'])}")]}
+                       "big": [(_("Send"), fmt_bits(send)), (_("Receive"), fmt_bits(recv))],
+                       "small": [(_("Adapter name"), name), (_("Sent"), fmt_bytes(n["tx_bytes"])),
+                                 (_("Received"), fmt_bytes(n["rx_bytes"])),
+                                 (_("Packets"), f"{fmt_count(n['tx_packets'])} / {fmt_count(n['rx_packets'])}")]}
             if not first:
                 r.a.push(recv)
                 r.b.push(send)
@@ -270,14 +271,14 @@ class PerformancePage(Page):
                 self._add(Resource(key, "gpu", f"GPU {i}", card))
             r = self.resources[key]
             r.detail = f"{gi['maker']} ({card})" if gi.get("maker") else card
-            state = f"{busy:.0f}%" if busy is not None else ("Sleeping" if gi.get("asleep") else "N/A")
+            state = f"{busy:.0f}%" if busy is not None else (_("Sleeping") if gi.get("asleep") else _("N/A"))
             vram = gi.get("vram")
-            small = [("Card", card)] + ([("Maker", gi["maker"])] if gi.get("maker") else [])
-            big = [("Utilization", state)]
+            small = [(_("Card"), card)] + ([(_("Maker"), gi["maker"])] if gi.get("maker") else [])
+            big = [(_("Utilization"), state)]
             if vram:
-                big.append(("Dedicated memory", f"{fmt_gb(vram[0])}/{fmt_gb(vram[1])}"))
+                big.append((_("Dedicated memory"), f"{fmt_gb(vram[0])}/{fmt_gb(vram[1])}"))
             r.subtitle = (f"{gi['maker']}  {state}" if gi.get("maker") else state)
-            r.stats = {"caption": "Utilization", "top": "100%", "big": big, "small": small}
+            r.stats = {"caption": _("Utilization"), "top": "100%", "big": big, "small": small}
             if not first:
                 r.a.push(busy or 0.0)                         # a sleeping card does no work: 0
         for key in [k for k in self.resources if k.startswith("gpu:")]:

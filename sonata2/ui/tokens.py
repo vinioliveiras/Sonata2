@@ -452,14 +452,28 @@ def radius_tokens(r: dict) -> dict:
 # any colour. The window background takes it; the surfaces drawn around it
 # (content, panes, sidebars, menus, title bars) keep their distance to it,
 # so a tinted background tints them all alike.
+def N_(text: str) -> str:
+    """Marks a name for translation (i18n.N_; this file is also loaded on
+    its own, outside the package -- tools/wayfire-config.sh)."""
+    return text
+
+
+# names shown translated: _(name)
 BACKGROUNDS = {
-    "light": (("Default", "#ececec"), ("Paper", "#f5f3ee"), ("Sand", "#efe8dc"), ("Mist", "#e4e9f0"),
-              ("Mint", "#e3eee7"), ("Rose", "#f1e5e8"), ("Lavender", "#e9e5f2")),
-    "dark": (("Default", "#18181a"), ("Black", "#0b0b0c"), ("Graphite", "#26262a"), ("Navy", "#121826"),
-             ("Forest", "#121c16"), ("Plum", "#1d1420"), ("Espresso", "#1f1915")),
+    "light": ((N_("Default"), "#ececec"), (N_("Paper"), "#f5f3ee"), (N_("Sand"), "#efe8dc"),
+              (N_("Mist"), "#e4e9f0"), (N_("Mint"), "#e3eee7"), (N_("Rose"), "#f1e5e8"),
+              (N_("Lavender"), "#e9e5f2"), (N_("Butter"), "#f2eedb")),
+    "dark": ((N_("Default"), "#18181a"), (N_("Black"), "#0b0b0c"), (N_("Graphite"), "#26262a"),
+             (N_("Navy"), "#121826"), (N_("Forest"), "#121c16"), (N_("Plum"), "#1d1420"),
+             (N_("Espresso"), "#1f1915"), (N_("Teal"), "#0f1e1f")),
 }
 # surfaces that follow the background (their own alpha, if any, is kept)
 BACKGROUND_FOLLOWERS = ("window_bg", "content_bg", "pane_bg", "sidebar_bg", "menu_bg", "solid_tint")
+# glass (Dock, menu bar, menus and panels, sidebars, glass title bars; Vini:
+# "the colour changed only where it isn't see-through"): moved by the same
+# amount *as seen* -- the shift over its alpha, since only that much of the
+# tint shows over what is behind
+BACKGROUND_GLASS = ("glass_tint", "bar_bg", "window_glass", "titlebar_glass", "titlebar_glass_inactive", "calc_bg")
 # legible text: a light background stays this light, a dark one this dark (relative luminance)
 LIGHT_BG_MIN, DARK_BG_MAX = 0.55, 0.045
 _backgrounds_cache = {"mtime": None, "value": {}}
@@ -539,12 +553,16 @@ def _background_tokens(tokens: dict, picked: str, dark: bool) -> dict:
     base = _rgb(tokens["window_bg"])[0]
     delta = [n - b for n, b in zip(new, base)]
     out = {}
-    for k in BACKGROUND_FOLLOWERS:
+    for k in BACKGROUND_FOLLOWERS + BACKGROUND_GLASS:
+        if k not in tokens:
+            continue
         rgb, a = _rgb(tokens[k])
-        moved = [max(0, min(255, v + d)) for v, d in zip(rgb, delta)]
+        gain = 1 / max(a, 0.35) if k in BACKGROUND_GLASS and a else 1   # (clear glass: never a glare)
+        moved = [max(0, min(255, round(v + d * gain))) for v, d in zip(rgb, delta)]
         out[k] = ("#%02x%02x%02x" % tuple(moved)) if a is None else "rgba(%d, %d, %d, %s)" % (*moved, a)
     for k in ("titlebar_bg", "titlebar_bg_inactive"):
-        out[k] = over(tokens[k.replace("_bg", "_glass")], out["window_bg"])
+        # the moved glass over the theme's window: as seen, the bar moved like the window
+        out[k] = over(out.get(k.replace("_bg", "_glass")) or tokens[k.replace("_bg", "_glass")], tokens["window_bg"])
     return out
 
 

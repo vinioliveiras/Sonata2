@@ -12,13 +12,14 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from . import controls, dialog  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 
 def split_message(message: str) -> tuple:
     """GIO's "heading\\nbody" -> (heading, body)."""
     lines = [ln.strip() for ln in (message or "").splitlines() if ln.strip()]
     if not lines:
-        return "Enter the password", ""
+        return _("Enter the password"), ""
     return lines[0], " ".join(lines[1:])
 
 
@@ -38,26 +39,26 @@ class MountOperation(Gio.MountOperation):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         user = domain = None
         if flags & Gio.AskPasswordFlags.ANONYMOUS_SUPPORTED:
-            anon = Gtk.CheckButton(label="Connect as a guest", halign=Gtk.Align.START)
+            anon = Gtk.CheckButton(label=_("Connect as a guest"), halign=Gtk.Align.START)
             box.append(anon)
         else:
             anon = None
         if flags & Gio.AskPasswordFlags.NEED_USERNAME:
-            user = controls.text_field(default_user or "", "Name")
+            user = controls.text_field(default_user or "", _("Name"))
             user.set_activates_default(True)
             box.append(user)
         if flags & Gio.AskPasswordFlags.NEED_DOMAIN:
-            domain = controls.text_field(default_domain or "", "Domain")
+            domain = controls.text_field(default_domain or "", _("Domain"))
             domain.set_activates_default(True)
             box.append(domain)
         pw = None
         if flags & Gio.AskPasswordFlags.NEED_PASSWORD:
-            pw = controls.text_field(placeholder="Password", secret=True)
+            pw = controls.text_field(placeholder=_("Password"), secret=True)
             pw.set_property("activates-default", True)
             box.append(pw)
         remember = None
         if flags & Gio.AskPasswordFlags.SAVING_SUPPORTED:
-            remember = Gtk.CheckButton(label="Remember this password in my keyring", halign=Gtk.Align.START)
+            remember = Gtk.CheckButton(label=_("Remember this password in my keyring"), halign=Gtk.Align.START)
             box.append(remember)
 
         def answered(rid):
@@ -76,8 +77,8 @@ class MountOperation(Gio.MountOperation):
             op.set_password_save(Gio.PasswordSave.PERMANENTLY if remember is not None and remember.get_active()
                                  else Gio.PasswordSave.NEVER)
             op.reply(Gio.MountOperationResult.HANDLED)
-        self.dialog = dialog.alert(heading, body, [("cancel", "Cancel", ""), ("ok", "Unlock" if pw and not user
-                                                                               else "Connect", "default")],
+        self.dialog = dialog.alert(heading, body, [("cancel", _("Cancel"), ""), ("ok", _("Unlock") if pw and not user
+                                                                               else _("Connect"), "default")],
                                    answered, parent=self.parent)
         self.dialog.set_extra_child(box)
         first = user or pw
@@ -102,7 +103,7 @@ class MountOperation(Gio.MountOperation):
             op.set_choice(int(rid))
             op.reply(Gio.MountOperationResult.HANDLED)
         # Escape aborts: never picks a choice ("Unmount Anyway" comes first)
-        self.dialog = dialog.alert(heading, body, responses or [("0", "OK", "default")], answered,
+        self.dialog = dialog.alert(heading, body, responses or [("0", _("OK"), "default")], answered,
                                    parent=self.parent, close="close")
         return True
 

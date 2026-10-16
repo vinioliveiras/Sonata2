@@ -24,13 +24,14 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 from .. import config, ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 from ..backend.system import run_async  # noqa: E402
 from . import engine  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.camera"
 CONFIG = "camera"
 DEFAULTS = {"camera": "", "mirror": True, "countdown": False, "flash": False, "mode": "photo"}
-MODES = (("video", "VIDEO"), ("photo", "PHOTO"))
+MODES = (("video", N_("VIDEO")), ("photo", N_("PHOTO")))
 COUNT_FROM = 3
 FLASH_LEAD_MS = 180          # the screen is white this long before the photo (it lights the face)
 THUMB = 44
@@ -156,7 +157,7 @@ def fmt_time(seconds: int) -> str:
 # -- the window ------------------------------------------------------------------------------------
 class CameraWindow(Gtk.ApplicationWindow):
     def __init__(self, app, source=None):
-        super().__init__(application=app, title="Camera", css_classes=["sonata-camera"])
+        super().__init__(application=app, title=_("Camera"), css_classes=["sonata-camera"])
         ui.window.remember_size(self, "camera", 820, 700)  # its last size (never bigger than the display)
         ui.window.standard(self)
         self.set_size_request(460, 480)
@@ -185,7 +186,7 @@ class CameraWindow(Gtk.ApplicationWindow):
     def _top_bar(self):
         bar = Gtk.CenterBox(css_classes=["cam-top"])
         left = Gtk.Box(spacing=4, valign=Gtk.Align.CENTER)
-        self.flash_btn = Gtk.Button(icon_name="sonata-flash-symbolic", css_classes=["cam-icon"], tooltip_text="Flash")
+        self.flash_btn = Gtk.Button(icon_name="sonata-flash-symbolic", css_classes=["cam-icon"], tooltip_text=_("Flash"))
         self.flash_btn.connect("clicked", lambda *_: self._toggle("flash"))
         left.append(self.flash_btn)
         bar.set_start_widget(left)
@@ -193,10 +194,10 @@ class CameraWindow(Gtk.ApplicationWindow):
                                   visible=False)
         bar.set_center_widget(self.rec_time)
         right = Gtk.Box(spacing=4, valign=Gtk.Align.CENTER)
-        self.timer_btn = Gtk.Button(icon_name="timer-symbolic", css_classes=["cam-icon"], tooltip_text="Timer (3 s)")
+        self.timer_btn = Gtk.Button(icon_name="timer-symbolic", css_classes=["cam-icon"], tooltip_text=_("Timer (3 s)"))
         self.timer_btn.connect("clicked", lambda *_: self._toggle("countdown"))
         right.append(self.timer_btn)
-        self.menu_btn = Gtk.MenuButton(icon_name="view-more-symbolic", css_classes=["cam-icon"], tooltip_text="Options")
+        self.menu_btn = Gtk.MenuButton(icon_name="view-more-symbolic", css_classes=["cam-icon"], tooltip_text=_("Options"))
         self.menu_btn.set_create_popup_func(self._menu)
         right.append(self.menu_btn)
         bar.set_end_widget(right)
@@ -230,7 +231,7 @@ class CameraWindow(Gtk.ApplicationWindow):
         modes = Gtk.Box(spacing=6, halign=Gtk.Align.CENTER)
         self.mode_btns = {}
         for key, label in MODES:
-            b = Gtk.Button(label=label, css_classes=["cam-mode"])
+            b = Gtk.Button(label=_(label), css_classes=["cam-mode"])
             b.connect("clicked", lambda _b, k=key: self._set_mode(k))
             modes.append(b)
             self.mode_btns[key] = b
@@ -246,13 +247,13 @@ class CameraWindow(Gtk.ApplicationWindow):
         click.connect("pressed", lambda _g, _n, x, y: self.last_photo and self._last_menu(x, y))
         self.last_btn.add_controller(click)
         row.set_start_widget(self.last_btn)
-        self.shutter = Gtk.Button(css_classes=["cam-shutter"], tooltip_text="Take a Photo", halign=Gtk.Align.CENTER,
+        self.shutter = Gtk.Button(css_classes=["cam-shutter"], tooltip_text=_("Take a Photo"), halign=Gtk.Align.CENTER,
                                   valign=Gtk.Align.CENTER, sensitive=False)
         self.shutter.set_child(Gtk.Box(css_classes=["cam-core"], halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER))
         self.shutter.connect("clicked", lambda *_: self.capture())
         row.set_center_widget(self.shutter)
         self.switch_btn = Gtk.Button(icon_name="camera-switch-symbolic", css_classes=["cam-switch"],
-                                     valign=Gtk.Align.CENTER, tooltip_text="Switch Camera")
+                                     valign=Gtk.Align.CENTER, tooltip_text=_("Switch Camera"))
         self.switch_btn.connect("clicked", lambda *_: self._next_camera())
         row.set_end_widget(self.switch_btn)
         col.append(row)
@@ -275,7 +276,7 @@ class CameraWindow(Gtk.ApplicationWindow):
     def _start_camera(self):
         if self.cam.source is None:
             if not self.cams:
-                self._show_error("No Camera", "Connect a camera, or check that no other app is using it.")
+                self._show_error(_("No Camera"), _("Connect a camera, or check that no other app is using it."))
                 self.switch_btn.set_sensitive(False)
                 return
         self.switch_btn.set_sensitive(len(self.cams) > 1)
@@ -287,7 +288,7 @@ class CameraWindow(Gtk.ApplicationWindow):
 
     def _show_error(self, text, hint=None):
         """(text) from the camera: "Camera Unavailable" with it under; or a title and a hint."""
-        title, hint = ("Camera Unavailable", text) if hint is None else (text, hint)
+        title, hint = (_("Camera Unavailable"), _(text)) if hint is None else (text, hint)
         self.msg_title.set_label(title)
         self.msg_hint.set_label(hint)
         self.msg.set_visible(True)
@@ -326,7 +327,7 @@ class CameraWindow(Gtk.ApplicationWindow):
         current = self.cfg.get("camera") or (self.cams[0].name if self.cams else "")
         cams = [Item(c.name, lambda _on, n=c.name: self._switch(n), checked=c.name == current) for c in self.cams]
         sections = ([cams] if cams else []) + [[
-            Item("Mirror Image", lambda on: self._set("mirror", on), checked=self.cfg.get("mirror", True))]]
+            Item(_("Mirror Image"), lambda on: self._set("mirror", on), checked=self.cfg.get("mirror", True))]]
         pop = ui.menu.popup(button, sections, position=Gtk.PositionType.BOTTOM)
         button.set_active(False)
         return pop
@@ -339,7 +340,7 @@ class CameraWindow(Gtk.ApplicationWindow):
         for key, b in self.mode_btns.items():
             (b.add_css_class if key == mode else b.remove_css_class)("selected")
         (self.shutter.add_css_class if mode == "video" else self.shutter.remove_css_class)("video")
-        self.shutter.set_tooltip_text("Record" if mode == "video" else "Take a Photo")
+        self.shutter.set_tooltip_text(_("Record") if mode == "video" else _("Take a Photo"))
         self.flash_btn.set_visible(mode == "photo")
         if save:
             self._set("mode", mode)
@@ -435,7 +436,7 @@ class CameraWindow(Gtk.ApplicationWindow):
         if path is None:
             return
         self.shutter.add_css_class("recording")
-        self.shutter.set_tooltip_text("Stop")
+        self.shutter.set_tooltip_text(_("Stop"))
         for b in list(self.mode_btns.values()) + [self.switch_btn, self.last_btn]:
             b.set_sensitive(False)
         self.rec_time.set_label(fmt_time(0))
@@ -453,7 +454,7 @@ class CameraWindow(Gtk.ApplicationWindow):
             self._rec_src = 0
         self.rec_time.set_visible(False)
         self.shutter.remove_css_class("recording")
-        self.shutter.set_tooltip_text("Record" if self.mode == "video" else "Take a Photo")
+        self.shutter.set_tooltip_text(_("Record") if self.mode == "video" else _("Take a Photo"))
         for b in self.mode_btns.values():
             b.set_sensitive(True)
         self.switch_btn.set_sensitive(len(self.cams) > 1)
@@ -512,8 +513,8 @@ class CameraWindow(Gtk.ApplicationWindow):
                                  flags=GLib.SpawnFlags.SEARCH_PATH)
             except GLib.Error:
                 pass
-        ui.menu.popup(self.last_btn, [[Item("Open", lambda: self._open(path)), Item("Show in Files", reveal)],
-                                      [Item("Move to Trash", trash)]], at=(x, y))
+        ui.menu.popup(self.last_btn, [[Item(_("Open"), lambda: self._open(path)), Item(_("Show in Files"), reveal)],
+                                      [Item(_("Move to Trash"), trash)]], at=(x, y))
 
 
 def open_windows(app, paths=None) -> None:

@@ -33,15 +33,16 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, ui  # noqa: E402
+from ..i18n import N_, _, ngettext  # noqa: E402
 from . import alerts, ics, model, views  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.calendar"
 DEFAULTS = {"view": "week", "sidebar": True, "hidden": [], "default_calendar": "", "week_start": "locale"}
-VIEWS = (("day", "Day"), ("week", "Week"), ("month", "Month"), ("year", "Year"))
-REPEATS = ((None, "None"), ("DAILY", "Every Day"), ("WEEKLY", "Every Week"), ("MONTHLY", "Every Month"),
-           ("YEARLY", "Every Year"))
-ALERTS = ((None, "None"), (0, "At time of event"), (5, "5 minutes before"), (15, "15 minutes before"),
-          (30, "30 minutes before"), (60, "1 hour before"), (1440, "1 day before"))
+VIEWS = (("day", N_("Day")), ("week", N_("Week")), ("month", N_("Month")), ("year", N_("Year")))
+REPEATS = ((None, N_("None")), ("DAILY", N_("Every Day")), ("WEEKLY", N_("Every Week")), ("MONTHLY", N_("Every Month")),
+           ("YEARLY", N_("Every Year")))
+ALERTS = ((None, N_("None")), (0, N_("At time of event")), (5, N_("5 minutes before")), (15, N_("15 minutes before")),
+          (30, N_("30 minutes before")), (60, N_("1 hour before")), (1440, N_("1 day before")))
 SIDEBAR_W = ui.window.SIDEBAR_W          # the apps' one sidebar width
 RESULTS_W = 270
 
@@ -202,29 +203,29 @@ class CalendarWindow(Gtk.ApplicationWindow):
     # -- building ---------------------------------------------------------------------------------
     def _toolbar(self):
         tb = ui.window.glass_toolbar(self, start=(
-            ("sidebar-show-symbolic", "Show Calendar List", self.toggle_sidebar),
-            ("list-add-symbolic", "New Event", self.new_event)))
+            ("sidebar-show-symbolic", _("Show Calendar List"), self.toggle_sidebar),
+            ("list-add-symbolic", _("New Event"), self.new_event)))
         bar = tb.get_child()
         self.add_btn = bar.get_start_widget().get_last_child()
         seg = Gtk.Box(css_classes=["cal-seg"], valign=Gtk.Align.CENTER, homogeneous=True)
         self.view_buttons = {}
         first = None
         for vid, label in VIEWS:
-            b = Gtk.ToggleButton(label=label, group=first, can_focus=False)
+            b = Gtk.ToggleButton(label=_(label), group=first, can_focus=False)
             b.connect("toggled", lambda b, v=vid: b.get_active() and self.view != v and self.set_view(v))
             first = first or b
             seg.append(b)
             self.view_buttons[vid] = b
         bar.set_center_widget(seg)
         end = Gtk.Box(spacing=2, valign=Gtk.Align.CENTER)
-        self.search = Gtk.SearchEntry(placeholder_text="Search", width_chars=16, css_classes=["cal-search"],
+        self.search = Gtk.SearchEntry(placeholder_text=_("Search"), width_chars=16, css_classes=["cal-search"],
                                       valign=Gtk.Align.CENTER)
         self.search.connect("search-changed", lambda *_: self._search_changed())
         self.search.connect("stop-search", lambda *_: self._close_search())
         end.append(self.search)
-        for icon, label, tip, cb in (("go-previous-symbolic", None, "Previous", lambda: self.step(-1)),
-                                     (None, "Today", "Today", self.today),
-                                     ("go-next-symbolic", None, "Next", lambda: self.step(1))):
+        for icon, label, tip, cb in (("go-previous-symbolic", None, _("Previous"), lambda: self.step(-1)),
+                                     (None, _("Today"), _("Today"), self.today),
+                                     ("go-next-symbolic", None, _("Next"), lambda: self.step(1))):
             b = Gtk.Button(tooltip_text=tip, can_focus=False, css_classes=["tool"] + (["cal-today"] if label else []))
             if icon:
                 b.set_icon_name(icon)
@@ -246,7 +247,7 @@ class CalendarWindow(Gtk.ApplicationWindow):
     def _sidebar(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["sonata-sidebar", "cal-sidebar"])
         box.set_size_request(SIDEBAR_W, -1)
-        box.append(Gtk.Label(label="On My Computer", xalign=0, css_classes=["cal-sec"]))
+        box.append(Gtk.Label(label=_("On My Computer"), xalign=0, css_classes=["cal-sec"]))
         self.cal_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
         self.cal_list.connect("row-selected", self._calendar_selected)
         scroll = Gtk.ScrolledWindow(child=self.cal_list, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
@@ -374,19 +375,19 @@ class CalendarWindow(Gtk.ApplicationWindow):
         widget = gesture.get_widget()
         res = widget.translate_coordinates(self.cal_list, x, y)     # (x, y), or (ok, x, y) in older PyGObject
         row = self._row_at(res[-1]) if res and res[0] is not False else None
-        sections = [[Item("New Calendar", self.new_calendar)]]
+        sections = [[Item(_("New Calendar"), self.new_calendar)]]
         if row is not None:
             cal = self.store.calendar(row.cal_id)
-            colors = [Item(name, lambda _on=None, cid=cid, c=cal.id: self.recolor_calendar(c, cid), checked=cal.color == cid)
+            colors = [Item(_(name), lambda _on=None, cid=cid, c=cal.id: self.recolor_calendar(c, cid), checked=cal.color == cid)
                       for cid, name, _r in model.PALETTE]
-            sections = [[Item("Rename", lambda r=row: self.rename_calendar(r)),
-                         Item("Color", submenu=[colors])],
-                        [Item("Delete", lambda c=cal.id: self.delete_calendar(c),
+            sections = [[Item(_("Rename"), lambda r=row: self.rename_calendar(r)),
+                         Item(_("Color"), submenu=[colors])],
+                        [Item(_("Delete"), lambda c=cal.id: self.delete_calendar(c),
                               enabled=len(self.store.calendars) > 1)]] + sections
         ui.menu.popup(widget, sections, at=(x, y), glass=True, passthrough=True)
 
     def new_calendar(self) -> None:
-        cal = self.store.add_calendar("Untitled")
+        cal = self.store.add_calendar(_("Untitled"))
         self._fill_calendars()
         row = next((r for r in self._rows() if r.cal_id == cal.id), None)
         if row is not None:
@@ -434,10 +435,11 @@ class CalendarWindow(Gtk.ApplicationWindow):
                 self.redo_stack.clear()
                 self._fill_calendars()
                 self.data_changed()
-        ui.dialog.alert(f"Are you sure you want to delete the calendar “{cal.name}”?",
-                        f"Its {n} event{'s' if n != 1 else ''} will be deleted too. This can't be undone." if n
-                        else "This can't be undone.",
-                        [("cancel", "Cancel", "default"), ("delete", "Delete", "destructive")], answer, parent=self)
+        ui.dialog.alert(_("Are you sure you want to delete the calendar “{name}”?").format(name=cal.name),
+                        ngettext("Its {n} event will be deleted too. This can't be undone.",
+                                 "Its {n} events will be deleted too. This can't be undone.", n).format(n=n) if n
+                        else _("This can't be undone."),
+                        [("cancel", _("Cancel"), "default"), ("delete", _("Delete"), "destructive")], answer, parent=self)
 
     # -- navigation --------------------------------------------------------------------------------
     def set_view(self, view: str) -> None:
@@ -486,7 +488,7 @@ class CalendarWindow(Gtk.ApplicationWindow):
         size = ui.px("text_title") * 1.75
         esc = GLib.markup_escape_text
         if self.view == "day":
-            title = f"<b>{d.day} {esc(d.strftime('%B'))}</b> {d.year}"
+            title = _("<b>{day} {month}</b> {year}").format(day=d.day, month=esc(d.strftime('%B')), year=d.year)
             self.subtitle.set_label(d.strftime("%A"))
         elif self.view == "year":
             title = f"<b>{d.year}</b>"
@@ -495,7 +497,7 @@ class CalendarWindow(Gtk.ApplicationWindow):
             if self.view == "week":
                 first = model.week_start(d, self.first_weekday)
                 d = first + dt.timedelta(days=3)          # the month most of the week is in
-            title = f"<b>{esc(d.strftime('%B'))}</b> {d.year}"
+            title = _("<b>{month}</b> {year}").format(month=esc(d.strftime('%B')), year=d.year)
             self.subtitle.set_label("")
         self.title.set_markup(f"<span size='{int(size * Pango.SCALE)}'>{title}</span>")
         self.subtitle.set_visible(bool(self.subtitle.get_label()))
@@ -525,7 +527,7 @@ class CalendarWindow(Gtk.ApplicationWindow):
         if cal in self.hidden:
             self.set_visible_calendar(cal, True)
             self._fill_calendars()
-        ev = ics.Event(uid=ics.new_uid(), summary="New Event", start=start, end=end, all_day=all_day, calendar=cal)
+        ev = ics.Event(uid=ics.new_uid(), summary=_("New Event"), start=start, end=end, all_day=all_day, calendar=cal)
         self.apply([(None, ev)])
         occ = ics.Occurrence(self.store.events[ev.uid], start, end)
         self.select(occ)
@@ -602,11 +604,11 @@ class CalendarWindow(Gtk.ApplicationWindow):
                 self.apply([(ev.copy(), new if occ.start > ev.start else None)])
             if rid != "cancel":
                 self.select(None)
-        ui.dialog.alert(f"You're deleting an event “{ev.summary}”.",
-                        "Do you want to delete this and all future occurrences of this event, or only the "
-                        "selected occurrence?",
-                        [("cancel", "Cancel", ""), ("future", "Delete All Future", "destructive"),
-                         ("this", "Delete Only This Event", "default")], answer, parent=self)
+        ui.dialog.alert(_("You're deleting an event “{name}”.").format(name=ev.summary),
+                        _("Do you want to delete this and all future occurrences of this event, or only the "
+                          "selected occurrence?"),
+                        [("cancel", _("Cancel"), ""), ("future", _("Delete All Future"), "destructive"),
+                         ("this", _("Delete Only This Event"), "default")], answer, parent=self)
 
     def duplicate(self, occ) -> None:
         ev = self.store.events.get(occ.event.uid)
@@ -626,9 +628,9 @@ class CalendarWindow(Gtk.ApplicationWindow):
         r = Gdk.Rectangle()
         r.x, r.y, r.width, r.height = int(x), int(y), 1, 1
         ui.menu.popup(widget, [
-            [Item("Get Info", lambda: self.edit(occ, widget, r))],
-            [Item("Duplicate", lambda: self.duplicate(occ)), Item("Delete", self.delete_selected)],
-            [Item("Calendar", submenu=[cals])],
+            [Item(_("Get Info"), lambda: self.edit(occ, widget, r))],
+            [Item(_("Duplicate"), lambda: self.duplicate(occ)), Item(_("Delete"), self.delete_selected)],
+            [Item(_("Calendar"), submenu=[cals])],
         ], at=(x, y), glass=True, passthrough=True)
 
     def _move_to_calendar(self, occ, cal_id) -> None:
@@ -643,8 +645,8 @@ class CalendarWindow(Gtk.ApplicationWindow):
         r = Gdk.Rectangle()
         r.x, r.y, r.width, r.height = int(x), int(y), 1, 1
         end = start + (dt.timedelta(days=1) if all_day else dt.timedelta(hours=1))
-        ui.menu.popup(widget, [[Item("New Event", lambda: self.create(start, end, all_day, widget, r))],
-                               [Item("Go to Today", self.today)]], at=(x, y), glass=True, passthrough=True)
+        ui.menu.popup(widget, [[Item(_("New Event"), lambda: self.create(start, end, all_day, widget, r))],
+                               [Item(_("Go to Today"), self.today)]], at=(x, y), glass=True, passthrough=True)
 
     # -- search -----------------------------------------------------------------------------------
     def _search_changed(self) -> None:
@@ -670,7 +672,7 @@ class CalendarWindow(Gtk.ApplicationWindow):
             cal = self.store.calendar(ev.calendar)
             hb.append(Gtk.Box(css_classes=["cal-dot", "c-" + (cal.color if cal else "blue")], valign=Gtk.Align.CENTER))
             vb = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-            vb.append(Gtk.Label(label=ev.summary or "New Event", xalign=0, ellipsize=Pango.EllipsizeMode.END))
+            vb.append(Gtk.Label(label=ev.summary or _("New Event"), xalign=0, ellipsize=Pango.EllipsizeMode.END))
             date = f"{when:%a} {when.day} {when:%b %Y}" + ("" if ev.all_day else "  " + self.fmt_time(when.time()))
             vb.append(Gtk.Label(label=date + ("  ↻" if ev.freq else ""), xalign=0, css_classes=["cal-res-date"]))
             hb.append(vb)
@@ -702,8 +704,8 @@ class CalendarWindow(Gtk.ApplicationWindow):
             try:
                 _ok, data, _e = f.load_contents_finish(res)
             except GLib.Error as e:
-                ui.dialog.alert(f"“{f.get_basename()}” couldn't be imported.", e.message,
-                                [("ok", "OK", "default")], parent=self)
+                ui.dialog.alert(_("“{name}” couldn't be imported.").format(name=f.get_basename()), e.message,
+                                [("ok", _("OK"), "default")], parent=self)
                 return
             self._ask_import(f, bytes(data).decode("utf-8", errors="replace"))
         for f in files:
@@ -713,8 +715,8 @@ class CalendarWindow(Gtk.ApplicationWindow):
         info, events = ics.parse(text)
         name = f.get_basename()
         if not events:
-            ui.dialog.alert(f"“{name}” has no events.", "There is nothing to import.",
-                            [("ok", "OK", "default")], parent=self)
+            ui.dialog.alert(_("“{name}” has no events.").format(name=name), _("There is nothing to import."),
+                            [("ok", _("OK"), "default")], parent=self)
             return
         target = self.store.calendar(self.default_calendar())
 
@@ -735,22 +737,23 @@ class CalendarWindow(Gtk.ApplicationWindow):
             self.go(first.start.date())
             self.data_changed()
         n = len(events)
-        responses = [("cancel", "Cancel", ""), ("new", "New Calendar", "")]
+        responses = [("cancel", _("Cancel"), ""), ("new", _("New Calendar"), "")]
         if target is not None:
-            responses.append(("add", f"Add to “{target.name}”", "default"))
-        ui.dialog.alert(f"Import {n} event{'s' if n != 1 else ''} from “{name}”?",
-                        "Add them to a calendar you have or to a new calendar.", responses, answer, parent=self)
+            responses.append(("add", _("Add to “{name}”").format(name=target.name), "default"))
+        ui.dialog.alert(ngettext("Import {n} event from “{name}”?", "Import {n} events from “{name}”?", n).format(
+                            n=n, name=name),
+                        _("Add them to a calendar you have or to a new calendar."), responses, answer, parent=self)
 
     # -- alerts -----------------------------------------------------------------------------------
     def _notify(self, occ) -> None:
         ev = occ.event
         if ev.all_day:
-            body = "All day"
+            body = _("All day")
         else:
             body = f"{self.fmt_time(occ.start.time())} – {self.fmt_time(occ.end.time())}"
         if ev.location:
             body += "\n" + ev.location
-        alerts.send_notification(ev.summary or "New Event", body)
+        alerts.send_notification(ev.summary or _("New Event"), body)
 
     # -- formats ----------------------------------------------------------------------------------
     def fmt_time(self, t: dt.time) -> str:
@@ -764,7 +767,7 @@ class CalendarWindow(Gtk.ApplicationWindow):
         if self.h24:
             return f"{hour:02d}:00"
         if hour == 12:
-            return "Noon"
+            return _("Noon")
         return f"{hour % 12 or 12} {'AM' if hour < 12 else 'PM'}"
 
     # -- keys -------------------------------------------------------------------------------------
@@ -808,9 +811,9 @@ class Editor:
         self.master = win.store.events[occ.event.uid].copy()
         ev = self.master
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["cal-editor"])
-        self.title = Gtk.Entry(text=ev.summary, placeholder_text="New Event", css_classes=["cal-ed-title"])
+        self.title = Gtk.Entry(text=ev.summary, placeholder_text=_("New Event"), css_classes=["cal-ed-title"])
         self.title.connect("activate", lambda *_: self.pop.popdown())
-        self.location = Gtk.Entry(text=ev.location, placeholder_text="Add Location", css_classes=["cal-ed-flat"])
+        self.location = Gtk.Entry(text=ev.location, placeholder_text=_("Add Location"), css_classes=["cal-ed-flat"])
         self.location.connect("activate", lambda *_: self.pop.popdown())
         box.append(self.title)
         box.append(self.location)
@@ -822,21 +825,21 @@ class Editor:
         end_shown = end - dt.timedelta(days=1) if ev.all_day else end
         self.s_date, self.s_time = self._date_button(start.date()), self._time_entry(start.time())
         self.e_date, self.e_time = self._date_button(max(start.date(), end_shown.date())), self._time_entry(end.time())
-        self.repeat = ui.controls.popup_button([t for _v, t in REPEATS], [v for v, _t in REPEATS].index(ev.freq))
+        self.repeat = ui.controls.popup_button([_(t) for _v, t in REPEATS], [v for v, _t in REPEATS].index(ev.freq))
         alert_vals = [v for v, _t in ALERTS]
-        alert_names = [t for _v, t in ALERTS]
+        alert_names = [_(t) for _v, t in ALERTS]
         if ev.alarm not in alert_vals:
             alert_vals.append(ev.alarm)
-            alert_names.append(f"{ev.alarm} minutes before")
+            alert_names.append(ngettext("{n} minute before", "{n} minutes before", ev.alarm).format(n=ev.alarm))
         self.alert_vals = alert_vals
         self.alert = ui.controls.popup_button(alert_names, alert_vals.index(ev.alarm))
         self.cal_ids = [c.id for c in win.store.calendars]
         self.calendar = ui.controls.popup_button([c.name for c in win.store.calendars],
                                                  max(0, self.cal_ids.index(ev.calendar))
                                                  if ev.calendar in self.cal_ids else 0)
-        rows = (("all-day:", self.all_day), ("starts:", self._pair(self.s_date, self.s_time)),
-                ("ends:", self._pair(self.e_date, self.e_time)), ("repeat:", self.repeat),
-                ("alert:", self.alert), ("calendar:", self.calendar))
+        rows = ((_("all-day:"), self.all_day), (_("starts:"), self._pair(self.s_date, self.s_time)),
+                (_("ends:"), self._pair(self.e_date, self.e_time)), (_("repeat:"), self.repeat),
+                (_("alert:"), self.alert), (_("calendar:"), self.calendar))
         for i, (key, w) in enumerate(rows):
             grid.attach(Gtk.Label(label=key, xalign=1, css_classes=["cal-ed-key"]), 0, i, 1, 1)
             w.set_halign(Gtk.Align.START)
@@ -847,7 +850,7 @@ class Editor:
                                   right_margin=4, top_margin=2, bottom_margin=2)
         self.notes.get_buffer().set_text(ev.description)
         over = Gtk.Overlay(child=self.notes)
-        self.placeholder = Gtk.Label(label="Add Notes", xalign=0, valign=Gtk.Align.START, can_target=False,
+        self.placeholder = Gtk.Label(label=_("Add Notes"), xalign=0, valign=Gtk.Align.START, can_target=False,
                                      css_classes=["cal-ed-placeholder"], margin_start=4, margin_top=2)
         over.add_overlay(self.placeholder)
         self.notes.get_buffer().connect("changed", lambda b: self.placeholder.set_visible(b.get_char_count() == 0))
@@ -972,7 +975,7 @@ class Editor:
         if cur is None:
             return
         new = cur.copy()
-        new.summary = self.title.get_text().strip() or "New Event"
+        new.summary = self.title.get_text().strip() or _("New Event")
         new.location = self.location.get_text().strip()
         buf = self.notes.get_buffer()
         new.description = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False).strip()

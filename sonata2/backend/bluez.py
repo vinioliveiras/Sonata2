@@ -18,6 +18,8 @@ from typing import List, Optional, Tuple
 
 from gi.repository import Gio, GLib
 
+from ..i18n import _
+
 BUS_NAME = "org.bluez"
 DEVICE = "org.bluez.Device1"
 ADAPTER = "org.bluez.Adapter1"
@@ -94,15 +96,15 @@ def _prop(bus, path, name):
 def _message(e: GLib.Error) -> str:
     Gio.DBusError.strip_remote_error(e)
     text = e.message or ""
-    known = {"AuthenticationFailed": "Pairing failed", "AuthenticationCanceled": "Pairing was cancelled",
-             "ConnectionAttemptFailed": "The device didn't answer (is it on and in range?)",
-             "page-timeout": "The device didn't answer (is it on and in range?)",
-             "br-connection-profile-unavailable": "No audio/input service on this device",
-             "InProgress": "Already connecting", "AlreadyConnected": "Already connected"}
+    known = {"AuthenticationFailed": _("Pairing failed"), "AuthenticationCanceled": _("Pairing was cancelled"),
+             "ConnectionAttemptFailed": _("The device didn't answer (is it on and in range?)"),
+             "page-timeout": _("The device didn't answer (is it on and in range?)"),
+             "br-connection-profile-unavailable": _("No audio/input service on this device"),
+             "InProgress": _("Already connecting"), "AlreadyConnected": _("Already connected")}
     for k, v in known.items():
         if k in text:
             return v
-    return text or "That didn't work"
+    return text or _("That didn't work")
 
 
 def connect(mac: str) -> Tuple[bool, str]:
@@ -114,7 +116,7 @@ def connect(mac: str) -> Tuple[bool, str]:
         bus = _bus()
         path = _device_path(bus, mac)
         if path is None:
-            return False, "Device not found"
+            return False, _("Device not found")
     except GLib.Error as e:
         return False, _message(e)
     pair_error = None
@@ -143,7 +145,7 @@ def connect(mac: str) -> Tuple[bool, str]:
     except GLib.Error as e:
         ok, msg = False, _message(e)
     if ok:
-        return True, "Connected"
+        return True, _("Connected")
     return False, connect_error or pair_error or msg
 
 
@@ -160,7 +162,7 @@ def _settled(bus, path, wait: float = 8) -> Tuple[bool, str]:
             break
         time.sleep(0.25)
     else:
-        return False, "The device didn't stay connected"
+        return False, _("The device didn't stay connected")
     until = time.monotonic() + STAY_S
     while time.monotonic() < until:
         if not _prop(bus, path, "Connected"):
@@ -169,11 +171,11 @@ def _settled(bus, path, wait: float = 8) -> Tuple[bool, str]:
             except GLib.Error:
                 icon = ""
             if icon == "input-gaming":
-                return False, ("It connected, then dropped. Xbox controllers usually need the xpadneo "
-                               "driver (or Bluetooth ERTM turned off) on Linux.")
-            return False, "It connected, then dropped"
+                return False, _("It connected, then dropped. Xbox controllers usually need the xpadneo "
+                                 "driver (or Bluetooth ERTM turned off) on Linux.")
+            return False, _("It connected, then dropped")
         time.sleep(0.25)
-    return True, "Connected"
+    return True, _("Connected")
 
 
 def disconnect(mac: str) -> Tuple[bool, str]:
@@ -181,9 +183,9 @@ def disconnect(mac: str) -> Tuple[bool, str]:
         bus = _bus()
         path = _device_path(bus, mac)
         if path is None:
-            return False, "Device not found"
+            return False, _("Device not found")
         bus.call_sync(BUS_NAME, path, DEVICE, "Disconnect", None, None, Gio.DBusCallFlags.NONE, 10000, None)
-        return (not _prop(bus, path, "Connected")), "Disconnected"
+        return (not _prop(bus, path, "Connected")), _("Disconnected")
     except GLib.Error as e:
         return False, _message(e)
 
@@ -194,10 +196,10 @@ def forget(mac: str) -> Tuple[bool, str]:
         bus = _bus()
         path, adapter = _device_path(bus, mac), adapter_path(bus)
         if path is None or adapter is None:
-            return False, "Device not found"
+            return False, _("Device not found")
         bus.call_sync(BUS_NAME, adapter, ADAPTER, "RemoveDevice", GLib.Variant("(o)", (path,)), None,
                       Gio.DBusCallFlags.NONE, 5000, None)
-        return True, "Removed"
+        return True, _("Removed")
     except GLib.Error as e:
         return False, _message(e)
 

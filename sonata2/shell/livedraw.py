@@ -21,10 +21,11 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 from . import layer  # noqa: E402
 
 FADE_AFTER_S, FADE_S = 3.0, 0.8          # fading marks: shown this long, then fade out
-TOOLS = (("pen", "Pen"), ("hl", "Highlighter"), ("shape", "Shapes"), ("text", "Text"), ("emoji", "Emoji"))
+TOOLS = (("pen", N_("Pen")), ("hl", N_("Highlighter")), ("shape", N_("Shapes")), ("text", N_("Text")), ("emoji", N_("Emoji")))
 COLORS = ("#ff3b30", "#ffcc00", "#34c759", "#007aff", "#ffffff")
 PALETTE_NS, OVERLAY_NS = "sonata2-draw-palette", "sonata2-draw"
 PALETTE_SIZE = (560, 62)                 # before the palette has been laid out
@@ -114,15 +115,16 @@ class Palette(Gtk.Window):
                          css_classes=["sonata-draw-palette"])
         from ..preview.markup import MarkupBar
         self.owner = owner
-        actions = (("fade", "Marks fade away by themselves", owner.toggle_fade),
-                   ("undo", "Undo", owner.undo), ("trash", "Clear the screen", owner.clear),
-                   ("close", "Stop drawing (Esc)", lambda: owner.set_on(False)))
-        self.bar = MarkupBar(owner.proto, tools=TOOLS, colors=COLORS, actions=actions)
+        fade = _("Marks fade away by themselves")
+        actions = (("fade", fade, owner.toggle_fade),
+                   ("undo", _("Undo"), owner.undo), ("trash", _("Clear the screen"), owner.clear),
+                   ("close", _("Stop drawing (Esc)"), lambda: owner.set_on(False)))
+        self.bar = MarkupBar(owner.proto, tools=[(k, _(v)) for k, v in TOOLS], colors=COLORS, actions=actions)
         frame = Gtk.Box(css_classes=["draw-palette"])
         frame.append(self.bar)
         self.set_child(frame)
         self.fade_btn = [c for c in _children(self.bar.box) if c.get_tooltip_text() ==
-                         "Marks fade away by themselves"][0]
+                         fade][0]
         LS = layer.layer_shell()
         if LS:
             LS.init_for_window(self)
@@ -312,7 +314,7 @@ def get(app) -> LiveDraw:
 def pen_button(app, output_fn=lambda: None) -> Gtk.Button:
     """The pills' pen: drawing on / off (blue while on)."""
     from ..preview.markup import _glyph
-    b = Gtk.Button(css_classes=["rec-pen"], tooltip_text="Draw on the screen (Super+Shift+D)", can_focus=False,
+    b = Gtk.Button(css_classes=["rec-pen"], tooltip_text=_("Draw on the screen (Super+Shift+D)"), can_focus=False,
                    valign=Gtk.Align.CENTER)
     b.set_child(_glyph("pen", 12))
     d = get(app)

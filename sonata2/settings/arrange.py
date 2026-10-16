@@ -13,6 +13,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Gdk, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 HEIGHT = 220                  # the drawing's height in Settings
 PAD = 24
@@ -38,7 +39,7 @@ def display_title(d) -> str:
     'LG Electronics LG ULTRAGEAR 0x00066A07 (HDMI-A-1)' -> 'LG Electronics LG ULTRAGEAR'."""
     from ..backend import system
     if system.is_builtin(d.name):
-        return "Built-in Display"
+        return _("Built-in Display")
     words = [w for w in (d.description or "").split("(")[0].split() if not w.lower().startswith("0x")]
     return " ".join(words) or d.name
 

@@ -13,6 +13,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk  # noqa: E402
 
 from . import theme  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 HOLD_MS = 800                       # press and hold before edit mode starts
 
@@ -39,11 +40,11 @@ theme.register("""
 """, key="edit")
 
 
-def badge(on_click, tooltip: str = "Remove", corner: bool = False) -> Gtk.Button:
+def badge(on_click, tooltip: str = None, corner: bool = False) -> Gtk.Button:
     """The round x shown on an item in edit mode (hidden until then).
     corner: half outside the item's top-left corner (a module edge to edge)."""
     b = Gtk.Button(icon_name="window-close-symbolic", css_classes=["sonata-edit-badge"] + (["corner"] if corner else []),
-                   tooltip_text=tooltip,
+                   tooltip_text=_("Remove") if tooltip is None else tooltip,
                    halign=Gtk.Align.START, valign=Gtk.Align.START, can_focus=False, visible=False)
     b.connect("clicked", lambda _b: on_click())
     return b

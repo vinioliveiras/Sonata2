@@ -17,6 +17,8 @@ import threading
 
 from gi.repository import GLib
 
+from ..i18n import N_
+
 # containers that take H.264 + AAC as they are; any other movie becomes .mp4
 VIDEO_KEEP = (".mp4", ".m4v", ".mov", ".mkv")
 # a song keeps its format: the encoder for it
@@ -159,7 +161,7 @@ def thumbnails(path: str, duration: float, count: int, height: int, on_thumb, st
 
 
 # -- crop geometry (video pixels) -------------------------------------------------------------
-RATIOS = (("free", "Free", None), ("16:9", "16:9", 16 / 9), ("4:3", "4:3", 4 / 3), ("1:1", "1:1", 1.0),
+RATIOS = (("free", N_("Free"), None), ("16:9", "16:9", 16 / 9), ("4:3", "4:3", 4 / 3), ("1:1", "1:1", 1.0),
           ("9:16", "9:16", 9 / 16))
 MIN_CROP = 32               # px of the movie: the smallest crop
 

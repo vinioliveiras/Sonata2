@@ -15,13 +15,14 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 from ..backend import system  # noqa: E402
 from . import manage  # noqa: E402
 from .procfs import fmt_bytes, fmt_count, fmt_cpu_time  # noqa: E402
 from .widgets import name_column, row_at, table, text_column, tool_button  # noqa: E402
 
 NCPU = os.cpu_count() or 1
-GROUPS = ("Apps", "Background processes", "System processes")
+GROUPS = (N_("Apps"), N_("Background processes"), N_("System processes"))
 
 
 def _cmp(a, b) -> int:
@@ -137,7 +138,7 @@ class StartupRow(GObject.Object):
 
     def __init__(self, entry):
         super().__init__(name=entry.name, comment=entry.comment, command=entry.command,
-                         status="Enabled" if entry.enabled else "Disabled", enabled=entry.enabled)
+                         status=_("Enabled") if entry.enabled else _("Disabled"), enabled=entry.enabled)
         self.entry = entry
         self.icon = _icon(entry.icon)
         self.sv = {"name": entry.name, "comment": entry.comment, "command": entry.command, "status": self.status}
@@ -152,7 +153,7 @@ class ServiceRow(GObject.Object):
 
     def __init__(self, s):
         super().__init__(name=s.unit, description=s.description, status=s.status,
-                         scope="User" if s.scope == "user" else "System")
+                         scope=_("User") if s.scope == "user" else _("System"))
         self.service = s
         self.icon = None
         self.sv = {"name": s.unit, "description": s.description, "status": s.status, "scope": self.scope}
@@ -299,13 +300,13 @@ class Page:
 class ProcessesPage(Page):
     """Windows' Processes: Apps (expandable), Background processes, System
     processes; Name, Status, CPU, Memory, Disk, Network with heat tint."""
-    id, title, icon = "processes", "Processes", "view-app-grid-symbolic"
+    id, title, icon = "processes", N_("Processes"), "view-app-grid-symbolic"
 
     def __init__(self, win):
         super().__init__(win)
-        self.end_btn = self.button("process-stop-symbolic", "End task", lambda: win.end_task(self.selected_rows()))
+        self.end_btn = self.button("process-stop-symbolic", _("End task"), lambda: win.end_task(self.selected_rows()))
         self.props_btn = self.button("info-outline-symbolic", "", lambda: win.show_properties(self.selected_rows()),
-                                     "Properties")
+                                     _("Properties"))
         self.root = Gio.ListStore(item_type=RowBase)
         self.nodes = {}                          # app key -> AppNode
         self.counts = [0, 0, 0]
@@ -326,16 +327,16 @@ class ProcessesPage(Page):
         hf.connect("unbind", lambda _f, h: self.headers.pop(h.get_child(), None))
         self.view.set_header_factory(hf)
         dummy = lambda: Gtk.CustomSorter.new(lambda *_a: 0)      # noqa: E731  (headers clickable; _compare sorts)
-        self.cols = {"name": name_column(self.view, "Name", 240, tree=True, sorter=dummy())}
-        self.cols["status"] = text_column(self.view, "Status", "status", None, 90, numeric=False, sorter=dummy(),
+        self.cols = {"name": name_column(self.view, _("Name"), 240, tree=True, sorter=dummy())}
+        self.cols["status"] = text_column(self.view, _("Status"), "status", _, 90, numeric=False, sorter=dummy(),
                                           dim=True)
-        self.cols["cpu"] = text_column(self.view, "CPU", "cpu", fmt_cpu, 80, heat=heat_cpu, sorter=dummy())
-        self.cols["mem"] = text_column(self.view, "Memory", "mem", fmt_mem, 100, heat=heat_mem, sorter=dummy())
-        self.cols["disk"] = text_column(self.view, "Disk", "disk", fmt_disk, 90, heat=heat_disk, sorter=dummy())
-        self.cols["net"] = text_column(self.view, "Network", "net", fmt_net, 90, heat=heat_net, sorter=dummy())
+        self.cols["cpu"] = text_column(self.view, _("CPU"), "cpu", fmt_cpu, 80, heat=heat_cpu, sorter=dummy())
+        self.cols["mem"] = text_column(self.view, _("Memory"), "mem", fmt_mem, 100, heat=heat_mem, sorter=dummy())
+        self.cols["disk"] = text_column(self.view, _("Disk"), "disk", fmt_disk, 90, heat=heat_disk, sorter=dummy())
+        self.cols["net"] = text_column(self.view, _("Network"), "net", fmt_net, 90, heat=heat_net, sorter=dummy())
         self.cols["gpu"] = text_column(self.view, "GPU", "gpu", fmt_gpu, 70, heat=heat_gpu, sorter=dummy())
         # which card draws it (Vini): two-GPU laptops, the integrated card for everyday apps
-        self.cols["gpu_on"] = text_column(self.view, "GPU Engine", "gpu_on", None, 96, numeric=False,
+        self.cols["gpu_on"] = text_column(self.view, _("GPU Engine"), "gpu_on", None, 96, numeric=False,
                                           sorter=dummy(), dim=True)
         for cid, c in self.cols.items():
             c.cid = cid
@@ -389,7 +390,7 @@ class ProcessesPage(Page):
         tree_row = header.get_item()
         g = tree_row.get_item().sv.get("group", 0) if tree_row is not None else 0
         self.headers[header.get_child()] = g
-        header.get_child().set_label(f"{GROUPS[g]} ({self.counts[g]})")
+        header.get_child().set_label(f"{_(GROUPS[g])} ({self.counts[g]})")
 
     def search(self, text: str) -> None:
         super().search(text)
@@ -453,17 +454,17 @@ class ProcessesPage(Page):
         finally:
             win._restoring = False
         for lbl, g in list(self.headers.items()):
-            lbl.set_label(f"{GROUPS[g]} ({self.counts[g]})")
+            lbl.set_label(f"{_(GROUPS[g])} ({self.counts[g]})")
         cpu = 100 - snap.cpu.get("idle", 100)
-        self.cols["cpu"].set_title(f"{cpu:.0f}%\nCPU")
+        self.cols["cpu"].set_title(f"{cpu:.0f}%\n" + _("CPU"))
         m = snap.memory
-        self.cols["mem"].set_title(f"{100 * m.get('used', 0) / max(1, m.get('total', 1)):.0f}%\nMemory")
+        self.cols["mem"].set_title(f"{100 * m.get('used', 0) / max(1, m.get('total', 1)):.0f}%\n" + _("Memory"))
         active = max((d["active"] for d in snap.disks.values()), default=0)
-        self.cols["disk"].set_title(f"{active:.0f}%\nDisk")
+        self.cols["disk"].set_title(f"{active:.0f}%\n" + _("Disk"))
         self.cols["net"].set_title(f"{fmt_bits(8 * (snap.net.get('rx_bytes_ps', 0) + snap.net.get('tx_bytes_ps', 0)))}"
-                                   "\nNetwork")
+                                   "\n" + _("Network"))
         gpu = max((v for v in snap.gpus.values() if v is not None), default=None)   # a sleeping dGPU: None
-        self.cols["gpu"].set_title(f"{gpu:.0f}%\nGPU" if gpu is not None else "GPU")
+        self.cols["gpu"].set_title(f"{gpu:.0f}%\n" + _("GPU") if gpu is not None else _("GPU"))
         self._buttons()
 
     def _menu(self, gesture, _n, x, y) -> None:
@@ -479,22 +480,22 @@ class ProcessesPage(Page):
         first = rows[0] if rows else None
         Item = ui.menu.Item
         ui.menu.popup(self.view, [
-            [Item("End task", lambda: self.win.end_task(rows))],
-            [Item("Open file location", lambda: self.win.open_location(first), enabled=bool(first and first.exe)),
-             Item("Search online", lambda: self.win.search_online(row.name))],
-            [Item("Properties", lambda: self.win.show_properties(rows))],
+            [Item(_("End task"), lambda: self.win.end_task(rows))],
+            [Item(_("Open file location"), lambda: self.win.open_location(first), enabled=bool(first and first.exe)),
+             Item(_("Search online"), lambda: self.win.search_online(row.name))],
+            [Item(_("Properties"), lambda: self.win.show_properties(rows))],
         ], at=(x, y), glass=True, passthrough=True)
 
 
 class DetailsPage(Page):
     """Every process in one table (Windows' Details)."""
-    id, title, icon = "details", "Details", "view-list-symbolic"
+    id, title, icon = "details", N_("Details"), "view-list-symbolic"
 
     def __init__(self, win):
         super().__init__(win)
-        self.end_btn = self.button("process-stop-symbolic", "End task", lambda: win.end_task(self.selected_rows()))
+        self.end_btn = self.button("process-stop-symbolic", _("End task"), lambda: win.end_task(self.selected_rows()))
         self.props_btn = self.button("info-outline-symbolic", "", lambda: win.show_properties(self.selected_rows()),
-                                     "Properties")
+                                     _("Properties"))
         self.filtered = Gtk.FilterListModel(model=win.all_store, filter=Gtk.CustomFilter.new(self._accepts))
         self.view = table()
         self.sorted = Gtk.SortListModel(model=self.filtered, sorter=self.view.get_sorter())
@@ -506,14 +507,15 @@ class DetailsPage(Page):
             if fold:
                 return Gtk.CustomSorter.new(lambda a, b, _d: _cmp(a.sv[k].casefold(), b.sv[k].casefold()))
             return Gtk.CustomSorter.new(lambda a, b, _d: _cmp(a.sv[k], b.sv[k]) or _cmp(a.sv["pid"], b.sv["pid"]))
-        self.cols = {"name": name_column(self.view, "Name", 220, sorter=srt("name", True))}
+        self.cols = {"name": name_column(self.view, _("Name"), 220, sorter=srt("name", True))}
         for cid, title, fmt, width, numeric, heat in (
-                ("pid", "PID", str, 70, True, None), ("status", "Status", None, 110, False, None),
-                ("user", "User name", None, 100, False, None), ("cpu", "CPU", fmt_cpu, 70, True, heat_cpu),
-                ("cpu_time", "CPU time", fmt_cpu_time, 90, True, None), ("threads", "Threads", fmt_count, 70, True, None),
-                ("mem", "Memory", fmt_mem, 100, True, heat_mem), ("read_bytes", "Read", fmt_bytes, 90, True, None),
-                ("write_bytes", "Written", fmt_bytes, 90, True, None),
-                ("command", "Command line", None, 320, False, None)):
+                ("pid", "PID", str, 70, True, None), ("status", _("Status"), _, 110, False, None),
+                ("user", _("User name"), None, 100, False, None), ("cpu", _("CPU"), fmt_cpu, 70, True, heat_cpu),
+                ("cpu_time", _("CPU time"), fmt_cpu_time, 90, True, None),
+                ("threads", _("Threads"), fmt_count, 70, True, None),
+                ("mem", _("Memory"), fmt_mem, 100, True, heat_mem), ("read_bytes", _("Read"), fmt_bytes, 90, True, None),
+                ("write_bytes", _("Written"), fmt_bytes, 90, True, None),
+                ("command", _("Command line"), None, 320, False, None)):
             self.cols[cid] = text_column(self.view, title, cid, fmt, width, numeric=numeric, heat=heat,
                                          sorter=srt(cid, not numeric), dim=cid in ("user", "command", "status"))
         for cid, c in self.cols.items():
@@ -604,19 +606,19 @@ class DetailsPage(Page):
         tree = [r for r in self.win.rows.values() if self.win.descends(r, row)]
         Item = ui.menu.Item
         ui.menu.popup(self.view, [
-            [Item("End task", lambda: self.win.end_task([row])),
-             Item("End process tree", lambda: self.win.end_task([row] + tree)),
-             Item("Force quit", lambda: self.win.end_task([row], force=True))],
-            [Item("Open file location", lambda: self.win.open_location(row), enabled=bool(row.exe)),
-             Item("Search online", lambda: self.win.search_online(row.name)),
-             Item("Copy PID", lambda: self.win.get_clipboard().set(str(row.sv["pid"])))],
-            [Item("Properties", lambda: self.win.show_properties([row]))],
+            [Item(_("End task"), lambda: self.win.end_task([row])),
+             Item(_("End process tree"), lambda: self.win.end_task([row] + tree)),
+             Item(_("Force quit"), lambda: self.win.end_task([row], force=True))],
+            [Item(_("Open file location"), lambda: self.win.open_location(row), enabled=bool(row.exe)),
+             Item(_("Search online"), lambda: self.win.search_online(row.name)),
+             Item(_("Copy PID"), lambda: self.win.get_clipboard().set(str(row.sv["pid"])))],
+            [Item(_("Properties"), lambda: self.win.show_properties([row]))],
         ], at=(x, y), glass=True, passthrough=True)
 
 
 class UsersPage(Page):
     """Per-user totals (Windows' Users)."""
-    id, title, icon = "users", "Users", "system-users-symbolic"
+    id, title, icon = "users", N_("Users"), "system-users-symbolic"
 
     def __init__(self, win):
         super().__init__(win)
@@ -631,12 +633,12 @@ class UsersPage(Page):
 
         def srt(k):
             return Gtk.CustomSorter.new(lambda a, b, _d: _cmp(a.sv.get(k, 0), b.sv.get(k, 0)))
-        name_column(self.view, "User", 240, sorter=Gtk.CustomSorter.new(
+        name_column(self.view, _("User"), 240, sorter=Gtk.CustomSorter.new(
             lambda a, b, _d: _cmp(a.sv["name"].casefold(), b.sv["name"].casefold())))
-        text_column(self.view, "Processes", "procs", fmt_count, 90, sorter=srt("procs"))
-        self.cpu_col = text_column(self.view, "CPU", "cpu", fmt_cpu, 90, heat=heat_cpu, sorter=srt("cpu"))
-        text_column(self.view, "Memory", "mem", fmt_mem, 110, heat=heat_mem, sorter=srt("mem"))
-        text_column(self.view, "Disk", "disk", fmt_disk, 100, heat=heat_disk, sorter=srt("disk"))
+        text_column(self.view, _("Processes"), "procs", fmt_count, 90, sorter=srt("procs"))
+        self.cpu_col = text_column(self.view, _("CPU"), "cpu", fmt_cpu, 90, heat=heat_cpu, sorter=srt("cpu"))
+        text_column(self.view, _("Memory"), "mem", fmt_mem, 110, heat=heat_mem, sorter=srt("mem"))
+        text_column(self.view, _("Disk"), "disk", fmt_disk, 100, heat=heat_disk, sorter=srt("disk"))
         self.view.sort_by_column(self.cpu_col, Gtk.SortType.DESCENDING)
         self.scroller = self._scrolled(self.view)
         self.widget = self.scroller
@@ -666,11 +668,11 @@ class UsersPage(Page):
 
 class HistoryPage(Page):
     """CPU time and disk use per app since a date (Windows' App history)."""
-    id, title, icon = "history", "App history", "document-open-recent-symbolic"
+    id, title, icon = "history", N_("App history"), "document-open-recent-symbolic"
 
     def __init__(self, win):
         super().__init__(win)
-        self.button("edit-delete-symbolic", "Delete usage history", self.clear)
+        self.button("edit-delete-symbolic", _("Delete usage history"), self.clear)
         self.store = Gio.ListStore(item_type=HistoryRow)
         self.rows = {}
         self.filtered = Gtk.FilterListModel(model=self.store, filter=Gtk.CustomFilter.new(
@@ -682,10 +684,10 @@ class HistoryPage(Page):
 
         def srt(k):
             return Gtk.CustomSorter.new(lambda a, b, _d: _cmp(a.sv.get(k, 0), b.sv.get(k, 0)))
-        name_column(self.view, "Name", 300, sorter=Gtk.CustomSorter.new(
+        name_column(self.view, _("Name"), 300, sorter=Gtk.CustomSorter.new(
             lambda a, b, _d: _cmp(a.sv["name"].casefold(), b.sv["name"].casefold())))
-        self.cpu_col = text_column(self.view, "CPU time", "cpu_time", fmt_cpu_time, 120, sorter=srt("cpu_time"))
-        text_column(self.view, "Disk", "disk", lambda v: fmt_bytes(int(v)), 120, sorter=srt("disk"))
+        self.cpu_col = text_column(self.view, _("CPU time"), "cpu_time", fmt_cpu_time, 120, sorter=srt("cpu_time"))
+        text_column(self.view, _("Disk"), "disk", lambda v: fmt_bytes(int(v)), 120, sorter=srt("disk"))
         self.view.sort_by_column(self.cpu_col, Gtk.SortType.DESCENDING)
         self.note = Gtk.Label(xalign=0, css_classes=["tm-note"])
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -707,8 +709,8 @@ class HistoryPage(Page):
 
     def update(self, snap) -> None:
         h = self.win.history
-        self.note.set_label("Resource usage since " + time.strftime("%d/%m/%Y", time.localtime(h.since)) +
-                            " for the current user account.")
+        self.note.set_label(_("Resource usage since {date} for the current user account.").format(
+            date=time.strftime("%d/%m/%Y", time.localtime(h.since))))
         for key, a in h.apps.items():
             r = self.rows.get(key)
             if r is None:
@@ -726,12 +728,12 @@ class HistoryPage(Page):
 class StartupPage(Page):
     """Login items (~/.config/autostart over /etc/xdg/autostart) with an
     Enabled switch (Windows' Startup apps)."""
-    id, title, icon = "startup", "Startup apps", "system-run-symbolic"
+    id, title, icon = "startup", N_("Startup apps"), "system-run-symbolic"
 
     def __init__(self, win):
         super().__init__(win)
-        self.enable_btn = self.button("media-playback-start-symbolic", "Enable", lambda: self._toggle_selected(True))
-        self.disable_btn = self.button("media-playback-stop-symbolic", "Disable",
+        self.enable_btn = self.button("media-playback-start-symbolic", _("Enable"), lambda: self._toggle_selected(True))
+        self.disable_btn = self.button("media-playback-stop-symbolic", _("Disable"),
                                        lambda: self._toggle_selected(False))
         self.store = Gio.ListStore(item_type=StartupRow)
         self.filtered = Gtk.FilterListModel(model=self.store, filter=Gtk.CustomFilter.new(
@@ -744,21 +746,21 @@ class StartupPage(Page):
 
         def srt(k):
             return Gtk.CustomSorter.new(lambda a, b, _d: _cmp(a.sv[k].casefold(), b.sv[k].casefold()))
-        name = name_column(self.view, "Name", 240, sorter=srt("name"))
-        text_column(self.view, "Description", "comment", None, 260, numeric=False, sorter=srt("comment"), dim=True)
-        text_column(self.view, "Command", "command", None, 240, numeric=False, sorter=srt("command"), dim=True)
-        text_column(self.view, "Status", "status", None, 90, numeric=False, sorter=srt("status"))
+        name = name_column(self.view, _("Name"), 240, sorter=srt("name"))
+        text_column(self.view, _("Description"), "comment", None, 260, numeric=False, sorter=srt("comment"), dim=True)
+        text_column(self.view, _("Command"), "command", None, 240, numeric=False, sorter=srt("command"), dim=True)
+        text_column(self.view, _("Status"), "status", None, 90, numeric=False, sorter=srt("status"))
         f = Gtk.SignalListItemFactory()
         f.connect("setup", lambda _f, it: it.set_child(Gtk.Box(halign=Gtk.Align.CENTER)))
         f.connect("bind", self._bind_switch)
-        sw_col = Gtk.ColumnViewColumn(title="Enabled", factory=f)
+        sw_col = Gtk.ColumnViewColumn(title=_("Enabled"), factory=f)
         sw_col.set_fixed_width(80)
         self.view.append_column(sw_col)
         self.view.sort_by_column(name, Gtk.SortType.ASCENDING)
         menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
         menu.connect("pressed", self._menu)
         self.view.add_controller(menu)
-        self.empty = Gtk.Label(label="No startup apps", css_classes=["tm-note"], visible=False, vexpand=True)
+        self.empty = Gtk.Label(label=_("No startup apps"), css_classes=["tm-note"], visible=False, vexpand=True)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         box.append(self._scrolled(self.view))
         box.append(self.empty)
@@ -791,12 +793,13 @@ class StartupPage(Page):
 
         def done(path):
             if path is None:
-                ui.dialog.alert(f"“{row.name}” couldn't be changed.", "Its startup file couldn't be written.",
-                                [("ok", "OK", "default")], parent=self.win)
+                ui.dialog.alert(_("“{name}” couldn't be changed.").format(name=row.name),
+                                _("Its startup file couldn't be written."),
+                                [("ok", _("OK"), "default")], parent=self.win)
                 self.reload()
                 return
             row.enabled = on
-            row.status = row.sv["status"] = "Enabled" if on else "Disabled"
+            row.status = row.sv["status"] = _("Enabled") if on else _("Disabled")
             self._rebind(row)
             self._buttons()
         system.run_async(manage.set_startup_enabled, done, row.entry, on)
@@ -827,23 +830,23 @@ class StartupPage(Page):
         gesture.set_state(Gtk.EventSequenceState.CLAIMED)
         Item = ui.menu.Item
         ui.menu.popup(self.view, [
-            [Item("Enable", lambda: self.set_enabled(row, True), enabled=not row.enabled),
-             Item("Disable", lambda: self.set_enabled(row, False), enabled=row.enabled)],
-            [Item("Open file location", lambda: self.win.reveal_path(row.entry.path)),
-             Item("Search online", lambda: self.win.search_online(row.name))],
+            [Item(_("Enable"), lambda: self.set_enabled(row, True), enabled=not row.enabled),
+             Item(_("Disable"), lambda: self.set_enabled(row, False), enabled=row.enabled)],
+            [Item(_("Open file location"), lambda: self.win.reveal_path(row.entry.path)),
+             Item(_("Search online"), lambda: self.win.search_online(row.name))],
         ], at=(x, y), glass=True, passthrough=True)
 
 
 class ServicesPage(Page):
     """systemd services of the user and the system, Start / Stop / Restart
     (system ones ask through polkit)."""
-    id, title, icon = "services", "Services", "emblem-system-symbolic"
+    id, title, icon = "services", N_("Services"), "emblem-system-symbolic"
 
     def __init__(self, win):
         super().__init__(win)
-        self.start_btn = self.button("media-playback-start-symbolic", "Start", lambda: self.act("start"))
-        self.stop_btn = self.button("media-playback-stop-symbolic", "Stop", lambda: self.act("stop"))
-        self.restart_btn = self.button("view-refresh-symbolic", "Restart", lambda: self.act("restart"))
+        self.start_btn = self.button("media-playback-start-symbolic", _("Start"), lambda: self.act("start"))
+        self.stop_btn = self.button("media-playback-stop-symbolic", _("Stop"), lambda: self.act("stop"))
+        self.restart_btn = self.button("view-refresh-symbolic", _("Restart"), lambda: self.act("restart"))
         self.store = Gio.ListStore(item_type=ServiceRow)
         self.filtered = Gtk.FilterListModel(model=self.store, filter=Gtk.CustomFilter.new(
             lambda r: not self.text or self.text in r.sv["name"].casefold()
@@ -856,11 +859,11 @@ class ServicesPage(Page):
 
         def srt(k):
             return Gtk.CustomSorter.new(lambda a, b, _d: _cmp(a.sv[k].casefold(), b.sv[k].casefold()))
-        name = text_column(self.view, "Name", "name", None, 260, numeric=False, sorter=srt("name"))
-        text_column(self.view, "Description", "description", None, 320, numeric=False, sorter=srt("description"),
+        name = text_column(self.view, _("Name"), "name", None, 260, numeric=False, sorter=srt("name"))
+        text_column(self.view, _("Description"), "description", None, 320, numeric=False, sorter=srt("description"),
                     expand=True, dim=True)
         self._status_column(srt("status"))
-        text_column(self.view, "Type", "scope", None, 80, numeric=False, sorter=srt("scope"), dim=True)
+        text_column(self.view, _("Type"), "scope", None, 80, numeric=False, sorter=srt("scope"), dim=True)
         self.view.sort_by_column(name, Gtk.SortType.ASCENDING)
         menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
         menu.connect("pressed", self._menu)
@@ -880,12 +883,12 @@ class ServicesPage(Page):
 
         def bind(_f, it):
             lbl, row = it.get_child(), it.get_item()
-            lbl.set_label(row.status)
+            lbl.set_label(_(row.status))
             lbl.tm_row = row
             for c, on in (("tm-running", row.status == "Running"), ("tm-failed", row.status == "Failed")):
                 (lbl.add_css_class if on else lbl.remove_css_class)(c)
         f.connect("bind", bind)
-        c = Gtk.ColumnViewColumn(title="Status", factory=f, sorter=sorter, resizable=True)
+        c = Gtk.ColumnViewColumn(title=_("Status"), factory=f, sorter=sorter, resizable=True)
         c.set_fixed_width(100)
         self.view.append_column(c)
 
@@ -908,9 +911,10 @@ class ServicesPage(Page):
         self.store.remove_all()
         self.store.splice(0, 0, items)
         if user is None and sys_ is None:
-            self.message.set_label("Services aren't available: systemd isn't running on this computer.")
+            self.message.set_label(_("Services aren't available: systemd isn't running on this computer."))
         elif sys_ is None or user is None:
-            self.message.set_label(f"Only {'user' if sys_ is None else 'system'} services are shown.")
+            self.message.set_label(_("Only user services are shown.") if sys_ is None else
+                                   _("Only system services are shown."))
         self.message.set_visible(user is None or sys_ is None)
         if sel_name:
             for i in range(self.sorted.get_n_items()):
@@ -930,8 +934,10 @@ class ServicesPage(Page):
             self._busy = False
             ok, msg = res if res else (False, "")
             if not ok:
-                ui.dialog.alert(f"“{s.unit}” couldn't {action}.", msg or "The service manager refused.",
-                                [("ok", "OK", "default")], parent=self.win)
+                ui.dialog.alert({"start": _("“{name}” couldn't start."), "stop": _("“{name}” couldn't stop."),
+                                 "restart": _("“{name}” couldn't restart.")}[action].format(name=s.unit),
+                                msg or _("The service manager refused."),
+                                [("ok", _("OK"), "default")], parent=self.win)
             self.reload()
         system.run_async(manage.service_action, done, s.unit, action, s.scope)
 
@@ -954,8 +960,8 @@ class ServicesPage(Page):
         running = row.service.active == "active"
         Item = ui.menu.Item
         ui.menu.popup(self.view, [
-            [Item("Start", lambda: self.act("start", row), enabled=not running),
-             Item("Stop", lambda: self.act("stop", row), enabled=running),
-             Item("Restart", lambda: self.act("restart", row))],
-            [Item("Search online", lambda: self.win.search_online(row.sv["name"]))],
+            [Item(_("Start"), lambda: self.act("start", row), enabled=not running),
+             Item(_("Stop"), lambda: self.act("stop", row), enabled=running),
+             Item(_("Restart"), lambda: self.act("restart", row))],
+            [Item(_("Search online"), lambda: self.win.search_online(row.sv["name"]))],
         ], at=(x, y), glass=True, passthrough=True)

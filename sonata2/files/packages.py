@@ -20,6 +20,7 @@ from gi.repository import GLib
 
 from .. import ui
 from ..backend import system
+from ..i18n import N_, _
 
 # suffix -> package format (longest suffixes first)
 _FORMATS = [(".pkg.tar.zst", "arch"), (".pkg.tar.xz", "arch"), (".deb", "debian"), (".rpm", "rpm"),
@@ -30,8 +31,8 @@ _ARCHIVES = (".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2", ".tar.zs
 # libarchive's bsdtar (installed with pacman itself on Arch / CachyOS: RAR 4
 # and 5 work with nothing more installed)
 _TOOLS = {".rar": ("7z", "7zz", "unrar", "bsdtar"), ".7z": ("7z", "7zz", "bsdtar")}
-FAMILY_NAMES = {"arch": "Arch Linux (.pkg.tar.zst)", "debian": "Debian and Ubuntu (.deb)",
-                "rpm": "Fedora, openSUSE and RHEL (.rpm)"}
+FAMILY_NAMES = {"arch": N_("Arch Linux (.pkg.tar.zst)"), "debian": N_("Debian and Ubuntu (.deb)"),
+                "rpm": N_("Fedora, openSUSE and RHEL (.rpm)")}
 
 
 def kind(path: str):
@@ -132,25 +133,26 @@ def install(path: str, parent=None) -> None:
             def answer(r):
                 if r == "debtap":
                     system.run_in_terminal(f"{helper} -S debtap && {_root()} debtap -u && {_debtap_command(path)}")
-            ui.dialog.alert(f"“{name}” is a package for Debian and Ubuntu.",
-                            "It can be converted into an Arch package with debtap, which isn't installed yet. "
-                            "Converted packages usually work, but a version made for this system, a Flatpak or "
-                            "an AppImage is safer.",
-                            [("cancel", "Cancel", ""), ("debtap", "Install debtap and Convert", "default")],
+            ui.dialog.alert(_("“{name}” is a package for Debian and Ubuntu.").format(name=name),
+                            _("It can be converted into an Arch package with debtap, which isn't installed yet. "
+                              "Converted packages usually work, but a version made for this system, a Flatpak or "
+                              "an AppImage is safer."),
+                            [("cancel", _("Cancel"), ""), ("debtap", _("Install debtap and Convert"), "default")],
                             on_response=answer, parent=parent)
             return
         if k in FAMILY_NAMES:
             here = FAMILY_NAMES.get(family(), "")
-            body = f"This is a package for {FAMILY_NAMES[k]}." + \
-                (f" This computer installs packages for {here}." if here else "") + \
-                " Look for a version of the app made for this system, a Flatpak or an AppImage."
+            body = _("This is a package for {family}.").format(family=_(FAMILY_NAMES[k])) + \
+                (" " + _("This computer installs packages for {family}.").format(family=_(here)) if here else "") + \
+                " " + _("Look for a version of the app made for this system, a Flatpak or an AppImage.")
         else:
-            tool = {"flatpak": "Flatpak", "flatpakref": "Flatpak", "snap": "Snap"}.get(k, "its installer")
-            body = f"{tool} isn't installed on this computer."
-        ui.dialog.alert(f"“{name}” can’t be installed.", body, [("ok", "OK", "default")], parent=parent)
+            tool = {"flatpak": "Flatpak", "flatpakref": "Flatpak", "snap": "Snap"}.get(k)
+            body = _("{tool} isn't installed on this computer.").format(tool=tool) if tool else \
+                _("Its installer isn't installed on this computer.")
+        ui.dialog.alert(_("“{name}” can’t be installed.").format(name=name), body, [("ok", "OK", "default")], parent=parent)
         return
     if not system.run_in_terminal(cmd):
-        ui.dialog.alert("No terminal app was found.", f"Install it with:\n{cmd}", [("ok", "OK", "default")],
+        ui.dialog.alert(_("No terminal app was found."), _("Install it with:") + "\n" + cmd, [("ok", "OK", "default")],
                         parent=parent)
 
 
@@ -192,10 +194,10 @@ def run_appimage(path: str, parent=None) -> None:
         if rid == "open":
             _trust_appimage(path)
             _launch_appimage(path, parent)
-    ui.dialog.alert(f"Are you sure you want to open “{os.path.basename(path)}”?",
-                    "This app will run with your permissions and can access your files. "
-                    "Only open apps from developers you trust.",
-                    [("cancel", "Cancel", ""), ("open", "Open", "default")], answer, parent=parent)
+    ui.dialog.alert(_("Are you sure you want to open “{name}”?").format(name=os.path.basename(path)),
+                    _("This app will run with your permissions and can access your files. "
+                      "Only open apps from developers you trust."),
+                    [("cancel", _("Cancel"), ""), ("open", _("Open"), "default")], answer, parent=parent)
 
 
 def _launch_appimage(path: str, parent=None) -> None:
@@ -206,7 +208,7 @@ def _launch_appimage(path: str, parent=None) -> None:
         GLib.spawn_async([path], flags=GLib.SpawnFlags.DEFAULT,
                          working_directory=os.path.dirname(path) or None)
     except (OSError, GLib.Error) as e:
-        ui.dialog.alert(f"“{os.path.basename(path)}” can’t be opened.", str(e), [("ok", "OK", "default")],
+        ui.dialog.alert(_("“{name}” can’t be opened.").format(name=os.path.basename(path)), str(e), [("ok", "OK", "default")],
                         parent=parent)
 
 
@@ -257,7 +259,7 @@ def _run_tool(path: str, target: str, password: str = None) -> None:
     import subprocess
     argv = tool_command(path, target, password)
     if argv is None:
-        raise OSError("Expanding this kind of archive needs 7-Zip (the 7zip package) or bsdtar (libarchive).")
+        raise OSError(_("Expanding this kind of archive needs 7-Zip (the 7zip package) or bsdtar (libarchive)."))
     # no stdin: nothing waits for a password typed in a terminal
     r = subprocess.run(argv, capture_output=True, text=True, stdin=subprocess.DEVNULL)
     if r.returncode:
@@ -271,16 +273,16 @@ def ask_password(path: str, parent, wrong: bool, on_done) -> None:
     """Finder's Archive Utility: the archive's password, typed in a secure
     field; on_done(password) unless cancelled."""
     from gi.repository import GLib as _GLib
-    field = ui.controls.text_field(placeholder="Password", secret=True)
+    field = ui.controls.text_field(placeholder=_("Password"), secret=True)
     field.set_property("activates-default", True)
     name = os.path.basename(path)
-    heading = "The password is incorrect." if wrong else f"“{name}” is protected by a password."
-    body = f"Enter the password for “{name}”." if wrong else "Enter its password to expand it."
+    heading = _("The password is incorrect.") if wrong else _("“{name}” is protected by a password.").format(name=name)
+    body = _("Enter the password for “{name}”.").format(name=name) if wrong else _("Enter its password to expand it.")
 
     def answered(rid):
         if rid == "ok" and field.get_text():
             on_done(field.get_text())
-    dlg = ui.dialog.alert(heading, body, [("cancel", "Cancel", ""), ("ok", "Expand", "default")], answered,
+    dlg = ui.dialog.alert(heading, body, [("cancel", _("Cancel"), ""), ("ok", _("Expand"), "default")], answered,
                           parent=parent)
     dlg.set_extra_child(field)
     _GLib.idle_add(lambda: (field.grab_focus(), False)[1])
@@ -326,7 +328,7 @@ def extract(path: str, parent=None, done=None, password: str = None) -> None:
         if isinstance(err, PasswordNeeded):
             ask_password(path, parent, err.wrong, lambda pw: extract(path, parent, done, pw))
         elif err:
-            ui.dialog.alert(f"Unable to expand “{os.path.basename(path)}”.", err, [("ok", "OK", "default")],
+            ui.dialog.alert(_("Unable to expand “{name}”.").format(name=os.path.basename(path)), err, [("ok", "OK", "default")],
                             parent=parent)
         elif done:
             done(target)
@@ -379,13 +381,13 @@ def run_script(path: str, parent=None, terminal: bool = True) -> None:
         cmd = f"cd {shlex.quote(folder or '.')} && {shlex.join(argv)}"
         if system.run_in_terminal(cmd):
             return
-        ui.dialog.alert("No terminal app was found.", f"Run it with:\n{cmd}", [("ok", "OK", "default")],
+        ui.dialog.alert(_("No terminal app was found."), _("Run it with:") + "\n" + cmd, [("ok", "OK", "default")],
                         parent=parent)
         return
     try:
         GLib.spawn_async(argv, working_directory=folder, flags=GLib.SpawnFlags.SEARCH_PATH)
     except GLib.Error as e:
-        ui.dialog.alert(f"“{os.path.basename(path)}” can’t be run.", e.message, [("ok", "OK", "default")],
+        ui.dialog.alert(_("“{name}” can’t be run.").format(name=os.path.basename(path)), e.message, [("ok", "OK", "default")],
                         parent=parent)
 
 
@@ -395,11 +397,11 @@ def menu_items(path: str, parent=None) -> list:
     k = kind(path)
     if k is None:
         if is_script(path):
-            return [Item("Run in Terminal", lambda: run_script(path, parent)),
-                    Item("Run", lambda: run_script(path, parent, terminal=False))]
+            return [Item(_("Run in Terminal"), lambda: run_script(path, parent)),
+                    Item(_("Run"), lambda: run_script(path, parent, terminal=False))]
         return []
     if k == "appimage":
-        return [Item("Run", lambda: run_appimage(path, parent))]
+        return [Item(_("Run"), lambda: run_appimage(path, parent))]
     if k == "archive":
-        return [Item("Extract Here", lambda: extract(path, parent))]
-    return [Item("Install", lambda: install(path, parent))]    # explains when it can't
+        return [Item(_("Extract Here"), lambda: extract(path, parent))]
+    return [Item(_("Install"), lambda: install(path, parent))]    # explains when it can't

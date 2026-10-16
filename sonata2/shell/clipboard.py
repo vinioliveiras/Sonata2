@@ -11,6 +11,8 @@ import threading
 
 from gi.repository import GLib
 
+from ..i18n import _
+
 KEEP = 15
 MAX_BYTES = 64 * 1024        # larger copies (a whole file...) are not kept
 MAX_IMAGE = 16 * 1024 * 1024  # PNG bytes
@@ -29,7 +31,7 @@ class ClipImage(str):
         w = h = 0
         if png[:8] == b"\x89PNG\r\n\x1a\n" and len(png) >= 24:
             w, h = int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big")
-        obj = super().__new__(cls, f"Image · {w}×{h}" if w else "Image")
+        obj = super().__new__(cls, _("Image · {w}×{h}").format(w=w, h=h) if w else _("Image"))
         obj.png, obj.size, obj.key = png, (w, h), hashlib.sha1(png).hexdigest()
         obj._texture = None
         return obj

@@ -15,6 +15,7 @@ import urllib.parse
 import zipfile
 
 from .. import __version__, logs
+from ..i18n import N_, _, ngettext
 
 FOLDER = "Sonata Reports"
 ISSUES = "https://github.com/vinioliveiras/sonata2/issues/new"
@@ -55,8 +56,9 @@ def clear_crash() -> None:
         pass
 
 
-def crash_text(c: dict) -> str:
-    """"Sonata quit unexpectedly at 04:16 (exit code 134, SIGABRT)."""
+def crash_text(c: dict, local: bool = False) -> str:
+    """"Sonata quit unexpectedly at 04:16 (exit code 134, SIGABRT)."; local:
+    in the session's language (shown), else English (the report's files)."""
     import signal
     code = c.get("code", 0)
     why = ""
@@ -65,6 +67,9 @@ def crash_text(c: dict) -> str:
             why = f", {signal.Signals(code - 128).name}"
         except ValueError:
             pass
+    if local:
+        when = time.strftime(_("%H:%M on %b %d"), time.localtime(c.get("time", 0)))
+        return _("Sonata quit unexpectedly at {when} (exit code {code}{why}).").format(when=when, code=code, why=why)
     when = time.strftime("%H:%M on %b %d", time.localtime(c.get("time", 0)))
     return f"Sonata quit unexpectedly at {when} (exit code {code}{why})."
 
@@ -73,15 +78,15 @@ def crash_text(c: dict) -> str:
 HISTORY = "crashes.log"               # one line per crash: "<epoch> <kind> <exit code>" (in the reports too)
 # kind -> what Feedbacker says; the first that matches wins (most specific first)
 KINDS = (
-    ("nvidia-memory", "The NVIDIA card ran out of memory (an app filled it).",
+    ("nvidia-memory", N_("The NVIDIA card ran out of memory (an app filled it)."),
      ("NV_ERR_NO_MEMORY", "Failed to allocate NVKMS memory")),
-    ("amd-reset", "The AMD graphics card stopped and was reset (a driver bug).",
+    ("amd-reset", N_("The AMD graphics card stopped and was reset (a driver bug)."),
      ("amdgpu", "ring gfx", "timeout")),
-    ("gpu-reset", "The graphics card was reset.", ("GPU reset",)),
-    ("nvidia-pcie", "The NVIDIA card's connection had errors (PCIe).", ("BadTLP", "Xid")),
-    ("gpu-buffer", "The graphics card refused a buffer.", ("gbm_bo_create failed", "Failed to allocate auxilliary")),
-    ("wayfire-abort", "Wayfire stopped on an internal error.", ("Fatal error(SIGABRT)", "dassert")),
-    ("wayfire-segfault", "Wayfire crashed (segmentation fault).", ("Fatal error(SIGSEGV)", "wayfire[")),
+    ("gpu-reset", N_("The graphics card was reset."), ("GPU reset",)),
+    ("nvidia-pcie", N_("The NVIDIA card's connection had errors (PCIe)."), ("BadTLP", "Xid")),
+    ("gpu-buffer", N_("The graphics card refused a buffer."), ("gbm_bo_create failed", "Failed to allocate auxilliary")),
+    ("wayfire-abort", N_("Wayfire stopped on an internal error."), ("Fatal error(SIGABRT)", "dassert")),
+    ("wayfire-segfault", N_("Wayfire crashed (segmentation fault)."), ("Fatal error(SIGSEGV)", "wayfire[")),
 )
 
 
@@ -115,7 +120,7 @@ def classify(kernel: str, session: str) -> str:
 
 
 def describe(kind: str) -> str:
-    return next((say for k, say, _m in KINDS if k == kind), "The cause isn't in the logs.")
+    return _(next((say for k, say, _m in KINDS if k == kind), N_("The cause isn't in the logs.")))
 
 
 def note_crash(c: dict) -> str:
@@ -157,14 +162,15 @@ def history_text(days: float = 7, now: float = None) -> str:
     h = history(days, now)
     if not h:
         return ""
-    short = {"nvidia-memory": "NVIDIA memory", "amd-reset": "AMD reset", "gpu-reset": "GPU reset",
-             "nvidia-pcie": "NVIDIA PCIe", "gpu-buffer": "refused buffer", "wayfire-abort": "Wayfire error",
-             "wayfire-segfault": "Wayfire crash", "unknown": "unknown"}
+    short = {"nvidia-memory": _("NVIDIA memory"), "amd-reset": _("AMD reset"), "gpu-reset": _("GPU reset"),
+             "nvidia-pcie": "NVIDIA PCIe", "gpu-buffer": _("refused buffer"), "wayfire-abort": _("Wayfire error"),
+             "wayfire-segfault": _("Wayfire crash"), "unknown": _("unknown")}
     counts = {}
     for _t, kind, _c in h:
         counts[kind] = counts.get(kind, 0) + 1
     parts = ", ".join(f"{n} {short.get(k, k)}" for k, n in sorted(counts.items(), key=lambda kv: -kv[1]))
-    return f"{len(h)} crash{'es' if len(h) != 1 else ''} in the last {int(days)} days: {parts}"
+    return ngettext("{n} crash in the last {days} days: {parts}", "{n} crashes in the last {days} days: {parts}",
+                    len(h)).format(n=len(h), days=int(days), parts=parts)
 
 
 def monitoring() -> bool:

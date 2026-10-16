@@ -20,6 +20,7 @@ gi.require_version("PolkitAgent", "1.0")
 from gi.repository import Gio, GLib, Gtk, Polkit, PolkitAgent  # noqa: E402,F401
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from . import layer  # noqa: E402
 from .loginui import avatar, password_field, shake  # noqa: E402
 
@@ -68,17 +69,17 @@ class AuthDialog:
         self.index = names.index(me) if me in names else 0
         self.session = None
         self.finished = False
-        self.win = Gtk.Window(application=app, decorated=False, title="Authenticate",
+        self.win = Gtk.Window(application=app, decorated=False, title=_("Authenticate"),
                               css_classes=["sonata-auth"])
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, css_classes=["auth-panel"],
                         halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER, width_request=340)
         top = Gtk.Box(spacing=14)
         top.append(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=40, valign=Gtk.Align.START))
         texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        texts.append(Gtk.Label(label="Authentication Required", xalign=0, css_classes=["auth-title"]))
-        texts.append(Gtk.Label(label=message or "An application wants to make changes.", xalign=0, wrap=True,
+        texts.append(Gtk.Label(label=_("Authentication Required"), xalign=0, css_classes=["auth-title"]))
+        texts.append(Gtk.Label(label=message or _("An application wants to make changes."), xalign=0, wrap=True,
                                max_width_chars=40, css_classes=["auth-text"]))
-        texts.append(Gtk.Label(label="Enter the password to allow this.", xalign=0,
+        texts.append(Gtk.Label(label=_("Enter the password to allow this."), xalign=0,
                                css_classes=["auth-text"]))
         top.append(texts)
         panel.append(top)
@@ -93,7 +94,7 @@ class AuthDialog:
         else:
             who.append(Gtk.Label(label=_real_name(names[self.index]), xalign=0, hexpand=True))
         panel.append(who)
-        self.entry = password_field("Password")
+        self.entry = password_field(_("Password"))
         self.entry.remove_css_class("lk-field")          # the login screen's look is for dark backdrops
         self.entry.set_halign(Gtk.Align.FILL)
         self.entry.connect("activate", lambda *_: self._ok())
@@ -101,8 +102,8 @@ class AuthDialog:
         self.error = Gtk.Label(xalign=0, css_classes=["auth-error"], visible=False, wrap=True)
         panel.append(self.error)
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END, margin_top=4)
-        cancel = ui.controls.push_button("Cancel", lambda: self.finish(False))
-        self.ok = ui.controls.push_button("OK", self._ok, "default")
+        cancel = ui.controls.push_button(_("Cancel"), lambda: self.finish(False))
+        self.ok = ui.controls.push_button(_("OK"), self._ok, "default")
         buttons.append(cancel)
         buttons.append(self.ok)
         panel.append(buttons)
@@ -149,7 +150,7 @@ class AuthDialog:
         self.entry.set_text("")
         self.entry.grab_focus()
         if not self.error.get_visible():
-            self._say("Sorry, try again.")
+            self._say(_("Sorry, try again."))
         shake(self.entry)
 
     def _say(self, text):

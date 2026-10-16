@@ -16,6 +16,8 @@ from typing import List, Optional, Tuple
 
 from gi.repository import Gio, GLib
 
+from ..i18n import N_, _
+
 POWER_SUPPLY = "/sys/class/power_supply"
 _JUNK_DMI = ("to be filled by o.e.m.", "default string", "system product name", "not applicable", "")
 
@@ -218,7 +220,7 @@ def _wifi_connect_dbus(ssid: str, password: str) -> Tuple[bool, str]:
             wifi = path
             break
     if wifi is None:
-        return False, "No Wi-Fi device"
+        return False, _("No Wi-Fi device")
     conn = GLib.Variant("a{sa{sv}}", {
         "connection": {"id": GLib.Variant("s", ssid), "type": GLib.Variant("s", "802-11-wireless")},
         "802-11-wireless": {"ssid": GLib.Variant("ay", ssid.encode())},
@@ -230,7 +232,7 @@ def _wifi_connect_dbus(ssid: str, password: str) -> Tuple[bool, str]:
     # like nmcli: wait until it's up (or failed: a wrong password)
     import time
     state = 0
-    for _ in range(90):
+    for _i in range(90):
         try:
             state = bus.call_sync("org.freedesktop.NetworkManager", active, "org.freedesktop.DBus.Properties", "Get",
                                   GLib.Variant("(ss)", ("org.freedesktop.NetworkManager.Connection.Active", "State")),
@@ -247,7 +249,7 @@ def _wifi_connect_dbus(ssid: str, password: str) -> Tuple[bool, str]:
                       "Delete", None, None, Gio.DBusCallFlags.NONE, 5000, None)
     except GLib.Error:
         pass
-    return False, "Couldn't join the network (wrong password?)"
+    return False, _("Couldn't join the network (wrong password?)")
 
 
 def wifi_disconnect() -> bool:
@@ -335,7 +337,7 @@ def printers() -> Optional[List[Printer]]:
     for ln in out.splitlines():
         m = re.match(r"printer (\S+) (?:is )?(\w+)", ln)
         if m:
-            st = {"idle": "Idle", "now": "Printing", "disabled": "Disabled"}.get(m.group(2), m.group(2).title())
+            st = {"idle": N_("Idle"), "now": N_("Printing"), "disabled": N_("Disabled")}.get(m.group(2), m.group(2).title())
             out_list.append(Printer(m.group(1), st, m.group(1) == default))
     return out_list
 
@@ -397,7 +399,8 @@ def run_in_terminal(command: str) -> bool:
         return True
     except (ValueError, ImportError, OSError):
         pass
-    script = f"{command}; echo; read -p 'Press Enter to close' _"
+    prompt = _("Press Enter to close").replace("'", "")
+    script = f"{command}; echo; read -p '{prompt}' _"
     for term, flag in ([(os.environ["TERMINAL"], ["-e"])] if os.environ.get("TERMINAL") else []) + list(TERMINALS):
         if shutil.which(term):
             _spawn([term] + flag + ["sh", "-c", script])
@@ -730,7 +733,7 @@ def _machine_name(vendor: str, family: str, product: str) -> str:
     brand = {"asustek": "asus", "hewlett-packard": "hp", "micro-star": "msi"}.get(first, first)
     if product and brand and product.lower().startswith(brand):
         return product
-    return " ".join(x for x in (vendor if vendor.lower() not in _JUNK_DMI else "", product) if x) or "Computer"
+    return " ".join(x for x in (vendor if vendor.lower() not in _JUNK_DMI else "", product) if x) or _("Computer")
 
 
 def _gpu_name(vendor: str, device: str) -> str:
@@ -749,7 +752,7 @@ def about() -> About:
                             _read(f"{dmi}/product_name"))
     cpuinfo = _read("/proc/cpuinfo")
     m = re.search(r"^model name\s*:\s*(.+)$", cpuinfo, re.M)
-    cpu = re.sub(r"\s+", " ", m.group(1)).strip() if m else "Unknown"
+    cpu = re.sub(r"\s+", " ", m.group(1)).strip() if m else _("Unknown")
     m = re.search(r"^MemTotal:\s*(\d+) kB", _read("/proc/meminfo"), re.M)
     mem = round(int(m.group(1)) / 1024 / 1024) if m else 0
     gpus = []
@@ -789,7 +792,8 @@ def bluetooth_connect_result(mac: str, on: bool) -> Tuple[bool, str]:
         return bluez.connect(mac) if on else bluez.disconnect(mac)
     rc, out = _run(["bluetoothctl", "connect" if on else "disconnect", mac], timeout=20)
     ok = rc == 0 and ("successful" in out.lower()) and "failed" not in out.lower()
-    return ok, "Connected" if ok and on else "Disconnected" if ok else (out.strip().splitlines() or ["That didn't work"])[-1]
+    return ok, _("Connected") if ok and on else _("Disconnected") if ok else \
+        (out.strip().splitlines() or [_("That didn't work")])[-1]
 
 
 def bluetooth_forget(mac: str) -> Tuple[bool, str]:
@@ -799,7 +803,7 @@ def bluetooth_forget(mac: str) -> Tuple[bool, str]:
         return bluez.forget(mac)
     rc, out = _run(["bluetoothctl", "remove", mac], timeout=10)
     ok = rc == 0 and "removed" in out.lower()
-    return ok, "Removed" if ok else (out.strip().splitlines() or ["That didn't work"])[-1]
+    return ok, _("Removed") if ok else (out.strip().splitlines() or [_("That didn't work")])[-1]
 
 
 def bluetooth_pair_again(mac: str) -> Tuple[bool, str]:
@@ -809,14 +813,14 @@ def bluetooth_pair_again(mac: str) -> Tuple[bool, str]:
         return ok, msg
     from . import bluez
     if not bluez.available():
-        return False, "Removed; pair it again from Nearby Devices"
+        return False, _("Removed; pair it again from Nearby Devices")
     import time
     bluez.discovery(True)
-    for _ in range(20):                      # it shows up again once in pairing mode
+    for _i in range(20):                      # it shows up again once in pairing mode
         if any(d.mac == mac for d in bluez.devices(named_only=False)):
             return bluez.connect(mac)
         time.sleep(0.5)
-    return False, "Removed; put the device in pairing mode, then Connect it in Nearby Devices"
+    return False, _("Removed; put the device in pairing mode, then Connect it in Nearby Devices")
 
 
 def bluetooth_connect(mac: str, on: bool) -> bool:
@@ -1042,8 +1046,8 @@ def set_display_scale(name: str, scale: float) -> bool:
 
 
 # -- power profiles -------------------------------------------------------------------------------
-POWER_PROFILES = (("performance", "High Performance"), ("balanced", "Automatic"),
-                  ("power-saver", "Low Power"))
+POWER_PROFILES = (("performance", _("High Performance")), ("balanced", _("Automatic")),
+                  ("power-saver", _("Low Power")))
 
 
 def power_profile_fast() -> Optional[str]:
@@ -1095,9 +1099,10 @@ def set_gsetting(schema: str, key: str, value: str) -> bool:
 from ..wfconfig import wayfire_get, wayfire_set  # noqa: E402,F401  (gi-free, used by the session script)
 
 
-XKB_LAYOUTS = [("us", "U.S."), ("us(intl)", "U.S. International"), ("br", "Brazilian (ABNT2)"),
-               ("gb", "British"), ("de", "German"), ("fr", "French"), ("es", "Spanish"), ("pt", "Portuguese"),
-               ("it", "Italian"), ("latam", "Latin American"), ("ru", "Russian"), ("jp", "Japanese")]
+XKB_LAYOUTS = [("us", _("U.S.")), ("us(intl)", _("U.S. International")), ("br", _("Brazilian (ABNT2)")),
+               ("gb", _("British")), ("de", _("German")), ("fr", _("French")), ("es", _("Spanish")),
+               ("pt", _("Portuguese")), ("it", _("Italian")), ("latam", _("Latin American")), ("ru", _("Russian")),
+               ("jp", _("Japanese"))]
 
 
 def keyboard_layouts() -> List[str]:

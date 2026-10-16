@@ -21,6 +21,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, names, ui  # noqa: E402
+from ..i18n import N_, _, ngettext  # noqa: E402
 from . import actions, folder, folderprefs, ops, packages, tags, undo  # noqa: E402
 from .search import Search  # noqa: E402
 from .folder import APPS, RECENTS, VIRTUAL, file_of, is_dir  # noqa: E402
@@ -29,8 +30,8 @@ from .sidebar import Sidebar  # noqa: E402
 from .tabs import TabStrip  # noqa: E402
 from .pathbar import PathBar  # noqa: E402
 
-VIEWS = (("icons", "view-grid-symbolic", "as Icons"), ("list", "view-list-symbolic", "as List"),
-         ("columns", "view-dual-symbolic", "as Columns"))
+VIEWS = (("icons", "view-grid-symbolic", N_("as Icons")), ("list", "view-list-symbolic", N_("as List")),
+         ("columns", "view-dual-symbolic", N_("as Columns")))
 DEFAULTS = {"view": "icons", "list_columns": {}, "path_bar": True,    # list_columns: views.py
             "list_shown": None, "count_sizes": False,           # the list's columns; folder sizes
             "show_hidden": False}               # hidden files: off, except in folders where the eye is on (Vini)
@@ -130,7 +131,7 @@ class Tab:
         self.loading_box = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER,
                                    visible=False, can_target=False, css_classes=["fs-loading"])
         self.loading_box.append(ui.progress.spinner(False))
-        self.loading_box.append(Gtk.Label(label="Loading…"))
+        self.loading_box.append(Gtk.Label(label=_("Loading…")))
         self.widget.add_overlay(self.loading_box)
         self._loading_src = 0
         self.view = self.views.get(view_id) or self.views["icons"]
@@ -145,7 +146,7 @@ class Tab:
         return next(k for k, v in self.views.items() if v is self.view)
 
     def title(self) -> str:
-        return self.name or (folder.display_name(self.uri) if self.uri else "Files")
+        return self.name or (folder.display_name(self.uri) if self.uri else _("Files"))
 
     LOADING_MS = 400
 
@@ -237,7 +238,7 @@ class FilesWindow(Adw.ApplicationWindow):
     def __init__(self, app, uri: str = None):
         # (classes added, not passed: passing css_classes drops GTK's "csd"
         # class, and with it the rounded corners and the shadow)
-        super().__init__(application=app, title="Files")
+        super().__init__(application=app, title=_("Files"))
         ui.window.remember_size(self, "files", 920, 560)        # its last size
         for c in ("sonata-files", "sonata-glass"):
             self.add_css_class(c)
@@ -295,8 +296,8 @@ class FilesWindow(Adw.ApplicationWindow):
     # -- toolbar ---------------------------------------------------------------------
     def _toolbar(self):
         bar = Gtk.Box(spacing=4, css_classes=["fs-toolbar"])
-        self.back = _icon_button("go-previous-symbolic", "Back", self.go_back)
-        self.fwd = _icon_button("go-next-symbolic", "Forward", self.go_forward)
+        self.back = _icon_button("go-previous-symbolic", _("Back"), self.go_back)
+        self.fwd = _icon_button("go-next-symbolic", _("Forward"), self.go_forward)
         bar.append(self.back)
         bar.append(self.fwd)
         self.title = Gtk.Label(css_classes=["fs-title"], margin_start=6, ellipsize=Pango.EllipsizeMode.END,
@@ -308,7 +309,7 @@ class FilesWindow(Adw.ApplicationWindow):
         self.title.add_controller(click)
         bar.append(Gtk.Box(hexpand=True))
         # Trash: Finder's "Empty" button
-        self.empty_btn = Gtk.Button(label="Empty", valign=Gtk.Align.CENTER, visible=False,
+        self.empty_btn = Gtk.Button(label=_("Empty"), valign=Gtk.Align.CENTER, visible=False,
                                     css_classes=["fs-text-btn"])
         self.empty_btn.connect("clicked", lambda *_: self.empty_trash())
         bar.append(self.empty_btn)
@@ -316,7 +317,7 @@ class FilesWindow(Adw.ApplicationWindow):
         self.view_buttons = {}
         first = None
         for vid, icon, tip in VIEWS:
-            b = Gtk.ToggleButton(icon_name=icon, tooltip_text=tip, focus_on_click=False, group=first)
+            b = Gtk.ToggleButton(icon_name=icon, tooltip_text=_(tip), focus_on_click=False, group=first)
             b.connect("toggled", lambda b, v=vid: b.get_active() and not self._syncing and self.set_view(v))
             first = first or b
             seg.append(b)
@@ -324,18 +325,18 @@ class FilesWindow(Adw.ApplicationWindow):
         bar.append(seg)
         # hidden files in this folder, on or off (Vini): remembered per folder
         eye = Gtk.Box(css_classes=["fs-seg"], valign=Gtk.Align.CENTER)
-        self.hidden_btn = Gtk.ToggleButton(icon_name="view-reveal-symbolic", tooltip_text="Show Hidden Files",
+        self.hidden_btn = Gtk.ToggleButton(icon_name="view-reveal-symbolic", tooltip_text=_("Show Hidden Files"),
                                            focus_on_click=False)
         self.hidden_btn.connect("toggled", lambda b: not self._syncing and
                                 b.get_active() != self.tab.folder.show_hidden and self.toggle_hidden())
         eye.append(self.hidden_btn)
         bar.insert_child_after(eye, self.empty_btn)
-        self.search = Gtk.SearchEntry(placeholder_text="Search", width_chars=16, valign=Gtk.Align.CENTER)
+        self.search = Gtk.SearchEntry(placeholder_text=_("Search"), width_chars=16, valign=Gtk.Align.CENTER)
         self.search.connect("search-changed", lambda *_: self._search_changed())
         self.search.connect("stop-search", lambda *_: self._close_search())
         self.search_rev = Gtk.Revealer(child=self.search, transition_type=Gtk.RevealerTransitionType.SLIDE_LEFT,
                                        transition_duration=150)
-        self.search_btn = _icon_button("system-search-symbolic", "Search", self._open_search)
+        self.search_btn = _icon_button("system-search-symbolic", _("Search"), self._open_search)
         bar.append(self.search_btn)
         bar.append(self.search_rev)
         self._toolbar_bar = bar
@@ -368,8 +369,8 @@ class FilesWindow(Adw.ApplicationWindow):
     # -- search (Finder: This Mac / the current folder, recursive) -------------------------
     def _scope_bar(self):
         bar = Gtk.Box(spacing=2, css_classes=["fs-scope"])
-        bar.append(Gtk.Label(label="Search:", css_classes=["fs-scope-title"]))
-        self.scope_home = Gtk.ToggleButton(label=names.THIS_COMPUTER, active=True, focus_on_click=False)
+        bar.append(Gtk.Label(label=_("Search:"), css_classes=["fs-scope-title"]))
+        self.scope_home = Gtk.ToggleButton(label=_(names.THIS_COMPUTER), active=True, focus_on_click=False)
         self.scope_here = Gtk.ToggleButton(group=self.scope_home, focus_on_click=False)
         for b in (self.scope_home, self.scope_here):
             b.connect("toggled", lambda b: b.get_active() and self._run_search())
@@ -377,14 +378,14 @@ class FilesWindow(Adw.ApplicationWindow):
         # Finder's search criteria: the words in names or contents, a kind, a date
         from .search import DATES, KINDS
         bar.append(Gtk.Box(css_classes=["fs-scope-sep"], margin_start=6, margin_end=6))
-        self.match_name = Gtk.ToggleButton(label="Name", active=True, focus_on_click=False)
-        self.match_contents = Gtk.ToggleButton(label="Contents", group=self.match_name, focus_on_click=False)
+        self.match_name = Gtk.ToggleButton(label=_("Name"), active=True, focus_on_click=False)
+        self.match_contents = Gtk.ToggleButton(label=_("Contents"), group=self.match_name, focus_on_click=False)
         for b in (self.match_name, self.match_contents):
             b.connect("toggled", lambda b: b.get_active() and self._run_search())
             bar.append(b)
-        self.search_kind = ui.controls.popup_button([label for _k, label in KINDS], 0,
+        self.search_kind = ui.controls.popup_button([_(label) for _k, label in KINDS], 0,
                                                     lambda _i: self._run_search())
-        self.search_date = ui.controls.popup_button([label for _k, label, _d in DATES], 0,
+        self.search_date = ui.controls.popup_button([_(label) for _k, label, _d in DATES], 0,
                                                     lambda _i: self._run_search())
         for w in (self.search_kind, self.search_date):
             w.set_valign(Gtk.Align.CENTER)
@@ -442,9 +443,9 @@ class FilesWindow(Adw.ApplicationWindow):
                 self.set_view("list", save=False)
             self.filtered.set_model(self.results)
             self._refilter()
-        self.search_status.set_label("Searching…")
-        scope = names.THIS_COMPUTER if not self.scope_here.get_active() else folder.display_name(here)
-        self.title.set_label(f"Searching “{scope}”")
+        self.search_status.set_label(_("Searching…"))
+        scope = _(names.THIS_COMPUTER) if not self.scope_here.get_active() else folder.display_name(here)
+        self.title.set_label(_("Searching “{name}”").format(name=scope))
         from .search import DATES, KINDS
         self.searcher.start(root, q, self._got_results, self._search_done,
                             kind=KINDS[self.search_kind.get_selected()][0],
@@ -457,7 +458,8 @@ class FilesWindow(Adw.ApplicationWindow):
 
     def _search_done(self, truncated):
         n = self.results.get_n_items()
-        self.search_status.set_label(f"{n}+ items" if truncated else f"{n} item{'s' if n != 1 else ''}")
+        self.search_status.set_label(_("{n}+ items").format(n=n) if truncated
+                                     else ngettext("{n} item", "{n} items", n).format(n=n))
         self._update_empty()
 
     def _leave_results(self):
@@ -584,8 +586,8 @@ class FilesWindow(Adw.ApplicationWindow):
     def _update_empty(self):
         empty = self.filtered.get_n_items() == 0
         searching = bool(self.search.get_text().strip())
-        busy = getattr(self, "_in_results", False) and self.search_status.get_label() == "Searching…"
-        self.empty.set_label("No Results" if searching else "")
+        busy = getattr(self, "_in_results", False) and self.search_status.get_label() == _("Searching…")
+        self.empty.set_label(_("No Results") if searching else "")
         self.empty.set_visible(empty and searching and not busy)
 
     # -- navigation ------------------------------------------------------------------
@@ -661,10 +663,10 @@ class FilesWindow(Adw.ApplicationWindow):
     def _load_failed(self, uri, err):
         name = folder.display_name(uri)
         if err.matches(Gio.io_error_quark(), Gio.IOErrorEnum.PERMISSION_DENIED):
-            body = "You don't have permission to see its contents."
+            body = _("You don't have permission to see its contents.")
         else:
             body = err.message
-        ui.dialog.alert(f"The folder “{name}” can’t be opened.", body, [("ok", "OK", "default")], parent=self)
+        ui.dialog.alert(_("The folder “{name}” can’t be opened.").format(name=name), body, [("ok", "OK", "default")], parent=self)
 
     # -- tabs (Finder) -----------------------------------------------------------------
     def _add_tab(self, uri, view_id=None, index=None, select=True):
@@ -813,7 +815,8 @@ class FilesWindow(Adw.ApplicationWindow):
         try:
             Gio.AppInfo.launch_default_for_uri_finish(res)
         except GLib.Error as e:
-            ui.dialog.alert(f"There is no application set to open “{info.get_display_name()}”.", e.message,
+            ui.dialog.alert(_("There is no application set to open “{name}”.").format(name=info.get_display_name()),
+                            e.message,
                             [("ok", "OK", "default")], parent=self)
 
     def open_selection(self):
@@ -837,27 +840,31 @@ class FilesWindow(Adw.ApplicationWindow):
         def answer(rid):
             if rid == "empty":
                 ops.empty_trash(lambda: self.folder.reload(),
-                                lambda f, e: self._error("The Trash can’t be emptied.", e))
-        ui.dialog.alert("Are you sure you want to permanently erase the items in the Trash?",
-                        "You can’t undo this action.",
-                        [("cancel", "Cancel", ""), ("empty", "Empty Trash", "destructive")], answer, parent=self,
+                                lambda f, e: self._error(_("The Trash can’t be emptied."), e))
+        ui.dialog.alert(_("Are you sure you want to permanently erase the items in the Trash?"),
+                        _("You can’t undo this action."),
+                        [("cancel", _("Cancel"), ""), ("empty", _("Empty Trash"), "destructive")], answer, parent=self,
                         default="empty")            # Return empties (macOS)
 
     def delete_selection_now(self):
         files = self._selected_files()
         if not files:
             return
-        what = f"“{files[0].get_basename()}”" if len(files) == 1 else f"these {len(files)} items"
+        if len(files) == 1:
+            heading = _("Are you sure you want to delete “{name}” immediately?").format(name=files[0].get_basename())
+        else:
+            heading = _("Are you sure you want to delete these {n} items immediately?").format(n=len(files))
 
         def answer(rid):
             if rid == "delete":
-                ops.delete_now(files, None, lambda f, e: self._error(f"“{f.get_basename()}” can’t be deleted.", e))
-        ui.dialog.alert(f"Are you sure you want to delete {what} immediately?", "You can’t undo this action.",
-                        [("cancel", "Cancel", ""), ("delete", "Delete", "destructive")], answer, parent=self)
+                ops.delete_now(files, None, lambda f, e: self._error(
+                    _("“{name}” can’t be deleted.").format(name=f.get_basename()), e))
+        ui.dialog.alert(heading, _("You can’t undo this action."),
+                        [("cancel", _("Cancel"), ""), ("delete", _("Delete"), "destructive")], answer, parent=self)
 
     def put_back_selection(self):
         ops.put_back(self._selected_files(),
-                     lambda f, e: self._error(f"“{f.get_basename()}” can’t be put back.", e))
+                     lambda f, e: self._error(_("“{name}” can’t be put back.").format(name=f.get_basename()), e))
 
     def _selected_files(self):
         return [file_of(i) for i in self.view.selected()]
@@ -875,82 +882,83 @@ class FilesWindow(Adw.ApplicationWindow):
             view.ensure_selected(info)
             sel = view.selected() or [info]
             n = len(sel)
-            what = f"“{folder.short_name(sel[0].get_display_name())}”" if n == 1 else f"{n} Items"
+            what = f"“{folder.short_name(sel[0].get_display_name())}”" if n == 1 else \
+                ngettext("{n} Item", "{n} Items", n).format(n=n)
             if self._in_trash():                 # Finder's Trash menu
-                ui.menu.popup(widget, [[Item("Put Back", self.put_back_selection)],
-                                       [Item("Delete Immediately…", self.delete_selection_now)],
-                                       [Item("Get Info", self.get_info),
-                                        Item(f"Quick Look {what}", self.toggle_quicklook)],
-                                       [Item("Empty Trash", self.empty_trash)]], at=(x, y), passthrough=True)
+                ui.menu.popup(widget, [[Item(_("Put Back"), self.put_back_selection)],
+                                       [Item(_("Delete Immediately…"), self.delete_selection_now)],
+                                       [Item(_("Get Info"), self.get_info),
+                                        Item(_("Quick Look {what}").format(what=what), self.toggle_quicklook)],
+                                       [Item(_("Empty Trash"), self.empty_trash)]], at=(x, y), passthrough=True)
                 return
             pkg = packages.menu_items(file_of(sel[0]).get_path(), self) if n == 1 and not is_dir(sel[0]) else []
-            sections = [pkg + [Item("Open", self.open_selection)]] if pkg else [[Item("Open", self.open_selection)]]
+            sections = [pkg + [Item(_("Open"), self.open_selection)]] if pkg else [[Item(_("Open"), self.open_selection)]]
             if self.TABS and n == 1 and is_dir(sel[0]):
-                sections[0].append(Item("Open in New Tab", lambda i=sel[0]: self.open_in_new_tab(i)))
+                sections[0].append(Item(_("Open in New Tab"), lambda i=sel[0]: self.open_in_new_tab(i)))
             apps = self._open_with_items(sel[0]) if n == 1 and not is_dir(sel[0]) else []
             if apps:
-                sections[0].append(Item("Open With", submenu=[apps]))
+                sections[0].append(Item(_("Open With"), submenu=[apps]))
             from .. import prefs
             if n == 1 and prefs.is_picture(sel[0].get_content_type() or ""):     # Finder's Quick Action
-                sections[0].append(Item("Set Desktop Picture",
+                sections[0].append(Item(_("Set Desktop Picture"),
                                         lambda f=file_of(sel[0]): prefs.set_wallpaper(f.get_uri())))
-            sections.append([Item("Move to Trash", self.trash_selection, enabled=self._writable_sel(sel))])
-            sections.append([Item("Get Info", self.get_info),
-                             Item(f"Quick Look {what}", self.toggle_quicklook)])
-            sections.append([Item("Rename" if n == 1 else f"Rename {n} Items…", lambda: self.rename_selection(),
+            sections.append([Item(_("Move to Trash"), self.trash_selection, enabled=self._writable_sel(sel))])
+            sections.append([Item(_("Get Info"), self.get_info),
+                             Item(_("Quick Look {what}").format(what=what), self.toggle_quicklook)])
+            sections.append([Item(_("Rename") if n == 1 else _("Rename {n} Items…").format(n=n), lambda: self.rename_selection(),
                                   enabled=self._writable_sel(sel)),
-                             Item(f"Compress {what}", self.compress_selection, enabled=self._writable_here()),
-                             Item("Duplicate", self.duplicate_selection, enabled=self._writable_here())])
-            sections.append([Item("Create Shortcut", self.shortcut_selection, enabled=self._writable_here()),
-                             Item("Create Shortcut on Desktop", lambda: self.shortcut_selection(desktop=True))])
-            sections.append([Item(f"Copy {what}", self.copy_selection),
-                             Item("Copy Path" if n == 1 else "Copy Paths", self.copy_path_selection)])
+                             Item(_("Compress {what}").format(what=what), self.compress_selection, enabled=self._writable_here()),
+                             Item(_("Duplicate"), self.duplicate_selection, enabled=self._writable_here())])
+            sections.append([Item(_("Create Shortcut"), self.shortcut_selection, enabled=self._writable_here()),
+                             Item(_("Create Shortcut on Desktop"), lambda: self.shortcut_selection(desktop=True))])
+            sections.append([Item(_("Copy {what}").format(what=what), self.copy_selection),
+                             Item(_("Copy Path") if n == 1 else _("Copy Paths"), self.copy_path_selection)])
             paths = [file_of(i).get_path() for i in sel]
             if all(paths) and self._writable_sel(sel):                    # Finder's tag colours
                 states = {t: tags.state(paths, t) for t in tags.NAMES}
-                sections.append([Item("Tags", widget=lambda pop, p=paths, st=states: tags.menu_row(
+                sections.append([Item(_("Tags"), widget=lambda pop, p=paths, st=states: tags.menu_row(
                     pop, st, lambda t, on: self.tag_files(p, t, on)))])
             pics = [(file_of(i), actions.picture_kind(i)) for i in sel]
             if all(k for _f, k in pics) and self._writable_sel(sel):          # Finder's Quick Actions
-                sections.append([Item("Quick Actions", submenu=[[
-                    Item("Rotate Left", lambda p=pics: self._rotate(p, False)),
-                    Item("Rotate Right", lambda p=pics: self._rotate(p, True))], [
-                    Item("Convert to PNG", lambda p=pics: self._convert(p, "png")),
-                    Item("Convert to JPEG", lambda p=pics: self._convert(p, "jpeg"))]])])
+                sections.append([Item(_("Quick Actions"), submenu=[[
+                    Item(_("Rotate Left"), lambda p=pics: self._rotate(p, False)),
+                    Item(_("Rotate Right"), lambda p=pics: self._rotate(p, True))], [
+                    Item(_("Convert to PNG"), lambda p=pics: self._convert(p, "png")),
+                    Item(_("Convert to JPEG"), lambda p=pics: self._convert(p, "jpeg"))]])])
             if self.history[self.pos] in VIRTUAL or self.search.get_text():
-                sections.append([Item("Show in Enclosing Folder", lambda: self._reveal(sel[0]))])
+                sections.append([Item(_("Show in Enclosing Folder"), lambda: self._reveal(sel[0]))])
             if n == 1 and is_dir(sel[0]):
-                sections.append([Item("New Terminal at Folder", lambda: self._terminal(file_of(sel[0])))])
+                sections.append([Item(_("New Terminal at Folder"), lambda: self._terminal(file_of(sel[0])))])
         else:
             self.view.unselect_all()
             here = self._writable_here()
-            sections = [[Item("New Folder", self.new_folder, enabled=here)],
-                        [Item("Paste", self.paste,
+            sections = [[Item(_("New Folder"), self.new_folder, enabled=here)],
+                        [Item(_("Paste"), self.paste,
                               enabled=here and ops.clipboard_has_files(self))],
-                        [Item("View", submenu=[[Item(label, lambda v=vid: self.set_view(v),
+                        [Item(_("View"), submenu=[[Item(_(label), lambda v=vid: self.set_view(v),
                                                      checked=self.view is self.views[vid])
                                                 for vid, _i, label in VIEWS],
-                                               [Item("Hide Path Bar" if self.pathbar.get_visible() else "Show Path Bar",
+                                               [Item(_("Hide Path Bar") if self.pathbar.get_visible() else _("Show Path Bar"),
                                                      self.toggle_path_bar),
-                                                Item("Hide Hidden Files" if self.tab.folder.show_hidden
-                                                     else "Show Hidden Files",
+                                                Item(_("Hide Hidden Files") if self.tab.folder.show_hidden
+                                                     else _("Show Hidden Files"),
                                                      self.toggle_hidden)]])]]
             if self.view is not self.views["columns"]:
                 cur = self.view.sort_state()[0]
-                sections[-1].append(Item("Sort By", submenu=[[Item(t, lambda _on=None, t=t: self.sort_by(t),
+                sections[-1].append(Item(_("Sort By"), submenu=[[Item(_(t), lambda _on=None, t=t: self.sort_by(t),
                                                                    checked=t == cur) for t, _d in SORT_BY]]))
             if self.view is self.views["list"]:                    # Finder's View Options for the list
                 from .views import LIST_COLUMNS
                 shown = self.views["list"].shown_columns()
-                sections[-1].append(Item("Show Columns", submenu=[[Item(t, lambda on, t=t: self.show_column(t, on),
+                sections[-1].append(Item(_("Show Columns"), submenu=[[Item(_(t), lambda on, t=t: self.show_column(t, on),
                                                                         checked=t in shown)
                                                                    for t, _w, _d in LIST_COLUMNS]]))
-                sections[-1].append(Item("Calculate All Sizes", lambda on: self.set_count_sizes(on),
+                sections[-1].append(Item(_("Calculate All Sizes"), lambda on: self.set_count_sizes(on),
                                          checked=self.views["list"].count_sizes))
             if self._in_trash():
-                sections.insert(0, [Item("Empty Trash", self.empty_trash)])
+                sections.insert(0, [Item(_("Empty Trash"), self.empty_trash)])
             if here:
-                sections.append([Item("New Terminal at Folder",
+                sections.append([Item(_("New Terminal at Folder"),
                                       lambda: self._terminal(Gio.File.new_for_uri(self.location())))])
         ui.menu.popup(widget, sections, at=(x, y), passthrough=True)
 
@@ -964,7 +972,8 @@ class FilesWindow(Adw.ApplicationWindow):
         default = Gio.AppInfo.get_default_for_type(ct, False) if ct else None
         items = []
         for app in Gio.AppInfo.get_all_for_type(ct) if ct else []:
-            label = app.get_display_name() + (" (default)" if default and app.equal(default) else "")
+            label = _("{app} (default)").format(app=app.get_display_name()) if default and app.equal(default) \
+                else app.get_display_name()
             items.append(Item(label, lambda a=app: self._open_with(a, info)))
         return items
 
@@ -993,8 +1002,8 @@ class FilesWindow(Adw.ApplicationWindow):
                 return
             except GLib.Error:
                 continue
-        ui.dialog.alert("No terminal app was found.",
-                        "Install a terminal app, like kitty or Konsole, to open folders in it.",
+        ui.dialog.alert(_("No terminal app was found."),
+                        _("Install a terminal app, like kitty or Konsole, to open folders in it."),
                         [("ok", "OK", "default")], parent=self)
 
     # new folder / rename
@@ -1003,7 +1012,7 @@ class FilesWindow(Adw.ApplicationWindow):
             return
         where = Gio.File.new_for_uri(self.location())
         ops.new_folder(where, lambda f: (undo.new_folder(f), self._select_when_listed(f.get_basename(), rename=True)),
-                       lambda e: self._error("The folder can’t be created.", e))
+                       lambda e: self._error(_("The folder can’t be created."), e))
 
     def _select_when_listed(self, name, rename=False, tries=40):
         """Select (and maybe rename) `name` once the live listing shows it."""
@@ -1070,8 +1079,8 @@ class FilesWindow(Adw.ApplicationWindow):
             if not commit or not new or new == old:
                 return
             if "/" in new:
-                self._error(f"The name “{new}” can’t be used.", None,
-                            "Try using a name with fewer characters, or with no punctuation marks.")
+                self._error(_("The name “{name}” can’t be used.").format(name=new), None,
+                            _("Try using a name with fewer characters, or with no punctuation marks."))
                 return
 
             def renamed(nf):
@@ -1081,7 +1090,7 @@ class FilesWindow(Adw.ApplicationWindow):
                 folderprefs.moved(f.get_uri(), nf.get_uri())
                 sidebar.moved(f.get_uri(), nf.get_uri())
                 self._folder_moved(f.get_uri(), nf.get_uri())
-            ops.rename(f, new, renamed, lambda e: self._error(f"The name “{new}” can’t be used.", e))
+            ops.rename(f, new, renamed, lambda e: self._error(_("The name “{name}” can’t be used.").format(name=new), e))
         entry.connect("activate", lambda *_: finish(True))
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", lambda _c, k, *_: (finish(False), True)[1] if k == Gdk.KEY_Escape else False)
@@ -1108,8 +1117,8 @@ class FilesWindow(Adw.ApplicationWindow):
 
     def _commit_rename(self, info, new_name):
         if "/" in new_name:
-            self._error(f"The name “{new_name}” can’t be used.", None,
-                        "Try using a name with fewer characters, or with no punctuation marks.")
+            self._error(_("The name “{name}” can’t be used.").format(name=new_name), None,
+                        _("Try using a name with fewer characters, or with no punctuation marks."))
             return
         old_name = file_of(info).get_basename()
 
@@ -1117,7 +1126,8 @@ class FilesWindow(Adw.ApplicationWindow):
             undo.renamed(f, old_name)
             tags.moved([(f.get_parent().get_child(old_name), f)])
             self._select_when_listed(f.get_basename())
-        ops.rename(file_of(info), new_name, renamed, lambda e: self._error(f"The name “{new_name}” can’t be used.", e))
+        ops.rename(file_of(info), new_name, renamed, lambda e: self._error(
+            _("The name “{name}” can’t be used.").format(name=new_name), e))
 
     # drag and drop (Finder: same disk moves, another disk copies, Ctrl copies)
     def files_for_drag(self, view, info):
@@ -1147,7 +1157,8 @@ class FilesWindow(Adw.ApplicationWindow):
         if ops.is_trash(dest.get_uri()):                  # dropped on Trash: move to the Trash
             files = [f for f in files if not ops.is_trash(f.get_uri())]
             if files:                                     # USB/NFS without a Trash: say so
-                ops.trash(files, lambda f, e: self._error(f"“{f.get_basename()}” can’t be moved to the Trash.", e))
+                ops.trash(files, lambda f, e: self._error(
+                    _("“{name}” can’t be moved to the Trash.").format(name=f.get_basename()), e))
             return bool(files)
         files = ops.drop_plan(files, dest)
         if not files:
@@ -1190,8 +1201,8 @@ class FilesWindow(Adw.ApplicationWindow):
     def trash_selection(self):
         files = self._selected_files()
         if files:
-            ops.trash(files, lambda f, e: self._error(f"“{f.get_basename()}” can’t be moved to the Trash.", e),
-                      undo.trashed)
+            ops.trash(files, lambda f, e: self._error(
+                _("“{name}” can’t be moved to the Trash.").format(name=f.get_basename()), e), undo.trashed)
             GLib.timeout_add(600, lambda: (self.sidebar.refresh_space(), False)[1])
 
     def duplicate_selection(self):
@@ -1208,7 +1219,7 @@ class FilesWindow(Adw.ApplicationWindow):
         files = self._selected_files()
         if files and self._writable_here():
             actions.compress(files, lambda z: self._select_when_listed(z.get_basename()),
-                             lambda f, e: self._error("The items can’t be compressed.", e))
+                             lambda f, e: self._error(_("The items can’t be compressed."), e))
 
     def copy_path_selection(self):
         actions.copy_paths(self, self._selected_files())
@@ -1218,19 +1229,19 @@ class FilesWindow(Adw.ApplicationWindow):
         failed = tags.toggle(paths, tag, on)
         if failed:
             p, e = failed[0]
-            self._error(f"“{os.path.basename(p)}” can’t be tagged.", None,
-                        e.strerror or "The disk it’s on can’t keep tags.")
+            self._error(_("“{name}” can’t be tagged.").format(name=os.path.basename(p)), None,
+                        e.strerror or _("The disk it’s on can’t keep tags."))
         for t in self.tabs:
             if tags.tag_of(t.folder.uri):
                 t.folder.reload()
 
     def _rotate(self, pics, clockwise):
         actions.rotate(pics, clockwise, lambda: [t.folder.reload() for t in self.tabs],
-                       lambda f, e: self._error(f"“{f.get_basename()}” can’t be rotated.", e))
+                       lambda f, e: self._error(_("“{name}” can’t be rotated.").format(name=f.get_basename()), e))
 
     def _convert(self, pics, kind):
         actions.convert([f for f, _k in pics], kind, None,
-                        lambda f, e: self._error(f"“{f.get_basename()}” can’t be converted.", e))
+                        lambda f, e: self._error(_("“{name}” can’t be converted.").format(name=f.get_basename()), e))
 
     def copy_selection(self, cut=False):
         files = self._selected_files()
@@ -1249,7 +1260,7 @@ class FilesWindow(Adw.ApplicationWindow):
                     self.get_clipboard().set_content(None)     # a cut is pasted once
             else:
                 ops.paste_image(self, dest,                     # a copied picture becomes a file
-                                on_error=lambda e: self._error("The picture can’t be pasted.", e))
+                                on_error=lambda e: self._error(_("The picture can’t be pasted."), e))
         ops.read_clipboard(self, got)
 
     # Edit > Undo / Redo (undo.py: one history for every Files window)
@@ -1260,16 +1271,16 @@ class FilesWindow(Adw.ApplicationWindow):
     def undo(self):
         if self._editing():
             return False                        # the text field's own undo
-        self._run_history(undo.history.take_undo(), "undo", "Undo")
+        self._run_history(undo.history.take_undo(), "undo", _("Undo {action} can’t be completed."))
         return True
 
     def redo(self):
         if self._editing():
             return False
-        self._run_history(undo.history.take_redo(), "redo", "Redo")
+        self._run_history(undo.history.take_redo(), "redo", _("Redo {action} can’t be completed."))
         return True
 
-    def _run_history(self, action, which, verb):
+    def _run_history(self, action, which, heading):
         if action is None:
             self.get_display().beep()
             return
@@ -1281,7 +1292,7 @@ class FilesWindow(Adw.ApplicationWindow):
             except GLib.Error as e:
                 report(None, e)
         ops._in_thread(work, lambda: [t.folder.reload() for t in self.tabs],
-                       lambda _f, e: self._error(f"{verb} {action.label} can’t be completed.", e))
+                       lambda _f, e: self._error(heading.format(action=action.label), e))
 
     def _error(self, heading, err, body=None):
         ui.dialog.alert(heading, body or (err.message if err else ""), [("ok", "OK", "default")], parent=self)
@@ -1317,7 +1328,7 @@ class FilesWindow(Adw.ApplicationWindow):
         from .pathbar import resolve
         found = resolve(text, here)
         if found is None:
-            self._error("The folder can’t be found.", None, f"“{text}” doesn’t exist.")
+            self._error(_("The folder can’t be found."), None, _("“{name}” doesn’t exist.").format(name=text))
             return
         uri, name = found
         self.go(uri)
@@ -1327,7 +1338,7 @@ class FilesWindow(Adw.ApplicationWindow):
     def go_to_folder(self):
         """Finder's Go to Folder (Ctrl+Shift+G): a path typed, gone to."""
         here, start = self._typed_location()
-        ui.dialog.ask_text("Go to Folder", start, "Go", lambda t: self._go_typed(t, here), parent=self)
+        ui.dialog.ask_text(_("Go to Folder"), start, _("Go"), lambda t: self._go_typed(t, here), parent=self)
 
     def edit_address(self):
         """Ctrl+L, or a click on the path bar's empty part: type the address
@@ -1361,7 +1372,7 @@ class FilesWindow(Adw.ApplicationWindow):
 
     def _sync_hidden_button(self):
         on = bool(self.tab and self.tab.folder.show_hidden)
-        self.hidden_btn.set_tooltip_text("Hide Hidden Files" if on else "Show Hidden Files")
+        self.hidden_btn.set_tooltip_text(_("Hide Hidden Files") if on else _("Show Hidden Files"))
         self.hidden_btn.set_icon_name("view-conceal-symbolic" if on else "view-reveal-symbolic")
         if self.hidden_btn.get_active() != on:
             self._syncing = True

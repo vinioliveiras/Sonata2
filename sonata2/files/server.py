@@ -17,6 +17,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 SCHEMES = ("smb", "sftp", "ssh", "ftp", "ftps", "dav", "davs", "nfs", "afp")
 NEEDS = {"smb": "gvfs-smb", "nfs": "gvfs-nfs", "afp": "gvfs-afp"}     # the package with that kind
@@ -55,7 +56,8 @@ def why_not(uri: str) -> str:
     scheme = uri.partition("://")[0]
     if scheme in supported():
         return ""
-    return f"Connecting to “{scheme}://” servers needs the {NEEDS.get(scheme, 'gvfs')} package."
+    return _("Connecting to “{scheme}://” servers needs the {package} package.").format(
+        scheme=scheme, package=NEEDS.get(scheme, "gvfs"))
 
 
 # -- the servers used last ---------------------------------------------------------------------
@@ -98,12 +100,12 @@ def dialog(parent, on_connected):
     entry = ui.controls.text_field(placeholder="smb://server/share", hexpand=True)
     entry.set_activates_default(True)
     box.append(entry)
-    box.append(Gtk.Label(label="For example: smb://nas/photos · sftp://me@server · davs://cloud.example.com",
+    box.append(Gtk.Label(label=_("For example: smb://nas/photos · sftp://me@server · davs://cloud.example.com"),
                          xalign=0, wrap=True, css_classes=["dim-label", "caption"]))
     servers = recent()
     lb = None
     if servers:
-        box.append(Gtk.Label(label="Recent Servers", xalign=0, css_classes=["heading"], margin_top=4))
+        box.append(Gtk.Label(label=_("Recent Servers"), xalign=0, css_classes=["heading"], margin_top=4))
         lb = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE, css_classes=["boxed-list"])
         for uri in servers:
             row = Gtk.ListBoxRow()
@@ -112,7 +114,7 @@ def dialog(parent, on_connected):
             line.append(Gtk.Image(icon_name="network-server-symbolic"))
             line.append(Gtk.Label(label=uri, xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.MIDDLE))
             x = Gtk.Button(icon_name="window-close-symbolic", css_classes=["flat", "circular"],
-                           tooltip_text="Forget This Server", valign=Gtk.Align.CENTER)
+                           tooltip_text=_("Forget This Server"), valign=Gtk.Align.CENTER)
             x.connect("clicked", lambda _b, r=row: (forget(r.uri), lb.remove(r)))
             line.append(x)
             row.set_child(line)
@@ -124,7 +126,7 @@ def dialog(parent, on_connected):
 
     def problem(uri):
         if uri is None:
-            return "Type a server address, like smb://server/share."
+            return _("Type a server address, like smb://server/share.")
         return why_not(uri)
 
     def answer(rid):
@@ -133,12 +135,12 @@ def dialog(parent, on_connected):
         uri = normalize(entry.get_text())
         bad = problem(uri)
         if bad:
-            ui.dialog.alert("You can’t connect to this server.", bad, [("ok", "OK", "default")], parent=parent)
+            ui.dialog.alert(_("You can’t connect to this server."), bad, [("ok", "OK", "default")], parent=parent)
             return
         connect(uri, parent, on_connected, lambda e: ui.dialog.alert(
-            f"There was a problem connecting to the server “{uri}”.",
+            _("There was a problem connecting to the server “{uri}”.").format(uri=uri),
             e.message, [("ok", "OK", "default")], parent=parent))
-    dlg = ui.dialog.alert("Connect to Server", "", [("cancel", "Cancel", ""), ("connect", "Connect", "default")],
+    dlg = ui.dialog.alert(_("Connect to Server"), "", [("cancel", _("Cancel"), ""), ("connect", _("Connect"), "default")],
                           answer, parent=parent)
     dlg.set_extra_child(box)
     if servers:

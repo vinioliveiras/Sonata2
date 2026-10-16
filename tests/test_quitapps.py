@@ -97,7 +97,7 @@ class QuitterTest(unittest.TestCase):
     def test_menus_quit_through_it(self):
         import pathlib
         root = pathlib.Path(Q.__file__).resolve().parent
-        self.assertIn('Item("Quit", lambda: _quit(dock, wins, key))', (root / "dock_menu.py").read_text())
+        self.assertIn('Item(_("Quit"), lambda: _quit(dock, wins, key))', (root / "dock_menu.py").read_text())
         self.assertIn("self._quit_app(wins, key)", (root / "topbar.py").read_text())
 
     def test_power_menu_goes_through_it(self):

@@ -14,9 +14,11 @@ by day, the same kind of peaks under the stars at night.
 import os
 from collections import namedtuple
 
+from .i18n import N_
+
 FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "wallpapers")
 
-Wallpaper = namedtuple("Wallpaper", "id name light dark")
+Wallpaper = namedtuple("Wallpaper", "id name light dark")        # name: shown translated, _(w.name)
 
 
 def _w(wid, name, light, dark=None) -> Wallpaper:
@@ -24,16 +26,16 @@ def _w(wid, name, light, dark=None) -> Wallpaper:
 
 
 CATALOG = [
-    _w("mountains", "Mountains", "snow-peaks", "starry-night"),        # the default (Light / Dark)
-    _w("above-the-clouds", "Above the Clouds", "above-the-clouds"),
-    _w("snow-peaks", "Snow Peaks", "snow-peaks"),
-    _w("starry-night", "Starry Night", "starry-night"),
-    _w("lake-cabin", "Lake Cabin", "lake-cabin"),
-    _w("valley", "Valley", "valley"),
-    _w("golden-meadow", "Golden Meadow", "golden-meadow"),
-    _w("rolling-hills", "Rolling Hills", "rolling-hills"),
-    _w("highlands", "Highlands", "highlands"),
-    _w("pier", "Pier", "pier"),
+    _w("mountains", N_("Mountains"), "snow-peaks", "starry-night"),        # the default (Light / Dark)
+    _w("above-the-clouds", N_("Above the Clouds"), "above-the-clouds"),
+    _w("snow-peaks", N_("Snow Peaks"), "snow-peaks"),
+    _w("starry-night", N_("Starry Night"), "starry-night"),
+    _w("lake-cabin", N_("Lake Cabin"), "lake-cabin"),
+    _w("valley", N_("Valley"), "valley"),
+    _w("golden-meadow", N_("Golden Meadow"), "golden-meadow"),
+    _w("rolling-hills", N_("Rolling Hills"), "rolling-hills"),
+    _w("highlands", N_("Highlands"), "highlands"),
+    _w("pier", N_("Pier"), "pier"),
 ]
 DEFAULT = CATALOG[0]
 

@@ -11,6 +11,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Graphene, Gsk, Gtk  # noqa: E402
 
 from . import controls, panel, theme  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 BASES = ("#0a84ff", "#30d158", "#ffd60a", "#ff9f0a", "#ff453a", "#bf5af2", "#a2845e")
 LIGHTS = ("#ffffff", "#f2f2f7", "#d1d1d6", "#aeaeb2", "#8e8e93")
@@ -96,7 +97,8 @@ class Swatch(Gtk.Widget):
 class ColorDot(Gtk.Button):
     """The "other colour" dot: a rainbow ring around the colour picked."""
 
-    def __init__(self, color: str, tooltip: str = "Other colour…"):
+    def __init__(self, color: str, tooltip: str = None):
+        tooltip = _("Other colour…") if tooltip is None else tooltip
         self.swatch = Swatch(color, 12, round_=True)
         super().__init__(child=self.swatch, css_classes=["cp-dot"], valign=Gtk.Align.CENTER, tooltip_text=tooltip)
 
@@ -104,8 +106,9 @@ class ColorDot(Gtk.Button):
         self.swatch.set_color(color)
 
 
-def popup(anchor: Gtk.Widget, current: str, on_pick, title: str = "Accent Colour") -> Gtk.Popover:
+def popup(anchor: Gtk.Widget, current: str, on_pick, title: str = None) -> Gtk.Popover:
     """The picker under `anchor`; on_pick("#rrggbb") when Select is pressed."""
+    title = _("Accent Colour") if title is None else title
     state = {"color": parse_hex(current) or BASES[0]}
     grid = Gtk.Grid(css_classes=["cp-grid"], halign=Gtk.Align.CENTER)
     buttons = {}
@@ -135,8 +138,8 @@ def popup(anchor: Gtk.Widget, current: str, on_pick, title: str = "Accent Colour
         on_pick(state["color"])
         pop.popdown()
     btns = Gtk.Box(spacing=8, css_classes=["cp-buttons"], homogeneous=True)
-    btns.append(controls.push_button("Cancel", lambda: pop.popdown()))
-    sel = controls.push_button("Select", select, style="default")
+    btns.append(controls.push_button(_("Cancel"), lambda: pop.popdown()))
+    sel = controls.push_button(_("Select"), select, style="default")
     btns.append(sel)
     hexe.connect("activate", lambda _e: select())
     col = panel.column(panel.header(title), grid, row, btns)

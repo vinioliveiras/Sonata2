@@ -6,17 +6,19 @@ the same one GNOME Settings and KDE's Flatpak Permissions use. An app turned
 off here is refused next time it asks; a reset one is asked again."""
 from gi.repository import Gio, GLib
 
+from ..i18n import N_
+
 BUS = "org.freedesktop.impl.portal.PermissionStore"
 PATH = "/org/freedesktop/impl/portal/PermissionStore"
 IFACE = "org.freedesktop.impl.portal.PermissionStore"
 TIMEOUT_MS = 2000
 
 # (key, title, table, id, "allowed" value)
-KINDS = (("camera", "Camera", "devices", "camera", "yes"),
-         ("location", "Location", "location", "location", None),
-         ("screenshot", "Screenshots", "screenshot", "screenshot", "yes"),
-         ("notifications", "Notifications", "notifications", "notification", "yes"),
-         ("background", "Running in the Background", "background", "background", "yes"))
+KINDS = (("camera", N_("Camera"), "devices", "camera", "yes"),
+         ("location", N_("Location"), "location", "location", None),
+         ("screenshot", N_("Screenshots"), "screenshot", "screenshot", "yes"),
+         ("notifications", N_("Notifications"), "notifications", "notification", "yes"),
+         ("background", N_("Running in the Background"), "background", "background", "yes"))
 
 
 def _bus():

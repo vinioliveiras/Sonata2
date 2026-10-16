@@ -20,6 +20,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 from .. import pam  # noqa: E402
+from ..i18n import _  # noqa: E402
 from ..ui.progress import Spinner  # noqa: E402
 from .loginui import Backdrop, Mirror, balanced, lift, WaitGuard, avatar, logind, top_clock, menu_bar_format, password_field, power_bar, shake, wallpaper_texture  # noqa: E402
 
@@ -228,7 +229,7 @@ class LockScreen:
         slot.add_named(spinner, "spinner")
         col.append(slot)
         hint = self.hint.add(Gtk.Label(label="" if pam.available() else
-                                       "PAM is not available: can't check passwords", css_classes=["lk-hint"]))
+                                       _("PAM is not available: can't check passwords"), css_classes=["lk-hint"]))
         if len(self.hint.items) > 1:
             hint.set_label(self.hint.items[0].get_label())
         balanced(col, hint)                           # picture, name and field centred as one

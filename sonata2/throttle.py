@@ -13,6 +13,8 @@ import json
 import os
 import time
 
+from .i18n import _, ngettext
+
 FREE_TRIES = 4
 WAITS = (60, 5 * 60, 15 * 60, 60 * 60)      # 5th, 6th, 7th, 8th+ wrong password
 
@@ -62,5 +64,5 @@ class Throttle:
 def describe(seconds: int) -> str:
     """"Try again in 4:59" (minutes:seconds), "Try again in 59 seconds"."""
     if seconds >= 60:
-        return f"Try again in {seconds // 60}:{seconds % 60:02d}"
-    return f"Try again in {seconds} second{'s' if seconds != 1 else ''}"
+        return _("Try again in {time}").format(time=f"{seconds // 60}:{seconds % 60:02d}")
+    return ngettext("Try again in {n} second", "Try again in {n} seconds", seconds).format(n=seconds)

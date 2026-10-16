@@ -18,8 +18,9 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from .. import fpslimit, ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 
-LABELS = {"off": "Off", "max": "Max"}
+LABELS = {"off": N_("Off"), "max": N_("Max")}           # shown through _()
 
 ui.register("""
 /* two grid rows (120 px): padding 5 + title 19 + 3 + choices 24 + 4 + the graph + 5 */
@@ -46,21 +47,21 @@ class FpsModule(Gtk.Box):
     def __init__(self):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=3, css_classes=["panel-module", "cc-fps"])
         head = Gtk.Box(spacing=6)
-        head.append(Gtk.Label(label="FPS Limit", xalign=0, css_classes=["panel-module-title"]))
+        head.append(Gtk.Label(label=_("FPS Limit"), xalign=0, css_classes=["panel-module-title"]))
         # the app being measured (Vini)
         self.app = Gtk.Label(label="", xalign=0, hexpand=True, css_classes=["cc-fps-app"],
                              ellipsize=Pango.EllipsizeMode.END, width_chars=1)
         head.append(self.app)
         self.live = Gtk.Label(label="", css_classes=["cc-fps-live"])          # "58 fps"
         head.append(self.live)
-        self.cap = Gtk.Label(label="games", css_classes=["cc-fps-cap"])
+        self.cap = Gtk.Label(label=_("games"), css_classes=["cc-fps-cap"])
         head.append(self.cap)
-        self.install_btn = Gtk.Button(label="Install frame-pacer", css_classes=["cc-fps-install"],
+        self.install_btn = Gtk.Button(label=_("Install frame-pacer"), css_classes=["cc-fps-install"],
                                       can_focus=False, visible=False)
         self.install_btn.connect("clicked", lambda _b: self._install())
         head.append(self.install_btn)
         self.append(head)
-        self.seg = ui.controls.segmented([(c, LABELS.get(c, c)) for c in fpslimit.CHOICES], None, self.choose)
+        self.seg = ui.controls.segmented([(c, _(LABELS.get(c, c))) for c in fpslimit.CHOICES], None, self.choose)
         self.buttons = self.seg.buttons
         self.append(self.seg)
         self.graph = FrameTimeGraph()
@@ -81,13 +82,13 @@ class FpsModule(Gtk.Box):
     def update(self) -> None:
         ok = fpslimit.installed()
         self.seg.set_sensitive(ok)
-        self.install_btn.set_visible(not ok and self.cap.get_label() != "Installing…")
-        self.cap.set_visible((ok and not self.live.get_label()) or self.cap.get_label() == "Installing…")
+        self.install_btn.set_visible(not ok and self.cap.get_label() != _("Installing…"))
+        self.cap.set_visible((ok and not self.live.get_label()) or self.cap.get_label() == _("Installing…"))
         cur = fpslimit.get()
         for c, b in self.buttons.items():
             (b.add_css_class if c == cur else b.remove_css_class)("on")
         hz = refresh_hz()
-        self.buttons["max"].set_tooltip_text(f"The display's rate ({round(hz)} FPS)" if hz else None)
+        self.buttons["max"].set_tooltip_text(_("The display's rate ({n} FPS)").format(n=round(hz)) if hz else None)
         lim = fpslimit.resolve(cur, hz)
         self.graph.target = 1000.0 / int(lim) if lim.isdigit() else None
         self.graph.queue_draw()
@@ -118,7 +119,7 @@ class FpsModule(Gtk.Box):
     def show_frames(self, r) -> None:
         """r: the plugin's answer (None: no plugin / no Wayfire)."""
         if not isinstance(r, dict) or "frametimes" not in r:
-            self.graph.set_times([], "Update Sonata's Wayfire plugin (./install.sh)" if r is not None else "")
+            self.graph.set_times([], _("Update Sonata's Wayfire plugin (./install.sh)") if r is not None else "")
             self.history, self._app_id = [], None
             self.app.set_label("")
             self.live.set_label("")
@@ -127,7 +128,7 @@ class FpsModule(Gtk.Box):
             return
         times = [t for t in r.get("frametimes") or [] if isinstance(t, (int, float)) and t > 0]
         if not r.get("app-id") or len(times) < 2:
-            self.graph.set_times([], "No game or full-screen app")
+            self.graph.set_times([], _("No game or full-screen app"))
             self.history, self._app_id = [], None
             self.app.set_label("")
             self.live.set_label("")
@@ -141,9 +142,9 @@ class FpsModule(Gtk.Box):
         self.history = (self.history + [recent_average(times)])[-SHOWN:]
         self.graph.set_times(self.history)
         avg, low = summary(times)
-        self.live.set_label(f"{int(r.get('fps') or 0)} fps")
+        self.live.set_label(_("{n} fps").format(n=int(r.get("fps") or 0)))
         self.avg.set_label(f"{avg:.1f} ms")
-        self.low.set_label(f"1% low {low} fps")
+        self.low.set_label(_("1% low {n} fps").format(n=low))
         self.cap.set_visible(False)                     # the live figure says it
 
     def choose(self, c: str) -> None:
@@ -151,12 +152,12 @@ class FpsModule(Gtk.Box):
         self.update()
 
     def _install(self) -> None:
-        self.cap.set_label("Installing…")
+        self.cap.set_label(_("Installing…"))
         self.update()
 
         def done(err):
-            self.cap.set_label("games" if not err else "couldn't install")
-            self.cap.set_tooltip_text(err or "Steam picks it up the next time it opens")
+            self.cap.set_label(_("games") if not err else _("couldn't install"))
+            self.cap.set_tooltip_text(err or _("Steam picks it up the next time it opens"))
             self.update()
         fpslimit.install(done)
 

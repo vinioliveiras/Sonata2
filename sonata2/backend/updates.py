@@ -26,6 +26,7 @@ from typing import Callable, List, Optional
 
 from gi.repository import Gio, GLib
 
+from ..i18n import _
 from .linereader import read_lines
 
 
@@ -119,7 +120,7 @@ def sources() -> List[Source]:
     out = []
     if shutil.which("pacman"):
         lst = ["checkupdates", "--nocolor"] if shutil.which("checkupdates") else ["pacman", "-Qu"]
-        out.append(Source("system", "System", lst, ["pkexec", "pacman", "-Syu", "--noconfirm"],
+        out.append(Source("system", _("System"), lst, ["pkexec", "pacman", "-Syu", "--noconfirm"],
                           "sudo pacman -Syu", parse_arrow))
         helper = _aur_helper()
         if helper:
@@ -129,13 +130,13 @@ def sources() -> List[Source]:
                               [helper, "-Sua", "--noconfirm", "--sudo", "pkexec"] + flags,
                               f"{helper} -Sua", parse_arrow))
     elif shutil.which("dnf"):
-        out.append(Source("system", "System", ["dnf", "-q", "check-update"], None,
+        out.append(Source("system", _("System"), ["dnf", "-q", "check-update"], None,
                           "sudo dnf upgrade", parse_columns))
     elif shutil.which("apt"):
-        out.append(Source("system", "System", ["apt", "list", "--upgradable"], None,
+        out.append(Source("system", _("System"), ["apt", "list", "--upgradable"], None,
                           "sudo apt update && sudo apt upgrade", parse_apt))
     elif shutil.which("zypper"):
-        out.append(Source("system", "System", ["zypper", "-q", "list-updates"], None,
+        out.append(Source("system", _("System"), ["zypper", "-q", "list-updates"], None,
                           "sudo zypper update", parse_columns))
     if shutil.which("flatpak"):
         out.append(Source("flatpak", "Flatpak", ["flatpak", "remote-ls", "--updates",
@@ -154,7 +155,7 @@ def plan(srcs: List[Source]) -> List[Source]:
     if "system" not in ids or "aur" not in ids:
         return list(srcs)
     aur = srcs[ids.index("aur")]
-    both = Source("system+aur", "System and AUR", aur.list_cmd,
+    both = Source("system+aur", _("System and AUR"), aur.list_cmd,
                   [("-Syu" if a == "-Sua" else a) for a in aur.install], aur.terminal, aur.parse)
     out = [s for s in srcs if s.id not in ("system", "aur")]
     out.insert(min(ids.index("system"), ids.index("aur")), both)

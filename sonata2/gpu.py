@@ -17,6 +17,7 @@ import re
 from collections import namedtuple
 
 from . import config
+from .i18n import _
 
 NAME = "gpu"
 # desktop ids (without .desktop) the user put on the discrete GPU, or took
@@ -328,9 +329,9 @@ def fallback_notice() -> bool:
     path = fallback_marker()
     if not os.path.exists(path):
         return True
-    if not notify("Sonata started with the other graphics card",
-                  "It couldn't start on the card your displays use, so it is drawing with the other one "
-                  "for this session. Log out and back in to try again; Feedbacker has the logs."):
+    if not notify(_("Sonata started with the other graphics card"),
+                  _("It couldn't start on the card your displays use, so it is drawing with the other one "
+                    "for this session. Log out and back in to try again; Feedbacker has the logs.")):
         return False
     try:
         os.remove(path)
@@ -367,10 +368,10 @@ def crash_notice() -> bool:
                 return False
     except OSError:
         return False
-    if not notify("Graphics set back to the integrated card",
-                  "The last session ended because the discrete card refused memory. "
-                  "Sonata draws with the integrated card again (Settings > Displays > Graphics); "
-                  "games still use the discrete card."):
+    if not notify(_("Graphics set back to the integrated card"),
+                  _("The last session ended because the discrete card refused memory. "
+                    "Sonata draws with the integrated card again (Settings > Displays > Graphics); "
+                    "games still use the discrete card.")):
         return False                              # not told yet: tried again later
     mtime = crashed_at()
     try:
@@ -558,8 +559,8 @@ def menu_items(info, Item) -> list:
     if info is None or not has_dual_gpu():
         return []
     auto = smart() and not chosen(info)
-    items = [Item("Use High-Performance Graphics", lambda on: set_discrete(info, on), checked=wants_discrete(info),
+    items = [Item(_("Use High-Performance Graphics"), lambda on: set_discrete(info, on), checked=wants_discrete(info),
                   enabled=not auto)]
     if smart():
-        items.insert(0, Item("Smart Graphics Switching", lambda on: set_smart_for(info, on), checked=auto))
+        items.insert(0, Item(_("Smart Graphics Switching"), lambda on: set_smart_for(info, on), checked=auto))
     return items

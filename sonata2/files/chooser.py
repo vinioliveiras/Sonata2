@@ -19,6 +19,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from .folder import VIRTUAL, file_of, is_dir  # noqa: E402
 from .window import FilesWindow  # noqa: E402
 
@@ -61,7 +62,7 @@ class ChooserWindow(FilesWindow):
         self._answered = False
         super().__init__(app, folder)
         self.add_css_class("sonata-chooser")
-        self.set_title(title or {"open": "Open", "save": "Save", "folder": "Choose Folder"}[mode])
+        self.set_title(title or {"open": _("Open"), "save": _("Save"), "folder": _("Choose Folder")}[mode])
         self.set_default_size(820, 520)
         content = self.content_box            # (it was the paned's end child: Files' sidebar is fixed now)
         if mode == "save":
@@ -79,7 +80,7 @@ class ChooserWindow(FilesWindow):
         outer = Gtk.Box(css_classes=["fc-top"])
         row = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER, hexpand=True)
         outer.append(row)
-        row.append(Gtk.Label(label="Save As:"))
+        row.append(Gtk.Label(label=_("Save As:")))
         self.name_entry = Gtk.Entry(text=name or "", hexpand=False)
         self.name_entry.connect("activate", lambda *_: self._accept())
         self.name_entry.connect("changed", lambda *_: self._update_accept())
@@ -93,7 +94,7 @@ class ChooserWindow(FilesWindow):
     def _bottom(self, accept_label):
         bar = Gtk.Box(spacing=8, css_classes=["fc-bottom"])
         if self.filters:
-            bar.append(Gtk.Label(label="Show:" if self.mode != "save" else "Format:", css_classes=["fc-caption"]))
+            bar.append(Gtk.Label(label=_("Show:") if self.mode != "save" else _("Format:"), css_classes=["fc-caption"]))
             # Sonata's pop-up button (the plain GTK one was 34 px tall and
             # stretched the push buttons beside it to its height)
             combo = Gtk.DropDown.new_from_strings([f[0] for f in self.filters])
@@ -103,16 +104,16 @@ class ChooserWindow(FilesWindow):
             combo.connect("notify::selected", lambda d, _p: self._set_filter(d.get_selected()))
             bar.append(combo)
         if self.mode in ("save", "folder"):
-            new = Gtk.Button(label="New Folder", css_classes=["sonata-button", "fc-cancel"],
+            new = Gtk.Button(label=_("New Folder"), css_classes=["sonata-button", "fc-cancel"],
                              valign=Gtk.Align.CENTER)
             new.connect("clicked", lambda *_: self.new_folder())
             bar.append(new)
         bar.append(Gtk.Box(hexpand=True))
-        cancel = Gtk.Button(label="Cancel", css_classes=["sonata-button", "fc-cancel"], valign=Gtk.Align.CENTER)
+        cancel = Gtk.Button(label=_("Cancel"), css_classes=["sonata-button", "fc-cancel"], valign=Gtk.Align.CENTER)
         cancel.connect("clicked", lambda *_: self._finish(None))
         bar.append(cancel)
         label = accept_label.replace("_", "") if accept_label else \
-            {"open": "Open", "save": "Save", "folder": "Choose"}[self.mode]
+            {"open": _("Open"), "save": _("Save"), "folder": _("Choose")}[self.mode]
         self.accept_btn = Gtk.Button(label=label, css_classes=["sonata-button", "default", "fc-accept"],
                                      valign=Gtk.Align.CENTER)
         self.accept_btn.connect("clicked", lambda *_: self._accept())
@@ -189,10 +190,10 @@ class ChooserWindow(FilesWindow):
                 return
             dest = Gio.File.new_for_uri(self.location()).get_child_for_display_name(name)
             if dest.query_exists(None):
-                ui.dialog.alert(f"“{name}” already exists. Do you want to replace it?",
-                                "A file with the same name already exists in this folder. "
-                                "Replacing it will overwrite its current contents.",
-                                [("cancel", "Cancel", ""), ("replace", "Replace", "destructive")],
+                ui.dialog.alert(_("“{name}” already exists. Do you want to replace it?").format(name=name),
+                                _("A file with the same name already exists in this folder. "
+                                  "Replacing it will overwrite its current contents."),
+                                [("cancel", _("Cancel"), ""), ("replace", _("Replace"), "destructive")],
                                 lambda r: r == "replace" and self._finish([dest.get_uri()]), parent=self)
                 return
             self._finish([dest.get_uri()])

@@ -17,6 +17,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 ATTRS = "standard::name,standard::type,standard::size,standard::is-symlink"
 UI_EVERY_S = 0.1
@@ -173,7 +174,7 @@ def put_back(files, on_error=None, on_done=None) -> None:
             try:
                 orig = f.query_info("trash::orig-path", NOFOLLOW, None).get_attribute_byte_string("trash::orig-path")
                 if not orig:
-                    raise GLib.Error("The original location is unknown.")
+                    raise GLib.Error(_("The original location is unknown."))
                 dest = Gio.File.new_for_path(orig)
                 parent = dest.get_parent()
                 if parent and not parent.query_exists(None):
@@ -311,11 +312,15 @@ class Transfer:
         self.total = self.done_bytes = 0
         self._last_ui = 0.0
         self._apply_all = None               # remembered conflict answer
-        verb = "Moving" if move else "Copying"
         first = self.sources[0].get_basename() if self.sources else ""
-        what = f"“{first}”" if len(self.sources) == 1 else f"{len(self.sources)} items"
-        self.op = ui.progress.start(f"{verb} {what} to “{dest.get_basename() or dest.get_uri()}”",
-                                    on_cancel=self.cancel.cancel, heading="Move" if move else "Copy")
+        where = dest.get_basename() or dest.get_uri()
+        if len(self.sources) == 1:
+            title = (_("Moving “{name}” to “{dest}”") if move else _("Copying “{name}” to “{dest}”")).format(
+                name=first, dest=where)
+        else:
+            title = (_("Moving {n} items to “{dest}”") if move else _("Copying {n} items to “{dest}”")).format(
+                n=len(self.sources), dest=where)
+        self.op = ui.progress.start(title, on_cancel=self.cancel.cancel, heading=_("Move") if move else _("Copy"))
         threading.Thread(target=self._run, daemon=True).start()
 
     # -- worker thread ----------------------------------------------------------------
@@ -383,9 +388,10 @@ class Transfer:
         folder (deleting it first lost data when the copy then failed, or
         when it contained the item being moved)."""
         if _inside(_real(src, True), _real(target, True)):
-            verb = "moving" if self.move else "copying"
+            why = _("“{name}” can’t be replaced because it contains the item you’re moving.") if self.move else \
+                _("“{name}” can’t be replaced because it contains the item you’re copying.")
             raise GLib.Error.new_literal(
-                Gio.io_error_quark(), f"“{name}” can’t be replaced because it contains the item you’re {verb}.",
+                Gio.io_error_quark(), why.format(name=name),
                 Gio.IOErrorEnum.FAILED)
         aside = self.dest.get_child(free_name(self.dest, f".{name}.sonata-replaced", True, style="number"))
         target.move(aside, Gio.FileCopyFlags.NOFOLLOW_SYMLINKS | Gio.FileCopyFlags.NO_FALLBACK_FOR_MOVE,
@@ -446,18 +452,20 @@ class Transfer:
         ev, box = threading.Event(), {}
 
         def show():
-            kind = "folder" if is_dir else "item"
-            verb = "moving" if self.move else "copying"
 
             def answered(rid, apply_all):
                 box["a"] = rid
                 if apply_all:
                     self._apply_all = rid
                 ev.set()
-            ui.dialog.alert(f"An {kind} named “{name}” already exists in this location.",
-                            f"Do you want to replace it with the one you’re {verb}?",
-                            [("keep", "Keep Both", ""), ("stop", "Stop", ""), ("replace", "Replace", "default")],
-                            answered, parent=self.parent, check="Apply to All")
+            heading = _("A folder named “{name}” already exists in this location.") if is_dir else \
+                _("An item named “{name}” already exists in this location.")
+            ui.dialog.alert(heading.format(name=name),
+                            _("Do you want to replace it with the one you’re moving?") if self.move else
+                            _("Do you want to replace it with the one you’re copying?"),
+                            [("keep", _("Keep Both"), ""), ("stop", _("Stop"), ""),
+                             ("replace", _("Replace"), "default")],
+                            answered, parent=self.parent, check=_("Apply to All"))
             return False
         GLib.idle_add(show)
         ev.wait()
@@ -477,7 +485,7 @@ class Transfer:
         from .. import sounds
         sounds.play("done" if err is None else "error")
         if err is not None:
-            ui.dialog.alert("The operation can’t be completed.", err.message, [("ok", "OK", "default")],
+            ui.dialog.alert(_("The operation can’t be completed."), err.message, [("ok", "OK", "default")],
                             parent=self.parent)
         if self.on_done:
             self.on_done()
@@ -580,7 +588,7 @@ def paste_image(widget, dest, done=None, on_error=None) -> bool:
             ok = False
         if not ok:
             if on_error:
-                on_error(GLib.Error.new_literal(Gio.io_error_quark(), "The picture couldn’t be saved.",
+                on_error(GLib.Error.new_literal(Gio.io_error_quark(), _("The picture couldn’t be saved."),
                                                 Gio.IOErrorEnum.FAILED))
             return
         if done:

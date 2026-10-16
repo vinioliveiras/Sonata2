@@ -17,9 +17,11 @@ import gi
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib  # noqa: E402
 
+from ..i18n import N_  # noqa: E402
+
 PROXY = 1800                     # the working copy's longest side
-ADJUSTMENTS = (("brightness", "Brightness"), ("contrast", "Contrast"), ("saturation", "Saturation"),
-               ("warmth", "Temperature"), ("sharpness", "Sharpness"))
+ADJUSTMENTS = (("brightness", N_("Brightness")), ("contrast", N_("Contrast")), ("saturation", N_("Saturation")),
+               ("warmth", N_("Temperature")), ("sharpness", N_("Sharpness")))
 # formats Preview writes back in place; others (RAW, SVG, animated GIF...) need Save As
 WRITABLE = {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG", ".webp": "WEBP", ".bmp": "BMP",
             ".tif": "TIFF", ".tiff": "TIFF"}

@@ -13,6 +13,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
+from ..i18n import _  # noqa: E402
+
 ATTRS = ",".join((
     "standard::name", "standard::display-name", "standard::icon", "standard::symbolic-icon",
     "standard::type", "standard::is-symlink", "standard::is-hidden", "standard::is-backup", "standard::content-type",
@@ -83,18 +85,18 @@ def short_name(name: str, limit: int = MENU_NAME_MAX) -> str:
 
 def display_name(uri: str) -> str:
     if uri == RECENTS:
-        return "Recents"
+        return _("Recents")
     if uri == APPS:
-        return "Applications"
+        return _("Applications")
     if uri.startswith("sonata:tag/"):
-        return uri[len("sonata:tag/"):]
+        return _(uri[len("sonata:tag/"):])          # a colour tag: N_() in tags.py
     if uri.rstrip("/") == "trash:":
-        return "Trash"
+        return _("Trash")
     f = Gio.File.new_for_uri(uri)
     if f.get_path() == GLib.get_home_dir():
         return GLib.get_user_name()
     if f.get_path() == "/":
-        return "Computer"
+        return _("Computer")
     try:
         return f.query_info("standard::display-name", Gio.FileQueryInfoFlags.NONE, None).get_display_name()
     except GLib.Error:
@@ -320,17 +322,33 @@ class Folder:
             self._monitor = d.monitor_directory(Gio.FileMonitorFlags.WATCH_MOVES, None)
         except GLib.Error:
             return
+        self._watched = d
         self._monitor.connect("changed", self._changed)
+
+    def _inside(self, f) -> bool:
+        """`f` is an item of the folder shown -- not the folder itself, whose
+        own changes the monitor reports too (the Trash's item count after a
+        deletion: it was listed inside itself as "Wastebasket", Vini)."""
+        d = getattr(self, "_watched", None)
+        if f is None or d is None:
+            return f is not None
+        if f.equal(d):
+            return False
+        parent = f.get_parent()
+        return parent is not None and parent.equal(d)
 
     def _changed(self, _mon, f, other, event):
         E = Gio.FileMonitorEvent
+        if not self._inside(f) and not (event == E.RENAMED and self._inside(other)):
+            return
         if event in (E.DELETED, E.MOVED_OUT):
             self._remove(f.get_basename())
         elif event in (E.CREATED, E.MOVED_IN):
             self._add(f)
         elif event == E.RENAMED:
-            self._remove(f.get_basename())
-            if other is not None:
+            if self._inside(f):
+                self._remove(f.get_basename())
+            if other is not None and self._inside(other):
                 self._add(other)
         elif event in (E.CHANGES_DONE_HINT, E.ATTRIBUTE_CHANGED):
             self._add(f, replace=True)

@@ -25,6 +25,7 @@ gi.require_version("Graphene", "1.0")
 from gi.repository import Gdk, Gio, GLib, GObject, Graphene, Gsk, Gtk  # noqa: E402
 
 from . import config  # noqa: E402
+from .i18n import N_  # noqa: E402
 
 ICONS_DIR = os.path.join(os.path.dirname(__file__), "data", "icons")
 # Sonata's appearance.json (config.load keeps only known keys: every
@@ -113,7 +114,7 @@ def _steam_game_icon(info, shape: str = "squircle"):
 # "package" | "file" | "theme", "path": a picture, "name": a theme icon,
 # "shape": that app's own shape}. "auto": Sonata's artwork, else the package's.
 SHAPES = ("squircle", "circle", "rounded")
-SHAPE_TITLES = {"squircle": "Squircle", "circle": "Circle", "rounded": "Rounded Square"}
+SHAPE_TITLES = {"squircle": N_("Squircle"), "circle": N_("Circle"), "rounded": N_("Rounded Square")}   # _(title) shown
 SOURCES = ("auto", "package", "file", "theme")
 # "source": every app's default (an app's own choice wins): "auto" or "package"
 ICON_DEFAULTS = {"shape": "squircle", "source": "auto", "apps": {}}

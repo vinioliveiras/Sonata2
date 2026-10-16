@@ -23,6 +23,7 @@ import time
 from gi.repository import GLib
 
 from . import config
+from .i18n import _
 
 CONFIG = "~/.config/keepassxc/keepassxc.ini"
 PAM_FILE = "/etc/pam.d/greetd"
@@ -285,16 +286,16 @@ def switch_to_gnome(password: str, step=lambda _t: None, ops=None) -> int:
              start_kp=_start_keepassxc,
              set_backend=set_backend)
     o.update(ops or {})
-    step("Checking your password…")
+    step(_("Checking your password…"))
     if not o["auth"](password):
         raise PermissionError("That's not your login password.")
     if not o["pam_ready"]():
-        step("Letting the login screen unlock the keyring…")
+        step(_("Letting the login screen unlock the keyring…"))
         if not o["write_pam"]():
             raise RuntimeError("The login screen's settings couldn't be changed.")
-    step("Reading the saved passwords from KeePassXC…")
+    step(_("Reading the saved passwords from KeePassXC…"))
     items = o["read"]()
-    step("Moving them to the login keyring…")
+    step(_("Moving them to the login keyring…"))
     o["quit_kp"]()
     o["kp_service"](False)
     try:

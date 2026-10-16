@@ -12,6 +12,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _, pgettext  # noqa: E402
 from . import timers as T  # noqa: E402
 
 ui.register("""
@@ -95,8 +96,8 @@ class StopwatchPage(_Ticking):
         self.root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, vexpand=True, css_classes=["ck-main"])
         self.big = Gtk.Label(css_classes=["ck-big"], margin_top=48, margin_bottom=20)
         self.root.append(self.big)
-        self.lap_btn = ui.controls.circle_button("Lap", self.lap_or_reset)
-        self.go_btn = ui.controls.circle_button("Start", self.start_or_stop, tone="green")
+        self.lap_btn = ui.controls.circle_button(_("Lap"), self.lap_or_reset)
+        self.go_btn = ui.controls.circle_button(_("Start"), self.start_or_stop, tone="green")
         self.root.append(_buttons(self.lap_btn, self.go_btn))
         self.laps = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["ck-laps"])
         self.root.append(Gtk.ScrolledWindow(child=self.laps, vexpand=True, margin_top=16,
@@ -122,9 +123,9 @@ class StopwatchPage(_Ticking):
     def refresh(self) -> None:
         sw = self.state.sw
         running, started = sw["running"], sw["running"] or sw["before"] > 0
-        self.go_btn.set_label("Stop" if running else "Start")
+        self.go_btn.set_label(_("Stop") if running else _("Start"))
         self.go_btn.set_tone("red" if running else "green")
-        self.lap_btn.set_label("Lap" if running or not started else "Reset")
+        self.lap_btn.set_label(_("Lap") if running or not started else pgettext("stopwatch", "Reset"))
         self.lap_btn.set_sensitive(started)
         self._fill_laps()
         self.update()
@@ -156,7 +157,7 @@ class StopwatchPage(_Ticking):
     @staticmethod
     def _lap_row(n: int, seconds: float) -> Gtk.ListBoxRow:
         box = Gtk.Box()
-        box.append(Gtk.Label(label=f"Lap {n}", xalign=0, hexpand=True))
+        box.append(Gtk.Label(label=_("Lap {n}").format(n=n), xalign=0, hexpand=True))
         box.time = Gtk.Label(label=T.stopwatch_text(seconds), xalign=1)
         box.append(box.time)
         row = Gtk.ListBoxRow(child=box, activatable=False)
@@ -211,7 +212,7 @@ class TimerPage(_Ticking):
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18, margin_top=40, valign=Gtk.Align.START)
         pick = Gtk.Box(spacing=10, halign=Gtk.Align.CENTER, css_classes=["ck-pick"])
         self.spins = []
-        for unit, upper in (("hours", 23), ("min", 59), ("sec", 59)):
+        for unit, upper in ((_("hours"), 23), (_("min"), 59), (_("sec"), 59)):
             s = Gtk.SpinButton.new_with_range(0, upper, 1)
             s.set_wrap(True)
             s.set_numeric(True)
@@ -231,11 +232,11 @@ class TimerPage(_Ticking):
             b.connect("clicked", lambda _b, s=secs: self.start(s))
             chips.append(b)
         col.append(chips)
-        self.name = ui.controls.text_field(placeholder="Timer", on_activate=lambda *_a: self.start())
+        self.name = ui.controls.text_field(placeholder=_("Timer"), on_activate=lambda *_a: self.start())
         self.name.set_halign(Gtk.Align.CENTER)
         self.name.set_size_request(220, -1)
         col.append(self.name)
-        self.start_btn = ui.controls.circle_button("Start", self.start, tone="green")
+        self.start_btn = ui.controls.circle_button(_("Start"), self.start, tone="green")
         col.append(self.start_btn)
         return col
 
@@ -252,8 +253,8 @@ class TimerPage(_Ticking):
         mid.append(self.sub)
         over.add_overlay(mid)
         col.append(over)
-        self.cancel_btn = ui.controls.circle_button("Cancel", self.cancel)
-        self.pause_btn = ui.controls.circle_button("Pause", self.pause_or_resume, tone="orange")
+        self.cancel_btn = ui.controls.circle_button(_("Cancel"), self.cancel)
+        self.pause_btn = ui.controls.circle_button(_("Pause"), self.pause_or_resume, tone="orange")
         col.append(_buttons(self.cancel_btn, self.pause_btn))
         return col
 
@@ -290,7 +291,7 @@ class TimerPage(_Ticking):
                 spin.set_value(v)
             self.name.set_text(tm["label"])
         else:
-            self.pause_btn.set_label("Pause" if self.running() else "Resume")
+            self.pause_btn.set_label(_("Pause") if self.running() else _("Resume"))
             self.pause_btn.set_tone("orange" if self.running() else "green")
         self.update()
         self._frames()
@@ -308,4 +309,4 @@ class TimerPage(_Ticking):
             end = GLib.DateTime.new_from_unix_local(int(tm["ends"]))
             self.sub.set_label(f"{end.format('%H:%M' if h24() else '%-I:%M %p')} · {name}")
         else:
-            self.sub.set_label(f"Paused · {name}")
+            self.sub.set_label(_("Paused · {name}").format(name=name))

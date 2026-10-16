@@ -19,6 +19,8 @@ import tempfile
 
 from gi.repository import Gio, GLib
 
+from .i18n import _
+
 _running = {}           # desktop id -> number of sandboxed copies running
 listeners = []          # fn() when that changes (the Dock's badges)
 
@@ -168,15 +170,15 @@ def ask_open(info) -> None:
     from . import applock
     from .ui import dialog
     if not available():
-        dialog.alert("Open in Sandbox needs bubblewrap",
-                     "Install the bubblewrap package (./install.sh installs it), then try again.",
-                     [("ok", "OK", "default")])
+        dialog.alert(_("Open in Sandbox needs bubblewrap"),
+                     _("Install the bubblewrap package (./install.sh installs it), then try again."),
+                     [("ok", _("OK"), "default")])
         return
 
     def go():
         if not open_app(info):
-            dialog.alert(f"“{info.get_display_name()}” couldn't open in a sandbox", "",
-                         [("ok", "OK", "default")])
+            dialog.alert(_("“{name}” couldn't open in a sandbox").format(name=info.get_display_name()), "",
+                         [("ok", _("OK"), "default")])
     # a locked app asks its password here too (this launch skips apps.py's wrapper)
     if not applock.gate(info, go):
         go()

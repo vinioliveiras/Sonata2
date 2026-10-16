@@ -143,7 +143,7 @@ class LockTest(unittest.TestCase):
 
     def test_settings_switch(self):
         src = (pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "settings" / "app.py").read_text()
-        self.assertIn('switch_row("Don\'t let apps change the volume"', src)
+        self.assertIn('switch_row(_("Don\'t let apps change the volume")', src)
         self.assertIn("devicevolume.lock_defaults", src)
 
 

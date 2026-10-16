@@ -22,6 +22,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 from ..clock import alarms as A  # noqa: E402
 from ..clock import timers as T  # noqa: E402
 from . import layer  # noqa: E402
@@ -90,26 +91,26 @@ class Ringer:
 class AlarmCard(Gtk.Window):
     """Top right, above everything: the alarm's name and time, Snooze and Stop."""
 
-    def __init__(self, app, alarm: dict, on_snooze, on_stop, head: str = "ALARM", time_text: str = None):
+    def __init__(self, app, alarm: dict, on_snooze, on_stop, head: str = N_("ALARM"), time_text: str = None):
         super().__init__(application=app, title=head.title(), decorated=False, css_classes=["sonata-alarm"])
         self.alarm = alarm
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, css_classes=["alarm-card"])
         card.set_size_request(320, -1)
         top = Gtk.Box(spacing=6)
         top.append(Gtk.Image(icon_name="alarm-symbolic", pixel_size=14))
-        top.append(Gtk.Label(label=head, xalign=0, css_classes=["alarm-app"]))
+        top.append(Gtk.Label(label=_(head), xalign=0, css_classes=["alarm-app"]))
         card.append(top)
         row = Gtk.Box(spacing=10, margin_top=4)
         texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
         texts.append(Gtk.Label(label=time_text or A.time_text(alarm, h24()), xalign=0, css_classes=["alarm-time"]))
-        texts.append(Gtk.Label(label=alarm.get("label") or "Alarm", xalign=0, css_classes=["alarm-label"],
+        texts.append(Gtk.Label(label=alarm.get("label") or _("Alarm"), xalign=0, css_classes=["alarm-label"],
                                ellipsize=3))
         row.append(texts)
         btns = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, valign=Gtk.Align.CENTER)
         if alarm.get("snooze"):
-            self.snooze_btn = ui.controls.push_button("Snooze", on_snooze)
+            self.snooze_btn = ui.controls.push_button(_("Snooze"), on_snooze)
             btns.append(self.snooze_btn)
-        self.stop_btn = ui.controls.push_button("Stop", on_stop, style="default")
+        self.stop_btn = ui.controls.push_button(_("Stop"), on_stop, style="default")
         btns.append(self.stop_btn)
         row.append(btns)
         card.append(row)
@@ -206,8 +207,8 @@ class AlarmService:
         self.clock_timer = tm
         self.rung.append("timer")
         self.dismiss(stop_sound=False)
-        self.current = {"label": tm["label"] or "Timer", "snooze": False}
-        self.card = AlarmCard(self.app, self.current, self.snooze, self.stop, head="TIMER",
+        self.current = {"label": tm["label"] or _("Timer"), "snooze": False}
+        self.card = AlarmCard(self.app, self.current, self.snooze, self.stop, head=N_("TIMER"),
                               time_text=T.duration_text(tm["duration"]))
         self.card.present()
         self.ringer.start(tm["sound"])

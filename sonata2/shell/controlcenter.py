@@ -15,34 +15,37 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GObject, Graphene, Gsk, Gtk  # noqa: E402
 
 from .. import config, ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 
 COLS = 4
 SPACING = 8
 UNIT_H = 56                    # one grid row: every module is a whole number of these, always
 WIDTH_MIN, WIDTH_MAX, WIDTH_SHARE = 344, 400, 0.18   # Control Center's width from the display's
-# id -> (title in Add Controls, (columns, rows))
+# id -> (title in Add Controls, (columns, rows)); shown through _(title)
 CATALOG = {
-    "connectivity": ("Wi-Fi & Bluetooth", (2, 2)),
-    "dnd": ("Do Not Disturb", (2, 1)),
-    "darkmode": ("Dark Mode", (1, 1)),
-    "screenshot": ("Screenshot", (1, 1)),
-    "display": ("Display", (4, 2)),
-    "sound": ("Sound", (4, 2)),
-    "nowplaying": ("Now Playing", (4, 1)),
-    "mixer": ("Volume Mixer", (4, 2)),            # each app's volume; grows a row per app (set_rows)
-    "fpslimit": ("FPS Limit", (4, 2)),            # games' frame rate + frame-time graph (fpsmodule.py; Add Controls)
-    "keyboard": ("Keyboard", (4, 1)),             # input sources, a click switches (kbdmodule.py; Add Controls)
+    "connectivity": (N_("Wi-Fi & Bluetooth"), (2, 2)),
+    "dnd": (N_("Do Not Disturb"), (2, 1)),
+    "darkmode": (N_("Dark Mode"), (1, 1)),
+    "screenshot": (N_("Screenshot"), (1, 1)),
+    "display": (N_("Display"), (4, 2)),
+    "sound": (N_("Sound"), (4, 2)),
+    "nowplaying": (N_("Now Playing"), (4, 1)),
+    "mixer": (N_("Volume Mixer"), (4, 2)),            # each app's volume; grows a row per app (set_rows)
+    "fpslimit": (N_("FPS Limit"), (4, 2)),            # games' frame rate + frame-time graph (fpsmodule.py; Add Controls)
+    "keyboard": (N_("Keyboard"), (4, 1)),             # input sources, a click switches (kbdmodule.py; Add Controls)
     # performance (statsui.py): not in the default layout, offered by Add Controls
 }
 from ..backend import stats as _stats  # noqa: E402
-_GPU_TITLES = {k: f"GPU ({m})" for k, m in _stats.GPU_MAKERS.items()}
+# (a card's own title is translated here already: _() of it again finds nothing and keeps it)
+_GPU_TITLES = {k: _("GPU ({maker})").format(maker=m) for k, m in _stats.GPU_MAKERS.items()}
 for _k in _stats.KINDS:                    # one GPU, or one module per card
-    CATALOG["stat_" + _k] = ({"cpu": "CPU", "gpu": "GPU", "ram": "Memory", "net": "Network",
-                              "fps": "FPS", "vram": "Video Memory", "temp_cpu": "CPU Temperature",
-                              "temp_gpu": "GPU Temperature"}.get(_k) or _GPU_TITLES.get(_k)
-                             or (f"GPU Temperature ({_stats.TEMP_MAKERS_BY_KIND[_k]})"
+    CATALOG["stat_" + _k] = ({"cpu": N_("CPU"), "gpu": N_("GPU"), "ram": N_("Memory"), "net": N_("Network"),
+                              "fps": N_("FPS"), "vram": N_("Video Memory"), "temp_cpu": N_("CPU Temperature"),
+                              "temp_gpu": N_("GPU Temperature")}.get(_k) or _GPU_TITLES.get(_k)
+                             or (_("GPU Temperature ({maker})").format(maker=_stats.TEMP_MAKERS_BY_KIND[_k])
                                  if _k in _stats.TEMP_MAKERS_BY_KIND else None)
-                             or f"Video Memory ({_stats.VRAM_MAKERS_BY_KIND.get(_k, _k)})", (2, 2))
+                             or _("Video Memory ({maker})").format(maker=_stats.VRAM_MAKERS_BY_KIND.get(_k, _k)),
+                             (2, 2))
 DEFAULT_ORDER = ["connectivity", "dnd", "darkmode", "screenshot", "display", "sound", "nowplaying"]
 DEFAULTS = {"modules": None}            # None: DEFAULT_ORDER (new modules join it in later versions)
 

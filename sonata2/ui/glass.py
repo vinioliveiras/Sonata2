@@ -14,12 +14,15 @@ No GTK here: ui/theme.py turns these into the material tokens
 (dock_material, bar_material, panel_material, sidebar_material,
 launchpad_material)."""
 
+from ..i18n import N_
+
 ITEMS = ("dock", "menubar", "menus", "windows", "launchpad")
-TITLES = {"dock": "Dock", "menubar": "Menu bar", "menus": "Menus and panels",
-          "windows": "Windows", "launchpad": "Apps Menu"}
-SUBTITLES = {"menus": "Menu bar menus, Control Center, Wi-Fi, notifications panels",
-             "windows": "Sidebars, and title bars when Glass title bars is on",
-             "launchpad": "The apps panel when Apps > Style is Apps Menu"}
+# shown translated: _(TITLES[part])
+TITLES = {"dock": N_("Dock"), "menubar": N_("Menu bar"), "menus": N_("Menus and panels"),
+          "windows": N_("Windows"), "launchpad": N_("Apps Menu")}
+SUBTITLES = {"menus": N_("Menu bar menus, Control Center, Wi-Fi, notifications panels"),
+             "windows": N_("Sidebars, and title bars when Glass title bars is on"),
+             "launchpad": N_("The apps panel when Apps > Style is Apps Menu")}
 # glass token -> solid token, per part
 MATERIALS = {"dock": ("glass_tint", "solid_tint"), "menubar": ("bar_bg", "window_bg"),
              "menus": ("glass_tint", "menu_bg"), "windows": ("window_glass", "sidebar_bg"),

@@ -40,7 +40,7 @@ class InputSourcesTest(unittest.TestCase):
         import inspect
         from sonata2.settings import app
         self.assertTrue(T.DEFAULTS["show_input"])
-        self.assertIn('("show_input", "Keyboard layout"', inspect.getsource(app))
+        self.assertIn('("show_input", _("Keyboard layout")', inspect.getsource(app))
         self.assertIn("self._update_input()", inspect.getsource(T.Bar._config_changed))   # live
 
     def test_badges(self):

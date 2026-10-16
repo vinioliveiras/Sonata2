@@ -20,6 +20,7 @@ gi.require_version("PangoCairo", "1.0")
 from gi.repository import Gdk, GLib, Gtk, Pango, PangoCairo  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _, ngettext  # noqa: E402
 from . import model  # noqa: E402
 
 HOUR_H = 48              # timeline: pixels per hour
@@ -160,7 +161,7 @@ def draw_block(canvas, cr, x, y, w, h, occ, selected, first=True, time_text=None
         cr.fill()
     col = ui.rgba("label_on_accent") if selected else text
     tx, tw = x + 7, w - 10
-    lay = layout(canvas, occ.event.summary or "New Event", weight=600, width=tw)
+    lay = layout(canvas, occ.event.summary or _("New Event"), weight=600, width=tw)
     if first and h >= 30 and w > 40:
         lay.set_width(int(tw * Pango.SCALE))
         show(cr, lay, tx, y + 2, col)
@@ -174,7 +175,7 @@ def draw_block(canvas, cr, x, y, w, h, occ, selected, first=True, time_text=None
             show(cr, sub, tx, cy, col, 0.85)
             cy += text_h(sub)
     else:                                   # short: one line, title then time
-        line = occ.event.summary or "New Event"
+        line = occ.event.summary or _("New Event")
         if first and time_text and w > 90:
             line += "  " + time_text
         lay = layout(canvas, line, weight=600, width=tw)
@@ -195,7 +196,7 @@ def draw_bar(canvas, cr, x, y, w, h, occ, selected, label=True, round_l=True, ro
     source(cr, solid if selected else fill)
     cr.paint()
     if label:
-        lay = layout(canvas, occ.event.summary or "New Event", weight=600, width=max(1, w - 10))
+        lay = layout(canvas, occ.event.summary or _("New Event"), weight=600, width=max(1, w - 10))
         show(cr, lay, x + 6, y + (h - text_h(lay)) / 2, ui.rgba("label_on_accent") if selected else text)
     cr.restore()
 
@@ -600,7 +601,7 @@ class TimelineHead(_Dragging, Canvas):
         source(cr, sep)
         cr.rectangle(GUTTER, self.tl.days_h, w - GUTTER, 1)
         cr.fill()
-        lay = layout(self, "all-day", width=GUTTER - 12, align=Pango.Alignment.RIGHT)
+        lay = layout(self, _("all-day"), width=GUTTER - 12, align=Pango.Alignment.RIGHT)
         show(cr, lay, 2, self.tl.days_h + 4 + (LANE - text_h(lay)) / 2, lab2)
         # all-day and multi-day bars
         sel = win.selected
@@ -794,7 +795,7 @@ class MonthView(_Dragging, Canvas):
                         labels.append((bx, y, span * cw - 6, line, o))
             for bx, y, lw, lh, o in labels:
                 col = ui.rgba("label_on_accent") if sel == o.key else event_colors(win.calendar_color(o))[2]
-                lay = layout(self, o.event.summary or "New Event", weight=600, width=lw - 10)
+                lay = layout(self, o.event.summary or _("New Event"), weight=600, width=lw - 10)
                 show(cr, lay, bx + 6, y + 1 + (lh - 2 - text_h(lay)) / 2, col)
             for c in range(7):
                 items = slots[c]
@@ -803,7 +804,7 @@ class MonthView(_Dragging, Canvas):
                 x = c * cw
                 if hidden:
                     y = y0 + num_h + limit * line
-                    lay = layout(self, f"{hidden} more", weight=600, width=cw - 14)
+                    lay = layout(self, ngettext("{n} more", "{n} more", hidden).format(n=hidden), weight=600, width=cw - 14)
                     show(cr, lay, x + 8, y + (line - text_h(lay)) / 2, lab2)
                     self.more.append((x, y, cw, line, row[c]))
         if drag and self._target is not None:
@@ -832,7 +833,7 @@ class MonthView(_Dragging, Canvas):
         t = layout(self, self.win.fmt_time(occ.start.time()), width=None)
         tw = t.get_pixel_extents()[1].width
         show_time = w > tw + 60
-        name = layout(self, occ.event.summary or "New Event", width=w - 18 - (tw + 6 if show_time else 0))
+        name = layout(self, occ.event.summary or _("New Event"), width=w - 18 - (tw + 6 if show_time else 0))
         fg = ui.rgba("label_on_accent") if selected else ui.rgba("label")
         show(cr, name, x + 15, y + (h - text_h(name)) / 2, fg)
         if show_time:

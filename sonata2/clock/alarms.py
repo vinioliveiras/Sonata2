@@ -11,16 +11,31 @@ import json
 import os
 import uuid
 
+from ..i18n import N_, _
+
 FILE = "alarms.json"
 # the alarm's sound: key -> (name shown, file in data/sounds). Soft ones first;
 # Classic is the freedesktop alarm (high and sharp: no longer the default)
-SOUNDS = {"morning": ("Morning", "sonata-alarm-morning"), "chimes": ("Chimes", "sonata-alarm-chimes"),
-          "harp": ("Harp", "sonata-alarm-harp"), "sunrise": ("Sunrise", "sonata-alarm-sunrise"),
-          "pulse": ("Pulse", "sonata-alarm-pulse"), "classic": ("Classic", "alarm-clock-elapsed")}
+SOUNDS = {"morning": (N_("Morning"), "sonata-alarm-morning"), "chimes": (N_("Chimes"), "sonata-alarm-chimes"),
+          "harp": (N_("Harp"), "sonata-alarm-harp"), "sunrise": (N_("Sunrise"), "sonata-alarm-sunrise"),
+          "pulse": (N_("Pulse"), "sonata-alarm-pulse"), "classic": (N_("Classic"), "alarm-clock-elapsed")}
 SOUND = "morning"
 SNOOZE_MIN = 9                         # iPhone / macOS
 RING_MAX_S = 15 * 60                   # an alarm nobody stops goes quiet after this
-DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+WEEKDAYS = (N_("Monday"), N_("Tuesday"), N_("Wednesday"), N_("Thursday"), N_("Friday"), N_("Saturday"),
+            N_("Sunday"))
+DAYS = tuple(d[:3] for d in WEEKDAYS)          # "Mon"... (English)
+
+
+def day_name(i: int) -> str:
+    """Weekday i (0 = Monday) in the session's language."""
+    return _(WEEKDAYS[i])
+
+
+def day_abbr(i: int) -> str:
+    """"Mon" / "Seg": the first three letters of the day's name (a "Sun"
+    of its own in the catalogs would be the sun's)."""
+    return day_name(i)[:3]
 
 
 def sound_path(key: str) -> str:
@@ -36,7 +51,7 @@ def path() -> str:
 
 
 def new(hour: int = 7, minute: int = 0) -> dict:
-    return {"id": uuid.uuid4().hex[:12], "hour": hour, "minute": minute, "label": "Alarm",
+    return {"id": uuid.uuid4().hex[:12], "hour": hour, "minute": minute, "label": _("Alarm"),
             "repeat": [], "enabled": True, "snooze": True, "sound": SOUND}
 
 
@@ -108,12 +123,12 @@ def repeat_text(repeat: list) -> str:
     """"Every day", "Weekdays", "Weekends", "Mon, Wed" -- or "" for once."""
     r = sorted(repeat or [])
     if len(r) == 7:
-        return "Every day"
+        return _("Every day")
     if r == [0, 1, 2, 3, 4]:
-        return "Weekdays"
+        return _("Weekdays")
     if r == [5, 6]:
-        return "Weekends"
-    return ", ".join(DAYS[d] for d in r)
+        return _("Weekends")
+    return ", ".join(day_abbr(d) for d in r)
 
 
 def time_text(a: dict, h24: bool = True) -> str:

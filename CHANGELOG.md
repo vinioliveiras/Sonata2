@@ -3,6 +3,26 @@
 ## Unreleased
 
 ### Changes
+- Settings > Language & Region (as on a first install): the system's
+  language, and apart from it the region of its formats -- dates, times,
+  numbers, money, measures, paper -- with an example, and the first day of
+  the week (the Calendar's). The keyboard stays in Keyboard (Portuguese
+  (Brazil) with a Portugal keyboard, say). Set for the whole system
+  (localectl, the locale generated first when missing; one password) and
+  in effect at the next login.
+- Sonata in Portuguese: Brazil's and Portugal's, following the system's
+  language by itself (English otherwise). Strings that read differently
+  by place have their own words ("Zerar" on the stopwatch); a few
+  subtitles were shortened so the longer Portuguese fits.
+- The background colour of Light and Dark Mode tints the glass too: the
+  Dock, the menu bar, menus and panels, sidebars and glass title bars,
+  moved as much as they show (as see-through as before). Eight colours per
+  mode, as many as the accent colours (new: Butter, Teal).
+- Web apps (Chrome): a window whose title read the site's address
+  ("web.whatsapp.com") shows the page's title again -- or the web app's
+  name, for a page without one.
+- Files: the Trash no longer shows an item of itself inside
+  ("Wastebasket", after opening and closing it).
 - The Copy window is as tall as its copies: shorter when one ends, and
   new for the next batch (it came back as tall as it once was). About This
   Computer opens at its content's height.

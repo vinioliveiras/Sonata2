@@ -17,6 +17,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, GObject, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from . import markup  # noqa: E402
 
 PARA = ("title", "heading", "subheading", "item")
@@ -370,4 +371,4 @@ class NoteEditor(Gtk.ScrolledWindow):
 
 def format_date(t: float) -> str:
     """"30 September 2026 at 14:05" (macOS Notes' editor header)."""
-    return GLib.DateTime.new_from_unix_local(int(t)).format("%-d %B %Y at %H:%M")
+    return GLib.DateTime.new_from_unix_local(int(t)).format(_("%-d %B %Y at %H:%M"))

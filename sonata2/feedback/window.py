@@ -28,6 +28,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _, ngettext  # noqa: E402
 from . import report  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.feedback"
@@ -73,7 +74,7 @@ class FeedbackWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         if not GLib.get_application_name():
             GLib.set_application_name("Feedbacker")
-        super().__init__(application=app, title="Feedbacker", css_classes=["sonata-feedback"])
+        super().__init__(application=app, title=_("Feedbacker"), css_classes=["sonata-feedback"])
         ui.window.standard(self)
         ui.window.remember_size(self, "feedback", WIDTH, HEIGHT)  # its last size (never bigger than the display)
         self.set_size_request(480, 520)
@@ -91,9 +92,9 @@ class FeedbackWindow(Gtk.ApplicationWindow):
             # what took it down, from its logs, and how often lately (Vini: crashes, with data)
             kind = report.note_crash(self.crash)
             self.crash_cause = report.describe(kind) + (f" {report.history_text()}." if report.history_text() else "")
-            self.crash_row = Adw.ActionRow(title="Sonata quit unexpectedly", use_markup=False,
-                                           subtitle=report.crash_text(self.crash) + " " + self.crash_cause +
-                                           " Saving a report with the logs…")
+            self.crash_row = Adw.ActionRow(title=_("Sonata quit unexpectedly"), use_markup=False,
+                                           subtitle=report.crash_text(self.crash, local=True) + " " +
+                                           self.crash_cause + " " + _("Saving a report with the logs…"))
             self.crash_row.set_subtitle_lines(0)
             self.crash_row.add_prefix(Gtk.Image(icon_name="dialog-error-symbolic", css_classes=["error"]))
             grp.add(self.crash_row)
@@ -101,26 +102,26 @@ class FeedbackWindow(Gtk.ApplicationWindow):
             page.add(grp)
 
         mon = Adw.PreferencesGroup()
-        self.monitor_row = Adw.SwitchRow(title="Monitoring", use_markup=False, active=report.monitoring(),
-                                         subtitle="Keeps detailed logs so problems can be traced")
+        self.monitor_row = Adw.SwitchRow(title=_("Monitoring"), use_markup=False, active=report.monitoring(),
+                                         subtitle=_("Keeps detailed logs so problems can be traced"))
         self.monitor_row.connect("notify::active", self._monitor_changed)
         mon.add(self.monitor_row)
-        self.off_note = Adw.ActionRow(title="Monitoring is off", use_markup=False,
-                                      subtitle="Turn it on, log out and back in, then make the problem "
-                                               "happen again before saving a report.")
+        self.off_note = Adw.ActionRow(title=_("Monitoring is off"), use_markup=False,
+                                      subtitle=_("Turn it on, log out and back in, then make the problem "
+                                                 "happen again before saving a report."))
         self.off_note.add_prefix(Gtk.Image(icon_name="dialog-warning-symbolic", css_classes=["warning"]))
         self.off_note.set_subtitle_lines(0)
         mon.add(self.off_note)
         page.add(mon)
 
-        desc = Adw.PreferencesGroup(title="Describe the Problem")
-        self.title_row = Adw.EntryRow(title="Title", use_markup=False)
+        desc = Adw.PreferencesGroup(title=_("Describe the Problem"))
+        self.title_row = Adw.EntryRow(title=_("Title"), use_markup=False)
         desc.add(self.title_row)
         self.text = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, accepts_tab=False,
                                  top_margin=2, bottom_margin=2)
         frame = Gtk.ScrolledWindow(child=self.text, hscrollbar_policy=Gtk.PolicyType.NEVER,
                                    css_classes=["fb-text", "card"], margin_top=12)
-        self.text_hint = Gtk.Label(label="What happened, what you were doing, and how to make it happen again.",
+        self.text_hint = Gtk.Label(label=_("What happened, what you were doing, and how to make it happen again."),
                                    xalign=0, wrap=True, css_classes=["dim-label", "caption"], margin_top=6)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         box.append(frame)
@@ -128,9 +129,9 @@ class FeedbackWindow(Gtk.ApplicationWindow):
         desc.add(box)
         page.add(desc)
 
-        where = Adw.PreferencesGroup(title="Reports")
-        row = Adw.ActionRow(title="Saved in your home folder", subtitle="~/" + report.FOLDER, use_markup=False)
-        show = Gtk.Button(label="Show in Files", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+        where = Adw.PreferencesGroup(title=_("Reports"))
+        row = Adw.ActionRow(title=_("Saved in your home folder"), subtitle="~/" + report.FOLDER, use_markup=False)
+        show = Gtk.Button(label=_("Show in Files"), valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
         show.connect("clicked", lambda _b: reveal(report.folder()))
         row.add_suffix(show)
         where.add(row)
@@ -141,8 +142,8 @@ class FeedbackWindow(Gtk.ApplicationWindow):
         self.spinner = ui.progress.Spinner(visible=False)
         bottom.append(self.spinner)
         bottom.append(Gtk.Box(hexpand=True))
-        self.save_btn = ui.controls.push_button("Save Report", lambda: self.submit(False))
-        self.github_btn = ui.controls.push_button("Report on GitHub…", lambda: self.submit(True), style="default")
+        self.save_btn = ui.controls.push_button(_("Save Report"), lambda: self.submit(False))
+        self.github_btn = ui.controls.push_button(_("Report on GitHub…"), lambda: self.submit(True), style="default")
         bottom.append(self.save_btn)
         bottom.append(self.github_btn)
         col.append(bottom)
@@ -150,8 +151,9 @@ class FeedbackWindow(Gtk.ApplicationWindow):
         self.set_child(self.toasts)
         self._update_note()
         if self.crash:
-            self.title_row.set_text("Sonata quit unexpectedly")
-            self.text.get_buffer().set_text(report.crash_text(self.crash) + "\n\nWhat I was doing just before: ")
+            self.title_row.set_text(_("Sonata quit unexpectedly"))
+            self.text.get_buffer().set_text(report.crash_text(self.crash, local=True) + "\n\n" +
+                                            _("What I was doing just before: "))
             self._auto = True
             self._create(False)                  # no question about monitoring: errors are logged anyway
 
@@ -164,16 +166,16 @@ class FeedbackWindow(Gtk.ApplicationWindow):
         if not ids:
             return
         shown = open_apps.names(ids)
-        more = f" and {len(shown) - 4} more" if len(shown) > 4 else ""
-        row = Adw.ActionRow(title="Reopen your apps", use_markup=False,
+        more = " " + _("and {n} more").format(n=len(shown) - 4) if len(shown) > 4 else ""
+        row = Adw.ActionRow(title=_("Reopen your apps"), use_markup=False,
                             subtitle=", ".join(shown[:4]) + more)
         row.set_subtitle_lines(0)
 
         def reopen():
             n = open_apps.reopen(ids)
-            row.set_subtitle(f"Reopened {n} app{'s' if n != 1 else ''}.")
+            row.set_subtitle(ngettext("Reopened {n} app.", "Reopened {n} apps.", n).format(n=n))
             btn.set_sensitive(False)
-        btn = ui.controls.push_button("Reopen", reopen, style="default")
+        btn = ui.controls.push_button(_("Reopen"), reopen, style="default")
         btn.set_valign(Gtk.Align.CENTER)
         row.add_suffix(btn)
         grp.add(row)
@@ -186,7 +188,7 @@ class FeedbackWindow(Gtk.ApplicationWindow):
         report.set_monitoring(row.get_active())
         self._update_note()
         if row.get_active():
-            self.toast("Monitoring on: log out and back in, then make the problem happen again")
+            self.toast(_("Monitoring on: log out and back in, then make the problem happen again"))
 
     def toast(self, text: str, button: str = None, on_button=None) -> None:
         t = Adw.Toast(title=GLib.markup_escape_text(text), timeout=4)
@@ -212,12 +214,12 @@ class FeedbackWindow(Gtk.ApplicationWindow):
                 self.monitor_row.set_active(True)
             elif rid == "anyway":
                 self._create(github)
-        ui.dialog.alert("Monitoring Is Off",
-                        "Without monitoring the logs only hold errors, so this report may not show what went "
-                        "wrong. Turn monitoring on, log out and back in, make the problem happen again, "
-                        "then save the report.",
-                        (("cancel", "Cancel", ""), ("anyway", "Save Anyway", ""),
-                         ("on", "Turn On Monitoring", "default")), answered, parent=self)
+        ui.dialog.alert(_("Monitoring Is Off"),
+                        _("Without monitoring the logs only hold errors, so this report may not show what went "
+                          "wrong. Turn monitoring on, log out and back in, make the problem happen again, "
+                          "then save the report."),
+                        (("cancel", _("Cancel"), ""), ("anyway", _("Save Anyway"), ""),
+                         ("on", _("Turn On Monitoring"), "default")), answered, parent=self)
 
     def _set_busy(self, busy: bool) -> None:
         self.busy = busy
@@ -248,14 +250,14 @@ class FeedbackWindow(Gtk.ApplicationWindow):
             self._auto = False
             if path and not err:
                 report.clear_crash()                 # the next login doesn't open Feedbacker again
-                self.crash_row.set_subtitle(report.crash_text(self.crash) + " " + self.crash_cause +
-                                            f" The logs are saved in “{os.path.basename(path)}”.")
-                show = Gtk.Button(label="Show", valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
+                self.crash_row.set_subtitle(report.crash_text(self.crash, local=True) + " " + self.crash_cause + " " +
+                                            _("The logs are saved in “{name}”.").format(name=os.path.basename(path)))
+                show = Gtk.Button(label=_("Show"), valign=Gtk.Align.CENTER, css_classes=["sonata-button"])
                 show.connect("clicked", lambda _b: reveal(path))
                 self.crash_row.add_suffix(show)
                 return False
         if err or not path:
-            self.toast(f"Couldn't save the report: {getattr(err, 'strerror', None) or err}")
+            self.toast(_("Couldn't save the report: {error}").format(error=getattr(err, 'strerror', None) or err))
             return False
         if url:
             try:
@@ -263,9 +265,9 @@ class FeedbackWindow(Gtk.ApplicationWindow):
             except GLib.Error:
                 pass
             reveal(path)
-            self.toast("Attach the report shown in Files to the GitHub issue")
+            self.toast(_("Attach the report shown in Files to the GitHub issue"))
         else:
-            self.toast(f"Saved “{os.path.basename(path)}”", "Show", lambda: reveal(path))
+            self.toast(_("Saved “{name}”").format(name=os.path.basename(path)), _("Show"), lambda: reveal(path))
         return False
 
 

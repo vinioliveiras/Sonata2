@@ -7,6 +7,7 @@ import time
 from gi.repository import Gio, GLib
 
 from .. import config
+from ..i18n import _
 from ..backend import selfupdate
 
 FIRST_S = 120            # after login: let the session settle
@@ -41,7 +42,7 @@ class UpdateNotifier:
 
     def notify(self, rel) -> None:
         version = rel["tag"].lstrip("vV")
-        title, body = f"Sonata {version} is available", "Click to see what's new and update."
+        title, body = _("Sonata {version} is available").format(version=version), _("Click to see what's new and update.")
         self.sent.append((title, body))
         try:
             bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
@@ -60,7 +61,7 @@ class UpdateNotifier:
         bus.call("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
                  "org.freedesktop.Notifications", "Notify",
                  GLib.Variant("(susssasa{sv}i)", ("Software Update", 0, "software-update-available", title, body,
-                                                  ["default", "Update", "update", "Update…"],
+                                                  ["default", _("Update"), "update", _("Update…")],
                                                   {"urgency": GLib.Variant("y", 1)}, -1)),
                  None, Gio.DBusCallFlags.NONE, -1, None, sent)
 

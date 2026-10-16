@@ -38,6 +38,7 @@ import shlex
 from gi.repository import GLib
 
 from . import config
+from .i18n import _
 
 NAME = "browsergpu"
 # vulkan / webgpu: app key -> the user's choice (apps without a file of their
@@ -50,7 +51,7 @@ WEBGPU = "--enable-unsafe-webgpu"
 FLAGS = (X11, WEBGPU)
 FEATURE = "Vulkan"
 OWN = "--enable-features=" + FEATURE
-NOTE = "Takes effect the next time it opens."
+NOTE = _("Takes effect the next time it opens.")
 
 # the program -> its launcher's flag file
 CHROMIUM_BINS = {"google-chrome": "chrome-flags.conf", "google-chrome-stable": "chrome-flags.conf",
@@ -432,21 +433,21 @@ def menu_items(info, Item) -> list:
     vk_ok, wg_ok = supports(info)
     items = []
     if vk_ok:
-        items.append(Item("Use Vulkan", lambda on: set_vulkan(info, on), checked=vulkan(info),
+        items.append(Item(_("Use Vulkan"), lambda on: set_vulkan(info, on), checked=vulkan(info),
                           enabled=not vulkan_forced(info)))
     if wg_ok:
-        items.append(Item("Allow WebGPU", lambda on: set_webgpu(info, on), checked=webgpu(info)))
+        items.append(Item(_("Allow WebGPU"), lambda on: set_webgpu(info, on), checked=webgpu(info)))
     return items
 
 
 def vulkan_note(info) -> str:
-    return {"chromium": "Draws through XWayland with Vulkan. Restart it after changing.",
-            "webapp": "Draws through XWayland with Vulkan.",
-            "electron": "Draws through XWayland with Vulkan.",
-            "wine": "DXVK for Windows games. Off: WineD3D (OpenGL).",
-            }.get(kind(info), "Apps made with GTK 4 or Qt 6 draw with Vulkan; others ignore it.")
+    return {"chromium": _("Draws through XWayland with Vulkan. Restart it after changing."),
+            "webapp": _("Draws through XWayland with Vulkan."),
+            "electron": _("Draws through XWayland with Vulkan."),
+            "wine": _("DXVK for Windows games. Off: WineD3D (OpenGL)."),
+            }.get(kind(info), _("Apps made with GTK 4 or Qt 6 draw with Vulkan; others ignore it."))
 
 
 def webgpu_note(info) -> str:
-    return "For 3D web games." + (" Turns Vulkan on too." if kind(info) != "mozilla" else "") + \
-        (" Restart it after changing." if kind(info) in ("chromium", "mozilla") else "")
+    return _("For 3D web games.") + (" " + _("Turns Vulkan on too.") if kind(info) != "mozilla" else "") + \
+        (" " + _("Restart it after changing.") if kind(info) in ("chromium", "mozilla") else "")

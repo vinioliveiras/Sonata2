@@ -13,6 +13,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
 
 from .. import shortcuts as S, ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 ui.register("""
 .sc-keys { opacity: 0.9; }
@@ -27,10 +28,10 @@ def _keys(binding: str) -> Gtk.Box:
     box = Gtk.Box(spacing=6, valign=Gtk.Align.CENTER, css_classes=["sc-keys"])
     combos = S.split(binding)
     if not combos:
-        box.append(Gtk.Label(label="Off", css_classes=["sc-text"]))
+        box.append(Gtk.Label(label=_("Off"), css_classes=["sc-text"]))
     for i, combo in enumerate(combos):
         if i:
-            box.append(Gtk.Label(label="or", css_classes=["sc-or"]))
+            box.append(Gtk.Label(label=_("or"), css_classes=["sc-or"]))
         accel = S.accelerator(combo)
         box.append(Gtk.ShortcutLabel(accelerator=accel) if accel
                    else Gtk.Label(label=S.describe(combo), css_classes=["sc-text"]))
@@ -43,16 +44,16 @@ class ShortcutsPage:
         self.rows = {}
 
     def groups(self) -> list:
-        top = Adw.PreferencesGroup(description="Click a shortcut to change it, then press the new keys. "
-                                               "Super- and Ctrl-style shortcuts both work.")
+        top = Adw.PreferencesGroup(description=_("Click a shortcut to change it, then press the new keys. "
+                                                 "Super- and Ctrl-style shortcuts both work."))
         out = [top]
         for name in S.GROUPS:
-            g = Adw.PreferencesGroup(title=name)
+            g = Adw.PreferencesGroup(title=_(name))
             for s in (s for s in S.SHORTCUTS if s.group == name):
                 g.add(self._row(s))
             out.append(g)
         reset = Adw.PreferencesGroup()
-        btn = ui.controls.push_button("Restore Defaults", halign=Gtk.Align.START)
+        btn = ui.controls.push_button(_("Restore Defaults"), halign=Gtk.Align.START)
         btn.connect("clicked", lambda *_: self._reset_all())
         reset.add(btn)
         out.append(reset)
@@ -60,12 +61,12 @@ class ShortcutsPage:
 
     # -- rows ---------------------------------------------------------------------------------
     def _row(self, s):
-        row = Adw.ActionRow(title=GLib.markup_escape_text(s.title), activatable=True)
+        row = Adw.ActionRow(title=GLib.markup_escape_text(_(s.title)), activatable=True)
         row.connect("activated", lambda *_: self.record(s, add=False))
         row.holder = Gtk.Box(valign=Gtk.Align.CENTER)      # the key caps, before the "…" button
         row.add_suffix(row.holder)
         more = Gtk.MenuButton(icon_name="view-more-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"],
-                              tooltip_text="More")
+                              tooltip_text=_("More"))
         more.set_create_popup_func(lambda b, s=s: self._menu(b, s))
         row.add_suffix(more)
         self.rows[s.id] = row
@@ -83,10 +84,10 @@ class ShortcutsPage:
         Item = ui.menu.Item
         is_default = S.split(S.current(s)) == S.split(S.default(s))
         pop = ui.menu.popup(button, [
-            [Item("Change Shortcut…", lambda: self.record(s, add=False)),
-             Item("Add Another Shortcut…", lambda: self.record(s, add=True))],
-            [Item("Turn Off", lambda: self._set(s, []), enabled=bool(S.split(S.current(s)))),
-             Item("Use the Default", lambda: (S.reset(s), self._fill(s)), enabled=not is_default)]],
+            [Item(_("Change Shortcut…"), lambda: self.record(s, add=False)),
+             Item(_("Add Another Shortcut…"), lambda: self.record(s, add=True))],
+            [Item(_("Turn Off"), lambda: self._set(s, []), enabled=bool(S.split(S.current(s)))),
+             Item(_("Use the Default"), lambda: (S.reset(s), self._fill(s)), enabled=not is_default)]],
             position=Gtk.PositionType.BOTTOM)
         button.set_active(False)
         return pop
@@ -101,14 +102,14 @@ class ShortcutsPage:
                 for s in S.SHORTCUTS:
                     S.reset(s)
                     self._fill(s)
-                self.win.toast("Shortcuts restored")
-        ui.dialog.alert("Restore the default shortcuts?", "Every shortcut you changed goes back to Sonata's.",
-                        [("cancel", "Cancel", ""), ("reset", "Restore", "destructive")], answer, parent=self.win)
+                self.win.toast(_("Shortcuts restored"))
+        ui.dialog.alert(_("Restore the default shortcuts?"), _("Every shortcut you changed goes back to Sonata's."),
+                        [("cancel", _("Cancel"), ""), ("reset", _("Restore"), "destructive")], answer, parent=self.win)
 
     # -- recording ------------------------------------------------------------------------------
     def record(self, s, add: bool):
         shown = Gtk.Label(label="…", css_classes=["sc-capture"])
-        dlg = ui.dialog.alert(s.title, "Press the new shortcut. Esc cancels.", [("cancel", "Cancel", "")],
+        dlg = ui.dialog.alert(_(s.title), _("Press the new shortcut. Esc cancels."), [("cancel", _("Cancel"), "")],
                               parent=self.win)
         dlg.set_extra_child(shown)
         surface = self.win.get_surface()
@@ -146,7 +147,7 @@ class ShortcutsPage:
         if other is not None:                                # one combo, one shortcut
             S.set_binding(other, [c for c in S.split(S.current(other)) if c != combo])
             self._fill(other)
-            self.win.toast(f"{S.describe(combo)} was removed from “{other.title}”")
+            self.win.toast(_("{keys} was removed from “{name}”").format(keys=S.describe(combo), name=_(other.title)))
         combos = S.split(S.current(s)) if add else []
         if combo not in combos:
             combos.append(combo)

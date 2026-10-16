@@ -13,6 +13,8 @@ the icon): it uses the same timings and failed().
 """
 from gi.repository import GLib
 
+from .i18n import _
+
 WATCH_S = 30
 SLOW_S = {"steam": 90, "steam-native": 90, "steam-runtime": 90}    # updates itself first
 RETRIES = 3
@@ -58,9 +60,10 @@ def has_window(info, views=None, unit=None) -> bool:
 def failed(info, why: str) -> None:
     """The notification: it couldn't open."""
     from . import notify
-    name = info.get_display_name() if info is not None else "The app"
+    name = info.get_display_name() if info is not None else _("The app")
     icon = info.get_icon() if info is not None else None
-    notify.send(f"“{name}” couldn't open", why + " Try opening it again in a moment.", app="Sonata",
+    notify.send(_("“{name}” couldn't open").format(name=name), why + " " + _("Try opening it again in a moment."),
+                app="Sonata",
                 icon=icon.to_string() if icon is not None else "",
                 desktop=(info.get_id() or "") if info is not None else "")
 
@@ -87,7 +90,7 @@ def _check(info, launch, tries: int) -> None:
         return
     appscope.kill(info.get_id() or "", info)
     if tries >= RETRIES:
-        failed(info, f"It was closed and opened again {RETRIES} times and still didn't show a window.")
+        failed(info, _("It was closed and opened again {n} times and still didn't show a window.").format(n=RETRIES))
         return
     print(f"sonata2: {key_of(info)} showed no window in {wait_s(info)} s: killed, opening it again "
           f"({tries + 1}/{RETRIES})", flush=True)

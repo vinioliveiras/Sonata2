@@ -18,16 +18,18 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib  # noqa: E402
 
+from ..i18n import N_  # noqa: E402
+
 from .folder import ATTRS, sort_key  # noqa: E402
 
 LIMIT = 2000
 BATCH = 50
 SKIP = {"node_modules", "__pycache__", ".git", "proc", "sys"}
 CONTENT_MAX = 4 << 20
-KINDS = (("any", "Any Kind"), ("folder", "Folders"), ("document", "Documents"), ("image", "Pictures"),
-         ("video", "Movies"), ("audio", "Music"), ("archive", "Archives"))
-DATES = (("any", "Any Time", 0), ("today", "Today", 0), ("week", "Last 7 Days", 7), ("month", "Last 30 Days", 30),
-         ("year", "This Year", 0))
+KINDS = (("any", N_("Any Kind")), ("folder", N_("Folders")), ("document", N_("Documents")), ("image", N_("Pictures")),
+         ("video", N_("Movies")), ("audio", N_("Music")), ("archive", N_("Archives")))
+DATES = (("any", N_("Any Time"), 0), ("today", N_("Today"), 0), ("week", N_("Last 7 Days"), 7),
+         ("month", N_("Last 30 Days"), 30), ("year", N_("This Year"), 0))
 _DOC_TYPES = ("text/", "application/pdf", "application/msword", "application/vnd.", "application/rtf",
               "application/x-tex", "application/json", "application/xml")
 _ARCHIVES = (".zip", ".tar", ".gz", ".tgz", ".xz", ".bz2", ".zst", ".7z", ".rar")

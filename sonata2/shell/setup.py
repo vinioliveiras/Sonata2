@@ -13,6 +13,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Adw, Gdk, GLib, Graphene, Gsk, Gtk  # noqa: E402
 
 from .. import config, icons, names, ui  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 from ..backend import system  # noqa: E402
 from . import layer  # noqa: E402
 from .loginui import Backdrop, wallpaper_texture  # noqa: E402
@@ -20,6 +21,8 @@ from .loginui import Backdrop, wallpaper_texture  # noqa: E402
 DEFAULTS = {"done": False}
 HELLOS = ("hello", "olá", "hola", "bonjour", "ciao", "hallo", "こんにちは", "안녕하세요", "привет", "你好")
 HELLO_MS = 1800
+ACCENT_NAMES = {"blue": N_("Blue"), "purple": N_("Purple"), "pink": N_("Pink"), "red": N_("Red"),
+                "orange": N_("Orange"), "yellow": N_("Yellow"), "green": N_("Green"), "graphite": N_("Graphite")}
 
 ui.register("""
 .su-hello { color: white; font-family: %(font_display)s; font-size: 76px; font-weight: 300;
@@ -158,7 +161,7 @@ class SetupAssistant:
         self.app = app
         self.on_done = on_done
         self.tex = wallpaper_texture()
-        self.win = Gtk.Window(application=app, decorated=False, title="Setup Assistant")
+        self.win = Gtk.Window(application=app, decorated=False, title=_("Setup Assistant"))
         self.win.add_css_class("sonata-lock")
         over = Gtk.Overlay()
         over.set_child(Backdrop(self.tex, dim=0.22))
@@ -188,11 +191,11 @@ class SetupAssistant:
             col.append(body)
         nav = Gtk.Box(spacing=16, halign=Gtk.Align.CENTER, margin_top=28)
         if back:
-            b = Gtk.Button(icon_name="go-previous-symbolic", css_classes=["su-next"], tooltip_text="Back")
+            b = Gtk.Button(icon_name="go-previous-symbolic", css_classes=["su-next"], tooltip_text=_("Back"))
             b.connect("clicked", lambda *_: self._go(-1))
             nav.append(b)
         if next_to:
-            n = Gtk.Button(icon_name="go-next-symbolic", css_classes=["su-next"], tooltip_text="Continue")
+            n = Gtk.Button(icon_name="go-next-symbolic", css_classes=["su-next"], tooltip_text=_("Continue"))
             n.connect("clicked", lambda *_: self._go(1))
             nav.append(n)
         col.append(nav)
@@ -206,7 +209,7 @@ class SetupAssistant:
         for i, w in enumerate(HELLOS):
             words.add_named(Gtk.Label(label=w, css_classes=["su-hello"]), str(i))
         col.append(words)
-        col.append(Gtk.Label(label="Welcome to Sonata", css_classes=["su-text"]))
+        col.append(Gtk.Label(label=_("Welcome to Sonata"), css_classes=["su-text"]))
         state = {"i": 0}
 
         def cycle():
@@ -216,7 +219,7 @@ class SetupAssistant:
             words.set_visible_child_name(str(state["i"]))
             return True
         GLib.timeout_add(HELLO_MS, cycle)
-        n = Gtk.Button(icon_name="go-next-symbolic", css_classes=["su-next"], tooltip_text="Continue",
+        n = Gtk.Button(icon_name="go-next-symbolic", css_classes=["su-next"], tooltip_text=_("Continue"),
                        halign=Gtk.Align.CENTER, margin_top=36)
         n.connect("clicked", lambda *_: self._go(1))
         col.append(n)
@@ -227,7 +230,7 @@ class SetupAssistant:
         cards = Gtk.Box(spacing=24, halign=Gtk.Align.CENTER)
         dark_now = Adw.StyleManager.get_default().get_dark()
         self.cards = {}
-        for dark, label in ((False, "Light"), (True, "Dark")):
+        for dark, label in ((False, _("Light")), (True, _("Dark"))):
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
             box.append(LookPreview(self.tex, dark))
             box.append(Gtk.Label(label=label, css_classes=["su-caption"]))
@@ -241,15 +244,15 @@ class SetupAssistant:
         self.dots = {}
         for name in ui.tokens.ACCENTS:
             d = Gtk.Button(css_classes=["su-dot", name] + (["selected"] if name == cur else []),
-                           tooltip_text=name.capitalize())
+                           tooltip_text=_(ACCENT_NAMES.get(name) or name.capitalize()))
             d.connect("clicked", lambda _b, n=name: self._set_accent(n))
             self.dots[name] = d
             dots.append(d)
         acc = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        acc.append(Gtk.Label(label="Accent Colour", css_classes=["su-caption"]))
+        acc.append(Gtk.Label(label=_("Accent Colour"), css_classes=["su-caption"]))
         acc.append(dots)
         body.append(acc)
-        return self._page("Choose Your Look", "Pick an appearance. You can change it later in Settings > Appearance.",
+        return self._page(_("Choose Your Look"), _("Pick an appearance. You can change it later in Settings > Appearance."),
                           body, next_to=True)
 
     def _apps(self):
@@ -261,14 +264,15 @@ class SetupAssistant:
         for kind, label in LW.STYLES:
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
             box.append(AppsPreview(self.tex, kind))
-            box.append(Gtk.Label(label=label, css_classes=["su-caption"]))
+            box.append(Gtk.Label(label=_(label), css_classes=["su-caption"]))
             b = Gtk.Button(child=box, css_classes=["su-card"] + (["selected"] if kind == cur else []))
             b.connect("clicked", lambda _b, k=kind: self._set_apps_style(k))
             self.app_cards[kind] = b
             cards.append(b)
-        return self._page(f"Choose How to See Your {names.APPS}",
-                          f"Over the whole screen, or a smaller {names.APPS_MENU} in the middle that can also "
-                          "sort them by category. You can change it later in Settings > Appearance.", cards, next_to=True)
+        return self._page(_("Choose How to See Your {apps}").format(apps=_(names.APPS)),
+                          _("Over the whole screen, or a smaller {apps_menu} in the middle that can also "
+                            "sort them by category. You can change it later in Settings > Appearance.")
+                          .format(apps_menu=_(names.APPS_MENU)), cards, next_to=True)
 
     def _sonata(self):
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["su-panel"], width_request=460)
@@ -276,11 +280,11 @@ class SetupAssistant:
         from . import dock as D
         dock_cfg = config.load("dock", D.DEFAULTS)
         rows = (
-            ("Sonata title bars for all apps", "Chrome, VS Code, Firefox and others match Sonata's windows",
+            (_("Sonata title bars for all apps"), _("Chrome, VS Code, Firefox and others match Sonata's windows"),
              app_cfg.get("system_titlebars", True), self._set_titlebars),
-            ("Click an app in the Dock to minimize it", "Its windows go back into the Dock",
+            (_("Click an app in the Dock to minimize it"), _("Its windows go back into the Dock"),
              dock_cfg.get("click_minimizes", True), lambda on: config.update("dock", click_minimizes=on)),
-            ("Automatically hide the Dock", "It slides in when the pointer reaches the screen edge",
+            (_("Automatically hide the Dock"), _("It slides in when the pointer reaches the screen edge"),
              dock_cfg.get("autohide", False), lambda on: config.update("dock", autohide=on)),
         )
         for i, (title, sub, on, cb) in enumerate(rows):
@@ -295,17 +299,19 @@ class SetupAssistant:
             sw.connect("notify::active", lambda s, _p, f=cb: f(s.get_active()))
             row.append(sw)
             panel.append(row)
-        return self._page("Make It Yours", "A few of Sonata's choices. Everything else is in Settings.",
+        return self._page(_("Make It Yours"), _("A few of Sonata's choices. Everything else is in Settings."),
                           panel, next_to=True)
 
     def _ready(self):
-        start = Gtk.Button(label="Get Started", css_classes=["sonata-button", "default", "su-start"],
+        start = Gtk.Button(label=_("Get Started"), css_classes=["sonata-button", "default", "su-start"],
                            halign=Gtk.Align.CENTER)
         start.connect("clicked", lambda *_: self.finish())
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.append(start)
-        return self._page("You're All Set", f"Open {names.APPS} with the Super key, {names.SEARCH} with Super+Space, "
-                          f"and {names.OVERVIEW} with F3.", box, back=True)
+        return self._page(_("You're All Set"),
+                          _("Open {apps} with the Super key, {search} with Super+Space, and {overview} with F3.")
+                          .format(apps=_(names.APPS), search=_(names.SEARCH), overview=_(names.OVERVIEW)),
+                          box, back=True)
 
     # -- choices ------------------------------------------------------------------------
     def _set_dark(self, dark):

@@ -8,6 +8,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gio, Gtk, Pango  # noqa: E402
 
 from .. import apps, icons, ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from ..backend import mixer  # noqa: E402
 
 SLIDE_MS = 160
@@ -66,7 +67,7 @@ class MixerRow(Gtk.Revealer):
         self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5, css_classes=["mixer-row"])
         title = Gtk.Box(spacing=6, css_classes=["mixer-title"])
         self.mute = Gtk.Button(css_classes=["mixer-mute"], valign=Gtk.Align.CENTER, can_focus=False,
-                               tooltip_text="Mute")
+                               tooltip_text=_("Mute"))
         self.image = Gtk.Image(pixel_size=16)
         icons.set_image(self.image, _gicon(stream))
         self.mute.set_child(self.image)
@@ -96,7 +97,7 @@ class MixerRow(Gtk.Revealer):
     def _set_muted(self, on: bool) -> None:
         self.muted = bool(on)
         (self.box.add_css_class if on else self.box.remove_css_class)("muted")
-        self.mute.set_tooltip_text("Unmute" if on else "Mute")
+        self.mute.set_tooltip_text(_("Unmute") if on else _("Mute"))
 
     def toggle_mute(self) -> None:
         on = not self.muted
@@ -128,7 +129,7 @@ class AppMixer(Gtk.Box):
         self.rows = {}
         self._streams = []
         self.apply_fn = apply or self._apply_async
-        self.empty = Gtk.Label(label="No apps playing sound", xalign=0, css_classes=["mixer-empty"])
+        self.empty = Gtk.Label(label=_("No apps playing sound"), xalign=0, css_classes=["mixer-empty"])
         self.append(self.empty)
 
     def set_streams(self, streams) -> None:

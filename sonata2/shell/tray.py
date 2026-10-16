@@ -29,6 +29,7 @@ gi.require_version("Graphene", "1.0")
 from gi.repository import Gdk, Gio, GLib, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 WATCHER = "org.kde.StatusNotifierWatcher"
 WATCHER_PATH = "/StatusNotifierWatcher"
@@ -1044,7 +1045,7 @@ class TrayBox(Gtk.Box):
             if lay is None or not btn.get_mapped():
                 btn.remove_css_class("open")
                 return
-            sections = menu.sections(lay) or [[ui.menu.Item("No Items", enabled=False)]]
+            sections = menu.sections(lay) or [[ui.menu.Item(_("No Items"), enabled=False)]]
             pop = ui.menu.popup(btn, sections, position=Gtk.PositionType.BOTTOM, gap=2, glass=True)
             ui.panel.align_to_start(pop, btn, 2)
             menu.open = (pop, btn)

@@ -9,6 +9,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from ..backend import system  # noqa: E402
 
 ui.register("""
@@ -23,7 +24,7 @@ class KeyboardModule(Gtk.Box):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=3, css_classes=["panel-module", "cc-kbd"])
         self.bar, self.close = bar, close
         head = Gtk.Box(spacing=6)
-        head.append(Gtk.Label(label="Keyboard", xalign=0, css_classes=["panel-module-title"]))
+        head.append(Gtk.Label(label=_("Keyboard"), xalign=0, css_classes=["panel-module-title"]))
         self.name = Gtk.Label(xalign=1, hexpand=True, css_classes=["cc-kbd-name"],
                               ellipsize=Pango.EllipsizeMode.END, width_chars=1)
         head.append(self.name)
@@ -32,12 +33,12 @@ class KeyboardModule(Gtk.Box):
         names = dict(system.XKB_LAYOUTS)
         from .topbar import layout_badge
         self.seg = ui.controls.segmented([(l, layout_badge(l)) for l in self.order], self.order[0] if self.order
-                                         else None, self.pick, tooltips={l: names.get(l, l) for l in self.order})
+                                         else None, self.pick, tooltips={l: _(names.get(l, l)) for l in self.order})
         row = Gtk.Box(spacing=6)
         self.seg.set_hexpand(True)
         row.append(self.seg)
-        self.add_btn = Gtk.Button(label="Add…", css_classes=["cc-kbd-add"], can_focus=False,
-                                  valign=Gtk.Align.CENTER, tooltip_text="Add an input source (Keyboard settings)",
+        self.add_btn = Gtk.Button(label=_("Add…"), css_classes=["cc-kbd-add"], can_focus=False,
+                                  valign=Gtk.Align.CENTER, tooltip_text=_("Add an input source (Keyboard settings)"),
                                   visible=len(self.order) < 2)
         self.add_btn.connect("clicked", lambda _b: self._settings())
         row.append(self.add_btn)
@@ -46,7 +47,7 @@ class KeyboardModule(Gtk.Box):
 
     def show_current(self, layout: str) -> None:
         self.seg.select(layout)
-        self.name.set_label(dict(system.XKB_LAYOUTS).get(layout, layout))
+        self.name.set_label(_(dict(system.XKB_LAYOUTS).get(layout, layout)))
 
     def pick(self, layout: str) -> None:
         """That layout in use now (the first of the list, as Wayfire wants)."""

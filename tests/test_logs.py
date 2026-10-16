@@ -72,7 +72,7 @@ class LogsTest(unittest.TestCase):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         with open(os.path.join(root, "sonata2", "settings", "app.py")) as f:
             src = f.read()
-        self.assertIn('switch_row("Logs", logs.verbose()', src)
+        self.assertIn('switch_row(_("Logs"), logs.verbose()', src)
         self.assertNotIn("logs_row.set_visible(", src)              # no more 7 clicks to find it
 
     def test_trim_keeps_the_newest_half(self):

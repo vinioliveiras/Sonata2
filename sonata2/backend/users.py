@@ -11,6 +11,8 @@ from typing import List, Optional
 
 from gi.repository import Gio, GLib
 
+from ..i18n import _
+
 BUS = "org.freedesktop.Accounts"
 PATH = "/org/freedesktop/Accounts"
 IFACE = "org.freedesktop.Accounts"
@@ -119,7 +121,7 @@ def set_picture(user: User, file_path: str) -> Optional[str]:
     try:
         small = _square_png(file_path)
     except GLib.Error as e:
-        return f"This picture can't be used: {e.message}"
+        return _("This picture can't be used: {error}").format(error=e.message)
     try:
         err = _call_user(user.path, "SetIconFile", "(s)", small)
         if err is None and user.current:          # ~/.face too (lock screen, other apps)
@@ -159,13 +161,13 @@ def _crypt(password: str) -> Optional[str]:
 def set_password(user: User, password: str, hint: str = "") -> Optional[str]:
     hashed = _crypt(password)
     if not hashed:
-        return "openssl is needed to set passwords"
+        return _("openssl is needed to set passwords")
     return _call_user(user.path, "SetPassword", "(ss)", hashed, hint)
 
 
 def create_user(name: str, real_name: str, admin: bool, password: str) -> Optional[str]:
     if not password:          # without one the account is locked: no login, not on the login screen
-        return "A password is needed"
+        return _("A password is needed")
     try:
         path = _bus().call_sync(BUS, PATH, IFACE, "CreateUser", GLib.Variant("(ssi)", (name, real_name, 1 if admin else 0)),
                                 None, INTERACTIVE, 120000, None).unpack()[0]

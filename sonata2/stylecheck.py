@@ -282,8 +282,9 @@ def check_and_notify() -> list:
     new = new_problems(rows)
     if new:
         from .gpu import notify
-        listed = ", ".join(new[:4]) + (f" and {len(new) - 4} more" if len(new) > 4 else "")
-        notify("Window styles", f"Not in Sonata's look: {listed}. Details: sonata2 doctor windows",
+        from .i18n import _
+        listed = ", ".join(new[:4]) + (" " + _("and {n} more").format(n=len(new) - 4) if len(new) > 4 else "")
+        notify(_("Window styles"), _("Not in Sonata's look: {listed}. Details: sonata2 doctor windows").format(listed=listed),
                icon="preferences-desktop-theme")
     return new
 

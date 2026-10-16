@@ -17,6 +17,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import N_, _, ngettext  # noqa: E402
 from .folder import file_of, is_dir  # noqa: E402
 
 TEXT_MAX = 256 * 1024
@@ -52,7 +53,7 @@ def _fmt_date(info, attr):
     t = info.get_attribute_uint64(attr) if info.has_attribute(attr) else 0
     if not t:
         return "--"
-    return GLib.DateTime.new_from_unix_local(t).format("%-d %B %Y at %H:%M")
+    return GLib.DateTime.new_from_unix_local(t).format(_("%-d %B %Y at %H:%M"))
 
 
 class QuickLook(Adw.Window):
@@ -60,7 +61,7 @@ class QuickLook(Adw.Window):
         # not transient: Wayfire won't maximize a window with a parent, and
         # Quick Look is its own window on macOS too (the desktop's has none)
         super().__init__(application=parent.get_application() if parent else None,
-                         default_width=720, default_height=520, title="Quick Look")
+                         default_width=720, default_height=520, title=_("Quick Look"))
         for c in ("sonata-ql", "sonata-glass-window"):          # frosted glass, like the Dock
             self.add_css_class(c)
         ui.window.standard(self)
@@ -95,7 +96,7 @@ class QuickLook(Adw.Window):
         self.title.set_label(info.get_display_name())
         ct = info.get_content_type() or ""
         app = None if is_dir(info) else Gio.AppInfo.get_default_for_type(ct, False) if ct else None
-        self.open_btn.set_label(f"Open with {app.get_display_name()}" if app else "Open")
+        self.open_btn.set_label(_("Open with {app}").format(app=app.get_display_name()) if app else _("Open"))
         self.open_btn.app = app
         child = self.body.get_first_child()
         if child is not None:
@@ -124,7 +125,7 @@ class QuickLook(Adw.Window):
             menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)     # right-click: Copy Image (Vini)
             menu.connect("pressed", lambda g, _n, x, y: (
                 g.set_state(Gtk.EventSequenceState.CLAIMED),
-                ui.menu.popup(pic, [[ui.menu.Item("Copy Image", lambda: imageload.copy_picture(
+                ui.menu.popup(pic, [[ui.menu.Item(_("Copy Image"), lambda: imageload.copy_picture(
                     pic, path, pic.get_paintable() if isinstance(pic.get_paintable(), Gdk.Texture) else None))]],
                     at=(x, y), passthrough=True)))
             pic.add_controller(menu)
@@ -158,7 +159,7 @@ class QuickLook(Adw.Window):
         col.append(Gtk.Label(label=info.get_display_name(), css_classes=["ql-big-name"], wrap=True,
                              justify=Gtk.Justification.CENTER))
         col.append(Gtk.Label(label=f"{kind(info)} – {size(info)}", css_classes=["ql-meta"]))
-        col.append(Gtk.Label(label=f"Modified {date(info)}", css_classes=["ql-meta"]))
+        col.append(Gtk.Label(label=_("Modified {date}").format(date=date(info)), css_classes=["ql-meta"]))
         return col
 
     def _open(self):
@@ -176,7 +177,7 @@ class QuickLook(Adw.Window):
 
 
 # -- Get Info: Sharing & Permissions (Finder), Open With ----------------------------------------
-LEVELS = ("Read & Write", "Read only", "No Access")
+LEVELS = (N_("Read & Write"), N_("Read only"), N_("No Access"))
 WHO = (("owner", 6), ("group", 3), ("other", 0))       # the shift of each one's rwx bits
 
 
@@ -214,7 +215,7 @@ def _owner_names(st):
 class GetInfo(Adw.Window):
     def __init__(self, parent, info):
         super().__init__(transient_for=None, default_width=300,
-                         title=f"{info.get_display_name()} Info")
+                         title=_("{name} Info").format(name=info.get_display_name()))
         self.set_size_request(240, 200)
         for c in ("sonata-info", "sonata-glass-window"):       # frosted glass, like the Dock
             self.add_css_class(c)
@@ -237,16 +238,17 @@ class GetInfo(Adw.Window):
         col.append(Gtk.Separator())
         grid = Gtk.Grid(column_spacing=10, row_spacing=4)
         parent_dir = f.get_parent()
-        rows = [("Kind:", kind(info)), ("Size:", size(info)),
-                ("Where:", parent_dir.get_path() or parent_dir.get_uri() if parent_dir else "--"),
-                ("Created:", _fmt_date(info, "time::created")), ("Modified:", _fmt_date(info, "time::modified"))]
+        rows = [(_("Kind:"), kind(info)), (_("Size:"), size(info)),
+                (_("Where:"), parent_dir.get_path() or parent_dir.get_uri() if parent_dir else "--"),
+                (_("Created:"), _fmt_date(info, "time::created")),
+                (_("Modified:"), _fmt_date(info, "time::modified"))]
         self.size_row = None
         for r, (k, v) in enumerate(rows):
             grid.attach(Gtk.Label(label=k, xalign=1, css_classes=["gi-key"]), 0, r, 1, 1)
             val = Gtk.Label(label=v, xalign=0, css_classes=["gi-val"], wrap=True, max_width_chars=30,
                             hexpand=True, natural_wrap_mode=Gtk.NaturalWrapMode.NONE)
             grid.attach(val, 1, r, 1, 1)
-            if k == "Size:":
+            if r == 1:                                  # Size
                 self.size_row = val
         col.append(grid)
         if not is_dir(info):
@@ -259,10 +261,11 @@ class GetInfo(Adw.Window):
                                         propagate_natural_height=True, propagate_natural_width=True))
         self.set_content(outer)
         if is_dir(info) and f.get_path():
-            self.size_row.set_label("Calculating…")
+            self.size_row.set_label(_("Calculating…"))
             threading.Thread(target=self._count, args=(f.get_path(),), daemon=True).start()
         elif not is_dir(info):
-            self.size_row.set_label(f"{info.get_size():,} bytes ({size(info)} on disk)")
+            self.size_row.set_label(ngettext("{n} byte ({size} on disk)", "{n} bytes ({size} on disk)", info.get_size())
+                                    .format(n=f"{info.get_size():,}", size=size(info)))
 
     def _open_with(self, col, info, f):
         """Finder's "Open with:" -- this file, or every file of its kind (Change All)."""
@@ -273,29 +276,31 @@ class GetInfo(Adw.Window):
         default = Gio.AppInfo.get_default_for_type(ct, False)
         cur = next((i for i, a in enumerate(apps) if default and a.equal(default)), 0)
         col.append(Gtk.Separator())
-        col.append(Gtk.Label(label="Open with:", xalign=0, css_classes=["gi-key"]))
+        col.append(Gtk.Label(label=_("Open with:"), xalign=0, css_classes=["gi-key"]))
         row = Gtk.Box(spacing=8)
         pick = ui.controls.popup_button([a.get_display_name() for a in apps], cur)
         pick.set_hexpand(True)
         row.append(pick)
-        change = ui.controls.push_button("Change All…", lambda: self._change_all(apps[pick.get_selected()], ct))
+        change = ui.controls.push_button(_("Change All…"), lambda: self._change_all(apps[pick.get_selected()], ct))
         row.append(change)
         col.append(row)
         self.open_with = pick                                     # (tests)
 
     def _change_all(self, app, ct):
-        desc = (Gio.content_type_get_description(ct) if ct else "") or "such"
+        desc = (Gio.content_type_get_description(ct) if ct else "")
 
         def answer(rid):
             if rid == "change":
                 try:
                     app.set_as_default_for_type(ct)
                 except GLib.Error as e:
-                    ui.dialog.alert("The default app can’t be changed.", e.message, [("ok", "OK", "default")],
+                    ui.dialog.alert(_("The default app can’t be changed."), e.message, [("ok", "OK", "default")],
                                     parent=self)
-        ui.dialog.alert(f"Do you want to change all similar documents to open with “{app.get_display_name()}”?",
-                        f"This change will apply to every {desc} file.",
-                        [("cancel", "Cancel", ""), ("change", "Continue", "default")], answer, parent=self)
+        ui.dialog.alert(_("Do you want to change all similar documents to open with “{app}”?").format(
+                            app=app.get_display_name()),
+                        _("This change will apply to every {kind} file.").format(kind=desc) if desc else
+                        _("This change will apply to every such file."),
+                        [("cancel", _("Cancel"), ""), ("change", _("Continue"), "default")], answer, parent=self)
 
     def _permissions(self, col, path, folder):
         """Finder's Sharing & Permissions: you, the group, everyone -- Read &
@@ -307,16 +312,17 @@ class GetInfo(Adw.Window):
         owner, group = _owner_names(st)
         mine = st.st_uid == os.getuid()
         col.append(Gtk.Separator())
-        col.append(Gtk.Label(label="Sharing & Permissions:", xalign=0, css_classes=["gi-key"]))
+        col.append(Gtk.Label(label=_("Sharing & Permissions:"), xalign=0, css_classes=["gi-key"]))
         if not mine:
-            col.append(Gtk.Label(label="Only its owner can change them.", xalign=0, css_classes=["gi-val"]))
+            col.append(Gtk.Label(label=_("Only its owner can change them."), xalign=0, css_classes=["gi-val"]))
         grid = Gtk.Grid(column_spacing=10, row_spacing=4)
         self.perm_picks = {}
         for r, (who, shift) in enumerate(WHO):
-            name = {"owner": f"{owner} (Me)" if mine else owner, "group": group, "other": "everyone"}[who]
+            name = {"owner": _("{name} (Me)").format(name=owner) if mine else owner, "group": group,
+                    "other": _("everyone")}[who]
             grid.attach(Gtk.Label(label=name, xalign=0, css_classes=["gi-val"], hexpand=True,
                                   ellipsize=Pango.EllipsizeMode.END), 0, r, 1, 1)
-            pick = ui.controls.popup_button(list(LEVELS), perm_level(st.st_mode, shift),
+            pick = ui.controls.popup_button([_(lv) for lv in LEVELS], perm_level(st.st_mode, shift),
                                             lambda lvl, s=shift: self._set_perm(path, s, lvl, folder))
             pick.set_sensitive(mine)
             grid.attach(pick, 1, r, 1, 1)
@@ -328,7 +334,7 @@ class GetInfo(Adw.Window):
             mode = os.lstat(path).st_mode
             os.chmod(path, set_level(mode, shift, level, folder) & 0o7777)
         except OSError as e:
-            ui.dialog.alert("The permissions can’t be changed.", e.strerror or str(e), [("ok", "OK", "default")],
+            ui.dialog.alert(_("The permissions can’t be changed."), e.strerror or str(e), [("ok", "OK", "default")],
                             parent=self)
 
     def _count(self, path):
@@ -340,5 +346,6 @@ class GetInfo(Adw.Window):
                 except OSError:
                     pass
             items += len(files) + len(dirs)
-        text = f"{ui.fmt.size(total)} for {items:,} items"
+        text = ngettext("{size} for {n} item", "{size} for {n} items", items).format(size=ui.fmt.size(total),
+                                                                                   n=f"{items:,}")
         GLib.idle_add(lambda: (self.size_row.set_label(text), self.size_lbl.set_label(ui.fmt.size(total)), False)[-1])

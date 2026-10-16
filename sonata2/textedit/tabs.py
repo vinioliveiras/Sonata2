@@ -10,6 +10,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Graphene, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 ui.register("""
 .te-tabs { box-shadow: inset 0 -1px %(separator)s; }
@@ -58,7 +59,7 @@ class Tab(Gtk.Overlay):
         self.add_overlay(self.dot)
         self.close = Gtk.Button(icon_name="window-close-symbolic", css_classes=["te-tab-close"],
                                 halign=Gtk.Align.START, valign=Gtk.Align.CENTER, can_focus=False,
-                                tooltip_text="Close Tab")
+                                tooltip_text=_("Close Tab"))
         self.close.connect("clicked", lambda *_: strip.on_close(self.doc))
         self.add_overlay(self.close)
         click = Gtk.GestureClick(button=0)
@@ -94,7 +95,7 @@ class TabStrip(Gtk.Box):
         self.row = Gtk.Box(homogeneous=True, hexpand=True)
         self.append(self.row)
         plus = Gtk.Button(icon_name="list-add-symbolic", css_classes=["te-tab-new"], can_focus=False,
-                          tooltip_text="New Tab")
+                          tooltip_text=_("New Tab"))
         plus.connect("clicked", lambda *_: self.on_new())
         self.append(plus)
         self._drag = None

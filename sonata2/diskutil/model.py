@@ -6,6 +6,8 @@ sidebar (Internal / External / Disk Images).
 Pure Python, no GTK or D-Bus: tests feed it a fake tree."""
 import shutil
 
+from ..i18n import N_, _
+
 U = "org.freedesktop.UDisks2."
 DRIVE, ATA, NVME = U + "Drive", U + "Drive.Ata", U + "NVMe.Controller"
 BLOCK, PART, TABLE = U + "Block", U + "Partition", U + "PartitionTable"
@@ -21,17 +23,18 @@ FREE_MIN = 16 * 1024 * 1024            # unallocated gaps smaller than this don'
 
 # display names of filesystem types (macOS wording where there is one)
 FS_NAMES = {"ext4": "Linux ext4", "ext3": "Linux ext3", "ext2": "Linux ext2", "vfat": "MS-DOS (FAT)",
-            "exfat": "ExFAT", "ntfs": "Windows NT File System (NTFS)", "btrfs": "Btrfs", "xfs": "XFS",
-            "f2fs": "F2FS", "crypto_LUKS": "Encrypted (LUKS)", "swap": "Linux Swap",
+            "exfat": "ExFAT", "ntfs": N_("Windows NT File System (NTFS)"), "btrfs": "Btrfs", "xfs": "XFS",
+            "f2fs": "F2FS", "crypto_LUKS": N_("Encrypted (LUKS)"), "swap": N_("Linux Swap"),
             "iso9660": "ISO 9660", "udf": "UDF", "hfsplus": "HFS+", "apfs": "APFS",
-            "LVM2_member": "LVM Physical Volume", "zfs_member": "ZFS", "BitLocker": "Encrypted (BitLocker)"}
-TABLE_NAMES = {"gpt": "GUID Partition Map", "dos": "Master Boot Record"}
-BUS_NAMES = {"usb": "USB", "ieee1394": "FireWire", "sdio": "SD Card", "": ""}
+            "LVM2_member": N_("LVM Physical Volume"), "zfs_member": "ZFS",
+            "BitLocker": N_("Encrypted (BitLocker)")}
+TABLE_NAMES = {"gpt": N_("GUID Partition Map"), "dos": N_("Master Boot Record")}
+BUS_NAMES = {"usb": "USB", "ieee1394": "FireWire", "sdio": N_("SD Card"), "": ""}
 # Erase: (UDisks type, label in the Format menu, mkfs tool)
 FORMATS = (("ext4", "Linux ext4", "mkfs.ext4"), ("exfat", "ExFAT", "mkfs.exfat"),
-           ("vfat", "MS-DOS (FAT32)", "mkfs.vfat"), ("ntfs", "Windows NT File System (NTFS)", "mkfs.ntfs"),
+           ("vfat", "MS-DOS (FAT32)", "mkfs.vfat"), ("ntfs", N_("Windows NT File System (NTFS)"), "mkfs.ntfs"),
            ("btrfs", "Btrfs", "mkfs.btrfs"))
-SCHEMES = (("gpt", "GUID Partition Map"), ("dos", "Master Boot Record"))
+SCHEMES = (("gpt", N_("GUID Partition Map")), ("dos", N_("Master Boot Record")))
 # colours of the capacity bar's segments, in order (ui tokens)
 SEGMENT_COLORS = ("sys_blue", "sys_green", "sys_orange", "sys_purple", "sys_teal", "sys_pink", "sys_indigo",
                   "sys_red")
@@ -78,8 +81,8 @@ class Volume:
         self.mounts = [text(m) for m in fs_ifaces.get(FS, {}).get("MountPoints", [])]
         self.swap = SWAP in ifaces or self.type == "swap"
         self.hidden = bool(b.get("HintIgnore"))
-        self.name = self.label or b.get("HintName", "") or self.part_name or ("Swap" if self.swap else "") or \
-            ("Untitled" if self.has_fs else (self.device.rsplit("/", 1)[-1] or "Volume"))
+        self.name = self.label or b.get("HintName", "") or self.part_name or (_("Swap") if self.swap else "") or \
+            (_("Untitled") if self.has_fs else (self.device.rsplit("/", 1)[-1] or _("Volume")))
         self.disk = None
         self.system_member = False               # part of the running system's storage (parse)
 
@@ -107,8 +110,10 @@ class Volume:
         if t == "vfat" and self.version:
             return f"MS-DOS ({self.version})"
         if self.locked:
-            return "Encrypted (Locked)"
-        return FS_NAMES.get(t, t.upper() if t else ("Extended" if self.is_container else "Unknown"))
+            return _("Encrypted (Locked)")
+        if t in FS_NAMES:
+            return _(FS_NAMES[t])
+        return t.upper() if t else (_("Extended") if self.is_container else _("Unknown"))
 
     @property
     def listed(self) -> bool:
@@ -144,7 +149,7 @@ class Disk:
         name = " ".join(x for x in (self.vendor, self.model) if x)
         if self.is_image:
             name = self.image.rsplit("/", 1)[-1] or self.device.rsplit("/", 1)[-1]
-        self.name = name or b.get("HintName", "") or self.device.rsplit("/", 1)[-1] or "Disk"
+        self.name = name or b.get("HintName", "") or self.device.rsplit("/", 1)[-1] or _("Disk")
         self.volumes = []
         self.system_member = False               # the whole disk is a system storage member (parse)
 
@@ -162,19 +167,20 @@ class Disk:
 
     @property
     def kind(self) -> str:
-        where = "Disk Image" if self.is_image else ("External" if self.external else "Internal")
         bus = BUS_NAMES.get(self.bus, self.bus.upper())
-        return " ".join(x for x in (bus, where, "Physical Disk" if not self.is_image else "") if x)
+        text = _("{bus} Disk Image") if self.is_image else \
+            (_("{bus} External Physical Disk") if self.external else _("{bus} Internal Physical Disk"))
+        return " ".join(text.format(bus=_(bus) if bus else "").split())
 
     @property
     def media_kind(self) -> str:
         if self.is_image:
-            return "Disk Image"
+            return _("Disk Image")
         if self.optical:
-            return "Optical"
+            return _("Optical")
         if self.media.startswith("flash") or self.bus == "sdio":
-            return "Flash Storage"
-        return "Rotational" if self.rotational else "Solid State"
+            return _("Flash Storage")
+        return _("Rotational") if self.rotational else _("Solid State")
 
     @property
     def icon(self) -> str:
@@ -194,8 +200,8 @@ def smart_status(ifaces: dict) -> str:
     ata = ifaces.get(ATA)
     if ata and ata.get("SmartSupported"):
         if not ata.get("SmartEnabled", True):
-            return "Not Enabled"
-        return "Failing" if ata.get("SmartFailing") else "Verified"
+            return N_("Not Enabled")
+        return N_("Failing") if ata.get("SmartFailing") else N_("Verified")
     nvme = ifaces.get(NVME)
     if nvme and nvme.get("SmartUpdated"):
         return "Failing" if nvme.get("SmartCriticalWarning") else "Verified"
@@ -271,7 +277,7 @@ def parse(objects: dict) -> list:
         for v in disk.volumes:
             v.system_member = _system_member(objects.get(v.path, {}), uuids, arrays) or \
                 (v.cleartext is not None and _system_member(objects.get(v.cleartext, {}), uuids, arrays))
-    order = {"Internal": 0, "External": 1, "Disk Images": 2}
+    order = {N_("Internal"): 0, N_("External"): 1, N_("Disk Images"): 2}
     return sorted(disks.values(), key=lambda d: (order[d.section], d.device))
 
 
@@ -296,21 +302,21 @@ def segments(disk: Disk, volume: Volume = None, usage=None) -> list:
             if volume in disk.volumes else SEGMENT_COLORS[0]
         if usage:
             used, free = usage
-            return [("Used", used, colour), ("Free", free, "free")]
+            return [(_("Used"), used, colour), (_("Free"), free, "free")]
         return [(volume.name, volume.size, colour)]
     out, pos, i = [], 0, 0
     for v in disk.volumes:
         if v.is_container:                        # logical partitions sit inside it
             continue
         if v.offset and v.offset - pos >= FREE_MIN:
-            out.append(("Free Space", v.offset - pos, "free"))
+            out.append((_("Free Space"), v.offset - pos, "free"))
         out.append((v.name, v.size, "sys_gray" if v.swap or not v.listed else
                     SEGMENT_COLORS[i % len(SEGMENT_COLORS)]))
         if v.listed and not v.swap:
             i += 1
         pos = max(pos, (v.offset or pos) + v.size)
     if disk.size - pos >= FREE_MIN:
-        out.append(("Free Space", disk.size - pos, "free"))
+        out.append((_("Free Space"), disk.size - pos, "free"))
     return out
 
 
@@ -318,5 +324,5 @@ def formats(can_format=None) -> list:
     """[(type, label)] the Erase sheet offers: the types whose mkfs is
     installed (can_format(type) -> bool overrides, e.g. UDisks' CanFormat)."""
     ok = can_format or (lambda t: shutil.which(dict((f, m) for f, _l, m in FORMATS)[t]) is not None)
-    out = [(t, label) for t, label, _m in FORMATS if t != "ntfs" or ok(t)]
-    return out or [(t, label) for t, label, _m in FORMATS if t != "ntfs"]
+    out = [(t, _(label)) for t, label, _m in FORMATS if t != "ntfs" or ok(t)]
+    return out or [(t, _(label)) for t, label, _m in FORMATS if t != "ntfs"]

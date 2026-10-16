@@ -14,6 +14,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _, ngettext  # noqa: E402
 from . import layer  # noqa: E402
 from .clipboard import ClipImage  # noqa: E402
 
@@ -56,24 +57,24 @@ def _preview(text: str) -> str:
 def _meta(text: str) -> str:
     n = len(text)
     lines = text.count("\n") + 1
-    size = f"{n} characters" if n != 1 else "1 character"
-    return size + (f" · {lines} lines" if lines > 1 else "")
+    size = ngettext("{n} character", "{n} characters", n).format(n=n)
+    return size + (" · " + ngettext("{n} line", "{n} lines", lines).format(n=lines) if lines > 1 else "")
 
 
 class ClipboardPicker(Gtk.Window):
     def __init__(self, app, history):
-        super().__init__(application=app, title="Clipboard", decorated=False)
+        super().__init__(application=app, title=_("Clipboard"), decorated=False)
         self.add_css_class("sonata-clip-picker")
         self.history = history
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["clip-panel"])
         ui.theme.glass_class(panel)
         head = Gtk.Box(css_classes=["clip-head"])
-        head.append(Gtk.Label(label="Clipboard", xalign=0, hexpand=True, css_classes=["clip-title"]))
-        self.clear_btn = Gtk.Button(label="Clear All", css_classes=["clip-clear"], can_focus=False)
+        head.append(Gtk.Label(label=_("Clipboard"), xalign=0, hexpand=True, css_classes=["clip-title"]))
+        self.clear_btn = Gtk.Button(label=_("Clear All"), css_classes=["clip-clear"], can_focus=False)
         self.clear_btn.connect("clicked", lambda *_: (history.clear(), self._fill()))
         head.append(self.clear_btn)
         panel.append(head)
-        self.search = Gtk.SearchEntry(placeholder_text="Search")
+        self.search = Gtk.SearchEntry(placeholder_text=_("Search"))
         self.search.connect("search-changed", lambda *_: self._fill())
         self.search.connect("activate", lambda *_: self._paste_selected())
         panel.append(self.search)
@@ -82,7 +83,7 @@ class ClipboardPicker(Gtk.Window):
         self.scroll = Gtk.ScrolledWindow(child=self.list, hscrollbar_policy=Gtk.PolicyType.NEVER,
                                          propagate_natural_height=True, max_content_height=420)
         panel.append(self.scroll)
-        self.empty = Gtk.Label(label="Nothing copied yet", css_classes=["clip-empty"])
+        self.empty = Gtk.Label(label=_("Nothing copied yet"), css_classes=["clip-empty"])
         panel.append(self.empty)
         from ..ui.fixed import FixedWidth
         box = FixedWidth(panel, WIDTH)                           # long copied text never widens it
@@ -110,7 +111,7 @@ class ClipboardPicker(Gtk.Window):
         q = self.search.get_text().strip().casefold()
         items = [t for t in self.history.items
                  if not q or (not isinstance(t, ClipImage) and q in t.casefold()) or (isinstance(t, ClipImage)
-                                                                                    and q in "image")]
+                                                                                    and (q in "image" or q in _("Image").casefold()))]
         self.list.remove_all()
         for text in items:
             row = Gtk.ListBoxRow()
@@ -132,7 +133,7 @@ class ClipboardPicker(Gtk.Window):
             row.set_child(box)
             self.list.append(row)
         self.scroll.set_visible(bool(items))
-        self.empty.set_label("No Results" if q and self.history.items else "Nothing copied yet")
+        self.empty.set_label(_("No Results") if q and self.history.items else _("Nothing copied yet"))
         self.empty.set_visible(not items)
         self.clear_btn.set_sensitive(bool(self.history.items))
         first = self.list.get_row_at_index(0)

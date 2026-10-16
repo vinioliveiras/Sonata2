@@ -12,6 +12,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from .engine import Engine  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.calculator"
@@ -48,7 +49,7 @@ KEYMAP = {Gdk.KEY_plus: "+", Gdk.KEY_KP_Add: "+", Gdk.KEY_minus: "−", Gdk.KEY_
 
 class CalculatorWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Calculator", resizable=False,
+        super().__init__(application=app, title=_("Calculator"), resizable=False,
                          css_classes=["sonata-calculator", "sonata-glass"])
         ui.window.standard(self)
         self.engine = Engine()
@@ -129,6 +130,8 @@ class CalculatorWindow(Gtk.ApplicationWindow):
     # -- output ---------------------------------------------------------------------------
     def _refresh(self):
         text = self.engine.display()
+        if text == "Error":                            # (the engine's word for ÷0 and overflow)
+            text = _("Error")
         self.display.set_label(text)
         # the number shrinks to fit (macOS), from 44 px down to 22 px
         size = 44 if len(text) <= 9 else max(22, int(44 * 9 / len(text)))

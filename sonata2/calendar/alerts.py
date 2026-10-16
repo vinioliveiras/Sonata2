@@ -6,6 +6,7 @@ suspend or a clock change is caught up soon); no polling in between."""
 import datetime as dt
 
 from . import ics
+from ..i18n import _
 
 HORIZON = dt.timedelta(days=2)
 MAX_WAIT = 300              # seconds
@@ -78,7 +79,7 @@ def send_notification(summary: str, body: str) -> None:
             return
         bus.call("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
                  "org.freedesktop.Notifications", "Notify",
-                 GLib.Variant("(susssasa{sv}i)", ("Calendar", 0, "x-office-calendar", summary, body, [],
+                 GLib.Variant("(susssasa{sv}i)", (_("Calendar"), 0, "x-office-calendar", summary, body, [],
                                                   {"desktop-entry": GLib.Variant(
                                                       "s", "io.github.vinioliveiras.sonata2.calendar"),
                                                    "category": GLib.Variant("s", "x-calendar")}, -1)),

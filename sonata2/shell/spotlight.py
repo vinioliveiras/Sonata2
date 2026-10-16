@@ -22,6 +22,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 from .. import icons, ui  # noqa: E402
 from .. import apps as _apps  # noqa: E402
 from .. import launchpad_model as M  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 
 
 def _keywords(info) -> str:
@@ -260,7 +261,7 @@ class Spotlight(Gtk.ApplicationWindow):
         ui.theme.glass_class(panel)
         field = Gtk.Box(spacing=10, css_classes=["sp-field"])
         field.append(Gtk.Image(icon_name="sonata-search-symbolic", pixel_size=22))
-        self.entry = Gtk.Text(placeholder_text="Search", hexpand=True)
+        self.entry = Gtk.Text(placeholder_text=_("Search"), hexpand=True)
         self.entry.connect("changed", lambda *_: self._search_soon())
         self.entry.connect("activate", lambda *_: self._open_selected())
         field.append(self.entry)
@@ -270,7 +271,7 @@ class Spotlight(Gtk.ApplicationWindow):
         results.append(self.sep)
         self.body = Gtk.Box()
         self.list = Gtk.ListBox(css_classes=["sp-list"], selection_mode=Gtk.SelectionMode.SINGLE)
-        self.list.set_placeholder(Gtk.Label(label="No Results", css_classes=["sp-prev-meta"], margin_top=16))
+        self.list.set_placeholder(Gtk.Label(label=_("No Results"), css_classes=["sp-prev-meta"], margin_top=16))
         self.list.connect("row-selected", lambda _l, r: self._preview(r))
         self.list.connect("row-activated", lambda _l, r: self._open(r))
         scroller = Gtk.ScrolledWindow(child=self.list, hscrollbar_policy=Gtk.PolicyType.NEVER)
@@ -404,7 +405,7 @@ class Spotlight(Gtk.ApplicationWindow):
         results = []            # (section, kind, payload)
         calc = calculate(q)
         if calc is not None:
-            results.append(("Calculator", "calc", (q, calc)))
+            results.append((N_("Calculator"), "calc", (q, calc)))
         meta = {i: (a.get_display_name(), " ".join(filter(None, (
                     _apps._entry_field(a, "get_generic_name", "GenericName"), a.get_description(),
                     _keywords(a)))))
@@ -414,21 +415,21 @@ class Spotlight(Gtk.ApplicationWindow):
         folders = [p for p, d in found if d][:SHOW["folders"]]
         docs = [p for p, d in found if not d][:SHOW["docs"]]
         if app_ids:
-            results.append(("Top Hit", "app", app_ids[0]))
-            results += [("Applications", "app", i) for i in app_ids[1:]]
+            results.append((N_("Top Hit"), "app", app_ids[0]))
+            results += [(N_("Applications"), "app", i) for i in app_ids[1:]]
         elif docs or folders:
             top = (folders or docs)[0]
-            results.append(("Top Hit", "file", top))
+            results.append((N_("Top Hit"), "file", top))
             folders = [p for p in folders if p != top]
             docs = [p for p in docs if p != top]
-        results += [("Folders", "file", p) for p in folders]
-        results += [("Documents", "file", p) for p in docs]
+        results += [(N_("Folders"), "file", p) for p in folders]
+        results += [(N_("Documents"), "file", p) for p in docs]
         last = None
         first_row = None
         for section, kind, payload in results:
             if section != last:
                 head = Gtk.ListBoxRow(selectable=False, activatable=False, css_classes=["sp-head"])
-                head.set_child(Gtk.Label(label=section, xalign=0))
+                head.set_child(Gtk.Label(label=_(section), xalign=0))
                 self.list.append(head)
                 last = section
             row = Gtk.ListBoxRow()

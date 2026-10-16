@@ -31,6 +31,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from ..backend import system  # noqa: E402
 from . import manage, pages, procfs  # noqa: E402
 from .pages import (DetailsPage, HistoryPage, ProcessesPage, ProcessRow, ServicesPage, StartupPage,  # noqa: E402
@@ -120,7 +121,7 @@ def app_for(p, idx: dict):
 
 class TaskManagerWindow(Gtk.ApplicationWindow):
     def __init__(self, app, sampler: procfs.Sampler = None):
-        super().__init__(application=app, title="Task Manager")
+        super().__init__(application=app, title=_("Task Manager"))
         for c in ("sonata-activity", "sonata-glass"):
             self.add_css_class(c)
         ui.window.standard(self)
@@ -184,7 +185,7 @@ class TaskManagerWindow(Gtk.ApplicationWindow):
         for p in self.pages:
             self.page_buttons.add_named(p.buttons, p.id)
         end.append(self.page_buttons)
-        self.search = Gtk.SearchEntry(placeholder_text="Search", width_chars=16, valign=Gtk.Align.CENTER)
+        self.search = Gtk.SearchEntry(placeholder_text=_("Search"), width_chars=16, valign=Gtk.Align.CENTER)
         self.search.connect("search-changed", lambda e: self.page_by_id[self.page_id].search(e.get_text()))
         self.search.connect("stop-search", lambda e: e.set_text(""))
         end.append(self.search)
@@ -200,7 +201,7 @@ class TaskManagerWindow(Gtk.ApplicationWindow):
             row.page_id = p.id
             h = Gtk.Box(spacing=8)
             h.append(Gtk.Image(icon_name=p.icon))
-            h.append(Gtk.Label(label=p.title, xalign=0, ellipsize=Pango.EllipsizeMode.END))
+            h.append(Gtk.Label(label=_(p.title), xalign=0, ellipsize=Pango.EllipsizeMode.END))
             row.set_child(h)
             self.side.append(row)
         self.side.connect("row-selected", lambda _l, r: r is not None and self.show_page(r.page_id))
@@ -219,7 +220,7 @@ class TaskManagerWindow(Gtk.ApplicationWindow):
             self.side.select_row(row)
         self.stack.set_visible_child_name(page_id)
         self.page_buttons.set_visible_child_name(page_id)
-        self.title_lbl.set_label(page.title)
+        self.title_lbl.set_label(_(page.title))
         self.search.set_visible(page_id != "performance")
         if self.search.get_text():
             self.search.set_text("")
@@ -369,10 +370,10 @@ class TaskManagerWindow(Gtk.ApplicationWindow):
         def answer(rid):
             if rid == "end":
                 self._signal(rows, sig)
-        ui.dialog.alert(f"Do you want to end the system process “{name}”?",
-                        "Ending this process may make the system unstable or lose unsaved data. "
-                        "It may need an administrator.",
-                        [("cancel", "Cancel", ""), ("end", "End process", "destructive")], answer, parent=self)
+        ui.dialog.alert(_("Do you want to end the system process “{name}”?").format(name=name),
+                        _("Ending this process may make the system unstable or lose unsaved data. "
+                          "It may need an administrator."),
+                        [("cancel", _("Cancel"), ""), ("end", _("End process"), "destructive")], answer, parent=self)
 
     def _signal(self, rows, sig) -> None:
         denied = []
@@ -384,9 +385,9 @@ class TaskManagerWindow(Gtk.ApplicationWindow):
             except PermissionError:
                 denied.append(r)
         if denied:
-            ui.dialog.alert(f"“{denied[0].sv['name']}” couldn't be ended.",
-                            "You don't have permission to end a process that belongs to another user.",
-                            [("ok", "OK", "default")], parent=self)
+            ui.dialog.alert(_("“{name}” couldn't be ended.").format(name=denied[0].sv['name']),
+                            _("You don't have permission to end a process that belongs to another user."),
+                            [("ok", _("OK"), "default")], parent=self)
         if self._timer and not self._busy:
             GLib.timeout_add(300, lambda: (self._alive and self._tick(), False)[1])
 
@@ -434,15 +435,15 @@ class TaskManagerWindow(Gtk.ApplicationWindow):
         """The Properties lines; path=False skips the Location (a readlink), which never changes."""
         parent = self.pid_rows.get(row.ppid)
         return [("pid", "PID", str(row.sv["pid"])),
-                ("parent", "Parent process", f"{parent.sv['name']} ({row.ppid})" if parent else str(row.ppid)),
-                ("user", "User", f"{row.sv['user']} ({row.uid})"),
-                ("status", "Status", row.sv.get("status") or "Running"),
-                ("cpu", "CPU", fmt_cpu(row.sv.get("cpu", 0))),
-                ("cpu_time", "CPU time", fmt_cpu_time(row.sv.get("cpu_time", 0))),
-                ("threads", "Threads", fmt_count(row.sv.get("threads", 0))),
-                ("mem", "Memory", fmt_mem(row.sv.get("mem", 0))),
-                ("started", "Started", time.strftime("%d %b %Y, %H:%M:%S", time.localtime(row.started))),
-                ("path", "Location", self.exe_path(row) or "–" if path else "")]
+                ("parent", _("Parent process"), f"{parent.sv['name']} ({row.ppid})" if parent else str(row.ppid)),
+                ("user", _("User"), f"{row.sv['user']} ({row.uid})"),
+                ("status", _("Status"), _(row.sv.get("status") or "Running")),
+                ("cpu", _("CPU"), fmt_cpu(row.sv.get("cpu", 0))),
+                ("cpu_time", _("CPU time"), fmt_cpu_time(row.sv.get("cpu_time", 0))),
+                ("threads", _("Threads"), fmt_count(row.sv.get("threads", 0))),
+                ("mem", _("Memory"), fmt_mem(row.sv.get("mem", 0))),
+                ("started", _("Started"), time.strftime("%d %b %Y, %H:%M:%S", time.localtime(row.started))),
+                ("path", _("Location"), self.exe_path(row) or "–" if path else "")]
 
     def show_properties(self, rows) -> None:
         rows = [r for r in rows or [] if r is not None]
@@ -450,7 +451,7 @@ class TaskManagerWindow(Gtk.ApplicationWindow):
             return
         row = rows[0]
         page = self.page_by_id[self.page_id]
-        anchor = next((b for b in _children(page.buttons) if b.get_tooltip_text() == "Properties"), self.search)
+        anchor = next((b for b in _children(page.buttons) if b.get_tooltip_text() == _("Properties")), self.search)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["tm-info"])
         head = Gtk.Box(spacing=10)
         img = Gtk.Image(pixel_size=32)
@@ -462,13 +463,13 @@ class TaskManagerWindow(Gtk.ApplicationWindow):
         grid = Gtk.Grid(row_spacing=3, column_spacing=12)
         labels = {}
         for i, (key, title, value) in enumerate(self._props(row)):
-            grid.attach(Gtk.Label(label=title + ":", xalign=1, css_classes=["tm-key"]), 0, i, 1, 1)
+            grid.attach(Gtk.Label(label=_("{label}:").format(label=title), xalign=1, css_classes=["tm-key"]), 0, i, 1, 1)
             v = Gtk.Label(label=value, xalign=0, selectable=True, css_classes=["tm-val"],
                           ellipsize=Pango.EllipsizeMode.MIDDLE, max_width_chars=40)
             grid.attach(v, 1, i, 1, 1)
             labels[key] = v
         box.append(grid)
-        box.append(Gtk.Label(label="Command line:", xalign=0, css_classes=["tm-key"]))
+        box.append(Gtk.Label(label=_("Command line:"), xalign=0, css_classes=["tm-key"]))
         box.append(Gtk.Label(label=row.cmdline.replace("\n", " ")[:2000], xalign=0, wrap=True,
                              wrap_mode=Pango.WrapMode.WORD_CHAR, selectable=True, max_width_chars=48, lines=6,
                              ellipsize=Pango.EllipsizeMode.END, css_classes=["tm-cmd"]))

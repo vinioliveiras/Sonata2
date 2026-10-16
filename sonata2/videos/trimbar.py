@@ -14,6 +14,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Graphene, Gsk, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from . import edit as E  # noqa: E402
 
 STRIP_H = 48               # the filmstrip's height
@@ -164,8 +165,8 @@ class TrimBar(Gtk.Box):
         self.progress = Gtk.LevelBar(min_value=0, max_value=1, hexpand=True, visible=False,
                                      valign=Gtk.Align.CENTER)
         row.append(self.progress)
-        self.cancel_btn = ui.controls.push_button("Cancel", on_cancel)
-        self.trim_btn = ui.controls.push_button("Trim", lambda: on_trim(self.strip.start, self.strip.end),
+        self.cancel_btn = ui.controls.push_button(_("Cancel"), on_cancel)
+        self.trim_btn = ui.controls.push_button(_("Trim"), lambda: on_trim(self.strip.start, self.strip.end),
                                                 style="default")
         row.append(self.cancel_btn)
         row.append(self.trim_btn)

@@ -23,6 +23,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
 from ..ui import tokens  # noqa: E402
+from ..i18n import _  # noqa: E402
 
 APP_ID = "io.github.vinioliveiras.sonata2.preview"
 from ..imageload import RAW_EXTS, RAW_TYPES  # noqa: E402
@@ -89,15 +90,15 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self._loading = None              # the picture being decoded off the main loop
         self._saving = False              # a save is being written (edits wait)
         self.toolbar = ui.window.glass_toolbar(self, start=(
-            ("sidebar-show-symbolic", "Thumbnails", self.toggle_sidebar),
+            ("sidebar-show-symbolic", _("Thumbnails"), self.toggle_sidebar),
         ), end=(
-            ("info-symbolic", "Show Info", self.toggle_info),
-            ("zoom-out-symbolic", "Zoom Out", lambda: self.step_zoom(-1)),
-            ("zoom-in-symbolic", "Zoom In", lambda: self.step_zoom(1)),
-            ("object-rotate-left-symbolic", "Rotate Left", lambda: self.rotate(-90)),
-            ("sonata-markup-symbolic", "Markup", self.markup_button),
-            ("sonata-crop-symbolic", "Crop", self.crop_button),
-            ("sonata-adjust-symbolic", "Adjust Color", self.adjust_panel)))
+            ("info-symbolic", _("Show Info"), self.toggle_info),
+            ("zoom-out-symbolic", _("Zoom Out"), lambda: self.step_zoom(-1)),
+            ("zoom-in-symbolic", _("Zoom In"), lambda: self.step_zoom(1)),
+            ("object-rotate-left-symbolic", _("Rotate Left"), lambda: self.rotate(-90)),
+            ("sonata-markup-symbolic", _("Markup"), self.markup_button),
+            ("sonata-crop-symbolic", _("Crop"), self.crop_button),
+            ("sonata-adjust-symbolic", _("Adjust Color"), self.adjust_panel)))
         tools = self.toolbar.get_child().get_end_widget()
         self.adjust_btn = tools.get_last_child()
         self.crop_btn = self.adjust_btn.get_prev_sibling()
@@ -209,11 +210,11 @@ class PreviewWindow(Gtk.ApplicationWindow):
             def tell():
                 if self.path != path or len(self.pics) > 1:     # moved on, or others to see: no need to close
                     if self.path == path:
-                        ui.dialog.alert(f"“{name}” couldn't be opened.", "It isn't a picture Preview can read.",
-                                        [("ok", "OK", "default")], parent=self)
+                        ui.dialog.alert(_("“{name}” couldn't be opened.").format(name=name), _("It isn't a picture Preview can read."),
+                                        [("ok", _("OK"), "default")], parent=self)
                     return False
-                ui.dialog.alert(f"“{name}” couldn't be opened.", "It isn't a picture Preview can read.",
-                                [("ok", "OK", "default")], lambda _r: self.close(), parent=self)
+                ui.dialog.alert(_("“{name}” couldn't be opened.").format(name=name), _("It isn't a picture Preview can read."),
+                                [("ok", _("OK"), "default")], lambda _r: self.close(), parent=self)
                 return False
             GLib.timeout_add(150, tell)
             return
@@ -342,8 +343,8 @@ class PreviewWindow(Gtk.ApplicationWindow):
             from .edit import Edits
             self.edits = Edits.load(self.path)
             if self.edits is None:
-                ui.dialog.alert("This picture can't be edited.", "Preview can only view it.",
-                                [("ok", "OK", "default")], parent=self)
+                ui.dialog.alert(_("This picture can't be edited."), _("Preview can only view it."),
+                                [("ok", _("OK"), "default")], parent=self)
         return self.edits
 
     def _show_edits(self) -> None:
@@ -353,7 +354,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self.texture = ed.texture()
         self.canvas.set_texture(self.texture, keep_view=True)
         name = os.path.basename(self.path or "")
-        self.set_title(name + (" — Edited" if ed.edited else ""))
+        self.set_title(_("{name} — Edited").format(name=name) if ed.edited else name)
 
     def edit(self, op) -> None:
         if self._saving:                          # the save renders these edits right now
@@ -561,12 +562,12 @@ class PreviewWindow(Gtk.ApplicationWindow):
                 pending["src"] = GLib.idle_add(refresh)
         sliders = {}
         for key, title in ADJUSTMENTS:
-            box.append(Gtk.Label(label=title, xalign=0, css_classes=["pv-adj-name"]))
+            box.append(Gtk.Label(label=_(title), xalign=0, css_classes=["pv-adj-name"]))
             sl = ui.controls.slider(ed.adjust[key] * 100, lambda v, k=key: changed(k, v), lower=-100, upper=100,
                                     default=0)
             sliders[key] = sl
             box.append(sl)
-        reset = Gtk.Button(label="Reset All", halign=Gtk.Align.END, margin_top=6, css_classes=["sonata-button"])
+        reset = Gtk.Button(label=_("Reset All"), halign=Gtk.Align.END, margin_top=6, css_classes=["sonata-button"])
 
         def reset_all(*_a):
             for k, sl in sliders.items():
@@ -584,7 +585,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
             return None
         w0, h0 = ed.size()
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["pv-sheet"])
-        box.append(Gtk.Label(label="Resize", xalign=0, css_classes=["pv-sheet-title"]))
+        box.append(Gtk.Label(label=_("Resize"), xalign=0, css_classes=["pv-sheet-title"]))
         grid = Gtk.Grid(column_spacing=8, row_spacing=6)
 
         def spin(value, upper):
@@ -593,8 +594,8 @@ class PreviewWindow(Gtk.ApplicationWindow):
             s.set_width_chars(6)
             return s
         width, height, percent = spin(w0, 100000), spin(h0, 100000), spin(100, 1000)
-        for i, (name, sb, unit) in enumerate((("Width:", width, "pixels"), ("Height:", height, "pixels"),
-                                              ("Scale:", percent, "percent"))):
+        for i, (name, sb, unit) in enumerate(((_("Width:"), width, _("pixels")), (_("Height:"), height, _("pixels")),
+                                              (_("Scale:"), percent, _("percent")))):
             grid.attach(Gtk.Label(label=name, xalign=1), 0, i, 1, 1)
             grid.attach(sb, 1, i, 1, 1)
             grid.attach(Gtk.Label(label=unit, xalign=0, css_classes=["pv-sheet-dim"]), 2, i, 1, 1)
@@ -602,7 +603,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         keep = Gtk.Box(spacing=8)
         ratio = ui.controls.switch(True)
         keep.append(ratio)
-        keep.append(Gtk.Label(label="Scale proportionally", xalign=0))
+        keep.append(Gtk.Label(label=_("Scale proportionally"), xalign=0))
         box.append(keep)
         result = Gtk.Label(xalign=0, css_classes=["pv-sheet-dim"])
         box.append(result)
@@ -623,7 +624,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
                 elif src is height:
                     width.set_value(max(1, round(h * w0 / h0)))
                 percent.set_value(round(width.get_value() / w0 * 100))
-            result.set_label(f"Resulting size: {int(width.get_value())} × {int(height.get_value())} pixels")
+            result.set_label(_("Resulting size: {w} × {h} pixels").format(w=int(width.get_value()), h=int(height.get_value())))
             busy["on"] = False
         for sb in (width, height, percent):
             sb.connect("value-changed", sync)
@@ -635,8 +636,8 @@ class PreviewWindow(Gtk.ApplicationWindow):
         def ok():
             self.resize_to(int(width.get_value()), int(height.get_value()))
             pop["p"].popdown()
-        buttons.append(ui.controls.push_button("Cancel", lambda: pop["p"].popdown()))
-        buttons.append(ui.controls.push_button("OK", ok, "default"))
+        buttons.append(ui.controls.push_button(_("Cancel"), lambda: pop["p"].popdown()))
+        buttons.append(ui.controls.push_button(_("OK"), ok, "default"))
         box.append(buttons)
         box.sheet = {"width": width, "height": height, "percent": percent, "ratio": ratio, "ok": ok}
         pop["p"] = ui.panel.popup(self.toolbar, box, close=True)
@@ -657,9 +658,9 @@ class PreviewWindow(Gtk.ApplicationWindow):
         current = next((i for i, f in enumerate(EXPORT_FORMATS) if f[1] == pil), 0)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["pv-sheet"])
         box.set_size_request(260, -1)
-        box.append(Gtk.Label(label="Export As", xalign=0, css_classes=["pv-sheet-title"]))
+        box.append(Gtk.Label(label=_("Export As"), xalign=0, css_classes=["pv-sheet-title"]))
         row = Gtk.Box(spacing=8)
-        row.append(Gtk.Label(label="Format:", xalign=1))
+        row.append(Gtk.Label(label=_("Format:"), xalign=1))
         fmt = ui.controls.popup_button([f[0] for f in EXPORT_FORMATS], current)
         fmt.set_hexpand(True)
         row.append(fmt)
@@ -670,7 +671,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
 
         def quality(v):
             state["q"] = int(v)
-            qlabel.set_label(f"Quality: {state['q']} %")
+            qlabel.set_label(_("Quality: {q} %").format(q=state["q"]))
         qrow.append(qlabel)
         qrow.append(ui.controls.slider(85, quality, lower=10, upper=100, default=85))
         quality(85)
@@ -687,8 +688,8 @@ class PreviewWindow(Gtk.ApplicationWindow):
             pop["p"].popdown()
             self.export_as(pil, fext, state["q"])
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END, margin_top=4)
-        buttons.append(ui.controls.push_button("Cancel", lambda: pop["p"].popdown()))
-        buttons.append(ui.controls.push_button("Save…", go, "default"))
+        buttons.append(ui.controls.push_button(_("Cancel"), lambda: pop["p"].popdown()))
+        buttons.append(ui.controls.push_button(_("Save…"), go, "default"))
         box.append(buttons)
         box.sheet = {"format": fmt, "go": go, "quality": state}
         pop["p"] = ui.panel.popup(self.toolbar, box, close=True)
@@ -702,15 +703,15 @@ class PreviewWindow(Gtk.ApplicationWindow):
             from .edit import Edits
             ed = Edits.load(self.path) if self.path else None
             if ed is None:
-                ui.dialog.alert("This picture can't be exported.", "Preview can only view it.",
-                                [("ok", "OK", "default")], parent=self)
+                ui.dialog.alert(_("This picture can't be exported."), _("Preview can only view it."),
+                                [("ok", _("OK"), "default")], parent=self)
                 return False
 
         def write(path):
             try:
                 ed.write(path, fmt, quality)
             except Exception as e:
-                ui.dialog.alert("The picture couldn't be exported.", str(e), [("ok", "OK", "default")],
+                ui.dialog.alert(_("The picture couldn't be exported."), str(e), [("ok", _("OK"), "default")],
                                 parent=self)
                 return False
             return True
@@ -730,9 +731,9 @@ class PreviewWindow(Gtk.ApplicationWindow):
             target = Gio.File.new_for_uri(uris[0]).get_path() if uris else None
             if target:
                 chosen(target)
-        dlg = ChooserWindow(self.get_application(), mode="save", title="Export As",
+        dlg = ChooserWindow(self.get_application(), mode="save", title=_("Export As"),
                             folder=Gio.File.new_for_path(os.path.dirname(self.path)).get_uri(), name=base + ext,
-                            filters=[("Images", [(0, "*" + ext)])], on_done=done)
+                            filters=[(_("Images"), [(0, "*" + ext)])], on_done=done)
         dlg.set_transient_for(self)
         dlg.set_modal(True)
         dlg.present()
@@ -776,7 +777,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         def finished(err):
             self._saving = False
             if err is not None:
-                ui.dialog.alert("The picture couldn't be saved.", str(err), [("ok", "OK", "default")],
+                ui.dialog.alert(_("The picture couldn't be saved."), str(err), [("ok", _("OK"), "default")],
                                 parent=self)
                 return
             done()
@@ -788,9 +789,9 @@ class PreviewWindow(Gtk.ApplicationWindow):
         if final == chosen or not os.path.lexists(final):
             return write(final)
         name = os.path.basename(final)
-        ui.dialog.alert(f"“{name}” already exists. Do you want to replace it?",
-                        "A file with the same name already exists. Replacing it will overwrite its contents.",
-                        [("cancel", "Cancel", ""), ("replace", "Replace", "destructive")],
+        ui.dialog.alert(_("“{name}” already exists. Do you want to replace it?").format(name=name),
+                        _("A file with the same name already exists. Replacing it will overwrite its contents."),
+                        [("cancel", _("Cancel"), ""), ("replace", _("Replace"), "destructive")],
                         lambda rid: rid == "replace" and write(final), parent=self)
         return False
 
@@ -821,9 +822,9 @@ class PreviewWindow(Gtk.ApplicationWindow):
                 if then:
                     then()
             self._save_async(self.edits, target, saved)
-        dlg = ChooserWindow(self.get_application(), mode="save", title="Save As",
+        dlg = ChooserWindow(self.get_application(), mode="save", title=_("Save As"),
                             folder=Gio.File.new_for_path(os.path.dirname(self.path)).get_uri(), name=base + ext,
-                            filters=[("Images", [(0, "*.png"), (0, "*.jpg"), (0, "*.jpeg"), (0, "*.webp")])],
+                            filters=[(_("Images"), [(0, "*.png"), (0, "*.jpg"), (0, "*.jpeg"), (0, "*.webp")])],
                             on_done=done)
         dlg.set_transient_for(self)
         dlg.set_modal(True)
@@ -846,10 +847,10 @@ class PreviewWindow(Gtk.ApplicationWindow):
                 then()
             else:
                 self.thumbs.select(self.path)
-        self.prompt = ui.dialog.alert(f"Do you want to keep the changes you made to “{name}”?",
-                                      "Your changes will be lost if you don't save them.",
-                                      [("discard", "Don't Save", "destructive"), ("cancel", "Cancel", ""),
-                                       ("save", "Save", "default")], answer, parent=self)
+        self.prompt = ui.dialog.alert(_("Do you want to keep the changes you made to “{name}”?").format(name=name),
+                                      _("Your changes will be lost if you don't save them."),
+                                      [("discard", _("Don't Save"), "destructive"), ("cancel", _("Cancel"), ""),
+                                       ("save", _("Save"), "default")], answer, parent=self)
 
     def _close_request(self, _w) -> bool:
         if self.markup is not None and self.markup.items:
@@ -900,23 +901,23 @@ class PreviewWindow(Gtk.ApplicationWindow):
         uri = Gio.File.new_for_path(self.path).get_uri() if self.path else None
         edited = bool(self.edits and self.edits.edited)
         ui.menu.popup(self.canvas, [
-            [Item("Copy", self.copy_picture, enabled=self.texture is not None)],
-            [Item("Zoom In", lambda: self.step_zoom(1)), Item("Zoom Out", lambda: self.step_zoom(-1)),
-             Item("Zoom to Fit", lambda: self.set_zoom(None, animate=True)),
-             Item("Actual Size", lambda: self.set_zoom(1.0, anchor=(x, y), animate=True))],
-            [Item("Thumbnails", lambda *_: self.toggle_sidebar(), checked=self.sidebar.get_reveal_child()),
-             Item("Show Info", lambda *_: self.toggle_info(), checked=self.info_rev.get_reveal_child()),
-             Item("Slideshow", self.slideshow)],
-            [Item("Rotate Left", lambda: self.rotate(-90)), Item("Rotate Right", lambda: self.rotate(90)),
-             Item("Flip Horizontal", lambda: self.edit(("flip", "h"))),
-             Item("Flip Vertical", lambda: self.edit(("flip", "v")))],
-            [Item("Crop", self.crop_button), Item("Adjust Color…", self.adjust_panel),
-             Item("Resize…", self.resize_sheet)],
-            [Item("Undo", self.undo, enabled=bool(self.edits and self.edits.ops)),
-             Item("Revert", self.revert, enabled=edited),
-             Item("Save", self.save, enabled=edited),
-             Item("Save As…", self.save_as), Item("Export As…", self.export_sheet)],
-            [Item("Set Desktop Picture", lambda: prefs.set_wallpaper(uri), enabled=bool(uri))],
+            [Item(_("Copy"), self.copy_picture, enabled=self.texture is not None)],
+            [Item(_("Zoom In"), lambda: self.step_zoom(1)), Item(_("Zoom Out"), lambda: self.step_zoom(-1)),
+             Item(_("Zoom to Fit"), lambda: self.set_zoom(None, animate=True)),
+             Item(_("Actual Size"), lambda: self.set_zoom(1.0, anchor=(x, y), animate=True))],
+            [Item(_("Thumbnails"), lambda *_: self.toggle_sidebar(), checked=self.sidebar.get_reveal_child()),
+             Item(_("Show Info"), lambda *_: self.toggle_info(), checked=self.info_rev.get_reveal_child()),
+             Item(_("Slideshow"), self.slideshow)],
+            [Item(_("Rotate Left"), lambda: self.rotate(-90)), Item(_("Rotate Right"), lambda: self.rotate(90)),
+             Item(_("Flip Horizontal"), lambda: self.edit(("flip", "h"))),
+             Item(_("Flip Vertical"), lambda: self.edit(("flip", "v")))],
+            [Item(_("Crop"), self.crop_button), Item(_("Adjust Color…"), self.adjust_panel),
+             Item(_("Resize…"), self.resize_sheet)],
+            [Item(_("Undo"), self.undo, enabled=bool(self.edits and self.edits.ops)),
+             Item(_("Revert"), self.revert, enabled=edited),
+             Item(_("Save"), self.save, enabled=edited),
+             Item(_("Save As…"), self.save_as), Item(_("Export As…"), self.export_sheet)],
+            [Item(_("Set Desktop Picture"), lambda: prefs.set_wallpaper(uri), enabled=bool(uri))],
         ], at=(x, y), glass=True, passthrough=True)
 
     def _key(self, _c, keyval, _code, state) -> bool:
@@ -1026,8 +1027,8 @@ def open_paths(app, paths) -> None:
 
         def done(uris, _i):
             open_paths(app, uris or [])
-        ChooserWindow(app, mode="open", title="Open", multiple=True,
-                      filters=[("Images", [(1, "image/*")])], on_done=done).present()
+        ChooserWindow(app, mode="open", title=_("Open"), multiple=True,
+                      filters=[(_("Images"), [(1, "image/*")])], on_done=done).present()
 
 
 def preview_desktop_file(command: str) -> str:
