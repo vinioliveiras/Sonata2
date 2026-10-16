@@ -19,6 +19,11 @@
   never under 100 % (blurry, and harder on the GPU). It follows a new
   resolution until a scale is picked in Settings > Displays (100-300 %).
 - Software Update runs System and AUR as one paru/yay run: one password.
+- The emoji and clipboard pickers open in the middle of the screen, a
+  little lower, and a click anywhere outside closes them (the emoji one
+  was at the top left, the clipboard one at the top and never closed).
+- A picked emoji is pasted into the app instead of typed as keys:
+  WhatsApp and other Chromium/Electron apps got other characters.
 - Copy in Preview and Quick Look sends the file itself when unedited
   (PNG, JPEG, GIF, WebP as they are: no slow re-encoding of big photos);
   an edited picture is copied at full size.

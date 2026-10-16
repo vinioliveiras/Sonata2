@@ -174,6 +174,34 @@ def overlay_fullscreen(win, namespace: str) -> bool:
     return True
 
 
+PICKER_DROP = 140        # the pickers' panel sits this far below the middle of the screen (Vini)
+
+
+def centered_picker(win, panel, namespace: str, close) -> bool:
+    """The emoji and clipboard pickers (Vini): `panel` in the middle of
+    the screen, a little lower, and a click anywhere else calls close().
+    The window covers the screen, see-through (resizable: a fixed-size
+    layer surface was put at the top left by Wayfire, and clicks outside
+    it never reached it). False = no layer shell: a plain window."""
+    from gi.repository import Gtk
+    panel.set_halign(Gtk.Align.CENTER)
+    panel.set_valign(Gtk.Align.CENTER)
+    panel.set_margin_top(PICKER_DROP * 2)        # centred in what's left: PICKER_DROP below the middle
+    win.set_resizable(True)
+    if not overlay_fullscreen(win, namespace):
+        panel.set_margin_top(0)
+        return False
+
+    def pressed(_g, _n, x, y):
+        w = win.pick(x, y, Gtk.PickFlags.DEFAULT)
+        if w is None or not (w is panel or w.is_ancestor(panel)):
+            close()
+    click = Gtk.GestureClick(button=0)
+    click.connect("pressed", pressed)
+    win.add_controller(click)
+    return True
+
+
 def prewarm(win, before=None, after=None, frames: int = 3, delay_ms: int = 1500, step=None) -> None:
     """Draw a hidden surface once, invisibly, shortly after start: the first
     real open then doesn't pay for building the widgets' render nodes,
