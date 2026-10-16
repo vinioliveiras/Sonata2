@@ -37,6 +37,9 @@ window.messagedialog.sonata-alert .body { font-size: %(text_small)s; color: %(la
 window.dialog-window.sonata-glass-window { box-shadow: none; }
 dialog.alert.sonata-alert.glass, dialog.alert.sonata-alert.glass > * { background: transparent; box-shadow: none; }
 window.messagedialog.sonata-alert checkbutton { font-size: %(text_small)s; }
+/* the close dot's row stands where the text's top padding was */
+dialog.alert.sonata-alert.has-close .message-area,
+window.messagedialog.sonata-alert.has-close .message-area { padding-top: 4px; }
 """)
 
 _STYLE = {"destructive": Adw.ResponseAppearance.DESTRUCTIVE,
@@ -127,7 +130,40 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None,
         dlg.present()
         _raise_when_owner_shows(parent.get_root() if parent is not None and hasattr(parent, "get_root") else None,
                                 dlg)
+    _add_close(dlg)                      # (its content exists once presented)
     return dlg
+
+
+def _add_close(dlg) -> None:
+    """Every Sonata dialog gets a close dot at its top corner (Vini), the
+    windows' own button: their look, colours and side. A click closes it
+    like Escape (its close response). Put at the top of the dialog's own
+    content (the box under its window handle): nothing is moved around."""
+    from . import window
+    if not isinstance(dlg, Gtk.Widget) or window.has_window_buttons(dlg):   # (one of its own already: Vini)
+        return
+    stack = [dlg]
+    while stack:
+        w = stack.pop(0)
+        if isinstance(w, Gtk.WindowHandle) and isinstance(w.get_child(), Gtk.Box):
+            w.get_child().prepend(window.close_button(lambda: _close(dlg)))
+            dlg.add_css_class("has-close")
+            return
+        c = w.get_first_child()
+        while c is not None:
+            stack.append(c)
+            c = c.get_next_sibling()
+
+
+def _close(dlg) -> None:
+    """The close dot: what Escape does -- its close response, then it goes."""
+    rid = dlg.get_close_response() or "close"
+    if _MODERN and isinstance(dlg, Adw.AlertDialog):
+        dlg.emit("response", rid)
+        if dlg.get_root() is not None:
+            dlg.force_close()
+    else:
+        dlg.response(rid)                    # Adw.MessageDialog: answers and closes
 
 
 def _raise_when_owner_shows(owner, win) -> None:

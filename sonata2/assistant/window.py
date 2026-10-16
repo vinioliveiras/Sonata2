@@ -409,7 +409,7 @@ class AssistantWindow(Gtk.ApplicationWindow):
         box.append(Gtk.Label(label="Claude can list, read and create files only in these folders, "
                              "and asks before every action.", xalign=0, wrap=True, max_width_chars=40,
                              css_classes=["panel-caption"]))
-        self.settings_panel = ui.panel.popup(self.settings_btn, box, width=360)
+        self.settings_panel = ui.panel.popup(self.settings_btn, box, width=360, close=True)
 
     def _key_status(self, text: str = None) -> None:
         if text is None:

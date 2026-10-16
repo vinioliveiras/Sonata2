@@ -3325,7 +3325,7 @@ class Settings(Adw.ApplicationWindow):
         search.connect("search-changed", lambda *_: lb.invalidate_filter())
         box.append(Gtk.ScrolledWindow(child=lb, min_content_height=300, min_content_width=280,
                                       hscrollbar_policy=Gtk.PolicyType.NEVER))
-        pop = ui.panel.popup(anchor, box)
+        pop = ui.panel.popup(anchor, box, close=True)
 
         def picked(_lb, r):
             pop.popdown()

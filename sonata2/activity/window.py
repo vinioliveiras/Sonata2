@@ -472,7 +472,7 @@ class TaskManagerWindow(Gtk.ApplicationWindow):
         box.append(Gtk.Label(label=row.cmdline.replace("\n", " ")[:2000], xalign=0, wrap=True,
                              wrap_mode=Pango.WrapMode.WORD_CHAR, selectable=True, max_width_chars=48, lines=6,
                              ellipsize=Pango.EllipsizeMode.END, css_classes=["tm-cmd"]))
-        pop = ui.panel.popup(anchor, box)
+        pop = ui.panel.popup(anchor, box, close=True)
         self._info = (row, labels)
         pop.connect("closed", lambda *_: setattr(self, "_info", None))
 

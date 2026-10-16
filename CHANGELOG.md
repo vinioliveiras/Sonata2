@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Changes
+- Every Sonata dialog (Edit Web App, errors, confirmations...) and the
+  panels that work as forms (Change Icon, Get Info, Disk Info, Resize,
+  Export, Adjust Color, the Assistant's settings, a Calendar event) have
+  the windows' close dot -- their look, colours and side -- at the top
+  corner; it closes like Escape. None is added where one already is.
 - Notifications stay unread until read: bringing an app to the front no
   longer clears its Dock count, and a web app (WhatsApp) taking its
   notifications back as its window is focused only hides the banners --

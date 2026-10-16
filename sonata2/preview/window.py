@@ -575,7 +575,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
             self._show_edits()
         reset.connect("clicked", reset_all)
         box.append(reset)
-        ui.panel.popup(self.adjust_btn, box)
+        ui.panel.popup(self.adjust_btn, box, close=True)
 
     # Resize… (macOS: Tools > Adjust Size…): a small sheet under the toolbar
     def resize_sheet(self):
@@ -639,7 +639,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         buttons.append(ui.controls.push_button("OK", ok, "default"))
         box.append(buttons)
         box.sheet = {"width": width, "height": height, "percent": percent, "ratio": ratio, "ok": ok}
-        pop["p"] = ui.panel.popup(self.toolbar, box)
+        pop["p"] = ui.panel.popup(self.toolbar, box, close=True)
         return box
 
     def resize_to(self, w: int, h: int) -> None:
@@ -691,7 +691,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         buttons.append(ui.controls.push_button("Save…", go, "default"))
         box.append(buttons)
         box.sheet = {"format": fmt, "go": go, "quality": state}
-        pop["p"] = ui.panel.popup(self.toolbar, box)
+        pop["p"] = ui.panel.popup(self.toolbar, box, close=True)
         return box
 
     def export_as(self, fmt: str, ext: str, quality: int = 85, target: str = None) -> bool:

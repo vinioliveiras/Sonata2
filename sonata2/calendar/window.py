@@ -866,7 +866,8 @@ class Editor:
             else:
                 y0, y1 = max(rect.y, int(top)), min(rect.y + rect.height, int(bottom))
                 rect.y, rect.height = y0, max(1, y1 - y0)
-        self.pop = ui.panel.popup(widget, box, position=Gtk.PositionType.RIGHT if rect else Gtk.PositionType.BOTTOM)
+        self.pop = ui.panel.popup(widget, box, position=Gtk.PositionType.RIGHT if rect else Gtk.PositionType.BOTTOM,
+                                  close=True)
         if rect is not None:
             self.pop.set_pointing_to(rect)
         self.pop.connect("closed", lambda *_: self.commit())

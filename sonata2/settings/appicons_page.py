@@ -203,7 +203,7 @@ class AppIconsPage:
         btns.append(ui.controls.push_button("Done", lambda: pop.popdown(), style="default"))
         col = ui.panel.column(ui.panel.header(row.info.get_display_name()), preview, grid, btns)
         col.add_css_class("ai-panel")
-        pop = ui.panel.popup(row, col, gap=4, width=self.PANEL_W)
+        pop = ui.panel.popup(row, col, gap=4, width=self.PANEL_W, close=True)
         pop.source, pop.shape, pop.choose, pop.name, pop.preview = source, shape, choose, name, preview   # (tests)
         pop.size, pop.file_rv, pop.name_rv, pop.size_rv = size, file_rv, name_rv, size_rv
         redraw()

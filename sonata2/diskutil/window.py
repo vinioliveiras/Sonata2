@@ -760,7 +760,7 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
             grid.attach(Gtk.Label(label=k, xalign=1, css_classes=["du-key"]), 0, i, 1, 1)
             grid.attach(Gtk.Label(label=val, xalign=0, selectable=True, css_classes=["du-value"],
                                   ellipsize=Pango.EllipsizeMode.MIDDLE, max_width_chars=40), 1, i, 1, 1)
-        ui.panel.popup(self.btn["info"], grid)
+        ui.panel.popup(self.btn["info"], grid, close=True)
 
     # -- input ---------------------------------------------------------------------------------
     def _context_menu(self, gesture, _n, x, y) -> None:
