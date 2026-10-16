@@ -5,6 +5,11 @@
 ### New
 - Mission Control: a click where no window is closes it, back to the window
   that was in front.
+- Mission Control: the window under the pointer has a close button (x) at
+  its corner.
+- The small close buttons -- on Mission Control's windows and desktops and
+  on the Dock's window previews -- are on the side of your window buttons
+  (Settings > Appearance).
 - Mission Control: right-click a window for its app's Dock menu (its
   windows, Options, Minimize, Quit...); hold a window and drag it onto a
   desktop in the bar to move it there. Desktops grow in when added and
@@ -12,8 +17,6 @@
   Wayfire: wayfire-scale-sonata-events.patch.)
 
 ### Fixes
-- The Dock's window previews: the x that closes a window is at its top left
-  (as macOS puts close).
 - The Dock's window previews show the windows: their pictures came back
   empty (transparent) on some GPUs. Sonata's Wayfire plugin now has them
   drawn and read by the renderer itself.

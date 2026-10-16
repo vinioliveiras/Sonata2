@@ -111,6 +111,71 @@ class DragTest(unittest.TestCase):
         self.assertIn('"sonata-scale-drag#"', read("sonata2", "shell", "mission.py"))
 
 
+class CloseButtonTest(unittest.TestCase):
+    """Vini: a close button on the windows in Mission Control, on the side
+    of the user's window buttons, over the window under the pointer."""
+
+    def test_patch_tells_the_window_under_the_pointer(self):
+        patch = read("wayfire-plugin", "wayfire-scale-sonata-events.patch")
+        for part in ('"sonata-scale-hover#"', "sonata_hover(drag_helper->view ? nullptr : scaled_view_at(to_f));",
+                     "static wf::pointf_t through_transformers(", "sonata_hover(nullptr);"):
+            self.assertIn(part, patch)
+
+    def test_spot_follows_the_users_side(self):
+        from gi.repository import Gtk
+        from sonata2.shell import mission as M
+        box = {"x": 100, "y": 200, "width": 300, "height": 150}
+        self.assertEqual(M.close_spot(box, Gtk.Align.START), (100 - M.CLOSE_OUT, 200 - M.CLOSE_OUT))
+        self.assertEqual(M.close_spot(box, Gtk.Align.END), (400 - M.CLOSE_SIZE + M.CLOSE_OUT, 200 - M.CLOSE_OUT))
+        self.assertEqual(M.close_spot({"x": 2, "y": 3, "width": 50, "height": 50}, Gtk.Align.START), (0, 0))
+
+    def closer(self):
+        from sonata2.shell import mission as M
+        c = M.CloseOverlay.__new__(M.CloseOverlay)
+        c.ipc, c.view, c.LS = mock.Mock(), None, mock.Mock()
+        c.get_visible = mock.Mock(return_value=False)
+        c.present, c.set_visible = mock.Mock(), mock.Mock()
+        return M, c
+
+    def test_moves_to_the_window_and_closes_it(self):
+        from sonata2.ui import window as W
+        M, c = self.closer()
+        with mock.patch.object(W, "buttons_side", return_value="left"):
+            c.hover({"view-id": 15, "output": "DP-1", "x": 1249, "y": 342, "width": 228, "height": 359})
+        c.present.assert_called_once()
+        margins = {call.args[1]: call.args[2] for call in c.LS.set_margin.call_args_list}
+        self.assertEqual(margins, {c.LS.Edge.LEFT: 1249 - M.CLOSE_OUT, c.LS.Edge.TOP: 342 - M.CLOSE_OUT})
+        c._close()
+        c.ipc.call.assert_called_once_with("window-rules/close-view", {"id": 15})
+        c.set_visible.assert_called_with(False)
+        self.assertIsNone(c.view)
+
+    def test_no_window_under_the_pointer_hides_it(self):
+        M, c = self.closer()
+        c.hover({"view-id": -1, "output": "DP-1", "x": 0, "y": 0, "width": 0, "height": 0})
+        c.present.assert_not_called()
+        c.set_visible.assert_called_with(False)
+        c._close()
+        c.ipc.call.assert_not_called()                                   # nothing to close
+
+    def test_events_reach_it(self):
+        from sonata2.shell import mission as M
+        m = M.MissionBackdrop.__new__(M.MissionBackdrop)
+        m.closers, m.bars = {"DP-1": mock.Mock()}, {}
+        ev = {"event": "sonata-scale-hover#", "view-id": 3, "output": "DP-1", "x": 1, "y": 2, "width": 3, "height": 4}
+        m._event(ev)
+        m.closers["DP-1"].hover.assert_called_once_with(ev)
+        with mock.patch.object(M, "CloseOverlay") as made:
+            m._event(dict(ev, output="HDMI-A-1", **{"view-id": -1}))     # none yet, nothing to show: none made
+        made.assert_not_called()
+        m._spaces = mock.Mock()
+        m.active, m._hide = set(), mock.Mock()
+        m._event({"event": "plugin-activation-state-changed", "plugin": "scale", "state": False,
+                  "output-data": {"name": "DP-1"}})
+        m.closers["DP-1"].clear.assert_called_once()                     # gone with Mission Control
+        self.assertIn('"sonata-scale-hover#"', read("sonata2", "shell", "mission.py"))
+
+
 class LaunchpadTest(unittest.TestCase):
     """Vini: with the Apps menu open, Super+Tab should close it."""
 

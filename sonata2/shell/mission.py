@@ -21,6 +21,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from ..wl.wfipc import WayfireIPC  # noqa: E402
 from . import layer, monitors  # noqa: E402
 from .loginui import wallpaper_texture  # noqa: E402
@@ -31,6 +32,15 @@ DIM = 0.45                           # how dark the desktop goes behind the wind
 ui.register("""
 window.sonata-mission, window.sonata-mission > contents { background: rgba(0, 0, 0, %(dim)s); box-shadow: none; }
 """, key="mission", dim=DIM)
+ui.register("""
+window.sonata-mission-close, window.sonata-mission-close > contents { background: none; box-shadow: none; }
+.mc-close { min-width: %(size)dpx; min-height: %(size)dpx; padding: 0; border-radius: 99px; border: none;
+  background: %(menu_bg)s; color: %(label)s; box-shadow: 0 0 0 0.5px %(hairline)s, %(shadow_control)s; }
+.mc-close image { -gtk-icon-size: 12px; }
+.mc-close:hover { background: %(sys_red)s; color: white; }
+""", key="mission-close", size=24)
+CLOSE_SIZE = 24
+CLOSE_OUT = 8                        # how far the x sits out of the window's corner
 PLUGINS = ("scale", "expo")          # expo (all Spaces) gets the same backdrop
 BACKDROP_MIN = 480                   # decode size bounds (backdrop_size)
 BACKDROP_FALLBACK = 1280             # no display known
@@ -50,6 +60,66 @@ def backdrop_size(monitors_=None) -> int:
     return max(BACKDROP_MIN, side // 4) if side else BACKDROP_FALLBACK
 
 
+def close_spot(box: dict, side) -> tuple:
+    """Where the x goes for a window drawn at `box` (output-local): its top
+    corner on the side of the user's window buttons, a little out of it."""
+    x = box["x"] - CLOSE_OUT if side != Gtk.Align.END else box["x"] + box["width"] - CLOSE_SIZE + CLOSE_OUT
+    return max(0, x), max(0, box["y"] - CLOSE_OUT)
+
+
+class CloseOverlay(Gtk.Window):
+    """A window's close button in Mission Control (Vini), over the window
+    under the pointer: a layer surface just the button's size, put at its
+    corner with the layer's margins (Sonata's Wayfire says which window and
+    where: sonata-scale-hover#)."""
+
+    def __init__(self, app, monitor, ipc):
+        super().__init__(application=app, decorated=False, resizable=False, css_classes=["sonata-mission-close"])
+        self.ipc, self.view = ipc, None
+        # a plain box, its click taken by the surface: a Gtk.Button here got
+        # the press and the release but never said "clicked" (Mission Control
+        # holds the pointer: the window never closed)
+        self.button = Gtk.Box(css_classes=["mc-close"], tooltip_text=_("Close Window"))
+        self.button.set_size_request(CLOSE_SIZE, CLOSE_SIZE)
+        self.button.append(Gtk.Image(icon_name="window-close-symbolic", hexpand=True, halign=Gtk.Align.CENTER))
+        self.set_child(self.button)
+        click = Gtk.GestureClick(button=1)
+        click.connect("released", lambda *_a: self._close())
+        self.add_controller(click)
+        LS = self.LS = layer.layer_shell()
+        LS.init_for_window(self)
+        LS.set_namespace(self, "sonata2-mission-close")
+        LS.set_layer(self, LS.Layer.OVERLAY)
+        LS.set_anchor(self, LS.Edge.TOP, True)
+        LS.set_anchor(self, LS.Edge.LEFT, True)
+        LS.set_exclusive_zone(self, -1)
+        LS.set_keyboard_mode(self, LS.KeyboardMode.NONE)
+        if monitor is not None:
+            LS.set_monitor(self, monitor)
+
+    def hover(self, ev: dict) -> None:
+        """The window under the pointer (view-id -1: none)."""
+        vid = ev.get("view-id", -1)
+        if vid is None or vid < 0 or ev.get("width", 0) <= 0:
+            self.clear()
+            return
+        self.view = vid
+        x, y = close_spot(ev, ui.window.close_align())
+        self.LS.set_margin(self, self.LS.Edge.LEFT, x)
+        self.LS.set_margin(self, self.LS.Edge.TOP, y)
+        if not self.get_visible():
+            self.present()
+
+    def clear(self) -> None:
+        self.view = None
+        self.set_visible(False)
+
+    def _close(self) -> None:
+        if self.view is not None:
+            self.ipc.call("window-rules/close-view", {"id": self.view})
+        self.clear()
+
+
 class MissionBackdrop:
     def __init__(self, app):
         self.app = app
@@ -59,11 +129,16 @@ class MissionBackdrop:
         self._textures = {}           # dark? -> decoded wallpaper (only the current one; until system.json changes)
         self._prefs_mon = None
         self.bars = {}                # connector -> spaces.SpacesBar
+        self.closers = {}             # connector -> CloseOverlay
         if layer.layer_shell() and self.ipc.available:
             self.ipc.watch(["plugin-activation-state-changed", "wset-workspace-changed", "view-mapped",
-                            "view-unmapped", "view-workspace-changed", "sonata-scale-drag#"], self._event)
+                            "view-unmapped", "view-workspace-changed", "sonata-scale-drag#",
+                            "sonata-scale-hover#"], self._event)
 
     def _event(self, ev):
+        if ev.get("event") == "sonata-scale-hover#":  # the window under the pointer: its x
+            self._hover(ev)
+            return
         if ev.get("event") == "sonata-scale-drag#":   # a window dragged: maybe onto a desktop
             bar = self.bars.get(ev.get("output", ""))
             if bar is not None and bar.get_visible():
@@ -78,6 +153,10 @@ class MissionBackdrop:
             return
         if ev["plugin"] == "scale":
             self._spaces((ev.get("output-data") or {}).get("name", ""), bool(ev.get("state")))
+            if not ev.get("state"):
+                closer = self.closers.get((ev.get("output-data") or {}).get("name", ""))
+                if closer is not None:
+                    closer.clear()
         name = (ev.get("output-data") or {}).get("name", "")
         key = (ev["plugin"], name)
         if ev.get("state"):
@@ -87,6 +166,16 @@ class MissionBackdrop:
             self.active.discard(key)
             if not any(n == name for _p, n in self.active):
                 self._hide(name)
+
+    def _hover(self, ev) -> None:
+        name = ev.get("output", "")
+        closer = self.closers.get(name)
+        if closer is None:
+            if ev.get("view-id", -1) < 0 or not layer.layer_shell():
+                return
+            mon = next((m for m in monitors._list() if monitors.connector(m) == name), None)
+            closer = self.closers[name] = CloseOverlay(self.app, mon, self.ipc)
+        closer.hover(ev)
 
     def _window(self, name):
         win = self.windows.get(name)

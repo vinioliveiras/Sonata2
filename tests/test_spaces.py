@@ -211,6 +211,16 @@ class BarTest(unittest.TestCase):
         self.bar.go(1)                                                               # the current one: just closes
         self.assertEqual([m for m, _d in self.bar.ipc.calls if m != "window-rules/list-outputs"], ["scale/toggle"])
 
+    def test_close_x_on_the_users_side(self):
+        """Vini: Mission Control's buttons follow the user's window buttons."""
+        from sonata2.ui import window as W
+        for side, align, end in (("left", Gtk.Align.START, False), ("right", Gtk.Align.END, True)):
+            with mock.patch.object(W, "buttons_side", return_value=side):
+                self.bar.refresh()
+            x = [w for w in walk(self.bar.row) if isinstance(w, Gtk.Button) and w.has_css_class("sp-close")]
+            self.assertTrue(x)
+            self.assertTrue(all(w.get_halign() == align and w.has_css_class("end") == end for w in x), side)
+
     def test_close_x_works_on_a_picture(self):
         x = [w for w in walk(self.bar.row) if isinstance(w, Gtk.Button) and w.has_css_class("sp-close")]
         self.assertEqual(len(x), 3)
