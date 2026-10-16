@@ -219,7 +219,12 @@ class Operation(Gtk.Box):
     def finish(self) -> None:
         if not self.done:
             self.done = True
-            _Window.get().remove_op(self)
+            win = getattr(self, "window", None)
+            if win is not None:
+                win.remove_op(self)
+
+
+WIDTH = 460
 
 
 class _Window(Adw.Window):
@@ -232,7 +237,7 @@ class _Window(Adw.Window):
         return cls._instance
 
     def __init__(self):
-        super().__init__(title="Copy", default_width=460, resizable=False, hide_on_close=True)
+        super().__init__(title="Copy", default_width=WIDTH, resizable=False, hide_on_close=True)
         for c in ("sonata-progress-window", "sonata-glass-window"):     # frosted glass, like Get Info
             self.add_css_class(c)
         window.standard(self)
@@ -246,6 +251,7 @@ class _Window(Adw.Window):
         self.ops = []
 
     def add_op(self, op: Operation) -> None:
+        op.window = self
         self.ops.append(op)
         self.rows.append(op)
         GLib.timeout_add(SHOW_DELAY_MS, lambda: (not op.done and self.present(), False)[1])
@@ -255,7 +261,13 @@ class _Window(Adw.Window):
             self.ops.remove(op)
             self.rows.remove(op)
         if not self.ops:
-            self.set_visible(False)
+            # gone, not hidden: the next copy opens a new window at its own
+            # height (a hidden one came back as tall as it once was -- Vini)
+            if _Window._instance is self:
+                _Window._instance = None
+            self.destroy()
+            return
+        self.set_default_size(WIDTH, 1)                         # a row less: shorter again
 
 
 def start(title: str, on_cancel=None, heading: str = "Copy") -> Operation:

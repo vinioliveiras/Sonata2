@@ -1722,7 +1722,7 @@ class AboutWindow(Adw.Window):
     Resizable; narrow, the logo goes above the text (breakpoint)."""
 
     def __init__(self):
-        super().__init__(title="About This Computer", default_width=720, default_height=300)
+        super().__init__(title="About This Computer", default_width=720)    # its content's height
         for c in ("sonata-about", "sonata-glass-window"):       # frosted glass, like the Dock
             self.add_css_class(c)
         ui.window.standard(self)

@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changes
+- The Copy window is as tall as its copies: shorter when one ends, and
+  new for the next batch (it came back as tall as it once was). About This
+  Computer opens at its content's height.
 - Files: a folder that takes a while to open (a big one, a network share)
   shows Finder's spinner and "Loading…" until it is in; a quick one never
   flashes it.
