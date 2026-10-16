@@ -16,6 +16,8 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple
 
+from ..i18n import N_
+
 
 # -- Processes: apps / background / system ----------------------------------------------------
 def group_processes(procs: dict, app_of: Callable, my_uid: int) -> Tuple[dict, list, list]:
@@ -239,12 +241,13 @@ class Service:
     @property
     def status(self) -> str:
         if self.active == "active":
-            return "Running" if self.sub == "running" else "Active"
+            return N_("Running") if self.sub == "running" else N_("Active")
         if self.active == "failed":
-            return "Failed"
+            return N_("Failed")
         if self.active in ("activating", "deactivating", "reloading"):
-            return self.active.capitalize()
-        return "Stopped"
+            return {"activating": N_("Activating"), "deactivating": N_("Deactivating"),
+                    "reloading": N_("Reloading")}[self.active]
+        return N_("Stopped")
 
 
 def parse_units_json(text: str, scope: str) -> List[Service]:

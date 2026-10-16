@@ -17,6 +17,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from ..i18n import N_, _
+
 CLK_TCK = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
 PAGE_SIZE = os.sysconf("SC_PAGE_SIZE") if hasattr(os, "sysconf") else 4096
 SECTOR = 512                                   # /proc/diskstats counts 512-byte sectors
@@ -186,7 +188,7 @@ def parse_cpuinfo(text: str) -> dict:
             if core is not None:
                 cores.add((phys, core))
             phys = core = None
-    return {"model": model or "Processor", "logical": logical or 1, "cores": len(cores) or logical or 1,
+    return {"model": model or N_("Processor"), "logical": logical or 1, "cores": len(cores) or logical or 1,
             "sockets": len(sockets) or 1, "mhz": sum(mhz) / len(mhz) if mhz else 0.0}
 
 
@@ -230,7 +232,7 @@ def battery_info(sys_root: str = "/sys") -> Optional[dict]:
 
 
 # -- sampling ---------------------------------------------------------------------------------
-STATES = {"T": "Suspended", "t": "Suspended", "Z": "Zombie", "D": "Waiting for disk"}
+STATES = {"T": N_("Suspended"), "t": N_("Suspended"), "Z": N_("Zombie"), "D": N_("Waiting for disk")}
 
 
 def steam_appid(d: str) -> str:
@@ -770,6 +772,6 @@ def fmt_count(n: float) -> str:
 
 def fmt_duration(seconds: Optional[float]) -> str:
     if seconds is None:
-        return "Calculating…"
+        return _("Calculating…")
     h, m = divmod(int(seconds) // 60, 60)
     return f"{h}:{m:02d}"
