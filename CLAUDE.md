@@ -22,6 +22,10 @@ docs/DESIGN.md (design rules).
   `xvfb-run -a python3 -m unittest tests.<module>` (one module at a time).
 - **Regressions.** Every reported bug that gets fixed gets a test named
   after it.
+- **Every language.** After touching Settings, an app or any text, run
+  `dbus-run-session -- xvfb-run -a python3 -m unittest tests.test_smoke_languages`
+  (about 90 s). It opens every Sonata app in English, pt-BR and pt-PT and
+  walks and rebuilds every Settings section in each.
 - **Plugin.** The Wayfire plugin (`wayfire-plugin/`) is C++. It builds with
   meson against Wayfire's headers; compile-check any change to it.
 
