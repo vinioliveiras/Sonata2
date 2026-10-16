@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Changes
+- Dock: an app opening gets its place smoothly -- the neighbours slide
+  aside, then its icon fades in -- as its place closes up when it quits.
 - About This Computer shows all of its content: it grows to it once the
   specs are read (it kept the height it opened with, and longer lines --
   Portuguese's -- needed a scroll bar).
