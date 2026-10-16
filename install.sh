@@ -399,9 +399,10 @@ own_wf="$HOME/.local/opt/sonata-wayfire"
 # corners, zoom, outline resize... (Vini: a friend's Fedora had none).
 wf_ver="$(wayfire --version 2>/dev/null | sed -n 's/^\([0-9]*\)\.\([0-9]*\).*/\1 \2/p' | head -n1)"
 if [ -n "$wf_ver" ] && [ "$(echo "$wf_ver" | awk '{print ($1 * 1000 + $2 < 11) ? 1 : 0}')" = 1 ] &&
-        [ -n "$BUILD_DEPS" ] && [ ! -s "$own_wf/standalone" ] && [ "$DEPS" = 1 ] &&
-        ask "Your Wayfire is $(echo "$wf_ver" | tr ' ' .); build Wayfire 0.12 for Sonata's title bars, corners and window effects (10-20 minutes)?"; then
-    say "Building Wayfire 0.12 (its own folder: $own_wf)"
+        [ -n "$BUILD_DEPS" ] && [ ! -s "$own_wf/standalone" ] && [ "$DEPS" = 1 ]; then
+    # (no question: without it Sonata has no title bars, corners or window
+    #  effects -- Vini: "it should just go ahead")
+    say "Your Wayfire is $(echo "$wf_ver" | tr ' ' .): building Wayfire 0.12 for Sonata (10-20 minutes; its own folder: $own_wf)"
     $PM $NI $BUILD_DEPS >/dev/null 2>&1 || $PM $NI $BUILD_DEPS || true
     bash "$SRC/tools/build-wayfire-stack.sh" || echo "  (the system's Wayfire is used; retry: tools/build-wayfire-stack.sh)"
 elif [ -s "$own_wf/standalone" ] && [ "$DEPS" = 1 ] && [ -n "$BUILD_DEPS" ]; then
@@ -445,9 +446,9 @@ if command -v meson >/dev/null && command -v ninja >/dev/null && pkg-config --ex
     # (again when Sonata's patches changed: wayfire-plugin/wayfire-*.patch)
     wf_patches="$(cat "$SRC"/wayfire-plugin/wayfire-*.patch 2>/dev/null | sha256sum | cut -c1-12)"
     if [ ! -s "$own_wf/standalone" ] && { ! wayfire --version 2>/dev/null | grep -qs -- "-$(head -n1 "$own_wf/sonata-commit" 2>/dev/null) " ||
-            [ "$(cat "$own_wf/sonata-patches" 2>/dev/null)" != "$wf_patches" ]; } &&
-            ask "Build Wayfire with Sonata's fixes (a few minutes)?"; then
-        say "Building Wayfire with Sonata's fix"
+            [ "$(cat "$own_wf/sonata-patches" 2>/dev/null)" != "$wf_patches" ]; }; then
+        # (no question: Sonata's fixes -- Electron resizes, buffers the GPU refuses -- come with it)
+        say "Building Wayfire with Sonata's fixes (a few minutes)"
         bash "$SRC/tools/build-wayfire.sh" || echo "  (the system's Wayfire is used; retry: tools/build-wayfire.sh)"
     fi
 else
