@@ -16,7 +16,7 @@ from gi.repository import Gio, GLib, Gtk  # noqa: E402
 ATTRS = ",".join((
     "standard::name", "standard::display-name", "standard::icon", "standard::symbolic-icon",
     "standard::type", "standard::is-symlink", "standard::is-hidden", "standard::is-backup", "standard::content-type",
-    "standard::size", "standard::target-uri", "time::modified", "time::created", "time::access", "access::can-write",
+    "standard::size", "standard::target-uri", "time::modified", "time::modified-usec", "time::created", "time::access", "access::can-write",
     "thumbnail::path", "thumbnail::failed", "xattr::xdg.tags"))       # (the last: tags.py)
 RECENTS = "sonata:recents"
 APPS = "sonata:applications"      # the installed apps, like Finder's Applications folder
@@ -105,8 +105,9 @@ class Folder:
     """`store` holds the current folder's items. load(uri) replaces them;
     on_loaded(uri) / on_error(uri, GLib.Error) report the outcome."""
 
-    def __init__(self, on_loaded, on_error):
+    def __init__(self, on_loaded, on_error, on_started=None):
         self.store = Gio.ListStore(item_type=Gio.FileInfo)
+        self._on_started = on_started  # on_started(uri): a load begins (Files' "Loading…")
         self.uri = None
         self.show_hidden = False
         self._on_loaded, self._on_error = on_loaded, on_error
@@ -122,6 +123,8 @@ class Folder:
         if self._cancel:
             self._cancel.cancel()
         self._cancel = cancel = Gio.Cancellable()
+        if self._on_started:
+            self._on_started(uri)
         if self._monitor:
             self._monitor.cancel()
             self._monitor = None

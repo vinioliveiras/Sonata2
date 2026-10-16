@@ -2,11 +2,12 @@
 double-click an installer (.pkg.tar.zst, .deb, .rpm, .flatpak(ref),
 .snap) to install it, an AppImage to run it, an archive (.tar.gz, .zip, .rar, .7z...)
 to extract it next to itself (macOS Archive Utility). The same actions
-are in the right-click menus (Files, desktop).
+are in the right-click menus (Files, desktop), and a shell script's Run
+(right-click only: a double-click still opens it to read).
 
-Installs run in a terminal window: the package manager asks for the
-password and shows what it does (dependencies, conflicts), as on any
-Linux system. A package for another distro family isn't forced in; an
+Installs run in a terminal window that shows what the package manager does
+(dependencies, conflicts); the password is asked first by Sonata's own
+prompt (pkexec), not inside the terminal. A package for another distro family isn't forced in; an
 alert says what this system installs instead."""
 import os
 import shlex
@@ -65,11 +66,18 @@ def family() -> str:
     return ""
 
 
+def _root() -> str:
+    """How an install becomes root: pkexec, so Sonata's own password prompt
+    asks first (Vini: sudo asked inside the terminal and the install could
+    fail there); sudo where there's no pkexec."""
+    return "pkexec" if shutil.which("pkexec") else "sudo"
+
+
 def _debtap_command(path: str) -> str:
     """Convert a .deb into an Arch package with debtap, then install it."""
     d, q = shlex.quote(os.path.dirname(path) or "."), shlex.quote(path)
     return (f"cd {d} && debtap -Q {q} && "
-            f"sudo pacman -U \"$(ls -t -- *.pkg.tar.zst | head -n 1)\"")
+            f"{_root()} pacman -U \"$(ls -t -- *.pkg.tar.zst | head -n 1)\"")
 
 
 def aur_helper():
@@ -84,17 +92,17 @@ def install_command(path: str):
     if k in ("arch", "debian", "rpm") and k != family():
         return None
     if k == "arch":
-        return f"sudo pacman -U {q}"
+        return f"{_root()} pacman -U {q}"
     if k == "debian":
-        return f"sudo apt install {q}"
+        return f"{_root()} apt install {q}"
     if k == "rpm":
-        return f"sudo dnf install {q}" if shutil.which("dnf") else f"sudo zypper install {q}"
+        return f"{_root()} dnf install {q}" if shutil.which("dnf") else f"{_root()} zypper install {q}"
     if k == "flatpakref" and shutil.which("flatpak"):
         return f"flatpak install --user {q}"
     if k == "flatpak" and shutil.which("flatpak"):
         return f"flatpak install --user --bundle {q}"
     if k == "snap" and shutil.which("snap"):
-        return f"sudo snap install --dangerous {q}"
+        return f"{_root()} snap install --dangerous {q}"
     return None
 
 
@@ -123,7 +131,7 @@ def install(path: str, parent=None) -> None:
             # debtap (AUR) converts .deb packages for Arch; offer to get it
             def answer(r):
                 if r == "debtap":
-                    system.run_in_terminal(f"{helper} -S debtap && sudo debtap -u && {_debtap_command(path)}")
+                    system.run_in_terminal(f"{helper} -S debtap && {_root()} debtap -u && {_debtap_command(path)}")
             ui.dialog.alert(f"“{name}” is a package for Debian and Ubuntu.",
                             "It can be converted into an Arch package with debtap, which isn't installed yet. "
                             "Converted packages usually work, but a version made for this system, a Flatpak or "
@@ -326,11 +334,69 @@ def extract(path: str, parent=None, done=None, password: str = None) -> None:
     threading.Thread(target=work, daemon=True).start()
 
 
+# -- shell scripts: Run (Vini) ---------------------------------------------------------------
+_SCRIPTS = {".sh": "bash", ".bash": "bash", ".zsh": "zsh"}
+
+
+def is_script(path: str) -> bool:
+    """A script to run: .sh / .bash / .zsh, or an executable file starting with "#!"."""
+    if not path or not os.path.isfile(path):
+        return False
+    if os.path.splitext(path)[1].lower() in _SCRIPTS:
+        return True
+    return os.access(path, os.X_OK) and _shebang(path) is not None
+
+
+def _shebang(path: str):
+    """The "#!" line's interpreter and its arguments, or None."""
+    try:
+        with open(path, "rb") as f:
+            line = f.readline(256)
+    except OSError:
+        return None
+    if not line.startswith(b"#!"):
+        return None
+    try:
+        return shlex.split(line[2:].decode("utf-8", "replace").strip()) or None
+    except ValueError:
+        return None
+
+
+def script_argv(path: str) -> list:
+    """How to run it: itself when executable, else through its "#!" line's
+    interpreter (or the shell its suffix names) -- no chmod +x needed."""
+    if os.access(path, os.X_OK):
+        return [path]
+    return (_shebang(path) or [_SCRIPTS.get(os.path.splitext(path)[1].lower(), "sh")]) + [path]
+
+
+def run_script(path: str, parent=None, terminal: bool = True) -> None:
+    """Run a script in its own folder: in a terminal window that stays open
+    (its output, and whatever it asks), or in the background."""
+    argv = script_argv(path)
+    folder = os.path.dirname(path) or None
+    if terminal:
+        cmd = f"cd {shlex.quote(folder or '.')} && {shlex.join(argv)}"
+        if system.run_in_terminal(cmd):
+            return
+        ui.dialog.alert("No terminal app was found.", f"Run it with:\n{cmd}", [("ok", "OK", "default")],
+                        parent=parent)
+        return
+    try:
+        GLib.spawn_async(argv, working_directory=folder, flags=GLib.SpawnFlags.SEARCH_PATH)
+    except GLib.Error as e:
+        ui.dialog.alert(f"“{os.path.basename(path)}” can’t be run.", e.message, [("ok", "OK", "default")],
+                        parent=parent)
+
+
 def menu_items(path: str, parent=None) -> list:
-    """Right-click entries for a package/archive ([] for other files)."""
+    """Right-click entries for a package/archive/script ([] for other files)."""
     Item = ui.menu.Item
     k = kind(path)
     if k is None:
+        if is_script(path):
+            return [Item("Run in Terminal", lambda: run_script(path, parent)),
+                    Item("Run", lambda: run_script(path, parent, terminal=False))]
         return []
     if k == "appimage":
         return [Item("Run", lambda: run_appimage(path, parent))]

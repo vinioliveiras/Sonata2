@@ -72,6 +72,7 @@ window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text
 .fs-scope dropdown button { min-height: 20px; padding: 0 6px; }
 .fs-toolbar button.fs-text-btn { padding: 0 10px; color: %(label)s; background: %(tool_hover)s; }
 .fs-empty { color: %(label_tertiary)s; font-size: %(text_title)s; }
+.fs-loading { color: %(label_secondary)s; font-size: %(text_body)s; }
 """, key="files-window")
 
 # window state that belongs to the tab in front (FilesWindow reads/writes it through)
@@ -101,7 +102,8 @@ class Tab:
     def __init__(self, win, view_id):
         self.win = win
         self.history, self.pos = [], -1
-        self.folder = folder.Folder(lambda u: win._tab_loaded(self, u), lambda u, e: win._tab_failed(self, u, e))
+        self.folder = folder.Folder(lambda u: win._tab_loaded(self, u), lambda u, e: win._tab_failed(self, u, e),
+                                    lambda u: self.loading(True))
         self.folder.show_hidden = win.show_hidden
         self.name = ""                           # what the tab shows (columns: the deepest folder)
         self.button = None                       # its tab in the strip
@@ -122,6 +124,15 @@ class Tab:
         self.widget.set_child(self.fade)
         self.empty = Gtk.Label(css_classes=["fs-empty"], visible=False, can_target=False)
         self.widget.add_overlay(self.empty)
+        # a slow folder (a big one, a network share): Finder's spinner and
+        # "Loading…" once it takes longer than LOADING_MS (Vini); a quick one
+        # never flashes it
+        self.loading_box = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER,
+                                   visible=False, can_target=False, css_classes=["fs-loading"])
+        self.loading_box.append(ui.progress.spinner(False))
+        self.loading_box.append(Gtk.Label(label="Loading…"))
+        self.widget.add_overlay(self.loading_box)
+        self._loading_src = 0
         self.view = self.views.get(view_id) or self.views["icons"]
         self.stack.set_visible_child_name(self.view_id)
 
@@ -135,6 +146,26 @@ class Tab:
 
     def title(self) -> str:
         return self.name or (folder.display_name(self.uri) if self.uri else "Files")
+
+    LOADING_MS = 400
+
+    def loading(self, on: bool) -> None:
+        """A load began (shown after LOADING_MS) / ended (hidden at once)."""
+        if self._loading_src:
+            GLib.source_remove(self._loading_src)
+            self._loading_src = 0
+        spin = self.loading_box.get_first_child()
+        if not on:
+            self.loading_box.set_visible(False)
+            spin.stop()
+            return
+
+        def show():
+            self._loading_src = 0
+            self.loading_box.set_visible(True)
+            spin.start()
+            return False
+        self._loading_src = GLib.timeout_add(self.LOADING_MS, show)
 
     def after_load(self, uri) -> None:
         """A folder finished loading: fresh views, back at the top."""
@@ -598,6 +629,7 @@ class FilesWindow(Adw.ApplicationWindow):
         self.fwd.set_sensitive(self.pos < len(self.history) - 1)
 
     def _tab_loaded(self, tab, uri):
+        tab.loading(False)
         tab.after_load(uri)
         self.strip.retitle(tab)
         if tab is self.tab:
@@ -614,6 +646,7 @@ class FilesWindow(Adw.ApplicationWindow):
         self._update_empty()
 
     def _tab_failed(self, tab, uri, err):
+        tab.loading(False)
         tab.fade.play()
         # stay where we were (drop the failed step from the history)
         if tab.history and tab.history[tab.pos] == uri:

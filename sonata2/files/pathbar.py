@@ -26,7 +26,11 @@ ui.register("""
 .fs-pathbar button.drop { background: alpha(%(accent)s, 0.22); }
 .fs-pathbar button image { -gtk-icon-size: 13px; }
 .fs-pathbar .fs-path-sep { color: %(label_tertiary)s; font-size: %(text_small)s; margin: 0 1px; }
-.fs-pathbar entry { min-height: 18px; margin: 2px 0; padding: 0 6px; font-size: %(text_small)s; }
+.fs-pathbar entry { min-height: 18px; margin: 3px 2px; padding: 0 6px; font-size: %(text_small)s; border-radius: 5px; }
+/* the bar is only 24 px high (and scrolls sideways): the focus ring drawn
+   inside the field, not around it -- it was cut off (Vini) */
+.fs-pathbar entry.sonata-field:focus-within {
+  box-shadow: inset 0 0 0 1.5px alpha(%(accent)s, 0.85), inset 0 0 0 3px alpha(%(accent)s, 0.18); }
 """, key="files-pathbar")
 
 
@@ -71,6 +75,28 @@ class PathBar(Gtk.ScrolledWindow):
         click.connect("released", lambda *_a: self.on_edit and self.on_edit())
         self.add_controller(click)
         self.on_edit = None                  # set by the window: starts edit() with the folder's path
+        # right-click: Copy Path -- of the folder clicked, or the one shown (Vini)
+        menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
+        menu.connect("pressed", self._menu)
+        self.add_controller(menu)
+
+    def uri_at(self, x: float, y: float):
+        """The folder under (x, y): a crumb's, else the one shown."""
+        w = self.pick(x, y, Gtk.PickFlags.DEFAULT)
+        while w is not None and w is not self:
+            if getattr(w, "crumb_uri", None):
+                return w.crumb_uri
+            w = w.get_parent()
+        return self.uri
+
+    def _menu(self, g, _n, x, y) -> None:
+        uri = self.uri_at(x, y)
+        if not uri or self.entry is not None:          # (typing an address: the field's own menu)
+            return
+        g.set_state(Gtk.EventSequenceState.CLAIMED)
+        from .actions import copy_paths
+        ui.menu.popup(self, [[ui.menu.Item("Copy Path", lambda: copy_paths(self, [Gio.File.new_for_uri(uri)]))]],
+                      at=(x, y))
 
     def edit(self, text: str, on_go) -> None:
         """The bar becomes a field with `text` (selected): Return calls
@@ -127,6 +153,7 @@ class PathBar(Gtk.ScrolledWindow):
             b.set_child(row)
             if i == len(items) - 1:
                 b.add_css_class("current")
+            b.crumb_uri = u                               # (its right-click: Copy Path)
             b.connect("clicked", lambda _b, u=u: self.go(u))
             if self.drop is not None:
                 self._drop_target(b, u)

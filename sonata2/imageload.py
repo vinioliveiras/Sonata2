@@ -139,3 +139,50 @@ def pixbuf_at_scale(path: str, size: int):
         return Gdk.pixbuf_get_from_texture(tex)
     except (AttributeError, GLib.Error):
         return None
+
+
+
+def copy_picture(widget, path: str = None, tex=None, done=None) -> None:
+    """A picture on the clipboard (Preview's and Quick Look's Copy). With
+    `path` (the picture unedited): the file's own bytes -- PNG, JPEG, GIF,
+    WebP as they are, like Files' Copy (ops._image_data), no re-encoding of
+    a big photo; otherwise (edits, marks, a format GTK can't read) `tex` as
+    PNG. Through wl-copy, which keeps it there after the app quits; GTK's
+    own clipboard without it. done(ok) on the main loop."""
+    import shutil
+    if path is None and tex is None:
+        if done:
+            done(False)
+        return
+
+    def data():                                  # off the main loop: a file read or a PNG encoding
+        out = None
+        if path:
+            from gi.repository import Gio
+            from .files.ops import _image_data
+            out = _image_data(Gio.File.new_for_path(path))
+        if out is None and tex is not None:
+            out = ("image/png", tex.save_to_png_bytes())
+        return out
+
+    def run():
+        import subprocess
+        d = data()
+        if d is None:
+            return False
+        try:
+            return subprocess.run(["wl-copy", "--type", d[0]], input=d[1].get_data(), timeout=10).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return False
+
+    from .backend.system import run_async
+    if shutil.which("wl-copy"):
+        run_async(run, lambda ok: done and done(bool(ok)))
+        return
+
+    def got(d):                                  # no wl-copy: GTK's clipboard (while the app runs)
+        if d is not None:
+            widget.get_clipboard().set_content(Gdk.ContentProvider.new_for_bytes(*d))
+        if done:
+            done(d is not None)
+    run_async(data, got)

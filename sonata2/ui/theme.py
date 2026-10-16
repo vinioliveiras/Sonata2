@@ -129,6 +129,7 @@ def _glass_cfg() -> dict:
 
 _glass_bars_on = None
 _radii_seen = None
+_bg_seen = None
 
 
 def _glass_bars() -> bool:
@@ -162,11 +163,13 @@ def _remember_appearance() -> None:
     writes its recents to dock.json) cross-faded every Sonata window --
     nothing had been seen yet, so everything counted as changed -- and the
     menu bar's Control Center icon went blank after that fade."""
-    global _radii_seen, _glass_bars_on
+    global _radii_seen, _glass_bars_on, _bg_seen
     _accent()
     _glass_cfg()
     if _radii_seen is None:
         _radii_seen = tokens.user_radii()
+    if _bg_seen is None:
+        _bg_seen = tokens.user_backgrounds()
     if _glass_bars_on is None:
         _glass_bars_on = glass_titlebars()
 
@@ -179,16 +182,18 @@ def _appearance_changed() -> None:
     _accent_name = None
     _transparency_changed()
     bars = glass_titlebars()
-    global _radii_seen, _glass_seen
+    global _radii_seen, _glass_seen, _bg_seen
     radii = tokens.user_radii()
+    bg = tokens.user_backgrounds()
     from . import glass as G
     gl = G.settings()
     switched = _glass_seen is not None and any(gl[i]["on"] != _glass_seen[i]["on"] for i in G.ITEMS)
     _buttons_changed()
-    big = _accent() != old or bars != _glass_bars_on or radii != _radii_seen or switched
+    big = _accent() != old or bars != _glass_bars_on or radii != _radii_seen or switched or bg != _bg_seen
     if big or gl != _glass_seen:
         _glass_bars_on = bars
         _radii_seen = radii
+        _bg_seen = bg
         _glass_seen = gl
         _parsed.clear()
         _load(fade=big)        # a glass slider: no cross-fade (it re-pictures every window); a switch fades
@@ -400,6 +405,8 @@ def refresh_tree(root, icons: bool = True) -> None:
             name = w.get_icon_name()
             if name:
                 w.set_from_icon_name(name)         # (GTK clears the image first, even for the same name)
+        elif icons and callable(getattr(w, "refresh", None)) and getattr(w, "sonata_refreshable", False):
+            w.refresh()                            # widgets drawing a picture of their own (ui.logo)
         w.queue_draw()
         c = w.get_first_child()
         while c is not None:

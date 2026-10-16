@@ -3,6 +3,75 @@
 ## Unreleased
 
 ### Changes
+- The Copy window is as tall as its copies: shorter when one ends, and
+  new for the next batch (it came back as tall as it once was). About This
+  Computer opens at its content's height.
+- Files: a folder that takes a while to open (a big one, a network share)
+  shows Finder's spinner and "Loading…" until it is in; a quick one never
+  flashes it.
+- Files and the desktop: Windows programs (.exe, .dll) show their own
+  icon, read from the file itself (its resources; only the headers and
+  icons are read, never a whole big game).
+- Files and the desktop: an edited picture or video gets a new thumbnail
+  (the old one stayed: GIO still pointed at it, and two saves in the same
+  second shared one).
+- Files' path bar: right-click > Copy Path copies the folder under the
+  pointer (or, on the bar's empty part, the folder shown). Typing an
+  address there, the field's focus ring is drawn inside it (it was cut off).
+- ç on U.S. International: ' + c types "ç" (and ' + C "Ç"), as on Windows
+  and macOS, instead of "ć". Set at login in ~/.XCompose, after the
+  locale's own table; a file of your own keeps its lines. Apps opened
+  after the next login follow it.
+- Settings > Appearance: the background colour of Light and Dark Mode,
+  picked like the accent colour -- a few for each mode, the default first
+  to go back to, any colour through Sonata's colour picker. Windows,
+  sidebars, menus and title bars follow it (Sonata's, Wayfire's and other
+  GTK apps'); a colour too dark for Light Mode (or too light for Dark) is
+  eased until the text reads well.
+- Right-click > Install (and a package's double-click) asks for the
+  password first, in Sonata's own prompt (pkexec), instead of sudo asking
+  inside the terminal; the terminal still shows the install.
+- Every Sonata dialog (Edit Web App, errors, confirmations...) and the
+  panels that work as forms (Change Icon, Get Info, Disk Info, Resize,
+  Export, Adjust Color, the Assistant's settings, a Calendar event) have
+  the windows' close dot -- their look, colours and side -- at the top
+  corner; it closes like Escape. None is added where one already is.
+- Notifications stay unread until read: bringing an app to the front no
+  longer clears its Dock count, and a web app (WhatsApp) taking its
+  notifications back as its window is focused only hides the banners --
+  they stay in Notification Center until clicked or dismissed. The app's
+  own count (LauncherEntry, the page's "(3)" title) still comes first.
+- The Sonata menu's logo (top left) is drawn anew with the other menu bar
+  icons (an app window gone, its menu closed, Light/Dark, a new display
+  scale): it could go blank.
+- Files and the desktop: a shell script's right-click menu has Run in
+  Terminal (its output in a window that stays open) and Run (in the
+  background). Scripts are .sh / .bash / .zsh files, or executables that
+  start with "#!"; one without the executable bit runs through its "#!"
+  line or its shell. A double-click still opens it to read.
+- Preview: right-click > Copy puts the picture on the clipboard as shown
+  (its edits, and Markup's marks while Markup is open). Quick Look in
+  Files: right-click a picture > Copy Image.
+- Software Update asks for the password once, not at every package: install.sh adds a polkit rule that keeps the
+  administrator's "yes" to pacman for a few minutes, for that update only.
+- Displays nobody picked a scale for get one that keeps the size of a
+  1080p desktop monitor: from the display's DPI (the size it reports; a
+  laptop's panel, seen closer, a higher reference), else its resolution;
+  never under 100 % (blurry, and harder on the GPU). It follows a new
+  resolution until a scale is picked in Settings > Displays (100-300 %).
+- Software Update runs System and AUR as one paru/yay run: one password.
+- The emoji and clipboard pickers open in the middle of the screen, a
+  little lower, and a click anywhere outside closes them (the emoji one
+  was at the top left, the clipboard one at the top and never closed).
+- A picked emoji is pasted into the app instead of typed as keys:
+  WhatsApp and other Chromium/Electron apps got other characters.
+- Copy in Preview and Quick Look sends the file itself when unedited
+  (PNG, JPEG, GIF, WebP as they are: no slow re-encoding of big photos);
+  an edited picture is copied at full size.
+- install.sh no longer asks "mount system disks without a password": the
+  rule is added for administrators by default (it lowers security: any app
+  in the session can mount system disks and unlock system LUKS);
+  --no-mount-without-password removes it.
 - Light Mode glass is more see-through by default (Dock, menu bar, menus
   and panels 0.60 -> 0.45; sidebars 0.74 -> 0.58), closer to how Dark Mode
   reads: a pale tint at the same opacity looked milky, almost opaque. Wayfire's

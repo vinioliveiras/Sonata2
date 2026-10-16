@@ -480,6 +480,14 @@ class Bar(Gtk.CenterBox):
         if name:
             child.set_from_icon_name(name)
 
+    def _refresh_logo(self, reload: bool = True) -> None:
+        """The Sonata menu's logo drawn anew (Vini: it went blank); reload:
+        its picture made again too (not on every focus change: LogoGlyph)."""
+        logo = getattr(self, "logo", None)
+        glyph = logo.get_child().get_last_child() if logo is not None and logo.get_child() else None
+        if hasattr(glyph, "refresh"):
+            glyph.refresh(reload)
+
     def _open(self, btn, builder) -> None:
         reveal = getattr(self, "reveal", None)
         if reveal:                                # a hidden bar comes down for its menu
@@ -493,6 +501,8 @@ class Bar(Gtk.CenterBox):
         def closed(*_a):
             btn.remove_css_class("open")
             self._refresh_icon(btn)               # never left without its icon (Vini)
+            if btn is getattr(self, "logo", None):
+                self._refresh_logo()
         pop.connect("closed", closed)
 
     def open_menu(self, index: int) -> None:
@@ -585,6 +595,7 @@ class Bar(Gtk.CenterBox):
             for b in (getattr(self, "cc", None), getattr(self, "wifi", None), getattr(self, "spotlight", None)):
                 if b is not None:
                     self._refresh_icon(b)
+            self._refresh_logo(reload=False)        # (focus changes are frequent: a redraw only)
             return False
         self._icons_src = GLib.timeout_add(120, run)
 
@@ -1711,7 +1722,7 @@ class AboutWindow(Adw.Window):
     Resizable; narrow, the logo goes above the text (breakpoint)."""
 
     def __init__(self):
-        super().__init__(title="About This Computer", default_width=720, default_height=300)
+        super().__init__(title="About This Computer", default_width=720)    # its content's height
         for c in ("sonata-about", "sonata-glass-window"):       # frosted glass, like the Dock
             self.add_css_class(c)
         ui.window.standard(self)

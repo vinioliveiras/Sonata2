@@ -102,6 +102,8 @@ def _shape_path(name, x, y, s):
 
 
 class LogoGlyph(Gtk.Widget):
+    sonata_refreshable = True                     # ui.theme.refresh_tree calls refresh()
+
     def __init__(self, size: int = 16):
         super().__init__(valign=Gtk.Align.CENTER, halign=Gtk.Align.CENTER)
         self.size = size
@@ -111,6 +113,28 @@ class LogoGlyph(Gtk.Widget):
         self.set_kind(*_current_with_text())
         from .. import config
         self._mon = config.watch("appearance", lambda *_: self.set_kind(*_current_with_text()))
+        self.connect("notify::scale-factor", lambda *_: self.refresh())     # a new display scale: sharp again
+
+    def refresh(self, reload: bool = True) -> None:
+        """Drawn anew (Vini: the menu bar's logo went blank, like the Control
+        Center icon did -- a stale picture kept by GTK). reload=False only
+        redraws it (every focus change: topbar._icons_soon); a reload makes
+        the picture again (a distro logo's tile is cut out pixel by pixel:
+        kept for rare moments -- appearance, scale, its menu closed)."""
+        if not reload:
+            self.queue_draw()
+            return
+        kind, custom = _current_with_text()
+        if kind != self.kind or text_for(kind, custom) != self.text:
+            self.set_kind(kind, custom)               # another logo: set_kind measures it again
+            return
+        # the same logo: only its picture made again and drawn -- no new layout
+        # (a relayout as a panel closes crashed GTK in gdk_surface_request_motion)
+        if kind in ("distro", "distro-colour", "sonata") or kind.startswith("icon:"):
+            self.texture = self._load(kind)
+        elif self.text:
+            self.texture = self._text_texture(self.text)
+        self.queue_draw()
 
     def set_kind(self, kind: str, custom: str = "") -> None:
         text = text_for(kind, custom)

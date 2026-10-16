@@ -88,6 +88,45 @@ class PreviewTest(unittest.TestCase):
         win.rotate(90)
         self.assertEqual(win.texture.get_width(), 100)
 
+    def test_right_click_copy(self):
+        """Vini: right-click > Copy puts the picture on the clipboard: the
+        file itself when unedited (no re-encoding of a big photo), through
+        wl-copy; GTK's clipboard without it."""
+        from unittest import mock
+        win = self.window(self.a)
+        seen = {}
+        with mock.patch.object(ui.menu, "popup", lambda w, sections, **kw: seen.setdefault("s", sections)):
+            win._context_menu(Gtk.GestureClick(), 1, 10, 10)
+        copy = seen["s"][0][0]
+        self.assertEqual(copy.label, "Copy")
+        sent = {}
+        with mock.patch("shutil.which", return_value="/usr/bin/wl-copy"), \
+                mock.patch("subprocess.run", lambda argv, input=None, **kw: (
+                    sent.update(argv=argv, data=input), mock.Mock(returncode=0))[1]):
+            copy.on_activate()
+            self.assertTrue(wait(lambda: "data" in sent))
+        self.assertEqual(sent["argv"], ["wl-copy", "--type", "image/png"])
+        with open(self.a, "rb") as f:
+            self.assertEqual(sent["data"], f.read())                  # the file's own bytes
+        with mock.patch("shutil.which", return_value=None):          # no wl-copy: GTK's clipboard
+            copy.on_activate()
+            self.assertTrue(wait(lambda: win.get_clipboard().get_formats().contain_mime_type("image/png")))
+
+    def test_copy_jpeg_as_it_is(self):
+        from unittest import mock
+        from sonata2 import imageload
+        jpg = os.path.join(self.dir, "p.jpg")
+        GdkPixbuf.Pixbuf.new_from_file(self.c).savev(jpg, "jpeg", ["quality"], ["90"])
+        sent = {}
+        with mock.patch("shutil.which", return_value="/usr/bin/wl-copy"), \
+                mock.patch("subprocess.run", lambda argv, input=None, **kw: (
+                    sent.update(argv=argv, data=input), mock.Mock(returncode=0))[1]):
+            imageload.copy_picture(Gtk.Label(), jpg, None)
+            self.assertTrue(wait(lambda: "data" in sent))
+        self.assertEqual(sent["argv"][-1], "image/jpeg")
+        with open(jpg, "rb") as f:
+            self.assertEqual(sent["data"], f.read())
+
     def test_zoom_around_pointer(self):
         win = self.window(self.c)
         cv = win.canvas

@@ -9,7 +9,8 @@ Sources, each checked on its own (a slow AUR doesn't hold the others):
 Updating runs in the app, one step per source, with the output streamed to
 the details log and a progress fraction read from pacman's "(3/12)" lines.
 Root steps go through pkexec (the session's polkit agent asks for the
-password). Sources without an unattended mode (apt, dnf, zypper) update
+password; once per update: plan() runs System and AUR as one process,
+and install.sh's polkit rule, POLKIT_RULE_SRC, keeps the password for it). Sources without an unattended mode (apt, dnf, zypper) update
 in a terminal, as does anything the user wants to watch there.
 
     srcs = sources()                     # [Source] available here
@@ -43,6 +44,17 @@ class Source:
     install: Optional[List[str]]           # run in the app (None: terminal only)
     terminal: str                          # the same, for a terminal
     parse: Callable[[str], List[Update]] = field(repr=False, default=None)
+
+
+# -- one password per update (Vini: it was asked again and again) -----------------------
+# The AUR helper runs pkexec pacman once per step (dependencies, each
+# package...), and pkexec asks every time. install.sh adds this rule: after
+# the password, pacman through pkexec isn't asked again for a few minutes
+# (polkit's "keep", ~5 min) -- for the same caller only (Settings' update,
+# or that one paru/yay run), for administrators at their own active session.
+# So an update asks once for the system and at most once for the AUR.
+POLKIT_RULE_FILE = "/etc/polkit-1/rules.d/60-sonata2-updates.rules"
+POLKIT_RULE_SRC = os.path.join(os.path.dirname(__file__), "..", "..", "config", "polkit", "60-sonata2-updates.rules")
 
 
 # -- parsing --------------------------------------------------------------------------
@@ -130,6 +142,22 @@ def sources() -> List[Source]:
                                                  "--columns=name,application,version"],
                           ["flatpak", "update", "-y", "--noninteractive"], "flatpak update", parse_flatpak))
     # (Sonata itself: About > Sonata Update, apart from the system's -- Vini)
+    return out
+
+
+def plan(srcs: List[Source]) -> List[Source]:
+    """The steps to run for `srcs`: System and AUR together become one run
+    of the AUR helper (-Syu: the repositories, then the AUR). Every pkexec
+    then comes from that one process, and polkit keeps the password for it
+    (POLKIT_RULE_SRC): asked once per update, not once per step (Vini)."""
+    ids = [s.id for s in srcs]
+    if "system" not in ids or "aur" not in ids:
+        return list(srcs)
+    aur = srcs[ids.index("aur")]
+    both = Source("system+aur", "System and AUR", aur.list_cmd,
+                  [("-Syu" if a == "-Sua" else a) for a in aur.install], aur.terminal, aur.parse)
+    out = [s for s in srcs if s.id not in ("system", "aur")]
+    out.insert(min(ids.index("system"), ids.index("aur")), both)
     return out
 
 

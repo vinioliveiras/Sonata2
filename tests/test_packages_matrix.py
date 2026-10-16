@@ -61,6 +61,17 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(self.cmd("c.rpm", "rpm", ("dnf",)), "sudo dnf install /home/v/Downloads/c.rpm")
         self.assertEqual(self.cmd("c.rpm", "rpm", ("zypper",)), "sudo zypper install /home/v/Downloads/c.rpm")
 
+    def test_password_asked_first(self):
+        """Vini: sudo asked inside the terminal, and the install could fail
+        there. With pkexec, Sonata's own prompt asks first."""
+        self.assertEqual(self.cmd("yay-1.pkg.tar.zst", "arch", ("pkexec",)),
+                         "pkexec pacman -U /home/v/Downloads/yay-1.pkg.tar.zst")
+        self.assertEqual(self.cmd("a.deb", "debian", ("pkexec",)), "pkexec apt install /home/v/Downloads/a.deb")
+        self.assertEqual(self.cmd("x.snap", "debian", ("snap", "pkexec")),
+                         "pkexec snap install --dangerous /home/v/Downloads/x.snap")
+        self.assertTrue(self.cmd("a.deb", "arch", ("debtap", "pkexec")).endswith(
+            'pkexec pacman -U "$(ls -t -- *.pkg.tar.zst | head -n 1)"'))
+
     def test_quotes_in_names(self):
         c = self.cmd("it's (1).pkg.tar.zst", "arch")
         self.assertEqual(c, "sudo pacman -U '/home/v/Downloads/it'\"'\"'s (1).pkg.tar.zst'")
@@ -245,6 +256,56 @@ class ExtractTest(unittest.TestCase):
             self.assertEqual(done, [])
             self.assertIn("Unable to expand", errs[0][0])
             self.assertEqual(os.listdir(d), ["broken.zip"])                # no empty folder left
+
+
+class ScriptTest(unittest.TestCase):
+    """Vini: right-click a Linux script to run it."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+    def _file(self, name, text, mode=0o644):
+        path = os.path.join(self.dir, name)
+        with open(path, "w") as f:
+            f.write(text)
+        os.chmod(path, mode)
+        return path
+
+    def test_which_files_are_scripts(self):
+        self.assertTrue(P.is_script(self._file("a.sh", "echo hi\n")))
+        self.assertTrue(P.is_script(self._file("b.BASH", "echo hi\n")))
+        self.assertTrue(P.is_script(self._file("tool", "#!/usr/bin/env python3\nprint(1)\n", 0o755)))
+        self.assertFalse(P.is_script(self._file("notes", "#!/bin/sh\n")))          # not executable, no suffix
+        self.assertFalse(P.is_script(self._file("data.bin", "\x7fELF", 0o755)))    # a program, not a script
+        self.assertFalse(P.is_script(self._file("readme.txt", "hello")))
+        self.assertFalse(P.is_script(self.dir))
+        self.assertFalse(P.is_script(None))
+
+    def test_how_it_runs(self):
+        exe = self._file("x.sh", "echo\n", 0o755)
+        self.assertEqual(P.script_argv(exe), [exe])                             # executable: itself
+        plain = self._file("y.sh", "echo\n")
+        self.assertEqual(P.script_argv(plain), ["bash", plain])                  # no chmod +x needed
+        bang = self._file("z.sh", "#!/usr/bin/env python3\n")
+        self.assertEqual(P.script_argv(bang), ["/usr/bin/env", "python3", bang])  # its "#!" line
+        self.assertEqual(P.script_argv(self._file("w.zsh", "echo\n"))[0], "zsh")
+
+    def test_menu(self):
+        sh = self._file("a.sh", "echo hi\n")
+        self.assertEqual([i.label for i in P.menu_items(sh)], ["Run in Terminal", "Run"])
+        self.assertEqual(P.menu_items(self._file("a.txt", "x")), [])
+        cmds = []
+        with mock.patch.object(P.system, "run_in_terminal", lambda c: cmds.append(c) or True):
+            P.menu_items(os.path.join(self.dir, "a.sh"))[0].on_activate()
+        self.assertEqual(cmds, [f"cd {self.dir} && bash {sh}"])                 # in its own folder
+
+    def test_run_in_the_background(self):
+        out = os.path.join(self.dir, "out.txt")
+        sh = self._file("w.sh", f"pwd > {out}\n")
+        P.run_script(sh, terminal=False)
+        settle(3000, until=lambda: os.path.exists(out) and os.path.getsize(out))
+        with open(out) as f:
+            self.assertEqual(f.read().strip(), os.path.realpath(self.dir))
 
 
 if __name__ == "__main__":

@@ -62,7 +62,7 @@ def _meta(text: str) -> str:
 
 class ClipboardPicker(Gtk.Window):
     def __init__(self, app, history):
-        super().__init__(application=app, title="Clipboard", decorated=False, resizable=False)
+        super().__init__(application=app, title="Clipboard", decorated=False)
         self.add_css_class("sonata-clip-picker")
         self.history = history
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["clip-panel"])
@@ -85,22 +85,19 @@ class ClipboardPicker(Gtk.Window):
         self.empty = Gtk.Label(label="Nothing copied yet", css_classes=["clip-empty"])
         panel.append(self.empty)
         from ..ui.fixed import FixedWidth
-        self.set_child(FixedWidth(panel, WIDTH))                  # long copied text never widens it
+        box = FixedWidth(panel, WIDTH)                           # long copied text never widens it
+        self.set_child(box)
 
         keys = Gtk.EventControllerKey(propagation_phase=Gtk.PropagationPhase.CAPTURE)
         keys.connect("key-pressed", self._key)
         self.add_controller(keys)
-        LS = layer.layer_shell()
-        if LS:
-            LS.init_for_window(self)
-            LS.set_namespace(self, "sonata2-clipboard")
-            LS.set_layer(self, LS.Layer.OVERLAY)
-            LS.set_keyboard_mode(self, LS.KeyboardMode.EXCLUSIVE)
-            LS.set_anchor(self, LS.Edge.TOP, True)
-            LS.set_margin(self, LS.Edge.TOP, 90)             # where Spotlight opens
-        # a click outside (the window loses the keyboard) closes it
-        self.connect("notify::is-active", lambda w, _p: (not w.is_active() and w.get_visible()
-                                                         and GLib.timeout_add(120, self._close_if_inactive)))
+        # in the middle of the screen, a little lower, like the emoji picker; a
+        # click outside closes it (Vini: it kept the keyboard, so it never lost focus)
+        if not layer.centered_picker(self, box, "sonata2-clipboard", lambda: self.set_visible(False)):
+            self.set_resizable(False)
+            # a plain window: closed when another window takes the focus
+            self.connect("notify::is-active", lambda w, _p: (not w.is_active() and w.get_visible()
+                                                             and GLib.timeout_add(120, self._close_if_inactive)))
         history.listeners.append(lambda: self.get_visible() and self._fill())
 
     def _close_if_inactive(self):
@@ -174,16 +171,22 @@ class ClipboardPicker(Gtk.Window):
         self.set_visible(False)
         if not shutil.which("wtype"):
             return                                  # it is on the clipboard: Ctrl+V by hand
-        combo = ["-M", "ctrl", "-M", "shift", "v", "-m", "shift", "-m", "ctrl"] if _terminal_focused() \
-            else ["-M", "ctrl", "v", "-m", "ctrl"]
         # once the keyboard is back on the app and wl-copy owns the clipboard
-        GLib.timeout_add(200, lambda: (subprocess.Popen(["wtype"] + combo), False)[1])
+        GLib.timeout_add(200, lambda: (subprocess.Popen(["wtype"] + paste_keys()), False)[1])
 
     def open(self) -> None:
         self.search.set_text("")
         self._fill()
         self.present()
         self.search.grab_focus()
+
+
+def paste_keys() -> list:
+    """wtype's arguments for Paste in the focused app: Ctrl+V, or
+    Ctrl+Shift+V in a terminal (the clipboard and emoji pickers)."""
+    if _terminal_focused():
+        return ["-M", "ctrl", "-M", "shift", "v", "-m", "shift", "-m", "ctrl"]
+    return ["-M", "ctrl", "v", "-m", "ctrl"]
 
 
 def _terminal_focused() -> bool:

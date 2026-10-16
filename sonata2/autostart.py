@@ -80,6 +80,11 @@ def run() -> int:
         titlebars.apply()                  # Sonata title bars for Chrome, VS Code... (before they start)
     except Exception as e:                 # never keep the login's apps from starting
         print(f"sonata2-autostart: title bars: {e}")
+    try:                                   # ç on U.S. International, before the apps start (Vini)
+        from . import compose
+        compose.ensure()
+    except Exception as e:
+        print(f"sonata2-autostart: compose: {e}")
     mark("autostart: setup check")
     try:
         from . import config

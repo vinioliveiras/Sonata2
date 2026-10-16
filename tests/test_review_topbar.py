@@ -296,6 +296,21 @@ class NotifyServerTest(unittest.TestCase):
         first = self.send(app="Player")
         self.assertEqual(self.send(app="Player", replaces=first), first)
 
+    def test_web_app_taking_it_back_keeps_it_listed(self):
+        """Vini: WhatsApp's notifications vanished as its window was focused,
+        unread. A web app's own close only hides the banner; reading it in
+        Notification Center (dismiss, click) removes it. Other apps' closes
+        still remove theirs."""
+        with mock.patch("sonata2.webapps.is_webapp", side_effect=lambda d: d == "whatsapp"):
+            web, other = self.send(app="WhatsApp"), self.send(app="Chat")
+            self.assertEqual(sorted(self.nc._banners), [web, other])
+            self.nc.close(web, reason=3)                              # WhatsApp takes it back
+            self.nc.close(other, reason=3)
+            self.assertEqual([n.id for n in self.nc.notes], [web])    # still unread in the center
+            self.assertNotIn(web, self.nc._banners)                   # (its banner gone)
+            self.nc.close(web, reason=2)                              # dismissed there: read
+            self.assertEqual(self.nc.notes, [])
+
     def test_close_removes_and_tells_listeners(self):
         """close() removes the note and notifies listeners only when something changed."""
         nid = self.send()

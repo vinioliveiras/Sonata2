@@ -7,6 +7,7 @@ touches the real home or a real disk.
     xvfb-run -a python3.12 -m unittest tests.test_review_files -v"""
 import os
 import shlex
+import shutil
 import tarfile
 import threading
 import tempfile
@@ -448,6 +449,45 @@ class ThumbsTest(unittest.TestCase):
         self.assertEqual(thumbs._cached(uri, 1234), out)
         self.assertIsNone(thumbs._cached(uri, 9999))           # stale after the file changed
         self.assertFalse([n for n in os.listdir(thumbs.CACHE_DIR) if n.endswith(".tmp")])
+
+    def test_edited_file_gets_a_new_thumbnail(self):
+        """Vini: an edited file kept its old thumbnail. GIO's thumbnail::path
+        still names the old one: used only when it is this version's; an
+        edit in the same second (other size) makes a new one too."""
+        src = os.path.join(self.d, "pic.png")
+        self._png(src, 400, 200)
+        f = Gio.File.new_for_path(src)
+        uri = f.get_uri()
+        old = thumbs._make(uri, src, 100, "image/png", os.path.getsize(src))
+        stale = os.path.join(self.d, "gio-old.png")
+        shutil.copy(old, stale)                              # what GIO still points at
+        self._png(src, 200, 400)                             # edited: another picture
+        size = os.path.getsize(src)
+        made = []
+        real = thumbs._make
+        with mock.patch.object(thumbs, "_make", side_effect=lambda *a: made.append(a) or real(*a)), \
+                mock.patch.object(thumbs.GLib, "idle_add", side_effect=lambda fn, *a: fn(*a)), \
+                mock.patch.dict(thumbs._mem, clear=True), mock.patch.dict(thumbs._pending, clear=True):
+            thumbs._work(("k", 101), uri, src, 101, "image/png", size, stale)
+            tex = thumbs._mem[("k", 101)]
+        self.assertEqual(len(made), 1)                       # the stale one wasn't used
+        self.assertGreater(tex.get_height(), tex.get_width())    # the edited (portrait) picture
+        self.assertFalse(thumbs._valid(thumbs._cached(uri, 101, size) or "", 101, size + 1))  # same second, other size
+        self.assertTrue(thumbs._valid(thumbs._cached(uri, 101, size), 101, size))
+
+    def test_memory_key_follows_edits(self):
+        info = Gio.FileInfo()
+        info.set_content_type("image/png")
+        info.set_attribute_uint64("time::modified", 5)
+        info.set_attribute_uint32("time::modified-usec", 1)
+        info.set_size(10)
+        keys = []
+        with mock.patch.object(thumbs._pool, "submit", side_effect=lambda fn, key, *a: keys.append(key)), \
+                mock.patch.dict(thumbs._pending, clear=True):
+            thumbs.request(info, Gio.File.new_for_path("/tmp/x.png"), lambda t: None)
+            info.set_attribute_uint32("time::modified-usec", 2)      # saved again within the same second
+            thumbs.request(info, Gio.File.new_for_path("/tmp/x.png"), lambda t: None)
+        self.assertEqual(len(set(keys)), 2)
 
     def test_failures_remembered_per_mtime(self):
         """An unreadable picture is marked failed (not retried) until it changes."""
@@ -967,6 +1007,18 @@ class OffMainLoopTest(_Base):
             ql.body.append(pic)
             self.assertTrue(spin(lambda: pic.get_paintable() is tex))
         self.assertIsNot(threads[0], threading.main_thread())
+        # right-click: Copy Image (Vini) -- the picture shown, to the clipboard
+        menus, copied = [], []
+        with mock.patch.object(ui.menu, "popup", lambda w, sections, **kw: menus.append(sections)), \
+                mock.patch.object(imageload, "copy_picture",
+                                  lambda w, path=None, tex=None, done=None: copied.append((path, tex))):
+            click = next(c for c in list(pic.observe_controllers()) if isinstance(c, Gtk.GestureClick))
+            self.assertEqual(click.get_button(), Gdk.BUTTON_SECONDARY)
+            click.emit("pressed", 1, 5, 5)
+            item = menus[0][0][0]
+            self.assertEqual(item.label, "Copy Image")
+            item.on_activate()
+        self.assertEqual(copied, [(f.get_path(), tex)])          # the file itself first (no re-encoding)
         ql.destroy()
 
     def test_save_as_extension_asks_before_replacing(self):

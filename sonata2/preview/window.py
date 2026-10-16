@@ -425,6 +425,17 @@ class PreviewWindow(Gtk.ApplicationWindow):
         from ..backend.system import run_async
         run_async(lambda: copy_picture(ed, items), lambda ok: done and done(bool(ok)))
 
+    def copy_picture(self) -> None:
+        """Right-click Copy (Vini): the picture as shown. Unedited: the file
+        itself (no re-encoding); with edits or Markup's marks: rendered at
+        full size (copy_marked -- the texture shown is a smaller copy)."""
+        edited = self.edits is not None and self.edits.edited
+        if edited or (self.markup is not None and self.markup.items):
+            self.copy_marked()
+            return
+        from ..imageload import copy_picture
+        copy_picture(self, self.path, self.texture)
+
     def _shot_to_clipboard(self) -> None:
         """A screenshot that went to the clipboard (only, or also): the marked one goes there too."""
         from ..shell.capture import CLIPBOARD_SHOT, DEFAULTS
@@ -564,7 +575,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
             self._show_edits()
         reset.connect("clicked", reset_all)
         box.append(reset)
-        ui.panel.popup(self.adjust_btn, box)
+        ui.panel.popup(self.adjust_btn, box, close=True)
 
     # Resize… (macOS: Tools > Adjust Size…): a small sheet under the toolbar
     def resize_sheet(self):
@@ -628,7 +639,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         buttons.append(ui.controls.push_button("OK", ok, "default"))
         box.append(buttons)
         box.sheet = {"width": width, "height": height, "percent": percent, "ratio": ratio, "ok": ok}
-        pop["p"] = ui.panel.popup(self.toolbar, box)
+        pop["p"] = ui.panel.popup(self.toolbar, box, close=True)
         return box
 
     def resize_to(self, w: int, h: int) -> None:
@@ -680,7 +691,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         buttons.append(ui.controls.push_button("Save…", go, "default"))
         box.append(buttons)
         box.sheet = {"format": fmt, "go": go, "quality": state}
-        pop["p"] = ui.panel.popup(self.toolbar, box)
+        pop["p"] = ui.panel.popup(self.toolbar, box, close=True)
         return box
 
     def export_as(self, fmt: str, ext: str, quality: int = 85, target: str = None) -> bool:
@@ -889,6 +900,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         uri = Gio.File.new_for_path(self.path).get_uri() if self.path else None
         edited = bool(self.edits and self.edits.edited)
         ui.menu.popup(self.canvas, [
+            [Item("Copy", self.copy_picture, enabled=self.texture is not None)],
             [Item("Zoom In", lambda: self.step_zoom(1)), Item("Zoom Out", lambda: self.step_zoom(-1)),
              Item("Zoom to Fit", lambda: self.set_zoom(None, animate=True)),
              Item("Actual Size", lambda: self.set_zoom(1.0, anchor=(x, y), animate=True))],

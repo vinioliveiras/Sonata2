@@ -56,14 +56,23 @@ popover.sonata-panel calendar > grid > label:selected { background: %(accent)s; 
 
 
 def popup(anchor: Gtk.Widget, child: Gtk.Widget, position=Gtk.PositionType.BOTTOM, gap: int = 4,
-          align_start: bool = False, width: int = None) -> Gtk.Popover:
+          align_start: bool = False, width: int = None, close: bool = False) -> Gtk.Popover:
     """width: a fixed content width (menu bar panels): long names ellipsize
-    instead of stretching the panel (ui/fixed.py)."""
+    instead of stretching the panel (ui/fixed.py). close: a close dot at its
+    top corner, the windows' own (panels that are forms and sheets, like
+    dialogs -- Vini; not the menu bar's or small tool panels)."""
     pop = Gtk.Popover(css_classes=["sonata-panel"], has_arrow=False, position=position)
     child = fit_screen(child, anchor)
     if width:
         from .fixed import FixedWidth
         child = FixedWidth(child, width)
+    from .window import has_window_buttons
+    if close and not has_window_buttons(child):  # (one of its own already: none added)
+        from .window import close_button
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        col.append(close_button(pop.popdown))
+        col.append(child)
+        child = col
     pop.set_child(child)
     P = Gtk.PositionType
     pop.set_offset(*{P.TOP: (0, -gap), P.BOTTOM: (0, gap), P.LEFT: (-gap, 0), P.RIGHT: (gap, 0)}[position])

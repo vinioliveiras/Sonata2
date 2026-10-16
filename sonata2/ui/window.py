@@ -365,6 +365,38 @@ def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
 
 
 
+def close_button(on_close) -> Gtk.Box:
+    """Only the close dot (Sonata's dialogs: Vini), in the look and on the
+    side the user picked for windows (Settings > Appearance), like theirs."""
+    box = Gtk.Box(css_classes=["traffic", "traffic-close-only"], valign=Gtk.Align.START,
+                  halign=Gtk.Align.END if buttons_side() == "right" else Gtk.Align.START)
+    b = Gtk.Button(tooltip_text="Close", css_classes=["tl-close"], valign=Gtk.Align.CENTER,
+                   focus_on_click=False, can_focus=False)
+    b.connect("clicked", lambda _b: on_close())
+    box.append(b)
+    return box
+
+
+def has_window_buttons(widget) -> bool:
+    """True when `widget` already holds window buttons (a dialog or panel
+    with its own): close_button() isn't added a second time."""
+    stack = [widget] if isinstance(widget, Gtk.Widget) else []
+    while stack:
+        w = stack.pop()
+        if "traffic" in w.get_css_classes():
+            return True
+        c = w.get_first_child()
+        while c is not None:
+            stack.append(c)
+            c = c.get_next_sibling()
+    return False
+
+
+theme.register("""
+.traffic.traffic-close-only { margin: %(tl_margin_top)s %(tl_margin_left)s 0 %(tl_margin_left)s; }
+""", key="traffic-close-only", **traffic_metrics())
+
+
 # Toolbar under the compositor's glass title bar (Sonata apps keep the
 # title bar pixdecor draws): the same glass, so bar and toolbar read as one
 # (macOS unified toolbar). The window must be see-through behind it

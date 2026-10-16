@@ -1,5 +1,5 @@
 """Thumbnails for images and videos (Finder shows the picture instead of
-the file icon).
+the file icon), and Windows programs' own icons (peicon.py).
 
 Uses the freedesktop thumbnail cache (~/.cache/thumbnails/large, shared
 with GNOME/KDE apps): an existing up-to-date thumbnail is loaded; otherwise
@@ -31,6 +31,8 @@ MEMORY = 400                     # textures kept in RAM, at most...
 # worth of 256 px thumbnails still fits (~130)
 MEMORY_BYTES = 32 << 20
 
+from .peicon import is_program  # noqa: E402  (Windows programs: their own icon)
+
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sonata2-thumbs")
 _mem = OrderedDict()             # key -> Gdk.Texture or None (failed)
 _pending = {}                    # key -> [callbacks]
@@ -38,7 +40,7 @@ _pending = {}                    # key -> [callbacks]
 
 def wanted(info) -> bool:
     ct = info.get_content_type() or ""
-    return ct.startswith("image/") or ct.startswith("video/")
+    return ct.startswith("image/") or ct.startswith("video/") or is_program(ct)
 
 
 def request(info, gfile, callback) -> None:
@@ -48,7 +50,10 @@ def request(info, gfile, callback) -> None:
     if not path or not wanted(info):
         return
     mtime = info.get_attribute_uint64("time::modified")
-    key = (path, mtime)
+    # an edit makes a new key: its seconds, microseconds and size (two edits in
+    # the same second kept the old picture -- Vini: edited files' thumbnails
+    # didn't change)
+    key = (path, mtime, info.get_attribute_uint32("time::modified-usec"), info.get_size())
     if key in _mem:
         _mem.move_to_end(key)
         if _mem[key] is not None:
@@ -66,7 +71,9 @@ def request(info, gfile, callback) -> None:
 def _work(key, uri, path, mtime, ct, size, existing):
     tex = None
     try:
-        thumb = existing if existing and os.path.exists(existing) else _cached(uri, mtime)
+        # GIO's thumbnail::path names the cached file even when it is out of
+        # date (the file edited since): used only when it is this version's
+        thumb = (existing if existing and _valid(existing, mtime, size) else None) or _cached(uri, mtime, size)
         if not thumb and not _failed(uri, mtime):
             thumb = _make(uri, path, mtime, ct, size)
         if thumb:
@@ -100,17 +107,46 @@ def _name(uri) -> str:
     return hashlib.md5(uri.encode()).hexdigest() + ".png"
 
 
-def _cached(uri, mtime):
-    p = os.path.join(CACHE_DIR, _name(uri))
-    if not os.path.exists(p):
-        return None
+def png_text(p) -> dict:
+    """A PNG's tEXt entries, read from its chunks before the picture: no
+    decoding (it was decoded once to check it, then again to show it)."""
+    out = {}
     try:
-        pb = GdkPixbuf.Pixbuf.new_from_file(p)
-        if pb.get_option("tEXt::Thumb::MTime") == str(mtime):
-            return p
-    except GLib.Error:
+        with open(p, "rb") as f:
+            if f.read(8) != b"\x89PNG\r\n\x1a\n":
+                return out
+            while True:
+                head = f.read(8)
+                if len(head) < 8:
+                    break
+                n, kind = int.from_bytes(head[:4], "big"), head[4:]
+                if kind in (b"IDAT", b"IEND") or n > 1 << 20:
+                    break                             # (text comes before the picture in thumbnails)
+                data = f.read(n)
+                f.seek(4, 1)                          # its CRC
+                if kind == b"tEXt" and b"\0" in data:
+                    k, v = data.split(b"\0", 1)
+                    out[k.decode("latin-1")] = v.decode("latin-1")
+    except OSError:
         pass
-    return None
+    return out
+
+
+def _valid(p, mtime, size=None) -> bool:
+    """A cached thumbnail of this version of the file: its Thumb::MTime, and
+    its Thumb::Size when it has one (an edit within the same second)."""
+    if not os.path.exists(p):
+        return False
+    text = png_text(p)
+    if text.get("Thumb::MTime") != str(mtime):
+        return False
+    kept = text.get("Thumb::Size")
+    return size is None or kept is None or kept == str(size)
+
+
+def _cached(uri, mtime, size=None):
+    p = os.path.join(CACHE_DIR, _name(uri))
+    return p if _valid(p, mtime, size) else None
 
 
 def _failed(uri, mtime) -> bool:
@@ -132,14 +168,18 @@ def _make(uri, path, mtime, ct, size):
         pb = imageload.pixbuf_at_scale(path, SIZE)
     elif ct.startswith("video/"):
         pb = _video_frame(path)
+    else:
+        from . import peicon
+        if peicon.is_program(ct):                     # a Windows program: its own icon (Vini)
+            pb = peicon.pixbuf(path, SIZE)
     if pb is None:
         _mark_failed(uri, mtime)
         return None
     os.makedirs(CACHE_DIR, mode=0o700, exist_ok=True)
     out = os.path.join(CACHE_DIR, _name(uri))
     tmp = out + f".sonata{os.getpid()}.tmp"
-    pb.savev(tmp, "png", ["tEXt::Thumb::URI", "tEXt::Thumb::MTime", "tEXt::Software"],
-             [uri, str(mtime), "Sonata Files"])
+    pb.savev(tmp, "png", ["tEXt::Thumb::URI", "tEXt::Thumb::MTime", "tEXt::Thumb::Size", "tEXt::Software"],
+             [uri, str(mtime), str(size), "Sonata Files"])
     os.replace(tmp, out)
     return out
 

@@ -154,6 +154,10 @@ button.st-accent { min-width: 16px; min-height: 16px; padding: 0; margin: 0 3px;
   box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.2); transition: box-shadow %(t_fast)s; }
 button.st-accent.selected { box-shadow: 0 0 0 2px %(window_bg)s, 0 0 0 3.5px alpha(%(label)s, 0.45); }
 """, key="settings-accent")
+# background colours (tokens.BACKGROUNDS): the same dots, each its own colour
+ui.register("".join(f".st-bg.bg-{mode}-{i} {{ background: {c}; }}\n"
+                    for mode, opts in ui.tokens.BACKGROUNDS.items() for i, (_n, c) in enumerate(opts)),
+            key="settings-backgrounds")
 
 ui.register("""
 window.sonata-settings { color: %(label)s; }
@@ -1230,7 +1234,9 @@ class Settings(Adw.ApplicationWindow):
                 screens.add(combo_row(d.name, opts, saved if saved in [o[0] for o in opts] else d.current,
                                       lambda m, d=d: system.run_async(system.set_display_mode, None, d.name, m),
                                       subtitle=d.description))
-                scales = [(1.0, "100 %"), (1.25, "125 %"), (1.5, "150 %"), (2.0, "200 %")]
+                scales = [(1.0, "100 %"), (1.25, "125 %"), (1.5, "150 %"), (1.75, "175 %"),
+                          (2.0, "200 %"), (2.25, "225 %"), (2.5, "250 %"), (2.75, "275 %"),
+                          (3.0, "300 %")]                    # (every one monitors.auto_scale picks; never under 100 %)
                 screens.add(combo_row("Scale", scales, nearest(scales, d.scale), lambda s, d=d: system.run_async(system.set_display_scale, None,
                                                                                d.name, s)))
             if not ds:
@@ -2220,6 +2226,7 @@ class Settings(Adw.ApplicationWindow):
             log.get_buffer().set_text("")
             kernel = any(u.name.startswith(("linux", "nvidia")) and not u.name.startswith("linux-firmware")
                          for u in state["found"].get("system") or [])
+            srcs = U.plan(srcs)                  # System and AUR in one run: one password (Vini)
             steps = [s.install for s in srcs]
 
             def line(t):
@@ -2672,6 +2679,64 @@ class Settings(Adw.ApplicationWindow):
         row.add_suffix(box)
         return row
 
+    def _background_row(self, mode: str):
+        """Background colour of one appearance (Vini), like the accent colour:
+        a few to pick from -- the first is the theme's own -- and any colour
+        (Sonata's colour picker). Live everywhere: Sonata's windows, the title
+        bars Wayfire draws and other GTK apps."""
+        title = "Light background" if mode == "light" else "Dark background"
+        row = Adw.ActionRow(title=title, subtitle="Windows, sidebars, menus and title bars in "
+                            + ("Light" if mode == "light" else "Dark") + " Mode")
+        box = Gtk.Box(valign=Gtk.Align.CENTER)
+        opts = ui.tokens.BACKGROUNDS[mode]
+        default = opts[0][1]
+        cur = ui.tokens.custom_accent((config.load("appearance", icons.APPEARANCE_DEFAULTS)["background"]
+                                       or {}).get(mode)) or default
+        buttons = {}
+
+        def pick(color):
+            color = ui.tokens.custom_accent(color) or default
+            for c, b in buttons.items():
+                (b.add_css_class if c == color else b.remove_css_class)("selected")
+            (custom.add_css_class if color not in buttons else custom.remove_css_class)("selected")
+            bg = dict(config.load("appearance", icons.APPEARANCE_DEFAULTS)["background"] or {})
+            if color == default:
+                bg.pop(mode, None)                      # the theme's own again
+            else:
+                bg[mode] = color
+            self._save("appearance", "background", bg)
+            # the title bars Wayfire draws and other GTK apps: once the clicks
+            # stop (each run rewrites their style files; quick clicks raced)
+            if getattr(self, "_bg_apply_src", 0):
+                GLib.source_remove(self._bg_apply_src)
+
+            def apply():
+                self._bg_apply_src = 0
+                from .. import titlebars
+                dark = Adw.StyleManager.get_default().get_dark()
+                system.run_async(lambda: (titlebars.apply_colors(dark), titlebars.apply()), None)
+                return False
+            self._bg_apply_src = GLib.timeout_add(400, apply)
+        for i, (name, color) in enumerate(opts):
+            b = Gtk.Button(css_classes=["st-accent", "st-bg", f"bg-{mode}-{i}"] + (["selected"] if color == cur else []),
+                           tooltip_text=name, valign=Gtk.Align.CENTER)
+            b.connect("clicked", lambda _b, c=color: pick(c))
+            buttons[color] = b
+            box.append(b)
+        custom = ui.colorpicker.ColorDot(cur)
+        if cur not in buttons:
+            custom.add_css_class("selected")
+
+        def picked(hexc):
+            custom.set_color(hexc)
+            pick(hexc)
+        custom.connect("clicked", lambda b: setattr(b, "picker", ui.colorpicker.popup(
+            b, custom.swatch.color, picked, title=title)))
+        box.append(custom)
+        row.background_buttons, row.custom_background = buttons, custom      # (tests)
+        row.add_suffix(box)
+        return row
+
     def _page_appearance(self):
         """Everything about how Sonata looks (macOS Appearance): light/dark and
         accent, style and icons, title bars, glass, corners."""
@@ -2682,6 +2747,8 @@ class Settings(Adw.ApplicationWindow):
                         lambda v: system.run_async(system.set_dark_mode, None, v == "prefer-dark"),
                         subtitle="Linux setting: every app follows it"))
         g.add(self._accent_row())
+        g.add(self._background_row("light"))
+        g.add(self._background_row("dark"))
         s = group("Style")
         app = config.load("appearance", icons.APPEARANCE_DEFAULTS)
         def style(v):
@@ -2754,7 +2821,7 @@ class Settings(Adw.ApplicationWindow):
 
     # what Reset Appearance puts back (Vini: the theme's defaults); light/dark is
     # the system's setting and stays
-    APPEARANCE_RESET = ("accent", "theme", "icon_theme", "flatpak_theme", "system_titlebars",
+    APPEARANCE_RESET = ("accent", "background", "theme", "icon_theme", "flatpak_theme", "system_titlebars",
                         "glass_titlebars", "glass", "radius", "buttons_side", "buttons_style", "buttons_colors",
                         "always_show_tabs")
 
@@ -2834,7 +2901,7 @@ class Settings(Adw.ApplicationWindow):
 
     def ask_reset_appearance(self):
         return ui.dialog.alert("Reset Appearance?",
-                               "The accent colour, style, icons, title bars, glass and corners go back to "
+                               "The accent and background colours, style, icons, title bars, glass and corners go back to "
                                "the theme's defaults.",
                                [("cancel", "Cancel", ""), ("reset", "Reset", "destructive")],
                                lambda rid: rid == "reset" and self.reset_appearance(), parent=self)
@@ -3322,7 +3389,7 @@ class Settings(Adw.ApplicationWindow):
         search.connect("search-changed", lambda *_: lb.invalidate_filter())
         box.append(Gtk.ScrolledWindow(child=lb, min_content_height=300, min_content_width=280,
                                       hscrollbar_policy=Gtk.PolicyType.NEVER))
-        pop = ui.panel.popup(anchor, box)
+        pop = ui.panel.popup(anchor, box, close=True)
 
         def picked(_lb, r):
             pop.popdown()

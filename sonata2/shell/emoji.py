@@ -1,8 +1,8 @@
 """Character Viewer, compact (macOS Big Sur Ctrl+Cmd+Space): a small
 panel with a search field, the emoji of one category (Frequently Used
 first) and the category tabs at the bottom. Picking one types it into the
-window that had focus (wtype, when installed) and leaves it on the
-clipboard. Lazy grid (GridView): only the visible cells exist.
+window that had focus (pasted with Ctrl+V through wtype, when installed)
+and leaves it on the clipboard. Lazy grid (GridView): only the visible cells exist.
 Data: sonata2/data/emoji.tsv (tools/gen-emoji.py)."""
 import os
 import shutil
@@ -62,15 +62,14 @@ def load() -> list:
 
 class EmojiPicker(Gtk.Window):
     def __init__(self, app):
-        super().__init__(application=app, title="Emoji & Symbols", decorated=False, resizable=False)
+        super().__init__(application=app, title="Emoji & Symbols", decorated=False)
         self.add_css_class("sonata-emoji")
         self.all = load()
         self.names = {e: n for _g, e, n in self.all}
         self.cfg = config.load("emoji", {"recent": []})
         self.group = "recent" if self.cfg["recent"] else "Smileys & Emotion"
 
-        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["emoji-panel"],
-                        halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["emoji-panel"])
         self.panel = panel
         panel.set_size_request(340, 380)
         self.search = Gtk.SearchEntry(placeholder_text="Search")
@@ -108,12 +107,9 @@ class EmojiPicker(Gtk.Window):
         keys.connect("key-pressed", self._key)
         self.add_controller(keys)
         self.search.connect("stop-search", lambda *_: self.set_visible(False))
-        # a click outside the panel closes it (Vini): the window covers the
-        # screen, see-through; only the panel is drawn
-        if layer.overlay_fullscreen(self, "sonata2-emoji"):
-            click = Gtk.GestureClick(button=0)
-            click.connect("pressed", self._clicked)
-            self.add_controller(click)
+        # in the middle of the screen, a little lower; a click outside closes it (Vini)
+        if not layer.centered_picker(self, panel, "sonata2-emoji", lambda: self.set_visible(False)):
+            self.set_resizable(False)                 # a plain window: the panel's size
         self.tabs[self.group].set_active(True)
         self._refill()
 
@@ -160,13 +156,12 @@ class EmojiPicker(Gtk.Window):
         config.save("emoji", self.cfg)
         self.get_display().get_clipboard().set(e)
         self.set_visible(False)
-        if shutil.which("wtype"):                 # type it once focus is back on the app
-            GLib.timeout_add(180, lambda: (subprocess.Popen(["wtype", "--", e]), False)[1])
-
-    def _clicked(self, _g, _n, x, y):
-        w = self.pick(x, y, Gtk.PickFlags.DEFAULT)
-        if w is None or not (w is self.panel or w.is_ancestor(self.panel)):
-            self.set_visible(False)
+        if shutil.which("wtype"):
+            # pasted (Ctrl+V; Ctrl+Shift+V in a terminal) once the keyboard is
+            # back on the app: typed as keys (wtype -- e), Chromium and Electron
+            # apps (WhatsApp) turned emoji into other characters (Vini)
+            from .clip_picker import paste_keys
+            GLib.timeout_add(180, lambda: (subprocess.Popen(["wtype"] + paste_keys()), False)[1])
 
     def _key(self, _c, keyval, _code, _state):
         if keyval == Gdk.KEY_Escape:
