@@ -15,7 +15,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
-from ..i18n import _  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 from . import folder  # noqa: E402
 
 ui.register("""
@@ -157,12 +157,12 @@ class Sidebar(Gtk.Box):
         self.list.remove_all()
         self._rows = {}
         self._disks = []
-        head = self._head(_("Favorites"))
+        head = self._head(N_("Favorites"))
         self._pin_target(head, None)                  # on the heading: pinned at the end
         pinned = {u for u, _l in read_bookmarks()}
         for title, icon, uri in _favorites():
             self._place(title, icon, uri, favorite=True, pinned=uri in pinned)
-        self._head(_("Locations"))
+        self._head(N_("Locations"))
         self._place(_("Computer"), "drive-harddisk-symbolic", "file:///", disk=True)
         for mount in self._volumes.get_mounts():
             if mount.is_shadowed():
@@ -186,15 +186,16 @@ class Sidebar(Gtk.Box):
             self._place(_("Network"), "network-workgroup-symbolic", server.NETWORK)
         self._place(_("Trash"), "user-trash-symbolic", "trash:///")      # (Vini: Trash in the sidebar)
         from . import tags                                              # Finder's Tags
-        self._head(_("Tags"))
+        self._head(N_("Tags"))
         for name in tags.NAMES:
             self._place(_(name), None, tags.uri(name), tag=name)
         if self._current:
             self.select(self._current)
 
     def _head(self, text) -> Gtk.ListBoxRow:
+        """A heading: `text` in English, shown translated."""
         row = Gtk.ListBoxRow(selectable=False, activatable=False, css_classes=["fs-head"])
-        row.set_child(Gtk.Label(label=text, xalign=0, margin_start=2))
+        row.set_child(Gtk.Label(label=_(text), xalign=0, margin_start=2))
         self.list.append(row)
         return row
 
