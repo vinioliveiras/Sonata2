@@ -11,8 +11,9 @@ it ([scale] outer_margin = SCALE_MARGIN): it never covers a window.
 
 Click a desktop to go there (Mission Control closes, as on macOS); + adds
 one; x on a picture (under the pointer) closes one -- its windows go to the
-desktop before it. One desktop to start with (core/vwidth = 1); the ones
-you add are kept in Sonata's Wayfire config. Scale's input grab sits under
+desktop before it, and desktop 1's apps close instead (there is none before
+it). One desktop to start with (core/vwidth = 1); the ones you add are kept
+in Sonata's Wayfire config. Scale's input grab sits under
 the top layers (grab_input(WORKSPACE)), so the bar takes clicks meanwhile.
 
 Switching: scale holds the output, so vswitch can't animate a switch while
@@ -255,7 +256,7 @@ class SpacesBar(Gtk.Window):
         b.connect("clicked", lambda _b: self.go(i))
         box = Gtk.Overlay(css_classes=["sp-desk-box"])            # (the x outside the button: its own click)
         box.set_child(b)
-        if count > 1:
+        if count > 1 or (i == 0 and app_ids):            # (the first one alone: x closes its apps)
             x = Gtk.Button(icon_name="window-close-symbolic", css_classes=["sp-close"], halign=Gtk.Align.START,
                            valign=Gtk.Align.START, tooltip_text=_("Close Desktop"), can_focus=False)
             x.connect("clicked", lambda _b: self.close_desktop(i))
@@ -294,6 +295,16 @@ class SpacesBar(Gtk.Window):
         ws = out.get("workspace") or {}
         count, current = ws.get("grid_width", 1), ws.get("x", 0)
         views = [(v["id"], desktop_of(v, out)) for v in _views(self.ipc) if v.get("output-id") == out["id"]]
+        if index == 0:
+            # Desktop 1 has none before it: its apps close (Vini) -- each may
+            # still ask to save; one that stays goes on to the next desktop
+            for vid, desk in views:
+                if desk == 0:
+                    self.ipc.call("window-rules/close-view", {"id": vid})
+            views = [(vid, desk) for vid, desk in views if desk != 0]
+            if count <= 1:
+                self._refresh_soon(300)
+                return
         moves, after, new_count = plan_close(index, count, views, current)
         if new_count == count:
             return

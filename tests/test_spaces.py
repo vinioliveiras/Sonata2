@@ -190,7 +190,11 @@ class BarTest(unittest.TestCase):
             labels = [w.get_label() for w in walk(self.bar.row) if isinstance(w, Gtk.Label)]
             self.assertEqual(labels, [_("Desktop")])
             closes = [w for w in walk(self.bar.row) if isinstance(w, Gtk.Button) and w.has_css_class("sp-close")]
-            self.assertEqual(closes, [])                                             # the only one stays
+            self.assertEqual(len(closes), 1)                                         # its apps can be closed
+            with mock.patch.object(spaces, "_views", return_value=[]):
+                self.bar.refresh()
+            closes = [w for w in walk(self.bar.row) if isinstance(w, Gtk.Button) and w.has_css_class("sp-close")]
+            self.assertEqual(closes, [])                                             # nothing on it: no x
         finally:
             OUT["workspace"]["grid_width"], OUT["workspace"]["x"] = 3, 1
 
@@ -251,10 +255,24 @@ class BarTest(unittest.TestCase):
         finally:
             spaces.set_count = old
         sent = [d for m, d in self.bar.ipc.calls if m == "vswitch/send-view"]
-        self.assertEqual(sorted((d["view-id"], d["x"]) for d in sent), [(1, 0), (2, 0), (3, 0), (4, 1)])
+        self.assertEqual(sorted((d["view-id"], d["x"]) for d in sent), [(2, 0), (3, 0), (4, 1)])
+        # (Vini: desktop 1 closes its apps -- none before it to take them)
+        self.assertEqual([d for m, d in self.bar.ipc.calls if m == "window-rules/close-view"], [{"id": 1}])
         # (Mission Control stays open, on the desktop that was the current one)
         self.assertEqual(self.bar.ipc.calls[-1], ("sonata/set-workspace", {"x": 0, "y": 0, "output-id": 1}))
         self.assertEqual(set_to, [2])
+
+    def test_close_the_only_desktop_closes_its_apps(self):
+        OUT["workspace"]["grid_width"], OUT["workspace"]["x"] = 1, 0
+        try:
+            with mock.patch.object(spaces, "set_count") as count:
+                self.bar.close_desktop(0)
+            closed = sorted(d["id"] for m, d in self.bar.ipc.calls if m == "window-rules/close-view")
+            self.assertEqual(closed, [2, 3])                                         # the ones on it
+            count.assert_not_called()                                                # the desktop stays
+            self.assertNotIn("vswitch/send-view", [m for m, _d in self.bar.ipc.calls])
+        finally:
+            OUT["workspace"]["grid_width"], OUT["workspace"]["x"] = 3, 1
 
     def test_close_without_sonatas_plugin(self):
         """An older plugin: the vswitch way (Mission Control closes)."""

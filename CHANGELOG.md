@@ -8,6 +8,8 @@
   to the one before. The pictures are always there, centred at the top with
   + beside them (centred on the pictures), in room Mission Control keeps
   free: they no longer cover the windows. One desktop to start with.
+  Closing desktop 1 closes its apps (there is no desktop before it to take
+  them); the only desktop's x does the same.
 - Mission Control opens on an empty desktop too, and stays open when its
   last window closes (Sonata's Wayfire: wayfire-scale-empty-desktop.patch) --
   an empty desktop could not be left.
@@ -15,7 +17,7 @@
   (lighter on the machine).
 - Dock previews: only for an app with more than one window, after the
   pointer rests on its icon for 2 s, as far from the Dock as a maximized
-  window; small pictures of the windows themselves (no big empty frame: the
+  window; very small pictures of the windows themselves (no big empty frame: the
   app's icon, small, until one comes), and x on one closes that window.
 - A video wallpaper is silent even where GStreamer's player starts with its
   own volume, and fills the screen whatever its shape (cut to fit, centred).

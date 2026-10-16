@@ -24,7 +24,7 @@ from ..i18n import _  # noqa: E402
 from ..wl.wfipc import WayfireIPC  # noqa: E402
 
 # small (Vini: "the thumbnail, and very small"): a window is at most PIC_W x PIC_H
-PIC_W, PIC_H = 132, 84
+PIC_W, PIC_H = 104, 66
 SHOT_W = 2 * PIC_W              # (crisp at 2x scale)
 ICON_PX = 32                    # the app's icon standing in until a picture comes
 MAX_WINDOWS = 6
@@ -192,7 +192,7 @@ class PreviewPopover(Gtk.Popover):
             slot.append(pic)
             col.append(slot)
             col.append(Gtk.Label(label=w["title"] or tile.name, ellipsize=Pango.EllipsizeMode.END,
-                                 max_width_chars=16))
+                                 max_width_chars=13))
             b = Gtk.Button(child=col, css_classes=["shot"], can_focus=False, tooltip_text=w["title"] or None)
             b.connect("clicked", lambda _b, v=w["id"]: (self.popdown(), restore(v)))
             item = Gtk.Overlay(css_classes=["shot-item"])
