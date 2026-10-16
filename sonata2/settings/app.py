@@ -1483,7 +1483,17 @@ class Settings(Adw.ApplicationWindow):
             light, dark = shown()
             uri = dark if Adw.StyleManager.get_default().get_dark() else light
             f = Gio.File.new_for_uri(uri) if uri else None
-            alive["pic"].set_file(f if f and f.query_exists(None) else None)
+            path = f.get_path() if f and f.query_exists(None) else None
+            from .. import videowall
+            if path and videowall.is_video(path):
+                # a video wallpaper: its poster (made by ffmpeg the first time: off the UI thread)
+                def shown_poster(still):
+                    if alive and still:
+                        alive["pic"].set_filename(still)
+                    return False
+                system.run_async(videowall.poster, shown_poster, path)
+            else:
+                alive["pic"].set_file(f if path else None)
             cur = W.current(light, dark)
             for wid, b in alive["tiles"].items():
                 (b.add_css_class if wid == cur else b.remove_css_class)("selected")
@@ -1496,9 +1506,10 @@ class Settings(Adw.ApplicationWindow):
             refresh()
 
         def pick(*_):
-            dlg = Gtk.FileDialog(title=_("Choose a Picture"))
-            filt = Gtk.FileFilter(name=_("Images"))
+            dlg = Gtk.FileDialog(title=_("Choose a Picture or Video"))
+            filt = Gtk.FileFilter(name=_("Pictures and Videos"))
             filt.add_mime_type("image/*")
+            filt.add_mime_type("video/*")                 # a video plays on the desktop (videowall.py)
             dlg.set_default_filter(filt)
 
             def done(d, res):

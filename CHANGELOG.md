@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Changes
+- Videos as wallpapers: choose one in Settings > Wallpaper, or right-click
+  a video on the desktop or in Files > Use Video as Wallpaper. It plays in
+  a loop, silent, only while the desktop is in front: any app in front,
+  the lock screen or a dark display pause it (no decoding meanwhile). One
+  decoder serves every display showing it. A frame of it (made once with
+  ffmpeg) is what the lock and login screens blur, and what shows at login
+  until the video starts.
 - Super+Tab is Mission Control (Windows' Task View): every window laid out,
   and desktops as on Windows -- their names at the top as in macOS Ventura,
   the current one in a glass pill, each one's picture (wallpaper, its apps'

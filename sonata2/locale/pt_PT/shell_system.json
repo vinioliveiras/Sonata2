@@ -124,5 +124,6 @@
  "{tool} is not installed": "O {tool} não está instalado",
  "Desktop {n}": "Secretária {n}",
  "New Desktop": "Nova secretária",
- "Close Desktop": "Fechar secretária"
+ "Close Desktop": "Fechar secretária",
+ "Use Video as Wallpaper": "Usar vídeo como imagem de fundo"
 }

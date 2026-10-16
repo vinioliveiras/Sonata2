@@ -2,13 +2,18 @@
 set in Sonata's desktop settings (prefs.py: picture-uri /
 picture-uri-dark, the keys every Linux app knows), updated live. Replaces
 swaybg. The
-desktop icons (desktop.py) sit on top of it."""
+desktop icons (desktop.py) sit on top of it.
+
+A video plays there too (videowallpaper.py: looped, silent, only while the
+desktop has the focus): its poster (videowall.py) shows first, the video
+fades in over it once it has a frame."""
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
+import os  # noqa: E402
 import threading  # noqa: E402
 
 from .. import ui  # noqa: E402
@@ -57,6 +62,8 @@ class WallpaperWindow(Gtk.ApplicationWindow):
         for i, p in enumerate(self.pics):
             self.stack.add_named(p, str(i))
         self._uri = None
+        self._video = None                    # the video wallpaper shown (videowallpaper.acquire)
+        self._frame_id = 0
         self._monitor = monitor
         self._loaded_for = (0, 0)                # the pixel size the picture was decoded for
         # after a cross-fade the hidden picture lets go of its texture
@@ -106,8 +113,24 @@ class WallpaperWindow(Gtk.ApplicationWindow):
             self._prefs_mon.cancel()
             self._prefs_mon = None
         self._uri = object()                  # a decode still running is dropped when it lands
+        self._drop_video()
         for p in self.pics:
             p.set_paintable(None)
+
+    def _drop_video(self, now: bool = True) -> None:
+        """Let go of the video; `now` False: once the next picture has faded in
+        over it (freed at once, it would fade out from an empty picture)."""
+        if self._video is not None:
+            from . import videowallpaper
+            v, self._video = self._video, None
+            if self._frame_id and v.media is not None:
+                v.media.disconnect(self._frame_id)
+            self._frame_id = 0
+            if now:
+                videowallpaper.release(v)
+            else:
+                GLib.timeout_add(self.stack.get_transition_duration() + 150,
+                                 lambda: (videowallpaper.release(v), False)[1])
 
     def do_size_allocate(self, w, h, baseline) -> None:
         Gtk.ApplicationWindow.do_size_allocate(self, w, h, baseline)
@@ -138,6 +161,10 @@ class WallpaperWindow(Gtk.ApplicationWindow):
         f = Gio.File.new_for_uri(uri) if uri else None
         path = f.get_path() if f is not None and f.query_exists(None) else None
         w, h = self._loaded_for = self._pixels()
+        from .. import videowall
+        video = bool(path) and videowall.is_video(path)
+        if not (video and self._video is not None and self._video.path == path):
+            self._drop_video(now=False)          # (a resize keeps the video playing)
 
         def show(tex):
             if uri != self._uri:                 # another picture was chosen meanwhile
@@ -146,9 +173,51 @@ class WallpaperWindow(Gtk.ApplicationWindow):
             nxt.set_paintable(tex)
             self.stack.set_visible_child(nxt)
             return False
+
+        def poster_then_video(still):
+            """The poster now, the video over it once it has a frame (no black
+            flash while GStreamer starts)."""
+            if uri != self._uri:
+                return False
+            if still is not None and self._video is None:
+                show(still)
+            if self._video is None:
+                from . import videowallpaper
+                self._video = videowallpaper.acquire(path)
+                media = self._video.media
+
+                def framed(*_a):
+                    if self._frame_id:
+                        media.disconnect(self._frame_id)
+                        self._frame_id = 0
+                    if self._video is not None and self._video.media is media:
+                        show(media)
+                if media.get_current_image() is not None and media.get_intrinsic_width() > 0:
+                    show(media)                   # (another display already plays it)
+                else:
+                    self._frame_id = media.connect("invalidate-contents", framed)
+            if self.main and still_file:
+                share_with_login_screen(Gio.File.new_for_path(still_file[0]))     # the poster, not the video
+            return False
+        still_file = []
         first = all(p.get_paintable() is None for p in self.pics)
         if path is None:
             show(None)
+        elif video:
+            if self._video is not None and self._video.path == path:
+                return                           # (already on it)
+
+            def poster():                        # ffmpeg, the first time: off the UI thread
+                still = videowall.poster(path)
+                if still:
+                    still_file.append(still)
+                GLib.idle_add(poster_then_video, screen_texture(still, w, h) if still else None)
+            if first and os.path.isfile(videowall.poster_path(path)):
+                still_file.append(videowall.poster_path(path))
+                poster_then_video(screen_texture(still_file[0], w, h))      # at login: no gradient flash
+            else:
+                threading.Thread(target=poster, daemon=True).start()
+            return
         elif first:
             # at login: decoded before the window shows (a thread let the gradient
             # behind it flash first -- Vini: "the default wallpaper, then mine")

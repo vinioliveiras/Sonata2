@@ -152,6 +152,7 @@ Run `tools/dev-session.sh` (or a Wayfire session).
       Dock, menu bar; F4 / Super+Space open Launchpad.
 - [ ] An app with Open at Login (Dock > Options) starts at login.
 - [ ] Alt+Tab, Super+Q, Super+M, Super+Tab / Ctrl+Up (Mission Control), Super+, work.
+- [ ] Video wallpaper: plays on the desktop, pauses when an app is focused (not when the Dock or menu bar is clicked), paused while locked; the lock screen blurs its frame.
 - [ ] Mission Control: the desktops' names at the top, pictures on hover; + adds a desktop, × closes one (its windows move to the one before).
 - [ ] File chooser / screenshot portals work in apps (xdg-desktop-portal-gtk/-wlr).
 - [ ] Log back into GNOME: it looks and behaves exactly as before.

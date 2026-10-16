@@ -899,8 +899,12 @@ class FilesWindow(Adw.ApplicationWindow):
             if apps:
                 sections[0].append(Item(_("Open With"), submenu=[apps]))
             from .. import prefs
-            if n == 1 and prefs.is_picture(sel[0].get_content_type() or ""):     # Finder's Quick Action
+            ctype = (sel[0].get_content_type() or "") if n == 1 else ""
+            if n == 1 and prefs.is_picture(ctype):                                # Finder's Quick Action
                 sections[0].append(Item(_("Set Desktop Picture"),
+                                        lambda f=file_of(sel[0]): prefs.set_wallpaper(f.get_uri())))
+            elif n == 1 and prefs.is_video(ctype):                                # a video wallpaper (videowall.py)
+                sections[0].append(Item(_("Use Video as Wallpaper"),
                                         lambda f=file_of(sel[0]): prefs.set_wallpaper(f.get_uri())))
             sections.append([Item(_("Move to Trash"), self.trash_selection, enabled=self._writable_sel(sel))])
             sections.append([Item(_("Get Info"), self.get_info),

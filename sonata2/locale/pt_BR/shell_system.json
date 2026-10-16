@@ -124,5 +124,6 @@
  "{tool} is not installed": "O {tool} não está instalado",
  "Desktop {n}": "Mesa {n}",
  "New Desktop": "Nova Mesa",
- "Close Desktop": "Fechar Mesa"
+ "Close Desktop": "Fechar Mesa",
+ "Use Video as Wallpaper": "Usar Vídeo como Papel de Parede"
 }

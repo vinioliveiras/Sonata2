@@ -788,5 +788,7 @@
  "{reason}. {warning} Set Up turns it on the safe way.": "{reason}. {warning} Configurar o ativa de forma segura.",
  "{} takes effect after a restart. Save your work first: apps will quit.": "{}: entra em vigor após reiniciar. Salve seu trabalho antes: os apps serão encerrados.",
  "{} takes effect from the next login. Save your work first: apps will quit.": "{}: entra em vigor a partir do próximo login. Salve seu trabalho antes: os apps serão encerrados.",
- "{} takes effect when Sonata restarts. Open apps stay open.": "{}: entra em vigor quando o Sonata reiniciar. Os apps abertos continuam abertos."
+ "{} takes effect when Sonata restarts. Open apps stay open.": "{}: entra em vigor quando o Sonata reiniciar. Os apps abertos continuam abertos.",
+ "Choose a Picture or Video": "Escolher uma Imagem ou Vídeo",
+ "Pictures and Videos": "Imagens e Vídeos"
 }

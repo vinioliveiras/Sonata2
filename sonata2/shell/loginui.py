@@ -152,11 +152,12 @@ def wallpaper_texture(max_size: int = 0):
     lock / login screens keep the default (full size)."""
     override = os.environ.get("SONATA_LOCK_WALLPAPER")        # previews
     if override:
-        return _decode_wallpaper(Gio.File.new_for_path(override), max_size)
+        from .. import videowall
+        return _decode_wallpaper(Gio.File.new_for_path(videowall.still(override) or override), max_size)
     try:
         from .. import prefs
         dark = Adw.StyleManager.get_default().get_dark()
-        uri = prefs.wallpaper_uri(dark)
+        uri = prefs.wallpaper_still_uri(dark)                 # a video wallpaper: its poster, blurred
         f = Gio.File.new_for_uri(uri) if uri else None
         if f and f.query_exists(None):
             return _decode_wallpaper(f, max_size)

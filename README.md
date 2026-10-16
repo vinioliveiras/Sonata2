@@ -261,6 +261,10 @@ They are generated once and kept (Settings → Appearance → Regenerate).
   recording (Super+Shift+3/4/5), emoji picker, sound effects.
 - One menu bar and wallpaper per display, and the highest refresh rate
   by default.
+- Videos as wallpapers (Settings > Wallpaper > Choose…, or right-click a
+  video > Use Video as Wallpaper): looped and silent, playing only while
+  the desktop is in front and paused under any app. The lock and login
+  screens blur a frame of it.
 
 ## Keyboard shortcuts
 
