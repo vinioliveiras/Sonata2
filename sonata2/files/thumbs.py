@@ -1,5 +1,5 @@
 """Thumbnails for images and videos (Finder shows the picture instead of
-the file icon).
+the file icon), and Windows programs' own icons (peicon.py).
 
 Uses the freedesktop thumbnail cache (~/.cache/thumbnails/large, shared
 with GNOME/KDE apps): an existing up-to-date thumbnail is loaded; otherwise
@@ -38,7 +38,8 @@ _pending = {}                    # key -> [callbacks]
 
 def wanted(info) -> bool:
     ct = info.get_content_type() or ""
-    return ct.startswith("image/") or ct.startswith("video/")
+    from .peicon import is_program
+    return ct.startswith("image/") or ct.startswith("video/") or is_program(ct)
 
 
 def request(info, gfile, callback) -> None:
@@ -144,6 +145,10 @@ def _make(uri, path, mtime, ct, size):
         pb = imageload.pixbuf_at_scale(path, SIZE)
     elif ct.startswith("video/"):
         pb = _video_frame(path)
+    else:
+        from . import peicon
+        if peicon.is_program(ct):                     # a Windows program: its own icon (Vini)
+            pb = peicon.pixbuf(path, SIZE)
     if pb is None:
         _mark_failed(uri, mtime)
         return None

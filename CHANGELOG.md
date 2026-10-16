@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changes
+- Files and the desktop: Windows programs (.exe, .dll) show their own
+  icon, read from the file itself (its resources; only the headers and
+  icons are read, never a whole big game).
 - Files and the desktop: an edited picture or video gets a new thumbnail
   (the old one stayed: GIO still pointed at it, and two saves in the same
   second shared one).
