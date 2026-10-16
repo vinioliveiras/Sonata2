@@ -17,6 +17,9 @@
   Wayfire: wayfire-scale-sonata-events.patch.)
 
 ### Fixes
+- WhatsApp's web app window is titled "WhatsApp" (its name in Sonata), not
+  "web.whatsapp.com", while the page gives Chrome no title; once it does
+  ("(3) WhatsApp"), that one shows.
 - The Dock's window previews show the windows: their pictures came back
   empty (transparent) on some GPUs. Sonata's Wayfire plugin now has them
   drawn and read by the renderer itself.
