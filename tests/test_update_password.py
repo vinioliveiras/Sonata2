@@ -37,6 +37,25 @@ class UpdateRuleTest(unittest.TestCase):
         self.assertEqual(out.strip(), '["keep","keep",null,null,null,null]')
 
 
+class OneRunTest(unittest.TestCase):
+    """System and AUR run as one AUR-helper process: polkit keeps the
+    password for that process, so it is asked once."""
+
+    def test_plan(self):
+        import gi
+        gi.require_version("Gio", "2.0")
+        from sonata2.backend import updates as U
+        sysu = U.Source("system", "System", ["checkupdates"], ["pkexec", "pacman", "-Syu", "--noconfirm"], "sudo pacman -Syu")
+        aur = U.Source("aur", "AUR", ["paru", "-Qua"], ["paru", "-Sua", "--noconfirm", "--sudo", "pkexec", "--skipreview"],
+                       "paru -Sua")
+        flat = U.Source("flatpak", "Flatpak", [], ["flatpak", "update", "-y"], "flatpak update")
+        steps = U.plan([sysu, aur, flat])
+        self.assertEqual([s.id for s in steps], ["system+aur", "flatpak"])
+        self.assertEqual(steps[0].install, ["paru", "-Syu", "--noconfirm", "--sudo", "pkexec", "--skipreview"])
+        self.assertEqual([s.id for s in U.plan([sysu, flat])], ["system", "flatpak"])      # no AUR: as before
+        self.assertEqual([s.id for s in U.plan([aur])], ["aur"])
+
+
 class DiskRuleTest(unittest.TestCase):
     """Vini: the disks rule is added without asking; --no-mount-without-password removes it."""
 

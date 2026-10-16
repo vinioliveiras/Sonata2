@@ -970,14 +970,15 @@ class OffMainLoopTest(_Base):
         # right-click: Copy Image (Vini) -- the picture shown, to the clipboard
         menus, copied = [], []
         with mock.patch.object(ui.menu, "popup", lambda w, sections, **kw: menus.append(sections)), \
-                mock.patch.object(imageload, "copy_texture", lambda t, w, done=None: copied.append(t)):
+                mock.patch.object(imageload, "copy_picture",
+                                  lambda w, path=None, tex=None, done=None: copied.append((path, tex))):
             click = next(c for c in list(pic.observe_controllers()) if isinstance(c, Gtk.GestureClick))
             self.assertEqual(click.get_button(), Gdk.BUTTON_SECONDARY)
             click.emit("pressed", 1, 5, 5)
             item = menus[0][0][0]
-            self.assertEqual((item.label, item.enabled), ("Copy Image", True))
+            self.assertEqual(item.label, "Copy Image")
             item.on_activate()
-        self.assertEqual(copied, [tex])
+        self.assertEqual(copied, [(f.get_path(), tex)])          # the file itself first (no re-encoding)
         ql.destroy()
 
     def test_save_as_extension_asks_before_replacing(self):

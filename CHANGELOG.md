@@ -11,13 +11,17 @@
 - Preview: right-click > Copy puts the picture on the clipboard as shown
   (its edits, and Markup's marks while Markup is open). Quick Look in
   Files: right-click a picture > Copy Image.
-- Software Update asks for the password once (once more for the AUR), not
-  at every package: install.sh adds a polkit rule that keeps the
+- Software Update asks for the password once, not at every package: install.sh adds a polkit rule that keeps the
   administrator's "yes" to pacman for a few minutes, for that update only.
-- Displays nobody picked a scale for get one for their resolution, so
-  everything looks the size it does at 1080p: 4K at 200 %, 1440p at 125 %,
-  1366x768 at 75 % (the shorter side against 1080, in quarter steps). Set
-  once per display; Settings > Displays > Scale changes it (now 75-300 %).
+- Displays nobody picked a scale for get one that keeps the size of a
+  1080p desktop monitor: from the display's DPI (the size it reports; a
+  laptop's panel, seen closer, a higher reference), else its resolution;
+  never under 100 % (blurry, and harder on the GPU). It follows a new
+  resolution until a scale is picked in Settings > Displays (100-300 %).
+- Software Update runs System and AUR as one paru/yay run: one password.
+- Copy in Preview and Quick Look sends the file itself when unedited
+  (PNG, JPEG, GIF, WebP as they are: no slow re-encoding of big photos);
+  an edited picture is copied at full size.
 - install.sh no longer asks "mount system disks without a password": the
   rule is added for administrators by default (it lowers security: any app
   in the session can mount system disks and unlock system LUKS);

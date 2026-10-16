@@ -426,13 +426,15 @@ class PreviewWindow(Gtk.ApplicationWindow):
         run_async(lambda: copy_picture(ed, items), lambda ok: done and done(bool(ok)))
 
     def copy_picture(self) -> None:
-        """Right-click Copy (Vini): the picture as shown -- its edits, and
-        Markup's marks while Markup is open -- on the clipboard."""
-        if self.markup is not None and self.markup.items:
+        """Right-click Copy (Vini): the picture as shown. Unedited: the file
+        itself (no re-encoding); with edits or Markup's marks: rendered at
+        full size (copy_marked -- the texture shown is a smaller copy)."""
+        edited = self.edits is not None and self.edits.edited
+        if edited or (self.markup is not None and self.markup.items):
             self.copy_marked()
             return
-        from ..imageload import copy_texture
-        copy_texture(self.texture, self)
+        from ..imageload import copy_picture
+        copy_picture(self, self.path, self.texture)
 
     def _shot_to_clipboard(self) -> None:
         """A screenshot that went to the clipboard (only, or also): the marked one goes there too."""

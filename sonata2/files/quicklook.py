@@ -124,9 +124,9 @@ class QuickLook(Adw.Window):
             menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)     # right-click: Copy Image (Vini)
             menu.connect("pressed", lambda g, _n, x, y: (
                 g.set_state(Gtk.EventSequenceState.CLAIMED),
-                ui.menu.popup(pic, [[ui.menu.Item("Copy Image", lambda: imageload.copy_texture(
-                    pic.get_paintable() if isinstance(pic.get_paintable(), Gdk.Texture) else None, pic),
-                    enabled=isinstance(pic.get_paintable(), Gdk.Texture))]], at=(x, y), passthrough=True)))
+                ui.menu.popup(pic, [[ui.menu.Item("Copy Image", lambda: imageload.copy_picture(
+                    pic, path, pic.get_paintable() if isinstance(pic.get_paintable(), Gdk.Texture) else None))]],
+                    at=(x, y), passthrough=True)))
             pic.add_controller(menu)
             return pic
         if path and (ct.startswith("video/") or ct.startswith("audio/")):
