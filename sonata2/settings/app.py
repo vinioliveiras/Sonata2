@@ -662,7 +662,7 @@ class Settings(Adw.ApplicationWindow):
         self.current = sid                          # at once, no fade (Vini)
         self.content.set_visible_child(self.pages[sid])
         if getattr(self, "fade", None) is not None:
-            self.fade.play()                        # (a picture of a page rebuilt in place: never left on top)
+            self.fade.drop()                        # (a picture of a page rebuilt in place: never left on top)
         focus = getattr(self, "_focus_app", None)
         part = getattr(self, "_focus_part", None)
         if focus and part in ("appicons", "apps") and getattr(self, part + "_page", None):

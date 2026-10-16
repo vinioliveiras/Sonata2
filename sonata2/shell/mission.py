@@ -57,7 +57,7 @@ class MissionBackdrop:
                             "view-unmapped", "view-workspace-changed"], self._event)
 
     def _event(self, ev):
-        if ev.get("event") != "plugin-activation-state-changed":
+        if ev.get("event", "plugin-activation-state-changed") != "plugin-activation-state-changed":
             for bar in self.bars.values():          # the desktops changed while the bar shows
                 if bar.get_visible():
                     bar._refresh_soon()
