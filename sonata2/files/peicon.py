@@ -17,7 +17,7 @@ from gi.repository import GdkPixbuf, GLib  # noqa: E402
 RT_ICON, RT_GROUP_ICON = 3, 14
 CONTENT_TYPES = ("application/x-ms-dos-executable", "application/x-msdownload", "application/x-dosexec",
                  "application/vnd.microsoft.portable-executable", "application/x-ms-ne-executable")
-MAX_RSRC = 64 << 20          # a resource section bigger than this isn't read
+MAX_RSRC = 1 << 31           # (a bound on offsets: only what is needed is read)
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
@@ -25,8 +25,27 @@ def is_program(content_type: str) -> bool:
     return (content_type or "") in CONTENT_TYPES
 
 
+class _Section:
+    """The resource section, read where asked (seek + read): a game's
+    resources can be hundreds of MB; only the directories and one icon
+    are read."""
+
+    def __init__(self, f, rawptr, size):
+        self.f, self.rawptr, self.size = f, rawptr, size
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, s):
+        start, stop = max(0, s.start or 0), min(self.size, s.stop if s.stop is not None else self.size)
+        if stop <= start:
+            return b""
+        self.f.seek(self.rawptr + start)
+        return self.f.read(stop - start)
+
+
 def _rsrc(f):
-    """(the resource section's bytes, its RVA), or None."""
+    """(the resource section, its RVA), or None."""
     f.seek(0)
     if f.read(2) != b"MZ":
         return None
@@ -44,17 +63,15 @@ def _rsrc(f):
     if dirs is None or len(opt) < dirs + 3 * 8:
         return None
     rva, size = struct.unpack("<II", opt[dirs + 2 * 8:dirs + 3 * 8])     # #2: resources
-    if not rva or not size or size > MAX_RSRC:
+    if not rva or not size:
         return None
-    for _ in range(nsec):
+    for _ in range(min(nsec, 96)):
         sec = f.read(40)
         if len(sec) < 40:
             return None
         vsize, vaddr, rawsize, rawptr = struct.unpack("<IIII", sec[8:24])
         if vaddr <= rva < vaddr + max(vsize, rawsize):
-            f.seek(rawptr)
-            data = f.read(min(max(vsize, rawsize), MAX_RSRC))
-            return data, vaddr
+            return _Section(f, rawptr, min(max(vsize, rawsize), MAX_RSRC)), vaddr
     return None
 
 
@@ -73,24 +90,29 @@ def _entries(data, off):
     return out
 
 
-def _first_data(data, off, base):
-    """The bytes of the first leaf under a directory (any name, any language)."""
+def _first_leaf(data, off):
+    """(rva, size) of the first leaf under a directory (any name, any language)."""
     for _ in range(4):                               # type > name > language > data
         ents = _entries(data, off)
         if not ents:
             return None
         _id, off, is_dir = ents[0]
         if not is_dir:
-            if off + 8 > len(data):
-                return None
-            rva, size = struct.unpack("<II", data[off:off + 8])
-            start = rva - base
-            return data[start:start + size] if 0 <= start <= len(data) else None
+            head = data[off:off + 8]
+            return struct.unpack("<II", head) if len(head) == 8 else None
     return None
 
 
+def _read(data, base, leaf):
+    if not leaf:
+        return None
+    start = leaf[0] - base
+    return data[start:start + leaf[1]] if 0 <= start <= len(data) else None
+
+
 def _icons(data, base):
-    """({icon id: bytes}, the first icon group's bytes) of a resource section."""
+    """({icon id: (rva, size)}, the first icon group's bytes): only the
+    group is read here, an icon's bytes once it is chosen."""
     icons, group = {}, None
     for tid, off, is_dir in _entries(data, 0):
         if not is_dir:
@@ -98,11 +120,11 @@ def _icons(data, base):
         if tid == RT_ICON:
             for iid, ioff, idir in _entries(data, off):
                 if iid is not None and idir:
-                    b = _first_data(data, ioff, base)
-                    if b:
-                        icons[iid] = b
+                    leaf = _first_leaf(data, ioff)
+                    if leaf:
+                        icons[iid] = leaf
         elif tid == RT_GROUP_ICON and group is None:
-            group = _first_data(data, off, base)
+            group = _read(data, base, _first_leaf(data, off))
     return icons, group
 
 
@@ -112,14 +134,15 @@ def best_icon(path: str, size: int = 256):
     try:
         with open(path, "rb") as f:
             got = _rsrc(f)
+            if got is None:
+                return None
+            return _best(f, *got, size)
     except (OSError, struct.error):
         return None
-    if got is None:
-        return None
-    try:
-        icons, group = _icons(*got)
-    except struct.error:
-        return None
+
+
+def _best(f, data, base, size):
+    icons, group = _icons(data, base)
     if not icons or not group or len(group) < 6:
         return None
     count = struct.unpack("<H", group[4:6])[0]
@@ -136,7 +159,9 @@ def best_icon(path: str, size: int = 256):
     above = [c for c in choices if c[0] >= size]
     w, _bits, iid, head = (min(above, key=lambda c: (c[0], -c[1])) if above
                            else max(choices, key=lambda c: (c[0], c[1])))
-    img = icons[iid]
+    img = _read(data, base, icons[iid])
+    if not img:
+        return None
     if img.startswith(PNG_MAGIC):
         return img
     # a DIB: wrapped in a one-image .ico, which GdkPixbuf reads

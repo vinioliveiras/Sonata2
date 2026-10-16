@@ -6,6 +6,7 @@ import os
 import struct
 import tempfile
 import unittest
+import unittest.mock
 
 import gi
 
@@ -92,6 +93,26 @@ class PeIconTest(unittest.TestCase):
         self.assertEqual((pb.get_width(), pb.get_height()), (256, 256))
         pb = peicon.pixbuf(p, 40)                                   # the closest above, made to fit
         self.assertEqual(pb.get_width(), 40)
+
+    def test_huge_resources_read_in_part(self):
+        """A game's resources can be hundreds of MB: only the directories and
+        the chosen icon are read (it used to read the section whole, and
+        gave up above 64 MB)."""
+        data = bytearray(make_pe([(256, png_bytes(256, 256))]))
+        big = 200 << 20
+        sec_hdr = 0x40 + 4 + 20 + 240                       # the .rsrc section header
+        struct.pack_into("<I", data, sec_hdr + 8, big)      # its size: 200 MB
+        struct.pack_into("<I", data, sec_hdr + 16, big)
+        p = self.write("game.exe", bytes(data))
+        with open(p, "r+b") as f:
+            f.truncate(0x200 + big)                          # (sparse: no 200 MB written)
+        read = []
+        real = peicon._Section.__getitem__
+        with unittest.mock.patch.object(peicon._Section, "__getitem__",
+                                        lambda sec, sl: (lambda b: (read.append(len(b)), b)[1])(real(sec, sl))):
+            pb = peicon.pixbuf(p, 256)
+        self.assertEqual(pb.get_width(), 256)
+        self.assertLess(sum(read), 64 << 10)                # a few KB, not 200 MB
 
     def test_real_windows_programs(self):
         found = [p for p in glob.glob(os.path.expanduser("~/.cache/uv/archive-v0/*/distlib/w*.exe"))]

@@ -31,6 +31,8 @@ MEMORY = 400                     # textures kept in RAM, at most...
 # worth of 256 px thumbnails still fits (~130)
 MEMORY_BYTES = 32 << 20
 
+from .peicon import is_program  # noqa: E402  (Windows programs: their own icon)
+
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sonata2-thumbs")
 _mem = OrderedDict()             # key -> Gdk.Texture or None (failed)
 _pending = {}                    # key -> [callbacks]
@@ -38,7 +40,6 @@ _pending = {}                    # key -> [callbacks]
 
 def wanted(info) -> bool:
     ct = info.get_content_type() or ""
-    from .peicon import is_program
     return ct.startswith("image/") or ct.startswith("video/") or is_program(ct)
 
 
@@ -106,18 +107,40 @@ def _name(uri) -> str:
     return hashlib.md5(uri.encode()).hexdigest() + ".png"
 
 
+def png_text(p) -> dict:
+    """A PNG's tEXt entries, read from its chunks before the picture: no
+    decoding (it was decoded once to check it, then again to show it)."""
+    out = {}
+    try:
+        with open(p, "rb") as f:
+            if f.read(8) != b"\x89PNG\r\n\x1a\n":
+                return out
+            while True:
+                head = f.read(8)
+                if len(head) < 8:
+                    break
+                n, kind = int.from_bytes(head[:4], "big"), head[4:]
+                if kind in (b"IDAT", b"IEND") or n > 1 << 20:
+                    break                             # (text comes before the picture in thumbnails)
+                data = f.read(n)
+                f.seek(4, 1)                          # its CRC
+                if kind == b"tEXt" and b"\0" in data:
+                    k, v = data.split(b"\0", 1)
+                    out[k.decode("latin-1")] = v.decode("latin-1")
+    except OSError:
+        pass
+    return out
+
+
 def _valid(p, mtime, size=None) -> bool:
     """A cached thumbnail of this version of the file: its Thumb::MTime, and
     its Thumb::Size when it has one (an edit within the same second)."""
     if not os.path.exists(p):
         return False
-    try:
-        pb = GdkPixbuf.Pixbuf.new_from_file(p)
-    except GLib.Error:
+    text = png_text(p)
+    if text.get("Thumb::MTime") != str(mtime):
         return False
-    if pb.get_option("tEXt::Thumb::MTime") != str(mtime):
-        return False
-    kept = pb.get_option("tEXt::Thumb::Size")
+    kept = text.get("Thumb::Size")
     return size is None or kept is None or kept == str(size)
 
 
