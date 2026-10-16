@@ -322,17 +322,33 @@ class Folder:
             self._monitor = d.monitor_directory(Gio.FileMonitorFlags.WATCH_MOVES, None)
         except GLib.Error:
             return
+        self._watched = d
         self._monitor.connect("changed", self._changed)
+
+    def _inside(self, f) -> bool:
+        """`f` is an item of the folder shown -- not the folder itself, whose
+        own changes the monitor reports too (the Trash's item count after a
+        deletion: it was listed inside itself as "Wastebasket", Vini)."""
+        d = getattr(self, "_watched", None)
+        if f is None or d is None:
+            return f is not None
+        if f.equal(d):
+            return False
+        parent = f.get_parent()
+        return parent is not None and parent.equal(d)
 
     def _changed(self, _mon, f, other, event):
         E = Gio.FileMonitorEvent
+        if not self._inside(f) and not (event == E.RENAMED and self._inside(other)):
+            return
         if event in (E.DELETED, E.MOVED_OUT):
             self._remove(f.get_basename())
         elif event in (E.CREATED, E.MOVED_IN):
             self._add(f)
         elif event == E.RENAMED:
-            self._remove(f.get_basename())
-            if other is not None:
+            if self._inside(f):
+                self._remove(f.get_basename())
+            if other is not None and self._inside(other):
                 self._add(other)
         elif event in (E.CHANGES_DONE_HINT, E.ATTRIBUTE_CHANGED):
             self._add(f, replace=True)
