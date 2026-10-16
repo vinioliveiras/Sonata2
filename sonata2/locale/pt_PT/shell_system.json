@@ -125,5 +125,7 @@
  "Desktop {n}": "Secretária {n}",
  "New Desktop": "Nova secretária",
  "Close Desktop": "Fechar secretária",
- "Use Video as Wallpaper": "Usar vídeo como imagem de fundo"
+ "Use Video as Wallpaper": "Usar vídeo como imagem de fundo",
+ "Switch User": "Mudar de utilizador",
+ "Couldn't switch user": "Não foi possível mudar de utilizador"
 }

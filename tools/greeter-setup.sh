@@ -15,6 +15,12 @@
 #   /var/lib/sonata-greeter/<you>/      your wallpaper, copied there by your
 #                                       session so the login screen shows it
 #   /var/cache/sonata-greeter/          last user and session (greeter's)
+#   Switch User (lock screen; sonata2/userswitch.py): a second greetd on
+#   the next free VT, started on demand --
+#     /etc/greetd/sonata-switch.toml
+#     /etc/systemd/system/sonata-greeter-switch.service
+#     /etc/polkit-1/rules.d/60-sonata2-switch-user.rules  (local users and
+#                                       the greeter may start / stop it)
 set -euo pipefail
 trap 's=$?; echo "greeter-setup.sh stopped at line $LINENO (exit $s): $BASH_COMMAND" >&2' ERR
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -23,6 +29,9 @@ SHARE=/usr/local/share/sonata2-greeter
 LAUNCHER=/usr/local/bin/sonata-greeter
 GREETD=/etc/greetd/config.toml
 MARK=/var/lib/sonata-greeter/previous-dm
+SWITCH_TOML=/etc/greetd/sonata-switch.toml
+SWITCH_UNIT=/etc/systemd/system/sonata-greeter-switch.service
+SWITCH_RULE=/etc/polkit-1/rules.d/60-sonata2-switch-user.rules
 DMS="gdm sddm plasmalogin lightdm lxdm ly lemurs cosmic-greeter"
 
 say() { printf '\033[1m%s\033[0m\n' "$*"; }
@@ -53,6 +62,8 @@ if [ "$ACTION" = revert ]; then
     $SUDO systemctl enable "$prev.service"
     [ -f "$GREETD.sonata-backup" ] && $SUDO mv -f "$GREETD.sonata-backup" "$GREETD"
     $SUDO rm -f "$LAUNCHER"            # install.sh keeps it up to date only while it's in use
+    $SUDO rm -f "$SWITCH_TOML" "$SWITCH_UNIT" "$SWITCH_RULE"
+    $SUDO systemctl daemon-reload || true
     # undo the rest of "install": the keyring lines added to greetd's PAM file, the quiet console
     if [ -f /etc/pam.d/greetd.sonata-bak ]; then
         $SUDO env PYTHONPATH="$SRC" python3 -m sonata2 keyring unpam /etc/pam.d/greetd || true
@@ -163,6 +174,19 @@ fi
 $SUDO install -d /etc/greetd
 printf '# Sonata login screen (tools/greeter-setup.sh; "install.sh --gdm" undoes it)\n[terminal]\nvt = 1\n\n[default_session]\ncommand = "%s"\nuser = "greeter"\n' \
     "$LAUNCHER" | $SUDO tee "$GREETD" >/dev/null
+
+# -- Switch User: a second greetd on the next free VT, started from the lock screen ----------
+# (greetd's own session stays on VT 1; this one's greeter goes away again
+#  once you go back to a session that's already running -- userswitch.py)
+printf '# Sonata: Switch User (tools/greeter-setup.sh)\n[terminal]\nvt = "next"\nswitch = true\n\n[default_session]\ncommand = "env SONATA_GREETER_SWITCH=1 %s"\nuser = "greeter"\n' \
+    "$LAUNCHER" | $SUDO tee "$SWITCH_TOML" >/dev/null
+GREETD_BIN="$(command -v greetd || echo /usr/bin/greetd)"
+printf '[Unit]\nDescription=Sonata login screen for Switch User\nAfter=systemd-user-sessions.service\n\n[Service]\nExecStart=%s --config %s\nRestart=no\n' \
+    "$GREETD_BIN" "$SWITCH_TOML" | $SUDO tee "$SWITCH_UNIT" >/dev/null
+$SUDO systemctl daemon-reload || true
+if [ -d /etc/polkit-1/rules.d ] || $SUDO mkdir -p /etc/polkit-1/rules.d 2>/dev/null; then
+    $SUDO install -m 644 "$SRC/config/polkit/60-sonata2-switch-user.rules" "$SWITCH_RULE"
+fi
 
 # -- the login unlocks GNOME's keyring (saved passwords: no prompt after logging in) ----------
 # pam_gnome_keyring in /etc/pam.d/greetd (a copy kept as .sonata-bak); sonata2/keyring.py

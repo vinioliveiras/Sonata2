@@ -251,7 +251,15 @@ class LockScreen:
                                        _("PAM is not available: can't check passwords"), css_classes=["lk-hint"]))
         if len(self.hint.items) > 1:
             hint.set_label(self.hint.items[0].get_label())
-        balanced(col, hint)                           # picture, name and field centred as one
+        below = [hint]
+        if self._can_switch():                        # another user: Switch User (macOS's fast user switching)
+            links = Gtk.Box(spacing=4, halign=Gtk.Align.CENTER)
+            switch = Gtk.Button(label=_("Switch User"), css_classes=["gr-link"], focusable=False,
+                                focus_on_click=False)
+            switch.connect("clicked", lambda *_: self._switch_user())
+            links.append(switch)
+            below.insert(0, links)
+        balanced(col, *below)                         # picture, name and field centred as one
         if getattr(self, "guard", None) is None:
             import os
             from ..throttle import Throttle
@@ -291,6 +299,30 @@ class LockScreen:
         shake(self.entry)
         self.guard.failed(user)
         return False
+
+    def _can_switch(self) -> bool:
+        """Switch User shows when another user exists and can be reached
+        (userswitch.py); asked once per lock, the same on every display."""
+        if not hasattr(self, "_switchable"):
+            try:
+                from .. import userswitch
+                self._switchable = userswitch.available(GLib.get_user_name())
+            except Exception as e:                # never in the way of locking
+                print(f"sonata2-lock: switch user: {e}", flush=True)
+                self._switchable = False
+        return self._switchable
+
+    def _switch_user(self) -> None:
+        """The login screen (or the other user's session) in front; this
+        session stays locked behind it (off the UI thread: D-Bus, systemd)."""
+        from .. import userswitch
+        me = GLib.get_user_name()
+
+        def done(ok):
+            if not ok:
+                self.hint.set_label(_("Couldn't switch user"))
+            return False
+        threading.Thread(target=lambda: GLib.idle_add(done, userswitch.switch(me)), daemon=True).start()
 
     def _power(self, method):
         """Sleep keeps the lock; Restart and Shut Down ask logind (it asks

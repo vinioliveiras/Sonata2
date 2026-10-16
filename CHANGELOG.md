@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Changes
+- Lock screen: Switch User, when the computer has another user. Your
+  session stays locked; a user who is already logged in goes straight back
+  to their session (their own lock screen), anyone else gets the login
+  screen on a free console. With Sonata's login screen that is a second
+  greetd, installed by `install.sh --greeter` with a polkit rule allowing
+  only it to be started without a password; GDM and LightDM use their own.
 - Videos as wallpapers: choose one in Settings > Wallpaper, or right-click
   a video on the desktop or in Files > Use Video as Wallpaper. It plays in
   a loop, silent, only while the desktop is in front: any app in front,
