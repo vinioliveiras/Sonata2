@@ -421,11 +421,25 @@ def _match(app_id: str):
         did = webapps.desktop_id(app_id[len(webapps.APP_ID_PREFIX):])
         if lookup(did):
             return did
+    if app_id.startswith("chrome-"):                # one on Chromium: its window is named by the site
+        for wid, entry in webapps.apps().items():
+            if isinstance(entry, dict) and webapps.window_class(wid, entry) == app_id:
+                did = webapps.desktop_id(wid)
+                if lookup(did) or did + ".desktop" in scan():
+                    return did
     global _INDEX_AT
     if _INDEX is None:
         _INDEX, _INDEX_AT = _build_index(), time.monotonic()
     a = app_id.lower()
     found = _INDEX.get(a) or _INDEX.get(a.rsplit(".", 1)[-1])
+    if found is not None and not lookup(found):
+        # an entry gone since the index was built (Vini: a web app made again
+        # has a new id -- the menu bar named WhatsApp "Sonata2 Webapp W6bf...",
+        # the old entry's id): built again now
+        _INDEX, _INDEX_AT = _build_index(), time.monotonic()
+        found = _INDEX.get(a) or _INDEX.get(a.rsplit(".", 1)[-1])
+        if found is not None and not lookup(found):
+            found = None
     if found is None and time.monotonic() - _INDEX_AT > INDEX_RETRY_S:
         # an app installed since the index was built (Vini: a new web app's
         # window had no icon or name in the Dock): built again, once in a while

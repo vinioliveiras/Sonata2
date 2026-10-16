@@ -3,6 +3,18 @@
 ## Unreleased
 
 ### Changes
+- Dock: while the Apps Menu is open, Launchpad's icon has the dot an open
+  app has.
+- Dialogs and panels with a Cancel, Close or Quit button no longer get the
+  close dot too.
+- Web apps on Chrome: the Dock's unread count follows the page's title
+  ("(3) WhatsApp") -- Chrome titles the window with the site's name, so it
+  never showed. The menu bar names them right again (it showed "Sonata2
+  Webapp W6bf…" after a web app was made again).
+- Resizing a window without its contents: the panel that follows the
+  pointer is frosted glass like the windows' (their colour, background
+  colour, transparency and blur strength; solid with the windows' glass off
+  or Reduce transparency).
 - Settings > Language & Region (as on a first install): the system's
   language, and apart from it the region of its formats -- dates, times,
   numbers, money, measures, paper -- with an example, and the first day of
