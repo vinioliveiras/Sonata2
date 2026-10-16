@@ -154,7 +154,8 @@ Terms already used. Keep them consistent:
 | Default | Padrão | Predefinição |
 | Get Info | Obter Informações | Obter informações |
 | Show in Files | Mostrar em Arquivos | Mostrar nos Ficheiros |
-| Keep in Dock | Manter no Dock | Manter no Dock |
+| Dock | o Dock | a Dock (feminine) |
+| Keep in Dock | Manter no Dock | Manter na Dock |
 | Open at Login | Abrir ao Iniciar Sessão | Abrir no início de sessão |
 | Language & Region | Idioma e Região | Idioma e região |
 | Preview (the app) | Pré-Visualização | Pré-visualização |

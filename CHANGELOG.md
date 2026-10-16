@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changes
+- Settings > Dock > Folders in the Dock: the Dock's folders, each with
+  Remove; Downloads back with one click once removed; any other folder
+  (Add Folder…). The running Dock follows at once.
 - External monitors' brightness on NVIDIA cards: their DDC/CI bus is found
   through ddcutil's own detection (by connector, else by the monitor's
   EDID) when the driver links none to the display -- the slider did

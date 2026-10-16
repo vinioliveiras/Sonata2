@@ -3100,9 +3100,75 @@ class Settings(Adw.ApplicationWindow):
         # (its glass: Appearance > Glass & Transparency)
         look.add(slider_row(_("Distance from the screen edge"), cfg["edge_gap"], 0, 24,    # and from zoomed windows
                             lambda v: self._save_live("dock", "edge_gap", int(v)), default=D.DEFAULTS["edge_gap"]))
+        folders = group(_("Folders in the Dock"), _("Right of the divider, next to the Trash"))
+        self._dock_folders_group = folders
+        self._fill_dock_folders()
         reset = self._reset_group(_("Reset Dock"), _("The Dock's options back to the defaults; your apps and "
                                   "folders in the Dock stay"), self.ask_reset_dock)
-        return [size, behave, look, reset]
+        return [size, behave, look, folders, reset]
+
+    # -- Dock > folders (stacks): a folder removed from the Dock comes back here (Vini) ------
+    def _dock_stacks(self) -> list:
+        from ..shell import dock as D, dock_stack
+        stacks = config.load("dock", D.DEFAULTS).get("stacks")
+        return dock_stack.default_stacks() if stacks is None else [s for s in stacks if s.get("path")]
+
+    def _set_dock_stacks(self, stacks) -> None:
+        self._save("dock", "stacks", stacks)
+        self._fill_dock_folders()
+
+    def _fill_dock_folders(self) -> None:
+        from ..shell import dock_stack
+        g = self._dock_folders_group
+        for row in getattr(g, "folder_rows", []):
+            g.remove(row)
+        g.folder_rows = []
+        stacks = self._dock_stacks()
+
+        def add_row(row):
+            g.add(row)
+            g.folder_rows.append(row)
+        for spec in stacks:
+            path = spec["path"]
+            row = Adw.ActionRow(title=os.path.basename(path.rstrip("/")) or path, subtitle=path, use_markup=False)
+            row.add_prefix(Gtk.Image(icon_name="folder-symbolic"))
+            rm = ui.controls.push_button(_("Remove"), lambda p=path: self._set_dock_stacks(
+                [s for s in self._dock_stacks() if s["path"] != p]))
+            rm.set_valign(Gtk.Align.CENTER)
+            row.add_suffix(rm)
+            add_row(row)
+        downloads = dock_stack._downloads()
+        if downloads and os.path.isdir(downloads) and all(s["path"] != downloads for s in stacks):
+            row = Adw.ActionRow(title=_("Downloads"), subtitle=_("Not in the Dock"), use_markup=False)
+            row.add_prefix(Gtk.Image(icon_name="folder-download-symbolic"))
+            back = ui.controls.push_button(_("Add to Dock"), lambda: self._add_dock_folder(downloads))
+            back.set_valign(Gtk.Align.CENTER)
+            row.add_suffix(back)
+            add_row(row)
+        row = Adw.ActionRow(title=_("Another folder"), subtitle=_("Its items one click away, like Downloads"),
+                            use_markup=False)
+        pick = ui.controls.push_button(_("Add Folder\u2026"), self._pick_dock_folder)
+        pick.set_valign(Gtk.Align.CENTER)
+        row.add_suffix(pick)
+        add_row(row)
+
+    def _add_dock_folder(self, path: str) -> None:
+        from ..shell import dock_stack
+        stacks = self._dock_stacks()
+        if os.path.isdir(path) and all(s["path"] != path for s in stacks):
+            self._set_dock_stacks(stacks + [dict(dock_stack.STACK_DEFAULTS, path=path)])
+
+    def _pick_dock_folder(self) -> None:
+        dlg = Gtk.FileDialog(title=_("Add a Folder to the Dock"), modal=True)
+
+        def chosen(d, res):
+            try:
+                f = d.select_folder_finish(res)
+            except GLib.Error:
+                return
+            if f is not None and f.get_path():
+                self._add_dock_folder(f.get_path())
+        dlg.select_folder(self, None, chosen)
 
     def _page_desktop(self):
         """Desktop & Windows: how windows behave, the desktop's icons."""

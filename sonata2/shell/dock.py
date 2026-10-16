@@ -2526,6 +2526,11 @@ class DockWindow(Gtk.ApplicationWindow):
                 if key in d.tiles and key not in PERMANENT and key not in d.windows and not d._is_recent(key):
                     d._remove_tile(key)
             d._relayout()
+        # Settings > Dock's folders (a folder removed by mistake brought back: Vini)
+        if d and new["stacks"] is not None and [x.get("path") for x in new["stacks"]] != \
+                [x.get("path") for x in (self.cfg["stacks"] or [])]:
+            d.stacks.sync(new["stacks"])
+            d._relayout()
         cur = dict(self.cfg, icon_size=d.user_size if d else self.cfg["icon_size"])
         changed = [k for k in self.LIVE_KEYS if new[k] != cur[k]]
         if not changed:
