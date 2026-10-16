@@ -35,6 +35,27 @@ class TokensTest(unittest.TestCase):
         self.assertEqual(T.BACKGROUNDS["light"][0][1], T.LIGHT["window_bg"])     # the first is the theme's own
         self.assertEqual(T.BACKGROUNDS["dark"][0][1], T.DARK["window_bg"])
 
+    def test_glass_follows_too(self):
+        """Vini: the colour changed only where it wasn't see-through -- the
+        Dock, the menu bar, menus and panels and the sidebars' glass follow,
+        moved as seen (over what is behind) like the window."""
+        config.save("appearance", {"background": {"dark": "#121826"}})
+        base, got = T.DARK, T.palette(True)
+        delta = [n - b for n, b in zip(T._rgb(got["window_bg"])[0], T._rgb(base["window_bg"])[0])]
+        for k in T.BACKGROUND_GLASS:
+            (g0, a), (g1, a1) = T._rgb(base[k]), T._rgb(got[k])
+            self.assertEqual(a, a1, k)                                      # as see-through as before
+            seen = [round((v1 - v0) * a) for v0, v1 in zip(g0, g1)]
+            for s_, d, v1 in zip(seen, delta, g1):
+                if 0 < v1 < 255:                                            # (not clipped)
+                    self.assertLessEqual(abs(s_ - d), 1, (k, seen, delta))
+        tb = [n - b for n, b in zip(T._rgb(got["titlebar_bg"])[0], T._rgb(base["titlebar_bg"])[0])]
+        self.assertEqual(tb[1:], delta[1:])                                 # opaque bars: moved like the window
+
+    def test_as_many_as_accent_colours(self):
+        for mode in ("light", "dark"):
+            self.assertEqual(len(T.BACKGROUNDS[mode]), len(T.ACCENTS), mode)
+
     def test_picked_per_mode(self):
         config.save("appearance", {"background": {"light": "#e4e9f0", "dark": "#121826"}})
         light, dark = T.palette(False), T.palette(True)
@@ -42,7 +63,8 @@ class TokensTest(unittest.TestCase):
         # the surfaces around it keep their distance: content still lighter (light), sidebar lighter (dark)
         self.assertGreater(T._luminance(light["content_bg"]), T._luminance(light["window_bg"]))
         self.assertGreater(T._luminance(dark["sidebar_bg"]), T._luminance(dark["window_bg"]))
-        self.assertEqual(light["titlebar_bg"], T.over(light["titlebar_glass"], light["window_bg"]))
+        # the opaque title bar: its (moved) glass over the theme's window -- moved as the window was
+        self.assertEqual(light["titlebar_bg"], T.over(light["titlebar_glass"], T.LIGHT["window_bg"]))
         self.assertTrue(light["menu_bg"].startswith("rgba(") and light["menu_bg"].endswith("0.97)"))
 
     def test_text_stays_legible(self):

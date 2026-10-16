@@ -14,6 +14,10 @@
   language by itself (English otherwise). Strings that read differently
   by place have their own words ("Zerar" on the stopwatch); a few
   subtitles were shortened so the longer Portuguese fits.
+- The background colour of Light and Dark Mode tints the glass too: the
+  Dock, the menu bar, menus and panels, sidebars and glass title bars,
+  moved as much as they show (as see-through as before). Eight colours per
+  mode, as many as the accent colours (new: Butter, Teal).
 - Web apps (Chrome): a window whose title read the site's address
   ("web.whatsapp.com") shows the page's title again -- or the web app's
   name, for a page without one.
