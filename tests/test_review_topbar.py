@@ -360,7 +360,7 @@ class TopbarHelpersTest(unittest.TestCase):
                     (True, True, ("", 0, False)), (True, False, ("", 0, False)), (False, False, ("", 0, True))):
             topbar.Bar._wifi_state(fake, res)
         self.assertEqual(names, ["sonata-wifi-3-symbolic", "sonata-wifi-2-symbolic", "sonata-wifi-0-symbolic",
-                                 "sonata-wifi-off-symbolic", "network-wired-symbolic"])
+                                 "sonata-wifi-off-symbolic", "sonata-ethernet-symbolic"])
         names.clear()
         topbar.Bar._wifi_state(fake, (False, False, ("", 0, False)))
         fake.wifi.set_visible.assert_called_with(False)

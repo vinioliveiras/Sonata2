@@ -752,7 +752,7 @@ class Bar(Gtk.CenterBox):
             return
         avail, on, (ssid, sig, wired) = res
         if wired and not ssid:
-            name = "network-wired-symbolic"
+            name = "sonata-ethernet-symbolic"            # an Ethernet port (Vini's pick, MacTahoe's)
         elif not avail:
             self.wifi.set_visible(False)
             return

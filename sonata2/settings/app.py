@@ -27,7 +27,7 @@ from ..backend import equalizer, system  # noqa: E402
 
 SECTIONS = [  # id, title, icon, badge colour, group (colours varied, not mostly grey: Vini)
     ("wifi", "Wi-Fi", "network-wireless-symbolic", "blue", "linux"),
-    ("network", _("Network"), "network-wired-symbolic", "indigo", "linux"),
+    ("network", _("Network"), "sonata-ethernet-symbolic", "indigo", "linux"),
     ("bluetooth", "Bluetooth", "bluetooth-active-symbolic", "blue", "linux"),
     ("sound", _("Sound"), "audio-volume-high-symbolic", "pink", "linux"),
     ("displays", _("Displays"), "video-display-symbolic", "teal", "linux"),

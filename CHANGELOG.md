@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Changes
+- A new wired network icon, an Ethernet port: in the menu bar when the
+  connection is a cable, not Wi-Fi, and on Settings' Network section.
 - Lock screen: Switch User, when the computer has another user. Your
   session stays locked; a user who is already logged in goes straight back
   to their session (their own lock screen), anyone else gets the login
