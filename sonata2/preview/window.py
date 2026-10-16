@@ -425,6 +425,15 @@ class PreviewWindow(Gtk.ApplicationWindow):
         from ..backend.system import run_async
         run_async(lambda: copy_picture(ed, items), lambda ok: done and done(bool(ok)))
 
+    def copy_picture(self) -> None:
+        """Right-click Copy (Vini): the picture as shown -- its edits, and
+        Markup's marks while Markup is open -- on the clipboard."""
+        if self.markup is not None and self.markup.items:
+            self.copy_marked()
+            return
+        from ..imageload import copy_texture
+        copy_texture(self.texture, self)
+
     def _shot_to_clipboard(self) -> None:
         """A screenshot that went to the clipboard (only, or also): the marked one goes there too."""
         from ..shell.capture import CLIPBOARD_SHOT, DEFAULTS
@@ -889,6 +898,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         uri = Gio.File.new_for_path(self.path).get_uri() if self.path else None
         edited = bool(self.edits and self.edits.edited)
         ui.menu.popup(self.canvas, [
+            [Item("Copy", self.copy_picture, enabled=self.texture is not None)],
             [Item("Zoom In", lambda: self.step_zoom(1)), Item("Zoom Out", lambda: self.step_zoom(-1)),
              Item("Zoom to Fit", lambda: self.set_zoom(None, animate=True)),
              Item("Actual Size", lambda: self.set_zoom(1.0, anchor=(x, y), animate=True))],

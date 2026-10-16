@@ -139,3 +139,29 @@ def pixbuf_at_scale(path: str, size: int):
         return Gdk.pixbuf_get_from_texture(tex)
     except (AttributeError, GLib.Error):
         return None
+
+
+def copy_texture(tex, widget, done=None) -> None:
+    """A picture on the clipboard (Preview's and Quick Look's Copy): as PNG
+    through wl-copy, which keeps it there after the app quits; GTK's own
+    clipboard without it. done(ok) on the main loop."""
+    import shutil
+    if tex is None:
+        if done:
+            done(False)
+        return
+    if not shutil.which("wl-copy"):
+        widget.get_clipboard().set_content(Gdk.ContentProvider.new_for_bytes("image/png", tex.save_to_png_bytes()))
+        if done:
+            done(True)
+        return
+
+    def run():                                   # encoding a big photo takes a moment: not on the main loop
+        import subprocess
+        try:
+            data = tex.save_to_png_bytes().get_data()
+            return subprocess.run(["wl-copy", "--type", "image/png"], input=data, timeout=10).returncode == 0
+        except (OSError, subprocess.SubprocessError, GLib.Error):
+            return False
+    from .backend.system import run_async
+    run_async(run, lambda ok: done and done(bool(ok)))

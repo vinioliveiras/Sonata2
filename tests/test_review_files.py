@@ -967,6 +967,17 @@ class OffMainLoopTest(_Base):
             ql.body.append(pic)
             self.assertTrue(spin(lambda: pic.get_paintable() is tex))
         self.assertIsNot(threads[0], threading.main_thread())
+        # right-click: Copy Image (Vini) -- the picture shown, to the clipboard
+        menus, copied = [], []
+        with mock.patch.object(ui.menu, "popup", lambda w, sections, **kw: menus.append(sections)), \
+                mock.patch.object(imageload, "copy_texture", lambda t, w, done=None: copied.append(t)):
+            click = next(c for c in list(pic.observe_controllers()) if isinstance(c, Gtk.GestureClick))
+            self.assertEqual(click.get_button(), Gdk.BUTTON_SECONDARY)
+            click.emit("pressed", 1, 5, 5)
+            item = menus[0][0][0]
+            self.assertEqual((item.label, item.enabled), ("Copy Image", True))
+            item.on_activate()
+        self.assertEqual(copied, [tex])
         ql.destroy()
 
     def test_save_as_extension_asks_before_replacing(self):

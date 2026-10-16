@@ -88,6 +88,30 @@ class PreviewTest(unittest.TestCase):
         win.rotate(90)
         self.assertEqual(win.texture.get_width(), 100)
 
+    def test_right_click_copy(self):
+        """Vini: right-click > Copy puts the picture on the clipboard (PNG
+        through wl-copy; GTK's clipboard without it)."""
+        from unittest import mock
+        win = self.window(self.a)
+        seen = {}
+        with mock.patch.object(ui.menu, "popup", lambda w, sections, **kw: seen.setdefault("s", sections)):
+            g = Gtk.GestureClick()
+            win._context_menu(g, 1, 10, 10)
+        copy = seen["s"][0][0]
+        self.assertEqual(copy.label, "Copy")
+        sent = {}
+        with mock.patch("shutil.which", return_value="/usr/bin/wl-copy"), \
+                mock.patch("subprocess.run", lambda argv, input=None, **kw: (
+                    sent.update(argv=argv, data=input), mock.Mock(returncode=0))[1]):
+            copy.on_activate()
+            self.assertTrue(wait(lambda: "data" in sent))
+        self.assertEqual(sent["argv"], ["wl-copy", "--type", "image/png"])
+        tex = Gdk.Texture.new_from_bytes(GLib.Bytes.new(sent["data"]))
+        self.assertEqual((tex.get_width(), tex.get_height()), (300, 100))
+        with mock.patch("shutil.which", return_value=None):          # no wl-copy: GTK's clipboard
+            copy.on_activate()
+        self.assertTrue(win.get_clipboard().get_formats().contain_mime_type("image/png"), win.get_clipboard().get_formats().to_string())
+
     def test_zoom_around_pointer(self):
         win = self.window(self.c)
         cv = win.canvas

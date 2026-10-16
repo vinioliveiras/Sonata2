@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Changes
+- Files and the desktop: a shell script's right-click menu has Run in
+  Terminal (its output in a window that stays open) and Run (in the
+  background). Scripts are .sh / .bash / .zsh files, or executables that
+  start with "#!"; one without the executable bit runs through its "#!"
+  line or its shell. A double-click still opens it to read.
+- Preview: right-click > Copy puts the picture on the clipboard as shown
+  (its edits, and Markup's marks while Markup is open). Quick Look in
+  Files: right-click a picture > Copy Image.
 - Light Mode glass is more see-through by default (Dock, menu bar, menus
   and panels 0.60 -> 0.45; sidebars 0.74 -> 0.58), closer to how Dark Mode
   reads: a pale tint at the same opacity looked milky, almost opaque. Wayfire's
