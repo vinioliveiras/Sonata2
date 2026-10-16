@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.19.0-alpha -- 2026-10-16
+
+Mission Control grows up: right-click a window for its Dock menu, drag it
+onto another desktop, close it from its corner, a click on the empty space
+to leave; animated desktops. The Dock's window previews show the windows,
+WhatsApp's window its name, and Sonata is lighter: the Control Center
+opens at once, with its sliders where they are.
+
 ### New
 - Mission Control: a click where no window is closes it, back to the window
   that was in front.
