@@ -80,7 +80,9 @@ class NotifyOnceTest(unittest.TestCase):
 
 
 class ConfigRowsTest(unittest.TestCase):
-    def test_vscode_setting_undone(self):
+    def test_vscode_keeps_its_own_bar(self):
+        """Vini: VS Code isn't forced to the system title bar any more (its
+        GTK menu bar was light in Dark Mode): its own bar is fine."""
         home = tempfile.mkdtemp()
         cfg = os.path.join(home, ".config")
         os.makedirs(os.path.join(cfg, "Code", "User"))
@@ -91,7 +93,7 @@ class ConfigRowsTest(unittest.TestCase):
                 mock.patch("sonata2.titlebars.enabled", lambda: True), \
                 mock.patch.object(SC, "steam_rows", lambda: []):
             rows = {r[1]: r for r in SC.config_rows()}
-        self.assertEqual(rows["Code"][0], SC.FAIL)
+        self.assertEqual(rows["Code"][0], SC.OK)
 
     def test_official_claude_is_not_ok(self):
         """The official Claude Desktop ignores CLAUDE_NATIVE_TITLEBAR (only the

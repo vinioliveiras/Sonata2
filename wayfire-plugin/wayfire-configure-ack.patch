@@ -1,0 +1,22 @@
+diff --git a/src/view/xdg-shell/xdg-toplevel.cpp b/src/view/xdg-shell/xdg-toplevel.cpp
+index fff930a5..25a532fc 100644
+--- a/src/view/xdg-shell/xdg-toplevel.cpp
++++ b/src/view/xdg-shell/xdg-toplevel.cpp
+@@ -191,6 +191,17 @@ void wf::xdg_toplevel_t::handle_surface_commit()
+         return;
+     }
+ 
++    // Sonata: the client hasn't acknowledged the last configure we sent yet -- it took longer than
++    // the transaction's timeout (Electron apps: VS Code, Claude) and still draws at its previous
++    // size. That frame is not a resize of its own: taken as one, its previous size was sent back to
++    // it as a new configure and the user's resize was undone. Show the frame, wait for the ack.
++    if (this->toplevel->base->current.configure_serial < this->target_configure)
++    {
++        apply_pending_state();
++        main_surface->send_frame_done(true);
++        return;
++    }
++
+     auto toplevel_size =
+         expand_dimensions_by_margins(wf::dimensionsf_t{get_current_wlr_toplevel_size()}, _current.margins);
+     if ((toplevel_size == wf::fdimensions(current().geometry)) || !current().mapped)

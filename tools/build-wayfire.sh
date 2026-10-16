@@ -40,9 +40,11 @@ step() {
 step git clone -q --filter=blob:none https://github.com/WayfireWM/wayfire.git "$wdir/src"
 step git -C "$wdir/src" checkout -q "$commit"
 step git -C "$wdir/src" submodule update -q --init subprojects/wf-json subprojects/wf-utils subprojects/wf-touch subprojects/wf-config
-step patch -d "$wdir/src" -p1 -i "$SRC/wayfire-plugin/wayfire-buffer-failures.patch"
-# no cursor image left frozen on a full-screen game after Alt+Tab (Vini)
-step patch -d "$wdir/src" -p1 -i "$SRC/wayfire-plugin/wayfire-cursor-focus.patch"
+# Sonata's patches: buffers the GPU refuses, no cursor image left frozen on a full-screen
+# game after Alt+Tab, Electron's resizes undone (Vini; each patch says why)
+for p in "$SRC"/wayfire-plugin/wayfire-*.patch; do
+    step patch -d "$wdir/src" -p1 -i "$p"
+done
 step meson setup "$wdir/build" "$wdir/src" --prefix "$PREFIX" --libdir lib --buildtype release \
     -Duse_system_wlroots=enabled -Duse_system_wfconfig=disabled -Dtests=disabled \
     -Dcpp_link_args="-Wl,-rpath,$PREFIX/lib" -Dc_link_args="-Wl,-rpath,$PREFIX/lib"
@@ -54,5 +56,6 @@ step meson install -C "$wdir/build" --destdir "$wdir/stage"
     cp -p "$wdir/stage$PREFIX/$f" "$PREFIX/$f.new" && mv -f "$PREFIX/$f.new" "$PREFIX/$f"
 done
 echo "$commit" > "$PREFIX/sonata-commit"
+cat "$SRC"/wayfire-plugin/wayfire-*.patch | sha256sum | cut -c1-12 > "$PREFIX/sonata-patches"   # (install.sh: changed -> again)
 rm -f "$PREFIX/failed"                  # (tools/sonata-session tries it again)
 echo "  Wayfire $commit with Sonata's fix installed to $PREFIX (log out and back in to use it)"

@@ -15,7 +15,9 @@ PREFIX="${SONATA_WAYFIRE_PREFIX:-$HOME/.local/opt/sonata-wayfire}"
 # what Arch / CachyOS run, and Sonata's plugins are built and tested against
 WLROOTS_TAG=0.20.2
 WAYFIRE_COMMIT=d181484c
-STAMP="wlroots-$WLROOTS_TAG wayfire-$WAYFIRE_COMMIT"
+# Sonata's patches (wayfire-plugin/wayfire-*.patch): a new or changed one builds it again
+PATCHES="$(cat "$SRC"/wayfire-plugin/wayfire-*.patch 2>/dev/null | sha256sum | cut -c1-12)"
+STAMP="wlroots-$WLROOTS_TAG wayfire-$WAYFIRE_COMMIT patches-$PATCHES"
 if [ -x "$PREFIX/bin/wayfire" ] && [ "$(cat "$PREFIX/standalone" 2>/dev/null)" = "$STAMP" ]; then
     echo "  Wayfire $WAYFIRE_COMMIT already built in $PREFIX"
     exit 0
@@ -72,8 +74,10 @@ echo "  Wayfire $WAYFIRE_COMMIT..."
 step git clone -q --filter=blob:none https://github.com/WayfireWM/wayfire.git "$wdir/wayfire"
 step git -C "$wdir/wayfire" checkout -q "$WAYFIRE_COMMIT"
 step git -C "$wdir/wayfire" submodule update -q --init subprojects/wf-json subprojects/wf-utils subprojects/wf-touch subprojects/wf-config
-step patch -d "$wdir/wayfire" -p1 -i "$SRC/wayfire-plugin/wayfire-buffer-failures.patch"
-step patch -d "$wdir/wayfire" -p1 -i "$SRC/wayfire-plugin/wayfire-cursor-focus.patch"
+# buffers the GPU refuses, the cursor after Alt+Tab, Electron's resizes undone (each patch says why)
+for p in "$SRC"/wayfire-plugin/wayfire-*.patch; do
+    step patch -d "$wdir/wayfire" -p1 -i "$p"
+done
 step meson setup "$wdir/wayfire-build" "$wdir/wayfire" --prefix "$PREFIX" --libdir lib --buildtype release \
     --wrap-mode=default -Duse_system_wlroots=enabled -Duse_system_wfconfig=disabled -Dtests=disabled "${rpath[@]}"
 step ninja -C "$wdir/wayfire-build"

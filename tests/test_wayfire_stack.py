@@ -24,7 +24,24 @@ class StackTest(unittest.TestCase):
         self.assertIn('echo "$STAMP" > "$PREFIX/standalone"', STACK)
         self.assertIn("--wrap-mode=default", STACK)                    # Debian's meson won't fetch otherwise
         self.assertIn("--force-fallback-for=pixman-1", STACK)          # Debian/Ubuntu's pixman 0.44
-        self.assertIn("wayfire-buffer-failures.patch", STACK)          # Sonata's own fixes too
+        self.assertIn('for p in "$SRC"/wayfire-plugin/wayfire-*.patch; do', STACK)   # Sonata's own fixes too
+        self.assertIn("patches-$PATCHES", STACK)                       # a changed patch builds it again
+        for name in ("buffer-failures", "cursor-focus", "configure-ack"):
+            self.assertTrue((ROOT / "wayfire-plugin" / f"wayfire-{name}.patch").is_file(), name)
+
+    def test_electron_resize_not_undone(self):
+        """Vini: VS Code / Claude sometimes didn't resize on release -- a
+        frame at the old size, from before the app took the configure (it
+        took longer than the transaction's timeout), was taken as the app
+        resizing itself, and its old size was sent back to it."""
+        patch = (ROOT / "wayfire-plugin" / "wayfire-configure-ack.patch").read_text()
+        self.assertIn("src/view/xdg-shell/xdg-toplevel.cpp", patch)
+        self.assertIn("+    if (this->toplevel->base->current.configure_serial < this->target_configure)", patch)
+        single = (ROOT / "tools" / "build-wayfire.sh").read_text()
+        self.assertIn('for p in "$SRC"/wayfire-plugin/wayfire-*.patch; do', single)
+        self.assertIn('"$PREFIX/sonata-patches"', single)
+        installer = (ROOT / "install.sh").read_text()
+        self.assertIn('"$own_wf/sonata-patches"', installer)                # rebuilt when the patches change
         r = subprocess.run(["bash", "-n", str(ROOT / "tools" / "build-wayfire-stack.sh")])
         self.assertEqual(r.returncode, 0)
 

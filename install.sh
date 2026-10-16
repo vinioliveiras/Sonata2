@@ -442,8 +442,11 @@ if command -v meson >/dev/null && command -v ninja >/dev/null && pkg-config --ex
     bash "$SRC/tools/build-pixdecor.sh" || echo "  (the installed pixdecor stays; retry: tools/build-pixdecor.sh)"
     # Wayfire itself with Sonata's fix for buffers the GPU refuses (its own folder;
     # tools/sonata-session uses it while it matches the installed Wayfire)
-    if [ ! -s "$own_wf/standalone" ] && ! wayfire --version 2>/dev/null | grep -qs -- "-$(head -n1 "$own_wf/sonata-commit" 2>/dev/null) " &&
-            ask "Build Wayfire with Sonata's crash fix (a few minutes)?"; then
+    # (again when Sonata's patches changed: wayfire-plugin/wayfire-*.patch)
+    wf_patches="$(cat "$SRC"/wayfire-plugin/wayfire-*.patch 2>/dev/null | sha256sum | cut -c1-12)"
+    if [ ! -s "$own_wf/standalone" ] && { ! wayfire --version 2>/dev/null | grep -qs -- "-$(head -n1 "$own_wf/sonata-commit" 2>/dev/null) " ||
+            [ "$(cat "$own_wf/sonata-patches" 2>/dev/null)" != "$wf_patches" ]; } &&
+            ask "Build Wayfire with Sonata's fixes (a few minutes)?"; then
         say "Building Wayfire with Sonata's fix"
         bash "$SRC/tools/build-wayfire.sh" || echo "  (the system's Wayfire is used; retry: tools/build-wayfire.sh)"
     fi

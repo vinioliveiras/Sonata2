@@ -79,12 +79,9 @@ def config_rows() -> list:
             ok = T.MOZ_LINE in _read(os.path.join(base, p, "user.js"))
             rows.append((OK if ok else WARN, f"{os.path.basename(base)} {p}",
                          "tabs under Sonata's title bar" if ok else "user.js line missing: written at the next login"))
-    for app in T.CODE:
+    for app in T.CODE:                    # (their own title bar, on purpose: titlebars.release_code)
         if os.path.isdir(os.path.join(cfg, app)):
-            text = _read(os.path.join(cfg, app, "User", "settings.json"))
-            ok = re.search(r'(?m)^(?:(?!//)[^\n])*?"window\.titleBarStyle"\s*:\s*"native"', text) is not None
-            rows.append((OK if ok else FAIL, app, "native title bar (Sonata's)" if ok else
-                         'window.titleBarStyle is not "native": its own frame'))
+            rows.append((OK, app, "its own title bar and menu, in its theme"))
     for path in T.VESKTOP:
         path = os.path.expanduser(path)
         if os.path.isfile(path):

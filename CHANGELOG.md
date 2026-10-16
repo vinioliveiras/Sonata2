@@ -3,6 +3,17 @@
 ## Unreleased
 
 ### Changes
+- Electron apps (VS Code, Claude...) no longer snap back to their old size
+  after a resize: a frame drawn before the app took its new size, coming
+  late, was taken by Wayfire as the app resizing itself and its old size
+  sent back to it. Fixed in Sonata's Wayfire (wayfire-configure-ack.patch);
+  install.sh builds it again when Sonata's Wayfire patches change.
+- X11 apps (through XWayland: Electron in X11 mode, GTK 2/3, Wine...) get
+  Sonata's look -- theme, Dark Mode, icons, cursor, fonts -- from Sonata's
+  own XSETTINGS manager, live; their GTK menu bars were light in Dark Mode.
+- VS Code is no longer forced to the system title bar (its GTK menu bar
+  was light): it keeps its own, in its own theme. Where Sonata had set it,
+  it goes back once.
 - Web apps on Chrome: after the page moves within itself (WhatsApp) or
   loads, its own title is set again so Chrome takes it for the window --
   the page's name and unread count, no name made up for it.

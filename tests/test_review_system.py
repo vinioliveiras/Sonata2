@@ -197,6 +197,23 @@ class TitlebarSettingsTest(unittest.TestCase):
         titlebars._browser_pref(p)
         self.assertIs(json.loads(_read(p))["browser"]["custom_chrome_frame"], False)
 
+    def test_vscode_released_once(self):
+        """Vini: VS Code isn't forced to "native" any more -- what Sonata had
+        written goes back to "custom", once; a later "native" of the user's stays."""
+        cfg = os.path.join(self.d, ".config")
+        p = os.path.join(cfg, "Code", "User", "settings.json")
+        _write(p, '{\n    "window.titleBarStyle": "native",\n    "a": 1\n}\n')
+        with mock.patch.object(titlebars.config, "load", return_value={}), \
+                mock.patch.object(titlebars.config, "save") as save:
+            titlebars.release_code(cfg)
+        self.assertIn('"window.titleBarStyle": "custom"', _read(p))
+        self.assertIn('"a": 1', _read(p))
+        save.assert_called_once()
+        _write(p, '{\n    "window.titleBarStyle": "native"\n}\n')        # the user's own, later
+        with mock.patch.object(titlebars.config, "load", return_value={"code_released": True}):
+            titlebars.release_code(cfg)
+        self.assertIn('"native"', _read(p))
+
     def test_chromium_roots_found_electron_apps_skipped(self):
         """Browsers (Local State + Default/, one or two levels deep, Flatpak
         too) are found; Electron apps (no Default/) are not."""

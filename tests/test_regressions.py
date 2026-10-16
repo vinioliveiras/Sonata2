@@ -1924,7 +1924,8 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         self.assertIn('touch "$own/failed"', tail)                     # not tried again until rebuilt
         self.assertIn('[ ! -e "$own/failed" ]', sess)
         build = (root / "tools" / "build-wayfire.sh").read_text()
-        self.assertIn("wayfire-buffer-failures.patch", build)
+        self.assertIn('for p in "$SRC"/wayfire-plugin/wayfire-*.patch; do', build)     # every Sonata patch
+        self.assertTrue((root / "wayfire-plugin" / "wayfire-buffer-failures.patch").is_file())
         self.assertIn('echo "$commit" > "$PREFIX/sonata-commit"', build)
         # Vini: "wayfire/nonstd/safe-list.hpp: No such file" -- the system's wf-config is older
         self.assertIn("-Duse_system_wfconfig=disabled", build)
@@ -1957,7 +1958,7 @@ class DisplayGpuSafetyNetRegressions(unittest.TestCase):
         self.assertIn("+    last_cursor_name.clear();", patch)          # Wayfire sets "default" again later
         self.assertIn("if (!can_client_set_cursor())", patch)             # hidden on purpose: left alone
         build = (root / "tools" / "build-wayfire.sh").read_text()
-        self.assertIn('"$SRC/wayfire-plugin/wayfire-cursor-focus.patch"', build)
+        self.assertIn('for p in "$SRC"/wayfire-plugin/wayfire-*.patch; do', build)     # (it is one of them)
 
     def test_wayfire_patch_covers_the_snapshot(self):
         """15:39 crash: the close animation's snapshot (view.cpp take_snapshot)
