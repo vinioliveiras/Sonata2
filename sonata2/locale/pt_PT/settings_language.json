@@ -1,0 +1,20 @@
+{
+ "Calendar": "Calendário",
+ "Couldn't change the language": "Não foi possível alterar o idioma",
+ "Example": "Exemplo",
+ "First day of the week": "Primeiro dia da semana",
+ "Formats": "Formatos",
+ "How dates, times, numbers and money are written.": "Como se escrevem datas, horas, números e valores monetários.",
+ "Keyboard": "Teclado",
+ "Keyboard…": "Teclado…",
+ "Language": "Idioma",
+ "Monday": "Segunda-feira",
+ "Region": "Região",
+ "Region's default": "Predefinição da região",
+ "Saturday": "Sábado",
+ "Shown once the region's formats are installed (next login).": "Aparece quando os formatos da região estiverem instalados (no próximo início de sessão).",
+ "Sonata, your apps and the login screen use it from the next login.": "O Sonata, as suas aplicações e o ecrã de início de sessão usam este idioma a partir do próximo início de sessão.",
+ "Sunday": "Domingo",
+ "The new language and formats": "O novo idioma e os formatos",
+ "Your keyboard layout is set apart: Keyboard > Input Sources.": "A disposição do teclado define-se à parte: Teclado > Fontes de introdução."
+}

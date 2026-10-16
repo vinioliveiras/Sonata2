@@ -49,6 +49,7 @@ SECTIONS = [  # id, title, icon, badge colour, group (colours varied, not mostly
     ("defaults", "Default Apps", "emblem-default-symbolic", "purple", "system"),
     ("privacy", "Security & Privacy", "security-high-symbolic", "indigo", "system"),
     ("accessibility", "Accessibility", "preferences-desktop-accessibility-symbolic", "blue", "system"),
+    ("language", "Language & Region", "preferences-desktop-locale-symbolic", "blue", "system"),
     ("datetime", "Date & Time", "preferences-system-time-symbolic", "green", "system"),
     ("about", "About", "help-about-symbolic", "gray", "about"),
 ]
@@ -110,6 +111,8 @@ KEYWORDS = {
     "shortcuts": "keyboard shortcuts keys hotkeys windows super win snap desktop lock screenshot",
     "gamepad": "game controller gamepad xbox playstation dualsense joystick steam",
     "datetime": "clock time zone date", "notifications": "do not disturb alerts banners",
+    "language": "language idioma locale region formats date time numbers currency calendar first day week "
+                "portuguese português english translation",
     "users": "account password picture avatar login items", "privacy": "security lock screen location trash",
     "sharing": "file sharing remote", "accessibility": "zoom contrast reduce transparency motion graphics gpu hardware acceleration renderer",
     "appearance": "app icons regenerate frame generated dark light mode accent color theme icons font "
@@ -1671,6 +1674,13 @@ class Settings(Adw.ApplicationWindow):
         from .appicons_page import AppIconsPage
         self.appicons_page = AppIconsPage(self)
         return self.appicons_page.groups()
+
+    def _page_language(self):
+        """Language & Region (language_page.py): the system's language and
+        formats, apart from the keyboard."""
+        from .language_page import LanguagePage
+        self.language_page = LanguagePage(self)
+        return self.language_page.groups()
 
     def _page_shortcuts(self):
         from .shortcuts_page import ShortcutsPage
