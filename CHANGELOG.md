@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changes
+- Files and the desktop: an edited picture or video gets a new thumbnail
+  (the old one stayed: GIO still pointed at it, and two saves in the same
+  second shared one).
 - Files' path bar: right-click > Copy Path copies the folder under the
   pointer (or, on the bar's empty part, the folder shown). Typing an
   address there, the field's focus ring is drawn inside it (it was cut off).

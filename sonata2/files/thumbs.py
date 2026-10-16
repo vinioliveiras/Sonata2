@@ -48,7 +48,10 @@ def request(info, gfile, callback) -> None:
     if not path or not wanted(info):
         return
     mtime = info.get_attribute_uint64("time::modified")
-    key = (path, mtime)
+    # an edit makes a new key: its seconds, microseconds and size (two edits in
+    # the same second kept the old picture -- Vini: edited files' thumbnails
+    # didn't change)
+    key = (path, mtime, info.get_attribute_uint32("time::modified-usec"), info.get_size())
     if key in _mem:
         _mem.move_to_end(key)
         if _mem[key] is not None:
@@ -66,7 +69,9 @@ def request(info, gfile, callback) -> None:
 def _work(key, uri, path, mtime, ct, size, existing):
     tex = None
     try:
-        thumb = existing if existing and os.path.exists(existing) else _cached(uri, mtime)
+        # GIO's thumbnail::path names the cached file even when it is out of
+        # date (the file edited since): used only when it is this version's
+        thumb = (existing if existing and _valid(existing, mtime, size) else None) or _cached(uri, mtime, size)
         if not thumb and not _failed(uri, mtime):
             thumb = _make(uri, path, mtime, ct, size)
         if thumb:
@@ -100,17 +105,24 @@ def _name(uri) -> str:
     return hashlib.md5(uri.encode()).hexdigest() + ".png"
 
 
-def _cached(uri, mtime):
-    p = os.path.join(CACHE_DIR, _name(uri))
+def _valid(p, mtime, size=None) -> bool:
+    """A cached thumbnail of this version of the file: its Thumb::MTime, and
+    its Thumb::Size when it has one (an edit within the same second)."""
     if not os.path.exists(p):
-        return None
+        return False
     try:
         pb = GdkPixbuf.Pixbuf.new_from_file(p)
-        if pb.get_option("tEXt::Thumb::MTime") == str(mtime):
-            return p
     except GLib.Error:
-        pass
-    return None
+        return False
+    if pb.get_option("tEXt::Thumb::MTime") != str(mtime):
+        return False
+    kept = pb.get_option("tEXt::Thumb::Size")
+    return size is None or kept is None or kept == str(size)
+
+
+def _cached(uri, mtime, size=None):
+    p = os.path.join(CACHE_DIR, _name(uri))
+    return p if _valid(p, mtime, size) else None
 
 
 def _failed(uri, mtime) -> bool:
@@ -138,8 +150,8 @@ def _make(uri, path, mtime, ct, size):
     os.makedirs(CACHE_DIR, mode=0o700, exist_ok=True)
     out = os.path.join(CACHE_DIR, _name(uri))
     tmp = out + f".sonata{os.getpid()}.tmp"
-    pb.savev(tmp, "png", ["tEXt::Thumb::URI", "tEXt::Thumb::MTime", "tEXt::Software"],
-             [uri, str(mtime), "Sonata Files"])
+    pb.savev(tmp, "png", ["tEXt::Thumb::URI", "tEXt::Thumb::MTime", "tEXt::Thumb::Size", "tEXt::Software"],
+             [uri, str(mtime), str(size), "Sonata Files"])
     os.replace(tmp, out)
     return out
 
