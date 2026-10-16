@@ -1,0 +1,12 @@
+// Sonata: Switch User (sonata2/userswitch.py, tools/greeter-setup.sh).
+// Someone at this computer -- on its screen, in a session that's in front,
+// or the login screen itself -- may start and stop the second login screen
+// without a password. Nothing else about systemd's units changes.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") == "sonata-greeter-switch.service" &&
+        (action.lookup("verb") == "start" || action.lookup("verb") == "stop") &&
+        subject.local && (subject.active || subject.user == "greeter")) {
+        return polkit.Result.YES;
+    }
+});

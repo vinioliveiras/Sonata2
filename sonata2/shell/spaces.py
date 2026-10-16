@@ -1,0 +1,303 @@
+"""Desktops in Mission Control (Vini: Win+Tab shows the windows like Mission
+Control, and more desktops can be made, as on Windows).
+
+Wayfire's `scale` lays the windows out (Super+Tab, Ctrl+Up, F3, three
+fingers up); while it does, this bar sits at the top of the display, as in
+macOS Ventura: the desktops' names in a row, the current one in a glass
+pill; with the pointer over it, each name gets its picture (the wallpaper,
+the icons of the apps on it). Click one to go there, + (right edge) for a
+new desktop, x (on a picture) to close one -- its windows go to the
+desktop before it. Scale's input grab sits under the top layers (grab_input(WORKSPACE)),
+so the bar, like the Dock and the menu bar, takes clicks meanwhile.
+
+Desktops are Wayfire's workspaces in a row (core/vwidth, applied live and
+kept in Sonata's Wayfire config); moving windows and switching go through
+vswitch's IPC. The arithmetic is plain functions (desktop_of, plan_close),
+tested without a compositor."""
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+from gi.repository import Gdk, GLib, Graphene, Gsk, Gtk  # noqa: E402
+
+from .. import apps, icons, ui  # noqa: E402
+from ..i18n import _  # noqa: E402
+from ..wl.wfipc import WayfireIPC  # noqa: E402
+from . import layer  # noqa: E402
+
+MAX_DESKTOPS = 9
+THUMB_W, THUMB_H = 160, 96
+ICONS_PER_DESKTOP = 5
+BAR_GAP = 8                        # below the menu bar
+PILL_H = 24
+# what scale keeps free around the windows (config/wayfire.ini [scale] outer_margin):
+# the row of names and its gaps (the pictures open over the windows, on hover)
+SCALE_MARGIN = PILL_H + 3 * BAR_GAP + 8
+
+# Ventura's Spaces bar: no panel -- the desktops' names in a row at the top,
+# the current one in a glass pill; the pictures slide in while the pointer is
+# over it; a bare "+" at the right edge.
+ui.register("""
+window.sonata-spaces, window.sonata-spaces > contents { background: none; box-shadow: none; }
+.sp-strip { padding: %(gap)dpx 14px 0 14px; }
+.sp-strip > box > button { margin: 0; }
+.sp-desk { background: none; border: none; box-shadow: none; padding: 0; min-height: 0; }
+.sp-name { color: %(label)s; font-family: %(font)s; font-size: %(text_small)s; font-weight: 500;
+  min-height: %(pill_h)dpx; padding: 0 10px; border-radius: 7px; text-shadow: 0 1px 2px rgba(0,0,0,0.25);
+  transition: background-color %(t_fast)s ease-out; }
+.sp-desk:hover .sp-name { background: alpha(%(label)s, 0.10); }
+.sp-desk.current .sp-name { background: %(glass_tint)s; text-shadow: none;
+  box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_control)s; }
+.sp-desk.current .sp-name.solid { background: %(menu_bg)s; }
+.sp-thumb { border-radius: 8px; box-shadow: 0 0 0 0.5px %(hairline)s, 0 2px 6px rgba(0,0,0,0.25);
+  transition: box-shadow %(t_fast)s ease-out; }
+.sp-desk.current .sp-thumb { box-shadow: 0 0 0 2.5px %(accent)s, 0 2px 6px rgba(0,0,0,0.25); }
+.sp-desk:hover .sp-thumb { box-shadow: 0 0 0 2px alpha(white, 0.7), 0 2px 6px rgba(0,0,0,0.25); }
+.sp-icons { margin: 0 0 6px 0; }
+.sp-close { min-width: 18px; min-height: 18px; padding: 0; margin: -6px 0 0 -6px; border-radius: 99px;
+  background: %(menu_bg)s; color: %(label)s; border: none; opacity: 0;
+  box-shadow: 0 0 0 0.5px %(hairline)s, %(shadow_control)s; transition: opacity %(t_fast)s; }
+.sp-close image { -gtk-icon-size: 10px; }
+.sp-desk:hover .sp-close, .sp-close:hover { opacity: 1; }
+/* New Desktop: the bare plus at the right edge, a soft disc under the pointer */
+.sp-add { min-width: 30px; min-height: 30px; padding: 0; border-radius: 99px; border: none; box-shadow: none;
+  background: none; color: %(label)s; -gtk-icon-shadow: 0 1px 2px rgba(0,0,0,0.25);
+  transition: background-color %(t_fast)s ease-out, transform %(t_press)s ease-out; }
+.sp-add image { -gtk-icon-size: 20px; }
+.sp-add:hover { background: alpha(%(label)s, 0.12); }
+.sp-add:active { background: alpha(%(label)s, 0.20); transform: scale(0.94); }
+@keyframes sp-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+.sp-strip.opening { animation: sp-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+""", key="spaces", gap=BAR_GAP, pill_h=PILL_H)
+
+
+# -- the arithmetic ---------------------------------------------------------------------
+def desktop_of(view: dict, out: dict) -> int:
+    """Which desktop (column) a window is on: its centre, from the current
+    one, in display widths."""
+    g, og = view.get("geometry") or {}, out.get("geometry") or {}
+    width = og.get("width") or 1
+    cur = (out.get("workspace") or {}).get("x", 0)
+    centre = g.get("x", 0) + g.get("width", 0) / 2
+    return cur + int(centre // width)
+
+
+def plan_close(index: int, count: int, views: list, current: int):
+    """Closing desktop `index` of `count` (views: [(view id, desktop)]):
+    ([(view id, its desktop after)], the desktop to show, the new count).
+    Its windows go to the one before it (the first's: to the next one,
+    which becomes the first); the desktops after it move one to the left.
+    Every window goes straight to where it ends, then the last column goes."""
+    if count <= 1 or not 0 <= index < count:
+        return [], current, count
+    moves = []
+    for vid, desk in views:
+        if desk == index:
+            moves.append((vid, max(0, index - 1)))
+        elif desk > index:
+            moves.append((vid, desk - 1))
+    if current > index or (current == index and index > 0):
+        current -= 1
+    return moves, max(0, min(current, count - 2)), count - 1
+
+
+class _Thumb(Gtk.Widget):
+    """A desktop's picture: the wallpaper cropped to THUMB_W x THUMB_H (cover),
+    rounded -- a fixed size, whatever the wallpaper's (a Gtk.Picture asks for
+    the image's own proportions and stretches the row)."""
+
+    def __init__(self, paintable):
+        super().__init__(css_classes=["sp-thumb"], overflow=Gtk.Overflow.HIDDEN)
+        self.paintable = paintable
+
+    def do_measure(self, orientation, _for_size):
+        n = THUMB_W if orientation == Gtk.Orientation.HORIZONTAL else THUMB_H
+        return n, n, -1, -1
+
+    def do_snapshot(self, snap):
+        w, h, p = self.get_width(), self.get_height(), self.paintable
+        if p is None:
+            return
+        pw, ph = p.get_intrinsic_width() or w, p.get_intrinsic_height() or h
+        k = max(w / pw, h / ph)
+        sw, sh = pw * k, ph * k
+        bounds, clip = Graphene.Rect().init(0, 0, w, h), Gsk.RoundedRect()    # (kept: the clip
+        clip.init_from_rect(bounds, 8)                                        # reads them later)
+        snap.push_rounded_clip(clip)
+        area = Graphene.Rect().init((w - sw) / 2, (h - sh) / 2, sw, sh)
+        if isinstance(p, Gdk.Texture):
+            snap.append_texture(p, area)
+        else:
+            snap.save()
+            snap.translate(area.get_top_left())
+            p.snapshot(snap, sw, sh)
+            snap.restore()
+        snap.pop()
+
+
+# -- Wayfire --------------------------------------------------------------------------------
+def _outputs(ipc) -> list:
+    got = ipc.call("window-rules/list-outputs")
+    return got if isinstance(got, list) else []
+
+
+def _views(ipc) -> list:
+    got = ipc.call("window-rules/list-views")
+    return [v for v in (got if isinstance(got, list) else [])
+            if v.get("type") == "toplevel" and v.get("mapped", True) and not v.get("sticky")]
+
+
+def set_count(n: int) -> None:
+    from .. import wfconfig
+    wfconfig.wayfire_set("core", "vwidth", max(1, min(MAX_DESKTOPS, int(n))))
+    wfconfig.wayfire_set("core", "vheight", 1)
+
+
+class SpacesBar(Gtk.Window):
+    """One display's Spaces bar (shown while scale lays its windows out)."""
+
+    def __init__(self, app, monitor, connector: str, wallpaper):
+        super().__init__(application=app, title="Desktops", decorated=False, resizable=False)
+        self.add_css_class("sonata-spaces")
+        self.connector, self.wallpaper = connector, wallpaper
+        self.ipc = WayfireIPC()
+        self.expanded, self._collapse = False, 0
+        self.strip = Gtk.CenterBox(css_classes=["sp-strip"], hexpand=True)
+        self.row = Gtk.Box(spacing=14, halign=Gtk.Align.CENTER, valign=Gtk.Align.START)
+        self.strip.set_center_widget(self.row)
+        self.add = Gtk.Button(icon_name="list-add-symbolic", css_classes=["sp-add"], valign=Gtk.Align.START,
+                              tooltip_text=_("New Desktop"), can_focus=False)
+        self.add.connect("clicked", lambda _b: self.add_desktop(self.count))
+        self.strip.set_end_widget(self.add)
+        self.set_child(self.strip)
+        self.count = 1
+        motion = Gtk.EventControllerMotion()
+        motion.connect("enter", lambda *_a: self.expand(True))
+        motion.connect("leave", lambda *_a: self.expand(False))
+        self.strip.add_controller(motion)
+        LS = layer.layer_shell()
+        if LS:
+            LS.init_for_window(self)
+            LS.set_namespace(self, "sonata2-spaces")
+            LS.set_layer(self, LS.Layer.OVERLAY)
+            for edge in (LS.Edge.TOP, LS.Edge.LEFT, LS.Edge.RIGHT):
+                LS.set_anchor(self, edge, True)
+            LS.set_exclusive_zone(self, -1)
+            LS.set_keyboard_mode(self, LS.KeyboardMode.NONE)
+            if monitor is not None:
+                LS.set_monitor(self, monitor)
+
+    def _out(self):
+        return next((o for o in _outputs(self.ipc) if o.get("name") == self.connector), None)
+
+    def show_bar(self) -> None:
+        self.expanded = False
+        self.refresh()
+        out = self._out()
+        LS = layer.layer_shell()
+        if LS and out:
+            top = (out.get("workarea") or {}).get("y", 0) - (out.get("geometry") or {}).get("y", 0)
+            LS.set_margin(self, LS.Edge.TOP, max(0, top))
+        self.strip.remove_css_class("opening")
+        self.present()
+        self.strip.add_css_class("opening")
+
+    def expand(self, on: bool) -> None:
+        """The pictures in (pointer over the bar) or out (a moment after it left)."""
+        if self._collapse:
+            GLib.source_remove(self._collapse)
+            self._collapse = 0
+        if on:
+            self._reveal(True)
+        else:
+            def later():
+                self._collapse = 0
+                self._reveal(False)
+                return False
+            self._collapse = GLib.timeout_add(250, later)
+
+    def _reveal(self, on: bool) -> None:
+        self.expanded = on
+        c = self.row.get_first_child()
+        while c:
+            if getattr(c, "revealer", None):
+                c.revealer.set_reveal_child(on)
+            c = c.get_next_sibling()
+
+    def refresh(self) -> None:
+        out = self._out()
+        while self.row.get_first_child():
+            self.row.remove(self.row.get_first_child())
+        if out is None:
+            return
+        ws = out.get("workspace") or {}
+        count, current = max(1, ws.get("grid_width", 1)), ws.get("x", 0)
+        self.count = count
+        per = {i: [] for i in range(count)}
+        for v in _views(self.ipc):
+            if v.get("output-id") == out.get("id"):
+                d = desktop_of(v, out)
+                if 0 <= d < count and v.get("app-id") not in per[d]:
+                    per[d].append(v.get("app-id"))
+        for i in range(count):
+            self.row.append(self._desktop(i, i == current, per[i], count))
+        self.add.set_visible(count < MAX_DESKTOPS)
+
+    def _desktop(self, i, current, app_ids, count) -> Gtk.Widget:
+        # (room for the ring and the shadow: the revealer clips to its size)
+        over = Gtk.Overlay(halign=Gtk.Align.CENTER, margin_start=6, margin_end=6, margin_top=4, margin_bottom=8)
+        over.set_child(_Thumb(self.wallpaper))
+        row = Gtk.Box(spacing=3, halign=Gtk.Align.CENTER, valign=Gtk.Align.END, css_classes=["sp-icons"])
+        for aid in app_ids[:ICONS_PER_DESKTOP]:
+            info = apps.lookup(apps.match_app_id(aid) or aid or "")
+            img = Gtk.Image(pixel_size=20)
+            if info:
+                icons.set_image(img, icons.app_icon(info))
+            else:
+                img.set_from_icon_name("application-x-executable")
+            row.append(img)
+        over.add_overlay(row)
+        if count > 1:
+            x = Gtk.Button(icon_name="window-close-symbolic", css_classes=["sp-close"], halign=Gtk.Align.START,
+                           valign=Gtk.Align.START, tooltip_text=_("Close Desktop"), can_focus=False)
+            x.connect("clicked", lambda _b: self.close_desktop(i))
+            over.add_overlay(x)
+        rev = Gtk.Revealer(child=over, reveal_child=self.expanded, transition_duration=180,
+                           transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN)
+        name = _("Desktop {n}").format(n=i + 1) if count > 1 else _("Desktop")   # (Ventura: one is "Desktop")
+        label = ui.theme.glass_class(Gtk.Label(label=name, css_classes=["sp-name"], halign=Gtk.Align.CENTER))
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        col.append(rev)
+        col.append(label)
+        b = Gtk.Button(child=col, css_classes=["sp-desk"] + (["current"] if current else []), can_focus=False)
+        b.revealer = rev
+        b.connect("clicked", lambda _b: self.go(i))
+        return b
+
+    # -- actions --------------------------------------------------------------------------
+    def go(self, i: int) -> None:
+        out = self._out()
+        if out is not None:
+            self.ipc.call("vswitch/set-workspace", {"x": i, "y": 0, "output-id": out["id"]})
+        self._refresh_soon()
+
+    def add_desktop(self, count: int) -> None:
+        set_count(count + 1)
+        self._refresh_soon(250)                         # (Wayfire reads its config again)
+
+    def close_desktop(self, index: int) -> None:
+        out = self._out()
+        if out is None:
+            return
+        ws = out.get("workspace") or {}
+        count, current = ws.get("grid_width", 1), ws.get("x", 0)
+        views = [(v["id"], desktop_of(v, out)) for v in _views(self.ipc) if v.get("output-id") == out["id"]]
+        moves, after, new_count = plan_close(index, count, views, current)
+        for vid, desk in moves:
+            self.ipc.call("vswitch/send-view", {"view-id": vid, "x": desk, "y": 0})
+        self.ipc.call("vswitch/set-workspace", {"x": after, "y": 0, "output-id": out["id"]})
+        set_count(new_count)                            # (the last column goes, empty now)
+        self._refresh_soon(300)
+
+    def _refresh_soon(self, ms: int = 120) -> None:
+        GLib.timeout_add(ms, lambda: (self.get_visible() and self.refresh(), False)[1])

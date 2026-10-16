@@ -330,5 +330,6 @@
  "“{name}” doesn’t exist.": "“{name}” não existe.",
  "“{name}” is a package for Debian and Ubuntu.": "“{name}” é um pacote para Debian e Ubuntu.",
  "“{name}” is protected by a password.": "“{name}” está protegido por palavra-passe.",
- "“{name}” is read-only.": "“{name}” é só de leitura."
+ "“{name}” is read-only.": "“{name}” é só de leitura.",
+ "Use Video as Wallpaper": "Usar vídeo como imagem de fundo"
 }

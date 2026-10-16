@@ -80,6 +80,22 @@ with open(sys.argv[1], encoding="utf-8") as f:
     m = re.search(r"^plugins *=(.*)$", f.read(), re.M)
 if m and "sonata-resize" in m.group(1).split():
     wfconfig.wayfire_set("grid", "type", "none")
+# Super+Tab is Mission Control now (a wayfire.ini kept from before had it on
+# the app switcher); scale keeps room for the desktops bar (spaces.py)
+with open(sys.argv[1], encoding="utf-8") as f:
+    text = f.read()
+moved = wfconfig.migrate_mission_control(text, 56)
+if moved != text:
+    with open(sys.argv[1], "w", encoding="utf-8") as f:
+        f.write(moved)
+# X11 apps (XWayland: Electron in X11 mode, GTK 2/3, Wine...) get Sonata's
+# look from its XSETTINGS manager, started with each XWayland (Vini: their
+# GTK menu bars were light in Dark Mode). A script of the user's stays.
+with open(sys.argv[1], encoding="utf-8") as f:
+    own = re.search(r"^xwayland_startup_script *= *(\S.*)$", f.read(), re.M)
+if not own:
+    here = os.environ["PYTHONPATH"]
+    wfconfig.wayfire_set("core", "xwayland_startup_script", f"env PYTHONPATH={here} python3 -m sonata2.xsettings")
 PY
 over="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/wayfire-overrides.ini"
 # Keyboard: the system's layout (localectl) until one is picked in Settings.

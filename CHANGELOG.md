@@ -3,6 +3,71 @@
 ## Unreleased
 
 ### Changes
+- A new wired network icon, an Ethernet port: in the menu bar when the
+  connection is a cable, not Wi-Fi, and on Settings' Network section.
+- Lock screen: Switch User, when the computer has another user. Your
+  session stays locked; a user who is already logged in goes straight back
+  to their session (their own lock screen), anyone else gets the login
+  screen on a free console. With Sonata's login screen that is a second
+  greetd, installed by `install.sh --greeter` with a polkit rule allowing
+  only it to be started without a password; GDM and LightDM use their own.
+- Videos as wallpapers: choose one in Settings > Wallpaper, or right-click
+  a video on the desktop or in Files > Use Video as Wallpaper. It plays in
+  a loop, silent, only while the desktop is in front: any app in front,
+  the lock screen or a dark display pause it (no decoding meanwhile). One
+  decoder serves every display showing it. A frame of it (made once with
+  ffmpeg) is what the lock and login screens blur, and what shows at login
+  until the video starts.
+- Super+Tab is Mission Control (Windows' Task View): every window laid out,
+  and desktops as on Windows -- their names at the top as in macOS Ventura,
+  the current one in a glass pill, each one's picture (wallpaper, its apps'
+  icons) while the pointer is over the bar. + (top right) adds a desktop,
+  x on a picture closes one (its windows go to the desktop before it), a
+  click goes there. Alt+Tab stays the app switcher; a wayfire.ini kept
+  from before is moved over at login.
+- Alt+Tab: an app with several windows has one icon per window, side by
+  side, the window's title under the selected one; picking one brings that
+  window alone forward. One press still goes to the previous app.
+- Dock: hovering a running app shows every window it has open (minimized
+  ones too), live, drawn by Sonata's Wayfire plugin -- covered windows or
+  windows on another desktop as well; click one to bring it forward.
+- Settings no longer gets stuck on a section after adding (or deleting) a
+  user: the page rebuilt in place left a picture of itself on top of every
+  section opened after it.
+- Settings > Dock > Folders in the Dock: the Dock's folders, each with
+  Remove; Downloads back with one click once removed; any other folder
+  (Add Folder…). The running Dock follows at once.
+- External monitors' brightness on NVIDIA cards: their DDC/CI bus is found
+  through ddcutil's own detection (by connector, else by the monitor's
+  EDID) when the driver links none to the display -- the slider did
+  nothing with DDC/CI on.
+- Locked after the display went dark, it stays dark: the lock screen no
+  longer shows black with the pointer in the middle until its own 30 s
+  pass. Dark while locked also hides the pointer and turns plugged-in
+  monitors really off, as when unlocked (the laptop's panel: backlight only).
+- Electron apps (VS Code, Claude...) no longer snap back to their old size
+  after a resize: a frame drawn before the app took its new size, coming
+  late, was taken by Wayfire as the app resizing itself and its old size
+  sent back to it. Fixed in Sonata's Wayfire (wayfire-configure-ack.patch);
+  install.sh builds it again when Sonata's Wayfire patches change.
+- X11 apps (through XWayland: Electron in X11 mode, GTK 2/3, Wine...) get
+  Sonata's look -- theme, Dark Mode, icons, cursor, fonts -- from Sonata's
+  own XSETTINGS manager, live; their GTK menu bars were light in Dark Mode.
+- VS Code is no longer forced to the system title bar (its GTK menu bar
+  was light): it keeps its own, in its own theme. Where Sonata had set it,
+  it goes back once.
+- Web apps on Chrome: after the page moves within itself (WhatsApp) or
+  loads, its own title is set again so Chrome takes it for the window --
+  the page's name and unread count, no name made up for it.
+- Dock: an app opening gets its place smoothly -- the neighbours slide
+  aside, then its icon fades in -- as its place closes up when it quits.
+- About This Computer shows all of its content: it grows to it once the
+  specs are read (it kept the height it opened with, and longer lines --
+  Portuguese's -- needed a scroll bar).
+- Apps and the menu bar show Sonata's apps' names in the system's
+  language right after an update (a launcher rewritten in place went
+  unnoticed until something else changed its folder); the menu bar's
+  "Files" with no window in front, and Calendar's window title, too.
 - Sonata's apps are named in the system's language (Arquivos / Ficheiros,
   Calendário...): their launchers carry the Portuguese names and
   descriptions too, so the Dock, Apps and the menu bar show them.

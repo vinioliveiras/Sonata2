@@ -58,8 +58,10 @@ class LockDisplayTest(unittest.TestCase):
         src = inspect.getsource(lock.LockScreen)
         self.assertIn("self._dark(True)", src)
         self.assertIn("self._dark(False)", src)
-        self.assertNotIn("displays(False)", src)              # never powered off while locked
-        self.assertIn("lockdisplay.dim(True)", src)
+        # the built-in panel never powered off while locked (NVIDIA: it never came back) --
+        # only its backlight, plugged-in monitors off, as the session darkens them (idlelock)
+        self.assertIn("displays_dark(w, not on)", src)
+        self.assertIn("lockdisplay.dim(not on)", src)
         self.assertIn("lockdisplay.unlocked()", inspect.getsource(idlelock.IdleLock.__init__))
 
     def test_keyboard_goes_dark_with_the_lock(self):
@@ -160,16 +162,17 @@ class LockWakeTest(unittest.TestCase):
             def watch(s, secs, idle, back):
                 s.watched = (secs, idle, back)
                 return 1
-            def displays(s, on):
-                s.calls.append(on)
+            def displays(s, on, only=None):
+                s.calls.append((on, only))
                 return True
             def close(s):
                 s.closed = True
         return W()
 
     def test_input_idle_darkens_and_any_input_wakes(self):
-        """Dark is black + backlight at zero, never the display powered off;
-        any input anywhere brings it back."""
+        """Dark is black + the panel's backlight at zero (never the panel
+        powered off), plugged-in monitors off, no pointer; any input anywhere
+        brings it back."""
         L, ls = self.lock(30)
         w = self.fake_watch()
         black = types.SimpleNamespace(on=False)
@@ -181,6 +184,8 @@ class LockWakeTest(unittest.TestCase):
                 mock.patch.object(LD, "dark_seconds", return_value=30), \
                 mock.patch("sonata2.wl.idlewatch.IdleWatch", lambda: w), \
                 mock.patch.object(LD, "lights", lights.append), mock.patch.object(LD, "dim", dims.append), \
+                mock.patch.object(LD, "has_backlight", return_value=True), \
+                mock.patch.object(LD, "mark_dark"), mock.patch("sonata2.shell.blackout.pointer") as pointer, \
                 mock.patch.object(LD, "displays") as power:
             ls._dark(True)
             secs, idle, back = w.watched
@@ -195,7 +200,33 @@ class LockWakeTest(unittest.TestCase):
             self.assertEqual((black.on, dims[-1]), (False, False))
             self.assertTrue(w.closed)
         power.assert_not_called()
-        self.assertEqual(w.calls, [])                            # no output power changes at all
+        self.assertEqual([on for on, _o in w.calls], [False, True, False, True])
+        for _on, only in w.calls:                                # only plugged-in monitors
+            self.assertFalse(only("eDP-1"))
+            self.assertTrue(only("HDMI-A-1"))
+        self.assertEqual([c.args[0] for c in pointer.call_args_list], [True, False, True, False])
+
+    def test_locked_after_the_session_went_dark_starts_dark(self):
+        """Vini: locked after the display had gone dark, it showed black with
+        the pointer in the middle, really dark only its own 30 s later."""
+        L, ls = self.lock(30)
+        w = self.fake_watch()
+        ls.blackouts = []
+        with mock.patch.object(LD, "locked"), mock.patch.object(LD, "dark_seconds", return_value=30), \
+                mock.patch("sonata2.wl.idlewatch.IdleWatch", lambda: w), mock.patch.object(LD, "lights"), \
+                mock.patch.object(LD, "dim"), mock.patch.object(LD, "has_backlight", return_value=True), \
+                mock.patch.object(LD, "was_dark", return_value=True), mock.patch("sonata2.shell.blackout.pointer"):
+            ls._dark(True)
+        self.assertTrue(ls._off)                                 # dark at once
+        self.assertEqual([on for on, _o in w.calls], [False])
+
+    def test_dark_marker(self):
+        with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": tempfile.mkdtemp()}):
+            self.assertFalse(LD.was_dark())
+            LD.mark_dark(True)
+            self.assertTrue(LD.was_dark())
+            LD.mark_dark(False)
+            self.assertFalse(LD.was_dark())
 
     def test_never_means_no_dark_at_all(self):
         L, ls = self.lock(None)

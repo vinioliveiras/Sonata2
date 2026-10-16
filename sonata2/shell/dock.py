@@ -1187,8 +1187,9 @@ class Dock(Gtk.Box):
         anim.play()
 
     def open_up(self, tile) -> None:
-        """A new icon (a folder dropped on the Dock): its place opens, the
-        neighbours sliding aside, then it fades in (Vini: it just popped in)."""
+        """A new icon (an app opened, a folder dropped on the Dock): its place
+        opens, the neighbours sliding aside, then it fades in (Vini: it just
+        popped in)."""
         if not self.get_mapped():
             return
         tiles = [t for t in self.app_tiles() + self.stacks.tiles() if t is not tile and t.get_mapped()]
@@ -1969,6 +1970,7 @@ class Dock(Gtk.Box):
         for key in [k for k in self.tiles if k not in pinned and
                     ((k not in groups and not self._is_recent(k)) or self.folder_tile_of(k))]:
             self._remove_tile(key)                 # unpinned app quit (or it lives in a folder)
+        before = set(self.tiles)
         for key in groups:
             if key not in self.tiles and not self.folder_tile_of(key):   # (Vini: it left its folder)
                 if self._add_known_tile(key):        # a desktop entry, or a Steam game
@@ -1989,6 +1991,12 @@ class Dock(Gtk.Box):
             if getattr(tile, "folder_pop", None) is not None:
                 dock_folder.show_running(self, tile.folder_pop)
         self._relayout()
+        # an app opened: its place opens smoothly, as it closes up when it quits
+        # (Vini) -- not for the windows already there when the Dock starts
+        if getattr(self, "_windows_seen", False):
+            for key in [k for k in self.tiles if k not in before]:
+                self.open_up(self.tiles[key])
+        self._windows_seen = True
         GLib.idle_add(self._update_rectangles_bg)
         return False
 
@@ -2517,6 +2525,11 @@ class DockWindow(Gtk.ApplicationWindow):
             for key in gone:
                 if key in d.tiles and key not in PERMANENT and key not in d.windows and not d._is_recent(key):
                     d._remove_tile(key)
+            d._relayout()
+        # Settings > Dock's folders (a folder removed by mistake brought back: Vini)
+        if d and new["stacks"] is not None and [x.get("path") for x in new["stacks"]] != \
+                [x.get("path") for x in (self.cfg["stacks"] or [])]:
+            d.stacks.sync(new["stacks"])
             d._relayout()
         cur = dict(self.cfg, icon_size=d.user_size if d else self.cfg["icon_size"])
         changed = [k for k in self.LIVE_KEYS if new[k] != cur[k]]

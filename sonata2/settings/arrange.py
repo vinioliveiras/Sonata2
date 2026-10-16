@@ -27,7 +27,7 @@ def wallpaper_thumb(width: int = 320):
         from gi.repository import Adw, GdkPixbuf, Gio
         from .. import prefs
         dark = Adw.StyleManager.get_default().get_dark()
-        uri = prefs.wallpaper_uri(dark)
+        uri = prefs.wallpaper_still_uri(dark)           # (a video wallpaper: its poster)
         path = Gio.File.new_for_uri(uri).get_path() if uri else None
         return GdkPixbuf.Pixbuf.new_from_file_at_scale(path, width, -1, True) if path else None
     except Exception:

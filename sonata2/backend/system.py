@@ -590,7 +590,7 @@ def set_brightness(level: int, output: Optional[str] = None) -> bool:
 DRM = "/sys/class/drm"
 
 
-def ddc_bus(output: str) -> Optional[int]:
+def _drm_ddc_bus(output: str) -> Optional[int]:
     import glob as _glob
     for conn in _glob.glob(os.path.join(DRM, f"card*-{output}")):
         for link in (os.path.join(conn, "ddc"), conn):
@@ -604,6 +604,89 @@ def ddc_bus(output: str) -> Optional[int]:
                 kids = []
             if kids:
                 return int(kids[0][4:])
+    return None
+
+
+def ddc_bus(output: str) -> Optional[int]:
+    """The I2C bus of a monitor's DDC/CI: from its DRM connector, else from
+    what ddcutil finds (NVIDIA's driver links no bus to the connector: Vini's
+    monitor had DDC/CI on and no brightness)."""
+    bus = _drm_ddc_bus(output)
+    return bus if bus is not None else _detected_bus(output)
+
+
+def _edid_id(output: str):
+    """(manufacturer, model name, serial) of the monitor on `output`, from
+    its EDID in sysfs; None when there's none."""
+    import glob as _glob
+    for conn in _glob.glob(os.path.join(DRM, f"card*-{output}")):
+        try:
+            with open(os.path.join(conn, "edid"), "rb") as f:
+                e = f.read(128)
+        except OSError:
+            continue
+        if len(e) < 128:
+            continue
+        v = (e[8] << 8) | e[9]
+        mfg = "".join(chr(((v >> s) & 0x1F) + 64) for s in (10, 5, 0))
+        name = serial = ""
+        for off in (54, 72, 90, 108):
+            d = e[off:off + 18]
+            if d[0:3] == b"\0\0\0" and d[3] in (0xFC, 0xFF):
+                text = d[5:18].split(b"\n")[0].decode("ascii", "replace").strip()
+                if d[3] == 0xFC:
+                    name = text
+                else:
+                    serial = text
+        return mfg, name, serial
+    return None
+
+
+_detected = {"at": 0.0, "displays": []}
+DETECT_TTL_S = 300
+
+
+def ddc_displays() -> list:
+    """[{"bus", "connector", "mfg", "model", "serial"}] from `ddcutil detect
+    --brief` (kept a few minutes: probing every bus takes seconds)."""
+    import time
+    if _detected["displays"] and time.monotonic() - _detected["at"] < DETECT_TTL_S:
+        return _detected["displays"]
+    rc, out = _run(["ddcutil", "detect", "--brief"], timeout=20)
+    _detected.update(at=time.monotonic(), displays=parse_ddc_detect(out) if rc == 0 else [])
+    return _detected["displays"]
+
+
+def parse_ddc_detect(text: str) -> list:
+    out = []
+    for block in re.split(r"(?m)^(?=Display \d+)", text or ""):
+        if not block.startswith("Display"):
+            continue                                  # ("Invalid display": no DDC/CI there)
+        bus = re.search(r"I2C bus:\s*/dev/i2c-(\d+)", block)
+        if not bus:
+            continue
+        conn = re.search(r"DRM connector:\s*(\S+)", block)
+        mon = re.search(r"Monitor:\s*(.*)", block)
+        mfg, model, serial = ((mon.group(1).strip().split(":") + ["", "", ""])[:3] if mon else ("", "", ""))
+        out.append({"bus": int(bus.group(1)), "connector": conn.group(1) if conn else "",
+                    "mfg": mfg.strip(), "model": model.strip(), "serial": serial.strip()})
+    return out
+
+
+def _detected_bus(output: str) -> Optional[int]:
+    if not shutil.which("ddcutil"):
+        return None
+    shown = ddc_displays()
+    for d in shown:                                   # ddcutil 2: the connector it's on
+        if d["connector"] and d["connector"].split("-", 1)[-1] == output:
+            return d["bus"]
+    ident = _edid_id(output)                          # else: the same monitor, by its EDID
+    if ident is None:
+        return None
+    mfg, name, serial = ident
+    for d in shown:
+        if d["mfg"] == mfg and d["model"] == name and (not serial or not d["serial"] or d["serial"] == serial):
+            return d["bus"]
     return None
 
 

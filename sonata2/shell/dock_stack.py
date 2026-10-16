@@ -181,14 +181,28 @@ class StackRow:
         self._save()
         self.dock.open_up(tile)                      # its place opens, then it fades in
 
-    def remove(self, tile) -> None:
+    def remove(self, tile, save: bool = True) -> None:
         self._unwatch(tile)
         self._tiles.remove(tile)
         tile.label.unparent()
         self.dock.close_up(tile)                     # its place closes up, like an app's
-        self._save()
+        if save:
+            self._save()
 
-    def _add_tile(self, spec) -> None:
+    def sync(self, specs) -> None:
+        """Settings > Dock changed the folders (added back, removed): the
+        Dock follows, nothing written back (the file is already so)."""
+        want = [dict(STACK_DEFAULTS, **s) for s in (specs or []) if s.get("path") and not gone(s["path"])]
+        paths = [s["path"] for s in want]
+        for tile in [t for t in self._tiles if t.spec["path"] not in paths]:
+            self.remove(tile, save=False)
+        have = {t.spec["path"] for t in self._tiles}
+        for spec in want:
+            if spec["path"] not in have:
+                self.dock.open_up(self._add_tile(spec))     # its place opens, then it fades in
+        self.dock.cfg["stacks"] = [t.spec for t in self._tiles]
+
+    def _add_tile(self, spec):
         from .dock import DockTile
         name = os.path.basename(spec["path"].rstrip("/")) or spec["path"]
         tile = DockTile(self.dock, name, Gio.ThemedIcon.new("folder"), self.open_panel,

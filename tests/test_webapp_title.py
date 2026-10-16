@@ -27,31 +27,46 @@ class TitleTest(unittest.TestCase):
     def feed(self, *ms):
         self.g.feed(b"".join(json.dumps(m).encode() + b"\0" for m in ms))
 
-    def test_address_title_set_again(self):
-        self.feed(info("A", URL, "web.whatsapp.com", "Target.targetCreated"))
+    def attach(self):
+        self.feed(info("A", URL, "WhatsApp", "Target.targetCreated"),
+                  {"method": "Target.attachedToTarget",
+                   "params": {"sessionId": "S1", "targetInfo": {"targetId": "A", "type": "page"}}})
+
+    def test_watches_the_app_page(self):
+        self.feed(info("A", URL, "WhatsApp", "Target.targetCreated"))
         self.assertEqual(self.msgs()[-1]["method"], "Target.attachToTarget")
         self.assertEqual(self.msgs()[-1]["params"], {"targetId": "A", "flatten": True})
         self.feed({"method": "Target.attachedToTarget",
                    "params": {"sessionId": "S1", "targetInfo": {"targetId": "A", "type": "page"}}})
-        last = self.msgs()[-1]
-        self.assertEqual((last["method"], last["sessionId"]), ("Runtime.evaluate", "S1"))
-        self.assertIn('"WhatsApp"', last["params"]["expression"])         # the name, when it has none
+        methods = [(m["method"], m.get("sessionId")) for m in self.msgs()[-2:]]
+        self.assertEqual(methods, [("Page.enable", "S1"), ("Runtime.evaluate", "S1")])
+
+    def test_title_set_again_after_a_move_within_the_page(self):
+        """pushState left a history entry without a title: Chrome showed the address."""
+        self.attach()
         n = len(self.sent)
-        self.feed(info("A", URL, "web.whatsapp.com"))                       # still: tried again, attached
-        self.assertEqual(self.msgs()[-1]["method"], "Runtime.evaluate")
+        self.feed({"method": "Page.navigatedWithinDocument", "sessionId": "S1",
+                   "params": {"frameId": "A", "url": URL + "chat"}})
+        last = self.msgs()[-1]
         self.assertEqual(len(self.sent), n + 1)
+        self.assertEqual((last["method"], last["sessionId"]), ("Runtime.evaluate", "S1"))
+        self.assertIn("document.title = t", last["params"]["expression"])
+        self.feed({"method": "Page.navigatedWithinDocument", "sessionId": "OTHER", "params": {}})
+        self.assertEqual(len(self.sent), n + 1)                              # another page's: no
 
-    def test_a_real_title_left_alone(self):
-        self.feed(info("A", URL, "WhatsApp", "Target.targetCreated"), info("A", URL, "(3) WhatsApp"))
-        self.assertEqual(len(self.msgs()), 1)                              # (setDiscoverTargets only)
+    def test_nothing_made_up(self):
+        """Vini: no hard-coded name -- only the page's own title is set again."""
+        self.attach()
+        expr = self.msgs()[-1]["params"]["expression"]
+        self.assertNotIn("WhatsApp", expr)
+        self.assertIn("if (t)", expr)
 
-    def test_never_a_loop(self):
-        self.feed(info("A", URL, "web.whatsapp.com", "Target.targetCreated"),
-                  {"method": "Target.attachedToTarget",
-                   "params": {"sessionId": "S1", "targetInfo": {"targetId": "A"}}})
+    def test_address_title_tried_a_few_times_only(self):
+        self.attach()
         for _ in range(10):
-            self.feed(info("A", URL, ""))
-        self.assertLessEqual(sum(m["method"] == "Runtime.evaluate" for m in self.msgs()), Guard.TITLE_TRIES)
+            self.feed(info("A", URL, "web.whatsapp.com"))
+        evals = sum(m["method"] == "Runtime.evaluate" for m in self.msgs())
+        self.assertLessEqual(evals, 1 + Guard.TITLE_TRIES)
 
     def test_other_pages_untouched(self):
         self.feed(info("A", URL, "WhatsApp", "Target.targetCreated"),

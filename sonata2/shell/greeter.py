@@ -374,8 +374,28 @@ class Greeter:
     def _pick(self, user):
         if getattr(self, "_busy", False):          # logging in: the page must stay until it ends
             return
+        if user is not None and self._resume(user.name):
+            return
         self.user = user
         self._show()
+
+    def _resume(self, name: str) -> bool:
+        """`name` is already logged in (Switch User from their lock screen,
+        or from someone else's): back to that session -- its own lock screen
+        asks for the password -- instead of a second login. A switch login
+        screen (userswitch.py) then goes away."""
+        if self.fake:
+            return False
+        from .. import userswitch
+        try:
+            s = userswitch.graphical_session(name, userswitch.sessions())
+        except Exception:
+            return False
+        if s is None or not userswitch.activate(s["id"]):
+            return False
+        if os.environ.get(userswitch.SWITCH_ENV):
+            threading.Thread(target=userswitch.leave_switch_greeter, daemon=True).start()
+        return True
 
     def _login_page(self, focus=True):
         u = self.user
@@ -509,6 +529,9 @@ class Greeter:
         pw = self.entry.get_text()
         session = self._session()
         if not pw or session is None or self.guard.blocked(self.user.name):
+            return
+        if self._resume(self.user.name):            # (already logged in: never a second session)
+            self.entry.set_text("")
             return
         self.entry.set_sensitive(False)
         self.links.set_sensitive(False)              # no "Other Users"/session change mid-login

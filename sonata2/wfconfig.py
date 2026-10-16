@@ -192,3 +192,38 @@ def remove_section(section: str) -> bool:
             except OSError:
                 pass
         return ok
+
+
+SUPER_TAB = "<super> KEY_TAB"
+
+
+def migrate_mission_control(text: str, margin: int) -> str:
+    """A wayfire.ini kept from before Super+Tab became Mission Control (Vini:
+    Win+Tab shows the windows, as Task View): Super+Tab / Super+Shift+Tab
+    leave the app switcher (Alt+Tab stays), scale's toggle gets Super+Tab,
+    and scale keeps room for the desktops bar (its old 28 px margin)."""
+    out, sec, drop = [], None, set()
+    lines = text.splitlines(keepends=True)
+    for line in lines:                                   # the switcher's Super bindings, and their commands
+        s = line.strip()
+        if s.startswith("[") and s.endswith("]"):
+            sec = s[1:-1]
+        elif sec == "command" and "=" in s:
+            key, val = (p.strip() for p in s.split("=", 1))
+            if key.startswith("binding_") and val in (SUPER_TAB, "<super> <shift> KEY_TAB"):
+                drop.add(key[len("binding_"):])
+    sec = None
+    for line in lines:
+        s = line.strip()
+        if s.startswith("[") and s.endswith("]"):
+            sec = s[1:-1]
+        elif "=" in s and not s.startswith("#"):
+            key, val = (p.strip() for p in s.split("=", 1))
+            if sec == "command" and key.split("_", 1)[-1] in drop and key.split("_", 1)[0] in ("binding", "command"):
+                continue
+            if sec == "scale" and key == "toggle" and SUPER_TAB not in val:
+                line = f"toggle = {SUPER_TAB} | {val}\n" if val else f"toggle = {SUPER_TAB}\n"
+            elif sec == "scale" and key == "outer_margin" and val == "28":
+                line = f"outer_margin = {margin}\n"
+        out.append(line)
+    return "".join(out)

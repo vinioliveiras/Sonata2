@@ -42,12 +42,17 @@ class FallbackTest(unittest.TestCase):
         self.assertNotIn(f"{prefs.BG}/picture-uri", data)
         self.assertEqual(prefs.get(prefs.BG, "picture-uri"), wallpapers.default_uris()[0])
 
+    def test_still_goes_through_the_fallback(self):
+        import inspect
+        self.assertIn("wallpaper_uri(dark)", inspect.getsource(prefs.wallpaper_still_uri))
+
     def test_every_reader_uses_it(self):
         import pathlib
         root = pathlib.Path(prefs.__file__).parent
         for f in ("shell/wallpaper.py", "shell/loginui.py", "settings/arrange.py"):
             src = (root / f).read_text()
-            self.assertIn("prefs.wallpaper_uri(", src, f)
+            # (wallpaper_still_uri: a video wallpaper's poster, through wallpaper_uri)
+            self.assertTrue("prefs.wallpaper_uri(" in src or "prefs.wallpaper_still_uri(" in src, f)
             self.assertNotIn('prefs.get(prefs.BG, "picture-uri', src, f)
 
 

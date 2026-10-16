@@ -80,6 +80,11 @@ class CrossFade(Gtk.Overlay):
         self._anim.connect("done", lambda *_: self._finish())
         self._anim.play()
 
+    def drop(self) -> None:
+        """Take a picture still on top away at once, without fading (a page
+        switch is instant; a leftover picture would cover the new page)."""
+        self._finish()
+
     def _finish(self) -> None:
         if self._anim is not None:
             anim, self._anim = self._anim, None

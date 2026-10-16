@@ -151,7 +151,10 @@ Run `tools/dev-session.sh` (or a Wayfire session).
 - [ ] Log out: "Sonata" is on the login screen; logging in starts wallpaper,
       Dock, menu bar; F4 / Super+Space open Launchpad.
 - [ ] An app with Open at Login (Dock > Options) starts at login.
-- [ ] Super+Tab, Super+Q, Super+M, Ctrl+Up, Super+, work.
+- [ ] Alt+Tab, Super+Q, Super+M, Super+Tab / Ctrl+Up (Mission Control), Super+, work.
+- [ ] Lock screen with two users: Switch User shows; the other user logs in on a new console; switching back shows the first user's lock screen.
+- [ ] Video wallpaper: plays on the desktop, pauses when an app is focused (not when the Dock or menu bar is clicked), paused while locked; the lock screen blurs its frame.
+- [ ] Mission Control: the desktops' names at the top, pictures on hover; + adds a desktop, × closes one (its windows move to the one before).
 - [ ] File chooser / screenshot portals work in apps (xdg-desktop-portal-gtk/-wlr).
 - [ ] Log back into GNOME: it looks and behaves exactly as before.
 - [ ] `./install.sh --uninstall` removes it (settings stay).

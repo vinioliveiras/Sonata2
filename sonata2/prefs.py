@@ -21,7 +21,7 @@ import shutil
 import subprocess
 import sys
 
-from . import config
+from . import config, videowall
 
 NAME = "system"
 I, WM, BG = "org.gnome.desktop.interface", "org.gnome.desktop.wm.preferences", "org.gnome.desktop.background"
@@ -138,6 +138,8 @@ def usable_picture(uri: str) -> bool:
     try:
         from gi.repository import Gio, GdkPixbuf
         path = Gio.File.new_for_uri(uri).get_path()
+        if path and videowall.is_video(path):                 # a video wallpaper (videowall.py)
+            return os.path.isfile(path)
         return bool(path) and os.path.isfile(path) and GdkPixbuf.Pixbuf.get_file_info(path)[0] is not None
     except Exception:
         return False
@@ -151,8 +153,25 @@ def wallpaper_uri(dark: bool) -> str:
     return uri if usable_picture(uri) else _WALL[1 if dark else 0]
 
 
+def wallpaper_still_uri(dark: bool) -> str:
+    """The wallpaper as a picture, for what can't play a video (the lock and
+    login screens' blurred backdrop, Mission Control, previews): a video's
+    poster frame (made the first time: call it off the UI thread), else the
+    picture itself. Sonata's default when the video has no frame to give."""
+    uri = wallpaper_uri(dark)
+    try:
+        from gi.repository import Gio
+        path = Gio.File.new_for_uri(uri).get_path()
+    except Exception:
+        return uri
+    if not path or not videowall.is_video(path):
+        return uri
+    still = videowall.poster(path)
+    return "file://" + still if still else _WALL[1 if dark else 0]
+
+
 def set_wallpaper(uri: str) -> None:
-    """Finder's "Set Desktop Picture": the same picture in Light and Dark."""
+    """Finder's "Set Desktop Picture": the same picture (or video) in Light and Dark."""
     for key in ("picture-uri", "picture-uri-dark"):
         set(BG, key, uri)
 
@@ -160,6 +179,11 @@ def set_wallpaper(uri: str) -> None:
 def is_picture(content_type: str) -> bool:
     return bool(content_type) and content_type.startswith("image/") and "svg" not in content_type \
         and "icon" not in content_type
+
+
+def is_video(content_type: str) -> bool:
+    """A video a wallpaper can be made of (videowall.py)."""
+    return videowall.is_video(content_type)
 
 
 def watch(callback):

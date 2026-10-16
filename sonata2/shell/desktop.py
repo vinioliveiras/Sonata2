@@ -568,8 +568,12 @@ class Desktop(Gtk.Fixed):
         ok, pt = item.compute_point(self, Graphene.Point().init(x, y))
         from .. import prefs
         first = pkg + [Item(_("Open"), self.open_selection)]
-        if n == 1 and item.app is None and prefs.is_picture(item.info.get_content_type() or ""):
+        ctype = item.info.get_content_type() or ""
+        if n == 1 and item.app is None and prefs.is_picture(ctype):
             first.append(Item(_("Set Desktop Picture"), lambda f=file_of(item.info): prefs.set_wallpaper(f.get_uri())))
+        elif n == 1 and item.app is None and prefs.is_video(ctype):               # a video wallpaper (videowall.py)
+            first.append(Item(_("Use Video as Wallpaper"),
+                              lambda f=file_of(item.info): prefs.set_wallpaper(f.get_uri())))
         ui.menu.popup(self, [
             first,
             [Item(_("Move to Trash"), self.trash_selection)],

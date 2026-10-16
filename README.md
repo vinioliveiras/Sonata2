@@ -31,8 +31,8 @@ doesn't need GNOME or KDE.
 ![Files zoomed between the menu bar and the Dock](docs/screenshots/files-full.webp)
 <sub>**Files** with tabs; the menu bar follows the app in front.</sub>
 
-![System Settings on the desktop](docs/screenshots/settings-full.webp)
-<sub>**System Settings**: Sonata's own settings and the Linux ones, side by side.</sub>
+![Settings on the desktop](docs/screenshots/settings-full.webp)
+<sub>**Settings**: Sonata's own settings and the Linux ones, side by side.</sub>
 
 | | |
 |---|---|
@@ -261,6 +261,10 @@ They are generated once and kept (Settings → Appearance → Regenerate).
   recording (Super+Shift+3/4/5), emoji picker, sound effects.
 - One menu bar and wallpaper per display, and the highest refresh rate
   by default.
+- Videos as wallpapers (Settings > Wallpaper > Choose…, or right-click a
+  video > Use Video as Wallpaper): looped and silent, playing only while
+  the desktop is in front and paused under any app. The lock and login
+  screens blur a frame of it.
 
 ## Keyboard shortcuts
 
@@ -270,9 +274,9 @@ Super (the Windows key) plays the part of Cmd.
 |---|---|
 | Super (alone), F4, pinch with 4 fingers | Launchpad |
 | Super+Space | Search |
-| Super+Tab / Super+Shift+Tab | switch apps |
+| Alt+Tab / Alt+Shift+Tab | switch apps (one icon per window when an app has several) |
 | Super+Q, Alt+F4 / Super+M / Ctrl+Super+F | close / minimize / full screen (remembered per app; Windows games open in full screen by themselves) |
-| Ctrl+Up, F3, swipe up with 3 fingers | Mission Control |
+| Super+Tab, Ctrl+Up, F3, swipe up with 3 fingers | Mission Control (desktops at the top: + adds one, × closes one) |
 | Ctrl+Down, swipe down with 3 fingers | App Exposé |
 | swipe left/right with 3 fingers, Super+Alt+arrows | switch Spaces |
 | Super+Shift+3 / 4, Print | screenshot (screen / selection) |
@@ -300,6 +304,18 @@ Super (the Windows key) plays the part of Cmd.
 | Ctrl+Shift+. | hidden files |
 | Ctrl+Shift+A | Applications |
 | Ctrl+Shift+F | Recents |
+
+## Language
+
+Sonata speaks the system's language: Portuguese (Brazil), Portuguese
+(Portugal), or English for any other language. Settings → Language & Region
+sets the system's language and, separately, the region of its formats
+(dates, times, numbers, money, measures, paper) and the first day of the
+week, as on a first install. The keyboard stays in Settings → Keyboard, so
+a Portuguese (Brazil) system can use a Portugal keyboard. Changes take
+effect at the next login.
+
+Translating: [docs/TRANSLATING.md](docs/TRANSLATING.md).
 
 ## Settings: Sonata vs. Linux
 
@@ -381,6 +397,10 @@ xvfb-run -a -s "-screen 0 1920x1200x24" python3 tools/readme-shots.py   # README
 - **Tests that need a display**: `tests.test_dock`, `tests.test_launchpad`,
   `tests.test_topbar`, `tests.test_settings`, `tests.test_files`. Run each
   module on its own.
+- **Translations**: any text people see goes through `_()` and into both
+  Portuguese catalogs. `python3 tools/i18n_missing.py sonata2/<area>/` lists
+  what's missing; `tests.test_i18n` checks it all. See
+  [docs/TRANSLATING.md](docs/TRANSLATING.md).
 
 Each shell component is its own process (a crash doesn't take the others
 with it). They talk through D-Bus and the config files.
@@ -407,11 +427,13 @@ sonata2/            Python package (`python3 -m sonata2 <component>`)
   backend/          Linux services: network, audio (equalizer), power, displays, users
   wl/               Wayland protocol clients
   data/             icons, cursors, GTK themes, fonts, sounds, title bar artwork
+  locale/           translations: pt_BR and pt_PT catalogs (docs/TRANSLATING.md)
+  i18n.py           _(), ngettext(), the language from the session's locale
 config/             the session's Wayfire config
 wayfire-plugin/     sonata-corners (rounded corners for every window)
 tools/              session scripts, installer helpers, previews
 tests/              unit and UI tests
-docs/               design system, feature parity
+docs/               design system, feature parity, translating
 ```
 
 Sonata succeeds [Sonata](https://github.com/vinioliveiras/sonata)
