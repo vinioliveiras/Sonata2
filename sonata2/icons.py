@@ -33,6 +33,7 @@ APPEARANCE_DEFAULTS = {"flatpak_theme": True, "icon_theme": "Sonata", "theme": "
                        "renderer": "gl", "system_titlebars": True, "menu_logo": "distro",
                        "menu_text": "", "glass_titlebars": False,
                        "screen_corners": True, "radius": {}, "glass": {},
+                       "background": {},                 # {"light": "#rrggbb", "dark": ...} (tokens.BACKGROUNDS)
                        "buttons_side": "left",           # window buttons: left (macOS) / right (Vini)
                        "buttons_style": "color",         # their colours: color / graphite / mono / custom
                        "buttons_colors": {},             # custom: {"close", "minimize", "maximize"} (trafficlights.py)

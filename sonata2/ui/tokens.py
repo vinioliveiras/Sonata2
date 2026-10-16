@@ -447,8 +447,101 @@ def radius_tokens(r: dict) -> dict:
             "r_dialog": scaled(7, m, 12)}
 
 
+# Background colour per appearance (Settings > Appearance, like the accent
+# colour: Vini). A few to pick from -- the first is the theme's own -- or
+# any colour. The window background takes it; the surfaces drawn around it
+# (content, panes, sidebars, menus, title bars) keep their distance to it,
+# so a tinted background tints them all alike.
+BACKGROUNDS = {
+    "light": (("Default", "#ececec"), ("Paper", "#f5f3ee"), ("Sand", "#efe8dc"), ("Mist", "#e4e9f0"),
+              ("Mint", "#e3eee7"), ("Rose", "#f1e5e8"), ("Lavender", "#e9e5f2")),
+    "dark": (("Default", "#18181a"), ("Black", "#0b0b0c"), ("Graphite", "#26262a"), ("Navy", "#121826"),
+             ("Forest", "#121c16"), ("Plum", "#1d1420"), ("Espresso", "#1f1915")),
+}
+# surfaces that follow the background (their own alpha, if any, is kept)
+BACKGROUND_FOLLOWERS = ("window_bg", "content_bg", "pane_bg", "sidebar_bg", "menu_bg", "solid_tint")
+# legible text: a light background stays this light, a dark one this dark (relative luminance)
+LIGHT_BG_MIN, DARK_BG_MAX = 0.55, 0.045
+_backgrounds_cache = {"mtime": None, "value": {}}
+
+
+def _rgb(c: str):
+    """'#rrggbb' / 'rgb(...)' / 'rgba(...)' -> ([r, g, b], alpha or None)."""
+    c = c.strip()
+    if c.startswith("#"):
+        h = c.lstrip("#")
+        return [int(h[i:i + 2], 16) for i in (0, 2, 4)], None
+    v = [float(x) for x in c[c.index("(") + 1:c.index(")")].split(",")]
+    return [round(x) for x in v[:3]], (v[3] if len(v) > 3 else None)
+
+
+def legible_background(hex_color: str, dark: bool) -> str:
+    """`hex_color` moved towards white (light) or black (dark), just enough
+    for the theme's text to stay readable on it."""
+    c = custom_accent(hex_color)
+    if c is None:
+        return BACKGROUNDS["dark" if dark else "light"][0][1]
+    rgb = _rgb(c)[0]
+    target = 0 if dark else 255
+    for step in range(0, 101, 2):
+        t = step / 100
+        out = "#%02x%02x%02x" % tuple(round(v + (target - v) * t) for v in rgb)
+        lum = _luminance(out)
+        if (dark and lum <= DARK_BG_MAX) or (not dark and lum >= LIGHT_BG_MIN):
+            return out
+    return "#000000" if dark else "#ffffff"
+
+
+def user_backgrounds() -> dict:
+    """{"light": "#rrggbb", "dark": ...} as picked (appearance.json
+    "background"); a missing one is the theme's own. No GTK."""
+    import json
+    import os
+    try:
+        from .. import config
+        folder = config.CONFIG_DIR
+    except ImportError:
+        folder = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "sonata2")
+    path = os.path.join(folder, "appearance.json")
+    try:
+        mtime = os.stat(path).st_mtime
+    except OSError:
+        return {}
+    if _backgrounds_cache["mtime"] != mtime:
+        got = {}
+        try:
+            with open(path, encoding="utf-8") as f:
+                raw = (json.load(f) or {}).get("background") or {}
+            got = {k: custom_accent(v) for k, v in raw.items() if k in ("light", "dark") and custom_accent(v)}
+        except (OSError, ValueError, AttributeError):
+            pass
+        _backgrounds_cache.update(mtime=mtime, value=got)
+    return dict(_backgrounds_cache["value"])
+
+
+def background_tokens(tokens: dict, picked: str, dark: bool) -> dict:
+    """The tokens a picked background changes: the window's own colour, and
+    every surface in BACKGROUND_FOLLOWERS moved by the same amount; the
+    opaque title bars made again over it (their glass over the window)."""
+    if not picked:
+        return {}
+    new = _rgb(legible_background(picked, dark))[0]
+    base = _rgb(tokens["window_bg"])[0]
+    delta = [n - b for n, b in zip(new, base)]
+    out = {}
+    for k in BACKGROUND_FOLLOWERS:
+        rgb, a = _rgb(tokens[k])
+        moved = [max(0, min(255, v + d)) for v, d in zip(rgb, delta)]
+        out[k] = ("#%02x%02x%02x" % tuple(moved)) if a is None else "rgba(%d, %d, %d, %s)" % (*moved, a)
+    for k in ("titlebar_bg", "titlebar_bg_inactive"):
+        out[k] = over(tokens[k.replace("_bg", "_glass")], out["window_bg"])
+    return out
+
+
 def palette(dark: bool, theme: str = "mac") -> dict:
     """All tokens for one theme and appearance."""
     t = THEMES.get(theme, THEMES["mac"])
-    return {**t["shared"], **{"sys_" + k: v for k, v in SYSTEM_COLORS.items()},
-            **(t["dark"] if dark else t["light"]), **radius_tokens(user_radii())}
+    base = t["dark"] if dark else t["light"]
+    return {**t["shared"], **{"sys_" + k: v for k, v in SYSTEM_COLORS.items()}, **base,
+            **background_tokens(base, user_backgrounds().get("dark" if dark else "light"), dark),
+            **radius_tokens(user_radii())}

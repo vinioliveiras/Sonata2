@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Changes
+- Settings > Appearance: the background colour of Light and Dark Mode,
+  picked like the accent colour -- a few for each mode, the default first
+  to go back to, any colour through Sonata's colour picker. Windows,
+  sidebars, menus and title bars follow it (Sonata's, Wayfire's and other
+  GTK apps'); a colour too dark for Light Mode (or too light for Dark) is
+  eased until the text reads well.
 - Right-click > Install (and a package's double-click) asks for the
   password first, in Sonata's own prompt (pkexec), instead of sudo asking
   inside the terminal; the terminal still shows the install.
