@@ -252,6 +252,14 @@ def menu_at(app, connector: str, x: float, y: float, sections):
     return win
 
 
+def close_menu_at() -> None:
+    """menu_at()'s menu closes (Mission Control closed under it: Vini, its
+    items stayed on the screen)."""
+    pop = _MENU_HOLDER.get("pop")
+    if pop is not None:
+        pop.popdown()
+
+
 PICKER_DROP = 140        # the pickers' panel sits this far below the middle of the screen (Vini)
 
 

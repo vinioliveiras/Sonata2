@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### New
+- Mission Control: a click where no window is closes it, back to the window
+  that was in front.
+- Mission Control: the window under the pointer has a close button (x) at
+  its corner.
+- The small close buttons -- on Mission Control's windows and desktops and
+  on the Dock's window previews -- are on the side of your window buttons
+  (Settings > Appearance).
 - Mission Control: right-click a window for its app's Dock menu (its
   windows, Options, Minimize, Quit...); hold a window and drag it onto a
   desktop in the bar to move it there. Desktops grow in when added and
@@ -10,6 +17,16 @@
   Wayfire: wayfire-scale-sonata-events.patch.)
 
 ### Fixes
+- WhatsApp's web app window is titled "WhatsApp" (its name in Sonata), not
+  "web.whatsapp.com", while the page gives Chrome no title; once it does
+  ("(3) WhatsApp"), that one shows.
+- The Dock's window previews show the windows: their pictures came back
+  empty (transparent) on some GPUs. Sonata's Wayfire plugin now has them
+  drawn and read by the renderer itself.
+- Mission Control: a window's menu (right click) closes with it -- its
+  items stayed on the screen.
+- A video in full screen no longer comes back from Mission Control with
+  blue in its four corners (its rounded corners were cut and filled).
 - Faster: the Control Center opens at once with its sliders already at
   the last levels read, and only moves them to the live ones -- it set the
   volume, the microphone and the brightness again on every opening (with

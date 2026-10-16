@@ -2,7 +2,9 @@ Sonata: Mission Control (scale) tells sonata2 what is done to a window,
 through ipc-rules' custom events: a right click asks for its app menu
 (sonata-scale-menu#, the Dock's menu), a drag starts and drops
 (sonata-scale-drag#: dropped on a desktop of the desktops bar, the window
-goes there). sonata2/shell/spaces.py, sonata2/shell/dock_menu.py
+goes there), the window under the pointer and where it's drawn
+(sonata-scale-hover#: its close button). A click where no window is
+closes it. sonata2/shell/spaces.py, mission.py, dock_menu.py
 
 --- a/plugins/scale/scale.cpp
 +++ b/plugins/scale/scale.cpp
@@ -14,7 +16,17 @@ goes there). sonata2/shell/spaces.py, sonata2/shell/dock_menu.py
  #include "scale-title-overlay.hpp"
  #include "wayfire/core.hpp"
  #include "wayfire/debug.hpp"
-@@ -472,6 +473,32 @@
+@@ -108,6 +109,9 @@
+     wayfire_toplevel_view current_focus_view;
+     // View over which the last input press happened
+     wayfire_toplevel_view last_selected_view;
++    bool pressed_empty = false;   /* Sonata: pressed where no window is */
++    wayfire_toplevel_view hovered = nullptr;   /* Sonata: the window under the pointer, told */
++    wf::geometry_t hovered_box = {0, 0, 0, 0};
+     std::map<wayfire_toplevel_view, view_scale_data> scale_data;
+     wf::option_wrapper_t<int> spacing{"scale/spacing"};
+     wf::option_wrapper_t<int> outer_margin{"scale/outer_margin"};
+@@ -472,6 +476,32 @@
          return nullptr;
      }
  
@@ -47,7 +59,32 @@ goes there). sonata2/shell/spaces.py, sonata2/shell/dock_menu.py
      /* Process button event */
      void process_input(uint32_t button, uint32_t state, wf::pointf_t input_position)
      {
-@@ -522,6 +549,11 @@
+@@ -483,6 +513,7 @@
+         if (state == WLR_BUTTON_PRESSED)
+         {
+             auto view = scaled_view_at(input_position);
++            pressed_empty = !view && (button == BTN_LEFT);
+             if (view && should_scale_view(view))
+             {
+                 // Mark the view as the target of the next input release operation
+@@ -497,6 +528,16 @@
+         }
+ 
+         drag_helper->handle_input_released();
++        // Sonata: a click where no window is closes Mission Control, back
++        // to the window that was in front (Vini; macOS does the same)
++        if (pressed_empty && (button == BTN_LEFT) && !scaled_view_at(input_position))
++        {
++            pressed_empty = false;
++            deactivate();
++            return;
++        }
++
++        pressed_empty = false;
+         // Sonata: still held (a drag past 20 px lets go of it) -- a click on
+         // the window pressed, even if the lookup now finds another or none
+         auto view = last_selected_view ? last_selected_view : scaled_view_at(input_position);
+@@ -522,6 +563,11 @@
              deactivate();
              break;
  
@@ -59,7 +96,7 @@ goes there). sonata2/shell/spaces.py, sonata2/shell/dock_menu.py
            case BTN_MIDDLE:
              // Check kill the view
              if (middle_click_close)
-@@ -549,6 +581,7 @@
+@@ -549,6 +595,7 @@
              // another output.
              grab->set_wants_raw_input(true);
              drag_helper->start_drag(last_selected_view, opts);
@@ -67,7 +104,65 @@ goes there). sonata2/shell/spaces.py, sonata2/shell/dock_menu.py
              drag_helper->handle_motion(to_f);
          } else if (drag_helper->view)
          {
-@@ -1307,6 +1340,12 @@
+@@ -562,6 +609,57 @@
+                 }
+             }
+         }
++
++        sonata_hover(drag_helper->view ? nullptr : scaled_view_at(to_f));
++    }
++
++    /* Sonata: a point of the window where it's drawn now (each transformer
++     * maps a point one level up: scale's among them), output-local */
++    static wf::pointf_t through_transformers(wayfire_toplevel_view view, wf::pointf_t p)
++    {
++        auto top = view->get_transformed_node().get();
++        for (wf::scene::node_t *n = view->get_surface_root_node()->parent(); n; n = n->parent())
++        {
++            p = n->to_global(p);
++            if (n == top)
++            {
++                break;
++            }
++        }
++
++        return p;
++    }
++
++    /* Sonata: the window under the pointer and where its frame is drawn now
++     * (output-local), when either changes -- sonata2 puts its close button
++     * there (sonata-scale-hover#; view-id -1: none). */
++    void sonata_hover(wayfire_toplevel_view view)
++    {
++        wf::geometry_t box = {0, 0, 0, 0};
++        if (view)
++        {
++            view = wf::find_topmost_parent(view);
++            auto g  = view->get_geometry();
++            auto tl = through_transformers(view, {1.0 * g.x, 1.0 * g.y});
++            auto br = through_transformers(view, {1.0 * g.x + g.width, 1.0 * g.y + g.height});
++            box = {(int)tl.x, (int)tl.y, (int)(br.x - tl.x), (int)(br.y - tl.y)};
++        }
++
++        if ((view == hovered) && (box == hovered_box))
++        {
++            return;
++        }
++
++        hovered = view;
++        hovered_box = box;
++        wf::json_t data;
++        data["view-id"] = view ? (int)view->get_id() : -1;
++        data["output"]  = output->to_string();
++        data["x"] = box.x;
++        data["y"] = box.y;
++        data["width"]  = box.width;
++        data["height"] = box.height;
++        wf::ipc_rules::send_event_to_subscribes(data, "sonata-scale-hover#");
+     }
+ 
+     /* Get the workspace for the center point of the untransformed view geometry */
+@@ -1307,6 +1405,12 @@
      wf::signal::connection_t<wf::move_drag::drag_done_signal> on_drag_done =
          [=] (wf::move_drag::drag_done_signal *ev)
      {
@@ -80,3 +175,11 @@ goes there). sonata2/shell/spaces.py, sonata2/shell/dock_menu.py
          if ((ev->focused_output == output) && can_handle_drag() && !drag_helper->is_view_held_in_place())
          {
              if (ev->main_view->get_output() == ev->focused_output)
+@@ -1395,6 +1499,7 @@
+     void deactivate()
+     {
+         active = false;
++        sonata_hover(nullptr);
+ 
+         set_hook();
+         on_view_mapped.disconnect();

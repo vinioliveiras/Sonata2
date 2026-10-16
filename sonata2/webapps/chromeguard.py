@@ -27,9 +27,11 @@ KEEP_SCHEMES = ("devtools:", "chrome-extension:")
 
 class Guard:
     TITLE_TRIES = 3                        # per address shown as title (never a loop with the page)
-    # the page's own title, set again (a change Chrome hears: zero-width space, then back)
+    # the page's own title, set again (a change Chrome hears: zero-width space,
+    # then back); it answers with that title, to know when the page has none
     NUDGE = ("(() => { const t = document.title;"
-             " if (t) { document.title = t + '\\u200b'; document.title = t; } })()")
+             " if (t) { document.title = t + '\\u200b'; document.title = t; } return t; })()")
+    TITLES_LOGGED = 5
 
     def __init__(self, app_url: str, write, open_outside=None, log=None, name: str = "", on_title=None):
         self.app_url = app_url
@@ -45,14 +47,17 @@ class Guard:
         self._id = 0
         self.session = None                # attached to the main page (for its title)
         self._title_tries = {}             # url -> tries
+        self._asked = set()                # ids of the NUDGEs sent (their answers: the page's title)
+        self._own_logged = 0
         self.send("Target.setDiscoverTargets", {"discover": True})
 
-    def send(self, method: str, params=None, session: str = None) -> None:
+    def send(self, method: str, params=None, session: str = None) -> int:
         self._id += 1
         msg = {"id": self._id, "method": method, "params": params or {}}
         if session:
             msg["sessionId"] = session
         self.write(json.dumps(msg).encode() + b"\0")
+        return self._id
 
     def feed(self, data: bytes) -> None:
         self._buf += data
@@ -66,6 +71,10 @@ class Guard:
                 self.message(m)
 
     def message(self, msg: dict) -> None:
+        if msg.get("id") in self._asked:
+            self._asked.discard(msg["id"])
+            self._own_title(((msg.get("result") or {}).get("result") or {}).get("value"))
+            return
         method = msg.get("method")
         if method == "Target.attachedToTarget":
             params = msg.get("params") or {}
@@ -127,9 +136,22 @@ class Guard:
 
     def _retitle(self) -> None:
         """The page's own title set again, so Chrome takes it for the window
-        (nothing when the page has none: nothing is made up)."""
+        (its answer: _own_title)."""
         if self.session:
-            self.send("Runtime.evaluate", {"expression": self.NUDGE}, session=self.session)
+            self._asked.add(self.send("Runtime.evaluate", {"expression": self.NUDGE, "returnByValue": True},
+                                      session=self.session))
+
+    def _own_title(self, title) -> None:
+        """What the page's title really is. None (Vini: WhatsApp's window
+        opened as "web.whatsapp.com" and stayed so -- the page never gave
+        Chrome a title): the web app's own name, the one its user gave it,
+        until the page sets one ("(3) WhatsApp" then wins)."""
+        if self._own_logged < self.TITLES_LOGGED:
+            self._own_logged += 1
+            self.log(f"page's own title: {(title or '')[:80]!r}")
+        if not title and self.name and self.session:
+            self.send("Runtime.evaluate", {"expression": "if (!document.title) document.title = "
+                                           + json.dumps(self.name)}, session=self.session)
 
 
 def is_address(title: str, url: str) -> bool:

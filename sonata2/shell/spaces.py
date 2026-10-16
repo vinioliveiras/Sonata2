@@ -70,6 +70,7 @@ window.sonata-spaces, window.sonata-spaces > contents { background: none; box-sh
 .sp-close { min-width: 20px; min-height: 20px; padding: 0; margin: -4px 0 0 -4px; border-radius: 99px;
   background: %(menu_bg)s; color: %(label)s; border: none; opacity: 0;
   box-shadow: 0 0 0 0.5px %(hairline)s, %(shadow_control)s; transition: opacity %(t_fast)s; }
+.sp-close.end { margin: -4px -4px 0 0; }
 .sp-close image { -gtk-icon-size: 10px; }
 .sp-desk-box:hover .sp-close, .sp-close:hover { opacity: 1; }
 /* New Desktop: a bare plus in a soft disc under the pointer, centred on the pictures */
@@ -304,8 +305,10 @@ class SpacesBar(Gtk.Window):
         box = Gtk.Overlay(css_classes=["sp-desk-box"])            # (the x outside the button: its own click)
         box.set_child(b)
         if count > 1 or (i == 0 and app_ids):            # (the first one alone: x closes its apps)
-            x = Gtk.Button(icon_name="window-close-symbolic", css_classes=["sp-close"], halign=Gtk.Align.START,
-                           valign=Gtk.Align.START, tooltip_text=_("Close Desktop"), can_focus=False)
+            side = ui.window.close_align()               # (the side of the user's window buttons: Vini)
+            x = Gtk.Button(icon_name="window-close-symbolic", halign=side, valign=Gtk.Align.START,
+                           css_classes=["sp-close"] + (["end"] if side == Gtk.Align.END else []),
+                           tooltip_text=_("Close Desktop"), can_focus=False)
             x.connect("clicked", lambda _b: self.close_desktop(i))
             box.add_overlay(x)
         box.desk_button = b

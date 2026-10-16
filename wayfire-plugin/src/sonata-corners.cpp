@@ -64,6 +64,7 @@
 #include <wayfire/plugins/common/shared-core-data.hpp>
 #include <deque>
 #include <sys/stat.h>
+#include <drm_fourcc.h>                     // DRM_FORMAT_ABGR8888 (window-shot)
 #include <ctime>
 #include <drm_fourcc.h>
 
@@ -399,6 +400,15 @@ class corners_node_t : public wf::scene::transformer_base_node_t, public wf::sce
     int64_t last_drawn = 0;            /* ms, wf::get_current_time() */
     wf::wl_timer<true> idle_check;
 
+  public:
+    bool drawn_full = false;           /* its instances pass the window through (full screen) */
+
+    bool full_screen() const
+    {
+        return view->pending_fullscreen() || view->toplevel()->current().fullscreen;
+    }
+
+  private:
     /* not on screen: minimized, unmapped, or on another workspace */
     bool hidden() const
     {
@@ -461,6 +471,11 @@ class corners_node_t : public wf::scene::transformer_base_node_t, public wf::sce
         }
 
         wf::regionf_t region = inner->get_opaque_region();
+        if (full_screen())
+        {
+            return region;                          /* (nothing cut: gen_render_instances) */
+        }
+
 
         /* the frame as drawn (the rounded corners are cut out of it, not
          * out of the shadow around it) */
@@ -694,6 +709,21 @@ class corners_render_instance_t :
 void corners_node_t::gen_render_instances(std::vector<render_instance_uptr>& instances,
     damage_callback push_damage, wf::output_t *shown_on)
 {
+    drawn_full = full_screen();
+    if (drawn_full)
+    {
+        /* Full screen: the window as it is. Vini: a video, Super+Tab twice
+         * (Mission Control in and out) -- its four corners were cut and
+         * filled with the glass colour (blue). The transformer goes on the
+         * next update; until then nothing is cut. */
+        for (auto& ch : get_children())
+        {
+            ch->gen_render_instances(instances, push_damage, shown_on);
+        }
+
+        return;
+    }
+
     instances.push_back(std::make_unique<corners_render_instance_t>(this, push_damage, view));
 }
 
@@ -1928,6 +1958,13 @@ class sonata_corners_t : public wf::plugin_interface_t
 
         auto tnode = view->get_transformed_node();
         auto have  = tnode->get_transformer(transformer_name);
+        auto mine  = std::dynamic_pointer_cast<corners_node_t>(have);
+        if (wanted(view) && mine && mine->drawn_full)
+        {
+            tnode->rem_transformer(have);           /* out of full screen: drawn anew, with corners */
+            have = nullptr;
+        }
+
         if (wanted(view) && !have)
         {
             /* innermost: the corners are cut before any other transform */
@@ -2015,6 +2052,9 @@ class sonata_corners_t : public wf::plugin_interface_t
     };
     wf::signal::connection_t<wf::view_fullscreen_signal> on_fullscreen =
         [=] (wf::view_fullscreen_signal*) { update_soon(); };
+    /* (Mission Control closing focuses a window: its state checked again) */
+    wf::signal::connection_t<wf::keyboard_focus_changed_signal> on_focus_check =
+        [=] (wf::keyboard_focus_changed_signal*) { update_soon(); };
     wf::signal::connection_t<wf::view_decoration_state_updated_signal> on_decoration =
         [=] (wf::view_decoration_state_updated_signal*) { update_soon(); };
     wf::signal::connection_t<wf::view_tiled_signal> on_tiled =
@@ -2251,6 +2291,29 @@ class sonata_corners_t : public wf::plugin_interface_t
      * premultiplied, rows top to bottom.
      * {"id": 42, "width": 280, "path": "/run/user/1000/sonata2-shot-42"} ->
      * {"width": 280, "height": 175} */
+    /* `src` drawn smaller into `dst` (`to` big) by the renderer, whichever it is */
+    static bool shrink_into(wf::auxilliary_buffer_t& src, wf::auxilliary_buffer_t& dst, wf::dimensions_t to)
+    {
+        if (dst.allocate(to) == wf::buffer_reallocation_result_t::FAILED)
+        {
+            return false;
+        }
+
+        wf::geometry_t box = wf::construct_box({0, 0}, to);
+        wf::render_target_t target{dst};
+        target.geometry = box;
+        target.scale    = 1.0;
+        wf::render_pass_params_t params;
+        params.target = target;
+        params.damage = wf::regionf_t{box};
+        params.background_color = {0, 0, 0, 0};
+        params.flags = wf::RPASS_CLEAR_BACKGROUND;
+        wf::render_pass_t pass{params};
+        pass.run_partial();
+        pass.add_texture(wf::texture_t::from_aux(src), target, box, wf::regionf_t{box});
+        return pass.submit();
+    }
+
     wf::ipc::method_callback ipc_window_shot = [=] (wf::json_t data)
     {
         if (!data.is_object() || !data.has_member("id") || !data.has_member("path"))
@@ -2283,48 +2346,42 @@ class sonata_corners_t : public wf::plugin_interface_t
 
         int w = std::min(want, size.width);
         int h = std::max(1, (int)std::lround(1.0 * size.height * w / size.width));
-        std::vector<uint8_t> px((size_t)w * h * 4);
-        bool ok = false;
-        wf::gles::run_in_context_if_gles([&]
+        // made smaller and read by the renderer itself (any renderer, its own
+        // sync and formats). Vini: the Dock's previews were empty frames --
+        // the pixels read straight with GL came back transparent there.
+        // Halved step by step (each step blends 2x2): one big scale-down skips pixels.
+        std::vector<std::unique_ptr<wf::auxilliary_buffer_t>> steps;
+        wf::auxilliary_buffer_t *src = &full;
+        wf::dimensions_t cur = size;
+        while (true)
         {
-            // halved step by step (each step blends 2x2): one big scale-down skips pixels
-            std::vector<std::unique_ptr<wf::auxilliary_buffer_t>> steps;
-            wf::auxilliary_buffer_t *src = &full;
-            wf::dimensions_t cur = size;
-            while ((cur.width / 2 >= w) && (cur.height / 2 >= h))
+            bool last = !((cur.width / 2 >= w) && (cur.height / 2 >= h));
+            wf::dimensions_t next = last ? wf::dimensions_t{w, h} : wf::dimensions_t{cur.width / 2, cur.height / 2};
+            steps.push_back(std::make_unique<wf::auxilliary_buffer_t>());
+            if (!shrink_into(*src, *steps.back(), next))
             {
-                wf::dimensions_t next{cur.width / 2, cur.height / 2};
-                steps.push_back(std::make_unique<wf::auxilliary_buffer_t>());
-                steps.back()->allocate(next);
-                GL_CALL(glBindFramebuffer(GL_READ_FRAMEBUFFER,
-                    wf::gles::ensure_render_buffer_fb_id(src->get_renderbuffer())));
-                GL_CALL(glBindFramebuffer(GL_DRAW_FRAMEBUFFER,
-                    wf::gles::ensure_render_buffer_fb_id(steps.back()->get_renderbuffer())));
-                GL_CALL(glBlitFramebuffer(0, 0, cur.width, cur.height, 0, 0, next.width, next.height,
-                    GL_COLOR_BUFFER_BIT, GL_LINEAR));
-                src = steps.back().get();
-                cur = next;
+                return wf::ipc::json_error("can't draw the picture");
             }
 
-            wf::auxilliary_buffer_t out;
-            out.allocate({w, h});
-            GL_CALL(glBindFramebuffer(GL_READ_FRAMEBUFFER,
-                wf::gles::ensure_render_buffer_fb_id(src->get_renderbuffer())));
-            GL_CALL(glBindFramebuffer(GL_DRAW_FRAMEBUFFER,
-                wf::gles::ensure_render_buffer_fb_id(out.get_renderbuffer())));
-            GL_CALL(glBlitFramebuffer(0, 0, cur.width, cur.height, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_LINEAR));
-            GL_CALL(glBindFramebuffer(GL_READ_FRAMEBUFFER,
-                wf::gles::ensure_render_buffer_fb_id(out.get_renderbuffer())));
-            GL_CALL(glPixelStorei(GL_PACK_ALIGNMENT, 1));
-            GL_CALL(glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px.data()));
-            ok = true;
-        });
-        if (!ok)
-        {
-            return wf::ipc::json_error("no GL renderer");
+            src = steps.back().get();
+            cur = next;
+            if (last)
+            {
+                break;
+            }
         }
 
-        // GL reads bottom row first (as Wayfire's view-shot): rows turned over
+        std::vector<uint8_t> px((size_t)w * h * 4);
+        wlr_texture_read_pixels_options opts{};
+        opts.data   = px.data();
+        opts.format = DRM_FORMAT_ABGR8888;          /* bytes R, G, B, A */
+        opts.stride = w * 4;
+        wlr_texture *tex = src->get_texture();
+        if (!tex || !wlr_texture_read_pixels(tex, &opts))
+        {
+            return wf::ipc::json_error("can't read the picture");
+        }
+
         std::string tmp = path + ".new";
         FILE *f = fopen(tmp.c_str(), "wb");
         if (!f)
@@ -2332,11 +2389,7 @@ class sonata_corners_t : public wf::plugin_interface_t
             return wf::ipc::json_error("can't write");
         }
 
-        for (int y = h - 1; y >= 0; y--)
-        {
-            fwrite(px.data() + (size_t)y * w * 4, 1, (size_t)w * 4, f);
-        }
-
+        fwrite(px.data(), 1, px.size(), f);     /* (top row first: as the window) */
         fclose(f);
         rename(tmp.c_str(), path.c_str());
         auto response = wf::ipc::json_ok();
@@ -2422,6 +2475,7 @@ class sonata_corners_t : public wf::plugin_interface_t
         wf::get_core().connect(&on_reload);
         wf::get_core().connect(&on_map);
         wf::get_core().connect(&on_fullscreen);
+        wf::get_core().connect(&on_focus_check);
         wf::get_core().connect(&on_decoration);
         wf::get_core().connect(&on_tiled);
         wf::get_core().scene()->connect(&on_root_update);

@@ -343,6 +343,13 @@ def buttons_side() -> str:
     return tokens.user_buttons_side()
 
 
+def close_align() -> Gtk.Align:
+    """Where a small x that closes something goes (a window's picture in the
+    Dock's previews, a desktop in Mission Control): the side the user keeps
+    window buttons on (Vini: "my buttons are all on the left")."""
+    return Gtk.Align.END if buttons_side() == "right" else Gtk.Align.START
+
+
 def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
     """Close / minimize / zoom as macOS-style coloured dots. on_zoom=None greys the
     green one out (fixed-size windows, like System Settings). On the right

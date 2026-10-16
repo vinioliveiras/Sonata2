@@ -55,11 +55,41 @@ class TitleTest(unittest.TestCase):
         self.assertEqual(len(self.sent), n + 1)                              # another page's: no
 
     def test_nothing_made_up(self):
-        """Vini: no hard-coded name -- only the page's own title is set again."""
+        """Vini: no hard-coded name -- the page's own title is set again."""
         self.attach()
         expr = self.msgs()[-1]["params"]["expression"]
         self.assertNotIn("WhatsApp", expr)
         self.assertIn("if (t)", expr)
+
+    def answer(self, value):
+        ask = self.msgs()[-1]
+        self.assertEqual(ask["method"], "Runtime.evaluate")
+        self.assertTrue(ask["params"]["returnByValue"])
+        n = len(self.sent)
+        self.feed({"id": ask["id"], "sessionId": "S1", "result": {"result": {"type": "string", "value": value}}})
+        return self.msgs()[n:]
+
+    def test_page_without_a_title_gets_the_apps_name(self):
+        """Vini: WhatsApp's window opened as "web.whatsapp.com" and stayed so
+        (its log: the page never gave Chrome a title). The web app's own name
+        stands in, only while the page has none."""
+        logged = []
+        self.g.log = logged.append
+        self.attach()
+        sent = self.answer("")
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0]["params"]["expression"], 'if (!document.title) document.title = "WhatsApp"')
+        self.assertEqual(sent[0]["sessionId"], "S1")
+        self.assertIn("page's own title: ''", logged)
+
+    def test_page_with_a_title_keeps_it(self):
+        self.attach()
+        self.assertEqual(self.answer("(3) WhatsApp"), [])                   # its own title stays
+
+    def test_no_name_nothing_made_up(self):
+        self.g.name = ""
+        self.attach()
+        self.assertEqual(self.answer(""), [])
 
     def test_address_title_tried_a_few_times_only(self):
         self.attach()
