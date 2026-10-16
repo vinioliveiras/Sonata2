@@ -1,7 +1,7 @@
 """Vini: a system update asked for the password again and again (pkexec at
 every AUR step). install.sh adds a polkit rule keeping the "yes" for a few
-minutes -- pacman only, administrators at their own session -- and asks
-the disks question once. python3 -m unittest tests.test_update_password"""
+minutes -- pacman only, administrators at their own session -- and adds
+the disks rule without asking. python3 -m unittest tests.test_update_password"""
 import os
 import re
 import shutil
@@ -37,20 +37,35 @@ class UpdateRuleTest(unittest.TestCase):
         self.assertEqual(out.strip(), '["keep","keep",null,null,null,null]')
 
 
-class DiskQuestionTest(unittest.TestCase):
-    def test_asked_once(self):
-        import tempfile
+class DiskRuleTest(unittest.TestCase):
+    """Vini: the disks rule is added without asking; --no-mount-without-password removes it."""
+
+    def _run(self, mountrule, exists=False):
         with open(os.path.join(ROOT, "install.sh")) as f:
             sh = f.read()
         block = sh[sh.index("MOUNT_RULES="):]
         block = block[:block.index("\nfi\n") + 4]
-        cfg = tempfile.mkdtemp()
-        script = ('sudo() { :; }\nask_no() { echo ASKED; return 1; }\n'
-                  + "".join(f"YES=0 MOUNTRULE=ask\n{block}" for _ in range(2)))
-        out = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
-                             env={**os.environ, "XDG_CONFIG_HOME": cfg}).stdout
-        self.assertEqual(out.count("ASKED"), 1)
+        block = block.replace('[ -f "$MOUNT_RULES" ]', "[ %s ]" % ("1" if exists else ""))   # (no /etc here)
+        script = ('sudo() { echo "SUDO $*"; cat >/dev/null; }\nask_no() { echo ASKED; return 1; }\n'
+                  f"YES=0 MOUNTRULE={mountrule}\n" + block)
+        return subprocess.run(["bash", "-c", script], capture_output=True, text=True, input="", timeout=20).stdout
 
+    def test_added_without_asking(self):
+        out = self._run(1)
+        self.assertNotIn("ASKED", out)
+        self.assertIn("Disks: mounted without a password", out)
+
+    def test_kept_when_there(self):
+        out = self._run(1, exists=True)
+        self.assertNotIn("SUDO", out)
+        self.assertNotIn("ASKED", out)
+
+    def test_flag_removes_it(self):
+        self.assertIn("SUDO rm -f /etc/polkit-1/rules.d/50-sonata2-mount.rules", self._run(0))
+
+    def test_default_is_on(self):
+        with open(os.path.join(ROOT, "install.sh")) as f:
+            self.assertIn(" MOUNTRULE=1 ", f.read())
 
 if __name__ == "__main__":
     unittest.main()

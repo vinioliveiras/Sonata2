@@ -14,8 +14,10 @@
 - Software Update asks for the password once (once more for the AUR), not
   at every package: install.sh adds a polkit rule that keeps the
   administrator's "yes" to pacman for a few minutes, for that update only.
-- install.sh asks the "mount system disks without a password" question
-  once: a No is remembered too (--mount-without-password still turns it on).
+- install.sh no longer asks "mount system disks without a password": the
+  rule is added for administrators by default (it lowers security: any app
+  in the session can mount system disks and unlock system LUKS);
+  --no-mount-without-password removes it.
 - Light Mode glass is more see-through by default (Dock, menu bar, menus
   and panels 0.60 -> 0.45; sidebars 0.74 -> 0.58), closer to how Dark Mode
   reads: a pale tint at the same opacity looked milky, almost opaque. Wayfire's
