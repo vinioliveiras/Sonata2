@@ -19,8 +19,24 @@ STATUS = """   System Locale: LANG=pt_BR.UTF-8
 
 
 class BackendTest(unittest.TestCase):
+    def test_reads_the_systems_file_first(self):
+        import builtins
+        real = builtins.open
+
+        def fake_open(path, *a, **k):
+            if path == "/etc/locale.conf":
+                import io
+                return io.StringIO('LANG=pt_BR.UTF-8\nLC_TIME="pt_PT.UTF-8"\n')
+            return real(path, *a, **k)
+        with mock.patch("builtins.open", fake_open), mock.patch.object(L.subprocess, "run") as run:
+            self.assertEqual(L.current(), {"LANG": "pt_BR.UTF-8", "LC_TIME": "pt_PT.UTF-8"})
+        run.assert_not_called()                                           # no program waited for
+
     def test_reads_localectl(self):
-        with mock.patch.object(L.shutil, "which", return_value="/usr/bin/localectl"), \
+        real = open
+        with mock.patch("builtins.open", side_effect=lambda p, *a, **k: (_ for _ in ()).throw(OSError())
+                        if str(p).startswith("/etc/") else real(p, *a, **k)), \
+                mock.patch.object(L.shutil, "which", return_value="/usr/bin/localectl"), \
                 mock.patch.object(L.subprocess, "run", return_value=mock.Mock(stdout=STATUS)):
             cur = L.current()
         self.assertEqual(cur, {"LANG": "pt_BR.UTF-8", "LC_TIME": "pt_PT.UTF-8"})   # (not the keyboard's lines)

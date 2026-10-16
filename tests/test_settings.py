@@ -328,10 +328,10 @@ class SettingsTest(unittest.TestCase):
                    "privacy", "sharing", "accessibility", "appearance", "dock", "menubar", "launchpad", "hidden",
                    "updates", "about"]
         ids = [x[0] for x in S.SECTIONS]
-        self.assertEqual(len(ids), 24)          # 19 + App Icons, Default Apps, Menu Bar, Control Center, Desktop
-        built = [p for sid in ids for p in S.parts_of(sid)]
+        self.assertEqual(len(ids), 25)          # 19 + App Icons, Default Apps, Menu Bar, Control Center, Desktop,
+        built = [p for sid in ids for p in S.parts_of(sid)]                  # Language & Region
         self.assertEqual(sorted(built), sorted(old_ids + ["appicons", "defaults", "controlcenter", "desktop",
-                                                          "sonataupdate", "apps"]))
+                                                          "sonataupdate", "apps", "language"]))
         for old in old_ids:
             self.assertIn(S.section_of(old), ids, old)
             self.assertTrue(hasattr(S.Settings, f"_page_{old}"), old)

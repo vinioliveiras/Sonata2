@@ -862,14 +862,17 @@ class DoctorPamTest(unittest.TestCase):
         self.assertIn("keyring unpam", revert)
         self.assertIn("quiet-console.sh\" revert", revert)
 
-    def test_installer_never_adds_the_mount_rule_unasked(self):
-        """install.sh: the passwordless-mount polkit rule is opt-in (default No; --yes doesn't add it)."""
+    def test_installer_mount_rule_on_by_default_and_removable(self):
+        """install.sh: the passwordless-mount polkit rule is added without asking
+        (Vini's call, knowing it lowers security); --no-mount-without-password
+        removes it (tests/test_update_password.py runs the block)."""
         with open(os.path.join(main.REPO, "install.sh")) as f:
             text = f.read()
-        self.assertIn('ask_no() { [ "$YES" = 1 ] && return 1;', text)
+        self.assertIn(" MOUNTRULE=1 ", text)
         block = text[text.index("MOUNT_RULES="):text.index("# -- Sonata's login screen")]
-        self.assertIn('[ "$MOUNTRULE" = 1 ] || ask_no ', block)
-        self.assertIn("--mount-without-password) MOUNTRULE=1", text)
+        self.assertNotIn("ask_no", block)
+        self.assertIn("--no-mount-without-password) MOUNTRULE=0", text)
+        self.assertIn('sudo rm -f "$MOUNT_RULES"', block)
 
 
 try:

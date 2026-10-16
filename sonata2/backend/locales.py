@@ -59,22 +59,26 @@ def _parse(text: str) -> dict:
 
 
 def current() -> dict:
-    """The system's locale settings (localectl, else /etc/locale.conf)."""
+    """The system's locale settings: its file (/etc/locale.conf; Debian's
+    /etc/default/locale) -- read directly, the page opens without waiting
+    for a program -- else localectl."""
+    for path in ("/etc/locale.conf", "/etc/default/locale"):
+        try:
+            with open(path, encoding="utf-8") as f:
+                got = _parse(f.read())
+        except OSError:
+            continue
+        if got:
+            return got
     if shutil.which("localectl"):
         try:
             out = subprocess.run(["localectl", "status"], capture_output=True, text=True, timeout=5).stdout
-            # "System Locale: LANG=pt_BR.UTF-8\n                LC_TIME=..."
-            block = out.split("VC Keymap:")[0]
-            got = _parse(block)
+            got = _parse(out.split("VC Keymap:")[0])     # (not the keyboard's lines)
             if got:
                 return got
         except (OSError, subprocess.SubprocessError):
             pass
-    try:
-        with open("/etc/locale.conf", encoding="utf-8") as f:
-            return _parse(f.read())
-    except OSError:
-        return {"LANG": os.environ.get("LANG", "en_US.UTF-8")}
+    return {"LANG": os.environ.get("LANG", "en_US.UTF-8")}
 
 
 def installed() -> set:

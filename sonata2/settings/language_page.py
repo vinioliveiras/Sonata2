@@ -77,6 +77,8 @@ class LanguagePage:
             self.state["lang"] = lang
         if region:
             self.state["region"] = region
+        if self.state == before:                   # (put back after a failure: nothing to do)
+            return
         cmd = locales.command(self.state["lang"], self.state["region"])
         if not cmd:
             return
