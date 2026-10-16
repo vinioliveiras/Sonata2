@@ -2,7 +2,8 @@ Sonata: Mission Control (scale) tells sonata2 what is done to a window,
 through ipc-rules' custom events: a right click asks for its app menu
 (sonata-scale-menu#, the Dock's menu), a drag starts and drops
 (sonata-scale-drag#: dropped on a desktop of the desktops bar, the window
-goes there). sonata2/shell/spaces.py, sonata2/shell/dock_menu.py
+goes there). A click where no window is closes it.
+sonata2/shell/spaces.py, sonata2/shell/dock_menu.py
 
 --- a/plugins/scale/scale.cpp
 +++ b/plugins/scale/scale.cpp
@@ -14,7 +15,15 @@ goes there). sonata2/shell/spaces.py, sonata2/shell/dock_menu.py
  #include "scale-title-overlay.hpp"
  #include "wayfire/core.hpp"
  #include "wayfire/debug.hpp"
-@@ -472,6 +473,32 @@
+@@ -108,6 +109,7 @@
+     wayfire_toplevel_view current_focus_view;
+     // View over which the last input press happened
+     wayfire_toplevel_view last_selected_view;
++    bool pressed_empty = false;   /* Sonata: pressed where no window is */
+     std::map<wayfire_toplevel_view, view_scale_data> scale_data;
+     wf::option_wrapper_t<int> spacing{"scale/spacing"};
+     wf::option_wrapper_t<int> outer_margin{"scale/outer_margin"};
+@@ -472,6 +474,32 @@
          return nullptr;
      }
  
@@ -47,7 +56,32 @@ goes there). sonata2/shell/spaces.py, sonata2/shell/dock_menu.py
      /* Process button event */
      void process_input(uint32_t button, uint32_t state, wf::pointf_t input_position)
      {
-@@ -522,6 +549,11 @@
+@@ -483,6 +511,7 @@
+         if (state == WLR_BUTTON_PRESSED)
+         {
+             auto view = scaled_view_at(input_position);
++            pressed_empty = !view && (button == BTN_LEFT);
+             if (view && should_scale_view(view))
+             {
+                 // Mark the view as the target of the next input release operation
+@@ -497,6 +526,16 @@
+         }
+ 
+         drag_helper->handle_input_released();
++        // Sonata: a click where no window is closes Mission Control, back
++        // to the window that was in front (Vini; macOS does the same)
++        if (pressed_empty && (button == BTN_LEFT) && !scaled_view_at(input_position))
++        {
++            pressed_empty = false;
++            deactivate();
++            return;
++        }
++
++        pressed_empty = false;
+         // Sonata: still held (a drag past 20 px lets go of it) -- a click on
+         // the window pressed, even if the lookup now finds another or none
+         auto view = last_selected_view ? last_selected_view : scaled_view_at(input_position);
+@@ -522,6 +561,11 @@
              deactivate();
              break;
  
@@ -59,7 +93,7 @@ goes there). sonata2/shell/spaces.py, sonata2/shell/dock_menu.py
            case BTN_MIDDLE:
              // Check kill the view
              if (middle_click_close)
-@@ -549,6 +581,7 @@
+@@ -549,6 +593,7 @@
              // another output.
              grab->set_wants_raw_input(true);
              drag_helper->start_drag(last_selected_view, opts);
@@ -67,7 +101,7 @@ goes there). sonata2/shell/spaces.py, sonata2/shell/dock_menu.py
              drag_helper->handle_motion(to_f);
          } else if (drag_helper->view)
          {
-@@ -1307,6 +1340,12 @@
+@@ -1307,6 +1352,12 @@
      wf::signal::connection_t<wf::move_drag::drag_done_signal> on_drag_done =
          [=] (wf::move_drag::drag_done_signal *ev)
      {

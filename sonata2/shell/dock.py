@@ -598,9 +598,14 @@ def _watch_outputs() -> None:
             if _DOCKS:
                 dock_menu.scale_menu(next(iter(_DOCKS)), msg)
             return
+        if msg.get("event") == "plugin-activation-state-changed":
+            if msg.get("plugin") == "scale" and not msg.get("state"):
+                layer.close_menu_at()                         # its menu goes with Mission Control
+            return
         for d in list(_DOCKS):
             d._rects_soon()
-    if not ipc.watch(["view-mapped", "view-set-output", "sonata-scale-menu#"], event):
+    if not ipc.watch(["view-mapped", "view-set-output", "sonata-scale-menu#", "plugin-activation-state-changed"],
+                     event):
         _WATCH["on"] = False
 
 
