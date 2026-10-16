@@ -12,7 +12,7 @@ import unittest
 from sonata2 import i18n
 
 ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sonata2")
-FUNCS = {"_", "N_", "ngettext"}
+FUNCS = {"_", "N_", "ngettext", "pgettext", "NC_"}
 
 
 def marked():
@@ -32,6 +32,16 @@ def marked():
                     continue
                 where = f"{os.path.relpath(path, ROOT)}:{node.lineno}"
                 args = node.args
+                if node.func.id in ("pgettext", "NC_"):
+                    lit = [isinstance(a, ast.Constant) and isinstance(a.value, str) for a in args]
+                    if len(args) != 2 or not lit[0] or (node.func.id == "NC_" and not lit[1]):
+                        bad.append((where, f"{node.func.id}() needs a literal context (and NC_ a literal string)"))
+                        continue
+                    if isinstance(args[1], ast.JoinedStr):
+                        bad.append((where, "an f-string inside pgettext()"))
+                    elif lit[1]:                      # (a variable: marked with NC_() where it is defined)
+                        found.setdefault((args[0].value + i18n.CONTEXT_SEP + args[1].value, None), []).append(where)
+                    continue
                 if node.func.id == "ngettext":
                     if len(args) < 2 or not all(isinstance(a, ast.Constant) and isinstance(a.value, str)
                                                 for a in args[:2]):
@@ -128,6 +138,29 @@ class LanguageTest(unittest.TestCase):
         self.assertEqual(i18n.ngettext("{n} item", "{n} items", 0), "{n} itens")
         i18n.use("en")
         self.assertEqual(i18n.ngettext("{n} item", "{n} items", 1), "{n} item")
+
+    def test_context(self):
+        i18n.use("pt_BR")
+        i18n._state["catalog"] = {"Reset": "Redefinir", "stopwatch\x04Reset": "Zerar"}
+        self.assertEqual(i18n.pgettext("stopwatch", "Reset"), "Zerar")
+        self.assertEqual(i18n._("Reset"), "Redefinir")
+        self.assertEqual(i18n.pgettext("nowhere", "Reset"), "Redefinir")      # falls back to the plain one
+        i18n.use("en")
+        self.assertEqual(i18n.pgettext("stopwatch", "Reset"), "Reset")
+
+    def test_one_translation_per_string(self):
+        """Every catalog of a language agrees on a string (they're merged:
+        a second translation would win at random)."""
+        for lang in i18n.SUPPORTED:
+            folder = os.path.join(i18n.LOCALE_DIR, lang)
+            seen, conflicts = {}, []
+            for n in sorted(os.listdir(folder)):
+                with open(os.path.join(folder, n), encoding="utf-8") as f:
+                    for k, v in json.load(f).items():
+                        if k in seen and seen[k][1] != v:
+                            conflicts.append((k, seen[k], (n, v)))
+                        seen.setdefault(k, (n, v))
+            self.assertEqual(conflicts, [], lang)
 
     def test_pt_br_and_pt_pt_differ_where_they_should(self):
         br, pt = i18n._load("pt_BR"), i18n._load("pt_PT")

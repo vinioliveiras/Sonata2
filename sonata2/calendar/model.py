@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 
 from . import ics
 from ..config import atomic_write
-from ..i18n import N_, _
+from ..i18n import _, N_, NC_, pgettext
 
 # macOS Calendar's colour palette: (id, name, token or colour). The Apple
 # system colours already are tokens (sys_*); yellow and brown are not, so
@@ -21,7 +21,7 @@ PALETTE = (("red", N_("Red"), "sys_red"), ("orange", N_("Orange"), "sys_orange")
            ("green", N_("Green"), "sys_green"), ("blue", N_("Blue"), "sys_blue"), ("purple", N_("Purple"), "sys_purple"),
            ("brown", N_("Brown"), "#a2845e"))
 PALETTE_IDS = tuple(p[0] for p in PALETTE)
-DEFAULT_CALENDARS = ((N_("Home"), "blue"), (N_("Work"), "red"))
+DEFAULT_CALENDARS = ((NC_("calendar", "Home"), "blue"), (N_("Work"), "red"))
 # the hex written as X-APPLE-CALENDAR-COLOR (other apps' view of the colour)
 PALETTE_HEX = {"red": "#ff3b30", "orange": "#ff9500", "yellow": "#ffcc00", "green": "#34c759",
                "blue": "#007aff", "purple": "#af52de", "brown": "#a2845e"}
@@ -180,7 +180,7 @@ class Store:
                 self.events[ev.uid] = ev
         if not self.calendars:
             for name, color in DEFAULT_CALENDARS:
-                self.add_calendar(_(name), color)           # created in the session's language
+                self.add_calendar(pgettext("calendar", name), color)    # created in the session's language
 
     def calendar(self, cal_id: str) -> Optional[Calendar]:
         return next((c for c in self.calendars if c.id == cal_id), None)

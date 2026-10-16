@@ -14,7 +14,8 @@ of Sonata keeps its own file (they're merged when loaded). A string that
 isn't translated shows in English.
 
 N_("...") marks a string translated later, where it is shown (tables
-built at import that also serve as keys)."""
+built at import that also serve as keys). pgettext(context, text) /
+NC_(context, text): one English word that reads differently by place."""
 import json
 import os
 
@@ -93,4 +94,20 @@ def ngettext(singular: str, plural: str, n: int) -> str:
 
 
 def N_(text: str) -> str:
+    return text
+
+
+CONTEXT_SEP = "\x04"                         # gettext's: "context\x04text"
+
+
+def pgettext(context: str, text: str) -> str:
+    """A string whose translation depends on where it is ("Reset" is
+    "Zerar" on a stopwatch, "Redefinir" in Settings). Catalog key:
+    "context\x04text"; English: `text`."""
+    got = catalog().get(context + CONTEXT_SEP + text)
+    return got if isinstance(got, str) and got else _(text)
+
+
+def NC_(context: str, text: str) -> str:
+    """N_() for pgettext(): marks the pair, returns `text`."""
     return text

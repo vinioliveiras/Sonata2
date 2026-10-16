@@ -12,7 +12,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
-from ..i18n import _  # noqa: E402
+from ..i18n import _, pgettext  # noqa: E402
 from . import timers as T  # noqa: E402
 
 ui.register("""
@@ -125,7 +125,7 @@ class StopwatchPage(_Ticking):
         running, started = sw["running"], sw["running"] or sw["before"] > 0
         self.go_btn.set_label(_("Stop") if running else _("Start"))
         self.go_btn.set_tone("red" if running else "green")
-        self.lap_btn.set_label(_("Lap") if running or not started else _("Reset"))
+        self.lap_btn.set_label(_("Lap") if running or not started else pgettext("stopwatch", "Reset"))
         self.lap_btn.set_sensitive(started)
         self._fill_laps()
         self.update()
