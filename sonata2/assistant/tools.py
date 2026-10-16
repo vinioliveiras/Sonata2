@@ -10,6 +10,8 @@ Paths are resolved (symlinks, "..") before the folder check, so nothing
 outside the chosen folders can be reached."""
 import os
 
+from ..i18n import _
+
 MAX_READ = 256 * 1024          # bytes read from one file
 MAX_LIST = 500                 # entries listed from one folder
 MAX_WRITE = 2 * 1024 * 1024    # bytes written to one file
@@ -55,8 +57,9 @@ class Action:
     def summary(self) -> str:
         """Past-tense line for the chat ("Read notes.txt")."""
         base = os.path.basename(self.path.rstrip(os.sep)) or self.path
-        return {"list_folder": f"Looked in {base}", "read_file": f"Read {base}"}.get(
-            self.name, f"{'Replaced' if self.exists else 'Created'} {base}")
+        text = {"list_folder": _("Looked in {name}"), "read_file": _("Read {name}")}.get(
+            self.name, _("Replaced {name}") if self.exists else _("Created {name}"))
+        return text.format(name=base)
 
 
 def system_prompt(folders) -> str:

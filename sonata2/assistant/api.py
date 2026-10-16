@@ -17,6 +17,8 @@ import threading
 import urllib.error
 import urllib.request
 
+from ..i18n import _
+
 API = "https://api.anthropic.com/v1"
 VERSION = "2023-06-01"
 MAX_TOKENS = 8192
@@ -45,14 +47,14 @@ def _error_text(e: Exception) -> str:
         except (ValueError, OSError, AttributeError):
             msg = ""
         if e.code == 401:
-            return "The API key was not accepted."
+            return _("The API key was not accepted.")
         if e.code == 429:
-            return msg or "Too many requests. Try again in a moment."
+            return msg or _("Too many requests. Try again in a moment.")
         if e.code in (500, 529) and not msg:
-            return "The service is busy. Try again in a moment."
-        return msg or f"The request failed (HTTP {e.code})."
+            return _("The service is busy. Try again in a moment.")
+        return msg or _("The request failed (HTTP {code}).").format(code=e.code)
     if isinstance(e, urllib.error.URLError):
-        return "Could not reach the service. Check your connection."
+        return _("Could not reach the service. Check your connection.")
     return str(e) or e.__class__.__name__
 
 
