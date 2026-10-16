@@ -4,7 +4,7 @@
  "A file with the same name already exists in this folder. Replacing it will overwrite its current contents.": "Já existe um arquivo com o mesmo nome nesta pasta. Substituí-lo apagará o conteúdo atual.",
  "A folder named “{name}” already exists in this location.": "Já existe uma pasta chamada “{name}” neste local.",
  "A name can’t contain “/”.": "Um nome não pode conter “/”.",
- "A website in a window of its own, with its own icon and login.": "Um site numa janela própria, com seu próprio ícone e login.",
+ "A website in a window of its own, with its own icon and login.": "Um site em uma janela própria, com ícone e login próprios.",
  "Add Text": "Adicionar Texto",
  "Add “{tag}” tag": "Adicionar Etiqueta “{tag}”",
  "Address:": "Endereço:",
