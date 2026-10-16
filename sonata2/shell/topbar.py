@@ -1742,8 +1742,10 @@ class AboutWindow(Adw.Window):
         body.append(info)
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col.append(head)
-        col.append(_scroller(Gtk.WindowHandle(child=body)))   # drag from anywhere, like macOS
+        self.scroller = _scroller(Gtk.WindowHandle(child=body))   # drag from anywhere, like macOS
+        col.append(self.scroller)
         self.set_content(col)
+        self.col = col
         bp = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 560sp"))
         bp.add_setter(body, "orientation", Gtk.Orientation.VERTICAL)
         bp.add_setter(body, "spacing", 16)
@@ -1769,6 +1771,32 @@ class AboutWindow(Adw.Window):
             row.append(Gtk.Label(label=value, xalign=0, wrap=True, natural_wrap_mode=Gtk.NaturalWrapMode.NONE,
                                  max_width_chars=60, hexpand=True))
             self.info.append(row)
+        # once laid out, grow by what doesn't fit; the next couple of seconds
+        # only (then the size is the user's)
+        adj = self.scroller.get_vadjustment()
+        sid = adj.connect("changed", lambda _a: self._fit())
+        GLib.timeout_add(2000, lambda: (adj.disconnect(sid), False)[1])
+        GLib.idle_add(self._fit)
+
+    def _fit(self) -> bool:
+        """Its whole content in sight (Vini: it opened before the specs came
+        and kept that height -- a scroll bar on a small window, worse with
+        longer words, Portuguese's): as tall as its content, never taller
+        than the screen (then it scrolls)."""
+        adj = self.scroller.get_vadjustment()
+        missing = adj.get_upper() - adj.get_page_size()
+        height = self.get_height()
+        if missing < 1 or height <= 0:
+            return False
+        limit = 10 ** 6
+        surface = self.get_surface()
+        mon = self.get_display().get_monitor_at_surface(surface) if surface is not None else None
+        if mon is not None:
+            limit = mon.get_geometry().height - 80
+        # (the default size counts the window's frame, get_width/height don't)
+        frame = max(0, self.get_default_size()[0] - self.get_width())
+        self.set_default_size(self.get_width() + frame, min(limit, height + frame + int(missing + 0.999)))
+        return False
 
 
 def _scroller(child) -> Gtk.ScrolledWindow:

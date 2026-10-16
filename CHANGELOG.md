@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changes
+- About This Computer shows all of its content: it grows to it once the
+  specs are read (it kept the height it opened with, and longer lines --
+  Portuguese's -- needed a scroll bar).
 - Apps and the menu bar show Sonata's apps' names in the system's
   language right after an update (a launcher rewritten in place went
   unnoticed until something else changed its folder); the menu bar's
