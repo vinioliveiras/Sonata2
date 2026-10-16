@@ -45,9 +45,23 @@ shared_module('sonata-corners', corners_src,
   install: true, install_dir: get_option('libdir') / 'wayfire')
 
 # Wayfire's resize with "Show window contents while resizing" (off: the
-# window's background follows the pointer, its contents fade in on release)
+# window's background follows the pointer, its contents fade in on release).
+# That background is frosted glass (Vini) with Wayfire's own blur library
+# (libwayfire-blur-base, its blur plugin's: the same method and strength);
+# without it, the background stays solid.
+cpp = meson.get_compiler('cpp')
+wf_libdir = wayfire.get_variable(pkgconfig: 'libdir', default_value: '')
+blur_base = cpp.find_library('wayfire-blur-base', dirs: wf_libdir != '' ? [wf_libdir] : [], required: false)
+resize_args = []
+resize_deps = [wayfire, wlroots]
+if blur_base.found() and cpp.has_header('wayfire/plugins/blur/blur.hpp', dependencies: [wayfire, wlroots],
+    args: ['-DWLR_USE_UNSTABLE', '-std=c++17'])
+  resize_args += ['-DSONATA_GLASS']
+  resize_deps += [blur_base]
+endif
 shared_module('sonata-resize', 'src/sonata-resize.cpp',
-  dependencies: [wayfire, wlroots],
+  dependencies: resize_deps, cpp_args: resize_args,
+  install_rpath: wf_libdir,
   install: true, install_dir: get_option('libdir') / 'wayfire')
 
 # Privileged Wayland protocols (screen capture, window control, clipboard,

@@ -88,6 +88,38 @@ class PluginTest(unittest.TestCase):
         self.assertIn(("sonata-resize", "fill"), keys)
         self.assertIn(("sonata-resize", "border"), keys)
 
+    def test_glass_when_the_windows_glass_is_on(self):
+        """Vini: the resize panel frosted like the rest -- the windows' glass
+        (see-through: the plugin blurs behind it), solid when it is off or
+        with Reduce transparency."""
+        from sonata2 import titlebars
+        from sonata2.ui import glass as G, theme, tokens
+
+        def fill(on, reduce=False):
+            sets = []
+            cfg = G.settings()
+            cfg["windows"]["on"] = on
+            with mock.patch("sonata2.backend.system.wayfire_set", side_effect=lambda *a: sets.append(a)), \
+                    mock.patch.object(G, "settings", return_value=cfg), \
+                    mock.patch.object(theme, "reduce_transparency_now", return_value=reduce):
+                try:
+                    titlebars.apply_colors(True)
+                except Exception:
+                    pass
+            return next(a[2] for a in sets if a[:2] == ("sonata-resize", "fill")).lstrip("\\")
+        self.assertFalse(fill(True).endswith("ff"))                       # see-through: glass
+        self.assertEqual(fill(False), tokens.wayfire_color(tokens.palette(True)["window_bg"]))
+        self.assertEqual(fill(True, reduce=True), tokens.wayfire_color(tokens.palette(True)["window_bg"]))
+
+    def test_plugin_frosts_with_waylands_blur(self):
+        root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "wayfire-plugin")
+        src = open(os.path.join(root, "src", "sonata-resize.cpp")).read()
+        self.assertIn("create_blur_from_name", src)
+        self.assertIn("return fill.a < 0.999;", src)                    # only a see-through colour
+        build = open(os.path.join(root, "meson.build")).read()
+        self.assertIn("find_library('wayfire-blur-base'", build)
+        self.assertIn("-DSONATA_GLASS", build)
+
     def test_setting(self):
         import gi
         gi.require_version("Gtk", "4.0")
