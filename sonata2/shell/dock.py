@@ -656,6 +656,8 @@ class Dock(Gtk.Box):
         self.title_counts = {}  # key -> a web app's unread count from its title (badges.py)
         self._notes = badges.load()
         self._notes_mon = badges.watch(self._notes_changed)
+        # a Chromium web app's page title (its window's is the site's name): its count
+        self._pages_mon = badges.watch(lambda: self._sync_titles(self.windows), badges.PAGE_TITLES)
         self._badge_cfg = config.load("notifications", {})
         self._badge_cfg_mon = config.watch("notifications", self._badge_cfg_changed)
         self._launcher_entries()
@@ -708,7 +710,7 @@ class Dock(Gtk.Box):
         if self._apps_src:
             GLib.source_remove(self._apps_src)
             self._apps_src = 0
-        for attr in ("_notes_mon", "_badge_cfg_mon"):
+        for attr in ("_notes_mon", "_badge_cfg_mon", "_pages_mon"):
             if getattr(self, attr, None) is not None:
                 getattr(self, attr).cancel()
                 setattr(self, attr, None)
@@ -1998,7 +2000,8 @@ class Dock(Gtk.Box):
                 if name != tile.name:
                     tile.name = name
                     tile.label.set_text(name)
-        counts = {k: badges.title_count([t.title for t in wins]) for k, wins in groups.items()
+        pages = badges.page_titles()                                    # (Chromium web apps: their page's)
+        counts = {k: badges.title_count(badges.window_titles(wins, pages)) for k, wins in groups.items()
                   if any(badges.counted_title(t.app_id, k) for t in wins)}
         if badges_too or counts != self.title_counts:                   # (a title change is usually not a count's)
             self.title_counts = counts
