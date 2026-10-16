@@ -34,12 +34,13 @@ REFRESH_MS = 1500               # pictures drawn again while the previews are op
 CAPTURE_DELAY_MS = 700          # let the window finish drawing / animating
 
 ui.register("""
-popover.dock-preview > contents { background: %(panel_material)s; border-radius: %(r_dialog)s; padding: 8px;
+popover.dock-preview > contents { background: %(panel_material)s; border-radius: %(r_dialog)s; padding: 3px;
   box-shadow: 0 0 0 0.5px %(hairline)s, %(shadow_menu)s; }
-.dock-preview button.shot { padding: 6px; border-radius: 8px; background: none; border: none; box-shadow: none; }
+/* a thin frame around each picture (Vini: a small border) */
+.dock-preview button.shot { padding: 4px 4px 3px 4px; border-radius: 8px; background: none; border: none; box-shadow: none; }
 .dock-preview button.shot:hover { background: alpha(%(label)s, 0.12); }
 .dock-preview picture.shot-pic { border-radius: 5px; box-shadow: 0 0 0 0.5px %(hairline)s, 0 1px 3px rgba(0,0,0,0.2); }
-.dock-preview label { color: %(label)s; font-family: %(font)s; font-size: %(text_small)s; margin-top: 5px; }
+.dock-preview label { color: %(label)s; font-family: %(font)s; font-size: %(text_small)s; margin-top: 3px; }
 .dock-preview .minimized picture.shot-pic { opacity: 0.6; }
 /* close a window from its preview (Vini), as on Windows' taskbar: under the pointer only */
 .dock-preview button.shot-close { min-width: 18px; min-height: 18px; padding: 0; margin: 2px; border-radius: 99px;
@@ -141,7 +142,8 @@ class WindowShots:
         g = view.get("geometry") or {}
         if not view or view.get("minimized") or not view.get("activated", True) or g.get("width", 0) < 40:
             return False
-        region = f"{g['x']},{g['y']} {g['width']}x{g['height']}"
+        # (whole pixels: Wayfire 0.12 reports 500.0 -- grim refused "500.0,241.5 920.0x560.0")
+        region = f"{round(g['x'])},{round(g['y'])} {round(g['width'])}x{round(g['height'])}"
         scale = min(1.0, SHOT_W / g["width"])
 
         def work():
@@ -174,6 +176,20 @@ class WindowShots:
         return out
 
 
+class _Pic(Gtk.Picture):
+    """A picture exactly `size` big. A Gtk.Picture asks for its image's own
+    size (a whole window: the preview came out ~1000 px wide -- Vini: "a very
+    big frame"), and a size request is only a minimum."""
+
+    def __init__(self, **kw):
+        super().__init__(can_shrink=True, **kw)
+        self.size = (ICON_PX, ICON_PX)
+
+    def do_measure(self, orientation, _for_size):
+        n = self.size[0] if orientation == Gtk.Orientation.HORIZONTAL else self.size[1]
+        return n, n, -1, -1
+
+
 class PreviewPopover(Gtk.Popover):
     """The windows above a Dock icon -- a small picture and the name; a click
     brings that window forward (restored when minimized), x closes it.
@@ -181,15 +197,15 @@ class PreviewPopover(Gtk.Popover):
 
     def __init__(self, tile, position, windows, restore, close=None):
         super().__init__(css_classes=["dock-preview"], has_arrow=False, autohide=False, position=position)
-        self.box = Gtk.Box(spacing=4)
+        self.box = Gtk.Box(spacing=0)
         self.pics, self.items = {}, {}
         self.close_view = close
         for w in windows:
             col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["minimized"] if w["minimized"] else [])
             slot = Gtk.Box(halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)       # PIC_W x PIC_H, the picture inside
             slot.set_size_request(PIC_W, PIC_H)
-            pic = Gtk.Picture(can_shrink=True, content_fit=Gtk.ContentFit.CONTAIN, halign=Gtk.Align.CENTER,
-                              valign=Gtk.Align.CENTER, hexpand=True)
+            pic = _Pic(content_fit=Gtk.ContentFit.CONTAIN, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER,
+                       hexpand=True)
             slot.append(pic)
             col.append(slot)
             col.append(Gtk.Label(label=w["title"] or tile.name, ellipsize=Pango.EllipsizeMode.END,
@@ -220,13 +236,15 @@ class PreviewPopover(Gtk.Popover):
             if icon is None and pic.get_paintable() is not None:
                 return                                         # (keep what's there)
             pic.set_paintable(icon)
-            pic.set_size_request(ICON_PX, ICON_PX)
+            pic.size = (ICON_PX, ICON_PX)
+            pic.queue_resize()
             pic.remove_css_class("shot-pic")
             return
         w, h = max(1, tex.get_width()), max(1, tex.get_height())
         k = min(PIC_W / w, PIC_H / h)
         pic.set_paintable(tex)
-        pic.set_size_request(max(1, round(w * k)), max(1, round(h * k)))
+        pic.size = (max(1, round(w * k)), max(1, round(h * k)))
+        pic.queue_resize()
         pic.add_css_class("shot-pic")
 
     def _close(self, vid) -> None:

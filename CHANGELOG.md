@@ -19,7 +19,10 @@
   pointer rests on its icon for 2 s, as far from the Dock as a maximized
   window; small pictures of the windows themselves, the size of Mission
   Control's desktop pictures (no big empty frame: the app's icon, small,
-  until one comes), and x on one closes that window.
+  until one comes), and x on one closes that window. The preview is as
+  small as its pictures (a window's whole picture made it ~1000 px wide), in
+  a thin frame; with only the old way of taking the pictures (grim), they
+  are taken again (Wayfire 0.12's sizes with decimals were refused).
 - A video wallpaper is silent even where GStreamer's player starts with its
   own volume, and fills the screen whatever its shape (cut to fit, centred).
 - Switch User asks for the password once: the login screen checks it and

@@ -180,12 +180,12 @@ class SmallPreviewsTest(unittest.TestCase):
         from gi.repository import Gdk, GLib
         P, pop, _r, _t = self.popover()
         pic = pop.pics[7]
-        self.assertEqual(pic.get_size_request(), (32, 32))                      # the icon, small: no empty frame
+        self.assertEqual(pic.size, (32, 32))                      # the icon, small: no empty frame
         self.assertFalse(pic.has_css_class("shot-pic"))
         raw = bytes(4 * 1600 * 900)
         tex = Gdk.MemoryTexture.new(1600, 900, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(raw), 1600 * 4)
         pop.set_shot(7, tex)
-        w, h = pic.get_size_request()
+        w, h = pic.size
         self.assertLessEqual(w, P.PIC_W)
         self.assertLessEqual(h, P.PIC_H)
         self.assertAlmostEqual(w / h, 16 / 9, delta=0.05)                         # its own shape
@@ -193,6 +193,18 @@ class SmallPreviewsTest(unittest.TestCase):
         self.assertEqual((P.PIC_W, P.PIC_H), (spaces.THUMB_W, spaces.THUMB_H))   # as the desktops' pictures
         pop.set_shot(7, None)
         self.assertIs(pic.get_paintable(), tex)                                    # a failed refresh keeps it
+
+    def test_the_preview_is_as_small_as_its_pictures(self):
+        """Vini: "a very big frame" -- a whole window's picture made the
+        preview ~1000 px wide (its natural size won over the request)."""
+        from gi.repository import Gdk, GLib, Gtk
+        P, pop, _r, _t = self.popover()
+        raw = bytes(4 * 1800 * 1120)
+        for vid in (7, 8):
+            pop.set_shot(vid, Gdk.MemoryTexture.new(1800, 1120, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(raw), 1800 * 4))
+        nat = pop.get_child().measure(Gtk.Orientation.HORIZONTAL, -1)[1]
+        self.assertLess(nat, 2 * P.PIC_W + 80)                                  # two pictures and their frames
+        self.assertEqual(pop.pics[7].measure(Gtk.Orientation.HORIZONTAL, -1)[1], P.PIC_W)
 
     def test_close_from_the_preview(self):
         close = mock.Mock()
