@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changes
+- Files: a folder that takes a while to open (a big one, a network share)
+  shows Finder's spinner and "Loading…" until it is in; a quick one never
+  flashes it.
 - Files and the desktop: Windows programs (.exe, .dll) show their own
   icon, read from the file itself (its resources; only the headers and
   icons are read, never a whole big game).
