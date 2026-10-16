@@ -140,7 +140,7 @@ class CalendarWindow(Gtk.ApplicationWindow):
     def __init__(self, app, folder: str = None):
         if not GLib.get_application_name():
             GLib.set_application_name("Calendar")
-        super().__init__(application=app, title="Calendar", css_classes=["sonata-calendar"])
+        super().__init__(application=app, title=_("Calendar"), css_classes=["sonata-calendar"])
         ui.window.standard(self)
         ui.window.remember_size(self, "calendar", 1100, 720)  # its last size (never bigger than the display)
         self.cfg = config.load("calendar", DEFAULTS)

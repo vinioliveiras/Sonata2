@@ -236,7 +236,7 @@ class Bar(Gtk.CenterBox):
         self.logo = self._item(left, on_click=self._sonata_menu, css="icon")
         from ..ui.logo import LogoGlyph                      # distro logo, a shape or a symbol (Settings)
         self.logo.get_child().append(LogoGlyph(LOGO_PX))
-        self.app_btn = self._item(left, text="Files", on_click=self._app_menu, css="app")
+        self.app_btn = self._item(left, text=_("Files"), on_click=self._app_menu, css="app")
         # a very long app name ("GNU Image Manipulation Program", a raw app id)
         # ellipsizes: with tray and stats on a 1280 px display the bar overflowed
         name = self.app_btn.get_child().get_last_child()
@@ -618,7 +618,7 @@ class Bar(Gtk.CenterBox):
                 name = windowapps.describe(key, windowapps.window_title(_wins))[0]
             self._set_text(self.app_btn, name)
         else:
-            self._set_text(self.app_btn, "Files")
+            self._set_text(self.app_btn, _("Files"))
 
     # -- File: the app's windows and tabs (apptabs: the app's own shortcuts) ---------------
     def _file_menu(self, btn):
@@ -685,7 +685,7 @@ class Bar(Gtk.CenterBox):
         key, wins = self._active()
         from ..files import APP_ID as FILES_ID
         info = apps.lookup(key) if key else apps.lookup(FILES_ID)       # desktop: Files, like Finder
-        name = info.get_display_name() if info else (key or "Files")
+        name = info.get_display_name() if info else (key or _("Files"))
         m = self.manager
         others = [t for t in (m.toplevels if m else []) if t not in wins]
         return self._menu(btn, [

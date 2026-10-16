@@ -78,5 +78,32 @@ class AppNamesTest(unittest.TestCase):
         self.assertIsNotNone(Gio.DesktopAppInfo.new_from_filename(path))
 
 
+class RewriteSeenTest(unittest.TestCase):
+    """Vini: Apps kept the English names -- a launcher rewritten in place
+    left its folder's time as it was, and Apps (apps.signature) never
+    looked again. It is written beside and moved in: the folder changes."""
+
+    def test_folder_changes_when_a_launcher_changes(self):
+        import time
+        d = tempfile.mkdtemp()
+        with mock.patch("gi.repository.GLib.get_user_data_dir", return_value=d):
+            apps.write_desktop_file("x.desktop", "[Desktop Entry]\nName=Files\n")
+            folder = os.path.join(d, "applications")
+            before = os.stat(folder).st_mtime_ns
+            time.sleep(0.02)
+            apps.write_desktop_file("x.desktop", "[Desktop Entry]\nName=Files\nComment=Browse your files\n")
+            self.assertNotEqual(os.stat(folder).st_mtime_ns, before)
+            self.assertEqual(sorted(os.listdir(folder)), ["x.desktop"])            # (no leftover)
+            with open(os.path.join(folder, "x.desktop")) as f:
+                self.assertIn("Name[pt_BR]=Arquivos", f.read())
+
+    def test_menu_bar_names_files_in_the_language(self):
+        import inspect
+        from sonata2.shell import topbar
+        src = inspect.getsource(topbar)
+        self.assertNotIn('self._set_text(self.app_btn, "Files")', src)
+        self.assertIn('self._set_text(self.app_btn, _("Files"))', src)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -246,8 +246,14 @@ def write_desktop_file(filename: str, text: str) -> str:
                 return path
     except OSError:
         pass
-    with open(path, "w", encoding="utf-8") as f:
+    # written beside it, then moved in: the folder itself changes, so Apps
+    # and the Dock (apps.signature: folder times) and GIO read it again --
+    # rewritten in place, a launcher's new name went unseen (Vini: the
+    # names stayed English after they were translated)
+    tmp = path + ".new"
+    with open(tmp, "w", encoding="utf-8") as f:
         f.write(text)
+    os.replace(tmp, path)
     return path
 
 

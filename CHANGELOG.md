@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Changes
+- Apps and the menu bar show Sonata's apps' names in the system's
+  language right after an update (a launcher rewritten in place went
+  unnoticed until something else changed its folder); the menu bar's
+  "Files" with no window in front, and Calendar's window title, too.
 - Sonata's apps are named in the system's language (Arquivos / Ficheiros,
   Calendário...): their launchers carry the Portuguese names and
   descriptions too, so the Dock, Apps and the menu bar show them.
