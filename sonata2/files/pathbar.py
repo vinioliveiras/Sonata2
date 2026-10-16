@@ -26,7 +26,11 @@ ui.register("""
 .fs-pathbar button.drop { background: alpha(%(accent)s, 0.22); }
 .fs-pathbar button image { -gtk-icon-size: 13px; }
 .fs-pathbar .fs-path-sep { color: %(label_tertiary)s; font-size: %(text_small)s; margin: 0 1px; }
-.fs-pathbar entry { min-height: 18px; margin: 2px 0; padding: 0 6px; font-size: %(text_small)s; }
+.fs-pathbar entry { min-height: 18px; margin: 3px 2px; padding: 0 6px; font-size: %(text_small)s; border-radius: 5px; }
+/* the bar is only 24 px high (and scrolls sideways): the focus ring drawn
+   inside the field, not around it -- it was cut off (Vini) */
+.fs-pathbar entry.sonata-field:focus-within {
+  box-shadow: inset 0 0 0 1.5px alpha(%(accent)s, 0.85), inset 0 0 0 3px alpha(%(accent)s, 0.18); }
 """, key="files-pathbar")
 
 

@@ -4,7 +4,8 @@
 
 ### Changes
 - Files' path bar: right-click > Copy Path copies the folder under the
-  pointer (or, on the bar's empty part, the folder shown).
+  pointer (or, on the bar's empty part, the folder shown). Typing an
+  address there, the field's focus ring is drawn inside it (it was cut off).
 - ç on U.S. International: ' + c types "ç" (and ' + C "Ç"), as on Windows
   and macOS, instead of "ć". Set at login in ~/.XCompose, after the
   locale's own table; a file of your own keeps its lines. Apps opened
