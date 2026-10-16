@@ -131,7 +131,9 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None,
         dlg.present()
         _raise_when_owner_shows(parent.get_root() if parent is not None and hasattr(parent, "get_root") else None,
                                 dlg)
-    _add_close(dlg)                      # (its content exists once presented)
+    from .window import DISMISS_IDS, dismiss_label
+    if not any(rid in DISMISS_IDS or dismiss_label(text) for rid, text, _s in responses):
+        _add_close(dlg)                  # (its content exists once presented; none next to Cancel: Vini)
     return dlg
 
 

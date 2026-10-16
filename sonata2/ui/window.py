@@ -393,6 +393,33 @@ def has_window_buttons(widget) -> bool:
     return False
 
 
+# a button that already closes without doing anything (Vini: a close dot
+# next to Cancel or Quit makes no sense)
+DISMISS_IDS = ("cancel", "close", "quit")
+
+
+def dismiss_label(text) -> bool:
+    """Cancel, Close or Quit (in Sonata's language)."""
+    t = (text or "").replace("_", "").strip().rstrip("….").strip().casefold()
+    return bool(t) and t in {x.casefold() for x in (_("Cancel"), _("Close"), _("Quit"),
+                                                    "cancel", "close", "quit")}
+
+
+def has_dismiss_button(widget) -> bool:
+    """True when `widget` holds a Cancel / Close / Quit button: no close
+    dot is added to it."""
+    stack = [widget] if isinstance(widget, Gtk.Widget) else []
+    while stack:
+        w = stack.pop()
+        if isinstance(w, Gtk.Button) and dismiss_label(w.get_label()):
+            return True
+        c = w.get_first_child()
+        while c is not None:
+            stack.append(c)
+            c = c.get_next_sibling()
+    return False
+
+
 theme.register("""
 .traffic.traffic-close-only { margin: %(tl_margin_top)s %(tl_margin_left)s 0 %(tl_margin_left)s; }
 """, key="traffic-close-only", **traffic_metrics())
