@@ -2705,9 +2705,18 @@ class Settings(Adw.ApplicationWindow):
             else:
                 bg[mode] = color
             self._save("appearance", "background", bg)
-            from .. import titlebars                     # the title bars Wayfire draws, other GTK apps
-            dark = Adw.StyleManager.get_default().get_dark()
-            system.run_async(lambda: (titlebars.apply_colors(dark), titlebars.apply()), None)
+            # the title bars Wayfire draws and other GTK apps: once the clicks
+            # stop (each run rewrites their style files; quick clicks raced)
+            if getattr(self, "_bg_apply_src", 0):
+                GLib.source_remove(self._bg_apply_src)
+
+            def apply():
+                self._bg_apply_src = 0
+                from .. import titlebars
+                dark = Adw.StyleManager.get_default().get_dark()
+                system.run_async(lambda: (titlebars.apply_colors(dark), titlebars.apply()), None)
+                return False
+            self._bg_apply_src = GLib.timeout_add(400, apply)
         for i, (name, color) in enumerate(opts):
             b = Gtk.Button(css_classes=["st-accent", "st-bg", f"bg-{mode}-{i}"] + (["selected"] if color == cur else []),
                            tooltip_text=name, valign=Gtk.Align.CENTER)

@@ -480,12 +480,13 @@ class Bar(Gtk.CenterBox):
         if name:
             child.set_from_icon_name(name)
 
-    def _refresh_logo(self) -> None:
-        """The Sonata menu's logo drawn anew (Vini: it went blank)."""
+    def _refresh_logo(self, reload: bool = True) -> None:
+        """The Sonata menu's logo drawn anew (Vini: it went blank); reload:
+        its picture made again too (not on every focus change: LogoGlyph)."""
         logo = getattr(self, "logo", None)
         glyph = logo.get_child().get_last_child() if logo is not None and logo.get_child() else None
         if hasattr(glyph, "refresh"):
-            glyph.refresh()
+            glyph.refresh(reload)
 
     def _open(self, btn, builder) -> None:
         reveal = getattr(self, "reveal", None)
@@ -594,7 +595,7 @@ class Bar(Gtk.CenterBox):
             for b in (getattr(self, "cc", None), getattr(self, "wifi", None), getattr(self, "spotlight", None)):
                 if b is not None:
                     self._refresh_icon(b)
-            self._refresh_logo()
+            self._refresh_logo(reload=False)        # (focus changes are frequent: a redraw only)
             return False
         self._icons_src = GLib.timeout_add(120, run)
 

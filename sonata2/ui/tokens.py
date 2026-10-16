@@ -525,6 +525,16 @@ def background_tokens(tokens: dict, picked: str, dark: bool) -> dict:
     opaque title bars made again over it (their glass over the window)."""
     if not picked:
         return {}
+    key = (dark, picked, id(tokens))
+    if key not in _background_memo:            # (palette() runs often: drawing code asks for values())
+        _background_memo[key] = _background_tokens(tokens, picked, dark)
+    return dict(_background_memo[key])
+
+
+_background_memo = {}
+
+
+def _background_tokens(tokens: dict, picked: str, dark: bool) -> dict:
     new = _rgb(legible_background(picked, dark))[0]
     base = _rgb(tokens["window_bg"])[0]
     delta = [n - b for n, b in zip(new, base)]

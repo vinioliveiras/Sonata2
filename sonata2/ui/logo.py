@@ -115,10 +115,15 @@ class LogoGlyph(Gtk.Widget):
         self._mon = config.watch("appearance", lambda *_: self.set_kind(*_current_with_text()))
         self.connect("notify::scale-factor", lambda *_: self.refresh())     # a new display scale: sharp again
 
-    def refresh(self) -> None:
-        """Its picture made again (Vini: the menu bar's logo went blank, like
-        the Control Center icon did -- a stale picture kept by GTK). Called
-        with the menu bar's icons (topbar._icons_soon, ui.theme.refresh_tree)."""
+    def refresh(self, reload: bool = True) -> None:
+        """Drawn anew (Vini: the menu bar's logo went blank, like the Control
+        Center icon did -- a stale picture kept by GTK). reload=False only
+        redraws it (every focus change: topbar._icons_soon); a reload makes
+        the picture again (a distro logo's tile is cut out pixel by pixel:
+        kept for rare moments -- appearance, scale, its menu closed)."""
+        if not reload:
+            self.queue_draw()
+            return
         kind, custom = _current_with_text()
         if kind != self.kind or text_for(kind, custom) != self.text:
             self.set_kind(kind, custom)               # another logo: set_kind measures it again

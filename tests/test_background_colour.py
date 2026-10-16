@@ -85,6 +85,8 @@ class SettingsTest(unittest.TestCase):
             default = T.BACKGROUNDS["dark"][0][1]
             self.assertTrue(row.background_buttons[default].has_css_class("selected"))
             navy = dict(T.BACKGROUNDS["dark"])["Navy"]
+            settle(500)
+            before = titlebars.apply.call_count                       # (the page's own, if any)
             row.background_buttons[navy].emit("clicked")
             self.assertEqual(config.load("appearance", {"background": {}})["background"], {"dark": navy})
             row.custom_background.emit("clicked")                     # any colour: Sonata's own picker
@@ -98,6 +100,8 @@ class SettingsTest(unittest.TestCase):
             self.assertFalse(row.background_buttons[navy].has_css_class("selected"))
             row.background_buttons[default].emit("clicked")           # back to the original
             self.assertEqual(config.load("appearance", {"background": {}})["background"], {})
+            settle(700)
+            self.assertEqual(titlebars.apply.call_count - before, 1)   # quick clicks: applied once
 
     def test_light_row_leaves_dark_alone(self):
         from sonata2 import titlebars
