@@ -661,6 +661,8 @@ class Settings(Adw.ApplicationWindow):
             self.pop_detail(self.current)           # a section opens on its list again
         self.current = sid                          # at once, no fade (Vini)
         self.content.set_visible_child(self.pages[sid])
+        if getattr(self, "fade", None) is not None:
+            self.fade.play()                        # (a picture of a page rebuilt in place: never left on top)
         focus = getattr(self, "_focus_app", None)
         part = getattr(self, "_focus_part", None)
         if focus and part in ("appicons", "apps") and getattr(self, part + "_page", None):
@@ -1626,6 +1628,10 @@ class Settings(Adw.ApplicationWindow):
         if showing:
             self.current = None
             self.select(sid, from_sidebar=True)
+            # the picture taken above fades away: left on top, it covered every
+            # section opened after (Vini: after adding a user, Settings stayed on
+            # Users & Groups whatever was picked, the new user not in it)
+            self.fade.play()
 
     def _page_trackpad(self):
         get = system.wayfire_get

@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changes
+- Settings no longer gets stuck on a section after adding (or deleting) a
+  user: the page rebuilt in place left a picture of itself on top of every
+  section opened after it.
 - Settings > Dock > Folders in the Dock: the Dock's folders, each with
   Remove; Downloads back with one click once removed; any other folder
   (Add Folder…). The running Dock follows at once.
