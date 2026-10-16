@@ -43,6 +43,21 @@ opens at once, with its sliders where they are.
   computer without DDC/CI displays isn't probed again on every opening.
 - Faster: the app a window belongs to is remembered a few seconds instead of
   its .desktop file being read again on every window event.
+- Lighter, more of it:
+  - `sonata2 keep` (polkit's agent, all session long) sleeps until its
+    program ends -- it woke 20 times a second;
+  - the Dock's window previews never take screen pictures (grim) where
+    Sonata's plugin draws them, and never two at once;
+  - the menu bar's icons are drawn again only when the front app or the
+    windows change, not on every title change;
+  - the Downloads stack in the Dock isn't listed again while a download is
+    being written, only when a file comes, goes or is done;
+  - Mission Control's desktops bar is rebuilt once after a burst of window
+    events, not once per event;
+  - a change to the Dock's settings no longer re-reads the appearance in
+    every Sonata process;
+  - per-app volumes changed outside Sonata are saved after 5 s, not 1.5 s
+    (each look reads every playing stream).
 - Faster: every sound stream's events no longer read the volume again (many
   a second while something played); quit-on-close no longer lists every
   window on each title change of an app whose process it never found.

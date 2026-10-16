@@ -59,6 +59,9 @@ class FakeWayfire(threading.Thread):
                     _send(c, {"result": "error", "error": "No such method found!"})
                     continue
                 d = msg["data"]
+                if not d.get("id"):                                        # (the probe at start)
+                    _send(c, {"error": "no such window"})
+                    continue
                 with open(d["path"], "wb") as f:
                     f.write(bytes([255, 0, 0, 255]) * (4 * 2))       # 4 x 2, opaque red
                 _send(c, {"result": "ok", "width": 4, "height": 2})
@@ -85,6 +88,7 @@ class PreviewTest(unittest.TestCase):
         tmp = tempfile.mkdtemp()
         sock = os.path.join(tmp, "wf.sock")
         fake = FakeWayfire(sock)
+        fake.shots = False                              # grim: only without Sonata's plugin
         fake.start()
         png = os.path.join(tmp, "shot.png")             # what the fake grim prints
         from gi.repository import GdkPixbuf
@@ -238,6 +242,42 @@ class SmallPreviewsTest(unittest.TestCase):
         with mock.patch.object(P, "shots", return_value=mock.Mock(ipc=fake)):
             P.close_window(42)
         fake.call.assert_called_once_with("window-rules/close-view", {"id": 42})
+
+
+class GrimOnlyWithoutThePluginTest(unittest.TestCase):
+    """Performance: until a preview opened, every focus change took a grim
+    picture even where Sonata's plugin draws them -- now asked at start."""
+
+    def test_has_window_shot(self):
+        from sonata2.shell import dock_preview as P
+        self.assertFalse(P.has_window_shot({"error": "No such method found!", "method": "sonata/window-shot"}))
+        self.assertTrue(P.has_window_shot({"error": "no such window"}))
+        self.assertTrue(P.has_window_shot({"result": "ok"}))
+
+    def shots(self, compositor):
+        from sonata2.shell import dock_preview as P
+        s = P.WindowShots.__new__(P.WindowShots)
+        s.shots, s.grim, s.compositor, s._pending, s._grabbing = {}, True, compositor, 0, False
+        return P, s
+
+    def focus(self, P, s):
+        with mock.patch.object(P.GLib, "timeout_add", return_value=5) as later:
+            s._event({"event": "view-focused", "view": dict(VIEW)})
+        return later
+
+    def test_no_grim_with_the_plugin_or_before_knowing(self):
+        for compositor in (True, None):
+            P, s = self.shots(compositor)
+            self.focus(P, s).assert_not_called()
+        P, s = self.shots(False)
+        self.focus(P, s).assert_called_once()
+
+    def test_never_two_grims_at_once(self):
+        P, s = self.shots(False)
+        s._grabbing = True
+        s.ipc = mock.Mock()
+        self.assertFalse(s._capture(7))
+        s.ipc.call.assert_not_called()
 
 
 class HoverRulesTest(unittest.TestCase):

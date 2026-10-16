@@ -413,4 +413,14 @@ class SpacesBar(Gtk.Window):
         GLib.timeout_add(40, check)
 
     def _refresh_soon(self, ms: int = 120) -> None:
-        GLib.timeout_add(ms, lambda: (self.get_visible() and self.refresh(), False)[1])
+        """One refresh after a burst of window events (each one rebuilt the
+        bar, asking Wayfire twice): a new one starts the wait again."""
+        if getattr(self, "_soon", 0):
+            GLib.source_remove(self._soon)
+
+        def run():
+            self._soon = 0
+            if self.get_visible():
+                self.refresh()
+            return False
+        self._soon = GLib.timeout_add(ms, run)

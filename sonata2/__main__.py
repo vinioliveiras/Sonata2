@@ -1213,7 +1213,7 @@ def keep(argv) -> int:
         k.start()
         while True:
             try:
-                code = k.child.wait(timeout=60)
+                code = _wait_child(k.child, 60)
                 break
             except subprocess.TimeoutExpired:
                 if k.tick():
@@ -1225,6 +1225,31 @@ def keep(argv) -> int:
         time.sleep(n)
         if not _same_session(k.sock, k.session):
             return 0
+
+
+def _wait_child(child, timeout: float):
+    """child.wait(timeout), sleeping until it ends: Popen.wait with a timeout
+    polls (20 times a second -- `sonata2 keep polkit`, the whole session).
+    A pidfd wakes this when the process ends (Linux 5.3); otherwise, or for
+    anything but a real Popen, its own wait."""
+    import select
+    import subprocess
+    real = type(child).__module__ == "subprocess" and isinstance(getattr(child, "pid", None), int)
+    if real and hasattr(os, "pidfd_open"):
+        try:
+            fd = os.pidfd_open(child.pid)
+        except OSError:
+            fd = None
+        if fd is not None:
+            try:
+                select.select([fd], [], [], timeout)
+            finally:
+                os.close(fd)
+            code = child.poll()
+            if code is None:
+                raise subprocess.TimeoutExpired(child.args, timeout)
+            return code
+    return child.wait(timeout=timeout)
 
 
 def _wait_sigchld(fd: int, timeout: float) -> None:

@@ -52,6 +52,13 @@ popover.dock-preview > contents { background: %(panel_material)s; border-radius:
 """, key="dock-preview")
 
 
+def has_window_shot(reply: dict) -> bool:
+    """Sonata's plugin answers sonata/window-shot (an error about the request
+    is still an answer); Wayfire without it: no such method."""
+    err = str((reply or {}).get("error", "")).lower()
+    return not ("method" in err and ("no such" in err or "not found" in err or "unknown" in err))
+
+
 class WindowShots:
     """view id -> {"tex", "app", "title", "minimized"}, kept up to date."""
 
@@ -62,9 +69,19 @@ class WindowShots:
         self.grim = shutil.which("grim") is not None
         self.enabled = self.ipc.available
         self._pending = 0
+        self._grabbing = False          # a grim capture running (never two at once)
         if self.enabled:
             self.enabled = self.ipc.watch(["view-focused", "view-minimized", "view-unmapped",
                                            "view-title-changed"], self._event)
+        if self.enabled:
+            # asked once now: until a preview opened it was unknown, and every
+            # focus change took a grim picture even with the plugin there
+            threading.Thread(target=self._probe, daemon=True).start()
+
+    def _probe(self) -> None:
+        r = WayfireIPC().call("sonata/window-shot", {"id": 0, "path": ""})
+        if r is not None:
+            self.compositor = has_window_shot(r)
 
     # -- the compositor draws the window (sonata/window-shot) --------------------------------
     def snapshot(self, vid, done) -> None:
@@ -77,7 +94,7 @@ class WindowShots:
             path = os.path.join(GLib.get_user_runtime_dir(), f"sonata2-shot-{os.getpid()}-{vid}")
             r = WayfireIPC().call("sonata/window-shot", {"id": vid, "width": SHOT_W, "path": path})
             if not r or r.get("result") != "ok":
-                if r is not None and "method" in str(r.get("error", "")).lower():
+                if r is not None and not has_window_shot(r):
                     self.compositor = False          # no such method: an older plugin
                 return
             try:
@@ -130,13 +147,15 @@ class WindowShots:
         entry.update(app=view.get("app-id", ""), title=view.get("title", ""),
                      minimized=bool(view.get("minimized")))
         if ev == "view-focused" and view.get("type", "toplevel") == "toplevel" and not entry["minimized"] \
-                and self.grim and self.compositor is not True:      # (the plugin draws them itself)
+                and self.grim and self.compositor is False:         # (the plugin draws them itself)
             if self._pending:
                 GLib.source_remove(self._pending)
             self._pending = GLib.timeout_add(CAPTURE_DELAY_MS, self._capture, vid)
 
     def _capture(self, vid) -> bool:
         self._pending = 0
+        if self._grabbing:
+            return False                     # (the next focus change takes it)
         info = self.ipc.call("window-rules/view-info", {"id": vid})
         view = (info or {}).get("info") or {}
         g = view.get("geometry") or {}
@@ -151,9 +170,12 @@ class WindowShots:
                 r = subprocess.run(["grim", "-g", region, "-s", f"{scale:.3f}", "-t", "png", "-"],
                                    capture_output=True, timeout=5)
             except (OSError, subprocess.SubprocessError):
-                return
-            if r.returncode == 0 and r.stdout:
+                r = None
+            finally:
+                self._grabbing = False
+            if r is not None and r.returncode == 0 and r.stdout:
                 GLib.idle_add(self._store, vid, r.stdout)
+        self._grabbing = True
         threading.Thread(target=work, daemon=True).start()
         return False
 
