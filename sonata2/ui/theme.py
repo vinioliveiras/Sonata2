@@ -400,6 +400,8 @@ def refresh_tree(root, icons: bool = True) -> None:
             name = w.get_icon_name()
             if name:
                 w.set_from_icon_name(name)         # (GTK clears the image first, even for the same name)
+        elif icons and callable(getattr(w, "refresh", None)) and getattr(w, "sonata_refreshable", False):
+            w.refresh()                            # widgets drawing a picture of their own (ui.logo)
         w.queue_draw()
         c = w.get_first_child()
         while c is not None:

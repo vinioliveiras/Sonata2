@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changes
+- The Sonata menu's logo (top left) is drawn anew with the other menu bar
+  icons (an app window gone, its menu closed, Light/Dark, a new display
+  scale): it could go blank.
 - Files and the desktop: a shell script's right-click menu has Run in
   Terminal (its output in a window that stays open) and Run (in the
   background). Scripts are .sh / .bash / .zsh files, or executables that

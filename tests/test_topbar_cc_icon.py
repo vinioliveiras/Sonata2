@@ -148,6 +148,42 @@ class ControlCenterIconTest(unittest.TestCase):
         bar.stop()
         win.destroy()
 
+    def test_logo_drawn_anew(self):
+        """Vini: the Sonata menu's logo (top left) went blank. It is made
+        again with the other icons: an app window gone, its menu closed,
+        a Light/Dark switch."""
+        from sonata2.ui.logo import LogoGlyph
+        win = Gtk.Window()
+        bar = topbar.Bar(None)
+        win.set_child(bar)
+        win.present()
+        settle(300)
+        glyph = bar.logo.get_child().get_last_child()
+        self.assertIsInstance(glyph, LogoGlyph)
+        loads = []
+        orig = glyph._load
+        glyph._load = lambda kind: (loads.append(kind), orig(kind))[1]
+        if (glyph.kind or "").startswith("shape:") or glyph.text:
+            self.skipTest("a drawn shape / words: no picture to load")
+        bar._active_changed()                                # an app window closed
+        settle(400)
+        self.assertEqual(len(loads), 1)
+        self.assertIsNotNone(glyph.kind)
+        bar._open(bar.logo, lambda b: bar._sonata_menu(b))   # its menu, then closed
+        settle(200)
+        for pop in list(ui.menu.OPEN):
+            pop.popdown()
+        settle(300)
+        self.assertGreaterEqual(len(loads), 2)
+        n = len(loads)
+        sm = Adw.StyleManager.get_default()
+        sm.set_color_scheme(Adw.ColorScheme.FORCE_DARK if not sm.get_dark() else Adw.ColorScheme.FORCE_LIGHT)
+        settle(900)
+        self.assertGreater(len(loads), n)
+        self.assertTrue(glyph.texture is not None or (glyph.kind or "").startswith("shape:"))
+        bar.stop()
+        win.destroy()
+
 
 if __name__ == "__main__":
     unittest.main()
