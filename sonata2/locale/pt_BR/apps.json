@@ -220,8 +220,8 @@
  "Italic": "Itálico",
  "Its startup file couldn't be written.": "Não foi possível gravar o arquivo de inicialização.",
  "Its {n} event will be deleted too. This can't be undone.": [
-  "O {n} evento dele também será apagado. Não é possível desfazer.",
-  "Os {n} eventos dele também serão apagados. Não é possível desfazer."
+  "Este calendário tem {n} evento, que também será apagado. Não é possível desfazer.",
+  "Os {n} eventos deste calendário também serão apagados. Não é possível desfazer."
  ],
  "Its {n} note will be moved to Recently Deleted.": [
   "A pasta tem {n} nota, que será movida para Apagados Recentemente.",
