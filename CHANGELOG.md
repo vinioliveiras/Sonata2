@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changes
+- Web apps on Chrome: after the page moves within itself (WhatsApp) or
+  loads, its own title is set again so Chrome takes it for the window --
+  the page's name and unread count, no name made up for it.
 - Dock: an app opening gets its place smoothly -- the neighbours slide
   aside, then its icon fades in -- as its place closes up when it quits.
 - About This Computer shows all of its content: it grows to it once the

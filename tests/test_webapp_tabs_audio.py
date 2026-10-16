@@ -36,7 +36,8 @@ class GuardTest(unittest.TestCase):
         self.feed({"method": "Target.targetInfoChanged",
                    "params": {"targetInfo": {"targetId": "B", "type": "page", "url": "https://example.org/a"}}})
         self.assertEqual(self.opened, ["https://example.org/a"])
-        self.assertEqual(self.msgs()[-1], {"id": 2, "method": "Target.closeTarget", "params": {"targetId": "B"}})
+        last = self.msgs()[-1]
+        self.assertEqual((last["method"], last["params"]), ("Target.closeTarget", {"targetId": "B"}))
         self.feed(target("C", "chrome://newtab/"))                          # Ctrl+T: just closed
         self.assertEqual(self.msgs()[-1]["params"], {"targetId": "C"})
         self.assertEqual(len(self.opened), 1)
@@ -46,7 +47,7 @@ class GuardTest(unittest.TestCase):
                   target("P", "https://accounts.google.com/o/oauth2", opener=True),
                   target("W", "https://web.whatsapp.com/sw.js", kind="service_worker"))
         self.assertEqual(self.opened, [])
-        self.assertEqual(len(self.msgs()), 1)                              # nothing closed
+        self.assertNotIn("Target.closeTarget", [m["method"] for m in self.msgs()])      # nothing closed
 
     def test_split_messages(self):
         data = json.dumps(target("A", "https://web.whatsapp.com/")).encode() + b"\0" + \

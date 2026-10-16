@@ -7,10 +7,14 @@ The browser runs with --remote-debugging-pipe: DevTools' protocol over two
 pipes (no port anyone else could reach), messages are JSON ended by a NUL.
 Sonata only watches which pages open (Target.setDiscoverTargets).
 
-Its window's title (Vini: WhatsApp's window read "web.whatsapp.com", its
-address -- Chrome's stand-in for a page without a title it took -- while a
-tab of it read "WhatsApp"): when the app's page shows its address as title,
-the page's own title is set again (the name of the web app when it has none).
+Its window's title (Vini: WhatsApp's window read "web.whatsapp.com" -- its
+address -- with neither its name nor its unread count, while a tab of it
+read "(10) WhatsApp"): Chrome titles the window from the current history
+entry, and a page that moves within itself (pushState: WhatsApp) leaves a
+new entry without a title until the title changes again. The app's page is
+watched (Page.enable on its own session) and after each such move, and
+each load, its own title is set again (the same text, nudged), so Chrome
+takes it -- the page's real name and count, nothing made up.
 
     guard = Guard(app_url, write)      # write(bytes): to the browser
     guard.feed(data)                   # bytes from the browser
@@ -22,7 +26,10 @@ KEEP_SCHEMES = ("devtools:", "chrome-extension:")
 
 
 class Guard:
-    TITLE_TRIES = 3                        # per page loaded (never a loop with the page)
+    TITLE_TRIES = 3                        # per address shown as title (never a loop with the page)
+    # the page's own title, set again (a change Chrome hears: zero-width space, then back)
+    NUDGE = ("(() => { const t = document.title;"
+             " if (t) { document.title = t + '\\u200b'; document.title = t; } })()")
 
     def __init__(self, app_url: str, write, open_outside=None, log=None, name: str = "", on_title=None):
         self.app_url = app_url
@@ -64,7 +71,12 @@ class Guard:
             params = msg.get("params") or {}
             if (params.get("targetInfo") or {}).get("targetId") == self.main and params.get("sessionId"):
                 self.session = params["sessionId"]
+                self.send("Page.enable", session=self.session)       # its moves and loads, below
                 self._retitle()
+            return
+        if method in ("Page.navigatedWithinDocument", "Page.loadEventFired"):
+            if self.session and msg.get("sessionId") == self.session:
+                self._retitle()                    # a new history entry: its title again
             return
         if method not in ("Target.targetCreated", "Target.targetInfoChanged"):
             return
@@ -74,9 +86,15 @@ class Guard:
         tid = info.get("targetId")
         if self.main is None:
             self.main = tid                # the --app window's page
+            self.send("Target.attachToTarget", {"targetId": tid, "flatten": True})   # (its title: above)
         if tid == self.main:
-            if self.on_title and isinstance(info.get("title"), str):
-                self.on_title(info["title"])
+            if isinstance(info.get("title"), str):
+                if self.on_title:
+                    self.on_title(info["title"])
+                if info["title"] != getattr(self, "_last_title", None) and getattr(self, "_titles_logged", 0) < 5:
+                    self._last_title = info["title"]          # (the first few: to compare with the window's)
+                    self._titles_logged = getattr(self, "_titles_logged", 0) + 1
+                    self.log(f"page title: {info['title'][:80]!r} at {(info.get('url') or '')[:80]}")
             self._check_title(info)
             return
         if tid in self.handled:
@@ -105,19 +123,13 @@ class Guard:
         if tries >= self.TITLE_TRIES:
             return
         self._title_tries[url] = tries + 1
-        if self.session:
-            self._retitle()
-        else:
-            self.send("Target.attachToTarget", {"targetId": self.main, "flatten": True})
+        self._retitle()
 
     def _retitle(self) -> None:
-        """The page's title set again -- Chrome takes it this time -- or, with
-        none, the web app's name."""
-        name = json.dumps(self.name or "")
-        expr = ("(() => { const t = document.title.trim();"
-                " if (t && t !== location.host) { document.title = t + '\\u200b'; document.title = t; }"
-                f" else if ({name}) document.title = {name}; }})()")
-        self.send("Runtime.evaluate", {"expression": expr}, session=self.session)
+        """The page's own title set again, so Chrome takes it for the window
+        (nothing when the page has none: nothing is made up)."""
+        if self.session:
+            self.send("Runtime.evaluate", {"expression": self.NUDGE}, session=self.session)
 
 
 def is_address(title: str, url: str) -> bool:
