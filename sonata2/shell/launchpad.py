@@ -360,6 +360,10 @@ class Launchpad(Gtk.ApplicationWindow):
         self.layer = layer.overlay_fullscreen(self, "sonata2-launchpad")
         self._overlay = True
         Gio.AppInfoMonitor.get().connect("changed", lambda *_: self._apps_changed())
+        # Mission Control (Super+Tab) or all Spaces open over it: it closes (Vini)
+        from ..wl.wfipc import WayfireIPC
+        self._wf_watch = WayfireIPC()
+        self._wf_watch.watch(["plugin-activation-state-changed"], self._plugin_changed)
         self._cfg_mon = config.watch("launchpad", self._config_changed)
         self._icons_mon = config.watch("icons", lambda: (icons.forget_prefs(), self.widgets.clear(), self.render()))   # App Icons
         self._lock_mon = config.watch("applock", lambda: (self.widgets.clear(), self.render()))      # padlocks
@@ -775,6 +779,11 @@ class Launchpad(Gtk.ApplicationWindow):
         self.col.set_margin_bottom(room if edge == "bottom" else 0)
         self.col.set_margin_start(room if edge == "left" else 0)
         self.col.set_margin_end(room if edge == "right" else 0)
+
+    def _plugin_changed(self, ev) -> None:
+        if ev.get("plugin") in ("scale", "expo") and ev.get("state") and self.get_visible() \
+                and (self.mode != "menu" or self.menu is None or self.menu.is_open()):
+            self.close_launchpad()
 
     def close_launchpad(self, then=None) -> None:
         self._unlocked = False                  # Hidden asks for the password again next time

@@ -86,8 +86,17 @@ class BlurRuleTest(unittest.TestCase):
     def test_all_on_is_wayfire_ini(self):
         from sonata2 import titlebars
         config.save("dock", {})
-        self.assertEqual(G.BLUR_ALL, titlebars.BLUR)
-        self.assertEqual(self.rule(), G.BLUR_ALL)
+        self.assertEqual(G.without_never(G.BLUR_ALL), titlebars.BLUR)
+        self.assertEqual(self.rule(), titlebars.BLUR)
+
+    def test_never_behind_mission_control_or_the_wallpaper(self):
+        """Vini: Mission Control still blurred -- its dark layer is a Sonata
+        surface, and the rule blurred every one (a full-screen pass a frame)."""
+        config.save("dock", {})
+        for r in (self.rule(), self.rule(dock=True), self.rule(dock=True, menubar=True, windows=True)):
+            self.assertTrue(r.endswith(f"& !({G.NEVER_BLUR})"), r)          # every rule with "contains"
+        for app in ("sonata2-mission", "sonata2-spaces", "sonata2-wallpaper"):
+            self.assertIn(f'app_id is "{app}"', G.NEVER_BLUR)
 
     def test_parts_left_out(self):
         config.save("dock", {})
@@ -101,7 +110,9 @@ class BlurRuleTest(unittest.TestCase):
         self.assertEqual(self.rule(dock=True, menubar=True, menus=True, windows=True),
                          'app_id is "sonata2-launchpad-window"')
         self.assertNotIn("launchpad-window", self.rule(launchpad=True, windows=True))   # menus' rule covers it
-        self.assertNotIn("!", self.rule(windows=True))           # positive rules only
+        # positive rules, but for the surfaces never blurred behind (NEVER_BLUR:
+        # "!" is Wayfire's condition syntax -- a session parsed it without a word)
+        self.assertNotIn("!", self.rule(windows=True).replace(f"!({G.NEVER_BLUR})", ""))
         self.assertIn("unmanaged", self.rule(menus=True))         # the Dock's folder panel: glass too
 
     def test_apply_colors_uses_it(self):

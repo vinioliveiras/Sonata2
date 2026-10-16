@@ -116,19 +116,30 @@ BLUR_PARTS = {"dock": 'app_id is "sonata2-dock"', "menubar": 'app_id is "sonata2
               "windows": 'app_id contains "sonata2."',     # Sonata apps (io.github....sonata2.files)
               "launchpad": 'app_id is "sonata2-launchpad-window"'}
 BLUR_NONE = 'app_id is "sonata2-blur-nothing"'           # matches nothing: the plugin stays loaded
+# never blurred behind, whatever is on (Vini: Mission Control still blurred):
+# Mission Control's dark layer and its desktops bar (see-through over the
+# whole display: a full-screen blur every frame), and the wallpaper (opaque:
+# nothing behind it to see)
+NEVER_BLUR = ('app_id is "sonata2-mission" | app_id is "sonata2-spaces" | app_id is "sonata2-wallpaper"')
+
+
+def without_never(rule: str) -> str:
+    """`rule`, never matching NEVER_BLUR's surfaces (only a rule that could:
+    one naming exact app ids is left as it is)."""
+    return f"({rule}) & !({NEVER_BLUR})" if 'contains "sonata2' in rule else rule
 
 
 def blur_rule(cfg: dict = None) -> str:
     s = cfg or settings()
     on = [i for i in ITEMS if s[i]["on"]]
     if len(on) == len(ITEMS):
-        return BLUR_ALL
+        return without_never(BLUR_ALL)
     if "menus" in on:                        # it covers the Dock's, the menu bar's and Launchpad's surfaces too
         on = [i for i in on if i not in ("dock", "menubar", "launchpad")]
     rule = " | ".join(BLUR_PARTS[i] for i in on)
     if "dock" in on:                         # an open Dock folder (a popup) has the Dock's glass
         rule += ' | type is "unmanaged"'
-    return rule or BLUR_NONE
+    return without_never(rule) if rule else BLUR_NONE
 
 
 def blur_threshold(cfg: dict = None, tokens: dict = None) -> float:

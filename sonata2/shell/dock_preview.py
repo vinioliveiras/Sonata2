@@ -29,7 +29,7 @@ PIC_W, PIC_H = 128, 80
 SHOT_W = 2 * PIC_W              # (crisp at 2x scale)
 ICON_PX = 32                    # the app's icon standing in until a picture comes
 MAX_WINDOWS = 6
-HOVER_MS = 2000                 # the pointer rests on the icon this long first (Vini: not at once)
+HOVER_MS = 1000                 # the pointer rests on the icon this long first (Vini: not at once)
 REFRESH_MS = 1500               # pictures drawn again while the previews are open: live, cheaply
 CAPTURE_DELAY_MS = 700          # let the window finish drawing / animating
 
@@ -317,6 +317,16 @@ def attach(tile, dock) -> None:
             return False
         state["src"] = GLib.timeout_add(300, close)
 
+    def forget(pop):
+        """Closed by itself (a window picked, Esc, a click elsewhere): this
+        icon's previews show again (Vini: "sometimes the hover doesn't show"
+        -- the closed one was still taken as open, and hover() gave up)."""
+        if state["pop"] is pop:
+            state["pop"], state["inside"] = None, False
+            if state["refresh"]:
+                GLib.source_remove(state["refresh"])
+                state["refresh"] = 0
+
     def hover(*_a):
         """The pointer came onto the icon: the previews after HOVER_MS, if it stays."""
         if state["src"]:                             # (back from the previews: they stay)
@@ -342,8 +352,8 @@ def attach(tile, dock) -> None:
         if not s.enabled or tile.key is None or not dock.windows.get(tile.key):
             return                                   # (not running: the name label shows)
         found = s.open_windows(tile.key)
-        if len(found) < 2:
-            return                                   # one window: nothing to choose (Vini) -- the name label shows
+        if not found:
+            return                                   # (a single window gets its preview too: Vini)
         if state["src"]:
             GLib.source_remove(state["src"])
             state["src"] = 0
@@ -355,6 +365,7 @@ def attach(tile, dock) -> None:
             motion.connect("enter", lambda *_: state.update(inside=True))
             motion.connect("leave", lambda *_: (state.update(inside=False), close_later()))
             pop.add_controller(motion)
+            pop.connect("closed", lambda p: forget(p))
             state["pop"] = pop
             pop.popup()
             GLib.idle_add(lambda: (tile.label.popdown(), False)[1])     # the name label yields

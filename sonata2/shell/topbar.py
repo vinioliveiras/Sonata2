@@ -1014,7 +1014,7 @@ class Bar(Gtk.CenterBox):
         def fill(res):
             vol, sinks = res or (None, [])
             if vol:
-                slider.set_value(vol[0])
+                ui.controls.show_value(slider, vol[0])
             for sk in sinks:
                 r = ui.panel.row("object-select-symbolic", sk.name, on_click=lambda sk=sk: (
                     pop.popdown(), system.run_async(system.select_output, None, sk.key)))
@@ -1167,6 +1167,9 @@ ui.register("""
 # Filled once at start; a menu shows them at once and asks again, updating
 # only what changed (macOS menus never open empty and fill in).
 _CACHE = {}
+
+
+_LEVELS = {}     # the Control Center's last levels read: {"vol", "mic", <output>: {"bright"}}
 
 
 def cached(name, fn, fill) -> None:
@@ -1395,8 +1398,9 @@ class ControlCenter(Gtk.Box):
         # or an external monitor over DDC/CI
         self.output = self._output()
         out = self.output
+        known = _LEVELS.get(out, {})                 # the last levels read: no jump as it opens (Vini)
         disp, self.bright = _slider_with_icon(
-            "display-brightness-symbolic", 50,
+            "display-brightness-symbolic", known.get("bright", 50),
             lambda v: system.run_latest(("brightness", out), system.set_brightness, int(v), out),
             button=_round_button("video-display-symbolic", _("Displays Preferences"),
                                  lambda _b: (self._close(), open_settings("displays"))))
@@ -1413,12 +1417,12 @@ class ControlCenter(Gtk.Box):
         display = ui.panel.module(Gtk.Label(label=_("Display"), xalign=0, css_classes=["panel-module-title"]),
                                   disp, ns)
         snd, self.vol = _slider_with_icon(
-            _speaker_icon, 50, bar._set_volume,
+            _speaker_icon, _LEVELS.get("vol", 50), bar._set_volume,
             button=_round_button("sonata-audio-output-symbolic", _("Output"),
                                  lambda b: _device_menu(b, _("Output"), system.audio_outputs, system.select_output)))
         _volume_feedback(self.vol)
         mic, self.mic = _slider_with_icon(
-            lambda v: "microphone-disabled-symbolic" if v <= 0 else "audio-input-microphone-symbolic", 50,
+            lambda v: "microphone-disabled-symbolic" if v <= 0 else "audio-input-microphone-symbolic", _LEVELS.get("mic", 50),
             lambda v: system.run_async(system.set_input_volume, None, int(v), False),
             button=_round_button("audio-input-microphone-symbolic", _("Input"),
                                  lambda b: _device_menu(b, _("Input"), system.audio_inputs, system.select_input)))
@@ -1464,8 +1468,10 @@ class ControlCenter(Gtk.Box):
         for row, kind in ((self.wifi, "wifi"), (self.bt, "bluetooth")):
             self._opens_details(row, kind)
         cached("cc", _cc_state, self._fill_toggles)             # Wi-Fi / Bluetooth: last known at once
-        system.run_async(lambda: (system.brightness(out), system.volume(), system.input_volume()),
-                         self._fill_sliders)                  # levels: always the live ones
+        # levels: the live ones, sound apart from brightness (a DDC/CI monitor
+        # answers in seconds; the sound sliders don't wait for it)
+        system.run_async(lambda: (system.volume(), system.input_volume()), self._fill_sound)
+        system.run_async(system.brightness, self._fill_brightness, out)
 
     def _opens_details(self, row, kind: str) -> None:
         """The row beside its toggle (its name and state) shows the list; the
@@ -1687,24 +1693,33 @@ class ControlCenter(Gtk.Box):
         system.run_async(system.set_airplane_mode, done, on)
 
     def _fill_sliders(self, res):
-        if not res:
-            return
-        b, vol, mic = res
+        """(brightness, volume, mic) at once (tests, older callers)."""
+        if res:
+            self._fill_brightness(res[0])
+            self._fill_sound(res[1:])
+
+    def _fill_brightness(self, b) -> None:
         if b is None:
             self.bright.set_sensitive(False)
             if not system.is_builtin(self.output):
                 self.bright.set_tooltip_text(_("This display's brightness can't be changed from the computer "
                                                "(turn on DDC/CI in its menu; needs ddcutil)"))
-        else:
-            self.bright.set_value(b)
+            return
+        _LEVELS.setdefault(self.output, {})["bright"] = b
+        ui.controls.show_value(self.bright, b)        # (not set again: only shown)
+
+    def _fill_sound(self, res) -> None:
+        vol, mic = res if res else (None, None)
         if vol is None:
             self.vol.set_sensitive(False)
         else:
-            self.vol.set_value(vol[0])
+            _LEVELS["vol"] = vol[0]
+            ui.controls.show_value(self.vol, vol[0])
         if mic is None:
             self.mic.set_sensitive(False)
         else:
-            self.mic.set_value(mic[0])
+            _LEVELS["mic"] = mic[0]
+            ui.controls.show_value(self.mic, mic[0])
 
     def _screenshot(self):
         """The capture toolbar (Super+Shift+5), after the panel closes."""

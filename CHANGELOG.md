@@ -3,6 +3,25 @@
 ## Unreleased
 
 ### Fixes
+- Faster: the Control Center opens at once with its sliders already at
+  the last levels read, and only moves them to the live ones -- it set the
+  volume, the microphone and the brightness again on every opening (with
+  DDC/CI, seconds of `ddcutil`), which also hid its opening animation.
+  Sound reads no longer wait for an external display's brightness; a
+  computer without DDC/CI displays isn't probed again on every opening.
+- Faster: every sound stream's events no longer read the volume again (many
+  a second while something played); quit-on-close no longer lists every
+  window on each title change of an app whose process it never found.
+- The Dock's notification badges come back after the menu bar restarts --
+  they only came back with a new notification.
+- Dock previews show again on an icon after a window was picked from them
+  (they were taken as still open), after 1 s on the icon, and for an app
+  with a single window too.
+- A click on a window in Mission Control brings it forward even where
+  Wayfire's lookup found no window under the pointer -- only minimized ones
+  came forward (Sonata's Wayfire: wayfire-scale-click.patch).
+- Mission Control (Super+Tab) closes Launchpad and the Apps menu.
+- Mission Control, its desktops bar and the wallpaper are never blurred.
 - Mission Control's desktops work: a click goes to that desktop (an empty
   one too) and closes Mission Control; x closes a desktop, its windows going
   to the one before. The pictures are always there, centred at the top with
@@ -15,8 +34,7 @@
   an empty desktop could not be left.
 - Mission Control only darkens the desktop behind the windows: no blur
   (lighter on the machine).
-- Dock previews: only for an app with more than one window, after the
-  pointer rests on its icon for 2 s, as far from the Dock as a maximized
+- Dock previews: after the pointer rests on its icon, as far from the Dock as a maximized
   window; small pictures of the windows themselves, the size of Mission
   Control's desktop pictures (no big empty frame: the app's icon, small,
   until one comes), and x on one closes that window. The preview is as

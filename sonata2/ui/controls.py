@@ -206,7 +206,7 @@ def slider(value: float = 0, on_change=None, style: str = "menu", lower: float =
     if style == "module":
         m = ModuleSlider(value, lower, upper)
         if on_change:
-            m.connect("value-changed", lambda sl: on_change(sl.get_value()))
+            m.connect("value-changed", lambda sl: getattr(sl, "_quiet", False) or on_change(sl.get_value()))
         if default is not None:                  # same double-click reset as the thin slider
             reset_on_double_click(m, default)
         return m
@@ -216,10 +216,21 @@ def slider(value: float = 0, on_change=None, style: str = "menu", lower: float =
     s.set_value(value)
     s.set_hexpand(True)
     if on_change:
-        s.connect("value-changed", lambda sc: on_change(sc.get_value()))
+        s.connect("value-changed", lambda sc: getattr(sc, "_quiet", False) or on_change(sc.get_value()))
     if default is not None:
         reset_on_double_click(s, default)
     return s
+
+
+def show_value(slider, value: float) -> None:
+    """Move `slider` to a level read from the system, without calling its
+    on_change: that would set the same level again (a DDC/CI monitor's
+    brightness takes seconds -- the Control Center lagged on every open)."""
+    slider._quiet = True
+    try:
+        slider.set_value(value)
+    finally:
+        slider._quiet = False
 
 
 def on_release(widget: Gtk.Widget, callback) -> None:

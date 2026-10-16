@@ -262,7 +262,8 @@ def _write(path: str, text: str) -> None:
 # (tokens.titlebar_bg), so blurring behind them only cost GPU time on every
 # frame they changed -- moving and resizing a window got heavy, and the
 # blur pass is where the Radeon 680M hung (session crash).
-BLUR = 'app_id contains "sonata2" | type is "unmanaged"'
+from .ui.glass import BLUR_ALL as _ALL, without_never as _without_never  # noqa: E402
+BLUR = _without_never(_ALL)                     # (never behind Mission Control or the wallpaper: glass.NEVER_BLUR)
 # "Glass title bars" on: every window again (their bars are see-through)
 BLUR_GLASS = BLUR + ' | type is "toplevel"'
 

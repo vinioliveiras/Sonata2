@@ -217,6 +217,36 @@ button.nc-clear { min-height: 20px; padding: 0 9px; border-radius: 99px; border:
 """, key="notifications", nc_slide=NC_SLIDE_PX)
 
 
+HISTORY = "sonata2-notification-center.json"      # in the runtime folder: this session only
+
+
+def _history_path() -> str:
+    return os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", HISTORY)
+
+
+def save_history(notes) -> None:
+    """Notification Center's list, kept for a menu bar started again during
+    the session (gone at logout, as the list always was)."""
+    import json
+    from dataclasses import asdict
+    from .. import config
+    try:
+        config.atomic_write(_history_path(), json.dumps([asdict(n) for n in notes]).encode(), fsync=False)
+    except (OSError, TypeError, ValueError):
+        pass
+
+
+def load_history() -> list:
+    import json
+    try:
+        with open(_history_path(), encoding="utf-8") as f:
+            raw = json.load(f)
+        return [Note(**dict(d, actions=[tuple(a) for a in d.get("actions") or []]))
+                for d in raw if isinstance(d, dict)][-MAX_NOTES:]
+    except (OSError, ValueError, TypeError):
+        return []
+
+
 @dataclass
 class Note:
     id: int
@@ -304,7 +334,11 @@ class Notifications:
         self.nc = None
         self.listeners = []        # called when the list changes (NC open)
         from .. import badges
-        badges.publish([], os.getpid())     # a previous menu bar's list is gone with it
+        # a menu bar started again (a crash, `sonata2 restart`) picks up the list
+        # it had: the Dock's badges came back only with the next notification (Vini)
+        self.notes = load_history()
+        self._next = max((n.id for n in self.notes), default=0) + 1
+        badges.publish(self.notes, os.getpid())
         Gio.bus_own_name(Gio.BusType.SESSION, "org.freedesktop.Notifications",
                          Gio.BusNameOwnerFlags.DO_NOT_QUEUE, self._bus_acquired, None, None)
         GLib.timeout_add(2500, self._prewarm)
@@ -493,6 +527,7 @@ class Notifications:
     def _changed(self):
         from .. import badges
         badges.publish(self.notes, os.getpid())     # the Dock's badges (badges.py)
+        save_history(self.notes)
         for cb in list(self.listeners):
             cb()
 
