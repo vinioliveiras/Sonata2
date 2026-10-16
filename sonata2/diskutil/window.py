@@ -30,6 +30,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from .. import ui  # noqa: E402
+from ..i18n import N_, _, ngettext  # noqa: E402
 from . import model  # noqa: E402
 from .model import Disk, Volume  # noqa: E402
 
@@ -146,7 +147,7 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
     def __init__(self, app, client=None):
         if not GLib.get_application_name():
             GLib.set_application_name("Disk Manager")
-        super().__init__(application=app, title="Disk Manager", css_classes=["sonata-diskutil"])
+        super().__init__(application=app, title=_("Disk Manager"), css_classes=["sonata-diskutil"])
         ui.window.standard(self)
         ui.window.remember_size(self, "diskutil", 900, 600)
         self.disks = []
@@ -157,14 +158,14 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         self.available = False
         self._can_format = {}              # fs type -> mkfs available (Manager.CanFormat)
         self.toolbar = ui.window.glass_toolbar(self, start=(
-            ("sidebar-show-symbolic", "Show or Hide the Sidebar", self.toggle_sidebar),), end=(
-            ("workspacelistentryicon-bandaid-symbolic", "First Aid", self.first_aid),
-            ("am-pie-symbolic", "Partition — Not available", lambda: None),
-            ("draw-eraser-symbolic", "Erase", self.erase),
-            ("layer-rename-symbolic", "Rename", self.rename),
-            ("media-mount-symbolic", "Mount", self.mount_toggle),
-            ("media-eject-symbolic", "Eject", self.eject),
-            ("info-outline-symbolic", "Info", self.info)))
+            ("sidebar-show-symbolic", _("Show or Hide the Sidebar"), self.toggle_sidebar),), end=(
+            ("workspacelistentryicon-bandaid-symbolic", _("First Aid"), self.first_aid),
+            ("am-pie-symbolic", _("Partition — Not available"), lambda: None),
+            ("draw-eraser-symbolic", _("Erase"), self.erase),
+            ("layer-rename-symbolic", _("Rename"), self.rename),
+            ("media-mount-symbolic", _("Mount"), self.mount_toggle),
+            ("media-eject-symbolic", _("Eject"), self.eject),
+            ("info-outline-symbolic", _("Info"), self.info)))
         tools = self.toolbar.get_child().get_end_widget()
         self.btn = {}
         child = tools.get_first_child()
@@ -185,7 +186,7 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, hexpand=True,
                                css_classes=["du-main"])
         self.stack.add_named(self._build_detail(), "detail")
-        self.stack.add_named(Gtk.Label(label="No Selection", css_classes=["du-empty"]), "empty")
+        self.stack.add_named(Gtk.Label(label=_("No Selection"), css_classes=["du-empty"]), "empty")
         self.stack.add_named(self._build_missing(), "missing")
         self.stack.add_named(ui.progress.spinner(size=32), "loading")
         self.stack.set_visible_child_name("loading")
@@ -247,10 +248,10 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, valign=Gtk.Align.CENTER,
                       halign=Gtk.Align.CENTER, css_classes=["du-missing"])
         box.append(Gtk.Image(icon_name="sonata-diskmanager", pixel_size=96))
-        self.missing_title = Gtk.Label(label="Disk Manager needs UDisks2", css_classes=["du-missing-title"])
+        self.missing_title = Gtk.Label(label=_("Disk Manager needs UDisks2"), css_classes=["du-missing-title"])
         box.append(self.missing_title)
-        self.missing_body = Gtk.Label(label="Install the udisks2 package and start its service "
-                                            "(udisks2.service), then open Disk Manager again.",
+        self.missing_body = Gtk.Label(label=_("Install the udisks2 package and start its service "
+                                              "(udisks2.service), then open Disk Manager again."),
                                       css_classes=["du-missing-body"], wrap=True, max_width_chars=48,
                                       justify=Gtk.Justification.CENTER)
         box.append(self.missing_body)
@@ -285,7 +286,7 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         target = None
         for title, disks in model.grouped(self.disks):
             head = Gtk.ListBoxRow(selectable=False, activatable=False, css_classes=["du-head"])
-            head.set_child(Gtk.Label(label=title, xalign=0))
+            head.set_child(Gtk.Label(label=_(title), xalign=0))
             head.item = None
             self.list.append(head)
             for d in disks:
@@ -316,7 +317,7 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
             box.append(Gtk.Image(icon_name="system-lock-screen-symbolic" if item.locked else "padlock-open-symbolic",
                                  pixel_size=12, css_classes=["du-lock"]))
         if is_disk and (disk.external or disk.is_image):
-            ej = Gtk.Button(icon_name="media-eject-symbolic", css_classes=["du-eject"], tooltip_text="Eject",
+            ej = Gtk.Button(icon_name="media-eject-symbolic", css_classes=["du-eject"], tooltip_text=_("Eject"),
                             valign=Gtk.Align.CENTER, can_focus=False)
             ej.connect("clicked", lambda _b, d=disk: self.eject(d))
             box.append(ej)
@@ -365,17 +366,18 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         self.icon.set_from_icon_name(disk.icon)
         self.name_label.set_label(item.name)
         where = model.BUS_NAMES.get(disk.bus, disk.bus.upper())
-        table = model.TABLE_NAMES.get(disk.table, disk.table.upper())
+        table = _(model.TABLE_NAMES.get(disk.table, disk.table.upper()))
         if is_disk:
             self.sub_label.set_label(" • ".join(x for x in (disk.kind, table) if x))
             n = sum(1 for v in disk.volumes if v.listed)
-            self.size_sub.set_label(f"{n} VOLUME{'S' if n != 1 else ''}" if n else "")
+            self.size_sub.set_label(ngettext("{n} VOLUME", "{n} VOLUMES", n).format(n=n) if n else "")
             self.sub2_label.set_label(disk.device)
         else:
-            place = "Disk Image" if disk.is_image else ("External" if disk.external else "Internal")
-            self.sub_label.set_label(" • ".join(x for x in (
-                " ".join(x for x in (where, place, "Physical Volume") if x), item.kind) if x))
-            self.sub2_label.set_label(item.device + (" — Locked" if item.locked else ""))
+            place = _("{bus} Disk Image Volume") if disk.is_image else \
+                (_("{bus} External Physical Volume") if disk.external else _("{bus} Internal Physical Volume"))
+            place = " ".join(place.format(bus=_(where) if where else "").split())
+            self.sub_label.set_label(" • ".join(x for x in (place, item.kind) if x))
+            self.sub2_label.set_label(_("{device} — Locked").format(device=item.device) if item.locked else item.device)
             self.size_sub.set_label("")
         self.size_label.set_label(ui.fmt.size(item.size))
         usage = self.usage.get(item.mount_point) if not is_disk and item.mounted else None
@@ -402,26 +404,28 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         if isinstance(item, Disk):
             d = item
             n = sum(1 for v in d.volumes if v.listed)
-            return [("Location", "Disk Image" if d.is_image else ("External" if d.external else "Internal")),
-                    ("Capacity", ui.fmt.size(d.size)),
-                    ("Connection", model.BUS_NAMES.get(d.bus, d.bus.upper()) or ("Loop" if d.is_image else "Internal")),
-                    ("Child count", str(n)),
-                    ("Partition Map", model.TABLE_NAMES.get(d.table, d.table.upper()) or "None"),
-                    ("Type", d.media_kind),
-                    ("S.M.A.R.T. status", d.smart or "Not Supported"),
-                    ("Device", d.device)]
+            return [(_("Location"), _("Disk Image") if d.is_image else (_("External") if d.external else _("Internal"))),
+                    (_("Capacity"), ui.fmt.size(d.size)),
+                    (_("Connection"), _(model.BUS_NAMES.get(d.bus, d.bus.upper()) or
+                                        (N_("Loop") if d.is_image else N_("Internal")))),
+                    (_("Child count"), str(n)),
+                    (_("Partition Map"), _(model.TABLE_NAMES.get(d.table, d.table.upper()) or N_("None"))),
+                    (_("Type"), d.media_kind),
+                    (_("S.M.A.R.T. status"), _(d.smart or N_("Not Supported"))),
+                    (_("Device"), d.device)]
         v, d = item, item.disk
         used, free = usage if usage else (None, None)
-        return [("Mount Point", v.mount_point or ("Locked" if v.locked else "Not Mounted")),
-                ("Type", v.kind),
-                ("Capacity", ui.fmt.size(v.size)),
-                ("Label", v.label or dash),
-                ("Available", ui.fmt.size(free) if free is not None else dash),
-                ("Connection", model.BUS_NAMES.get(d.bus, d.bus.upper()) or ("Loop" if d.is_image else "Internal")),
-                ("Used", ui.fmt.size(used) if used is not None else dash),
-                ("Device", v.device),
+        return [(_("Mount Point"), v.mount_point or (_("Locked") if v.locked else _("Not Mounted"))),
+                (_("Type"), v.kind),
+                (_("Capacity"), ui.fmt.size(v.size)),
+                (_("Label"), v.label or dash),
+                (_("Available"), ui.fmt.size(free) if free is not None else dash),
+                (_("Connection"), _(model.BUS_NAMES.get(d.bus, d.bus.upper()) or
+                                    (N_("Loop") if d.is_image else N_("Internal")))),
+                (_("Used"), ui.fmt.size(used) if used is not None else dash),
+                (_("Device"), v.device),
                 ("UUID", v.uuid or dash),
-                ("Partition Map", model.TABLE_NAMES.get(d.table, d.table.upper()) or "None")]
+                (_("Partition Map"), _(model.TABLE_NAMES.get(d.table, d.table.upper()) or N_("None")))]
 
     def _fill_info(self, rows) -> None:
         while (c := self.info_box.get_first_child()) is not None:
@@ -430,10 +434,10 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
             line = Gtk.Box(homogeneous=True, css_classes=["du-info-row"])
             for key, value in rows[i:i + 2]:
                 cell = Gtk.Box(spacing=12, css_classes=["du-cell"])
-                cell.append(Gtk.Label(label=key + ":", xalign=0, css_classes=["du-key"]))
+                cell.append(Gtk.Label(label=_("{label}:").format(label=key), xalign=0, css_classes=["du-key"]))
                 val = Gtk.Label(label=value, xalign=1, hexpand=True, selectable=False, css_classes=["du-value"],
                                 ellipsize=Pango.EllipsizeMode.MIDDLE, tooltip_text=value)
-                if key == "S.M.A.R.T. status" and value == "Failing":
+                if key == _("S.M.A.R.T. status") and value == _("Failing"):
                     val.add_css_class("du-bad")
                 cell.append(val)
                 line.append(cell)
@@ -446,9 +450,9 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         ok = self.available and not self.busy and item is not None
         vol = item if isinstance(item, Volume) else None
         disk = item if isinstance(item, Disk) else (vol.disk if vol else None)
-        verb = "Mount"
+        verb = N_("Mount")
         if vol is not None:
-            verb = "Unlock" if vol.locked else ("Unmount" if vol.mounted else "Mount")
+            verb = N_("Unlock") if vol.locked else (N_("Unmount") if vol.mounted else N_("Mount"))
         in_use = bool(vol and vol.mounted and vol.protected)          # the running system
         return {"first_aid": bool(ok and vol and vol.has_fs and not vol.locked and not in_use),
                 "erase": bool(ok and not item.protected),
@@ -463,7 +467,7 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         for k in ("first_aid", "erase", "rename", "mount", "eject", "info"):
             self.btn[k].set_sensitive(a[k])
         self.btn["mount"].set_icon_name("padlock-open-symbolic" if a["verb"] == "Unlock" else "media-mount-symbolic")
-        self.btn["mount"].set_tooltip_text(a["verb"])
+        self.btn["mount"].set_tooltip_text(_(a["verb"]))
 
     def toggle_sidebar(self) -> None:
         if self.available:
@@ -481,7 +485,7 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         from .udisks import dismissed, error_text
         if err is None or dismissed(err):
             return
-        ui.dialog.alert(heading, error_text(err), [("ok", "OK", "default")], parent=self)
+        ui.dialog.alert(heading, error_text(err), [("ok", _("OK"), "default")], parent=self)
 
     def _chain(self, steps, done, heading: str) -> None:
         """Run step(cb) one after the other (cb(out, err)); done(out) after the last,
@@ -506,14 +510,14 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         if v.locked:
             self.unlock(v)
         elif v.mounted:
-            self.client.unmount(v.fs_path, lambda _o, e: self._failed(f"“{v.name}” couldn't be unmounted.", e))
+            self.client.unmount(v.fs_path, lambda _o, e: self._failed(_("“{name}” couldn't be unmounted.").format(name=v.name), e))
         else:
-            self.client.mount(v.fs_path, lambda _o, e: self._failed(f"“{v.name}” couldn't be mounted.", e))
+            self.client.mount(v.fs_path, lambda _o, e: self._failed(_("“{name}” couldn't be mounted.").format(name=v.name), e))
 
     def unlock(self, v: Volume) -> None:
         entry = Gtk.PasswordEntry(show_peek_icon=True, activates_default=True, css_classes=["du-form"])
-        dlg = ui.dialog.alert(f"Unlock “{v.name}”", "Enter the password to unlock this volume.",
-                              [("cancel", "Cancel", ""), ("unlock", "Unlock", "default")],
+        dlg = ui.dialog.alert(_("Unlock “{name}”").format(name=v.name), _("Enter the password to unlock this volume."),
+                              [("cancel", _("Cancel"), ""), ("unlock", _("Unlock"), "default")],
                               lambda rid: rid == "unlock" and self._do_unlock(v, entry.get_text()), parent=self)
         dlg.set_extra_child(entry)
         GLib.idle_add(lambda: (entry.grab_focus(), False)[1])
@@ -521,7 +525,7 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
     def _do_unlock(self, v: Volume, password: str) -> None:
         def unlocked(out, err):
             if err is not None:
-                self._failed(f"“{v.name}” couldn't be unlocked.", err)
+                self._failed(_("“{name}” couldn't be unlocked.").format(name=v.name), err)
                 return
             self.client.mount(out[0], lambda _o, _e: None)        # like macOS: unlocked volumes mount
         self.client.unlock(v.path, password, unlocked)
@@ -546,16 +550,18 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
                 steps.append(lambda cb: c.eject(d.path, cb))
             if d.can_power_off:
                 steps.append(lambda cb: c.power_off(d.path, cb))
-        self._chain(steps, lambda _o: None, f"“{d.name}” couldn't be ejected.")
+        self._chain(steps, lambda _o: None, _("“{name}” couldn't be ejected.").format(name=d.name))
 
     def rename(self) -> None:
         v = self.selected
         if not isinstance(v, Volume) or not v.has_fs:
             return
-        return ui.dialog.ask_text(f"Rename “{v.name}”", v.label, "Rename",
+        return ui.dialog.ask_text(_("Rename “{name}”").format(name=v.name), v.label, _("Rename"),
                                   lambda text: self.client.set_label(
-                                      v.fs_path, text, lambda _o, e: self._failed(f"“{v.name}” couldn't be renamed.", e)),
-                                  body="Enter a new name for this volume.", parent=self)
+                                      v.fs_path, text,
+                                      lambda _o, e: self._failed(_("“{name}” couldn't be renamed.").format(name=v.name),
+                                                                 e)),
+                                  body=_("Enter a new name for this volume."), parent=self)
 
     # erase ----------------------------------------------------------------------------------------
     def _query_formats(self) -> None:
@@ -578,16 +584,16 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         choices = self.format_choices()
         grid = Gtk.Grid(column_spacing=10, row_spacing=8, css_classes=["du-form"])
         name = Gtk.Entry(text=(item.volumes[0].label if is_disk and item.volumes else getattr(item, "label", ""))
-                         or "Untitled", hexpand=True, activates_default=True)
+                         or _("Untitled"), hexpand=True, activates_default=True)
         external = (item if is_disk else item.disk).external       # removable media: ExFAT, like macOS
         fmt = ui.controls.popup_button([label for _t, label in choices],
                                        next((i for i, (t, _l) in enumerate(choices) if t == "exfat"), 0)
                                        if external else 0)
-        rows = [("Name:", name), ("Format:", fmt)]
+        rows = [(_("Name:"), name), (_("Format:"), fmt)]
         scheme = None
         if is_disk:
-            scheme = ui.controls.popup_button([label for _t, label in model.SCHEMES], 0)
-            rows.append(("Scheme:", scheme))
+            scheme = ui.controls.popup_button([_(label) for _t, label in model.SCHEMES], 0)
+            rows.append((_("Scheme:"), scheme))
         for i, (label, w) in enumerate(rows):
             grid.attach(Gtk.Label(label=label, xalign=1), 0, i, 1, 1)
             grid.attach(w, 1, i, 1, 1)
@@ -599,24 +605,25 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
             fs_type = choices[fmt.get_selected()][0]
             table = model.SCHEMES[scheme.get_selected()][0] if scheme is not None else None
             self._confirm_erase(item, label, fs_type, table)
-        dlg = ui.dialog.alert(f"Erase “{item.name}”?",
-                              f"Erasing “{item.name}” will permanently erase all data stored on it. "
-                              "Enter a name, choose a format and click Erase.",
-                              [("cancel", "Cancel", ""), ("erase", "Erase", "default")], answer, parent=self)
+        dlg = ui.dialog.alert(_("Erase “{name}”?").format(name=item.name),
+                              _("Erasing “{name}” will permanently erase all data stored on it. "
+                                "Enter a name, choose a format and click Erase.").format(name=item.name),
+                              [("cancel", _("Cancel"), ""), ("erase", _("Erase"), "default")], answer, parent=self)
         dlg.set_extra_child(grid)
 
     def _confirm_erase(self, item, label: str, fs_type: str, table) -> None:
         """The last word before erasing: names the device and its size."""
         what = f"{item.device} ({ui.fmt.size(item.size)})"
-        ui.dialog.alert(f"Are you sure you want to erase “{item.name}”?",
-                        f"All the data on {what} will be permanently erased. You can't undo this action.",
-                        [("cancel", "Cancel", ""), ("erase", "Erase", "destructive")],
+        ui.dialog.alert(_("Are you sure you want to erase “{name}”?").format(name=item.name),
+                        _("All the data on {what} will be permanently erased. You can't undo this action.").format(
+                            what=what),
+                        [("cancel", _("Cancel"), ""), ("erase", _("Erase"), "destructive")],
                         lambda rid: rid == "erase" and self._do_erase(item, label, fs_type, table), parent=self)
 
     def _refuse_erase(self, item) -> None:
-        ui.dialog.alert(f"“{item.name}” can't be erased.",
-                        "It holds the running system (/, /boot, /home, swap or one of their devices).",
-                        [("ok", "OK", "default")], parent=self)
+        ui.dialog.alert(_("“{name}” can't be erased.").format(name=item.name),
+                        _("It holds the running system (/, /boot, /home, swap or one of their devices)."),
+                        [("ok", _("OK"), "default")], parent=self)
 
     def _find(self, disks, item):
         """`item` (a Disk or Volume) in another parse of the tree, or None."""
@@ -643,8 +650,8 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
 
     def _erase_now(self, item, label: str, fs_type: str, table) -> None:
         c = self.client
-        heading = f"“{item.name}” couldn't be erased."
-        self._set_busy(f"Erasing “{item.name}”…")
+        heading = _("“{name}” couldn't be erased.").format(name=item.name)
+        self._set_busy(_("Erasing “{name}”…").format(name=item.name))
         done = lambda _o: self._set_busy("")            # noqa: E731
         if isinstance(item, Volume):
             self._chain([lambda cb: c.format(item.path, fs_type, label, cb, update_partition_type=True)],
@@ -669,28 +676,29 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         if not isinstance(v, Volume) or not v.has_fs:
             return
         if v.mounted and v.protected:
-            ui.dialog.alert(f"First Aid can't check “{v.name}” while it's in use.",
-                            "It holds the running system. Check it from another system.",
-                            [("ok", "OK", "default")], parent=self)
+            ui.dialog.alert(_("First Aid can't check “{name}” while it's in use.").format(name=v.name),
+                            _("It holds the running system. Check it from another system."),
+                            [("ok", _("OK"), "default")], parent=self)
             return
-        body = "First Aid will check the volume for errors." + \
-            (" It will be unmounted while it's checked." if v.mounted else "")
-        ui.dialog.alert(f"Would you like to run First Aid on “{v.name}”?", body,
-                        [("cancel", "Cancel", ""), ("run", "Run", "default")],
+        body = _("First Aid will check the volume for errors.") + \
+            (" " + _("It will be unmounted while it's checked.") if v.mounted else "")
+        ui.dialog.alert(_("Would you like to run First Aid on “{name}”?").format(name=v.name), body,
+                        [("cancel", _("Cancel"), ""), ("run", _("Run"), "default")],
                         lambda rid: rid == "run" and self._check(v), parent=self)
 
     def _check(self, v: Volume) -> None:
         def can(ok, util):
             if not ok:
-                ui.dialog.alert("First Aid isn't available for this volume.",
-                                f"Install {util} to check {v.kind} volumes." if util else
-                                f"{v.kind} volumes can't be checked.", [("ok", "OK", "default")], parent=self)
+                ui.dialog.alert(_("First Aid isn't available for this volume."),
+                                _("Install {util} to check {kind} volumes.").format(util=util, kind=v.kind) if util else
+                                _("{kind} volumes can't be checked.").format(kind=v.kind),
+                                [("ok", _("OK"), "default")], parent=self)
                 return
-            self._set_busy(f"Checking “{v.name}”…")
+            self._set_busy(_("Checking “{name}”…").format(name=v.name))
             c, was = self.client, v.mounted
             steps = [lambda cb: c.unmount(v.fs_path, cb)] if was else []
             steps.append(lambda cb: c.check(v.fs_path, cb))
-            self._chain(steps, lambda out: self._checked(v, bool(out and out[0]), was), "First Aid failed.")
+            self._chain(steps, lambda out: self._checked(v, bool(out and out[0]), was), _("First Aid failed."))
         self.client.can("Check", v.fs_type, can)
 
     def _remount(self, v: Volume, was: bool) -> None:
@@ -701,34 +709,38 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         self._set_busy("")
         if consistent:
             self._remount(v, was)
-            ui.dialog.alert("First Aid process has completed.", f"The volume “{v.name}” appears to be OK.",
-                            [("done", "Done", "default")], parent=self)
+            ui.dialog.alert(_("First Aid process has completed."),
+                            _("The volume “{name}” appears to be OK.").format(name=v.name),
+                            [("done", _("Done"), "default")], parent=self)
             return
 
         def can(ok, _util):
             if not ok:
                 self._remount(v, was)
-                ui.dialog.alert(f"First Aid found problems on “{v.name}”.", "They can't be repaired here.",
-                                [("done", "Done", "default")], parent=self)
+                ui.dialog.alert(_("First Aid found problems on “{name}”.").format(name=v.name),
+                                _("They can't be repaired here."),
+                                [("done", _("Done"), "default")], parent=self)
                 return
-            ui.dialog.alert(f"First Aid found problems on “{v.name}”.", "Do you want to repair them now?",
-                            [("cancel", "Not Now", ""), ("repair", "Repair", "default")],
+            ui.dialog.alert(_("First Aid found problems on “{name}”.").format(name=v.name),
+                            _("Do you want to repair them now?"),
+                            [("cancel", _("Not Now"), ""), ("repair", _("Repair"), "default")],
                             lambda rid: self._repair(v, was) if rid == "repair" else self._remount(v, was),
                             parent=self)
         self.client.can("Repair", v.fs_type, can)
 
     def _repair(self, v: Volume, was: bool) -> None:
-        self._set_busy(f"Repairing “{v.name}”…")
+        self._set_busy(_("Repairing “{name}”…").format(name=v.name))
 
         def done(out):
             self._set_busy("")
             self._remount(v, was)
             ok = bool(out and out[0])
-            ui.dialog.alert("First Aid process has completed." if ok else f"“{v.name}” couldn't be repaired.",
-                            f"The volume “{v.name}” was repaired." if ok else
-                            "Copy its data to another disk, then erase it.",
-                            [("done", "Done", "default")], parent=self)
-        self._chain([lambda cb: self.client.repair(v.fs_path, cb)], done, "First Aid failed.")
+            ui.dialog.alert(_("First Aid process has completed.") if ok else
+                            _("“{name}” couldn't be repaired.").format(name=v.name),
+                            _("The volume “{name}” was repaired.").format(name=v.name) if ok else
+                            _("Copy its data to another disk, then erase it."),
+                            [("done", _("Done"), "default")], parent=self)
+        self._chain([lambda cb: self.client.repair(v.fs_path, cb)], done, _("First Aid failed."))
 
     # info -----------------------------------------------------------------------------------------
     def info_fields(self, item=None) -> list:
@@ -737,19 +749,23 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
             return []
         if isinstance(item, Disk):
             d = item
-            return [("Name", d.name), ("Type", d.kind), ("Device", d.device), ("Model", d.model or "—"),
-                    ("Vendor", d.vendor or "—"), ("Capacity", f"{ui.fmt.size(d.size)} ({d.size:,} bytes)"),
-                    ("Partition Map", model.TABLE_NAMES.get(d.table, d.table) or "None"),
-                    ("Media", d.media_kind), ("Removable", "Yes" if d.removable else "No"),
-                    ("Ejectable", "Yes" if d.ejectable else "No"),
-                    ("S.M.A.R.T. Status", d.smart or "Not Supported")] + \
-                ([("Image File", d.image)] if d.is_image else [])
+            return [(_("Name"), d.name), (_("Type"), d.kind), (_("Device"), d.device), (_("Model"), d.model or "—"),
+                    (_("Vendor"), d.vendor or "—"),
+                    (_("Capacity"), _("{size} ({bytes} bytes)").format(size=ui.fmt.size(d.size), bytes=f"{d.size:,}")),
+                    (_("Partition Map"), _(model.TABLE_NAMES.get(d.table, d.table) or N_("None"))),
+                    (_("Media"), d.media_kind), (_("Removable"), _("Yes") if d.removable else _("No")),
+                    (_("Ejectable"), _("Yes") if d.ejectable else _("No")),
+                    (_("S.M.A.R.T. Status"), _(d.smart or N_("Not Supported")))] + \
+                ([(_("Image File"), d.image)] if d.is_image else [])
         v = item
-        return [("Name", v.name), ("Type", v.kind), ("Device", v.device), ("Mount Point", v.mount_point or "—"),
-                ("Capacity", f"{ui.fmt.size(v.size)} ({v.size:,} bytes)"), ("Label", v.label or "—"),
-                ("UUID", v.uuid or "—"), ("Partition Number", str(v.number) if v.number else "—"),
-                ("Partition Offset", f"{v.offset:,} bytes"), ("Encrypted", "Yes" if v.encrypted else "No"),
-                ("System Volume", "Yes" if v.protected else "No"), ("Disk", v.disk.name)]
+        return [(_("Name"), v.name), (_("Type"), v.kind), (_("Device"), v.device),
+                (_("Mount Point"), v.mount_point or "—"),
+                (_("Capacity"), _("{size} ({bytes} bytes)").format(size=ui.fmt.size(v.size), bytes=f"{v.size:,}")),
+                (_("Label"), v.label or "—"),
+                ("UUID", v.uuid or "—"), (_("Partition Number"), str(v.number) if v.number else "—"),
+                (_("Partition Offset"), _("{bytes} bytes").format(bytes=f"{v.offset:,}")),
+                (_("Encrypted"), _("Yes") if v.encrypted else _("No")),
+                (_("System Volume"), _("Yes") if v.protected else _("No")), (_("Disk"), v.disk.name)]
 
     def info(self) -> None:
         fields = self.info_fields()
@@ -772,10 +788,10 @@ class DiskUtilityWindow(Gtk.ApplicationWindow):
         a = self.actions(row.item)
         Item = ui.menu.Item
         ui.menu.popup(self.list, [
-            [Item(a["verb"], self.mount_toggle, enabled=a["mount"]), Item("Eject", self.eject, enabled=a["eject"])],
-            [Item("Rename…", self.rename, enabled=a["rename"]), Item("Erase…", self.erase, enabled=a["erase"]),
-             Item("Run First Aid…", self.first_aid, enabled=a["first_aid"])],
-            [Item("Get Info", self.info, enabled=a["info"])],
+            [Item(_(a["verb"]), self.mount_toggle, enabled=a["mount"]), Item(_("Eject"), self.eject, enabled=a["eject"])],
+            [Item(_("Rename…"), self.rename, enabled=a["rename"]), Item(_("Erase…"), self.erase, enabled=a["erase"]),
+             Item(_("Run First Aid…"), self.first_aid, enabled=a["first_aid"])],
+            [Item(_("Get Info"), self.info, enabled=a["info"])],
         ], at=(x, y), glass=True, passthrough=True)
 
     def _key(self, _c, keyval, _code, state) -> bool:
