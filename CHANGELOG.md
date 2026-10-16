@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Changes
+- ç on U.S. International: ' + c types "ç" (and ' + C "Ç"), as on Windows
+  and macOS, instead of "ć". Set at login in ~/.XCompose, after the
+  locale's own table; a file of your own keeps its lines. Apps opened
+  after the next login follow it.
 - Settings > Appearance: the background colour of Light and Dark Mode,
   picked like the accent colour -- a few for each mode, the default first
   to go back to, any colour through Sonata's colour picker. Windows,
