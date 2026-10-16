@@ -195,13 +195,16 @@ def remove_section(section: str) -> bool:
 
 
 SUPER_TAB = "<super> KEY_TAB"
+OLD_MARGINS = ("28", "56")       # scale's margin before the desktops bar, and the bar's first one
 
 
 def migrate_mission_control(text: str, margin: int) -> str:
     """A wayfire.ini kept from before Super+Tab became Mission Control (Vini:
     Win+Tab shows the windows, as Task View): Super+Tab / Super+Shift+Tab
     leave the app switcher (Alt+Tab stays), scale's toggle gets Super+Tab,
-    and scale keeps room for the desktops bar (its old 28 px margin)."""
+    and scale keeps room for the desktops bar (its old 28 px margin, the
+    bar's first 56). One desktop to start with (Vini): the old default of
+    four becomes one; desktops you add live in the overrides, which win."""
     out, sec, drop = [], None, set()
     lines = text.splitlines(keepends=True)
     for line in lines:                                   # the switcher's Super bindings, and their commands
@@ -223,7 +226,9 @@ def migrate_mission_control(text: str, margin: int) -> str:
                 continue
             if sec == "scale" and key == "toggle" and SUPER_TAB not in val:
                 line = f"toggle = {SUPER_TAB} | {val}\n" if val else f"toggle = {SUPER_TAB}\n"
-            elif sec == "scale" and key == "outer_margin" and val == "28":
+            elif sec == "scale" and key == "outer_margin" and val in OLD_MARGINS:
                 line = f"outer_margin = {margin}\n"
+            elif sec == "core" and key == "vwidth" and val == "4":     # the old default: one desktop now
+                line = "vwidth = 1\n"
         out.append(line)
     return "".join(out)

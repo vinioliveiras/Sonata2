@@ -1,0 +1,46 @@
+Sonata: Mission Control (scale) opens on an empty desktop and stays open
+when its last window closes -- its desktops bar is the way to another
+desktop (Vini: an empty desktop could not be left). sonata2/shell/spaces.py
+
+--- a/plugins/scale/scale.cpp
++++ b/plugins/scale/scale.cpp
+@@ -921,12 +921,7 @@
+         wf::dassert(active || hook_set, "Scale is not active");
+         if (!views.size())
+         {
+-            if (!all_workspaces && active)
+-            {
+-                deactivate();
+-            }
+-
+-            return;
++            return;        // Sonata: an empty desktop stays in Mission Control
+         }
+ 
+         filter_views(views);
+@@ -1165,9 +1160,7 @@
+         auto views = get_views();
+         if (!views.size())
+         {
+-            deactivate();
+-
+-            return;
++            return;        // Sonata: the last window closed: Mission Control stays
+         }
+ 
+         layout_slots(std::move(views));
+@@ -1324,12 +1317,9 @@
+             return false;
+         }
+ 
++        // Sonata: open on an empty desktop too -- Mission Control's desktops
++        // bar is how you leave it (sonata2/shell/spaces.py)
+         auto views = get_views();
+-        if (views.empty())
+-        {
+-            output->deactivate_plugin(&grab_interface);
+-            return false;
+-        }
+ 
+         initial_workspace = output->wset()->get_current_workspace();
+ 

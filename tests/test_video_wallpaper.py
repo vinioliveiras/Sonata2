@@ -273,7 +273,7 @@ class DesktopWindowTest(unittest.TestCase):
         self.assertIsNotNone(win._video)
         if win._video.media.get_error() is not None:
             self.skipTest("no decoder")
-        self.assertIs(shown, win._video.media)                              # the video, over its poster
+        self.assertIs(shown, win._video.cover)                              # the video, over its poster
         shared.assert_called()
         self.assertTrue(shared.call_args[0][0].get_path().endswith(".jpg"))    # the login screen: the poster
         v = win._video
@@ -285,7 +285,7 @@ class DesktopWindowTest(unittest.TestCase):
             settle(1200)
         self.assertIsNone(win._video)
         self.assertIsNone(v.media)                                          # freed once the picture faded in
-        self.assertNotIsInstance(win.stack.get_visible_child().get_paintable(), Gtk.MediaStream)
+        self.assertNotIsInstance(win.stack.get_visible_child().get_paintable(), self.VW.CoverPaintable)
         win.destroy()
 
     def test_poster_first_at_login(self):
@@ -297,6 +297,88 @@ class DesktopWindowTest(unittest.TestCase):
         self.assertIsNotNone(win.stack.get_visible_child().get_paintable())   # before any main loop turn
         win.destroy()
         self.assertIsNone(win._video)                                        # destroyed: the decoder goes
+
+
+class CoverTest(unittest.TestCase):
+    """Vini: the video didn't fill the screen -- it's drawn to cover it."""
+
+    def paintable(self, ratio=0.0, w=0, h=0):
+        from unittest import mock as m
+        return m.Mock(get_intrinsic_aspect_ratio=lambda: ratio, get_intrinsic_width=lambda: w,
+                      get_intrinsic_height=lambda: h)
+
+    def test_cover_sizes(self):
+        from sonata2.shell import videowallpaper as VW
+        self.assertEqual(VW.cover(self.paintable(16 / 9), 1920, 1080), (1920, 1080))
+        self.assertEqual(VW.cover(self.paintable(16 / 9), 1080, 1920)[1], 1920)                # a tall box: as tall
+        w, h = VW.cover(self.paintable(9 / 16), 2560, 1080)                 # a phone video on a wide screen
+        self.assertEqual(w, 2560)
+        self.assertGreater(h, 1080)
+        w, h = VW.cover(self.paintable(0, 640, 360), 1000, 1000)          # no ratio: from its size
+        self.assertEqual(h, 1000)
+        self.assertGreater(w, 1000)
+        self.assertEqual(VW.cover(self.paintable(), 300, 200), (300, 200))  # nothing known: the box
+
+
+@unittest.skipUnless(os.environ.get("DISPLAY"), "needs a display (xvfb-run)")
+class FillAndSilenceTest(unittest.TestCase):
+    def setUp(self):
+        from sonata2.shell import videowallpaper as VW
+        self.VW = VW
+        self.old, VW.DesktopFocus._one = VW.DesktopFocus._one, VW.DesktopFocus(FakeIPC())
+        if not HAS_FFMPEG:
+            self.skipTest("needs ffmpeg")
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        self.path = os.path.join(folder, "tone.mp4")                        # 16:9, with a sound track
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=red:size=320x180:rate=25",
+                        "-f", "lavfi", "-i", "sine=frequency=440", "-t", "2", "-c:v", "libx264",
+                        "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", self.path], check=True, timeout=60)
+
+    def tearDown(self):
+        self.VW.DesktopFocus._one = self.old
+
+    def test_silent_once_playing(self):
+        """Vini: it played with sound."""
+        v = self.VW.acquire(self.path)
+        win = Gtk.Window(child=Gtk.Picture(paintable=v.cover), default_width=200, default_height=200)
+        win.present()
+        settle(1200)
+        m = v.media
+        if m.get_error() is not None:
+            self.skipTest("no decoder")
+        self.assertTrue(m.is_prepared() and m.has_audio() and m.get_playing())
+        self.assertTrue(m.get_muted())
+        self.assertEqual(m.get_volume(), 0.0)
+        with mock.patch.object(v, "_silence") as again:
+            v._allowed(True)
+        again.assert_called()                                               # at every play
+        win.destroy()
+        self.VW.release(v)
+
+    def test_fills_a_square_screen(self):
+        """A 16:9 video on a square box: no bars -- every corner is the video."""
+        from gi.repository import Gdk, Graphene
+        v = self.VW.acquire(self.path)
+        pic = Gtk.Picture(paintable=v.cover, content_fit=Gtk.ContentFit.COVER)
+        win = Gtk.Window(child=pic, default_width=200, default_height=200)
+        win.present()
+        settle(1200)
+        if v.media.get_error() is not None:
+            self.skipTest("no decoder")
+        snap = Gtk.Snapshot()
+        v.cover.snapshot(snap, 200, 200)
+        tex = win.get_renderer().render_texture(snap.to_node(), Graphene.Rect().init(0, 0, 200, 200))
+        dl = Gdk.TextureDownloader.new(tex)
+        dl.set_format(Gdk.MemoryFormat.R8G8B8A8)
+        data, stride = dl.download_bytes()
+        px = data.get_data()
+        for x, y in ((2, 2), (197, 2), (2, 197), (197, 197), (100, 100)):
+            r, g, b, a = px[y * stride + 4 * x: y * stride + 4 * x + 4]
+            self.assertEqual(a, 255, (x, y))
+            self.assertGreater(r, 180, (x, y))                              # red: the video, not a bar
+        win.destroy()
+        self.VW.release(v)
 
 
 class MenusTest(unittest.TestCase):

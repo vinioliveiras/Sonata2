@@ -23,7 +23,7 @@ import os
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, GObject, Graphene, Gtk  # noqa: E402
 
 # the view types (ipc-rules' "type") that are the desktop, an app, or neither
 DESKTOP_TYPES = {"background"}
@@ -120,18 +120,32 @@ class VideoWallpaper:
         self.path, self.users = path, 0
         self.media = Gtk.MediaFile.new_for_filename(path)
         self.media.set_loop(True)
-        self.media.set_muted(True)
-        self.media.set_volume(0.0)
+        self._silence()
+        self.cover = CoverPaintable(self.media)        # what the desktop draws: the screen filled
         self.focus = DesktopFocus.get()
         self.focus.listeners.append(self._allowed)
         self._error = self.media.connect("notify::error", self._failed)
+        self._ready = self.media.connect("notify::prepared", lambda *_a: self._silence())
         self._allowed(self.focus.active)
+
+    def _silence(self) -> None:
+        """No sound, ever (Vini: it played with sound). Set again once the
+        player is up and at every play: GStreamer's player can come up with
+        its own volume, and GTK only passes a change on -- so the volume is
+        moved and set back, the stream muted all along."""
+        m = self.media
+        if m is None:
+            return
+        m.set_muted(True)
+        m.set_volume(0.01)
+        m.set_volume(0.0)
 
     def _allowed(self, on: bool) -> None:
         if self.media is None:
             return
         if on and self.media.get_error() is None:
             self.media.play()
+            self._silence()
         else:
             self.media.pause()                   # (the frame on screen stays: no black desktop)
 
@@ -145,9 +159,71 @@ class VideoWallpaper:
             self.focus.listeners.remove(self._allowed)
         if self.media is not None:
             self.media.disconnect(self._error)
+            self.media.disconnect(self._ready)
+            self.cover.release()
             self.media.pause()
             self.media.clear()                   # the decoder and its frames go now, not at the next GC
             self.media = None
+
+
+class CoverPaintable(GObject.Object, Gdk.Paintable):
+    """The video drawn to fill whatever it's given, like a wallpaper: scaled
+    to cover, the overflow cut off, centred (Vini: it didn't fill the
+    screen). Done here, not by Gtk.Picture's fit: the size a video reports
+    differs between GTK versions and GStreamer sinks; the aspect ratio is
+    what's asked for. No size of its own: the picture gives it the screen."""
+
+    def __init__(self, media):
+        super().__init__()
+        self.media = media
+        self._ids = [media.connect("invalidate-contents", lambda *_a: self.invalidate_contents()),
+                     media.connect("invalidate-size", lambda *_a: self.invalidate_contents())]
+
+    def release(self) -> None:
+        for i in self._ids:
+            self.media.disconnect(i)
+        self._ids = []
+
+    def do_get_intrinsic_width(self):
+        return 0
+
+    def do_get_intrinsic_height(self):
+        return 0
+
+    def do_get_intrinsic_aspect_ratio(self):
+        return 0.0
+
+    def do_get_flags(self):
+        return 0
+
+    def do_get_current_image(self):
+        return self.media.get_current_image()
+
+    def do_snapshot(self, snap, width, height):
+        sw, sh = cover(self.media, width, height)
+        if sw <= 0:
+            return
+        bounds = Graphene.Rect().init(0, 0, width, height)        # (kept: the clip reads it later)
+        snap.push_clip(bounds)
+        snap.save()
+        snap.translate(Graphene.Point().init((width - sw) / 2, (height - sh) / 2))
+        self.media.snapshot(snap, sw, sh)
+        snap.restore()
+        snap.pop()
+
+
+def cover(paintable, width: float, height: float) -> tuple:
+    """(w, h) to draw `paintable` at so it covers width x height, keeping its
+    shape; its aspect ratio, else its size; nothing known: the box itself."""
+    ratio = paintable.get_intrinsic_aspect_ratio()
+    if not ratio:
+        iw, ih = paintable.get_intrinsic_width(), paintable.get_intrinsic_height()
+        ratio = iw / ih if iw > 0 and ih > 0 else 0
+    if not ratio or width <= 0 or height <= 0:
+        return width, height
+    if width / height > ratio:                   # the box is wider: as wide as it, taller than it
+        return width, width / ratio
+    return height * ratio, height
 
 
 _open = {}

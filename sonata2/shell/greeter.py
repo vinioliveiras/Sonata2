@@ -374,28 +374,18 @@ class Greeter:
     def _pick(self, user):
         if getattr(self, "_busy", False):          # logging in: the page must stay until it ends
             return
-        if user is not None and self._resume(user.name):
-            return
         self.user = user
         self._show()
 
-    def _resume(self, name: str) -> bool:
-        """`name` is already logged in (Switch User from their lock screen,
-        or from someone else's): back to that session -- its own lock screen
-        asks for the password -- instead of a second login. A switch login
-        screen (userswitch.py) then goes away."""
+    def _running(self, name: str):
+        """`name`'s session already running on this seat (Switch User), or None."""
         if self.fake:
-            return False
+            return None
         from .. import userswitch
         try:
-            s = userswitch.graphical_session(name, userswitch.sessions())
+            return userswitch.graphical_session(name, userswitch.sessions())
         except Exception:
-            return False
-        if s is None or not userswitch.activate(s["id"]):
-            return False
-        if os.environ.get(userswitch.SWITCH_ENV):
-            threading.Thread(target=userswitch.leave_switch_greeter, daemon=True).start()
-        return True
+            return None
 
     def _login_page(self, focus=True):
         u = self.user
@@ -530,9 +520,7 @@ class Greeter:
         session = self._session()
         if not pw or session is None or self.guard.blocked(self.user.name):
             return
-        if self._resume(self.user.name):            # (already logged in: never a second session)
-            self.entry.set_text("")
-            return
+        running = self._running(self.user.name)     # already logged in: never a second session
         self.entry.set_sensitive(False)
         self.links.set_sensitive(False)              # no "Other Users"/session change mid-login
         self._busy = True
@@ -546,6 +534,16 @@ class Greeter:
             try:
                 client = greetd.Fake() if self.fake else greetd.Client()
                 greetd.login(client, user, pw)
+                if running is not None:
+                    # their session, unlocked and in front: the password asked once
+                    # (Vini: here and again on its lock screen)
+                    client.cancel()
+                    client.close()
+                    from .. import userswitch
+                    if not userswitch.resume(running["id"]):
+                        raise greetd.GreetdError("error", _("Couldn't switch user"))
+                    GLib.idle_add(self._resumed, user)
+                    return
                 env = ["XDG_SESSION_TYPE=wayland", f"XDG_SESSION_DESKTOP={session.key}"]
                 if session.desktops:
                     env.append(f"XDG_CURRENT_DESKTOP={session.desktops}")
@@ -558,6 +556,20 @@ class Greeter:
                     e = greetd.GreetdError("error", str(e) or type(e).__name__)
                 GLib.idle_add(self._failed, e, user)
         threading.Thread(target=work, daemon=True).start()
+
+    def _resumed(self, user):
+        """Back in a running session: this login screen's job is done (a
+        switch one stops; the boot one stays for the next login)."""
+        self._busy = False
+        self.guard.succeeded(user)
+        self._stop_pulse()
+        self.slot.set_visible_child_name("field")
+        self.entry.set_text("")
+        self.entry.set_sensitive(True)
+        self.links.set_sensitive(True)
+        from .. import userswitch
+        threading.Thread(target=userswitch.leave_switch_greeter, daemon=True).start()
+        return False
 
     def _stop_pulse(self):
         self.progress.stop()

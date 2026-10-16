@@ -2345,6 +2345,31 @@ class sonata_corners_t : public wf::plugin_interface_t
         return response;
     };
 
+    // Mission Control's desktops bar (sonata2/shell/spaces.py): show another
+    // desktop while scale stays open. vswitch can't while scale holds the
+    // output (its set-workspace needs to activate); the workspace set is
+    // changed directly, and scale lays out that desktop's windows itself
+    // (it listens for workspace-changed).
+    wf::ipc::method_callback ipc_set_workspace = [=] (wf::json_t data)
+    {
+        auto wo = wf::ipc::find_output_by_id(wf::ipc::json_get_uint64(data, "output-id"));
+        if (!wo)
+        {
+            return wf::ipc::json_error("Invalid output!");
+        }
+
+        int x = (int)wf::ipc::json_get_uint64(data, "x");
+        int y = (int)wf::ipc::json_get_uint64(data, "y");
+        auto grid = wo->wset()->get_workspace_grid_size();
+        if ((x >= grid.width) || (y >= grid.height))
+        {
+            return wf::ipc::json_error("Workspace coordinates are too big!");
+        }
+
+        wo->wset()->set_workspace({x, y});
+        return wf::ipc::json_ok();
+    };
+
     /* No pointer while the screen is dark (Vini: black, with the pointer in
      * the middle -- a surface mapped under a still pointer never gets it,
      * so its own "no cursor" can't apply). {"hidden": true | false} */
@@ -2364,6 +2389,7 @@ class sonata_corners_t : public wf::plugin_interface_t
         ipc_repo->register_method("sonata/fps", ipc_fps);
         ipc_repo->register_method("sonata/rounded", ipc_rounded);
         ipc_repo->register_method("sonata/window-shot", ipc_window_shot);
+        ipc_repo->register_method("sonata/set-workspace", ipc_set_workspace);
         /* which build runs (session.log): a fix is only in once install.sh rebuilt it */
         LOGI("sonata-corners: build ", SONATA_CORNERS_BUILD);
         input_debug.init();
@@ -2413,6 +2439,7 @@ class sonata_corners_t : public wf::plugin_interface_t
     {
         ipc_repo->unregister_method("sonata/focus-layer");
         ipc_repo->unregister_method("sonata/window-shot");
+        ipc_repo->unregister_method("sonata/set-workspace");
         ipc_repo->unregister_method("sonata/cursor");
         wf::get_core().unhide_cursor();
         ipc_repo->unregister_method("sonata/fps");

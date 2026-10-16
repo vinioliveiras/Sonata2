@@ -17,26 +17,36 @@ import threading
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, GLib, Graphene, Gtk, Pango  # noqa: E402
 
 from .. import apps, ui  # noqa: E402
+from ..i18n import _  # noqa: E402
 from ..wl.wfipc import WayfireIPC  # noqa: E402
 
-THUMB_W = 220
-SHOT_W = 2 * THUMB_W            # (crisp at 2x scale)
+# small (Vini: "the thumbnail, and very small"): a window is at most PIC_W x PIC_H
+PIC_W, PIC_H = 132, 84
+SHOT_W = 2 * PIC_W              # (crisp at 2x scale)
+ICON_PX = 32                    # the app's icon standing in until a picture comes
 MAX_WINDOWS = 6
+HOVER_MS = 2000                 # the pointer rests on the icon this long first (Vini: not at once)
 REFRESH_MS = 1500               # pictures drawn again while the previews are open: live, cheaply
 CAPTURE_DELAY_MS = 700          # let the window finish drawing / animating
 
 ui.register("""
 popover.dock-preview > contents { background: %(panel_material)s; border-radius: %(r_dialog)s; padding: 8px;
   box-shadow: 0 0 0 0.5px %(hairline)s, %(shadow_menu)s; }
-.dock-preview button.shot { padding: 4px; border-radius: 8px; background: none; border: none; box-shadow: none; }
+.dock-preview button.shot { padding: 6px; border-radius: 8px; background: none; border: none; box-shadow: none; }
 .dock-preview button.shot:hover { background: alpha(%(label)s, 0.12); }
-.dock-preview picture { border-radius: 6px; }
-.dock-preview label { color: %(label)s; font-family: %(font)s; font-size: %(text_small)s; margin-top: 4px; }
-.dock-preview .shot-frame { border-radius: 6px; background: alpha(%(label)s, 0.06); }
-.dock-preview .minimized picture { opacity: 0.6; }
+.dock-preview picture.shot-pic { border-radius: 5px; box-shadow: 0 0 0 0.5px %(hairline)s, 0 1px 3px rgba(0,0,0,0.2); }
+.dock-preview label { color: %(label)s; font-family: %(font)s; font-size: %(text_small)s; margin-top: 5px; }
+.dock-preview .minimized picture.shot-pic { opacity: 0.6; }
+/* close a window from its preview (Vini), as on Windows' taskbar: under the pointer only */
+.dock-preview button.shot-close { min-width: 18px; min-height: 18px; padding: 0; margin: 2px; border-radius: 99px;
+  background: %(menu_bg)s; color: %(label)s; border: none; opacity: 0;
+  box-shadow: 0 0 0 0.5px %(hairline)s, %(shadow_control)s; transition: opacity %(t_fast)s; }
+.dock-preview button.shot-close image { -gtk-icon-size: 10px; }
+.dock-preview .shot-item:hover button.shot-close { opacity: 1; }
+.dock-preview button.shot-close:hover { background: %(sys_red)s; color: white; }
 """, key="dock-preview")
 
 
@@ -131,7 +141,7 @@ class WindowShots:
         if not view or view.get("minimized") or not view.get("activated", True) or g.get("width", 0) < 40:
             return False
         region = f"{g['x']},{g['y']} {g['width']}x{g['height']}"
-        scale = min(1.0, THUMB_W / g["width"])
+        scale = min(1.0, SHOT_W / g["width"])
 
         def work():
             try:
@@ -164,35 +174,70 @@ class WindowShots:
 
 
 class PreviewPopover(Gtk.Popover):
-    """The windows above a Dock icon -- picture and name; a click brings that
-    window forward (restored when minimized). Pictures arrive later (set_shot)."""
+    """The windows above a Dock icon -- a small picture and the name; a click
+    brings that window forward (restored when minimized), x closes it.
+    Pictures arrive later (set_shot); until then the app's icon, small."""
 
-    PIC_W, PIC_H = int(THUMB_W / 1.4), int(THUMB_W / 1.4 * 0.625)       # a 16:10 frame for every window
-
-    def __init__(self, tile, position, windows, restore):
+    def __init__(self, tile, position, windows, restore, close=None):
         super().__init__(css_classes=["dock-preview"], has_arrow=False, autohide=False, position=position)
-        box = Gtk.Box(spacing=6)
-        self.pics = {}
+        self.box = Gtk.Box(spacing=4)
+        self.pics, self.items = {}, {}
+        self.close_view = close
         for w in windows:
             col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["minimized"] if w["minimized"] else [])
-            pic = Gtk.Picture(paintable=w.get("tex") or _icon(tile), can_shrink=True,
-                              content_fit=Gtk.ContentFit.CONTAIN, css_classes=["shot-frame"])
-            pic.set_size_request(self.PIC_W, self.PIC_H)
-            col.append(pic)
+            slot = Gtk.Box(halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)       # PIC_W x PIC_H, the picture inside
+            slot.set_size_request(PIC_W, PIC_H)
+            pic = Gtk.Picture(can_shrink=True, content_fit=Gtk.ContentFit.CONTAIN, halign=Gtk.Align.CENTER,
+                              valign=Gtk.Align.CENTER, hexpand=True)
+            slot.append(pic)
+            col.append(slot)
             col.append(Gtk.Label(label=w["title"] or tile.name, ellipsize=Pango.EllipsizeMode.END,
-                                 max_width_chars=22))
+                                 max_width_chars=16))
             b = Gtk.Button(child=col, css_classes=["shot"], can_focus=False, tooltip_text=w["title"] or None)
             b.connect("clicked", lambda _b, v=w["id"]: (self.popdown(), restore(v)))
-            box.append(b)
-            self.pics[w["id"]] = pic
-        self.set_child(box)
+            item = Gtk.Overlay(css_classes=["shot-item"])
+            item.set_child(b)
+            if close is not None:
+                x = Gtk.Button(icon_name="window-close-symbolic", css_classes=["shot-close"], can_focus=False,
+                               halign=Gtk.Align.END, valign=Gtk.Align.START, tooltip_text=_("Close Window"))
+                x.connect("clicked", lambda _b, v=w["id"]: self._close(v))
+                item.add_overlay(x)
+            self.box.append(item)
+            self.pics[w["id"]], self.items[w["id"]] = pic, item
+            self.set_shot(w["id"], w.get("tex"), icon=_icon(tile))
+        self.set_child(self.box)
         self.set_parent(tile)
         self.connect("closed", lambda p: GLib.idle_add(lambda: (p.unparent(), False)[1]))
 
-    def set_shot(self, vid, tex) -> None:
+    def set_shot(self, vid, tex, icon=None) -> None:
+        """The window's picture, as big as fits PIC_W x PIC_H in its own shape;
+        none yet: the app's icon, small, in the middle (no empty frame)."""
         pic = self.pics.get(vid)
-        if pic is not None:
-            pic.set_paintable(tex)
+        if pic is None:
+            return
+        if tex is None:
+            if icon is None and pic.get_paintable() is not None:
+                return                                         # (keep what's there)
+            pic.set_paintable(icon)
+            pic.set_size_request(ICON_PX, ICON_PX)
+            pic.remove_css_class("shot-pic")
+            return
+        w, h = max(1, tex.get_width()), max(1, tex.get_height())
+        k = min(PIC_W / w, PIC_H / h)
+        pic.set_paintable(tex)
+        pic.set_size_request(max(1, round(w * k)), max(1, round(h * k)))
+        pic.add_css_class("shot-pic")
+
+    def _close(self, vid) -> None:
+        """x: that window closes (the app may ask to save first); its preview goes."""
+        if self.close_view is not None:
+            self.close_view(vid)
+        item = self.items.pop(vid, None)
+        self.pics.pop(vid, None)
+        if item is not None:
+            self.box.remove(item)
+        if not self.items:
+            self.popdown()
 
 
 def _icon(tile):
@@ -200,8 +245,8 @@ def _icon(tile):
     theme = Gtk.IconTheme.get_for_display(tile.get_display())
     gicon = getattr(tile, "gicon", None)
     if gicon is not None:
-        return theme.lookup_by_gicon(gicon, 64, tile.get_scale_factor(), Gtk.TextDirection.NONE, 0)
-    return theme.lookup_icon("application-x-executable", None, 64, tile.get_scale_factor(),
+        return theme.lookup_by_gicon(gicon, ICON_PX, tile.get_scale_factor(), Gtk.TextDirection.NONE, 0)
+    return theme.lookup_icon("application-x-executable", None, ICON_PX, tile.get_scale_factor(),
                              Gtk.TextDirection.NONE, 0)
 
 
@@ -215,6 +260,10 @@ def shots() -> WindowShots:
     return _shots
 
 
+def close_window(vid) -> None:
+    shots().ipc.call("window-rules/close-view", {"id": vid})
+
+
 def restore(vid) -> None:
     ipc = shots().ipc
     ipc.call("wm-actions/set-minimized", {"view_id": vid, "state": False})
@@ -223,7 +272,7 @@ def restore(vid) -> None:
 
 def attach(tile, dock) -> None:
     """Hovering `tile` shows its app's open windows (pictures, names)."""
-    state = {"pop": None, "src": 0, "inside": False, "refresh": 0}
+    state = {"pop": None, "src": 0, "inside": False, "refresh": 0, "wait": 0}
 
     def refresh():
         pop = state["pop"]
@@ -249,19 +298,40 @@ def attach(tile, dock) -> None:
             return False
         state["src"] = GLib.timeout_add(300, close)
 
+    def hover(*_a):
+        """The pointer came onto the icon: the previews after HOVER_MS, if it stays."""
+        if state["src"]:                             # (back from the previews: they stay)
+            GLib.source_remove(state["src"])
+            state["src"] = 0
+        if state["pop"] is not None or state["wait"]:
+            return
+
+        def due():
+            state["wait"] = 0
+            enter()
+            return False
+        state["wait"] = GLib.timeout_add(HOVER_MS, due)
+
+    def left(*_a):
+        if state["wait"]:
+            GLib.source_remove(state["wait"])
+            state["wait"] = 0
+        close_later()
+
     def enter(*_a):
         s = shots()
         if not s.enabled or tile.key is None or not dock.windows.get(tile.key):
             return                                   # (not running: the name label shows)
         found = s.open_windows(tile.key)
-        if not found:
-            return
+        if len(found) < 2:
+            return                                   # one window: nothing to choose (Vini) -- the name label shows
         if state["src"]:
             GLib.source_remove(state["src"])
             state["src"] = 0
         if state["pop"] is None:
             tile.label.popdown()
-            pop = PreviewPopover(tile, dock.away, found, restore)
+            pop = PreviewPopover(tile, dock.away, found, restore, close_window)
+            gap_from_dock(pop, tile, dock)
             motion = Gtk.EventControllerMotion()
             motion.connect("enter", lambda *_: state.update(inside=True))
             motion.connect("leave", lambda *_: (state.update(inside=False), close_later()))
@@ -273,6 +343,28 @@ def attach(tile, dock) -> None:
             state["refresh"] = GLib.timeout_add(REFRESH_MS, refresh)
 
     motion = Gtk.EventControllerMotion()
-    motion.connect("enter", enter)
-    motion.connect("leave", lambda *_: close_later())
+    motion.connect("enter", hover)
+    motion.connect("leave", left)
     tile.add_controller(motion)
+
+
+def gap_from_dock(pop, tile, dock) -> None:
+    """The previews stand off the Dock as far as a maximized window does
+    (Vini: they sat against the icon): edge_gap past the Dock's plate, not
+    the icon -- the plate's inner side is SHADOW in from the Dock's window."""
+    from .dock import SHADOW
+    win = tile.get_root()
+    edge = getattr(dock, "edge", "bottom")
+    gap = (getattr(dock, "cfg", None) or {}).get("edge_gap", 8)
+    ok, pt = tile.compute_point(win, Graphene.Point().init(0, 0)) if win is not None else (False, None)
+    if not ok:
+        return
+    w, h = tile.get_width(), tile.get_height()
+    rect = Gdk.Rectangle()
+    if edge == "bottom":                                       # plate top, in the tile's own coordinates
+        rect.x, rect.y, rect.width, rect.height = 0, round(SHADOW - pt.y) - gap, w, 1
+    elif edge == "left":                                       # plate's right side
+        rect.x, rect.y, rect.width, rect.height = round(win.get_width() - SHADOW - pt.x) + gap - 1, 0, 1, h
+    else:                                                      # right: the plate's left side
+        rect.x, rect.y, rect.width, rect.height = round(SHADOW - pt.x) - gap, 0, 1, h
+    pop.set_pointing_to(rect)

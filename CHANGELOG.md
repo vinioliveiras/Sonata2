@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Fixes
+- Mission Control's desktops work: a click goes to that desktop (an empty
+  one too) and closes Mission Control; x closes a desktop, its windows going
+  to the one before. The pictures are always there, centred at the top with
+  + beside them (centred on the pictures), in room Mission Control keeps
+  free: they no longer cover the windows. One desktop to start with.
+- Mission Control opens on an empty desktop too, and stays open when its
+  last window closes (Sonata's Wayfire: wayfire-scale-empty-desktop.patch) --
+  an empty desktop could not be left.
+- Mission Control only darkens the desktop behind the windows: no blur
+  (lighter on the machine).
+- Dock previews: only for an app with more than one window, after the
+  pointer rests on its icon for 2 s, as far from the Dock as a maximized
+  window; small pictures of the windows themselves (no big empty frame: the
+  app's icon, small, until one comes), and x on one closes that window.
+- A video wallpaper is silent even where GStreamer's player starts with its
+  own volume, and fills the screen whatever its shape (cut to fit, centred).
+- Switch User asks for the password once: the login screen checks it and
+  brings your session back unlocked (it went back without checking, and the
+  lock screen asked again).
+- The menu bar's warm-up no longer stops half-way with some PyGObject
+  versions ("does not allow None"): its surface takes clicks everywhere again.
+
 ## 0.18.0-alpha -- 2026-10-16
 
 Mission Control with desktops on Super+Tab, videos as wallpapers, Switch
