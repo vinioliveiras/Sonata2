@@ -22,7 +22,20 @@ SOUNDS = {"morning": (N_("Morning"), "sonata-alarm-morning"), "chimes": (N_("Chi
 SOUND = "morning"
 SNOOZE_MIN = 9                         # iPhone / macOS
 RING_MAX_S = 15 * 60                   # an alarm nobody stops goes quiet after this
-DAYS = (N_("Mon"), N_("Tue"), N_("Wed"), N_("Thu"), N_("Fri"), N_("Sat"), N_("Sun"))   # shown _()
+WEEKDAYS = (N_("Monday"), N_("Tuesday"), N_("Wednesday"), N_("Thursday"), N_("Friday"), N_("Saturday"),
+            N_("Sunday"))
+DAYS = tuple(d[:3] for d in WEEKDAYS)          # "Mon"... (English)
+
+
+def day_name(i: int) -> str:
+    """Weekday i (0 = Monday) in the session's language."""
+    return _(WEEKDAYS[i])
+
+
+def day_abbr(i: int) -> str:
+    """"Mon" / "Seg": the first three letters of the day's name (a "Sun"
+    of its own in the catalogs would be the sun's)."""
+    return day_name(i)[:3]
 
 
 def sound_path(key: str) -> str:
@@ -115,7 +128,7 @@ def repeat_text(repeat: list) -> str:
         return _("Weekdays")
     if r == [5, 6]:
         return _("Weekends")
-    return ", ".join(_(DAYS[d]) for d in r)
+    return ", ".join(day_abbr(d) for d in r)
 
 
 def time_text(a: dict, h24: bool = True) -> str:

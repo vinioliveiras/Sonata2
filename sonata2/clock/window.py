@@ -198,8 +198,10 @@ class ClockWindow(Gtk.ApplicationWindow):
         box.append(times)
         days = Gtk.Box(spacing=4, halign=Gtk.Align.CENTER)
         toggles = []
-        for i, d in enumerate(_(d) for d in A.DAYS):
-            t = Gtk.ToggleButton(label=d[0], active=i in a["repeat"], css_classes=["ck-day"], tooltip_text=d)
+        for i in range(len(A.DAYS)):
+            d = A.day_name(i)
+            t = Gtk.ToggleButton(label=d[0], active=i in a["repeat"], css_classes=["ck-day"],
+                                 tooltip_text=A.day_abbr(i))
             toggles.append(t)
             days.append(t)
         box.append(days)
