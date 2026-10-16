@@ -17,8 +17,9 @@
   (lighter on the machine).
 - Dock previews: only for an app with more than one window, after the
   pointer rests on its icon for 2 s, as far from the Dock as a maximized
-  window; very small pictures of the windows themselves (no big empty frame: the
-  app's icon, small, until one comes), and x on one closes that window.
+  window; small pictures of the windows themselves, the size of Mission
+  Control's desktop pictures (no big empty frame: the app's icon, small,
+  until one comes), and x on one closes that window.
 - A video wallpaper is silent even where GStreamer's player starts with its
   own volume, and fills the screen whatever its shape (cut to fit, centred).
 - Switch User asks for the password once: the login screen checks it and

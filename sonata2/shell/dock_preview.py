@@ -23,8 +23,9 @@ from .. import apps, ui  # noqa: E402
 from ..i18n import _  # noqa: E402
 from ..wl.wfipc import WayfireIPC  # noqa: E402
 
-# small (Vini: "the thumbnail, and very small"): a window is at most PIC_W x PIC_H
-PIC_W, PIC_H = 104, 66
+# small (Vini): a window is at most PIC_W x PIC_H -- the size of Mission
+# Control's desktop pictures (spaces.THUMB_W x THUMB_H), Vini's pick
+PIC_W, PIC_H = 128, 80
 SHOT_W = 2 * PIC_W              # (crisp at 2x scale)
 ICON_PX = 32                    # the app's icon standing in until a picture comes
 MAX_WINDOWS = 6

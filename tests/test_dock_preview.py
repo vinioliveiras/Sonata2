@@ -189,7 +189,8 @@ class SmallPreviewsTest(unittest.TestCase):
         self.assertLessEqual(w, P.PIC_W)
         self.assertLessEqual(h, P.PIC_H)
         self.assertAlmostEqual(w / h, 16 / 9, delta=0.05)                         # its own shape
-        self.assertLessEqual(P.PIC_W, 110)                                        # "very small" (Vini: smaller still)
+        from sonata2.shell import spaces
+        self.assertEqual((P.PIC_W, P.PIC_H), (spaces.THUMB_W, spaces.THUMB_H))   # as the desktops' pictures
         pop.set_shot(7, None)
         self.assertIs(pic.get_paintable(), tex)                                    # a failed refresh keeps it
 
