@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changes
+- Alt+Tab: an app with several windows has one icon per window, side by
+  side, the window's title under the selected one; picking one brings that
+  window alone forward. One press still goes to the previous app.
 - Dock: hovering a running app shows every window it has open (minimized
   ones too), live, drawn by Sonata's Wayfire plugin -- covered windows or
   windows on another desktop as well; click one to bring it forward.

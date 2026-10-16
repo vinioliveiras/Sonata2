@@ -2,7 +2,10 @@
 recently used first, as big icons on a glass panel in the middle of the
 screen; Tab / Shift+Tab (or the arrows) move, releasing Super switches to
 the app (all its windows come forward, minimized ones restored), Q quits
-it, Escape cancels. Lives in the menu bar process (it already tracks the
+it, Escape cancels. An app with several windows has one icon per window
+(Vini, like Windows), side by side, the window's title under the selected
+one; picking one brings that window alone forward. One press still goes
+to the previous app. Lives in the menu bar process (it already tracks the
 windows); Wayfire's binding reaches it over D-Bus (gdbus: no start-up
 cost per key press)."""
 import gi
@@ -140,7 +143,7 @@ class Switcher(Gtk.Window):
         self.panel = ui.theme.glass_class(SwitcherPanel())
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col.append(self.panel)
-        self.name = Gtk.Label(css_classes=["sw-name"], ellipsize=Pango.EllipsizeMode.END, max_width_chars=12)
+        self.name = Gtk.Label(css_classes=["sw-name"], ellipsize=Pango.EllipsizeMode.END, max_width_chars=18)
         self.set_child(col)
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._key)
@@ -166,8 +169,10 @@ class Switcher(Gtk.Window):
     def step(self, direction: int) -> None:
         if not self.get_visible() or self.panel.has_css_class("closing"):
             self._open()
-            direction = 1 if len(self.keys) > 1 else 0      # the previous app is preselected
-            self.index = 0
+            # the previous app is preselected (past the windows of the app in front)
+            first = next((i for i, k in enumerate(self.keys) if self.keys and k != self.keys[0]), None)
+            self.index = (first - 1) if first is not None else 0
+            direction = 1 if first is not None else (1 if len(self.keys) > 1 else 0)
         if self.keys:
             self.index = (self.index + direction) % len(self.keys)
             self._mark()
@@ -180,8 +185,24 @@ class Switcher(Gtk.Window):
         order = [k for k in self.mru if k in groups] + [k for k in groups if k not in self.mru]
         return order, groups
 
+    def _entries(self, order, groups):
+        """(app keys, windows): one entry per app, or per window for an app
+        with several (its last used first); window None: the whole app."""
+        keys, wins = [], []
+        for key in order:
+            ws = groups[key]
+            if len(ws) > 1:
+                for t in sorted(ws, key=_last_used, reverse=True):
+                    keys.append(key)
+                    wins.append(t)
+            else:
+                keys.append(key)
+                wins.append(None)
+        return keys, wins
+
     def _open(self):
-        self.keys, self.groups = self._groups()
+        order, self.groups = self._groups()
+        self.keys, self.wins = self._entries(order, self.groups)
         while self.panel.get_first_child():
             self.panel.remove(self.panel.get_first_child())
         self.items = []
@@ -200,6 +221,9 @@ class Switcher(Gtk.Window):
                 icons.set_image(img, other[1])
             box.append(img)
             box.name = info.get_display_name() if info else other[0]
+            win = self.wins[len(self.items)]
+            if win is not None and (getattr(win, "title", "") or ""):
+                box.name = win.title                  # one of its windows: which one
             self.panel.append(box)
             self.items.append(box)
         if not self.keys:
@@ -311,7 +335,10 @@ class Switcher(Gtk.Window):
             self._switch()
 
     def _switch(self):
-        if self.get_visible() and self.keys:
+        one = (getattr(self, "wins", None) or [None] * len(self.keys or ()))[self.index] if self.keys else None
+        if self.get_visible() and one is not None:
+            self.manager.activate(one)                        # that window alone (restored if minimized)
+        elif self.get_visible() and self.keys:
             wins = self.groups[self.keys[self.index]]
             # all of the app's windows come forward, the one used last activated last (on top, focused)
             for t in sorted([t for t in wins if not t.minimized] or wins, key=_last_used):
