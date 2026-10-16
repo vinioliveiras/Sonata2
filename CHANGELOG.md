@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Changes
+- Light Mode glass is more see-through by default (Dock, menu bar, menus
+  and panels 0.60 -> 0.45; sidebars 0.74 -> 0.58), closer to how Dark Mode
+  reads: a pale tint at the same opacity looked milky, almost opaque. Wayfire's
+  blur threshold follows the theme's own glass, so it stays frosted; the
+  opaque title bars keep their colour.
+
+### Fixes
+- After a Light/Dark switch, a menu bar icon (often Control Center's) or a
+  Dock count badge could keep its Light Mode look until clicked: once the
+  change settles, the menu bar looks its icons up again and the Dock draws
+  every part anew.
+
 ## 0.16.1-alpha -- 2026-10-10
 
 Fixes for installing Sonata on other computers: the login screen, title bars and the wallpaper.

@@ -312,7 +312,7 @@ class Bar(Gtk.CenterBox):
         right.set_margin_end(8)
         self.set_end_widget(right)
 
-        self._theme_cb = ui.theme.on_change(self.queue_draw)
+        self._theme_cb = ui.theme.on_change(self._theme_changed)
         self._cfg_mon = config.watch("topbar", self._config_changed)
         if self.manager:
             self.manager.listeners.append(self._active_changed)
@@ -346,6 +346,12 @@ class Bar(Gtk.CenterBox):
                 owner.listeners.remove(cb)
         ui.theme.off_change(self._theme_cb)
         self._cfg_mon.cancel()
+
+    def _theme_changed(self) -> None:
+        self.queue_draw()                        # the bar's material (blends during a cross-fade)
+        # and, once it has settled, every item anew: an icon kept its Light
+        # Mode look in Dark Mode until clicked (Vini)
+        ui.theme.settled(self, lambda: self.alive and ui.theme.refresh_tree(self))
 
     def _inuse_changed(self) -> None:
         """The dots: green while the camera records, orange the microphone; who, on hover."""
