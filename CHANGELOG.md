@@ -9,6 +9,10 @@
   title bar again, set at every login and whenever the option is turned on
   -- whatever was chosen since. Its menu bar follows Sonata's theme and Dark
   Mode now; it had been left with its own title bar for that.
+- Every app that has a setting for it gets Sonata's title bar at every
+  login: Chromium browsers (Chrome, Brave, Edge... -- the tabs below
+  Sonata's bar) and Obsidian too, besides VS Code, Firefox, Thunderbird and
+  Vesktop. Apps without one keep their own, so no window shows two.
 
 ### New
 - Mission Control: drop a window on + for a new desktop with the window on

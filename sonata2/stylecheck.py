@@ -52,17 +52,12 @@ def config_rows() -> list:
                 prefs = json.loads(_read(os.path.join(base, prof, "Preferences")) or "{}")
             except ValueError:
                 continue
-            theme = prefs.get("extensions", {}).get("theme", {})
             frame = prefs.get("browser", {}).get("custom_chrome_frame")
-            mode = theme.get("system_theme")
-            if mode == T.GTK_MODE and not theme.get("id") and frame is True:
-                rows.append((OK, f"{name} ({prof})", "GTK mode: Sonata's traffic lights"))
-            elif mode != T.GTK_MODE or theme.get("id"):
-                rows.append((OK, f"{name} ({prof})", "Classic mode or a theme: Sonata's title bar above the tabs"
-                             if frame is False else "Classic mode or a theme"))
+            if frame is False:
+                rows.append((OK, f"{name} ({prof})", "Sonata's title bar above the tabs"))
             else:
-                rows.append((WARN, f"{name} ({prof})", "its frame setting changed: put back at the next login "
-                             "(while the browser is closed)"))
+                rows.append((WARN, f"{name} ({prof})", "its own frame: Sonata's title bar is set at the next "
+                             "login (while the browser is closed)"))
     for flags in T.CHROMIUM_FLAGS:
         path = os.path.join(cfg, flags)
         if os.path.exists(path) or T._installed(flags):

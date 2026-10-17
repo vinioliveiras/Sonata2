@@ -183,19 +183,35 @@ class TitlebarSettingsTest(unittest.TestCase):
         self.assertEqual(json.loads(_read(p)), {"minimizeToTray": True, "titleBar": "system",
                                                 "customTitleBar": False})
 
-    def test_chromium_qt_mode_goes_back_to_gtk_and_theme_keeps_classic_frame(self):
-        """Qt mode (hangs Chromium here) becomes GTK with Chromium's frame; a
-        browser theme keeps Sonata's title bar (custom_chrome_frame False)."""
+    def test_chromium_always_gets_sonatas_title_bar(self):
+        """Vini: "everything forced to Sonata's bars": Sonata's title bar above
+        the tabs at every login, a browser theme or a change since or not; Qt
+        mode (hangs Chromium here) becomes GTK for the colours; its own frame
+        when the option is off."""
         p = os.path.join(self.d, "Preferences")
         _write(p, json.dumps({"extensions": {"theme": {"system_theme": 2}}, "other": 1}))
-        titlebars._browser_pref(p)
+        titlebars._browser_pref(p, True)
         prefs = json.loads(_read(p))
         self.assertEqual(prefs["extensions"]["theme"]["system_theme"], titlebars.GTK_MODE)
-        self.assertIs(prefs["browser"]["custom_chrome_frame"], True)
+        self.assertIs(prefs["browser"]["custom_chrome_frame"], False)
         self.assertEqual(prefs["other"], 1)
-        _write(p, json.dumps({"extensions": {"theme": {"system_theme": 1, "id": "abc"}}}))
-        titlebars._browser_pref(p)
+        _write(p, json.dumps({"browser": {"custom_chrome_frame": True},
+                              "extensions": {"theme": {"system_theme": 1, "id": "abc"}}}))
+        titlebars._browser_pref(p, True)
         self.assertIs(json.loads(_read(p))["browser"]["custom_chrome_frame"], False)
+        titlebars._browser_pref(p, False)
+        self.assertIs(json.loads(_read(p))["browser"]["custom_chrome_frame"], True)
+        self.assertIn('_browser_pref(os.path.join(base, p, "Preferences"), on)', open(titlebars.__file__).read())
+
+    def test_obsidian_forced_only_when_it_ran_once(self):
+        p = os.path.join(self.d, "obsidian", "obsidian.json")
+        titlebars._obsidian_setting(p, True)
+        self.assertFalse(os.path.exists(p))
+        _write(p, json.dumps({"vaults": {}, "frame": "hidden"}))
+        titlebars._obsidian_setting(p, True)
+        self.assertEqual(json.loads(_read(p)), {"vaults": {}, "frame": "native"})
+        titlebars._obsidian_setting(p, False)
+        self.assertEqual(json.loads(_read(p))["frame"], "hidden")
 
     def test_vscode_always_gets_sonatas_title_bar(self):
         """Vini: "VS Code stopped taking Sonata's window theme -- Sonata must
