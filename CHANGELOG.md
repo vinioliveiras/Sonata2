@@ -9,6 +9,22 @@
 - The menu bar's Sound menu has no list of outputs under its slider any
   more: the slider's output button picks it, as in Control Center.
 
+### Performance
+- Files lists a big folder about four times faster (5,000 files: ~10.5 s
+  -> ~2.5 s): each file's cell no longer reloads Sonata's whole stylesheet.
+- Lighter on the battery while nothing happens:
+  - the Dock, wallpaper, Launchpad, Spotlight and every Sonata app no
+    longer wake up once a second (a diagnostics check now waits for its
+    file instead of looking for it);
+  - the menu bar follows Wi-Fi and the battery from NetworkManager's and
+    UPower's own signals instead of running nmcli every 10 seconds;
+  - app windows no longer run code on every frame of an animation (Disk
+    Utility did ~60 times a second while its spinner turned).
+- Settings > Displays opens faster and holds ~40 MB less: the wallpaper
+  preview is read in the background, at its own size.
+- The menu bar no longer pauses for a moment just after it appears at
+  login (a version report now runs in the background).
+
 ## 0.19.2-alpha -- 2026-10-17
 
 Sonata's title bars on every app that can take them, a lighter video

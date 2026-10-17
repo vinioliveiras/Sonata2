@@ -255,8 +255,10 @@ class MenuBarNoNmcliPollTest(unittest.TestCase):
         self.reads, self.timers, self.later = [], [], []
         patches = [mock.patch.object(T, "_BARS", []),
                    mock.patch.object(T.GLib, "timeout_add_seconds", side_effect=lambda s, fn: self.timers.append(s)),
-                   mock.patch.object(T.GLib, "timeout_add", side_effect=lambda ms, fn: self.later.append((ms, fn)) or 7),
-                   mock.patch.object(T.system, "run_async", side_effect=lambda fn, cb=None, *a: (self.reads.append(fn), cb and cb(None))),
+                   mock.patch.object(T.GLib, "timeout_add",
+                                     side_effect=lambda ms, fn: self.later.append((ms, fn)) or 7),
+                   mock.patch.object(T.system, "run_async",
+                                     side_effect=lambda fn, cb=None, *a: (self.reads.append(fn), cb and cb(None))),
                    mock.patch.object(T.system, "watch_network", return_value=(lambda: None) if net else None),
                    mock.patch.object(T.system, "system_service", return_value=upower)]
         for p in patches:
@@ -379,7 +381,8 @@ class DisplaysWallpaperPreviewTest(unittest.TestCase):
                 while c is not None:
                     yield from walk(c)
                     c = c.get_next_sibling()
-            pic = next(p for p in walk(w.pages["displays"]) if isinstance(p, Gtk.Picture) and p.has_css_class("st-wall"))
+            pic = next(p for p in walk(w.pages["displays"])
+                       if isinstance(p, Gtk.Picture) and p.has_css_class("st-wall"))
             for _ in range(40):
                 _spin(100)
                 if pic.get_paintable() is not None:
