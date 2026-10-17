@@ -142,6 +142,8 @@ def _set(section: str, key: str, value, files=None) -> bool:
                 continue
             out.append(line)
         if not done and value is not None:
+            if out and not out[-1].endswith("\n"):
+                out[-1] += "\n"            # a file ending without one: never glue the new key onto that line
             if cur == section:
                 sec_end = len(out)
             if sec_end is not None:

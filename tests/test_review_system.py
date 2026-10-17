@@ -100,7 +100,8 @@ class LightEffectsEmptyTest(unittest.TestCase):
         light_file = os.path.join(tempfile.mkdtemp(), "light.json")
         with mock.patch.object(gamemode, "LIGHT", light_file):
             light = gamemode.LightEffects(get=lambda s, k, d="": cfg.get((s, k), d),
-                                          set_=lambda s, k, v: cfg.__setitem__((s, k), v), wanted=lambda: True)
+                                          set_=lambda s, k, v: cfg.__setitem__((s, k), v) or True,
+                                          wanted=lambda: True)
             light.update(full=True, used=7900, total=8188)
             light.update(full=False)
         self.assertNotEqual(cfg.get(("blur", "blur_by_default")), 'app_id is "sonata2-no-blur"')
