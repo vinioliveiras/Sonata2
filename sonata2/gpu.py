@@ -221,9 +221,14 @@ def card_name(card) -> str:
         card.driver, "Intel" if card.driver in ("i915", "xe") else card.driver) + " graphics"
 
 
-def _key(info) -> str:
-    did = info.get_id() or ""
+def app_key(info) -> str:
+    """The app's desktop id without ".desktop" -- a login item's own name
+    when it has none (autostart.entries)."""
+    did = (info.get_id() if info else "") or getattr(info, "sonata_desktop_id", "") or ""
     return did[:-8] if did.endswith(".desktop") else did
+
+
+_key = app_key
 
 
 def wants_discrete(info) -> bool:

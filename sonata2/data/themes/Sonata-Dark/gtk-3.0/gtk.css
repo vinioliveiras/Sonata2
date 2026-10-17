@@ -6,3 +6,12 @@
    Code, Discord...) as dark as the title bar above it -- the base theme's
    grey (55,55,55) stood out under Sonata's dark title bar (Vini) */
 menubar { background-color: #141416; background-image: none; box-shadow: none; }
+/* Sonata: its menus too -- Electron draws its menu bar and the menus under it
+   in GtkMenu#menu's colour, not the menu bar's: GitHub Desktop's stayed grey
+   (Vini: "the menus inside it too") */
+menu, .menu, .context-menu,
+.background.csd > menu, .background.popup > menu,
+window.background:not(.csd):not(.popup) > menu,
+window.background:not(.csd):not(.popup) > menu > menu,
+window.background.chromium menu { background-color: #141416; background-image: none; }
+window.background:not(.csd):not(.popup) > menu > menuitem { background-color: transparent; }

@@ -51,6 +51,25 @@ class FpsLimitTest(unittest.TestCase):
         with mock.patch.object(F, "installed", lambda: False):
             self.assertEqual(F.env_for(info("steam.desktop")), {})
 
+    def test_steam_at_login_gets_the_layer(self):
+        """Vini: the FPS limit stopped working. Steam set to Open at Login
+        starts from its autostart entry, an app made from the file's
+        contents with no desktop id: it never got ENABLE_FRAME_PACER (nor
+        its GPU), so its games were never limited."""
+        from sonata2 import autostart, gpu
+        folder = os.path.join(os.environ["XDG_CONFIG_HOME"], "autostart")
+        os.makedirs(folder)
+        with open(os.path.join(folder, "steam.desktop"), "w") as f:
+            f.write("[Desktop Entry]\nName=Steam\nExec=true -silent %U\nType=Application\nIcon=steam\n")
+        with mock.patch.object(autostart, "_dirs", return_value=[folder]):
+            entries = autostart.entries()
+        self.assertEqual([n for n, _i in entries], ["steam.desktop"])
+        info = entries[0][1]
+        self.assertEqual(gpu.app_key(info), "steam")
+        with mock.patch.object(F, "installed", lambda: True):
+            self.assertEqual(F.env_for(info), {"ENABLE_FRAME_PACER": "1"})
+            self.assertEqual(gpu.extra_env(info).get("ENABLE_FRAME_PACER"), "1")
+
     def test_release_asset(self):
         rels = [{"assets": [{"name": "src.tar.gz", "browser_download_url": "x"}]},
                 {"assets": [{"name": "frame-pacer-0.1.0-linux-x86_64-multilib.tar.xz", "browser_download_url": "T"},

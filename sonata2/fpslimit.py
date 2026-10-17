@@ -112,8 +112,8 @@ def set(limit: str, refresh_hz: float = None, hud: bool = None) -> None:   # noq
 
 def env_for(info) -> dict:
     """ENABLE_FRAME_PACER=1 for game launchers once frame-pacer is here."""
-    did = ((info.get_id() if info else "") or "").removesuffix(".desktop")
-    return {"ENABLE_FRAME_PACER": "1"} if did in LAUNCHERS and installed() else {}
+    from .gpu import app_key
+    return {"ENABLE_FRAME_PACER": "1"} if app_key(info) in LAUNCHERS and installed() else {}
 
 
 # -- install (a release: prebuilt, no compiler, no sudo) --------------------------------------

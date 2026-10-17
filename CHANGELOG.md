@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Fixes
+- FPS Limit works again for Steam set to Open at Login: started from its
+  login entry, it never got frame-pacer's switch (nor its graphics card), so
+  its games weren't limited until Steam was opened again from the Dock.
+- Dark Mode: the menus of GTK 3 and Electron apps are as dark as their menu
+  bar -- GitHub Desktop's menu bar and its menus stayed grey (Electron paints
+  both in the menus' colour).
 - Screenshots: Capture in the toolbar (Print) no longer sometimes does
   nothing -- it began before the toolbar had gone, while it still held the
   keyboard.
