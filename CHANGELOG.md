@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixes
+- Video wallpaper: changing it several times no longer slows the desktop
+  down. Each video let go of is freed once paused, and the memory goes back
+  to the system: a player freed while GStreamer was still busy with it was
+  never freed, its threads and ~30 MB staying behind at every change.
+- Video wallpaper: no sound, ever. The wallpaper's player has no audio
+  output at all, rather than a muted one the sound server could unmute.
+
 ### New
 - Mission Control: drop a window on + for a new desktop with the window on
   it.
