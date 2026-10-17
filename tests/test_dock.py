@@ -18,6 +18,16 @@ from sonata2 import config  # noqa: E402
 from sonata2.shell import dock as D, dock_menu  # noqa: E402
 
 
+def fresh_dock_config():
+    """Each test starts from the default Dock: one that unpins apps or adds
+    recents must not leave the next with too few icons (or a recent one
+    where a pinned one was expected)."""
+    try:
+        os.remove(os.path.join(config.CONFIG_DIR, "dock.json"))
+    except FileNotFoundError:
+        pass
+
+
 def settle(ms=200):
     end = GLib.get_monotonic_time() + ms * 1000
     ctx = GLib.MainContext.default()
@@ -39,6 +49,7 @@ class OrderTest(unittest.TestCase):
     def test_pinned_kept_through_a_save(self):
         from unittest import mock
         Gtk.init()
+        fresh_dock_config()
         cfg = D.load_config()
         D.load_css(cfg)
         real = [k for k in cfg["pinned"] if k not in D.PERMANENT]
@@ -86,6 +97,7 @@ class DropAnimationTest(unittest.TestCase):
 class DockTest(unittest.TestCase):
     def setUp(self):
         Gtk.init()
+        fresh_dock_config()
         self.cfg = D.load_config()
         D.load_css(self.cfg)
         if len(self.cfg["pinned"]) < 3:
@@ -125,16 +137,23 @@ class DockTest(unittest.TestCase):
     def test_drag_to_trash_uninstalls(self):
         """Vini: a Dock icon dragged onto the Trash is uninstalled (asked
         first); it stays in the Dock until that's done."""
+        from unittest import mock
         key = self.removable()[0]
+        # Sonata's own apps can't be uninstalled, and on a test machine they
+        # may be all the Dock has: one stands in for a third-party app
+        from sonata2.apps import PROTECTED
+        if key.startswith(PROTECTED):
+            self.assertFalse(self.dock.can_uninstall(self.dock.tiles[key]))
         self.start_drag(key)
         ok, b = self.dock.trash.compute_bounds(self.dock)
         x, y = b.get_x() + b.get_width() / 2, b.get_y() + b.get_height() / 2
         asked = []
         self.dock._uninstall_dropped = lambda t: asked.append(t.key)
-        self.assertEqual(self.dock._drag_motion(None, x, y), Gdk.DragAction.MOVE)
-        self.assertTrue(self.dock.trash.has_css_class("drop-hover"))
-        self.assertEqual(self.keys().index(key), self.dock._drag["index"])   # kept its place
-        self.assertTrue(self.dock._drag_drop(None, None, x, y))
+        with mock.patch("sonata2.apps.PROTECTED", ("no.such.app.",)):
+            self.assertEqual(self.dock._drag_motion(None, x, y), Gdk.DragAction.MOVE)
+            self.assertTrue(self.dock.trash.has_css_class("drop-hover"))
+            self.assertEqual(self.keys().index(key), self.dock._drag["index"])   # kept its place
+            self.assertTrue(self.dock._drag_drop(None, None, x, y))
         self.assertEqual(asked, [key])
         self.assertIn(key, self.dock.cfg["pinned"])                         # until uninstalled
         self.assertFalse(self.dock.trash.has_css_class("drop-hover"))

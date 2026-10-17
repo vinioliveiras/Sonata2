@@ -81,7 +81,10 @@ class WindowTest(unittest.TestCase):
         from sonata2.files import window
         d = tempfile.mkdtemp()
         w = self.make(Gio.File.new_for_path(d).get_uri())
-        with mock.patch.object(window.GLib, "spawn_async") as spawn:
+        # (as where Sonata's Terminal can run: VTE for GTK 4 present -- not
+        # on every test machine, where nothing would be spawned at all)
+        with mock.patch.object(window, "_sonata_terminal_ok", return_value=True), \
+                mock.patch.object(window.GLib, "spawn_async") as spawn:
             w._terminal(Gio.File.new_for_path(d))
         argv = spawn.call_args.args[0]
         self.assertEqual(spawn.call_args.kwargs["working_directory"], d)
