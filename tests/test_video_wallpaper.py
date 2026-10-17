@@ -381,6 +381,66 @@ class FillAndSilenceTest(unittest.TestCase):
         self.VW.release(v)
 
 
+class ChangedSeveralTimesTest(unittest.TestCase):
+    """Vini: "it froze when I changed the wallpaper several times" and "it
+    still plays sound"."""
+
+    def setUp(self):
+        from sonata2.shell import videowallpaper as VW
+        self.VW = VW
+
+    def test_player_freed_only_once_paused_and_settled(self):
+        """A player freed while GStreamer's thread still held it was never
+        freed (pipeline, threads, ~30 MB at every change)."""
+        media = mock.Mock(**{"is_prepared.return_value": False, "get_error.return_value": None})
+        timers = []
+        with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)):
+            self.VW._let_go(media)
+        media.pause.assert_called()                                         # paused at once
+        media.clear.assert_not_called()
+        self.assertIn(media, self.VW._settling)                             # held meanwhile
+        self.assertTrue(timers[0]())                                        # still opening: wait
+        media.clear.assert_not_called()
+        media.is_prepared.return_value = True
+        with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)):
+            self.assertFalse(timers[0]())
+        media.clear.assert_called_once()
+        self.assertNotIn(media, self.VW._settling)
+        self.assertIs(timers[-1], self.VW._trim)                            # then the memory goes back
+        self.assertFalse(self.VW._trim())
+
+    def test_one_that_never_opens_is_freed_anyway(self):
+        media = mock.Mock(**{"is_prepared.return_value": False, "get_error.return_value": None})
+        timers = []
+        with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)):
+            self.VW._let_go(media)
+        with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)):
+            while timers[0]():
+                pass
+        media.clear.assert_called_once()
+
+    def test_no_audio_sink_for_the_wallpaper_only(self):
+        """No sound reaches the speakers (muting alone didn't do it); the
+        ranks are set only while the player starts: an app opened from the
+        desktop keeps its sound."""
+        seen = {}
+        fake = lambda path: seen.setdefault("ranks", os.environ.get("GST_PLUGIN_FEATURE_RANK"))   # noqa: E731
+        for before in (None, "nvh264dec:0"):
+            seen.clear()
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("GST_PLUGIN_FEATURE_RANK", None)
+                if before:
+                    os.environ["GST_PLUGIN_FEATURE_RANK"] = before
+                with mock.patch.object(self.VW.Gtk.MediaFile, "new_for_filename", side_effect=fake):
+                    self.VW.new_player("/x.mp4")
+                self.assertEqual(os.environ.get("GST_PLUGIN_FEATURE_RANK"), before)
+            for sink in ("pulsesink", "pipewiresink", "alsasink"):
+                self.assertIn(f"{sink}:0", seen["ranks"])
+            if before:
+                self.assertTrue(seen["ranks"].startswith(before))
+        self.assertEqual(self.VW.silent_ranks("pulsesink:256").count("pulsesink"), 1)   # what was set stays
+
+
 class MenusTest(unittest.TestCase):
     """Vini: set a video as wallpaper from the right-click menu too."""
 

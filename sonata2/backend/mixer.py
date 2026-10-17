@@ -66,6 +66,7 @@ class Stream:
     muted: bool
     corked: bool = False  # paused
     pid: int = 0          # the process playing it (application.process.id)
+    sink: int = -1        # the output it plays on (pactl's sink index)
 
 
 def _percent(volume: dict) -> int:
@@ -154,7 +155,8 @@ def parse(text: str, webapp=webapp_of) -> List[Stream]:
             key, name, icon = webapps.desktop_id(wid), entry.get("name") or name, ""
         out.append(Stream(index=int(it.get("index", -1)), key=key, name=name,
                           icon=icon, volume=_percent(it.get("volume")),
-                          muted=bool(it.get("mute")), corked=bool(it.get("corked")), pid=pid))
+                          muted=bool(it.get("mute")), corked=bool(it.get("corked")), pid=pid,
+                          sink=int(it.get("sink", -1)) if str(it.get("sink", "")).isdigit() else -1))
     return out
 
 
@@ -272,6 +274,82 @@ def set_level(key: str, percent: Optional[int] = None, muted: Optional[bool] = N
                        f"{max(0, min(MAX_PERCENT, int(round(percent))))}%"])[0] == 0 and ok
         if muted is not None:
             ok = _run(["pactl", "set-sink-input-mute", str(s.index), "1" if muted else "0"])[0] == 0 and ok
+    return ok
+
+
+# -- which output an app plays on ---------------------------------------------------------------
+@dataclass
+class Output:
+    index: int           # pactl's sink index (Stream.sink)
+    name: str            # the sink's node name (what move-sink-input takes)
+    label: str           # shown: as in the Sound menu's Output list
+
+
+EQ_PREFIX = "sonata-eq"         # equalizer.PREFIX (not imported: it pulls the whole equalizer in)
+
+
+def outputs_from(sinks_json: str, devices) -> List[Output]:
+    """The outputs an app can be sent to: one per device (a stream goes to a
+    sink; its ports -- Speakers / Headphones -- are the whole card's, so
+    they aren't offered per app), named as in the Output list (`devices`:
+    system.audio_outputs()) when that list has one entry for it. Devices
+    that list leaves out (unplugged HDMI, the equalizer's filters) are left
+    out here too."""
+    try:
+        items = json.loads(sinks_json or "[]")
+    except ValueError:
+        return []
+    by_sink = {}
+    for d in devices or []:
+        by_sink.setdefault(d.key.split("|", 1)[0], []).append(d)
+    out = []
+    for it in items if isinstance(items, list) else []:
+        name = it.get("name") or ""
+        if name.startswith(EQ_PREFIX) or name not in by_sink:
+            continue
+        shown = by_sink[name]
+        label = shown[0].name if len(shown) == 1 else (it.get("description") or name)
+        out.append(Output(index=int(it.get("index", -1)), name=name, label=label))
+    return out
+
+
+def current_output(stream: Stream, outs: List[Output], sinks_json: str) -> Optional[Output]:
+    """The output `stream` plays on. With the equalizer on, the stream is
+    linked to the filter in front of the device (node "sonata-eq.<device>"):
+    that is the device's own. None: unknown."""
+    for o in outs:
+        if o.index == stream.sink:
+            return o
+    try:
+        node = next((it.get("name") or "" for it in json.loads(sinks_json or "[]")
+                     if isinstance(it, dict) and it.get("index") == stream.sink), "")
+    except ValueError:
+        return None
+    if node.startswith(EQ_PREFIX + "."):
+        slug = node[len(EQ_PREFIX) + 1:]                     # equalizer._slug(device)
+        return next((o for o in outs if re.sub(r"[^A-Za-z0-9_.-]", "_", o.name) == slug), None)
+    return None
+
+
+def choices(stream: Stream):
+    """(outputs, the one `stream` plays on or None): what the per-app
+    output picker lists, read in one go (a background thread's work)."""
+    rc, text = _run(["pactl", "-f", "json", "list", "sinks"])
+    if rc != 0:
+        return [], None
+    from . import system
+    outs = outputs_from(text, system.audio_outputs())
+    return outs, current_output(stream, outs, text)
+
+
+def move(key: str, sink_name: str, all_streams: Optional[List[Stream]] = None) -> bool:
+    """Every stream of app `key` to the output `sink_name` (a browser's
+    tabs together, as with its level). WirePlumber keeps the choice for the
+    app's next streams (its stream-restore), like a level Sonata keeps."""
+    ok = True
+    for s in (all_streams if all_streams is not None else streams()):
+        if s.key == key:
+            ok = _run(["pactl", "move-sink-input", str(s.index), sink_name])[0] == 0 and ok
     return ok
 
 
