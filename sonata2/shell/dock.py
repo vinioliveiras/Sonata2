@@ -434,13 +434,28 @@ class DockTile(Gtk.Button):
 
 def close_launchpad() -> None:
     """Close Launchpad (its "close" action over D-Bus; nothing if it isn't running)."""
+    launchpad_action("close")
+
+
+def launchpad_action(action: str, failed=None) -> None:
+    """The running Launchpad's `action` over D-Bus, without waiting;
+    failed() when it isn't running (or doesn't answer)."""
+    app_id = "io.github.vinioliveiras.sonata2.launchpad"
+
+    def done(bus, res):
+        try:
+            bus.call_finish(res)
+        except GLib.Error:
+            if failed is not None:
+                failed()
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-        app_id = "io.github.vinioliveiras.sonata2.launchpad"
         bus.call(app_id, "/" + app_id.replace(".", "/"), "org.freedesktop.Application", "ActivateAction",
-                 GLib.Variant("(sava{sv})", ("close", [], {})), None, Gio.DBusCallFlags.NONE, 800, None, None)
+                 GLib.Variant("(sava{sv})", (action, [], {})), None, Gio.DBusCallFlags.NO_AUTO_START, 800,
+                 None, done)
     except GLib.Error:
-        pass
+        if failed is not None:
+            failed()
 
 
 class DockLine(Gtk.Box):
@@ -2254,6 +2269,17 @@ class Dock(Gtk.Box):
         from .. import appscope
         info = tile.info
         key = tile.key
+        if key == "sonata2-launchpad" and not getattr(tile, "spawn", False):
+            # resident: told over D-Bus (its launcher started a whole Sonata
+            # process, ~0.5 s before Launchpad began to open); not running: launched
+            def spawn():
+                tile.spawn = True
+                try:
+                    self.launch(tile)
+                finally:
+                    tile.spawn = False
+            launchpad_action("toggle", failed=spawn)
+            return
         since = self._starting.get(key)
         if (since is not None and key not in NO_BOUNCE and STUCK_S <= time.monotonic() - since <= STUCK_MAX_S
                 and not self.windows.get(key) and not scope_has_window(appscope.launched.get(info.get_id() or ""))
