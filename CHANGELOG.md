@@ -8,6 +8,8 @@
   tries again instead of leaving them off until the next login.
 - A Wayfire option Sonata adds to a config file that doesn't end with a
   newline goes on its own line instead of being joined to the last one.
+- The on-screen keyboard and the gamepad's pointer can't be left broken by
+  a half-made protocol file in the cache (Sonata stopped while making it).
 - Screenshots: Capture in the toolbar (Print) no longer sometimes does
   nothing -- it began before the toolbar had gone, while it still held the
   keyboard.
