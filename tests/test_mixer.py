@@ -389,8 +389,10 @@ class VolumeMixerAlignedWithSoundSlidersTest(unittest.TestCase):
         x, w = self.bounds(row.output, pop)
         sx, sw = self.bounds(main, pop)
         rx, _rw = self.bounds(row.slider, pop)
-        self.assertEqual(rx, sx)                          # the sliders start together
-        self.assertEqual(x + w, sx + sw)                  # the button ends where the main slider ends
+        self.assertEqual((rx, _rw), (sx, sw))             # the sliders line up
+        main_btn = main.get_parent().get_next_sibling()   # the main slider's output button, as in Control Center
+        self.assertTrue(main_btn.has_css_class("cc-round"))
+        self.assertEqual(self.bounds(row.output, pop), self.bounds(main_btn, pop))
         pop.popdown()
 
 
