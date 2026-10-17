@@ -38,6 +38,16 @@ class _NoManager:
     toplevels = []
 
 
+def _windows(*app_ids):
+    """A window manager with these windows open, none in front -- what
+    _active_changed() reads (the menu bar redraws its icons only when the
+    front app or the number of windows changed: a browser's title alone
+    changes many times a second)."""
+    import types
+    return types.SimpleNamespace(available=True, listeners=[], toplevels=[
+        types.SimpleNamespace(app_id=a, title=a, activated=False) for a in app_ids])
+
+
 def _image(btn):
     c = btn.get_child().get_first_child()
     while not isinstance(c, Gtk.Image):
@@ -110,10 +120,14 @@ class ControlCenterIconTest(unittest.TestCase):
         win.set_child(bar)
         win.present()
         settle(300)
+        bar.manager = _windows("google-chrome", "files")
+        bar._active_changed()
+        settle(400)
         img = _image(bar.cc)
         changes = []
         img.connect("notify::storage-type", lambda i, _p: changes.append(1))
-        bar._active_changed()                                # focus moved: an app window closed
+        bar.manager.toplevels.pop(0)                         # Chrome closed (only a title change redraws nothing)
+        bar._active_changed()
         bar._active_changed()                                # (a burst: one redraw)
         settle(400)
         self.assertTrue(changes, "looked up again")
@@ -168,7 +182,12 @@ class ControlCenterIconTest(unittest.TestCase):
         draws = []
         orig_draw = glyph.queue_draw
         glyph.queue_draw = lambda: (draws.append(1), orig_draw())[1]
-        bar._active_changed()                                # an app window closed
+        bar.manager = _windows("google-chrome")
+        bar._active_changed()
+        settle(400)
+        draws.clear()
+        bar.manager.toplevels.pop()                          # an app window closed
+        bar._active_changed()
         settle(400)
         self.assertTrue(draws)                               # drawn anew...
         self.assertEqual(loads, [])                          # ...without making the picture again (frequent)
