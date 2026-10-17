@@ -789,6 +789,7 @@ class DBusMenu:
         model = ui.menu._build(self.sections(lay), group)
         pop.insert_action_group("m", group)              # on the menu, like ui.menu (not left on the anchor)
         pop.set_menu_model(model)
+        ui.menu._cap_labels(pop)                         # the new rows' long text ends in "…" too
 
 
 def _empty_submenus(node):

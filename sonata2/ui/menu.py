@@ -16,7 +16,7 @@ from typing import Callable, Optional
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from . import theme  # noqa: E402
 from ..i18n import _  # noqa: E402
@@ -88,6 +88,11 @@ popover.menu .sonata-menu-x:hover { opacity: 1; background: alpha(currentColor, 
 OPEN = set()
 on_closed = []
 SHOWN_WITHIN_MS = 400
+# A row's text is at most this many characters wide (~320 px at 13 px), then
+# ends in "…" (Vini: a Chrome window titled with a whole YouTube video name
+# made the Window menu 830 px wide; macOS cuts long titles too). Short rows
+# keep their own width.
+LABEL_CHARS = 40
 
 
 def watch_shown(pop) -> None:
@@ -148,7 +153,7 @@ def _closable_row(pop, item) -> Gtk.Widget:
     """A menu row with a small x on the right: the label does the item's
     action (and closes the menu); the x runs on_close and removes the row."""
     row = Gtk.Box(css_classes=["sonata-menu-row"], hexpand=True)
-    main = Gtk.Button(child=Gtk.Label(label=item.label, xalign=0, ellipsize=3, max_width_chars=40),
+    main = Gtk.Button(child=Gtk.Label(label=item.label, xalign=0, ellipsize=3, max_width_chars=LABEL_CHARS),
                       css_classes=["sonata-menu-row-label"], hexpand=True, can_focus=False)
     main.set_sensitive(item.enabled)
     _one_click(main, lambda: (pop.popdown(), item.on_activate and item.on_activate()))
@@ -226,6 +231,7 @@ def popup(widget: Gtk.Widget, sections, position=Gtk.PositionType.TOP,
     _no_scroll(pop)
     _hover_only(pop)
     pop.connect("map", _checks_after_text)
+    _cap_labels(pop)
     pop.set_autohide(autohide)
     pop.popup()
     watch_shown(pop)
@@ -272,6 +278,25 @@ def _checks_after_text(pop) -> None:
         ind.connect("state-flags-changed", sync)
         btn.connect("destroy", lambda *_a: img.get_parent() is not None and img.unparent())
     walk(pop)
+
+
+def _cap_labels(w) -> None:
+    """A long row ends in "…" at LABEL_CHARS and hovering it shows the whole
+    text. GTK makes the rows' labels itself (nested submenus' too, already
+    there under the row that opens them), so they are capped here, before
+    the menu first shows at its full width."""
+    w = w.get_first_child()
+    while w is not None:
+        if (isinstance(w, Gtk.Label) and w.get_parent().get_css_name() == "modelbutton"
+                and not w.has_css_class("accelerator") and w.get_ellipsize() == Pango.EllipsizeMode.NONE):
+            w.set_ellipsize(Pango.EllipsizeMode.END)
+            w.set_max_width_chars(LABEL_CHARS)
+            # only a cut row gets a tooltip: a short one would repeat itself
+            w.set_has_tooltip(True)
+            w.connect("query-tooltip", lambda lbl, _x, _y, _k, tip: lbl.get_layout().is_ellipsized()
+                      and (tip.set_text(lbl.get_label()), True)[1])
+        _cap_labels(w)
+        w = w.get_next_sibling()
 
 
 def _pass_clicks(pop, root) -> None:
