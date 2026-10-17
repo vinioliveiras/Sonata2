@@ -19,6 +19,9 @@
 - Mission Control: a window follows the pointer as soon as you drag it --
   it stayed in its place until pulled about 200 px (Sonata's Wayfire:
   wayfire-scale-sonata-events.patch).
+- Menus: a very long item (a window's title in the menu bar's Window menu,
+  a recent file, a tray app's entry) ends in "…" instead of making the whole
+  menu as wide as its text; hovering it shows the full text.
 
 ## 0.19.0-alpha -- 2026-10-16
 

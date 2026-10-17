@@ -64,7 +64,7 @@ class SteamMenuLoopTest(unittest.TestCase):
     def menu(self):
         m = tray.DBusMenu.__new__(tray.DBusMenu)
         m.steam, m.labels, m.calls, m.replies = True, {}, [], []
-        m.pop = mock.Mock(get_visible=lambda: True)
+        m.pop = mock.Mock(get_visible=lambda: True, get_first_child=lambda: None)   # (no rows to walk)
 
         def call(method, args, rtype=None, cb=None):
             m.calls.append((method, args.unpack()[:2]))
