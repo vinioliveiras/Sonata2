@@ -25,6 +25,29 @@ class VersionTest(unittest.TestCase):
         self.assertFalse(S.newer("v0.1.0-alpha", "0.1.0-alpha"))
         self.assertFalse(S.newer("v0.0.9", "0.1.0-alpha"))
 
+    def test_code_version_is_the_published_tags(self):
+        """The self-updater compares the release's tag with __version__: a
+        release published as v0.19.1-alpha while the code said 0.20.0-alpha
+        (and CHANGELOG.md with it) left the two apart. Every release tag has
+        its CHANGELOG entry, the newest entry is __version__, and no tag is
+        newer than the code."""
+        import re
+        import shutil
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if not shutil.which("git") or not os.path.exists(os.path.join(root, ".git")):
+            self.skipTest("not a clone")
+        r = subprocess.run(["git", "-C", root, "tag", "--list", "v*"], capture_output=True, text=True)
+        tags = r.stdout.split()
+        if r.returncode != 0 or not tags:
+            self.skipTest("no release tags here")
+        with open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8") as f:
+            released = re.findall(r"(?m)^## (\S+) -- ", f.read())
+        self.assertEqual(released[0], S.__version__)
+        for tag in tags:
+            self.assertIn(tag[1:], released, tag)
+        self.assertFalse(S.newer(max(tags, key=S.parse_version)))
+
     def test_pick(self):
         rels = [{"tag_name": "v0.1.0-alpha", "html_url": "u1"}, {"tag_name": "v0.3.0", "draft": True},
                 {"tag_name": "v0.2.0-beta", "name": "Beta", "body": "notes", "html_url": "u2"}, "junk", {}]
