@@ -40,7 +40,7 @@ class EveryDisplayTest(unittest.TestCase):
 
     def test_show_center_sets_the_monitor_once(self):
         ls = mock.Mock()
-        center = mock.Mock(spec=["monitor", "_built_for", "_state_key", "_rebuild", "present", "rev"])
+        center = mock.Mock(spec=["monitor", "_built_for", "_state_key", "_rebuild", "_refresh_times", "present", "rev"])
         center.monitor = None
         center._built_for = center._state_key.return_value = "k"
         with mock.patch.object(N.layer, "layer_shell", return_value=ls), \

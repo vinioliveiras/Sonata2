@@ -13,6 +13,11 @@
 - A web app's notifications on Chrome are told apart by the browser
   process that sends them, not only by the site in their text (Chrome
   rewrites its command line, so its profile wasn't found).
+- Notification Center opens smoothly again with notifications in it: a new
+  notification adds only its own card instead of rebuilding every card and
+  the calendar, which the next opening then had to lay out again (~0.25 s
+  with 100 notifications, now ~10 ms). Each card's time ("5m ago") is now
+  current when it opens.
 - Video wallpaper: changing it several times no longer slows the desktop
   down. Each video let go of is freed once paused, and the memory goes back
   to the system: a player freed while GStreamer was still busy with it was
