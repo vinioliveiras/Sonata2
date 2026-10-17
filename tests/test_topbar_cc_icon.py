@@ -11,6 +11,7 @@ always gets its icon drawn anew when its panel closes.
 xvfb-run -a python3 -m unittest tests.test_topbar_cc_icon"""
 import os
 import tempfile
+import types
 import unittest
 
 os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp()
@@ -113,7 +114,11 @@ class ControlCenterIconTest(unittest.TestCase):
         img = _image(bar.cc)
         changes = []
         img.connect("notify::storage-type", lambda i, _p: changes.append(1))
-        bar._active_changed()                                # focus moved: an app window closed
+        chrome = types.SimpleNamespace(app_id="google-chrome", activated=True)
+        bar.manager = types.SimpleNamespace(toplevels=[chrome], listeners=[])
+        bar._active_changed()
+        bar.manager.toplevels = []                           # Chrome's window closed
+        bar._active_changed()
         bar._active_changed()                                # (a burst: one redraw)
         settle(400)
         self.assertTrue(changes, "looked up again")
@@ -148,6 +153,30 @@ class ControlCenterIconTest(unittest.TestCase):
         bar.stop()
         win.destroy()
 
+    def test_closing_the_sound_menu_redraws_control_centers_icon(self):
+        """Vini: clicking Sound and closing it turned the Control Center icon
+        from light to dark. The focus goes back to the same app -- no window
+        came or went -- so only Sound's own icon was looked up again; every
+        item is now, once its panel closes."""
+        win = Gtk.Window()
+        bar = topbar.Bar(None)
+        win.set_child(bar)
+        win.present()
+        settle(300)
+        img = _image(bar.cc)
+        changes = []
+        img.connect("notify::storage-type", lambda i, _p: changes.append(1))
+        pop = Gtk.Popover()
+        pop.set_parent(bar.sound)
+        bar._open(bar.sound, lambda _b: pop)
+        pop.emit("closed")
+        settle(400)
+        self.assertTrue(changes, "Control Center's icon looked up again")
+        self.assertEqual(img.get_icon_name(), "sonata-control-center-symbolic")
+        pop.unparent()
+        bar.stop()
+        win.destroy()
+
     def test_logo_drawn_anew(self):
         """Vini: the Sonata menu's logo (top left) went blank. It is made
         again with the other icons: an app window gone, its menu closed,
@@ -168,7 +197,10 @@ class ControlCenterIconTest(unittest.TestCase):
         draws = []
         orig_draw = glyph.queue_draw
         glyph.queue_draw = lambda: (draws.append(1), orig_draw())[1]
-        bar._active_changed()                                # an app window closed
+        bar.manager = types.SimpleNamespace(toplevels=[types.SimpleNamespace(app_id="x", activated=True)], listeners=[])
+        bar._active_changed()
+        bar.manager.toplevels = []                           # an app window closed
+        bar._active_changed()
         settle(400)
         self.assertTrue(draws)                               # drawn anew...
         self.assertEqual(loads, [])                          # ...without making the picture again (frequent)

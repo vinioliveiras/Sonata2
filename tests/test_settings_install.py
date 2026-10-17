@@ -189,7 +189,7 @@ class PagesTest(unittest.TestCase):
         from sonata2.backend import security, screenshare
         s = self.settings()
         with mock.patch("shutil.which", return_value=None), \
-                mock.patch("sonata2.files.packages.family", return_value="arch"):
+                mock.patch("sonata2.backend.system.package_family", return_value="arch"):
             cmds = [r.command for r in self.rows(s._night_shift_group())]
             self.assertEqual(cmds, ["sudo pacman -S --needed wlsunset"])
             with mock.patch.object(security, "firewall", return_value={"kind": None, "on": False}):
@@ -201,7 +201,7 @@ class PagesTest(unittest.TestCase):
     def test_usb_set_up(self):
         s = self.settings()
         with mock.patch.object(U, "status", return_value="off"), \
-                mock.patch("sonata2.files.packages.family", return_value="arch"), \
+                mock.patch("sonata2.backend.system.package_family", return_value="arch"), \
                 mock.patch.object(system, "run_async", side_effect=lambda fn, cb, *a: cb(fn(*a))):
             g = s._usb_group({})
         rows = self.rows(g)
@@ -214,7 +214,7 @@ class PagesTest(unittest.TestCase):
         """Vini: a warning before it runs -- USBGuard alone blocks the keyboard too."""
         s = self.settings()
         with mock.patch.object(U, "status", return_value="missing"), \
-                mock.patch("sonata2.files.packages.family", return_value="arch"), \
+                mock.patch("sonata2.backend.system.package_family", return_value="arch"), \
                 mock.patch.object(system, "run_async", side_effect=lambda fn, cb, *a: cb(fn(*a))):
             g = s._usb_group({})
         win = Gtk.Window()
@@ -344,7 +344,7 @@ class PrintingTest(PagesTest):
         s = self.settings()
         with mock.patch.object(system, "printers", return_value=printers), \
                 mock.patch.object(system, "cups_running", return_value=running), \
-                mock.patch("sonata2.files.packages.family", return_value="arch"), \
+                mock.patch("sonata2.backend.system.package_family", return_value="arch"), \
                 mock.patch.object(system, "run_async", side_effect=lambda fn, cb, *a: cb(fn(*a))):
             return s._page_printers()
 

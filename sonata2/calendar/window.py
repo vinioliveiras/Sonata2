@@ -292,7 +292,7 @@ class CalendarWindow(Gtk.ApplicationWindow):
         self.results = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
         self.results.connect("row-activated", self._result_activated)
         self.results.set_activate_on_single_click(True)
-        self.results.set_placeholder(Gtk.Label(label="No Results", css_classes=["cal-empty"]))
+        self.results.set_placeholder(Gtk.Label(label=_("No Results"), css_classes=["cal-empty"]))
         box.append(Gtk.ScrolledWindow(child=self.results, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER))
         return box
 

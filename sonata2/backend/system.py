@@ -191,6 +191,35 @@ def wifi_scan(rescan: bool = False) -> List[WifiNetwork]:
 
 
 NM = ("org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager", "org.freedesktop.NetworkManager")
+# what the menu bar's Wi-Fi icon shows: the radio, devices and connections, the signal
+_NM_IFACES = ("org.freedesktop.NetworkManager", "org.freedesktop.NetworkManager.Device",
+              "org.freedesktop.NetworkManager.Device.Wireless", "org.freedesktop.NetworkManager.AccessPoint")
+
+
+def system_service(name: str) -> bool:
+    """`name` is on the system bus now (NetworkManager, UPower...)."""
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        return bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameHasOwner",
+                             GLib.Variant("(s)", (name,)), GLib.VariantType.new("(b)"),
+                             Gio.DBusCallFlags.NONE, 1000, None).unpack()[0]
+    except GLib.Error:
+        return False
+
+
+def watch_network(callback):
+    """callback() on the GTK main loop whenever NetworkManager reports a
+    change the Wi-Fi icon shows (radio, devices, connections, signal).
+    Returns a cancel function, None without NetworkManager (keep polling).
+    Only these interfaces' changes reach this process (the bus filters)."""
+    if not system_service(NM[0]):
+        return None
+    bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+    subs = [bus.signal_subscribe(NM[0], "org.freedesktop.DBus.Properties", "PropertiesChanged", None, iface,
+                                 Gio.DBusSignalFlags.NONE, lambda *_a: callback()) for iface in _NM_IFACES]
+    subs.append(bus.signal_subscribe(NM[0], NM[2], "StateChanged", NM[1], None, Gio.DBusSignalFlags.NONE,
+                                     lambda *_a: callback()))
+    return lambda: [bus.signal_unsubscribe(s) for s in subs]
 
 
 def wifi_connect(ssid: str, password: str = "") -> Tuple[bool, str]:
@@ -374,12 +403,33 @@ TERMINALS = (("kgx", ["--"]), ("gnome-terminal", ["--"]), ("konsole", ["-e"]), (
 INSTALLERS = {"arch": "sudo pacman -S --needed", "debian": "sudo apt install", "rpm": "sudo dnf install"}
 
 
+def package_family() -> str:
+    """This system's native package family: arch, debian, rpm (or "")."""
+    osr = {}
+    try:
+        with open("/etc/os-release") as f:
+            osr = {k: v.strip().strip('"') for k, v in (ln.split("=", 1) for ln in f if "=" in ln)}
+    except OSError:
+        pass
+    ids = f"{osr.get('ID', '')} {osr.get('ID_LIKE', '')}".lower().split()
+    for fam, names in (("arch", {"arch", "archlinux", "cachyos", "manjaro", "endeavouros"}),
+                       ("debian", {"debian", "ubuntu"}),
+                       ("rpm", {"fedora", "rhel", "centos", "suse", "opensuse", "opensuse-tumbleweed"})):
+        if names & set(ids):
+            return fam
+    for fam, tool in (("arch", "pacman"), ("debian", "apt"), ("rpm", "dnf"), ("rpm", "zypper")):
+        if shutil.which(tool):
+            return fam
+    return ""
+
+
 def install_command(packages, family: str = None):
     """The command that installs `packages` (a name, or {family: names}) on
-    this system, None when its package manager is unknown."""
+    this system, None when its package manager is unknown. (The family is
+    read here: Files' packages module -- tarfile, zipfile, Files' UI -- was
+    imported for it by every Settings page offering an install, ~36 ms.)"""
     if family is None:
-        from ..files.packages import family as fam
-        family = fam()
+        family = package_family()
     names = packages.get(family) if isinstance(packages, dict) else packages
     pm = INSTALLERS.get(family)
     return f"{pm} {names}" if pm and names else None

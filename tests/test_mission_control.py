@@ -235,5 +235,40 @@ class PluginTest(unittest.TestCase):
         self.assertNotIn("glBlitFramebuffer", body)
 
 
+class AltTabInMissionControlTest(unittest.TestCase):
+    """Vini: in Mission Control, Alt+Tab should pick a window. Scale holds
+    the keyboard and Alt+Tab's binding reaches Sonata's app switcher first,
+    whose list opened hidden under it (it chose a window unseen)."""
+
+    def test_patch_cycles_and_alt_let_go_of_picks(self):
+        patch = read("wayfire-plugin", "wayfire-scale-tab.patch")
+        self.assertIn('ipc_repo->register_method("sonata/scale-cycle", sonata_cycle);', patch)
+        self.assertIn('ipc_repo->unregister_method("sonata/scale-cycle");', patch)
+        self.assertIn("void cycle(bool back)", patch)
+        self.assertIn("(ev.keycode == KEY_LEFTALT) || (ev.keycode == KEY_RIGHTALT)", patch)
+        self.assertIn("select_view(view);", patch)
+        self.assertIn('return wf::ipc::json_error("Mission Control is not open");', patch)
+
+    def test_switcher_steps_mission_control_when_open(self):
+        from sonata2 import __main__ as M
+        from sonata2.wl import wfipc
+        calls = []
+
+        def fake(answer):
+            return types.SimpleNamespace(call=lambda m, d=None: (calls.append((m, d)), answer)[1])
+        with mock.patch.object(wfipc, "WayfireIPC", return_value=fake({"result": "ok"})):
+            self.assertTrue(M.mission_control_step(False))
+            self.assertTrue(M.mission_control_step(True))
+        self.assertEqual(calls, [("sonata/scale-cycle", {"back": False}), ("sonata/scale-cycle", {"back": True})])
+        for answer in ({"error": "Mission Control is not open"}, None):     # closed / an older Wayfire
+            with mock.patch.object(wfipc, "WayfireIPC", return_value=fake(answer)):
+                self.assertFalse(M.mission_control_step(False))
+
+    def test_the_switcher_action_asks_first(self):
+        src = read("sonata2", "__main__.py")
+        body = src[src.index("    def switch(_a, param):"):src.index('act = Gio.SimpleAction.new("switcher"')]
+        self.assertLess(body.index("mission_control_step("), body.index("Switcher(app"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -27,12 +27,25 @@ def _click(win, at):
         click.emit("pressed", 1, 5, 5)
 
 
+_APPS = {}
+
+
+def _app(app_id):
+    """One registered app per id for the whole module: a second one on the
+    same bus was refused ("an object is already exported"), and every test
+    after the first errored."""
+    if app_id not in _APPS:
+        app = Gtk.Application(application_id=app_id)
+        app.register(None)
+        _APPS[app_id] = app
+    return _APPS[app_id]
+
+
 class EmojiPickerCloseTest(unittest.TestCase):
     def setUp(self):
         if not Gtk.init_check():
             self.skipTest("no display")
-        self.app = Gtk.Application(application_id="io.github.test.emoji")
-        self.app.register(None)
+        self.app = _app("io.github.test.emoji")
         with mock.patch.object(layer, "overlay_fullscreen", return_value=True):   # (a layer surface)
             self.win = E.EmojiPicker(self.app)
         self.win.set_visible(True)
@@ -87,8 +100,7 @@ class ClipboardPickerTest(unittest.TestCase):
     def setUp(self):
         if not Gtk.init_check():
             self.skipTest("no display")
-        self.app = Gtk.Application(application_id="io.github.test.clip")
-        self.app.register(None)
+        self.app = _app("io.github.test.clip")
         history = mock.Mock(items=[], listeners=[])
         with mock.patch.object(layer, "overlay_fullscreen", return_value=True):
             self.win = clip_picker.ClipboardPicker(self.app, history)

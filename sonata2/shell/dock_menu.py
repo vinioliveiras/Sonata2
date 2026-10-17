@@ -312,6 +312,38 @@ def divider_menu(dock, divider):
     ], position=dock.away)
 
 
+def area_menu(dock, window, at):
+    """Right-click on the Dock's own space -- the strip under it, its plate
+    between the icons (Vini: like Windows' taskbar): Task Manager, Show
+    Desktop, the Dock's options and its preferences."""
+    Item = ui.menu.Item
+    cfg = dock.cfg
+    from .. import __main__ as M
+
+    def run(*args):
+        GLib.spawn_async(M.self_argv() + list(args), flags=GLib.SpawnFlags.SEARCH_PATH)
+
+    def show_desktop():
+        from .dock import toggle_show_desktop
+        manager = getattr(window, "manager", None)
+        if manager is not None:
+            toggle_show_desktop(manager)
+
+    def preferences():
+        from .topbar import open_settings
+        open_settings("dock")
+    return ui.menu.popup(dock, [
+        [Item(_("Task Manager"), lambda: run("activity")),
+         Item(_("Show Desktop"), show_desktop)],
+        [Item(_("Turn Hiding Off") if cfg["autohide"] else _("Turn Hiding On"),
+              lambda: dock.set_option("autohide", not cfg["autohide"])),
+         Item(_("Position on Screen"), submenu=[[
+             Item(_(label), lambda on, e=e: on and dock.set_option("position", e), checked=cfg["position"] == e)
+             for e, label in (("left", N_("Left")), ("bottom", N_("Bottom")), ("right", N_("Right")))]])],
+        [Item(_("Dock Preferences…"), preferences)],
+    ], position=dock.away, at=at)
+
+
 def _open_folder(uri: str) -> None:
     from ..files import open_folder
     open_folder(uri)                      # always Sonata's Files

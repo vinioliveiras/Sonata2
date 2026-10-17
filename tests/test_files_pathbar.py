@@ -105,6 +105,27 @@ class AddressTest(unittest.TestCase):
         self.assertIsNone(bar.entry)
         self.assertIs(bar.stack.get_visible_child(), bar.box)  # the folders are back
 
+    def test_address_field_focus_ring_not_cut_off(self):
+        """Vini: the address field's focus ring was cut off at every edge --
+        the bar is 24 px high and scrolls sideways, and the 3 px ring was
+        drawn around the field. In the path bar it is drawn inside it."""
+        import re
+        from sonata2.ui import theme
+        bar = P.PathBar(lambda u: None)
+        bar.edit("/tmp", lambda v: None)
+        entry = bar.entry
+        self.assertTrue(entry.has_css_class("sonata-field"))
+        up = entry.get_parent()
+        while up is not None and not up.has_css_class("fs-pathbar"):
+            up = up.get_parent()
+        self.assertIsNotNone(up)                                 # the rule below reaches it
+        css = theme._templates["files-pathbar"][0]
+        rule = re.search(r"\.fs-pathbar entry\.sonata-field:focus-within\s*\{([^}]*)\}", css)
+        self.assertIsNotNone(rule)                               # (more specific than every field's ring)
+        shadow = re.search(r"box-shadow:([^;]*);", rule.group(1)).group(1)
+        rings = [s.strip() for s in re.split(r",(?![^(]*\))", shadow)]
+        self.assertTrue(rings and all(r.startswith("inset") for r in rings), rings)
+
     def test_hidden_files_wiring(self):
         from sonata2.files import window
         self.assertFalse(window.DEFAULTS["show_hidden"])         # hidden by default (Vini)

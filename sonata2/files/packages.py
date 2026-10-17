@@ -47,24 +47,7 @@ def kind(path: str):
     return None
 
 
-def family() -> str:
-    """This system's native package family: arch, debian, rpm (or "")."""
-    osr = {}
-    try:
-        with open("/etc/os-release") as f:
-            osr = {k: v.strip().strip('"') for k, v in (ln.split("=", 1) for ln in f if "=" in ln)}
-    except OSError:
-        pass
-    ids = f"{osr.get('ID', '')} {osr.get('ID_LIKE', '')}".lower().split()
-    for fam, names in (("arch", {"arch", "archlinux", "cachyos", "manjaro", "endeavouros"}),
-                       ("debian", {"debian", "ubuntu"}),
-                       ("rpm", {"fedora", "rhel", "centos", "suse", "opensuse", "opensuse-tumbleweed"})):
-        if names & set(ids):
-            return fam
-    for fam, tool in (("arch", "pacman"), ("debian", "apt"), ("rpm", "dnf"), ("rpm", "zypper")):
-        if shutil.which(tool):
-            return fam
-    return ""
+family = system.package_family     # (here too: this module's callers and tests)
 
 
 def _root() -> str:

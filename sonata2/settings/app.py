@@ -342,6 +342,7 @@ def loading_row(title: str) -> Adw.ActionRow:
 
 
 INSTALL_POLL_S = 2
+WALL_PREVIEW_PX = 1280          # Displays' wallpaper preview: decoded at most this wide/tall (180 px high, HiDPI)
 INSTALL_WAIT_S = 15 * 60
 
 
@@ -1493,7 +1494,19 @@ class Settings(Adw.ApplicationWindow):
                     return False
                 system.run_async(videowall.poster, shown_poster, path)
             else:
-                alive["pic"].set_file(f if path else None)
+                # decoded in a thread, at the preview's size: a 4K picture took
+                # ~160 ms of the page's opening and kept ~40 MB for a 180 px view
+                # (the one shown stays until the new one is ready: no blank flash)
+                alive["load"] = load = alive.get("load", 0) + 1
+
+                def loaded(pb):
+                    if alive and alive.get("load") == load:
+                        alive["pic"].set_paintable(Gdk.Texture.new_for_pixbuf(pb) if pb is not None else None)
+                if path:
+                    from .. import imageload
+                    system.run_async(imageload.pixbuf_at_scale, loaded, path, WALL_PREVIEW_PX)
+                else:
+                    alive["pic"].set_paintable(None)
             cur = W.current(light, dark)
             for wid, b in alive["tiles"].items():
                 (b.add_css_class if wid == cur else b.remove_css_class)("selected")
@@ -1766,7 +1779,7 @@ class Settings(Adw.ApplicationWindow):
 
     # -- system --------------------------------------------------------------------------------
     def _page_datetime(self):
-        from ..shell import topbar as T
+        from ..shell import topbar_prefs as T
         auto = group()
         clock = group(_("Clock"))
         zone = group(_("Time Zone"))
@@ -2462,7 +2475,7 @@ class Settings(Adw.ApplicationWindow):
     def _usb_group(self, sec):
         """GNOME's USB protection: devices plugged in while locked are blocked (USBGuard)."""
         from ..backend import usbprotect
-        from ..files.packages import family
+        family = system.package_family
         grp = group("USB")
         row = switch_row(_("Block new USB devices while locked"), False,
                          lambda on: self._save("security", "usb_protection", on), subtitle=_("Checking USBGuard…"))
@@ -3234,7 +3247,7 @@ class Settings(Adw.ApplicationWindow):
         system.run_async(lambda: subprocess.run(self_argv() + ["restart", "topbar"], check=False))
 
     def _page_menubar(self):
-        from ..shell import topbar as T
+        from ..shell import topbar_prefs as T
         cfg = config.load("topbar", T.DEFAULTS)
         g = group(_("Menu Bar"))
         g.add(switch_row(_("Automatically hide and show the menu bar"), cfg.get("autohide", False),
@@ -3359,7 +3372,7 @@ class Settings(Adw.ApplicationWindow):
                                self.reset_menubar)
 
     def reset_menubar(self) -> None:
-        from ..shell import topbar as T
+        from ..shell import topbar_prefs as T
         for k, v in T.DEFAULTS.items():
             self._save("topbar", k, v)
         for k in ("menu_logo", "menu_text"):

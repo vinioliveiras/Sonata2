@@ -104,7 +104,7 @@ class Tab:
         self.win = win
         self.history, self.pos = [], -1
         self.folder = folder.Folder(lambda u: win._tab_loaded(self, u), lambda u, e: win._tab_failed(self, u, e),
-                                    lambda u: self.loading(True))
+                                    lambda u: (self.hide_others(), self.loading(True)))
         self.folder.show_hidden = win.show_hidden
         self.name = ""                           # what the tab shows (columns: the deepest folder)
         self.button = None                       # its tab in the strip
@@ -134,8 +134,22 @@ class Tab:
         self.loading_box.append(Gtk.Label(label=_("Loading…")))
         self.widget.add_overlay(self.loading_box)
         self._loading_src = 0
+        self.show(view_id)
+
+    def show(self, view_id) -> None:
+        """That view in front, with the folder's items."""
         self.view = self.views.get(view_id) or self.views["icons"]
+        self.view.show_items(True)
         self.stack.set_visible_child_name(self.view_id)
+
+    def hide_others(self) -> None:
+        """A new folder (or search) coming: the views not shown let go of the
+        items -- each made, sorted and filled cells for all of them (5,000
+        files: ~2,500 cells). The one shown next takes them then, as after a
+        load: nothing selected, at the top."""
+        for v in self.views.values():
+            if v is not self.view:
+                v.show_items(False)
 
     @property
     def uri(self) -> str:
@@ -441,6 +455,7 @@ class FilesWindow(Adw.ApplicationWindow):
             if self.view is self.views["columns"]:
                 self._view_before_search = "columns"
                 self.set_view("list", save=False)
+            self.tab.hide_others()
             self.filtered.set_model(self.results)
             self._refilter()
         self.search_status.set_label(_("Searching…"))
@@ -518,8 +533,7 @@ class FilesWindow(Adw.ApplicationWindow):
     def set_view(self, vid, save=True):
         if vid not in self.views:
             vid = "icons"
-        self.view = self.views[vid]
-        self.stack.set_visible_child_name(vid)
+        self.tab.show(vid)
         self._sync_view_buttons()
         if vid == "columns" and self.pos >= 0:
             self.views["columns"].reset(self.history[self.pos])
@@ -542,8 +556,7 @@ class FilesWindow(Adw.ApplicationWindow):
             if tab is self.tab:
                 self.set_view(vid, save=False)
             else:
-                tab.view = tab.views[vid]
-                tab.stack.set_visible_child_name(vid)
+                tab.show(vid)
         for vid in ("list", "icons"):
             tab.views[vid].set_sort(*p.get("sort", folderprefs.DEFAULT_SORT))
 

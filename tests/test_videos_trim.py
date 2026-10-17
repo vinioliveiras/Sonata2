@@ -2,6 +2,7 @@
 Trim). A filmstrip with a yellow frame, the part kept saved as a new file
 beside the original, which is never touched."""
 import os
+import sys
 import shutil
 import subprocess
 import tempfile
@@ -22,6 +23,7 @@ from sonata2 import ui  # noqa: E402
 from sonata2.videos import edit as E  # noqa: E402
 from sonata2.videos import window as vw  # noqa: E402
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # (its sibling: run as tests.<module> too)
 from test_videos import fake, settle  # noqa: E402
 
 

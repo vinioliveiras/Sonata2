@@ -47,6 +47,11 @@ def entries() -> list:
             except TypeError:
                 info = None
             if info:
+                # made from the file's contents, it has no desktop id: the
+                # entry's name stands in for it, so a login item gets the
+                # environment its app gets from the Dock (Steam: frame-pacer's
+                # FPS limit and the GPU; gpu.app_key)
+                info.sonata_desktop_id = name
                 out.append((name, info))
     return out
 

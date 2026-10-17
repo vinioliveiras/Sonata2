@@ -911,10 +911,17 @@ class PolkitAgentTest(unittest.TestCase):
         self.assertEqual(PK._identity("unix-user", {"uid": 1000}).get_uid(), 1000)
 
 
+_APPS = {}
+
+
 def _app(name):
-    app = Adw.Application(application_id=f"io.github.vinioliveiras.sonata2.test.{name}")
-    app.register(None)
-    return app
+    """One registered app per name: a second one on the same bus was refused
+    ("an object is already exported") and the tests after the first errored."""
+    if name not in _APPS:
+        app = Adw.Application(application_id=f"io.github.vinioliveiras.sonata2.test.{name}")
+        app.register(None)
+        _APPS[name] = app
+    return _APPS[name]
 
 
 def settle(ms=150):

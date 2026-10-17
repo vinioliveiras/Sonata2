@@ -1,6 +1,7 @@
 """Videos: time format, remembered positions, window with a fake stream and
 with no media backend (xvfb-run python3 -m unittest tests.test_videos)."""
 import os
+import sys
 import tempfile
 import unittest
 
@@ -227,6 +228,7 @@ class SongTest(unittest.TestCase):
 
     def test_song_window(self):
         import shutil
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from test_audiotags import make_mp3
         d = tempfile.mkdtemp()
         path = os.path.join(d, "song.mp3")

@@ -234,6 +234,17 @@ class DockTest(unittest.TestCase):
         self.notes(1)
         self.assertEqual(self.tile.icon.badge, "1")
 
+    def test_badges_drawn_anew_once_dark_mode_settles(self):
+        """Vini: after a Light/Dark switch a Dock count badge sometimes kept
+        its Light Mode look until clicked. Once the switch settles the Dock
+        draws every widget anew -- once, not on every frame of the fade."""
+        self.notes(1)
+        with mock.patch.object(D.ui.theme, "refresh_tree") as again:
+            for _ in range(5):                            # the cross-fade: every frame
+                self.dock._appearance_changed()
+            settle(450)
+        again.assert_called_once_with(self.dock)
+
     def test_badge_pops_in(self):
         settle()
         self.notes(1)

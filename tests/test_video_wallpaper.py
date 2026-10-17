@@ -440,6 +440,88 @@ class ChangedSeveralTimesTest(unittest.TestCase):
                 self.assertTrue(seen["ranks"].startswith(before))
         self.assertEqual(self.VW.silent_ranks("pulsesink:256").count("pulsesink"), 1)   # what was set stays
 
+    def test_changing_the_wallpaper_frees_its_player_once_settled_and_silent(self):
+        """The same two bugs through acquire / release, as the desktop changes
+        the wallpaper: its player made without audio sinks, and not cleared
+        at once when let go (freed while GStreamer still held it, it never
+        was: Vini's freeze after several changes)."""
+        ranks, timers = [], []
+
+        def made(path):
+            ranks.append(os.environ.get("GST_PLUGIN_FEATURE_RANK") or "")
+            return mock.Mock(**{"is_prepared.return_value": False, "get_error.return_value": None})
+
+        old, self.VW.DesktopFocus._one = self.VW.DesktopFocus._one, self.VW.DesktopFocus(FakeIPC())
+        self.addCleanup(setattr, self.VW.DesktopFocus, "_one", old)
+        with mock.patch.object(self.VW.Gtk.MediaFile, "new_for_filename", side_effect=made), \
+                mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)):
+            v = self.VW.acquire("/nowhere/changed-several-times.mp4")
+            media = v.media
+            self.VW.release(v)
+        media.clear.assert_not_called()                                     # not while it may be held
+        self.addCleanup(self.VW._settling.discard, media)
+        self.assertIn("pulsesink:0", ranks[0])
+        self.assertIn(media, self.VW._settling)
+        self.assertTrue(timers)
+
+
+class NarrowFrameTest(unittest.TestCase):
+    """Vini: the video wallpaper left a black band down the right of the
+    screen (only a video, never a picture). GTK's GStreamer picture draws
+    its frame at frame size / video size of what it's asked, from the left:
+    a decoded frame a little narrower than the video (hardware decoders)
+    stopped short of the right edge."""
+
+    def media(self, frame_w, frame_h, video_w=1920, video_h=1080):
+        from gi.repository import Gdk, GObject
+
+        class Frame(GObject.Object, Gdk.Paintable):
+            def do_get_intrinsic_width(self):
+                return frame_w
+
+            def do_get_intrinsic_height(self):
+                return frame_h
+
+        class Video(GObject.Object, Gdk.Paintable):
+            asked = []
+
+            def do_get_intrinsic_width(self):
+                return video_w
+
+            def do_get_intrinsic_height(self):
+                return video_h
+
+            def do_get_intrinsic_aspect_ratio(self):
+                return video_w / video_h
+
+            def do_get_current_image(self):
+                return Frame()
+
+            def do_snapshot(self, snap, w, h):
+                self.asked.append((w, h))
+        return Video()
+
+    def test_a_narrower_frame_still_reaches_the_right_edge(self):
+        from sonata2.shell import videowallpaper as VW
+        v = self.media(1909, 1080)
+        cover = VW.CoverPaintable(v)
+        snap = Gtk.Snapshot()
+        cover.snapshot(snap, 2560, 1440)
+        w, h = v.asked[-1]
+        drawn = w * 1909 / 1920                      # what GTK's picture then draws
+        self.assertAlmostEqual(drawn, 2560, delta=0.5)
+        self.assertAlmostEqual(h, 1440, delta=0.5)
+        cover.release()
+
+    def test_a_whole_or_padded_frame_is_drawn_as_asked(self):
+        from sonata2.shell import videowallpaper as VW
+        for fw, fh in ((1920, 1080), (1920, 1088)):     # (padding: GTK cuts it itself)
+            v = self.media(fw, fh)
+            cover = VW.CoverPaintable(v)
+            cover.snapshot(Gtk.Snapshot(), 2560, 1440)
+            self.assertEqual(tuple(round(x) for x in v.asked[-1]), (2560, 1440), (fw, fh))
+            cover.release()
+
 
 class MenusTest(unittest.TestCase):
     """Vini: set a video as wallpaper from the right-click menu too."""

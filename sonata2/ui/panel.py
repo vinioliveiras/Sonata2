@@ -56,11 +56,14 @@ popover.sonata-panel calendar > grid > label:selected { background: %(accent)s; 
 
 
 def popup(anchor: Gtk.Widget, child: Gtk.Widget, position=Gtk.PositionType.BOTTOM, gap: int = 4,
-          align_start: bool = False, width: int = None, close: bool = False) -> Gtk.Popover:
+          align_start: bool = False, width: int = None, close: bool = False, keep: bool = False) -> Gtk.Popover:
     """width: a fixed content width (menu bar panels): long names ellipsize
     instead of stretching the panel (ui/fixed.py). close: a close dot at its
     top corner, the windows' own (panels that are forms and sheets, like
-    dialogs -- Vini; not the menu bar's or small tool panels)."""
+    dialogs -- Vini; not the menu bar's or small tool panels). keep: not
+    dropped when it closes, to be shown again with reopen() (Control
+    Center: a new panel around the same content cost ~100 ms of GTK work
+    -- styles and sizes of all of it -- before its first frame)."""
     pop = Gtk.Popover(css_classes=["sonata-panel"], has_arrow=False, position=position)
     child = fit_screen(child, anchor)
     if width:
@@ -80,6 +83,25 @@ def popup(anchor: Gtk.Widget, child: Gtk.Widget, position=Gtk.PositionType.BOTTO
     pop.set_parent(anchor)
     if align_start:
         align_to_start(pop, anchor, gap)
+    pop.kept = keep
+    if keep:                                     # with its anchor (GTK wants no child left)
+        anchor.connect("destroy", lambda *_a: pop.get_parent() is not None and pop.unparent())
+    return _show(pop)
+
+
+def reopen(pop: Gtk.Popover) -> Gtk.Popover:
+    """A panel made with keep=True shown again, as a new one would open:
+    its opening animation (CSS plays an animation once: its name alternates)."""
+    if not pop.get_visible():
+        pop.set_css_classes([c for c in pop.get_css_classes() if c != "reopen"] +
+                            ([] if pop.has_css_class("reopen") else ["reopen"]))
+        _show(pop)
+    return pop
+
+
+def _show(pop: Gtk.Popover) -> Gtk.Popover:
+    """Each opening: focus, a click outside closes it, no hover yet."""
+    anchor = pop.get_parent()
 
     # GTK 4: a widget that can't take focus keeps its descendants from taking
     # it too, and a popover is a child of its anchor -- a text field in a panel
@@ -119,6 +141,7 @@ def popup(anchor: Gtk.Widget, child: Gtk.Widget, position=Gtk.PositionType.BOTTO
         pop.press_outside = close_if_outside       # (tests)
 
     def closed(p):
+        p.disconnect(handler)                    # (once: a kept panel opens again)
         if outside is not None and outside.get_widget() is not None:
             outside.get_widget().remove_controller(outside)
         for wid, foc in unlocked:
@@ -126,10 +149,11 @@ def popup(anchor: Gtk.Widget, child: Gtk.Widget, position=Gtk.PositionType.BOTTO
             wid.set_focus_on_click(foc)
         unlocked.clear()
         menu.OPEN.discard(p)
-        GLib.idle_add(lambda: (p.unparent(), False)[1])
+        if not getattr(p, "kept", False):
+            GLib.idle_add(lambda: (p.unparent(), False)[1])
         for cb in list(menu.on_closed):
             cb()
-    pop.connect("closed", closed)
+    handler = pop.connect("closed", closed)
     menu.OPEN.add(pop)
     hold_hover(pop)
     pop.popup()
@@ -165,7 +189,11 @@ def hold_hover(pop: Gtk.Popover, slack: float = 2.0) -> None:
     "fresh" class): a row that only seemed under the pointer as the panel
     opened (or as its rows were filled in) lit up, then went dark."""
     pop.add_css_class("fresh")
+    if getattr(pop, "hover_seen", None) is not None:   # a kept panel shown again
+        pop.hover_seen["at"] = None
+        return
     seen = {"at": None}
+    pop.hover_seen = seen
     motion = Gtk.EventControllerMotion()
 
     def moved(_c, x, y):

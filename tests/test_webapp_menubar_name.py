@@ -17,8 +17,10 @@ WA = "chrome-web.whatsapp.com__-Default"
 
 class NameTest(unittest.TestCase):
     def setUp(self):
-        apps._MISSES.clear()
-        self.addCleanup(apps._MISSES.clear)
+        # (and the matches kept 10 s: one test's answer was the next one's)
+        for cache in (apps._MISSES, apps._HITS):
+            cache.clear()
+            self.addCleanup(cache.clear)
 
     def test_chromium_web_app_found_by_its_window_class(self):
         entry = {"name": "WhatsApp", "url": "https://web.whatsapp.com/", "engine": "chromium"}

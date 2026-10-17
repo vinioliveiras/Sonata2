@@ -220,6 +220,21 @@ class LockWakeTest(unittest.TestCase):
         self.assertTrue(ls._off)                                 # dark at once
         self.assertEqual([on for on, _o in w.calls], [False])
 
+    def test_session_going_dark_leaves_the_mark_the_lock_reads(self):
+        """The same bug from the other side: the lock starts dark only if
+        the session's own darkening (idlelock.darken) leaves its mark, and
+        takes it away when the display comes back."""
+        from sonata2.shell import idlelock
+        w = self.fake_watch()
+        with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": tempfile.mkdtemp()}), \
+                mock.patch.object(LD, "lights"), mock.patch.object(LD, "dim"), \
+                mock.patch.object(LD, "has_backlight", return_value=False), \
+                mock.patch("sonata2.shell.blackout.show"), mock.patch("sonata2.shell.blackout.hide"):
+            idlelock.darken(w, True)
+            self.assertTrue(LD.was_dark())
+            idlelock.darken(w, False)
+            self.assertFalse(LD.was_dark())
+
     def test_dark_marker(self):
         with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": tempfile.mkdtemp()}):
             self.assertFalse(LD.was_dark())

@@ -109,6 +109,17 @@ class SteamMenuLoopTest(unittest.TestCase):
         m.pop.set_menu_model.assert_called_once()
         self.assertEqual(m.labels[103], "Portal 2")
 
+    def test_long_items_in_a_redrawn_tray_menu_end_in_ellipsis(self):
+        """Vini: long menu items widened the menu instead of ending in "…".
+        A tray menu whose rows are swapped while open gets new rows from
+        GTK: they are capped again, like the first ones."""
+        m = self.menu()
+        m.replies = [renumbered(100, "A game with a very long name " * 4)]
+        with mock.patch.object(tray.ui.menu, "_cap_labels") as cap:
+            m._signal(None, None, None, None, "LayoutUpdated")
+            self.flush(m)
+        cap.assert_called_once_with(m.pop)
+
     def test_link_brings_steam_forward(self):
         with mock.patch("shutil.which", return_value="/usr/bin/steam"), \
                 mock.patch("subprocess.Popen"), mock.patch.object(tray, "front_steam") as front:

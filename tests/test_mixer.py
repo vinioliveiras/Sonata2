@@ -393,6 +393,12 @@ class VolumeMixerAlignedWithSoundSlidersTest(unittest.TestCase):
         main_btn = main.get_parent().get_next_sibling()   # the main slider's output button, as in Control Center
         self.assertTrue(main_btn.has_css_class("cc-round"))
         self.assertEqual(self.bounds(row.output, pop), self.bounds(main_btn, pop))
+        # Vini: the list of outputs under the slider made no sense any more
+        # (the slider's button picks the output): gone
+        sections = [w.get_label() for w in walk(pop.get_child()) if isinstance(w, Gtk.Label)
+                    and w.has_css_class("panel-section")]
+        from sonata2.i18n import _
+        self.assertEqual(sections, [_("Applications")])
         pop.popdown()
 
 

@@ -30,6 +30,9 @@ from . import theme  # noqa: E402
 theme.register("""
 @keyframes sonata-open { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
 popover > contents { animation: sonata-open %(t_open)s %(ease_out)s; }
+/* the same, under another name: a panel kept and shown again (panel.reopen) */
+@keyframes sonata-open-again { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+popover.reopen > contents { animation-name: sonata-open-again; }
 """, key="motion-open")
 
 theme.register("""

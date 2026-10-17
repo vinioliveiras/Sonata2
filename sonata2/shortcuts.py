@@ -67,21 +67,33 @@ SHORTCUTS = [
 GROUPS = [N_("Apps and Search"), N_("Windows"), N_("Spaces"), N_("Screenshots"), N_("System")]
 
 
+_parsed = {}         # path -> (mtime, {(section, key): value})
+
+
 def _ini_value(path, section, key):
+    """One value of an ini file, read once while the file doesn't change
+    (Settings > Keyboard asks for 29 of them: the whole file read 29 times)."""
     try:
-        with open(path, encoding="utf-8") as f:
-            cur = None
-            for line in f:
-                s = line.strip()
-                if s.startswith("[") and s.endswith("]"):
-                    cur = s[1:-1]
-                elif cur == section and "=" in s and not s.startswith("#"):
-                    k, v = s.split("=", 1)
-                    if k.strip() == key:
-                        return v.strip()
+        mtime = os.stat(path).st_mtime_ns
     except OSError:
-        pass
-    return None
+        return None
+    kept = _parsed.get(path)
+    if kept is None or kept[0] != mtime:
+        values = {}
+        try:
+            with open(path, encoding="utf-8") as f:
+                cur = None
+                for line in f:
+                    s = line.strip()
+                    if s.startswith("[") and s.endswith("]"):
+                        cur = s[1:-1]
+                    elif cur is not None and "=" in s and not s.startswith("#"):
+                        k, v = s.split("=", 1)
+                        values.setdefault((cur, k.strip()), v.strip())    # (the first one, as before)
+        except OSError:
+            return None
+        kept = _parsed[path] = (mtime, values)
+    return kept[1].get((section, key))
 
 
 def default(s: Shortcut) -> str:

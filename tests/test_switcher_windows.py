@@ -55,6 +55,25 @@ class EntriesTest(unittest.TestCase):
         SW.Switcher._switch(sw)
         sw.manager.activate.assert_called_once_with(self.term)
 
+    def test_opening_shows_an_icon_per_window(self):
+        """What Alt+Tab opens on: Code's two windows, two icons named after
+        them; the terminal's one window, one icon (the app)."""
+        import gi
+        gi.require_version("Gtk", "4.0")
+        from gi.repository import Gtk
+        sw = SW.Switcher.__new__(SW.Switcher)
+        sw.manager = types.SimpleNamespace(toplevels=[self.code2, self.term, self.code1])
+        sw.mru = ["code", "term"]
+        sw.panel = Gtk.Box()
+        sw.present = lambda: None
+        with mock.patch.object(SW.GLib, "timeout_add", return_value=1), \
+                mock.patch.object(SW.apps, "match_app_id", side_effect=lambda a: a):
+            SW.Switcher._open(sw)
+        self.assertEqual(sw.keys, ["code", "code", "term"])
+        self.assertEqual(sw.wins, [self.code1, self.code2, None])
+        self.assertEqual([b.name for b in sw.items[:2]], ["a.py", "b.py"])      # which window
+        self.assertEqual(len(sw.items), 3)
+
     def test_only_one_app_with_two_windows(self):
         sw = self.sw()
         sw.groups = {"code": [self.code1, self.code2]}

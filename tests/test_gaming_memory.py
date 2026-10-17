@@ -3,6 +3,7 @@
 (gamemode.LightEffects) and, optionally, everyday apps on the integrated
 GPU (gpu.launch_env).
 Run: python3 -m unittest tests.test_gaming_memory"""
+import json
 import os
 import tempfile
 import unittest
@@ -20,10 +21,16 @@ class LightEffectsTest(unittest.TestCase):
                     ("animate", "close_animation"): "zoom", ("animate", "minimize_animation"): "squeezimize"}
         self.orig = dict(self.cfg)
         self.light = gamemode.LightEffects(get=lambda s, k, d="": self.cfg.get((s, k), d),
-                                           set_=lambda s, k, v: self.cfg.__setitem__((s, k), v),
-                                           wanted=lambda: True)
+                                           set_=self._set, wanted=lambda: True)
+        self.fail_writes = False                 # runtime_set's False: no session copy, write failed
         if os.path.exists(gamemode.LIGHT):
             os.remove(gamemode.LIGHT)
+
+    def _set(self, s, k, v):
+        if self.fail_writes:
+            return False
+        self.cfg[(s, k)] = v
+        return True
 
     def test_only_when_a_game_fills_the_card(self):
         self.light.update(full=False, used=7800, total=8188)
@@ -51,6 +58,54 @@ class LightEffectsTest(unittest.TestCase):
     def test_session_copy_only(self):
         src = open(gamemode.__file__).read()
         self.assertIn("wfconfig.runtime_set", src)
+
+    def test_animations_back_after_a_failed_restore(self):
+        """Vini: window animations stopped working. The game left full
+        screen while the session copy couldn't be written (runtime_set
+        False): the save was deleted anyway and animations stayed "none"
+        for the session. The save stays until a restore goes through."""
+        self.light.update(full=True, used=7900, total=8188)
+        self.fail_writes = True
+        self.light.update(full=False)
+        self.assertEqual(self.cfg[("animate", "open_animation")], "none")
+        self.assertTrue(self.light.on())                             # kept: try again
+        self.fail_writes = False
+        self.light.update(full=False)                                # the next update (focus, VRAM poll)
+        self.assertEqual(self.cfg, self.orig)
+        self.assertFalse(self.light.on())
+
+    def test_failed_restore_keeps_the_original_values(self):
+        """While a restore is pending, a new game filling the card doesn't
+        save "none" over the user's own animations."""
+        self.light.update(full=True, used=7900, total=8188)
+        self.fail_writes = True
+        self.light.update(full=False)
+        self.fail_writes = False
+        self.light.update(full=True, used=7900, total=8188)          # another game
+        self.light.update(full=False)
+        self.assertEqual(self.cfg, self.orig)
+
+    def test_save_file_written_whole(self):
+        """The save is a temp file renamed over LIGHT: killed mid-write, the
+        menu bar left an empty file, read back as unreadable, and the
+        effects never came back. A failing write leaves no save at all (and
+        the effects untouched) instead."""
+        real_dump = json.dump
+
+        def dump_then_die(obj, f, *a, **kw):
+            f.write('{"blur/blur_by_def')                           # half of it
+            f.flush()
+            raise OSError("killed")
+        with mock.patch.object(json, "dump", dump_then_die):
+            self.light.update(full=True, used=7900, total=8188)
+        self.assertFalse(os.path.exists(gamemode.LIGHT))
+        self.assertEqual(self.cfg, self.orig)                        # nothing lightened without a save
+        self.assertEqual([n for n in os.listdir(os.path.dirname(gamemode.LIGHT))
+                          if n.startswith(os.path.basename(gamemode.LIGHT) + ".")], [])
+        with mock.patch.object(json, "dump", real_dump):
+            self.light.update(used=7901, total=8188)
+        with open(gamemode.LIGHT, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["animate/open_animation"], "zoom")
 
 
 class EverydayIntegratedTest(unittest.TestCase):

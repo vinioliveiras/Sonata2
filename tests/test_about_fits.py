@@ -59,6 +59,19 @@ class AboutFitsTest(unittest.TestCase):
         self.assertEqual(win.get_height(), height)                       # and it stays (no runaway)
         win.destroy()
 
+    def test_no_taller_than_its_content(self):
+        """About This Computer at its content's height, not a fixed 300 px
+        with empty glass under the specs."""
+        from gi.repository import Gtk
+        from sonata2.shell import topbar
+        with mock.patch.object(topbar.system, "run_async", side_effect=lambda fn, cb: cb(SPECS)):
+            win = topbar.AboutWindow()
+        win.present()
+        settle(900)
+        content = win.col.measure(Gtk.Orientation.VERTICAL, win.get_width())[1]
+        self.assertLessEqual(win.get_height(), content + 2, (win.get_height(), content))
+        win.destroy()
+
 
 if __name__ == "__main__":
     unittest.main()

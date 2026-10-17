@@ -2423,6 +2423,15 @@ def apply_margins(dock: Dock) -> None:
         (dock.set_margin_start if dock.edge == "left" else dock.set_margin_end)(gap)
 
 
+def on_an_item(widget) -> bool:
+    """`widget` is (inside) a Dock icon or the divider."""
+    while widget is not None:
+        if isinstance(widget, (DockTile, DockDivider)):
+            return True
+        widget = widget.get_parent()
+    return False
+
+
 class DockWindow(Gtk.ApplicationWindow):
     """Layer surface spanning the Dock's screen edge, thick enough for
     magnified icons; only the Dock itself receives clicks (input region).
@@ -2453,6 +2462,11 @@ class DockWindow(Gtk.ApplicationWindow):
         motion.connect("enter", lambda *_: self._pointer(True))
         motion.connect("leave", lambda *_: self._pointer(False))
         self.add_controller(motion)
+        # right-click on the Dock itself -- the strip under it, its plate
+        # between the icons -- like Windows' taskbar (Vini): dock_menu.area_menu
+        area = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
+        area.connect("pressed", self._area_pressed)
+        self.add_controller(area)
         # module-wide lists and file monitors that point back at this window:
         # all undone on "destroy" (_forget), or every display hotplug (an
         # extra Dock destroyed, a new one made) leaked a whole Dock
@@ -2668,6 +2682,17 @@ class DockWindow(Gtk.ApplicationWindow):
             self._slide(False)
         elif self.cfg["autohide"] and not self._hidden and not self._inside:
             self._pointer(False)
+
+    def _area_pressed(self, gesture, _n, x, y) -> None:
+        """The Dock's own menu, unless an icon or the divider (menus of
+        their own) is under the pointer."""
+        if self.dock is None or on_an_item(self.pick(x, y, Gtk.PickFlags.DEFAULT)):
+            return
+        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        # anchored to the Dock (a menu on the window itself never showed),
+        # at the pointer -- under the plate too, in the strip
+        ok, at = self.compute_point(self.dock, Graphene.Point().init(x, y))
+        dock_menu.area_menu(self.dock, self, (at.x, at.y) if ok else (x, y))
 
     def _update_input(self) -> None:
         if not self.layer or not self.dock:

@@ -2,6 +2,76 @@
 
 ## Unreleased
 
+### New
+- Dock: a right-click on the Dock's own space -- the strip under it, or
+  its plate between the icons -- opens a menu like Windows' taskbar: Task
+  Manager, Show Desktop, Turn Hiding On/Off, Position on Screen and Dock
+  Preferences…. An icon or the divider keeps its own menu.
+- Mission Control: Alt+Tab (and Alt+Shift+Tab) moves the highlight from
+  window to window, and letting go of Alt opens the one highlighted -- the
+  app switcher's list used to open hidden under Mission Control (Sonata's
+  Wayfire: wayfire-scale-tab.patch, built again by the next update).
+
+### Fixes
+- Four texts left in English in Portuguese are translated: the Close
+  button's tooltip (every window), Assistant's "No Conversations",
+  Calendar's "No Results" and Camera's "Open".
+- Video wallpaper: no black band down the right of the screen. GTK draws a
+  video's frame at frame size / video size, from the left, and a decoded
+  frame a little narrower than the video (hardware decoding) stopped short
+  of the edge; the wallpaper now asks for that much more.
+- The Control Center icon no longer turns dark in Light Mode after the Sound
+  menu (or any menu bar panel) closes: every item in the menu bar is drawn
+  anew once a panel closes, not only the one that opened it.
+- FPS Limit works again for Steam set to Open at Login: started from its
+  login entry, it never got frame-pacer's switch (nor its graphics card), so
+  its games weren't limited until Steam was opened again from the Dock.
+- Dark Mode: the menus of GTK 3 and Electron apps are as dark as their menu
+  bar -- GitHub Desktop's menu bar and its menus stayed grey (Electron paints
+  both in the menus' colour).
+- Window animations (and blur) come back after a full-screen game even when
+  the session's Wayfire config couldn't be written at that moment: Sonata
+  tries again instead of leaving them off until the next login.
+- A Wayfire option Sonata adds to a config file that doesn't end with a
+  newline goes on its own line instead of being joined to the last one.
+- The on-screen keyboard and the gamepad's pointer can't be left broken by
+  a half-made protocol file in the cache (Sonata stopped while making it).
+- Screenshots: Capture in the toolbar (Print) no longer sometimes does
+  nothing -- it began before the toolbar had gone, while it still held the
+  keyboard.
+- The menu bar's Sound menu has no list of outputs under its slider any
+  more: the slider's output button picks it, as in Control Center.
+
+### Performance
+- Files lists a big folder about four times faster (5,000 files: ~10.5 s
+  -> ~2.5 s): each file's cell no longer reloads Sonata's whole stylesheet.
+- Files lists a big folder about three times faster again (5,000 files:
+  ~2.5 s -> ~0.6-0.9 s in each view): the icons view makes cells for what
+  its width holds (it kept 2,049 ready), the two views not shown no longer
+  make, sort and fill theirs, and a file named like a picture that isn't
+  one is no longer looked at again on every listing.
+- Lighter on the battery while nothing happens:
+  - the Dock, wallpaper, Launchpad, Spotlight and every Sonata app no
+    longer wake up once a second (a diagnostics check now waits for its
+    file instead of looking for it);
+  - the menu bar follows Wi-Fi and the battery from NetworkManager's and
+    UPower's own signals instead of running nmcli every 10 seconds;
+  - app windows no longer run code on every frame of an animation (Disk
+    Utility did ~60 times a second while its spinner turned).
+- Settings > Displays opens faster and holds ~40 MB less: the wallpaper
+  preview is read in the background, at its own size.
+- Settings > Displays and Menu Bar open faster the first time (~95 ms ->
+  ~75 ms and ~85 ms -> ~45 ms): they no longer load Files' package
+  installer or the whole menu bar only to read a setting.
+- The menu bar no longer pauses for a moment just after it appears at
+  login (a version report now runs in the background).
+- The menu bar runs about 40% fewer programs in its first seconds (~33 ->
+  ~19): Wi-Fi, Bluetooth and Airplane Mode are read once for the menus and
+  Control Center alike, and Control Center is warmed up once, not twice.
+- Control Center opens about five times faster (~125 ms -> ~25 ms to its
+  first frame): it is kept between openings and only brought up to date
+  as it opens, instead of being built again, in a new panel, every time.
+
 ## 0.19.2-alpha -- 2026-10-17
 
 Sonata's title bars on every app that can take them, a lighter video

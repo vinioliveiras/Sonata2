@@ -2,6 +2,7 @@
 Markup: marks stay editable until Done, then they're one edit; what's saved
 is what was drawn; a screenshot's thumbnail opens straight into it."""
 import os
+import sys
 import tempfile
 import unittest
 
@@ -287,6 +288,7 @@ class PreviewMarkupTest(unittest.TestCase):
         from PIL import Image
         from sonata2 import ui
         from sonata2.preview.window import PreviewWindow
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # (its sibling: run as tests.<module> too)
         import layoutcheck as LC
         Adw.init()
         ui.setup()

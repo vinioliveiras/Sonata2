@@ -83,5 +83,19 @@ class FrozenTest(unittest.TestCase):
         self.assertEqual(t.call_args[0][0], 0)
 
 
+    def test_capture_button_waits_for_the_toolbar_to_go(self):
+        """Vini: Print, then Capture, sometimes did nothing -- the toolbar was
+        hidden before run(), which then didn't wait for it to go."""
+        cap = C.Capture(None, None)
+        bar = mock.Mock(**{"get_visible.return_value": True})
+        cap.toolbar = bar
+        tb = C._Toolbar.__new__(C._Toolbar)
+        tb.owner, tb.mode, tb.cfg = cap, "area", {"timer": 0}
+        with mock.patch.object(C.GLib, "timeout_add") as t:
+            tb._go()
+        bar.set_visible.assert_called_once_with(False)
+        self.assertEqual(t.call_args[0][0], 250)                 # once the toolbar has gone
+
+
 if __name__ == "__main__":
     unittest.main()

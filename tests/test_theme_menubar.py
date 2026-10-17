@@ -18,8 +18,10 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk
 Gtk.Settings.get_default().set_property("gtk-theme-name", "Sonata-Dark")
 bar = Gtk.MenuBar(); win = Gtk.Window(); win.add(bar); win.show_all()
-c = bar.get_style_context().get_property("background-color", Gtk.StateFlags.NORMAL)
-print(*(round(v * 255) for v in (c.red, c.green, c.blue)))
+menu = Gtk.Menu(); menu.append(Gtk.MenuItem(label="x")); menu.show_all()
+for w in (bar, menu):
+    c = w.get_style_context().get_property("background-color", Gtk.StateFlags.NORMAL)
+    print(*(round(v * 255) for v in (c.red, c.green, c.blue)))
 """
 
 
@@ -27,6 +29,7 @@ class MenuBarTest(unittest.TestCase):
     def test_rule(self):
         css = open(os.path.join(ROOT, "sonata2", "data", "themes", "Sonata-Dark", "gtk-3.0", "gtk.css")).read()
         self.assertIn("menubar { background-color: #141416;", css)
+        self.assertIn("window.background.chromium menu { background-color: #141416;", css)
 
     @unittest.skipUnless(os.environ.get("DISPLAY"), "needs a display (xvfb-run)")
     def test_gtk3_draws_it_dark(self):
@@ -37,8 +40,11 @@ class MenuBarTest(unittest.TestCase):
                            env=dict(os.environ, XDG_DATA_HOME=data))
         if r.returncode != 0:
             self.skipTest("no GTK 3 here")
-        rgb = [int(v) for v in r.stdout.split()[-3:]]
-        self.assertTrue(all(v <= 24 for v in rgb), rgb)                 # was (55, 55, 55)
+        bar, menu = ([int(v) for v in line.split()] for line in r.stdout.strip().splitlines()[-2:])
+        self.assertTrue(all(v <= 24 for v in bar), bar)                 # was (55, 55, 55)
+        # Vini: GitHub Desktop's menu bar and its menus stayed grey -- Electron
+        # paints both in GtkMenu#menu's colour
+        self.assertTrue(all(v <= 24 for v in menu), menu)
 
 
 if __name__ == "__main__":

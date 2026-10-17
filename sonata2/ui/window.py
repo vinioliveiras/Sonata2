@@ -297,7 +297,16 @@ def remember_size(win, key: str, w: int, h: int) -> None:
     # size reset by itself): GTK goes back to its default size whenever the
     # compositor lets it choose (a configure without a size), and that was
     # still the size it opened at
-    def resized(*_a):
+    # The surface's "layout" comes on every frame something animates (a
+    # spinner, a page's transition), not only on a resize: only a new size
+    # is looked at -- it was a Python call 60 times a second in Disk Utility
+    # while its spinner turned, in every app window during an animation.
+    seen = {"size": None}
+
+    def resized(_surface, width, height):
+        if seen["size"] == (width, height):
+            return
+        seen["size"] = (width, height)
         GLib.idle_add(lambda: (follow_size(win), False)[1])
     win.connect("realize", lambda *_a: win.get_surface().connect("layout", resized))
     if win.get_realized():
@@ -378,7 +387,7 @@ def close_button(on_close) -> Gtk.Box:
     side the user picked for windows (Settings > Appearance), like theirs."""
     box = Gtk.Box(css_classes=["traffic", "traffic-close-only"], valign=Gtk.Align.START,
                   halign=Gtk.Align.END if buttons_side() == "right" else Gtk.Align.START)
-    b = Gtk.Button(tooltip_text="Close", css_classes=["tl-close"], valign=Gtk.Align.CENTER,
+    b = Gtk.Button(tooltip_text=_("Close"), css_classes=["tl-close"], valign=Gtk.Align.CENTER,
                    focus_on_click=False, can_focus=False)
     b.connect("clicked", lambda _b: on_close())
     box.append(b)
