@@ -60,6 +60,9 @@
     Utility did ~60 times a second while its spinner turned).
 - Settings > Displays opens faster and holds ~40 MB less: the wallpaper
   preview is read in the background, at its own size.
+- Settings > Displays and Menu Bar open faster the first time (~95 ms ->
+  ~75 ms and ~85 ms -> ~45 ms): they no longer load Files' package
+  installer or the whole menu bar only to read a setting.
 - The menu bar no longer pauses for a moment just after it appears at
   login (a version report now runs in the background).
 - Control Center opens about five times faster (~125 ms -> ~25 ms to its

@@ -403,12 +403,33 @@ TERMINALS = (("kgx", ["--"]), ("gnome-terminal", ["--"]), ("konsole", ["-e"]), (
 INSTALLERS = {"arch": "sudo pacman -S --needed", "debian": "sudo apt install", "rpm": "sudo dnf install"}
 
 
+def package_family() -> str:
+    """This system's native package family: arch, debian, rpm (or "")."""
+    osr = {}
+    try:
+        with open("/etc/os-release") as f:
+            osr = {k: v.strip().strip('"') for k, v in (ln.split("=", 1) for ln in f if "=" in ln)}
+    except OSError:
+        pass
+    ids = f"{osr.get('ID', '')} {osr.get('ID_LIKE', '')}".lower().split()
+    for fam, names in (("arch", {"arch", "archlinux", "cachyos", "manjaro", "endeavouros"}),
+                       ("debian", {"debian", "ubuntu"}),
+                       ("rpm", {"fedora", "rhel", "centos", "suse", "opensuse", "opensuse-tumbleweed"})):
+        if names & set(ids):
+            return fam
+    for fam, tool in (("arch", "pacman"), ("debian", "apt"), ("rpm", "dnf"), ("rpm", "zypper")):
+        if shutil.which(tool):
+            return fam
+    return ""
+
+
 def install_command(packages, family: str = None):
     """The command that installs `packages` (a name, or {family: names}) on
-    this system, None when its package manager is unknown."""
+    this system, None when its package manager is unknown. (The family is
+    read here: Files' packages module -- tarfile, zipfile, Files' UI -- was
+    imported for it by every Settings page offering an install, ~36 ms.)"""
     if family is None:
-        from ..files.packages import family as fam
-        family = fam()
+        family = package_family()
     names = packages.get(family) if isinstance(packages, dict) else packages
     pm = INSTALLERS.get(family)
     return f"{pm} {names}" if pm and names else None

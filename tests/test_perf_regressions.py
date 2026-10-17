@@ -623,6 +623,62 @@ class FilesBigFolderTest(unittest.TestCase):
         self.assertEqual(len(thumbs._mem), 0)                               # nor kept with the pictures
 
 
+@unittest.skipUnless(__import__("os").environ.get("DISPLAY"), "needs a display (xvfb-run)")
+class SettingsFirstVisitImportsTest(unittest.TestCase):
+    """Product-wide check: Settings > Displays imported Files' packages module
+    (tarfile, zipfile, Files' UI: ~36 ms) only to name the package manager;
+    Menu Bar and Date & Time imported the whole menu bar for its settings."""
+
+    def test_pages_import_neither(self):
+        import os
+        import subprocess
+        import sys
+        import tempfile
+        code = (
+            "import sys, gi\n"
+            "gi.require_version('Gtk', '4.0'); gi.require_version('Adw', '1')\n"
+            "from gi.repository import Adw\n"
+            "Adw.init()\n"
+            "from sonata2 import ui\n"
+            "ui.setup()\n"
+            "from sonata2.settings import app as S\n"
+            "w = S.Settings(None, 'displays')\n"
+            "for sid in ('displays', 'menubar', 'datetime', 'keyboard'):\n"
+            "    w.select(sid)\n"
+            "print(sorted(m for m in ('sonata2.files.packages', 'sonata2.shell.topbar') if m in sys.modules))\n")
+        env = dict(os.environ, XDG_CONFIG_HOME=tempfile.mkdtemp(), XDG_CACHE_HOME=tempfile.mkdtemp())
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        out = subprocess.run([sys.executable, "-c", code], cwd=root, env=env, capture_output=True, text=True,
+                             timeout=120)
+        self.assertEqual(out.stdout.strip().splitlines()[-1:], ["[]"], out.stderr[-2000:])
+
+    def test_install_command_needs_no_files_module(self):
+        from sonata2.backend import system
+        with mock.patch.object(system, "package_family", return_value="arch"):
+            self.assertEqual(system.install_command("wlsunset"), "sudo pacman -S --needed wlsunset")
+        from sonata2.files import packages
+        self.assertIs(packages.family, system.package_family)          # one answer for both
+
+
+class ShortcutDefaultsReadOnceTest(unittest.TestCase):
+    """Settings > Keyboard read Sonata's wayfire.ini once per shortcut (29)."""
+
+    def test_one_read_for_all(self):
+        import builtins
+        from sonata2 import shortcuts as SC
+        real = builtins.open
+        reads = []
+
+        def counting(path, *a, **k):
+            if str(path).endswith("wayfire.ini"):
+                reads.append(path)
+            return real(path, *a, **k)
+        with mock.patch.dict(SC._parsed, clear=True), mock.patch("builtins.open", counting):
+            values = [SC.default(s) for s in SC.SHORTCUTS]
+        self.assertEqual(len(reads), 1)
+        self.assertTrue(all(values))
+
+
 class EnvReportOffTheMainLoopTest(unittest.TestCase):
     """Product-wide check: the menu bar's env report ran ten `tool --version`
     on its main loop right after it started (~60-220 ms frozen as it slid in)."""

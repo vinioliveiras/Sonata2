@@ -1779,7 +1779,7 @@ class Settings(Adw.ApplicationWindow):
 
     # -- system --------------------------------------------------------------------------------
     def _page_datetime(self):
-        from ..shell import topbar as T
+        from ..shell import topbar_prefs as T
         auto = group()
         clock = group(_("Clock"))
         zone = group(_("Time Zone"))
@@ -2475,7 +2475,7 @@ class Settings(Adw.ApplicationWindow):
     def _usb_group(self, sec):
         """GNOME's USB protection: devices plugged in while locked are blocked (USBGuard)."""
         from ..backend import usbprotect
-        from ..files.packages import family
+        family = system.package_family
         grp = group("USB")
         row = switch_row(_("Block new USB devices while locked"), False,
                          lambda on: self._save("security", "usb_protection", on), subtitle=_("Checking USBGuard…"))
@@ -3247,7 +3247,7 @@ class Settings(Adw.ApplicationWindow):
         system.run_async(lambda: subprocess.run(self_argv() + ["restart", "topbar"], check=False))
 
     def _page_menubar(self):
-        from ..shell import topbar as T
+        from ..shell import topbar_prefs as T
         cfg = config.load("topbar", T.DEFAULTS)
         g = group(_("Menu Bar"))
         g.add(switch_row(_("Automatically hide and show the menu bar"), cfg.get("autohide", False),
@@ -3372,7 +3372,7 @@ class Settings(Adw.ApplicationWindow):
                                self.reset_menubar)
 
     def reset_menubar(self) -> None:
-        from ..shell import topbar as T
+        from ..shell import topbar_prefs as T
         for k, v in T.DEFAULTS.items():
             self._save("topbar", k, v)
         for k in ("menu_logo", "menu_text"):

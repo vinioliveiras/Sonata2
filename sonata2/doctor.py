@@ -25,8 +25,8 @@ def _run(cmd, timeout=5) -> str:
 
 def _family() -> str:
     try:
-        from .files.packages import family
-        return family()
+        from .backend.system import package_family
+        return package_family()
     except Exception:           # noqa: BLE001 -- a report, never fatal
         return ""
 
