@@ -500,16 +500,18 @@ class ThumbsTest(unittest.TestCase):
 
     def test_memory_cache_bounded_and_callbacks(self):
         """The in-RAM cache stays at MEMORY entries; waiting callbacks get the
-        texture once, and nothing for a failed one."""
+        texture once, and nothing for a failed one (kept apart: it never
+        pushes a picture out)."""
         got = []
         with mock.patch.object(thumbs, "MEMORY", 2), mock.patch.dict(thumbs._mem, clear=True), \
-                mock.patch.dict(thumbs._pending, clear=True):
+                mock.patch.dict(thumbs._pending, clear=True), mock.patch.dict(thumbs._none, clear=True):
             thumbs._pending[("a", 1)] = [got.append]
             thumbs._pending[("b", 1)] = [got.append]
             thumbs._deliver(("a", 1), "TEX")
             thumbs._deliver(("b", 1), None)
             thumbs._deliver(("c", 1), "TEX3")
-            self.assertEqual(list(thumbs._mem), [("b", 1), ("c", 1)])
+            self.assertEqual(list(thumbs._mem), [("a", 1), ("c", 1)])
+            self.assertEqual(list(thumbs._none), [("b", 1)])
             self.assertEqual(got, ["TEX"])
             self.assertEqual(thumbs._pending, {})
 

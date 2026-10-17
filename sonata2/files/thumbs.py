@@ -34,8 +34,14 @@ MEMORY_BYTES = 32 << 20
 from .peicon import is_program  # noqa: E402  (Windows programs: their own icon)
 
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sonata2-thumbs")
-_mem = OrderedDict()             # key -> Gdk.Texture or None (failed)
+_mem = OrderedDict()             # key -> Gdk.Texture
 _pending = {}                    # key -> [callbacks]
+# files that have none (a ".png" that isn't one): asked once a session. They
+# were kept with the pictures, as None: a folder of them pushed the pictures
+# out of the cache, and were asked again (a thread, two file checks) on every
+# listing
+_none = OrderedDict()
+NONE_KEEP = 20000
 
 
 def wanted(info) -> bool:
@@ -56,8 +62,9 @@ def request(info, gfile, callback) -> None:
     key = (path, mtime, info.get_attribute_uint32("time::modified-usec"), info.get_size())
     if key in _mem:
         _mem.move_to_end(key)
-        if _mem[key] is not None:
-            callback(_mem[key])
+        callback(_mem[key])
+        return
+    if key in _none:
         return
     if key in _pending:
         _pending[key].append(callback)
@@ -91,6 +98,12 @@ def _bytes(tex) -> int:
 
 
 def _deliver(key, tex):
+    if tex is None:
+        _none[key] = True
+        while len(_none) > NONE_KEEP:
+            _none.popitem(last=False)
+        _pending.pop(key, None)
+        return False
     _mem[key] = tex
     _mem.move_to_end(key)
     used = sum(_bytes(t) for t in _mem.values())       # (a few hundred entries at most)

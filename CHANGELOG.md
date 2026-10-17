@@ -45,6 +45,11 @@
 ### Performance
 - Files lists a big folder about four times faster (5,000 files: ~10.5 s
   -> ~2.5 s): each file's cell no longer reloads Sonata's whole stylesheet.
+- Files lists a big folder about three times faster again (5,000 files:
+  ~2.5 s -> ~0.6-0.9 s in each view): the icons view makes cells for what
+  its width holds (it kept 2,049 ready), the two views not shown no longer
+  make, sort and fill theirs, and a file named like a picture that isn't
+  one is no longer looked at again on every listing.
 - Lighter on the battery while nothing happens:
   - the Dock, wallpaper, Launchpad, Spotlight and every Sonata app no
     longer wake up once a second (a diagnostics check now waits for its

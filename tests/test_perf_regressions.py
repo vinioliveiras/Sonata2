@@ -507,6 +507,122 @@ class DisplaysWallpaperPreviewTest(unittest.TestCase):
             w.destroy()
 
 
+@unittest.skipUnless(__import__("os").environ.get("DISPLAY"), "needs a display (xvfb-run)")
+class FilesBigFolderTest(unittest.TestCase):
+    """Product-wide check: Files took ~2.5 s to list 5,000 files -- the
+    icons grid made 2,049 cells (GTK keeps max_columns x 32 of them; it was
+    64), and the two views not shown made, sorted and filled theirs too.
+    A ".png" that isn't one was asked for again on every listing."""
+
+    N = 600
+
+    @classmethod
+    def setUpClass(cls):
+        import gi
+        gi.require_version("Gtk", "4.0")
+        gi.require_version("Adw", "1")
+        from gi.repository import Adw
+        from sonata2 import ui
+        Adw.init()
+        ui.setup()
+        cls.app = Adw.Application(application_id="io.test.perfbigfolder")
+        cls.app.register(None)
+
+    def setUp(self):
+        import os
+        import tempfile
+        from sonata2 import config
+        from sonata2.files import thumbs
+        self.d = tempfile.mkdtemp()
+        self.big = os.path.join(self.d, "big")
+        os.mkdir(self.big)
+        for i in range(self.N):
+            with open(os.path.join(self.big, f"f{i:04}.png" if i % 2 else f"f{i:04}.txt"), "w") as f:
+                f.write("x")                                       # (no picture in the ".png"s)
+        for p in (mock.patch.object(config, "CONFIG_DIR", tempfile.mkdtemp()),
+                  mock.patch.object(thumbs, "CACHE_DIR", os.path.join(self.d, "large")),
+                  mock.patch.object(thumbs, "FAIL_DIR", os.path.join(self.d, "fail")),
+                  mock.patch.dict(thumbs._none, clear=True), mock.patch.dict(thumbs._mem, clear=True)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def window(self):
+        from gi.repository import Gio
+        from sonata2.files.window import FilesWindow
+        w = FilesWindow(self.app, Gio.File.new_for_path(self.d).get_uri())
+        w.set_default_size(1000, 700)
+        w.present()
+        self.addCleanup(w.destroy)
+        _spin(400)
+        return w
+
+    def go_big(self, w):
+        from gi.repository import Gio
+        w.go(Gio.File.new_for_path(self.big).get_uri(), fade=False)
+        for _ in range(50):
+            _spin(100)
+            if w.tab.folder.store.get_n_items() == self.N:
+                break
+        _spin(300)
+
+    def test_cells_only_for_the_view_shown(self):
+        from sonata2.files import views as V
+        made = {}
+
+        def count(name, real):
+            def f(*a):
+                made[name] = made.get(name, 0) + 1
+                return real(*a)
+            return f
+        with mock.patch.object(V.IconsView, "_setup", count("icons", V.IconsView._setup)), \
+                mock.patch.object(V.ListView, "_setup_name", count("list", V.ListView._setup_name)), \
+                mock.patch.object(V._Column, "_setup", count("columns", V._Column._setup)):
+            w = self.window()
+            w.set_view("icons", save=False)
+            made.clear()
+            self.go_big(w)
+            grid = w.tab.views["icons"].widget
+            self.assertLess(made.get("icons", 0), 2049 // 2)               # not 64 x 32 + 1
+            self.assertEqual(made.get("list", 0), 0)                         # hidden: no cells
+            self.assertEqual(made.get("columns", 0), 0)
+            # as many columns as before: the limit is never what stops them
+            xs = {round(c.get_parent().compute_point(grid, __import__("gi").repository.Graphene.Point().init(0, 0))[1].x)
+                  for c in w.tab.views["icons"]._cells.values() if c.get_parent() is not None and c.get_mapped()}
+            self.assertGreater(len(xs), 1)
+            self.assertGreater(grid.get_max_columns(), len(xs))
+            # the list, once shown: every item, nothing selected, at the top
+            w.set_view("list", save=False)
+            _spin(300)
+            lv = w.tab.views["list"]
+            self.assertEqual(lv.model.get_n_items(), self.N)
+            self.assertGreater(made.get("list", 0), 0)
+            self.assertEqual(lv.selected(), [])
+            self.assertEqual(w.tab.views["icons"].model.get_n_items(), self.N)   # the one left: kept
+            w.go(__import__("gi").repository.Gio.File.new_for_path(self.d).get_uri(), fade=False)
+            _spin(300)                                   # (the default view there: icons, given back)
+            w.set_view("icons", save=False)
+            _spin(200)
+            self.assertEqual(w.tab.views["icons"].model.get_n_items(), w.tab.filtered.get_n_items())
+
+    def test_a_file_without_a_picture_is_asked_once(self):
+        from sonata2.files import thumbs
+        real = thumbs._pool.submit
+        with mock.patch.object(thumbs._pool, "submit", side_effect=real) as sub:
+            w = self.window()
+            w.set_view("icons", save=False)
+            self.go_big(w)
+            _spin(1500)                                                      # (the threads answer)
+            first = sub.call_count
+            self.assertGreater(first, 0)
+            from gi.repository import Gio
+            w.go(Gio.File.new_for_path(self.d).get_uri(), fade=False)
+            _spin(400)
+            self.go_big(w)
+            _spin(500)
+        self.assertEqual(sub.call_count, first)                             # none asked again
+        self.assertEqual(len(thumbs._mem), 0)                               # nor kept with the pictures
+
+
 class EnvReportOffTheMainLoopTest(unittest.TestCase):
     """Product-wide check: the menu bar's env report ran ten `tool --version`
     on its main loop right after it started (~60-220 ms frozen as it slid in)."""

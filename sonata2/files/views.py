@@ -79,6 +79,7 @@ window:backdrop .fs-col.fs-active listview > row:selected { background: %(sideba
 SPRING_MS = 900        # spring-loaded folders: hover time before a folder opens
 ICON_SIZE = 64
 CELL_W = 96
+MAX_COLUMNS = 64
 COLUMN_W = 230
 
 # -- formatting (Finder style) --------------------------------------------------------
@@ -297,6 +298,15 @@ def info_under(widget, x, y):
     return None
 
 
+def _show_items(view, on: bool) -> None:
+    """Off: the view lets go of the folder's items while the window shows
+    another view -- GTK made, sorted and filled cells for all three views
+    on every folder change (Files: Tab.hide_others)."""
+    holder, source = view._items
+    if (holder.get_model() is not None) != on:
+        holder.set_model(source if on else None)
+
+
 class _Cells:
     """What every view offers the window besides showing items: the item
     under the pointer (context menus), selecting a file by name, and
@@ -306,6 +316,9 @@ class _Cells:
     def _init_cells(self):
         self._cells = {}          # FileInfo -> cell box currently showing it
         self.dnd = None           # the window: files_for_drag(info), drop(files, folder, copy)
+
+    def show_items(self, on: bool) -> None:
+        _show_items(self, on)
 
     def _dnd_cell(self, box):
         """Folders accept drops, and open when a drag hovers on them
@@ -610,14 +623,18 @@ class IconsView(_Cells):
         self._sort = ("Name", False)
         self.sorter = Gtk.CustomSorter.new(lambda a, b, _d: self._compare(a, b))
         self.model = Gtk.SortListModel(model=model, sorter=self.sorter)
+        self._items = (self.model, model)
         model = self.model
         self.selection = Gtk.MultiSelection(model=model)
         f = Gtk.SignalListItemFactory()
         f.connect("setup", self._setup)
         f.connect("bind", self._bind)
         f.connect("unbind", lambda _f, item: self._untrack(item.get_child()))
-        self.widget = Gtk.GridView(model=self.selection, factory=f, max_columns=64, min_columns=1,
+        self.widget = Gtk.GridView(model=self.selection, factory=f, max_columns=MAX_COLUMNS, min_columns=1,
                                    enable_rubberband=True, css_classes=["fs-icons"])
+        # GTK keeps max_columns x 32 cells made (2,049 for one big folder, ~14
+        # columns shown): the most the view's width can hold is enough
+        self.widget.connect("notify::hadjustment", lambda w, _p: self._follow_width(w.get_hadjustment()))
         self._dnd_list(self.widget, rubberband=True)
         self.widget.connect("activate", lambda _g, pos: on_open(model.get_item(pos)))
         self.reflow = Reflow(self)
@@ -665,6 +682,20 @@ class IconsView(_Cells):
 
     def _scroll_to(self, pos):
         self.widget.scroll_to(pos, Gtk.ListScrollFlags.FOCUS, None)
+
+    def _follow_width(self, adj) -> None:
+        if adj is not None and adj is not getattr(self, "_width_adj", None):
+            self._width_adj = adj
+            adj.connect("changed", lambda a: self._fit_columns(a.get_page_size()))
+            self._fit_columns(adj.get_page_size())
+
+    def _fit_columns(self, width) -> None:
+        """max_columns: one more than the cells that fit across (a cell is
+        at least CELL_W wide), so GTK's own count never meets it."""
+        if width > 0:
+            n = max(1, min(MAX_COLUMNS, int(width) // CELL_W + 1))
+            if n != self.widget.get_max_columns():
+                self.widget.set_max_columns(n)
 
     def _compare(self, a, b) -> int:
         title, desc = self._sort
@@ -784,6 +815,7 @@ class ListView(_Cells):
         both.append(self.view.get_sorter())
         self.sorted = Gtk.SortListModel(model=model, sorter=both)
         self.model = self.sorted
+        self._items = (self.sorted, model)
         self.selection = Gtk.MultiSelection(model=self.sorted)
         self.view.set_model(self.selection)
         self.view.connect("activate", lambda _v, pos: on_open(self.sorted.get_item(pos)))
@@ -994,6 +1026,10 @@ class ColumnsView:
         self.widget = self.scroller
         self.columns = [_Column(self, model)]
         self.box.append(self.columns[0])
+        self._items = (self.columns[0].selection, model)
+
+    def show_items(self, on: bool) -> None:
+        _show_items(self, on)
         self.preview = None
         self.root_uri = None
 
