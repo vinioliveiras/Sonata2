@@ -219,17 +219,20 @@ class IconChoiceTest(unittest.TestCase):
         lp = open(os.path.join(os.path.dirname(W.__file__), "..", "shell", "launchpad.py")).read()
         self.assertIn('"appicons/" + item', lp[lp.index("def item_menu"):])
         from sonata2.settings.appicons_page import AppIconsPage
+        from sonata2.settings.applist import AppList
+        # (the rows and the waiting live in the page's AppList, shared with Apps)
         page = AppIconsPage.__new__(AppIconsPage)
-        page.rows, page._focus = {}, None
-        page.focus("sonata2-webapp-w0123456789.desktop")
-        self.assertEqual(page._focus, "sonata2-webapp-w0123456789")         # waits for its row
-        row = mock.Mock()
-        page.rows["sonata2-webapp-w0123456789"] = row
         page.edit = mock.Mock()
+        page.list = lst = AppList.__new__(AppList)
+        lst.rows, lst._focus, lst.on_activate = {}, None, page.edit
+        page.focus("sonata2-webapp-w0123456789.desktop")
+        self.assertEqual(lst._focus, "sonata2-webapp-w0123456789")          # waits for its row
+        row = mock.Mock()
+        lst.rows["sonata2-webapp-w0123456789"] = row
         page.focus("sonata2-webapp-w0123456789")
         settle()
         page.edit.assert_called_once_with(row)
-        self.assertIsNone(page._focus)
+        self.assertIsNone(lst._focus)
 
 
 class ThemeIconTest(unittest.TestCase):
@@ -425,8 +428,8 @@ class DeleteAskTest(unittest.TestCase):
             L.Launchpad.ask_delete_webapp(pad, "sonata2-webapp-w0123456789")
         pad.close_launchpad.assert_called_once()
         self.assertIn("WhatsApp", alert.call_args[0][0])
-        self.assertNotIn("parent", alert.call_args[1])
-        self.assertEqual(len(alert.call_args[0]), 4)                   # no parent: its own glass window
+        self.assertIsNone(alert.call_args[1].get("parent"))            # no parent: its own glass window
+        self.assertEqual(len(alert.call_args[0]), 4)                   # (nor one passed by position)
 
 
 class MenusTest(unittest.TestCase):

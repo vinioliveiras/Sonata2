@@ -299,11 +299,15 @@ class SameSizeModulesTest(TempConfig):
 
     def test_each_module_is_its_span(self):
         import types
+        from sonata2.backend import mixer
         from sonata2.shell import topbar as T
+        # (every module built, the Volume Mixer too: without pactl here it'd be left out)
         bar = types.SimpleNamespace(_poll=lambda: None, _set_volume=lambda v: None, notifications=None,
-                                    monitor=None, get_native=lambda: None)
+                                    monitor=None, get_native=lambda: None,
+                                    mixer=types.SimpleNamespace(listeners=[]))
         seen = {}
-        with mock.patch.object(T.system, "run_async"), mock.patch.object(T, "cached"):
+        with mock.patch.object(T.system, "run_async"), mock.patch.object(T, "cached"), \
+                mock.patch.object(mixer, "available", return_value=True):
             for order in (C.DEFAULT_ORDER, list(C.CATALOG), ["stat_cpu", "darkmode"]):
                 config.save("controlcenter", {"modules": order})
                 cc = T.ControlCenter(bar)

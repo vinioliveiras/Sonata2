@@ -234,10 +234,11 @@ class PreviewTest(unittest.TestCase):
         p = os.path.join(self.dir, "cam.jpg")
         ex = Image.Exif()
         ex[0x010F], ex[0x0110] = "Canon", "Canon EOS R6"
-        sub = ex.get_ifd(0x8769)
-        sub.update({0x829A: 1 / 125, 0x829D: 4.0, 0x8827: 800, 0x920A: 50.0, 0x9003: "2023:12:24 18:05:00",
-                    0xA434: "RF50mm F1.8 STM"})
-        ex.get_ifd(0x8825)[1] = "N"
+        # (the sub-IFDs set as dicts: before Pillow 11, get_ifd() on a new
+        # Exif hands back a dict that isn't saved with it)
+        ex[0x8769] = {0x829A: 1 / 125, 0x829D: 4.0, 0x8827: 800, 0x920A: 50.0, 0x9003: "2023:12:24 18:05:00",
+                      0xA434: "RF50mm F1.8 STM"}
+        ex[0x8825] = {1: "N"}
         Image.new("RGB", (64, 48), (200, 100, 50)).save(p, "JPEG", exif=ex)
         rows = dict(info.read(p)["camera"])
         self.assertEqual(rows["Camera"], "Canon EOS R6")
