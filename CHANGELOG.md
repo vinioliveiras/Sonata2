@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### New
+- Dock: a right-click on the Dock's own space -- the strip under it, or
+  its plate between the icons -- opens a menu like Windows' taskbar: Task
+  Manager, Show Desktop, Turn Hiding On/Off, Position on Screen and Dock
+  Preferences…. An icon or the divider keeps its own menu.
 - Mission Control: Alt+Tab (and Alt+Shift+Tab) moves the highlight from
   window to window, and letting go of Alt opens the one highlighted -- the
   app switcher's list used to open hidden under Mission Control (Sonata's
