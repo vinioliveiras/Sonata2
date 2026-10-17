@@ -232,12 +232,6 @@ class MixerUiTest(unittest.TestCase):
         row.output.emit("clicked")
         self.assertEqual(picked, [(row.output, "com.spotify.client", 3)])
 
-    def test_sound_menu_puts_the_button_by_the_name(self):
-        box = self.U.AppMixer(apply=lambda *a: None, beside=False)
-        box.set_streams(M.parse(PACTL))
-        row = box.rows["firefox"]
-        self.assertIs(row.output.get_parent(), row.box.get_first_child())     # on the name's line
-        self.assertTrue(row.box.get_last_child().has_css_class("cc-slider-box"))   # the slider alone
 
     def test_picker_lists_outputs_and_moves_the_app(self):
         from sonata2.shell import topbar
@@ -385,10 +379,18 @@ class VolumeMixerAlignedWithSoundSlidersTest(unittest.TestCase):
                 yield from walk(c)
                 c = c.get_next_sibling()
         main = next(s for s in walk(pop.get_child()) if isinstance(s, ModuleSlider))
-        self.assertEqual(self.bounds(row.slider, pop), self.bounds(main, pop))
+        # Vini: "the same layout as Control Center's mixer": the output
+        # button at the slider's right, both on one line under the name
+        under = row.slider.get_parent()
+        while under is not None and row.output.get_parent() is not under:
+            under = under.get_parent()
+        self.assertIsNotNone(under)
+        self.assertIs(under.get_last_child(), row.output)
         x, w = self.bounds(row.output, pop)
         sx, sw = self.bounds(main, pop)
-        self.assertEqual(x + w, sx + sw)                  # the button ends where the sliders end
+        rx, _rw = self.bounds(row.slider, pop)
+        self.assertEqual(rx, sx)                          # the sliders start together
+        self.assertEqual(x + w, sx + sw)                  # the button ends where the main slider ends
         pop.popdown()
 
 

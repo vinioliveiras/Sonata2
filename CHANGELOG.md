@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.19.2-alpha -- 2026-10-17
+
+Sonata's title bars on every app that can take them, a lighter video
+wallpaper (silent, no slowdown after changing it), a Notification Center
+that opens at once, and web apps that count their notifications again --
+WhatsApp Web loads again too. Plus a Volume Mixer aligned with the Sound
+sliders, with an output per app, and menus that no longer grow with long
+names.
+
 ### Fixes
 - Dark Mode: menu bars of GTK 3 and Electron apps (GitHub Desktop, VS Code,
   Discord...) are as dark as the title bar above them, not grey.
@@ -42,8 +51,8 @@
 ### New
 - Volume Mixer: each app has an output button, like the Sound module's,
   that sends that app alone to another output (the one it plays on is
-  checked) -- in Control Center at its slider's right, in the menu bar's
-  Sound menu by its name.
+  checked) -- at its slider's right, in Control Center and in the menu
+  bar's Sound menu alike.
 
 ## 0.19.1-alpha -- 2026-10-17
 
