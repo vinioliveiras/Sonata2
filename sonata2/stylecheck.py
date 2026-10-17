@@ -52,17 +52,12 @@ def config_rows() -> list:
                 prefs = json.loads(_read(os.path.join(base, prof, "Preferences")) or "{}")
             except ValueError:
                 continue
-            theme = prefs.get("extensions", {}).get("theme", {})
             frame = prefs.get("browser", {}).get("custom_chrome_frame")
-            mode = theme.get("system_theme")
-            if mode == T.GTK_MODE and not theme.get("id") and frame is True:
-                rows.append((OK, f"{name} ({prof})", "GTK mode: Sonata's traffic lights"))
-            elif mode != T.GTK_MODE or theme.get("id"):
-                rows.append((OK, f"{name} ({prof})", "Classic mode or a theme: Sonata's title bar above the tabs"
-                             if frame is False else "Classic mode or a theme"))
+            if frame is False:
+                rows.append((OK, f"{name} ({prof})", "Sonata's title bar above the tabs"))
             else:
-                rows.append((WARN, f"{name} ({prof})", "its frame setting changed: put back at the next login "
-                             "(while the browser is closed)"))
+                rows.append((WARN, f"{name} ({prof})", "its own frame: Sonata's title bar is set at the next "
+                             "login (while the browser is closed)"))
     for flags in T.CHROMIUM_FLAGS:
         path = os.path.join(cfg, flags)
         if os.path.exists(path) or T._installed(flags):
@@ -79,9 +74,11 @@ def config_rows() -> list:
             ok = T.MOZ_LINE in _read(os.path.join(base, p, "user.js"))
             rows.append((OK if ok else WARN, f"{os.path.basename(base)} {p}",
                          "tabs under Sonata's title bar" if ok else "user.js line missing: written at the next login"))
-    for app in T.CODE:                    # (their own title bar, on purpose: titlebars.release_code)
-        if os.path.isdir(os.path.join(cfg, app)):
-            rows.append((OK, app, "its own title bar and menu, in its theme"))
+    for d in T.code_dirs(cfg):            # Sonata's title bar, always (titlebars.code_titlebar)
+        text = _read(os.path.join(d, "User", "settings.json"))
+        ok = bool(re.search(r'(?m)^(?:(?!//)[^\n])*?"window\.titleBarStyle"\s*:\s*"native"', text))
+        rows.append((OK if ok else WARN, os.path.basename(d), "Sonata's title bar" if ok else
+                     "its own title bar: Sonata's is set at the next login"))
     for path in T.VESKTOP:
         path = os.path.expanduser(path)
         if os.path.isfile(path):

@@ -5,23 +5,30 @@ preferred_decoration_mode = server), drawn by pixdecor like the rest of
 Sonata. Apps that draw their own frame unless told otherwise are told,
 at every login (`sonata2 autostart`):
 
+Sonata forces its title bar on every app that has a way to ask for it,
+at every login, whatever was chosen since (Vini: "everything forced to
+Sonata's bars"). Apps with no such setting keep their own -- forcing one
+over theirs would show two title bars.
+
 - Every Chromium-based browser (Chrome, Chromium, Brave, Edge, Vivaldi,
-  Opera, Thorium..., Flatpak ones too), found by its profile folder: like
-  Chrome on a Mac, its own frame with the tabs in the title bar and
-  Sonata's traffic lights to their left (GTK mode, set the first time);
-  choosing Classic in the browser brings Sonata's glass title bar back.
-  Skipped while the browser runs (it would write its own value back on
-  quit): next login.
+  Opera, Thorium..., Flatpak ones too), found by its profile folder:
+  Sonata's title bar above the tabs ("Use system title bar and borders"),
+  GTK mode for the colours (set the first time). Skipped while the browser
+  runs (it would write its own value back on quit): next login.
 - Electron apps with a normal frame get Sonata's title bar by themselves
   (Wayfire prefers server-side decorations); the ones that draw their own
   frame and have no setting for it (Spotify, Discord...) keep theirs.
-- VS Code / VSCodium / Code - OSS: left with their own title bar (Vini:
-  forced to "native", they showed Electron's GTK menu bar, light in Dark
-  Mode). Where Sonata had set "native", it's put back to "custom" once.
+- VS Code / VSCodium / Code - OSS / Insiders (Flatpak too): Sonata's title
+  bar, "window.titleBarStyle": "native", at every login and whenever the
+  option is turned on -- always, whatever was set since (Vini: Sonata
+  always forces its windows). Its menu bar follows Sonata's theme and Dark
+  Mode now (xsettings.py: it was light in Dark Mode, why it had been let go
+  for a while). Off: "custom", its own title bar.
 - Firefox, Thunderbird, LibreWolf, Floorp (every profile): user.js
   browser.tabs.inTitlebar = 0 (tabs under the system title bar).
 - Claude Desktop (claude-desktop-bin): CLAUDE_NATIVE_TITLEBAR=1, set by
   tools/session-env.sh at login.
+- Obsidian (Flatpak too): obsidian.json "frame": "native".
 - Vesktop (the open Discord client, Flatpak too): settings.json
   "titleBar": "system". The official Discord app has no such setting (only
   patching its core.asar, undone by every update): use Vesktop for it.
@@ -41,8 +48,12 @@ from gi.repository import GLib
 from . import config
 
 VESKTOP = ("~/.config/vesktop/settings.json", "~/.var/app/dev.vencord.Vesktop/config/vesktop/settings.json")
+OBSIDIAN = ("~/.config/obsidian/obsidian.json", "~/.var/app/md.obsidian.Obsidian/config/obsidian/obsidian.json")
 NAME = "titlebars"                     # ~/.config/sonata2/titlebars.json (one-time moves)
 CODE = ("Code", "Code - OSS", "VSCodium", "Code - Insiders")
+# Flatpak builds keep their settings in their own sandbox
+CODE_FLATPAK = ("~/.var/app/com.visualstudio.code/config/Code", "~/.var/app/com.vscodium.codium/config/VSCodium",
+                "~/.var/app/com.visualstudio.code.insiders/config/Code - Insiders")
 MOZILLA = ("~/.mozilla/firefox", "~/.config/mozilla/firefox", "~/.thunderbird", "~/.librewolf", "~/.floorp",
            "~/.var/app/org.mozilla.firefox/.mozilla/firefox")
 GTK_MODE, QT_MODE = 1, 2      # Chromium's "Appearance > Mode": 0 Classic, 1 GTK, 2 Qt
@@ -74,7 +85,7 @@ def apply(on: bool = None) -> None:
         except OSError:
             continue
         for p in profiles:
-            _browser_pref(os.path.join(base, p, "Preferences"))
+            _browser_pref(os.path.join(base, p, "Preferences"), on)
     _chromium_gtk3()
     for base in MOZILLA:
         base = os.path.expanduser(base)
@@ -85,7 +96,9 @@ def apply(on: bool = None) -> None:
         for prof in profiles:
             if os.path.isfile(os.path.join(prof, "prefs.js")):
                 _mozilla_userjs(os.path.join(prof, "user.js"), on)
-    release_code(cfg)
+    code_titlebar(on, cfg)
+    for path in OBSIDIAN:
+        _obsidian_setting(os.path.expanduser(path), on)
     for path in VESKTOP:
         _vesktop_setting(os.path.expanduser(path), on)
 
@@ -150,13 +163,11 @@ def _listdirs(path: str) -> list:
         return []
 
 
-def _browser_pref(path: str) -> None:
-    """Chrome on a Mac: tabs in the title bar, the window buttons to their
-    left. A profile that never chose an Appearance > Mode gets GTK (Sonata's
-    traffic lights, Light/Dark tab strip). The frame follows that mode:
-    GTK keeps the tabs in the title bar with Chromium's own frame; Classic
-    (or a browser theme) goes back to Sonata's glass title bar above the
-    tabs (read at login, while the browser is closed)."""
+def _browser_pref(path: str, on: bool = True) -> None:
+    """Sonata's title bar above the tabs while the option is on (Chromium's
+    "Use system title bar and borders"), every login; its own frame when off.
+    A profile that never chose an Appearance > Mode gets GTK (Sonata's
+    Light/Dark colours). Read at login, while the browser is closed."""
     try:
         with open(path, encoding="utf-8") as f:
             prefs = json.load(f)
@@ -171,9 +182,9 @@ def _browser_pref(path: str) -> None:
     if theme.get("system_theme") in (None, QT_MODE):
         theme["system_theme"] = GTK_MODE
         changed = True
-    gtk = theme.get("system_theme") == GTK_MODE and not theme.get("id")
-    if browser.get("custom_chrome_frame") is not gtk:
-        browser["custom_chrome_frame"] = gtk
+    own_frame = not on
+    if browser.get("custom_chrome_frame") is not own_frame:
+        browser["custom_chrome_frame"] = own_frame
         changed = True
     if not changed:
         return
@@ -194,23 +205,19 @@ def _mozilla_userjs(path: str, on: bool) -> None:
         _write(path, "\n".join(new) + ("\n" if new else ""))
 
 
-def release_code(cfg: str = None) -> None:
-    """VS Code is no longer told to use the system's title bar: where Sonata
-    had written "native", it goes back to "custom" (its own title bar, menu
-    included, in its own theme), once -- a later choice of the user's stays."""
-    if config.load(NAME, {}).get("code_released"):
-        return
+def code_dirs(cfg: str = None) -> list:
+    """The config folders of the VS Code family that has run here."""
     cfg = cfg or os.path.join(os.path.expanduser("~"), ".config")
-    for app in CODE:
-        path = os.path.join(cfg, app, "User", "settings.json")
-        try:
-            with open(path, encoding="utf-8") as f:
-                text = f.read()
-        except OSError:
-            continue
-        if re.search(r'(?m)^(?:(?!//)[^\n])*?"window\.titleBarStyle"\s*:\s*"native"', text):
-            _code_setting(path, "custom")
-    config.save(NAME, dict(config.load(NAME, {}), code_released=True))
+    dirs = [os.path.join(cfg, app) for app in CODE] + [os.path.expanduser(p) for p in CODE_FLATPAK]
+    return [d for d in dirs if os.path.isdir(d)]
+
+
+def code_titlebar(on: bool, cfg: str = None) -> None:
+    """VS Code and its family: Sonata's title bar ("native") while the option
+    is on -- set every time, whatever was chosen since -- their own
+    ("custom") when it's off. Only where one has run (its folder exists)."""
+    for d in code_dirs(cfg):
+        _code_setting(os.path.join(d, "User", "settings.json"), "native" if on else "custom")
 
 
 def _code_setting(path: str, style: str) -> None:
@@ -234,6 +241,19 @@ def _code_setting(path: str, style: str) -> None:
     if new != text:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         _write(path, new)
+
+
+def _obsidian_setting(path: str, on: bool) -> None:
+    """Obsidian: "frame" -- "native" is the window manager's title bar,
+    "hidden" its own. Only for an Obsidian that has run once."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return
+    new = dict(data, frame="native" if on else "hidden")
+    if new != data:
+        _write(path, json.dumps(new))
 
 
 def _vesktop_setting(path: str, on: bool) -> None:

@@ -3,6 +3,18 @@
 ## Unreleased
 
 ### Fixes
+- Dark Mode: menu bars of GTK 3 and Electron apps (GitHub Desktop, VS Code,
+  Discord...) are as dark as the title bar above them, not grey.
+- VS Code (and VSCodium, Code - OSS, Insiders, Flatpak too) gets Sonata's
+  title bar again, set at every login and whenever the option is turned on
+  -- whatever was chosen since. Its menu bar follows Sonata's theme and Dark
+  Mode now; it had been left with its own title bar for that.
+- Every app that has a setting for it gets Sonata's title bar at every
+  login: Chromium browsers (Chrome, Brave, Edge... -- the tabs below
+  Sonata's bar) and Obsidian too, besides VS Code, Firefox, Thunderbird and
+  Vesktop. Apps without one keep their own, so no window shows two.
+<<<<<<< HEAD
+=======
 - Web apps on Chrome (Instagram, WhatsApp...): the unread count in the
   page's title reaches the Dock again, as soon as the app opens and each
   time it changes -- Chrome only told Sonata the title when the page's
@@ -18,6 +30,7 @@
   the calendar, which the next opening then had to lay out again (~0.25 s
   with 100 notifications, now ~10 ms). Each card's time ("5m ago") is now
   current when it opens.
+>>>>>>> origin/main
 - Video wallpaper: changing it several times no longer slows the desktop
   down. Each video let go of is freed once paused, and the memory goes back
   to the system: a player freed while GStreamer was still busy with it was
