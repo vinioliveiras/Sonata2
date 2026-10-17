@@ -214,6 +214,31 @@ class TitlebarSettingsTest(unittest.TestCase):
         titlebars._obsidian_setting(p, False)
         self.assertEqual(json.loads(_read(p))["frame"], "hidden")
 
+    def test_vscode_chromium_obsidian_forced_onto_sonatas_title_bar_at_every_login(self):
+        """Vini: "Sonata must ALWAYS force its windows" -- VS Code, Chromium
+        browsers and Obsidian, each set back to its own bar since, get
+        Sonata's title bar again from the login's apply(), not only from
+        their setters run alone."""
+        home = self.d
+        cfg = os.path.join(home, ".config")
+        code = os.path.join(cfg, "Code", "User", "settings.json")
+        chrome = os.path.join(cfg, "google-chrome", "Default", "Preferences")
+        obsidian = os.path.join(cfg, "obsidian", "obsidian.json")
+        _write(code, '{\n    "window.titleBarStyle": "custom"\n}\n')
+        _write(os.path.join(cfg, "google-chrome", "Local State"), "{}")
+        _write(chrome, json.dumps({"browser": {"custom_chrome_frame": True},
+                                   "extensions": {"theme": {"system_theme": 1}}}))
+        _write(obsidian, json.dumps({"vaults": {}, "frame": "hidden"}))
+        from sonata2 import adwstyle
+        with mock.patch.dict(os.environ, {"HOME": home}), \
+                mock.patch.object(titlebars.GLib, "get_user_config_dir", lambda: cfg), \
+                mock.patch.object(titlebars, "_chromium_gtk3"), \
+                mock.patch.object(adwstyle, "write"), mock.patch.object(adwstyle, "link"):
+            titlebars.apply(True)
+        self.assertIn('"window.titleBarStyle": "native"', _read(code))
+        self.assertIs(json.loads(_read(chrome))["browser"]["custom_chrome_frame"], False)
+        self.assertEqual(json.loads(_read(obsidian))["frame"], "native")
+
     def test_vscode_always_gets_sonatas_title_bar(self):
         """Vini: "VS Code stopped taking Sonata's window theme -- Sonata must
         ALWAYS force its windows": "native" at every login while the option is

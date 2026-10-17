@@ -24,6 +24,15 @@ def settle(ms=200):
         GLib.MainContext.default().iteration(False)
 
 
+def walk(w):
+    """w and every widget under it."""
+    yield w
+    c = w.get_first_child()
+    while c is not None:
+        yield from walk(c)
+        c = c.get_next_sibling()
+
+
 class FakeInfo:
     def __init__(self, name, cats):
         self.name, self.cats = name, cats
@@ -301,6 +310,29 @@ class PlaceAndSizeTest(unittest.TestCase):
         launchpad = src[src.index("def _page_launchpad"):src.index("def _page_hidden")]
         self.assertIn("LW.STYLES", appearance)
         self.assertNotIn("LW.STYLES", launchpad)
+
+    def test_style_value_not_cut_by_its_subtitle(self):
+        """Vini: Settings > Appearance > Apps style showed its value cut to
+        "Ful…" -- the long subtitle took the row's width. Every language."""
+        from sonata2 import i18n, names
+        from sonata2.settings import app as st
+        Adw.init()
+        ui.setup()
+        self.addCleanup(i18n.use, None)
+        for lang in (None, "pt_BR", "pt_PT"):
+            i18n.use(lang)
+            win = st.Settings(None)
+            win.present()
+            settle(300)
+            win.select("appearance")
+            settle(400)
+            title = i18n._("{apps} style").format(apps=i18n._(names.APPS))
+            rows = [w for w in walk(win) if isinstance(w, Adw.ComboRow) and w.get_title() == title]
+            self.assertEqual(len(rows), 1, lang)
+            cut = [w.get_label() for w in walk(rows[0])
+                   if isinstance(w, Gtk.Label) and w.get_mapped() and w.get_layout().is_ellipsized()]
+            self.assertEqual(cut, [], lang)
+            win.destroy()
 
     def test_smaller_panel(self):
         """Vini: it was too big on his 1920 x 1080 screen."""

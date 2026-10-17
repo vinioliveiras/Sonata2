@@ -35,6 +35,19 @@ class HistoryTest(unittest.TestCase):
             f.write("{not json")
         self.assertEqual(N.load_history(), [])
 
+    def test_every_change_is_kept_for_a_restart(self):
+        """The list is written as it changes (a notification, one read):
+        what a restarted menu bar reads back is the Dock's badges as they were."""
+        n = N.Notifications.__new__(N.Notifications)
+        n.notes, n.listeners = [N.Note(5, "WhatsApp", "", "Ana", "oi", [], desktop="whatsapp")], []
+        with mock.patch("sonata2.badges.publish"):
+            n._changed()
+        self.assertEqual([x.id for x in N.load_history()], [5])
+        n.notes = []
+        with mock.patch("sonata2.badges.publish"):
+            n._changed()                                             # read: gone after a restart too
+        self.assertEqual(N.load_history(), [])
+
     def test_start_publishes_what_was_kept(self):
         src = open(N.__file__).read()
         self.assertIn("self.notes = load_history()", src)

@@ -58,6 +58,21 @@ class ReloadTest(unittest.TestCase):
         self.assertIsNone(win.fade._pic)
         win.destroy()
 
+    def test_switching_sections_stays_instant(self):
+        """Vini: Settings' sections switch at once, no fade. A leftover
+        picture was let go of by fading it out, which animated every
+        section switch: it goes at once now."""
+        win = S.Settings(None)
+        win.set_default_size(900, 600)
+        win.present()
+        win.select("users")
+        settle(500)
+        win.fade.capture()
+        win.select("sound")
+        self.assertIsNone(win.fade._pic)               # gone already, not fading over the new page
+        self.assertIsNone(win.fade._anim)
+        win.destroy()
+
 
 if __name__ == "__main__":
     unittest.main()
