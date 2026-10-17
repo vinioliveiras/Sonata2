@@ -13,6 +13,12 @@
   login: Chromium browsers (Chrome, Brave, Edge... -- the tabs below
   Sonata's bar) and Obsidian too, besides VS Code, Firefox, Thunderbird and
   Vesktop. Apps without one keep their own, so no window shows two.
+- Video wallpaper: changing it several times no longer slows the desktop
+  down. Each video let go of is freed once paused, and the memory goes back
+  to the system: a player freed while GStreamer was still busy with it was
+  never freed, its threads and ~30 MB staying behind at every change.
+- Video wallpaper: no sound, ever. The wallpaper's player has no audio
+  output at all, rather than a muted one the sound server could unmute.
 
 ### New
 - Mission Control: drop a window on + for a new desktop with the window on
@@ -31,6 +37,9 @@
 - Mission Control: a window follows the pointer as soon as you drag it --
   it stayed in its place until pulled about 200 px (Sonata's Wayfire:
   wayfire-scale-sonata-events.patch).
+- Menus: a very long item (a window's title in the menu bar's Window menu,
+  a recent file, a tray app's entry) ends in "…" instead of making the whole
+  menu as wide as its text; hovering it shows the full text.
 
 ## 0.19.0-alpha -- 2026-10-16
 
