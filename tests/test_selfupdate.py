@@ -87,7 +87,8 @@ class VersionTest(unittest.TestCase):
             released = re.findall(r"(?m)^## (\S+) -- ", f.read())
         self.assertEqual(released[0], S.__version__)
         for tag in tags:
-            self.assertIn(tag[1:], released, tag)
+            # (v0.16.0 was 0.16.0-alpha's tag, published without its suffix)
+            self.assertTrue(tag[1:] in released or tag[1:] + "-alpha" in released, tag)
         self.assertFalse(S.newer(max(tags, key=S.parse_version)))
 
     def test_pick(self):

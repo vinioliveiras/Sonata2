@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.19.3-alpha -- 2026-10-17
+
+Alt+Tab picks a window in Mission Control and a right-click under the Dock
+opens a taskbar menu. The FPS limit works for Steam at login, window
+animations come back after a game, the video wallpaper fills the whole
+screen and dark menus are dark in every app. Lighter all round: Files
+opens big folders several times faster, Control Center opens in a blink and
+the shell no longer wakes up while idle.
+
 ### New
 - Dock: a right-click on the Dock's own space -- the strip under it, or
   its plate between the icons -- opens a menu like Windows' taskbar: Task
