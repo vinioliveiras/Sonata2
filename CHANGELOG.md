@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.20.0-alpha -- 2026-10-17
+
+Quicker to open and smoother to use: the Apps menu opens at once, the
+Control Center's first opening is as fast as the rest, translucent windows
+no longer flicker, and Mission Control's windows drag at once -- onto + for
+a new desktop.
+
 ### New
 - Mission Control: drop a window on + for a new desktop with the window on
   it.
