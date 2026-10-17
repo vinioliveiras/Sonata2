@@ -18,7 +18,7 @@ from sonata2 import config  # noqa: E402
 from sonata2.backend import mixer as M  # noqa: E402
 
 
-def item(index, name, binary, pct="65%", mute=False, role=None, app_id=None, icon=None):
+def item(index, name, binary, pct="65%", mute=False, role=None, app_id=None, icon=None, sink=1):
     props = {"application.name": name, "application.process.binary": binary}
     if role:
         props["media.role"] = role
@@ -26,14 +26,14 @@ def item(index, name, binary, pct="65%", mute=False, role=None, app_id=None, ico
         props["application.id"] = app_id
     if icon:
         props["application.icon_name"] = icon
-    return {"index": index, "mute": mute, "corked": False, "properties": props,
+    return {"index": index, "mute": mute, "corked": False, "properties": props, "sink": sink,
             "volume": {"front-left": {"value_percent": pct}, "front-right": {"value_percent": pct}}}
 
 
 PACTL = json.dumps([
     item(10, "Firefox", "firefox", "40%", icon="firefox"),
     item(11, "Firefox", "firefox", "40%"),                       # a second tab playing
-    item(12, "Spotify", "spotify", "80%", mute=True, app_id="com.spotify.Client"),
+    item(12, "Spotify", "spotify", "80%", mute=True, app_id="com.spotify.Client", sink=2),
     item(13, "pw-play", "pw-play", "100%"),                     # Sonata's own sound
     item(14, "Chat", "chat", "100%", role="event"),             # a ding
 ])
@@ -91,9 +91,68 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(calls, [["pactl", "set-sink-input-volume", "10", "25%"],
                                  ["pactl", "set-sink-input-mute", "12", "0"]])
 
+    def test_stream_knows_its_output(self):
+        ss = M.parse(PACTL)
+        self.assertEqual([s.sink for s in ss], [1, 1, 2])
+        self.assertEqual(M.parse(json.dumps([{**item(1, "A", "a"), "sink": None}]))[0].sink, -1)
+
     def test_saved_is_a_known_config(self):
         M.remember("x", 10, True)
         self.assertEqual(config.load(M.NAME, M.DEFAULTS), {"volumes": {"x": 10}, "muted": {"x": True}})
+
+
+SINKS = json.dumps([
+    {"index": 1, "name": "alsa_output.pci", "description": "Built-in Audio Analog Stereo"},
+    {"index": 2, "name": "bluez_output.AA", "description": "AirPods Pro"},
+    {"index": 3, "name": "alsa_output.hdmi", "description": "HDMI"},              # unplugged: not in Output
+    {"index": 4, "name": "sonata-eq.alsa_output.pci", "description": "Equalizer"},
+    {"index": 5, "name": "alsa_output.usb", "description": "USB Audio"},          # two ports: its own name
+])
+
+
+def devices():
+    from sonata2.backend.system import AudioDevice
+    return [AudioDevice("alsa_output.pci|analog-output-speaker", "Speakers", True),
+            AudioDevice("bluez_output.AA|", "AirPods Pro", False),
+            AudioDevice("alsa_output.usb|line", "Line Out", False),
+            AudioDevice("alsa_output.usb|headphones", "Headphones", False)]
+
+
+class PerAppOutputTest(unittest.TestCase):
+    """Vini: each app's slider gets a button, like the Sound module's output
+    one, that sends that app alone to another output."""
+
+    def test_outputs_as_in_the_output_list(self):
+        outs = M.outputs_from(SINKS, devices())
+        self.assertEqual([(o.index, o.name, o.label) for o in outs],
+                         [(1, "alsa_output.pci", "Speakers"), (2, "bluez_output.AA", "AirPods Pro"),
+                          (5, "alsa_output.usb", "USB Audio")])
+        self.assertEqual(M.outputs_from("not json", devices()), [])
+
+    def test_current_output(self):
+        outs = M.outputs_from(SINKS, devices())
+        ss = M.parse(PACTL)
+        self.assertEqual(M.current_output(ss[2], outs, SINKS).label, "AirPods Pro")
+        ss[0].sink = 4                                   # through the equalizer: its device's
+        self.assertEqual(M.current_output(ss[0], outs, SINKS).name, "alsa_output.pci")
+        ss[0].sink = 99
+        self.assertIsNone(M.current_output(ss[0], outs, SINKS))
+
+    def test_move_sends_every_stream_of_the_app(self):
+        calls = []
+        with mock.patch.object(M, "_run", side_effect=lambda a, timeout=4: (calls.append(a), (0, ""))[1]):
+            self.assertTrue(M.move("firefox", "bluez_output.AA", M.parse(PACTL)))
+        self.assertEqual(calls, [["pactl", "move-sink-input", "10", "bluez_output.AA"],
+                                 ["pactl", "move-sink-input", "11", "bluez_output.AA"]])
+
+    def test_choices_read_once(self):
+        with mock.patch.object(M, "_run", return_value=(0, SINKS)), \
+                mock.patch("sonata2.backend.system.audio_outputs", return_value=devices()):
+            outs, cur = M.choices(M.parse(PACTL)[2])
+        self.assertEqual(len(outs), 3)
+        self.assertEqual(cur.name, "bluez_output.AA")
+        with mock.patch.object(M, "_run", return_value=(1, "")):
+            self.assertEqual(M.choices(M.parse(PACTL)[2]), ([], None))
 
 
 class ServiceTest(unittest.TestCase):
@@ -159,9 +218,43 @@ class MixerUiTest(unittest.TestCase):
         row = self.box.rows["firefox"]
         self.assertIsInstance(row.slider, ModuleSlider)
         self.assertEqual(row.box.get_orientation(), Gtk.Orientation.VERTICAL)
-        title, capsule = row.box.get_first_child(), row.box.get_last_child()
+        title, under = row.box.get_first_child(), row.box.get_last_child()
         self.assertIs(title.get_first_child(), row.mute)          # icon, then name, on top
-        self.assertTrue(capsule.has_css_class("cc-slider-box"))   # the capsule under them
+        capsule = under.get_first_child()
+        self.assertTrue(capsule.has_css_class("cc-slider-box"))   # the capsule under them,
+        self.assertIs(under.get_last_child(), row.output)         # the output button at its right
+
+    def test_output_button_picks_for_that_app(self):
+        picked = []
+        box = self.U.AppMixer(apply=lambda *a: None, pick=lambda b, key, ss: picked.append((b, key, len(ss))))
+        box.set_streams(M.parse(PACTL))
+        row = box.rows["com.spotify.client"]
+        row.output.emit("clicked")
+        self.assertEqual(picked, [(row.output, "com.spotify.client", 3)])
+
+    def test_sound_menu_puts_the_button_by_the_name(self):
+        box = self.U.AppMixer(apply=lambda *a: None, beside=False)
+        box.set_streams(M.parse(PACTL))
+        row = box.rows["firefox"]
+        self.assertIs(row.output.get_parent(), row.box.get_first_child())     # on the name's line
+        self.assertTrue(row.box.get_last_child().has_css_class("cc-slider-box"))   # the slider alone
+
+    def test_picker_lists_outputs_and_moves_the_app(self):
+        from sonata2.shell import topbar
+        ss = M.parse(PACTL)
+        outs = [M.Output(1, "alsa_output.pci", "Speakers"), M.Output(2, "bluez_output.AA", "AirPods Pro")]
+        seen = {}
+
+        def menu(btn, title, list_fn, set_fn):
+            seen["devs"] = [(d.name, d.default) for d in list_fn()]
+            seen["set"] = set_fn
+        with mock.patch.object(topbar, "_device_menu", side_effect=menu), \
+                mock.patch.object(M, "choices", return_value=(outs, outs[1])):
+            self.U.AppMixer._pick_menu(None, "com.spotify.client", ss)
+        self.assertEqual(seen["devs"], [("Speakers", False), ("AirPods Pro", True)])
+        with mock.patch.object(M, "move") as move:
+            seen["set"]("alsa_output.pci")
+        move.assert_called_once_with("com.spotify.client", "alsa_output.pci", ss)
 
     def test_rows_follow_the_streams(self):
         self.assertTrue(self.box.empty.get_visible())
@@ -213,6 +306,90 @@ class MixerUiTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VolumeMixerAlignedWithSoundSlidersTest(unittest.TestCase):
+    """Vini: the Volume Mixer's app sliders started further in and ended
+    earlier than the Sound module's, with no output button. They line up
+    now (same left edge, same width) with the button at their right, in
+    Control Center and in the menu bar's Sound menu."""
+
+    @classmethod
+    def setUpClass(cls):
+        gi.require_version("Adw", "1")
+        from gi.repository import Adw
+        Adw.init()
+        from sonata2 import ui
+        ui.theme.setup()                 # the real CSS: paddings are what this is about
+
+    def setUp(self):
+        import types
+        from sonata2.backend import system
+        from sonata2.shell import topbar as T
+        self.T = T
+        ss = [M.Stream(index=10, key="google-chrome", name="Google Chrome", icon="", volume=70, muted=False,
+                       sink=1)]
+        self.service = types.SimpleNamespace(listeners=[])
+        for p in (mock.patch.object(M, "available", return_value=True),
+                  mock.patch.object(M, "streams", return_value=ss),
+                  mock.patch.object(system, "run_async",
+                                    side_effect=lambda fn, cb=None, *a: cb and cb(fn(*a))),
+                  mock.patch.object(system, "volume", return_value=(60, False)),
+                  mock.patch.object(system, "audio_outputs", return_value=devices()),
+                  mock.patch.object(T, "cached")):
+            p.start()
+            self.addCleanup(p.stop)
+        self.wins = []
+        self.addCleanup(lambda: [w.destroy() for w in self.wins])
+
+    def bounds(self, w, ref):
+        ok, b = w.compute_bounds(ref)
+        self.assertTrue(ok)
+        return round(b.get_x()), round(b.get_width())
+
+    def test_control_center(self):
+        import types
+        config.save("controlcenter", {"modules": ["sound", "mixer"]})
+        bar = types.SimpleNamespace(_poll=lambda: None, _set_volume=lambda v: None, notifications=None,
+                                    monitor=None, get_native=lambda: None, mixer=self.service)
+        cc = self.T.ControlCenter(bar)
+        win = Gtk.Window(child=cc)
+        self.wins.append(win)
+        win.present()
+        settle(400)
+        row = cc.app_mixer.rows["google-chrome"]
+        self.assertEqual(self.bounds(row.slider, cc), self.bounds(cc.vol, cc))
+        self.assertEqual(self.bounds(row.slider, cc), self.bounds(cc.mic, cc))
+        sound_btn = cc.vol.get_parent().get_next_sibling()           # the Sound module's output button
+        self.assertEqual(self.bounds(row.output, cc), self.bounds(sound_btn, cc))
+
+    def test_sound_menu(self):
+        import types
+        from sonata2.ui.controls import ModuleSlider
+        bar = types.SimpleNamespace(mixer=self.service, _set_volume=lambda v: None)
+        bar._prefs_row = types.MethodType(self.T.Bar._prefs_row, bar)
+        btn = Gtk.Button(label="x", halign=Gtk.Align.CENTER, valign=Gtk.Align.START)
+        win = Gtk.Window(child=btn, default_width=400, default_height=600)
+        self.wins.append(win)
+        win.present()
+        settle(50)
+        pop = self.T.Bar._sound_panel(bar, btn)
+        pop.popup()
+        settle(400)
+        row = bar.app_mixer.rows["google-chrome"]
+
+        def walk(w):
+            yield w
+            c = w.get_first_child()
+            while c is not None:
+                yield from walk(c)
+                c = c.get_next_sibling()
+        main = next(s for s in walk(pop.get_child()) if isinstance(s, ModuleSlider))
+        self.assertEqual(self.bounds(row.slider, pop), self.bounds(main, pop))
+        x, w = self.bounds(row.output, pop)
+        sx, sw = self.bounds(main, pop)
+        self.assertEqual(x + w, sx + sw)                  # the button ends where the sliders end
+        pop.popdown()
 
 
 class SystemSoundsTest(unittest.TestCase):
