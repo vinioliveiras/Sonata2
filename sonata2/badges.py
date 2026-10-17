@@ -24,8 +24,9 @@ finds it by the sending process's own profile (notifications.py).
 
 Its window's title is no help there either: Chrome names an --app window
 after the site ("web.whatsapp.com", Vini: WhatsApp's count never showed).
-The web app's own process reads the page's title over DevTools' pipe and
-publishes it here (page_title); the Dock counts that one.
+The web app's own process reads the page's title over DevTools' pipe as it
+changes and publishes it here (page_title); the Dock counts that one and
+the window's own.
 
     publish_page_title(window_class, title)   # the web app's process
     page_titles() -> {window_class: title}    # the Dock
@@ -126,10 +127,16 @@ def page_titles(path=None) -> dict:
 
 
 def window_titles(wins, pages: dict = None) -> list:
-    """The titles that count: a web app's page title where its window's is
-    only the site's name."""
+    """The titles that count: each window's own and its web app's page
+    title, both -- the page's stood in for the window's, and a stale one
+    (Chrome's word at the last move: "Instagram", the address) hid the
+    count the window's title had ("(3) Instagram", Vini: no badge)."""
     pages = page_titles() if pages is None else pages
-    return [pages.get(getattr(t, "app_id", "") or "") or t.title for t in wins]
+    out = []
+    for t in wins:
+        page = pages.get(getattr(t, "app_id", "") or "")
+        out += [page, t.title] if page and page != t.title else [t.title]
+    return out
 
 
 # -- the notification list, between processes ----------------------------------------------
@@ -201,8 +208,12 @@ def webapp_of(argv) -> str:
     from . import webapps
     argv = list(argv or ())
     for a in argv:
-        if a.startswith("--user-data-dir="):
-            path = os.path.normpath(a.split("=", 1)[1])
+        # Chrome writes its whole command line back as one string, spaces
+        # between ("chrome --user-data-dir=... --app=..."): its own sender
+        # was never found by this (its notifications went to "Google Chrome")
+        m = re.search(r"(?:^|\s)--user-data-dir=(.+?)(?=\s--|$)", a)
+        if m:
+            path = os.path.normpath(m.group(1))
             parent, leaf = os.path.split(path)
             root, app = os.path.split(parent)
             if leaf == "chromium" and os.path.basename(root) == "webapps" and app:

@@ -32,7 +32,8 @@ BANNER_MS = 5000
 from . import menubar_size  # noqa: E402
 TOP_GAP = menubar_size.height() + 6                # under the menu bar
 MAX_BANNERS = 3
-MAX_NOTES = 100            # kept in the Notification Center (it shows the newest 40)
+MAX_NOTES = 100            # kept in the Notification Center
+SHOWN = 40                 # the newest ones it shows (a card each)
 DEFAULTS = {"dnd": False, "badges": True, "apps": {}}
 # per app (System Preferences > Notifications): key = desktop entry or app name
 APP_DEFAULTS = {"name": "", "allow": True, "style": "banners", "center": True, "sound": True, "badge": True}
@@ -623,6 +624,7 @@ class Notifications:
         over.add_controller(hover)
         over.set_margin_start(6)
         over.set_margin_top(6)
+        over.when = when                            # Notification Center keeps its time current
         return over
 
     def _icon(self, img, n: Note):
@@ -707,6 +709,12 @@ class _Center(Gtk.Window):
             LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND)
             self.keyboard_mode = LS.KeyboardMode.ON_DEMAND        # (layer.prewarm restores it)
         self._slots = {}             # note id -> Revealer around its card
+        self._shown = {}             # note id -> (the Note, its time) its card was made for
+        self._leaving = []           # slots sliding out, removed when they've gone
+        self._head = self._title = self._clear = None
+        self._cal = None             # the Today widgets
+        self._cal_key = None
+        self._cal_until = None       # when Up Next's first event ends (it then drops out)
         self._settle = 0
         self._later = 0              # a rebuild while closed, coalesced
         owner.listeners.append(self._changed)
@@ -727,10 +735,11 @@ class _Center(Gtk.Window):
             if LS:                                   # (closed, so it can move to that display)
                 LS.set_monitor(self, monitor)
             self.monitor = monitor
-        # already built (at start, and on every change while closed): only a new
-        # day needs the calendar redrawn -- opening is then instant
+        # already built (at start, and on every change while closed): only what
+        # changed since is brought up to date -- opening is then instant
         if getattr(self, "_built_for", None) != self._state_key():
             self._rebuild()
+        self._refresh_times()
         self.present()
         GLib.idle_add(lambda: (self.rev.set_reveal_child(True), False)[1])
 
@@ -740,21 +749,23 @@ class _Center(Gtk.Window):
 
     def _changed(self):
         """Closed notes leave with an animation (staggered for Clear All);
-        anything else rebuilds the column at once."""
+        anything else updates the column at once."""
         if not self.get_visible():
-            # closed: one rebuild after a burst, not one per notification
+            # closed: one update after a burst, not one per notification
             # (opening still finds it built; show_center catches anything newer)
             if not self._later:
                 self._later = GLib.timeout_add(1000, self._rebuild_closed)
             return
         ids = {n.id for n in self.owner.notes}
         gone = [nid for nid in self._slots if nid not in ids]
-        new = [n.id for n in list(reversed(self.owner.notes))[:40] if n.id not in self._slots]
+        new = [n.id for n in list(reversed(self.owner.notes))[:SHOWN] if n.id not in self._slots]
         if new or not gone:
             self._rebuild()
             return
         for i, nid in enumerate(gone):
             slot = self._slots.pop(nid)
+            self._shown.pop(nid, None)
+            self._leaving.append(slot)
 
             def leave(slot=slot):
                 slot.add_css_class("leaving")
@@ -778,29 +789,77 @@ class _Center(Gtk.Window):
         return False
 
     def _state_key(self):
+        import datetime as dt
         return (tuple((n.id, n.at) for n in self.owner.notes),
-                GLib.DateTime.new_now_local().format("%Y-%m-%d"), _calendar_stamp())
+                GLib.DateTime.new_now_local().format("%Y-%m-%d"), _calendar_stamp(),
+                self._cal_until is not None and dt.datetime.now() >= self._cal_until)
 
     def _rebuild(self):
+        """The column brought up to the list: a new note gets its card, a
+        closed one loses its own, the others stay as they are -- built and
+        laid out already. (Every notification used to rebuild all 40 cards
+        and the calendar, so the next opening laid them all out again before
+        its first frame: Vini, it opened laggy whenever there were
+        notifications.)"""
         self._built_for = self._state_key()
-        while self.col.get_first_child():
-            self.col.remove(self.col.get_first_child())
-        notes = list(reversed(self.owner.notes))
-        head = Gtk.Box()
-        head.append(Gtk.Label(label=_("Notifications") if notes else _("No Notifications"), xalign=0, hexpand=True,
-                              css_classes=["nc-head"]))
-        if notes:
-            clear = Gtk.Button(label=_("Clear All"), css_classes=["nc-clear"], valign=Gtk.Align.CENTER)
-            clear.connect("clicked", lambda *_: self.owner.clear())
-            head.append(clear)
-        self.col.append(head)
-        self._slots = {}
-        for n in notes[:40]:
-            slot = Gtk.Revealer(child=self.owner.card(n), reveal_child=True, css_classes=["nc-slot"],
-                                transition_type=Gtk.RevealerTransitionType.SLIDE_UP, transition_duration=260)
-            self._slots[n.id] = slot
-            self.col.append(slot)
-        # Today widgets (Big Sur: below the notifications)
+        notes = list(reversed(self.owner.notes))[:SHOWN]
+        if self._head is None:
+            self._head = Gtk.Box()
+            self._title = Gtk.Label(xalign=0, hexpand=True, css_classes=["nc-head"])
+            self._head.append(self._title)
+            self._clear = Gtk.Button(label=_("Clear All"), css_classes=["nc-clear"], valign=Gtk.Align.CENTER)
+            self._clear.connect("clicked", lambda *_: self.owner.clear())
+            self._head.append(self._clear)
+            self.col.prepend(self._head)
+        self._title.set_label(_("Notifications") if notes else _("No Notifications"))
+        self._clear.set_visible(bool(notes))
+        for slot in self._leaving:                  # (done sliding out)
+            if slot.get_parent() is self.col:
+                self.col.remove(slot)
+        self._leaving = []
+        wanted = {n.id for n in notes}
+        for nid in [nid for nid in self._slots if nid not in wanted]:
+            self.col.remove(self._slots.pop(nid))
+            self._shown.pop(nid, None)
+        prev = self._head
+        for n in notes:
+            slot = self._slots.get(n.id)
+            made = self._shown.get(n.id)
+            if slot is not None and (made is None or made[0] is not n or made[1] != n.at):
+                self.col.remove(slot)                 # replaced in place (same id, new text)
+                slot = None
+            if slot is None:
+                card = self.owner.card(n)
+                slot = Gtk.Revealer(child=card, reveal_child=True, css_classes=["nc-slot"],
+                                    transition_type=Gtk.RevealerTransitionType.SLIDE_UP, transition_duration=260)
+                slot.when = getattr(card, "when", None)
+                self._slots[n.id], self._shown[n.id] = slot, (n, n.at)
+                self.col.insert_child_after(slot, prev)
+            elif slot.get_prev_sibling() is not prev:
+                self.col.reorder_child_after(slot, prev)
+            prev = slot
+        self._calendar()
+
+    def _refresh_times(self):
+        """Each card's "5m ago" as of this opening (only the ones that changed
+        are set: a label set anew is laid out again)."""
+        for nid, slot in self._slots.items():
+            made, when = self._shown.get(nid), getattr(slot, "when", None)
+            if made is not None and when is not None:
+                text = _ago(made[1])
+                if when.get_label() != text:
+                    when.set_label(text)
+
+    def _calendar(self):
+        """Today widgets (Big Sur: below the notifications), made again only
+        on a new day, after Calendar's files changed, or when Up Next's first
+        event has ended -- reading the calendar files was part of every
+        notification's rebuild."""
+        import datetime as dt
+        key = (GLib.DateTime.new_now_local().format("%Y-%m-%d"), _calendar_stamp())
+        now = dt.datetime.now()
+        if self._cal is not None and key == self._cal_key and (self._cal_until is None or now < self._cal_until):
+            return
         cal = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["nc-widget"], margin_start=6,
                       margin_top=8)
         events = _upcoming()
@@ -811,7 +870,13 @@ class _Center(Gtk.Window):
         click.connect("released", lambda *_: self._open_calendar(None))
         cal.add_controller(click)
         from ..ui.fixed import FixedWidth
-        self.col.append(FixedWidth(cal, BANNER_W + 6))        # (its margin_start); an event title never widens it
+        if self._cal is not None:
+            self.col.remove(self._cal)
+        self._cal = FixedWidth(cal, BANNER_W + 6)        # (its margin_start); an event title never widens it
+        self.col.append(self._cal)
+        self._cal_key = key
+        self._cal_until = min((o.end for o, _c in events
+                               if o.end > now and o.start.date() <= now.date() + dt.timedelta(days=1)), default=None)
 
     def _open_calendar(self, date) -> None:
         """Calendar, on `date` (a datetime.date) in the Day view, or as it was."""

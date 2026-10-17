@@ -3,16 +3,6 @@
 ## Unreleased
 
 ### Fixes
-- Dark Mode: menu bars of GTK 3 and Electron apps (GitHub Desktop, VS Code,
-  Discord...) are as dark as the title bar above them, not grey.
-- VS Code (and VSCodium, Code - OSS, Insiders, Flatpak too) gets Sonata's
-  title bar again, set at every login and whenever the option is turned on
-  -- whatever was chosen since. Its menu bar follows Sonata's theme and Dark
-  Mode now; it had been left with its own title bar for that.
-- Every app that has a setting for it gets Sonata's title bar at every
-  login: Chromium browsers (Chrome, Brave, Edge... -- the tabs below
-  Sonata's bar) and Obsidian too, besides VS Code, Firefox, Thunderbird and
-  Vesktop. Apps without one keep their own, so no window shows two.
 - Video wallpaper: changing it several times no longer slows the desktop
   down. Each video let go of is freed once paused, and the memory goes back
   to the system: a player freed while GStreamer was still busy with it was
@@ -23,6 +13,10 @@
 ### New
 - Mission Control: drop a window on + for a new desktop with the window on
   it.
+- Volume Mixer: each app has an output button, like the Sound module's,
+  that sends that app alone to another output (the one it plays on is
+  checked) -- in Control Center at its slider's right, in the menu bar's
+  Sound menu by its name.
 
 ### Fixes
 - Translucent windows (Terminal and Sonata's other apps) no longer flicker

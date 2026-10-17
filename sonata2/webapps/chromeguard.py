@@ -14,7 +14,17 @@ entry, and a page that moves within itself (pushState: WhatsApp) leaves a
 new entry without a title until the title changes again. The app's page is
 watched (Page.enable on its own session) and after each such move, and
 each load, its own title is set again (the same text, nudged), so Chrome
-takes it -- the page's real name and count, nothing made up.
+takes it -- the page's real name and count.
+
+The page's title as it changes (Vini: Instagram's count, only ever in its
+title, never reached the Dock; WhatsApp's window still read its address).
+Chrome tells DevTools a page's title only when its address changes
+(Target.targetInfoChanged): a count that came into the title without a
+move went unseen, and what was published was the address, read before the
+page's <title>. A small watcher in the page (WATCH_JS, on every load)
+reports each new title through a binding (Runtime.bindingCalled); while the
+page has no title at all (none yet, or its <title> taken out) it holds the
+web app's own name, given way to as soon as the page has its own.
 
     guard = Guard(app_url, write)      # write(bytes): to the browser
     guard.feed(data)                   # bytes from the browser
@@ -32,6 +42,45 @@ class Guard:
     NUDGE = ("(() => { const t = document.title;"
              " if (t) { document.title = t + '\\u200b'; document.title = t; } return t; })()")
     TITLES_LOGGED = 5
+    BINDING = "sonataTitle"
+    # in the page: its title reported on each change (BINDING). A page without
+    # one holds the web app's name in a <title> of ours, taken out as soon as
+    # the page has its own -- never over the page's count. Only <head> is
+    # watched (a chat's other DOM changes cost nothing).
+    WATCH_JS = """(() => {
+  if (window.__sonataTitle) return;
+  window.__sonataTitle = true;
+  const NAME = %s, MARK = "data-sonata-name";
+  let last = null;
+  const look = () => {
+    const titles = [...document.getElementsByTagName("title")];
+    const mine = titles.filter((e) => e.hasAttribute(MARK));
+    if (mine.length && titles.length > mine.length) mine.forEach((e) => e.remove());
+    let t = document.title;
+    if (!t && NAME && document.head && document.readyState !== "loading") {
+      const e = document.createElement("title");
+      e.setAttribute(MARK, "");
+      e.textContent = NAME;
+      document.head.appendChild(e);
+      t = document.title;
+    }
+    if (t && t !== last) {
+      last = t;
+      try { %s(t); } catch (err) {}
+    }
+  };
+  const watch = () => {
+    if (!document.head) return false;
+    new MutationObserver(look).observe(document.head, {childList: true, subtree: true, characterData: true});
+    look();
+    return true;
+  };
+  if (!watch()) {
+    const waiting = new MutationObserver(() => { if (watch()) waiting.disconnect(); });
+    waiting.observe(document, {childList: true, subtree: true});
+  }
+  document.addEventListener("readystatechange", look);
+})()"""
 
     def __init__(self, app_url: str, write, open_outside=None, log=None, name: str = "", on_title=None):
         self.app_url = app_url
@@ -49,6 +98,8 @@ class Guard:
         self._title_tries = {}             # url -> tries
         self._asked = set()                # ids of the NUDGEs sent (their answers: the page's title)
         self._own_logged = 0
+        self._watch_logged = 0
+        self.watching = False              # WATCH_JS reports the page's titles (Runtime.bindingCalled)
         self.send("Target.setDiscoverTargets", {"discover": True})
 
     def send(self, method: str, params=None, session: str = None) -> int:
@@ -81,7 +132,13 @@ class Guard:
             if (params.get("targetInfo") or {}).get("targetId") == self.main and params.get("sessionId"):
                 self.session = params["sessionId"]
                 self.send("Page.enable", session=self.session)       # its moves and loads, below
+                self._watch_title()
                 self._retitle()
+            return
+        if method == "Runtime.bindingCalled":
+            params = msg.get("params") or {}
+            if self.session and msg.get("sessionId") == self.session and params.get("name") == self.BINDING:
+                self._page_title(params.get("payload"))
             return
         if method in ("Page.navigatedWithinDocument", "Page.loadEventFired"):
             if self.session and msg.get("sessionId") == self.session:
@@ -98,7 +155,9 @@ class Guard:
             self.send("Target.attachToTarget", {"targetId": tid, "flatten": True})   # (its title: above)
         if tid == self.main:
             if isinstance(info.get("title"), str):
-                if self.on_title:
+                if self.on_title and not self.watching:
+                    # (once the watcher reports, its word goes: Chrome's is
+                    # read only at a move -- often the address, before <title>)
                     self.on_title(info["title"])
                 if info["title"] != getattr(self, "_last_title", None) and getattr(self, "_titles_logged", 0) < 5:
                     self._last_title = info["title"]          # (the first few: to compare with the window's)
@@ -142,16 +201,33 @@ class Guard:
                                       session=self.session))
 
     def _own_title(self, title) -> None:
-        """What the page's title really is. None (Vini: WhatsApp's window
-        opened as "web.whatsapp.com" and stayed so -- the page never gave
-        Chrome a title): the web app's own name, the one its user gave it,
-        until the page sets one ("(3) WhatsApp" then wins)."""
+        """What the page's title really is (the first few logged, to compare
+        with the window's). None: WATCH_JS gives it the web app's name --
+        set from here once, at a load, the window went back to the address
+        as soon as the page took its <title> out again (Vini: WhatsApp's
+        window read "web.whatsapp.com" all the same)."""
         if self._own_logged < self.TITLES_LOGGED:
             self._own_logged += 1
             self.log(f"page's own title: {(title or '')[:80]!r}")
-        if not title and self.name and self.session:
-            self.send("Runtime.evaluate", {"expression": "if (!document.title) document.title = "
-                                           + json.dumps(self.name)}, session=self.session)
+
+    def _watch_title(self) -> None:
+        """WATCH_JS in the app's page: now, and in every page it loads."""
+        js = self.WATCH_JS % (json.dumps(self.name or ""), self.BINDING)
+        self.send("Runtime.enable", session=self.session)            # (the binding's calls come only then)
+        self.send("Runtime.addBinding", {"name": self.BINDING}, session=self.session)
+        self.send("Page.addScriptToEvaluateOnNewDocument", {"source": js}, session=self.session)
+        self.send("Runtime.evaluate", {"expression": js}, session=self.session)
+
+    def _page_title(self, title) -> None:
+        """A title the page now has (WATCH_JS): the Dock's count reads it."""
+        if not isinstance(title, str):
+            return
+        self.watching = True
+        if self.on_title:
+            self.on_title(title)
+        if self._watch_logged < self.TITLES_LOGGED:
+            self._watch_logged += 1
+            self.log(f"page's title now: {title[:80]!r}")
 
 
 def is_address(title: str, url: str) -> bool:
