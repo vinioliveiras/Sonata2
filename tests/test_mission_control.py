@@ -36,6 +36,12 @@ class WayfirePatchesTest(unittest.TestCase):
         self.assertIn("pressed_empty = !view && (button == BTN_LEFT);", patch)
         self.assertIn("if (pressed_empty && (button == BTN_LEFT) && !scaled_view_at(input_position))", patch)
 
+    def test_a_window_comes_off_its_place_at_once(self):
+        """Vini: a window had to be pulled a long way (200 px) before it moved."""
+        patch = read("wayfire-plugin", "wayfire-scale-sonata-events.patch")
+        self.assertIn("opts.snap_off_threshold = DRAG_OFF_PX;", patch)
+        self.assertIn("static constexpr int DRAG_OFF_PX = 12;", patch)
+
     def test_right_click_and_drag_are_told(self):
         patch = read("wayfire-plugin", "wayfire-scale-sonata-events.patch")
         for part in ("case BTN_RIGHT:", '"sonata-scale-menu#"', '"sonata-scale-drag#"', '"start"', '"drop"'):

@@ -1180,6 +1180,19 @@ ui.register("""
 _CACHE = {}
 
 
+CC_PREWARM_S = 4
+
+
+def prewarm_control_center(bar) -> None:
+    """A Control Center made and dropped (never shown): what its first
+    opening paid for -- modules imported, toggles' states and levels read
+    into their caches -- is done."""
+    try:
+        ControlCenter(bar)
+    except Exception as e:                 # a warm-up only: never in the way
+        print(f"sonata2-topbar: control center warm-up: {e!r}", flush=True)
+
+
 _LEVELS = {}     # the Control Center's last levels read: {"vol", "mic", <output>: {"bright"}}
 
 
@@ -2035,6 +2048,10 @@ class TopBarWindow(Gtk.ApplicationWindow):
                 print(f"sonata2-topbar: mixer: {e}")
             from .mission import MissionBackdrop
             self.bar.mission = MissionBackdrop(app)
+            # the Control Center built once, unseen, a moment after login: its
+            # modules loaded and its last levels read -- the first opening took
+            # ~2.5x the others (127 ms to its first frame, then ~45)
+            GLib.timeout_add_seconds(CC_PREWARM_S, lambda: (prewarm_control_center(self.bar), False)[1])
             from ..trash_cleanup import Housekeeping
             self.bar.housekeeping = Housekeeping()              # old Trash items (when that's on)
             from ..gamepad.service import Gamepads                  # controllers drive the desktop

@@ -1,0 +1,59 @@
+Sonata: a partly blurred region (a cursor's damage, a terminal's blinking
+caret) starts on the grid the whole screen's blur uses. Dual Kawase halves
+the picture once per iteration; aligned only to `degrade`, the region was
+halved on another grid and blurred slightly differently -- a faint square
+around the pointer, a terminal flickering where its cursor blinks (Vini).
+
+--- a/plugins/blur/blur.hpp
++++ b/plugins/blur/blur.hpp
+@@ -134,6 +134,9 @@
+     virtual ~wf_blur_base();
+ 
+     virtual int calculate_blur_radius();
++    /* Sonata: the grid a partly blurred region starts on, in framebuffer
++     * pixels -- where a smaller copy of it lines up with the whole screen's */
++    virtual int region_alignment();
+ 
+     /**
+      * Calculate the blurred background region.
+--- a/plugins/blur/blur-base.cpp
++++ b/plugins/blur/blur-base.cpp
+@@ -166,6 +166,11 @@
+     return wf::clamp(out_box, bounds);
+ }
+ 
++int wf_blur_base::region_alignment()
++{
++    return degrade_opt;
++}
++
+ wlr_box wf_blur_base::copy_region(wf::auxilliary_buffer_t& result,
+     const wf::render_target_t& source, const wf::regionf_t& region)
+ {
+@@ -177,7 +182,7 @@
+ 
+     // Make sure that the box is aligned properly for degrading, otherwise,
+     // we get a flickering
+-    subbox = sanitize(subbox, degrade_opt, source_box);
++    subbox = sanitize(subbox, region_alignment(), source_box);
+     int degraded_width  = subbox.width / degrade_opt;
+     int degraded_height = subbox.height / degrade_opt;
+     if (result.allocate({degraded_width, degraded_height}) == wf::buffer_reallocation_result_t::FAILED)
+--- a/plugins/blur/kawase.cpp
++++ b/plugins/blur/kawase.cpp
+@@ -135,6 +135,15 @@
+         return 0;
+     }
+ 
++    /* Sonata: dual Kawase halves the picture once per iteration -- a region
++     * aligned only to `degrade` was halved on another grid than the whole
++     * screen, and blurred slightly differently: a faint square around the
++     * pointer, and a terminal flickering where its cursor blinks (Vini) */
++    int region_alignment() override
++    {
++        return degrade_opt * (1 << std::max(0, (int)iterations_opt));
++    }
++
+     int calculate_blur_radius() override
+     {
+         return pow(2, iterations_opt + 1) * offset_opt * degrade_opt;

@@ -362,6 +362,25 @@ class BarTest(unittest.TestCase):
         self.assertFalse(self.bar.row.has_css_class("dropping"))
         self.assertIn(("vswitch/send-view", {"view-id": 2, "x": 2, "y": 0}), self.bar.ipc.calls)
 
+    def test_a_window_dropped_on_add_gets_a_new_desktop(self):
+        """Vini: drag a window onto + -- a new desktop, and the window goes there."""
+        later = []
+        with mock.patch.object(self.bar, "pick", return_value=self.bar.add), \
+                mock.patch.object(self.bar, "get_height", return_value=200), \
+                mock.patch.object(spaces, "set_count") as count, \
+                mock.patch.object(spaces.GLib, "timeout_add", side_effect=lambda ms, fn: later.append(fn)):
+            self.bar.dragging({"state": "drop", "view-id": 2, "x": 900, "y": 60})
+        count.assert_called_once_with(4)                                         # 3 -> 4
+        self.assertNotIn("vswitch/send-view", [m for m, _d in self.bar.ipc.calls])  # not before it exists
+        OUT["workspace"]["grid_width"] = 4                                      # Wayfire read its config
+        self.bar.set_visible(True)
+        try:
+            later[-1]()
+        finally:
+            OUT["workspace"]["grid_width"] = 3
+            self.bar.set_visible(False)
+        self.assertIn(("vswitch/send-view", {"view-id": 2, "x": 3, "y": 0}), self.bar.ipc.calls)
+
     def test_dropped_elsewhere_or_on_its_own_desktop_stays(self):
         self.bar.ipc.calls.clear()
         own = self.children()[1].desk_button                                         # view 2 is on desktop 1

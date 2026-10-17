@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### New
+- Mission Control: drop a window on + for a new desktop with the window on
+  it.
+
+### Fixes
+- Translucent windows (Terminal and Sonata's other apps) no longer flicker
+  where they redraw a little (a blinking cursor), nor show a faint square
+  around the pointer: the blur of a small part is computed on the same grid
+  as the whole screen's (Sonata's Wayfire: wayfire-kawase-align.patch).
+- Faster: the Apps menu (Launchpad) begins to open at once from the Dock and
+  ~0.1 s after Super / F4 -- every opening started a whole Sonata process
+  (~0.5 s) only to tell the one already running.
+- Faster: the Control Center's first opening after login is as quick as
+  the others (it's built once, unseen, a few seconds after login).
+- Mission Control: a window follows the pointer as soon as you drag it --
+  it stayed in its place until pulled about 200 px (Sonata's Wayfire:
+  wayfire-scale-sonata-events.patch).
+
 ## 0.19.0-alpha -- 2026-10-16
 
 Mission Control grows up: right-click a window for its Dock menu, drag it

@@ -133,6 +133,52 @@ class DockJsonTest(unittest.TestCase):
             restyle.assert_called_once()
 
 
+class LaunchpadOpensFastTest(unittest.TestCase):
+    """Vini: open the Apps menu faster. `sonata2 launchpad` (Super, F4, the
+    Dock's icon) started a whole Sonata process -- GTK, its UI -- only to
+    tell the resident Launchpad: ~0.5 s before it began to open."""
+
+    def test_cli_tells_the_resident_launchpad_first(self):
+        import sys
+        import sonata2.__main__ as M
+        with mock.patch.object(sys, "argv", ["sonata2", "launchpad"]), \
+                mock.patch.object(M, "tell_launchpad", return_value=True) as tell, \
+                mock.patch.object(M, "run", create=True) as heavy:
+            self.assertEqual(M.main(), 0)
+        tell.assert_called_once_with("toggle")
+        heavy.assert_not_called()
+        src = open(M.__file__).read()
+        self.assertIn('toggle = _Gio.SimpleAction.new("toggle", None)', src)
+
+    def test_dock_tells_it_over_dbus(self):
+        import types
+        from sonata2.shell import dock as D
+        tile = types.SimpleNamespace(key="sonata2-launchpad", info=mock.Mock())
+        fake = types.SimpleNamespace(_starting={})
+        with mock.patch.object(D, "launchpad_action") as act:
+            D.Dock.launch(fake, tile)
+        self.assertEqual(act.call_args[0][0], "toggle")
+        tile.info.launch.assert_not_called()                              # no process
+        failed = act.call_args[1]["failed"]                               # not running: launched
+        seen = []
+        fake.launch = lambda t: seen.append(getattr(t, "spawn", False))
+        failed()
+        self.assertEqual(seen, [True])                                    # the usual way, this once
+        self.assertFalse(tile.spawn)
+
+
+class ControlCenterWarmTest(unittest.TestCase):
+    def test_built_once_unseen_after_login(self):
+        """Its first opening took ~2.5x the others: built once, unseen."""
+        from sonata2.shell import topbar as T
+        with mock.patch.object(T, "ControlCenter") as cc:
+            T.prewarm_control_center("bar")
+        cc.assert_called_once_with("bar")
+        with mock.patch.object(T, "ControlCenter", side_effect=RuntimeError("x")):
+            T.prewarm_control_center("bar")                               # never in the way
+        self.assertIn("prewarm_control_center(self.bar)", open(T.__file__).read())
+
+
 class MenuBarIconsTest(unittest.TestCase):
     """The menu bar's icons were drawn anew on every window change, a
     browser's title changes included (many a second)."""

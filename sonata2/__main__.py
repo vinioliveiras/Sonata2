@@ -249,6 +249,11 @@ def run_launchpad(app, args, ui, state):
     close = _Gio.SimpleAction.new("close", None)     # (the Dock, before asking to uninstall an app)
     close.connect("activate", lambda *_a: win.get_visible() and win.close_launchpad())
     app.add_action(close)
+    # open / close from the Dock and `sonata2 launchpad` over D-Bus: a new
+    # Sonata process for every opening took half a second before it began
+    toggle = _Gio.SimpleAction.new("toggle", None)
+    toggle.connect("activate", lambda *_a: win.toggle())
+    app.add_action(toggle)
     if not args.preview:
         # macOS: an app opened any other way (Dock, a shortcut, Spotlight)
         # closes Launchpad -- a new window, or another one activated
@@ -1322,7 +1327,31 @@ def keep_all(specs) -> int:
     return max(results, default=0)
 
 
+LAUNCHPAD_ID = "io.github.vinioliveiras.sonata2.launchpad"
+
+
+def tell_launchpad(action: str, timeout_ms: int = 800) -> bool:
+    """The running Launchpad's `action` ("toggle", "close") over D-Bus, Gio
+    only: no GTK, no Sonata UI loaded. False when it isn't running."""
+    import gi
+    gi.require_version("Gio", "2.0")
+    from gi.repository import Gio, GLib
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        bus.call_sync(LAUNCHPAD_ID, "/" + LAUNCHPAD_ID.replace(".", "/"), "org.freedesktop.Application",
+                      "ActivateAction", GLib.Variant("(sava{sv})", (action, [], {})), None,
+                      Gio.DBusCallFlags.NO_AUTO_START, timeout_ms, None)
+        return True
+    except GLib.Error:
+        return False
+
+
 def main() -> int:
+    # `sonata2 launchpad` (Super, F4, the pinch): the resident Launchpad told
+    # straight away -- starting GTK and Sonata's UI only to pass the word on
+    # took ~0.5 s before it began to open
+    if sys.argv[1:] == ["launchpad"] and tell_launchpad("toggle"):
+        return 0
     if len(sys.argv) > 2 and sys.argv[1] == "doctor" and sys.argv[2] == "windows":
         from . import stylecheck
         return stylecheck.main()
