@@ -237,7 +237,7 @@ class CameraWindow(Gtk.ApplicationWindow):
             self.mode_btns[key] = b
         col.append(modes)
         row = Gtk.CenterBox(margin_start=28, margin_end=28)
-        self.last_btn = Gtk.Button(css_classes=["cam-last"], valign=Gtk.Align.CENTER, tooltip_text="Open")
+        self.last_btn = Gtk.Button(css_classes=["cam-last"], valign=Gtk.Align.CENTER, tooltip_text=_("Open"))
         self.last_pic = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, css_classes=["cam-last-pic"],
                                     overflow=Gtk.Overflow.HIDDEN, can_shrink=True)
         from ..ui.fixed import FixedWidth

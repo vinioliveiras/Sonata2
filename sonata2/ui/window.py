@@ -378,7 +378,7 @@ def close_button(on_close) -> Gtk.Box:
     side the user picked for windows (Settings > Appearance), like theirs."""
     box = Gtk.Box(css_classes=["traffic", "traffic-close-only"], valign=Gtk.Align.START,
                   halign=Gtk.Align.END if buttons_side() == "right" else Gtk.Align.START)
-    b = Gtk.Button(tooltip_text="Close", css_classes=["tl-close"], valign=Gtk.Align.CENTER,
+    b = Gtk.Button(tooltip_text=_("Close"), css_classes=["tl-close"], valign=Gtk.Align.CENTER,
                    focus_on_click=False, can_focus=False)
     b.connect("clicked", lambda _b: on_close())
     box.append(b)

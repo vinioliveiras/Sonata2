@@ -284,7 +284,7 @@ class AssistantWindow(Gtk.ApplicationWindow):
         box.set_size_request(180, -1)
         self.side = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
         self.side.connect("row-selected", self._side_selected)
-        self.side.set_placeholder(Gtk.Label(label="No Conversations", css_classes=["as-sidebar-empty"]))
+        self.side.set_placeholder(Gtk.Label(label=_("No Conversations"), css_classes=["as-sidebar-empty"]))
         menu = Gtk.GestureClick(button=3)
         menu.connect("pressed", self._side_menu)
         self.side.add_controller(menu)

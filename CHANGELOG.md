@@ -13,6 +13,9 @@
   Wayfire: wayfire-scale-tab.patch, built again by the next update).
 
 ### Fixes
+- Four texts left in English in Portuguese are translated: the Close
+  button's tooltip (every window), Assistant's "No Conversations",
+  Calendar's "No Results" and Camera's "Open".
 - Video wallpaper: no black band down the right of the screen. GTK draws a
   video's frame at frame size / video size, from the left, and a decoded
   frame a little narrower than the video (hardware decoding) stopped short
