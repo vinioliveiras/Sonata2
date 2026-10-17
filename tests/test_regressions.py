@@ -1157,7 +1157,8 @@ class BrightnessTests(unittest.TestCase):
 
     def test_control_center_follows_its_display(self):
         src = (pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "shell" / "topbar.py").read_text()
-        self.assertIn("system.brightness(out)", src)
+        # (read on its own: sound doesn't wait for a DDC/CI display -- the Control Center lagged)
+        self.assertIn("system.run_async(system.brightness, self._fill_brightness, out)", src)
         self.assertIn("system.set_brightness, int(v), out", src)
         self.assertIn("self.bar.monitor = monitor", src)
 

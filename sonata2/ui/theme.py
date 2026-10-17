@@ -199,6 +199,25 @@ def _appearance_changed() -> None:
         _load(fade=big)        # a glass slider: no cross-fade (it re-pictures every window); a switch fades
 
 
+_dock_glass_seen = None
+
+
+def _dock_glass() -> object:
+    from .. import config
+    return config.load("dock", {}).get("glass")
+
+
+def _dock_changed() -> None:
+    """dock.json changed: only its old "glass" switch is the theme's -- every
+    write (an icon pinned or moved, the Dock resized) re-read the appearance
+    in every Sonata process."""
+    global _dock_glass_seen
+    glass_on = _dock_glass()
+    if glass_on != _dock_glass_seen:
+        _dock_glass_seen = glass_on
+        _appearance_changed()
+
+
 def _theme() -> str:
     """Visual theme from Sonata's appearance settings (read once)."""
     global _theme_name
@@ -522,8 +541,9 @@ def setup() -> None:
     from .. import config
     global _appearance_mon
     _appearance_mon = config.watch("appearance", _appearance_changed)
-    global _dock_mon
-    _dock_mon = config.watch("dock", _appearance_changed)       # its old "glass" switch (ui/glass.py)
+    global _dock_mon, _dock_glass_seen
+    _dock_glass_seen = _dock_glass()
+    _dock_mon = config.watch("dock", _dock_changed)             # its old "glass" switch (ui/glass.py)
     _remember_appearance()
     _buttons_changed()                        # (the first look: remembered, nothing to follow)
     _follow_color_scheme()

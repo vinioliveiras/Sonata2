@@ -300,6 +300,19 @@ class BarTest(unittest.TestCase):
         self.assertEqual(tail, ["sonata/set-workspace", "scale/toggle", "vswitch/set-workspace"])
         count.assert_called_once_with(2)
 
+    def test_a_burst_of_window_events_refreshes_once(self):
+        """Performance: each window event rebuilt the bar (and asked Wayfire twice)."""
+        from gi.repository import GLib
+        self.bar.set_visible(True)
+        with mock.patch.object(self.bar, "refresh") as refresh:
+            for _ in range(10):
+                self.bar._refresh_soon(30)
+            ctx, end = GLib.MainContext.default(), GLib.get_monotonic_time() + 300_000
+            while GLib.get_monotonic_time() < end:
+                ctx.iteration(False)
+        refresh.assert_called_once()
+        self.bar.set_visible(False)
+
     # -- Vini: creating and deleting desktops had no animation
     def test_a_new_desktop_grows_in_the_others_glide(self):
         with mock.patch.object(spaces, "set_count"), mock.patch.object(spaces.GLib, "timeout_add"):

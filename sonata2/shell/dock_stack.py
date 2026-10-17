@@ -25,6 +25,15 @@ GRID_COLS, GRID_ICON = 5, 48
 # writing fires them all the time, and at 300 ms the folder was listed (and
 # every item stat-ed) on the main loop ~3 times a second until it finished
 REFRESH_MS = 1000
+# a file being written (a download) sends CHANGED many times a second; what
+# the stack shows (which files, newest first) changes only when one comes,
+# goes, is renamed or is done being written
+_WRITING = (Gio.FileMonitorEvent.CHANGED,)
+
+
+def stack_event(ev) -> bool:
+    """A folder event that can change the stack (not a write in progress)."""
+    return ev not in _WRITING
 MOUNT_MS = 300         # a drive unplugged: its folders leave this long after
 
 ui.register("""
@@ -214,7 +223,7 @@ class StackRow:
         self._tiles.append(tile)
         self.refresh_icon(tile)
         mon = Gio.File.new_for_path(spec["path"]).monitor_directory(Gio.FileMonitorFlags.NONE, None)
-        mon.connect("changed", lambda *_: self._refresh_later(tile))
+        mon.connect("changed", lambda _m, _f, _o, ev: stack_event(ev) and self._refresh_later(tile))
         tile.stack_monitor, tile.stack_src = mon, 0
         self._monitors.append(mon)
         return tile

@@ -30,8 +30,12 @@ MAX_PERCENT = 100
 # an app that sets its own level right after its stream starts (Spotify:
 # its saved level went back every time -- Vini) gets ours again at these
 RECHECK_MS = (120, 300, 700, 2000, 4000)   # an app that sets its own level on start (Spotify): put ours back fast
-FRESH_S = 5.0          # ...and only then: afterwards, a level the app sets is the user's (learned)
-LEARN_MS = 1500        # changes made outside Sonata (Spotify's own slider) saved this long after
+FRESH_S = 8.0          # ...and only then: afterwards, a level the app sets is the user's (learned)
+# changes made outside Sonata (Spotify's own slider) saved this long after: a
+# playing app sends 'change' events all the time, and each learn reads every
+# stream (pactl) -- 1.5 s was one every 1.5 s while anything played.
+# (Less than FRESH_S: a new stream's own start level is never learned.)
+LEARN_MS = 5000
 
 
 def learn(ss: "List[Stream]", data: dict, skip=()) -> dict:

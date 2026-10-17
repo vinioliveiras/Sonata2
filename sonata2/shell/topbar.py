@@ -600,10 +600,21 @@ class Bar(Gtk.CenterBox):
             return False
         self._icons_src = GLib.timeout_add(120, run)
 
+    def _icons_if_changed(self) -> None:
+        """_icons_soon() when the front app or the number of windows changed
+        -- not on a title change (a browser's changes many times a second:
+        every one redrew the icons)."""
+        tops = list(getattr(getattr(self, "manager", None), "toplevels", None) or [])
+        act = next((t for t in tops if t.activated), None)
+        sig = (act.app_id if act is not None else None, len(tops))
+        if sig != getattr(self, "_icons_sig", None):
+            self._icons_sig = sig
+            self._icons_soon()
+
     def _active_changed(self) -> None:
         """App name + menus follow the focused app; on the desktop (nothing
         focused) they are Files' -- File, Go, Window -- like Finder's."""
-        self._icons_soon()
+        self._icons_if_changed()
         key, _wins = self._active()
         if key:                                   # most recently used apps (app switcher)
             self.mru = [key] + [k for k in getattr(self, "mru", []) if k != key]

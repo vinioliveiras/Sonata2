@@ -66,5 +66,41 @@ class KeepMemoryTest(unittest.TestCase):
         self.assertFalse(child.terminated)
 
 
+class KeepSleepsTest(unittest.TestCase):
+    """`sonata2 keep polkit` (the whole session) woke 20 times a second:
+    Popen.wait with a timeout polls. It now sleeps until the child ends."""
+
+    def wakeups(self, child, timeout):
+        before = int(open("/proc/self/status").read().split("voluntary_ctxt_switches:")[1].split()[0])
+        try:
+            M._wait_child(child, timeout)
+        except subprocess.TimeoutExpired:
+            pass
+        after = int(open("/proc/self/status").read().split("voluntary_ctxt_switches:")[1].split()[0])
+        return after - before
+
+    def test_sleeps_until_the_child_ends(self):
+        import time
+        child = subprocess.Popen(["sleep", "0.6"])
+        t = time.monotonic()
+        self.assertEqual(M._wait_child(child, 10), 0)
+        self.assertLess(time.monotonic() - t, 2)                           # woken when it ended
+        child = subprocess.Popen(["sleep", "5"])
+        try:
+            self.assertLess(self.wakeups(child, 1.0), 5)                   # (Popen.wait: ~20)
+        finally:
+            child.kill()
+            child.wait()
+
+    def test_timeout_still_raised(self):
+        child = subprocess.Popen(["sleep", "5"])
+        try:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                M._wait_child(child, 0.2)
+        finally:
+            child.kill()
+            child.wait()
+
+
 if __name__ == "__main__":
     unittest.main()
