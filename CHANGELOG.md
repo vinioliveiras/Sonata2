@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Fixes
+- Web apps on Chrome (Instagram, WhatsApp...): the unread count in the
+  page's title reaches the Dock again, as soon as the app opens and each
+  time it changes -- Chrome only told Sonata the title when the page's
+  address changed, and that stale title hid the window's own count.
+- WhatsApp's web app window keeps its name ("WhatsApp") while the page has
+  no title of its own, instead of going back to "web.whatsapp.com"; the
+  page's own title, with its count, still wins as soon as it has one.
+- A web app's notifications on Chrome are told apart by the browser
+  process that sends them, not only by the site in their text (Chrome
+  rewrites its command line, so its profile wasn't found).
 - Video wallpaper: changing it several times no longer slows the desktop
   down. Each video let go of is freed once paused, and the memory goes back
   to the system: a player freed while GStreamer was still busy with it was
