@@ -13,15 +13,11 @@
   login: Chromium browsers (Chrome, Brave, Edge... -- the tabs below
   Sonata's bar) and Obsidian too, besides VS Code, Firefox, Thunderbird and
   Vesktop. Apps without one keep their own, so no window shows two.
-<<<<<<< HEAD
-=======
-- Web apps on Chrome (Instagram, WhatsApp...): the unread count in the
-  page's title reaches the Dock again, as soon as the app opens and each
-  time it changes -- Chrome only told Sonata the title when the page's
-  address changed, and that stale title hid the window's own count.
-- WhatsApp's web app window keeps its name ("WhatsApp") while the page has
-  no title of its own, instead of going back to "web.whatsapp.com"; the
-  page's own title, with its count, still wins as soon as it has one.
+- WhatsApp Web loads again (it stayed on its loading screen): Sonata no
+  longer runs a watcher of its own inside a web app's page; it only reads
+  the page's title, as before.
+- Web apps on Chrome: the Dock counts both the page's title and the
+  window's, so a stale one no longer hides the count.
 - A web app's notifications on Chrome are told apart by the browser
   process that sends them, not only by the site in their text (Chrome
   rewrites its command line, so its profile wasn't found).
@@ -30,7 +26,6 @@
   the calendar, which the next opening then had to lay out again (~0.25 s
   with 100 notifications, now ~10 ms). Each card's time ("5m ago") is now
   current when it opens.
->>>>>>> origin/main
 - Video wallpaper: changing it several times no longer slows the desktop
   down. Each video let go of is freed once paused, and the memory goes back
   to the system: a player freed while GStreamer was still busy with it was

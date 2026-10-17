@@ -38,10 +38,8 @@ class TitleTest(unittest.TestCase):
         self.assertEqual(self.msgs()[-1]["params"], {"targetId": "A", "flatten": True})
         self.feed({"method": "Target.attachedToTarget",
                    "params": {"sessionId": "S1", "targetInfo": {"targetId": "A", "type": "page"}}})
-        methods = [(m["method"], m.get("sessionId")) for m in self.msgs()[2:]]
-        self.assertEqual(methods, [("Page.enable", "S1"), ("Runtime.enable", "S1"), ("Runtime.addBinding", "S1"),
-                                   ("Page.addScriptToEvaluateOnNewDocument", "S1"), ("Runtime.evaluate", "S1"),
-                                   ("Runtime.evaluate", "S1")])
+        methods = [(m["method"], m.get("sessionId")) for m in self.msgs()[-2:]]
+        self.assertEqual(methods, [("Page.enable", "S1"), ("Runtime.evaluate", "S1")])
 
     def test_title_set_again_after_a_move_within_the_page(self):
         """pushState left a history entry without a title: Chrome showed the address."""
@@ -72,16 +70,17 @@ class TitleTest(unittest.TestCase):
         return self.msgs()[n:]
 
     def test_page_without_a_title_gets_the_apps_name(self):
-        """Vini: WhatsApp's window opened as "web.whatsapp.com" and stayed so.
-        The web app's own name stands in, only while the page has none --
-        held by the watcher in the page, not set once from here."""
+        """Vini: WhatsApp's window opened as "web.whatsapp.com" and stayed so
+        (its log: the page never gave Chrome a title). The web app's own name
+        stands in, only while the page has none."""
         logged = []
         self.g.log = logged.append
         self.attach()
-        self.assertEqual(self.answer(""), [])                  # (nothing set from here: WATCH_JS holds it)
+        sent = self.answer("")
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0]["params"]["expression"], 'if (!document.title) document.title = "WhatsApp"')
+        self.assertEqual(sent[0]["sessionId"], "S1")
         self.assertIn("page's own title: ''", logged)
-        watch = [m for m in self.msgs() if m["method"] == "Page.addScriptToEvaluateOnNewDocument"]
-        self.assertIn('const NAME = "WhatsApp"', watch[0]["params"]["source"])
 
     def test_page_with_a_title_keeps_it(self):
         self.attach()
@@ -97,7 +96,7 @@ class TitleTest(unittest.TestCase):
         for _ in range(10):
             self.feed(info("A", URL, "web.whatsapp.com"))
         evals = sum(m["method"] == "Runtime.evaluate" for m in self.msgs())
-        self.assertLessEqual(evals, 2 + Guard.TITLE_TRIES)                   # (+ the watcher, once)
+        self.assertLessEqual(evals, 1 + Guard.TITLE_TRIES)
 
     def test_other_pages_untouched(self):
         self.feed(info("A", URL, "WhatsApp", "Target.targetCreated"),
@@ -152,73 +151,24 @@ class PageTitleCountTest(unittest.TestCase):
         self.assertIn("badges.window_titles(wins, pages)", src)
 
 
-class LiveTitleTest(unittest.TestCase):
-    """Vini: Instagram's notifications (the count only ever in its title,
-    "(3) Instagram") stopped showing on the Dock, and the count no longer
-    showed as soon as an app opened; WhatsApp's window read
-    "web.whatsapp.com" instead of its name. Seen with Chrome for Testing
-    141: Chrome tells DevTools a page's title only when its address
-    changes (often the address itself, read before the page's <title>), and
-    the Dock let that stale title stand in for the window's own."""
+class WhatsAppLoadsTest(unittest.TestCase):
+    """Vini: WhatsApp Web stayed on its loading screen for ever, after Sonata
+    began running a watcher of its own in the page (Runtime.enable, a
+    script on every load, a <title> of ours). The web app's page gets
+    nothing of the sort: Sonata only reads it -- "we're putting too much
+    where it doesn't belong"."""
 
-    def setUp(self):
-        self.sent, self.got = [], []
-        self.g = Guard(URL, self.sent.append, open_outside=lambda u: None, name="WhatsApp", on_title=self.got.append)
-
-    def msgs(self):
-        return [json.loads(m.rstrip(b"\0")) for m in self.sent]
-
-    def feed(self, *ms):
-        self.g.feed(b"".join(json.dumps(m).encode() + b"\0" for m in ms))
-
-    def attach(self):
-        self.feed(info("A", URL, "", "Target.targetCreated"),
-                  {"method": "Target.attachedToTarget",
-                   "params": {"sessionId": "S1", "targetInfo": {"targetId": "A", "type": "page"}}})
-
-    def test_title_count_without_a_move_reaches_the_dock(self):
-        """Instagram: its count comes into the title with no move -- the
-        watcher's binding reports it."""
-        self.attach()
-        binding = [m for m in self.msgs() if m["method"] == "Runtime.addBinding"][0]
-        self.assertEqual(binding["params"], {"name": Guard.BINDING})
-        self.feed({"method": "Runtime.bindingCalled", "sessionId": "S1",
-                   "params": {"name": Guard.BINDING, "payload": "(3) Instagram", "executionContextId": 1}})
-        self.assertEqual(self.got[-1], "(3) Instagram")
-        self.feed({"method": "Runtime.bindingCalled", "sessionId": "OTHER",
-                   "params": {"name": Guard.BINDING, "payload": "(9) Other"}})
-        self.feed({"method": "Runtime.bindingCalled", "sessionId": "S1", "params": {"name": "x", "payload": "(9)"}})
-        self.assertEqual(self.got[-1], "(3) Instagram")                      # another page's, another binding
-
-    def test_address_from_a_move_does_not_replace_the_watchers_title(self):
-        self.attach()
-        self.feed({"method": "Runtime.bindingCalled", "sessionId": "S1",
-                   "params": {"name": Guard.BINDING, "payload": "(3) WhatsApp"}})
-        self.feed(info("A", URL, "web.whatsapp.com"))
-        self.assertEqual(self.got[-1], "(3) WhatsApp")
-
-    def test_watcher_on_every_load_and_now(self):
-        self.attach()
-        new_doc = [m for m in self.msgs() if m["method"] == "Page.addScriptToEvaluateOnNewDocument"]
-        now = [m for m in self.msgs() if m["method"] == "Runtime.evaluate"
-               and "__sonataTitle" in m["params"]["expression"]]
-        self.assertEqual(len(new_doc), 1)
-        self.assertEqual(len(now), 1)
-        js = now[0]["params"]["expression"]
-        self.assertEqual(js, new_doc[0]["params"]["source"])
-        self.assertIn("sonataTitle(t)", js)
-        # the name is a <title> of ours, taken out once the page has its own:
-        # never over the page's count ("(3) WhatsApp")
-        self.assertIn('setAttribute(MARK, "")', js)
-        self.assertIn("mine.forEach((e) => e.remove())", js)
-        self.assertIn('document.readyState !== "loading"', js)          # (not before the page's <title>)
-        self.assertIn("observe(document.head", js)                      # (only <head> watched)
-
-    def test_name_is_quoted(self):
-        self.g.name = 'Bob\'s "chat"</script>'
-        self.attach()
-        js = [m for m in self.msgs() if m["method"] == "Page.addScriptToEvaluateOnNewDocument"][0]["params"]["source"]
-        self.assertIn("const NAME = " + json.dumps(self.g.name) + ",", js)
+    def test_nothing_run_in_the_page_on_every_load(self):
+        sent = []
+        g = Guard(URL, sent.append, open_outside=lambda u: None, name="WhatsApp")
+        g.feed(b"".join(json.dumps(m).encode() + b"\0" for m in (
+            info("A", URL, "", "Target.targetCreated"),
+            {"method": "Target.attachedToTarget",
+             "params": {"sessionId": "S1", "targetInfo": {"targetId": "A", "type": "page"}}},
+            {"method": "Page.loadEventFired", "params": {}, "sessionId": "S1"})))
+        methods = {json.loads(m.rstrip(b"\0"))["method"] for m in sent}
+        for m in ("Runtime.enable", "Runtime.addBinding", "Page.addScriptToEvaluateOnNewDocument"):
+            self.assertNotIn(m, methods)
 
     def test_title_count_not_hidden_by_a_stale_page_title(self):
         """The Dock: the page's title published at the last move ("Instagram",
@@ -234,9 +184,9 @@ class LiveTitleTest(unittest.TestCase):
 
 class ChromeSenderTest(unittest.TestCase):
     def test_chrome_rewritten_command_line(self):
-        """Seen with Chrome for Testing: /proc/<pid>/cmdline of Chrome is one
-        string, spaces between -- the web app that sent a notification was
-        never found by its profile (it went to "Google Chrome")."""
+        """/proc/<pid>/cmdline of Chrome is one string, spaces between -- the
+        web app that sent a notification was never found by its profile (it
+        went to "Google Chrome")."""
         from sonata2 import badges
         root = "/home/v/.local/share/sonata2-data/webapps"
         one = (f"/opt/google/chrome/chrome --user-data-dir={root}/w84b1822077/chromium --no-first-run"
