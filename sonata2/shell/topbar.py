@@ -1008,7 +1008,7 @@ class Bar(Gtk.CenterBox):
         service = getattr(self, "mixer", None)
         if mixer.available():                                # every app's own volume, kept (Vini)
             from .mixer_ui import AppMixer
-            apps_box = AppMixer()
+            apps_box = AppMixer(beside=False)                # its slider keeps the main one's width
             col.append(ui.panel.section_title(_("Applications")))
             col.append(apps_box)
             col.append(ui.panel.separator())
