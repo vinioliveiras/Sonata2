@@ -7,6 +7,11 @@
   it.
 
 ### Fixes
+- Notification Center opens smoothly again with notifications in it: a new
+  notification adds only its own card instead of rebuilding every card and
+  the calendar, which the next opening then had to lay out again (~0.25 s
+  with 100 notifications, now ~10 ms). Each card's time ("5m ago") is now
+  current when it opens.
 - Translucent windows (Terminal and Sonata's other apps) no longer flicker
   where they redraw a little (a blinking cursor), nor show a faint square
   around the pointer: the blur of a small part is computed on the same grid
