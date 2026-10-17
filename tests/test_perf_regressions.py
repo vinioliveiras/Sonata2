@@ -177,7 +177,7 @@ class ControlCenterWarmTest(unittest.TestCase):
         with mock.patch.object(T, "ControlCenter") as cc:
             T.prewarm_control_center(bar)
             T.prewarm_control_center(bar)
-        cc.assert_called_once_with(bar)
+        cc.assert_called_once_with(bar, warm=True)
         self.assertIs(bar.control_center, cc.return_value)
         with mock.patch.object(T, "ControlCenter", side_effect=RuntimeError("x")):
             T.prewarm_control_center(types.SimpleNamespace())            # never in the way
@@ -677,6 +677,64 @@ class ShortcutDefaultsReadOnceTest(unittest.TestCase):
             values = [SC.default(s) for s in SC.SHORTCUTS]
         self.assertEqual(len(reads), 1)
         self.assertTrue(all(values))
+
+
+class MenuBarStartupReadsTest(unittest.TestCase):
+    """Product-wide check: the menu bar's first ~10 s asked NetworkManager,
+    BlueZ and rfkill the same things two or three times (~33 programs run):
+    the prefetch, Control Center's warm-up (twice) and the Wi-Fi list each
+    read on their own. One read now feeds them all (~19)."""
+
+    def setUp(self):
+        from sonata2.shell import topbar as T
+        self.T = T
+        self.jobs = []
+        for p in (mock.patch.object(T.system, "run_async",
+                                    side_effect=lambda fn, cb=None, *a: self.jobs.append((fn, cb, a))),
+                  mock.patch.dict(T._CACHE, clear=True), mock.patch.dict(T._INFLIGHT, clear=True)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def run_jobs(self):
+        while self.jobs:
+            fn, cb, a = self.jobs.pop(0)
+            res = fn(*a)
+            if cb:
+                cb(res)
+
+    def test_one_read_feeds_all(self):
+        T = self.T
+        calls = []
+        fake = {"wifi_enabled": True, "wifi_scan": ["net"], "wifi_current": ("Home", 70, False),
+                "bluetooth_state": True, "airplane_mode": False, "bluetooth_devices": []}
+        patches = [mock.patch.object(T.system, k, side_effect=lambda k=k: (calls.append(k), fake[k])[1])
+                   for k in fake]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        T.prefetch()
+        got = {}
+        T.cached("cc", T._cc_state, lambda r: got.setdefault("cc", r))            # warm-up, meanwhile
+        T.cached("wifi", T._wifi_list, lambda r: got.setdefault("wifi", r))       # a menu, meanwhile
+        self.assertEqual(len(self.jobs), 2)                                       # bluetooth + one network job
+        self.run_jobs()
+        self.assertEqual(calls.count("wifi_enabled"), 1)
+        self.assertEqual(calls.count("bluetooth_state"), 1)
+        self.assertEqual(got["cc"], (True, ("Home", 70, False), True, False))
+        self.assertEqual(got["wifi"], (True, ["net"]))
+        self.assertEqual(T._CACHE["cc"], got["cc"])
+
+    def test_unseen_warm_up_reads_nothing_known(self):
+        T = self.T
+        T._CACHE["cc"] = ("known",)
+        filled = []
+        T.cached("cc", T._cc_state, filled.append, again=False)
+        self.assertEqual(filled, [("known",)])
+        self.assertEqual(self.jobs, [])
+        T.cached("cc", T._cc_state, filled.append)                               # an opening: read again
+        self.assertEqual(len(self.jobs), 1)
+        src = open(T.__file__).read()
+        self.assertIn("ControlCenter(bar, warm=True)", src)
 
 
 class EnvReportOffTheMainLoopTest(unittest.TestCase):

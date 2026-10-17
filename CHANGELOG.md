@@ -65,6 +65,9 @@
   installer or the whole menu bar only to read a setting.
 - The menu bar no longer pauses for a moment just after it appears at
   login (a version report now runs in the background).
+- The menu bar runs about 40% fewer programs in its first seconds (~33 ->
+  ~19): Wi-Fi, Bluetooth and Airplane Mode are read once for the menus and
+  Control Center alike, and Control Center is warmed up once, not twice.
 - Control Center opens about five times faster (~125 ms -> ~25 ms to its
   first frame): it is kept between openings and only brought up to date
   as it opens, instead of being built again, in a new panel, every time.

@@ -1227,7 +1227,7 @@ def prewarm_control_center(bar) -> None:
     if getattr(bar, "control_center", None) is not None:
         return
     try:
-        cc = ControlCenter(bar)
+        cc = ControlCenter(bar, warm=True)
     except Exception as e:                 # a warm-up only: never in the way
         print(f"sonata2-topbar: control center warm-up: {e!r}", flush=True)
         return
@@ -1255,9 +1255,31 @@ def _detach(widget: Gtk.Widget) -> None:
 _LEVELS = {}     # the Control Center's last levels read: {"vol", "mic", <output>: {"bright"}}
 
 
-def cached(name, fn, fill) -> None:
+_INFLIGHT = {}   # name -> callbacks waiting for the read of it running now
+
+
+def _read_shared(name, fn, cb) -> None:
+    """One read of `name` at a time: whoever asks while it runs gets the same
+    answer (the menu bar's first seconds asked NetworkManager, BlueZ and
+    rfkill the same things two or three times over)."""
+    if name in _INFLIGHT:
+        _INFLIGHT[name].append(cb)
+        return
+    _INFLIGHT[name] = [cb]
+
+    def done(res):
+        for c in _INFLIGHT.pop(name, []):
+            c(res)
+    system.run_async(fn, done)
+
+
+def cached(name, fn, fill, again=True) -> None:
+    """fill() with the last answer at once, then with a new one if it
+    differs. again=False: the last answer is enough (an unseen warm-up)."""
     if name in _CACHE:
         fill(_CACHE[name])
+        if not again:
+            return
 
     def got(res):
         if res is None:
@@ -1269,13 +1291,37 @@ def cached(name, fn, fill) -> None:
         _CACHE[name] = res
         if not same:
             fill(res)
-    system.run_async(fn, got)
+    _read_shared(name, fn, got)
 
 
 def prefetch() -> None:
-    """At start (after the login intro): the answers menus will need."""
-    for name, fn in PREFETCH.items():
-        system.run_async(fn, lambda res, n=name: res is not None and _CACHE.__setitem__(n, res))
+    """At start (after the login intro): the answers menus will need. Wi-Fi's
+    list and Control Center's states in one job: the radio asked once."""
+    def keep(name):
+        return lambda res: res is not None and _CACHE.__setitem__(name, res)
+    _read_shared("bluetooth", PREFETCH["bluetooth"], keep("bluetooth"))
+    names = [n for n in ("wifi", "cc") if n not in _INFLIGHT]
+    for n in names:
+        _INFLIGHT[n] = []
+
+    def done(res):
+        for n in names:
+            r = (res or {}).get(n)
+            for c in _INFLIGHT.pop(n, []):              # (asked meanwhile: this answer)
+                c(r)
+            keep(n)(r)
+    if names:
+        system.run_async(lambda: _net_state(names), done)
+
+
+def _net_state(names) -> dict:
+    on = system.wifi_enabled()
+    out = {}
+    if "wifi" in names:
+        out["wifi"] = (on, system.wifi_scan())
+    if "cc" in names:
+        out["cc"] = (on, system.wifi_current(), system.bluetooth_state(), system.airplane_mode())
+    return out
 
 
 def _wifi_list():
@@ -1457,8 +1503,9 @@ class ControlCenter(Gtk.Box):
     order: the user's (Edit Controls…, like Launchpad). Opens at once;
     states fill in from background reads."""
 
-    def __init__(self, bar: Bar):
+    def __init__(self, bar: Bar, warm: bool = False):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8, width_request=320)
+        self._warm = warm                       # made unseen (warm-up): its toggles read at its first opening
         from . import controlcenter as CCL
         self.bar = bar
         self.wifi = ui.panel.toggle("network-wireless-symbolic", _("Wi-Fi"), False,
@@ -1562,7 +1609,10 @@ class ControlCenter(Gtk.Box):
 
     def _read_states(self) -> None:
         out = self.output
-        cached("cc", _cc_state, self._fill_toggles)             # Wi-Fi / Bluetooth: last known at once
+        # Wi-Fi / Bluetooth: last known at once (unseen: what the menu bar's
+        # prefetch just read is enough; its first opening reads them again)
+        cached("cc", _cc_state, self._fill_toggles, again=not self._warm)
+        self._warm = False
         # levels: the live ones, sound apart from brightness (a DDC/CI monitor
         # answers in seconds; the sound sliders don't wait for it)
         system.run_async(lambda: (system.volume(), system.input_volume()), self._fill_sound)
