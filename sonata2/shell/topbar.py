@@ -994,8 +994,9 @@ class Bar(Gtk.CenterBox):
         self.battery_pct.set_visible(on)
 
     def _sound_panel(self, btn):
-        """Big Sur sound menu: slider, Output devices (check on the current
-        one), Sound Preferences…"""
+        """Big Sur sound menu: slider, the apps' volumes, Sound Preferences…
+        The output is picked from the slider's button, as in Control Center
+        (the list of outputs under it went: the same choice twice, Vini)."""
         # the same slider as Control Center's Sound module (icon in the capsule,
         # its output button at the right: laid out alike, Vini)
         box, slider = _slider_with_icon(
@@ -1005,9 +1006,7 @@ class Bar(Gtk.CenterBox):
         _volume_feedback(slider)
         holder = Gtk.Box(css_classes=["panel-header"])
         holder.append(box)
-        outs = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        col = ui.panel.column(ui.panel.header(_("Sound")), holder, ui.panel.separator(),
-                              ui.panel.section_title(_("Output")), outs, ui.panel.separator())
+        col = ui.panel.column(ui.panel.header(_("Sound")), holder, ui.panel.separator())
         from ..backend import mixer
         service = getattr(self, "mixer", None)
         if mixer.available():                                # every app's own volume, kept (Vini)
@@ -1026,18 +1025,10 @@ class Bar(Gtk.CenterBox):
         col.append(self._prefs_row(pop, _("Sound Preferences…"), "sound"))
         ui.panel.align_to_start(pop, btn, 2)
 
-        def fill(res):
-            vol, sinks = res or (None, [])
+        def fill(vol):
             if vol:
                 ui.controls.show_value(slider, vol[0])
-            for sk in sinks:
-                r = ui.panel.row("object-select-symbolic", sk.name, on_click=lambda sk=sk: (
-                    pop.popdown(), system.run_async(system.select_output, None, sk.key)))
-                r.icon.set_opacity(1 if sk.default else 0)            # checkmark column (menus)
-                outs.append(r)
-            if not sinks:
-                outs.append(ui.panel.row(None, _("No output devices")))
-        system.run_async(lambda: (system.volume(), system.audio_outputs()), fill)
+        system.run_async(system.volume, fill)
         return pop
 
     def _set_volume(self, v) -> None:

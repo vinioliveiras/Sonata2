@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixes
+- Screenshots: Capture in the toolbar (Print) no longer sometimes does
+  nothing -- it began before the toolbar had gone, while it still held the
+  keyboard.
+- The menu bar's Sound menu has no list of outputs under its slider any
+  more: the slider's output button picks it, as in Control Center.
+
 ## 0.19.2-alpha -- 2026-10-17
 
 Sonata's title bars on every app that can take them, a lighter video

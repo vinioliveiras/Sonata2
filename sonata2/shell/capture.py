@@ -932,7 +932,10 @@ class _Toolbar(Gtk.Window):
         dialog.select_folder(None, None, done)
 
     def _go(self):
-        self.set_visible(False)
+        # run() hides the toolbar and waits for it to go (Vini: Print, then
+        # Capture, sometimes did nothing): hidden here first, run() saw no
+        # toolbar and started at once -- the selection or the picture while
+        # the toolbar still held the keyboard and was still on screen
         self.owner.run(self.mode, self.cfg)
 
 
