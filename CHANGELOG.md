@@ -19,9 +19,6 @@
   Sound menu by its name.
 
 ### Fixes
-- Control Center: the Volume Mixer's sliders line up with the Sound
-  module's (same edges, same size) -- they started further in and ended
-  earlier.
 - Translucent windows (Terminal and Sonata's other apps) no longer flicker
   where they redraw a little (a blinking cursor), nor show a faint square
   around the pointer: the blur of a small part is computed on the same grid
