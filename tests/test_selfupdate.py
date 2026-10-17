@@ -25,6 +25,48 @@ class VersionTest(unittest.TestCase):
         self.assertFalse(S.newer("v0.1.0-alpha", "0.1.0-alpha"))
         self.assertFalse(S.newer("v0.0.9", "0.1.0-alpha"))
 
+    def test_same_version_is_not_an_update(self):
+        """The release flow tags vX.Y.Z-alpha for __version__ X.Y.Z-alpha: the
+        same version written with v/V, spaces or an explicit .0 must never be
+        offered as an update (Sonata would ask to update to itself forever)."""
+        for tag in ("v0.19.2-alpha", "V0.19.2-alpha", " v0.19.2-alpha ", "0.19.2-alpha.0", "v0.19.2-Alpha",
+                    "0.19.2-a"):
+            self.assertFalse(S.newer(tag, "0.19.2-alpha"), tag)
+        self.assertFalse(S.newer("v0.19.2", "0.19.2"))
+        self.assertFalse(S.newer("v0.19", "0.19.0"))
+
+    def test_pre_releases_climb_to_the_release(self):
+        """alpha < alpha.2 < beta < rc < the release itself, and a numbered
+        pre-release without a dot (alpha2) counts the same."""
+        self.assertTrue(S.newer("v0.19.2-alpha.2", "0.19.2-alpha"))
+        self.assertTrue(S.newer("v0.19.2-alpha2", "0.19.2-alpha.1"))
+        self.assertTrue(S.newer("v0.19.2-beta", "0.19.2-alpha.9"))
+        self.assertTrue(S.newer("v0.19.2-rc.1", "0.19.2-beta.3"))
+        self.assertTrue(S.newer("v0.19.2", "0.19.2-rc.4"))
+        self.assertFalse(S.newer("v0.19.2-beta", "0.19.2"))           # the release never goes back to a beta
+        self.assertFalse(S.newer("v0.19.2-alpha", "0.19.2-beta"))
+
+    def test_numbers_compare_as_numbers(self):
+        """0.19.10 is after 0.19.9 (as text it sorts before), and the next
+        version's alpha is after this version's release."""
+        self.assertTrue(S.newer("v0.19.10-alpha", "0.19.9-alpha"))
+        self.assertTrue(S.newer("v0.20.0-alpha", "0.19.2"))
+        self.assertTrue(S.newer("v1.0.0-alpha", "0.99.99"))
+        self.assertFalse(S.newer("v0.9.0", "0.19.2-alpha"))
+
+    def test_junk_tags_are_never_newer(self):
+        """A tag without a version (or none at all) is never an update."""
+        for tag in ("", None, "latest", "nightly"):
+            self.assertFalse(S.newer(tag, "0.19.2-alpha"), tag)
+
+    def test_running_version_parses(self):
+        """__version__ itself (what newer() compares against by default) is a
+        version the comparison understands."""
+        from sonata2 import __version__
+        self.assertGreater(S.parse_version(__version__)[:3], (0, 0, 0))
+        self.assertFalse(S.newer(__version__))
+        self.assertFalse(S.newer("v" + __version__))
+
     def test_pick(self):
         rels = [{"tag_name": "v0.1.0-alpha", "html_url": "u1"}, {"tag_name": "v0.3.0", "draft": True},
                 {"tag_name": "v0.2.0-beta", "name": "Beta", "body": "notes", "html_url": "u2"}, "junk", {}]
