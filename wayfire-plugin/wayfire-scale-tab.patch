@@ -1,0 +1,149 @@
+diff --git a/plugins/scale/scale.cpp b/plugins/scale/scale.cpp
+index 58fcc0ed..931c84eb 100644
+--- a/plugins/scale/scale.cpp
++++ b/plugins/scale/scale.cpp
+@@ -22,10 +22,13 @@
+ #include <wayfire/plugins/common/move-drag-interface.hpp>
+ #include <wayfire/plugins/common/shared-core-data.hpp>
+ #include <wayfire/plugins/common/input-grab.hpp>
++#include <algorithm>
+ 
+ #include <linux/input-event-codes.h>
+ 
+ #include "wayfire/plugins/ipc/ipc-activator.hpp"
++#include "wayfire/plugins/ipc/ipc-method-repository.hpp"
++#include "wayfire/plugins/ipc/ipc-helpers.hpp"
+ #include "scale.hpp"
+ #include "../ipc-rules/ipc-rules-common.hpp"
+ #include "scale-title-overlay.hpp"
+@@ -701,8 +704,92 @@ class wayfire_scale : public wf::per_output_plugin_instance_t,
+     /* Process key event */
+ 
+ 
++    /* Sonata: Alt+Tab / Alt+Shift+Tab move the highlight from window to
++     * window in Mission Control, and letting go of Alt picks it, like the
++     * app switcher (Vini). Scale holds the keyboard, so the switcher's own
++     * binding can't start while it's open. */
++    bool tab_cycled = false;
++
++    bool handle_alt_tab(const wlr_keyboard_key_event& ev)
++    {
++        uint32_t mods = wf::get_core().seat->get_keyboard_modifiers();
++        if (((ev.keycode == KEY_LEFTALT) || (ev.keycode == KEY_RIGHTALT)) &&
++            (ev.state == WLR_KEY_RELEASED))
++        {
++            if (!tab_cycled)
++            {
++                return false;
++            }
++
++            tab_cycled = false;
++            auto view = current_focus_view;
++            if (view)
++            {
++                deactivate();
++                select_view(view);
++                wf::get_core().default_wm->focus_raise_view(view);
++            }
++
++            return true;
++        }
++
++        if ((ev.keycode != KEY_TAB) || (ev.state != WLR_KEY_PRESSED) ||
++            !(mods & WLR_MODIFIER_ALT))
++        {
++            return false;
++        }
++
++        cycle(mods & WLR_MODIFIER_SHIFT);
++        return true;
++    }
++
++    /* The highlight to the next (back: previous) window, in the order they
++     * sit on screen; Alt let go of then picks it (handle_alt_tab). Also from
++     * Sonata's app switcher (IPC sonata/scale-cycle): Alt+Tab's binding
++     * reaches it first, and its own list would open hidden under scale. */
++    void cycle(bool back)
++    {
++        std::vector<wayfire_toplevel_view> order;
++        for (auto& e : scale_data)
++        {
++            if (e.first && (e.first->parent == nullptr) &&
++                (e.second.visibility == view_scale_data::view_visibility_t::VISIBLE))
++            {
++                order.push_back(e.first);
++            }
++        }
++
++        if (order.empty())
++        {
++            return;
++        }
++
++        std::sort(order.begin(), order.end(), [&] (auto a, auto b)
++        {
++            auto& da = scale_data[a];
++            auto& db = scale_data[b];
++            return (da.row < db.row) || ((da.row == db.row) && (da.col < db.col));
++        });
++
++        int n    = order.size();
++        int i    = std::find(order.begin(), order.end(), current_focus_view) - order.begin();
++        int next = (i >= n) ? (back ? n - 1 : 0) : (i + (back ? n - 1 : 1)) % n;
++        auto view = order[next];
++        fade_out_all_except(view);
++        fade_in(view);
++        current_focus_view = view;
++        wf::get_core().seat->focus_view(view);
++        tab_cycled = true;
++        output->render->schedule_redraw();
++    }
++
+     void handle_keyboard_key(wf::seat_t*, wlr_keyboard_key_event ev) override
+     {
++        if (handle_alt_tab(ev))
++        {
++            return;
++        }
++
+         auto view = toplevel_cast(wf::get_active_view_for_output(output));
+         if (!view)
+         {
+@@ -1618,17 +1705,37 @@ class wayfire_scale_global : public wf::plugin_interface_t,
+ {
+     wf::ipc_activator_t toggle_ws{"scale/toggle"};
+     wf::ipc_activator_t toggle_all{"scale/toggle_all"};
++    wf::shared_data::ref_ptr_t<wf::ipc::method_repository_t> ipc_repo;
++
++    /* Sonata: {"back": bool} -- the highlight of the open Mission Control
++     * moves (Alt+Tab while it's open); an error when none is open. */
++    wf::ipc::method_callback sonata_cycle = [=] (wf::json_t data)
++    {
++        bool back = wf::ipc::json_get_optional_bool(data, "back").value_or(false);
++        for (auto& [output, scale] : output_instance)
++        {
++            if (scale->active)
++            {
++                scale->cycle(back);
++                return wf::ipc::json_ok();
++            }
++        }
++
++        return wf::ipc::json_error("Mission Control is not open");
++    };
+ 
+   public:
+     void init() override
+     {
+         this->init_output_tracking();
+         toggle_ws.set_handler(toggle_cb);
++        ipc_repo->register_method("sonata/scale-cycle", sonata_cycle);
+         toggle_all.set_handler(toggle_all_cb);
+     }
+ 
+     void fini() override
+     {
++        ipc_repo->unregister_method("sonata/scale-cycle");
+         this->fini_output_tracking();
+     }
+ 

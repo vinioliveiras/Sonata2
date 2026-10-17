@@ -588,6 +588,8 @@ def run_topbar(app, args, ui):
     def switch(_a, param):
         if win.bar.manager is None:
             return
+        if mission_control_step(param.get_string() == "prev"):
+            return                                 # Mission Control open: its highlight moved instead
         if "w" not in sw:
             from .shell.switcher import Switcher
             if not hasattr(win.bar, "mru"):
@@ -1328,6 +1330,19 @@ def keep_all(specs) -> int:
 
 
 LAUNCHPAD_ID = "io.github.vinioliveiras.sonata2.launchpad"
+
+
+def mission_control_step(back: bool) -> bool:
+    """Alt+Tab while Mission Control is open (Vini: pick a window with it):
+    its highlight moves, and letting go of Alt picks it (Sonata's Wayfire:
+    wayfire-scale-tab.patch). False when it isn't open -- the app switcher
+    then, as ever (its list would open hidden under Mission Control)."""
+    try:
+        from .wl.wfipc import WayfireIPC
+        r = WayfireIPC().call("sonata/scale-cycle", {"back": bool(back)})
+    except Exception:
+        return False
+    return isinstance(r, dict) and r.get("result") == "ok"
 
 
 def tell_launchpad(action: str, timeout_ms: int = 800) -> bool:

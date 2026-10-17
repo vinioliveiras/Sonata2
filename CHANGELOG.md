@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### New
+- Mission Control: Alt+Tab (and Alt+Shift+Tab) moves the highlight from
+  window to window, and letting go of Alt opens the one highlighted -- the
+  app switcher's list used to open hidden under Mission Control (Sonata's
+  Wayfire: wayfire-scale-tab.patch, built again by the next update).
+
 ### Fixes
 - Video wallpaper: no black band down the right of the screen. GTK draws a
   video's frame at frame size / video size, from the left, and a decoded
