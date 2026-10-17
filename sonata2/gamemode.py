@@ -142,10 +142,18 @@ class LightEffects:
     def _lighten(self) -> None:
         import json
         saved = {f"{s}/{k}": self.get(s, k, "") for s, k, _v in LIGHT_OPTIONS}
+        # a temp file renamed over LIGHT: killed mid-write, a half (empty) save
+        # read back as unreadable and the effects never came back
+        tmp = LIGHT + ".tmp"
         try:
-            with open(LIGHT, "w", encoding="utf-8") as f:
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(saved, f)
+            os.replace(tmp, LIGHT)
         except OSError:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
             return
         for s, k, v in LIGHT_OPTIONS:
             self.set(s, k, v)
@@ -159,11 +167,18 @@ class LightEffects:
                 saved = json.load(f)
         except (OSError, ValueError):
             saved = {}
+        ok = True
         for s, k, _v in LIGHT_OPTIONS:
             if f"{s}/{k}" not in saved:
                 continue                                 # unreadable save: leave the session copy
             # "" = the config never set it: drop our value so Wayfire's default is back
-            self.set(s, k, saved[f"{s}/{k}"] or None)
+            if not self.set(s, k, saved[f"{s}/{k}"] or None):
+                ok = False
+        if not ok:
+            # not written (no session copy, a failed write): the save stays, so
+            # the next update tries again -- deleted, the animations stayed off
+            # for the rest of the session
+            return
         try:
             os.remove(LIGHT)
         except OSError:

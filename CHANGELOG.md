@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Fixes
+- Window animations (and blur) come back after a full-screen game even when
+  the session's Wayfire config couldn't be written at that moment: Sonata
+  tries again instead of leaving them off until the next login.
 - Screenshots: Capture in the toolbar (Print) no longer sometimes does
   nothing -- it began before the toolbar had gone, while it still held the
   keyboard.
