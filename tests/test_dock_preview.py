@@ -279,6 +279,25 @@ class GrimOnlyWithoutThePluginTest(unittest.TestCase):
         self.assertFalse(s._capture(7))
         s.ipc.call.assert_not_called()
 
+    def test_grim_region_in_whole_pixels(self):
+        """Dock previews stayed empty without the plugin: Wayfire 0.12 gives
+        float geometry and grim refused "500.0,241.5 920.0x560.0"."""
+        P, s = self.shots(False)
+        s.ipc = mock.Mock(**{"call.return_value": {"info": {
+            "id": 7, "activated": True, "geometry": {"x": 500.0, "y": 241.5, "width": 920.0, "height": 560.0}}}})
+        ran = []
+
+        class Now:                                              # the grim thread, run here
+            def __init__(self, target, daemon):
+                self.target = target
+
+            def start(self):
+                self.target()
+        with mock.patch.object(P.threading, "Thread", Now), \
+                mock.patch.object(P.subprocess, "run", side_effect=lambda a, **k: ran.append(a)):
+            s._capture(7)
+        self.assertEqual(ran[0][:3], ["grim", "-g", "500,242 920x560"])
+
 
 class HoverRulesTest(unittest.TestCase):
     """Vini: previews only after 1 s on the icon, only for an app with more
