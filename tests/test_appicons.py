@@ -244,7 +244,12 @@ class SettingsPageTest(unittest.TestCase):
         self.assertFalse(pop.file_rv.get_reveal_child())
         self.assertTrue(pop.size_rv.get_reveal_child())                # a theme icon sits on the plate
         pop.size.set_value(100)                                        # fills the frame, cut to its shape
-        settle(300)
+        # saved 150 ms after the slider stops: waited for, not guessed -- on a
+        # busy machine a fixed 300 ms came too early, and the late save then
+        # landed in the next test's settings
+        end = GLib.get_monotonic_time() + 3_000_000
+        while icons.app_pref(row.info).get("scale") is None and GLib.get_monotonic_time() < end:
+            settle(20)
         self.assertEqual(icons.app_pref(row.info)["scale"], 1.0)
         pop.shape.set_selected(1 + list(icons.SHAPES).index("rounded"))
         self.assertEqual(icons.app_pref(row.info)["shape"], "rounded")
