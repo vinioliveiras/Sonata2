@@ -7,6 +7,10 @@
   it.
 
 ### Fixes
+- Translucent windows (Terminal and Sonata's other apps) no longer flicker
+  where they redraw a little (a blinking cursor), nor show a faint square
+  around the pointer: the blur of a small part is computed on the same grid
+  as the whole screen's (Sonata's Wayfire: wayfire-kawase-align.patch).
 - Faster: the Apps menu (Launchpad) begins to open at once from the Dock and
   ~0.1 s after Super / F4 -- every opening started a whole Sonata process
   (~0.5 s) only to tell the one already running.
