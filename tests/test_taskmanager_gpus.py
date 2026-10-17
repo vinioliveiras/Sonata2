@@ -2,11 +2,13 @@
 Radeon 680M + NVIDIA). The NVIDIA driver has no gpu_busy_percent, so the
 dGPU was dropped; a sleeping dGPU must still show, without nvidia-smi."""
 import os
+import sys
 import shutil
 import unittest
 from unittest import mock
 
 from sonata2.activity.performance import GPU_GONE_SAMPLES  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # (its sibling: run as tests.<module> too)
 from test_activity import FakeSystem  # noqa: E402
 
 

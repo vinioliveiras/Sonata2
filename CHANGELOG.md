@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Fixes
+- The Control Center icon no longer turns dark in Light Mode after the Sound
+  menu (or any menu bar panel) closes: every item in the menu bar is drawn
+  anew once a panel closes, not only the one that opened it.
 - FPS Limit works again for Steam set to Open at Login: started from its
   login entry, it never got frame-pacer's switch (nor its graphics card), so
   its games weren't limited until Steam was opened again from the Dock.

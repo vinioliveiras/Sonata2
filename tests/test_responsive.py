@@ -32,10 +32,17 @@ def settle(ms=150):
         GLib.MainContext.default().iteration(False)
 
 
+_APPS = {}
+
+
 def _app(name):
-    app = Adw.Application(application_id=f"io.github.vinioliveiras.sonata2.test.resp.{name}")
-    app.register(None)
-    return app
+    """One registered app per name: a second one on the same bus was refused
+    ("an object is already exported")."""
+    if name not in _APPS:
+        app = Adw.Application(application_id=f"io.github.vinioliveiras.sonata2.test.resp.{name}")
+        app.register(None)
+        _APPS[name] = app
+    return _APPS[name]
 
 
 def work_area(screen):

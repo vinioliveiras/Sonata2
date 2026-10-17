@@ -504,6 +504,11 @@ class Bar(Gtk.CenterBox):
             self._refresh_icon(btn)               # never left without its icon (Vini)
             if btn is getattr(self, "logo", None):
                 self._refresh_logo()
+            # the other items too: Vini: closing the Sound menu turned the
+            # Control Center icon dark in Light Mode -- the focus went back
+            # to the same app (no window came or went), so nothing else
+            # looked them up again (_icons_if_changed)
+            self._icons_soon()
         pop.connect("closed", closed)
 
     def open_menu(self, index: int) -> None:

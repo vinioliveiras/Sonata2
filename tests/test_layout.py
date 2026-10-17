@@ -9,6 +9,7 @@ that jumps when you only renamed it. Light and dark, small and big displays.
 The checks live in tests/layoutcheck.py; a failure names the widget and by
 how many pixels it's off."""
 import os
+import sys
 import tempfile
 import types
 import unittest
@@ -25,6 +26,7 @@ from gi.repository import Adw, Gtk  # noqa: E402
 
 from sonata2 import config, ui  # noqa: E402
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # (its sibling: run as tests.<module> too)
 import layoutcheck as LC  # noqa: E402
 
 
