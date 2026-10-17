@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### New
+- Mission Control: drop a window on + for a new desktop with the window on
+  it.
+
+### Fixes
+- Mission Control: a window follows the pointer as soon as you drag it --
+  it stayed in its place until pulled about 200 px (Sonata's Wayfire:
+  wayfire-scale-sonata-events.patch).
+
 ## 0.19.0-alpha -- 2026-10-16
 
 Mission Control grows up: right-click a window for its Dock menu, drag it

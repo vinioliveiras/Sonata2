@@ -89,6 +89,7 @@ window.sonata-spaces, window.sonata-spaces > contents { background: none; box-sh
 .sp-desk-box.vanishing { animation: sp-vanish %(vanish)dms ease-in both; }
 /* a window being dragged in Mission Control: the desktops take it */
 .sp-row.dropping .sp-thumb { box-shadow: 0 0 0 2px alpha(%(accent)s, 0.55), 0 2px 6px rgba(0,0,0,0.25); }
+.sp-row.dropping .sp-add { background: alpha(%(accent)s, 0.30); }
 """, key="spaces", gap=BAR_GAP, pill_h=PILL_H, add=ADD_SIZE, appear=APPEAR_MS, vanish=VANISH_MS)
 
 
@@ -327,10 +328,11 @@ class SpacesBar(Gtk.Window):
         if i != (out.get("workspace") or {}).get("x", 0):
             self.ipc.call("vswitch/set-workspace", {"x": i, "y": 0, "output-id": out["id"]})
 
-    def add_desktop(self, count: int) -> None:
+    def add_desktop(self, count: int, then=None) -> None:
+        """A new desktop after the `count` there are; then() once Wayfire has it."""
         self._glide = (count + 1, lambda i: i if i < count else None)
         set_count(count + 1)
-        self._refresh_when(count + 1)
+        self._refresh_when(count + 1, then=then)
 
     def switch_here(self, out, x: int) -> None:
         """Show desktop x, Mission Control staying open on it: Sonata's
@@ -387,24 +389,37 @@ class SpacesBar(Gtk.Window):
         self.row.remove_css_class("dropping")
         g = self.monitor.get_geometry() if self.monitor is not None else None
         x, y = msg.get("x", 0) - (g.x if g else 0), msg.get("y", 0) - (g.y if g else 0) - self.top
-        target = desktop_at(self.pick(x, y, Gtk.PickFlags.DEFAULT)) if 0 <= y <= self.get_height() else None
+        picked = self.pick(x, y, Gtk.PickFlags.DEFAULT) if 0 <= y <= self.get_height() else None
+        target = desktop_at(picked)
         out = self._out()
-        if target is None or out is None:
+        if out is None:
             return
         view = next((v for v in _views(self.ipc) if v.get("id") == msg.get("view-id")), None)
-        if view is None or desktop_of(view, out) == target:
+        if view is None:
+            return
+        if picked is not None and (picked is self.add or picked.is_ancestor(self.add)) and self.add.get_visible():
+            # onto +: a new desktop, and the window goes there (Vini)
+            new = self.count
+            self.add_desktop(new, then=lambda: self.ipc.call("vswitch/send-view",
+                                                             {"view-id": view["id"], "x": new, "y": 0}))
+            return
+        if target is None or desktop_of(view, out) == target:
             return
         self.ipc.call("vswitch/send-view", {"view-id": view["id"], "x": target, "y": 0})
         self._refresh_soon(200)
 
-    def _refresh_when(self, count: int, tries: int = 20) -> None:
+    def _refresh_when(self, count: int, tries: int = 20, then=None) -> None:
         """Refreshed as soon as Wayfire has read its config again (it has
-        `count` desktops): the closed one's gap doesn't wait a fixed time."""
+        `count` desktops): the closed one's gap doesn't wait a fixed time.
+        then(): run first, only once it has them (a window sent to the new one)."""
         def check():
             if not self.get_visible():
                 return False
             out = self._out()
-            if (((out or {}).get("workspace") or {}).get("grid_width", 1) == count) or state["n"] >= tries:
+            there = ((out or {}).get("workspace") or {}).get("grid_width", 1) == count
+            if there or state["n"] >= tries:
+                if there and then is not None:
+                    then()
                 self.refresh()
                 return False
             state["n"] += 1
