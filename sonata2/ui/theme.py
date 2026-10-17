@@ -30,7 +30,11 @@ _parsed = {}          # (token, dark) -> parsed value, for snapshot drawing
 def register(template: str, key: str = None, **local) -> None:
     """Add a component's CSS. `local` = extra placeholders for this template
     only (e.g. geometry from the component's settings). Registering the same
-    `key` again replaces it."""
+    `key` again replaces it. The same CSS again is nothing to do: a part
+    made many times (each of Files' cells registered its tags' CSS: the whole
+    stylesheet parsed again per cell, ~9 of 13 s listing 5,000 files)."""
+    if _templates.get(key or template) == (template, local):
+        return
     _templates[key or template] = (template, local)
     if _provider:
         _load()

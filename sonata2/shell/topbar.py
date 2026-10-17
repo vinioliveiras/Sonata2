@@ -15,6 +15,7 @@ backend/system.py (async)."""
 import os
 import re
 import shutil
+import time
 
 import gi
 
@@ -75,6 +76,8 @@ for _k in _stats.KINDS:
 HIDE_MS = 250                                   # auto-hide slide (the Dock's)
 REVEAL_MS = 150                                 # pointer at the top edge -> the bar comes down
 POLL_S = 10
+PUSHED_POLL_S = 120                             # Wi-Fi / battery as signals: a look now and then only
+NET_SETTLE_MS = 1000                            # a burst of NetworkManager signals -> one read
 
 ui.register("""
 .topbar-item.inuse { padding-left: 4px; padding-right: 4px; }
@@ -125,18 +128,55 @@ class _StatusPoll:
     every POLL_S). Nothing runs while the screen is locked or a fullscreen
     game has the focus (quiet.py); it catches up the moment that ends. The
     volume is read only while a bar shows the Sound item, and then from
-    `pactl subscribe` events when pactl is there (no polling)."""
+    `pactl subscribe` events when pactl is there (no polling).
+
+    Wi-Fi and battery come from NetworkManager's and UPower's signals when
+    they are there: no nmcli every POLL_S (up to three runs a tick, all day
+    long), only a look every PUSHED_POLL_S in case a signal was missed."""
 
     def __init__(self):
         from .. import quiet
         self._busy = set()                       # reads in flight: a second ask while one runs is dropped
         self._audio = None                       # the volume's event watch, while a bar shows Sound
         self._gate = quiet.watch(lambda paused: paused or self.poll())
-        GLib.timeout_add_seconds(POLL_S, self._tick)
+        self._looked = self._wifi_at = time.monotonic()
+        self._net_src = 0
+        self._net = system.watch_network(self._net_changed)              # None: Wi-Fi polled
+        self._upower = system.system_service("org.freedesktop.UPower")   # battery pushed (power.watch)
+        self._schedule()
+
+    def _pushed(self) -> bool:
+        """Nothing to poll: Wi-Fi, battery and the volume all come as events."""
+        return bool(self._net) and self._upower and self._audio is not False
+
+    def _schedule(self) -> None:
+        GLib.timeout_add_seconds(PUSHED_POLL_S if self._pushed() else POLL_S, self._tick)
 
     def _tick(self) -> bool:
-        self.poll()
-        return True
+        if time.monotonic() - self._looked >= PUSHED_POLL_S - POLL_S:
+            self.poll()                          # now and then everything, signals or not
+        else:
+            self.poll(wifi=not self._net, battery=not self._upower)
+        self._schedule()
+        return False
+
+    def _net_changed(self) -> None:
+        """NetworkManager changed something: one read for a burst of signals,
+        and never more often than the old poll (a scan sends one per network)."""
+        if not self._net_src:
+            wait = max(NET_SETTLE_MS, int((self._wifi_at + POLL_S - time.monotonic()) * 1000))
+            self._net_src = GLib.timeout_add(wait, self._net_read)
+
+    def _net_read(self) -> bool:
+        from .. import quiet
+        self._net_src = 0
+        if not quiet.paused():                   # (the end of a pause reads everything anyway)
+            self._wifi()
+        return False
+
+    def _wifi(self) -> None:
+        self._wifi_at = time.monotonic()
+        self._run("wifi", system.wifi_status, lambda b, res: b._wifi_state(res))
 
     def _run(self, key, fn, deliver) -> None:
         if key in self._busy:
@@ -149,12 +189,16 @@ class _StatusPoll:
                 deliver(b, res)
         system.run_async(fn, done)
 
-    def poll(self) -> None:
+    def poll(self, wifi: bool = True, battery: bool = True) -> None:
         from .. import quiet
         if quiet.paused():
             return                      # locked, or a fullscreen game/video has the focus: stay out of its way
-        self._run("wifi", system.wifi_status, lambda b, res: b._wifi_state(res))
-        self.battery()
+        if wifi and battery:
+            self._looked = time.monotonic()
+        if wifi:
+            self._wifi()
+        if battery:
+            self.battery()
         self._volume()
 
     def battery(self) -> None:

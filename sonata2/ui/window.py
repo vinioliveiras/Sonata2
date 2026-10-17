@@ -297,7 +297,16 @@ def remember_size(win, key: str, w: int, h: int) -> None:
     # size reset by itself): GTK goes back to its default size whenever the
     # compositor lets it choose (a configure without a size), and that was
     # still the size it opened at
-    def resized(*_a):
+    # The surface's "layout" comes on every frame something animates (a
+    # spinner, a page's transition), not only on a resize: only a new size
+    # is looked at -- it was a Python call 60 times a second in Disk Utility
+    # while its spinner turned, in every app window during an animation.
+    seen = {"size": None}
+
+    def resized(_surface, width, height):
+        if seen["size"] == (width, height):
+            return
+        seen["size"] = (width, height)
         GLib.idle_add(lambda: (follow_size(win), False)[1])
     win.connect("realize", lambda *_a: win.get_surface().connect("layout", resized))
     if win.get_realized():
