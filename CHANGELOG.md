@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Fixes
+- Web apps on Chrome (Instagram, WhatsApp...): the unread count in the
+  page's title reaches the Dock again, as soon as the app opens and each
+  time it changes -- Chrome only told Sonata the title when the page's
+  address changed, and that stale title hid the window's own count.
+- WhatsApp's web app window keeps its name ("WhatsApp") while the page has
+  no title of its own, instead of going back to "web.whatsapp.com"; the
+  page's own title, with its count, still wins as soon as it has one.
+- A web app's notifications on Chrome are told apart by the browser
+  process that sends them, not only by the site in their text (Chrome
+  rewrites its command line, so its profile wasn't found).
 - Notification Center opens smoothly again with notifications in it: a new
   notification adds only its own card instead of rebuilding every card and
   the calendar, which the next opening then had to lay out again (~0.25 s
@@ -14,14 +24,29 @@
   never freed, its threads and ~30 MB staying behind at every change.
 - Video wallpaper: no sound, ever. The wallpaper's player has no audio
   output at all, rather than a muted one the sound server could unmute.
+- Menus: a very long item (a window's title in the menu bar's Window menu,
+  a recent file, a tray app's entry) ends in "…" instead of making the whole
+  menu as wide as its text; hovering it shows the full text.
+- Control Center: the Volume Mixer's sliders line up with the Sound
+  module's (same edges, same size) -- they started further in and ended
+  earlier.
 
 ### New
-- Mission Control: drop a window on + for a new desktop with the window on
-  it.
 - Volume Mixer: each app has an output button, like the Sound module's,
   that sends that app alone to another output (the one it plays on is
   checked) -- in Control Center at its slider's right, in the menu bar's
   Sound menu by its name.
+
+## 0.19.1-alpha -- 2026-10-17
+
+Quicker to open and smoother to use: the Apps menu opens at once, the
+Control Center's first opening is as fast as the rest, translucent windows
+no longer flicker, and Mission Control's windows drag at once -- onto + for
+a new desktop.
+
+### New
+- Mission Control: drop a window on + for a new desktop with the window on
+  it.
 
 ### Fixes
 - Translucent windows (Terminal and Sonata's other apps) no longer flicker
@@ -36,9 +61,6 @@
 - Mission Control: a window follows the pointer as soon as you drag it --
   it stayed in its place until pulled about 200 px (Sonata's Wayfire:
   wayfire-scale-sonata-events.patch).
-- Menus: a very long item (a window's title in the menu bar's Window menu,
-  a recent file, a tray app's entry) ends in "…" instead of making the whole
-  menu as wide as its text; hovering it shows the full text.
 
 ## 0.19.0-alpha -- 2026-10-16
 
