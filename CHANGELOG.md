@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Fixes
+- Video wallpaper: no black band down the right of the screen. GTK draws a
+  video's frame at frame size / video size, from the left, and a decoded
+  frame a little narrower than the video (hardware decoding) stopped short
+  of the edge; the wallpaper now asks for that much more.
 - The Control Center icon no longer turns dark in Light Mode after the Sound
   menu (or any menu bar panel) closes: every item in the menu bar is drawn
   anew once a panel closes, not only the one that opened it.

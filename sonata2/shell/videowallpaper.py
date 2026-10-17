@@ -286,9 +286,31 @@ class CoverPaintable(GObject.Object, Gdk.Paintable):
         snap.push_clip(bounds)
         snap.save()
         snap.translate(Graphene.Point().init((width - sw) / 2, (height - sh) / 2))
-        self.media.snapshot(snap, sw, sh)
+        fx, fy = frame_shortfall(self.media)
+        self.media.snapshot(snap, sw / fx, sh / fy)
         snap.restore()
         snap.pop()
+
+
+def frame_shortfall(media) -> tuple:
+    """(x, y) <= 1: how much smaller the decoded frame is than the video says
+    it is. GTK's GStreamer picture draws its frame at frame size / video size
+    of what it's asked, from the left: a frame a little narrower (hardware
+    decoders) left a black band down the right of the screen (Vini: "the
+    video wallpaper doesn't fill the right side"). Asked that much larger, the
+    frame lands on the whole box; a frame bigger than the video (padding) is
+    cut by GTK itself and needs nothing."""
+    try:
+        img = media.get_current_image()
+        ratio, vh = media.get_intrinsic_aspect_ratio(), media.get_intrinsic_height()
+        iw, ih = img.get_intrinsic_width(), img.get_intrinsic_height()
+    except (AttributeError, TypeError):
+        return 1.0, 1.0
+    if not (img is not None and ratio > 0 and vh > 0 and iw > 0 and ih > 0):
+        return 1.0, 1.0
+    fx, fy = iw / (ratio * vh), ih / vh               # (the video's own width: its height x its shape)
+    # only a small shortfall is that band; anything else isn't this
+    return (fx if 0.8 <= fx < 1 else 1.0), (fy if 0.8 <= fy < 1 else 1.0)
 
 
 def cover(paintable, width: float, height: float) -> tuple:
