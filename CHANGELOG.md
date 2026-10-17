@@ -12,6 +12,15 @@
 - Menus: a very long item (a window's title in the menu bar's Window menu,
   a recent file, a tray app's entry) ends in "…" instead of making the whole
   menu as wide as its text; hovering it shows the full text.
+- Control Center: the Volume Mixer's sliders line up with the Sound
+  module's (same edges, same size) -- they started further in and ended
+  earlier.
+
+### New
+- Volume Mixer: each app has an output button, like the Sound module's,
+  that sends that app alone to another output (the one it plays on is
+  checked) -- in Control Center at its slider's right, in the menu bar's
+  Sound menu by its name.
 
 ## 0.19.1-alpha -- 2026-10-17
 
@@ -23,15 +32,8 @@ a new desktop.
 ### New
 - Mission Control: drop a window on + for a new desktop with the window on
   it.
-- Volume Mixer: each app has an output button, like the Sound module's,
-  that sends that app alone to another output (the one it plays on is
-  checked) -- in Control Center at its slider's right, in the menu bar's
-  Sound menu by its name.
 
 ### Fixes
-- Control Center: the Volume Mixer's sliders line up with the Sound
-  module's (same edges, same size) -- they started further in and ended
-  earlier.
 - Translucent windows (Terminal and Sonata's other apps) no longer flicker
   where they redraw a little (a blinking cursor), nor show a faint square
   around the pointer: the blur of a small part is computed on the same grid
