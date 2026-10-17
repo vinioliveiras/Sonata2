@@ -15,9 +15,12 @@ at every login (`sonata2 autostart`):
 - Electron apps with a normal frame get Sonata's title bar by themselves
   (Wayfire prefers server-side decorations); the ones that draw their own
   frame and have no setting for it (Spotify, Discord...) keep theirs.
-- VS Code / VSCodium / Code - OSS: left with their own title bar (Vini:
-  forced to "native", they showed Electron's GTK menu bar, light in Dark
-  Mode). Where Sonata had set "native", it's put back to "custom" once.
+- VS Code / VSCodium / Code - OSS / Insiders (Flatpak too): Sonata's title
+  bar, "window.titleBarStyle": "native", at every login and whenever the
+  option is turned on -- always, whatever was set since (Vini: Sonata
+  always forces its windows). Its menu bar follows Sonata's theme and Dark
+  Mode now (xsettings.py: it was light in Dark Mode, why it had been let go
+  for a while). Off: "custom", its own title bar.
 - Firefox, Thunderbird, LibreWolf, Floorp (every profile): user.js
   browser.tabs.inTitlebar = 0 (tabs under the system title bar).
 - Claude Desktop (claude-desktop-bin): CLAUDE_NATIVE_TITLEBAR=1, set by
@@ -43,6 +46,9 @@ from . import config
 VESKTOP = ("~/.config/vesktop/settings.json", "~/.var/app/dev.vencord.Vesktop/config/vesktop/settings.json")
 NAME = "titlebars"                     # ~/.config/sonata2/titlebars.json (one-time moves)
 CODE = ("Code", "Code - OSS", "VSCodium", "Code - Insiders")
+# Flatpak builds keep their settings in their own sandbox
+CODE_FLATPAK = ("~/.var/app/com.visualstudio.code/config/Code", "~/.var/app/com.vscodium.codium/config/VSCodium",
+                "~/.var/app/com.visualstudio.code.insiders/config/Code - Insiders")
 MOZILLA = ("~/.mozilla/firefox", "~/.config/mozilla/firefox", "~/.thunderbird", "~/.librewolf", "~/.floorp",
            "~/.var/app/org.mozilla.firefox/.mozilla/firefox")
 GTK_MODE, QT_MODE = 1, 2      # Chromium's "Appearance > Mode": 0 Classic, 1 GTK, 2 Qt
@@ -85,7 +91,7 @@ def apply(on: bool = None) -> None:
         for prof in profiles:
             if os.path.isfile(os.path.join(prof, "prefs.js")):
                 _mozilla_userjs(os.path.join(prof, "user.js"), on)
-    release_code(cfg)
+    code_titlebar(on, cfg)
     for path in VESKTOP:
         _vesktop_setting(os.path.expanduser(path), on)
 
@@ -194,23 +200,19 @@ def _mozilla_userjs(path: str, on: bool) -> None:
         _write(path, "\n".join(new) + ("\n" if new else ""))
 
 
-def release_code(cfg: str = None) -> None:
-    """VS Code is no longer told to use the system's title bar: where Sonata
-    had written "native", it goes back to "custom" (its own title bar, menu
-    included, in its own theme), once -- a later choice of the user's stays."""
-    if config.load(NAME, {}).get("code_released"):
-        return
+def code_dirs(cfg: str = None) -> list:
+    """The config folders of the VS Code family that has run here."""
     cfg = cfg or os.path.join(os.path.expanduser("~"), ".config")
-    for app in CODE:
-        path = os.path.join(cfg, app, "User", "settings.json")
-        try:
-            with open(path, encoding="utf-8") as f:
-                text = f.read()
-        except OSError:
-            continue
-        if re.search(r'(?m)^(?:(?!//)[^\n])*?"window\.titleBarStyle"\s*:\s*"native"', text):
-            _code_setting(path, "custom")
-    config.save(NAME, dict(config.load(NAME, {}), code_released=True))
+    dirs = [os.path.join(cfg, app) for app in CODE] + [os.path.expanduser(p) for p in CODE_FLATPAK]
+    return [d for d in dirs if os.path.isdir(d)]
+
+
+def code_titlebar(on: bool, cfg: str = None) -> None:
+    """VS Code and its family: Sonata's title bar ("native") while the option
+    is on -- set every time, whatever was chosen since -- their own
+    ("custom") when it's off. Only where one has run (its folder exists)."""
+    for d in code_dirs(cfg):
+        _code_setting(os.path.join(d, "User", "settings.json"), "native" if on else "custom")
 
 
 def _code_setting(path: str, style: str) -> None:

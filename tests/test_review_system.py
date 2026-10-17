@@ -197,22 +197,29 @@ class TitlebarSettingsTest(unittest.TestCase):
         titlebars._browser_pref(p)
         self.assertIs(json.loads(_read(p))["browser"]["custom_chrome_frame"], False)
 
-    def test_vscode_released_once(self):
-        """Vini: VS Code isn't forced to "native" any more -- what Sonata had
-        written goes back to "custom", once; a later "native" of the user's stays."""
+    def test_vscode_always_gets_sonatas_title_bar(self):
+        """Vini: "VS Code stopped taking Sonata's window theme -- Sonata must
+        ALWAYS force its windows": "native" at every login while the option is
+        on, whatever was set since; "custom" (its own) when it's off."""
         cfg = os.path.join(self.d, ".config")
         p = os.path.join(cfg, "Code", "User", "settings.json")
-        _write(p, '{\n    "window.titleBarStyle": "native",\n    "a": 1\n}\n')
-        with mock.patch.object(titlebars.config, "load", return_value={}), \
-                mock.patch.object(titlebars.config, "save") as save:
-            titlebars.release_code(cfg)
-        self.assertIn('"window.titleBarStyle": "custom"', _read(p))
-        self.assertIn('"a": 1', _read(p))
-        save.assert_called_once()
-        _write(p, '{\n    "window.titleBarStyle": "native"\n}\n')        # the user's own, later
-        with mock.patch.object(titlebars.config, "load", return_value={"code_released": True}):
-            titlebars.release_code(cfg)
-        self.assertIn('"native"', _read(p))
+        _write(p, '{\n    "window.titleBarStyle": "custom",\n    "a": 1\n}\n')
+        with mock.patch.dict(os.environ, {"HOME": self.d}):
+            titlebars.code_titlebar(True, cfg)
+            self.assertIn('"window.titleBarStyle": "native"', _read(p))
+            self.assertIn('"a": 1', _read(p))
+            _write(p, '{\n    "window.titleBarStyle": "custom"\n}\n')      # changed since (VS Code, the user)
+            titlebars.code_titlebar(True, cfg)
+            self.assertIn('"native"', _read(p))                                # forced again
+            titlebars.code_titlebar(False, cfg)
+            self.assertIn('"custom"', _read(p))
+            other = os.path.join(cfg, "VSCodium", "User", "settings.json")
+            titlebars.code_titlebar(True, cfg)
+            self.assertFalse(os.path.exists(other))                            # never run here: left alone
+            os.makedirs(os.path.join(cfg, "VSCodium"))
+            titlebars.code_titlebar(True, cfg)
+            self.assertIn('"window.titleBarStyle": "native"', _read(other))
+        self.assertIn("code_titlebar(on, cfg)", open(titlebars.__file__).read())
 
     def test_chromium_roots_found_electron_apps_skipped(self):
         """Browsers (Local State + Default/, one or two levels deep, Flatpak

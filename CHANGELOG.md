@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixes
+- VS Code (and VSCodium, Code - OSS, Insiders, Flatpak too) gets Sonata's
+  title bar again, set at every login and whenever the option is turned on
+  -- whatever was chosen since. Its menu bar follows Sonata's theme and Dark
+  Mode now; it had been left with its own title bar for that.
+
 ### New
 - Mission Control: drop a window on + for a new desktop with the window on
   it.

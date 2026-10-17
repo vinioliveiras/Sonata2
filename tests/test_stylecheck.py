@@ -80,20 +80,21 @@ class NotifyOnceTest(unittest.TestCase):
 
 
 class ConfigRowsTest(unittest.TestCase):
-    def test_vscode_keeps_its_own_bar(self):
-        """Vini: VS Code isn't forced to the system title bar any more (its
-        GTK menu bar was light in Dark Mode): its own bar is fine."""
+    def test_vscode_on_sonatas_bar(self):
+        """Vini: Sonata always forces its title bar on VS Code: "native" is
+        OK, its own bar ("custom") is reported (set again at the next login)."""
         home = tempfile.mkdtemp()
         cfg = os.path.join(home, ".config")
         os.makedirs(os.path.join(cfg, "Code", "User"))
-        with open(os.path.join(cfg, "Code", "User", "settings.json"), "w") as f:
-            json.dump({"window.titleBarStyle": "custom"}, f)
-        with mock.patch.dict(os.environ, {"HOME": home, "XDG_CONFIG_HOME": cfg}), \
-                mock.patch("gi.repository.GLib.get_user_config_dir", lambda: cfg), \
-                mock.patch("sonata2.titlebars.enabled", lambda: True), \
-                mock.patch.object(SC, "steam_rows", lambda: []):
-            rows = {r[1]: r for r in SC.config_rows()}
-        self.assertEqual(rows["Code"][0], SC.OK)
+        for style, want in (("native", SC.OK), ("custom", SC.WARN)):
+            with open(os.path.join(cfg, "Code", "User", "settings.json"), "w") as f:
+                json.dump({"window.titleBarStyle": style}, f, indent=4)
+            with mock.patch.dict(os.environ, {"HOME": home, "XDG_CONFIG_HOME": cfg}), \
+                    mock.patch("gi.repository.GLib.get_user_config_dir", lambda: cfg), \
+                    mock.patch("sonata2.titlebars.enabled", lambda: True), \
+                    mock.patch.object(SC, "steam_rows", lambda: []):
+                rows = {r[1]: r for r in SC.config_rows()}
+            self.assertEqual(rows["Code"][0], want, style)
 
     def test_official_claude_is_not_ok(self):
         """The official Claude Desktop ignores CLAUDE_NATIVE_TITLEBAR (only the
