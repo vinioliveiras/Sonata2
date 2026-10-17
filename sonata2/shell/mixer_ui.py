@@ -94,16 +94,8 @@ class MixerRow(Gtk.Revealer):
                                width_chars=1)
         title.append(self.label)
         self.box.append(title)
-        if owner.beside:
-            self.output = _round_button(OUTPUT_ICON, _("Output"), lambda b: owner.pick_output(b, self.key))
-        else:
-            self.output = Gtk.Button(css_classes=["mixer-output-small"], valign=Gtk.Align.CENTER,
-                                     can_focus=False, tooltip_text=_("Output"))
-            self.output.set_child(Gtk.Image(icon_name=OUTPUT_ICON, pixel_size=14))
-            self.output.connect("clicked", lambda b: owner.pick_output(b, self.key))
-            title.append(self.output)
-        capsule, self.slider = _slider_with_icon(_speaker_icon, stream.volume, self._moved,
-                                                 button=self.output if owner.beside else None)
+        self.output = _round_button(OUTPUT_ICON, _("Output"), lambda b: owner.pick_output(b, self.key))
+        capsule, self.slider = _slider_with_icon(_speaker_icon, stream.volume, self._moved, button=self.output)
         self.box.append(capsule)
         self.set_child(self.box)
         self._src = 0
@@ -150,14 +142,13 @@ class AppMixer(Gtk.Box):
     """The list; set_streams() with what's playing now (diffed: rows that
     stay keep their state, new ones slide in, gone ones slide out)."""
 
-    def __init__(self, apply=None, beside=True, pick=None):
-        """beside: the output button at the slider's right (Control Center);
-        False: on the name's line (the Sound menu). pick(button, key, streams):
-        the output picker (tests)."""
+    def __init__(self, apply=None, pick=None):
+        """The output button at each slider's right, in Control Center and
+        the Sound menu alike (Vini). pick(button, key, streams): the output
+        picker (tests)."""
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.rows = {}
         self._streams = []
-        self.beside = beside
         self.apply_fn = apply or self._apply_async
         self.pick_fn = pick or self._pick_menu
         self.empty = Gtk.Label(label=_("No apps playing sound"), xalign=0, css_classes=["mixer-empty"])

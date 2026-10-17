@@ -996,8 +996,12 @@ class Bar(Gtk.CenterBox):
     def _sound_panel(self, btn):
         """Big Sur sound menu: slider, Output devices (check on the current
         one), Sound Preferences…"""
-        # the same slider as Control Center's Sound module (icon in the capsule)
-        box, slider = _slider_with_icon(_speaker_icon, 0, lambda v: self._set_volume(v))
+        # the same slider as Control Center's Sound module (icon in the capsule,
+        # its output button at the right: laid out alike, Vini)
+        box, slider = _slider_with_icon(
+            _speaker_icon, 0, lambda v: self._set_volume(v),
+            button=_round_button("sonata-audio-output-symbolic", _("Output"),
+                                 lambda b: _device_menu(b, _("Output"), system.audio_outputs, system.select_output)))
         _volume_feedback(slider)
         holder = Gtk.Box(css_classes=["panel-header"])
         holder.append(box)
@@ -1008,7 +1012,7 @@ class Bar(Gtk.CenterBox):
         service = getattr(self, "mixer", None)
         if mixer.available():                                # every app's own volume, kept (Vini)
             from .mixer_ui import AppMixer
-            apps_box = AppMixer(beside=False)                # its slider keeps the main one's width
+            apps_box = AppMixer()                            # laid out as Control Center's mixer (Vini)
             col.append(ui.panel.section_title(_("Applications")))
             col.append(apps_box)
             col.append(ui.panel.separator())
