@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Fixes
+- Dark Mode: menu bars of GTK 3 and Electron apps (GitHub Desktop, VS Code,
+  Discord...) are as dark as the title bar above them, not grey.
 - VS Code (and VSCodium, Code - OSS, Insiders, Flatpak too) gets Sonata's
   title bar again, set at every login and whenever the option is turned on
   -- whatever was chosen since. Its menu bar follows Sonata's theme and Dark

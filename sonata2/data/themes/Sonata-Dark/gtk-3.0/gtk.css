@@ -2,3 +2,7 @@
 /* Sonata: maximized / tiled windows keep their rounded top corners */
 .maximized .titlebar, .tiled .titlebar, .maximized headerbar, .tiled headerbar {
   border-top-left-radius: 10px; border-top-right-radius: 10px; }
+/* Sonata: the menu bar (and Electron's, which reads it: GitHub Desktop, VS
+   Code, Discord...) as dark as the title bar above it -- the base theme's
+   grey (55,55,55) stood out under Sonata's dark title bar (Vini) */
+menubar { background-color: #141416; background-image: none; box-shadow: none; }
