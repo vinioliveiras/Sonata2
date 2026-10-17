@@ -2,16 +2,31 @@
 
 ## Unreleased
 
-### New
-- Mission Control: drop a window on + for a new desktop with the window on
-  it.
-
 ### Fixes
 - Notification Center opens smoothly again with notifications in it: a new
   notification adds only its own card instead of rebuilding every card and
   the calendar, which the next opening then had to lay out again (~0.25 s
   with 100 notifications, now ~10 ms). Each card's time ("5m ago") is now
   current when it opens.
+- Video wallpaper: changing it several times no longer slows the desktop
+  down. Each video let go of is freed once paused, and the memory goes back
+  to the system: a player freed while GStreamer was still busy with it was
+  never freed, its threads and ~30 MB staying behind at every change.
+- Video wallpaper: no sound, ever. The wallpaper's player has no audio
+  output at all, rather than a muted one the sound server could unmute.
+
+### New
+- Mission Control: drop a window on + for a new desktop with the window on
+  it.
+- Volume Mixer: each app has an output button, like the Sound module's,
+  that sends that app alone to another output (the one it plays on is
+  checked) -- in Control Center at its slider's right, in the menu bar's
+  Sound menu by its name.
+
+### Fixes
+- Control Center: the Volume Mixer's sliders line up with the Sound
+  module's (same edges, same size) -- they started further in and ended
+  earlier.
 - Translucent windows (Terminal and Sonata's other apps) no longer flicker
   where they redraw a little (a blinking cursor), nor show a faint square
   around the pointer: the blur of a small part is computed on the same grid
@@ -24,6 +39,9 @@
 - Mission Control: a window follows the pointer as soon as you drag it --
   it stayed in its place until pulled about 200 px (Sonata's Wayfire:
   wayfire-scale-sonata-events.patch).
+- Menus: a very long item (a window's title in the menu bar's Window menu,
+  a recent file, a tray app's entry) ends in "…" instead of making the whole
+  menu as wide as its text; hovering it shows the full text.
 
 ## 0.19.0-alpha -- 2026-10-16
 

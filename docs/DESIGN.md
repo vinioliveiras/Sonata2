@@ -65,7 +65,7 @@ changing `dot` or the colours (a test fails until they match).
 
 | Module | Component | Use |
 |---|---|---|
-| `ui/menu.py` | Context menu / menu popover: sections, check items, disabled items, side submenus (NESTED) | `menu.popup(widget, [[Item(...)], ...])` |
+| `ui/menu.py` | Context menu / menu popover: sections, check items, disabled items, side submenus (NESTED); a row's text ends in "…" past `LABEL_CHARS` (40), whole text as its tooltip | `menu.popup(widget, [[Item(...)], ...])` |
 | `ui/label.py` | Hover label (Dock name bubble, tooltips) | `HoverLabel(widget, "Name")` |
 | `ui/controls.py` | Push button (plain / default / destructive), pop-up button with the accent chevron cap, switch | `push_button`, `popup_button`, `switch` |
 | `ui/dialog.py` | Alert (bold heading, body, Cancel default for destructive actions; optional "Apply to All" checkbox) | `alert(heading, body, responses, on_response, check=None)` |

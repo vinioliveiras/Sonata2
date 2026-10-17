@@ -1,7 +1,14 @@
 """The Sound menu's per-app volumes (backend/mixer.py): one row per app
-playing sound -- its icon (click: mute), its name, a slider. Rows come and
-go with a short slide (Gtk.Revealer, no relayout of the others' content);
-a slider's level is applied and saved a moment after it stops moving."""
+playing sound -- its icon (click: mute), its name, a slider, and the output
+it plays on (the Sound module's output button, for that app alone). Rows
+come and go with a short slide (Gtk.Revealer, no relayout of the others'
+content); a slider's level is applied and saved a moment after it stops
+moving.
+
+Where the output button goes: in Control Center, at the slider's right,
+as on the Sound module (the same capsule, the same edges -- Vini); in the
+menu bar's Sound menu, whose own slider has no button, at the right of
+the app's name, so every slider there keeps the main one's width."""
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -17,12 +24,19 @@ ui.register("""
 /* like the Sound menu's own slider (panel-header + Control Center capsule):
    the app's icon and name above, the big white slider under them (Vini) */
 .mixer-row { padding: 4px 10px 6px 10px; }
+/* Control Center: the module's own padding, as for the Sound module's sliders
+   (their own 10 px more made the app sliders start further in and end earlier) */
+.cc-mixer .mixer-row { padding-left: 0; padding-right: 0; }
 .mixer-row .mixer-title label { font-size: %(text_body)s; font-weight: 400; }
 .mixer-row .cc-slider-box { transition: opacity %(t_fast)s ease-out; }
 .mixer-row.muted .cc-slider-box { opacity: 0.5; }
 .mixer-row button.mixer-mute { padding: 0; min-width: 20px; min-height: 20px; background: none; border: none;
   box-shadow: none; transition: opacity %(t_fast)s ease-out; }
 .mixer-row.muted button.mixer-mute { opacity: 0.4; }
+/* the Sound menu's output button: a glyph on the name's line, like the menu's rows */
+.mixer-row button.mixer-output-small { padding: 0; min-width: 20px; min-height: 20px; border-radius: 99px;
+  background: none; border: none; box-shadow: none; color: %(label_secondary)s; }
+.mixer-row button.mixer-output-small:hover { background: alpha(%(label)s, 0.10); color: %(label)s; }
 .mixer-row.muted label { color: %(label_secondary)s; }
 .mixer-empty { padding: 2px 10px 4px 10px; font-size: %(text_body)s; color: %(label_secondary)s; }
 """, key="mixer")
@@ -59,11 +73,14 @@ def _gicon(stream: "mixer.Stream"):
     return shown(stream)[1]
 
 
+OUTPUT_ICON = "sonata-audio-output-symbolic"      # the Sound module's output button's
+
+
 class MixerRow(Gtk.Revealer):
     def __init__(self, owner, stream):
         super().__init__(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN, transition_duration=SLIDE_MS)
         self.owner, self.key = owner, stream.key
-        from .topbar import _slider_with_icon, _speaker_icon
+        from .topbar import _round_button, _slider_with_icon, _speaker_icon
         self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5, css_classes=["mixer-row"])
         title = Gtk.Box(spacing=6, css_classes=["mixer-title"])
         self.mute = Gtk.Button(css_classes=["mixer-mute"], valign=Gtk.Align.CENTER, can_focus=False,
@@ -77,7 +94,16 @@ class MixerRow(Gtk.Revealer):
                                width_chars=1)
         title.append(self.label)
         self.box.append(title)
-        capsule, self.slider = _slider_with_icon(_speaker_icon, stream.volume, self._moved)
+        if owner.beside:
+            self.output = _round_button(OUTPUT_ICON, _("Output"), lambda b: owner.pick_output(b, self.key))
+        else:
+            self.output = Gtk.Button(css_classes=["mixer-output-small"], valign=Gtk.Align.CENTER,
+                                     can_focus=False, tooltip_text=_("Output"))
+            self.output.set_child(Gtk.Image(icon_name=OUTPUT_ICON, pixel_size=14))
+            self.output.connect("clicked", lambda b: owner.pick_output(b, self.key))
+            title.append(self.output)
+        capsule, self.slider = _slider_with_icon(_speaker_icon, stream.volume, self._moved,
+                                                 button=self.output if owner.beside else None)
         self.box.append(capsule)
         self.set_child(self.box)
         self._src = 0
@@ -124,11 +150,16 @@ class AppMixer(Gtk.Box):
     """The list; set_streams() with what's playing now (diffed: rows that
     stay keep their state, new ones slide in, gone ones slide out)."""
 
-    def __init__(self, apply=None):
+    def __init__(self, apply=None, beside=True, pick=None):
+        """beside: the output button at the slider's right (Control Center);
+        False: on the name's line (the Sound menu). pick(button, key, streams):
+        the output picker (tests)."""
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.rows = {}
         self._streams = []
+        self.beside = beside
         self.apply_fn = apply or self._apply_async
+        self.pick_fn = pick or self._pick_menu
         self.empty = Gtk.Label(label=_("No apps playing sound"), xalign=0, css_classes=["mixer-empty"])
         self.append(self.empty)
 
@@ -161,6 +192,24 @@ class AppMixer(Gtk.Box):
 
     def apply(self, key, percent=None, muted=None) -> None:
         self.apply_fn(key, percent, muted, list(self._streams))
+
+    def pick_output(self, button, key) -> None:
+        self.pick_fn(button, key, list(self._streams))
+
+    @staticmethod
+    def _pick_menu(button, key, streams) -> None:
+        """The Sound module's output menu, for this app: its devices, the one
+        it plays on checked; a choice moves all of the app's streams there."""
+        from types import SimpleNamespace
+        from .topbar import _device_menu
+        stream = next((s for s in streams if s.key == key), None)
+        if stream is None:
+            return
+
+        def devices():
+            outs, cur = mixer.choices(stream)
+            return [SimpleNamespace(key=o.name, name=o.label, default=o is cur) for o in outs]
+        _device_menu(button, _("Output"), devices, lambda name: mixer.move(key, name, streams))
 
     @staticmethod
     def _apply_async(key, percent, muted, streams) -> None:
