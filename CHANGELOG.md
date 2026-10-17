@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.20.0-alpha -- 2026-10-17
+## 0.19.1-alpha -- 2026-10-17
 
 Quicker to open and smoother to use: the Apps menu opens at once, the
 Control Center's first opening is as fast as the rest, translucent windows
