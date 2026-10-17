@@ -544,6 +544,7 @@ class Bar(Gtk.CenterBox):
             return
 
         def closed(*_a):
+            pop.disconnect(handler)               # (once: Control Center's panel opens again)
             btn.remove_css_class("open")
             self._refresh_icon(btn)               # never left without its icon (Vini)
             if btn is getattr(self, "logo", None):
@@ -553,7 +554,7 @@ class Bar(Gtk.CenterBox):
             # to the same app (no window came or went), so nothing else
             # looked them up again (_icons_if_changed)
             self._icons_soon()
-        pop.connect("closed", closed)
+        handler = pop.connect("closed", closed)
 
     def open_menu(self, index: int) -> None:
         """Open the N-th item (screenshots)."""
@@ -1149,8 +1150,29 @@ class Bar(Gtk.CenterBox):
         return None
 
     def _control_center(self, btn):
-        cc = ControlCenter(self)
-        return ui.panel.popup(btn, cc, gap=PANEL_GAP, width=getattr(cc, "width", None))
+        """One Control Center per menu bar, kept in its panel: each opening
+        brings its states up to date (refresh) -- a new one, in a new panel,
+        took ~35 ms and ~100 ms more of GTK work before its first frame.
+        A new one only when it no longer fits (its layout changed in
+        Settings, another display or size)."""
+        cc = getattr(self, "control_center", None)
+        pop = getattr(self, "_cc_panel", None)
+        refresh = getattr(cc, "refresh", None)
+        if cc is not None and refresh is not None and refresh():
+            if pop is not None and pop.get_parent() is btn and cc.get_ancestor(Gtk.Popover) is pop:
+                return ui.panel.reopen(pop)
+        else:
+            cc = ControlCenter(self)
+            self.control_center = cc
+        _detach(cc)
+        if pop is not None:                       # (another item opened it, or a new one)
+            if pop.get_visible():
+                pop.popdown()
+            if pop.get_parent() is not None:
+                pop.unparent()
+        pop = ui.panel.popup(btn, cc, gap=PANEL_GAP, width=getattr(cc, "width", None), keep=True)
+        self._cc_panel = pop
+        return pop
 
     def _poll_soon(self) -> None:
         GLib.timeout_add(600, lambda: (self._poll(), False)[1])
@@ -1228,13 +1250,35 @@ CC_PREWARM_S = 4
 
 
 def prewarm_control_center(bar) -> None:
-    """A Control Center made and dropped (never shown): what its first
-    opening paid for -- modules imported, toggles' states and levels read
-    into their caches -- is done."""
+    """The menu bar's Control Center made unseen: its first opening only
+    brings it up to date (modules imported, toggles' states and levels read
+    into their caches). Once is enough: the login warm-up asks again."""
+    if getattr(bar, "control_center", None) is not None:
+        return
     try:
-        ControlCenter(bar)
+        cc = ControlCenter(bar)
     except Exception as e:                 # a warm-up only: never in the way
         print(f"sonata2-topbar: control center warm-up: {e!r}", flush=True)
+        return
+    try:
+        bar.control_center = cc
+    except AttributeError:                 # (not a menu bar: tests)
+        pass
+
+
+def _detach(widget: Gtk.Widget) -> None:
+    """Out of the panel it was shown in (closed, or closing), to be shown in
+    a new one."""
+    parent = widget.get_parent()
+    if parent is None:
+        return
+    old = widget.get_ancestor(Gtk.Popover)
+    if old is not None and old.get_visible():
+        old.popdown()
+    if isinstance(parent, Gtk.Box):
+        parent.remove(widget)
+    else:                                  # ui.fixed.FixedWidth (set_parent)
+        widget.unparent()
 
 
 _LEVELS = {}     # the Control Center's last levels read: {"vol", "mic", <output>: {"bright"}}
@@ -1423,6 +1467,13 @@ def now_playing_module(p, header=False) -> Gtk.Widget:
             _load_art(url, art, 36)
     update()
     p.listeners.append(update)
+
+    def shown(*_a):
+        """Shown again (the Control Center is kept between openings)."""
+        if update not in p.listeners:
+            p.listeners.append(update)
+            update()
+    row.connect("realize", shown)
     row.connect("unrealize", lambda *_: update in p.listeners and p.listeners.remove(update))
     box.append(row)
     return ui.panel.module(box)
@@ -1454,8 +1505,9 @@ class ControlCenter(Gtk.Box):
         conn.set_valign(Gtk.Align.FILL)
         dark = Adw.StyleManager.get_default().get_dark()
         nc = getattr(bar, "notifications", None)
-        dnd_toggle = ui.panel.toggle("weather-clear-night-symbolic", _("Do Not Disturb"),
-                                     bool(nc and nc.dnd), lambda on: nc and nc.set_dnd(on))
+        self.dnd = dnd_toggle = ui.panel.toggle(
+            "weather-clear-night-symbolic", _("Do Not Disturb"), bool(nc and nc.dnd),
+            lambda on: getattr(bar, "notifications", None) and bar.notifications.set_dnd(on))
         dnd = ui.panel.click_anywhere(ui.panel.module(dnd_toggle), dnd_toggle)
         self.dark_btn = self._small("sonata-dark-mode-symbolic", _("Dark Mode"),
                                     lambda: self._set_dark(not Adw.StyleManager.get_default().get_dark()),
@@ -1480,7 +1532,7 @@ class ControlCenter(Gtk.Box):
         ns_box.append(Gtk.Image(icon_name="night-light-symbolic", css_classes=["cc-ns-icon"]))
         ns_box.append(Gtk.Label(label=_("Night Shift")))
         ns.set_child(ns_box)
-        ns.connect("toggled", lambda b: nightshift.set_manual(b.get_active()))
+        self.ns, self._ns_toggled = ns, ns.connect("toggled", lambda b: nightshift.set_manual(b.get_active()))
         ns.set_sensitive(shutil.which("wlsunset") is not None)
         display = ui.panel.module(Gtk.Label(label=_("Display"), xalign=0, css_classes=["panel-module-title"]),
                                   disp, ns)
@@ -1535,11 +1587,66 @@ class ControlCenter(Gtk.Box):
         self.append(self.pages)
         for row, kind in ((self.wifi, "wifi"), (self.bt, "bluetooth")):
             self._opens_details(row, kind)
+        self._read_states()
+
+    def _read_states(self) -> None:
+        out = self.output
         cached("cc", _cc_state, self._fill_toggles)             # Wi-Fi / Bluetooth: last known at once
         # levels: the live ones, sound apart from brightness (a DDC/CI monitor
         # answers in seconds; the sound sliders don't wait for it)
         system.run_async(lambda: (system.volume(), system.input_volume()), self._fill_sound)
         system.run_async(system.brightness, self._fill_brightness, out)
+
+    def refresh(self) -> bool:
+        """Up to date for another opening, as a new one would open: every
+        state read again, on its controls (not a Wi-Fi list or Edit Controls
+        left open). False: it no longer fits -- its layout changed elsewhere
+        (Settings), another display or size -- and a new one is needed."""
+        from . import controlcenter as CCL
+        from ..backend import mixer
+        mon = self._monitor()
+        if ([m for m in CCL.load() if m in self.modules] != self.grid.order
+                or CCL.width_for(mon.get_geometry().width if mon is not None else 0) != self.width
+                or self._max_height() != self.scroller.get_max_content_height()
+                or self._output() != self.output
+                or ("mixer" in self.modules) != mixer.available()):
+            return False
+        if self.pages.get_visible_child_name() != "main":
+            self.pages.set_transition_type(Gtk.StackTransitionType.NONE)
+            self.pages.set_visible_child_name("main")
+            self.pages.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
+        old = self.pages.get_child_by_name("details")
+        if old is not None:
+            self.pages.remove(old)
+        self.grid.set_editing(False)
+        self.add_reveal.set_reveal_child(False)
+        self.add_btn.remove_css_class("on")
+        self._edit_bar_update()
+        for slot in self.grid.slots.values():               # (played when it was put back)
+            slot.remove_css_class("cc-slot-arriving")
+        self.scroller.get_vadjustment().set_value(0)
+        nc = getattr(self.bar, "notifications", None)
+        ui.panel.set_toggle(self.dnd, bool(nc and nc.dnd))
+        (self.dark_btn.add_css_class if Adw.StyleManager.get_default().get_dark()
+         else self.dark_btn.remove_css_class)("on")
+        from . import nightshift
+        self.ns.handler_block(self._ns_toggled)              # shown, not set again
+        self.ns.set_active(nightshift.is_on())
+        self.ns.handler_unblock(self._ns_toggled)
+        self.ns.set_sensitive(shutil.which("wlsunset") is not None)
+        kbd = self.modules.get("keyboard")
+        if kbd is not None and getattr(kbd, "order", None) != system.keyboard_layouts():
+            from . import kbdmodule                          # sources added, or another one in use
+            self.modules["keyboard"] = kbdmodule.module(self.bar, lambda: self._close())
+            self.grid.replace("keyboard", self.modules["keyboard"])
+        # the sliders at the last levels read, then the live ones
+        for slider, level in ((self.bright, _LEVELS.get(self.output, {}).get("bright", 50)),
+                              (self.vol, _LEVELS.get("vol", 50)), (self.mic, _LEVELS.get("mic", 50))):
+            slider.set_sensitive(True)
+            ui.controls.show_value(slider, level)
+        self.bright.set_tooltip_text(None)
+        self._read_states()
+        return True
 
     def _opens_details(self, row, kind: str) -> None:
         """The row beside its toggle (its name and state) shows the list; the

@@ -57,6 +57,9 @@
   preview is read in the background, at its own size.
 - The menu bar no longer pauses for a moment just after it appears at
   login (a version report now runs in the background).
+- Control Center opens about five times faster (~125 ms -> ~25 ms to its
+  first frame): it is kept between openings and only brought up to date
+  as it opens, instead of being built again, in a new panel, every time.
 
 ## 0.19.2-alpha -- 2026-10-17
 

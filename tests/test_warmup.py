@@ -56,7 +56,7 @@ class WarmupTest(unittest.TestCase):
         self.assertIn("launchpad.warm_icons(win)", main)
         self.assertIn("step=lambda t: (setattr(win.bin, \"progress\", t)", main)
         warm = main[main.index("def warm(step=0)"):main.index("_later(8000, warm)")]
-        for name in ("Switcher(app", "OSD(app)", "ControlCenter(win.bar)"):
+        for name in ("Switcher(app", "OSD(app)", "prewarm_control_center(win.bar)"):
             self.assertIn(name, warm)
         # memory review: the emoji / clipboard pickers are built on first use
         # (emoji() / clipboard()), never kept for the session by the warm-up

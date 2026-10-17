@@ -682,9 +682,9 @@ def run_topbar(app, args, ui):
                 if LS:
                     osd["w"].keyboard_mode = LS.KeyboardMode.NONE     # (prewarm gives it back)
                 layer.prewarm(osd["w"], delay_ms=1)
-            elif step == 2:
-                from .shell.topbar import ControlCenter
-                ControlCenter(win.bar)                           # built and dropped: icons, modules
+            elif step == 2:                                      # kept by the menu bar (once: the
+                from .shell.topbar import prewarm_control_center  # menu bar may have made it already)
+                prewarm_control_center(win.bar)
         except Exception as e:                                   # a warm-up only
             print(f"sonata2: warm-up {step}: {e!r}", flush=True)
         if step < 2:

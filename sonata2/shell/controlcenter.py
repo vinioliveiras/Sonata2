@@ -274,6 +274,16 @@ class ModuleGrid(Gtk.Widget):
         if self.on_change:
             self.on_change(self.order)
 
+    def replace(self, mid: str, widget: Gtk.Widget) -> None:
+        """Another widget for a module, in the same place (Control Center
+        kept between openings: the Keyboard module's sources changed)."""
+        self.widgets[mid] = widget
+        slot = self.slots.get(mid)
+        if slot is not None:
+            widget.set_vexpand(True)
+            widget.set_valign(Gtk.Align.FILL)
+            slot.set_child(widget)
+
     def remove_module(self, mid: str) -> None:
         if mid not in self.order:
             return

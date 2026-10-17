@@ -169,14 +169,127 @@ class LaunchpadOpensFastTest(unittest.TestCase):
 
 class ControlCenterWarmTest(unittest.TestCase):
     def test_built_once_unseen_after_login(self):
-        """Its first opening took ~2.5x the others: built once, unseen."""
+        """Its first opening took ~2.5x the others: built once, unseen, and
+        kept by the menu bar (the login warm-up asking again builds nothing)."""
+        import types
         from sonata2.shell import topbar as T
+        bar = types.SimpleNamespace()
         with mock.patch.object(T, "ControlCenter") as cc:
-            T.prewarm_control_center("bar")
-        cc.assert_called_once_with("bar")
+            T.prewarm_control_center(bar)
+            T.prewarm_control_center(bar)
+        cc.assert_called_once_with(bar)
+        self.assertIs(bar.control_center, cc.return_value)
         with mock.patch.object(T, "ControlCenter", side_effect=RuntimeError("x")):
-            T.prewarm_control_center("bar")                               # never in the way
+            T.prewarm_control_center(types.SimpleNamespace())            # never in the way
         self.assertIn("prewarm_control_center(self.bar)", open(T.__file__).read())
+        import sonata2.__main__ as M
+        self.assertNotIn("ControlCenter(win.bar)", open(M.__file__).read())
+
+
+@unittest.skipUnless(__import__("os").environ.get("DISPLAY"), "needs a display (xvfb-run)")
+class ControlCenterKeptTest(unittest.TestCase):
+    """Product-wide check: every Control Center opening built it again, in a
+    new panel (~35 ms of Python, ~125 ms to its first frame). It is kept, in
+    its panel, and only brought up to date as it opens (~25 ms)."""
+
+    def setUp(self):
+        import tempfile
+        import types
+        import gi
+        gi.require_version("Gtk", "4.0")
+        gi.require_version("Adw", "1")
+        from gi.repository import Adw, Gtk
+        from sonata2 import config, ui
+        from sonata2.shell import topbar as T
+        Adw.init()
+        ui.setup()
+        self.T, self.Gtk = T, Gtk
+        for p in (mock.patch.object(T.system, "run_async"), mock.patch.object(T, "cached"),
+                  mock.patch.object(config, "CONFIG_DIR", tempfile.mkdtemp()),
+                  mock.patch.dict(T._LEVELS, clear=True)):
+            p.start()
+            self.addCleanup(p.stop)
+        self.nc = types.SimpleNamespace(dnd=False, set_dnd=lambda on: None)
+        self.bar = types.SimpleNamespace(
+            _poll=lambda: None, _set_volume=lambda v: None, notifications=self.nc, monitor=None,
+            get_native=lambda: None, wifi_column=lambda close: Gtk.Label(label="Networks"),
+            bluetooth_column=lambda close: Gtk.Label(label="Devices"))
+        self.win = Gtk.Window()
+        self.btn = Gtk.Button(label="cc")
+        self.win.set_child(self.btn)
+        self.win.present()
+        self.addCleanup(self.win.destroy)
+        _spin(150)
+
+    def open(self):
+        pop = self.T.Bar._control_center(self.bar, self.btn)
+        _spin(120)
+        return pop
+
+    def close(self, pop):
+        pop.popdown()
+        _spin(120)
+
+    def test_not_built_again(self):
+        real = self.T.ControlCenter
+        with mock.patch.object(self.T, "ControlCenter", side_effect=real) as made:
+            pops = []
+            for _ in range(4):
+                pops.append(self.open())
+                self.close(pops[-1])
+        self.assertEqual(made.call_count, 1)
+        self.assertEqual(len({id(p) for p in pops}), 1)                  # the same panel
+        self.assertIs(pops[0].get_parent(), self.btn)                     # kept, not dropped
+        # its opening animation plays each time (CSS plays one name once)
+        classes = []
+        for _ in range(2):
+            classes.append(self.open().has_css_class("reopen"))
+            self.close(pops[0])
+        self.assertEqual(sorted(classes), [False, True])
+
+    def test_opens_with_current_states(self):
+        from sonata2.shell import controlcenter as C
+        from sonata2 import config
+        config.save("controlcenter", {"modules": list(C.DEFAULT_ORDER)})
+        pop = self.open()
+        cc = self.bar.control_center
+        cc.show_details("wifi")                                           # left open...
+        cc.grid.set_editing(True)
+        self.close(pop)
+        self.nc.dnd = True                                                # ...states changed elsewhere
+        self.T._LEVELS.update(vol=17, mic=83)
+        self.open()
+        self.assertIs(self.bar.control_center, cc)
+        self.assertEqual(cc.pages.get_visible_child_name(), "main")
+        self.assertIsNone(cc.pages.get_child_by_name("details"))
+        self.assertFalse(cc.grid.editing)
+        self.assertTrue(cc.dnd.button.has_css_class("on"))
+        self.assertEqual(round(cc.vol.get_value()), 17)
+        self.assertEqual(round(cc.mic.get_value()), 83)
+
+    def test_a_layout_changed_elsewhere_builds_a_new_one(self):
+        from sonata2.shell import controlcenter as C
+        from sonata2 import config
+        config.save("controlcenter", {"modules": list(C.DEFAULT_ORDER)})
+        self.close(self.open())
+        first = self.bar.control_center
+        config.save("controlcenter", {"modules": ["dnd", "sound"]})        # (Settings)
+        pop = self.open()
+        self.assertIsNot(self.bar.control_center, first)
+        self.assertEqual(self.bar.control_center.grid.order, ["dnd", "sound"])
+        self.assertIs(self.bar.control_center.get_ancestor(self.Gtk.Popover), pop)
+        self.close(pop)
+
+    def test_menu_bar_item_closes_once_per_opening(self):
+        """Bar._open's "closed" handler doesn't pile up on the kept panel."""
+        import types
+        closed = []
+        bar = types.SimpleNamespace(reveal=None, _refresh_icon=lambda b: closed.append(1),
+                                    logo=None, _icons_soon=lambda: None)
+        for _ in range(3):
+            self.T.Bar._open(bar, self.btn, lambda b: self.open())
+            self.close(self.bar._cc_panel)
+        self.assertEqual(len(closed), 3)
 
 
 class MenuBarIconsTest(unittest.TestCase):

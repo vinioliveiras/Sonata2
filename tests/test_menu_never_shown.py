@@ -49,7 +49,9 @@ class NeverShownTest(unittest.TestCase):
         import inspect
         from sonata2.ui import panel
         self.assertIn("watch_shown(pop)", inspect.getsource(menu.popup))
-        self.assertIn("menu.watch_shown(pop)", inspect.getsource(panel.popup))
+        self.assertIn("menu.watch_shown(pop)", inspect.getsource(panel._show))
+        self.assertIn("return _show(pop)", inspect.getsource(panel.popup))
+        self.assertIn("_show(pop)", inspect.getsource(panel.reopen))      # a kept panel shown again
 
 
 if __name__ == "__main__":
