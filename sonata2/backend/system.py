@@ -191,6 +191,35 @@ def wifi_scan(rescan: bool = False) -> List[WifiNetwork]:
 
 
 NM = ("org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager", "org.freedesktop.NetworkManager")
+# what the menu bar's Wi-Fi icon shows: the radio, devices and connections, the signal
+_NM_IFACES = ("org.freedesktop.NetworkManager", "org.freedesktop.NetworkManager.Device",
+              "org.freedesktop.NetworkManager.Device.Wireless", "org.freedesktop.NetworkManager.AccessPoint")
+
+
+def system_service(name: str) -> bool:
+    """`name` is on the system bus now (NetworkManager, UPower...)."""
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        return bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameHasOwner",
+                             GLib.Variant("(s)", (name,)), GLib.VariantType.new("(b)"),
+                             Gio.DBusCallFlags.NONE, 1000, None).unpack()[0]
+    except GLib.Error:
+        return False
+
+
+def watch_network(callback):
+    """callback() on the GTK main loop whenever NetworkManager reports a
+    change the Wi-Fi icon shows (radio, devices, connections, signal).
+    Returns a cancel function, None without NetworkManager (keep polling).
+    Only these interfaces' changes reach this process (the bus filters)."""
+    if not system_service(NM[0]):
+        return None
+    bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+    subs = [bus.signal_subscribe(NM[0], "org.freedesktop.DBus.Properties", "PropertiesChanged", None, iface,
+                                 Gio.DBusSignalFlags.NONE, lambda *_a: callback()) for iface in _NM_IFACES]
+    subs.append(bus.signal_subscribe(NM[0], NM[2], "StateChanged", NM[1], None, Gio.DBusSignalFlags.NONE,
+                                     lambda *_a: callback()))
+    return lambda: [bus.signal_unsubscribe(s) for s in subs]
 
 
 def wifi_connect(ssid: str, password: str = "") -> Tuple[bool, str]:

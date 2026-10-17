@@ -967,9 +967,19 @@ def screenshot(mode: str) -> int:
     return 0
 
 
-def _write_env_report() -> None:
+def _logo_line() -> str:
+    """The env report's logo line (GTK's icon theme: on the main thread)."""
+    try:
+        from . import icons
+        return f"logo {icons.distro_logo()}"
+    except Exception as e:                        # noqa: BLE001
+        return f"logo error {e}"
+
+
+def _write_env_report(logo: str = None) -> None:
     """~/.cache/sonata2/env.txt: library versions of this machine, so the
-    development environment can match them (written by the menu bar)."""
+    development environment can match them (written by the menu bar, in a
+    thread: `logo` read beforehand on the main thread)."""
     import platform
     import shutil
     import subprocess
@@ -995,11 +1005,7 @@ def _write_env_report() -> None:
             lines.append(f"{mod} {getattr(m, '__version__', getattr(m, 'version', '?'))}")
         except ImportError:
             lines.append(f"{mod} missing")
-    try:
-        from . import icons
-        lines.append(f"logo {icons.distro_logo()}")
-    except Exception as e:                        # noqa: BLE001
-        lines.append(f"logo error {e}")
+    lines.append(logo or _logo_line())
     for tool, arg in (("wayfire", "--version"), ("grim", "-h"), ("wf-recorder", "--version"),
                       ("wlsunset", "-h"), ("swayidle", "-v"), ("wtype", "-h"), ("nmcli", "--version"),
                       ("wpctl", "--version"), ("brightnessctl", "--version"), ("bluetoothctl", "--version")):
@@ -1472,7 +1478,11 @@ def main() -> int:
     os.environ.pop("SONATA2_SESSION_GDK_DEBUG", None)
 
     if args.component == "topbar" and not args.preview:
-        GLib.idle_add(lambda: (_write_env_report(), False)[1])
+        # in a thread: its ten `tool --version` runs held the menu bar's main
+        # loop ~0.1-0.2 s just as it slid in at login
+        import threading
+        GLib.idle_add(lambda: (threading.Thread(target=_write_env_report, args=(_logo_line(),), daemon=True,
+                                                name="env-report").start(), False)[1])
     app_id = APP_IDS[args.component]
     GLib.set_prgname(app_id)     # Wayland app_id, also without a session bus
     app = Adw.Application(application_id=app_id)
