@@ -342,6 +342,7 @@ def loading_row(title: str) -> Adw.ActionRow:
 
 
 INSTALL_POLL_S = 2
+WALL_PREVIEW_PX = 1280          # Displays' wallpaper preview: decoded at most this wide/tall (180 px high, HiDPI)
 INSTALL_WAIT_S = 15 * 60
 
 
@@ -1493,7 +1494,19 @@ class Settings(Adw.ApplicationWindow):
                     return False
                 system.run_async(videowall.poster, shown_poster, path)
             else:
-                alive["pic"].set_file(f if path else None)
+                # decoded in a thread, at the preview's size: a 4K picture took
+                # ~160 ms of the page's opening and kept ~40 MB for a 180 px view
+                # (the one shown stays until the new one is ready: no blank flash)
+                alive["load"] = load = alive.get("load", 0) + 1
+
+                def loaded(pb):
+                    if alive and alive.get("load") == load:
+                        alive["pic"].set_paintable(Gdk.Texture.new_for_pixbuf(pb) if pb is not None else None)
+                if path:
+                    from .. import imageload
+                    system.run_async(imageload.pixbuf_at_scale, loaded, path, WALL_PREVIEW_PX)
+                else:
+                    alive["pic"].set_paintable(None)
             cur = W.current(light, dark)
             for wid, b in alive["tiles"].items():
                 (b.add_css_class if wid == cur else b.remove_css_class)("selected")

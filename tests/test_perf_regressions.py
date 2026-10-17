@@ -350,6 +350,47 @@ class SameCssNotParsedAgainTest(unittest.TestCase):
         load.assert_not_called()
 
 
+@unittest.skipUnless(__import__("os").environ.get("DISPLAY"), "needs a display (xvfb-run)")
+class DisplaysWallpaperPreviewTest(unittest.TestCase):
+    """Product-wide check: Settings > Displays took ~230 ms to open -- ~160
+    of them decoding the 4K wallpaper on the main thread for a 180 px
+    preview, which then held ~40 MB."""
+
+    def test_decoded_in_a_thread_at_the_previews_size(self):
+        import os
+        import tempfile
+        os.environ.setdefault("XDG_CONFIG_HOME", tempfile.mkdtemp())
+        import gi
+        gi.require_version("Gtk", "4.0")
+        gi.require_version("Adw", "1")
+        from gi.repository import Adw, Gtk
+        Adw.init()
+        from sonata2 import ui
+        from sonata2.settings import app as S
+        ui.setup()
+        with mock.patch.object(Gtk.Picture, "set_file", side_effect=AssertionError("decoded on the main loop")):
+            w = S.Settings(None, "displays")
+        try:
+            w.present()
+
+            def walk(x):
+                yield x
+                c = x.get_first_child()
+                while c is not None:
+                    yield from walk(c)
+                    c = c.get_next_sibling()
+            pic = next(p for p in walk(w.pages["displays"]) if isinstance(p, Gtk.Picture) and p.has_css_class("st-wall"))
+            for _ in range(40):
+                _spin(100)
+                if pic.get_paintable() is not None:
+                    break
+            tex = pic.get_paintable()
+            self.assertIsNotNone(tex)                                     # (the default wallpaper)
+            self.assertLessEqual(max(tex.get_width(), tex.get_height()), S.WALL_PREVIEW_PX)
+        finally:
+            w.destroy()
+
+
 class EnvReportOffTheMainLoopTest(unittest.TestCase):
     """Product-wide check: the menu bar's env report ran ten `tool --version`
     on its main loop right after it started (~60-220 ms frozen as it slid in)."""
