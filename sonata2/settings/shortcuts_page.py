@@ -24,20 +24,25 @@ ui.register("""
 
 
 def _keys(binding: str) -> Gtk.Box:
-    """The shortcuts as key caps, "or" between them."""
-    box = Gtk.Box(spacing=6, valign=Gtk.Align.CENTER, css_classes=["sc-keys"])
+    """The shortcuts as key caps, each alternative on its own line ("or"
+    before it), right-aligned: side by side, "Ctrl+Super+→ or Alt+Super+→"
+    made Keyboard the one section wider than a narrow Settings window."""
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, valign=Gtk.Align.CENTER,
+                  css_classes=["sc-keys"])
     combos = S.split(binding)
     if not combos:
-        box.append(Gtk.Label(label=_("Off"), css_classes=["sc-text"]))
+        box.append(Gtk.Label(label=_("Off"), css_classes=["sc-text"], halign=Gtk.Align.END))
     for i, combo in enumerate(combos):
+        line = Gtk.Box(spacing=6, halign=Gtk.Align.END)
         if i:
-            box.append(Gtk.Label(label=_("or"), css_classes=["sc-or"]))
+            line.append(Gtk.Label(label=_("or"), css_classes=["sc-or"]))
         accel = S.accelerator(combo)
         # a gesture's words wrap: on one line ("Swipe up with 3 fingers", longer
         # in Portuguese) they made the row wider than a narrow window
-        box.append(Gtk.ShortcutLabel(accelerator=accel, valign=Gtk.Align.CENTER) if accel
-                   else Gtk.Label(label=S.describe(combo), css_classes=["sc-text"], wrap=True,
-                                  justify=Gtk.Justification.RIGHT, xalign=1))
+        line.append(Gtk.ShortcutLabel(accelerator=accel, valign=Gtk.Align.CENTER) if accel
+                    else Gtk.Label(label=S.describe(combo), css_classes=["sc-text"], wrap=True,
+                                   justify=Gtk.Justification.RIGHT, xalign=1))
+        box.append(line)
     return box
 
 

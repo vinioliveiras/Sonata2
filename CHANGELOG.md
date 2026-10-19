@@ -35,6 +35,16 @@
   "Swipe up with 3 fingers" wraps.
 - Settings > Keyboard > Add: "Add Input Source…" is no longer cut in
   Portuguese.
+- Window buttons on the right (Settings > Appearance): in Files and
+  Preview's file chooser they sit at the window's top corner, where they
+  are on the left (they were centred in the toolbar, lower and further
+  in); Settings' and dialogs' close dots keep the same room from the
+  right edge.
+- GTK 3 apps (and Chrome in its GTK mode): the window buttons sit in
+  Sonata's place on either side, and the theme's x / - / square no longer
+  shows over the dots all the time.
+- Settings > Keyboard: a shortcut with two key combos shows them one
+  under the other; side by side they made a narrow Settings window wider.
 
 ## 0.19.3-alpha -- 2026-10-17
 

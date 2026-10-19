@@ -38,6 +38,11 @@ theme.register("""
    pixdecor's, other GTK 4 apps'). */
 .traffic { margin-left: %(tl_margin_left)s; margin-top: %(tl_margin_top)s; }
 headerbar .traffic { margin-left: %(tl_hb_left)s; margin-top: %(tl_hb_top)s; }   /* headerbar adds its own padding */
+/* on the right (Settings > Appearance): the same room from the right edge;
+   it kept the left one's margin, and the right edge got whatever its
+   container left */
+.traffic.traffic-right { margin-left: 0; margin-right: %(tl_margin_left)s; }
+headerbar .traffic.traffic-right { margin-left: 0; margin-right: %(tl_hb_left)s; }
 /* The dots are the same pictures pixdecor draws on other apps' title bars
    (tools/gen-decor.py), so every window looks and hovers alike: the glyph
    fades in on the button under the pointer. */
@@ -369,6 +374,7 @@ def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
             ("tl-zoom", _("Zoom") if on_zoom else None, on_zoom))
     if buttons_side() == "right":
         dots = tuple(reversed(dots))
+        box.add_css_class("traffic-right")
     for css, tip, cb in dots:
         b = Gtk.Button(tooltip_text=tip, css_classes=[css], valign=Gtk.Align.CENTER,
                        focus_on_click=False, can_focus=False)
@@ -385,8 +391,9 @@ def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
 def close_button(on_close) -> Gtk.Box:
     """Only the close dot (Sonata's dialogs: Vini), in the look and on the
     side the user picked for windows (Settings > Appearance), like theirs."""
-    box = Gtk.Box(css_classes=["traffic", "traffic-close-only"], valign=Gtk.Align.START,
-                  halign=Gtk.Align.END if buttons_side() == "right" else Gtk.Align.START)
+    right = buttons_side() == "right"
+    box = Gtk.Box(css_classes=["traffic", "traffic-close-only"] + (["traffic-right"] if right else []),
+                  valign=Gtk.Align.START, halign=Gtk.Align.END if right else Gtk.Align.START)
     b = Gtk.Button(tooltip_text=_("Close"), css_classes=["tl-close"], valign=Gtk.Align.CENTER,
                    focus_on_click=False, can_focus=False)
     b.connect("clicked", lambda _b: on_close())

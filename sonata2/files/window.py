@@ -45,6 +45,8 @@ window.sonata-files { color: %(label)s; font-family: %(font)s; font-size: %(text
 .fs-divider { min-width: 1px; background: %(content_bg)s; box-shadow: inset 1px 0 %(separator)s; }
 .fs-toolbar { min-height: 52px; padding: 0 10px 0 8px; background: %(content_bg)s;
   box-shadow: inset 0 -1px %(separator)s; }
+/* the window buttons at its end: they keep their own room from the edge */
+.fs-toolbar.lights-right { padding-right: 0; }
 .fs-toolbar .fs-title { font-weight: 700; font-size: %(text_title)s; color: %(label)s; }
 .fs-toolbar entry.fs-title-rename { font-weight: 700; font-size: %(text_title)s; min-height: 24px; margin-left: 2px; }
 .fs-toolbar button { min-width: 28px; min-height: 26px; padding: 0 4px; border-radius: %(r_button)s;
@@ -367,12 +369,16 @@ class FilesWindow(Adw.ApplicationWindow):
             old.get_parent().remove(old)
         lights = self._lights = ui.window.traffic_lights(self.close, self.minimize, self._zoom)
         if ui.window.buttons_side() == "right":
-            lights.set_valign(Gtk.Align.CENTER)
+            # at the window's top, like on the left (centred in the toolbar
+            # they sat lower and further in, off the place every window has)
+            lights.set_valign(Gtk.Align.START)
             lights.set_margin_start(8)
             self._toolbar_bar.append(lights)
+            self._toolbar_bar.add_css_class("lights-right")
             self._right_lights = lights
         else:
             self._lights_slot.append(lights)
+            self._toolbar_bar.remove_css_class("lights-right")
             self._right_lights = None
 
     def _open_search(self):
