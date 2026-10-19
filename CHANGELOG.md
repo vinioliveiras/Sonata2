@@ -19,6 +19,22 @@
   switched.
 - New folders and shortcuts are named in Portuguese ("pasta sem título",
   "Projetos - Atalho").
+- Switching Dark Mode while an alert is open (Settings' "Restart Sonata
+  now?", any app's) no longer closes the app.
+- Settings > Apps > Hidden & Protected Apps: after the password the hidden
+  apps show where the password field was, not at the bottom of the section
+  under every installed app.
+- Settings > Desktop & Windows > Reset: a double-click on a window's top
+  edge zooms it again, like the title bar.
+- Settings > Menu Bar > Reset: a menu bar made shorter goes back to its
+  taller height at once.
+- Settings > Displays no longer makes a narrow Settings window wider: the
+  wallpapers wrap to four on a line.
+- Settings > Keyboard Shortcuts in a narrow window: a shortcut's name
+  breaks between words ("Overview" came out one letter per line) and
+  "Swipe up with 3 fingers" wraps.
+- Settings > Keyboard > Add: "Add Input Source…" is no longer cut in
+  Portuguese.
 
 ## 0.19.3-alpha -- 2026-10-17
 
