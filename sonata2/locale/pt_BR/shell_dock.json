@@ -148,5 +148,6 @@
  "“{name}” can't be uninstalled here.": "Não é possível desinstalar “{name}” aqui.",
  "“{name}” couldn't be removed": "Não foi possível remover “{name}”",
  "“{name}” couldn't be uninstalled": "Não foi possível desinstalar “{name}”",
- "“{name}” was uninstalled": "“{name}” foi desinstalado"
+ "“{name}” was uninstalled": "“{name}” foi desinstalado",
+ "The shortcut “{name}” can’t be opened because the original item can’t be found.": "Não é possível abrir o atalho “{name}” porque o item original não foi encontrado."
 }

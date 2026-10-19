@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+### Fixes
+- Desktop: dragging one icon while Sort By is on no longer sends every
+  other icon back to where it was before sorting.
+- Desktop: deleting a file no longer shuffles the icons after it, and
+  icons keep their spots after logging in again.
+- Desktop: Clean Up leaves the icons on the other display where they are
+  (they all went to the main display).
+- Desktop: several files dropped on the desktop land together where they
+  were dropped (only the first did; the rest went to the top right).
+- Desktop: renaming an icon to a name already in use says so, and no
+  longer moves the other file's icon.
+- Desktop: opening a shortcut whose original was deleted says the original
+  can't be found, with Move to Trash (it opened an empty Quick Look).
+- Desktop: icons follow the menu bar right away when Taller menu bar is
+  switched.
+- New folders and shortcuts are named in Portuguese ("pasta sem título",
+  "Projetos - Atalho").
+- Switching Dark Mode while an alert is open (Settings' "Restart Sonata
+  now?", any app's) no longer closes the app.
+- Settings > Apps > Hidden & Protected Apps: after the password the hidden
+  apps show where the password field was, not at the bottom of the section
+  under every installed app.
+- Settings > Desktop & Windows > Reset: a double-click on a window's top
+  edge zooms it again, like the title bar.
+- Settings > Menu Bar > Reset: a menu bar made shorter goes back to its
+  taller height at once.
+- Settings > Displays no longer makes a narrow Settings window wider: the
+  wallpapers wrap to four on a line.
+- Settings > Keyboard Shortcuts in a narrow window: a shortcut's name
+  breaks between words ("Overview" came out one letter per line) and
+  "Swipe up with 3 fingers" wraps.
+- Settings > Keyboard > Add: "Add Input Source…" is no longer cut in
+  Portuguese.
+- Window buttons on the right (Settings > Appearance): in Files and
+  Preview's file chooser they sit at the window's top corner, where they
+  are on the left (they were centred in the toolbar, lower and further
+  in); Settings' and dialogs' close dots keep the same room from the
+  right edge.
+- GTK 3 apps (and Chrome in its GTK mode): the window buttons sit in
+  Sonata's place on either side, and the theme's x / - / square no longer
+  shows over the dots all the time.
+- Settings > Keyboard: a shortcut with two key combos shows them one
+  under the other; side by side they made a narrow Settings window wider.
+
 ## 0.19.3-alpha -- 2026-10-17
 
 Alt+Tab picks a window in Mission Control and a right-click under the Dock

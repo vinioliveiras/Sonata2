@@ -10,7 +10,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from .. import shortcuts as S, ui  # noqa: E402
 from ..i18n import _  # noqa: E402
@@ -24,18 +24,42 @@ ui.register("""
 
 
 def _keys(binding: str) -> Gtk.Box:
-    """The shortcuts as key caps, "or" between them."""
-    box = Gtk.Box(spacing=6, valign=Gtk.Align.CENTER, css_classes=["sc-keys"])
+    """The shortcuts as key caps, each alternative on its own line ("or"
+    before it), right-aligned: side by side, "Ctrl+Super+→ or Alt+Super+→"
+    made Keyboard the one section wider than a narrow Settings window."""
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, valign=Gtk.Align.CENTER,
+                  css_classes=["sc-keys"])
     combos = S.split(binding)
     if not combos:
-        box.append(Gtk.Label(label=_("Off"), css_classes=["sc-text"]))
+        box.append(Gtk.Label(label=_("Off"), css_classes=["sc-text"], halign=Gtk.Align.END))
     for i, combo in enumerate(combos):
+        line = Gtk.Box(spacing=6, halign=Gtk.Align.END)
         if i:
-            box.append(Gtk.Label(label=_("or"), css_classes=["sc-or"]))
+            line.append(Gtk.Label(label=_("or"), css_classes=["sc-or"]))
         accel = S.accelerator(combo)
-        box.append(Gtk.ShortcutLabel(accelerator=accel) if accel
-                   else Gtk.Label(label=S.describe(combo), css_classes=["sc-text"]))
+        # a gesture's words wrap: on one line ("Swipe up with 3 fingers", longer
+        # in Portuguese) they made the row wider than a narrow window
+        line.append(Gtk.ShortcutLabel(accelerator=accel, valign=Gtk.Align.CENTER) if accel
+                    else Gtk.Label(label=S.describe(combo), css_classes=["sc-text"], wrap=True,
+                                   justify=Gtk.Justification.RIGHT, xalign=1))
+        box.append(line)
     return box
+
+
+def _whole_words(row) -> None:
+    """The row's title breaks between words only. Adw breaks it anywhere: in
+    a narrow window the key caps took the room and "Overview" came out one
+    letter per line ("V-is-ão G-e-ral")."""
+    stack = [row]
+    while stack:
+        w = stack.pop()
+        if isinstance(w, Gtk.Label) and w.has_css_class("title"):
+            w.set_wrap_mode(Pango.WrapMode.WORD)
+            return
+        c = w.get_first_child()
+        while c is not None:
+            stack.append(c)
+            c = c.get_next_sibling()
 
 
 class ShortcutsPage:
@@ -63,6 +87,7 @@ class ShortcutsPage:
     def _row(self, s):
         row = Adw.ActionRow(title=GLib.markup_escape_text(_(s.title)), activatable=True)
         row.connect("activated", lambda *_: self.record(s, add=False))
+        _whole_words(row)
         row.holder = Gtk.Box(valign=Gtk.Align.CENTER)      # the key caps, before the "…" button
         row.add_suffix(row.holder)
         more = Gtk.MenuButton(icon_name="view-more-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"],

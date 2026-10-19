@@ -20,8 +20,11 @@ docs/DESIGN.md (design rules).
 - **Use the right interpreter.** Run tests with the interpreter that has
   PyGObject. UI tests need a display:
   `xvfb-run -a python3 -m unittest tests.<module>` (one module at a time).
-- **Regressions.** Every reported bug that gets fixed gets a test named
-  after it.
+- **A test for every bug, always.** Every bug that gets fixed -- reported
+  by Vini or found while working -- gets a regression test in the same
+  change, named after the bug (`test_<what_went_wrong>`), with a docstring
+  saying what the user saw. Check it fails on the code before the fix and
+  passes after. No bug fix is done without its test.
 - **Every language.** After touching Settings, an app or any text, run
   `dbus-run-session -- xvfb-run -a python3 -m unittest tests.test_smoke_languages`
   (about 90 s). It opens every Sonata app in English, pt-BR and pt-PT and

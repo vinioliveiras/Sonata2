@@ -310,7 +310,7 @@ class StackItemsTest(unittest.TestCase):
 class DesktopGridTest(unittest.TestCase):
     def grid(self, w=1920, h=1080, margins=(14, 14, 80)):
         from sonata2.shell import desktop as DK
-        ns = types.SimpleNamespace(_size=(w, h), _margins=margins, cfg={"sort": "none", "positions": {}},
+        ns = types.SimpleNamespace(_size=(w, h), _margins=margins, _top=DK.TOP, cfg={"sort": "none", "positions": {}},
                                    screen="DP-1", main=True)
         for name in ("rows", "cols", "cell_size", "cell_xy", "cell_at", "_display_of", "mine"):
             setattr(ns, name, getattr(DK.Desktop, name).__get__(ns))

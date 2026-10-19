@@ -22,7 +22,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, icons, names, ui  # noqa: E402
-from ..i18n import _, ngettext  # noqa: E402
+from ..i18n import _, ngettext, pgettext  # noqa: E402
 from ..backend import equalizer, system  # noqa: E402
 
 SECTIONS = [  # id, title, icon, badge colour, group (colours varied, not mostly grey: Vini)
@@ -1452,7 +1452,7 @@ class Settings(Adw.ApplicationWindow):
 
         # Sonata's own pictures (Vini): a click sets them for Light and Dark
         gallery = group(_("Sonata Wallpapers"))
-        grid = Gtk.FlowBox(max_children_per_line=5, min_children_per_line=5, selection_mode=Gtk.SelectionMode.NONE,
+        grid = Gtk.FlowBox(max_children_per_line=5, min_children_per_line=4, selection_mode=Gtk.SelectionMode.NONE,
                            row_spacing=12, column_spacing=12, homogeneous=True)
         tiles = {}
         for w in W.CATALOG:
@@ -1582,7 +1582,9 @@ class Settings(Adw.ApplicationWindow):
                                                                          if x != lay]))
             r.add_suffix(rm)
             src.add(r)
-        add_opts = [("", _("Add Input Source…"))] + [o for o in system.XKB_LAYOUTS if o[0] not in lays]
+        # (a short translation: the pop-up's value is cut past ~20 letters)
+        add_opts = ([("", pgettext("input source combo", "Add Input Source…"))]
+                    + [o for o in system.XKB_LAYOUTS if o[0] not in lays])
         src.add(combo_row(_("Add"), add_opts, "", lambda v: v and self._set_layouts(system.keyboard_layouts() + [v])))
         test = Adw.EntryRow(title=_("Type here to test"))
         src.add(test)
@@ -3218,7 +3220,7 @@ class Settings(Adw.ApplicationWindow):
                            cfg["minimize_effect"], self._set_minimize_effect))
         dbl = system.gsetting("org.gnome.desktop.wm.preferences", "action-double-click-titlebar") or "toggle-maximize"
         wins.add(combo_row(_("Double-click a window's title bar to"),
-                           [("toggle-maximize", "Zoom"), ("minimize", _("Minimize")), ("none", _("Do Nothing"))],
+                           [("toggle-maximize", _("Zoom")), ("minimize", _("Minimize")), ("none", _("Do Nothing"))],
                            dbl if dbl in ("toggle-maximize", "minimize", "none") else "toggle-maximize",
                            self._set_double_click))
         desk = group(_("Desktop"))
@@ -3373,8 +3375,11 @@ class Settings(Adw.ApplicationWindow):
 
     def reset_menubar(self) -> None:
         from ..shell import topbar_prefs as T
+        tall = config.load("topbar", T.DEFAULTS).get("tall", True)
         for k, v in T.DEFAULTS.items():
             self._save("topbar", k, v)
+        if bool(tall) != T.DEFAULTS["tall"]:           # its height is read at start: it starts again
+            self._set_tall_menubar(T.DEFAULTS["tall"])
         for k in ("menu_logo", "menu_text"):
             self._save("appearance", k, icons.APPEARANCE_DEFAULTS[k])
         self.rebuild_page("menubar")
@@ -3393,6 +3398,9 @@ class Settings(Adw.ApplicationWindow):
             system.wayfire_set("animate", "minimize_animation", minimize_animation(D.DEFAULTS["minimize_effect"]))
             system.set_gsetting("org.gnome.desktop.wm.preferences", "action-double-click-titlebar",
                                 "toggle-maximize")
+            # and the windows' top edge, which follows the title bar (it kept
+            # minimizing after a reset)
+            system.wayfire_set("sonata-resize", "double_click", "toggle-maximize")
             system.wayfire_set("sonata-resize", "live", True)
         system.run_async(apply, None)
         self.rebuild_page("desktop")
@@ -3455,11 +3463,22 @@ class Settings(Adw.ApplicationWindow):
         return [g]
 
     def _hidden_page(self):
-        return self.pages["hidden"].get_content()        # the Adw.PreferencesPage
+        return self.pages["hidden"].main                 # the Adw.PreferencesPage (not an app's, if one is open)
 
     def _show_hidden_apps(self) -> None:
         page = self._hidden_page()
-        for grp in [self._hidden_lock] + self._hidden_groups:
+        # the list takes the lock's place: added last, it went under Installed
+        # Apps, out of sight, and the unlocked section seemed to show nothing.
+        # (Adw.PreferencesPage can't insert: the groups after it go again after.)
+        mine = [self._hidden_lock] + self._hidden_groups
+        here = next((g for g in mine if g.get_parent() is not None), None)
+        after = []
+        sib = here.get_next_sibling() if here is not None else None
+        while sib is not None:
+            if isinstance(sib, Adw.PreferencesGroup) and sib not in mine:
+                after.append(sib)
+            sib = sib.get_next_sibling()
+        for grp in mine + after:
             if grp.get_parent() is not None:
                 page.remove(grp)
         self._hidden_groups = []
@@ -3485,6 +3504,8 @@ class Settings(Adw.ApplicationWindow):
         add.connect("clicked", lambda b: self._pick_app_to_hide(b, installed, hidden))
         h.add(add)
         page.add(h)
+        for grp in after:
+            page.add(grp)
         self._hidden_groups = [h]
 
     def _pick_app_to_hide(self, anchor, installed, hidden) -> None:

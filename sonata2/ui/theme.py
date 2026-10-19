@@ -255,6 +255,11 @@ def _fade_window(win) -> None:
     out while the new style shows underneath. (GTK doesn't run CSS
     transitions for stylesheet changes, so this is done with a snapshot.)"""
     child = _content(win)
+    if hasattr(Adw, "Dialog") and isinstance(child, Adw.Dialog):
+        # an alert in its own window: libadwaita aborts the app when a
+        # dialog is put in an overlay (Dark Mode switched with "Restart
+        # Sonata now?" open took Settings down). It keeps its plain switch.
+        return
     w, h = (child.get_width(), child.get_height()) if child else (0, 0)
     if not child or w <= 0 or h <= 0 or not win.get_renderer():
         return

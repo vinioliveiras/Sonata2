@@ -30,6 +30,10 @@ CELL_W, CELL_H = 96, 104          # Big Sur's default desktop grid (64 px icons)
 ICON = 64
 from ..shell import menubar_size  # noqa: E402
 TOP, EDGE = menubar_size.height() + 10, 14        # below the menu bar; off the screen edges
+
+
+def _top() -> int:
+    return menubar_size.height() + 10
 DEFAULTS = {"positions": {}, "sort": "none"}
 SORTS = (("none", N_("None")), ("name", N_("Name")), ("kind", N_("Kind")), ("date", N_("Date Modified")))   # Sort By (and Settings)
 
@@ -137,6 +141,13 @@ def _launcher(info):
         return None
 
 
+def _broken(info, f) -> bool:
+    """A shortcut (a link) whose original is gone."""
+    path = f.get_path()
+    return bool(info.has_attribute("standard::is-symlink") and info.get_is_symlink()
+                and path and not os.path.exists(path))
+
+
 def _copy(target) -> bool:
     return bool(target.get_current_event_state() & Gdk.ModifierType.CONTROL_MASK)
 
@@ -156,6 +167,7 @@ class Desktop(Gtk.Fixed):
         self._placed = {}
         self._size = (0, 0)
         self._margins = self._dock_margins()
+        self._top = _top()
         self.folder = folder.Folder(lambda _u: self._sync(), lambda _u, _e: None)
         self.folder.store.connect("items-changed", lambda *_: self._sync())
         self.folder.load(self.dir.get_uri())
@@ -178,7 +190,7 @@ class Desktop(Gtk.Fixed):
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._key)
         self.add_controller(keys)
-        self._mon = self._dock_mon = None
+        self._mon = self._dock_mon = self._bar_mon = None
         self._released = False
         self._watch()
 
@@ -193,15 +205,18 @@ class Desktop(Gtk.Fixed):
         if self._mon is None:
             self._mon = config.watch("desktop", self._config_changed)
             self._dock_mon = config.watch("dock", self._dock_changed)      # the Dock moved / resized
+            # the taller / standard menu bar: icons stayed where the old one
+            # ended (read once at import) until the session started again
+            self._bar_mon = config.watch("topbar", self._bar_changed)
         if self._released:
             self._released = False
             self.folder.load(self.dir.get_uri())
 
     def release(self) -> None:
-        for mon in (self._mon, self._dock_mon):
+        for mon in (self._mon, self._dock_mon, self._bar_mon):
             if mon is not None:
                 mon.cancel()
-        self._mon = self._dock_mon = None
+        self._mon = self._dock_mon = self._bar_mon = None
         self.folder.cancel()
         self._released = True
 
@@ -232,7 +247,7 @@ class Desktop(Gtk.Fixed):
                 EDGE + (thick if side == "bottom" else 0))
 
     def rows(self) -> int:
-        return max(1, (self._size[1] - TOP - self._margins[2]) // CELL_H)
+        return max(1, (self._size[1] - self._top - self._margins[2]) // CELL_H)
 
     def cols(self) -> int:
         return max(1, (self._size[0] - self._margins[0] - self._margins[1]) // CELL_W)
@@ -242,7 +257,7 @@ class Desktop(Gtk.Fixed):
         the grid reaches both edges (Vini: the left side had a strip no icon
         could go to) -- never smaller than Big Sur's grid."""
         w = self._size[0] - self._margins[0] - self._margins[1]
-        h = self._size[1] - TOP - self._margins[2]
+        h = self._size[1] - self._top - self._margins[2]
         return max(CELL_W, w / self.cols()), max(CELL_H, h / self.rows())
 
     def cell_xy(self, col, row):
@@ -250,13 +265,25 @@ class Desktop(Gtk.Fixed):
         counted from the right (macOS)."""
         cw, ch = self.cell_size()
         x = self._size[0] - self._margins[1] - (col + 1) * cw + (cw - CELL_W) / 2
-        return int(round(x)), int(round(TOP + row * ch))
+        return int(round(x)), int(round(self._top + row * ch))
 
     def cell_at(self, x, y):
         cw, ch = self.cell_size()
         col = int((self._size[0] - self._margins[1] - x) // cw)
-        row = int((y - TOP) // ch)
+        row = int((y - self._top) // ch)
         return max(0, min(self.cols() - 1, col)), max(0, min(self.rows() - 1, row))
+
+    def _next_free(self, c, r, taken):
+        """(c, r), or the next free cell below it (then the next column);
+        None when the desktop is full."""
+        while 0 <= c < self.cols():
+            if r >= self.rows():
+                r, c = 0, c + 1
+                continue
+            if (c, r) not in taken:
+                return c, r
+            r += 1
+        return None
 
     def _sorted_names(self):
         infos = [self.folder.store.get_item(i) for i in range(self.folder.store.get_n_items())]
@@ -282,10 +309,23 @@ class Desktop(Gtk.Fixed):
             if p and (p[0], p[1]) not in taken and p[0] < self.cols() and p[1] < rows:
                 placed[name] = (p[0], p[1])
                 taken.add((p[0], p[1]))
+        prev = (getattr(self, "_placed", {}) or {}) if self.cfg.get("sort", "none") == "none" else {}
+        for name in mine:                          # then where they already were
+            p = prev.get(name)
+            if name not in placed and p and p not in taken and p[0] < self.cols() and p[1] < rows:
+                placed[name] = p
+                taken.add(p)
         slots = iter(c for c in free_order if c not in taken)
         for name in mine:                          # then the first free cells
             if name not in placed:
                 placed[name] = next(slots, (self.cols() - 1, rows - 1))
+        if self.cfg.get("sort", "none") == "none":
+            # an icon with no spot of its own keeps the one it got: deleting a
+            # file shuffled every icon after it (they took the first free cells
+            # in name order again), and so did logging in again
+            unsaved = {n: c for n, c in placed.items() if n not in pos}
+            if unsaved:
+                GLib.idle_add(lambda u=unsaved: (self._keep_spots(u), False)[1])
         # icons that already had a spot slide to their new one (new ones just appear)
         old = getattr(self, "_placed", {}) or {}
         # (only icons already drawn at a spot: one just added sits at 0,0 until
@@ -301,6 +341,18 @@ class Desktop(Gtk.Fixed):
                 item.set_opacity(1)
         self._placed = placed
         ui.transition.glide_play(before, self)
+
+    def _keep_spots(self, spots) -> None:
+        cfg = config.load("desktop", DEFAULTS)
+        if cfg.get("sort", "none") != "none":
+            return
+        tag = [] if self.main else [self.screen]
+        spots = {n: c for n, c in spots.items() if n not in cfg["positions"] and n in self.items
+                 and self._placed.get(n) == c}
+        if spots:
+            cfg["positions"].update({n: [c[0], c[1]] + tag for n, c in spots.items()})
+            config.save("desktop", cfg)
+            self.cfg = cfg
 
     def do_snapshot(self, snap) -> None:
         ui.transition.snapshot_children(self, snap)
@@ -366,9 +418,20 @@ class Desktop(Gtk.Fixed):
             self._margins = m
             self._layout()
 
+    def _bar_changed(self) -> None:
+        top = _top()
+        if top != self._top:
+            self._top = top
+            self._layout()
+
     def _save_positions(self, moved: dict) -> None:
         cfg = config.load("desktop", DEFAULTS)
         tag = [] if self.main else [self.screen]          # spots on another display name it
+        if cfg.get("sort", "none") != "none":
+            # leaving the sort: the other icons stay where it put them (they
+            # jumped back to their old hand-made spots, Finder keeps them)
+            cfg["positions"].update({k: [v[0], v[1]] + tag for k, v in (self._placed or {}).items()
+                                     if k not in moved})
         cfg["positions"].update({k: [v[0], v[1]] + tag for k, v in moved.items()})
         # files gone from ~/Desktop lose their spot (not icons of another
         # display, nor a folder that is being made right now)
@@ -427,7 +490,9 @@ class Desktop(Gtk.Fixed):
         from ..files import open_folder
         for item in self.selection:
             f = file_of(item.info)
-            if item.app is not None:
+            if _broken(item.info, f):
+                self._broken_shortcut(item)
+            elif item.app is not None:
                 try:
                     item.app.launch([], None)
                 except GLib.Error:
@@ -444,6 +509,17 @@ class Desktop(Gtk.Fixed):
                 except GLib.Error:
                     pass
 
+    def _broken_shortcut(self, item) -> None:
+        """A shortcut whose original is gone says so (macOS' alias alert):
+        it opened an empty Quick Look, or nothing at all."""
+        def answer(r):
+            if r == "trash":
+                ops.trash([file_of(item.info)])
+        ui.dialog.alert(_("The shortcut “{name}” can’t be opened because the original item can’t be found.")
+                        .format(name=item.info.get_display_name()), "",
+                        [("trash", _("Move to Trash"), "destructive"), ("ok", _("OK"), "default")], answer,
+                        default="ok")
+
     def trash_selection(self) -> None:
         ops.trash(self.selected_files())
 
@@ -459,9 +535,15 @@ class Desktop(Gtk.Fixed):
             # watch can list it first, and it went to the first free cell
             # (top right) -- the old name's spot was gone by then (Vini)
             spot = (getattr(self, "_placed", None) or {}).get(old)
-            if spot and self.cfg.get("sort", "none") == "none":
+            # (not over a file that already has the name: the rename fails, and
+            # that file's icon had been sent to this one's spot)
+            taken = os.path.lexists(os.path.join(self.dir.get_path(), new))
+            if spot and self.cfg.get("sort", "none") == "none" and not taken:
                 self._save_positions({new: spot})
-            ops.rename(file_of(info), new, lambda _f: self._renamed(old, new, spot), lambda _e: None)
+            # a name that can't be used says so (it was silently kept, as in Files)
+            ops.rename(file_of(info), new, lambda _f: self._renamed(old, new, spot),
+                       lambda e: ui.dialog.alert(_("The name “{name}” can’t be used.").format(name=new),
+                                                 getattr(e, "message", str(e)), [("ok", _("OK"), "default")]))
         # the desktop sits under the windows and gets the keyboard only when
         # clicked: it takes it while the name is typed (Vini: a new folder's
         # name had to be clicked before typing), then gives it back
@@ -513,7 +595,7 @@ class Desktop(Gtk.Fixed):
                 ops.paste_image(self, self.dir,                 # a copied picture becomes a file
                                 on_error=lambda e: ui.dialog.alert(
                                     _("The picture couldn’t be pasted."), getattr(e, "message", str(e)),
-                                    [("ok", _("OK"), "suggested")]))
+                                    [("ok", _("OK"), "default")]))
         ops.read_clipboard(self, got)
 
     def new_folder(self, at=None) -> None:
@@ -541,10 +623,24 @@ class Desktop(Gtk.Fixed):
             self.rename_selection()
 
     def clean_up(self) -> None:
-        """Snap everything into the grid in name order (Finder's Clean Up By Name)."""
+        """Snap this display's icons into the grid in name order (Finder's
+        Clean Up By Name). Icons on the other displays stay there: wiping
+        every spot brought them all to the main display."""
         cfg = config.load("desktop", DEFAULTS)
-        cfg["positions"], cfg["sort"] = {}, "none"
+        store = self.folder.store
+        order = [store.get_item(i).get_name() for i in range(store.get_n_items())]
+        mine = [n for n in order if n in self.items]
+        cfg["positions"] = {k: v for k, v in cfg.get("positions", {}).items() if k not in self.items}
+        tag = [] if self.main else [self.screen]
+        free = ((c, r) for c in range(self.cols()) for r in range(self.rows()))
+        for name in mine:
+            cell = next(free, None)
+            if cell is None:
+                break
+            cfg["positions"][name] = list(cell) + tag
+        cfg["sort"] = "none"
         config.save("desktop", cfg)
+        self.cfg = cfg
 
     def set_sort(self, sort: str) -> None:
         cfg = config.load("desktop", DEFAULTS)
@@ -633,28 +729,38 @@ class Desktop(Gtk.Fixed):
                 p = self._placed.get(name, anchor)
                 c = max(0, min(self.cols() - 1, p[0] + (col - anchor[0])))
                 r = max(0, min(self.rows() - 1, p[1] + (row - anchor[1])))
-                while (c, r) in taken:                  # occupied: next free cell below
-                    r += 1
-                    if r >= self.rows():
-                        r, c = 0, c + 1
-                moved[name] = (c, r)
-                taken.add((c, r))
+                cell = self._next_free(c, r, taken)     # occupied: next free cell below
+                if cell is not None:
+                    moved[name] = cell
+                    taken.add(cell)
             self._save_positions(moved)
             return True
         here = [f for f in files if f.get_parent() is not None and f.get_parent().equal(self.dir)]
         if here and len(here) == len(files):          # icons from another display's desktop: just move them
             moved, taken = {}, set(self._placed.values())
-            c, r = col, row
             for f in here:
-                while (c, r) in taken:
-                    r += 1
-                    if r >= self.rows():
-                        r, c = 0, c + 1
-                moved[f.get_basename()] = (c, r)
-                taken.add((c, r))
+                cell = self._next_free(col, row, taken)
+                if cell is not None:
+                    moved[f.get_basename()] = cell
+                    taken.add(cell)
             self._save_positions(moved)
             return True
-        self._save_positions({f.get_basename(): (col, row) for f in files[:1]})
+        # every dropped file where it was dropped, one under the other (only
+        # the first got the spot; the rest went to the top right). Not a name
+        # already on the Desktop: the copy gets another name, and the icon
+        # already there was sent here.
+        moved, taken = {}, set(self._placed.values())
+        for f in files:
+            name = f.get_basename()
+            if not name or os.path.lexists(os.path.join(self.dir.get_path(), name)):
+                continue
+            cell = self._next_free(col, row, taken)
+            if cell is None:
+                break
+            moved[name] = cell
+            taken.add(cell)
+        if moved:
+            self._save_positions(moved)
         return self.drop_into(files, self.dir, _copy(target))
 
     def drop_into(self, files, dest: Gio.File, copy=False) -> bool:

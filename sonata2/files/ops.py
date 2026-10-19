@@ -62,7 +62,9 @@ def rename_selection(name: str, is_dir: bool):
 def new_folder(folder: Gio.File, on_done, on_error, before=None) -> None:
     """before(child): called with the folder's file before it exists (the
     desktop puts its spot down first, so the icon appears right there)."""
-    name = free_name(folder, "untitled folder", True, style="number")
+    # in the user's language, like macOS' "pasta sem título" (it was English
+    # in Portuguese too)
+    name = free_name(folder, _("untitled folder"), True, style="number")
     child = folder.get_child(name)
     if before is not None:
         before(child)
@@ -76,13 +78,11 @@ def new_folder(folder: Gio.File, on_done, on_error, before=None) -> None:
     child.make_directory_async(GLib.PRIORITY_DEFAULT, None, done)
 
 
-SHORTCUT_SUFFIX = " - Shortcut"
-
-
 def shortcut_name(name: str) -> str:
-    """What a shortcut to `name` is called (Windows: "report.pdf - Shortcut");
-    an app's launcher keeps its name (it shows the app's own)."""
-    return name if name.endswith(".desktop") else name + SHORTCUT_SUFFIX
+    """What a shortcut to `name` is called (Windows: "report.pdf - Shortcut",
+    "relatório.pdf - Atalho" in Portuguese); an app's launcher keeps its name
+    (it shows the app's own)."""
+    return name if name.endswith(".desktop") else name + _(" - Shortcut")
 
 
 def make_shortcuts(files, dest: Gio.File) -> list:

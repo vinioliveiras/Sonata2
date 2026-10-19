@@ -2511,5 +2511,153 @@ class SettingsAuditRegressions(unittest.TestCase):
         self.assertIn("Clear", labels)
         w.destroy()
 
+
+class SettingsWalkRegressions(unittest.TestCase):
+    """Found walking every Settings section in English, pt-BR and pt-PT."""
+
+    @classmethod
+    def setUpClass(cls):
+        from sonata2.settings import app as st
+        cls.st = st
+
+    def window(self, start="about"):
+        w = self.st.Settings(None, start)
+        w.present()
+        settle(150)
+        return w
+
+    def test_dark_mode_with_an_alert_open_does_not_abort(self):
+        """Switching Dark Mode while an alert was open ("Restart Sonata
+        now?") took the app down: the cross-fade put the alert's dialog in a
+        Gtk.Overlay and libadwaita aborts on that. In its own process (an
+        abort would end this one)."""
+        code = (
+            "import gi\n"
+            "gi.require_version('Gtk', '4.0'); gi.require_version('Adw', '1')\n"
+            "from gi.repository import Adw, GLib\n"
+            "from sonata2 import ui\n"
+            "Adw.init(); ui.setup()\n"
+            "from sonata2.ui import theme\n"
+            "dlg = ui.dialog.alert('Restart?', 'Now or later', [('later', 'Later', ''), ('now', 'Now', 'default')])\n"
+            "end = GLib.get_monotonic_time() + 300000\n"
+            "while GLib.get_monotonic_time() < end: GLib.MainContext.default().iteration(False)\n"
+            "root = dlg.get_root() if hasattr(dlg, 'get_root') else dlg\n"
+            "theme._fade_window(root)\n"
+            "print('OK')\n")
+        root = str(pathlib.Path(__file__).resolve().parent.parent)
+        env = dict(os.environ, PYTHONPATH=root)
+        import sys
+        p = subprocess.run([sys.executable, "-c", code], cwd=root, env=env, capture_output=True, text=True,
+                           timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr[-1500:])
+        self.assertIn("OK", p.stdout)
+
+    def _group_titles(self, page) -> list:
+        out, stack = [], [page]
+        while stack:
+            x = stack.pop(0)
+            if isinstance(x, Adw.PreferencesGroup):
+                if x.get_title():
+                    out.append(x.get_title())
+                elif x.get_description():                # the password's group has no title
+                    out.append("lock")
+                continue
+            c = x.get_first_child()
+            while c is not None:
+                stack.append(c)
+                c = c.get_next_sibling()
+        return out
+
+    def test_hidden_apps_list_stays_where_the_lock_was(self):
+        """Apps > Hidden & Protected Apps: after the password the list went
+        to the bottom of the section, under every installed app, and the
+        section seemed to show nothing."""
+        w = self.window("launchpad")
+        w.select("launchpad")
+        settle(300)
+        page = w.pages["launchpad"].main
+        before = self._group_titles(page)
+        self.assertIn("lock", before)
+        w._show_hidden_apps()
+        settle(100)
+        after = self._group_titles(page)
+        self.assertEqual(after, [("Hidden apps" if t == "lock" else t) for t in before])
+        w._show_hidden_apps()                              # again (an app shown again, one hidden)
+        settle(100)
+        self.assertEqual(self._group_titles(page), after)
+        w.destroy()
+
+    def test_reset_desktop_puts_back_the_top_edge_double_click(self):
+        """Reset Desktop & Windows put the title bar's double-click back to
+        Zoom but not the windows' top edge (sonata-resize), which kept the
+        old action."""
+        from sonata2.backend import system
+        calls = []
+
+        def now(fn, cb=None, *args):
+            res = fn(*args)
+            if cb:
+                cb(res)
+        w = self.window("desktop")
+        with patched(system, run_async=now, wayfire_set=lambda *a: calls.append(a),
+                     set_gsetting=lambda *a: calls.append(a)):
+            w.reset_desktop()
+        self.assertIn(("sonata-resize", "double_click", "toggle-maximize"), calls)
+        w.destroy()
+
+    def test_reset_menubar_brings_back_the_taller_menu_bar(self):
+        """Reset Menu Bar wrote "Taller menu bar" back on but the menu bar
+        kept its height: it is read when the menu bar starts, and only the
+        switch restarted it."""
+        w = self.window("menubar")
+        restarts = []
+        w._set_tall_menubar = lambda on: (restarts.append(on), w._save("topbar", "tall", bool(on)))
+        config.update("topbar", tall=False)
+        w.reset_menubar()
+        self.assertEqual(restarts, [True])
+        self.assertTrue(config.load("topbar", {"tall": None})["tall"])
+        w.reset_menubar()                                  # already tall: no restart for nothing
+        self.assertEqual(restarts, [True])
+        w.destroy()
+
+    def test_wallpapers_do_not_widen_the_narrowest_window(self):
+        """Displays made the window grow past its narrowest size (760 px ->
+        823): Sonata Wallpapers asked for five tiles on every line."""
+        w = self.window("displays")
+        w.select("displays")
+        settle(300)
+        room = 760 - ui.window.SIDEBAR_W - 1
+        self.assertLessEqual(w.pages["displays"].measure(Gtk.Orientation.HORIZONTAL, -1)[0], room)
+        w.destroy()
+
+    def test_shortcut_titles_break_between_words(self):
+        """Keyboard Shortcuts in a narrow window: the key caps took the room
+        and "Overview" came out one letter per line ("V-is-ão G-e-ral"); a
+        gesture's words on one line widened the window."""
+        from gi.repository import Pango
+        w = self.window("keyboard")
+        w.select("keyboard")
+        settle(300)
+        rows = w.shortcuts_page.rows
+        self.assertTrue(rows)
+        for row in rows.values():
+            title = next(lb for lb in rows_of(row, Gtk.Label) if lb.has_css_class("title"))
+            self.assertEqual(title.get_wrap_mode(), Pango.WrapMode.WORD, row.get_title())
+        texts = [lb for row in rows.values() for lb in rows_of(row, Gtk.Label) if lb.has_css_class("sc-text")]
+        self.assertTrue(texts)                             # Overview's "Swipe up with 3 fingers"
+        self.assertTrue(all(lb.get_wrap() for lb in texts))
+        w.destroy()
+
+    def test_add_input_source_fits_its_popup(self):
+        """Keyboard > Input Sources > Add showed "Adicionar Fonte de
+        Entrad…": a pop-up's value is cut past about 20 letters."""
+        import json
+        key = "input source combo\u0004Add Input Source…"
+        base = pathlib.Path(__file__).resolve().parent.parent / "sonata2" / "locale"
+        for lang in ("pt_BR", "pt_PT"):
+            text = json.loads((base / lang / "settings_app.json").read_text(encoding="utf-8"))[key]
+            self.assertLessEqual(len(text), 20, lang)
+
+
 if __name__ == "__main__":
     unittest.main()

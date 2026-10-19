@@ -31,6 +31,10 @@ from .ui.tokens import frame as tokens_frame  # noqa: E402  (the user's window r
 
 TL_LEFT, TL_TOP = FRAME["dot_left"], FRAME["dot_top"]
 TL_CENTRE_Y_ADW = 23
+GTK3_ICON = 16          # GTK 3's title buttons keep their 16 px icon's size
+GTK3_BAR_CENTRE = 22    # ... and are centred this far down a GTK 3 header bar
+GTK3_BOX_INSET = -1     # whose button box starts 1 px out, over its border
+GTK3_SPACING = 6        # and puts 6 px between them (a property, not CSS)
 ADW_START_INSET = 6     # the header bar's start box sits this far in (with no padding)
 LIGHTS = ("close", "close-hover", "minimize", "minimize-hover", "maximize", "maximize-hover")
 
@@ -158,20 +162,33 @@ def css3(folder: str = None) -> str:
     folder = folder or runtime_dir()
     side = tokens_frame()["buttons_side"]
     box = "left" if side == "left" else "right"
-    edge_pad = max(0, TL_LEFT - D / 2 - G / 2)
+    # GTK 3 keeps the 16 px icon inside each button whatever its CSS says:
+    # the dots' centres are 16 px + the margins + the box's spacing apart
+    # (22 at the closest, Sonata's are 20), and the first one's centre is
+    # the header bar's edge, the box's room, a margin and 8 px in. Sized
+    # from a 12 px button they sat 20 px in, 26 px apart and centred in the
+    # 46 px bar (Sonata's place: 13 px in, 14 down).
+    icon = GTK3_ICON
+    margin = max(0, (G + D - icon - GTK3_SPACING) / 2)
+    edge_pad = max(0, TL_LEFT - icon / 2 - margin - GTK3_BOX_INSET)
+    lift = max(0, 2 * (GTK3_BAR_CENTRE - TL_TOP))
 
     def url(name):
         return f'url("file://{os.path.join(folder, "sonata-tl-" + name + ".svg")}")'
     w = "headerbar button.titlebutton"
     out = ["/* Sonata's window buttons for GTK 3 apps -- written by sonata2/adwstyle.py at login */",
+           f"headerbar {{ padding-{side}: 0; }}",
            f"headerbar > box.{box} {{ padding-{side}: {edge_pad:g}px; }}",
            f"{w}.close, {w}.minimize, {w}.maximize {{ min-width: {D}px; min-height: {D}px; padding: 0;",
-           f"  margin: 0 {G / 2:g}px; border: none; box-shadow: none; background-color: transparent;",
+           f"  margin: 0 {margin:g}px {lift:g}px; border: none; box-shadow: none; background-color: transparent;",
            f"  background-repeat: no-repeat; background-position: center; background-size: {D}px {D}px; }}"]
     for n in ("close", "minimize", "maximize"):
         out += [f"{w}.{n}, {w}.{n}:backdrop {{ background-image: {url(n)}; }}",
                 f"{w}.{n}:hover, {w}.{n}:backdrop:hover {{ background-image: {url(n + '-hover')}; }}"]
     out.append(f"{w}:active {{ opacity: 0.85; }}")
+    # the theme's own glyphs (x, -, a square) were drawn over the dots all
+    # the time: the dots' pictures carry theirs, on hover
+    out.append(f"{w} image {{ opacity: 0; }}")
     return "\n".join(out) + "\n"
 
 
