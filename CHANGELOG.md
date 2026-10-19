@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Fixes
+- Desktop: dragging one icon while Sort By is on no longer sends every
+  other icon back to where it was before sorting.
+- Desktop: deleting a file no longer shuffles the icons after it, and
+  icons keep their spots after logging in again.
+- Desktop: Clean Up leaves the icons on the other display where they are
+  (they all went to the main display).
+- Desktop: several files dropped on the desktop land together where they
+  were dropped (only the first did; the rest went to the top right).
+- Desktop: renaming an icon to a name already in use says so, and no
+  longer moves the other file's icon.
+- Desktop: opening a shortcut whose original was deleted says the original
+  can't be found, with Move to Trash (it opened an empty Quick Look).
+- Desktop: icons follow the menu bar right away when Taller menu bar is
+  switched.
+- New folders and shortcuts are named in Portuguese ("pasta sem título",
+  "Projetos - Atalho").
+
 ## 0.19.3-alpha -- 2026-10-17
 
 Alt+Tab picks a window in Mission Control and a right-click under the Dock
