@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.19.4-alpha -- 2026-10-19
+
+Desktop icons stay where you put them: sorting, deleting, Clean Up and
+drops no longer shuffle them, and a shortcut whose original is gone says
+so. Window buttons on the right sit in the same corner as on the left, in
+Sonata's apps and in GTK 3 apps. Settings no longer closes when Dark Mode
+changes with an alert open, and fits a narrow window in every section.
+
 ### Fixes
 - Desktop: dragging one icon while Sort By is on no longer sends every
   other icon back to where it was before sorting.
