@@ -185,14 +185,13 @@ class ColourHelperTests(unittest.TestCase):
         self.assertEqual(G.blur_offset(500), G.OFFSET_RANGE[1])
         self.assertEqual(G.blur_offset(50), 3.38)
 
-    def test_picker_mix(self):
-        """Picker shades: 0 keeps the hue, + tints to white, - shades to black."""
+    def test_picker_hsv(self):
+        """Picker colours: hue/saturation/brightness and back, as hex."""
         from sonata2.ui import colorpicker as C
-        self.assertEqual(C._mix("#336699", 0.0), "#336699")
-        self.assertEqual(C._mix("#000000", 1.0), "#ffffff")
-        self.assertEqual(C._mix("#ffffff", -1.0), "#000000")
-        flat = [c for col in C.palette() for c in col]
-        self.assertTrue(all(C.parse_hex(c) == c for c in flat))                  # every swatch a valid colour
+        self.assertEqual(C.to_hex(0, 1, 1), "#ff0000")
+        self.assertEqual(C.to_hex(0, 0, 0), "#000000")
+        self.assertEqual(C.to_hex(1.0, 1, 1), "#ff0000")                         # hue wraps round
+        self.assertEqual(C.to_hsv("#ffffff"), (0.0, 0.0, 1.0))
 
 
 # -- menu model -------------------------------------------------------------------------------

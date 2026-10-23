@@ -126,18 +126,33 @@ def popup_button(options, selected: int = 0, on_change=None) -> Gtk.DropDown:
     return dd
 
 
+def color_stops(*colors) -> list:
+    """Evenly spread Gsk.ColorStops for a gradient ("#000", "#f00", ...)."""
+    stops = []
+    for i, c in enumerate(colors):
+        st = Gsk.ColorStop()
+        st.offset = i / max(1, len(colors) - 1)
+        rgba = Gdk.RGBA()
+        rgba.parse(c)
+        st.color = rgba
+        stops.append(st)
+    return stops
+
+
 class ModuleSlider(Gtk.Widget):
     """Control Center slider, drawn by hand so the knob and the fill line up
     exactly (Gtk.Scale ends its fill at the knob's centre): a 22 px capsule,
     the fill runs under the whole knob. Scale-like API: get_value,
-    set_value, "value-changed"."""
+    set_value, "value-changed". gradient=("#000", "#f00"): the track is that
+    ramp instead of track + fill (the colour picker's brightness)."""
 
     __gsignals__ = {"value-changed": (GObject.SignalFlags.RUN_FIRST, None, ())}
     H = 22
 
-    def __init__(self, value=0.0, lower=0.0, upper=100.0):
+    def __init__(self, value=0.0, lower=0.0, upper=100.0, gradient=None):
         super().__init__(hexpand=True, valign=Gtk.Align.CENTER, cursor=Gdk.Cursor.new_from_name("default"))
         self.lower, self.upper, self.value = lower, upper, float(value)
+        self.gradient = gradient
         self.set_size_request(120, self.H)
         drag = Gtk.GestureDrag()
         drag.connect("drag-begin", lambda _g, x, _y: self._to(x))
@@ -155,6 +170,10 @@ class ModuleSlider(Gtk.Widget):
             self.value = v
             self.queue_draw()
             self.emit("value-changed")
+
+    def set_gradient(self, start: str, end: str) -> None:
+        self.gradient = (start, end)
+        self.queue_draw()
 
     def _to(self, x) -> None:
         if not self.is_sensitive():
@@ -174,12 +193,16 @@ class ModuleSlider(Gtk.Widget):
         track = Gsk.RoundedRect()
         track.init_from_rect(Graphene.Rect().init(0, y, w, h), r)
         snap.push_rounded_clip(track)
-        snap.append_color(theme.rgba("module_track"), Graphene.Rect().init(0, y, w, h))
-        fill = Gsk.RoundedRect()
-        fill.init_from_rect(Graphene.Rect().init(0, y, kx + h, h), r)
-        snap.push_rounded_clip(fill)
-        snap.append_color(theme.rgba("module_fill"), Graphene.Rect().init(0, y, kx + h, h))
-        snap.pop()
+        if self.gradient:
+            snap.append_linear_gradient(Graphene.Rect().init(0, y, w, h), Graphene.Point().init(r, 0),
+                                        Graphene.Point().init(w - r, 0), color_stops(*self.gradient))
+        else:
+            snap.append_color(theme.rgba("module_track"), Graphene.Rect().init(0, y, w, h))
+            fill = Gsk.RoundedRect()
+            fill.init_from_rect(Graphene.Rect().init(0, y, kx + h, h), r)
+            snap.push_rounded_clip(fill)
+            snap.append_color(theme.rgba("module_fill"), Graphene.Rect().init(0, y, kx + h, h))
+            snap.pop()
         snap.pop()
         knob = Gsk.RoundedRect()
         knob.init_from_rect(Graphene.Rect().init(kx, y, h, h), r)

@@ -84,37 +84,42 @@ class GamepadTest(unittest.TestCase):
         self.press(E.BTN_EAST, 1)
         self.assertEqual((self.g.vp.log, self.keys), ([], []))
 
-    def test_quick_guide_presses_toggle(self):
+    def chord(self, down=True):
+        for b in (E.BTN_TL, E.BTN_TR, E.BTN_THUMBL, E.BTN_THUMBR):
+            self.press(b, 1 if down else 0)
+
+    def test_toggle_is_l1_r1_l3_r3_held_together(self):
+        """Vini: the on / off shortcut was the Xbox / PS button 5 times
+        quickly; now LB + RB + L3 + R3 held together (L1 + R1 + L3 + R3)."""
         self.g._notify = lambda _t: None
         self.g.cfg["enabled"] = False
-        for _ in range(S.TOGGLE_TAPS):
-            self.press(E.BTN_MODE, 1)
-            self.press(E.BTN_MODE, 0)
+        self.chord()
         self.assertTrue(self.g.cfg["enabled"])
         self.assertTrue(S.config.load("gamepad", S.DEFAULTS)["enabled"])     # saved
-        settle(int(S.TAP_GAP_S * 1000) + 150)
-        self.assertEqual(self.keys, [])            # a burst is not Mission Control
-        for _ in range(S.TOGGLE_TAPS):
+        self.press(E.BTN_THUMBR, 2)                    # key repeat while held: still once
+        self.assertTrue(self.g.cfg["enabled"])
+        self.chord(down=False)
+        self.chord()
+        self.assertFalse(self.g.cfg["enabled"])
+        self.chord(down=False)
+        for _ in range(5):                             # the old shortcut does nothing now
             self.press(E.BTN_MODE, 1)
+            self.press(E.BTN_MODE, 0)
         self.assertFalse(self.g.cfg["enabled"])
 
-    def test_xbox_button_over_bluetooth_toggles_too(self):
-        """The shortcut did nothing: over Bluetooth the Xbox button comes as
-        KEY_HOMEPAGE from a "Consumer Control" device, not BTN_MODE."""
-        self.assertEqual(S.TOGGLE_TAPS, 5)
+    def test_three_of_the_four_dont_toggle(self):
         self.g._notify = lambda _t: None
         self.g.cfg["enabled"] = False
-        for _ in range(5):
-            self.press(E.KEY_HOMEPAGE, 1)
-            self.press(E.KEY_HOMEPAGE, 0)
-        self.assertTrue(self.g.cfg["enabled"])
+        for b in (E.BTN_TL, E.BTN_TR, E.BTN_THUMBL):
+            self.press(b, 1)
+        self.assertFalse(self.g.cfg["enabled"])
 
     def test_one_guide_press_is_mission_control(self):
         self.press(E.BTN_MODE, 1)
         self.press(E.BTN_MODE, 0)
-        self.assertEqual(self.keys, [])            # waits: more presses may follow
-        settle(int(S.TAP_GAP_S * 1000) + 150)
-        self.assertEqual(self.keys, ["F3"])
+        self.assertEqual(self.keys, ["F3"])            # at once: no burst to wait for
+        self.press(E.KEY_HOMEPAGE, 1)                  # the Xbox button over Bluetooth
+        self.assertEqual(self.keys, ["F3", "F3"])
 
     def test_steam_pause_can_be_turned_off(self):
         self.g._steam = True

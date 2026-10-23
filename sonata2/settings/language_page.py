@@ -75,6 +75,8 @@ class LanguagePage:
         before = dict(self.state)
         if lang:
             self.state["lang"] = lang
+            if not region:                         # formats follow the language they went with
+                self.state["region"] = locales.follow_region(before["lang"], lang, before["region"])
         if region:
             self.state["region"] = region
         if self.state == before:                   # (put back after a failure: nothing to do)
@@ -97,6 +99,9 @@ class LanguagePage:
                 show_quietly(self.region_row, before["region"])
                 self.settings.toast(_("Couldn't change the language"))
                 return
+            if self.state["region"] != before["region"]:
+                from .app import show_quietly
+                show_quietly(self.region_row, self.state["region"])
             self._sample()
             self.settings.ask_restart("session", _("The new language and formats"))
         system.run_async(run, done)

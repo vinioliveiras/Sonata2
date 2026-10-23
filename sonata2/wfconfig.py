@@ -69,6 +69,12 @@ def wayfire_get(section: str, key: str, default: str = "") -> str:
     return default
 
 
+# the buttons' place: always from tokens.frame() (the user's side), so a
+# value Settings saved earlier never wins at login (wayfire-config.sh)
+BUTTON_KEYS = ("button_layout", "button_order", "left_button_spacing", "left_button_x_offset",
+               "right_button_spacing", "right_button_x_offset")
+
+
 def frame_options(frame: dict) -> list:
     """(section, key, value) for the title bars Wayfire draws, from
     tokens.FRAME: the same corners, buttons, title and shadow as Sonata's
@@ -77,12 +83,18 @@ def frame_options(frame: dict) -> list:
     pixdecor) only takes the order, title and font."""
     side = frame["buttons_side"]
     names = list(frame["buttons"])
+    inset = frame["dot_left"] - frame["dot"] / 2
+    # pixdecor adds x_offset to the x of the buttons' run on both sides: on
+    # the left that moves them in, on the right out -- past the window's
+    # edge, where the rounded corner cut the close button (Vini: WhatsApp,
+    # VS Code). The right side's inset is negative.
+    offset = inset if side == "left" else -inset
     layout = ",".join(names) + ":" if side == "left" else ":" + ",".join(reversed(names))
     align = {"left": "0", "center": "1", "right": "2"}[frame["title_align"]]
     return [("pixdecor", "rounded_corner_radius", str(frame["radius"])),
             ("pixdecor", "button_layout", layout),
             ("pixdecor", f"{side}_button_spacing", str(frame["dot_gap"])),
-            ("pixdecor", f"{side}_button_x_offset", f"{frame['dot_left'] - frame['dot'] / 2:g}"),
+            ("pixdecor", f"{side}_button_x_offset", f"{offset:g}"),
             ("pixdecor", "title_font", frame["title_font"]),
             ("pixdecor", "title_text_align", align),
             ("pixdecor", "shadow_radius", str(frame["shadow_radius"])),

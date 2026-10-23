@@ -9,6 +9,7 @@ the session's).
 
     current()                  # {"LANG": "pt_BR.UTF-8", "LC_TIME": ...}
     languages() / regions()    # [(locale, name in its own language)]
+    follow_region(old, new, r) # the region after a new language
     command(lang, formats)     # the root shell script that sets them
     sample(locale)             # "Friday, 16 October 2026 · 17:05 · 1,234.56"
 """
@@ -114,6 +115,20 @@ def regions():
 def formats_of(settings: dict) -> str:
     """The formats region in effect: LC_TIME's, else the language's."""
     return settings.get("LC_TIME") or settings.get("LANG") or "en_US.UTF-8"
+
+
+def follow_region(old_lang: str, new_lang: str, region: str) -> str:
+    """The region after a new language: the new language's when the region
+    went with the old one (same language: Vini switched Portuguese to English
+    and dates and months stayed Portuguese), else kept -- English with
+    Portugal's formats, picked on purpose, stays."""
+    lang_of = lambda loc: loc.split("_")[0].split(".")[0]
+    if lang_of(region) != lang_of(old_lang) or lang_of(new_lang) == lang_of(old_lang):
+        return region
+    codes = [c for c, _n in REGIONS]
+    if new_lang in codes:
+        return new_lang
+    return next((c for c in codes if lang_of(c) == lang_of(new_lang)), region)
 
 
 def command(lang: str, formats: str, have=None) -> str:

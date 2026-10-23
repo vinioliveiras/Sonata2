@@ -1,31 +1,29 @@
 """A colour picker in Sonata's own style (no GTK/libadwaita colour dialog:
-its buttons and header came out in another theme). A panel popover: a grid
-of swatches (macOS-like hues, lighter to darker), a hex field with a
-preview, Cancel / Select.
+its buttons and header came out in another theme). A panel popover: a
+colour wheel (hue around, saturation outwards; drag the knob), a
+brightness slider, a hex field with a preview, Cancel / Select.
 
     ui.colorpicker.popup(anchor, "#ff6a00", on_pick)    # on_pick("#rrggbb")
     ColorDot(color)                                      # the dot that opens it"""
+import colorsys
+import math
+
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, GLib, Graphene, Gsk, Gtk  # noqa: E402
+from gi.repository import Gdk, GLib, GObject, Graphene, Gsk, Gtk  # noqa: E402
 
-from . import controls, panel, theme  # noqa: E402
+from . import controls, panel, theme, tokens, transition  # noqa: E402
 from ..i18n import _  # noqa: E402
 
-BASES = ("#0a84ff", "#30d158", "#ffd60a", "#ff9f0a", "#ff453a", "#bf5af2", "#a2845e")
-LIGHTS = ("#ffffff", "#f2f2f7", "#d1d1d6", "#aeaeb2", "#8e8e93")
-DARKS = ("#636366", "#48484a", "#3a3a3c", "#2c2c2e", "#000000")
-ROWS = (0.45, 0.22, 0.0, -0.18, -0.36)       # + tint towards white, - shade towards black
-SWATCH = 28
+DEFAULT = "#0a84ff"
+WHEEL = 200                                   # the wheel's diameter
+KNOB = 9                                      # the knob's radius (11 while held)
 
 theme.register("""
 .cp-panel { padding: 2px 2px 4px 2px; }
-.cp-grid { margin: 0 10px; }
-button.cp-swatch { min-width: %(sw)dpx; min-height: %(sw)dpx; padding: 0; margin: 0; border: none;
-  border-radius: 0; background: none; box-shadow: none; }
-.cp-grid > button.cp-swatch:first-child { border-top-left-radius: 6px; }
-button.cp-swatch.selected { outline: 2px solid white; outline-offset: -4px; }   /* over the swatch (drawn on top) */
+.cp-wheel { margin: 6px 14px 4px 14px; }
+.cp-bright { margin: 10px 14px 2px 14px; }
 .cp-row { margin: 10px 10px 2px 10px; }
 entry.cp-hex { min-height: %(control_h)s; font-family: monospace; }
 .cp-buttons { margin: 10px 10px 4px 10px; }
@@ -33,21 +31,16 @@ button.cp-dot { min-width: 16px; min-height: 16px; padding: 2px; margin: 0 3px; 
   background: conic-gradient(#ff3b30, #ffcc00, #34c759, #0a84ff, #af52de, #ff3b30);
   box-shadow: none; transition: box-shadow %(t_fast)s; }
 button.cp-dot.selected { box-shadow: 0 0 0 2px %(window_bg)s, 0 0 0 3.5px alpha(%(label)s, 0.45); }
-""", key="colorpicker", sw=SWATCH)
+""", key="colorpicker")
 
 
-def _mix(hex_color: str, k: float) -> str:
+def to_hex(h: float, s: float, v: float) -> str:
+    return "#%02x%02x%02x" % tuple(round(c * 255) for c in colorsys.hsv_to_rgb(h % 1.0, s, v))
+
+
+def to_hsv(hex_color: str) -> tuple:
     h = hex_color.lstrip("#")
-    rgb = [int(h[i:i + 2], 16) for i in (0, 2, 4)]
-    target = 255 if k > 0 else 0
-    rgb = [round(c + (target - c) * abs(k)) for c in rgb]
-    return "#%02x%02x%02x" % tuple(rgb)
-
-
-def palette() -> list:
-    """Columns of five, light to dark: the hues, then greys."""
-    cols = [[_mix(b, k) for k in ROWS] for b in BASES]
-    return cols + [list(LIGHTS), list(DARKS)]
+    return colorsys.rgb_to_hsv(*(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)))
 
 
 def parse_hex(text: str):
@@ -106,29 +99,180 @@ class ColorDot(Gtk.Button):
         self.swatch.set_color(color)
 
 
+class ColorWheel(Gtk.Widget):
+    """Hue around the circle (red on the right, counter-clockwise, as macOS),
+    saturation from the white centre out, darkened by the brightness. Press
+    and the knob glides to the spot; drag and it follows. "changed" when the
+    hue or saturation moves (h, s, v: 0..1)."""
+
+    __gsignals__ = {"changed": (GObject.SignalFlags.RUN_FIRST, None, ())}
+
+    def __init__(self, h=0.0, s=0.0, v=1.0, size=WHEEL):
+        super().__init__(css_classes=["cp-wheel"], halign=Gtk.Align.CENTER,
+                         cursor=Gdk.Cursor.new_from_name("crosshair"))
+        self.h, self.s, self.v, self.size = h, s, v, size
+        self.knob = KNOB
+        self.set_size_request(size, size)
+        drag = Gtk.GestureDrag()
+        drag.connect("drag-begin", self._begin)
+        drag.connect("drag-update", lambda g, dx, dy: self._at(*(a + d for a, d in zip(g.get_start_point()[1:], (dx, dy)))))
+        drag.connect("drag-end", lambda *_a: self._grow(False))
+        self.add_controller(drag)
+
+    # -- geometry ---------------------------------------------------------------
+    def _centre(self):
+        return self.get_width() / 2, self.get_height() / 2, min(self.get_width(), self.get_height()) / 2
+
+    def point_of(self, h, s):
+        """(x, y) of a hue and saturation."""
+        cx, cy, r = self._centre()
+        a = h * 2 * math.pi
+        return cx + r * s * math.cos(a), cy - r * s * math.sin(a)
+
+    def hs_at(self, x, y):
+        """Hue and saturation under (x, y); outside the circle, its edge."""
+        cx, cy, r = self._centre()
+        dx, dy = x - cx, cy - y
+        return (math.atan2(dy, dx) / (2 * math.pi)) % 1.0, min(1.0, math.hypot(dx, dy) / max(1, r))
+
+    # -- input ------------------------------------------------------------------
+    def _begin(self, _g, x, y):
+        self._grow(True)
+        h, s = self.hs_at(x, y)
+        self.glide(h, s, self.v)
+
+    def _at(self, x, y):
+        self._stop()
+        self.h, self.s = self.hs_at(x, y)
+        self.queue_draw()
+        self.emit("changed")
+
+    def _stop(self):
+        a = getattr(self, "_tweens", {}).pop("glide", None)
+        if a:
+            a[0].pause()
+            a[1].stop()
+
+    def _grow(self, held: bool):
+        start, end = self.knob, KNOB + (2 if held else 0)
+        transition.tween(self, "knob", start, end, tokens.ms(150),
+                         lambda k: (setattr(self, "knob", k), self.queue_draw()), "colour-knob")
+
+    def set_hsv(self, h, s, v) -> None:
+        """Quietly (no "changed"): a colour read from elsewhere."""
+        self._stop()
+        self.h, self.s, self.v = h, s, v
+        self.queue_draw()
+
+    def glide(self, h, s, v, quiet=False) -> None:
+        """The knob slides to (h, s) on a straight line, the colour with it."""
+        a0 = self.h * 2 * math.pi
+        x0, y0, v0 = self.s * math.cos(a0), self.s * math.sin(a0), self.v
+        a1 = h * 2 * math.pi
+        x1, y1 = s * math.cos(a1), s * math.sin(a1)
+
+        def step(t):
+            x, y = x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
+            if t >= 1:
+                self.h, self.s = h, s                  # exact at the end (the centre has no hue)
+            else:
+                self.h, self.s = (math.atan2(y, x) / (2 * math.pi)) % 1.0, min(1.0, math.hypot(x, y))
+            self.v = v0 + (v - v0) * t
+            self.queue_draw()
+            if not quiet:
+                self.emit("changed")
+        transition.tween(self, "glide", 0.0, 1.0, tokens.ms(180), step, "colour-glide")
+
+    # -- drawing ----------------------------------------------------------------
+    def do_snapshot(self, snap) -> None:
+        cx, cy, r = self._centre()
+        rect = Graphene.Rect().init(cx - r, cy - r, 2 * r, 2 * r)
+        circle = Gsk.RoundedRect()
+        circle.init_from_rect(rect, r)
+        snap.push_rounded_clip(circle)
+        # conic: clockwise from the top; hue: counter-clockwise from the right
+        hues = [to_hex(((90 - 30 * i) % 360) / 360, 1, 1) for i in range(13)]
+        snap.append_conic_gradient(rect, Graphene.Point().init(cx, cy), 0, controls.color_stops(*hues))
+        snap.append_radial_gradient(rect, Graphene.Point().init(cx, cy), r, r, 0, 1,
+                                    controls.color_stops("#ffffff", "rgba(255,255,255,0)"))
+        if self.v < 1:
+            dark = Gdk.RGBA()
+            dark.parse(f"rgba(0,0,0,{1 - self.v:.3f})")
+            snap.append_color(dark, rect)
+        snap.pop()
+        edge = Gdk.RGBA()
+        edge.parse("rgba(0,0,0,0.12)")
+        snap.append_border(circle, [0.5] * 4, [edge] * 4)
+        # the knob: the colour, in a white ring
+        x, y = self.point_of(self.h, self.s)
+        k = self.knob
+        ring = Gsk.RoundedRect()
+        ring.init_from_rect(Graphene.Rect().init(x - k, y - k, 2 * k, 2 * k), k)
+        shadow = Gdk.RGBA()
+        shadow.parse("rgba(0,0,0,0.35)")
+        snap.append_outset_shadow(ring, shadow, 0, 0.5, 0, 2)
+        white = Gdk.RGBA()
+        white.parse("#ffffff")
+        snap.append_border(ring, [3] * 4, [white] * 4)
+        inner = Gsk.RoundedRect()
+        inner.init_from_rect(Graphene.Rect().init(x - k + 3, y - k + 3, 2 * k - 6, 2 * k - 6), k - 3)
+        snap.push_rounded_clip(inner)
+        snap.append_color(_rgba(to_hex(self.h, self.s, self.v)), inner.bounds)
+        snap.pop()
+
+
 def popup(anchor: Gtk.Widget, current: str, on_pick, title: str = None) -> Gtk.Popover:
     """The picker under `anchor`; on_pick("#rrggbb") when Select is pressed."""
     title = _("Accent Colour") if title is None else title
-    state = {"color": parse_hex(current) or BASES[0]}
-    grid = Gtk.Grid(css_classes=["cp-grid"], halign=Gtk.Align.CENTER)
-    buttons = {}
+    state = {"color": parse_hex(current) or DEFAULT}
+    h, s, v = to_hsv(state["color"])
+    wheel = ColorWheel(h, s, v)
+    bright = controls.ModuleSlider(v * 100, 0, 100, gradient=("#000000", to_hex(h, s, 1)))
+    bright.set_tooltip_text(_("Brightness"))
+    bright.add_css_class("cp-bright")
     preview = Swatch(state["color"], 22, round_=True)
     hexe = Gtk.Entry(text=state["color"], css_classes=["cp-hex"], max_length=7, width_chars=8, hexpand=True)
+    busy = []                                     # (a change made here: not echoed back)
 
-    def choose(c, from_entry=False):
+    def show(c, from_entry=False):
         state["color"] = c
         preview.set_color(c)
-        for k, b in buttons.items():
-            (b.add_css_class if k == c else b.remove_css_class)("selected")
+        bright.set_gradient("#000000", to_hex(wheel.h, wheel.s, 1))
         if not from_entry and hexe.get_text() != c:
+            busy.append(1)
             hexe.set_text(c)
-    for x, col in enumerate(palette()):
-        for y, c in enumerate(col):
-            b = Gtk.Button(child=Swatch(c, SWATCH), css_classes=["cp-swatch"], tooltip_text=c)
-            b.connect("clicked", lambda _b, c=c: choose(c))
-            buttons.setdefault(c, b)
-            grid.attach(b, x, y, 1, 1)
-    hexe.connect("changed", lambda e: (parse_hex(e.get_text()) and choose(parse_hex(e.get_text()), True)))
+            busy.pop()
+
+    def from_wheel(_w):
+        show(to_hex(wheel.h, wheel.s, wheel.v))
+        if abs(bright.get_value() - wheel.v * 100) > 0.5:
+            busy.append(1)
+            bright.set_value(wheel.v * 100)
+            busy.pop()
+    wheel.connect("changed", from_wheel)
+
+    def from_slider(sl):
+        if busy:
+            return
+        wheel.set_hsv(wheel.h, wheel.s, sl.get_value() / 100)
+        show(to_hex(wheel.h, wheel.s, wheel.v))
+    bright.connect("value-changed", from_slider)
+
+    def from_entry(e):
+        c = parse_hex(e.get_text())
+        if busy or not c:
+            return                                # ignored until it's a colour
+        nh, ns, nv = to_hsv(c)
+        if ns == 0:
+            nh = wheel.h                          # a grey: keep the hue (no swing round)
+        state["color"] = c
+        wheel.glide(nh, ns, nv, quiet=True)
+        busy.append(1)
+        bright.set_value(nv * 100)
+        busy.pop()
+        preview.set_color(c)
+        bright.set_gradient("#000000", to_hex(nh, ns, 1))
+    hexe.connect("changed", from_entry)
     row = Gtk.Box(spacing=8, css_classes=["cp-row"])
     row.append(preview)
     row.append(hexe)
@@ -142,11 +286,10 @@ def popup(anchor: Gtk.Widget, current: str, on_pick, title: str = None) -> Gtk.P
     sel = controls.push_button(_("Select"), select, style="default")
     btns.append(sel)
     hexe.connect("activate", lambda _e: select())
-    col = panel.column(panel.header(title), grid, row, btns)
+    col = panel.column(panel.header(title), wheel, bright, row, btns)
     col.add_css_class("cp-panel")
     pop = panel.popup(anchor, col, gap=6)
-    pop.grid, pop.hex, pop.select_button, pop.state, pop.swatches = grid, hexe, sel, state, buttons   # (tests)
-    choose(state["color"])
+    pop.wheel, pop.brightness, pop.hex, pop.select_button, pop.state = wheel, bright, hexe, sel, state   # (tests)
     # its window closing while it's open: let go of the anchor first (a
     # popover still attached when the anchor is freed crashes GTK)
     hid = anchor.connect("unrealize", lambda *_: pop.get_parent() is not None and pop.unparent())

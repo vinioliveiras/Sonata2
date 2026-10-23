@@ -121,6 +121,8 @@ for line in open(over, encoding="utf-8"):
         sec = s[1:-1]
     elif sec and "=" in s and not s.startswith("#"):
         k, v = s.split("=", 1)
+        if sec in ("pixdecor", "decoration") and k.strip() in system.BUTTON_KEYS:
+            continue                           # set from the side above (an old right offset cut the close button)
         system.wayfire_set(sec, k.strip(), v.strip())
 PY
 fi

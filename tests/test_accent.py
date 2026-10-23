@@ -127,31 +127,72 @@ class PickerTest(unittest.TestCase):
         for bad in ("", "#12", "zzzzzz", None):
             self.assertIsNone(self.C.parse_hex(bad))
 
-    def test_palette(self):
-        cols = self.C.palette()
-        self.assertEqual(len(cols), len(self.C.BASES) + 2)
-        self.assertTrue(all(len(c) == 5 for c in cols))
-        self.assertEqual(cols[0][2], self.C.BASES[0])                 # the hue itself in the middle
+    def test_hsv_round_trip(self):
+        for c in ("#ff9f0a", "#30d158", "#000000", "#ffffff", "#418cd8"):
+            self.assertEqual(self.C.to_hex(*self.C.to_hsv(c)), c)
 
-    def test_popup_uses_the_kit(self):
+    def _open(self, colour, got):
         w = Gtk.Window()
         anchor = Gtk.Button()
         w.set_child(anchor)
         w.present()
-        got = []
-        pop = self.C.popup(anchor, "#ff9f0a", got.append)
+        pop = self.C.popup(anchor, colour, got.append)
         settle(50)
+        return w, pop
+
+    def test_popup_uses_the_kit(self):
+        got = []
+        w, pop = self._open("#ff9f0a", got)
         self.assertTrue(pop.has_css_class("sonata-panel"))                 # Sonata's panel, not a dialog
         self.assertTrue(pop.select_button.has_css_class("sonata-button"))
         self.assertTrue(pop.select_button.has_css_class("default"))
-        self.assertTrue(pop.swatches["#ff9f0a"].has_css_class("selected"))
-        pop.swatches["#30d158"].emit("clicked")
-        self.assertEqual(pop.hex.get_text(), "#30d158")
+        self.assertIsInstance(pop.brightness, ui_controls().ModuleSlider)  # the kit's slider
+        pop.hex.set_text("#30d158")
+        settle(400)                                                     # the knob glides there
+        self.assertEqual(self.C.to_hex(pop.wheel.h, pop.wheel.s, pop.wheel.v), "#30d158")
         pop.hex.set_text("nonsense")                                    # ignored until it's a colour
         self.assertEqual(pop.state["color"], "#30d158")
         pop.select_button.emit("clicked")
         self.assertEqual(got, ["#30d158"])
         w.destroy()
+
+    def test_wheel_picks_hue_and_saturation(self):
+        """Vini: a circle you move a knob in (macOS): red on the right,
+        green up-left, white in the middle; brightness apart."""
+        got = []
+        w, pop = self._open("#ffffff", got)
+        wh = pop.wheel
+        cx, cy, r = wh.get_width() / 2, wh.get_height() / 2, wh.get_width() / 2
+        wh._at(cx + r, cy)                                              # the right edge
+        self.assertEqual(pop.state["color"], "#ff0000")
+        self.assertEqual(pop.hex.get_text(), "#ff0000")
+        h, s = wh.hs_at(*wh.point_of(1 / 3, 1.0))                       # green
+        self.assertAlmostEqual(h, 1 / 3, places=3)
+        self.assertLess(wh.point_of(1 / 3, 1)[0], cx)                   # ...on the left
+        self.assertLess(wh.point_of(1 / 3, 1)[1], cy)                   # ...and up
+        self.assertEqual(wh.hs_at(cx + 5 * r, cy)[1], 1.0)              # outside: the edge
+        pop.brightness.set_value(50)
+        self.assertEqual(pop.state["color"], "#800000")
+        self.assertEqual(pop.wheel.h, 0.0)                              # the hue kept
+        pop.select_button.emit("clicked")
+        self.assertEqual(got, ["#800000"])
+        w.destroy()
+
+    def test_wheel_draws(self):
+        got = []
+        w, pop = self._open("#418cd8", got)
+        snap = Gtk.Snapshot()
+        pop.wheel.do_snapshot(snap)
+        self.assertIsNotNone(snap.to_node())
+        snap = Gtk.Snapshot()
+        pop.brightness.do_snapshot(snap)
+        self.assertIsNotNone(snap.to_node())
+        w.destroy()
+
+
+def ui_controls():
+    from sonata2.ui import controls
+    return controls
 
 
 if __name__ == "__main__":

@@ -131,6 +131,26 @@ class PageTest(unittest.TestCase):
         s.toast.assert_called_once()
         s.ask_restart.assert_not_called()
 
+    def test_dates_stayed_portuguese_after_switching_to_english(self):
+        """Vini: Language back from Portuguese to English, and dates and
+        months stayed in Portuguese (the region, Portugal, kept LC_TIME)."""
+        s, page, _g = self._page()
+        runs = []
+        with mock.patch("sonata2.backend.system.run_async", side_effect=lambda fn, cb=None, *a: cb(fn(*a)) if cb else fn(*a)), \
+                mock.patch.object(L, "installed", return_value={"pt_BR.UTF-8", "pt_PT.UTF-8", "en_US.UTF-8"}), \
+                mock.patch.object(L, "sample", return_value="x"), \
+                mock.patch("subprocess.run", side_effect=lambda argv, **kw: runs.append(argv) or mock.Mock(returncode=0)):
+            page.lang_row.set_selected(page.lang_row.values.index("en_US.UTF-8"))
+        self.assertIn("LANG=en_US.UTF-8", runs[0][3])
+        self.assertNotIn("pt_PT", runs[0][3])                              # LC_TIME follows
+        self.assertEqual(page.region_row.values[page.region_row.get_selected()], "en_US.UTF-8")
+
+    def test_region_picked_apart_from_the_language_stays(self):
+        self.assertEqual(L.follow_region("en_US.UTF-8", "de_DE.UTF-8", "pt_PT.UTF-8"), "pt_PT.UTF-8")
+        self.assertEqual(L.follow_region("pt_BR.UTF-8", "pt_PT.UTF-8", "pt_BR.UTF-8"), "pt_BR.UTF-8")
+        self.assertEqual(L.follow_region("pt_PT.UTF-8", "es_ES.UTF-8", "pt_PT.UTF-8"), "es_ES.UTF-8")
+        self.assertEqual(L.follow_region("pt_PT.UTF-8", "ko_KR.UTF-8", "pt_PT.UTF-8"), "pt_PT.UTF-8")  # no Korea
+
     def test_week_start_saved_for_the_calendar(self):
         s, page, groups = self._page()
         week = [r for r in _rows(groups[1]) if getattr(r, "values", None) and 6 in r.values][0]

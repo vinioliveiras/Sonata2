@@ -7,7 +7,8 @@ bar process; nothing runs while no controller is connected.
     D-pad          arrow keys                         B / circle    Esc
     LB / RB        app switcher (A picks, B closes)   Y / square    Launchpad
     Start          Search                             View/Select   Overview
-    Guide (Xbox / PS)  Overview; pressed 5 times quickly: on / off
+    Guide (Xbox / PS)  Overview
+    LB + RB + L3 + R3 held together: desktop control on / off
 
 Off by default. Games keep the controller: it is never grabbed, and the desktop control
 pauses by itself while a fullscreen window has the focus (gamemode.py)
@@ -33,8 +34,9 @@ DEAD = 0.18                 # stick dead zone
 TICK_MS = 8                 # while a stick is pushed (~120 Hz)
 MAX_PX_S = 1500.0           # pointer speed at full tilt (speed 1.0)
 SCROLL_PX_S = 900.0
-TOGGLE_TAPS = 5             # Guide pressed this many times quickly: on / off
-TAP_GAP_S = 0.5             # max time between those presses
+# held together: desktop control on / off (Vini: L1 + R1 + L3 + R3 -- no
+# game asks for all four at once, and it works the same on every pad)
+TOGGLE_CHORD = frozenset((E.BTN_TL, E.BTN_TR, E.BTN_THUMBL, E.BTN_THUMBR))
 
 # button -> action (named for other front ends)
 BUTTONS = {E.BTN_SOUTH: "primary", E.BTN_NORTH: "secondary", E.BTN_EAST: "back", E.BTN_WEST: "launchpad",
@@ -48,7 +50,8 @@ LEGEND = [(N_("Left stick"), N_("Pointer (LT slower, RT faster)")),
           (N_("X / Triangle"), N_("Right-click")), (N_("B / Circle"), N_("Back (Esc)")),
           (N_("Y / Square"), names.APPS), ("LB / RB", N_("Switch apps")), (N_("D-pad"), N_("Arrow keys")),
           (N_("Start / Options"), names.SEARCH), (N_("View / Share"), names.OVERVIEW),
-          (N_("Xbox / PS button"), N_("Overview · 5× quickly: on / off"))]
+          (N_("Xbox / PS button"), names.OVERVIEW),
+          ("LB + RB + L3 + R3", N_("Desktop control on / off"))]
 ARROWS = {"up": "Up", "down": "Down", "left": "Left", "right": "Right"}
 
 
@@ -91,8 +94,8 @@ class Gamepads:
         self._tick_src = 0
         self._acc = [0.0, 0.0]
         self._last = 0.0
-        self._taps = []                       # Guide presses of the current burst
-        self._tap_src = 0
+        self._down = set()                    # buttons held now (the on / off chord)
+        self._chord_done = False              # fired for this hold: once until let go
         self._steam = False
         self._steam_src = 0
         self._scan_src = 0
@@ -175,15 +178,16 @@ class Gamepads:
             self.axes[(pad.path, code)] = pad.norm(code, value)
             self._tick_soon()
             return
+        if value == 2:                                    # key repeat
+            return
+        pressed = value != 0
+        self._chord(code, pressed)
         name = BUTTONS.get(code)
         if name is None:
             return
-        pressed = value != 0
         if name == "guide":
-            if value == 1:
-                self._guide_tap()
-            return
-        if value == 2:                                    # key repeat
+            if pressed and not self.paused:
+                self.action("mission", True)
             return
         if not self.paused:
             self.action(name, pressed)
@@ -203,28 +207,23 @@ class Gamepads:
             return                                        # never pressed by us: nothing to release
         self._pointer().button(btn, pressed)
 
-    def _guide_tap(self) -> None:
-        """One press: Mission Control, once the burst is over. Five quick
-        presses: desktop control on / off (works while off or paused)."""
-        now = time.monotonic()
-        if self._taps and now - self._taps[-1] > TAP_GAP_S:
-            self._taps = []
-        self._taps.append(now)
-        if self._tap_src:
-            GLib.source_remove(self._tap_src)
-            self._tap_src = 0
-        if len(self._taps) >= TOGGLE_TAPS:
-            self._taps = []
-            self.set_enabled(not self.cfg["enabled"])
+    def _chord(self, code: int, pressed: bool) -> None:
+        """LB + RB + L3 + R3 held together: desktop control on / off (works
+        while off or paused); once per hold."""
+        if pressed:
+            self._down.add(code)
+        else:
+            self._down.discard(code)
+        if not TOGGLE_CHORD <= self._down:
+            self._chord_done = False
             return
-        self._tap_src = GLib.timeout_add(int(TAP_GAP_S * 1000), self._burst_over)
-
-    def _burst_over(self) -> bool:
-        self._tap_src = 0
-        taps, self._taps = len(self._taps), []
-        if taps == 1 and not self.paused:
-            self.action("mission", True)
-        return False
+        if self._chord_done:
+            return
+        self._chord_done = True
+        sw = self.switcher() if self.switcher else None
+        if sw is not None and sw.get_visible():
+            sw._close()                                   # LB / RB opened it on the way
+        self.set_enabled(not self.cfg["enabled"])
 
     def set_enabled(self, on: bool) -> None:
         log("desktop control", "on" if on else "off")
@@ -321,9 +320,6 @@ class Gamepads:
         return True
 
     def stop(self) -> None:
-        if self._tap_src:
-            GLib.source_remove(self._tap_src)
-            self._tap_src = 0
         if self._scan_src:
             GLib.source_remove(self._scan_src)
             self._scan_src = 0

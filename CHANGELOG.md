@@ -2,7 +2,20 @@
 
 ## Unreleased
 
+### Changes
+- Colour picker: a colour wheel -- drag the knob for hue and saturation,
+  a slider for brightness -- in place of the grid of swatches.
+- Game controllers: desktop control turns on or off by holding LB + RB +
+  L3 + R3 (L1 + R1 + L3 + R3) together, instead of pressing the Xbox / PS
+  button 5 times. The Xbox / PS button opens Mission Control at once.
+
 ### Fixes
+- Language & Region: changing the language moves the formats region along
+  when it went with the old language (dates and months stayed in
+  Portuguese after switching to English). A region picked apart stays.
+- Window buttons on the right in title bars Sonata draws for other apps
+  (WhatsApp, VS Code...): the same distance from the edge as on the left;
+  the close button was pushed past the edge and cut by the corner.
 - Window buttons on the right in WhatsApp, VS Code and other Chrome /
   Electron apps: the close button keeps its room from the edge (the
   window's corner cut it).

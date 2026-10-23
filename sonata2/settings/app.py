@@ -24,6 +24,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 from .. import config, icons, names, ui  # noqa: E402
 from ..i18n import _, ngettext, pgettext  # noqa: E402
 from ..backend import equalizer, system  # noqa: E402
+from ..wfconfig import BUTTON_KEYS  # noqa: E402
 
 SECTIONS = [  # id, title, icon, badge colour, group (colours varied, not mostly grey: Vini)
     ("wifi", "Wi-Fi", "network-wireless-symbolic", "blue", "linux"),
@@ -391,8 +392,6 @@ def install_row(title, subtitle, command, ready=None, on_ready=None, label=None,
     return row
 
 
-BUTTON_KEYS = ("button_layout", "button_order", "left_button_spacing", "left_button_x_offset",
-               "right_button_spacing", "right_button_x_offset")
 
 
 def apply_buttons_side() -> None:
@@ -1757,10 +1756,9 @@ class Settings(Adw.ApplicationWindow):
                                         "It pauses by itself while a game fills the screen."))
         desk.add(switch_row(_("Control the desktop with a controller"), gp["enabled"],
                             lambda on: self._save("gamepad", "enabled", on)))
-        from ..gamepad.service import TOGGLE_TAPS
         hint = Adw.ActionRow(title=_("Shortcut on the controller"),
-                             subtitle=_("Press the Xbox / PS button {n} times quickly to turn it on or off, "
-                                        "even in a game").format(n=TOGGLE_TAPS))
+                             subtitle=_("Hold LB + RB + L3 + R3 (L1 + R1 + L3 + R3) together to turn it on or off, "
+                                        "even in a game"))
         hint.add_prefix(Gtk.Image(icon_name="input-gaming-symbolic", pixel_size=16))
         desk.add(hint)
         desk.add(slider_row(_("Pointer speed"), float(gp["speed"]) * 50, 10, 100,
