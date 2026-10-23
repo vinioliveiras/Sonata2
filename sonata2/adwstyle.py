@@ -110,27 +110,32 @@ def css(folder: str = None, bars: bool = True, glass: bool = False) -> str:
                     f"{t['window_bg']} {ADW_HEADER_H}px); }}\n")
         return out
     w = "window:not(.sonata-window) windowcontrols > button"
-    side = tokens_frame()["buttons_side"]                # the header bar's start (left) or end box
-    wc = f"window:not(.sonata-window) headerbar windowcontrols.{'start' if side == 'left' else 'end'}"
-    edge = "first-child" if side == "left" else "last-child"
     # Sonata's place for the dots (ui/window.py): 12 px, centres 20 px apart,
-    # the first one centred 13 px from the left edge and 14 px from the top.
-    # libadwaita's header bar: no left padding here, its controls centred in ~46 px.
+    # the first one centred 13 px from the side edge and 14 px from the top.
+    # libadwaita's header bar: no padding at its ends, its controls centred in
+    # ~46 px. Both sides are written, whichever Window buttons says: an app
+    # reads this once, when it starts, and one that stays running (Bazaar
+    # keeps a background service) kept the left side's rules after the
+    # buttons moved right -- 25 px apart, low, further in.
+    sides = ""
+    for box, edge, side in (("start", "first-child", "left"), ("end", "last-child", "right")):
+        wc = f"window:not(.sonata-window) headerbar windowcontrols.{box}"
+        sides += (f"{wc} {{ border-spacing: 0; padding: 0; margin: 0 0 {2 * (TL_CENTRE_Y_ADW - TL_TOP)}px 0; }}\n"
+                  f"{wc} > button:{edge} {{ margin-{side}: {TL_LEFT - D / 2 - ADW_START_INSET:g}px; }}\n")
     return (f"/* Sonata's window look for other GTK 4 apps -- written by sonata2/adwstyle.py at login */\n"
-            f"window:not(.sonata-window) headerbar {{ padding-{side}: 0; }}\n"
+            f"window:not(.sonata-window) headerbar {{ padding-left: 0; padding-right: 0; }}\n"
             # the corners of Sonata's windows and of the ones Wayfire draws (sonata-corners radius)
             f"window:not(.sonata-window).csd {{ border-radius: {tokens_frame()['radius']}px; }}\n"
             f"window:not(.sonata-window).csd.maximized, window:not(.sonata-window).csd.fullscreen,\n"
             f"window:not(.sonata-window).csd.tiled, window:not(.sonata-window).csd.tiled-top,\n"
             f"window:not(.sonata-window).csd.tiled-left, window:not(.sonata-window).csd.tiled-right,\n"
             f"window:not(.sonata-window).csd.tiled-bottom {{ border-radius: 0; }}\n"
-            f"{wc} {{ border-spacing: 0; padding: 0; margin: 0 0 {2 * (TL_CENTRE_Y_ADW - TL_TOP)}px 0; }}\n"
+            + sides +
             f"{w}, {w}:hover, {w}:active, {w}:backdrop {{\n"
             f"  min-width: {D}px; min-height: {D}px; padding: 0; margin: 0 {G / 2:g}px; border: none;\n"
             f"  border-radius: 999px;\n"
             f"  box-shadow: none; outline: none; background-color: transparent; background-repeat: no-repeat;\n"
             f"  background-position: center; background-size: {D}px {D}px; }}\n"
-            f"{wc} > button:{edge} {{ margin-{side}: {TL_LEFT - D / 2 - ADW_START_INSET:g}px; }}\n"
             f"{w} > image {{ opacity: 0; background: none; box-shadow: none; padding: 0; margin: 0;\n"
             f"  min-width: {D}px; min-height: {D}px; -gtk-icon-size: {D}px; }}\n"
             f"{w}.close {{ background-image: {url('close')}; }}\n"
@@ -160,25 +165,30 @@ def css3(folder: str = None) -> str:
     close button came out cut by the window's edge)."""
     D, G = FRAME["dot"], FRAME["dot_gap"]
     folder = folder or runtime_dir()
-    side = tokens_frame()["buttons_side"]
-    box = "left" if side == "left" else "right"
     # GTK 3 keeps the 16 px icon inside each button whatever its CSS says:
     # the dots' centres are 16 px + the margins + the box's spacing apart
     # (22 at the closest, Sonata's are 20), and the first one's centre is
-    # the header bar's edge, the box's room, a margin and 8 px in. Sized
-    # from a 12 px button they sat 20 px in, 26 px apart and centred in the
-    # 46 px bar (Sonata's place: 13 px in, 14 down).
+    # the header bar's padding, a margin and 8 px in. Sized from a 12 px
+    # button they sat 20 px in, 26 px apart and centred in the 46 px bar
+    # (Sonata's place: 13 px in, 14 down).
+    # The room from the edge is the header bar's own padding: Chrome and
+    # Electron apps (WhatsApp, VS Code) draw their buttons from it and the
+    # buttons' margins, and never see the box inside -- with the padding at
+    # 0 their close button touched the edge, cut by the window's corner.
+    # A GTK 3 header bar puts its box 1 px further out, given back here.
+    # Both sides at once: an app reads this when it starts.
     icon = GTK3_ICON
     margin = max(0, (G + D - icon - GTK3_SPACING) / 2)
-    edge_pad = max(0, TL_LEFT - icon / 2 - margin - GTK3_BOX_INSET)
+    edge_pad = max(0, TL_LEFT - icon / 2 - margin)
     lift = max(0, 2 * (GTK3_BAR_CENTRE - TL_TOP))
 
     def url(name):
         return f'url("file://{os.path.join(folder, "sonata-tl-" + name + ".svg")}")'
     w = "headerbar button.titlebutton"
     out = ["/* Sonata's window buttons for GTK 3 apps -- written by sonata2/adwstyle.py at login */",
-           f"headerbar {{ padding-{side}: 0; }}",
-           f"headerbar > box.{box} {{ padding-{side}: {edge_pad:g}px; }}",
+           f"headerbar {{ padding-left: {edge_pad:g}px; padding-right: {edge_pad:g}px; }}",
+           f"headerbar > box.left {{ padding-left: {-GTK3_BOX_INSET:g}px; }}",
+           f"headerbar > box.right {{ padding-right: {-GTK3_BOX_INSET:g}px; }}",
            f"{w}.close, {w}.minimize, {w}.maximize {{ min-width: {D}px; min-height: {D}px; padding: 0;",
            f"  margin: 0 {margin:g}px {lift:g}px; border: none; box-shadow: none; background-color: transparent;",
            f"  background-repeat: no-repeat; background-position: center; background-size: {D}px {D}px; }}"]
