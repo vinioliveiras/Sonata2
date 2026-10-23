@@ -16,7 +16,10 @@ from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 from .. import ui  # noqa: E402
 from ..i18n import N_, _  # noqa: E402
 
-STACK_DEFAULTS = {"display": "stack", "view": "grid", "sort": "added"}
+# shown as the folder's icon by default (Vini: Downloads showed its newest photo);
+# "stack" (the first item's picture) stays in its menu
+STACK_DEFAULTS = {"display": "folder", "view": "grid", "sort": "added"}
+STACKS_VERSION = 2          # dock.json "stacks_version": 2 = the folder icon made the default
 SORTS = (("name", N_("Name")), ("added", N_("Date Added")), ("modified", N_("Date Modified")),
          ("kind", N_("Kind")))
 MAX_ITEMS = 60
@@ -173,10 +176,14 @@ class StackRow:
 
     def load(self) -> None:
         specs = self.dock.cfg["stacks"] or []
+        migrate = self.dock.cfg.get("stacks_version", 1) < STACKS_VERSION
+        if migrate:                                  # saved with the old default: the folder icon now
+            specs = [dict(spec, display="folder") for spec in specs]
+            self.dock.cfg["stacks_version"] = STACKS_VERSION
         kept = [spec for spec in specs if not gone(spec.get("path", ""))]
         for spec in kept:
             self._add_tile(dict(STACK_DEFAULTS, **spec))
-        if len(kept) != len(specs):                  # deleted while the Dock wasn't running
+        if migrate or len(kept) != len(specs):       # (deleted while the Dock wasn't running)
             self._save()
 
     def _save(self) -> None:
@@ -327,8 +334,11 @@ class StackRow:
             b = Gtk.Button(css_classes=["stack-item"])
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
             box.append(Gtk.Image(gicon=_icon(info), pixel_size=GRID_ICON))
-            lbl = Gtk.Label(label=info.get_display_name(), wrap=True, lines=2, justify=Gtk.Justification.CENTER,
-                            ellipsize=Pango.EllipsizeMode.MIDDLE, max_width_chars=12, width_chars=12)
+            # broken anywhere (WORD_CHAR): a long name with no spaces (a Downloads
+            # photo, an .iso) widened its column -- the panel ran across the screen
+            lbl = Gtk.Label(label=info.get_display_name(), wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, lines=2,
+                            justify=Gtk.Justification.CENTER, ellipsize=Pango.EllipsizeMode.MIDDLE,
+                            max_width_chars=12, width_chars=12)
             box.append(lbl)
             b.set_child(box)
             b.connect("clicked", lambda _b, f=gfile: (_open(f), pop.popdown()))

@@ -13,20 +13,10 @@ from gi.repository import GLib, Gtk  # noqa: E402
 from . import theme  # noqa: E402
 from ..i18n import _  # noqa: E402
 
-# a GTK header bar's own padding around the traffic lights (Sonata's theme)
-HEADERBAR_PAD_X, HEADERBAR_PAD_Y = 5, 6
-
-
 def traffic_metrics() -> dict:
-    """CSS values for the dots, from tokens.FRAME (also used by adwstyle.py)."""
-    from .tokens import FRAME as F
-    half = F["dot"] / 2
-    left = F["dot_left"] - half - F["dot_gap"] / 2          # the box's margin: the first button adds half a gap
-    top = F["dot_top"] - half
-    px = lambda v: f"{v:g}px"                                # noqa: E731
-    return {"tl_dot": px(F["dot"]), "tl_half_gap": px(F["dot_gap"] / 2),
-            "tl_margin_left": px(left), "tl_margin_top": px(top),
-            "tl_hb_left": px(left - HEADERBAR_PAD_X), "tl_hb_top": px(top - HEADERBAR_PAD_Y)}
+    """CSS values for the dots now (tokens: the theme's tl_* placeholders)."""
+    from . import tokens
+    return tokens.traffic_tokens(tokens.frame())
 
 
 theme.register("""
@@ -69,7 +59,7 @@ headerbar .traffic.traffic-right { margin-left: 0; margin-right: %(tl_hb_left)s;
   background-image: none; background-color: %(tl_disabled)s; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,.18); }
 .traffic button:active { filter: brightness(0.85); }
 .traffic button label { color: transparent; font-size: 1px; padding: 0; margin: 0; }
-""", key="traffic-lights", **traffic_metrics())
+""", key="traffic-lights")
 
 
 # Settings > Appearance > Button Colours (trafficlights.py): the dots of
@@ -445,7 +435,7 @@ def has_dismiss_button(widget) -> bool:
 
 theme.register("""
 .traffic.traffic-close-only { margin: %(tl_margin_top)s %(tl_margin_left)s 0 %(tl_margin_left)s; }
-""", key="traffic-close-only", **traffic_metrics())
+""", key="traffic-close-only")
 
 
 # Toolbar under the compositor's glass title bar (Sonata apps keep the

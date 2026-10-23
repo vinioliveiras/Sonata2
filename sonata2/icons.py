@@ -36,6 +36,7 @@ APPEARANCE_DEFAULTS = {"flatpak_theme": True, "icon_theme": "Sonata", "theme": "
                        "screen_corners": True, "radius": {}, "glass": {},
                        "background": {},                 # {"light": "#rrggbb", "dark": ...} (tokens.BACKGROUNDS)
                        "buttons_side": "left",           # window buttons: left (macOS) / right (Vini)
+                       "button_size": 12,                # their size, px (tokens.BUTTON_SIZE_RANGE)
                        "buttons_style": "color",         # their colours: color / graphite / mono / custom
                        "buttons_colors": {},             # custom: {"close", "minimize", "maximize"} (trafficlights.py)
                        "steam_theme": True,              # Steam in Sonata's look (steamtheme.py)

@@ -88,7 +88,7 @@ def frame_options(frame: dict) -> list:
     # the left that moves them in, on the right out -- past the window's
     # edge, where the rounded corner cut the close button (Vini: WhatsApp,
     # VS Code). The right side's inset is negative.
-    offset = inset if side == "left" else -inset
+    offset = round(inset) if side == "left" else -round(inset)     # (an int option)
     layout = ",".join(names) + ":" if side == "left" else ":" + ",".join(reversed(names))
     align = {"left": "0", "center": "1", "right": "2"}[frame["title_align"]]
     return [("pixdecor", "rounded_corner_radius", str(frame["radius"])),

@@ -154,17 +154,16 @@ def _key(dark: bool) -> str:
     """The pictures' folder name: the look, its colours, the size and how
     they're drawn -- a Sonata update that draws them differently (or at
     another size) makes them again instead of keeping the old ones."""
-    from .ui.tokens import FRAME
     look = style()
     cols = colors(dark, look)
-    what = json.dumps({"c": cols, "size": FRAME["dot"], "v": DRAW_VERSION}, sort_keys=True)
+    what = json.dumps({"c": cols, "size": size(), "v": DRAW_VERSION}, sort_keys=True)
     return look + "-" + hashlib.sha1(what.encode()).hexdigest()[:10]
 
 
 def folder(dark: bool) -> str:
     """Where this look's pictures are (made if needed): SVGs named
     sonata-tl-<name>[-hover].svg, PNGs <name>[-hover].png."""
-    if style() == "color":
+    if _bundled_ok():
         return _bundled(dark)[0]
     d = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "sonata2", "tl",
                      _key(dark), "dark" if dark else "light")
@@ -174,22 +173,34 @@ def folder(dark: bool) -> str:
 
 
 def png_folder(dark: bool) -> str:
-    return _bundled(dark)[1] if style() == "color" else folder(dark)
+    return _bundled(dark)[1] if _bundled_ok() else folder(dark)
+
+
+def size() -> int:
+    """The buttons' size (Settings > Appearance), px."""
+    from .ui.tokens import user_button_size
+    return user_button_size()
+
+
+def _bundled_ok() -> bool:
+    """The bundled pictures do: the default look at the default size (any
+    other size is drawn here -- pixdecor draws its PNGs 1:1)."""
+    from .ui.tokens import FRAME
+    return style() == "color" and size() == FRAME["dot"]
 
 
 def make(d: str, cols: dict) -> None:
-    from .ui.tokens import FRAME
-    size = FRAME["dot"]
+    px = size()
     os.makedirs(d, exist_ok=True)
     for n in NAMES:
         for suffix, g in (("", None), ("-hover", n)):
-            _svg(os.path.join(d, f"sonata-tl-{n}{suffix}.svg"), size, cols[n], g)
-            _png(os.path.join(d, f"{n}{suffix}.png"), size, cols[n], g)
+            _svg(os.path.join(d, f"sonata-tl-{n}{suffix}.svg"), px, cols[n], g)
+            _png(os.path.join(d, f"{n}{suffix}.png"), px, cols[n], g)
 
 
 def css_rules(dark: bool) -> str:
     """Sonata's own windows (ui/window.py's .traffic buttons) in this look."""
-    if style() == "color":
+    if _bundled_ok():
         return ""
     d = folder(dark)
     url = lambda n: f'url("file://{os.path.join(d, "sonata-tl-" + n + ".svg")}")'   # noqa: E731
@@ -198,8 +209,9 @@ def css_rules(dark: bool) -> str:
         f".traffic button.tl-close:hover {{ background-image: {url('close-hover')}; }}",
         f".traffic button.tl-min {{ background-image: {url('minimize')}; }}",
         f".traffic button.tl-min:hover {{ background-image: {url('minimize-hover')}; }}",
-        f".traffic button.tl-zoom {{ background-image: {url('maximize')}; }}",
-        f".traffic button.tl-zoom:hover {{ background-image: {url('maximize-hover')}; }}"])
+        # (a greyed-out zoom stays grey: Settings' showed green in another look or size)
+        f".traffic button.tl-zoom:not(.tl-disabled) {{ background-image: {url('maximize')}; }}",
+        f".traffic button.tl-zoom:not(.tl-disabled):hover {{ background-image: {url('maximize-hover')}; }}"])
 
 
 def wayfire_options(dark: bool) -> list:

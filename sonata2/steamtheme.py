@@ -90,7 +90,7 @@ def window_css() -> str:
     f = tokens.frame()
     left = f["buttons_side"] == "left"
     dot, gap = f["dot"], f["dot_gap"]
-    edge, top = f["dot_left"] - dot // 2, f["dot_top"] - dot // 2
+    edge, top = round(f["dot_left"] - dot / 2), round(f["dot_top"] - dot / 2)     # (whole px; a rounder corner gives halves)
     from . import trafficlights
     pics = trafficlights.folder(True)          # Settings' button colours (Steam is dark)
     # in the row, left to right: on the right side close is at the edge (Windows' order);

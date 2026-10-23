@@ -158,15 +158,31 @@ def _read_uris(drop, done) -> None:
     drop.read_async([URI_LIST], GLib.PRIORITY_DEFAULT, None, got_stream)
 
 
-def _target(on_motion, on_drop, on_leave) -> Gtk.DropTargetAsync:
+def _action(drop, wanted, link: bool = True):
+    """The action to answer with: `wanted` (COPY) when the drag allows it,
+    else LINK -- a place dragged from Files' sidebar is offered as a link
+    only (sidebar.py), so nothing else ever copies or moves a whole folder."""
+    if not wanted:
+        return 0
+    allowed = drop.get_actions()
+    if allowed & wanted:
+        return wanted
+    return Gdk.DragAction.LINK if link and allowed & Gdk.DragAction.LINK else 0
+
+
+def _target(on_motion, on_drop, on_leave, link: bool = False) -> Gtk.DropTargetAsync:
     """A file drop target that reads text/uri-list itself (see _read_uris);
-    the handlers get (target, x, y) / (target, value, x, y) as before."""
-    t = Gtk.DropTargetAsync.new(Gdk.ContentFormats.new([URI_LIST]),
-                                Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+    the handlers get (target, x, y) / (target, value, x, y) as before.
+    link: also takes a link-only drag (the plate: folders become stacks);
+    the icons and the Trash never do (the Trash would bin the folder)."""
+    actions = Gdk.DragAction.COPY | Gdk.DragAction.MOVE
+    if link:
+        actions |= Gdk.DragAction.LINK
+    t = Gtk.DropTargetAsync.new(Gdk.ContentFormats.new([URI_LIST]), actions)
     st = _Target()
 
     def accept(_t, drop):
-        return drop.get_formats().contain_mime_type(URI_LIST)
+        return drop.get_formats().contain_mime_type(URI_LIST) and bool(drop.get_actions() & actions)
 
     def enter(_t, drop, x, y):
         st.drop, st.files = drop, None
@@ -175,12 +191,12 @@ def _target(on_motion, on_drop, on_leave) -> Gtk.DropTargetAsync:
             if st.drop is drop:
                 st.files = files or []
         _read_uris(drop, ready)
-        return Gdk.DragAction.COPY                  # decided on the next motion, once read
+        return _action(drop, Gdk.DragAction.COPY, link)   # decided on the next motion, once read
 
-    def motion(_t, _drop, x, y):
+    def motion(_t, drop, x, y):
         if st.files is None:
-            return Gdk.DragAction.COPY
-        return on_motion(st, x, y) or 0
+            return _action(drop, Gdk.DragAction.COPY, link)
+        return _action(drop, on_motion(st, x, y) or 0, link)
 
     def leave(_t, _drop):
         on_leave(st)
@@ -189,7 +205,7 @@ def _target(on_motion, on_drop, on_leave) -> Gtk.DropTargetAsync:
     def dropped(_t, drop, x, y):
         def finish(files):
             ok = bool(files) and bool(on_drop(st, _Files(files), x, y))
-            drop.finish(Gdk.DragAction.COPY if ok else 0)
+            drop.finish(_action(drop, Gdk.DragAction.COPY, link) if ok else 0)
             st.drop, st.files = None, None
         if st.files is not None:
             finish(st.files)
@@ -345,7 +361,7 @@ def attach_plate(dock) -> None:
             return pin_files(dock, files, before=tiles[slot])
         return pin_files(dock, files, x=x, y=y)
 
-    dock.add_controller(_target(motion, drop, lambda *_: dock.hide_drop_gap_soon()))
+    dock.add_controller(_target(motion, drop, lambda *_: dock.hide_drop_gap_soon(), link=True))
 
 
 def add_folders(dock, folders, before=None, x=None, y=0.0) -> bool:

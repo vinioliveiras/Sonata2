@@ -310,6 +310,48 @@ class DockTest(unittest.TestCase):
         pop.popdown()
         dock_stack.stack_menu(self.dock.stacks, tile).popdown()
 
+    def test_downloads_panel_ran_across_the_screen(self):
+        """Vini: Downloads in the Dock opened a panel as wide as the screen
+        (long names with no spaces -- photos, an .iso -- kept their column
+        wide); other folders' were fine."""
+        from sonata2.shell import dock_stack
+        folder = os.path.join(os.environ["XDG_CONFIG_HOME"], "longnames")
+        os.makedirs(folder, exist_ok=True)
+        for n in ("616596717_17894881599391900_8810441269282256308_n.jpg",
+                  "Win11_25H2_EnglishInternational_x64_v2.iso", "a.txt", "b.txt", "c.txt"):
+            open(os.path.join(folder, n), "w").close()
+        short = os.path.join(os.environ["XDG_CONFIG_HOME"], "shortnames")
+        os.makedirs(short, exist_ok=True)
+        for n in ("a.txt", "b.txt", "c.txt", "d.txt", "e.txt"):
+            open(os.path.join(short, n), "w").close()
+        width = lambda d: dock_stack.StackRow._grid(None, dock_stack._items(d, "name"), None).measure(  # noqa: E731
+            Gtk.Orientation.HORIZONTAL, -1)[1]
+        self.assertEqual(width(folder), width(short))                  # like any other folder
+
+    def test_stack_shows_the_folder_icon_by_default(self):
+        """Vini: the folder's icon by default, not its newest file's picture
+        -- also for a stack saved with the old default."""
+        from sonata2.shell import dock_stack
+        self.assertEqual(dock_stack.STACK_DEFAULTS["display"], "folder")
+        folder = os.path.join(os.environ["XDG_CONFIG_HOME"], "withphoto")
+        os.makedirs(folder, exist_ok=True)
+        open(os.path.join(folder, "photo.png"), "w").close()
+        icon = dock_stack._stack_icon(dict(dock_stack.STACK_DEFAULTS, path=folder))
+        self.assertIn("folder", icon.get_names())
+        row = self.dock.stacks
+        for t in list(row.tiles()):
+            row.remove(t, save=False)
+        self.dock.cfg["stacks"] = [dict(dock_stack.STACK_DEFAULTS, path=folder, display="stack")]
+        self.dock.cfg.pop("stacks_version", None)
+        row.load()
+        self.assertEqual(row.tiles()[-1].spec["display"], "folder")
+        self.assertEqual(self.dock.cfg["stacks_version"], dock_stack.STACKS_VERSION)
+        row.set_spec(row.tiles()[-1], "display", "stack")              # chosen in its menu: kept
+        for t in list(row.tiles()):
+            row.remove(t, save=False)
+        row.load()
+        self.assertEqual(row.tiles()[-1].spec["display"], "stack")
+
     def test_dropped_folder_opens_its_place_and_leaves_when_deleted(self):
         """Vini: a folder dragged onto the Dock (from the desktop) just popped
         in, and once deleted it stayed in the Dock."""

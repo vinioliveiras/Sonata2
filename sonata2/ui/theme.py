@@ -171,11 +171,16 @@ def _remember_appearance() -> None:
     _accent()
     _glass_cfg()
     if _radii_seen is None:
-        _radii_seen = tokens.user_radii()
+        _radii_seen = _shape()
     if _bg_seen is None:
         _bg_seen = tokens.user_backgrounds()
     if _glass_bars_on is None:
         _glass_bars_on = glass_titlebars()
+
+
+def _shape() -> tuple:
+    """The radii and the window buttons' size: either one moves the buttons."""
+    return tokens.user_radii(), tokens.user_button_size()
 
 
 def _appearance_changed() -> None:
@@ -187,7 +192,7 @@ def _appearance_changed() -> None:
     _transparency_changed()
     bars = glass_titlebars()
     global _radii_seen, _glass_seen, _bg_seen
-    radii = tokens.user_radii()
+    radii = _shape()
     bg = tokens.user_backgrounds()
     from . import glass as G
     gl = G.settings()

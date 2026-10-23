@@ -378,7 +378,9 @@ for _p in (LIGHT, DARK):
 # group's ratio. Not the screen's corners (shell/screencorners.py).
 RADIUS_DEFAULTS = {"window": FRAME["radius"], "dock": 18, "menu": 7}
 RADIUS_RANGE = {"window": (0, 24), "dock": (0, 32), "menu": (0, 16)}
-_radii_cache = {"mtime": None, "value": dict(RADIUS_DEFAULTS), "set": {}}
+# window buttons' size (Settings > Appearance > Title Bars), px: FRAME["dot"] by default
+BUTTON_SIZE_RANGE = (10, 20)
+_radii_cache = {"mtime": None, "value": dict(RADIUS_DEFAULTS), "set": {}, "button": None}
 
 
 def user_radii() -> dict:
@@ -397,16 +399,20 @@ def user_radii() -> dict:
         return dict(RADIUS_DEFAULTS, window=FRAME["radius"])     # (the theme's own: FRAME)
     if _radii_cache["mtime"] != mtime:
         out = dict(RADIUS_DEFAULTS, window=FRAME["radius"])
-        got = {}
+        got, button = {}, None
         try:
             with open(path, encoding="utf-8") as f:
-                got = (json.load(f) or {}).get("radius") or {}
+                data = json.load(f) or {}
+            got = data.get("radius") or {}
             for k, (lo, hi) in RADIUS_RANGE.items():
                 if isinstance(got.get(k), (int, float)):
                     out[k] = int(max(lo, min(hi, round(got[k]))))
+            b = data.get("button_size")
+            if isinstance(b, (int, float)) and not isinstance(b, bool):
+                button = int(max(BUTTON_SIZE_RANGE[0], min(BUTTON_SIZE_RANGE[1], round(b))))
         except (OSError, ValueError, AttributeError):
             pass
-        _radii_cache.update(mtime=mtime, value=out, set=got if isinstance(got, dict) else {})
+        _radii_cache.update(mtime=mtime, value=out, set=got if isinstance(got, dict) else {}, button=button)
     out = dict(_radii_cache["value"])
     if "window" not in _radii_cache.get("set", {}):
         out["window"] = FRAME["radius"]                         # not picked: the theme's own
@@ -432,9 +438,56 @@ def user_buttons_side() -> str:
     return side if side in ("left", "right") else FRAME["buttons_side"]
 
 
+def user_button_size() -> int:
+    """The window buttons' size in effect (appearance.json "button_size";
+    FRAME["dot"] when not picked)."""
+    user_radii()                               # (reads appearance.json, cached)
+    import os
+    try:
+        from .. import config
+        folder = config.CONFIG_DIR
+    except ImportError:
+        folder = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "sonata2")
+    if not os.path.exists(os.path.join(folder, "appearance.json")):
+        return FRAME["dot"]
+    return _radii_cache.get("button") or FRAME["dot"]
+
+
+def corner_extra(radius: float, designed: float) -> float:
+    """How much further in what sits by a corner goes when the corner is
+    rounder than designed: half the extra radius (Vini: with a bigger
+    radius the window buttons -- and the Dock's end icons -- stayed put and
+    crowded the curve). Never closer than designed."""
+    return max(0.0, (radius - designed) / 2)
+
+
 def frame() -> dict:
-    """FRAME with the user's window radius and buttons side."""
-    return dict(FRAME, radius=user_radii()["window"], buttons_side=user_buttons_side())
+    """FRAME with the user's window radius, buttons side and size. The
+    buttons keep their room from the edges whatever their size (a bigger
+    one grows inwards; the gap between them grows with it) and move in with
+    a rounder corner (corner_extra)."""
+    r = user_radii()["window"]
+    size = user_button_size()
+    move = corner_extra(r, FRAME["radius"]) + (size - FRAME["dot"]) / 2
+    return dict(FRAME, radius=r, buttons_side=user_buttons_side(), dot=size,
+                dot_gap=round(FRAME["dot_gap"] * size / FRAME["dot"]),
+                dot_left=FRAME["dot_left"] + move, dot_top=FRAME["dot_top"] + move)
+
+
+# a GTK header bar's own padding around the traffic lights (Sonata's theme)
+HEADERBAR_PAD_X, HEADERBAR_PAD_Y = 5, 6
+
+
+def traffic_tokens(f: dict) -> dict:
+    """CSS values for the traffic lights (ui/window.py) from a frame():
+    tokens, so a new window radius moves them with the rest of the theme."""
+    half = f["dot"] / 2
+    left = f["dot_left"] - half - f["dot_gap"] / 2          # the box's margin: the first button adds half a gap
+    top = f["dot_top"] - half
+    px = lambda v: f"{v:g}px"                                # noqa: E731
+    return {"tl_dot": px(f["dot"]), "tl_half_gap": px(f["dot_gap"] / 2),
+            "tl_margin_left": px(left), "tl_margin_top": px(top),
+            "tl_hb_left": px(left - HEADERBAR_PAD_X), "tl_hb_top": px(top - HEADERBAR_PAD_Y)}
 
 
 def radius_tokens(r: dict) -> dict:
@@ -572,4 +625,4 @@ def palette(dark: bool, theme: str = "mac") -> dict:
     base = t["dark"] if dark else t["light"]
     return {**t["shared"], **{"sys_" + k: v for k, v in SYSTEM_COLORS.items()}, **base,
             **background_tokens(base, user_backgrounds().get("dark" if dark else "light"), dark),
-            **radius_tokens(user_radii())}
+            **radius_tokens(user_radii()), **traffic_tokens(frame())}

@@ -104,6 +104,14 @@ DIVIDER_W = 11              # 1 px line + 5 px each side (also the drag handle)
 ART_INSET = 1 / 12          # measured: 4 px at 48 px
 
 
+def pad_side() -> float:
+    """Room before the first icon and after the last: more with a rounder
+    plate (tokens.corner_extra), so the end icons keep their distance from
+    its corners."""
+    from ..ui import tokens
+    return PAD_SIDE + tokens.corner_extra(tokens.user_radii()["dock"], tokens.RADIUS_DEFAULTS["dock"])
+
+
 def dot_gaps(icon_size: int):
     """(gap icon->dot, gap dot->edge), in px, for visual centring."""
     return max(0, DOT_GAP - round(icon_size * ART_INSET)), DOT_GAP
@@ -754,7 +762,19 @@ class Dock(Gtk.Box):
             self._apps_mon = (None, 0)
 
     def _spacer(self) -> Gtk.Box:
-        return Gtk.Box(height_request=PAD_SIDE) if self.vertical else Gtk.Box(width_request=PAD_SIDE)
+        box = Gtk.Box(css_classes=["dock-end"])
+        self._size_spacer(box)
+        return box
+
+    def _size_spacer(self, box: Gtk.Box) -> None:
+        pad = round(pad_side())
+        box.set_size_request(-1, pad) if self.vertical else box.set_size_request(pad, -1)
+
+    def _size_spacers(self) -> None:
+        """A new plate radius: the ends' room follows (pad_side)."""
+        for box in (self.get_first_child(), self.get_last_child()):
+            if box is not None and box.has_css_class("dock-end"):
+                self._size_spacer(box)
 
     def _update_thickness(self) -> None:
         t = plate_height(self.cfg)
@@ -830,14 +850,14 @@ class Dock(Gtk.Box):
     def _cells_room(self, size: float) -> float:
         """How many icons of `size` fit along the edge."""
         lines = DIVIDER_W * (2 if self.recent_sep.get_visible() else 1)
-        return (self._span() - 2 * PAD_SIDE - lines) / (size + 2 * TILE_PAD)
+        return (self._span() - 2 * round(pad_side()) - lines) / (size + 2 * TILE_PAD)
 
     def _fit_size(self) -> int:
         n = len(self.all_tiles())
         if self._span() <= 0 or not n:
             return self.user_size
         lines = DIVIDER_W * (2 if self.recent_sep.get_visible() else 1)
-        fit = (self._span() - 2 * PAD_SIDE - lines) / n - 2 * TILE_PAD
+        fit = (self._span() - 2 * round(pad_side()) - lines) / n - 2 * TILE_PAD
         return int(max(MIN_SIZE, min(self.user_size, fit)))
 
     def refit(self) -> bool:
@@ -1041,9 +1061,10 @@ class Dock(Gtk.Box):
         parent = self.get_parent()
         cell = base + 2 * TILE_PAD
         lines = DIVIDER_W * (2 if self.recent_sep.get_visible() else 1)
-        length = 2 * PAD_SIDE + len(tiles) * cell + lines
+        pad = round(pad_side())
+        length = 2 * pad + len(tiles) * cell + lines
         span = (parent.get_height() if self.vertical else parent.get_width()) if parent else length
-        pos = (span - length) / 2 + PAD_SIDE
+        pos = (span - length) / 2 + pad
         radius = MAG_RADIUS * cell
         first_extra = self._first_extra()
         after_divider = (self.stacks.tiles() or [self.trash])[0]
@@ -2367,6 +2388,7 @@ class Dock(Gtk.Box):
         settled, every widget anew (a count badge kept its Light Mode
         colour in Dark Mode until clicked -- Vini)."""
         ui.theme.settled(self, lambda: ui.theme.refresh_tree(self))
+        self._size_spacers()
         stack = [self]
         while stack:
             w = stack.pop()

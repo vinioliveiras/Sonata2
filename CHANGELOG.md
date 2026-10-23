@@ -3,6 +3,15 @@
 ## Unreleased
 
 ### Changes
+- Appearance > Title Bars: a Button size slider for close, minimize and
+  zoom on every window (Sonata's, GTK apps', the title bars Sonata draws,
+  Steam's); they keep their distance from the window's edge at any size.
+- A rounder window corner moves the window buttons in with it, and a
+  rounder Dock moves its end icons in, so neither crowds the curve.
+- Files: folders in the sidebar (Favorites, Locations) can be dragged onto
+  the Dock as stacks; a pinned folder dragged in the sidebar moves.
+- Dock folders show the folder's icon by default (the newest file's
+  picture stays as "Display as > Stack").
 - Colour picker: a colour wheel -- drag the knob for hue and saturation,
   a slider for brightness -- in place of the grid of swatches.
 - Game controllers: desktop control turns on or off by holding LB + RB +
@@ -10,6 +19,10 @@
   button 5 times. The Xbox / PS button opens Mission Control at once.
 
 ### Fixes
+- Downloads in the Dock: its panel no longer runs across the screen when
+  a file has a long name with no spaces.
+- A greyed-out zoom button (Settings) turned green with custom button
+  colours.
 - Language & Region: changing the language moves the formats region along
   when it went with the old language (dates and months stayed in
   Portuguese after switching to English). A region picked apart stays.

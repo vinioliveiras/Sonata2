@@ -791,5 +791,7 @@
  "{} takes effect from the next login. Save your work first: apps will quit.": "{}: entra em vigor a partir do próximo início de sessão. Guarde primeiro o seu trabalho: as apps vão sair.",
  "{} takes effect when Sonata restarts. Open apps stay open.": "{}: entra em vigor quando o Sonata reiniciar. As apps abertas continuam abertas.",
  "Choose a Picture or Video": "Escolher uma imagem ou vídeo",
- "Pictures and Videos": "Imagens e vídeos"
+ "Pictures and Videos": "Imagens e vídeos",
+ "Button size": "Tamanho dos botões",
+ "Small": "Pequeno"
 }

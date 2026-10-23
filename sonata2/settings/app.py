@@ -2839,6 +2839,12 @@ class Settings(Adw.ApplicationWindow):
                            app.get("buttons_side", "left"), self._set_buttons_side,
                            subtitle=_("Where close, minimize and zoom sit on every window")))
         self._button_colour_rows(bars, app)
+        from ..ui import tokens
+        lo, hi = tokens.BUTTON_SIZE_RANGE
+        self.button_size_row = slider_row(_("Button size"), tokens.user_button_size(), lo, hi, self._set_button_size,
+                                          subtitle=_("Close, minimize and zoom on every window"),
+                                          ends=(_("Small"), _("Large")), default=tokens.FRAME["dot"])
+        bars.add(self.button_size_row)
         bars.add(switch_row(_("Sonata title bars for all apps"), app["system_titlebars"],
                             lambda on: (self._save("appearance", "system_titlebars", on),
                                         system.run_async(__import__("sonata2.titlebars", fromlist=["apply"]).apply,
@@ -2872,7 +2878,8 @@ class Settings(Adw.ApplicationWindow):
     # what Reset Appearance puts back (Vini: the theme's defaults); light/dark is
     # the system's setting and stays
     APPEARANCE_RESET = ("accent", "background", "theme", "icon_theme", "flatpak_theme", "system_titlebars",
-                        "glass_titlebars", "glass", "radius", "buttons_side", "buttons_style", "buttons_colors",
+                        "glass_titlebars", "glass", "radius", "button_size", "buttons_side",
+                        "buttons_style", "buttons_colors",
                         "always_show_tabs")
 
     def _set_steam_theme(self, on):
@@ -2913,6 +2920,27 @@ class Settings(Adw.ApplicationWindow):
         custom.add_suffix(box)
         bars.add(custom)
         self.button_custom_row = custom                           # (tests)
+
+    def _set_button_size(self, value) -> None:
+        """Saved a moment after the slider stops (like the corners): Sonata's
+        windows restyle; the pictures are drawn at that size and every place
+        told (pixdecor's title bars, GTK apps, Steam) with their new room."""
+        self._button_size_pending = int(round(value))
+        if getattr(self, "_button_size_src", 0):
+            GLib.source_remove(self._button_size_src)
+
+        def save():
+            self._button_size_src = 0
+            self._save("appearance", "button_size", self._button_size_pending)
+            dark = Adw.StyleManager.get_default().get_dark()
+
+            def apply():
+                from .. import trafficlights
+                trafficlights.apply(dark)                    # the pictures at that size, pixdecor's too
+                apply_buttons_side()                         # their room and spacing, GTK apps
+            system.run_async(apply, None)
+            return False
+        self._button_size_src = GLib.timeout_add(250, save)
 
     def _set_button_style(self, look):
         from .. import trafficlights
@@ -2960,7 +2988,7 @@ class Settings(Adw.ApplicationWindow):
         import copy
         from .. import flatpak_theme, titlebars, wfconfig
         from ..ui import tokens
-        for src in ("_glass_src", "_glass_wf_src", "_radius_src"):      # a slider still saving
+        for src in ("_glass_src", "_glass_wf_src", "_radius_src", "_button_size_src"):      # a slider still saving
             if getattr(self, src, 0):
                 GLib.source_remove(getattr(self, src))
                 setattr(self, src, 0)
@@ -2970,11 +2998,12 @@ class Settings(Adw.ApplicationWindow):
             self._save("appearance", k, copy.deepcopy(icons.APPEARANCE_DEFAULTS[k]))
         dark = Adw.StyleManager.get_default().get_dark()
         flatpak = old.get(flatpak_theme.KEY) != icons.APPEARANCE_DEFAULTS[flatpak_theme.KEY]
-        buttons = old.get("buttons_style", "color") != "color"
+        buttons = (old.get("buttons_style", "color") != "color"
+                   or old.get("button_size", tokens.FRAME["dot"]) != tokens.FRAME["dot"])
 
         def apply():
             for sec, k, v in wfconfig.frame_options(tokens.frame()):
-                if k in ("rounded_corner_radius", "radius"):
+                if k in ("rounded_corner_radius", "radius") or k.endswith(("_button_x_offset", "_button_spacing")):
                     system.wayfire_set(sec, k, v)
             apply_buttons_side()
             titlebars.apply(icons.APPEARANCE_DEFAULTS["system_titlebars"])
@@ -3882,7 +3911,8 @@ class Settings(Adw.ApplicationWindow):
             def wayfire():
                 from .. import titlebars, wfconfig
                 for sec, k, v in wfconfig.frame_options(tokens.frame()):
-                    if k in ("rounded_corner_radius", "radius"):
+                    # the corners, and the buttons' room from them (tokens.corner_extra)
+                    if k in ("rounded_corner_radius", "radius") or k.endswith("_button_x_offset"):
                         system.wayfire_set(sec, k, v)
                 titlebars.apply()                            # GNOME apps' corners (adwstyle)
             system.run_async(wayfire, None)

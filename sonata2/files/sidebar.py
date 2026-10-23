@@ -5,8 +5,15 @@ Vini's choice). Live: rebuilt when drives come and go; free space is read
 again when the window gets focus (no polling).
 
 Pin a folder (Finder): drag it between two Favorites -- a line shows where
-it goes -- or onto the Favorites heading. Right-click a pinned folder:
-Remove from Sidebar. Pins are GTK's bookmarks (shared with file dialogs)."""
+it goes -- or onto the Favorites heading; a pinned one dragged there moves.
+Right-click a pinned folder: Remove from Sidebar. Pins are GTK's bookmarks
+(shared with file dialogs).
+
+A folder place (Favorites, Locations) dragged out goes on the Dock as a
+stack (Vini). It is offered as a link only (place_drag): the drops that
+copy or move -- Files' lists, tabs, path bar, the Desktop, the Trash --
+don't take it, so a place can't copy or move a whole folder (Home) by
+mistake."""
 import os
 
 import gi
@@ -75,13 +82,48 @@ def _changed() -> None:
 
 
 def pin(uris, before: str = None) -> None:
-    """Add folders to Favorites, before the pinned `before` (else at the end)."""
+    """Add folders to Favorites, before the pinned `before` (else at the
+    end); one pinned already moves there (its label kept)."""
+    if before in uris:
+        return                                      # dropped next to itself: stays
     marks = read_bookmarks()
-    have = {u for u, _l in marks}
-    new = [(u, "") for u in uris if u not in have]
-    at = next((i for i, (u, _l) in enumerate(marks) if u == before), len(marks))
-    write_bookmarks(marks[:at] + new + marks[at:])
+    labels = dict(marks)
+    rest = [(u, l) for u, l in marks if u not in uris]
+    new = [(u, labels.get(u, "")) for u in dict.fromkeys(uris)]
+    at = next((i for i, (u, _l) in enumerate(rest) if u == before), len(rest))
+    write_bookmarks(rest[:at] + new + rest[at:])
     _changed()
+
+
+def place_folder(uri: str):
+    """The local folder behind a place (a Gio.File), else None: Recents,
+    Network, Trash, tags and drives not mounted can't be dragged out."""
+    if not uri.startswith("file://") or uri in folder.VIRTUAL:
+        return None
+    f = Gio.File.new_for_uri(uri)
+    path = f.get_path()
+    return f if path and os.path.isdir(path) else None
+
+
+def place_drag(uri: str):
+    """What a place carries when dragged: its folder as text/uri-list (the
+    Dock reads that), no picture. None when it isn't a folder."""
+    f = place_folder(uri)
+    if f is None:
+        return None
+    from .ops import file_content
+    return file_content([f], with_image=False)
+
+
+def _pin_action(t):
+    """Pinning answers COPY (nothing is copied), or LINK for a place's drag."""
+    return Gdk.DragAction.LINK if _link_only(t) else Gdk.DragAction.COPY
+
+
+def _link_only(t) -> bool:
+    """The drag only links (a place from a sidebar: place_drag)."""
+    drop = t.get_current_drop()
+    return drop is not None and not drop.get_actions() & (Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
 
 
 def moved(old: str, new: str) -> None:
@@ -207,7 +249,8 @@ class Sidebar(Gtk.Box):
     def _pin_target(self, row, before) -> None:
         """A drop target that only pins (the Favorites heading)."""
         tgt = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY | Gdk.DragAction.MOVE | Gdk.DragAction.LINK)
-        tgt.connect("enter", lambda *_a: (row.add_css_class("pin-after"), Gdk.DragAction.COPY)[1])
+        tgt.connect("enter", lambda t, *_a: (row.add_css_class("pin-after"), _pin_action(t))[1])
+        tgt.connect("motion", lambda t, *_a: _pin_action(t))
         tgt.connect("leave", lambda *_a: row.remove_css_class("pin-after"))
         tgt.connect("drop", lambda _t, v, *_a: (row.remove_css_class("pin-after"),
                                                  pin(self._folders(v.get_files()), before), True)[2])
@@ -277,6 +320,8 @@ class Sidebar(Gtk.Box):
             self._tag_target(row, tag)
         elif uri not in folder.VIRTUAL or favorite:
             self._drop_target(row, uri, favorite)
+        if not tag:
+            self._place_drag(row, uri)
         if pinned:
             menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
             menu.connect("pressed", lambda _g, _n, x, y, r=row: ui.menu.popup(
@@ -284,6 +329,27 @@ class Sidebar(Gtk.Box):
             row.add_controller(menu)
         self.list.append(row)
         self._rows[uri] = row
+
+    def _place_drag(self, row, uri) -> None:
+        """A folder place dragged out (onto the Dock: a stack), its icon
+        hanging under the pointer like a file's (ui.drag)."""
+        if place_folder(uri) is None:
+            return
+        src = Gtk.DragSource(actions=Gdk.DragAction.LINK)
+        src.connect("prepare", lambda *_a: place_drag(uri))
+
+        def begin(_s, drag):
+            from .. import icons
+            f = place_folder(uri)
+            gicon = None
+            try:
+                gicon = f.query_info("standard::icon", Gio.FileQueryInfoFlags.NONE, None).get_icon()
+            except (GLib.Error, AttributeError):
+                pass
+            ui.drag.hang(drag, icons.paintable(row, gicon or Gio.ThemedIcon.new("folder"), 64), 64)
+        src.connect("drag-begin", begin)
+        row.add_controller(src)
+        row.place_drag = src                            # (tests)
 
     def _drop_target(self, row, uri, favorite) -> None:
         """Files dropped on a place move/copy there; on a Favorite's top or
@@ -299,16 +365,21 @@ class Sidebar(Gtk.Box):
             elif zone in ("before", "after"):
                 row.add_css_class("pin-" + zone)
 
-        def motion(_t, _x, y):
+        def motion(t, _x, y):
             zone = self._zone(row, y) if favorite else "into"
+            if zone == "into" and _link_only(t):
+                show(None)                      # a place dragged onto another: not moved into it
+                return 0
             show(zone)
             if zone == "into":
                 return Gdk.DragAction.MOVE if into_ok else 0
-            return Gdk.DragAction.COPY          # (the source offers copy/move; nothing is copied)
+            return _pin_action(t)               # (the source offers copy/move; nothing is copied)
 
         def drop(t, value, _x, y):
             zone = self._zone(row, y) if favorite else "into"
             show(None)
+            if zone == "into" and _link_only(t):
+                return False
             files = list(value.get_files())
             if zone != "into":
                 pin(self._folders(files), self._next_pinned(row, zone))

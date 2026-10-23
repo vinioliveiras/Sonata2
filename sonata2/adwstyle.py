@@ -29,7 +29,20 @@ from .ui.tokens import FRAME  # noqa: E402  (dots and corners: one place for eve
 
 from .ui.tokens import frame as tokens_frame  # noqa: E402  (the user's window radius)
 
-TL_LEFT, TL_TOP = FRAME["dot_left"], FRAME["dot_top"]
+
+
+def _tl():
+    """The first dot's centre from the side and top edges (moves in with a
+    rounder window corner: tokens.frame)."""
+    f = tokens_frame()
+    return f.get("dot_left", FRAME["dot_left"]), f.get("dot_top", FRAME["dot_top"])
+
+
+def _dots():
+    """The buttons' size and the gap between them (Settings: their size)."""
+    f = tokens_frame()
+    return f.get("dot", FRAME["dot"]), f.get("dot_gap", FRAME["dot_gap"])
+
 TL_CENTRE_Y_ADW = 23
 GTK3_ICON = 16          # GTK 3's title buttons keep their 16 px icon's size
 GTK3_BAR_CENTRE = 22    # ... and are centred this far down a GTK 3 header bar
@@ -92,7 +105,7 @@ def css(folder: str = None, bars: bool = True, glass: bool = False) -> str:
     the window's background is see-through only behind its header bar,
     where Wayfire blurs; the rest stays the app's own colour)."""
     from .ui.tokens import DARK, LIGHT
-    D, G = FRAME["dot"], FRAME["dot_gap"]
+    D, G = _dots()
     folder = folder or runtime_dir()
 
     def url(name):
@@ -117,11 +130,12 @@ def css(folder: str = None, bars: bool = True, glass: bool = False) -> str:
     # reads this once, when it starts, and one that stays running (Bazaar
     # keeps a background service) kept the left side's rules after the
     # buttons moved right -- 25 px apart, low, further in.
+    tl_left, tl_top = _tl()
     sides = ""
     for box, edge, side in (("start", "first-child", "left"), ("end", "last-child", "right")):
         wc = f"window:not(.sonata-window) headerbar windowcontrols.{box}"
-        sides += (f"{wc} {{ border-spacing: 0; padding: 0; margin: 0 0 {2 * (TL_CENTRE_Y_ADW - TL_TOP)}px 0; }}\n"
-                  f"{wc} > button:{edge} {{ margin-{side}: {TL_LEFT - D / 2 - ADW_START_INSET:g}px; }}\n")
+        sides += (f"{wc} {{ border-spacing: 0; padding: 0; margin: 0 0 {max(0, 2 * (TL_CENTRE_Y_ADW - tl_top)):g}px 0; }}\n"
+                  f"{wc} > button:{edge} {{ margin-{side}: {tl_left - D / 2 - ADW_START_INSET:g}px; }}\n")
     return (f"/* Sonata's window look for other GTK 4 apps -- written by sonata2/adwstyle.py at login */\n"
             f"window:not(.sonata-window) headerbar {{ padding-left: 0; padding-right: 0; }}\n"
             # the corners of Sonata's windows and of the ones Wayfire draws (sonata-corners radius)
@@ -163,7 +177,7 @@ def css3(folder: str = None) -> str:
     theirs from these rules too: the colours chosen in Settings (Vini: they
     kept the theme's), and room at the edge they're on (on the right, the
     close button came out cut by the window's edge)."""
-    D, G = FRAME["dot"], FRAME["dot_gap"]
+    D, G = _dots()
     folder = folder or runtime_dir()
     # GTK 3 keeps the 16 px icon inside each button whatever its CSS says:
     # the dots' centres are 16 px + the margins + the box's spacing apart
@@ -179,8 +193,9 @@ def css3(folder: str = None) -> str:
     # Both sides at once: an app reads this when it starts.
     icon = GTK3_ICON
     margin = max(0, (G + D - icon - GTK3_SPACING) / 2)
-    edge_pad = max(0, TL_LEFT - icon / 2 - margin)
-    lift = max(0, 2 * (GTK3_BAR_CENTRE - TL_TOP))
+    tl_left, tl_top = _tl()
+    edge_pad = max(0, tl_left - icon / 2 - margin)
+    lift = max(0, 2 * (GTK3_BAR_CENTRE - tl_top))
 
     def url(name):
         return f'url("file://{os.path.join(folder, "sonata-tl-" + name + ".svg")}")'
