@@ -9,7 +9,14 @@ dot_left from the side edge and dot_top from the top, on both sides.
 
 Other apps' GTK 3 title bars (adwstyle.css3; Chrome in its GTK mode too):
 the dots sat 20 px in and centred in the 46 px bar, 26 px apart, with the
-theme's x / - / square drawn over them all the time."""
+theme's x / - / square drawn over them all the time.
+
+Chrome / Electron (WhatsApp, VS Code) draw their own buttons from the GTK 3
+header bar's padding and the buttons' size and margins -- not the box
+inside: with the padding at 0 the close dot touched the window's edge and
+the corner cut it. And an app reads the stylesheets once, at start: one
+left running (Bazaar keeps a service) kept the other side's rules when the
+buttons moved, so both sides are always written."""
 import json
 import os
 import shutil
@@ -18,6 +25,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -39,6 +47,8 @@ def dots(w):
             c = c.get_next_sibling()
     return out
 
+tries = [0]
+
 def report():
     got = []
     for win in Gtk.Window.list_toplevels():
@@ -46,11 +56,15 @@ def report():
             for d in dots(win):
                 ok, b = d.compute_bounds(win)
                 cx, cy = b.get_x() + b.get_width() / 2, b.get_y() + b.get_height() / 2
-                got.append({"left": cx, "right": win.get_width() - cx, "top": cy})
+                got.append({"left": cx, "right": win.get_width() - cx, "top": cy, "w": b.get_width()})
+    # laid out yet? (several apps starting at once on a cold cache took longer than a fixed wait)
+    tries[0] += 1
+    if (not got or any(g["w"] <= 0 for g in got)) and tries[0] < 40:
+        return True
     print("PLACES " + json.dumps(got), flush=True)
     sys.exit(0)
 
-GLib.timeout_add(5000, report)
+GLib.timeout_add(1500, lambda: GLib.timeout_add(500, report) and False)
 sys.argv = ["sonata2", sys.argv[1]]
 from sonata2.__main__ import main
 main()
@@ -165,6 +179,72 @@ class Gtk3TitleButtonsTest(unittest.TestCase):
                 self.assertLessEqual(abs(got["minimize"]["x"] - got["close"]["x"]), 22)
                 self.assertEqual(got["glyph"], 0, "the theme's glyph is drawn over the close dot")
 
+
+
+CHROME_PROBE = r"""
+import json, subprocess, sys
+css = subprocess.run([sys.executable, "-c",
+    "import os; from sonata2 import adwstyle; "
+    "os.makedirs(adwstyle.runtime_dir(), exist_ok=True); adwstyle.write(True, glass=False); "
+    "print(adwstyle.css_path3())"], capture_output=True, text=True).stdout.split()[-1]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0")
+from gi.repository import Gtk, Gdk
+prov = Gtk.CssProvider(); prov.load_from_path(css)
+Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), prov, Gtk.STYLE_PROVIDER_PRIORITY_USER)
+hb = Gtk.HeaderBar(show_close_button=True)
+hb.get_style_context().add_class("titlebar")
+btn = Gtk.Button(); btn.get_style_context().add_class("titlebutton"); btn.get_style_context().add_class("close")
+box = Gtk.Box(); hb.pack_end(box); box.add(btn)
+hc, bc = hb.get_style_context(), btn.get_style_context()
+st = Gtk.StateFlags.NORMAL
+pad, margin, bpad = hc.get_padding(st), bc.get_margin(st), bc.get_padding(st)
+minw = bc.get_property("min-width", st)
+print("CHROME " + json.dumps({"pad": [pad.left, pad.right], "margin": [margin.left, margin.right],
+                              "width": max(minw, 16 + bpad.left + bpad.right)}), flush=True)
+"""
+
+
+@unittest.skipUnless(os.environ.get("DISPLAY"), "needs a display (xvfb-run)")
+class ChromeGtkButtonsTest(unittest.TestCase):
+    def test_chrome_and_electron_close_dot_keeps_room_from_the_edge(self):
+        """WhatsApp (Chrome) and VS Code (Electron) on the right: the close
+        dot was cut by the window's corner. Modelled the way Chromium's GTK
+        frame reads the theme: from the edge, the header bar's padding, the
+        button's margin, then half the button (its 16 px icon at least)."""
+        from sonata2.ui.tokens import FRAME
+        for side in ("left", "right"):
+            cfg = tempfile.mkdtemp()
+            os.makedirs(os.path.join(cfg, "sonata2"))
+            with open(os.path.join(cfg, "sonata2", "appearance.json"), "w") as f:
+                json.dump({"buttons_side": side}, f)
+            env = dict(os.environ, XDG_CONFIG_HOME=cfg, XDG_RUNTIME_DIR=tempfile.mkdtemp(),
+                       GDK_BACKEND="x11", PYTHONPATH=ROOT)
+            out = subprocess.run([sys.executable, "-c", CHROME_PROBE], cwd=ROOT, env=env, timeout=60,
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout
+            line = next((ln for ln in out.splitlines() if ln.startswith("CHROME ")), None)
+            self.assertIsNotNone(line, side)
+            got = json.loads(line[len("CHROME "):])
+            for i, edge in enumerate(("left", "right")):        # both sides: whichever it's on
+                with self.subTest(css_for=side, edge=edge):
+                    centre = got["pad"][i] + got["margin"][i] + got["width"] / 2
+                    self.assertAlmostEqual(centre, FRAME["dot_left"], delta=1)
+
+
+@unittest.skipUnless(os.environ.get("DISPLAY"), "needs a display (xvfb-run)")
+class LibadwaitaBothSidesTest(unittest.TestCase):
+    def test_libadwaita_buttons_right_with_the_left_sides_stylesheet(self):
+        """Bazaar, left running while the buttons moved right: 16 px from the
+        edge, 23 px down and 23 px apart (the left side's rules only)."""
+        from sonata2 import adwstyle
+        from sonata2.ui import tokens
+        with unittest.mock.patch.object(adwstyle, "tokens_frame",
+                                        return_value=dict(tokens.frame(), buttons_side="left")):
+            css = adwstyle.css("/x", bars=False)
+        for box, edge, side in (("start", "first-child", "left"), ("end", "last-child", "right")):
+            self.assertIn(f"headerbar windowcontrols.{box} {{ border-spacing: 0;", css)
+            self.assertIn(f"windowcontrols.{box} > button:{edge} {{ margin-{side}:", css)
+        self.assertIn("headerbar { padding-left: 0; padding-right: 0; }", css)
 
 
 @unittest.skipUnless(os.environ.get("DISPLAY"), "needs a display (xvfb-run)")

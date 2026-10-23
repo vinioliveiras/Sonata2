@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixes
+- Window buttons on the right in WhatsApp, VS Code and other Chrome /
+  Electron apps: the close button keeps its room from the edge (the
+  window's corner cut it).
+- Window buttons on the right in Bazaar and other GNOME apps left running
+  while the side changed: 20 px apart and in Sonata's place, not lower and
+  further in (an app reads its style once, at start; both sides are always
+  written now).
+
 ## 0.19.4-alpha -- 2026-10-19
 
 Desktop icons stay where you put them: sorting, deleting, Clean Up and
