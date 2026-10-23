@@ -380,8 +380,8 @@ class PlaybackTest(unittest.TestCase):
 
     def test_long_video_went_black_after_its_end(self):
         """Vini: a big video wallpaper went black some time after its end.
-        The loop is a new player now, the last frame fading into the first;
-        the picture is never empty meanwhile."""
+        The loop seeks back, the last frame fading into the first; the
+        picture is never empty meanwhile, and it goes on playing."""
         v = self.VW.acquire(self.path)
         self.addCleanup(lambda: v.media is not None and self.VW.release(v))
         win = self.show(v.cover)
@@ -390,16 +390,21 @@ class PlaybackTest(unittest.TestCase):
         if first.get_error() is not None:
             self.skipTest(f"no decoder: {first.get_error().message}")
         faded, end = [], GLib.get_monotonic_time() + 4_000_000
-        while v.media is first and GLib.get_monotonic_time() < end:
+        looped = []
+        orig = v._loop
+        v._loop = lambda: (looped.append(1), orig())
+        while not looped and GLib.get_monotonic_time() < end:
             GLib.MainContext.default().iteration(False)
             self.assertIsNotNone(v.cover.get_current_image())            # never nothing to show
-        self.assertIsNot(v.media, first)                                    # a new player from the start
-        self.assertIn(first, self.VW._settling)                             # the old one let go of
+        self.assertIs(v.media, first)                                       # the same player, from the start
         faded.append(v.cover.fade_alpha())
         self.assertGreater(faded[0], 0.5)                                   # the last frame over it, fading
         settle(self.VW.FADE_MS + 200)
         self.assertEqual(v.cover.fade_alpha(), 0.0)
         self.assertTrue(v.media.get_playing())
+        ts = v.media.get_timestamp()
+        settle(500)
+        self.assertGreater(v.media.get_timestamp(), ts)                     # it goes on (it stopped there)
         win.destroy()
 
     def test_sound_off_by_default_and_on_at_its_volume(self):
@@ -767,44 +772,35 @@ class ChangedSeveralTimesTest(unittest.TestCase):
         self.assertTrue(timers[0]())                                        # still opening: wait
         media.clear.assert_not_called()
         media.is_prepared.return_value = True
-        with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)), \
-                mock.patch.object(self.VW, "_off_main", side_effect=lambda fn, done: (fn(), done())):
+        with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)):
             self.assertFalse(timers[0]())
         media.clear.assert_called_once()
         self.assertNotIn(media, self.VW._settling)
         self.assertIs(timers[-1], self.VW._trim)                            # then the memory goes back
         self.assertFalse(self.VW._trim())
 
-    def test_wallpaper_stuck_after_leaving_a_video(self):
-        """Vini: after a video wallpaper, the first picture chosen showed and
-        the next ones never did until Sonata restarted -- freeing the video's
-        player (GStreamer waiting for its threads) held the main thread. It
-        is freed on a thread of its own now."""
+    def test_loop_end_froze_the_desktop(self):
+        """Vini: at a loop's end the video went back to its first frame and
+        stopped, and the desktop didn't answer the mouse: the old player was
+        freed from another thread (GTK's sink shares the window's GL
+        context). Freed on the main thread; a loop seeks the same player."""
         import threading
-        import time
-        release = threading.Event()
+        seen = []
         media = mock.Mock(**{"is_prepared.return_value": True, "get_error.return_value": None})
-        media.clear.side_effect = lambda: release.wait(5)                   # a teardown that hangs
+        media.clear.side_effect = lambda: seen.append(threading.current_thread() is threading.main_thread())
         timers = []
         with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)):
             self.VW._let_go(media)
-            t0 = time.monotonic()
-            self.assertFalse(timers[0]())
-            self.assertLess(time.monotonic() - t0, 0.5)                     # the desktop goes on
-            self.assertIn(media, self.VW._settling)                         # held until it's done
-            release.set()
-            end = time.monotonic() + 3
-            while media in self.VW._settling and time.monotonic() < end:
-                GLib.MainContext.default().iteration(False)
-        self.assertNotIn(media, self.VW._settling)
+            timers[0]()
+        self.assertEqual(seen, [True])
+        self.assertFalse(hasattr(self.VW, "_off_main"))
 
     def test_one_that_never_opens_is_freed_anyway(self):
         media = mock.Mock(**{"is_prepared.return_value": False, "get_error.return_value": None})
         timers = []
         with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)):
             self.VW._let_go(media)
-        with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)), \
-                mock.patch.object(self.VW, "_off_main", side_effect=lambda fn, done: (fn(), done())):
+        with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)):
             while timers[0]():
                 pass
         media.clear.assert_called_once()

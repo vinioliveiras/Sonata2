@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.20.4-alpha -- 2026-10-23
+
+### Fixes
+- Video wallpaper: at the end of the video it went back to the first frame
+  and stopped, and the desktop stopped answering the mouse. The loop seeks
+  the same player back (the last frame still fades into the first), and a
+  player is never freed from another thread again.
+
 ## 0.20.3-alpha -- 2026-10-23
 
 ### Changes

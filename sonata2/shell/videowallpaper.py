@@ -393,29 +393,17 @@ def _let_go(media) -> None:
             media.pause()                    # (prepared meanwhile: GTK starts what was asked)
             return True
         media.pause()
-
-        def cleared():
-            _settling.discard(media)         # (the last reference goes on the main thread)
-            GLib.timeout_add(TRIM_AFTER_MS, _trim)
-        # the decoder and its frames go now, not at the next GC -- on a thread
-        # of its own: GStreamer's stop waits for its threads, and on the main
-        # one it could wait for good (Vini: after a video, the first picture
-        # chosen showed and the next ones never did, until Sonata restarted)
-        _off_main(media.clear, cleared)
+        # the decoder and its frames go now, not at the next GC. On the main
+        # thread: GTK's GStreamer sink shares the window's GL context -- freed
+        # from a thread of its own, at a loop's end the video stopped and the
+        # desktop stopped answering the mouse (Vini). A wallpaper change starts
+        # a fresh wallpaper process anyway (prefs.reload_wallpaper)
+        media.clear()
+        _settling.discard(media)
+        GLib.timeout_add(TRIM_AFTER_MS, _trim)
         return False
     _settling.add(media)                     # held until then
     GLib.timeout_add(SETTLE_MS, free)
-
-
-def _off_main(fn, done) -> None:
-    """fn() on a thread of its own, then done() on the main thread."""
-    def run():
-        try:
-            fn()
-        except Exception as e:               # (never in the way of the desktop)
-            print(f"sonata2 wallpaper: freeing a player: {e}", flush=True)
-        GLib.idle_add(lambda: (done(), False)[1])
-    threading.Thread(target=run, daemon=True, name="wallpaper-free").start()
 
 
 _settling = set()
@@ -512,7 +500,7 @@ class VideoWallpaper:
         self.cover.set_media(media)
         self._ids = [media.connect("notify::error", self._failed),
                      media.connect("notify::prepared", lambda *_a: self._prepared()),
-                     media.connect("notify::ended", lambda m, _p: m.get_ended() and self._again())]
+                     media.connect("notify::ended", lambda m, _p: m.get_ended() and self._loop())]
         self._seen = (None, GLib.get_monotonic_time())
 
     def _drop(self, media, ids) -> None:
@@ -520,6 +508,22 @@ class VideoWallpaper:
             if media.handler_is_connected(i):
                 media.disconnect(i)
         _let_go(media)
+
+    def _loop(self) -> None:
+        """The end: the last frame fades into the start, on the same player
+        (seeked back). A new player per loop meant freeing one at every end
+        (Vini: at the end it went back to the first frame and stopped, the
+        desktop not answering the mouse); a new one is only for a player that
+        stalls or fails (_again)."""
+        m = self.media
+        if m is None or self._next is not None:
+            return
+        self.cover.fade_from(m.get_current_image())
+        m.seek(0)
+        if self.focus.active:
+            m.play()
+            self._silence(m)
+        self._seen = (None, GLib.get_monotonic_time())
 
     def _again(self) -> None:
         """From the start, on a new player; the last frame fades into its
@@ -602,7 +606,7 @@ class VideoWallpaper:
             return
         if on and self.media.get_error() is None:
             if self.media.get_ended():
-                self._again()                    # (it ended while paused at its last frame)
+                self._loop()                     # (it ended while paused at its last frame)
             self.media.play()
             self._silence(self.media)
         else:
