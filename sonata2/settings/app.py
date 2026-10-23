@@ -1469,7 +1469,7 @@ class Settings(Adw.ApplicationWindow):
         gallery.add(grid)
 
         chooser = group()                        # its own group: the page's standard gap below the picture
-        row = Adw.ActionRow(title=_("Picture"))
+        row = Adw.ActionRow(title=_("Picture or Video"))
         choose = ui.controls.push_button(_("Choose…"), valign=Gtk.Align.CENTER)
 
         # the widgets refresh() updates, emptied when the page goes: the tiles'
@@ -1517,20 +1517,22 @@ class Settings(Adw.ApplicationWindow):
             system.set_gsetting(BG, "picture-uri-dark", dark)
             refresh()
 
-        def pick(*_):
-            dlg = Gtk.FileDialog(title=_("Choose a Picture or Video"))
-            filt = Gtk.FileFilter(name=_("Pictures and Videos"))
-            filt.add_mime_type("image/*")
-            filt.add_mime_type("video/*")                 # a video plays on the desktop (videowall.py)
-            dlg.set_default_filter(filt)
+        def pick(*_a):
+            """Sonata's own Open panel (Files' chooser), pictures and videos:
+            GTK's file dialog went through the portal and did nothing here
+            (Vini), and it isn't Sonata's look anyway."""
+            from ..files.chooser import ChooserWindow
 
-            def done(d, res):
-                try:
-                    chosen = d.open_finish(res)
-                except GLib.Error:
-                    return
-                use(chosen.get_uri(), chosen.get_uri())
-            dlg.open(self, None, done)
+            def done(uris, _i):
+                if uris:
+                    use(uris[0], uris[0])
+            dlg = ChooserWindow(self.get_application(), mode="open", title=_("Choose a Picture or Video"),
+                                filters=[(_("Pictures and Videos"), [(1, "image/*"), (1, "video/*")])],
+                                on_done=done)
+            dlg.set_transient_for(self)
+            dlg.set_modal(True)
+            dlg.present()
+            self.wall_chooser = dlg                      # (tests)
         choose.connect("clicked", pick)
         row.add_suffix(choose)
         chooser.add(row)

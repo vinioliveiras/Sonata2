@@ -362,6 +362,13 @@ class PlaybackTest(unittest.TestCase):
                 v._sound_changed()                                          # a new volume: at once
             self.assertIs(v.media, first)
             self.assertAlmostEqual(v.media.get_volume(), 0.6, places=2)
+            gi.require_version("Gst", "1.0")
+            from gi.repository import Gst
+            reg = Gst.Registry.get()
+            ranks = {n: reg.lookup_feature(n).get_rank() for n in self.VW.AUDIO_SINKS if reg.lookup_feature(n)}
+            if "pulsesink" in ranks:                                        # Vini: black picture, sound playing
+                self.assertEqual(ranks["pulsesink"], max(ranks.values()))   # not every sink back at one rank
+                self.assertEqual(list(ranks.values()).count(ranks["pulsesink"]), 1)
             with mock.patch.object(self.VW, "sound", return_value=(False, 0.6)):
                 v._sound_changed()                                          # off: a silent player, faded in
                 settle(800)
@@ -404,6 +411,31 @@ class PlaybackTest(unittest.TestCase):
                 yield from kinds(n.get_child())
         self.assertIn("BlurNode", list(kinds(node)))                         # the video, blurred
         win.destroy()
+
+    def test_sound_on_put_every_sink_back_at_one_rank(self):
+        """Vini: with the sound turned on the wallpaper went black, its sound
+        playing: the sinks turned off before were all put back at one rank
+        (OpenAL, JACK or OSS could win over PulseAudio / PipeWire)."""
+        gi.require_version("Gst", "1.0")
+        from gi.repository import Gst
+        if not Gst.is_initialized():
+            Gst.init(None)
+        reg = Gst.Registry.get()
+        if reg.lookup_feature("pulsesink") is None:
+            self.skipTest("no pulsesink")
+        self.VW._sink_ranks.clear()
+        for n in self.VW.AUDIO_SINKS:                                       # off before this process saw them
+            f = reg.lookup_feature(n)
+            if f is not None:
+                f.set_rank(0)
+        self.VW._audio_sinks(True)
+        ranks = {n: reg.lookup_feature(n).get_rank() for n in self.VW.AUDIO_SINKS if reg.lookup_feature(n)}
+        self.assertEqual(ranks["pulsesink"], 266)
+        self.assertEqual(max(ranks.values()), 266)
+        self.assertEqual(list(ranks.values()).count(266), 1)
+        self.VW._audio_sinks(False)
+        self.assertEqual(reg.lookup_feature("pulsesink").get_rank(), 0)
+        self.VW._audio_sinks(True)
 
     def test_stalled_or_failed_player_is_started_again(self):
         """A player that stops giving frames (or fails) while it should
@@ -775,9 +807,44 @@ class MenusTest(unittest.TestCase):
             self.assertIn('_("Use Video as Wallpaper")', src, rel)
             self.assertIn("prefs.is_video(ctype)", src, rel)
 
-    def test_settings_chooser_takes_videos(self):
-        src = open(os.path.join(ROOT, "sonata2", "settings", "app.py")).read()
-        self.assertIn('filt.add_mime_type("video/*")', src)
+    @unittest.skipUnless(os.environ.get("DISPLAY"), "needs a display (xvfb-run)")
+    def test_settings_chooser_did_nothing(self):
+        """Vini: Settings' Choose... for the wallpaper didn't work (GTK's file
+        dialog through the portal); it's Sonata's own Open panel now, for
+        pictures and videos, and its row says so."""
+        from gi.repository import Adw as A
+        from sonata2.files.chooser import ChooserWindow
+        from sonata2.settings import app as S
+        A.init()
+        w = S.Settings(None, "displays")
+        w.present()
+        settle(300)
+        try:
+            row = next(r for r in _walk(w.pages["displays"]) if isinstance(r, A.ActionRow)
+                       and r.get_title() == "Picture or Video")
+            btn = next(b for b in _walk(row) if isinstance(b, Gtk.Button) and b.get_label() == "Choose…")
+            set_to = {}
+            with mock.patch.object(S.system, "set_gsetting", side_effect=lambda sc, k, v: set_to.__setitem__(k, v)):
+                btn.emit("clicked")
+                settle(300)
+                dlg = w.wall_chooser
+                self.assertIsInstance(dlg, ChooserWindow)
+                rules = dlg.filters[0][1] if hasattr(dlg, "filters") else []
+                self.assertIn((1, "video/*"), rules)
+                dlg.on_done(["file://" + clip()], 0)
+            self.assertEqual(set_to.get("picture-uri"), "file://" + clip())
+            self.assertEqual(set_to.get("picture-uri-dark"), "file://" + clip())
+            dlg.destroy()
+        finally:
+            w.destroy()
+
+
+def _walk(w):
+    yield w
+    c = w.get_first_child()
+    while c is not None:
+        yield from _walk(c)
+        c = c.get_next_sibling()
 
 
 if __name__ == "__main__":

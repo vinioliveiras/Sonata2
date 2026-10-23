@@ -12,7 +12,7 @@ import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gdk, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from sonata2 import config  # noqa: E402
 from sonata2.shell import dock as D, dock_menu  # noqa: E402
@@ -351,6 +351,38 @@ class DockTest(unittest.TestCase):
             row.remove(t, save=False)
         row.load()
         self.assertEqual(row.tiles()[-1].spec["display"], "stack")
+
+    def test_folder_from_files_did_nothing_on_the_dock(self):
+        """Vini: dragging a folder from Files onto the Dock did nothing --
+        over an app's icon (most of the Dock) it was refused, and nothing
+        showed where it would go. Over any icon whose app can't open it, or
+        the plate, a place opens by the other folders and it's kept there."""
+        from unittest import mock as m
+        from sonata2.shell import dock_drop
+        folder = os.path.join(os.environ["XDG_CONFIG_HOME"], "fromfiles")
+        os.makedirs(folder, exist_ok=True)
+        if self.dock.get_root() is None:
+            win = Gtk.Window(child=self.dock)
+            win.present()
+            self.addCleanup(win.destroy)
+        settle()
+        tile = self.dock.app_tiles()[0]
+        got = {}
+        with m.patch.object(dock_drop, "_target", side_effect=lambda mo, dr, le, link=False: got.update(
+                motion=mo, drop=dr, link=link) or Gtk.EventControllerMotion()), \
+                m.patch.object(dock_drop, "can_open", return_value=False):
+            dock_drop.attach_app(self.dock, tile)
+            self.assertTrue(got["link"])                                    # a sidebar place (a link) too
+            t = dock_drop._Target()
+            t.files = [Gio.File.new_for_path(folder)]
+            self.assertEqual(got["motion"](t, 5, 5), Gdk.DragAction.COPY)   # not refused
+            gap = self.dock._gap
+            self.assertEqual(gap.slot, self.dock.STACK_SLOT)                # its place opens...
+            stacks = self.dock.stacks.tiles()
+            self.assertIs(gap.get_prev_sibling(), stacks[-1] if stacks else self.dock.sep)  # ...by the folders
+            self.assertTrue(got["drop"](t, t.get_value(), 5, 5))
+        self.assertIsNone(gap.get_parent())
+        self.assertIn(folder, [x.spec["path"] for x in self.dock.stacks.tiles()])
 
     def test_dropped_folder_opens_its_place_and_leaves_when_deleted(self):
         """Vini: a folder dragged onto the Dock (from the desktop) just popped

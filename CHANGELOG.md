@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.20.1-alpha -- 2026-10-23
+
+Fixes that missed 0.20.0.
+
+### Fixes
+- Settings > Wallpaper: Choose... did nothing; it opens Sonata's own Open
+  panel for pictures and videos ("Picture or Video").
+- Video wallpaper with sound on: the picture went black, the sound playing
+  (the audio outputs came back all at one rank; PulseAudio / PipeWire's
+  wins again).
+- Dock: a folder dragged from Files (its list or its sidebar) was refused
+  over app icons and showed nothing; its place now opens by the other
+  folders and it's kept there (an app that opens folders still opens it).
+
 ## 0.20.0-alpha -- 2026-10-23
 
 Video wallpapers loop with a smooth fade, play blurred on the lock and

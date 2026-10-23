@@ -203,6 +203,13 @@ def silent_ranks(existing: str = "") -> str:
 # Settings > Wallpaper: the video's sound (off by default) and its volume
 SOUND_DEFAULTS = {"video_sound": False, "video_volume": 25}
 _sink_ranks = {}            # the audio sinks' own ranks, before they were turned off
+# GStreamer's own ranks for them (gst-inspect-1.0): what a sink turned off
+# before this process saw it gets back. All put back at one rank, the
+# first sink to answer won -- OpenAL, JACK or OSS instead of PulseAudio /
+# PipeWire (Vini: with the sound on the wallpaper went black, the sound
+# playing)
+DEFAULT_RANKS = {"pulsesink": 266, "pipewiresink": 0, "alsasink": 256, "jackaudiosink": 256,
+                 "osssink": 128, "oss4sink": 129, "openalsink": 128, "sdlaudiosink": 0}
 
 
 def sound() -> tuple:
@@ -232,7 +239,7 @@ def _audio_sinks(on: bool) -> None:
         f = reg.lookup_feature(name)
         if f is None:
             continue
-        _sink_ranks.setdefault(name, f.get_rank() or Gst.Rank.PRIMARY)
+        _sink_ranks.setdefault(name, f.get_rank() or DEFAULT_RANKS.get(name, 0))
         f.set_rank(_sink_ranks[name] if on else 0)
 
 

@@ -1349,19 +1349,25 @@ class Dock(Gtk.Box):
             return False
         self._gap_hide = GLib.timeout_add(120, run)
 
-    def show_drop_gap(self, x: float, y: float) -> None:
-        """Open an empty slot where the dragged app would land (macOS)."""
-        if getattr(self, "_gap_hide", 0):
-            GLib.source_remove(self._gap_hide)
-            self._gap_hide = 0
+    def _drop_gap(self) -> Gtk.Box:
+        """The empty slot a drag opens (made once, an icon's size)."""
         gap = getattr(self, "_gap", None)
-        tiles = self.app_tiles()
         if gap is None:
+            tiles = self.app_tiles()
             cell = tiles[0].get_width() if tiles and not self.vertical else \
                 (tiles[0].get_height() if tiles else self.cfg["icon_size"] + 2 * TILE_PAD)
             gap = self._gap = Gtk.Box(can_target=False)
             gap.set_size_request(-1 if self.vertical else cell, cell if self.vertical else -1)
             gap.slot = -1
+        return gap
+
+    def show_drop_gap(self, x: float, y: float) -> None:
+        """Open an empty slot where the dragged app would land (macOS)."""
+        if getattr(self, "_gap_hide", 0):
+            GLib.source_remove(self._gap_hide)
+            self._gap_hide = 0
+        gap = self._drop_gap()
+        tiles = self.app_tiles()
         slot = self._slot_at(x, y)
         if slot == gap.slot:
             return
@@ -1375,6 +1381,28 @@ class Dock(Gtk.Box):
         gap.slot = slot
         ui.transition.glide_play(before, self)
 
+    STACK_SLOT = "stack"
+
+    def show_stack_gap(self) -> None:
+        """Open an empty slot where a dragged folder lands: after the Dock's
+        folders, before the Trash (Vini: a folder dragged from Files did
+        nothing -- no sign it would be kept, and refused over an app)."""
+        if getattr(self, "_gap_hide", 0):
+            GLib.source_remove(self._gap_hide)
+            self._gap_hide = 0
+        gap = self._drop_gap()
+        if gap.slot == self.STACK_SLOT:
+            return
+        before = ui.transition.glide_record(self.all_tiles(), self)
+        stacks = self.stacks.tiles()
+        anchor = stacks[-1] if stacks else self.sep
+        if gap.get_parent() is None:
+            self.insert_child_after(gap, anchor)
+        else:
+            self.reorder_child_after(gap, anchor)
+        gap.slot = self.STACK_SLOT
+        ui.transition.glide_play(before, self)
+
     def hide_drop_gap(self) -> int:
         """Close it again; returns where it was (-1: none)."""
         if getattr(self, "_gap_hide", 0):
@@ -1384,11 +1412,11 @@ class Dock(Gtk.Box):
         if gap is None or gap.get_parent() is None:
             return -1
         slot = gap.slot
-        before = ui.transition.glide_record(self.app_tiles(), self)
+        before = ui.transition.glide_record(self.all_tiles(), self)
         self.remove(gap)
         gap.slot = -1
         ui.transition.glide_play(before, self)
-        return slot
+        return -1 if slot == self.STACK_SLOT else slot
 
     def pin_at(self, key, before=None, x=None, y=0.0) -> None:
         """Pin app `key` (desktop id) before tile `before`, or at (x, y)."""

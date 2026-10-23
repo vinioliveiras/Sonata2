@@ -231,6 +231,11 @@ def attach_app(dock, tile) -> None:
             return Gdk.DragAction.COPY           # pin, handled on drop
         ok = can_open(tile.info, files)
         (tile.add_css_class if ok else tile.remove_css_class)(HOVER)
+        if not ok and _only_dirs(files):
+            dock.show_stack_gap()                # folders this app can't open: kept as a stack
+            return Gdk.DragAction.COPY
+        if ok:
+            dock.hide_drop_gap_soon()
         if files and tile.key in dock.windows and not spring["src"]:
             spring["src"] = GLib.timeout_add(SPRING_MS, spring_open)
         return Gdk.DragAction.COPY if ok else 0
@@ -261,7 +266,7 @@ def attach_app(dock, tile) -> None:
         if files and all(_is_app(f) for f in files):
             return pin_files(dock, files, before=tiles[slot] if 0 <= slot < len(tiles) else tile)
         if not can_open(tile.info, files):
-            return False
+            return add_stacks(dock, files)
         try:
             tile.info.launch(files, tile.get_display().get_app_launch_context())
         except GLib.Error as e:
@@ -272,7 +277,7 @@ def attach_app(dock, tile) -> None:
         return True
 
     tile.add_controller(_target(motion, drop, lambda *_: (spring_cancel(), tile.remove_css_class(HOVER),
-                                                           dock.hide_drop_gap_soon())))
+                                                           dock.hide_drop_gap_soon()), link=True))
 
 
 def attach_trash(dock, tile) -> None:
@@ -332,6 +337,21 @@ def _is_dir(f: Gio.File) -> bool:
     return f.query_file_type(Gio.FileQueryInfoFlags.NONE, None) == Gio.FileType.DIRECTORY
 
 
+def _only_dirs(files) -> bool:
+    return bool(files) and not _folders(files) and all(f.get_path() and _is_dir(f) for f in files)
+
+
+def add_stacks(dock, files) -> bool:
+    """Folders dropped on the Dock: kept as stacks, next to the others (the
+    gap closes as their places open: dock_stack.add)."""
+    dock.hide_drop_gap()
+    if not _only_dirs(files):
+        return False
+    for f in files:
+        dock.stacks.add(f.get_path())
+    return True
+
+
 def attach_plate(dock) -> None:
     """Apps dropped between icons get pinned; folders become stacks."""
     def motion(target, x, y):
@@ -340,7 +360,9 @@ def attach_plate(dock) -> None:
         new = [f for f in files if not _is_app(f) or app_id_for(f) not in dock.cfg["pinned"]]
         if apps_only and (new or _folders(files)):
             dock.show_drop_gap(x, y)             # the icons part where it will land (not for one already kept)
-        ok = files and (apps_only or all(_is_dir(f) for f in files))
+        elif _only_dirs(files):
+            dock.show_stack_gap()                # a folder: its place opens by the other folders
+        ok = files and (apps_only or _only_dirs(files))
         return Gdk.DragAction.COPY if ok else 0
 
     def drop(_target, value, x, y):
@@ -350,10 +372,8 @@ def attach_plate(dock) -> None:
         if _folders(files):
             return add_folders(dock, _folders(files), before=tiles[slot] if 0 <= slot < len(tiles) else None,
                                x=x, y=y)
-        if files and all(_is_dir(f) for f in files):
-            for f in files:
-                dock.stacks.add(f.get_path())
-            return True
+        if _only_dirs(files):
+            return add_stacks(dock, files)
         if not files or not all(_is_app(f) for f in files):
             return False
         tiles = dock.app_tiles()
