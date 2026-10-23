@@ -24,6 +24,9 @@
   button 5 times. The Xbox / PS button opens Mission Control at once.
 
 ### Fixes
+- Video wallpaper: the login screen's video stayed paused after a restart
+  (GStreamer slow to open it at boot), and the desktop's could stay paused
+  with no window open after closing the last one.
 - Video wallpaper: changing the wallpaper after a video sometimes needed
   Sonata restarted (the first frame switched the desktop from GStreamer's
   thread); a big video went black after its end until a window moved.

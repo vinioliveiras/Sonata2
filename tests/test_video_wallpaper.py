@@ -222,6 +222,27 @@ class FocusTest(unittest.TestCase):
         self.assertFalse(f.active)                                          # the display dark
         self.assertEqual(seen, [True, False, True, False])
 
+    def test_paused_with_no_window_open(self):
+        """Vini: the video paused and stayed paused with no window open: the
+        window just closed was still listed as the active one when the
+        focus went to nothing; the windows are asked again a moment later."""
+        ipc = FakeIPC([{"type": "toplevel", "activated": True, "mapped": True}])
+        f = self.VW.DesktopFocus(ipc)
+        timers = []
+        with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn) or 7):
+            ipc.focus(None)                                                 # closing: still listed
+            self.assertFalse(f.active)
+            ipc.views = []                                                  # gone now
+            timers[-1]()
+        self.assertTrue(f.active)
+        ipc.views = [{"type": "toplevel", "activated": True, "mapped": True}]
+        ipc.focus({"type": "toplevel"})
+        self.assertFalse(f.active)
+        ipc.views = []
+        with mock.patch.object(self.VW.GLib, "timeout_add", return_value=7):
+            ipc.cb({"event": "view-unmapped", "view": {"type": "toplevel"}})   # closed with the focus kept on it
+        self.assertTrue(f.active)
+
     def test_dragging_a_window_started_the_video(self):
         """Vini: dragging a window (nothing has the keyboard during the
         drag) started the video under it."""
@@ -412,7 +433,39 @@ class PlaybackTest(unittest.TestCase):
                 v._next = None
                 clock[0] += self.VW.STALL_MS * 1000
                 v._check()
-            self.assertLessEqual(len(made), 1 + self.VW.RETRY_MAX)          # then left on its last frame
+            self.assertLessEqual(len(made), 1 + self.VW.RETRY_MAX + 1)      # then not every few seconds...
+            n = len(made)
+            v._next = None
+            clock[0] += self.VW.RETRY_LATER_MS * 1000
+            v._check()
+            self.assertEqual(len(made), n + 1)                              # ...but never given up on
+            v.close()
+
+    def test_login_screen_video_stayed_paused_at_boot(self):
+        """Vini: after a restart the login screen's video stayed paused
+        (GStreamer slow to open it at boot: it was given up on); and the
+        desktop's paused by itself with no window open. A player still
+        opening is waited for; one left paused while it should play plays."""
+        m = mock.Mock(**{"get_timestamp.return_value": 0, "get_error.return_value": None,
+                         "get_ended.return_value": False, "get_current_image.return_value": None,
+                         "is_prepared.return_value": False, "get_playing.return_value": False})
+        made = [m]
+        clock = [0]
+        with mock.patch.object(self.VW, "new_player", side_effect=lambda *_a: made[0] if len(made) == 1 and not
+                               made.append(None) else mock.Mock()), \
+                mock.patch.object(self.VW.GLib, "timeout_add", return_value=1), \
+                mock.patch.object(self.VW.GLib, "source_remove"), \
+                mock.patch.object(self.VW.GLib, "get_monotonic_time", side_effect=lambda: clock[0]):
+            v = self.VW.VideoWallpaper("/nowhere/slow.mp4", focus=mock.Mock(active=True, listeners=[]))
+            for _ in range(10):                                             # 20 s opening: waited for
+                clock[0] += self.VW.WATCH_MS * 1000
+                v._check()
+            self.assertIs(v.media, m)
+            self.assertIsNone(v._next)
+            m.is_prepared.return_value = True                               # open, but left paused
+            m.play.reset_mock()
+            v._check()
+            m.play.assert_called_once()
             v.close()
 
     def test_one_decoder_for_every_display(self):

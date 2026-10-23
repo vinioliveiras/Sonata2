@@ -70,6 +70,7 @@ def _runtime(name: str) -> str:
     return os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", name)
 
 
+RECHECK_MS = 300            # after a window closes or minimizes: the windows asked again
 LOCKED_FILE = "sonata2-lock-display.json"         # lockdisplay._state()
 DARK_FILE = "sonata2-idle-dark"                   # lockdisplay._dark_marker()
 
@@ -121,7 +122,8 @@ class DesktopFocus:
         self.ipc = ipc
         if ipc.available:
             self.desktop = front_is_desktop(ipc.call("window-rules/list-views"))
-            ipc.watch(["view-focused", "plugin-activation-state-changed"], self._focused)
+            ipc.watch(["view-focused", "plugin-activation-state-changed", "view-unmapped", "view-minimized"],
+                      self._focused)
         for name in (LOCKED_FILE, DARK_FILE):
             try:
                 mon = Gio.File.new_for_path(_runtime(name)).monitor_file(Gio.FileMonitorFlags.NONE, None)
@@ -148,14 +150,32 @@ class DesktopFocus:
                 self._changed()
             return
         view = ev.get("view")
-        if not isinstance(view, dict) and self.ipc.available:
+        if ev.get("event") in ("view-unmapped", "view-minimized") or not isinstance(view, dict):
             # nothing has the keyboard: also while a window is dragged or
             # resized (Vini: dragging a window started the video) -- the
-            # windows say whether one is still in front
-            self.desktop = front_is_desktop(self.ipc.call("window-rules/list-views"))
-        else:
-            self.desktop = desktop_has_focus(view, self.desktop)
+            # windows say whether one is still in front. Asked again a moment
+            # later: the window just closed or minimized can still be listed
+            # as the active one (Vini: paused with no window open)
+            self._from_views()
+            self._recheck_soon()
+            return
+        self.desktop = desktop_has_focus(view, self.desktop)
         self._changed()
+
+    def _from_views(self) -> None:
+        if self.ipc.available:
+            self.desktop = front_is_desktop(self.ipc.call("window-rules/list-views"))
+            self._changed()
+
+    def _recheck_soon(self) -> None:
+        if getattr(self, "_recheck_src", 0):
+            GLib.source_remove(self._recheck_src)
+
+        def again():
+            self._recheck_src = 0
+            self._from_views()
+            return False
+        self._recheck_src = GLib.timeout_add(RECHECK_MS, again)
 
     def _changed(self) -> None:
         now = self.active
@@ -292,7 +312,9 @@ def _on_main(fn) -> None:
 FADE_MS = 700               # the end of the video fading into its start
 WATCH_MS = 2000             # how often a playing video is checked
 STALL_MS = 8000             # playing, but no new frame for this long: started again
-RETRY_MAX = 3               # in a row, with no frame in between: then left on its last frame
+RETRY_MAX = 3               # in a row, with no frame in between: then once every RETRY_LATER_MS
+RETRY_LATER_MS = 60000
+OPEN_MAX_MS = 45000         # still opening after this long: started again (GStreamer at boot is slow)
 
 
 class VideoWallpaper:
@@ -383,8 +405,11 @@ class VideoWallpaper:
         self._silence(nxt)
 
     def _check(self) -> bool:
-        """A video that should be playing but shows nothing new (stuck) or
-        failed: started again, a few times."""
+        """A video that should be playing: one left paused is played (Vini:
+        paused with no window open); one still opening is waited for (at
+        boot GStreamer can take long -- the login screen's stayed paused);
+        one that fails or shows nothing new is started again: a few times
+        in a row, then once a minute, never given up on."""
         m = self.media
         if m is None:
             return False
@@ -392,19 +417,27 @@ class VideoWallpaper:
         if not self.focus.active or self._next is not None:
             self._seen = (None, now)
             return True
+        err = m.get_error() is not None
+        if not err and m.is_prepared() and not m.get_playing() and not m.get_ended():
+            m.play()                                   # should play, but was left paused
+            self._silence(m)
         ts = m.get_timestamp()
-        if ts != self._seen[0]:
+        if not err and ts != self._seen[0]:
             if self._seen[0] is not None:
                 self._retries = 0                      # it plays: retries start over
             self._seen = (ts, now)
-            if m.get_error() is None:
-                return True
-        stuck = (now - self._seen[1]) / 1000 >= STALL_MS
-        if (m.get_error() is not None or stuck) and self._retries < RETRY_MAX:
-            self._retries += 1
-            print(f"sonata2 wallpaper: {self.path} {'failed' if m.get_error() else 'stalled'}, "
-                  f"starting it again", flush=True)
-            self._again()
+            return True
+        waited = (now - self._seen[1]) / 1000
+        limit = STALL_MS if m.is_prepared() else OPEN_MAX_MS
+        if not (err or waited >= limit):
+            return True
+        if self._retries >= RETRY_MAX and (now - getattr(self, "_last_retry", 0)) / 1000 < RETRY_LATER_MS:
+            return True
+        self._retries += 1
+        self._last_retry = now
+        self._seen = (None, now)
+        print(f"sonata2 wallpaper: {self.path} {'failed' if err else 'stalled'}, starting it again", flush=True)
+        self._again()
         return True
 
     # -- playing --------------------------------------------------------------------------------
