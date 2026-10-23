@@ -267,17 +267,47 @@ def blurred(texture, w: int, h: int, blur: float):
 
 
 class Backdrop(Gtk.Widget):
-    """The wallpaper, cover-fit, blurred and dimmed (drawn once per size)."""
+    """The wallpaper, cover-fit, blurred and dimmed (drawn once per size).
+    A video wallpaper plays under the blur (Vini: the lock and login
+    screens were black with one): its poster until the first frame."""
 
-    def __init__(self, texture, dim: float = 0.18, blur: float = 64):
+    def __init__(self, texture, dim: float = 0.18, blur: float = 64, video=None):
         super().__init__(hexpand=True, vexpand=True)
         self.texture = texture
         self.dim, self.blur = dim, blur
         self._ready = None              # (texture, w, h, blurred picture)
+        self.video, self._video_id = None, 0
+        self.set_video(video)
+
+    def set_video(self, video) -> None:
+        """A video wallpaper's picture (videowallpaper.CoverPaintable), or None."""
+        if self.video is not None and self._video_id:
+            self.video.disconnect(self._video_id)
+        self.video, self._video_id = video, 0
+        if video is not None:
+            self._video_id = video.connect("invalidate-contents", lambda *_a: self.queue_draw())
+        self.queue_draw()
+
+    def _draw_video(self, snap, w, h, rect) -> None:
+        """The video, a little past each edge (the blur's edges off screen), blurred and dimmed."""
+        snap.push_clip(rect)
+        snap.push_blur(self.blur)
+        snap.save()
+        snap.translate(Graphene.Point().init(-BLUR_MARGIN, -BLUR_MARGIN))
+        self.video.snapshot(snap, w + 2 * BLUR_MARGIN, h + 2 * BLUR_MARGIN)
+        snap.restore()
+        snap.pop()
+        dim = Gdk.RGBA()
+        dim.parse(f"rgba(0,0,0,{self.dim})")
+        snap.append_color(dim, rect)
+        snap.pop()
 
     def do_snapshot(self, snap):
         w, h = self.get_width(), self.get_height()
         rect = Graphene.Rect().init(0, 0, w, h)
+        if self.video is not None and self.video.has_frame():
+            self._draw_video(snap, w, h, rect)
+            return
         if self.texture is None:
             c = Gdk.RGBA()
             c.parse("#2a3550")

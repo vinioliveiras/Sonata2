@@ -10,6 +10,7 @@ back after sleep or a cable gets them too -- it came back without them), Sleep /
 at the top right. A wrong password shakes the field; while it's checked
 (PAM, sonata2/pam.py, in a thread) the field turns into a spinner, and on
 success everything fades before the desktop shows."""
+import os
 import threading
 
 LOCK_WALLPAPER_PX = 1280     # the wallpaper's longest side for the (blurred) backdrop
@@ -25,6 +26,24 @@ from ..ui.progress import Spinner  # noqa: E402
 from .loginui import Backdrop, Mirror, balanced, lift, WaitGuard, avatar, logind, top_clock, menu_bar_format, password_field, power_bar, shake, wallpaper_texture  # noqa: E402
 
 
+def lock_video():
+    """The video wallpaper's own player for the lock screen (silent, paused
+    while the display is dark), or None when the wallpaper is a picture."""
+    try:
+        from .. import prefs, videowall
+        gi.require_version("Adw", "1")
+        from gi.repository import Adw
+        uri = prefs.wallpaper_uri(Adw.StyleManager.get_default().get_dark())
+        path = Gio.File.new_for_uri(uri).get_path() if uri else None
+        if not (path and videowall.is_video(path) and os.path.isfile(path)):
+            return None
+        from . import videowallpaper
+        return videowallpaper.VideoWallpaper(path, focus=videowallpaper.AwakeGate(), silent=True)
+    except Exception as e:                       # never in the way of locking
+        print(f"sonata2-lock: video wallpaper: {e}", flush=True)
+        return None
+
+
 class LockScreen:
     def __init__(self, app):
         gi.require_version("Gtk4SessionLock", "1.0")
@@ -34,10 +53,12 @@ class LockScreen:
         from .idlelock import mark_locked
         self.lock.connect("locked", lambda *_: (mark_locked(True), self._usb(True), self._dark(True)))   # `sonata2 lock-wait` returns
         self.lock.connect("failed", lambda *_: (mark_locked(False), app.quit()))   # another locker is active
-        self.lock.connect("unlocked", lambda *_: (self._dark(False), self._usb(False), mark_locked(False), app.quit()))
+        self.lock.connect("unlocked", lambda *_: (self._dark(False), self._usb(False), mark_locked(False),
+                                                  getattr(self, "video", None) is not None and self.video.close(), app.quit()))
         self._idle_src = 0
         self._off = False
         self.texture = wallpaper_texture(LOCK_WALLPAPER_PX)   # shown only blurred: no full-size picture
+        self.video = lock_video()                              # a video wallpaper plays under the blur
         self.windows = []
         self.entry = None
         self.lock.lock()
@@ -192,7 +213,8 @@ class LockScreen:
         win = Gtk.Window(application=self.app)
         win.add_css_class("sonata-lock")
         over = Gtk.Overlay(css_classes=["gr-fade-in"])
-        over.set_child(Backdrop(self.texture))
+        video = getattr(self, "video", None)
+        over.set_child(Backdrop(self.texture, video=video.cover if video else None))
         over.add_overlay(top_clock(menu_bar_format()))     # the menu bar's place, size and format (Vini)
         parts = self._login()
         over.add_overlay(lift(parts["column"], monitor))

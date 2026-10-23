@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Changes
+- Video wallpapers: loop with a smooth fade from the last frame into the
+  first; a player that stalls or fails is started again (never black).
+- Video wallpapers play on the lock and login screens too, blurred.
+- Settings > Wallpaper: sound for a video wallpaper (off by default) and
+  its volume (25 % by default).
 - Appearance > Title Bars: a Button size slider for close, minimize and
   zoom on every window (Sonata's, GTK apps', the title bars Sonata draws,
   Steam's); they keep their distance from the window's edge at any size.
@@ -19,6 +24,14 @@
   button 5 times. The Xbox / PS button opens Mission Control at once.
 
 ### Fixes
+- Video wallpaper: changing the wallpaper after a video sometimes needed
+  Sonata restarted (the first frame switched the desktop from GStreamer's
+  thread); a big video went black after its end until a window moved.
+- Video wallpaper: kept playing while a window was dragged and under
+  Mission Control (Super+Tab).
+- Video wallpaper: the lock and login screens and Mission Control's
+  desktops were black when the video fades in (its poster was a black
+  frame); a bright frame is taken now.
 - Downloads in the Dock: its panel no longer runs across the screen when
   a file has a long name with no spaces.
 - A greyed-out zoom button (Settings) turned green with custom button

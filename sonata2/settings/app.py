@@ -1550,7 +1550,26 @@ class Settings(Adw.ApplicationWindow):
             GLib.timeout_add(0, lambda: (w.get_root() is None and release(), False)[1])
         pic.connect("unrealize", unrealized)
         pic.connect("destroy", lambda *_: release())          # the window closed
-        return [g, gallery, chooser]
+        return [g, gallery, chooser, self._video_sound_group()]
+
+    def _video_sound_group(self):
+        """A video wallpaper's sound (Vini): off by default, at 25 %."""
+        from ..shell.videowallpaper import SOUND_DEFAULTS
+        cfg = config.load("wallpaper", SOUND_DEFAULTS)
+        g = group(_("Video Wallpaper"), _("Only while the desktop is in front; paused under any app."))
+        vol = slider_row(_("Volume"), float(cfg.get("video_volume", 25)), 0, 100,
+                         lambda v: self._save_live("wallpaper", "video_volume", int(round(v))),
+                         ends=(_("Quiet"), _("Loud")), default=SOUND_DEFAULTS["video_volume"])
+        vol.set_sensitive(bool(cfg.get("video_sound")))
+
+        def sound(on):
+            self._save("wallpaper", "video_sound", bool(on))
+            vol.set_sensitive(bool(on))
+        g.add(switch_row(_("Play sound"), bool(cfg.get("video_sound")), sound,
+                         subtitle=_("The video's own sound, when the wallpaper is a video")))
+        g.add(vol)
+        self.video_volume_row = vol                                  # (tests)
+        return g
 
     # -- input (Wayfire [input]; applied live) --------------------------------------------------
     def _wf(self, key, value):

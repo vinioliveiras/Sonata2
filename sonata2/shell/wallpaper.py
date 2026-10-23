@@ -123,8 +123,10 @@ class WallpaperWindow(Gtk.ApplicationWindow):
         if self._video is not None:
             from . import videowallpaper
             v, self._video = self._video, None
-            if self._frame_id and v.media is not None:
-                v.media.disconnect(self._frame_id)
+            if self._frame_id:
+                fm, fid = self._frame_id
+                if fm.handler_is_connected(fid):
+                    fm.disconnect(fid)
             self._frame_id = 0
             if now:
                 videowallpaper.release(v)
@@ -188,16 +190,22 @@ class WallpaperWindow(Gtk.ApplicationWindow):
 
                 def framed(*_a):
                     if self._frame_id:
-                        media.disconnect(self._frame_id)
+                        fm, fid = self._frame_id
+                        if fm.handler_is_connected(fid):
+                            fm.disconnect(fid)
                         self._frame_id = 0
                     if self._video is not None and self._video.media is media:
                         show(self._video.cover)
                 if media.get_current_image() is not None and media.get_intrinsic_width() > 0:
                     show(self._video.cover)       # (another display already plays it)
                 else:
-                    self._frame_id = media.connect("invalidate-contents", framed)
+                    # (sent from GStreamer's thread at times: the stack is switched
+                    #  on the main one -- switched from there, later changes stuck
+                    #  until Sonata restarted)
+                    self._frame_id = (media, media.connect("invalidate-contents",
+                                                           lambda *_a: videowallpaper._on_main(framed)))
             if self.main and still_file:
-                share_with_login_screen(Gio.File.new_for_path(still_file[0]))     # the poster, not the video
+                share_with_login_screen(Gio.File.new_for_path(still_file[0]), video=path)   # the poster + the video
             return False
         still_file = []
         first = all(p.get_paintable() is None for p in self.pics)
@@ -231,20 +239,35 @@ class WallpaperWindow(Gtk.ApplicationWindow):
 _shared = None
 
 
-def share_with_login_screen(f: Gio.File) -> None:
+GREETER_FOLDER = "/var/lib/sonata-greeter"
+VIDEO_NAME = "wallpaper-video"             # beside "wallpaper" (the picture, or the video's poster)
+
+
+def share_with_login_screen(f: Gio.File, video: str = None) -> None:
     """The login screen (greeter.py) shows this user's wallpaper: copy it
     where the greeter can read it (install.sh --greeter makes the folder,
-    owned by this user). Nothing to do without that folder."""
+    owned by this user). Nothing to do without that folder. A video
+    wallpaper: its poster as the picture and the video beside it -- the
+    login screen plays it blurred (Vini: it was black); a picture removes
+    the video left from before."""
     global _shared
-    import os
-    from gi.repository import GLib
-    folder = os.path.join("/var/lib/sonata-greeter", GLib.get_user_name())
-    if f.get_uri() == _shared or not os.access(folder, os.W_OK):
+    folder = os.path.join(GREETER_FOLDER, GLib.get_user_name())
+    key = (f.get_uri(), video)
+    if key == _shared or not os.access(folder, os.W_OK):
         return
-    _shared = f.get_uri()
+    _shared = key
     dest = Gio.File.new_for_path(os.path.join(folder, "wallpaper"))
     f.copy_async(dest, Gio.FileCopyFlags.OVERWRITE, GLib.PRIORITY_LOW, None, None,
                  lambda src, res: _copied(src, res))
+    vdest = os.path.join(folder, VIDEO_NAME)
+    if video:
+        Gio.File.new_for_path(video).copy_async(Gio.File.new_for_path(vdest), Gio.FileCopyFlags.OVERWRITE,
+                                                GLib.PRIORITY_LOW, None, None, lambda src, res: _copied(src, res))
+    elif os.path.exists(vdest):
+        try:
+            os.remove(vdest)
+        except OSError:
+            pass
 
 
 def _copied(src, res) -> None:

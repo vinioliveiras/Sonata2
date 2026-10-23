@@ -98,6 +98,46 @@ class VideoFileTest(unittest.TestCase):
         self.assertEqual(videowall.still(path), out)
         self.assertEqual(videowall.still("/x/pic.jpg"), "/x/pic.jpg")
 
+    def test_black_screens_with_a_video_that_fades_in(self):
+        """Vini: with a video wallpaper the lock and login screens were black
+        (and Mission Control's desktops): the poster, taken 1 s in, was a
+        frame of the video's fade-in. A later, brighter frame is taken."""
+        folder = tempfile.mkdtemp()
+        path = os.path.join(folder, "fadein.webm")
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=black:size=160x90:rate=10:d=4",
+                        "-f", "lavfi", "-i", "testsrc=size=160x90:rate=10:d=6", "-filter_complex",
+                        "[0:v][1:v]concat=n=2:v=1[v]", "-map", "[v]", "-c:v", "libvpx", path],
+                       check=True, timeout=60)
+        out = videowall.poster(path)
+        self.assertIsNotNone(out)
+        self.assertGreaterEqual(videowall.brightness(out), videowall.DARK_MEAN)
+        black = os.path.join(folder, "black.webm")                          # all black: still a poster
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=black:size=160x90:rate=10:d=3",
+                        "-c:v", "libvpx", black], check=True, timeout=60)
+        self.assertIsNotNone(videowall.poster(black))
+
+    def test_login_screen_gets_the_video_too(self):
+        """The login screen plays the video (blurred): it's shared beside
+        the poster; a picture afterwards takes it away."""
+        from gi.repository import Gio
+        from sonata2.shell import wallpaper as W
+        root = tempfile.mkdtemp()
+        folder = os.path.join(root, GLib.get_user_name())
+        os.makedirs(folder)
+        poster = os.path.join(root, "poster.jpg")
+        open(poster, "wb").write(b"jpg")
+        W._shared = None
+        with mock.patch.object(W, "GREETER_FOLDER", root):
+            W.share_with_login_screen(Gio.File.new_for_path(poster), video=clip())
+            settle(500)
+            self.assertTrue(os.path.isfile(os.path.join(folder, W.VIDEO_NAME)))
+            from sonata2.shell import greeter
+            with mock.patch.object(greeter, "WALLPAPERS", root):
+                self.assertEqual(greeter.user_video(GLib.get_user_name()), os.path.join(folder, W.VIDEO_NAME))
+            W.share_with_login_screen(Gio.File.new_for_path(poster))
+            settle(300)
+            self.assertFalse(os.path.exists(os.path.join(folder, W.VIDEO_NAME)))
+
     def test_unreadable_video_has_no_poster(self):
         bad = os.path.join(self.cache, "broken.mp4")
         with open(bad, "wb") as f:
@@ -125,7 +165,7 @@ class VideoFileTest(unittest.TestCase):
         src = open(os.path.join(ROOT, "sonata2", "shell", "loginui.py")).read()
         self.assertIn("prefs.wallpaper_still_uri(dark)", src)
         src = open(os.path.join(ROOT, "sonata2", "shell", "wallpaper.py")).read()
-        self.assertIn("share_with_login_screen(Gio.File.new_for_path(still_file[0]))", src)  # greeter: the poster
+        self.assertIn("share_with_login_screen(Gio.File.new_for_path(still_file[0]), video=path)", src)  # greeter: the poster (+ video)
 
 
 class FocusTest(unittest.TestCase):
@@ -164,6 +204,9 @@ class FocusTest(unittest.TestCase):
         seen = []
         f.listeners.append(seen.append)
         self.assertFalse(f.active)                                          # an app in front at login
+        ipc.focus(None)                                                     # (a drag: the app still in front)
+        self.assertFalse(f.active)
+        ipc.views = []                                                      # its window closed
         ipc.focus(None)
         self.assertTrue(f.active)
         ipc.focus({"type": "panel"})                                        # the Dock: no change
@@ -178,6 +221,34 @@ class FocusTest(unittest.TestCase):
         f._changed()
         self.assertFalse(f.active)                                          # the display dark
         self.assertEqual(seen, [True, False, True, False])
+
+    def test_dragging_a_window_started_the_video(self):
+        """Vini: dragging a window (nothing has the keyboard during the
+        drag) started the video under it."""
+        ipc = FakeIPC([{"type": "toplevel", "activated": True, "mapped": True}])
+        f = self.VW.DesktopFocus(ipc)
+        self.assertFalse(f.active)
+        ipc.focus(None)                                                     # the drag
+        self.assertFalse(f.active)
+        ipc.views[0]["minimized"] = True                                    # minimized: the desktop shows
+        ipc.focus(None)
+        self.assertTrue(f.active)
+
+    def test_mission_control_paused_the_video(self):
+        """Vini: Super+Tab (Mission Control) left the video playing."""
+        ipc = FakeIPC([])
+        f = self.VW.DesktopFocus(ipc)
+        seen = []
+        f.listeners.append(seen.append)
+        self.assertTrue(f.active)
+        ipc.cb({"event": "plugin-activation-state-changed", "plugin": "scale", "state": True,
+                "output-data": {"name": "DP-1"}})
+        self.assertFalse(f.active)
+        ipc.cb({"event": "plugin-activation-state-changed", "plugin": "zoom", "state": True})
+        ipc.cb({"event": "plugin-activation-state-changed", "plugin": "scale", "state": False,
+                "output-data": {"name": "DP-1"}})
+        self.assertTrue(f.active)
+        self.assertEqual(seen, [False, True])
 
     def test_same_files_as_the_lock(self):
         from sonata2.shell import lockdisplay
@@ -209,7 +280,8 @@ class PlaybackTest(unittest.TestCase):
         settle(1200)
         if m.get_error() is not None:
             self.skipTest(f"no decoder: {m.get_error().message}")
-        self.assertTrue(m.get_playing() and m.get_muted() and m.get_loop())
+        self.assertTrue(m.get_playing() and m.get_muted())
+        self.assertFalse(m.get_loop())                                      # looped by hand (_again)
         self.ipc.focus({"type": "toplevel", "app-id": "org.gnome.TextEditor"})
         settle(200)
         at = m.get_timestamp()
@@ -218,12 +290,130 @@ class PlaybackTest(unittest.TestCase):
         self.assertEqual(m.get_timestamp(), at)                             # not decoding meanwhile
         self.assertIsNotNone(m.get_current_image())                        # its frame stays on the desktop
         self.ipc.focus(None)
-        settle(1800)                                                        # past the 2 s end: from the start again
-        self.assertTrue(m.get_playing())
-        self.assertFalse(m.get_ended())
+        settle(2600)                                                        # past the 2 s end: from the start again
+        self.assertTrue(v.media.get_playing())
+        self.assertFalse(v.media.get_ended())
+        self.assertTrue(v.media.get_muted())
         win.destroy()
         self.VW.release(v)
         self.assertIsNone(v.media)                                          # the decoder is gone
+
+    def test_long_video_went_black_after_its_end(self):
+        """Vini: a big video wallpaper went black some time after its end.
+        The loop is a new player now, the last frame fading into the first;
+        the picture is never empty meanwhile."""
+        v = self.VW.acquire(self.path)
+        self.addCleanup(lambda: v.media is not None and self.VW.release(v))
+        win = self.show(v.cover)
+        first = v.media
+        settle(1000)
+        if first.get_error() is not None:
+            self.skipTest(f"no decoder: {first.get_error().message}")
+        faded, end = [], GLib.get_monotonic_time() + 4_000_000
+        while v.media is first and GLib.get_monotonic_time() < end:
+            GLib.MainContext.default().iteration(False)
+            self.assertIsNotNone(v.cover.get_current_image())            # never nothing to show
+        self.assertIsNot(v.media, first)                                    # a new player from the start
+        self.assertIn(first, self.VW._settling)                             # the old one let go of
+        faded.append(v.cover.fade_alpha())
+        self.assertGreater(faded[0], 0.5)                                   # the last frame over it, fading
+        settle(self.VW.FADE_MS + 200)
+        self.assertEqual(v.cover.fade_alpha(), 0.0)
+        self.assertTrue(v.media.get_playing())
+        win.destroy()
+
+    def test_sound_off_by_default_and_on_at_its_volume(self):
+        """Vini: a switch in Settings for the video's sound (off by default)
+        and its volume (25 % by default)."""
+        self.assertEqual(self.VW.SOUND_DEFAULTS, {"video_sound": False, "video_volume": 25})
+        with mock.patch("sonata2.config.load", return_value=dict(self.VW.SOUND_DEFAULTS)):
+            self.assertEqual(self.VW.sound(), (False, 0.25))
+        with mock.patch.object(self.VW, "sound", return_value=(True, 0.25)):
+            v = self.VW.VideoWallpaper(self.path)
+            self.addCleanup(v.close)
+            settle(800)
+            if v.media.get_error() is not None:
+                self.skipTest("no decoder")
+            self.assertFalse(v.media.get_muted())
+            self.assertAlmostEqual(v.media.get_volume(), 0.25, places=2)
+            first = v.media
+            with mock.patch.object(self.VW, "sound", return_value=(True, 0.6)):
+                v._sound_changed()                                          # a new volume: at once
+            self.assertIs(v.media, first)
+            self.assertAlmostEqual(v.media.get_volume(), 0.6, places=2)
+            with mock.patch.object(self.VW, "sound", return_value=(False, 0.6)):
+                v._sound_changed()                                          # off: a silent player, faded in
+                settle(800)
+            self.assertIsNot(v.media, first)
+            self.assertTrue(v.media.get_muted())
+        seen = []
+        with mock.patch.object(self.VW.Gtk.MediaFile, "new_for_filename",
+                               side_effect=lambda p: seen.append(os.environ.get("GST_PLUGIN_FEATURE_RANK"))):
+            self.VW.new_player("/x.mp4", True)
+            self.VW.new_player("/x.mp4", False)
+        self.assertNotIn("pulsesink:0", seen[0] or "")                      # with sound: the sinks stay
+        self.assertIn("pulsesink:0", seen[1])
+
+    def test_lock_screen_plays_the_video_blurred(self):
+        """Vini: the lock screen was black with a video wallpaper: it plays
+        the video under its blur (silent, its own player, paused once the
+        display is dark), the poster until the first frame."""
+        from sonata2.shell import loginui
+        v = self.VW.VideoWallpaper(self.path, focus=self.VW.AwakeGate(), silent=True)
+        self.addCleanup(v.close)
+        bd = loginui.Backdrop(None, video=v.cover)
+        win = Gtk.Window(child=bd, default_width=200, default_height=120)
+        win.present()
+        settle(1000)
+        if v.media.get_error() is not None:
+            self.skipTest("no decoder")
+        self.assertTrue(v.cover.has_frame())
+        self.assertTrue(v.media.get_playing())
+        self.assertTrue(v.media.get_muted())                                 # silent whatever Settings says
+        snap = Gtk.Snapshot()
+        bd.do_snapshot(snap)
+        node = snap.to_node()
+
+        def kinds(n):
+            yield type(n).__name__
+            if hasattr(n, "get_n_children"):
+                for i in range(n.get_n_children()):
+                    yield from kinds(n.get_child(i))
+            elif hasattr(n, "get_child"):
+                yield from kinds(n.get_child())
+        self.assertIn("BlurNode", list(kinds(node)))                         # the video, blurred
+        win.destroy()
+
+    def test_stalled_or_failed_player_is_started_again(self):
+        """A player that stops giving frames (or fails) while it should
+        play: started again on a new one -- a few times, not forever."""
+        made = []
+
+        def player(_path, _sound=False):
+            m = mock.Mock(**{"get_timestamp.return_value": 5, "get_error.return_value": None,
+                             "get_ended.return_value": False, "get_current_image.return_value": None,
+                             "is_prepared.return_value": True})
+            made.append(m)
+            return m
+        clock = [0]
+        with mock.patch.object(self.VW, "new_player", side_effect=player), \
+                mock.patch.object(self.VW.GLib, "timeout_add", return_value=1), \
+                mock.patch.object(self.VW.GLib, "source_remove"), \
+                mock.patch.object(self.VW.GLib, "get_monotonic_time", side_effect=lambda: clock[0]):
+            v = self.VW.VideoWallpaper("/nowhere/stuck.mp4")
+            v._check()                                                      # first look: its frame noted
+            clock[0] += (self.VW.STALL_MS - 1000) * 1000
+            v._check()
+            self.assertEqual(len(made), 1)                                  # not yet
+            clock[0] += 2000 * 1000
+            v._check()
+            self.assertEqual(len(made), 2)                                  # stuck: a new player
+            for _ in range(10):                                             # the new one never shows a frame
+                v._next = None
+                clock[0] += self.VW.STALL_MS * 1000
+                v._check()
+            self.assertLessEqual(len(made), 1 + self.VW.RETRY_MAX)          # then left on its last frame
+            v.close()
 
     def test_one_decoder_for_every_display(self):
         a, b = self.VW.acquire(self.path), self.VW.acquire(self.path)

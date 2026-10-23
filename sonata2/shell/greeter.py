@@ -138,6 +138,17 @@ def save_state(state: dict) -> None:
         pass
 
 
+def user_video(name: str):
+    """The user's video wallpaper, shared beside the picture (wallpaper.py), or None."""
+    path = os.path.join(WALLPAPERS, name, "wallpaper-video")
+    return path if os.path.isfile(path) else None
+
+
+def user_wallpaper_path(name: str):
+    path = os.path.join(WALLPAPERS, name, "wallpaper")
+    return path if os.path.isfile(path) else None
+
+
 def user_wallpaper(name: str):
     path = os.path.join(WALLPAPERS, name, "wallpaper")
     try:
@@ -246,7 +257,7 @@ class Greeter:
         win = Gtk.Window(application=self.app, decorated=False)
         win.add_css_class("sonata-lock")
         over = Gtk.Overlay(css_classes=["gr-fade-in"])
-        bd = Backdrop(self._wallpaper())
+        bd = Backdrop(self._wallpaper(), video=self._video_cover())
         self.backdrops.append(bd)
         over.set_child(bd)
         over.add_overlay(top_clock())                 # like the lock screen: top, centred (Vini)
@@ -332,9 +343,36 @@ class Greeter:
             # could be a display that gets no keys: typing went nowhere)
             self._fill(center, focus=(center.get_root() is keys) if keys is not None else (i == 0))
         tex = self._wallpaper()
+        video = self._video_cover()
         for bd in self.backdrops:
             bd.texture = tex
+            bd.set_video(video)
             bd.queue_draw()
+
+    def _names(self) -> list:
+        return [self.user.name] if self.user else [self.state.get("user")] + [u.name for u in self.users]
+
+    def _video_cover(self):
+        """The video wallpaper of the user whose picture shows (_wallpaper),
+        played silent under the blur, one player for every display; None
+        for a picture."""
+        name = next((n for n in self._names() if n and user_wallpaper_path(n)), None)
+        path = user_video(name) if name else None
+        cur = getattr(self, "_video", None)
+        if cur is not None and cur.path == path:
+            return cur.cover
+        if cur is not None:
+            cur.close()
+            self._video = None
+        if path is None:
+            return None
+        try:
+            from . import videowallpaper
+            self._video = videowallpaper.VideoWallpaper(path, focus=videowallpaper.AwakeGate(), silent=True)
+            return self._video.cover
+        except Exception as e:                   # the picture stays
+            print(f"sonata2-greeter: video wallpaper: {e}", flush=True)
+            return None
 
     def _wallpaper(self):
         """The chosen user's; before choosing, the last user's (else anyone's)."""
