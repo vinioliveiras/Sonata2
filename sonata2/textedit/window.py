@@ -341,7 +341,7 @@ class TextEditWindow(Gtk.ApplicationWindow):
         super().__init__(application=app, title=_("Untitled"), css_classes=["sonata-textedit"])
         ui.window.standard(self)
         _apply_size()
-        ui.window.remember_size(self, "textedit", 760, 580)     # a session window: its own size (_restore)
+        ui.window.remember_size(self, "textedit", 760, 580, roomy=True)     # a session window: its own size (_restore)
         self.docs, self.doc = [], None
         self._closing = False
         self._stats_id = self._refind_id = 0

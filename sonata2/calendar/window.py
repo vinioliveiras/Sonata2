@@ -142,7 +142,7 @@ class CalendarWindow(Gtk.ApplicationWindow):
             GLib.set_application_name("Calendar")
         super().__init__(application=app, title=_("Calendar"), css_classes=["sonata-calendar"])
         ui.window.standard(self)
-        ui.window.remember_size(self, "calendar", 1100, 720)  # its last size (never bigger than the display)
+        ui.window.remember_size(self, "calendar", 1100, 720, roomy=True)  # its last size (never bigger than the display)
         self.cfg = config.load("calendar", DEFAULTS)
         ws = self.cfg["week_start"]
         self.first_weekday = ws if isinstance(ws, int) and 0 <= ws <= 6 else model.locale_first_weekday()

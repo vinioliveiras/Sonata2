@@ -75,6 +75,36 @@ class FrozenTest(unittest.TestCase):
             cap._run("rec-area", {})
             self.assertNotIn("freeze", order)
 
+    def test_timer_came_before_choosing_what_to_capture(self):
+        """Vini: with a timer, the list of displays / windows (and the
+        portion) came after the countdown; it comes first now, the
+        countdown after the choice, and the screen is taken after it (not
+        the one frozen while choosing)."""
+        order, timers = [], []
+        frozen = C.Frozen(screen(), OUTS)
+        cap = C.Capture(None, None)
+        cap._pick = lambda title, items, action, then: (order.append("list"), then("eDP-1"))
+        cap._shoot = lambda geo, cfg, output=None, frozen=None: order.append(("shot", output or geo, frozen))
+        cap._record = lambda geo, cfg, output=None: order.append(("rec", output or geo))
+        with mock.patch.object(C.Frozen, "take", return_value=frozen), \
+             mock.patch.object(C, "outputs", return_value=OUTS), \
+             mock.patch.object(C, "_FrozenCover"), \
+             mock.patch.object(C.shutil, "which", return_value="/usr/bin/x"), \
+             mock.patch.object(C, "_slurp_async", side_effect=lambda a, done: (order.append("select"),
+                                                                                done("1,2 3x4"))), \
+             mock.patch.object(C.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(ms) or fn()):
+            cap.run("display", {"timer": 5})
+            self.assertEqual(timers[0], 0)                                  # not the timer first
+            self.assertEqual(order, ["list", ("shot", "eDP-1", None)])      # chosen, then (live) taken
+            self.assertIn(5000, timers)
+            order.clear()
+            cap.run("rec-display", {"timer": 10})
+            self.assertEqual(order, ["list", ("rec", "eDP-1")])
+            self.assertIn(10000, timers)
+            order.clear()
+            cap.run("area", {"timer": 5})
+            self.assertEqual(order, ["select", ("shot", "1,2 3x4", None)])
+
     def test_shortcut_shoots_at_once(self):
         """No toolbar to hide: no wait (the menu is still open)."""
         cap = C.Capture(None, None)

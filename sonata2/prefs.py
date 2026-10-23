@@ -170,10 +170,53 @@ def wallpaper_still_uri(dark: bool) -> str:
     return "file://" + still if still else _WALL[1 if dark else 0]
 
 
-def set_wallpaper(uri: str) -> None:
-    """Finder's "Set Desktop Picture": the same picture (or video) in Light and Dark."""
-    for key in ("picture-uri", "picture-uri-dark"):
-        set(BG, key, uri)
+def set_wallpaper(uri: str, dark: str = None) -> None:
+    """Finder's "Set Desktop Picture" (and Settings): the picture (or video)
+    for Light and Dark (`dark`: another one for Dark). The desktop's
+    wallpaper is then started again, fresh (Vini: after a video wallpaper,
+    a second change didn't show until Sonata restarted -- its player held
+    the old wallpaper; a new one shows the new picture from the start)."""
+    dark = dark or uri
+    if get(BG, "picture-uri") == uri and get(BG, "picture-uri-dark") == dark:
+        return
+    set(BG, "picture-uri", uri)
+    set(BG, "picture-uri-dark", dark)
+    reload_wallpaper()
+
+
+RELOAD_AFTER_MS = 400       # quick changes: one fresh wallpaper, for the last one
+_reload = {"src": 0}
+
+
+def reload_wallpaper() -> None:
+    """The desktop's wallpaper started again (`sonata2 restart wallpaper`:
+    the new one comes up under the old one, no black flash), once changes
+    settle. Without a main loop (a script): at once."""
+    try:
+        from gi.repository import GLib
+    except ImportError:
+        GLib = None
+
+    def run():
+        _reload["src"] = 0
+        from .backend import system
+        system.restart_sonata("wallpaper")
+        return False
+    if GLib is None or not GLib.main_depth() and not _has_loop():
+        run()
+        return
+    if _reload["src"]:
+        GLib.source_remove(_reload["src"])
+    _reload["src"] = GLib.timeout_add(RELOAD_AFTER_MS, run)
+
+
+def _has_loop() -> bool:
+    """A GTK app (its main loop runs between events: main_depth is 0 then)."""
+    try:
+        from gi.repository import Gio
+        return Gio.Application.get_default() is not None
+    except Exception:
+        return False
 
 
 def is_picture(content_type: str) -> bool:

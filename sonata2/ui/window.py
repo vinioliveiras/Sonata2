@@ -246,14 +246,28 @@ def fit_default_size(win, w: int, h: int) -> None:
 
 
 SAVE_SIZE_MS = 600          # a resize settles, then its size is kept
+# a document window's first size (no size kept yet): about two thirds of the
+# display (Vini: on 1080p Files opened ~820 x 520, "too small"; ~1260 x 700
+# is what he wants), never smaller than the app's own default
+ROOMY_W, ROOMY_H = 0.66, 0.65
 
 
-def remember_size(win, key: str, w: int, h: int) -> None:
+def roomy_size(w: int, h: int, screen=None) -> tuple:
+    """(w, h) grown to ROOMY_W x ROOMY_H of a `screen`-sized display."""
+    if not screen:
+        return int(w), int(h)
+    return max(int(w), int(screen[0] * ROOMY_W)), max(int(h), int(screen[1] * ROOMY_H))
+
+
+def remember_size(win, key: str, w: int, h: int, roomy: bool = False) -> None:
     """The window opens at the size it last had (winsize; first time: w x h,
     never bigger than the display) and maximized if it was; that size is
-    kept when it closes (Vini: every app should remember it)."""
+    kept when it closes (Vini: every app should remember it). roomy: a
+    document window -- the first time, about two thirds of the display."""
     from .. import winsize
     st = winsize.saved(key)
+    if not st and roomy:
+        w, h = roomy_size(w, h, screen_size(win if win.get_realized() else None))
     fit_default_size(win, *((st["width"], st["height"]) if st else (w, h)))
     if st and st["maximized"]:
         win.maximize()

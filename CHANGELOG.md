@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.20.3-alpha -- 2026-10-23
+
+### Changes
+- Changing the wallpaper starts the desktop's wallpaper again, fresh (like
+  restarting Sonata, but only the wallpaper; no black flash).
+- Sonata's document windows (Files, Settings, Notes, Calendar, TextEdit,
+  Activity Monitor, Disk Utility, Assistant) open at about two thirds of the
+  display the first time (~1260 x 700 on 1080p), not small.
+
+### Fixes
+- Wallpaper: the second one chosen after a video still didn't show until
+  Sonata restarted.
+- Screenshots and recordings with a timer: the display / window list (and
+  the portion) comes first, then the countdown.
+
 ## 0.20.2-alpha -- 2026-10-23
 
 ### Changes

@@ -569,9 +569,9 @@ class Capture:
         shown = self.toolbar is not None and self.toolbar.get_visible()
         if shown:
             self.toolbar.set_visible(False)
-        # the toolbar: let it disappear first; a shortcut: at once (an open menu still there)
-        delay = int(cfg.get("timer", 0)) * 1000 + (250 if shown else 0)
-        GLib.timeout_add(delay, lambda: (self._run(mode, cfg), False)[1])
+        # the toolbar: let it disappear first; a shortcut: at once (an open menu still there).
+        # The timer runs once the display, window or portion is chosen (_run)
+        GLib.timeout_add(250 if shown else 0, lambda: (self._run(mode, cfg), False)[1])
 
     def _run(self, mode, cfg):
         """mode: screen (every display: Super+Shift+3) | display | window | area,
@@ -586,11 +586,23 @@ class Capture:
         picker = what == "window" or (what == "display" and len(outs) > 1)
         frozen = Frozen.take() if (not rec and what != "screen") or (rec and picker) else None
 
+        timer = int(cfg.get("timer", 0) or 0)
+
         def go(geo=None, output=None):
+            """What was chosen, captured -- after the timer when there is one
+            (Vini: the display / window list came after the countdown; it's
+            first now, as on macOS). After a timer the screen is taken then,
+            not the one frozen when choosing."""
+            if timer > 0:
+                GLib.timeout_add(timer * 1000, lambda: (now(geo, output, None), False)[1])
+            else:
+                now(geo, output, frozen)
+
+        def now(geo, output, still):
             if rec:
                 self._record(geo, cfg, output)
             else:
-                self._shoot(geo, cfg, output, frozen=frozen)
+                self._shoot(geo, cfg, output, frozen=still)
         if what == "display":
             if len(outs) <= 1:
                 go(output=(outs[0].get("name") if outs else None) or focused_output())

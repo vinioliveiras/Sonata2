@@ -755,6 +755,11 @@ def restart(names) -> int:
         # old code (looks) after an update. Stopped; D-Bus starts it again, new.
         subprocess.run(["pkill", "-f", "--", r"sonata2 portal( |$)"], check=False)
     names = [n for n in names if n in SHELL_COMPONENTS] or list(SHELL_COMPONENTS)
+    # one restart at a time (a new wallpaper chosen twice quickly: two at once
+    # left two wallpapers, or none)
+    import fcntl
+    lock = open(os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "sonata2-restart.lock"), "w")
+    fcntl.flock(lock, fcntl.LOCK_EX)
     keepers = {n: _pids(rf"-m sonata2 keep {n}( |$)") for n in names}
     children = {n: _pids(rf"-m sonata2 {n}( |$)") for n in names}
     for n in names:                       # the keepers first, so they don't start it again
@@ -792,6 +797,10 @@ def restart(names) -> int:
         time.sleep(1.5)                    # the new wallpaper is up under the old one
         for pid in children["wallpaper"]:
             _signal(pid, signal.SIGTERM)
+        time.sleep(1.0)                    # one stuck (GStreamer) can't take SIGTERM in time: gone anyway
+        for pid in children["wallpaper"]:
+            if os.path.exists(f"/proc/{pid}"):
+                _signal(pid, signal.SIGKILL)
     if visible:
         # the Dock and the menu bar slide in together: once both are ready
         want = [n for n in ("dock", "topbar") if n in names]

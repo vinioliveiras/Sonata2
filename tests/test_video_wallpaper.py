@@ -922,6 +922,42 @@ class MenusTest(unittest.TestCase):
             self.assertIn('_("Use Video as Wallpaper")', src, rel)
             self.assertIn("prefs.is_video(ctype)", src, rel)
 
+    def test_second_wallpaper_change_didnt_show(self):
+        """Vini: after a video wallpaper, the second wallpaper chosen didn't
+        show until Sonata restarted. Choosing one (Settings, Files, the
+        desktop's menu) starts the desktop's wallpaper again, fresh -- once
+        for quick changes, and not when nothing changed."""
+        stored = {}
+        calls = []
+        with mock.patch.object(prefs, "get", side_effect=lambda sc, k, d=None: stored.get(k, d)), \
+                mock.patch.object(prefs, "set", side_effect=lambda sc, k, v: stored.__setitem__(k, v)), \
+                mock.patch("sonata2.backend.system.restart_sonata", side_effect=lambda *n: calls.append(n)), \
+                mock.patch.object(prefs, "_has_loop", return_value=True):
+            prefs.set_wallpaper("file:///a.jpg", "file:///b.jpg")
+            prefs.set_wallpaper("file:///c.jpg")
+            self.assertEqual(calls, [])                                     # waits for changes to settle
+            settle(prefs.RELOAD_AFTER_MS + 200)
+            self.assertEqual(calls, [("wallpaper",)])                       # once, only the wallpaper
+            self.assertEqual((stored["picture-uri"], stored["picture-uri-dark"]), ("file:///c.jpg",) * 2)
+            prefs.set_wallpaper("file:///c.jpg")                            # the same: nothing to do
+            settle(prefs.RELOAD_AFTER_MS + 200)
+            self.assertEqual(len(calls), 1)
+
+    def test_restart_kills_a_stuck_wallpaper(self):
+        """A wallpaper stuck in GStreamer ignores SIGTERM for a while: it's
+        killed, so the fresh one is the only one."""
+        import sonata2.__main__ as M
+        sent = []
+        with mock.patch.object(M, "_pids", side_effect=lambda pat: [4242] if pat.startswith("-m sonata2 wallpaper") else []), \
+                mock.patch.object(M, "_signal", side_effect=lambda pid, sig: sent.append((pid, sig))), \
+                mock.patch("subprocess.Popen"), mock.patch("time.sleep"), \
+                mock.patch("os.path.exists", side_effect=lambda p: p == "/proc/4242"), \
+                mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": tempfile.mkdtemp()}):
+            M.restart(["wallpaper"])
+        import signal
+        self.assertIn((4242, signal.SIGTERM), sent)
+        self.assertIn((4242, signal.SIGKILL), sent)
+
     @unittest.skipUnless(os.environ.get("DISPLAY"), "needs a display (xvfb-run)")
     def test_settings_chooser_did_nothing(self):
         """Vini: Settings' Choose... for the wallpaper didn't work (GTK's file
@@ -939,7 +975,8 @@ class MenusTest(unittest.TestCase):
                        and r.get_title() == "Picture or Video")
             btn = next(b for b in _walk(row) if isinstance(b, Gtk.Button) and b.get_label() == "Choose…")
             set_to = {}
-            with mock.patch.object(S.system, "set_gsetting", side_effect=lambda sc, k, v: set_to.__setitem__(k, v)):
+            with mock.patch.object(prefs, "set_wallpaper", side_effect=lambda u, d=None: set_to.update(
+                    {"picture-uri": u, "picture-uri-dark": d or u})):
                 btn.emit("clicked")
                 settle(300)
                 dlg = w.wall_chooser

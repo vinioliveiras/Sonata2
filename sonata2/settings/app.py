@@ -485,7 +485,7 @@ class Settings(Adw.ApplicationWindow):
         for c in ("sonata-settings", "sonata-glass"):      # added, not passed (keeps GTK's "csd")
             self.add_css_class(c)
         # Resizable with a working Zoom button (Vini's call; macOS keeps it fixed).
-        ui.window.remember_size(self, "settings", 920, 640)  # its last size (never bigger than the display)
+        ui.window.remember_size(self, "settings", 920, 640, roomy=True)  # its last size (never bigger than the display)
         self.set_size_request(760, 480)
         # Bluetooth's search for nearby devices ends with the window
         self.connect("close-request", lambda *_: (getattr(self, "_bt_scan_src", 0) and self._bt_scan(False), False)[1])
@@ -1513,8 +1513,8 @@ class Settings(Adw.ApplicationWindow):
             alive["row"].set_subtitle(name or (f.get_basename() if f else _("None")))
 
         def use(light, dark):
-            system.set_gsetting(BG, "picture-uri", light)
-            system.set_gsetting(BG, "picture-uri-dark", dark)
+            from .. import prefs
+            prefs.set_wallpaper(light, dark)            # (the desktop's wallpaper starts again, fresh)
             refresh()
 
         def pick(*_a):
