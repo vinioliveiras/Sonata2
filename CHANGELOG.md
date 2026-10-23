@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.20.0-alpha -- 2026-10-23
+
+Video wallpapers loop with a smooth fade, play blurred on the lock and
+login screens, can have sound, and pause under any app, a dragged window
+and Mission Control. Window buttons get a size slider and move in with a
+rounder corner; on the right they sit as on the left in every app. The
+colour picker is a colour wheel, folders from Files' sidebar go on the
+Dock, and a controller turns desktop control on with LB + RB + L3 + R3.
+
 ### Changes
 - Video wallpapers: loop with a smooth fade from the last frame into the
   first; a player that stalls or fails is started again (never black).
