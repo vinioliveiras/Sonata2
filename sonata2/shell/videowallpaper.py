@@ -184,12 +184,25 @@ class DesktopFocus:
                 self._mons.append(mon)
             except GLib.Error:
                 pass
+        try:                                           # a game / anything full screen in front
+            from .. import gamemode
+            self._mons.append(gamemode.watch(lambda _on: self._changed()))
+        except Exception:
+            pass
         self._was = self.active
 
     @staticmethod
     def blocked() -> bool:
-        """Locked, or the display gone dark (idle)."""
-        return any(os.path.exists(_runtime(n)) for n in (LOCKED_FILE, DARK_FILE))
+        """Locked, the display gone dark (idle), or a game or anything full
+        screen in front (Vini: paused on every display then, whatever the
+        Settings switches say)."""
+        if any(os.path.exists(_runtime(n)) for n in (LOCKED_FILE, DARK_FILE)):
+            return True
+        try:
+            from .. import gamemode
+            return gamemode.active()
+        except Exception:
+            return False
 
     @staticmethod
     def _settings() -> tuple:

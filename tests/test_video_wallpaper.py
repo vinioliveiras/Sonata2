@@ -312,6 +312,24 @@ class FocusTest(unittest.TestCase):
             ipc.cb({"event": "plugin-activation-state-changed", "plugin": "scale", "state": True})
             self.assertFalse(f.active)                                      # Overview still pauses it
 
+    def test_games_in_full_screen_pause_every_display(self):
+        """Vini: in a game (or anything full screen) the wallpaper pauses on
+        every display -- also a free one, and with "keep playing" on."""
+        from sonata2 import gamemode
+        ipc = FakeIPC([])
+        ipc.outputs = self.OUTS
+        cfg = {"video_per_display": True, "video_always": True}
+        with mock.patch("sonata2.config.load", side_effect=lambda n, d: dict(d, **cfg)), \
+                mock.patch.object(gamemode, "active", return_value=False) as full:
+            f = self.VW.DesktopFocus(ipc)
+            self.assertTrue(f.active)
+            full.return_value = True
+            self.assertFalse(f.active)
+            self.assertFalse(f.playing_on("DP-1"))
+            self.assertFalse(f.playing_on("HDMI-A-1"))
+            full.return_value = False
+            self.assertTrue(f.active)
+
     def test_display_with_windows_shows_the_last_frame(self):
         from gi.repository import Gdk
         frame = Gdk.MemoryTexture.new(2, 2, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(b"\xff" * 16), 8)

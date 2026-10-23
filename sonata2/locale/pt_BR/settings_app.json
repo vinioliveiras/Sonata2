@@ -804,5 +804,5 @@
  "A display with no window keeps playing while another has windows": "Uma tela sem janelas continua reproduzindo enquanto outra tem janelas",
  "Keep playing with windows open": "Continuar reproduzindo com janelas abertas",
  "When the wallpaper is a video.": "Quando o papel de parede é um vídeo.",
- "Even with maximized windows; still paused in Overview and when locked": "Mesmo com janelas maximizadas; ainda pausa na Visão Geral e com a tela bloqueada"
+ "Even with maximized windows; still paused in Overview, in full screen and when locked": "Mesmo com janelas maximizadas; ainda pausa na Visão Geral, em tela cheia e com a tela bloqueada"
 }

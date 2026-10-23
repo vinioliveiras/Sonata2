@@ -1582,7 +1582,7 @@ class Settings(Adw.ApplicationWindow):
             self._save("wallpaper", "video_always", bool(on))
             per.set_sensitive(not on)
         g.add(switch_row(_("Keep playing with windows open"), always_on, always,
-                         subtitle=_("Even with maximized windows; still paused in Overview and when locked")))
+                         subtitle=_("Even with maximized windows; still paused in Overview, in full screen and when locked")))
         g.add(per)
         self.video_per_display_row = per                           # (tests)
         self.video_volume_row = vol                                  # (tests)

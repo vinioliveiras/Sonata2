@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.20.5-alpha -- 2026-10-23
+
+### Changes
+- Video wallpaper: paused on every display while a game or anything full
+  screen is in front, whatever the wallpaper switches say.
+
 ## 0.20.4-alpha -- 2026-10-23
 
 ### Fixes
