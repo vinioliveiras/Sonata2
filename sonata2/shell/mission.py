@@ -12,13 +12,14 @@ scale starts and stops ("plugin-activation-state-changed").
 
 With scale (not expo) the desktops bar comes too (spaces.py): the desktops
 in a row at the top, + for a new one."""
+import os
 import time
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from .. import ui  # noqa: E402
 from ..i18n import _  # noqa: E402
@@ -66,6 +67,37 @@ def close_spot(box: dict, side) -> tuple:
     x = box["x"] - CLOSE_OUT if side != Gtk.Align.END else box["x"] + box["width"] - CLOSE_SIZE + CLOSE_OUT
     return max(0, x), max(0, box["y"] - CLOSE_OUT)
 
+
+
+
+_frame_cache = {"key": None, "tex": None}
+
+
+def video_frame(dark: bool):
+    """The video wallpaper's frame where it paused (videowallpaper.FRAME_FILE,
+    written by the desktop as Overview opens), or None for a picture or no
+    frame yet."""
+    from .. import prefs, videowall
+    from .videowallpaper import FRAME_FILE, _runtime
+    try:
+        uri = prefs.wallpaper_uri(dark)
+        path = Gio.File.new_for_uri(uri).get_path() if uri else None
+    except GLib.Error:
+        return None
+    if not (path and videowall.is_video(path)):
+        return None
+    frame = _runtime(FRAME_FILE)
+    try:
+        st = os.stat(frame)
+    except OSError:
+        return None
+    key = (path, st.st_mtime_ns)
+    if _frame_cache["key"] != key:
+        try:
+            _frame_cache.update(key=key, tex=Gdk.Texture.new_from_filename(frame))
+        except GLib.Error:
+            return None
+    return _frame_cache["tex"]
 
 class CloseOverlay(Gtk.Window):
     """A window's close button in Mission Control (Vini), over the window
@@ -128,6 +160,15 @@ class MissionBackdrop:
         self.ipc = WayfireIPC()
         self._textures = {}           # dark? -> decoded wallpaper (only the current one; until system.json changes)
         self._prefs_mon = None
+        try:                          # a video wallpaper's frame, written as Overview opens
+            from .videowallpaper import FRAME_FILE, _runtime
+            self._frame_mon = Gio.File.new_for_path(_runtime(FRAME_FILE)).monitor_file(
+                Gio.FileMonitorFlags.WATCH_MOVES, None)
+            self._frame_mon.connect("changed", lambda _m, _f, _o, ev: ev in (
+                Gio.FileMonitorEvent.CHANGES_DONE_HINT, Gio.FileMonitorEvent.CREATED,
+                Gio.FileMonitorEvent.RENAMED, Gio.FileMonitorEvent.MOVED_IN) and self._frame_changed())
+        except GLib.Error:
+            self._frame_mon = None
         self.bars = {}                # connector -> spaces.SpacesBar
         self.closers = {}             # connector -> CloseOverlay
         if layer.layer_shell() and self.ipc.available:
@@ -236,10 +277,22 @@ class MissionBackdrop:
             from .. import prefs
             self._prefs_mon = prefs.watch(lambda *_a: self._textures.clear())
         dark = Adw.StyleManager.get_default().get_dark()
+        frame = video_frame(dark)
+        if frame is not None:                            # a video: where it paused (Vini)
+            return frame
         if dark not in self._textures:
             self._textures.clear()
             self._textures[dark] = wallpaper_texture(max_size=backdrop_size())
         return self._textures[dark]
+
+    def _frame_changed(self) -> None:
+        """The video's frame landed (just after Overview opened): the
+        desktops showing get it."""
+        tex = self._wallpaper()
+        for bar in self.bars.values():
+            if bar.get_visible() and bar.wallpaper is not tex:
+                bar.wallpaper = tex
+                bar.refresh()
 
     def _hide(self, name):
         win = self.windows.get(name)

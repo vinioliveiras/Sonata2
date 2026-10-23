@@ -798,7 +798,11 @@
  "Loud": "Alto",
  "Video Wallpaper": "Papel de parede em vídeo",
  "Play sound": "Tocar som",
- "Only while the desktop is in front; paused under any app.": "Só enquanto a mesa está à frente; pausa sob qualquer app.",
  "The video's own sound, when the wallpaper is a video": "O som do próprio vídeo, quando o papel de parede é um vídeo",
- "Picture or Video": "Imagem ou Vídeo"
+ "Picture or Video": "Imagem ou Vídeo",
+ "Pause each display on its own": "Pausar cada tela separadamente",
+ "A display with no window keeps playing while another has windows": "Uma tela sem janelas continua reproduzindo enquanto outra tem janelas",
+ "Keep playing with windows open": "Continuar reproduzindo com janelas abertas",
+ "When the wallpaper is a video.": "Quando o papel de parede é um vídeo.",
+ "Even with maximized windows; still paused in Overview and when locked": "Mesmo com janelas maximizadas; ainda pausa na Visão Geral e com a tela bloqueada"
 }

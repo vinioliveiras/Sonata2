@@ -63,6 +63,7 @@ class WallpaperWindow(Gtk.ApplicationWindow):
             self.stack.add_named(p, str(i))
         self._uri = None
         self._video = None                    # the video wallpaper shown (videowallpaper.acquire)
+        self._cover = None                    # this display's picture of it (videowallpaper.DisplayCover)
         self._frame_id = 0
         self._monitor = monitor
         self._loaded_for = (0, 0)                # the pixel size the picture was decoded for
@@ -123,6 +124,9 @@ class WallpaperWindow(Gtk.ApplicationWindow):
         if self._video is not None:
             from . import videowallpaper
             v, self._video = self._video, None
+            if self._cover is not None:
+                self._cover.release()
+                self._cover = None
             if self._frame_id:
                 fm, fid = self._frame_id
                 if fm.handler_is_connected(fid):
@@ -133,6 +137,15 @@ class WallpaperWindow(Gtk.ApplicationWindow):
             else:
                 GLib.timeout_add(self.stack.get_transition_duration() + 150,
                                  lambda: (videowallpaper.release(v), False)[1])
+
+    def _display_cover(self):
+        """This display's picture of the video: paused here while a window
+        is on this display, playing on the others (Settings > Wallpaper)."""
+        if self._cover is None and self._video is not None:
+            from . import videowallpaper
+            from .monitors import connector
+            self._cover = videowallpaper.DisplayCover(self._video, connector(self._monitor))
+        return self._cover
 
     def do_size_allocate(self, w, h, baseline) -> None:
         Gtk.ApplicationWindow.do_size_allocate(self, w, h, baseline)
@@ -195,9 +208,9 @@ class WallpaperWindow(Gtk.ApplicationWindow):
                             fm.disconnect(fid)
                         self._frame_id = 0
                     if self._video is not None and self._video.media is media:
-                        show(self._video.cover)
+                        show(self._display_cover())
                 if media.get_current_image() is not None and media.get_intrinsic_width() > 0:
-                    show(self._video.cover)       # (another display already plays it)
+                    show(self._display_cover())   # (another display already plays it)
                 else:
                     # (sent from GStreamer's thread at times: the stack is switched
                     #  on the main one -- switched from there, later changes stuck

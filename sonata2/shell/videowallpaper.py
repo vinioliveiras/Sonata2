@@ -70,6 +70,8 @@ def _runtime(name: str) -> str:
     return os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", name)
 
 
+FRAME_FILE = "sonata2-wallpaper-frame.jpg"     # the frame shown when Overview opened (mission.py)
+FRAME_PX = 960                                 # its longest side: drawn small, under Overview's blur
 RECHECK_MS = 300            # after a window closes or minimizes: the windows asked again
 LOCKED_FILE = "sonata2-lock-display.json"         # lockdisplay._state()
 DARK_FILE = "sonata2-idle-dark"                   # lockdisplay._dark_marker()
@@ -100,9 +102,49 @@ class AwakeGate:
                 fn(now)
 
 
+def free_outputs(outputs, views) -> dict:
+    """{display name: no window on it} -- a window counts when it's mapped,
+    not minimized and on the desktop each display shows now (its geometry,
+    relative to that desktop, overlaps the display)."""
+    outs = [o for o in (outputs if isinstance(outputs, list) else []) if isinstance(o, dict) and o.get("name")]
+    free = {o["name"]: True for o in outs}
+    by_id = {o.get("id"): o for o in outs}
+    for v in views if isinstance(views, list) else []:
+        if not isinstance(v, dict) or (v.get("type") or "toplevel") not in APP_TYPES:
+            continue
+        if not v.get("mapped", True) or v.get("minimized"):
+            continue
+        o = by_id.get(v.get("output-id"))
+        if o is None:
+            o = next((x for x in outs if x["name"] == v.get("output-name")), None)
+        if o is None:
+            continue
+        g, og = v.get("geometry") or {}, o.get("geometry") or {}
+        w, h = og.get("width", 0), og.get("height", 0)
+        x, y, vw, vh = g.get("x", 0), g.get("y", 0), g.get("width", 0), g.get("height", 0)
+        if vw > 0 and vh > 0 and x < w and y < h and x + vw > 0 and y + vh > 0:
+            free[o["name"]] = False
+    return free
+
+
+# Settings > Wallpaper: a display with no window keeps playing while another
+# has windows (Vini); off: plays only while the desktop has the focus
+PER_DISPLAY_DEFAULT = True
+# Settings > Wallpaper: keep playing whatever windows are open (Vini; off by default)
+ALWAYS_DEFAULT = False
+LAYOUT_EVENTS = ["view-mapped", "view-geometry-changed", "view-workspace-changed", "wset-workspace-changed",
+                 "view-set-output", "output-added", "output-removed", "view-tiled", "view-fullscreen"]
+LAYOUT_SOON_MS = 150        # windows moving: looked at again once they settle a moment
+
+
 class DesktopFocus:
     """Whether a video wallpaper may play: the desktop in front, not locked,
-    the display not dark. Listeners are called when that changes."""
+    the display not dark. Listeners are called when that changes.
+
+    Per display (Settings, on by default): a display with no window shows
+    the video playing, one with a window shows it paused (its last frame);
+    the player runs while any display shows it playing. display_listeners
+    are called when which displays are free changes."""
     _one = None
 
     @classmethod
@@ -113,17 +155,28 @@ class DesktopFocus:
 
     def __init__(self, ipc=None):
         self.listeners = []
+        self.display_listeners = []
         self.desktop = True
         self.covered = set()                           # (plugin, output) on now: COVERING_PLUGINS
+        self.free = {}                                 # display name -> no window on it (free_outputs)
         self._mons = []
+        self._layout_src = 0
+        self._was = None                               # (set for real at the end)
         if ipc is None:
             from ..wl.wfipc import WayfireIPC
             ipc = WayfireIPC()
         self.ipc = ipc
+        self.per_display, self.always = self._settings()
+        try:
+            from .. import config
+            self._cfg_mon = config.watch("wallpaper", self._setting_changed)
+        except Exception:
+            self._cfg_mon = None
         if ipc.available:
             self.desktop = front_is_desktop(ipc.call("window-rules/list-views"))
-            ipc.watch(["view-focused", "plugin-activation-state-changed", "view-unmapped", "view-minimized"],
-                      self._focused)
+            self._layout()
+            ipc.watch(["view-focused", "plugin-activation-state-changed", "view-unmapped", "view-minimized"]
+                      + LAYOUT_EVENTS, self._focused)
         for name in (LOCKED_FILE, DARK_FILE):
             try:
                 mon = Gio.File.new_for_path(_runtime(name)).monitor_file(Gio.FileMonitorFlags.NONE, None)
@@ -138,11 +191,71 @@ class DesktopFocus:
         """Locked, or the display gone dark (idle)."""
         return any(os.path.exists(_runtime(n)) for n in (LOCKED_FILE, DARK_FILE))
 
+    @staticmethod
+    def _settings() -> tuple:
+        """(per display, always) from wallpaper.json."""
+        try:
+            from .. import config
+            cfg = config.load("wallpaper", {"video_per_display": PER_DISPLAY_DEFAULT,
+                                            "video_always": ALWAYS_DEFAULT})
+            return bool(cfg["video_per_display"]), bool(cfg["video_always"])
+        except Exception:
+            return PER_DISPLAY_DEFAULT, ALWAYS_DEFAULT
+
+    def _setting_changed(self) -> None:
+        got = self._settings()
+        if got != (self.per_display, self.always):
+            self.per_display, self.always = got
+            self._layout()
+            self._changed(displays=True)
+
+    def _by_display(self) -> bool:
+        return self.per_display and bool(self.free) and self.ipc.available
+
     @property
     def active(self) -> bool:
-        return self.desktop and not self.covered and not self.blocked()
+        """May the player run: some display shows it playing."""
+        if self.covered or self.blocked():
+            return False
+        if self.always:                                  # windows don't pause it
+            return True
+        if self._by_display():
+            return any(self.free.values())
+        return self.desktop
+
+    def playing_on(self, display: str) -> bool:
+        """Does `display` (a connector name) show the video playing (else
+        its last frame, still)."""
+        if not self.active:
+            return False
+        if self._by_display() and not self.always:
+            return self.free.get(display, True)
+        return True
+
+    def _layout(self) -> None:
+        if not self.ipc.available:
+            return
+        free = free_outputs(self.ipc.call("window-rules/list-outputs"), self.ipc.call("window-rules/list-views"))
+        if free != self.free:
+            self.free = free
+            self._changed(displays=True)
+
+    def _layout_soon(self) -> None:
+        if self._layout_src:
+            return
+
+        def run():
+            self._layout_src = 0
+            self._layout()
+            return False
+        self._layout_src = GLib.timeout_add(LAYOUT_SOON_MS, run)
 
     def _focused(self, ev) -> None:
+        if ev.get("event") in LAYOUT_EVENTS:
+            self._layout_soon()
+            return
+        if ev.get("event") in ("view-unmapped", "view-minimized"):
+            self._layout_soon()
         if ev.get("event") == "plugin-activation-state-changed":
             if ev.get("plugin") in COVERING_PLUGINS:
                 key = (ev["plugin"], (ev.get("output-data") or {}).get("name", ""))
@@ -177,12 +290,14 @@ class DesktopFocus:
             return False
         self._recheck_src = GLib.timeout_add(RECHECK_MS, again)
 
-    def _changed(self) -> None:
+    def _changed(self, displays: bool = False) -> None:
         now = self.active
         if now != self._was:
             self._was = now
             for fn in list(self.listeners):
                 fn(now)
+        for fn in list(self.display_listeners):     # (which displays play may change with it)
+            fn()
 
 
 # GStreamer reads its ranks once, when the first player starts it; 0 = never
@@ -278,12 +393,29 @@ def _let_go(media) -> None:
             media.pause()                    # (prepared meanwhile: GTK starts what was asked)
             return True
         media.pause()
-        media.clear()                        # the decoder and its frames go now, not at the next GC
-        _settling.discard(media)
-        GLib.timeout_add(TRIM_AFTER_MS, _trim)
+
+        def cleared():
+            _settling.discard(media)         # (the last reference goes on the main thread)
+            GLib.timeout_add(TRIM_AFTER_MS, _trim)
+        # the decoder and its frames go now, not at the next GC -- on a thread
+        # of its own: GStreamer's stop waits for its threads, and on the main
+        # one it could wait for good (Vini: after a video, the first picture
+        # chosen showed and the next ones never did, until Sonata restarted)
+        _off_main(media.clear, cleared)
         return False
     _settling.add(media)                     # held until then
     GLib.timeout_add(SETTLE_MS, free)
+
+
+def _off_main(fn, done) -> None:
+    """fn() on a thread of its own, then done() on the main thread."""
+    def run():
+        try:
+            fn()
+        except Exception as e:               # (never in the way of the desktop)
+            print(f"sonata2 wallpaper: freeing a player: {e}", flush=True)
+        GLib.idle_add(lambda: (done(), False)[1])
+    threading.Thread(target=run, daemon=True, name="wallpaper-free").start()
 
 
 _settling = set()
@@ -475,7 +607,41 @@ class VideoWallpaper:
             self._silence(self.media)
         else:
             self.media.pause()                   # (the frame on screen stays: no black desktop)
+            if getattr(self.focus, "covered", None) and not self.silent:
+                self.save_frame()                # Overview: its desktops show this frame
         self._seen = (None, GLib.get_monotonic_time())
+
+    def save_frame(self) -> None:
+        """The frame on screen, small, as a picture in the runtime folder
+        (FRAME_FILE): Overview's desktops show the video where it paused,
+        not its poster (Vini). Copied now, shrunk and written on a thread."""
+        m = self.media
+        img = m.get_current_image() if m is not None else None
+        if img is None or not isinstance(img, Gdk.Texture):
+            return
+        try:
+            dl = Gdk.TextureDownloader.new(img)
+            dl.set_format(Gdk.MemoryFormat.R8G8B8)
+            data, stride = dl.download_bytes()
+            w, h = img.get_width(), img.get_height()
+        except (GLib.Error, TypeError, AttributeError):
+            return
+        path = _runtime(FRAME_FILE)
+
+        def write():
+            try:
+                gi.require_version("GdkPixbuf", "2.0")
+                from gi.repository import GdkPixbuf
+                pb = GdkPixbuf.Pixbuf.new_from_bytes(data, GdkPixbuf.Colorspace.RGB, False, 8, w, h, stride)
+                k = min(1.0, FRAME_PX / max(w, h))
+                if k < 1:
+                    pb = pb.scale_simple(max(1, int(w * k)), max(1, int(h * k)), GdkPixbuf.InterpType.BILINEAR)
+                tmp = path + ".tmp"
+                pb.savev(tmp, "jpeg", ["quality"], ["85"])
+                os.replace(tmp, path)                       # (whole: Overview may be reading it)
+            except (GLib.Error, OSError) as e:
+                print(f"sonata2 wallpaper: frame for Overview: {e}", flush=True)
+        threading.Thread(target=write, daemon=True, name="wallpaper-frame").start()
 
     def _failed(self, media, _p) -> None:
         err = media.get_error()
@@ -499,6 +665,72 @@ class VideoWallpaper:
             self.cover.release()
             self._drop(self.media, self._ids)
             self.media = None
+
+
+class DisplayCover(GObject.Object, Gdk.Paintable):
+    """One display's picture of a video every display shares: playing while
+    the video plays there (DesktopFocus.playing_on), else its last frame,
+    still -- the display with windows paused, the one without playing on
+    (Vini). A still one doesn't redraw at all."""
+
+    def __init__(self, video, display: str):
+        super().__init__()
+        self.video, self.display = video, display
+        self.focus = video.focus
+        self.frozen = None
+        self._id = video.cover.connect("invalidate-contents", self._relay)
+        if hasattr(self.focus, "display_listeners"):
+            self.focus.display_listeners.append(self._update)
+        self._update()
+
+    def _live(self) -> bool:
+        on = getattr(self.focus, "playing_on", None)
+        return on(self.display) if on else self.focus.active
+
+    def _update(self) -> None:
+        if self._live():
+            if self.frozen is not None:
+                self.frozen = None
+                self.invalidate_contents()
+        elif self.frozen is None:
+            m = self.video.media
+            img = m.get_current_image() if m is not None else None
+            if img is not None and img.get_intrinsic_width() > 0:
+                self.frozen = img
+
+    def _relay(self, *_a) -> None:
+        if self.frozen is None:
+            self.invalidate_contents()
+
+    def release(self) -> None:
+        if self._id and self.video.cover.handler_is_connected(self._id):
+            self.video.cover.disconnect(self._id)
+        self._id = 0
+        if self._update in getattr(self.focus, "display_listeners", []):
+            self.focus.display_listeners.remove(self._update)
+
+    def do_get_intrinsic_width(self):
+        return 0
+
+    def do_get_intrinsic_height(self):
+        return 0
+
+    def do_get_intrinsic_aspect_ratio(self):
+        return 0.0
+
+    def do_get_flags(self):
+        return 0
+
+    def do_get_current_image(self):
+        return self.frozen if self.frozen is not None else self.video.cover.get_current_image()
+
+    def do_snapshot(self, snap, width, height):
+        if self.frozen is None:
+            self.video.cover.snapshot(snap, width, height)
+            return
+        snap.push_clip(Graphene.Rect().init(0, 0, width, height))
+        self.video.cover._draw(snap, self.frozen, width, height, ratio_from=self.frozen)
+        snap.pop()
 
 
 class CoverPaintable(GObject.Object, Gdk.Paintable):

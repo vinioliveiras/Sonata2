@@ -1558,7 +1558,7 @@ class Settings(Adw.ApplicationWindow):
         """A video wallpaper's sound (Vini): off by default, at 25 %."""
         from ..shell.videowallpaper import SOUND_DEFAULTS
         cfg = config.load("wallpaper", SOUND_DEFAULTS)
-        g = group(_("Video Wallpaper"), _("Only while the desktop is in front; paused under any app."))
+        g = group(_("Video Wallpaper"), _("When the wallpaper is a video."))
         vol = slider_row(_("Volume"), float(cfg.get("video_volume", 25)), 0, 100,
                          lambda v: self._save_live("wallpaper", "video_volume", int(round(v))),
                          ends=(_("Quiet"), _("Loud")), default=SOUND_DEFAULTS["video_volume"])
@@ -1570,6 +1570,21 @@ class Settings(Adw.ApplicationWindow):
         g.add(switch_row(_("Play sound"), bool(cfg.get("video_sound")), sound,
                          subtitle=_("The video's own sound, when the wallpaper is a video")))
         g.add(vol)
+        from ..shell.videowallpaper import ALWAYS_DEFAULT, PER_DISPLAY_DEFAULT
+        always_on = bool(config.load("wallpaper", {"video_always": ALWAYS_DEFAULT})["video_always"])
+        per = switch_row(_("Pause each display on its own"),
+                         bool(config.load("wallpaper", {"video_per_display": PER_DISPLAY_DEFAULT})["video_per_display"]),
+                         lambda on: self._save("wallpaper", "video_per_display", bool(on)),
+                         subtitle=_("A display with no window keeps playing while another has windows"))
+        per.set_sensitive(not always_on)
+
+        def always(on):
+            self._save("wallpaper", "video_always", bool(on))
+            per.set_sensitive(not on)
+        g.add(switch_row(_("Keep playing with windows open"), always_on, always,
+                         subtitle=_("Even with maximized windows; still paused in Overview and when locked")))
+        g.add(per)
+        self.video_per_display_row = per                           # (tests)
         self.video_volume_row = vol                                  # (tests)
         return g
 

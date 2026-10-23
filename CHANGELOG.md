@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.20.2-alpha -- 2026-10-23
+
+### Changes
+- Video wallpaper, per display: a display with no window keeps playing
+  while another one with windows shows it paused (Settings > Wallpaper >
+  "Pause each display on its own", on by default).
+- Settings > Wallpaper: "Keep playing with windows open" (off by default):
+  windows never pause the video; Overview and the lock screen still do.
+- Overview: a video wallpaper's desktop thumbnail shows the frame the video
+  paused on, not its poster.
+
+### Fixes
+- Wallpaper: after a video, the first picture chosen showed and the next
+  ones didn't until Sonata restarted (freeing the video's player held the
+  desktop; it's freed on a thread of its own now).
+
 ## 0.20.1-alpha -- 2026-10-23
 
 Fixes that missed 0.20.0.

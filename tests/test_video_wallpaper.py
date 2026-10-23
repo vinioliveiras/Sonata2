@@ -56,7 +56,11 @@ class FakeIPC:
     def __init__(self, views=None):
         self.views, self.cb = views or [], None
 
+    outputs = []
+
     def call(self, method, data=None):
+        if method == "window-rules/list-outputs":
+            return self.outputs
         return self.views if method == "window-rules/list-views" else None
 
     def watch(self, events, cb):
@@ -271,6 +275,61 @@ class FocusTest(unittest.TestCase):
         self.assertTrue(f.active)
         self.assertEqual(seen, [False, True])
 
+    OUTS = [{"id": 1, "name": "DP-1", "geometry": {"x": 0, "y": 0, "width": 1920, "height": 1080}},
+            {"id": 2, "name": "HDMI-A-1", "geometry": {"x": 1920, "y": 0, "width": 2560, "height": 1440}}]
+
+    def test_free_displays(self):
+        app = {"type": "toplevel", "mapped": True, "output-id": 2,
+               "geometry": {"x": 100, "y": 100, "width": 800, "height": 600}}
+        free = self.VW.free_outputs(self.OUTS, [app])
+        self.assertEqual(free, {"DP-1": True, "HDMI-A-1": False})
+        self.assertTrue(all(self.VW.free_outputs(self.OUTS, [dict(app, minimized=True)]).values()))
+        other_desktop = dict(app, geometry={"x": 2560 + 100, "y": 0, "width": 800, "height": 600})
+        self.assertTrue(all(self.VW.free_outputs(self.OUTS, [other_desktop]).values()))
+        self.assertTrue(all(self.VW.free_outputs(self.OUTS, [dict(app, type="panel")]).values()))
+
+    def test_one_display_with_windows_pauses_only_there(self):
+        """Vini: the video went on only while the desktop had the focus, on
+        every display alike; now a display with no window keeps playing and
+        one with a window shows it paused (a switch turns that off), and
+        another switch keeps it playing whatever windows are open."""
+        ipc = FakeIPC([{"type": "toplevel", "activated": True, "mapped": True, "output-id": 2,
+                        "geometry": {"x": 0, "y": 0, "width": 2560, "height": 1440}}])
+        ipc.outputs = self.OUTS
+        cfg = {"video_per_display": True, "video_always": False}
+        with mock.patch("sonata2.config.load", side_effect=lambda n, d: dict(d, **cfg)):
+            f = self.VW.DesktopFocus(ipc)
+            self.assertTrue(f.active)                                       # DP-1 is free: the player runs
+            self.assertTrue(f.playing_on("DP-1"))
+            self.assertFalse(f.playing_on("HDMI-A-1"))                      # the one with the window: paused
+            cfg["video_per_display"] = False                                # switched off: as before
+            f._setting_changed()
+            self.assertFalse(f.active)                                      # (an app has the focus)
+            cfg["video_always"] = True                                      # keep playing with windows
+            f._setting_changed()
+            self.assertTrue(f.active)
+            self.assertTrue(f.playing_on("HDMI-A-1"))
+            ipc.cb({"event": "plugin-activation-state-changed", "plugin": "scale", "state": True})
+            self.assertFalse(f.active)                                      # Overview still pauses it
+
+    def test_display_with_windows_shows_the_last_frame(self):
+        from gi.repository import Gdk
+        frame = Gdk.MemoryTexture.new(2, 2, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(b"\xff" * 16), 8)
+        focus = mock.Mock(active=True, display_listeners=[])
+        focus.playing_on = lambda d: d == "DP-1"
+        media = mock.Mock(**{"get_current_image.return_value": frame})
+        video = mock.Mock(media=media, focus=focus, cover=self.VW.CoverPaintable(None))
+        here, there = self.VW.DisplayCover(video, "HDMI-A-1"), self.VW.DisplayCover(video, "DP-1")
+        self.assertIs(here.frozen, frame)                                   # still: its last frame
+        self.assertIsNone(there.frozen)                                     # playing
+        focus.playing_on = lambda d: True                                   # its window closed
+        for fn in list(focus.display_listeners):
+            fn()
+        self.assertIsNone(here.frozen)
+        here.release()
+        there.release()
+        self.assertEqual(focus.display_listeners, [])
+
     def test_same_files_as_the_lock(self):
         from sonata2.shell import lockdisplay
         self.assertEqual(os.path.basename(lockdisplay._state()), self.VW.LOCKED_FILE)
@@ -437,6 +496,36 @@ class PlaybackTest(unittest.TestCase):
         self.assertEqual(reg.lookup_feature("pulsesink").get_rank(), 0)
         self.VW._audio_sinks(True)
 
+    def test_overview_desktop_showed_the_poster_not_the_paused_frame(self):
+        """Vini: Overview's desktop thumbnail showed the video's poster; it
+        shows the frame the video paused on as Overview opened."""
+        import time
+        run = tempfile.mkdtemp()
+        with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": run}):
+            v = self.VW.acquire(self.path)
+            self.addCleanup(lambda: v.media is not None and self.VW.release(v))
+            win = self.show(v.cover)
+            settle(1200)
+            if v.media.get_error() is not None:
+                self.skipTest("no decoder")
+            self.ipc.cb({"event": "plugin-activation-state-changed", "plugin": "scale", "state": True})
+            frame = os.path.join(run, self.VW.FRAME_FILE)
+            end = time.monotonic() + 3
+            while not os.path.exists(frame) and time.monotonic() < end:
+                settle(50)
+            self.assertTrue(os.path.isfile(frame))
+            from gi.repository import GdkPixbuf
+            _f, w, h = GdkPixbuf.Pixbuf.get_file_info(frame)
+            self.assertLessEqual(max(w, h), self.VW.FRAME_PX)
+            from sonata2.shell import mission
+            uri = "file://" + self.path
+            with mock.patch.object(prefs, "wallpaper_uri", return_value=uri):
+                self.assertIsNotNone(mission.video_frame(False))            # Overview: that frame
+            with mock.patch.object(prefs, "wallpaper_uri", return_value="file:///x/picture.jpg"):
+                self.assertIsNone(mission.video_frame(False))               # a picture: its own
+            self.ipc.cb({"event": "plugin-activation-state-changed", "plugin": "scale", "state": False})
+            win.destroy()
+
     def test_stalled_or_failed_player_is_started_again(self):
         """A player that stops giving frames (or fails) while it should
         play: started again on a new one -- a few times, not forever."""
@@ -548,7 +637,8 @@ class DesktopWindowTest(unittest.TestCase):
         self.assertIsNotNone(win._video)
         if win._video.media.get_error() is not None:
             self.skipTest("no decoder")
-        self.assertIs(shown, win._video.cover)                              # the video, over its poster
+        self.assertIs(shown, win._cover)                                    # the video, over its poster
+        self.assertIsInstance(shown, self.VW.DisplayCover)
         shared.assert_called()
         self.assertTrue(shared.call_args[0][0].get_path().endswith(".jpg"))    # the login screen: the poster
         v = win._video
@@ -560,7 +650,7 @@ class DesktopWindowTest(unittest.TestCase):
             settle(1200)
         self.assertIsNone(win._video)
         self.assertIsNone(v.media)                                          # freed once the picture faded in
-        self.assertNotIsInstance(win.stack.get_visible_child().get_paintable(), self.VW.CoverPaintable)
+        self.assertNotIsInstance(win.stack.get_visible_child().get_paintable(), self.VW.DisplayCover)
         win.destroy()
 
     def test_poster_first_at_login(self):
@@ -677,19 +767,44 @@ class ChangedSeveralTimesTest(unittest.TestCase):
         self.assertTrue(timers[0]())                                        # still opening: wait
         media.clear.assert_not_called()
         media.is_prepared.return_value = True
-        with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)):
+        with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)), \
+                mock.patch.object(self.VW, "_off_main", side_effect=lambda fn, done: (fn(), done())):
             self.assertFalse(timers[0]())
         media.clear.assert_called_once()
         self.assertNotIn(media, self.VW._settling)
         self.assertIs(timers[-1], self.VW._trim)                            # then the memory goes back
         self.assertFalse(self.VW._trim())
 
+    def test_wallpaper_stuck_after_leaving_a_video(self):
+        """Vini: after a video wallpaper, the first picture chosen showed and
+        the next ones never did until Sonata restarted -- freeing the video's
+        player (GStreamer waiting for its threads) held the main thread. It
+        is freed on a thread of its own now."""
+        import threading
+        import time
+        release = threading.Event()
+        media = mock.Mock(**{"is_prepared.return_value": True, "get_error.return_value": None})
+        media.clear.side_effect = lambda: release.wait(5)                   # a teardown that hangs
+        timers = []
+        with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)):
+            self.VW._let_go(media)
+            t0 = time.monotonic()
+            self.assertFalse(timers[0]())
+            self.assertLess(time.monotonic() - t0, 0.5)                     # the desktop goes on
+            self.assertIn(media, self.VW._settling)                         # held until it's done
+            release.set()
+            end = time.monotonic() + 3
+            while media in self.VW._settling and time.monotonic() < end:
+                GLib.MainContext.default().iteration(False)
+        self.assertNotIn(media, self.VW._settling)
+
     def test_one_that_never_opens_is_freed_anyway(self):
         media = mock.Mock(**{"is_prepared.return_value": False, "get_error.return_value": None})
         timers = []
         with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)):
             self.VW._let_go(media)
-        with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)):
+        with mock.patch.object(self.VW.GLib, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)), \
+                mock.patch.object(self.VW, "_off_main", side_effect=lambda fn, done: (fn(), done())):
             while timers[0]():
                 pass
         media.clear.assert_called_once()
