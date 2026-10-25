@@ -72,7 +72,8 @@ h1 .soft { color: var(--text-2); }
 .cmd { display: flex; align-items: center; min-width: 0; max-width: 100%; height: 52px; padding: 0 6px 0 18px; gap: 14px;
   border: 1px solid var(--line-strong); border-radius: 12px; background: var(--bg-raised);
   box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 12px 40px -12px rgba(0,0,0,.6); }
-.cmd code { font: 400 14px/1 var(--mono); color: var(--text); white-space: nowrap; overflow-x: auto; scrollbar-width: none; }
+.cmd code { flex: 1; min-width: 0; font: 400 14px/1 var(--mono); color: var(--text); white-space: nowrap; overflow-x: auto; scrollbar-width: none; }
+.get .cmd { flex: 1; }                      /* the whole line: the copy button at its end */
 .cmd code::-webkit-scrollbar { display: none; }
 .cmd code .p { color: var(--text-3); user-select: none; margin-right: 10px; }
 .cmd code .k { color: var(--accent-2); }
@@ -343,7 +344,6 @@ footer a { color: var(--text-2); transition: color .2s var(--ease); } footer a:h
           <svg class="ok" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
         </button>
       </div>
-      <a class="btn big" href="https://ko-fi.com/vinioliveira" target="_blank" rel="noopener"><svg class="heart" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>Donate</a>
     </div>
     <ul class="facts rise" style="--i:3">
       <li>Free and open source</li><li>Alpha</li><li>Light and Dark</li><li>Any distribution with Wayfire</li><li>Your data stays on your computer</li>
