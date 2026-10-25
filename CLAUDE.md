@@ -1,7 +1,7 @@
 # Notes for Claude
 
 Sonata 2 is a macOS-like Linux desktop: Python, GTK 4 / libadwaita and
-Wayfire. Start with README.md (layout, development commands) and
+Wayfire. Start with docs/GUIDE.md (layout, development commands) and
 docs/DESIGN.md (design rules).
 
 ## Text the user sees: always translated

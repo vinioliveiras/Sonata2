@@ -8,6 +8,7 @@ Usage (from the repository root; needs Xvfb, GTK 4, libadwaita, Pillow):
     xvfb-run -a -s "-screen 0 1920x1200x24" python3 tools/readme-shots.py
     xvfb-run -a -s "-screen 0 1920x1200x24" python3 tools/readme-shots.py files notes-dark
     python3 tools/readme-shots.py --list
+    ... tools/readme-shots.py --wallpaper ~/Pictures/photo.jpg      (default: tools/shots-wallpaper.jpg)
 
 Privacy: nothing of the machine it runs on may show. Every capture runs in
 its own process with a throwaway HOME (a generated demo home: sample
@@ -52,31 +53,48 @@ MAX_BYTES = 350 * 1024
 # Sonata's default wallpaper (wallpapers.py "Mountains"): day in Light, night in Dark
 
 
-def wall(size, dark: bool = False):
-    """The default wallpaper cover-fit to `size` (RGBA), as the desktop shows it."""
-    from PIL import Image, ImageOps
+# the website's shots use this photo as the wallpaper when it's there (Vini);
+# --wallpaper PATH picks another one, --wallpaper default Sonata's own
+SHOTS_WALLPAPER = os.path.join(ROOT, "tools", "shots-wallpaper.jpg")
+
+
+def wall_path(dark: bool = False) -> str:
+    """The picture behind the shots: SHOTS_WALLPAPER (set by
+    --wallpaper), else tools/shots-wallpaper.jpg, else Sonata's default."""
     from sonata2 import wallpapers
-    path = wallpapers.DEFAULT.dark if dark else wallpapers.DEFAULT.light
-    return ImageOps.fit(Image.open(path).convert("RGB"), size, Image.LANCZOS, centering=(0.5, 0.45)).convert("RGBA")
+    chosen = os.environ.get("SHOTS_WALLPAPER", SHOTS_WALLPAPER)
+    if chosen != "default" and os.path.isfile(chosen):
+        return chosen
+    return wallpapers.DEFAULT.dark if dark else wallpapers.DEFAULT.light
+
+
+def wall(size, dark: bool = False):
+    """The wallpaper cover-fit to `size` (RGBA), as the desktop shows it."""
+    from PIL import Image, ImageOps
+    return ImageOps.fit(Image.open(wall_path(dark)).convert("RGB"), size, Image.LANCZOS,
+                        centering=(0.5, 0.45)).convert("RGBA")
 
 
 # name -> (appearance, window size); the capture function is shot_<base name>
 SHOTS = {
     "files": ("light", (1060, 580)),
     "files-dark": ("dark", (1060, 580)),
-    "settings": ("light", (980, 660)),
+    "settings": ("dark", (980, 660)),
+    "settings-wallpaper": ("dark", (980, 760)),
+    "settings-hidden": ("dark", (980, 660)),
+    "settings-titlebars": ("dark", (980, 700)),
     "notes": ("light", (1080, 660)),
     "notes-dark": ("dark", (1080, 660)),
-    "reminders": ("light", (1080, 660)),
-    "calendar": ("light", (1120, 720)),
-    "taskmanager": ("light", (1060, 680)),
+    "reminders": ("dark", (1080, 660)),
+    "calendar": ("dark", (1120, 720)),
+    "taskmanager": ("dark", (1060, 680)),
     "taskmanager-dark": ("dark", (1060, 680)),
-    "taskmanager-performance": ("light", (1060, 680)),
-    "diskmanager": ("light", (1000, 640)),
-    "textedit": ("light", (900, 600)),
-    "preview": ("light", (1000, 602)),
-    "calculator": ("light", None),
-    "terminal": ("light", (820, 480)),
+    "taskmanager-performance": ("dark", (1060, 680)),
+    "diskmanager": ("dark", (1000, 640)),
+    "textedit": ("dark", (900, 600)),
+    "preview": ("dark", (1000, 602)),
+    "calculator": ("dark", None),
+    "terminal": ("dark", (820, 480)),
 }
 
 # nothing like these may be on screen (checked on every visible label)
@@ -331,6 +349,8 @@ def _child_setup(name: str, mode: str):
     Adw.init()
     if mode == "dark":
         ui.force_appearance("dark")
+        from sonata2 import prefs                       # (Settings' Appearance pop-up says Dark too)
+        prefs.set("org.gnome.desktop.interface", "color-scheme", "prefer-dark")
     ui.setup()
     try:
         from sonata2 import icons
@@ -397,11 +417,57 @@ def shot_files(app, name, size):
     return win, True
 
 
+# shot -> (section, the group scrolled to the top); else Appearance from its top
+SETTINGS_PAGES = {"settings-wallpaper": ("displays", "Video Wallpaper"),
+                  "settings-hidden": ("launchpad", "Hidden apps"),
+                  "settings-titlebars": ("appearance", "Title Bars")}
+
+
+def _scroll_to_group(root, title) -> None:
+    """The preferences group titled `title` at the top of its scrolled page."""
+    from gi.repository import Adw, Gtk
+    stack = [root]
+    while stack:
+        w = stack.pop()
+        if isinstance(w, Adw.PreferencesGroup) and w.get_title() == title:
+            sw = w.get_ancestor(Gtk.ScrolledWindow)
+            if sw is not None:
+                ok, b = w.compute_bounds(sw.get_child())
+                if ok:                                  # (a little of what's above it too)
+                    sw.get_vadjustment().set_value(max(0, b.origin.y - (330 if title == "Video Wallpaper" else 12)))
+            return
+        c = w.get_last_child()
+        while c is not None:
+            stack.append(c)
+            c = c.get_prev_sibling()
+
+
 def shot_settings(app, name, size):
     from sonata2.settings.app import Settings
-    win = Settings(app, "appearance")
+    page, group_title = SETTINGS_PAGES.get(name, ("appearance", None))
+    if name == "settings-hidden":                      # hidden and locked apps (applock.py)
+        from sonata2 import applock, config
+        install_demo_apps()
+        config.save("launchpad", {"pages": [], "hidden": ["discord", "org.telegram.desktop"]})
+        for did in ("steam", "spotify"):
+            applock.set_locked(did, True)
+    if name == "settings-wallpaper":                   # the shots' own wallpaper in its preview
+        from sonata2 import prefs
+        pic = os.path.join(os.environ["HOME"], "Pictures", "Sleepy cat.jpg")
+        os.makedirs(os.path.dirname(pic), exist_ok=True)
+        shutil.copy(wall_path(True), pic)
+        uri = "file://" + pic
+        prefs.set(prefs.BG, "picture-uri", uri)
+        prefs.set(prefs.BG, "picture-uri-dark", uri)
+    win = Settings(app, page)
     _present(win, size)
     settle(1500)
+    if name == "settings-hidden":
+        win._show_hidden_apps()                         # as after the password
+        settle(500)
+    if group_title:
+        _scroll_to_group(win, group_title)
+        settle(400)
     return win, True
 
 
@@ -729,19 +795,32 @@ SCREEN = (1920, 1080)
 BAR_H = 24                                   # shell/topbar.py
 DOCK_ROOM = 76                               # the Dock's strip at the bottom (a zoomed window stops above it)
 APP_MAX = (SCREEN[0] - 24, SCREEN[1] - BAR_H - DOCK_ROOM)
-SHOTS.update({"files-max": ("light", APP_MAX), "settings-max": ("light", APP_MAX)})
+SHOTS.update({"files-max": ("dark", APP_MAX), "settings-max": ("dark", APP_MAX)})
 INTERNAL = {"files-max", "settings-max"}     # parts of the full-screen shots, not saved on their own
 SONATA = "io.github.vinioliveiras.sonata2."
 # name -> (appearance, base picture, parts); base "wall" = the wallpaper, else another raw capture
 SCENES = {
     "desktop": ("light", "wall", {"icons", "bar", "dock"}),
     "desktop-dark": ("dark", "wall", {"icons", "bar", "dock"}),
-    "files-full": ("light", "files-max", {"bar", "dock"}),
-    "settings-full": ("light", "settings-max", {"bar", "dock"}),
-    "launchpad-grid": ("light", "desktop", {"launchpad"}),
-    "launchpad": ("light", "launchpad-grid", {"dock"}),
-    "controlcenter": ("light", "wall", {"icons", "bar", "dock", "cc"}),
+    "files-full": ("dark", "files-max", {"bar", "dock"}),
+    "settings-full": ("dark", "settings-max", {"bar", "dock"}),
+    "launchpad-grid": ("dark", "desktop-dark", {"launchpad"}),
+    "launchpad": ("dark", "launchpad-grid", {"dock"}),
+    "controlcenter": ("dark", "wall", {"icons", "bar", "dock", "cc"}),
+    # what a Mac doesn't do (the website): folders in the Dock, a locked
+    # folder asking for the password, an app opened in a sandbox
+    "dock-folder": ("dark", "wall", {"icons", "bar", "dock", "folder"}),
+    "dock-locked": ("dark", "wall", {"icons", "bar", "dock", "locked"}),
+    "dock-sandbox": ("dark", "wall", {"icons", "bar", "dock", "sandbox"}),
 }
+# a close-up of a scene, saved too as <name>-detail.webp (the website's feature
+# pictures): (left, top, right, bottom) of the 1920x1080 screen
+SCENE_DETAIL = {"dock-folder": (400, 380, 1520, 1080), "dock-locked": (400, 380, 1520, 1080),
+                "dock-sandbox": (400, 380, 1520, 1080), "controlcenter": (1024, 0, 1920, 560)}
+# the Dock's folders in the scenes above: (key, name, apps, locked)
+DOCK_FOLDERS = [("folder:creative", "Creative", ["gimp", "org.inkscape.Inkscape", "org.kde.krita", "blender",
+                                                 "com.obsproject.Studio"], False),
+                ("folder:private", "Private", ["org.telegram.desktop", "discord"], True)]
 SCENE_ACTIVE = {"files-full": SONATA + "files", "settings-full": "sonata2-settings"}
 DOCK_PINS = [SONATA + "files", "sonata2-launchpad", "firefox", "thunderbird", SONATA + "calendar", SONATA + "notes",
              SONATA + "videos", SONATA + "preview", SONATA + "textedit", SONATA + "terminal", SONATA + "activity",
@@ -795,9 +874,13 @@ def install_demo_apps() -> None:
     apps.lookup = lambda did: apps._scan.get(did if did.endswith(".desktop") else did + ".desktop") or lookup(did)
 
 
+WINDOW_TITLES = {"firefox": "Sonata — a desktop for Linux"}
+
+
 class FakeToplevel:
     def __init__(self, app_id, activated=False):
-        self.app_id, self.activated, self.title = app_id, activated, app_id
+        self.app_id, self.activated = app_id, activated
+        self.title = WINDOW_TITLES.get(app_id, app_id)
         self.minimized = self.maximized = self.fullscreen = False
 
 
@@ -890,7 +973,16 @@ def run_scene(name: str, raw_path: str, base: str, frosted: str) -> None:
         over.add_overlay(bar)
     if "dock" in parts:
         cfg = D.load_config()
-        cfg.update(pinned=list(DOCK_PINS), recent=[], show_recents=False, magnification=False)
+        pins = list(DOCK_PINS)
+        if parts & {"folder", "locked", "sandbox"}:
+            pins = pins[:-1] + [k for k, *_r in DOCK_FOLDERS] + pins[-1:]
+            cfg["folders"] = {k.split(":", 1)[1]: {"name": n, "apps": [a + ".desktop" for a in ids], "locked": lk}
+                              for k, n, ids, lk in DOCK_FOLDERS}
+        if "sandbox" in parts:                           # a copy runs sandboxed: the orange "S"
+            from sonata2 import sandbox
+            sandbox.available = lambda: True
+            sandbox._running.update({"firefox": 1, "firefox.desktop": 1})
+        cfg.update(pinned=pins, recent=[], show_recents=False, magnification=False)
         D.load_css(cfg)
         dock = D.Dock(cfg, mgr)
         D.apply_margins(dock)
@@ -914,8 +1006,23 @@ def run_scene(name: str, raw_path: str, base: str, frosted: str) -> None:
         bar._set_text(bar.clock, day.strftime("%a ") + str(day.day) + day.strftime(" %b  09:41"))
     settle(2500)                                         # thumbnails, icons, tray
     pops = []
+    anchor = None
     if "cc" in parts:
         bar.cc.emit("clicked")
+        settle(1500)
+        pops = [p for p in ui.menu.OPEN if p.get_mapped()]
+        anchor = bar.cc
+    if parts & {"folder", "locked"}:
+        from sonata2.shell import dock_folder
+        key = DOCK_FOLDERS[0 if "folder" in parts else 1][0]
+        anchor = dock.tiles[key]
+        dock_folder.open_panel(dock, anchor)
+        settle(1500)
+        pops = [p for p in ui.menu.OPEN if p.get_mapped()]
+    if "sandbox" in parts:
+        from sonata2.shell import dock_menu
+        anchor = dock.tiles["firefox"] if "firefox" in dock.tiles else dock.tiles["firefox.desktop"]
+        dock_menu.app_menu(dock, anchor.key, anchor)
         settle(1500)
         pops = [p for p in ui.menu.OPEN if p.get_mapped()]
     _check(name, [win] + pops)
@@ -932,10 +1039,11 @@ def run_scene(name: str, raw_path: str, base: str, frosted: str) -> None:
         surf = pop.get_surface()
         contents = pop.get_child().get_parent()
         ok, b = contents.compute_bounds(pop)
-        ok2, ab = bar.cc.compute_bounds(win)
+        ok2, ab = anchor.compute_bounds(win)
         meta["pop"] = {"path": path, "x": surf.get_position_x(), "y": surf.get_position_y(),
                        "contents": [b.origin.x, b.origin.y, b.size.width, b.size.height],
-                       "anchor": [ab.origin.x, ab.origin.y, ab.size.width, ab.size.height]}
+                       "anchor": [ab.origin.x, ab.origin.y, ab.size.width, ab.size.height],
+                       "above": anchor is not getattr(bar, "cc", None)}
     with open(raw_path + ".json", "w") as f:
         json.dump(meta, f)
     os._exit(0)
@@ -969,6 +1077,43 @@ def scene_base(name: str, raws: dict, work: str):
     return base, frosted
 
 
+def scene_layers(name: str, out_dir: str, work: str, env: dict, bus: list) -> str:
+    """A scene's menu bar, Dock and desktop icons without the wallpaper, for
+    a video under them (tools/hero-video.py): captured over black and over
+    white (alpha matting), and once with only the glass white -- what is
+    glass (blurred wallpaper under it) vs. the clear desktop.
+    Writes ui.png (RGBA) and glass.png (L) into out_dir."""
+    from PIL import Image, ImageChops
+    os.makedirs(out_dir, exist_ok=True)
+    shots = {}
+    for key, base_c, glass_c in (("bb", 0, 0), ("ww", 255, 255), ("bw", 0, 255)):
+        base, glass = (os.path.join(work, f"{key}-{w}.png") for w in ("base", "frost"))
+        Image.new("RGB", SCREEN, (base_c,) * 3).save(base)
+        Image.new("RGB", SCREEN, (glass_c,) * 3).save(glass)
+        raw = os.path.join(work, f"layers-{key}.png")
+        subprocess.run(bus + [sys.executable, os.path.abspath(__file__), "--scene", name, raw, base, glass],
+                       env=env, cwd=env["HOME"], capture_output=True, text=True, timeout=180)
+        if not os.path.exists(raw):
+            return f"{name}: layers failed ({key})"
+        shots[key] = Image.open(raw).convert("RGB")
+    b, w = shots["bb"], shots["ww"]
+    # over black: c = a*F; over white: c = a*F + (1 - a)  ->  a = 1 - (w - b)
+    alpha = ImageChops.invert(ImageChops.subtract(w, b)).convert("L")
+    ui = Image.new("RGBA", SCREEN)
+    px_b, px_a = b.load(), alpha.load()
+    out = ui.load()
+    for y in range(SCREEN[1]):
+        for x in range(SCREEN[0]):
+            a = px_a[x, y]
+            if a:
+                r, g, bb = px_b[x, y]
+                out[x, y] = (min(255, r * 255 // a), min(255, g * 255 // a), min(255, bb * 255 // a), a)
+    ui.save(os.path.join(out_dir, "ui.png"))
+    glass = ImageChops.difference(shots["bw"], b).convert("L").point(lambda v: 255 if v > 8 else 0)
+    glass.save(os.path.join(out_dir, "glass.png"))
+    return f"{name}: layers in {out_dir}"
+
+
 def finish_scene(raw: str, out: str) -> int:
     """The scene capture, plus an open panel over the same frosted glass."""
     from PIL import Image, ImageDraw
@@ -982,7 +1127,10 @@ def finish_scene(raw: str, out: str) -> int:
         ax, ay, aw, ah = pop["anchor"]
         # where the popover sits: from its surface, else right-aligned under its button
         x, y = pop["x"], pop["y"]
-        if not (0 <= x <= SCREEN[0] - cw and BAR_H - cy <= y <= BAR_H + 20):
+        if pop.get("above"):                             # over a Dock icon, centred on it
+            x = round(max(8, min(SCREEN[0] - 8 - cw, ax + aw / 2 - cw / 2)) - cx)
+            y = round(ay - 8 - ch - cy)
+        elif not (0 <= x <= SCREEN[0] - cw and BAR_H - cy <= y <= BAR_H + 20):
             x = round(min(SCREEN[0] - 8 - cw, ax + aw / 2 - cw / 2) - cx)
             y = round(ay + ah + 2 - cy)
         mask = Image.new("L", layer.size, 0)
@@ -1153,7 +1301,18 @@ def main(argv) -> int:
         print('Run under Xvfb: xvfb-run -a -s "-screen 0 1920x1200x24" python3 tools/readme-shots.py',
               file=sys.stderr)
         return 2
+    if "--wallpaper" in argv:                            # a picture, or "default" (Sonata's own)
+        i = argv.index("--wallpaper")
+        os.environ["SHOTS_WALLPAPER"] = argv[i + 1]
+        argv = argv[:i] + argv[i + 2:]
+    layers = None
+    if "--layers" in argv:                               # the UI alone, for tools/hero-video.py
+        i = argv.index("--layers")
+        layers = (argv[i + 1], argv[i + 2])              # scene, output folder
+        argv = argv[:i] + argv[i + 3:]
     wanted = [a for a in argv if not a.startswith("-")] or public
+    if layers:
+        wanted = []
     base = tempfile.mkdtemp(prefix="sonata-shots-")
     raw_dir = os.path.join(base, "raw")
     os.makedirs(raw_dir)
@@ -1213,9 +1372,13 @@ def main(argv) -> int:
                 size = save_png(Image.open(final), os.path.join(OUT_DIR, name + ".webp"))
                 if name == "desktop":                    # link previews (og:image) want a JPEG
                     save_png(Image.open(final), os.path.join(OUT_DIR, name + ".jpg"))
+                if name in SCENE_DETAIL:
+                    save_png(Image.open(final).crop(SCENE_DETAIL[name]), os.path.join(OUT_DIR, name + "-detail.webp"))
                 report.append(f"{name}: {size // 1024} KB")
         if "hero" in wanted:
             report.append(f"hero: {hero(raws, os.path.join(OUT_DIR, 'hero.webp')) // 1024} KB")
+        if layers:
+            report.append(scene_layers(layers[0], layers[1], raw_dir, env, bus))
         print("\n".join(report))
     finally:
         shutil.rmtree(base, ignore_errors=True) if not os.environ.get("KEEP_RAW") else print("raw:", base)

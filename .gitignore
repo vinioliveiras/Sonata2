@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 /build/
 /screenshots/
+Claude outputs/
 .uuid
 .dev-logs/
 # app data of a dev install from before sonata2/userdata.py (it moves out by itself)
