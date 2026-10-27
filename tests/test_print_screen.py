@@ -25,6 +25,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def _cap():
     cap = C.Capture.__new__(C.Capture)          # no windows: only the flow is tested
     cap.app, cap.thumb, cap.toolbar, cap.recorder = None, None, None, None
+    cap.keep = False
     return cap
 
 
@@ -118,6 +119,59 @@ class PrintScreenTests(unittest.TestCase):
             self.assertTrue(C.open_shot(f.name))
         argv = spawn.call_args.args[0]
         self.assertEqual(argv[-3:], ["preview", "--markup", f.name])
+
+    def test_toolbar_stays_after_print(self):
+        """Vini: after Print the capture toolbar stays open -- even once the
+        picture is closed -- for more shots or other options."""
+        cap = _cap()
+        now = mock.patch.object(C.GLib, "timeout_add", side_effect=lambda _ms, f: f())
+        with now, mock.patch.object(C, "open_shot") as opened, mock.patch.object(cap, "show_toolbar") as tb:
+            cap.shot_taken("/tmp/a.png", edit=True)
+        opened.assert_called_once_with("/tmp/a.png")
+        self.assertTrue(cap.keep)
+        tb.assert_called_once()
+
+    def test_kept_toolbar_shots_open_in_the_editor_and_it_comes_back(self):
+        cap = _cap()
+        cap.keep = True
+        now = mock.patch.object(C.GLib, "timeout_add", side_effect=lambda _ms, f: f())
+        with now, mock.patch.object(C, "open_shot") as opened, mock.patch.object(C, "Thumbnail") as thumb, \
+                mock.patch.object(cap, "show_toolbar") as tb:
+            cap.shot_taken("/tmp/b.png")                   # from the kept toolbar
+        opened.assert_called_once_with("/tmp/b.png")
+        thumb.assert_not_called()
+        tb.assert_called_once()
+
+    def test_close_or_esc_ends_it(self):
+        cap = _cap()
+        cap.keep = True
+        cap.toolbar = mock.Mock()
+        cap.close_toolbar()
+        self.assertFalse(cap.keep)
+        cap.toolbar.set_visible.assert_called_once_with(False)
+        now = mock.patch.object(C.GLib, "timeout_add", side_effect=lambda _ms, f: f())
+        with now, mock.patch.object(C, "Thumbnail") as thumb, mock.patch.object(cap, "show_toolbar") as tb:
+            cap.shot_taken("/tmp/c.png")                   # an ordinary shot again: the thumbnail
+        thumb.return_value.show_shot.assert_called_once()
+        tb.assert_not_called()
+
+    def test_kept_toolbar_back_after_a_cancelled_selection_and_a_recording(self):
+        cap = _cap()
+        cap.keep = True
+        now = mock.patch.object(C.GLib, "timeout_add", side_effect=lambda _ms, f: f())
+        with now, mock.patch.object(cap, "show_toolbar") as tb:
+            cap._toolbar_back()
+            self.assertEqual(tb.call_count, 1)
+            cap.recorder = object()                         # while recording: not over it
+            cap._toolbar_back()
+            self.assertEqual(tb.call_count, 1)
+        src = open(C.__file__).read()
+        self.assertIn("self._toolbar_back()               # Esc on the selection", src)
+        self.assertIn("self._toolbar_back()                       # kept: back after the recording", src)
+
+    def test_kept_toolbar_lets_the_editor_type(self):
+        src = open(C.__file__).read()
+        self.assertIn("LS.KeyboardMode.ON_DEMAND if kept else LS.KeyboardMode.EXCLUSIVE", src)
 
     def test_listed_in_keyboard_shortcuts(self):
         self.assertIn("capture_print", [s.id for s in shortcuts.SHORTCUTS])

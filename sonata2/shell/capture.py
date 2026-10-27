@@ -451,6 +451,9 @@ class Thumbnail(Gtk.Window):
         self._hide()
 
 
+TOOLBAR_BACK_MS = 450      # a kept toolbar comes back once the editor has opened
+
+
 def open_shot(path: str) -> bool:
     """A screenshot in Preview's Markup (draw, crop, save); anything else
     (a movie) in its default app. False: it could not be opened."""
@@ -560,11 +563,16 @@ class Capture:
         self.rec_path = None
         self._rec = {}                 # what is being recorded: geo, output, audio, encoders left
         self.pill = None               # the recording control (RecordingControl)
+        # kept open (Vini): after Print the toolbar stays -- more shots, other
+        # options -- until its close button or Esc; each shot opens in Markup
+        self.keep = False
 
     # -- thumbnail --------------------------------------------------------------------------
     def shot_taken(self, path: str, edit: bool = False):
-        if edit:                               # Print Screen: straight into Markup, no thumbnail
+        if edit or self.keep:                  # Print Screen: straight into Markup, no thumbnail
             open_shot(path)
+            self.keep = True                   # the toolbar stays for the next ones (Vini)
+            self._toolbar_back()
             return
         if self.thumb is None:
             self.thumb = Thumbnail(self.app)
@@ -578,7 +586,21 @@ class Capture:
         if self.toolbar is None:
             self.toolbar = _Toolbar(self.app, self)
         self.toolbar.restore()
+        self.toolbar.set_kept(self.keep)
         self.toolbar.present()
+
+    def close_toolbar(self) -> None:
+        """Its close button or Esc: gone, and no longer kept."""
+        self.keep = False
+        if self.toolbar is not None:
+            self.toolbar.set_visible(False)
+
+    def _toolbar_back(self) -> None:
+        """Kept: the toolbar again once a shot is done (or a choice cancelled),
+        after the editor has opened (so it comes above it)."""
+        if self.keep and self.recorder is None:
+            GLib.timeout_add(TOOLBAR_BACK_MS, lambda: (self.keep and self.recorder is None
+                                                        and self.show_toolbar(), False)[1])
 
     def run(self, mode: str, cfg: dict):
         """mode: screen | area | edit | rec-screen | rec-area."""
@@ -677,6 +699,8 @@ class Capture:
                     cover.close()
                 if geo is not None:
                     go(geo=geo)
+                else:
+                    self._toolbar_back()               # Esc on the selection: the kept toolbar again
             # once the frozen screen is up (slurp maps over it)
             GLib.timeout_add(60 if cover is not None and cover.wins else 0,
                              lambda: (_slurp_async([], picked), False)[1])
@@ -690,6 +714,8 @@ class Capture:
         def done(value):
             if value is not None:
                 GLib.timeout_add(250, lambda: (then(value), False)[1])     # not in the picture
+            else:
+                self._toolbar_back()
         Picker(self.app, title, None, items, action, done).present()
 
     def _shoot(self, geo, cfg, output=None, frozen=None, edit=False):
@@ -822,6 +848,7 @@ class Capture:
                 proc.kill()
                 proc.wait()
             self._saved(path)
+            self._toolbar_back()                       # kept: back after the recording
             return False
         GLib.timeout_add(100, check)
 
@@ -877,7 +904,7 @@ class _Toolbar(Gtk.Window):
         self.cfg = config.load("capture", DEFAULTS)
         bar = Gtk.Box(spacing=2, css_classes=["cap-bar"])
         close = Gtk.Button(icon_name="window-close-symbolic", tooltip_text=_("Close"))
-        close.connect("clicked", lambda *_: self.set_visible(False))
+        close.connect("clicked", lambda *_: owner.close_toolbar())
         bar.append(close)
         bar.append(Gtk.Box(css_classes=["cap-sep"]))
         self.mode = "display"
@@ -900,7 +927,7 @@ class _Toolbar(Gtk.Window):
         bar.append(self.go)
         self.set_child(bar)
         keys = Gtk.EventControllerKey()
-        keys.connect("key-pressed", lambda _c, k, *_: (self.set_visible(False), True)[1] if k == Gdk.KEY_Escape
+        keys.connect("key-pressed", lambda _c, k, *_: (owner.close_toolbar(), True)[1] if k == Gdk.KEY_Escape
                      else (self._go(), True)[1] if k == Gdk.KEY_Return else False)
         self.add_controller(keys)
         LS = layer.layer_shell()
@@ -911,6 +938,14 @@ class _Toolbar(Gtk.Window):
             LS.set_anchor(self, LS.Edge.BOTTOM, True)
             LS.set_margin(self, LS.Edge.BOTTOM, 120)
             LS.set_keyboard_mode(self, LS.KeyboardMode.EXCLUSIVE)   # Esc / Return at once (macOS)
+
+    def set_kept(self, kept: bool) -> None:
+        """Kept open (after Print): it takes the keyboard only when clicked,
+        so the editor beside it can be typed in; otherwise at once (Esc /
+        Return, macOS)."""
+        LS = layer.layer_shell()
+        if LS and LS.is_layer_window(self):
+            LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND if kept else LS.KeyboardMode.EXCLUSIVE)
 
     def _set_mode(self, m):
         self.mode = m
