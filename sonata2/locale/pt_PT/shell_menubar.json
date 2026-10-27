@@ -175,5 +175,6 @@
   "{n} linhas"
  ],
  "{n}h ago": "há {n} h",
- "{n}m ago": "há {n} min"
+ "{n}m ago": "há {n} min",
+ "Reopen windows when logging back in": "Reabrir janelas ao iniciar sessão novamente"
 }

@@ -582,13 +582,21 @@ class Bar(Gtk.CenterBox):
         text = {"restart": (_("Are you sure you want to restart your computer now?"), _("Restart")),
                 "shutdown": (_("Are you sure you want to shut down your computer now?"), _("Shut Down")),
                 "logout": (_("Are you sure you want to quit all applications and log out now?"), _("Log Out"))}[kind]
-        ui.dialog.alert(text[0], "", [("cancel", _("Cancel"), ""), (kind, text[1], "default")],
-                        lambda r: self._end_session(kind) if r == kind else None)
+        from .. import open_apps
 
-    def _end_session(self, kind: str) -> None:
+        def answered(r, reopen):
+            open_apps.set_reopen_wanted(reopen)           # the box as left, next time (macOS)
+            if r == kind:
+                self._end_session(kind, reopen)
+        # macOS: "Reopen windows when logging back in" -- the apps open now
+        # come back at the next login (Vini), ticked as last time
+        ui.dialog.alert(text[0], "", [("cancel", _("Cancel"), ""), (kind, text[1], "default")], answered,
+                        check=_("Reopen windows when logging back in"), checked=open_apps.reopen_wanted())
+
+    def _end_session(self, kind: str, reopen=None) -> None:
         """The apps quit first (Chrome kept asking to restore its tabs)."""
         from . import quitapps
-        self._quitting = quitapps.end_session(kind, self.manager)
+        self._quitting = quitapps.end_session(kind, self.manager, reopen)
 
     # -- active app ------------------------------------------------------------------
     def _active(self):

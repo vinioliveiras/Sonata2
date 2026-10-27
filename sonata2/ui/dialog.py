@@ -8,8 +8,8 @@
 Default button (Return): the response styled "default"; otherwise the first
 non-destructive one (Cancel), as on macOS for destructive alerts.
 
-check="Apply to All" adds a checkbox (Finder's replace/conflict alerts);
-on_response then gets (response_id, checked)."""
+check="Apply to All" adds a checkbox (Finder's replace/conflict alerts;
+checked=True: ticked at first); on_response then gets (response_id, checked)."""
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -67,7 +67,7 @@ def _breakable(text: str) -> str:
 
 
 def alert(heading: str, body: str, responses, on_response=None, parent=None,
-          check: str = None, close: str = None, default: str = None):
+          check: str = None, close: str = None, default: str = None, checked: bool = False):
     """close: the response Escape gives (default: "cancel", else the first
     non-destructive one; it needn't be one of `responses`). default: the one
     Return gives -- chosen on purpose, it may be destructive (macOS' Empty
@@ -84,7 +84,7 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None,
                                 css_classes=["sonata-alert"])
     box = None
     if check:
-        box = Gtk.CheckButton(label=check, halign=Gtk.Align.CENTER)
+        box = Gtk.CheckButton(label=check, halign=Gtk.Align.CENTER, active=checked)
         dlg.set_extra_child(box)
     default = None
     for rid, text, style in responses:

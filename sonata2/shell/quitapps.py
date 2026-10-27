@@ -172,8 +172,15 @@ def quit_app(manager, windows, key: str) -> Quitter:
     return q
 
 
-def end_session(kind: str, manager=None) -> Quitter:
-    """Quit the apps, then sleep/restart/shut down/log out (system.power_action)."""
+SESSION_ENDS = ("restart", "shutdown", "logout")
+
+
+def end_session(kind: str, manager=None, reopen=None) -> Quitter:
+    """Quit the apps, then sleep/restart/shut down/log out (system.power_action).
+    reopen: the apps open now come back at the next login (None: the last
+    choice of the confirmation's box, open_apps.reopen_wanted). Kept before
+    they quit; dropped if an app stops it (the session goes on)."""
+    from .. import open_apps
     from ..backend import system
     if manager is None:
         try:
@@ -183,6 +190,15 @@ def end_session(kind: str, manager=None) -> Quitter:
             manager = manager if manager.available else None
         except Exception:
             manager = None
-    q = Quitter(kind, manager, system.power_action, _cancelled)
+    if kind in SESSION_ENDS:
+        if open_apps.reopen_wanted() if reopen is None else reopen:
+            open_apps.save_for_login(open_apps.current(manager))
+        else:
+            open_apps.drop_for_login()
+
+    def cancelled(k, t):
+        open_apps.drop_for_login()          # still here: nothing to reopen next time
+        _cancelled(k, t)
+    q = Quitter(kind, manager, system.power_action, cancelled)
     q.start()
     return q

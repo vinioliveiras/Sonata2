@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Reopen your apps after Restart, Shut Down or Log Out (macOS' "Reopen windows when logging back in"): the confirmation has the box, ticked by default and remembered as you leave it; the next session's Dock opens the apps that were open (not the ones Open at Login starts anyway). Settings' restarts follow the same choice.
 - Game Bar: the recording pill's pen is on its bar too -- Draw on the screen with the same palette (pen, highlighter, shapes, text, emoji, colours, fading marks). Pressed, the Game Bar closes and drawing starts on the game's display; pressed again while drawing, it stops. Reachable with the controller.
 - An open folder in Apps and the Apps Menu stands out more: a denser folder background (nearly solid in the Apps Menu) and the apps outside it faded further and blurred, both easing in and out.
 - Window buttons are easier to hit, with the same look: each dot takes the clicks of the room around it -- half the gap to its neighbours (no dead space between them), up to the window's top edge, and out to its side edge for the outermost one (maximized: the screen's corner). On Sonata's windows, dialogs and on other apps' title bars (pixdecor, rebuilt by install.sh). The window's edge still resizes.

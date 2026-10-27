@@ -632,6 +632,13 @@ def _watch_outputs() -> None:
         _WATCH["on"] = False
 
 
+# the apps of the last session (Restart / Shut Down / Log Out with "Reopen
+# windows when logging back in"): opened once the session has settled, the
+# Dock's own windows known by then (so Open at Login ones aren't doubled)
+REOPEN_AFTER_MS = 3500
+_REOPEN = {"done": False}
+
+
 class Dock(Gtk.Box):
     """The plate with all tiles. Hosted by DockWindow or by the preview.
     `manager` is a wl.toplevels.ToplevelManager (None = no window tracking)."""
@@ -648,6 +655,9 @@ class Dock(Gtk.Box):
         self.cfg = cfg
         self.user_size = cfg["icon_size"]      # the size chosen; cfg["icon_size"] is the size shown
         self.manager = manager if manager and manager.available else None
+        if not _REOPEN["done"]:                  # once a session (a rebuilt Dock doesn't again)
+            _REOPEN["done"] = True
+            GLib.timeout_add(REOPEN_AFTER_MS, self._reopen_last_session)
         self.tiles = {}       # desktop id (or bare app_id) -> DockTile (apps only)
         self.windows = {}     # same keys -> [Toplevel]
         self.launcher_open = False   # the Apps Menu is open: Launchpad's dot (Vini, like an app's)
@@ -985,6 +995,28 @@ class Dock(Gtk.Box):
         stats = self._mag_stats = ui.transition.FrameStats(self, "dock magnify " + ("in" if to else "out"))
         self._mag_anim.connect("done", lambda *_: stats.stop())
         self._mag_anim.play()
+
+    def _reopen_last_session(self) -> bool:
+        """The last session's apps (open_apps.reopen_after_login); one with
+        a tile here opens as if clicked (it bounces until its window shows)."""
+        from .. import open_apps
+        try:
+            running = set(self.windows) | set(self._starting)
+            if self.manager is not None:
+                running |= {apps.match_app_id(t.app_id or "") or (t.app_id or "") for t in self.manager.toplevels}
+            def launch(info):
+                did = info.get_id() or ""
+                tile = self.tiles.get(did) or self.tiles.get(open_apps.bare(did))
+                if tile is not None:
+                    self.launch(tile)                # a Dock app: bounces like a click
+                else:
+                    info.launch([], None)
+            n = open_apps.reopen_after_login(running, launch)
+            if n:
+                print(f"sonata2-dock: reopened {n} apps from the last session", flush=True)
+        except Exception as e:                       # a reopening never breaks the Dock
+            print(f"sonata2-dock: reopen: {e!r}", flush=True)
+        return False
 
     def _launcher_entries(self) -> None:
         """Badges and attention from apps (com.canonical.Unity.LauncherEntry:

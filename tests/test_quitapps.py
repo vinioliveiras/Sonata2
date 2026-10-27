@@ -104,7 +104,7 @@ class QuitterTest(unittest.TestCase):
         import pathlib
         root = pathlib.Path(Q.__file__).resolve().parent.parent
         top = (root / "shell" / "topbar.py").read_text()
-        self.assertIn("self._end_session(kind) if r == kind", top)
+        self.assertIn("self._end_session(kind, reopen)", top)
         self.assertIn("quitapps.end_session(", (root / "settings" / "app.py").read_text())
 
 
