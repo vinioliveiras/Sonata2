@@ -311,14 +311,25 @@ def get(app) -> LiveDraw:
     return _INSTANCE["d"]
 
 
-def pen_button(app, output_fn=lambda: None) -> Gtk.Button:
-    """The pills' pen: drawing on / off (blue while on)."""
+def pen_button(app, output_fn=lambda: None, css: str = "rec-pen", size: int = 12, start=None,
+               **props) -> Gtk.Button:
+    """The pills' pen: drawing on / off (blue while on). The Game Bar's is
+    the same pen in its own look (css, size); start(go) runs before drawing
+    turns on and calls go() when it may (the Game Bar closes first, so the
+    pointer reaches the game)."""
     from ..preview.markup import _glyph
-    b = Gtk.Button(css_classes=["rec-pen"], tooltip_text=_("Draw on the screen (Super+Shift+D)"), can_focus=False,
-                   valign=Gtk.Align.CENTER)
-    b.set_child(_glyph("pen", 12))
+    props.setdefault("can_focus", False)
+    b = Gtk.Button(css_classes=[css], tooltip_text=_("Draw on the screen (Super+Shift+D)"),
+                   valign=Gtk.Align.CENTER, **props)
+    b.set_child(_glyph("pen", size))
     d = get(app)
-    b.connect("clicked", lambda *_: d.toggle(output_fn()))
+
+    def clicked(*_a):
+        if d.on or start is None:
+            d.toggle(output_fn())
+        else:
+            start(lambda: d.set_on(True, output_fn()))
+    b.connect("clicked", clicked)
 
     def follow(on):
         (b.add_css_class if on else b.remove_css_class)("on")

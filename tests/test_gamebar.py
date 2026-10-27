@@ -156,6 +156,52 @@ class GameBarLayoutTests(unittest.TestCase):
             bar.destroy()
 
 
+class GameBarDrawTests(unittest.TestCase):
+    """Vini: the recording pill's drawing (pen, shapes, text...) in the Game
+    Bar too -- the same pen (livedraw.pen_button), in the bar's look."""
+
+    def setUp(self):
+        from sonata2.shell import livedraw
+        self.L = livedraw
+        self.d = mock.Mock(on=False, listeners=[])
+        self.p = mock.patch.object(livedraw, "get", return_value=self.d)
+        self.p.start()
+        self.o = mock.patch("sonata2.shell.capture.focused_output", return_value="DP-1")
+        self.o.start()
+        config.save(G.CONFIG, dict(G.DEFAULTS))
+        self.bar = G.GameBar(_app())
+        self.bar.open()
+
+    def tearDown(self):
+        self.bar.destroy()
+        self.p.stop()
+        self.o.stop()
+
+    def test_pen_on_the_bar_is_the_pills_pen(self):
+        self.assertIn("gb-toggle", self.bar.pen.get_css_classes())
+        self.assertTrue(self.bar.pen.is_ancestor(self.bar.bar))
+        self.assertIn(self.bar.pen, G._focusables(self.bar.bar))           # the controller reaches it
+        self.assertIn("Super+Shift+D", self.bar.pen.get_tooltip_text())
+
+    def test_pen_closes_the_bar_then_draws_on_the_games_display(self):
+        self.bar.pen.emit("clicked")
+        self.assertFalse(self.bar.is_open())
+        self.d.set_on.assert_not_called()                                   # not over the Game Bar
+        _spin(G._close_ms() + 120)
+        self.d.set_on.assert_called_once_with(True, "DP-1")
+
+    def test_pen_again_stops_drawing_and_keeps_the_bar(self):
+        self.d.on = True
+        self.bar.pen.emit("clicked")
+        self.d.toggle.assert_called_once()
+        self.assertTrue(self.bar.is_open())
+
+    def test_pen_lights_while_drawing(self):
+        for fn in list(self.d.listeners):
+            fn(True)
+        self.assertTrue(self.bar.pen.has_css_class("on"))
+
+
 class GameBarWiringTests(unittest.TestCase):
     def test_super_g_bound_in_wayfire(self):
         ini = configparser.ConfigParser(interpolation=None, strict=False)

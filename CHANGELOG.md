@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Game Bar: the recording pill's pen is on its bar too -- Draw on the screen with the same palette (pen, highlighter, shapes, text, emoji, colours, fading marks). Pressed, the Game Bar closes and drawing starts on the game's display; pressed again while drawing, it stops. Reachable with the controller.
 - An open folder in Apps and the Apps Menu stands out more: a denser folder background (nearly solid in the Apps Menu) and the apps outside it faded further and blurred, both easing in and out.
 - Window buttons are easier to hit, with the same look: each dot takes the clicks of the room around it -- half the gap to its neighbours (no dead space between them), up to the window's top edge, and out to its side edge for the outermost one (maximized: the screen's corner). On Sonata's windows, dialogs and on other apps' title bars (pixdecor, rebuilt by install.sh). The window's edge still resizes.
 - Game Bar with a controller: the Xbox / PS button opens and closes it (in games too, with desktop control off); while it's open the D-pad / left stick move between its controls, A presses, B closes and LB / RB jump between the bar and the widgets. The controllers are held by the Game Bar while it's open, so the game doesn't get those presses. Settings > Game Controllers can give the button back to the Overview.

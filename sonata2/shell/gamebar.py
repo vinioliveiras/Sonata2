@@ -12,6 +12,11 @@ pad()) -- D-pad / left stick move the focus, A presses, B closes, LB / RB
 jump between the bar and the widgets. The keyboard's arrows and Tab move
 the same focus.
 
+The pen on the bar (Vini) is the recording pill's: Draw on the screen
+(livedraw.py) with the same palette -- pen, highlighter, shapes, text,
+emoji, colours, fading marks. Pressed, the Game Bar closes and drawing
+starts on the game's display; pressed again (drawing on), it stops.
+
 Built in parts (ROADMAP M8): P1 this window, the bar and the widget frames;
 P2 Capture (shell/capture.py), P3 microphone + system audio as two tracks,
 P4 Performance (backend/stats.py, shell/statsui.py), P5 moving / pinning
@@ -204,6 +209,13 @@ class GameBar(Gtk.Window):
             self.toggles[wid] = b
             bar.append(b)
         bar.append(Gtk.Box(css_classes=["gb-sep"]))
+        # the recording pill's pen, in the bar's look (livedraw.pen_button)
+        from . import livedraw
+        from .capture import focused_output
+        self.pen = livedraw.pen_button(self.get_application(), focused_output, css="gb-toggle", size=16,
+                                       start=self._draw, focus_on_click=False, can_focus=True)
+        bar.append(self.pen)
+        bar.append(Gtk.Box(css_classes=["gb-sep"]))
         self.clock = Gtk.Label(css_classes=["gb-clock"], valign=Gtk.Align.CENTER)
         bar.append(self.clock)
         self.bar = bar
@@ -229,6 +241,11 @@ class GameBar(Gtk.Window):
         else:
             self.app_icon.set_from_icon_name("input-gaming-symbolic")
             self.app_name.set_label(_("Game Bar"))
+
+    def _draw(self, go) -> None:
+        """Drawing starts once the Game Bar has gone (the marks go on the game)."""
+        self.close_bar()
+        GLib.timeout_add(_close_ms() + 20, lambda: (go(), False)[1])
 
     def _sync_toggles(self) -> None:
         for wid, b in self.toggles.items():
