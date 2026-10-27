@@ -440,16 +440,22 @@ class Thumbnail(Gtk.Window):
     def _open(self):
         """A screenshot: Preview in Markup, to draw on it (Vini); a movie: its player."""
         if self.path:
-            try:
-                if self.path.lower().endswith(".png") and os.path.isfile(self.path):
-                    from ..__main__ import self_argv
-                    GLib.spawn_async(self_argv() + ["preview", "--markup", self.path],
-                                     flags=GLib.SpawnFlags.SEARCH_PATH)
-                else:
-                    Gio.AppInfo.launch_default_for_uri(Gio.File.new_for_path(self.path).get_uri(), None)
-            except GLib.Error:
-                pass
+            open_shot(self.path)
         self._hide()
+
+
+def open_shot(path: str) -> bool:
+    """A screenshot in Preview's Markup (draw, crop, save); anything else
+    (a movie) in its default app. False: it could not be opened."""
+    try:
+        if path.lower().endswith(".png") and os.path.isfile(path):
+            from ..__main__ import self_argv
+            GLib.spawn_async(self_argv() + ["preview", "--markup", path], flags=GLib.SpawnFlags.SEARCH_PATH)
+        else:
+            Gio.AppInfo.launch_default_for_uri(Gio.File.new_for_path(path).get_uri(), None)
+        return True
+    except GLib.Error:
+        return False
 
 
 def stop_button(tooltip: str) -> Gtk.Button:
@@ -549,7 +555,10 @@ class Capture:
         self.pill = None               # the recording control (RecordingControl)
 
     # -- thumbnail --------------------------------------------------------------------------
-    def shot_taken(self, path: str):
+    def shot_taken(self, path: str, edit: bool = False):
+        if edit:                               # Print Screen: straight into Markup, no thumbnail
+            open_shot(path)
+            return
         if self.thumb is None:
             self.thumb = Thumbnail(self.app)
         self.thumb.show_shot(path)
@@ -565,7 +574,7 @@ class Capture:
         self.toolbar.present()
 
     def run(self, mode: str, cfg: dict):
-        """mode: screen | area | rec-screen | rec-area."""
+        """mode: screen | area | edit | rec-screen | rec-area."""
         shown = self.toolbar is not None and self.toolbar.get_visible()
         if shown:
             self.toolbar.set_visible(False)
@@ -575,8 +584,14 @@ class Capture:
 
     def _run(self, mode, cfg):
         """mode: screen (every display: Super+Shift+3) | display | window | area,
+        edit (Print Screen: the focused display at once, opened in Markup),
         or rec-display | rec-window | rec-area (rec-screen: the focused display).
         A display or a window is picked from a list (thumbnails)."""
+        if mode == "edit":
+            # Vini: Print captures right away and opens the editor -- no
+            # toolbar, no timer (a game behind it keeps the moment)
+            self._shoot(None, dict(cfg, timer=0), focused_output(), edit=True)
+            return
         rec = mode.startswith("rec-")
         what = mode[4:] if rec else mode
         # a picture of a portion / window / display: the screen as it is now,
@@ -653,7 +668,7 @@ class Capture:
                 GLib.timeout_add(250, lambda: (then(value), False)[1])     # not in the picture
         Picker(self.app, title, None, items, action, done).present()
 
-    def _shoot(self, geo, cfg, output=None, frozen=None):
+    def _shoot(self, geo, cfg, output=None, frozen=None, edit=False):
         if not shutil.which("grim"):
             self._missing("grim")
             return
@@ -679,7 +694,7 @@ class Capture:
         if to_clip and shutil.which("wl-copy"):
             with open(path, "rb") as f:
                 subprocess.run(["wl-copy", "--type", "image/png"], stdin=f)
-        self.shot_taken(path)
+        self.shot_taken(path, edit=edit)
 
     def _record(self, geo, cfg, output=None):
         if not shutil.which("wf-recorder") and not shutil.which("wl-screenrec"):

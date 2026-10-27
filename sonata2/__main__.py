@@ -952,7 +952,7 @@ def screenshot(mode: str) -> int:
     "Screenshot 2026-09-29 at 01.52.10.png" on the Desktop and a notification."""
     if _topbar_action("capture", mode):
         return 0
-    if mode not in ("screen", "area"):
+    if mode not in ("screen", "area", "edit"):
         return 1
     area = mode == "area"
     import shutil
@@ -974,6 +974,9 @@ def screenshot(mode: str) -> int:
         cmd += ["-g", sel.stdout.strip()]
     if subprocess.run(cmd + [path]).returncode != 0:
         return 1
+    if mode == "edit":                          # Print Screen without the menu bar: still the editor
+        subprocess.Popen(self_argv() + ["preview", "--markup", path])
+        return 0
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications",

@@ -211,5 +211,6 @@
  "“{name}” couldn't open": "Não foi possível abrir “{name}”",
  "“{name}” couldn't open in a sandbox": "Não foi possível abrir “{name}” numa sandbox",
  "“{name}” is locked": "“{name}” está bloqueada",
- "“{name}” wants to use": "“{name}” quer usar"
+ "“{name}” wants to use": "“{name}” quer usar",
+ "Screenshot and Edit": "Captura de ecrã e editar"
 }
