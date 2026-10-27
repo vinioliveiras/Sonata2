@@ -197,7 +197,7 @@ class BarTests(unittest.TestCase):
         self.assertTrue(self.bar.get_focus_visible())         # the ring shows
 
     def test_a_presses_the_focused_toggle(self):
-        t = self.bar.toggles["capture"]
+        t = next(iter(self.bar.toggles.values()))          # where the focus starts
         self.assertTrue(t.has_css_class("on"))
         self.bar.pad("primary")
         settle(400)                                            # GTK shows the press, then clicks

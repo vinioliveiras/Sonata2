@@ -133,6 +133,29 @@ class GameBarTests(unittest.TestCase):
         self.assertTrue(self.bar.app_name.get_label())
 
 
+class GameBarLayoutTests(unittest.TestCase):
+    def test_widgets_along_the_bottom(self):
+        """Vini: Audio bottom left, Capture bottom centre (right of Audio),
+        Performance bottom right -- the bar's toggles in that same order."""
+        A = Gtk.Align
+        self.assertEqual({k: v[2] for k, v in G.WIDGETS.items()},
+                         {"audio": (A.START, A.END), "capture": (A.CENTER, A.END), "performance": (A.END, A.END)})
+        self.assertEqual(list(G.WIDGETS), ["audio", "capture", "performance"])
+        bar = G.GameBar(_app())
+        try:
+            bar.open()
+            _spin(300)
+            x = {k: w.compute_bounds(bar)[1].get_x() for k, w in bar.widgets.items()}
+            y = {k: w.compute_bounds(bar)[1].get_y() for k, w in bar.widgets.items()}
+            self.assertLess(x["audio"], x["capture"])
+            self.assertLess(x["capture"], x["performance"])
+            self.assertEqual(len(set(round(v) for v in y.values())), 1)          # one row
+            self.assertGreater(y["audio"], bar.get_height() / 2)                 # at the bottom
+            self.assertEqual(list(bar.toggles), list(G.WIDGETS))
+        finally:
+            bar.destroy()
+
+
 class GameBarWiringTests(unittest.TestCase):
     def test_super_g_bound_in_wayfire(self):
         ini = configparser.ConfigParser(interpolation=None, strict=False)

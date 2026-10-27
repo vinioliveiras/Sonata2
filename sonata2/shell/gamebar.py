@@ -36,13 +36,16 @@ from . import layer  # noqa: E402
 
 NAMESPACE = "sonata2-gamebar"
 CONFIG = "gamebar"
-# the widgets, in the bar's order: id -> (title, icon, where it sits)
+# the widgets, in the bar's order -- the same left-to-right order as on the
+# screen, so the toggles, the arrows and LB / RB follow them: id -> (title,
+# icon, (halign, valign)). Vini: all three along the bottom -- Audio at the
+# left, Capture in the middle, Performance at the right.
 WIDGETS = {
-    "capture": (N_("Capture"), "camera-photo-symbolic", (Gtk.Align.START, Gtk.Align.START)),
     "audio": (N_("Audio"), "audio-volume-high-symbolic", (Gtk.Align.START, Gtk.Align.END)),
-    "performance": (N_("Performance"), "speedometer-symbolic", (Gtk.Align.END, Gtk.Align.START)),
+    "capture": (N_("Capture"), "camera-photo-symbolic", (Gtk.Align.CENTER, Gtk.Align.END)),
+    "performance": (N_("Performance"), "speedometer-symbolic", (Gtk.Align.END, Gtk.Align.END)),
 }
-DEFAULTS = {"widgets": ["capture", "audio", "performance"]}
+DEFAULTS = {"widgets": list(WIDGETS)}
 BAR_TOP = 14                 # the bar below the screen's top edge
 WIDGET_TOP = 76              # widgets start under the bar
 WIDGET_SIDE = 24

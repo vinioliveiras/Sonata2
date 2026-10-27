@@ -7,7 +7,7 @@
 - Game Bar with a controller: the Xbox / PS button opens and closes it (in games too, with desktop control off); while it's open the D-pad / left stick move between its controls, A presses, B closes and LB / RB jump between the bar and the widgets. The controllers are held by the Game Bar while it's open, so the game doesn't get those presses. Settings > Game Controllers can give the button back to the Overview.
 - Alerts no longer show a close dot where a button already backs out: Later (Restart / Log Out / Restart Sonata), OK-only alerts, Done, Not Now, Don't Allow, Revert (display settings) and Stop (copy conflicts). It stays only where every button acts (a disk's "in use" choices).
 - Print Screen captures at once and opens the shot in the editor (Markup) to draw, crop and save, with the options last used in the screenshot toolbar (Super+Shift+5): its mode -- the display in front, the window in front, or a portion to draw (after a recording mode, the same kind of still) -- its folder and its clipboard choice; no list to pick from. Listed in Settings > Keyboard Shortcuts as "Screenshot and Edit".
-- Game Bar (Super+G, like Windows' Win+G, in the Big Sur look): a bar over the dimmed game with the app in front, a toggle per widget (Capture, Audio, Performance) and the clock; Esc, Super+G or a click on the game closes it. The widgets' content comes next.
+- Game Bar (Super+G, like Windows' Win+G, in the Big Sur look): a bar over the dimmed game with the app in front, a toggle per widget (Audio, Capture, Performance -- the widgets along the bottom: Audio left, Capture centre, Performance right) and the clock; Esc, Super+G or a click on the game closes it. The widgets' content comes next.
 
 ## 0.20.5-alpha -- 2026-10-23
 
