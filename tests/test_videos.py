@@ -112,6 +112,35 @@ class WindowTest(unittest.TestCase):
         win.close()
         settle(50)
 
+    def test_window_never_smaller_than_its_controls(self):
+        """Vini: the song / movie window had no smallest size -- shrunk, it
+        cut the controls (volume and the time row). Now it can't get
+        narrower than them, nor shorter than them plus some picture."""
+        for path in ("/movies/small.mp4", "/music/small.mp3"):
+            win = vw.VideoWindow(self.app, path, stream_factory=fake)
+            win.set_default_size(120, 80)
+            win.present()
+            settle(300)
+            hud = win.hud
+            need_w = hud.measure(Gtk.Orientation.HORIZONTAL, -1)[0] + hud.get_margin_start() + hud.get_margin_end()
+            need_h = (hud.measure(Gtk.Orientation.VERTICAL, -1)[0] + hud.get_margin_top() + hud.get_margin_bottom()
+                      + vw.MIN_PICTURE_H)
+            self.assertGreaterEqual(win.overlay.get_width(), need_w, path)
+            self.assertGreaterEqual(win.overlay.get_height(), need_h, path)
+            ok, b = hud.compute_bounds(win.overlay)
+            self.assertGreaterEqual(b.get_x(), 0, path)                       # the whole HUD inside
+            self.assertLessEqual(b.get_x() + b.get_width(), win.overlay.get_width(), path)
+            win.destroy()
+            settle(50)
+
+    def test_song_window_opens_square_and_whole(self):
+        win = vw.VideoWindow(self.app, "/music/square.mp3", stream_factory=fake)
+        win._set_audio(True)
+        w, h = win.get_default_size()
+        self.assertEqual(w, h)
+        self.assertGreaterEqual(w, win.overlay.measure(Gtk.Orientation.HORIZONTAL, -1)[0])
+        win.destroy()
+
     def test_factory_error(self):
         def broken(_p):
             raise RuntimeError("no decoder")
@@ -245,7 +274,9 @@ class SongTest(unittest.TestCase):
         settle(400)
         self.assertTrue(win.audio)
         self.assertTrue(win.has_css_class("vd-audio"))
-        self.assertEqual(tuple(win.get_default_size()), (vw.AUDIO_SIZE, vw.AUDIO_SIZE))
+        w, h = win.get_default_size()                  # square, and the controls whole (Vini)
+        self.assertEqual(w, h)
+        self.assertGreaterEqual(w, max(vw.AUDIO_SIZE, win.overlay.measure(Gtk.Orientation.HORIZONTAL, -1)[0]))
         self.assertEqual(win.get_title(), "Band — Song")
         self.assertIsInstance(win.picture.get_paintable(), Gdk.Texture)       # the cover
         self.assertFalse(win.art.get_visible())

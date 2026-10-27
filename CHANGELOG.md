@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Videos: the movie / song window has a smallest size -- never narrower than its controls (nor the trim and crop bars), nor shorter than them plus some picture; shrunk, it used to cut the volume and time row. A song's window opens square and whole.
 - Reopen your apps after Restart, Shut Down or Log Out (macOS' "Reopen windows when logging back in"): the confirmation has the box, ticked by default and remembered as you leave it; the next session's Dock opens the apps that were open (not the ones Open at Login starts anyway). Settings' restarts follow the same choice.
 - Game Bar: the recording pill's pen is on its bar too -- Draw on the screen with the same palette (pen, highlighter, shapes, text, emoji, colours, fading marks). Pressed, the Game Bar closes and drawing starts on the game's display; pressed again while drawing, it stops. Reachable with the controller.
 - An open folder in Apps and the Apps Menu stands out more: a denser folder background (nearly solid in the Apps Menu) and the apps outside it faded further and blurred, both easing in and out.

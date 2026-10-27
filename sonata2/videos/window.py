@@ -155,6 +155,40 @@ def media_file(path: str):
 
 
 # -- window -----------------------------------------------------------------------------------
+# room for the picture above the controls at the smallest window
+MIN_PICTURE_H = 120
+
+
+class _Canvas(Gtk.Overlay):
+    """The movie with its controls over it. An overlay's own children don't
+    size it (GtkOverlayLayout measures the movie only), so the window shrank
+    under the controls and they broke (Vini: the song's window cut its
+    volume and time row). The controls -- and the trim / crop bars in their
+    place -- set its smallest size: never narrower than them, nor shorter
+    than them plus some picture. Again whenever one comes, goes or shows."""
+
+    def add_overlay(self, child) -> None:
+        Gtk.Overlay.add_overlay(self, child)
+        if getattr(child, "sizes_window", False):
+            child.connect("notify::visible", lambda *_a: self.fit_controls())
+            self.fit_controls()
+
+    def remove_overlay(self, child) -> None:
+        Gtk.Overlay.remove_overlay(self, child)
+        self.fit_controls()
+
+    def fit_controls(self) -> None:
+        w = h = 0
+        c = self.get_first_child()
+        while c is not None:
+            if getattr(c, "sizes_window", False) and c.get_visible() and c.get_parent() is self:
+                w = max(w, c.measure(Gtk.Orientation.HORIZONTAL, -1)[0] + c.get_margin_start() + c.get_margin_end())
+                h = max(h, c.measure(Gtk.Orientation.VERTICAL, -1)[0] + c.get_margin_top() + c.get_margin_bottom()
+                        + MIN_PICTURE_H)
+            c = c.get_next_sibling()
+        self.set_size_request(w or -1, h or -1)
+
+
 class VideoWindow(Gtk.ApplicationWindow):
     def __init__(self, app, path: str, stream_factory=media_file):
         if not GLib.get_application_name():
@@ -182,13 +216,14 @@ class VideoWindow(Gtk.ApplicationWindow):
 
         self.picture = Gtk.Picture(content_fit=Gtk.ContentFit.CONTAIN, can_shrink=True, hexpand=True, vexpand=True)
         handle = Gtk.WindowHandle(child=self.picture)            # drag the movie: the window moves
-        self.overlay = Gtk.Overlay(child=handle, css_classes=["vd-canvas"])
+        self.overlay = _Canvas(child=handle, css_classes=["vd-canvas"])
         self.art = Gtk.Box(css_classes=["vd-art"], visible=False, can_target=False)      # a song without a cover
         self.art.append(Gtk.Image(icon_name="audio-x-generic-symbolic", hexpand=True, vexpand=True))
         self.overlay.add_overlay(self.art)
         self.message = self._build_message()
         self.overlay.add_overlay(self.message)
         self.hud = self._build_hud()
+        self.hud.sizes_window = True                  # the window's smallest size (_Canvas)
         self.overlay.add_overlay(self.hud)
         self.set_child(self.overlay)
 
@@ -315,6 +350,7 @@ class VideoWindow(Gtk.ApplicationWindow):
         self.trim_bar = TrimBar(dur, self._trim_seek, self.cancel_trim, self.do_trim)
         self.trim_bar.set_position(s.get_timestamp() / 1e6)
         self.hud.set_visible(False)
+        self.trim_bar.sizes_window = True             # (in the controls' place: they size the window too)
         self.overlay.add_overlay(self.trim_bar)
         self._set_cursor(True)
         bar = self.trim_bar
@@ -342,6 +378,7 @@ class VideoWindow(Gtk.ApplicationWindow):
         self._crop_room(True)
         self.hud.set_visible(False)
         self.overlay.add_overlay(self.crop_frame)
+        self.crop_bar.sizes_window = True
         self.overlay.add_overlay(self.crop_bar)
         self._set_cursor(True)
 
@@ -459,7 +496,8 @@ class VideoWindow(Gtk.ApplicationWindow):
         if self.is_fullscreen():
             self.toggle_fullscreen()
         self._sized = True
-        self.set_default_size(AUDIO_SIZE, AUDIO_SIZE)
+        side = max(AUDIO_SIZE, self.overlay.measure(Gtk.Orientation.HORIZONTAL, -1)[0])   # whole controls
+        self.set_default_size(side, side)
         from .. import audiotags
         from ..backend import system
         path = self.path
