@@ -34,8 +34,11 @@ SETTLE_MS = 150                          # the input once more after on/off (sur
 ui.register("""
 window.sonata-draw, window.sonata-draw > contents { background: none; box-shadow: none; }
 window.sonata-draw-palette, window.sonata-draw-palette > contents { background: none; box-shadow: none; }
-.draw-palette { background: %(panel_material)s; border-radius: %(r_dialog)s; margin: 6px 12px 16px 12px;
-  box-shadow: 0 0 0 0.5px %(hairline)s, 0 10px 30px rgba(0,0,0,0.3); }
+/* the margins hold the whole shadow (Vini: a square shadow around it -- a
+   30 px shadow in 6-16 px of room was cut at the surface's edges); only the
+   palette itself takes clicks (Palette._input), the margins pass them on */
+.draw-palette { background: %(panel_material)s; border-radius: %(r_dialog)s; margin: 12px 18px 24px 18px;
+  box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_menu)s; }
 .draw-palette .pv-markup { border-bottom: none; padding: 4px 6px; }
 .rec-pill button.rec-pen { min-width: 18px; min-height: 18px; padding: 0; margin: 1px 0; border-radius: 6px;
   background: none; border: none; box-shadow: none; color: %(label)s; }
@@ -89,10 +92,14 @@ class Overlay(Gtk.Window):
         if getattr(self.owner, "palette_on", None) is not self.monitor:
             return [(0, top, W, H - top)]          # the palette is on another display: all of this one
         pw, ph = PALETTE_SIZE
+        fx, fy, fw, fh = 0, 0, pw, ph
         if pal is not None and pal.get_mapped() and pal.get_width() > 0:
             pw, ph = pal.get_width(), pal.get_height()
-        x0, band = (W - pw) // 2, top + ph
-        return [(0, band, W, H - band), (0, top, x0, ph), (x0 + pw, top, W - x0 - pw, ph)]
+            fx, fy, fw, fh = pal.frame_rect()
+        # a hole for the palette itself only: its shadow's margins still draw
+        hx, hy = (W - pw) // 2 + fx, top + fy
+        return [r for r in ((0, top, W, hy - top), (0, hy, hx, fh), (hx + fw, hy, W - hx - fw, fh),
+                            (0, hy + fh, W, H - hy - fh)) if r[2] > 0 and r[3] > 0]
 
     def pointer(self, on: bool) -> None:
         """Drawing: the pointer comes here; off: clicks go through to the apps."""
@@ -122,6 +129,7 @@ class Palette(Gtk.Window):
         self.bar = MarkupBar(owner.proto, tools=[(k, _(v)) for k, v in TOOLS], colors=COLORS, actions=actions)
         frame = Gtk.Box(css_classes=["draw-palette"])
         frame.append(self.bar)
+        self.frame = frame
         self.set_child(frame)
         self.fade_btn = [c for c in _children(self.bar.box) if c.get_tooltip_text() ==
                          fade][0]
@@ -135,7 +143,21 @@ class Palette(Gtk.Window):
             from .menubar_size import height
             LS.set_margin(self, LS.Edge.TOP, height())   # right under the menu bar's pill
             LS.set_keyboard_mode(self, LS.KeyboardMode.NONE)
-        self.connect("map", lambda *_: GLib.timeout_add(50, lambda: (owner.regions(), False)[1]))
+        self.connect("map", lambda *_: GLib.timeout_add(50, lambda: (self._input(), owner.regions(), False)[2]))
+
+    def frame_rect(self) -> tuple:
+        """The palette itself (x, y, w, h) inside its surface, without the
+        room its shadow takes."""
+        ok, r = self.frame.compute_bounds(self)
+        if not ok or r.get_width() <= 0:
+            return 0, 0, self.get_width(), self.get_height()
+        return int(r.get_x()), int(r.get_y()), int(r.get_width()) + 1, int(r.get_height()) + 1
+
+    def _input(self) -> None:
+        """Clicks on the palette only: the shadow's margins let them through
+        to the drawing (or the apps) under them."""
+        if layer.layer_shell() and self.get_surface() is not None:
+            layer.set_input_region(self, [self.frame_rect()])
 
     def show_on(self, monitor) -> None:
         LS = layer.layer_shell()

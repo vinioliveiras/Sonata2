@@ -214,5 +214,47 @@ class CaptureHiddenTest(unittest.TestCase):
         self.assertIn('name="capture_hidden"', (root / "wayfire-plugin" / "metadata" / "sonata-corners.xml").read_text())
 
 
+
+class PaletteShadowTest(unittest.TestCase):
+    """Vini: the drawing palette (the Game Bar's, the recording pill's) had a
+    square shadow around it -- a 30 px shadow in 6-16 px of margins, cut at
+    the surface's edges. Now the margins hold the whole shadow, and only the
+    palette itself takes clicks (its margins draw / pass through)."""
+
+    def test_margins_hold_the_whole_shadow(self):
+        import re
+        from sonata2.shell import livedraw as L
+        from sonata2.ui import tokens
+        src = open(L.__file__).read()
+        rule = re.search(r"\.draw-palette \{([^}]*)\}", src).group(1)
+        top, side, bottom, _left = (int(v) for v in re.search(r"margin: (\d+)px (\d+)px (\d+)px (\d+)px", rule).groups())
+        self.assertIn("%(shadow_menu)s", rule)
+        for pal in (tokens.LIGHT, tokens.DARK):
+            x, y, blur = (float(v) for v in re.match(r"\s*([-\d.]+)(?:px)? ([-\d.]+)(?:px)? ([\d.]+)px", pal["shadow_menu"]).groups())
+            self.assertGreaterEqual(top, blur - y)
+            self.assertGreaterEqual(side, blur + abs(x))
+            self.assertGreaterEqual(bottom, blur + y)
+
+    def test_only_the_palette_takes_clicks(self):
+        from sonata2.shell import livedraw as L
+        mon = mock.Mock()
+        mon.get_geometry.return_value = mock.Mock(width=1000, height=800)
+        pal = mock.Mock(get_mapped=lambda: True, get_width=lambda: 540, get_height=lambda: 80,
+                        frame_rect=lambda: (18, 12, 504, 44))
+        owner = mock.Mock(palette=pal, palette_on=mon)
+        ov = L.Overlay.__new__(L.Overlay)
+        ov.monitor, ov.owner = mon, owner
+        with mock.patch("sonata2.shell.menubar_size.height", return_value=30):
+            rects = ov.region(True)
+        hx, hy = (1000 - 540) // 2 + 18, 30 + 12
+
+        def hit(x, y):
+            return any(rx <= x < rx + rw and ry <= y < ry + rh for rx, ry, rw, rh in rects)
+        self.assertFalse(hit(hx + 10, hy + 10))                 # the palette: its own
+        self.assertTrue(hit(hx - 5, hy + 10))                   # its shadow's margin: drawing
+        self.assertTrue(hit(hx + 10, hy + 44 + 5))              # under it: drawing
+        self.assertTrue(hit(hx + 10, 30 + 2))                   # above it, under the menu bar
+        self.assertFalse(hit(10, 10))                           # the menu bar stays the menu bar
+
 if __name__ == "__main__":
     unittest.main()
