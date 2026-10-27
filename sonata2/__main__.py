@@ -651,6 +651,15 @@ def run_topbar(app, args, ui):
     act = Gio.SimpleAction.new("draw", None)
     act.connect("activate", draw)
     app.add_action(act)
+    # Game Bar (Super+G, like Windows' Win+G): built on first use, kept after
+    def gamebar(*_a):
+        if "g" not in emo:
+            from .shell.gamebar import GameBar
+            emo["g"] = GameBar(app, win.bar)
+        emo["g"].toggle()
+    act = Gio.SimpleAction.new("gamebar", None)
+    act.connect("activate", gamebar)
+    app.add_action(act)
     # Input sources: Ctrl+Space goes back to the layout used before (macOS)
     act = Gio.SimpleAction.new("input-next", None)
     act.connect("activate", lambda *_a: win.bar.next_layout())
@@ -1409,6 +1418,8 @@ def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "lock-wait":         # swayidle: lock, return once locked
         from .shell import idlelock
         return idlelock.lock_and_wait(self_argv() + ["lock"])
+    if len(sys.argv) > 1 and sys.argv[1] == "gamebar":           # Super+G: the menu bar shows it
+        return 0 if _topbar_action("gamebar", None) else 1
     if len(sys.argv) > 1 and sys.argv[1] == "screenshot":
         return screenshot(sys.argv[2] if len(sys.argv) > 2 else "screen")
     if len(sys.argv) > 1 and sys.argv[1] == "self-update":     # Sonata's own updates (GitHub releases)

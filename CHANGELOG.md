@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Game Bar (Super+G, like Windows' Win+G, in the Big Sur look): a bar over the dimmed game with the app in front, a toggle per widget (Capture, Audio, Performance) and the clock; Esc, Super+G or a click on the game closes it. The widgets' content comes next.
+
 ## 0.20.5-alpha -- 2026-10-23
 
 ### Changes

@@ -70,6 +70,16 @@ list: [docs/PARITY.md](docs/PARITY.md).
   wayfire), XDG autostart runner, macOS-like key bindings.
   Next: a Sonata login/lock screen in the macOS style (ext-session-lock for
   locking; a greeter for the login screen).
+- **M8 -- Game Bar** (Super+G; Windows' Game Bar layout, Big Sur glass), in parts:
+  - [x] P1 overlay (dimmed game, top glass bar: app in front, widget
+        toggles, clock), widget frames, open/close animations, Esc / Super+G /
+        click outside, widgets shown remembered (`gamebar.json`)
+  - [ ] P2 Capture widget: screenshot, record, stop (shell/capture.py)
+  - [ ] P3 microphone + system audio recorded as two separate tracks
+  - [ ] P4 Performance widget: CPU, GPU, VRAM, temps, RAM, FPS graphs
+        (backend/stats.py, shell/statsui.py, fpsmodule.py)
+  - [ ] P5 move widgets, pin them over the game, small HUD
+  - [ ] P6 replay: save the last 30 seconds
 - **M7 -- Files** (our own Finder; `sonata2 files [FOLDER]`), in parts:
   - [x] F1 window: sidebar (Favorites: Recents, Desktop, Documents,
         Downloads, home, GTK bookmarks; Locations: Computer, drives with

@@ -43,6 +43,7 @@ SHORTCUTS = [
     Shortcut("emoji", N_("Emoji and Symbols"), N_("Apps and Search"), "command", "binding_emoji"),
     Shortcut("input", N_("Previous Input Source"), N_("Apps and Search"), "command", "binding_input"),
     Shortcut("clipboard", N_("Clipboard History"), N_("Apps and Search"), "command", "binding_clipboard"),
+    Shortcut("gamebar", N_("Game Bar"), N_("Apps and Search"), "command", "binding_gamebar"),
     Shortcut("close", N_("Close Window"), N_("Windows"), "core", "close_top_view"),
     Shortcut("minimize", N_("Minimize"), N_("Windows"), "wm-actions", "minimize"),
     Shortcut("fullscreen", N_("Full Screen"), N_("Windows"), "command", "binding_fullscreen"),
