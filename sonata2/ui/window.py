@@ -11,7 +11,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
 from . import theme  # noqa: E402
-from ..i18n import _  # noqa: E402
+from ..i18n import N_, _  # noqa: E402
 
 def traffic_metrics() -> dict:
     """CSS values for the dots now (tokens: the theme's tl_* placeholders)."""
@@ -421,15 +421,23 @@ def has_window_buttons(widget) -> bool:
 
 
 # a button that already closes without doing anything (Vini: a close dot
-# next to Cancel or Quit makes no sense)
-DISMISS_IDS = ("cancel", "close", "quit")
+# next to Cancel or Quit makes no sense -- nor next to OK, Done, Later, Not
+# Now or Don't Allow: Restart's "Later / Restart" alert had one)
+DISMISS_IDS = ("cancel", "close", "quit", "ok", "done", "later", "deny")
+# (an English label too: some alerts' buttons come untranslated, from GIO)
+DISMISS_LABELS = (N_("Cancel"), N_("Close"), N_("Quit"), N_("OK"), N_("Done"), N_("Later"), N_("Not Now"),
+                  N_("Don't Allow"), N_("Don't Open"))
+
+
+def _plain(text) -> str:
+    return (text or "").replace("_", "").replace("\u2019", "'").strip().rstrip("….").strip().casefold()
 
 
 def dismiss_label(text) -> bool:
-    """Cancel, Close or Quit (in Sonata's language)."""
-    t = (text or "").replace("_", "").strip().rstrip("….").strip().casefold()
-    return bool(t) and t in {x.casefold() for x in (_("Cancel"), _("Close"), _("Quit"),
-                                                    "cancel", "close", "quit")}
+    """Cancel, Close, Quit, OK, Done, Later, Not Now, Don't Allow... (in
+    Sonata's language or English): the button leaves without doing anything."""
+    t = _plain(text)
+    return bool(t) and t in {_plain(x) for label in DISMISS_LABELS for x in (label, _(label))}
 
 
 def has_dismiss_button(widget) -> bool:

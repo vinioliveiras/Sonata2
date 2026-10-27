@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Alerts no longer show a close dot where a button already backs out: Later (Restart / Log Out / Restart Sonata), OK-only alerts, Done, Not Now, Don't Allow, Revert (display settings) and Stop (copy conflicts). It stays only where every button acts (a disk's "in use" choices).
 - Print Screen captures the display in front at once and opens it in the editor (Markup) to draw, crop and save; the options toolbar stays on Super+Shift+5. Listed in Settings > Keyboard Shortcuts as "Screenshot and Edit".
 - Game Bar (Super+G, like Windows' Win+G, in the Big Sur look): a bar over the dimmed game with the app in front, a toggle per widget (Capture, Audio, Performance) and the clock; Esc, Super+G or a click on the game closes it. The widgets' content comes next.
 

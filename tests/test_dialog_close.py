@@ -1,7 +1,9 @@
 """Vini: every Sonata dialog (alerts: Edit Web App, errors, confirmations)
 and the panels that are forms (Change Icon, Get Info, Resize...) have the
 windows' close dot, in their look and on their side; it closes like Escape.
-Not where a Cancel / Close / Quit button already closes them (Vini).
+Not where a Cancel / Close / Quit button already closes them, nor beside
+OK / Done / Later / Not Now / Don't Allow / Revert / Stop, nor on a
+one-button alert (Vini: Restart's "Later / Restart" alert had one).
 xvfb-run -a python3 -m unittest tests.test_dialog_close"""
 import os
 import tempfile
@@ -47,8 +49,9 @@ class AlertCloseTest(unittest.TestCase):
         ui.setup()
 
     def _alert(self, answers, **kw):
-        dlg = ui.dialog.alert("Edit Web App", "Changes show the next time it opens.",
-                              [("later", "Not Now", ""), ("create", "Save", "default")], answers.append, **kw)
+        # every button acts (a disk's "in use" choices, from GIO): the dot is the way out
+        dlg = ui.dialog.alert("The disk is in use", "Some apps are still using it.",
+                              [("keep", "Unmount Anyway", ""), ("eject", "Eject", "default")], answers.append, **kw)
         settle()
         return dlg, (dlg.get_root() or dlg)
 
@@ -61,7 +64,7 @@ class AlertCloseTest(unittest.TestCase):
         self.assertIn("has-close", dlg.get_css_classes())
         find(box, "tl-close").emit("clicked")
         settle(800)
-        self.assertEqual(answers, ["later"])                         # what Escape answers
+        self.assertEqual(answers, ["keep"])                          # what Escape answers
         self.assertFalse(win.get_visible())
 
     def test_on_the_windows_side(self):
@@ -162,14 +165,34 @@ class PanelCloseTest(unittest.TestCase):
         self.assertIsNone(find(ui.panel.popup(anchor, form, close=True), "traffic-close-only"))
         win.destroy()
 
+    def test_no_close_dot_on_restart_later_alert(self):
+        """Vini: "Restart the computer now?" (Later / Restart) showed a close
+        dot though Later already closes it. Same for OK-only, Done, Don't
+        Allow, Revert (display settings) and Stop (copy conflicts)."""
+        for responses in ([("later", "Later", ""), ("now", "Restart", "default")],
+                          [("ok", "OK", "default")],
+                          [("only", "Unlock", "default")],
+                          [("done", "Done", "default"), ("more", "Show More", "")],
+                          [("deny", "Don’t Allow", ""), ("allow", "Allow", "default")],
+                          [("revert", "Revert", ""), ("keep", "Keep", "default")],
+                          [("keep", "Keep Both", ""), ("stop", "Stop", ""), ("replace", "Replace", "")]):
+            self.assertFalse(ui.dialog.needs_close(responses), responses)
+            dlg = ui.dialog.alert("T", "b", responses, lambda *_a: None)
+            settle()
+            self.assertIsNone(find(dlg.get_root() or dlg, "traffic-close-only"), responses)
+            ui.dialog._close(dlg)
+            settle(600)
+        self.assertTrue(ui.dialog.needs_close([("a", "Unmount Anyway", ""), ("b", "Eject", "default")]))
+
     def test_dismiss_labels(self):
         from sonata2 import i18n
         try:
             for lang in ("en", "pt_BR", "pt_PT"):
                 i18n.use(lang)
-                for t in (i18n._("Cancel"), i18n._("Quit") + "…", "_Close"):
+                for t in (i18n._("Cancel"), i18n._("Quit") + "…", "_Close", i18n._("OK"), i18n._("Later"),
+                          i18n._("Not Now"), i18n._("Done"), "Don’t Allow", i18n._("Don't Allow")):
                     self.assertTrue(W.dismiss_label(t), (lang, t))
-                for t in ("Save", "OK", "", None, i18n._("Delete")):
+                for t in ("Save", "", None, i18n._("Delete"), i18n._("Restart"), i18n._("Allow")):
                     self.assertFalse(W.dismiss_label(t), (lang, t))
         finally:
             i18n.use(None)

@@ -131,10 +131,24 @@ def alert(heading: str, body: str, responses, on_response=None, parent=None,
         dlg.present()
         _raise_when_owner_shows(parent.get_root() if parent is not None and hasattr(parent, "get_root") else None,
                                 dlg)
-    from .window import DISMISS_IDS, dismiss_label
-    if not any(rid in DISMISS_IDS or dismiss_label(text) for rid, text, _s in responses):
+    if needs_close(responses):
         _add_close(dlg)                  # (its content exists once presented; none next to Cancel: Vini)
     return dlg
+
+
+# answers that back out of an alert as well: Revert (a display change),
+# Stop (a copy that met a conflict)
+BACK_OUT_IDS = ("revert", "stop")
+
+
+def needs_close(responses) -> bool:
+    """A close dot only where no button leaves things as they are (Vini:
+    "Later / Restart" had one for nothing). One button alone (OK, Unlock...)
+    already closes it, so it never needs one either."""
+    from .window import DISMISS_IDS, dismiss_label
+    if len(responses) <= 1:
+        return False
+    return not any(rid in DISMISS_IDS or rid in BACK_OUT_IDS or dismiss_label(text) for rid, text, _s in responses)
 
 
 def _add_close(dlg) -> None:
