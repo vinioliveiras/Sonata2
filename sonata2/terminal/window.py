@@ -307,10 +307,14 @@ class _TabButton(Gtk.Box):
         self.win.move_tab(self.tab, int(max(0.0, self._start_x + dx) // width))
 
 
+MIN_SIZE = (420, 260)          # never smaller (Vini: no smallest size; a terminal of a few letters)
+
+
 class TerminalWindow(Gtk.ApplicationWindow):
     def __init__(self, app, cwd: str = None, command=None, factory=None, tab: TerminalTab = None):
         super().__init__(application=app, title=_("Terminal"), css_classes=["sonata-terminal"])
         ui.window.standard(self)
+        self.set_size_request(*MIN_SIZE)
         self.cfg = config.load("terminal", DEFAULTS)
         # the title bar is the glass one the compositor draws (pixdecor): no
         # second bar; this one only carries the title label

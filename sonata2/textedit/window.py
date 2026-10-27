@@ -334,12 +334,16 @@ class _Bar:
 
 
 # -- windows -----------------------------------------------------------------------------------
+MIN_SIZE = (420, 280)          # never smaller (Vini: the page shrank to one line under the toolbar)
+
+
 class TextEditWindow(Gtk.ApplicationWindow):
     def __init__(self, app, path: str = None, restore: dict = None):
         if not GLib.get_application_name():
             GLib.set_application_name("TextEdit")          # Recent documents need it
         super().__init__(application=app, title=_("Untitled"), css_classes=["sonata-textedit"])
         ui.window.standard(self)
+        self.set_size_request(*MIN_SIZE)
         _apply_size()
         ui.window.remember_size(self, "textedit", 760, 580, roomy=True)     # a session window: its own size (_restore)
         self.docs, self.doc = [], None

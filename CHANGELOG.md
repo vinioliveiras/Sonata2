@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A smallest window size for the apps that had none: Preview (420 x 300), Terminal (420 x 260), TextEdit (420 x 280), Disk Manager (640 x 420) and Calendar (720 x 440). Preview could shrink to a sliver and TextEdit to one line under its toolbar.
 - Videos: the movie / song window has a smallest size -- never narrower than its controls (nor the trim and crop bars), nor shorter than them plus some picture; shrunk, it used to cut the volume and time row. A song's window opens square and whole.
 - Reopen your apps after Restart, Shut Down or Log Out (macOS' "Reopen windows when logging back in"): the confirmation has the box, ticked by default and remembered as you leave it; the next session's Dock opens the apps that were open (not the ones Open at Login starts anyway). Settings' restarts follow the same choice.
 - Game Bar: the recording pill's pen is on its bar too -- Draw on the screen with the same palette (pen, highlighter, shapes, text, emoji, colours, fading marks). Pressed, the Game Bar closes and drawing starts on the game's display; pressed again while drawing, it stops. Reachable with the controller.

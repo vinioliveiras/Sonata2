@@ -65,6 +65,9 @@ def siblings(path: str) -> list:
     return [os.path.join(folder, n) for n in names]
 
 
+MIN_SIZE = (420, 300)          # never smaller (Vini: shrunk to 348 x 90, the picture a sliver)
+
+
 class PreviewWindow(Gtk.ApplicationWindow):
     def __init__(self, app, path: str, paths=None, markup: bool = False):
         """paths: the pictures opened together (their thumbnails show);
@@ -73,6 +76,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
             GLib.set_application_name("Preview")           # Recent documents need it
         super().__init__(application=app, css_classes=["sonata-preview"])
         ui.window.standard(self)
+        self.set_size_request(*MIN_SIZE)
         from .canvas import Canvas
         from .info import InfoPanel
         from .sidebar import Thumbnails

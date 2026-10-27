@@ -143,12 +143,16 @@ class CapacityBar(Gtk.DrawingArea):
         cr.stroke()
 
 
+MIN_SIZE = (640, 420)          # never smaller: the sidebar and a disk's details side by side (Vini)
+
+
 class DiskUtilityWindow(Gtk.ApplicationWindow):
     def __init__(self, app, client=None):
         if not GLib.get_application_name():
             GLib.set_application_name("Disk Manager")
         super().__init__(application=app, title=_("Disk Manager"), css_classes=["sonata-diskutil"])
         ui.window.standard(self)
+        self.set_size_request(*MIN_SIZE)
         ui.window.remember_size(self, "diskutil", 900, 600, roomy=True)
         self.disks = []
         self.selected = None               # a Disk or a Volume

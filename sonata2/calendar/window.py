@@ -136,12 +136,16 @@ def parse_time(text: str):
     return dt.time(h, mi)
 
 
+MIN_SIZE = (720, 440)          # never smaller: a week's columns and some hours in sight (Vini)
+
+
 class CalendarWindow(Gtk.ApplicationWindow):
     def __init__(self, app, folder: str = None):
         if not GLib.get_application_name():
             GLib.set_application_name("Calendar")
         super().__init__(application=app, title=_("Calendar"), css_classes=["sonata-calendar"])
         ui.window.standard(self)
+        self.set_size_request(*MIN_SIZE)
         ui.window.remember_size(self, "calendar", 1100, 720, roomy=True)  # its last size (never bigger than the display)
         self.cfg = config.load("calendar", DEFAULTS)
         ws = self.cfg["week_start"]
