@@ -4,8 +4,9 @@ The Linux gamepad layout (kernel docs, gamepad.rst): face buttons
 BTN_SOUTH (A / cross) .. , shoulders BTN_TL/TR, sticks ABS_X/Y and
 ABS_RX/RY, triggers ABS_Z/RZ (or ABS_BRAKE/GAS), d-pad ABS_HAT0X/Y or
 BTN_DPAD_*. Controllers are readable by the logged-in user (logind's
-"uaccess" for ID_INPUT_JOYSTICK devices). Devices are only listened to,
-never grabbed: games keep receiving them.
+"uaccess" for ID_INPUT_JOYSTICK devices). Devices are only listened to:
+games keep receiving them -- except while the Game Bar is open over a game
+(Gamepad.grab), so navigating it doesn't also play the game.
 
     pads = find_gamepads()                  # ["/dev/input/event17", ...]
     pad = Gamepad(path, on_event)           # on_event(pad, type, code, value)
@@ -34,6 +35,9 @@ TRIGGERS = (ABS_Z, ABS_RZ, ABS_GAS, ABS_BRAKE)
 
 def _ioc_read(nr: int, size: int) -> int:
     return (2 << 30) | (size << 16) | (ord("E") << 8) | nr
+
+
+EVIOCGRAB = (1 << 30) | (4 << 16) | (ord("E") << 8) | 0x90      # _IOW('E', 0x90, int)
 
 
 def _bits(fd, ev_type: int, count: int) -> bytes:
@@ -132,6 +136,17 @@ class Gamepad:
                 continue
         self._watch = GLib.io_add_watch(self.fd, GLib.PRIORITY_DEFAULT, GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR,
                                         self._readable)
+
+    def grab(self, on: bool) -> bool:
+        """EVIOCGRAB: the controller's events come only here (on) or to
+        everyone again (off). False: the kernel refused (another grab)."""
+        if self.fd is None:
+            return False
+        try:
+            fcntl.ioctl(self.fd, EVIOCGRAB, 1 if on else 0)
+            return True
+        except OSError:
+            return False
 
     def norm(self, code: int, raw: int) -> float:
         lo, hi, _flat = self.ranges.get(code, (-32768, 32767, 0))

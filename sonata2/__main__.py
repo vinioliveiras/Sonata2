@@ -655,7 +655,7 @@ def run_topbar(app, args, ui):
     def gamebar(*_a):
         if "g" not in emo:
             from .shell.gamebar import GameBar
-            emo["g"] = GameBar(app, win.bar)
+            emo["g"] = win.bar.gamebar_win = GameBar(app, win.bar)      # (controllers drive it while open)
         emo["g"].toggle()
     act = Gio.SimpleAction.new("gamebar", None)
     act.connect("activate", gamebar)

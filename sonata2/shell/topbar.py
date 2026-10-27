@@ -2227,7 +2227,8 @@ class TopBarWindow(Gtk.ApplicationWindow):
             from ..trash_cleanup import Housekeeping
             self.bar.housekeeping = Housekeeping()              # old Trash items (when that's on)
             from ..gamepad.service import Gamepads                  # controllers drive the desktop
-            self.bar.gamepads = Gamepads(app, lambda: getattr(self.bar, "switcher_win", None))
+            self.bar.gamepads = Gamepads(app, lambda: getattr(self.bar, "switcher_win", None),
+                                         lambda: getattr(self.bar, "gamebar_win", None))
             app.connect("shutdown", lambda *_: self.bar.gamepads.stop())
             from .. import fullscreen                               # Ctrl+Super+F, remembered; games
             self.bar.fullscreen = fullscreen.Rules()

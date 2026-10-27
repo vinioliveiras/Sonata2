@@ -804,5 +804,8 @@
  "A display with no window keeps playing while another has windows": "Uma tela sem janelas continua reproduzindo enquanto outra tem janelas",
  "Keep playing with windows open": "Continuar reproduzindo com janelas abertas",
  "When the wallpaper is a video.": "Quando o papel de parede é um vídeo.",
- "Even with maximized windows; still paused in Overview, in full screen and when locked": "Mesmo com janelas maximizadas; ainda pausa na Visão Geral, em tela cheia e com a tela bloqueada"
+ "Even with maximized windows; still paused in Overview, in full screen and when locked": "Mesmo com janelas maximizadas; ainda pausa na Visão Geral, em tela cheia e com a tela bloqueada",
+ "Capture, audio and performance over the game, like the Xbox Game Bar.": "Captura, áudio e desempenho por cima do jogo, como a Xbox Game Bar.",
+ "Xbox / PS button opens the Game Bar": "Botão Xbox / PS abre a Barra de Jogo",
+ "In games too. Off: the button shows the Overview while desktop control is on": "Também nos jogos. Desligado: o botão mostra a Visão Geral quando o Controle da Mesa está ligado"
 }

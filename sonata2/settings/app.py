@@ -1806,6 +1806,10 @@ class Settings(Adw.ApplicationWindow):
         desk.add(switch_row(_("Pause while Steam is open"), gp["pause_steam"],
                             lambda on: self._save("gamepad", "pause_steam", on),
                             subtitle=_("Steam has its own desktop controls: both would act on every press")))
+        bar = group(_("Game Bar"), _("Capture, audio and performance over the game, like the Xbox Game Bar."))
+        bar.add(switch_row(_("Xbox / PS button opens the Game Bar"), gp.get("guide_gamebar", True),
+                           lambda on: self._save("gamepad", "guide_gamebar", on),
+                           subtitle=_("In games too. Off: the button shows the Overview while desktop control is on")))
         keys = group(_("Buttons"))
         for button, does in LEGEND:
             row = Adw.ActionRow(title=_(button))

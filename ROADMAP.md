@@ -74,6 +74,8 @@ list: [docs/PARITY.md](docs/PARITY.md).
   - [x] P1 overlay (dimmed game, top glass bar: app in front, widget
         toggles, clock), widget frames, open/close animations, Esc / Super+G /
         click outside, widgets shown remembered (`gamebar.json`)
+  - [x] Controller: Xbox / PS button opens it, D-pad / stick / A / B / LB / RB
+        drive it, controllers grabbed while open (Settings toggle)
   - [ ] P2 Capture widget: screenshot, record, stop (shell/capture.py)
   - [ ] P3 microphone + system audio recorded as two separate tracks
   - [ ] P4 Performance widget: CPU, GPU, VRAM, temps, RAM, FPS graphs

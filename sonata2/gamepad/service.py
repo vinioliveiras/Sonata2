@@ -7,8 +7,14 @@ bar process; nothing runs while no controller is connected.
     D-pad          arrow keys                         B / circle    Esc
     LB / RB        app switcher (A picks, B closes)   Y / square    Launchpad
     Start          Search                             View/Select   Overview
-    Guide (Xbox / PS)  Overview
+    Guide (Xbox / PS)  Game Bar (also in games; Settings can make it Overview again)
     LB + RB + L3 + R3 held together: desktop control on / off
+
+While the Game Bar is open the controller drives it instead (Vini: like
+the Xbox Game Bar), even with desktop control off and in a game: D-pad /
+left stick move between its controls, A presses, B or Guide closes, LB /
+RB jump between the bar and the widgets. The controllers are grabbed while
+it's open, so the game behind doesn't also get the presses.
 
 Off by default. Games keep the controller: it is never grabbed, and the desktop control
 pauses by itself while a fullscreen window has the focus (gamemode.py)
@@ -17,7 +23,7 @@ Actions are named (ACTIONS) so a future SteamOS-style theme can bind the
 same buttons to its own navigation.
 
 Settings: ~/.config/sonata2/gamepad.json {"enabled", "speed", "scroll",
-"pause_steam"} (Settings > Game Controllers)."""
+"pause_steam", "guide_gamebar"} (Settings > Game Controllers)."""
 import os
 import sys
 import time
@@ -29,7 +35,7 @@ from ..i18n import N_, _
 from . import evdev as E
 from .vpointer import BTN_LEFT, BTN_RIGHT, VirtualPointer, key
 
-DEFAULTS = {"enabled": False, "speed": 1.0, "scroll": 1.0, "pause_steam": True}
+DEFAULTS = {"enabled": False, "speed": 1.0, "scroll": 1.0, "pause_steam": True, "guide_gamebar": True}
 DEAD = 0.18                 # stick dead zone
 TICK_MS = 8                 # while a stick is pushed (~120 Hz)
 MAX_PX_S = 1500.0           # pointer speed at full tilt (speed 1.0)
@@ -37,6 +43,10 @@ SCROLL_PX_S = 900.0
 # held together: desktop control on / off (Vini: L1 + R1 + L3 + R3 -- no
 # game asks for all four at once, and it works the same on every pad)
 TOGGLE_CHORD = frozenset((E.BTN_TL, E.BTN_TR, E.BTN_THUMBL, E.BTN_THUMBR))
+# the Game Bar with the left stick: a push past this is one step, held it repeats
+NAV_PUSH = 0.6
+NAV_FIRST_MS = 380
+NAV_REPEAT_MS = 140
 
 # button -> action (named for other front ends)
 BUTTONS = {E.BTN_SOUTH: "primary", E.BTN_NORTH: "secondary", E.BTN_EAST: "back", E.BTN_WEST: "launchpad",
@@ -50,7 +60,7 @@ LEGEND = [(N_("Left stick"), N_("Pointer (LT slower, RT faster)")),
           (N_("X / Triangle"), N_("Right-click")), (N_("B / Circle"), N_("Back (Esc)")),
           (N_("Y / Square"), names.APPS), ("LB / RB", N_("Switch apps")), (N_("D-pad"), N_("Arrow keys")),
           (N_("Start / Options"), names.SEARCH), (N_("View / Share"), names.OVERVIEW),
-          (N_("Xbox / PS button"), names.OVERVIEW),
+          (N_("Xbox / PS button"), N_("Game Bar")),
           ("LB + RB + L3 + R3", N_("Desktop control on / off"))]
 ARROWS = {"up": "Up", "down": "Down", "left": "Left", "right": "Right"}
 
@@ -83,9 +93,13 @@ def curve(v: float) -> float:
 
 
 class Gamepads:
-    def __init__(self, app=None, switcher=None):
+    def __init__(self, app=None, switcher=None, gamebar=None):
         self.app = app
         self.switcher = switcher              # () -> the app switcher window, or None
+        self.gamebar = gamebar                # () -> the Game Bar window, or None
+        self._grabbed = False
+        self._nav_dir = None                  # the left stick's direction in the Game Bar
+        self._nav_src = 0
         self.cfg = config.load("gamepad", DEFAULTS)
         self._cfg_mon = config.watch("gamepad", self._config_changed)
         self.pads = {}                        # path -> Gamepad
@@ -124,6 +138,8 @@ class Gamepads:
                 try:
                     self.pads[path] = E.Gamepad(path, self._event)
                     log(self.pads[path].name or path)
+                    if self._grabbed:                     # plugged in while the Game Bar is open
+                        self.pads[path].grab(True)
                 except OSError as e:          # not readable: logind gives controllers to the user
                     log(f"can't read {path} ({e})", error=True)
         names = {pad.name for pad in self.pads.values() if pad.name}
@@ -168,6 +184,12 @@ class Gamepads:
                 del self.axes[k]
             self._release_held()                          # unplugged mid-drag: never a stuck button
             return
+        bar = self._bar_open()
+        if bar is not None:                               # the Game Bar has the controller
+            if typ == E.EV_KEY and value != 2:
+                self._chord(code, value != 0)
+            self._to_bar(bar, pad, typ, code, value)
+            return
         if typ == E.EV_ABS:
             if code in (E.ABS_HAT0X, E.ABS_HAT0Y):        # d-pad as a hat: arrows
                 if value and not self.paused:
@@ -186,7 +208,11 @@ class Gamepads:
         if name is None:
             return
         if name == "guide":
-            if pressed and not self.paused:
+            if pressed and self.cfg.get("guide_gamebar", True) and self.app is not None:
+                # Vini: the Xbox / PS button opens the Game Bar -- in games too,
+                # with desktop control off (that's when it's needed)
+                self.app.activate_action("gamebar", None)
+            elif pressed and not self.paused:
                 self.action("mission", True)
             return
         if not self.paused:
@@ -243,6 +269,74 @@ class Gamepads:
                      None, Gio.DBusCallFlags.NONE, 1000, None, None, None)
         except GLib.Error:
             pass
+
+    # -- the Game Bar -------------------------------------------------------------------------------
+    def _bar_open(self):
+        bar = self.gamebar() if self.gamebar else None
+        return bar if bar is not None and bar.is_open() else None
+
+    def grab(self, on: bool) -> None:
+        """Every controller to us alone (the Game Bar is open) or back to all."""
+        if on == self._grabbed:
+            return
+        self._grabbed = on
+        for pad in list(self.pads.values()):
+            if not pad.grab(on):
+                log(f"can't {'grab' if on else 'release'} {pad.name or pad.path}")
+        if not on:
+            self._nav(None)
+            self.axes.clear()                             # stale tilts never move the pointer after
+
+    def _to_bar(self, bar, pad, typ, code, value) -> None:
+        if typ == E.EV_ABS:
+            if code in (E.ABS_HAT0X, E.ABS_HAT0Y):
+                if value:
+                    bar.pad({(E.ABS_HAT0X, -1): "left", (E.ABS_HAT0X, 1): "right", (E.ABS_HAT0Y, -1): "up",
+                             (E.ABS_HAT0Y, 1): "down"}[(code, 1 if value > 0 else -1)])
+            elif code in (E.ABS_X, E.ABS_Y):
+                self.axes[(pad.path, code)] = pad.norm(code, value)
+                self._nav(self._stick_dir())
+            return
+        if value != 1:                                    # presses only (no repeats, no releases)
+            return
+        name = BUTTONS.get(code)
+        if name in ("primary", "back", "guide", "switch_prev", "switch_next") or name in ARROWS:
+            bar.pad(name)
+
+    def _stick_dir(self):
+        x, y = self._axis(E.ABS_X), self._axis(E.ABS_Y)
+        if max(abs(x), abs(y)) < NAV_PUSH:
+            return None
+        if abs(x) > abs(y):
+            return "right" if x > 0 else "left"
+        return "down" if y > 0 else "up"
+
+    def _nav(self, direction) -> None:
+        """One step per push of the left stick; held, it repeats."""
+        if direction == self._nav_dir:
+            return
+        self._nav_dir = direction
+        if self._nav_src:
+            GLib.source_remove(self._nav_src)
+            self._nav_src = 0
+        if direction is None:
+            return
+        self._nav_step()
+        self._nav_src = GLib.timeout_add(NAV_FIRST_MS, self._nav_held)
+
+    def _nav_step(self) -> None:
+        bar = self._bar_open()
+        if bar is None or self._nav_dir is None:
+            self._nav(None)
+            return
+        bar.pad(self._nav_dir)
+
+    def _nav_held(self) -> bool:
+        self._nav_src = 0                                 # (this one ends here)
+        self._nav_step()
+        if self._nav_dir is not None:
+            self._nav_src = GLib.timeout_add(NAV_REPEAT_MS, self._nav_held)
+        return False
 
     # -- actions ------------------------------------------------------------------------------------
     def action(self, name: str, pressed: bool) -> None:
@@ -320,6 +414,7 @@ class Gamepads:
         return True
 
     def stop(self) -> None:
+        self.grab(False)
         if self._scan_src:
             GLib.source_remove(self._scan_src)
             self._scan_src = 0

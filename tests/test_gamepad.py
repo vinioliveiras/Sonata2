@@ -115,6 +115,7 @@ class GamepadTest(unittest.TestCase):
         self.assertFalse(self.g.cfg["enabled"])
 
     def test_one_guide_press_is_mission_control(self):
+        self.g.cfg["guide_gamebar"] = False            # (the Game Bar's setting off)
         self.press(E.BTN_MODE, 1)
         self.press(E.BTN_MODE, 0)
         self.assertEqual(self.keys, ["F3"])            # at once: no burst to wait for
