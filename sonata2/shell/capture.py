@@ -361,6 +361,13 @@ def encoders(preferred=None) -> list:
     return found
 
 
+def print_mode(last: str) -> str:
+    """Print Screen's capture, from the toolbar's last mode: the same, as a
+    still (Record a Window -> Capture a Window)."""
+    still = last[4:] if last.startswith("rec-") else last
+    return still if still in ("display", "window", "area") else "display"
+
+
 def recorder_command(path: str, geo=None, output=None, audio=None, encoder="x264") -> list:
     """wf-recorder at a constant FPS with a low CPU priority: the game or
     app being recorded goes first. "screenrec*": wl-screenrec instead."""
@@ -584,21 +591,26 @@ class Capture:
 
     def _run(self, mode, cfg):
         """mode: screen (every display: Super+Shift+3) | display | window | area,
-        edit (Print Screen: the focused display at once, opened in Markup),
-        or rec-display | rec-window | rec-area (rec-screen: the focused display).
-        A display or a window is picked from a list (thumbnails)."""
-        if mode == "edit":
-            # Vini: Print captures right away and opens the editor -- no
-            # toolbar, no timer (a game behind it keeps the moment)
-            self._shoot(None, dict(cfg, timer=0), focused_output(), edit=True)
-            return
+        edit (Print Screen, see below), or rec-display | rec-window | rec-area
+        (rec-screen: the focused display). A display or a window is picked
+        from a list (thumbnails).
+
+        edit (Vini): Print captures at once and opens the shot in Markup,
+        with what the toolbar used last -- its mode (a recording mode: the
+        same kind of still), folder and clipboard; no timer, like every
+        shortcut. No list to pick from: the display in front, or the window
+        in front; a portion is still drawn by hand."""
+        edit = mode == "edit"
+        if edit:
+            mode = print_mode(str(cfg.get("mode") or "display"))
+            cfg = dict(cfg, timer=0)
         rec = mode.startswith("rec-")
         what = mode[4:] if rec else mode
         # a picture of a portion / window / display: the screen as it is now,
         # before a list or the selection takes the keyboard (and closes menus).
         # Recording pickers take it too: one grim for every thumbnail.
         outs = outputs() if what in ("display", "window") else []
-        picker = what == "window" or (what == "display" and len(outs) > 1)
+        picker = not edit and (what == "window" or (what == "display" and len(outs) > 1))
         frozen = Frozen.take() if (not rec and what != "screen") or (rec and picker) else None
 
         timer = int(cfg.get("timer", 0) or 0)
@@ -617,7 +629,19 @@ class Capture:
             if rec:
                 self._record(geo, cfg, output)
             else:
-                self._shoot(geo, cfg, output, frozen=still)
+                self._shoot(geo, cfg, output, frozen=still, **({"edit": True} if edit else {}))
+        if edit and what == "display":
+            go(output=focused_output())
+            return
+        if edit and what == "window":
+            try:
+                views = _ipc().call("window-rules/list-views") or []
+            except Exception:
+                views = []
+            wins = window_list(views, outs)
+            # the window in front (front ones first); none: its display
+            go(geo=wins[0]["geo"]) if wins else go(output=focused_output())
+            return
         if what == "display":
             if len(outs) <= 1:
                 go(output=(outs[0].get("name") if outs else None) or focused_output())
