@@ -72,13 +72,15 @@ ui.register("""
 .lpw-root .lp-item:hover { background: alpha(%(label)s, 0.07); }
 .lpw-root .lp-item.selected { background: alpha(%(label)s, 0.12); }   /* grey, as in the full screen (Vini) */
 .lpw-root .lp-label { color: %(label)s; font-size: %(text_body)s; text-shadow: none; margin-top: 4px; }
-.lpw-root .lp-panel { background: %(launchpad_material)s; box-shadow: 0 0 0 0.5px %(hairline)s,
-  0 12px 40px rgba(0,0,0,0.28); }
+/* the folder: nearly solid -- the panel's glass only blurs what's behind
+   the window, so over the grid it showed every icon (Vini) */
+.lpw-root .lp-panel { background: %(menu_bg)s; box-shadow: 0 0 0 0.5px %(hairline)s,
+  inset 0 0 0 0.5px %(highlight)s, 0 12px 40px rgba(0,0,0,0.28); }
 .lpw-root .lp-panel-title, .lpw-root .lp-panel-title text, .lpw-root .lp-lock, .lpw-root .lp-lock-text {
   color: %(label)s; }
 .lpw-root .lp-lock-hint { color: %(label_secondary)s; }
-.lpw-content { transition: opacity %(fade_ms)dms ease-out; }
-.lpw-content.dimmed { opacity: 0.3; }
+.lpw-content { transition: opacity %(fade_ms)dms ease-out, filter %(fade_ms)dms ease-out; }
+.lpw-content.dimmed { opacity: %(folder_backdrop)s; filter: blur(%(folder_backdrop_blur)s); }
 .lpw-empty { color: %(label_secondary)s; font-size: %(text_title)s; margin: 40px 0; }
 @keyframes lpw-fade { from { opacity: 0; } to { opacity: 1; } }
 .lpw-body { animation: lpw-fade %(fade_ms)dms ease-out both; }

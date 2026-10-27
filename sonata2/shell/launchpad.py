@@ -72,8 +72,9 @@ window.sonata-launchpad *:drop(active) { box-shadow: none; outline: none; border
   60%% { transform: translateX(-8px); } 80%% { transform: translateX(8px); } 100%% { transform: none; } }
 .lp-lock-panel.shake { animation: lp-shake 360ms ease-in-out; }
 /* folders open and close with a zoom + fade (Big Sur); the grid dims behind */
-.lp-col { transition: opacity %(fold_in)dms cubic-bezier(0.2, 0.8, 0.2, 1); }
-.lp-col.dimmed { opacity: 0.35; }
+.lp-col { transition: opacity %(fold_in)dms cubic-bezier(0.2, 0.8, 0.2, 1),
+  filter %(fold_in)dms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.lp-col.dimmed { opacity: %(folder_backdrop)s; filter: blur(%(folder_backdrop_blur)s); }
 @keyframes lp-folder-in { from { opacity: 0; transform: scale(0.86); } to { opacity: 1; transform: none; } }
 @keyframes lp-folder-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.92); } }
 .lp-folder-view { animation: lp-folder-in %(fold_in)dms cubic-bezier(0.2, 0.8, 0.2, 1) both; }

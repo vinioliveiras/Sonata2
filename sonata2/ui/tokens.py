@@ -213,7 +213,11 @@ SHARED = {
     "on_scrim_secondary": "rgba(255, 255, 255, 0.60)",
     "field_on_scrim": "rgba(255, 255, 255, 0.16)",
     "tile_on_scrim": "rgba(255, 255, 255, 0.20)",
-    "folder_panel": "rgba(255, 255, 255, 0.16)",
+    # an open folder (Vini: its background too see-through, the apps behind
+    # it too visible): a denser panel, the grid behind faded and blurred
+    "folder_panel": "rgba(255, 255, 255, 0.26)",
+    "folder_backdrop": "0.14",               # opacity of the apps outside the folder
+    "folder_backdrop_blur": "6px",
     # timings
     "t_press": "80ms",
     "t_fast": "150ms",
