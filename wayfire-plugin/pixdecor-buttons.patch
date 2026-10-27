@@ -1,0 +1,165 @@
+diff -ruN a/src/deco-layout.cpp pd/src/deco-layout.cpp
+--- a/src/deco-layout.cpp	2026-10-27 23:22:31.770464428 +0000
++++ b/src/deco-layout.cpp	2026-10-27 23:22:57.437572986 +0000
+@@ -1,3 +1,5 @@
++#include <algorithm>
++#include <cmath>
+ #include "deco-layout.hpp"
+ #include "deco-theme.hpp"
+ #include <wayfire/core.hpp>
+@@ -52,6 +54,16 @@
+     }
+ }
+ 
++wf::geometry_t decoration_area_t::get_hit() const
++{
++    return (hit.width > 0 && hit.height > 0) ? hit : geometry;
++}
++
++void decoration_area_t::set_hit(wf::geometry_t g)
++{
++    hit = g;
++}
++
+ button_t& decoration_area_t::as_button()
+ {
+     assert(button);
+@@ -133,6 +145,7 @@
+     double border = theme.get_border_size();
+     wf::geometry_t button_geometry;
+     button_geometry.x = radius * 2 + (maximized ? 4 : border) + button_x_offset;
++    size_t first_button = this->layout_areas.size();
+ 
+     for (auto type : buttons)
+     {
+@@ -150,6 +163,10 @@
+         total_width += per_button;
+     }
+ 
++    /* Sonata: out to the window's side edge (the screen's corner when maximized) */
++    set_button_hits(first_button, maximized ? 0 : radius * 2 + border, -1,
++        maximized ? 0 : border / 2 + (radius * 2), theme.get_title_height() + (maximized ? 0 : border / 2));
++
+     return {
+         buttons.empty() ? 0 : (maximized ? 4 : border), maximized ? 4 : border + (radius * 2),
+         total_width, (double)theme.get_title_height()
+@@ -209,6 +226,7 @@
+     double border = theme.get_border_size();
+     wf::geometry_t button_geometry;
+     button_geometry.x = (width - (maximized ? 4 : border)) + button_x_offset;
++    size_t first_button = this->layout_areas.size();
+ 
+     for (auto type : wf::reverse(buttons))
+     {
+@@ -227,6 +245,9 @@
+     }
+ 
+     total_width -= button_x_offset;
++    /* Sonata: out to the window's side edge (width: the frame's, less the corner's room) */
++    set_button_hits(first_button, -1, width - (maximized ? 0 : border),
++        maximized ? 0 : border / 2 + (radius * 2), theme.get_title_height() + (maximized ? 0 : border / 2));
+ 
+     return {
+         button_geometry.x, maximized ? 4 : border + (radius * 2),
+@@ -234,6 +255,46 @@
+     };
+ }
+ 
++/* Sonata (Vini: the dots were hard to hit): each button takes the clicks of
++ * the room around it, its picture unchanged -- half the gap to each
++ * neighbour (no dead space between them), the whole height of the title bar
++ * (so up to the window's top edge), and out to the window's side edge for
++ * the outermost one (edge_left / edge_right; -1: that side faces the title,
++ * where it keeps half a gap like the others). Resize handles still win at
++ * the frame (find_area_at checks them first). */
++void pixdecor_layout_t::set_button_hits(size_t first, double edge_left, double edge_right,
++    double top, double height)
++{
++    std::vector<decoration_area_t*> row;
++    for (size_t i = first; i < this->layout_areas.size(); i++)
++    {
++        if (this->layout_areas[i]->get_type() == DECORATION_AREA_BUTTON)
++        {
++            row.push_back(this->layout_areas[i].get());
++        }
++    }
++
++    std::sort(row.begin(), row.end(), [] (decoration_area_t *a, decoration_area_t *b)
++    {
++        return a->get_geometry().x < b->get_geometry().x;
++    });
++    for (size_t i = 0; i < row.size(); i++)
++    {
++        auto g = row[i]->get_geometry();
++        double gap_l = (i > 0) ?
++            (g.x - (row[i - 1]->get_geometry().x + row[i - 1]->get_geometry().width)) / 2.0 : -1;
++        double gap_r = (i + 1 < row.size()) ? (row[i + 1]->get_geometry().x - (g.x + g.width)) / 2.0 : -1;
++        double half  = (std::max(gap_l, gap_r) > 0) ? std::max(gap_l, gap_r) : 4;
++        double left  = (i == 0) ? ((edge_left >= 0) ? edge_left : g.x - half) : g.x - gap_l;
++        double right = (i + 1 == row.size()) ?
++            ((edge_right >= 0) ? edge_right : g.x + g.width + half) : g.x + g.width + gap_r;
++        double y0 = std::min<double>(top, g.y);
++        double y1 = std::max<double>(top + height, g.y + g.height);
++        int x = (int)std::floor(left), y = (int)std::floor(y0);
++        row[i]->set_hit({x, y, (int)std::ceil(right) - x, (int)std::ceil(y1) - y});
++    }
++}
++
+ /** Regenerate layout using the new size */
+ void pixdecor_layout_t::resize(int width, int height)
+ {
+@@ -539,9 +600,9 @@
+     {
+         auto g   = area->get_geometry();
+         double b = theme.get_input_size();
+-        if (area->get_type() & DECORATION_AREA_MOVE_BIT)
++        if ((area->get_type() & DECORATION_AREA_MOVE_BIT) || (area->get_type() == DECORATION_AREA_BUTTON))
+         {
+-            continue;
++            continue;                     /* Sonata: buttons after the resize handles, below */
+         }
+ 
+         if (area->get_type() & DECORATION_AREA_RESIZE_BIT)
+@@ -569,6 +630,15 @@
+         {
+             return {area};
+         }
++    }
++
++    /* Sonata: a button anywhere in the room around its picture (set_button_hits) */
++    for (auto& area : this->layout_areas)
++    {
++        if ((area->get_type() == DECORATION_AREA_BUTTON) && (area->get_hit() & point))
++        {
++            return {area};
++        }
+     }
+ 
+     for (auto& area : this->layout_areas)
+diff -ruN a/src/deco-layout.hpp pd/src/deco-layout.hpp
+--- a/src/deco-layout.hpp	2026-10-27 23:22:31.770477666 +0000
++++ b/src/deco-layout.hpp	2026-10-27 23:22:57.437016411 +0000
+@@ -60,7 +60,13 @@
+     /** @return The type of the decoration area */
+     decoration_area_type_t get_type() const;
+ 
++    /** Sonata: where a button takes clicks -- bigger than its picture (the
++     *  room around it, see set_button_hits); its geometry when never set */
++    wf::geometry_t get_hit() const;
++    void set_hit(wf::geometry_t g);
++
+   private:
++    wf::geometry_t hit = {0, 0, 0, 0};
+     std::function<void(wf::geometry_t)> damage_callback;
+     decoration_area_type_t type;
+     wf::geometry_t geometry;
+@@ -183,6 +189,9 @@
+     /** Create buttons in the layout, and return their total geometry */
+     wf::geometry_t create_left_buttons(int width, int height);
+     wf::geometry_t create_right_buttons(int width, int height);
++    /** Sonata: the buttons from layout_areas[first] on take the clicks of the
++     *  room around them (Fitts' law, like macOS) */
++    void set_button_hits(size_t first, double edge_left, double edge_right, double top, double height);
+ 
+     /** Calculate resize edges based on @current_input */
+     uint32_t calculate_resize_edges() const;

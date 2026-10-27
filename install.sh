@@ -437,9 +437,10 @@ if command -v meson >/dev/null && command -v ninja >/dev/null && pkg-config --ex
         echo "  couldn't build it (window corners stay square); log: $bdir.log"
         grep -m8 -E "error|FAILED" "$bdir.log" | sed 's/^/    /'      # the reason, right here
     fi
-    # pixdecor with long titles cut before the buttons (wayfire-plugin/pixdecor-title.patch):
+    # pixdecor with long titles cut before the buttons and bigger button targets
+    # (wayfire-plugin/pixdecor-title.patch, pixdecor-buttons.patch):
     # built into the same user folder, which Wayfire searches before the system's
-    say "Building pixdecor (title bars) with Sonata's title fix"
+    say "Building pixdecor (title bars) with Sonata's fixes"
     bash "$SRC/tools/build-pixdecor.sh" || echo "  (the installed pixdecor stays; retry: tools/build-pixdecor.sh)"
     # Wayfire itself with Sonata's fix for buffers the GPU refuses (its own folder;
     # tools/sonata-session uses it while it matches the installed Wayfire)

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # build-pixdecor.sh: builds the pixdecor Wayfire plugin (title bars) with
-# Sonata's fix for long titles (wayfire-plugin/pixdecor-title.patch) into the
+# Sonata's fix for long titles (wayfire-plugin/pixdecor-title.patch) and
+# bigger button targets (wayfire-plugin/pixdecor-buttons.patch) into the
 # user's plugin folder, which Wayfire searches before the system's. install.sh
 # runs it; run it alone to retry, it prints why a build failed.
 set -uo pipefail
@@ -44,6 +45,7 @@ curl -fsSL "https://codeload.github.com/soreau/pixdecor/tar.gz/$PIXDECOR_COMMIT"
     { echo "  pixdecor: couldn't download it"; exit 1; }
 step tar xzf "$pdir.tgz" -C "$pdir" --strip-components=1
 step patch -d "$pdir" -p1 -i "$SRC/wayfire-plugin/pixdecor-title.patch"
+step patch -d "$pdir" -p1 -i "$SRC/wayfire-plugin/pixdecor-buttons.patch"
 step meson setup "$pdir/build" "$pdir" --prefix "$PLUG_PREFIX" --libdir lib --buildtype release
 step ninja -C "$pdir/build"
 step meson install -C "$pdir/build" --destdir "$pdir/stage"

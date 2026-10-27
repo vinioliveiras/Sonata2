@@ -368,6 +368,50 @@ def close_align() -> Gtk.Align:
     return Gtk.Align.END if buttons_side() == "right" else Gtk.Align.START
 
 
+# Bigger targets, same look (Vini: the 12 px dots were hard to hit). Each dot
+# takes the clicks of the room around it -- Fitts' law, like macOS: half the
+# gap to its neighbours (no dead space between them), up to the window's top
+# edge, out to its side edge for the outermost one, and half a gap below.
+# Maximized, that's the screen's corner: throw the pointer there and click.
+# Only the hit test grows (Gtk.Widget.contains): layout and drawing don't move.
+_REACH = {}
+
+
+def _reach() -> dict:
+    """The room around a dot, px: top, edge (to the window's side), gap (to a
+    neighbour, each side), below -- from the window frame tokens."""
+    if not _REACH:
+        from . import tokens
+        f = tokens.frame()
+        half = f["dot"] / 2
+        _REACH.update(top=max(0.0, f["dot_top"] - half), edge=max(0.0, f["dot_left"] - half),
+                      gap=f["dot_gap"] / 2, below=f["dot_gap"] / 2)
+    return _REACH
+
+
+def _forget_reach(*_a) -> None:
+    _REACH.clear()                     # a new button size / window radius: measured again
+
+
+theme.on_change(_forget_reach)
+theme.on_buttons_change(_forget_reach)
+
+
+class _Light(Gtk.Button):
+    """A traffic light whose clickable area reaches past its dot (_REACH).
+    outer: which side faces the window's edge ("left" / "right" / None)."""
+
+    def __init__(self, outer=None, **props):
+        super().__init__(**props)
+        self.outer = outer
+
+    def do_contains(self, x: float, y: float) -> bool:
+        r = _reach()
+        left = r["edge"] if self.outer == "left" else r["gap"]
+        right = r["edge"] if self.outer == "right" else r["gap"]
+        return -left <= x < self.get_width() + right and -r["top"] <= y < self.get_height() + r["below"]
+
+
 def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
     """Close / minimize / zoom as macOS-style coloured dots. on_zoom=None greys the
     green one out (fixed-size windows, like System Settings). On the right
@@ -379,9 +423,11 @@ def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
     if buttons_side() == "right":
         dots = tuple(reversed(dots))
         box.add_css_class("traffic-right")
-    for css, tip, cb in dots:
-        b = Gtk.Button(tooltip_text=tip, css_classes=[css], valign=Gtk.Align.CENTER,
-                       focus_on_click=False, can_focus=False)
+    right = buttons_side() == "right"
+    for i, (css, tip, cb) in enumerate(dots):
+        edge = (right and i == len(dots) - 1) or (not right and i == 0)    # close, at the window's edge
+        b = _Light("right" if right and edge else "left" if edge else None, tooltip_text=tip, css_classes=[css],
+                   valign=Gtk.Align.CENTER, focus_on_click=False, can_focus=False)
         if cb:
             b.connect("clicked", lambda _b, f=cb: f())
         else:
@@ -398,8 +444,8 @@ def close_button(on_close) -> Gtk.Box:
     right = buttons_side() == "right"
     box = Gtk.Box(css_classes=["traffic", "traffic-close-only"] + (["traffic-right"] if right else []),
                   valign=Gtk.Align.START, halign=Gtk.Align.END if right else Gtk.Align.START)
-    b = Gtk.Button(tooltip_text=_("Close"), css_classes=["tl-close"], valign=Gtk.Align.CENTER,
-                   focus_on_click=False, can_focus=False)
+    b = _Light("right" if right else "left", tooltip_text=_("Close"), css_classes=["tl-close"],
+               valign=Gtk.Align.CENTER, focus_on_click=False, can_focus=False)
     b.connect("clicked", lambda _b: on_close())
     box.append(b)
     return box

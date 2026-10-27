@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Window buttons are easier to hit, with the same look: each dot takes the clicks of the room around it -- half the gap to its neighbours (no dead space between them), up to the window's top edge, and out to its side edge for the outermost one (maximized: the screen's corner). On Sonata's windows, dialogs and on other apps' title bars (pixdecor, rebuilt by install.sh). The window's edge still resizes.
 - Game Bar with a controller: the Xbox / PS button opens and closes it (in games too, with desktop control off); while it's open the D-pad / left stick move between its controls, A presses, B closes and LB / RB jump between the bar and the widgets. The controllers are held by the Game Bar while it's open, so the game doesn't get those presses. Settings > Game Controllers can give the button back to the Overview.
 - Alerts no longer show a close dot where a button already backs out: Later (Restart / Log Out / Restart Sonata), OK-only alerts, Done, Not Now, Don't Allow, Revert (display settings) and Stop (copy conflicts). It stays only where every button acts (a disk's "in use" choices).
 - Print Screen captures the display in front at once and opens it in the editor (Markup) to draw, crop and save; the options toolbar stays on Super+Shift+5. Listed in Settings > Keyboard Shortcuts as "Screenshot and Edit".
