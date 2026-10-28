@@ -20,7 +20,7 @@ starts on the game's display; pressed again (drawing on), it stops.
 
 Glass (Vini, the "fake" glass, at no cost per frame): opening, the Game
 Bar first takes a small picture of the game's display (grim, a quarter of
-its size), blurs it once, and shows it behind its bar and widgets (_Frost),
+its size), blurs it once, and shows it behind its bar and widgets (_Glass),
 which turn see-through over it. The compositor never blurs behind the Game
 Bar (glass.NEVER_BLUR: a full-screen blur over a running game cost too much)
 -- behind the panels the moment you opened it, the game itself dimmed
@@ -73,7 +73,7 @@ FROST_SCALE = 0.25
 FROST_BLUR = 28
 FROST_WAIT_MS = 80          # (later: the glass fades in when it comes)
 READ_AFTER_MS = 260
-FROST_FOLLOW_MS = 150       # the glass looks where the panels are this often while open         # the states read once the opening animation is over
+GLASS_FADE_MS = 250         # a late picture: the glass fades in         # the states read once the opening animation is over
 FROST_LATE_S = 2.0          # a later picture than that: the game has moved on, no glass this time
 CONFIG = "gamebar"
 # the widgets, in the bar's order -- the same left-to-right order as on the
@@ -154,10 +154,9 @@ window.sonata-gamebar, window.sonata-gamebar > contents { background: none; box-
   transition: outline-color %(t_fast)s %(ease_out)s, outline-width %(t_fast)s %(ease_out)s; }
 
 /* the fake glass under them (_Frost): see-through over the blurred picture */
-.gb-root.frosted .gb-bar, .gb-root.frosted .gb-widget { background-color: alpha(%(menu_bg)s, 0.55); }
-/* a picture that came after the Game Bar opened: the glass fades in */
-.gb-frost { opacity: 0; transition: opacity %(t_standard)s %(ease_out)s; }
-.gb-root.frosted .gb-frost { opacity: 1; }
+/* over the glass a panel paints its own tint (_Glass): no CSS background,
+   its solid one fading out as the glass fades in */
+.gb-root.frosted .gb-bar, .gb-root.frosted .gb-widget { background-color: transparent; }
 .gb-bar, .gb-widget { transition: background-color %(t_standard)s %(ease_out)s; }
 
 /* a widget: Control Center glass, popping in a little after the bar */
@@ -253,7 +252,69 @@ def _focusables(root) -> list:
     return found
 
 
-class Widget(Gtk.Box):
+GLASS_TINT = 0.55          # the panels' tint over the glass (menu_bg at this alpha)
+
+
+def blur_texture(renderer, texture):
+    """The game's picture blurred once (GSK), at its small size."""
+    if renderer is None:
+        return texture
+    from gi.repository import Graphene
+    w, h = texture.get_width(), texture.get_height()
+    snap = Gtk.Snapshot()
+    r = Graphene.Rect().init(0, 0, w, h)
+    snap.push_clip(r)
+    snap.push_blur(FROST_BLUR * FROST_SCALE)
+    snap.append_texture(texture, Graphene.Rect().init(-8, -8, w + 16, h + 16))   # no dark edges
+    snap.pop()
+    snap.pop()
+    node = snap.to_node()
+    return renderer.render_texture(node, r) if node is not None else texture
+
+
+class _Glass:
+    """A panel (the bar, a widget) drawing the Game Bar's glass under itself:
+    its slice of the blurred picture, then its tint, inside its rounded
+    shape. Each panel draws its own (Vini: the Game Bar was slow -- one
+    glass layer over the whole screen was drawn again whole whenever a panel
+    changed, and was looked at on a timer); a panel moved draws again
+    (place / queue_draw), its size changed redraws it anyway."""
+    radius_token = "r_dialog"
+
+    def _glass(self, snap) -> None:
+        win = self.get_root()
+        tex = getattr(win, "frost_tex", None)
+        alpha = getattr(win, "frost_alpha", 0.0)
+        root = getattr(win, "root", None)
+        if tex is None or alpha <= 0 or root is None or self.get_parent() is None:
+            return
+        # (a snapshot's origin is the content box, inside the padding: the
+        # whole panel is its border box, here and in the Game Bar)
+        ok, b = self.compute_bounds(root)
+        ok_self, own = self.compute_bounds(self)
+        if not (ok and ok_self):
+            return
+        from gi.repository import Graphene, Gsk
+        rr = Gsk.RoundedRect()
+        rr.init_from_rect(own, ui.theme.px(self.radius_token))
+        snap.push_rounded_clip(rr)
+        snap.push_opacity(alpha)
+        snap.append_texture(tex, Graphene.Rect().init(own.get_x() - b.get_x(), own.get_y() - b.get_y(),
+                                                      root.get_width(), root.get_height()))
+        tint = ui.rgba("menu_bg")
+        tint.alpha = GLASS_TINT
+        snap.append_color(tint, own)
+        snap.pop()
+        snap.pop()
+
+
+class _GlassBox(_Glass, Gtk.Box):
+    def do_snapshot(self, snap) -> None:
+        self._glass(snap)
+        Gtk.Box.do_snapshot(self, snap)
+
+
+class Widget(_GlassBox):
     """One Game Bar widget: a glass panel with a header (icon + title) and
     `body`, the widget's own content (filled by its part)."""
 
@@ -296,6 +357,7 @@ class Widget(Gtk.Box):
         self.set_margin_top(int(pos[1]))
         self.set_margin_end(0)
         self.set_margin_bottom(0)
+        self.queue_draw()                               # its slice of the glass, where it is now
 
     def bare(self) -> None:
         """No margins (in its own pinned window)."""
@@ -333,74 +395,6 @@ def frost_command(output) -> list:
     if output:
         cmd += ["-o", output]
     return cmd + ["-"]
-
-
-class _Frost(Gtk.Widget):
-    """The blurred picture of the game, drawn only under the bar and the
-    widgets (rounded like them) -- blurred once (blur()), then only drawn."""
-
-    def __init__(self, targets):
-        super().__init__(can_target=False, hexpand=True, vexpand=True, css_classes=["gb-frost"])
-        self.targets = targets                  # () -> [(widget, radius token)]
-        self.texture = None
-        self._drawn = None                      # where the panels were when last drawn
-        # a panel resized or moved (the clock, a name, a widget toggled): drawn
-        # again -- looked at FROST_FOLLOW_MS apart while the Game Bar is open
-        # (GameBar._follow_src); a tick callback looked every frame (Vini:
-        # opening and the animations were slow -- the frame clock never rested)
-
-    def _places(self):
-        out = []
-        for w, _r in self.targets():
-            ok, b = w.compute_bounds(self) if w.get_mapped() and w.get_parent() is not None else (False, None)
-            out.append((round(b.get_x()), round(b.get_y()), round(b.get_width()), round(b.get_height()))
-                       if ok else None)
-        return out
-
-    def follow(self) -> None:
-        """A panel was laid out again: the glass under it again if it moved."""
-        if self.texture is not None and self._places() != self._drawn:
-            self.queue_draw()
-
-    def set_picture(self, texture) -> None:
-        self.texture = texture
-        self.queue_draw()
-
-    def blur(self, texture):
-        """The picture blurred once (GSK), at its small size."""
-        native = self.get_native()
-        renderer = native.get_renderer() if native is not None else None
-        if renderer is None:
-            return texture
-        from gi.repository import Graphene
-        w, h = texture.get_width(), texture.get_height()
-        snap = Gtk.Snapshot()
-        r = Graphene.Rect().init(0, 0, w, h)
-        snap.push_clip(r)
-        snap.push_blur(FROST_BLUR * FROST_SCALE)
-        snap.append_texture(texture, Graphene.Rect().init(-8, -8, w + 16, h + 16))   # no dark edges
-        snap.pop()
-        snap.pop()
-        node = snap.to_node()
-        return renderer.render_texture(node, r) if node is not None else texture
-
-    def do_snapshot(self, snap) -> None:
-        if self.texture is None:
-            return
-        self._drawn = self._places()
-        from gi.repository import Graphene, Gsk
-        full = Graphene.Rect().init(0, 0, self.get_width(), self.get_height())
-        for w, radius in self.targets():
-            if not w.get_mapped() or w.get_parent() is None or w.get_root() is not self.get_root():
-                continue
-            ok, b = w.compute_bounds(self)
-            if not ok:
-                continue
-            rr = Gsk.RoundedRect()
-            rr.init_from_rect(b, ui.theme.px(radius))
-            snap.push_rounded_clip(rr)
-            snap.append_texture(self.texture, full)
-            snap.pop()
 
 
 class PinWindow(Gtk.Window):
@@ -444,14 +438,13 @@ class GameBar(Gtk.Window):
         self._clock_src = 0
         self._hide_src = 0
         self._read_src = 0
-        self._follow_src = 0
 
         self.root = Gtk.Overlay(css_classes=["gb-root"])
         self.scrim = Gtk.Box(css_classes=["gb-scrim"], hexpand=True, vexpand=True)
         self.root.set_child(self.scrim)
-        self.frost = _Frost(lambda: [(self.bar, "r_plate")] + [(w, "r_dialog") for w in self.widgets.values()])
-        self.root.add_overlay(self.frost)
-        self.root.set_measure_overlay(self.frost, False)
+        self.frost_tex = None                           # the game's picture, blurred (_Glass)
+        self.frost_alpha = 0.0
+        self._frost_anim = None
         self.root.add_overlay(self._bar())
         self.widgets = {}
         for wid in WIDGETS:
@@ -465,10 +458,6 @@ class GameBar(Gtk.Window):
         self.widgets["nowplaying"].fill(self._now_playing())
         self.widgets["controls"].fill(self._controls())
         self.pins = {}                                  # wid -> PinWindow while the Game Bar is closed
-        for w in [self.bar] + list(self.widgets.values()):      # the glass follows them
-            w.connect("notify::visible", lambda *_a: self.frost.queue_draw())
-            w.connect("map", lambda *_a: self.frost.queue_draw())
-            w.connect("unmap", lambda *_a: self.frost.queue_draw())
         for wid, w in self.widgets.items():
             w.place(self._pos(wid))
             w.pin_btn.connect("clicked", lambda _b, k=wid: self.toggle_pin(k))
@@ -489,8 +478,9 @@ class GameBar(Gtk.Window):
 
     # -- the bar ----------------------------------------------------------------------------------
     def _bar(self) -> Gtk.Widget:
-        bar = Gtk.Box(css_classes=["gb-bar"], halign=Gtk.Align.CENTER, valign=Gtk.Align.START,
-                      margin_top=BAR_TOP, spacing=2)
+        bar = _GlassBox(css_classes=["gb-bar"], halign=Gtk.Align.CENTER, valign=Gtk.Align.START,
+                        margin_top=BAR_TOP, spacing=2)
+        bar.radius_token = "r_plate"
         ui.theme.glass_class(bar)
         app = Gtk.Box(css_classes=["gb-app"], spacing=8, valign=Gtk.Align.CENTER)
         self.app_icon = Gtk.Image(pixel_size=22)
@@ -612,7 +602,6 @@ class GameBar(Gtk.Window):
             x = max(0, min(W - start["wh"][0], start["xy"][0] + dx))
             y = max(0, min(H - start["wh"][1], start["xy"][1] + dy))
             start["w"].place((x, y))
-            self.frost.queue_draw()
             start["now"] = (int(x), int(y))
 
         def end(_g, _dx, _dy):
@@ -642,7 +631,7 @@ class GameBar(Gtk.Window):
         """A double-click on its title: back to its own corner."""
         self._save_pos(wid, None)
         self.widgets[wid].place(None)
-        self.frost.queue_draw()
+        self.widgets[wid].queue_draw()
 
     def toggle_pin(self, wid: str) -> None:
         pinned = [w for w in (self.cfg.get("pinned") or []) if w in WIDGETS]
@@ -738,15 +727,6 @@ class GameBar(Gtk.Window):
         first = next(iter(self.toggles.values()))
         first.grab_focus()                              # where the controller / arrows start
         self._grab(True)
-        if not self._follow_src:
-            self._follow_src = GLib.timeout_add(FROST_FOLLOW_MS, self._follow)
-
-    def _follow(self) -> bool:
-        if not self.is_open():
-            self._follow_src = 0
-            return False
-        self.frost.follow()
-        return True
 
     # -- the fake glass ---------------------------------------------------------------------------
     def _frost_then(self, show) -> None:
@@ -758,7 +738,7 @@ class GameBar(Gtk.Window):
         made, the Game Bar isn't in it."""
         self._frost_gen = getattr(self, "_frost_gen", 0) + 1
         gen = self._frost_gen
-        self.frost.set_picture(None)
+        self._set_glass(None, 0.0)
         self.root.remove_css_class("frosted")
         import shutil
         if not shutil.which("grim") or layer.layer_shell() is None:
@@ -796,18 +776,31 @@ class GameBar(Gtk.Window):
         proc.communicate_async(None, None, done)
 
     def _set_frost(self, tex) -> None:
-        def apply(*_a):
-            self.frost.set_picture(self.frost.blur(tex))
-            self.root.add_css_class("frosted")
-        if self.frost.get_native() is not None and self.get_realized():
-            apply()
-        else:                                           # blurred once it has a renderer
+        """The picture blurred, the glass on: at once before the Game Bar
+        shows, fading in after (a late picture)."""
+        if not self.get_realized():                     # blurred once it has a renderer
             hid = {}
 
             def realized(*_a):
                 self.disconnect(hid["id"])
-                apply()
+                self._set_frost(tex)
             hid["id"] = self.connect("realize", realized)
+            return
+        tex = blur_texture(self.get_renderer(), tex)
+        self.root.add_css_class("frosted")
+        if not self.get_mapped():
+            self._set_glass(tex, 1.0)
+            return
+        self._set_glass(tex, 0.0)
+        from gi.repository import Adw
+        target = Adw.CallbackAnimationTarget.new(lambda v: self._set_glass(tex, v))
+        self._frost_anim = Adw.TimedAnimation.new(self, 0.0, 1.0, tokens.ms(GLASS_FADE_MS), target)
+        self._frost_anim.play()
+
+    def _set_glass(self, tex, alpha: float) -> None:
+        self.frost_tex, self.frost_alpha = tex, alpha
+        for w in [self.bar] + list(self.widgets.values()):
+            w.queue_draw()                              # each panel's own area only
 
     def close_bar(self) -> None:
         if not self.get_visible() or self.root.has_css_class("closing"):

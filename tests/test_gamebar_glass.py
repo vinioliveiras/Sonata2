@@ -93,7 +93,7 @@ class GlassTest(unittest.TestCase):
         new, shown, _p = self.open_with(red_png())
         self.assertEqual(new.call_args.args[0][0], "grim")
         self.assertEqual(shown, [1])                            # once
-        self.assertIsNotNone(self.bar.frost.texture)
+        self.assertIsNotNone(self.bar.frost_tex)
         self.assertTrue(self.bar.root.has_css_class("frosted"))
 
     def test_too_slow_shows_solid_then_the_glass_fades_in(self):
@@ -109,9 +109,10 @@ class GlassTest(unittest.TestCase):
         proc.out = red_png()
         proc.done(proc, None)
         spin(100)
-        self.assertIsNotNone(self.bar.frost.texture)
+        self.assertIsNotNone(self.bar.frost_tex)
         self.assertTrue(self.bar.root.has_css_class("frosted"))
-        self.assertIn("gb-frost", self.bar.frost.get_css_classes())   # (its opacity eases in)
+        spin(G.GLASS_FADE_MS + 200)
+        self.assertEqual(self.bar.frost_alpha, 1.0)               # (eased in)
 
     def test_late_picture_ignored_once_closed_or_reopened(self):
         proc = FakeProc(None)
@@ -121,7 +122,7 @@ class GlassTest(unittest.TestCase):
         self.bar.root.add_css_class("closing")                   # closing meanwhile
         proc.out = red_png()
         proc.done(proc, None)
-        self.assertIsNone(self.bar.frost.texture)
+        self.assertIsNone(self.bar.frost_tex)
         self.bar.root.remove_css_class("closing")
         old = FakeProc(None)
         with mock.patch.object(G.Gio.Subprocess, "new", return_value=old):
@@ -130,7 +131,7 @@ class GlassTest(unittest.TestCase):
             self.bar._frost_then(self.bar.present)               # opened again: a new picture asked
         old.out = red_png()
         old.done(old, None)                                      # the first one's: not this opening's
-        self.assertIsNone(self.bar.frost.texture)
+        self.assertIsNone(self.bar.frost_tex)
 
     def test_without_grim_shown_at_once_solid(self):
         with mock.patch("shutil.which", return_value=None):
@@ -139,46 +140,55 @@ class GlassTest(unittest.TestCase):
         self.assertEqual(shown, [1])
         self.assertFalse(self.bar.root.has_css_class("frosted"))
 
-    def test_glass_only_behind_the_panels(self):
-        """Red picture: under the bar it shows through; on the dimmed game, not."""
-        self.bar.set_default_size(1000, 600)
-        self.bar.present()
-        spin(300)
-        self.bar.frost.set_picture(Gdk.Texture.new_from_bytes(red_png()))
-        self.bar.root.add_css_class("frosted")
-        spin(200)
+    def _render(self):
         w, h = self.bar.get_width(), self.bar.get_height()
         snap = Gtk.Snapshot()
-        self.bar.frost.do_snapshot(snap)
+        Gtk.WidgetPaintable(widget=self.bar.root).snapshot(snap, w, h)
         tex = self.bar.get_renderer().render_texture(snap.to_node(), Graphene.Rect().init(0, 0, w, h))
         dl = Gdk.TextureDownloader.new(tex)
         dl.set_format(Gdk.MemoryFormat.R8G8B8A8)
         data, stride = dl.download_bytes()
         px = data.get_data()
+        return lambda x, y: tuple(px[int(y) * stride + int(x) * 4:int(y) * stride + int(x) * 4 + 4])
 
-        def at(x, y):
-            i = int(y) * stride + int(x) * 4
-            return tuple(px[i:i + 4])
-        ok, b = self.bar.bar.compute_bounds(self.bar.frost)
-        self.assertEqual(at(b.get_x() + b.get_width() / 2, b.get_y() + b.get_height() / 2)[:2], (255, 0))
-        self.assertEqual(at(w / 2, h / 2)[3], 0)                 # the middle of the screen: no glass
-        self.assertEqual(at(b.get_x() + 1, b.get_y() + 1)[3], 0)  # the rounded corner stays clear
-
-    def test_glass_follows_a_panel_that_resizes(self):
-        """The bar grew (the game's name, the clock) after the glass was
-        drawn: it was drawn again at the bar's new size -- looked at a few
-        times a second while open, not every frame (Vini: slow opening)."""
-        self.bar._show()
+    def test_glass_only_behind_the_panels(self):
+        """Red picture: under the bar it shows through (tinted); on the
+        dimmed game, not -- each panel draws its own slice."""
+        self.bar.set_default_size(1000, 600)
+        self.bar.present()
         spin(300)
-        self.bar.frost.set_picture(Gdk.Texture.new_from_bytes(red_png()))
-        self.bar.root.add_css_class("frosted")                  # (as _set_frost: the glass on)
-        spin(400)
-        before = self.bar.frost._drawn
-        self.bar.app_name.set_label("A Much Longer Game Name Than Before")
-        spin(G.FROST_FOLLOW_MS * 3)
-        self.assertNotEqual(self.bar.frost._drawn, before)
-        ok, b = self.bar.bar.compute_bounds(self.bar.frost)
-        self.assertEqual(self.bar.frost._drawn[0][2], round(b.get_width()))
+        self.bar.root.add_css_class("frosted")
+        self.bar._set_glass(Gdk.Texture.new_from_bytes(red_png()), 1.0)
+        spin(300)
+        at = self._render()
+        ok, b = self.bar.bar.compute_bounds(self.bar.root)
+        inside = at(b.get_x() + 30, b.get_y() + b.get_height() / 2)
+        outside = at(self.bar.get_width() / 2, self.bar.get_height() / 2)
+        self.assertGreater(inside[0], inside[1] + 40)               # reddish: the picture through the tint
+        self.assertLess(outside[0], outside[1] + 20)                # the scrim: no red
+        # the whole panel, its padding too (a snapshot starts inside it: the
+        # glass was shifted in by the padding, a frame of no glass around it)
+        w = self.bar.widgets["capture"]
+        ok, wb = w.compute_bounds(self.bar.root)
+        edge = at(wb.get_x() + wb.get_width() / 2, wb.get_y() + 3)
+        self.assertGreater(edge[0], edge[1] + 40)
+
+    def test_glass_follows_a_moved_widget(self):
+        """Moved (dragged, put back): it draws its slice again, where it is."""
+        w = self.bar.widgets["capture"]
+        with mock.patch.object(w, "queue_draw") as qd:
+            w.place((100, 80))
+        qd.assert_called()
+
+    def test_no_screen_wide_glass_layer(self):
+        """Vini: slow -- one glass layer over the whole screen was drawn whole
+        whenever a panel changed, and looked at on a timer."""
+        src = open(G.__file__).read()
+        self.assertNotIn("class _Frost", src)
+        self.assertNotIn("FROST_FOLLOW_MS", src)
+        self.assertIsInstance(self.bar.bar, G._Glass)
+        for w in self.bar.widgets.values():
+            self.assertIsInstance(w, G._Glass)
 
     def test_never_blurred_by_the_compositor(self):
         from sonata2.ui import glass
