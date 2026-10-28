@@ -171,8 +171,9 @@ class MenuView:
         # the empty room under the apps takes a drag too -- the end of the last
         # page (Vini: an app dragged out of a folder, let go there, stayed in it)
         below = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
-        below.connect("motion", lambda _t, _x, _y: self._at_end(lambda g, x, y: pad.drag_over(g, x, y)))
-        below.connect("drop", lambda _t, v, _x, _y: self._at_end(lambda g, x, y: pad.drag_drop(g, x, y, v)) or False)
+        below.connect("motion", lambda _t, x, y: self._at_end(lambda g, gx, gy: pad.drag_over(g, gx, gy), x, y))
+        below.connect("drop", lambda _t, v, x, y: self._at_end(lambda g, gx, gy: pad.drag_drop(g, gx, gy, v), x, y)
+                      or False)
         self.scroll.add_controller(below)
         self.panel.append(self.content)
         self.results = PageGrid(pad, -1)               # search results (pad._search_changed fills it)
@@ -341,11 +342,22 @@ class MenuView:
         elif bottom > adj.get_value() + adj.get_page_size():
             adj.set_value(bottom - adj.get_page_size())
 
-    def _at_end(self, fn):
-        """fn(grid, x, y) at the last cell of the last page (none: nothing)."""
+    def _at_end(self, fn, x=None, y=None):
+        """fn(grid, x, y) at the last cell of the last page (none: nothing) --
+        only in the empty room: over a page's grid the grid's own drop target
+        has it (Vini: making a folder failed -- this one heard every motion
+        too and answered "the end", clearing the folder's target each time).
+        x, y: the pointer in the scrolled area (None: anywhere)."""
         grids = [g for g in self.pages if g.get_mapped()]
         if not grids or not self.pad._drag:
             return Gdk.DragAction.MOVE if self.pad._drag else 0
+        if x is not None:
+            for g in grids:
+                ok, b = g.compute_bounds(self.scroll)
+                if ok and b.get_x() <= x < b.get_x() + b.get_width() and b.get_y() <= y < b.get_y() + b.get_height():
+                    return Gdk.DragAction.MOVE      # the grid's own
+            if self.pad.folder_view is not None and self.pad._drag.get("folder") is None:
+                return Gdk.DragAction.MOVE
         g = grids[-1]
         return fn(g, max(0, g.get_width() - 1), max(0, g.get_height() - 1))
 

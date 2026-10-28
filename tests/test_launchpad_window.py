@@ -343,6 +343,46 @@ class MenuModeTest(unittest.TestCase):
         self.assertEqual(other + 1, mine)                          # right after it
         self.assertEqual(cls, ["drop-after"])
 
+    def test_room_below_leaves_the_grid_alone(self):
+        """Vini: dropping an app on another no longer made a folder -- the
+        empty room's drop target heard every motion too (it's around the
+        grids) and answered "the end of the page", clearing the folder's
+        target. Over a grid it now does nothing."""
+        self.pad.render()
+        settle(100)
+        grid = self.menu.pages[0]
+        tile = self.pad._item_widget(self.pad.model.pages[0][0])
+        with mock.patch.object(self.L.ui.drag, "hang", return_value=None):
+            self.pad._drag_begun(tile, None)
+        ok, b = grid.compute_bounds(self.menu.scroll)
+        called = []
+        self.menu._at_end(lambda *a: called.append(a), b.get_x() + 10, b.get_y() + 10)
+        self.assertEqual(called, [])                                  # over the grid: the grid's
+        self.menu._at_end(lambda *a: called.append(a), b.get_x() + 10, b.get_y() + b.get_height() + 30)
+        self.assertEqual(len(called), 1)                              # below it: the end
+        self.pad._drag_ended(tile)
+
+    def test_drop_on_an_app_makes_a_folder(self):
+        page = self.pad.model.pages[0]
+        a, b = page[0], page[1]
+        self.pad.render()
+        settle(100)
+        grid = self.menu.pages[0]
+        tile = self.pad._item_widget(a)
+        with mock.patch.object(self.L.ui.drag, "hang", return_value=None):
+            self.pad._drag_begun(tile, None)
+        cw, ch = grid.get_width() / grid.cols, grid.get_height() / grid.rows
+        ok, gb = grid.compute_bounds(self.menu.scroll)
+        for _i in range(3):                                           # both drop targets hear the motion
+            self.pad.drag_over(grid, cw * 1.5, ch / 2)
+            self.menu._at_end(lambda g, x, y: self.pad.drag_over(g, x, y), gb.get_x() + cw * 1.5, gb.get_y() + ch / 2)
+            settle(self.L.FOLDER_HOLD_MS // 2 + 20)
+        self.assertTrue(self.pad.drag_drop(grid, cw * 1.5, ch / 2, a))
+        self.pad._drag_ended(tile)
+        first = self.pad.model.pages[0][0]
+        self.assertIsInstance(first, dict)
+        self.assertEqual(set(first["apps"]), {a, b})
+
     def test_dropped_back_in_the_folder_clicks_behind_close_it_again(self):
         self.pad.model.make_folder("calc", "files", "Work")
         self.pad.save()
