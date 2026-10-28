@@ -50,7 +50,7 @@ def _list(v) -> list:
     return v if isinstance(v, list) else []
 
 
-KEPT_KEYS = ("link",)     # a folder's other keys kept (folder_link.py: the Dock's copy)
+KEPT_KEYS = ("link", "secure")   # a folder's other keys kept (folder_link.py: the Dock's copy; Lock Folder)
 
 
 class Model:

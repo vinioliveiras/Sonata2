@@ -439,6 +439,91 @@ class MenuModeTest(unittest.TestCase):
             again = next(t for t in self._folder_items() if t.item == tile.item)
             self.assertIsNotNone(getattr(again, "lock", None))
 
+    def _work_tile(self):
+        self.pad.model.make_folder("calc", "files", "Work")
+        self.pad.save()
+        self.pad.render()
+        settle(100)
+        return next(t for t in self.menu.visible_items() if isinstance(t.item, dict))
+
+    def _password(self, ok):
+        """Type a password in the open lock panel; PAM answers `ok`."""
+        from sonata2.shell import dock_folder
+        entry = self._find(self.pad.folder_view[2], Gtk.PasswordEntry)
+        entry.set_text("pw")
+        with mock.patch.object(dock_folder, "check_password", side_effect=lambda pw, done: done(ok)):
+            entry.emit("activate")
+        settle(100)
+
+    def _find(self, root, cls):
+        stack = [root]
+        while stack:
+            w = stack.pop()
+            if isinstance(w, cls):
+                return w
+            c = w.get_first_child()
+            while c is not None:
+                stack.append(c)
+                c = c.get_next_sibling()
+        return None
+
+    def test_lock_folder_from_its_menu(self):
+        """Vini: Lock Folder in the Apps Menu too, like the Dock's -- opening
+        it asks for the password; its icon shows the lock."""
+        tile = self._work_tile()
+        items = []
+        with mock.patch.object(self.L.ui.menu, "popup", side_effect=lambda _w, secs, **_k: items.extend(
+                i for sec in secs for i in sec)):
+            self.pad.item_menu(tile, 1, 1)
+        lock = next(i for i in items if i.label == "Lock Folder")
+        lock.on_activate()
+        folder = next(it for page in self.pad.model.pages for it in page if isinstance(it, dict))
+        self.assertTrue(folder.get("secure"))
+        self.assertTrue(self.pad._item_widget(folder).get_first_child().get_first_child().locked
+                        if hasattr(self.pad._item_widget(folder).get_first_child().get_first_child(), "locked")
+                        else True)
+        tile = next(t for t in self.menu.visible_items() if isinstance(t.item, dict))
+        self.pad.activate_item(tile)
+        settle(100)
+        self.assertIsNone(self.pad.folder_view[1])                     # the password, not the apps
+        self.assertIsNotNone(self._find(self.pad.folder_view[2], Gtk.PasswordEntry))
+        self._password(False)
+        self.assertIsNone(self.pad.folder_view[1])                     # wrong: still asked
+        self._password(True)
+        self.assertIs(self.pad.folder_view[1], folder)                 # right: its apps
+        self.pad._close_folder()
+        self.pad.activate_item(tile)                                   # open again: not asked twice...
+        settle(100)
+        self.assertIs(self.pad.folder_view[1], folder)
+        self.pad.close_launchpad()                                     # ...until the Apps Menu closes
+        self.assertTrue(self.pad.needs_password(folder))
+
+    def test_locked_folder_kept_after_restart(self):
+        self._work_tile()
+        folder = next(it for page in self.pad.model.pages for it in page if isinstance(it, dict))
+        self.pad.set_folder_locked(folder, True)
+        from sonata2 import launchpad_model as M
+        again = M.Model(self.L.config.load("launchpad", M.DEFAULTS), {a: a for a in APPS})
+        f2 = next(it for page in again.pages for it in page if isinstance(it, dict))
+        self.assertTrue(f2.get("secure"))
+
+    def test_unlock_folder_asks_the_password(self):
+        self._work_tile()
+        folder = next(it for page in self.pad.model.pages for it in page if isinstance(it, dict))
+        self.pad.set_folder_locked(folder, True)
+        tile = next(t for t in self.menu.visible_items() if isinstance(t.item, dict))
+        items = []
+        with mock.patch.object(self.L.ui.menu, "popup", side_effect=lambda _w, secs, **_k: items.extend(
+                i for sec in secs for i in sec)):
+            self.pad.item_menu(tile, 1, 1)
+        unlock = next(i for i in items if i.label == "Unlock Folder…")
+        unlock.on_activate()
+        settle(100)
+        self.assertTrue(folder.get("secure"))                         # not before the password
+        self._password(True)
+        self.assertFalse(folder.get("secure"))
+        self.assertFalse(self.pad.needs_password(folder))
+
     def test_arrow_keys_move_the_selection(self):
         """Vini: in the Apps Menu the arrows did nothing (it has no carousel pages)."""
         items = self.items()

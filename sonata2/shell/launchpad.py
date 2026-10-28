@@ -256,8 +256,8 @@ class LaunchItem(Gtk.Button):
         """The same folder icon as the Dock's: exactly an app's frame (Vini),
         its apps in a 3 x 3 grid; Hidden (locked): blank tiles and a lock."""
         from .dock_folder import FolderIcon
-        icon = FolderIcon(folder["apps"], size, locked=bool(folder.get("locked")), on_scrim=True,
-                          css=("lp-folder",))
+        icon = FolderIcon(folder["apps"], size, locked=bool(folder.get("locked") or folder.get("secure")),
+                          on_scrim=True, css=("lp-folder",))
         icon.set_halign(Gtk.Align.CENTER)
         return icon
 
@@ -323,6 +323,7 @@ class Launchpad(Gtk.ApplicationWindow):
         self._timers = {}
         self._anim = None
         self.folder_view = None
+        self._unlocked_ids = set()              # locked folders opened with the password (until it closes)
         self.mode = "fullscreen"   # or "menu": the Apps Menu layout (launchpad_window.MenuView)
         self.menu = None
 
@@ -590,14 +591,36 @@ class Launchpad(Gtk.ApplicationWindow):
             return ICON
         return self.icon_size
 
-    def _ask_password(self, folder) -> None:
-        """The Hidden folder opens only with the user's password (PAM, like
-        the lock screen); it stays open until Launchpad closes."""
+    def needs_password(self, folder) -> bool:
+        if folder.get("locked"):
+            return not getattr(self, "_unlocked", False)
+        return bool(folder.get("secure")) and id(folder) not in self._unlocked_ids
+
+    def set_folder_locked(self, folder, on: bool) -> None:
+        """Lock Folder (Vini, like the Dock's): opening it asks for the
+        password; its icon shows blank tiles and a lock."""
+        if on:
+            folder["secure"] = True
+        else:
+            folder.pop("secure", None)
+        self._unlocked_ids.discard(id(folder))
+        self.widgets.pop(id(folder), None)        # its icon drawn again
+        self.save()
+        self.render()
+
+    def _ask_password(self, folder, then=None) -> None:
+        """The Hidden folder -- and a folder locked with Lock Folder (Vini, as
+        the Dock's) -- opens only with the user's password (PAM, like the lock
+        screen); it stays open until Launchpad closes. then(): instead of
+        opening it (Unlock Folder)."""
         from .. import pam
         self._close_folder()
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, css_classes=["lp-panel", "lp-lock-panel"])
         panel.append(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=36, css_classes=["lp-lock"]))
-        panel.append(Gtk.Label(label=_("Enter your password to see hidden apps"), css_classes=["lp-lock-text"]))
+        text = _("Enter your password to see hidden apps") if folder.get("locked") else \
+            _("Enter your password to open this folder") if then is None else \
+            _("Enter your password to change this folder")
+        panel.append(Gtk.Label(label=text, css_classes=["lp-lock-text"]))
         entry = Gtk.PasswordEntry(show_peek_icon=True, halign=Gtk.Align.CENTER)
         panel.append(entry)
         hint = Gtk.Label(label="" if pam.available() else _("PAM is not available: can't check passwords"),
@@ -621,8 +644,15 @@ class Launchpad(Gtk.ApplicationWindow):
                 return False
             entry.set_sensitive(True)
             if ok:
-                self._unlocked = True
-                self._open_folder(folder)
+                if folder.get("locked"):
+                    self._unlocked = True
+                else:
+                    self._unlocked_ids.add(id(folder))
+                if then is not None:
+                    self._close_folder()
+                    then()
+                else:
+                    self._open_folder(folder)
             else:
                 hint.set_label(_("Wrong password"))
                 entry.set_text("")
@@ -799,6 +829,7 @@ class Launchpad(Gtk.ApplicationWindow):
 
     def close_launchpad(self, then=None) -> None:
         self._unlocked = False                  # Hidden asks for the password again next time
+        self._unlocked_ids.clear()              # (and the locked folders)
         if self.mode == "menu" and self.menu is not None:
             self._close_folder()
             self.set_jiggle(False)
@@ -878,7 +909,7 @@ class Launchpad(Gtk.ApplicationWindow):
         if self.jiggling and not M.is_folder(widget.item):
             return
         if M.is_folder(widget.item):
-            if widget.item.get("locked") and not getattr(self, "_unlocked", False):
+            if self.needs_password(widget.item):
                 self._ask_password(widget.item)
             else:
                 self._open_folder(widget.item)
@@ -1126,6 +1157,10 @@ class Launchpad(Gtk.ApplicationWindow):
         in_hidden = bool(self.folder_view and self.folder_view[1] and self.folder_view[1].get("locked"))
         if M.is_folder(item):
             sections = [[Item(_("Open"), lambda: self.activate_item(widget))]]
+            if not item.get("locked"):                  # (not Hidden: it's always behind the password)
+                sections.append([Item(_("Unlock Folder…"), lambda: self._ask_password(
+                    item, then=lambda: self.set_folder_locked(item, False))) if item.get("secure")
+                    else Item(_("Lock Folder"), lambda: self.set_folder_locked(item, True))])
         elif in_hidden:
             sections = [[Item(_("Open"), lambda: self.activate_item(widget))],
                         [Item(_("Show in {apps}").format(apps=_(names.APPS)), lambda: self.unhide_app(item))]]

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Apps and the Apps Menu: Lock Folder in a folder's right-click menu, like the Dock's -- opening it asks for the password (once, until Apps closes), its icon shows blank tiles and a lock; Unlock Folder… asks for the password first. Kept across restarts.
 - Apps Menu: the room under the apps is now a box of its own after the grids (a drop there goes to the end), instead of a drop target around them that heard every motion over the grids too -- reordering and making folders work in the Apps Menu as they do full screen.
 - Dock folders: while an app is dragged out of a folder's panel, the (invisible) panel takes no pointer at all -- the drop under it went to the panel, which has no drop target, and the app fell back into its folder.
 - Tests: the Dock, Dock folders and Launchpad tests no longer skip on a machine without certain apps -- a fixed set of test apps (tests/fake_apps.py) is installed for them, so they always run (they had hidden regressions); two stale tests brought up to date (a reorder that landed in the new folder zone, a centred name measured against an old width).
