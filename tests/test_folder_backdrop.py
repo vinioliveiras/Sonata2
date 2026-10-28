@@ -35,7 +35,14 @@ class FolderBackdropTest(unittest.TestCase):
             self.assertIn("filter: blur(%(folder_backdrop_blur)s)", rule, mod.__name__)
 
     def test_folder_panel_denser(self):
-        self.assertGreaterEqual(_alpha(tokens.SHARED["folder_panel"]), 0.25)     # was 0.16
+        # light glass in the light look, dark glass in the dark (Vini)
+        self.assertNotIn("folder_panel", tokens.SHARED)
+        light, dark = tokens.LIGHT["folder_panel"], tokens.DARK["folder_panel"]
+        self.assertTrue(light.startswith("rgba(255, 255, 255"))
+        self.assertFalse(dark.startswith("rgba(255, 255, 255"))
+        for c in (light, dark):
+            self.assertGreaterEqual(_alpha(c), 0.25)                                 # was 0.16
+            self.assertLess(_alpha(c), 0.9)                                          # still glass
         rule = re.search(r"\.lpw-root \.lp-panel\s*\{([^}]*)\}", _source(LW)).group(1)
         # Vini (option B): the Apps Menu's folder is light glass like the full-screen one,
         # over the faded, blurred grid

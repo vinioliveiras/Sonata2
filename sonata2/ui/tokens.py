@@ -25,6 +25,8 @@ LIGHT = {
     "destructive": "#ff3b30",
     # materials (backgrounds)
     "menu_bg": "rgba(236, 236, 236, 0.97)",     # menus, hover labels
+    # an open folder in Apps: light glass in the light look, dark in the dark (Vini)
+    "folder_panel": "rgba(255, 255, 255, 0.26)",
     "window_bg": "#ececec",
     "control_bg": "#ffffff",                     # push buttons, pop-up buttons
     "control_pressed": "#e5e5e5",
@@ -94,6 +96,7 @@ DARK = {
     "accent_ink": "#0a84ff",
     "destructive": "#ff453a",
     "menu_bg": "rgba(44, 44, 46, 0.97)",
+    "folder_panel": "rgba(30, 30, 32, 0.45)",
     "window_bg": "#18181a",                   # darker than macOS' #1e1e1e (Vini)
     "control_bg": "rgba(255, 255, 255, 0.16)",
     "control_pressed": "rgba(255, 255, 255, 0.24)",
@@ -215,7 +218,6 @@ SHARED = {
     "tile_on_scrim": "rgba(255, 255, 255, 0.20)",
     # an open folder (Vini: its background too see-through, the apps behind
     # it too visible): a denser panel, the grid behind faded and blurred
-    "folder_panel": "rgba(255, 255, 255, 0.26)",
     "folder_backdrop": "0.14",               # opacity of the apps outside the folder
     "folder_backdrop_blur": "6px",
     # timings
