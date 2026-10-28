@@ -54,7 +54,7 @@ class FakeProc:
     def communicate_async(self, _i, _c, done):
         self.done = done
         if self.out is not None:
-            GLib.idle_add(lambda: (done(self, None), False)[1])
+            GLib.timeout_add(5, lambda: (done(self, None), False)[1])   # (an idle could wait behind frames)
 
     def communicate_finish(self, _res):
         return True, self.out, None
@@ -95,6 +95,30 @@ class GlassTest(unittest.TestCase):
         self.assertEqual(shown, [1])                            # once
         self.assertIsNotNone(self.bar.frost_tex)
         self.assertTrue(self.bar.root.has_css_class("frosted"))
+
+    def test_panels_wait_for_their_glass(self):
+        """Vini: the widgets opened solid, then turned to glass. The game dims
+        at once; the bar and widgets wait (a little) and pop in already in
+        glass."""
+        proc = FakeProc(None)
+        with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc):
+            self.bar._frost_then(self.bar.present)
+            spin(G.FROST_WAIT_MS + 60)
+        self.assertTrue(self.bar.get_visible())                  # the dimming: at once
+        self.assertTrue(self.bar.root.has_css_class("waiting"))  # the panels: not yet
+        proc.out = red_png()
+        proc.done(proc, None)
+        spin(50)
+        self.assertFalse(self.bar.root.has_css_class("waiting"))
+        self.assertEqual(self.bar.frost_alpha, 1.0)               # in glass from their first frame
+
+    def test_panels_shown_solid_if_the_picture_is_too_late(self):
+        proc = FakeProc(None)
+        with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc):
+            self.bar._frost_then(self.bar.present)
+            spin(G.FROST_WAIT_MS + G.PANELS_WAIT_MS + 120)
+        self.assertFalse(self.bar.root.has_css_class("waiting"))  # not kept hidden
+        self.assertIsNone(self.bar.frost_tex)
 
     def test_too_slow_shows_solid_then_the_glass_fades_in(self):
         """Vini: some openings had no glass -- grim was slower than the wait

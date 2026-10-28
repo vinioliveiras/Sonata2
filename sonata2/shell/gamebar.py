@@ -71,7 +71,8 @@ PIN_NAMESPACE = "sonata2-gamebar-pin"
 # needed), blurred this much (px at full size), awaited this long at most
 FROST_SCALE = 0.25
 FROST_BLUR = 28
-FROST_WAIT_MS = 80          # (later: the glass fades in when it comes)
+FROST_WAIT_MS = 80          # the Game Bar (its dimming) shows after this at most
+PANELS_WAIT_MS = 220        # its panels wait this much more for their glass (later: solid, glass fading in)
 READ_AFTER_MS = 260
 GLASS_FADE_MS = 250         # a late picture: the glass fades in         # the states read once the opening animation is over
 FROST_LATE_S = 2.0          # a later picture than that: the game has moved on, no glass this time
@@ -154,6 +155,8 @@ window.sonata-gamebar, window.sonata-gamebar > contents { background: none; box-
   transition: outline-color %(t_fast)s %(ease_out)s, outline-width %(t_fast)s %(ease_out)s; }
 
 /* the fake glass under them (_Frost): see-through over the blurred picture */
+/* the panels waiting for their glass: not shown yet (they pop in with it) */
+.gb-root.waiting .gb-bar, .gb-root.waiting .gb-widget { opacity: 0; animation: none; }
 /* over the glass a panel paints its own tint (_Glass): no CSS background,
    its solid one fading out as the glass fades in */
 .gb-root.frosted .gb-bar, .gb-root.frosted .gb-widget { background-color: transparent; }
@@ -740,6 +743,7 @@ class GameBar(Gtk.Window):
         gen = self._frost_gen
         self._set_glass(None, 0.0)
         self.root.remove_css_class("frosted")
+        self.root.remove_css_class("waiting")
         import shutil
         if not shutil.which("grim") or layer.layer_shell() is None:
             show()
@@ -749,6 +753,13 @@ class GameBar(Gtk.Window):
         def once():
             if not state["shown"]:
                 state["shown"] = True
+                if self.frost_tex is None and gen == self._frost_gen:
+                    # the panels wait for their glass (Vini: they opened solid,
+                    # then turned to glass): the game dims at once, the bar and
+                    # widgets pop in with the picture, or solid at the latest
+                    self.root.add_css_class("waiting")
+                    GLib.timeout_add(PANELS_WAIT_MS, lambda: (gen == self._frost_gen and self._panels_in(),
+                                                              False)[1])
                 show()
             return False
         GLib.timeout_add(FROST_WAIT_MS, once)
@@ -788,14 +799,19 @@ class GameBar(Gtk.Window):
             return
         tex = blur_texture(self.get_renderer(), tex)
         self.root.add_css_class("frosted")
-        if not self.get_mapped():
-            self._set_glass(tex, 1.0)
+        if not self.get_mapped() or self.root.has_css_class("waiting"):
+            self._set_glass(tex, 1.0)                   # in glass from their first frame
+            self._panels_in()
             return
         self._set_glass(tex, 0.0)
         from gi.repository import Adw
         target = Adw.CallbackAnimationTarget.new(lambda v: self._set_glass(tex, v))
         self._frost_anim = Adw.TimedAnimation.new(self, 0.0, 1.0, tokens.ms(GLASS_FADE_MS), target)
         self._frost_anim.play()
+
+    def _panels_in(self) -> None:
+        """The bar and widgets pop in (they waited for the glass)."""
+        self.root.remove_css_class("waiting")
 
     def _set_glass(self, tex, alpha: float) -> None:
         self.frost_tex, self.frost_alpha = tex, alpha
