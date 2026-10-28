@@ -140,6 +140,33 @@ class WindowTest(unittest.TestCase):
         self.assertTrue(names["Trim…"].enabled)
         self.assertTrue(names["Crop…"].enabled)
 
+    def test_trim_and_crop_buttons_in_the_controls(self):
+        """Vini (option A): Trim and Crop in sight in the controls, beside
+        full screen -- they start the same trim / crop as the menu."""
+        win, _path = self.window()
+        end = win.hud.get_first_child().get_end_widget()
+        kids = []
+        c = end.get_first_child()
+        while c is not None:
+            kids.append(c)
+            c = c.get_next_sibling()
+        self.assertEqual(kids, [win.trim_btn, win.crop_btn, win.full_btn])
+        with mock.patch.object(E, "available", return_value=True):
+            win._edit_buttons()
+            self.assertTrue(win.trim_btn.get_sensitive())
+            self.assertTrue(win.crop_btn.get_sensitive())
+            with mock.patch.object(E, "thumbnails"):
+                win.trim_btn.emit("clicked")
+            self.assertIsNotNone(win.trim_bar)
+            win.cancel_trim()
+
+    def test_song_has_no_crop_button(self):
+        win, _path = self.window()
+        with mock.patch.object(E, "available", return_value=True):
+            win._set_audio(True)
+        self.assertFalse(win.crop_btn.get_visible())
+        self.assertTrue(win.trim_btn.get_visible())
+
     def test_without_ffmpeg_they_say_so(self):
         """No FFmpeg: Trim / Crop aren't greyed out with no reason -- they say what to install."""
         win, _path = self.window()

@@ -267,7 +267,14 @@ class VideoWindow(Gtk.ApplicationWindow):
         self.full_btn = self._button("view-fullscreen-symbolic", _("Enter Full Screen"), self.toggle_fullscreen,
                                      ["vd-small"])
         self.full_btn.set_valign(Gtk.Align.CENTER)
-        top.set_end_widget(self.full_btn)
+        # Trim and Crop in sight (Vini: only in the right-click menu, they
+        # weren't found), beside full screen; a song has no Crop
+        self.trim_btn = self._button("edit-cut-symbolic", _("Trim…"), self.start_trim, ["vd-small"])
+        self.crop_btn = self._button("image-crop-symbolic", _("Crop…"), self.start_crop, ["vd-small"])
+        end = Gtk.Box(spacing=2, valign=Gtk.Align.CENTER)
+        for b in (self.trim_btn, self.crop_btn, self.full_btn):
+            end.append(b)
+        top.set_end_widget(end)
         hud.append(top)
         bottom = Gtk.Box(spacing=8)
         self.elapsed = Gtk.Label(label="0:00", xalign=0, css_classes=["vd-time"])
@@ -303,6 +310,9 @@ class VideoWindow(Gtk.ApplicationWindow):
             self.cancel_crop()
         self._release()
         self.path = path
+        if hasattr(self, "trim_btn"):                  # not before it can be edited (_prepared)
+            self.trim_btn.set_sensitive(False)
+            self.crop_btn.set_sensitive(False)
         self._sized = False
         self.set_title(os.path.basename(path))
         self.message.set_visible(False)
@@ -508,6 +518,8 @@ class VideoWindow(Gtk.ApplicationWindow):
         self.audio = audio
         (self.add_css_class if audio else self.remove_css_class)("vd-audio")
         self.full_btn.set_visible(not audio)
+        self.crop_btn.set_visible(not audio)
+        self._edit_buttons()
         self.msg_title.set_label(_("This song can't be played") if audio else _("This video can't be played"))
         self.art.set_visible(audio)
         if not audio:
@@ -575,6 +587,12 @@ class VideoWindow(Gtk.ApplicationWindow):
             msg = _("No media backend is installed (GTK's GStreamer module and its plugins).")
         self._fail(msg)
 
+    def _edit_buttons(self) -> None:
+        """Trim / Crop pressable once the movie can be edited (or only FFmpeg is missing: they say so)."""
+        on = self._editable() and not self._editing()
+        self.trim_btn.set_sensitive(on)
+        self.crop_btn.set_sensitive(on and not self.audio)
+
     def _prepared(self, *_a) -> None:
         s = self.stream
         if s is None or not s.is_prepared() or s.get_error() is not None:
@@ -586,6 +604,7 @@ class VideoWindow(Gtk.ApplicationWindow):
         resume = load_position(self.path)
         if resume and s.is_seekable() and (s.get_duration() <= 0 or resume < s.get_duration() / 1e6):
             s.seek(int(resume * 1e6))
+        self._edit_buttons()
         self._tick()
 
     # -- playback ------------------------------------------------------------------------------
