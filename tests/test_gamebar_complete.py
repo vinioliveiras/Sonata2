@@ -171,6 +171,51 @@ class WidthTests(Base):
         self.assertLessEqual(b["capture"].get_x() + b["capture"].get_width(), b["performance"].get_x())
 
 
+class NowPlayingTests(Base):
+    def test_now_playing_widget_top_left(self):
+        """Vini: the Now Playing widget too -- the menu bar's module (artwork,
+        title, artist, previous / play-pause / next), at the top left."""
+        w = self.bar.widgets["nowplaying"]
+        self.assertIsNone(w.empty.get_parent())
+        self.assertIn("nowplaying", self.bar.toggles)
+        self.assertEqual((w.get_halign(), w.get_valign()), (Gtk.Align.START, Gtk.Align.START))
+        names, stack = set(), [w]
+        while stack:
+            c = stack.pop()
+            if isinstance(c, Gtk.Button):
+                names.add(c.get_icon_name())
+            k = c.get_first_child()
+            while k is not None:
+                stack.append(k)
+                k = k.get_next_sibling()
+        self.assertTrue({"media-skip-backward-symbolic", "media-skip-forward-symbolic"} <= names)
+
+    def test_new_widget_shows_after_an_update(self):
+        """A Game Bar saved before Now Playing existed: it shows the first
+        time, and a choice made later (turned off) is kept."""
+        config.save(G.CONFIG, {"widgets": ["audio", "capture"]})
+        again = G.GameBar(_app(), self.top)
+        try:
+            self.assertTrue(again.widgets["nowplaying"].get_visible())
+            self.assertFalse(again.widgets["performance"].get_visible())   # the user's own choice
+            again.toggle_widget("nowplaying")
+        finally:
+            again.destroy()
+        third = G.GameBar(_app(), self.top)
+        try:
+            self.assertFalse(third.widgets["nowplaying"].get_visible())
+        finally:
+            third.destroy()
+
+    def test_follows_the_player_only_while_shown(self):
+        from sonata2.shell import mpris
+        p = mpris.players()
+        n = len(p.listeners)
+        self.bar.close_bar()
+        spin(G._close_ms() + 150)
+        self.assertLess(len(p.listeners), n)                       # unrealized: no more updates
+
+
 class FpsLimitTests(Base):
     def test_control_centers_fps_limit_in_performance(self):
         """Vini: Control Center's FPS Limit in the Game Bar -- the same module

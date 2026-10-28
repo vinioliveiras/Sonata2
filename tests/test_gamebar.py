@@ -139,13 +139,14 @@ class GameBarLayoutTests(unittest.TestCase):
         Performance bottom right -- the bar's toggles in that same order."""
         A = Gtk.Align
         self.assertEqual({k: v[2] for k, v in G.WIDGETS.items()},
-                         {"audio": (A.START, A.END), "capture": (A.CENTER, A.END), "performance": (A.END, A.END)})
-        self.assertEqual(list(G.WIDGETS), ["audio", "capture", "performance"])
+                         {"nowplaying": (A.START, A.START), "audio": (A.START, A.END),
+                          "capture": (A.CENTER, A.END), "performance": (A.END, A.END)})
+        self.assertEqual(list(G.WIDGETS), ["nowplaying", "audio", "capture", "performance"])
         bar = G.GameBar(_app())
         try:
             bar.open()
             _spin(300)
-            b = {k: w.compute_bounds(bar)[1] for k, w in bar.widgets.items()}
+            b = {k: w.compute_bounds(bar)[1] for k, w in bar.widgets.items() if k != "nowplaying"}
             x = {k: r.get_x() for k, r in b.items()}
             bottom = {k: r.get_y() + r.get_height() for k, r in b.items()}
             self.assertLess(x["audio"], x["capture"])

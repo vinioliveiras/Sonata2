@@ -73,14 +73,16 @@ FROST_WAIT_MS = 250
 CONFIG = "gamebar"
 # the widgets, in the bar's order -- the same left-to-right order as on the
 # screen, so the toggles, the arrows and LB / RB follow them: id -> (title,
-# icon, (halign, valign)). Vini: all three along the bottom -- Audio at the
-# left, Capture in the middle, Performance at the right.
+# icon, (halign, valign)). Vini: three along the bottom -- Audio at the
+# left, Capture in the middle, Performance at the right -- and Now Playing at
+# the top left.
 WIDGETS = {
+    "nowplaying": (N_("Now Playing"), "sonata-now-playing-symbolic", (Gtk.Align.START, Gtk.Align.START)),
     "audio": (N_("Audio"), "audio-volume-high-symbolic", (Gtk.Align.START, Gtk.Align.END)),
     "capture": (N_("Capture"), "camera-photo-symbolic", (Gtk.Align.CENTER, Gtk.Align.END)),
     "performance": (N_("Performance"), "speedometer-symbolic", (Gtk.Align.END, Gtk.Align.END)),
 }
-DEFAULTS = {"widgets": list(WIDGETS), "positions": {}, "pinned": []}
+DEFAULTS = {"widgets": list(WIDGETS), "positions": {}, "pinned": [], "known": list(WIDGETS)}
 # the Performance widget's graphs under Control Center's FPS Limit (which has
 # the game's frame rate and frame times): gpu -- the card games use (NVIDIA
 # first, else the first); temp -- the first temperature there is
@@ -428,6 +430,7 @@ class GameBar(Gtk.Window):
                          css_classes=["sonata-gamebar"])
         self.topbar = topbar
         self.cfg = config.load(CONFIG, DEFAULTS)
+        self._new_widgets_shown()
         self._clock_src = 0
         self._hide_src = 0
 
@@ -447,6 +450,7 @@ class GameBar(Gtk.Window):
         self.widgets["capture"].fill(self._capture_actions())
         self.widgets["audio"].fill(self._audio_controls())
         self.widgets["performance"].fill(self._performance())
+        self.widgets["nowplaying"].fill(self._now_playing())
         self.pins = {}                                  # wid -> PinWindow while the Game Bar is closed
         for w in [self.bar] + list(self.widgets.values()):      # the glass follows them
             w.connect("notify::visible", lambda *_a: self.frost.queue_draw())
@@ -541,6 +545,20 @@ class GameBar(Gtk.Window):
             (b.add_css_class if self.widgets[wid].get_visible() else b.remove_css_class)("on")
 
     # -- widgets ----------------------------------------------------------------------------------
+    def _new_widgets_shown(self) -> None:
+        """A widget added by an update (Now Playing) shows the first time
+        (Vini added it, then it was off): the saved list predates it."""
+        raw = config.load(CONFIG, {"widgets": None, "known": None})     # what was saved, no defaults
+        known = raw["known"]
+        if known is None:                               # saved before "known" existed: the first three
+            known = ["audio", "capture", "performance"] if raw["widgets"] is not None else list(WIDGETS)
+        new = [w for w in WIDGETS if w not in known]
+        if new:
+            self.cfg["widgets"] = list(self.cfg.get("widgets") or []) + [w for w in new
+                                                                     if w not in (self.cfg.get("widgets") or [])]
+            self.cfg["known"] = list(WIDGETS)
+            config.update(CONFIG, widgets=self.cfg["widgets"], known=self.cfg["known"])
+
     # -- moving and pinning (P5) -----------------------------------------------------------------
     def _pos(self, wid: str):
         p = (self.cfg.get("positions") or {}).get(wid)
@@ -867,6 +885,16 @@ class GameBar(Gtk.Window):
                 if level is not None:
                     ui.controls.show_value(slider, level[0])
         system.run_async(lambda: (system.volume(), system.input_volume()), fill)
+
+    # -- Now Playing --------------------------------------------------------------------------
+    def _now_playing(self) -> Gtk.Widget:
+        """The menu bar's / Control Center's Now Playing (Vini): artwork, title,
+        artist, previous / play-pause / next -- the same module, following
+        the player only while on screen."""
+        from . import mpris
+        from .topbar import now_playing_module
+        players = getattr(self.topbar, "players", None) or mpris.players()
+        return now_playing_module(players)
 
     # -- Performance (P4) ---------------------------------------------------------------------
     def _performance(self) -> Gtk.Widget:

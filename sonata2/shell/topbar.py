@@ -1498,8 +1498,10 @@ def now_playing_module(p, header=False) -> Gtk.Widget:
         if update not in p.listeners:
             p.listeners.append(update)
             update()
-    row.connect("realize", shown)
-    row.connect("unrealize", lambda *_: update in p.listeners and p.listeners.remove(update))
+    # on screen only (map / unmap): a hidden window stays realized -- Control
+    # Center between openings, the Game Bar closed -- and kept following the player
+    row.connect("map", shown)
+    row.connect("unmap", lambda *_: update in p.listeners and p.listeners.remove(update))
     box.append(row)
     return ui.panel.module(box)
 
