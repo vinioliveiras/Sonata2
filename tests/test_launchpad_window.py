@@ -209,8 +209,11 @@ class MenuModeTest(unittest.TestCase):
         self.pad._drag = {"item": "gimp", "widget": self.L.LaunchItem(self.pad, "gimp", 64),
                           "folder": hidden, "target": None}
         self.pad.drag_over(self.menu.pages[0], 5, 5)            # Vini: dragging out of Hidden did nothing
+        self.assertIn("gimp", self.pad.model.hidden)             # held: not yet (only on letting go)
+        self.assertTrue(self.pad.drag_drop(self.menu.pages[0], 5, 5, "gimp"))
         self.pad._drag = None
         self.assertNotIn("gimp", self.pad.model.hidden)
+        self.assertEqual(self.pad.model.pages[0][0], "gimp")     # where it was let go
 
     def test_folders_open_in_the_menu_and_close_behind(self):
         self.pad.model.make_folder("calc", "files", "Work")
@@ -249,6 +252,8 @@ class MenuModeTest(unittest.TestCase):
         self.assertIsNotNone(grid)                                    # a page's grid: its drop target hears it
         self.pad.drag_over(grid, 4, 4)                                # out of the folder, onto the grid
         self.assertIsNone(self.pad.folder_view)
+        self.assertNotIn("calc", self.pad.model.pages[0])             # held: still in its folder
+        self.assertTrue(self.pad.drag_drop(grid, 4, 4, "calc"))       # let go
         self.pad._drag_ended(tile)
         settle(200)
         flat = [i for page in self.pad.model.pages for i in page]
@@ -271,9 +276,36 @@ class MenuModeTest(unittest.TestCase):
         self.assertTrue(any(isinstance(c, Gtk.DropTarget) for c in list(self.menu.scroll.observe_controllers())))
         self.menu._at_end(lambda g, x, y: self.pad.drag_over(g, x, y))
         self.assertIsNone(self.pad.folder_view)
+        self.menu._at_end(lambda g, x, y: self.pad.drag_drop(g, x, y, item))
         self.pad._drag_ended(tile)
         settle(200)
         self.assertIn(item, [i for page in self.pad.model.pages for i in page])
+
+    def test_held_out_of_a_folder_moves_only_when_let_go(self):
+        """Vini: held out of its folder, the app moved at once (the grid
+        jumping under it); now only a mark shows where it will go -- let go
+        on the grid it goes there, let go elsewhere it stays in its folder."""
+        self.pad.model.make_folder("calc", "files", "Work")
+        self.pad.save()
+        self.pad.render()
+        folder = next(t for t in self.menu.visible_items() if isinstance(t.item, dict))
+        self.pad.activate_item(folder)
+        settle(100)
+        before = [list(p) for p in self.pad.model.pages]
+        tile = self.pad.folder_view[2].get_first_child().get_child_at(0, 0)
+        with mock.patch.object(self.L.ui.drag, "hang", return_value=None):
+            self.pad._drag_begun(tile, None)
+        grid = self.menu.pages[0]
+        self.pad.drag_over(grid, 4, 4)
+        self.assertEqual([list(p) for p in self.pad.model.pages], before)      # nothing moved
+        mark = self.pad._drag.get("out_mark")
+        self.assertIsNotNone(mark)
+        self.assertTrue(mark.has_css_class("drop-before"))
+        self.pad._drag_ended(tile)                                             # let go elsewhere
+        settle(100)
+        self.assertFalse(mark.has_css_class("drop-before"))
+        f = next(it for page in self.pad.model.pages for it in page if isinstance(it, dict))
+        self.assertIn(tile.item, f["apps"])                                    # still in its folder
 
     def test_dropped_back_in_the_folder_clicks_behind_close_it_again(self):
         self.pad.model.make_folder("calc", "files", "Work")

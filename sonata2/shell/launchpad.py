@@ -48,6 +48,11 @@ window.sonata-launchpad *:drop(active) { box-shadow: none; outline: none; border
 .lp-item:active .lp-icon { filter: brightness(0.7); }
 .lp-item.folder-target .lp-icon, .lp-item.folder-target .lp-folder { transform: scale(1.12); }
 .lp-item.dragging { opacity: 0; }
+/* an app held out of its folder: where it will go once let go (a bar on that
+   side of the tile there; nothing moves before the drop -- Vini) */
+.lp-item { transition: box-shadow %(t_fast)s %(ease_out)s; }
+.lp-item.drop-before { box-shadow: inset 3px 0 0 %(accent)s; }
+.lp-item.drop-after { box-shadow: inset -3px 0 0 %(accent)s; }
 .lp-label { color: %(on_scrim)s; font-family: %(font)s; font-size: %(lp_label)s; font-weight: 400;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55); margin-top: 6px; }
 .lp-panel { background: %(folder_panel)s; border-radius: 28px;
@@ -1274,6 +1279,8 @@ class Launchpad(Gtk.ApplicationWindow):
 
     def _drag_ended(self, widget) -> None:
         widget.remove_css_class("dragging")
+        if self._drag:
+            self._mark_out(None, 0)                 # (not dropped on the grid: it stays in its folder)
         self._clear_target()
         self._drag = None
         if self.folder_view:                    # still open (dropped back in it): clicks close it again
@@ -1301,21 +1308,41 @@ class Launchpad(Gtk.ApplicationWindow):
             self._drag["target"].remove_css_class("folder-target")
             self._drag["target"] = None
 
-    def leave_folder(self, d) -> bool:
-        """The dragged app came out of its open folder: Hidden shows it
-        again (Vini: dragging out of Hidden did nothing), a folder lets it
-        go to the end. True when it was out of Hidden."""
-        folder = d.get("folder")
-        if folder is None or not folder.get("locked"):
-            return False
+    def _mark_out(self, grid, index) -> None:
+        """Where an app held out of its folder will go: a bar beside that
+        tile (or after the last one). None: no mark."""
+        d = self._drag
+        old = d.pop("out_mark", None) if d else None
+        if old is not None:
+            old.remove_css_class("drop-before")
+            old.remove_css_class("drop-after")
+        if d is None or grid is None:
+            return
+        shown = self._pages_with_hidden()
+        page = shown[grid.index] if grid.index < len(shown) else []
+        if not page:
+            return
+        after = index >= len(page)
+        w = self._item_widget(page[-1] if after else page[index])
+        w.add_css_class("drop-after" if after else "drop-before")
+        d["out_mark"] = w
+
+    def _take_out(self) -> None:
+        """Let go: the app held out of its folder goes where it was marked
+        (Hidden: shown again there)."""
+        d = self._drag
+        folder, out = d.get("folder"), d.get("out")
+        if folder is None or out is None:
+            return
+        page_i, index = out
+        if folder.get("locked"):                     # out of Hidden
+            if d["item"] in self.model.hidden:
+                self.model.hidden.remove(d["item"])
+                self.model.reconcile()
+                self.model.move(d["item"], page_i, index)
+        else:
+            self.model.take_out_of_folder(folder, d["item"], page_i, index)
         d["folder"] = None
-        self._close_folder()
-        if d["item"] in self.model.hidden:
-            self.model.hidden.remove(d["item"])
-            self.model.reconcile()               # back at the end of the grid
-            self.save()
-            self.render()
-        return True
 
     def drag_over(self, grid: PageGrid, x, y):
         d = self._drag
@@ -1323,9 +1350,7 @@ class Launchpad(Gtk.ApplicationWindow):
             return Gdk.DragAction.MOVE      # an app dragged from the Dock: dropping here unpins it
         if grid.index < 0:
             return Gdk.DragAction.MOVE
-        if self.leave_folder(d):
-            return Gdk.DragAction.MOVE
-        if d["folder"] is not None and self.folder_view:     # dragged out of the open folder
+        if d["folder"] is not None and self.folder_view:     # dragged out of the open folder (Hidden too)
             self._close_folder()
         index, centre = grid.cell_at(x, y)
         shown = self._pages_with_hidden()         # the Hidden folder too: dropping on it hides
@@ -1335,6 +1360,8 @@ class Launchpad(Gtk.ApplicationWindow):
         if centre and target is not None and target is not d["item"] and dragged_is_app:
             self._cancel("reorder")
             d["pending"] = None
+            d["out"] = None
+            self._mark_out(None, 0)
             tw = self._item_widget(target)
             if d["target"] is not tw:
                 self._clear_target()
@@ -1342,12 +1369,14 @@ class Launchpad(Gtk.ApplicationWindow):
                 self._timer("folder", FOLDER_HOLD_MS, lambda: tw.add_css_class("folder-target"))
             return Gdk.DragAction.MOVE
         self._clear_target()
-        # reorder live, after a short pause over the same slot
+        # held out of its folder: only marked -- it goes there when let go
+        # (Vini: it moved as soon as it left the folder, the grid jumping)
         if d["folder"] is not None:
-            self.model.take_out_of_folder(d["folder"], d["item"], grid.index, index)
-            d["folder"] = None
-            self.render()
+            if d.get("out") != (grid.index, index):
+                d["out"] = (grid.index, index)
+                self._mark_out(grid, index)
             return Gdk.DragAction.MOVE
+        # reorder live, after a short pause over the same slot
         want = (grid.index, index)
         if d.get("pending") != want:
             d["pending"] = want
@@ -1394,6 +1423,11 @@ class Launchpad(Gtk.ApplicationWindow):
                 return self.drop_dock_folder(grid, x, y, folder)
             return isinstance(value, str) and value in self.installed
 
+        self._mark_out(None, 0)
+        target = d.get("target")
+        if d.get("folder") is not None and target is not None and target.has_css_class("folder-target"):
+            d["out"] = d.get("out") or (self._top_location(target.item) or (len(self.model.pages) - 1, 0))
+        self._take_out()                             # out of its folder: now, where marked
         self._drop_on_target()
         self.save()
         self.render()

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Apps and the Apps Menu: an app held out of its folder (Hidden too) moves only when let go -- meanwhile a bar beside a tile marks where it will go and nothing jumps; let go away from the grid, it stays in its folder.
 - Apps and the Apps Menu: an open folder follows its apps -- Hide takes the app out of it at once, Lock App shows its padlock there, and a folder left empty closes (it stayed as it was until opened again).
 - Apps Menu: an app can be dragged out of an open folder again -- the dimmed grid behind the folder let no drag through (so a click behind the folder closes it); it hears drags again while one comes out of the folder. Let go in the empty room under the apps, it goes to the end.
 - Game Bar lighter still: each panel draws its own glass under itself, instead of one glass layer over the whole screen that was drawn again whole whenever a panel changed (and looked at on a timer); only the panel that changes is drawn again.
