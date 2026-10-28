@@ -108,5 +108,45 @@ class HitAreaTest(unittest.TestCase):
         W._forget_reach()
 
 
+class AppCornersTest(unittest.TestCase):
+    """Vini: does the bigger target work with the buttons on the right too?
+    In Settings (a header bar) the dots sat a pixel further in than the
+    tokens say and the very corner missed -- on both sides. Now each
+    outermost dot reaches the window's real edge."""
+
+    @classmethod
+    def setUpClass(cls):
+        from gi.repository import Adw
+        Adw.init()
+        ui.setup()
+        cls.app = Adw.Application(application_id="io.test.corners")
+        cls.app.register(None)
+
+    def corner(self, make, side):
+        with mock.patch.object(W, "buttons_side", return_value=side):
+            win = make()
+            win.set_default_size(900, 600)
+            win.present()
+            settle(800)
+            try:
+                x = win.get_width() - 0.5 if side == "right" else 0.5
+                hit = win.pick(x, 0.5, Gtk.PickFlags.DEFAULT)
+                self.assertIsNotNone(hit, (type(win).__name__, side))
+                self.assertIn("tl-close", hit.get_css_classes(), (type(win).__name__, side))
+            finally:
+                win.destroy()
+                settle(100)
+
+    def test_settings_corners(self):
+        from sonata2.settings.app import Settings
+        for side in ("left", "right"):
+            self.corner(lambda: Settings(self.app), side)
+
+    def test_files_corners(self):
+        from sonata2.files.window import FilesWindow
+        for side in ("left", "right"):
+            self.corner(lambda: FilesWindow(self.app, GLib.filename_to_uri(tempfile.mkdtemp())), side)
+
+
 if __name__ == "__main__":
     unittest.main()

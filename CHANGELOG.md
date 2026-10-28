@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Window buttons' bigger target reaches the window's real corner on both sides: in Settings (a header bar) the dots sat a pixel further in than designed and the very corner missed, buttons on the left or on the right.
 - The drawing palette (Game Bar, recording and sharing pills) lost its square shadow: its shadow was cut at the edges of its surface; the room around it now holds the whole (menus') shadow, and only the palette itself takes clicks -- you can draw right up to it.
 - After Print Screen the capture toolbar stays open -- even once the picture is closed -- to take more shots or change the options; each shot from it opens in Markup, and it comes back after each one (or a cancelled selection, or a recording). Its close button or Esc ends it. While kept it takes the keyboard only when clicked, so the editor can be typed in.
 - A smallest window size for the apps that had none: Preview (420 x 300), Terminal (420 x 260), TextEdit (420 x 280), Disk Manager (640 x 420) and Calendar (720 x 440). Preview could shrink to a sliver and TextEdit to one line under its toolbar.

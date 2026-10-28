@@ -375,6 +375,7 @@ def close_align() -> Gtk.Align:
 # Maximized, that's the screen's corner: throw the pointer there and click.
 # Only the hit test grows (Gtk.Widget.contains): layout and drawing don't move.
 _REACH = {}
+EDGE_SLACK = 8         # px: a dot this much further from the edge than designed still reaches it
 
 
 def _reach() -> dict:
@@ -405,11 +406,34 @@ class _Light(Gtk.Button):
         super().__init__(**props)
         self.outer = outer
 
+    def _to_edges(self):
+        """How far the window's content edges really are (left, top, right):
+        a header bar's padding put Settings' dots a pixel further in than the
+        tokens say, and the very corner missed (Vini: on both sides)."""
+        root = self.get_root()
+        content = root.get_child() if isinstance(root, Gtk.Window) else None
+        if content is None:
+            return None
+        from gi.repository import Graphene
+        ok, p = self.compute_point(content, Graphene.Point().init(0, 0))
+        if not ok:
+            return None
+        return p.x, p.y, content.get_width() - (p.x + self.get_width())
+
     def do_contains(self, x: float, y: float) -> bool:
         r = _reach()
         left = r["edge"] if self.outer == "left" else r["gap"]
         right = r["edge"] if self.outer == "right" else r["gap"]
-        return -left <= x < self.get_width() + right and -r["top"] <= y < self.get_height() + r["below"]
+        top = r["top"]
+        edges = self._to_edges()
+        if edges is not None:                    # out to the real edge, if it's a little further
+            ex, ey, er = edges
+            top = top if not 0 <= ey - top <= EDGE_SLACK else ey
+            if self.outer == "left" and 0 <= ex - left <= EDGE_SLACK:
+                left = ex
+            if self.outer == "right" and 0 <= er - right <= EDGE_SLACK:
+                right = er
+        return -left <= x < self.get_width() + right and -top <= y < self.get_height() + r["below"]
 
 
 def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
