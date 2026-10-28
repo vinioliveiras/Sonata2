@@ -86,6 +86,7 @@ DEFAULTS = {"widgets": list(WIDGETS), "positions": {}, "pinned": []}
 # first, else the first); temp -- the first temperature there is
 PERF_KINDS = ("cpu", "gpu", "temp", "ram")
 SLIDER_STEP = 5                                  # the D-pad's left / right on a slider
+MIXER_MAX_H = 200                                # the apps' volumes: more scroll inside the widget
 BAR_TOP = 14                 # the bar below the screen's top edge
 WIDGET_TOP = 76              # widgets start under the bar
 WIDGET_SIDE = 24
@@ -768,6 +769,7 @@ class GameBar(Gtk.Window):
         def gone():
             self._hide_src = 0
             self._show_pins()                           # (measured where they are, before hiding)
+            self._mixer_listen("audio" in self.pins)    # still on screen pinned: still listening
             self.set_visible(False)
             self.root.remove_css_class("closing")
             return False
@@ -797,6 +799,16 @@ class GameBar(Gtk.Window):
             s_.set_can_focus(True)
         box.append(out)
         box.append(mic)
+        # every app's own volume (Vini): the Sound menu's mixer, the same rows
+        from ..backend import mixer
+        if mixer.available():
+            from .mixer_ui import AppMixer
+            box.append(Gtk.Label(label=_("Applications"), xalign=0, css_classes=["gb-section"]))
+            self.app_mixer = AppMixer()
+            self.app_mixer.add_css_class("cc-mixer")    # Control Center's edges: lined up with the sliders above
+            scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True,
+                                        max_content_height=MIXER_MAX_H, child=self.app_mixer)
+            box.append(scroll)
         box.append(Gtk.Label(label=_("Recordings Take"), xalign=0, css_classes=["gb-section"]))
         from .capture import DEFAULTS as CAP_DEFAULTS
         cur = config.load("capture", CAP_DEFAULTS).get("audio", "system")
@@ -812,10 +824,38 @@ class GameBar(Gtk.Window):
         config.update("capture", audio=kind)
         self.sound_choice.select(kind)
 
+    def _streams(self, streams) -> None:
+        """The apps playing sound (the mixer's rows), their sliders and mute
+        buttons reachable with the controller."""
+        mix = getattr(self, "app_mixer", None)
+        if mix is None:
+            return
+        mix.set_streams(streams)
+        for row in mix.rows.values():
+            row.slider.set_focusable(True)
+            row.slider.set_can_focus(True)
+            row.mute.set_can_focus(True)
+
+    def _mixer_listen(self, on: bool) -> None:
+        """Apps starting / stopping sound heard only while the Audio widget is
+        on screen (the Game Bar open, or it pinned)."""
+        service = getattr(self.topbar, "mixer", None)
+        if service is None or getattr(self, "app_mixer", None) is None:
+            return
+        listening = self._streams in service.listeners
+        if on and not listening:
+            service.listeners.append(self._streams)
+        elif not on and listening:
+            service.listeners.remove(self._streams)
+
     def _refresh_audio(self) -> None:
         """The levels as they are now (each opening; changed elsewhere meanwhile)."""
         if not hasattr(self, "vol"):
             return
+        if getattr(self, "app_mixer", None) is not None:
+            from ..backend import mixer, system as system_
+            system_.run_async(mixer.streams, self._streams)
+            self._mixer_listen(True)
         from ..backend import system
         from .capture import DEFAULTS as CAP_DEFAULTS
         self.sound_choice.select(config.load("capture", CAP_DEFAULTS).get("audio", "system"))

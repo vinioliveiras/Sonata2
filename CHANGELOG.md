@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Game Bar: the volume mixer in the Audio widget -- each app playing sound with its own volume, mute and output (the Sound menu's rows), kept up to date only while it's on screen (open or pinned); reachable with the controller.
 - Game Bar: Control Center's FPS Limit in the Performance widget (the same module: Off, 30, 60, 90, 120, Max, and the game's frame times), above CPU, the games' GPU, a temperature and memory. Reachable with the controller.
 - Dock folders: an app dragged out of a folder's panel leaves it only when dropped on the Dock; let go anywhere else (or barely dragged, or cancelled) it goes back into its folder where it was -- a two-app folder isn't undone any more.
 - Game Bar: a dragged widget no longer shakes under the pointer -- the drag was measured from its own title, which moved with it; now from the Game Bar, which doesn't.

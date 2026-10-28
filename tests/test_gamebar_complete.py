@@ -89,6 +89,64 @@ class AudioTests(Base):
         self.assertIn(self.bar.sound_choice.buttons["both"], G._focusables(self.bar.widgets["audio"]))
 
 
+class MixerTests(unittest.TestCase):
+    """Vini: the volume mixer in the Game Bar -- the Sound menu's per-app
+    volumes (mixer_ui.AppMixer) in the Audio widget, kept up to date only
+    while it's on screen."""
+
+    def setUp(self):
+        config.save(G.CONFIG, {})
+        from sonata2.backend import mixer
+        self.mixer = mixer
+        self.p = [mock.patch.object(mixer, "available", return_value=True),
+                  mock.patch.object(mixer, "streams", return_value=[]),
+                  mock.patch("sonata2.backend.system.run_async",
+                             side_effect=lambda fn, done=None, *a: done(fn(*a)) if done else fn(*a))]
+        for p in self.p:
+            p.start()
+        self.service = mock.Mock(listeners=[])
+        self.top = type("Top", (), {})()
+        self.top.mixer = self.service
+        self.bar = G.GameBar(_app(), self.top)
+
+    def tearDown(self):
+        self.bar.destroy()
+        for p in self.p:
+            p.stop()
+
+    def test_mixer_in_the_audio_widget(self):
+        from sonata2.shell.mixer_ui import AppMixer
+        self.assertIsInstance(self.bar.app_mixer, AppMixer)
+        self.assertTrue(self.bar.app_mixer.is_ancestor(self.bar.widgets["audio"]))
+
+    def test_listens_only_while_on_screen(self):
+        self.bar.open()
+        self.assertIn(self.bar._streams, self.service.listeners)
+        self.bar.close_bar()
+        spin(G._close_ms() + 120)
+        self.assertNotIn(self.bar._streams, self.service.listeners)
+
+    def test_pinned_audio_keeps_listening(self):
+        self.bar.toggle_pin("audio")
+        self.bar.open()
+        self.bar.close_bar()
+        spin(G._close_ms() + 120)
+        self.assertIn(self.bar._streams, self.service.listeners)
+        self.bar._hide_pins()
+
+    def test_rows_reachable_with_the_controller(self):
+        from sonata2.shell import mixer_ui
+        s = mock.Mock(key="spotify", volume=60, muted=False)
+        with mock.patch.object(mixer_ui.mixer, "group", side_effect=lambda ss: ss), \
+                mock.patch.object(mixer_ui, "shown", return_value=("Spotify", None)), \
+                mock.patch.object(mixer_ui, "_gicon", return_value=mixer_ui.Gio.ThemedIcon.new("audio-x-generic")):
+            self.bar._streams([s])
+        row = self.bar.app_mixer.rows["spotify"]
+        stops = G._focusables(self.bar.widgets["audio"])
+        self.assertIn(row.slider, stops)
+        self.assertIn(row.mute, stops)
+
+
 class PerformanceTests(Base):
     def test_graphs_of_fps_cpu_gpu_memory(self):
         from sonata2.shell import statsui
@@ -172,7 +230,7 @@ class MoveAndPinTests(Base):
         self.bar.drag.emit("drag-begin", px, py)
         for dx, dy in ((10, -5), (40, -60), (41, -61), (80, -120)):
             self.bar.drag.emit("drag-update", dx, dy)
-            spin(16)
+            spin(60)                                               # (a layout pass, even on a busy machine)
             ok, nb = w.compute_bounds(self.bar.root)
             self.assertEqual((round(nb.get_x()), round(nb.get_y())),
                              (round(wb.get_x() + dx), round(wb.get_y() + dy)))       # exactly under the pointer
