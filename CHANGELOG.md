@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The blur rule Wayfire runs with is brought up to date when the menu bar starts: after an update, a surface newly never blurred (the Game Bar) kept its blur until the look was changed or you logged in again.
 - Apps and the Apps Menu: an open folder is glass again -- light in the light look, dark in the dark -- over the faded and blurred apps behind it.
 - Game Bar finished:
   - Audio widget: the output and microphone volumes, and what recordings take -- System, Microphone, Both (two separate tracks in the movie) or None. "Record System Sound and Microphone" is in the screenshot toolbar's Options too.

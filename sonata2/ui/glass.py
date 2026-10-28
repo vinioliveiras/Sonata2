@@ -144,6 +144,32 @@ def blur_rule(cfg: dict = None) -> str:
     return without_never(rule) if rule else BLUR_NONE
 
 
+GLASS_BARS = ' | type is "toplevel"'           # titlebars.apply_colors: glass title bars on
+
+
+def refresh_blur_rule(get=None, set_=None) -> bool:
+    """The blur rule Wayfire runs with, brought up to this version's: it is
+    stored in Sonata's Wayfire settings when the look changes, so a surface
+    added to NEVER_BLUR (Vini: the Game Bar, still blurred after the update)
+    kept its blur until the look was changed again. Called when the menu bar
+    starts. Not while a game has the lighter effects (gamemode). True: changed."""
+    import os
+    from .. import gamemode, wfconfig
+    from ..backend import system
+    get = get or wfconfig.wayfire_get
+    set_ = set_ or system.wayfire_set
+    if os.path.exists(gamemode.LIGHT):
+        return False
+    cur = (get("blur", "blur_by_default") or "").strip()
+    if 'contains "sonata2' not in cur:
+        return False                             # not one of Sonata's (Glass all off, or the user's own)
+    want = blur_rule() + (GLASS_BARS if cur.endswith(GLASS_BARS) else "")
+    if cur == want:
+        return False
+    set_("blur", "blur_by_default", want)
+    return True
+
+
 def blur_threshold(cfg: dict = None, tokens: dict = None) -> float:
     """Wayfire's alpha_threshold for the alphas chosen: just under the most
     see-through part that is on, 0.5 otherwise. With `tokens` (the palette)

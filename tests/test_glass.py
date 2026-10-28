@@ -3,6 +3,7 @@ xvfb-run python3 -m unittest tests.test_glass"""
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp()
 os.environ["GDK_BACKEND"] = "x11"
@@ -346,6 +347,45 @@ class SettingsAppearanceTest(unittest.TestCase):
         for a in (0.5, 0.6, 0.74, 0.95):
             self.assertAlmostEqual(self.st.Settings._slider_to_alpha(self.st.Settings._alpha_to_slider(a)), a, 2)
 
+
+
+class RefreshBlurRuleTest(unittest.TestCase):
+    """Vini: the Game Bar was still blurred after updating -- the blur rule
+    Wayfire runs with is stored when the look changes, so a surface newly
+    never blurred kept its blur. The menu bar brings the rule up to date."""
+
+    def run_with(self, cur, light=False):
+        from sonata2.ui import glass
+        from sonata2 import gamemode
+        got = []
+        with mock.patch.object(glass.os.path if hasattr(glass, "os") else __import__("os").path, "exists",
+                               side_effect=lambda p: light if p == gamemode.LIGHT else False):
+            changed = glass.refresh_blur_rule(get=lambda *_a: cur, set_=lambda *a: got.append(a))
+        return changed, got
+
+    def test_old_rule_updated(self):
+        from sonata2.ui import glass
+        old = '(app_id contains "sonata2" | type is "unmanaged") & !(app_id is "sonata2-mission")'
+        changed, got = self.run_with(old)
+        self.assertTrue(changed)
+        self.assertIn('app_id is "sonata2-gamebar"', got[0][2])
+        self.assertEqual(got[0][2], glass.blur_rule())
+
+    def test_glass_title_bars_kept(self):
+        old = '(app_id contains "sonata2") & !(app_id is "sonata2-mission") | type is "toplevel"'
+        _c, got = self.run_with(old)
+        self.assertTrue(got[0][2].endswith(' | type is "toplevel"'))
+
+    def test_up_to_date_left_alone(self):
+        from sonata2.ui import glass
+        changed, got = self.run_with(glass.blur_rule())
+        self.assertFalse(changed)
+        self.assertEqual(got, [])
+
+    def test_not_while_a_game_has_lighter_effects_nor_a_foreign_rule(self):
+        self.assertEqual(self.run_with('(app_id contains "sonata2") & !(x)', light=True), (False, []))
+        self.assertEqual(self.run_with('app_id is "sonata2-no-blur"'), (False, []))
+        self.assertEqual(self.run_with('type is "toplevel"'), (False, []))
 
 if __name__ == "__main__":
     unittest.main()

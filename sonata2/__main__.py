@@ -611,6 +611,11 @@ def run_topbar(app, args, ui):
     win.bar.capture = Capture(app, win.bar)
     # the instant replay's buffer goes with the menu bar (replay.py)
     app.connect("shutdown", lambda *_a: win.bar.capture._replay is not None and win.bar.capture._replay.stop())
+    # an updated Sonata's blur rule at once (surfaces never blurred: Overview,
+    # the Game Bar...), not only after the look is next changed
+    from .backend import system as _system
+    from .ui import glass as _glass
+    GLib.timeout_add_seconds(2, lambda: (_system.run_async(_glass.refresh_blur_rule), False)[1])
 
     def capture(_a, param):
         from . import config
