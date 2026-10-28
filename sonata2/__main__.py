@@ -609,6 +609,8 @@ def run_topbar(app, args, ui):
     # "screen" | "area" | "toolbar" | "stop"
     from .shell.capture import Capture
     win.bar.capture = Capture(app, win.bar)
+    # the instant replay's buffer goes with the menu bar (replay.py)
+    app.connect("shutdown", lambda *_a: win.bar.capture._replay is not None and win.bar.capture._replay.stop())
 
     def capture(_a, param):
         from . import config
@@ -659,6 +661,14 @@ def run_topbar(app, args, ui):
         emo["g"].toggle()
     act = Gio.SimpleAction.new("gamebar", None)
     act.connect("activate", gamebar)
+    app.add_action(act)
+    # Instant replay: the last 30 seconds as a clip (Super+Alt+G, Windows' Win+Alt+G)
+    def replay_save(*_a):
+        rp = win.bar.capture.replay
+        if rp.running:
+            rp.save()
+    act = Gio.SimpleAction.new("replay-save", None)
+    act.connect("activate", replay_save)
     app.add_action(act)
     # Input sources: Ctrl+Space goes back to the layout used before (macOS)
     act = Gio.SimpleAction.new("input-next", None)

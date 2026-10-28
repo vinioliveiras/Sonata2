@@ -130,5 +130,17 @@
  "Couldn't switch user": "Não foi possível mudar de utilizador",
  "Game Bar": "Barra de Jogo",
  "Audio": "Áudio",
- "Coming soon": "Brevemente"
+ "Coming soon": "Brevemente",
+ "Both": "Ambos",
+ "Instant Replay": "Repetição Instantânea",
+ "Instant replay needs wl-screenrec": "A repetição instantânea precisa do wl-screenrec",
+ "Microphone": "Microfone",
+ "Pin Over the Game": "Fixar sobre o jogo",
+ "Record System Sound and Microphone": "Gravar som do sistema e microfone",
+ "Recordings Take": "As gravações captam",
+ "Save Last 30 s": "Guardar últimos 30 s",
+ "Save the Last 30 Seconds": "Guardar os últimos 30 segundos",
+ "Save the last 30 seconds (Super+Alt+G)": "Guardar os últimos 30 segundos (Super+Alt+G)",
+ "System sound and microphone, two tracks": "Som do sistema e microfone, em duas faixas",
+ "Unpin": "Desafixar"
 }

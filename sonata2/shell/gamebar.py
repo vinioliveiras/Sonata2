@@ -22,6 +22,16 @@ Capture widget (P2): Screenshot and Record / Stop (with the time) -- the
 menu bar's Capture (shell/capture.py), on the game's display once the Game
 Bar has gone; the recording keeps its pill (stop, pen) at the top.
 
+Audio widget (P3): the output and microphone volumes (Control Center's
+sliders) and what a recording takes -- System, Microphone, Both (two
+separate tracks, capture.tracks_command) or None (the capture options).
+Performance widget (P4): FPS, CPU, GPU and memory, Control Center's graphs
+(statsui), read only while on screen. Widgets move by their title (dragged;
+a double-click puts one back) and the pin keeps one over the game after the
+Game Bar closes (P5: a small click-through window each -- the Performance
+one is the HUD). Instant replay (P6, replay.py): the last 30 seconds kept,
+Save Clip (or Super+Alt+G) writes them.
+
 Built in parts (ROADMAP M8): P1 this window, the bar and the widget frames;
 P2 Capture, P3 microphone + system audio as two tracks,
 P4 Performance (backend/stats.py, shell/statsui.py), P5 moving / pinning
@@ -37,7 +47,7 @@ while it's closed: the clock ticks only while it's on screen.
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, ui  # noqa: E402
 from ..i18n import N_, _  # noqa: E402
@@ -46,6 +56,7 @@ from . import layer  # noqa: E402
 from .mission import DIM  # noqa: E402  (the same dark layer as Overview, Win+Tab)
 
 NAMESPACE = "sonata2-gamebar"
+PIN_NAMESPACE = "sonata2-gamebar-pin"
 CONFIG = "gamebar"
 # the widgets, in the bar's order -- the same left-to-right order as on the
 # screen, so the toggles, the arrows and LB / RB follow them: id -> (title,
@@ -56,11 +67,17 @@ WIDGETS = {
     "capture": (N_("Capture"), "camera-photo-symbolic", (Gtk.Align.CENTER, Gtk.Align.END)),
     "performance": (N_("Performance"), "speedometer-symbolic", (Gtk.Align.END, Gtk.Align.END)),
 }
-DEFAULTS = {"widgets": list(WIDGETS)}
+DEFAULTS = {"widgets": list(WIDGETS), "positions": {}, "pinned": []}
+PERF_KINDS = ("fps", "cpu", "gpu", "ram")       # the Performance widget's graphs (gpu: the first card)
+SLIDER_STEP = 5                                  # the D-pad's left / right on a slider
 BAR_TOP = 14                 # the bar below the screen's top edge
 WIDGET_TOP = 76              # widgets start under the bar
 WIDGET_SIDE = 24
-WIDGET_W = 300
+WIDGET_W = 340
+# the content's width inside a widget (its padding and the body's): long text
+# (an FPS hint, a sound choice) wraps or ellipsizes, never widens a widget
+WIDGET_INNER = WIDGET_W - 2 * 6 - 2 * 4
+PERF_CELL = ((WIDGET_INNER - 6) // 2, 92)       # two graphs a row, the Grid's 6 px between
 
 
 def _close_ms() -> int:
@@ -103,7 +120,10 @@ window.sonata-gamebar, window.sonata-gamebar > contents { background: none; box-
 .gb-root button { outline: 0 solid transparent; outline-offset: 1px;
   transition: background-color %(t_fast)s %(ease_out)s, color %(t_fast)s %(ease_out)s,
               outline-color %(t_fast)s %(ease_out)s, outline-width %(t_fast)s %(ease_out)s; }
-.gb-root button:focus-visible { outline: 3px solid alpha(%(accent)s, 0.55); }
+.gb-root button:focus-visible, .gb-root .sonata-module-slider:focus-visible {
+  outline: 3px solid alpha(%(accent)s, 0.55); }
+.gb-root .sonata-module-slider { outline: 0 solid transparent; outline-offset: 2px; border-radius: 99px;
+  transition: outline-color %(t_fast)s %(ease_out)s, outline-width %(t_fast)s %(ease_out)s; }
 
 /* a widget: Control Center glass, popping in a little after the bar */
 .gb-widget { background-color: %(menu_bg)s; border-radius: %(r_dialog)s; padding: 6px;
@@ -131,6 +151,32 @@ window.sonata-gamebar, window.sonata-gamebar > contents { background: none; box-
 .gb-rec-dot { min-width: 14px; min-height: 14px; border-radius: 99px; background: %(sys_red)s; }
 .gb-action.recording .gb-rec-dot { background: %(label_on_accent)s; border-radius: 3px; }
 .gb-action:disabled { opacity: 0.45; }
+
+/* the title: drag to move; the pin keeps the widget over the game */
+.gb-widget .panel-header { padding-right: 4px; }
+.gb-widget.dragging { opacity: 0.85; }
+.gb-pin { min-width: 24px; min-height: 24px; padding: 0; border: none; border-radius: 99px; background: none;
+  box-shadow: none; color: %(label_secondary)s;
+  transition: background-color %(t_fast)s %(ease_out)s, color %(t_fast)s %(ease_out)s; }
+.gb-pin:hover { background: alpha(%(label)s, 0.10); }
+.gb-pin.on { color: %(accent_ink)s; }
+/* pinned over the game: no title buttons to press (it lets clicks through) */
+window.sonata-gamebar-pin, window.sonata-gamebar-pin > contents { background: none; box-shadow: none; }
+window.sonata-gamebar-pin .gb-widget { animation: none; opacity: 0.92; }
+window.sonata-gamebar-pin .gb-pin, window.sonata-gamebar-pin .gb-chips { opacity: 0; }
+
+/* chips: Instant Replay, Save Clip; the sound a recording takes */
+.gb-chips { margin: 4px 4px 2px; }
+.gb-chip { min-height: 26px; padding: 0 10px; border-radius: 99px; border: none; box-shadow: none;
+  background: alpha(%(label)s, 0.08); color: %(label)s; font-size: %(text_small)s;
+  transition: background-color %(t_fast)s %(ease_out)s, color %(t_fast)s %(ease_out)s; }
+.gb-chip:hover { background: alpha(%(label)s, 0.14); }
+.gb-chip:active { background: alpha(%(label)s, 0.20); transition-duration: %(t_press)s; }
+.gb-chip.on { background: %(accent)s; color: %(label_on_accent)s; }
+.gb-chip:disabled { opacity: 0.45; }
+.gb-section { font-size: %(text_small)s; font-weight: 600; color: %(label_secondary)s; margin: 4px 4px 0; }
+.gb-widget .seg button { font-size: %(text_small)s; padding-left: 2px; padding-right: 2px; }
+.gb-perf .panel-module { padding: 8px; }
 """, key="gamebar", dim=DIM)
 
 
@@ -138,12 +184,29 @@ def _now() -> str:
     return GLib.DateTime.new_now_local().format("%H:%M")
 
 
+# what the controller stops on: buttons and sliders (Control Center's capsule ones too)
+_STOPS = (Gtk.Button, Gtk.Range, ui.controls.ModuleSlider)
+
+
+def _slider_of(w):
+    if w is None:
+        return None
+    for t in (Gtk.Range, ui.controls.ModuleSlider):
+        if isinstance(w, t):
+            return w
+        a = w.get_ancestor(t)
+        if a is not None:
+            return a
+    return None
+
+
 def _focusables(root) -> list:
     """What the controller can stop on inside `root`, in reading order."""
     found, stack = [], [root]
     while stack:
         w = stack.pop(0)
-        if w is not root and isinstance(w, Gtk.Button) and w.get_visible() and w.get_sensitive():
+        if w is not root and isinstance(w, _STOPS) and w.get_visible() and w.get_sensitive() \
+                and not w.has_css_class("gb-pin"):
             found.append(w)
             continue
         c = w.get_first_child()
@@ -171,19 +234,78 @@ class Widget(Gtk.Box):
         self.set_margin_end(WIDGET_SIDE)
         self.set_margin_top(WIDGET_TOP)
         self.set_margin_bottom(WIDGET_SIDE)
-        head = ui.panel.header(_(title))
+        self.align = (halign, valign)
+        self.pin_btn = Gtk.Button(icon_name="view-pin-symbolic", css_classes=["gb-pin"], focus_on_click=False,
+                                  tooltip_text=_("Pin Over the Game"), valign=Gtk.Align.CENTER)
+        head = ui.panel.header(_(title), self.pin_btn)
         head.prepend(Gtk.Image(icon_name=icon, pixel_size=16, margin_end=6))
+        head.set_cursor(Gdk.Cursor.new_from_name("grab"))
+        self.head = head
         self.append(head)
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["gb-widget-body"])
         self.empty = Gtk.Label(label=_("Coming soon"), css_classes=["gb-widget-empty"])
         self.body.append(self.empty)
         self.append(self.body)
 
+    def place(self, pos) -> None:
+        """At (x, y) in the Game Bar (moved there), or None: its own corner."""
+        if pos is None:
+            self.set_halign(self.align[0])
+            self.set_valign(self.align[1])
+            for side, v in (("start", WIDGET_SIDE), ("end", WIDGET_SIDE), ("top", WIDGET_TOP), ("bottom", WIDGET_SIDE)):
+                getattr(self, f"set_margin_{side}")(v)
+            return
+        self.set_halign(Gtk.Align.START)
+        self.set_valign(Gtk.Align.START)
+        self.set_margin_start(int(pos[0]))
+        self.set_margin_top(int(pos[1]))
+        self.set_margin_end(0)
+        self.set_margin_bottom(0)
+
+    def bare(self) -> None:
+        """No margins (in its own pinned window)."""
+        for side in ("start", "end", "top", "bottom"):
+            getattr(self, f"set_margin_{side}")(0)
+        self.set_halign(Gtk.Align.FILL)
+        self.set_valign(Gtk.Align.FILL)
+
     def fill(self, child: Gtk.Widget) -> None:
         """The widget's own content in place of "Coming soon"."""
         if self.empty.get_parent() is self.body:
             self.body.remove(self.empty)
-        self.body.append(child)
+        from ..ui.fixed import FixedWidth
+        self.body.append(FixedWidth(child, WIDGET_INNER))
+
+
+class PinWindow(Gtk.Window):
+    """A pinned widget over the game once the Game Bar has gone: a small
+    layer surface at the widget's place, clicks passing through it."""
+
+    def __init__(self, app, widget: Widget, x: int, y: int, monitor=None):
+        super().__init__(application=app, title=_("Game Bar"), decorated=False, resizable=False,
+                         css_classes=["sonata-gamebar-pin"])
+        widget.bare()
+        self.set_child(widget)
+        LS = layer.layer_shell()
+        if LS:
+            LS.init_for_window(self)
+            LS.set_namespace(self, PIN_NAMESPACE)
+            LS.set_layer(self, LS.Layer.OVERLAY)
+            LS.set_anchor(self, LS.Edge.TOP, True)
+            LS.set_anchor(self, LS.Edge.LEFT, True)
+            LS.set_margin(self, LS.Edge.TOP, int(y))
+            LS.set_margin(self, LS.Edge.LEFT, int(x))
+            LS.set_exclusive_zone(self, -1)
+            LS.set_keyboard_mode(self, LS.KeyboardMode.NONE)
+            if monitor is not None:
+                LS.set_monitor(self, monitor)
+        self.connect("map", lambda *_a: layer.set_input_region(self, []))   # the game keeps the clicks
+
+    def release(self) -> Widget:
+        w = self.get_child()
+        self.set_child(None)
+        self.destroy()
+        return w
 
 
 class GameBar(Gtk.Window):
@@ -206,6 +328,14 @@ class GameBar(Gtk.Window):
             self.widgets[wid] = w
             self.root.add_overlay(w)
         self.widgets["capture"].fill(self._capture_actions())
+        self.widgets["audio"].fill(self._audio_controls())
+        self.widgets["performance"].fill(self._performance())
+        self.pins = {}                                  # wid -> PinWindow while the Game Bar is closed
+        for wid, w in self.widgets.items():
+            w.place(self._pos(wid))
+            w.pin_btn.connect("clicked", lambda _b, k=wid: self.toggle_pin(k))
+            self._movable(w)
+        self._sync_pins()
         self._sync_toggles()
         self.set_child(self.root)
 
@@ -289,6 +419,99 @@ class GameBar(Gtk.Window):
             (b.add_css_class if self.widgets[wid].get_visible() else b.remove_css_class)("on")
 
     # -- widgets ----------------------------------------------------------------------------------
+    # -- moving and pinning (P5) -----------------------------------------------------------------
+    def _pos(self, wid: str):
+        p = (self.cfg.get("positions") or {}).get(wid)
+        return tuple(p) if isinstance(p, (list, tuple)) and len(p) == 2 else None
+
+    def _movable(self, w: Widget) -> None:
+        drag = Gtk.GestureDrag()
+        start = {}
+
+        def begin(_g, _x, _y):
+            ok, b = w.compute_bounds(self.root)
+            start["xy"] = (b.get_x(), b.get_y()) if ok else (0, 0)
+            start["wh"] = (b.get_width(), b.get_height()) if ok else (WIDGET_W, 100)
+            w.add_css_class("dragging")
+
+        def update(_g, dx, dy):
+            if "xy" not in start:
+                return
+            W, H = self.root.get_width(), self.root.get_height()
+            x = max(0, min(W - start["wh"][0], start["xy"][0] + dx))
+            y = max(0, min(H - start["wh"][1], start["xy"][1] + dy))
+            w.place((x, y))
+            start["now"] = (int(x), int(y))
+
+        def end(_g, _dx, _dy):
+            w.remove_css_class("dragging")
+            if "now" in start:
+                self._save_pos(w.wid, start["now"])
+            start.clear()
+        drag.connect("drag-begin", begin)
+        drag.connect("drag-update", update)
+        drag.connect("drag-end", end)
+        w.head.add_controller(drag)
+        click = Gtk.GestureClick()
+        click.connect("pressed", lambda _g, n, _x, _y: n == 2 and self.reset_position(w.wid))
+        w.head.add_controller(click)
+
+    def _save_pos(self, wid: str, xy) -> None:
+        pos = dict(self.cfg.get("positions") or {})
+        if xy is None:
+            pos.pop(wid, None)
+        else:
+            pos[wid] = [int(xy[0]), int(xy[1])]
+        self.cfg["positions"] = pos
+        config.update(CONFIG, positions=pos)
+
+    def reset_position(self, wid: str) -> None:
+        """A double-click on its title: back to its own corner."""
+        self._save_pos(wid, None)
+        self.widgets[wid].place(None)
+
+    def toggle_pin(self, wid: str) -> None:
+        pinned = [w for w in (self.cfg.get("pinned") or []) if w in WIDGETS]
+        pinned = [w for w in pinned if w != wid] if wid in pinned else pinned + [wid]
+        self.cfg["pinned"] = pinned
+        config.update(CONFIG, pinned=pinned)
+        self._sync_pins()
+
+    def _sync_pins(self) -> None:
+        pinned = self.cfg.get("pinned") or []
+        for wid, w in self.widgets.items():
+            on = wid in pinned
+            (w.pin_btn.add_css_class if on else w.pin_btn.remove_css_class)("on")
+            w.pin_btn.set_tooltip_text(_("Unpin") if on else _("Pin Over the Game"))
+
+    def _show_pins(self) -> None:
+        """The Game Bar has gone: its pinned widgets stay over the game."""
+        pinned = [w for w in (self.cfg.get("pinned") or []) if w in self.widgets]
+        mon = None
+        try:
+            mon = self.get_display().get_monitor_at_surface(self.get_surface())
+        except Exception:
+            pass
+        for wid in pinned:
+            w = self.widgets[wid]
+            if not w.get_visible() or wid in self.pins:
+                continue
+            ok, b = w.compute_bounds(self.root)
+            x, y = (b.get_x(), b.get_y()) if ok else (0, 0)
+            self.root.remove_overlay(w)
+            win = PinWindow(self.get_application(), w, x, y, mon)
+            self.pins[wid] = win
+            win.present()
+        if self.pins and not self._clock_src:          # a pinned Capture shows its recording's time
+            self._clock_src = GLib.timeout_add_seconds(1, self._tick)
+
+    def _hide_pins(self) -> None:
+        for wid, win in list(self.pins.items()):
+            w = win.release()
+            self.root.add_overlay(w)
+            w.place(self._pos(wid))
+        self.pins.clear()
+
     def toggle_widget(self, wid: str) -> None:
         w = self.widgets[wid]
         if w.get_visible() and not w.has_css_class("hiding"):
@@ -322,6 +545,8 @@ class GameBar(Gtk.Window):
             GLib.source_remove(self._hide_src)
             self._hide_src = 0
         self.root.remove_css_class("closing")
+        self._hide_pins()                               # back in the Game Bar
+        self._refresh_audio()
         self._front_app()
         self._tick()
         if not self._clock_src:
@@ -344,15 +569,83 @@ class GameBar(Gtk.Window):
 
         def gone():
             self._hide_src = 0
+            self._show_pins()                           # (measured where they are, before hiding)
             self.set_visible(False)
             self.root.remove_css_class("closing")
             return False
         self._hide_src = GLib.timeout_add(_close_ms(), gone)
 
     def _tick(self) -> bool:
+        if not self.is_open() and not self.pins:
+            self._clock_src = 0
+            return False                                # nothing on screen: nothing to tick
         self.clock.set_label(_now())
         self._sync_capture()
         return True
+
+    # -- Audio (P3) ---------------------------------------------------------------------------
+    def _audio_controls(self) -> Gtk.Widget:
+        from ..backend import system
+        from .topbar import _slider_with_icon, _speaker_icon, _volume_feedback
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        out, self.vol = _slider_with_icon(_speaker_icon, 50, lambda v: system.run_async(
+            system.set_volume, None, int(v), False))
+        _volume_feedback(self.vol)
+        mic, self.mic = _slider_with_icon(
+            lambda v: "microphone-disabled-symbolic" if v <= 0 else "audio-input-microphone-symbolic", 50,
+            lambda v: system.run_async(system.set_input_volume, None, int(v), False))
+        for s_ in (self.vol, self.mic):
+            s_.set_focusable(True)                      # the controller: left / right change it
+            s_.set_can_focus(True)
+        box.append(out)
+        box.append(mic)
+        box.append(Gtk.Label(label=_("Recordings Take"), xalign=0, css_classes=["gb-section"]))
+        from .capture import DEFAULTS as CAP_DEFAULTS
+        cur = config.load("capture", CAP_DEFAULTS).get("audio", "system")
+        self.sound_choice = ui.controls.segmented(
+            [("system", _("System")), ("mic", _("Microphone")), ("both", _("Both")), ("none", _("None"))], cur,
+            self._set_sound, tooltips={"both": _("System sound and microphone, two tracks")})
+        for b in self.sound_choice.buttons.values():
+            b.set_can_focus(True)                       # the controller reaches them
+        box.append(self.sound_choice)
+        return box
+
+    def _set_sound(self, kind: str) -> None:
+        config.update("capture", audio=kind)
+        self.sound_choice.select(kind)
+
+    def _refresh_audio(self) -> None:
+        """The levels as they are now (each opening; changed elsewhere meanwhile)."""
+        if not hasattr(self, "vol"):
+            return
+        from ..backend import system
+        from .capture import DEFAULTS as CAP_DEFAULTS
+        self.sound_choice.select(config.load("capture", CAP_DEFAULTS).get("audio", "system"))
+
+        def fill(res):
+            vol, mic = res if res else (None, None)
+            for slider, level in ((self.vol, vol), (self.mic, mic)):
+                slider.set_sensitive(level is not None)
+                if level is not None:
+                    ui.controls.show_value(slider, level[0])
+        system.run_async(lambda: (system.volume(), system.input_volume()), fill)
+
+    # -- Performance (P4) ---------------------------------------------------------------------
+    def _performance(self) -> Gtk.Widget:
+        from . import statsui
+        grid = Gtk.Grid(column_spacing=6, row_spacing=6, column_homogeneous=True, css_classes=["gb-perf"])
+        kinds = []
+        for k in PERF_KINDS:
+            if k == "gpu":
+                k = next((x for x in statsui.KINDS if x == "gpu" or x.startswith("gpu_")), None)
+            if k in statsui.KINDS:
+                kinds.append(k)
+        self.perf_kinds = kinds
+        for i, k in enumerate(kinds):
+            m = statsui.module(k)                       # read only while shown (statsui._Live)
+            m.set_size_request(*PERF_CELL)
+            grid.attach(m, i % 2, i // 2, 1, 1)
+        return grid
 
     # -- Capture (P2) -------------------------------------------------------------------------
     def _action(self, icon_widget, label: str, on_click) -> Gtk.Button:
@@ -377,7 +670,18 @@ class GameBar(Gtk.Window):
         self.rec_btn = self._action(Gtk.Box(css_classes=["gb-rec-dot"]), _("Record"), self.toggle_record)
         row.append(self.shot_btn)
         row.append(self.rec_btn)
-        return row
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        col.append(row)
+        chips = Gtk.Box(spacing=6, homogeneous=True, css_classes=["gb-chips"])
+        self.replay_btn = Gtk.Button(label=_("Instant Replay"), css_classes=["gb-chip"], focus_on_click=False)
+        self.replay_btn.connect("clicked", lambda *_a: self.toggle_replay())
+        self.clip_btn = Gtk.Button(label=_("Save Last 30 s"), css_classes=["gb-chip"], focus_on_click=False,
+                                   tooltip_text=_("Save the last 30 seconds (Super+Alt+G)"))
+        self.clip_btn.connect("clicked", lambda *_a: self.save_clip())
+        chips.append(self.replay_btn)
+        chips.append(self.clip_btn)
+        col.append(chips)
+        return col
 
     def _capture(self):
         return getattr(self.topbar, "capture", None)
@@ -401,6 +705,13 @@ class GameBar(Gtk.Window):
         self.rec_btn.label.set_label(label)
         self.shot_btn.set_sensitive(cap is not None)
         self.rec_btn.set_sensitive(cap is not None)
+        rp = cap.replay if cap is not None else None
+        ok = rp is not None and rp.available()
+        on = bool(ok and rp.running)
+        self.replay_btn.set_sensitive(ok)
+        self.replay_btn.set_tooltip_text(None if ok else _("Instant replay needs wl-screenrec"))
+        (self.replay_btn.add_css_class if on else self.replay_btn.remove_css_class)("on")
+        self.clip_btn.set_sensitive(on)
 
     def _after_close(self, fn) -> None:
         """fn once the Game Bar has gone: the game alone in the picture."""
@@ -417,6 +728,29 @@ class GameBar(Gtk.Window):
             return
         from .capture import focused_output
         self._after_close(lambda: cap._shoot(None, self._cfg(), focused_output()))
+
+    def toggle_replay(self) -> None:
+        """Instant replay on (the game's display: the one in front) or off."""
+        cap = self._capture()
+        if cap is None:
+            return
+        if cap.replay.running:
+            cap.replay.stop()
+        else:
+            from .capture import focused_output
+            cap.replay.start(focused_output())
+        self._sync_capture()
+
+    def save_clip(self) -> None:
+        """The last 30 seconds as a clip -- once the Game Bar has gone (it
+        would be in the last moments)."""
+        cap = self._capture()
+        if cap is None or not cap.replay.running:
+            return
+        if self.is_open():
+            self._after_close(cap.replay.save)
+        else:
+            cap.replay.save()
 
     def toggle_record(self) -> None:
         cap = self._capture()
@@ -444,8 +778,12 @@ class GameBar(Gtk.Window):
             return
         self.set_focus_visible(True)                    # the ring shows from the first press
         if name in self.DIRECTIONS:
-            if self.get_focus() is None:
+            focus = self.get_focus()
+            rng = _slider_of(focus)
+            if focus is None:
                 self._focus_zone(0)
+            elif rng is not None and name in ("left", "right"):     # a slider: its value
+                rng.set_value(rng.get_value() + (SLIDER_STEP if name == "right" else -SLIDER_STEP))
             else:
                 self.child_focus(self.DIRECTIONS[name])
         elif name == "primary":

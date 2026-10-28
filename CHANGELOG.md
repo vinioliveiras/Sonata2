@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Game Bar finished:
+  - Audio widget: the output and microphone volumes, and what recordings take -- System, Microphone, Both (two separate tracks in the movie) or None. "Record System Sound and Microphone" is in the screenshot toolbar's Options too.
+  - Performance widget: FPS, CPU, GPU and memory graphs (Control Center's), read only while on screen.
+  - Widgets move by their title (a double-click puts one back) and the pin keeps one over the game after the Game Bar closes -- a pinned Performance is the HUD; pinned widgets let clicks through.
+  - Instant replay: keeps the last 30 seconds of the game (wl-screenrec); Save Last 30 s in the Capture widget, or Super+Alt+G, writes them as a clip.
+  - The controller moves the Audio sliders with the D-pad's left / right.
 - Game Bar: a Steam game (or a Windows program) shows its real name and icon, as in the Dock, instead of "steam_app_3219630".
 - Game Bar records games: its Capture widget has Screenshot and Record / Stop (with the recording's time), on the game's display once the Game Bar has gone; the recording keeps its pill (stop, pen) at the top.
 - Game Bar: no blur behind it any more (a full-screen blur over a running game cost too much) -- the game dims like Overview (Win+Tab), and its bar and widgets are solid.

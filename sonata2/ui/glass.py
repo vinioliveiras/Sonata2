@@ -122,7 +122,7 @@ BLUR_NONE = 'app_id is "sonata2-blur-nothing"'           # matches nothing: the 
 # nothing behind it to see)
 # (the Game Bar too, Vini: a full-screen blur over a running game cost too much -- dimmed like Overview instead)
 NEVER_BLUR = ('app_id is "sonata2-mission" | app_id is "sonata2-spaces" | app_id is "sonata2-wallpaper" | '
-              'app_id is "sonata2-gamebar"')
+              'app_id is "sonata2-gamebar" | app_id is "sonata2-gamebar-pin"')
 
 
 def without_never(rule: str) -> str:

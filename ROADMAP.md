@@ -78,11 +78,11 @@ list: [docs/PARITY.md](docs/PARITY.md).
         drive it, controllers grabbed while open (Settings toggle)
   - [x] P2 Capture widget: screenshot, record, stop (shell/capture.py); no blur
         behind the Game Bar (dimmed like Overview)
-  - [ ] P3 microphone + system audio recorded as two separate tracks
-  - [ ] P4 Performance widget: CPU, GPU, VRAM, temps, RAM, FPS graphs
+  - [x] P3 Audio widget; microphone + system audio recorded as two separate tracks
+  - [x] P4 Performance widget: CPU, GPU, VRAM, temps, RAM, FPS graphs
         (backend/stats.py, shell/statsui.py, fpsmodule.py)
-  - [ ] P5 move widgets, pin them over the game, small HUD
-  - [ ] P6 replay: save the last 30 seconds
+  - [x] P5 move widgets, pin them over the game (the pinned Performance is the HUD)
+  - [x] P6 replay: save the last 30 seconds (Super+Alt+G)
 - **M7 -- Files** (our own Finder; `sonata2 files [FOLDER]`), in parts:
   - [x] F1 window: sidebar (Favorites: Recents, Desktop, Documents,
         Downloads, home, GTK bookmarks; Locations: Computer, drives with

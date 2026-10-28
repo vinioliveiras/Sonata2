@@ -204,15 +204,29 @@ class BarTests(unittest.TestCase):
         self.assertFalse(t.has_css_class("on"))
 
     def test_lb_rb_jump_between_bar_and_widgets(self):
-        w = self.bar.widgets["capture"]
-        btn = Gtk.Button(label="Screenshot")
-        w.body.append(btn)
-        self.bar.pad("switch_next")
-        self.assertIs(self.bar.get_focus(), btn)
-        self.bar.pad("switch_next")                            # back round to the bar
+        """LB / RB: the bar, then each widget with something to press, in
+        the screen's order (Audio, Capture...), and round again."""
+        zones = self.bar._zones()
+        self.assertIs(zones[0], self.bar.bar)
+        self.assertIn(self.bar.widgets["audio"], zones)
+        self.assertIn(self.bar.widgets["capture"], zones)
+        seen = []
+        for _i in range(len(zones)):
+            self.bar.pad("switch_next")
+            seen.append(next(z for z in zones if self.bar._inside(z)))
+        self.assertEqual(seen, zones[1:] + zones[:1])            # every zone once, back to the bar
         self.assertIs(self.bar.get_focus(), next(iter(self.bar.toggles.values())))
         self.bar.pad("switch_prev")
-        self.assertIs(self.bar.get_focus(), btn)
+        self.assertTrue(self.bar._inside(zones[-1]))
+
+    def test_dpad_left_right_change_a_slider(self):
+        """On a slider (Audio's volumes) the D-pad's left / right move it."""
+        vol = self.bar.vol
+        vol.grab_focus()
+        before = vol.get_value()
+        self.bar.pad("right")
+        self.assertAlmostEqual(vol.get_value(), min(100, before + 5))
+        self.assertIs(self.bar.get_focus(), vol)                   # still there
 
     def test_ignored_when_closed(self):
         self.bar.close_bar()

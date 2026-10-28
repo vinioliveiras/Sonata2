@@ -393,6 +393,33 @@ def recorder_command(path: str, geo=None, output=None, audio=None, encoder="x264
     return cmd
 
 
+# Microphone and the system's sound at once (Vini): two separate tracks in
+# the movie. The recorders take one sound device, so the picture is recorded
+# silent and FFmpeg records both devices beside it (one AAC track each); at
+# the end they are put together without re-encoding (stream copy).
+TRACK_TITLES = ("System Sound", "Microphone")
+
+
+def tracks_command(path: str, system: str, mic: str) -> list:
+    """FFmpeg recording the system's sound and the microphone as two tracks."""
+    return ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
+            "-f", "pulse", "-i", system, "-f", "pulse", "-i", mic,
+            "-map", "0:a", "-map", "1:a", "-c:a", "aac", "-b:a", "192k", path]
+
+
+def mux_command(video: str, audio: str, out: str) -> list:
+    """The silent movie and its two sound tracks in one file (stream copy)."""
+    return ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-i", video, "-i", audio,
+            "-map", "0:v", "-map", "1:a", "-c", "copy",
+            "-metadata:s:a:0", f"title={TRACK_TITLES[0]}", "-metadata:s:a:1", f"title={TRACK_TITLES[1]}",
+            "-movflags", "+faststart", out]
+
+
+def _hidden_beside(path: str, ext: str) -> str:
+    d, n = os.path.split(path)
+    return os.path.join(d, "." + os.path.splitext(n)[0] + ext)
+
+
 def _name(prefix: str, ext: str) -> str:
     return GLib.DateTime.new_now_local().format(f"{prefix} %Y-%m-%d at %H.%M.%S.{ext}")
 
@@ -529,8 +556,9 @@ class RecordingControl(BarPill):
 
     def start(self, output, audio: bool, kind=None):
         self.sound.set_visible(audio)
-        self.sound.set_from_icon_name("audio-input-microphone-symbolic" if kind == "mic"
+        self.sound.set_from_icon_name("audio-input-microphone-symbolic" if kind in ("mic", "both")
                                       else "audio-volume-high-symbolic")
+        self.sound.set_tooltip_text(_("System sound and microphone, two tracks") if kind == "both" else None)
         self.output = output
         self._t0 = GLib.get_monotonic_time()
         self._tick()
@@ -566,6 +594,15 @@ class Capture:
         # kept open (Vini): after Print the toolbar stays -- more shots, other
         # options -- until its close button or Esc; each shot opens in Markup
         self.keep = False
+        self._tracks = None            # two sound tracks: {"proc", "video", "audio", "out"} (tracks_command)
+        self._replay = None            # instant replay (replay.py), made when first asked for
+
+    @property
+    def replay(self):
+        if self._replay is None:
+            from .replay import Replay
+            self._replay = Replay(self)
+        return self._replay
 
     # -- thumbnail --------------------------------------------------------------------------
     def shot_taken(self, path: str, edit: bool = False):
@@ -753,14 +790,25 @@ class Capture:
         self.rec_path = os.path.join(movies_dir(cfg), _name("Screen Recording", "mp4"))
         if not geo and not output:
             output = focused_output()
-        audio = audio_device(cfg.get("audio", "system"))
+        kind = cfg.get("audio", "system")
+        two = bool(kind == "both" and shutil.which("ffmpeg") and audio_device("system") and audio_device("mic"))
+        if kind == "both" and not two:
+            kind = "system"                          # no FFmpeg / no microphone: the system's sound alone
+        audio = None if two else audio_device(kind)
+        out = self.rec_path
+        if two:                                      # the picture silent, beside it the two tracks
+            self.rec_path = _hidden_beside(out, ".video.mp4")
         self._rec = {"geo": geo, "output": output, "audio": audio,
                      "encoders": encoders(config.load("capture", DEFAULTS).get("encoder"))}
         if not self._spawn():
+            self.rec_path = out
             return
+        if two:
+            self._start_tracks(out)
+            audio = True
         if self.pill is None:
             self.pill = RecordingControl(self.app, self)
-        self.pill.start(output or self._output_at(geo), bool(audio), cfg.get("audio"))
+        self.pill.start(output or self._output_at(geo), bool(audio), kind)
 
     def _spawn(self) -> bool:
         """Start wf-recorder with the next encoder to try."""
@@ -821,6 +869,7 @@ class Capture:
             if self._spawn():
                 return False
         self.recorder = None
+        self._stop_tracks(discard=True)
         if self.pill is not None:
             self.pill.stop()
         nc = getattr(self.bar, "notifications", None)
@@ -829,11 +878,79 @@ class Capture:
                       _("Details in {path}").format(path=_logs_path("recorder.log")), [], {}, -1)
         return False
 
+    def _start_tracks(self, out: str) -> None:
+        apath = _hidden_beside(out, ".audio.mka")
+        cmd = tracks_command(apath, audio_device("system"), audio_device("mic"))
+        try:
+            proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL)
+        except OSError:
+            proc = None
+        self._tracks = {"proc": proc, "video": self.rec_path, "audio": apath, "out": out}
+
+    def _stop_tracks(self, discard: bool = False):
+        """The sound tracks' recording ends (SIGINT: FFmpeg finishes its file).
+        discard: the recording didn't happen -- its files go."""
+        t, self._tracks = self._tracks, None
+        if t is None:
+            return None
+        if t["proc"] is not None and t["proc"].poll() is None:
+            t["proc"].send_signal(2)
+        if discard:
+            if t["proc"] is not None:
+                try:
+                    t["proc"].wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    t["proc"].kill()
+            for f in (t["video"], t["audio"]):
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
+            return None
+        return t
+
+    def _mux(self, t, done) -> None:
+        """Picture and the two tracks in one movie, then done(path) -- off the
+        main loop. Without the tracks (FFmpeg stopped at once): the picture."""
+        def finished(ok):
+            path = t["out"]
+            if ok and os.path.exists(path) and os.path.getsize(path) > 0:
+                for f in (t["video"], t["audio"]):
+                    try:
+                        os.remove(f)
+                    except OSError:
+                        pass
+            else:                                      # keep what was recorded: the picture alone
+                try:
+                    os.replace(t["video"], path)
+                except OSError:
+                    path = t["video"]
+            done(path)
+
+        if not (os.path.exists(t["audio"]) and os.path.getsize(t["audio"]) > 0):
+            finished(False)
+            return
+        try:
+            proc = subprocess.Popen(mux_command(t["video"], t["audio"], t["out"]), stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            finished(False)
+            return
+
+        def check():
+            if proc.poll() is None:
+                return True
+            finished(proc.returncode == 0)
+            return False
+        GLib.timeout_add(150, check)
+
     def stop_recording(self):
         """Stop and finish the movie without blocking the menu bar."""
         proc, path = self.recorder, self.rec_path
         if proc is None:
             return
+        tracks = self._stop_tracks()
         self.recorder = None
         if self.pill is not None:
             self.pill.stop()
@@ -847,6 +964,14 @@ class Capture:
                     return True
                 proc.kill()
                 proc.wait()
+            if tracks is not None:                     # two sound tracks: together, then saved
+                def tracks_done():
+                    if tracks["proc"] is not None and tracks["proc"].poll() is None:
+                        return True
+                    self._mux(tracks, lambda p: (self._saved(p), self._toolbar_back()))
+                    return False
+                GLib.timeout_add(100, tracks_done)
+                return False
             self._saved(path)
             self._toolbar_back()                       # kept: back after the recording
             return False
@@ -992,7 +1117,10 @@ class _Toolbar(Gtk.Window):
             [Item(_("Record Without Sound"), lambda _on: setv("audio", "none"), checked=c.get("audio") == "none"),
              Item(_("Record System Sound"), lambda _on: setv("audio", "system"),
                   checked=c.get("audio", "system") == "system"),
-             Item(_("Record Microphone"), lambda _on: setv("audio", "mic"), checked=c.get("audio") == "mic")]],
+             Item(_("Record Microphone"), lambda _on: setv("audio", "mic"), checked=c.get("audio") == "mic"),
+             # both at once, each its own track (Vini)
+             Item(_("Record System Sound and Microphone"), lambda _on: setv("audio", "both"),
+                  checked=c.get("audio") == "both")]],
             position=Gtk.PositionType.TOP)
         button.set_active(False)
         return pop
