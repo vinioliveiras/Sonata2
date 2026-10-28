@@ -489,6 +489,7 @@ class Launchpad(Gtk.ApplicationWindow):
             grid.fill(widgets)
         if menu is not None:
             menu.show()
+        self._sync_folder_view()
         self._prune_widgets(pages)
         self._select(self.selected)
         ui.transition.glide_play(before, self)
@@ -899,15 +900,7 @@ class Launchpad(Gtk.ApplicationWindow):
         # live (Vini): the folder's name in the grid follows each key typed
         title.connect("changed", lambda *_: title.get_editing() and
                       self._folder_tile_name(folder, title.get_text().strip() or folder["folder"]))
-        n = len(folder["apps"])
-        cols = min(M.COLS, max(3, n))
-        rows = min(3, (n + cols - 1) // cols)
-        grid = PageGrid(self, -2, cols, rows)
-        size = self._tile_size()
-        grid.set_size_request(cols * int(size * 1.7), rows * int(size * 1.7))
-        grid.folder = folder
-        grid.fill([LaunchItem(self, a, size) for a in folder["apps"][:cols * rows]])
-        panel.append(grid)
+        panel.append(self._folder_grid(folder))
         # Big Sur: the folder name sits above the panel, editable in place.
         wrap = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18,
                        halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
@@ -919,6 +912,37 @@ class Launchpad(Gtk.ApplicationWindow):
         wrap.add_css_class("lp-folder-view")
         dim.add_css_class("dimmed")
         dim.set_can_target(False)                 # a click behind the folder closes it (Vini)
+
+    def _folder_grid(self, folder) -> "PageGrid":
+        """The open folder's apps: its panel's grid (made again when they change)."""
+        n = len(folder["apps"])
+        cols = min(M.COLS, max(3, n))
+        rows = max(1, min(3, (n + cols - 1) // cols))
+        grid = PageGrid(self, -2, cols, rows)
+        size = self._tile_size()
+        grid.set_size_request(cols * int(size * 1.7), rows * int(size * 1.7))
+        grid.folder = folder
+        grid.fill([LaunchItem(self, a, size) for a in folder["apps"][:cols * rows]])
+        return grid
+
+    def _sync_folder_view(self) -> None:
+        """The open folder follows its apps (Vini: Hide or Lock on an app in
+        it left the folder as it was): its grid made again -- the hidden app
+        gone, the padlock on -- or the folder closed when it no longer is
+        (its last apps taken out, ungrouped). Not during a drag: its tile is
+        the drag's source."""
+        if not self.folder_view or self._drag:
+            return
+        wrap, folder, panel = self.folder_view
+        hidden = folder is getattr(self, "_hidden_item", None)
+        alive = any(it is folder for page in self.model.pages for it in page) or (hidden and folder["apps"])
+        if not alive or not folder["apps"]:
+            self._close_folder()
+            return
+        old = panel.get_first_child()
+        if old is not None:
+            panel.remove(old)
+        panel.append(self._folder_grid(folder))
 
     def _close_folder(self) -> None:
         """Zooms/fades out (the grid comes back at once for drags and clicks)."""

@@ -290,6 +290,53 @@ class MenuModeTest(unittest.TestCase):
         self.assertIsNotNone(self.pad.folder_view)
         self.assertFalse(self.menu.content.get_can_target())
 
+    def _open_work(self, apps=("calc", "files")):
+        self.pad.model.make_folder(apps[0], apps[1], "Work")
+        f = next(it for page in self.pad.model.pages for it in page if isinstance(it, dict))
+        for a in apps[2:]:
+            self.pad.model.add_to_folder(f, a) if hasattr(self.pad.model, "add_to_folder") else f["apps"].append(a)
+        self.pad.save()
+        self.pad.render()
+        folder = next(t for t in self.menu.visible_items() if isinstance(t.item, dict))
+        self.pad.activate_item(folder)
+        settle(100)
+        return f
+
+    def _folder_items(self):
+        grid = self.pad.folder_view[2].get_first_child()
+        return [c for c in (grid.get_child_at(i % grid.cols, i // grid.cols) for i in range(grid.cols * grid.rows))
+                if getattr(c, "item", None)]
+
+    def test_hide_inside_an_open_folder_updates_it(self):
+        """Vini: Hide on an app in an open folder left the folder as it was."""
+        apps = [a for a in APPS][:3]
+        self._open_work(tuple(apps))
+        self.assertEqual(len(self._folder_items()), 3)
+        self.pad.hide_app(apps[0])
+        settle(100)
+        self.assertIsNotNone(self.pad.folder_view)
+        self.assertNotIn(apps[0], [t.item for t in self._folder_items()])
+
+    def test_folder_gone_closes_its_panel(self):
+        f = self._open_work()
+        for a in list(f["apps"]):
+            self.pad.hide_app(a)
+        settle(100)
+        self.assertIsNone(self.pad.folder_view)
+
+    def test_lock_inside_an_open_folder_shows_its_padlock(self):
+        """Vini: Lock App on an app in an open folder showed no padlock there."""
+        self._open_work()
+        tile = self._folder_items()[0]
+        self.assertIsNone(getattr(tile, "lock", None))
+        from sonata2 import applock
+        with mock.patch.object(applock, "locked", side_effect=lambda did: did.startswith(tile.item)):
+            self.pad.widgets.clear()
+            self.pad.render()                                      # (what the applock watch does)
+            settle(100)
+            again = next(t for t in self._folder_items() if t.item == tile.item)
+            self.assertIsNotNone(getattr(again, "lock", None))
+
     def test_arrow_keys_move_the_selection(self):
         """Vini: in the Apps Menu the arrows did nothing (it has no carousel pages)."""
         items = self.items()

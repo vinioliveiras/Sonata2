@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Apps and the Apps Menu: an open folder follows its apps -- Hide takes the app out of it at once, Lock App shows its padlock there, and a folder left empty closes (it stayed as it was until opened again).
 - Apps Menu: an app can be dragged out of an open folder again -- the dimmed grid behind the folder let no drag through (so a click behind the folder closes it); it hears drags again while one comes out of the folder. Let go in the empty room under the apps, it goes to the end.
 - Game Bar lighter still: each panel draws its own glass under itself, instead of one glass layer over the whole screen that was drawn again whole whenever a panel changed (and looked at on a timer); only the panel that changes is drawn again.
 - Game Bar opens and animates lighter: it waits at most 80 ms for the game's picture (a later one fades the glass in); the glass looks where the panels are a few times a second instead of on every frame (the frame clock never rested while it was open); the volumes, radios and brightness are read once the opening animation is over (pactl, nmcli, rfkill and DDC/CI started with it).
