@@ -20,7 +20,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
-from .. import config, names, ui  # noqa: E402
+from .. import config, names, ui, vault  # noqa: E402
+from ..backend import system  # noqa: E402
 from ..i18n import N_, _, ngettext  # noqa: E402
 from . import actions, folder, folderprefs, ops, packages, tags, undo  # noqa: E402
 from .search import Search  # noqa: E402
@@ -611,8 +612,13 @@ class FilesWindow(Adw.ApplicationWindow):
 
     # -- navigation ------------------------------------------------------------------
     def go(self, uri: str, record=True, fade=True) -> None:
-        """fade: cross-fade into the folder (not from the sidebar: at once, Vini)."""
+        """fade: cross-fade into the folder (not from the sidebar: at once, Vini).
+        A locked folder (vault.py) closed: its password first, then into it."""
         uri = folder.canonical(uri)
+        path = Gio.File.new_for_uri(uri).get_path() if uri.startswith("file:") else None
+        if path and vault.is_vault(path) and not vault.is_open(path):
+            self._open_vault(path, lambda: self.go(uri, record, fade))
+            return
         if record:
             if self.pos >= 0 and self.history[self.pos] == uri:
                 return
@@ -626,6 +632,96 @@ class FilesWindow(Adw.ApplicationWindow):
         self._apply_folder_prefs(self.tab, uri)
         self.folder.load(uri)
         self._update_nav()
+
+    # -- locked folders (vault.py: gocryptfs; Vini) --------------------------------------
+    def _open_vault(self, path: str, then) -> None:
+        name = os.path.basename(path.rstrip("/"))
+
+        def opened(res):
+            ok, err = res
+            if ok:
+                then()
+            elif err == vault.WRONG:          # locked with an earlier login password
+                ui.dialog.alert(_("“{name}” can’t be opened").format(name=name),
+                                _("It was locked with a different password."), [("ok", _("OK"), "default")],
+                                parent=self)
+            else:
+                self._error(_("“{name}” can’t be opened").format(name=name), None, body=self._vault_reason(err))
+
+        ui.dialog.ask_password(_("Open “{name}”").format(name=name),
+                               _("This folder is locked. Enter your password to open it."),
+                               lambda pw: system.run_async(vault.open, opened, path, pw),
+                               parent=self, with_password=True)
+
+    @staticmethod
+    def _vault_reason(err) -> str:
+        """vault.py's error, said plainly."""
+        return {vault.WRONG: _("It was locked with a different password."),
+                "gocryptfs": _("Locked folders need gocryptfs (install the “gocryptfs” package)."),
+                "busy": _("A file in it is still open in an app."),
+                "not empty": _("Something was put in it while it was locked; move it out first.")}.get(err, err or "")
+
+    def _vault_items(self, info) -> list:
+        """Lock Folder… / Lock Now / Unlock Folder… for one folder."""
+        Item = ui.menu.Item
+        path = file_of(info).get_path()
+        if not path or not vault.available():
+            return []
+        if vault.is_vault(path):
+            items = [Item(_("Lock Now"), lambda: self.close_vault(path))] if vault.is_open(path) else []
+            return items + [Item(_("Unlock Folder…"), lambda: self.unlock_vault(path))]
+        if vault.can_lock(path):
+            return [Item(_("Lock Folder…"), lambda: self.lock_vault(path))]
+        return []
+
+    def _leave(self, path: str) -> None:
+        """Out of `path` (and anything in it) before it closes."""
+        here = Gio.File.new_for_uri(self.history[self.pos]).get_path() if self.pos >= 0 else None
+        if here and (here == path or here.startswith(path.rstrip("/") + os.sep)):
+            self.go(Gio.File.new_for_path(os.path.dirname(path.rstrip("/"))).get_uri())
+
+    def lock_vault(self, path: str) -> None:
+        name = os.path.basename(path.rstrip("/"))
+
+        def done(res):
+            ok, err = res
+            self.folder.reload()
+            if not ok:
+                self._error(_("“{name}” can’t be locked").format(name=name), None, body=self._vault_reason(err))
+
+        def go(pw):
+            self._leave(path)
+            system.run_async(vault.lock, done, path, pw)
+        ui.dialog.ask_password(_("Lock “{name}”?").format(name=name),
+                               _("Its files are encrypted: no app can read them until you open it with your "
+                                 "password. Enter your password to lock it."),
+                               go, parent=self, ok=_("Lock"), with_password=True)
+
+    def close_vault(self, path: str) -> None:
+        self._leave(path)
+
+        def done(ok):
+            self.folder.reload()
+            if not ok:
+                self._error(_("“{name}” can’t be locked now").format(name=os.path.basename(path)), None,
+                        body=_("A file in it is still open in an app."))
+        GLib.timeout_add(150, lambda: (system.run_async(vault.close, done, path), False)[1])
+
+    def unlock_vault(self, path: str) -> None:
+        name = os.path.basename(path.rstrip("/"))
+
+        def done(res):
+            ok, err = res
+            self.folder.reload()
+            if not ok:
+                self._error(_("“{name}” can’t be unlocked").format(name=name), None, body=self._vault_reason(err))
+
+        def go(pw):
+            self._leave(path)
+            GLib.timeout_add(150, lambda: (system.run_async(vault.unlock, done, path, pw), False)[1])
+        ui.dialog.ask_password(_("Unlock “{name}”?").format(name=name),
+                               _("Its files are decrypted and stay readable by any app."),
+                               go, parent=self, ok=_("Unlock"), with_password=True)
 
     def go_back(self):
         if self.pos > 0:
@@ -952,6 +1048,9 @@ class FilesWindow(Adw.ApplicationWindow):
                 sections.append([Item(_("Show in Enclosing Folder"), lambda: self._reveal(sel[0]))])
             if n == 1 and is_dir(sel[0]):
                 sections.append([Item(_("New Terminal at Folder"), lambda: self._terminal(file_of(sel[0])))])
+                lock = self._vault_items(sel[0])                    # an encrypted folder (vault.py)
+                if lock:
+                    sections.append(lock)
         else:
             self.view.unselect_all()
             here = self._writable_here()

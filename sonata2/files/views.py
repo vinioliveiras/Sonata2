@@ -190,6 +190,17 @@ def show_badge(image: Gtk.Image, info) -> None:
         badge.set_visible(is_shortcut(info))
 
 
+def _vault_closed(info) -> bool:
+    """A locked folder (vault.py) that's closed: drawn locked (Vini)."""
+    if info.get_file_type() != Gio.FileType.DIRECTORY:
+        return False
+    path = folder.file_of(info).get_path()
+    if not path:
+        return False
+    from .. import vault
+    return vault.is_vault(path) and not vault.is_open(path)
+
+
 def set_icon(image: Gtk.Image, info, small=False) -> None:
     """The item's icon. small=True (16 px rows): drawn from the 32 px artwork,
     like Finder's full-colour small icons (themes' 16 px folders are outlines)."""
@@ -197,6 +208,8 @@ def set_icon(image: Gtk.Image, info, small=False) -> None:
     app = _launcher_icon(info)
     if app is not None:                         # an app shortcut (.desktop): the app's icon
         gicon = app
+    elif _vault_closed(info):                   # a locked folder, closed: a folder with a padlock
+        gicon = Gio.ThemedIcon.new("folder-locked")
     elif info.get_content_type() == "application/x-zerosize":
         gicon = Gio.content_type_get_icon(content_type(info))
     if not gicon:

@@ -333,5 +333,21 @@
  "“{name}” is read-only.": "“{name}” é só de leitura.",
  "Use Video as Wallpaper": "Usar vídeo como imagem de fundo",
  "untitled folder": "pasta sem título",
- " - Shortcut": " - Atalho"
+ " - Shortcut": " - Atalho",
+ "A file in it is still open in an app.": "Um ficheiro dela ainda está aberto numa app.",
+ "It was locked with a different password.": "Foi bloqueada com outra palavra-passe.",
+ "Its files are decrypted and stay readable by any app.": "Os ficheiros dela são desencriptados e ficam legíveis por qualquer app.",
+ "Its files are encrypted: no app can read them until you open it with your password. Enter your password to lock it.": "Os ficheiros dela são encriptados: nenhuma app os consegue ler até a abrir com a sua palavra-passe. Introduza a palavra-passe para a bloquear.",
+ "Lock": "Bloquear",
+ "Lock Folder…": "Bloquear pasta…",
+ "Lock Now": "Bloquear agora",
+ "Lock “{name}”?": "Bloquear “{name}”?",
+ "Open “{name}”": "Abrir “{name}”",
+ "This folder is locked. Enter your password to open it.": "Esta pasta está bloqueada. Introduza a palavra-passe para a abrir.",
+ "“{name}” can’t be locked": "Não foi possível bloquear “{name}”",
+ "“{name}” can’t be locked now": "Não foi possível bloquear “{name}” agora",
+ "“{name}” can’t be opened": "Não foi possível abrir “{name}”",
+ "“{name}” can’t be unlocked": "Não foi possível desbloquear “{name}”",
+ "Locked folders need gocryptfs (install the “gocryptfs” package).": "As pastas bloqueadas precisam do gocryptfs (instale o pacote “gocryptfs”).",
+ "Something was put in it while it was locked; move it out first.": "Algo foi colocado nela enquanto estava bloqueada; mova-o para fora primeiro."
 }

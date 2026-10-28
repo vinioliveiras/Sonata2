@@ -442,6 +442,10 @@ def run_lock(app, args, ui, state):
     """Lock the session (once: a second `sonata2 lock` does nothing)."""
     if state.get("lock"):
         return
+    # the locked folders close with the screen (vault.py: open again with the password)
+    import threading
+    from . import vault
+    threading.Thread(target=vault.close_all, daemon=True).start()
     from . import pam
     from .shell import layer as L
     try:

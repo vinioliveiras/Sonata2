@@ -191,6 +191,8 @@ def end_session(kind: str, manager=None, reopen=None) -> Quitter:
         except Exception:
             manager = None
     if kind in SESSION_ENDS:
+        from .. import vault
+        system.run_async(vault.close_all)          # the locked folders closed with the session
         if open_apps.reopen_wanted() if reopen is None else reopen:
             open_apps.save_for_login(open_apps.current(manager))
         else:

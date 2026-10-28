@@ -234,10 +234,12 @@ def ask_text(heading: str, text: str, ok: str, on_done, body: str = "", parent=N
     return dlg
 
 
-def ask_password(heading: str, body: str, on_ok, parent=None, ok: str = None, wrong: bool = False):
+def ask_password(heading: str, body: str, on_ok, parent=None, ok: str = None, wrong: bool = False,
+                 with_password: bool = False):
     """The login password, checked (PAM) before on_ok() runs; a wrong one
     asks again ("Wrong password"). Return in the field checks it without
-    closing the alert; the button closes it, then checks."""
+    closing the alert; the button closes it, then checks. with_password:
+    on_ok(password) -- it's needed past the check (a locked folder's key)."""
     from gi.repository import GLib
     from . import controls
     from .. import pam
@@ -251,15 +253,15 @@ def ask_password(heading: str, body: str, on_ok, parent=None, ok: str = None, wr
     box.append(hint)
     state = {"busy": False}
 
-    def checked(ok_, dlg, closed):
+    def checked(ok_, dlg, closed, pw=""):
         state["busy"] = False
         entry.set_sensitive(True)
         if ok_:
             if not closed:
                 dlg.close() if hasattr(dlg, "close") else dlg.destroy()
-            on_ok()
+            on_ok(pw) if with_password else on_ok()
         elif closed:
-            ask_password(heading, body, on_ok, parent, ok, wrong=True)
+            ask_password(heading, body, on_ok, parent, ok, wrong=True, with_password=with_password)
         else:
             hint.set_label(_("Wrong password"))
             hint.set_visible(True)
@@ -272,7 +274,7 @@ def ask_password(heading: str, body: str, on_ok, parent=None, ok: str = None, wr
             return
         state["busy"] = True
         entry.set_sensitive(False)
-        pam.check_async(pw, lambda r: checked(r, dlg, closed))
+        pam.check_async(pw, lambda r: checked(r, dlg, closed, pw))
 
     dlg = alert(heading, body, [("cancel", _("Cancel"), ""), ("ok", ok, "default")],
                 lambda rid: rid == "ok" and check(True), parent=parent)
