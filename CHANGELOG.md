@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Game Bar: the Performance widget has every graph Control Center has -- CPU, each GPU, their memory, the temperatures, memory, network -- in Control Center's order, under the FPS Limit; many of them scroll inside the widget.
 - Game Bar: a Control Center widget at the top right -- Wi-Fi, Bluetooth, Airplane Mode, Do Not Disturb and the brightness of the game's display, Control Center's own controls (made once for both: topbar.QuickControls), read again at each opening; reachable with the controller. Shown the first time after the update.
 - Game Bar: a Now Playing widget at the top left (the menu bar's module: artwork, title, artist, previous / play-pause / next), with its toggle on the bar; shown the first time after the update. Now Playing follows the player only while on screen, in Control Center too (a hidden window stays realized and kept listening).
 - Game Bar: the volume mixer in the Audio widget -- each app playing sound with its own volume, mute and output (the Sound menu's rows), kept up to date only while it's on screen (open or pinned); reachable with the controller.

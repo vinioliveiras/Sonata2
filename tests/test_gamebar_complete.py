@@ -151,7 +151,8 @@ class PerformanceTests(Base):
     def test_graphs_of_fps_cpu_gpu_memory(self):
         from sonata2.shell import statsui
         box = self.bar.widgets["performance"].body.get_first_child().get_first_child()    # (in its FixedWidth)
-        grid = box.get_last_child()
+        grid = box.get_last_child().get_child()
+        grid = grid.get_child() if isinstance(grid, Gtk.Viewport) else grid
         self.assertIsInstance(grid, Gtk.Grid)
         self.assertIsNone(self.bar.widgets["performance"].empty.get_parent())
         expected = [k for k in ("cpu", "ram") if k in statsui.KINDS]
@@ -276,12 +277,20 @@ class FpsLimitTests(Base):
         chosen.assert_called()
         self.assertEqual(chosen.call_args.args[0], "60")
 
-    def test_graphs_under_it_prefer_the_games_card(self):
-        kinds = ("cpu", "gpu_amd", "gpu_nvidia", "vram_nvidia", "temp_cpu", "temp_nvidia", "ram", "net", "fps")
-        self.assertEqual(G.perf_kinds(kinds, {"gpu_amd": "AMD", "gpu_nvidia": "NVIDIA"}),
-                         ["cpu", "gpu_nvidia", "temp_cpu", "ram"])
-        self.assertEqual(G.perf_kinds(("cpu", "gpu", "ram", "fps"), {}), ["cpu", "gpu", "ram"])
-        self.assertNotIn("fps", G.perf_kinds(kinds, {}))               # the FPS Limit module has it
+    def test_every_control_center_graph_under_it(self):
+        """Vini: both GPUs, temperatures, everything Control Center has --
+        in its order; FPS only once (the FPS Limit module)."""
+        kinds = ("cpu", "gpu_amd", "gpu_nvidia", "vram_amd", "vram_nvidia", "temp_cpu", "temp_amd", "temp_nvidia",
+                 "ram", "net", "fps")
+        self.assertEqual(G.perf_kinds(kinds), list(kinds[:-1]))
+        from sonata2.shell import statsui
+        self.assertEqual(self.bar.perf_kinds, [k for k in statsui.KINDS if k != "fps"])
+
+    def test_many_graphs_scroll_inside(self):
+        box = self.bar.widgets["performance"].body.get_first_child().get_first_child()
+        scroll = box.get_last_child()
+        self.assertIsInstance(scroll, Gtk.ScrolledWindow)
+        self.assertEqual(scroll.get_max_content_height(), G.PERF_MAX_H)
 
 
 class MoveAndPinTests(Base):

@@ -86,9 +86,11 @@ WIDGETS = {
 }
 DEFAULTS = {"widgets": list(WIDGETS), "positions": {}, "pinned": [], "known": list(WIDGETS)}
 # the Performance widget's graphs under Control Center's FPS Limit (which has
-# the game's frame rate and frame times): gpu -- the card games use (NVIDIA
-# first, else the first); temp -- the first temperature there is
-PERF_KINDS = ("cpu", "gpu", "temp", "ram")
+# the game's frame rate and frame times): every one Control Center has (Vini:
+# both GPUs, their memory, the temperatures, memory, network) -- not FPS
+# again; past PERF_MAX_H they scroll inside the widget
+PERF_SKIP = ("fps",)
+PERF_MAX_H = 440
 SLIDER_STEP = 5                                  # the D-pad's left / right on a slider
 MIXER_MAX_H = 200                                # the apps' volumes: more scroll inside the widget
 BAR_TOP = 14                 # the bar below the screen's top edge
@@ -309,21 +311,11 @@ class _NoBar:
         pass
 
 
-def perf_kinds(available, makers=None) -> list:
-    """The Performance widget's graphs (PERF_KINDS) among those there are.
-    makers: "gpu_<card>" -> its maker (stats.GPU_MAKERS)."""
-    from ..backend import stats
-    makers = stats.GPU_MAKERS if makers is None else makers
-    out = []
-    for k in PERF_KINDS:
-        if k == "gpu":
-            gpus = [x for x in available if x == "gpu" or x.startswith("gpu_")]
-            k = next((x for x in gpus if makers.get(x) == "NVIDIA"), gpus[0] if gpus else None)
-        elif k == "temp":
-            k = next((x for x in available if x.startswith("temp_")), None)
-        if k in available and k not in out:
-            out.append(k)
-    return out
+def perf_kinds(available) -> list:
+    """The Performance widget's graphs: all of Control Center's (statsui.KINDS,
+    in its order: CPU, each GPU, their memory, temperatures, memory, network),
+    FPS apart (the FPS Limit above shows it)."""
+    return [k for k in available if k not in PERF_SKIP]
 
 
 def frost_command(output) -> list:
@@ -953,7 +945,9 @@ class GameBar(Gtk.Window):
             m = statsui.module(k)                       # read only while shown (statsui._Live)
             m.set_size_request(*PERF_CELL)
             grid.attach(m, i % 2, i // 2, 1, 1)
-        box.append(grid)
+        scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True,
+                                    max_content_height=PERF_MAX_H, child=grid)
+        box.append(scroll)
         return box
 
     # -- Capture (P2) -------------------------------------------------------------------------
