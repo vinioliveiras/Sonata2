@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.21.0-alpha -- 2026-10-28
+
+A Game Bar (Super+G, or a controller's Xbox / PS button) over the game:
+audio with a volume mixer, recording and instant replay, performance graphs
+and FPS limit, Now Playing and Control Center, in glass, all reachable with
+a controller. Folders can be locked with your login password -- encrypted
+in Files, password-protected in Apps and the Dock. Print Screen opens the
+shot in Markup, apps reopen after a restart, window buttons are easier to
+hit, and dragging apps in and out of folders works everywhere.
+
+### Changes
 - Recording with System Sound and Microphone: the movie's first (default) track now has both mixed -- players play one track, so with only the two apart the microphone went unheard -- then each on its own track for editing (named in the file).
 - tools/apply-update.sh: applies an update Claude sends (the newest ~/Downloads/sonata2-*.mbox) without the usual failures -- undoes a half-done earlier attempt, catches up with GitHub, skips commits already there, then pushes, installs and restarts Sonata; it stops, changing nothing, if the clone has edits not committed.
 - Files: Lock Folder… encrypts a folder with gocryptfs (your login password is its key) -- its files unreadable by any app until opened. Opening it asks for the password; Lock Now closes it (stepping out of it first); Unlock Folder… decrypts it for good. A closed one shows a folder with a padlock; all close when the screen locks or the session ends. Files are copied in and checked before the originals go; a failure leaves them where they were. install.sh offers gocryptfs (and wl-screenrec for the Game Bar's replay on Arch).
