@@ -120,7 +120,9 @@ BLUR_NONE = 'app_id is "sonata2-blur-nothing"'           # matches nothing: the 
 # Mission Control's dark layer and its desktops bar (see-through over the
 # whole display: a full-screen blur every frame), and the wallpaper (opaque:
 # nothing behind it to see)
-NEVER_BLUR = ('app_id is "sonata2-mission" | app_id is "sonata2-spaces" | app_id is "sonata2-wallpaper"')
+# (the Game Bar too, Vini: a full-screen blur over a running game cost too much -- dimmed like Overview instead)
+NEVER_BLUR = ('app_id is "sonata2-mission" | app_id is "sonata2-spaces" | app_id is "sonata2-wallpaper" | '
+              'app_id is "sonata2-gamebar"')
 
 
 def without_never(rule: str) -> str:

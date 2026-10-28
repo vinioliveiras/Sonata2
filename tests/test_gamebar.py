@@ -145,12 +145,13 @@ class GameBarLayoutTests(unittest.TestCase):
         try:
             bar.open()
             _spin(300)
-            x = {k: w.compute_bounds(bar)[1].get_x() for k, w in bar.widgets.items()}
-            y = {k: w.compute_bounds(bar)[1].get_y() for k, w in bar.widgets.items()}
+            b = {k: w.compute_bounds(bar)[1] for k, w in bar.widgets.items()}
+            x = {k: r.get_x() for k, r in b.items()}
+            bottom = {k: r.get_y() + r.get_height() for k, r in b.items()}
             self.assertLess(x["audio"], x["capture"])
             self.assertLess(x["capture"], x["performance"])
-            self.assertEqual(len(set(round(v) for v in y.values())), 1)          # one row
-            self.assertGreater(y["audio"], bar.get_height() / 2)                 # at the bottom
+            self.assertEqual(len(set(round(v) for v in bottom.values())), 1)     # one row, along the bottom
+            self.assertGreater(b["audio"].get_y(), bar.get_height() / 2)
             self.assertEqual(list(bar.toggles), list(G.WIDGETS))
         finally:
             bar.destroy()
@@ -200,6 +201,75 @@ class GameBarDrawTests(unittest.TestCase):
         for fn in list(self.d.listeners):
             fn(True)
         self.assertTrue(self.bar.pen.has_css_class("on"))
+
+
+class GameBarCaptureTests(unittest.TestCase):
+    """Vini: the Game Bar didn't record games (its Capture widget said
+    "Coming soon"). Screenshot and Record / Stop now -- the menu bar's
+    capture, on the game's display, once the Game Bar has gone."""
+
+    def setUp(self):
+        config.save(G.CONFIG, dict(G.DEFAULTS))
+        self.cap = mock.Mock(recorder=None, pill=None)
+        self.top = type("Top", (), {})()
+        self.top.capture = self.cap
+        self.o = mock.patch("sonata2.shell.capture.focused_output", return_value="DP-2")
+        self.o.start()
+        self.bar = G.GameBar(_app(), self.top)
+        self.bar.open()
+
+    def tearDown(self):
+        self.bar.destroy()
+        self.o.stop()
+
+    def test_widget_has_screenshot_and_record(self):
+        w = self.bar.widgets["capture"]
+        self.assertTrue(self.bar.shot_btn.is_ancestor(w))
+        self.assertTrue(self.bar.rec_btn.is_ancestor(w))
+        self.assertIsNone(w.empty.get_parent())                       # no "Coming soon"
+        self.assertIn(self.bar.rec_btn, G._focusables(w))              # the controller reaches them
+
+    def test_screenshot_after_the_bar_has_gone(self):
+        self.bar.shot_btn.emit("clicked")
+        self.assertFalse(self.bar.is_open())
+        self.cap._shoot.assert_not_called()                            # the Game Bar not in the picture
+        _spin(G._close_ms() + 160)
+        geo, cfg, output = self.cap._shoot.call_args.args
+        self.assertEqual((geo, output, cfg["timer"]), (None, "DP-2", 0))
+
+    def test_record_starts_on_the_games_display(self):
+        self.bar.rec_btn.emit("clicked")
+        self.assertFalse(self.bar.is_open())
+        _spin(G._close_ms() + 160)
+        geo, cfg, output = self.cap._record.call_args.args
+        self.assertEqual((geo, output), (None, "DP-2"))
+
+    def test_while_recording_it_is_stop_with_the_time(self):
+        self.cap.recorder = object()
+        self.cap.pill = mock.Mock(_t0=GLib.get_monotonic_time() - 75_000_000)
+        self.bar._sync_capture()
+        self.assertTrue(self.bar.rec_btn.has_css_class("recording"))
+        self.assertIn("1:15", self.bar.rec_btn.label.get_label())
+        self.bar.rec_btn.emit("clicked")
+        self.cap.stop_recording.assert_called_once()
+        self.assertTrue(self.bar.is_open())                            # stays: what next
+        self.cap._record.assert_not_called()
+
+
+class GameBarBackdropTests(unittest.TestCase):
+    def test_dimmed_like_overview_never_blurred(self):
+        """Vini: the blur behind the Game Bar cost too much over a game --
+        dimmed like Win+Tab (Overview) instead, no blur at all."""
+        from sonata2.ui import glass
+        from sonata2.shell import mission
+        self.assertIn('app_id is "sonata2-gamebar"', glass.NEVER_BLUR)
+        self.assertEqual(G.DIM, mission.DIM)
+        src = open(G.__file__).read()
+        self.assertIn(".gb-scrim { background: rgba(0, 0, 0, %(dim)s)", src)
+        self.assertNotIn("panel_material", src)                        # no glass that needs a blur behind
+        ini = configparser.ConfigParser(interpolation=None, strict=False)
+        ini.read(os.path.join(REPO, "config", "wayfire.ini"))
+        self.assertIn('app_id is "sonata2-gamebar"', ini["blur"]["blur_by_default"])
 
 
 class GameBarWiringTests(unittest.TestCase):

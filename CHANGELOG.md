@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Game Bar records games: its Capture widget has Screenshot and Record / Stop (with the recording's time), on the game's display once the Game Bar has gone; the recording keeps its pill (stop, pen) at the top.
+- Game Bar: no blur behind it any more (a full-screen blur over a running game cost too much) -- the game dims like Overview (Win+Tab), and its bar and widgets are solid.
 - Videos: Trim and Crop buttons in the controls, beside full screen (a song shows only Trim); pressable once the movie can be edited.
 - Videos: the right-click menu (Trim…, Crop…, Loop, Show in Files…) shows again -- the movie's window handle took the right-click for the window menu first. Without FFmpeg, Trim and Crop say what to install instead of sitting greyed out.
 - Window buttons' bigger target reaches the window's real corner on both sides: in Settings (a header bar) the dots sat a pixel further in than designed and the very corner missed, buttons on the left or on the right.

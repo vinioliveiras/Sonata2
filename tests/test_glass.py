@@ -95,7 +95,7 @@ class BlurRuleTest(unittest.TestCase):
         config.save("dock", {})
         for r in (self.rule(), self.rule(dock=True), self.rule(dock=True, menubar=True, windows=True)):
             self.assertTrue(r.endswith(f"& !({G.NEVER_BLUR})"), r)          # every rule with "contains"
-        for app in ("sonata2-mission", "sonata2-spaces", "sonata2-wallpaper"):
+        for app in ("sonata2-mission", "sonata2-spaces", "sonata2-wallpaper", "sonata2-gamebar"):
             self.assertIn(f'app_id is "{app}"', G.NEVER_BLUR)
 
     def test_parts_left_out(self):

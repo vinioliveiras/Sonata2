@@ -1,7 +1,8 @@
 """Game Bar (Super+G; Vini: Windows' Xbox Game Bar, drawn the Big Sur way).
 
-Over the game, a full-screen overlay: the screen dimmed (the Launchpad
-scrim), a glass bar at the top -- the app in front, a toggle per widget, the
+Over the game, a full-screen overlay: the screen dimmed like Overview's
+(Win+Tab: mission.DIM; no blur -- Vini: a full-screen blur over a game cost
+too much), a bar at the top -- the app in front, a toggle per widget, the
 clock -- and the widgets themselves as Control Center-style glass panels.
 Super+G again, Esc or a click on the dimmed screen closes it; the game keeps
 running underneath.
@@ -17,8 +18,12 @@ The pen on the bar (Vini) is the recording pill's: Draw on the screen
 emoji, colours, fading marks. Pressed, the Game Bar closes and drawing
 starts on the game's display; pressed again (drawing on), it stops.
 
+Capture widget (P2): Screenshot and Record / Stop (with the time) -- the
+menu bar's Capture (shell/capture.py), on the game's display once the Game
+Bar has gone; the recording keeps its pill (stop, pen) at the top.
+
 Built in parts (ROADMAP M8): P1 this window, the bar and the widget frames;
-P2 Capture (shell/capture.py), P3 microphone + system audio as two tracks,
+P2 Capture, P3 microphone + system audio as two tracks,
 P4 Performance (backend/stats.py, shell/statsui.py), P5 moving / pinning
 widgets and the small HUD, then the last-30-seconds replay.
 
@@ -38,6 +43,7 @@ from .. import config, ui  # noqa: E402
 from ..i18n import N_, _  # noqa: E402
 from ..ui import tokens  # noqa: E402
 from . import layer  # noqa: E402
+from .mission import DIM  # noqa: E402  (the same dark layer as Overview, Win+Tab)
 
 NAMESPACE = "sonata2-gamebar"
 CONFIG = "gamebar"
@@ -64,14 +70,14 @@ def _close_ms() -> int:
 
 ui.register("""
 window.sonata-gamebar, window.sonata-gamebar > contents { background: none; box-shadow: none; }
-/* the game dimmed, like Launchpad's backdrop */
-.gb-scrim { background: %(scrim)s; transition: opacity %(t_open)s %(ease_out)s; }
+/* the game dimmed like Overview's (Win+Tab); never blurred (glass.NEVER_BLUR) */
+.gb-scrim { background: rgba(0, 0, 0, %(dim)s); transition: opacity %(t_open)s %(ease_out)s; }
 .gb-root.closing .gb-scrim { opacity: 0; }
 @keyframes gb-fade-in { from { opacity: 0; } to { opacity: 1; } }
 .gb-scrim { animation: gb-fade-in %(t_open)s %(ease_out)s both; }
 
 /* the bar: a Big Sur glass pill, sliding down from the top edge */
-.gb-bar { background-color: %(panel_material)s; border-radius: %(r_plate)s; padding: 6px 8px;
+.gb-bar { background-color: %(menu_bg)s; border-radius: %(r_plate)s; padding: 6px 8px;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_menu)s;
   color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
 @keyframes gb-bar-in { from { opacity: 0; transform: translateY(-14px) scale(0.98); } to { opacity: 1; transform: none; } }
@@ -100,7 +106,7 @@ window.sonata-gamebar, window.sonata-gamebar > contents { background: none; box-
 .gb-root button:focus-visible { outline: 3px solid alpha(%(accent)s, 0.55); }
 
 /* a widget: Control Center glass, popping in a little after the bar */
-.gb-widget { background-color: %(panel_material)s; border-radius: %(r_dialog)s; padding: 6px;
+.gb-widget { background-color: %(menu_bg)s; border-radius: %(r_dialog)s; padding: 6px;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_menu)s;
   color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
 @keyframes gb-widget-in { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
@@ -109,7 +115,23 @@ window.sonata-gamebar, window.sonata-gamebar > contents { background: none; box-
 .gb-widget.hiding, .gb-root.closing .gb-widget { animation: gb-widget-out %(t_open)s %(ease_out)s both; }
 .gb-widget-body { padding: 4px 4px 2px; }
 .gb-widget-empty { color: %(label_secondary)s; font-size: %(text_small)s; margin: 14px 8px 16px; }
-""", key="gamebar")
+
+/* Capture: two round actions, Control Center style */
+.gb-actions { margin: 6px 4px 2px; }
+.gb-action { background: none; border: none; box-shadow: none; padding: 4px; border-radius: %(r_dialog)s;
+  color: %(label)s; transition: background-color %(t_fast)s %(ease_out)s; }
+.gb-action:hover { background: alpha(%(label)s, 0.06); }
+.gb-action .gb-action-icon { min-width: 44px; min-height: 44px; border-radius: 99px; background: %(toggle_off)s;
+  transition: background-color %(t_fast)s %(ease_out)s, transform %(t_press)s %(ease_out)s; }
+.gb-action:active .gb-action-icon { transform: scale(0.92); }
+.gb-action .gb-action-label { font-size: %(text_small)s; margin-top: 4px; }
+.gb-action.recording .gb-action-icon { background: %(sys_red)s; color: %(label_on_accent)s; }
+@keyframes gb-rec-pulse { from { opacity: 1; } to { opacity: 0.55; } }
+.gb-action.recording .gb-action-icon image { animation: gb-rec-pulse 900ms ease-in-out infinite alternate; }
+.gb-rec-dot { min-width: 14px; min-height: 14px; border-radius: 99px; background: %(sys_red)s; }
+.gb-action.recording .gb-rec-dot { background: %(label_on_accent)s; border-radius: 3px; }
+.gb-action:disabled { opacity: 0.45; }
+""", key="gamebar", dim=DIM)
 
 
 def _now() -> str:
@@ -153,8 +175,15 @@ class Widget(Gtk.Box):
         head.prepend(Gtk.Image(icon_name=icon, pixel_size=16, margin_end=6))
         self.append(head)
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["gb-widget-body"])
-        self.body.append(Gtk.Label(label=_("Coming soon"), css_classes=["gb-widget-empty"]))
+        self.empty = Gtk.Label(label=_("Coming soon"), css_classes=["gb-widget-empty"])
+        self.body.append(self.empty)
         self.append(self.body)
+
+    def fill(self, child: Gtk.Widget) -> None:
+        """The widget's own content in place of "Coming soon"."""
+        if self.empty.get_parent() is self.body:
+            self.body.remove(self.empty)
+        self.body.append(child)
 
 
 class GameBar(Gtk.Window):
@@ -176,6 +205,7 @@ class GameBar(Gtk.Window):
             w.set_visible(wid in self.cfg["widgets"])
             self.widgets[wid] = w
             self.root.add_overlay(w)
+        self.widgets["capture"].fill(self._capture_actions())
         self._sync_toggles()
         self.set_child(self.root)
 
@@ -314,7 +344,83 @@ class GameBar(Gtk.Window):
 
     def _tick(self) -> bool:
         self.clock.set_label(_now())
+        self._sync_capture()
         return True
+
+    # -- Capture (P2) -------------------------------------------------------------------------
+    def _action(self, icon_widget, label: str, on_click) -> Gtk.Button:
+        b = Gtk.Button(css_classes=["gb-action"], focus_on_click=False, hexpand=True)
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        holder = Gtk.Box(css_classes=["gb-action-icon"], halign=Gtk.Align.CENTER)
+        icon_widget.set_hexpand(True)
+        icon_widget.set_halign(Gtk.Align.CENTER)
+        icon_widget.set_valign(Gtk.Align.CENTER)
+        holder.append(icon_widget)
+        col.append(holder)
+        b.label = Gtk.Label(label=label, css_classes=["gb-action-label"])
+        col.append(b.label)
+        b.set_child(col)
+        b.connect("clicked", lambda *_a: on_click())
+        return b
+
+    def _capture_actions(self) -> Gtk.Widget:
+        row = Gtk.Box(spacing=8, homogeneous=True, css_classes=["gb-actions"])
+        self.shot_btn = self._action(Gtk.Image(icon_name="camera-photo-symbolic", pixel_size=20), _("Screenshot"),
+                                     self.screenshot)
+        self.rec_btn = self._action(Gtk.Box(css_classes=["gb-rec-dot"]), _("Record"), self.toggle_record)
+        row.append(self.shot_btn)
+        row.append(self.rec_btn)
+        return row
+
+    def _capture(self):
+        return getattr(self.topbar, "capture", None)
+
+    def _recording(self) -> bool:
+        cap = self._capture()
+        return cap is not None and cap.recorder is not None
+
+    def _sync_capture(self) -> None:
+        """Record or Stop (with the recording's time) as it is now."""
+        if not hasattr(self, "rec_btn"):
+            return
+        cap = self._capture()
+        rec = self._recording()
+        (self.rec_btn.add_css_class if rec else self.rec_btn.remove_css_class)("recording")
+        label = _("Record")
+        if rec:
+            t0 = getattr(getattr(cap, "pill", None), "_t0", 0)
+            s = int((GLib.get_monotonic_time() - t0) / 1_000_000) if t0 else 0
+            label = _("Stop") + f" · {s // 60}:{s % 60:02d}"
+        self.rec_btn.label.set_label(label)
+        self.shot_btn.set_sensitive(cap is not None)
+        self.rec_btn.set_sensitive(cap is not None)
+
+    def _after_close(self, fn) -> None:
+        """fn once the Game Bar has gone: the game alone in the picture."""
+        self.close_bar()
+        GLib.timeout_add(_close_ms() + 60, lambda: (fn(), False)[1])
+
+    def _cfg(self) -> dict:
+        from .capture import DEFAULTS as CAP_DEFAULTS
+        return dict(config.load("capture", CAP_DEFAULTS), timer=0)     # shortcuts never wait for the timer
+
+    def screenshot(self) -> None:
+        cap = self._capture()
+        if cap is None:
+            return
+        from .capture import focused_output
+        self._after_close(lambda: cap._shoot(None, self._cfg(), focused_output()))
+
+    def toggle_record(self) -> None:
+        cap = self._capture()
+        if cap is None:
+            return
+        if self._recording():
+            cap.stop_recording()                         # stop here (the bar stays: what's next)
+            self._sync_capture()
+            return
+        from .capture import focused_output
+        self._after_close(lambda: cap._record(None, self._cfg(), focused_output()))
 
     def _grab(self, on: bool) -> None:
         pads = getattr(self.topbar, "gamepads", None)
