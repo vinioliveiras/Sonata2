@@ -1594,11 +1594,13 @@ class Dock(Gtk.Box):
     def folder_app_drag_begin(self, fkey, key, drag) -> bool:
         """Out of the folder: the app's own icon comes back to the Dock and is
         dragged like any other -- dropped on the Dock it lands there (or in
-        another folder), anywhere else it stays right after the folder. A
-        folder left with one app is ungrouped when the drag ends (its panel
-        holds the drag's source until then)."""
+        another folder). Let go anywhere else, or the drag cancelled, it goes
+        back into its folder where it was (Vini: barely dragged, the app was
+        out and a two-app folder undone). A folder left with one app is
+        ungrouped only once the app has been dropped on the Dock."""
         if self._drag is not None or key not in (self.folder(fkey) or {}).get("apps", ()):
             return False
+        index = self.folder(fkey)["apps"].index(key)
         self.remove_from_folder(fkey, key, ungroup_last=False)
         tile = self.tiles.get(key)
         if tile is None:
@@ -1606,6 +1608,7 @@ class Dock(Gtk.Box):
         self._drag_begin(None, drag, tile)
         self._drag["left"] = True
         self._drag["from_folder"] = fkey
+        self._drag["folder_index"] = index
         tile.set_visible(False)                    # its slot opens where the pointer reaches the Dock
         return True
 
@@ -1618,8 +1621,9 @@ class Dock(Gtk.Box):
             self._drag_end(None, None, False, tile)   # never removed from the Dock: it left a folder
         else:
             self._drag = None
-        if d is not None and not d["dropped"]:
-            self._save_order()
+        if d is not None and not d["dropped"]:     # not dropped on the Dock: back into its folder
+            self._back_into_folder(fkey, key, d.get("folder_index", 0))
+            return
 
         def last():
             f = self.folder(fkey)
@@ -1627,6 +1631,17 @@ class Dock(Gtk.Box):
                 self.ungroup(fkey)
             return False
         GLib.idle_add(last)
+
+    def _back_into_folder(self, fkey, key, index: int) -> None:
+        f = self.folder(fkey)
+        if f is None:
+            self._save_order()
+            return
+        if key not in f["apps"]:
+            f["apps"].insert(max(0, min(index, len(f["apps"]))), key)
+        self._unpin_into_folder(key)
+        self._folder_changed(fkey)
+        self._relayout()
 
     def ungroup(self, fkey) -> None:
         """The folder's apps go back to the Dock in its place, popping out of

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Dock folders: an app dragged out of a folder's panel leaves it only when dropped on the Dock; let go anywhere else (or barely dragged, or cancelled) it goes back into its folder where it was -- a two-app folder isn't undone any more.
 - Game Bar: a dragged widget no longer shakes under the pointer -- the drag was measured from its own title, which moved with it; now from the Game Bar, which doesn't.
 - Game Bar in glass again, at no cost per frame: opening, it takes a small picture of the game's display, blurs it once and shows it behind its bar and widgets, which turn see-through over it (the compositor still never blurs behind it). Without grim, or if the picture is late, solid as before.
 - The blur rule Wayfire runs with is brought up to date when the menu bar starts: after an update, a surface newly never blurred (the Game Bar) kept its blur until the look was changed or you logged in again.
