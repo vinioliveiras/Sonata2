@@ -254,19 +254,26 @@ class GameBar(Gtk.Window):
     def _front_app(self) -> None:
         """The app in front (the game) beside the toggles."""
         from .capture import _app_gicon, _app_name
-        key = None
+        key, wins = None, []
         active = getattr(self.topbar, "_active", None)
         if active is not None:
             try:
-                key = active()[0]
+                key, wins = active()
             except Exception:                           # a name on a bar never fails it
-                key = None
-        if key:
-            gicon = _app_gicon(key)
-            if gicon is not None:
-                self.app_icon.set_from_gicon(gicon)
-            else:
-                self.app_icon.set_from_icon_name("input-gaming-symbolic")
+                key, wins = None, []
+        if key and _app_gicon(key) is None:
+            # no desktop entry -- a Steam game ("steam_app_3219630", Vini) or a
+            # Windows program: named and drawn as the Dock and the menu bar do
+            from .. import windowapps
+            try:
+                name, gicon, _dynamic = windowapps.describe(key, windowapps.window_title(wins))
+            except Exception:
+                name, gicon = key, None
+            (self.app_icon.set_from_gicon if gicon is not None else
+             lambda _g: self.app_icon.set_from_icon_name("input-gaming-symbolic"))(gicon)
+            self.app_name.set_label(name or key)
+        elif key:
+            self.app_icon.set_from_gicon(_app_gicon(key))
             self.app_name.set_label(_app_name(key))
         else:
             self.app_icon.set_from_icon_name("input-gaming-symbolic")

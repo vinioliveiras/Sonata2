@@ -256,6 +256,23 @@ class GameBarCaptureTests(unittest.TestCase):
         self.cap._record.assert_not_called()
 
 
+class GameBarFrontAppTests(unittest.TestCase):
+    def test_steam_game_named_like_the_dock(self):
+        """Vini: the bar said "steam_app_3219630" -- a Steam game has no
+        desktop entry; its name comes from Steam's library (windowapps)."""
+        top = type("Top", (), {})()
+        top._active = lambda: ("steam_app_3219630", [])
+        bar = G.GameBar(_app(), top)
+        try:
+            with mock.patch("sonata2.windowapps.describe", return_value=("Halloween: The Game", None, False)) as d, \
+                    mock.patch("sonata2.shell.capture._app_gicon", return_value=None):
+                bar._front_app()
+            d.assert_called_once()
+            self.assertEqual(bar.app_name.get_label(), "Halloween: The Game")
+        finally:
+            bar.destroy()
+
+
 class GameBarBackdropTests(unittest.TestCase):
     def test_dimmed_like_overview_never_blurred(self):
         """Vini: the blur behind the Game Bar cost too much over a game --
