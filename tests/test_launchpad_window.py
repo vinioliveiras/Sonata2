@@ -226,6 +226,70 @@ class MenuModeTest(unittest.TestCase):
         self.assertIsNone(self.pad.folder_view)
         self.assertTrue(self.pad.get_visible())
 
+    def test_app_dragged_out_of_a_folder(self):
+        """Vini: in the Apps Menu an app couldn't be dragged out of its open
+        folder -- the dimmed grid let nothing through (so a click behind the
+        folder closes it) and its drop target never heard the drag."""
+        self.pad.model.make_folder("calc", "files", "Work")
+        self.pad.save()
+        self.pad.render()
+        folder = next(t for t in self.menu.visible_items() if isinstance(t.item, dict))
+        self.pad.activate_item(folder)
+        settle(100)
+        panel_grid = self.pad.folder_view[2].get_first_child()
+        tile = next(c for c in (panel_grid.get_child_at(i, 0) for i in range(panel_grid.cols))
+                    if getattr(c, "item", None) == "calc")
+        with mock.patch.object(self.L.ui.drag, "hang", return_value=None):
+            self.pad._drag_begun(tile, None)
+        self.assertTrue(self.menu.content.get_can_target())          # the grid hears the drag again
+        ok, b = self.pad.folder_view[2].compute_bounds(self.menu.root)
+        x, y = b.get_x() + b.get_width() / 2, b.get_y() - 60                     # the grid above the folder
+        hit = self.menu.root.pick(x, y, Gtk.PickFlags.DEFAULT)
+        grid = hit if isinstance(hit, self.L.PageGrid) else hit.get_ancestor(self.L.PageGrid)
+        self.assertIsNotNone(grid)                                    # a page's grid: its drop target hears it
+        self.pad.drag_over(grid, 4, 4)                                # out of the folder, onto the grid
+        self.assertIsNone(self.pad.folder_view)
+        self.pad._drag_ended(tile)
+        settle(200)
+        flat = [i for page in self.pad.model.pages for i in page]
+        self.assertIn("calc", flat)                                   # its own tile again
+        self.assertTrue(self.menu.content.get_can_target())
+
+    def test_let_go_in_the_empty_room_below(self):
+        """Under the last apps there's no grid: it takes the drag too (the
+        end of the last page)."""
+        self.pad.model.make_folder("calc", "files", "Work")
+        self.pad.save()
+        self.pad.render()
+        folder = next(t for t in self.menu.visible_items() if isinstance(t.item, dict))
+        self.pad.activate_item(folder)
+        settle(100)
+        tile = self.pad.folder_view[2].get_first_child().get_child_at(0, 0)
+        item = tile.item
+        with mock.patch.object(self.L.ui.drag, "hang", return_value=None):
+            self.pad._drag_begun(tile, None)
+        self.assertTrue(any(isinstance(c, Gtk.DropTarget) for c in list(self.menu.scroll.observe_controllers())))
+        self.menu._at_end(lambda g, x, y: self.pad.drag_over(g, x, y))
+        self.assertIsNone(self.pad.folder_view)
+        self.pad._drag_ended(tile)
+        settle(200)
+        self.assertIn(item, [i for page in self.pad.model.pages for i in page])
+
+    def test_dropped_back_in_the_folder_clicks_behind_close_it_again(self):
+        self.pad.model.make_folder("calc", "files", "Work")
+        self.pad.save()
+        self.pad.render()
+        folder = next(t for t in self.menu.visible_items() if isinstance(t.item, dict))
+        self.pad.activate_item(folder)
+        settle(100)
+        panel_grid = self.pad.folder_view[2].get_first_child()
+        tile = panel_grid.get_child_at(0, 0)
+        with mock.patch.object(self.L.ui.drag, "hang", return_value=None):
+            self.pad._drag_begun(tile, None)
+        self.pad._drag_ended(tile)                                    # never left it
+        self.assertIsNotNone(self.pad.folder_view)
+        self.assertFalse(self.menu.content.get_can_target())
+
     def test_arrow_keys_move_the_selection(self):
         """Vini: in the Apps Menu the arrows did nothing (it has no carousel pages)."""
         items = self.items()

@@ -168,6 +168,12 @@ class MenuView:
                             valign=Gtk.Align.START, css_classes=["lpw-body"])
         self.scroll = Gtk.ScrolledWindow(child=self.body, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
         self.content.append(self.scroll)
+        # the empty room under the apps takes a drag too -- the end of the last
+        # page (Vini: an app dragged out of a folder, let go there, stayed in it)
+        below = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
+        below.connect("motion", lambda _t, _x, _y: self._at_end(lambda g, x, y: pad.drag_over(g, x, y)))
+        below.connect("drop", lambda _t, v, _x, _y: self._at_end(lambda g, x, y: pad.drag_drop(g, x, y, v)) or False)
+        self.scroll.add_controller(below)
         self.panel.append(self.content)
         self.results = PageGrid(pad, -1)               # search results (pad._search_changed fills it)
         self.tab_grid = PageGrid(pad, -3)              # a category's apps (index < 0: no reordering)
@@ -334,6 +340,14 @@ class MenuView:
             adj.set_value(top)
         elif bottom > adj.get_value() + adj.get_page_size():
             adj.set_value(bottom - adj.get_page_size())
+
+    def _at_end(self, fn):
+        """fn(grid, x, y) at the last cell of the last page (none: nothing)."""
+        grids = [g for g in self.pages if g.get_mapped()]
+        if not grids or not self.pad._drag:
+            return Gdk.DragAction.MOVE if self.pad._drag else 0
+        g = grids[-1]
+        return fn(g, max(0, g.get_width() - 1), max(0, g.get_height() - 1))
 
     def visible_items(self) -> list:
         from .launchpad import LaunchItem

@@ -1227,26 +1227,35 @@ class Launchpad(Gtk.ApplicationWindow):
                     "text/uri-list", GLib.Bytes.new((uri + "\r\n").encode())))
             return Gdk.ContentProvider.new_union(providers)
 
-        def begin(s, drag):
-            if self._overlay:
-                self._dock_above(True)          # pressing raised Launchpad over the Dock: bring it back
-            folder = self.folder_view[1] if self.folder_view and widget.item in self.folder_view[1]["apps"] \
-                and not M.is_folder(widget.item) else None
-            self._drag = {"item": widget.item, "widget": widget, "folder": folder, "target": None}
-            self._drag["icon"] = ui.drag.hang(
-                drag, Gtk.WidgetPaintable.new(widget.get_first_child().get_first_child()), widget.size)
-            widget.add_css_class("dragging")
-
-        def end(*_):
-            widget.remove_css_class("dragging")
-            self._clear_target()
-            self._drag = None
-            self.save()
-            self.render()
         src.connect("prepare", prepare)
-        src.connect("drag-begin", begin)
-        src.connect("drag-end", end)
+        src.connect("drag-begin", lambda _s, drag: self._drag_begun(widget, drag))
+        src.connect("drag-end", lambda *_a: self._drag_ended(widget))
         widget.add_controller(src)
+
+    def _drag_begun(self, widget, drag) -> None:
+        if self._overlay:
+            self._dock_above(True)          # pressing raised Launchpad over the Dock: bring it back
+        folder = self.folder_view[1] if self.folder_view and widget.item in self.folder_view[1]["apps"] \
+            and not M.is_folder(widget.item) else None
+        self._drag = {"item": widget.item, "widget": widget, "folder": folder, "target": None}
+        if folder is not None:
+            # out of the folder: the grid behind it takes the drag again
+            # (Vini: in the Apps Menu an app couldn't be dragged out of its
+            # folder -- the dimmed grid let nothing through, so a click
+            # behind the folder closes it; its drop target never heard)
+            self._host()[1].set_can_target(True)
+        self._drag["icon"] = ui.drag.hang(
+            drag, Gtk.WidgetPaintable.new(widget.get_first_child().get_first_child()), widget.size)
+        widget.add_css_class("dragging")
+
+    def _drag_ended(self, widget) -> None:
+        widget.remove_css_class("dragging")
+        self._clear_target()
+        self._drag = None
+        if self.folder_view:                    # still open (dropped back in it): clicks close it again
+            self._host()[1].set_can_target(False)
+        self.save()
+        self.render()
 
     def _timer(self, name, ms, fn) -> None:
         if name in self._timers:

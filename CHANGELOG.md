@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Apps Menu: an app can be dragged out of an open folder again -- the dimmed grid behind the folder let no drag through (so a click behind the folder closes it); it hears drags again while one comes out of the folder. Let go in the empty room under the apps, it goes to the end.
 - Game Bar lighter still: each panel draws its own glass under itself, instead of one glass layer over the whole screen that was drawn again whole whenever a panel changed (and looked at on a timer); only the panel that changes is drawn again.
 - Game Bar opens and animates lighter: it waits at most 80 ms for the game's picture (a later one fades the glass in); the glass looks where the panels are a few times a second instead of on every frame (the frame clock never rested while it was open); the volumes, radios and brightness are read once the opening animation is over (pactl, nmcli, rfkill and DDC/CI started with it).
 - Game Bar: the glass no longer goes missing on some openings -- when the game's picture took longer than the Game Bar waits, it was thrown away; now the Game Bar still opens at once and the glass fades in when the picture comes (that opening's, while it's open).
