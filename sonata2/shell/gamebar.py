@@ -74,10 +74,12 @@ CONFIG = "gamebar"
 # the widgets, in the bar's order -- the same left-to-right order as on the
 # screen, so the toggles, the arrows and LB / RB follow them: id -> (title,
 # icon, (halign, valign)). Vini: three along the bottom -- Audio at the
-# left, Capture in the middle, Performance at the right -- and Now Playing at
-# the top left.
+# left, Capture in the middle, Performance at the right -- Now Playing at the
+# top left, Control Center's Wi-Fi, Bluetooth, Airplane Mode, Do Not Disturb
+# and brightness at the top right.
 WIDGETS = {
     "nowplaying": (N_("Now Playing"), "sonata-now-playing-symbolic", (Gtk.Align.START, Gtk.Align.START)),
+    "controls": (N_("Control Center"), "sonata-control-center-symbolic", (Gtk.Align.END, Gtk.Align.START)),
     "audio": (N_("Audio"), "audio-volume-high-symbolic", (Gtk.Align.START, Gtk.Align.END)),
     "capture": (N_("Capture"), "camera-photo-symbolic", (Gtk.Align.CENTER, Gtk.Align.END)),
     "performance": (N_("Performance"), "speedometer-symbolic", (Gtk.Align.END, Gtk.Align.END)),
@@ -299,6 +301,14 @@ class Widget(Gtk.Box):
         self.body.append(FixedWidth(child, WIDGET_INNER))
 
 
+class _NoBar:
+    """No menu bar (a preview, tests): the controls still work."""
+    notifications = None
+
+    def _poll(self) -> None:
+        pass
+
+
 def perf_kinds(available, makers=None) -> list:
     """The Performance widget's graphs (PERF_KINDS) among those there are.
     makers: "gpu_<card>" -> its maker (stats.GPU_MAKERS)."""
@@ -451,6 +461,7 @@ class GameBar(Gtk.Window):
         self.widgets["audio"].fill(self._audio_controls())
         self.widgets["performance"].fill(self._performance())
         self.widgets["nowplaying"].fill(self._now_playing())
+        self.widgets["controls"].fill(self._controls())
         self.pins = {}                                  # wid -> PinWindow while the Game Bar is closed
         for w in [self.bar] + list(self.widgets.values()):      # the glass follows them
             w.connect("notify::visible", lambda *_a: self.frost.queue_draw())
@@ -708,6 +719,7 @@ class GameBar(Gtk.Window):
         self.root.remove_css_class("closing")
         self._hide_pins()                               # back in the Game Bar
         self._refresh_audio()
+        self._refresh_controls()
         self._front_app()
         self._tick()
         if not self._clock_src:
@@ -885,6 +897,34 @@ class GameBar(Gtk.Window):
                 if level is not None:
                     ui.controls.show_value(slider, level[0])
         system.run_async(lambda: (system.volume(), system.input_volume()), fill)
+
+    # -- Control Center's controls ------------------------------------------------------------
+    def _controls(self) -> Gtk.Widget:
+        """Wi-Fi, Bluetooth, Airplane Mode, Do Not Disturb and the brightness of
+        the game's display (Vini) -- Control Center's own (topbar.QuickControls),
+        read again at each opening."""
+        from .topbar import QuickControls, open_settings
+        bar = self.topbar if hasattr(self.topbar, "_poll") else _NoBar()
+        q = self.quick = QuickControls()
+        disp = q._make_quick(bar, None, lambda: self._after_close(lambda: open_settings("displays")))
+        for t in (q.wifi, q.bt, q.plane, q.dnd):
+            t.button.set_can_focus(True)                # the controller reaches them
+        q.bright.set_focusable(True)
+        q.bright.set_can_focus(True)
+        conn = ui.panel.module(q.wifi, q.bt, q.plane, spacing=2)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.append(conn)
+        box.append(ui.panel.click_anywhere(ui.panel.module(q.dnd), q.dnd))
+        box.append(ui.panel.module(Gtk.Label(label=_("Display"), xalign=0, css_classes=["panel-module-title"]), disp))
+        return box
+
+    def _refresh_controls(self) -> None:
+        q = getattr(self, "quick", None)
+        if q is None:
+            return
+        from .capture import focused_output
+        q.output = focused_output()                     # the game's display: its brightness
+        q.read_quick()
 
     # -- Now Playing --------------------------------------------------------------------------
     def _now_playing(self) -> Gtk.Widget:

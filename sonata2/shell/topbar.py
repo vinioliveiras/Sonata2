@@ -1506,7 +1506,79 @@ def now_playing_module(p, header=False) -> Gtk.Widget:
     return ui.panel.module(box)
 
 
-class ControlCenter(Gtk.Box):
+class QuickControls:
+    """Control Center's Wi-Fi, Bluetooth, Airplane Mode, Do Not Disturb and
+    display brightness (Vini: in the Game Bar too) -- made and kept up to
+    date here, for both. _make_quick() makes them; read_quick() fills them."""
+
+    def _make_quick(self, bar, output, on_displays):
+        """The controls (self.wifi / bt / plane / dnd / bright); returns the
+        brightness capsule. output: the display whose brightness (None: the
+        laptop panel); on_displays(): its Displays Preferences button."""
+        self.bar, self.output = bar, output
+        self.wifi = ui.panel.toggle("network-wireless-symbolic", _("Wi-Fi"), False,
+                                    lambda on: system.run_async(system.set_wifi_enabled, lambda _r: bar._poll(), on),
+                                    caption="…")
+        self.bt = ui.panel.toggle("bluetooth-active-symbolic", _("Bluetooth"), False,
+                                  lambda on: system.run_async(system.set_bluetooth, None, on), caption="…")
+        # where macOS has AirDrop (Vini): Airplane Mode -- every radio off, and back as they were
+        self.plane = ui.panel.toggle("airplane-mode-symbolic", _("Airplane Mode"), False, self._set_airplane, caption="…")
+        nc = getattr(bar, "notifications", None)
+        self.dnd = ui.panel.toggle(
+            "weather-clear-night-symbolic", _("Do Not Disturb"), bool(nc and nc.dnd),
+            lambda on: getattr(bar, "notifications", None) and bar.notifications.set_dnd(on))
+        # the brightness of the display this menu bar is on: the laptop panel,
+        # or an external monitor over DDC/CI
+        known = _LEVELS.get(output, {})              # the last levels read: no jump as it opens (Vini)
+        disp, self.bright = _slider_with_icon(
+            "display-brightness-symbolic", known.get("bright", 50),
+            lambda v: system.run_latest(("brightness", self.output), system.set_brightness, int(v), self.output),
+            button=_round_button("video-display-symbolic", _("Displays Preferences"), lambda _b: on_displays()))
+        return disp
+
+    def read_quick(self) -> None:
+        """Every state as it is now: the radios, Do Not Disturb, the brightness."""
+        system.run_async(_cc_state, self._fill_toggles)
+        nc = getattr(self.bar, "notifications", None)
+        ui.panel.set_toggle(self.dnd, bool(nc and nc.dnd))
+        system.run_async(system.brightness, self._fill_brightness, self.output)
+
+    def _fill_toggles(self, res):
+        if not res:
+            return
+        wifi_on, (ssid, _sig, _wired), bt = res[:3]
+        plane = res[3] if len(res) > 3 else None
+        ui.panel.set_toggle(self.wifi, bool(wifi_on), ssid or (_("Not Connected") if wifi_on else _("Off")))
+        ui.panel.set_toggle(self.bt, bool(bt), _("On") if bt else _("Off") if bt is not None else _("Unavailable"))
+        ui.panel.set_toggle(self.plane, bool(plane),
+                            _("On") if plane else _("Off") if plane is not None else _("Unavailable"))
+        self.plane.button.set_sensitive(plane is not None)
+
+    def _set_airplane(self, on: bool) -> None:
+        """Every radio off (or back as it was); Wi-Fi and Bluetooth show it."""
+        ui.panel.set_toggle(self.plane, on, _("On") if on else _("Off"))
+        if on:                                   # they go off with it, at once
+            ui.panel.set_toggle(self.wifi, False, _("Off"))
+            ui.panel.set_toggle(self.bt, False, _("Off"))
+
+        def done(_ok):
+            self.bar._poll()
+            system.run_async(_cc_state, self._fill_toggles)
+        system.run_async(system.set_airplane_mode, done, on)
+
+    def _fill_brightness(self, b) -> None:
+        if b is None:
+            self.bright.set_sensitive(False)
+            if not system.is_builtin(self.output):
+                self.bright.set_tooltip_text(_("This display's brightness can't be changed from the computer "
+                                               "(turn on DDC/CI in its menu; needs ddcutil)"))
+            return
+        self.bright.set_sensitive(True)
+        _LEVELS.setdefault(self.output, {})["bright"] = b
+        ui.controls.show_value(self.bright, b)        # (not set again: only shown)
+
+
+class ControlCenter(QuickControls, Gtk.Box):
     """Control Center: modules on a 4-column grid (controlcenter.py) -- the
     connectivity module (Wi-Fi, Bluetooth), Do Not Disturb, Dark Mode,
     Screenshot, Display and Sound sliders, Now Playing. Which ones, their
@@ -1518,13 +1590,8 @@ class ControlCenter(Gtk.Box):
         self._warm = warm                       # made unseen (warm-up): its toggles read at its first opening
         from . import controlcenter as CCL
         self.bar = bar
-        self.wifi = ui.panel.toggle("network-wireless-symbolic", _("Wi-Fi"), False,
-                                    lambda on: system.run_async(system.set_wifi_enabled, lambda _r: bar._poll(), on),
-                                    caption="…")
-        self.bt = ui.panel.toggle("bluetooth-active-symbolic", _("Bluetooth"), False,
-                                  lambda on: system.run_async(system.set_bluetooth, None, on), caption="…")
-        # where macOS has AirDrop (Vini): Airplane Mode -- every radio off, and back as they were
-        self.plane = ui.panel.toggle("airplane-mode-symbolic", _("Airplane Mode"), False, self._set_airplane, caption="…")
+        self.output = self._output()
+        disp = self._make_quick(bar, self.output, lambda: (self._close(), open_settings("displays")))
         conn = ui.panel.module(self.wifi, self.bt, self.plane, spacing=2)
         conn.add_css_class("cc-conn")                           # three rows in its 2x2 cells,
         conn.set_homogeneous(True)                              # spread evenly over its height
@@ -1532,26 +1599,14 @@ class ControlCenter(Gtk.Box):
             row.set_valign(Gtk.Align.CENTER)
         conn.set_valign(Gtk.Align.FILL)
         dark = Adw.StyleManager.get_default().get_dark()
-        nc = getattr(bar, "notifications", None)
-        self.dnd = dnd_toggle = ui.panel.toggle(
-            "weather-clear-night-symbolic", _("Do Not Disturb"), bool(nc and nc.dnd),
-            lambda on: getattr(bar, "notifications", None) and bar.notifications.set_dnd(on))
+        dnd_toggle = self.dnd
         dnd = ui.panel.click_anywhere(ui.panel.module(dnd_toggle), dnd_toggle)
         self.dark_btn = self._small("sonata-dark-mode-symbolic", _("Dark Mode"),
                                     lambda: self._set_dark(not Adw.StyleManager.get_default().get_dark()),
                                     close=False)
         (self.dark_btn.add_css_class if dark else self.dark_btn.remove_css_class)("on")
         shot = self._small("sonata-screenshot-symbolic", _("Screenshot"), self._screenshot)   # opens the toolbar
-        # the brightness of the display this menu bar is on: the laptop panel,
-        # or an external monitor over DDC/CI
-        self.output = self._output()
         out = self.output
-        known = _LEVELS.get(out, {})                 # the last levels read: no jump as it opens (Vini)
-        disp, self.bright = _slider_with_icon(
-            "display-brightness-symbolic", known.get("bright", 50),
-            lambda v: system.run_latest(("brightness", out), system.set_brightness, int(v), out),
-            button=_round_button("video-display-symbolic", _("Displays Preferences"),
-                                 lambda _b: (self._close(), open_settings("displays"))))
         # Night Shift under the brightness slider (Big Sur's expanded Display module)
         from . import nightshift
         ns = Gtk.ToggleButton(css_classes=["cc-ns"], can_focus=False, active=nightshift.is_on(),
@@ -1875,44 +1930,11 @@ class ControlCenter(Gtk.Box):
         if pop:
             pop.popdown()
 
-    def _fill_toggles(self, res):
-        if not res:
-            return
-        wifi_on, (ssid, _sig, _wired), bt = res[:3]
-        plane = res[3] if len(res) > 3 else None
-        ui.panel.set_toggle(self.wifi, bool(wifi_on), ssid or (_("Not Connected") if wifi_on else _("Off")))
-        ui.panel.set_toggle(self.bt, bool(bt), _("On") if bt else _("Off") if bt is not None else _("Unavailable"))
-        ui.panel.set_toggle(self.plane, bool(plane),
-                            _("On") if plane else _("Off") if plane is not None else _("Unavailable"))
-        self.plane.button.set_sensitive(plane is not None)
-
-    def _set_airplane(self, on: bool) -> None:
-        """Every radio off (or back as it was); Wi-Fi and Bluetooth show it."""
-        ui.panel.set_toggle(self.plane, on, _("On") if on else _("Off"))
-        if on:                                   # they go off with it, at once
-            ui.panel.set_toggle(self.wifi, False, _("Off"))
-            ui.panel.set_toggle(self.bt, False, _("Off"))
-
-        def done(_ok):
-            self.bar._poll()
-            system.run_async(_cc_state, self._fill_toggles)
-        system.run_async(system.set_airplane_mode, done, on)
-
     def _fill_sliders(self, res):
         """(brightness, volume, mic) at once (tests, older callers)."""
         if res:
             self._fill_brightness(res[0])
             self._fill_sound(res[1:])
-
-    def _fill_brightness(self, b) -> None:
-        if b is None:
-            self.bright.set_sensitive(False)
-            if not system.is_builtin(self.output):
-                self.bright.set_tooltip_text(_("This display's brightness can't be changed from the computer "
-                                               "(turn on DDC/CI in its menu; needs ddcutil)"))
-            return
-        _LEVELS.setdefault(self.output, {})["bright"] = b
-        ui.controls.show_value(self.bright, b)        # (not set again: only shown)
 
     def _fill_sound(self, res) -> None:
         vol, mic = res if res else (None, None)

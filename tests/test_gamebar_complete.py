@@ -216,6 +216,46 @@ class NowPlayingTests(Base):
         self.assertLess(len(p.listeners), n)                       # unrealized: no more updates
 
 
+class ControlsTests(Base):
+    """Vini: Wi-Fi, Bluetooth, Airplane Mode, Do Not Disturb and the screen's
+    brightness in the Game Bar -- Control Center's own (QuickControls)."""
+
+    def test_controls_widget_top_right(self):
+        from sonata2.shell.topbar import QuickControls
+        w = self.bar.widgets["controls"]
+        q = self.bar.quick
+        self.assertIsInstance(q, QuickControls)
+        self.assertEqual((w.get_halign(), w.get_valign()), (Gtk.Align.END, Gtk.Align.START))
+        for t in (q.wifi, q.bt, q.plane, q.dnd):
+            self.assertTrue(t.is_ancestor(w))
+        for b in (q.plane.button, q.bright):
+            b.set_sensitive(True)                                   # (no radios / backlight in the tests)
+        stops = G._focusables(w)
+        for b in (q.wifi.button, q.bt.button, q.plane.button, q.dnd.button, q.bright):
+            self.assertIn(b, stops)                                 # the controller reaches them
+
+    def test_read_again_at_each_opening_for_the_games_display(self):
+        q = self.bar.quick
+        with mock.patch.object(q, "read_quick") as read:
+            self.bar.close_bar()
+            spin(G._close_ms() + 120)
+            self.bar.open()
+        read.assert_called_once()
+        self.assertEqual(q.output, "DP-1")                         # (focused_output: the game's)
+
+    def test_brightness_and_radios_as_control_center(self):
+        from sonata2.backend import system
+        q = self.bar.quick
+        with mock.patch.object(system, "run_latest") as latest:
+            q.bright.set_value(30)
+        self.assertEqual(latest.call_args.args[1:], (system.set_brightness, 30, q.output))
+        q._fill_toggles((True, ("Home", 80, False), False, False))
+        with mock.patch.object(system, "set_airplane_mode", return_value=True) as plane:
+            q._set_airplane(True)
+            spin(100)
+        plane.assert_called_with(True)
+
+
 class FpsLimitTests(Base):
     def test_control_centers_fps_limit_in_performance(self):
         """Vini: Control Center's FPS Limit in the Game Bar -- the same module
