@@ -435,6 +435,7 @@ class GameBar(Gtk.Window):
             w.place(self._pos(wid))
             w.pin_btn.connect("clicked", lambda _b, k=wid: self.toggle_pin(k))
             self._movable(w)
+        self._drag_widgets()
         self._sync_pins()
         self._sync_toggles()
         self.set_child(self.root)
@@ -525,37 +526,56 @@ class GameBar(Gtk.Window):
         return tuple(p) if isinstance(p, (list, tuple)) and len(p) == 2 else None
 
     def _movable(self, w: Widget) -> None:
+        """A double-click on its title puts it back (the dragging itself is
+        the Game Bar's: _drag_widgets)."""
+        click = Gtk.GestureClick()
+        click.connect("pressed", lambda _g, n, _x, _y: n == 2 and self.reset_position(w.wid))
+        w.head.add_controller(click)
+
+    def _drag_widgets(self) -> None:
+        """Widgets dragged by their title. The gesture sits on the Game Bar,
+        which doesn't move: on the title itself its offsets were measured
+        from a title that moved with them, and the widget shook under the
+        pointer (Vini). Buttons on the title keep their clicks."""
         drag = Gtk.GestureDrag()
         start = {}
 
-        def begin(_g, _x, _y):
+        def begin(g, x, y):
+            target = self.root.pick(x, y, Gtk.PickFlags.DEFAULT)
+            w = next((wd for wd in self.widgets.values()
+                      if target is not None and (target is wd.head or target.is_ancestor(wd.head))), None)
+            if w is None or isinstance(target, Gtk.Button) or target.get_ancestor(Gtk.Button) is not None:
+                g.set_state(Gtk.EventSequenceState.DENIED)
+                return
             ok, b = w.compute_bounds(self.root)
-            start["xy"] = (b.get_x(), b.get_y()) if ok else (0, 0)
-            start["wh"] = (b.get_width(), b.get_height()) if ok else (WIDGET_W, 100)
+            start.update(w=w, xy=(b.get_x(), b.get_y()) if ok else (0, 0),
+                         wh=(b.get_width(), b.get_height()) if ok else (WIDGET_W, 100))
+            g.set_state(Gtk.EventSequenceState.CLAIMED)
             w.add_css_class("dragging")
 
         def update(_g, dx, dy):
-            if "xy" not in start:
+            if "w" not in start:
                 return
             W, H = self.root.get_width(), self.root.get_height()
             x = max(0, min(W - start["wh"][0], start["xy"][0] + dx))
             y = max(0, min(H - start["wh"][1], start["xy"][1] + dy))
-            w.place((x, y))
+            start["w"].place((x, y))
             self.frost.queue_draw()
             start["now"] = (int(x), int(y))
 
         def end(_g, _dx, _dy):
-            w.remove_css_class("dragging")
-            if "now" in start:
-                self._save_pos(w.wid, start["now"])
+            w = start.get("w")
+            if w is not None:
+                w.remove_css_class("dragging")
+                if "now" in start:
+                    self._save_pos(w.wid, start["now"])
             start.clear()
         drag.connect("drag-begin", begin)
         drag.connect("drag-update", update)
         drag.connect("drag-end", end)
-        w.head.add_controller(drag)
-        click = Gtk.GestureClick()
-        click.connect("pressed", lambda _g, n, _x, _y: n == 2 and self.reset_position(w.wid))
-        w.head.add_controller(click)
+        self.root.add_controller(drag)
+        self.drag = drag                                # (tests)
+        self._drag_state = start
 
     def _save_pos(self, wid: str, xy) -> None:
         pos = dict(self.cfg.get("positions") or {})

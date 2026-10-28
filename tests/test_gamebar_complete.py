@@ -130,6 +130,36 @@ class MoveAndPinTests(Base):
         self.assertEqual(w.get_halign(), Gtk.Align.START)          # its own corner again
         self.assertEqual(w.get_valign(), Gtk.Align.END)
 
+    def test_drag_measured_on_the_game_bar_not_the_moving_title(self):
+        """Vini: a dragged widget shook -- the gesture was on its title,
+        which moved with it, so every offset was measured from a new place.
+        Now it's the Game Bar's (still): the widget follows the pointer."""
+        w = self.bar.widgets["capture"]
+        self.assertIs(self.bar.drag.get_widget(), self.bar.root)
+        self.assertFalse(any(isinstance(c, Gtk.GestureDrag) for c in list(w.head.observe_controllers())))
+        ok, hb = w.head.compute_bounds(self.bar.root)
+        ok, wb = w.compute_bounds(self.bar.root)
+        px, py = hb.get_x() + 20, hb.get_y() + hb.get_height() / 2
+        self.bar.drag.emit("drag-begin", px, py)
+        for dx, dy in ((10, -5), (40, -60), (41, -61), (80, -120)):
+            self.bar.drag.emit("drag-update", dx, dy)
+            spin(16)
+            ok, nb = w.compute_bounds(self.bar.root)
+            self.assertEqual((round(nb.get_x()), round(nb.get_y())),
+                             (round(wb.get_x() + dx), round(wb.get_y() + dy)))       # exactly under the pointer
+        self.bar.drag.emit("drag-end", 80, -120)
+        self.assertEqual(config.load(G.CONFIG, G.DEFAULTS)["positions"]["capture"],
+                         [round(wb.get_x() + 80), round(wb.get_y() - 120)])
+
+    def test_drag_not_from_a_button_or_the_body(self):
+        w = self.bar.widgets["audio"]
+        ok, pb = w.pin_btn.compute_bounds(self.bar.root)
+        self.bar.drag.emit("drag-begin", pb.get_x() + 4, pb.get_y() + 4)        # the pin
+        self.assertNotIn("w", self.bar._drag_state)
+        ok, bb = w.body.compute_bounds(self.bar.root)
+        self.bar.drag.emit("drag-begin", bb.get_x() + 4, bb.get_y() + bb.get_height() - 4)
+        self.assertNotIn("w", self.bar._drag_state)
+
     def test_pinned_widget_stays_over_the_game(self):
         self.bar.toggle_pin("performance")
         self.assertTrue(self.bar.widgets["performance"].pin_btn.has_css_class("on"))
