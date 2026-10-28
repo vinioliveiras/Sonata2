@@ -51,6 +51,13 @@ def icon_size(n: int, screen_w: int) -> int:
     return max(ICON_MIN, min(ICON, fit))
 
 
+def name_label() -> Gtk.Label:
+    """The name under the selected icon. Vini: a long one made its tile wider
+    than the others -- it asks for no width of its own (one character), so
+    the tile stays the icon's size and a longer name ends in "..."."""
+    return Gtk.Label(css_classes=["sw-name"], ellipsize=Pango.EllipsizeMode.END, max_width_chars=1)
+
+
 class SwitcherPanel(Gtk.Box):
     """The row of apps with the selection drawn behind them, gliding to the
     selected app instead of jumping. The selection is measured on the app
@@ -143,7 +150,7 @@ class Switcher(Gtk.Window):
         self.panel = ui.theme.glass_class(SwitcherPanel())
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         col.append(self.panel)
-        self.name = Gtk.Label(css_classes=["sw-name"], ellipsize=Pango.EllipsizeMode.END, max_width_chars=18)
+        self.name = name_label()
         self.set_child(col)
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._key)

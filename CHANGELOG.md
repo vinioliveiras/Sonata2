@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Alt+Tab: every app keeps the same tile size when selected -- a long app name or window title made its tile wider; the name under the icon now fits the icon's width and ends in "..." when longer.
+
 ## 0.21.0-alpha -- 2026-10-28
 
 A Game Bar (Super+G, or a controller's Xbox / PS button) over the game:
