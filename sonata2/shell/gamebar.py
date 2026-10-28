@@ -81,7 +81,10 @@ WIDGETS = {
     "performance": (N_("Performance"), "speedometer-symbolic", (Gtk.Align.END, Gtk.Align.END)),
 }
 DEFAULTS = {"widgets": list(WIDGETS), "positions": {}, "pinned": []}
-PERF_KINDS = ("fps", "cpu", "gpu", "ram")       # the Performance widget's graphs (gpu: the first card)
+# the Performance widget's graphs under Control Center's FPS Limit (which has
+# the game's frame rate and frame times): gpu -- the card games use (NVIDIA
+# first, else the first); temp -- the first temperature there is
+PERF_KINDS = ("cpu", "gpu", "temp", "ram")
 SLIDER_STEP = 5                                  # the D-pad's left / right on a slider
 BAR_TOP = 14                 # the bar below the screen's top edge
 WIDGET_TOP = 76              # widgets start under the bar
@@ -291,6 +294,23 @@ class Widget(Gtk.Box):
             self.body.remove(self.empty)
         from ..ui.fixed import FixedWidth
         self.body.append(FixedWidth(child, WIDGET_INNER))
+
+
+def perf_kinds(available, makers=None) -> list:
+    """The Performance widget's graphs (PERF_KINDS) among those there are.
+    makers: "gpu_<card>" -> its maker (stats.GPU_MAKERS)."""
+    from ..backend import stats
+    makers = stats.GPU_MAKERS if makers is None else makers
+    out = []
+    for k in PERF_KINDS:
+        if k == "gpu":
+            gpus = [x for x in available if x == "gpu" or x.startswith("gpu_")]
+            k = next((x for x in gpus if makers.get(x) == "NVIDIA"), gpus[0] if gpus else None)
+        elif k == "temp":
+            k = next((x for x in available if x.startswith("temp_")), None)
+        if k in available and k not in out:
+            out.append(k)
+    return out
 
 
 def frost_command(output) -> list:
@@ -811,19 +831,22 @@ class GameBar(Gtk.Window):
     # -- Performance (P4) ---------------------------------------------------------------------
     def _performance(self) -> Gtk.Widget:
         from . import statsui
-        grid = Gtk.Grid(column_spacing=6, row_spacing=6, column_homogeneous=True, css_classes=["gb-perf"])
-        kinds = []
-        for k in PERF_KINDS:
-            if k == "gpu":
-                k = next((x for x in statsui.KINDS if x == "gpu" or x.startswith("gpu_")), None)
-            if k in statsui.KINDS:
-                kinds.append(k)
-        self.perf_kinds = kinds
-        for i, k in enumerate(kinds):
+        from .fpsmodule import FpsModule
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["gb-perf"])
+        # Control Center's FPS Limit, the same module (Vini): Off / 30 / 60 / 90 /
+        # 120 / Max, and the game's frame times -- read only while on screen
+        self.fps_limit = FpsModule()
+        for b in list(self.fps_limit.buttons.values()) + [self.fps_limit.install_btn]:
+            b.set_can_focus(True)                       # the controller reaches them
+        box.append(self.fps_limit)
+        grid = Gtk.Grid(column_spacing=6, row_spacing=6, column_homogeneous=True)
+        self.perf_kinds = perf_kinds(statsui.KINDS)
+        for i, k in enumerate(self.perf_kinds):
             m = statsui.module(k)                       # read only while shown (statsui._Live)
             m.set_size_request(*PERF_CELL)
             grid.attach(m, i % 2, i // 2, 1, 1)
-        return grid
+        box.append(grid)
+        return box
 
     # -- Capture (P2) -------------------------------------------------------------------------
     def _action(self, icon_widget, label: str, on_click) -> Gtk.Button:

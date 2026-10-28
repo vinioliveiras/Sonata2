@@ -92,10 +92,11 @@ class AudioTests(Base):
 class PerformanceTests(Base):
     def test_graphs_of_fps_cpu_gpu_memory(self):
         from sonata2.shell import statsui
-        grid = self.bar.widgets["performance"].body.get_first_child().get_first_child()   # (in its FixedWidth)
+        box = self.bar.widgets["performance"].body.get_first_child().get_first_child()    # (in its FixedWidth)
+        grid = box.get_last_child()
         self.assertIsInstance(grid, Gtk.Grid)
         self.assertIsNone(self.bar.widgets["performance"].empty.get_parent())
-        expected = [k for k in ("fps", "cpu") if k in statsui.KINDS]
+        expected = [k for k in ("cpu", "ram") if k in statsui.KINDS]
         for k in expected:
             self.assertIn(k, self.bar.perf_kinds)
         self.assertTrue(all(k in statsui.KINDS for k in self.bar.perf_kinds))
@@ -110,6 +111,34 @@ class WidthTests(Base):
         b = {k: w.compute_bounds(self.bar.root)[1] for k, w in self.bar.widgets.items()}
         self.assertLessEqual(b["audio"].get_x() + b["audio"].get_width(), b["capture"].get_x())
         self.assertLessEqual(b["capture"].get_x() + b["capture"].get_width(), b["performance"].get_x())
+
+
+class FpsLimitTests(Base):
+    def test_control_centers_fps_limit_in_performance(self):
+        """Vini: Control Center's FPS Limit in the Game Bar -- the same module
+        (fpsmodule.FpsModule): its choices and the game's frame times."""
+        from sonata2.shell.fpsmodule import FpsModule
+        from sonata2 import fpslimit
+        m = self.bar.fps_limit
+        self.assertIsInstance(m, FpsModule)
+        self.assertTrue(m.is_ancestor(self.bar.widgets["performance"]))
+        self.assertEqual(set(m.buttons), set(fpslimit.CHOICES))
+        stops = G._focusables(self.bar.widgets["performance"])
+        self.assertTrue(all(b in stops for b in m.buttons.values()) or not m.seg.get_sensitive())
+        with mock.patch.object(fpslimit, "installed", return_value=True), \
+                mock.patch.object(fpslimit, "set") as chosen:
+            m.update()
+            self.assertIn(m.buttons["60"], G._focusables(self.bar.widgets["performance"]))
+            m.buttons["60"].emit("clicked")
+        chosen.assert_called()
+        self.assertEqual(chosen.call_args.args[0], "60")
+
+    def test_graphs_under_it_prefer_the_games_card(self):
+        kinds = ("cpu", "gpu_amd", "gpu_nvidia", "vram_nvidia", "temp_cpu", "temp_nvidia", "ram", "net", "fps")
+        self.assertEqual(G.perf_kinds(kinds, {"gpu_amd": "AMD", "gpu_nvidia": "NVIDIA"}),
+                         ["cpu", "gpu_nvidia", "temp_cpu", "ram"])
+        self.assertEqual(G.perf_kinds(("cpu", "gpu", "ram", "fps"), {}), ["cpu", "gpu", "ram"])
+        self.assertNotIn("fps", G.perf_kinds(kinds, {}))               # the FPS Limit module has it
 
 
 class MoveAndPinTests(Base):
