@@ -393,11 +393,14 @@ def recorder_command(path: str, geo=None, output=None, audio=None, encoder="x264
     return cmd
 
 
-# Microphone and the system's sound at once (Vini): two separate tracks in
-# the movie. The recorders take one sound device, so the picture is recorded
-# silent and FFmpeg records both devices beside it (one AAC track each); at
-# the end they are put together without re-encoding (stream copy).
-TRACK_TITLES = ("System Sound", "Microphone")
+# Microphone and the system's sound at once (Vini): separate tracks in the
+# movie. The recorders take one sound device, so the picture is recorded
+# silent and FFmpeg records both devices beside it (one AAC track each). At
+# the end: the picture copied as it is, a first track with both mixed -- the
+# one players play (they play one track: with only the two apart, the
+# microphone went unheard) -- then the system's sound and the microphone
+# apart, for editing.
+TRACK_TITLES = ("System Sound + Microphone", "System Sound", "Microphone")
 
 
 def tracks_command(path: str, system: str, mic: str) -> list:
@@ -408,10 +411,15 @@ def tracks_command(path: str, system: str, mic: str) -> list:
 
 
 def mux_command(video: str, audio: str, out: str) -> list:
-    """The silent movie and its two sound tracks in one file (stream copy)."""
+    """The silent movie and its sound in one file: both mixed first (the
+    default track), then each apart -- only the mix is encoded again."""
     return ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-i", video, "-i", audio,
-            "-map", "0:v", "-map", "1:a", "-c", "copy",
-            "-metadata:s:a:0", f"title={TRACK_TITLES[0]}", "-metadata:s:a:1", f"title={TRACK_TITLES[1]}",
+            "-filter_complex", "[1:a:0][1:a:1]amix=inputs=2:duration=longest:normalize=0[mix]",
+            "-map", "0:v", "-map", "[mix]", "-map", "1:a:0", "-map", "1:a:1",
+            "-c:v", "copy", "-c:a:0", "aac", "-b:a:0", "192k", "-c:a:1", "copy", "-c:a:2", "copy",
+            "-disposition:a:0", "default", "-disposition:a:1", "0", "-disposition:a:2", "0",
+            *[a for i, t in enumerate(TRACK_TITLES)            # (MP4 names a track by its handler)
+              for a in (f"-metadata:s:a:{i}", f"title={t}", f"-metadata:s:a:{i}", f"handler_name={t}")],
             "-movflags", "+faststart", out]
 
 
@@ -558,7 +566,7 @@ class RecordingControl(BarPill):
         self.sound.set_visible(audio)
         self.sound.set_from_icon_name("audio-input-microphone-symbolic" if kind in ("mic", "both")
                                       else "audio-volume-high-symbolic")
-        self.sound.set_tooltip_text(_("System sound and microphone, two tracks") if kind == "both" else None)
+        self.sound.set_tooltip_text(_("System sound and microphone: mixed, and each on its own track") if kind == "both" else None)
         self.output = output
         self._t0 = GLib.get_monotonic_time()
         self._tick()

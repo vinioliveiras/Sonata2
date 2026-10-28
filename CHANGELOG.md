@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Recording with System Sound and Microphone: the movie's first (default) track now has both mixed -- players play one track, so with only the two apart the microphone went unheard -- then each on its own track for editing (named in the file).
 - tools/apply-update.sh: applies an update Claude sends (the newest ~/Downloads/sonata2-*.mbox) without the usual failures -- undoes a half-done earlier attempt, catches up with GitHub, skips commits already there, then pushes, installs and restarts Sonata; it stops, changing nothing, if the clone has edits not committed.
 - Files: Lock Folder… encrypts a folder with gocryptfs (your login password is its key) -- its files unreadable by any app until opened. Opening it asks for the password; Lock Now closes it (stepping out of it first); Unlock Folder… decrypts it for good. A closed one shows a folder with a padlock; all close when the screen locks or the session ends. Files are copied in and checked before the originals go; a failure leaves them where they were. install.sh offers gocryptfs (and wl-screenrec for the Game Bar's replay on Arch).
 - Apps and the Apps Menu: Lock Folder in a folder's right-click menu, like the Dock's -- opening it asks for the password (once, until Apps closes), its icon shows blank tiles and a lock; Unlock Folder… asks for the password first. Kept across restarts.

@@ -875,7 +875,7 @@ class GameBar(Gtk.Window):
         cur = config.load("capture", CAP_DEFAULTS).get("audio", "system")
         self.sound_choice = ui.controls.segmented(
             [("system", _("System")), ("mic", _("Microphone")), ("both", _("Both")), ("none", _("None"))], cur,
-            self._set_sound, tooltips={"both": _("System sound and microphone, two tracks")})
+            self._set_sound, tooltips={"both": _("System sound and microphone: mixed, and each on its own track")})
         for b in self.sound_choice.buttons.values():
             b.set_can_focus(True)                       # the controller reaches them
         box.append(self.sound_choice)

@@ -456,8 +456,8 @@ class TwoTracksTests(unittest.TestCase):
         self.assertIn("sys.monitor", cmd)
         self.assertEqual(cmd[cmd.index("-map"):cmd.index("-map") + 4], ["-map", "0:a", "-map", "1:a"])
         mux = C.mux_command("/m/v.mp4", "/m/a.mka", "/m/out.mp4")
-        self.assertIn("copy", mux)
-        self.assertIn("1:a", mux)
+        self.assertIn("amix=inputs=2", " ".join(mux))
+        self.assertEqual(mux.count("-map"), 4)                         # picture, mix, system, microphone
 
     def test_record_both_records_the_picture_silent_and_two_tracks(self):
         cap = C.Capture.__new__(C.Capture)
@@ -505,8 +505,23 @@ class TwoTracksTests(unittest.TestCase):
         self.assertEqual(got, [out])
         streams = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", out],
                                  capture_output=True, text=True).stdout.split()
-        self.assertEqual(streams.count("audio"), 2)
+        # the mix first (players play one track: Vini heard no microphone), then each apart
+        self.assertEqual(streams.count("audio"), 3)
         self.assertEqual(streams.count("video"), 1)
+        info = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries",
+                               "stream_disposition=default:stream_tags=handler_name", "-of", "csv=p=0", out],
+                              capture_output=True, text=True).stdout.splitlines()
+        self.assertTrue(info[0].startswith("1"), info)                       # the mix: the default
+        self.assertIn("System Sound + Microphone", info[0])
+        self.assertTrue(info[1].startswith("0") and info[2].startswith("0"), info)
+
+        def level(track, freq):
+            r = subprocess.run(["ffmpeg", "-hide_banner", "-nostdin", "-i", out, "-map", f"0:a:{track}",
+                                "-af", f"bandpass=f={freq}:w=60,volumedetect", "-f", "null", "-"],
+                               capture_output=True, text=True).stderr
+            return float(r.split("max_volume:")[1].split("dB")[0])
+        self.assertGreater(level(0, 440), -30)                                 # the mix: the system's tone...
+        self.assertGreater(level(0, 880), -30)                                 # ...and the microphone's
         self.assertFalse(os.path.exists(v) or os.path.exists(a))   # the parts gone
 
 
