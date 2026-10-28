@@ -339,8 +339,28 @@ class VideoWindow(Gtk.ApplicationWindow):
         return bool(edit.available() and s is not None and s.get_error() is None and s.is_prepared()
                     and s.get_duration() > 0 and s.is_seekable() and os.path.exists(self.path))
 
+    def _editable(self) -> bool:
+        """Trim / Crop offered: the movie can be edited -- or only FFmpeg is
+        missing (then they say so, instead of sitting greyed out)."""
+        from . import edit
+        return self.can_edit() or (not edit.available() and self._playable())
+
+    def _playable(self) -> bool:
+        s = self.stream
+        return bool(s is not None and s.get_error() is None and s.is_prepared() and s.get_duration() > 0
+                    and s.is_seekable() and os.path.exists(self.path))
+
+    def _needs_ffmpeg(self) -> bool:
+        """No FFmpeg: an alert says what to install (True: nothing to do)."""
+        from . import edit
+        if edit.available():
+            return False
+        ui.dialog.alert(_("Trim and Crop need FFmpeg"), _("Install the “ffmpeg” package, then try again."),
+                        [("ok", _("OK"), "default")], parent=self)
+        return True
+
     def start_trim(self) -> None:
-        if self._editing() or not self.can_edit():
+        if self._needs_ffmpeg() or self._editing() or not self.can_edit():
             return
         from . import edit
         from .trimbar import TrimBar
@@ -363,7 +383,7 @@ class VideoWindow(Gtk.ApplicationWindow):
 
     # -- crop ---------------------------------------------------------------------------------------
     def start_crop(self) -> None:
-        if self._editing() or self.audio or not self.can_edit():
+        if self._needs_ffmpeg() or self._editing() or self.audio or not self.can_edit():
             return
         from .cropbar import CropBar, CropFrame
         s = self.stream
@@ -740,9 +760,13 @@ class VideoWindow(Gtk.ApplicationWindow):
                 self.toggle_fullscreen()
         click.connect("pressed", pressed)
         self.picture.get_parent().add_controller(click)
-        menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
+        # before the movie's window handle (capture): its own right-click
+        # (the window menu) took the press, and the menu with Trim and Crop
+        # never showed (Vini)
+        menu = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY, propagation_phase=Gtk.PropagationPhase.CAPTURE)
         menu.connect("pressed", self._context_menu)
         self.overlay.add_controller(menu)
+        self.menu_click = menu                              # (tests)
 
     def _context_menu(self, gesture, _n, x, y) -> None:
         gesture.set_state(Gtk.EventSequenceState.CLAIMED)
@@ -756,8 +780,8 @@ class VideoWindow(Gtk.ApplicationWindow):
              Item(_("Mute"), lambda _v=None: self.toggle_mute(), checked=self.muted, enabled=ok)],
             [Item(_("Exit Full Screen") if self.is_fullscreen() else _("Enter Full Screen"), self.toggle_fullscreen,
                   enabled=not self.audio)],
-            [Item(_("Trim…"), self.start_trim, enabled=self.can_edit() and not self._editing()),
-             Item(_("Crop…"), self.start_crop, enabled=self.can_edit() and not self.audio and not self._editing())],
+            [Item(_("Trim…"), self.start_trim, enabled=self._editable() and not self._editing()),
+             Item(_("Crop…"), self.start_crop, enabled=self._editable() and not self.audio and not self._editing())],
             [Item(_("Show in Files"), self.show_in_files), Item(_("Open…"), self.open_dialog)],
         ], at=(x, y), glass=True, passthrough=True)
 

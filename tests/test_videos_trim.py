@@ -17,7 +17,7 @@ import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib  # noqa: E402
+from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
 
 from sonata2 import ui  # noqa: E402
 from sonata2.videos import edit as E  # noqa: E402
@@ -120,6 +120,43 @@ class WindowTest(unittest.TestCase):
         self.addCleanup(win.destroy)
         settle()
         return win, path
+
+    def test_right_click_menu_comes_before_the_window_handle(self):
+        """Vini: Trim and Crop didn't show -- the movie is a window handle,
+        whose own right-click (the window menu) took the press before the
+        player's menu. The menu's click now comes first (capture phase)."""
+        win, _path = self.window()
+        self.assertEqual(win.menu_click.get_propagation_phase(), Gtk.PropagationPhase.CAPTURE)
+        self.assertEqual(win.menu_click.get_button(), Gdk.BUTTON_SECONDARY)
+        handle = win.picture.get_parent()
+        self.assertIsInstance(handle, Gtk.WindowHandle)
+        self.assertTrue(handle.is_ancestor(win.overlay))          # captured on the way down to it
+        items = []
+        with mock.patch.object(E, "available", return_value=True), \
+                mock.patch.object(vw.ui.menu, "popup", side_effect=lambda _w, secs, **_k: items.extend(
+                    i for sec in secs for i in sec)):
+            win._context_menu(win.menu_click, 1, 10, 10)
+        names = {i.label: i for i in items}
+        self.assertTrue(names["Trim…"].enabled)
+        self.assertTrue(names["Crop…"].enabled)
+
+    def test_without_ffmpeg_they_say_so(self):
+        """No FFmpeg: Trim / Crop aren't greyed out with no reason -- they say what to install."""
+        win, _path = self.window()
+        items = []
+        with mock.patch.object(E, "available", return_value=False), \
+                mock.patch.object(vw.ui.menu, "popup", side_effect=lambda _w, secs, **_k: items.extend(
+                    i for sec in secs for i in sec)), \
+                mock.patch.object(vw.ui.dialog, "alert") as alert:
+            win._context_menu(win.menu_click, 1, 10, 10)
+            names = {i.label: i for i in items}
+            self.assertTrue(names["Trim…"].enabled)
+            win.start_trim()
+            self.assertIsNone(win.trim_bar)
+            self.assertIn("FFmpeg", alert.call_args.args[0])
+            win.start_crop()
+            self.assertIsNone(win.crop_bar)
+            self.assertEqual(alert.call_count, 2)
 
     def test_trim_bar_replaces_the_controls(self):
         win, _path = self.window()

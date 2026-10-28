@@ -724,5 +724,7 @@
  "“{name}” couldn't start.": "Não foi possível iniciar “{name}”.",
  "“{name}” couldn't stop.": "Não foi possível parar “{name}”.",
  "“{name}” has been changed by another application.": "“{name}” foi alterado por outro aplicativo.",
- "“{name}” has no events.": "“{name}” não tem eventos."
+ "“{name}” has no events.": "“{name}” não tem eventos.",
+ "Trim and Crop need FFmpeg": "Cortar e Recortar precisam do FFmpeg",
+ "Install the “ffmpeg” package, then try again.": "Instale o pacote “ffmpeg” e tente de novo."
 }

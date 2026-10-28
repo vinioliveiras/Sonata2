@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Videos: the right-click menu (Trim…, Crop…, Loop, Show in Files…) shows again -- the movie's window handle took the right-click for the window menu first. Without FFmpeg, Trim and Crop say what to install instead of sitting greyed out.
 - Window buttons' bigger target reaches the window's real corner on both sides: in Settings (a header bar) the dots sat a pixel further in than designed and the very corner missed, buttons on the left or on the right.
 - The drawing palette (Game Bar, recording and sharing pills) lost its square shadow: its shadow was cut at the edges of its surface; the room around it now holds the whole (menus') shadow, and only the palette itself takes clicks -- you can draw right up to it.
 - After Print Screen the capture toolbar stays open -- even once the picture is closed -- to take more shots or change the options; each shot from it opens in Markup, and it comes back after each one (or a cancelled selection, or a recording). Its close button or Esc ends it. While kept it takes the keyboard only when clicked, so the editor can be typed in.
