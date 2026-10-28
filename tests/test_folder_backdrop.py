@@ -37,9 +37,9 @@ class FolderBackdropTest(unittest.TestCase):
     def test_folder_panel_denser(self):
         self.assertGreaterEqual(_alpha(tokens.SHARED["folder_panel"]), 0.25)     # was 0.16
         rule = re.search(r"\.lpw-root \.lp-panel\s*\{([^}]*)\}", _source(LW)).group(1)
-        self.assertIn("background: %(menu_bg)s", rule)                             # not the window's glass
-        for palette in (tokens.LIGHT, tokens.DARK):
-            self.assertGreaterEqual(_alpha(palette["menu_bg"]), 0.9)
+        # Vini (option B): the Apps Menu's folder is light glass like the full-screen one,
+        # over the faded, blurred grid
+        self.assertIn("background: %(folder_panel)s", rule)
 
     def test_fade_and_blur_animate(self):
         self.assertRegex(_source(L), r"\.lp-col \{ transition: opacity[^}]*filter")

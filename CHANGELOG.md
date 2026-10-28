@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Apps Menu: an open folder is light glass again, like the full-screen Apps folder, over the faded and blurred apps behind it.
 - Game Bar finished:
   - Audio widget: the output and microphone volumes, and what recordings take -- System, Microphone, Both (two separate tracks in the movie) or None. "Record System Sound and Microphone" is in the screenshot toolbar's Options too.
   - Performance widget: FPS, CPU, GPU and memory graphs (Control Center's), read only while on screen.

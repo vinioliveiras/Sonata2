@@ -72,9 +72,10 @@ ui.register("""
 .lpw-root .lp-item:hover { background: alpha(%(label)s, 0.07); }
 .lpw-root .lp-item.selected { background: alpha(%(label)s, 0.12); }   /* grey, as in the full screen (Vini) */
 .lpw-root .lp-label { color: %(label)s; font-size: %(text_body)s; text-shadow: none; margin-top: 4px; }
-/* the folder: nearly solid -- the panel's glass only blurs what's behind
-   the window, so over the grid it showed every icon (Vini) */
-.lpw-root .lp-panel { background: %(menu_bg)s; box-shadow: 0 0 0 0.5px %(hairline)s,
+/* the folder: light glass, the same as Apps' full-screen folder (Vini) --
+   over the grid faded and blurred behind it (.lpw-content.dimmed), so the
+   apps outside it don't show through */
+.lpw-root .lp-panel { background: %(folder_panel)s; box-shadow: 0 0 0 0.5px %(hairline)s,
   inset 0 0 0 0.5px %(highlight)s, 0 12px 40px rgba(0,0,0,0.28); }
 .lpw-root .lp-panel-title, .lpw-root .lp-panel-title text, .lpw-root .lp-lock, .lpw-root .lp-lock-text {
   color: %(label)s; }
