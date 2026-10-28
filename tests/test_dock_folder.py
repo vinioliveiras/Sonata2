@@ -907,7 +907,11 @@ class DragOutOfPanelTest(unittest.TestCase):
         pop.popdown.assert_not_called()                        # the drag's source stays
         pop.set_opacity.assert_called_with(0)
         child.set_can_target.assert_called_with(False)         # the Dock under it reachable
+        surface = pop.get_native.return_value.get_surface.return_value
+        empty = surface.set_input_region.call_args.args[0]
+        self.assertEqual(empty.num_rectangles(), 0)            # no pointer for it: drops reach the Dock
         F._drag_out_end(dock, tile, "firefox", pop)
+        self.assertGreater(surface.set_input_region.call_args.args[0].num_rectangles(), 0)   # all of it again
         pop.popdown.assert_called_once()
         pop.set_opacity.assert_called_with(1)
         child.set_can_target.assert_called_with(True)

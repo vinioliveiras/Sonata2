@@ -572,12 +572,21 @@ def _drag_out(dock, tile, key, pop, drag) -> None:
 
 
 def _hold_open(pop, on: bool) -> None:
-    """While an app is dragged out of it: invisible, clicks and drags through."""
+    """While an app is dragged out of it: invisible, clicks and drags through
+    -- its surface takes no pointer at all (an empty input region): over it,
+    the drop went to the panel, no drop target there, and the app fell back
+    into its folder (Vini: it couldn't be put beside a chosen app)."""
     pop.dragging_out = on
     pop.set_opacity(0 if on else 1)
     child = pop.get_child()
     if child is not None:
         child.set_can_target(not on)
+    native = pop.get_native()
+    surface = native.get_surface() if native is not None else None
+    if surface is not None:
+        import cairo
+        surface.set_input_region(cairo.Region() if on else
+                                 cairo.Region(cairo.RectangleInt(0, 0, 1 << 15, 1 << 15)))   # (all of it again)
     if not on:
         pop.popdown()
 
