@@ -340,7 +340,8 @@ class PreviewMarkupTest(unittest.TestCase):
     def test_thumbnail_opens_markup(self):
         import inspect
         from sonata2.shell import capture
-        self.assertIn('"preview", "--markup"', inspect.getsource(capture.Thumbnail._open))
+        self.assertIn("open_shot(self.path)", inspect.getsource(capture.Thumbnail._open))
+        self.assertIn('"preview", "--markup"', inspect.getsource(capture.open_shot))     # (shared with Print)
 
 
 class MarkupLifecycleTest(unittest.TestCase):

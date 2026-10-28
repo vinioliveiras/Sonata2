@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Screenshots to the clipboard work again with every caller (the Print Screen change passed a new argument to code that took the path alone).
 - Apps Menu: dropping an app on another makes a folder again -- the drop target added under the apps (for the empty room) heard every motion over the grid too and undid the folder's target; it now only answers in the empty room. A test drags with a real pointer (xdotool) so this can't come back unseen.
 - Game Bar: its bar and widgets open already in glass -- the game dims at once while they wait (at most 220 ms) for the game's picture, then pop in with it; they used to open solid and turn to glass a moment later.
 - Apps and the Apps Menu: an app taken out of a folder goes right beside the app it's let go on -- over its left half before it, over its right half after it, the bar on that side showing where.

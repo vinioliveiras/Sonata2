@@ -781,7 +781,7 @@ class Capture:
         if to_clip and shutil.which("wl-copy"):
             with open(path, "rb") as f:
                 subprocess.run(["wl-copy", "--type", "image/png"], stdin=f)
-        self.shot_taken(path, edit=edit)
+        self.shot_taken(path, **({"edit": True} if edit else {}))   # (stand-ins take the path alone)
 
     def _record(self, geo, cfg, output=None):
         if not shutil.which("wf-recorder") and not shutil.which("wl-screenrec"):
