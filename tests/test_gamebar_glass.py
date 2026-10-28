@@ -96,13 +96,40 @@ class GlassTest(unittest.TestCase):
         self.assertIsNotNone(self.bar.frost.texture)
         self.assertTrue(self.bar.root.has_css_class("frosted"))
 
-    def test_too_slow_shows_solid(self):
-        _n, shown, proc = self.open_with(None)                  # grim never answers
-        self.assertEqual(shown, [1])
+    def test_too_slow_shows_solid_then_the_glass_fades_in(self):
+        """Vini: some openings had no glass -- grim was slower than the wait
+        and its picture was thrown away. It shows solid at once, and the
+        glass comes when the picture does (fading in)."""
+        proc = FakeProc(None)                                    # grim answers late
+        with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc):
+            self.bar._frost_then(self.bar.present)
+            spin(G.FROST_WAIT_MS + 150)
+        self.assertTrue(self.bar.get_visible())                  # not kept waiting
         self.assertFalse(self.bar.root.has_css_class("frosted"))
         proc.out = red_png()
-        proc.done(proc, None)                                   # late: ignored (the Game Bar is on it now)
-        self.assertEqual(shown, [1])
+        proc.done(proc, None)
+        spin(100)
+        self.assertIsNotNone(self.bar.frost.texture)
+        self.assertTrue(self.bar.root.has_css_class("frosted"))
+        self.assertIn("gb-frost", self.bar.frost.get_css_classes())   # (its opacity eases in)
+
+    def test_late_picture_ignored_once_closed_or_reopened(self):
+        proc = FakeProc(None)
+        with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc):
+            self.bar._frost_then(self.bar.present)
+            spin(G.FROST_WAIT_MS + 150)
+        self.bar.root.add_css_class("closing")                   # closing meanwhile
+        proc.out = red_png()
+        proc.done(proc, None)
+        self.assertIsNone(self.bar.frost.texture)
+        self.bar.root.remove_css_class("closing")
+        old = FakeProc(None)
+        with mock.patch.object(G.Gio.Subprocess, "new", return_value=old):
+            self.bar._frost_then(self.bar.present)
+        with mock.patch.object(G.Gio.Subprocess, "new", return_value=FakeProc(None)):
+            self.bar._frost_then(self.bar.present)               # opened again: a new picture asked
+        old.out = red_png()
+        old.done(old, None)                                      # the first one's: not this opening's
         self.assertIsNone(self.bar.frost.texture)
 
     def test_without_grim_shown_at_once_solid(self):
@@ -143,7 +170,8 @@ class GlassTest(unittest.TestCase):
         self.bar.present()
         spin(300)
         self.bar.frost.set_picture(Gdk.Texture.new_from_bytes(red_png()))
-        spin(100)
+        self.bar.root.add_css_class("frosted")                  # (as _set_frost: the glass on)
+        spin(400)
         before = self.bar.frost._drawn
         self.bar.app_name.set_label("A Much Longer Game Name Than Before")
         spin(200)

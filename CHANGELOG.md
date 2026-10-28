@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Game Bar: the glass no longer goes missing on some openings -- when the game's picture took longer than the Game Bar waits, it was thrown away; now the Game Bar still opens at once and the glass fades in when the picture comes (that opening's, while it's open).
 - Game Bar: the Performance widget has every graph Control Center has -- CPU, each GPU, their memory, the temperatures, memory, network -- in Control Center's order, under the FPS Limit; many of them scroll inside the widget.
 - Game Bar: a Control Center widget at the top right -- Wi-Fi, Bluetooth, Airplane Mode, Do Not Disturb and the brightness of the game's display, Control Center's own controls (made once for both: topbar.QuickControls), read again at each opening; reachable with the controller. Shown the first time after the update.
 - Game Bar: a Now Playing widget at the top left (the menu bar's module: artwork, title, artist, previous / play-pause / next), with its toggle on the bar; shown the first time after the update. Now Playing follows the player only while on screen, in Control Center too (a hidden window stays realized and kept listening).

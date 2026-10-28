@@ -52,6 +52,8 @@ while it's closed: the clock ticks only while it's on screen.
     bar = GameBar(app, topbar)      # topbar: for the app in front (optional)
     bar.toggle(); bar.open(); bar.close()
 """
+import time
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -70,6 +72,7 @@ PIN_NAMESPACE = "sonata2-gamebar-pin"
 FROST_SCALE = 0.25
 FROST_BLUR = 28
 FROST_WAIT_MS = 250
+FROST_LATE_S = 2.0          # a later picture than that: the game has moved on, no glass this time
 CONFIG = "gamebar"
 # the widgets, in the bar's order -- the same left-to-right order as on the
 # screen, so the toggles, the arrows and LB / RB follow them: id -> (title,
@@ -150,6 +153,10 @@ window.sonata-gamebar, window.sonata-gamebar > contents { background: none; box-
 
 /* the fake glass under them (_Frost): see-through over the blurred picture */
 .gb-root.frosted .gb-bar, .gb-root.frosted .gb-widget { background-color: alpha(%(menu_bg)s, 0.55); }
+/* a picture that came after the Game Bar opened: the glass fades in */
+.gb-frost { opacity: 0; transition: opacity %(t_standard)s %(ease_out)s; }
+.gb-root.frosted .gb-frost { opacity: 1; }
+.gb-bar, .gb-widget { transition: background-color %(t_standard)s %(ease_out)s; }
 
 /* a widget: Control Center glass, popping in a little after the bar */
 .gb-widget { background-color: %(menu_bg)s; border-radius: %(r_dialog)s; padding: 6px;
@@ -331,7 +338,7 @@ class _Frost(Gtk.Widget):
     widgets (rounded like them) -- blurred once (blur()), then only drawn."""
 
     def __init__(self, targets):
-        super().__init__(can_target=False, hexpand=True, vexpand=True)
+        super().__init__(can_target=False, hexpand=True, vexpand=True, css_classes=["gb-frost"])
         self.targets = targets                  # () -> [(widget, radius token)]
         self.texture = None
         self._drawn = None                      # where the panels were when last drawn
@@ -730,7 +737,13 @@ class GameBar(Gtk.Window):
     # -- the fake glass ---------------------------------------------------------------------------
     def _frost_then(self, show) -> None:
         """The game's picture first (before the Game Bar is on it), then show();
-        at most FROST_WAIT_MS -- later, it shows solid."""
+        at most FROST_WAIT_MS. A picture that comes later still turns the glass
+        on, fading in (Vini: some openings had no glass -- grim took longer
+        than that now and then, and its picture was thrown away). grim asks
+        for the screen as it starts: the late part is only its picture being
+        made, the Game Bar isn't in it."""
+        self._frost_gen = getattr(self, "_frost_gen", 0) + 1
+        gen = self._frost_gen
         self.frost.set_picture(None)
         self.root.remove_css_class("frosted")
         import shutil
@@ -753,14 +766,17 @@ class GameBar(Gtk.Window):
             once()
             return
 
+        started = time.monotonic()
+
         def done(p, res):
             try:
                 _ok, out, _err = p.communicate_finish(res)
                 tex = Gdk.Texture.new_from_bytes(out) if out is not None and out.get_size() else None
             except GLib.Error:
                 tex = None
-            late = state["shown"]
-            if tex is not None and not late:
+            # this opening's picture, the Game Bar still open (or about to be)
+            if tex is not None and gen == self._frost_gen and (not state["shown"] or self.is_open()) \
+                    and time.monotonic() - started < FROST_LATE_S:
                 self._set_frost(tex)
             once()
         proc.communicate_async(None, None, done)
