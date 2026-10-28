@@ -81,7 +81,7 @@ class GlassTest(unittest.TestCase):
         with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc) as new:
             self.bar._frost_then(lambda: shown.append(1))
             self.assertEqual(shown, [])                         # not before the picture: it'd be in it
-            spin(G.FROST_WAIT_MS + 150)
+            spin(G.FROST_WAIT_MS + 350)
         return new, shown, proc
 
     def test_command(self):
@@ -166,15 +166,16 @@ class GlassTest(unittest.TestCase):
 
     def test_glass_follows_a_panel_that_resizes(self):
         """The bar grew (the game's name, the clock) after the glass was
-        drawn: it was drawn again at the bar's new size."""
-        self.bar.present()
+        drawn: it was drawn again at the bar's new size -- looked at a few
+        times a second while open, not every frame (Vini: slow opening)."""
+        self.bar._show()
         spin(300)
         self.bar.frost.set_picture(Gdk.Texture.new_from_bytes(red_png()))
         self.bar.root.add_css_class("frosted")                  # (as _set_frost: the glass on)
         spin(400)
         before = self.bar.frost._drawn
         self.bar.app_name.set_label("A Much Longer Game Name Than Before")
-        spin(200)
+        spin(G.FROST_FOLLOW_MS * 3)
         self.assertNotEqual(self.bar.frost._drawn, before)
         ok, b = self.bar.bar.compute_bounds(self.bar.frost)
         self.assertEqual(self.bar.frost._drawn[0][2], round(b.get_width()))
@@ -183,6 +184,30 @@ class GlassTest(unittest.TestCase):
         from sonata2.ui import glass
         self.assertIn('app_id is "sonata2-gamebar"', glass.NEVER_BLUR)
 
+
+
+class LightOpeningTest(unittest.TestCase):
+    """Vini: opening, closing and showing / hiding a widget were slow."""
+
+    def test_no_frame_by_frame_work_while_open(self):
+        src = open(G.__file__).read()
+        self.assertNotIn("add_tick_callback", src)                 # the frame clock rests between changes
+        self.assertLessEqual(G.FROST_WAIT_MS, 100)                 # (a late picture fades in)
+
+    def test_states_read_after_the_opening_animation(self):
+        config.save(G.CONFIG, dict(G.DEFAULTS))
+        bar = G.GameBar(_app())
+        try:
+            with mock.patch.object(bar, "_refresh_audio") as audio, \
+                    mock.patch.object(bar, "_refresh_controls") as controls:
+                bar.open()
+                audio.assert_not_called()
+                controls.assert_not_called()
+                spin(G.READ_AFTER_MS + 100)
+            audio.assert_called_once()
+            controls.assert_called_once()
+        finally:
+            bar.destroy()
 
 if __name__ == "__main__":
     unittest.main()

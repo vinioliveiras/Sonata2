@@ -71,7 +71,9 @@ PIN_NAMESPACE = "sonata2-gamebar-pin"
 # needed), blurred this much (px at full size), awaited this long at most
 FROST_SCALE = 0.25
 FROST_BLUR = 28
-FROST_WAIT_MS = 250
+FROST_WAIT_MS = 80          # (later: the glass fades in when it comes)
+READ_AFTER_MS = 260
+FROST_FOLLOW_MS = 150       # the glass looks where the panels are this often while open         # the states read once the opening animation is over
 FROST_LATE_S = 2.0          # a later picture than that: the game has moved on, no glass this time
 CONFIG = "gamebar"
 # the widgets, in the bar's order -- the same left-to-right order as on the
@@ -343,8 +345,9 @@ class _Frost(Gtk.Widget):
         self.texture = None
         self._drawn = None                      # where the panels were when last drawn
         # a panel resized or moved (the clock, a name, a widget toggled): drawn
-        # again -- checked each frame only while there is glass on screen
-        self.add_tick_callback(self._follow)
+        # again -- looked at FROST_FOLLOW_MS apart while the Game Bar is open
+        # (GameBar._follow_src); a tick callback looked every frame (Vini:
+        # opening and the animations were slow -- the frame clock never rested)
 
     def _places(self):
         out = []
@@ -354,12 +357,10 @@ class _Frost(Gtk.Widget):
                        if ok else None)
         return out
 
-    def _follow(self, *_a) -> bool:
-        if self.texture is not None:
-            now = self._places()
-            if now != self._drawn:
-                self.queue_draw()
-        return True
+    def follow(self) -> None:
+        """A panel was laid out again: the glass under it again if it moved."""
+        if self.texture is not None and self._places() != self._drawn:
+            self.queue_draw()
 
     def set_picture(self, texture) -> None:
         self.texture = texture
@@ -442,6 +443,8 @@ class GameBar(Gtk.Window):
         self._new_widgets_shown()
         self._clock_src = 0
         self._hide_src = 0
+        self._read_src = 0
+        self._follow_src = 0
 
         self.root = Gtk.Overlay(css_classes=["gb-root"])
         self.scrim = Gtk.Box(css_classes=["gb-scrim"], hexpand=True, vexpand=True)
@@ -717,8 +720,11 @@ class GameBar(Gtk.Window):
             self._hide_src = 0
         self.root.remove_css_class("closing")
         self._hide_pins()                               # back in the Game Bar
-        self._refresh_audio()
-        self._refresh_controls()
+        # the levels and radios read once it's on screen: their reads (pactl,
+        # nmcli, rfkill, DDC/CI) started with it and slowed its opening (Vini)
+        if self._read_src:
+            GLib.source_remove(self._read_src)
+        self._read_src = GLib.timeout_add(READ_AFTER_MS, self._read_states)
         self._front_app()
         self._tick()
         if not self._clock_src:
@@ -732,7 +738,15 @@ class GameBar(Gtk.Window):
         first = next(iter(self.toggles.values()))
         first.grab_focus()                              # where the controller / arrows start
         self._grab(True)
-        GLib.timeout_add(_close_ms() * 2, lambda: (self.frost.queue_draw(), False)[1])   # after the pop-in
+        if not self._follow_src:
+            self._follow_src = GLib.timeout_add(FROST_FOLLOW_MS, self._follow)
+
+    def _follow(self) -> bool:
+        if not self.is_open():
+            self._follow_src = 0
+            return False
+        self.frost.follow()
+        return True
 
     # -- the fake glass ---------------------------------------------------------------------------
     def _frost_then(self, show) -> None:
@@ -925,6 +939,13 @@ class GameBar(Gtk.Window):
         box.append(ui.panel.click_anywhere(ui.panel.module(q.dnd), q.dnd))
         box.append(ui.panel.module(Gtk.Label(label=_("Display"), xalign=0, css_classes=["panel-module-title"]), disp))
         return box
+
+    def _read_states(self) -> bool:
+        self._read_src = 0
+        if self.is_open():
+            self._refresh_audio()
+            self._refresh_controls()
+        return False
 
     def _refresh_controls(self) -> None:
         q = getattr(self, "quick", None)

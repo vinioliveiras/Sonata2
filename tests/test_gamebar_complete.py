@@ -121,6 +121,7 @@ class MixerTests(unittest.TestCase):
 
     def test_listens_only_while_on_screen(self):
         self.bar.open()
+        spin(G.READ_AFTER_MS + 80)
         self.assertIn(self.bar._streams, self.service.listeners)
         self.bar.close_bar()
         spin(G._close_ms() + 120)
@@ -129,6 +130,7 @@ class MixerTests(unittest.TestCase):
     def test_pinned_audio_keeps_listening(self):
         self.bar.toggle_pin("audio")
         self.bar.open()
+        spin(G.READ_AFTER_MS + 80)
         self.bar.close_bar()
         spin(G._close_ms() + 120)
         self.assertIn(self.bar._streams, self.service.listeners)
@@ -241,6 +243,8 @@ class ControlsTests(Base):
             self.bar.close_bar()
             spin(G._close_ms() + 120)
             self.bar.open()
+            read.assert_not_called()                                # not while it opens (Vini: slow)
+            spin(G.READ_AFTER_MS + 80)
         read.assert_called_once()
         self.assertEqual(q.output, "DP-1")                         # (focused_output: the game's)
 
