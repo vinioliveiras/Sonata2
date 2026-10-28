@@ -132,6 +132,32 @@ class RealReorderTest(unittest.TestCase):
         finally:
             t.tearDown()
 
+    def test_apps_menu_out_of_a_folder_into_the_empty_room(self):
+        """Out of an open folder, let go in the room under the apps: the end."""
+        T.MenuModeTest.setUpClass()
+        t = T.MenuModeTest("test_arrow_keys_move_the_selection")
+        t.setUp()
+        try:
+            pad, menu = t.pad, t.menu
+            pad.set_title("LP-ROOM")
+            pad.model.make_folder("calc", "files", "Work")
+            pad.save()
+            pad.render()
+            T.settle(200)
+            pad.activate_item(next(x for x in menu.visible_items() if isinstance(x.item, dict)))
+            T.settle(300)
+            tile = pad.folder_view[2].get_first_child().get_child_at(0, 0)
+            item = tile.item
+            ok, rb = menu.room.compute_bounds(pad)
+            ok, pb = pad.folder_view[0].compute_bounds(pad)
+            self.assertGreater(rb.get_height(), 40)                     # there is a room to drop in
+            to = (int(rb.get_x() + 20), int(max(rb.get_y() + 10, pb.get_y() + pb.get_height() + 20)))
+            self.assertTrue(real_drag("LP-ROOM", _mid(tile, pad), to, 10))
+            flat = [i for p in pad.model.pages for i in p]
+            self.assertEqual(flat[-1], item)
+        finally:
+            t.tearDown()
+
     def test_full_screen_apps(self):
         from tests import test_launchpad as TL
         TL.LaunchpadTest.setUpClass()

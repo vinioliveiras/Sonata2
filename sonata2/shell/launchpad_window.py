@@ -164,17 +164,23 @@ class MenuView:
         self.tabs = Gtk.Box(spacing=8, homogeneous=True)
         self.content.append(self.tabs)
         self.content.append(Gtk.Box(css_classes=["lpw-rule"]))
+        # (all the scrolled area's height: the room under the apps, self.room,
+        # fills what the grids leave -- they stay at the top)
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, margin_bottom=18,
-                            valign=Gtk.Align.START, css_classes=["lpw-body"])
+                            css_classes=["lpw-body"])
         self.scroll = Gtk.ScrolledWindow(child=self.body, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
         self.content.append(self.scroll)
         # the empty room under the apps takes a drag too -- the end of the last
-        # page (Vini: an app dragged out of a folder, let go there, stayed in it)
+        # page (Vini: an app dragged out of a folder, let go there, stayed in
+        # it). A box of its own after the grids, not a drop target around them:
+        # that one heard every motion over the grids too, and reordering and
+        # making folders broke in the Apps Menu (full screen was fine)
+        self.room = Gtk.Box(vexpand=True, css_classes=["lpw-room"])
         below = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
-        below.connect("motion", lambda _t, x, y: self._at_end(lambda g, gx, gy: pad.drag_over(g, gx, gy), x, y))
-        below.connect("drop", lambda _t, v, x, y: self._at_end(lambda g, gx, gy: pad.drag_drop(g, gx, gy, v), x, y)
-                      or False)
-        self.scroll.add_controller(below)
+        below.connect("accept", lambda _t, _d: self.pad._drag is not None)
+        below.connect("motion", lambda _t, _x, _y: self._at_end(lambda g, gx, gy: pad.drag_over(g, gx, gy)))
+        below.connect("drop", lambda _t, v, _x, _y: bool(self._at_end(lambda g, gx, gy: pad.drag_drop(g, gx, gy, v))))
+        self.room.add_controller(below)
         self.panel.append(self.content)
         self.results = PageGrid(pad, -1)               # search results (pad._search_changed fills it)
         self.tab_grid = PageGrid(pad, -3)              # a category's apps (index < 0: no reordering)
@@ -311,7 +317,7 @@ class MenuView:
         if self.pad.search.get_text().strip():
             want = [self.results]
         elif self.tab is None:
-            want = list(self.pages)
+            want = list(self.pages) + [self.room]      # (the room under the apps: drops go to the end)
         else:
             want = [self.tab_grid]
         have = []
@@ -342,22 +348,12 @@ class MenuView:
         elif bottom > adj.get_value() + adj.get_page_size():
             adj.set_value(bottom - adj.get_page_size())
 
-    def _at_end(self, fn, x=None, y=None):
-        """fn(grid, x, y) at the last cell of the last page (none: nothing) --
-        only in the empty room: over a page's grid the grid's own drop target
-        has it (Vini: making a folder failed -- this one heard every motion
-        too and answered "the end", clearing the folder's target each time).
-        x, y: the pointer in the scrolled area (None: anywhere)."""
+    def _at_end(self, fn):
+        """fn(grid, x, y) at the last cell of the last page (none: nothing):
+        the empty room under the apps (self.room)."""
         grids = [g for g in self.pages if g.get_mapped()]
         if not grids or not self.pad._drag:
             return Gdk.DragAction.MOVE if self.pad._drag else 0
-        if x is not None:
-            for g in grids:
-                ok, b = g.compute_bounds(self.scroll)
-                if ok and b.get_x() <= x < b.get_x() + b.get_width() and b.get_y() <= y < b.get_y() + b.get_height():
-                    return Gdk.DragAction.MOVE      # the grid's own
-            if self.pad.folder_view is not None and self.pad._drag.get("folder") is None:
-                return Gdk.DragAction.MOVE
         g = grids[-1]
         return fn(g, max(0, g.get_width() - 1), max(0, g.get_height() - 1))
 
