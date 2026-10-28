@@ -221,7 +221,9 @@ class BarTests(unittest.TestCase):
 
     def test_dpad_left_right_change_a_slider(self):
         """On a slider (Audio's volumes) the D-pad's left / right move it."""
+        settle(300)                                                # the levels read on open have come
         vol = self.bar.vol
+        vol.set_sensitive(True)                                    # (no sound server in the tests)
         vol.grab_focus()
         before = vol.get_value()
         self.bar.pad("right")
