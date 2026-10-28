@@ -544,7 +544,7 @@ def _app_button(dock, tile, key, pop) -> Gtk.Button:
     src.connect("prepare", lambda *_: Gdk.ContentProvider.new_for_value(key))
     src.connect("drag-begin", lambda _s, drag: _drag_out(dock, tile, key, pop, drag))
     src.connect("drag-cancel", lambda *_: True)          # no snap back into a closed panel
-    src.connect("drag-end", lambda *_: dock.folder_app_drag_end(tile.key, key))
+    src.connect("drag-end", lambda *_: _drag_out_end(dock, tile, key, pop))
     b.add_controller(src)
     return b
 
@@ -560,9 +560,32 @@ def show_running(dock, pop) -> None:
 
 
 def _drag_out(dock, tile, key, pop, drag) -> None:
-    pop.popdown()                                        # the Dock is reachable under it
+    """The panel holds the drag's source: closing it now ended the drag at
+    once on Wayland -- its surface went, so the drag did (Vini: an app from a
+    Dock folder couldn't be put at a place of his choosing; it fell back, and
+    before that the folder came undone). It only goes invisible and lets the
+    pointer through until the drag ends (_drag_out_end)."""
+    _hold_open(pop, True)
     if not dock.folder_app_drag_begin(tile.key, key, drag):
+        _hold_open(pop, False)
         drag.drop_done(False)
+
+
+def _hold_open(pop, on: bool) -> None:
+    """While an app is dragged out of it: invisible, clicks and drags through."""
+    pop.dragging_out = on
+    pop.set_opacity(0 if on else 1)
+    child = pop.get_child()
+    if child is not None:
+        child.set_can_target(not on)
+    if not on:
+        pop.popdown()
+
+
+def _drag_out_end(dock, tile, key, pop) -> None:
+    if getattr(pop, "dragging_out", False):
+        _hold_open(pop, False)                           # closed now, the drag over
+    dock.folder_app_drag_end(tile.key, key)
 
 
 # -- menus -------------------------------------------------------------------------------------

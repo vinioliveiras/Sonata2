@@ -856,5 +856,41 @@ class DockFolderTest(unittest.TestCase):
         self.assertIsNotNone(snap.to_node())
 
 
+
+class DragOutOfPanelTest(unittest.TestCase):
+    """Vini: an app dragged out of a Dock folder couldn't be put where he
+    wanted -- the panel closed as the drag began, and on Wayland the drag
+    ended with its source's surface (it fell back; before, the folder came
+    undone). The panel only goes invisible and click-through until the drag
+    ends, then closes."""
+
+    def test_panel_kept_until_the_drag_ends(self):
+        from unittest import mock
+        child = mock.Mock()
+        pop = mock.Mock()
+        pop.get_child.return_value = child
+        dock = mock.Mock()
+        dock.folder_app_drag_begin.return_value = True
+        tile = mock.Mock(key="folder:Work")
+        F._drag_out(dock, tile, "firefox", pop, mock.Mock())
+        pop.popdown.assert_not_called()                        # the drag's source stays
+        pop.set_opacity.assert_called_with(0)
+        child.set_can_target.assert_called_with(False)         # the Dock under it reachable
+        F._drag_out_end(dock, tile, "firefox", pop)
+        pop.popdown.assert_called_once()
+        pop.set_opacity.assert_called_with(1)
+        child.set_can_target.assert_called_with(True)
+        dock.folder_app_drag_end.assert_called_once_with("folder:Work", "firefox")
+
+    def test_refused_drag_closes_it_at_once(self):
+        from unittest import mock
+        pop = mock.Mock()
+        dock = mock.Mock()
+        dock.folder_app_drag_begin.return_value = False
+        drag = mock.Mock()
+        F._drag_out(dock, mock.Mock(key="folder:Work"), "firefox", pop, drag)
+        pop.popdown.assert_called_once()
+        drag.drop_done.assert_called_once_with(False)
+
 if __name__ == "__main__":
     unittest.main()
