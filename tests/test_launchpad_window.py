@@ -307,6 +307,42 @@ class MenuModeTest(unittest.TestCase):
         f = next(it for page in self.pad.model.pages for it in page if isinstance(it, dict))
         self.assertIn(tile.item, f["apps"])                                    # still in its folder
 
+    def _drag_out_to(self, frac):
+        """Hold the folder's first app over the grid's 2nd tile at `frac` of
+        its cell's width, let go; the app's place on the page and the mark."""
+        self.pad.model.make_folder("calc", "files", "Work")
+        self.pad.save()
+        self.pad.render()
+        folder = next(t for t in self.menu.visible_items() if isinstance(t.item, dict))
+        self.pad.activate_item(folder)
+        settle(100)
+        tile = self.pad.folder_view[2].get_first_child().get_child_at(0, 0)
+        item = tile.item
+        with mock.patch.object(self.L.ui.drag, "hang", return_value=None):
+            self.pad._drag_begun(tile, None)
+        grid = self.menu.pages[0]
+        cw, ch = grid.get_width() / grid.cols, grid.get_height() / grid.rows
+        beside = self.pad.model.pages[0][1]
+        self.pad.drag_over(grid, cw * (1 + frac), ch / 2)
+        mark = self.pad._drag["out_mark"]
+        cls = [c for c in ("drop-before", "drop-after") if mark.has_css_class(c)]
+        self.assertTrue(self.pad.drag_drop(grid, cw * (1 + frac), ch / 2, item))
+        self.pad._drag_ended(tile)
+        page = self.pad.model.pages[0]
+        return page.index(item), page.index(beside), mark.item, cls
+
+    def test_out_of_a_folder_beside_the_app_left_half(self):
+        """Vini: out of a folder, put right beside the app he wants -- its
+        left half: before it."""
+        mine, other, marked, cls = self._drag_out_to(0.15)
+        self.assertEqual(mine + 1, other)
+        self.assertEqual(cls, ["drop-before"])
+
+    def test_out_of_a_folder_beside_the_app_right_half(self):
+        mine, other, marked, cls = self._drag_out_to(0.85)
+        self.assertEqual(other + 1, mine)                          # right after it
+        self.assertEqual(cls, ["drop-after"])
+
     def test_dropped_back_in_the_folder_clicks_behind_close_it_again(self):
         self.pad.model.make_folder("calc", "files", "Work")
         self.pad.save()

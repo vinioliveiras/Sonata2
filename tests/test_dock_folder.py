@@ -606,6 +606,36 @@ class DockFolderTest(unittest.TestCase):
             self.assertTrue(d.folder_app_drag_begin(fkey, key, object()))
         return d
 
+    def _out_beside(self, side):
+        """The folder's first app dragged out and let go `side` of the Dock's
+        third other app (just beside its middle zone)."""
+        d, a, b, c = self.dock, *self.apps[:3]
+        fkey = d.make_folder([a, b])
+        settle()
+        self._drag_out(fkey, a)
+        settle(30)
+        x, y = self._centre(d.tiles[c])
+        size = d.tiles[c].get_width() if not d.vertical else d.tiles[c].get_height()
+        off = size * (D.FOLDER_ZONE + 0.1) * (1 if side == "right" else -1)
+        px, py = (x + off, y) if not d.vertical else (x, y + off)
+        d._drag_motion(None, px, py)
+        settle(30)
+        self.assertTrue(d._drag_drop(None, a, px, py))
+        d.folder_app_drag_end(fkey, a)
+        settle(30)
+        order = [t.key for t in d.app_tiles()]
+        return order.index(a), order.index(c), d.cfg["pinned"]
+
+    def test_out_of_a_folder_beside_an_app_after_it(self):
+        """Vini: out of a Dock folder, put beside the app he wants."""
+        mine, other, pins = self._out_beside("right")
+        self.assertEqual(mine, other + 1)
+        self.assertEqual(pins.index(self.apps[0]), pins.index(self.apps[2]) + 1)
+
+    def test_out_of_a_folder_beside_an_app_before_it(self):
+        mine, other, pins = self._out_beside("left")
+        self.assertEqual(mine + 1, other)
+
     def test_panel_apps_can_be_dragged(self):
         d, a, b = self.dock, *self.apps[:2]
         fkey = d.make_folder([a, b])

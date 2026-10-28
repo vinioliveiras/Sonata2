@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Apps and the Apps Menu: an app taken out of a folder goes right beside the app it's let go on -- over its left half before it, over its right half after it, the bar on that side showing where.
 - Dock folders: an app dragged out of a folder's panel can be put anywhere on the Dock -- the panel closed as the drag began and, on Wayland, the drag ended with it (the app fell back into its folder). The panel now goes invisible and lets the pointer through until the drag ends.
 - Apps and the Apps Menu: an app held out of its folder (Hidden too) moves only when let go -- meanwhile a bar beside a tile marks where it will go and nothing jumps; let go away from the grid, it stays in its folder.
 - Apps and the Apps Menu: an open folder follows its apps -- Hide takes the app out of it at once, Lock App shows its padlock there, and a folder left empty closes (it stayed as it was until opened again).

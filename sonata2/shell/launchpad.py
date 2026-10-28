@@ -289,6 +289,11 @@ class PageGrid(Gtk.Grid):
         centre = abs(x - cx) < w / self.cols * 0.22 and abs(y - cy) < h / self.rows * 0.22
         return r * self.cols + c, centre
 
+    def right_half(self, x) -> bool:
+        """The pointer is on the right of its cell: "after this one"."""
+        w = max(1, self.get_width()) / self.cols
+        return (x % w) >= w / 2
+
     def fill(self, widgets) -> None:
         for i in range(self.cols * self.rows):
             old = self.get_child_at(i % self.cols, i // self.cols)
@@ -1308,9 +1313,10 @@ class Launchpad(Gtk.ApplicationWindow):
             self._drag["target"].remove_css_class("folder-target")
             self._drag["target"] = None
 
-    def _mark_out(self, grid, index) -> None:
-        """Where an app held out of its folder will go: a bar beside that
-        tile (or after the last one). None: no mark."""
+    def _mark_out(self, grid, index, after=False) -> None:
+        """Where an app held out of its folder will go: a bar on the side of
+        the app it goes beside -- before page[index], or after it (after=True,
+        or past the last one). None: no mark."""
         d = self._drag
         old = d.pop("out_mark", None) if d else None
         if old is not None:
@@ -1322,8 +1328,9 @@ class Launchpad(Gtk.ApplicationWindow):
         page = shown[grid.index] if grid.index < len(shown) else []
         if not page:
             return
-        after = index >= len(page)
-        w = self._item_widget(page[-1] if after else page[index])
+        if index >= len(page):
+            index, after = len(page) - 1, True
+        w = self._item_widget(page[index])
         w.add_css_class("drop-after" if after else "drop-before")
         d["out_mark"] = w
 
@@ -1371,10 +1378,14 @@ class Launchpad(Gtk.ApplicationWindow):
         self._clear_target()
         # held out of its folder: only marked -- it goes there when let go
         # (Vini: it moved as soon as it left the folder, the grid jumping)
+        # (beside the app under it, Vini: its left half before it, its right
+        # half after it)
         if d["folder"] is not None:
-            if d.get("out") != (grid.index, index):
-                d["out"] = (grid.index, index)
-                self._mark_out(grid, index)
+            right = target is not None and grid.right_half(x)
+            out = (grid.index, min(index + (1 if right else 0), len(page)))
+            if d.get("out") != out:
+                d["out"] = out
+                self._mark_out(grid, index, after=right)
             return Gdk.DragAction.MOVE
         # reorder live, after a short pause over the same slot
         want = (grid.index, index)
