@@ -7,6 +7,7 @@ import unittest
 os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp()
 os.environ["GDK_BACKEND"] = "x11"
 
+from tests import fake_apps  # noqa: F401,E402  (installed apps for the Dock / Launchpad)
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
@@ -142,7 +143,8 @@ class LaunchpadTest(unittest.TestCase):
         title.set_text("A Much Longer Folder Name")
         title.stop_editing(True)
         settle(300)
-        self.assertLessEqual(abs(centre() - mid), 1)
+        # (measured again: a longer name may widen the box it's centred in)
+        self.assertLessEqual(abs(centre() - round(title.get_parent().get_width() / 2)), 1)
         labels = []
 
         def walk(w):

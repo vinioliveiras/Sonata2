@@ -10,6 +10,7 @@ from unittest import mock
 os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp()
 os.environ["GDK_BACKEND"] = "x11"
 
+from tests import fake_apps  # noqa: F401,E402  (installed apps for the Dock / Launchpad)
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
