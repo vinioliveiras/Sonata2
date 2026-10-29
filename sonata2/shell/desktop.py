@@ -74,7 +74,7 @@ class DesktopItem(Gtk.Box):
         else:
             set_icon(self.img, info)
         self.append(icon_with_badge(self.img))
-        show_badge(self.img, info)
+        show_badge(self.img, info, mine=True)          # the Desktop is the person's, wherever it is
         self.lbl = Gtk.Label(label=self.app.get_display_name() if self.app else info.get_display_name(), wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR,
                              lines=2, ellipsize=Pango.EllipsizeMode.MIDDLE, justify=Gtk.Justification.CENTER,
                              max_width_chars=13, halign=Gtk.Align.CENTER, valign=Gtk.Align.START)

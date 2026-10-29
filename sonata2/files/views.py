@@ -183,11 +183,12 @@ def icon_with_badge(image: Gtk.Image) -> Gtk.Overlay:
     return over
 
 
-def show_badge(image: Gtk.Image, info) -> None:
+def show_badge(image: Gtk.Image, info, mine=None) -> None:
+    """mine: see ops.is_shortcut (the Desktop's links are all the person's)."""
     from .ops import is_shortcut
     badge = getattr(image, "badge", None)
     if badge is not None:
-        badge.set_visible(is_shortcut(info))
+        badge.set_visible(is_shortcut(info, mine))
 
 
 def _vault_closed(info) -> bool:

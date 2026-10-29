@@ -9,6 +9,8 @@
   pointer with Restore Defaults. Apps that read the pointer only when they
   start pick it up at the next login.
 
+### Fixes
+- Files and the Desktop: the shortcut arrow no longer shows on apps installed with Flatpak, Nix, Snap and others (their entries are links only because of how they were installed) nor on other links of the system or of hidden folders; shortcuts made with Create Shortcut, in your folders, on the Desktop or on a plugged-in disk, keep it.
 - Alt+Tab: every app keeps the same tile size when selected -- a long app name or window title made its tile wider; the name under the icon now fits the icon's width and ends in "..." when longer.
 
 ## 0.21.0-alpha -- 2026-10-28
