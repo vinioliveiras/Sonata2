@@ -33,6 +33,8 @@ headerbar .traffic { margin-left: %(tl_hb_left)s; margin-top: %(tl_hb_top)s; }  
    container left */
 .traffic.traffic-right { margin-left: 0; margin-right: %(tl_margin_left)s; }
 headerbar .traffic.traffic-right { margin-left: 0; margin-right: %(tl_hb_left)s; }
+/* the dots to reorder (Settings > Appearance > Button order): in a row, not a title bar */
+.traffic.traffic-order { margin: 0; }
 /* The dots are the same pictures pixdecor draws on other apps' title bars
    (tools/gen-decor.py), so every window looks and hovers alike: the glyph
    fades in on the button under the pointer. */
@@ -436,20 +438,32 @@ class _Light(Gtk.Button):
         return -left <= x < self.get_width() + right and -top <= y < self.get_height() + r["below"]
 
 
+def buttons_order() -> tuple:
+    """The buttons from the window's edge inwards (Settings > Appearance >
+    Button order): close, minimize, maximize unless the user moved them."""
+    from . import tokens
+    return tokens.user_buttons_order()
+
+
+# a button's name (tokens.FRAME["buttons"]) -> its dot's CSS class
+DOT_CLASSES = {"close": "tl-close", "minimize": "tl-min", "maximize": "tl-zoom"}
+
+
 def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
     """Close / minimize / zoom as macOS-style coloured dots. on_zoom=None greys the
-    green one out (fixed-size windows, like System Settings). On the right
-    (Settings > Appearance), mirrored: close at the window's edge."""
+    green one out (fixed-size windows, like System Settings). In the order
+    Settings > Appearance > Button order says, from the window's edge; on the
+    right, mirrored: the first one at the window's edge."""
     box = Gtk.Box(css_classes=["traffic"], valign=Gtk.Align.START)
-    dots = (("tl-close", _("Close"), on_close),
-            ("tl-min", _("Minimize"), on_minimize),
-            ("tl-zoom", _("Zoom") if on_zoom else None, on_zoom))
+    tips = {"close": _("Close"), "minimize": _("Minimize"), "maximize": _("Zoom") if on_zoom else None}
+    calls = {"close": on_close, "minimize": on_minimize, "maximize": on_zoom}
+    dots = tuple((DOT_CLASSES[n], tips[n], calls[n]) for n in buttons_order())
     if buttons_side() == "right":
         dots = tuple(reversed(dots))
         box.add_css_class("traffic-right")
     right = buttons_side() == "right"
     for i, (css, tip, cb) in enumerate(dots):
-        edge = (right and i == len(dots) - 1) or (not right and i == 0)    # close, at the window's edge
+        edge = (right and i == len(dots) - 1) or (not right and i == 0)    # the first one, at the window's edge
         b = _Light("right" if right and edge else "left" if edge else None, tooltip_text=tip, css_classes=[css],
                    valign=Gtk.Align.CENTER, focus_on_click=False, can_focus=False)
         if cb:
@@ -460,6 +474,69 @@ def traffic_lights(on_close, on_minimize, on_zoom=None) -> Gtk.Box:
         box.append(b)
     return box
 
+
+
+def order_lights(order, right: bool, on_change) -> Gtk.Box:
+    """The three window buttons to reorder (Settings > Appearance > Button
+    order, Vini): shown as windows show them -- `order` from the edge
+    inwards, mirrored when `right` -- and dragged to another place in the
+    row. on_change(new_order) gets the new order, from the edge inwards.
+    Only a picture of the buttons: they close, minimize and zoom nothing."""
+    from gi.repository import Gdk, GObject
+    from . import tokens
+    order = tokens.buttons_order(order)
+    screen = list(reversed(order)) if right else list(order)       # left to right, as drawn
+    box = Gtk.Box(css_classes=["traffic", "traffic-order"], valign=Gtk.Align.CENTER, halign=Gtk.Align.CENTER)
+    box.order = order
+    tips = {"close": _("Close"), "minimize": _("Minimize"), "maximize": _("Zoom")}
+
+    def move(name, index) -> bool:
+        """`name` to the `index`-th place of the row (left to right)."""
+        if name not in screen:
+            return False
+        names = [n for n in screen if n != name]
+        names.insert(max(0, min(index, len(names))), name)
+        new = tuple(reversed(names)) if right else tuple(names)
+        if new != box.order:
+            on_change(new)
+        return True
+
+    def index_at(x) -> int:
+        """Where a dot dropped at `x` goes: after every other dot whose
+        centre is left of it."""
+        i, c = 0, box.get_first_child()
+        while c is not None:
+            ok, b = c.compute_bounds(box)
+            if ok and b.get_x() + b.get_width() / 2 < x:
+                i += 1
+            c = c.get_next_sibling()
+        return i
+
+    def dropped(_t, value, x, _y) -> bool:
+        name = str(value)
+        if name not in screen:
+            return False
+        i = index_at(x)
+        if screen.index(name) < i:          # (counted itself among the dots on its left)
+            i -= 1
+        return move(name, i)
+
+    for name in screen:
+        b = Gtk.Button(css_classes=[DOT_CLASSES[name]], tooltip_text=tips[name], valign=Gtk.Align.CENTER,
+                       focus_on_click=False, can_focus=False)
+        b.set_cursor_from_name("grab")
+        b.button_name = name
+        src = Gtk.DragSource(actions=Gdk.DragAction.MOVE)
+        src.connect("prepare", lambda _s, _x, _y, n=name: Gdk.ContentProvider.new_for_value(n))
+        src.connect("drag-begin", lambda s, _d, w=b: s.set_icon(Gtk.WidgetPaintable.new(w),
+                                                               w.get_width() // 2, w.get_height() // 2))
+        b.add_controller(src)
+        box.append(b)
+    target = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
+    target.connect("drop", dropped)
+    box.add_controller(target)
+    box.move, box.dropped = move, dropped            # (tests)
+    return box
 
 
 def close_button(on_close) -> Gtk.Box:
@@ -481,8 +558,8 @@ def has_window_buttons(widget) -> bool:
     stack = [widget] if isinstance(widget, Gtk.Widget) else []
     while stack:
         w = stack.pop()
-        if "traffic" in w.get_css_classes():
-            return True
+        if "traffic" in w.get_css_classes() and "traffic-order" not in w.get_css_classes():
+            return True                  # (Button order's picture of them isn't a window's own)
         c = w.get_first_child()
         while c is not None:
             stack.append(c)

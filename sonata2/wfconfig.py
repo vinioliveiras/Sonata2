@@ -100,9 +100,10 @@ def frame_options(frame: dict) -> list:
             ("pixdecor", "shadow_radius", str(frame["shadow_radius"])),
             ("pixdecor", "shadow_color", "\\" + frame["shadow_color"]),
             ("sonata-corners", "radius", str(frame["radius"])),
-            # Wayfire's own bar keeps its buttons on the right: close at the edge
+            # Wayfire's own bar keeps its buttons on the right: the outermost
+            # one (close, unless Button order says otherwise) at the edge
             ("decoration", "button_order", " ".join(reversed(names)) if side == "right" else
-             " ".join([n for n in names if n != "close"] + ["close"])),
+             " ".join(names[1:] + names[:1])),
             ("decoration", "title_height", str(frame["fallback_title_h"])),
             ("decoration", "title_halign", frame["title_align"]),
             ("decoration", "font", frame["fallback_font"])]

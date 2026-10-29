@@ -380,7 +380,7 @@ _buttons_seen = None
 
 
 def on_buttons_change(callback, owner=None):
-    """`callback()` when the buttons' side or look changes in appearance.json
+    """`callback()` when the buttons' side, order or look changes in appearance.json
     (held like on_change's)."""
     if getattr(callback, "__self__", None) is not None:
         handle = weakref.WeakMethod(callback)
@@ -401,7 +401,8 @@ def _buttons_sig():
         a = config.load("appearance", APPEARANCE_DEFAULTS) or {}       # (load keeps only known keys)
     except Exception:
         return None
-    return (a.get("buttons_side"), a.get("buttons_style"), json.dumps(a.get("buttons_colors"), sort_keys=True))
+    return (a.get("buttons_side"), json.dumps(a.get("buttons_order")), a.get("buttons_style"),
+            json.dumps(a.get("buttons_colors"), sort_keys=True))
 
 
 def _buttons_changed() -> None:

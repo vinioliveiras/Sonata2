@@ -395,7 +395,7 @@ def install_row(title, subtitle, command, ready=None, on_ready=None, label=None,
 
 
 def apply_buttons_side() -> None:
-    """The window buttons' side (appearance.json) for everything drawn outside
+    """The window buttons' side and order (appearance.json) for everything drawn outside
     Sonata's own windows: Wayfire's title bars (pixdecor, decoration), GNOME's
     button-layout (GTK 3/4 apps), libadwaita apps' style (adwstyle)."""
     from .. import prefs, titlebars, wfconfig
@@ -2955,6 +2955,7 @@ class Settings(Adw.ApplicationWindow):
         bars.add(combo_row(_("Window buttons"), [("left", _("Left")), ("right", _("Right"))],
                            app.get("buttons_side", "left"), self._set_buttons_side,
                            subtitle=_("Where close, minimize and zoom sit on every window")))
+        bars.add(self._button_order_row())
         self._button_colour_rows(bars, app)
         from ..ui import tokens
         lo, hi = tokens.BUTTON_SIZE_RANGE
@@ -2995,7 +2996,7 @@ class Settings(Adw.ApplicationWindow):
     # what Reset Appearance puts back (Vini: the theme's defaults); light/dark is
     # the system's setting and stays
     APPEARANCE_RESET = ("accent", "background", "theme", "icon_theme", "flatpak_theme", "system_titlebars",
-                        "glass_titlebars", "glass", "radius", "button_size", "buttons_side",
+                        "glass_titlebars", "glass", "radius", "button_size", "buttons_side", "buttons_order",
                         "buttons_style", "buttons_colors",
                         "always_show_tabs")
 
@@ -3073,6 +3074,48 @@ class Settings(Adw.ApplicationWindow):
         button-layout; Sonata's apps place theirs when their windows open."""
         self._save("appearance", "buttons_side", side)
         self._place_lights()                           # Vini: Settings itself didn't move them
+        self._fill_button_order()                      # the order's picture, mirrored too
+        system.run_async(apply_buttons_side, None)
+        self.toast(_("Other open windows pick it up when they open again"))
+
+    def _button_order_row(self) -> Adw.ActionRow:
+        """Settings > Appearance > Button order (Vini): the three buttons as
+        windows show them, dragged to another place; Use Default puts back
+        macOS's (close, minimize, zoom from the edge)."""
+        from ..ui import tokens
+        row = Adw.ActionRow(title=_("Button order"), subtitle=_("Drag the buttons to change their order on every window"))
+        self.button_order_slot = Gtk.Box(valign=Gtk.Align.CENTER, margin_end=6)
+        row.add_suffix(self.button_order_slot)
+        self.button_order_default = ui.controls.push_button(
+            _("Use Default"), lambda: self._set_buttons_order(tokens.FRAME["buttons"]), valign=Gtk.Align.CENTER)
+        row.add_suffix(self.button_order_default)
+        self.button_order_row, self.button_order_dots = row, None
+        self._fill_button_order()
+        return row
+
+    def _fill_button_order(self) -> None:
+        """The Button order row's dots as they are now (its order and side)."""
+        from ..ui import tokens
+        slot = getattr(self, "button_order_slot", None)
+        if slot is None:
+            return
+        if self.button_order_dots is not None:
+            slot.remove(self.button_order_dots)
+        order = ui.window.buttons_order()
+        self.button_order_dots = ui.window.order_lights(order, ui.window.buttons_side() == "right",
+                                                        self._set_buttons_order)
+        slot.append(self.button_order_dots)
+        self.button_order_default.set_sensitive(order != tuple(tokens.FRAME["buttons"]))
+
+    def _set_buttons_order(self, order) -> None:
+        """Button order: saved (from the window's edge inwards), then like
+        Window buttons -- Settings' own buttons, the title bars Wayfire draws,
+        GTK apps' button-layout; open Sonata windows follow appearance.json."""
+        from ..ui import tokens
+        self._save("appearance", "buttons_order", list(tokens.buttons_order(order)))
+        self._place_lights()
+        # (after the drop: the dots that were dragged are still in their signal)
+        GLib.idle_add(lambda: (self._fill_button_order(), False)[1])
         system.run_async(apply_buttons_side, None)
         self.toast(_("Other open windows pick it up when they open again"))
 

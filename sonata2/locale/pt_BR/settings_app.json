@@ -822,5 +822,7 @@
  "Pointer theme added": "Tema de ponteiro adicionado",
  "From a downloaded file, or from a folder?": "De um arquivo baixado ou de uma pasta?",
  "Folder…": "Pasta…",
- "File…": "Arquivo…"
+ "File…": "Arquivo…",
+ "Button order": "Ordem dos botões",
+ "Drag the buttons to change their order on every window": "Arraste os botões para mudar a ordem deles em todas as janelas"
 }

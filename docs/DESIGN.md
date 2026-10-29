@@ -50,7 +50,7 @@ not new code. Selected in `~/.config/sonata2/appearance.json` (`theme`).
 | Sizes | `control_h` 22, `switch_w` 32, `switch_h` 18, `menu_min_w` 190 |
 | Motion | `t_press` 80 ms, `t_fast` 150 ms, `t_standard` 250 ms |
 | Spacing (layout code) | `SPACE`: xxs 2, xs 4, s 6, m 8, l 12, xl 16, xxl 20 |
-| Window frame | `FRAME`: corners + shadow (`radius` 10, `shadow_radius`, `shadow_color`), buttons (`buttons` order, `buttons_side` left/right, `dot` 12, `dot_gap` 8, `dot_left` 13, `dot_top` 14), title (`title_h` 52, `title_align`, `title_font`), Wayfire's own bars (`fallback_title_h`, `fallback_font`); `TL_COLORS`. `r_window`, `button_layout()` and the GSettings button layout / title font follow it |
+| Window frame | `FRAME`: corners + shadow (`radius` 10, `shadow_radius`, `shadow_color`), buttons (`buttons` order from the edge inwards, `buttons_side` left/right -- both the user's in `frame()`, `dot` 12, `dot_gap` 8, `dot_left` 13, `dot_top` 14), title (`title_h` 52, `title_align`, `title_font`), Wayfire's own bars (`fallback_title_h`, `fallback_font`); `TL_COLORS`. `r_window`, `button_layout()` and the GSettings button layout / title font follow it |
 
 **Window frame: one place.** Change `FRAME` (or `TL_COLORS`) and every window
 follows: Sonata's own (`ui/window.py`), the title bars Wayfire draws (pixdecor,
@@ -73,7 +73,8 @@ changing `dot` or the colours (a test fails until they match).
 | `ui/fmt.py` | Finder formats: sizes ("12 KB"), remaining time ("About a minute") | `fmt.size(n)`, `fmt.eta(s)` |
 | `ui/controls.py` | Text field (one line; `secret=True`: password with the peek eye), text area (rounded, grows with its text up to `max_height`, placeholder, optional trailing widget; Return submits, Shift+Return new line), round accent icon button | `text_field(text, placeholder, secret, on_activate, on_change)`, `TextArea(placeholder, trailing=round_button(icon, tip, cb), on_submit=cb)` |
 | `ui/fixed.py` | Fixed-width container (panels), centred reading column of at most N px (chat, documents) | `FixedWidth(child, 320)`, `MaxWidth(child, 720)` |
-| `ui/window.py` | Traffic lights (close / minimize / zoom, zoom greyed for fixed windows) | `traffic_lights(close, minimize, zoom=None)` |
+| `ui/window.py` | Traffic lights (close / minimize / zoom, zoom greyed for fixed windows), in the user's side and order (`tokens.frame()`) | `traffic_lights(close, minimize, zoom=None)` |
+| `ui/window.py` | Button order picker: the three dots, dragged to another place (Settings > Appearance > Button order) | `order_lights(order, right, on_change)` |
 
 Shell components (Dock, Launchpad, ...) register their own CSS through
 `ui.register(template, key=..., **geometry)` using the same tokens.
