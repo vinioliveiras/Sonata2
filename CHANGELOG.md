@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### New
+- Settings > Mouse & Trackpad > Pointer: pick any pointer theme installed
+  on the computer, add one from a downloaded file (.tar.gz, .tar.xz, .zip)
+  or a folder, choose its size (up to 64 px), and go back to Sonata's
+  pointer with Restore Defaults. Apps that read the pointer only when they
+  start pick it up at the next login.
+
 - Alt+Tab: every app keeps the same tile size when selected -- a long app name or window title made its tile wider; the name under the icon now fits the icon's width and ends in "..." when longer.
 
 ## 0.21.0-alpha -- 2026-10-28

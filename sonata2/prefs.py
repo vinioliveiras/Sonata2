@@ -305,7 +305,18 @@ def session_env() -> str:
         set(I, "gtk-theme", theme)
     # other apps take the GTK theme from the settings (portal / Sonata's dconf
     # layer) -- never from a GTK_THEME variable, which breaks libadwaita apps
-    return "unset GTK_THEME\n"
+    out = "unset GTK_THEME\n"
+    # the pointer picked in Settings (cursors.py) for the apps that only read
+    # these at start (Qt, X11, Electron, SDL games...); session-env.sh sets
+    # Sonata's own before this
+    import shlex
+    theme = get(I, "cursor-theme") or "Sonata-Cursors"
+    try:
+        px = int(get(I, "cursor-size") or 24)
+    except ValueError:
+        px = 24
+    out += f"export XCURSOR_THEME={shlex.quote(theme)} XCURSOR_SIZE={px}\n"
+    return out
 
 
 if __name__ == "__main__":
