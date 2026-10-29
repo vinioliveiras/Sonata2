@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.22.0-alpha -- 2026-10-29
+
+Pick your own mouse pointer -- any theme installed, or one downloaded --
+and its size, with Sonata's always a click away. Put the close, minimize
+and zoom buttons in the order you like, on every window. Apps installed
+with Flatpak, Nix or Snap no longer look like shortcuts, and Alt+Tab keeps
+every tile the same size.
+
 ### New
 - Settings > Mouse & Trackpad > Pointer: pick any pointer theme installed
   on the computer, add one from a downloaded file (.tar.gz, .tar.xz, .zip)
