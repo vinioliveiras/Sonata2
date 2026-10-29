@@ -395,7 +395,7 @@ def install_row(title, subtitle, command, ready=None, on_ready=None, label=None,
 
 
 def apply_buttons_side() -> None:
-    """The window buttons' side (appearance.json) for everything drawn outside
+    """The window buttons' side and order (appearance.json) for everything drawn outside
     Sonata's own windows: Wayfire's title bars (pixdecor, decoration), GNOME's
     button-layout (GTK 3/4 apps), libadwaita apps' style (adwstyle)."""
     from .. import prefs, titlebars, wfconfig
@@ -1732,7 +1732,91 @@ class Settings(Adw.ApplicationWindow):
         g.add(combo_row(_("Primary mouse button"), [(False, _("Left")), (True, _("Right"))],
                         get("input", "left_handed_mode", "false") == "true",
                         lambda v: self._wf("left_handed_mode", v)))
-        return [g]
+        return [g, self._pointer_group()]
+
+    # -- the pointer (cursors.py): its look, a downloaded one, its size ------------------------
+    def _pointer_size_row(self):
+        from .. import cursors
+        labels = {24: _("Normal"), 32: _("Large"), 48: _("Larger"), 64: _("Largest")}
+        opts = [(px, labels[px]) for px in cursors.SIZES]
+        return combo_row(_("Pointer size"), opts, nearest(opts, cursors.size()),
+                         lambda v: system.run_async(cursors.apply, lambda _r: self._pointer_changed(), None, v))
+
+    def _pointer_group(self):
+        from .. import cursors
+        g = group(_("Pointer"))
+        found = cursors.themes()
+        now = cursors.current()
+        if now not in [n for n, _l in found]:
+            found.append((now, now))                       # set, but its folder is gone: still shown
+        opts = [(n, "Sonata" if n == cursors.DEFAULT else label) for n, label in found]      # (a name)
+        g.add(combo_row(_("Pointer style"), opts, now,
+                        lambda v: system.run_async(cursors.apply, lambda _r: self._pointer_changed(), v),
+                        subtitle=_("Pointer themes installed on this computer")))
+        g.add(self._pointer_size_row())
+        add = Adw.ActionRow(title=_("Add a pointer theme"),
+                            subtitle=_("A downloaded file (.tar.gz, .tar.xz or .zip) or a folder"))
+        btn = ui.controls.push_button(_("Add…"), valign=Gtk.Align.CENTER)
+        btn.connect("clicked", lambda _b: self._add_pointer())
+        add.add_suffix(btn)
+        g.add(add)
+        back = Adw.ActionRow(title=_("Sonata's pointer"), subtitle=_("Its own look at the normal size"))
+        rb = ui.controls.push_button(_("Restore Defaults"), valign=Gtk.Align.CENTER)
+        rb.set_sensitive(now != cursors.DEFAULT or cursors.size() != cursors.DEFAULT_SIZE)
+        rb.connect("clicked", lambda _b: system.run_async(cursors.reset, lambda _r: self._pointer_changed()))
+        back.add_suffix(rb)
+        g.add(back)
+        return g
+
+    def _pointer_changed(self) -> None:
+        """Both places that show the pointer's settings, again."""
+        for sid in ("mouse", "accessibility"):
+            if sid in self.pages:
+                self.rebuild_page(sid)
+
+    def _add_pointer(self) -> None:
+        from .. import cursors
+        filt = Gtk.FileFilter(name=_("Pointer themes"))
+        for ext in cursors.ARCHIVES:
+            filt.add_pattern("*" + ext)
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        filters.append(filt)
+        dlg = Gtk.FileDialog(title=_("Add a Pointer Theme"), modal=True, filters=filters, default_filter=filt)
+
+        def added(res):
+            names, err = res
+            if not names:
+                ui.dialog.alert(_("No pointer theme was found there."),
+                                _("A pointer theme is a folder with a “cursors” folder inside, or a file that "
+                                  "holds one."), [("ok", _("OK"), "default")], parent=self)
+                return
+            cursors.apply(names[0])
+            self._pointer_changed()
+            self.toast(_("Pointer theme added"))
+
+        def work(path):
+            try:
+                return cursors.add(path), None
+            except (cursors.NotATheme, OSError) as e:
+                return [], e
+
+        def chosen(d, res, folder=False):
+            try:
+                f = d.select_folder_finish(res) if folder else d.open_finish(res)
+            except GLib.Error:
+                return
+            path = f.get_path() if f else None
+            if path:
+                system.run_async(work, added, path)
+
+        def ask(rid):
+            if rid == "file":
+                dlg.open(self, None, chosen)
+            elif rid == "folder":
+                dlg.select_folder(self, None, lambda d, r: chosen(d, r, True))
+        ui.dialog.alert(_("Add a pointer theme"), _("From a downloaded file, or from a folder?"),
+                        [("cancel", _("Cancel"), ""), ("folder", _("Folder…"), ""), ("file", _("File…"), "default")],
+                        ask, parent=self)
 
     def _page_apps(self):
         from .apps_page import AppsPage
@@ -2724,14 +2808,7 @@ class Settings(Adw.ApplicationWindow):
                            min((1.0, 1.15, 1.3), key=lambda v: abs(v - scale)),
                            lambda v: system.set_gsetting(I, "text-scaling-factor", str(v))))
         ptr = group(_("Pointer"))
-        try:
-            size = int(system.gsetting(I, "cursor-size") or 24)
-        except ValueError:
-            size = 24
-        ptr.add(combo_row(_("Pointer size"), [(24, _("Normal")), (32, _("Large")), (48, _("Larger"))],
-                          min((24, 32, 48), key=lambda v: abs(v - size)),
-                          lambda v: (system.set_gsetting(I, "cursor-size", str(v)),
-                                     system.run_async(system.wayfire_set, None, "input", "cursor_size", v))))
+        ptr.add(self._pointer_size_row())          # the same as Mouse & Trackpad's (cursors.py)
         return [disp, ptr]
 
     # -- Sonata sections ------------------------------------------------------------
@@ -2878,6 +2955,7 @@ class Settings(Adw.ApplicationWindow):
         bars.add(combo_row(_("Window buttons"), [("left", _("Left")), ("right", _("Right"))],
                            app.get("buttons_side", "left"), self._set_buttons_side,
                            subtitle=_("Where close, minimize and zoom sit on every window")))
+        bars.add(self._button_order_row())
         self._button_colour_rows(bars, app)
         from ..ui import tokens
         lo, hi = tokens.BUTTON_SIZE_RANGE
@@ -2918,7 +2996,7 @@ class Settings(Adw.ApplicationWindow):
     # what Reset Appearance puts back (Vini: the theme's defaults); light/dark is
     # the system's setting and stays
     APPEARANCE_RESET = ("accent", "background", "theme", "icon_theme", "flatpak_theme", "system_titlebars",
-                        "glass_titlebars", "glass", "radius", "button_size", "buttons_side",
+                        "glass_titlebars", "glass", "radius", "button_size", "buttons_side", "buttons_order",
                         "buttons_style", "buttons_colors",
                         "always_show_tabs")
 
@@ -2996,6 +3074,48 @@ class Settings(Adw.ApplicationWindow):
         button-layout; Sonata's apps place theirs when their windows open."""
         self._save("appearance", "buttons_side", side)
         self._place_lights()                           # Vini: Settings itself didn't move them
+        self._fill_button_order()                      # the order's picture, mirrored too
+        system.run_async(apply_buttons_side, None)
+        self.toast(_("Other open windows pick it up when they open again"))
+
+    def _button_order_row(self) -> Adw.ActionRow:
+        """Settings > Appearance > Button order (Vini): the three buttons as
+        windows show them, dragged to another place; Use Default puts back
+        macOS's (close, minimize, zoom from the edge)."""
+        from ..ui import tokens
+        row = Adw.ActionRow(title=_("Button order"), subtitle=_("Drag the buttons to change their order on every window"))
+        self.button_order_slot = Gtk.Box(valign=Gtk.Align.CENTER, margin_end=6)
+        row.add_suffix(self.button_order_slot)
+        self.button_order_default = ui.controls.push_button(
+            _("Use Default"), lambda: self._set_buttons_order(tokens.FRAME["buttons"]), valign=Gtk.Align.CENTER)
+        row.add_suffix(self.button_order_default)
+        self.button_order_row, self.button_order_dots = row, None
+        self._fill_button_order()
+        return row
+
+    def _fill_button_order(self) -> None:
+        """The Button order row's dots as they are now (its order and side)."""
+        from ..ui import tokens
+        slot = getattr(self, "button_order_slot", None)
+        if slot is None:
+            return
+        if self.button_order_dots is not None:
+            slot.remove(self.button_order_dots)
+        order = ui.window.buttons_order()
+        self.button_order_dots = ui.window.order_lights(order, ui.window.buttons_side() == "right",
+                                                        self._set_buttons_order)
+        slot.append(self.button_order_dots)
+        self.button_order_default.set_sensitive(order != tuple(tokens.FRAME["buttons"]))
+
+    def _set_buttons_order(self, order) -> None:
+        """Button order: saved (from the window's edge inwards), then like
+        Window buttons -- Settings' own buttons, the title bars Wayfire draws,
+        GTK apps' button-layout; open Sonata windows follow appearance.json."""
+        from ..ui import tokens
+        self._save("appearance", "buttons_order", list(tokens.buttons_order(order)))
+        self._place_lights()
+        # (after the drop: the dots that were dragged are still in their signal)
+        GLib.idle_add(lambda: (self._fill_button_order(), False)[1])
         system.run_async(apply_buttons_side, None)
         self.toast(_("Other open windows pick it up when they open again"))
 

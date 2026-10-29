@@ -39,6 +39,8 @@ def dots(w):
     out, stack = [], [w]
     while stack:
         x = stack.pop()
+        if x.has_css_class("traffic-order"):
+            continue                    # Settings > Appearance > Button order: a picture, not the window's
         if x.has_css_class("tl-close") and x.get_mapped():
             out.append(x)
         c = x.get_first_child()

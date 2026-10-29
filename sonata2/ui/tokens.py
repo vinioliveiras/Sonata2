@@ -160,7 +160,7 @@ FRAME = {
     "shadow": "0 1px 4px rgba(0, 0, 0, 0.14)",
     "shadow_backdrop": "0 1px 3px rgba(0, 0, 0, 0.08)",
     # window buttons
-    "buttons": ("close", "minimize", "maximize"),   # from the window's edge inwards
+    "buttons": ("close", "minimize", "maximize"),   # from the window's edge inwards (the user's: frame())
     "buttons_side": "left",             # "left" (macOS) / "right" (Windows)
     "dot": 12,                          # button size (traffic light diameter)
     "dot_gap": 8,                       # space between two buttons
@@ -444,6 +444,37 @@ def user_buttons_side() -> str:
     return side if side in ("left", "right") else FRAME["buttons_side"]
 
 
+def buttons_order(value) -> tuple:
+    """A stored order of the window buttons, from the window's edge inwards
+    (Settings > Appearance > Button order, Vini): close, minimize and
+    maximize, each once. Anything else -- a missing name, a repeat, a
+    stranger -- is FRAME's order (macOS)."""
+    default = tuple(FRAME["buttons"])
+    if not isinstance(value, (list, tuple)) or len(value) != len(default):
+        return default
+    order = tuple(value)
+    return order if sorted(map(str, order)) == sorted(default) else default
+
+
+def user_buttons_order() -> tuple:
+    """The window buttons' order the user picked (appearance.json
+    "buttons_order", from the edge inwards; the same order mirrors on the
+    right). No GTK: wayfire-config.sh and prefs.py read it too."""
+    import json
+    import os
+    try:
+        from .. import config
+        folder = config.CONFIG_DIR
+    except ImportError:                        # loaded on its own (wayfire-config.sh, prefs.py)
+        folder = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "sonata2")
+    try:
+        with open(os.path.join(folder, "appearance.json"), encoding="utf-8") as f:
+            order = (json.load(f) or {}).get("buttons_order")
+    except (OSError, ValueError, AttributeError):
+        order = None
+    return buttons_order(order)
+
+
 def user_button_size() -> int:
     """The window buttons' size in effect (appearance.json "button_size";
     FRAME["dot"] when not picked)."""
@@ -468,14 +499,14 @@ def corner_extra(radius: float, designed: float) -> float:
 
 
 def frame() -> dict:
-    """FRAME with the user's window radius, buttons side and size. The
+    """FRAME with the user's window radius, buttons side, order and size. The
     buttons keep their room from the edges whatever their size (a bigger
     one grows inwards; the gap between them grows with it) and move in with
     a rounder corner (corner_extra)."""
     r = user_radii()["window"]
     size = user_button_size()
     move = corner_extra(r, FRAME["radius"]) + (size - FRAME["dot"]) / 2
-    return dict(FRAME, radius=r, buttons_side=user_buttons_side(), dot=size,
+    return dict(FRAME, radius=r, buttons_side=user_buttons_side(), buttons=user_buttons_order(), dot=size,
                 dot_gap=round(FRAME["dot_gap"] * size / FRAME["dot"]),
                 dot_left=FRAME["dot_left"] + move, dot_top=FRAME["dot_top"] + move)
 

@@ -807,5 +807,22 @@
  "Even with maximized windows; still paused in Overview, in full screen and when locked": "Mesmo com janelas maximizadas; ainda pausa na Visão Geral, em tela cheia e com a tela bloqueada",
  "Capture, audio and performance over the game, like the Xbox Game Bar.": "Captura, áudio e desempenho por cima do jogo, como a Xbox Game Bar.",
  "Xbox / PS button opens the Game Bar": "Botão Xbox / PS abre a Barra de Jogo",
- "In games too. Off: the button shows the Overview while desktop control is on": "Também nos jogos. Desligado: o botão mostra a Visão Geral quando o Controle da Mesa está ligado"
+ "In games too. Off: the button shows the Overview while desktop control is on": "Também nos jogos. Desligado: o botão mostra a Visão Geral quando o Controle da Mesa está ligado",
+ "Largest": "Máximo",
+ "Pointer style": "Estilo do ponteiro",
+ "Pointer themes installed on this computer": "Temas de ponteiro instalados neste computador",
+ "Add a pointer theme": "Adicionar um tema de ponteiro",
+ "A downloaded file (.tar.gz, .tar.xz or .zip) or a folder": "Um arquivo baixado (.tar.gz, .tar.xz ou .zip) ou uma pasta",
+ "Sonata's pointer": "Ponteiro do Sonata",
+ "Its own look at the normal size": "O visual próprio, no tamanho normal",
+ "Pointer themes": "Temas de ponteiro",
+ "Add a Pointer Theme": "Adicionar um Tema de Ponteiro",
+ "No pointer theme was found there.": "Nenhum tema de ponteiro foi encontrado aí.",
+ "A pointer theme is a folder with a “cursors” folder inside, or a file that holds one.": "Um tema de ponteiro é uma pasta com uma pasta “cursors” dentro, ou um arquivo que contenha uma.",
+ "Pointer theme added": "Tema de ponteiro adicionado",
+ "From a downloaded file, or from a folder?": "De um arquivo baixado ou de uma pasta?",
+ "Folder…": "Pasta…",
+ "File…": "Arquivo…",
+ "Button order": "Ordem dos botões",
+ "Drag the buttons to change their order on every window": "Arraste os botões para mudar a ordem deles em todas as janelas"
 }

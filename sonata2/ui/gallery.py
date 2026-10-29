@@ -69,6 +69,8 @@ class GalleryWindow(Gtk.ApplicationWindow):
                         Gtk.Label(label="(disk capacity, red above 90 %)", css_classes=["gallery-caption"])))
         col.append(_row("Traffic lights", window.traffic_lights(lambda: None, lambda: None),
                         Gtk.Label(label="(zoom disabled)", css_classes=["gallery-caption"])))
+        col.append(_row("Button order", window.order_lights(("close", "minimize", "maximize"), False, lambda o: None),
+                        Gtk.Label(label="(drag a dot to another place)", css_classes=["gallery-caption"])))
         self.set_child(col)
         self.connect("map", lambda *_: GLib.timeout_add(300, lambda: (self.tip.popup(), False)[1]))
 

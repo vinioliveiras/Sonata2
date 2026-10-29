@@ -83,8 +83,9 @@ def _data_uri(path: str) -> str:
 
 def window_css() -> str:
     """Steam's window buttons as Sonata's: round traffic lights (the same
-    pictures as every window's), close / minimize / maximize from the
-    window's edge inwards, on the user's side, at Sonata's place. Nothing
+    pictures as every window's), in the user's order from the window's edge
+    inwards (close / minimize / maximize unless Settings > Appearance >
+    Button order says otherwise), on the user's side, at Sonata's place. Nothing
     else in Steam changes."""
     from .ui import tokens
     f = tokens.frame()

@@ -106,9 +106,42 @@ def make_shortcuts(files, dest: Gio.File) -> list:
     return made
 
 
-def is_shortcut(info) -> bool:
-    """A link (a shortcut): its icon gets the arrow."""
-    return bool(info.has_attribute("standard::is-symlink") and info.get_is_symlink())
+def is_shortcut(info, mine=None) -> bool:
+    """A link a person would call a shortcut: its icon gets the arrow.
+
+    Vini: Flatpak, Nix, Snap... apps showed the arrow -- their entries are
+    links too, but only as part of how they were installed. So a link is a
+    shortcut where people keep their own things (what Create Shortcut makes,
+    like a Mac alias): the home folder outside its hidden folders, and disks
+    plugged in. Hidden folders (~/.local, ~/.nix-profile...), applications
+    folders and the system's folders hold installs, never shortcuts.
+    `mine`: True when the caller knows the place is the person's (the
+    Desktop); a link in an unknown place (no path, the Trash) is one."""
+    if not (info.has_attribute("standard::is-symlink") and info.get_is_symlink()):
+        return False
+    if mine is not None:
+        return mine
+    f = info.get_attribute_object("sonata::file") if info.has_attribute("sonata::file") else None
+    path = f.get_path() if f is not None else None
+    return True if not path else _persons_place(os.path.dirname(os.path.abspath(path)))
+
+
+def _persons_place(folder: str) -> bool:
+    """`folder` (where a link is) is one where people keep their own things.
+    Both spellings count: the folder as shown and resolved (Silverblue's
+    /home is a link to /var/home; a Documents linked to another disk)."""
+    from .. import apps
+    home = GLib.get_home_dir()
+    bases = (home, os.path.realpath(home), "/media", "/run/media", "/mnt")
+    real = os.path.realpath(folder)
+    if any(real == os.path.realpath(d) for d in apps.app_dirs()):
+        return False
+    for d in {folder, real}:
+        for base in bases:
+            rel = os.path.relpath(d, base)          # outside the base starts with "..": hidden too
+            if rel == "." or not any(p.startswith(".") for p in rel.split(os.sep)):
+                return True
+    return False
 
 
 def rename(f: Gio.File, new_name: str, on_done, on_error) -> None:
