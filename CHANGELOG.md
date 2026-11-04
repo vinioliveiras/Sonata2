@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Game Bar opens and closes at once, as fast as it can: no fading or sliding in and out, and it no longer waits for the game's picture before showing -- its panels show solid and turn to glass the moment the picture comes.
 - Control Center appears at once, without the panels' grow-in: its own work on opening is a few ms, and the 180 ms animation had the compositor blur the whole panel again on every frame.
 - Web apps: each Chromium-family browser installed is its own choice in the form's Engine pop-up -- Brave too, when it's there beside Chrome (only the first one found was offered). A Brave web app keeps its own profile and its Dock icon.
 - Notification Center: the calendar (Today) stays fixed at the top and the notifications scroll under it -- with many of them it used to sit at the end, out of sight.

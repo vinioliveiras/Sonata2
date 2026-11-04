@@ -80,7 +80,7 @@ class GlassTest(unittest.TestCase):
         shown = []
         with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc) as new:
             self.bar._frost_then(lambda: shown.append(1))
-            self.assertEqual(shown, [])                         # not before the picture: it'd be in it
+            self.assertEqual(shown, [1])                        # at once (grim already asked for the screen)
             spin(G.FROST_WAIT_MS + 350)
         return new, shown, proc
 
@@ -96,21 +96,30 @@ class GlassTest(unittest.TestCase):
         self.assertIsNotNone(self.bar.frost_tex)
         self.assertTrue(self.bar.root.has_css_class("frosted"))
 
-    def test_panels_wait_for_their_glass(self):
-        """Vini: the widgets opened solid, then turned to glass. The game dims
-        at once; the bar and widgets wait (a little) and pop in already in
-        glass."""
+    def test_game_bar_waited_and_animated_opening_and_closing(self):
+        """Vini: the Game Bar should open and close at once, as fast as it can.
+        It waited for the game's picture (up to 80 ms, then 220 ms more for
+        its panels) and faded / slid in and out. Now it shows the moment it's
+        asked, its panels solid until the glass comes -- at once, no fade --
+        and closing hides it at once."""
+        from sonata2.ui import theme
         proc = FakeProc(None)
         with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc):
             self.bar._frost_then(self.bar.present)
-            spin(G.FROST_WAIT_MS + 60)
-        self.assertTrue(self.bar.get_visible())                  # the dimming: at once
-        self.assertTrue(self.bar.root.has_css_class("waiting"))  # the panels: not yet
+            self.assertTrue(self.bar.get_visible())                   # no wait
+            spin(30)
+        self.assertFalse(self.bar.root.has_css_class("waiting"))     # the panels too
         proc.out = red_png()
         proc.done(proc, None)
         spin(50)
-        self.assertFalse(self.bar.root.has_css_class("waiting"))
-        self.assertEqual(self.bar.frost_alpha, 1.0)               # in glass from their first frame
+        self.assertEqual(self.bar.frost_alpha, 1.0)                  # the glass at once, no fade
+        css = theme._templates["gamebar"][0]
+        for name in ("gb-bar-in", "gb-bar-out", "gb-widget-in", "gb-widget-out", "gb-fade-in"):
+            self.assertNotIn(name, css)
+        self.assertEqual(G._close_ms(), 0)
+        self.bar.close_bar()
+        spin(20)
+        self.assertFalse(self.bar.get_visible())                     # closed at once
 
     def test_panels_shown_solid_if_the_picture_is_too_late(self):
         proc = FakeProc(None)
