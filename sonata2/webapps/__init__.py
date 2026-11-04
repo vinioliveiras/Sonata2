@@ -133,6 +133,18 @@ CHROMIUM_BROWSERS = (("google-chrome-stable", "Google Chrome"), ("google-chrome"
 BROWSER_KEYS = {"Google Chrome": "chrome", "Chromium": "chromium", "Brave": "brave",
                 "Microsoft Edge": "edge", "Vivaldi": "vivaldi"}
 BROWSER_ID_PREFIX = {"brave": "brave-"}
+# the same browsers as Flatpaks (Vini's Brave is one): run with `flatpak run`,
+# their profiles in the app's own folder (no access to the rest of home)
+CHROMIUM_FLATPAKS = (("com.google.Chrome", "Google Chrome"), ("org.chromium.Chromium", "Chromium"),
+                     ("com.brave.Browser", "Brave"), ("com.microsoft.Edge", "Microsoft Edge"),
+                     ("com.vivaldi.Vivaldi", "Vivaldi"))
+FLATPAK = "flatpak:"                 # a browser "path" that is a Flatpak: "flatpak:com.brave.Browser"
+FLATPAK_APPS = ("/var/lib/flatpak/app", "~/.local/share/flatpak/app")
+
+
+def _flatpak_installed(app_id: str) -> bool:
+    return shutil.which("flatpak") is not None and \
+        any(os.path.isdir(os.path.join(os.path.expanduser(d), app_id)) for d in FLATPAK_APPS)
 
 
 def chromium_browsers() -> list:
@@ -145,6 +157,10 @@ def chromium_browsers() -> list:
         if path and name not in seen:
             seen.add(name)
             found.append((path, name, BROWSER_KEYS[name]))
+    for fid, name in CHROMIUM_FLATPAKS:                    # (installed natively too: that one)
+        if name not in seen and _flatpak_installed(fid):
+            seen.add(name)
+            found.append((FLATPAK + fid, name, BROWSER_KEYS[name]))
     return found
 
 
@@ -191,7 +207,11 @@ def window_class(app: str, entry: dict) -> str:
 
 def profile_dir(app: str, entry: dict) -> str:
     """The browser's profile for this web app: one per browser (a Brave and a
-    Chrome profile in one folder would clash)."""
+    Chrome profile in one folder would clash). A Flatpak's is in its own
+    folder (~/.var/app/<id>): it can't reach the rest of home."""
+    b = chromium_browser(entry)
+    if b and b[0].startswith(FLATPAK):
+        return os.path.expanduser(f"~/.var/app/{b[0][len(FLATPAK):]}/data/sonata2-webapps/{app}")
     key = browser_key(entry)
     return os.path.join(data_dir(app), "chromium" if key in ("chrome", "chromium") else key)
 
@@ -231,6 +251,11 @@ def chromium_command(app: str, entry: dict, browser: str) -> list:
     no "unsupported command-line flag" bar over the page (Vini: WhatsApp),
     whatever flags reach the browser (the user's own, a launcher's, its
     own WebGPU)."""
+    if browser.startswith(FLATPAK):                        # (its flag files are inside the Flatpak)
+        start = ["flatpak", "run", browser[len(FLATPAK):]]
+        return start + [f"--user-data-dir={profile_dir(app, entry)}",
+                        "--no-first-run", "--no-default-browser-check", "--test-type", "--ozone-platform-hint=auto",
+                        "--window-size={},{}".format(*window_size(app)), f"--app={entry['url']}"]
     from .. import browsergpu
     start = browsergpu.web_app_command(app, browser)
     return [start[0], f"--user-data-dir={profile_dir(app, entry)}",
@@ -665,9 +690,16 @@ def run_chromium(app: str) -> int:
     def fds():
         os.dup2(to_r, 3)
         os.dup2(from_w, 4)
-    cmd = chromium_command(app, get(app), browser[0]) + ["--remote-debugging-pipe"]
+    # a Flatpak gets no pipe: `flatpak run` doesn't hand fds 3 and 4 into its
+    # sandbox, and a browser asked for a pipe it hasn't got won't start (its
+    # other windows then stay in it, not in the default browser)
+    flat = browser[0].startswith(FLATPAK)
+    cmd = chromium_command(app, get(app), browser[0]) + ([] if flat else ["--remote-debugging-pipe"])
     try:
-        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, pass_fds=(3, 4), preexec_fn=fds)
+        if flat:
+            proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL)
+        else:
+            proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, pass_fds=(3, 4), preexec_fn=fds)
     except OSError as e:
         print(f"sonata2 webapp: {e}", file=sys.stderr)
         return 1

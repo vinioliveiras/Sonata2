@@ -88,6 +88,21 @@ class BraveTest(unittest.TestCase):
             self.assertTrue(W.profile_dir("wabc", e).endswith("wabc/brave"))
             self.assertTrue(W.profile_dir("wabc", {**e, "browser": "chrome"}).endswith("wabc/chromium"))
 
+    def test_brave_flatpak_not_found(self):
+        """Vini's Brave is a Flatpak (com.brave.Browser): it wasn't offered at
+        all -- only browsers on PATH were. A Flatpak one is, run with
+        `flatpak run`, its profile in its own folder (it can't reach home)."""
+        with mock.patch.object(W.shutil, "which", side_effect={"flatpak": "/usr/bin/flatpak"}.get), \
+                mock.patch.object(W.os.path, "isdir", side_effect=lambda p: p.endswith("/com.brave.Browser")):
+            self.assertEqual(W.chromium_browsers(), [("flatpak:com.brave.Browser", "Brave", "brave")])
+            e = {"url": "https://web.whatsapp.com/", "engine": "chromium", "browser": "brave"}
+            cmd = W.chromium_command("wabc", e, "flatpak:com.brave.Browser")
+            self.assertEqual(cmd[:3], ["flatpak", "run", "com.brave.Browser"])
+            self.assertIn("--app=https://web.whatsapp.com/", cmd)
+            prof = next(a for a in cmd if a.startswith("--user-data-dir="))
+            self.assertTrue(prof.endswith("/.var/app/com.brave.Browser/data/sonata2-webapps/wabc"), prof)
+            self.assertEqual(W.window_class("wabc", e), "brave-web.whatsapp.com__-Default")
+
     def test_brave_gone_falls_back(self):
         with mock.patch.object(W.shutil, "which", side_effect={"chromium": "/usr/bin/chromium"}.get):
             self.assertEqual(W.chromium_browser({"browser": "brave"}), ("/usr/bin/chromium", "Chromium"))
