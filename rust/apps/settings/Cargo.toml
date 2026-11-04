@@ -4,6 +4,14 @@ description = "Settings (sonata2/settings/)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+build = "build.rs"
+
+[features]
+# The pages that need backend/* (Apps' sizes and permissions, Language &
+# Region) build on sonata-system; without it they show their placeholder.
+system = ["dep:sonata-system", "dep:sonata-dock"]
+# sonata-system is ported: on by default
+default = ["system"]
 
 [dependencies]
 gtk.workspace = true
@@ -12,11 +20,15 @@ gio.workspace = true
 glib.workspace = true
 serde_json.workspace = true
 libc.workspace = true
+pangocairo.workspace = true
 sonata-backend.workspace = true
 sonata-config = { workspace = true, features = ["watch"] }
 sonata-desktop.workspace = true
+sonata-dock = { workspace = true, optional = true }
 sonata-i18n.workspace = true
+sonata-sessionui.workspace = true
 sonata-shell.workspace = true
+sonata-system = { workspace = true, optional = true }
 sonata-tweaks.workspace = true
 sonata-ui.workspace = true
 

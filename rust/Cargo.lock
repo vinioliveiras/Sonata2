@@ -1405,6 +1405,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-capture"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "gtk4-layer-shell",
+ "libadwaita",
+ "libc",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-desktop",
+ "sonata-i18n",
+ "sonata-preview",
+ "sonata-session",
+ "sonata-shell",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
+name = "sonata-clipboard"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "libadwaita",
+ "libc",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-desktop",
+ "sonata-i18n",
+ "sonata-shell",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
 name = "sonata-clock"
 version = "0.1.0"
 dependencies = [
@@ -1449,6 +1490,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-desktop-icons"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "gtk4-layer-shell",
+ "libadwaita",
+ "libc",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-desktop",
+ "sonata-files",
+ "sonata-i18n",
+ "sonata-shell",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
 name = "sonata-diskutil"
 version = "0.1.0"
 dependencies = [
@@ -1470,11 +1532,14 @@ dependencies = [
  "gio",
  "glib",
  "gtk4",
+ "gtk4-layer-shell",
  "libadwaita",
+ "libc",
  "serde_json",
  "sonata-backend",
  "sonata-config",
  "sonata-desktop",
+ "sonata-files",
  "sonata-i18n",
  "sonata-shell",
  "sonata-ui",
@@ -1518,6 +1583,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-gamebar"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "gtk4-layer-shell",
+ "libadwaita",
+ "libc",
+ "pangocairo",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-desktop",
+ "sonata-i18n",
+ "sonata-shell",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
 name = "sonata-greeter"
 version = "0.1.0"
 dependencies = [
@@ -1543,6 +1629,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-launchpad"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "gtk4-layer-shell",
+ "libadwaita",
+ "libc",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-desktop",
+ "sonata-dock",
+ "sonata-i18n",
+ "sonata-mission",
+ "sonata-shell",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
 name = "sonata-lock"
 version = "0.1.0"
 dependencies = [
@@ -1557,6 +1665,27 @@ dependencies = [
  "sonata-i18n",
  "sonata-shell",
  "sonata-ui",
+]
+
+[[package]]
+name = "sonata-mission"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "gtk4-layer-shell",
+ "image",
+ "libadwaita",
+ "libc",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-desktop",
+ "sonata-i18n",
+ "sonata-shell",
+ "sonata-ui",
+ "tempfile",
 ]
 
 [[package]]
@@ -1576,12 +1705,16 @@ dependencies = [
 name = "sonata-notifications"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "gio",
  "glib",
  "gtk4",
+ "gtk4-layer-shell",
  "libadwaita",
+ "regex",
  "serde_json",
  "sonata-backend",
+ "sonata-calendar",
  "sonata-config",
  "sonata-desktop",
  "sonata-i18n",
@@ -1656,6 +1789,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-sessionui"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "gio",
+ "glib",
+ "gtk4",
+ "gtk4-layer-shell",
+ "libadwaita",
+ "libc",
+ "serde_json",
+ "sonata-backend",
+ "sonata-clock",
+ "sonata-config",
+ "sonata-desktop",
+ "sonata-i18n",
+ "sonata-session",
+ "sonata-shell",
+ "sonata-tray",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
+name = "sonata-settings"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "libadwaita",
+ "libc",
+ "pangocairo",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-desktop",
+ "sonata-dock",
+ "sonata-i18n",
+ "sonata-sessionui",
+ "sonata-shell",
+ "sonata-system",
+ "sonata-tweaks",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
 name = "sonata-shell"
 version = "0.1.0"
 dependencies = [
@@ -1691,6 +1872,25 @@ dependencies = [
  "sonata-i18n",
  "sonata-shell",
  "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
+name = "sonata-system"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "gio",
+ "glib",
+ "gtk4",
+ "libc",
+ "regex",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-desktop",
+ "sonata-i18n",
+ "sonata-session",
  "tempfile",
 ]
 
@@ -1739,8 +1939,12 @@ dependencies = [
  "serde_json",
  "sonata-backend",
  "sonata-config",
+ "sonata-desktop",
  "sonata-i18n",
+ "sonata-notifications",
  "sonata-shell",
+ "sonata-system",
+ "sonata-tray",
  "sonata-ui",
  "tempfile",
 ]
@@ -1760,6 +1964,29 @@ dependencies = [
  "sonata-shell",
  "sonata-ui",
  "tempfile",
+]
+
+[[package]]
+name = "sonata-tweaks"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "gio",
+ "glib",
+ "gtk4",
+ "image",
+ "libadwaita",
+ "libc",
+ "regex",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-desktop",
+ "sonata-i18n",
+ "sonata-shell",
+ "sonata-ui",
+ "tempfile",
+ "zip",
 ]
 
 [[package]]
@@ -1792,6 +2019,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-webapps"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "gio",
+ "glib",
+ "gtk4",
+ "libadwaita",
+ "libc",
+ "regex",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-desktop",
+ "sonata-i18n",
+ "sonata-shell",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
 name = "sonata-welcome"
 version = "0.1.0"
 dependencies = [
@@ -1812,21 +2060,34 @@ dependencies = [
  "sonata-activity",
  "sonata-calculator",
  "sonata-calendar",
+ "sonata-capture",
+ "sonata-clipboard",
  "sonata-clock",
  "sonata-config",
+ "sonata-desktop-icons",
  "sonata-diskutil",
+ "sonata-dock",
  "sonata-feedback",
  "sonata-files",
+ "sonata-gamebar",
  "sonata-greeter",
  "sonata-i18n",
+ "sonata-launchpad",
  "sonata-lock",
+ "sonata-mission",
  "sonata-notes",
+ "sonata-notifications",
  "sonata-polkit",
  "sonata-portal",
  "sonata-preview",
  "sonata-session",
+ "sonata-sessionui",
+ "sonata-settings",
  "sonata-spotlight",
  "sonata-textedit",
+ "sonata-topbar",
+ "sonata-tweaks",
+ "sonata-webapps",
  "sonata-welcome",
  "tempfile",
 ]
