@@ -23,6 +23,35 @@ use std::time::{Duration, Instant};
 /// The components the Rust build runs itself.
 pub const PORTED: [&str; 9] = ["calculator", "clock", "textedit", "preview", "notes", "welcome", "lock", "spotlight", "polkit"];
 
+/// The shell and apps ported since: Rust only in the Rust session
+/// ("Sonata (Rust preview)", SONATA2_RS_SIDE_BY_SIDE=0). The Python session
+/// keeps its own Dock, menu bar... until each is switched over.
+pub const PORTED_SHELL: [&str; 18] = [
+    "wallpaper", "dock", "topbar", "launchpad", "files", "settings", "portal", "activity", "calendar", "assistant",
+    "terminal", "camera", "videos", "diskutil", "feedback", "setup", "greeter", "webapp",
+];
+
+/// Does `sonata2-rs` run this component here.
+pub fn ported(name: &str) -> bool {
+    ported_in(name, sonata_config::side_by_side())
+}
+
+fn ported_in(name: &str, side_by_side: bool) -> bool {
+    PORTED.contains(&name) || (!side_by_side && PORTED_SHELL.contains(&name))
+}
+
+#[cfg(test)]
+mod ported_tests {
+    #[test]
+    fn rust_shell_only_in_the_rust_session() {
+        // the Python session's Dock stays Python; the Rust session's is Rust
+        assert!(!super::ported_in("dock", true));
+        assert!(super::ported_in("dock", false));
+        assert!(super::ported_in("lock", true));
+        assert!(!super::ported_in("music", false));
+    }
+}
+
 /// Hand this session's display to D-Bus/systemd-started services (the
 /// portals) before any surface asks for them -- once per display.
 pub const ACTIVATION_ENV: [&str; 11] = [
@@ -95,7 +124,7 @@ fn mem_total_mb() -> u64 {
 /// How a component is started: this binary for a ported one, the Python
 /// Sonata's launcher for the rest.
 pub fn command_for(argv: &[String]) -> Vec<String> {
-    if PORTED.contains(&argv[0].as_str()) {
+    if ported(&argv[0]) {
         let me = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "sonata2-rs".into());
         return std::iter::once(me).chain(argv.iter().cloned()).collect();
     }

@@ -18,6 +18,11 @@ fi
 # Resolved copy: Sonata paths filled in, pixdecor title bars when installed.
 run_cfg="${XDG_RUNTIME_DIR:-/tmp}/sonata2-wayfire.ini"
 "$(dirname "$(readlink -f "$0")")/wayfire-config.sh" "$cfg" "$run_cfg" && cfg="$run_cfg"
+# "Sonata (Rust preview)" (rust/install-rs.sh --session): the shell's
+# commands -- the supervisor, the keys -- run the Rust build instead
+if [ "${SONATA2_RS_SESSION:-}" = 1 ] && [ "$cfg" = "$run_cfg" ]; then
+    sed -i -E 's/(^|[=[:space:]])sonata2 /\1sonata2-rs /g' "$run_cfg"
+fi
 # Sonata's Wayfire with the fix for buffers the GPU refuses (tools/build-wayfire.sh),
 # while it's built from the installed Wayfire's commit (its plugins match)
 WAYFIRE=wayfire

@@ -677,3 +677,16 @@ location, permissions, screen sharing). The window list comes from
 Wayfire's IPC events (no Wayland client crate yet), so the minimize
 target (set_rectangle) and the virtual keyboard's wire protocol are
 done by hand or left out; each crate's lib.rs lists what it left out.
+
+### The Rust preview session
+
+`rust/install-rs.sh --session` adds "Sonata (Rust preview)" to the login
+screen (sudo, for /usr/share/wayland-sessions). It runs this clone's
+tools/sonata-session with SONATA2_RS_SIDE_BY_SIDE=0 and
+SONATA2_RS_SESSION=1: the Wayfire config's `sonata2 ...` commands become
+`sonata2-rs ...`, and the supervisor (keep.rs `ported`) starts the Rust
+Dock, menu bar, Launchpad, desktop, Files, Settings... with their real app
+ids and the real settings in ~/.config/sonata2 (the same files as the
+Python Sonata). The "Sonata" entry is untouched: logging out and picking it
+gives the Python session back. `install-rs.sh --uninstall` removes the
+entry too.

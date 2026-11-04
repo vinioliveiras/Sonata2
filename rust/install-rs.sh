@@ -32,6 +32,10 @@ SHARE="${XDG_DATA_HOME:-$HOME/.local/share}"
 APPS="$SHARE/applications"
 
 if [ "${1:-}" = "--uninstall" ]; then
+    rm -f "$BIN/sonata-rs-session"
+    if [ -e /usr/share/wayland-sessions/sonata-rs.desktop ]; then
+        sudo rm -f /usr/share/wayland-sessions/sonata-rs.desktop
+    fi
     rm -f "$BIN/sonata2-rs" "$BIN/sonata2-rs-terminal" "$BIN/sonata2-rs-camera" "$BIN/sonata2-rs-videos" "$BIN/sonata2-rs-assistant"
     rm -rf "$SHARE/sonata2-rs"
     rm -f "$APPS"/io.github.vinioliveiras.sonata2rs.*.desktop
@@ -73,3 +77,27 @@ echo
 echo "Installed next to Sonata: the Rust Calculator, Clock, TextEdit, Preview, Notes, Terminal, Feedbacker, Disk Manager, Camera and Videos are in Launchpad,"
 echo "or run: sonata2-rs calculator | clock | textedit [FILE] | preview [FILE] | notes | terminal | feedback | diskutil | camera | videos [FILE] | assistant | calendar | activity"
 echo "Remove it with: rust/install-rs.sh --uninstall"
+
+# --session: a "Sonata (Rust preview)" entry on the login screen. The whole
+# shell and every app run as Rust there, with their real app ids and the
+# real settings (~/.config/sonata2, shared with the Python Sonata); what
+# isn't ported yet (the portal's D-Bus start, a few helpers) still comes
+# from the Python install. The "Sonata" entry stays as it was.
+if [ "${1:-}" = "--session" ]; then
+    cat > "$BIN/sonata-rs-session" <<EOF
+#!/bin/sh
+# "Sonata (Rust preview)" (rust/install-rs.sh --session)
+logdir="\${XDG_RUNTIME_DIR:-/tmp}/sonata2-logs"
+mkdir -p "\$logdir"
+exec > "\$logdir/login.log" 2>&1
+export PATH="$BIN:\$PATH" SONATA2_LAUNCHER="$BIN/sonata2" SONATA2_RS_SIDE_BY_SIDE=0 SONATA2_RS_SESSION=1
+exec bash -x "$REPO/tools/sonata-session" "\$@"
+EOF
+    chmod 755 "$BIN/sonata-rs-session"
+    entry=$(mktemp)
+    printf '[Desktop Entry]\nName=Sonata (Rust preview)\nComment=Sonata 2 with the Rust shell and apps\nExec=%s\nTryExec=%s\nType=Application\nDesktopNames=Sonata\n' \
+        "$BIN/sonata-rs-session" "$BIN/sonata-rs-session" > "$entry"
+    sudo install -D -m 644 "$entry" /usr/share/wayland-sessions/sonata-rs.desktop
+    rm -f "$entry"
+    echo 'Added "Sonata (Rust preview)" to the login screen.'
+fi

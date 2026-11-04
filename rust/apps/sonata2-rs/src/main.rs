@@ -39,6 +39,7 @@
 //!   sonata2-rs prefs session-env                  defaults filled in, the session's environment
 //!   sonata2-rs launchpad [--preview] [--search T] Launchpad (again: toggles it)
 //!   sonata2-rs settings [--page ID]               Settings
+//!   sonata2-rs show-desktop                       Super+D: every window away, and back
 //!   sonata2-rs notifications [--preview] [--center]  notifications (on trial: off the real bus name)
 //!   sonata2-rs greeter                            the login screen (SONATA_GREETER_FAKE=1: preview)
 //!   sonata2-rs portal                             the portal backend (not on trial)
@@ -60,7 +61,7 @@ mod desktop;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|settings|launchpad|keyring|prefs|topbar|dock|lock-wait|setup|session-try|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|show-desktop|settings|launchpad|keyring|prefs|topbar|dock|lock-wait|setup|session-try|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -181,6 +182,8 @@ fn main() -> ExitCode {
             let code = sonata_settings::run(&args[1..]);
             ExitCode::from(code.value() as u8)
         }
+        // Super+D: the Dock does it
+        "show-desktop" => ExitCode::from(if sonata_session::keys::app_action(sonata_dock::app_id(), "show-desktop", None) { 0 } else { 1 }),
         "notifications" => {
             let code = sonata_notifications::run(&args[1..]);
             ExitCode::from(code.value() as u8)
