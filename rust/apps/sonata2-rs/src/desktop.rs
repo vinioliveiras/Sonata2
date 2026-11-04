@@ -118,6 +118,19 @@ pub fn textedit_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
+/// Disk Manager's entry (diskutil_desktop_file).
+pub fn diskutil_entry(exec: &str) -> (String, String) {
+    let id = sonata_diskutil::app_id();
+    let name = if sonata_config::side_by_side() { sonata_i18n::n_!("Disk Manager (Rust)") } else { "Disk Manager" };
+    let text = format!(
+        "[Desktop Entry]\nType=Application\nName={name}\nComment=Manage disks and volumes\nIcon=sonata-diskmanager\n\
+         Categories=System;Utility;\nKeywords=disk;drive;partition;format;erase;mount;usb;\nStartupNotify=true\n\
+         Exec={} diskutil\n",
+        quote(exec)
+    );
+    (format!("{id}.desktop"), text)
+}
+
 /// Feedbacker's entry (feedback_desktop_file).
 pub fn feedback_entry(exec: &str) -> (String, String) {
     let id = sonata_feedback::app_id();
@@ -182,7 +195,7 @@ pub fn write_all() -> io::Result<Vec<PathBuf>> {
     let folder = data_home().join("applications");
     let mut written = Vec::new();
     let exec = launcher();
-    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec), notes_entry(&exec), terminal_entry(&exec), feedback_entry(&exec)] {
+    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec), notes_entry(&exec), terminal_entry(&exec), feedback_entry(&exec), diskutil_entry(&exec)] {
         let text = localize(&text, &catalogs);
         let path = folder.join(file);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {

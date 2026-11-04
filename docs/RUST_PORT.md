@@ -470,3 +470,19 @@ stay behind `--features ui-tests` and run only under
   Python Sonata's flag file, written on trial too -- like the wallpaper,
   it is the user asking for it.
 - Not ported yet: "Reopen your apps" after a crash (open_apps.py).
+
+### Step 6 so far: Disk Manager
+
+- `sonata2-rs diskutil`: diskutil/ -- the model (UDisks2's tree into
+  disks and volumes; the properties kept as GLib variants, read the way
+  Python reads them) with test_diskutil.py's fake tree and cases, plus
+  the system-storage members (btrfs RAID, LVM, md); the UDisks client
+  (async Gio, interactive authorization, debounced live reloads); the
+  window -- sidebar, capacity bar and legend, info table, First Aid,
+  Erase, Rename, Mount / Unmount / Unlock, Eject, Info, the context menu
+  and the keys.
+- Erase keeps every guard: the running system's volumes refused, two
+  confirmations, and a fresh tree checked right before (a volume mounted
+  as a system one meanwhile is refused then).
+- sonata-ui gains `dialog::ask_text`; the CSS exporter reads
+  `"""...""" + computed` registrations too.

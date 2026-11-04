@@ -20,6 +20,7 @@ members = [
     "apps/polkit",
     "apps/terminal",
     "apps/feedback",
+    "apps/diskutil",
     "apps/sonata2-rs",
 ]
 
@@ -74,6 +75,7 @@ sonata-lock = { path = "apps/lock" }
 sonata-spotlight = { path = "apps/spotlight" }
 sonata-polkit = { path = "apps/polkit" }
 sonata-feedback = { path = "apps/feedback" }
+sonata-diskutil = { path = "apps/diskutil" }
 
 [profile.release]
 lto = "thin"

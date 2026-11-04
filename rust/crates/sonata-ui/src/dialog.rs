@@ -97,6 +97,31 @@ pub fn alert<F: Fn(&str) + 'static>(
     dlg
 }
 
+/// One line to type (a new name...): an alert with an entry, the text
+/// selected, `ok` off while it's empty. on_done(text) with the trimmed
+/// text, only when confirmed.
+pub fn ask_text<F: Fn(String) + 'static>(heading: &str, text: &str, ok: &str, on_done: F, body: &str, parent: Option<&gtk::Widget>) -> adw::AlertDialog {
+    let entry = crate::controls::text_field(text, "");
+    entry.set_hexpand(true);
+    entry.set_activates_default(true);
+    let e = entry.clone();
+    let dlg = alert(heading, body, &[("cancel", sonata_i18n::tr!("Cancel"), ""), ("ok", ok.to_string(), "default")], move |rid| {
+        let value = e.text().trim().to_string();
+        if rid == "ok" && !value.is_empty() {
+            on_done(value);
+        }
+    }, parent);
+    dlg.set_extra_child(Some(&entry));
+    let d = dlg.clone();
+    entry.connect_changed(move |e| d.set_response_enabled("ok", !e.text().trim().is_empty()));
+    dlg.set_response_enabled("ok", !text.trim().is_empty()); // opened empty: off already
+    glib::idle_add_local_once(move || {
+        entry.grab_focus();
+        entry.select_region(0, -1);
+    });
+    dlg
+}
+
 #[cfg(test)]
 mod tests {
     use super::breakable;

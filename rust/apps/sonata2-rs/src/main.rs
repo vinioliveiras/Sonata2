@@ -10,6 +10,7 @@
 //!   sonata2-rs lock                                lock the session
 //!   sonata2-rs spotlight [--background] [--search TEXT]   Spotlight (again: toggles it)
 //!   sonata2-rs polkit                              the password prompt for system actions
+//!   sonata2-rs diskutil                            Disk Manager
 //!   sonata2-rs feedback                            Feedbacker: report a problem
 //!   sonata2-rs terminal [--new-window] [--exec CMD] [FOLDER...]   Terminal
 //!                                                  (sonata2-rs-terminal: only it needs libvte)
@@ -28,7 +29,7 @@ mod desktop;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|feedback|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -72,6 +73,10 @@ fn main() -> ExitCode {
             ExitCode::from(code.value() as u8)
         }
         "terminal" => ExitCode::from(terminal(&args[1..]) as u8),
+        "diskutil" => {
+            let code = sonata_diskutil::run(&args[1..]);
+            ExitCode::from(code.value() as u8)
+        }
         "feedback" => {
             let code = sonata_feedback::run(&args[1..]);
             ExitCode::from(code.value() as u8)

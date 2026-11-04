@@ -20,6 +20,7 @@ sonata-lock.workspace = true
 sonata-spotlight.workspace = true
 sonata-polkit.workspace = true
 sonata-feedback.workspace = true
+sonata-diskutil.workspace = true
 sonata-config.workspace = true
 sonata-session.workspace = true
 sonata-i18n.workspace = true

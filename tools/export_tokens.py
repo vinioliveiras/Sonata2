@@ -26,7 +26,8 @@ CSS_MODULES = ("ui/controls.py", "ui/menu.py", "ui/window.py", "ui/dialog.py", "
                "preview/window.py", "preview/sidebar.py", "preview/info.py", "preview/markup.py",
                "notes/window.py", "notes/editor.py", "notes/reminders.py", "ui/progress.py",
                "shell/loginui.py", "shell/spotlight.py", "shell/authsheet.py",
-               "terminal/window.py", "feedback/window.py")
+               "terminal/window.py", "feedback/window.py",
+               "diskutil/window.py")
 
 
 def _registered(src: str, mod: str) -> list:
@@ -61,6 +62,8 @@ def _registered(src: str, mod: str) -> list:
             # `_colors + """..."""` (Reminders): the literal part; the Rust side
             # makes the computed part itself
             first = first.right
+        elif isinstance(first, ast.BinOp) and isinstance(first.left, ast.Constant):
+            first = first.left                  # `"""...""" + swatches` (Disk Manager): the same, the other way round
         if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
             continue
         key, local = None, {}
