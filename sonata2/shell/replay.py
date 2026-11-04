@@ -31,6 +31,7 @@ SECONDS = 30
 FLUSH_MS = 600            # after SIGUSR1, before SIGINT: the buffer is written out
 WAIT_MS = 100
 GSR_SAVE_S = 15           # gpu-screen-recorder's clip: given up on if it isn't written by then
+GSR_STILL = 5             # ...and kept once its size hasn't changed for this many looks (WAIT_MS apart)
 GSR_FPS = 60
 
 
@@ -196,7 +197,7 @@ class Replay:
     def _gsr_wait(self, folder: str, before: set) -> None:
         """gpu-screen-recorder writes the clip in the background: kept once
         it's there and stopped growing (it keeps recording meanwhile)."""
-        state = {"left": int(GSR_SAVE_S * 1000 / WAIT_MS), "size": -1}
+        state = {"left": int(GSR_SAVE_S * 1000 / WAIT_MS), "size": -1, "still": 0}
 
         def look():
             state["left"] -= 1
@@ -207,7 +208,9 @@ class Replay:
                     size = os.path.getsize(f)
                 except OSError:
                     size = 0
-                if size > 0 and size == state["size"]:
+                # (one look the same was a pause in its writing, and the clip came out cut)
+                state["still"] = state["still"] + 1 if size > 0 and size == state["size"] else 0
+                if state["still"] >= GSR_STILL:
                     self._saving = False
                     clip = self._keep(f)
                     if clip:

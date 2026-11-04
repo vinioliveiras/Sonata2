@@ -175,6 +175,22 @@ class OneAppPerSiteTest(unittest.TestCase):
             self.assertNotEqual(other, first)
             self.assertEqual(sorted(W.apps()), sorted([first, other]))
 
+    def test_second_webkit_app_for_a_site_was_refused(self):
+        """Only Chromium web apps of one browser share an app id per site: a
+        WebKit one (its own app id) for a site already made -- another
+        account, say -- is made, with the name and engine asked for."""
+        import tempfile
+        from sonata2 import config
+        with mock.patch.object(config, "CONFIG_DIR", tempfile.mkdtemp()), \
+                mock.patch.object(W, "chromium_browser", return_value=("/usr/bin/google-chrome-stable", "Google Chrome")), \
+                mock.patch.object(W, "data_dir", side_effect=lambda a: tempfile.mkdtemp()), \
+                mock.patch.object(W, "update_theme_icon"), mock.patch.object(W, "write_desktop"):
+            first = W.create("WhatsApp", "https://web.whatsapp.com/", fetch=False, engine_name="chromium")
+            work = W.create("WhatsApp Work", "https://web.whatsapp.com/", fetch=False, engine_name="webkit")
+            self.assertNotEqual(work, first)
+            self.assertEqual(W.get(work)["name"], "WhatsApp Work")
+            self.assertEqual(W.create("Zap", "web.whatsapp.com", fetch=False, engine_name="chromium"), first)
+
 
     def test_removed_app_came_back_in_the_same_process(self):
         """A web app made before webapps.json existed went into DEFAULTS' own

@@ -67,7 +67,7 @@ from .mission import DIM  # noqa: E402  (the same dark layer as Overview, Win+Ta
 NAMESPACE = "sonata2-gamebar"
 PIN_NAMESPACE = "sonata2-gamebar-pin"
 # the fake glass: the display's picture, small and blurred once (frost.py)
-from .frost import FROST_BLUR, FROST_SCALE, blur_texture, frost_command  # noqa: E402,F401  (shared: frost.py)
+from .frost import FROST_BLUR, FROST_SCALE, blur_texture, frost_command, texture_from  # noqa: E402,F401
 # Vini: the Game Bar opens and closes at once, as fast as it can -- no
 # animations -- and already in glass, never turning to glass in front of
 # you: it shows the moment the game's picture is ready (~25 ms), solid
@@ -663,15 +663,20 @@ class GameBar(Gtk.Window):
     def is_open(self) -> bool:
         return self.get_visible() and not self.root.has_css_class("closing")
 
+    def opening(self) -> bool:
+        """Asked to open, waiting (at most FROST_WAIT_MS) for its picture."""
+        return getattr(self, "_opening_gen", None) == getattr(self, "_frost_gen", 0) and not self.get_visible()
+
     def toggle(self) -> None:
-        self.close_bar() if self.is_open() else self.open()
+        # pressed again while it waits for its picture: that's a close (it
+        # opened anyway, the second press taken as another opening)
+        self.close_bar() if self.is_open() or self.opening() else self.open()
 
     def open(self) -> None:
         if self._hide_src:
             GLib.source_remove(self._hide_src)
             self._hide_src = 0
         self.root.remove_css_class("closing")
-        self._hide_pins()                               # back in the Game Bar
         # the levels and radios read once it's on screen: their reads (pactl,
         # nmcli, rfkill, DDC/CI) started with it and slowed its opening (Vini)
         if self._read_src:
@@ -684,6 +689,8 @@ class GameBar(Gtk.Window):
         self._frost_then(self._show)
 
     def _show(self) -> None:
+        self._hide_pins()                               # back in the Game Bar (as it shows: a
+        # pending opening closed again leaves them over the game)
         # shown again: the CSS animations run anew only for newly mapped widgets
         self.set_visible(False)
         self.present()
@@ -701,7 +708,7 @@ class GameBar(Gtk.Window):
         solid and stays so this time (no glass coming on in front of you);
         the Game Bar isn't on screen yet, so it's never in the picture."""
         self._frost_gen = getattr(self, "_frost_gen", 0) + 1
-        gen = self._frost_gen
+        gen = self._opening_gen = self._frost_gen
         self._set_glass(None, 0.0)
         self.root.remove_css_class("frosted")
         import shutil
@@ -727,7 +734,7 @@ class GameBar(Gtk.Window):
         def done(p, res):
             try:
                 _ok, out, _err = p.communicate_finish(res)
-                tex = Gdk.Texture.new_from_bytes(out) if out is not None and out.get_size() else None
+                tex = texture_from(out)
             except GLib.Error:
                 tex = None
             # this opening's picture, before it showed: in glass from its first frame
@@ -749,6 +756,15 @@ class GameBar(Gtk.Window):
             w.queue_draw()                              # each panel's own area only
 
     def close_bar(self) -> None:
+        if self.opening():                              # not on screen yet: it never shows
+            self._frost_gen += 1
+            if self._read_src:
+                GLib.source_remove(self._read_src)
+                self._read_src = 0
+            if self._clock_src:
+                GLib.source_remove(self._clock_src)
+                self._clock_src = 0
+            return
         if not self.get_visible() or self.root.has_css_class("closing"):
             return
         self.root.add_css_class("closing")

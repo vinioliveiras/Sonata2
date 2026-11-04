@@ -358,12 +358,18 @@ def create(name: str, url: str, command: str = None, fetch: bool = True, backgro
     url = normalize_url(url)
     if not url:
         raise ValueError("not a web address")
-    # the same site twice is one web app (Vini: WhatsApp twice -- both in
-    # the browser have one app id, the Dock can't tell their windows apart,
-    # and opening one opened the site in Chrome): that one, not a copy
-    for other, entry in apps().items():
-        if normalize_url(entry.get("url", "")) == url:
-            return other
+    # the same site twice in one browser is one web app (Vini: WhatsApp twice
+    # -- Chrome gives both one app id, the Dock can't tell their windows
+    # apart, and opening one opened the site in Chrome): that one, not a
+    # copy. (WebKit web apps have an app id each: a second is fine.)
+    new = {"url": url, "engine": engine_name if engine_name in ENGINES else default_engine()}
+    if browser in BROWSER_KEYS.values():
+        new["browser"] = browser
+    if engine(new) == "chromium":
+        cls = window_class("", new)
+        for other, entry in apps().items():
+            if engine(entry) == "chromium" and window_class(other, entry) == cls:
+                return other
     app = "w" + uuid.uuid4().hex[:10]
     data = _load()
     data.setdefault("apps", {})[app] = {"name": (name or "").strip() or default_name(url), "url": url}

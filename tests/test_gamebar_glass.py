@@ -84,7 +84,51 @@ class GlassTest(unittest.TestCase):
         return new, shown, proc
 
     def test_command(self):
-        self.assertEqual(G.frost_command("DP-1"), ["grim", "-l", "0", "-o", "DP-1", "-"])
+        self.assertEqual(G.frost_command("DP-1"), ["grim", "-t", "ppm", "-o", "DP-1", "-"])
+
+    def test_picture_decoded_on_the_main_loop(self):
+        """Each opening decoded a PNG of the whole display on the main loop
+        (~4 ms at 1080p, ~16 ms at 4K). grim's PPM is used as it is: its
+        pixels become the texture, no decoding. A PNG still works; anything
+        else is no picture."""
+        from sonata2.shell import frost
+        px = bytes([255, 0, 0] * 6)
+        tex = frost.texture_from(GLib.Bytes.new(b"P6\n# grim\n3 2\n255\n" + px))
+        self.assertEqual((tex.get_width(), tex.get_height()), (3, 2))
+        self.assertEqual(frost.texture_from(red_png()).get_width(), 8)
+        for bad in (b"", b"P6\n3 2\n255\n" + px[:5], b"not a picture"):
+            self.assertIsNone(frost.texture_from(GLib.Bytes.new(bad)))
+        self.assertIsNone(frost.texture_from(None))
+
+    def test_notification_center_glass_was_the_sharp_screenshot(self):
+        """Without a renderer yet (its window not realized when the picture
+        came), the picture went back unblurred -- now full size, a sharp
+        screenshot behind the cards. No glass that time instead."""
+        from sonata2.shell import frost
+        got = []
+        proc = FakeProc(red_png())
+        with mock.patch.object(frost, "available", return_value=True), \
+                mock.patch.object(frost.Gio.Subprocess, "new", return_value=proc):
+            self.assertTrue(frost.capture("DP-1", got.append, lambda: None))
+            spin(60)
+        self.assertEqual(got, [None])
+
+    def test_super_g_twice_quickly_still_opened_it(self):
+        """Pressed again while it waited for its picture (it isn't on screen
+        yet), the second press was taken as another opening: it opened. It's
+        a close now -- it never shows, the pinned widgets stay over the game."""
+        proc = FakeProc(None)                                   # the picture not there yet
+        with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc), \
+                mock.patch.object(self.bar, "_hide_pins") as take_pins:
+            self.bar.toggle()
+            self.assertTrue(self.bar.opening())
+            self.bar.toggle()                                   # again, before it showed
+            self.assertFalse(self.bar.opening())
+            proc.out = red_png()
+            proc.done(proc, None)
+            spin(G.FROST_WAIT_MS + 100)
+        self.assertFalse(self.bar.get_visible())
+        take_pins.assert_not_called()
 
     def test_grim_shrinking_the_picture_made_the_glass_late(self):
         """Vini: the Game Bar opened solid and turned to glass a moment later.
