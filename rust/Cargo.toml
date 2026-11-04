@@ -7,6 +7,7 @@ members = [
     "crates/sonata-i18n",
     "crates/sonata-ui",
     "crates/sonata-session",
+    "crates/sonata-backend",
     "apps/calculator",
     "apps/clock",
     "apps/textedit",
@@ -48,6 +49,7 @@ sonata-config = { path = "crates/sonata-config" }
 sonata-i18n = { path = "crates/sonata-i18n" }
 sonata-ui = { path = "crates/sonata-ui" }
 sonata-session = { path = "crates/sonata-session" }
+sonata-backend = { path = "crates/sonata-backend" }
 sonata-calculator = { path = "apps/calculator" }
 sonata-clock = { path = "apps/clock" }
 sonata-textedit = { path = "apps/textedit" }

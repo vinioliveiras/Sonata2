@@ -91,7 +91,10 @@ rust/
                           SAME sonata2/locale/<lang>/*.json; tr!() / trn!() macros
     sonata-ui/            ui/: tokens (light/dark), the CSS templates, theme.setup()
                           (appearance.json, accent, glass), window frame, controls
-    sonata-wfipc/         wl/wfipc.py: Wayfire IPC client (sync call + glib watch)
+    sonata-backend/       backend/system.py and its helpers: Wi-Fi, sound, brightness
+                          (DDC/CI too), battery, displays, keyboards...; wfconfig.py,
+                          the Wayfire IPC client (wl/wfipc.py), sounds.py
+    sonata-session/       the session's plumbing: logs, keep / keep-all, key, screenshot
     sonata-dbus/          zbus proxies/services: Notifications, logind, NM, UPower...
     sonata-apps/          apps.py: .desktop parsing, write_desktop_file, icons
   apps/
@@ -326,7 +329,7 @@ stay behind `--features ui-tests` and run only under
 - The CSS exporter also takes `_colors + """..."""` registrations (the
   literal part; Rust makes the colour classes itself).
 
-### Step 3 so far: the supervisor
+### Step 3 so far: the supervisor, keys and screenshots
 
 - `sonata-session`: logs (off by default, in memory; ~/.cache with Logs on;
   kept under their cap) and `keep` / `keep-all` with the Python rules
@@ -336,5 +339,18 @@ stay behind `--features ui-tests` and run only under
   this is what a mixed "Sonata (Rust preview)" session will start.
   Each child's pidfd wakes the supervisor when it ends (no signals, no
   polling).
+- `sonata-backend`: backend/system.py (Wi-Fi and network services over
+  nmcli and NetworkManager's D-Bus, printers, Bluetooth through
+  bluetoothctl, Airplane Mode, sound, brightness with DDC/CI for external
+  monitors, battery, power, About, displays, power profiles, keyboards,
+  date & time, computer name, default browser), wfconfig.py, the Wayfire
+  IPC client, sounds.py and the "remember" half of devicevolume.py. The
+  parsers carry the Python tests' cases.
+- `sonata2-rs key <name>` (the volume, brightness and media keys; the HUD
+  is still the Python menu bar's, asked over D-Bus) and `sonata2-rs
+  screenshot [screen|area|edit]` (the menu bar's capture, else grim and
+  a notification). Wayfire's bindings still call the Python ones: the
+  "Sonata (Rust preview)" session switches them over.
 - Not ported yet: `restart` (it finds the Python processes by their
-  command line), `key`, `screenshot`, `doctor`, autostart.
+  command line), `doctor`, autostart; BlueZ over D-Bus (bluez.py) and
+  watching NetworkManager and the sound server.

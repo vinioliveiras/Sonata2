@@ -1,12 +1,16 @@
 [package]
 name = "sonata-session"
-description = "The session's plumbing: logs and the component supervisor (keep / keep-all)"
+description = "The session's plumbing: logs and the component supervisor (keep / keep-all), media keys, screenshots"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+gio.workspace = true
+glib.workspace = true
 libc.workspace = true
+sonata-backend.workspace = true
+sonata-i18n.workspace = true
 sonata-config.workspace = true
 
 [dev-dependencies]
