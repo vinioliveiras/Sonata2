@@ -504,3 +504,18 @@ stay behind `--features ui-tests` and run only under
 - Not tested with a real camera yet: no GUI or device test runs on
   Vini's machine. A cloud session could run them once the branch is
   pushed.
+
+### Step 6 so far: Videos
+
+- `sonata2-rs-videos`, a binary of its own (GStreamer). videos/: the
+  window (the movie's shape, the fading glass controls, positions
+  remembered, volume saved once the slider rests, songs square with
+  their cover, full screen, the menu, the keys), Trim (the filmstrip with
+  ffmpeg's frames) and Crop (the frame, the shapes), the ffmpeg exports
+  (a failed or cancelled one leaves nothing beside the original), and
+  songs through classic playbin as a gtk::MediaStream.
+- A song's tags come from GStreamer's discoverer, not audiotags.py's own
+  parsers; the title falls back to the file name the same way
+  (audiotags.from_filename, checked on the same names).
+- The Open panel is GTK's file dialog (the portal's): Files' own
+  chooser isn't ported yet. Its trial entry takes no file types.

@@ -144,6 +144,26 @@ pub fn feedback_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
+/// Videos' entry (videos_desktop_file). On trial it takes no file
+/// types: the Python Videos stays what opens movies.
+pub fn videos_entry(exec: &str) -> (String, String) {
+    let trial = sonata_config::side_by_side();
+    let id = if trial { "io.github.vinioliveiras.sonata2rs.videos" } else { "io.github.vinioliveiras.sonata2.videos" };
+    let name = if trial { sonata_i18n::n_!("Videos (Rust)") } else { "Videos" };
+    let mime = if trial {
+        String::new()
+    } else {
+        let types = ["video/mp4", "video/x-matroska", "video/webm", "video/x-msvideo", "video/avi", "video/quicktime", "video/mpeg", "video/ogg", "video/x-ogm+ogg", "video/x-flv", "video/3gpp", "video/3gpp2", "video/x-m4v", "video/mp2t", "video/x-ms-wmv", "audio/mpeg", "audio/mp3", "audio/flac", "audio/x-flac", "audio/ogg", "audio/x-vorbis+ogg", "audio/vorbis", "audio/opus", "audio/x-opus+ogg", "audio/mp4", "audio/x-m4a", "audio/aac", "audio/x-aac", "audio/wav", "audio/x-wav", "audio/vnd.wave"];
+        format!("MimeType={}\n", types.iter().map(|t| format!("{t};")).collect::<String>())
+    };
+    let text = format!(
+        "[Desktop Entry]\nType=Application\nName={name}\nComment=Watch movies\nIcon=sonata-videos\n\
+         Categories=AudioVideo;Video;Audio;Player;\n{mime}StartupNotify=true\nExec={} videos %F\n",
+        quote(exec)
+    );
+    (format!("{id}.desktop"), text)
+}
+
 /// Camera's entry (camera_desktop_file).
 pub fn camera_entry(exec: &str) -> (String, String) {
     let trial = sonata_config::side_by_side();
@@ -209,7 +229,7 @@ pub fn write_all() -> io::Result<Vec<PathBuf>> {
     let folder = data_home().join("applications");
     let mut written = Vec::new();
     let exec = launcher();
-    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec), notes_entry(&exec), terminal_entry(&exec), feedback_entry(&exec), diskutil_entry(&exec), camera_entry(&exec)] {
+    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec), notes_entry(&exec), terminal_entry(&exec), feedback_entry(&exec), diskutil_entry(&exec), camera_entry(&exec), videos_entry(&exec)] {
         let text = localize(&text, &catalogs);
         let path = folder.join(file);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
