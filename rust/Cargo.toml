@@ -10,6 +10,7 @@ members = [
     "apps/clock",
     "apps/textedit",
     "apps/preview",
+    "apps/notes",
     "apps/sonata2-rs",
 ]
 
@@ -49,6 +50,7 @@ sonata-calculator = { path = "apps/calculator" }
 sonata-clock = { path = "apps/clock" }
 sonata-textedit = { path = "apps/textedit" }
 sonata-preview = { path = "apps/preview" }
+sonata-notes = { path = "apps/notes" }
 
 [profile.release]
 lto = "thin"

@@ -1,8 +1,8 @@
 # Porting Sonata 2 to Rust
 
-Status: **step 1 done** (foundations + Calculator), **step 2 under way**:
-Clock and TextEdit (tried in Vini's session) and Preview ported; Preview
-builds and its tests pass, not tried in a session yet. Branch
+Status: **step 1 done** (foundations + Calculator), **step 2 done**:
+Clock and TextEdit tried in Vini's session; Preview and Notes build and
+their tests pass, not tried in a session yet. Branch
 `claude/rust-port-fdcd02`.
 The Python code stays the working Sonata on this branch until a
 component's Rust replacement is ready; the Wayfire plugin
@@ -56,10 +56,13 @@ desktop:
 
 - Different app ids mean both Calculators can be open at once, and the
   Rust one never steals the Python one's single-instance D-Bus name.
-- App data (`~/.local/share/sonata2-data/<app>`) is the exception, app by
-  app, when the Python shell acts on it: Clock (Rust) edits the same
-  `alarms.json` and `timers.json` as the Python Clock (Vini's call), since
-  the Python menu bar is what rings them.
+- App data (`~/.local/share/sonata2-data/<app>`) is decided app by app.
+  Clock (Rust) edits the same `alarms.json` and `timers.json` as the
+  Python Clock (Vini's call), since the Python menu bar is what rings
+  them. TextEdit and Notes keep their own (`sonata2-rs-data/<app>`): two
+  copies of the same app writing one file would undo each other's work.
+  Notes fills its own copy from the Python Notes' data the first time,
+  so the trial shows your notes without risking them.
 - Settings: on load the Rust code looks in `sonata2-rs/` first, then
   `sonata2/`; on save it only ever writes `sonata2-rs/`. Your Python
   Sonata's files are never written by the trial build. (For a component
@@ -306,3 +309,19 @@ stay behind `--features ui-tests` and run only under
   Picture writes the shared `~/.config/sonata2/system.json` even on trial
   (it is the desktop's wallpaper: the user asked for it), then
   `sonata2 restart wallpaper`.
+
+### Step 2 so far: Notes
+
+- `sonata-notes`: the note format (markup.rs, the same Markdown-ish text,
+  round-trips byte for byte), the data (unknown keys kept, damaged files
+  set aside, Recently Deleted for 30 days), the editor (paragraph and
+  character styles, lists renumbered, checklists, Return / Backspace
+  rules), the notes list in date sections, folders and lists with
+  rename / delete, search, Reminders (smart lists, rows with the strike
+  animation, the ⓘ panel with date, time, flag, priority, list) and the
+  reminder alerts (org.freedesktop.Notifications, the shared ledger so an
+  alert goes out once).
+- `sonata-ui` grew panel rows and separators, and the date sections and
+  short dates of lists (ui/fmt.py).
+- The CSS exporter also takes `_colors + """..."""` registrations (the
+  literal part; Rust makes the colour classes itself).

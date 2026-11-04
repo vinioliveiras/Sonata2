@@ -161,20 +161,27 @@ pub fn to_python_json(value: &Value) -> String {
 /// `json.dumps(value, indent=indent)` (the apps' data files use indent=1).
 pub fn to_python_json_indent(value: &Value, indent: usize) -> String {
     let mut out = String::new();
-    write_value(&mut out, value, 0, indent);
+    write_value(&mut out, value, 0, indent, true);
     out
 }
 
-fn write_value(out: &mut String, v: &Value, depth: usize, indent: usize) {
+/// `json.dumps(value, ensure_ascii=False, indent=indent)` (Notes' files).
+pub fn to_python_json_utf8(value: &Value, indent: usize) -> String {
+    let mut out = String::new();
+    write_value(&mut out, value, 0, indent, false);
+    out
+}
+
+fn write_value(out: &mut String, v: &Value, depth: usize, indent: usize, ascii: bool) {
     let pad = |n: usize| " ".repeat(n * indent);
     match v {
         Value::Object(m) if !m.is_empty() => {
             out.push_str("{\n");
             for (i, (k, val)) in m.iter().enumerate() {
                 out.push_str(&pad(depth + 1));
-                write_string(out, k);
+                write_string(out, k, ascii);
                 out.push_str(": ");
-                write_value(out, val, depth + 1, indent);
+                write_value(out, val, depth + 1, indent, ascii);
                 if i + 1 < m.len() {
                     out.push(',');
                 }
@@ -187,7 +194,7 @@ fn write_value(out: &mut String, v: &Value, depth: usize, indent: usize) {
             out.push_str("[\n");
             for (i, val) in a.iter().enumerate() {
                 out.push_str(&pad(depth + 1));
-                write_value(out, val, depth + 1, indent);
+                write_value(out, val, depth + 1, indent, ascii);
                 if i + 1 < a.len() {
                     out.push(',');
                 }
@@ -198,7 +205,7 @@ fn write_value(out: &mut String, v: &Value, depth: usize, indent: usize) {
         }
         Value::Object(_) => out.push_str("{}"),
         Value::Array(_) => out.push_str("[]"),
-        Value::String(s) => write_string(out, s),
+        Value::String(s) => write_string(out, s, ascii),
         Value::Number(n) => out.push_str(&python_number(n)),
         Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
         Value::Null => out.push_str("null"),
@@ -214,7 +221,7 @@ fn python_number(n: &serde_json::Number) -> String {
     n.to_string()
 }
 
-fn write_string(out: &mut String, s: &str) {
+fn write_string(out: &mut String, s: &str, ascii: bool) {
     out.push('"');
     for c in s.chars() {
         match c {
@@ -225,7 +232,7 @@ fn write_string(out: &mut String, s: &str) {
             '\t' => out.push_str("\\t"),
             '\u{8}' => out.push_str("\\b"),
             '\u{c}' => out.push_str("\\f"),
-            c if (c as u32) < 0x20 || (c as u32) > 0x7e => {
+            c if (c as u32) < 0x20 || (ascii && (c as u32) > 0x7e) => {
                 let mut buf = [0u16; 2];
                 for unit in c.encode_utf16(&mut buf) {
                     out.push_str(&format!("\\u{unit:04x}"));

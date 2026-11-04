@@ -960,6 +960,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-notes"
+version = "0.1.0"
+dependencies = [
+ "gtk4",
+ "libadwaita",
+ "serde_json",
+ "sonata-config",
+ "sonata-i18n",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
 name = "sonata-preview"
 version = "0.1.0"
 dependencies = [
@@ -1016,6 +1029,7 @@ dependencies = [
  "sonata-clock",
  "sonata-config",
  "sonata-i18n",
+ "sonata-notes",
  "sonata-preview",
  "sonata-textedit",
  "tempfile",

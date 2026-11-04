@@ -28,6 +28,62 @@ pub fn size(n: u64) -> String {
     unreachable!()
 }
 
+fn local_date(t: f64) -> Option<gtk::glib::DateTime> {
+    gtk::glib::DateTime::from_unix_local(t as i64).ok()
+}
+
+fn day_number(d: &gtk::glib::DateTime) -> i64 {
+    // whole days since the epoch, in local time
+    let (y, m, dd) = (d.year(), d.month(), d.day_of_month());
+    let (y, m) = (if m <= 2 { y - 1 } else { y } as i64, m as i64);
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + dd as i64 - 1;
+    era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719468
+}
+
+/// (rank, sub-rank, title) of the list section a date falls in (macOS:
+/// Pinned, Today, Yesterday, Previous 7 Days, Previous 30 Days, months, years).
+pub fn date_section(t: f64, pinned: bool, now: f64) -> (i32, i32, String) {
+    if pinned {
+        return (0, 0, tr!("Pinned"));
+    }
+    let (Some(today), Some(d)) = (local_date(now), local_date(t)) else { return (6, 0, String::new()) };
+    let days = day_number(&today) - day_number(&d);
+    if days <= 0 {
+        return (1, 0, tr!("Today"));
+    }
+    if days == 1 {
+        return (2, 0, tr!("Yesterday"));
+    }
+    if days <= 7 {
+        return (3, 0, tr!("Previous 7 Days"));
+    }
+    if days <= 30 {
+        return (4, 0, tr!("Previous 30 Days"));
+    }
+    if d.year() == today.year() {
+        return (5, -d.month(), d.format("%B").map(|s| s.to_string()).unwrap_or_default());
+    }
+    (6, -d.year(), d.year().to_string())
+}
+
+/// 14:05 today, Yesterday, a weekday this week, else the date.
+pub fn short_date(t: f64, now: f64) -> String {
+    let (Some(today), Some(d)) = (local_date(now), local_date(t)) else { return String::new() };
+    let days = day_number(&today) - day_number(&d);
+    let f = |p: &str| d.format(p).map(|s| s.to_string()).unwrap_or_default();
+    if days <= 0 {
+        f("%H:%M")
+    } else if days == 1 {
+        tr!("Yesterday")
+    } else if days < 7 {
+        f("%A")
+    } else {
+        f("%x")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

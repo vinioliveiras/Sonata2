@@ -5,6 +5,7 @@
 //!   sonata2-rs clock [--dark|--light]         Clock
 //!   sonata2-rs textedit [--new-window] [FILE...]   TextEdit
 //!   sonata2-rs preview [--markup] [FILE...]        Preview
+//!   sonata2-rs notes [--dark|--light]              Notes (with Reminders)
 //!   sonata2-rs desktop-files                  write the ported apps' desktop entries
 //!
 //! On trial (the default) everything runs next to the installed Python
@@ -14,7 +15,7 @@ mod desktop;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|desktop-files> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|desktop-files> [--dark|--light]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -37,6 +38,10 @@ fn main() -> ExitCode {
         }
         "preview" => {
             let code = sonata_preview::window::run(&args[1..]);
+            ExitCode::from(code.value() as u8)
+        }
+        "notes" => {
+            let code = sonata_notes::window::run(&args[1..]);
             ExitCode::from(code.value() as u8)
         }
         "desktop-files" => match desktop::write_all() {

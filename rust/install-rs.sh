@@ -11,6 +11,7 @@
 #   ~/.config/sonata2-rs/                         what the Rust build saves
 # One exception, Vini's call: Clock (Rust) edits the same alarms and timers
 # as the Python Clock (~/.local/share/sonata2-data/clock), so they ring.
+# TextEdit and Notes keep theirs in ~/.local/share/sonata2-rs-data.
 #
 #   rust/install-rs.sh               build (release) and install
 #   rust/install-rs.sh --uninstall   remove all of the above but ~/.config/sonata2-rs
@@ -50,6 +51,6 @@ SONATA2_RS_LAUNCHER="$BIN/sonata2-rs" "$BIN/sonata2-rs" desktop-files
 update-desktop-database "$APPS" 2>/dev/null || true
 
 echo
-echo "Installed next to Sonata: the Rust Calculator, Clock, TextEdit and Preview are in Launchpad,"
-echo "or run: sonata2-rs calculator | clock | textedit [FILE] | preview [FILE]"
+echo "Installed next to Sonata: the Rust Calculator, Clock, TextEdit, Preview and Notes are in Launchpad,"
+echo "or run: sonata2-rs calculator | clock | textedit [FILE] | preview [FILE] | notes"
 echo "Remove it with: rust/install-rs.sh --uninstall"

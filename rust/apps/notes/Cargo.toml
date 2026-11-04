@@ -1,0 +1,22 @@
+[package]
+name = "sonata-notes"
+description = "Notes, with Reminders in the same window -- ported from sonata2/notes/"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["gui"]
+# the window; without it only the note format, the data and the dates build
+gui = ["dep:gtk", "dep:adw", "dep:sonata-ui"]
+
+[dependencies]
+serde_json.workspace = true
+sonata-config = { workspace = true, features = ["watch"] }
+sonata-i18n.workspace = true
+gtk = { workspace = true, optional = true }
+adw = { workspace = true, optional = true }
+sonata-ui = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true

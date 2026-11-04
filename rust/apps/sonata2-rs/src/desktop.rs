@@ -133,6 +133,19 @@ pub fn preview_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
+/// Notes' entry ("Notes (Rust)" on trial).
+pub fn notes_entry(exec: &str) -> (String, String) {
+    let id = sonata_notes::app_id();
+    let name = if sonata_config::side_by_side() { sonata_i18n::n_!("Notes (Rust)") } else { "Notes" };
+    let text = format!(
+        "[Desktop Entry]\nType=Application\nName={name}\nComment=Write notes, make checklists and keep reminders\n\
+         Icon=sonata-notes\nCategories=Office;Utility;\nKeywords=note;reminder;todo;checklist;\nStartupNotify=true\n\
+         Exec={} notes\n",
+        quote(exec)
+    );
+    (format!("{id}.desktop"), text)
+}
+
 /// Write every ported app's entry (only when it changed); the paths written.
 pub fn write_all() -> io::Result<Vec<PathBuf>> {
     let dir = sonata_i18n::locale_dir();
@@ -140,7 +153,7 @@ pub fn write_all() -> io::Result<Vec<PathBuf>> {
     let folder = data_home().join("applications");
     let mut written = Vec::new();
     let exec = launcher();
-    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec)] {
+    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec), notes_entry(&exec)] {
         let text = localize(&text, &catalogs);
         let path = folder.join(file);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {

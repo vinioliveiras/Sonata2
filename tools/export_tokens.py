@@ -23,7 +23,8 @@ CSS_OUT = os.path.join(ROOT, "rust", "crates", "sonata-ui", "css.json")
 # the modules whose CSS the Rust code registers (sonata_ui::css::register_module)
 CSS_MODULES = ("ui/controls.py", "ui/menu.py", "ui/window.py", "ui/dialog.py", "ui/panel.py",
                "calculator/window.py", "clock/window.py", "clock/pages.py", "textedit/window.py", "textedit/tabs.py",
-               "preview/window.py", "preview/sidebar.py", "preview/info.py", "preview/markup.py")
+               "preview/window.py", "preview/sidebar.py", "preview/info.py", "preview/markup.py",
+               "notes/window.py", "notes/editor.py", "notes/reminders.py")
 
 
 def _registered(src: str, mod: str) -> list:
@@ -35,8 +36,14 @@ def _registered(src: str, mod: str) -> list:
         call = node.value if isinstance(node, ast.Expr) else None
         if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
                 and call.func.attr == "register" and isinstance(call.func.value, ast.Name)
-                and call.func.value.id in ("ui", "theme") and call.args
-                and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str)):
+                and call.func.value.id in ("ui", "theme") and call.args):
+            continue
+        first = call.args[0]
+        if isinstance(first, ast.BinOp) and isinstance(first.right, ast.Constant):
+            # `_colors + """..."""` (Reminders): the literal part; the Rust side
+            # makes the computed part itself
+            first = first.right
+        if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
             continue
         key, local = None, {}
         for kw in call.keywords:
@@ -48,7 +55,7 @@ def _registered(src: str, mod: str) -> list:
                 key = value
             elif value is not None:
                 local[kw.arg] = str(value)
-        out.append({"key": key or f"{mod}#{len(out)}", "css": call.args[0].value, "local": local})
+        out.append({"key": key or f"{mod}#{len(out)}", "css": first.value, "local": local})
     return out
 
 
