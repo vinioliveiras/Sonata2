@@ -310,6 +310,13 @@ def signature() -> tuple:
 _scan = {}          # desktop id -> DesktopAppInfo (scan())
 
 
+def _is_hidden(info) -> bool:
+    try:
+        return bool(info.get_is_hidden())
+    except Exception:
+        return False
+
+
 def scan() -> dict:
     """desktop id -> DesktopAppInfo, read from the folders themselves (GIO's
     own list only notices folders it watched since the process started)."""
@@ -327,6 +334,11 @@ def scan() -> dict:
                 try:
                     info = DesktopAppInfo.new_from_filename(os.path.join(root, n))
                 except TypeError:
+                    info = None
+                # Hidden=true: the entry is removed (a user's copy hiding a system
+                # one, as GIO reads it) -- kept as None, so the system copy stays
+                # hidden too. Vini: a second Google Chrome in the Apps Menu
+                if info is not None and _is_hidden(info):
                     info = None
                 out[did] = info
     _scan = {k: v for k, v in out.items() if v is not None}

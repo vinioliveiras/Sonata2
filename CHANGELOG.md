@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Apps Menu: an app entry you've hidden with a copy in ~/.local/share/applications marked Hidden=true no longer shows up as an app of its own (it gave a second Google Chrome), and hides the system's entry of the same name, as other desktops do.
 - Menu bar: keyboards set to different layouts (Settings > Keyboard) each get their own input control, one per layout (for example PT for the laptop and US for an external keyboard). Each control's tooltip lists its keyboards, and switching there changes only those. The single control showed Input Sources, which no keyboard with its own layout uses, so it showed the wrong layout and switching did nothing. Keyboards plugged in or out are picked up within 15 s.
 - Menu bar: the microphone / camera dot sits right of the date, centred between it and the screen's edge as on macOS Tahoe, and no longer moves any item when it appears; it used to be an item of its own beside Control Center and pushed the clock and every other item left. A click still opens Control Center; hovering still says which apps are using them.
 - New network icon: a network globe, in the menu bar when you're on a wired connection and in Settings' Network section, instead of the Ethernet port.

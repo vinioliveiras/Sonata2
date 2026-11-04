@@ -7,7 +7,8 @@ import unittest
 _DATA = tempfile.mkdtemp()
 os.makedirs(os.path.join(_DATA, "applications"))
 os.environ["XDG_DATA_HOME"] = _DATA
-os.environ["XDG_DATA_DIRS"] = tempfile.mkdtemp()            # only these entries
+_SYS = tempfile.mkdtemp()
+os.environ["XDG_DATA_DIRS"] = _SYS                          # only these entries
 
 
 _BIN = tempfile.mkdtemp()
@@ -35,6 +36,22 @@ _entry("com.google.Chrome", "Google Chrome", "/usr/bin/google-chrome-stable",
        "StartupWMClass=google-chrome\nNoDisplay=true\n")
 
 from sonata2 import apps  # noqa: E402
+
+
+class HiddenEntryTest(unittest.TestCase):
+    def test_hidden_override_was_a_second_chrome(self):
+        """Vini: two Google Chrome in the Apps Menu. A user's copy of an entry
+        with Hidden=true removes it (GIO's reading); Sonata's own scan read
+        the file and listed it, as an app of its own. It's gone now, and the
+        system's entry of that name with it."""
+        os.makedirs(os.path.join(_SYS, "applications"), exist_ok=True)
+        with open(os.path.join(_SYS, "applications", "org.example.Gone.desktop"), "w") as f:
+            f.write("[Desktop Entry]\nType=Application\nName=Gone\nExec=thing\n")
+        with open(os.path.join(_DATA, "applications", "org.example.Gone.desktop"), "w") as f:
+            f.write("[Desktop Entry]\nType=Application\nName=Gone\nHidden=true\n")
+        found = apps.scan()
+        self.assertNotIn("org.example.Gone.desktop", found)
+        self.assertIn("org.example.Thing.desktop", found)
 
 
 class MatchTest(unittest.TestCase):
