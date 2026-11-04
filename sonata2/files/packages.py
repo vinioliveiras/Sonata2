@@ -91,10 +91,15 @@ def install_command(path: str):
 
 
 def open_path(path: str, parent=None) -> bool:
-    """Double-click: install / run / extract. False = not a package (the
-    caller opens it the usual way)."""
+    """Double-click: install / run / extract, a shell script run. False =
+    none of those (the caller opens it the usual way)."""
     k = kind(path)
     if k is None:
+        # a shell script (.sh / .bash / .zsh) runs, in a terminal that stays
+        # open: its output and whatever it asks (Vini: double-click runs it)
+        if os.path.splitext(path)[1].lower() in _SCRIPTS and is_script(path):
+            run_script(path, parent)
+            return True
         return False
     if k == "appimage":
         run_appimage(path, parent)

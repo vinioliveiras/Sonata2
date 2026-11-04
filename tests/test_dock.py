@@ -96,9 +96,10 @@ class DropAnimationTest(unittest.TestCase):
 
 
 class UninstallPlaceTest(unittest.TestCase):
-    def test_uninstall_was_at_the_end_not_under_options(self):
-        """Vini: Uninstall… should be right under Options, not at the very end
-        of the right-click (past Minimize / Quit or Open)."""
+    def test_uninstall_was_at_the_end_not_under_keep_in_dock(self):
+        """Vini: Uninstall… was at the very end of the right-click (past
+        Minimize / Quit or Open); it belongs in Options, right under Keep in
+        Dock -- and only there."""
         import os
         import tempfile
         import types
@@ -112,10 +113,13 @@ class UninstallPlaceTest(unittest.TestCase):
             dock = types.SimpleNamespace(windows={key: wins}, cfg={"pinned": [key]},
                                          can_uninstall=lambda t: True, ask_uninstall=lambda t: None)
             tile = types.SimpleNamespace(info=info, name="Thing", key=key)
-            labels = [[i.label for i in sec] for sec in dock_menu.app_sections(dock, key, tile)]
-            sec = next(s for s in labels if "Options" in s)
-            self.assertEqual(sec[sec.index("Options") + 1], "Uninstall…", labels)
-            self.assertEqual(sum(s.count("Uninstall…") for s in labels), 1)
+            sections = dock_menu.app_sections(dock, key, tile)
+            top = [i.label for sec in sections for i in sec]
+            self.assertNotIn("Uninstall…", top)
+            opts = next(i for sec in sections for i in sec if i.label == "Options").submenu
+            first = [i.label for i in opts[0]]
+            self.assertEqual(first[:2], ["Keep in Dock", "Uninstall…"])
+            self.assertEqual(sum(i.label == "Uninstall…" for sec in opts for i in sec), 1)
 
 
 class DockTest(unittest.TestCase):
@@ -245,6 +249,7 @@ class DockTest(unittest.TestCase):
         key = next(k for k in self.removable() if D.Dock.can_uninstall(self.dock.tiles[k]))
         tile = self.dock.tiles[key]
         items = [i for sec in dock_menu.app_sections(self.dock, key, tile) for i in sec]
+        items += [j for i in items for sec in (i.submenu or []) for j in sec]          # (in Options)
         item = next((i for i in items if i.label == "Uninstall…"), None)
         self.assertIsNotNone(item)
         with mock.patch("sonata2.shell.uninstall_ui.ask") as ask:
@@ -254,7 +259,8 @@ class DockTest(unittest.TestCase):
         for k in D.PERMANENT:
             t = self.dock.tiles.get(k)
             if t is not None:
-                labels = [i.label for sec in dock_menu.app_sections(self.dock, k, t) for i in sec]
+                its = [i for sec in dock_menu.app_sections(self.dock, k, t) for i in sec]
+                labels = [j.label for i in its for sec in (i.submenu or []) for j in sec] + [i.label for i in its]
                 self.assertNotIn("Uninstall…", labels)
 
     def test_files_could_not_leave_the_dock(self):

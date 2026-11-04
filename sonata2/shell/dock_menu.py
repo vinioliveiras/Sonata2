@@ -166,10 +166,13 @@ def app_sections(dock, key: str, tile) -> list:
     pinned = key in dock.cfg["pinned"]
     from .dock import PERMANENT
     opts = []
+    # Uninstall… right under Keep in Dock, in Options (Vini)
+    uninstall = [Item(_("Uninstall…"), lambda: dock.ask_uninstall(tile))] if dock.can_uninstall(tile) else []
     if info and key in PERMANENT:                  # can't leave the Dock (Launchpad / the Apps Menu)
         opts = [[Item(_("Open File Location"), lambda: show_in_files(app_file(info)))]]
     elif info:
         opts = [[Item(_("Keep in Dock"), lambda on: dock.set_pinned(key, on), checked=pinned),
+                 *uninstall,
                  Item(_("Open at Login"), lambda on: set_open_at_login(info, on),
                       checked=opens_at_login(info.get_id()[:-8])),
                  lock_item(info)],
@@ -189,17 +192,9 @@ def app_sections(dock, key: str, tile) -> list:
         if f:
             opts.append(f)
     elif pinned:
-        opts = [[Item(_("Keep in Dock"), lambda on: dock.set_pinned(key, on), checked=True)]]
-    under_options = []
+        opts = [[Item(_("Keep in Dock"), lambda on: dock.set_pinned(key, on), checked=True), *uninstall]]
     if opts:
-        under_options.append(Item(_("Options"), submenu=opts))
-    if dock.can_uninstall(tile):
-        # Vini: uninstall from the right-click too, not only by dropping it on
-        # the Trash -- asked first, and it leaves the Dock once it's done.
-        # Right under Options (Vini), not at the very end past Quit
-        under_options.append(Item(_("Uninstall…"), lambda: dock.ask_uninstall(tile)))
-    if under_options:
-        sections.append(under_options)
+        sections.append([Item(_("Options"), submenu=opts)])
     if wins:
         # Minimize; when every window already is: Maximize (brought back, full size)
         if all(t.minimized for t in wins):

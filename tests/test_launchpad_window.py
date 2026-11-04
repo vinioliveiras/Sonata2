@@ -201,6 +201,18 @@ class MenuModeTest(unittest.TestCase):
         for want in ("Open", "Keep in Dock", "Hide"):
             self.assertIn(want, labels)
 
+    def test_uninstall_was_under_hide_not_keep_in_dock(self):
+        """Vini: in the Apps Menu Uninstall… goes right under Keep in Dock /
+        Remove from Dock (it was beside Hide, at the end)."""
+        for pinned in ([], ["gimp"]):
+            config.save("dock", {"pinned": pinned})
+            with mock.patch.object(ui.menu, "popup") as popup:
+                self.pad.item_menu(self.tile("gimp"), 1, 1)
+            secs = [[i.label for i in sec] for sec in popup.call_args[0][1]]
+            dock = next(sec for sec in secs if sec[0] in ("Keep in Dock", "Remove from Dock"))
+            self.assertEqual(dock[1:], ["Uninstall…"], secs)
+            self.assertEqual(sum(sec.count("Uninstall…") for sec in secs), 1)
+
     def test_hide_and_drag_out_of_hidden(self):
         self.pad.hide_app("gimp")
         self.assertNotIn("gimp", self.items())
