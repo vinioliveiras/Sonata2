@@ -106,9 +106,13 @@ class BarDotsTest(unittest.TestCase):
             ok, dot = bar.mic_dot.compute_bounds(bar)
             ok2, clock = bar.clock.compute_bounds(bar)
             self.assertTrue(ok and ok2)
-            self.assertGreaterEqual(dot.get_x(), clock.get_x() + clock.get_width())   # right of the date
-            self.assertLessEqual(dot.get_x() + dot.get_width(), w)                    # still on the bar
+            ok3, text = bar.clock.get_child().get_last_child().compute_bounds(bar)
+            text_end = text.get_x() + text.get_width()
             self.assertGreater(dot.get_width(), 0)
+            self.assertGreaterEqual(dot.get_x(), text_end)                            # right of the date
+            self.assertLessEqual(dot.get_x() + dot.get_width(), w)                    # still on the bar
+            # Vini: centred between the end of the date and the screen's edge
+            self.assertAlmostEqual(dot.get_x() + dot.get_width() / 2, (text_end + w) / 2, delta=1)
         finally:
             bar.stop()
 

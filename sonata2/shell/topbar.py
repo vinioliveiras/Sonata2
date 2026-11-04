@@ -324,7 +324,7 @@ class Bar(Gtk.CenterBox):
         from ..backend import inuse
         self.inuse = _shared("inuse", inuse.Watcher)
         self.inuse_btn = Gtk.Button(css_classes=["inuse-dots"], can_focus=False, halign=Gtk.Align.END,
-                                    valign=Gtk.Align.CENTER, margin_end=(INUSE_ROOM - INUSE_DOT) // 2)
+                                    valign=Gtk.Align.CENTER)
         self.inuse_btn.connect("clicked", lambda _b: self._open(self.cc, self._control_center))
         dots = Gtk.Box(valign=Gtk.Align.CENTER)
         self.mic_dot = Gtk.Box(css_classes=["inuse-dot", "mic"], valign=Gtk.Align.CENTER)
@@ -334,6 +334,7 @@ class Bar(Gtk.CenterBox):
         self.inuse_btn.set_child(dots)
         end = Gtk.Overlay(child=right)
         end.add_overlay(self.inuse_btn)                 # (an overlay: not measured, the row keeps its size)
+        end.connect("get-child-position", self._inuse_place)
         self.inuse.listeners.append(self._inuse_changed)
         self._inuse_changed()
         self.set_end_widget(end)
@@ -378,6 +379,21 @@ class Bar(Gtk.CenterBox):
         # and, once it has settled, every item anew: an icon kept its Light
         # Mode look in Dark Mode until clicked (Vini)
         ui.theme.settled(self, lambda: self.alive and ui.theme.refresh_tree(self))
+
+    def _inuse_place(self, overlay, child, r=None):
+        """The dot halfway between the end of the date's text and the screen's
+        edge (Vini), centred on the bar's height."""
+        if child is not self.inuse_btn:
+            return False
+        w, h = child.get_preferred_size()[1].width, child.get_preferred_size()[1].height
+        label = self.clock.get_child().get_last_child()
+        ok, b = label.compute_bounds(overlay)
+        text_end = b.get_x() + b.get_width() if ok else overlay.get_width() - INUSE_ROOM
+        out = r if r is not None else Gdk.Rectangle()       # (PyGObject: filled in, or returned)
+        out.x = round(text_end + (overlay.get_width() - text_end - w) / 2)
+        out.y = round((overlay.get_height() - h) / 2)
+        out.width, out.height = w, h
+        return True if r is not None else (True, out)
 
     def _inuse_changed(self) -> None:
         """The dots: green while the camera records, orange the microphone; who, on hover."""

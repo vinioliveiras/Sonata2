@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Menu bar: the microphone / camera dot sits right of the date, as on macOS Tahoe, and no longer moves any item when it appears; it used to be an item of its own beside Control Center and pushed the clock and every other item left. A click still opens Control Center; hovering still says which apps are using them.
+- Menu bar: the microphone / camera dot sits right of the date, centred between it and the screen's edge as on macOS Tahoe, and no longer moves any item when it appears; it used to be an item of its own beside Control Center and pushed the clock and every other item left. A click still opens Control Center; hovering still says which apps are using them.
 - New network icon: a network globe, in the menu bar when you're on a wired connection and in Settings' Network section, instead of the Ethernet port.
 - Files: double-clicking a shell script (.sh, .bash, .zsh) runs it, in a Terminal window opened in its folder, so you see what it prints and can answer what it asks. It used to open in the text editor. Opening one from the Desktop, Spotlight or a Dock stack runs it too; Open With still offers the editor.
 - Chrome in the Dock no longer opens as a second icon, and no longer gets closed and opened again in a loop: a Chrome update added a hidden entry (com.google.Chrome) with the same window class, and its windows went to that one instead of the Chrome in the Dock. Entries meant to be shown claim their windows first.
