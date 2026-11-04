@@ -1464,6 +1464,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-dock"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "libadwaita",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-desktop",
+ "sonata-i18n",
+ "sonata-shell",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
 name = "sonata-feedback"
 version = "0.1.0"
 dependencies = [
@@ -1550,6 +1568,24 @@ dependencies = [
  "serde_json",
  "sonata-config",
  "sonata-i18n",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
+name = "sonata-notifications"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "libadwaita",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-desktop",
+ "sonata-i18n",
+ "sonata-shell",
  "sonata-ui",
  "tempfile",
 ]

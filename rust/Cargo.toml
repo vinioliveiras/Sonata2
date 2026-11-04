@@ -30,6 +30,8 @@ members = [
     "apps/portal",
     "apps/topbar",
     "apps/greeter",
+    "apps/dock",
+    "crates/sonata-notifications",
     "crates/sonata-desktop",
     "crates/sonata-tray",
     "apps/sonata2-rs",
@@ -98,6 +100,8 @@ sonata-files = { path = "apps/files" }
 sonata-portal = { path = "apps/portal" }
 sonata-topbar = { path = "apps/topbar" }
 sonata-greeter = { path = "apps/greeter" }
+sonata-dock = { path = "apps/dock" }
+sonata-notifications = { path = "crates/sonata-notifications" }
 sonata-desktop = { path = "crates/sonata-desktop" }
 sonata-tray = { path = "crates/sonata-tray" }
 
