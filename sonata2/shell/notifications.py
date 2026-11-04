@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
 from .. import apps, config, icons, ui  # noqa: E402
 from ..i18n import _  # noqa: E402
@@ -148,6 +148,51 @@ XML = """
 NC_SLIDE_PX = BANNER_W + 40         # off the right edge: the column's width and its margins
 
 
+class _FrostBox(Gtk.Box):
+    """A column of Notification Center (the Today widgets, the cards) that
+    draws the glass under each of its panels -- their slice of the display's
+    blurred picture (frost.py), placed where it is on screen -- before the
+    panels themselves (their tint over it). The compositor never blurs
+    Notification Center (glass.NEVER_BLUR: Vini, it lagged with many
+    notifications); without a picture, nothing here (the panels go solid:
+    .no-frost)."""
+    PANELS = {"nt-card": 1.08, "nc-widget": 1.5}    # their radius, as their CSS (r_dialog *)
+
+    def do_snapshot(self, snap) -> None:
+        win = self.get_root()
+        tex = getattr(win, "frost_tex", None)
+        if tex is not None:
+            p = Graphene.Point()
+            p.x, p.y = 0, 0
+            ok, at = self.compute_point(win, p)
+            if ok:
+                screen = Graphene.Rect().init(-at.x, -at.y, win.get_width(), win.get_height())
+                for w, k in self._panels():
+                    ok, b = w.compute_bounds(self)
+                    if not ok or b.get_width() <= 0:
+                        continue
+                    rr = Gsk.RoundedRect()
+                    rr.init_from_rect(b, ui.theme.px("r_dialog") * k)
+                    snap.push_rounded_clip(rr)
+                    snap.append_texture(tex, screen)
+                    snap.pop()
+        Gtk.Box.do_snapshot(self, snap)
+
+    def _panels(self):
+        """The visible panels inside it (a card sits a few boxes down its slot)."""
+        stack = [self.get_first_child()]
+        while stack:
+            w = stack.pop()
+            while w is not None:
+                if w.get_visible():
+                    k = next((v for c, v in self.PANELS.items() if w.has_css_class(c)), None)
+                    if k is not None:
+                        yield w, k
+                    elif w.get_first_child() is not None:
+                        stack.append(w.get_first_child())
+                w = w.get_next_sibling()
+
+
 class _Slide(Gtk.Box):
     """The Notification Center column, sliding in and out (CSS .nc-slide).
     Keeps a Revealer's two calls (prewarm and show/hide use them)."""
@@ -185,6 +230,10 @@ window.sonata-nc, window.sonata-nc > contents { background: none; box-shadow: no
   color: %(label)s; font-family: %(font)s;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, 0 8px 22px rgba(0,0,0,0.18); }
 .nt-card.solid { background: %(menu_bg)s; }
+/* Notification Center without its glass (no grim, no picture): solid panels
+   -- the compositor doesn't blur behind it (_FrostBox) */
+window.sonata-nc.no-frost .nt-card, window.sonata-nc.no-frost .nc-widget,
+window.sonata-nc.no-frost button.nc-clear { background: %(menu_bg)s; }
 .nt-title { font-weight: 700; font-size: %(text_body)s; }
 .nt-image { border-radius: 5px; }
 .nt-body { font-size: %(text_body)s; }
@@ -686,11 +735,18 @@ class _Center(Gtk.Window):
         super().__init__(application=app, title="Notification Center", decorated=False)
         self.add_css_class("sonata-nc")
         self.owner = owner
-        scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_width=True)
-        self.col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=TOP_GAP - 4,
-                           margin_end=10, margin_bottom=12, margin_start=6)
+        # the Today widgets stay at the top, the notifications scroll under
+        # them (Vini: the calendar fixed, however many notifications)
+        self.top = _FrostBox(orientation=Gtk.Orientation.VERTICAL, margin_top=TOP_GAP - 12, margin_end=10)
+        scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_width=True,
+                                      vexpand=True)
+        self.col = _FrostBox(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=4,
+                             margin_end=10, margin_bottom=12, margin_start=6)
         scroller.set_child(self.col)
-        self.rev = _Slide(scroller)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        outer.append(self.top)
+        outer.append(scroller)
+        self.rev = _Slide(outer)
         self.set_child(self.rev)
         outside = Gtk.GestureClick()
         outside.connect("released", self._clicked)
@@ -724,7 +780,7 @@ class _Center(Gtk.Window):
         # column (it spans the full height, over the menu bar's clock and
         # icons too) close it like any other click outside
         w = self.pick(x, y, Gtk.PickFlags.DEFAULT)
-        while w is not None and w.get_parent() is not self.col:
+        while w is not None and w.get_parent() not in (self.col, self.top):
             w = w.get_parent()
         if w is None:
             self.hide_center()
@@ -740,12 +796,42 @@ class _Center(Gtk.Window):
         if getattr(self, "_built_for", None) != self._state_key():
             self._rebuild()
         self._refresh_times()
+        self._frost()
         self.present()
         GLib.idle_add(lambda: (self.rev.set_reveal_child(True), False)[1])
 
+    def _frost(self) -> None:
+        """Its glass: the display's picture, taken as it opens (it slides in
+        from transparent, so it's not in it yet), blurred once and drawn
+        under the panels (_FrostBox). No grim, or no picture: solid panels."""
+        from . import frost
+        self.frost_tex = None
+        self._frost_gen = getattr(self, "_frost_gen", 0) + 1
+        gen = self._frost_gen
+        mon = getattr(self, "monitor", None)
+        out = mon.get_connector() if mon is not None else None
+        if out is None:
+            from .capture import focused_output
+            out = focused_output()
+
+        def done(tex):
+            if gen != self._frost_gen or not self.get_visible():
+                return                                   # closed, or opened again since
+            self.frost_tex = tex
+            (self.remove_css_class if tex is not None else self.add_css_class)("no-frost")
+            self.top.queue_draw()
+            self.col.queue_draw()
+        if not layer.layer_shell() or not frost.capture(out, done, self.get_renderer):
+            self.add_css_class("no-frost")
+
     def hide_center(self):
         self.rev.set_reveal_child(False)
-        GLib.timeout_add(260, lambda: (self.set_visible(False), False)[1])
+
+        def gone():
+            self.set_visible(False)
+            self.frost_tex = None                        # (a new picture each opening)
+            return False
+        GLib.timeout_add(260, gone)
 
     def _changed(self):
         """Closed notes leave with an animation (staggered for Clear All);
@@ -851,7 +937,7 @@ class _Center(Gtk.Window):
                     when.set_label(text)
 
     def _calendar(self):
-        """Today widgets (Big Sur: below the notifications), made again only
+        """Today widgets (fixed above the notifications: Vini), made again only
         on a new day, after Calendar's files changed, or when Up Next's first
         event has ended -- reading the calendar files was part of every
         notification's rebuild."""
@@ -871,9 +957,9 @@ class _Center(Gtk.Window):
         cal.add_controller(click)
         from ..ui.fixed import FixedWidth
         if self._cal is not None:
-            self.col.remove(self._cal)
+            self.top.remove(self._cal)
         self._cal = FixedWidth(cal, BANNER_W + 6)        # (its margin_start); an event title never widens it
-        self.col.append(self._cal)
+        self.top.append(self._cal)
         self._cal_key = key
         self._cal_until = min((o.end for o, _c in events
                                if o.end > now and o.start.date() <= now.date() + dt.timedelta(days=1)), default=None)

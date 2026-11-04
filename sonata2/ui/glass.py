@@ -121,8 +121,12 @@ BLUR_NONE = 'app_id is "sonata2-blur-nothing"'           # matches nothing: the 
 # whole display: a full-screen blur every frame), and the wallpaper (opaque:
 # nothing behind it to see)
 # (the Game Bar too, Vini: a full-screen blur over a running game cost too much -- dimmed like Overview instead)
+# (and Notification Center, Vini: laggy with many notifications -- a blur pass
+# over its whole column every frame it scrolled or slid; its glass is a
+# picture blurred once, shell/frost.py)
 NEVER_BLUR = ('app_id is "sonata2-mission" | app_id is "sonata2-spaces" | app_id is "sonata2-wallpaper" | '
-              'app_id is "sonata2-gamebar" | app_id is "sonata2-gamebar-pin"')
+              'app_id is "sonata2-gamebar" | app_id is "sonata2-gamebar-pin" | '
+              'app_id is "sonata2-notification-center"')
 
 
 def without_never(rule: str) -> str:

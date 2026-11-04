@@ -67,14 +67,16 @@ from .mission import DIM  # noqa: E402  (the same dark layer as Overview, Win+Ta
 
 NAMESPACE = "sonata2-gamebar"
 PIN_NAMESPACE = "sonata2-gamebar-pin"
-# the fake glass: the display's picture at this scale (blurred: no detail
-# needed), blurred this much (px at full size), awaited this long at most
-FROST_SCALE = 0.25
-FROST_BLUR = 28
-FROST_WAIT_MS = 80          # the Game Bar (its dimming) shows after this at most
-PANELS_WAIT_MS = 220        # its panels wait this much more for their glass (later: solid, glass fading in)
-READ_AFTER_MS = 260
-GLASS_FADE_MS = 250         # a late picture: the glass fades in         # the states read once the opening animation is over
+# the fake glass: the display's picture, small and blurred once (frost.py)
+from .frost import FROST_BLUR, FROST_SCALE, blur_texture, frost_command  # noqa: E402,F401  (shared: frost.py)
+# Vini: the Game Bar opens and closes at once, as fast as it can -- no
+# animations, and it never waits for the game's picture: its panels show
+# solid and turn to glass the moment the picture comes (usually a few
+# frames later)
+FROST_WAIT_MS = 0           # the Game Bar shows at once
+PANELS_WAIT_MS = 0          # its panels too (solid until their glass comes)
+READ_AFTER_MS = 120         # the states read once it's on screen
+GLASS_FADE_MS = 0           # the glass comes on at once, no fade
 FROST_LATE_S = 2.0          # a later picture than that: the game has moved on, no glass this time
 CONFIG = "gamebar"
 # the widgets, in the bar's order -- the same left-to-right order as on the
@@ -110,26 +112,21 @@ PERF_CELL = ((WIDGET_INNER - 6) // 2, 92)       # two graphs a row, the Grid's 6
 
 
 def _close_ms() -> int:
-    """How long the closing animation runs (t_open, at Sonata's speed)."""
-    return tokens.ms(float(tokens.SHARED["t_open"].rstrip("ms")))
+    """How long closing takes: nothing, it goes at once (Vini: no animations)."""
+    return 0
 
 
 ui.register("""
 window.sonata-gamebar, window.sonata-gamebar > contents { background: none; box-shadow: none; }
 /* the game dimmed like Overview's (Win+Tab); never blurred (glass.NEVER_BLUR) */
-.gb-scrim { background: rgba(0, 0, 0, %(dim)s); transition: opacity %(t_open)s %(ease_out)s; }
+/* (no fade in or out: the Game Bar opens and closes at once -- Vini) */
+.gb-scrim { background: rgba(0, 0, 0, %(dim)s); }
 .gb-root.closing .gb-scrim { opacity: 0; }
-@keyframes gb-fade-in { from { opacity: 0; } to { opacity: 1; } }
-.gb-scrim { animation: gb-fade-in %(t_open)s %(ease_out)s both; }
 
-/* the bar: a Big Sur glass pill, sliding down from the top edge */
+/* the bar: a Big Sur glass pill at the top */
 .gb-bar { background-color: %(menu_bg)s; border-radius: %(r_plate)s; padding: 6px 8px;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_menu)s;
   color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
-@keyframes gb-bar-in { from { opacity: 0; transform: translateY(-14px) scale(0.98); } to { opacity: 1; transform: none; } }
-@keyframes gb-bar-out { to { opacity: 0; transform: translateY(-14px) scale(0.98); } }
-.gb-bar { animation: gb-bar-in %(t_standard)s %(ease_out)s both; }
-.gb-root.closing .gb-bar { animation: gb-bar-out %(t_open)s %(ease_out)s both; }
 .gb-app { padding: 0 8px 0 4px; }
 .gb-app-name { font-weight: 700; }
 .gb-sep { min-width: 1px; margin: 4px 6px; background: %(separator)s; }
@@ -156,20 +153,15 @@ window.sonata-gamebar, window.sonata-gamebar > contents { background: none; box-
 
 /* the fake glass under them (_Frost): see-through over the blurred picture */
 /* the panels waiting for their glass: not shown yet (they pop in with it) */
-.gb-root.waiting .gb-bar, .gb-root.waiting .gb-widget { opacity: 0; animation: none; }
-/* over the glass a panel paints its own tint (_Glass): no CSS background,
-   its solid one fading out as the glass fades in */
+.gb-root.waiting .gb-bar, .gb-root.waiting .gb-widget { opacity: 0; }
+/* over the glass a panel paints its own tint (_Glass): no CSS background */
 .gb-root.frosted .gb-bar, .gb-root.frosted .gb-widget { background-color: transparent; }
-.gb-bar, .gb-widget { transition: background-color %(t_standard)s %(ease_out)s; }
 
-/* a widget: Control Center glass, popping in a little after the bar */
+/* a widget: Control Center glass */
 .gb-widget { background-color: %(menu_bg)s; border-radius: %(r_dialog)s; padding: 6px;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_menu)s;
   color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
-@keyframes gb-widget-in { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
-@keyframes gb-widget-out { to { opacity: 0; transform: scale(0.94); } }
-.gb-widget { animation: gb-widget-in %(t_standard)s %(ease_out)s both; }
-.gb-widget.hiding, .gb-root.closing .gb-widget { animation: gb-widget-out %(t_open)s %(ease_out)s both; }
+.gb-root.closing .gb-bar, .gb-root.closing .gb-widget, .gb-widget.hiding { opacity: 0; }
 .gb-widget-body { padding: 4px 4px 2px; }
 .gb-widget-empty { color: %(label_secondary)s; font-size: %(text_small)s; margin: 14px 8px 16px; }
 
@@ -256,23 +248,6 @@ def _focusables(root) -> list:
 
 
 GLASS_TINT = 0.55          # the panels' tint over the glass (menu_bg at this alpha)
-
-
-def blur_texture(renderer, texture):
-    """The game's picture blurred once (GSK), at its small size."""
-    if renderer is None:
-        return texture
-    from gi.repository import Graphene
-    w, h = texture.get_width(), texture.get_height()
-    snap = Gtk.Snapshot()
-    r = Graphene.Rect().init(0, 0, w, h)
-    snap.push_clip(r)
-    snap.push_blur(FROST_BLUR * FROST_SCALE)
-    snap.append_texture(texture, Graphene.Rect().init(-8, -8, w + 16, h + 16))   # no dark edges
-    snap.pop()
-    snap.pop()
-    node = snap.to_node()
-    return renderer.render_texture(node, r) if node is not None else texture
 
 
 class _Glass:
@@ -390,14 +365,6 @@ def perf_kinds(available) -> list:
     in its order: CPU, each GPU, their memory, temperatures, memory, network),
     FPS apart (the FPS Limit above shows it)."""
     return [k for k in available if k not in PERF_SKIP]
-
-
-def frost_command(output) -> list:
-    """grim: the display's picture, small and uncompressed (fast)."""
-    cmd = ["grim", "-s", str(FROST_SCALE), "-l", "0"]
-    if output:
-        cmd += ["-o", output]
-    return cmd + ["-"]
 
 
 class PinWindow(Gtk.Window):
@@ -753,7 +720,7 @@ class GameBar(Gtk.Window):
         def once():
             if not state["shown"]:
                 state["shown"] = True
-                if self.frost_tex is None and gen == self._frost_gen:
+                if self.frost_tex is None and gen == self._frost_gen and PANELS_WAIT_MS:
                     # the panels wait for their glass (Vini: they opened solid,
                     # then turned to glass): the game dims at once, the bar and
                     # widgets pop in with the picture, or solid at the latest
@@ -762,7 +729,8 @@ class GameBar(Gtk.Window):
                                                               False)[1])
                 show()
             return False
-        GLib.timeout_add(FROST_WAIT_MS, once)
+        if FROST_WAIT_MS:
+            GLib.timeout_add(FROST_WAIT_MS, once)
         from .capture import focused_output
         try:
             proc = Gio.Subprocess.new(frost_command(focused_output()),
@@ -770,6 +738,8 @@ class GameBar(Gtk.Window):
         except GLib.Error:
             once()
             return
+        if not FROST_WAIT_MS:
+            once()                                      # at once, grim already asked for the screen
 
         started = time.monotonic()
 
@@ -802,6 +772,9 @@ class GameBar(Gtk.Window):
         if not self.get_mapped() or self.root.has_css_class("waiting"):
             self._set_glass(tex, 1.0)                   # in glass from their first frame
             self._panels_in()
+            return
+        if not GLASS_FADE_MS:
+            self._set_glass(tex, 1.0)                   # (no fade: Vini, no animations)
             return
         self._set_glass(tex, 0.0)
         from gi.repository import Adw

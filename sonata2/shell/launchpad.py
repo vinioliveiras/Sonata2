@@ -67,15 +67,6 @@ window.sonata-launchpad *:drop(active) { box-shadow: none; outline: none; border
 /* edit mode (jiggle, the x): ui.edit, shared with Control Center */
 .jiggle .lp-item .lp-icon, .jiggle .lp-item .lp-folder { animation: sonata-jiggle 260ms ease-in-out infinite; }
 .jiggle .lp-item.odd .lp-icon, .jiggle .lp-item.odd .lp-folder { animation-delay: -130ms; }
-.lp-lock { color: %(on_scrim)s; }
-.lp-lock-text { color: %(on_scrim)s; font-family: %(font)s; font-size: %(text_body)s; }
-.lp-lock-hint { color: %(on_scrim_secondary)s; font-family: %(font)s; font-size: %(text_small)s; }
-.lp-lock-panel passwordentry { min-width: 220px; min-height: 28px; border-radius: 8px; padding: 0 8px;
-  background: %(field_on_scrim)s; color: %(on_scrim)s; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.18); }
-@keyframes lp-shake {   /* one selector per step: GTK's CSS has no "0%%, 100%%" lists */
-  0%% { transform: none; } 20%% { transform: translateX(-8px); } 40%% { transform: translateX(8px); }
-  60%% { transform: translateX(-8px); } 80%% { transform: translateX(8px); } 100%% { transform: none; } }
-.lp-lock-panel.shake { animation: lp-shake 360ms ease-in-out; }
 /* folders open and close with a zoom + fade (Big Sur); the grid dims behind */
 .lp-col { transition: opacity %(fold_in)dms cubic-bezier(0.2, 0.8, 0.2, 1),
   filter %(fold_in)dms cubic-bezier(0.2, 0.8, 0.2, 1); }
@@ -608,67 +599,33 @@ class Launchpad(Gtk.ApplicationWindow):
         self.save()
         self.render()
 
-    def _ask_password(self, folder, then=None) -> None:
+    def _ask_password(self, folder, then=None):
         """The Hidden folder -- and a folder locked with Lock Folder (Vini, as
         the Dock's) -- opens only with the user's password (PAM, like the lock
         screen); it stays open until Launchpad closes. then(): instead of
-        opening it (Unlock Folder)."""
-        from .. import pam
+        opening it (Unlock Folder). Asked in the sheet every login-password
+        prompt shares (authsheet)."""
+        from . import authsheet
         self._close_folder()
-        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, css_classes=["lp-panel", "lp-lock-panel"])
-        panel.append(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=36, css_classes=["lp-lock"]))
         text = _("Enter your password to see hidden apps") if folder.get("locked") else \
             _("Enter your password to open this folder") if then is None else \
             _("Enter your password to change this folder")
-        panel.append(Gtk.Label(label=text, css_classes=["lp-lock-text"]))
-        entry = Gtk.PasswordEntry(show_peek_icon=True, halign=Gtk.Align.CENTER)
-        panel.append(entry)
-        hint = Gtk.Label(label="" if pam.available() else _("PAM is not available: can't check passwords"),
-                         css_classes=["lp-lock-hint"])
-        panel.append(hint)
-        wrap = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18, halign=Gtk.Align.CENTER,
-                       valign=Gtk.Align.CENTER)
-        title = Gtk.Label(label=folder["folder"], css_classes=["lp-panel-title"])
-        wrap.append(title)
-        wrap.append(panel)
-        host, dim = self._host()
-        host.add_overlay(wrap)
-        self.folder_view = (wrap, None, panel)
-        wrap.add_css_class("lp-folder-view")
-        dim.add_css_class("dimmed")
-        dim.set_can_target(False)                 # a click behind the folder closes it
-        entry.grab_focus()
 
-        def done(ok):
-            if self.folder_view is None or self.folder_view[0] is not wrap:
-                return False
-            entry.set_sensitive(True)
-            if ok:
-                if folder.get("locked"):
-                    self._unlocked = True
-                else:
-                    self._unlocked_ids.add(id(folder))
-                if then is not None:
-                    self._close_folder()
-                    then()
-                else:
-                    self._open_folder(folder)
+        def right():
+            if folder.get("locked"):
+                self._unlocked = True
             else:
-                hint.set_label(_("Wrong password"))
-                entry.set_text("")
-                entry.grab_focus()
-                panel.remove_css_class("shake")
-                GLib.idle_add(lambda: (panel.add_css_class("shake"), False)[1])
-            return False
-
-        def check(_e):
-            pw = entry.get_text()
-            if not pw:
-                return
-            entry.set_sensitive(False)
-            from .dock_folder import check_password      # PAM in a thread (the Dock's folders too)
-            check_password(pw, done)
-        entry.connect("activate", check)
+                self._unlocked_ids.add(id(folder))
+            if then is not None:
+                then()
+            else:
+                self._open_folder(folder)
+        root = self.get_root()
+        self.password_sheet = authsheet.ask(
+            _("“{name}” is locked").format(name=folder["folder"]), text, right,
+            ok=_("Open") if then is None else _("OK"), parent=root,
+            app=root.get_application() if root is not None else None)
+        return self.password_sheet
 
     def _config_changed(self) -> None:
         """launchpad.json changed elsewhere (Settings: reset, unhide)."""
@@ -1070,8 +1027,6 @@ class Launchpad(Gtk.ApplicationWindow):
 
     def _key(self, _c, keyval, _code, state) -> bool:
         K = Gdk
-        if self.folder_view and self.folder_view[1] is None and keyval != K.KEY_Escape:
-            return False                        # typing the Hidden folder's password
         editing = self._editing_title()
         if editing is not None:                 # renaming a folder: the keys move in its text (Vini)
             if keyval == K.KEY_Escape:
@@ -1171,7 +1126,7 @@ class Launchpad(Gtk.ApplicationWindow):
             dock = config.load("dock", {"pinned": None})
             pins = dock.get("pinned")
             from .dock import PERMANENT
-            if pins is not None and item not in PERMANENT:       # Files / Launchpad always stay
+            if pins is not None and item not in PERMANENT:       # (Launchpad always stays)
                 kept = item in pins
 
                 def toggle_dock(on=not kept):
@@ -1200,7 +1155,7 @@ class Launchpad(Gtk.ApplicationWindow):
                 sections.append([lock_item(info, self.close_launchpad)])
             hide = [Item(_("Hide"), lambda: self.hide_app(item))]      # into the Hidden folder
             if info and not (info.get_id() or "").startswith(PROTECTED):
-                hide.append(Item(_("Move to Trash"), lambda: self.ask_delete(item)))
+                hide.append(Item(_("Uninstall…"), lambda: self.ask_delete(item)))   # (Settings > Apps' name: Vini)
             from .. import webapps
             if webapps.is_webapp(item):
                 sections.append([Item(_("Edit Web App…"), lambda: self.close_launchpad(

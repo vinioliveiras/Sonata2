@@ -467,7 +467,7 @@ def _match(app_id: str):
         did = webapps.desktop_id(app_id[len(webapps.APP_ID_PREFIX):])
         if lookup(did):
             return did
-    if app_id.startswith("chrome-"):                # one on Chromium: its window is named by the site
+    if app_id.startswith(("chrome-", "brave-")):    # one on Chromium / Brave: its window is named by the site
         for wid, entry in webapps.apps().items():
             if isinstance(entry, dict) and webapps.window_class(wid, entry) == app_id:
                 did = webapps.desktop_id(wid)

@@ -18,7 +18,7 @@ import zipfile
 
 from gi.repository import GLib
 
-from .. import ui
+from .. import names, ui
 from ..backend import system
 from ..i18n import N_, _
 
@@ -193,6 +193,39 @@ def _launch_appimage(path: str, parent=None) -> None:
     except (OSError, GLib.Error) as e:
         ui.dialog.alert(_("“{name}” can’t be opened.").format(name=os.path.basename(path)), str(e), [("ok", "OK", "default")],
                         parent=parent)
+
+
+def install_appimage(path: str, parent=None) -> None:
+    """Install (Vini, its right-click): asked first, like opening it; then it's
+    copied into Applications with a launcher of its own (appimages.py) and
+    shows in the Apps Menu."""
+    name = os.path.basename(path)
+
+    def done(res):
+        if isinstance(res, Exception):
+            ui.dialog.alert(_("“{name}” can’t be installed.").format(name=name), str(res),
+                            [("ok", "OK", "default")], parent=parent)
+            return
+        _trust_appimage(res["appimage"])
+        from ..shell.uninstall_ui import _notify
+        _notify(_("“{name}” was installed").format(name=res["name"]),
+                _("It's in the {apps_menu}.").format(apps_menu=_(names.APPS_MENU)))
+
+    def work():
+        from .. import appimages
+        try:
+            return appimages.install(path)
+        except OSError as e:
+            return e
+
+    def answer(rid):
+        if rid == "install":
+            system.run_async(work, done)
+    ui.dialog.alert(_("Install “{name}”?").format(name=name),
+                    _("It's copied into the Applications folder in your home folder and shows in the {apps_menu}. "
+                      "This app will run with your permissions and can access your files. Only install apps from "
+                      "developers you trust.").format(apps_menu=_(names.APPS_MENU)),
+                    [("cancel", _("Cancel"), ""), ("install", _("Install"), "default")], answer, parent=parent)
 
 
 def _extract_dir(path: str) -> str:
@@ -384,7 +417,8 @@ def menu_items(path: str, parent=None) -> list:
                     Item(_("Run"), lambda: run_script(path, parent, terminal=False))]
         return []
     if k == "appimage":
-        return [Item(_("Run"), lambda: run_appimage(path, parent))]
+        return [Item(_("Run"), lambda: run_appimage(path, parent)),
+                Item(_("Install"), lambda: install_appimage(path, parent))]
     if k == "archive":
         return [Item(_("Extract Here"), lambda: extract(path, parent))]
     return [Item(_("Install"), lambda: install(path, parent))]    # explains when it can't

@@ -127,15 +127,55 @@ CHROMIUM_BROWSERS = (("google-chrome-stable", "Google Chrome"), ("google-chrome"
                      ("chromium", "Chromium"), ("chromium-browser", "Chromium"), ("brave", "Brave"),
                      ("brave-browser", "Brave"), ("microsoft-edge-stable", "Microsoft Edge"),
                      ("vivaldi-stable", "Vivaldi"))
+# a browser picked in the form (entry["browser"]): its key, the prefix of
+# the app id its --app windows get, and the profile folder (Chrome's and
+# Chromium's stay "chromium", where web apps kept theirs before)
+BROWSER_KEYS = {"Google Chrome": "chrome", "Chromium": "chromium", "Brave": "brave",
+                "Microsoft Edge": "edge", "Vivaldi": "vivaldi"}
+BROWSER_ID_PREFIX = {"brave": "brave-"}
+# the same browsers as Flatpaks (Vini's Brave is one): run with `flatpak run`,
+# their profiles in the app's own folder (no access to the rest of home)
+CHROMIUM_FLATPAKS = (("com.google.Chrome", "Google Chrome"), ("org.chromium.Chromium", "Chromium"),
+                     ("com.brave.Browser", "Brave"), ("com.microsoft.Edge", "Microsoft Edge"),
+                     ("com.vivaldi.Vivaldi", "Vivaldi"))
+FLATPAK = "flatpak:"                 # a browser "path" that is a Flatpak: "flatpak:com.brave.Browser"
+FLATPAK_APPS = ("/var/lib/flatpak/app", "~/.local/share/flatpak/app")
 
 
-def chromium_browser():
-    """(command path, name) of the first Chromium-family browser installed, or None."""
+def _flatpak_installed(app_id: str) -> bool:
+    return shutil.which("flatpak") is not None and \
+        any(os.path.isdir(os.path.join(os.path.expanduser(d), app_id)) for d in FLATPAK_APPS)
+
+
+def chromium_browsers() -> list:
+    """[(command path, name, key)] of every Chromium-family browser installed,
+    one per browser (Vini: Brave to choose when it's there, not only the
+    first one found)."""
+    found, seen = [], set()
     for cmd, name in CHROMIUM_BROWSERS:
         path = shutil.which(cmd)
-        if path:
-            return path, name
-    return None
+        if path and name not in seen:
+            seen.add(name)
+            found.append((path, name, BROWSER_KEYS[name]))
+    for fid, name in CHROMIUM_FLATPAKS:                    # (installed natively too: that one)
+        if name not in seen and _flatpak_installed(fid):
+            seen.add(name)
+            found.append((FLATPAK + fid, name, BROWSER_KEYS[name]))
+    return found
+
+
+def chromium_browser(entry: dict = None):
+    """(command path, name) of the browser a web app runs in: the one its form
+    picked if it's still installed, else the first one installed; None: none."""
+    found = chromium_browsers()
+    want = (entry or {}).get("browser")
+    pick = next((b for b in found if b[2] == want), None) or (found[0] if found else None)
+    return (pick[0], pick[1]) if pick else None
+
+
+def browser_key(entry: dict = None) -> str:
+    b = chromium_browser(entry)
+    return BROWSER_KEYS.get(b[1], "chrome") if b else "chrome"
 
 
 def default_engine() -> str:
@@ -149,16 +189,31 @@ def engine(entry: dict) -> str:
     return "chromium" if e == "chromium" and chromium_browser() else "webkit"
 
 
-def chromium_app_id(url: str) -> str:
+def chromium_app_id(url: str, key: str = "chrome") -> str:
     """The Wayland app id Chrome gives an --app window ("--class" is ignored):
-    https://web.whatsapp.com/ -> chrome-web.whatsapp.com__-Default."""
+    https://web.whatsapp.com/ -> chrome-web.whatsapp.com__-Default (Brave's
+    start with "brave-")."""
     u = urllib.parse.urlsplit(url or "")
-    return "chrome-" + (u.hostname or "") + "_" + (u.path or "/").replace("/", "_") + "-Default"
+    return BROWSER_ID_PREFIX.get(key, "chrome-") + (u.hostname or "") + "_" + (u.path or "/").replace("/", "_") + \
+        "-Default"
 
 
 def window_class(app: str, entry: dict) -> str:
     """The app id its windows have (the desktop entry's StartupWMClass: the Dock's icon)."""
-    return chromium_app_id(entry.get("url", "")) if engine(entry) == "chromium" else app_id(app)
+    if engine(entry) == "chromium":
+        return chromium_app_id(entry.get("url", ""), browser_key(entry))
+    return app_id(app)
+
+
+def profile_dir(app: str, entry: dict) -> str:
+    """The browser's profile for this web app: one per browser (a Brave and a
+    Chrome profile in one folder would clash). A Flatpak's is in its own
+    folder (~/.var/app/<id>): it can't reach the rest of home."""
+    b = chromium_browser(entry)
+    if b and b[0].startswith(FLATPAK):
+        return os.path.expanduser(f"~/.var/app/{b[0][len(FLATPAK):]}/data/sonata2-webapps/{app}")
+    key = browser_key(entry)
+    return os.path.join(data_dir(app), "chromium" if key in ("chrome", "chromium") else key)
 
 
 DEFAULT_SIZE = (1200, 820)
@@ -196,9 +251,14 @@ def chromium_command(app: str, entry: dict, browser: str) -> list:
     no "unsupported command-line flag" bar over the page (Vini: WhatsApp),
     whatever flags reach the browser (the user's own, a launcher's, its
     own WebGPU)."""
+    if browser.startswith(FLATPAK):                        # (its flag files are inside the Flatpak)
+        start = ["flatpak", "run", browser[len(FLATPAK):]]
+        return start + [f"--user-data-dir={profile_dir(app, entry)}",
+                        "--no-first-run", "--no-default-browser-check", "--test-type", "--ozone-platform-hint=auto",
+                        "--window-size={},{}".format(*window_size(app)), f"--app={entry['url']}"]
     from .. import browsergpu
     start = browsergpu.web_app_command(app, browser)
-    return [start[0], f"--user-data-dir={os.path.join(data_dir(app), 'chromium')}",
+    return [start[0], f"--user-data-dir={profile_dir(app, entry)}",
             "--no-first-run", "--no-default-browser-check", "--test-type", "--ozone-platform-hint=auto", *start[1:],
             "--window-size={},{}".format(*window_size(app)), f"--app={entry['url']}"]
 
@@ -286,7 +346,7 @@ def write_desktop(app: str, command: str = None) -> str:
 
 
 def create(name: str, url: str, command: str = None, fetch: bool = True, background: bool = False,
-           engine_name: str = None) -> str:
+           engine_name: str = None, browser: str = None) -> str:
     url = normalize_url(url)
     if not url:
         raise ValueError("not a web address")
@@ -296,6 +356,8 @@ def create(name: str, url: str, command: str = None, fetch: bool = True, backgro
     if background:
         data["apps"][app]["background"] = True
     data["apps"][app]["engine"] = engine_name if engine_name in ENGINES else default_engine()
+    if browser in BROWSER_KEYS.values():
+        data["apps"][app]["browser"] = browser
     config.save(NAME, data)
     os.makedirs(data_dir(app), exist_ok=True)
     update_theme_icon(app)
@@ -306,7 +368,7 @@ def create(name: str, url: str, command: str = None, fetch: bool = True, backgro
 
 
 def update(app: str, name: str = None, url: str = None, background: bool = None, command: str = None,
-           engine_name: str = None) -> bool:
+           engine_name: str = None, browser: str = None) -> bool:
     """Edit a web app (its form): name, address, keep running, engine. Its
     login stays (each engine keeps its own: switching asks to sign in once)."""
     data = config.load(NAME, DEFAULTS)
@@ -326,6 +388,8 @@ def update(app: str, name: str = None, url: str = None, background: bool = None,
             entry.pop("background", None)
     if engine_name in ENGINES:
         entry["engine"] = engine_name
+    if browser in BROWSER_KEYS.values():
+        entry["browser"] = browser
     config.save(NAME, data)
     update_theme_icon(app)                       # a new name may have its own icon in the pack
     write_desktop(app, command)
@@ -611,7 +675,7 @@ def run_chromium(app: str) -> int:
     """The browser as the web app's window; this process stays (its scope's
     memory guard) until the browser is gone."""
     from gi.repository import GLib
-    browser = chromium_browser()
+    browser = chromium_browser(get(app))
     # DevTools' pipe (fd 3: to the browser, fd 4: from it): new tabs and windows
     # go to the default browser (chromeguard.py)
     import fcntl
@@ -626,9 +690,16 @@ def run_chromium(app: str) -> int:
     def fds():
         os.dup2(to_r, 3)
         os.dup2(from_w, 4)
-    cmd = chromium_command(app, get(app), browser[0]) + ["--remote-debugging-pipe"]
+    # a Flatpak gets no pipe: `flatpak run` doesn't hand fds 3 and 4 into its
+    # sandbox, and a browser asked for a pipe it hasn't got won't start (its
+    # other windows then stay in it, not in the default browser)
+    flat = browser[0].startswith(FLATPAK)
+    cmd = chromium_command(app, get(app), browser[0]) + ([] if flat else ["--remote-debugging-pipe"])
     try:
-        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, pass_fds=(3, 4), preexec_fn=fds)
+        if flat:
+            proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL)
+        else:
+            proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, pass_fds=(3, 4), preexec_fn=fds)
     except OSError as e:
         print(f"sonata2 webapp: {e}", file=sys.stderr)
         return 1

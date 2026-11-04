@@ -1033,7 +1033,7 @@ class AnimationTests(unittest.TestCase):
         panel = d.win.get_child()
         self.assertTrue(panel.has_css_class("auth-panel"))
         from sonata2.ui import theme
-        self.assertIn("animation: auth-in", theme._templates["polkit-agent"][0])
+        self.assertIn("animation: auth-in", theme._templates["auth-sheet"][0])
         d.finish(False)
 
     def test_setup_assistant_pages_slide_and_finish_fades(self):

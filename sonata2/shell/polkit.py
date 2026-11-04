@@ -19,26 +19,13 @@ gi.require_version("Polkit", "1.0")
 gi.require_version("PolkitAgent", "1.0")
 from gi.repository import Gio, GLib, Gtk, Polkit, PolkitAgent  # noqa: E402,F401
 
-from .. import ui  # noqa: E402
 from ..i18n import _  # noqa: E402
-from . import layer  # noqa: E402
-from .loginui import avatar, password_field, shake  # noqa: E402
+from . import layer  # noqa: E402,F401
+from .authsheet import PasswordSheet  # noqa: E402
 
 OBJECT_PATH = "/io/github/vinioliveiras/sonata2/PolkitAgent"
 
-ui.register("""
-window.sonata-auth { background: rgba(0, 0, 0, 0.18); }
-.auth-panel { background: %(panel_material)s; border-radius: calc(%(r_dialog)s * 1.17); padding: 22px 22px 18px 22px;
-  box-shadow: 0 22px 56px rgba(0,0,0,0.35), 0 0 0 0.5px rgba(0,0,0,0.35), inset 0 0 0 0.5px %(highlight)s; }
-.auth-title { font-weight: 700; font-size: %(text_body)s; color: %(label)s; }
-.auth-text { font-size: %(text_small)s; color: %(label_secondary)s; }
-.auth-error { font-size: %(text_small)s; color: %(destructive)s; }
-.auth-panel entry { min-height: 28px; }
-.auth-panel entry.shake { animation: lk-shake 420ms ease-in-out; }
-.auth-panel button { min-width: 76px; }
-@keyframes auth-in { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
-.auth-panel { animation: auth-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-""", key="polkit-agent")
+# (the look: authsheet, shared with every prompt for the login password)
 
 
 def _user(identity) -> str:
@@ -69,72 +56,27 @@ class AuthDialog:
         self.index = names.index(me) if me in names else 0
         self.session = None
         self.finished = False
-        self.win = Gtk.Window(application=app, decorated=False, title=_("Authenticate"),
-                              css_classes=["sonata-auth"])
-        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, css_classes=["auth-panel"],
-                        halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER, width_request=340)
-        top = Gtk.Box(spacing=14)
-        top.append(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=40, valign=Gtk.Align.START))
-        texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        texts.append(Gtk.Label(label=_("Authentication Required"), xalign=0, css_classes=["auth-title"]))
-        texts.append(Gtk.Label(label=message or _("An application wants to make changes."), xalign=0, wrap=True,
-                               max_width_chars=40, css_classes=["auth-text"]))
-        texts.append(Gtk.Label(label=_("Enter the password to allow this."), xalign=0,
-                               css_classes=["auth-text"]))
-        top.append(texts)
-        panel.append(top)
-        who = Gtk.Box(spacing=10, margin_top=6)
-        self.who, self.names = who, names
-        self.face = avatar(28, names[self.index], _real_name(names[self.index]))
-        who.append(self.face)
-        if len(names) > 1:
-            self.account = ui.controls.popup_button([_real_name(n) for n in names], self.index, self._pick)
-            self.account.set_hexpand(True)
-            who.append(self.account)
-        else:
-            who.append(Gtk.Label(label=_real_name(names[self.index]), xalign=0, hexpand=True))
-        panel.append(who)
-        self.entry = password_field(_("Password"))
-        self.entry.remove_css_class("lk-field")          # the login screen's look is for dark backdrops
-        self.entry.set_halign(Gtk.Align.FILL)
-        self.entry.connect("activate", lambda *_: self._ok())
-        panel.append(self.entry)
-        self.error = Gtk.Label(xalign=0, css_classes=["auth-error"], visible=False, wrap=True)
-        panel.append(self.error)
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END, margin_top=4)
-        cancel = ui.controls.push_button(_("Cancel"), lambda: self.finish(False))
-        self.ok = ui.controls.push_button(_("OK"), self._ok, "default")
-        buttons.append(cancel)
-        buttons.append(self.ok)
-        panel.append(buttons)
-        self.win.set_child(panel)
-        keys = Gtk.EventControllerKey()
-        keys.connect("key-pressed", lambda _c, kv, *_: kv == 0xff1b and (self.finish(False), True)[1])
-        self.win.add_controller(keys)
-        if layer.overlay_fullscreen(self.win, "sonata2-auth"):
-            pass                                         # above everything, takes the keyboard
-        self.win.present()
-        self.entry.grab_focus()
+        self.sheet = PasswordSheet(_("Authentication Required"), message or _("An application wants to make changes."),
+                                   lambda _pw: self._ok(), lambda: self.finish(False),
+                                   detail=_("Enter the password to allow this."), app=app, names=names,
+                                   real_names=[_real_name(n) for n in names], index=self.index, on_pick=self._pick)
+        self.win, self.entry, self.error, self.ok = self.sheet.win, self.sheet.entry, self.sheet.error, self.sheet.ok
+        self.who, self.names = self.sheet.who, names
+        self.account = getattr(self.sheet, "account", None)
+
+    @property
+    def face(self):
+        return self.sheet.face
 
     def _pick(self, i):
         self.index = i
         self._cancel_session()
-        # the picture follows the chosen account
-        face = avatar(28, self.names[i], _real_name(self.names[i]))
-        self.who.insert_child_after(face, self.face)
-        self.who.remove(self.face)
-        self.face = face
 
     def _ok(self):
-        if not self.entry.get_text():
-            return
-        self.ok.set_sensitive(False)
-        self.entry.set_sensitive(False)
-        self.error.set_visible(False)
         self._cancel_session()
         s = self.session = PolkitAgent.Session.new(self.identities[self.index], self.cookie)
         s.connect("request", lambda sess, _prompt, _echo: sess.response(self.entry.get_text()))
-        s.connect("show-error", lambda _s, text: self._say(text))
+        s.connect("show-error", lambda _s, text: self.sheet.say(text))
         s.connect("completed", self._completed)
         s.initiate()
 
@@ -145,17 +87,7 @@ class AuthDialog:
         if gained:
             self.finish(True)
             return
-        self.ok.set_sensitive(True)
-        self.entry.set_sensitive(True)
-        self.entry.set_text("")
-        self.entry.grab_focus()
-        if not self.error.get_visible():
-            self._say(_("Sorry, try again."))
-        shake(self.entry)
-
-    def _say(self, text):
-        self.error.set_label(text)
-        self.error.set_visible(True)
+        self.sheet.wrong(None if self.error.get_visible() else _("Sorry, try again."))
 
     def _cancel_session(self):
         if self.session is not None:
@@ -170,7 +102,7 @@ class AuthDialog:
             return
         self.finished = True
         self._cancel_session()
-        self.win.destroy()
+        self.sheet.close()
         self.done_cb(ok)
 
 

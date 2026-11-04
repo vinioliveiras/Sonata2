@@ -119,34 +119,45 @@ class PasswordAlertTest(unittest.TestCase):
     def setUpClass(cls):
         Adw.init()
 
-    def test_enter_checks_without_closing(self):
-        opened = []
-        results = iter([False, True])
-        with mock.patch("sonata2.pam.check_async", lambda pw, done: done(next(results))), \
-                mock.patch.object(dialog, "alert") as alert:
-            dlg = alert.return_value
-            d = dialog.ask_password("“X” is locked", "", lambda: opened.append(1))
-            d.entry.set_text("wrong")
-            d.entry.emit("activate")
-            self.assertEqual(d.hint.get_label(), "Wrong password")
-            self.assertTrue(d.hint.get_visible())
-            self.assertEqual(d.entry.get_text(), "")
-            self.assertEqual(opened, [])
-            d.entry.set_text("right")
-            d.entry.emit("activate")
-        self.assertEqual(opened, [1])
-        dlg.close.assert_called_once()
+    def sheet(self, on_ok, results):
+        from sonata2.shell import authsheet
+        with mock.patch.object(authsheet.layer, "overlay_fullscreen", return_value=True):
+            d = dialog.ask_password("“X” is locked", "", on_ok)
+        self.addCleanup(d.close)
+        self.answers = mock.patch("sonata2.pam.check_async", lambda pw, done: done(next(results)))
+        self.answers.start()
+        self.addCleanup(self.answers.stop)
+        return d
 
-    def test_button_wrong_asks_again(self):
-        with mock.patch("sonata2.pam.check_async", lambda pw, done: done(False)), \
-                mock.patch.object(dialog, "alert") as alert:
-            dialog.ask_password("“X” is locked", "", lambda: None)
-            entry = alert.return_value.entry
-            on_response = alert.call_args[0][3]
-            with mock.patch.object(dialog, "ask_password") as again:
-                entry.set_text("wrong")
-                on_response("ok")
-            self.assertTrue(again.call_args.kwargs["wrong"])
+    def test_enter_checks_without_closing(self):
+        """Every login-password prompt is the password sheet (Vini: like the
+        updates' one); a wrong password asks again in it."""
+        from sonata2.shell import authsheet
+        opened = []
+        d = self.sheet(lambda: opened.append(1), iter([False, True]))
+        self.assertIsInstance(d, authsheet.PasswordSheet)
+        d.entry.set_text("wrong")
+        d.entry.emit("activate")
+        self.assertEqual(d.error.get_label(), "Wrong password")
+        self.assertTrue(d.error.get_visible())
+        self.assertEqual(d.entry.get_text(), "")
+        self.assertFalse(d.finished)
+        self.assertEqual(opened, [])
+        d.entry.set_text("right")
+        d.entry.emit("activate")
+        self.assertEqual(opened, [1])
+        self.assertTrue(d.finished)
+
+    def test_ok_button_checks_and_cancel_closes(self):
+        opened = []
+        d = self.sheet(lambda: opened.append(1), iter([True]))
+        d.entry.set_text("right")
+        d.ok.emit("clicked")
+        self.assertEqual(opened, [1])
+        d = self.sheet(lambda: opened.append(2), iter([True]))
+        d.cancel()
+        self.assertTrue(d.finished)
+        self.assertEqual(opened, [1])
 
 
 class IconsTest(unittest.TestCase):

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Notification Center no longer lags with many notifications: the compositor blurred behind its whole column again on every frame it scrolled or slid. Its glass is now a picture of the display blurred once as it opens (as the Game Bar's), each card drawing its own slice; without grim the cards are solid.
+- AppImages: Install in their right-click (Files and the desktop), next to Run -- asked first, then the AppImage is copied into ~/Applications and gets a launcher with its own name, icon and categories, so it's in the Apps Menu and can be kept in the Dock. Uninstalling it moves the AppImage to the Trash with its launcher.
+- Files can be taken off the Dock (drag it out, or untick Keep in Dock): it's in the Apps Menu, where it can be pinned again. Only Launchpad / the Apps Menu always stays.
+- Uninstall… in an app's right-click menu on the Dock (and Mission Control), asked first like dropping it on the Trash; in Apps / the Apps Menu, "Move to Trash" is now called Uninstall…, as in Settings > Apps.
+- Settings' search finds every setting, not only the sections: any text Settings shows (a group, a row, a switch, a button), in your language or in English, is listed under the sections with where it is; picking one opens that section scrolled to that setting, which lights up for a moment. Return opens the first section found, else the first setting.
+- Game Bar opens and closes at once, as fast as it can: no fading or sliding in and out, and it no longer waits for the game's picture before showing -- its panels show solid and turn to glass the moment the picture comes.
+- Control Center appears at once, without the panels' grow-in: its own work on opening is a few ms, and the 180 ms animation had the compositor blur the whole panel again on every frame.
+- Web apps: each Chromium-family browser installed is its own choice in the form's Engine pop-up -- Brave too, when it's there beside Chrome (only the first one found was offered), installed as a Flatpak too (run with `flatpak run`, its profile in the Flatpak's own folder). A Brave web app keeps its own profile and its Dock icon.
+- Notification Center: the calendar (Today) stays fixed at the top and the notifications scroll under it -- with many of them it used to sit at the end, out of sight.
+- Dock: a locked folder's password can be typed again -- it was asked inside the folder's panel on the Dock, which takes no keyboard, so the field could be clicked but not typed in.
+- Every prompt for your login password is now the same sheet as the one installing updates asks with -- a lock, the title, your picture and name, the password, Cancel / OK, a shake when it's wrong: locked Dock and Apps folders, the Hidden folder, Lock App and Files' Lock Folder.
+
 ## 0.22.0-alpha -- 2026-10-29
 
 Pick your own mouse pointer -- any theme installed, or one downloaded --

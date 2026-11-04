@@ -17,7 +17,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
 from sonata2 import config, launchpad_model as M, ui  # noqa: E402
-from sonata2.shell import dock as D, dock_folder as F  # noqa: E402
+from sonata2.shell import authsheet as A, dock as D, dock_folder as F  # noqa: E402
 
 
 def settle(ms=150):
@@ -328,30 +328,57 @@ class DockFolderTest(unittest.TestCase):
         self.assertEqual(len(F.lock_paths(48)), 2)
 
     def _open_with(self, fkey, ok, then=None):
-        from unittest import mock
+        """Open the locked folder (then: an action behind the password) and
+        answer its password sheet; PAM says `ok`. The panel, if it opened."""
         calls = []
-        with mock.patch.object(F, "check_password", side_effect=lambda pw, done: (calls.append(pw), done(ok))):
-            pop = F.open_panel(self.dock, self.dock.tiles[fkey], then=then)
-            settle()
-            self.assertIsNotNone(pop.lock)                    # the password first
-            self.assertIsNone(pop.flow)                       # nothing of the apps yet
-            pop.entry.set_text("secret")
-            pop.entry.emit("activate")
+        tile = self.dock.tiles[fkey]
+        with mock.patch.object(A.layer, "overlay_fullscreen", return_value=True):
+            sheet = F.open_panel(self.dock, tile, then=then)
+        settle()
+        self.assertIsInstance(sheet, A.PasswordSheet)       # the password first
+        self.assertIsNone(self._open_pop(tile))              # nothing of the apps yet
+        with mock.patch("sonata2.pam.check_async", side_effect=lambda pw, done: (calls.append(pw), done(ok))):
+            sheet.entry.set_text("secret")
+            sheet.entry.emit("activate")
             settle()
         self.assertEqual(calls, ["secret"])
-        return pop
+        self.sheet = sheet
+        return self._open_pop(tile)
+
+    def _open_pop(self, tile):
+        return next((c for c in self._children(tile) if isinstance(c, Gtk.Popover) and c.get_visible()), None)
+
+    def _children(self, w):
+        c = w.get_first_child()
+        while c is not None:
+            yield c
+            c = c.get_next_sibling()
+
+    def test_locked_folder_password_could_not_be_typed(self):
+        """Vini: a locked Dock folder asked for the password inside its panel
+        on the Dock, and the field could be clicked but never typed in (the
+        Dock takes no keyboard). It's asked in the password sheet, a window
+        of its own above everything that takes the keyboard."""
+        fkey = self._locked()
+        with mock.patch.object(A.layer, "overlay_fullscreen", return_value=True) as over:
+            sheet = F.open_panel(self.dock, self.dock.tiles[fkey])
+        settle()
+        self.assertIsInstance(sheet, A.PasswordSheet)
+        over.assert_called_once_with(sheet.win, "sonata2-auth")    # (layer: OVERLAY, keyboard EXCLUSIVE)
+        self.assertIsNot(sheet.win, self.dock.get_root())           # not the Dock's surface
+        self.assertIs(sheet.entry.get_root(), sheet.win)
+        sheet.cancel()
 
     def test_locked_opens_only_with_password(self):
         fkey = self._locked()
         pop = self._open_with(fkey, False)
-        self.assertIsNotNone(pop.lock)                        # wrong: still asking
-        self.assertIsNone(pop.flow)
-        self.assertEqual(pop.hint.get_label(), "Wrong password")
-        self.assertEqual(pop.entry.get_text(), "")
-        pop.popdown()
-        settle()
+        self.assertIsNone(pop)                                # wrong: still asking, no apps
+        self.assertFalse(self.sheet.finished)
+        self.assertEqual(self.sheet.error.get_label(), "Wrong password")
+        self.assertEqual(self.sheet.entry.get_text(), "")
+        self.sheet.cancel()
         pop = self._open_with(fkey, True)
-        self.assertIsNone(pop.lock)
+        self.assertTrue(self.sheet.finished)
         self.assertIsNotNone(pop.flow)                        # right: the apps
         self.assertTrue(self.dock.folder(fkey)["locked"])     # opening doesn't unlock it
         pop.popdown()
@@ -361,6 +388,7 @@ class DockFolderTest(unittest.TestCase):
         fkey = self._locked()
         self._open_with(fkey, False, then=lambda: d.set_folder_locked(fkey, False))
         self.assertTrue(d.folder(fkey)["locked"])
+        self.sheet.cancel()
         self._open_with(fkey, True, then=lambda: d.set_folder_locked(fkey, False))
         self.assertNotIn("locked", d.folder(fkey))
         d.set_folder_locked(fkey, True)
@@ -488,7 +516,8 @@ class DockFolderTest(unittest.TestCase):
 
     def test_locked_panel_never_kept(self):
         fkey = self._locked()
-        pop = F.open_panel(self.dock, self.dock.tiles[fkey])
+        pop = self._open_with(fkey, True)
+        self.assertIsNotNone(pop)
         self.assertIsNone(getattr(self.dock.tiles[fkey], "folder_pop", None))
         pop.popdown()
 
@@ -803,9 +832,14 @@ class DockFolderTest(unittest.TestCase):
         fkey = d.make_folder([a, b], name="Work")
         d.set_folder_locked(fkey, True)
         settle()
-        pop = F.open_panel(d, d.tiles[fkey])
+        with mock.patch.object(A.layer, "overlay_fullscreen", return_value=True):
+            sheet = F.open_panel(d, d.tiles[fkey])
         settle()
-        self.assertFalse(pop.title.editable)
+        self.assertIsInstance(sheet, A.PasswordSheet)                # its name nowhere to click yet
+        self.assertIsNone(self._open_pop(d.tiles[fkey]))
+        sheet.cancel()
+        pop = self._open_with(fkey, True)
+        self.assertTrue(pop.title.editable)                          # after it: renamable
         pop.popdown()
         settle()
 

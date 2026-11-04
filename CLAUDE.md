@@ -17,6 +17,12 @@ docs/DESIGN.md (design rules).
   - `python3 -m unittest tests.test_i18n tests.test_app_names_translated`
 
 ## Tests
+- **Never on Vini's session.** The tests rewrote his Dock, Launchpad and web
+  apps once (2026-11-04). `tests/__init__.py` now gives every run a
+  temporary HOME and XDG folders, a private D-Bus, no Wayfire socket and
+  no window on the real screen -- it only runs through the package, so
+  always `python3 -m unittest tests.<module>`, never `python3 tests/x.py`.
+  Don't run tests on his machine unless he asks.
 - **Use the right interpreter.** Run tests with the interpreter that has
   PyGObject. UI tests need a display:
   `xvfb-run -a python3 -m unittest tests.<module>` (one module at a time).

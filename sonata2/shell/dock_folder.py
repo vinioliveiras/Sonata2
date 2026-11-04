@@ -47,14 +47,6 @@ popover.dock-folder-panel > contents {
 .dock-folder-app:hover { background-color: %(control_off)s; }
 .dock-folder-app:active { background-color: %(accent_selected)s; color: %(label_on_accent)s; }
 .dock-folder-app label { font-size: %(text_small)s; }
-.dock-folder-lock { margin: 4px 16px 6px 16px; }
-.dock-folder-lock label { font-size: %(text_body)s; color: %(label_secondary)s; }
-.dock-folder-lock .hint { font-size: %(text_small)s; color: %(label_tertiary)s; }
-.dock-folder-lock passwordentry { min-width: 220px; }
-@keyframes dock-folder-shake {   /* one selector per step: GTK's CSS has no "0%%, 100%%" lists */
-  0%% { transform: none; } 20%% { transform: translateX(-8px); } 40%% { transform: translateX(8px); }
-  60%% { transform: translateX(-8px); } 80%% { transform: translateX(8px); } 100%% { transform: none; } }
-.dock-folder-lock.shake { animation: dock-folder-shake 360ms ease-in-out; }
 """, key="dock-folder", open_ms=OPEN_MS, close_ms=CLOSE_MS)
 
 
@@ -322,24 +314,21 @@ def _rounded_rect(x, y, w, h, r) -> Gsk.RoundedRect:
     return rr
 
 
-def check_password(password: str, done) -> None:
-    """The login password (PAM) in a thread; done(ok) on the main loop."""
-    from .. import pam
-    pam.check_async(password, done)
-
-
 # -- the open folder ---------------------------------------------------------------------------
 def _signature(folder: dict) -> tuple:
     return folder["name"], tuple(folder["apps"])
 
 
-def open_panel(dock, tile, then=None, rename=False) -> Gtk.Popover:
+def open_panel(dock, tile, then=None, rename=False, passed=False):
     """The folder's apps in a panel over its icon, zooming in from it (a
-    locked folder asks for the password first; `then`: ask, then run it
-    instead of showing the apps). An unlocked folder's panel is built once
-    and opened again as it is while its apps don't change."""
+    locked folder asks for the password first -- ask_password; `then`: ask,
+    then run it instead of showing the apps). An unlocked folder's panel is
+    built once and opened again as it is while its apps don't change.
+    None while the password is asked."""
     tile.label.popdown()
     folder = dock.folder(tile.key)
+    if (folder.get("locked") or then is not None) and not passed:
+        return ask_password(dock, tile, then, rename)
     cached = getattr(tile, "folder_pop", None)
     reuse = then is None and not folder.get("locked")
     if cached is not None:
@@ -366,24 +355,21 @@ def open_panel(dock, tile, then=None, rename=False) -> Gtk.Popover:
     click.connect("released", lambda *_a: title.editable and ask_rename(dock, tile, pop))
     title.add_controller(click)
     view.append(title)
-    pop.view, pop.flow, pop.lock, pop.sig, pop.title = view, None, None, _signature(folder), title
+    pop.view, pop.flow, pop.sig, pop.title = view, None, _signature(folder), title
     pop.rename = rename
     pop.dock, pop.tile = dock, tile
     pop.set_child(view)
     pop.set_parent(tile)
     if reuse:
         tile.folder_pop = pop                   # kept (unparented with the tile: Dock._remove_tile)
-    else:                                       # a password panel: never kept
+    else:                                       # a locked folder's, after its password: never kept
         pop.connect("closed", lambda p: GLib.idle_add(lambda: (p.unparent(), False)[1]))
     ui.menu.OPEN.add(pop)                       # keeps an auto-hiding Dock visible
     pop.connect("closed", lambda p: (ui.menu.OPEN.discard(p), [cb() for cb in list(ui.menu.on_closed)]))
     # the keyboard while it's open (the Dock takes none): its name can be
-    # typed (Vini: clicking it did nothing), Esc closes it, a password too
+    # typed (Vini: clicking it did nothing), Esc closes it
     pop.connect("closed", lambda _p: _keyboard(tile, False))
-    if not reuse:
-        _lock_view(dock, tile, pop, then)
-    else:
-        _apps_view(dock, tile, pop)
+    _apps_view(dock, tile, pop)
     _keyboard(tile, True)
     pop.popup()
     return pop
@@ -414,50 +400,28 @@ def _replay(pop) -> None:
     GLib.idle_add(start)
 
 
-def _lock_view(dock, tile, pop, then=None) -> None:
-    """Password first; right: the apps (or then(), e.g. unlock / ungroup)."""
-    from .. import pam
-    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, css_classes=["dock-folder-lock"])
-    box.append(Gtk.Image(icon_name="system-lock-screen-symbolic", pixel_size=32))
-    box.append(Gtk.Label(label=_("Enter your password to open this folder") if then is None
-                         else _("Enter your password to change this folder"), wrap=True,
-                         justify=Gtk.Justification.CENTER, max_width_chars=30))
-    entry = Gtk.PasswordEntry(show_peek_icon=True, halign=Gtk.Align.CENTER)
-    box.append(entry)
-    hint = Gtk.Label(label="" if pam.available() else _("Passwords can't be checked (PAM missing)"),
-                     css_classes=["hint"])
-    box.append(hint)
-    pop.view.append(box)
-    pop.lock, pop.entry, pop.hint = box, entry, hint      # (tests)
+def ask_password(dock, tile, then=None, rename=False):
+    """Password first, in the sheet every login-password prompt shares (a
+    window of its own: in the Dock's panel the field could be clicked but
+    never typed in -- the Dock takes no keyboard, Vini); right: the apps
+    (or then(), e.g. unlock / ungroup)."""
+    from . import authsheet
+    folder = dock.folder(tile.key)
 
-    def done(ok):
-        if pop.lock is not box:
-            return
-        entry.set_sensitive(True)
-        if ok:
-            pop.view.remove(box)
-            pop.lock = None
-            if then is not None:
-                pop.popdown()
-                then()
-                return
-            _apps_view(dock, tile, pop)
-            pop.view.remove_css_class("dock-folder-view")         # zoom in again, now with the apps
-            GLib.idle_add(lambda: (pop.view.add_css_class("dock-folder-view"), False)[1])
+    def right():
+        if dock.folder(tile.key) is None:
+            return                                         # gone meanwhile
+        if then is not None:
+            then()
         else:
-            hint.set_label(_("Wrong password"))
-            entry.set_text("")
-            entry.grab_focus()
-            box.remove_css_class("shake")
-            GLib.idle_add(lambda: (box.add_css_class("shake"), False)[1])
-
-    def check(_e):
-        pw = entry.get_text()
-        if pw:
-            entry.set_sensitive(False)
-            check_password(pw, done)
-    entry.connect("activate", check)
-    GLib.idle_add(lambda: (entry.grab_focus(), False)[1])
+            open_panel(dock, tile, rename=rename, passed=True)
+    sheet = authsheet.ask(_("“{name}” is locked").format(name=folder["name"]),
+                          _("Enter your password to open this folder") if then is None
+                          else _("Enter your password to change this folder"),
+                          right, ok=_("Open") if then is None else _("OK"),
+                          app=dock.get_root().get_application() if dock.get_root() else None)
+    tile.password_sheet = sheet                            # (tests)
+    return sheet
 
 
 def _apps_view(dock, tile, pop) -> None:

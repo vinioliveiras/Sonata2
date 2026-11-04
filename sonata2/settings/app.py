@@ -197,6 +197,14 @@ entry.st-search.inline, .st-search.inline { margin: 0 0 0 12px; min-width: 200px
 .st-card-title { font-weight: 700; }
 .st-card-sub { color: %(label_secondary)s; font-size: %(text_small)s; }
 .st-gap-row, .st-gap-row:hover { min-height: 8px; padding: 0; margin: 0; background: none; }
+/* the search's settings under the sections (settings/search.py); the one
+   picked lights up where it is */
+.st-results-title { color: %(label_secondary)s; font-size: %(text_small)s; font-weight: 700;
+  margin: 10px 18px 2px 18px; }
+.st-hit-text { font-size: %(text_body)s; }
+.st-hit-where { color: %(label_secondary)s; font-size: %(text_small)s; }
+.st-found { background-color: alpha(%(accent)s, 0.22); border-radius: 8px;
+  transition: background-color 400ms ease-out; }
 .st-pane-title { font-weight: 700; font-size: %(text_title)s; color: %(label)s; }
 .st-about-name { font-family: %(font_display)s; font-weight: 700; font-size: 26px; color: %(label)s; }
 .st-caption { color: %(label_secondary)s; font-size: %(text_small)s; }
@@ -595,6 +603,15 @@ class Settings(Adw.ApplicationWindow):
                              self.pop_detail(r.sid))
         box.append(self.listbox)                    # the selection jumps: no slide (Vini)
         self.listbox.set_vexpand(True)
+        # every setting the search finds, under the sections (Vini: any text
+        # in Settings, and a click goes right to that setting)
+        self.results_title = Gtk.Label(label=_("Settings"), xalign=0, css_classes=["st-results-title"],
+                                       visible=False)
+        self.results = Gtk.ListBox(css_classes=["navigation-sidebar", "st-results"], visible=False,
+                                   selection_mode=Gtk.SelectionMode.NONE)
+        self.results.connect("row-activated", lambda _lb, r: self.open_hit(r.hit))
+        box.append(self.results_title)
+        box.append(self.results)
         tv.set_content(Gtk.ScrolledWindow(child=box, hscrollbar_policy=Gtk.PolicyType.NEVER))
         return Adw.NavigationPage(title=_("Settings"), child=tv, css_classes=["st-sidebar", "sonata-sidebar"])
 
@@ -613,6 +630,26 @@ class Settings(Adw.ApplicationWindow):
             else:
                 row.set_visible(not q or self._matches(sid, titles[sid], q))
             row = row.get_next_sibling()
+        self._fill_results(q, titles)
+
+    def _fill_results(self, q: str, titles: dict) -> None:
+        """The settings whose text has the query's words, each with its section."""
+        from . import search
+        while self.results.get_first_child() is not None:
+            self.results.remove(self.results.get_first_child())
+        hits = search.find(q, section_of) if q else []
+        for hit in hits:
+            row = Gtk.ListBoxRow()
+            row.hit = hit
+            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_top=3, margin_bottom=3, margin_start=4)
+            col.append(Gtk.Label(label=hit.text, xalign=0, ellipsize=Pango.EllipsizeMode.END,
+                                 css_classes=["st-hit-text"], tooltip_text=hit.text))
+            col.append(Gtk.Label(label=titles.get(hit.sid, ""), xalign=0, css_classes=["st-hit-where"]))
+            row.set_child(col)
+            self.results.append(row)
+        self.results.set_visible(bool(hits))
+        self.results_title.set_visible(bool(hits))
+        self.listbox.set_vexpand(not hits)
 
     def _open_first_match(self) -> None:
         row = self.listbox.get_first_child()
@@ -621,6 +658,29 @@ class Settings(Adw.ApplicationWindow):
                 self.listbox.select_row(row)
                 return
             row = row.get_next_sibling()
+        first = self.results.get_first_child()           # no section: the first setting found
+        if first is not None and self.results.get_visible():
+            self.open_hit(first.hit)
+
+    def open_hit(self, hit) -> None:
+        """A search result: its section, scrolled to that setting, lit up."""
+        from . import search
+        self.select(hit.sid, from_sidebar=True)
+        if self.rows.get(hit.sid) is not None and self.listbox.get_selected_row() is not self.rows[hit.sid]:
+            self.listbox.select_row(self.rows[hit.sid])
+        tv = self.pages.get(hit.sid)
+        if tv is None:
+            return
+        tries = {"n": 0}
+
+        def show():
+            # once the section is laid out (a new one isn't on its first frame)
+            tries["n"] += 1
+            if tv.main.get_height() <= 0 and tries["n"] < 20:
+                return True
+            self.found = search.reveal(tv.main, hit.text)
+            return False
+        GLib.timeout_add(30, show)
 
     def select(self, sid, from_sidebar=False):
         if "/" in sid:                    # "appicons/<desktop id>": that app's icon form (a web app's menu)

@@ -349,5 +349,9 @@
  "“{name}” can’t be opened": "Não foi possível abrir “{name}”",
  "“{name}” can’t be unlocked": "Não foi possível desbloquear “{name}”",
  "Locked folders need gocryptfs (install the “gocryptfs” package).": "As pastas bloqueadas precisam do gocryptfs (instale o pacote “gocryptfs”).",
- "Something was put in it while it was locked; move it out first.": "Algo foi colocado nela enquanto estava bloqueada; mova-o para fora primeiro."
+ "Something was put in it while it was locked; move it out first.": "Algo foi colocado nela enquanto estava bloqueada; mova-o para fora primeiro.",
+ "Install “{name}”?": "Instalar “{name}”?",
+ "It's copied into the Applications folder in your home folder and shows in the {apps_menu}. This app will run with your permissions and can access your files. Only install apps from developers you trust.": "É copiada para a pasta Applications da sua pasta pessoal e aparece no {apps_menu}. Esta aplicação será executada com as suas permissões e poderá aceder aos seus ficheiros. Instale apenas aplicações de programadores em quem confia.",
+ "“{name}” was installed": "“{name}” foi instalada",
+ "It's in the {apps_menu}.": "Está no {apps_menu}."
 }
