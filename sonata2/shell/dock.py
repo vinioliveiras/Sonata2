@@ -582,6 +582,24 @@ _WATCH = {"on": False}
 _ASK = object()       # "fetch Wayfire's window list now" (_update_rectangles / _windows_here)
 
 
+def class_has_window(info) -> bool:
+    """A window with the entry's own app id (StartupWMClass) is open. A web
+    app's browser runs in a scope of its own (its memory cap), never the
+    launch's: the Dock thought WhatsApp showed no window, killed it, and its
+    next launch found the browser still there and opened the site in Chrome
+    (Vini)."""
+    wm = info.get_startup_wm_class() if info is not None and hasattr(info, "get_startup_wm_class") else None
+    if not wm:
+        return False
+    try:
+        from ..wl.wfipc import WayfireIPC
+        views = WayfireIPC().call("window-rules/list-views")
+    except Exception:
+        return True                    # can't tell: never killed on a guess
+    return any(isinstance(v, dict) and v.get("app-id") == wm and v.get("role", "toplevel") == "toplevel"
+               for v in (views if isinstance(views, list) else []))
+
+
 def scope_has_window(unit) -> bool:
     """A window of that launch's processes is open (Wayfire's list: each
     window's pid, then its cgroup) -- the app is running, maybe grouped under
@@ -2416,7 +2434,7 @@ class Dock(Gtk.Box):
             if self._starting.get(key) != started or self.windows.get(key):
                 return False                       # it showed a window, or was clicked again since
             app_id = tile.info.get_id() or ""
-            if scope_has_window(appscope.launched.get(app_id)):
+            if scope_has_window(appscope.launched.get(app_id)) or class_has_window(tile.info):
                 self._starting.pop(key, None)      # its window is under another icon: it's open
                 self._retries.pop(key, None)
                 return False
