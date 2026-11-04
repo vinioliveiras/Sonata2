@@ -22,6 +22,7 @@ sonata-polkit.workspace = true
 sonata-feedback.workspace = true
 sonata-diskutil.workspace = true
 sonata-calendar.workspace = true
+sonata-activity.workspace = true
 sonata-config.workspace = true
 sonata-session.workspace = true
 sonata-i18n.workspace = true

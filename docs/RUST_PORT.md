@@ -558,3 +558,26 @@ stay behind `--features ui-tests` and run only under
 - On trial it reads a copy of the Python Calendar's files
   (`sonata2-rs-data/calendar`, made once) and its entry takes no file
   types.
+
+### Step 6 so far: Task Manager (Activity)
+
+- `sonata-backend::procfs` (activity/procfs.py: processes, CPU, memory,
+  disks, interfaces, GPUs per card and per process through DRM fdinfo
+  and `nvidia-smi pmon`, battery) and `sonata-backend::stats`
+  (backend/stats.py's sampler, kinds, nvidia-smi read shared through
+  one cache, texts and history -- the menu bar's figures will use it).
+  Both are tested on a fake /proc and /sys tree, the Python cases
+  ported. A real difference found: CPU time "12.345 s" printed 12.34;
+  Python rounds to hundredths through the exact decimal first.
+- `sonata-activity`, in the main binary: manage.rs (app grouping,
+  users, app history, startup items the XDG way, systemd services with
+  the polkit / pkexec retry), rows.rs (one GObject row type; cells
+  redraw on its "changed" signal only when a value changed), the
+  widgets (graphs and the composition bar drawn with cairo, live
+  columns with heat tint, only the last column fills), the seven pages
+  and the window (sampling off the main loop only while on screen,
+  Properties, End task / process tree / Force quit, Open file location,
+  Search online, the keys).
+- Steam games' processes show the game (steam.rs: the appmanifest's
+  name, Steam's icon as is -- not yet on the plate the Python icons
+  module draws).

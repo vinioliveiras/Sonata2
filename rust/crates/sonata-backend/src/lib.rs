@@ -3,8 +3,10 @@
 //! per-device volumes, and the system state Settings and the menu bar show.
 
 pub mod devicevolume;
+pub mod procfs;
 pub mod run;
 pub mod sounds;
+pub mod stats;
 pub mod system;
 pub mod usbprotect;
 pub mod userdirs;

@@ -1307,6 +1307,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
 
 [[package]]
+name = "sonata-activity"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "libadwaita",
+ "libc",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-i18n",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
 name = "sonata-assistant"
 version = "0.1.0"
 dependencies = [
@@ -1648,6 +1665,7 @@ dependencies = [
 name = "sonata2-rs"
 version = "0.1.0"
 dependencies = [
+ "sonata-activity",
  "sonata-calculator",
  "sonata-calendar",
  "sonata-clock",
