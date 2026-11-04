@@ -31,6 +31,7 @@ sonata-gamebar.workspace = true
 sonata-desktop-icons.workspace = true
 sonata-mission.workspace = true
 sonata-webapps.workspace = true
+sonata-capture.workspace = true
 sonata-activity.workspace = true
 sonata-config.workspace = true
 sonata-session.workspace = true
