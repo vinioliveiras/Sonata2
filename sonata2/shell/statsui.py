@@ -183,6 +183,11 @@ def module(kind: str) -> Gtk.Widget:
         value.add_css_class("cc-stat-speeds")
         box = ui.panel.module(head, value, shown, hint, spacing=4)
     else:
+        # the figure whole, the title cut instead (Vini: "Video …  … .5 GB" --
+        # the two shared the room and the GB, what matters, lost its start)
+        value.set_ellipsize(Pango.EllipsizeMode.NONE)
+        value.set_width_chars(-1)
+        value.set_max_width_chars(-1)
         head.append(value)
         box = ui.panel.module(head, shown, hint, spacing=6)
     box.add_css_class("cc-stat")

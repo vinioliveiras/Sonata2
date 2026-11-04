@@ -3,7 +3,7 @@ way): a glass panel under the menu bar with the last copies (newest
 first; images as thumbnails), a search field and Clear All. Click a copy, or pick it with the
 arrow keys and Return, and it is pasted into the window that had focus
 (it goes to the clipboard, then Ctrl+V -- Ctrl+Shift+V in terminals --
-through wtype). The history itself is the menu bar's (clipboard.py):
+with its real keycode: paste()). The history itself is the menu bar's (clipboard.py):
 memory only, never on disk."""
 import shutil
 import subprocess
@@ -170,10 +170,8 @@ class ClipboardPicker(Gtk.Window):
     def _paste(self, text: str) -> None:
         self.history.copy(text)
         self.set_visible(False)
-        if not shutil.which("wtype"):
-            return                                  # it is on the clipboard: Ctrl+V by hand
         # once the keyboard is back on the app and wl-copy owns the clipboard
-        GLib.timeout_add(200, lambda: (subprocess.Popen(["wtype"] + paste_keys()), False)[1])
+        GLib.timeout_add(200, lambda: (paste(), False)[1])
 
     def open(self) -> None:
         self.search.set_text("")
@@ -182,9 +180,23 @@ class ClipboardPicker(Gtk.Window):
         self.search.grab_focus()
 
 
+def paste() -> None:
+    """Paste in the focused app: Ctrl+V (Ctrl+Shift+V in a terminal) with
+    its real keycode (wl/vkeyboard). Vini: Instagram took no emoji from the
+    Character Viewer -- wtype gives the first key it types keycode 1, so the
+    page saw Ctrl+Esc (event.code "Escape") and ignored it; WhatsApp only
+    looks at the letter. wtype only when there's no virtual keyboard."""
+    from ..wl import vkeyboard
+    mods = ("ctrl", "shift") if _terminal_focused() else ("ctrl",)
+    if vkeyboard.press("v", mods):
+        return
+    if shutil.which("wtype"):
+        subprocess.Popen(["wtype"] + paste_keys())
+
+
 def paste_keys() -> list:
-    """wtype's arguments for Paste in the focused app: Ctrl+V, or
-    Ctrl+Shift+V in a terminal (the clipboard and emoji pickers)."""
+    """wtype's arguments for Paste in the focused app (paste()'s fallback):
+    Ctrl+V, or Ctrl+Shift+V in a terminal."""
     if _terminal_focused():
         return ["-M", "ctrl", "-M", "shift", "v", "-m", "shift", "-m", "ctrl"]
     return ["-M", "ctrl", "v", "-m", "ctrl"]

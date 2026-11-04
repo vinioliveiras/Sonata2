@@ -76,17 +76,17 @@ class EmojiPickerCloseTest(unittest.TestCase):
         self.assertTrue(any(c.get_propagation_phase() == Gtk.PropagationPhase.CAPTURE for c in ctrls))
 
     def test_emoji_is_pasted_not_typed(self):
+        from sonata2.wl import vkeyboard
         runs = []
-        with mock.patch("shutil.which", return_value="/usr/bin/wtype"), \
-                mock.patch.object(clip_picker, "_terminal_focused", return_value=False), \
-                mock.patch("subprocess.Popen", lambda argv, **kw: runs.append(argv)), \
+        with mock.patch.object(clip_picker, "_terminal_focused", return_value=False), \
+                mock.patch.object(vkeyboard, "press", side_effect=lambda k, m: runs.append((k, m)) or True), \
                 mock.patch.object(E.config, "save"):
             self.win._pick("👨‍👩‍👧")
             ctx = GLib.MainContext.default()
             end = GLib.get_monotonic_time() + 600_000
             while not runs and GLib.get_monotonic_time() < end:
                 ctx.iteration(False)
-        self.assertEqual(runs, [["wtype", "-M", "ctrl", "v", "-m", "ctrl"]])
+        self.assertEqual(runs, [("v", ("ctrl",))])                        # pasted, with V's own keycode
         self.assertFalse(self.win.get_visible())
 
     def test_plain_window_without_layer_shell(self):
@@ -122,6 +122,29 @@ class ClipboardPickerTest(unittest.TestCase):
         self.assertTrue(self.win.get_resizable())
         self.assertEqual((self.box.get_halign(), self.box.get_valign()), (Gtk.Align.CENTER, Gtk.Align.CENTER))
         self.assertEqual(self.box.get_margin_top(), 2 * layer.PICKER_DROP)
+
+    def test_instagram_took_no_emoji_from_the_character_viewer(self):
+        """Vini: in the Instagram web app emoji from the Character Viewer
+        never pasted (copied elsewhere they did). wtype gave its "v" keycode
+        1 -- the page saw Ctrl+Esc. Ctrl+V goes out with V's real keycode."""
+        from sonata2.wl import vkeyboard
+        self.assertEqual(vkeyboard.CODES["v"], 47)                     # KEY_V
+        with mock.patch.object(clip_picker, "_terminal_focused", return_value=False), \
+                mock.patch.object(vkeyboard, "press", return_value=True) as press, \
+                mock.patch.object(clip_picker.subprocess, "Popen") as spawn:
+            clip_picker.paste()
+        press.assert_called_once_with("v", ("ctrl",))
+        spawn.assert_not_called()
+        with mock.patch.object(clip_picker, "_terminal_focused", return_value=True), \
+                mock.patch.object(vkeyboard, "press", return_value=True) as press:
+            clip_picker.paste()
+        press.assert_called_once_with("v", ("ctrl", "shift"))
+        with mock.patch.object(clip_picker, "_terminal_focused", return_value=False), \
+                mock.patch.object(vkeyboard, "press", return_value=False), \
+                mock.patch.object(clip_picker.shutil, "which", return_value="/usr/bin/wtype"), \
+                mock.patch.object(clip_picker.subprocess, "Popen") as spawn:
+            clip_picker.paste()                                         # no virtual keyboard: wtype
+        spawn.assert_called_once_with(["wtype", "-M", "ctrl", "v", "-m", "ctrl"])
 
     def test_paste_keys(self):
         with mock.patch.object(clip_picker, "_terminal_focused", return_value=True):

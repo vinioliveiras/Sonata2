@@ -24,24 +24,66 @@ def available() -> bool:
 
 
 def frost_command(output) -> list:
-    """grim: the display's picture, small and uncompressed (fast)."""
-    cmd = ["grim", "-s", str(FROST_SCALE), "-l", "0"]
+    """grim: the display's picture, uncompressed (fast). At full size: grim
+    shrinking it itself (-s) took ~160 ms on a 1080p display, ~25 ms
+    without -- blur_texture shrinks it on the GPU instead (Vini: the Game
+    Bar opened solid, then turned to glass). PPM: its pixels as they are,
+    made a texture without decoding (texture_from; a PNG of a 4K display
+    took ~16 ms to decode on the main loop)."""
+    cmd = ["grim", "-t", "ppm"]
     if output:
         cmd += ["-o", output]
     return cmd + ["-"]
 
 
+def texture_from(data):
+    """grim's picture (GLib.Bytes: a binary PPM, else anything GDK reads) as a
+    texture; None when it isn't one. The PPM's pixels are used in place."""
+    if data is None or not data.get_size():
+        return None
+    raw = data.get_data()
+    if raw[:2] == b"P6":
+        fields, i = [], 2
+        while len(fields) < 3 and i < len(raw):            # width, height, maxval (and comments)
+            while i < len(raw) and raw[i:i + 1].isspace():
+                i += 1
+            if raw[i:i + 1] == b"#":
+                while i < len(raw) and raw[i:i + 1] != b"\n":
+                    i += 1
+                continue
+            j = i
+            while j < len(raw) and not raw[j:j + 1].isspace():
+                j += 1
+            fields.append(raw[i:j])
+            i = j
+        try:
+            w, h, maxval = (int(f) for f in fields)
+        except ValueError:
+            return None
+        i += 1                                             # the one whitespace before the pixels
+        if maxval != 255 or w <= 0 or h <= 0 or len(raw) - i < w * h * 3:
+            return None
+        pixels = GLib.Bytes.new_from_bytes(data, i, w * h * 3)
+        return Gdk.MemoryTexture.new(w, h, Gdk.MemoryFormat.R8G8B8, pixels, w * 3)
+    try:
+        return Gdk.Texture.new_from_bytes(data)
+    except GLib.Error:
+        return None
+
+
 def blur_texture(renderer, texture):
-    """The picture blurred once (GSK), at its small size."""
+    """The picture shrunk to FROST_SCALE and blurred once (GSK, on the GPU)."""
     if renderer is None:
         return texture
-    from gi.repository import Graphene
-    w, h = texture.get_width(), texture.get_height()
+    from gi.repository import Graphene, Gsk
+    w = max(1, round(texture.get_width() * FROST_SCALE))
+    h = max(1, round(texture.get_height() * FROST_SCALE))
     snap = Gtk.Snapshot()
     r = Graphene.Rect().init(0, 0, w, h)
     snap.push_clip(r)
     snap.push_blur(FROST_BLUR * FROST_SCALE)
-    snap.append_texture(texture, Graphene.Rect().init(-8, -8, w + 16, h + 16))   # no dark edges
+    snap.append_scaled_texture(texture, Gsk.ScalingFilter.TRILINEAR,      # (mipmapped: no shimmer)
+                               Graphene.Rect().init(-8, -8, w + 16, h + 16))   # no dark edges
     snap.pop()
     snap.pop()
     node = snap.to_node()
@@ -64,11 +106,12 @@ def capture(output, done, renderer_of=None) -> bool:
     def finished(p, res):
         try:
             _ok, out, _err = p.communicate_finish(res)
-            tex = Gdk.Texture.new_from_bytes(out) if out is not None and out.get_size() else None
+            tex = texture_from(out)
         except GLib.Error:
             tex = None
-        if tex is not None:
-            tex = blur_texture(renderer_of() if renderer_of else None, tex)
-        done(tex)
+        renderer = renderer_of() if renderer_of else None
+        # never the picture unblurred: without a renderer yet, no glass this
+        # time (the panels solid) -- not a sharp screenshot behind them
+        done(blur_texture(renderer, tex) if tex is not None and renderer is not None else None)
     proc.communicate_async(None, None, finished)
     return True

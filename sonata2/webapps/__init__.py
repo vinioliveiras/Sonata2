@@ -27,6 +27,14 @@ from ..i18n import _
 
 NAME = "webapps"
 DEFAULTS = {"apps": {}}
+
+
+def _load() -> dict:
+    """webapps.json, with an "apps" dict of its own: config.load copies the
+    defaults shallowly, and a web app made with no file yet went into
+    DEFAULTS' own dict -- every later read in that process had it, even a
+    removed one."""
+    return config.load(NAME, {"apps": {}})
 APP_ID_PREFIX = "io.github.vinioliveiras.sonata2.webapp."
 DESKTOP_PREFIX = "sonata2-webapp-"
 FALLBACK_ICON = "web-browser"
@@ -36,7 +44,7 @@ UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) V
 
 
 def apps() -> dict:
-    data = config.load(NAME, DEFAULTS).get("apps")
+    data = _load().get("apps")
     return data if isinstance(data, dict) else {}
 
 
@@ -295,7 +303,7 @@ def theme_icon(name: str, url: str):
 
 def update_theme_icon(app: str) -> None:
     """Look the theme icon up again (main thread: GTK) and keep it in the entry."""
-    data = config.load(NAME, DEFAULTS)
+    data = _load()
     entry = data.get("apps", {}).get(app)
     if not entry:
         return
@@ -350,8 +358,20 @@ def create(name: str, url: str, command: str = None, fetch: bool = True, backgro
     url = normalize_url(url)
     if not url:
         raise ValueError("not a web address")
+    # the same site twice in one browser is one web app (Vini: WhatsApp twice
+    # -- Chrome gives both one app id, the Dock can't tell their windows
+    # apart, and opening one opened the site in Chrome): that one, not a
+    # copy. (WebKit web apps have an app id each: a second is fine.)
+    new = {"url": url, "engine": engine_name if engine_name in ENGINES else default_engine()}
+    if browser in BROWSER_KEYS.values():
+        new["browser"] = browser
+    if engine(new) == "chromium":
+        cls = window_class("", new)
+        for other, entry in apps().items():
+            if engine(entry) == "chromium" and window_class(other, entry) == cls:
+                return other
     app = "w" + uuid.uuid4().hex[:10]
-    data = config.load(NAME, DEFAULTS)
+    data = _load()
     data.setdefault("apps", {})[app] = {"name": (name or "").strip() or default_name(url), "url": url}
     if background:
         data["apps"][app]["background"] = True
@@ -371,7 +391,7 @@ def update(app: str, name: str = None, url: str = None, background: bool = None,
            engine_name: str = None, browser: str = None) -> bool:
     """Edit a web app (its form): name, address, keep running, engine. Its
     login stays (each engine keeps its own: switching asks to sign in once)."""
-    data = config.load(NAME, DEFAULTS)
+    data = _load()
     entry = data.get("apps", {}).get(app)
     if entry is None:
         return False
@@ -421,7 +441,7 @@ def set_custom_icon(app: str, picture: str) -> str:
 def remove(app: str) -> None:
     """The web app, its desktop entry and its data (login, storage)."""
     from gi.repository import GLib
-    data = config.load(NAME, DEFAULTS)
+    data = _load()
     data.get("apps", {}).pop(app, None)
     config.save(NAME, data)
     try:

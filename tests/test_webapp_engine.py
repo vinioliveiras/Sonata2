@@ -156,3 +156,52 @@ class SizeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OneAppPerSiteTest(unittest.TestCase):
+    def test_whatsapp_made_twice(self):
+        """Vini: the WhatsApp web app was there twice -- both get one app id
+        in the browser, so the Dock mixed up their windows and opening one
+        opened Chrome. The same site again is the web app already made."""
+        import tempfile
+        from sonata2 import config
+        with mock.patch.object(config, "CONFIG_DIR", tempfile.mkdtemp()), \
+                mock.patch.object(W, "data_dir", side_effect=lambda a: tempfile.mkdtemp()), \
+                mock.patch.object(W, "update_theme_icon"), mock.patch.object(W, "write_desktop"):
+            first = W.create("WhatsApp", "https://web.whatsapp.com/", fetch=False)
+            again = W.create("WhatsApp", "web.whatsapp.com", fetch=False)
+            other = W.create("Instagram", "https://www.instagram.com/", fetch=False)
+            self.assertEqual(again, first)
+            self.assertNotEqual(other, first)
+            self.assertEqual(sorted(W.apps()), sorted([first, other]))
+
+    def test_second_webkit_app_for_a_site_was_refused(self):
+        """Only Chromium web apps of one browser share an app id per site: a
+        WebKit one (its own app id) for a site already made -- another
+        account, say -- is made, with the name and engine asked for."""
+        import tempfile
+        from sonata2 import config
+        with mock.patch.object(config, "CONFIG_DIR", tempfile.mkdtemp()), \
+                mock.patch.object(W, "chromium_browser", return_value=("/usr/bin/google-chrome-stable", "Google Chrome")), \
+                mock.patch.object(W, "data_dir", side_effect=lambda a: tempfile.mkdtemp()), \
+                mock.patch.object(W, "update_theme_icon"), mock.patch.object(W, "write_desktop"):
+            first = W.create("WhatsApp", "https://web.whatsapp.com/", fetch=False, engine_name="chromium")
+            work = W.create("WhatsApp Work", "https://web.whatsapp.com/", fetch=False, engine_name="webkit")
+            self.assertNotEqual(work, first)
+            self.assertEqual(W.get(work)["name"], "WhatsApp Work")
+            self.assertEqual(W.create("Zap", "web.whatsapp.com", fetch=False, engine_name="chromium"), first)
+
+
+    def test_removed_app_came_back_in_the_same_process(self):
+        """A web app made before webapps.json existed went into DEFAULTS' own
+        "apps" dict (a shallow copy): every later read in that process --
+        the Dock, the form -- still had it, in any folder, removed or not."""
+        import tempfile
+        from sonata2 import config
+        with mock.patch.object(config, "CONFIG_DIR", tempfile.mkdtemp()), \
+                mock.patch.object(W, "data_dir", side_effect=lambda a: tempfile.mkdtemp()), \
+                mock.patch.object(W, "update_theme_icon"), mock.patch.object(W, "write_desktop"):
+            W.create("WhatsApp", "https://web.whatsapp.com/", fetch=False)
+        self.assertEqual(W.DEFAULTS, {"apps": {}})
+        with mock.patch.object(config, "CONFIG_DIR", tempfile.mkdtemp()):
+            self.assertEqual(W.apps(), {})
