@@ -1,8 +1,7 @@
 # Porting Sonata 2 to Rust
 
-Status: **step 1 written** (foundations + Calculator, below), not yet
-built: Rust isn't installed on the development machine yet. Branch
-`claude/rust-port-fdcd02`.
+Status: **step 1 done** (foundations + Calculator, below): it builds and
+its tests pass; not tried in a session yet. Branch `claude/rust-port-fdcd02`.
 The Python code stays the working Sonata on this branch until a
 component's Rust replacement is ready; the Wayfire plugin
 (`wayfire-plugin/`, C++) stays as it is.

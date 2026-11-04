@@ -39,16 +39,17 @@ window.sonata-window paned.vertical > separator { min-height: 1px; background: %
 }
 
 /// Give an app window Sonata's standard frame (call once, any time).
-pub fn standard(win: &impl IsA<gtk::Window>) {
-    win.add_css_class("sonata-window");
-    win.set_overflow(gtk::Overflow::Hidden); // children clipped to the rounded corners
+pub fn standard(win: &(impl IsA<gtk::Window> + IsA<gtk::Widget>)) {
+    let w = win.upcast_ref::<gtk::Widget>();
+    w.add_css_class("sonata-window");
+    w.set_overflow(gtk::Overflow::Hidden); // children clipped to the rounded corners
 }
 
 /// Present a window that was hidden instead of closed. GTK remembers a
 /// minimize as "minimize when shown" and Wayland never tells it the Dock
 /// brought the window back, so a hidden window came back minimized.
-pub fn show_again(win: &impl IsA<gtk::Window>) {
-    if !win.is_visible() {
+pub fn show_again(win: &(impl IsA<gtk::Window> + IsA<gtk::Widget>)) {
+    if !win.upcast_ref::<gtk::Widget>().is_visible() {
         win.unminimize();
     }
     win.present();

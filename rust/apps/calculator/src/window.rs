@@ -7,7 +7,7 @@
 //! for a number stays highlighted (white with orange text), as on a Mac.
 
 use crate::engine::Engine;
-use gtk::gdk::{self, Key, ModifierType};
+use gtk::gdk::{Key, ModifierType};
 use gtk::{glib, pango, prelude::*};
 use sonata_i18n::tr;
 use std::cell::RefCell;

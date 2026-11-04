@@ -8,7 +8,6 @@
 //! change, the window buttons. Components that need them come later.
 
 use crate::tokens::{self, Values};
-use adw::prelude::*;
 use serde_json::json;
 use std::cell::RefCell;
 

@@ -146,7 +146,15 @@ impl Dec {
         let q = q * 10u8 + if r.is_zero() { 0u8 } else { 1u8 };
         let neg = (self.m.sign() == Sign::Minus) != (other.m.sign() == Sign::Minus);
         let m = if neg { -q } else { q };
-        Dec { m, e: self.e - other.e - k - 1 }.round(prec)
+        let mut out = Dec { m, e: self.e - other.e - k - 1 }.round(prec)?;
+        // an exact quotient keeps no more trailing zeros than Python's
+        // "ideal exponent" (10 ÷ 4 is 2.5, not 2.500...0)
+        let ideal = self.e - other.e;
+        while out.e < ideal && !out.m.is_zero() && (&out.m % 10u8).is_zero() {
+            out.m /= 10u8;
+            out.e += 1;
+        }
+        Ok(out)
     }
 
     /// Plain notation, no exponent ('f' format): "1200", "-0.05".
