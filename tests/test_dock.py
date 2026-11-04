@@ -158,7 +158,7 @@ class DockTest(unittest.TestCase):
         self.assertEqual(asked, [key])
         self.assertIn(key, self.dock.cfg["pinned"])                         # until uninstalled
         self.assertFalse(self.dock.trash.has_css_class("drop-hover"))
-        files = self.dock.tiles[D.PERMANENT[0]] if D.PERMANENT[0] in self.dock.tiles else None
+        files = self.dock.tiles.get(D.FILES_KEY)
         if files is not None:
             self.assertFalse(self.dock.can_uninstall(files))                 # Files never
 
@@ -233,6 +233,23 @@ class DockTest(unittest.TestCase):
             if t is not None:
                 labels = [i.label for sec in dock_menu.app_sections(self.dock, k, t) for i in sec]
                 self.assertNotIn("Uninstall…", labels)
+
+    def test_files_could_not_leave_the_dock(self):
+        """Vini: Files couldn't be taken off the Dock -- it's in the Apps Menu,
+        where it can be pinned again. Only Launchpad / the Apps Menu stays."""
+        self.assertEqual(D.PERMANENT, ("sonata2-launchpad",))
+        if D.FILES_KEY not in self.dock.cfg["pinned"]:
+            self.dock.set_pinned(D.FILES_KEY, True)
+        self.dock.set_pinned(D.FILES_KEY, False)
+        self.assertNotIn(D.FILES_KEY, self.dock.cfg["pinned"])
+        self.assertNotIn(D.FILES_KEY, D.load_config()["pinned"])            # not put back on start
+        tile = self.dock.tiles.get(D.FILES_KEY)
+        if tile is not None:                                                # (still open: its icon stays)
+            items = [i for sec in dock_menu.app_sections(self.dock, D.FILES_KEY, tile) for i in sec]
+            labels = [j.label for i in items for sub in (i.submenu or []) for j in sub]
+            self.assertIn("Keep in Dock", labels)
+        self.dock.set_pinned(D.FILES_KEY, True)
+        self.assertIn(D.FILES_KEY, self.dock.cfg["pinned"])
 
     def test_app_file_is_real_path(self):
         path = dock_menu.app_file(self.dock.tiles[self.keys()[0]].info)

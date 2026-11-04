@@ -166,7 +166,7 @@ def app_sections(dock, key: str, tile) -> list:
     pinned = key in dock.cfg["pinned"]
     from .dock import PERMANENT
     opts = []
-    if info and key in PERMANENT:                  # can't leave the Dock (like Finder)
+    if info and key in PERMANENT:                  # can't leave the Dock (Launchpad / the Apps Menu)
         opts = [[Item(_("Open File Location"), lambda: show_in_files(app_file(info)))]]
     elif info:
         opts = [[Item(_("Keep in Dock"), lambda on: dock.set_pinned(key, on), checked=pinned),

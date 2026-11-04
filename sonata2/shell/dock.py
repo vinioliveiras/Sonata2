@@ -46,8 +46,6 @@ SCREEN_MARGIN = 16          # px kept free at both ends of the screen edge
 MAX_RECENTS = 3
 LAUNCH_BOUNCES = 3          # attention / urgent bounces
 MAX_DOTS = 3                        # running dots: one per window, up to this many (a + looked off -- Vini)
-# Always in the Dock (like Finder on macOS): Files and Launchpad can't be
-# removed -- the shell relies on them (open folders, reach every app).
 def merge_order(pinned: list, tile_keys: list) -> list:
     """The pinned keys in the tiles' order; keys without a tile stay where
     they were (between the same neighbours)."""
@@ -61,8 +59,11 @@ def merge_order(pinned: list, tile_keys: list) -> list:
     return [k for k in out if not (k in seen or seen.add(k))]
 
 
-PERMANENT = ("io.github.vinioliveiras.sonata2.files", "sonata2-launchpad")
-LAUNCHPAD_KEY = PERMANENT[1]
+# Always in the Dock: Launchpad / the Apps Menu, which reaches every app.
+# Files can leave it (Vini): it's in the Apps Menu, pinned again from there
+PERMANENT = ("sonata2-launchpad",)
+LAUNCHPAD_KEY = PERMANENT[0]
+FILES_KEY = "io.github.vinioliveiras.sonata2.files"
 # shell tools that open instantly and have no app window (layer surfaces: the
 # screenshot toolbar): no launch bounce, and never "stuck" -- the Dock bounced
 # the Screenshot icon on and on, then stopped it as stuck (Vini)
@@ -2501,7 +2502,7 @@ def load_config() -> dict:
         cfg["stacks"] = dock_stack.default_stacks()
         config.save("dock", cfg)
     missing = [k for k in PERMANENT if k not in cfg["pinned"] and apps.lookup(k)]
-    for i, k in enumerate(PERMANENT):                     # Files first, Launchpad next
+    for i, k in enumerate(PERMANENT):                     # Launchpad first (Files, taken out, stays out)
         if k in missing:
             cfg["pinned"].insert(min(i, len(cfg["pinned"])), k)
     if missing:

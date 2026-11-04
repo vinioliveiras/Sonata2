@@ -1126,7 +1126,7 @@ class Launchpad(Gtk.ApplicationWindow):
             dock = config.load("dock", {"pinned": None})
             pins = dock.get("pinned")
             from .dock import PERMANENT
-            if pins is not None and item not in PERMANENT:       # Files / Launchpad always stay
+            if pins is not None and item not in PERMANENT:       # (Launchpad always stays)
                 kept = item in pins
 
                 def toggle_dock(on=not kept):
