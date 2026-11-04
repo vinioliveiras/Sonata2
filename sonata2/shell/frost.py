@@ -24,24 +24,29 @@ def available() -> bool:
 
 
 def frost_command(output) -> list:
-    """grim: the display's picture, small and uncompressed (fast)."""
-    cmd = ["grim", "-s", str(FROST_SCALE), "-l", "0"]
+    """grim: the display's picture, uncompressed (fast). At full size: grim
+    shrinking it itself (-s) took ~160 ms on a 1080p display, ~25 ms
+    without -- blur_texture shrinks it on the GPU instead (Vini: the Game
+    Bar opened solid, then turned to glass)."""
+    cmd = ["grim", "-l", "0"]
     if output:
         cmd += ["-o", output]
     return cmd + ["-"]
 
 
 def blur_texture(renderer, texture):
-    """The picture blurred once (GSK), at its small size."""
+    """The picture shrunk to FROST_SCALE and blurred once (GSK, on the GPU)."""
     if renderer is None:
         return texture
-    from gi.repository import Graphene
-    w, h = texture.get_width(), texture.get_height()
+    from gi.repository import Graphene, Gsk
+    w = max(1, round(texture.get_width() * FROST_SCALE))
+    h = max(1, round(texture.get_height() * FROST_SCALE))
     snap = Gtk.Snapshot()
     r = Graphene.Rect().init(0, 0, w, h)
     snap.push_clip(r)
     snap.push_blur(FROST_BLUR * FROST_SCALE)
-    snap.append_texture(texture, Graphene.Rect().init(-8, -8, w + 16, h + 16))   # no dark edges
+    snap.append_scaled_texture(texture, Gsk.ScalingFilter.TRILINEAR,      # (mipmapped: no shimmer)
+                               Graphene.Rect().init(-8, -8, w + 16, h + 16))   # no dark edges
     snap.pop()
     snap.pop()
     node = snap.to_node()

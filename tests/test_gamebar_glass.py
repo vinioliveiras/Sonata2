@@ -80,12 +80,51 @@ class GlassTest(unittest.TestCase):
         shown = []
         with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc) as new:
             self.bar._frost_then(lambda: shown.append(1))
-            self.assertEqual(shown, [1])                        # at once (grim already asked for the screen)
             spin(G.FROST_WAIT_MS + 350)
         return new, shown, proc
 
     def test_command(self):
-        self.assertEqual(G.frost_command("DP-1"), ["grim", "-s", str(G.FROST_SCALE), "-l", "0", "-o", "DP-1", "-"])
+        self.assertEqual(G.frost_command("DP-1"), ["grim", "-l", "0", "-o", "DP-1", "-"])
+
+    def test_grim_shrinking_the_picture_made_the_glass_late(self):
+        """Vini: the Game Bar opened solid and turned to glass a moment later.
+        grim shrinking the picture itself (-s 0.25) took ~160 ms on a 1080p
+        display, ~25 ms at full size: it's taken whole and shrunk with the
+        blur, on the GPU -- the glass is as small as before."""
+        self.assertNotIn("-s", G.frost_command(None))
+        self.bar.realize()
+        big = Gdk.MemoryTexture.new(400, 200, Gdk.MemoryFormat.R8G8B8A8,
+                                    GLib.Bytes.new(bytes([255, 0, 0, 255] * 400 * 200)), 400 * 4)
+        tex = G.blur_texture(self.bar.get_renderer(), big)
+        self.assertEqual((tex.get_width(), tex.get_height()), (100, 50))
+
+    def test_game_bar_opened_solid_then_turned_to_glass(self):
+        """Vini: opening, the Game Bar showed solid panels and turned to
+        glass in front of him once the game's picture came. Now it shows
+        when the picture is ready, already in glass from its first frame."""
+        proc = FakeProc(red_png())
+        seen = []
+        with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc):
+            self.bar._frost_then(lambda: seen.append(self.bar.frost_tex is not None
+                                                     and self.bar.root.has_css_class("frosted")))
+            self.assertEqual(seen, [])                          # not before its glass
+            spin(G.FROST_WAIT_MS + 100)
+        self.assertEqual(seen, [True])                          # shown once, in glass
+        self.assertEqual(self.bar.frost_alpha, 1.0)
+
+    def test_late_picture_never_turns_it_to_glass_in_front_of_you(self):
+        """Later than FROST_WAIT_MS it opens solid -- and stays solid this
+        time: no glass coming on while it's on screen (Vini)."""
+        proc = FakeProc(None)
+        with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc):
+            self.bar._frost_then(self.bar.present)
+            spin(G.FROST_WAIT_MS + 100)
+        self.assertTrue(self.bar.get_visible())                 # not kept waiting
+        proc.out = red_png()
+        proc.done(proc, None)
+        spin(50)
+        self.assertIsNone(self.bar.frost_tex)
+        self.assertFalse(self.bar.root.has_css_class("frosted"))
 
     def test_picture_first_then_shown_frosted(self):
         self.bar.present()
@@ -99,20 +138,16 @@ class GlassTest(unittest.TestCase):
     def test_game_bar_waited_and_animated_opening_and_closing(self):
         """Vini: the Game Bar should open and close at once, as fast as it can.
         It waited for the game's picture (up to 80 ms, then 220 ms more for
-        its panels) and faded / slid in and out. Now it shows the moment it's
-        asked, its panels solid until the glass comes -- at once, no fade --
-        and closing hides it at once."""
+        its panels) and faded / slid in and out. Now it waits at most
+        FROST_WAIT_MS (the picture usually comes in ~25 ms), nothing fades
+        or slides, and closing hides it at once."""
         from sonata2.ui import theme
         proc = FakeProc(None)
         with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc):
             self.bar._frost_then(self.bar.present)
-            self.assertTrue(self.bar.get_visible())                   # no wait
-            spin(30)
-        self.assertFalse(self.bar.root.has_css_class("waiting"))     # the panels too
-        proc.out = red_png()
-        proc.done(proc, None)
-        spin(50)
-        self.assertEqual(self.bar.frost_alpha, 1.0)                  # the glass at once, no fade
+            spin(G.FROST_WAIT_MS + 30)
+            self.assertTrue(self.bar.get_visible())                   # no picture: solid, no longer wait
+        self.assertLessEqual(G.FROST_WAIT_MS, 100)
         css = theme._templates["gamebar"][0]
         for name in ("gb-bar-in", "gb-bar-out", "gb-widget-in", "gb-widget-out", "gb-fade-in"):
             self.assertNotIn(name, css)
@@ -125,27 +160,9 @@ class GlassTest(unittest.TestCase):
         proc = FakeProc(None)
         with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc):
             self.bar._frost_then(self.bar.present)
-            spin(G.FROST_WAIT_MS + G.PANELS_WAIT_MS + 120)
-        self.assertFalse(self.bar.root.has_css_class("waiting"))  # not kept hidden
+            spin(G.FROST_WAIT_MS + 120)
+        self.assertTrue(self.bar.get_visible())                   # not kept hidden
         self.assertIsNone(self.bar.frost_tex)
-
-    def test_too_slow_shows_solid_then_the_glass_fades_in(self):
-        """Vini: some openings had no glass -- grim was slower than the wait
-        and its picture was thrown away. It shows solid at once, and the
-        glass comes when the picture does (fading in)."""
-        proc = FakeProc(None)                                    # grim answers late
-        with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc):
-            self.bar._frost_then(self.bar.present)
-            spin(G.FROST_WAIT_MS + 150)
-        self.assertTrue(self.bar.get_visible())                  # not kept waiting
-        self.assertFalse(self.bar.root.has_css_class("frosted"))
-        proc.out = red_png()
-        proc.done(proc, None)
-        spin(100)
-        self.assertIsNotNone(self.bar.frost_tex)
-        self.assertTrue(self.bar.root.has_css_class("frosted"))
-        spin(G.GLASS_FADE_MS + 200)
-        self.assertEqual(self.bar.frost_alpha, 1.0)               # (eased in)
 
     def test_late_picture_ignored_once_closed_or_reopened(self):
         proc = FakeProc(None)
@@ -235,7 +252,7 @@ class LightOpeningTest(unittest.TestCase):
     def test_no_frame_by_frame_work_while_open(self):
         src = open(G.__file__).read()
         self.assertNotIn("add_tick_callback", src)                 # the frame clock rests between changes
-        self.assertLessEqual(G.FROST_WAIT_MS, 100)                 # (a late picture fades in)
+        self.assertLessEqual(G.FROST_WAIT_MS, 100)                 # (a late picture: solid this time)
 
     def test_states_read_after_the_opening_animation(self):
         config.save(G.CONFIG, dict(G.DEFAULTS))
