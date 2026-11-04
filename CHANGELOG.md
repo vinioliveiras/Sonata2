@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Game Bar and Control Center: the Video Memory card (and every graph card) shows its figure whole, "9.5 / 16 GB", and cuts the title instead; the two used to share the space and the GB lost its start.
 - Files no longer opens small again now and then, and the Trash (opened from the Dock) opens at Files' size: closing an Open / Save panel (an app asking for a file) saved its 820 x 520 as Files' window size. The panel now remembers a size of its own.
 - Notification Center no longer lags with many notifications: the compositor blurred behind its whole column again on every frame it scrolled or slid. Its glass is now a picture of the display blurred once as it opens (as the Game Bar's), each card drawing its own slice; without grim the cards are solid.
 - AppImages: Install in their right-click (Files and the desktop), next to Run -- asked first, then the AppImage is copied into ~/Applications and gets a launcher with its own name, icon and categories, so it's in the Apps Menu and can be kept in the Dock. Uninstalling it moves the AppImage to the Trash with its launcher.
