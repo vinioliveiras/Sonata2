@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Menu bar: keyboards set to different layouts (Settings > Keyboard) each get their own input control, one per layout (for example PT for the laptop and US for an external keyboard). Each control's tooltip lists its keyboards, and switching there changes only those. The single control showed Input Sources, which no keyboard with its own layout uses, so it showed the wrong layout and switching did nothing. Keyboards plugged in or out are picked up within 15 s.
 - Menu bar: the microphone / camera dot sits right of the date, centred between it and the screen's edge as on macOS Tahoe, and no longer moves any item when it appears; it used to be an item of its own beside Control Center and pushed the clock and every other item left. A click still opens Control Center; hovering still says which apps are using them.
 - New network icon: a network globe, in the menu bar when you're on a wired connection and in Settings' Network section, instead of the Ethernet port.
 - Files: double-clicking a shell script (.sh, .bash, .zsh) runs it, in a Terminal window opened in its folder, so you see what it prints and can answer what it asks. It used to open in the text editor. Opening one from the Desktop, Spotlight or a Dock stack runs it too; Open With still offers the editor.

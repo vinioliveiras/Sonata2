@@ -49,6 +49,7 @@ REVEAL_MS = 150                                 # pointer at the top edge -> the
 POLL_S = 10
 PUSHED_POLL_S = 120                             # Wi-Fi / battery as signals: a look now and then only
 NET_SETTLE_MS = 1000                            # a burst of NetworkManager signals -> one read
+KEYBOARDS_S = 15                                # keyboards plugged in / out: looked at this often (a thread)
 INUSE_ROOM = 8                                  # the bar's right margin, where the in-use dot sits
 INUSE_DOT = 6
 
@@ -296,7 +297,11 @@ class Bar(Gtk.CenterBox):
         self.fullscreen_first.listeners.append(self._fullscreen_cb)
         self.input_btn = self._item(right, text="", on_click=self._input_panel)
         self.input_btn.add_css_class("input-src")
+        self.input_btn.kbd_group = (None, [])           # (its layout, its keyboards): None, Input Sources
+        self._input_extra, self._input_groups = [], None
         self._update_input()
+        self._kbd_src = GLib.timeout_add_seconds(KEYBOARDS_S, lambda: (self.alive and self._read_keyboards(),
+                                                                       self.alive)[1])
         self.sound = self._item(right, icon="sonata-volume-3-symbolic", on_click=self._sound_panel, css="icon")
         self._extras_visibility()
         self.battery = self._item(right, icon="sonata-battery-100-symbolic", on_click=self._battery_panel,
@@ -1104,17 +1109,77 @@ class Bar(Gtk.CenterBox):
 
     def _update_input(self):
         """The layout in use, always (Vini: like macOS' input menu, even with
-        one layout -- it showed only with two or more)."""
+        one layout -- it showed only with two or more). Keyboards with a
+        layout of their own (Settings > Keyboard) get a control each, one per
+        layout: Vini's laptop types Portuguese, his HyperX US -- the menu bar
+        showed (and switched) Input Sources, which neither of them used."""
         lays = self._layouts()
         self.input_btn.set_visible(bool(lays) and self.cfg.get("show_input", True))
-        if lays:
+        if lays and self.input_btn.kbd_group[0] is None:
             self._set_text(self.input_btn, layout_badge(lays[0]))
             names = dict(system.XKB_LAYOUTS)
             self.input_btn.set_tooltip_text(_(names.get(lays[0], lays[0])) +
                                             ("  " + _("(Ctrl+Space: the previous one)") if len(lays) > 1 else ""))
+        for b in [self.input_btn] + self._input_extra:
+            if b.kbd_group[0] is not None:
+                b.set_visible(self.cfg.get("show_input", True))
+        self._read_keyboards()
+
+    def _read_keyboards(self) -> None:
+        """The keyboards connected and their layouts, read in a thread (Wayfire's
+        IPC); their controls brought up to date."""
+        def read():
+            kbs = system.keyboards()
+            return keyboard_groups(kbs, {n: system.keyboard_device_layout(n) for n in kbs})
+        system.run_async(read, self._show_keyboards)
+
+    def _show_keyboards(self, groups) -> None:
+        """One control per group of keyboards (input_btn the first, the others
+        right after it); none of this while every keyboard follows Input Sources."""
+        if not self.alive or groups is None or groups == self._input_groups:
+            return
+        self._input_groups = groups
+        if not groups or groups == [(None, groups[0][1])]:
+            groups = [(None, [])]                      # every keyboard on Input Sources: as it was
+        for b in self._input_extra:
+            if b.get_parent() is not None:
+                b.get_parent().remove(b)
+            if b in self.items:
+                self.items.remove(b)
+        self._input_extra = []
+        box, prev = self.input_btn.get_parent(), self.input_btn
+        for i, group in enumerate(groups):
+            if i == 0:
+                b = self.input_btn
+            else:
+                b = self._item(box, text="", on_click=self._input_panel)
+                b.add_css_class("input-src")
+                box.reorder_child_after(b, prev)
+                self._input_extra.append(b)
+            b.kbd_group = group
+            prev = b
+            layout, kbs = group
+            if layout is not None:
+                names = dict(system.XKB_LAYOUTS)
+                self._set_text(b, layout_badge(layout))
+                b.set_tooltip_text(_(names.get(layout, layout)) + "\n" + "\n".join(kbs))
+        self._update_input_badges()
+
+    def _update_input_badges(self) -> None:
+        lays = self._layouts()
+        if self.input_btn.kbd_group[0] is None:
+            self.input_btn.set_visible(bool(lays) and self.cfg.get("show_input", True))
+            if lays:
+                self._set_text(self.input_btn, layout_badge(lays[0]))
+        for b in [self.input_btn] + self._input_extra:
+            if b.kbd_group[0] is not None:
+                b.set_visible(self.cfg.get("show_input", True))
 
     def _input_panel(self, btn):
         names = dict(system.XKB_LAYOUTS)
+        layout, kbs = getattr(btn, "kbd_group", (None, []))
+        if layout is not None:
+            return self._keyboard_panel(btn, layout, kbs)
         lays = self._layouts()
         col = ui.panel.column()
         pop = ui.panel.popup(btn, col, gap=PANEL_GAP, width=STATUS_W)
@@ -1128,6 +1193,35 @@ class Bar(Gtk.CenterBox):
                                    "keyboard"))
         ui.panel.align_to_start(pop, btn, 2)
         return pop
+
+    def _keyboard_panel(self, btn, layout, kbs):
+        """These keyboards' layout: one of the Input Sources (or the one they
+        have); a click sets it for them only."""
+        names = dict(system.XKB_LAYOUTS)
+        lays = self._layouts()
+        if layout not in lays:
+            lays = [layout] + lays
+        col = ui.panel.column()
+        pop = ui.panel.popup(btn, col, gap=PANEL_GAP, width=STATUS_W)
+        for kb in kbs:                                      # whose layout this is
+            col.append(Gtk.Label(label=kb, xalign=0, ellipsize=Pango.EllipsizeMode.END,
+                                 css_classes=["panel-module-title", "dim-label"]))
+        for l in lays:
+            r = ui.panel.row("object-select-symbolic", _(names.get(l, l)), on_click=lambda l=l: (
+                pop.popdown(), self._use_keyboard_layout(kbs, l)))
+            r.icon.set_opacity(1 if l == layout else 0)
+            col.append(r)
+        col.append(ui.panel.separator())
+        col.append(self._prefs_row(pop, _("Open Keyboard Preferences…"), "keyboard"))
+        ui.panel.align_to_start(pop, btn, 2)
+        return pop
+
+    def _use_keyboard_layout(self, kbs, layout) -> None:
+        def done(_r):
+            for b in list(_BARS) or [self]:
+                b._input_groups = None                      # read again: the badges follow
+                b._update_input()
+        system.run_async(lambda: [system.set_keyboard_device_layout(k, layout) for k in kbs], done)
 
     def next_layout(self) -> None:
         """Ctrl+Space (macOS): back to the layout used before this one."""
@@ -1182,6 +1276,16 @@ class Bar(Gtk.CenterBox):
 
     def _poll_soon(self) -> None:
         GLib.timeout_add(600, lambda: (self._poll(), False)[1])
+
+
+def keyboard_groups(keyboards, own) -> list:
+    """[(layout, [keyboard names])]: the connected keyboards by the layout
+    they type, in their order; layout None for the ones following Input
+    Sources (own[name] ""), that group first."""
+    groups = {}
+    for k in keyboards:
+        groups.setdefault(own.get(k) or None, []).append(k)
+    return sorted(groups.items(), key=lambda g: g[0] is not None)
 
 
 def layout_badge(layout: str) -> str:
