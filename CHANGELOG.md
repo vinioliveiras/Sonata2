@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Dock: a locked folder's password can be typed again -- it was asked inside the folder's panel on the Dock, which takes no keyboard, so the field could be clicked but not typed in.
+- Every prompt for your login password is now the same sheet as the one installing updates asks with -- a lock, the title, your picture and name, the password, Cancel / OK, a shake when it's wrong: locked Dock and Apps folders, the Hidden folder, Lock App and Files' Lock Folder.
+
 ## 0.22.0-alpha -- 2026-10-29
 
 Pick your own mouse pointer -- any theme installed, or one downloaded --

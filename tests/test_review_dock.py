@@ -182,10 +182,11 @@ class DockFolderModelTest(unittest.TestCase):
 
     def test_password_checked_off_the_main_thread(self):
         """PAM runs in the worker thread; only the result comes back on the main loop."""
+        from sonata2 import pam
         seen, result = [], []
         with mock.patch("sonata2.pam.authenticate",
                         side_effect=lambda u, p: (seen.append(threading.current_thread()), True)[1]):
-            F.check_password("pw", result.append)
+            pam.check_async("pw", result.append)
             for _ in range(200):
                 if result:
                     break

@@ -447,12 +447,11 @@ class MenuModeTest(unittest.TestCase):
         return next(t for t in self.menu.visible_items() if isinstance(t.item, dict))
 
     def _password(self, ok):
-        """Type a password in the open lock panel; PAM answers `ok`."""
-        from sonata2.shell import dock_folder
-        entry = self._find(self.pad.folder_view[2], Gtk.PasswordEntry)
-        entry.set_text("pw")
-        with mock.patch.object(dock_folder, "check_password", side_effect=lambda pw, done: done(ok)):
-            entry.emit("activate")
+        """Type a password in the open password sheet; PAM answers `ok`."""
+        sheet = self.pad.password_sheet
+        sheet.entry.set_text("pw")
+        with mock.patch("sonata2.pam.check_async", side_effect=lambda pw, done: done(ok)):
+            sheet.entry.emit("activate")
         settle(100)
 
     def _find(self, root, cls):
@@ -485,10 +484,11 @@ class MenuModeTest(unittest.TestCase):
         tile = next(t for t in self.menu.visible_items() if isinstance(t.item, dict))
         self.pad.activate_item(tile)
         settle(100)
-        self.assertIsNone(self.pad.folder_view[1])                     # the password, not the apps
-        self.assertIsNotNone(self._find(self.pad.folder_view[2], Gtk.PasswordEntry))
+        self.assertIsNone(self.pad.folder_view)                        # the password, not the apps
+        self.assertFalse(self.pad.password_sheet.finished)
         self._password(False)
-        self.assertIsNone(self.pad.folder_view[1])                     # wrong: still asked
+        self.assertIsNone(self.pad.folder_view)                        # wrong: still asked
+        self.assertFalse(self.pad.password_sheet.finished)
         self._password(True)
         self.assertIs(self.pad.folder_view[1], folder)                 # right: its apps
         self.pad._close_folder()

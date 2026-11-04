@@ -237,49 +237,12 @@ def ask_text(heading: str, text: str, ok: str, on_done, body: str = "", parent=N
 def ask_password(heading: str, body: str, on_ok, parent=None, ok: str = None, wrong: bool = False,
                  with_password: bool = False):
     """The login password, checked (PAM) before on_ok() runs; a wrong one
-    asks again ("Wrong password"). Return in the field checks it without
-    closing the alert; the button closes it, then checks. with_password:
-    on_ok(password) -- it's needed past the check (a locked folder's key)."""
-    from gi.repository import GLib
-    from . import controls
-    from .. import pam
-    ok = ok or _("Open")
-    entry = controls.text_field("", _("Password"), secret=True, hexpand=True)
-    hint = Gtk.Label(label=_("Wrong password") if wrong else
-                     ("" if pam.available() else _("Passwords can't be checked (PAM missing)")),
-                     css_classes=["dim-label", "caption"], visible=wrong or not pam.available())
-    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-    box.append(entry)
-    box.append(hint)
-    state = {"busy": False}
-
-    def checked(ok_, dlg, closed, pw=""):
-        state["busy"] = False
-        entry.set_sensitive(True)
-        if ok_:
-            if not closed:
-                dlg.close() if hasattr(dlg, "close") else dlg.destroy()
-            on_ok(pw) if with_password else on_ok()
-        elif closed:
-            ask_password(heading, body, on_ok, parent, ok, wrong=True, with_password=with_password)
-        else:
-            hint.set_label(_("Wrong password"))
-            hint.set_visible(True)
-            entry.set_text("")
-            entry.grab_focus()
-
-    def check(closed):
-        pw = entry.get_text()
-        if not pw or state["busy"]:
-            return
-        state["busy"] = True
-        entry.set_sensitive(False)
-        pam.check_async(pw, lambda r: checked(r, dlg, closed, pw))
-
-    dlg = alert(heading, body, [("cancel", _("Cancel"), ""), ("ok", ok, "default")],
-                lambda rid: rid == "ok" and check(True), parent=parent)
-    dlg.set_extra_child(box)
-    entry.connect("activate", lambda _e: check(False))
-    GLib.idle_add(lambda: (entry.grab_focus(), False)[1])
-    dlg.entry, dlg.hint = entry, hint                   # (tests)
-    return dlg
+    asks again ("Wrong password") in the same sheet. with_password:
+    on_ok(password) -- it's needed past the check (a locked folder's key).
+    Every prompt for the login password is the same sheet (shell/authsheet,
+    Vini: like the one installing updates asks)."""
+    from ..shell import authsheet
+    sheet = authsheet.ask(heading, body, on_ok, ok=ok or _("Open"), parent=parent, with_password=with_password)
+    if wrong:
+        sheet.say(_("Wrong password"))
+    return sheet
