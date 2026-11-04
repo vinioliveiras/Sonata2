@@ -89,12 +89,16 @@ fn entries() -> Vec<Entry> {
             let id = did.strip_suffix(".desktop")?.to_string();
             let desk = info.downcast_ref::<gio::DesktopAppInfo>();
             let wm_class = desk.and_then(|d| d.startup_wm_class()).map(|s| s.to_string()).unwrap_or_default();
-            // the program Exec starts, its file name
-            let exe = info.executable().to_string_lossy().into_owned();
-            let exe = exe.split(' ').next().unwrap_or("").rsplit('/').next().unwrap_or("").to_string();
-            Some(Entry { id, shown: info.should_show(), wm_class, exe })
+            Some(Entry { id, shown: info.should_show(), wm_class, exe: exe_of(&info) })
         })
         .collect()
+}
+
+/// The program Exec starts, its file name ("" when there's no Exec=: a
+/// D-Bus activated entry -- AppInfo::executable() panics on its NULL).
+fn exe_of(info: &gio::AppInfo) -> String {
+    let cmd = info.commandline().map(|c| c.to_string_lossy().into_owned()).unwrap_or_default();
+    cmd.split(' ').next().unwrap_or("").rsplit('/').next().unwrap_or("").to_string()
 }
 
 fn find(idx: &HashMap<String, String>, a: &str) -> Option<String> {
@@ -215,5 +219,16 @@ mod tests {
     #[test]
     fn test_empty_matches_nothing() {
         assert_eq!(match_app_id(""), None);
+    }
+
+    #[test]
+    fn test_entry_without_exec_crashed() {
+        // a D-Bus activated app with no Exec= line made the app index panic,
+        // taking the Dock or menu bar down with it
+        let kf = glib::KeyFile::new();
+        kf.load_from_data("[Desktop Entry]\nType=Application\nName=X\nDBusActivatable=true\n", glib::KeyFileFlags::NONE).unwrap();
+        let info = gio::DesktopAppInfo::from_keyfile(&kf).expect("GLib takes a D-Bus activated entry");
+        assert_eq!(super::exe_of(info.upcast_ref()), "");
+        assert!(std::panic::catch_unwind(|| info.executable()).is_err(), "the old call panics here");
     }
 }
