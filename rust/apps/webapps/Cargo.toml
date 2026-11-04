@@ -12,6 +12,8 @@ gio.workspace = true
 glib.workspace = true
 serde_json.workspace = true
 libc.workspace = true
+regex.workspace = true
+base64.workspace = true
 sonata-backend.workspace = true
 sonata-config = { workspace = true, features = ["watch"] }
 sonata-desktop.workspace = true
