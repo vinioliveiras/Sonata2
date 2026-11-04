@@ -49,10 +49,13 @@ REVEAL_MS = 150                                 # pointer at the top edge -> the
 POLL_S = 10
 PUSHED_POLL_S = 120                             # Wi-Fi / battery as signals: a look now and then only
 NET_SETTLE_MS = 1000                            # a burst of NetworkManager signals -> one read
+INUSE_ROOM = 8                                  # the bar's right margin, where the in-use dot sits
+INUSE_DOT = 6
 
 ui.register("""
-.topbar-item.inuse { padding-left: 4px; padding-right: 4px; }
-.inuse-dot { min-width: 7px; min-height: 7px; border-radius: 4px; }
+button.inuse-dots { padding: 0; margin: 0; min-width: 0; min-height: 0; border: none; box-shadow: none;
+  background: none; }
+.inuse-dot { min-width: 6px; min-height: 6px; border-radius: 3px; }
 .inuse-dot.mic { background: %(sys_orange)s; }
 .inuse-dot.cam { background: %(sys_green)s; }
 """, key="topbar-inuse")
@@ -311,22 +314,29 @@ class Bar(Gtk.CenterBox):
         self.spotlight.set_visible(self.cfg.get("show_spotlight", True))
         self.cc = self._item(right, icon="sonata-control-center-symbolic", on_click=self._control_center,
                              css="icon")
-        # microphone / camera in use (macOS: the orange and green dots, right of Control Center)
-        from ..backend import inuse
-        self.inuse = _shared("inuse", inuse.Watcher)
-        self.inuse_btn = self._item(right, on_click=self._control_center, css="icon")
-        self.inuse_btn.add_css_class("inuse")
-        self.mic_dot = Gtk.Box(css_classes=["inuse-dot", "mic"], valign=Gtk.Align.CENTER)
-        self.cam_dot = Gtk.Box(css_classes=["inuse-dot", "cam"], valign=Gtk.Align.CENTER)
-        self.inuse_btn.get_child().append(self.cam_dot)
-        self.inuse_btn.get_child().append(self.mic_dot)
-        self.inuse_btn.get_child().set_spacing(3)
-        self.inuse.listeners.append(self._inuse_changed)
-        self._inuse_changed()
         self.clock = self._item(right, text="", on_click=self._calendar, css="clock")
         self.clock.get_child().get_last_child().connect("map", lambda *_: self._clock_room())
-        right.set_margin_end(8)
-        self.set_end_widget(right)
+        right.set_margin_end(INUSE_ROOM)
+        # microphone / camera in use (macOS Tahoe: the orange or green dot right
+        # of the date). Over the menu bar's right margin, never in the row: it
+        # comes and goes without moving a single item (Vini) -- it used to be
+        # an item of its own beside Control Center, and pushed them all left
+        from ..backend import inuse
+        self.inuse = _shared("inuse", inuse.Watcher)
+        self.inuse_btn = Gtk.Button(css_classes=["inuse-dots"], can_focus=False, halign=Gtk.Align.END,
+                                    valign=Gtk.Align.CENTER, margin_end=(INUSE_ROOM - INUSE_DOT) // 2)
+        self.inuse_btn.connect("clicked", lambda _b: self._open(self.cc, self._control_center))
+        dots = Gtk.Box(valign=Gtk.Align.CENTER)
+        self.mic_dot = Gtk.Box(css_classes=["inuse-dot", "mic"], valign=Gtk.Align.CENTER)
+        self.cam_dot = Gtk.Box(css_classes=["inuse-dot", "cam"], valign=Gtk.Align.CENTER)
+        dots.append(self.cam_dot)
+        dots.append(self.mic_dot)
+        self.inuse_btn.set_child(dots)
+        end = Gtk.Overlay(child=right)
+        end.add_overlay(self.inuse_btn)                 # (an overlay: not measured, the row keeps its size)
+        self.inuse.listeners.append(self._inuse_changed)
+        self._inuse_changed()
+        self.set_end_widget(end)
 
         self._theme_cb = ui.theme.on_change(self._theme_changed)
         self._cfg_mon = config.watch("topbar", self._config_changed)
