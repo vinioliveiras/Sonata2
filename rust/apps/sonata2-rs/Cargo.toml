@@ -1,0 +1,18 @@
+[package]
+name = "sonata2-rs"
+description = "Sonata 2 in Rust: one binary, `sonata2-rs <component>` (as `sonata2 <component>`)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sonata2-rs"
+path = "src/main.rs"
+
+[dependencies]
+sonata-calculator.workspace = true
+sonata-config.workspace = true
+sonata-i18n.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

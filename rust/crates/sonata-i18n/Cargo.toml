@@ -1,0 +1,12 @@
+[package]
+name = "sonata-i18n"
+description = "Sonata in the system's language, from the same catalogs as sonata2/i18n.py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

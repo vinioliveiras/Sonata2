@@ -1,0 +1,20 @@
+[package]
+name = "sonata-calculator"
+description = "Calculator (macOS Calculator, Basic), ported from sonata2/calculator/"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["gui"]
+# the window; without it only the engine builds (its tests need no GTK)
+gui = ["dep:gtk", "dep:adw", "dep:sonata-ui", "dep:sonata-i18n"]
+
+[dependencies]
+num-bigint.workspace = true
+num-traits.workspace = true
+sonata-config.workspace = true
+gtk = { workspace = true, optional = true }
+adw = { workspace = true, optional = true }
+sonata-ui = { workspace = true, optional = true }
+sonata-i18n = { workspace = true, optional = true }

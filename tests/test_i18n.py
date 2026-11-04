@@ -58,7 +58,66 @@ def marked():
                 elif isinstance(a, ast.Constant) and isinstance(a.value, str):
                     found.setdefault((a.value, None), []).append(where)
                 # _(variable): translated through a table marked with N_() elsewhere
+    _marked_rust(found, bad)
     return found, bad
+
+
+# The Rust port (docs/RUST_PORT.md) marks strings with tr!(), trn!(), trp!(),
+# n_!() and nc_!() -- the same catalogs, so the same check.
+RUST = os.path.join(os.path.dirname(ROOT), "rust")
+_RS_STR = r'"((?:[^"\\]|\\.)*)"'
+_RS_MACROS = (
+    (re.compile(r"\b(?:tr|n_)!\(\s*" + _RS_STR + r"\s*\)"), "one"),
+    (re.compile(r"\btrn!\(\s*" + _RS_STR + r"\s*,\s*" + _RS_STR), "plural"),
+    (re.compile(r"\b(?:trp|nc_)!\(\s*" + _RS_STR + r"\s*,\s*" + _RS_STR + r"\s*\)"), "context"),
+)
+_RS_ANY = re.compile(r"\b(tr|trn|trp|n_|nc_)!\(")
+
+
+def _rust_unescape(text: str) -> str:
+    out, i = [], 0
+    while i < len(text):
+        c = text[i]
+        if c == "\\" and i + 1 < len(text):
+            n = text[i + 1]
+            if n == "u" and text[i + 2:i + 3] == "{":
+                end = text.index("}", i)
+                out.append(chr(int(text[i + 3:end], 16)))
+                i = end + 1
+                continue
+            out.append({"n": "\n", "t": "\t", "r": "\r", "0": "\0"}.get(n, n))
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _marked_rust(found, bad):
+    for dp, dn, fns in os.walk(RUST):
+        dn[:] = [d for d in dn if d != "target"]
+        for fn in fns:
+            if not fn.endswith(".rs"):
+                continue
+            path = os.path.join(dp, fn)
+            with open(path, encoding="utf-8") as f:
+                lines = f.read().split("\n")
+            for no, line in enumerate(lines, 1):
+                code = line.split("//")[0] if not line.lstrip().startswith("//") else ""
+                if "macro_rules!" in code or not _RS_ANY.search(code):
+                    continue
+                where = f"{os.path.relpath(path, ROOT)}:{no}"             # (as i18n_missing.py compares)
+                calls = len(_RS_ANY.findall(code))
+                got = 0
+                for rx, kind in _RS_MACROS:
+                    for m in rx.finditer(code):
+                        got += 1
+                        g = [_rust_unescape(x) for x in m.groups()]
+                        key = (g[0], None) if kind == "one" else (g[0], g[1]) if kind == "plural" \
+                            else (g[0] + i18n.CONTEXT_SEP + g[1], None)
+                        found.setdefault(key, []).append(where)
+                if got < calls:
+                    bad.append((where, "a translation macro needs literal strings on one line"))
 
 
 def fields(text):

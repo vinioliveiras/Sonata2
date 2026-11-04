@@ -1,6 +1,8 @@
 # Porting Sonata 2 to Rust
 
-Status: **plan, nothing ported yet.** Branch `claude/rust-port-fdcd02`.
+Status: **step 1 written** (foundations + Calculator, below), not yet
+built: Rust isn't installed on the development machine yet. Branch
+`claude/rust-port-fdcd02`.
 The Python code stays the working Sonata on this branch until a
 component's Rust replacement is ready; the Wayfire plugin
 (`wayfire-plugin/`, C++) stays as it is.
@@ -73,6 +75,7 @@ A Cargo workspace in `rust/` (the Python package stays where it is):
 rust/
   Cargo.toml              workspace; shared versions of gtk4, libadwaita, zbus, serde
   install-rs.sh           side-by-side installer (see above)
+  .gitignore              target/
   crates/
     sonata-config/        config.py: load with defaults, update (flock + atomic write),
                           watch (gio::FileMonitor), side-by-side read/write dirs
@@ -93,7 +96,8 @@ rust/
 Dependencies: `gtk4` (0.9+, feature `v4_12`), `libadwaita` (`v1_4`),
 `gtk4-layer-shell` (the `gtk4-layer-shell` crate), `zbus` (blocking +
 glib executor via `glib::MainContext::spawn_local`), `serde` /
-`serde_json`, `rust_decimal` (the Calculator), `wayland-client` +
+`serde_json`, `num-bigint` (the Calculator's exact decimals: Python's
+`Decimal` rounding, digit for digit), `wayland-client` +
 `wayland-protocols-wlr` for toplevels later.
 
 One multi-call binary rather than 30: one build, one install, shared
@@ -205,3 +209,39 @@ languages, and Vini says so. Then `__main__.py` (or the session's
 - **Safety on the real session.** Tests must be isolated as strictly as
   the Python ones (see Tests); nothing writes `~/.config/sonata2` in
   trial mode.
+
+## Working on it
+
+```
+cd rust
+cargo build                                   # everything
+cargo test -p sonata-calculator --no-default-features   # the engine alone, no GTK
+cargo test                                    # every crate's own tests (none opens a window)
+python3 tools/export_tokens.py                # after changing sonata2/ui/tokens.py
+rust/install-rs.sh                            # try it next to Sonata (--uninstall removes it)
+sonata2-rs calculator --dark                  # a component, as `sonata2 calculator`
+```
+
+Tests that read or write settings set their own temporary
+`XDG_CONFIG_HOME` (one at a time: they share the process environment);
+none talks to Wayfire or the session bus. GUI tests, when they come,
+stay behind `--features ui-tests` and run only under
+`dbus-run-session -- xvfb-run -a`.
+
+### Step 1, what is in it
+
+- `sonata-config`: load / save / update / atomic writes / the same
+  `.<name>.lock` flock / watch, the side-by-side folders, and the exact
+  text `json.dumps(indent=2)` writes.
+- `sonata-i18n`: the same catalogs and rules; `tr!` and friends, which
+  `tests/test_i18n.py` (and so `tools/i18n_missing.py`) now finds in
+  `rust/**/*.rs` too.
+- `sonata-ui`: tokens from `tokens.json` (`tools/export_tokens.py`,
+  `tests.test_rust_tokens` checks it is fresh), the CSS provider refilled
+  on Light/Dark (system.json) and accent (appearance.json) changes, the
+  window frame. Not yet: per-part glass, the user's radii and
+  backgrounds, the cross-fade, the window buttons.
+- `sonata-calculator`: the engine (its Python tests plus ~50 key
+  sequences checked against what the Python engine shows) and the window,
+  keyboard, copy and paste.
+- `sonata2-rs`: `calculator`, `desktop-files`.

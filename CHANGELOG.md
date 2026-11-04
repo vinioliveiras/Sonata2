@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Rust port, first piece (docs/RUST_PORT.md): the Calculator in Rust, installed next to Sonata with `rust/install-rs.sh` as "Calculator (Rust)" so it can be tried without touching the Python one or its settings.
 - Notification Center: the calendar at the top keeps its size when you clear the notifications; it was stretched 6 px wider while there were cards, and shrank back when they went.
 - Game Bar: Super+G pressed twice quickly closes it again; the second press used to count as another opening, so it opened anyway. Its picture of the game is no longer decoded on the main loop (raw pixels from grim), and Notification Center never shows an unblurred screenshot behind its cards. Instant replay with gpu-screen-recorder waits until a clip has stopped growing for half a second before keeping it, so a clip is never cut off.
 - Emoji & Symbols and the clipboard history paste into the Instagram web app (and other Chrome pages) again: their Ctrl+V went through wtype, which gives a key a made-up keycode, and Chrome dropped it. It now goes out with V's real keycode, like the menu bar's New Tab.
