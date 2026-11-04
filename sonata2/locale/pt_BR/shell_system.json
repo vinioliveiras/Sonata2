@@ -133,7 +133,7 @@
  "Coming soon": "Em breve",
  "Both": "Ambos",
  "Instant Replay": "Replay Instantâneo",
- "Instant replay needs wl-screenrec": "O replay instantâneo precisa do wl-screenrec",
+ "Instant replay needs gpu-screen-recorder or wl-screenrec": "O replay instantâneo precisa do gpu-screen-recorder ou do wl-screenrec",
  "Microphone": "Microfone",
  "Pin Over the Game": "Fixar Sobre o Jogo",
  "Record System Sound and Microphone": "Gravar Som do Sistema e Microfone",

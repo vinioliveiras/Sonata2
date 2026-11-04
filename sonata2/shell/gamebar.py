@@ -988,7 +988,7 @@ class GameBar(Gtk.Window):
         ok = rp is not None and rp.available()
         on = bool(ok and rp.running)
         self.replay_btn.set_sensitive(ok)
-        self.replay_btn.set_tooltip_text(None if ok else _("Instant replay needs wl-screenrec"))
+        self.replay_btn.set_tooltip_text(None if ok else _("Instant replay needs gpu-screen-recorder or wl-screenrec"))
         (self.replay_btn.add_css_class if on else self.replay_btn.remove_css_class)("on")
         self.clip_btn.set_sensitive(on)
 

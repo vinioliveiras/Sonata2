@@ -448,6 +448,48 @@ class ReplayTests(unittest.TestCase):
         r.stop()
         self.assertFalse(r.running)
 
+    def test_gsr_command_keeps_the_last_seconds(self):
+        cmd = R.gsr_command("/v/.replay", "DP-1", 30, "sink.monitor")
+        self.assertEqual(cmd[cmd.index("gpu-screen-recorder"):],
+                         ["gpu-screen-recorder", "-w", "DP-1", "-f", str(R.GSR_FPS), "-r", "30", "-c", "mp4",
+                          "-o", "/v/.replay", "-a", "sink.monitor"])
+
+    def test_instant_replay_could_not_be_turned_on_without_wl_screenrec(self):
+        """Vini: the Game Bar's Instant Replay couldn't be turned on -- it only
+        knew wl-screenrec, which isn't in Arch's / CachyOS' repositories (so
+        install.sh never got it). gpu-screen-recorder, which is, keeps the
+        replay too: SIGUSR1 writes the clip into its folder, it keeps going."""
+        d = tempfile.mkdtemp()
+        config.save("capture", {"movies_to": "other", "movies_dir": d})
+        cap = mock.Mock()
+        r = R.Replay(cap)
+        procs = []
+
+        def popen(cmd, **_k):
+            p = FakeProc(cmd)
+            procs.append(p)
+            return p
+        which = lambda n: "/usr/bin/" + n if n in ("gpu-screen-recorder", "nice") else None   # noqa: E731
+        with mock.patch.object(R.shutil, "which", side_effect=which), \
+                mock.patch.object(R.subprocess, "Popen", side_effect=popen), \
+                mock.patch("sonata2.shell.capture.audio_device", return_value=None):
+            self.assertTrue(r.available())
+            self.assertTrue(r.start("DP-1"))
+            self.assertIn("gpu-screen-recorder", procs[0].cmd)
+            self.assertTrue(os.path.isdir(r.path))
+            self.assertTrue(r.save())
+            with open(os.path.join(r.path, "Replay_2026-11-04_13-00-00.mp4"), "wb") as f:
+                f.write(b"clip")                                    # what it writes on SIGUSR1
+            spin(R.WAIT_MS * 5)
+        self.assertEqual(procs[0].signals, [signal.SIGUSR1])        # still recording
+        clip = cap._saved.call_args.args[0]
+        self.assertEqual(os.path.dirname(clip), d)                  # out of its folder
+        self.assertTrue(os.path.basename(clip).startswith("Replay "))
+        self.assertEqual(len(procs), 1)
+        folder = r.path
+        r.stop()
+        self.assertFalse(os.path.exists(folder))
+
 
 class TwoTracksTests(unittest.TestCase):
     def test_commands(self):
