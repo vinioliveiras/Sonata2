@@ -207,6 +207,10 @@ def app_sections(dock, key: str, tile) -> list:
                          Item(_("Quit"), lambda: _quit(dock, wins, key))])
     elif info:
         sections.append([i for i in (Item(_("Open"), lambda: dock.launch(tile)), sandbox_item(info)) if i])
+    if dock.can_uninstall(tile):
+        # Vini: uninstall from the right-click too, not only by dropping it on
+        # the Trash -- asked first, and it leaves the Dock once it's done
+        sections.append([Item(_("Uninstall…"), lambda: dock.ask_uninstall(tile))])
     return sections
 
 

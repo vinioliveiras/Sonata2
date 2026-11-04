@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Uninstall… in an app's right-click menu on the Dock (and Mission Control), asked first like dropping it on the Trash; in Apps / the Apps Menu, "Move to Trash" is now called Uninstall…, as in Settings > Apps.
 - Settings' search finds every setting, not only the sections: any text Settings shows (a group, a row, a switch, a button), in your language or in English, is listed under the sections with where it is; picking one opens that section scrolled to that setting, which lights up for a moment. Return opens the first section found, else the first setting.
 - Game Bar opens and closes at once, as fast as it can: no fading or sliding in and out, and it no longer waits for the game's picture before showing -- its panels show solid and turn to glass the moment the picture comes.
 - Control Center appears at once, without the panels' grow-in: its own work on opening is a few ms, and the 180 ms animation had the compositor blur the whole panel again on every frame.

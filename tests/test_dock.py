@@ -214,6 +214,26 @@ class DockTest(unittest.TestCase):
         pop.popdown()
         dock_menu.trash_menu(self.dock.trash).popdown()
 
+    def test_no_uninstall_in_the_right_click(self):
+        """Vini: an app could only be uninstalled by dragging it to the Trash;
+        its right-click has Uninstall… now (asked first, like the Trash) --
+        not on the Dock's own icons (Finder, Launchpad) or Sonata's apps."""
+        from unittest import mock
+        key = next(k for k in self.removable() if D.Dock.can_uninstall(self.dock.tiles[k]))
+        tile = self.dock.tiles[key]
+        items = [i for sec in dock_menu.app_sections(self.dock, key, tile) for i in sec]
+        item = next((i for i in items if i.label == "Uninstall…"), None)
+        self.assertIsNotNone(item)
+        with mock.patch("sonata2.shell.uninstall_ui.ask") as ask:
+            item.on_activate()
+        ask.assert_called_once()
+        self.assertIs(ask.call_args.args[0], tile.info)
+        for k in D.PERMANENT:
+            t = self.dock.tiles.get(k)
+            if t is not None:
+                labels = [i.label for sec in dock_menu.app_sections(self.dock, k, t) for i in sec]
+                self.assertNotIn("Uninstall…", labels)
+
     def test_app_file_is_real_path(self):
         path = dock_menu.app_file(self.dock.tiles[self.keys()[0]].info)
         self.assertTrue(os.path.isabs(path) and os.path.exists(path), path)

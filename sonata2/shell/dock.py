@@ -1861,6 +1861,8 @@ class Dock(Gtk.Box):
         key = tile.key
         ask(tile.info, done=lambda ok: ok and self.set_pinned(key, False))
 
+    ask_uninstall = _uninstall_dropped          # its menu's Uninstall…: the same question (dock_menu)
+
     def _folder_candidate(self, tile, x, y):
         """The pinned tile whose middle is under the pointer, if the dragged
         app may make a folder with it (or go into it)."""
