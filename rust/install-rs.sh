@@ -67,5 +67,5 @@ update-desktop-database "$APPS" 2>/dev/null || true
 
 echo
 echo "Installed next to Sonata: the Rust Calculator, Clock, TextEdit, Preview, Notes, Terminal, Feedbacker, Disk Manager, Camera and Videos are in Launchpad,"
-echo "or run: sonata2-rs calculator | clock | textedit [FILE] | preview [FILE] | notes | terminal | feedback | diskutil | camera | videos [FILE] | assistant"
+echo "or run: sonata2-rs calculator | clock | textedit [FILE] | preview [FILE] | notes | terminal | feedback | diskutil | camera | videos [FILE] | assistant | calendar"
 echo "Remove it with: rust/install-rs.sh --uninstall"

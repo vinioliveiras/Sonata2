@@ -539,3 +539,22 @@ stay behind `--features ui-tests` and run only under
   panel, the file actions' alerts, the keys).
 - Add Folder uses GTK's folder dialog (the portal's): Files' own chooser
   isn't ported yet.
+
+### Step 6 so far: Calendar
+
+- `sonata-calendar`, in the main binary (GTK only). calendar/: ics.rs
+  (the RFC 5545 subset, foreign lines kept verbatim, recurrence with
+  BYDAY, COUNT, UNTIL, EXDATE and changed instances; zones through
+  GLib's own time zone database, so a series repeats in its zone across
+  DST changes), model.rs (columns, lanes, month grids, the store with
+  its ordered writer thread), alerts.rs (notifications over D-Bus),
+  views.rs (Month, Week, Day, Year and the mini month, painted with
+  cairo, drag to move or resize) and window.rs (sidebar, search, undo,
+  the event popover, import by drop or argument, the keys).
+- chrono's naive date-times stand in for Python's naive datetimes;
+  weekday and month names come from GLib (the session's language).
+- The palette CSS is computed in Rust (`palette_css`), as the exporter
+  leaves computed parts to the Rust side.
+- On trial it reads a copy of the Python Calendar's files
+  (`sonata2-rs-data/calendar`, made once) and its entry takes no file
+  types.

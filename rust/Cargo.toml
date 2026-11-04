@@ -24,6 +24,7 @@ members = [
     "apps/camera",
     "apps/videos",
     "apps/assistant",
+    "apps/calendar",
     "apps/sonata2-rs",
 ]
 
@@ -64,6 +65,8 @@ vte4 = "0.8"
 gstreamer = "0.23"
 gstreamer-video = "0.23"
 gstreamer-pbutils = "0.23"
+# Calendar's naive local times (zones through GLib's own tz database)
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 
 sonata-config = { path = "crates/sonata-config" }
 sonata-i18n = { path = "crates/sonata-i18n" }
@@ -82,6 +85,7 @@ sonata-spotlight = { path = "apps/spotlight" }
 sonata-polkit = { path = "apps/polkit" }
 sonata-feedback = { path = "apps/feedback" }
 sonata-diskutil = { path = "apps/diskutil" }
+sonata-calendar = { path = "apps/calendar" }
 
 [profile.release]
 lto = "thin"
