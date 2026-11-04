@@ -22,15 +22,23 @@ OUT = os.path.join(ROOT, "rust", "crates", "sonata-ui", "tokens.json")
 CSS_OUT = os.path.join(ROOT, "rust", "crates", "sonata-ui", "css.json")
 # the modules whose CSS the Rust code registers (sonata_ui::css::register_module)
 CSS_MODULES = ("ui/controls.py", "ui/menu.py", "ui/window.py", "ui/dialog.py", "ui/panel.py",
-               "calculator/window.py", "clock/window.py", "clock/pages.py", "textedit/window.py", "textedit/tabs.py",
-               "preview/window.py", "preview/sidebar.py", "preview/info.py", "preview/markup.py",
-               "notes/window.py", "notes/editor.py", "notes/reminders.py", "ui/progress.py",
-               "shell/loginui.py", "shell/spotlight.py", "shell/authsheet.py",
-               "terminal/window.py", "feedback/window.py",
-               "diskutil/window.py", "camera/window.py",
+               "calculator/window.py", "clock/window.py", "clock/pages.py", "textedit/window.py",
+               "textedit/tabs.py", "preview/window.py", "preview/sidebar.py", "preview/info.py",
+               "preview/markup.py", "notes/window.py", "notes/editor.py", "notes/reminders.py",
+               "ui/progress.py", "shell/loginui.py", "shell/spotlight.py", "shell/authsheet.py",
+               "terminal/window.py", "feedback/window.py", "diskutil/window.py", "camera/window.py",
                "videos/window.py", "videos/trimbar.py", "assistant/window.py", "calendar/window.py",
                "activity/widgets.py", "files/views.py", "files/tags.py", "files/pathbar.py",
-               "files/sidebar.py", "files/tabs.py", "files/window.py", "files/quicklook.py", "files/chooser.py")
+               "files/sidebar.py", "files/tabs.py", "files/window.py", "files/quicklook.py",
+               "files/chooser.py", "shell/blackout.py", "shell/alarmservice.py", "shell/capture.py",
+               "shell/dock_folder.py", "shell/emoji.py", "shell/dock_preview.py", "shell/dock_stack.py",
+               "shell/fpsmodule.py", "shell/controlcenter.py", "shell/kbdmodule.py", "shell/clip_picker.py",
+               "shell/layer.py", "shell/launchpad_window.py", "shell/livedraw.py", "shell/mixer_ui.py",
+               "shell/mission.py", "shell/osd.py", "shell/sharepicker.py", "shell/notifications.py",
+               "shell/switcher.py", "shell/gamebar.py", "shell/launchpad.py", "shell/desktop.py",
+               "shell/statsui.py", "shell/poof.py", "shell/spaces.py", "shell/wallpaper.py", "shell/dock.py",
+               "shell/setup.py", "shell/topbar.py", "settings/appicons_page.py",
+               "settings/shortcuts_page.py", "settings/app.py")
 
 
 def _registered(src: str, mod: str) -> list:

@@ -1,0 +1,1 @@
+//! What the shell and apps share about apps and windows (sonata2/badges.py, applock.py, windowapps.py, launchwatch.py, open_apps.py, sandbox.py, appscope.py, folder_link.py, names.py, steamgames.py, launchpad_model.py)

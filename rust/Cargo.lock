@@ -1429,6 +1429,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-desktop"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "libadwaita",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-i18n",
+ "sonata-shell",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
 name = "sonata-diskutil"
 version = "0.1.0"
 dependencies = [
@@ -1651,6 +1668,40 @@ dependencies = [
  "sourceview5",
  "tempfile",
  "zip",
+]
+
+[[package]]
+name = "sonata-topbar"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "libadwaita",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-i18n",
+ "sonata-shell",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
+name = "sonata-tray"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "libadwaita",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-i18n",
+ "sonata-shell",
+ "sonata-ui",
+ "tempfile",
 ]
 
 [[package]]

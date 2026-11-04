@@ -59,7 +59,31 @@ pub fn blocks(module: &str) -> Vec<(String, String, Values)> {
 
 /// Register every template of `module`, as its import does in Python.
 pub fn register_module(module: &str) {
-    for (key, css, local) in blocks(module) {
+    register_module_with(module, &[]);
+}
+
+/// Placeholders the exporter can't fill (a computed keyword: `fade_ms=
+/// ui.tokens.ms(FADE_MS)`, `bar_h=BAR_H`): the Rust component passes
+/// them to register_module_with. The test below keeps this list honest.
+pub const FILLED_BY_CALLER: &[(&str, &str)] = &[
+    ("shell/launchpad_window.py", "open_ms"),
+    ("shell/launchpad_window.py", "close_ms"),
+    ("shell/launchpad_window.py", "fade_ms"),
+    ("shell/notifications.py", "nc_slide"),
+    ("shell/gamebar.py", "dim"),
+    ("shell/launchpad.py", "fold_in"),
+    ("shell/launchpad.py", "fold_out"),
+    ("shell/topbar.py", "bar_h"),
+    ("shell/topbar.py", "item_h"),
+];
+
+/// register_module, with values for the template's own computed
+/// placeholders (`("fade_ms", tokens::ms(150).to_string())`).
+pub fn register_module_with(module: &str, extra: &[(&str, String)]) {
+    for (key, css, mut local) in blocks(module) {
+        for (k, v) in extra {
+            local.insert(k.to_string(), v.clone());
+        }
         crate::theme::register_with(&key, &css, local);
     }
 }
@@ -80,7 +104,8 @@ mod tests {
                 while let Some(i) = rest.find("%(") {
                     let end = rest[i..].find(')').map(|e| i + e).unwrap();
                     let name = &rest[i + 2..end];
-                    assert!(known.contains_key(name) || local.contains_key(name), "{module} {key}: no {name}");
+                    let caller = FILLED_BY_CALLER.contains(&(module.as_str(), name));
+                    assert!(known.contains_key(name) || local.contains_key(name) || caller, "{module} {key}: no {name}");
                     rest = &rest[end..];
                 }
             }
