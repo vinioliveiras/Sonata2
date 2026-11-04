@@ -203,6 +203,11 @@ languages, and Vini says so. Then `__main__.py` (or the session's
 
 ## Risks
 
+- **One binary, every library.** A library linked into `sonata2-rs`
+  must be there for any part of it to start -- the lock screen too.
+  libpam and polkit's libraries are opened at run time for that reason,
+  and Terminal (libvte) is a binary of its own; TextEdit's GtkSourceView
+  is still linked in (move it out the same way before the Rust session).
 - **Size.** 90 000 lines is many months. Mitigation: every step ships on
   its own; the port can stop at any step and Sonata still works.
 - **Two design systems drifting.** Mitigation: tokens generated from
@@ -438,3 +443,17 @@ stay behind `--features ui-tests` and run only under
   $XDG_SESSION_ID); with another agent there it exits quietly.
 - The supervisor now runs welcome, lock, spotlight and polkit as Rust
   (`sonata2-rs keep <name>`); nothing starts them yet.
+- Not portable yet: the portal (its Open/Save panels are the Files
+  window), notifications and the tray (inside the menu bar, step 7).
+
+### Step 6 so far: Terminal
+
+- `sonata2-rs-terminal`, a binary of its own (`sonata2-rs terminal`
+  starts it): only it links libvte (vte4 0.8, the gtk4 0.9 one), so the
+  shell's other parts start on a system without VTE. terminal/window.py:
+  tabs with their own shells, the strip (middle-click, drag to reorder),
+  the Basic profile in Light / Dark, the shortcuts, the context menu,
+  "terminate running processes?" for a tab and a window, `--exec` for
+  Sonata's commands, folders opening as tabs of the front window.
+- Its trial entry "Terminal (Rust)" isn't a TerminalEmulator: the Python
+  Terminal stays the one the system picks.

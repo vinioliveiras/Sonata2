@@ -118,6 +118,22 @@ pub fn textedit_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
+/// Terminal's entry (terminal_desktop_file). On trial it isn't a
+/// TerminalEmulator: the Python Terminal stays the one the system picks.
+pub fn terminal_entry(exec: &str) -> (String, String) {
+    let trial = sonata_config::side_by_side();
+    let id = if trial { "io.github.vinioliveiras.sonata2rs.terminal" } else { "io.github.vinioliveiras.sonata2.terminal" };
+    let name = if trial { sonata_i18n::n_!("Terminal (Rust)") } else { "Terminal" };
+    let categories = if trial { "System;" } else { "System;TerminalEmulator;" };
+    let exec = quote(exec);
+    let text = format!(
+        "[Desktop Entry]\nType=Application\nName={name}\nComment=Use the command line\nIcon=utilities-terminal\n\
+         Categories={categories}\nStartupNotify=true\nExec={exec} terminal %F\nActions=new-window;\n\n\
+         [Desktop Action new-window]\nName=New Window\nExec={exec} terminal --new-window\n"
+    );
+    (format!("{id}.desktop"), text)
+}
+
 /// Preview's entry ("Preview (Rust)" on trial, claiming no file types:
 /// the Python Preview stays what opens pictures).
 pub fn preview_entry(exec: &str) -> (String, String) {
@@ -153,7 +169,7 @@ pub fn write_all() -> io::Result<Vec<PathBuf>> {
     let folder = data_home().join("applications");
     let mut written = Vec::new();
     let exec = launcher();
-    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec), notes_entry(&exec)] {
+    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec), notes_entry(&exec), terminal_entry(&exec)] {
         let text = localize(&text, &catalogs);
         let path = folder.join(file);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {

@@ -18,6 +18,7 @@ members = [
     "apps/lock",
     "apps/spotlight",
     "apps/polkit",
+    "apps/terminal",
     "apps/sonata2-rs",
 ]
 
@@ -54,6 +55,7 @@ flate2 = "1"
 base64 = "0.22"
 gtk4-layer-shell = "0.5"
 gtk4-session-lock = "0.1.2"
+vte4 = "0.8"
 
 sonata-config = { path = "crates/sonata-config" }
 sonata-i18n = { path = "crates/sonata-i18n" }

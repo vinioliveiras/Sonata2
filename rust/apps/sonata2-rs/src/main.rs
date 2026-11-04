@@ -10,6 +10,8 @@
 //!   sonata2-rs lock                                lock the session
 //!   sonata2-rs spotlight [--background] [--search TEXT]   Spotlight (again: toggles it)
 //!   sonata2-rs polkit                              the password prompt for system actions
+//!   sonata2-rs terminal [--new-window] [--exec CMD] [FOLDER...]   Terminal
+//!                                                  (sonata2-rs-terminal: only it needs libvte)
 //!   sonata2-rs key <volume-up|volume-down|volume-mute|brightness-up|
 //!                  brightness-down|play-pause|next|previous>   a media key
 //!   sonata2-rs screenshot [screen|area|edit]    a screenshot (the menu bar's, else grim)
@@ -25,7 +27,7 @@ mod desktop;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -68,6 +70,7 @@ fn main() -> ExitCode {
             let code = sonata_spotlight::run(&args[1..]);
             ExitCode::from(code.value() as u8)
         }
+        "terminal" => ExitCode::from(terminal(&args[1..]) as u8),
         "polkit" => {
             let code = sonata_polkit::run(&args[1..]);
             ExitCode::from(code.value() as u8)
@@ -95,4 +98,15 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+/// Terminal is a binary of its own (only it needs libvte): the one next to
+/// this one, else in $PATH. Replaces this process.
+fn terminal(args: &[String]) -> i32 {
+    use std::os::unix::process::CommandExt;
+    let beside = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("sonata2-rs-terminal"))).filter(|p| p.exists());
+    let exe = beside.map(|p| p.into_os_string()).unwrap_or_else(|| "sonata2-rs-terminal".into());
+    let err = std::process::Command::new(&exe).args(args).exec();
+    eprintln!("sonata2-rs: terminal: {err} ({})", sonata_i18n::tr!("Terminal needs VTE for GTK 4 (package vte4 / gir1.2-vte-3.91)."));
+    1
 }
