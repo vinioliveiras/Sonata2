@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- AppImages: Install in their right-click (Files and the desktop), next to Run -- asked first, then the AppImage is copied into ~/Applications and gets a launcher with its own name, icon and categories, so it's in the Apps Menu and can be kept in the Dock. Uninstalling it moves the AppImage to the Trash with its launcher.
 - Files can be taken off the Dock (drag it out, or untick Keep in Dock): it's in the Apps Menu, where it can be pinned again. Only Launchpad / the Apps Menu always stays.
 - Uninstall… in an app's right-click menu on the Dock (and Mission Control), asked first like dropping it on the Trash; in Apps / the Apps Menu, "Move to Trash" is now called Uninstall…, as in Settings > Apps.
 - Settings' search finds every setting, not only the sections: any text Settings shows (a group, a row, a switch, a button), in your language or in English, is listed under the sections with where it is; picking one opens that section scrolled to that setting, which lights up for a moment. Return opens the first section found, else the first setting.
