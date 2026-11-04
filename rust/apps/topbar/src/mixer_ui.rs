@@ -23,33 +23,9 @@ pub const APPLY_MS: u64 = 120;
 /// the Sound module's output button's
 pub const OUTPUT_ICON: &str = "sonata-audio-output-symbolic";
 
-/// One stream playing sound (backend/mixer.py's Stream).
-#[derive(Clone, Debug, PartialEq)]
-pub struct Stream {
-    pub index: i64,
-    /// what the level is saved under
-    pub key: String,
-    /// shown
-    pub name: String,
-    /// icon name ("" = none known)
-    pub icon: String,
-    /// percent (the loudest channel)
-    pub volume: i32,
-    pub muted: bool,
-    /// paused
-    pub corked: bool,
-    /// the process playing it (application.process.id)
-    pub pid: i64,
-    /// the output it plays on (pactl's sink index)
-    pub sink: i64,
-}
+// backend/mixer.py's Stream and group(): one definition, sonata-system's
+pub use sonata_system::mixer::{group, Stream};
 
-/// One entry per app (a browser plays several streams): the first stream
-/// stands for them; a level set changes all of an app's streams.
-pub fn group(streams: &[Stream]) -> Vec<Stream> {
-    let mut seen = std::collections::HashSet::new();
-    streams.iter().filter(|s| seen.insert(s.key.clone())).cloned().collect()
-}
 
 /// apply(key, percent, muted, every stream): set an app's level / mute.
 pub type ApplyFn = Rc<dyn Fn(&str, Option<i32>, Option<bool>, &[Stream])>;

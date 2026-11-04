@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+sonata-system.workspace = true
 gtk.workspace = true
 adw.workspace = true
 gio.workspace = true

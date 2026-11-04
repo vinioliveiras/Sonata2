@@ -95,7 +95,9 @@ pub fn prefetch() {
 
 /// `sonata2-rs topbar [--preview] [--menu N] [--dark|--light]`.
 pub fn run(args: &[String]) -> glib::ExitCode {
-    run_with(args, Services::default(), |_, _| {})
+    // the seams other crates fill, where they're ported
+    let services = Services { mixer: Some(seams::system_mixer()), ..Services::default() };
+    run_with(args, services, |_, _| {})
 }
 
 /// run() with the seams filled in, and `started(app, main window)` once

@@ -85,3 +85,45 @@ pub struct Services {
     /// "keyboard" (kbdmodule.py, gamebar crate). Each builds a new widget.
     pub extra_modules: Vec<(String, Rc<dyn Fn() -> gtk::Widget>)>,
 }
+
+/// The Mixer seam filled by sonata-system (backend/mixer.py): pactl's
+/// streams and saved levels, the output picker, MixerService's listeners.
+pub fn system_mixer() -> Mixer {
+    use sonata_system::mixer as m;
+    let service: Rc<std::cell::RefCell<Option<m::MixerService>>> = Rc::default();
+    let s2 = service.clone();
+    Mixer {
+        available: Rc::new(|| glib::find_program_in_path("pactl").is_some()),
+        streams: std::sync::Arc::new(m::streams),
+        apply: Rc::new(|key, percent, muted, all| {
+            m::set_level(key, percent.map(i64::from), muted, Some(all));
+        }),
+        pick: Rc::new(|button, key, all| {
+            let Some(stream) = all.iter().find(|s| s.key == key).cloned() else { return };
+            let (outputs, current) = m::choices(&stream);
+            let items: Vec<sonata_ui::menu::Item> = outputs
+                .into_iter()
+                .map(|o| {
+                    let on = current.as_ref().is_some_and(|c| c.name == o.name);
+                    let (key, all) = (key.to_string(), all.to_vec());
+                    sonata_ui::menu::Item::check(&o.label, on, move |_| {
+                        m::move_to(&key, &o.name, Some(&all));
+                    })
+                })
+                .collect();
+            if !items.is_empty() {
+                sonata_ui::menu::popup(button, vec![items], sonata_ui::menu::Options::below());
+            }
+        }),
+        listen: Some(Rc::new(move |f| {
+            let mut s = service.borrow_mut();
+            let svc = s.get_or_insert_with(m::MixerService::new);
+            svc.add_listener(move |streams| f(streams))
+        })),
+        unlisten: Some(Rc::new(move |id| {
+            if let Some(s) = s2.borrow().as_ref() {
+                s.remove_listener(id);
+            }
+        })),
+    }
+}

@@ -162,7 +162,7 @@ fn main() -> ExitCode {
             ExitCode::from(code.value() as u8)
         }
         "topbar" => {
-            let code = sonata_topbar::run(&args[1..]);
+            let code = sonata_topbar::run_with(&args[1..], topbar_services(), |_, _| {});
             ExitCode::from(code.value() as u8)
         }
         "keyring" => ExitCode::from(sonata_tweaks::keyring::main(&args[1..]) as u8),
@@ -251,4 +251,24 @@ fn terminal(args: &[String]) -> i32 {
 
 fn camera(args: &[String]) -> i32 {
     own_binary("camera", args, "GStreamer")
+}
+
+/// The menu bar's seams, filled from the crates ported since (the menu bar
+/// can't depend on them all itself: some depend on it).
+fn topbar_services() -> sonata_topbar::seams::Services {
+    use std::rc::Rc;
+    let me = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "sonata2-rs".into());
+    let spawn = move |args: Vec<String>| {
+        let me = me.clone();
+        Rc::new(move || {
+            let _ = std::process::Command::new(&me).args(&args).spawn();
+        }) as Rc<dyn Fn()>
+    };
+    let mut s = sonata_topbar::seams::Services { mixer: Some(sonata_topbar::seams::system_mixer()), ..Default::default() };
+    s.night_shift = Some((Rc::new(sonata_sessionui::nightshift::is_on), Rc::new(sonata_sessionui::nightshift::set_manual)));
+    s.end_session = Some(Rc::new(|kind: &str, reopen: bool| {
+        sonata_sessionui::quitapps::end_session(kind, None, Some(reopen));
+    }));
+    s.capture_toolbar = Some(spawn(vec!["capture".into(), "toolbar".into()]));
+    s
 }
