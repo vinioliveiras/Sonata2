@@ -211,25 +211,6 @@ languages, and Vini says so. Then `__main__.py` (or the session's
   (wrong types, extra keys, missing files) like `config.load()` does:
   `serde_json::Value` merged over defaults, never strict structs that
   reject a file. Ported with tests built from real config files.
-### Step 2 so far: Preview
-
-- `sonata-preview`: the picture view (zoom that glides, pinch, pan with
-  inertia, cross-fades), thumbnails made off the main loop, the Info panel
-  (EXIF through kamadak-exif, the colour profile's own name), slideshow,
-  crop, rotate / flip, Adjust Color (Pillow's ImageEnhance formulas),
-  Resize, Export As, Save / Save As (EXIF and colour profile kept, written
-  next to the file then moved over it), Copy, and all of Markup (pen,
-  highlighter, shapes, text, emoji, steps, pixelate; one Cairo + Pango
-  renderer for the screen and the saved file). Camera RAW files show
-  their built-in JPEG, as in Python.
-- `sonata-ui` grew the thin slider (double-click resets) and file sizes.
-- Differences on purpose: the pixels are read and written by GdkPixbuf
-  (Python used Pillow): a format GdkPixbuf can't write is not offered;
-  WebP's colour profile is dropped when its saver takes none. Set Desktop
-  Picture writes the shared `~/.config/sonata2/system.json` even on trial
-  (it is the desktop's wallpaper: the user asked for it), then
-  `sonata2 restart wallpaper`.
-
 - **libadwaita 1.5.** The Rust alerts use AlertDialog (1.5); the Python
   code falls back to MessageDialog on 1.4. Distributions with 1.4 only
   (none that Sonata supports today, docs/GUIDE.md) would need that fallback.
@@ -306,3 +287,22 @@ stay behind `--features ui-tests` and run only under
   Python TextEdit stays the one that opens text files). Not ported: the
   tabs' glide, the first-size "roomy" window, the plain-TextView fallback
   without GtkSourceView.
+
+### Step 2 so far: Preview
+
+- `sonata-preview`: the picture view (zoom that glides, pinch, pan with
+  inertia, cross-fades), thumbnails made off the main loop, the Info panel
+  (EXIF through kamadak-exif, the colour profile's own name), slideshow,
+  crop, rotate / flip, Adjust Color (Pillow's ImageEnhance formulas),
+  Resize, Export As, Save / Save As (EXIF and colour profile kept, written
+  next to the file then moved over it), Copy, and all of Markup (pen,
+  highlighter, shapes, text, emoji, steps, pixelate; one Cairo + Pango
+  renderer for the screen and the saved file). Camera RAW files show
+  their built-in JPEG, as in Python.
+- `sonata-ui` grew the thin slider (double-click resets) and file sizes.
+- Differences on purpose: the pixels are read and written by GdkPixbuf
+  (Python used Pillow): a format GdkPixbuf can't write is not offered;
+  WebP's colour profile is dropped when its saver takes none. Set Desktop
+  Picture writes the shared `~/.config/sonata2/system.json` even on trial
+  (it is the desktop's wallpaper: the user asked for it), then
+  `sonata2 restart wallpaper`.
