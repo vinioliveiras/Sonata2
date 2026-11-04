@@ -303,8 +303,9 @@ mod tests {
             assert!(parts.contains(&part), "{part}");
         }
         let hits = find_with("restore defaults", sec, MAX_HITS, &|t| t.to_string());
-        assert_eq!(hits.first().map(|h| (h.part.as_str(), h.text.as_str())), Some(("shortcuts", "Restore Defaults")));
-        assert_eq!(hits[0].sid, "keyboard"); // a merged part opens its section
+        // (Mouse has a Restore Defaults too: Shortcuts' is among the hits)
+        let sc = hits.iter().find(|h| h.part == "shortcuts" && h.text == "Restore Defaults").expect("Shortcuts' Restore Defaults");
+        assert_eq!(sc.sid, "keyboard"); // a merged part opens its section
     }
 
     /// The texts are searched as shown (in pt-BR / pt-PT too), and English still matches.
