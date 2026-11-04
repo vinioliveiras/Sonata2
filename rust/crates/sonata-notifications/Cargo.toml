@@ -11,7 +11,11 @@ adw.workspace = true
 gio.workspace = true
 glib.workspace = true
 serde_json.workspace = true
+chrono.workspace = true
+regex.workspace = true
+gtk4-layer-shell.workspace = true
 sonata-backend.workspace = true
+sonata-calendar.workspace = true
 sonata-config = { workspace = true, features = ["watch"] }
 sonata-desktop.workspace = true
 sonata-i18n.workspace = true
