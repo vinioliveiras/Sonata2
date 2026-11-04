@@ -30,6 +30,9 @@ _entry("org.example.Thing", "Thing", "thing", "StartupWMClass=ThingWin\n")
 _entry("foo-bin", "Foo (wrapper)", "foo-bin")
 _entry("com.anthropic.Claude", "Claude", "claude-desktop", "StartupWMClass=com.anthropic.Claude\n")
 _entry("foo", "Foo", "foo")
+_entry("google-chrome", "Google Chrome", "/usr/bin/google-chrome-stable", "StartupWMClass=Google-chrome\n")
+_entry("com.google.Chrome", "Google Chrome", "/usr/bin/google-chrome-stable",
+       "StartupWMClass=google-chrome\nNoDisplay=true\n")
 
 from sonata2 import apps  # noqa: E402
 
@@ -37,6 +40,21 @@ from sonata2 import apps  # noqa: E402
 class MatchTest(unittest.TestCase):
     def setUp(self):
         apps.refresh()
+
+    def test_chrome_got_a_second_dock_icon(self):
+        """Vini: Chrome in the Dock opened as another icon -- an update added
+        a hidden com.google.Chrome.desktop with the same window class, listed
+        first, and the window went to it, not the pinned google-chrome. An
+        entry meant to be shown claims the name first."""
+        from unittest import mock
+        from gi.repository import Gio
+        hidden = Gio.DesktopAppInfo.new("com.google.Chrome.desktop")
+        shown = Gio.DesktopAppInfo.new("google-chrome.desktop")
+        with mock.patch.object(apps.Gio.AppInfo, "get_all", return_value=[hidden, shown]):
+            apps.refresh()
+            self.assertEqual(apps.match_app_id("Google-chrome"), "google-chrome")
+            self.assertEqual(apps.match_app_id("google-chrome"), "google-chrome")
+        apps.refresh()                                  # (the index of only those two: not kept)
 
     def test_launcher_entry_matches_its_window(self):
         """Vini: Spotify open while Sonata restarted lost its running dot and
