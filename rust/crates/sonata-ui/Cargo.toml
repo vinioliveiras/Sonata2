@@ -11,3 +11,4 @@ adw.workspace = true
 glib.workspace = true
 serde_json.workspace = true
 sonata-config = { workspace = true, features = ["watch"] }
+sonata-i18n.workspace = true

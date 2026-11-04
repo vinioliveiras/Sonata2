@@ -22,7 +22,8 @@ OUT = os.path.join(ROOT, "rust", "crates", "sonata-ui", "tokens.json")
 CSS_OUT = os.path.join(ROOT, "rust", "crates", "sonata-ui", "css.json")
 # the modules whose CSS the Rust code registers (sonata_ui::css::register_module)
 CSS_MODULES = ("ui/controls.py", "ui/menu.py", "ui/window.py", "ui/dialog.py", "ui/panel.py",
-               "calculator/window.py", "clock/window.py", "clock/pages.py", "textedit/window.py", "textedit/tabs.py")
+               "calculator/window.py", "clock/window.py", "clock/pages.py", "textedit/window.py", "textedit/tabs.py",
+               "preview/window.py", "preview/sidebar.py", "preview/info.py", "preview/markup.py")
 
 
 def _registered(src: str, mod: str) -> list:

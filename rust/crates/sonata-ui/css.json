@@ -115,5 +115,33 @@
    "css": "\n.te-tabs { box-shadow: inset 0 -1px %(separator)s; }\n/* like Terminal's and Files': the tab in front is the document's own\n   background, the others sit in the bar, no grey of their own (Vini) */\n.te-tab, .te-tabs button.te-tab-new {\n  min-height: 28px; background-color: %(titlebar_bg)s; background-image: none;\n  box-shadow: inset -1px 0 %(separator)s, inset 0 -1px %(separator)s;\n  transition: background-image %(t_fast)s %(ease_out)s, color %(t_fast)s; }\nwindow:backdrop .te-tab, window:backdrop .te-tabs button.te-tab-new { background-color: %(titlebar_bg_inactive)s; }\n.te-tab { min-width: 64px; color: %(label_secondary)s; font-size: %(text_body)s; }\n.te-tab:hover { background-image: linear-gradient(%(tool_hover)s, %(tool_hover)s); color: %(label)s; }\n.te-tab.selected, window:backdrop .te-tab.selected { background-color: %(content_bg)s; background-image: none;\n  color: %(label)s; box-shadow: inset -1px 0 %(separator)s; }\n.te-tab.dragging { background-image: none; box-shadow: inset 1px 0 %(separator)s, inset -1px 0 %(separator)s,\n  %(shadow_control)s; }\n.te-tab label { padding: 0 26px; }\n.te-tab button.te-tab-close { min-width: 16px; min-height: 16px; padding: 0; margin-left: 6px;\n  border-radius: %(r_menu_row)s; border: none; background: none; box-shadow: none;\n  color: %(label_secondary)s; opacity: 0; transition: opacity %(t_fast)s, background %(t_fast)s; }\n.te-tab button.te-tab-close image { -gtk-icon-size: 10px; }\n.te-tab:hover button.te-tab-close { opacity: 1; }\n.te-tab button.te-tab-close:hover { background: alpha(%(label)s, 0.10); color: %(label)s; }\n.te-tab button.te-tab-close:active { background: alpha(%(label)s, 0.18); }\n.te-tab .te-tab-dot { min-width: 7px; min-height: 7px; margin-left: 10px; border-radius: 99px;\n  background: %(label_secondary)s; opacity: 0; transition: opacity %(t_fast)s; }\n.te-tab.modified .te-tab-dot { opacity: 1; }\n.te-tab.modified:hover .te-tab-dot { opacity: 0; }\n.te-tabs button.te-tab-new { min-width: 30px; padding: 0; border: none; border-radius: 0;\n  box-shadow: inset 0 -1px %(separator)s; color: %(label_secondary)s; }\n.te-tabs button.te-tab-new:hover { color: %(label)s;\n  background-image: linear-gradient(alpha(%(label)s, 0.11), alpha(%(label)s, 0.11)); }\n.te-tabs button.te-tab-new image { -gtk-icon-size: 12px; }\n",
    "local": {}
   }
+ ],
+ "preview/window.py": [
+  {
+   "key": "preview",
+   "css": "\n.pv-canvas { background: %(content_bg)s; }\nwindow.pv-slideshow .pv-canvas { background: #000000; }   /* the slideshow's stage is black, like macOS */\n.pv-adjust { padding: 12px 14px 10px 14px; }\n.pv-adjust label.pv-adj-name { font-size: %(text_small)s; color: %(label_secondary)s; }\n.pv-sheet { padding: 12px 14px 10px 14px; }\n.pv-sheet label { font-size: %(text_small)s; }\n.pv-sheet label.pv-sheet-title { font-size: %(text_body)s; font-weight: 700; }\n.pv-sheet label.pv-sheet-dim { color: %(label_secondary)s; }\n.pv-sheet spinbutton { min-height: %(control_h)s; font-size: %(text_small)s; }\n.sonata-toolbar button.tool:checked { background: alpha(%(label)s, 0.14); }\n",
+   "local": {}
+  }
+ ],
+ "preview/sidebar.py": [
+  {
+   "key": "preview-sidebar",
+   "css": "\n.pv-sidebar { background: %(sidebar_material)s; box-shadow: inset -1px 0 %(separator)s; }\n.pv-thumbs, .pv-thumbs > row { background: none; }\n.pv-thumbs > row { padding: 6px 8px 4px 8px; margin: 0 6px; border-radius: %(r_label)s; outline: none;\n  transition: background-color %(t_fast)s ease; }\n.pv-thumbs > row:hover { background: alpha(%(label)s, 0.04); }\n.pv-thumbs > row:selected { background: %(sidebar_selected)s; }\n.pv-thumb { border-radius: 2px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 0 0 0.5px %(hairline)s; }\n.pv-thumb-name { font-size: %(text_small)s; color: %(label_secondary)s; }\n.pv-thumbs > row:selected .pv-thumb-name { color: %(label)s; font-weight: 600; }\n",
+   "local": {}
+  }
+ ],
+ "preview/info.py": [
+  {
+   "key": "preview-info",
+   "css": "\n.pv-info { background: %(sidebar_material)s; box-shadow: inset 1px 0 %(separator)s; }\n.pv-info-body { padding: 14px 14px 12px 14px; }\n.pv-info-title { font-weight: 700; font-size: %(text_body)s; color: %(label)s; }\n.pv-info-section { font-size: %(text_small)s; font-weight: 700; color: %(label_secondary)s; margin-top: 12px;\n  margin-bottom: 2px; }\n.pv-info-key { font-size: %(text_small)s; color: %(label_secondary)s; }\n.pv-info-value { font-size: %(text_small)s; color: %(label)s; }\n.pv-info-note { font-size: %(text_small)s; color: %(label_tertiary)s; margin-top: 12px; }\n",
+   "local": {}
+  }
+ ],
+ "preview/markup.py": [
+  {
+   "key": "preview-markup",
+   "css": "\n.pv-markup { padding: 4px 8px; border-bottom: 1px solid %(separator)s; }\n/* under Preview's toolbar: the window paints no background of its own (the\n * title bar's glass): without one the picture showed through (Vini) */\n.pv-markup.docked { background: %(titlebar_bg)s; }\nwindow:backdrop .pv-markup.docked { background: %(titlebar_bg_inactive)s; }\n.pv-markup button.mk { min-width: 30px; min-height: 26px; padding: 0; border-radius: 7px; background: none;\n  border: none; box-shadow: none; color: %(label)s; }\n.pv-markup button.mk:hover { background: %(tool_hover)s; }\n.pv-markup button.mk.on { background: alpha(%(label)s, 0.14); }\n.pv-markup button.mk:disabled { opacity: 0.35; }\n.pv-markup .mk-sep { min-width: 1px; background: %(separator)s; margin: 5px 6px; }\n.pv-markup button.mk-color { min-width: 22px; min-height: 22px; padding: 0; border-radius: 99px; background: none;\n  border: none; box-shadow: none; }\n.pv-markup button.mk-done { min-height: 26px; padding: 0 12px; }\n.mk-pop button { min-width: 32px; min-height: 32px; padding: 0; border-radius: 7px; background: none; border: none;\n  box-shadow: none; color: %(label)s; font-size: 18px; }\n.mk-pop button:hover { background: %(tool_hover)s; }\n.mk-pop button.on { background: alpha(%(label)s, 0.14); }\n",
+   "local": {}
+  }
  ]
 }

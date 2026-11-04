@@ -9,6 +9,7 @@ members = [
     "apps/calculator",
     "apps/clock",
     "apps/textedit",
+    "apps/preview",
     "apps/sonata2-rs",
 ]
 
@@ -34,6 +35,12 @@ tempfile = "3"
 sourceview5 = "0.9"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 roxmltree = "0.20"
+image = { version = "0.25", default-features = false }
+kamadak-exif = "0.6"
+pangocairo = "0.20"
+memmap2 = "0.9"
+flate2 = "1"
+base64 = "0.22"
 
 sonata-config = { path = "crates/sonata-config" }
 sonata-i18n = { path = "crates/sonata-i18n" }
@@ -41,6 +48,7 @@ sonata-ui = { path = "crates/sonata-ui" }
 sonata-calculator = { path = "apps/calculator" }
 sonata-clock = { path = "apps/clock" }
 sonata-textedit = { path = "apps/textedit" }
+sonata-preview = { path = "apps/preview" }
 
 [profile.release]
 lto = "thin"

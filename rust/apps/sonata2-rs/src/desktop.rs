@@ -118,6 +118,21 @@ pub fn textedit_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
+/// Preview's entry ("Preview (Rust)" on trial, claiming no file types:
+/// the Python Preview stays what opens pictures).
+pub fn preview_entry(exec: &str) -> (String, String) {
+    let id = sonata_preview::app_id();
+    let trial = sonata_config::side_by_side();
+    let name = if trial { sonata_i18n::n_!("Preview (Rust)") } else { "Preview" };
+    let mime = if trial { String::new() } else { format!("MimeType={}\n", sonata_preview::window::mime_types()) };
+    let text = format!(
+        "[Desktop Entry]\nType=Application\nName={name}\nComment=View pictures\nIcon=image-viewer\n\
+         Categories=Graphics;Viewer;\n{mime}StartupNotify=true\nExec={} preview %F\n",
+        quote(exec)
+    );
+    (format!("{id}.desktop"), text)
+}
+
 /// Write every ported app's entry (only when it changed); the paths written.
 pub fn write_all() -> io::Result<Vec<PathBuf>> {
     let dir = sonata_i18n::locale_dir();
@@ -125,7 +140,7 @@ pub fn write_all() -> io::Result<Vec<PathBuf>> {
     let folder = data_home().join("applications");
     let mut written = Vec::new();
     let exec = launcher();
-    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec)] {
+    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec)] {
         let text = localize(&text, &catalogs);
         let path = folder.join(file);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {

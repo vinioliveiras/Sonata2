@@ -294,6 +294,41 @@ pub fn own_data_dir(app: &str) -> PathBuf {
     dir
 }
 
+/// Finder's "Set Desktop Picture" (prefs.set_wallpaper): the picture for
+/// Light and Dark, in system.json -- the desktop's own setting, so the
+/// shared `~/.config/sonata2` even on trial (the user asked for it in so
+/// many words: the trial build has no wallpaper of its own) -- mirrored to
+/// GSettings, then the desktop's wallpaper is started again.
+pub fn set_wallpaper(uri: &str) -> io::Result<()> {
+    const BG: &str = "org.gnome.desktop.background";
+    let dir = config_home().join(NAME);
+    let path = dir.join("system.json");
+    let mut data = read_object(&path);
+    let same = data.get(&format!("{BG}/picture-uri")).and_then(Value::as_str) == Some(uri)
+        && data.get(&format!("{BG}/picture-uri-dark")).and_then(Value::as_str) == Some(uri);
+    if same {
+        return Ok(());
+    }
+    {
+        fs::create_dir_all(&dir)?;
+        let lock = OpenOptions::new().write(true).create(true).truncate(false).open(dir.join(".system.lock"))?;
+        unsafe {
+            libc::flock(lock.as_raw_fd(), libc::LOCK_EX);
+        }
+        data = read_object(&path);
+        data.insert(format!("{BG}/picture-uri"), Value::String(uri.into()));
+        data.insert(format!("{BG}/picture-uri-dark"), Value::String(uri.into()));
+        atomic_write(&path, to_python_json(&Value::Object(data)).as_bytes(), false)?;
+    }
+    for key in ["picture-uri", "picture-uri-dark"] {
+        let _ = std::process::Command::new("gsettings").args(["set", BG, key, &format!("'{}'", uri.replace('\'', "\\'"))]).spawn();
+    }
+    // `sonata2 restart wallpaper`: the new one comes up under the old one
+    let launcher = std::env::var("SONATA2_LAUNCHER").unwrap_or_else(|_| "sonata2".into());
+    let _ = std::process::Command::new(launcher).args(["restart", "wallpaper"]).spawn();
+    Ok(())
+}
+
 /// Follow one file (a data file, not a setting): `callback` when it
 /// changes on disk. Keep the monitor alive.
 #[cfg(feature = "watch")]

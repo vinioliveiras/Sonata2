@@ -104,3 +104,55 @@ impl Segmented {
         }
     }
 }
+
+/// A thin slider (macOS menu slider): `on_change(value)` while dragging; a
+/// double-click puts it back to `default` (controls.slider, style "menu").
+pub fn slider<F: Fn(f64) + 'static>(value: f64, on_change: F, lower: f64, upper: f64, default: Option<f64>) -> gtk::Scale {
+    let s = gtk::Scale::with_range(gtk::Orientation::Horizontal, lower, upper, 1.0);
+    s.add_css_class("sonata-slider");
+    s.set_draw_value(false);
+    s.set_value(value);
+    s.set_hexpand(true);
+    s.connect_value_changed(move |sc| on_change(sc.value()));
+    if let Some(d) = default {
+        reset_on_double_click(&s, d);
+    }
+    s
+}
+
+/// Double-click a slider: back to its default value. The slider claims
+/// every press for its own drag, so the clicks are timed here from the raw
+/// events (capture phase), and the value is reset when the second click is
+/// released -- after the slider's own drag is over.
+pub fn reset_on_double_click(scale: &gtk::Scale, default: f64) {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    let state = Rc::new(Cell::new((0u32, 0.0f64, 0.0f64, false)));
+    let legacy = gtk::EventControllerLegacy::new();
+    legacy.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let sc = scale.clone();
+    legacy.connect_event(move |_, ev| {
+        let (t0, x0, y0, _) = state.get();
+        match ev.event_type() {
+            gtk::gdk::EventType::ButtonPress => {
+                let button = ev.downcast_ref::<gtk::gdk::ButtonEvent>().map(|b| b.button()).unwrap_or(0);
+                if button == 1 {
+                    let t = ev.time();
+                    let (x, y) = ev.position().unwrap_or((0.0, 0.0));
+                    let limit = gtk::Settings::default().map(|s| s.gtk_double_click_time() as u32).unwrap_or(400);
+                    let near = (x - x0).abs() < 8.0 && (y - y0).abs() < 8.0;
+                    let double = t0 != 0 && t.wrapping_sub(t0) <= limit && near;
+                    state.set((if double { 0 } else { t }, x, y, double));
+                }
+            }
+            gtk::gdk::EventType::ButtonRelease if state.get().3 => {
+                state.set((t0, x0, y0, false));
+                let sc = sc.clone();
+                gtk::glib::idle_add_local_once(move || sc.set_value(default));
+            }
+            _ => {}
+        }
+        gtk::glib::Propagation::Proceed // the slider still gets every event
+    });
+    scale.add_controller(legacy);
+}
