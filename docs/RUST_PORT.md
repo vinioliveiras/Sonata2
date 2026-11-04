@@ -647,3 +647,33 @@ stay behind `--features ui-tests` and run only under
 - `sonata2-rs autostart`: login items; the Python-only steps (title
   bars, compose, GTK style, Flatpak theme, KeePassXC) still run through
   the Python Sonata when it's there.
+
+### Step 7 so far: the shell
+
+Ported crate by crate, each triable next to the Python shell (its own app
+id `…sonata2rs.<name>`, its own layer namespace, settings written only to
+`~/.config/sonata2-rs`, never the Python shell's bus names):
+
+| command | crate | Python | try it on trial |
+|---|---|---|---|
+| `dock` | sonata-dock | dock.py, dock_*.py, poof.py, uninstall_ui.py | `sonata2-rs dock --preview` |
+| `launchpad` | sonata-launchpad | launchpad.py, launchpad_window.py | `sonata2-rs launchpad --preview` |
+| `topbar` | sonata-topbar | topbar.py, controlcenter.py, statsui, mpris, mixer_ui, osd | `sonata2-rs topbar --preview` |
+| `notifications` | sonata-notifications | notifications.py | `sonata2-rs notifications --preview --center` |
+| (in the bar) | sonata-tray | tray.py (host only on trial) | -- |
+| `mission`, `switcher` | sonata-mission | mission, switcher, spaces, apptabs, frost, preview | `sonata2-rs mission --preview` |
+| `capture`, `share-picker` | sonata-capture | capture, livedraw, replay, sharepicker, sharing | `sonata2-rs capture toolbar` |
+| `gamebar` | sonata-gamebar | gamebar, fpsmodule, kbdmodule, memorywatch | `sonata2-rs gamebar --preview` |
+| `wallpaper` | sonata-desktop-icons | desktop.py, videowallpaper.py, wallpaper.py | `sonata2-rs wallpaper --preview` |
+| `clipboard`, `emoji` | sonata-clipboard | clipboard, clip_picker, emoji | `sonata2-rs clipboard` |
+| `lock-wait`, `setup`, `session-try` | sonata-sessionui | idlelock, idlepolicy, screencorners, nightshift, blackout, quitonclose, quitapps, monitors, alarmservice, updatenotify, setup | `sonata2-rs session-try corners` |
+| `webapp` | sonata-webapps | webapps/ (WebKit opened at run time) | `sonata2-rs webapp new` |
+| `keyring`, `prefs session-env` | sonata-tweaks | appperms, backup, cursors, gpu, gamemode, keyring, titlebars, trafficlights, ... | -- |
+
+Shared underneath: sonata-desktop (badges, applock, launch watch, open
+apps, sandbox, scopes, Launchpad's model, app matching), sonata-system
+(backend/: mixer, equalizer, Bluetooth, users, updates, locales,
+location, permissions, screen sharing). The window list comes from
+Wayfire's IPC events (no Wayland client crate yet), so the minimize
+target (set_rectangle) and the virtual keyboard's wire protocol are
+done by hand or left out; each crate's lib.rs lists what it left out.
