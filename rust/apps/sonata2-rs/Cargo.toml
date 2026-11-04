@@ -18,6 +18,7 @@ sonata-notes.workspace = true
 sonata-welcome.workspace = true
 sonata-lock.workspace = true
 sonata-spotlight.workspace = true
+sonata-polkit.workspace = true
 sonata-config.workspace = true
 sonata-session.workspace = true
 sonata-i18n.workspace = true

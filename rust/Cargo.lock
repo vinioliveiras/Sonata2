@@ -1122,6 +1122,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-polkit"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "libc",
+ "sonata-config",
+ "sonata-i18n",
+ "sonata-session",
+ "sonata-shell",
+ "sonata-ui",
+]
+
+[[package]]
 name = "sonata-preview"
 version = "0.1.0"
 dependencies = [
@@ -1246,6 +1261,7 @@ dependencies = [
  "sonata-i18n",
  "sonata-lock",
  "sonata-notes",
+ "sonata-polkit",
  "sonata-preview",
  "sonata-session",
  "sonata-spotlight",

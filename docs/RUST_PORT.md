@@ -421,3 +421,20 @@ stay behind `--features ui-tests` and run only under
   script (files/packages.py: they open with their default app), and the
   hidden warm-up draw (layer.prewarm). Folders open in the Python Files.
 - install-rs.sh links the icon themes (125 MB) instead of copying them.
+
+### Step 5 so far: the password prompt for system actions
+
+- `sonata-shell::authsheet`: the password sheet (authsheet.py), and
+  ask() -- the login password checked with PAM -- for the prompts that
+  will need it.
+- `sonata-shell::polkitagent`: PolkitAgent.Session through
+  libpolkit-agent-1, opened at run time (as pam.rs opens libpam). The
+  password is passed to polkit's own helper, which checks it, and wiped
+  afterwards.
+- `sonata2-rs polkit`: polkit.py. polkitd's calls only (any other sender
+  is refused); identities without an id are skipped, never taken as root;
+  several accounts: a pop-up; Cancel and polkitd's CancelAuthentication
+  close it. Registered for the login session (logind's, else
+  $XDG_SESSION_ID); with another agent there it exits quietly.
+- The supervisor now runs welcome, lock, spotlight and polkit as Rust
+  (`sonata2-rs keep <name>`); nothing starts them yet.

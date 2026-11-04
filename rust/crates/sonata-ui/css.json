@@ -198,5 +198,12 @@
     "close_ms": "120"
    }
   }
+ ],
+ "shell/authsheet.py": [
+  {
+   "key": "auth-sheet",
+   "css": "\nwindow.sonata-auth { background: rgba(0, 0, 0, 0.18); }\nwindow.sonata-auth.in-app { background: none; }\n.auth-panel { background: %(panel_material)s; border-radius: calc(%(r_dialog)s * 1.17); padding: 22px 22px 18px 22px;\n  box-shadow: 0 22px 56px rgba(0,0,0,0.35), 0 0 0 0.5px rgba(0,0,0,0.35), inset 0 0 0 0.5px %(highlight)s; }\n.auth-title { font-weight: 700; font-size: %(text_body)s; color: %(label)s; }\n.auth-text { font-size: %(text_small)s; color: %(label_secondary)s; }\n.auth-error { font-size: %(text_small)s; color: %(destructive)s; }\n.auth-panel entry { min-height: 28px; }\n.auth-panel entry.shake { animation: lk-shake 420ms ease-in-out; }\n.auth-panel button { min-width: 76px; }\n@keyframes auth-in { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }\n.auth-panel { animation: auth-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }\n",
+   "local": {}
+  }
  ]
 }

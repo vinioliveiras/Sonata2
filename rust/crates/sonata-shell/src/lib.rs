@@ -2,10 +2,12 @@
 //! login intro, the wallpaper of the moment, and the look of the login,
 //! lock and welcome screens.
 
+pub mod authsheet;
 pub mod intro;
 pub mod layer;
 pub mod logins;
 pub mod pam;
+pub mod polkitagent;
 pub mod throttle;
 pub mod lockdisplay;
 pub mod loginui;

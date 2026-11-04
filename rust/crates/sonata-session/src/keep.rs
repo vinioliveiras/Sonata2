@@ -21,7 +21,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 /// The components the Rust build runs itself.
-pub const PORTED: [&str; 5] = ["calculator", "clock", "textedit", "preview", "notes"];
+pub const PORTED: [&str; 9] = ["calculator", "clock", "textedit", "preview", "notes", "welcome", "lock", "spotlight", "polkit"];
 
 /// Hand this session's display to D-Bus/systemd-started services (the
 /// portals) before any surface asks for them -- once per display.
