@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New network icons: the menu bar shows a computer with a cable when you're on a wired connection, and Settings' Network section has a network globe. Both used the same Ethernet port before.
 - Files: double-clicking a shell script (.sh, .bash, .zsh) runs it, in a Terminal window opened in its folder, so you see what it prints and can answer what it asks. It used to open in the text editor. Opening one from the Desktop, Spotlight or a Dock stack runs it too; Open With still offers the editor.
 - Chrome in the Dock no longer opens as a second icon, and no longer gets closed and opened again in a loop: a Chrome update added a hidden entry (com.google.Chrome) with the same window class, and its windows went to that one instead of the Chrome in the Dock. Entries meant to be shown claim their windows first.
 - Game Bar: Super+G pressed twice quickly closes it again; the second press used to count as another opening, so it opened anyway. Its picture of the game is no longer decoded on the main loop (raw pixels from grim), and Notification Center never shows an unblurred screenshot behind its cards. Instant replay with gpu-screen-recorder waits until a clip has stopped growing for half a second before keeping it, so a clip is never cut off.
