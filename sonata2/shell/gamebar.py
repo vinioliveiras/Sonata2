@@ -67,10 +67,8 @@ from .mission import DIM  # noqa: E402  (the same dark layer as Overview, Win+Ta
 
 NAMESPACE = "sonata2-gamebar"
 PIN_NAMESPACE = "sonata2-gamebar-pin"
-# the fake glass: the display's picture at this scale (blurred: no detail
-# needed), blurred this much (px at full size), awaited this long at most
-FROST_SCALE = 0.25
-FROST_BLUR = 28
+# the fake glass: the display's picture, small and blurred once (frost.py)
+from .frost import FROST_BLUR, FROST_SCALE, blur_texture, frost_command  # noqa: E402,F401  (shared: frost.py)
 # Vini: the Game Bar opens and closes at once, as fast as it can -- no
 # animations, and it never waits for the game's picture: its panels show
 # solid and turn to glass the moment the picture comes (usually a few
@@ -252,23 +250,6 @@ def _focusables(root) -> list:
 GLASS_TINT = 0.55          # the panels' tint over the glass (menu_bg at this alpha)
 
 
-def blur_texture(renderer, texture):
-    """The game's picture blurred once (GSK), at its small size."""
-    if renderer is None:
-        return texture
-    from gi.repository import Graphene
-    w, h = texture.get_width(), texture.get_height()
-    snap = Gtk.Snapshot()
-    r = Graphene.Rect().init(0, 0, w, h)
-    snap.push_clip(r)
-    snap.push_blur(FROST_BLUR * FROST_SCALE)
-    snap.append_texture(texture, Graphene.Rect().init(-8, -8, w + 16, h + 16))   # no dark edges
-    snap.pop()
-    snap.pop()
-    node = snap.to_node()
-    return renderer.render_texture(node, r) if node is not None else texture
-
-
 class _Glass:
     """A panel (the bar, a widget) drawing the Game Bar's glass under itself:
     its slice of the blurred picture, then its tint, inside its rounded
@@ -384,14 +365,6 @@ def perf_kinds(available) -> list:
     in its order: CPU, each GPU, their memory, temperatures, memory, network),
     FPS apart (the FPS Limit above shows it)."""
     return [k for k in available if k not in PERF_SKIP]
-
-
-def frost_command(output) -> list:
-    """grim: the display's picture, small and uncompressed (fast)."""
-    cmd = ["grim", "-s", str(FROST_SCALE), "-l", "0"]
-    if output:
-        cmd += ["-o", output]
-    return cmd + ["-"]
 
 
 class PinWindow(Gtk.Window):

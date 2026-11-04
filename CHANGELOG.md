@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Notification Center no longer lags with many notifications: the compositor blurred behind its whole column again on every frame it scrolled or slid. Its glass is now a picture of the display blurred once as it opens (as the Game Bar's), each card drawing its own slice; without grim the cards are solid.
 - AppImages: Install in their right-click (Files and the desktop), next to Run -- asked first, then the AppImage is copied into ~/Applications and gets a launcher with its own name, icon and categories, so it's in the Apps Menu and can be kept in the Dock. Uninstalling it moves the AppImage to the Trash with its launcher.
 - Files can be taken off the Dock (drag it out, or untick Keep in Dock): it's in the Apps Menu, where it can be pinned again. Only Launchpad / the Apps Menu always stays.
 - Uninstall… in an app's right-click menu on the Dock (and Mission Control), asked first like dropping it on the Trash; in Apps / the Apps Menu, "Move to Trash" is now called Uninstall…, as in Settings > Apps.
