@@ -1612,6 +1612,7 @@ dependencies = [
  "gio",
  "glib",
  "libc",
+ "serde_json",
  "sonata-backend",
  "sonata-config",
  "sonata-i18n",
