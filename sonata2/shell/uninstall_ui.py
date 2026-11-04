@@ -61,7 +61,9 @@ def ask(info, parent=None, done=None) -> None:
                             [("ok", _("OK"), "default")], parent=parent)
             return
         if o.kind == "shortcut":
-            body = _("Its shortcut is moved to the Trash.")
+            from .. import appimages
+            body = _("It and its shortcut are moved to the Trash.") if appimages.file_of(o.name) else \
+                _("Its shortcut is moved to the Trash.")
         elif o.kind == "flatpak":
             body = _("The Flatpak app {name} is removed. Its settings and data stay in your home folder.").format(name=o.name)
         else:
@@ -82,7 +84,11 @@ def _uninstall(o, name, done) -> None:
     from .. import sounds
     if o.kind == "shortcut":
         try:
+            from .. import appimages
+            app_file = appimages.file_of(o.name)           # an AppImage installed from Files: it goes too
             Gio.File.new_for_path(o.name).trash(None)
+            if app_file:
+                Gio.File.new_for_path(app_file).trash(None)
             sounds.play("trash")
             if done:
                 done(True)

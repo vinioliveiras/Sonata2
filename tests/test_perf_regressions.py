@@ -247,6 +247,19 @@ class ControlCenterKeptTest(unittest.TestCase):
             self.close(pops[0])
         self.assertEqual(sorted(classes), [False, True])
 
+    def test_control_center_opened_with_a_delay(self):
+        """Vini: Control Center still took a moment to open. Its main-loop work
+        is a few ms; what was left was the panels' 180 ms grow-in, every frame
+        of it a blur pass over the whole panel in the compositor. It appears
+        at once now, first opening and every one after."""
+        from sonata2.ui import theme
+        css = theme._templates["motion-open"][0]
+        self.assertIn("popover.instant > contents, popover.instant.reopen > contents { animation: none; }", css)
+        for _ in range(3):
+            pop = self.open()
+            self.assertTrue(pop.has_css_class("instant"))
+            self.close(pop)
+
     def test_opens_with_current_states(self):
         from sonata2.shell import controlcenter as C
         from sonata2 import config
@@ -755,6 +768,22 @@ class EnvReportOffTheMainLoopTest(unittest.TestCase):
             M._write_env_report("logo /x.svg")                            # (as the thread runs it)
         with open(os.path.join(home, ".cache", "sonata2", "env.txt")) as f:
             self.assertIn("logo /x.svg", f.read())
+
+
+
+class PopupFadeTest(unittest.TestCase):
+    def test_control_center_faded_in_and_out_by_wayfire(self):
+        """Vini: Control Center still had a delay opening and closing. Its own
+        work is ~3 ms to its first frame; Wayfire then faded every popup in
+        and out for 123 ms (fade_enabled_for = type equals "unmanaged"), each
+        frame a blur pass behind it. Popups appear and go at once now."""
+        import configparser
+        ini = configparser.ConfigParser(interpolation=None, strict=False)
+        ini.read("config/wayfire.ini", encoding="utf-8")
+        anim = ini["animate"]
+        self.assertNotIn("unmanaged", anim.get("fade_enabled_for", ""))
+        for key in ("enabled_for", "zoom_enabled_for", "fire_enabled_for"):
+            self.assertNotIn("unmanaged", anim.get(key, ""))           # (no other effect on them either)
 
 
 if __name__ == "__main__":

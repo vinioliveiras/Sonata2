@@ -118,6 +118,37 @@ class OpensLaggyWithNotificationsTest(unittest.TestCase):
         self.assertEqual(self.shown(), list(range(31, 0, -1)))             # newest first
         self.assertIs(self.c.top.get_last_child(), cal)
 
+    def test_laggy_with_many_notifications_blurred_every_frame(self):
+        """Vini: Notification Center lagged with many notifications -- the
+        compositor blurred behind its whole column again on every frame it
+        scrolled or slid. It's never blurred now (glass.NEVER_BLUR); its
+        panels draw a picture of the display blurred once (frost.py), each
+        its own slice, and go solid without one."""
+        from sonata2.ui import glass
+        from sonata2.shell import frost
+        self.assertIn('app_id is "sonata2-notification-center"', glass.NEVER_BLUR)
+        self.assertIsInstance(self.c.col, N._FrostBox)
+        self.assertIsInstance(self.c.top, N._FrostBox)
+        self.owner.notes = [note(i) for i in range(1, 41)]
+        self.c._rebuild()
+        panels = list(self.c.col._panels())
+        self.assertEqual(len(panels), 40)                                  # each card draws its own glass
+        self.assertTrue(all(w.has_css_class("nt-card") for w, _k in panels))
+        self.assertEqual([w for w, _k in self.c.top._panels()][0].has_css_class("nc-widget"), True)
+        with mock.patch.object(frost, "capture", return_value=False), \
+                mock.patch.object(N.layer, "layer_shell", return_value=object()):
+            self.c._frost()
+        self.assertTrue(self.c.has_css_class("no-frost"))                  # no picture: solid
+        got = {}
+        with mock.patch.object(frost, "capture", side_effect=lambda out, done, r: (got.setdefault("done", done), True)[1]), \
+                mock.patch.object(N.layer, "layer_shell", return_value=object()), \
+                mock.patch.object(self.c, "get_visible", return_value=True):
+            self.c._frost()
+            tex = object()
+            got["done"](tex)
+        self.assertIs(self.c.frost_tex, tex)
+        self.assertFalse(self.c.has_css_class("no-frost"))
+
     def test_calendar_scrolled_away_under_notifications(self):
         """Vini: with many notifications the calendar was at the end of the
         column, scrolled out of sight. It stays fixed at the top; only the

@@ -390,6 +390,15 @@ class ReplayInBarTests(Base):
         self.assertFalse(self.bar.clip_btn.get_sensitive())
 
 
+REAL_POPEN = subprocess.Popen
+
+
+def _recorder(cmd) -> bool:
+    """A replay recorder's command (not another part's: the Performance
+    widget's GPU reader runs in a thread of its own and was counted)."""
+    return any(r in (cmd or []) for r in ("wl-screenrec", "gpu-screen-recorder"))
+
+
 class FakeProc:
     def __init__(self, *a, **k):
         self.cmd = a[0] if a else None
@@ -426,7 +435,9 @@ class ReplayTests(unittest.TestCase):
         r = R.Replay(cap)
         procs = []
 
-        def popen(cmd, **_k):
+        def popen(cmd, **k):
+            if not _recorder(cmd):
+                return REAL_POPEN(cmd, **k)                         # (another part's thread: the stats)
             p = FakeProc(cmd)
             procs.append(p)
             return p
@@ -447,6 +458,77 @@ class ReplayTests(unittest.TestCase):
         self.assertTrue(r.running)
         r.stop()
         self.assertFalse(r.running)
+
+    def test_gsr_command_keeps_the_last_seconds(self):
+        cmd = R.gsr_command("/v/.replay", "DP-1", 30, "sink.monitor")
+        self.assertEqual(cmd[cmd.index("gpu-screen-recorder"):],
+                         ["gpu-screen-recorder", "-w", "DP-1", "-f", str(R.GSR_FPS), "-r", "30", "-c", "mp4",
+                          "-o", "/v/.replay", "-a", "sink.monitor"])
+
+    def test_instant_replay_could_not_be_turned_on_without_wl_screenrec(self):
+        """Vini: the Game Bar's Instant Replay couldn't be turned on -- it only
+        knew wl-screenrec, which isn't in Arch's / CachyOS' repositories (so
+        install.sh never got it). gpu-screen-recorder, which is, keeps the
+        replay too: SIGUSR1 writes the clip into its folder, it keeps going."""
+        d = tempfile.mkdtemp()
+        config.save("capture", {"movies_to": "other", "movies_dir": d})
+        cap = mock.Mock()
+        r = R.Replay(cap)
+        procs = []
+
+        def popen(cmd, **k):
+            if not _recorder(cmd):
+                return REAL_POPEN(cmd, **k)                         # (another part's thread: the stats)
+            p = FakeProc(cmd)
+            procs.append(p)
+            return p
+        which = lambda n: "/usr/bin/" + n if n in ("gpu-screen-recorder", "nice") else None   # noqa: E731
+        with mock.patch.object(R.shutil, "which", side_effect=which), \
+                mock.patch.object(R.subprocess, "Popen", side_effect=popen), \
+                mock.patch("sonata2.shell.capture.audio_device", return_value=None):
+            self.assertTrue(r.available())
+            self.assertTrue(r.start("DP-1"))
+            self.assertIn("gpu-screen-recorder", procs[0].cmd)
+            self.assertTrue(os.path.isdir(r.path))
+            self.assertTrue(r.save())
+            with open(os.path.join(r.path, "Replay_2026-11-04_13-00-00.mp4"), "wb") as f:
+                f.write(b"clip")                                    # what it writes on SIGUSR1
+            spin(R.WAIT_MS * (R.GSR_STILL + 4))
+        self.assertEqual(procs[0].signals, [signal.SIGUSR1])        # still recording
+        clip = cap._saved.call_args.args[0]
+        self.assertEqual(os.path.dirname(clip), d)                  # out of its folder
+        self.assertTrue(os.path.basename(clip).startswith("Replay "))
+        self.assertEqual(len(procs), 1)
+        folder = r.path
+        r.stop()
+        self.assertFalse(os.path.exists(folder))
+
+    def test_gsr_clip_kept_while_still_being_written(self):
+        """A clip was taken as done the first time its size looked the same
+        twice (100 ms): a pause in gpu-screen-recorder's writing and the
+        Replay came out cut. It must stay the same size GSR_STILL looks."""
+        d = tempfile.mkdtemp()
+        config.save("capture", {"movies_to": "other", "movies_dir": d})
+        cap = mock.Mock()
+        r = R.Replay(cap)
+        which = lambda n: "/usr/bin/" + n if n == "gpu-screen-recorder" else None   # noqa: E731
+        with mock.patch.object(R.shutil, "which", side_effect=which), \
+                mock.patch.object(R.subprocess, "Popen", side_effect=lambda c, **k: FakeProc(c) if _recorder(c) else REAL_POPEN(c, **k)), \
+                mock.patch("sonata2.shell.capture.audio_device", return_value=None):
+            r.start("DP-1")
+            r.save()
+            clip = os.path.join(r.path, "Replay_x.mp4")
+            with open(clip, "wb") as f:
+                f.write(b"part")
+            spin(R.WAIT_MS * 3)                                     # the same size two, three looks
+            cap._saved.assert_not_called()
+            with open(clip, "ab") as f:
+                f.write(b" more")                                   # it was still writing
+            spin(R.WAIT_MS * (R.GSR_STILL + 4))
+        saved = cap._saved.call_args.args[0]
+        with open(saved, "rb") as f:
+            self.assertEqual(f.read(), b"part more")
+        r.stop()
 
 
 class TwoTracksTests(unittest.TestCase):

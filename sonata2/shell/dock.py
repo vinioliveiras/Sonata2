@@ -46,8 +46,6 @@ SCREEN_MARGIN = 16          # px kept free at both ends of the screen edge
 MAX_RECENTS = 3
 LAUNCH_BOUNCES = 3          # attention / urgent bounces
 MAX_DOTS = 3                        # running dots: one per window, up to this many (a + looked off -- Vini)
-# Always in the Dock (like Finder on macOS): Files and Launchpad can't be
-# removed -- the shell relies on them (open folders, reach every app).
 def merge_order(pinned: list, tile_keys: list) -> list:
     """The pinned keys in the tiles' order; keys without a tile stay where
     they were (between the same neighbours)."""
@@ -61,8 +59,11 @@ def merge_order(pinned: list, tile_keys: list) -> list:
     return [k for k in out if not (k in seen or seen.add(k))]
 
 
-PERMANENT = ("io.github.vinioliveiras.sonata2.files", "sonata2-launchpad")
-LAUNCHPAD_KEY = PERMANENT[1]
+# Always in the Dock: Launchpad / the Apps Menu, which reaches every app.
+# Files can leave it (Vini): it's in the Apps Menu, pinned again from there
+PERMANENT = ("sonata2-launchpad",)
+LAUNCHPAD_KEY = PERMANENT[0]
+FILES_KEY = "io.github.vinioliveiras.sonata2.files"
 # shell tools that open instantly and have no app window (layer surfaces: the
 # screenshot toolbar): no launch bounce, and never "stuck" -- the Dock bounced
 # the Screenshot icon on and on, then stopped it as stuck (Vini)
@@ -579,6 +580,24 @@ def _badge_n(text: str) -> int:
 _SEEN = {"server": None, "ids": {}}   # notification ids seen per app, all Docks (badges.py)
 _WATCH = {"on": False}
 _ASK = object()       # "fetch Wayfire's window list now" (_update_rectangles / _windows_here)
+
+
+def class_has_window(info) -> bool:
+    """A window with the entry's own app id (StartupWMClass) is open. A web
+    app's browser runs in a scope of its own (its memory cap), never the
+    launch's: the Dock thought WhatsApp showed no window, killed it, and its
+    next launch found the browser still there and opened the site in Chrome
+    (Vini)."""
+    wm = info.get_startup_wm_class() if info is not None and hasattr(info, "get_startup_wm_class") else None
+    if not wm:
+        return False
+    try:
+        from ..wl.wfipc import WayfireIPC
+        views = WayfireIPC().call("window-rules/list-views")
+    except Exception:
+        return True                    # can't tell: never killed on a guess
+    return any(isinstance(v, dict) and v.get("app-id") == wm and v.get("role", "toplevel") == "toplevel"
+               for v in (views if isinstance(views, list) else []))
 
 
 def scope_has_window(unit) -> bool:
@@ -1861,6 +1880,8 @@ class Dock(Gtk.Box):
         key = tile.key
         ask(tile.info, done=lambda ok: ok and self.set_pinned(key, False))
 
+    ask_uninstall = _uninstall_dropped          # its menu's Uninstall…: the same question (dock_menu)
+
     def _folder_candidate(self, tile, x, y):
         """The pinned tile whose middle is under the pointer, if the dragged
         app may make a folder with it (or go into it)."""
@@ -2413,7 +2434,7 @@ class Dock(Gtk.Box):
             if self._starting.get(key) != started or self.windows.get(key):
                 return False                       # it showed a window, or was clicked again since
             app_id = tile.info.get_id() or ""
-            if scope_has_window(appscope.launched.get(app_id)):
+            if scope_has_window(appscope.launched.get(app_id)) or class_has_window(tile.info):
                 self._starting.pop(key, None)      # its window is under another icon: it's open
                 self._retries.pop(key, None)
                 return False
@@ -2499,7 +2520,7 @@ def load_config() -> dict:
         cfg["stacks"] = dock_stack.default_stacks()
         config.save("dock", cfg)
     missing = [k for k in PERMANENT if k not in cfg["pinned"] and apps.lookup(k)]
-    for i, k in enumerate(PERMANENT):                     # Files first, Launchpad next
+    for i, k in enumerate(PERMANENT):                     # Launchpad first (Files, taken out, stays out)
         if k in missing:
             cfg["pinned"].insert(min(i, len(cfg["pinned"])), k)
     if missing:

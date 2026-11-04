@@ -19,8 +19,8 @@ emoji, colours, fading marks. Pressed, the Game Bar closes and drawing
 starts on the game's display; pressed again (drawing on), it stops.
 
 Glass (Vini, the "fake" glass, at no cost per frame): opening, the Game
-Bar first takes a small picture of the game's display (grim, a quarter of
-its size), blurs it once, and shows it behind its bar and widgets (_Glass),
+Bar first takes a picture of the game's display (grim), shrinks and blurs
+it once on the GPU (frost.py), and shows it behind its bar and widgets (_Glass),
 which turn see-through over it. The compositor never blurs behind the Game
 Bar (glass.NEVER_BLUR: a full-screen blur over a running game cost too much)
 -- behind the panels the moment you opened it, the game itself dimmed
@@ -52,7 +52,6 @@ while it's closed: the clock ticks only while it's on screen.
     bar = GameBar(app, topbar)      # topbar: for the app in front (optional)
     bar.toggle(); bar.open(); bar.close()
 """
-import time
 
 import gi
 
@@ -67,15 +66,14 @@ from .mission import DIM  # noqa: E402  (the same dark layer as Overview, Win+Ta
 
 NAMESPACE = "sonata2-gamebar"
 PIN_NAMESPACE = "sonata2-gamebar-pin"
-# the fake glass: the display's picture at this scale (blurred: no detail
-# needed), blurred this much (px at full size), awaited this long at most
-FROST_SCALE = 0.25
-FROST_BLUR = 28
-FROST_WAIT_MS = 80          # the Game Bar (its dimming) shows after this at most
-PANELS_WAIT_MS = 220        # its panels wait this much more for their glass (later: solid, glass fading in)
-READ_AFTER_MS = 260
-GLASS_FADE_MS = 250         # a late picture: the glass fades in         # the states read once the opening animation is over
-FROST_LATE_S = 2.0          # a later picture than that: the game has moved on, no glass this time
+# the fake glass: the display's picture, small and blurred once (frost.py)
+from .frost import FROST_BLUR, FROST_SCALE, blur_texture, frost_command, texture_from  # noqa: E402,F401
+# Vini: the Game Bar opens and closes at once, as fast as it can -- no
+# animations -- and already in glass, never turning to glass in front of
+# you: it shows the moment the game's picture is ready (~25 ms), solid
+# only if the picture is later than this
+FROST_WAIT_MS = 100
+READ_AFTER_MS = 120         # the states read once it's on screen
 CONFIG = "gamebar"
 # the widgets, in the bar's order -- the same left-to-right order as on the
 # screen, so the toggles, the arrows and LB / RB follow them: id -> (title,
@@ -110,26 +108,21 @@ PERF_CELL = ((WIDGET_INNER - 6) // 2, 92)       # two graphs a row, the Grid's 6
 
 
 def _close_ms() -> int:
-    """How long the closing animation runs (t_open, at Sonata's speed)."""
-    return tokens.ms(float(tokens.SHARED["t_open"].rstrip("ms")))
+    """How long closing takes: nothing, it goes at once (Vini: no animations)."""
+    return 0
 
 
 ui.register("""
 window.sonata-gamebar, window.sonata-gamebar > contents { background: none; box-shadow: none; }
 /* the game dimmed like Overview's (Win+Tab); never blurred (glass.NEVER_BLUR) */
-.gb-scrim { background: rgba(0, 0, 0, %(dim)s); transition: opacity %(t_open)s %(ease_out)s; }
+/* (no fade in or out: the Game Bar opens and closes at once -- Vini) */
+.gb-scrim { background: rgba(0, 0, 0, %(dim)s); }
 .gb-root.closing .gb-scrim { opacity: 0; }
-@keyframes gb-fade-in { from { opacity: 0; } to { opacity: 1; } }
-.gb-scrim { animation: gb-fade-in %(t_open)s %(ease_out)s both; }
 
-/* the bar: a Big Sur glass pill, sliding down from the top edge */
+/* the bar: a Big Sur glass pill at the top */
 .gb-bar { background-color: %(menu_bg)s; border-radius: %(r_plate)s; padding: 6px 8px;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_menu)s;
   color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
-@keyframes gb-bar-in { from { opacity: 0; transform: translateY(-14px) scale(0.98); } to { opacity: 1; transform: none; } }
-@keyframes gb-bar-out { to { opacity: 0; transform: translateY(-14px) scale(0.98); } }
-.gb-bar { animation: gb-bar-in %(t_standard)s %(ease_out)s both; }
-.gb-root.closing .gb-bar { animation: gb-bar-out %(t_open)s %(ease_out)s both; }
 .gb-app { padding: 0 8px 0 4px; }
 .gb-app-name { font-weight: 700; }
 .gb-sep { min-width: 1px; margin: 4px 6px; background: %(separator)s; }
@@ -155,21 +148,14 @@ window.sonata-gamebar, window.sonata-gamebar > contents { background: none; box-
   transition: outline-color %(t_fast)s %(ease_out)s, outline-width %(t_fast)s %(ease_out)s; }
 
 /* the fake glass under them (_Frost): see-through over the blurred picture */
-/* the panels waiting for their glass: not shown yet (they pop in with it) */
-.gb-root.waiting .gb-bar, .gb-root.waiting .gb-widget { opacity: 0; animation: none; }
-/* over the glass a panel paints its own tint (_Glass): no CSS background,
-   its solid one fading out as the glass fades in */
+/* over the glass a panel paints its own tint (_Glass): no CSS background */
 .gb-root.frosted .gb-bar, .gb-root.frosted .gb-widget { background-color: transparent; }
-.gb-bar, .gb-widget { transition: background-color %(t_standard)s %(ease_out)s; }
 
-/* a widget: Control Center glass, popping in a little after the bar */
+/* a widget: Control Center glass */
 .gb-widget { background-color: %(menu_bg)s; border-radius: %(r_dialog)s; padding: 6px;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_menu)s;
   color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
-@keyframes gb-widget-in { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
-@keyframes gb-widget-out { to { opacity: 0; transform: scale(0.94); } }
-.gb-widget { animation: gb-widget-in %(t_standard)s %(ease_out)s both; }
-.gb-widget.hiding, .gb-root.closing .gb-widget { animation: gb-widget-out %(t_open)s %(ease_out)s both; }
+.gb-root.closing .gb-bar, .gb-root.closing .gb-widget, .gb-widget.hiding { opacity: 0; }
 .gb-widget-body { padding: 4px 4px 2px; }
 .gb-widget-empty { color: %(label_secondary)s; font-size: %(text_small)s; margin: 14px 8px 16px; }
 
@@ -256,23 +242,6 @@ def _focusables(root) -> list:
 
 
 GLASS_TINT = 0.55          # the panels' tint over the glass (menu_bg at this alpha)
-
-
-def blur_texture(renderer, texture):
-    """The game's picture blurred once (GSK), at its small size."""
-    if renderer is None:
-        return texture
-    from gi.repository import Graphene
-    w, h = texture.get_width(), texture.get_height()
-    snap = Gtk.Snapshot()
-    r = Graphene.Rect().init(0, 0, w, h)
-    snap.push_clip(r)
-    snap.push_blur(FROST_BLUR * FROST_SCALE)
-    snap.append_texture(texture, Graphene.Rect().init(-8, -8, w + 16, h + 16))   # no dark edges
-    snap.pop()
-    snap.pop()
-    node = snap.to_node()
-    return renderer.render_texture(node, r) if node is not None else texture
 
 
 class _Glass:
@@ -392,14 +361,6 @@ def perf_kinds(available) -> list:
     return [k for k in available if k not in PERF_SKIP]
 
 
-def frost_command(output) -> list:
-    """grim: the display's picture, small and uncompressed (fast)."""
-    cmd = ["grim", "-s", str(FROST_SCALE), "-l", "0"]
-    if output:
-        cmd += ["-o", output]
-    return cmd + ["-"]
-
-
 class PinWindow(Gtk.Window):
     """A pinned widget over the game once the Game Bar has gone: a small
     layer surface at the widget's place, clicks passing through it."""
@@ -447,7 +408,6 @@ class GameBar(Gtk.Window):
         self.root.set_child(self.scrim)
         self.frost_tex = None                           # the game's picture, blurred (_Glass)
         self.frost_alpha = 0.0
-        self._frost_anim = None
         self.root.add_overlay(self._bar())
         self.widgets = {}
         for wid in WIDGETS:
@@ -703,15 +663,20 @@ class GameBar(Gtk.Window):
     def is_open(self) -> bool:
         return self.get_visible() and not self.root.has_css_class("closing")
 
+    def opening(self) -> bool:
+        """Asked to open, waiting (at most FROST_WAIT_MS) for its picture."""
+        return getattr(self, "_opening_gen", None) == getattr(self, "_frost_gen", 0) and not self.get_visible()
+
     def toggle(self) -> None:
-        self.close_bar() if self.is_open() else self.open()
+        # pressed again while it waits for its picture: that's a close (it
+        # opened anyway, the second press taken as another opening)
+        self.close_bar() if self.is_open() or self.opening() else self.open()
 
     def open(self) -> None:
         if self._hide_src:
             GLib.source_remove(self._hide_src)
             self._hide_src = 0
         self.root.remove_css_class("closing")
-        self._hide_pins()                               # back in the Game Bar
         # the levels and radios read once it's on screen: their reads (pactl,
         # nmcli, rfkill, DDC/CI) started with it and slowed its opening (Vini)
         if self._read_src:
@@ -724,6 +689,8 @@ class GameBar(Gtk.Window):
         self._frost_then(self._show)
 
     def _show(self) -> None:
+        self._hide_pins()                               # back in the Game Bar (as it shows: a
+        # pending opening closed again leaves them over the game)
         # shown again: the CSS animations run anew only for newly mapped widgets
         self.set_visible(False)
         self.present()
@@ -733,17 +700,17 @@ class GameBar(Gtk.Window):
 
     # -- the fake glass ---------------------------------------------------------------------------
     def _frost_then(self, show) -> None:
-        """The game's picture first (before the Game Bar is on it), then show();
-        at most FROST_WAIT_MS. A picture that comes later still turns the glass
-        on, fading in (Vini: some openings had no glass -- grim took longer
-        than that now and then, and its picture was thrown away). grim asks
-        for the screen as it starts: the late part is only its picture being
-        made, the Game Bar isn't in it."""
+        """The game's picture first, blurred, then show(): the Game Bar opens
+        already in glass. Vini: it opened solid and turned to glass a moment
+        later -- it showed at once and the picture came after, grim taking
+        ~160 ms to shrink it (frost.py: now taken at full size, ~25 ms, and
+        shrunk on the GPU). At most FROST_WAIT_MS: later than that it opens
+        solid and stays so this time (no glass coming on in front of you);
+        the Game Bar isn't on screen yet, so it's never in the picture."""
         self._frost_gen = getattr(self, "_frost_gen", 0) + 1
-        gen = self._frost_gen
+        gen = self._opening_gen = self._frost_gen
         self._set_glass(None, 0.0)
         self.root.remove_css_class("frosted")
-        self.root.remove_css_class("waiting")
         import shutil
         if not shutil.which("grim") or layer.layer_shell() is None:
             show()
@@ -751,18 +718,10 @@ class GameBar(Gtk.Window):
         state = {"shown": False}
 
         def once():
-            if not state["shown"]:
+            if not state["shown"] and gen == self._frost_gen:
                 state["shown"] = True
-                if self.frost_tex is None and gen == self._frost_gen:
-                    # the panels wait for their glass (Vini: they opened solid,
-                    # then turned to glass): the game dims at once, the bar and
-                    # widgets pop in with the picture, or solid at the latest
-                    self.root.add_css_class("waiting")
-                    GLib.timeout_add(PANELS_WAIT_MS, lambda: (gen == self._frost_gen and self._panels_in(),
-                                                              False)[1])
                 show()
             return False
-        GLib.timeout_add(FROST_WAIT_MS, once)
         from .capture import focused_output
         try:
             proc = Gio.Subprocess.new(frost_command(focused_output()),
@@ -770,48 +729,26 @@ class GameBar(Gtk.Window):
         except GLib.Error:
             once()
             return
-
-        started = time.monotonic()
+        GLib.timeout_add(FROST_WAIT_MS, once)
 
         def done(p, res):
             try:
                 _ok, out, _err = p.communicate_finish(res)
-                tex = Gdk.Texture.new_from_bytes(out) if out is not None and out.get_size() else None
+                tex = texture_from(out)
             except GLib.Error:
                 tex = None
-            # this opening's picture, the Game Bar still open (or about to be)
-            if tex is not None and gen == self._frost_gen and (not state["shown"] or self.is_open()) \
-                    and time.monotonic() - started < FROST_LATE_S:
+            # this opening's picture, before it showed: in glass from its first frame
+            if tex is not None and gen == self._frost_gen and not state["shown"]:
                 self._set_frost(tex)
             once()
         proc.communicate_async(None, None, done)
 
     def _set_frost(self, tex) -> None:
-        """The picture blurred, the glass on: at once before the Game Bar
-        shows, fading in after (a late picture)."""
-        if not self.get_realized():                     # blurred once it has a renderer
-            hid = {}
-
-            def realized(*_a):
-                self.disconnect(hid["id"])
-                self._set_frost(tex)
-            hid["id"] = self.connect("realize", realized)
-            return
-        tex = blur_texture(self.get_renderer(), tex)
+        """The picture blurred, the glass on (before the Game Bar shows)."""
+        if not self.get_realized():
+            self.realize()                              # blurred with its renderer (not on screen yet)
+        self._set_glass(blur_texture(self.get_renderer(), tex), 1.0)
         self.root.add_css_class("frosted")
-        if not self.get_mapped() or self.root.has_css_class("waiting"):
-            self._set_glass(tex, 1.0)                   # in glass from their first frame
-            self._panels_in()
-            return
-        self._set_glass(tex, 0.0)
-        from gi.repository import Adw
-        target = Adw.CallbackAnimationTarget.new(lambda v: self._set_glass(tex, v))
-        self._frost_anim = Adw.TimedAnimation.new(self, 0.0, 1.0, tokens.ms(GLASS_FADE_MS), target)
-        self._frost_anim.play()
-
-    def _panels_in(self) -> None:
-        """The bar and widgets pop in (they waited for the glass)."""
-        self.root.remove_css_class("waiting")
 
     def _set_glass(self, tex, alpha: float) -> None:
         self.frost_tex, self.frost_alpha = tex, alpha
@@ -819,6 +756,15 @@ class GameBar(Gtk.Window):
             w.queue_draw()                              # each panel's own area only
 
     def close_bar(self) -> None:
+        if self.opening():                              # not on screen yet: it never shows
+            self._frost_gen += 1
+            if self._read_src:
+                GLib.source_remove(self._read_src)
+                self._read_src = 0
+            if self._clock_src:
+                GLib.source_remove(self._clock_src)
+                self._clock_src = 0
+            return
         if not self.get_visible() or self.root.has_css_class("closing"):
             return
         self.root.add_css_class("closing")
@@ -1058,7 +1004,7 @@ class GameBar(Gtk.Window):
         ok = rp is not None and rp.available()
         on = bool(ok and rp.running)
         self.replay_btn.set_sensitive(ok)
-        self.replay_btn.set_tooltip_text(None if ok else _("Instant replay needs wl-screenrec"))
+        self.replay_btn.set_tooltip_text(None if ok else _("Instant replay needs gpu-screen-recorder or wl-screenrec"))
         (self.replay_btn.add_css_class if on else self.replay_btn.remove_css_class)("on")
         self.clip_btn.set_sensitive(on)
 

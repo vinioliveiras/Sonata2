@@ -1150,6 +1150,7 @@ class Bar(Gtk.CenterBox):
             if pop.get_parent() is not None:
                 pop.unparent()
         pop = ui.panel.popup(btn, cc, gap=PANEL_GAP, width=getattr(cc, "width", None), keep=True)
+        pop.add_css_class("instant")              # no grow-in: there at once (ui.transition)
         self._cc_panel = pop
         return pop
 

@@ -129,6 +129,37 @@ class LaunchRetryTest(unittest.TestCase):
         self.assertLess(D.LAUNCH_WATCH_S, D.LAUNCH_WATCH_SLOW_S["steam"])
 
 
+class WebAppWindowTest(unittest.TestCase):
+    def test_whatsapp_killed_and_opened_in_chrome_though_its_window_was_open(self):
+        """Vini: the WhatsApp web app started opening Chrome. A web app's
+        browser runs in a scope of its own (its memory cap), not the
+        launch's: the Dock saw no window of the launch, killed it and opened
+        it again -- the browser was still there, so the site went to Chrome.
+        A window with the entry's app id (StartupWMClass) is it, open."""
+        d, tile = fake()
+        tile.info.get_startup_wm_class = lambda: "chrome-web.whatsapp.com__-Default"
+        views = [{"app-id": "chrome-web.whatsapp.com__-Default", "role": "toplevel", "pid": 9}]
+        checks = []
+        with mock.patch.object(D.GLib, "timeout_add_seconds", side_effect=lambda s, f: checks.append(f)), \
+                mock.patch.object(D.GLib, "timeout_add"), \
+                mock.patch.object(D, "scope_has_window", return_value=False), \
+                mock.patch("sonata2.wl.wfipc.WayfireIPC") as ipc, \
+                mock.patch("sonata2.appscope.kill") as stop:
+            ipc.return_value.call.return_value = views
+            d.launch(tile)
+            checks.pop(0)()
+        stop.assert_not_called()
+        self.assertEqual(tile.info.launches, 1)
+        self.assertEqual(d._retries, {})
+
+    def test_no_window_of_its_class_still_retried(self):
+        info = types.SimpleNamespace(get_startup_wm_class=lambda: "chrome-web.whatsapp.com__-Default")
+        with mock.patch("sonata2.wl.wfipc.WayfireIPC") as ipc:
+            ipc.return_value.call.return_value = [{"app-id": "chrome-www.instagram.com__-Default"}]
+            self.assertFalse(D.class_has_window(info))
+        self.assertFalse(D.class_has_window(FakeInfo()))              # no class: the scope decides
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -97,7 +97,9 @@ class WinsizeTest(unittest.TestCase):
         root = os.path.join(os.path.dirname(__file__), "..", "sonata2")
         for path, key in APPS.items():
             with open(os.path.join(root, path), encoding="utf-8") as f:
-                self.assertIn(f'remember_size(self, "{key}"', f.read(), path)
+                src = f.read()
+            # (Files: its key a class attribute, the Open/Save panel has its own)
+            self.assertTrue(f'remember_size(self, "{key}"' in src or f'SIZE_KEY, SIZE, ROOMY = "{key}"' in src, path)
 
 
 if __name__ == "__main__":

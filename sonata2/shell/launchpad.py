@@ -1126,7 +1126,7 @@ class Launchpad(Gtk.ApplicationWindow):
             dock = config.load("dock", {"pinned": None})
             pins = dock.get("pinned")
             from .dock import PERMANENT
-            if pins is not None and item not in PERMANENT:       # Files / Launchpad always stay
+            if pins is not None and item not in PERMANENT:       # (Launchpad always stays)
                 kept = item in pins
 
                 def toggle_dock(on=not kept):
@@ -1155,7 +1155,7 @@ class Launchpad(Gtk.ApplicationWindow):
                 sections.append([lock_item(info, self.close_launchpad)])
             hide = [Item(_("Hide"), lambda: self.hide_app(item))]      # into the Hidden folder
             if info and not (info.get_id() or "").startswith(PROTECTED):
-                hide.append(Item(_("Move to Trash"), lambda: self.ask_delete(item)))
+                hide.append(Item(_("Uninstall…"), lambda: self.ask_delete(item)))   # (Settings > Apps' name: Vini)
             from .. import webapps
             if webapps.is_webapp(item):
                 sections.append([Item(_("Edit Web App…"), lambda: self.close_launchpad(
