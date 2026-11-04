@@ -5,9 +5,12 @@
 #
 #   ~/.local/bin/sonata2-rs                       the binary
 #   ~/.local/share/sonata2-rs/locale/             the translations (a copy)
+#   ~/.local/share/sonata2-rs/sounds/             the alarm sounds (a copy, for Clock's preview)
 #   ~/.local/share/applications/io.github.vinioliveiras.sonata2rs.*.desktop
 #                                                 "Calculator (Rust)"... in Launchpad
 #   ~/.config/sonata2-rs/                         what the Rust build saves
+# One exception, Vini's call: Clock (Rust) edits the same alarms and timers
+# as the Python Clock (~/.local/share/sonata2-data/clock), so they ring.
 #
 #   rust/install-rs.sh               build (release) and install
 #   rust/install-rs.sh --uninstall   remove all of the above but ~/.config/sonata2-rs
@@ -40,11 +43,13 @@ mkdir -p "$BIN" "$SHARE/sonata2-rs"
 install -m 755 target/release/sonata2-rs "$BIN/sonata2-rs"
 rm -rf "$SHARE/sonata2-rs/locale"
 cp -r "$REPO/sonata2/locale" "$SHARE/sonata2-rs/locale"
+rm -rf "$SHARE/sonata2-rs/sounds"
+cp -r "$REPO/sonata2/data/sounds" "$SHARE/sonata2-rs/sounds"
 # the desktop entries name this binary; on trial they are the "(Rust)" ones
 SONATA2_RS_LAUNCHER="$BIN/sonata2-rs" "$BIN/sonata2-rs" desktop-files
 update-desktop-database "$APPS" 2>/dev/null || true
 
 echo
-echo "Installed next to Sonata: \"Calculator (Rust)\" is in Launchpad,"
-echo "or run: sonata2-rs calculator"
+echo "Installed next to Sonata: \"Calculator (Rust)\" and \"Clock (Rust)\" are in Launchpad,"
+echo "or run: sonata2-rs calculator / sonata2-rs clock"
 echo "Remove it with: rust/install-rs.sh --uninstall"

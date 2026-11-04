@@ -79,13 +79,27 @@ pub fn calculator_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
+/// Clock's entry ("Clock (Rust)" on trial).
+pub fn clock_entry(exec: &str) -> (String, String) {
+    let id = sonata_clock::app_id();
+    let name = if sonata_config::side_by_side() { sonata_i18n::n_!("Clock (Rust)") } else { "Clock" };
+    let text = format!(
+        "[Desktop Entry]\nType=Application\nName={name}\nComment=Alarms, stopwatch and timer\nIcon=sonata-clock\n\
+         Categories=Utility;Clock;\nKeywords=alarm;clock;wake;timer;stopwatch;\nStartupNotify=true\n\
+         Exec={} clock\n",
+        quote(exec)
+    );
+    (format!("{id}.desktop"), text)
+}
+
 /// Write every ported app's entry (only when it changed); the paths written.
 pub fn write_all() -> io::Result<Vec<PathBuf>> {
     let dir = sonata_i18n::locale_dir();
     let catalogs: Vec<Catalog> = SUPPORTED.iter().map(|l| Catalog::load(&dir, l)).collect();
     let folder = data_home().join("applications");
     let mut written = Vec::new();
-    for (file, text) in [calculator_entry(&launcher())] {
+    let exec = launcher();
+    for (file, text) in [calculator_entry(&exec), clock_entry(&exec)] {
         let text = localize(&text, &catalogs);
         let path = folder.join(file);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {

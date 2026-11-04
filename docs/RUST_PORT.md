@@ -1,7 +1,8 @@
 # Porting Sonata 2 to Rust
 
-Status: **step 1 done** (foundations + Calculator, below): it builds and
-its tests pass; not tried in a session yet. Branch `claude/rust-port-fdcd02`.
+Status: **step 1 done** (foundations + Calculator, tried in Vini's
+session), **step 2 started**: Clock ported, builds, its tests pass; not
+tried in a session yet. Branch `claude/rust-port-fdcd02`.
 The Python code stays the working Sonata on this branch until a
 component's Rust replacement is ready; the Wayfire plugin
 (`wayfire-plugin/`, C++) stays as it is.
@@ -54,6 +55,10 @@ desktop:
 
 - Different app ids mean both Calculators can be open at once, and the
   Rust one never steals the Python one's single-instance D-Bus name.
+- App data (`~/.local/share/sonata2-data/<app>`) is the exception, app by
+  app, when the Python shell acts on it: Clock (Rust) edits the same
+  `alarms.json` and `timers.json` as the Python Clock (Vini's call), since
+  the Python menu bar is what rings them.
 - Settings: on load the Rust code looks in `sonata2-rs/` first, then
   `sonata2/`; on save it only ever writes `sonata2-rs/`. Your Python
   Sonata's files are never written by the trial build. (For a component
@@ -111,9 +116,12 @@ template. Two copies would drift. During the port:
    (LIGHT, DARK, SHARED, FRAME, ACCENTS) to `rust/crates/sonata-ui/tokens.json`;
    `sonata-ui` embeds it with `include_str!`. A test fails when the JSON
    is stale, so tokens.py stays the one place to change a value.
-2. Each component's CSS template moves into its crate, filled from the
-   same tokens (`%(calc_bg)s` style), and registered with the same
-   `register()` -> one `gtk::CssProvider` refilled on appearance change.
+2. The same generator reads the CSS templates (`ui.register("""...""")`)
+   of the ported modules out of the Python files (with `ast`) into
+   `css.json`; Rust registers them with `sonata_ui::css::register_module
+   ("clock/pages.py")`, filled from the same tokens into one
+   `gtk::CssProvider` refilled on appearance change. No CSS is copied by
+   hand: a style changed in Python reaches Rust at the next export.
 3. Once the Python side is gone, `tokens.json` (or a `tokens.rs`) becomes
    the source.
 
@@ -244,3 +252,15 @@ stay behind `--features ui-tests` and run only under
   sequences checked against what the Python engine shows) and the window,
   keyboard, copy and paste.
 - `sonata2-rs`: `calculator`, `desktop-files`.
+
+### Step 2 so far: Clock
+
+- `sonata-ui` grew what Clock needs: the glass materials per part
+  (ui/glass.py), controls (push / pop-up / circle buttons, switch, text
+  field, segmented tabs), context menus, the unified glass toolbar, the
+  size a window remembers (windows.json). Their CSS is Python's own
+  (css.json).
+- `sonata-clock`: alarms and timers (the same files, the same JSON text,
+  unknown keys kept; tests from tests/test_clock*.py), the sound preview,
+  Alarms with the edit popover, Stopwatch with laps, Timers with the ring.
+  Not ported: ringing (the menu bar's), menus' submenus and checks.

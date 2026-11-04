@@ -113,3 +113,10 @@ fn atomic_write_leaves_no_temp_files() {
     let names: Vec<_> = fs::read_dir(p.parent().unwrap()).unwrap().map(|d| d.unwrap().file_name()).collect();
     assert_eq!(names, vec![std::ffi::OsString::from("f.json")]);
 }
+
+#[test]
+fn indent_one_as_the_apps_data_files() {
+    // json.dumps({"alarms": [{"id": "a", "repeat": []}]}, indent=1)
+    let v = json!({"alarms": [{"id": "a", "repeat": []}]});
+    assert_eq!(to_python_json_indent(&v, 1), "{\n \"alarms\": [\n  {\n   \"id\": \"a\",\n   \"repeat\": []\n  }\n ]\n}");
+}

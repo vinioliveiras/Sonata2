@@ -155,13 +155,18 @@ fn lock(name: &str) -> io::Result<Lock> {
 /// The same text config.py writes: `json.dumps(data, indent=2)`, non-ASCII
 /// escaped, so a file reads the same whichever side wrote it last.
 pub fn to_python_json(value: &Value) -> String {
+    to_python_json_indent(value, 2)
+}
+
+/// `json.dumps(value, indent=indent)` (the apps' data files use indent=1).
+pub fn to_python_json_indent(value: &Value, indent: usize) -> String {
     let mut out = String::new();
-    write_value(&mut out, value, 0);
+    write_value(&mut out, value, 0, indent);
     out
 }
 
-fn write_value(out: &mut String, v: &Value, depth: usize) {
-    let pad = |n: usize| "  ".repeat(n);
+fn write_value(out: &mut String, v: &Value, depth: usize, indent: usize) {
+    let pad = |n: usize| " ".repeat(n * indent);
     match v {
         Value::Object(m) if !m.is_empty() => {
             out.push_str("{\n");
@@ -169,7 +174,7 @@ fn write_value(out: &mut String, v: &Value, depth: usize) {
                 out.push_str(&pad(depth + 1));
                 write_string(out, k);
                 out.push_str(": ");
-                write_value(out, val, depth + 1);
+                write_value(out, val, depth + 1, indent);
                 if i + 1 < m.len() {
                     out.push(',');
                 }
@@ -182,7 +187,7 @@ fn write_value(out: &mut String, v: &Value, depth: usize) {
             out.push_str("[\n");
             for (i, val) in a.iter().enumerate() {
                 out.push_str(&pad(depth + 1));
-                write_value(out, val, depth + 1);
+                write_value(out, val, depth + 1, indent);
                 if i + 1 < a.len() {
                     out.push(',');
                 }
@@ -256,6 +261,35 @@ pub fn update(name: &str, values: &Value) -> io::Result<()> {
         }
     }
     write_unlocked(name, &data)
+}
+
+/// Where Sonata's apps keep your data (userdata.py):
+/// `$XDG_DATA_HOME/sonata2-data/<app>`, created. Shared with the Python
+/// apps on trial too (Vini's call for Clock: its alarms and timers ring
+/// from the menu bar, so both Clocks edit the same ones).
+pub fn data_dir(app: &str) -> PathBuf {
+    let base = match std::env::var_os("XDG_DATA_HOME") {
+        Some(v) if !v.is_empty() => PathBuf::from(v),
+        _ => home().join(".local").join("share"),
+    };
+    let dir = base.join("sonata2-data").join(app);
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
+/// Follow one file (a data file, not a setting): `callback` when it
+/// changes on disk. Keep the monitor alive.
+#[cfg(feature = "watch")]
+pub fn watch_path<F: Fn() + 'static>(path: &Path, callback: F) -> Option<gio::FileMonitor> {
+    use gio::prelude::*;
+    let mon = gio::File::for_path(path).monitor_file(gio::FileMonitorFlags::WATCH_MOVES, gio::Cancellable::NONE).ok()?;
+    mon.connect_changed(move |_m, _f, _o, event| {
+        use gio::FileMonitorEvent as E;
+        if matches!(event, E::ChangesDoneHint | E::Created | E::Renamed | E::MovedIn | E::Deleted) {
+            callback();
+        }
+    });
+    Some(mon)
 }
 
 /// Call `callback` when `<name>.json` changes on disk (e.g. from Settings).

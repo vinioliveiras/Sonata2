@@ -708,6 +708,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-clock"
+version = "0.1.0"
+dependencies = [
+ "gtk4",
+ "libadwaita",
+ "libc",
+ "serde_json",
+ "sonata-config",
+ "sonata-i18n",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
 name = "sonata-config"
 version = "0.1.0"
 dependencies = [
@@ -741,6 +755,7 @@ name = "sonata2-rs"
 version = "0.1.0"
 dependencies = [
  "sonata-calculator",
+ "sonata-clock",
  "sonata-config",
  "sonata-i18n",
  "tempfile",

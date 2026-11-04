@@ -7,6 +7,7 @@ members = [
     "crates/sonata-i18n",
     "crates/sonata-ui",
     "apps/calculator",
+    "apps/clock",
     "apps/sonata2-rs",
 ]
 
@@ -33,6 +34,7 @@ sonata-config = { path = "crates/sonata-config" }
 sonata-i18n = { path = "crates/sonata-i18n" }
 sonata-ui = { path = "crates/sonata-ui" }
 sonata-calculator = { path = "apps/calculator" }
+sonata-clock = { path = "apps/clock" }
 
 [profile.release]
 lto = "thin"

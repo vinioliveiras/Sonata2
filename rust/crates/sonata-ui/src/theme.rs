@@ -3,10 +3,11 @@
 //! Dark comes from Sonata's own settings (system.json, as prefs.py keeps
 //! it), the accent from appearance.json; both are followed live.
 //!
-//! Not ported yet (docs/RUST_PORT.md): the glass materials per part
-//! (ui/glass.py), the user's radii and backgrounds, the cross-fade on a
-//! change, the window buttons. Components that need them come later.
+//! Not ported yet (docs/RUST_PORT.md): the user's radii and backgrounds,
+//! the cross-fade on a change, the window buttons. Components that need
+//! them come later.
 
+use crate::glass as parts;
 use crate::tokens::{self, Values};
 use serde_json::json;
 use std::cell::RefCell;
@@ -62,11 +63,44 @@ fn accent() -> String {
     a.get("accent").and_then(|v| v.as_str()).unwrap_or("blue").to_string()
 }
 
-/// The current tokens (for code that needs a value, e.g. drawing).
+fn appearance_flag(key: &str) -> bool {
+    sonata_config::stored("appearance").get(key).and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
+/// True when the compositor blurs Sonata windows (Sonata session or the
+/// dev session: SONATA_GLASS=1) and Reduce transparency is off. Elsewhere
+/// materials fall back to their solid tokens.
+pub fn glass() -> bool {
+    std::env::var("SONATA_GLASS").as_deref() == Ok("1") && !appearance_flag("reduce_transparency")
+}
+
+/// The current tokens (for code that needs a value, e.g. drawing), plus
+/// the materials resolved for this compositor (theme.values).
 pub fn values() -> Values {
     let dark = is_dark();
     let mut v = tokens::palette(dark);
     v.extend(tokens::accent_tokens(&accent(), dark));
+    let parts = parts::settings();
+    let ok = glass();
+    for (token, item) in [("sidebar_material", "windows"), ("panel_material", "menus"), ("dock_material", "dock"),
+                          ("bar_material", "menubar"), ("launchpad_material", "launchpad")] {
+        let m = parts::material(item, &v, ok, &parts);
+        v.insert(token.into(), m);
+    }
+    let windows = parts.iter().find(|(i, _)| *i == "windows").map(|(_, p)| *p);
+    if let Some(w) = windows.filter(|w| ok && w.on && appearance_flag("glass_titlebars")) {
+        // title bars and toolbars: the glass again
+        for k in ["titlebar_glass", "titlebar_glass_inactive"] {
+            if let (Some(a), Some(c)) = (w.alpha, v.get(k).cloned()) {
+                v.insert(k.into(), parts::with_alpha(&c, a));
+            }
+        }
+        for (bg, glass_k) in [("titlebar_bg", "titlebar_glass"), ("titlebar_bg_inactive", "titlebar_glass_inactive")] {
+            if let Some(c) = v.get(glass_k).cloned() {
+                v.insert(bg.into(), c);
+            }
+        }
+    }
     v
 }
 
@@ -146,8 +180,11 @@ pub fn setup() {
     gtk::style_context_add_provider_for_display(&display, &provider, PRIORITY);
     STATE.with(|s| s.borrow_mut().provider = Some(provider));
     crate::window::register_css();
+    crate::controls::register_css();
+    crate::menu::register_css();
     adw::StyleManager::default().connect_dark_notify(|_| load());
     let mut monitors = sonata_config::watch("appearance", load);
+    monitors.extend(sonata_config::watch("dock", load)); // its old "glass" switch (glass.rs)
     monitors.extend(sonata_config::watch("system", follow_color_scheme));
     STATE.with(|s| s.borrow_mut().monitors = monitors);
     follow_color_scheme();
@@ -164,4 +201,12 @@ pub fn force_appearance(appearance: &str) {
         "light" => sm.set_color_scheme(adw::ColorScheme::ForceLight),
         _ => follow_color_scheme(),
     }
+}
+
+/// A colour token as a GdkRGBA (for drawing in a snapshot or with cairo).
+pub fn rgba(token: &str) -> gtk::gdk::RGBA {
+    values()
+        .get(token)
+        .and_then(|c| gtk::gdk::RGBA::parse(c.as_str()).ok())
+        .unwrap_or(gtk::gdk::RGBA::BLACK)
 }

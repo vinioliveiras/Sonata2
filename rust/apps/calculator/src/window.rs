@@ -15,20 +15,7 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 
-const CSS: &str = r#"
-window.sonata-calculator { background: %(calc_bg)s; }
-.calc-display { padding: 8px 16px 2px 16px; }
-.calc-display label { color: %(calc_display)s; font-family: %(font_display)s; font-weight: 300; }
-.calc-keys { padding: 6px 8px 10px 8px; }
-button.calc-key { min-width: 48px; min-height: 42px; padding: 0; border-radius: 8px; border: none;
-  font-size: 20px; font-weight: 400; box-shadow: none; background: %(calc_key)s; color: %(calc_key_text)s;
-  transition: background-color 90ms ease-out, filter 90ms ease-out; }
-button.calc-key:hover { filter: brightness(1.08); }
-button.calc-key:active, button.calc-key.pressed { filter: brightness(1.35); transition: none; }
-button.calc-key.fn { background: %(calc_key_fn)s; font-size: 17px; }
-button.calc-key.op { background: %(calc_key_op)s; color: white; font-size: 24px; }
-button.calc-key.op.armed { background: white; color: %(calc_key_op)s; }
-"#;
+
 
 /// (label, kind): "fn" grey, "op" orange, "zero" two columns wide.
 const KEYS: [&[(&str, &str)]; 5] = [
@@ -76,7 +63,7 @@ pub struct Calculator {
 
 impl Calculator {
     pub fn new(app: &impl IsA<gtk::Application>) -> Rc<Self> {
-        sonata_ui::register("calculator", CSS);
+        sonata_ui::css::register_module("calculator/window.py"); // window.py's own CSS (css.json)
         let window = gtk::ApplicationWindow::builder().application(app).title(tr!("Calculator")).resizable(false).build();
         window.add_css_class("sonata-calculator");
         window.add_css_class("sonata-glass");
