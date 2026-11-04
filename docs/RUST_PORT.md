@@ -632,3 +632,18 @@ stay behind `--features ui-tests` and run only under
 - Not yet: video wallpaper and screen corners (the lock lacks them too),
   ext-idle-notify (it goes dark on its own timer), the lock's side of
   Switch User.
+
+### Step 5 so far: restart, doctor, autostart
+
+- `sonata2-rs restart [COMPONENT...]`: the Python restart's sequence
+  (slide away, wallpaper handover, ready markers, the shared lock, the
+  Wayfire config reload); components come back under `sonata2-rs
+  keep-all`, which picks Rust or Python. Processes are found by reading
+  /proc (procs.rs). The Python restart doesn't see Rust supervisors: a
+  mixed session restarts with the Rust one.
+- `sonata2-rs doctor [windows]`: doctor.py and stylecheck.py; the Python
+  checks became library checks (GTK 4.12, libadwaita 1.5,
+  gtk4-layer-shell, session lock, polkit agent), both log folders read.
+- `sonata2-rs autostart`: login items; the Python-only steps (title
+  bars, compose, GTK style, Flatpak theme, KeePassXC) still run through
+  the Python Sonata when it's there.

@@ -18,6 +18,9 @@
 //!   sonata2-rs videos [FILE...]                    Videos (sonata2-rs-videos, the same)
 //!   sonata2-rs calendar [FILE.ics...]             Calendar
 //!   sonata2-rs files [FOLDER...] [--background]   Files
+//!   sonata2-rs restart [COMPONENT...]            restart shell components
+//!   sonata2-rs doctor [windows]                   is this computer ready for Sonata?
+//!   sonata2-rs autostart                          login items, at login
 //!   sonata2-rs greeter                            the login screen (SONATA_GREETER_FAKE=1: preview)
 //!   sonata2-rs portal                             the portal backend (not on trial)
 //!   sonata2-rs chooser [open|save|folder]         an Open / Save panel, to try
@@ -38,7 +41,7 @@ mod desktop;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -89,6 +92,9 @@ fn main() -> ExitCode {
             let code = sonata_activity::run(&args[1..]);
             ExitCode::from(code.value() as u8)
         }
+        "restart" => ExitCode::from(sonata_session::restart(&args[1..]) as u8),
+        "doctor" => ExitCode::from(sonata_session::doctor(&args[1..]) as u8),
+        "autostart" => ExitCode::from(sonata_session::autostart(&args[1..]) as u8),
         "greeter" => {
             let code = sonata_greeter::run(&args[1..]);
             ExitCode::from(code.value() as u8)
