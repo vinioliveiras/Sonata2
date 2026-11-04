@@ -1123,6 +1123,9 @@ class Launchpad(Gtk.ApplicationWindow):
             info = self.installed.get(item)
             # (no Open in Sandbox here: the Dock's menu only -- Vini)
             sections = [[Item(_("Open"), lambda: self.activate_item(widget))]]
+            # Uninstall… right under Keep in Dock / Remove from Dock (Vini), in its group
+            dock_sec = [Item(_("Uninstall…"), lambda: self.ask_delete(item))] \
+                if info and not (info.get_id() or "").startswith(PROTECTED) else []
             dock = config.load("dock", {"pinned": None})
             pins = dock.get("pinned")
             from .dock import PERMANENT
@@ -1138,7 +1141,9 @@ class Launchpad(Gtk.ApplicationWindow):
                     elif not on and item in cfg["pinned"]:
                         cfg["pinned"].remove(item)
                     self._save_dock_pins(cfg["pinned"])
-                sections.append([Item(_("Remove from Dock") if kept else _("Keep in Dock"), toggle_dock)])
+                dock_sec.insert(0, Item(_("Remove from Dock") if kept else _("Keep in Dock"), toggle_dock))
+            if dock_sec:
+                sections.append(dock_sec)
             from .. import gpu
             from .. import browsergpu
             for g in (gpu.menu_items(info, Item), browsergpu.menu_items(info, Item)) if info else ():
@@ -1154,8 +1159,6 @@ class Launchpad(Gtk.ApplicationWindow):
                 from .dock_menu import lock_item
                 sections.append([lock_item(info, self.close_launchpad)])
             hide = [Item(_("Hide"), lambda: self.hide_app(item))]      # into the Hidden folder
-            if info and not (info.get_id() or "").startswith(PROTECTED):
-                hide.append(Item(_("Uninstall…"), lambda: self.ask_delete(item)))   # (Settings > Apps' name: Vini)
             from .. import webapps
             if webapps.is_webapp(item):
                 sections.append([Item(_("Edit Web App…"), lambda: self.close_launchpad(

@@ -67,6 +67,55 @@ class BarDotsTest(unittest.TestCase):
         self.assertTrue(b.cam_dot.get_visible())
         self.assertFalse(b.mic_dot.get_visible())                # the camera's dot covers both (macOS)
 
+    @unittest.skipUnless(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"), "needs a display")
+    def test_dot_moved_the_menu_bar_items(self):
+        """Vini: the microphone / camera dot should be right of the date, as on
+        macOS Tahoe, and moving nothing. It was an item of its own beside
+        Control Center: shown, it pushed the clock and every item left of it.
+        It sits over the bar's right margin now, every item where it was."""
+        from gi.repository import GLib, Graphene
+        from sonata2 import ui
+        from sonata2.shell import topbar
+        ui.setup()
+        bar = topbar.Bar(None)
+        try:
+            w = 2400                                                     # one width, both times
+
+            def layout():
+                ctx = GLib.MainContext.default()
+                for _i in range(3):                                      # (whatever fills in on its own)
+                    while ctx.pending():
+                        ctx.iteration(False)
+                    bar.measure(Gtk.Orientation.HORIZONTAL, -1)
+                    bar.allocate(w, 32, -1, None)
+                out = {}
+                for b in bar.items:
+                    if b.get_visible():
+                        ok, r = b.compute_bounds(bar)
+                        out[id(b)] = (round(w - r.get_x()), round(r.get_width())) if ok else None
+                return out, w
+            bar.inuse.state = {"mic": [], "camera": []}
+            bar._inuse_changed()
+            layout()                                                     # (settled first)
+            before, w = layout()
+            bar.inuse.state = {"mic": ["Discord"], "camera": []}
+            bar._inuse_changed()
+            after, _w = layout()
+            self.assertEqual(after, before)                              # nothing moved
+            self.assertNotIn(bar.inuse_btn, bar.items)
+            ok, dot = bar.mic_dot.compute_bounds(bar)
+            ok2, clock = bar.clock.compute_bounds(bar)
+            self.assertTrue(ok and ok2)
+            ok3, text = bar.clock.get_child().get_last_child().compute_bounds(bar)
+            text_end = text.get_x() + text.get_width()
+            self.assertGreater(dot.get_width(), 0)
+            self.assertGreaterEqual(dot.get_x(), text_end)                            # right of the date
+            self.assertLessEqual(dot.get_x() + dot.get_width(), w)                    # still on the bar
+            # Vini: centred between the end of the date and the screen's edge
+            self.assertAlmostEqual(dot.get_x() + dot.get_width() / 2, (text_end + w) / 2, delta=1)
+        finally:
+            bar.stop()
+
     def test_watcher_reads_on_events_only(self):
         with mock.patch.object(I.shutil, "which", return_value=None), \
                 mock.patch.object(I.GLib, "timeout_add_seconds"):

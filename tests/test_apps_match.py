@@ -7,7 +7,8 @@ import unittest
 _DATA = tempfile.mkdtemp()
 os.makedirs(os.path.join(_DATA, "applications"))
 os.environ["XDG_DATA_HOME"] = _DATA
-os.environ["XDG_DATA_DIRS"] = tempfile.mkdtemp()            # only these entries
+_SYS = tempfile.mkdtemp()
+os.environ["XDG_DATA_DIRS"] = _SYS                          # only these entries
 
 
 _BIN = tempfile.mkdtemp()
@@ -30,13 +31,47 @@ _entry("org.example.Thing", "Thing", "thing", "StartupWMClass=ThingWin\n")
 _entry("foo-bin", "Foo (wrapper)", "foo-bin")
 _entry("com.anthropic.Claude", "Claude", "claude-desktop", "StartupWMClass=com.anthropic.Claude\n")
 _entry("foo", "Foo", "foo")
+_entry("google-chrome", "Google Chrome", "/usr/bin/google-chrome-stable", "StartupWMClass=Google-chrome\n")
+_entry("com.google.Chrome", "Google Chrome", "/usr/bin/google-chrome-stable",
+       "StartupWMClass=google-chrome\nNoDisplay=true\n")
 
 from sonata2 import apps  # noqa: E402
+
+
+class HiddenEntryTest(unittest.TestCase):
+    def test_hidden_override_was_a_second_chrome(self):
+        """Vini: two Google Chrome in the Apps Menu. A user's copy of an entry
+        with Hidden=true removes it (GIO's reading); Sonata's own scan read
+        the file and listed it, as an app of its own. It's gone now, and the
+        system's entry of that name with it."""
+        os.makedirs(os.path.join(_SYS, "applications"), exist_ok=True)
+        with open(os.path.join(_SYS, "applications", "org.example.Gone.desktop"), "w") as f:
+            f.write("[Desktop Entry]\nType=Application\nName=Gone\nExec=thing\n")
+        with open(os.path.join(_DATA, "applications", "org.example.Gone.desktop"), "w") as f:
+            f.write("[Desktop Entry]\nType=Application\nName=Gone\nHidden=true\n")
+        found = apps.scan()
+        self.assertNotIn("org.example.Gone.desktop", found)
+        self.assertIn("org.example.Thing.desktop", found)
 
 
 class MatchTest(unittest.TestCase):
     def setUp(self):
         apps.refresh()
+
+    def test_chrome_got_a_second_dock_icon(self):
+        """Vini: Chrome in the Dock opened as another icon -- an update added
+        a hidden com.google.Chrome.desktop with the same window class, listed
+        first, and the window went to it, not the pinned google-chrome. An
+        entry meant to be shown claims the name first."""
+        from unittest import mock
+        from gi.repository import Gio
+        hidden = Gio.DesktopAppInfo.new("com.google.Chrome.desktop")
+        shown = Gio.DesktopAppInfo.new("google-chrome.desktop")
+        with mock.patch.object(apps.Gio.AppInfo, "get_all", return_value=[hidden, shown]):
+            apps.refresh()
+            self.assertEqual(apps.match_app_id("Google-chrome"), "google-chrome")
+            self.assertEqual(apps.match_app_id("google-chrome"), "google-chrome")
+        apps.refresh()                                  # (the index of only those two: not kept)
 
     def test_launcher_entry_matches_its_window(self):
         """Vini: Spotify open while Sonata restarted lost its running dot and

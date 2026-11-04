@@ -38,6 +38,28 @@ class KindTest(unittest.TestCase):
         "x.7z": "archive", "notes.txt": None, "pkg.tar.zst.sig": None,
     }
 
+    def test_double_click_on_a_sh_did_not_run_it(self):
+        """Vini: double-clicking a .sh in Files should run it (it opened in
+        the text editor). It runs in a terminal, in its own folder; other
+        files -- an executable Python script too -- are opened as before."""
+        import os
+        import tempfile
+        from unittest import mock
+        from sonata2.files import packages as P
+        d = tempfile.mkdtemp()
+        sh, txt, py = (os.path.join(d, n) for n in ("go.sh", "notes.txt", "tool.py"))
+        for p, text in ((sh, "echo hi\n"), (txt, "hi\n"), (py, "#!/usr/bin/env python3\nprint(1)\n")):
+            with open(p, "w") as f:
+                f.write(text)
+        os.chmod(py, 0o755)
+        with mock.patch.object(P.system, "run_in_terminal", return_value=True) as term:
+            self.assertTrue(P.open_path(sh))
+            self.assertFalse(P.open_path(txt))
+            self.assertFalse(P.open_path(py))
+        term.assert_called_once()
+        self.assertIn("bash", term.call_args.args[0])
+        self.assertIn(f"cd {d}", term.call_args.args[0])
+
     def test_kinds(self):
         for name, k in self.CASES.items():
             self.assertEqual(P.kind("/d/" + name), k, name)

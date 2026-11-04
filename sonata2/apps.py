@@ -310,6 +310,13 @@ def signature() -> tuple:
 _scan = {}          # desktop id -> DesktopAppInfo (scan())
 
 
+def _is_hidden(info) -> bool:
+    try:
+        return bool(info.get_is_hidden())
+    except Exception:
+        return False
+
+
 def scan() -> dict:
     """desktop id -> DesktopAppInfo, read from the folders themselves (GIO's
     own list only notices folders it watched since the process started)."""
@@ -327,6 +334,11 @@ def scan() -> dict:
                 try:
                     info = DesktopAppInfo.new_from_filename(os.path.join(root, n))
                 except TypeError:
+                    info = None
+                # Hidden=true: the entry is removed (a user's copy hiding a system
+                # one, as GIO reads it) -- kept as None, so the system copy stays
+                # hidden too. Vini: a second Google Chrome in the Apps Menu
+                if info is not None and _is_hidden(info):
                     info = None
                 out[did] = info
     _scan = {k: v for k, v in out.items() if v is not None}
@@ -406,13 +418,24 @@ def app_filename(info) -> str:
     return ""
 
 
+def _shown(info) -> bool:
+    try:
+        return bool(info.should_show())
+    except Exception:
+        return True
+
+
 def _build_index() -> dict:
     """Lower-cased app_id candidates -> desktop id (without .desktop).
     Exact names first (id, StartupWMClass, last reverse-DNS part,
     executable); then the same without a wrapper suffix -- only where no
     entry claims that name exactly."""
     idx, loose = {}, []
-    for info in Gio.AppInfo.get_all():
+    # entries meant to be shown claim their names first: Vini's Chrome got a
+    # second Dock icon -- an update added a hidden com.google.Chrome.desktop
+    # (NoDisplay) with the same window class, and it was listed first
+    infos = sorted(Gio.AppInfo.get_all(), key=lambda i: not _shown(i))
+    for info in infos:
         did = info.get_id() or ""
         if not did.endswith(".desktop"):
             continue
