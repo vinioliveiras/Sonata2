@@ -1959,7 +1959,7 @@ class Settings(Adw.ApplicationWindow):
             row = Adw.ActionRow(title=_(button))
             row.add_suffix(Gtk.Label(label=_(does), xalign=1, css_classes=["dim-label"]))
             keys.add(row)
-        return [pads, desk, keys]
+        return [pads, desk, bar, keys]
 
     # -- system --------------------------------------------------------------------------------
     def _page_datetime(self):

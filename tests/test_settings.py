@@ -320,6 +320,14 @@ class SettingsTest(unittest.TestCase):
             self.assertIn("SIDEBAR_W", open(os.path.join(root, f)).read(), f)
         self.assertFalse(_re.search(r"sidebar\.set_size_request\(\d", open(os.path.join(root, "diskutil/window.py")).read()))
 
+    def test_game_bar_group_never_shown(self):
+        """Game Controllers: the "Xbox / PS button opens the Game Bar" switch
+        was built but its group never returned, so it never showed."""
+        win = S.Settings(None)
+        titles = [g.get_title() for g in win._page_gamepad()]
+        self.assertIn(S._("Game Bar"), titles)
+        win.destroy()
+
     def test_sections_merged_nothing_lost(self):
         """Vini: fewer sections (27 -> 19), nothing removed: every old section's
         builder still runs inside its new section, old ids still open it."""
