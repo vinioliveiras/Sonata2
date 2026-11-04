@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Notification Center: the calendar at the top keeps its size when you clear the notifications; it was stretched 6 px wider while there were cards, and shrank back when they went.
 - Web apps: each Chromium-family browser installed is its own choice in the form's Engine pop-up -- Brave too, when it's there beside Chrome (only the first one found was offered). A Brave web app keeps its own profile and its Dock icon.
 - Notification Center: the calendar (Today) stays fixed at the top and the notifications scroll under it -- with many of them it used to sit at the end, out of sight.
 - Dock: a locked folder's password can be typed again -- it was asked inside the folder's panel on the Dock, which takes no keyboard, so the field could be clicked but not typed in.

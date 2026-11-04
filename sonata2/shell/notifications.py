@@ -880,6 +880,10 @@ class _Center(Gtk.Window):
         if self._cal is not None:
             self.top.remove(self._cal)
         self._cal = FixedWidth(cal, BANNER_W + 6)        # (its margin_start); an event title never widens it
+        # its own width, never stretched: the cards' column (margins and all)
+        # made the window 6 px wider than it, and it grew with them -- Vini:
+        # clearing the notifications, the calendar shrank a little
+        self._cal.set_halign(Gtk.Align.START)
         self.top.append(self._cal)
         self._cal_key = key
         self._cal_until = min((o.end for o, _c in events
