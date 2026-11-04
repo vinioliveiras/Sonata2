@@ -12,6 +12,8 @@ gio.workspace = true
 glib.workspace = true
 serde_json.workspace = true
 libc.workspace = true
+gtk4-layer-shell.workspace = true
+sonata-mission.workspace = true
 sonata-backend.workspace = true
 sonata-config = { workspace = true, features = ["watch"] }
 sonata-desktop.workspace = true
