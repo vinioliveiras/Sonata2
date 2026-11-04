@@ -30,6 +30,9 @@
 //!   sonata2-rs webapp new | edit ID | ID          web apps (WebKit opened at run time)
 //!   sonata2-rs capture [toolbar|screen|area|...]  screenshots, recording, live drawing
 //!   sonata2-rs share-picker                       the screen-sharing picker (portal)
+//!   sonata2-rs lock-wait                          swayidle's lock command
+//!   sonata2-rs setup [--preview]                  first-login setup
+//!   sonata2-rs session-try corners|blackout|alarm|timer|idle|nightshift|displays  try a session helper (writes nothing)
 //!   sonata2-rs notifications [--preview] [--center]  notifications (on trial: off the real bus name)
 //!   sonata2-rs greeter                            the login screen (SONATA_GREETER_FAKE=1: preview)
 //!   sonata2-rs portal                             the portal backend (not on trial)
@@ -51,7 +54,7 @@ mod desktop;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|lock-wait|setup|session-try|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -139,6 +142,15 @@ fn main() -> ExitCode {
         }
         "share-picker" => {
             let code = sonata_capture::run_share_picker(&args[1..]);
+            ExitCode::from(code.value() as u8)
+        }
+        "lock-wait" => ExitCode::from(sonata_sessionui::idlelock::run_lock_wait(&args[1..]) as u8),
+        "setup" => {
+            let code = sonata_sessionui::setup::run_setup(&args[1..], Default::default());
+            ExitCode::from(code.value() as u8)
+        }
+        "session-try" => {
+            let code = sonata_sessionui::run_try(&args[1..]);
             ExitCode::from(code.value() as u8)
         }
         "notifications" => {
