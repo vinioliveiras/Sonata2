@@ -76,3 +76,64 @@ impl FixedWidth {
         f
     }
 }
+
+mod imp_max {
+    use super::*;
+
+    #[derive(Default)]
+    pub struct MaxWidth {
+        pub width: Cell<i32>,
+    }
+
+    #[glib::object_subclass]
+    impl ObjectSubclass for MaxWidth {
+        const NAME: &'static str = "SonataRsMaxWidth";
+        type Type = super::MaxWidth;
+        type ParentType = gtk::Widget;
+    }
+
+    impl ObjectImpl for MaxWidth {
+        fn dispose(&self) {
+            if let Some(child) = self.obj().first_child() {
+                child.unparent();
+            }
+        }
+    }
+
+    impl WidgetImpl for MaxWidth {
+        fn request_mode(&self) -> gtk::SizeRequestMode {
+            gtk::SizeRequestMode::HeightForWidth
+        }
+
+        fn measure(&self, o: gtk::Orientation, for_size: i32) -> (i32, i32, i32, i32) {
+            let Some(child) = self.obj().first_child() else { return (0, 0, -1, -1) };
+            let w = self.width.get();
+            let for_size = if o == gtk::Orientation::Vertical && for_size > w { w } else { for_size };
+            let (mn, nat, _, _) = child.measure(o, for_size);
+            let nat = if o == gtk::Orientation::Horizontal { mn.max(nat.min(w)) } else { nat };
+            (mn, nat, -1, -1)
+        }
+
+        fn size_allocate(&self, width: i32, height: i32, _baseline: i32) {
+            let Some(child) = self.obj().first_child() else { return };
+            let w = width.min(self.width.get()).max(child.measure(gtk::Orientation::Horizontal, -1).0);
+            let t = gtk::gsk::Transform::new().translate(&gtk::graphene::Point::new((width - w) as f32 / 2.0, 0.0));
+            child.allocate(w, height, -1, Some(t));
+        }
+    }
+}
+
+glib::wrapper! {
+    /// Centres its child at most `width` wide (a reading column: chat,
+    /// documents); narrower windows give it all their width.
+    pub struct MaxWidth(ObjectSubclass<imp_max::MaxWidth>) @extends gtk::Widget;
+}
+
+impl MaxWidth {
+    pub fn new(child: &impl IsA<gtk::Widget>, width: i32) -> Self {
+        let m: Self = glib::Object::builder().property("hexpand", true).build();
+        m.imp().width.set(width);
+        child.set_parent(&m);
+        m
+    }
+}

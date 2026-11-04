@@ -30,6 +30,19 @@ pub fn popup(anchor: &impl IsA<gtk::Widget>, child: &impl IsA<gtk::Widget>, posi
     pop
 }
 
+pub fn header(title: &str, trailing: Option<&gtk::Widget>) -> gtk::Box {
+    let b = gtk::Box::builder().css_classes(["panel-header"]).build();
+    b.append(&gtk::Label::builder().label(title).xalign(0.0).hexpand(true).build());
+    if let Some(t) = trailing {
+        b.append(t);
+    }
+    b
+}
+
+pub fn section_title(text: &str) -> gtk::Label {
+    gtk::Label::builder().label(text).xalign(0.0).css_classes(["panel-section"]).build()
+}
+
 pub fn separator() -> gtk::Box {
     let b = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     b.add_css_class("panel-sep");

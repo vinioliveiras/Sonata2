@@ -519,3 +519,23 @@ stay behind `--features ui-tests` and run only under
   (audiotags.from_filename, checked on the same names).
 - The Open panel is GTK's file dialog (the portal's): Files' own
   chooser isn't ported yet. Its trial entry takes no file types.
+
+### Step 6 so far: Assistant
+
+- `sonata2-rs-assistant`, a binary of its own: only it links libsoup 3
+  (soup3-rs) and libsecret (libsecret-rs), both already on the system --
+  no TLS stack is bundled. Python's urllib in a worker thread becomes
+  libsoup reading the stream on the main loop; Stop drops the request
+  (no callback runs after it).
+- assistant/: the store and usage files (the same formats; on trial in
+  `~/.local/share/sonata2-rs-data/assistant`), the API (models and their
+  context windows, the stream put together event by event, errors made
+  readable, tested against a local HTTP server), the Markdown blocks and
+  inline markup (fancy-regex: the same lookaround patterns), the keyring
+  (the same entry as the Python Assistant: a key saved in one is the
+  other's), the file tools (paths resolved before the folder check,
+  tested with links and `..` that lead out), and the window (sidebar by
+  date with Rename / Delete, streaming answers, the meters, the settings
+  panel, the file actions' alerts, the keys).
+- Add Folder uses GTK's folder dialog (the portal's): Files' own chooser
+  isn't ported yet.

@@ -16,6 +16,7 @@
 //!                                                  (sonata2-rs-terminal: only it needs libvte)
 //!   sonata2-rs camera                              Camera (sonata2-rs-camera: only it needs GStreamer)
 //!   sonata2-rs videos [FILE...]                    Videos (sonata2-rs-videos, the same)
+//!   sonata2-rs assistant                           Assistant (sonata2-rs-assistant: libsoup, libsecret)
 //!   sonata2-rs key <volume-up|volume-down|volume-mute|brightness-up|
 //!                  brightness-down|play-pause|next|previous>   a media key
 //!   sonata2-rs screenshot [screen|area|edit]    a screenshot (the menu bar's, else grim)
@@ -31,7 +32,7 @@ mod desktop;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -77,6 +78,7 @@ fn main() -> ExitCode {
         "terminal" => ExitCode::from(terminal(&args[1..]) as u8),
         "camera" => ExitCode::from(camera(&args[1..]) as u8),
         "videos" => ExitCode::from(own_binary("videos", &args[1..], "GStreamer") as u8),
+        "assistant" => ExitCode::from(own_binary("assistant", &args[1..], "libsoup and libsecret") as u8),
         "diskutil" => {
             let code = sonata_diskutil::run(&args[1..]);
             ExitCode::from(code.value() as u8)

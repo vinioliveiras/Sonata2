@@ -23,6 +23,7 @@ members = [
     "apps/diskutil",
     "apps/camera",
     "apps/videos",
+    "apps/assistant",
     "apps/sonata2-rs",
 ]
 

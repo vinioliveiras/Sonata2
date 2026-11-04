@@ -43,6 +43,86 @@ pub fn text_field(text: &str, placeholder: &str) -> gtk::Entry {
     e
 }
 
+/// A password field with the peek eye (text_field(secret=True)).
+pub fn secret_field(text: &str, placeholder: &str) -> gtk::PasswordEntry {
+    let e = gtk::PasswordEntry::builder().show_peek_icon(true).css_classes(["sonata-field"]).build();
+    e.set_property("placeholder-text", placeholder);
+    e.set_text(text);
+    e
+}
+
+/// A round accent icon button (a text area's Send).
+pub fn round_button<F: Fn() + 'static>(icon: &str, tooltip: &str, on_click: F) -> gtk::Button {
+    let b = gtk::Button::builder().icon_name(icon).css_classes(["sonata-round"]).tooltip_text(tooltip).can_focus(false).build();
+    b.connect_clicked(move |_| on_click());
+    b
+}
+
+/// A rounded multi-line field that grows with its text up to max_height
+/// (then scrolls), with a placeholder and an optional trailing widget (a
+/// send button). on_submit(text): Return (Shift+Return starts a new line).
+pub struct TextArea {
+    pub root: gtk::Box,
+    pub view: gtk::TextView,
+}
+
+impl TextArea {
+    pub fn new(placeholder: &str, max_height: i32, trailing: Option<&gtk::Widget>, on_submit: impl Fn(String) + 'static, on_change: impl Fn(String) + 'static) -> Self {
+        let root = gtk::Box::builder().spacing(6).css_classes(["sonata-text-area"]).build();
+        let view = gtk::TextView::builder().wrap_mode(gtk::WrapMode::WordChar).accepts_tab(false).hexpand(true).top_margin(6).bottom_margin(6).build();
+        // no scroll bar until the field is at its tallest: a scroll bar's
+        // minimum length made a one-line field twice as tall
+        let scroll = gtk::ScrolledWindow::builder().child(&view).hscrollbar_policy(gtk::PolicyType::Never).vscrollbar_policy(gtk::PolicyType::External).propagate_natural_height(true).max_content_height(max_height).hexpand(true).build();
+        let ph = gtk::Label::builder().label(placeholder).css_classes(["sonata-placeholder"]).xalign(0.0).can_target(false).halign(gtk::Align::Start).valign(gtk::Align::Center).build();
+        let field = gtk::Overlay::builder().child(&scroll).hexpand(true).build();
+        field.add_overlay(&ph);
+        root.append(&field);
+        if let Some(t) = trailing {
+            t.set_valign(gtk::Align::End);
+            root.append(t);
+        }
+        let (v, s) = (view.downgrade(), scroll.downgrade());
+        view.buffer().connect_changed(move |buf| {
+            ph.set_visible(buf.char_count() == 0);
+            let (v, s) = (v.clone(), s.clone());
+            glib::idle_add_local_once(move || {
+                if let (Some(v), Some(s)) = (v.upgrade(), s.upgrade()) {
+                    let tall = v.measure(gtk::Orientation::Vertical, v.width().max(1)).1 > max_height;
+                    s.set_policy(gtk::PolicyType::Never, if tall { gtk::PolicyType::Automatic } else { gtk::PolicyType::External });
+                }
+            });
+            on_change(buf.text(&buf.start_iter(), &buf.end_iter(), false).to_string());
+        });
+        let keys = gtk::EventControllerKey::new();
+        let v = view.downgrade();
+        keys.connect_key_pressed(move |_, k, _, state| {
+            if (k == gtk::gdk::Key::Return || k == gtk::gdk::Key::KP_Enter) && !state.contains(gtk::gdk::ModifierType::SHIFT_MASK) {
+                if let Some(v) = v.upgrade() {
+                    let b = v.buffer();
+                    on_submit(b.text(&b.start_iter(), &b.end_iter(), false).to_string());
+                }
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        });
+        view.add_controller(keys);
+        Self { root, view }
+    }
+
+    pub fn text(&self) -> String {
+        let b = self.view.buffer();
+        b.text(&b.start_iter(), &b.end_iter(), false).to_string()
+    }
+
+    pub fn set_text(&self, text: &str) {
+        self.view.buffer().set_text(text);
+    }
+
+    pub fn grab_focus(&self) {
+        self.view.grab_focus();
+    }
+}
+
 pub const TONES: [&str; 4] = ["grey", "green", "red", "orange"];
 
 /// A big round button with a word in it, tinted (macOS Clock's Start,

@@ -8,6 +8,18 @@ fn decimal(text: &str) -> String {
 }
 
 /// Decimal units like Finder: "Zero bytes", "653 bytes", "12 KB", "1.4 MB".
+/// Short counts: 950, 24K, 1.2M (tokens, items).
+pub fn count(n: i64) -> String {
+    if n < 1000 {
+        return n.to_string();
+    }
+    let f = n as f64;
+    if n < 1_000_000 {
+        return if n >= 10_000 { format!("{:.0}K", f / 1000.0) } else { format!("{:.1}K", f / 1000.0).replace(".0K", "K") };
+    }
+    format!("{:.1}M", f / 1_000_000.0).replace(".0M", "M")
+}
+
 pub fn size(n: u64) -> String {
     if n == 0 {
         return tr!("Zero bytes");

@@ -160,3 +160,19 @@ pub fn bar(fraction: Option<f64>) -> gtk::ProgressBar {
     }
     b
 }
+
+/// meter turns red above this
+const FULL: f64 = 0.9;
+
+/// Capacity meter (4 px): used / total; red above 90 %.
+pub fn meter(fraction: f64) -> gtk::ProgressBar {
+    let m = bar(Some(fraction));
+    m.add_css_class("meter");
+    set_meter(&m, fraction);
+    m
+}
+
+pub fn set_meter(m: &gtk::ProgressBar, fraction: f64) {
+    m.set_fraction(fraction.clamp(0.0, 1.0));
+    if fraction >= FULL { m.add_css_class("full") } else { m.remove_css_class("full") }
+}

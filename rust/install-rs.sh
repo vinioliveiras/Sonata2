@@ -7,6 +7,7 @@
 #   ~/.local/bin/sonata2-rs-terminal              Terminal's own (only it needs libvte)
 #   ~/.local/bin/sonata2-rs-camera                Camera's own (only it needs GStreamer)
 #   ~/.local/bin/sonata2-rs-videos                Videos' own (the same)
+#   ~/.local/bin/sonata2-rs-assistant             the Assistant's own (libsoup, libsecret)
 #   ~/.local/share/sonata2-rs/locale/             the translations (a copy)
 #   ~/.local/share/sonata2-rs/sounds/             the alarm sounds (a copy, for Clock's preview)
 #   ~/.local/share/sonata2-rs/wallpapers/         Sonata's wallpapers (a copy: the default one)
@@ -30,7 +31,7 @@ SHARE="${XDG_DATA_HOME:-$HOME/.local/share}"
 APPS="$SHARE/applications"
 
 if [ "${1:-}" = "--uninstall" ]; then
-    rm -f "$BIN/sonata2-rs" "$BIN/sonata2-rs-terminal" "$BIN/sonata2-rs-camera" "$BIN/sonata2-rs-videos"
+    rm -f "$BIN/sonata2-rs" "$BIN/sonata2-rs-terminal" "$BIN/sonata2-rs-camera" "$BIN/sonata2-rs-videos" "$BIN/sonata2-rs-assistant"
     rm -rf "$SHARE/sonata2-rs"
     rm -f "$APPS"/io.github.vinioliveiras.sonata2rs.*.desktop
     update-desktop-database "$APPS" 2>/dev/null || true
@@ -44,13 +45,14 @@ if ! command -v cargo >/dev/null 2>&1; then
 fi
 
 cd "$HERE"
-cargo build --release --bin sonata2-rs --bin sonata2-rs-terminal --bin sonata2-rs-camera --bin sonata2-rs-videos
+cargo build --release --bin sonata2-rs --bin sonata2-rs-terminal --bin sonata2-rs-camera --bin sonata2-rs-videos --bin sonata2-rs-assistant
 
 mkdir -p "$BIN" "$SHARE/sonata2-rs"
 install -m 755 target/release/sonata2-rs "$BIN/sonata2-rs"
 install -m 755 target/release/sonata2-rs-terminal "$BIN/sonata2-rs-terminal"
 install -m 755 target/release/sonata2-rs-camera "$BIN/sonata2-rs-camera"
 install -m 755 target/release/sonata2-rs-videos "$BIN/sonata2-rs-videos"
+install -m 755 target/release/sonata2-rs-assistant "$BIN/sonata2-rs-assistant"
 rm -rf "$SHARE/sonata2-rs/locale"
 cp -r "$REPO/sonata2/locale" "$SHARE/sonata2-rs/locale"
 rm -rf "$SHARE/sonata2-rs/sounds"
@@ -65,5 +67,5 @@ update-desktop-database "$APPS" 2>/dev/null || true
 
 echo
 echo "Installed next to Sonata: the Rust Calculator, Clock, TextEdit, Preview, Notes, Terminal, Feedbacker, Disk Manager, Camera and Videos are in Launchpad,"
-echo "or run: sonata2-rs calculator | clock | textedit [FILE] | preview [FILE] | notes | terminal | feedback | diskutil | camera | videos [FILE]"
+echo "or run: sonata2-rs calculator | clock | textedit [FILE] | preview [FILE] | notes | terminal | feedback | diskutil | camera | videos [FILE] | assistant"
 echo "Remove it with: rust/install-rs.sh --uninstall"
