@@ -619,3 +619,16 @@ stay behind `--features ui-tests` and run only under
   appearance.json change) and Access. Never on trial: the Python portal
   owns the bus name. The panel is kept above the asking app through
   Wayfire's IPC; the xdg-foreign parenting (GdkWayland) isn't there yet.
+
+### Step 5 so far: the login screen
+
+- `sonata-greeter` (`sonata2-rs greeter`; `SONATA_GREETER_FAKE=1` is the
+  preview: no greetd, password "sonata", Esc quits): greeter.py and
+  greetd.py. A window per display (hot-plugged too) mirroring the field,
+  the users grid and Other Users, the session menu, the wrong-password
+  wait (Python's file), each display's mode restored and the Displays
+  menu's Keep / Revert, Switch User back into a running session, the
+  power bar. greetd's protocol is tested against a fake server.
+- Not yet: video wallpaper and screen corners (the lock lacks them too),
+  ext-idle-notify (it goes dark on its own timer), the lock's side of
+  Switch User.

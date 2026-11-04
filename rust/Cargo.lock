@@ -1436,10 +1436,13 @@ dependencies = [
  "glib",
  "gtk4",
  "libadwaita",
+ "libc",
+ "regex",
  "serde_json",
  "sonata-backend",
  "sonata-config",
  "sonata-i18n",
+ "sonata-session",
  "sonata-shell",
  "sonata-ui",
  "tempfile",
@@ -1494,6 +1497,23 @@ dependencies = [
  "sonata-ui",
  "tempfile",
  "zip",
+]
+
+[[package]]
+name = "sonata-greeter"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "libadwaita",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-i18n",
+ "sonata-shell",
+ "sonata-ui",
+ "tempfile",
 ]
 
 [[package]]
@@ -1677,6 +1697,7 @@ dependencies = [
  "gio",
  "glib",
  "gtk4",
+ "gtk4-layer-shell",
  "libadwaita",
  "serde_json",
  "sonata-backend",
@@ -1759,6 +1780,7 @@ dependencies = [
  "sonata-diskutil",
  "sonata-feedback",
  "sonata-files",
+ "sonata-greeter",
  "sonata-i18n",
  "sonata-lock",
  "sonata-notes",
