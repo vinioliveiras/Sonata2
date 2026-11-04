@@ -79,3 +79,41 @@ class FrontTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(__import__("os").environ.get("DISPLAY") or __import__("os").environ.get("WAYLAND_DISPLAY"),
+                     "needs a display")
+class ChooserSizeTest(unittest.TestCase):
+    def test_open_panel_closed_reset_files_size(self):
+        """Vini: Files windows sometimes opened small again, and the Trash
+        (a new Files window from the Dock) opened at another size than
+        Files. The Open/Save panel is a Files window: it kept its size under
+        "files" too, so closing an app's Open dialog (820 x 520) saved that
+        as Files' size. It keeps its own now."""
+        import tempfile
+        import gi
+        gi.require_version("Gtk", "4.0")
+        gi.require_version("Adw", "1")
+        from gi.repository import Adw, GLib, Gtk
+        from sonata2 import config, ui, winsize
+        Adw.init()
+        ui.setup()
+        with mock.patch.object(config, "CONFIG_DIR", tempfile.mkdtemp()):
+            winsize.save("files", 900, 560)
+            from sonata2.files.chooser import ChooserWindow
+            app = Adw.Application(application_id="io.github.vinioliveiras.sonata2.test.chooser")
+            app.register(None)
+            win = ChooserWindow(app, mode="open", title="Open")
+            self.assertEqual(tuple(win.get_default_size()), (820, 520))   # its own first size
+            win.present()
+            loop = GLib.MainLoop()
+            GLib.timeout_add(400, loop.quit)
+            loop.run()
+            win.close()
+            win.destroy()
+            self.assertEqual(winsize.saved("files"), {"width": 900, "height": 560, "maximized": False})
+            self.assertEqual((winsize.saved("chooser") or {}).get("width"), 820)
+            from sonata2.files.window import FilesWindow
+            files = FilesWindow(app, None)
+            self.assertEqual(tuple(files.get_default_size()), (900, 560))
+            files.destroy()

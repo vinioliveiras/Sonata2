@@ -251,12 +251,16 @@ def terminal_commands(path: str) -> list:
 
 class FilesWindow(Adw.ApplicationWindow):
     TABS = True              # the Open/Save panel (chooser.py) has no tabs
+    # the size it opens at, kept under its own name: the Open/Save panel has
+    # its own (Vini: Files and the Trash opened at the panel's 820 x 520 --
+    # closing an app's Open dialog saved its size as Files')
+    SIZE_KEY, SIZE, ROOMY = "files", (920, 560), True
 
     def __init__(self, app, uri: str = None):
         # (classes added, not passed: passing css_classes drops GTK's "csd"
         # class, and with it the rounded corners and the shadow)
         super().__init__(application=app, title=_("Files"))
-        ui.window.remember_size(self, "files", 920, 560, roomy=True)        # its last size
+        ui.window.remember_size(self, self.SIZE_KEY, *self.SIZE, roomy=self.ROOMY)   # its last size
         for c in ("sonata-files", "sonata-glass"):
             self.add_css_class(c)
         self.set_size_request(560, 320)
