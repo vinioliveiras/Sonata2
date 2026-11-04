@@ -1533,6 +1533,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-portal"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "libadwaita",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-files",
+ "sonata-i18n",
+ "sonata-ui",
+]
+
+[[package]]
 name = "sonata-preview"
 version = "0.1.0"
 dependencies = [
@@ -1696,6 +1712,7 @@ dependencies = [
  "sonata-lock",
  "sonata-notes",
  "sonata-polkit",
+ "sonata-portal",
  "sonata-preview",
  "sonata-session",
  "sonata-spotlight",

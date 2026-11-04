@@ -392,5 +392,7 @@ pub fn watch<F: Fn() + 'static>(name: &str, callback: F) -> Vec<gio::FileMonitor
     monitors
 }
 
+pub mod prefs;
+
 #[cfg(test)]
 mod tests;

@@ -603,5 +603,19 @@ stay behind `--features ui-tests` and run only under
   Permissions) and window.rs (tabs, toolbar, search bar, context
   menus, the Finder keys, undo / redo).
 - Not yet: vault (locked folders), packages (install / extract),
-  Connect to Server and network browsing, read-only disks, the file
-  chooser / portal, the icons' reflow animation.
+  Connect to Server and network browsing, read-only disks, the icons'
+  reflow animation.
+
+### Step 6 so far: the Open / Save panels and the portal
+
+- chooser.rs: a Files window with a say in it (`window::Embed`: what
+  shows, what a double-click does, when the accept button updates); no
+  tabs, its own size. `sonata2-rs chooser open|save|folder` opens one on
+  its own and prints the answer.
+- `sonata-portal` (`sonata2-rs portal`): FileChooser (OpenFile,
+  SaveFile, SaveFiles with the Request's Close), Settings (from
+  `sonata_config::prefs`, the port of prefs.py's reading half, and
+  org.freedesktop.appearance; SettingChanged when system.json or
+  appearance.json change) and Access. Never on trial: the Python portal
+  owns the bus name. The panel is kept above the asking app through
+  Wayfire's IPC; the xdg-foreign parenting (GdkWayland) isn't there yet.

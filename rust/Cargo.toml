@@ -27,6 +27,7 @@ members = [
     "apps/calendar",
     "apps/activity",
     "apps/files",
+    "apps/portal",
     "apps/sonata2-rs",
 ]
 
@@ -90,6 +91,7 @@ sonata-diskutil = { path = "apps/diskutil" }
 sonata-calendar = { path = "apps/calendar" }
 sonata-activity = { path = "apps/activity" }
 sonata-files = { path = "apps/files" }
+sonata-portal = { path = "apps/portal" }
 
 [profile.release]
 lto = "thin"

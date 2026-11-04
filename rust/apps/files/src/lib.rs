@@ -2,6 +2,7 @@
 
 pub mod actions;
 pub mod batchrename;
+pub mod chooser;
 pub mod folder;
 pub mod folderprefs;
 pub mod ops;

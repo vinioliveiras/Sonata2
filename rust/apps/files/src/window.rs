@@ -163,7 +163,22 @@ pub struct FilesWindow {
     enter_src: RefCell<Option<glib::SourceId>>,
     title_entry: RefCell<Option<gtk::Entry>>,
     ql: RefCell<Option<Rc<crate::quicklook::QuickLook>>>,
+    /// The window's column right of the sidebar (the Open / Save panels add rows to it).
+    pub content: gtk::Box,
+    tabs_on: bool,
+    /// An Open / Save panel's say in what shows and what a double-click does.
+    pub embed: RefCell<Option<Embed>>,
     pub me: Weak<FilesWindow>,
+}
+
+/// The Open / Save panels (chooser.rs) are a Files window with a say in it.
+pub struct Embed {
+    /// besides the search: does this item show
+    pub matches: Box<dyn Fn(&gio::FileInfo) -> bool>,
+    /// a double-click: true when the panel took it
+    pub open: Box<dyn Fn(&gio::FileInfo) -> bool>,
+    /// the selection or the folder changed
+    pub changed: Box<dyn Fn()>,
 }
 
 thread_local! {
@@ -178,11 +193,17 @@ fn icon_button(icon: &str, tip: &str, f: impl Fn() + 'static) -> gtk::Button {
 
 impl FilesWindow {
     pub fn new(app: &gtk::Application, uri: Option<&str>) -> Rc<Self> {
+        Self::new_with(app, uri, ("files", 920, 560), true)
+    }
+
+    /// `size`: (the key its size is kept under, default width, height);
+    /// `tabs` false: one folder only (the Open / Save panels).
+    pub fn new_with(app: &gtk::Application, uri: Option<&str>, size: (&str, i32, i32), tabs: bool) -> Rc<Self> {
         let c = cfg();
         let show_hidden = c.get("show_hidden").and_then(Value::as_bool).unwrap_or(false);
         let win = Rc::new_cyclic(|me: &Weak<FilesWindow>| {
             let window = adw::ApplicationWindow::builder().application(app).title(tr!("Files")).build();
-            sonata_ui::window::remember_size(window.upcast_ref(), "files", 920, 560);
+            sonata_ui::window::remember_size(window.upcast_ref(), size.0, size.1, size.2);
             for cl in ["sonata-files", "sonata-glass"] {
                 window.add_css_class(cl);
             }
@@ -361,9 +382,13 @@ impl FilesWindow {
                 enter_src: RefCell::default(),
                 title_entry: RefCell::default(),
                 ql: RefCell::default(),
+                content,
+                tabs_on: tabs,
+                embed: RefCell::default(),
                 me: me.clone(),
             }
         });
+        win.strip.root.set_visible(tabs);
         win.wire();
         let start = uri.map(folder::canonical).filter(|u| !u.is_empty() && u != folder::CONNECT).unwrap_or_else(|| gio::File::for_path(glib::home_dir()).uri().to_string());
         let view = c.get("view").and_then(Value::as_str).unwrap_or("icons").to_string();
@@ -438,7 +463,7 @@ impl FilesWindow {
         self.tab.borrow().clone()
     }
 
-    fn view(&self) -> Option<Rc<dyn View>> {
+    pub fn view(&self) -> Option<Rc<dyn View>> {
         self.cur().map(|t| t.view())
     }
 
@@ -546,6 +571,7 @@ impl FilesWindow {
             v.selection().connect_selection_changed(move |_, _, _| {
                 if let Some(win) = wq.upgrade() {
                     win.follow_quicklook();
+                    win.embed_changed();
                 }
             });
         }
@@ -593,6 +619,9 @@ impl FilesWindow {
     }
 
     fn open_in_new_tab(self: &Rc<Self>, info: &gio::FileInfo, select: bool) {
+        if !self.tabs_on {
+            return; // a panel shows one folder
+        }
         if is_dir(info) {
             let u = info.attribute_string("standard::target-uri").map(|s| s.to_string()).filter(|s| !s.is_empty()).or_else(|| file_of(info).map(|f| f.uri().to_string())).unwrap_or_default();
             self.new_tab(Some(&u), select);
@@ -658,8 +687,20 @@ impl FilesWindow {
         self.select_tab_rc(&tabs[(i + step).rem_euclid(tabs.len() as isize) as usize]);
     }
 
+    fn embed_changed(&self) {
+        if let Some(e) = self.embed.borrow().as_ref() {
+            (e.changed)();
+        }
+    }
+
     fn tab_loaded(&self, id: u64, uri: &str) {
         let Some(tab) = self.tab_by_id(id) else { return };
+        let me = self.me.clone();
+        glib::idle_add_local_once(move || {
+            if let Some(t) = me.upgrade() {
+                t.embed_changed();
+            }
+        });
         tab.loading(false);
         tab.name.replace(folder::display_name(uri));
         for (_, v) in tab.views() {
@@ -788,10 +829,13 @@ impl FilesWindow {
             return true; // the search already matched them
         }
         let q = self.search.text().trim().to_lowercase();
-        q.is_empty() || info.display_name().to_lowercase().contains(&q)
+        if !q.is_empty() && !info.display_name().to_lowercase().contains(&q) {
+            return false;
+        }
+        self.embed.borrow().as_ref().is_none_or(|e| (e.matches)(info))
     }
 
-    fn refilter(&self) {
+    pub fn refilter(&self) {
         if let Some(t) = self.cur() {
             t.filter.changed(gtk::FilterChange::Different);
         }
@@ -969,6 +1013,14 @@ impl FilesWindow {
 
     // -- opening ----------------------------------------------------------------------------------
     pub fn open_item(&self, info: &gio::FileInfo) {
+        if self.embed.borrow().as_ref().is_some_and(|e| (e.open)(info)) {
+            return;
+        }
+        self.open_folder_or_file(info);
+    }
+
+    /// Folders open here; files in their app.
+    pub fn open_folder_or_file(&self, info: &gio::FileInfo) {
         let Some(f) = file_of(info) else { return };
         let target = info.attribute_string("standard::target-uri").map(|s| s.to_string()).filter(|s| !s.is_empty());
         if is_dir(info) {
@@ -1214,7 +1266,7 @@ impl FilesWindow {
         }
     }
 
-    fn new_folder(&self) {
+    pub fn new_folder(&self) {
         if !self.writable_here() {
             return;
         }
@@ -1899,6 +1951,9 @@ impl FilesWindow {
     /// ⌘T, ⌘W, Ctrl+Tab / Ctrl+Shift+Tab, ⌘⇧[ / ⌘⇧].
     fn tab_keys(self: &Rc<Self>, keyval: gdk::Key, state: gdk::ModifierType) -> bool {
         use gdk::Key;
+        if !self.tabs_on {
+            return false;
+        }
         let ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
         let cmd = ctrl || state.contains(gdk::ModifierType::SUPER_MASK);
         let shift = state.contains(gdk::ModifierType::SHIFT_MASK);

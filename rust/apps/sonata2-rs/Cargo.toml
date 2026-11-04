@@ -23,6 +23,7 @@ sonata-feedback.workspace = true
 sonata-diskutil.workspace = true
 sonata-calendar.workspace = true
 sonata-files.workspace = true
+sonata-portal.workspace = true
 sonata-activity.workspace = true
 sonata-config.workspace = true
 sonata-session.workspace = true
