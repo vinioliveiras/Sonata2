@@ -581,3 +581,27 @@ stay behind `--features ui-tests` and run only under
 - Steam games' processes show the game (steam.rs: the appmanifest's
   name, Steam's icon as is -- not yet on the plate the Python icons
   module draws).
+
+### Step 6 so far: Files
+
+- `sonata-files`, in the main binary (`sonata2-rs files [FOLDER...]`,
+  "Files (Rust)" on trial; no file types then, so folders and the Trash
+  still open in the Python Files, which also keeps FileManager1).
+- Data layer: ops.rs (names, new folder, rename, shortcuts, the Trash,
+  copy / move with the progress window and "Apply to All", the
+  clipboard), undo.rs, tags.rs (xattrs and the index), folderprefs.rs,
+  actions.rs (compress, copy path, rotate / convert pictures),
+  batchrename.rs (Rename N Items), peicon.rs (Windows programs' icons).
+- folder.rs (the live listing: Recents, Applications, tags and real
+  folders, sorted and bisected like Python), thumbs.rs (two worker
+  threads), search.rs (this computer / here, name / contents, kind and
+  date). `gio::FileInfo` is not Send: workers return paths and the main
+  loop queries the info.
+- The UI: views.rs (Icons, List, Columns, rename in place, drag and
+  drop, spring-loaded folders), sidebar.rs, pathbar.rs, tabs.rs,
+  quicklook.rs (Quick Look and Get Info with Open with and Sharing &
+  Permissions) and window.rs (tabs, toolbar, search bar, context
+  menus, the Finder keys, undo / redo).
+- Not yet: vault (locked folders), packages (install / extract),
+  Connect to Server and network browsing, read-only disks, the file
+  chooser / portal, the icons' reflow animation.

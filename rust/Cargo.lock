@@ -1691,6 +1691,7 @@ dependencies = [
  "sonata-config",
  "sonata-diskutil",
  "sonata-feedback",
+ "sonata-files",
  "sonata-i18n",
  "sonata-lock",
  "sonata-notes",

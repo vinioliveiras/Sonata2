@@ -177,6 +177,21 @@ pub fn activity_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
+/// Files' entry (files_desktop_file). On trial it takes no file types:
+/// the Python Files stays what opens folders and the Trash.
+pub fn files_entry(exec: &str) -> (String, String) {
+    let trial = sonata_config::side_by_side();
+    let id = sonata_files::app_id();
+    let name = if trial { sonata_i18n::n_!("Files (Rust)") } else { "Files" };
+    let mime = if trial { "" } else { "MimeType=inode/directory;x-scheme-handler/trash;\n" };
+    let text = format!(
+        "[Desktop Entry]\nType=Application\nName={name}\nComment=Browse your files\nIcon=system-file-manager\n\
+         Categories=System;FileManager;Utility;\n{mime}StartupNotify=true\nExec={} files %U\n",
+        quote(exec)
+    );
+    (format!("{id}.desktop"), text)
+}
+
 /// Calendar's entry (calendar_desktop_file). On trial it takes no file
 /// types: the Python Calendar stays what opens .ics files.
 pub fn calendar_entry(exec: &str) -> (String, String) {
@@ -270,7 +285,7 @@ pub fn write_all() -> io::Result<Vec<PathBuf>> {
     let folder = data_home().join("applications");
     let mut written = Vec::new();
     let exec = launcher();
-    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec), notes_entry(&exec), terminal_entry(&exec), feedback_entry(&exec), diskutil_entry(&exec), camera_entry(&exec), videos_entry(&exec), assistant_entry(&exec), calendar_entry(&exec), activity_entry(&exec)] {
+    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec), notes_entry(&exec), terminal_entry(&exec), feedback_entry(&exec), diskutil_entry(&exec), camera_entry(&exec), videos_entry(&exec), assistant_entry(&exec), calendar_entry(&exec), activity_entry(&exec), files_entry(&exec)] {
         let text = localize(&text, &catalogs);
         let path = folder.join(file);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {

@@ -17,6 +17,7 @@
 //!   sonata2-rs camera                              Camera (sonata2-rs-camera: only it needs GStreamer)
 //!   sonata2-rs videos [FILE...]                    Videos (sonata2-rs-videos, the same)
 //!   sonata2-rs calendar [FILE.ics...]             Calendar
+//!   sonata2-rs files [FOLDER...] [--background]   Files
 //!   sonata2-rs activity                            Task Manager
 //!   sonata2-rs assistant                           Assistant (sonata2-rs-assistant: libsoup, libsecret)
 //!   sonata2-rs key <volume-up|volume-down|volume-mute|brightness-up|
@@ -34,7 +35,7 @@ mod desktop;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -83,6 +84,10 @@ fn main() -> ExitCode {
         "assistant" => ExitCode::from(own_binary("assistant", &args[1..], "libsoup and libsecret") as u8),
         "activity" => {
             let code = sonata_activity::run(&args[1..]);
+            ExitCode::from(code.value() as u8)
+        }
+        "files" => {
+            let code = sonata_files::run(&args[1..]);
             ExitCode::from(code.value() as u8)
         }
         "calendar" => {

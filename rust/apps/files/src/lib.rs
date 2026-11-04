@@ -1,11 +1,13 @@
 //! Files (sonata2/files/): Sonata's file manager (macOS Finder look and behaviour).
 
 pub mod actions;
+pub mod batchrename;
 pub mod folder;
 pub mod folderprefs;
 pub mod ops;
 pub mod pathbar;
 pub mod peicon;
+pub mod quicklook;
 pub mod search;
 pub mod sidebar;
 pub mod tabs;
@@ -13,3 +15,125 @@ pub mod tags;
 pub mod thumbs;
 pub mod undo;
 pub mod views;
+pub mod window;
+
+use gtk::prelude::*;
+
+/// The app id: on trial its own (`sonata2rs`), so both Files can be open.
+pub fn app_id() -> &'static str {
+    if sonata_config::side_by_side() {
+        "io.github.vinioliveiras.sonata2rs.files"
+    } else {
+        "io.github.vinioliveiras.sonata2.files"
+    }
+}
+
+/// A new Files window per launch (like Finder's File > New Window); a file
+/// opens its folder with it selected.
+pub fn open_uris(app: &gtk::Application, uris: &[String]) {
+    let none = [String::new()];
+    for uri in if uris.is_empty() { &none[..] } else { uris } {
+        let mut uri = if uri.is_empty() { None } else { Some(folder::canonical(uri)) };
+        if uri.as_deref() == Some(folder::CONNECT) {
+            uri = None; // Connect to Server is the Python Files' for now
+        }
+        let mut reveal = None;
+        if let Some(u) = uri.clone() {
+            let f = gio::File::for_uri(&u);
+            let t = f.query_file_type(gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE);
+            if !matches!(t, gio::FileType::Directory | gio::FileType::Unknown) {
+                if let Some(p) = f.parent() {
+                    reveal = Some(ops::base(&f));
+                    uri = Some(p.uri().to_string());
+                }
+            }
+        }
+        let w = window::present(app, uri.as_deref(), true);
+        if let Some(n) = reveal {
+            w.reveal(&n);
+        }
+    }
+}
+
+/// org.freedesktop.FileManager1 (apps' "Show in Folder"): served only by
+/// the real Files, never on trial (the Python one keeps it).
+fn serve_file_manager(app: &gtk::Application) {
+    const XML: &str = r#"<node><interface name="org.freedesktop.FileManager1">
+  <method name="ShowFolders"><arg type="as" name="URIs" direction="in"/><arg type="s" name="StartupId" direction="in"/></method>
+  <method name="ShowItems"><arg type="as" name="URIs" direction="in"/><arg type="s" name="StartupId" direction="in"/></method>
+  <method name="ShowItemProperties"><arg type="as" name="URIs" direction="in"/><arg type="s" name="StartupId" direction="in"/></method>
+</interface></node>"#;
+    let Some(conn) = app.dbus_connection() else { return };
+    let Ok(node) = gio::DBusNodeInfo::for_xml(XML) else { return };
+    let Some(iface) = node.lookup_interface("org.freedesktop.FileManager1") else { return };
+    let a = app.downgrade();
+    let reg = conn
+        .register_object("/org/freedesktop/FileManager1", &iface)
+        .method_call(move |_, _, _, _, method, params, inv| {
+            let uris: Vec<String> = params.child_value(0).get().unwrap_or_default();
+            if let Some(app) = a.upgrade() {
+                if method == "ShowItemProperties" {
+                    for u in &uris {
+                        let f = gio::File::for_uri(u);
+                        if let Ok(info) = f.query_info(folder::ATTRS, gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE) {
+                            info.set_attribute_object("sonata::file", &f);
+                            let w = gtk::Window::new();
+                            w.set_application(Some(&app));
+                            quicklook::get_info(&w, &info);
+                        }
+                    }
+                } else {
+                    open_uris(&app, &uris);
+                }
+            }
+            inv.return_value(None);
+        })
+        .build();
+    if reg.is_ok() {
+        std::mem::forget(gio::bus_own_name_on_connection(&conn, "org.freedesktop.FileManager1", gio::BusNameOwnerFlags::REPLACE, |_, _| {}, |_, _| {}));
+    }
+}
+
+pub fn run(args: &[String]) -> glib::ExitCode {
+    let app = gtk::Application::builder().application_id(app_id()).flags(gio::ApplicationFlags::HANDLES_OPEN).build();
+    let force = args.iter().find_map(|a| match a.as_str() {
+        "--dark" => Some("dark"),
+        "--light" => Some("light"),
+        _ => None,
+    });
+    let background = args.iter().any(|a| a == "--background");
+    let ready = std::rc::Rc::new(std::cell::Cell::new(false));
+    let start = move |app: &gtk::Application| {
+        if !ready.replace(true) {
+            if glib::application_name().is_none() {
+                glib::set_application_name("Files");
+            }
+            sonata_ui::setup();
+            if let Some(f) = force {
+                sonata_ui::force_appearance(f);
+            }
+            sonata_ui::css::register_module("files/window.py");
+            if !sonata_config::side_by_side() {
+                serve_file_manager(app);
+            }
+        }
+    };
+    let s = start.clone();
+    app.connect_open(move |app, files, _| {
+        s(app);
+        open_uris(app, &files.iter().map(|f| f.uri().to_string()).collect::<Vec<_>>());
+    });
+    let resident = std::rc::Rc::new(std::cell::Cell::new(false));
+    app.connect_activate(move |app| {
+        start(app);
+        if background && !resident.replace(true) {
+            // at login: resident like Finder, so every window opens at once
+            std::mem::forget(app.hold());
+            return;
+        }
+        open_uris(app, &[]);
+    });
+    let mut argv = vec![std::env::args().next().unwrap_or_default()];
+    argv.extend(args.iter().filter(|a| !a.starts_with("--")).map(|a| gio::File::for_commandline_arg(a).uri().to_string()));
+    app.run_with_args(&argv)
+}
