@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Emoji & Symbols and the clipboard history paste into the Instagram web app (and other Chrome pages) again: their Ctrl+V went through wtype, which gives a key a made-up keycode, and Chrome dropped it. It now goes out with V's real keycode, like the menu bar's New Tab.
 - Web apps: a WhatsApp web app no longer opens Chrome by itself. Its browser runs apart from the launch (in its memory-capped scope), so the Dock thought it showed no window, killed it and opened it again, and the next launch sent the site to Chrome. The Dock now sees its window by its app id. Making a web app for a site that already has one gives you that one: two of them share one window id and got mixed up.
 - Menus, menu bar panels and other popups (Control Center too) appear and go at once: Wayfire faded each one in and out for 123 ms, every frame of it a blur pass behind the panel. Control Center's own work to open is about 3 ms, so that fade was the delay you saw. Takes effect from the next login (or Restart Sonata).
 - Game Bar and Control Center: the Video Memory card (and every graph card) shows its figure whole, "9.5 / 16 GB", and cuts the title instead; the two used to share the space and the GB lost its start.

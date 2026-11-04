@@ -1,12 +1,10 @@
 """Character Viewer, compact (macOS Big Sur Ctrl+Cmd+Space): a small
 panel with a search field, the emoji of one category (Frequently Used
 first) and the category tabs at the bottom. Picking one types it into the
-window that had focus (pasted with Ctrl+V through wtype, when installed)
+window that had focus (pasted with Ctrl+V, its real keycode: clip_picker.paste)
 and leaves it on the clipboard. Lazy grid (GridView): only the visible cells exist.
 Data: sonata2/data/emoji.tsv (tools/gen-emoji.py)."""
 import os
-import shutil
-import subprocess
 
 import gi
 
@@ -157,12 +155,11 @@ class EmojiPicker(Gtk.Window):
         config.save("emoji", self.cfg)
         self.get_display().get_clipboard().set(e)
         self.set_visible(False)
-        if shutil.which("wtype"):
-            # pasted (Ctrl+V; Ctrl+Shift+V in a terminal) once the keyboard is
-            # back on the app: typed as keys (wtype -- e), Chromium and Electron
-            # apps (WhatsApp) turned emoji into other characters (Vini)
-            from .clip_picker import paste_keys
-            GLib.timeout_add(180, lambda: (subprocess.Popen(["wtype"] + paste_keys()), False)[1])
+        # pasted (Ctrl+V; Ctrl+Shift+V in a terminal) once the keyboard is
+        # back on the app, never typed as keys: Chromium and Electron apps
+        # (WhatsApp) turned typed emoji into other characters (Vini)
+        from .clip_picker import paste
+        GLib.timeout_add(180, lambda: (paste(), False)[1])
 
     def _key(self, _c, keyval, _code, _state):
         if keyval == Gdk.KEY_Escape:
