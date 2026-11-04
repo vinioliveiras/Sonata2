@@ -1,8 +1,8 @@
 # Porting Sonata 2 to Rust
 
-Status: **step 1 done** (foundations + Calculator, tried in Vini's
-session), **step 2 started**: Clock ported, builds, its tests pass; not
-tried in a session yet. Branch `claude/rust-port-fdcd02`.
+Status: **step 1 done** (foundations + Calculator), **step 2 under way**:
+Clock (tried in Vini's session) and TextEdit ported; TextEdit builds and
+its tests pass, not tried in a session yet. Branch `claude/rust-port-fdcd02`.
 The Python code stays the working Sonata on this branch until a
 component's Rust replacement is ready; the Wayfire plugin
 (`wayfire-plugin/`, C++) stays as it is.
@@ -210,6 +210,9 @@ languages, and Vini says so. Then `__main__.py` (or the session's
   (wrong types, extra keys, missing files) like `config.load()` does:
   `serde_json::Value` merged over defaults, never strict structs that
   reject a file. Ported with tests built from real config files.
+- **libadwaita 1.5.** The Rust alerts use AlertDialog (1.5); the Python
+  code falls back to MessageDialog on 1.4. Distributions with 1.4 only
+  (none that Sonata supports today, docs/GUIDE.md) would need that fallback.
 - **Build tooling.** Rust is not installed on Vini's machine yet
   (`pacman -S rust` or rustup). `install.sh` will need cargo, and
   distributions with an old rustc may lag behind the gtk4-rs MSRV.
@@ -263,4 +266,23 @@ stay behind `--features ui-tests` and run only under
 - `sonata-clock`: alarms and timers (the same files, the same JSON text,
   unknown keys kept; tests from tests/test_clock*.py), the sound preview,
   Alarms with the edit popover, Stopwatch with laps, Timers with the ring.
-  Not ported: ringing (the menu bar's), menus' submenus and checks.
+  Not ported: ringing (the menu bar's).
+
+### Step 2 so far: TextEdit
+
+- `sonata-ui` grew alerts (ui/dialog.py, on libadwaita's AlertDialog),
+  panels (ui/panel.py), menus with checks after the text and submenus, tab
+  bar visibility (always_show_tabs).
+- `sonata-textedit`: the file formats (UTF-8 / UTF-16 / Windows and ISO
+  Latin 1 with Python's exact codec rules, line endings, .docx / .odt /
+  .rtf as read-only text), Find & Replace (Python-style `\1` replacements),
+  the session (hot exit, own folder on trial: `sonata2-rs-data/textedit`,
+  so the two TextEdits never undo each other's windows), GtkSourceView
+  with the Sonata scheme, tabs, status bar menus, Go to Line, drops.
+- Differences from Python, on purpose for now: Open / Save are
+  GtkFileDialog, which a Sonata session sends through the file chooser
+  portal to Sonata's own panels (`GDK_DEBUG=portals`); outside a Sonata
+  session they are GTK's. On trial the entry claims no file types (the
+  Python TextEdit stays the one that opens text files). Not ported: the
+  tabs' glide, the first-size "roomy" window, the plain-TextView fallback
+  without GtkSourceView.

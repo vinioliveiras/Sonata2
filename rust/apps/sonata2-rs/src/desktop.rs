@@ -92,6 +92,32 @@ pub fn clock_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
+/// TextEdit's entry ("TextEdit (Rust)" on trial). On trial it claims no
+/// file types: the Python TextEdit stays what opens text files; try the
+/// Rust one with `sonata2-rs textedit FILE`.
+pub fn textedit_entry(exec: &str) -> (String, String) {
+    let id = sonata_textedit::app_id();
+    let trial = sonata_config::side_by_side();
+    let name = if trial { sonata_i18n::n_!("TextEdit (Rust)") } else { "TextEdit" };
+    let mime = if trial {
+        String::new()
+    } else {
+        "MimeType=text/plain;text/markdown;text/x-log;application/x-shellscript;text/x-python;application/json;text/csv;\
+         text/x-csrc;text/x-chdr;text/x-c++src;text/javascript;text/css;text/html;application/xml;application/x-yaml;\
+         application/toml;text/rtf;application/vnd.openxmlformats-officedocument.wordprocessingml.document;\
+         application/vnd.oasis.opendocument.text;\n"
+            .to_string()
+    };
+    let exec = quote(exec);
+    let text = format!(
+        "[Desktop Entry]\nType=Application\nName={name}\nComment=Write and edit plain text documents\n\
+         Icon=accessories-text-editor\nCategories=Utility;TextEditor;\n{mime}StartupNotify=true\n\
+         Exec={exec} textedit %F\nActions=new-window;\n\n[Desktop Action new-window]\nName=New Window\n\
+         Exec={exec} textedit --new-window\n"
+    );
+    (format!("{id}.desktop"), text)
+}
+
 /// Write every ported app's entry (only when it changed); the paths written.
 pub fn write_all() -> io::Result<Vec<PathBuf>> {
     let dir = sonata_i18n::locale_dir();
@@ -99,7 +125,7 @@ pub fn write_all() -> io::Result<Vec<PathBuf>> {
     let folder = data_home().join("applications");
     let mut written = Vec::new();
     let exec = launcher();
-    for (file, text) in [calculator_entry(&exec), clock_entry(&exec)] {
+    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec)] {
         let text = localize(&text, &catalogs);
         let path = folder.join(file);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {

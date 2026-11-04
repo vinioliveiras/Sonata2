@@ -141,3 +141,24 @@ pub fn remember_size(win: &gtk::Window, key: &str, w: i32, h: i32) {
     win.connect_default_height_notify(move |w| s(w));
     win.connect_maximized_notify(move |w| soon(w));
 }
+
+/// set_default_size() that never opens a window bigger than the display.
+pub fn fit_default_size(win: &gtk::Window, w: i32, h: i32) {
+    let (sw, sh) = screen_size(win).unwrap_or((w, h));
+    win.set_default_size(w.min(sw), h.min(sh));
+}
+
+// -- tab bars (Terminal, Files, TextEdit) ---------------------------------------------------------
+const TABS_KEY: &str = "always_show_tabs";
+
+/// A window's tab bar shows with more than one tab -- or always, the
+/// Settings > Appearance choice (on by default, like Safari's "Always show
+/// tab bar").
+pub fn tab_bar_shown(count: usize) -> bool {
+    count > 1 || sonata_config::load("appearance", &json!({TABS_KEY: true})).get(TABS_KEY).and_then(Value::as_bool).unwrap_or(true)
+}
+
+/// Call `refresh` again whenever that choice changes; keep the monitors.
+pub fn follow_tab_bar<F: Fn() + 'static>(refresh: F) -> Vec<gtk::gio::FileMonitor> {
+    sonata_config::watch("appearance", refresh)
+}

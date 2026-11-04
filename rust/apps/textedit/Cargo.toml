@@ -1,0 +1,26 @@
+[package]
+name = "sonata-textedit"
+description = "TextEdit (plain text, tabs, nothing lost) -- ported from sonata2/textedit/"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["gui"]
+# the window; without it only the file formats, search and session build
+gui = ["dep:gtk", "dep:adw", "dep:sonata-ui", "dep:sourceview5"]
+
+[dependencies]
+serde_json.workspace = true
+regex.workspace = true
+zip.workspace = true
+roxmltree.workspace = true
+sonata-config.workspace = true
+sonata-i18n.workspace = true
+gtk = { workspace = true, optional = true }
+adw = { workspace = true, optional = true }
+sonata-ui = { workspace = true, optional = true }
+sourceview5 = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -9,8 +9,10 @@
 
 pub mod controls;
 pub mod css;
+pub mod dialog;
 pub mod glass;
 pub mod menu;
+pub mod panel;
 pub mod theme;
 pub mod tokens;
 pub mod window;

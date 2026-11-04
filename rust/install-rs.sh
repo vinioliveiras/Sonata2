@@ -50,6 +50,6 @@ SONATA2_RS_LAUNCHER="$BIN/sonata2-rs" "$BIN/sonata2-rs" desktop-files
 update-desktop-database "$APPS" 2>/dev/null || true
 
 echo
-echo "Installed next to Sonata: \"Calculator (Rust)\" and \"Clock (Rust)\" are in Launchpad,"
-echo "or run: sonata2-rs calculator / sonata2-rs clock"
+echo "Installed next to Sonata: \"Calculator (Rust)\", \"Clock (Rust)\" and \"TextEdit (Rust)\" are in Launchpad,"
+echo "or run: sonata2-rs calculator / sonata2-rs clock / sonata2-rs textedit [FILE]"
 echo "Remove it with: rust/install-rs.sh --uninstall"

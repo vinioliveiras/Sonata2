@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 sonata-calculator.workspace = true
 sonata-clock.workspace = true
+sonata-textedit.workspace = true
 sonata-config.workspace = true
 sonata-i18n.workspace = true
 

@@ -277,6 +277,23 @@ pub fn data_dir(app: &str) -> PathBuf {
     dir
 }
 
+/// An app's own data, never shared with the Python app on trial:
+/// `$XDG_DATA_HOME/sonata2-rs-data/<app>` then (TextEdit's session: two
+/// TextEdits writing one would undo each other's windows), `sonata2-data`
+/// once final. Created.
+pub fn own_data_dir(app: &str) -> PathBuf {
+    if !side_by_side() {
+        return data_dir(app);
+    }
+    let base = match std::env::var_os("XDG_DATA_HOME") {
+        Some(v) if !v.is_empty() => PathBuf::from(v),
+        _ => home().join(".local").join("share"),
+    };
+    let dir = base.join("sonata2-rs-data").join(app);
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
 /// Follow one file (a data file, not a setting): `callback` when it
 /// changes on disk. Keep the monitor alive.
 #[cfg(feature = "watch")]

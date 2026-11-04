@@ -225,7 +225,7 @@ impl Clock {
                 if let Some(c) = w2.upgrade() {
                     c.delete(&id);
                 }
-            })]], Some((x, y)));
+            })]], menu::Options::at(x, y));
         });
         row.add_controller(click);
         row

@@ -182,6 +182,8 @@ pub fn setup() {
     crate::window::register_css();
     crate::controls::register_css();
     crate::menu::register_css();
+    crate::dialog::register_css();
+    crate::panel::register_css();
     adw::StyleManager::default().connect_dark_notify(|_| load());
     let mut monitors = sonata_config::watch("appearance", load);
     monitors.extend(sonata_config::watch("dock", load)); // its old "glass" switch (glass.rs)
