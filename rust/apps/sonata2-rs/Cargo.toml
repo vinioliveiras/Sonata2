@@ -27,6 +27,7 @@ sonata-portal.workspace = true
 sonata-greeter.workspace = true
 sonata-notifications.workspace = true
 sonata-clipboard.workspace = true
+sonata-gamebar.workspace = true
 sonata-activity.workspace = true
 sonata-config.workspace = true
 sonata-session.workspace = true
