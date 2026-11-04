@@ -21,6 +21,7 @@ members = [
     "apps/terminal",
     "apps/feedback",
     "apps/diskutil",
+    "apps/camera",
     "apps/sonata2-rs",
 ]
 
@@ -58,6 +59,8 @@ base64 = "0.22"
 gtk4-layer-shell = "0.5"
 gtk4-session-lock = "0.1.2"
 vte4 = "0.8"
+gstreamer = "0.23"
+gstreamer-video = "0.23"
 
 sonata-config = { path = "crates/sonata-config" }
 sonata-i18n = { path = "crates/sonata-i18n" }

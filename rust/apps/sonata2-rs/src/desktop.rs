@@ -144,6 +144,20 @@ pub fn feedback_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
+/// Camera's entry (camera_desktop_file).
+pub fn camera_entry(exec: &str) -> (String, String) {
+    let trial = sonata_config::side_by_side();
+    let id = if trial { "io.github.vinioliveiras.sonata2rs.camera" } else { "io.github.vinioliveiras.sonata2.camera" };
+    let name = if trial { sonata_i18n::n_!("Camera (Rust)") } else { "Camera" };
+    let text = format!(
+        "[Desktop Entry]\nType=Application\nName={name}\nComment=Take photos and videos with your camera\nIcon=camera\n\
+         Categories=AudioVideo;Video;Recorder;\nKeywords=photo;video;webcam;selfie;picture;record;\nStartupNotify=true\n\
+         Exec={} camera\n",
+        quote(exec)
+    );
+    (format!("{id}.desktop"), text)
+}
+
 /// Terminal's entry (terminal_desktop_file). On trial it isn't a
 /// TerminalEmulator: the Python Terminal stays the one the system picks.
 pub fn terminal_entry(exec: &str) -> (String, String) {
@@ -195,7 +209,7 @@ pub fn write_all() -> io::Result<Vec<PathBuf>> {
     let folder = data_home().join("applications");
     let mut written = Vec::new();
     let exec = launcher();
-    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec), notes_entry(&exec), terminal_entry(&exec), feedback_entry(&exec), diskutil_entry(&exec)] {
+    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec), notes_entry(&exec), terminal_entry(&exec), feedback_entry(&exec), diskutil_entry(&exec), camera_entry(&exec)] {
         let text = localize(&text, &catalogs);
         let path = folder.join(file);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {

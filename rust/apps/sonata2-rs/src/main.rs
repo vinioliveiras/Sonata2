@@ -14,6 +14,7 @@
 //!   sonata2-rs feedback                            Feedbacker: report a problem
 //!   sonata2-rs terminal [--new-window] [--exec CMD] [FOLDER...]   Terminal
 //!                                                  (sonata2-rs-terminal: only it needs libvte)
+//!   sonata2-rs camera                              Camera (sonata2-rs-camera: only it needs GStreamer)
 //!   sonata2-rs key <volume-up|volume-down|volume-mute|brightness-up|
 //!                  brightness-down|play-pause|next|previous>   a media key
 //!   sonata2-rs screenshot [screen|area|edit]    a screenshot (the menu bar's, else grim)
@@ -29,7 +30,7 @@ mod desktop;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -73,6 +74,7 @@ fn main() -> ExitCode {
             ExitCode::from(code.value() as u8)
         }
         "terminal" => ExitCode::from(terminal(&args[1..]) as u8),
+        "camera" => ExitCode::from(camera(&args[1..]) as u8),
         "diskutil" => {
             let code = sonata_diskutil::run(&args[1..]);
             ExitCode::from(code.value() as u8)
@@ -110,13 +112,23 @@ fn main() -> ExitCode {
     }
 }
 
-/// Terminal is a binary of its own (only it needs libvte): the one next to
-/// this one, else in $PATH. Replaces this process.
-fn terminal(args: &[String]) -> i32 {
+/// Apps with a library the rest must not need (Terminal: libvte; Camera:
+/// GStreamer) are binaries of their own: the one next to this one, else
+/// in $PATH. Replaces this process; `missing` says what to install.
+fn own_binary(name: &str, args: &[String], missing: &str) -> i32 {
     use std::os::unix::process::CommandExt;
-    let beside = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("sonata2-rs-terminal"))).filter(|p| p.exists());
-    let exe = beside.map(|p| p.into_os_string()).unwrap_or_else(|| "sonata2-rs-terminal".into());
+    let file = format!("sonata2-rs-{name}");
+    let beside = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join(&file))).filter(|p| p.exists());
+    let exe = beside.map(|p| p.into_os_string()).unwrap_or_else(|| file.into());
     let err = std::process::Command::new(&exe).args(args).exec();
-    eprintln!("sonata2-rs: terminal: {err} ({})", sonata_i18n::tr!("Terminal needs VTE for GTK 4 (package vte4 / gir1.2-vte-3.91)."));
+    eprintln!("sonata2-rs: {name}: {err} ({missing})");
     1
+}
+
+fn terminal(args: &[String]) -> i32 {
+    own_binary("terminal", args, &sonata_i18n::tr!("Terminal needs VTE for GTK 4 (package vte4 / gir1.2-vte-3.91)."))
+}
+
+fn camera(args: &[String]) -> i32 {
+    own_binary("camera", args, "GStreamer")
 }

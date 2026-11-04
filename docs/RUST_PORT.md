@@ -486,3 +486,21 @@ stay behind `--features ui-tests` and run only under
   as a system one meanwhile is refused then).
 - sonata-ui gains `dialog::ask_text`; the CSS exporter reads
   `"""...""" + computed` registrations too.
+
+### Step 6 so far: Camera
+
+- `sonata2-rs-camera`, a binary of its own like Terminal's
+  (`sonata2-rs camera` starts it): only it links GStreamer (gstreamer-rs
+  0.23, the glib 0.20 one). camera/: the engine (device monitor, V4L2
+  first; decodebin, mirror, tee; GTK 4 paintable sink, else an appsink
+  whose frames reach the window through the main context; the photo from
+  the last sample; recording with the GPU's H.264 encoder first, AAC from
+  the microphone, or VP8/Opus; an encoder setting this version can't read
+  is left at its default, never a panic) and the window (modes, timer,
+  screen flash, the last capture with Open / Show in Files / Move to
+  Trash, options, keys).
+- `sonata-backend::userdirs`: userdirs.py (Pictures and Videos found by
+  their usual names when user-dirs.dirs has none).
+- Not tested with a real camera yet: no GUI or device test runs on
+  Vini's machine. A cloud session could run them once the branch is
+  pushed.
