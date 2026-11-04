@@ -397,3 +397,27 @@ stay behind `--features ui-tests` and run only under
 - Found on the way: serde_json's fast float parser read some numbers one
   bit off (a Notes timestamp changed on save); `float_roundtrip` is on now,
   with a test.
+
+### Step 4 so far: Spotlight, and Sonata's icons
+
+- `sonata-ui::icons`: icons.py -- Sonata's icon themes first, app icons
+  under every name they may have, the user's App Icons choices, and the
+  plate for apps without Sonata artwork (a tile's own colour, a logo keyed
+  out of its tile, discs and squares filling the frame). The plated icons
+  are cached under the Python names and stamps (~/.cache/sonata2/app-icons),
+  so either build reuses the other's. The plate's outline is a cairo mask:
+  icons.py fills a GSK path, which needs GTK 4.14. The picture analysis is
+  checked against icons.py's own on the same pixels.
+- `sonata_ui::setup()` now sets Sonata's icon theme, as ui.setup does in
+  every Python app: the Rust apps had been using the system's icons.
+- `sonata-ui::fixed`: FixedWidth (ui/fixed.py). CSS templates fill
+  `%(name)d` too, and the exporter resolves a module's own constants
+  (`open_ms=OPEN_MS`).
+- `sonata2-rs spotlight [--background] [--search TEXT]`: spotlight.py --
+  the calculator (its own small parser, Python's rules; checked against
+  calculate() on the same sums), the home folder's index, Launchpad's app
+  ranking, the preview, the layout on short displays.
+- Not ported yet in Spotlight: opening a package, AppImage, archive or
+  script (files/packages.py: they open with their default app), and the
+  hidden warm-up draw (layer.prewarm). Folders open in the Python Files.
+- install-rs.sh links the icon themes (125 MB) instead of copying them.

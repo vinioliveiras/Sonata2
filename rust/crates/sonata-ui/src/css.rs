@@ -48,7 +48,7 @@ pub fn blocks(module: &str) -> Vec<(String, String, Values)> {
                 .map(|m| m.iter().map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string())).collect())
                 .unwrap_or_default();
             for (k, v) in frame() {
-                if css.contains(&format!("%({k})s")) && !local.contains_key(k) {
+                if (css.contains(&format!("%({k})s")) || css.contains(&format!("%({k})d"))) && !local.contains_key(k) {
                     local.insert(k.clone(), v.clone());
                 }
             }
@@ -78,7 +78,7 @@ mod tests {
             for (key, css, local) in blocks(module) {
                 let mut rest = css.as_str();
                 while let Some(i) = rest.find("%(") {
-                    let end = rest[i..].find(")s").map(|e| i + e).unwrap();
+                    let end = rest[i..].find(')').map(|e| i + e).unwrap();
                     let name = &rest[i + 2..end];
                     assert!(known.contains_key(name) || local.contains_key(name), "{module} {key}: no {name}");
                     rest = &rest[end..];

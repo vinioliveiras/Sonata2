@@ -188,5 +188,15 @@
    "css": "\n.gr-user { background: none; border: none; box-shadow: none; padding: 8px; border-radius: 14px;\n  transition: background-color 180ms ease-out, transform 180ms ease-out; }\n.gr-user:hover { background: rgba(255,255,255,0.12); }\n.gr-user:active { transform: scale(0.96); }\n.gr-power { min-width: 44px; min-height: 44px; padding: 0; border-radius: 99px; border: none;\n  transition: background-color 160ms ease-out, transform 160ms ease-out;\n  background: rgba(255,255,255,0.18); color: white; box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.22);\n  -gtk-icon-size: 20px; }\n.gr-power:hover { background: rgba(255,255,255,0.30); }\n.gr-power:active { transform: scale(0.92); }\n.gr-power-label { color: white; font-size: %(text_small)s; text-shadow: 0 1px 2px rgba(0,0,0,0.45); }\n.gr-link { background: none; border: none; box-shadow: none; color: rgba(255,255,255,0.8);\n  font-size: %(text_small)s; min-height: 22px; padding: 0 8px; border-radius: 99px; }\n.gr-link:hover { background: rgba(255,255,255,0.14); color: white; }\n",
    "local": {}
   }
+ ],
+ "shell/spotlight.py": [
+  {
+   "key": "spotlight",
+   "css": "\nwindow.sonata-spotlight, window.sonata-spotlight > contents { background: none; box-shadow: none; }\n.sp-panel { background: %(glass_tint)s; border-radius: %(r_dialog)s; color: %(label)s; font-family: %(font)s;\n  box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, 0 18px 50px rgba(0,0,0,0.28); }\n.sp-panel.solid { background: %(menu_bg)s; }\n.sp-field { min-height: 48px; padding: 0 14px; }\n.sp-field image { color: %(label_secondary)s; }\n.sp-field text { font-size: 22px; font-weight: 300; background: none; color: %(label)s; }\n.sp-field text placeholder { color: %(label_tertiary)s; }\n.sp-sep { min-height: 1px; background: %(separator)s; }\n.sp-list { background: none; padding: 4px 0 6px 0; }\n.sp-list row { min-height: 26px; padding: 0 12px; background: none; color: %(label)s; border-radius: 5px;\n  margin: 0 6px; }\n.sp-list row:selected { background: %(accent_selected)s; color: %(label_on_accent)s; }\n.sp-list row.sp-head { min-height: 20px; margin-top: 6px; }\n.sp-list row.sp-head label { font-size: %(text_small)s; font-weight: 700; color: %(label_secondary)s; }\n.sp-preview { padding: 22px 16px; border-left: 1px solid %(separator)s; }\n.sp-prev-name { font-weight: 700; font-size: %(text_title)s; }\n.sp-prev-meta { color: %(label_secondary)s; font-size: %(text_small)s; }\n.sp-calc { font-size: 30px; font-weight: 300; }\n/* Big Sur: the bar drops in softly and fades out; rows ease their highlight */\n@keyframes sp-in { from { opacity: 0; transform: translateY(-8px) scale(0.97); }\n                   to { opacity: 1; transform: none; } }\n@keyframes sp-out { from { opacity: 1; } to { opacity: 0; transform: scale(0.98); } }\n.sp-panel.opening { animation: sp-in %(open_ms)dms cubic-bezier(0.2, 0.9, 0.3, 1); }\n.sp-panel.closing { animation: sp-out %(close_ms)dms ease-in forwards; }\n.sp-list row { transition: background-color 90ms ease-out, color 90ms ease-out; }\n",
+   "local": {
+    "open_ms": "200",
+    "close_ms": "120"
+   }
+  }
  ]
 }

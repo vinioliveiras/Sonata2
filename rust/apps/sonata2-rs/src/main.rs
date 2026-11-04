@@ -8,6 +8,7 @@
 //!   sonata2-rs notes [--dark|--light]              Notes (with Reminders)
 //!   sonata2-rs welcome [--preview]                 the welcome screen after login
 //!   sonata2-rs lock                                lock the session
+//!   sonata2-rs spotlight [--background] [--search TEXT]   Spotlight (again: toggles it)
 //!   sonata2-rs key <volume-up|volume-down|volume-mute|brightness-up|
 //!                  brightness-down|play-pause|next|previous>   a media key
 //!   sonata2-rs screenshot [screen|area|edit]    a screenshot (the menu bar's, else grim)
@@ -23,7 +24,7 @@ mod desktop;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -60,6 +61,10 @@ fn main() -> ExitCode {
         }
         "lock" => {
             let code = sonata_lock::run(&args[1..]);
+            ExitCode::from(code.value() as u8)
+        }
+        "spotlight" => {
+            let code = sonata_spotlight::run(&args[1..]);
             ExitCode::from(code.value() as u8)
         }
         "keep" if args.len() > 1 => ExitCode::from(sonata_session::keep::keep(&args[1..]) as u8),

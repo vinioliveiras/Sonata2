@@ -141,8 +141,8 @@ pub fn accent_tokens(name: &str, dark: bool) -> Values {
     out
 }
 
-/// Fill a CSS template's `%(token)s` placeholders (Python's `%` with a
-/// dict; `%%` is a literal %). A token that doesn't exist is left empty
+/// Fill a CSS template's `%(token)s` / `%(token)d` placeholders (Python's
+/// `%` with a dict; `%%` is a literal %). A token that doesn't exist is left empty
 /// and named on stderr, where Python would have raised KeyError.
 pub fn fill(template: &str, values: &Values) -> String {
     let mut out = String::with_capacity(template.len() + 256);
@@ -154,7 +154,7 @@ pub fn fill(template: &str, values: &Values) -> String {
             out.push('%');
             rest = t;
         } else if let Some(t) = tail.strip_prefix("%(") {
-            match t.find(")s") {
+            match t.find(')').filter(|e| matches!(t.as_bytes().get(e + 1), Some(b's') | Some(b'd'))) {
                 Some(end) => {
                     let key = &t[..end];
                     match values.get(key) {
@@ -252,6 +252,16 @@ mod tests {
         v.insert("bg".into(), "red".into());
         assert_eq!(fill("a { background: %(bg)s; width: 50%%; }", &v), "a { background: red; width: 50%; }");
         assert_eq!(fill("%(missing)s!", &v), "!");
+    }
+
+    /// Spotlight's `%(open_ms)d` ran on to the next `)s` and swallowed
+    /// the CSS in between: `d` placeholders are filled too.
+    #[test]
+    fn test_d_placeholders_filled() {
+        let mut v = Values::new();
+        v.insert("bg".into(), "red".into());
+        v.insert("open_ms".into(), "200".into());
+        assert_eq!(fill("a { animation: x %(open_ms)dms; color: %(bg)s; }", &v), "a { animation: x 200ms; color: red; }");
     }
 
     #[test]

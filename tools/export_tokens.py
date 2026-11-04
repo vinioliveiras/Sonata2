@@ -25,7 +25,7 @@ CSS_MODULES = ("ui/controls.py", "ui/menu.py", "ui/window.py", "ui/dialog.py", "
                "calculator/window.py", "clock/window.py", "clock/pages.py", "textedit/window.py", "textedit/tabs.py",
                "preview/window.py", "preview/sidebar.py", "preview/info.py", "preview/markup.py",
                "notes/window.py", "notes/editor.py", "notes/reminders.py", "ui/progress.py",
-               "shell/loginui.py")
+               "shell/loginui.py", "shell/spotlight.py")
 
 
 def _registered(src: str, mod: str) -> list:
@@ -33,7 +33,23 @@ def _registered(src: str, mod: str) -> list:
     module's top level, in order. A template with placeholders of its own
     (`title_h=...`) is filled the same way, from literal values only."""
     out = []
-    for node in ast.parse(src).body:
+    tree = ast.parse(src)
+    # the module's own literal constants (`OPEN_MS, CLOSE_MS = 200, 120`):
+    # a keyword naming one (`open_ms=OPEN_MS`) is filled with its value
+    consts = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        try:
+            value = ast.literal_eval(node.value)
+        except ValueError:
+            continue
+        if isinstance(target, ast.Name):
+            consts[target.id] = value
+        elif isinstance(target, ast.Tuple) and isinstance(value, tuple) and len(value) == len(target.elts):
+            consts.update({t.id: v for t, v in zip(target.elts, value) if isinstance(t, ast.Name)})
+    for node in tree.body:
         call = node.value if isinstance(node, ast.Expr) else None
         if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
                 and call.func.attr == "register" and isinstance(call.func.value, ast.Name)
@@ -51,7 +67,8 @@ def _registered(src: str, mod: str) -> list:
             try:
                 value = ast.literal_eval(kw.value)
             except ValueError:
-                value = None                    # computed (f"{TITLEBAR_H}px"): left to the token
+                # a constant of the module, else computed (f"{TITLEBAR_H}px"): left to the token
+                value = consts.get(kw.value.id) if isinstance(kw.value, ast.Name) else None
             if kw.arg == "key":
                 key = value
             elif value is not None:

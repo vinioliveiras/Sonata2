@@ -1176,6 +1176,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-spotlight"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "libadwaita",
+ "num-bigint",
+ "num-traits",
+ "serde_json",
+ "sonata-config",
+ "sonata-i18n",
+ "sonata-shell",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
 name = "sonata-textedit"
 version = "0.1.0"
 dependencies = [
@@ -1230,6 +1248,7 @@ dependencies = [
  "sonata-notes",
  "sonata-preview",
  "sonata-session",
+ "sonata-spotlight",
  "sonata-textedit",
  "sonata-welcome",
  "tempfile",

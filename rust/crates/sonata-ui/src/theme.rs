@@ -176,6 +176,7 @@ pub fn setup() {
         eprintln!("sonata-ui: no display");
         return;
     };
+    crate::icons::setup(); // Sonata's own icon theme, before any widget (as ui.setup does)
     let provider = gtk::CssProvider::new();
     gtk::style_context_add_provider_for_display(&display, &provider, PRIORITY);
     STATE.with(|s| s.borrow_mut().provider = Some(provider));
