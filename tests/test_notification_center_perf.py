@@ -40,6 +40,35 @@ def note(i, **kw):
     return N.Note(i, "Chat", "", f"Title {i}", f"body {i}", [], "", **kw)
 
 
+class CalendarWidthTest(unittest.TestCase):
+    def test_calendar_shrank_when_notifications_were_cleared(self):
+        """Vini: clearing the notifications, the calendar at the top got a
+        little smaller. The cards' column made the window wider than the
+        calendar, which stretched to it; without cards it went back to its
+        own width. It keeps its width, with cards or without."""
+        from gi.repository import Gtk
+        Adw.init()
+        ui.setup()
+        owner = N.Notifications.__new__(N.Notifications)
+        owner.notes, owner.listeners, owner._banners, owner._conn, owner.nc = [], [], {}, None, None
+        c = N._Center(None, owner)
+        try:
+            owner.notes = [note(i) for i in range(1, 6)]
+            c._rebuild()
+            widths = []
+            for notes in (owner.notes, []):
+                owner.notes = notes
+                c._rebuild()
+                w = c.rev.measure(Gtk.Orientation.HORIZONTAL, -1)[1]
+                h = c.rev.measure(Gtk.Orientation.VERTICAL, w)[1]
+                c.rev.allocate(w, h, -1, None)
+                widths.append(c._cal.get_width())
+            self.assertEqual(widths[0], widths[1])
+            self.assertEqual(widths[0], N.BANNER_W + 6)
+        finally:
+            c.destroy()
+
+
 class OpensLaggyWithNotificationsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
