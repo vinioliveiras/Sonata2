@@ -1,0 +1,19 @@
+[package]
+name = "sonata-lock"
+description = "The lock screen (sonata2/shell/lock.py), on ext-session-lock"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gtk.workspace = true
+adw.workspace = true
+gio.workspace = true
+glib.workspace = true
+gtk4-session-lock.workspace = true
+serde_json.workspace = true
+sonata-backend.workspace = true
+sonata-config.workspace = true
+sonata-i18n.workspace = true
+sonata-shell.workspace = true
+sonata-ui.workspace = true

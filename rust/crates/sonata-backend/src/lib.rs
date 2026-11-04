@@ -6,5 +6,7 @@ pub mod devicevolume;
 pub mod run;
 pub mod sounds;
 pub mod system;
+pub mod usbprotect;
+pub mod vault;
 pub mod wfconfig;
 pub mod wfipc;

@@ -156,3 +156,39 @@ pub fn monitors() -> Vec<gtk::gdk::Monitor> {
     let list = display.monitors();
     (0..list.n_items()).filter_map(|i| list.item(i).and_downcast::<gtk::gdk::Monitor>()).collect()
 }
+
+pub fn connector(m: &gtk::gdk::Monitor) -> String {
+    m.connector().map(|c| c.to_string()).unwrap_or_default()
+}
+
+/// The main display (shell/monitors.py): the one chosen in Settings, else
+/// an external monitor when one is connected (Vini), else the built-in panel.
+pub fn pick_main(connectors: &[String], chosen: &str) -> Option<usize> {
+    if connectors.is_empty() {
+        return None;
+    }
+    if let Some(i) = connectors.iter().position(|c| !chosen.is_empty() && c == chosen) {
+        return Some(i);
+    }
+    Some(connectors.iter().position(|c| !c.is_empty() && !["eDP", "LVDS", "DSI"].iter().any(|b| c.starts_with(b))).unwrap_or(0))
+}
+
+pub fn main_monitor() -> Option<gtk::gdk::Monitor> {
+    let mons = monitors();
+    let chosen = sonata_config::load("displays", &serde_json::json!({"main": ""})).get("main").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    pick_main(&mons.iter().map(connector).collect::<Vec<_>>(), &chosen).map(|i| mons[i].clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pick_main;
+
+    #[test]
+    fn the_main_display() {
+        let c = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(pick_main(&c(&["eDP-1", "HDMI-A-1"]), ""), Some(1)); // an external one first
+        assert_eq!(pick_main(&c(&["eDP-1", "HDMI-A-1"]), "eDP-1"), Some(0)); // your choice
+        assert_eq!(pick_main(&c(&["eDP-1"]), "DP-2"), Some(0)); // the chosen one unplugged
+        assert_eq!(pick_main(&[], ""), None);
+    }
+}

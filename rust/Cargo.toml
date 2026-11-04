@@ -15,6 +15,7 @@ members = [
     "apps/preview",
     "apps/notes",
     "apps/welcome",
+    "apps/lock",
     "apps/sonata2-rs",
 ]
 
@@ -50,6 +51,7 @@ memmap2 = "0.9"
 flate2 = "1"
 base64 = "0.22"
 gtk4-layer-shell = "0.5"
+gtk4-session-lock = "0.1.2"
 
 sonata-config = { path = "crates/sonata-config" }
 sonata-i18n = { path = "crates/sonata-i18n" }
@@ -63,6 +65,7 @@ sonata-textedit = { path = "apps/textedit" }
 sonata-preview = { path = "apps/preview" }
 sonata-notes = { path = "apps/notes" }
 sonata-welcome = { path = "apps/welcome" }
+sonata-lock = { path = "apps/lock" }
 
 [profile.release]
 lto = "thin"

@@ -537,6 +537,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "gtk4-session-lock"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "434dbb8948bcd0fa3237c69856277fdfc5fb9dd9f96cf40ac696b37a6fa407f9"
+dependencies = [
+ "gdk4",
+ "glib",
+ "glib-sys",
+ "gtk4",
+ "gtk4-session-lock-sys",
+ "libc",
+]
+
+[[package]]
+name = "gtk4-session-lock-sys"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d03a6b29932556cb355cacd90846a9f3ebf1ad12380eaa1933b2ff389bd46a62"
+dependencies = [
+ "gdk4-sys",
+ "glib-sys",
+ "gobject-sys",
+ "gtk4-sys",
+ "libc",
+ "system-deps",
+]
+
+[[package]]
 name = "gtk4-sys"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1064,6 +1092,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-lock"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "gtk4-session-lock",
+ "libadwaita",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-i18n",
+ "sonata-shell",
+ "sonata-ui",
+]
+
+[[package]]
 name = "sonata-notes"
 version = "0.1.0"
 dependencies = [
@@ -1117,6 +1162,7 @@ dependencies = [
  "glib",
  "gtk4",
  "gtk4-layer-shell",
+ "gtk4-session-lock",
  "image",
  "libadwaita",
  "libc",
@@ -1180,6 +1226,7 @@ dependencies = [
  "sonata-clock",
  "sonata-config",
  "sonata-i18n",
+ "sonata-lock",
  "sonata-notes",
  "sonata-preview",
  "sonata-session",

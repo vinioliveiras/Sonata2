@@ -5,5 +5,8 @@
 pub mod intro;
 pub mod layer;
 pub mod logins;
+pub mod pam;
+pub mod throttle;
+pub mod lockdisplay;
 pub mod loginui;
 pub mod wallpaper;

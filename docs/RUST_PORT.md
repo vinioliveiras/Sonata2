@@ -362,7 +362,7 @@ stay behind `--features ui-tests` and run only under
   modules still). Each changes shape once the session runs Rust pieces;
   ported now they would be rewritten then.
 
-### Step 4 so far: the welcome screen
+### Step 4 so far: the welcome screen and the lock screen
 
 - `sonata-shell`: what the shell's surfaces share -- gtk4-layer-shell
   (0.5, the gtk4 0.9 one; the process starts itself again with the
@@ -378,8 +378,22 @@ stay behind `--features ui-tests` and run only under
 - `sonata2-rs welcome [--preview]`: welcome.py. It waits for the Python
   shell's D-Bus names (those are the parts that run), then finishes the
   intro and fades.
-- Not ported yet: the video under the backdrop (videowallpaper.py), the
-  mirrored password fields and the wrong-password wait (lock.py's).
+- Not ported yet in the welcome screen: the video under the backdrop
+  (videowallpaper.py).
+- `sonata2-rs lock`: lock.py on ext-session-lock (gtk4-session-lock 0.1,
+  the gtk4 0.9 one). PAM through libpam opened at run time, as pam.py
+  does (no libpam or no session lock: it refuses to lock), the password
+  wiped from memory after the check; the waits after wrong passwords
+  (throttle.py, the same file, so both lock screens count together); the
+  field mirrored on every display, displays that come and go; logind's
+  Unlock signal (Switch User coming back); USB devices blocked while
+  locked (usbprotect.py) and locked folders closed (vault.py); the screen
+  dark after its 30 s (lockdisplay.py, with idlelock.py's backlight
+  commands -- compared with the Python ones in a test).
+- Not ported yet in the lock: Switch User (userswitch.py), the video
+  wallpaper under the blur, the screen corners, and the compositor's idle
+  watch (ext-idle-notify): the screen goes dark on the lock's own timer,
+  as lock.py does without it.
 - Found on the way: serde_json's fast float parser read some numbers one
   bit off (a Notes timestamp changed on save); `float_roundtrip` is on now,
   with a test.
