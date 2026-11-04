@@ -190,8 +190,16 @@ def app_sections(dock, key: str, tile) -> list:
             opts.append(f)
     elif pinned:
         opts = [[Item(_("Keep in Dock"), lambda on: dock.set_pinned(key, on), checked=True)]]
+    under_options = []
     if opts:
-        sections.append([Item(_("Options"), submenu=opts)])
+        under_options.append(Item(_("Options"), submenu=opts))
+    if dock.can_uninstall(tile):
+        # Vini: uninstall from the right-click too, not only by dropping it on
+        # the Trash -- asked first, and it leaves the Dock once it's done.
+        # Right under Options (Vini), not at the very end past Quit
+        under_options.append(Item(_("Uninstall…"), lambda: dock.ask_uninstall(tile)))
+    if under_options:
+        sections.append(under_options)
     if wins:
         # Minimize; when every window already is: Maximize (brought back, full size)
         if all(t.minimized for t in wins):
@@ -207,10 +215,6 @@ def app_sections(dock, key: str, tile) -> list:
                          Item(_("Quit"), lambda: _quit(dock, wins, key))])
     elif info:
         sections.append([i for i in (Item(_("Open"), lambda: dock.launch(tile)), sandbox_item(info)) if i])
-    if dock.can_uninstall(tile):
-        # Vini: uninstall from the right-click too, not only by dropping it on
-        # the Trash -- asked first, and it leaves the Dock once it's done
-        sections.append([Item(_("Uninstall…"), lambda: dock.ask_uninstall(tile))])
     return sections
 
 

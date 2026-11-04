@@ -95,6 +95,29 @@ class DropAnimationTest(unittest.TestCase):
         self.assertIn("_poof", inspect.getsource(D.Dock._drag_cancel))
 
 
+class UninstallPlaceTest(unittest.TestCase):
+    def test_uninstall_was_at_the_end_not_under_options(self):
+        """Vini: Uninstall… should be right under Options, not at the very end
+        of the right-click (past Minimize / Quit or Open)."""
+        import os
+        import tempfile
+        import types
+        from gi.repository import Gio
+        path = os.path.join(tempfile.mkdtemp(), "org.example.Thing.desktop")
+        with open(path, "w") as f:
+            f.write("[Desktop Entry]\nType=Application\nName=Thing\nExec=true\n")
+        info = Gio.DesktopAppInfo.new_from_filename(path)
+        key = "org.example.Thing"
+        for wins in ([], [types.SimpleNamespace(title="Thing", minimized=False)]):
+            dock = types.SimpleNamespace(windows={key: wins}, cfg={"pinned": [key]},
+                                         can_uninstall=lambda t: True, ask_uninstall=lambda t: None)
+            tile = types.SimpleNamespace(info=info, name="Thing", key=key)
+            labels = [[i.label for i in sec] for sec in dock_menu.app_sections(dock, key, tile)]
+            sec = next(s for s in labels if "Options" in s)
+            self.assertEqual(sec[sec.index("Options") + 1], "Uninstall…", labels)
+            self.assertEqual(sum(s.count("Uninstall…") for s in labels), 1)
+
+
 class DockTest(unittest.TestCase):
     def setUp(self):
         Gtk.init()
