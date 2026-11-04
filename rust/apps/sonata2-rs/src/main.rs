@@ -7,6 +7,9 @@
 //!   sonata2-rs preview [--markup] [FILE...]        Preview
 //!   sonata2-rs notes [--dark|--light]              Notes (with Reminders)
 //!   sonata2-rs desktop-files                  write the ported apps' desktop entries
+//!   sonata2-rs keep <component> [args]        run it, start it again if it crashes
+//!   sonata2-rs keep-all <component>[,args] ...  the same, several in one process
+//!                                             (Rust components here, the rest through `sonata2`)
 //!
 //! On trial (the default) everything runs next to the installed Python
 //! Sonata: its own app ids, its own settings folder for writing.
@@ -15,7 +18,7 @@ mod desktop;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|desktop-files> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|desktop-files|keep|keep-all> [--dark|--light]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -44,6 +47,8 @@ fn main() -> ExitCode {
             let code = sonata_notes::window::run(&args[1..]);
             ExitCode::from(code.value() as u8)
         }
+        "keep" if args.len() > 1 => ExitCode::from(sonata_session::keep::keep(&args[1..]) as u8),
+        "keep-all" => ExitCode::from(sonata_session::keep::keep_all(&args[1..]) as u8),
         "desktop-files" => match desktop::write_all() {
             Ok(paths) => {
                 for p in paths {

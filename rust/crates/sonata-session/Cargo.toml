@@ -1,0 +1,13 @@
+[package]
+name = "sonata-session"
+description = "The session's plumbing: logs and the component supervisor (keep / keep-all)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+libc.workspace = true
+sonata-config.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

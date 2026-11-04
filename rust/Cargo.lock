@@ -993,6 +993,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-session"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "sonata-config",
+ "tempfile",
+]
+
+[[package]]
 name = "sonata-textedit"
 version = "0.1.0"
 dependencies = [
@@ -1031,6 +1040,7 @@ dependencies = [
  "sonata-i18n",
  "sonata-notes",
  "sonata-preview",
+ "sonata-session",
  "sonata-textedit",
  "tempfile",
 ]

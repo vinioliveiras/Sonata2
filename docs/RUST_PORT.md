@@ -325,3 +325,16 @@ stay behind `--features ui-tests` and run only under
   short dates of lists (ui/fmt.py).
 - The CSS exporter also takes `_colors + """..."""` registrations (the
   literal part; Rust makes the colour classes itself).
+
+### Step 3 so far: the supervisor
+
+- `sonata-session`: logs (off by default, in memory; ~/.cache with Logs on;
+  kept under their cap) and `keep` / `keep-all` with the Python rules
+  (stopped on purpose stays stopped, 5 crashes in a minute gives up, the
+  memory limit, the compositor gone ends it). A component the Rust build
+  has runs as `sonata2-rs <name>`, any other through the Python `sonata2`:
+  this is what a mixed "Sonata (Rust preview)" session will start.
+  Each child's pidfd wakes the supervisor when it ends (no signals, no
+  polling).
+- Not ported yet: `restart` (it finds the Python processes by their
+  command line), `key`, `screenshot`, `doctor`, autostart.
