@@ -32,6 +32,7 @@ members = [
     "apps/greeter",
     "apps/dock",
     "apps/launchpad",
+    "apps/settings",
     "crates/sonata-notifications",
     "crates/sonata-system",
     "crates/sonata-tweaks",
@@ -112,6 +113,7 @@ sonata-topbar = { path = "apps/topbar" }
 sonata-greeter = { path = "apps/greeter" }
 sonata-dock = { path = "apps/dock" }
 sonata-launchpad = { path = "apps/launchpad" }
+sonata-settings = { path = "apps/settings" }
 sonata-notifications = { path = "crates/sonata-notifications" }
 sonata-system = { path = "crates/sonata-system" }
 sonata-tweaks = { path = "crates/sonata-tweaks" }
