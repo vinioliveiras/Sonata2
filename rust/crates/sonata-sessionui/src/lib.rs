@@ -1,0 +1,1 @@
+//! The session's background helpers (sonata2/shell/idlelock.py, idlepolicy.py, screencorners.py, nightshift.py, blackout.py, quitonclose.py, quitapps.py, monitors.py, alarmservice.py, updatenotify.py, setup.py, welcome.py)

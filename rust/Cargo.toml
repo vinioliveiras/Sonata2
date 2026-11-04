@@ -34,6 +34,13 @@ members = [
     "crates/sonata-notifications",
     "crates/sonata-system",
     "crates/sonata-tweaks",
+    "apps/mission",
+    "apps/capture",
+    "apps/gamebar",
+    "apps/desktop",
+    "apps/clipboard",
+    "crates/sonata-sessionui",
+    "apps/webapps",
     "crates/sonata-desktop",
     "crates/sonata-tray",
     "apps/sonata2-rs",
@@ -106,6 +113,13 @@ sonata-dock = { path = "apps/dock" }
 sonata-notifications = { path = "crates/sonata-notifications" }
 sonata-system = { path = "crates/sonata-system" }
 sonata-tweaks = { path = "crates/sonata-tweaks" }
+sonata-mission = { path = "apps/mission" }
+sonata-capture = { path = "apps/capture" }
+sonata-gamebar = { path = "apps/gamebar" }
+sonata-desktop-icons = { path = "apps/desktop" }
+sonata-clipboard = { path = "apps/clipboard" }
+sonata-sessionui = { path = "crates/sonata-sessionui" }
+sonata-webapps = { path = "apps/webapps" }
 sonata-desktop = { path = "crates/sonata-desktop" }
 sonata-tray = { path = "crates/sonata-tray" }
 
