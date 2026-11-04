@@ -35,6 +35,8 @@
 //!   sonata2-rs session-try corners|blackout|alarm|timer|idle|nightshift|displays  try a session helper (writes nothing)
 //!   sonata2-rs dock [--preview] [--set K=V] ...   the Dock (on trial: try it with --preview)
 //!   sonata2-rs topbar [--preview] [--menu N]      the menu bar and Control Center
+//!   sonata2-rs keyring ...                        the login keyring (keyring.py)
+//!   sonata2-rs prefs session-env                  defaults filled in, the session's environment
 //!   sonata2-rs notifications [--preview] [--center]  notifications (on trial: off the real bus name)
 //!   sonata2-rs greeter                            the login screen (SONATA_GREETER_FAKE=1: preview)
 //!   sonata2-rs portal                             the portal backend (not on trial)
@@ -56,7 +58,7 @@ mod desktop;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|topbar|dock|lock-wait|setup|session-try|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|keyring|prefs|topbar|dock|lock-wait|setup|session-try|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -162,6 +164,12 @@ fn main() -> ExitCode {
         "topbar" => {
             let code = sonata_topbar::run(&args[1..]);
             ExitCode::from(code.value() as u8)
+        }
+        "keyring" => ExitCode::from(sonata_tweaks::keyring::main(&args[1..]) as u8),
+        // tools/session-env.sh, every login: the environment the session needs
+        "prefs" if args.get(1).map(String::as_str) == Some("session-env") => {
+            print!("{}", sonata_tweaks::prefs_write::session_env());
+            ExitCode::SUCCESS
         }
         "notifications" => {
             let code = sonata_notifications::run(&args[1..]);

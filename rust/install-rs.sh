@@ -11,6 +11,7 @@
 #   ~/.local/share/sonata2-rs/locale/             the translations (a copy)
 #   ~/.local/share/sonata2-rs/sounds/             the alarm sounds (a copy, for Clock's preview)
 #   ~/.local/share/sonata2-rs/wallpapers/         Sonata's wallpapers (a copy: the default one)
+#   ~/.local/share/sonata2-rs/config/wayfire.ini  Wayfire's default config (the shortcuts' defaults)
 #   ~/.local/share/sonata2-rs/icons               Sonata's icon themes: a link to this clone's
 #                                                 (125 MB; keep the clone while trying it)
 #   ~/.local/share/applications/io.github.vinioliveiras.sonata2rs.*.desktop
@@ -59,6 +60,9 @@ rm -rf "$SHARE/sonata2-rs/sounds"
 cp -r "$REPO/sonata2/data/sounds" "$SHARE/sonata2-rs/sounds"
 rm -rf "$SHARE/sonata2-rs/wallpapers"
 cp -r "$REPO/sonata2/data/wallpapers" "$SHARE/sonata2-rs/wallpapers"
+# Wayfire's default config: Settings' shortcuts read their defaults from it
+mkdir -p "$SHARE/sonata2-rs/config"
+cp "$REPO/config/wayfire.ini" "$SHARE/sonata2-rs/config/wayfire.ini"
 rm -rf "$SHARE/sonata2-rs/icons"
 ln -s "$REPO/sonata2/data/icons" "$SHARE/sonata2-rs/icons"
 # the desktop entries name this binary; on trial they are the "(Rust)" ones
