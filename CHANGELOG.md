@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Menus, menu bar panels and other popups (Control Center too) appear and go at once: Wayfire faded each one in and out for 123 ms, every frame of it a blur pass behind the panel. Control Center's own work to open is about 3 ms, so that fade was the delay you saw. Takes effect from the next login (or Restart Sonata).
 - Game Bar and Control Center: the Video Memory card (and every graph card) shows its figure whole, "9.5 / 16 GB", and cuts the title instead; the two used to share the space and the GB lost its start.
 - Files no longer opens small again now and then, and the Trash (opened from the Dock) opens at Files' size: closing an Open / Save panel (an app asking for a file) saved its 820 x 520 as Files' window size. The panel now remembers a size of its own.
 - Notification Center no longer lags with many notifications: the compositor blurred behind its whole column again on every frame it scrolled or slid. Its glass is now a picture of the display blurred once as it opens (as the Game Bar's), each card drawing its own slice; without grim the cards are solid.
