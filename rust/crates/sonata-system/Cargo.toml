@@ -11,10 +11,11 @@ gio.workspace = true
 glib.workspace = true
 serde_json.workspace = true
 libc.workspace = true
+regex.workspace = true
+flate2.workspace = true
+tempfile.workspace = true
 sonata-backend.workspace = true
 sonata-config = { workspace = true, features = ["watch"] }
 sonata-desktop.workspace = true
 sonata-i18n.workspace = true
-
-[dev-dependencies]
-tempfile.workspace = true
+sonata-session.workspace = true
