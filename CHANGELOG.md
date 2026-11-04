@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Control Center appears at once, without the panels' grow-in: its own work on opening is a few ms, and the 180 ms animation had the compositor blur the whole panel again on every frame.
 - Web apps: each Chromium-family browser installed is its own choice in the form's Engine pop-up -- Brave too, when it's there beside Chrome (only the first one found was offered). A Brave web app keeps its own profile and its Dock icon.
 - Notification Center: the calendar (Today) stays fixed at the top and the notifications scroll under it -- with many of them it used to sit at the end, out of sight.
 - Dock: a locked folder's password can be typed again -- it was asked inside the folder's panel on the Dock, which takes no keyboard, so the field could be clicked but not typed in.

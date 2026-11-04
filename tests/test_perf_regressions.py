@@ -247,6 +247,19 @@ class ControlCenterKeptTest(unittest.TestCase):
             self.close(pops[0])
         self.assertEqual(sorted(classes), [False, True])
 
+    def test_control_center_opened_with_a_delay(self):
+        """Vini: Control Center still took a moment to open. Its main-loop work
+        is a few ms; what was left was the panels' 180 ms grow-in, every frame
+        of it a blur pass over the whole panel in the compositor. It appears
+        at once now, first opening and every one after."""
+        from sonata2.ui import theme
+        css = theme._templates["motion-open"][0]
+        self.assertIn("popover.instant > contents, popover.instant.reopen > contents { animation: none; }", css)
+        for _ in range(3):
+            pop = self.open()
+            self.assertTrue(pop.has_css_class("instant"))
+            self.close(pop)
+
     def test_opens_with_current_states(self):
         from sonata2.shell import controlcenter as C
         from sonata2 import config

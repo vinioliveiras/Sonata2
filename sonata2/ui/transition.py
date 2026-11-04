@@ -33,6 +33,9 @@ popover > contents { animation: sonata-open %(t_open)s %(ease_out)s; }
 /* the same, under another name: a panel kept and shown again (panel.reopen) */
 @keyframes sonata-open-again { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
 popover.reopen > contents { animation-name: sonata-open-again; }
+/* a panel that appears at once (Control Center: Vini, it still felt slow --
+   each frame of the grow-in had the compositor blur the whole panel again) */
+popover.instant > contents, popover.instant.reopen > contents { animation: none; }
 """, key="motion-open")
 
 theme.register("""
