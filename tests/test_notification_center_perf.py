@@ -87,7 +87,20 @@ class OpensLaggyWithNotificationsTest(unittest.TestCase):
         self.assertIs(self.c._cal, cal)                                    # nor the calendar
         self.assertEqual(self.upcoming_calls.call_count, 1)                # (nor its files read)
         self.assertEqual(self.shown(), list(range(31, 0, -1)))             # newest first
-        self.assertIs(self.c.col.get_last_child(), cal)
+        self.assertIs(self.c.top.get_last_child(), cal)
+
+    def test_calendar_scrolled_away_under_notifications(self):
+        """Vini: with many notifications the calendar was at the end of the
+        column, scrolled out of sight. It stays fixed at the top; only the
+        notifications scroll, under it."""
+        self.owner.notes = [note(i) for i in range(1, 41)]
+        self.c._rebuild()
+        cal = self.c._cal
+        self.assertIs(cal.get_parent(), self.c.top)
+        scroller = self.c.col.get_ancestor(N.Gtk.ScrolledWindow)
+        self.assertIsNotNone(scroller)
+        self.assertIsNone(cal.get_ancestor(N.Gtk.ScrolledWindow))          # not in what scrolls
+        self.assertIs(self.c.top.get_next_sibling(), scroller)              # above the notifications
 
     def test_opening_after_a_notification_lays_out_one_card(self):
         """The real cost was the opening: the cards made while it was closed

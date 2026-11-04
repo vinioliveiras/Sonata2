@@ -686,11 +686,18 @@ class _Center(Gtk.Window):
         super().__init__(application=app, title="Notification Center", decorated=False)
         self.add_css_class("sonata-nc")
         self.owner = owner
-        scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_width=True)
-        self.col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=TOP_GAP - 4,
+        # the Today widgets stay at the top, the notifications scroll under
+        # them (Vini: the calendar fixed, however many notifications)
+        self.top = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_top=TOP_GAP - 12, margin_end=10)
+        scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_width=True,
+                                      vexpand=True)
+        self.col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=4,
                            margin_end=10, margin_bottom=12, margin_start=6)
         scroller.set_child(self.col)
-        self.rev = _Slide(scroller)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        outer.append(self.top)
+        outer.append(scroller)
+        self.rev = _Slide(outer)
         self.set_child(self.rev)
         outside = Gtk.GestureClick()
         outside.connect("released", self._clicked)
@@ -724,7 +731,7 @@ class _Center(Gtk.Window):
         # column (it spans the full height, over the menu bar's clock and
         # icons too) close it like any other click outside
         w = self.pick(x, y, Gtk.PickFlags.DEFAULT)
-        while w is not None and w.get_parent() is not self.col:
+        while w is not None and w.get_parent() not in (self.col, self.top):
             w = w.get_parent()
         if w is None:
             self.hide_center()
@@ -851,7 +858,7 @@ class _Center(Gtk.Window):
                     when.set_label(text)
 
     def _calendar(self):
-        """Today widgets (Big Sur: below the notifications), made again only
+        """Today widgets (fixed above the notifications: Vini), made again only
         on a new day, after Calendar's files changed, or when Up Next's first
         event has ended -- reading the calendar files was part of every
         notification's rebuild."""
@@ -871,9 +878,9 @@ class _Center(Gtk.Window):
         cal.add_controller(click)
         from ..ui.fixed import FixedWidth
         if self._cal is not None:
-            self.col.remove(self._cal)
+            self.top.remove(self._cal)
         self._cal = FixedWidth(cal, BANNER_W + 6)        # (its margin_start); an event title never widens it
-        self.col.append(self._cal)
+        self.top.append(self._cal)
         self._cal_key = key
         self._cal_until = min((o.end for o, _c in events
                                if o.end > now and o.start.date() <= now.date() + dt.timedelta(days=1)), default=None)
