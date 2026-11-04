@@ -111,6 +111,17 @@ class ReopenTest(unittest.TestCase):
         self.assertEqual(len(started), 1)
 
 
+class AutostartedTest(unittest.TestCase):
+    def test_login_items_were_opened_twice(self):
+        """An app in Open at Login was opened again after a restart: its
+        entry, read from its keyfile, has no id, so it was never skipped."""
+        d = os.path.join(GLib.get_user_config_dir(), "autostart")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "discord.desktop"), "w") as f:
+            f.write("[Desktop Entry]\nType=Application\nName=Discord\nExec=true\n")
+        self.assertIn("discord.desktop", O._autostarted())
+
+
 class ConfirmBoxTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

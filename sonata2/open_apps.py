@@ -156,7 +156,9 @@ def _autostarted() -> set:
     """Apps "Open at Login" starts anyway: not opened a second time."""
     try:
         from . import autostart
-        return {info.get_id() for _name, info in autostart.entries() if info is not None}
+        # the file name: an entry read from its keyfile has no id (get_id()
+        # gave None, so Open at Login apps were opened a second time)
+        return {name for name, info in autostart.entries() if info is not None}
     except Exception:
         return set()
 
