@@ -147,7 +147,8 @@ class ClipboardPicker(Gtk.Window):
         if nxt:
             self.list.select_row(nxt)
             nxt.grab_focus()
-            self.search.grab_focus_without_selecting()
+            # GtkSearchEntry has no grab_focus_without_selecting (GTK 4): its text does
+            self.search.get_delegate().grab_focus_without_selecting()
 
     def _key(self, _c, keyval, _code, _state) -> bool:
         if keyval == Gdk.KEY_Escape:

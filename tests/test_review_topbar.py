@@ -1095,5 +1095,18 @@ class AnimationTests(unittest.TestCase):
         self.assertIn(".clip-panel { animation: clip-in", css)
 
 
+class ClipPickerKeysTest(unittest.TestCase):
+    def test_clipboard_arrow_keys_raised(self):
+        """Clipboard picker: the arrow keys raised AttributeError
+        (SearchEntry.grab_focus_without_selecting is not in GTK 4) and focus
+        stayed on the row instead of going back to the search field."""
+        lst = Gtk.ListBox()
+        for t in ("a", "b"):
+            lst.append(Gtk.Label(label=t))
+        fake = types.SimpleNamespace(list=lst, search=Gtk.SearchEntry())
+        clip_picker.ClipboardPicker._move(fake, 1)
+        self.assertEqual(lst.get_selected_row().get_index(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
