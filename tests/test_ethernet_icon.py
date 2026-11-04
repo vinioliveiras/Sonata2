@@ -1,8 +1,7 @@
-"""The network icons (Vini's picks, MacTahoe's drawings): in the menu bar,
-a computer with a cable when the connection isn't Wi-Fi (option 2); in
-Settings, the network globe for its Network section (option 5). Sonata's
-own icons, so no installed theme draws another one. (Before: one Ethernet
-port for both.)
+"""The network icon (Vini's pick, MacTahoe's network globe, option 5): in
+the menu bar when the connection isn't Wi-Fi, and Settings' Network
+section. Sonata's own icon, so no installed theme draws another one.
+(Before: an Ethernet port.)
 
     xvfb-run -a python3 -m unittest tests.test_ethernet_icon
 """
@@ -14,15 +13,15 @@ from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ICONS = os.path.join(ROOT, "sonata2", "data", "icons")
-WIRED, NETWORK = "sonata-wired-symbolic", "sonata-network-symbolic"
+NETWORK = "sonata-network-symbolic"
+WIRED = NETWORK                       # (the menu bar's cable connection: the same one, Vini)
 
 
 def own(name):
     return os.path.join(ICONS, "Sonata", "status", "symbolic", name + ".svg")
 
 
-PICKED = {WIRED: os.path.join(ICONS, "Sonata-MacTahoe", "status", "symbolic", "network-wired-symbolic.svg"),
-          NETWORK: os.path.join(ICONS, "Sonata-MacTahoe", "places", "symbolic", "network-workgroup-symbolic.svg")}
+PICKED = {NETWORK: os.path.join(ICONS, "Sonata-MacTahoe", "places", "symbolic", "network-workgroup-symbolic.svg")}
 
 
 class NetworkIconsTest(unittest.TestCase):

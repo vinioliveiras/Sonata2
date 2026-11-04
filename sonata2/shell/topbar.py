@@ -792,7 +792,7 @@ class Bar(Gtk.CenterBox):
             return
         avail, on, (ssid, sig, wired) = res
         if wired and not ssid:
-            name = "sonata-wired-symbolic"               # a cable connection (Vini's pick, MacTahoe's)
+            name = "sonata-network-symbolic"             # a cable connection: the network globe, as in Settings (Vini)
         elif not avail:
             self.wifi.set_visible(False)
             return
