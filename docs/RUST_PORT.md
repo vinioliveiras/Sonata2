@@ -95,6 +95,7 @@ rust/
                           (DDC/CI too), battery, displays, keyboards...; wfconfig.py,
                           the Wayfire IPC client (wl/wfipc.py), sounds.py
     sonata-session/       the session's plumbing: logs, keep / keep-all, key, screenshot
+    sonata-shell/         shell/'s shared pieces: layer-shell, intro, wallpaper, loginui
     sonata-dbus/          zbus proxies/services: Notifications, logind, NM, UPower...
     sonata-apps/          apps.py: .desktop parsing, write_desktop_file, icons
   apps/
@@ -351,6 +352,34 @@ stay behind `--features ui-tests` and run only under
   screenshot [screen|area|edit]` (the menu bar's capture, else grim and
   a notification). Wayfire's bindings still call the Python ones: the
   "Sonata (Rust preview)" session switches them over.
-- Not ported yet: `restart` (it finds the Python processes by their
-  command line), `doctor`, autostart; BlueZ over D-Bus (bluez.py) and
-  watching NetworkManager and the sound server.
+- Not ported yet: BlueZ over D-Bus (bluez.py) and watching NetworkManager
+  and the sound server.
+- Left for the "Sonata (Rust preview)" session (step 4), on purpose:
+  `restart` (it stops and starts the Python shell by its command lines,
+  with intro.py's slide-away signals), `doctor` (it checks what the
+  *Python* Sonata needs: PyGObject, typelibs) and autostart (title bars,
+  compose, keyring, Flatpak theme, app lock and scopes: all Python
+  modules still). Each changes shape once the session runs Rust pieces;
+  ported now they would be rewritten then.
+
+### Step 4 so far: the welcome screen
+
+- `sonata-shell`: what the shell's surfaces share -- gtk4-layer-shell
+  (0.5, the gtk4 0.9 one; the process starts itself again with the
+  library preloaded, as layer.py does), intro.py's markers, the
+  wallpaper of the moment (system.json, else Sonata's "Mountains"; a
+  video's poster made with ffmpeg and named like the Python one, so
+  both share the cache), the login look (loginui.py: the blurred
+  backdrop -- blurred on the CPU with the `image` crate --, avatar,
+  password field, shake, clock, power buttons with logind and the
+  systemctl fallback) and the accounts and sessions the login screen
+  lists.
+- `sonata-ui::progress`: the macOS spinner and the progress bar.
+- `sonata2-rs welcome [--preview]`: welcome.py. It waits for the Python
+  shell's D-Bus names (those are the parts that run), then finishes the
+  intro and fades.
+- Not ported yet: the video under the backdrop (videowallpaper.py), the
+  mirrored password fields and the wrong-password wait (lock.py's).
+- Found on the way: serde_json's fast float parser read some numbers one
+  bit off (a Notes timestamp changed on save); `float_roundtrip` is on now,
+  with a test.

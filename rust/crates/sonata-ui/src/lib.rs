@@ -14,6 +14,7 @@ pub mod fmt;
 pub mod glass;
 pub mod menu;
 pub mod panel;
+pub mod progress;
 pub mod theme;
 pub mod tokens;
 pub mod window;

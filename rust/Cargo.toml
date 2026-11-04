@@ -8,11 +8,13 @@ members = [
     "crates/sonata-ui",
     "crates/sonata-session",
     "crates/sonata-backend",
+    "crates/sonata-shell",
     "apps/calculator",
     "apps/clock",
     "apps/textedit",
     "apps/preview",
     "apps/notes",
+    "apps/welcome",
     "apps/sonata2-rs",
 ]
 
@@ -29,7 +31,10 @@ gtk = { package = "gtk4", version = "0.9", features = ["v4_12"] }
 adw = { package = "libadwaita", version = "0.7", features = ["v1_5"] }
 gio = "0.20"
 glib = "0.20"
-serde_json = { version = "1", features = ["preserve_order"] }   # keys keep their order, as Python writes them
+# preserve_order: keys keep their order, as Python writes them; float_roundtrip:
+# numbers read back exactly (the fast parser was a bit off: Notes' timestamps
+# changed on every save)
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 libc = "0.2"
 num-bigint = "0.4"
 num-traits = "0.2"
@@ -44,17 +49,20 @@ pangocairo = "0.20"
 memmap2 = "0.9"
 flate2 = "1"
 base64 = "0.22"
+gtk4-layer-shell = "0.5"
 
 sonata-config = { path = "crates/sonata-config" }
 sonata-i18n = { path = "crates/sonata-i18n" }
 sonata-ui = { path = "crates/sonata-ui" }
 sonata-session = { path = "crates/sonata-session" }
 sonata-backend = { path = "crates/sonata-backend" }
+sonata-shell = { path = "crates/sonata-shell" }
 sonata-calculator = { path = "apps/calculator" }
 sonata-clock = { path = "apps/clock" }
 sonata-textedit = { path = "apps/textedit" }
 sonata-preview = { path = "apps/preview" }
 sonata-notes = { path = "apps/notes" }
+sonata-welcome = { path = "apps/welcome" }
 
 [profile.release]
 lto = "thin"

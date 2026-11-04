@@ -6,6 +6,7 @@
 #   ~/.local/bin/sonata2-rs                       the binary
 #   ~/.local/share/sonata2-rs/locale/             the translations (a copy)
 #   ~/.local/share/sonata2-rs/sounds/             the alarm sounds (a copy, for Clock's preview)
+#   ~/.local/share/sonata2-rs/wallpapers/         Sonata's wallpapers (a copy: the default one)
 #   ~/.local/share/applications/io.github.vinioliveiras.sonata2rs.*.desktop
 #                                                 "Calculator (Rust)"... in Launchpad
 #   ~/.config/sonata2-rs/                         what the Rust build saves
@@ -46,6 +47,8 @@ rm -rf "$SHARE/sonata2-rs/locale"
 cp -r "$REPO/sonata2/locale" "$SHARE/sonata2-rs/locale"
 rm -rf "$SHARE/sonata2-rs/sounds"
 cp -r "$REPO/sonata2/data/sounds" "$SHARE/sonata2-rs/sounds"
+rm -rf "$SHARE/sonata2-rs/wallpapers"
+cp -r "$REPO/sonata2/data/wallpapers" "$SHARE/sonata2-rs/wallpapers"
 # the desktop entries name this binary; on trial they are the "(Rust)" ones
 SONATA2_RS_LAUNCHER="$BIN/sonata2-rs" "$BIN/sonata2-rs" desktop-files
 update-desktop-database "$APPS" 2>/dev/null || true

@@ -120,3 +120,17 @@ fn indent_one_as_the_apps_data_files() {
     let v = json!({"alarms": [{"id": "a", "repeat": []}]});
     assert_eq!(to_python_json_indent(&v, 1), "{\n \"alarms\": [\n  {\n   \"id\": \"a\",\n   \"repeat\": []\n  }\n ]\n}");
 }
+
+/// Notes' timestamps came back one bit off after a save: serde_json's fast
+/// float parser read "1793814913.3558567" as 1793814913.355857, so every
+/// number the Python Sonata wrote could change on the Rust side's next
+/// write (and the Notes store's round-trip test failed now and then).
+#[test]
+fn test_floats_read_back_exactly() {
+    for text in ["1793814913.3558567", "1793814913.355857", "0.1", "1e-7", "123456789.12345679"] {
+        let v: serde_json::Value = serde_json::from_str(text).unwrap();
+        let want: f64 = text.parse().unwrap();
+        assert_eq!(v.as_f64().unwrap().to_bits(), want.to_bits(), "{text}");
+        assert_eq!(to_python_json(&v), format!("{want:?}"));
+    }
+}

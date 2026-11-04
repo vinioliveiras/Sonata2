@@ -6,6 +6,7 @@
 //!   sonata2-rs textedit [--new-window] [FILE...]   TextEdit
 //!   sonata2-rs preview [--markup] [FILE...]        Preview
 //!   sonata2-rs notes [--dark|--light]              Notes (with Reminders)
+//!   sonata2-rs welcome [--preview]                 the welcome screen after login
 //!   sonata2-rs key <volume-up|volume-down|volume-mute|brightness-up|
 //!                  brightness-down|play-pause|next|previous>   a media key
 //!   sonata2-rs screenshot [screen|area|edit]    a screenshot (the menu bar's, else grim)
@@ -21,7 +22,7 @@ mod desktop;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -52,6 +53,10 @@ fn main() -> ExitCode {
         }
         "key" if args.len() > 1 => ExitCode::from(sonata_session::keys::key(&args[1]) as u8),
         "screenshot" => ExitCode::from(sonata_session::keys::screenshot(args.get(1).map_or("screen", String::as_str)) as u8),
+        "welcome" => {
+            let code = sonata_welcome::run(&args[1..]);
+            ExitCode::from(code.value() as u8)
+        }
         "keep" if args.len() > 1 => ExitCode::from(sonata_session::keep::keep(&args[1..]) as u8),
         "keep-all" => ExitCode::from(sonata_session::keep::keep_all(&args[1..]) as u8),
         "desktop-files" => match desktop::write_all() {

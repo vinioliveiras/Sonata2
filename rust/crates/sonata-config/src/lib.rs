@@ -301,6 +301,19 @@ pub fn own_data_dir(app: &str) -> PathBuf {
     dir
 }
 
+/// One of Sonata's own files (sonata2/data/<name>: wallpapers, sounds...):
+/// next to the installed binary (`<prefix>/share/sonata2-rs/<name>`), else
+/// this clone's.
+pub fn data_path(name: &str) -> PathBuf {
+    if let Some(prefix) = std::env::current_exe().ok().and_then(|e| e.parent()?.parent().map(PathBuf::from)) {
+        let p = prefix.join("share").join("sonata2-rs").join(name);
+        if p.exists() {
+            return p;
+        }
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../sonata2/data").join(name)
+}
+
 /// Finder's "Set Desktop Picture" (prefs.set_wallpaper): the picture for
 /// Light and Dark, in system.json -- the desktop's own setting, so the
 /// shared `~/.config/sonata2` even on trial (the user asked for it in so
