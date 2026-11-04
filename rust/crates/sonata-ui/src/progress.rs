@@ -4,7 +4,7 @@
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use gtk::{glib, graphene};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 const SPOKES: i64 = 12;
 /// one turn a second
@@ -175,4 +175,135 @@ pub fn meter(fraction: f64) -> gtk::ProgressBar {
 pub fn set_meter(m: &gtk::ProgressBar, fraction: f64) {
     m.set_fraction(fraction.clamp(0.0, 1.0));
     if fraction >= FULL { m.add_css_class("full") } else { m.remove_css_class("full") }
+}
+
+// -- operations window (ui/progress.py) -----------------------------------------------------
+/// quick copies never flash a window
+const SHOW_DELAY_MS: u64 = 700;
+const WIDTH: i32 = 460;
+
+/// One row of the progress window. Update it from the GTK thread.
+pub struct Operation {
+    pub root: gtk::Box,
+    title: gtk::Label,
+    pub bar: gtk::ProgressBar,
+    detail: gtk::Label,
+    on_cancel: Option<Box<dyn Fn()>>,
+    started: std::time::Instant,
+    done: std::cell::Cell<bool>,
+}
+
+impl Operation {
+    pub fn set_title(&self, text: &str) {
+        self.title.set_label(text);
+    }
+
+    /// Bytes done of total: fills the bar and estimates the time left.
+    pub fn update(&self, done: u64, total: u64) {
+        if total == 0 {
+            self.bar.pulse();
+            return;
+        }
+        let f = (done as f64 / total as f64).min(1.0);
+        self.bar.set_fraction(f);
+        let mut text = sonata_i18n::fmt(&sonata_i18n::tr!("{done} of {total}"), &[("done", &crate::fmt::size(done)), ("total", &crate::fmt::size(total))]);
+        let elapsed = self.started.elapsed().as_secs_f64();
+        text.push_str(" — ");
+        if f > 0.02 && elapsed > 1.0 {
+            text.push_str(&crate::fmt::eta(elapsed * (1.0 - f) / f));
+        } else {
+            text.push_str(&sonata_i18n::tr!("Estimating time remaining…"));
+        }
+        self.detail.set_label(&text);
+    }
+
+    pub fn set_detail(&self, text: &str) {
+        self.detail.set_label(text);
+    }
+
+    pub fn finish(&self) {
+        if self.done.replace(true) {
+            return;
+        }
+        OPS.with(|w| {
+            let mut st = w.borrow_mut();
+            let Some((win, rows, ops)) = st.as_mut() else { return };
+            ops.retain(|o| o.upgrade().is_some_and(|o| !std::ptr::eq(o.as_ref(), self)));
+            rows.remove(&self.root);
+            if ops.is_empty() {
+                // gone, not hidden: the next copy opens a new window at its own
+                // height (a hidden one came back as tall as it once was)
+                win.destroy();
+                *st = None;
+            } else {
+                win.set_default_size(WIDTH, 1); // a row less: shorter again
+            }
+        });
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.done.get()
+    }
+}
+
+type OpsWindow = (gtk::Window, gtk::Box, Vec<std::rc::Weak<Operation>>);
+
+thread_local! {
+    static OPS: RefCell<Option<OpsWindow>> = const { RefCell::new(None) };
+}
+
+/// Add an operation to the progress window (shown after a short delay;
+/// closing it leaves the operations running, like Finder).
+pub fn start(title: &str, on_cancel: Option<Box<dyn Fn()>>, heading: Option<&str>) -> std::rc::Rc<Operation> {
+    crate::css::register_module("ui/progress.py");
+    let heading = heading.map(str::to_string).unwrap_or_else(|| sonata_i18n::tr!("Copy"));
+    let root = gtk::Box::builder().spacing(12).css_classes(["sp-row"]).build();
+    let col = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(6).hexpand(true).build();
+    let title_l = gtk::Label::builder().label(title).xalign(0.0).ellipsize(gtk::pango::EllipsizeMode::Middle).css_classes(["sp-title"]).build();
+    let pbar = bar(None);
+    let detail = gtk::Label::builder().label(sonata_i18n::tr!("Preparing…")).xalign(0.0).css_classes(["sp-detail"]).build();
+    col.append(&title_l);
+    col.append(&pbar);
+    col.append(&detail);
+    root.append(&col);
+    let has_cancel = on_cancel.is_some();
+    let op = std::rc::Rc::new(Operation { root, title: title_l, bar: pbar, detail, on_cancel, started: std::time::Instant::now(), done: std::cell::Cell::new(false) });
+    if has_cancel {
+        let stop = gtk::Button::builder().icon_name("window-close-symbolic").tooltip_text(sonata_i18n::tr!("Stop")).valign(gtk::Align::Center).css_classes(["sp-stop"]).build();
+        let w = std::rc::Rc::downgrade(&op);
+        stop.connect_clicked(move |_| {
+            if let Some(o) = w.upgrade() {
+                if let Some(c) = &o.on_cancel {
+                    c();
+                }
+                o.finish();
+            }
+        });
+        op.root.append(&stop);
+    }
+    OPS.with(|w| {
+        let mut st = w.borrow_mut();
+        let (win, rows, ops) = st.get_or_insert_with(|| {
+            let win = gtk::Window::builder().default_width(WIDTH).resizable(false).hide_on_close(true).build();
+            for c in ["sonata-progress-window", "sonata-glass-window"] {
+                win.add_css_class(c); // frosted glass, like Get Info
+            }
+            crate::window::standard(&win);
+            let rows = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            win.set_child(Some(&rows));
+            (win, rows, Vec::new())
+        });
+        win.set_title(Some(&heading));
+        rows.append(&op.root);
+        ops.push(std::rc::Rc::downgrade(&op));
+        let (wk, ow) = (win.downgrade(), std::rc::Rc::downgrade(&op));
+        glib::timeout_add_local_once(std::time::Duration::from_millis(SHOW_DELAY_MS), move || {
+            if let (Some(win), Some(o)) = (wk.upgrade(), ow.upgrade()) {
+                if !o.is_done() {
+                    win.present();
+                }
+            }
+        });
+    });
+    op
 }

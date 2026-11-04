@@ -49,7 +49,37 @@ pub fn alert<F: Fn(&str) + 'static>(
     on_response: F,
     parent: Option<&gtk::Widget>,
 ) -> adw::AlertDialog {
+    alert_full(heading, body, responses, None, move |rid, _| on_response(rid), parent)
+}
+
+/// An alert with a checkbox under its text (Finder's "Apply to All");
+/// on_response(response id, ticked).
+pub fn alert_check<F: Fn(&str, bool) + 'static>(
+    heading: &str,
+    body: &str,
+    responses: &[(&str, String, &str)],
+    check: &str,
+    checked: bool,
+    on_response: F,
+    parent: Option<&gtk::Widget>,
+) -> adw::AlertDialog {
+    alert_full(heading, body, responses, Some((check, checked)), on_response, parent)
+}
+
+fn alert_full<F: Fn(&str, bool) + 'static>(
+    heading: &str,
+    body: &str,
+    responses: &[(&str, String, &str)],
+    check: Option<(&str, bool)>,
+    on_response: F,
+    parent: Option<&gtk::Widget>,
+) -> adw::AlertDialog {
     let dlg = adw::AlertDialog::new(Some(&breakable(heading)), Some(&breakable(body)));
+    let tick = check.map(|(label, on)| {
+        let b = gtk::CheckButton::builder().label(label).halign(gtk::Align::Center).active(on).build();
+        dlg.set_extra_child(Some(&b));
+        b
+    });
     dlg.add_css_class("sonata-alert");
     if (adw::major_version(), adw::minor_version()) >= (1, 6) {
         dlg.set_content_width(ALERT_WIDTH); // (segfaults with libadwaita 1.5.0)
@@ -73,7 +103,7 @@ pub fn alert<F: Fn(&str) + 'static>(
     if let Some(c) = close {
         dlg.set_close_response(c.0);
     }
-    dlg.connect_response(None, move |_, rid| on_response(rid));
+    dlg.connect_response(None, move |_, rid| on_response(rid, tick.as_ref().is_some_and(|t| t.is_active())));
     // always its own window, so the compositor's blur shows through its
     // glass -- still in front of its window and modal to it
     let owner = parent.and_then(|p| p.root());

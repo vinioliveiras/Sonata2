@@ -7,6 +7,7 @@
 //! sonata_ui::register("calculator", "button { background: %(calc_key)s; }");
 //! ```
 
+pub mod apps;
 pub mod controls;
 pub mod css;
 pub mod dialog;

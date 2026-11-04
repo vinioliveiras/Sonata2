@@ -108,3 +108,39 @@ mod tests {
         assert_eq!(super::size(1_400_000), "1.4 MB");
     }
 }
+
+/// Finder's remaining-time phrase.
+pub fn eta(seconds: f64) -> String {
+    let s = (seconds + 0.5) as i64;
+    let n = |t: String, n: i64| fmt(&t, &[("n", &n.to_string())]);
+    if s < 5 {
+        return n(tr!("About {n} seconds"), 5);
+    }
+    if s < 60 {
+        return n(tr!("About {n} seconds"), (s + 4) / 5 * 5);
+    }
+    let m = (s + 30) / 60;
+    if m == 1 {
+        return tr!("About a minute");
+    }
+    if m < 60 {
+        return n(tr!("About {n} minutes"), m);
+    }
+    let h = (m + 30) / 60;
+    if h == 1 { tr!("About an hour") } else { n(tr!("About {n} hours"), h) }
+}
+
+#[cfg(test)]
+mod eta_tests {
+    #[test]
+    fn remaining_time_like_finder() {
+        sonata_i18n::use_language("en");
+        assert_eq!(super::eta(2.0), "About 5 seconds");
+        assert_eq!(super::eta(21.0), "About 25 seconds");
+        assert_eq!(super::eta(80.0), "About a minute");
+        assert_eq!(super::eta(600.0), "About 10 minutes");
+        assert_eq!(super::eta(3500.0), "About 58 minutes");
+        assert_eq!(super::eta(4000.0), "About an hour");
+        assert_eq!(super::eta(4.0 * 3600.0), "About 4 hours");
+    }
+}
