@@ -34,6 +34,7 @@ sonata-webapps.workspace = true
 sonata-capture.workspace = true
 sonata-sessionui.workspace = true
 sonata-dock.workspace = true
+sonata-topbar.workspace = true
 sonata-activity.workspace = true
 sonata-config.workspace = true
 sonata-session.workspace = true

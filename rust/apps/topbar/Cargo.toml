@@ -14,8 +14,11 @@ gtk4-layer-shell.workspace = true
 serde_json.workspace = true
 sonata-backend.workspace = true
 sonata-config = { workspace = true, features = ["watch"] }
+sonata-desktop.workspace = true
 sonata-i18n.workspace = true
+sonata-notifications.workspace = true
 sonata-shell.workspace = true
+sonata-tray.workspace = true
 sonata-ui.workspace = true
 
 [dev-dependencies]
