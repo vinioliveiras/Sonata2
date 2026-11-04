@@ -2,5 +2,8 @@ pub mod actions;
 pub mod folder;
 pub mod folderprefs;
 pub mod ops;
+pub mod peicon;
+pub mod search;
 pub mod tags;
+pub mod thumbs;
 pub mod undo;

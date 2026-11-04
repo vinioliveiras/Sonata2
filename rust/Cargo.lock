@@ -1473,6 +1473,7 @@ dependencies = [
  "sonata-backend",
  "sonata-config",
  "sonata-i18n",
+ "sonata-preview",
  "sonata-ui",
  "tempfile",
  "zip",
