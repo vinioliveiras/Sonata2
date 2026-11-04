@@ -26,7 +26,7 @@ CSS_MODULES = ("ui/controls.py", "ui/menu.py", "ui/window.py", "ui/dialog.py", "
                "preview/window.py", "preview/sidebar.py", "preview/info.py", "preview/markup.py",
                "notes/window.py", "notes/editor.py", "notes/reminders.py", "ui/progress.py",
                "shell/loginui.py", "shell/spotlight.py", "shell/authsheet.py",
-               "terminal/window.py")
+               "terminal/window.py", "feedback/window.py")
 
 
 def _registered(src: str, mod: str) -> list:

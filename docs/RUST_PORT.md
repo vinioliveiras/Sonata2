@@ -457,3 +457,16 @@ stay behind `--features ui-tests` and run only under
   Sonata's commands, folders opening as tabs of the front window.
 - Its trial entry "Terminal (Rust)" isn't a TerminalEmulator: the Python
   Terminal stays the one the system picks.
+
+### Step 6 so far: Feedbacker
+
+- `sonata2-rs feedback`: feedback/ -- the report .zip (description,
+  system facts, the Python `sonata2 doctor`, the session's logs, and on
+  trial the Rust parts' own under logs/rust/), the GitHub link (Python's
+  urlencode, cut to 6000 characters), the crash note with its kind from
+  the logs and the week's history, Monitoring with its "turn it on"
+  question.
+- Monitoring is the session's one switch (Settings > About > Logs): the
+  Python Sonata's flag file, written on trial too -- like the wallpaper,
+  it is the user asking for it.
+- Not ported yet: "Reopen your apps" after a crash (open_apps.py).

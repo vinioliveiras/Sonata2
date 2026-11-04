@@ -35,12 +35,36 @@ pub fn verbose() -> bool {
 
 /// Where everything logs: ~/.cache/sonata2 with logs on, else memory.
 pub fn log_dir() -> PathBuf {
+    log_dir_named(name())
+}
+
+/// The session's own logs (the Python Sonata's, which runs it: Wayfire's,
+/// the crash notes tools/sonata-session leaves) -- on trial too.
+pub fn session_log_dir() -> PathBuf {
+    log_dir_named("sonata2")
+}
+
+fn log_dir_named(name: &str) -> PathBuf {
     if verbose() {
         let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
         let cache = std::env::var_os("XDG_CACHE_HOME").filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| home.join(".cache"));
-        return cache.join(name());
+        return cache.join(name);
     }
-    env_dir("XDG_RUNTIME_DIR", "/tmp").join(format!("{}-logs", name()))
+    env_dir("XDG_RUNTIME_DIR", "/tmp").join(format!("{name}-logs"))
+}
+
+/// Settings > About > Logs on / off (from the next start of each part).
+/// The session's one switch: the Python Sonata's flag file, on trial too.
+pub fn set_verbose(on: bool) {
+    let path = flag_path();
+    if on {
+        if let Some(d) = path.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let _ = std::fs::write(&path, "Sonata writes detailed logs while this file exists.\n");
+    } else {
+        let _ = std::fs::remove_file(&path);
+    }
 }
 
 /// Keep a log under its cap: past it, only the newest half stays. (The

@@ -1,0 +1,21 @@
+[package]
+name = "sonata-feedback"
+description = "Feedbacker (sonata2/feedback/): report a problem with Sonata"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gtk.workspace = true
+adw.workspace = true
+gio.workspace = true
+glib.workspace = true
+zip.workspace = true
+sonata-backend.workspace = true
+sonata-config.workspace = true
+sonata-i18n.workspace = true
+sonata-session.workspace = true
+sonata-ui.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

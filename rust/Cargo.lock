@@ -1090,6 +1090,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-feedback"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "libadwaita",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-i18n",
+ "sonata-session",
+ "sonata-ui",
+ "tempfile",
+ "zip",
+]
+
+[[package]]
 name = "sonata-i18n"
 version = "0.1.0"
 dependencies = [
@@ -1280,6 +1297,7 @@ dependencies = [
  "sonata-calculator",
  "sonata-clock",
  "sonata-config",
+ "sonata-feedback",
  "sonata-i18n",
  "sonata-lock",
  "sonata-notes",

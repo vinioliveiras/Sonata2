@@ -212,5 +212,12 @@
    "css": "\nwindow.sonata-terminal { background: %(term_bg)s; }\n.tm-bar { background: %(window_bg)s; box-shadow: inset 0 -1px %(separator)s; }\n.tm-missing { color: %(label_secondary)s; }\n/* tab strip: macOS Terminal's, equal-width tabs under the title bar */\n.tm-tabs { background: %(window_bg)s; box-shadow: inset 0 -1px %(separator)s, inset 0 1px %(separator)s;\n           min-height: 26px; }\n/* the tab in front is the terminal itself (its background, light or dark);\n   the others sit in the bar, darker (Vini: it was grey) */\n.tm-tab { background: none; box-shadow: inset -1px 0 %(separator)s;\n          transition: background %(t_fast)s %(ease_out)s; }\n.tm-tab:hover { background: %(tool_hover)s; }\n.tm-tab.active, .tm-tab.active:hover { background: %(term_bg)s; box-shadow: inset -1px 0 %(separator)s; }\n.tm-tab-label { font-size: %(text_small)s; color: %(label_secondary)s; margin: 0 22px; }\n.tm-tab.active .tm-tab-label { color: %(label)s; }\n.tm-tab-close, .tm-tab-add { min-width: 16px; min-height: 16px; padding: 0; margin: 0 5px;\n                             border-radius: 4px; background: none; box-shadow: none; border: none;\n                             color: %(label_secondary)s; -gtk-icon-size: 10px; }\n.tm-tab-close { opacity: 0; transition: opacity %(t_fast)s %(ease_out)s; }\n.tm-tab:hover .tm-tab-close { opacity: 1; }\n.tm-tab-close:hover, .tm-tab-add:hover { background: %(tool_hover)s; color: %(label)s; }\n.tm-tab-add { margin: 0 6px; -gtk-icon-size: 12px; }\n",
    "local": {}
   }
+ ],
+ "feedback/window.py": [
+  {
+   "key": "feedback",
+   "css": "\nwindow.sonata-feedback { background: %(window_bg)s; }\n.fb-text { min-height: 130px; padding: 10px 12px; }      /* libadwaita's .card: the rows' look */\n.fb-text textview, .fb-text text { background: transparent; }\n.fb-bottom { padding: 10px 16px 14px 16px; }\n",
+   "local": {}
+  }
  ]
 }

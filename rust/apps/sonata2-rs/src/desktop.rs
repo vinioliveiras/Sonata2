@@ -118,6 +118,19 @@ pub fn textedit_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
+/// Feedbacker's entry (feedback_desktop_file).
+pub fn feedback_entry(exec: &str) -> (String, String) {
+    let id = sonata_feedback::app_id();
+    let name = if sonata_config::side_by_side() { sonata_i18n::n_!("Feedbacker (Rust)") } else { "Feedbacker" };
+    let text = format!(
+        "[Desktop Entry]\nType=Application\nName={name}\nComment=Report a problem with Sonata\nIcon=sonata-feedback\n\
+         Categories=System;Utility;\nKeywords=bug;report;problem;feedback;logs;crash;\nStartupNotify=true\n\
+         Exec={} feedback\n",
+        quote(exec)
+    );
+    (format!("{id}.desktop"), text)
+}
+
 /// Terminal's entry (terminal_desktop_file). On trial it isn't a
 /// TerminalEmulator: the Python Terminal stays the one the system picks.
 pub fn terminal_entry(exec: &str) -> (String, String) {
@@ -169,7 +182,7 @@ pub fn write_all() -> io::Result<Vec<PathBuf>> {
     let folder = data_home().join("applications");
     let mut written = Vec::new();
     let exec = launcher();
-    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec), notes_entry(&exec), terminal_entry(&exec)] {
+    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec), notes_entry(&exec), terminal_entry(&exec), feedback_entry(&exec)] {
         let text = localize(&text, &catalogs);
         let path = folder.join(file);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
