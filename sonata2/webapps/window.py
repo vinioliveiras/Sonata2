@@ -392,20 +392,23 @@ def form(on_done=None, parent=None, wid=None):
     background = Gtk.CheckButton(label=_("Keep running when its window is closed"))
     grid.attach(background, 1, 4, 1, 1)
     grid.background = background
-    # the engine (Vini): Chromium (sites made for Chrome just work) or WebKit
-    browser = W.chromium_browser()
-    engines = [("chromium", browser[1] if browser else "Chromium"), ("webkit", "WebKit")]
-    if not browser:
-        engines = engines[1:]                                # none installed: WebKit only
-    current = W.engine(entry0) if entry0 else W.default_engine()
-    picked = {"engine": current}
+    # the engine (Vini): a Chromium-family browser (sites made for Chrome just
+    # work) -- each one installed, Brave too (Vini) -- or WebKit
+    browsers = W.chromium_browsers()
+    engines = [("chromium", name, key) for _path, name, key in browsers] + [("webkit", "WebKit", None)]
+    if entry0:
+        current = W.engine(entry0)
+        mine = W.browser_key(entry0) if current == "chromium" else None
+    else:
+        current, mine = W.default_engine(), (browsers[0][2] if browsers else None)
+    start = next((i for i, (e, _l, k) in enumerate(engines) if e == current and (k == mine or e == "webkit")), 0)
+    picked = {"engine": engines[start][0], "browser": engines[start][2]}
 
     def engine_changed(i):
-        picked["engine"] = engines[i][0]
+        picked["engine"], picked["browser"] = engines[i][0], engines[i][2]
         background.set_sensitive(picked["engine"] == "webkit")   # the browser keeps its own windows
     engine_row = Gtk.Box(spacing=8)
-    engine_pick = ui.controls.popup_button([label for _e, label in engines],
-                                           [e for e, _l in engines].index(current), engine_changed)
+    engine_pick = ui.controls.popup_button([label for _e, label, _k in engines], start, engine_changed)
     engine_row.append(engine_pick)
     if entry0:
         engine_row.append(Gtk.Label(label=_("Switching asks you to sign in again."), xalign=0,
@@ -413,7 +416,7 @@ def form(on_done=None, parent=None, wid=None):
     grid.attach(Gtk.Label(label=_("Engine:"), xalign=1), 0, 3, 1, 1)
     grid.attach(engine_row, 1, 3, 1, 1)
     grid.engine = engine_pick                                # (tests)
-    engine_changed([e for e, _l in engines].index(current))
+    engine_changed(start)
     if entry0:
         url.set_text(entry0["url"])
         name.set_text(entry0["name"])
@@ -428,11 +431,11 @@ def form(on_done=None, parent=None, wid=None):
             if target:
                 if entry0:
                     W.update(wid, name=name.get_text(), url=target, background=background.get_active(),
-                             engine_name=picked["engine"])
+                             engine_name=picked["engine"], browser=picked["browser"])
                     done = wid
                 else:
                     done = W.create(name.get_text(), target, background=background.get_active(),
-                                    engine_name=picked["engine"])
+                                    engine_name=picked["engine"], browser=picked["browser"])
                 if state["icon"]:
                     W.set_custom_icon(done, state["icon"])
                 if on_done:

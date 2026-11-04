@@ -134,9 +134,38 @@ class WindowTest(unittest.TestCase):
             self.assertTrue(dlg.enabled["create"])
             self.assertEqual(name.get_text(), "Whatsapp")                     # suggested from the address
             dlg.on("create")
+        browsers = W.chromium_browsers()
         create.assert_called_once_with("Whatsapp", "https://web.whatsapp.com/", background=False,
-                                       engine_name=W.default_engine())
+                                       engine_name=W.default_engine(),
+                                       browser=browsers[0][2] if browsers else None)
         self.assertEqual(done, ["w0123456789"])
+
+    def test_brave_not_offered_beside_chrome(self):
+        """Vini: Brave installed with Chrome couldn't be picked for a web app
+        (only the first Chromium-family browser was offered): the Engine
+        pop-up lists each one; picking Brave makes the app in Brave."""
+        class Dlg:
+            def __init__(self, *_a, **_k):
+                self.on, self.child = _a[3], None
+
+            def set_extra_child(self, c):
+                self.child = c
+
+            def set_response_enabled(self, *_a):
+                pass
+        installed = {"google-chrome-stable": "/usr/bin/google-chrome-stable", "brave": "/usr/bin/brave"}
+        with mock.patch.object(W.shutil, "which", side_effect=installed.get), \
+                mock.patch.object(ui.dialog, "alert", side_effect=Dlg), \
+                mock.patch.object(W, "create", return_value="w0123456789") as create:
+            dlg = self.win_mod.form()
+            pick = dlg.child.engine
+            labels = [pick.get_model().get_string(i) for i in range(pick.get_model().get_n_items())]
+            self.assertEqual(labels, ["Google Chrome", "Brave", "WebKit"])
+            pick.set_selected(1)
+            dlg.child.get_child_at(1, 0).set_text("web.whatsapp.com")
+            dlg.on("create")
+        self.assertEqual(create.call_args.kwargs["browser"], "brave")
+        self.assertEqual(create.call_args.kwargs["engine_name"], "chromium")
 
     def test_window_has_its_own_storage(self):
         try:
@@ -313,7 +342,7 @@ class EditTest(unittest.TestCase):
     def test_form_filled_in_and_saves(self):
         from sonata2.webapps import window
         with mock.patch.object(W, "theme_icon", return_value=None):
-            wid = W.create("Zap", "web.whatsapp.com", command="sonata2", fetch=False)
+            wid = W.create("Zap", "web.whatsapp.com", command="sonata2", fetch=False, engine_name="webkit")
 
         class Dlg:
             def __init__(self, *a, **_k):
@@ -334,7 +363,7 @@ class EditTest(unittest.TestCase):
             dlg.child.background.set_active(True)
             dlg.on("create")
         update.assert_called_once_with(wid, name="WhatsApp", url="https://web.whatsapp.com/", background=True,
-                                       engine_name="webkit")
+                                       engine_name="webkit", browser=None)
         create.assert_not_called()
 
     def test_menus_offer_it(self):

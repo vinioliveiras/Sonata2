@@ -64,6 +64,48 @@ class EngineTest(unittest.TestCase):
             self.assertEqual(W.get(app)["engine"], "chromium")
 
 
+class BraveTest(unittest.TestCase):
+    """Vini: web apps couldn't be made with Brave when Chrome was installed too
+    -- only the first Chromium-family browser found was offered. Each one
+    installed is a choice in the form, Brave among them."""
+
+    INSTALLED = {"google-chrome-stable": "/usr/bin/google-chrome-stable", "brave": "/usr/bin/brave"}
+
+    def which(self):
+        return mock.patch.object(W.shutil, "which", side_effect=self.INSTALLED.get)
+
+    def test_only_chrome_offered_when_brave_installed_too(self):
+        with self.which():
+            self.assertEqual([(n, k) for _p, n, k in W.chromium_browsers()],
+                             [("Google Chrome", "chrome"), ("Brave", "brave")])
+            self.assertEqual(W.chromium_browser(), ("/usr/bin/google-chrome-stable", "Google Chrome"))
+            self.assertEqual(W.chromium_browser({"browser": "brave"}), ("/usr/bin/brave", "Brave"))
+
+    def test_brave_app_runs_in_brave_with_its_own_profile_and_app_id(self):
+        e = {"url": "https://web.whatsapp.com/", "engine": "chromium", "browser": "brave"}
+        with self.which():
+            self.assertEqual(W.window_class("wabc", e), "brave-web.whatsapp.com__-Default")
+            self.assertTrue(W.profile_dir("wabc", e).endswith("wabc/brave"))
+            self.assertTrue(W.profile_dir("wabc", {**e, "browser": "chrome"}).endswith("wabc/chromium"))
+
+    def test_brave_gone_falls_back(self):
+        with mock.patch.object(W.shutil, "which", side_effect={"chromium": "/usr/bin/chromium"}.get):
+            self.assertEqual(W.chromium_browser({"browser": "brave"}), ("/usr/bin/chromium", "Chromium"))
+
+    def test_browser_saved(self):
+        import tempfile
+        d = tempfile.mkdtemp()
+        from sonata2 import config
+        with mock.patch.object(config, "CONFIG_DIR", d), mock.patch.object(W, "data_dir", return_value=d), \
+                mock.patch.object(W, "write_desktop"), mock.patch.object(W, "update_theme_icon"):
+            app = W.create("Zap", "web.whatsapp.com", fetch=False, engine_name="chromium", browser="brave")
+            self.assertEqual(W.get(app)["browser"], "brave")
+            W.update(app, browser="chrome")
+            self.assertEqual(W.get(app)["browser"], "chrome")
+            W.update(app, browser="nonsense")
+            self.assertEqual(W.get(app)["browser"], "chrome")
+
+
 class SizeTest(unittest.TestCase):
     """Vini: the web app (in Chrome) didn't keep the size he gave its window."""
 
