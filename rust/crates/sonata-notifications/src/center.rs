@@ -82,6 +82,14 @@ impl FrostBox {
         self.queue_draw();
     }
 
+    /// Itself and every panel in it drawn again (their glass and tint).
+    pub fn redraw(&self) {
+        self.queue_draw();
+        for (w, _) in self.panels() {
+            w.queue_draw();
+        }
+    }
+
     pub fn has_picture(&self) -> bool {
         use gtk::subclass::prelude::ObjectSubclassIsExt;
         self.imp().tex.borrow().is_some()
@@ -404,6 +412,22 @@ impl Center {
         }
         for b in [&self.top, &self.col] {
             b.set_picture(tex.clone());
+        }
+        // the glass drawn now and once the column has slid in: Vini, the
+        // calendar's glass only showed after the pointer went over it (its
+        // panel's last picture, drawn while sliding, was kept)
+        self.redraw_glass();
+        let (t, c) = (self.top.downgrade(), self.col.downgrade());
+        glib::timeout_add_local_once(std::time::Duration::from_millis(sonata_ui::tokens::ms(400.0) as u64), move || {
+            for b in [t.upgrade(), c.upgrade()].into_iter().flatten() {
+                FrostBox::redraw(&b);
+            }
+        });
+    }
+
+    fn redraw_glass(&self) {
+        for b in [&self.top, &self.col] {
+            FrostBox::redraw(b);
         }
     }
 

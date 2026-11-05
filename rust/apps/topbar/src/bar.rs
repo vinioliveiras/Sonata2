@@ -425,9 +425,16 @@ fn menu_at(btn: &gtk::Button, sections: Vec<Vec<Item>>) -> Option<gtk::Popover> 
     Some(pop.upcast())
 }
 
+/// A status item's panel (Wi-Fi, Bluetooth, battery...), centred under its
+/// icon as topbar.py's ui.panel.popup(btn, col, gap=, width=) puts it --
+/// not hung from the icon's left edge like the app menus: Vini, the Wi-Fi
+/// panel opened off to the right.
 fn status_panel(btn: &gtk::Button, col: &gtk::Box) -> gtk::Popover {
-    kit::panel(btn, col, PANEL_GAP, Some(STATUS_W), true, false)
+    kit::panel(btn, col, PANEL_GAP, Some(STATUS_W), STATUS_ALIGN_START, false)
 }
+
+/// Status panels hang centred under their icon (macOS, topbar.py).
+pub(crate) const STATUS_ALIGN_START: bool = false;
 
 impl Bar {
     pub fn new(services: Services) -> Rc<Bar> {
