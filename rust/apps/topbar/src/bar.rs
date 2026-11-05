@@ -1366,6 +1366,7 @@ impl Bar {
         let w = Rc::downgrade(self);
         let out_btn = crate::controls::round_button("sonata-audio-output-symbolic", &tr!("Output"), |b| device_menu(b, &tr!("Output"), false));
         let (bx, slider) = crate::controls::slider_with_icon(|v| crate::controls::speaker_icon(v).to_string(), 0.0, move |v| w.upgrade().iter().for_each(|b| b.set_volume(v)), true, Some(&out_btn));
+        crate::controls::volume_feedback(&slider);
         let holder = gtk::Box::builder().css_classes(["panel-header"]).build();
         holder.append(&bx);
         let col = kit::column(&[sonata_ui::panel::header(&tr!("Sound"), None).upcast_ref(), holder.upcast_ref(), sonata_ui::panel::separator().upcast_ref()]);

@@ -58,6 +58,13 @@ pub fn player(path: &str) -> Option<Vec<String>> {
     cands.into_iter().find(|c| crate::run::which(c[0]).is_some()).map(|c| c.into_iter().map(String::from).collect())
 }
 
+/// play() shortly, on the main loop: after a slider is let go, so the new
+/// volume is in place when the sound plays (sounds.play_soon).
+pub fn play_soon(event: &str) {
+    let event = event.to_string();
+    glib::timeout_add_local_once(std::time::Duration::from_millis(120), move || play(&event));
+}
+
 pub fn play(event: &str) {
     if !enabled(event) {
         return;

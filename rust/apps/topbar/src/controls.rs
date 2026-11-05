@@ -176,6 +176,13 @@ impl ModuleSlider {
 /// Big Sur module slider: the symbol sits inside the capsule, left;
 /// `button` (a round one) at the right, like the Sound module's AirPlay.
 /// `icon(value)`: the symbol for a level (muted / levels).
+/// The volume feedback sound when the slider is let go (Settings > Sound):
+/// Vini, in the Rust session -- Control Center's and the Sound menu's
+/// volume made no sound (topbar.py's _volume_feedback).
+pub fn volume_feedback(slider: &impl IsA<gtk::Widget>) {
+    sonata_ui::controls::on_release(slider, || sonata_backend::sounds::play_soon("volume"));
+}
+
 pub fn slider_with_icon(icon: impl Fn(f64) -> String + 'static, value: f64, on_change: impl Fn(f64) + 'static, sensitive: bool, button: Option<&gtk::Button>) -> (gtk::Widget, ModuleSlider) {
     let over = gtk::Overlay::builder().css_classes(["cc-slider-box"]).hexpand(true).build();
     let sl = ModuleSlider::new(value, 0.0, 100.0);
@@ -219,5 +226,35 @@ mod tests {
         assert_eq!(value_at(11.0 + 100.0, 222.0, 0.0, 100.0), 50.0);
         assert_eq!(value_at(500.0, 222.0, 0.0, 100.0), 100.0);
         assert_eq!(value_at(50.0, 10.0, 0.0, 100.0), 100.0); // narrower than the knob: no division by zero
+    }
+}
+
+#[cfg(test)]
+mod feedback_tests {
+    use gtk::prelude::*;
+    /// Vini, in the Rust session: moving the volume in Control Center (and
+    /// the Sound menu) made no sound -- the release hook was never put on
+    /// those sliders. Both carry it, as topbar.py's _volume_feedback does.
+    #[test]
+    fn test_control_center_volume_made_no_sound() {
+        for (file, src) in [("cc.rs", include_str!("cc.rs")), ("bar.rs", include_str!("bar.rs"))] {
+            let at = src.find("slider_with_icon(|v| crate::controls::speaker_icon(v)").or_else(|| src.find("slider_with_icon(|v| speaker_icon(v)")).unwrap_or_else(|| panic!("{file}: the volume slider"));
+            let next = &src[at..(at + 600).min(src.len())];
+            assert!(next.contains("volume_feedback(&"), "{file}: no feedback on the volume slider");
+        }
+    }
+
+    /// The hook itself: a release on the slider plays (here: is called).
+    #[test]
+    fn release_calls_back() {
+        if gtk::init().is_err() {
+            return; // (no display)
+        }
+        let s = super::ModuleSlider::new(50.0, 0.0, 100.0);
+        super::volume_feedback(&s);
+        let w: &gtk::Widget = s.upcast_ref();
+        let ctl = w.observe_controllers();
+        let has = (0..ctl.n_items()).any(|i| ctl.item(i).is_some_and(|c| c.is::<gtk::EventControllerLegacy>()));
+        assert!(has);
     }
 }

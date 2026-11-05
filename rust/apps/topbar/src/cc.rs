@@ -273,6 +273,7 @@ impl ControlCenter {
             let bv = b.clone();
             let out_btn = round_button("sonata-audio-output-symbolic", &tr!("Output"), |btn| bar::device_menu(btn, &tr!("Output"), false));
             let (snd, vol) = slider_with_icon(|v| speaker_icon(v).to_string(), level("vol"), move |v| bv.upgrade().iter().for_each(|b| b.set_volume(v)), true, Some(&out_btn));
+            crate::controls::volume_feedback(&vol);
             let in_btn = round_button("audio-input-microphone-symbolic", &tr!("Input"), |btn| bar::device_menu(btn, &tr!("Input"), true));
             let (mic_row, mic) = slider_with_icon(
                 |v| if v <= 0.0 { "microphone-disabled-symbolic".into() } else { "audio-input-microphone-symbolic".into() },

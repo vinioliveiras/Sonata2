@@ -187,6 +187,35 @@ impl Segmented {
 
 /// A thin slider (macOS menu slider): `on_change(value)` while dragging; a
 /// double-click puts it back to `default` (controls.slider, style "menu").
+/// A slider was let go: the left button up, a touch ended, an arrow key up
+/// (ui.controls.is_release).
+pub fn is_release(kind: gtk::gdk::EventType, button: u32, key: Option<gtk::gdk::Key>) -> bool {
+    use gtk::gdk::{EventType, Key};
+    match kind {
+        EventType::ButtonRelease => button == 1,
+        EventType::TouchEnd => true,
+        EventType::KeyRelease => key.is_some_and(|k| [Key::Left, Key::Right, Key::Up, Key::Down, Key::Page_Up, Key::Page_Down, Key::Home, Key::End].contains(&k)),
+        _ => false,
+    }
+}
+
+/// callback() when a slider is let go (mouse, touch) or an arrow key on it
+/// comes up -- not while dragging, and never for a value set from code
+/// (macOS plays the volume feedback once, on release; ui.controls.on_release).
+pub fn on_release(widget: &impl IsA<gtk::Widget>, callback: impl Fn() + 'static) {
+    let legacy = gtk::EventControllerLegacy::new();
+    legacy.set_propagation_phase(gtk::PropagationPhase::Capture);
+    legacy.connect_event(move |_, ev| {
+        let button = ev.downcast_ref::<gtk::gdk::ButtonEvent>().map_or(0, |b| b.button());
+        let key = ev.downcast_ref::<gtk::gdk::KeyEvent>().map(|k| k.keyval());
+        if is_release(ev.event_type(), button, key) {
+            callback();
+        }
+        gtk::glib::Propagation::Proceed // the slider still gets every event
+    });
+    widget.add_controller(legacy);
+}
+
 pub fn slider<F: Fn(f64) + 'static>(value: f64, on_change: F, lower: f64, upper: f64, default: Option<f64>) -> gtk::Scale {
     let s = gtk::Scale::with_range(gtk::Orientation::Horizontal, lower, upper, 1.0);
     s.add_css_class("sonata-slider");
@@ -235,4 +264,21 @@ pub fn reset_on_double_click(scale: &gtk::Scale, default: f64) {
         gtk::glib::Propagation::Proceed // the slider still gets every event
     });
     scale.add_controller(legacy);
+}
+
+#[cfg(test)]
+mod release_tests {
+    use super::is_release;
+    use gtk::gdk::{EventType, Key};
+
+    #[test]
+    fn only_letting_go_counts() {
+        assert!(is_release(EventType::ButtonRelease, 1, None));
+        assert!(!is_release(EventType::ButtonRelease, 3, None));
+        assert!(!is_release(EventType::ButtonPress, 1, None));
+        assert!(!is_release(EventType::MotionNotify, 0, None));
+        assert!(is_release(EventType::TouchEnd, 0, None));
+        assert!(is_release(EventType::KeyRelease, 0, Some(Key::Right)));
+        assert!(!is_release(EventType::KeyRelease, 0, Some(Key::a)));
+    }
 }

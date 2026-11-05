@@ -14,8 +14,6 @@
 #   ~/.local/share/sonata2-rs/config/wayfire.ini  Wayfire's default config (the shortcuts' defaults)
 #   ~/.local/share/sonata2-rs/icons               Sonata's icon themes: a link to this clone's
 #                                                 (125 MB; keep the clone while trying it)
-#   ~/.local/share/applications/io.github.vinioliveiras.sonata2rs.*.desktop
-#                                                 "Calculator (Rust)"... in Launchpad
 #   ~/.config/sonata2-rs/                         what the Rust build saves
 # One exception, Vini's call: Clock (Rust) edits the same alarms and timers
 # as the Python Clock (~/.local/share/sonata2-data/clock), so they ring.
@@ -77,12 +75,15 @@ if [ -f "$REPO/sonata2/data/icons/Sonata-MacTahoe/apps/scalable/system-file-mana
 fi
 rm -rf "$SHARE/sonata2-rs/icons"
 ln -s "$REPO/sonata2/data/icons" "$SHARE/sonata2-rs/icons"
-# the desktop entries name this binary; on trial they are the "(Rust)" ones
-SONATA2_RS_LAUNCHER="$BIN/sonata2-rs" "$BIN/sonata2-rs" desktop-files
+# The "Calculator (Rust)"... entries were for trying the apps next to the
+# Python ones (Vini: removed once the port was done). The Rust session
+# opens the Rust apps through Sonata's own entries (the sonata2 launcher);
+# an older install's are taken away.
+rm -f "$APPS"/io.github.vinioliveiras.sonata2rs.*.desktop
 update-desktop-database "$APPS" 2>/dev/null || true
 
 echo
-echo "Installed next to Sonata: the Rust Calculator, Clock, TextEdit, Preview, Notes, Terminal, Feedbacker, Disk Manager, Camera and Videos are in Launchpad,"
+echo "Installed: sonata2-rs. Log in to \"Sonata (Rust preview)\" (rust/install-rs.sh --session) for the whole desktop in Rust,"
 echo "or run: sonata2-rs calculator | clock | textedit [FILE] | preview [FILE] | notes | terminal | feedback | diskutil | camera | videos [FILE] | assistant | calendar | activity"
 echo "Remove it with: rust/install-rs.sh --uninstall"
 
