@@ -109,9 +109,15 @@ exec bash -x "$REPO/tools/sonata-session" "\$@"
 EOF
     chmod 755 "$BIN/sonata-rs-session"
     # the installed Python launcher hands what's ported to sonata2-rs in
-    # that session (install.sh writes this into new installs)
-    if [ -f "$BIN/sonata2" ] && ! grep -q 'sonata2-rs --handles' "$BIN/sonata2"; then
-        sed -i 's|^exec python3 -m sonata2 "\$@"$|if [ "${SONATA2_RS_SESSION:-}" = 1 ] \&\& command -v sonata2-rs >/dev/null 2>\&1 \&\& sonata2-rs --handles "${1:-}"; then\n    exec sonata2-rs "$@"\nfi\nexec python3 -m sonata2 "$@"|' "$BIN/sonata2"
+    # that session (install.sh writes this into new installs), by its path:
+    # D-Bus starts the portal with a PATH without ~/.local/bin
+    if [ -f "$BIN/sonata2" ] && ! grep -qF "\"$BIN/sonata2-rs\" --handles" "$BIN/sonata2"; then
+        sed -i '/sonata2-rs.* --handles/,/^fi$/d' "$BIN/sonata2"
+        awk -v bin="$BIN" '/^exec python3 -m sonata2 / {
+            print "if [ \"${SONATA2_RS_SESSION:-}\" = 1 ] && [ -x \"" bin "/sonata2-rs\" ] && \"" bin "/sonata2-rs\" --handles \"${1:-}\"; then"
+            print "    exec \"" bin "/sonata2-rs\" \"$@\""
+            print "fi"
+        } { print }' "$BIN/sonata2" > "$BIN/sonata2.new" && cat "$BIN/sonata2.new" > "$BIN/sonata2" && rm -f "$BIN/sonata2.new"
     fi
     entry=$(mktemp)
     printf '[Desktop Entry]\nName=Sonata (Rust preview)\nComment=Sonata 2 with the Rust shell and apps\nExec=%s\nTryExec=%s\nType=Application\nDesktopNames=Sonata\n' \

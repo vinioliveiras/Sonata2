@@ -406,6 +406,18 @@ mod launchpad_tests {
 
 #[cfg(test)]
 mod handles_tests {
+    /// Vini's Rust session: the portal (Open/Save panels) stayed the Python
+    /// one -- D-Bus starts it with a PATH without ~/.local/bin, and the
+    /// launcher looked for sonata2-rs on the PATH. It calls it by its path.
+    #[test]
+    fn test_portal_stayed_python_in_the_rust_session() {
+        let install = include_str!("../../../../install.sh");
+        assert!(install.contains("\"$BIN/sonata2-rs\" --handles"));
+        assert!(!install.contains("command -v sonata2-rs"));
+        let rs = include_str!("../../../install-rs.sh");
+        assert!(rs.contains("/sonata2-rs\\\" --handles"), "install-rs.sh rewrites older launchers");
+    }
+
     /// Vini, in the Rust session: Task Manager, Terminal and the portal
     /// opened as the Python ones -- Launchpad, the Dock and D-Bus start
     /// them through `sonata2`, which only knew Python. The launcher asks
