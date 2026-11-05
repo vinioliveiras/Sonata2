@@ -123,6 +123,30 @@ pub fn movies_dir(cfg: &Cfg) -> PathBuf {
 
 // -- displays and windows (Wayfire) -------------------------------------------------------------
 
+/// The capture options for a shortcut: as saved, but never waiting for
+/// the timer (gamebar.py's _cfg).
+pub fn shortcut_cfg() -> Cfg {
+    for_shortcut(load_cfg())
+}
+
+pub fn for_shortcut(mut cfg: Cfg) -> Cfg {
+    cfg.insert("timer".into(), json!(0));
+    cfg
+}
+
+/// The app in front, from Wayfire's windows: (its app id, its title) --
+/// the focused app window; None on the desktop (nothing focused). The
+/// Game Bar names the game by it.
+pub fn front_app(views: &[Value]) -> Option<(String, String)> {
+    let v = views.iter().find(|v| {
+        let role = v.get("role").and_then(Value::as_str).unwrap_or("toplevel");
+        role == "toplevel" && truthy(v.get("activated")) && !truthy(v.get("minimized"))
+    })?;
+    let s = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let app = s("app-id");
+    (!app.is_empty()).then(|| (app, s("title")))
+}
+
 /// The display with the focus (Wayfire); None: let the recorder decide.
 /// Without -o, wf-recorder asks on the terminal when there are two
 /// displays, and quits (no terminal).
@@ -967,6 +991,27 @@ impl Capture {
     /// Recording now (the Game Bar's record button follows it).
     pub fn recording(&self) -> bool {
         self.recorder.borrow().is_some()
+    }
+
+    /// When the recording started (glib::monotonic_time, µs); 0 when not
+    /// recording. The Game Bar's Stop shows the same time as the pill.
+    pub fn recording_since_us(&self) -> i64 {
+        if !self.recording() {
+            return 0;
+        }
+        self.pill.borrow().as_ref().map_or(0, |p| p.t0.get())
+    }
+
+    /// A screenshot of `output` at once, as the capture options say but
+    /// never waiting for the timer (the Game Bar's Screenshot: the game's
+    /// display, the Game Bar already gone).
+    pub fn shoot_output(&self, output: Option<&str>) {
+        self.shoot(None, &shortcut_cfg(), output, None, false);
+    }
+
+    /// A recording of `output` at once (the Game Bar's Record).
+    pub fn record_output(&self, output: Option<&str>) {
+        self.record(None, &shortcut_cfg(), output.map(String::from));
     }
 
     pub fn replay(&self) -> Rc<Replay> {

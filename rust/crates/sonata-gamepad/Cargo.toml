@@ -14,6 +14,7 @@ libc.workspace = true
 sonata-backend.workspace = true
 sonata-config = { workspace = true, features = ["watch"] }
 sonata-i18n.workspace = true
+sonata-session.workspace = true
 sonata-ui.workspace = true
 
 [dev-dependencies]

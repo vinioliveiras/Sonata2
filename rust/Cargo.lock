@@ -1577,6 +1577,7 @@ dependencies = [
  "sonata-config",
  "sonata-i18n",
  "sonata-preview",
+ "sonata-system",
  "sonata-ui",
  "tempfile",
  "zip",
@@ -1615,6 +1616,7 @@ dependencies = [
  "sonata-backend",
  "sonata-config",
  "sonata-i18n",
+ "sonata-session",
  "sonata-ui",
  "tempfile",
 ]
@@ -1815,6 +1817,7 @@ dependencies = [
  "gtk4-layer-shell",
  "libadwaita",
  "libc",
+ "regex",
  "serde_json",
  "sonata-backend",
  "sonata-clock",
@@ -1824,6 +1827,7 @@ dependencies = [
  "sonata-session",
  "sonata-shell",
  "sonata-tray",
+ "sonata-tweaks",
  "sonata-ui",
  "tempfile",
 ]
@@ -2075,7 +2079,10 @@ name = "sonata2-rs"
 version = "0.1.0"
 dependencies = [
  "gtk4",
+ "libadwaita",
+ "serde_json",
  "sonata-activity",
+ "sonata-backend",
  "sonata-calculator",
  "sonata-calendar",
  "sonata-capture",
@@ -2103,6 +2110,7 @@ dependencies = [
  "sonata-sessionui",
  "sonata-settings",
  "sonata-spotlight",
+ "sonata-system",
  "sonata-textedit",
  "sonata-topbar",
  "sonata-tweaks",

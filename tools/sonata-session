@@ -22,6 +22,8 @@ run_cfg="${XDG_RUNTIME_DIR:-/tmp}/sonata2-wayfire.ini"
 # commands -- the supervisor, the keys -- run the Rust build instead
 if [ "${SONATA2_RS_SESSION:-}" = 1 ] && [ "$cfg" = "$run_cfg" ]; then
     sed -i -E 's/(^|[=[:space:]])sonata2 /\1sonata2-rs /g' "$run_cfg"
+    # X11 apps' XSETTINGS manager, started with each XWayland
+    sed -i -E 's/^(xwayland_startup_script *= *)env PYTHONPATH=[^ ]* python3 -m sonata2\.xsettings$/\1sonata2-rs xsettings/' "$run_cfg"
 fi
 # Sonata's Wayfire with the fix for buffers the GPU refuses (tools/build-wayfire.sh),
 # while it's built from the installed Wayfire's commit (its plugins match)
@@ -99,9 +101,15 @@ if command -v systemctl >/dev/null; then
     systemctl --user stop xdg-desktop-portal.service xdg-desktop-portal-gnome.service \
         xdg-desktop-portal-gtk.service xdg-desktop-portal-kde.service 2>/dev/null || true
 fi
+# What D-Bus starts (the portal, its share picker, Files' FileManager1)
+# knows which Sonata this is: the Rust preview's or the Python's. Pushed
+# empty in a Python session too -- the activation environment outlives a
+# logout, and the Python session's portal turned into the Rust one.
+export SONATA2_RS_SESSION="${SONATA2_RS_SESSION:-}" SONATA2_RS_SIDE_BY_SIDE="${SONATA2_RS_SIDE_BY_SIDE:-}"
 command -v dbus-update-activation-environment >/dev/null && \
     dbus-update-activation-environment --systemd XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_DATA_DIRS \
-        DCONF_PROFILE XCURSOR_THEME XCURSOR_SIZE XCURSOR_PATH QT_QPA_PLATFORMTHEME SONATA_GLASS 2>/dev/null || true
+        DCONF_PROFILE XCURSOR_THEME XCURSOR_SIZE XCURSOR_PATH QT_QPA_PLATFORMTHEME SONATA_GLASS \
+        SONATA2_RS_SESSION SONATA2_RS_SIDE_BY_SIDE 2>/dev/null || true
 # Hybrid laptops: draw with the GPU the displays are connected to. wlroots
 # renders on the first GPU it finds -- often the integrated one -- and then
 # copies every frame to the other GPU's screens (a 180 Hz external display

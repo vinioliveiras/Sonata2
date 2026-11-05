@@ -18,7 +18,8 @@ use std::rc::Rc;
 
 /// The actions the menu bar answers (config/wayfire.ini's gdbus calls and
 /// `sonata2-rs screenshot`), besides its own "osd" and "input-next".
-pub const ACTIONS: &[&str] = &["switcher", "capture", "draw", "replay-save", "emoji", "clipboard", "gamebar"];
+#[cfg_attr(not(test), allow(dead_code))] // (the test holds the bindings to it)
+pub const ACTIONS: &[&str] = &["switcher", "fullscreen", "capture", "draw", "replay-save", "emoji", "clipboard", "gamebar"];
 
 /// Everything above, once, on the main display's menu bar (never in a
 /// preview: a second backdrop or clipboard watcher would double up).
@@ -26,19 +27,164 @@ pub fn topbar_started(app: &gtk::Application, win: &Rc<sonata_topbar::window::To
     if !win.layered() || sonata_config::side_by_side() {
         return;
     }
-    install_actions(app);
+    // full screen remembered per app (Ctrl+Super+F), the game in front
+    // followed (lighter effects, no screen corners over it), the GPU's memory
+    let corners = sonata_sessionui::screencorners::ScreenCorners::start(app);
+    let full = sonata_sessionui::start_fullscreen_services(corners.as_ref());
+    install_actions(app, full.rules.clone());
+    std::mem::forget((corners, full));
     // Mission Control's dark backdrop and the desktops bar follow Wayfire's
     // scale plugin from the menu bar (topbar.py: MissionBackdrop(app))
     sonata_ui::css::register_module("shell/mission.py");
     sonata_ui::css::register_module("shell/spaces.py");
     std::mem::forget(sonata_mission::mission::MissionBackdrop::new(app));
+    start_services(app);
+}
+
+/// The menu bar's background services (topbar.py's TopBarWindow, main
+/// display only). Each lives as long as the process; the ones holding a
+/// child process or a sound stop with it.
+fn start_services(app: &gtk::Application) {
+    use sonata_sessionui as su;
+    let mut stops: Vec<Box<dyn Fn()>> = Vec::new();
+    // Night Shift's schedule and the display's warmth
+    if let Some(ns) = su::nightshift::NightShift::start() {
+        stops.push(Box::new(move || {
+            ns.stop();
+        }));
+    }
+    // locking when idle, the display going dark (swayidle)
+    let hooks = su::idlelock::Hooks {
+        compositor_off: Box::new(|| {
+            sonata_tweaks::displaysleep::compositor_off();
+        }),
+        watch: None,
+    };
+    if let Some(il) = su::idlelock::IdleLock::start(hooks) {
+        stops.push(Box::new(move || il.stop()));
+    }
+    // a lock screen gone without unblocking USB: every 30 s, unless locked
+    // or a game is in front (nothing stale then)
+    let paused = || su::idlelock::is_locked() || sonata_tweaks::gamemode::active();
+    std::mem::forget(sonata_backend::usbprotect::StaleCheck::start(paused, su::idlelock::is_locked));
+    // old Trash items (when that's on); window styles still in place
+    std::mem::forget(sonata_tweaks::housekeeping::Housekeeping::start());
+    std::mem::forget(sonata_session::stylecheck::Watch::start(sonata_tweaks::gpu::notify));
+    // an updated Sonata's blur rule at once (surfaces never blurred: Overview,
+    // the Game Bar...), not only after the look is next changed
+    glib::timeout_add_seconds_local_once(2, || {
+        std::thread::spawn(sonata_tweaks::titlebars::refresh_blur_rule);
+    });
+    // what this session runs on, for bug reports (~/.cache/sonata2/env.txt)
+    let ui = vec![format!("gtk {}.{}.{}", gtk::major_version(), gtk::minor_version(), gtk::micro_version()), format!("libadwaita {}.{}.{}", adw::major_version(), adw::minor_version(), adw::micro_version())];
+    sonata_session::envreport::start(ui);
+    // a browser sharing the screen: a pill in the menu bar
+    sonata_ui::css::register_module("shell/sharing.py");
+    let sharing = sonata_capture::sharing::SharingControl::new(app, Rc::new(ShareBars));
+    let s = Rc::downgrade(&sharing);
+    sonata_dock::toplevels::manager().add_event_listener(Rc::new(move |_| {
+        if let Some(s) = s.upgrade() {
+            s.update();
+        }
+    }));
+    std::mem::forget(sharing);
+    // Steam in Sonata's look
+    std::mem::forget(sonata_tweaks::steamtheme::Watch::new(sonata_tweaks::steamtheme::SETTLE_S));
+    // background apps give memory back; last resort: the alert
+    std::mem::forget(sonata_gamebar::memorywatch::MemoryWatch::start(app));
+    // Clock's alarms and timers ring from here
+    if let Some(a) = su::alarmservice::AlarmService::start(app) {
+        stops.push(Box::new(move || a.stop()));
+    }
+    // Notes' reminders notify with Notes closed (Vini)
+    let reminders = sonata_notes::notifier::Notifier::new(Rc::new(RefCell::new(sonata_notes::store::Store::new())));
+    stops.push(Box::new(move || reminders.stop()));
+    // a new Sonata release: say so
+    let check: su::updatenotify::Check = std::sync::Arc::new(|| sonata_system::selfupdate::available(20).map(|r| su::updatenotify::Release { tag: r.tag }));
+    if let Some(u) = su::updatenotify::UpdateNotifier::start(check) {
+        stops.push(Box::new(move || u.stop()));
+    }
+    // Settings > Sharing > Screen Sharing; the system-wide equalizer
+    let share = sonata_system::screenshare::ScreenSharing::new();
+    share.start();
+    let eq = sonata_system::equalizer::Equalizer::new();
+    eq.start();
+    stops.push(Box::new(move || share.stop()));
+    stops.push(Box::new(move || eq.stop()));
+    // the title bars Wayfire draws (terminals, X11 apps) follow Dark Mode live
+    let colors = |dark: bool| {
+        std::thread::spawn(move || sonata_tweaks::titlebars::apply_colors(dark));
+    };
+    let sm = adw::StyleManager::default();
+    colors(sm.is_dark());
+    sm.connect_dark_notify(move |m| colors(m.is_dark()));
+    app.connect_shutdown(move |_| stops.iter().for_each(|f| f()));
+}
+
+/// The browsers' "… is sharing your screen" bars (Wayfire's views: the
+/// Dock's tracker leaves them out of the apps).
+struct ShareBars;
+
+impl ShareBars {
+    fn bars() -> Vec<(i64, String)> {
+        let views = sonata_backend::wfipc::call("window-rules/list-views", serde_json::json!({})).unwrap_or_default();
+        views
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|v| {
+                let (app_id, title) = (v.get("app-id")?.as_str().unwrap_or(""), v.get("title")?.as_str().unwrap_or(""));
+                let id = v.get("id")?.as_i64()?;
+                sonata_dock::toplevels::is_share_bar(app_id, title).then(|| (id, title.to_string()))
+            })
+            .collect()
+    }
+}
+
+impl sonata_capture::sharing::ShareBars for ShareBars {
+    fn titles(&self) -> Vec<String> {
+        Self::bars().into_iter().map(|b| b.1).collect()
+    }
+    fn close_all(&self) {
+        for (id, _) in Self::bars() {
+            sonata_backend::wfipc::call("window-rules/close-view", serde_json::json!({"id": id}));
+        }
+    }
+    fn front(&self) {
+        for (id, _) in Self::bars() {
+            sonata_backend::wfipc::call("window-rules/focus-view", serde_json::json!({"id": id}));
+        }
+    }
+}
+
+/// What `cell` holds, made by make() the first time. (The cell is let go
+/// before make() runs: holding it while the closure stored into it panicked
+/// -- the menu bar went down on the first Ctrl+Super+Space.)
+fn built<T: Clone>(cell: &RefCell<Option<T>>, make: impl FnOnce() -> T) -> T {
+    let got = cell.borrow().clone();
+    if let Some(v) = got {
+        return v;
+    }
+    let v = make();
+    cell.replace(Some(v.clone()));
+    v
 }
 
 /// The menu bar's actions, each built on first use and kept after, as
 /// run_topbar does.
-pub fn install_actions(app: &gtk::Application) {
+pub fn install_actions(app: &gtk::Application, rules: Option<Rc<sonata_sessionui::fullscreen::Rules>>) {
+    // Full screen (Ctrl+Super+F): the focused window, remembered per app
+    let act = gio::SimpleAction::new("fullscreen", None);
+    act.connect_activate(move |_, _| {
+        if let Some(r) = &rules {
+            r.toggle();
+        }
+    });
+    app.add_action(&act);
+
     // App switcher: Alt+Tab -> "next", Alt+Shift+Tab -> "prev"
     let sw: Rc<RefCell<Option<Rc<switcher::Switcher>>>> = Rc::default();
+    let sw_pads = sw.clone();
     let act = gio::SimpleAction::new("switcher", Some(glib::VariantTy::STRING));
     let a = app.downgrade();
     act.connect_activate(move |_, param| {
@@ -47,10 +193,9 @@ pub fn install_actions(app: &gtk::Application) {
         if switcher::mission_control_step(&Wayfire, back) {
             return; // Mission Control open: its highlight moved instead
         }
-        let s = sw.borrow().clone().unwrap_or_else(|| {
+        let s = built(&sw, || {
             sonata_ui::css::register_module("shell/switcher.py");
             let s = switcher::Switcher::new(&app, Rc::new(switcher::IpcWindows(Wayfire)), true);
-            sw.replace(Some(s.clone()));
             s
         });
         s.step(if back { -1 } else { 1 });
@@ -68,10 +213,9 @@ pub fn install_actions(app: &gtk::Application) {
     let a = app.downgrade();
     act.connect_activate(move |_, _| {
         let Some(app) = a.upgrade() else { return };
-        let p = emoji.borrow().clone().unwrap_or_else(|| {
+        let p = built(&emoji, || {
             sonata_ui::css::register_module("shell/emoji.py");
             let p = sonata_clipboard::emoji::EmojiPicker::new(&app);
-            emoji.replace(Some(p.clone()));
             p
         });
         p.open();
@@ -87,10 +231,9 @@ pub fn install_actions(app: &gtk::Application) {
     let a = app.downgrade();
     act.connect_activate(move |_, _| {
         let Some(app) = a.upgrade() else { return };
-        let p = picker.borrow().clone().unwrap_or_else(|| {
+        let p = built(&picker, || {
             sonata_ui::css::register_module("shell/clip_picker.py");
             let p = sonata_clipboard::clip_picker::ClipboardPicker::new(&app, history.clone());
-            picker.replace(Some(p.clone()));
             p
         });
         p.open();
@@ -102,21 +245,97 @@ pub fn install_actions(app: &gtk::Application) {
     let act = gio::SimpleAction::new("gamebar", None);
     let a = app.downgrade();
     let c = Rc::downgrade(&cap);
+    let pads: Rc<RefCell<Option<std::rc::Weak<sonata_gamepad::Gamepads>>>> = Rc::default();
+    let pads_c = pads.clone();
+    let bar_c = bar.clone();
     act.connect_activate(move |_, _| {
         let Some(app) = a.upgrade() else { return };
-        let gb = bar.borrow().clone().unwrap_or_else(|| {
-            let gb = sonata_gamebar::gamebar::GameBar::new(app.upcast_ref(), crate::gamebar_host::host(&app, c.clone()));
-            bar.replace(Some(gb.clone()));
+        let gb = built(&bar, || {
+            let p = pads_c.clone();
+            let grab: Rc<dyn Fn(bool)> = Rc::new(move |on| {
+                if let Some(p) = p.borrow().as_ref().and_then(|w| w.upgrade()) {
+                    p.grab(on);
+                }
+            });
+            let gb = sonata_gamebar::gamebar::GameBar::new(app.upcast_ref(), crate::gamebar_host::host(&app, c.clone(), grab));
             gb
         });
         gb.toggle();
     });
     app.add_action(&act);
+
+    // Game controllers drive the desktop: the switcher, the Game Bar, a pointer
+    let g = sonata_gamepad::Gamepads::start(app, Rc::new(PadTargets { switcher: sw_pads, gamebar: bar_c }));
+    pads.replace(Some(Rc::downgrade(&g)));
+    app.connect_shutdown(move |_| g.stop());
+}
+
+/// What the controllers drive (topbar.py's Gamepads(app, switcher, gamebar)).
+struct PadTargets {
+    switcher: Rc<RefCell<Option<Rc<switcher::Switcher>>>>,
+    gamebar: Rc<RefCell<Option<Rc<sonata_gamebar::gamebar::GameBar>>>>,
+}
+
+impl PadTargets {
+    fn sw(&self) -> Option<Rc<switcher::Switcher>> {
+        self.switcher.borrow().clone()
+    }
+    fn gb(&self) -> Option<Rc<sonata_gamebar::gamebar::GameBar>> {
+        self.gamebar.borrow().clone()
+    }
+}
+
+impl sonata_gamepad::Targets for PadTargets {
+    fn switcher_open(&self) -> bool {
+        self.sw().is_some_and(|s| s.is_open())
+    }
+    fn switcher_step(&self, direction: i32) {
+        if let Some(s) = self.sw() {
+            s.step(direction);
+        }
+    }
+    fn switcher_switch(&self) {
+        if let Some(s) = self.sw() {
+            s.switch();
+        }
+    }
+    fn switcher_close(&self) {
+        if let Some(s) = self.sw() {
+            s.close();
+        }
+    }
+    fn gamebar_open(&self) -> bool {
+        self.gb().is_some_and(|g| g.is_open())
+    }
+    fn gamebar_pad(&self, name: &str) {
+        if let Some(g) = self.gb() {
+            g.pad(name);
+        }
+    }
+    fn key(&self, name: &str) -> bool {
+        sonata_clipboard::vkeyboard::press(name, &[])
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Vini: the menu bar crashed on the first Ctrl+Super+Space -- the
+    /// picker was stored while its cell was still borrowed. The first
+    /// call builds it once, the next ones get the same.
+    #[test]
+    fn test_menu_bar_crashed_opening_emoji() {
+        let cell: RefCell<Option<Rc<u32>>> = RefCell::default();
+        let made = std::cell::Cell::new(0);
+        let a = built(&cell, || {
+            made.set(made.get() + 1);
+            Rc::new(7)
+        });
+        let b = built(&cell, || unreachable!("built once"));
+        assert!(Rc::ptr_eq(&a, &b));
+        assert_eq!(made.get(), 1);
+    }
 
     /// Vini, in the Rust session: Super+V, the screenshot keys and the
     /// rest did nothing -- the Rust menu bar had only "osd" and
@@ -133,11 +352,147 @@ mod tests {
         called.sort();
         called.dedup();
         assert!(called.len() >= 8, "{called:?}");
-        let own = ["osd", "input-next", "fullscreen"];
+        let own = ["osd", "input-next"];
         for name in called {
             assert!(ACTIONS.contains(&name) || own.contains(&name), "nobody answers {name}");
         }
         // what `sonata2-rs screenshot` asks for
         assert!(ACTIONS.contains(&"capture"));
     }
+}
+
+// -- the menu bar's seams (sonata_topbar::seams::Services) -----------------------------------------
+use sonata_topbar::seams;
+
+/// The windows, from the Dock's tracker over Wayfire's IPC (one socket per
+/// process): the menu bar's app name, its Window menu, Quit.
+struct Windows(Rc<sonata_dock::toplevels::Manager>);
+
+impl Windows {
+    fn find(&self, t: &seams::Toplevel) -> Option<sonata_dock::toplevels::Toplevel> {
+        self.0.get(t.id)
+    }
+}
+
+fn seam_toplevel(t: &sonata_dock::toplevels::Toplevel) -> seams::Toplevel {
+    seams::Toplevel { id: t.id, app_id: t.app_id.clone(), title: t.title.clone(), activated: t.activated, minimized: t.minimized, maximized: t.maximized }
+}
+
+impl seams::Windows for Windows {
+    fn toplevels(&self) -> Vec<seams::Toplevel> {
+        self.0.toplevels().iter().map(seam_toplevel).collect()
+    }
+    fn add_listener(&self, f: Rc<dyn Fn()>) -> u64 {
+        self.0.add_listener(f)
+    }
+    fn remove_listener(&self, id: u64) {
+        self.0.remove_listener(id)
+    }
+    fn activate(&self, t: &seams::Toplevel) {
+        if let Some(t) = self.find(t) {
+            self.0.activate(&t);
+        }
+    }
+    fn minimize(&self, t: &seams::Toplevel) {
+        if let Some(t) = self.find(t) {
+            self.0.minimize(&t);
+        }
+    }
+    fn unminimize(&self, t: &seams::Toplevel) {
+        // (focusing a minimized window brings it back)
+        self.activate(t);
+    }
+    fn close(&self, t: &seams::Toplevel) {
+        if let Some(t) = self.find(t) {
+            self.0.close(&t);
+        }
+    }
+    fn set_maximized(&self, t: &seams::Toplevel, on: bool) {
+        if let (true, Some(t)) = (on, self.find(t)) {
+            self.0.set_maximized(&t);
+        }
+    }
+}
+
+/// The same windows as Quit / Log Out see them (quitapps).
+struct QuitWindows(Rc<sonata_dock::toplevels::Manager>);
+
+impl sonata_sessionui::quitapps::Windows for QuitWindows {
+    fn toplevels(&self) -> Vec<sonata_sessionui::quitapps::Toplevel> {
+        self.0.toplevels().iter().map(|t| sonata_sessionui::quitapps::Toplevel { id: t.id as u64, app_id: t.app_id.clone(), title: t.title.clone() }).collect()
+    }
+    fn close(&self, id: u64) {
+        if let Some(t) = self.0.get(id as i64) {
+            self.0.close(&t);
+        }
+    }
+}
+
+pub fn quit_windows() -> Rc<dyn sonata_sessionui::quitapps::Windows> {
+    Rc::new(QuitWindows(sonata_dock::toplevels::manager()))
+}
+
+/// The apps' own shortcuts for windows and tabs (shell/apptabs.py),
+/// pressed with the virtual keyboard as vkeyboard.press does.
+struct AppTabs;
+
+impl seams::AppTabs for AppTabs {
+    fn kind(&self, app_id: &str) -> Option<String> {
+        sonata_mission::apptabs::kind(app_id).map(|k| format!("{k:?}").to_lowercase())
+    }
+    fn has(&self, app_id: &str, action: &str) -> bool {
+        sonata_mission::apptabs::keys(app_id, action).is_some()
+    }
+    fn press(&self, app_id: &str, action: &str) {
+        sonata_mission::apptabs::press(app_id, action, sonata_clipboard::vkeyboard::press);
+    }
+}
+
+/// Control Center's Screenshot: the toolbar of the capture this process hosts.
+pub fn show_capture_toolbar() {
+    if let Some(app) = gio::Application::default() {
+        app.activate_action("capture", Some(&"toolbar".to_variant()));
+    }
+}
+
+/// system.set_dark_mode: Sonata and libadwaita / GTK 4 apps (color-scheme),
+/// GTK 3 apps (the theme's name), Flatpak apps (their theme).
+fn set_dark_mode(on: bool) {
+    const IFACE: &str = "org.gnome.desktop.interface";
+    sonata_tweaks::prefs_write::set(IFACE, "color-scheme", if on { "prefer-dark" } else { "default" });
+    sonata_tweaks::prefs_write::set(IFACE, "gtk-theme", if on { "Sonata-Dark" } else { "Sonata-Light" });
+    sonata_tweaks::flatpak_theme::apply();
+}
+
+/// The seams sonata2-rs can fill beyond the mixer, Night Shift, Log Out and
+/// the capture toolbar: without them the menu bar had no Window menu, no
+/// app name, no Quit, no New Folder (Vini's Rust session).
+pub fn fill_services(s: &mut seams::Services) {
+    let m = sonata_dock::toplevels::manager();
+    s.windows = Some(Rc::new(Windows(m.clone())));
+    s.apptabs = Some(Rc::new(AppTabs));
+    s.quiet_paused = Some(Rc::new(|| sonata_sessionui::idlelock::is_locked() || sonata_tweaks::gamemode::active()));
+    s.set_dark_mode = Some(std::sync::Arc::new(set_dark_mode));
+    s.quit_app = Some(Rc::new(move |these: &[seams::Toplevel], key: &str| {
+        let wins: Vec<_> = these.iter().map(|t| sonata_sessionui::quitapps::Toplevel { id: t.id as u64, app_id: t.app_id.clone(), title: t.title.clone() }).collect();
+        std::mem::forget(sonata_sessionui::quitapps::quit_app(Rc::new(QuitWindows(m.clone())), &wins, key));
+    }));
+    s.open_folder = Some(Rc::new(sonata_dock::dock_menu::open_folder));
+    s.new_desktop_folder = Some(Rc::new(|| {
+        let desk = gio::File::for_path(glib::user_special_dir(glib::UserDirectory::Desktop).unwrap_or_else(|| glib::home_dir().join("Desktop")));
+        sonata_files::ops::new_folder(&desk, |_| {}, |_| {}, None);
+    }));
+    s.power_boosted = Some((Rc::new(sonata_tweaks::gamemode::boosted), Rc::new(sonata_tweaks::gamemode::set_boosted)));
+    s.remember_profile = Some(Rc::new(sonata_tweaks::powerprofile::remember));
+    s.extra_modules.push(("fpslimit".into(), Rc::new(sonata_gamebar::fpsmodule::module)));
+    s.extra_modules.push((
+        "keyboard".into(),
+        Rc::new(|| {
+            let km = sonata_gamebar::kbdmodule::KeyboardModule::new(None, None);
+            let root: gtk::Widget = km.root.clone().upcast();
+            // the module's clicks reach it through a weak reference: it lives as long as its widget
+            unsafe { root.set_data("sonata-kbd-module", km) };
+            root
+        }),
+    ));
 }

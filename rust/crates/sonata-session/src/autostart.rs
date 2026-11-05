@@ -147,7 +147,20 @@ pub fn autostart(_args: &[String]) -> i32 {
 /// since you just logged in: applock.py, appscope.py, gpu.py), which lives
 /// in a crate above this one. Returns how many started.
 pub fn run(launch: &dyn Fn(&str, &gio::DesktopAppInfo) -> Result<(), glib::Error>) -> usize {
-    python_steps();
+    run_with(launch, &python_steps)
+}
+
+/// `autostart` with the setup steps (title bars, compose, GTK style,
+/// keyring) given by `steps`: their Rust versions live in crates above this
+/// one, so `sonata2-rs` passes them in the Rust session instead of asking
+/// the Python install.
+pub fn autostart_with(steps: &dyn Fn()) -> i32 {
+    run_with(&launch_plain, steps);
+    0
+}
+
+pub fn run_with(launch: &dyn Fn(&str, &gio::DesktopAppInfo) -> Result<(), glib::Error>, steps: &dyn Fn()) -> usize {
+    steps();
     // first login: the Setup Assistant
     let setup = sonata_config::load("setup", &serde_json::json!({"done": false}));
     if !crate::stylecheck::truthy(setup.get("done")) {

@@ -302,6 +302,7 @@ mod tests {
 
     #[test]
     fn keyboard_light_follows_the_display() {
+        let _e = testenv::env(); // the cache folder in the commands: no other test moves it meanwhile
         let cmd = command(&cfg(json!({"lock_after": -1})), 300, true, LOCK);
         assert_eq!(cmd, ["swayidle", "-w", "timeout", "300", &serial(&kbd_off()), "resume", &serial(&kbd_on())]);
         assert!(kbd_off().contains("set 0")); // level saved before turning off
@@ -316,6 +317,7 @@ mod tests {
 
     #[test]
     fn lock_kept() {
+        let _e = testenv::env(); // the cache folder in the commands: no other test moves it meanwhile
         let cmd = command(&cfg(json!({"lock_after": 5, "lock_before_sleep": true})), 300, true, LOCK);
         assert_eq!(cmd[cmd.len() - 5..], ["timeout", "305", LOCK, "before-sleep", LOCK]);
         assert!(cmd.contains(&serial(&kbd_off())));

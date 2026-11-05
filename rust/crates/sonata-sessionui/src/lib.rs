@@ -15,6 +15,11 @@
 //! | alarmservice.py | [`alarmservice`] | the menu bar ([`alarmservice::AlarmService`]) |
 //! | updatenotify.py | [`updatenotify`] | the menu bar ([`updatenotify::UpdateNotifier`]) |
 //! | setup.py | [`setup`] | `sonata2-rs setup [--preview]` ([`setup::run_setup`]) |
+//! | fullscreen.py | [`fullscreen`] | the menu bar ([`fullscreen::Rules`]: Ctrl+Super+F, games) |
+//! | gamemode.py's Watcher | [`fullscreenfirst`] | the menu bar ([`fullscreenfirst::FullscreenFirst`]) |
+//! | vram.py | [`vram`] | the menu bar ([`vram::VramWatch`]) |
+//!
+//! The last three come together in [`start_fullscreen_services`].
 //!
 //! welcome.py is `sonata-welcome` (apps/welcome).
 //!
@@ -30,6 +35,8 @@
 
 pub mod alarmservice;
 pub mod blackout;
+pub mod fullscreen;
+pub mod fullscreenfirst;
 pub mod idlelock;
 pub mod idlepolicy;
 pub mod monitors;
@@ -40,8 +47,58 @@ pub mod screencorners;
 pub mod setup;
 pub mod trial;
 pub mod updatenotify;
+pub mod vram;
+mod wfevents;
 
 pub use trial::run_try;
+
+use std::rc::Rc;
+
+/// What [`start_fullscreen_services`] started; keep it for the process' life.
+pub struct FullscreenServices {
+    /// Ctrl+Super+F (the menu bar's "fullscreen" action: `rules.toggle()`);
+    /// None on trial
+    pub rules: Option<Rc<fullscreen::Rules>>,
+    /// fullscreen first: `active()`, `output()`, `connect(|full| ...)` --
+    /// the menu bar pauses its polling while it's on
+    pub first: Rc<fullscreenfirst::FullscreenFirst>,
+    /// a full NVIDIA card; None without one, and on trial
+    pub vram: Option<Rc<vram::VramWatch>>,
+}
+
+/// The menu bar's full-screen helpers, wired as topbar.py does: the rules
+/// (Ctrl+Super+F, games), fullscreen first (with its energy mode and
+/// lighter effects), the screen corners following it (none over a
+/// full-screen game), the VRAM watch feeding the lighter effects and
+/// warning through a notification, and the GPU notices at login. Call it
+/// once, with the menu bar's ScreenCorners (None when it has none). On
+/// trial only fullscreen first runs, as a listener (see each `start()`).
+pub fn start_fullscreen_services(corners: Option<&Rc<screencorners::ScreenCorners>>) -> FullscreenServices {
+    let rules = fullscreen::Rules::start();
+    let first = fullscreenfirst::FullscreenFirst::start();
+    if let Some(c) = corners {
+        let (c, f) = (Rc::downgrade(c), Rc::downgrade(&first));
+        let follow = move |full: bool| {
+            if let (Some(c), Some(f)) = (c.upgrade(), f.upgrade()) {
+                c.fullscreen_on(if full { f.output() } else { None }.as_deref());
+            }
+        };
+        follow(first.active());
+        first.connect(follow);
+    }
+    vram::start_gpu_notices(); // crashed on the discrete GPU last time, or started on the other one
+    let vram = vram::VramWatch::start(Rc::new(|title: &str, body: &str| sonata_tweaks::gpu::notify(title, body, "video-display")));
+    if let Some(v) = &vram {
+        // lighter effects while a game fills the card
+        let f = Rc::downgrade(&first);
+        v.connect(move |used, total| {
+            if let Some(f) = f.upgrade() {
+                f.memory(used, total);
+            }
+        });
+    }
+    FullscreenServices { rules, first, vram }
+}
 
 use serde_json::Value;
 

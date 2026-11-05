@@ -1,6 +1,6 @@
 [package]
 name = "sonata-sessionui"
-description = "The session's background helpers (sonata2/shell/idlelock.py, idlepolicy.py, screencorners.py, nightshift.py, blackout.py, quitonclose.py, quitapps.py, monitors.py, alarmservice.py, updatenotify.py, setup.py)"
+description = "The session's background helpers (sonata2/shell/idlelock.py, idlepolicy.py, screencorners.py, nightshift.py, blackout.py, quitonclose.py, quitapps.py, monitors.py, alarmservice.py, updatenotify.py, setup.py; sonata2/fullscreen.py, vram.py, gamemode.py's Watcher)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,6 +12,7 @@ gio.workspace = true
 glib.workspace = true
 serde_json.workspace = true
 libc.workspace = true
+regex.workspace = true
 chrono.workspace = true
 gtk4-layer-shell.workspace = true
 sonata-backend.workspace = true
@@ -24,6 +25,8 @@ sonata-tray.workspace = true
 sonata-session.workspace = true
 # its alarms.rs / timers.rs / sound.rs (the window comes along: it's in sonata2-rs anyway)
 sonata-clock.workspace = true
+# gamemode.rs (the state file, PowerBoost, LightEffects) and gpu.rs (its notices)
+sonata-tweaks.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

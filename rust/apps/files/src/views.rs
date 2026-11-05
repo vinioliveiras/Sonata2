@@ -1074,31 +1074,55 @@ impl View for ListView {
     }
 }
 
-/// Only the last visible column expands -- kept so when columns are shown or hidden.
+/// List columns the macOS way (ui/columns.py): every column keeps the
+/// width it's given or dragged to, and only the last visible one takes the
+/// room that's left -- kept so when columns are added, reordered, shown or
+/// hidden. A column in the middle that expanded fought every resize:
+/// shrinking its neighbour grew it, so the edge being dragged stayed put,
+/// away from the pointer, and the next press grabbed its header and
+/// reordered it.
 pub fn fill_last(view: &gtk::ColumnView) {
-    let update = |cols: &gio::ListModel| {
-        let shown: Vec<gtk::ColumnViewColumn> = (0..cols.n_items()).filter_map(|i| cols.item(i).and_downcast::<gtk::ColumnViewColumn>()).filter(|c| c.is_visible()).collect();
-        for (i, c) in shown.iter().enumerate() {
-            let want = i + 1 == shown.len();
-            if c.expands() != want {
-                c.set_expand(want);
+    fn update(cols: &gio::ListModel) {
+        let all: Vec<gtk::ColumnViewColumn> = (0..cols.n_items()).filter_map(|i| cols.item(i).and_downcast::<gtk::ColumnViewColumn>()).collect();
+        let last = last_shown(&all.iter().map(|c| c.is_visible()).collect::<Vec<_>>());
+        for (i, c) in all.iter().enumerate() {
+            // (a hidden column's flag takes no room: left as it is)
+            if c.is_visible() && c.expands() != (Some(i) == last) {
+                c.set_expand(Some(i) == last);
             }
         }
-    };
+    }
+    fn watch(cols: &gio::ListModel, c: &gtk::ColumnViewColumn) {
+        let cl = cols.downgrade();
+        c.connect_visible_notify(move |_| {
+            if let Some(cl) = cl.upgrade() {
+                update(&cl);
+            }
+        });
+    }
     let cols = view.columns();
-    cols.connect_items_changed(move |cols, pos, _, added| {
+    let model: gio::ListModel = cols.clone().upcast();
+    // the columns there already (fill_last after they were added)
+    for i in 0..model.n_items() {
+        if let Some(c) = model.item(i).and_downcast::<gtk::ColumnViewColumn>() {
+            watch(&model, &c);
+        }
+    }
+    cols.connect_items_changed(|cols, pos, _, added| {
+        let model: &gio::ListModel = cols.upcast_ref();
         for i in pos..pos + added {
-            if let Some(c) = cols.item(i).and_downcast::<gtk::ColumnViewColumn>() {
-                let cl = cols.downgrade();
-                c.connect_visible_notify(move |_| {
-                    if let Some(cl) = cl.upgrade() {
-                        update(cl.upcast_ref());
-                    }
-                });
+            if let Some(c) = model.item(i).and_downcast::<gtk::ColumnViewColumn>() {
+                watch(model, &c);
             }
         }
-        update(cols.upcast_ref());
+        update(model);
     });
+    update(&model);
+}
+
+/// Which column fills: the last visible one.
+fn last_shown(visible: &[bool]) -> Option<usize> {
+    visible.iter().rposition(|v| *v)
 }
 
 // -- Columns ----------------------------------------------------------------------------------
@@ -1404,6 +1428,40 @@ fn preview(info: &gio::FileInfo) -> gtk::Widget {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_last_shown_column_fills() {
+        assert_eq!(last_shown(&[true, true, true]), Some(2));
+        assert_eq!(last_shown(&[true, true, false]), Some(1)); // View > Show Kind off: Size fills
+        assert_eq!(last_shown(&[false, false, false]), None);
+        assert_eq!(last_shown(&[]), None);
+    }
+
+    /// ui/columns.py's tests, run where GTK can start (a display): the
+    /// flag follows hiding, adding, reordering and removing columns.
+    #[test]
+    fn fill_last_follows_the_columns() {
+        if gtk::init().is_err() {
+            return; // (no display: the logic above is still checked)
+        }
+        let view = gtk::ColumnView::new(None::<gtk::SelectionModel>);
+        let cols: Vec<gtk::ColumnViewColumn> = ["Name", "Size", "Kind"].iter().map(|t| gtk::ColumnViewColumn::new(Some(t), None::<gtk::ListItemFactory>)).collect();
+        for c in &cols {
+            c.set_expand(true); // what a caller may have set: fill_last decides
+            view.append_column(c);
+        }
+        let expanding = || cols.iter().filter(|c| c.expands() && c.is_visible()).map(|c| c.title().unwrap().to_string()).collect::<Vec<_>>();
+        fill_last(&view); // after the columns were added
+        assert_eq!(expanding(), ["Kind"]);
+        cols[2].set_visible(false);
+        assert_eq!(expanding(), ["Size"]);
+        cols[2].set_visible(true);
+        assert_eq!(expanding(), ["Kind"]);
+        view.insert_column(2, &cols[0]); // Size, Kind, Name
+        assert_eq!(expanding(), ["Name"]);
+        view.remove_column(&cols[0]);
+        assert_eq!(expanding(), ["Kind"]);
+    }
 
     fn info(name: &str, dir: bool, size: i64) -> gio::FileInfo {
         let i = gio::FileInfo::new();

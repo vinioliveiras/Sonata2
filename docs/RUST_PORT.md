@@ -602,9 +602,12 @@ stay behind `--features ui-tests` and run only under
   quicklook.rs (Quick Look and Get Info with Open with and Sharing &
   Permissions) and window.rs (tabs, toolbar, search bar, context
   menus, the Finder keys, undo / redo).
-- Not yet: vault (locked folders), packages (install / extract),
-  Connect to Server and network browsing, read-only disks, the icons'
-  reflow animation.
+- Since: Connect to Server and network browsing (server.rs), the mount
+  prompts (mountop.rs), read-only Windows disks (rodisk.rs), automount
+  at login (automount.rs), installing an AppImage (appimage.rs, through
+  sonata-system's appimages), `files --service` (FileManager1).
+- Not yet: vault (locked folders), extracting packages, running an
+  AppImage from its menu, the icons' reflow animation.
 
 ### Step 6 so far: the Open / Save panels and the portal
 
@@ -690,3 +693,25 @@ ids and the real settings in ~/.config/sonata2 (the same files as the
 Python Sonata). The "Sonata" entry is untouched: logging out and picking it
 gives the Python session back. `install-rs.sh --uninstall` removes the
 entry too.
+
+What the Python menu bar process hosts, the Rust one hosts too
+(apps/sonata2-rs/src/host.rs, through `run_with`'s start hook and the
+seams): the actions Wayfire's keys call (switcher, fullscreen, capture,
+draw, replay-save, emoji, clipboard, gamebar), Mission Control's
+backdrop, the Game Bar with its host (gamebar_host.rs), the game
+controllers (sonata-gamepad), and the background services -- Night
+Shift, idle lock, USB check, the sharing pill, Steam's theme, the memory
+watch, screen corners, full-screen rules and the game in front, VRAM,
+Clock's alarms, Notes' reminders, the update check, Screen Sharing, the
+equalizer, title bar colours, Trash housekeeping, the style check, the
+blur rule, the env report.
+
+In that session the installed `sonata2` launcher hands every command
+`sonata2-rs --handles` knows to the Rust build (install.sh writes it;
+`install-rs.sh --session` adds it to an older launcher), so the apps
+Launchpad, the Dock and D-Bus start (the portal, FileManager1) are the
+Rust ones; tools/sonata-session passes SONATA2_RS_SESSION and
+SONATA2_RS_SIDE_BY_SIDE to D-Bus activation (empty in a Python session),
+and the XWayland start-up script becomes `sonata2-rs xsettings`. The
+login's setup steps (title bars, compose, GTK style, keyring) run in
+Rust there (`autostart_with`).

@@ -81,6 +81,41 @@ impl Latest {
     }
 }
 
+/// The radios as read (Control Center's and the Game Bar's alike).
+fn show_toggles(wifi: &Toggle, bt: &Toggle, plane: &Toggle, s: &CcState) {
+    let (wifi_on, (ssid, _, _), bt_on, plane_on) = s;
+    let cap = if !ssid.is_empty() { ssid.clone() } else if *wifi_on { tr!("Not Connected") } else { tr!("Off") };
+    wifi.set(*wifi_on, Some(&cap));
+    bt.set(*bt_on == Some(true), Some(&logic::on_off(*bt_on)));
+    plane.set(*plane_on == Some(true), Some(&logic::on_off(*plane_on)));
+    plane.button.set_sensitive(plane_on.is_some());
+}
+
+/// Airplane Mode pressed: shown at once, Wi-Fi and Bluetooth going off with it.
+fn show_airplane(wifi: &Toggle, bt: &Toggle, plane: &Toggle, on: bool) {
+    plane.set(on, Some(&logic::on_off(Some(on))));
+    if on {
+        // they go off with it, at once
+        wifi.set(false, Some(&tr!("Off")));
+        bt.set(false, Some(&tr!("Off")));
+    }
+}
+
+/// `output`'s brightness as read; None: it can't be changed from here.
+fn show_brightness(bright: &ModuleSlider, output: &Option<String>, b: Option<i64>) {
+    let Some(b) = b else {
+        bright.set_sensitive(false);
+        if !system::is_builtin(output.as_deref()) {
+            bright.set_tooltip_text(Some(&tr!("This display's brightness can't be changed from the computer (turn on DDC/CI in its menu; needs ddcutil)")));
+        }
+        return;
+    };
+    bright.set_sensitive(true);
+    bright.set_tooltip_text(None);
+    remember_level(&bright_key(output), b as f64);
+    bright.show_value(b as f64); // (not set again: only shown)
+}
+
 pub struct ControlCenter {
     pub root: gtk::Box,
     bar: Weak<Bar>,
@@ -367,22 +402,12 @@ impl ControlCenter {
     }
 
     pub fn fill_toggles(&self, s: &CcState) {
-        let (wifi_on, (ssid, _, _), bt, plane) = s;
-        let cap = if !ssid.is_empty() { ssid.clone() } else if *wifi_on { tr!("Not Connected") } else { tr!("Off") };
-        self.wifi.set(*wifi_on, Some(&cap));
-        self.bt.set(*bt == Some(true), Some(&logic::on_off(*bt)));
-        self.plane.set(*plane == Some(true), Some(&logic::on_off(*plane)));
-        self.plane.button.set_sensitive(plane.is_some());
+        show_toggles(&self.wifi, &self.bt, &self.plane, s);
     }
 
     /// Every radio off (or back as it was); Wi-Fi and Bluetooth show it.
     fn set_airplane(self: &Rc<Self>, on: bool) {
-        self.plane.set(on, Some(&logic::on_off(Some(on))));
-        if on {
-            // they go off with it, at once
-            self.wifi.set(false, Some(&tr!("Off")));
-            self.bt.set(false, Some(&tr!("Off")));
-        }
+        show_airplane(&self.wifi, &self.bt, &self.plane, on);
         let w = Rc::downgrade(self);
         run_async(move || system::set_airplane_mode(on), move |_| {
             poll_all();
@@ -391,16 +416,7 @@ impl ControlCenter {
     }
 
     pub fn fill_brightness(&self, b: Option<i64>) {
-        let Some(b) = b else {
-            self.bright.set_sensitive(false);
-            if !system::is_builtin(self.output.as_deref()) {
-                self.bright.set_tooltip_text(Some(&tr!("This display's brightness can't be changed from the computer (turn on DDC/CI in its menu; needs ddcutil)")));
-            }
-            return;
-        };
-        self.bright.set_sensitive(true);
-        remember_level(&bright_key(&self.output), b as f64);
-        self.bright.show_value(b as f64); // (not set again: only shown)
+        show_brightness(&self.bright, &self.output, b);
     }
 
     pub fn fill_sound(&self, vol: Option<(i64, bool)>, mic: Option<(i64, bool)>) {
@@ -598,4 +614,103 @@ fn mixer_module(m: crate::seams::Mixer, cc: Weak<ControlCenter>) -> gtk::Box {
         }
     });
     bx
+}
+
+// -- the quick controls on their own (the Game Bar's) ---------------------------------------------
+/// Do Not Disturb as saved (notifications.json): the Game Bar reaches it
+/// without the menu bar's Notifications, whose server follows the file.
+pub fn dnd_saved() -> bool {
+    sonata_notifications::model::load_config().get("dnd").and_then(serde_json::Value::as_bool).unwrap_or(false)
+}
+
+/// topbar.py's QuickControls: Control Center's Wi-Fi, Bluetooth, Airplane
+/// Mode, Do Not Disturb and display brightness, made apart from Control
+/// Center for the Game Bar (Vini: the game's display's brightness, the
+/// radios, without leaving the game). Its brightness follows `output`,
+/// set at each read().
+pub struct QuickControls {
+    pub wifi: Toggle,
+    pub bt: Toggle,
+    pub plane: Toggle,
+    pub dnd: Toggle,
+    pub bright: ModuleSlider,
+    /// the brightness capsule with its Displays Preferences button
+    pub display: gtk::Widget,
+    output: Rc<RefCell<Option<String>>>,
+    _brightness: Latest,
+}
+
+impl QuickControls {
+    /// on_displays(): the Displays Preferences button beside the brightness.
+    pub fn new(on_displays: Rc<dyn Fn()>) -> Rc<QuickControls> {
+        let output: Rc<RefCell<Option<String>>> = Rc::default();
+        Rc::new_cyclic(|weak: &Weak<QuickControls>| {
+            let wifi = Toggle::new("network-wireless-symbolic", &tr!("Wi-Fi"), false, |on| run_async(move || system::set_wifi_enabled(on), |_| poll_all()), "…");
+            let bt = Toggle::new("bluetooth-active-symbolic", &tr!("Bluetooth"), false, |on| kit::in_thread(move || {
+                system::set_bluetooth(on);
+            }), "…");
+            let w = weak.clone();
+            let plane = Toggle::new("airplane-mode-symbolic", &tr!("Airplane Mode"), false, move |on| {
+                if let Some(q) = w.upgrade() {
+                    q.set_airplane(on);
+                }
+            }, "…");
+            // saved where Settings saves it: the menu bar's notification
+            // server follows the file (banners hidden, its toggle in step)
+            let dnd = Toggle::new("weather-clear-night-symbolic", &tr!("Do Not Disturb"), dnd_saved(), |on| {
+                let _ = sonata_config::update(sonata_notifications::model::CONFIG, &serde_json::json!({ "dnd": on }));
+            }, "");
+            let latest = Latest::default();
+            let (l, out) = (latest.clone(), output.clone());
+            let disp_btn = round_button("video-display-symbolic", &tr!("Displays Preferences"), move |_| on_displays());
+            let (display, bright) = slider_with_icon(|_| "display-brightness-symbolic".into(), level(&bright_key(&None)), move |v| {
+                let out = out.borrow().clone();
+                l.send(v as i64, move |v| {
+                    system::set_brightness(v, out.as_deref());
+                });
+            }, true, Some(&disp_btn));
+            QuickControls { wifi, bt, plane, dnd, bright, display, output, _brightness: latest }
+        })
+    }
+
+    /// Every state as it is now: the radios, Do Not Disturb, and the
+    /// brightness of `output` (the display it now stands for).
+    pub fn read(self: &Rc<Self>, output: Option<String>) {
+        let w = Rc::downgrade(self);
+        run_async(cc_state, move |s| w.upgrade().iter().for_each(|q| show_toggles(&q.wifi, &q.bt, &q.plane, &s)));
+        self.dnd.set(dnd_saved(), None);
+        // the last level read for that display first: no jump as it opens (Vini)
+        self.bright.show_value(level(&bright_key(&output)));
+        *self.output.borrow_mut() = output.clone();
+        let w = Rc::downgrade(self);
+        run_async(move || (system::brightness(output.as_deref()), output), move |(b, out)| {
+            if let Some(q) = w.upgrade() {
+                // (another read since: the display it stands for is that one's)
+                if *q.output.borrow() == out {
+                    show_brightness(&q.bright, &out, b);
+                }
+            }
+        });
+    }
+
+    fn set_airplane(self: &Rc<Self>, on: bool) {
+        show_airplane(&self.wifi, &self.bt, &self.plane, on);
+        let w = Rc::downgrade(self);
+        run_async(move || system::set_airplane_mode(on), move |_| {
+            poll_all();
+            run_async(cc_state, move |s| w.upgrade().iter().for_each(|q| show_toggles(&q.wifi, &q.bt, &q.plane, &s)));
+        });
+    }
+
+    /// A module of the radios, Do Not Disturb's (a click anywhere on it
+    /// toggles), as Control Center lays them out.
+    pub fn radios_module(&self) -> gtk::Box {
+        kit::module(&[self.wifi.root.upcast_ref(), self.bt.root.upcast_ref(), self.plane.root.upcast_ref()], 2)
+    }
+
+    pub fn dnd_module(&self) -> gtk::Box {
+        let m = kit::module(&[self.dnd.root.upcast_ref()], 8);
+        kit::click_anywhere(&m, &self.dnd);
+        m
+    }
 }

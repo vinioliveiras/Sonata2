@@ -1493,6 +1493,16 @@ impl FilesWindow {
                     let writable = sel.iter().all(|i| !i.has_attribute("access::can-write") || i.boolean("access::can-write"));
                     let here = self.writable_here();
                     let mut first = vec![Item::new(&tr!("Open"), act(|t| t.open_selection()))];
+                    // an AppImage: Install, ahead of Open (packages.py's menu_items;
+                    // its Run isn't ported yet)
+                    if let Some(path) = sel.first().filter(|i| n == 1 && !is_dir(i)).and_then(file_of).and_then(|f| f.path()).filter(|p| crate::appimage::is_appimage(p)) {
+                        let w = me.clone();
+                        first.insert(0, Item::new(&tr!("Install"), move || {
+                            if let Some(t) = w.upgrade() {
+                                crate::appimage::install(&path, Some(t.window.upcast_ref()));
+                            }
+                        }));
+                    }
                     if n == 1 && is_dir(&sel[0]) {
                         let (w, i) = (me.clone(), sel[0].clone());
                         first.push(Item::new(&tr!("Open in New Tab"), move || {
@@ -1788,6 +1798,16 @@ impl FilesWindow {
         }, "", Some(self.window.upcast_ref()));
     }
 
+    /// Finder's Go > Connect to Server (Ctrl+K): server.rs; opened here once connected.
+    pub fn connect_to_server(&self) {
+        let w = self.me.clone();
+        crate::server::dialog(self.window.upcast_ref(), move |uri| {
+            if let Some(t) = w.upgrade() {
+                t.go(uri, true);
+            }
+        });
+    }
+
     /// Ctrl+L, or a click on the path bar's empty part: type the address in
     /// the path bar; the Go to Folder dialog when the path bar is hidden.
     fn edit_address(&self) {
@@ -1930,6 +1950,7 @@ impl FilesWindow {
             ("<Control><Shift>g", |t| { t.go_to_folder(); true }),
             ("<Control>l", |t| { t.edit_address(); true }),
             ("<Control><Alt>p", |t| { t.toggle_path_bar(); true }),
+            ("<Control>k", |t| { t.connect_to_server(); true }), // Finder: ⌘K
             ("<Control>z", |t| t.run_history(false)),
             ("<Control><Shift>z", |t| t.run_history(true)),
         ];

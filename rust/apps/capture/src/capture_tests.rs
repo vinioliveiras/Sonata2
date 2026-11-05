@@ -382,3 +382,28 @@ fn test_python_truthiness() {
     assert_eq!(text(&cfg(json!({"audio": 3})), "audio", "system"), "");
     assert_eq!(text(&Cfg::new(), "audio", "system"), "system");
 }
+
+/// The Game Bar names the app in front: the focused app window, never a
+/// panel or a minimized one; on the desktop (nothing focused) none.
+#[test]
+fn test_game_bar_names_the_app_in_front() {
+    let views = vec![
+        json!({"role": "desktop-environment", "app-id": "sonata2-dock", "activated": true}),
+        json!({"role": "toplevel", "app-id": "firefox", "title": "Mozilla Firefox", "activated": false}),
+        json!({"role": "toplevel", "app-id": "steam_app_3219630", "title": "A Game", "activated": true}),
+    ];
+    assert_eq!(front_app(&views), Some(("steam_app_3219630".into(), "A Game".into())));
+    let desktop = vec![json!({"role": "toplevel", "app-id": "firefox", "title": "x", "activated": false})];
+    assert_eq!(front_app(&desktop), None);
+    assert_eq!(front_app(&[json!({"app-id": "", "activated": true})]), None);
+    assert_eq!(front_app(&[json!({"app-id": "foot", "activated": true, "minimized": true})]), None);
+}
+
+/// The Game Bar's Screenshot and Record never wait for the timer
+/// (gamebar.py's _cfg), whatever the toolbar's timer is set to.
+#[test]
+fn test_game_bar_capture_never_waits_for_the_timer() {
+    let c = for_shortcut(cfg(json!({"timer": 10, "audio": "mic"})));
+    assert_eq!(c.get("timer"), Some(&json!(0)));
+    assert_eq!(text(&c, "audio", "system"), "mic");
+}

@@ -1,15 +1,20 @@
 //! Files (sonata2/files/): Sonata's file manager (macOS Finder look and behaviour).
 
 pub mod actions;
+pub mod appimage;
+pub mod automount;
 pub mod batchrename;
 pub mod chooser;
 pub mod folder;
 pub mod folderprefs;
+pub mod mountop;
 pub mod ops;
 pub mod pathbar;
 pub mod peicon;
 pub mod quicklook;
+pub mod rodisk;
 pub mod search;
+pub mod server;
 pub mod sidebar;
 pub mod tabs;
 pub mod tags;
@@ -36,7 +41,9 @@ pub fn open_uris(app: &gtk::Application, uris: &[String]) {
     for uri in if uris.is_empty() { &none[..] } else { uris } {
         let mut uri = if uri.is_empty() { None } else { Some(folder::canonical(uri)) };
         if uri.as_deref() == Some(folder::CONNECT) {
-            uri = None; // Connect to Server is the Python Files' for now
+            // the menu bar's Go > Connect to Server
+            window::present(app, None, true).connect_to_server();
+            continue;
         }
         let mut reveal = None;
         if let Some(u) = uri.clone() {
@@ -56,8 +63,13 @@ pub fn open_uris(app: &gtk::Application, uris: &[String]) {
     }
 }
 
-/// org.freedesktop.FileManager1 (apps' "Show in Folder"): served only by
-/// the real Files, never on trial (the Python one keeps it).
+/// org.freedesktop.FileManager1 (files/filemanager1.py): what apps call
+/// for "Show in Folder" / "Open containing folder" (Chrome and Firefox
+/// downloads, VS Code, Steam, portals...); without it D-Bus starts GNOME
+/// Files for them. The name is taken by the running Files process; when
+/// none runs, D-Bus starts `files --service` through the service file the
+/// installer writes. Served only by the real Files, never on trial (the
+/// Python one keeps it).
 fn serve_file_manager(app: &gtk::Application) {
     const XML: &str = r#"<node><interface name="org.freedesktop.FileManager1">
   <method name="ShowFolders"><arg type="as" name="URIs" direction="in"/><arg type="s" name="StartupId" direction="in"/></method>
@@ -103,6 +115,8 @@ pub fn run(args: &[String]) -> glib::ExitCode {
         _ => None,
     });
     let background = args.iter().any(|a| a == "--background");
+    // started by D-Bus for FileManager1: no window of its own
+    let service = args.iter().any(|a| a == "--service");
     let ready = std::rc::Rc::new(std::cell::Cell::new(false));
     let start = move |app: &gtk::Application| {
         if !ready.replace(true) {
@@ -130,6 +144,21 @@ pub fn run(args: &[String]) -> glib::ExitCode {
         if background && !resident.replace(true) {
             // at login: resident like Finder, so every window opens at once
             std::mem::forget(app.hold());
+            automount::start(); // every disk mounted and in the sidebar
+            // warm once: CSS, icons -- the first window then opens at once
+            let a = app.downgrade();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(1500), move || {
+                if let Some(app) = a.upgrade() {
+                    // (closed, not destroyed: closing stops its folder listing too)
+                    window::FilesWindow::new(&app, None).window.close();
+                }
+            });
+            return;
+        }
+        if service && !resident.replace(true) {
+            // the call that started it opens the windows; they keep it alive
+            let hold = app.hold();
+            glib::timeout_add_seconds_local_once(30, move || drop(hold));
             return;
         }
         open_uris(app, &[]);

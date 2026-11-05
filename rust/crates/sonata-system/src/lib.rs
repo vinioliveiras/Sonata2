@@ -5,10 +5,13 @@
 //! files and commands. What blocks (pactl, D-Bus calls to system services,
 //! package managers) says so: call it off the main loop, with run_async.
 
+pub mod appimages;
 pub mod appmanage;
 pub mod audiofollow;
 pub mod bluez;
+pub mod compose;
 pub mod equalizer;
+pub mod gtkstyle;
 pub mod inuse;
 pub mod linereader;
 pub mod locales;
@@ -21,9 +24,11 @@ pub mod power;
 pub mod screenshare;
 pub mod security;
 pub mod selfupdate;
+pub mod trace;
 pub mod uninstall;
 pub mod updates;
 pub mod users;
+pub mod xsettings;
 
 /// system.run_async: `work` in a worker thread, `done(result)` back on the
 /// main loop (the thread-default context).

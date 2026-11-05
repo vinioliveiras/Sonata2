@@ -20,6 +20,7 @@ pub mod fpslimit;
 pub mod frame;
 pub mod gamemode;
 pub mod gpu;
+pub mod housekeeping;
 pub mod keyring;
 pub mod powerprofile;
 pub mod prefs_write;

@@ -1,7 +1,7 @@
 //! Files sidebar (files/sidebar.py; Finder's source list): Favorites
 //! (Recents, Applications, Desktop, Documents, Downloads, home, GTK
 //! bookmarks), Locations (Computer, mounted drives with Eject on their icon
-//! and a capacity meter, disks not mounted yet, Trash) and Tags. Live:
+//! and a capacity meter, disks not mounted yet, Network, Trash) and Tags. Live:
 //! rebuilt when drives come and go or pins change.
 //!
 //! Pin a folder: drag it between two Favorites -- a line shows where it
@@ -246,6 +246,10 @@ impl Sidebar {
             if let Some(r) = self.rows.borrow_mut().last_mut() {
                 r.volume = Some(vol);
             }
+        }
+        if crate::server::can_browse_network() {
+            // Finder's Network: the computers and shares nearby
+            self.place(&tr!("Network"), Some("network-workgroup-symbolic"), None, crate::server::NETWORK, None, false, false, false, None);
         }
         self.place(&tr!("Trash"), Some("user-trash-symbolic"), None, "trash:///", None, false, false, false, None);
         self.head(n_!("Tags"));
@@ -519,28 +523,75 @@ impl Sidebar {
         };
         if let Some(vol) = vol {
             // not mounted yet: mount, then open it
-            let op = gtk::MountOperation::new(self.root.root().and_downcast::<gtk::Window>().as_ref());
+            let op = crate::mountop::new(self.window().as_ref());
             let w = self.me.clone();
-            vol.mount(gio::MountMountFlags::NONE, Some(&op), gio::Cancellable::NONE, move |res| {
+            vol.mount(gio::MountMountFlags::NONE, Some(&op), gio::Cancellable::NONE, glib::clone!(#[strong] vol, move |res| {
                 let Some(s) = w.upgrade() else { return };
                 match res {
-                    Ok(()) => {
-                        // (the volume's mount appears a moment later)
-                        let uri = s.volumes.volumes().iter().find_map(|v| v.get_mount()).map(|m| m.root().uri().to_string());
-                        if let (Some(u), Some(open)) = (uri, s.hooks.borrow().on_open.as_ref()) {
-                            open(&u);
-                        }
-                    }
-                    Err(e) => {
-                        sonata_ui::dialog::alert(&fmt(&tr!("“{name}” couldn't be opened."), &[("name", "")]), e.message(), &[("ok", "OK".into(), "default")], |_| {}, Some(s.root.upcast_ref()));
-                    }
+                    Ok(()) => s.open_volume(&vol),
+                    Err(e) => match vol.identifier("unix-device") {
+                        // a Windows disk left dirty: read-only
+                        Some(dev) if crate::rodisk::try_readonly(&dev, e.message()) => s.open_readonly(&vol, &dev, e.message()),
+                        _ => s.cant_open(&vol, e.message()),
+                    },
                 }
-            });
+            }));
             return;
         }
         if let Some(open) = self.hooks.borrow().on_open.as_ref() {
             open(&uri);
         }
+    }
+
+    fn window(&self) -> Option<gtk::Window> {
+        self.root.root().and_downcast::<gtk::Window>()
+    }
+
+    /// Open the disk just mounted -- this one, not the first disk with a
+    /// mount (that opened another disk). Its mount may show up a moment
+    /// after the mount finished: then it opens when it does.
+    fn open_volume(&self, vol: &gio::Volume) {
+        if let Some(m) = vol.get_mount() {
+            if let Some(open) = self.hooks.borrow().on_open.as_ref() {
+                open(&m.root().uri());
+            }
+            return;
+        }
+        let w = self.me.clone();
+        let id = std::rc::Rc::new(std::cell::RefCell::new(None::<glib::SignalHandlerId>));
+        let i = id.clone();
+        let h = vol.connect_changed(move |v| {
+            if v.get_mount().is_some() {
+                if let Some(h) = i.borrow_mut().take() {
+                    v.disconnect(h);
+                }
+                if let Some(s) = w.upgrade() {
+                    s.open_volume(v);
+                }
+            }
+        });
+        id.replace(Some(h));
+    }
+
+    fn cant_open(&self, vol: &gio::Volume, why: &str) {
+        sonata_ui::dialog::alert(&fmt(&tr!("“{name}” couldn't be opened."), &[("name", &vol.name())]), why, &[("ok", "OK".into(), "default")], |_| {}, Some(self.root.upcast_ref()));
+    }
+
+    /// Opened read-only (rodisk.rs), and said why -- once, when it opens.
+    fn open_readonly(&self, vol: &gio::Volume, device: &str, why: &str) {
+        let (w, vol, why) = (self.me.clone(), vol.clone(), why.to_string());
+        crate::rodisk::mount_readonly(device, move |res| {
+            let Some(s) = w.upgrade() else { return };
+            let path = match res {
+                Ok(p) => p,
+                Err(e) => return s.cant_open(&vol, if e.is_empty() { &why } else { &e }),
+            };
+            let uri = vol.get_mount().map(|m| m.root().uri().to_string()).or_else(|| (!path.is_empty()).then(|| gio::File::for_path(&path).uri().to_string()));
+            if let (Some(u), Some(open)) = (uri, s.hooks.borrow().on_open.as_ref()) {
+                open(&u);
+            }
+            sonata_ui::dialog::alert(&fmt(&tr!("“{name}” is read-only."), &[("name", &vol.name())]), &sonata_i18n::gettext(crate::rodisk::NOTE), &[("ok", "OK".into(), "default")], |_| {}, Some(s.root.upcast_ref()));
+        });
     }
 
     /// Highlight the place showing `uri` (none if it isn't one).
@@ -625,7 +676,7 @@ impl Sidebar {
     }
 
     fn eject(&self, mount: &gio::Mount) {
-        let op = gtk::MountOperation::new(self.root.root().and_downcast::<gtk::Window>().as_ref());
+        let op = crate::mountop::new(self.window().as_ref());
         let (w, name) = (self.me.clone(), mount.name().to_string());
         let done = move |res: Result<(), glib::Error>| {
             if let (Err(e), Some(s)) = (res, w.upgrade()) {
@@ -688,6 +739,17 @@ fn read_space(uri: &str, meter: &gtk::ProgressBar, free: &gtk::Label, row: &gtk:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A click on a disk not mounted yet opened whichever disk was mounted
+    /// first, not the one clicked; and its error said “” couldn't be opened
+    /// (no name).
+    #[test]
+    fn test_mounting_a_disk_opened_another_disk() {
+        let src = include_str!("sidebar.rs");
+        assert!(!src.contains(concat!("volumes().iter().find_map(|v| v", ".get_mount())")));
+        assert!(!src.contains(concat!("couldn't be opened.\"), &[(\"name\", \"\")]")));
+        assert!(src.contains("Ok(()) => s.open_volume(&vol)"));
+    }
 
     #[test]
     fn pins_move_and_follow_renames() {

@@ -14,11 +14,12 @@
 //!    (sonata-corners, "sonata/rounded").
 //!
 //! Rows are (status, what, detail): ok / warn / FAIL. The menu bar's half
-//! (a notification once a problem is new) keeps `problems` / `new_problems`
-//! here for when the menu bar is ported.
+//! is `Watch`: a notification that only names what changed since the last
+//! one (a new problem), never the same twice.
 
 use crate::doctor::{Status, COLOR_END, FAIL, OK, WARN};
 use serde_json::{json, Value};
+use sonata_i18n::tr;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -390,6 +391,89 @@ pub fn new_problems(rows: &[Row], seen_path: &Path) -> Vec<String> {
     new
 }
 
+fn seen_path() -> PathBuf {
+    let cache = std::env::var_os("XDG_CACHE_HOME").filter(|v| !v.is_empty()).map(PathBuf::from);
+    cache.unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cache")).join("sonata2").join("stylecheck.json")
+}
+
+/// The notification's text for these new problems (four named, then a count).
+pub fn message(new: &[String]) -> String {
+    let mut listed = new.iter().take(4).cloned().collect::<Vec<_>>().join(", ");
+    if new.len() > 4 {
+        listed += &format!(" {}", sonata_i18n::fmt(&tr!("and {n} more"), &[("n", &(new.len() - 4).to_string())]));
+    }
+    sonata_i18n::fmt(&tr!("Not in Sonata's look: {listed}. Details: sonata2 doctor windows"), &[("listed", &listed)])
+}
+
+/// Looks now and says what is newly broken. Blocking (files, Wayfire IPC):
+/// call it off the main loop. `notify(summary, body, icon)` is the menu
+/// bar's urgent notification (sonata_tweaks::gpu::notify) -- passed in, as
+/// this crate sits under the one that sends it.
+pub fn check_and_notify(notify: fn(&str, &str, &str) -> bool) -> Vec<String> {
+    let mut rows = config_rows();
+    rows.extend(window_rows());
+    let new = new_problems(&rows, &seen_path());
+    if !new.is_empty() {
+        notify(&tr!("Window styles"), &message(&new), "preferences-desktop-theme");
+    }
+    new
+}
+
+/// The menu bar's side: a look a while after login (`FIRST_S`), and again
+/// every `INTERVAL_S` (an app updated meanwhile, a new app opened) -- in a
+/// thread. Started once by the main display's menu bar (shell/topbar.py)
+/// and kept for its life; dropping it (or `stop`) ends the timers.
+///
+/// None on trial: the Python menu bar runs the same watch on the same
+/// stylecheck.json, and each would tell every new problem a second time.
+pub struct Watch {
+    srcs: std::rc::Rc<std::cell::RefCell<Vec<glib::SourceId>>>,
+}
+
+impl Watch {
+    pub const FIRST_S: u32 = 90;
+    pub const INTERVAL_S: u32 = 3600;
+
+    pub fn start(notify: fn(&str, &str, &str) -> bool) -> Option<Self> {
+        if sonata_config::side_by_side() {
+            return None;
+        }
+        let srcs: std::rc::Rc<std::cell::RefCell<Vec<glib::SourceId>>> = Default::default();
+        let first = glib::timeout_add_seconds_local(Self::FIRST_S, {
+            let srcs = std::rc::Rc::downgrade(&srcs);
+            move || {
+                if let Some(s) = srcs.upgrade() {
+                    s.borrow_mut().remove(0); // (fired: never removed again)
+                }
+                Self::run(notify);
+                glib::ControlFlow::Break
+            }
+        });
+        let every = glib::timeout_add_seconds_local(Self::INTERVAL_S, move || {
+            Self::run(notify);
+            glib::ControlFlow::Continue
+        });
+        srcs.borrow_mut().extend([first, every]);
+        Some(Watch { srcs })
+    }
+
+    fn run(notify: fn(&str, &str, &str) -> bool) {
+        let _ = std::thread::Builder::new().name("stylecheck".into()).spawn(move || check_and_notify(notify));
+    }
+
+    pub fn stop(&self) {
+        for s in self.srcs.borrow_mut().drain(..) {
+            s.remove();
+        }
+    }
+}
+
+impl Drop for Watch {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -501,5 +585,16 @@ mod tests {
         assert!(t.starts_with("Apps Sonata styles\n[  ok] a\n\nWindows open now\n[warn] b -- c\n"));
         assert!(t.ends_with("\n1 to look at."));
         assert!(text(&rows[..2], false).ends_with("Every style is in place."));
+    }
+
+    #[test]
+    fn notification_names_four_then_counts() {
+        let few: Vec<String> = ["VS Code", "Spotify (own title bar)"].map(String::from).to_vec();
+        // (in whatever language the tests run in: the names, the count)
+        assert!(message(&few).contains("VS Code, Spotify (own title bar)"));
+        let many: Vec<String> = (1..=6).map(|i| format!("app{i}")).collect();
+        let m = message(&many);
+        assert!(m.contains("app1, app2, app3, app4 ") && m.contains(" 2") && !m.contains("app5"), "{m}");
+        assert!(!m.contains('{'), "{m}"); // every placeholder filled
     }
 }

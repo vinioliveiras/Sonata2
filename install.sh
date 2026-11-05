@@ -327,6 +327,11 @@ cat > "$tmp/sonata2-launcher" <<EOF
 SONATA_HOME="$SHARE"
 export PYTHONPATH="\$SONATA_HOME\${PYTHONPATH:+:\$PYTHONPATH}"
 export SONATA2_LAUNCHER="$BIN/sonata2"
+# "Sonata (Rust preview)" (rust/install-rs.sh --session): what the Rust
+# build runs, it runs -- Launchpad, the Dock and D-Bus start apps through here
+if [ "\${SONATA2_RS_SESSION:-}" = 1 ] && command -v sonata2-rs >/dev/null 2>&1 && sonata2-rs --handles "\${1:-}"; then
+    exec sonata2-rs "\$@"
+fi
 exec python3 -m sonata2 "\$@"
 EOF
 cat > "$tmp/sonata-session-launcher" <<EOF

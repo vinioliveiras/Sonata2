@@ -63,7 +63,30 @@ mod host;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|show-desktop|settings|launchpad|keyring|prefs|topbar|dock|lock-wait|setup|session-try|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|show-desktop|settings|launchpad|keyring|prefs|topbar|dock|lock-wait|setup|session-try|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all|xsettings> [--dark|--light]";
+
+/// autostart.py's setup steps before the login items, each on its own
+/// (one failing never keeps the rest, or the apps, from starting).
+fn login_steps() {
+    // Sonata title bars for Chrome, VS Code... (before they start)
+    sonata_tweaks::titlebars::apply(None);
+    // ç on U.S. International, before the apps start (Vini)
+    sonata_system::compose::ensure(None);
+    // forced GTK_THEME gone from D-Bus activated apps; Flatpak apps in Sonata's look
+    sonata_system::gtkstyle::reset_env();
+    sonata_tweaks::flatpak_theme::apply();
+    // KeePassXC: saved passwords for every app
+    sonata_tweaks::keyring::start();
+}
+
+/// The commands that run and return, or run without GTK: no start-up trace.
+const NO_WINDOWS: &[&str] = &["key", "screenshot", "keep", "keep-all", "autostart", "xsettings", "prefs", "desktop-files", "restart", "doctor", "lock-wait", "keyring", "show-desktop"];
+
+/// The components USAGE lists (the ones this binary dispatches).
+fn handles(component: &str) -> bool {
+    let list = USAGE.split_once('<').and_then(|(_, r)| r.split_once('>')).map_or("", |(l, _)| l);
+    list.split('|').any(|c| c == component)
+}
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -71,6 +94,17 @@ fn main() -> ExitCode {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
+    if handles(component) && !NO_WINDOWS.contains(&component.as_str()) && !args.iter().any(|a| a == "--preview") {
+        // __main__.py: the start-up watchdog (detailed logs) until the first
+        // idle, and the main-loop stall log (ui.theme.setup) in every
+        // process that shows something
+        sonata_system::trace::start(component);
+        let c = component.clone();
+        gtk::glib::idle_add_local_once(move || {
+            sonata_system::trace::ready("first idle");
+            sonata_session::stallwatch::start(&c);
+        });
+    }
     match component.as_str() {
         "calculator" => {
             let code = sonata_calculator::window::run(&args[1..]);
@@ -116,7 +150,12 @@ fn main() -> ExitCode {
         }
         "restart" => ExitCode::from(sonata_session::restart(&args[1..]) as u8),
         "doctor" => ExitCode::from(sonata_session::doctor(&args[1..]) as u8),
+        // in the Rust session the setup steps are the Rust ones; on trial the
+        // Python session's own autostart runs and this one only tries it
+        "autostart" if !sonata_config::side_by_side() => ExitCode::from(sonata_session::autostart::autostart_with(&login_steps) as u8),
         "autostart" => ExitCode::from(sonata_session::autostart(&args[1..]) as u8),
+        // XWayland's startup script (tools/wayfire-config.sh): X11 apps in Sonata's look
+        "xsettings" => ExitCode::from(sonata_system::xsettings::run() as u8),
         "clipboard" => {
             let code = sonata_clipboard::run_clipboard(&args[1..]);
             ExitCode::from(code.value() as u8)
@@ -236,6 +275,12 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        // `sonata2 <component>` in the "Sonata (Rust preview)" session
+        // (install.sh's launcher): 0 when the Rust build runs it, so the
+        // apps and helpers Launchpad, the Dock, D-Bus and the session start
+        // through `sonata2` are the Rust ones there, and the Python ones
+        // where nothing is ported (self-update...)
+        "--handles" => ExitCode::from(if args.get(1).is_some_and(|c| handles(c)) { 0 } else { 1 }),
         "-h" | "--help" | "help" => {
             println!("{USAGE}");
             ExitCode::SUCCESS
@@ -282,8 +327,28 @@ fn topbar_services() -> sonata_topbar::seams::Services {
     let mut s = sonata_topbar::seams::Services { mixer: Some(sonata_topbar::seams::system_mixer()), ..Default::default() };
     s.night_shift = Some((Rc::new(sonata_sessionui::nightshift::is_on), Rc::new(sonata_sessionui::nightshift::set_manual)));
     s.end_session = Some(Rc::new(|kind: &str, reopen: bool| {
-        sonata_sessionui::quitapps::end_session(kind, None, Some(reopen));
+        sonata_sessionui::quitapps::end_session(kind, Some(host::quit_windows()), Some(reopen));
     }));
-    s.capture_toolbar = Some(spawn(vec!["capture".into(), "toolbar".into()]));
+    // the capture lives in the menu bar's process (host.rs); on trial the
+    // Python menu bar keeps it, and `sonata2-rs capture` is the Rust one
+    s.capture_toolbar = Some(if sonata_config::side_by_side() { spawn(vec!["capture".into(), "toolbar".into()]) } else { Rc::new(host::show_capture_toolbar) });
+    host::fill_services(&mut s);
     s
+}
+
+#[cfg(test)]
+mod handles_tests {
+    /// Vini, in the Rust session: Task Manager, Terminal and the portal
+    /// opened as the Python ones -- Launchpad, the Dock and D-Bus start
+    /// them through `sonata2`, which only knew Python. The launcher asks
+    /// `sonata2-rs --handles` first there.
+    #[test]
+    fn test_rust_session_opened_python_apps() {
+        for c in ["activity", "terminal", "files", "portal", "settings", "topbar", "screenshot"] {
+            assert!(super::handles(c), "{c}");
+        }
+        for c in ["self-update", "gallery", "", "--handles"] {
+            assert!(!super::handles(c), "{c}");
+        }
+    }
 }

@@ -322,6 +322,39 @@ pub fn blur_rule(parts: &[(&str, sonata_ui::glass::Part)]) -> String {
     if rule.is_empty() { BLUR_NONE.into() } else { without_never(&rule) }
 }
 
+/// The rule `cur` should become (None: left as it is). Only one of
+/// Sonata's ("contains \"sonata2"): Glass all off, or the user's own rule,
+/// stay; glass title bars on stay on; nothing while a game has the lighter
+/// effects (`light`: gamemode's file), whose rule is put back when it ends.
+pub fn refreshed_blur_rule(cur: &str, light: bool, parts: &[(&str, sonata_ui::glass::Part)]) -> Option<String> {
+    let cur = cur.trim();
+    if light || !cur.contains("contains \"sonata2") {
+        return None;
+    }
+    let want = blur_rule(parts) + if cur.ends_with(GLASS_BARS) { GLASS_BARS } else { "" };
+    (cur != want).then_some(want)
+}
+
+/// The blur rule Wayfire runs with, brought up to this version's
+/// (ui/glass.py refresh_blur_rule): it is stored in Sonata's Wayfire
+/// settings when the look changes, so a surface added to NEVER_BLUR (Vini:
+/// the Game Bar, still blurred after the update) kept its blur until the
+/// look was changed again. True: changed.
+///
+/// The menu bar calls it once, 2 s after it starts, in a thread (it
+/// writes Wayfire's config). Never on trial: the trial build writes no
+/// Wayfire settings of the Python Sonata, which refreshes the rule itself.
+pub fn refresh_blur_rule() -> bool {
+    if sonata_config::side_by_side() {
+        return false;
+    }
+    let cur = sonata_backend::wfconfig::get("blur", "blur_by_default", "");
+    match refreshed_blur_rule(&cur, crate::gamemode::light_path().exists(), &sonata_ui::glass::settings()) {
+        Some(want) => sonata_backend::wfconfig::set("blur", "blur_by_default", &want),
+        None => false,
+    }
+}
+
 pub fn blur_strength(appearance: &Map<String, Value>) -> i64 {
     appearance.get("glass").and_then(|g| g.get("blur")).and_then(Value::as_f64).map(|b| b.clamp(0.0, 100.0) as i64).unwrap_or(BLUR_DEFAULT)
 }
@@ -553,5 +586,38 @@ mod tests {
         let t = sonata_ui::tokens::palette(false);
         assert_eq!(blur_threshold(&p(&["dock"]), &t), 0.43); // light glass is under 0.5
         assert_eq!(blur_threshold(&p(&[]), &t), 0.5);
+    }
+
+    fn all_on() -> Vec<(&'static str, sonata_ui::glass::Part)> {
+        sonata_ui::glass::ITEMS.iter().map(|i| (*i, sonata_ui::glass::Part { on: true, alpha: None })).collect()
+    }
+
+    /// Vini: the Game Bar still blurred after the update -- the rule stored
+    /// when the look last changed was an older version's.
+    #[test]
+    fn test_old_blur_rule_updated() {
+        let old = "(app_id contains \"sonata2\" | type is \"unmanaged\") & !(app_id is \"sonata2-mission\")";
+        let want = refreshed_blur_rule(old, false, &all_on()).unwrap();
+        assert!(want.contains("app_id is \"sonata2-gamebar\""));
+        assert_eq!(want, blur_rule(&all_on()));
+    }
+
+    #[test]
+    fn glass_title_bars_kept() {
+        let old = "(app_id contains \"sonata2\") & !(app_id is \"sonata2-mission\") | type is \"toplevel\"";
+        assert!(refreshed_blur_rule(old, false, &all_on()).unwrap().ends_with(GLASS_BARS));
+    }
+
+    #[test]
+    fn up_to_date_left_alone() {
+        assert_eq!(refreshed_blur_rule(&blur_rule(&all_on()), false, &all_on()), None);
+        assert_eq!(refreshed_blur_rule(&(blur_rule(&all_on()) + GLASS_BARS), false, &all_on()), None);
+    }
+
+    #[test]
+    fn not_while_a_game_has_lighter_effects_nor_a_foreign_rule() {
+        assert_eq!(refreshed_blur_rule("(app_id contains \"sonata2\") & !(x)", true, &all_on()), None);
+        assert_eq!(refreshed_blur_rule("app_id is \"sonata2-no-blur\"", false, &all_on()), None);
+        assert_eq!(refreshed_blur_rule("type is \"toplevel\"", false, &all_on()), None);
     }
 }

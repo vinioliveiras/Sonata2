@@ -1,4 +1,4 @@
-//! Settings > Displays > Arrange (macOS): the displays drawn where they
+//! Settings > Displays > Arrange (settings/arrange.py; macOS): the displays drawn where they
 //! sit; drag one to move it (it snaps edge to edge with the others, gliding
 //! into place), drag the white menu bar to another display to make that
 //! one the main display (Dock, desktop icons, notifications).

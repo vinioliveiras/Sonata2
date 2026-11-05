@@ -3,7 +3,9 @@
 //! plays through playbin3, whose decodebin3 aborts the whole app on some
 //! MP3s -- what the removed Music app learnt. As a MediaStream, the window
 //! uses it exactly like a movie. Also the song's tags (title, artist,
-//! cover), read with GStreamer's discoverer.
+//! cover), read with GStreamer's discoverer: audiotags.py's own MP3 / FLAC /
+//! Ogg / MP4 / WAV parsers aren't ported -- the discoverer reads every
+//! format GStreamer plays, and Videos only shows those three.
 
 use gst::prelude::*;
 use gstreamer as gst;
