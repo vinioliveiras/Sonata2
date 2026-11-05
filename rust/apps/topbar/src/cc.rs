@@ -373,6 +373,12 @@ impl ControlCenter {
                 cc.fit_height();
             }
         });
+        let w = Rc::downgrade(&me);
+        me.grid.set_on_height(move || {
+            if let Some(cc) = w.upgrade() {
+                cc.fit_height(); // its size changes smoothly
+            }
+        });
         me.fit_height();
         me.edit_bar_update();
         for (t, kind) in [(&me.wifi, "wifi"), (&me.bt, "bluetooth")] {

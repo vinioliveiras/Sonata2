@@ -24,6 +24,27 @@ class AudioEventsTest(unittest.TestCase):
         self.assertFalse(S._AUDIO_EVENT.search("Event 'change' on sink-input #812"))
         self.assertFalse(S._AUDIO_EVENT.search("Event 'change' on source-output #9"))
 
+    def test_new_default_device_never_noticed(self):
+        """A new default output (the server's event) never updated the menu
+        bar's Sound: pactl prints "on server", and the code looked for
+        "'server'" with quotes."""
+        self.assertTrue(S._AUDIO_EVENT.search("Event 'change' on server #4294967295"))
+        from sonata2.backend import equalizer as E
+        import inspect
+        self.assertNotIn("\"'server'\"", inspect.getsource(E))
+
+
+class SoundHiddenWithoutPactlTest(unittest.TestCase):
+    def test_hiding_sound_without_pactl_crashed(self):
+        """Without pactl the menu bar keeps polling (its watch is False);
+        hiding Sound then called False.kill() and the menu bar crashed."""
+        from sonata2.shell import topbar as T
+        poll = T._StatusPoll.__new__(T._StatusPoll)
+        poll._audio = False
+        with mock.patch.object(T, "_BARS", []):
+            poll._volume()
+        self.assertIsNone(poll._audio)
+
 
 class DdcDetectTest(unittest.TestCase):
     def test_none_found_is_kept_too(self):

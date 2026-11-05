@@ -63,7 +63,7 @@ mod host;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|show-desktop|settings|launchpad|keyring|prefs|topbar|dock|lock-wait|setup|session-try|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all|xsettings> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|show-desktop|settings|launchpad|keyring|prefs|topbar|dock|lock-wait|setup|session-try|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all|xsettings|gallery> [--dark|--light]";
 
 /// autostart.py's setup steps before the login items, each on its own
 /// (one failing never keeps the rest, or the apps, from starting).
@@ -157,6 +157,11 @@ fn main() -> ExitCode {
         // Python session's own autostart runs and this one only tries it
         "autostart" if !sonata_config::side_by_side() => ExitCode::from(sonata_session::autostart::autostart_with(&login_steps) as u8),
         "autostart" => ExitCode::from(sonata_session::autostart(&args[1..]) as u8),
+        // the design system's page (ui/gallery.py)
+        "gallery" => {
+            let code = sonata_ui::gallery::run_gallery(&args[1..]);
+            ExitCode::from(code.value() as u8)
+        }
         // XWayland's startup script (tools/wayfire-config.sh): X11 apps in Sonata's look
         "xsettings" => ExitCode::from(sonata_system::xsettings::run() as u8),
         "clipboard" => {
@@ -350,7 +355,7 @@ mod handles_tests {
         for c in ["activity", "terminal", "files", "portal", "settings", "topbar", "screenshot"] {
             assert!(super::handles(c), "{c}");
         }
-        for c in ["self-update", "gallery", "", "--handles"] {
+        for c in ["self-update", "", "--handles"] {
             assert!(!super::handles(c), "{c}");
         }
     }

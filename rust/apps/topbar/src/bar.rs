@@ -5,15 +5,16 @@
 //! microphone / camera dot over its right margin.
 //!
 //! Wi-Fi, battery and volume are read by one poller for every display's
-//! bar (StatusPoll), Bluetooth by one BlueZ watch. Not ported here (see
-//! seams.rs for what's passed in): NetworkManager's signals (Wi-Fi is
-//! polled every POLL_S), `pactl subscribe` for the volume (polled while
-//! Sound is shown), the clipboard history (its own crate), the distro
-//! logo's shape / symbol choices (ui/logo.py: the distro logo only).
+//! bar ([`crate::statuspoll`]: NetworkManager's, UPower's and `pactl
+//! subscribe`'s events, polling as the fallback), Bluetooth by one BlueZ
+//! watch. Not ported here (see seams.rs for what's passed in): the
+//! clipboard history (its own crate), the distro logo's shape / symbol
+//! choices (ui/logo.py: the distro logo only).
 
 use crate::kit::{self, run_async};
 use crate::logic;
 use crate::seams::{Services, Toplevel};
+use crate::statuspoll::StatusPoll;
 use crate::{about, cc::ControlCenter, menubar_size, statsui, topbar_prefs};
 use gtk::{gdk, gio, glib, graphene, prelude::*, subclass::prelude::*};
 use serde_json::{json, Map, Value};
@@ -23,7 +24,7 @@ use adw::prelude::AlertDialogExt;
 use sonata_ui::menu::{self, Item};
 use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// The menu bar's panels (Control Center, Wi-Fi, clock...) open this far below it.
 pub const PANEL_GAP: i32 = 2;
@@ -37,7 +38,7 @@ pub const APP_NAME_CHARS: i32 = 24;
 /// The Sonata menu's logo (under the 16 px status icons; Vini's call).
 pub const LOGO_PX: i32 = 12;
 pub const POLL_S: u64 = 10;
-/// Battery as signals: a look now and then only.
+/// Wi-Fi / battery as signals: a look now and then only.
 pub const PUSHED_POLL_S: u64 = 120;
 /// Keyboards plugged in / out: looked at this often (a thread).
 pub const KEYBOARDS_S: u32 = 15;
@@ -55,7 +56,6 @@ pub fn item_h(bar_h: i32) -> i32 {
 thread_local! {
     static CSS: Cell<bool> = const { Cell::new(false) };
     static BARS: RefCell<Vec<Weak<Bar>>> = RefCell::default();
-    static POLL: RefCell<Option<Rc<StatusPoll>>> = RefCell::default();
     static BT: RefCell<Option<Rc<Bluetooth>>> = RefCell::default();
 }
 
@@ -162,95 +162,10 @@ impl Material {
 
 // -- shared services ------------------------------------------------------------------------
 
-/// Wi-Fi, battery and volume for every display's bar: read once per tick
-/// and handed to each live bar. Nothing runs while the screen is locked
-/// or a fullscreen game has the focus (Services::quiet_paused). The volume
-/// is read only while a bar shows the Sound item. With UPower's signals
-/// (power_watch) the battery is only looked at every PUSHED_POLL_S.
-struct StatusPoll {
-    busy: RefCell<Vec<&'static str>>,
-    looked: Cell<Instant>,
-    upower: bool,
-    paused: Option<Rc<dyn Fn() -> bool>>,
-}
-
-impl StatusPoll {
-    fn shared(paused: Option<Rc<dyn Fn() -> bool>>) -> Rc<StatusPoll> {
-        POLL.with(|p| {
-            p.borrow_mut()
-                .get_or_insert_with(|| {
-                    let upower = power_watch();
-                    let me = Rc::new(StatusPoll { busy: RefCell::default(), looked: Cell::new(Instant::now()), upower, paused });
-                    let w = Rc::downgrade(&me);
-                    glib::timeout_add_seconds_local(POLL_S as u32, move || {
-                        let Some(me) = w.upgrade() else { return glib::ControlFlow::Break };
-                        if me.looked.get().elapsed().as_secs() >= PUSHED_POLL_S - POLL_S {
-                            me.poll(true, true); // now and then everything, signals or not
-                        } else {
-                            me.poll(true, !me.upower);
-                        }
-                        glib::ControlFlow::Continue
-                    });
-                    me
-                })
-                .clone()
-        })
-    }
-
-    fn run<T: Send + 'static>(&self, key: &'static str, work: impl FnOnce() -> T + Send + 'static, deliver: impl Fn(&Rc<Bar>, &T) + 'static) {
-        if self.busy.borrow().contains(&key) {
-            return; // a second ask while one runs is dropped
-        }
-        self.busy.borrow_mut().push(key);
-        let me = POLL.with(|p| p.borrow().clone());
-        run_async(work, move |res| {
-            if let Some(me) = me {
-                me.busy.borrow_mut().retain(|k| *k != key);
-            }
-            for b in bars() {
-                deliver(&b, &res);
-            }
-        });
-    }
-
-    fn poll(&self, wifi: bool, battery: bool) {
-        if self.paused.as_ref().is_some_and(|p| p()) {
-            return; // locked, or a fullscreen game/video has the focus: stay out of its way
-        }
-        if wifi && battery {
-            self.looked.set(Instant::now());
-        }
-        if wifi {
-            self.run("wifi", system::wifi_status, |b, r| b.wifi_state(r));
-        }
-        if battery {
-            self.battery();
-        }
-        if bars().iter().any(|b| b.cfg_bool("show_sound", false)) {
-            self.run("volume", system::volume, |b, r| b.sound_state(*r));
-        } else {
-            for b in bars() {
-                b.sound_state(None);
-            }
-        }
-    }
-
-    fn battery(&self) {
-        self.run(
-            "battery",
-            || {
-                let (pct, status) = system::battery(system::POWER_SUPPLY);
-                (pct, status, system::on_ac(system::POWER_SUPPLY), system::power_profile_fast())
-            },
-            |b, r| b.battery_state(r),
-        );
-    }
-}
-
 /// Battery / power events (backend/power.py's watch): plugging in,
 /// charging, level and Low Power Mode changes are pushed, so the icon
 /// updates at once. False when the system bus isn't reachable (polled then).
-fn power_watch() -> bool {
+pub(crate) fn power_watch() -> bool {
     let Ok(bus) = gio::bus_get_sync(gio::BusType::System, gio::Cancellable::NONE) else { return false };
     let src: Rc<Cell<Option<glib::SourceId>>> = Rc::default();
     for (name, path) in [
@@ -270,7 +185,7 @@ fn power_watch() -> bool {
             let s = src.clone();
             src.set(Some(glib::timeout_add_local_once(Duration::from_millis(150), move || {
                 s.set(None);
-                if let Some(p) = POLL.with(|p| p.borrow().clone()) {
+                if let Some(p) = StatusPoll::current() {
                     p.battery();
                 }
             })));

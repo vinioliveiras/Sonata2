@@ -19,8 +19,6 @@
 //!
 //! Minimize targets (each window flies into its icon): wlr.rs, aimed by
 //! update_rectangles / aim_at.
-//!
-//! Not ported yet (docs: the port's report): Mission Control's window menu.
 
 use crate::toplevels::{Manager, Toplevel};
 use crate::{dock_drop, dock_folder, dock_menu, dock_preview, dock_stack, poof, uninstall_ui};
@@ -3681,11 +3679,15 @@ impl Dock {
     }
 
     fn ipc_event(&self, msg: &Value) {
-        if msg.get("event").and_then(Value::as_str) == Some("sonata-scale-menu#") {
-            // a window right-clicked in Mission Control: only the first Dock answers
-            if docks().first().is_some_and(|d| std::ptr::eq(&**d, self)) {
-                dock_menu::scale_menu(self, msg);
+        match dock_menu::scale_event(msg) {
+            dock_menu::ScaleEvent::Menu => {
+                // a window right-clicked in Mission Control: only the first Dock answers
+                if docks().first().is_some_and(|d| std::ptr::eq(&**d, self)) {
+                    dock_menu::scale_menu(self, msg);
+                }
             }
+            dock_menu::ScaleEvent::Closed => dock_menu::close_menu_at(), // its menu goes with Mission Control
+            dock_menu::ScaleEvent::Other => {}
         }
     }
 

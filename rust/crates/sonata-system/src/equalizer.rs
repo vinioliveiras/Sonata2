@@ -300,7 +300,7 @@ impl Equalizer {
             if own_event(text, &me.0.own.borrow()) {
                 return; // set-param on our filter: no sync (it fed itself)
             }
-            if text.contains(" sink ") || text.contains("'server'") || text.contains(" card ") {
+            if text.contains(" sink ") || text.contains(" server ") || text.contains(" card ") { // (pactl: "on server #-1")
                 me.sync_soon();
             } else if text.contains("'new' on sink-input") && !me.0.chains.borrow().is_empty() {
                 me.links_soon(); // an app started playing: does it go through us?

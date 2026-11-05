@@ -153,6 +153,13 @@ arguments must be literal).
 
 ## Tests
 
+The GTK tests skip without a display. To run them without touching the
+real session: a private Broadway display --
+`XDG_RUNTIME_DIR=$tmp gtk4-broadwayd :39 &` then the usual isolated
+`cargo test` with `GDK_BACKEND=broadway BROADWAY_DISPLAY=:39` and the
+same XDG_RUNTIME_DIR.
+
+
 - **Pure logic** (Calculator engine, config merging, i18n rules, IPC
   framing, .desktop parsing) becomes `#[test]`s in each crate, ported
   case by case from `tests/test_*.py`. The bug-named regression tests
@@ -358,8 +365,9 @@ stay behind `--features ui-tests` and run only under
   a notification). Wayfire's bindings still call the Python ones: the
   "Sonata (Rust preview)" session switches them over.
 - BlueZ over D-Bus (sonata-backend's bluez.rs) is in, bluetoothctl only
-  as the fallback. Not ported yet: watching NetworkManager and the sound
-  server (the menu bar polls them).
+  as the fallback; the menu bar follows NetworkManager's signals and
+  `pactl subscribe` (topbar/src/statuspoll.rs), polling only as the
+  fallback.
 - Left for the "Sonata (Rust preview)" session (step 4), on purpose:
   `restart` (it stops and starts the Python shell by its command lines,
   with intro.py's slide-away signals), `doctor` (it checks what the
@@ -610,7 +618,8 @@ stay behind `--features ui-tests` and run only under
 - Since, too: packages (packages.rs: install / run / extract, scripts;
   also from Spotlight, the Dock's stacks and the desktop) and locked
   folders (sonata-backend's vault, Files' Lock / Unlock).
-- Not yet: the icons' reflow animation.
+- The icons glide to their new place when items come and go (views.rs'
+  Reflow), as Python's do.
 
 ### Step 6 so far: the Open / Save panels and the portal
 

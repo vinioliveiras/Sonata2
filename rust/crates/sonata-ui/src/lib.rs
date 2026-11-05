@@ -14,6 +14,7 @@ pub mod dialog;
 pub mod fixed;
 pub mod fmt;
 pub mod frame;
+pub mod gallery;
 pub mod glass;
 pub mod icons;
 pub mod menu;

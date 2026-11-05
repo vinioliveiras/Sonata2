@@ -133,10 +133,9 @@ pub fn darken(watch: &dyn IdleWatch, on: bool) {
     displays_dark(watch, on);
 }
 
-/// The displays powered off on a laptop: every one but its own panel.
-pub fn not_the_panel(name: &str) -> bool {
-    !name.is_empty() && !sonata_backend::system::is_builtin(Some(name))
-}
+/// The displays powered off on a laptop: every one but its own panel
+/// (sonata-shell's, which the lock and login screens use too).
+pub use sonata_shell::idlewatch::not_the_panel;
 
 /// The panel's backlight (a laptop) or every display off, and back; the
 /// session's darkening and the lock screen's alike.
@@ -144,17 +143,10 @@ pub fn displays_dark(watch: &dyn IdleWatch, on: bool) {
     displays_dark_with(watch, on, lockdisplay::has_backlight(), &lockdisplay::dim);
 }
 
+/// sonata-shell's rule (the lock and login screens darken the same way),
+/// through the session's IdleWatch trait so the tests can hand in a fake.
 fn displays_dark_with(watch: &dyn IdleWatch, on: bool, backlight: bool, dim: &dyn Fn(bool)) {
-    if backlight {
-        // a laptop: its panel's backlight to zero, the panel stays on --
-        // powering it off and on again failed on Vini's (NVIDIA: the screen
-        // came back only by closing and opening the lid). Monitors plugged
-        // in really go off (Vini: they only went black, the pointer on them)
-        dim(on);
-        watch.displays(!on, Some(&not_the_panel));
-    } else {
-        watch.displays(!on, None);
-    }
+    sonata_shell::idlewatch::displays_dark_with(&|power, only| watch.displays(power, only), on, backlight, dim);
 }
 
 /// What IdleLock needs from parts ported elsewhere.

@@ -527,7 +527,10 @@ def set_volume(percent: Optional[int] = None, muted: Optional[bool] = None,
     return ok
 
 
-_AUDIO_EVENT = re.compile(r"on (sink|source) #")
+# a device, or the server's own events (a new default device); pactl prints
+# "Event 'change' on server #-1" -- no quotes around server, so the old
+# "'server'" never matched and a new default output wasn't noticed
+_AUDIO_EVENT = re.compile(r"on (sink|source|server) #")
 
 
 def watch_audio(callback):
@@ -544,7 +547,7 @@ def watch_audio(callback):
 
     def line(text):
         # (not "on sink-input": every stream that plays sends those, many a second)
-        if _AUDIO_EVENT.search(text) or "'server'" in text:
+        if _AUDIO_EVENT.search(text):
             if not state["src"]:
                 state["src"] = GLib.timeout_add(120, fire)      # a burst of events: one read
     return watch(line)

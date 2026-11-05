@@ -177,7 +177,7 @@ fn lock_defaults(data: &mut serde_json::Map<String, Value>, get: &dyn Fn(&str) -
 /// sink-input": every stream that plays sends those, many a second).
 #[cfg_attr(not(feature = "system"), allow(dead_code))]
 fn audio_event(text: &str) -> bool {
-    text.contains("on sink #") || text.contains("on source #") || text.contains("'server'")
+    text.contains("on sink #") || text.contains("on source #") || text.contains("on server #") // (pactl: "on server #-1", no quotes)
 }
 
 /// The sliders follow volume changes made elsewhere (Control Center, keys,
@@ -1099,7 +1099,7 @@ mod tests {
     fn only_device_events_wake_the_sliders() {
         assert!(audio_event("Event 'change' on sink #56"));
         assert!(audio_event("Event 'new' on source #12"));
-        assert!(audio_event("Event 'change' on server #0'server'"));
+        assert!(audio_event("Event 'change' on server #4294967295")); // a new default device
         assert!(!audio_event("Event 'change' on sink-input #210"));
     }
 

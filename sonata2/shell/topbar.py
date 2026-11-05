@@ -182,9 +182,9 @@ class _StatusPoll:
 
     def _volume(self) -> None:
         if not any(b.cfg.get("show_sound") for b in _BARS):
-            if self._audio is not None:          # nobody shows Sound: no reads, no subscription
-                self._audio.kill()
-                self._audio = None
+            if self._audio:                      # nobody shows Sound: no reads, no subscription
+                self._audio.kill()               # (False: no pactl, nothing to stop)
+            self._audio = None
             for b in list(_BARS):
                 b._sound_state(None)
             return

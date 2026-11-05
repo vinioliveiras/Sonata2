@@ -6,12 +6,14 @@
 //! rename. Also the tag dots (tags.py's look).
 
 use crate::folder::{self, is_dir, sort_key};
+use adw::prelude::AnimationExt;
 use gtk::prelude::*;
 use gtk::{gdk, pango};
 use sonata_i18n::{fmt, n_, tr};
+use sonata_ui::transition::{self, GlideBox};
 use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 
 /// spring-loaded folders: hover time before a folder opens
@@ -713,6 +715,121 @@ pub trait View {
     }
 }
 
+// -- items moving when others come and go ----------------------------------------------------
+/// bigger changes (a folder loading, a big paste) just appear
+const REFLOW_MAX: u32 = 60;
+const FADE_MS: u32 = 180;
+
+/// Vini: deleting, moving or adding items made the others jump. When the
+/// grid's items change, the ones still there slide from their old place to
+/// the new one (ui.transition's glide) and the new ones fade in (Finder).
+/// A cell is a GlideBox: its parts are what glide, so the cell (the one
+/// GTK moves) draws them shifted.
+struct Reflow {
+    grid: glib::WeakRef<gtk::GridView>,
+    cells: Rc<Cells>,
+    order: RefCell<Vec<gio::FileInfo>>,
+    /// the items before a change not drawn yet (several changes before a
+    /// frame: one move, from the first places)
+    pending: RefCell<Option<HashSet<gio::FileInfo>>>,
+}
+
+impl Reflow {
+    /// Connected before the selection model is made, so it runs before
+    /// GTK hears of the change: every cell is still where it was drawn.
+    fn new(model: &gtk::SortListModel, cells: Rc<Cells>) -> Rc<Self> {
+        // (a view made for a folder already listed: its first change moves too)
+        let order = RefCell::new(items_of(model.upcast_ref()));
+        let r = Rc::new(Reflow { grid: glib::WeakRef::new(), cells, order, pending: RefCell::default() });
+        let w = Rc::downgrade(&r);
+        model.connect_items_changed(move |m, _, removed, added| {
+            if let Some(r) = w.upgrade() {
+                r.changed(m.upcast_ref(), removed, added);
+            }
+        });
+        r
+    }
+
+    fn changed(self: &Rc<Self>, model: &gio::ListModel, removed: u32, added: u32) {
+        let old = self.order.replace(items_of(model));
+        let Some(grid) = self.grid.upgrade() else { return };
+        if old.is_empty() || removed > REFLOW_MAX || added > REFLOW_MAX || !grid.is_mapped() || self.pending.borrow().is_some() {
+            return;
+        }
+        let Some(clock) = grid.frame_clock() else { return };
+        let was: HashSet<gio::FileInfo> = old.into_iter().collect();
+        let parts: Vec<gtk::Widget> = {
+            let order = self.order.borrow();
+            let here: HashSet<&gio::FileInfo> = order.iter().collect();
+            // only the items still here glide: a removed item's cell may come
+            // back showing a new one, which fades in instead
+            self
+                .cells
+                .cells
+                .borrow()
+                .iter()
+                .filter(|(i, _)| was.contains(*i) && here.contains(i))
+                .flat_map(|(_, b)| children(b))
+                .collect()
+        };
+        let before = transition::glide_record(&parts, grid.upcast_ref());
+        self.pending.replace(Some(was));
+        let id: Rc<Cell<Option<glib::SignalHandlerId>>> = Rc::default();
+        let (id2, me) = (id.clone(), Rc::downgrade(self));
+        id.set(Some(clock.connect_layout(move |clock| {
+            if let Some(h) = id2.take() {
+                clock.disconnect(h);
+            }
+            if let Some(me) = me.upgrade() {
+                let was = me.pending.take().unwrap_or_default();
+                me.fade_in(&was);
+            }
+        })));
+        transition::glide_play(before, grid.upcast_ref(), transition::GLIDE_MS);
+    }
+
+    /// The cells showing an item that wasn't there before fade in (laid
+    /// out by now, not drawn yet).
+    fn fade_in(&self, was: &HashSet<gio::FileInfo>) {
+        let new: Vec<gtk::Widget> = self.cells.cells.borrow().iter().filter(|(i, _)| !was.contains(*i)).map(|(_, b)| b.clone()).collect();
+        for b in new {
+            stop_fade(&b);
+            b.set_opacity(0.0);
+            let bw = b.downgrade();
+            let target = adw::CallbackAnimationTarget::new(move |v| {
+                if let Some(b) = bw.upgrade() {
+                    b.set_opacity(v);
+                }
+            });
+            let anim = adw::TimedAnimation::new(&b, 0.0, 1.0, sonata_ui::tokens::ms(FADE_MS as f64), target);
+            unsafe { b.set_data("fs-fade", anim.clone()) };
+            anim.play();
+        }
+    }
+}
+
+fn items_of(model: &gio::ListModel) -> Vec<gio::FileInfo> {
+    (0..model.n_items()).filter_map(|i| model.item(i).and_then(|o| info_of(&o))).collect()
+}
+
+fn children(w: &gtk::Widget) -> Vec<gtk::Widget> {
+    let mut out = Vec::new();
+    let mut c = w.first_child();
+    while let Some(ch) = c {
+        c = ch.next_sibling();
+        out.push(ch);
+    }
+    out
+}
+
+/// A cell showing another item: no fade left over from the last one.
+fn stop_fade(b: &gtk::Widget) {
+    if let Some(a) = unsafe { b.steal_data::<adw::TimedAnimation>("fs-fade") } {
+        a.skip();
+    }
+    b.set_opacity(1.0);
+}
+
 // -- Icons ------------------------------------------------------------------------------------
 /// Icons in a grid, sorted by name unless View > Sort By says otherwise.
 pub struct IconsView {
@@ -723,6 +840,8 @@ pub struct IconsView {
     cells: Rc<Cells>,
     sort: Rc<RefCell<(String, bool)>>,
     sorter: gtk::CustomSorter,
+    /// (kept here: the model's handler holds it weakly)
+    _reflow: Rc<Reflow>,
 }
 
 impl IconsView {
@@ -737,13 +856,15 @@ impl IconsView {
             folders_first(&a, &b).then(if desc { c.reverse() } else { c }).into()
         });
         let sorted = gtk::SortListModel::new(Some(model.clone()), Some(sorter.clone()));
-        let selection = gtk::MultiSelection::new(Some(sorted.clone()));
         let cells = Cells::new();
+        let reflow = Reflow::new(&sorted, cells.clone());
+        let selection = gtk::MultiSelection::new(Some(sorted.clone()));
         let f = gtk::SignalListItemFactory::new();
         let c = cells.clone();
         f.connect_setup(move |_, item| {
             let item = item.downcast_ref::<gtk::ListItem>().unwrap();
-            let b = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(3).halign(gtk::Align::Center).build();
+            let b = GlideBox::new(gtk::Orientation::Vertical, 3);
+            b.set_halign(gtk::Align::Center);
             b.set_size_request(CELL_W, -1);
             let img = gtk::Image::builder().pixel_size(ICON_SIZE).css_classes(["fs-icon"]).halign(gtk::Align::Center).build();
             let lbl = gtk::Label::builder().wrap(true).wrap_mode(pango::WrapMode::WordChar).lines(2).max_width_chars(12).ellipsize(pango::EllipsizeMode::Middle).justify(gtk::Justification::Center).halign(gtk::Align::Center).valign(gtk::Align::Start).css_classes(["fs-name"]).build();
@@ -772,6 +893,7 @@ impl IconsView {
         let c = cells.clone();
         f.connect_unbind(move |_, item| {
             if let Some(b) = item.downcast_ref::<gtk::ListItem>().and_then(|i| i.child()) {
+                stop_fade(&b);
                 c.untrack(&b);
             }
         });
@@ -801,7 +923,8 @@ impl IconsView {
                 on_open(&i);
             }
         });
-        Rc::new(Self { grid, sorted, selection, source: model.clone(), cells, sort, sorter })
+        reflow.grid.set(Some(&grid));
+        Rc::new(Self { grid, sorted, selection, source: model.clone(), cells, sort, sorter, _reflow: reflow })
     }
 }
 
@@ -1469,9 +1592,19 @@ mod tests {
 
     /// ui/columns.py's tests, run where GTK can start (a display): the
     /// flag follows hiding, adding, reordering and removing columns.
+    /// GTK for this test, on this thread: none without a display, and none
+    /// when another test's thread has it already (GTK lives on one thread;
+    /// with a display the GTK tests take turns failing otherwise).
+    fn gtk_here() -> bool {
+        if gtk::is_initialized() && !gtk::is_initialized_main_thread() {
+            return false;
+        }
+        gtk::init().is_ok()
+    }
+
     #[test]
     fn fill_last_follows_the_columns() {
-        if gtk::init().is_err() {
+        if !gtk_here() {
             return; // (no display: the logic above is still checked)
         }
         let view = gtk::ColumnView::new(None::<gtk::SelectionModel>);
@@ -1480,7 +1613,8 @@ mod tests {
             c.set_expand(true); // what a caller may have set: fill_last decides
             view.append_column(c);
         }
-        let expanding = || cols.iter().filter(|c| c.expands() && c.is_visible()).map(|c| c.title().unwrap().to_string()).collect::<Vec<_>>();
+        // (the view's columns: a removed one keeps its flag, and takes no room)
+        let expanding = || cols.iter().filter(|c| c.expands() && c.is_visible() && c.column_view().is_some()).map(|c| c.title().unwrap().to_string()).collect::<Vec<_>>();
         fill_last(&view); // after the columns were added
         assert_eq!(expanding(), ["Kind"]);
         cols[2].set_visible(false);
@@ -1500,6 +1634,69 @@ mod tests {
         i.set_file_type(if dir { gio::FileType::Directory } else { gio::FileType::Regular });
         i.set_size(size);
         i
+    }
+
+    /// The reflow follows the grid's order, and leaves a change alone
+    /// while the grid isn't drawn (a folder opening in a new view).
+    #[test]
+    fn reflow_follows_the_order() {
+        if !gtk_here() {
+            return; // (no display)
+        }
+        let store = gio::ListStore::new::<gio::FileInfo>();
+        let model: gio::ListModel = store.clone().upcast();
+        let view = IconsView::new(&model, Rc::new(|_: &gio::FileInfo| {}));
+        let (a, b) = (info("a.txt", false, 1), info("b.txt", false, 2));
+        store.append(&b);
+        store.append(&a);
+        assert_eq!(*view._reflow.order.borrow(), [a.clone(), b.clone()]); // sorted by name
+        store.remove(0);
+        assert_eq!(*view._reflow.order.borrow(), [a]);
+        assert!(view._reflow.pending.borrow().is_none()); // (not mapped: nothing to move)
+    }
+
+    /// Drawn: deleting an item, the ones after it slide back from their
+    /// old place (not jumping there); an item added fades in.
+    #[test]
+    fn reflow_glides_and_fades() {
+        if !gtk_here() {
+            return; // (no display)
+        }
+        let store = gio::ListStore::new::<gio::FileInfo>();
+        let names: Vec<String> = (0..12).map(|i| format!("f{i:02}.txt")).collect();
+        let infos: Vec<gio::FileInfo> = names.iter().map(|n| info(n, false, 1)).collect();
+        for i in &infos {
+            store.append(i);
+        }
+        let model: gio::ListModel = store.clone().upcast();
+        let view = IconsView::new(&model, Rc::new(|_: &gio::FileInfo| {}));
+        let scroll = gtk::ScrolledWindow::builder().child(&view.grid).build();
+        let win = gtk::Window::builder().default_width(500).default_height(400).child(&scroll).build();
+        win.present();
+        let ctx = glib::MainContext::default();
+        let spin = |until: &dyn Fn() -> bool| {
+            let t = std::time::Instant::now();
+            while !until() && t.elapsed() < std::time::Duration::from_secs(3) {
+                ctx.iteration(false);
+            }
+        };
+        spin(&|| view.cells.cells.borrow().len() == 12 && view.grid.is_mapped() && view.grid.width() > 0);
+        assert!(view.grid.is_mapped(), "the grid was never drawn");
+        let gliding = || {
+            view.cells.cells.borrow().values().flat_map(children).any(|w| transition::glide_offset(&w) != (0.0, 0.0))
+        };
+        store.remove(0); // every other item moves one place back
+        spin(&gliding);
+        assert!(gliding(), "the items jumped to their new place");
+        let added = info("a-new.txt", false, 1);
+        let t = std::time::Instant::now();
+        while t.elapsed() < std::time::Duration::from_millis(400) {
+            ctx.iteration(false); // (the glide ends)
+        }
+        store.append(&added);
+        spin(&|| view.cells.cells.borrow().get(&added).is_some_and(|b| b.opacity() < 1.0));
+        assert!(view.cells.cells.borrow().get(&added).is_some_and(|b| b.opacity() < 1.0), "the new item didn't fade in");
+        win.destroy();
     }
 
     #[test]

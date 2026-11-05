@@ -7,7 +7,7 @@
 //! | idlelock.py | [`idlelock`] | the menu bar ([`idlelock::IdleLock`]); `lock-wait` ([`idlelock::run_lock_wait`]) |
 //! | idlepolicy.py | [`idlepolicy`] | the menu bar, under IdleLock |
 //! | blackout.py | [`blackout`] | the menu bar (IdleLock's darkening) |
-//! | screencorners.py | [`screencorners`] | the menu bar ([`screencorners::ScreenCorners`]); lock / login screens ([`screencorners::CornersOverlay`]) |
+//! | screencorners.py | [`screencorners`] | the menu bar ([`screencorners::ScreenCorners`]); lock / login screens (sonata-shell's `screencorners::corners_overlay`) |
 //! | nightshift.py | [`nightshift`] | the menu bar ([`nightshift::NightShift`]); Control Center / Settings ([`nightshift::set_manual`], [`nightshift::is_on`]) |
 //! | quitapps.py | [`quitapps`] | the menu bar and Settings ([`quitapps::end_session`]); Dock and app menu ([`quitapps::quit_app`]) |
 //! | quitonclose.py | [`quitonclose`] | the Dock ([`quitonclose::QuitOnClose`]); every launcher ([`quitonclose::mark_launch`]) |

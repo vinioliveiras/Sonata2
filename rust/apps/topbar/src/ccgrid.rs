@@ -13,9 +13,9 @@
 //! The modules themselves are built by cc.rs. When one moves, is taken
 //! out (it shrinks away first) or put back (it grows in), the others glide
 //! to their new places (sonata_ui::transition); a module sized by its
-//! content grows and shrinks smoothly. Not ported yet: Control Center's own
-//! smooth height change (it follows at once); the jiggle and the x's look
-//! are ui/edit.py's CSS, not exported yet.
+//! content grows and shrinks smoothly, and so does the grid's own height
+//! (Control Center follows each frame through on_height). Not ported yet:
+//! the jiggle and the x's look are ui/edit.py's CSS, not exported yet.
 
 use adw::prelude::*;
 use gtk::{gdk, glib, graphene, gsk, subclass::prelude::*};
@@ -202,6 +202,11 @@ mod imp {
         /// a module growing or shrinking to its new rows: its height now (set_rows)
         pub grow: RefCell<HashMap<String, f64>>,
         pub grow_anims: RefCell<HashMap<String, adw::TimedAnimation>>,
+        /// the height drawn while it changes (resize_to); None: target_height
+        pub height: Cell<Option<f64>>,
+        pub height_anim: RefCell<Option<adw::TimedAnimation>>,
+        /// each frame of a size change (Control Center's height)
+        pub on_height: RefCell<Option<Rc<dyn Fn()>>>,
     }
 
     #[glib::object_subclass]
@@ -223,7 +228,11 @@ mod imp {
 
     impl WidgetImpl for ModuleGrid {
         fn measure(&self, orientation: gtk::Orientation, _for_size: i32) -> (i32, i32, i32, i32) {
-            let size = if orientation == gtk::Orientation::Horizontal { self.width.get() } else { self.obj().target_height() };
+            let size = if orientation == gtk::Orientation::Horizontal {
+                self.width.get()
+            } else {
+                self.height.get().map_or_else(|| self.obj().target_height(), |h| h.round_ties_even() as i32)
+            };
             (size, size, -1, -1)
         }
 
@@ -285,6 +294,45 @@ impl ModuleGrid {
     /// on_change(): the order, editing or a module's size changed.
     pub fn set_on_change(&self, f: impl Fn() + 'static) {
         self.imp().on_change.replace(Some(Rc::new(f)));
+    }
+
+    /// on_height(): each frame of the grid's own size change.
+    pub fn set_on_height(&self, f: impl Fn() + 'static) {
+        self.imp().on_height.replace(Some(Rc::new(f)));
+    }
+
+    /// Control Center grows or shrinks to the modules smoothly (Vini: a
+    /// module taken out made it jump); on_height() follows each frame.
+    fn resize_to(&self, old: i32) {
+        let new = self.target_height();
+        if let Some(a) = self.imp().height_anim.take() {
+            a.pause(); // a new size while one runs: from where it is now (`old`)
+        }
+        if old == new || !self.is_mapped() {
+            self.imp().height.set(None);
+            return;
+        }
+        self.imp().height.set(Some(old as f64));
+        let w = self.downgrade();
+        let target = adw::CallbackAnimationTarget::new(move |v| {
+            if let Some(g) = w.upgrade() {
+                g.height_step(v, new);
+            }
+        });
+        let anim = adw::TimedAnimation::new(self, old as f64, new as f64, sonata_ui::tokens::ms(240.0), target);
+        anim.set_easing(adw::Easing::EaseInOutCubic);
+        self.imp().height_anim.replace(Some(anim.clone()));
+        anim.play();
+    }
+
+    /// One frame of resize_to: the grid that tall, and whoever follows told.
+    fn height_step(&self, v: f64, new: i32) {
+        self.imp().height.set(if v == new as f64 { None } else { Some(v) });
+        self.queue_resize();
+        let f = self.imp().on_height.borrow().clone();
+        if let Some(f) = f {
+            f();
+        }
     }
 
     fn notify_change(&self) {
@@ -444,6 +492,7 @@ impl ModuleGrid {
         } else {
             Vec::new()
         };
+        let old_h = (!imp.places.borrow().is_empty()).then(|| self.measure(gtk::Orientation::Vertical, -1).1);
         let places = pack(&imp.order.borrow(), COLS, &imp.rows.borrow());
         imp.places.replace(places);
         let slots: Vec<(String, Rc<Slot>)> = imp.slots.borrow().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -460,6 +509,9 @@ impl ModuleGrid {
             }
         }
         self.queue_resize();
+        if let Some(old) = old_h.filter(|_| glide) {
+            self.resize_to(old);
+        }
         sonata_ui::transition::glide_play(before, self.upcast_ref(), sonata_ui::transition::GLIDE_MS);
     }
 
@@ -679,5 +731,45 @@ mod tests {
         assert_eq!(width_for(1280), WIDTH_MIN);
         assert_eq!(width_for(2000), 360);
         assert_eq!(width_for(3840), WIDTH_MAX);
+    }
+
+    /// Vini: taking a module out made Control Center jump to its new size;
+    /// it shrinks smoothly now, and the panel follows every frame. (Run
+    /// where GTK can start: xvfb-run.)
+    #[test]
+    fn test_size_change_animates() {
+        if adw::init().is_err() {
+            return; // no display
+        }
+        let _e = crate::testenv::env(); // (after: the display's socket is in the real runtime dir)
+        let order = ids(&DEFAULT_ORDER);
+        let widgets: HashMap<String, gtk::Widget> = order.iter().map(|m| (m.clone(), gtk::Label::new(Some(m)).upcast())).collect();
+        let g = ModuleGrid::new(widgets, &order, 300);
+        let win = gtk::Window::new();
+        win.set_child(Some(&g));
+        win.present();
+        let ctx = glib::MainContext::default();
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while !g.is_mapped() && std::time::Instant::now() < until {
+            ctx.iteration(false);
+        }
+        assert!(g.is_mapped());
+        let before = g.measure(gtk::Orientation::Vertical, -1).1;
+        let seen: Rc<RefCell<Vec<i32>>> = Rc::default();
+        let (s, w) = (seen.clone(), g.downgrade());
+        g.set_on_height(move || s.borrow_mut().push(w.upgrade().unwrap().measure(gtk::Orientation::Vertical, -1).1));
+        g.take_out("nowplaying");
+        let end = g.target_height();
+        assert!(end < before);
+        // the grid starts where it was, not at its new size
+        assert_eq!(g.measure(gtk::Orientation::Vertical, -1).1, before);
+        assert!(g.imp().height_anim.borrow().is_some());
+        let mid = (before + end) as f64 / 2.0;
+        g.height_step(mid, end); // mid-way: the grid (and the panel) in between
+        assert_eq!(g.measure(gtk::Orientation::Vertical, -1).1, mid.round_ties_even() as i32);
+        g.height_step(end as f64, end);
+        assert_eq!(g.measure(gtk::Orientation::Vertical, -1).1, end);
+        assert!(seen.borrow().len() >= 2); // every frame
+        win.destroy();
     }
 }

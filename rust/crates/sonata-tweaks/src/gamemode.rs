@@ -10,8 +10,9 @@
 //! is never touched. And while a full-screen game fills the graphics card,
 //! blur and window animations are turned off in the running session.
 //!
-//! Not ported: the menu bar's `Watcher` (it needs the Wayfire event
-//! stream, which sonata-backend's wfipc doesn't follow yet).
+//! The menu bar's `Watcher` (the side that follows Wayfire's events and
+//! writes the state) is sonata-sessionui's fullscreenfirst.rs; this
+//! module is what every process reads, and the rules it applies.
 
 use serde_json::{Map, Value};
 use std::path::PathBuf;

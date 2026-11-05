@@ -7,7 +7,8 @@
 //! Launchpad uses add_to_desktop, show_in_files, lock_item, gpu_sections
 //! and edit_webapp.
 //!
-//! Not ported yet: Mission Control's menu (layer.menu_at).
+//! Mission Control's menu (a window right-clicked there) is the app's menu
+//! too, on a see-through surface of its own (layer.menu_at's holder).
 
 use crate::dock::{self, Dock, DockWindow, Tile, PERMANENT};
 use crate::toplevels::Toplevel;
@@ -16,6 +17,7 @@ use gtk::{gio, glib};
 use serde_json::{json, Value};
 use sonata_i18n::{n_, tr, trn};
 use sonata_ui::menu::{Item, Options};
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
@@ -198,15 +200,160 @@ pub fn app_menu(dock: &Dock, key: &str, tile: &Rc<Tile>) -> gtk::PopoverMenu {
     popup(&tile.button, dock, app_sections(dock, key, tile))
 }
 
-/// Mission Control: a window right-clicked (Sonata's Wayfire tells) --
-/// its app's Dock menu, at the pointer. Needs layer.menu_at (a menu on a
-/// surface of its own over Mission Control), not ported yet: logged.
-pub fn scale_menu(dock: &Dock, msg: &Value) {
+/// Mission Control: a window right-clicked (Sonata's Wayfire tells:
+/// wayfire-scale-sonata-events.patch) -- its app's Dock menu, at the
+/// pointer (Vini). False: not a Dock app, or no layer shell.
+pub fn scale_menu(dock: &Dock, msg: &Value) -> bool {
+    let (key, connector, x, y) = scale_target(msg);
+    let Some(tile) = dock.tiles.borrow().get(&key).cloned() else { return false };
+    let Some(key) = tile.key.borrow().clone() else { return false };
+    let app = dock.app.borrow().clone();
+    menu_at(app.as_ref(), &connector, x, y, app_sections(dock, &key, &tile))
+}
+
+/// What a Wayfire event means for Mission Control's menu.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ScaleEvent {
+    /// a window right-clicked there: its app's menu
+    Menu,
+    /// Mission Control closed: the menu goes with it
+    Closed,
+    Other,
+}
+
+pub fn scale_event(msg: &Value) -> ScaleEvent {
+    match msg.get("event").and_then(Value::as_str) {
+        Some("sonata-scale-menu#") => ScaleEvent::Menu,
+        Some("plugin-activation-state-changed")
+            if msg.get("plugin").and_then(Value::as_str) == Some("scale") && !msg.get("state").and_then(Value::as_bool).unwrap_or(false) =>
+        {
+            ScaleEvent::Closed
+        }
+        _ => ScaleEvent::Other,
+    }
+}
+
+/// What a sonata-scale-menu# event names: the Dock's key for its app, the
+/// display, and the pointer in the output layout's coordinates.
+pub fn scale_target(msg: &Value) -> (String, String, f64, f64) {
     let aid = msg.get("app-id").and_then(Value::as_str).unwrap_or("");
     let key = sonata_desktop::appmatch::match_app_id(aid).unwrap_or_else(|| aid.to_string());
-    if dock.tiles.borrow().contains_key(&key) {
-        println!("sonata2-dock: Mission Control's menu for {key}: not in the Rust Dock yet");
+    let connector = msg.get("output").and_then(Value::as_str).unwrap_or("").to_string();
+    let n = |k: &str| msg.get(k).and_then(Value::as_f64).unwrap_or(0.0);
+    (key, connector, n("x"), n("y"))
+}
+
+/// The menu's holder: one see-through surface over a display, kept for
+/// the next menu; the menu open on it now.
+#[derive(Default)]
+struct Holder {
+    win: Option<gtk::Window>,
+    pop: Option<gtk::PopoverMenu>,
+}
+
+thread_local! {
+    static HOLDER: RefCell<Holder> = RefCell::default();
+}
+
+const HOLDER_CSS: &str = "window.sonata-menu-holder, window.sonata-menu-holder > contents { background: none; box-shadow: none; }";
+
+/// Closes menu_at's menu; true when one was open.
+fn close_held() -> bool {
+    let pop = HOLDER.with(|h| h.borrow().pop.clone());
+    if let Some(p) = &pop {
+        p.popdown();
     }
+    pop.is_some()
+}
+
+/// Where (x, y) of the output layout is on a display at (gx, gy).
+pub fn on_display(x: f64, y: f64, origin: Option<(i32, i32)>) -> (f64, f64) {
+    match origin {
+        Some((gx, gy)) => (x - gx as f64, y - gy as f64),
+        None => (x, y),
+    }
+}
+
+/// A menu at (x, y) of the screen (the output layout's coordinates) on
+/// display `connector`, where no surface of ours is -- a window in Mission
+/// Control (layer.menu_at). A see-through surface over the display holds
+/// it while it's open; a click anywhere else, or Esc, closes it. False
+/// without the layer shell.
+pub fn menu_at(app: Option<&gtk::Application>, connector: &str, x: f64, y: f64, sections: Vec<Vec<Item>>) -> bool {
+    if !sonata_shell::layer::available() {
+        return false;
+    }
+    let mon = sonata_shell::layer::monitors().into_iter().find(|m| sonata_shell::layer::connector(m) == connector).or_else(sonata_shell::layer::main_monitor);
+    let win = HOLDER.with(|h| h.borrow().win.clone()).unwrap_or_else(|| {
+        sonata_ui::register("menu-holder", HOLDER_CSS);
+        let win = gtk::Window::builder().decorated(false).css_classes(["sonata-menu-holder"]).build();
+        win.set_application(app);
+        win.set_child(Some(&gtk::Box::builder().hexpand(true).vexpand(true).build()));
+        sonata_shell::layer::overlay_fullscreen(&win, "sonata2-menu");
+        let click = gtk::GestureClick::builder().button(0).build();
+        click.connect_pressed(|_, _, _, _| {
+            close_held();
+        });
+        win.add_controller(click);
+        let keys = gtk::EventControllerKey::new();
+        keys.connect_key_pressed(|_, kv, _, _| if kv == gtk::gdk::Key::Escape && close_held() { glib::Propagation::Stop } else { glib::Propagation::Proceed });
+        win.add_controller(keys);
+        HOLDER.with(|h| h.borrow_mut().win = Some(win.clone()));
+        win
+    });
+    let old = HOLDER.with(|h| h.borrow_mut().pop.take());
+    if let Some(old) = old {
+        old.popdown();
+    }
+    let origin = mon.as_ref().map(|m| {
+        sonata_shell::layer::set_monitor(&win, m);
+        let g = m.geometry();
+        (g.x(), g.y())
+    });
+    let (x, y) = on_display(x, y, origin);
+    let sections = RefCell::new(Some(sections));
+    let show = Rc::new(move |win: &gtk::Window| {
+        let Some(sections) = sections.take() else { return };
+        let Some(child) = win.child() else { return };
+        let pop = sonata_ui::menu::popup(&child, sections, Options::at(x, y));
+        let w = win.downgrade();
+        pop.connect_closed(move |p| {
+            let mine = HOLDER.with(|h| {
+                let mut h = h.borrow_mut();
+                let mine = h.pop.as_ref() == Some(p);
+                if mine {
+                    h.pop = None;
+                }
+                mine
+            });
+            if let (true, Some(w)) = (mine, w.upgrade()) {
+                w.set_visible(false);
+            }
+        });
+        HOLDER.with(|h| h.borrow_mut().pop = Some(pop));
+    });
+    if win.is_mapped() {
+        show(&win);
+    } else {
+        let handler: Rc<RefCell<Option<glib::SignalHandlerId>>> = Rc::default();
+        let h = handler.clone();
+        let id = win.connect_map(move |w| {
+            if let Some(id) = h.borrow_mut().take() {
+                w.disconnect(id);
+            }
+            let (w, show) = (w.clone(), show.clone());
+            glib::idle_add_local_once(move || show(&w)); // (once the surface has its size)
+        });
+        handler.replace(Some(id));
+        win.present();
+    }
+    true
+}
+
+/// menu_at()'s menu closes (Mission Control closed under it: Vini, its
+/// items stayed on the screen).
+pub fn close_menu_at() {
+    close_held();
 }
 
 /// The app's menu: its windows, Options, Minimize / Quit.
@@ -593,6 +740,37 @@ pub fn spawn_python(args: &[&str]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Vini: right-click a window, close Mission Control -- the menu's
+    /// items stayed on the screen.
+    #[test]
+    fn test_closes_with_mission_control() {
+        assert_eq!(scale_event(&json!({"event": "plugin-activation-state-changed", "plugin": "scale", "state": true})), ScaleEvent::Other); // opening: nothing
+        assert_eq!(scale_event(&json!({"event": "plugin-activation-state-changed", "plugin": "expo", "state": false})), ScaleEvent::Other);
+        assert_eq!(scale_event(&json!({"event": "plugin-activation-state-changed", "plugin": "scale", "state": false})), ScaleEvent::Closed);
+        assert_eq!(scale_event(&json!({"event": "sonata-scale-menu#", "app-id": "org.gnome.Calculator"})), ScaleEvent::Menu);
+        assert_eq!(scale_event(&json!({"event": "view-mapped"})), ScaleEvent::Other);
+    }
+
+    /// Mission Control's right-click is the Dock's menu, at the pointer on
+    /// that display (Vini: it only logged that it wasn't ported).
+    #[test]
+    fn test_right_click_is_the_docks_menu() {
+        let msg = json!({"event": "sonata-scale-menu#", "app-id": "org.gnome.Calculator", "output": "DP-1", "x": 700.0, "y": 400.0});
+        let (key, out, x, y) = scale_target(&msg);
+        assert_eq!(key, sonata_desktop::appmatch::match_app_id("org.gnome.Calculator").unwrap_or_else(|| "org.gnome.Calculator".into()));
+        assert_eq!((out.as_str(), x, y), ("DP-1", 700.0, 400.0));
+        assert_eq!(scale_target(&json!({"app-id": "unknown.app"})).1, ""); // no display named: the main one
+        // the layout's coordinates, on a display right of a 1920 px one
+        assert_eq!(on_display(2620.0, 400.0, Some((1920, 0))), (700.0, 400.0));
+        assert_eq!(on_display(5.0, 6.0, None), (5.0, 6.0));
+    }
+
+    #[test]
+    fn test_close_menu_at() {
+        assert!(!close_held()); // none open: nothing
+        close_menu_at();
+    }
 
     #[test]
     fn new_window_actions_by_any_spelling() {

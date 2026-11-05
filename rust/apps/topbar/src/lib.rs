@@ -5,6 +5,7 @@
 //! | Python | here |
 //! |---|---|
 //! | topbar.py's Bar | [`bar`] (and [`logic`] for its rules) |
+//! | topbar.py's _StatusPoll, system.watch_network / watch_audio | [`statuspoll`] |
 //! | topbar.py's ControlCenter / QuickControls | [`cc`] |
 //! | controlcenter.py | [`ccgrid`] |
 //! | topbar.py's TopBarWindow | [`window`] |
@@ -40,6 +41,7 @@ pub mod mpris;
 pub mod osd;
 pub mod seams;
 pub mod statsui;
+pub mod statuspoll;
 pub mod topbar_prefs;
 pub mod window;
 

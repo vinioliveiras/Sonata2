@@ -10,8 +10,9 @@
 //! reviewed.
 //!
 //! What a Flatpak app wants and the overrides themselves are
-//! backend/appmanage.py's (not ported yet): review_gate takes them from
-//! the caller.
+//! backend/appmanage.py's, ported as sonata-system's appmanage.rs
+//! (`permissions`, `set_permission`); that crate sits above this one, so
+//! review_gate takes them from the caller.
 
 use adw::prelude::*;
 use serde_json::{json, Map, Value};

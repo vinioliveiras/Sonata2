@@ -219,7 +219,7 @@ class Equalizer:
         def line(text):
             if self.own_event(text):
                 return                       # set-param on our filter: no sync (it fed itself)
-            if " sink " in text or "'server'" in text or " card " in text:
+            if " sink " in text or " server " in text or " card " in text:   # (pactl: "on server #-1")
                 self.sync_soon()
             elif "'new' on sink-input" in text and self.chains:
                 self._links_soon()           # an app started playing: does it go through us?
