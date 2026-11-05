@@ -112,7 +112,7 @@ fn entries() -> Vec<Entry> {
             let id = did.strip_suffix(".desktop")?.to_string();
             let desk = info.downcast_ref::<gio::DesktopAppInfo>();
             let wm_class = desk.and_then(|d| d.startup_wm_class()).map(|s| s.to_string()).unwrap_or_default();
-            Some(Entry { id, shown: info.should_show(), wm_class, exe: exe_of(&info) })
+            Some(Entry { id, shown: sonata_ui::apps::should_show(&info), wm_class, exe: exe_of(&info) })
         })
         .collect()
 }

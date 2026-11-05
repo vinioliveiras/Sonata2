@@ -295,8 +295,7 @@ impl Env for SystemEnv {
     }
 
     fn app_name(&self, desktop: &str) -> Option<String> {
-        use gio::prelude::*;
-        lookup_app(desktop).map(|i| i.name().to_string())
+        lookup_app(desktop).map(sonata_ui::apps::name) // ("Spotify", not "Spotify (Launcher)")
     }
 
     fn match_app_id(&self, app_id: &str) -> Option<String> {
@@ -317,9 +316,10 @@ impl Env for SystemEnv {
     }
 
     fn launch(&self, desktop: &str) -> bool {
-        use gio::prelude::*;
+        // Sonata's launch path: the display's context (the app comes to the
+        // front), its GPU, its own scope, the app lock -- as in the Dock
         match lookup_app(desktop) {
-            Some(info) => info.launch(&[], gio::AppLaunchContext::NONE).is_ok(),
+            Some(info) => sonata_ui::apps::launch(&info, &[], None).is_ok(),
             None => false,
         }
     }

@@ -151,11 +151,13 @@ pub fn run(launch: &dyn Fn(&str, &gio::DesktopAppInfo) -> Result<(), glib::Error
 }
 
 /// `autostart` with the setup steps (title bars, compose, GTK style,
-/// keyring) given by `steps`: their Rust versions live in crates above this
-/// one, so `sonata2-rs` passes them in the Rust session instead of asking
-/// the Python install.
-pub fn autostart_with(steps: &dyn Fn()) -> i32 {
-    run_with(&launch_plain, steps);
+/// keyring) given by `steps` and the login items opened by `launch`: their
+/// Rust versions live in crates above this one, so `sonata2-rs` passes them
+/// in the Rust session instead of asking the Python install. `launch` is
+/// Sonata's own launch path: gio's alone gave a login item no GPU, no FPS
+/// limit (Steam at login) and no scope of its own.
+pub fn autostart_with(launch: &dyn Fn(&str, &gio::DesktopAppInfo) -> Result<(), glib::Error>, steps: &dyn Fn()) -> i32 {
+    run_with(launch, steps);
     0
 }
 

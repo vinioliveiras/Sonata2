@@ -95,9 +95,11 @@ fn call_user(path: &str, method: &str, args: Variant) -> Option<String> {
 }
 
 /// Sonata's own user pictures (tools/gen-avatars.py): sonata2/data/avatars,
-/// next to the catalogs.
+/// found as Sonata's other data (next to the installed binary, else this
+/// clone's). It was looked for next to the catalogs, a folder the installed
+/// build doesn't have: Settings > Users showed no pictures to pick.
 pub fn avatars_dir() -> PathBuf {
-    sonata_i18n::locale_dir().parent().map(|p| p.join("data").join("avatars")).unwrap_or_default()
+    sonata_config::data_path("avatars")
 }
 
 pub fn stock_pictures() -> Vec<PathBuf> {
@@ -223,6 +225,15 @@ mod tests {
         assert_eq!(short_name("日本"), "user");
         assert!(valid_name("ana_s-1") && valid_name("_x"));
         assert!(!valid_name("Ana") && !valid_name("1ana") && !valid_name("") && !valid_name(&"a".repeat(33)));
+    }
+
+    /// The installed build looked for the stock pictures in
+    /// share/sonata2-rs/data/avatars (next to its copied catalogs), which
+    /// doesn't exist: the picture picker was empty.
+    #[test]
+    fn test_stock_pictures_missing_when_installed() {
+        assert_eq!(avatars_dir(), sonata_config::data_path("avatars"));
+        assert!(!stock_pictures().is_empty());
     }
 
     /// A stuck openssl hung the caller: it is given up on.

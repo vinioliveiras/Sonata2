@@ -9,7 +9,8 @@
 //! A package, an AppImage, an archive or a script opened from here is
 //! installed, run or extracted, like a double-click in Files (packages.rs).
 //!
-//! Not ported yet: the hidden warm-up draw (layer.prewarm).
+//! Started with --background (at login), it draws itself once, unseen
+//! (layer.prewarm): the first real open is as quick as the others.
 
 pub mod calc;
 pub mod index;
@@ -35,6 +36,58 @@ const CLOSE_MS: u64 = 120;
 const REVEAL_MS: u32 = 180;
 /// a burst of keys: one search
 const SEARCH_DELAY_MS: u64 = 40;
+/// layer.prewarm's defaults: the warm-up draw starts this long after the
+/// start, and lasts this many frames
+const PREWARM_DELAY_MS: u64 = 1500;
+const PREWARM_FRAMES: u32 = 3;
+
+/// layer.prewarm (shell/layer.py): draw the hidden window once, invisibly,
+/// shortly after start -- the first real open then doesn't pay for
+/// building the widgets' render nodes, loading icons and fonts and
+/// compiling the GPU shaders. Mapped at 1 % opacity, taking no keyboard or
+/// clicks, hidden again after `frames` frames. `warming` is true meanwhile:
+/// an open asked for then ends the warm-up and stays (end_warm_up).
+pub fn prewarm(win: &gtk::Window, delay_ms: u64, frames: u32, warming: Rc<Cell<bool>>) {
+    let win = win.clone();
+    glib::timeout_add_local_once(Duration::from_millis(delay_ms), move || {
+        if win.is_visible() {
+            return; // opened already: nothing to do
+        }
+        warming.set(true);
+        sonata_shell::layer::set_keyboard(&win, false);
+        win.set_opacity(0.01);
+        win.set_can_target(false);
+        win.present();
+        sonata_shell::layer::set_input_region(&win, &[]);
+        let n = Cell::new(0u32);
+        win.add_tick_callback(move |win, _| {
+            if !warming.get() {
+                return glib::ControlFlow::Break; // opened for real meanwhile
+            }
+            n.set(n.get() + 1);
+            if n.get() < frames {
+                return glib::ControlFlow::Continue;
+            }
+            win.set_visible(false);
+            end_warm_up(win.upcast_ref(), &warming);
+            glib::ControlFlow::Break
+        });
+    });
+}
+
+/// The window back as it opens: opaque, taking clicks (on the whole
+/// surface) and the keyboard.
+pub fn end_warm_up(win: &gtk::Window, warming: &Cell<bool>) {
+    warming.set(false);
+    win.set_opacity(1.0);
+    win.set_can_target(true);
+    sonata_shell::layer::set_keyboard(win, true);
+    if let Some(surface) = win.surface() {
+        let all = gtk::cairo::Region::create_rectangle(&gtk::cairo::RectangleInt::new(0, 0, i32::MAX / 2, i32::MAX / 2));
+        surface.set_input_region(&all);
+    }
+}
+
 /// Sonata's Files: folders open there. The Rust session's Files has the
 /// same id; on trial the Python Files keeps folders (the Rust one takes no
 /// file types then).
@@ -131,6 +184,8 @@ struct Spotlight {
     search_src: RefCell<Option<glib::SourceId>>,
     close_src: RefCell<Option<glib::SourceId>>,
     placed_for: RefCell<Option<gtk::gdk::Surface>>,
+    /// drawn unseen right now (prewarm)
+    warming: Rc<Cell<bool>>,
 }
 
 impl Spotlight {
@@ -174,6 +229,7 @@ impl Spotlight {
             search_src: RefCell::default(),
             close_src: RefCell::default(),
             placed_for: RefCell::default(),
+            warming: Rc::default(),
         });
         me.glass_class();
         me.wire();
@@ -273,6 +329,12 @@ impl Spotlight {
 
     // -- open / close ------------------------------------------------------------------------
     fn toggle(self: &Rc<Self>) {
+        if self.warming.get() {
+            // asked for while it draws itself unseen: open for real
+            end_warm_up(self.win.upcast_ref(), &self.warming);
+            self.open_spotlight();
+            return;
+        }
         if self.win.is_visible() {
             self.close();
         } else {
@@ -285,7 +347,7 @@ impl Spotlight {
         // apps in Launchpad's Hidden folder (behind the password) aren't found here either
         let lp = sonata_config::load("launchpad", &serde_json::json!({"pages": [], "hidden": []}));
         let hidden: Vec<String> = lp.get("hidden").and_then(|h| h.as_array()).map(|a| a.iter().filter_map(|v| v.as_str()).map(|s| format!("{s}.desktop")).collect()).unwrap_or_default();
-        let apps: Vec<gio::AppInfo> = gio::AppInfo::all().into_iter().filter(|a| a.should_show() && a.id().is_some_and(|id| !hidden.contains(&id.to_string()))).collect();
+        let apps: Vec<gio::AppInfo> = gio::AppInfo::all().into_iter().filter(|a| sonata_ui::apps::should_show(a) && a.id().is_some_and(|id| !hidden.contains(&id.to_string()))).collect();
         self.apps.replace(apps);
         if let Some(id) = self.close_src.take() {
             id.remove(); // reopened while fading out
@@ -378,7 +440,7 @@ impl Spotlight {
                 let keywords = d.as_ref().map(|d| d.keywords().iter().map(|k| k.to_string()).collect::<Vec<_>>().join(" ")).unwrap_or_default();
                 let desc = a.description().map(|s| s.to_string()).unwrap_or_default();
                 let extra = [generic, desc, keywords].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
-                Some((a.id()?.to_string(), a.display_name().to_string(), extra))
+                Some((a.id()?.to_string(), sonata_ui::apps::display_name(a), extra))
             })
             .collect();
         let calc = calc::calculate(&q).map(|a| (q.clone(), a));
@@ -415,7 +477,7 @@ impl Spotlight {
 
     fn title(&self, hit: &Hit) -> String {
         match hit {
-            Hit::App(id) => self.app(id).map(|a| a.display_name().to_string()).unwrap_or_default(),
+            Hit::App(id) => self.app(id).map(sonata_ui::apps::display_name).unwrap_or_default(),
             Hit::Calc(q, a) => format!("{q} = {a}"),
             Hit::File(p) => p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
         }
@@ -484,7 +546,8 @@ impl Spotlight {
         match hit {
             Hit::App(id) => {
                 if let Some(a) = self.app(&id) {
-                    let _ = a.launch(&[], Some(&ctx));
+                    // Sonata's launch path: the GPU, its scope, the app lock...
+                    let _ = sonata_ui::apps::launch(&a, &[], Some(ctx.upcast_ref()));
                 }
             }
             Hit::Calc(_, answer) => self.win.clipboard().set_text(&answer), // like macOS: copy the result
@@ -501,14 +564,14 @@ fn open_path(p: &Path, ctx: &gtk::gdk::AppLaunchContext) {
     let uri = gio::File::for_path(p).uri();
     if p.is_dir() {
         if let Some(files) = gio::DesktopAppInfo::new(FILES_ID) {
-            if files.launch_uris(&[uri.as_str()], Some(ctx)).is_ok() {
+            if sonata_ui::apps::launch_uris(&files, &[uri.as_str()], Some(ctx.upcast_ref())).is_ok() {
                 return;
             }
         }
     } else if sonata_files::packages::open_path(p, None) {
         return; // install / run / extract
     }
-    let _ = gio::AppInfo::launch_default_for_uri(&uri, Some(ctx));
+    let _ = sonata_ui::apps::launch_default_for_uri(&uri, Some(ctx.upcast_ref()));
 }
 
 /// `sonata2-rs spotlight [--background] [--search TEXT]`: single instance,
@@ -536,6 +599,9 @@ pub fn run(args: &[String]) -> glib::ExitCode {
         state.replace(Some(s.clone()));
         if first.replace(false) && background {
             s.index.refresh();
+            if !preview {
+                prewarm(s.win.upcast_ref(), PREWARM_DELAY_MS, PREWARM_FRAMES, s.warming.clone());
+            }
             return;
         }
         s.open_spotlight();
@@ -558,6 +624,39 @@ mod tests {
         let src = include_str!("lib.rs");
         let open = &src[src.find("fn open_path(").unwrap()..];
         assert!(open[..open.find("\n}").unwrap()].contains("sonata_files::packages::open_path("));
+    }
+
+    /// Vini, in the Rust session: the first Search after login opened with
+    /// a lag the later ones didn't have -- the Python one draws itself once,
+    /// unseen, at login (layer.prewarm); the Rust one never had.
+    #[test]
+    fn test_first_search_after_login_lagged() {
+        if gtk::init().is_err() {
+            return; // (no display)
+        }
+        let win = gtk::Window::new();
+        win.set_child(Some(&gtk::Label::new(Some("Search"))));
+        let mapped = Rc::new(Cell::new(false));
+        let m = mapped.clone();
+        win.connect_map(move |_| m.set(true));
+        let warming: Rc<Cell<bool>> = Rc::default();
+        prewarm(&win, 0, PREWARM_FRAMES, warming.clone());
+        let ctx = glib::MainContext::default();
+        let t = std::time::Instant::now();
+        while !(mapped.get() && !win.is_visible()) && t.elapsed() < Duration::from_secs(5) {
+            ctx.iteration(false);
+        }
+        assert!(mapped.get(), "never drawn before the first open");
+        assert!(!win.is_visible() && !warming.get(), "still on screen after the warm-up");
+        assert_eq!(win.opacity(), 1.0);
+        assert!(win.can_target());
+        // opened while it drew itself unseen: it stays, whole
+        warming.set(true);
+        win.set_opacity(0.01);
+        win.set_can_target(false);
+        end_warm_up(&win, &warming);
+        assert!(!warming.get() && win.opacity() == 1.0 && win.can_target());
+        win.destroy();
     }
 
     #[test]

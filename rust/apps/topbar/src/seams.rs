@@ -86,12 +86,35 @@ pub struct Services {
     pub extra_modules: Vec<(String, Rc<dyn Fn() -> gtk::Widget>)>,
 }
 
+thread_local! {
+    /// backend/mixer.py's MixerService: one for the process, whoever asks.
+    static SERVICE: std::cell::RefCell<Option<sonata_system::mixer::MixerService>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The process's MixerService (made at the first ask).
+fn mixer_service() -> sonata_system::mixer::MixerService {
+    SERVICE.with(|s| s.borrow_mut().get_or_insert_with(sonata_system::mixer::MixerService::new).clone())
+}
+
+/// The menu bar's mixer service from the start (topbar.py makes it with the
+/// main display's bar): each app's saved volume given back to its new
+/// streams at once, and a level set in the app learned. The Rust bar made
+/// it only when the Sound menu or Control Center's mixer first opened --
+/// until then apps started at whatever level (Vini: "volume per app,
+/// always kept"). Stopped with the app.
+pub fn start_mixer_service(app: &gtk::Application) {
+    if !sonata_system::mixer::available() {
+        return;
+    }
+    let svc = mixer_service();
+    gtk::gio::prelude::ApplicationExt::connect_shutdown(app, move |_| svc.stop());
+}
+
 /// The Mixer seam filled by sonata-system (backend/mixer.py): pactl's
 /// streams and saved levels, the output picker, MixerService's listeners.
+/// Every Mixer shares the process's one service (the Game Bar's too).
 pub fn system_mixer() -> Mixer {
     use sonata_system::mixer as m;
-    let service: Rc<std::cell::RefCell<Option<m::MixerService>>> = Rc::default();
-    let s2 = service.clone();
     Mixer {
         available: Rc::new(|| glib::find_program_in_path("pactl").is_some()),
         streams: std::sync::Arc::new(m::streams),
@@ -115,15 +138,25 @@ pub fn system_mixer() -> Mixer {
                 sonata_ui::menu::popup(button, vec![items], sonata_ui::menu::Options::below());
             }
         }),
-        listen: Some(Rc::new(move |f| {
-            let mut s = service.borrow_mut();
-            let svc = s.get_or_insert_with(m::MixerService::new);
-            svc.add_listener(move |streams| f(streams))
-        })),
+        listen: Some(Rc::new(move |f| mixer_service().add_listener(move |streams| f(streams)))),
         unlisten: Some(Rc::new(move |id| {
-            if let Some(s) = s2.borrow().as_ref() {
+            if let Some(s) = SERVICE.with(|s| s.borrow().clone()) {
                 s.remove_listener(id);
             }
         })),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Vini: an app's saved volume came back only after the Sound menu or
+    /// Control Center's mixer had been opened once -- the service that
+    /// gives it back was made on that first opening. The menu bar starts
+    /// it with the main display's bar (run_with), as topbar.py does.
+    #[test]
+    fn test_saved_volumes_waited_for_the_mixer() {
+        let src = include_str!("lib.rs");
+        let at = src.find("if !opts.preview {\n            // the menu bar's services").unwrap();
+        assert!(src[at..at + 800].contains("seams::start_mixer_service(app)"));
     }
 }

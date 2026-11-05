@@ -15,7 +15,10 @@
 //! ```
 //!
 //! The toplevel manager (wl/toplevels.py) is the Dock's and the menu bar's:
-//! they hand it in through the [`Windows`] trait.
+//! they hand it in through the [`Windows`] trait. Anyone else (Settings'
+//! Restart / Log Out) gets [`session_windows`], Wayfire's own list -- as
+//! Python's end_session makes a ToplevelManager of its own when none is
+//! given.
 
 use serde_json::{json, Value};
 use sonata_i18n::{fmt, gettext, n_, tr};
@@ -52,6 +55,50 @@ pub fn views() -> Vec<Value> {
         Some(Value::Array(v)) => v.into_iter().filter(Value::is_object).collect(),
         _ => Vec::new(),
     }
+}
+
+/// The session's windows straight from Wayfire's IPC, for a process with
+/// no toplevel manager of its own (Settings): listed fresh at every look,
+/// closed with `window-rules/close-view`.
+pub struct IpcWindows {
+    views: Box<dyn Fn() -> Vec<Value>>,
+    close: Box<dyn Fn(u64)>,
+}
+
+impl IpcWindows {
+    pub fn new(views: Box<dyn Fn() -> Vec<Value>>, close: Box<dyn Fn(u64)>) -> Self {
+        IpcWindows { views, close }
+    }
+}
+
+impl Windows for IpcWindows {
+    fn toplevels(&self) -> Vec<Toplevel> {
+        toplevels_of(&(self.views)())
+    }
+    fn close(&self, id: u64) {
+        (self.close)(id)
+    }
+}
+
+/// The app windows among Wayfire's views (mapped toplevels, not panels).
+pub fn toplevels_of(views: &[Value]) -> Vec<Toplevel> {
+    views
+        .iter()
+        .filter(|v| is_toplevel(v) && v.get("role").and_then(Value::as_str).is_none_or(|r| r == "toplevel") && v.get("mapped") != Some(&Value::Bool(false)))
+        .filter_map(|v| Some(Toplevel { id: v.get("id").and_then(Value::as_u64)?, app_id: view_app(v).to_string(), title: v.get("title").and_then(Value::as_str).unwrap_or("").to_string() }))
+        .collect()
+}
+
+/// Wayfire's windows, None without Wayfire (Python: the manager only when
+/// it is available).
+pub fn session_windows() -> Option<Rc<dyn Windows>> {
+    sonata_backend::wfipc::socket()?;
+    Some(Rc::new(IpcWindows::new(
+        Box::new(views),
+        Box::new(|id| {
+            sonata_backend::wfipc::call("window-rules/close-view", json!({"id": id}));
+        }),
+    )))
 }
 
 /// Processes behind the tray icons (apps that run without a window).
@@ -325,6 +372,9 @@ pub fn quit_app(windows: Rc<dyn Windows>, these: &[Toplevel], key: &str) -> Rc<Q
 /// Python one does, with the same files.
 pub fn end_session(kind: &str, windows: Option<Rc<dyn Windows>>, reopen: Option<bool>) -> Rc<Quitter> {
     use sonata_desktop::open_apps;
+    // none handed in: Wayfire's own list, or no window would be asked to
+    // close (Chrome then offered to restore its tabs)
+    let windows = windows.or_else(session_windows);
     if SESSION_ENDS.contains(&kind) {
         std::thread::spawn(sonata_backend::vault::close_all); // the locked folders closed with the session
         if reopen.unwrap_or_else(open_apps::reopen_wanted) {
@@ -502,5 +552,31 @@ mod tests {
         assert_eq!(cancelled_text_for("restart", &t, None), "Report.odt canceled restart.");
         assert_eq!(cancelled_text_for("logout", &Toplevel { title: String::new(), ..t.clone() }, None), "no-such-app-xyz canceled log out.");
         assert_eq!(cancelled_text_for("shutdown", &Toplevel { title: String::new(), app_id: String::new(), ..t }, None), "An app canceled shut down.");
+    }
+
+    /// Settings > Restart / Log Out asked no window to close (it had no
+    /// toplevel manager to hand in): the restart waited its 12 s and Chrome
+    /// was killed with the session, then offered to restore its tabs.
+    /// Wayfire's own list (IpcWindows) now asks each app window to close.
+    #[test]
+    fn test_settings_restart_asked_no_window_to_close() {
+        let views = json!([
+            {"id": 7, "type": "toplevel", "role": "toplevel", "mapped": true, "app-id": "google-chrome", "title": "Inbox", "pid": 4000},
+            {"id": 8, "type": "panel", "role": "desktop-environment", "app-id": "io.github.vinioliveiras.sonata2.dock", "pid": 1},
+            {"id": 9, "type": "toplevel", "role": "toplevel", "mapped": false, "app-id": "gone", "pid": 4001},
+            {"id": 10, "type": "toplevel", "role": "toplevel", "app-id": "io.github.vinioliveiras.sonata2rs.settings", "title": "Settings", "pid": 1}
+        ]);
+        let list: Vec<Value> = views.as_array().unwrap().clone();
+        let tops = toplevels_of(&list);
+        assert_eq!(tops.iter().map(|t| t.id).collect::<Vec<_>>(), [7, 10]);
+        let closed: Rc<RefCell<Vec<u64>>> = Rc::default();
+        let c = closed.clone();
+        let w: Rc<dyn Windows> = Rc::new(IpcWindows::new(Box::new(move || list.clone()), Box::new(move |id| c.borrow_mut().push(id))));
+        let fx = Effects { views: Box::new(Vec::new), alive: Box::new(|_| false), kill: Box::new(|_, _| {}) };
+        let q = Quitter::with_pids("restart", Some(w), Box::new(|_| {}), Box::new(|_, _| {}), fx, HashSet::new(), None);
+        q.tick();
+        assert_eq!(*closed.borrow(), [7]); // Chrome asked; Sonata's own Settings left alone
+        // (no Wayfire in the tests: nothing to list)
+        assert!(session_windows().is_none());
     }
 }

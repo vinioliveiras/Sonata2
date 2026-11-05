@@ -25,9 +25,9 @@
 //! - minimize targets (wlr.rs): only in the Rust session -- on trial the
 //!   Python Dock aims the windows, and two Docks writing would fight.
 //!
-//! Not in the Rust Dock yet (dock.rs / dock_menu.rs say which): Quit on
-//! Close (shell/quitonclose.py), the desktop entries run_dock writes (`sonata2-rs desktop-files` and the Python Dock do),
-//! the slide-away on `sonata2 restart` (intro.leave_on_signal).
+//! The desktop entries run_dock writes are written by `sonata2-rs dock`
+//! before it runs this (apps/sonata2-rs/src/desktop.rs: Settings, Capture
+//! and the web apps depend on this crate).
 
 pub mod dock;
 pub mod dock_drop;
@@ -162,32 +162,74 @@ fn preview_window(app: &adw::Application, dock: &Rc<Dock>) -> gtk::ApplicationWi
 struct Displays {
     app: gtk::Application,
     cfg_main: Rc<DockWindow>,
-    extra: RefCell<Vec<Rc<DockWindow>>>,
+    /// each other display's Dock, with its display
+    extra: RefCell<Vec<(gdk::Monitor, Rc<DockWindow>)>>,
+    /// the main display the extras were made for
+    main: RefCell<Option<gdk::Monitor>>,
     manager: Option<Rc<toplevels::Manager>>,
 }
 
 impl Displays {
+    /// Every extra Dock made again (the main display or the setting changed).
     fn rebuild(&self) {
-        for w in self.extra.borrow_mut().drain(..) {
+        for (_, w) in self.extra.borrow_mut().drain(..) {
             w.destroy();
         }
+        self.sync();
+    }
+
+    /// A display plugged in or out (monitors.Surfaces.sync): only its Dock
+    /// comes or goes -- remaking them all made every other display's Dock
+    /// blink. A new main display remakes them all.
+    fn sync(&self) {
         let main = sonata_shell::layer::main_monitor();
+        if *self.main.borrow() != main {
+            self.main.replace(main.clone());
+            for (_, w) in self.extra.borrow_mut().drain(..) {
+                w.destroy();
+            }
+        }
         if let Some(m) = &main {
             self.cfg_main.move_to(m);
         }
-        let cfg = dock::load_config();
-        if !cfg.get("all_displays").is_some_and(dock::truthy) || sonata_config::side_by_side() {
-            return;
+        let monitors = sonata_shell::layer::monitors();
+        let on = dock::load_config().get("all_displays").is_some_and(dock::truthy) && !sonata_config::side_by_side();
+        let want = |m: &gdk::Monitor| on && main.as_ref() != Some(m) && monitors.contains(m);
+        let gone: Vec<Rc<DockWindow>> = {
+            let mut extra = self.extra.borrow_mut();
+            let (keep, gone): (Vec<_>, Vec<_>) = extra.drain(..).partition(|(m, _)| want(m));
+            *extra = keep;
+            gone.into_iter().map(|(_, w)| w).collect()
+        };
+        for w in gone {
+            w.destroy();
         }
-        for m in sonata_shell::layer::monitors() {
-            if main.as_ref().is_some_and(|x| x == &m) {
+        for m in monitors.iter().filter(|m| want(m)) {
+            if self.extra.borrow().iter().any(|(x, _)| x == m) {
                 continue;
             }
-            let w = DockWindow::new(&self.app, Rc::new(RefCell::new(dock::load_config())), self.manager.clone(), Some(m));
+            let w = DockWindow::new(&self.app, Rc::new(RefCell::new(dock::load_config())), self.manager.clone(), Some(m.clone()));
             w.win.present();
-            self.extra.borrow_mut().push(w);
+            self.extra.borrow_mut().push((m.clone(), w));
         }
     }
+}
+
+/// Desktop & Windows: an app quits with its last window (run_dock starts
+/// QuitOnClose on the Dock's manager). It was never started here: the
+/// setting (on by default) did nothing and Steam kept running. None on
+/// trial (QuitOnClose::start): the Python Dock does it.
+fn start_quit_on_close(manager: Option<&Rc<toplevels::Manager>>, keep: &RefCell<Vec<Box<dyn std::any::Any>>>) -> bool {
+    let Some(m) = manager else { return false };
+    let Some(q) = sonata_sessionui::quitonclose::QuitOnClose::start(Rc::new(toplevels::QuitWindows(m.clone()))) else { return false };
+    let w = Rc::downgrade(&q);
+    m.add_listener(Rc::new(move || {
+        if let Some(q) = w.upgrade() {
+            q.changed();
+        }
+    }));
+    keep.borrow_mut().push(Box::new(q));
+    true
 }
 
 fn later(ms: u64, f: impl FnOnce() + 'static) {
@@ -223,6 +265,9 @@ fn activate(app: &adw::Application, a: &Args, keep: &RefCell<Vec<Box<dyn std::an
     }
     dock::load_css(&cfg);
     let manager = Some(toplevels::manager()).filter(|m| m.available);
+    if !a.preview {
+        start_quit_on_close(manager.as_ref(), keep);
+    }
     let cfg = Rc::new(RefCell::new(cfg));
     let gapp: gtk::Application = app.clone().upcast();
     // every Dock this process shows (the main one first)
@@ -239,7 +284,7 @@ fn activate(app: &adw::Application, a: &Args, keep: &RefCell<Vec<Box<dyn std::an
         w.win.present();
         windows.borrow_mut().push(w.clone());
         if w.layer.get() {
-            let displays = Rc::new(Displays { app: gapp.clone(), cfg_main: w.clone(), extra: RefCell::default(), manager: manager.clone() });
+            let displays = Rc::new(Displays { app: gapp.clone(), cfg_main: w.clone(), extra: RefCell::default(), main: RefCell::default(), manager: manager.clone() });
             displays.rebuild();
             if let Some(display) = gdk::Display::default() {
                 let ds = Rc::downgrade(&displays);
@@ -248,7 +293,7 @@ fn activate(app: &adw::Application, a: &Args, keep: &RefCell<Vec<Box<dyn std::an
                     // (a display coming up is listed before its connector is known)
                     later(500, move || {
                         if let Some(ds) = ds.upgrade() {
-                            ds.rebuild();
+                            ds.sync();
                         }
                     });
                 });
@@ -417,6 +462,28 @@ mod tests {
         assert_eq!(set_value("position=bottom"), Some(("position".into(), json!("bottom"))));
         assert_eq!(set_value("pinned=[\"a\"]"), Some(("pinned".into(), json!(["a"]))));
         assert_eq!(set_value("nothing"), None);
+    }
+
+    /// Quit on Close was never started by the Rust Dock: closing Steam's
+    /// last window left Steam running though the setting was on.
+    #[test]
+    fn test_quit_on_close_never_started() {
+        let src = include_str!("lib.rs");
+        let act = &src[src.find("fn activate(").unwrap()..];
+        assert!(act[..act.find("\n}\n").unwrap()].contains("start_quit_on_close("));
+        // no window list: nothing to follow
+        assert!(!start_quit_on_close(None, &RefCell::new(Vec::new())));
+    }
+
+    /// With a Dock on every display, plugging a display in or out made
+    /// every other display's Dock blink: all were destroyed and made
+    /// again, where monitors.Surfaces.sync only adds or drops that one.
+    #[test]
+    fn test_hotplug_remade_every_dock() {
+        let src = include_str!("lib.rs");
+        let hot = &src[src.find("connect_items_changed(").unwrap()..];
+        let hot = &hot[..hot.find("});").unwrap()];
+        assert!(hot.contains("ds.sync()") && !hot.contains("ds.rebuild()"));
     }
 
     /// On trial the Rust Dock never takes the Python Dock's D-Bus name.

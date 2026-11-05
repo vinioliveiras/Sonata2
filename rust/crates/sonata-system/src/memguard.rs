@@ -157,16 +157,19 @@ pub fn app_of(scope: &Scope) -> (Option<String>, Option<String>) {
     }
     // a web app's own scope: `sonata2 webapp <id>`
     for pid in scope.pids.iter().take(3) {
-        let Ok(raw) = std::fs::read(format!("/proc/{pid}/cmdline")) else { continue };
-        let text = String::from_utf8_lossy(&raw);
-        let args: Vec<&str> = text.split('\0').collect();
-        for i in 1..args.len().saturating_sub(1) {
-            if args[i] == "webapp" && args[i - 1] == "sonata2" {
-                return (None, Some(args[i + 1].to_string()));
-            }
+        if let Some(wid) = std::fs::read(format!("/proc/{pid}/cmdline")).ok().and_then(|raw| webapp_arg(&String::from_utf8_lossy(&raw))) {
+            return (None, Some(wid));
         }
     }
     (None, None)
+}
+
+/// The web app id of a command line (NUL-separated): `sonata2 webapp <id>`,
+/// and the Rust session's `<path>/sonata2-rs webapp <id>` (current_exe
+/// gives the full path).
+pub fn webapp_arg(cmdline: &str) -> Option<String> {
+    let args: Vec<&str> = cmdline.split('\0').collect();
+    (1..args.len().saturating_sub(1)).find(|&i| args[i] == "webapp" && (args[i - 1] == "sonata2" || args[i - 1].rsplit('/').next() == Some("sonata2-rs"))).map(|i| args[i + 1].to_string())
 }
 
 #[cfg(test)]
@@ -235,5 +238,14 @@ mod tests {
         let sc = |unit: &str| Scope { path: PathBuf::new(), unit: unit.into(), memory: 0, pids: vec![] };
         assert_eq!(app_of(&sc("app-sonata2-org.gnome.Nautilus-20.scope")), (Some("org.gnome.Nautilus".into()), None));
         assert_eq!(app_of(&sc("app-sonata2-my\\x2dapp-7.scope")), (Some("my-app".into()), None));
+    }
+
+    /// The Rust session runs a WebKit web app as `<path>/sonata2-rs webapp
+    /// <id>`: the memory alert named its scope, not the web app.
+    #[test]
+    fn test_rust_webapp_scope_not_named() {
+        assert_eq!(webapp_arg("python3\0-m\0sonata2\0webapp\0yt2\0"), Some("yt2".into()));
+        assert_eq!(webapp_arg("/home/v/.local/bin/sonata2-rs\0webapp\0yt3\0"), Some("yt3".into()));
+        assert_eq!(webapp_arg("/usr/bin/other\0webapp\0x\0"), None);
     }
 }

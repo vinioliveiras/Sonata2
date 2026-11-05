@@ -52,11 +52,13 @@ pub type Then = Option<Box<dyn Fn()>>;
 /// desktop id (without .desktop) -> the apps a launcher should list.
 pub fn installed_apps() -> BTreeMap<String, gio::DesktopAppInfo> {
     // the folders themselves: new apps show up at once
-    sonata_ui::apps::scan().into_iter().filter(|(_, i)| i.should_show()).map(|(k, i)| (k.strip_suffix(".desktop").unwrap_or(&k).to_string(), i)).collect()
+    // (should_show as apps.py made it: "Manage Printing" -- cups -- isn't an
+    // app here; the key checked too, for an entry GIO gave no id)
+    sonata_ui::apps::scan().into_iter().filter(|(k, i)| sonata_ui::apps::should_show(i) && !sonata_ui::apps::NOT_APPS.contains(&k.as_str())).map(|(k, i)| (k.strip_suffix(".desktop").unwrap_or(&k).to_string(), i)).collect()
 }
 
 fn names_of(installed: &BTreeMap<String, gio::DesktopAppInfo>) -> BTreeMap<String, String> {
-    installed.iter().map(|(k, v)| (k.clone(), v.display_name().to_string())).collect()
+    installed.iter().map(|(k, v)| (k.clone(), sonata_ui::apps::display_name(v))).collect()
 }
 
 /// The drag icon, macOS style (ui/drag.py's HangingIcon): the item's icon
@@ -703,6 +705,10 @@ impl Pad {
 
     fn apps_changed(self: &Rc<Self>) {
         self.apps_sig.replace(Some(logic::apps_signature()));
+        // (apps.refresh: a window id that failed to match a moment ago may
+        // be the app just installed -- else no icon nor name for a minute,
+        // and the launch watch took it for an app that never opened)
+        sonata_desktop::appmatch::refresh();
         let installed = installed_apps();
         {
             let mut model = self.model.borrow_mut();
@@ -1015,8 +1021,9 @@ impl Pad {
         self.close_folder();
         self.bin.invalidate();
         let panel = gtk::Box::builder().orientation(gtk::Orientation::Vertical).css_classes(["lp-panel"]).build();
-        // (ui.controls.centred_editable_label: a plain EditableLabel, centred)
-        let title = gtk::EditableLabel::builder().text(f.name.as_str()).css_classes(["lp-panel-title"]).editable(!is_hidden_folder(f)).xalign(0.5).halign(gtk::Align::Center).build();
+        let title = centred_editable_label(f.name.as_str());
+        title.add_css_class("lp-panel-title");
+        title.set_editable(!is_hidden_folder(f));
         let w = Rc::downgrade(self);
         title.connect_editing_notify(move |t| {
             if let Some(p) = w.upgrade().filter(|_| !t.is_editing()) {
@@ -1183,7 +1190,7 @@ impl Pad {
                 let keywords = v.keywords().iter().map(|k| k.to_string()).collect::<Vec<_>>().join(" ");
                 let exec = sonata_ui::apps::executable(v).display().to_string();
                 let extra = [v.generic_name().map(|s| s.to_string()).unwrap_or_default(), keywords, exec].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
-                Some((k.clone(), (v.display_name().to_string(), extra)))
+                Some((k.clone(), (sonata_ui::apps::display_name(v), extra)))
             })
             .collect();
         self.meta_cache.replace(Some((shown, meta.clone())));
@@ -1901,5 +1908,81 @@ impl Pad {
         self.save();
         self.render();
         true
+    }
+}
+
+/// A name you click to edit, centred before, during and after editing
+/// (ui.controls.centred_editable_label; Vini: a folder's name moved left
+/// once renamed). GtkEditableLabel's own label keeps xalign 0 and its
+/// stack keeps the entry's width: both set here, again on each edit.
+pub fn centred_editable_label(text: &str) -> gtk::EditableLabel {
+    let el = gtk::EditableLabel::builder().text(text).halign(gtk::Align::Center).xalign(0.5).build();
+    fn walk(mut w: Option<gtk::Widget>) {
+        while let Some(c) = w {
+            if let Some(l) = c.downcast_ref::<gtk::Label>() {
+                l.set_xalign(0.5);
+                l.set_justify(gtk::Justification::Center);
+            } else if let Some(st) = c.downcast_ref::<gtk::Stack>() {
+                st.set_hhomogeneous(false);
+                st.set_interpolate_size(true);
+            }
+            walk(c.first_child());
+            w = c.next_sibling();
+        }
+    }
+    walk(el.first_child());
+    el.connect_editing_notify(|el| walk(el.first_child()));
+    el
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(dir: &std::path::Path, file: &str, name: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join(file), format!("[Desktop Entry]\nType=Application\nName={name}\nExec=true\n")).unwrap();
+    }
+
+    /// "Manage Printing" (cups.desktop) showed in Launchpad and the Apps
+    /// Menu, and names kept their packaging noise ("Spotify (Launcher)"):
+    /// GIO's own should_show / display_name were used, not apps.py's.
+    #[test]
+    fn test_manage_printing_and_launcher_suffix_shown() {
+        let apps = glib::user_data_dir().join("applications");
+        entry(&apps, "cups.desktop", "Manage Printing");
+        entry(&apps, "lp-test-spotify.desktop", "Spotify (Launcher)");
+        let installed = installed_apps();
+        assert!(!installed.contains_key("cups"));
+        assert_eq!(names_of(&installed).get("lp-test-spotify").map(String::as_str), Some("Spotify"));
+    }
+
+    /// A folder's name moved left once renamed: the EditableLabel's inner
+    /// label kept xalign 0 (ui.controls.centred_editable_label).
+    #[test]
+    fn test_folder_name_moved_left_once_renamed() {
+        if gtk::init().is_err() {
+            return; // (no display)
+        }
+        let el = centred_editable_label("Games");
+        let mut labels = 0;
+        fn each(w: Option<gtk::Widget>, f: &mut dyn FnMut(&gtk::Widget)) {
+            let mut w = w;
+            while let Some(c) = w {
+                f(&c);
+                each(c.first_child(), f);
+                w = c.next_sibling();
+            }
+        }
+        each(el.first_child(), &mut |c| {
+            if let Some(l) = c.downcast_ref::<gtk::Label>() {
+                labels += 1;
+                assert_eq!(l.xalign(), 0.5);
+            }
+            if let Some(st) = c.downcast_ref::<gtk::Stack>() {
+                assert!(!st.is_hhomogeneous());
+            }
+        });
+        assert!(labels > 0);
     }
 }

@@ -20,3 +20,6 @@ vte4.workspace = true
 sonata-config.workspace = true
 sonata-i18n.workspace = true
 sonata-ui.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -359,7 +359,7 @@ impl MenuView {
             }
         }
         for keys in groups.values_mut() {
-            keys.sort_by_key(|k| installed[k].display_name().to_lowercase());
+            keys.sort_by_key(|k| sonata_ui::apps::display_name(&installed[k]).to_lowercase());
         }
         groups
     }

@@ -112,10 +112,19 @@ impl StatusPoll {
             }),
             watch_audio: Box::new(|changed| watch_audio(changed).map(|h| Box::new(move || h.stop()) as Stop)),
             showing_sound: Box::new(|| bars().iter().any(|b| b.cfg_bool("show_sound", false))),
-            paused: Box::new(move || paused.as_ref().is_some_and(|p| p())),
+            // (quiet.py's own answer when the host gave none)
+            paused: Box::new(move || paused.as_ref().map_or_else(crate::quiet::paused, |p| p())),
         };
         let me = StatusPoll::new(ports, net, upower);
         POLL.with(|p| *p.borrow_mut() = Some(me.clone()));
+        // it catches up the moment the pause ends (quiet.watch): a signal
+        // that came while locked or under a game was dropped
+        let w = Rc::downgrade(&me);
+        crate::quiet::watch(move |paused| {
+            if let Some(p) = w.upgrade() {
+                p.pause_changed(paused);
+            }
+        });
         me
     }
 
@@ -186,6 +195,13 @@ impl StatusPoll {
             self.battery();
         }
         self.volume();
+    }
+
+    /// quiet.watch: the pause ended -- everything read again at once.
+    pub(crate) fn pause_changed(&self, paused: bool) {
+        if !paused {
+            self.poll(true, true);
+        }
     }
 
     pub(crate) fn battery(&self) {
@@ -386,6 +402,24 @@ mod tests {
     /// to three runs a tick with Wi-Fi on), and woke a thread for the
     /// battery. With NetworkManager and UPower on the bus their signals
     /// say when to look.
+    /// Vini's Rust session: after unlocking (or leaving a game) the Wi-Fi
+    /// and battery icons kept what they showed before it -- the signals
+    /// that came meanwhile were dropped and nothing read them again until
+    /// the next look, two minutes later. The end of the pause reads them.
+    #[test]
+    fn test_icons_stale_after_unlock() {
+        let (p, f) = make(true, true, true);
+        f.paused.set(true);
+        p.net_changed();
+        f.fire(1); // the network's settle: paused, dropped
+        assert_eq!(f.count(Read::Wifi), 0);
+        p.pause_changed(true);
+        assert_eq!(f.count(Read::Wifi), 0);
+        f.paused.set(false);
+        p.pause_changed(false);
+        assert_eq!((f.count(Read::Wifi), f.count(Read::Battery)), (1, 1));
+    }
+
     #[test]
     fn test_signals_not_a_poll() {
         let (p, f) = make(true, true, true);

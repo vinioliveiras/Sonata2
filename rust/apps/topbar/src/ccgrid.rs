@@ -547,6 +547,14 @@ impl ModuleGrid {
         }
     }
 
+    /// The put-back animation's class off every module: a kept Control
+    /// Center played it again at each opening otherwise.
+    pub fn clear_arriving(&self) {
+        for s in self.imp().slots.borrow().values() {
+            s.root.remove_css_class("cc-slot-arriving");
+        }
+    }
+
     pub fn remove_module(&self, mid: &str) {
         if !self.imp().order.borrow().iter().any(|m| m == mid) {
             return;

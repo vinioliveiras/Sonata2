@@ -60,6 +60,20 @@ impl Usage {
 mod tests {
     use super::*;
 
+    /// tests/test_review_apps.py: calls older than a week are dropped on
+    /// add; malformed rows are ignored when read.
+    #[test]
+    fn test_usage_prunes_old_calls_and_ignores_junk() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("usage.json"), r#"{"calls": [[0, 10], "x", [1, "y"], [100, 5]]}"#).unwrap();
+        let mut u = Usage::open(d.path());
+        assert_eq!(u.calls, vec![(0.0, 10), (100.0, 5)]);
+        let now = 100.0 + 8.0 * 86400.0;
+        u.add(7, now);
+        assert_eq!(Usage::open(d.path()).calls, vec![(now, 7)]);
+        assert_eq!((u.last_hour(now + 3599.0), u.last_hour(now + 3601.0)), (7, 0));
+    }
+
     #[test]
     fn counted_by_hour_and_week() {
         let d = tempfile::tempdir().unwrap();

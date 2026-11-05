@@ -144,6 +144,49 @@ mod tests {
         assert!(t.ends_with('…') && t.chars().count() <= 61);
     }
 
+    /// tests/test_review_apps.py: titles are one line, cut at a word with
+    /// an ellipsis (a word longer than the cut is cut inside); blank is New Chat.
+    #[test]
+    fn test_title_from_long_and_blank() {
+        assert_eq!(title_from(&"x".repeat(100)), format!("{}…", "x".repeat(60)));
+        assert_eq!(title_from("  \n "), "New Chat");
+    }
+
+    /// tests/test_review_apps.py: bad messages in a chat file (a role the
+    /// API doesn't take, junk, content that is neither text nor blocks)
+    /// are skipped; a blank rename changes nothing.
+    #[test]
+    fn test_load_drops_malformed_messages_and_rename_ignores_blank() {
+        let d = tempfile::tempdir().unwrap();
+        let mut s = Store::open(d.path().to_path_buf());
+        let mut c = s.new_chat();
+        c.insert("messages".into(), json!([{"role": "user", "content": "hello there"}]));
+        s.save(&mut c);
+        let id = c["id"].as_str().unwrap().to_string();
+        let path = d.path().join("chats").join(format!("{id}.json"));
+        let mut data: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        data["messages"].as_array_mut().unwrap().extend([json!({"role": "system", "content": "x"}), json!("junk"), json!({"role": "user", "content": 5})]);
+        std::fs::write(&path, data.to_string()).unwrap();
+        let mut s2 = Store::open(d.path().to_path_buf());
+        assert_eq!(s2.load(&id)["messages"], json!([{"role": "user", "content": "hello there"}]));
+        s2.rename(&id, "   ");
+        assert_eq!(Store::open(d.path().to_path_buf()).get(&id).unwrap()["title"], "hello there");
+    }
+
+    /// The Python Assistant's files: an index whose entries lack an id (or
+    /// aren't objects) is read without them, and a file that isn't an
+    /// object reads as empty -- never a crash or a lost index.
+    #[test]
+    fn python_written_index_read_the_same() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("index.json"), r#"{"chats": [{"id": "a1", "title": "T", "created": 1.5, "modified": 2.5}, {"title": "no id"}, "x", {"id": ""}]}"#).unwrap();
+        let s = Store::open(d.path().to_path_buf());
+        assert_eq!(s.chats.len(), 1);
+        assert_eq!(s.load("a1")["title"], "T");
+        std::fs::write(d.path().join("index.json"), "[1, 2]").unwrap();
+        assert!(Store::open(d.path().to_path_buf()).chats.is_empty());
+    }
+
     #[test]
     fn chats_saved_listed_renamed_deleted() {
         let d = tempfile::tempdir().unwrap();

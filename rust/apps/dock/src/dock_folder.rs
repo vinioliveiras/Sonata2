@@ -645,7 +645,7 @@ fn app_button(dock: &Dock, tile: &Rc<Tile>, key: &str, p: &Rc<Panel>) -> gtk::Bu
     let img = gtk::Image::builder().pixel_size(PANEL_ICON).build();
     sonata_ui::icons::set_image(&img, &sonata_ui::icons::app_icon(info.upcast_ref()));
     col.append(&img);
-    col.append(&gtk::Label::builder().label(info.display_name()).wrap(true).lines(2).justify(gtk::Justification::Center).ellipsize(pango::EllipsizeMode::End).max_width_chars(12).width_chars(12).build());
+    col.append(&gtk::Label::builder().label(sonata_ui::apps::display_name(info)).wrap(true).lines(2).justify(gtk::Justification::Center).ellipsize(pango::EllipsizeMode::End).max_width_chars(12).width_chars(12).build());
     // open: the Dock's running dot under its name (Vini: the app stays in its folder)
     let dot = gtk::Box::builder().css_classes(["dock-dot", "on"]).halign(gtk::Align::Center).visible(dock.windows.borrow().get(key).is_some_and(|w| !w.is_empty())).build();
     col.append(&dot);

@@ -29,15 +29,29 @@ pub fn archive_name(files: &[gio::File]) -> String {
     if files.len() == 1 { format!("{}.zip", ops::base(&files[0])) } else { "Archive.zip".into() }
 }
 
+/// The item's modification time as a zip stores it: local time, like
+/// Python's zipfile. (Left out, the zip crate without its "time" feature
+/// dated every file 1 January 1980, and unzipped they all said so.)
+fn zip_time(meta: &std::fs::Metadata) -> Option<zip::DateTime> {
+    use std::os::unix::fs::MetadataExt;
+    let t = glib::DateTime::from_unix_local(meta.mtime()).ok()?;
+    zip::DateTime::from_date_and_time(t.year().try_into().ok()?, t.month() as u8, t.day_of_month() as u8, t.hour() as u8, t.minute() as u8, t.second() as u8).ok()
+}
+
 fn add(zf: &mut zip::ZipWriter<std::fs::File>, path: &Path, arc: &str) -> std::io::Result<()> {
     let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated).large_file(true);
     let meta = std::fs::symlink_metadata(path)?;
+    // (a symlink keeps the default date: Python's ZipInfo(arc) has it too)
+    let dated = |o: zip::write::SimpleFileOptions| match zip_time(&meta) {
+        Some(t) => o.last_modified_time(t),
+        None => o,
+    };
     if meta.file_type().is_symlink() {
         // a symlink stays a symlink
         let target = std::fs::read_link(path)?;
         zf.add_symlink(arc, target.to_string_lossy(), opts.unix_permissions(0o777)).map_err(std::io::Error::other)?;
     } else if meta.is_dir() {
-        zf.add_directory(format!("{arc}/"), opts).map_err(std::io::Error::other)?;
+        zf.add_directory(format!("{arc}/"), dated(opts)).map_err(std::io::Error::other)?;
         let mut names: Vec<String> = std::fs::read_dir(path)?.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
         names.sort();
         for n in names {
@@ -45,7 +59,7 @@ fn add(zf: &mut zip::ZipWriter<std::fs::File>, path: &Path, arc: &str) -> std::i
         }
     } else {
         use std::os::unix::fs::PermissionsExt;
-        zf.start_file(arc, opts.unix_permissions(meta.permissions().mode())).map_err(std::io::Error::other)?;
+        zf.start_file(arc, dated(opts).unix_permissions(meta.permissions().mode())).map_err(std::io::Error::other)?;
         let mut f = std::fs::File::open(path)?;
         std::io::copy(&mut f, zf)?;
     }
@@ -199,6 +213,21 @@ mod tests {
         assert_eq!(archive_name(&[g.clone()]), "dir.zip");
         assert_eq!(archive_name(&[g.clone(), g.clone()]), "Archive.zip");
         assert_eq!(paths_text(&[g]), d.path().join("dir").display().to_string());
+    }
+
+    /// Every file unzipped from a Compress said it was last changed on
+    /// 1 January 1980: its own date wasn't kept in the zip.
+    #[test]
+    fn test_compressed_files_dated_1980() {
+        let d = tempfile::tempdir().unwrap();
+        let a = d.path().join("a.txt");
+        std::fs::write(&a, "x").unwrap();
+        let target = d.path().join("a.zip");
+        zip_files(&[a.clone()], &target).unwrap();
+        let mut z = zip::ZipArchive::new(std::fs::File::open(&target).unwrap()).unwrap();
+        let t = z.by_index(0).unwrap().last_modified().unwrap();
+        let now = glib::DateTime::now_local().unwrap();
+        assert_eq!((t.year() as i32, t.month() as i32, t.day() as i32), (now.year(), now.month(), now.day_of_month()));
     }
 
     #[test]

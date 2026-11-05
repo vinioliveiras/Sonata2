@@ -629,3 +629,54 @@ fn watcher_and_host_on_a_private_bus() {
         bus.down();
     });
 }
+
+/// Vini's Rust session, auto-hide on: the menu bar slid away from under
+/// an open tray menu (Python counted every menu in ui.menu.OPEN; the Rust
+/// bar only its own). The menu bar hears each tray menu show and go -- a
+/// menu redrawn in place (Steam's) included, one "gone" for each "shown".
+#[test]
+fn test_bar_hid_under_a_tray_menu() {
+    in_own_process("tests::bar_hid_under_a_tray_menu_gtk");
+}
+
+/// Runs `test` (an #[ignore]d one) alone in a new process of this test
+/// binary: GTK takes the main context of the thread that starts it for
+/// good, and the other tests here need it.
+fn in_own_process(test: &str) {
+    let exe = std::env::current_exe().unwrap();
+    let out = std::process::Command::new(exe).args(["--ignored", "--exact", test, "--test-threads=1"]).output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{test}:\n{text}\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(text.contains("1 passed"), "{test} didn't run:\n{text}");
+}
+
+#[test]
+#[ignore = "GTK: run by test_bar_hid_under_a_tray_menu in a process of its own"]
+fn bar_hid_under_a_tray_menu_gtk() {
+    {
+        use gtk::prelude::*;
+        if gtk::init().is_err() {
+            return; // (no display)
+        }
+        let (m, _, _) = fake_menu(false);
+        let win = gtk::Window::new();
+        let btn = gtk::Button::with_label("tray");
+        win.set_child(Some(&btn));
+        win.present();
+        let heard: Rc<RefCell<Vec<bool>>> = Rc::default();
+        let h = heard.clone();
+        let hook: crate::traybox::MenuHook = Rc::new(move |open| h.borrow_mut().push(open));
+        crate::traybox::show(&m, &btn, m.sections(&steam_layout(0, "Half-Life 2")), Some(hook));
+        assert_eq!(*heard.borrow(), vec![true]);
+        let redraw = m.open.borrow().clone().unwrap();
+        (redraw.redraw)(m.sections(&steam_layout(0, "Portal")));
+        let ctx = glib::MainContext::default();
+        while ctx.iteration(false) {}
+        assert_eq!(*heard.borrow(), vec![true, true, false]);
+        let now = m.open.borrow().clone().unwrap();
+        (now.redraw)(Vec::new()); // (an empty redraw closes it)
+        while ctx.iteration(false) {}
+        assert_eq!(*heard.borrow(), vec![true, true, false, false]);
+        win.destroy();
+    }
+}

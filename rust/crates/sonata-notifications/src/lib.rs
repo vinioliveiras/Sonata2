@@ -60,6 +60,8 @@ struct Surfaces {
     server: std::rc::Weak<Server>,
     banners: Rc<banners::Banners>,
     center: RefCell<Option<Rc<center::Center>>>,
+    /// Notification Center's glass (the menu bar's: sonata-mission's frost)
+    frost: RefCell<Option<center::FrostFn>>,
 }
 
 impl Surfaces {
@@ -68,7 +70,7 @@ impl Surfaces {
             return Some(c.clone());
         }
         let server = self.server.upgrade()?;
-        let c = center::Center::new(&self.app, &server);
+        let c = center::Center::new(&self.app, &server, self.frost.borrow().clone());
         self.center.replace(Some(c.clone()));
         Some(c)
     }
@@ -119,7 +121,7 @@ impl Notifications {
         register_css();
         let server = Server::new(serving);
         server.watch_config();
-        let surfaces = Rc::new(Surfaces { app: app.clone(), server: Rc::downgrade(&server), banners: banners::Banners::new(app, &server), center: RefCell::default() });
+        let surfaces = Rc::new(Surfaces { app: app.clone(), server: Rc::downgrade(&server), banners: banners::Banners::new(app, &server), center: RefCell::default(), frost: RefCell::default() });
         server.set_presenter(Some(surfaces.clone()));
         let conn = app.dbus_connection().or_else(|| gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE).ok());
         if let Some(conn) = conn {
@@ -142,6 +144,13 @@ impl Notifications {
             }
         });
         me
+    }
+
+    /// How Notification Center gets its glass (the display's picture,
+    /// blurred once): set before it is first made (2.5 s after start).
+    /// Unset: solid panels.
+    pub fn set_frost(&self, f: center::FrostFn) {
+        self.surfaces.frost.replace(Some(f));
     }
 
     pub fn server(&self) -> &Rc<Server> {

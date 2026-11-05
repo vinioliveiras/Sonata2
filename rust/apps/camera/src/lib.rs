@@ -45,6 +45,20 @@ fn defaults() -> Value {
     json!({"camera": "", "mirror": true, "countdown": false, "flash": false, "mode": "photo"})
 }
 
+/// A setting as window.py reads it: Python's truth (1, "yes" and a
+/// non-empty list are on; 0, "", null are off), the default when missing.
+pub fn truthy(v: Option<&Value>, default: bool) -> bool {
+    match v {
+        None => default,
+        Some(Value::Null) => false,
+        Some(Value::Bool(b)) => *b,
+        Some(Value::Number(n)) => n.as_f64().is_some_and(|f| f != 0.0),
+        Some(Value::String(s)) => !s.is_empty(),
+        Some(Value::Array(a)) => !a.is_empty(),
+        Some(Value::Object(o)) => !o.is_empty(),
+    }
+}
+
 // -- pure logic (tested) ----------------------------------------------------------------------
 fn folder(kind: UserDirectory) -> PathBuf {
     userdirs::special(kind, true).unwrap_or_else(glib::home_dir).join("Camera")
@@ -152,7 +166,8 @@ struct CameraWin {
 }
 
 impl CameraWin {
-    fn new(app: &gtk::Application) -> Rc<Self> {
+    /// `source`: tests (a videotestsrc instead of a camera, no device probe).
+    fn new(app: &gtk::Application, source: Option<Rc<dyn Fn() -> Option<gstreamer::Element>>>) -> Rc<Self> {
         let win = gtk::ApplicationWindow::builder().application(app).title(tr!("Camera").as_str()).css_classes(["sonata-camera"]).build();
         sonata_ui::window::remember_size(win.upcast_ref(), "camera", 820, 700); // (never bigger than the display)
         sonata_ui::window::standard(&win);
@@ -226,6 +241,7 @@ impl CameraWin {
             flash_btn, timer_btn, rec_time, picture, count, msg, msg_title, msg_hint, flash, blink, mode_btns, last_btn, last_pic, shutter, switch_btn,
         });
         cell.replace(Some(Rc::downgrade(&me)));
+        me.cam.source.replace(source);
         me.wire(&menu_btn);
         me.sync_toggles();
         let mode = me.cfg.borrow().get("mode").and_then(Value::as_str).unwrap_or("photo").to_string();
@@ -250,8 +266,12 @@ impl CameraWin {
         self.flash_btn.connect_clicked(move |_| f());
         let f = on(|m| m.toggle("countdown"));
         self.timer_btn.connect_clicked(move |_| f());
-        let f = on(|m| m.menu());
-        menu_btn.connect_clicked(move |_| f());
+        let w = Rc::downgrade(self);
+        menu_btn.connect_clicked(move |b| {
+            if let Some(m) = w.upgrade() {
+                m.menu(b);
+            }
+        });
         for (k, b) in &self.mode_btns {
             let (w, k) = (Rc::downgrade(self), k.clone());
             b.connect_clicked(move |_| {
@@ -300,6 +320,10 @@ impl CameraWin {
 
     // -- camera ---------------------------------------------------------------------------------
     fn open_camera(self: &Rc<Self>) {
+        if self.cam.source.borrow().is_some() {
+            self.start_camera();
+            return;
+        }
         // the device probe can take a while (USB, PipeWire): off the main loop
         let me = self.clone();
         glib::spawn_future_local(async move {
@@ -314,7 +338,7 @@ impl CameraWin {
 
     fn start_camera(self: &Rc<Self>) {
         let cams = self.cams.borrow().clone();
-        if cams.is_empty() {
+        if cams.is_empty() && self.cam.source.borrow().is_none() {
             self.show_error(&tr!("No Camera"), Some(&tr!("Connect a camera, or check that no other app is using it.")));
             self.switch_btn.set_sensitive(false);
             return;
@@ -323,7 +347,7 @@ impl CameraWin {
         let want = self.cfg.borrow().get("camera").and_then(Value::as_str).unwrap_or("").to_string();
         let cam = cams.iter().find(|c| c.name == want).or(cams.first()).cloned();
         self.msg.set_visible(false);
-        let mirror = self.cfg.borrow().get("mirror").and_then(Value::as_bool).unwrap_or(true);
+        let mirror = truthy(self.cfg.borrow().get("mirror"), true);
         if self.cam.start(cam.as_ref(), mirror) {
             self.picture.set_paintable(self.cam.paintable.borrow().as_ref());
             self.shutter.set_sensitive(true);
@@ -367,7 +391,7 @@ impl CameraWin {
     }
 
     fn flag(&self, key: &str) -> bool {
-        self.cfg.borrow().get(key).and_then(Value::as_bool).unwrap_or(defaults()[key].as_bool().unwrap_or(false))
+        truthy(self.cfg.borrow().get(key), defaults()[key].as_bool().unwrap_or(false))
     }
 
     fn toggle(&self, key: &str) {
@@ -389,7 +413,8 @@ impl CameraWin {
         }
     }
 
-    fn menu(self: &Rc<Self>) {
+    /// The options, under their button (window.py's MenuButton).
+    fn menu(self: &Rc<Self>, button: &gtk::Button) {
         use sonata_ui::menu::{popup, Item, Options};
         let current = self.cfg.borrow().get("camera").and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from).or_else(|| self.cams.borrow().first().map(|c| c.name.clone())).unwrap_or_default();
         let mut sections = Vec::new();
@@ -410,8 +435,7 @@ impl CameraWin {
                 m.set("mirror", on);
             }
         })]);
-        let anchor = self.timer_btn.parent().unwrap_or_else(|| self.timer_btn.clone().upcast());
-        popup(&anchor, sections, Options::below());
+        popup(button, sections, Options::below());
     }
 
     // -- modes ------------------------------------------------------------------------------------
@@ -630,7 +654,7 @@ fn fade(widget: &gtk::Box, ms: i64, peak: f64) {
 }
 
 fn open(path: &Path) {
-    let _ = gio::AppInfo::launch_default_for_uri(&gio::File::for_path(path).uri(), gio::AppLaunchContext::NONE);
+    let _ = sonata_ui::apps::launch_default_for_uri(&gio::File::for_path(path).uri(), None);
 }
 
 /// Files shows it in its folder (FileManager1), else the folder opens.
@@ -638,7 +662,7 @@ fn reveal(path: &Path) {
     let uri = gio::File::for_path(path).uri().to_string();
     let folder = path.parent().map(Path::to_path_buf).unwrap_or_default();
     let fallback = move || {
-        let _ = gio::AppInfo::launch_default_for_uri(&gio::File::for_path(&folder).uri(), gio::AppLaunchContext::NONE);
+        let _ = sonata_ui::apps::launch_default_for_uri(&gio::File::for_path(&folder).uri(), None);
     };
     let Ok(bus) = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE) else { return fallback() };
     bus.call(Some("org.freedesktop.FileManager1"), "/org/freedesktop/FileManager1", "org.freedesktop.FileManager1", "ShowItems", Some(&(vec![uri], "").to_variant()), None, gio::DBusCallFlags::NONE, 3000, gio::Cancellable::NONE, move |r| {
@@ -671,7 +695,7 @@ pub fn run(args: &[String]) -> glib::ExitCode {
             sonata_ui::force_appearance(f);
         }
         sonata_ui::css::register_module("camera/window.py");
-        let c = CameraWin::new(app);
+        let c = CameraWin::new(app, None);
         c.win.present();
         state.replace(Some(c));
     });
@@ -701,6 +725,130 @@ mod tests {
         std::fs::write(d.path().join("Photo 2.jpg"), "").unwrap();
         assert_eq!(unique(d.path(), "Photo.jpg"), d.path().join("Photo 3.jpg"));
         assert_eq!(unique(d.path(), "Video"), d.path().join("Video"));
+    }
+
+    /// camera.json as window.py reads it: Python's truth, so a timer
+    /// saved as 1 (or "yes") is on in both, and null is off.
+    #[test]
+    fn test_settings_python_wrote_read_the_same() {
+        assert!(truthy(Some(&json!(1)), false) && truthy(Some(&json!("yes")), false));
+        assert!(!truthy(Some(&json!(0)), true) && !truthy(Some(&Value::Null), true) && !truthy(Some(&json!("")), true));
+        assert!(truthy(None, true) && !truthy(None, false));
+    }
+
+    fn settle(ms: u64) {
+        let end = std::time::Instant::now() + Duration::from_millis(ms);
+        let ctx = glib::MainContext::default();
+        while std::time::Instant::now() < end {
+            ctx.iteration(false);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    fn live(name: &str) -> Option<gstreamer::Element> {
+        gstreamer::ElementFactory::make(name).property("is-live", true).build().ok()
+    }
+
+    /// tests/test_camera.py's CameraTest, with a videotestsrc for a camera
+    /// (one test: GTK lives on one thread).
+    #[test]
+    fn camera_window_with_a_test_source() {
+        if (gtk::is_initialized() && !gtk::is_initialized_main_thread()) || gtk::init().is_err() || !engine::init() {
+            return; // no display, or no GStreamer
+        }
+        if gstreamer::ElementFactory::find("videotestsrc").is_none() {
+            return;
+        }
+        sonata_ui::setup();
+        let app = gtk::Application::builder().application_id("io.test.camera").flags(gio::ApplicationFlags::NON_UNIQUE).build();
+        app.register(gio::Cancellable::NONE).expect("registered");
+        let test_source: Rc<dyn Fn() -> Option<gstreamer::Element>> = Rc::new(|| gstreamer::ElementFactory::make("videotestsrc").build().ok());
+
+        // the engine: live frames and a photo of them
+        let errors: Rc<RefCell<Vec<String>>> = Rc::default();
+        let e = errors.clone();
+        let cam = engine::Camera::new(move |t| e.borrow_mut().push(t));
+        cam.source.replace(Some(test_source.clone()));
+        assert!(cam.start(None, true));
+        settle(800);
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("x.jpg");
+        assert!(cam.photo(&path));
+        assert_eq!(&std::fs::read(&path).unwrap()[..2], b"\xff\xd8"); // a JPEG
+        cam.set_mirror(false);
+        cam.stop();
+        assert!(errors.borrow().is_empty(), "{:?}", errors.borrow());
+        assert!(!cam.running());
+
+        // a photo keeps the window's size (it grew when the thumbnail strip appeared)
+        let pics = photos_dir();
+        let before = recent_photos(&pics, 100).len();
+        let win = CameraWin::new(&app, Some(test_source.clone()));
+        win.cfg.borrow_mut().insert("countdown".into(), json!(false));
+        win.win.present();
+        settle(1000);
+        let size = (win.win.width(), win.win.height());
+        assert!(win.shutter.is_sensitive());
+        win.capture();
+        settle(500);
+        assert_eq!(recent_photos(&pics, 100).len(), before + 1);
+        assert!(win.last_photo.borrow().as_ref().is_some_and(|p| p.starts_with(&pics)));
+        assert_eq!((win.win.width(), win.win.height()), size);
+        win.win.close();
+        assert!(!win.cam.running()); // closing frees the camera
+
+        // the timer, and Esc cancelling it: no photo
+        let before = recent_photos(&pics, 100).len();
+        let win = CameraWin::new(&app, Some(test_source.clone()));
+        win.cfg.borrow_mut().insert("countdown".into(), json!(true));
+        win.cfg.borrow_mut().insert("flash".into(), json!(false));
+        win.win.present();
+        settle(800);
+        win.capture();
+        assert!(win.count.is_visible());
+        assert_eq!(win.count.label(), "3");
+        win.cancel_count();
+        settle(1300);
+        assert_eq!(recent_photos(&pics, 100).len(), before); // cancelled: no photo
+        win.win.close();
+
+        // no camera: it says so
+        let win = CameraWin::new(&app, None);
+        win.closed.set(true); // (the real probe's answer is ignored)
+        win.cams.replace(Vec::new());
+        win.win.present();
+        win.start_camera();
+        settle(100);
+        assert!(win.msg.is_visible());
+        assert_eq!(win.msg_title.label(), tr!("No Camera"));
+        assert!(!win.shutter.is_sensitive());
+        win.win.close();
+
+        // video, with sound
+        if engine::pick_encoders_with(&|e| gstreamer::ElementFactory::find(e).is_some()).is_none() || gstreamer::ElementFactory::find("audiotestsrc").is_none() {
+            return;
+        }
+        let vids = videos_dir();
+        let before = recent_photos(&vids, 100);
+        let win = CameraWin::new(&app, Some(Rc::new(|| live("videotestsrc"))));
+        win.cam.audio_source.replace(Some(Rc::new(|| live("audiotestsrc"))));
+        win.cfg.borrow_mut().insert("countdown".into(), json!(false));
+        win.win.present();
+        settle(800);
+        win.set_mode("video", false);
+        win.capture();
+        assert!(win.cam.recording());
+        assert!(win.shutter.has_css_class("recording"));
+        assert!(win.rec_time.is_visible());
+        settle(1500);
+        win.capture(); // stop
+        settle(2500);
+        let made: Vec<PathBuf> = recent_photos(&vids, 100).into_iter().filter(|p| !before.contains(p)).collect();
+        assert_eq!(made.len(), 1);
+        assert!(std::fs::metadata(&made[0]).unwrap().len() > 10000);
+        assert!(!win.shutter.has_css_class("recording"));
+        assert_eq!(win.last_photo.borrow().as_ref(), Some(&made[0]));
+        win.win.close();
     }
 
     #[test]

@@ -5,7 +5,6 @@
 //! preview, Cancel / Select. Here because sonata-ui has no picker yet:
 //! Appearance is its only user so far.
 //!
-//! Not ported: the knob's glide to a new spot and its grow tween (it jumps).
 
 use adw::prelude::*;
 use gtk::{cairo, glib};
@@ -199,6 +198,171 @@ fn draw_wheel(cr: &cairo::Context, w: f64, h: f64, (hue, sat, val): (f64, f64, f
     let _ = cr.fill();
 }
 
+// -- motion: the knob glides and grows (transition.tween) ----------------------------------------
+/// The wheel's running tweens: one glide, one knob size at a time.
+#[derive(Clone, Default)]
+struct Tweens {
+    glide: Rc<RefCell<Option<adw::TimedAnimation>>>,
+    knob: Rc<RefCell<Option<adw::TimedAnimation>>>,
+}
+
+/// The point at `t` of the straight line from (h0, s0) to (h1, s1), as
+/// hue and saturation (the knob crosses the wheel, it doesn't go round);
+/// exact at the end (the centre has no hue).
+pub fn glide_at((h0, s0): (f64, f64), (h1, s1): (f64, f64), t: f64) -> (f64, f64) {
+    if t >= 1.0 {
+        return (h1, s1);
+    }
+    let (a0, a1) = (h0 * 2.0 * PI, h1 * 2.0 * PI);
+    let (x0, y0, x1, y1) = (s0 * a0.cos(), s0 * a0.sin(), s1 * a1.cos(), s1 * a1.sin());
+    let (x, y) = (x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
+    ((y.atan2(x) / (2.0 * PI)).rem_euclid(1.0), x.hypot(y).min(1.0))
+}
+
+fn tween(slot: &RefCell<Option<adw::TimedAnimation>>, widget: &gtk::DrawingArea, from: f64, to: f64, ms: f64, step: impl Fn(f64) + 'static) {
+    if let Some(old) = slot.borrow_mut().take() {
+        old.pause(); // a new one with the same key replaces it
+    }
+    let target = adw::CallbackAnimationTarget::new(step);
+    let anim = adw::TimedAnimation::new(widget, from, to, sonata_ui::tokens::ms(ms), target);
+    anim.set_easing(adw::Easing::EaseInOutCubic);
+    *slot.borrow_mut() = Some(anim.clone());
+    anim.play();
+}
+
+impl Tweens {
+    fn stop_glide(&self) {
+        if let Some(a) = self.glide.borrow_mut().take() {
+            a.pause();
+        }
+    }
+
+    /// The knob a little bigger while held, back when let go.
+    fn grow(&self, wheel: &gtk::DrawingArea, knob: &Rc<Cell<f64>>, held: bool) {
+        let (k, w) = (knob.clone(), wheel.downgrade());
+        tween(&self.knob, wheel, knob.get(), KNOB + if held { 2.0 } else { 0.0 }, 150.0, move |v| {
+            k.set(v);
+            if let Some(w) = w.upgrade() {
+                w.queue_draw();
+            }
+        });
+    }
+
+    /// The knob slides to (h, s) on a straight line, the colour (and the
+    /// brightness) with it; `changed` each step, none when quiet.
+    fn glide(&self, wheel: &gtk::DrawingArea, hsv: &Rc<Cell<(f64, f64, f64)>>, (h, s, v): (f64, f64, f64), changed: Option<Rc<dyn Fn()>>) {
+        let (h0, s0, v0) = hsv.get();
+        let (hsv, w) = (hsv.clone(), wheel.downgrade());
+        tween(&self.glide, wheel, 0.0, 1.0, 180.0, move |t| {
+            let (nh, ns) = glide_at((h0, s0), (h, s), t);
+            hsv.set((nh, ns, v0 + (v - v0) * t));
+            if let Some(w) = w.upgrade() {
+                w.queue_draw();
+            }
+            if let Some(c) = &changed {
+                c();
+            }
+        });
+    }
+}
+
+// -- the brightness: controls.ModuleSlider with a gradient ------------------------------------------
+/// A Control Center capsule slider whose track is black to the colour at
+/// full brightness (the knob and the ramp line up; a Gtk.Scale's didn't).
+#[derive(Clone)]
+struct BrightSlider {
+    area: gtk::DrawingArea,
+    value: Rc<Cell<f64>>,
+    end: Rc<RefCell<String>>,
+    changed: Rc<RefCell<Vec<Rc<dyn Fn(f64)>>>>,
+}
+
+const BRIGHT_H: f64 = 22.0;
+
+impl BrightSlider {
+    fn new(value: f64, end: &str) -> Self {
+        let area = gtk::DrawingArea::builder().hexpand(true).valign(gtk::Align::Center).height_request(BRIGHT_H as i32).width_request(120).build();
+        area.set_cursor_from_name(Some("default"));
+        let me = BrightSlider { area: area.clone(), value: Rc::new(Cell::new(value.clamp(0.0, 100.0))), end: Rc::new(RefCell::new(end.to_string())), changed: Rc::default() };
+        let (v, e) = (me.value.clone(), me.end.clone());
+        area.set_draw_func(move |_, cr, w, h| draw_bright(cr, w as f64, h as f64, v.get(), &e.borrow()));
+        let drag = gtk::GestureDrag::new();
+        let m = me.clone();
+        drag.connect_drag_begin(move |_, x, _| m.to(x));
+        let m = me.clone();
+        drag.connect_drag_update(move |g, dx, _| {
+            if let Some((x, _)) = g.start_point() {
+                m.to(x + dx);
+            }
+        });
+        area.add_controller(drag);
+        me
+    }
+
+    /// The knob's centre follows the pointer.
+    fn to(&self, x: f64) {
+        let span = (self.area.width() as f64 - BRIGHT_H).max(1.0);
+        self.set_value(((x - BRIGHT_H / 2.0) / span).clamp(0.0, 1.0) * 100.0);
+    }
+
+    fn value(&self) -> f64 {
+        self.value.get()
+    }
+
+    fn set_value(&self, v: f64) {
+        let v = v.clamp(0.0, 100.0);
+        if v != self.value.get() {
+            self.value.set(v);
+            self.area.queue_draw();
+            let fs: Vec<Rc<dyn Fn(f64)>> = self.changed.borrow().clone();
+            for f in fs {
+                f(v);
+            }
+        }
+    }
+
+    fn set_gradient_end(&self, hex: &str) {
+        *self.end.borrow_mut() = hex.to_string();
+        self.area.queue_draw();
+    }
+
+    fn connect_changed(&self, f: impl Fn(f64) + 'static) {
+        self.changed.borrow_mut().push(Rc::new(f));
+    }
+}
+
+fn capsule(cr: &cairo::Context, x: f64, y: f64, w: f64, h: f64) {
+    let r = h / 2.0;
+    cr.new_sub_path();
+    cr.arc(x + w - r, y + r, r, -PI / 2.0, PI / 2.0);
+    cr.arc(x + r, y + r, r, PI / 2.0, 3.0 * PI / 2.0);
+    cr.close_path();
+}
+
+fn draw_bright(cr: &cairo::Context, w: f64, height: f64, value: f64, end: &str) {
+    let h = BRIGHT_H;
+    let y = (height - h) / 2.0;
+    let r = h / 2.0;
+    let kx = (w - h) * value / 100.0; // the knob's left edge
+    let ramp = cairo::LinearGradient::new(r, 0.0, w - r, 0.0);
+    let (er, eg, eb) = rgb_of(end);
+    ramp.add_color_stop_rgb(0.0, 0.0, 0.0, 0.0);
+    ramp.add_color_stop_rgb(1.0, er, eg, eb);
+    capsule(cr, 0.0, y, w, h);
+    let _ = cr.set_source(&ramp);
+    let _ = cr.fill();
+    // the knob: white, a soft shadow and a hairline edge
+    capsule(cr, kx - 0.5, y + 0.5, h + 1.0, h + 1.0);
+    cr.set_source_rgba(0.0, 0.0, 0.0, 0.18);
+    let _ = cr.fill();
+    capsule(cr, kx, y, h, h);
+    cr.set_source_rgb(1.0, 1.0, 1.0);
+    let _ = cr.fill_preserve();
+    cr.set_source_rgba(0.0, 0.0, 0.0, 0.12);
+    cr.set_line_width(0.5);
+    let _ = cr.stroke();
+}
+
 /// The picker under `anchor`; on_pick("#rrggbb") when Select is pressed.
 pub fn popup(anchor: &impl IsA<gtk::Widget>, current: &str, on_pick: impl Fn(&str) + 'static, title: Option<&str>) -> gtk::Popover {
     register_css();
@@ -212,21 +376,22 @@ pub fn popup(anchor: &impl IsA<gtk::Widget>, current: &str, on_pick: impl Fn(&st
         let (hsv, knob) = (hsv.clone(), knob.clone());
         wheel.set_draw_func(move |_, cr, w, h| draw_wheel(cr, w as f64, h as f64, hsv.get(), knob.get()));
     }
-    let bright = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 100.0, 1.0);
-    bright.set_draw_value(false);
-    bright.set_value(hsv.get().2 * 100.0);
-    bright.set_tooltip_text(Some(&tr!("Brightness")));
-    bright.add_css_class("cp-bright");
+    let (h0, s0, v0) = hsv.get();
+    let bright = BrightSlider::new(v0 * 100.0, &to_hex(h0, s0, 1.0));
+    bright.area.set_tooltip_text(Some(&tr!("Brightness")));
+    bright.area.add_css_class("cp-bright");
     let preview = round_swatch(color.clone(), 22);
     let hexe = gtk::Entry::builder().text(color.borrow().as_str()).css_classes(["cp-hex"]).max_length(7).width_chars(8).hexpand(true).build();
     // (a change made here: not echoed back)
     let busy = Rc::new(Cell::new(false));
 
     let show: Rc<dyn Fn(&str, bool)> = {
-        let (color, preview, hexe, busy) = (color.clone(), preview.clone(), hexe.clone(), busy.clone());
+        let (color, preview, hexe, busy, bright, hsv) = (color.clone(), preview.clone(), hexe.clone(), busy.clone(), bright.clone(), hsv.clone());
         Rc::new(move |c: &str, from_entry: bool| {
             *color.borrow_mut() = c.to_string();
             preview.queue_draw();
+            let (h, s, _) = hsv.get();
+            bright.set_gradient_end(&to_hex(h, s, 1.0));
             if !from_entry && hexe.text() != c {
                 busy.set(true);
                 hexe.set_text(c);
@@ -234,53 +399,67 @@ pub fn popup(anchor: &impl IsA<gtk::Widget>, current: &str, on_pick: impl Fn(&st
             }
         })
     };
-    let drag = gtk::GestureDrag::new();
-    {
-        let (hsv, knob, wheel2, show, bright, busy) = (hsv.clone(), knob.clone(), wheel.clone(), show.clone(), bright.clone(), busy.clone());
-        let at = Rc::new(move |x: f64, y: f64| {
-            let (_, _, v) = hsv.get();
-            let (h, s) = hs_at(x, y, wheel2.width() as f64, wheel2.height() as f64);
-            hsv.set((h, s, v));
-            wheel2.queue_draw();
+    // the wheel moved (ColorWheel's "changed"): the colour, the brightness with it
+    let from_wheel: Rc<dyn Fn()> = {
+        let (hsv, show, bright, busy) = (hsv.clone(), show.clone(), bright.clone(), busy.clone());
+        Rc::new(move || {
+            let (h, s, v) = hsv.get();
             show(&to_hex(h, s, v), false);
             if (bright.value() - v * 100.0).abs() > 0.5 {
                 busy.set(true);
                 bright.set_value(v * 100.0);
                 busy.set(false);
             }
+        })
+    };
+    let tweens = Tweens::default();
+    let drag = gtk::GestureDrag::new();
+    {
+        let (hsv_outer, fw_outer) = (hsv.clone(), from_wheel.clone());
+        let (hsv, wheel2, from_wheel, tw) = (hsv.clone(), wheel.clone(), from_wheel.clone(), tweens.clone());
+        // a drag: the knob follows (a glide still running stops)
+        let at = Rc::new(move |x: f64, y: f64| {
+            tw.stop_glide();
+            let (_, _, v) = hsv.get();
+            let (h, s) = hs_at(x, y, wheel2.width() as f64, wheel2.height() as f64);
+            hsv.set((h, s, v));
+            wheel2.queue_draw();
+            from_wheel();
         });
-        let (at1, knob1) = (at.clone(), knob.clone());
+        let (hsv1, knob1, wheel1, tw1, fw1) = (hsv_outer.clone(), knob.clone(), wheel.clone(), tweens.clone(), fw_outer.clone());
+        // a press: the knob grows and glides to the spot
         drag.connect_drag_begin(move |_, x, y| {
-            knob1.set(KNOB + 2.0);
-            at1(x, y);
+            tw1.grow(&wheel1, &knob1, true);
+            let (h, s) = hs_at(x, y, wheel1.width() as f64, wheel1.height() as f64);
+            let v = hsv1.get().2;
+            let fw = fw1.clone();
+            tw1.glide(&wheel1, &hsv1, (h, s, v), Some(Rc::new(move || fw())));
         });
         drag.connect_drag_update(move |g, dx, dy| {
             if let Some((x, y)) = g.start_point() {
                 at(x + dx, y + dy);
             }
         });
-        let w3 = wheel.clone();
-        drag.connect_drag_end(move |_, _, _| {
-            knob.set(KNOB);
-            w3.queue_draw();
-        });
+        let (w3, tw3, knob3) = (wheel.clone(), tweens.clone(), knob.clone());
+        drag.connect_drag_end(move |_, _, _| tw3.grow(&w3, &knob3, false));
     }
     wheel.add_controller(drag);
     {
-        let (hsv, wheel, show, busy) = (hsv.clone(), wheel.clone(), show.clone(), busy.clone());
-        bright.connect_value_changed(move |sl| {
+        let (hsv, wheel, show, busy, tw) = (hsv.clone(), wheel.clone(), show.clone(), busy.clone(), tweens.clone());
+        bright.connect_changed(move |value| {
             if busy.get() {
                 return;
             }
+            tw.stop_glide(); // (set_hsv: quietly, what the wheel shows now)
             let (h, s, _) = hsv.get();
-            let v = sl.value() / 100.0;
+            let v = value / 100.0;
             hsv.set((h, s, v));
             wheel.queue_draw();
             show(&to_hex(h, s, v), false);
         });
     }
     {
-        let (hsv, wheel, show, busy, bright) = (hsv.clone(), wheel.clone(), show.clone(), busy.clone(), bright.clone());
+        let (hsv, wheel, show, busy, bright, tw) = (hsv.clone(), wheel.clone(), show.clone(), busy.clone(), bright.clone(), tweens.clone());
         hexe.connect_changed(move |e| {
             let Some(c) = parse_hex(&e.text()) else { return }; // ignored until it's a colour
             if busy.get() {
@@ -290,12 +469,12 @@ pub fn popup(anchor: &impl IsA<gtk::Widget>, current: &str, on_pick: impl Fn(&st
             if ns == 0.0 {
                 nh = hsv.get().0; // a grey: keep the hue (no swing round)
             }
-            hsv.set((nh, ns, nv));
-            wheel.queue_draw();
+            show(&c, true);
+            tw.glide(&wheel, &hsv, (nh, ns, nv), None); // quietly: the colour typed stays
             busy.set(true);
             bright.set_value(nv * 100.0);
             busy.set(false);
-            show(&c, true);
+            bright.set_gradient_end(&to_hex(nh, ns, 1.0));
         });
     }
     let row = gtk::Box::builder().spacing(8).css_classes(["cp-row"]).build();
@@ -325,7 +504,7 @@ pub fn popup(anchor: &impl IsA<gtk::Widget>, current: &str, on_pick: impl Fn(&st
     col.add_css_class("cp-panel");
     col.append(&sonata_ui::panel::header(&title, None));
     col.append(&wheel);
-    col.append(&bright);
+    col.append(&bright.area);
     col.append(&row);
     col.append(&btns);
     let pop = sonata_ui::panel::popup(anchor, &col, gtk::PositionType::Bottom);
@@ -360,6 +539,18 @@ mod tests {
         assert_eq!(parse_hex(" aabbcc ").as_deref(), Some("#aabbcc"));
         assert_eq!(parse_hex("#abcd"), None);
         assert_eq!(parse_hex("#gggggg"), None);
+    }
+
+    /// The knob jumped to the spot pressed: colorpicker.py glides it there
+    /// on a straight line (crossing the wheel, not going round it).
+    #[test]
+    fn test_knob_jumped_instead_of_gliding() {
+        // red to cyan across the centre: halfway is the centre itself
+        let (_, s) = glide_at((0.0, 1.0), (0.5, 1.0), 0.5);
+        assert!(s < 1e-9);
+        // the end is exact (the centre has no hue)
+        assert_eq!(glide_at((0.3, 0.0), (0.7, 0.4), 1.0), (0.7, 0.4));
+        assert_eq!(glide_at((0.25, 0.5), (0.25, 1.0), 0.5), (0.25, 0.75));
     }
 
     #[test]

@@ -25,13 +25,24 @@ pub fn defaults() -> Value {
     json!({"notified": "", "last_check": 0})
 }
 
+/// The __init__.py this build was made from (the clone's): its version
+/// when no installed Sonata says otherwise.
+const BUILT_INIT: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../sonata2/__init__.py"));
+
+/// `__version__ = "0.22.0-alpha"` of an __init__.py.
+pub fn version_in(init: &str) -> Option<String> {
+    init.lines().find_map(|l| l.strip_prefix("__version__ = ").map(|r| r.split('#').next().unwrap_or("").trim().trim_matches('"').to_string())).filter(|v| !v.is_empty())
+}
+
 /// The running Sonata's version (sonata2/__init__.py's __version__: the
-/// Python Sonata is what is installed and updated).
+/// Python Sonata is what is installed and updated), else this build's own.
+/// It read "0.0.0" in the installed Rust build (the package wasn't where it
+/// looked), and the update notice offered every release.
 pub fn version() -> String {
-    let init = install_root().join("sonata2").join("__init__.py");
-    std::fs::read_to_string(init)
+    std::fs::read_to_string(install_root().join("sonata2").join("__init__.py"))
         .ok()
-        .and_then(|t| t.lines().find_map(|l| l.strip_prefix("__version__ = ").map(|r| r.split('#').next().unwrap_or("").trim().trim_matches('"').to_string())))
+        .and_then(|t| version_in(&t))
+        .or_else(|| version_in(BUILT_INIT))
         .unwrap_or_else(|| "0.0.0".into())
 }
 
@@ -109,12 +120,33 @@ pub fn available(timeout_s: u64) -> Option<Release> {
 }
 
 // -- where Sonata runs from -------------------------------------------------------------------
-/// The folder holding the sonata2 package (a clone, or <prefix>/share/sonata2):
-/// the one whose catalogs this build reads.
+/// The folder holding the sonata2 package (a clone, or <prefix>/share/sonata2).
 pub fn install_root() -> PathBuf {
-    let loc = sonata_i18n::locale_dir();
-    let loc = loc.canonicalize().unwrap_or(loc);
-    loc.parent().and_then(Path::parent).map(Path::to_path_buf).unwrap_or_default()
+    let home = glib::home_dir();
+    let launchers: Vec<PathBuf> = std::env::var_os("SONATA2_LAUNCHER").filter(|l| !l.is_empty()).map(PathBuf::from).into_iter().chain([home.join(".local/bin/sonata2"), PathBuf::from("/usr/local/bin/sonata2")]).collect();
+    let installs = [home.join(".local/share/sonata2"), PathBuf::from("/usr/local/share/sonata2"), Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")];
+    install_root_from(&sonata_i18n::locale_dir(), &launchers, &installs)
+}
+
+/// install_root() from where it may be: the catalogs' folder when this
+/// build runs from a clone; a launcher's SONATA_HOME (install.sh writes
+/// it); then `installs` in order (the usual install folders, the clone this
+/// build was made from). The installed Rust build keeps its own copy of the
+/// catalogs (share/sonata2-rs/locale), whose grandparent is no Sonata.
+pub fn install_root_from(locale_dir: &Path, launchers: &[PathBuf], installs: &[PathBuf]) -> PathBuf {
+    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let package = |p: &Path| p.join("sonata2").join("__init__.py").is_file();
+    let beside = real(locale_dir).parent().and_then(Path::parent).map(Path::to_path_buf).unwrap_or_default();
+    let mut tried = vec![beside.clone()];
+    for l in launchers {
+        let text = std::fs::read_to_string(l).unwrap_or_default();
+        if let Some(h) = text.lines().find_map(|ln| ln.trim().strip_prefix("SONATA_HOME=")) {
+            tried.push(PathBuf::from(h.trim().trim_matches('"')));
+        }
+    }
+    tried.extend(installs.iter().cloned());
+    // (realpath, as the Python's __file__: a --dev install is the clone)
+    tried.iter().map(|p| real(p)).find(|p| package(p)).unwrap_or(beside)
 }
 
 pub fn is_clone(root: &Path) -> bool {
@@ -374,6 +406,37 @@ mod tests {
         }
         assert!(parse_version(&version()) > (0, 0, 0, 0, 0));
         assert!(!newer(&version(), &version()));
+    }
+
+    /// The installed Rust build looked for Sonata's package next to its own
+    /// copy of the catalogs (share/sonata2-rs/locale -> share/): its version
+    /// read "0.0.0" and every release was offered as an update.
+    #[test]
+    fn test_installed_build_offered_every_release() {
+        let d = tempfile::tempdir().unwrap();
+        let share = d.path().join("home/.local/share");
+        let loc = share.join("sonata2-rs/locale");
+        std::fs::create_dir_all(&loc).unwrap();
+        let installed = share.join("sonata2");
+        let clone = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        // nothing installed: the clone this build was made from
+        assert_eq!(install_root_from(&loc, &[], &[installed.clone(), clone.clone()]), clone.canonicalize().unwrap());
+        // ~/.local/share/sonata2
+        std::fs::create_dir_all(installed.join("sonata2")).unwrap();
+        std::fs::write(installed.join("sonata2/__init__.py"), "").unwrap();
+        assert_eq!(install_root_from(&loc, &[], &[installed.clone(), clone.clone()]), installed.canonicalize().unwrap());
+        // the Python install its launcher names (SONATA_HOME), first
+        let pkg = d.path().join("opt/sonata2");
+        std::fs::create_dir_all(pkg.join("sonata2")).unwrap();
+        std::fs::write(pkg.join("sonata2/__init__.py"), "__version__ = \"9.1.0-beta\"   # CHANGELOG.md\n").unwrap();
+        let launcher = d.path().join("sonata2");
+        std::fs::write(&launcher, format!("#!/bin/sh\nSONATA_HOME=\"{}\"\nexec python3 -m sonata2 \"$@\"\n", pkg.display())).unwrap();
+        let root = install_root_from(&loc, &[launcher], &[installed, clone]);
+        assert_eq!(root, pkg.canonicalize().unwrap());
+        assert_eq!(version_in(&std::fs::read_to_string(root.join("sonata2/__init__.py")).unwrap()).as_deref(), Some("9.1.0-beta"));
+        // never "0.0.0"
+        assert!(parse_version(&version()) > (0, 0, 0, 0, 0));
+        assert!(version_in(BUILT_INIT).is_some());
     }
 
     #[test]

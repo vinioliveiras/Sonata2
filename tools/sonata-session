@@ -56,10 +56,19 @@ export WAYFIRE_PLUGIN_XML_PATH="$plug_home/share/wayfire/metadata${WAYFIRE_PLUGI
 # Polkit authentication agent (password prompts for system actions):
 # Sonata's own (started by `sonata2 autostart`) when polkit's
 # introspection data is there; otherwise the first other agent installed.
+# The Rust build's agent needs no introspection data, only polkit's agent
+# library (it opens libpolkit-agent-1 itself): without this a Rust session
+# lacking the typelib started a second agent next to Sonata's.
 sonata_agent=""
-for t in /usr/lib/girepository-1.0 /usr/lib64/girepository-1.0 /usr/lib/*/girepository-1.0; do
-    [ -f "$t/PolkitAgent-1.0.typelib" ] && sonata_agent=1
-done
+if [ "${SONATA2_RS_SESSION:-}" = 1 ]; then
+    for t in /usr/lib /usr/lib64 /usr/lib/*-linux-gnu /lib/*-linux-gnu; do
+        [ -e "$t/libpolkit-agent-1.so.0" ] && sonata_agent=1
+    done
+else
+    for t in /usr/lib/girepository-1.0 /usr/lib64/girepository-1.0 /usr/lib/*/girepository-1.0; do
+        [ -f "$t/PolkitAgent-1.0.typelib" ] && sonata_agent=1
+    done
+fi
 [ -n "$sonata_agent" ] || for agent in /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 \
              /usr/libexec/polkit-gnome-authentication-agent-1 \
              /usr/lib/x86_64-linux-gnu/polkit-gnome-authentication-agent-1 \
@@ -72,7 +81,12 @@ done
 # by the login screen's PAM with your password (no prompt); make sure its
 # secrets service runs. KeePassXC instead while it is still your keyring
 # (sonata2/keyring.py: backend; it starts KeePassXC at login).
-keyring_backend="$(PYTHONPATH="$SONATA_REPO" python3 -m sonata2 keyring backend 2>/dev/null || echo gnome)"
+# (the Rust session asks the Rust build: same keyring.json, no Python needed)
+if [ "${SONATA2_RS_SESSION:-}" = 1 ]; then
+    keyring_backend="$(sonata2-rs keyring backend 2>/dev/null || echo gnome)"
+else
+    keyring_backend="$(PYTHONPATH="$SONATA_REPO" python3 -m sonata2 keyring backend 2>/dev/null || echo gnome)"
+fi
 if [ "$keyring_backend" != keepassxc ] && command -v gnome-keyring-daemon >/dev/null; then
     eval "$(gnome-keyring-daemon --start --components=secrets,pkcs11 2>/dev/null)" || true
     export SSH_AUTH_SOCK

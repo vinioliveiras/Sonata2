@@ -9,7 +9,8 @@ build = "build.rs"
 [features]
 # The pages that need backend/* (Apps' sizes and permissions, Language &
 # Region) build on sonata-system; without it they show their placeholder.
-system = ["dep:sonata-system", "dep:sonata-dock"]
+# Wallpaper's Choose… opens Files' Open panel (sonata-files, which needs it too).
+system = ["dep:sonata-system", "dep:sonata-dock", "dep:sonata-files"]
 # sonata-system is ported: on by default
 default = ["system"]
 
@@ -25,6 +26,7 @@ sonata-backend.workspace = true
 sonata-config = { workspace = true, features = ["watch"] }
 sonata-desktop.workspace = true
 sonata-dock = { workspace = true, optional = true }
+sonata-files = { workspace = true, optional = true }
 sonata-i18n.workspace = true
 sonata-sessionui.workspace = true
 sonata-shell.workspace = true

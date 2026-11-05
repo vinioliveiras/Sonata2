@@ -115,9 +115,12 @@ pub fn display_name(uri: &str) -> String {
     }
 }
 
-/// The URI of an XDG user folder, "" when unset/home.
+/// The URI of an XDG user folder, "" when unset/home. Through userdirs
+/// (userdirs.py), as Python's: without user-dirs.dirs (a session that never
+/// ran xdg-user-dirs-update) GLib answers nothing or the home folder, and
+/// the sidebar lost Desktop, Documents and Downloads.
 pub fn xdg_uri(kind: glib::UserDirectory) -> String {
-    glib::user_special_dir(kind).filter(|p| *p != glib::home_dir()).map(|p| gio::File::for_path(p).uri().to_string()).unwrap_or_default()
+    sonata_backend::userdirs::special(kind, false).map(|p| gio::File::for_path(p).uri().to_string()).unwrap_or_default()
 }
 
 fn query(f: &gio::File) -> Option<gio::FileInfo> {
@@ -276,9 +279,9 @@ impl Folder {
             let Some(fi) = query(&f) else { continue };
             fi.set_display_name(&info.display_name());
             fi.set_attribute_object("sonata::app", &info);
-            if let Some(icon) = info.icon() {
-                fi.set_icon(&icon);
-            }
+            // the icon Sonata draws for the app everywhere (the one chosen in
+            // Settings > App Icons, on its plate), as Python's icons.app_icon
+            fi.set_icon(&sonata_ui::icons::app_icon(info.upcast_ref()));
             out.push(fi);
         }
         if !cancel.is_cancelled() {
@@ -486,6 +489,19 @@ mod tests {
         assert_eq!(display_name(&crate::tags::uri("Red")), "Red");
     }
 
+    /// Without ~/.config/user-dirs.dirs the sidebar showed no Desktop,
+    /// Documents or Downloads (GLib knew none), though the folders were there.
+    #[test]
+    fn test_user_folders_missing_without_user_dirs_file() {
+        let home = glib::home_dir();
+        // only in the isolated test home: never makes folders in a real one
+        if !home.starts_with(std::env::temp_dir()) || glib::user_config_dir().join("user-dirs.dirs").exists() {
+            return;
+        }
+        let _ = std::fs::create_dir(home.join("Downloads"));
+        assert_eq!(xdg_uri(glib::UserDirectory::Downloads), gio::File::for_path(home.join("Downloads")).uri());
+    }
+
     #[test]
     fn folders_first_and_live() {
         let d = tempfile::tempdir().unwrap();
@@ -493,12 +509,19 @@ mod tests {
             std::fs::write(d.path().join(n), "").unwrap();
         }
         std::fs::create_dir(d.path().join("zdir")).unwrap();
-        let ctx = glib::MainContext::default();
-        let _g = ctx.acquire().unwrap();
+        // its own main context: the directory monitor and the loading
+        // future left on the default one fired on the next test's thread
+        // (glib's thread guard aborted the whole run in mountop's test)
+        let ctx = glib::MainContext::new();
+        ctx.with_thread_default(|| live_listing(&ctx, d.path())).unwrap();
+    }
+
+    fn live_listing(ctx: &glib::MainContext, dir: &std::path::Path) {
+        let d = dir;
         let loaded = Rc::new(Cell::new(false));
         let l = loaded.clone();
         let f = Folder::new(move |_| l.set(true), |_, e| panic!("{e}"), None);
-        f.load(&gio::File::for_path(d.path()).uri());
+        f.load(&gio::File::for_path(d).uri());
         let spin = |c: &dyn Fn() -> bool| {
             let end = std::time::Instant::now() + std::time::Duration::from_secs(5);
             while !c() && std::time::Instant::now() < end {
@@ -509,11 +532,12 @@ mod tests {
         let names = |f: &Folder| (0..f.store.n_items()).map(|i| f.store.item(i).and_downcast::<gio::FileInfo>().unwrap().name().to_string_lossy().into_owned()).collect::<Vec<_>>();
         assert_eq!(names(&f), ["zdir", "9.txt", "10.txt", "A.txt", "b.txt"]); // folders first, numbers numerically
         assert_eq!(f.index("A.txt"), Some(3));
-        std::fs::write(d.path().join("c.txt"), "").unwrap();
+        std::fs::write(d.join("c.txt"), "").unwrap();
         spin(&|| f.store.n_items() == 6);
         assert_eq!(names(&f).last().map(String::as_str), Some("c.txt"));
-        std::fs::remove_file(d.path().join("9.txt")).unwrap();
+        std::fs::remove_file(d.join("9.txt")).unwrap();
         spin(&|| f.store.n_items() == 5);
         assert!(!names(&f).contains(&"9.txt".to_string()));
+        f.cancel();
     }
 }

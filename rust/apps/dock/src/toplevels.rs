@@ -345,3 +345,19 @@ mod tests {
         assert!(Toplevel::from_view(&panel).is_none());
     }
 }
+
+/// The Dock's windows as Quit on Close reads them (run_dock hands it the
+/// Dock's own toplevel manager).
+pub struct QuitWindows(pub Rc<Manager>);
+
+impl sonata_sessionui::quitapps::Windows for QuitWindows {
+    fn toplevels(&self) -> Vec<sonata_sessionui::quitapps::Toplevel> {
+        self.0.toplevels().into_iter().map(|t| sonata_sessionui::quitapps::Toplevel { id: t.id as u64, app_id: t.app_id, title: t.title }).collect()
+    }
+
+    fn close(&self, id: u64) {
+        if let Some(t) = self.0.get(id as i64) {
+            self.0.close(&t);
+        }
+    }
+}

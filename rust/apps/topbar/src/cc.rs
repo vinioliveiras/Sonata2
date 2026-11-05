@@ -142,6 +142,8 @@ pub struct ControlCenter {
     add_reveal: gtk::Revealer,
     warm: Cell<bool>,
     has_mixer: bool,
+    /// the input sources when the Keyboard module was made
+    kbd_layouts: RefCell<Vec<String>>,
     /// (kept with it: the slider's applying thread)
     _brightness: Latest,
 }
@@ -364,6 +366,7 @@ impl ControlCenter {
                 add_reveal,
                 warm: Cell::new(warm),
                 has_mixer,
+                kbd_layouts: RefCell::new(if bar.services.extra_modules.iter().any(|(id, _)| id == "keyboard") { system::keyboard_layouts() } else { Vec::new() }),
                 _brightness: latest,
             }
         });
@@ -467,6 +470,7 @@ impl ControlCenter {
         self.add_reveal.set_reveal_child(false);
         self.add_btn.remove_css_class("on");
         self.edit_bar_update();
+        self.grid.clear_arriving(); // (played when it was put back)
         self.scroller.vadjustment().set_value(0.0);
         let nc = bar.notifications.borrow().clone();
         self.dnd.set(nc.is_some_and(|n| n.dnd()), None);
@@ -477,6 +481,19 @@ impl ControlCenter {
                 self.ns.set_active(is_on());
                 self.ns.unblock_signal(h);
             }
+        }
+        // wlsunset installed (or removed) since it was made
+        self.ns.set_sensitive(bar.services.night_shift.is_some() && sonata_backend::run::which("wlsunset").is_some());
+        // input sources added, or another one in use: the Keyboard module
+        // made again (it lists them as they were when it was made)
+        let layouts = system::keyboard_layouts();
+        if self.modules.borrow().contains_key("keyboard") && *self.kbd_layouts.borrow() != layouts {
+            if let Some((_, make)) = bar.services.extra_modules.iter().find(|(id, _)| id == "keyboard") {
+                let w = make();
+                self.grid.replace("keyboard", &w);
+                self.modules.borrow_mut().insert("keyboard".into(), w);
+            }
+            self.kbd_layouts.replace(layouts);
         }
         // the sliders at the last levels read, then the live ones
         for (slider, key) in [(&self.bright, bright_key(&self.output)), (&self.vol, "vol".into()), (&self.mic, "mic".into())] {
@@ -602,7 +619,7 @@ fn mixer_module(m: crate::seams::Mixer, cc: Weak<ControlCenter>) -> gtk::Box {
         a.set_streams(found);
         let (Some(bx), Some(cc)) = (b.upgrade(), cc.upgrade()) else { return };
         let v = gtk::Orientation::Vertical;
-        let inner = a.widget().measure(v, -1).1;
+        let inner = a.content_height(); // (rows sliding out don't count, new ones do)
         let chrome = bx.measure(v, -1).1 - s.measure(v, -1).1;
         cc.grid.set_rows("mixer", ccgrid::rows_for((chrome + inner) as f64, 6));
     });

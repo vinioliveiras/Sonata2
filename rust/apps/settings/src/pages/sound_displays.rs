@@ -999,28 +999,15 @@ pub fn page_wallpaper(ctx: &Ctx) -> Vec<adw::PreferencesGroup> {
         let wall = wall.clone();
         b.connect_clicked(move |_| wall.set(&wallpapers::uri(&w.light), &wallpapers::uri(&w.dark)));
     }
-    // Sonata's own Open panel (Files' chooser), pictures and videos: GTK's
-    // file dialog reaches it through Sonata's portal
     let choose = gtk::Button::with_label(&tr!("Choose…"));
     choose.add_css_class("sonata-button");
     choose.set_valign(gtk::Align::Center);
     let (wl, win) = (wall.clone(), ctx.window.downgrade());
     choose.connect_clicked(move |_| {
-        let flt = gtk::FileFilter::new();
-        flt.set_name(Some(&tr!("Pictures and Videos")));
-        flt.add_mime_type("image/*");
-        flt.add_mime_type("video/*");
-        let store = gio::ListStore::new::<gtk::FileFilter>();
-        store.append(&flt);
-        let dlg = gtk::FileDialog::builder().title(tr!("Choose a Picture or Video")).modal(true).filters(&store).build();
-        let wl = wl.clone();
-        dlg.open(win.upgrade().as_ref(), gio::Cancellable::NONE, move |res| {
-            // (an error: cancelled)
-            if let Ok(f) = res {
-                let uri = f.uri();
-                wl.set(&uri, &uri);
-            }
-        });
+        if let Some(win) = win.upgrade() {
+            let wl = wl.clone();
+            pick_wallpaper(&win, move |uri| wl.set(&uri, &uri));
+        }
     });
     row.add_suffix(&choose);
     chooser.add(&row);
@@ -1041,6 +1028,43 @@ pub fn page_wallpaper(ctx: &Ctx) -> Vec<adw::PreferencesGroup> {
     });
     // the tiles' handlers hold `wall`; it lives as long as they do
     vec![g, gallery, chooser, video_sound_group(ctx)]
+}
+
+/// Sonata's own Open panel (Files' chooser), pictures and videos: GTK's
+/// file dialog went through the portal and did nothing here (Vini), and it
+/// isn't Sonata's look anyway.
+#[cfg(feature = "system")]
+fn pick_wallpaper(win: &adw::ApplicationWindow, use_it: impl Fn(String) + 'static) {
+    use sonata_files::chooser::{Chooser, Mode, Options, MIME};
+    let Some(app) = win.application() else { return };
+    let filters = vec![(tr!("Pictures and Videos"), vec![(MIME, "image/*".to_string()), (MIME, "video/*".to_string())])];
+    let o = Options { mode: Mode::Open, title: tr!("Choose a Picture or Video"), accept_label: String::new(), multiple: false, filters, current_filter: 0, folder: None, name: String::new() };
+    let dlg = Chooser::new(&app, o, Box::new(move |uris, _| {
+        if let Some(uri) = uris.and_then(|u| u.into_iter().next()) {
+            use_it(uri);
+        }
+    }));
+    dlg.window().set_transient_for(Some(win));
+    dlg.window().set_modal(true);
+    dlg.present();
+}
+
+/// Without Files (no `system` feature): GTK's file dialog.
+#[cfg(not(feature = "system"))]
+fn pick_wallpaper(win: &adw::ApplicationWindow, use_it: impl Fn(String) + 'static) {
+    let flt = gtk::FileFilter::new();
+    flt.set_name(Some(&tr!("Pictures and Videos")));
+    flt.add_mime_type("image/*");
+    flt.add_mime_type("video/*");
+    let store = gio::ListStore::new::<gtk::FileFilter>();
+    store.append(&flt);
+    let dlg = gtk::FileDialog::builder().title(tr!("Choose a Picture or Video")).modal(true).filters(&store).build();
+    dlg.open(Some(win), gio::Cancellable::NONE, move |res| {
+        // (an error: cancelled)
+        if let Ok(f) = res {
+            use_it(f.uri().to_string());
+        }
+    });
 }
 
 /// A video wallpaper's sound (Vini): off by default, at 25 %.

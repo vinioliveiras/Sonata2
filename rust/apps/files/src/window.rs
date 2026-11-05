@@ -27,7 +27,24 @@ use std::rc::{Rc, Weak};
 
 pub const VIEWS: [(&str, &str, &str); 3] = [("icons", "view-grid-symbolic", n_!("as Icons")), ("list", "view-list-symbolic", n_!("as List")), ("columns", "view-dual-symbolic", n_!("as Columns"))];
 const LOADING_MS: u64 = 400;
+/// where an item's menu shows the tag colours: after Open, Move to Trash,
+/// Get Info, Rename, Create Shortcut and Copy (window.py's order)
+const TAGS_SECTION: i32 = 6;
 const ENTER_TWICE_MS: u64 = 350;
+
+/// ~/Desktop, as shell/desktop.py's desktop_dir: the XDG desktop folder,
+/// or ~/Desktop (made) when there's none or it is the home folder itself --
+/// GLib's alone put "Create Shortcut on Desktop" in the home folder then.
+pub(crate) fn desktop_dir() -> gio::File {
+    let p = desktop_path(glib::user_special_dir(glib::UserDirectory::Desktop), &glib::home_dir());
+    let _ = std::fs::create_dir_all(&p);
+    gio::File::for_path(p)
+}
+
+fn desktop_path(special: Option<std::path::PathBuf>, home: &std::path::Path) -> std::path::PathBuf {
+    let real = |p: &std::path::Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    special.filter(|p| real(p) != real(home)).unwrap_or_else(|| home.join("Desktop"))
+}
 
 fn defaults() -> Value {
     json!({"view": "icons", "list_columns": {}, "path_bar": true, "list_shown": null, "count_sizes": false, "show_hidden": false})
@@ -35,6 +52,31 @@ fn defaults() -> Value {
 
 fn cfg() -> serde_json::Map<String, Value> {
     sonata_config::load("files", &defaults())
+}
+
+/// Python's bool() of a files.json value: window.py reads show_hidden,
+/// count_sizes and path_bar that way, so a 1 or "yes" written by hand (or
+/// an older Sonata) means on here too.
+pub(crate) fn truthy(v: Option<&Value>) -> bool {
+    match v {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(b)) => *b,
+        Some(Value::Number(n)) => n.as_f64().is_some_and(|f| f != 0.0),
+        Some(Value::String(s)) => !s.is_empty(),
+        Some(Value::Array(a)) => !a.is_empty(),
+        Some(Value::Object(o)) => !o.is_empty(),
+    }
+}
+
+/// The tag colours for these items: every one a file on disk this user
+/// can change (window.py: a read-only file can't take a tag), not in the Trash.
+fn tags_offered(sel: &[gio::FileInfo], in_trash: bool) -> bool {
+    !sel.is_empty() && !in_trash && sel.iter().all(|i| file_of(i).and_then(|f| f.path()).is_some() && (!i.has_attribute("access::can-write") || i.boolean("access::can-write")))
+}
+
+/// A picture the desktop can show (prefs.is_picture: not an icon or SVG).
+fn is_picture(ct: &str) -> bool {
+    ct.starts_with("image/") && !ct.contains("svg") && !ct.contains("icon")
 }
 
 /// vault.rs's error, said plainly.
@@ -46,6 +88,24 @@ fn vault_reason(err: &str) -> String {
         "not empty" => tr!("Something was put in it while it was locked; move it out first."),
         e => e.to_string(),
     }
+}
+
+/// A document window's first size (ui/window.py roomy_size): (w, h) grown
+/// to about two thirds of a `screen`-sized display, never smaller than the
+/// window's own default.
+fn roomy_size(w: i32, h: i32, screen: Option<(i32, i32)>) -> (i32, i32) {
+    match screen {
+        Some((sw, sh)) => (w.max((sw as f64 * 0.66) as i32), h.max((sh as f64 * 0.65) as i32)),
+        None => (w, h),
+    }
+}
+
+/// An app opened from Files, watched: killed and opened again if no
+/// window of it comes, then a notification (launchwatch; Vini: Steam). It
+/// also says so when the app can't be started at all.
+fn watched_launch(app: &gio::AppInfo, files: Vec<gio::File>, ctx: &gdk::AppLaunchContext) {
+    let (a, ctx) = (app.clone(), ctx.clone());
+    sonata_desktop::launchwatch::open(app, Rc::new(move || a.launch(&files, Some(&ctx))), 0, None);
 }
 
 fn same_disk(a: &gio::File, b: &gio::File) -> bool {
@@ -68,9 +128,12 @@ pub struct Tab {
     pub columns: Rc<ColumnsView>,
     pub view_id: RefCell<String>,
     stack: gtk::Stack,
+    /// folder changes cross-fade (window.py Tab.fade)
+    fade: sonata_ui::transition::CrossFade,
     pub widget: gtk::Overlay,
     empty: gtk::Label,
     loading_box: gtk::Box,
+    spinner: sonata_ui::progress::Spinner,
     loading_src: RefCell<Option<glib::SourceId>>,
 }
 
@@ -126,12 +189,14 @@ impl Tab {
         }
         if !on {
             self.loading_box.set_visible(false);
+            self.spinner.set_spinning(false); // (a hidden spinner's timer stops too)
             return;
         }
-        let b = self.loading_box.downgrade();
+        let (b, sp) = (self.loading_box.downgrade(), self.spinner.downgrade());
         let id = glib::timeout_add_local_once(std::time::Duration::from_millis(LOADING_MS), move || {
-            if let Some(b) = b.upgrade() {
+            if let (Some(b), Some(sp)) = (b.upgrade(), sp.upgrade()) {
                 b.set_visible(true);
+                sp.set_spinning(true);
             }
         });
         self.loading_src.replace(Some(id));
@@ -153,6 +218,10 @@ pub struct FilesWindow {
     back: gtk::Button,
     fwd: gtk::Button,
     title: gtk::Label,
+    /// the window buttons: the sidebar's top (left) or the toolbar's end (right)
+    lights_slot: gtk::Box,
+    toolbar: gtk::Box,
+    lights: RefCell<Option<gtk::Box>>,
     empty_btn: gtk::Button,
     view_buttons: Vec<(&'static str, gtk::ToggleButton)>,
     hidden_btn: gtk::ToggleButton,
@@ -212,10 +281,18 @@ impl FilesWindow {
     /// `tabs` false: one folder only (the Open / Save panels).
     pub fn new_with(app: &gtk::Application, uri: Option<&str>, size: (&str, i32, i32), tabs: bool) -> Rc<Self> {
         let c = cfg();
-        let show_hidden = c.get("show_hidden").and_then(Value::as_bool).unwrap_or(false);
+        let show_hidden = truthy(c.get("show_hidden"));
         let win = Rc::new_cyclic(|me: &Weak<FilesWindow>| {
             let window = adw::ApplicationWindow::builder().application(app).title(tr!("Files")).build();
-            sonata_ui::window::remember_size(window.upcast_ref(), size.0, size.1, size.2);
+            // Files' first size, with none kept yet, is about two thirds of
+            // the display (window.py ROOMY); the Open / Save panels keep
+            // their own plain size
+            let (w0, h0) = if tabs && sonata_ui::window::saved_size(size.0).is_none() {
+                roomy_size(size.1, size.2, sonata_ui::window::screen_size_of(&window))
+            } else {
+                (size.1, size.2)
+            };
+            sonata_ui::window::remember_size(window.upcast_ref(), size.0, w0, h0);
             for cl in ["sonata-files", "sonata-glass"] {
                 window.add_css_class(cl);
             }
@@ -229,7 +306,8 @@ impl FilesWindow {
                     }
                 }
             };
-            let sidebar = Sidebar::new(&gtk::Box::new(gtk::Orientation::Horizontal, 0));
+            let lights_slot = gtk::Box::new(gtk::Orientation::Horizontal, 0); // the buttons on the left
+            let sidebar = Sidebar::new(&lights_slot);
             sidebar.root.set_size_request(280, -1);
             sidebar.root.set_hexpand(false);
             let split = gtk::Box::builder().css_classes(["fs-split"]).build();
@@ -247,8 +325,9 @@ impl FilesWindow {
             // a click on the folder's name renames it; the space after it still drags the window
             let click = gtk::GestureClick::builder().button(1).build();
             let f = call(|t| t.rename_folder());
-            click.connect_released(move |_, n, _, _| {
-                if n == 1 {
+            click.connect_released(move |g, n, x, y| {
+                // released on the name itself (a press there that ends elsewhere drags the window)
+                if n == 1 && g.widget().is_some_and(|w| w.contains(x, y)) {
                     f();
                 }
             });
@@ -353,7 +432,7 @@ impl FilesWindow {
                 },
                 Some(Rc::new(move |files, dest, copy| w2.upgrade().is_some_and(|t| t.drop_on(files, dest, copy)))),
             );
-            pathbar.root.set_visible(c.get("path_bar").and_then(Value::as_bool).unwrap_or(true));
+            pathbar.root.set_visible(c.get("path_bar").is_none_or(|v| truthy(Some(v))));
             content.append(&pathbar.root);
             split.append(&content);
             window.set_content(Some(&split));
@@ -372,6 +451,9 @@ impl FilesWindow {
                 back,
                 fwd,
                 title,
+                lights_slot,
+                toolbar: bar,
+                lights: RefCell::default(),
                 empty_btn,
                 view_buttons,
                 hidden_btn,
@@ -402,6 +484,22 @@ impl FilesWindow {
         });
         win.strip.root.set_visible(tabs);
         win.wire();
+        if uri.map(folder::canonical).as_deref() == Some(folder::CONNECT) {
+            // Go > Connect to Server from the menu bar: the dialog once the window shows
+            let (w, id) = (win.me.clone(), Rc::new(RefCell::new(None::<glib::SignalHandlerId>)));
+            let i = id.clone();
+            id.replace(Some(win.window.connect_map(move |win| {
+                if let Some(h) = i.take() {
+                    win.disconnect(h);
+                }
+                let w = w.clone();
+                glib::idle_add_local_once(move || {
+                    if let Some(t) = w.upgrade() {
+                        t.connect_to_server();
+                    }
+                });
+            })));
+        }
         let start = uri.map(folder::canonical).filter(|u| !u.is_empty() && u != folder::CONNECT).unwrap_or_else(|| gio::File::for_path(glib::home_dir()).uri().to_string());
         let view = c.get("view").and_then(Value::as_str).unwrap_or("icons").to_string();
         win.add_tab(&start, Some(&view), None, true);
@@ -414,7 +512,7 @@ impl FilesWindow {
             let w = self.me.clone();
             h.on_open = Some(Box::new(move |u| {
                 if let Some(t) = w.upgrade() {
-                    t.go(u, true);
+                    t.go_with(u, true, false); // from the sidebar: at once, no fade
                 }
             }));
             let w = self.me.clone();
@@ -435,13 +533,22 @@ impl FilesWindow {
                     }
                 }
             }));
-            let w = self.me.clone();
-            h.on_new_tab = Some(Box::new(move |u| {
-                if let Some(t) = w.upgrade() {
-                    t.new_tab(Some(u), true);
-                }
-            }));
+            if self.tabs_on {
+                let w = self.me.clone();
+                h.on_new_tab = Some(Box::new(move |u| {
+                    if let Some(t) = w.upgrade() {
+                        t.new_tab(Some(u), true);
+                    }
+                }));
+            }
         }
+        self.place_lights();
+        let w = self.me.clone();
+        sonata_ui::on_buttons_change(move || {
+            if let Some(t) = w.upgrade() {
+                t.place_lights();
+            }
+        });
         let host: Rc<dyn tabs::Host> = self.clone();
         self.strip.set_host(Rc::downgrade(&host));
         let w = self.me.clone();
@@ -469,6 +576,47 @@ impl FilesWindow {
             }
             glib::Propagation::Proceed
         });
+    }
+
+    /// The window buttons where Settings > Appearance > Window buttons
+    /// says: the sidebar's top (left) or the toolbar's end (right) -- again
+    /// when it changes, in an open window too.
+    fn place_lights(&self) {
+        if let Some(old) = self.lights.take() {
+            if let Some(p) = old.parent().and_downcast::<gtk::Box>() {
+                p.remove(&old);
+            }
+        }
+        let (c, m, z) = (self.window.downgrade(), self.window.downgrade(), self.window.downgrade());
+        let lights = sonata_ui::window::traffic_lights(
+            move || {
+                if let Some(w) = c.upgrade() {
+                    w.close();
+                }
+            },
+            move || {
+                if let Some(w) = m.upgrade() {
+                    w.minimize();
+                }
+            },
+            Some(Box::new(move || {
+                if let Some(w) = z.upgrade() {
+                    sonata_ui::window::toggle_zoom(&w);
+                }
+            })),
+        );
+        if sonata_ui::window::buttons_side() == "right" {
+            // at the window's top, like on the left (centred in the toolbar
+            // they sat lower and further in)
+            lights.set_valign(gtk::Align::Start);
+            lights.set_margin_start(8);
+            self.toolbar.append(&lights);
+            self.toolbar.add_css_class("lights-right");
+        } else {
+            self.lights_slot.append(&lights);
+            self.toolbar.remove_css_class("lights-right");
+        }
+        self.lights.replace(Some(lights));
     }
 
     pub fn cur(&self) -> Option<Rc<Tab>> {
@@ -530,9 +678,11 @@ impl FilesWindow {
         let c = cfg();
         let shown: Option<Vec<String>> = c.get("list_shown").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect());
         list.show_columns(shown.as_deref());
-        list.count_sizes.set(c.get("count_sizes").and_then(Value::as_bool).unwrap_or(false));
-        let stack = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(120).build();
-        let tab = Rc::new(Tab { id, history: RefCell::default(), pos: Cell::new(-1), folder: fo, name: RefCell::default(), filtered, filter, icons, list, columns, view_id: RefCell::new(view_id.into()), stack, widget: gtk::Overlay::builder().vexpand(true).build(), empty: gtk::Label::builder().css_classes(["fs-empty"]).visible(false).can_target(false).build(), loading_box: gtk::Box::builder().spacing(8).halign(gtk::Align::Center).valign(gtk::Align::Center).visible(false).can_target(false).css_classes(["fs-loading"]).build(), loading_src: RefCell::default() });
+        list.count_sizes.set(truthy(c.get("count_sizes")));
+        // the views switch at once; a folder change cross-fades (fade)
+        let stack = gtk::Stack::builder().transition_type(gtk::StackTransitionType::None).build();
+        let fade = sonata_ui::transition::CrossFade::new(&stack);
+        let tab = Rc::new(Tab { id, history: RefCell::default(), pos: Cell::new(-1), folder: fo, name: RefCell::default(), filtered, filter, icons, list, columns, view_id: RefCell::new(view_id.into()), stack, fade, widget: gtk::Overlay::builder().vexpand(true).build(), empty: gtk::Label::builder().css_classes(["fs-empty"]).visible(false).can_target(false).build(), loading_box: gtk::Box::builder().spacing(8).halign(gtk::Align::Center).valign(gtk::Align::Center).visible(false).can_target(false).css_classes(["fs-loading"]).build(), spinner: sonata_ui::progress::Spinner::new(false), loading_src: RefCell::default() });
         // a header click sorts this folder that way from now on
         let (wt, wi) = (Rc::downgrade(&tab), Rc::downgrade(&tab.icons));
         *tab.list.on_sort.borrow_mut() = Some(Box::new(move |state| {
@@ -587,9 +737,9 @@ impl FilesWindow {
                 }
             });
         }
-        tab.widget.set_child(Some(&tab.stack));
+        tab.widget.set_child(Some(&tab.fade.overlay));
         tab.widget.add_overlay(&tab.empty);
-        tab.loading_box.append(&sonata_ui::progress::Spinner::new(true));
+        tab.loading_box.append(&tab.spinner);
         tab.loading_box.append(&gtk::Label::new(Some(&tr!("Loading…"))));
         tab.widget.add_overlay(&tab.loading_box);
         tab.show(view_id);
@@ -613,7 +763,11 @@ impl FilesWindow {
         }
         tab.history.replace(vec![uri.clone()]);
         tab.pos.set(0);
-        self.apply_folder_prefs(&tab, &uri);
+        // only a folder with its own settings: a new tab otherwise keeps the
+        // view of the tab it came from (window.py _add_tab)
+        if folderprefs::get(&uri) != folderprefs::Prefs::default() {
+            self.apply_folder_prefs(&tab, &uri);
+        }
         if self.is_current(&tab) {
             self.update_nav();
         }
@@ -720,6 +874,7 @@ impl FilesWindow {
             v.scroll_top();
         }
         tab.columns.reset(uri);
+        tab.fade.play();
         self.strip.retitle(id, &tab.title());
         if self.is_current(&tab) {
             self.empty_btn.set_visible(ops::is_trash(uri));
@@ -733,6 +888,7 @@ impl FilesWindow {
     fn tab_failed(&self, id: u64, uri: &str, err: &glib::Error) {
         let Some(tab) = self.tab_by_id(id) else { return };
         tab.loading(false);
+        tab.fade.play();
         // stay where we were (drop the failed step from the history)
         {
             let mut h = tab.history.borrow_mut();
@@ -971,13 +1127,18 @@ impl FilesWindow {
     // -- navigation -------------------------------------------------------------------------------
     /// A locked folder (vault.rs) closed: its password first, then into it.
     pub fn go(&self, uri: &str, record: bool) {
+        self.go_with(uri, record, true);
+    }
+
+    /// fade: cross-fade into the folder (not from the sidebar: at once).
+    pub fn go_with(&self, uri: &str, record: bool, fade: bool) {
         let uri = folder::canonical(uri);
         if let Some(path) = uri.starts_with("file:").then(|| gio::File::for_uri(&uri).path()).flatten() {
             if vault::is_vault(&path) && !vault::is_open(&path) {
                 let (w, u) = (self.me.clone(), uri.clone());
                 self.open_vault(&path, move || {
                     if let Some(t) = w.upgrade() {
-                        t.go(&u, record);
+                        t.go_with(&u, record, fade);
                     }
                 });
                 return;
@@ -996,6 +1157,9 @@ impl FilesWindow {
         }
         if !self.search.text().is_empty() {
             self.close_search();
+        }
+        if fade && *tab.view_id.borrow() != "columns" {
+            tab.fade.capture(); // (columns slide on their own)
         }
         self.apply_folder_prefs(&tab, &uri);
         tab.folder.load(&uri);
@@ -1178,7 +1342,8 @@ impl FilesWindow {
         if info.name().to_string_lossy().ends_with(".desktop") {
             // an app (Applications, shortcuts)
             if let Some(app) = f.path().and_then(gio::DesktopAppInfo::from_filename) {
-                let _ = app.launch(&[], Some(&ctx));
+                let app: gio::AppInfo = app.upcast();
+                watched_launch(&app, Vec::new(), &ctx);
                 return;
             }
         }
@@ -1196,9 +1361,7 @@ impl FilesWindow {
             return;
         }
         if let Some(app) = app {
-            if let Err(e) = app.launch(&[f.clone()], Some(&ctx)) {
-                self.error(&fmt(&tr!("There is no application set to open “{name}”."), &[("name", &info.display_name())]), &e);
-            }
+            watched_launch(&app, vec![f.clone()], &ctx);
             return;
         }
         let (w, name, uri) = (self.me.clone(), info.display_name().to_string(), target.unwrap_or_else(|| f.uri().to_string()));
@@ -1616,7 +1779,9 @@ impl FilesWindow {
     }
 
     // -- context menus ----------------------------------------------------------------------------
-    fn context_menu(self: &Rc<Self>, view: &Rc<dyn View>, widget: &gtk::Widget, x: f64, y: f64) {
+    /// The right-click menu's items: an item's (info), or the folder's
+    /// background's (None).
+    fn menu_sections(self: &Rc<Self>, view: &Rc<dyn View>, info: Option<gio::FileInfo>) -> Vec<Vec<sonata_ui::menu::Item>> {
         use sonata_ui::menu::Item;
         let me = self.me.clone();
         let act = |f: fn(&Rc<FilesWindow>)| {
@@ -1627,7 +1792,7 @@ impl FilesWindow {
                 }
             }
         };
-        let sections: Vec<Vec<Item>> = match view.info_at(x, y) {
+        match info {
             Some(info) => {
                 view.ensure_selected(&info);
                 let sel = { let s = view.selected(); if s.is_empty() { vec![info.clone()] } else { s } };
@@ -1650,7 +1815,7 @@ impl FilesWindow {
                     if let Some(path) = sel.first().filter(|i| n == 1 && !is_dir(i)).and_then(file_of).and_then(|f| f.path()) {
                         first.splice(0..0, crate::packages::menu_items(&path, Some(self.window.upcast_ref())));
                     }
-                    if n == 1 && is_dir(&sel[0]) {
+                    if self.tabs_on && n == 1 && is_dir(&sel[0]) {
                         let (w, i) = (me.clone(), sel[0].clone());
                         first.push(Item::new(&tr!("Open in New Tab"), move || {
                             if let Some(t) = w.upgrade() {
@@ -1664,10 +1829,17 @@ impl FilesWindow {
                             first.push(Item::submenu(&tr!("Open With"), vec![apps]));
                         }
                         let ct = sel[0].content_type().map(|c| c.to_string()).unwrap_or_default();
-                        if ct.starts_with("image/") {
-                            // Finder's Quick Action
+                        // Finder's Quick Action; a video wallpaper too (videowall)
+                        let label = if is_picture(&ct) {
+                            Some(tr!("Set Desktop Picture"))
+                        } else if sonata_shell::wallpaper::is_video(&ct) {
+                            Some(tr!("Use Video as Wallpaper"))
+                        } else {
+                            None
+                        };
+                        if let Some(label) = label {
                             let f = file_of(&sel[0]);
-                            first.push(Item::new(&tr!("Set Desktop Picture"), move || {
+                            first.push(Item::new(&label, move || {
                                 if let Some(f) = &f {
                                     let _ = sonata_config::set_wallpaper(&f.uri());
                                 }
@@ -1734,33 +1906,32 @@ impl FilesWindow {
                 }).collect();
                 let path_label = if self.pathbar.root.is_visible() { tr!("Hide Path Bar") } else { tr!("Show Path Bar") };
                 let hidden_label = if tab.as_ref().is_some_and(|t| t.folder.show_hidden.get()) { tr!("Hide Hidden Files") } else { tr!("Show Hidden Files") };
-                let mut view_sections = vec![std::mem::take(&mut views), vec![Item::new(&path_label, act(|t| t.toggle_path_bar())), Item::new(&hidden_label, act(|t| t.toggle_hidden()))]];
+                let view_sections = vec![std::mem::take(&mut views), vec![Item::new(&path_label, act(|t| t.toggle_path_bar())), Item::new(&hidden_label, act(|t| t.toggle_hidden()))]];
+                // Sort By, Show Columns and Calculate All Sizes sit beside
+                // View in the menu, not inside it (window.py)
+                let mut view_row = vec![Item::submenu(&tr!("View"), view_sections)];
                 if vid != "columns" {
                     let cur = tab.as_ref().map(|t| t.view().sort_state().0).unwrap_or_default();
-                    view_sections.push(vec![Item::submenu(&tr!("Sort By"), vec![SORT_BY.iter().map(|(t, _)| {
+                    view_row.push(Item::submenu(&tr!("Sort By"), vec![SORT_BY.iter().map(|(t, _)| {
                         let w = me.clone();
                         Item::check(&sonata_i18n::gettext(t), cur == *t, move |_| if let Some(win) = w.upgrade() { win.sort_by(t) })
-                    }).collect()])]);
+                    }).collect()]));
                 }
                 if vid == "list" {
                     if let Some(tab) = &tab {
                         let shown = tab.list.shown_columns();
-                        view_sections.push(vec![
-                            Item::submenu(&tr!("Show Columns"), vec![crate::views::LIST_COLUMNS.iter().map(|(t, _, _)| {
-                                let w = me.clone();
-                                Item::check(&sonata_i18n::gettext(t), shown.iter().any(|s| s == t), move |on| if let Some(win) = w.upgrade() { win.show_column(t, on) })
-                            }).collect()]),
-                            {
-                                let w = me.clone();
-                                Item::check(&tr!("Calculate All Sizes"), tab.list.count_sizes.get(), move |on| if let Some(win) = w.upgrade() { win.set_count_sizes(on) })
-                            },
-                        ]);
+                        view_row.push(Item::submenu(&tr!("Show Columns"), vec![crate::views::LIST_COLUMNS.iter().map(|(t, _, _)| {
+                            let w = me.clone();
+                            Item::check(&sonata_i18n::gettext(t), shown.iter().any(|s| s == t), move |on| if let Some(win) = w.upgrade() { win.show_column(t, on) })
+                        }).collect()]));
+                        let w = me.clone();
+                        view_row.push(Item::check(&tr!("Calculate All Sizes"), tab.list.count_sizes.get(), move |on| if let Some(win) = w.upgrade() { win.set_count_sizes(on) }));
                     }
                 }
                 let mut s = vec![
                     vec![Item::new(&tr!("New Folder"), act(|t| t.new_folder())).enabled(here)],
                     vec![Item::new(&tr!("Paste"), act(|t| t.paste(false))).enabled(here && ops::clipboard_has_files(&self.window))],
-                    vec![Item::submenu(&tr!("View"), view_sections)],
+                    view_row,
                 ];
                 if self.in_trash() {
                     s.insert(0, vec![Item::new(&tr!("Empty Trash"), act(|t| t.empty_trash()))]);
@@ -1770,21 +1941,40 @@ impl FilesWindow {
                 }
                 s
             }
-        };
-        // the tag colours, as a row under the menu (Finder)
+        }
+    }
+
+    fn context_menu(self: &Rc<Self>, view: &Rc<dyn View>, widget: &gtk::Widget, x: f64, y: f64) -> gtk::PopoverMenu {
+        self.menu_at(view, widget, view.info_at(x, y), x, y)
+    }
+
+    /// The menu for `info` (None: the background), opened at (x, y).
+    fn menu_at(self: &Rc<Self>, view: &Rc<dyn View>, widget: &gtk::Widget, info: Option<gio::FileInfo>, x: f64, y: f64) -> gtk::PopoverMenu {
+        let sections = self.menu_sections(view, info);
+        let pop = sonata_ui::menu::popup(widget, sections, sonata_ui::menu::Options::at(x, y).passthrough());
+        // the tag colours, a row of their own after Copy (Finder)
         let sel = view.selected();
-        let paths: Vec<std::path::PathBuf> = sel.iter().filter_map(|i| file_of(i).and_then(|f| f.path())).collect();
-        let pop = sonata_ui::menu::popup(widget, sections, sonata_ui::menu::Options::at(x, y));
-        if !sel.is_empty() && paths.len() == sel.len() && !self.in_trash() {
+        if tags_offered(&sel, self.in_trash()) {
+            let paths: Vec<std::path::PathBuf> = sel.iter().filter_map(|i| file_of(i).and_then(|f| f.path())).collect();
             let states: HashMap<String, &'static str> = tags::COLORS.iter().map(|(n, _)| (n.to_string(), tags::state(&paths, n))).collect();
-            let w = me.clone();
+            let w = self.me.clone();
             let row = crate::views::tags_menu_row(&states, Rc::new(move |t, on| {
                 if let Some(win) = w.upgrade() {
                     win.tag_files(&paths, t, on);
                 }
             }));
-            pop.add_child(&row, "tags");
+            // (a custom row needs its place named in the menu first: added
+            // without one, GTK dropped it and the colours never showed)
+            if let Some(model) = pop.menu_model().and_downcast::<gio::Menu>() {
+                let item = gio::MenuItem::new(None, None);
+                item.set_attribute_value("custom", Some(&"tags".to_variant()));
+                let section = gio::Menu::new();
+                section.append_item(&item);
+                model.insert_section(TAGS_SECTION.min(model.n_items()), None, &section);
+                pop.add_child(&row, "tags");
+            }
         }
+        pop
     }
 
     fn open_with_items(&self, info: &gio::FileInfo) -> Vec<sonata_ui::menu::Item> {
@@ -1802,7 +1992,7 @@ impl FilesWindow {
                 sonata_ui::menu::Item::new(&label, move || {
                     if let (Some(t), Some(f)) = (w.upgrade(), f.as_ref()) {
                         let ctx = WidgetExt::display(&t.window).app_launch_context();
-                        let _ = app.launch(&[f.clone()], Some(&ctx));
+                        watched_launch(&app, vec![f.clone()], &ctx);
                     }
                 })
             })
@@ -1810,7 +2000,7 @@ impl FilesWindow {
     }
 
     fn shortcut_selection(&self, desktop: bool) {
-        let dest = if desktop { glib::user_special_dir(glib::UserDirectory::Desktop).map(gio::File::for_path) } else { self.cur().map(|t| gio::File::for_uri(&t.uri())) };
+        let dest = if desktop { Some(desktop_dir()) } else { self.cur().map(|t| gio::File::for_uri(&t.uri())) };
         if let Some(d) = dest {
             ops::make_shortcuts(&self.selected_files(), &d);
         }
@@ -1906,6 +2096,7 @@ impl FilesWindow {
         }
         self.sync_hidden_button();
         tab.folder.reload();
+        tab.columns.set_hidden(on); // the folders open to the right too
     }
 
     fn sync_hidden_button(&self) {
@@ -2075,6 +2266,7 @@ impl FilesWindow {
             ("<Control><Shift>a", |t| { t.go(APPS, true); true }),
             ("<Control><Shift>period", |t| { t.toggle_hidden(); true }),
             ("<Control>f", |t| { t.open_search(); true }),
+            ("<Control>w", |t| { t.close_tab_rc(None); true }), // (the tab keys take it first; a panel: closes it)
             ("<Control>n", |t| {
                 if let Some(app) = t.window.application() {
                     present(&app, Some(&t.cur().map(|c| c.uri()).unwrap_or_default()), true);
@@ -2349,6 +2541,17 @@ pub fn present(app: &gtk::Application, uri: Option<&str>, fresh: bool) -> Rc<Fil
 
 #[cfg(test)]
 mod tests {
+    /// Create Shortcut on Desktop put the shortcut in the home folder when
+    /// user-dirs.dirs names the home folder as the desktop (or names none):
+    /// GLib's folder was used as is, not shell/desktop.py's desktop_dir.
+    #[test]
+    fn test_desktop_shortcut_landed_in_home() {
+        let home = std::path::Path::new("/home/someone");
+        assert_eq!(super::desktop_path(Some(home.to_path_buf()), home), home.join("Desktop"));
+        assert_eq!(super::desktop_path(None, home), home.join("Desktop"));
+        assert_eq!(super::desktop_path(Some(home.join("Área de Trabalho")), home), home.join("Área de Trabalho"));
+    }
+
     /// test_vault.FilesMenu: Lock Folder… / Lock Now / Unlock Folder… in a
     /// folder's menu, and a closed locked folder asks for the password
     /// before Files goes into it.
@@ -2360,7 +2563,7 @@ mod tests {
         for label in ["(\"Lock Folder…\")", "(\"Lock Now\")", "(\"Unlock Folder…\")"] {
             assert!(items.contains(label), "{label}");
         }
-        let go = &src[src.find("pub fn go(").unwrap()..];
+        let go = &src[src.find("pub fn go_with(").unwrap()..];
         assert!(go[..go.find("\n    }\n").unwrap()].contains("vault::is_vault(&path) && !vault::is_open(&path)"));
         assert!(src.contains("let lock = self.vault_items(&sel[0]);"));
     }
@@ -2378,5 +2581,230 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let g = gio::File::for_path(d.path());
         assert!(super::same_disk(&g, &g));
+    }
+}
+
+/// What the Rust Files got wrong next to files/window.py (Vini's audit).
+#[cfg(test)]
+mod regressions {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// files.json written by hand or an older Sonata with `"show_hidden": 1`
+    /// showed no hidden files in the Rust Files (Python's bool() says on).
+    #[test]
+    fn test_files_json_flags_read_as_python_bool() {
+        assert!(truthy(Some(&json!(1))));
+        assert!(truthy(Some(&json!("yes"))));
+        assert!(truthy(Some(&json!(true))));
+        assert!(!truthy(Some(&json!(0))));
+        assert!(!truthy(Some(&json!(""))));
+        assert!(!truthy(Some(&Value::Null)));
+        assert!(!truthy(None));
+    }
+
+    /// The first Files window (no size kept yet) opened at 920 x 560 on a
+    /// 1080p display; Python's opens at about two thirds of it.
+    #[test]
+    fn test_first_files_window_was_not_roomy() {
+        assert_eq!(roomy_size(920, 560, Some((1920, 1080))), (1267, 702));
+        assert_eq!(roomy_size(920, 560, Some((1280, 720))), (920, 560)); // never smaller than the default
+        assert_eq!(roomy_size(920, 560, None), (920, 560));
+    }
+
+    /// A video's right-click had no "Use Video as Wallpaper", and an SVG or
+    /// an icon file offered "Set Desktop Picture" (prefs.is_picture says no).
+    #[test]
+    fn test_video_had_no_wallpaper_item() {
+        assert!(is_picture("image/jpeg"));
+        assert!(!is_picture("image/svg+xml"));
+        assert!(!is_picture("image/vnd.microsoft.icon"));
+        assert!(sonata_shell::wallpaper::is_video("video/mp4"));
+    }
+
+    /// The tag colours were offered for a file this user can't change.
+    #[test]
+    fn test_tag_colours_offered_on_read_only_files() {
+        let info = gio::FileInfo::new();
+        info.set_attribute_object("sonata::file", &gio::File::for_path("/tmp/x.txt"));
+        assert!(tags_offered(std::slice::from_ref(&info), false));
+        assert!(!tags_offered(std::slice::from_ref(&info), true)); // the Trash's menu has none
+        info.set_attribute_boolean("access::can-write", false);
+        assert!(!tags_offered(&[info], false));
+    }
+
+    // -- the window, where GTK can start (a display) -------------------------------------------
+
+    /// GTK for these tests, on this thread: none without a display, and none
+    /// when another test's thread has it already (GTK lives on one thread).
+    use crate::gtk_here;
+
+    fn settle(ms: u64) {
+        let end = Instant::now() + Duration::from_millis(ms);
+        while Instant::now() < end {
+            glib::MainContext::default().iteration(false);
+        }
+    }
+
+    /// Wait (the main loop running) until `ok`, at most `ms`.
+    fn until(ms: u64, ok: impl Fn() -> bool) -> bool {
+        let end = Instant::now() + Duration::from_millis(ms);
+        while Instant::now() < end {
+            if ok() {
+                return true;
+            }
+            glib::MainContext::default().iteration(false);
+        }
+        ok()
+    }
+
+    fn has_class(w: &gtk::Widget, class: &str) -> bool {
+        let mut stack = vec![w.clone()];
+        while let Some(w) = stack.pop() {
+            if w.has_css_class(class) {
+                return true;
+            }
+            let mut c = w.first_child();
+            while let Some(ch) = c {
+                c = ch.next_sibling();
+                stack.push(ch);
+            }
+        }
+        false
+    }
+
+    fn info_of(path: &std::path::Path) -> gio::FileInfo {
+        let f = gio::File::for_path(path);
+        let info = f.query_info("*", gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE).unwrap();
+        info.set_attribute_object("sonata::file", &f);
+        info
+    }
+
+    fn labels(sections: &[Vec<sonata_ui::menu::Item>]) -> Vec<Vec<String>> {
+        sections.iter().map(|s| s.iter().map(|i| i.label.clone()).collect()).collect()
+    }
+
+    #[test]
+    fn files_window_regressions() {
+        if !gtk_here() {
+            return; // (no display: the checks above still run)
+        }
+        let app = gtk::Application::builder().application_id("io.test.files.rs").flags(gio::ApplicationFlags::NON_UNIQUE).build();
+        app.register(gio::Cancellable::NONE).unwrap();
+        sonata_ui::setup();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("sub").join(".secret"), "x").unwrap();
+        std::fs::write(dir.path().join("note.txt"), "hello").unwrap();
+        let uri = gio::File::for_path(dir.path()).uri().to_string();
+        test_files_window_had_no_window_buttons(&app, &uri);
+        test_new_tab_lost_the_view_of_its_tab(&app, &uri);
+        test_sort_by_was_hidden_inside_view(&app, &uri);
+        test_open_panel_offered_new_tabs_and_ctrl_w_left_it_open(&app, dir.path());
+        test_tag_colours_never_showed_in_the_menu(&app, dir.path());
+        test_hidden_files_in_columns_kept_the_old_setting(&app, &uri);
+        test_quick_look_and_get_info_had_no_window_buttons(&app, dir.path());
+    }
+
+    /// The Rust Files window had no close / minimize / zoom buttons: the
+    /// sidebar's top was handed an empty box.
+    fn test_files_window_had_no_window_buttons(app: &gtk::Application, uri: &str) {
+        let w = FilesWindow::new(app, Some(uri));
+        assert!(has_class(w.window.upcast_ref(), "traffic"));
+        w.window.destroy();
+    }
+
+    /// ⌘T in a folder shown as a list opened the new tab as icons (the
+    /// default view): Python keeps the tab's view unless the folder has its own.
+    fn test_new_tab_lost_the_view_of_its_tab(app: &gtk::Application, uri: &str) {
+        let w = FilesWindow::new(app, Some(uri));
+        w.set_view("list", false);
+        w.new_tab(None, true);
+        assert_eq!(w.tabs.borrow().len(), 2);
+        assert_eq!(*w.cur().unwrap().view_id.borrow(), "list");
+        w.window.destroy();
+    }
+
+    /// Sort By, Show Columns and Calculate All Sizes were inside View's
+    /// submenu; in Python they sit beside it.
+    fn test_sort_by_was_hidden_inside_view(app: &gtk::Application, uri: &str) {
+        let w = FilesWindow::new(app, Some(uri));
+        w.set_view("list", false);
+        let view = w.view().unwrap();
+        let s = labels(&w.menu_sections(&view, None));
+        assert!(s.iter().any(|sec| sec == &["View", "Sort By", "Show Columns", "Calculate All Sizes"]), "{s:?}");
+        w.window.destroy();
+    }
+
+    /// The Open / Save panel offered "Open in New Tab" (it has no tabs) and
+    /// Ctrl+W didn't close it (Python: the window with its last tab).
+    fn test_open_panel_offered_new_tabs_and_ctrl_w_left_it_open(app: &gtk::Application, dir: &std::path::Path) {
+        let uri = gio::File::for_path(dir).uri().to_string();
+        let w = FilesWindow::new_with(app, Some(&uri), ("chooser", 820, 520), false);
+        let view = w.view().unwrap();
+        let s = labels(&w.menu_sections(&view, Some(info_of(&dir.join("sub")))));
+        assert!(!s.iter().flatten().any(|l| l == "Open in New Tab"), "{s:?}");
+        let files = FilesWindow::new(app, Some(&uri));
+        let view = files.view().unwrap();
+        let s = labels(&files.menu_sections(&view, Some(info_of(&dir.join("sub")))));
+        assert!(s.iter().flatten().any(|l| l == "Open in New Tab"));
+        files.window.destroy();
+        let ctrl_w = w.window.observe_controllers().iter::<glib::Object>().flatten().filter_map(|c| c.downcast::<gtk::ShortcutController>().ok()).any(|c| {
+            c.iter::<glib::Object>().flatten().filter_map(|s| s.downcast::<gtk::Shortcut>().ok()).any(|s| s.trigger().is_some_and(|t| t.to_str() == "<Control>w"))
+        });
+        assert!(ctrl_w);
+        w.window.destroy();
+    }
+
+    /// The tag colours never showed in a file's menu: the row was added to
+    /// the menu without a place named for it, and GTK dropped it.
+    fn test_tag_colours_never_showed_in_the_menu(app: &gtk::Application, dir: &std::path::Path) {
+        let uri = gio::File::for_path(dir).uri().to_string();
+        let w = FilesWindow::new(app, Some(&uri));
+        w.window.present();
+        let tab = w.cur().unwrap();
+        assert!(until(3000, || tab.folder.store.n_items() >= 2));
+        let view = w.view().unwrap();
+        assert!(view.select_name("note.txt"));
+        settle(100);
+        // the menu as a right-click on the selected file opens it
+        let sel = view.selected();
+        assert_eq!(sel.len(), 1);
+        let pop = w.menu_at(&view, &view.widget(), Some(sel[0].clone()), 10.0, 10.0);
+        let shown = has_class(pop.upcast_ref(), "fs-tag-row");
+        pop.popdown();
+        settle(200); // (the closed menu lets go of the view on idle)
+        assert!(shown);
+        w.window.destroy();
+    }
+
+    /// Hidden files switched on in Columns: the folders open to the right
+    /// kept the old setting (Python reloads them too).
+    fn test_hidden_files_in_columns_kept_the_old_setting(app: &gtk::Application, uri: &str) {
+        let w = FilesWindow::new(app, Some(uri));
+        w.window.present();
+        w.set_view("columns", false);
+        let tab = w.cur().unwrap();
+        assert!(until(3000, || tab.columns.pick_name("sub")));
+        assert!(until(1000, || !tab.columns.owners().is_empty()));
+        assert!(!tab.columns.owners()[0].show_hidden.get());
+        w.toggle_hidden();
+        assert!(tab.columns.owners()[0].show_hidden.get());
+        w.window.destroy();
+    }
+
+    /// Quick Look and Get Info had no window buttons (no way to close them
+    /// with the mouse); Python's title bar has them.
+    fn test_quick_look_and_get_info_had_no_window_buttons(app: &gtk::Application, dir: &std::path::Path) {
+        let uri = gio::File::for_path(dir).uri().to_string();
+        let w = FilesWindow::new(app, Some(&uri));
+        let ql = crate::quicklook::QuickLook::new(&w.window, Box::new(|| {}));
+        ql.show_item(&info_of(&dir.join("note.txt")));
+        assert!(has_class(ql.window.upcast_ref(), "traffic"));
+        ql.close();
+        let gi = crate::quicklook::get_info(&w.window, &info_of(&dir.join("note.txt")));
+        assert!(has_class(gi.upcast_ref(), "traffic"));
+        gi.destroy();
+        w.window.destroy();
     }
 }

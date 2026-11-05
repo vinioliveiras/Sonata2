@@ -72,10 +72,13 @@ impl Default for AudioFollow {
                 pactl(&[&format!("set-default-{kind}"), name]);
             }),
             enabled: Box::new(enabled),
-            // devicevolume.py's restore / keep aren't ported yet (only its
-            // remember half is, in sonata-backend): nothing until they are
-            restore: Box::new(|_, _| {}),
-            keep: Box::new(|_, _| {}),
+            // its own volume again, in a thread of its own (it waits for
+            // WirePlumber to restore its own first)
+            restore: Box::new(crate::devicevolume::restore_soon),
+            // "Don't let apps change the volume" (devicevolume.rs)
+            keep: Box::new(|kind, index| {
+                crate::devicevolume::keep_now(kind, index);
+            }),
             ours: HashMap::new(),
         }
     }
@@ -214,6 +217,31 @@ mod tests {
         t.f.event("Event 'change' on sink #90"); // other events: nothing
         t.f.event("Event 'remove' on sink #92"); // not ours: nothing
         assert_eq!(t.get("sink"), "alsa_output.usb-Logi_H390.analog-stereo");
+    }
+
+    /// Each device keeps its own volume: a device that comes back was
+    /// never given it again in the Rust session (the hooks did nothing).
+    /// "new" restores it, even with following off; "change" asks keep().
+    #[test]
+    fn test_device_volume_never_restored() {
+        let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+        let (s1, s2) = (seen.clone(), seen.clone());
+        let mut f = AudioFollow {
+            info: Box::new(|_, _| Some(("bluez_input.AA".into(), json!({"device.bus": "bluetooth"})))),
+            get_default: Box::new(|_| String::new()),
+            set_default: Box::new(|_, _| {}),
+            enabled: Box::new(|| false),
+            restore: Box::new(move |k, n| s1.lock().unwrap().push(format!("restore {k} {n}"))),
+            keep: Box::new(move |k, i| s2.lock().unwrap().push(format!("keep {k} {i}"))),
+            ours: HashMap::new(),
+        };
+        f.event("Event 'new' on source #77");
+        f.event("Event 'change' on source #5");
+        assert_eq!(*seen.lock().unwrap(), ["restore source bluez_input.AA", "keep source 5"]);
+        // the real ones are wired by default
+        let d = AudioFollow::default();
+        (d.restore)("source", "nothing-remembered");
+        (d.keep)("source", -1);
     }
 
     #[test]

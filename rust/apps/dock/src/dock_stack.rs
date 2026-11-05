@@ -87,6 +87,9 @@ pub struct Entry {
     pub modified: f64,
     pub added: f64,
     pub thumb: Option<String>,
+    /// the file's own icon (standard::icon, as text: Entry crosses threads)
+    /// -- Pictures, Music and custom folder icons, not a plain folder
+    pub icon: Option<String>,
 }
 
 /// The order of a stack's items (pure: tests).
@@ -102,7 +105,7 @@ pub fn sort_entries(entries: &mut [Entry], sort: &str) {
 /// The folder's visible items, sorted (gio only: safe off the main loop).
 pub fn items(path: &str, sort: &str) -> Vec<Entry> {
     let folder = gio::File::for_path(path);
-    let attrs = "standard::name,standard::display-name,standard::content-type,standard::is-hidden,standard::type,time::*,thumbnail::path";
+    let attrs = "standard::name,standard::display-name,standard::icon,standard::content-type,standard::is-hidden,standard::type,time::*,thumbnail::path";
     let Ok(en) = folder.enumerate_children(attrs, gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE) else { return Vec::new() };
     let t = |info: &gio::FileInfo, attr: &str| -> f64 {
         if !info.has_attribute(attr) {
@@ -126,6 +129,7 @@ pub fn items(path: &str, sort: &str) -> Vec<Entry> {
             modified: t(&info, "time::modified"),
             added: t(&info, "time::created").max(t(&info, "time::changed")),
             thumb: info.attribute_byte_string("thumbnail::path").map(|s| s.to_string()),
+            icon: info.icon().and_then(|i| IconExt::to_string(&i)).map(|s| s.to_string()),
         });
     }
     sort_entries(&mut out, sort);
@@ -136,6 +140,9 @@ pub fn items(path: &str, sort: &str) -> Vec<Entry> {
 fn entry_icon(e: &Entry) -> gio::Icon {
     if let Some(t) = e.thumb.as_ref().filter(|t| std::path::Path::new(t).exists()) {
         return gio::FileIcon::new(&gio::File::for_path(t)).upcast();
+    }
+    if let Some(i) = e.icon.as_deref().and_then(|s| gio::Icon::for_string(s).ok()) {
+        return i;
     }
     if e.is_dir {
         return gio::ThemedIcon::new("folder").upcast();
@@ -181,7 +188,7 @@ pub fn open(file: &gio::File) {
     if file.path().is_some_and(|p| sonata_files::packages::open_path(&p, None)) {
         return; // install / run / extract
     }
-    let _ = gio::AppInfo::launch_default_for_uri(&file.uri(), None::<&gio::AppLaunchContext>);
+    let _ = sonata_ui::apps::launch_default_for_uri(&file.uri(), None); // (the display's context: to the front)
 }
 
 fn drag_source(widget: &impl IsA<gtk::Widget>, file: gio::File) {
@@ -600,7 +607,21 @@ mod tests {
     }
 
     fn e(name: &str, kind: &str, modified: f64, added: f64) -> Entry {
-        Entry { name: name.into(), display: name.into(), content_type: kind.into(), is_dir: false, modified, added, thumb: None }
+        Entry { name: name.into(), display: name.into(), content_type: kind.into(), is_dir: false, modified, added, thumb: None, icon: None }
+    }
+
+    /// Pictures (or a folder with its own icon) in a stack showed as a
+    /// plain folder: the file's own icon wasn't asked for.
+    #[test]
+    fn test_stack_items_lost_their_own_icon() {
+        let mut pics = e("Pictures", "inode/directory", 0.0, 0.0);
+        pics.is_dir = true;
+        pics.icon = Some("folder-pictures".into());
+        assert_eq!(IconExt::to_string(&entry_icon(&pics)).unwrap().as_str(), "folder-pictures");
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        let listed = items(&dir.path().to_string_lossy(), "name");
+        assert!(listed[0].icon.is_some(), "standard::icon read");
     }
 
     #[test]

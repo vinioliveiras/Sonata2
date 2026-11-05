@@ -47,7 +47,7 @@ pub fn icon_index() -> HashMap<String, AppIcon> {
     let mut weak: HashMap<String, AppIcon> = HashMap::new();
     for info in gio::AppInfo::all() {
         let Some(icon) = info.icon() else { continue };
-        let name = info.display_name().to_string();
+        let name = sonata_ui::apps::display_name(&info);
         let mut strong = Vec::new();
         let did = info.id().map(|i| i.trim_end_matches(".desktop").to_string()).unwrap_or_default();
         if !did.is_empty() {
@@ -100,7 +100,7 @@ pub fn app_for(p: &Proc, idx: &HashMap<String, AppIcon>) -> (Option<String>, Opt
     if !p.steam.is_empty() {
         // a Steam game's process: the game, by its app id
         let key = format!("steam_app_{}", p.steam);
-        if let Some((name, icon)) = crate::steam::shown(&key, &p.name) {
+        if let Some((name, icon)) = sonata_desktop::steamgames::shown(&key, &p.name) {
             return (Some(key), Some(icon), name);
         }
     }
@@ -169,7 +169,9 @@ impl TaskManagerWindow {
                 window.add_css_class(c);
             }
             sonata_ui::window::standard(&window);
-            sonata_ui::window::remember_size(window.upcast_ref(), "activity", 1040, 680);
+            // the first time about two thirds of the display (window.py's
+            // roomy=True): opened at 1040x680 it looked lost on a big one
+            sonata_ui::window::remember_size_roomy(window.upcast_ref(), "activity", 1040, 680);
             window.set_size_request(720, 460);
             // -- toolbar
             let (toolbar, bar, _) = sonata_ui::window::glass_toolbar(&window, Vec::new());
@@ -425,6 +427,15 @@ impl TaskManagerWindow {
         }
     }
 
+    /// The pages' stack and their toolbar buttons' (tests).
+    pub fn stack(&self) -> gtk::Stack {
+        self.stack.clone()
+    }
+
+    pub fn page_buttons(&self) -> gtk::Stack {
+        self.page_buttons.clone()
+    }
+
     pub fn is_sampling(&self) -> bool {
         self.timer.borrow().is_some()
     }
@@ -626,7 +637,7 @@ impl TaskManagerWindow {
         let uri = gio::File::for_path(&path).uri().to_string();
         gio::bus_get(gio::BusType::Session, gio::Cancellable::NONE, move |bus| {
             let open_folder = move || {
-                let _ = gio::AppInfo::launch_default_for_uri(&folder_uri, None::<&gio::AppLaunchContext>);
+                let _ = sonata_ui::apps::launch_default_for_uri(&folder_uri, None);
             };
             let Ok(bus) = bus else { return open_folder() };
             let args = (vec![uri], "").to_variant();
@@ -639,7 +650,7 @@ impl TaskManagerWindow {
     }
 
     pub fn search_online(&self, name: &str) {
-        let _ = gio::AppInfo::launch_default_for_uri(&format!("{SEARCH_URL}{}", quote_plus(name)), None::<&gio::AppLaunchContext>);
+        let _ = sonata_ui::apps::launch_default_for_uri(&format!("{SEARCH_URL}{}", quote_plus(name)), None);
     }
 
     /// The Properties lines; path=false skips the Location (a readlink),
@@ -698,7 +709,8 @@ impl TaskManagerWindow {
         bx.append(&gtk::Label::builder().label(tr!("Command line:")).xalign(0.0).css_classes(["tm-key"]).build());
         let cmd: String = row.data().cmdline.replace('\n', " ").chars().take(2000).collect();
         bx.append(&gtk::Label::builder().label(cmd).xalign(0.0).wrap(true).wrap_mode(gtk::pango::WrapMode::WordChar).selectable(true).max_width_chars(48).lines(6).ellipsize(gtk::pango::EllipsizeMode::End).css_classes(["tm-cmd"]).build());
-        let pop = sonata_ui::panel::popup(&anchor, &bx, gtk::PositionType::Bottom);
+        // a form-like panel: the windows' close dot at its corner (as every dialog)
+        let pop = sonata_ui::panel::popup_with(&anchor, &bx, sonata_ui::panel::Options { close: true, ..Default::default() });
         self.info.replace(Some((row, labels)));
         let w = self.me.clone();
         pop.connect_closed(move |_| {
@@ -789,6 +801,16 @@ pub fn pids(snap: &Snapshot) -> BTreeMap<i64, Proc> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Task Manager opened at 1040x680 on a 2560x1440 display the first
+    /// time: the Python opens it at about two thirds of the display
+    /// (remember_size's roomy=True); a small display keeps 1040x680.
+    #[test]
+    fn test_first_open_too_small_on_big_displays() {
+        use sonata_ui::window::first_size;
+        assert_eq!(first_size(None, 1040, 680, true, Some((2560, 1440))), (1689, 936, false));
+        assert_eq!(first_size(None, 1040, 680, true, Some((1366, 768))), (1040, 664, false)); // (its work area)
+    }
 
     #[test]
     fn search_queries_quoted() {

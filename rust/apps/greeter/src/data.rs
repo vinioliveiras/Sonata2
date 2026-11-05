@@ -204,9 +204,10 @@ pub fn set_mode(name: &str, m: Mode) -> bool {
     sonata_backend::run::run(&["wlr-randr", "--output", name, "--mode", &spec], 6).0 == 0
 }
 
-/// "1920 × 1080  ·  60 Hz"
+/// "1920 × 1080  ·  60 Hz" -- the rate rounded as greeter.py's round()
+/// does (half to even), so both login screens name a mode alike.
 pub fn mode_label(m: Mode) -> String {
-    format!("{} \u{00d7} {}  \u{00b7}  {} Hz", m.0, m.1, m.2.round() as i64)
+    format!("{} \u{00d7} {}  \u{00b7}  {} Hz", m.0, m.1, m.2.round_ties_even() as i64)
 }
 
 #[cfg(test)]
@@ -313,6 +314,14 @@ mod tests {
         assert_eq!(best_modes(&o.modes), [(2560, 1440, 59.951), (1920, 1080, 144.002), (1280, 720, 60.0)]);
         assert!(parse_outputs("garbage").is_empty());
         assert_eq!(mode_label((1920, 1080, 59.951)), "1920 \u{00d7} 1080  \u{00b7}  60 Hz");
+    }
+
+    /// The Displays menu named a 74.5 Hz mode "75 Hz" where the Python
+    /// login screen (round(): half to even) says "74 Hz".
+    #[test]
+    fn test_refresh_rate_rounded_unlike_python() {
+        assert_eq!(mode_label((1920, 1080, 74.5)), "1920 \u{00d7} 1080  \u{00b7}  74 Hz");
+        assert_eq!(mode_label((1920, 1080, 75.5)), "1920 \u{00d7} 1080  \u{00b7}  76 Hz");
     }
 
     #[test]

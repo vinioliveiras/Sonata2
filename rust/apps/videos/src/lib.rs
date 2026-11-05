@@ -78,9 +78,48 @@ pub fn fit_size(w: i32, h: i32, max_w: f64, max_h: f64) -> (i32, i32) {
     (((w * s) as i32).max(320), ((h * s) as i32).max(180))
 }
 
+/// A number as window.py reads one: `float(v or 0)` -- a number, true
+/// (1), a numeric string ("42.5"); null, "" or false are 0; anything that
+/// doesn't read (Python's ValueError) is `bad`.
+pub fn py_float(v: Option<&Value>, bad: f64) -> f64 {
+    match v {
+        None | Some(Value::Null) => 0.0,
+        Some(Value::Bool(b)) => f64::from(u8::from(*b)),
+        Some(Value::Number(n)) => n.as_f64().unwrap_or(bad),
+        Some(Value::String(s)) if s.is_empty() => 0.0,
+        Some(Value::String(s)) => s.trim().parse::<f64>().ok().filter(|f| f.is_finite()).unwrap_or(bad),
+        Some(_) => bad,
+    }
+}
+
+/// Python's truth (window.py's bool(cfg.get("muted"))).
+pub fn py_truthy(v: Option<&Value>) -> bool {
+    match v {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(b)) => *b,
+        Some(Value::Number(n)) => n.as_f64().is_some_and(|f| f != 0.0),
+        Some(Value::String(s)) => !s.is_empty(),
+        Some(Value::Array(a)) => !a.is_empty(),
+        Some(Value::Object(o)) => !o.is_empty(),
+    }
+}
+
 /// Where the movie was left (seconds), 0 for none.
 pub fn position_in(cfg: &Map<String, Value>, path: &str) -> f64 {
-    cfg.get("positions").and_then(|p| p.get(path)).and_then(Value::as_f64).unwrap_or(0.0)
+    match cfg.get("positions") {
+        Some(Value::Object(p)) => py_float(p.get(path), 0.0),
+        _ => 0.0,
+    }
+}
+
+/// The volume and mute switch saved last (window.py's reading: a volume
+/// that doesn't read is 0, never past 0..1).
+pub fn volume_of(cfg: &Map<String, Value>) -> (f64, bool) {
+    let v = match cfg.get("volume") {
+        None => 1.0,
+        some => py_float(some, 0.0),
+    };
+    (if v.is_nan() { 0.0 } else { v.clamp(0.0, 1.0) }, py_truthy(cfg.get("muted")))
 }
 
 /// The positions after leaving `path` at `position`: forgotten near the
@@ -184,8 +223,7 @@ impl Video {
         let win = gtk::ApplicationWindow::builder().application(app).css_classes(["sonata-videos"]).build();
         sonata_ui::window::standard(&win);
         let cfg = sonata_config::load(CONFIG, &defaults());
-        let volume = cfg.get("volume").and_then(Value::as_f64).unwrap_or(1.0).clamp(0.0, 1.0);
-        let muted = cfg.get("muted").and_then(Value::as_bool).unwrap_or(false);
+        let (volume, muted) = volume_of(&cfg);
         let cell: Rc<RefCell<Option<std::rc::Weak<Video>>>> = Rc::default();
 
         let picture = gtk::Picture::builder().content_fit(gtk::ContentFit::Contain).can_shrink(true).hexpand(true).vexpand(true).build();
@@ -313,9 +351,12 @@ impl Video {
         self.fit_controls();
     }
 
+    /// (Their own visible flag -- get_visible, as window.py reads it; not
+    /// is_visible, which is false for anything in a window not shown yet:
+    /// the window opened with no smallest size at all.)
     fn fit_controls(&self) {
         let (mut w, mut h) = (0, 0);
-        for c in self.sizers.borrow().iter().filter(|c| c.is_visible() && c.parent().as_ref() == Some(self.overlay.upcast_ref())) {
+        for c in self.sizers.borrow().iter().filter(|c| c.get_visible() && c.parent().as_ref() == Some(self.overlay.upcast_ref())) {
             w = w.max(c.measure(gtk::Orientation::Horizontal, -1).0 + c.margin_start() + c.margin_end());
             h = h.max(c.measure(gtk::Orientation::Vertical, -1).0 + c.margin_top() + c.margin_bottom() + MIN_PICTURE_H);
         }
@@ -340,7 +381,13 @@ impl Video {
         self.hud.set_visible(true);
         let audio = is_audio(path);
         self.set_audio(audio);
-        let stream: gtk::MediaStream = if audio && playbin::available() {
+        let factory = FACTORY.with(|f| f.borrow().clone());
+        let stream: gtk::MediaStream = if let Some(make) = factory {
+            match make(path) {
+                Ok(s) => s,
+                Err(e) => return self.fail(&e),
+            }
+        } else if audio && playbin::available() {
             match playbin::PlaybinStream::new(path) {
                 Ok(s) => {
                     self.song.replace(Some(s.clone()));
@@ -587,7 +634,7 @@ impl Video {
             self.overlay.remove_overlay(&b.root);
             self.remove_sizer(b.root.upcast_ref());
         }
-        self.hud.set_visible(!self.message.is_visible());
+        self.hud.set_visible(!self.message.get_visible());
         self.show_hud();
         self.edit_buttons();
     }
@@ -689,7 +736,7 @@ impl Video {
             self.remove_sizer(b.root.upcast_ref());
         }
         self.crop_room(None, false);
-        self.hud.set_visible(!self.message.is_visible());
+        self.hud.set_visible(!self.message.get_visible());
         self.show_hud();
         self.edit_buttons();
     }
@@ -1080,7 +1127,7 @@ fn reveal(path: &Path) {
     let uri = gio::File::for_path(path).uri().to_string();
     let folder = path.parent().map(Path::to_path_buf).unwrap_or_default();
     let fallback = move || {
-        let _ = gio::AppInfo::launch_default_for_uri(&gio::File::for_path(&folder).uri(), gio::AppLaunchContext::NONE);
+        let _ = sonata_ui::apps::launch_default_for_uri(&gio::File::for_path(&folder).uri(), None);
     };
     let Ok(bus) = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE) else { return fallback() };
     bus.call(Some("org.freedesktop.FileManager1"), "/org/freedesktop/FileManager1", "org.freedesktop.FileManager1", "ShowItems", Some(&(vec![uri], "").to_variant()), None, gio::DBusCallFlags::NONE, 3000, gio::Cancellable::NONE, move |r| {
@@ -1090,8 +1137,13 @@ fn reveal(path: &Path) {
     });
 }
 
+/// Makes a file's stream instead of media_file's choice (window.py's
+/// `stream_factory`: tests).
+type Factory = Rc<dyn Fn(&Path) -> Result<gtk::MediaStream, String>>;
+
 thread_local! {
     static WINDOWS: RefCell<Vec<Me>> = RefCell::default();
+    static FACTORY: RefCell<Option<Factory>> = RefCell::default();
 }
 
 /// Files' Open panel: movies and songs.
@@ -1213,6 +1265,349 @@ mod tests {
         let pos = c["positions"].as_object().unwrap();
         assert_eq!(pos.len(), MAX_POSITIONS);
         assert!(pos.contains_key("/m/249.mp4") && !pos.contains_key("/m/0.mp4")); // the oldest dropped
+    }
+
+    /// videos.json as window.py reads it: whatever Python accepted is read
+    /// the same (a position or volume written as text, a 1 for muted).
+    #[test]
+    fn test_settings_python_wrote_read_the_same() {
+        let cfg = |v: Value| -> Map<String, Value> { serde_json::from_value(v).unwrap() };
+        assert_eq!(position_in(&cfg(json!({"positions": {"/m/a.mp4": "42.5"}})), "/m/a.mp4"), 42.5);
+        assert_eq!(position_in(&cfg(json!({"positions": {"/m/a.mp4": 30}})), "/m/a.mp4"), 30.0);
+        assert_eq!(position_in(&cfg(json!({"positions": {"/m/a.mp4": null}})), "/m/a.mp4"), 0.0);
+        assert_eq!(position_in(&cfg(json!({"positions": {"/m/a.mp4": "soon"}})), "/m/a.mp4"), 0.0);
+        assert_eq!(position_in(&cfg(json!({"positions": ["/m/a.mp4"]})), "/m/a.mp4"), 0.0);
+        assert_eq!(volume_of(&cfg(json!({"volume": "0.5", "muted": 1}))), (0.5, true));
+        assert_eq!(volume_of(&cfg(json!({"volume": null, "muted": "yes"}))), (0.0, true));
+        assert_eq!(volume_of(&cfg(json!({"volume": 7, "muted": 0}))), (1.0, false));
+        assert_eq!(volume_of(&cfg(json!({}))), (1.0, false));
+    }
+
+    mod fake {
+        use gtk::prelude::*;
+        use gtk::subclass::prelude::*;
+
+        #[derive(Default)]
+        pub struct Fake;
+
+        #[glib::object_subclass]
+        impl ObjectSubclass for Fake {
+            const NAME: &'static str = "SonataRsVideosFakeStream";
+            type Type = super::FakeStream;
+            type ParentType = gtk::MediaStream;
+            type Interfaces = (gtk::gdk::Paintable,);
+        }
+
+        impl ObjectImpl for Fake {}
+
+        impl gtk::gdk::subclass::paintable::PaintableImpl for Fake {
+            fn snapshot(&self, s: &gtk::gdk::Snapshot, w: f64, h: f64) {
+                let s = s.downcast_ref::<gtk::Snapshot>().unwrap();
+                s.append_color(&gtk::gdk::RGBA::new(0.2, 0.4, 0.6, 1.0), &gtk::graphene::Rect::new(0.0, 0.0, w as f32, h as f32));
+            }
+
+            fn intrinsic_width(&self) -> i32 {
+                1920
+            }
+
+            fn intrinsic_height(&self) -> i32 {
+                800
+            }
+        }
+
+        impl MediaStreamImpl for Fake {
+            fn play(&self) -> bool {
+                true
+            }
+
+            fn pause(&self) {}
+
+            fn seek(&self, ts: i64) {
+                self.obj().seek_success();
+                self.obj().update(ts);
+            }
+        }
+    }
+
+    glib::wrapper! {
+        /// A 90 s, 1920 x 800 movie that plays nothing (tests/test_videos.py's FakeStream).
+        pub struct FakeStream(ObjectSubclass<fake::Fake>) @extends gtk::MediaStream, @implements gtk::gdk::Paintable;
+    }
+
+    fn settle(ms: u64) {
+        let end = std::time::Instant::now() + Duration::from_millis(ms);
+        let ctx = glib::MainContext::default();
+        while std::time::Instant::now() < end {
+            ctx.iteration(false);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    fn wait(cond: impl Fn() -> bool, ms: u64) -> bool {
+        let end = std::time::Instant::now() + Duration::from_millis(ms);
+        let ctx = glib::MainContext::default();
+        while !cond() && std::time::Instant::now() < end {
+            ctx.iteration(false);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        cond()
+    }
+
+    fn use_fake() {
+        FACTORY.with(|f| {
+            f.replace(Some(Rc::new(|_: &Path| {
+                let s: FakeStream = glib::Object::new();
+                s.stream_prepared(true, true, true, 90_000_000);
+                Ok(s.upcast())
+            })))
+        });
+    }
+
+    fn ffprobe(args: &[&str], path: &Path) -> String {
+        let out = std::process::Command::new("ffprobe").args(["-v", "error"]).args(args).args(["-of", "csv=p=0"]).arg(path).output().unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    /// tests/test_videos_trim.py's and test_videos_crop.py's real ones:
+    /// ffmpeg trims to the frame and crops to even sizes; a cancelled
+    /// export leaves nothing.
+    fn real_exports() {
+        if sonata_backend::run::which("ffmpeg").is_none() || sonata_backend::run::which("ffprobe").is_none() {
+            return;
+        }
+        let d = tempfile::tempdir().unwrap();
+        let src = d.path().join("clip.mp4");
+        let ok = std::process::Command::new("ffmpeg").args(["-v", "error", "-f", "lavfi", "-i", "testsrc=size=640x360:rate=25:duration=4", "-f", "lavfi", "-i", "sine=duration=4", "-shortest", "-c:v", "libx264", "-g", "100"]).arg(&src).status().unwrap();
+        assert!(ok.success());
+        let out = edit::output_path(&src, "Trimmed", false);
+        let result: Rc<RefCell<Option<(bool, String)>>> = Rc::default();
+        let r = result.clone();
+        let _job = edit::Export::start(edit::trim_command(&src, &out, 1.0, 2.5, false), 1.5, |_| {}, move |ok, m| {
+            r.replace(Some((ok, m)));
+        });
+        assert!(wait(|| result.borrow().is_some(), 20000));
+        assert!(result.borrow().as_ref().unwrap().0, "{:?}", result.borrow());
+        let len: f64 = ffprobe(&["-show_entries", "format=duration"], &out).parse().unwrap();
+        assert!((len - 1.5).abs() < 0.1, "{len}"); // to the frame, not the keyframe
+        let len: f64 = ffprobe(&["-show_entries", "format=duration"], &src).parse().unwrap();
+        assert!((len - 4.0).abs() < 0.1); // the original untouched
+        let frames: Rc<RefCell<Vec<(usize, Vec<u8>)>>> = Rc::default();
+        let f = frames.clone();
+        edit::thumbnails(&src, 4.0, 3, 48, move |i, png| f.borrow_mut().push((i, png[..4].to_vec())), || false);
+        assert!(wait(|| frames.borrow().len() == 3, 20000));
+        assert!(frames.borrow().iter().all(|(_, p)| p == b"\x89PNG"));
+        // crop: even sizes
+        let out = edit::output_path(&src, "Cropped", false);
+        result.replace(None);
+        let r = result.clone();
+        let _job = edit::Export::start(edit::crop_command(&src, &out, 100, 50, 301, 201), 4.0, |_| {}, move |ok, m| {
+            r.replace(Some((ok, m)));
+        });
+        assert!(wait(|| result.borrow().is_some(), 20000));
+        assert!(result.borrow().as_ref().unwrap().0);
+        assert_eq!(ffprobe(&["-select_streams", "v:0", "-show_entries", "stream=width,height"], &out), "300,200");
+        // cancelled: nothing half-made left, no "done"
+        let out = d.path().join("x (Trimmed).mp4");
+        std::fs::write(&out, "").unwrap();
+        let done = Rc::new(Cell::new(false));
+        let dn = done.clone();
+        let job = edit::Export::start(vec!["sh".into(), "-c".into(), "exec sleep 5".into(), out.display().to_string()], 5.0, |_| {}, move |_, _| dn.set(true));
+        settle(150);
+        job.cancel();
+        settle(600);
+        assert!(!out.exists());
+        assert!(!done.get());
+    }
+
+    /// The Rust Videos opened with no smallest size: its controls were
+    /// measured as hidden (is_visible: false in a window not shown yet), so
+    /// a shrunk window cut them -- what Vini saw in the Python one before
+    /// 7670e43c. With it, tests/test_videos.py's, test_videos_trim.py's and
+    /// test_videos_crop.py's window tests, on a fake stream (one test: GTK
+    /// lives on one thread).
+    #[test]
+    fn test_videos_window_opened_with_no_smallest_size() {
+        let gtk_ok = !(gtk::is_initialized() && !gtk::is_initialized_main_thread()) && gtk::init().is_ok();
+        let ctx = glib::MainContext::default();
+        let _owner = if gtk_ok { None } else { ctx.acquire().ok() };
+        real_exports();
+        if !gtk_ok {
+            return; // no display
+        }
+        sonata_ui::setup();
+        sonata_ui::css::register_module("videos/window.py");
+        sonata_ui::css::register_module("videos/trimbar.py");
+        let app = gtk::Application::builder().application_id("io.test.videos").flags(gio::ApplicationFlags::NON_UNIQUE).build();
+        app.register(gio::Cancellable::NONE).expect("registered");
+        use_fake();
+        let d = tempfile::tempdir().unwrap();
+        let movie = d.path().join("movie.mp4");
+        std::fs::write(&movie, "").unwrap();
+        let song = d.path().join("small.mp3");
+        std::fs::write(&song, "").unwrap();
+
+        // test_window_never_smaller_than_its_controls: Vini -- the song /
+        // movie window had no smallest size; shrunk, it cut the controls
+        // (volume and the time row). Now it can't get narrower than them,
+        // nor shorter than them plus some picture.
+        for path in [&movie, &song] {
+            let v = Video::new(&app, path);
+            v.win.set_default_size(120, 80);
+            v.win.present();
+            settle(300);
+            let hud = &v.hud;
+            let need_w = hud.measure(gtk::Orientation::Horizontal, -1).0 + hud.margin_start() + hud.margin_end();
+            let need_h = hud.measure(gtk::Orientation::Vertical, -1).0 + hud.margin_top() + hud.margin_bottom() + MIN_PICTURE_H;
+            assert!(v.overlay.width() >= need_w, "{path:?}");
+            assert!(v.overlay.height() >= need_h, "{path:?}");
+            let b = hud.compute_bounds(&v.overlay).unwrap();
+            assert!(b.x() >= 0.0 && b.x() + b.width() <= v.overlay.width() as f32, "{path:?}"); // the whole HUD inside
+            v.win.destroy();
+            settle(50);
+        }
+
+        // a song's window opens square, its controls whole
+        let v = Video::new(&app, &song);
+        let (w, h) = v.win.default_size();
+        assert_eq!(w, h);
+        assert!(w >= v.overlay.measure(gtk::Orientation::Horizontal, -1).0);
+        assert!(!v.crop_btn.get_visible() && v.trim_btn.get_visible()); // a song has no Crop
+        v.start_crop();
+        assert!(v.crop_bar.borrow().is_none()); // not for songs
+        v.win.destroy();
+
+        // a stream that can't be made: the reason, no controls
+        FACTORY.with(|f| f.replace(Some(Rc::new(|_: &Path| Err("no decoder".to_string())))));
+        let v = Video::new(&app, Path::new("/x.mkv"));
+        assert!(v.message.get_visible() && !v.hud.get_visible());
+        assert_eq!(v.reason.label(), "no decoder");
+        v.toggle_play(); // harmless
+        v.win.destroy();
+        use_fake();
+
+        // playback, and the place it was left
+        let path = Path::new("/movies/resume.mp4");
+        let cfg = sonata_config::load(CONFIG, &defaults());
+        let _ = sonata_config::update(CONFIG, &json!({"positions": positions_after(&cfg, &path.to_string_lossy(), 30.0, 90.0)}));
+        let v = Video::new(&app, path);
+        v.win.present();
+        settle(200);
+        let s = v.stream().unwrap();
+        assert!((s.timestamp() as f64 / 1e6 - 30.0).abs() < 1e-3); // resumed
+        assert_eq!(v.elapsed.label(), "0:30");
+        assert_eq!(v.remaining.label(), "-1:00");
+        v.toggle_play();
+        assert!(s.is_playing());
+        assert_eq!(v.play_btn.icon_name().as_deref(), Some("media-playback-pause-symbolic"));
+        v.skip(10.0);
+        assert!((s.timestamp() as f64 / 1e6 - 40.0).abs() < 1e-3);
+        v.skip(-100.0);
+        assert_eq!(s.timestamp(), 0);
+        v.seek_to(500.0); // clamped to the end
+        assert_eq!(s.timestamp(), 90_000_000);
+        v.seek_to(55.0);
+        v.hide_now(); // playing: controls and pointer hide
+        assert!(v.hud.has_css_class("hidden"));
+        v.toggle_play(); // paused: controls come back
+        assert!(!v.hud.has_css_class("hidden"));
+        v.set_volume(0.3);
+        assert!((s.volume() - 0.3).abs() < 1e-6);
+        v.toggle_mute();
+        assert!(s.is_muted());
+        v.toggle_loop();
+        assert!(s.is_loop());
+        v.win.close();
+        settle(50);
+        let cfg = sonata_config::load(CONFIG, &defaults());
+        assert_eq!(position_in(&cfg, &path.to_string_lossy()), 55.0); // remembered on close
+        assert!(volume_of(&cfg).1); // muted, saved on close
+
+        // test_right_click_menu_comes_before_the_window_handle: Vini -- Trim
+        // and Crop didn't show: the movie is a window handle, whose own
+        // right-click (the window menu) took the press before the player's
+        // menu. The menu's click comes first (capture phase).
+        let v = Video::new(&app, &movie);
+        v.win.present();
+        settle(200);
+        let ctrls = v.overlay.observe_controllers();
+        let menu = (0..ctrls.n_items()).filter_map(|i| ctrls.item(i).and_downcast::<gtk::GestureClick>()).find(|g| g.button() == gtk::gdk::BUTTON_SECONDARY).expect("the right-click");
+        assert_eq!(menu.propagation_phase(), gtk::PropagationPhase::Capture);
+        let handle = v.picture.parent().unwrap();
+        assert!(handle.is::<gtk::WindowHandle>() && handle.is_ancestor(&v.overlay)); // captured on the way down to it
+
+        // test_trim_and_crop_buttons_in_the_controls: Vini (option A) --
+        // Trim and Crop in sight in the controls, beside full screen
+        let top = v.hud.first_child().and_downcast::<gtk::CenterBox>().unwrap();
+        let end = top.end_widget().unwrap();
+        let mut kids = Vec::new();
+        let mut c = end.first_child();
+        while let Some(w) = c {
+            c = w.next_sibling();
+            kids.push(w);
+        }
+        assert_eq!(kids, [v.trim_btn.clone().upcast::<gtk::Widget>(), v.crop_btn.clone().upcast(), v.full_btn.clone().upcast()]);
+        if edit::available() {
+            assert!(v.trim_btn.is_sensitive() && v.crop_btn.is_sensitive());
+            // the trim bar takes the controls' place
+            v.trim_btn.emit_clicked();
+            assert!(v.trim_bar.borrow().is_some());
+            assert!(!v.hud.get_visible());
+            v.cancel_trim();
+            assert!(v.trim_bar.borrow().is_none() && v.hud.get_visible());
+            v.win.destroy();
+            // (the bars are measured in a window shown with them: Broadway
+            // lays a window out again only when a browser draws it)
+            let v = Video::new(&app, &movie);
+            v.start_trim();
+            v.win.present();
+            settle(300);
+            let bar = v.trim_bar.borrow().clone().expect("trimming");
+            let strip = &bar.strip;
+            assert!(strip.width() > 300, "{}", strip.width());
+            strip.set_range(10.0, 40.0);
+            assert!(bar.times.label().contains("(0:30)"));
+            assert_eq!(strip.pick(strip.x_of(10.0) - 6.0), "start");
+            assert_eq!(strip.pick(strip.x_of(40.0) + 6.0), "end");
+            assert_eq!(strip.pick(strip.x_of(25.0)), "playhead");
+            // the dimming and the playhead leave the theme's shared colours alone
+            let black = sonata_ui::rgba("sys_black").to_string();
+            v.trim_seek(20.0);
+            settle(100);
+            assert_eq!(sonata_ui::rgba("sys_black").to_string(), black);
+            v.start_crop(); // one at a time
+            assert!(v.crop_bar.borrow().is_none());
+            v.do_trim(0.0, 90.0); // nothing cut off: nothing saved
+            assert!(v.trim_bar.borrow().is_none() && v.export.borrow().is_none());
+            assert!(v.hud.get_visible());
+
+            // crop: the frame and its shapes
+            v.win.destroy();
+            let v = Video::new(&app, &movie);
+            v.start_crop();
+            assert!(!v.hud.get_visible());
+            v.win.present();
+            settle(300);
+            let bar = v.crop_bar.borrow().clone().expect("cropping");
+            assert_eq!(bar.frame.rect(), (0, 0, 1920, 800)); // the whole picture to start
+            bar.pick("1:1");
+            assert_eq!(bar.frame.rect(), (560, 0, 800, 800));
+            assert_eq!(bar.size.label(), "800 × 800");
+            // the frame's bottom corners stay above the bar (review: the bar covered them)
+            settle(100);
+            let (iw, ih) = bar.frame.size();
+            let (ox, oy, sc) = edit::video_rect(iw, ih, bar.frame.width() as f64, bar.frame.height() as f64);
+            let (_, fy, _, fh) = bar.frame.rect();
+            let bottom = oy + (fy + fh) as f64 * sc;
+            let bb = bar.root.compute_bounds(&bar.frame).unwrap();
+            assert!(bottom < bb.y() as f64, "{bottom} {} {ox}", bb.y());
+            v.do_crop((0, 0, 1920, 800)); // the whole picture: nothing saved
+            assert!(v.crop_bar.borrow().is_none() && v.export.borrow().is_none());
+            assert!(v.hud.get_visible());
+            assert_eq!(v.picture.margin_bottom(), 0); // the movie back in place
+        }
+        v.win.destroy();
+        settle(50);
+        FACTORY.with(|f| f.replace(None));
     }
 
     #[test]

@@ -43,6 +43,31 @@ pub fn register_css() {
     sonata_ui::css::register_module("notes/reminders.py");
 }
 
+thread_local! {
+    /// Notes' menus open now (ui/menu.py's OPEN).
+    static MENUS_OPEN: Cell<u32> = const { Cell::new(0) };
+}
+
+/// A context menu, counted while it is open: a right-click on a new, still
+/// empty reminder takes the focus from its title, and that must not delete
+/// it before the menu can be used (reminders.py checks ui.menu.OPEN).
+pub fn popup_menu(widget: &impl IsA<gtk::Widget>, sections: Vec<Vec<menu::Item>>, opts: menu::Options) -> gtk::PopoverMenu {
+    let pop = menu::popup(widget, sections, opts);
+    MENUS_OPEN.with(|c| c.set(c.get() + 1));
+    pop.connect_closed(|_| MENUS_OPEN.with(|c| c.set(c.get().saturating_sub(1))));
+    pop
+}
+
+pub fn menu_open() -> bool {
+    MENUS_OPEN.with(|c| c.get() > 0)
+}
+
+/// A new reminder left empty goes away once its title loses focus (macOS) --
+/// unless it got a title meanwhile, or a menu is open.
+fn leaves_empty(r: Option<&Rec>) -> bool {
+    r.is_some_and(|x| S::s(x, "title").is_empty()) && !menu_open()
+}
+
 pub fn today() -> (i32, u32, u32) {
     glib::DateTime::now_local().map(|d| (d.year(), d.month() as u32, d.day_of_month() as u32)).unwrap_or((1970, 1, 1))
 }
@@ -433,8 +458,8 @@ impl RemindersView {
             let (v, id) = (self.me.clone(), rr.id.clone());
             glib::idle_add_local_once(move || {
                 if let Some(v) = v.upgrade() {
-                    let gone = v.store.borrow().reminder(&id).is_none_or(|x| !S::s(x, "title").is_empty());
-                    if !gone {
+                    let drop = leaves_empty(v.store.borrow().reminder(&id));
+                    if drop {
                         v.delete(&id);
                     }
                 }
@@ -511,7 +536,7 @@ impl RemindersView {
         let done = S::b(&r, "completed");
         let (v1, v2, v3, id1, id2, id3, w) = (self.me.clone(), self.me.clone(), self.me.clone(), rr.id.clone(), rr.id.clone(), rr.id.clone(), Rc::downgrade(rr));
         let anchor: gtk::Widget = if rr.due.is_visible() { rr.due.clone().upcast() } else { rr.row.clone().upcast() };
-        menu::popup(
+        popup_menu(
             &rr.row,
             vec![
                 vec![menu::Item::new(&tr!("Show Details"), move || {
@@ -745,6 +770,20 @@ mod tests {
         let mut done = r("2026-10-01");
         done.insert("completed".into(), json!(true));
         assert!(!is_overdue(&done, noon));
+    }
+
+    /// Right-clicking a new reminder whose title was still empty deleted it
+    /// as the menu opened (the title lost focus to the menu): Python keeps it
+    /// while a menu is open.
+    #[test]
+    fn test_empty_reminder_deleted_when_its_menu_opened() {
+        let empty = obj(json!({"id": "a", "title": ""}));
+        assert!(leaves_empty(Some(&empty)));
+        MENUS_OPEN.with(|c| c.set(1));
+        assert!(!leaves_empty(Some(&empty)));
+        MENUS_OPEN.with(|c| c.set(0));
+        assert!(!leaves_empty(Some(&obj(json!({"id": "a", "title": "Milk"})))));
+        assert!(!leaves_empty(None));
     }
 
     #[test]

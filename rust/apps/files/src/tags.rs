@@ -78,7 +78,12 @@ fn c_path(path: &Path) -> Option<CString> {
 
 pub fn read(path: &Path) -> Vec<String> {
     let (Some(p), Ok(name)) = (c_path(path), CString::new(XATTR)) else { return Vec::new() };
-    let mut buf = vec![0u8; 4096];
+    // its size first: many tags are more than any fixed buffer (Python reads them whole)
+    let len = unsafe { libc::lgetxattr(p.as_ptr(), name.as_ptr(), std::ptr::null_mut(), 0) };
+    if len <= 0 {
+        return Vec::new();
+    }
+    let mut buf = vec![0u8; len as usize];
     let n = unsafe { libc::lgetxattr(p.as_ptr(), name.as_ptr(), buf.as_mut_ptr().cast(), buf.len()) };
     if n <= 0 {
         return Vec::new();
@@ -153,8 +158,41 @@ fn load() -> Map<String, Value> {
     std::fs::read_to_string(index_path()).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).and_then(|v| v.as_object().cloned()).unwrap_or_default()
 }
 
+/// `json.dump(data, ensure_ascii=False)`'s text (", " and ": " between the
+/// parts): the Python Files writes the same index, and it read the same
+/// whichever wrote it last.
+fn python_text(v: &Value, out: &mut String) {
+    match v {
+        Value::Array(a) => {
+            out.push('[');
+            for (i, x) in a.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                python_text(x, out);
+            }
+            out.push(']');
+        }
+        Value::Object(m) => {
+            out.push('{');
+            for (i, (k, x)) in m.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str(&serde_json::to_string(k).unwrap_or_default());
+                out.push_str(": ");
+                python_text(x, out);
+            }
+            out.push('}');
+        }
+        other => out.push_str(&serde_json::to_string(other).unwrap_or_default()),
+    }
+}
+
 fn save(data: &Map<String, Value>) {
-    let _ = sonata_config::atomic_write(&index_path(), serde_json::to_string(data).unwrap_or_default().as_bytes(), true);
+    let mut text = String::new();
+    python_text(&Value::Object(data.clone()), &mut text);
+    let _ = sonata_config::atomic_write(&index_path(), text.as_bytes(), true);
 }
 
 fn as_tags(v: &Value) -> Vec<String> {
@@ -167,7 +205,7 @@ fn index_set(path: &Path, tags: &[String]) {
     let key = path.display().to_string();
     if !tags.is_empty() {
         data.insert(key, Value::from(tags.to_vec()));
-    } else if data.remove(&key).is_none() {
+    } else if data.shift_remove(&key).is_none() {
         return;
     }
     save(&data);
@@ -185,7 +223,7 @@ pub fn tagged(tag: &str) -> Vec<PathBuf> {
         if now != as_tags(&data[&path]) {
             changed = true;
             if now.is_empty() {
-                data.remove(&path);
+                data.shift_remove(&path);
             } else {
                 data.insert(path.clone(), Value::from(now.clone()));
             }
@@ -217,7 +255,9 @@ pub fn moved(pairs: &[(PathBuf, PathBuf)]) {
         let inside = format!("{}/", was.trim_end_matches('/'));
         for path in data.keys().cloned().collect::<Vec<_>>() {
             if path == was || path.starts_with(&inside) {
-                let v = data.remove(&path).unwrap();
+                // (shift_remove: remove() swaps the last item into the gap,
+                // and the index's order drifted from Python's)
+                let v = data.shift_remove(&path).unwrap();
                 data.insert(format!("{now}{}", &path[was.len()..]), v);
                 changed = true;
             }
@@ -246,6 +286,33 @@ mod tests {
         assert_eq!(unescape("Trabalho \\xc3\\xa9"), "Trabalho é".as_bytes());
         assert_eq!(tag_of(&uri("Red")), "Red");
         assert_eq!(tag_of("file:///"), "");
+    }
+
+    /// The index was written as compact JSON ({"a":["Red"]}) where the
+    /// Python Files writes json.dump's text ({"a": ["Red"]}): the shared
+    /// file changed form with whichever Files saved it last.
+    #[test]
+    fn test_tag_index_not_written_as_python_does() {
+        let mut m = Map::new();
+        m.insert("/home/v/Relatório.pdf".into(), Value::from(vec!["Red", "Trabalho é"]));
+        m.insert("/home/v/b".into(), Value::from(vec!["Blue"]));
+        let mut t = String::new();
+        python_text(&Value::Object(m), &mut t);
+        assert_eq!(t, r#"{"/home/v/Relatório.pdf": ["Red", "Trabalho é"], "/home/v/b": ["Blue"]}"#);
+    }
+
+    /// Tags past 4 KiB of text read as none (a fixed buffer): Python reads
+    /// the attribute whole. Needs user xattrs; skipped otherwise.
+    #[test]
+    fn test_long_tag_lists_read_as_none() {
+        let d = tempfile::tempdir().unwrap();
+        let a = d.path().join("a");
+        std::fs::write(&a, "").unwrap();
+        let many: Vec<String> = (0..600).map(|i| format!("tag number {i}")).collect();
+        if write(&a, &many).is_err() {
+            return; // no xattrs here (or too big for this disk)
+        }
+        assert_eq!(read(&a).len(), 600);
     }
 
     /// Needs a disk with user xattrs (tmpfs has them since Linux 6.6); skipped otherwise.

@@ -113,7 +113,7 @@ fn installed() -> Vec<gio::DesktopAppInfo> {
 
 fn shortcut_for(title: &str) -> Option<gio::DesktopAppInfo> {
     let apps = installed();
-    let pairs: Vec<(String, String)> = apps.iter().map(|i| (i.display_name().to_string(), i.commandline().map(|c| c.to_string_lossy().into_owned()).unwrap_or_default())).collect();
+    let pairs: Vec<(String, String)> = apps.iter().map(|i| (sonata_ui::apps::display_name(i), i.commandline().map(|c| c.to_string_lossy().into_owned()).unwrap_or_default())).collect();
     shortcut_index(title, &pairs).map(|i| apps[i].clone())
 }
 
@@ -154,7 +154,7 @@ pub fn describe(app_id: &str, title: &str) -> (String, gio::Icon, bool) {
     }
     if is_windows_program(app_id) {
         if let Some(info) = shortcut_for(title) {
-            return (info.display_name().to_string(), sonata_ui::icons::app_icon(info.upcast_ref()), false);
+            return (sonata_ui::apps::display_name(&info), sonata_ui::icons::app_icon(info.upcast_ref()), false);
         }
         let (name, dynamic) = plain_name(app_id, title);
         let names: Vec<String> = WINDOWS_ICONS.iter().map(|s| s.to_string()).collect();

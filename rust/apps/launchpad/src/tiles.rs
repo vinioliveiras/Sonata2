@@ -65,7 +65,7 @@ impl Tile {
                         badge = Some(b);
                     }
                 }
-                (info.map(|i| i.display_name().to_string()).unwrap_or_else(|| id.clone()), img.upcast())
+                (info.map(|i| sonata_ui::apps::display_name(i)).unwrap_or_else(|| id.clone()), img.upcast())
             }
         };
         if item.is_folder() {

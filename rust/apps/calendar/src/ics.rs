@@ -1091,6 +1091,33 @@ mod tests {
         assert_eq!(out.iter().filter(|l| *l == "BEGIN:VALARM").count(), 1);
     }
 
+    /// tests/test_review_docs.py: EXDATEs of an all-day series are written
+    /// as dates and still exclude the day after re-parse.
+    #[test]
+    fn test_all_day_exdate_round_trip() {
+        let mut e = ev("ad", d(2026, 10, 1), d(2026, 10, 2));
+        e.summary = "Gym".into();
+        e.all_day = true;
+        e.freq = Some("DAILY".into());
+        e.count = Some(5);
+        e.exdates = vec![d(2026, 10, 3)];
+        let text = serialize(&[e], "", "", "");
+        assert!(text.contains("EXDATE;VALUE=DATE:20261003"), "{text}");
+        let back = parse(&text, "").1.remove(0);
+        assert_eq!(starts(&back, d(2026, 10, 1), d(2026, 11, 1)), [1, 2, 4, 5].map(|n| d(2026, 10, n)));
+    }
+
+    /// tests/test_review_docs.py: RFC 5545 wants UNTIL a DATE when DTSTART
+    /// is a DATE (other apps reject the datetime form).
+    #[test]
+    fn test_all_day_until_is_written_as_date() {
+        let mut e = ev("u", d(2026, 10, 1), d(2026, 10, 2));
+        e.all_day = true;
+        e.freq = Some("DAILY".into());
+        e.until = Some(date(2026, 10, 5).and_hms_micro_opt(23, 59, 59, 999_999).unwrap());
+        assert!(serialize(&[e], "", "", "").replace("\r\n", ";").contains("UNTIL=20261005;"));
+    }
+
     #[test]
     fn durations_and_lines() {
         assert_eq!(parse_duration("-PT1H"), Some(Duration::hours(-1)));

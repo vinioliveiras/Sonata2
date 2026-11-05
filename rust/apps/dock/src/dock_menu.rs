@@ -27,7 +27,7 @@ pub const FILES_ID: &str = "io.github.vinioliveiras.sonata2.files.desktop";
 
 /// A menu on `widget`, on the Dock's side; it keeps an auto-hiding Dock up.
 pub fn popup(widget: &impl IsA<gtk::Widget>, dock: &Dock, sections: Vec<Vec<Item>>) -> gtk::PopoverMenu {
-    let pop = sonata_ui::menu::popup(widget, sections, Options { position: dock.away, at: None, glass: true });
+    let pop = sonata_ui::menu::popup(widget, sections, Options { position: dock.away, at: None, glass: true, passthrough: false, autohide: true });
     let (x, y) = match dock.away {
         gtk::PositionType::Left => (-6, 0),
         gtk::PositionType::Right => (6, 0),
@@ -78,12 +78,14 @@ pub fn add_to_desktop(path: Option<&Path>) -> Vec<gio::File> {
 /// Show a folder in Files (another process); the system's default file
 /// manager if Files' entry isn't there.
 pub fn open_folder(uri: &str) {
+    // (Sonata's launch path and the display's context: Files comes to the
+    // front even when it was already running)
     if let Some(info) = sonata_ui::apps::lookup(FILES_ID) {
-        if info.launch_uris(&[uri], None::<&gio::AppLaunchContext>).is_ok() {
+        if sonata_ui::apps::launch_uris(&info, &[uri], None).is_ok() {
             return;
         }
     }
-    let _ = gio::AppInfo::launch_default_for_uri(uri, None::<&gio::AppLaunchContext>);
+    let _ = sonata_ui::apps::launch_default_for_uri(uri, None);
 }
 
 /// Open the folder containing `path` in Sonata's Files, the file
@@ -141,6 +143,12 @@ pub fn empty_trash() {
     sonata_files::ops::empty_trash(None, Some(plain));
 }
 
+/// Return empties, like macOS (an alert never makes a destructive button
+/// the default unless asked).
+fn empty_trash_options() -> sonata_ui::dialog::AlertOptions {
+    sonata_ui::dialog::AlertOptions { default: Some("empty".into()), ..Default::default() }
+}
+
 pub fn confirm_empty_trash() {
     let n = trash_count();
     let title = match n {
@@ -148,7 +156,7 @@ pub fn confirm_empty_trash() {
         1 => tr!("Are you sure you want to permanently erase the item in the Trash?"),
         _ => sonata_i18n::fmt(&trn!("Are you sure you want to permanently erase the {n} item in the Trash?", "Are you sure you want to permanently erase the {n} items in the Trash?", n), &[("n", &n.to_string())]),
     };
-    sonata_ui::dialog::alert(&title, &tr!("You can't undo this action."), &[("cancel", tr!("Cancel"), ""), ("empty", tr!("Empty Trash"), "destructive")], |r| {
+    sonata_ui::dialog::alert_with(&title, &tr!("You can't undo this action."), &[("cancel", tr!("Cancel"), ""), ("empty", tr!("Empty Trash"), "destructive")], empty_trash_options(), |r, _| {
         if r == "empty" {
             empty_trash();
         }
@@ -315,7 +323,9 @@ pub fn menu_at(app: Option<&gtk::Application>, connector: &str, x: f64, y: f64, 
     let show = Rc::new(move |win: &gtk::Window| {
         let Some(sections) = sections.take() else { return };
         let Some(child) = win.child() else { return };
-        let pop = sonata_ui::menu::popup(&child, sections, Options::at(x, y));
+        // no autohide (layer.menu_at): the holder got no click of its own
+        // -- it closes the menu itself, on a click anywhere or Esc
+        let pop = sonata_ui::menu::popup(&child, sections, held_options(x, y));
         let w = win.downgrade();
         pop.connect_closed(move |p| {
             let mine = HOLDER.with(|h| {
@@ -348,6 +358,13 @@ pub fn menu_at(app: Option<&gtk::Application>, connector: &str, x: f64, y: f64, 
         win.present();
     }
     true
+}
+
+/// menu_at()'s menu: at the point, never hiding itself (ui.menu's
+/// autohide=False; with autohide, a menu on a surface that got no click of
+/// its own may never show or close at once).
+fn held_options(x: f64, y: f64) -> Options {
+    Options { autohide: false, ..Options::at(x, y) }
 }
 
 /// menu_at()'s menu closes (Mission Control closed under it: Vini, its
@@ -540,13 +557,50 @@ pub fn app_pids(views: &Value, key: &str, me: i64) -> Vec<i64> {
     pids
 }
 
+/// A process's command line, its arguments joined by spaces ("" when gone).
+fn cmdline(pid: i64) -> String {
+    std::fs::read(format!("/proc/{pid}/cmdline")).map(|c| String::from_utf8_lossy(&c).replace('\0', " ")).unwrap_or_default()
+}
+
+/// The pids that may be signalled (quitapps.app_pids' last step): never
+/// Sonata's own shell, and never Xwayland -- an X11 window's pid can be
+/// Xwayland's, and it goes with the session, taking every X11 app along.
+pub fn signallable(pids: Vec<i64>, cmdline: impl Fn(i64) -> String) -> Vec<i64> {
+    pids.into_iter()
+        .filter(|p| {
+            let line = cmdline(*p);
+            !line.contains("sonata2") && !line.split(' ').next().unwrap_or("").contains("Xwayland")
+        })
+        .collect()
+}
+
+/// Force Quit's processes (dock_menu.force_quit): every window's of the
+/// app, Sonata's own apps included (a hung Files or Settings can be
+/// killed), never this process nor Xwayland.
+pub fn force_pids(views: &Value, key: &str, me: i64) -> Vec<i64> {
+    let mut pids: Vec<i64> = views
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|v| {
+            let aid = v.get("app-id").and_then(Value::as_str).unwrap_or("");
+            sonata_desktop::appmatch::match_app_id(aid).unwrap_or_else(|| aid.to_string()) == key
+        })
+        .filter_map(|v| v.get("pid")?.as_i64())
+        .filter(|p| *p > 1 && *p != me)
+        .collect();
+    pids.sort();
+    pids.dedup();
+    pids
+}
+
 /// macOS Quit (quitapps.quit_app): the app's windows close, then the app
 /// itself gets SIGTERM if it's still running without one (Chrome in the
 /// background). One that keeps a window ("Save changes?") just stays.
 pub fn quit_app(manager: Option<Rc<crate::toplevels::Manager>>, wins: Vec<Toplevel>, key: &str) {
     let Some(m) = manager else { return };
     let views = sonata_backend::wfipc::call("window-rules/list-views", json!({})).unwrap_or(Value::Null);
-    let pids: Vec<i64> = app_pids(&views, key, std::process::id() as i64).into_iter().filter(|p| !std::fs::read(format!("/proc/{p}/cmdline")).is_ok_and(|c| String::from_utf8_lossy(&c).contains("sonata2"))).collect();
+    let pids = signallable(app_pids(&views, key, std::process::id() as i64), cmdline);
     for t in &wins {
         m.close(t);
     }
@@ -577,7 +631,7 @@ pub fn quit_app(manager: Option<Rc<crate::toplevels::Manager>>, wins: Vec<Toplev
 /// for an app that doesn't answer (its windows' pids from Wayfire).
 pub fn force_quit(key: &str) -> bool {
     let views = sonata_backend::wfipc::call("window-rules/list-views", json!({})).unwrap_or(Value::Null);
-    let pids = app_pids(&views, key, std::process::id() as i64);
+    let pids: Vec<i64> = force_pids(&views, key, std::process::id() as i64).into_iter().filter(|p| !cmdline(*p).split(' ').next().unwrap_or("").contains("Xwayland")).collect();
     for p in &pids {
         // SAFETY: kill(2) with a plain pid and signal
         if unsafe { libc::kill(*p as i32, libc::SIGKILL) } != 0 {
@@ -706,7 +760,7 @@ pub fn area_menu(dock: &Dock, window: &DockWindow, at: (f64, f64)) -> gtk::Popov
         ],
         vec![hiding_item(dock), position_item(dock)],
         vec![Item::new(&tr!("Dock Preferences…"), || spawn_sonata(&["settings", "--page", "dock"]))],
-    ], Options { position: dock.away, at: Some(at), glass: true });
+    ], Options { position: dock.away, at: Some(at), glass: true, passthrough: false, autohide: true });
     dock::menu_opened(&pop);
     pop
 }
@@ -800,5 +854,45 @@ mod tests {
         ]);
         assert_eq!(app_pids(&views, "kitty", 42), vec![100]);
         assert!(app_pids(&views, "io.github.vinioliveiras.sonata2.files", 0).is_empty());
+    }
+
+    /// Mission Control's right-click menu was an auto-hiding popover on a
+    /// surface that got no click of its own (layer.menu_at: autohide=False).
+    #[test]
+    fn test_mission_control_menu_autohid() {
+        let o = held_options(10.0, 20.0);
+        assert!(!o.autohide);
+        assert_eq!(o.at, Some((10.0, 20.0)));
+    }
+
+    /// Empty Trash…: Return cancelled instead of emptying (Python's alert
+    /// has default="empty", like macOS).
+    #[test]
+    fn test_return_did_not_empty_the_trash() {
+        assert_eq!(empty_trash_options().default.as_deref(), Some("empty"));
+    }
+
+    /// Quit on an X11 app (Steam, Wine) could SIGTERM Xwayland -- its
+    /// windows' pid can be Xwayland's -- and every X11 app closed with it.
+    #[test]
+    fn test_quit_killed_xwayland() {
+        let line = |p: i64| match p {
+            10 => "/usr/bin/Xwayland :0 -rootless".to_string(),
+            11 => "/usr/bin/python3 -m sonata2 files".to_string(),
+            _ => "/usr/bin/steam".to_string(),
+        };
+        assert_eq!(signallable(vec![10, 11, 12], line), vec![12]);
+    }
+
+    /// Force Quit on a hung Sonata Files or Settings did nothing: its
+    /// windows were left out as "Sonata's own" (only Quit leaves them out).
+    #[test]
+    fn test_force_quit_skipped_sonatas_own_apps() {
+        let views = json!([
+            {"type": "toplevel", "app-id": "io.github.vinioliveiras.sonata2.files", "pid": 300},
+            {"type": "toplevel", "app-id": "kitty", "pid": 42}
+        ]);
+        assert_eq!(force_pids(&views, "io.github.vinioliveiras.sonata2.files", 42), vec![300]);
+        assert!(force_pids(&views, "kitty", 42).is_empty());
     }
 }

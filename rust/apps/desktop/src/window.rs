@@ -554,6 +554,28 @@ mod tests {
 
     use super::*;
 
+    /// tests/test_wallpaper_memory.py -- Vini: at login the default
+    /// (gradient) showed for a moment before his wallpaper: the first
+    /// picture is there before the window shows, nothing to wait for.
+    #[test]
+    fn test_first_picture_before_the_window_shows() {
+        let _l = crate::testenv::lock();
+        crate::testenv::on_gtk(first_picture_at_once);
+    }
+
+    fn first_picture_at_once() {
+        // (the test's home: Sonata's own picture, Mountains)
+        if !sonata_shell::wallpaper::usable_picture(&sonata_shell::wallpaper::wallpaper_uri(adw::StyleManager::default().is_dark())) {
+            return; // (no wallpapers in this build)
+        }
+        let app = gtk::Application::builder().application_id("io.github.test.wallfirst").flags(gio::ApplicationFlags::NON_UNIQUE).build();
+        let _ = app.register(gio::Cancellable::NONE);
+        let w = WallpaperWindow::new(&app, None, false, false, false);
+        let shown = w.stack.visible_child().and_downcast::<gtk::Picture>().expect("a picture");
+        assert!(shown.paintable().is_some(), "decoded after the window showed");
+        w.destroy();
+    }
+
     #[test]
     fn test_cover_size() {
         assert_eq!(cover_size(3840, 2160, 1920, 1080), (1920, 1080));

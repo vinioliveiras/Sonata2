@@ -413,8 +413,25 @@ fn title_case(s: &str) -> String {
     out
 }
 
+/// userdata.migrate: calendars once lived in ~/.local/share/sonata2/calendar,
+/// the folder Sonata is installed in (an update replaced it, a dev install
+/// put them in the git clone); the first time, they move to the data folder
+/// unless that already exists. `base` is the user data dir.
+pub fn migrate_old_folder(base: &Path) -> bool {
+    let (old, new) = (base.join("sonata2").join("calendar"), base.join("sonata2-data").join("calendar"));
+    if new.symlink_metadata().is_ok() || !old.is_dir() {
+        return false;
+    }
+    let from = std::fs::canonicalize(&old).unwrap_or(old); // wherever it points: a dev install's clone
+    std::fs::create_dir_all(base.join("sonata2-data")).is_ok() && std::fs::rename(from, &new).is_ok()
+}
+
 /// The folder: on trial its own copy of the Python Calendar's files, made once.
 pub fn data_dir() -> PathBuf {
+    if !sonata_config::side_by_side() {
+        // (on trial the Python Calendar's own folders are never written)
+        migrate_old_folder(&glib::user_data_dir());
+    }
     let own = sonata_config::own_data_dir("calendar");
     let shared = sonata_config::data_dir("calendar");
     if own != shared && is_empty_dir(&own) {
@@ -531,6 +548,42 @@ mod tests {
         assert_eq!(st2.events["s"].overrides.len(), 1);
     }
 
+    /// tests/test_review_docs.py: editing an event keeps ATTENDEE / X-
+    /// properties, its RECURRENCE-ID instances and the VTIMEZONE.
+    #[test]
+    fn test_foreign_properties_and_overrides_survive_store_edit() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut st = Store::new(dir.path().into());
+        st.load();
+        let cal = st.calendars[0].id.clone();
+        st.import_text("BEGIN:VCALENDAR\nBEGIN:VTIMEZONE\nTZID:Custom Zone\nEND:VTIMEZONE\nBEGIN:VEVENT\nUID:s\nSUMMARY:Series\nDTSTART:20261001T090000\nDURATION:PT1H\nRRULE:FREQ=DAILY\nATTENDEE;CN=Ana:mailto:ana@x.org\nX-FOO:bar\nEND:VEVENT\nBEGIN:VEVENT\nUID:s\nRECURRENCE-ID:20261003T090000\nSUMMARY:Moved one\nDTSTART:20261003T120000\nDURATION:PT1H\nEND:VEVENT\nEND:VCALENDAR\n", &cal);
+        let mut ev = (*st.events["s"]).clone();
+        ev.summary = "Renamed".into();
+        st.put(ev);
+        let text = ics::unfold(&std::fs::read_to_string(dir.path().join(format!("{cal}.ics"))).unwrap());
+        for line in ["ATTENDEE;CN=Ana:mailto:ana@x.org", "X-FOO:bar", "TZID:Custom Zone", "RECURRENCE-ID:20261003T090000", "SUMMARY:Moved one", "SUMMARY:Renamed"] {
+            assert!(text.iter().any(|l| l == line), "{line}");
+        }
+        let mut st2 = Store::new(dir.path().into());
+        st2.load();
+        assert_eq!(st2.events["s"].overrides.len(), 1);
+    }
+
+    /// A file the Python Calendar wrote (its colour as X-SONATA-COLOR, a
+    /// name, CRLF lines) reads back with the same calendar, colour and
+    /// events; one with only Apple's hex colour gets the nearest palette one.
+    #[test]
+    fn python_written_files_read_the_same() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("work.ics"), "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Sonata//Calendar//EN\r\nCALSCALE:GREGORIAN\r\nX-WR-CALNAME:Office\r\nX-SONATA-COLOR:purple\r\nX-APPLE-CALENDAR-COLOR:#AF52DE\r\nBEGIN:VEVENT\r\nUID:A1\r\nDTSTAMP:20261001T000000Z\r\nDTSTART:20261002T110000\r\nDTEND:20261002T120000\r\nSUMMARY:Dentist\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n").unwrap();
+        std::fs::write(dir.path().join("apple.ics"), "BEGIN:VCALENDAR\nX-APPLE-CALENDAR-COLOR:#34C759FF\nEND:VCALENDAR\n").unwrap();
+        let mut st = Store::new(dir.path().into());
+        st.load();
+        let cals: Vec<(&str, &str, &str)> = st.calendars.iter().map(|c| (c.id.as_str(), c.name.as_str(), c.color.as_str())).collect();
+        assert_eq!(cals, [("apple", "Apple", "green"), ("work", "Office", "purple")]);
+        assert_eq!((st.events["A1"].summary.as_str(), st.events["A1"].calendar.as_str()), ("Dentist", "work"));
+    }
+
     #[test]
     fn async_writes_keep_order_and_a_delete_wins() {
         let dir = tempfile::tempdir().unwrap();
@@ -552,6 +605,23 @@ mod tests {
         st.flush();
         assert!(std::fs::read_to_string(dir.path().join(format!("{cal}.ics"))).unwrap().contains("SUMMARY:v19"));
         assert!(!dir.path().join(format!("{}.ics", temp.id)).exists());
+    }
+
+    /// tests/test_regressions.py (userdata): calendars kept in the install
+    /// folder (~/.local/share/sonata2/calendar) are moved to sonata2-data
+    /// the first time -- the Rust Calendar opened with none of them.
+    #[test]
+    fn test_calendars_left_in_the_install_folder() {
+        let base = tempfile::tempdir().unwrap();
+        let old = base.path().join("sonata2").join("calendar");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("home.ics"), "BEGIN:VCALENDAR\n").unwrap();
+        assert!(migrate_old_folder(base.path()));
+        assert!(base.path().join("sonata2-data/calendar/home.ics").exists());
+        assert!(!old.exists());
+        // the data folder there already: nothing moves
+        std::fs::create_dir_all(&old).unwrap();
+        assert!(!migrate_old_folder(base.path()));
     }
 
     #[test]

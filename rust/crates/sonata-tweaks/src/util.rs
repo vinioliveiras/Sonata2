@@ -70,10 +70,10 @@ pub fn strings(v: Option<&serde_json::Value>) -> Vec<String> {
     v.and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default()
 }
 
-/// The desktop id without ".desktop" (gpu.app_key).
+/// The desktop id without ".desktop" (gpu.app_key); a login item's own
+/// file name when it has none (sonata_ui::apps::desktop_id).
 pub fn key_of(info: &gio::AppInfo) -> String {
-    use gio::prelude::*;
-    let id = info.id().map(|s| s.to_string()).unwrap_or_default();
+    let id = sonata_ui::apps::desktop_id(info);
     id.strip_suffix(".desktop").map(String::from).unwrap_or(id)
 }
 

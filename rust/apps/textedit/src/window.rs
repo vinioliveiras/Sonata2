@@ -156,6 +156,36 @@ fn thousands(n: i64) -> String {
     if n < 0 { format!("-{out}") } else { out }
 }
 
+/// A document window's first size (ui/window.py's roomy_size): (w, h) grown
+/// to about two thirds of a `screen`-sized display (Vini: on 1080p windows
+/// opened too small), never smaller than the app's own default.
+fn roomy_size(w: i32, h: i32, screen: Option<(i32, i32)>) -> (i32, i32) {
+    match screen {
+        Some((sw, sh)) => (w.max((sw as f64 * 0.66) as i32), h.max((sh as f64 * 0.65) as i32)),
+        None => (w, h),
+    }
+}
+
+/// Go to Line's field: "12" or "12:3" / "12,3" (window.py's
+/// `^\s*(\d+)\s*(?:[:,]\s*(\d+))?\s*$`); None for anything else -- a sign,
+/// a stray character, "12:" -- so the cursor stays put.
+fn parse_goto(text: &str) -> Option<(i64, i64)> {
+    let num = |s: &str| -> Option<i64> {
+        let s = s.trim();
+        if s.is_empty() || !s.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        // a number past any line: the last line (clamped by go_to)
+        Some(s.parse::<i64>().unwrap_or(i64::MAX))
+    };
+    let mut parts = text.splitn(2, [':', ',']);
+    let line = num(parts.next()?)?;
+    match parts.next() {
+        None => Some((line, 1)),
+        Some(c) => Some((line, num(c)?)),
+    }
+}
+
 fn rgba(token: &str, alpha: f32) -> gdk::RGBA {
     let c = sonata_ui::rgba(token);
     gdk::RGBA::new(c.red(), c.green(), c.blue(), alpha)
@@ -501,7 +531,15 @@ impl TeWindow {
             window.add_css_class("sonata-textedit");
             sonata_ui::window::standard(&window);
             window.set_size_request(MIN_SIZE.0, MIN_SIZE.1);
-            sonata_ui::window::remember_size(window.upcast_ref(), "textedit", 760, 580);
+            // a session window: its own size (restore); a document window's
+            // first size, with no size kept yet, is about two thirds of the
+            // display (window.py: remember_size(..., roomy=True))
+            let (w0, h0) = if sonata_ui::window::saved_size("textedit").is_none() {
+                roomy_size(760, 580, sonata_ui::window::screen_size_of(&window))
+            } else {
+                (760, 580)
+            };
+            sonata_ui::window::remember_size(window.upcast_ref(), "textedit", w0, h0);
             let call = |f: fn(&TeWindow)| -> Box<dyn Fn()> {
                 let w = me.clone();
                 Box::new(move || {
@@ -1027,7 +1065,7 @@ impl TeWindow {
                 })
                 .enabled(has_others)],
             ],
-            menu::Options::at(x, y),
+            menu::Options::at(x, y).passthrough(), // (window.py: passthrough=True)
         );
     }
 
@@ -1450,16 +1488,9 @@ impl TeWindow {
         let pop = sonata_ui::panel::popup(&self.pos_btn, &col, gtk::PositionType::Top);
         let me = self.me.clone();
         entry.connect_activate(move |e| {
-            let text = e.text();
-            let mut parts = text.trim().splitn(2, [':', ',']);
-            let line = parts.next().and_then(|l| l.trim().parse::<i32>().ok());
-            let column = parts.next().map(|c| c.trim().parse::<i32>().ok());
-            if let (Some(line), Some(t)) = (line, me.upgrade()) {
-                match column {
-                    None => t.go_to(line, 1),
-                    Some(Some(c)) => t.go_to(line, c),
-                    Some(None) => {}
-                }
+            if let (Some((line, column)), Some(t)) = (parse_goto(&e.text()), me.upgrade()) {
+                let clamp = |n: i64| n.min(i32::MAX as i64) as i32;
+                t.go_to(clamp(line), clamp(column));
             }
             pop.popdown();
         });
@@ -1944,4 +1975,252 @@ pub fn run(args: &[String]) -> glib::ExitCode {
     let mut argv = vec![argv0];
     argv.extend(files);
     app.run_with_args(&argv)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sourceview5::prelude::ViewExt;
+    use std::time::Instant;
+
+    #[test]
+    fn test_go_to_line_moved_on_a_signed_number() {
+        // Go to Line took "+5" as line 5 and "-3" as line 1 (Rust's number
+        // parsing); the Python field only takes digits and stays put otherwise.
+        assert_eq!(parse_goto("12"), Some((12, 1)));
+        assert_eq!(parse_goto(" 12 : 3 "), Some((12, 3)));
+        assert_eq!(parse_goto("12,3"), Some((12, 3)));
+        for bad in ["+5", "-3", "12:", "12:x", "", "1 2", "a"] {
+            assert_eq!(parse_goto(bad), None, "{bad}");
+        }
+        assert_eq!(parse_goto("99999999999999999999"), Some((i64::MAX, 1))); // past the end: the last line
+    }
+
+    #[test]
+    fn test_first_window_was_not_roomy() {
+        // A first TextEdit window (no size kept yet) opened at 760 x 580 on a
+        // 1080p display; Python's opens at about two thirds of it.
+        assert_eq!(roomy_size(760, 580, Some((1920, 1080))), (1267, 702));
+        assert_eq!(roomy_size(760, 580, Some((1024, 600))), (760, 580)); // never smaller than the default
+        assert_eq!(roomy_size(760, 580, None), (760, 580));
+    }
+
+    // -- the window (tests/test_textedit.py's TextEditTest), where GTK can start
+
+    /// GTK for these tests, on this thread: none without a display, and none
+    /// when another test's thread has it already (GTK lives on one thread).
+    fn gtk_here() -> bool {
+        if gtk::is_initialized() && !gtk::is_initialized_main_thread() {
+            return false;
+        }
+        gtk::init().is_ok()
+    }
+
+    fn settle(ms: u64) {
+        let end = Instant::now() + Duration::from_millis(ms);
+        while Instant::now() < end {
+            glib::MainContext::default().iteration(false);
+        }
+    }
+
+    fn write(name: &str, text: &str) -> String {
+        let dir = tempfile::tempdir().unwrap().keep();
+        let p = dir.join(name);
+        std::fs::write(&p, text).unwrap();
+        p.display().to_string()
+    }
+
+    fn reset() {
+        for w in windows() {
+            w.closing.set(true);
+            w.forget();
+            w.window.destroy();
+        }
+        S.with(|s| {
+            let mut s = s.borrow_mut();
+            s.parked.clear();
+            s.loaded = true;
+        });
+        settle(20);
+    }
+
+    fn fresh_launch() {
+        S.with(|s| {
+            let mut s = s.borrow_mut();
+            s.parked.clear();
+            s.loaded = false;
+        });
+    }
+
+    fn front() -> Rc<TeWindow> {
+        windows()[0].clone()
+    }
+
+    fn path_of(d: &Document) -> Option<String> {
+        d.file.borrow().as_ref().and_then(|f| f.path()).map(|p| p.display().to_string())
+    }
+
+    fn session_json() -> Value {
+        serde_json::from_slice(&std::fs::read(session::data_dir().join("session.json")).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn window_and_session() {
+        if !gtk_here() {
+            return; // (no display: parse_goto and session.rs are still checked)
+        }
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let data = tempfile::tempdir().unwrap();
+        std::env::set_var("XDG_DATA_HOME", data.path());
+        let app = adw::Application::builder().application_id("io.test.textedit.rs").flags(gio::ApplicationFlags::NON_UNIQUE).build();
+        app.register(gio::Cancellable::NONE).unwrap();
+        sonata_ui::setup();
+        reset();
+        session_round_trip(&app);
+        reset();
+        closing_one_of_several_windows(&app);
+        reset();
+        session_comes_back_as_tabs_and_closed_tabs_stay_closed(&app);
+        reset();
+        look_settings(&app);
+        reset();
+    }
+
+    fn session_round_trip(app: &adw::Application) {
+        let path = write("kept.txt", "saved text\nline 2\n");
+        let w = TeWindow::new(app, Some(gio::File::for_path(&path)), None);
+        w.window.present();
+        settle(50);
+        let d0 = w.current().unwrap();
+        d0.buffer.insert(&mut d0.buffer.end_iter(), "unsaved edit\n");
+        d0.buffer.place_cursor(&d0.buffer.iter_at_offset(5));
+        let u = w.new_tab(true, None);
+        u.buffer.insert_at_cursor("scratch notes ✓");
+        w.new_tab(true, None); // empty Untitled: not brought back
+        let second = w.docs.borrow()[1].clone();
+        w.select(&second);
+        let names: Vec<String> = w.docs.borrow().iter().take(2).map(|d| d.name()).collect();
+        save_now();
+        let tabs = session_json()["windows"][0]["tabs"].clone();
+        let backups: Vec<bool> = tabs.as_array().unwrap().iter().map(|t| t["backup"].as_bool().unwrap()).collect();
+        assert_eq!(backups, [true, true, false]);
+        assert_eq!(session::read_buffer(&u.id.borrow()).as_deref(), Some("scratch notes ✓"));
+        // "quit": the last window closes without asking and stays in the session
+        w.window.close();
+        settle(50);
+        assert_eq!(std::fs::metadata(&path).unwrap().len() as usize, "saved text\nline 2\n".len()); // the file itself untouched
+        assert_eq!(S.with(|s| s.borrow().parked.len()), 1);
+        // a new process: TextEdit starts without files
+        fresh_launch();
+        open_paths(app, &[]);
+        settle(100);
+        let w2 = front();
+        let docs = w2.docs.borrow().clone();
+        assert_eq!(docs.iter().map(|d| d.name()).collect::<Vec<_>>(), names);
+        assert_eq!(docs[0].text(), "saved text\nline 2\nunsaved edit\n");
+        assert!(docs[0].dirty());
+        assert_eq!(path_of(&docs[0]).as_deref(), Some(path.as_str()));
+        assert_eq!(docs[0].buffer.iter_at_mark(&docs[0].buffer.get_insert()).offset(), 5);
+        assert_eq!(docs[1].text(), "scratch notes ✓");
+        assert!(w2.is_current(&docs[1])); // the tab that was active
+        // closing the untitled tab for good (Don't Save) drops its text from the disk
+        w2.remove_tab(&docs[1]);
+        save_now();
+        assert_eq!(session::read_buffer(&u.id.borrow()), None);
+        // saving the edited file: nothing unsaved is left in the session
+        w2.save(Some(docs[0].clone()), None, false);
+        save_now();
+        let any_backup = session_json()["windows"].as_array().unwrap().iter().flat_map(|w| w["tabs"].as_array().unwrap().clone()).any(|t| t["backup"] == json!(true));
+        assert!(!any_backup);
+    }
+
+    fn closing_one_of_several_windows(app: &adw::Application) {
+        let w1 = TeWindow::new(app, None, None);
+        let w2 = TeWindow::new(app, None, None);
+        w1.window.present();
+        w2.window.present();
+        w2.current().unwrap().buffer.insert_at_cursor("don't lose me");
+        w2.window.close(); // no question, the text is kept
+        settle(50);
+        assert_eq!(S.with(|s| s.borrow().parked.len()), 1);
+        w1.window.close(); // clean and last: kept too
+        settle(50);
+        assert_eq!(S.with(|s| s.borrow().parked.len()), 2);
+        fresh_launch();
+        assert!(restore_session(app).is_some());
+        assert_eq!(windows().len(), 1); // as tabs of one window
+        let texts: Vec<String> = windows().iter().flat_map(|w| w.docs.borrow().iter().map(|d| d.text()).collect::<Vec<_>>()).collect();
+        assert!(texts.iter().any(|t| t == "don't lose me"));
+    }
+
+    fn session_comes_back_as_tabs_and_closed_tabs_stay_closed(app: &adw::Application) {
+        // regression (Vini, Python): opening a file kept the saved session
+        // hidden, so old windows piled up and all came back at once as
+        // windows, even after closing them
+        session::save(&[]).unwrap(); // no session left by the others
+        let (a, b, c) = (write("a.txt", "A"), write("b.txt", "B"), write("c.txt", "C"));
+        for p in [&a, &b, &c] {
+            // three launches, each with a file
+            fresh_launch();
+            open_paths(app, &[gio::File::for_path(p)]);
+            settle(50);
+            assert_eq!(windows().len(), 1);
+            if *p != c {
+                front().window.close();
+                settle(50);
+            }
+        }
+        let w = front();
+        let mut open: Vec<String> = w.docs.borrow().iter().filter_map(|d| path_of(d)).collect();
+        open.sort();
+        let mut want = vec![a.clone(), b.clone(), c.clone()];
+        want.sort();
+        assert_eq!(open, want);
+        assert!(S.with(|s| s.borrow().parked.is_empty())); // nothing left waiting
+        for p in [&a, &b] {
+            let d = w.docs.borrow().iter().find(|d| path_of(d).as_deref() == Some(p.as_str())).cloned().unwrap();
+            w.remove_tab(&d);
+        }
+        w.window.close();
+        settle(50);
+        for _ in 0..2 {
+            // two more launches
+            fresh_launch();
+            open_paths(app, &[]);
+            settle(50);
+            assert_eq!(windows().len(), 1);
+            let paths: Vec<Option<String>> = front().docs.borrow().iter().map(|d| path_of(d)).collect();
+            assert_eq!(paths, [Some(c.clone())]);
+            front().window.close();
+            settle(50);
+        }
+    }
+
+    fn look_settings(app: &adw::Application) {
+        let w = TeWindow::new(app, Some(gio::File::for_path(write("main.py", "print(1)\n"))), None);
+        w.window.present();
+        assert!(w.current().unwrap().view.has_css_class("te-mono")); // Automatic: code is monospaced
+        w.open_file(&gio::File::for_path(write("prose.txt", "Words.")));
+        assert!(w.current().unwrap().view.has_css_class("te-sans"));
+        w.set_option("font", json!("serif"));
+        assert!(w.docs.borrow().iter().all(|d| d.view.has_css_class("te-serif")));
+        let size = cfg_size();
+        w.zoom(1);
+        assert!(cfg_size() > size);
+        assert_eq!(w.size_label.label(), cfg_size().to_string());
+        w.zoom(0);
+        assert_eq!(cfg_size(), 14);
+        w.wrap_btn.set_active(false);
+        assert_eq!(w.current().unwrap().view.wrap_mode(), gtk::WrapMode::None);
+        w.lines_btn.set_active(true);
+        assert!(w.current().unwrap().view.shows_line_numbers());
+        // kept in textedit.json, where the Python TextEdit reads them
+        let saved = sonata_config::stored("textedit");
+        assert_eq!(saved.get("font"), Some(&json!("serif")));
+        assert_eq!(saved.get("wrap"), Some(&json!(false)));
+        assert_eq!(saved.get("line_numbers"), Some(&json!(true)));
+        w.set_option("font", json!("auto"));
+        w.lines_btn.set_active(false);
+        w.wrap_btn.set_active(true);
+    }
 }

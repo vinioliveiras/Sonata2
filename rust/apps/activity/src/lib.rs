@@ -5,9 +5,10 @@ pub mod manage;
 pub mod pages;
 pub mod performance;
 pub mod rows;
-pub mod steam;
 pub mod widgets;
 pub mod window;
+#[cfg(test)]
+mod window_tests;
 
 use gtk::prelude::*;
 

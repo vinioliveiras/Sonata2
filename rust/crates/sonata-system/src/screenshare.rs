@@ -171,7 +171,7 @@ impl ScreenSharing {
 
     pub fn wanted(&self) -> Wanted {
         let cfg = sonata_config::load(NAME, &defaults());
-        Wanted { screen: cfg.get("screen").and_then(Value::as_bool).unwrap_or(false) && (self.0.installed)(), output: cfg.get("output").and_then(Value::as_str).unwrap_or("").into(), rev: cfg.get("rev").and_then(Value::as_i64).unwrap_or(0) }
+        Wanted { screen: crate::py::truthy(cfg.get("screen")) && (self.0.installed)(), output: cfg.get("output").and_then(Value::as_str).unwrap_or("").into(), rev: cfg.get("rev").and_then(Value::as_i64).unwrap_or(0) }
     }
 
     pub fn apply(&self) {
@@ -282,6 +282,31 @@ mod tests {
     fn addresses_tailscale_first() {
         let out = "2: wlan0    inet 192.168.1.20/24 brd x scope global\n5: tailscale0    inet 100.64.0.7/32 scope global\n";
         assert_eq!(addresses_of(out), [("100.64.0.7:5900".to_string(), "tailscale0".to_string()), ("192.168.1.20:5900".to_string(), "wlan0".to_string())]);
+    }
+
+    /// tests/test_screenshare.py: a server that quits is started again
+    /// (after RESTART_MS[0]), as long as sharing is on.
+    #[test]
+    fn started_again_when_it_quits() {
+        crate::on_main(move || {
+            let dir = tempfile::tempdir().unwrap();
+            let fake = dir.path().join("wayvnc");
+            std::fs::write(&fake, "#!/bin/sh\nexit 1\n").unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let save = |v: Value| sonata_config::save(NAME, v.as_object().unwrap()).unwrap();
+            save(json!({"screen": 1})); // (bool() of the setting, as the Python reads it)
+            let s = ScreenSharing::with_program(fake.to_str().unwrap(), || true);
+            s.apply();
+            assert!(s.running().is_some());
+            crate::spin(300);
+            assert_eq!((s.running(), s.0.fails.get()), (None, 1)); // it quit: a retry waits
+            crate::spin(RESTART_MS[0] + 500);
+            assert_eq!(s.0.fails.get(), 2); // started again (and quit again)
+            save(json!({"screen": false}));
+            s.apply();
+            assert_eq!(s.running(), None);
+        });
     }
 
     /// On, off, the display and a new password (restarted); never without wayvnc.

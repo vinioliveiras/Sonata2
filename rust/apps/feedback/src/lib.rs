@@ -35,7 +35,7 @@ pub fn app_id() -> &'static str {
 pub fn reveal(path: &Path) {
     let folder = if path.is_dir() { path.to_path_buf() } else { path.parent().map(Path::to_path_buf).unwrap_or_default() };
     let fallback = move || {
-        let _ = gio::AppInfo::launch_default_for_uri(&gio::File::for_path(&folder).uri(), gio::AppLaunchContext::NONE);
+        let _ = sonata_ui::apps::launch_default_for_uri(&gio::File::for_path(&folder).uri(), None);
     };
     if path.is_dir() {
         fallback();
@@ -272,7 +272,7 @@ impl Feedback {
         glib::spawn_future_local(async move {
             let made = gio::spawn_blocking(move || {
                 let info = report::system_info(); // once: it runs pacman and lspci
-                let path = report::create(&title, &text, &info).map_err(|e| e.to_string())?;
+                let path = report::create(&title, &text, &info).map_err(|e| report::error_text(&e))?;
                 let url = github.then(|| report::issue_url(&title, &text, &path.file_name().unwrap_or_default().to_string_lossy(), &info));
                 Ok::<_, String>((path, url))
             })
@@ -300,7 +300,7 @@ impl Feedback {
         match made {
             Err(e) => self.toast(&sonata_i18n::fmt(&tr!("Couldn't save the report: {error}"), &[("error", &e)]), None),
             Ok((path, Some(url))) => {
-                let _ = gio::AppInfo::launch_default_for_uri(&url, gio::AppLaunchContext::NONE);
+                let _ = sonata_ui::apps::launch_default_for_uri(&url, None);
                 reveal(&path);
                 self.toast(&tr!("Attach the report shown in Files to the GitHub issue"), None);
             }

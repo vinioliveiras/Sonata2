@@ -178,7 +178,9 @@ pub fn run(action: &Action) -> (String, bool) {
                         break;
                     }
                     let name = e.file_name().to_string_lossy().into_owned();
-                    entries.push(match e.metadata() {
+                    // through links, as os.scandir's is_dir() and stat() go: a
+                    // link to a folder is listed as a folder, not as the link
+                    entries.push(match std::fs::metadata(e.path()) {
                         Ok(m) if m.is_dir() => format!("{name}/"),
                         Ok(m) => format!("{name}\t{}", m.len()),
                         Err(_) => name,
@@ -266,6 +268,39 @@ mod tests {
         assert_eq!(run(&list).0, "dir/");
         std::fs::write(ok.join("bin"), [0u8, 1, 2]).unwrap();
         assert_eq!(run(&check("read_file", &json!({"path": ok.join("bin").display().to_string()}), &f).unwrap()), ("This is not a text file.".into(), true));
+    }
+
+    /// A link to a folder inside an allowed folder was listed as a file
+    /// with the link's own size ("docs\t24") instead of "docs/": Claude
+    /// couldn't tell it could look inside.
+    #[test]
+    fn test_list_folder_showed_folder_links_as_files() {
+        let d = tempfile::tempdir().unwrap();
+        let ok = d.path().join("allowed");
+        std::fs::create_dir_all(ok.join("real")).unwrap();
+        std::os::unix::fs::symlink(ok.join("real"), ok.join("docs")).unwrap();
+        std::os::unix::fs::symlink(ok.join("gone"), ok.join("broken")).unwrap();
+        let act = check("list_folder", &json!({"path": ok.display().to_string()}), &folders(d.path())).unwrap();
+        assert_eq!(run(&act), ("broken\ndocs/\nreal/".into(), false));
+    }
+
+    /// tests/test_review_apps.py: reads stop at MAX_READ and listings at MAX_LIST entries.
+    #[test]
+    fn test_read_is_capped_and_list_is_capped() {
+        let d = tempfile::tempdir().unwrap();
+        let ok = d.path().join("allowed");
+        std::fs::create_dir_all(&ok).unwrap();
+        std::fs::write(ok.join("big.txt"), "a".repeat(MAX_READ + 10)).unwrap();
+        let f = folders(d.path());
+        let (text, err) = run(&check("read_file", &json!({"path": ok.join("big.txt").display().to_string()}), &f).unwrap());
+        assert!(!err);
+        assert!(text.starts_with(&"a".repeat(MAX_READ)) && text.ends_with("\n… (cut at 256 KB)"));
+        for i in 0..MAX_LIST + 2 {
+            std::fs::write(ok.join(format!("f{i:04}")), "").unwrap();
+        }
+        let (text, _) = run(&check("list_folder", &json!({"path": ok.display().to_string()}), &f).unwrap());
+        assert_eq!(text.lines().count(), MAX_LIST + 1);
+        assert!(text.ends_with("… (more than 500 entries)"));
     }
 
     #[test]

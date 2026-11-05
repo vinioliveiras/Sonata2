@@ -100,6 +100,33 @@ fn to_clipboard(widget: &gtk::Widget, mime: &str, data: Vec<u8>, done: Option<Bo
     }
 }
 
+/// Pictures put on the clipboard as they are (files/ops.py's _RAW).
+const AS_IS: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+/// bigger pictures go as the PNG of what is shown
+const MAX_AS_IS: i64 = 40 << 20;
+
+/// (mime, bytes) of a picture for the clipboard (imageload.copy_picture with
+/// ops._image_data): PNG, JPEG, GIF and WebP as they are, like Files' Copy --
+/// no re-encoding of a big photo -- other pictures as PNG; a format GTK
+/// can't read, or one over 40 MB: `tex`, the picture shown, as PNG.
+/// Blocking: a file read or a PNG encoding.
+fn picture_data(path: &str, tex: Option<&gdk::Texture>) -> Option<(String, Vec<u8>)> {
+    let f = gio::File::for_path(path);
+    if let Ok(info) = f.query_info("standard::content-type,standard::size", gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE) {
+        let ct = info.content_type().map(|c| c.to_string()).unwrap_or_default();
+        if ct.starts_with("image/") && info.size() <= MAX_AS_IS {
+            if AS_IS.contains(&ct.as_str()) {
+                if let Ok(data) = std::fs::read(path) {
+                    return Some((ct, data));
+                }
+            } else if let Ok(t) = gdk::Texture::from_file(&f) {
+                return Some(("image/png".into(), t.save_to_png_bytes().to_vec()));
+            }
+        }
+    }
+    tex.map(|t| ("image/png".into(), t.save_to_png_bytes().to_vec()))
+}
+
 #[derive(Clone, Copy)]
 struct Slides {
     paused: bool,
@@ -433,10 +460,10 @@ impl PreviewWindow {
         if !self.window.is_realized() {
             // the window takes the picture's shape
             let (w, h) = (tex.width() as f64, tex.height() as f64);
-            let (max_w, max_h) = gdk::Display::default()
-                .and_then(|d| d.monitors().item(0))
-                .and_downcast::<gdk::Monitor>()
-                .map(|m| (m.geometry().width() as f64 * 0.7, m.geometry().height() as f64 * 0.7))
+            // the smallest display, not just the first (a laptop beside a big
+            // monitor: sized for the monitor, it opened past the laptop's edges)
+            let (max_w, max_h) = sonata_ui::window::screen_size_of(&self.window)
+                .map(|(w, h)| (w as f64 * 0.7, h as f64 * 0.7))
                 .unwrap_or((1100.0, 760.0));
             let side = if self.sidebar_rev.reveals_child() { crate::sidebar::SIDEBAR_W as f64 } else { 0.0 };
             let s = ((max_w - side) / w.max(1.0)).min((max_h - TITLEBAR_H as f64) / h.max(1.0)).min(1.0);
@@ -740,28 +767,41 @@ impl PreviewWindow {
     }
 
     /// Markup's Copy: the picture as it is now -- its edits and the marks
-    /// not Done yet -- on the clipboard (PNG); Markup stays open.
+    /// not Done yet -- on the clipboard (PNG); Markup stays open. Rendered
+    /// off the main loop, as in Python (a full-size photo froze the window).
     fn copy_marked(&self, done: Option<Box<dyn Fn(bool)>>) {
-        if !self.editor() {
+        let fail = |done: Option<Box<dyn Fn(bool)>>| {
             if let Some(d) = done {
                 d(false);
             }
-            return;
+        };
+        if !self.editor() {
+            return fail(done);
         }
         let items = self.markup.borrow().as_ref().map(|l| l.items.borrow().clone()).unwrap_or_default();
-        let png = self.edits.borrow().as_ref().and_then(|ed| Self::rendered_png(ed, &items));
-        match png {
-            Some(png) => to_clipboard(self.window.upcast_ref(), "image/png", png, done),
-            None => {
-                if let Some(d) = done {
-                    d(false);
-                }
+        // what the worker renders: the full picture and the edits, no proxy
+        let job = self.edits.borrow().as_ref().map(|ed| Edits {
+            full: ed.full.clone(),
+            proxy: image::RgbaImage::new(1, 1),
+            alpha: ed.alpha,
+            exif: None,
+            icc: None,
+            ops: ed.ops.clone(),
+            adjust: ed.adjust,
+        });
+        let Some(job) = job else { return fail(done) };
+        let widget = self.window.clone().upcast::<gtk::Widget>();
+        glib::spawn_future_local(async move {
+            match gio::spawn_blocking(move || Self::rendered_png(&job, &items)).await.ok().flatten() {
+                Some(png) => to_clipboard(&widget, "image/png", png, done),
+                None => fail(done),
             }
-        }
+        });
     }
 
     /// Right-click Copy: the picture as shown. Unedited: the file itself (no
-    /// re-encoding); with edits or marks: rendered at full size.
+    /// re-encoding); with edits or marks: rendered at full size. The file is
+    /// read off the main loop.
     pub fn copy_picture(&self) {
         let marked = self.markup.borrow().as_ref().is_some_and(|l| !l.items.borrow().is_empty());
         if self.edited() || marked {
@@ -769,17 +809,13 @@ impl PreviewWindow {
             return;
         }
         let Some(path) = self.cur() else { return };
-        let (ct, _) = gio::content_type_guess(Some(&path), &[]);
-        let as_is = ["image/png", "image/jpeg", "image/gif", "image/webp"];
-        if as_is.contains(&ct.as_str()) {
-            if let Ok(data) = std::fs::read(&path) {
-                to_clipboard(self.window.upcast_ref(), &ct, data, None);
-                return;
+        let tex = self.texture.borrow().clone();
+        let widget = self.window.clone().upcast::<gtk::Widget>();
+        glib::spawn_future_local(async move {
+            if let Some((mime, data)) = gio::spawn_blocking(move || picture_data(&path, tex.as_ref())).await.ok().flatten() {
+                to_clipboard(&widget, &mime, data, None);
             }
-        }
-        if let Some(t) = self.texture.borrow().as_ref() {
-            to_clipboard(self.window.upcast_ref(), "image/png", t.save_to_png_bytes().to_vec(), None);
-        }
+        });
     }
 
     /// A screenshot that went to the clipboard (only, or also): the marked one goes there too.
@@ -944,7 +980,8 @@ impl PreviewWindow {
             }
         });
         col.append(&reset);
-        sonata_ui::panel::popup(&self.adjust_btn, &col, gtk::PositionType::Bottom);
+        // a close dot, like every form panel (close=True in window.py)
+        sonata_ui::panel::popup_with(&self.adjust_btn, &col, sonata_ui::panel::Options { close: true, ..Default::default() });
     }
 
     // Resize… (macOS: Tools > Adjust Size…): a small sheet under the toolbar
@@ -1038,7 +1075,7 @@ impl PreviewWindow {
             }
         }, "default"));
         col.append(&buttons);
-        *pop_cell.borrow_mut() = Some(sonata_ui::panel::popup(&self.toolbar, &col, gtk::PositionType::Bottom));
+        *pop_cell.borrow_mut() = Some(sonata_ui::panel::popup_with(&self.toolbar, &col, sonata_ui::panel::Options { close: true, ..Default::default() }));
     }
 
     fn resize_to(&self, w: u32, h: u32) {
@@ -1108,7 +1145,7 @@ impl PreviewWindow {
             }
         }, "default"));
         col.append(&buttons);
-        *pop_cell.borrow_mut() = Some(sonata_ui::panel::popup(&self.toolbar, &col, gtk::PositionType::Bottom));
+        *pop_cell.borrow_mut() = Some(sonata_ui::panel::popup_with(&self.toolbar, &col, sonata_ui::panel::Options { close: true, ..Default::default() }));
     }
 
     /// A copy of the (edited) picture in another format; the window stays on this one.
@@ -1440,7 +1477,7 @@ impl PreviewWindow {
                 ],
                 vec![wallpaper],
             ],
-            menu::Options::at(x, y),
+            menu::Options::at(x, y).passthrough(), // (window.py: passthrough=True)
         );
     }
 
@@ -1543,12 +1580,22 @@ thread_local! {
 
 fn keep(w: Rc<PreviewWindow>) -> Rc<PreviewWindow> {
     WINDOWS.with(|ws| ws.borrow_mut().push(w.clone()));
-    let win = w.window.clone();
-    w.window.connect_destroy(move |_| WINDOWS.with(|ws| ws.borrow_mut().retain(|x| x.window != win)));
+    // a closed window leaves the app (gtk_window_destroy releases it): out of
+    // the list then. ("destroy" never came -- this list and the handler held
+    // the window -- so a picture opened again after its window closed went to
+    // the closed one: nothing showed, and every closed picture stayed in memory.)
+    // (no notify::application then: unrealize follows the release)
+    w.window.connect_unrealize(|win| {
+        if win.application().is_none() {
+            WINDOWS.with(|ws| ws.borrow_mut().retain(|x| x.window != *win));
+        }
+    });
     w
 }
 
 fn window_for(path: &str) -> Option<Rc<PreviewWindow>> {
+    // (a window closed before it was ever shown never unrealized: gone too)
+    WINDOWS.with(|ws| ws.borrow_mut().retain(|w| w.window.application().is_some()));
     WINDOWS.with(|ws| ws.borrow().iter().find(|w| w.cur().as_deref() == Some(path)).cloned())
 }
 
@@ -1586,7 +1633,8 @@ pub fn open_paths(app: &impl IsA<gtk::Application>, files: &[gio::File]) {
             None => keep(PreviewWindow::new(app, p, None, false)).window.present(),
         }
     }
-    if files.is_empty() && WINDOWS.with(|ws| ws.borrow().is_empty()) {
+    // (the app's own windows: the list above kept closed ones for a while)
+    if files.is_empty() && app.upcast_ref::<gtk::Application>().windows().is_empty() {
         let filters = gio::ListStore::new::<gtk::FileFilter>();
         let f = gtk::FileFilter::new();
         f.set_name(Some(&tr!("Images")));
@@ -1671,4 +1719,224 @@ pub fn run(args: &[String]) -> glib::ExitCode {
 pub fn mime_types() -> String {
     let base = "image/png;image/jpeg;image/gif;image/webp;image/bmp;image/tiff;image/svg+xml;image/x-icon;image/avif;image/heic;image/heif;image/jxl;";
     format!("{base}{}", RAW_TYPES.iter().map(|t| format!("{t};")).collect::<String>())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_copy_froze_the_window() {
+        // Copy read the file (or encoded the PNG) on the main loop: a big
+        // photo froze Preview. The work is picture_data now, run in a
+        // worker; it gives what Python's copy gave: PNG / JPEG / GIF / WebP
+        // as they are, anything else as PNG.
+        let dir = std::env::temp_dir().join(format!("sonata-preview-copy-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let im = image::RgbaImage::from_pixel(3, 2, image::Rgba([10, 20, 30, 255]));
+        let png = dir.join("a.png");
+        let bytes = edit::encode(&im, true, "png", 92, None, None).unwrap();
+        std::fs::write(&png, &bytes).unwrap();
+        let (mime, data) = picture_data(png.to_str().unwrap(), None).unwrap();
+        assert_eq!((mime.as_str(), data), ("image/png", bytes));
+        let bmp = dir.join("b.bmp");
+        std::fs::write(&bmp, edit::encode(&im, false, "bmp", 92, None, None).unwrap()).unwrap();
+        let (mime, data) = picture_data(bmp.to_str().unwrap(), None).unwrap();
+        assert_eq!(mime, "image/png");
+        assert!(data.starts_with(b"\x89PNG"));
+        assert!(picture_data(dir.join("missing.png").to_str().unwrap(), None).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // -- the window (tests/test_preview.py and test_markup.py), where GTK can start
+
+    /// GTK for these tests, on this thread: none without a display, and none
+    /// when another test's thread has it already (GTK lives on one thread).
+    fn gtk_here() -> bool {
+        if gtk::is_initialized() && !gtk::is_initialized_main_thread() {
+            return false;
+        }
+        gtk::init().is_ok()
+    }
+
+    /// ← / → and Save run off the main loop: wait for them.
+    fn wait(cond: impl Fn() -> bool, ms: u64) -> bool {
+        let end = std::time::Instant::now() + Duration::from_millis(ms);
+        while !cond() && std::time::Instant::now() < end {
+            glib::MainContext::default().iteration(false);
+        }
+        cond()
+    }
+
+    fn settle(ms: u64) {
+        wait(|| false, ms);
+    }
+
+    fn picture(dir: &std::path::Path, name: &str, w: u32, h: u32, px: [u8; 4]) -> String {
+        let p = dir.join(name);
+        let im = image::RgbaImage::from_pixel(w, h, image::Rgba(px));
+        std::fs::write(&p, edit::encode(&im, false, "png", 92, None, None).unwrap()).unwrap();
+        p.display().to_string()
+    }
+
+    /// The red channel of a pixel of the file on disk.
+    fn red_at(path: &str, x: i32, y: i32) -> u8 {
+        let pb = gtk::gdk_pixbuf::Pixbuf::from_file(path).unwrap();
+        let bytes = pb.read_pixel_bytes();
+        bytes[(y * pb.rowstride() + x * pb.n_channels()) as usize]
+    }
+
+    fn rect_mark() -> marks::Mark {
+        let mut m = marks::Mark::new("rect", "#ff0000", vec![[0.1, 0.1], [0.9, 0.9]]);
+        m.w = 0.03;
+        m
+    }
+
+    fn window(app: &adw::Application, path: &str, paths: Option<Vec<String>>, markup: bool) -> Rc<PreviewWindow> {
+        let w = keep(PreviewWindow::new(app, path, paths, markup));
+        w.window.set_default_size(600, 450);
+        w.window.present();
+        settle(300);
+        w
+    }
+
+    fn done(w: &Rc<PreviewWindow>) {
+        if let Some(e) = w.edits.borrow_mut().as_mut() {
+            e.revert();
+        }
+        w.window.destroy();
+        settle(20);
+    }
+
+    #[test]
+    fn window_markup_and_slideshow() {
+        if !gtk_here() {
+            return; // (no display: the pure parts are still checked)
+        }
+        let app = adw::Application::builder().application_id("io.test.preview.rs").flags(gio::ApplicationFlags::NON_UNIQUE).build();
+        app.register(gio::Cancellable::NONE).unwrap();
+        sonata_ui::setup();
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        let a = picture(d, "a.png", 300, 100, [0x33, 0x66, 0xcc, 0xff]);
+        let b = picture(d, "b.png", 200, 100, [0xcc, 0x66, 0x33, 0xff]);
+        let c = picture(d, "c.png", 1200, 800, [0x33, 0xcc, 0x66, 0xff]);
+
+        // open several: one window, their thumbnails, ⌥⌘2 hides them
+        open_paths(&app, &[gio::File::for_path(&c), gio::File::for_path(&a)]);
+        let w = window_for(&c).expect("one window for the pictures opened together");
+        settle(300);
+        assert!(w.sidebar_rev.reveals_child());
+        assert_eq!(*w.pics.borrow(), [c.clone(), a.clone()]); // the files opened, in that order
+        w.go(1, false);
+        assert!(wait(|| w.cur().as_deref() == Some(a.as_str()), 3000));
+        assert!(w.key(Key::_2, ModifierType::CONTROL_MASK | ModifierType::ALT_MASK));
+        assert!(!w.sidebar_rev.reveals_child());
+        done(&w);
+        // test_reopening_a_closed_picture_showed_nothing: a picture opened
+        // again after its window closed went to the closed window
+        open_paths(&app, &[gio::File::for_path(&b)]);
+        let first = window_for(&b).unwrap();
+        settle(100);
+        first.window.close();
+        settle(50);
+        assert!(window_for(&b).is_none());
+        open_paths(&app, &[gio::File::for_path(&b)]);
+        let again = window_for(&b).expect("a new window");
+        assert!(!Rc::ptr_eq(&again, &first));
+        assert!(again.window.is_visible());
+        done(&again);
+
+        // the slideshow: ⌘⇧F, → moves on, Space pauses, Esc stops
+        let w = window(&app, &a, None, false);
+        assert!(wait(|| w.pics.borrow().len() == 3, 3000)); // the folder's pictures
+        assert!(w.key(Key::f, ModifierType::CONTROL_MASK | ModifierType::SHIFT_MASK));
+        assert!(w.slides.get().is_some());
+        assert!(!w.toolbar.is_visible());
+        assert!(w.slide_timer.borrow().is_some());
+        w.key(Key::Right, ModifierType::empty());
+        assert!(wait(|| w.cur().as_deref() == Some(b.as_str()), 3000));
+        w.key(Key::space, ModifierType::empty()); // pause
+        assert!(w.slide_timer.borrow().is_none());
+        w.key(Key::Escape, ModifierType::empty());
+        assert!(w.slides.get().is_none());
+        assert!(w.toolbar.is_visible());
+        done(&w);
+
+        // crop still works
+        let w = window(&app, &c, None, false);
+        w.crop_button();
+        assert!(w.crop_area.is_visible());
+        let (x, y, cw, ch) = w.canvas.image_rect().unwrap();
+        w.crop.set(Some((x, y, x + cw / 2.0, y + ch / 2.0)));
+        w.crop_button(); // apply
+        assert!(!w.crop_area.is_visible());
+        assert_eq!(w.edits.borrow().as_ref().unwrap().size(), (600, 400));
+        // resize, and the save written off the main loop
+        w.undo();
+        w.resize_to(240, 100);
+        assert_eq!(w.edits.borrow().as_ref().unwrap().size(), (240, 100));
+        w.save(None);
+        assert!(w.saving.get());
+        assert!(wait(|| !w.saving.get(), 5000));
+        assert_eq!(gtk::gdk_pixbuf::Pixbuf::file_info(&c).map(|(_, w, h)| (w, h)), Some((240, 100)));
+        assert!(!w.edited());
+        done(&w);
+
+        // Markup: Done is one edit; Cancel leaves nothing
+        let (p0, p1) = (picture(d, "p0.png", 200, 100, [255; 4]), picture(d, "p1.png", 200, 100, [255; 4]));
+        let w = window(&app, &p0, None, true);
+        settle(300);
+        assert!(w.markup.borrow().is_some()); // opened straight into Markup
+        assert!(w.markup_rev.reveals_child());
+        *w.markup.borrow().as_ref().unwrap().items.borrow_mut() = vec![rect_mark()];
+        *w.from_shot.borrow_mut() = None; // (a picture, not a fresh screenshot)
+        w.end_markup(true, None);
+        assert!(w.markup.borrow().is_none());
+        assert!(matches!(w.edits.borrow().as_ref().unwrap().ops.as_slice(), [Op::Markup(_)]));
+        w.undo();
+        assert!(w.edits.borrow().as_ref().unwrap().ops.is_empty());
+        w.markup_button();
+        w.end_markup(false, None); // Cancel: nothing
+        assert!(w.edits.borrow().as_ref().unwrap().ops.is_empty());
+        // opening another picture mid-markup keeps the marks on this one, and asks
+        w.markup_button();
+        *w.markup.borrow().as_ref().unwrap().items.borrow_mut() = vec![rect_mark()];
+        *w.pics.borrow_mut() = vec![p0.clone(), p1.clone()];
+        w.open(&p1, false);
+        assert!(w.markup.borrow().is_none());
+        assert_eq!(w.cur().as_deref(), Some(p0.as_str())); // stays until the marks are saved or dropped
+        assert!(matches!(w.edits.borrow().as_ref().unwrap().ops.as_slice(), [Op::Markup(_)]));
+        assert!(w.asking.get());
+        w.asking.set(false);
+        done(&w);
+        // closing another picture mid-markup asks
+        let w = window(&app, &p1, None, false);
+        w.markup_button();
+        *w.markup.borrow().as_ref().unwrap().items.borrow_mut() = vec![rect_mark()];
+        assert!(w.close_request()); // not yet
+        assert!(w.asking.get());
+        w.asking.set(false);
+        done(&w);
+        // closing a screenshot mid-markup saves its marks
+        let shot = picture(d, CLIPBOARD_SHOT, 200, 100, [255; 4]);
+        let w = window(&app, &shot, None, true);
+        settle(300);
+        *w.markup.borrow().as_ref().unwrap().items.borrow_mut() = vec![rect_mark()];
+        assert!(w.close_request()); // not yet: saving first
+        assert!(wait(|| !w.saving.get() && red_at(&shot, 100, 10) > 200 && red_at(&shot, 100, 50) == 255, 5000));
+        // a new clipboard shot replaces the old one in its window
+        let w = window(&app, &shot, None, true);
+        settle(300);
+        w.end_markup(false, None);
+        picture(d, CLIPBOARD_SHOT, 300, 150, [0, 0, 0, 255]); // the next screenshot, same name
+        open_markup(&app, &shot);
+        settle(300);
+        let t = w.texture.borrow().clone().unwrap();
+        assert_eq!((t.width(), t.height()), (300, 150));
+        assert_eq!(w.from_shot.borrow().as_deref(), Some(shot.as_str()));
+        assert!(w.markup.borrow().is_some());
+        w.end_markup(false, None);
+        done(&w);
+    }
 }

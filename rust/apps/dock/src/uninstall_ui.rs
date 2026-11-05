@@ -195,7 +195,7 @@ pub fn ask(info: &gio::DesktopAppInfo, parent: Option<&gtk::Widget>, done: Optio
         ask_webapp(&sonata_webapps::id_of(&id), parent, done);
         return;
     }
-    let name = info.display_name().to_string();
+    let name = sonata_ui::apps::display_name(info);
     let file = sonata_ui::apps::app_filename(info);
     let parent = parent.cloned();
     let (tx, rx) = std::sync::mpsc::channel();

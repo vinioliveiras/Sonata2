@@ -142,9 +142,30 @@ pub fn merge_order(pinned: &[String], tile_keys: &[String]) -> Vec<String> {
 
 /// The Dock's corner radius (Settings > Appearance, appearance.json
 /// "radius": {"dock": n}, 0..32; tokens.user_radii).
+/// Read again only when the file changes (tokens.user_radii keeps it by
+/// mtime): it is asked on every paint and twice a frame while magnifying.
 pub fn dock_radius() -> f64 {
-    let a = sonata_config::stored("appearance");
-    a.get("radius").and_then(|r| r.get("dock")).and_then(Value::as_f64).map(|r| r.round().clamp(0.0, 32.0)).unwrap_or(RADIUS_DEFAULT)
+    thread_local! {
+        static CACHE: RefCell<Option<(std::path::PathBuf, Option<std::time::SystemTime>, f64)>> = const { RefCell::new(None) };
+    }
+    let p = sonata_config::path("appearance");
+    let mtime = std::fs::metadata(&p).and_then(|m| m.modified()).ok();
+    CACHE.with(|c| {
+        if let Some((cp, cm, r)) = c.borrow().as_ref() {
+            if *cp == p && *cm == mtime {
+                return *r;
+            }
+        }
+        let r = radius_of(&sonata_config::stored("appearance"));
+        c.replace(Some((p, mtime, r)));
+        r
+    })
+}
+
+/// appearance.json's Dock radius as tokens.user_radii reads it (rounded
+/// half to even, kept in its range).
+fn radius_of(appearance: &Map<String, Value>) -> f64 {
+    sonata_ui::tokens::user_radii(appearance).iter().find(|(k, _)| *k == "dock").map(|(_, r)| *r as f64).unwrap_or(RADIUS_DEFAULT)
 }
 
 /// tokens.corner_extra: half the extra radius, never closer than designed.
@@ -338,26 +359,14 @@ pub fn package_manager_busy() -> bool {
 
 // -- the pieces shared with Launchpad ----------------------------------------------------------
 
-/// Open an app as Sonata does (apps.DesktopAppInfo.launch): a locked app
-/// asks first, it runs in its own scope (systemd-oomd closes it alone), and
-/// never with the shell's GTK_THEME / ADW_DISABLE_PORTAL.
+/// Open an app as Sonata does (apps.DesktopAppInfo.launch): Sonata's
+/// whole launch path (sonata_ui::apps::launch -- the app lock, a new
+/// Flatpak's review, Settings > Apps' limits, Quit on Close called off, the
+/// GPU's environment and arguments, its own scope, no GTK_THEME). It once
+/// did only the lock and the scope here: apps opened from the Dock and
+/// Launchpad ignored "Use Discrete Graphics" and Steam's arguments.
 pub fn launch_info(info: &gio::DesktopAppInfo, files: &[gio::File], ctx: Option<gio::AppLaunchContext>) -> Result<(), glib::Error> {
-    let info2 = info.clone();
-    let files2 = files.to_vec();
-    let ctx2 = ctx.clone();
-    if sonata_desktop::applock::gate(info, move || {
-        let _ = launch_info(&info2, &files2, ctx2.clone());
-    }) {
-        return Ok(());
-    }
-    let ctx = ctx.unwrap_or_else(gio::AppLaunchContext::new);
-    for name in ["GTK_THEME", "ADW_DISABLE_PORTAL"] {
-        if std::env::var_os(name).is_some() {
-            ctx.unsetenv(name);
-        }
-    }
-    sonata_desktop::appscope::watch(&ctx, info.id().as_deref().unwrap_or(""));
-    info.launch(files, Some(&ctx))
+    sonata_ui::apps::launch(info, files, ctx.as_ref())
 }
 
 pub fn launch_context(w: &impl IsA<gtk::Widget>) -> gio::AppLaunchContext {
@@ -1582,7 +1591,7 @@ impl Dock {
                     continue;
                 }
                 if let Some(info) = sonata_ui::apps::lookup(&did) {
-                    self.add_tile(&did, &info.display_name(), Some(sonata_ui::icons::app_icon(info.upcast_ref())), Some(info), None);
+                    self.add_tile(&did, &sonata_ui::apps::display_name(&info), Some(sonata_ui::icons::app_icon(info.upcast_ref())), Some(info), None);
                 }
             }
         }
@@ -2316,7 +2325,7 @@ impl Dock {
             return true;
         }
         if let Some(info) = sonata_ui::apps::lookup(key) {
-            self.add_tile(key, &info.display_name(), Some(sonata_ui::icons::app_icon(info.upcast_ref())), Some(info), None);
+            self.add_tile(key, &sonata_ui::apps::display_name(&info), Some(sonata_ui::icons::app_icon(info.upcast_ref())), Some(info), None);
             return true;
         }
         if sonata_desktop::steamgames::appid(key).and_then(|a| sonata_desktop::steamgames::name(&a)).is_some() {
@@ -2696,7 +2705,7 @@ impl Dock {
             Some(t) => t,
             None => {
                 let Some(info) = sonata_ui::apps::lookup(key) else { return };
-                let t = self.add_tile(key, &info.display_name(), Some(sonata_ui::icons::app_icon(info.upcast_ref())), Some(info), None);
+                let t = self.add_tile(key, &sonata_ui::apps::display_name(&info), Some(sonata_ui::icons::app_icon(info.upcast_ref())), Some(info), None);
                 t.set_running(self.windows.borrow().get(key).map(Vec::len).unwrap_or(0));
                 t
             }
@@ -3831,8 +3840,11 @@ impl Dock {
                 // would wait until after the minimize and the windows flew to the
                 // old target, the other display's icon (Vini): the clicked icon now
                 self.aim_at(tile, &here);
-                for t in here {
-                    m.minimize(&t);
+                // every shown window goes, on every display (only the aim is
+                // this display's): with a Dock on each display, the app's
+                // windows on the other one stayed up
+                for t in &shown {
+                    m.minimize(t);
                 }
                 return;
             }
@@ -3991,6 +4003,14 @@ impl Dock {
     /// Light/Dark: redraw every icon (the Trash and Launchpad have one
     /// version per appearance) and the Dock's own drawing.
     fn appearance_changed(&self) {
+        // once it has settled, every widget anew (dock.py): a count badge
+        // kept its Light Mode colour in Dark Mode until clicked (Vini)
+        let plate = self.plate.downgrade();
+        sonata_ui::theme::settled(&self.plate, 150, move || {
+            if let Some(p) = plate.upgrade() {
+                sonata_ui::theme::refresh_tree(&p);
+            }
+        });
         let pad = pad_side().round() as i32;
         for b in [self.plate.first_child(), self.plate.last_child()].into_iter().flatten() {
             if b.has_css_class("dock-end") {
@@ -4352,8 +4372,11 @@ impl DockWindow {
                 d.hide_amount.set(1.0);
                 d.plate.queue_draw();
             }
-            intro_wait(weak_do!(dw.me, d => d.slide(false)));
+            intro_wait(weak_do!(dw.me, d => d.slide(false)), Some("dock"));
         }
+        // restart: the old Dock slides away (SIGUSR1's default would end
+        // the process on the spot, the Dock just gone)
+        leave_on_signal(weak_do!(dw.me, d => d.slide(true)));
         dw
     }
 
@@ -4723,15 +4746,42 @@ impl DockWindow {
     }
 }
 
-/// callback() once the intro is over (right away without one) -- the part
-/// of intro.wait the Dock needs: the marker file gone, or 12 s at most.
-fn intro_wait(callback: impl Fn() + 'static) {
-    let path = if sonata_shell::intro::pending() { sonata_shell::intro::mark() } else { sonata_shell::intro::restart_mark() };
-    if !path.exists() {
+/// never keep the Dock hidden longer than this (intro.TIMEOUT_S)
+const INTRO_TIMEOUT_S: u32 = 12;
+/// after a restart: from all ready to sliding in (first frames drawn)
+const ARRIVE_MS: u64 = 120;
+/// never wait longer than this for the other restarted one
+const RESTART_TIMEOUT_S: u32 = 6;
+
+/// callback() once the intro is over (right away without one), as
+/// intro.wait. After a restart: once every restarted component is ready --
+/// the Dock and the menu bar slide in together; `name` tells restart this
+/// one is (without the ready file restart waited 5 s for it).
+fn intro_wait(callback: impl Fn() + 'static, name: Option<&str>) {
+    if sonata_shell::intro::pending() {
+        when_gone(sonata_shell::intro::mark(), INTRO_TIMEOUT_S, Box::new(callback));
+    } else if sonata_shell::intro::restarting() {
+        if let Some(n) = name {
+            announce_ready(n);
+        }
+        let cb = Rc::new(callback);
+        when_gone(sonata_shell::intro::restart_mark(), RESTART_TIMEOUT_S, Box::new(move || {
+            let cb = cb.clone();
+            glib::timeout_add_local_once(Duration::from_millis(ARRIVE_MS), move || cb());
+        }));
+    } else {
         glib::idle_add_local_once(callback);
-        return;
     }
-    let cb: Rc<RefCell<Option<Box<dyn Fn()>>>> = Rc::new(RefCell::new(Some(Box::new(callback))));
+}
+
+/// This component is ready after a restart (intro.ready_file).
+fn announce_ready(name: &str) {
+    let _ = std::fs::File::create(sonata_shell::intro::ready_file(name));
+}
+
+/// callback() once `path` is deleted, or after timeout_s.
+fn when_gone(path: std::path::PathBuf, timeout_s: u32, callback: Box<dyn Fn()>) {
+    let cb: Rc<RefCell<Option<Box<dyn Fn()>>>> = Rc::new(RefCell::new(Some(callback)));
     let fire = {
         let cb = cb.clone();
         move || {
@@ -4741,6 +4791,11 @@ fn intro_wait(callback: impl Fn() + 'static) {
         }
     };
     let fire = Rc::new(fire);
+    if !path.exists() {
+        // removed before the monitor existed: no event will come
+        glib::idle_add_local_once(move || fire());
+        return;
+    }
     if let Ok(mon) = gio::File::for_path(&path).monitor_file(gio::FileMonitorFlags::NONE, gio::Cancellable::NONE) {
         let f = fire.clone();
         mon.connect_changed(move |_, _, _, ev| {
@@ -4751,15 +4806,36 @@ fn intro_wait(callback: impl Fn() + 'static) {
         // kept alive until it fires
         let keep = RefCell::new(Some(mon));
         let f = fire.clone();
-        glib::timeout_add_seconds_local_once(12, move || {
+        glib::timeout_add_seconds_local_once(timeout_s, move || {
             f();
             if let Some(m) = keep.borrow_mut().take() {
                 m.cancel();
             }
         });
     } else {
-        glib::timeout_add_seconds_local_once(12, move || fire());
+        glib::timeout_add_seconds_local_once(timeout_s, move || fire());
     }
+}
+
+thread_local! {
+    static LEAVING: RefCell<Vec<Rc<dyn Fn()>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// callback() when `sonata2 restart` asks this component to go (SIGUSR1,
+/// intro.leave_on_signal): it slides away before the new one comes.
+fn leave_on_signal(callback: impl Fn() + 'static) {
+    LEAVING.with(|l| {
+        if l.borrow().is_empty() {
+            glib::unix_signal_add_local(libc::SIGUSR1, || {
+                let all: Vec<Rc<dyn Fn()>> = LEAVING.with(|l| l.borrow().clone());
+                for cb in all {
+                    cb();
+                }
+                glib::ControlFlow::Continue
+            });
+        }
+        l.borrow_mut().push(Rc::new(callback));
+    });
 }
 
 #[cfg(test)]
@@ -4780,6 +4856,78 @@ mod tests {
         // dragged into place: new ones at the end
         assert_eq!(merge_order(&s(&["a", "b"]), &s(&["b", "a", "x"])), s(&["b", "a"]));
         assert_eq!(merge_order(&s(&["a", "a", "b"]), &s(&["a", "b"])), s(&["a", "b"]));
+    }
+
+    /// Apps opened from the Dock (and Launchpad, which shares launch_info)
+    /// skipped Sonata's launch path: "Use Discrete Graphics", Steam's
+    /// arguments and Settings > Apps' limits did nothing for them.
+    #[test]
+    fn test_dock_launch_skipped_sonatas_launch_path() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static CALLS: AtomicUsize = AtomicUsize::new(0);
+        fn fake(_: &gio::AppInfo, _: &[gio::File], _: Option<&gio::AppLaunchContext>) -> Result<(), glib::Error> {
+            CALLS.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+        sonata_ui::apps::set_launcher(fake);
+        let kf = glib::KeyFile::new();
+        kf.load_from_data("[Desktop Entry]\nType=Application\nName=X\nExec=true\n", glib::KeyFileFlags::NONE).unwrap();
+        let info = gio::DesktopAppInfo::from_keyfile(&kf).unwrap();
+        launch_info(&info, &[], None).unwrap();
+        assert_eq!(CALLS.load(Ordering::SeqCst), 1);
+    }
+
+    /// Vini: after a Light/Dark switch a Dock count badge kept its Light
+    /// Mode colour until clicked -- appearance_changed only redrew the
+    /// icons and the plate, never the rest (dock.py: settled + refresh_tree).
+    #[test]
+    fn test_dock_badge_kept_light_look_after_dark_switch() {
+        let src = include_str!("dock.rs");
+        let f = &src[src.find("fn appearance_changed(&self)").unwrap()..];
+        let f = &f[..f.find("\n    }\n").unwrap()];
+        assert!(f.contains("sonata_ui::theme::settled(&self.plate, 150,"), "{f}");
+        assert!(f.contains("sonata_ui::theme::refresh_tree(&p)"), "{f}");
+    }
+
+    /// With a Dock on every display, clicking the app in front minimized
+    /// only its windows on the clicked display; the others stayed up
+    /// (dock.py minimizes every shown window).
+    #[test]
+    fn test_click_left_other_displays_windows_up() {
+        let src = include_str!("dock.rs");
+        let f = &src[src.find("pub fn clicked(").unwrap()..];
+        let f = &f[..f.find("\n    }\n").unwrap()];
+        assert!(f.contains("for t in &shown {\n                    m.minimize(t);"));
+    }
+
+    /// `sonata2 restart` waited ~5 s for the Dock: it never left its ready
+    /// file (intro.wait(name="dock")), and SIGUSR1 ended it instead of
+    /// sliding it away.
+    #[test]
+    fn test_restart_waited_for_a_dock_never_ready() {
+        let f = sonata_shell::intro::ready_file("dock");
+        let _ = std::fs::remove_file(&f);
+        announce_ready("dock");
+        assert!(f.exists());
+        let _ = std::fs::remove_file(&f);
+        let src = include_str!("dock.rs");
+        let new = &src[src.find("        dw.rebuild();").unwrap()..];
+        let new = &new[..new.find("\n        dw\n").unwrap()];
+        assert!(new.contains("Some(\"dock\"))"));
+        assert!(new.contains("leave_on_signal("));
+    }
+
+    /// The Dock's radius was rounded half away from zero (18.5 -> 19)
+    /// where Python's round gives 18, and appearance.json was read again on
+    /// every frame of the magnification.
+    #[test]
+    fn test_dock_radius_rounded_unlike_python() {
+        let m = |v: Value| v.as_object().unwrap().clone();
+        assert_eq!(radius_of(&m(json!({"radius": {"dock": 18.5}}))), 18.0);
+        assert_eq!(radius_of(&m(json!({"radius": {"dock": 99}}))), 32.0);
+        assert_eq!(radius_of(&m(json!({"radius": {"dock": true}}))), RADIUS_DEFAULT);
+        assert_eq!(radius_of(&Map::new()), RADIUS_DEFAULT);
+        assert_eq!(dock_radius(), dock_radius());
     }
 
     #[test]

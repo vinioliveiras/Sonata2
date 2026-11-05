@@ -781,3 +781,70 @@ fn test_thumbnail_is_a_small_square() {
     assert_eq!((t.width(), t.height()), (2 * THUMB, 2 * THUMB));
     assert!(crate::card::thumbnail(dir.path().join("none.png").to_str().unwrap(), THUMB, 2).is_none());
 }
+
+/// Runs `test` (an #[ignore]d one) alone in a new process of this test
+/// binary: GTK takes the main context of the thread that starts it for
+/// good, and the other tests here need it.
+fn in_own_process(test: &str) {
+    let exe = std::env::current_exe().unwrap();
+    let out = std::process::Command::new(exe).args(["--ignored", "--exact", test, "--test-threads=1"]).output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{test}:\n{text}\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(text.contains("1 passed"), "{test} didn't run:\n{text}");
+}
+
+/// Vini's Rust session: Notification Center was always solid -- its glass
+/// (the display's picture blurred once, a slice of it under each card and
+/// the calendar) was never ported. Each panel finds its slice; an answer
+/// for an older opening is dropped; no picture: solid.
+#[test]
+fn test_notification_center_never_glass() {
+    in_own_process("tests::notification_center_glass_gtk");
+}
+
+#[test]
+#[ignore = "GTK: run by test_notification_center_never_glass in a process of its own"]
+fn notification_center_glass_gtk() {
+    use gtk::prelude::*;
+    if gtk::init().is_err() {
+        return; // (no display)
+    }
+    let home = tempfile::tempdir().unwrap();
+    std::env::set_var("XDG_CONFIG_HOME", home.path().join("config"));
+    std::env::set_var("XDG_RUNTIME_DIR", home.path());
+    sonata_ui::setup();
+    let server = Server::new(false);
+    let app = gtk::Application::builder().flags(gio::ApplicationFlags::NON_UNIQUE).build();
+    app.register(gio::Cancellable::NONE).unwrap();
+    let asked: Rc<Cell<u32>> = Rc::default();
+    let a = asked.clone();
+    let hook: crate::center::FrostFn = Rc::new(move |_out, _done, _r| {
+        a.set(a.get() + 1);
+        true
+    });
+    let c = crate::center::Center::new(&app, &server, Some(hook));
+    // the panels under a column, however deep
+    let card = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    card.add_css_class("nt-card");
+    let slot = gtk::Revealer::builder().child(&card).reveal_child(true).build();
+    let hidden = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    hidden.add_css_class("nt-card");
+    hidden.set_visible(false);
+    let col = crate::center::FrostBox::new_for_tests();
+    col.append(&slot);
+    col.append(&hidden);
+    let found = col.panels();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].1, 1.08);
+    // an opening asks for a picture (no layer shell here: solid panels, asked nothing)
+    c.show_center(None);
+    assert!(c.win.has_css_class("no-frost"));
+    assert_eq!(asked.get(), 0);
+    let tex: gtk::gdk::Texture = gtk::gdk::MemoryTexture::new(2, 2, gtk::gdk::MemoryFormat::R8g8b8a8, &glib::Bytes::from_owned(vec![0u8; 16]), 8).upcast();
+    c.frost_done(c.frost_opening(), Some(tex.clone()));
+    assert!(!c.win.has_css_class("no-frost") && c.pictured());
+    c.frost_done(c.frost_opening() - 1, None); // an older opening's answer
+    assert!(c.pictured());
+    c.frost_done(c.frost_opening(), None); // none this time: solid
+    assert!(c.win.has_css_class("no-frost") && !c.pictured());
+}

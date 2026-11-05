@@ -302,6 +302,22 @@ fn webapp_of_its_browser_or_window() {
     assert_eq!(webapp_of(31, p), None); // the real Chrome
 }
 
+/// In the Rust session a WebKit web app runs as `sonata2-rs webapp <id>`:
+/// its sound showed under "sonata2-rs" instead of the web app's name.
+#[test]
+fn test_rust_webapp_sound_shown_as_sonata2_rs() {
+    let proc = fake_proc(&[(40, 1, "/home/v/.local/bin/sonata2-rs webapp yt3", &[]), (41, 40, "/usr/lib/webkitgtk-6.0/WebKitWebProcess 7 12", &[])]);
+    assert_eq!(webapp_of(41, proc.path().to_str().unwrap()).as_deref(), Some("yt3"));
+}
+
+/// mixer.json "muted" holding 1 / 0 (Python's 1 == True): the saved mute
+/// was ignored and never put back.
+#[test]
+fn test_mute_saved_as_number_ignored() {
+    let data = Saved { volumes: Default::default(), muted: json!({"a": 1, "b": 0, "c": "yes"}).as_object().unwrap().clone() };
+    assert_eq!((data.mute("a"), data.mute("b"), data.mute("c")), (Some(true), Some(false), None));
+}
+
 #[test]
 fn stream_is_the_webapps_own() {
     let text = json!([{"index": 5, "volume": {}, "mute": false, "properties": {"application.name": "Google Chrome", "application.process.binary": "chrome", "application.process.id": "11"}}]).to_string();

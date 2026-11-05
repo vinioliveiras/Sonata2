@@ -3,9 +3,6 @@
 //! What app.py kept on `self` between a page's rows and its timers (a
 //! slider still saving, the Button order row, the Dock's folder rows, the
 //! hidden apps' lock) is one [`Look`], kept by the window.
-//!
-//! Not ported: Settings' own window buttons moving with Window buttons /
-//! Button order (`_place_lights`: the Rust window has none of its own yet).
 
 #[path = "look_color.rs"]
 mod look_color;
@@ -503,6 +500,7 @@ fn set_button_style(ctx: &Ctx, style: &str) {
 /// button-layout; Sonata's apps place theirs when their windows open.
 fn set_buttons_side(ctx: &Ctx, side: &str) {
     ctx.save("appearance", "buttons_side", json!(side));
+    ctx.place_lights(); // Vini: Settings itself didn't move them
     fill_button_order(ctx); // the order's picture, mirrored too
     kit::run_async(kit::apply_buttons_side, |_| {});
     ctx.toast(&tr!("Other open windows pick it up when they open again"));
@@ -553,6 +551,7 @@ fn fill_button_order(ctx: &Ctx) {
 fn set_buttons_order(ctx: &Ctx, order: Vec<String>) {
     let order = frame::buttons_order(Some(&json!(order)));
     ctx.save("appearance", "buttons_order", json!(order));
+    ctx.place_lights();
     // (after the drop: the dots that were dragged are still in their signal)
     let w = Rc::downgrade(ctx);
     glib::idle_add_local_once(move || with(&w, fill_button_order));
@@ -1489,9 +1488,13 @@ fn show_hidden_apps(ctx: &Ctx) {
     lk.hidden_groups.borrow_mut().push(h);
 }
 
+/// Hide an App's search field sits inside its popover: the inline style,
+/// like every search field but the sidebar's own (app.py's default).
+const HIDE_APP_SEARCH_INLINE: bool = true;
+
 fn pick_app_to_hide(ctx: &Ctx, anchor: &gtk::Button, hidden: &[String]) {
     let bx = gtk::Box::new(gtk::Orientation::Vertical, 6);
-    let search = kit::search_entry(None, false);
+    let search = kit::search_entry(None, HIDE_APP_SEARCH_INLINE);
     bx.append(&search);
     let lb = gtk::ListBox::builder().selection_mode(gtk::SelectionMode::None).css_classes(["boxed-list"]).build();
     let mut apps: Vec<(String, String, gio::AppInfo)> = installed_apps().into_iter().filter(|(d, _)| !hidden.contains(d)).map(|(d, i)| (i.display_name().to_string(), d, i)).collect();
@@ -1566,6 +1569,15 @@ mod tests {
     #[test]
     fn dock_defaults_match_the_dock() {
         assert_eq!(dock_defaults(), sonata_dock::dock::defaults());
+    }
+
+    /// Settings > Hide an App's search field had the sidebar's outer look
+    /// (no "inline" class), not the inline one every other search field in
+    /// a section has (release 0.12.0).
+    #[test]
+    fn test_hide_app_search_not_inline() {
+        assert!(kit::search_classes(HIDE_APP_SEARCH_INLINE).contains(&"inline"));
+        assert!(!kit::search_classes(false).contains(&"inline")); // (the sidebar's)
     }
 
     /// Vini: the slider's "More" end must be really see-through.

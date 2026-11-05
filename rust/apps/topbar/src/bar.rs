@@ -7,9 +7,8 @@
 //! Wi-Fi, battery and volume are read by one poller for every display's
 //! bar ([`crate::statuspoll`]: NetworkManager's, UPower's and `pactl
 //! subscribe`'s events, polling as the fallback), Bluetooth by one BlueZ
-//! watch. Not ported here (see seams.rs for what's passed in): the
-//! clipboard history (its own crate), the distro logo's shape / symbol
-//! choices (ui/logo.py: the distro logo only).
+//! watch. Not here (see seams.rs for what's passed in): the clipboard
+//! history (its own crate); the logo is logo.rs's.
 
 use crate::kit::{self, run_async};
 use crate::logic;
@@ -57,6 +56,8 @@ thread_local! {
     static CSS: Cell<bool> = const { Cell::new(false) };
     static BARS: RefCell<Vec<Weak<Bar>>> = RefCell::default();
     static BT: RefCell<Option<Rc<Bluetooth>>> = RefCell::default();
+    /// The microphone / camera watch, one for every display's bar.
+    static INUSE: RefCell<Option<sonata_system::inuse::Watcher>> = RefCell::default();
 }
 
 /// topbar.py's and controlcenter.py's CSS, filled once per process.
@@ -67,7 +68,14 @@ pub fn register_css() {
     let h = bar_h();
     sonata_ui::css::register_module_with("shell/topbar.py", &[("bar_h", h.to_string()), ("item_h", item_h(h).to_string())]);
     sonata_ui::css::register_module("shell/controlcenter.py");
+    // Edit Controls' jiggle and its x (ui/edit.py, Launchpad's look): never
+    // registered in the menu bar's process, the modules stood still and the
+    // x was a plain button
+    sonata_ui::css::register_module(EDIT_CSS);
 }
+
+/// ui/edit.py's templates: Control Center's edit mode.
+pub(crate) const EDIT_CSS: &str = "ui/edit.py";
 
 pub(crate) fn bars() -> Vec<Rc<Bar>> {
     BARS.with(|b| b.borrow().iter().filter_map(Weak::upgrade).collect())
@@ -306,6 +314,7 @@ pub struct Bar {
     windows_id: Cell<Option<u64>>,
     icons_src: RefCell<Option<glib::SourceId>>,
     icons_sig: RefCell<Option<(Option<String>, usize)>>,
+    theme_src: RefCell<Option<glib::SourceId>>,
     cfg_mon: RefCell<Vec<gio::FileMonitor>>,
 }
 
@@ -375,6 +384,34 @@ fn refresh_icon(btn: &gtk::Button) {
     }
 }
 
+/// An appearance change has settled this long after its last frame.
+pub const THEME_SETTLE_MS: u64 = 150;
+
+/// Every widget under `root` drawn anew, every named icon looked up again
+/// and the logo's picture made again (ui/theme.py's refresh_tree). GTK
+/// keeps a widget's last picture until that widget itself asks to redraw.
+pub fn refresh_tree(root: &gtk::Widget) {
+    let mut stack = vec![root.clone()];
+    while let Some(w) = stack.pop() {
+        if let Some(img) = w.downcast_ref::<gtk::Image>() {
+            if img.storage_type() == gtk::ImageType::IconName {
+                if let Some(n) = img.icon_name() {
+                    img.set_icon_name(None); // (GTK keeps the picture for the same name)
+                    img.set_icon_name(Some(&n));
+                }
+            }
+        } else if let Some(g) = w.downcast_ref::<crate::logo::LogoGlyph>() {
+            g.refresh(true);
+        }
+        w.queue_draw();
+        let mut c = w.first_child();
+        while let Some(x) = c {
+            c = x.next_sibling();
+            stack.push(x);
+        }
+    }
+}
+
 /// Once the menu has gone: its closing hands the keyboard back to the
 /// window, which must not undo a Minimize / Hide.
 fn after_menu(f: impl FnOnce() + 'static) {
@@ -399,8 +436,8 @@ impl Bar {
         let flag = |k: &str| cfg.get(k).and_then(Value::as_bool).unwrap_or(true);
         let left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         let logo = item(&left, None, None, "icon");
-        let glyph = gtk::Image::builder().pixel_size(LOGO_PX).build();
-        sonata_ui::icons::set_logo(&glyph); // the distro's logo (os-release LOGO=)
+        // the distro logo, a shape, a symbol or words (Settings > Appearance)
+        let glyph = crate::logo::LogoGlyph::new(LOGO_PX);
         if let Some(c) = logo.child().and_downcast::<gtk::Box>() {
             c.append(&glyph);
         }
@@ -508,6 +545,7 @@ impl Bar {
             windows_id: Cell::new(None),
             icons_src: RefCell::default(),
             icons_sig: RefCell::default(),
+            theme_src: RefCell::default(),
             cfg_mon: RefCell::default(),
         });
         bar.wire(&end);
@@ -519,7 +557,26 @@ impl Bar {
         bar.active_changed();
         bar.bt_update();
         bar.poll();
+        bar.watch_inuse();
         bar
+    }
+
+    /// The mic / camera dots follow backend/inuse.py's watcher (one for
+    /// the process, made by the first bar). Vini's Rust session: the dot
+    /// never showed -- set_inuse was there, nothing called it.
+    fn watch_inuse(self: &Rc<Self>) {
+        let w = INUSE.with(|i| {
+            i.borrow_mut()
+                .get_or_insert_with(|| {
+                    let paused = self.services.quiet_paused.clone();
+                    let w = sonata_system::inuse::Watcher::new(move || paused.as_ref().map_or_else(crate::quiet::paused, |p| p()));
+                    connect_inuse(&w);
+                    w
+                })
+                .clone()
+        });
+        let st = w.state();
+        self.set_inuse(&st.camera, &st.mic);
     }
 
     fn connect_item(self: &Rc<Self>, btn: &gtk::Button, build: Builder) {
@@ -558,6 +615,19 @@ impl Bar {
                 b.open(&cc, |b, btn| b.control_center_panel(btn));
             }
         });
+        // an auto-hidden bar stays down while a tray icon's menu is open
+        let w = Rc::downgrade(self);
+        self.tray.connect_menu(move |open| {
+            let Some(b) = w.upgrade() else { return };
+            if open {
+                b.open_menus.set(b.open_menus.get() + 1);
+            } else {
+                b.open_menus.set(b.open_menus.get().saturating_sub(1));
+                if let Some(f) = b.on_menu_closed.borrow().clone() {
+                    f();
+                }
+            }
+        });
         let w = Rc::downgrade(self);
         end.connect_get_child_position(move |ov, child| w.upgrade().and_then(|b| b.inuse_place(ov, child)));
         let w = Rc::downgrade(self);
@@ -579,8 +649,8 @@ impl Bar {
         // again once it settled (an icon kept its Light Mode look in Dark Mode)
         sonata_ui::on_change(move || {
             if let Some(b) = w.upgrade().filter(|b| b.alive.get()) {
-                b.root.queue_draw();
-                b.icons_soon();
+                b.root.queue_draw(); // the material (blends during a cross-fade)
+                b.theme_settled();
             }
         });
         let w = Rc::downgrade(self);
@@ -755,6 +825,9 @@ impl Bar {
             b.remove_css_class("open");
             refresh_icon(&b); // never left without its icon (Vini)
             if let Some(bar) = w.upgrade() {
+                if b == bar.logo {
+                    bar.refresh_logo(true);
+                }
                 bar.open_menus.set(bar.open_menus.get().saturating_sub(1));
                 // the other items too: closing the Sound menu turned the
                 // Control Center icon dark in Light Mode (Vini)
@@ -789,8 +862,41 @@ impl Bar {
                 for i in [&b.cc, &b.wifi, &b.spotlight] {
                     refresh_icon(i);
                 }
+                b.refresh_logo(false); // (focus changes are frequent: a redraw only)
             }
         })));
+    }
+
+    /// Once an appearance change has settled, every item drawn anew and
+    /// every named icon looked up again (ui.theme.settled + refresh_tree):
+    /// Vini, an icon kept its Light Mode look in Dark Mode until clicked --
+    /// only three of them (and not the logo, the tray, the battery) were.
+    fn theme_settled(self: &Rc<Self>) {
+        if let Some(s) = self.theme_src.take() {
+            s.remove(); // (on_change comes on every frame of a cross-fade)
+        }
+        let w = Rc::downgrade(self);
+        self.theme_src.replace(Some(glib::timeout_add_local_once(Duration::from_millis(THEME_SETTLE_MS), move || {
+            if let Some(b) = w.upgrade() {
+                b.theme_src.replace(None);
+                if b.alive.get() {
+                    refresh_tree(b.root.upcast_ref());
+                }
+            }
+        })));
+    }
+
+    /// The Sonata menu's logo.
+    pub fn logo_glyph(&self) -> Option<crate::logo::LogoGlyph> {
+        self.logo.child()?.last_child()?.downcast().ok()
+    }
+
+    /// The Sonata menu's logo drawn anew (Vini: it went blank); reload: its
+    /// picture made again too (not on every focus change).
+    fn refresh_logo(&self, reload: bool) {
+        if let Some(g) = self.logo_glyph() {
+            g.refresh(reload);
+        }
     }
 
     // -- the active app ---------------------------------------------------------------------
@@ -825,7 +931,7 @@ impl Bar {
                 mru.insert(0, key.clone());
                 drop(mru);
                 let name = match sonata_ui::apps::lookup(&key) {
-                    Some(info) => info.display_name().to_string(),
+                    Some(info) => sonata_ui::apps::display_name(&info),
                     None => {
                         // no desktop entry: named as in the Dock (windowapps)
                         let titles: Vec<(&str, bool)> = wins.iter().map(|t| (t.title.as_str(), t.activated)).collect();
@@ -894,7 +1000,7 @@ impl Bar {
     fn app_menu(self: &Rc<Self>, btn: &gtk::Button) -> Option<gtk::Popover> {
         let (key, wins) = self.active();
         let info = sonata_ui::apps::lookup(key.as_deref().unwrap_or("io.github.vinioliveiras.sonata2.files")); // desktop: Files, like Finder
-        let name = info.as_ref().map(|i| i.display_name().to_string()).or(key.clone()).unwrap_or_else(|| tr!("Files"));
+        let name = info.as_ref().map(sonata_ui::apps::display_name).or(key.clone()).unwrap_or_else(|| tr!("Files"));
         let win = self.services.windows.clone();
         let all = win.as_ref().map(|w| w.toplevels()).unwrap_or_default();
         let others: Vec<Toplevel> = all.iter().filter(|t| !wins.iter().any(|x| x.id == t.id)).cloned().collect();
@@ -1606,6 +1712,27 @@ impl Bar {
     }
 }
 
+/// The watcher's answers to every display's bar; a camera opened while
+/// locked or under a game is looked at once that ends.
+pub(crate) fn connect_inuse(w: &sonata_system::inuse::Watcher) {
+    w.add_listener(|st| {
+        for b in bars() {
+            b.set_inuse(&st.camera, &st.mic);
+        }
+    });
+    let w2 = w.clone();
+    crate::quiet::watch(move |paused| {
+        if !paused {
+            w2.resume();
+        }
+    });
+}
+
+#[cfg(test)]
+pub(crate) fn detach_for_tests(widget: &gtk::Widget) {
+    detach(widget);
+}
+
 /// Out of the panel it was shown in (closed, or closing), to be shown in a new one.
 fn detach(widget: &gtk::Widget) {
     let Some(parent) = widget.parent() else { return };
@@ -1614,9 +1741,14 @@ fn detach(widget: &gtk::Widget) {
             old.popdown();
         }
     }
-    match parent.downcast::<gtk::Box>() {
-        Ok(b) => b.remove(widget),
-        Err(_) => widget.unparent(), // ui::fixed::FixedWidth (set_parent)
+    if let Some(b) = parent.downcast_ref::<gtk::Box>() {
+        b.remove(widget);
+    } else if let Some(v) = parent.downcast_ref::<gtk::Viewport>() {
+        v.set_child(None::<&gtk::Widget>); // (the panel's scroller: panel::fit_screen)
+    } else if let Some(s) = parent.downcast_ref::<gtk::ScrolledWindow>() {
+        s.set_child(None::<&gtk::Widget>);
+    } else {
+        widget.unparent(); // ui::fixed::FixedWidth (set_parent)
     }
 }
 
@@ -1686,8 +1818,10 @@ fn recent_items(_s: &Services) -> Vec<Vec<Item>> {
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(Value::as_str).take(5).filter_map(sonata_ui::apps::lookup).map(|info| {
             let i = info.clone();
-            Item::new(&info.display_name(), move || {
-                let _ = i.launch(&[], gio::AppLaunchContext::NONE);
+            // Sonata's launch path (the GPU, its scope, the app lock...) and
+            // the display's context: it comes to the front
+            Item::new(&sonata_ui::apps::display_name(&info), move || {
+                let _ = sonata_ui::apps::launch(&i, &[], None);
             })
         }).collect())
         .unwrap_or_default();
@@ -1719,7 +1853,7 @@ fn open_recent(uri: &str) {
         }
         return;
     }
-    let _ = gio::AppInfo::launch_default_for_uri(uri, gio::AppLaunchContext::NONE);
+    let _ = sonata_ui::apps::launch_default_for_uri(uri, None); // (the display's context: to the front)
 }
 
 // -- Now Playing ------------------------------------------------------------------------------

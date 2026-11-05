@@ -13,6 +13,7 @@ gio.workspace = true
 glib.workspace = true
 gtk4-layer-shell.workspace = true
 serde_json.workspace = true
+libc.workspace = true
 sonata-backend.workspace = true
 sonata-config = { workspace = true, features = ["watch"] }
 sonata-desktop.workspace = true
@@ -21,6 +22,12 @@ sonata-notifications.workspace = true
 sonata-shell.workspace = true
 sonata-tray.workspace = true
 sonata-ui.workspace = true
+# quiet.rs: the full-screen game's state file (gamemode.STATE)
+sonata-tweaks.workspace = true
+# Notification Center's glass: the display's picture blurred once (frost.py)
+sonata-mission.workspace = true
+# the menu bar logo's words (ui/logo.py's text logos)
+pangocairo.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

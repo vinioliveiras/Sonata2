@@ -135,7 +135,10 @@ impl TabStrip {
         });
         b.root.add_controller(drag);
         self.drop_target(&b);
-        self.buttons.borrow_mut().insert(index.min(self.buttons.borrow().len()), b.clone());
+        // (the length read first: borrowed inside borrow_mut()'s call it
+        // panicked -- Files and Videos closed as they opened, Vini)
+        let at = index.min(self.buttons.borrow().len());
+        self.buttons.borrow_mut().insert(at, b.clone());
         self.retitle(id, title);
         self.relayout();
     }
@@ -236,5 +239,24 @@ impl TabStrip {
             b.label.set_label(title);
             b.root.set_tooltip_text(Some(title));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Vini: Files and Videos closed as they opened ("RefCell already
+    /// mutably borrowed" in TabStrip::add: the tab list was read while it
+    /// was being changed).
+    #[test]
+    fn test_files_and_videos_closed_as_they_opened() {
+        if (gtk::is_initialized() && !gtk::is_initialized_main_thread()) || gtk::init().is_err() {
+            return; // no display, or GTK is another test thread's
+        }
+        let strip = TabStrip::new();
+        strip.add(1, "Home", 0);
+        strip.add(2, "Documents", 5);
+        assert_eq!(strip.buttons.borrow().iter().map(|b| b.id).collect::<Vec<_>>(), [1, 2]);
     }
 }

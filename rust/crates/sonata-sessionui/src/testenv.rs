@@ -11,7 +11,24 @@ pub struct Env {
     _guard: MutexGuard<'static, ()>,
 }
 
+/// The runtime folder the tests started with (a private Broadway
+/// display's socket is there), while `f` runs.
+pub fn with_runtime_dir_of_the_session<R>(f: impl FnOnce() -> R) -> R {
+    let ours = std::env::var_os("XDG_RUNTIME_DIR");
+    if let Some(d) = START_RUNTIME.get_or_init(|| None) {
+        std::env::set_var("XDG_RUNTIME_DIR", d);
+    }
+    let r = f();
+    if let Some(o) = ours {
+        std::env::set_var("XDG_RUNTIME_DIR", o);
+    }
+    r
+}
+
+static START_RUNTIME: std::sync::OnceLock<Option<std::ffi::OsString>> = std::sync::OnceLock::new();
+
 pub fn env() -> Env {
+    START_RUNTIME.get_or_init(|| std::env::var_os("XDG_RUNTIME_DIR"));
     let guard = ENV.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();
     for (k, sub) in [("XDG_DATA_HOME", "data"), ("XDG_CONFIG_HOME", "config"), ("XDG_CACHE_HOME", "cache"), ("XDG_RUNTIME_DIR", "run")] {

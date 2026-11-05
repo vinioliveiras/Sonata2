@@ -69,6 +69,43 @@ fn open_settings(page: &str) {
     let _ = std::process::Command::new(launcher).args(["settings", "--page", page]).spawn();
 }
 
+// -- the icon layer: a gtk::Fixed whose icons glide to a new spot ----------------------------
+
+mod glide_imp {
+    use gtk::subclass::prelude::*;
+
+    #[derive(Default)]
+    pub struct GlideFixed;
+
+    #[glib::object_subclass]
+    impl ObjectSubclass for GlideFixed {
+        const NAME: &'static str = "SonataDesktopFixed";
+        type Type = super::GlideFixed;
+        type ParentType = gtk::Fixed;
+    }
+
+    impl ObjectImpl for GlideFixed {}
+    impl FixedImpl for GlideFixed {}
+
+    impl WidgetImpl for GlideFixed {
+        // each icon drawn at its glide's offset (ui.transition.snapshot_children)
+        fn snapshot(&self, snapshot: &gtk::Snapshot) {
+            sonata_ui::transition::snapshot_children(&*self.obj(), snapshot);
+        }
+    }
+}
+
+glib::wrapper! {
+    /// desktop.py's Desktop draws its children with ui.transition: icons
+    /// that already had a spot slide to their new one (Clean Up, Sort By, a
+    /// file gone, the Dock moved) instead of jumping there.
+    pub struct GlideFixed(ObjectSubclass<glide_imp::GlideFixed>) @extends gtk::Fixed, gtk::Widget;
+}
+
+fn icon_layer() -> gtk::Fixed {
+    glib::Object::builder::<GlideFixed>().property("focusable", true).property("hexpand", true).property("vexpand", true).build().upcast()
+}
+
 fn alert(heading: &str, body: &str) {
     sonata_ui::dialog::alert(heading, body, &[("ok", tr!("OK"), "default")], |_| {}, None);
 }
@@ -142,7 +179,7 @@ impl Desktop {
                 }
             });
             Desktop {
-                fixed: gtk::Fixed::builder().focusable(true).hexpand(true).vexpand(true).build(),
+                fixed: icon_layer(),
                 screen: screen.to_string(),
                 main,
                 dir: dir.clone(),
@@ -338,7 +375,14 @@ impl Desktop {
                 }
             });
         }
-        // (the icons' glide to a new spot isn't ported: they move at once)
+        // icons that already had a spot slide to their new one (new ones just
+        // appear). Only icons already drawn at a spot: one just added sits at
+        // 0,0 until now -- it glided in from the top-left corner (Vini)
+        let before = {
+            let (old, items) = (self.placed.borrow(), self.items.borrow());
+            let laid: Vec<gtk::Widget> = items.iter().filter(|(n, it)| old.contains_key(*n) && it.laid.get()).map(|(_, it)| it.widget.clone().upcast()).collect();
+            sonata_ui::transition::glide_record(&laid, self.fixed.upcast_ref())
+        };
         for (name, (c, r)) in &placed {
             if let Some(item) = self.items.borrow().get(name) {
                 let (x, y) = g.cell_xy(*c, *r);
@@ -348,6 +392,7 @@ impl Desktop {
             }
         }
         self.placed.replace(placed);
+        sonata_ui::transition::glide_play(before, self.fixed.upcast_ref(), sonata_ui::transition::GLIDE_MS);
     }
 
     fn keep_spots(&self, spots: &HashMap<String, Spot>) {
@@ -456,7 +501,7 @@ impl Desktop {
         badge.set_visible(ops::is_shortcut(info, folder::file_of(info).as_ref(), Some(true)));
         io.add_overlay(&badge);
         widget.append(&io);
-        let name = app.as_ref().map(|a| a.display_name().to_string()).unwrap_or_else(|| info.display_name().to_string());
+        let name = app.as_ref().map(sonata_ui::apps::display_name).unwrap_or_else(|| info.display_name().to_string());
         let lbl = gtk::Label::builder().label(name).wrap(true).wrap_mode(gtk::pango::WrapMode::WordChar).lines(2).ellipsize(gtk::pango::EllipsizeMode::Middle).justify(gtk::Justification::Center).max_width_chars(13).halign(gtk::Align::Center).valign(gtk::Align::Start).build();
         // the name in a kept two-line place, the rename field over it (as in
         // Files): the icon never shifts while or after it's renamed (Vini: it
@@ -504,13 +549,13 @@ impl Desktop {
             Some(d.drag_prepare(&item))
         });
         let (w, it) = (self.me.clone(), Rc::downgrade(item));
-        src.connect_drag_begin(move |s, _| {
+        src.connect_drag_begin(move |_, drag| {
             let (Some(d), Some(item)) = (w.upgrade(), it.upgrade()) else { return };
             for i in d.selection.borrow().iter() {
                 i.widget.add_css_class("dragging");
             }
             let paint = item.img.paintable().unwrap_or_else(|| gtk::WidgetPaintable::new(Some(&item.img)).upcast());
-            s.set_icon(Some(&paint), ICON / 2, ICON / 2);
+            hang(drag, &paint);
             d.drag_from.set(d.placed.borrow().get(&item.name()).copied());
         });
         let w = self.me.clone();
@@ -621,16 +666,18 @@ impl Desktop {
             if broken(&info, &f) {
                 self.broken_shortcut(item);
             } else if let Some(app) = &item.app {
-                let _ = app.launch(&[], gio::AppLaunchContext::NONE);
+                // Sonata's launch path, with the display's context: the app
+                // comes to the front, on its GPU, in its own scope
+                let _ = sonata_ui::apps::launch(app, &[], None);
             } else if folder::is_dir(&info) {
                 // (folders: the session's file manager -- Sonata's Files)
-                let _ = gio::AppInfo::launch_default_for_uri(&f.uri(), gio::AppLaunchContext::NONE);
+                let _ = sonata_ui::apps::launch_default_for_uri(&f.uri(), None);
             } else if quicklook::previewable(&info) && sel.len() == 1 && info.content_type().is_none_or(|ct| gio::AppInfo::default_for_type(&ct, false).is_none()) {
                 self.quick_look(); // Quick Look only when no app opens it (like Files)
             } else if !f.path().is_some_and(|p| sonata_files::packages::open_path(&p, Some(self.fixed.upcast_ref()))) {
                 // (a package, an AppImage, an archive or a script: installed,
                 // run or expanded above, as in Files; the rest: its app)
-                let _ = gio::AppInfo::launch_default_for_uri(&f.uri(), gio::AppLaunchContext::NONE);
+                let _ = sonata_ui::apps::launch_default_for_uri(&f.uri(), None);
             }
         }
     }
@@ -664,8 +711,20 @@ impl Desktop {
     /// had to be clicked before typing), then gives it back.
     fn take_keyboard(&self, on: bool) {
         use gtk4_layer_shell::{KeyboardMode, LayerShell};
-        if let Some(win) = self.window().filter(|w| w.is_layer_window()) {
-            win.set_keyboard_mode(if on { KeyboardMode::Exclusive } else { KeyboardMode::OnDemand });
+        let Some(win) = self.window().filter(|w| w.is_layer_window()) else { return };
+        win.set_keyboard_mode(if on { KeyboardMode::Exclusive } else { KeyboardMode::OnDemand });
+        win.queue_draw(); // (the new mode comes with the next frame)
+        let output = win.monitor().and_then(|m| m.connector()).map(|c| c.to_string());
+        if let Some(data) = focus_layer_request(on, win.layer(), &win.namespace().unwrap_or_default(), output.as_deref()) {
+            // under the windows Wayfire gives "exclusive" no keyboard (only the
+            // top layers get it): sonata-corners hands it over once the mode is
+            // in (layer.take_keyboard; Vini, in the Rust session: the new
+            // folder's name field took no typing until clicked)
+            glib::timeout_add_local_once(std::time::Duration::from_millis(FOCUS_AFTER_MS), move || {
+                std::thread::spawn(move || {
+                    sonata_backend::wfipc::call("sonata/focus-layer", data);
+                });
+            });
         }
     }
 
@@ -1070,6 +1129,39 @@ impl Desktop {
     }
 }
 
+/// ui.drag.hang: the dragged item as macOS shows it -- the icon itself, a
+/// little translucent, held steady under the pointer (Vini). GTK's own drag
+/// icon was the icon fully opaque.
+fn hang(drag: &gdk::Drag, paint: &gdk::Paintable) {
+    let pic = gtk::Picture::for_paintable(paint);
+    pic.set_size_request(ICON, ICON);
+    pic.set_can_shrink(true);
+    pic.set_opacity(DRAG_OPACITY);
+    gtk::DragIcon::for_drag(drag).set_child(Some(&pic));
+    drag.set_hotspot(ICON / 2, ICON / 2);
+}
+
+/// layer.FOCUS_AFTER_MS: the keyboard asked for once the new mode is in
+const FOCUS_AFTER_MS: u64 = 60;
+
+/// What sonata-corners is asked ("sonata/focus-layer") to hand a layer
+/// surface the keyboard: only taking it, and only under the windows (the
+/// top layers get it from Wayfire itself).
+fn focus_layer_request(on: bool, layer: Option<gtk4_layer_shell::Layer>, namespace: &str, output: Option<&str>) -> Option<Value> {
+    use gtk4_layer_shell::Layer;
+    if !on || !matches!(layer, Some(Layer::Background | Layer::Bottom)) {
+        return None;
+    }
+    let mut data = json!({"namespace": namespace});
+    if let Some(o) = output.filter(|o| !o.is_empty()) {
+        data["output"] = json!(o);
+    }
+    Some(data)
+}
+
+/// ui/drag.py's HangingIcon.OPACITY
+const DRAG_OPACITY: f64 = 0.78;
+
 /// The spot a renamed icon's new name gets before the rename: its own,
 /// unsorted, and not when another file has that name (the rename fails).
 fn spot_for_new_name(spot: Option<Spot>, sort: &str, taken: bool) -> Option<Spot> {
@@ -1119,6 +1211,59 @@ mod tests {
         assert_eq!(spot_for_new_name(Some((3, 3)), "none", true), None);
         assert_eq!(spot_for_new_name(Some((3, 3)), "none", false), Some((3, 3)));
         assert_eq!(spot_for_new_name(Some((3, 3)), "kind", false), None);
+    }
+
+    /// Vini, in the Rust session: Clean Up, Sort By or a file gone made the
+    /// desktop's icons jump to their new spots; the Python desktop slides
+    /// them there (ui.transition's glide).
+    #[test]
+    fn test_icons_jumped_to_their_new_spot() {
+        let _l = crate::testenv::lock();
+        crate::testenv::on_gtk(icons_glide);
+    }
+
+    fn icons_glide() {
+        let dir = desktop_dir().path().unwrap();
+        // a the oldest, c the newest: by date the order turns round
+        for (i, n) in ["a.txt", "b.txt", "c.txt"].iter().enumerate() {
+            let f = std::fs::File::create(dir.join(n)).unwrap();
+            f.set_modified(std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000 * (i as u64 + 1))).unwrap();
+        }
+        let d = Desktop::new("", true);
+        let win = gtk::Window::builder().default_width(800).default_height(600).child(&d.fixed).build();
+        win.present();
+        let ctx = glib::MainContext::default();
+        let spin = |until: &dyn Fn() -> bool| {
+            let t = std::time::Instant::now();
+            while !until() && t.elapsed() < std::time::Duration::from_secs(5) {
+                ctx.iteration(false);
+            }
+        };
+        d.resized(800, 600);
+        spin(&|| d.placed.borrow().len() == 3 && d.fixed.is_mapped() && d.items.borrow().values().all(|i| i.widget.is_mapped()));
+        assert_eq!(d.placed.borrow().len(), 3, "the icons were never laid out");
+        let gliding = || d.items.borrow().values().any(|i| sonata_ui::transition::glide_offset(i.widget.upcast_ref()) != (0.0, 0.0));
+        d.cfg.borrow_mut().insert("sort".into(), json!("date"));
+        d.layout();
+        spin(&gliding);
+        assert!(gliding(), "the icons jumped to their new spot");
+        win.destroy();
+        for n in ["a.txt", "b.txt", "c.txt"] {
+            let _ = std::fs::remove_file(dir.join(n));
+        }
+    }
+
+    /// Vini, in the Rust session: a new folder's name field on the desktop
+    /// took no typing until it was clicked -- the desktop is a background
+    /// layer, and Wayfire gives "exclusive" no keyboard there; the Python
+    /// desktop asks Sonata's plugin to hand it over.
+    #[test]
+    fn test_new_folder_name_took_no_typing() {
+        use gtk4_layer_shell::Layer;
+        assert_eq!(focus_layer_request(true, Some(Layer::Background), "sonata2-wallpaper", Some("DP-1")), Some(json!({"namespace": "sonata2-wallpaper", "output": "DP-1"})));
+        assert_eq!(focus_layer_request(true, Some(Layer::Bottom), "x", None), Some(json!({"namespace": "x"})));
+        assert_eq!(focus_layer_request(false, Some(Layer::Background), "sonata2-wallpaper", None), None); // giving it back
+        assert_eq!(focus_layer_request(true, Some(Layer::Overlay), "x", None), None); // the top layers get it anyway
     }
 
     #[test]

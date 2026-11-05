@@ -245,8 +245,16 @@ mod feedback_tests {
     }
 
     /// The hook itself: a release on the slider plays (here: is called).
+    /// (GTK in a process of its own: started on a test thread it took the
+    /// main context the other tests use -- the run aborted now and then.)
     #[test]
     fn release_calls_back() {
+        crate::gtk_tests::in_own_process("controls::feedback_tests::release_calls_back_gtk");
+    }
+
+    #[test]
+    #[ignore = "GTK: run by release_calls_back"]
+    fn release_calls_back_gtk() {
         if gtk::init().is_err() {
             return; // (no display)
         }

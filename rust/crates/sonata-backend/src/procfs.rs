@@ -576,11 +576,21 @@ impl NvidiaUsage {
         self.busy.store(true, Ordering::SeqCst);
         let (pids, busy) = (self.pids.clone(), self.busy.clone());
         std::thread::spawn(move || {
-            let out = std::process::Command::new(tool).args(["pmon", "-c", "1", "-s", "u"]).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+            let out = pmon_output(&tool, PMON_TIMEOUT_S);
             *pids.lock().unwrap() = parse_pmon(&out);
             busy.store(false, Ordering::SeqCst);
         });
     }
+}
+
+/// nvidia-smi gets this long (procfs.py's timeout=5): a hung one left
+/// `busy` set for good and the per-process GPU column stopped updating.
+pub const PMON_TIMEOUT_S: u64 = 5;
+
+/// One `nvidia-smi pmon` sample's text ("" when it fails or hangs).
+pub fn pmon_output(tool: &Path, timeout_s: u64) -> String {
+    let tool = tool.to_string_lossy();
+    crate::run::run(&[&tool, "pmon", "-c", "1", "-s", "u"], timeout_s).1
 }
 
 /// `nvidia-smi pmon -s u` -> {pid: SM %}.
@@ -1426,5 +1436,20 @@ mod tests {
         assert!((procs[&300].gpu - 40.0).abs() < 1e-3); // 0.4 s busy in 1 s, counted once
         let pm = "# gpu         pid   type     sm    mem    enc    dec    jpg    ofa    command\n# Idx           #    C/G      %      %      %      %      %      %    name\n    0       4242     G     57     12      -      -      -      -    game.exe\n    0       1111     G      -      -      -      -      -      -    Xwayland\n";
         assert_eq!(parse_pmon(pm), HashMap::from([(4242, 57.0)]));
+    }
+
+    /// A hung nvidia-smi was waited on forever: `busy` stayed set and
+    /// Activity Monitor's per-process GPU numbers stopped updating.
+    #[test]
+    fn test_hung_nvidia_smi_froze_gpu_column() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let tool = dir.path().join("nvidia-smi");
+        std::fs::write(&tool, "#!/bin/sh\nexec sleep 30\n").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let t = std::time::Instant::now();
+        assert!(parse_pmon(&pmon_output(&tool, 1)).is_empty());
+        assert!(t.elapsed() < std::time::Duration::from_secs(10));
+        assert_eq!(PMON_TIMEOUT_S, 5);
     }
 }

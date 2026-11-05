@@ -26,6 +26,23 @@ pub mod window;
 
 use gtk::prelude::*;
 
+/// GTK for a test, on its thread: none without a display, and none when
+/// another test's thread has it already (GTK lives on one thread). No
+/// display is checked before gtk::init: a second gtk::init after a failed
+/// one crashes the whole test run (SIGSEGV), so a run without a display
+/// never tries.
+#[cfg(test)]
+pub(crate) fn gtk_here() -> bool {
+    let shown = ["WAYLAND_DISPLAY", "DISPLAY", "BROADWAY_DISPLAY"].iter().any(|v| std::env::var_os(v).is_some_and(|x| !x.is_empty()));
+    if !shown {
+        return false;
+    }
+    if gtk::is_initialized() {
+        return gtk::is_initialized_main_thread();
+    }
+    gtk::init().is_ok()
+}
+
 /// The app id: on trial its own (`sonata2rs`), so both Files can be open.
 pub fn app_id() -> &'static str {
     if sonata_config::side_by_side() {
@@ -91,9 +108,12 @@ fn serve_file_manager(app: &gtk::Application) {
                         let f = gio::File::for_uri(u);
                         if let Ok(info) = f.query_info(folder::ATTRS, gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE) {
                             info.set_attribute_object("sonata::file", &f);
+                            // (a window only to hand the app over: gone at once, or
+                            // the app would never quit with it in its list)
                             let w = gtk::Window::new();
                             w.set_application(Some(&app));
                             quicklook::get_info(&w, &info);
+                            w.destroy();
                         }
                     }
                 } else {

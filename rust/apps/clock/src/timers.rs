@@ -29,6 +29,9 @@ pub struct Stopwatch {
     /// seconds counted before that
     pub before: f64,
     pub laps: Vec<f64>,
+    /// keys this version doesn't know: kept as they were (timers.py's
+    /// `dict(new_stopwatch(), **sw)` writes them back after its own)
+    pub extra: Map<String, Value>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,17 +61,19 @@ pub struct Timer {
     /// paused: seconds left
     pub left: f64,
     pub state: TimerState,
+    /// keys this version doesn't know, kept as they were
+    pub extra: Map<String, Value>,
 }
 
 impl Default for Stopwatch {
     fn default() -> Self {
-        Stopwatch { running: false, since: 0.0, before: 0.0, laps: Vec::new() }
+        Stopwatch { running: false, since: 0.0, before: 0.0, laps: Vec::new(), extra: Map::new() }
     }
 }
 
 impl Default for Timer {
     fn default() -> Self {
-        Timer { duration: 300.0, label: String::new(), sound: SOUND.into(), ends: 0.0, left: 0.0, state: TimerState::Idle }
+        Timer { duration: 300.0, label: String::new(), sound: SOUND.into(), ends: 0.0, left: 0.0, state: TimerState::Idle, extra: Map::new() }
     }
 }
 
@@ -95,6 +100,13 @@ fn truthy(v: Option<&Value>) -> bool {
     }
 }
 
+const SW_KEYS: [&str; 4] = ["running", "since", "before", "laps"];
+const TM_KEYS: [&str; 6] = ["duration", "label", "sound", "ends", "left", "state"];
+
+fn extras(m: &Map<String, Value>, known: &[&str]) -> Map<String, Value> {
+    m.iter().filter(|(k, _)| !known.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect()
+}
+
 /// (stopwatch, timer), cleaned: a damaged file reads as new ones.
 pub fn load() -> (Stopwatch, Timer) {
     let data = std::fs::read(path()).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).unwrap_or(Value::Null);
@@ -107,6 +119,7 @@ pub fn load() -> (Stopwatch, Timer) {
             since: num(s.get("since"), 0.0),
             before: num(s.get("before"), 0.0),
             laps: s.get("laps").and_then(Value::as_array).map(|l| l.iter().map(|x| num(Some(x), 0.0)).collect()).unwrap_or_default(),
+            extra: extras(s, &SW_KEYS),
         },
     };
     let t = data.get("timer").and_then(Value::as_object).unwrap_or(&empty);
@@ -129,6 +142,7 @@ pub fn load() -> (Stopwatch, Timer) {
                 Some("paused") => TimerState::Paused,
                 _ => TimerState::Idle,
             },
+            extra: extras(t, &TM_KEYS),
         }
     };
     (sw, tm)
@@ -141,6 +155,7 @@ pub fn to_value(sw: &Stopwatch, tm: &Timer) -> Value {
     s.insert("since".into(), json!(sw.since));
     s.insert("before".into(), json!(sw.before));
     s.insert("laps".into(), json!(sw.laps));
+    s.extend(sw.extra.iter().filter(|(k, _)| !SW_KEYS.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())));
     let mut t = Map::new();
     t.insert("duration".into(), json!(tm.duration));
     t.insert("label".into(), json!(tm.label));
@@ -148,6 +163,7 @@ pub fn to_value(sw: &Stopwatch, tm: &Timer) -> Value {
     t.insert("ends".into(), json!(tm.ends));
     t.insert("left".into(), json!(tm.left));
     t.insert("state".into(), json!(tm.state.name()));
+    t.extend(tm.extra.iter().filter(|(k, _)| !TM_KEYS.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())));
     let mut m = Map::new();
     m.insert("stopwatch".into(), Value::Object(s));
     m.insert("timer".into(), Value::Object(t));
@@ -188,6 +204,7 @@ pub fn sw_lap(sw: &mut Stopwatch, now: f64) {
 }
 
 pub fn sw_reset(sw: &mut Stopwatch) {
+    // sw.clear(); sw.update(new_stopwatch()): unknown keys go too
     *sw = Stopwatch::default();
 }
 
@@ -378,12 +395,31 @@ mod tests {
     #[test]
     fn saved_text_is_what_timers_py_writes() {
         let _e = testenv::env();
-        let sw = Stopwatch { running: true, since: 1730000000.25, before: 0.0, laps: vec![3.5] };
+        let sw = Stopwatch { running: true, since: 1730000000.25, before: 0.0, laps: vec![3.5], extra: Map::new() };
         let mut tm = Timer::default();
         tm.label = "Eggs".into();
         save(&sw, &tm).unwrap();
         // json.dumps({"stopwatch": sw, "timer": tm}, indent=1), floats as Python writes them
         let want = "{\n \"stopwatch\": {\n  \"running\": true,\n  \"since\": 1730000000.25,\n  \"before\": 0.0,\n  \"laps\": [\n   3.5\n  ]\n },\n \"timer\": {\n  \"duration\": 300.0,\n  \"label\": \"Eggs\",\n  \"sound\": \"chimes\",\n  \"ends\": 0.0,\n  \"left\": 0.0,\n  \"state\": \"idle\"\n }\n}";
         assert_eq!(std::fs::read_to_string(path()).unwrap(), want);
+    }
+
+    /// A timers.json written by a newer Sonata (or by hand) lost the keys
+    /// this one didn't know as soon as Clock (Rust) started or stopped
+    /// anything; timers.py keeps them (`dict(new_timer(), **tm)`).
+    #[test]
+    fn test_unknown_timer_keys_were_dropped() {
+        let _e = testenv::env();
+        std::fs::write(path(), r#"{"stopwatch": {"running": false, "since": 0, "before": 0, "laps": [], "color": "red"}, "timer": {"duration": 60, "state": "idle", "chime": 2}, "other": 1}"#).unwrap();
+        let (mut sw, tm) = load();
+        sw_start(&mut sw, 10.0);
+        save(&sw, &tm).unwrap();
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(path()).unwrap()).unwrap();
+        assert_eq!(v["stopwatch"]["color"], "red");
+        assert_eq!(v["timer"]["chime"], 2);
+        // after the known keys, as Python's dict(new, **old) puts them
+        let keys: Vec<&String> = v["timer"].as_object().unwrap().keys().collect();
+        assert_eq!(keys.last().map(|k| k.as_str()), Some("chime"));
+        assert_eq!(v["stopwatch"]["running"], true);
     }
 }

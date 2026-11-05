@@ -29,7 +29,8 @@ fn load() -> serde_json::Map<String, Value> {
 }
 
 pub fn enabled() -> bool {
-    load().get("enabled").and_then(Value::as_bool).unwrap_or(true)
+    // bool(get("enabled", True)), as the Python reads it
+    load().get("enabled").is_none_or(|v| crate::py::truthy(Some(v)))
 }
 
 pub fn denied() -> Vec<String> {

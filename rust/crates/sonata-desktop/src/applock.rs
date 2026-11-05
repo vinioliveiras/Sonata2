@@ -87,7 +87,7 @@ pub fn gate(info: &impl IsA<gio::AppInfo>, launch: impl Fn() + 'static) -> bool 
     if !gtk::is_initialized_main_thread() || gtk::gdk::Display::default().is_none() {
         return true; // nowhere to ask: never opens unasked
     }
-    let name = info.as_ref().display_name().to_string();
+    let name = sonata_ui::apps::display_name(info);
     let heading = sonata_i18n::fmt(&tr!("“{name}” is locked"), &[("name", &name)]);
     // (the launch comes back through gate: opened inside trusted())
     sonata_shell::authsheet::ask(&heading, &tr!("Enter your password to open it."), Some(&tr!("Open")), None, None, move |_pw| trusted(&launch), || {});
@@ -96,7 +96,7 @@ pub fn gate(info: &impl IsA<gio::AppInfo>, launch: impl Fn() + 'static) -> bool 
 
 /// Unlocking asks the password too (like a locked folder).
 pub fn ask_unlock(info: &impl IsA<gio::AppInfo>, done: Option<Box<dyn Fn()>>) {
-    let name = info.as_ref().display_name().to_string();
+    let name = sonata_ui::apps::display_name(info);
     let id = info.as_ref().id().map(|s| s.to_string()).unwrap_or_default();
     let heading = sonata_i18n::fmt(&tr!("Unlock “{name}”?"), &[("name", &name)]);
     sonata_shell::authsheet::ask(&heading, &tr!("Enter your password to stop asking when it opens."), Some(&tr!("Unlock")), None, None, move |_pw| {

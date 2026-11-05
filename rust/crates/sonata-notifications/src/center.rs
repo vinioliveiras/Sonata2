@@ -3,9 +3,11 @@
 //! notifications, newest first, scrolling under them. A click anywhere
 //! else (or Escape) closes it.
 //!
-//! Not here yet: its glass (shell/frost.py, the display's picture blurred
-//! under the panels) -- the panels are solid (`.no-frost`), as the Python
-//! one's are without a picture.
+//! Its glass (shell/frost.py): the display's picture, taken as it opens,
+//! blurred once and drawn under each panel ([`FrostBox`]); the compositor
+//! never blurs it (Vini: it lagged with many notifications). The picture
+//! comes through a hook ([`FrostFn`], the menu bar's: sonata-mission's
+//! frost); without one, or no picture, the panels are solid (`.no-frost`).
 
 use crate::card;
 use crate::model::{self, Note, BANNER_W, SHOWN};
@@ -20,6 +22,112 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use std::time::Duration;
+
+/// frost(display connector, done(blurred picture or None), the renderer to
+/// blur with): false when nothing can be pictured (no grim).
+pub type FrostFn = Rc<dyn Fn(Option<&str>, Box<dyn FnOnce(Option<gtk::gdk::Texture>)>, Box<dyn FnOnce() -> Option<gtk::gsk::Renderer>>) -> bool>;
+
+/// Its panels and their radius, as their CSS (r_dialog *).
+pub const PANELS: [(&str, f32); 2] = [("nt-card", 1.08), ("nc-widget", 1.5)];
+
+mod frost_imp {
+    use super::*;
+    use gtk::subclass::prelude::*;
+
+    #[derive(Default)]
+    pub struct FrostBox {
+        pub tex: RefCell<Option<gtk::gdk::Texture>>,
+    }
+
+    #[glib::object_subclass]
+    impl ObjectSubclass for FrostBox {
+        const NAME: &'static str = "SonataNcFrostBox";
+        type Type = super::FrostBox;
+        type ParentType = gtk::Box;
+    }
+
+    impl ObjectImpl for FrostBox {}
+
+    impl WidgetImpl for FrostBox {
+        fn snapshot(&self, snap: &gtk::Snapshot) {
+            self.obj().glass(snap);
+            self.parent_snapshot(snap);
+        }
+    }
+
+    impl BoxImpl for FrostBox {}
+}
+
+glib::wrapper! {
+    /// A column of Notification Center (the Today widgets, the cards) that
+    /// draws the glass under each of its panels -- their slice of the
+    /// display's blurred picture, placed where it is on screen -- before
+    /// the panels themselves (their tint over it).
+    pub struct FrostBox(ObjectSubclass<frost_imp::FrostBox>) @extends gtk::Box, gtk::Widget, @implements gtk::Orientable;
+}
+
+impl FrostBox {
+    fn new(spacing: i32) -> Self {
+        glib::Object::builder().property("orientation", gtk::Orientation::Vertical).property("spacing", spacing).build()
+    }
+
+    /// An empty column (tests).
+    pub fn new_for_tests() -> Self {
+        Self::new(0)
+    }
+
+    pub fn set_picture(&self, tex: Option<gtk::gdk::Texture>) {
+        use gtk::subclass::prelude::ObjectSubclassIsExt;
+        self.imp().tex.replace(tex);
+        self.queue_draw();
+    }
+
+    pub fn has_picture(&self) -> bool {
+        use gtk::subclass::prelude::ObjectSubclassIsExt;
+        self.imp().tex.borrow().is_some()
+    }
+
+    fn glass(&self, snap: &gtk::Snapshot) {
+        use gtk::subclass::prelude::ObjectSubclassIsExt;
+        let Some(tex) = self.imp().tex.borrow().clone() else { return };
+        let Some(root) = self.root() else { return };
+        let Some(at) = self.compute_point(&root, &gtk::graphene::Point::new(0.0, 0.0)) else { return };
+        let screen = gtk::graphene::Rect::new(-at.x(), -at.y(), root.width() as f32, root.height() as f32);
+        let r = sonata_ui::values().get("r_dialog").and_then(|v| v.trim_end_matches("px").parse::<f32>().ok()).unwrap_or(12.0);
+        for (w, k) in self.panels() {
+            let Some(b) = w.compute_bounds(self) else { continue };
+            if b.width() <= 0.0 {
+                continue;
+            }
+            snap.push_rounded_clip(&gtk::gsk::RoundedRect::from_rect(b, r * k));
+            snap.append_texture(&tex, &screen);
+            snap.pop();
+        }
+    }
+
+    /// The visible panels inside it (a card sits a few boxes down its slot).
+    pub fn panels(&self) -> Vec<(gtk::Widget, f32)> {
+        let mut out = Vec::new();
+        let mut stack: Vec<gtk::Widget> = self.first_child().into_iter().collect();
+        while let Some(first) = stack.pop() {
+            let mut w = Some(first);
+            while let Some(x) = w {
+                if x.is_visible() {
+                    match PANELS.iter().find(|(c, _)| x.has_css_class(c)) {
+                        Some((_, k)) => out.push((x.clone(), *k)),
+                        None => {
+                            if let Some(c) = x.first_child() {
+                                stack.push(c);
+                            }
+                        }
+                    }
+                }
+                w = x.next_sibling();
+            }
+        }
+        out
+    }
+}
 
 struct Slot {
     rev: gtk::Revealer,
@@ -42,8 +150,8 @@ pub struct Center {
     pub win: gtk::Window,
     server: Weak<Server>,
     slide: gtk::Box,
-    top: gtk::Box,
-    col: gtk::Box,
+    top: FrostBox,
+    col: FrostBox,
     head: gtk::Box,
     title: gtk::Label,
     clear: gtk::Button,
@@ -61,6 +169,9 @@ pub struct Center {
     later: RefCell<Option<glib::SourceId>>,
     hiding: RefCell<Option<glib::SourceId>>,
     monitor: RefCell<Option<gtk::gdk::Monitor>>,
+    frost: Option<FrostFn>,
+    /// each opening's picture: an answer for an older one is dropped
+    frost_gen: Cell<u64>,
 }
 
 fn day_now() -> String {
@@ -68,16 +179,21 @@ fn day_now() -> String {
 }
 
 impl Center {
-    pub fn new(app: &gtk::Application, server: &Rc<Server>) -> Rc<Self> {
+    pub fn new(app: &gtk::Application, server: &Rc<Server>, frost: Option<FrostFn>) -> Rc<Self> {
         let win = gtk::Window::builder().application(app).title("Notification Center").decorated(false).build();
         win.add_css_class("sonata-nc");
-        win.add_css_class("no-frost");
         let gap = model::menubar_height() + 6; // under the menu bar
         // the Today widgets stay at the top, the notifications scroll under
         // them (Vini: the calendar fixed, however many notifications)
-        let top = gtk::Box::builder().orientation(gtk::Orientation::Vertical).margin_top(gap - 12).margin_end(10).build();
+        let top = FrostBox::new(0);
+        top.set_margin_top(gap - 12);
+        top.set_margin_end(10);
         let scroller = gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).propagate_natural_width(true).vexpand(true).build();
-        let col = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(8).margin_top(4).margin_end(10).margin_bottom(12).margin_start(6).build();
+        let col = FrostBox::new(8);
+        col.set_margin_top(4);
+        col.set_margin_end(10);
+        col.set_margin_bottom(12);
+        col.set_margin_start(6);
         scroller.set_child(Some(&col));
         let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
         outer.append(&top);
@@ -124,6 +240,8 @@ impl Center {
             later: RefCell::default(),
             hiding: RefCell::default(),
             monitor: RefCell::default(),
+            frost,
+            frost_gen: Cell::new(0),
         });
         let w = Rc::downgrade(server);
         c.clear.connect_clicked(move |_| {
@@ -210,6 +328,7 @@ impl Center {
             self.rebuild();
         }
         self.refresh_times();
+        self.take_frost();
         self.win.present();
         let w = Rc::downgrade(self);
         glib::idle_add_local_once(move || {
@@ -229,9 +348,61 @@ impl Center {
             if let Some(c) = w.upgrade() {
                 c.hiding.take();
                 c.win.set_visible(false);
+                for b in [&c.top, &c.col] {
+                    b.set_picture(None); // (a new picture each opening)
+                }
             }
         });
         self.hiding.replace(Some(src));
+    }
+
+    /// Its glass: the display's picture, taken as it opens (it slides in
+    /// from transparent, so it's not in it yet), blurred once and drawn
+    /// under the panels. No hook, no layer shell or no picture: solid
+    /// panels.
+    fn take_frost(self: &Rc<Self>) {
+        for b in [&self.top, &self.col] {
+            b.set_picture(None);
+        }
+        let gen = self.frost_gen.get() + 1;
+        self.frost_gen.set(gen);
+        let out = self.monitor.borrow().as_ref().and_then(|m| m.connector()).map(|c| c.to_string());
+        let w = Rc::downgrade(self);
+        let done: Box<dyn FnOnce(Option<gtk::gdk::Texture>)> = Box::new(move |tex| {
+            let Some(c) = w.upgrade() else { return };
+            c.frost_done(gen, tex);
+        });
+        let ww = self.win.downgrade();
+        let renderer: Box<dyn FnOnce() -> Option<gtk::gsk::Renderer>> = Box::new(move || ww.upgrade().and_then(|w| w.renderer()));
+        let started = sonata_shell::layer::available() && self.frost.as_ref().is_some_and(|f| f(out.as_deref(), done, renderer));
+        if !started {
+            self.win.add_css_class("no-frost");
+        }
+    }
+
+    /// The current opening's number (tests).
+    pub fn frost_opening(&self) -> u64 {
+        self.frost_gen.get()
+    }
+
+    /// The panels draw a picture under them now (tests).
+    pub fn pictured(&self) -> bool {
+        self.top.has_picture() && self.col.has_picture()
+    }
+
+    /// The picture for opening `gen` came (None: there is none).
+    pub fn frost_done(&self, gen: u64, tex: Option<gtk::gdk::Texture>) {
+        if gen != self.frost_gen.get() || !self.is_open() {
+            return; // closed, or opened again since
+        }
+        if tex.is_some() {
+            self.win.remove_css_class("no-frost");
+        } else {
+            self.win.add_css_class("no-frost");
+        }
+        for b in [&self.top, &self.col] {
+            b.set_picture(tex.clone());
+        }
     }
 
     /// Built and laid out once, unseen, so its first opening slides in

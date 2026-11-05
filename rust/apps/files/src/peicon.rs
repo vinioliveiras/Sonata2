@@ -115,7 +115,8 @@ fn rsrc(f: &mut std::fs::File) -> Option<(u64, u64, u32)> {
         let mut sec = [0u8; 40];
         f.read_exact(&mut sec).ok()?;
         let (vsize, vaddr, rawsize, rawptr) = (u32le(&sec, 8)?, u32le(&sec, 12)?, u32le(&sec, 16)?, u32le(&sec, 20)?);
-        if vaddr <= rva && rva < vaddr + vsize.max(rawsize) {
+        // (in u64: a damaged header near 4 GiB overflowed the sum)
+        if vaddr <= rva && (rva as u64) < vaddr as u64 + vsize.max(rawsize) as u64 {
             return Some((rawptr as u64, (vsize.max(rawsize) as u64).min(MAX_RSRC), vaddr));
         }
     }
@@ -196,6 +197,106 @@ pub fn pixbuf(path: &std::path::Path, size: i32) -> Option<Pixbuf> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    fn png_bytes(w: i32) -> Vec<u8> {
+        let pb = Pixbuf::new(gtk::gdk_pixbuf::Colorspace::Rgb, true, 8, w, w).unwrap();
+        pb.fill(0xcc3333ff);
+        pb.save_to_bufferv("png", &[]).unwrap()
+    }
+
+    /// A minimal PE32+ whose resources hold one icon group of `icons`
+    /// ([(width, png)]), as compilers write them (tests/test_peicon.py's make_pe).
+    fn make_pe(icons: &[(u32, Vec<u8>)]) -> Vec<u8> {
+        let base = 0x1000u32;
+        let dir = |entries: &[(u32, u32, bool)]| {
+            let mut out = Vec::new();
+            out.extend_from_slice(&[0u8; 12]);
+            out.extend_from_slice(&0u16.to_le_bytes());
+            out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+            for (i, off, d) in entries {
+                out.extend_from_slice(&i.to_le_bytes());
+                out.extend_from_slice(&(off | if *d { 0x8000_0000 } else { 0 }).to_le_bytes());
+            }
+            out
+        };
+        let n = icons.len() as u32;
+        let (root_sz, type_sz, grp_type_sz, name_sz) = (32, 16 + 8 * n, 24, 24);
+        let off_type_icon = root_sz;
+        let off_type_group = off_type_icon + type_sz;
+        let off_icon_names = off_type_group + grp_type_sz;
+        let off_group_name = off_icon_names + n * name_sz;
+        let off_data_entries = off_group_name + name_sz;
+        let off_data = off_data_entries + 16 * (n + 1);
+        let mut blobs: Vec<Vec<u8>> = icons.iter().map(|(_, p)| p.clone()).collect();
+        let mut group = vec![0, 0, 1, 0];
+        group.extend_from_slice(&(n as u16).to_le_bytes());
+        for (i, (w, png)) in icons.iter().enumerate() {
+            group.extend_from_slice(&[(w % 256) as u8, (w % 256) as u8, 0, 0, 1, 0, 32, 0]);
+            group.extend_from_slice(&(png.len() as u32).to_le_bytes());
+            group.extend_from_slice(&(i as u16 + 1).to_le_bytes());
+        }
+        blobs.push(group);
+        let (mut data, mut positions) = (Vec::new(), Vec::new());
+        for b in &blobs {
+            positions.push(off_data + data.len() as u32);
+            data.extend_from_slice(b);
+            data.resize(data.len().div_ceil(4) * 4, 0);
+        }
+        let mut sec = dir(&[(RT_ICON, off_type_icon, true), (RT_GROUP_ICON, off_type_group, true)]);
+        sec.extend(dir(&(0..n).map(|i| (i + 1, off_icon_names + i * name_sz, true)).collect::<Vec<_>>()));
+        sec.extend(dir(&[(1, off_group_name, true)]));
+        for i in 0..n {
+            sec.extend(dir(&[(1033, off_data_entries + 16 * i, false)]));
+        }
+        sec.extend(dir(&[(1033, off_data_entries + 16 * n, false)]));
+        for (p, b) in positions.iter().zip(&blobs) {
+            for v in [base + p, b.len() as u32, 0, 0] {
+                sec.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        assert_eq!(sec.len() as u32, off_data);
+        sec.extend(data);
+        let mut head = b"MZ".to_vec();
+        head.resize(0x3C, 0);
+        head.extend_from_slice(&0x40u32.to_le_bytes());
+        head.extend_from_slice(b"PE\0\0");
+        for v in [0x8664u16, 1] {
+            head.extend_from_slice(&v.to_le_bytes());
+        }
+        head.extend_from_slice(&[0u8; 12]);
+        head.extend_from_slice(&240u16.to_le_bytes());
+        head.extend_from_slice(&0x22u16.to_le_bytes());
+        let mut opt = vec![0u8; 240];
+        opt[0..2].copy_from_slice(&0x20Bu16.to_le_bytes());
+        opt[128..132].copy_from_slice(&base.to_le_bytes());
+        opt[132..136].copy_from_slice(&(sec.len() as u32).to_le_bytes());
+        head.extend(opt);
+        let raw = 0x200u32;
+        head.extend_from_slice(b".rsrc\0\0\0");
+        for v in [sec.len() as u32, base, sec.len() as u32, raw, 0, 0] {
+            head.extend_from_slice(&v.to_le_bytes());
+        }
+        head.extend_from_slice(&[0u8; 4]);
+        head.extend_from_slice(&0x4000_0040u32.to_le_bytes());
+        head.resize(raw as usize, 0);
+        head.extend(sec);
+        head
+    }
+
+    /// From tests/test_peicon.py: the size closest above wins, made to fit.
+    #[test]
+    fn png_icon_picks_the_size() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("app.exe");
+        std::fs::write(&p, make_pe(&[(32, png_bytes(32)), (256, png_bytes(256)), (48, png_bytes(48))])).unwrap();
+        assert!(best_icon(&p, 256).unwrap().starts_with(PNG_MAGIC));
+        let pb = pixbuf(&p, 256).unwrap();
+        assert_eq!((pb.width(), pb.height()), (256, 256));
+        assert_eq!(pixbuf(&p, 40).unwrap().width(), 40);
+        assert_eq!(pixbuf(&p, 16).unwrap().width(), 16); // (32, the closest above, scaled down)
+    }
+
     #[test]
     fn not_a_program() {
         let d = tempfile::tempdir().unwrap();

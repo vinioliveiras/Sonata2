@@ -183,6 +183,10 @@ pub struct Camera {
     /// what the window shows
     pub paintable: RefCell<Option<gtk::gdk::Paintable>>,
     on_error: RefCell<Option<Rc<dyn Fn(String)>>>,
+    /// tests: the picture (videotestsrc) instead of a camera
+    pub source: RefCell<Option<Rc<dyn Fn() -> Option<gst::Element>>>>,
+    /// tests: the sound (audiotestsrc) instead of the microphone
+    pub audio_source: RefCell<Option<Rc<dyn Fn() -> Option<gst::Element>>>>,
 }
 
 impl Camera {
@@ -209,7 +213,12 @@ impl Camera {
 
     pub fn start(self: &Rc<Self>, cam: Option<&Cam>, mirror: bool) -> bool {
         self.stop();
-        let Some(src) = cam.and_then(|c| c.device.as_ref()).and_then(|d| d.create_element(None).ok()) else {
+        let test = self.source.borrow().clone();
+        let src = match &test {
+            Some(make) => make(),
+            None => cam.and_then(|c| c.device.as_ref()).and_then(|d| d.create_element(None).ok()),
+        };
+        let Some(src) = src else {
             self.error(n_!("No camera").into());
             return false;
         };
@@ -224,17 +233,25 @@ impl Camera {
             q.set_property_from_str("leaky", "downstream"); // the preview never waits for the recording
             let conv2 = make("videoconvert")?;
             let (sink, gtk) = self.make_sink()?;
-            p.add_many([&src, &caps, &dec, &conv, &flip, &tee, &q, &conv2, &sink]).ok()?;
-            src.link(&caps).ok()?;
-            caps.link(&dec).ok()?;
-            let c = conv.downgrade();
-            dec.connect_pad_added(move |_, pad| {
-                if let Some(sinkpad) = c.upgrade().and_then(|c| c.static_pad("sink")) {
-                    if !sinkpad.is_linked() {
-                        let _ = pad.link(&sinkpad);
+            p.add_many([&src, &caps, &conv, &flip, &tee, &q, &conv2, &sink]).ok()?;
+            if test.is_some() {
+                // a test source: no decoding needed
+                caps.set_property("caps", gst::Caps::from_str("video/x-raw,width=640,height=360").ok()?);
+                src.link(&caps).ok()?;
+                caps.link(&conv).ok()?;
+            } else {
+                p.add(&dec).ok()?;
+                src.link(&caps).ok()?;
+                caps.link(&dec).ok()?;
+                let c = conv.downgrade();
+                dec.connect_pad_added(move |_, pad| {
+                    if let Some(sinkpad) = c.upgrade().and_then(|c| c.static_pad("sink")) {
+                        if !sinkpad.is_linked() {
+                            let _ = pad.link(&sinkpad);
+                        }
                     }
-                }
-            });
+                });
+            }
             gst::Element::link_many([&conv, &flip, &tee, &q, &conv2]).ok()?;
             if gtk {
                 conv2.link(&sink).ok()?;
@@ -388,7 +405,11 @@ impl Camera {
         mux.link(&sink).ok()?;
         let mut audio = None;
         if let Some(aenc) = aenc_name {
-            let parts = (make("autoaudiosrc"), make("queue"), make("audioconvert"), make("audioresample"), make(aenc));
+            let asrc = match self.audio_source.borrow().clone() {
+                Some(f) => f(),
+                None => make("autoaudiosrc"),
+            };
+            let parts = (asrc, make("queue"), make("audioconvert"), make("audioresample"), make(aenc));
             if let (Some(asrc), Some(aq), Some(aconv), Some(ares), Some(aenc)) = parts {
                 if bin.add_many([&asrc, &aq, &aconv, &ares, &aenc]).is_ok() && gst::Element::link_many([&asrc, &aq, &aconv, &ares, &aenc]).is_ok() && aenc.link(&mux).is_ok() {
                     audio = Some(asrc);

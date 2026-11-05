@@ -313,6 +313,13 @@ impl CompositionBar {
     pub fn new() -> Self {
         let b: Self = glib::Object::builder().property("hexpand", true).build();
         b.set_size_request(200, 34);
+        // its colours are tokens: redrawn when Light / Dark or the accent change
+        let w = b.downgrade();
+        sonata_ui::theme::on_change(move || {
+            if let Some(b) = w.upgrade() {
+                b.queue_draw();
+            }
+        });
         b
     }
 

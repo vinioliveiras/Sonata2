@@ -160,3 +160,116 @@ pub(crate) fn self_exe() -> String {
 
 #[cfg(test)]
 pub(crate) mod testenv;
+
+/// The parts with windows (tests/test_blackout.py, tests/test_setup.py),
+/// on a display when there is one. One test: GTK lives on one thread.
+#[cfg(test)]
+mod gtk_tests {
+    use gtk::prelude::*;
+
+    fn spin(ms: u64) {
+        let end = std::time::Instant::now() + std::time::Duration::from_millis(ms);
+        let ctx = glib::MainContext::default();
+        while std::time::Instant::now() < end {
+            ctx.iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn windows() {
+        // (the display first: testenv moves XDG_RUNTIME_DIR, where Broadway's socket is)
+        let _lock = crate::testenv::env();
+        let shown = crate::testenv::with_runtime_dir_of_the_session(|| !(gtk::is_initialized() && !gtk::is_initialized_main_thread()) && gtk::init().is_ok() && gtk::gdk::Display::default().is_some());
+        if !shown {
+            return; // (no display)
+        }
+        let _ = adw::init();
+        blackout_fades_in_and_out();
+        blackout_shown_again_during_its_fade_out();
+        setup_flow();
+    }
+
+    /// Vini: after the idle time the screen only dimmed and the pointer
+    /// stayed on it. Now it fades to black on every display, without the
+    /// pointer, and fades out again.
+    fn blackout_fades_in_and_out() {
+        use crate::blackout as b;
+        b::show();
+        assert!(b::surfaces() > 0);
+        assert!(!b::showing()); // a transparent frame first: the fade shows
+        spin(150);
+        assert!(b::showing());
+        let n = b::surfaces();
+        b::show(); // again: nothing new
+        assert_eq!(b::surfaces(), n);
+        b::hide();
+        assert!(!b::showing());
+        assert_eq!(b::surfaces(), n); // still there while it fades out
+        spin(b::FADE_OUT_MS + 150);
+        assert_eq!(b::surfaces(), 0);
+    }
+
+    fn blackout_shown_again_during_its_fade_out() {
+        use crate::blackout as b;
+        b::show();
+        spin(150);
+        b::hide();
+        spin(100);
+        b::show(); // input stopped again right away
+        spin(b::FADE_OUT_MS + 200);
+        assert!(b::showing()); // the old fade-out took nothing away
+        b::hide();
+        spin(b::FADE_OUT_MS + 150);
+        assert_eq!(b::surfaces(), 0);
+    }
+
+    /// Pages navigate, choices save, Get Started marks it done.
+    fn setup_flow() {
+        use crate::setup as s;
+        use std::rc::Rc;
+        let app = adw::Application::builder().application_id("io.test.sessionui.setup").flags(gio::ApplicationFlags::NON_UNIQUE).build();
+        app.register(gio::Cancellable::NONE).unwrap();
+        assert!(!s::done());
+        let dark = Rc::new(std::cell::Cell::new(None));
+        let d2 = dark.clone();
+        let hooks = s::Hooks { set_dark_mode: Rc::new(move |on| d2.set(Some(on))), apply_titlebars: Rc::new(|_| {}) };
+        let finished = Rc::new(std::cell::Cell::new(false));
+        let f2 = finished.clone();
+        let a = s::SetupAssistant::new(app.upcast_ref(), hooks, move || f2.set(true));
+        spin(300);
+        for name in &s::PAGES[1..] {
+            a.go(1);
+            spin(500);
+            assert_eq!(a.stack.visible_child_name().as_deref(), Some(*name));
+        }
+        a.go(-1);
+        assert_eq!(a.stack.visible_child_name().as_deref(), Some("sonata"));
+        // Vini: the first setup asks how to see the apps
+        let mut kinds: Vec<&str> = a.app_cards.borrow().keys().copied().collect();
+        kinds.sort();
+        assert_eq!(kinds, ["fullscreen", "window"]);
+        a.set_apps_style("window");
+        assert_eq!(s::apps_style(), "window");
+        assert!(a.app_cards.borrow()["window"].has_css_class("selected"));
+        assert!(!a.app_cards.borrow()["fullscreen"].has_css_class("selected"));
+        a.set_apps_style("fullscreen");
+        assert_eq!(s::apps_style(), "fullscreen");
+        a.set_accent("green");
+        assert_eq!(sonata_config::load("appearance", &serde_json::json!({"accent": ""}))["accent"], "green");
+        a.set_dark(true);
+        assert_eq!(dark.get(), Some(true));
+        assert!(a.cards.borrow()[&true].has_css_class("selected"));
+        a.finish();
+        assert!(s::done()); // saved at once
+        // the fade runs on the window's frame clock: slower on a busy display
+        for _ in 0..40 {
+            if finished.get() {
+                break;
+            }
+            spin(100);
+        }
+        assert!(finished.get());
+        a.win.destroy();
+    }
+}

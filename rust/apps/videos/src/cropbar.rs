@@ -225,7 +225,7 @@ impl CropBar {
         me
     }
 
-    fn pick(&self, key: &str) {
+    pub fn pick(&self, key: &str) {
         self.shapes.select(key);
         self.frame.set_ratio(E::RATIOS.iter().find(|r| r.0 == key).and_then(|r| r.2));
     }

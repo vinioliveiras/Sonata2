@@ -121,7 +121,8 @@ pub fn app_key(props: &Value) -> String {
 
 fn webapp_re() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"(?:/webapps/([\w.-]+)/chromium\b|\bsonata2 webapp ([\w.-]+)\b)").unwrap())
+    // `sonata2-rs webapp <id>`: the Rust session's WebKit web apps
+    RE.get_or_init(|| regex::Regex::new(r"(?:/webapps/([\w.-]+)/chromium\b|\bsonata2(?:-rs)? webapp ([\w.-]+)\b)").unwrap())
 }
 
 fn parent(pid: i64, proc: &str) -> i64 {
@@ -308,8 +309,9 @@ impl Saved {
     pub fn volume(&self, key: &str) -> Option<i64> {
         self.volumes.get(key).and_then(|v| v.as_i64().or(v.as_f64().map(|f| f as i64)))
     }
+    /// (a 0 / 1 counts, as Python compares 1 == True)
     pub fn mute(&self, key: &str) -> Option<bool> {
-        self.muted.get(key).and_then(Value::as_bool)
+        self.muted.get(key).filter(|v| v.is_boolean() || v.is_number()).map(|v| crate::py::truthy(Some(v)))
     }
 }
 

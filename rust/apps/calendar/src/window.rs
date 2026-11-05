@@ -139,7 +139,9 @@ impl CalendarWindow {
             let window = gtk::ApplicationWindow::builder().application(app).title(tr!("Calendar")).css_classes(["sonata-calendar"]).build();
             sonata_ui::window::standard(&window);
             window.set_size_request(MIN_SIZE.0, MIN_SIZE.1);
-            sonata_ui::window::remember_size(window.upcast_ref(), "calendar", 1100, 720);
+            // its last size; the first time roomy, about two thirds of the
+            // display (ui.window.remember_size(roomy=True), 0.20.3)
+            sonata_ui::window::remember_size_roomy(window.upcast_ref(), "calendar", 1100, 720);
             let call = |f: fn(&Rc<CalendarWindow>)| {
                 let w = me.clone();
                 move || {
@@ -1360,7 +1362,9 @@ impl Editor {
                 }
             }
         }
-        let pop = sonata_ui::panel::popup(&widget, &bx, if rect.is_some() { gtk::PositionType::Right } else { gtk::PositionType::Bottom });
+        // the close dot of forms (panel.popup(..., close=True))
+        let position = if rect.is_some() { gtk::PositionType::Right } else { gtk::PositionType::Bottom };
+        let pop = sonata_ui::panel::popup_with(&widget, &bx, sonata_ui::panel::Options { position, close: true, ..Default::default() });
         if let Some(r) = rect {
             pop.set_pointing_to(Some(&r));
         }
@@ -1575,6 +1579,24 @@ impl TimeEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The event editor (a form) opened without the close dot every form
+    /// panel has (tests/test_dialog_close.py's test_forms_ask_for_it).
+    #[test]
+    fn test_event_editor_had_no_close_dot() {
+        let src = include_str!("window.rs");
+        let i = src.find("panel::popup_with(&widget, &bx").expect("the event editor");
+        assert!(src[i..i + 160].contains("close: true"));
+    }
+
+    /// Calendar opened at 1100 x 720 the first time on any display: the
+    /// Python one opens roomy, about two thirds of it.
+    #[test]
+    fn test_first_size_not_roomy() {
+        use sonata_ui::window::first_size;
+        assert_eq!(first_size(None, 1100, 720, true, Some((1920, 1080))), (1267, 720, false));
+        assert_eq!(first_size(None, 1100, 720, true, Some((2560, 1440))), (1689, 936, false));
+    }
 
     #[test]
     fn times_typed_in_any_usual_way() {

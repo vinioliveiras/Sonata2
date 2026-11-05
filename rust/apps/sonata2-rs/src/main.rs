@@ -60,6 +60,8 @@
 mod desktop;
 mod gamebar_host;
 mod host;
+mod launch;
+mod procenv;
 
 use std::process::ExitCode;
 
@@ -94,9 +96,23 @@ fn main() -> ExitCode {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
+    // `sonata2-rs launchpad` (Super, F4, the pinch): the resident Launchpad
+    // told straight away -- starting GTK only to pass the word on took
+    // ~0.5 s before it began to open (__main__.py's tell_launchpad)
+    if args.len() == 1 && component == "launchpad" && tell_launchpad("toggle", 800) {
+        return ExitCode::SUCCESS;
+    }
     // a Chromium web app's windows ("chrome-<site>-Default") are its own
     // app, not Chrome's (apps.py looks through webapps.json the same way)
     sonata_desktop::appmatch::set_webapp_resolver(sonata_webapps::desktop_for_window_class);
+    // every app Sonata opens goes through Sonata's launch path (apps.py
+    // patched GIO for that; here sonata_ui::apps::launch is the one door)
+    sonata_ui::apps::set_launcher(launch::launch);
+    if handles(component) && procenv::setup(component) {
+        // GTK reads GDK_DEBUG once, at init (done by the first idle): the
+        // apps opened from the shell get the session's again
+        gtk::glib::idle_add_local_once(procenv::restore_gdk_debug);
+    }
     if handles(component) && !NO_WINDOWS.contains(&component.as_str()) && !args.iter().any(|a| a == "--preview") {
         // __main__.py: the start-up watchdog (detailed logs) until the first
         // idle, and the main-loop stall log (ui.theme.setup) in every
@@ -155,7 +171,13 @@ fn main() -> ExitCode {
         "doctor" => ExitCode::from(sonata_session::doctor(&args[1..]) as u8),
         // in the Rust session the setup steps are the Rust ones; on trial the
         // Python session's own autostart runs and this one only tries it
-        "autostart" if !sonata_config::side_by_side() => ExitCode::from(sonata_session::autostart::autostart_with(&login_steps) as u8),
+        // the login items through Sonata's launch path (their GPU, Steam's
+        // FPS limit, their own scopes -- sent before this short process ends)
+        "autostart" if !sonata_config::side_by_side() => {
+            let code = sonata_session::autostart::autostart_with(&launch::login_item, &login_steps);
+            sonata_desktop::appscope::flush();
+            ExitCode::from(code as u8)
+        }
         "autostart" => ExitCode::from(sonata_session::autostart(&args[1..]) as u8),
         // the design system's page (ui/gallery.py)
         "gallery" => {
@@ -210,6 +232,10 @@ fn main() -> ExitCode {
             ExitCode::from(code.value() as u8)
         }
         "dock" => {
+            // __main__.run_dock: Sonata's desktop entries as the Dock starts
+            // (here: the Dock can't depend on Settings, Capture and the web
+            // apps that depend on it); nothing on trial
+            desktop::write_at_dock_start();
             let code = sonata_dock::run(&args[1..]);
             ExitCode::from(code.value() as u8)
         }
@@ -300,6 +326,19 @@ fn main() -> ExitCode {
     }
 }
 
+/// The running Launchpad's `action` ("toggle", "close") over D-Bus, waited
+/// for: GIO only, no GTK. False when it isn't running (never started by
+/// D-Bus for this: then this process starts it the long way).
+fn tell_launchpad(action: &str, timeout_ms: i32) -> bool {
+    use gtk::{gio, glib};
+    use gtk::prelude::*;
+    let Ok(bus) = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE) else { return false };
+    let id = sonata_launchpad::app_id();
+    let args = (action, Vec::<glib::Variant>::new(), std::collections::HashMap::<String, glib::Variant>::new()).to_variant();
+    bus.call_sync(Some(id), &format!("/{}", id.replace('.', "/")), "org.freedesktop.Application", "ActivateAction", Some(&args), None, gio::DBusCallFlags::NO_AUTO_START, timeout_ms, gio::Cancellable::NONE)
+        .is_ok()
+}
+
 /// Apps with a library the rest must not need (Terminal: libvte; Camera:
 /// GStreamer) are binaries of their own: the one next to this one, else
 /// in $PATH. Replaces this process; `missing` says what to install.
@@ -342,6 +381,25 @@ fn topbar_services() -> sonata_topbar::seams::Services {
     s.capture_toolbar = Some(if sonata_config::side_by_side() { spawn(vec!["capture".into(), "toolbar".into()]) } else { Rc::new(host::show_capture_toolbar) });
     host::fill_services(&mut s);
     s
+}
+
+#[cfg(test)]
+mod launchpad_tests {
+    /// Vini: Launchpad took ~0.5 s to begin opening in the Rust session --
+    /// `sonata2-rs launchpad` started GTK and the whole Launchpad only to
+    /// tell the running one to toggle. It asks the running one first, before
+    /// anything else, and goes on the long way only when none answers.
+    #[test]
+    fn test_launchpad_started_gtk_to_toggle() {
+        let src = include_str!("main.rs");
+        let main = &src[src.find("fn main() -> ExitCode").unwrap()..];
+        let fast = main.find("tell_launchpad(\"toggle\", 800)").expect("the fast path");
+        assert!(fast < main.find("set_launcher").unwrap() && fast < main.find("procenv::setup").unwrap());
+        // nothing running (no session bus here): false at once, never started by D-Bus
+        let t = std::time::Instant::now();
+        assert!(!super::tell_launchpad("toggle", 800));
+        assert!(t.elapsed() < std::time::Duration::from_secs(2));
+    }
 }
 
 #[cfg(test)]

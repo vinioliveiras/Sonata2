@@ -41,7 +41,7 @@ pub const SKIP: [&str; 2] = ["sonata2-launchpad", "io.github.vinioliveiras.sonat
 /// The session's crash note (tools/sonata-session: "<epoch> <exit code>").
 pub const CRASH: &str = "last-crash";
 
-/// What starts one app (default: `info.launch(&[], None)`).
+/// What starts one app (default: Sonata's launch path, `sonata_ui::apps::launch`).
 pub type Launcher = Rc<dyn Fn(&gio::DesktopAppInfo)>;
 
 thread_local! {
@@ -226,9 +226,8 @@ fn autostart_wanted(kf: &glib::KeyFile) -> bool {
 }
 
 /// Apps "Open at Login" starts anyway: not opened a second time. Their
-/// entries' file names (autostart.entries; autostart.py isn't ported). The
-/// Python Sonata asked each entry its desktop id, which an entry read from
-/// its file doesn't have: nothing was ever left out there.
+/// entries' file names (autostart.entries: only entries GIO takes for an
+/// app -- a link, or one whose program isn't installed, starts nothing).
 pub fn autostarted() -> Vec<String> {
     let mut dirs = vec![glib::user_config_dir().join("autostart")];
     dirs.extend(glib::system_config_dirs().into_iter().map(|d| d.join("autostart")));
@@ -248,7 +247,7 @@ fn autostarted_in(dirs: &[PathBuf]) -> Vec<String> {
             }
             seen.push(name.clone()); // a user entry hides the system one
             let kf = glib::KeyFile::new();
-            if kf.load_from_file(d.join(&name), glib::KeyFileFlags::NONE).is_ok() && autostart_wanted(&kf) {
+            if kf.load_from_file(d.join(&name), glib::KeyFileFlags::NONE).is_ok() && autostart_wanted(&kf) && gio::DesktopAppInfo::from_keyfile(&kf).is_some() {
                 out.push(name);
             }
         }
@@ -278,7 +277,7 @@ pub fn reopen_after_login(running: &[String], launch: Option<Launcher>) -> usize
 
 /// The apps' names to show (their ids when not installed).
 pub fn names(ids: &[String]) -> Vec<String> {
-    ids.iter().map(|i| sonata_ui::apps::lookup(i).map(|a| a.display_name().to_string()).unwrap_or_else(|| i.clone())).collect()
+    ids.iter().map(|i| sonata_ui::apps::lookup(i).map(|a| sonata_ui::apps::display_name(&a)).unwrap_or_else(|| i.clone())).collect()
 }
 
 /// Starts them, a little apart (not all at once at login); the list is
@@ -287,7 +286,7 @@ pub fn reopen(ids: &[String], launch: Option<Launcher>) -> usize {
     let infos: Vec<gio::DesktopAppInfo> = ids.iter().filter_map(|i| sonata_ui::apps::lookup(i)).collect();
     let launch: Launcher = launch.unwrap_or_else(|| {
         Rc::new(|info: &gio::DesktopAppInfo| {
-            if let Err(e) = info.launch(&[], gio::AppLaunchContext::NONE) {
+            if let Err(e) = sonata_ui::apps::launch(info, &[], None) {
                 eprintln!("sonata2: reopen {}: {e}", info.id().unwrap_or_default());
             }
         })
@@ -388,13 +387,25 @@ mod tests {
         let (user, system) = (d.path().join("user"), d.path().join("system"));
         std::fs::create_dir_all(&user).unwrap();
         std::fs::create_dir_all(&system).unwrap();
-        std::fs::write(user.join("discord.desktop"), "[Desktop Entry]\nType=Application\nName=Discord\nExec=discord\n").unwrap();
+        std::fs::write(user.join("discord.desktop"), "[Desktop Entry]\nType=Application\nName=Discord\nExec=true\n").unwrap();
         std::fs::write(user.join("off.desktop"), "[Desktop Entry]\nType=Application\nName=Off\nExec=off\nHidden=true\n").unwrap();
         std::fs::write(system.join("off.desktop"), "[Desktop Entry]\nType=Application\nName=Off\nExec=off\n").unwrap(); // hidden by the user's
         std::fs::write(system.join("gnome-only.desktop"), "[Desktop Entry]\nType=Application\nName=G\nExec=g\nOnlyShowIn=GNOME;\n").unwrap();
         let auto = autostarted_in(&[user, system]);
         assert_eq!(auto, ["discord.desktop"]);
         assert_eq!(left_to_open(ids(&["discord", "firefox"]), &[], &auto), ["firefox"]);
+    }
+
+    /// An autostart entry GIO doesn't take for an app (a link, or one whose
+    /// program isn't installed) counted as an app started at login: a
+    /// same-named app of the last session wasn't reopened
+    /// (autostart.entries keeps only what GIO reads as an app).
+    #[test]
+    fn test_non_app_login_entry_kept_an_app_closed() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("firefox.desktop"), "[Desktop Entry]\nType=Link\nName=Firefox\nURL=https://example.org\n").unwrap();
+        std::fs::write(d.path().join("gone.desktop"), "[Desktop Entry]\nType=Application\nName=N\nExec=no-such-program-anywhere\n").unwrap();
+        assert!(autostarted_in(&[d.path().to_path_buf()]).is_empty());
     }
 
     #[test]

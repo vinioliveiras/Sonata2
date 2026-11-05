@@ -242,22 +242,38 @@ pub fn system_info() -> Vec<(&'static str, String)> {
     ]
 }
 
-/// `sonata2 doctor` from the Python Sonata (the one being checked), its
-/// colours taken out.
+/// doctor.txt: the checks and the last session's errors (report_text, as
+/// report.py puts in). The session being reported on is checked: in the
+/// Rust session this build's own doctor, in-process (the Python one may not
+/// even be installed); on trial the Python Sonata's, whose `doctor` writes
+/// the same report_text to its logs' folder -- read back from there, since
+/// what it prints has no "Last session" part.
 fn doctor_text() -> String {
+    if !sonata_config::side_by_side() {
+        return sonata_session::doctor::report_text(&sonata_session::doctor::build());
+    }
     let launcher = std::env::var("SONATA2_LAUNCHER").ok().filter(|l| Path::new(l).exists()).unwrap_or_else(|| "sonata2".into());
     if sonata_backend::run::which(&launcher).is_none() {
         return "doctor: the Python Sonata isn't installed\n".into();
     }
+    let saved = log_dir().join("doctor.txt");
+    let started = std::time::SystemTime::now();
     let out = std::process::Command::new(&launcher).arg("doctor").stdin(std::process::Stdio::null()).output();
     match out {
-        Ok(o) => {
-            let text = String::from_utf8_lossy(&o.stdout).into_owned();
-            let ansi = regex_lite_strip(&text);
-            if ansi.trim().is_empty() { "doctor: no output\n".into() } else { ansi }
-        }
+        Ok(o) => python_doctor_text(&String::from_utf8_lossy(&o.stdout), &saved, started),
         Err(e) => format!("doctor failed: {e}\n"),
     }
+}
+
+/// The Python doctor's report: its doctor.txt when this run wrote it,
+/// else what it printed (colours taken out).
+pub fn python_doctor_text(printed: &str, saved: &Path, started: std::time::SystemTime) -> String {
+    let fresh = std::fs::metadata(saved).and_then(|m| m.modified()).is_ok_and(|t| t + std::time::Duration::from_secs(1) >= started);
+    if let Some(text) = fresh.then(|| std::fs::read_to_string(saved).ok()).flatten().filter(|t| !t.trim().is_empty()) {
+        return text;
+    }
+    let plain = regex_lite_strip(printed);
+    if plain.trim().is_empty() { "doctor: no output\n".into() } else { plain }
 }
 
 /// The text without terminal colour codes (ESC [ ... m).
@@ -345,6 +361,17 @@ pub fn create(title: &str, description: &str, info: &[(&str, String)]) -> std::i
         logs.extend(log_files(&own).into_iter().map(|p| (format!("logs/rust/{}", p.file_name().unwrap_or_default().to_string_lossy()), p)));
     }
     create_in(&folder(), title, description, &doctor_text(), info, &logs, crash())
+}
+
+/// What a failed save says: the system's own words ("Permission denied"),
+/// as report.py's toast shows an OSError's strerror -- not Rust's
+/// "(os error 13)" after them.
+pub fn error_text(e: &std::io::Error) -> String {
+    let text = e.to_string();
+    match (e.raw_os_error(), text.rfind(" (os error ")) {
+        (Some(_), Some(i)) => text[..i].to_string(),
+        _ => text,
+    }
 }
 
 /// Python's urlencode (quote_plus): letters, digits and "-_.~" stay, a space is "+".
@@ -439,6 +466,78 @@ mod tests {
         std::io::Read::read_to_string(&mut z.by_name("system.txt").unwrap(), &mut s).unwrap();
         assert!(s.starts_with("Sonata: x\nCrash: Sonata quit unexpectedly") && s.contains("SIGSEGV"));
         assert!(!std::fs::read_dir(d.path()).unwrap().any(|e| e.unwrap().file_name().to_string_lossy().ends_with(".part")));
+    }
+
+    // tests/test_crash_kinds.py's logs: what took the session down that day
+    const AMD: &str = "kernel: amdgpu 0000:36:00.0: [gfxhub] page fault (src_id:0 ring:24 vmid:4 pasid:1589)\n\
+        kernel: amdgpu 0000:36:00.0: ring gfx_0.0.0 timeout, signaled seq=1153010, emitted seq=1153011\n\
+        kernel: amdgpu 0000:36:00.0: Ring gfx_0.0.0 reset succeeded";
+    const AMD_WF: &str = "EE [GLES2] GL_CONTEXT_LOST in context lost\nEE [render/gles2/pass.c:315] GPU reset (guilty)";
+    const NV_OOM: &str = "kernel: NVRM: GPU0 nvAssertOkFailedNoLog: Assertion failed: Out of memory [NV_ERR_NO_MEMORY]";
+    const NV_WF: &str = "EE [render/allocator/gbm.c:89] gbm_bo_create failed: Invalid argument\n\
+        EE [src/render.cpp:465] Failed to allocate auxilliary buffer!\n\
+        EE [src/api/wayfire/dassert.hpp:26] Cannot run a render pass without a valid target!";
+
+    #[test]
+    fn test_todays_crashes() {
+        sonata_i18n::use_language("en");
+        assert_eq!(classify(AMD, AMD_WF), "amd-reset");
+        assert_eq!(classify(NV_OOM, NV_WF), "nvidia-memory"); // the memory, not the buffer
+        assert_eq!(classify("", NV_WF), "gpu-buffer");
+        assert_eq!(classify("", "EE [src/src/main.cpp:144] Fatal error: Fatal error(SIGABRT)"), "wayfire-abort");
+        assert_eq!(classify("kernel: wayfire[2150]: segfault at 21 ip 0 error 4", ""), "wayfire-segfault");
+        assert_eq!(classify("", ""), "unknown");
+        assert!(describe("amd-reset").contains("AMD"));
+    }
+
+    #[test]
+    fn test_noted_once_with_history() {
+        sonata_i18n::use_language("en");
+        let dir = log_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        for n in [HISTORY, "kernel-at-crash.log", "session.old.log"] {
+            let _ = std::fs::remove_file(dir.join(n));
+        }
+        let write = |n: &str, t: &str| std::fs::write(dir.join(n), t).unwrap();
+        write("kernel-at-crash.log", AMD);
+        write("session.old.log", AMD_WF);
+        let t = now() as i64;
+        let c = Crash { time: t - 60, code: 1 };
+        assert_eq!(note_crash(&c), "amd-reset");
+        assert_eq!(note_crash(&c), "amd-reset"); // once
+        assert_eq!(history(None).len(), 1);
+        write("kernel-at-crash.log", NV_OOM);
+        write("session.old.log", NV_WF);
+        note_crash(&Crash { time: t - 30, code: 134 });
+        let mut f = std::fs::OpenOptions::new().append(true).open(dir.join(HISTORY)).unwrap();
+        writeln!(f, "{} amd-reset 1", t - 30 * 86400).unwrap(); // a month ago: not counted
+        assert_eq!(history_text(), "2 crashes in the last 7 days: 1 AMD reset, 1 NVIDIA memory");
+    }
+
+    /// The Python Feedbacker's doctor.txt has the checks and the last
+    /// session's error lines (doctor.report_text); the Rust one put in what
+    /// `sonata2 doctor` printed -- no "Last session" part, plus "Saved to".
+    #[test]
+    fn test_report_doctor_missed_the_last_session() {
+        let d = tempfile::tempdir().unwrap();
+        let saved = d.path().join("doctor.txt");
+        let before = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+        std::fs::write(&saved, "[  ok] Wayfire\n\nLast session:\n--- session.log ---\nEE boom\n").unwrap();
+        let text = python_doctor_text("\x1b[32m[  ok]\x1b[0m Wayfire\n\nSaved to /x/doctor.txt\n", &saved, before);
+        assert!(text.contains("Last session:") && !text.contains("Saved to"));
+        // an old doctor.txt (that run didn't write one): what it printed
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+        assert_eq!(python_doctor_text("\x1b[32mok\x1b[0m\n", &saved, later), "ok\n");
+        assert_eq!(python_doctor_text("", &d.path().join("none"), before), "doctor: no output\n");
+    }
+
+    /// A report that couldn't be saved said "Permission denied (os error
+    /// 13)"; the Python Feedbacker says "Permission denied".
+    #[test]
+    fn test_save_error_said_os_error_number() {
+        assert_eq!(error_text(&std::io::Error::from_raw_os_error(13)), std::io::Error::from_raw_os_error(13).to_string().split(" (os error").next().unwrap());
+        assert!(!error_text(&std::io::Error::from_raw_os_error(13)).contains("os error"));
+        assert_eq!(error_text(&std::io::Error::other("no clock")), "no clock");
     }
 
     #[test]

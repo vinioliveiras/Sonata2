@@ -48,14 +48,125 @@ fn fmt_date(info: &gio::FileInfo, attr: &str) -> String {
     glib::DateTime::from_unix_local(t as i64).ok().and_then(|d| d.format(&tr!("%-d %B %Y at %H:%M")).ok()).map(|s| s.to_string()).unwrap_or_else(|| "--".into())
 }
 
-/// Title bar with a centred title and an optional widget at its end.
+/// ui/window.py's titlebar(): a 52 px bar with the window's buttons on
+/// their side (again when Window buttons changes), a centred title and an
+/// optional widget at its end. Zoom maximizes / restores. (Quick Look and
+/// Get Info had no buttons at all: no way to close them with the mouse.)
 fn titlebar(win: &adw::Window, title: &gtk::Label, end: Option<&gtk::Widget>) -> gtk::WindowHandle {
-    let (handle, bar, _) = sonata_ui::window::glass_toolbar(win, Vec::new());
+    title.add_css_class("sonata-titlebar-title");
+    title.set_ellipsize(pango::EllipsizeMode::Middle);
+    title.set_max_width_chars(50);
+    let bar = gtk::CenterBox::builder().css_classes(["sonata-titlebar"]).build();
     bar.set_center_widget(Some(title));
     if let Some(e) = end {
-        bar.set_end_widget(Some(e));
+        e.set_valign(gtk::Align::Center);
     }
+    let handle = gtk::WindowHandle::builder().child(&bar).build();
+    let place = {
+        let (b, w, end) = (bar.downgrade(), win.downgrade(), end.cloned());
+        move || {
+            let (Some(bar), Some(win)) = (b.upgrade(), w.upgrade()) else { return };
+            if let Some(e) = &end {
+                if let Some(p) = e.parent().and_downcast::<gtk::Box>() {
+                    p.remove(e);
+                }
+            }
+            bar.set_start_widget(None::<&gtk::Widget>);
+            bar.set_end_widget(None::<&gtk::Widget>);
+            let (c, m, z) = (win.downgrade(), win.downgrade(), win.downgrade());
+            let lights = sonata_ui::window::traffic_lights(
+                move || {
+                    if let Some(w) = c.upgrade() {
+                        w.close();
+                    }
+                },
+                move || {
+                    if let Some(w) = m.upgrade() {
+                        w.minimize();
+                    }
+                },
+                Some(Box::new(move || {
+                    if let Some(w) = z.upgrade() {
+                        sonata_ui::window::toggle_zoom(&w);
+                    }
+                })),
+            );
+            if sonata_ui::window::buttons_side() == "right" {
+                // the end widget, then the buttons at the edge
+                match &end {
+                    Some(e) => {
+                        let both = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                        both.append(e);
+                        both.append(&lights);
+                        bar.set_end_widget(Some(&both));
+                    }
+                    None => bar.set_end_widget(Some(&lights)),
+                }
+            } else {
+                bar.set_start_widget(Some(&lights));
+                bar.set_end_widget(end.as_ref());
+            }
+        }
+    };
+    place();
+    sonata_ui::on_buttons_change(place);
     handle
+}
+
+/// AS_IS: put on the clipboard as the file holds them (no re-encoding of a
+/// big photo); others become PNG. Over this: not copied (ops' 40 MB).
+const AS_IS: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+const COPY_MAX: i64 = 40 << 20;
+
+/// (mime, bytes) of a picture file for the clipboard (imageload.copy_picture).
+fn picture_data(path: &std::path::Path) -> Option<(String, Vec<u8>)> {
+    let f = gio::File::for_path(path);
+    let info = f.query_info("standard::content-type,standard::size", gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE).ok()?;
+    let ct = info.content_type().map(|c| c.to_string()).unwrap_or_default();
+    if !ct.starts_with("image/") || info.size() > COPY_MAX {
+        return None;
+    }
+    if AS_IS.contains(&ct.as_str()) {
+        return std::fs::read(path).ok().map(|d| (ct, d));
+    }
+    let pb = sonata_preview::imageload::pixbuf(&path.display().to_string())?;
+    pb.save_to_bufferv("png", &[]).ok().map(|d| ("image/png".to_string(), d))
+}
+
+/// Quick Look's right-click Copy Image: the picture on the clipboard,
+/// through wl-copy (it stays there after Files quits), GTK's clipboard
+/// without it. Read off the main loop.
+fn copy_picture(widget: &gtk::Widget, path: std::path::PathBuf) {
+    let w = widget.downgrade();
+    glib::spawn_future_local(async move {
+        let has_wlcopy = glib::find_program_in_path("wl-copy").is_some();
+        let done = gio::spawn_blocking(move || {
+            let (mime, data) = picture_data(&path)?;
+            if has_wlcopy {
+                use std::io::Write;
+                let ok = std::process::Command::new("wl-copy")
+                    .args(["--type", &mime])
+                    .stdin(std::process::Stdio::piped())
+                    .spawn()
+                    .and_then(|mut c| {
+                        c.stdin.take().map(|mut s| s.write_all(&data)).transpose()?;
+                        c.wait()
+                    })
+                    .is_ok_and(|s| s.success());
+                if ok {
+                    return None;
+                }
+            }
+            Some((mime, data))
+        })
+        .await
+        .ok()
+        .flatten();
+        if let (Some((mime, data)), Some(w)) = (done, w.upgrade()) {
+            let provider = gdk::ContentProvider::for_bytes(&mime, &glib::Bytes::from_owned(data));
+            let _ = w.clipboard().set_content(Some(&provider));
+        }
+    });
 }
 
 pub struct QuickLook {
@@ -162,6 +273,16 @@ impl QuickLook {
                     None => pic.set_file(Some(&file)),
                 }
             });
+            // right-click: Copy Image (Vini)
+            let menu = gtk::GestureClick::builder().button(gdk::BUTTON_SECONDARY).build();
+            let path = path.clone();
+            menu.connect_pressed(move |g, _, x, y| {
+                g.set_state(gtk::EventSequenceState::Claimed);
+                let Some(w) = g.widget() else { return };
+                let (w2, p) = (w.clone(), path.clone());
+                sonata_ui::menu::popup(&w, vec![vec![sonata_ui::menu::Item::new(&tr!("Copy Image"), move || copy_picture(&w2, p.clone()))]], sonata_ui::menu::Options::at(x, y).passthrough());
+            });
+            pic.add_controller(menu);
             return pic.upcast();
         }
         if path.is_some() && (ct.starts_with("video/") || ct.starts_with("audio/")) {

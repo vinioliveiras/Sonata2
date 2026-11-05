@@ -12,8 +12,8 @@
 //! let t = panel::toggle("bluetooth-active-symbolic", "Bluetooth", true, |_on| {}, "");
 //! ```
 //!
-//! Not here: counting open panels in ui.menu.OPEN (auto-hiding surfaces
-//! stay put) -- menu.rs's.
+//! Open panels count with the menus (menu::any_open: auto-hiding
+//! surfaces stay put) and a panel that couldn't show is closed again.
 
 use gtk::{glib, prelude::*};
 use std::cell::{Cell, RefCell};
@@ -198,6 +198,7 @@ fn show(pop: &gtk::Popover) -> gtk::Popover {
     });
     handler.set(Some(id));
     hold_hover(pop, 2.0);
+    crate::menu::track(pop); // open: auto-hiding surfaces stay put
     pop.popup();
     pop.clone()
 }

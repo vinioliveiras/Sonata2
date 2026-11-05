@@ -48,7 +48,7 @@ fn build_index() -> HashMap<String, String> {
     let mut infos = gio::AppInfo::all();
     // entries meant to be shown claim their names first (a hidden copy with
     // the same window class must not win: apps.py)
-    infos.sort_by_key(|i| !i.should_show());
+    infos.sort_by_key(|i| !sonata_ui::apps::should_show(i));
     let mut entries = Vec::new();
     for info in infos {
         let Some(did) = info.id().and_then(|d| d.strip_suffix(".desktop").map(String::from)) else { continue };
@@ -106,7 +106,7 @@ pub(crate) fn app_of_pid_with(pid: u32, proc: &Path, matcher: &dyn Fn(&str) -> O
 /// None when it has none. `desktop` is its desktop id; without one, the
 /// app is found by its name.
 pub fn window_of(views: &Value, desktop: &str, app_name: &str) -> Option<i64> {
-    let name_of = |did: &str| sonata_ui::apps::lookup(did).map(|i| i.name().to_string());
+    let name_of = |did: &str| sonata_ui::apps::lookup(did).map(sonata_ui::apps::name);
     window_of_with(views, desktop, app_name, &match_app_id, &name_of)
 }
 

@@ -59,6 +59,11 @@ pub const ACTIVATION_ENV: [&str; 11] = [
     "XCURSOR_SIZE", "XCURSOR_PATH", "QT_QPA_PLATFORMTHEME", "SONATA_GLASS",
 ];
 
+/// How long dbus-update-activation-environment may take (__main__.py's
+/// timeout): a bus that never answers must not keep the whole shell from
+/// starting -- the supervisor runs it before its first component.
+const ACTIVATION_TIMEOUT: Duration = Duration::from_secs(10);
+
 fn runtime_dir() -> PathBuf {
     std::env::var_os("XDG_RUNTIME_DIR").filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/tmp"))
 }
@@ -67,10 +72,35 @@ fn which(name: &str) -> Option<PathBuf> {
     std::env::var_os("PATH").and_then(|p| std::env::split_paths(&p).map(|d| d.join(name)).find(|f| f.is_file()))
 }
 
+/// Run `argv` to its end, or kill it after `timeout`. False: it couldn't start.
+fn run_for(argv: &[String], timeout: Duration) -> bool {
+    let Ok(mut child) = Command::new(&argv[0]).args(&argv[1..]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() else { return false };
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if !matches!(child.try_wait(), Ok(None)) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    true
+}
+
 pub fn share_session_env() {
     let (Ok(wd), Some(tool)) = (std::env::var("WAYLAND_DISPLAY"), which("dbus-update-activation-environment")) else { return };
-    let mark = runtime_dir().join(format!("sonata2-env-{wd}"));
-    let socket = runtime_dir().join(&wd);
+    let set: Vec<&str> = ACTIVATION_ENV.iter().copied().filter(|n| std::env::var_os(n).is_some()).collect();
+    share_session_env_in(&runtime_dir(), &wd, &tool, &set, &|argv| run_for(argv, ACTIVATION_TIMEOUT));
+}
+
+/// share_session_env with the world given: the runtime folder, the
+/// display, the tool, the variables set, and how to run the tool.
+pub fn share_session_env_in(runtime: &Path, wd: &str, tool: &Path, set: &[&str], run: &dyn Fn(&[String]) -> bool) {
+    if wd.is_empty() {
+        return;
+    }
+    let mark = runtime.join(format!("sonata2-env-{wd}"));
+    let socket = runtime.join(wd);
     let fresh = match (std::fs::metadata(&mark).and_then(|m| m.modified()), std::fs::metadata(&socket).and_then(|m| m.modified())) {
         (Ok(a), Ok(b)) => a >= b,
         _ => false,
@@ -78,9 +108,8 @@ pub fn share_session_env() {
     if fresh {
         return; // done for this Wayfire run
     }
-    let names: Vec<&str> = ACTIVATION_ENV.iter().copied().filter(|n| std::env::var_os(n).is_some()).collect();
-    let ok = Command::new(tool).arg("--systemd").args(&names).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok();
-    if ok {
+    let argv: Vec<String> = [tool.display().to_string(), "--systemd".into()].into_iter().chain(set.iter().map(|s| s.to_string())).collect();
+    if run(&argv) {
         let _ = File::create(mark);
     }
 }
@@ -140,22 +169,6 @@ pub enum Verdict {
     Stop(i32),
 }
 
-/// One supervised component: its log, its crash history and what to do when it ends.
-pub struct Kept {
-    pub argv: Vec<String>,
-    pub name: String,
-    sock: PathBuf,
-    session: Option<(u64, u64, i64, i64)>,
-    limit: u64,
-    cmd: Vec<String>,
-    crashes: Vec<Instant>,
-    pub child: Option<Child>,
-    pidfd: Option<OwnedFd>,
-    started: Instant,
-    too_big: u64,
-    log_path: PathBuf,
-}
-
 /// What `code` means for a component started `ran_for` ago that crashed at
 /// these moments before: the rules shared by `keep` and `keep-all`.
 pub fn verdict(code: Option<i32>, same_session: bool, crashes: &mut Vec<Instant>, now: Instant, ran_for: Duration) -> Verdict {
@@ -175,16 +188,49 @@ pub fn verdict(code: Option<i32>, same_session: bool, crashes: &mut Vec<Instant>
     Verdict::Again(if ran_for > Duration::from_secs(10) { 1 } else { 3 })
 }
 
+/// What the supervisor needs from the world: the real session's, or a
+/// test's (the Python tests mock the same seams: self_argv, _same_session,
+/// logs.log_dir, rss_mb, the minute's wait and the pauses).
+pub struct Rules<'a> {
+    /// a component's command line (command_for)
+    pub command: &'a dyn Fn(&[String]) -> Vec<String>,
+    /// the compositor these components belong to still runs (same_session)
+    pub same_session: &'a dyn Fn() -> bool,
+    /// where each component's log goes (logs::log_dir)
+    pub log_dir: PathBuf,
+    /// the memory limit, in MB (component_limit_mb)
+    pub limit: u64,
+    /// a process' resident memory in MB (rss_mb)
+    pub rss: &'a dyn Fn(u32) -> u64,
+    /// how often the logs and the memory are looked at (a minute)
+    pub tick: Duration,
+    /// the pause before a start again, for the verdict's seconds
+    pub pause: &'a dyn Fn(u64) -> Duration,
+}
+
+/// One supervised component: its log, its crash history and what to do when it ends.
+pub struct Kept {
+    pub argv: Vec<String>,
+    pub name: String,
+    cmd: Vec<String>,
+    crashes: Vec<Instant>,
+    pub child: Option<Child>,
+    pidfd: Option<OwnedFd>,
+    started: Instant,
+    too_big: u64,
+    log_path: PathBuf,
+}
+
 impl Kept {
-    pub fn new(argv: Vec<String>, sock: PathBuf, session: Option<(u64, u64, i64, i64)>, limit: u64) -> Self {
+    pub fn new(argv: Vec<String>, rules: &Rules) -> Self {
         let name = argv[0].clone();
-        let dir = logs::log_dir();
+        let dir = rules.log_dir.clone();
         let _ = std::fs::create_dir_all(&dir);
         let log_path = dir.join(format!("{name}.log"));
         if log_path.exists() {
             let _ = std::fs::rename(&log_path, dir.join(format!("{name}.old.log")));
         }
-        Kept { cmd: command_for(&argv), argv, name, sock, session, limit, crashes: Vec::new(), child: None, pidfd: None, started: Instant::now(), too_big: 0, log_path }
+        Kept { cmd: (rules.command)(&argv), argv, name, crashes: Vec::new(), child: None, pidfd: None, started: Instant::now(), too_big: 0, log_path }
     }
 
     pub fn start(&mut self) {
@@ -200,6 +246,9 @@ impl Kept {
             Err(_) => (Stdio::null(), Stdio::null()),
         };
         self.child = Command::new(&self.cmd[0]).args(&self.cmd[1..]).stdout(out).stderr(err).spawn().ok();
+        if self.child.is_none() {
+            append(&self.log_path, &format!("sonata2 keep: can't start {}\n", self.cmd.join(" ")));
+        }
         self.pidfd = self.child.as_ref().and_then(|c| {
             let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, c.id() as libc::pid_t, 0) };
             (fd >= 0).then(|| unsafe { OwnedFd::from_raw_fd(fd as i32) })
@@ -221,14 +270,14 @@ impl Kept {
 
     /// The once-a-minute check: the log stays under its cap, and a leak is
     /// stopped. True: stopped for its memory.
-    pub fn tick(&mut self) -> bool {
+    pub fn tick(&mut self, rules: &Rules) -> bool {
         logs::trim(&self.log_path, None);
         let Some(c) = self.child.as_mut() else { return false };
-        self.too_big = rss_mb(c.id());
-        if self.too_big <= self.limit {
+        self.too_big = (rules.rss)(c.id());
+        if self.too_big <= rules.limit {
             return false;
         }
-        append(&self.log_path, &format!("sonata2 keep: {} holds {} MB (limit {} MB); restarting\n", self.name, self.too_big, self.limit));
+        append(&self.log_path, &format!("sonata2 keep: {} holds {} MB (limit {} MB); restarting\n", self.name, self.too_big, rules.limit));
         unsafe {
             libc::kill(c.id() as i32, libc::SIGTERM);
         }
@@ -244,13 +293,16 @@ impl Kept {
         true
     }
 
-    pub fn ended(&mut self, code: Option<i32>) -> Verdict {
+    pub fn ended(&mut self, code: Option<i32>, rules: &Rules) -> Verdict {
         self.child = None;
         self.pidfd = None;
         if code.is_none() {
             eprintln!("sonata2 keep: {} used {} MB; started again", self.name, self.too_big);
         }
-        let same = same_session(&self.sock, self.session);
+        // the compositor is only asked about when it matters (a crash): the
+        // stops on purpose stay stops whatever it says
+        let on_purpose = code.is_some_and(|c| [0, -15, -2, 130, 143].contains(&c));
+        let same = code.is_none() || on_purpose || (rules.same_session)();
         let v = verdict(code, same, &mut self.crashes, Instant::now(), self.started.elapsed());
         match (&v, code) {
             (Verdict::Again(_), Some(c)) => eprintln!("sonata2 keep: {} exited with {c}; restarting", self.argv.join(" ")),
@@ -277,18 +329,12 @@ fn append(path: &Path, text: &str) {
     }
 }
 
-fn session() -> (PathBuf, Option<(u64, u64, i64, i64)>, u64) {
-    share_session_env();
-    let sock = runtime_dir().join(std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".into()));
-    let id = socket_id(&sock);
-    (sock, id, component_limit_mb(mem_total_mb()))
-}
-
 /// Sleep until one of these children ends (its pidfd readable) or `timeout`.
 fn wait_any(kept: &[Kept], timeout: Duration) {
     let mut fds: Vec<libc::pollfd> = kept.iter().filter_map(|k| k.pidfd.as_ref()).map(|fd| libc::pollfd { fd: fd.as_raw_fd(), events: libc::POLLIN, revents: 0 }).collect();
     let ms = timeout.as_millis().min(i32::MAX as u128) as i32;
     if fds.is_empty() {
+        // (no pidfd: an older kernel -- look again within a second)
         std::thread::sleep(timeout.min(Duration::from_secs(1)));
         return;
     }
@@ -300,53 +346,67 @@ fn wait_any(kept: &[Kept], timeout: Duration) {
 /// `keep-all wallpaper dock launchpad,--background ...`: `keep` for several
 /// components in one process; a component's arguments follow it after commas.
 pub fn keep_all(specs: &[String]) -> i32 {
-    let (sock, id, limit) = session();
+    share_session_env();
+    let sock = runtime_dir().join(std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".into()));
+    // the compositor these components belong to
+    let id = socket_id(&sock);
+    let same = move || same_session(&sock, id);
+    let rules = Rules {
+        command: &command_for,
+        same_session: &same,
+        log_dir: logs::log_dir(),
+        limit: component_limit_mb(mem_total_mb()),
+        rss: &rss_mb,
+        tick: Duration::from_secs(60),
+        pause: &Duration::from_secs,
+    };
+    keep_all_with(specs, &rules)
+}
+
+pub fn keep_all_with(specs: &[String], rules: &Rules) -> i32 {
     let mut kept: Vec<Kept> = specs
         .iter()
         .map(|s| s.split(',').filter(|a| !a.is_empty()).map(String::from).collect::<Vec<_>>())
         .filter(|a| !a.is_empty())
-        .map(|a| Kept::new(a, sock.clone(), id, limit))
+        .map(|a| Kept::new(a, rules))
         .collect();
     for k in kept.iter_mut() {
         k.start();
     }
     let mut due: Vec<Option<Instant>> = vec![None; kept.len()];
-    let mut stopped = vec![false; kept.len()];
     let mut results = Vec::new();
-    let mut next_tick = Instant::now() + Duration::from_secs(60);
-    while kept.iter().zip(&stopped).any(|(k, s)| !s && (k.child.is_some())) || due.iter().any(Option::is_some) {
+    let mut next_tick = Instant::now() + rules.tick;
+    while kept.iter().any(|k| k.child.is_some()) || due.iter().any(Option::is_some) {
         let now = Instant::now();
         let wake = due.iter().flatten().copied().chain([next_tick]).min().unwrap_or(next_tick);
         wait_any(&kept, wake.saturating_duration_since(now));
         for i in 0..kept.len() {
             if let Some(code) = kept[i].poll() {
-                match kept[i].ended(code) {
-                    Verdict::Stop(n) => {
-                        results.push(n);
-                        stopped[i] = true;
-                    }
-                    Verdict::Again(s) => due[i] = Some(Instant::now() + Duration::from_secs(s)),
+                match kept[i].ended(code, rules) {
+                    Verdict::Stop(n) => results.push(n),
+                    Verdict::Again(s) => due[i] = Some(Instant::now() + (rules.pause)(s)),
                 }
             }
         }
         let now = Instant::now();
         if now >= next_tick {
-            next_tick = now + Duration::from_secs(60);
+            next_tick = now + rules.tick;
             for i in 0..kept.len() {
-                if kept[i].child.is_some() && kept[i].tick() {
-                    let v = kept[i].ended(None);
-                    if let Verdict::Again(s) = v {
-                        due[i] = Some(Instant::now() + Duration::from_secs(s));
+                if kept[i].child.is_some() && kept[i].tick(rules) {
+                    if let Verdict::Again(s) = kept[i].ended(None, rules) {
+                        due[i] = Some(Instant::now() + (rules.pause)(s));
                     }
                 }
             }
         }
+        let now = Instant::now();
         for i in 0..kept.len() {
             if due[i].is_some_and(|t| now >= t) {
                 due[i] = None;
-                if !same_session(&sock, id) {
+                // the compositor went during the pause: a new session's own
+                // Dock and menu bar are coming (Vini, 18:53)
+                if !(rules.same_session)() {
                     results.push(0);
-                    stopped[i] = true;
                     continue;
                 }
                 kept[i].start();
@@ -365,6 +425,7 @@ pub fn keep(argv: &[String]) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
 
     #[test]
     fn stopped_on_purpose_stays_stopped() {
@@ -388,20 +449,221 @@ mod tests {
         assert_eq!(verdict(None, true, &mut Vec::new(), now, Duration::ZERO), Verdict::Again(1)); // its memory
     }
 
+    /// tests/test_keep_memory.py's test_limit.
     #[test]
     fn memory_limit_is_five_percent_within_1_to_2_gb() {
         assert_eq!(component_limit_mb(8 * 1024), 1024);
+        assert_eq!(component_limit_mb(30 * 1024), 1536);
         assert_eq!(component_limit_mb(32 * 1024), 1638);
         assert_eq!(component_limit_mb(128 * 1024), 2048);
     }
 
+    /// tests/test_keep_memory.py's test_rss.
+    #[test]
+    fn test_rss() {
+        assert!(rss_mb(std::process::id()) > 0);
+        assert_eq!(rss_mb(999_999_999), 0);
+    }
+
     #[test]
     fn ported_components_run_here_the_rest_in_python() {
+        let _env = crate::tests::ENV.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var("SONATA2_LAUNCHER");
         let c = command_for(&["clock".into()]);
-        assert!(c[0].ends_with("sonata_session-") || !c[0].is_empty());
+        assert!(!c[0].is_empty());
         assert_eq!(c[1], "clock");
-        assert_eq!(command_for(&["dock".into()])[..2], ["sonata2", "dock"]);
-        assert!(rss_mb(std::process::id()) > 0);
+        assert_eq!(command_for(&["music".into()])[..2], ["sonata2", "music"]);
+    }
+
+    // -- the supervisor itself, with fake components (tests/test_keep_all.py) ---------------------
+    // a fake component: `ok` stops on purpose, `flaky` crashes on its first
+    // run (a marker file) and stops on the second, `crash` always crashes,
+    // `term` ends on SIGTERM, `sleepy` runs until stopped; each run is
+    // written to <dir>/<name>.runs with its arguments
+    const CHILD: &str = r#"
+d="$SONATA_TEST_DIR"; echo "$@" >> "$d/$1.runs"
+case "$1" in
+  ok) exit 0 ;;
+  flaky) if [ -e "$d/flaky.once" ]; then exit 0; fi; touch "$d/flaky.once"; exit 3 ;;
+  crash) exit 4 ;;
+  term) kill -TERM $$ ;;
+  sleepy) if [ -e "$d/sleepy.once" ]; then exit 0; fi; touch "$d/sleepy.once"; exec sleep 30 ;;
+esac
+exit 0
+"#;
+
+    struct Run {
+        dir: tempfile::TempDir,
+        code: i32,
+        asked: usize,
+    }
+
+    impl Run {
+        fn runs(&self, name: &str) -> Vec<String> {
+            std::fs::read_to_string(self.dir.path().join(format!("{name}.runs"))).map(|t| t.lines().map(String::from).collect()).unwrap_or_default()
+        }
+        fn log(&self, name: &str) -> String {
+            std::fs::read_to_string(self.dir.path().join(format!("{name}.log"))).unwrap_or_default()
+        }
+    }
+
+    /// keep-all over the fake components; `same` answers "is it still our
+    /// compositor" each time it's asked; `rss` is every child's memory.
+    fn run_all(specs: &[&str], same: &dyn Fn(usize) -> bool, rss: u64, before: &dyn Fn(&Path)) -> Run {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path().to_path_buf();
+        before(&d);
+        let command = {
+            let d = d.clone();
+            move |argv: &[String]| -> Vec<String> {
+                let script = format!("SONATA_TEST_DIR='{}'\n{CHILD}", d.display());
+                ["sh", "-c", &script, "sh"].iter().map(|s| s.to_string()).chain(argv.iter().cloned()).collect()
+            }
+        };
+        let asked = Cell::new(0);
+        let same_session = || {
+            asked.set(asked.get() + 1);
+            same(asked.get())
+        };
+        let rss = move |_pid: u32| rss;
+        let rules = Rules {
+            command: &command,
+            same_session: &same_session,
+            log_dir: d.clone(),
+            limit: 1024,
+            rss: &rss,
+            tick: Duration::from_millis(300),
+            pause: &|_s| Duration::ZERO,
+        };
+        let specs: Vec<String> = specs.iter().map(|s| s.to_string()).collect();
+        let code = keep_all_with(&specs, &rules);
+        Run { dir, code, asked: asked.get() }
+    }
+
+    /// test_each_restarted_on_its_own: one stops on purpose and stays
+    /// stopped, the other crashed and is started again with its arguments;
+    /// each has its own log.
+    #[test]
+    fn test_each_restarted_on_its_own() {
+        let r = run_all(&["ok", "flaky,--background"], &|_| true, 0, &|_| {});
+        assert_eq!(r.code, 0);
+        assert_eq!(r.runs("ok"), ["ok"]);
+        assert_eq!(r.runs("flaky"), ["flaky --background", "flaky --background"]);
+        assert!(r.log("ok").starts_with("--- ") && r.log("flaky").contains("flaky --background"));
+    }
+
+    /// test_a_crash_loop_gives_up_alone: five crashes in a minute, then no
+    /// more -- and only for that one.
+    #[test]
+    fn test_a_crash_loop_gives_up_alone() {
+        let r = run_all(&["crash", "ok"], &|_| true, 0, &|_| {});
+        assert_eq!(r.code, 1);
+        assert_eq!(r.runs("crash").len(), 5);
+        assert_eq!(r.runs("ok"), ["ok"]);
+    }
+
+    /// test_review_session.py's test_keep_rotates_the_log_and_stops_on_a_clean_exit:
+    /// the previous run's log becomes <name>.old.log; exit 0 is not restarted.
+    #[test]
+    fn test_keep_rotates_the_log_and_stops_on_a_clean_exit() {
+        let r = run_all(&["ok,--background"], &|_| true, 0, &|d| std::fs::write(d.join("ok.log"), "previous run\n").unwrap());
+        assert_eq!(r.code, 0);
+        assert_eq!(r.runs("ok"), ["ok --background"]);
+        assert_eq!(std::fs::read_to_string(r.dir.path().join("ok.old.log")).unwrap(), "previous run\n");
+        assert!(r.log("ok").lines().next().unwrap().ends_with("ok --background"));
+    }
+
+    /// test_keep_respects_sigterm: stopped on purpose (SIGTERM from
+    /// `restart`, logout) it isn't started again -- and the compositor isn't
+    /// even asked.
+    #[test]
+    fn test_keep_respects_sigterm() {
+        let r = run_all(&["term"], &|_| true, 0, &|_| {});
+        assert_eq!((r.code, r.runs("term").len()), (0, 1));
+        assert_eq!(r.asked, 0);
+    }
+
+    /// test_open_apps.py's test_a_crashed_compositor_ends_them_too (Vini,
+    /// 18:53: Wayfire crashed, its socket file stayed, the old Dock was
+    /// started again and reached the new Wayfire).
+    #[test]
+    fn test_a_crashed_compositor_ends_them_too() {
+        let r = run_all(&["crash"], &|_| false, 0, &|_| {});
+        assert_eq!((r.code, r.runs("crash").len()), (0, 1));
+    }
+
+    /// test_a_new_compositor_during_the_pause: still ours when it crashed,
+    /// a new one by the end of the pause -- not started again.
+    #[test]
+    fn test_a_new_compositor_during_the_pause() {
+        let r = run_all(&["crash"], &|n| n == 1, 0, &|_| {});
+        assert_eq!((r.code, r.runs("crash").len()), (0, 1));
+    }
+
+    /// test_a_crashed_component_still_restarts.
+    #[test]
+    fn test_a_crashed_component_still_restarts() {
+        let r = run_all(&["flaky"], &|_| true, 0, &|_| {});
+        assert_eq!((r.code, r.runs("flaky").len()), (0, 2));
+    }
+
+    /// tests/test_keep_memory.py's test_restarted_when_too_big: a component
+    /// past its memory limit is stopped and started again (not a crash),
+    /// with a line in its log.
+    #[test]
+    fn test_restarted_when_too_big() {
+        let r = run_all(&["sleepy"], &|_| true, 99_999, &|_| {});
+        assert_eq!((r.code, r.runs("sleepy").len()), (0, 2));
+        assert!(r.log("sleepy").contains("holds 99999 MB (limit 1024 MB); restarting"), "{}", r.log("sleepy"));
+    }
+
+    /// test_healthy_left_alone: under the limit, the minute's look changes nothing.
+    #[test]
+    fn test_healthy_left_alone() {
+        let d = tempfile::tempdir().unwrap();
+        let script = format!("touch '{}/ran'; sleep 0.8", d.path().display());
+        let command = move |_a: &[String]| -> Vec<String> { vec!["sh".into(), "-c".into(), script.clone()] };
+        let rules = Rules {
+            command: &command,
+            same_session: &|| true,
+            log_dir: d.path().to_path_buf(),
+            limit: 1024,
+            rss: &|_| 200,
+            tick: Duration::from_millis(200),
+            pause: &|_| Duration::ZERO,
+        };
+        assert_eq!(keep_all_with(&["healthy".into()], &rules), 0);
+        assert!(!std::fs::read_to_string(d.path().join("healthy.log")).unwrap().contains("restarting"));
+    }
+
+    /// test_share_session_env_once_per_compositor: the display variables
+    /// that exist go to D-Bus/systemd activation, once per Wayland socket
+    /// (a marker newer than the socket).
+    #[test]
+    fn test_share_session_env_once_per_compositor() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("wayland-9"), "").unwrap();
+        let calls = RefCell::new(Vec::new());
+        let run = |argv: &[String]| {
+            calls.borrow_mut().push(argv.to_vec());
+            true
+        };
+        let tool = Path::new("/usr/bin/dbus-update-activation-environment");
+        for _ in 0..2 {
+            share_session_env_in(d.path(), "wayland-9", tool, &["WAYLAND_DISPLAY", "XDG_CURRENT_DESKTOP"], &run);
+        }
+        assert_eq!(*calls.borrow(), [vec!["/usr/bin/dbus-update-activation-environment".to_string(), "--systemd".into(), "WAYLAND_DISPLAY".into(), "XDG_CURRENT_DESKTOP".into()]]);
+        assert!(d.path().join("sonata2-env-wayland-9").exists());
+    }
+
+    /// The bus never answering: dbus-update-activation-environment hung, and
+    /// with no time limit the supervisor never started the Dock or the menu
+    /// bar (__main__.py gives it 10 s).
+    #[test]
+    fn test_activation_env_that_hangs_held_up_the_shell() {
+        let t = Instant::now();
+        assert!(run_for(&["sleep".into(), "30".into()], Duration::from_millis(300)));
+        assert!(t.elapsed() < Duration::from_secs(5));
+        assert!(!run_for(&["/nonexistent/tool".into()], Duration::from_millis(300)));
     }
 }

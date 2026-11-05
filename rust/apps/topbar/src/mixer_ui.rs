@@ -59,7 +59,7 @@ pub fn shown_with(stream: &Stream, entry: &dyn Fn(&str) -> Option<gio::AppInfo>,
         }
         Some((_, app_id)) => {
             if let Some(info) = entry(&app_id) {
-                return (info.display_name().to_string(), sonata_ui::icons::app_icon(&info));
+                return (sonata_ui::apps::display_name(&info), sonata_ui::icons::app_icon(&info));
             }
             if let Some(g) = game(&app_id, &stream.name) {
                 return g;
@@ -253,6 +253,20 @@ impl AppMixer {
     /// The row of an app, by its key (tests, the menu bar).
     pub fn row(&self, key: &str) -> Option<Rc<MixerRow>> {
         self.0.rows.borrow().iter().find(|r| r.key == key).cloned()
+    }
+
+    /// The list's height with every app playing now fully shown: its rows'
+    /// own heights (a row still sliding in counts whole, one sliding out
+    /// not at all), or the "No apps playing sound" line. Control Center's
+    /// module takes as many grid rows as this needs -- measured as it was
+    /// drawn, a new app's row (not revealed yet) counted nothing and the
+    /// module grew only at the next change (Vini: an app cut off).
+    pub fn content_height(&self) -> i32 {
+        let rows = self.0.rows.borrow();
+        if rows.is_empty() {
+            return self.0.empty.measure(gtk::Orientation::Vertical, -1).1;
+        }
+        rows.iter().map(|r| r.root.measure(gtk::Orientation::Vertical, -1).1).sum()
     }
 
     pub fn keys(&self) -> Vec<String> {

@@ -10,7 +10,8 @@
 //! the left) or each pane's (on the right), and move when Settings >
 //! Appearance changes their side or order (place_lights).
 //!
-//! Not ported here: the cross-fade when a shown section is rebuilt.
+//! A section rebuilt while shown (reload_page) cross-fades from a picture
+//! of how it looked: no flash.
 
 use crate::pages;
 use crate::search::{self, Hit};
@@ -55,6 +56,10 @@ pub struct Settings {
     pub window: adw::ApplicationWindow,
     toasts: adw::ToastOverlay,
     content: gtk::Stack,
+    /// around `content`: a section rebuilt in place fades in (reload_page)
+    fade: sonata_ui::transition::CrossFade,
+    /// reload_page is showing the section again: its picture stays to fade
+    reloading: Cell<bool>,
     /// the sidebar's search field (Ctrl+F)
     pub search: gtk::SearchEntry,
     listbox: gtk::ListBox,
@@ -99,14 +104,20 @@ impl Settings {
                 window.add_css_class(c); // added, not passed (keeps GTK's "csd")
             }
             // Resizable with a working Zoom (Vini's call; macOS keeps it fixed)
-            sonata_ui::window::remember_size(window.upcast_ref(), "settings", 920, 640);
+            // the first time about two thirds of the display (app.py's
+            // roomy=True), after that its last size
+            sonata_ui::window::remember_size_roomy(window.upcast_ref(), "settings", 920, 640);
             window.set_size_request(760, 480);
             sonata_ui::window::standard(&window);
             let search = crate::kit::search_entry(Some(&tr!("Search")), false);
+            let content = gtk::Stack::builder().transition_type(gtk::StackTransitionType::None).build();
+            let fade = sonata_ui::transition::CrossFade::new(&content);
             Settings {
                 window,
                 toasts: adw::ToastOverlay::new(),
-                content: gtk::Stack::builder().transition_type(gtk::StackTransitionType::None).build(),
+                content,
+                fade,
+                reloading: Cell::new(false),
                 search,
                 listbox: gtk::ListBox::builder().css_classes(["navigation-sidebar"]).vexpand(true).build(),
                 rows: RefCell::new(Vec::new()),
@@ -172,7 +183,7 @@ impl Settings {
         split.append(&side);
         split.append(&gtk::Separator::builder().orientation(gtk::Orientation::Vertical).css_classes(["st-divider"]).build());
         // one content page; the sections are its stack's children
-        let pane = adw::NavigationPage::builder().title(tr!("Settings")).child(&self.content).hexpand(true).css_classes(["st-content"]).build();
+        let pane = adw::NavigationPage::builder().title(tr!("Settings")).child(&self.fade.overlay).hexpand(true).css_classes(["st-content"]).build();
         split.append(&pane);
         self.toasts.set_child(Some(&split));
         self.window.set_content(Some(&self.toasts));
@@ -494,6 +505,12 @@ impl Settings {
         if let Some(p) = self.pane(sid) {
             self.content.set_visible_child(&p.tv);
         }
+        // (a picture of a page rebuilt in place: never left on top -- but
+        // reload_page's own, about to fade out. app.py dropped that one too,
+        // so its fade never showed)
+        if !self.reloading.get() {
+            self.fade.drop_picture();
+        }
         let focus = self.focus.borrow().clone();
         if let Some((part, did)) = focus {
             let handler = self.focus_handlers.borrow().get(&part).cloned();
@@ -592,10 +609,23 @@ impl Settings {
         }
     }
 
-    /// Rebuild a section (after its content changed). (Python cross-fades a
-    /// shown one; not ported yet.)
+    /// Rebuild a section (after its content changed); a shown one fades
+    /// from how it looked, no flash.
     pub fn reload_page(&self, sid: &str) {
+        let sid = section_of(sid);
+        let showing = self.current.get() == Some(sid) && self.pages.borrow().contains_key(sid);
+        if showing {
+            self.fade.capture();
+        }
+        self.reloading.set(showing);
         self.rebuild_page(sid);
+        self.reloading.set(false);
+        if showing {
+            // the picture taken above fades away: left on top, it covered every
+            // section opened after (Vini: after adding a user, Settings stayed on
+            // Users & Groups whatever was picked, the new user not in it)
+            self.fade.play();
+        }
     }
 
     // -- for the pages -------------------------------------------------------------------------------
@@ -732,10 +762,104 @@ impl Settings {
             if kind == "sonata" {
                 sonata_backend::system::restart_sonata(&[]);
             } else {
-                // the apps quit first (Chrome's tabs)
-                let q = sonata_sessionui::quitapps::end_session(if kind == "session" { "logout" } else { "restart" }, None, None);
+                // the apps quit first (Chrome's tabs): Wayfire's windows,
+                // as Settings has no toplevel manager of its own
+                let windows = sonata_sessionui::quitapps::session_windows();
+                let q = sonata_sessionui::quitapps::end_session(if kind == "session" { "logout" } else { "restart" }, windows, None);
                 s.keep("quitting", q);
             }
         }, self.parent().as_ref())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gtk::gio;
+
+    /// Settings opened at 920 x 640 the first time on any display: app.py
+    /// opens it roomy, about two thirds of the display (1267 x 702 on 1080p).
+    #[test]
+    fn test_first_size_not_roomy() {
+        use sonata_ui::window::first_size;
+        assert_eq!(first_size(None, 920, 640, true, Some((1920, 1080))), (1267, 702, false));
+        assert_eq!(first_size(None, 920, 640, true, Some((1280, 720))), (920, 616, false)); // never smaller (but within the work area)
+    }
+
+    fn settle(ms: u64) {
+        let ctx = glib::MainContext::default();
+        let end = std::time::Instant::now() + Duration::from_millis(ms);
+        while std::time::Instant::now() < end {
+            ctx.iteration(false);
+        }
+    }
+
+    /// A picture over the content (CrossFade's overlay holds more than the stack).
+    fn picture_on_top(s: &Settings) -> bool {
+        let mut n = 0;
+        let mut c = s.fade.overlay.first_child();
+        while let Some(w) = c {
+            n += 1;
+            c = w.next_sibling();
+        }
+        n > 1
+    }
+
+    /// The content has been drawn (a picture of it can be taken): not on a
+    /// display no one looks at (broadway without a browser draws nothing).
+    fn drawn(s: &Settings) -> bool {
+        let Some(child) = s.fade.overlay.child() else { return false };
+        let snap = gtk::Snapshot::new();
+        gtk::WidgetPaintable::new(Some(&child)).snapshot(&snap, child.width() as f64, child.height() as f64);
+        snap.to_node().is_some()
+    }
+
+    /// tests/test_settings_reload_stuck.py. Vini: after adding a user,
+    /// Settings stayed on Users & Groups whatever section was picked: a
+    /// picture of the page rebuilt in place was left on top. It fades away,
+    /// and a section switch takes a leftover picture away at once. (On a
+    /// private display; without one, skipped. Sections that only read
+    /// files: nothing here reaches the system.)
+    #[test]
+    fn test_no_picture_left_on_top() {
+        let _lock = crate::tests::CONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", dir.path());
+        if gtk::init().is_err() {
+            return; // (no display)
+        }
+        sonata_i18n::use_language("en");
+        sonata_ui::setup();
+        let app = adw::Application::new(Some("io.test.settings.rs"), gio::ApplicationFlags::NON_UNIQUE);
+        let _ = app.register(gio::Cancellable::NONE);
+        let s = Settings::new(&app, "appearance");
+        s.window.set_default_size(900, 600);
+        s.window.present();
+        settle(500);
+        // rebuilt in place (what adding a user does when it's done): it fades, then goes
+        s.reload_page("appearance");
+        assert_eq!(s.current(), Some("appearance"));
+        if drawn(&s) {
+            assert!(picture_on_top(&s), "rebuilt in place: it fades from how it looked");
+        }
+        settle(800);
+        assert!(!picture_on_top(&s), "the picture faded away");
+        s.select("dock");
+        settle(300);
+        assert!(!picture_on_top(&s));
+        assert_eq!(s.content.visible_child(), s.pane("dock").map(|p| p.tv.clone().upcast()));
+        // (a picture nobody played) a switch takes it away at once, no fade
+        s.fade.capture();
+        s.select("desktop");
+        assert!(!picture_on_top(&s), "gone already, not fading over the new page");
+        // the sections that only read Sonata's own files open without a panic
+        // (the ones that ask the system -- Bluetooth's search, USBGuard,
+        // updates, DDC/CI monitors -- are left out: never the real machine's)
+        for sid in ["appicons", "menubar", "controlcenter", "launchpad", "notifications", "accessibility", "mouse", "keyboard", "appearance"] {
+            s.select(sid);
+            settle(100);
+            assert_eq!(s.current(), Some(sid));
+        }
+        s.window.destroy();
     }
 }

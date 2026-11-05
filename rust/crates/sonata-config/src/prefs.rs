@@ -20,6 +20,31 @@ fn wallpaper(name: &str) -> String {
     format!("file://{}", crate::data_path(&format!("wallpapers/{name}.jpg")).display())
 }
 
+/// GTK's "button-layout" for the window buttons the user set (appearance.json
+/// "buttons_side" / "buttons_order", as tokens.button_layout(tokens.frame())
+/// gives prefs.py's default): "close,minimize,maximize:" on the left,
+/// ":maximize,minimize,close" on the right.
+pub fn button_layout_from(appearance: &Map<String, Value>) -> String {
+    const BUTTONS: [&str; 3] = ["close", "minimize", "maximize"];
+    let mut order: Vec<String> = appearance
+        .get("buttons_order")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().map(|v| v.as_str().map(String::from).unwrap_or_else(|| v.to_string())).collect())
+        .unwrap_or_default();
+    let mut sorted = order.clone();
+    sorted.sort();
+    let mut want: Vec<String> = BUTTONS.iter().map(|s| s.to_string()).collect();
+    want.sort();
+    if sorted != want {
+        order = BUTTONS.iter().map(|s| s.to_string()).collect(); // anything else: macOS' order
+    }
+    if appearance.get("buttons_side").and_then(Value::as_str) == Some("right") {
+        format!(":{}", order.iter().rev().cloned().collect::<Vec<_>>().join(","))
+    } else {
+        format!("{}:", order.join(","))
+    }
+}
+
 /// Sonata's look (macOS), what a fresh session starts with.
 pub fn defaults() -> Vec<(String, String)> {
     let i = |k: &str, v: &str| (format!("{I}/{k}"), v.to_string());
@@ -41,7 +66,9 @@ pub fn defaults() -> Vec<(String, String)> {
         i("monospace-font-name", "Monospace 10"),
         i("clock-format", "24h"),
         i("cursor-blink", "true"),
-        (format!("{WM}/button-layout"), "close,minimize,maximize:".into()),
+        // the user's frame: Vini's buttons on the right reached apps as the
+        // left-hand default through the portal while system.json had none
+        (format!("{WM}/button-layout"), button_layout_from(&crate::stored("appearance"))),
         (format!("{WM}/action-double-click-titlebar"), "toggle-maximize".into()),
         (format!("{WM}/titlebar-font"), "Inter Variable Semi-Bold 10".into()),
         // Sonata's own "Mountains": snowy peaks in Light, under the stars in Dark
@@ -125,6 +152,19 @@ pub fn keys(data: &Map<String, Value>) -> Vec<(String, Vec<String>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// prefs.py's default button-layout is the user's frame
+    /// (tokens.button_layout(tokens.frame())); the Rust one was always the
+    /// left-hand macOS layout, so apps reading it through the portal put
+    /// their buttons on the left of a right-handed desktop.
+    #[test]
+    fn test_button_layout_default_ignored_the_users_side() {
+        let a = |v: Value| v.as_object().cloned().unwrap();
+        assert_eq!(button_layout_from(&Map::new()), "close,minimize,maximize:");
+        assert_eq!(button_layout_from(&a(serde_json::json!({"buttons_side": "right"}))), ":maximize,minimize,close");
+        assert_eq!(button_layout_from(&a(serde_json::json!({"buttons_side": "right", "buttons_order": ["minimize", "close", "maximize"]}))), ":maximize,close,minimize");
+        assert_eq!(button_layout_from(&a(serde_json::json!({"buttons_order": ["close", "close", "maximize"]}))), "close,minimize,maximize:");
+    }
 
     #[test]
     fn prefs_typed_from_stored_or_default() {

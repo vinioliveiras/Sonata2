@@ -154,53 +154,20 @@ pub fn click_anywhere(area: &gtk::Box, toggle: &Toggle) {
 /// edge (macOS menus hang from the title's left edge). keep: not dropped
 /// when it closes, to be shown again with reopen() (Control Center: a new
 /// panel around the same content cost ~100 ms of GTK work).
+///
+/// ui/panel.py's popup, as sonata_ui has it: the content scrolls on a short
+/// display instead of running off it, a click elsewhere in the bar closes
+/// it (a lost popup grab left it open over everything), no row lights up
+/// under a pointer that hasn't moved yet. A popover of its own here had
+/// none of that: a long Wi-Fi list on a 720 px laptop ran off the screen.
 pub fn panel(anchor: &impl IsA<gtk::Widget>, child: &impl IsA<gtk::Widget>, gap: i32, width: Option<i32>, align_start: bool, keep: bool) -> gtk::Popover {
-    let pop = gtk::Popover::builder().has_arrow(false).position(gtk::PositionType::Bottom).build();
-    pop.add_css_class("sonata-panel");
-    match width {
-        Some(w) => pop.set_child(Some(&sonata_ui::fixed::FixedWidth::new(child, w))),
-        None => pop.set_child(Some(child)),
-    }
-    pop.set_offset(0, gap);
-    pop.set_parent(anchor);
-    if align_start {
-        align_to_start(&pop, anchor.upcast_ref(), gap);
-    }
-    if !keep {
-        pop.connect_closed(|p| {
-            let p = p.clone();
-            glib::idle_add_local_once(move || {
-                if p.parent().is_some() {
-                    p.unparent();
-                }
-            });
-        });
-    } else {
-        // with its anchor (GTK wants no child left)
-        let p = pop.downgrade();
-        anchor.connect_destroy(move |_| {
-            if let Some(p) = p.upgrade() {
-                if p.parent().is_some() {
-                    p.unparent();
-                }
-            }
-        });
-    }
-    pop.popup();
-    pop
+    sonata_ui::panel::popup_with(anchor, child, sonata_ui::panel::Options { position: gtk::PositionType::Bottom, gap, align_start, width, close: false, keep })
 }
 
 /// A kept panel shown again, as a new one would open: its opening
 /// animation (CSS plays an animation once: its name alternates).
 pub fn reopen(pop: &gtk::Popover) {
-    if !pop.is_visible() {
-        if pop.has_css_class("reopen") {
-            pop.remove_css_class("reopen");
-        } else {
-            pop.add_css_class("reopen");
-        }
-        pop.popup();
-    }
+    sonata_ui::panel::reopen(pop);
 }
 
 /// Left-align a popover below `anchor` instead of GTK's centring.
@@ -271,6 +238,43 @@ pub fn read_shared<T: Send + 'static>(name: &'static str, work: impl FnOnce() ->
     });
 }
 
+/// Two names read in one job (the prefetch: Wi-Fi's list and Control
+/// Center's states share their `nmcli radio` -- it ran twice at login).
+/// A name already being read is left to that read; whoever asks for
+/// either meanwhile gets this answer.
+pub fn read_two<A: Send + 'static, B: Send + 'static>(a: &'static str, b: &'static str, work: impl FnOnce(bool, bool) -> (Option<A>, Option<B>) + Send + 'static) {
+    let claim = |name: &'static str| {
+        INFLIGHT.with(|f| {
+            let mut f = f.borrow_mut();
+            if f.contains_key(name) {
+                return false;
+            }
+            f.insert(name, Vec::new());
+            true
+        })
+    };
+    let (want_a, want_b) = (claim(a), claim(b));
+    if !want_a && !want_b {
+        return;
+    }
+    run_async(move || work(want_a, want_b), move |(ra, rb)| {
+        fn deliver<T: 'static>(name: &'static str, wanted: bool, r: Option<T>) {
+            if !wanted {
+                return;
+            }
+            let waiting = INFLIGHT.with(|f| f.borrow_mut().remove(name)).unwrap_or_default();
+            let Some(r) = r else { return };
+            let v: Rc<dyn Any> = Rc::new(r);
+            CACHE.with(|c| c.borrow_mut().insert(name, v.clone()));
+            for c in waiting {
+                c(v.clone());
+            }
+        }
+        deliver(a, want_a, ra);
+        deliver(b, want_b, rb);
+    });
+}
+
 /// fill() with the last answer at once, then with a new one if it
 /// differs. again=false: the last answer is enough (an unseen warm-up).
 pub fn cached<T: PartialEq + Send + 'static>(name: &'static str, work: impl FnOnce() -> T + Send + 'static, fill: impl Fn(&T) + 'static, again: bool) {
@@ -330,6 +334,33 @@ mod tests {
         spin_until(|| fills.get() == 4);
         assert_eq!(fills.get(), 4);
         assert_eq!(*last::<i32>("test-a").unwrap(), 6);
+    }
+
+    /// The prefetch asked NetworkManager whether Wi-Fi is on twice (Wi-Fi's
+    /// list and Control Center's states, two jobs): one job now, its
+    /// answers kept and handed to whoever asked meanwhile.
+    #[test]
+    fn test_prefetch_asked_the_radio_twice() {
+        let _e = crate::testenv::env();
+        let ctx = glib::MainContext::default();
+        let _g = ctx.acquire().unwrap();
+        let runs = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let r = runs.clone();
+        read_two("test-w", "test-c", move |a, b| {
+            r.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            (a.then_some(1_i32), b.then_some("cc".to_string()))
+        });
+        let got = Rc::new(Cell::new(0));
+        let g = got.clone();
+        read_shared("test-c", || panic!("read twice"), move |v: Rc<String>| {
+            assert_eq!(*v, "cc");
+            g.set(g.get() + 1);
+        });
+        spin_until(|| got.get() == 1 && last::<i32>("test-w").is_some());
+        assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(*last::<i32>("test-w").unwrap(), 1);
+        assert_eq!(*last::<String>("test-c").unwrap(), "cc");
     }
 
     /// Asked twice while one read runs: one read, both answered.

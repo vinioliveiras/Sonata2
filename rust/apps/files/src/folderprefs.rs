@@ -25,6 +25,18 @@ fn all() -> Map<String, Value> {
     sonata_config::load(NAME, &json!({"folders": {}})).get("folders").and_then(Value::as_object).cloned().unwrap_or_default()
 }
 
+/// Python's bool(): what an older or hand-edited file holds reads the same.
+fn truthy(v: &Value) -> bool {
+    match v {
+        Value::Null => false,
+        Value::Bool(b) => *b,
+        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
+        Value::String(s) => !s.is_empty(),
+        Value::Array(a) => !a.is_empty(),
+        Value::Object(o) => !o.is_empty(),
+    }
+}
+
 /// What was chosen for this folder.
 pub fn get(uri: &str) -> Prefs {
     let all = all();
@@ -32,14 +44,17 @@ pub fn get(uri: &str) -> Prefs {
     Prefs {
         view: p.get("view").and_then(Value::as_str).filter(|v| VIEWS.contains(v)).map(str::to_string),
         hidden: p.get("hidden").and_then(Value::as_bool),
-        sort: p.get("sort").and_then(Value::as_array).filter(|a| a.len() == 2).and_then(|a| Some((a[0].as_str()?.to_string(), a[1].as_bool().unwrap_or(a[1].as_i64().unwrap_or(0) != 0)))),
+        sort: p.get("sort").and_then(Value::as_array).filter(|a| a.len() == 2).and_then(|a| Some((a[0].as_str()?.to_string(), truthy(&a[1])))),
     }
 }
 
 /// A folder renamed: its settings follow it.
 pub fn moved(old: &str, new: &str) {
     let mut folders = all();
-    if let Some(v) = folders.remove(old) {
+    // (shift_remove, not remove: serde_json's remove swaps the last folder
+    // into the gap, and the oldest-first order Python keeps -- what MAX
+    // trims by -- came out shuffled)
+    if let Some(v) = folders.shift_remove(old) {
         folders.insert(new.into(), v);
         let _ = sonata_config::save(NAME, json!({"folders": folders}).as_object().unwrap());
     }
@@ -51,14 +66,36 @@ pub fn remember(uri: &str, values: &[(&str, Value)]) {
         return;
     }
     let mut folders = all();
-    let mut p = folders.remove(uri).and_then(|v| v.as_object().cloned()).unwrap_or_default();
+    let mut p = folders.shift_remove(uri).and_then(|v| v.as_object().cloned()).unwrap_or_default();
     for (k, v) in values {
         p.insert(k.to_string(), v.clone());
     }
     folders.insert(uri.into(), Value::Object(p));
     while folders.len() > MAX {
         let first = folders.keys().next().cloned().unwrap();
-        folders.remove(&first);
+        folders.shift_remove(&first);
     }
     let _ = sonata_config::save(NAME, json!({"folders": folders}).as_object().unwrap());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The folder you changed last went to the end, but the folder that was
+    /// last before it jumped into its old place: the order Python keeps
+    /// (oldest first, what MAX trims) came out shuffled, and a full list
+    /// forgot a recent folder's view instead of the oldest one.
+    #[test]
+    fn test_folder_settings_reordered_on_change() {
+        let _ = std::fs::remove_file(sonata_config::write_dir().join("files-folders.json"));
+        for u in ["file:///a", "file:///b", "file:///c"] {
+            remember(u, &[("view", json!("list"))]);
+        }
+        remember("file:///a", &[("sort", json!(["Size", 1.0]))]);
+        assert_eq!(all().keys().collect::<Vec<_>>(), ["file:///b", "file:///c", "file:///a"]);
+        assert_eq!(get("file:///a").sort, Some(("Size".to_string(), true))); // bool(1.0), as Python reads it
+        moved("file:///b", "file:///d");
+        assert_eq!(all().keys().collect::<Vec<_>>(), ["file:///c", "file:///a", "file:///d"]);
+    }
 }

@@ -250,6 +250,10 @@ pub struct Store {
     pub notes: Vec<Rec>,
     pub lists: Vec<Rec>,
     pub reminders: Vec<Rec>,
+    /// notifier.py's ReminderFile: reminders.json only, never written (the
+    /// menu bar's reminder alerts: Notes is the only writer -- no purge, no
+    /// save, a damaged file is not set aside).
+    pub read_only: bool,
 }
 
 fn objects(v: Option<&Value>) -> Vec<Rec> {
@@ -275,6 +279,23 @@ impl Store {
             notes: Vec::new(),
             lists: Vec::new(),
             reminders: Vec::new(),
+            read_only: false,
+        };
+        st.load();
+        st
+    }
+
+    /// reminders.json read-only (notifier.py's ReminderFile).
+    pub fn open_read_only(dir: PathBuf) -> Self {
+        let mut st = Store {
+            notes_path: dir.join("notes.json"),
+            reminders_path: dir.join("reminders.json"),
+            dir,
+            folders: Vec::new(),
+            notes: Vec::new(),
+            lists: Vec::new(),
+            reminders: Vec::new(),
+            read_only: true,
         };
         st.load();
         st
@@ -285,6 +306,15 @@ impl Store {
     }
 
     pub fn load(&mut self) {
+        if self.read_only {
+            // mid-replace or damaged: keep what we had
+            let data = std::fs::read(&self.reminders_path).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+            if let Some(Value::Object(r)) = data {
+                self.lists = objects(r.get("lists"));
+                self.reminders = objects(r.get("reminders"));
+            }
+            return;
+        }
         let n = read(&self.notes_path);
         self.folders = objects(n.get("folders"));
         if !self.folders.iter().any(|x| s(x, "id") == DEFAULT_FOLDER) {
@@ -303,6 +333,9 @@ impl Store {
     }
 
     pub fn save_notes(&self) {
+        if self.read_only {
+            return;
+        }
         let data = json!({"version": 1, "folders": self.folders, "notes": self.notes});
         if let Err(e) = write_json(&self.notes_path, &data) {
             eprintln!("sonata2-rs notes: notes.json: {e}");
@@ -310,6 +343,9 @@ impl Store {
     }
 
     pub fn save_reminders(&self) {
+        if self.read_only {
+            return;
+        }
         let data = json!({"version": 1, "lists": self.lists, "reminders": self.reminders});
         if let Err(e) = write_json(&self.reminders_path, &data) {
             eprintln!("sonata2-rs notes: reminders.json: {e}");

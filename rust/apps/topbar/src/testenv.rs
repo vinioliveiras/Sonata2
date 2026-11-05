@@ -4,15 +4,25 @@
 
 use std::sync::{Mutex, MutexGuard};
 
-static ENV: Mutex<()> = Mutex::new(());
+pub(crate) static ENV: Mutex<()> = Mutex::new(());
 
 pub struct Env {
     _dir: tempfile::TempDir,
     _guard: MutexGuard<'static, ()>,
 }
 
+/// The variables env() changes, as the run had them (taken before the
+/// first change): a test run in a process of its own (gtk_tests) gets
+/// these, not the last test's temporary folders -- a Broadway display's
+/// socket is in the run's own runtime folder.
+pub fn original() -> &'static [(&'static str, Option<std::ffi::OsString>)] {
+    static O: std::sync::OnceLock<Vec<(&'static str, Option<std::ffi::OsString>)>> = std::sync::OnceLock::new();
+    O.get_or_init(|| ["XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_RUNTIME_DIR"].into_iter().map(|k| (k, std::env::var_os(k))).collect())
+}
+
 pub fn env() -> Env {
     let guard = ENV.lock().unwrap_or_else(|e| e.into_inner());
+    original();
     let dir = tempfile::tempdir().unwrap();
     std::env::set_var("XDG_DATA_HOME", dir.path().join("data"));
     std::env::set_var("XDG_CONFIG_HOME", dir.path().join("config"));

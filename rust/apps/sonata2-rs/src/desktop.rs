@@ -7,10 +7,14 @@ use sonata_i18n::{Catalog, Entry, SUPPORTED};
 use std::io;
 use std::path::{Path, PathBuf};
 
-const LOCALIZED_KEYS: [&str; 2] = ["Name", "Comment"];
+const LOCALIZED_KEYS: [&str; 3] = ["Name", "GenericName", "Comment"];
 
 /// `text` with `Name[pt_BR]=...` lines after each Name / Comment that a catalog translates.
+/// A web app's name is its own (X-Sonata-WebApp): left as it is.
 pub fn localize(text: &str, catalogs: &[Catalog]) -> String {
+    if text.contains("X-Sonata-WebApp=") {
+        return text.to_string();
+    }
     let mut out = Vec::new();
     for line in text.split('\n') {
         out.push(line.to_string());
@@ -278,22 +282,114 @@ pub fn notes_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
-/// Write every ported app's entry (only when it changed); the paths written.
-pub fn write_all() -> io::Result<Vec<PathBuf>> {
-    let dir = sonata_i18n::locale_dir();
-    let catalogs: Vec<Catalog> = SUPPORTED.iter().map(|l| Catalog::load(&dir, l)).collect();
-    let folder = data_home().join("applications");
-    let mut written = Vec::new();
-    let exec = launcher();
-    for (file, text) in [calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec), notes_entry(&exec), terminal_entry(&exec), feedback_entry(&exec), diskutil_entry(&exec), camera_entry(&exec), videos_entry(&exec), assistant_entry(&exec), calendar_entry(&exec), activity_entry(&exec), files_entry(&exec)] {
-        let text = localize(&text, &catalogs);
+/// Launchpad's entry (launchpad_desktop_file): hidden from app lists, so
+/// the Dock can show Launchpad as an app tile (its permanent pin needs it).
+pub fn launchpad_entry(exec: &str) -> (String, String) {
+    let text = format!(
+        "[Desktop Entry]\nType=Application\nName={}\nComment=Find and open your apps\n\
+         Icon=sonata-launchpad\nNoDisplay=true\nCategories=System;\nExec={} launchpad\n",
+        sonata_desktop::names::APPS,
+        quote(exec)
+    );
+    ("sonata2-launchpad.desktop".into(), text)
+}
+
+/// Every entry the Dock writes as it starts (__main__.run_dock), in its
+/// order: Launchpad, Settings, Files, Sonata's apps, Screenshot.
+pub fn dock_start_entries(exec: &str) -> Vec<(String, String)> {
+    let q = quote(exec);
+    let (shot, shot_text) = sonata_capture::capture::capture_desktop_entry(&q);
+    vec![
+        launchpad_entry(exec),
+        ("sonata2-settings.desktop".into(), sonata_settings::settings_desktop_entry(&q)),
+        files_entry(exec),
+        calculator_entry(exec),
+        textedit_entry(exec),
+        preview_entry(exec),
+        terminal_entry(exec),
+        notes_entry(exec),
+        activity_entry(exec),
+        videos_entry(exec),
+        diskutil_entry(exec),
+        calendar_entry(exec),
+        camera_entry(exec),
+        feedback_entry(exec),
+        clock_entry(exec),
+        assistant_entry(exec),
+        (shot.into(), shot_text),
+    ]
+}
+
+/// Sonata apps that were removed: their launchers go from Launchpad and
+/// Open With (apps.RETIRED -- Music: songs play in Videos).
+pub const RETIRED: [&str; 1] = ["io.github.vinioliveiras.sonata2.music.desktop"];
+
+/// Delete the launchers RETIRED lists from `folder`; the paths removed.
+pub fn remove_retired_in(folder: &Path) -> Vec<PathBuf> {
+    RETIRED.iter().map(|n| folder.join(n)).filter(|p| std::fs::remove_file(p).is_ok()).collect()
+}
+
+/// Write each entry into `folder` (only when it changed: a rewrite moves
+/// the file in, so Apps and GIO read it again), translated; one failing
+/// never keeps the rest. The paths written, the errors apart.
+pub fn write_entries(folder: &Path, entries: Vec<(String, String)>, catalogs: &[Catalog]) -> (Vec<PathBuf>, Vec<(PathBuf, io::Error)>) {
+    let (mut written, mut failed) = (Vec::new(), Vec::new());
+    for (file, text) in entries {
+        let text = localize(&text, catalogs);
         let path = folder.join(file);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
-            sonata_config::atomic_write(&path, text.as_bytes(), false)?;
+            if let Err(e) = sonata_config::atomic_write(&path, text.as_bytes(), false) {
+                failed.push((path, e));
+                continue;
+            }
         }
         written.push(path);
     }
-    Ok(written)
+    (written, failed)
+}
+
+fn catalogs() -> Vec<Catalog> {
+    let dir = sonata_i18n::locale_dir();
+    SUPPORTED.iter().map(|l| Catalog::load(&dir, l)).collect()
+}
+
+/// How Sonata's entries start it: the session's `sonata2` launcher (it
+/// hands what's ported to this binary in the Rust session, and is the
+/// Python Sonata in the other one -- both share these entries), else this
+/// binary.
+fn session_command() -> String {
+    std::env::var("SONATA2_LAUNCHER").ok().filter(|l| Path::new(l).exists()).unwrap_or_else(launcher)
+}
+
+/// What the Dock does as it starts (__main__.run_dock): every Sonata entry
+/// written -- Screenshot was missing from Apps, and so were Settings, the
+/// web apps and Launchpad's own tile, with only the Rust Dock running --
+/// the retired ones taken away. On trial nothing: the Python Dock writes
+/// the real entries, and the "(Rust)" names must never replace them.
+pub fn write_at_dock_start() {
+    if sonata_config::side_by_side() {
+        return;
+    }
+    let folder = data_home().join("applications");
+    let exec = session_command();
+    let (_, failed) = write_entries(&folder, dock_start_entries(&exec), &catalogs());
+    for (p, e) in failed {
+        eprintln!("sonata2-dock: {}: {e}", p.display()); // never keeps the Dock from starting
+    }
+    remove_retired_in(&folder);
+    sonata_webapps::write_all(Some(&quote(&exec))); // the web apps made with "New Web App…"
+}
+
+/// Write every ported app's entry (only when it changed); the paths written.
+pub fn write_all() -> io::Result<Vec<PathBuf>> {
+    let folder = data_home().join("applications");
+    let exec = launcher();
+    let entries = vec![calculator_entry(&exec), clock_entry(&exec), textedit_entry(&exec), preview_entry(&exec), notes_entry(&exec), terminal_entry(&exec), feedback_entry(&exec), diskutil_entry(&exec), camera_entry(&exec), videos_entry(&exec), assistant_entry(&exec), calendar_entry(&exec), activity_entry(&exec), files_entry(&exec)];
+    let (written, mut failed) = write_entries(&folder, entries, &catalogs());
+    match failed.pop() {
+        Some((_, e)) => Err(e),
+        None => Ok(written),
+    }
 }
 
 #[cfg(test)]
@@ -307,6 +403,7 @@ mod tests {
 
     #[test]
     fn trial_calculator_entry_is_its_own_and_translated() {
+        let _env = ENV.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var("SONATA2_RS_SIDE_BY_SIDE");
         let (file, text) = calculator_entry("/home/me/.local/bin/sonata2-rs");
         assert_eq!(file, "io.github.vinioliveiras.sonata2rs.calculator.desktop");
@@ -323,4 +420,59 @@ mod tests {
         assert_eq!(quote("/plain/path"), "/plain/path");
         assert_eq!(quote("100%"), "100%%");
     }
+
+    /// Vini: Screenshot never showed in Apps with the Rust Dock -- nor did
+    /// Settings, Launchpad's own tile or the web apps: only `sonata2-rs
+    /// desktop-files` wrote 14 entries, and nothing ran it. The Dock's start
+    /// writes every entry the Python Dock writes, and the retired Music
+    /// launcher goes.
+    #[test]
+    fn test_screenshot_missing_from_apps() {
+        let _env = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var("SONATA2_RS_SIDE_BY_SIDE", "0");
+        let entries = dock_start_entries("/usr/bin/sonata2");
+        std::env::remove_var("SONATA2_RS_SIDE_BY_SIDE");
+        let names: Vec<&str> = entries.iter().map(|(f, _)| f.as_str()).collect();
+        for want in ["sonata2-launchpad.desktop", "sonata2-settings.desktop", "sonata2-screenshot.desktop", "io.github.vinioliveiras.sonata2.files.desktop", "io.github.vinioliveiras.sonata2.calculator.desktop", "io.github.vinioliveiras.sonata2.clock.desktop", "io.github.vinioliveiras.sonata2.assistant.desktop"] {
+            assert!(names.contains(&want), "{want} in {names:?}");
+        }
+        assert_eq!(names.len(), 17, "{names:?}");
+        assert!(entries.iter().all(|(_, t)| !t.contains("(Rust)")), "real names in the Rust session");
+        let shot = &entries.iter().find(|(f, _)| f == "sonata2-screenshot.desktop").unwrap().1;
+        assert!(shot.contains("Exec=/usr/bin/sonata2 screenshot toolbar\n"));
+        let pad = &entries.iter().find(|(f, _)| f == "sonata2-launchpad.desktop").unwrap().1;
+        assert!(pad.contains("\nName=Apps\n") && pad.contains("NoDisplay=true") && pad.contains("Exec=/usr/bin/sonata2 launchpad\n"));
+        let set = &entries.iter().find(|(f, _)| f == "sonata2-settings.desktop").unwrap().1;
+        assert!(set.contains("StartupWMClass=io.github.vinioliveiras.sonata2.settings\n"));
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(RETIRED[0]), "[Desktop Entry]\nName=Music\n").unwrap();
+        let (written, failed) = write_entries(dir.path(), entries, &real_catalogs());
+        assert!(failed.is_empty());
+        assert_eq!(written.len(), 17);
+        let text = std::fs::read_to_string(dir.path().join("sonata2-screenshot.desktop")).unwrap();
+        assert!(text.contains("Name[pt_BR]=") && text.contains("Name[pt_PT]="), "{text}");
+        assert_eq!(remove_retired_in(dir.path()), vec![dir.path().join(RETIRED[0])]);
+        assert!(!dir.path().join(RETIRED[0]).exists());
+    }
+
+    /// On trial the Rust Dock runs next to the Python one: it must never
+    /// write the real entries (nor "(Rust)" ones in their place).
+    #[test]
+    fn test_trial_dock_wrote_the_real_entries() {
+        let _env = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let data = tempfile::tempdir().unwrap();
+        let old = std::env::var_os("XDG_DATA_HOME");
+        std::env::set_var("XDG_DATA_HOME", data.path());
+        std::env::remove_var("SONATA2_RS_SIDE_BY_SIDE");
+        write_at_dock_start();
+        match old {
+            Some(v) => std::env::set_var("XDG_DATA_HOME", v),
+            None => std::env::remove_var("XDG_DATA_HOME"),
+        }
+        assert!(!data.path().join("applications").exists());
+    }
+
+    /// Tests that set the process' environment take turns.
+    pub static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
 }

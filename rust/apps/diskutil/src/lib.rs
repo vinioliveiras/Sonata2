@@ -270,13 +270,19 @@ struct DiskUtility {
 
 impl DiskUtility {
     fn new(app: &gtk::Application) -> Rc<Self> {
+        Self::build(app, true)
+    }
+
+    /// start: false leaves UDisks alone (the tests hand the window a tree).
+    fn build(app: &gtk::Application, start: bool) -> Rc<Self> {
         if glib::application_name().is_none() {
             glib::set_application_name("Disk Manager");
         }
         let win = gtk::ApplicationWindow::builder().application(app).title(tr!("Disk Manager").as_str()).css_classes(["sonata-diskutil"]).build();
         sonata_ui::window::standard(&win);
         win.set_size_request(MIN_SIZE.0, MIN_SIZE.1);
-        sonata_ui::window::remember_size(win.upcast_ref(), "diskutil", 900, 600);
+        // the first time about two thirds of the display (window.py's roomy=True)
+        sonata_ui::window::remember_size_roomy(win.upcast_ref(), "diskutil", 900, 600);
         let cell: Rc<RefCell<Option<std::rc::Weak<DiskUtility>>>> = Rc::default();
         let act = |f: fn(&Rc<DiskUtility>)| -> Box<dyn Fn()> {
             let c = cell.clone();
@@ -396,6 +402,9 @@ impl DiskUtility {
         me.wire();
         me.update_tools();
         let (w1, w2) = (Rc::downgrade(&me), Rc::downgrade(&me));
+        if !start {
+            return me;
+        }
         me.client.start(
             move |tree| {
                 if let Some(m) = w1.upgrade() {
@@ -1034,7 +1043,8 @@ impl DiskUtility {
             grid.attach(&gtk::Label::builder().label(k.as_str()).xalign(1.0).css_classes(["du-key"]).build(), 0, i as i32, 1, 1);
             grid.attach(&gtk::Label::builder().label(val.as_str()).xalign(0.0).selectable(true).css_classes(["du-value"]).ellipsize(gtk::pango::EllipsizeMode::Middle).max_width_chars(40).build(), 1, i as i32, 1, 1);
         }
-        sonata_ui::panel::popup(&self.btn["info"], &grid, gtk::PositionType::Bottom);
+        // a form-like panel: the windows' close dot at its corner (as every dialog)
+        sonata_ui::panel::popup_with(&self.btn["info"], &grid, sonata_ui::panel::Options { close: true, ..Default::default() });
     }
 
     // -- input -------------------------------------------------------------------------------------
@@ -1135,6 +1145,16 @@ fn info_rows(item: &Item, usage: Option<(u64, u64)>) -> Vec<(String, String)> {
     }
 }
 
+/// Get Info's partition map: an unknown scheme as UDisks names it (the
+/// info table under the bar upper-cases it; window.py's info_fields doesn't).
+fn info_table(t: &str) -> String {
+    match t {
+        "" => tr!("None"),
+        "gpt" | "dos" => model::table_name(t),
+        other => other.to_string(),
+    }
+}
+
 /// Get Info's fields.
 fn info_fields(item: &Item) -> Vec<(String, String)> {
     let dash = || "—".to_string();
@@ -1148,7 +1168,7 @@ fn info_fields(item: &Item) -> Vec<(String, String)> {
                 (tr!("Model"), if d.model.is_empty() { dash() } else { d.model.clone() }),
                 (tr!("Vendor"), if d.vendor.is_empty() { dash() } else { d.vendor.clone() }),
                 (tr!("Capacity"), capacity(d.size)),
-                (tr!("Partition Map"), if d.table.is_empty() { tr!("None") } else { model::table_name(&d.table) }),
+                (tr!("Partition Map"), info_table(&d.table)),
                 (tr!("Media"), d.media_kind()),
                 (tr!("Removable"), yes_no(d.removable)),
                 (tr!("Ejectable"), yes_no(d.ejectable)),
@@ -1233,11 +1253,128 @@ mod tests {
         assert_eq!(actions_for(Some(&games), false), Actions { first_aid: false, erase: false, rename: false, mount: false, eject: false, info: false, verb: "Mount" });
     }
 
+    fn settle(ms: u64) {
+        let end = std::time::Instant::now() + std::time::Duration::from_millis(ms);
+        let ctx = glib::MainContext::default();
+        while std::time::Instant::now() < end {
+            while ctx.iteration(false) {}
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    fn rows(d: &DiskUtility) -> Vec<(Option<(String, bool)>, String)> {
+        let label_of = |r: &gtk::ListBoxRow| {
+            let c = r.child().unwrap();
+            let lbl = c.downcast_ref::<gtk::Label>().cloned().or_else(|| c.first_child().and_then(|x| x.next_sibling()).and_downcast::<gtk::Label>());
+            lbl.map(|l| l.label().to_string()).unwrap_or_default()
+        };
+        d.rows.borrow().iter().map(|(r, k)| (k.clone(), label_of(r))).collect()
+    }
+
+    /// test_diskutil.py's WindowTest: without UDisks the window says so;
+    /// with a tree, the sidebar, the selection and what it allows.
+    #[test]
+    fn window_with_and_without_udisks() {
+        if gtk::init().is_err() {
+            return; // (no display)
+        }
+        sonata_i18n::use_language("en");
+        sonata_ui::setup();
+        register_css();
+        // the real client with no UDisks to reach (a system bus that isn't there): the message
+        std::env::set_var("DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/nonexistent/sonata-test-bus");
+        let app = gtk::Application::new(Some("io.test.diskutil.rs"), gio::ApplicationFlags::NON_UNIQUE);
+        let _ = app.register(gio::Cancellable::NONE);
+        let win = DiskUtility::new(&app);
+        win.win.present();
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while win.stack.visible_child_name().as_deref() != Some("missing") && std::time::Instant::now() < end {
+            settle(20);
+        }
+        assert_eq!(win.stack.visible_child_name().as_deref(), Some("missing"));
+        assert!(!win.sidebar.is_visible());
+        assert!(["erase", "mount", "eject", "info", "partition"].iter().all(|k| !win.btn[k].is_sensitive()));
+        win.win.destroy();
+
+        let win = DiskUtility::build(&app, false);
+        win.win.present();
+        win.load(&model::tests_tree());
+        settle(100);
+        assert_eq!(win.stack.visible_child_name().as_deref(), Some("detail"));
+        let rs = rows(&win);
+        let heads: Vec<&str> = rs.iter().filter(|r| r.0.is_none()).map(|r| r.1.as_str()).collect();
+        assert_eq!(heads, ["Internal", "External", "Disk Images"]);
+        let names: Vec<&str> = rs.iter().filter(|r| r.0.is_some()).map(|r| r.1.as_str()).collect();
+        assert!(names.contains(&"Vault"));
+        assert!(!names.contains(&"Swap")); // swap stays out of the sidebar
+        // the system disk: nothing destructive
+        let sel = win.selected.borrow().clone();
+        assert!(matches!(&sel, Some(Item::Disk(d)) if d.device == "/dev/nvme0n1"));
+        let a = win.actions(None);
+        assert!(!a.erase && !a.eject && a.info);
+        // the USB stick's ExFAT volume
+        let i = rs.iter().position(|r| r.1 == "BACKUP").unwrap();
+        let row = win.list.row_at_index(i as i32).unwrap();
+        win.list.select_row(Some(&row));
+        settle(100);
+        let a = win.actions(None);
+        assert!(a.erase && a.mount && a.eject && a.rename && a.first_aid);
+        assert_eq!(a.verb, "Unmount");
+        assert_eq!(win.name_label.label(), "BACKUP");
+        assert!(win.sub_label.label().contains("ExFAT"));
+        assert!(!win.btn["partition"].is_sensitive());
+        test_info_panel_without_close_dot(&win);
+        // live update: the stick is unplugged; something stays selected
+        let tree: Tree = model::tests_tree().into_iter().filter(|(k, _)| !k.contains("sdb") && !k.contains("SanDisk")).collect();
+        win.load(&tree);
+        settle(50);
+        assert!(!win.disks.borrow().iter().any(|d| d.device == "/dev/sdb"));
+        assert!(win.selected.borrow().is_some());
+        win.win.destroy();
+    }
+
+    /// Get Info's panel had no close dot: window.py opens it with
+    /// close=True (every form-like panel has the windows' close dot).
+    fn test_info_panel_without_close_dot(win: &DiskUtility) {
+        win.info();
+        let mut pop = None;
+        let mut c = win.btn["info"].first_child();
+        while let Some(x) = c {
+            if let Some(p) = x.downcast_ref::<gtk::Popover>() {
+                pop = Some(p.clone());
+            }
+            c = x.next_sibling();
+        }
+        let pop = pop.expect("the Info panel hangs from its button");
+        assert!(sonata_ui::window::has_window_buttons(&pop.child().unwrap()));
+        pop.popdown();
+    }
+
     #[test]
     fn bar_widths_keep_tiny_partitions_visible() {
         let w = widths(&[1, 1_000_000, 1], 100.0, 4.0);
         assert!(w[0] > 3.0 && w[2] > 3.0);
         assert!((w.iter().sum::<f64>() - 100.0).abs() < 1e-9);
+    }
+
+    /// Disk Manager opened at 900x600 on a 2560x1440 display the first
+    /// time: the Python opens a document window at about two thirds of it
+    /// (roomy=True); never smaller than its own size on a small one.
+    #[test]
+    fn test_first_open_too_small_on_big_displays() {
+        use sonata_ui::window::first_size;
+        assert_eq!(first_size(None, 900, 600, true, Some((2560, 1440))), (1689, 936, false));
+        assert_eq!(first_size(None, 900, 600, true, Some((1280, 720))), (900, 600, false));
+    }
+
+    /// Get Info showed an unknown partition scheme upper-cased ("ATARI");
+    /// window.py's info_fields shows it as UDisks names it.
+    #[test]
+    fn test_info_partition_map_upper_cased() {
+        sonata_i18n::use_language("en");
+        assert_eq!(info_table("atari"), "atari");
+        assert_eq!(info_table("gpt"), "GUID Partition Map");
+        assert_eq!(info_table(""), "None");
     }
 
     #[test]

@@ -262,10 +262,23 @@ pub struct Display {
     pub logical_width: i32,
 }
 
+/// Logical -> pixels: the monitor's own fractional scale (GTK 4.14's
+/// "scale" property, asked by name: the bindings are built for 4.12), else
+/// the whole factor. The whole factor alone rounds 1.25 up to 2: the
+/// display seemed twice its size, got a bigger scale, then a smaller one
+/// at the next look, and so on.
+fn monitor_scale(m: &gdk::Monitor) -> f64 {
+    let fractional = m.find_property("scale").filter(|p| p.value_type() == f64::static_type()).map(|_| m.property::<f64>("scale"));
+    pixel_factor(fractional, m.scale_factor())
+}
+
+fn pixel_factor(fractional: Option<f64>, whole: i32) -> f64 {
+    fractional.filter(|k| k.is_finite() && *k > 0.0).unwrap_or(whole.max(1) as f64)
+}
+
 fn display_of(m: &gdk::Monitor) -> Display {
     let g = m.geometry();
-    // logical -> pixels (Monitor.scale, fractional, is GTK 4.14: the whole factor here)
-    let k = m.scale_factor() as f64;
+    let k = monitor_scale(m);
     Display { connector: connector(m), width: (g.width() as f64 * k).round() as i32, height: (g.height() as f64 * k).round() as i32, w_mm: m.width_mm(), h_mm: m.height_mm(), logical_width: g.width() }
 }
 
@@ -441,6 +454,26 @@ mod tests {
         // picked in Settings: never changed again
         put("output:HDMI-A-1", "scale", "1.25");
         assert!(run(&saved, &mut auto, &[mon("HDMI-A-1", 3840, 2160, 597, 336)]).is_empty());
+    }
+
+    /// The Rust session: a 27" 1440p monitor's automatic scale went back
+    /// and forth (125 %, then 175 %, then 125 %...): at 1.25 GTK's whole
+    /// scale factor is 2, so the display looked twice its pixels. The
+    /// monitor's fractional scale gives its real pixels, and the scale stays.
+    #[test]
+    fn test_fractional_scale_flipped_back_and_forth() {
+        assert_eq!(pixel_factor(Some(1.25), 2), 1.25);
+        assert_eq!(pixel_factor(None, 2), 2.0); // an older GTK: the whole factor
+        assert_eq!(pixel_factor(Some(0.0), 1), 1.0);
+        let saved = RefCell::new(std::collections::HashMap::new());
+        saved.borrow_mut().insert(("output:DP-1".to_string(), "mode".to_string()), "highrr".to_string());
+        let mut auto = Map::new();
+        let sets = run(&saved, &mut auto, &[mon("DP-1", 2560, 1440, 597, 336)]);
+        assert_eq!(sets, [("output:DP-1".into(), "scale".into(), "1.25".into())]);
+        // now laid out at 1.25: 2048 x 1152 logical
+        let k = pixel_factor(Some(1.25), 2);
+        let laid = Display { connector: "DP-1".into(), width: (2048.0 * k) as i32, height: (1152.0 * k) as i32, w_mm: 597, h_mm: 336, logical_width: 2048 };
+        assert!(run(&saved, &mut auto, &[laid]).is_empty());
     }
 
     #[test]

@@ -230,12 +230,14 @@ pub mod guard {
             }
         }
         for pid in scope.pids.iter().take(3) {
-            // a web app's own scope: `sonata2 webapp <id>`
+            // a web app's own scope: `sonata2 webapp <id>`, or the Rust
+            // session's `<path>/sonata2-rs webapp <id>` (sonata-system's
+            // memguard::webapp_arg reads it the same way)
             let Ok(raw) = std::fs::read(proc_root.join(pid.to_string()).join("cmdline")) else { continue };
             let text = String::from_utf8_lossy(&raw);
             let args: Vec<&str> = text.split('\0').collect();
             for i in 1..args.len().saturating_sub(1) {
-                if args[i] == "webapp" && args[i - 1] == "sonata2" {
+                if args[i] == "webapp" && (args[i - 1] == "sonata2" || args[i - 1].rsplit('/').next() == Some("sonata2-rs")) {
                     return (None, Some(args[i + 1].to_string()));
                 }
             }
@@ -516,6 +518,21 @@ mod tests {
         std::fs::write(proc_root.path().join("42/cmdline"), b"python3\0-m\0sonata2\0webapp\0abc123\0").unwrap();
         let web = Scope { pids: vec![42], ..sc("run-p42.scope") };
         assert_eq!(app_of(&web, proc_root.path()), (None, Some("abc123".into())));
+    }
+
+    /// The memory alert named a Rust session's web app by its scope
+    /// ("run-p42.scope"), not by the web app: its command line is
+    /// `<path>/sonata2-rs webapp <id>`, and only `sonata2 webapp` was known.
+    #[test]
+    fn test_rust_webapp_not_named_in_memory_alert() {
+        let proc_root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(proc_root.path().join("42")).unwrap();
+        std::fs::write(proc_root.path().join("42/cmdline"), b"/home/u/.local/bin/sonata2-rs\0webapp\0abc123\0").unwrap();
+        let web = Scope { path: PathBuf::new(), unit: "run-p42.scope".into(), memory: 0, pids: vec![42] };
+        assert_eq!(app_of(&web, proc_root.path()), (None, Some("abc123".into())));
+        // (another program's "webapp" argument isn't one)
+        std::fs::write(proc_root.path().join("42/cmdline"), b"/usr/bin/other\0webapp\0abc123\0").unwrap();
+        assert_eq!(app_of(&web, proc_root.path()), (None, None));
     }
 
     fn run_ticks(w: &mut Watch, lv: Level, n: u32, scopes: bool) -> u32 {

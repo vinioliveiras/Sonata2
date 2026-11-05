@@ -60,10 +60,25 @@ fn passwd(uid: Option<u32>, name: Option<&str>) -> Option<(String, String)> {
     Some((s(pw.pw_name), s(pw.pw_gecos).split(',').next().unwrap_or("").to_string()))
 }
 
+/// A group's name (getgrgid), None when there's no such group.
+fn group_name(gid: u32) -> Option<String> {
+    let mut gr: libc::group = unsafe { std::mem::zeroed() };
+    let mut buf = vec![0 as libc::c_char; 16384];
+    let mut out: *mut libc::group = std::ptr::null_mut();
+    let rc = unsafe { libc::getgrgid_r(gid, &mut gr, buf.as_mut_ptr(), buf.len(), &mut out) };
+    if rc != 0 || out.is_null() || gr.gr_name.is_null() {
+        return None;
+    }
+    Some(unsafe { std::ffi::CStr::from_ptr(gr.gr_name) }.to_string_lossy().into_owned())
+}
+
+/// What the sheet calls an identity: a user's login name; a group as
+/// polkit's own to_string() writes it ("unix-group:wheel", the number
+/// only when the group has no name), as polkit.py shows it.
 fn user_name(i: &Identity) -> String {
     match i {
         Identity::User(uid) => passwd(Some(*uid), None).map(|p| p.0).unwrap_or_else(|| uid.to_string()),
-        Identity::Group(gid) => format!("unix-group:{gid}"),
+        Identity::Group(gid) => format!("unix-group:{}", group_name(*gid).unwrap_or_else(|| gid.to_string())),
     }
 }
 
@@ -375,6 +390,14 @@ mod tests {
         let ty = glib::VariantTy::new("(sa{sv})").unwrap();
         let list = glib::Variant::array_from_iter_with_type(ty, [item("unix-user", user), item("unix-group", group), item("unix-user", none)]);
         assert_eq!(identities_of(&list), [Identity::User(1000), Identity::Group(10)]);
+    }
+
+    /// A prompt any member of a group could answer listed it as
+    /// "unix-group:10" where the Python agent says "unix-group:wheel".
+    #[test]
+    fn test_group_shown_by_number() {
+        assert_eq!(user_name(&Identity::Group(0)), "unix-group:root");
+        assert_eq!(user_name(&Identity::Group(4_000_000_000)), "unix-group:4000000000"); // no such group
     }
 
     #[test]

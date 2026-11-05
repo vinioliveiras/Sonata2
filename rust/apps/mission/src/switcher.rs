@@ -763,6 +763,33 @@ mod tests {
         assert_eq!(check_mods(false, true, 0, Some(false)), Mods::Stop);
     }
 
+    /// tests/test_switcher_name_width.py -- Vini: in Alt+Tab, an app with a
+    /// long name (or a window with a long title) made its tile wider when
+    /// selected; the tiles stopped being the same size.
+    #[test]
+    fn test_long_app_name_widens_the_selected_tile() {
+        if gtk::init().is_err() {
+            return; // (no display)
+        }
+        // the width a tile asks for, its name under it or not (as open / mark build it)
+        let width = |size: i32, name: Option<&str>| {
+            let tile = gtk::Box::builder().orientation(gtk::Orientation::Vertical).css_classes(["sw-item"]).build();
+            tile.append(&gtk::Image::builder().pixel_size(size).build());
+            if let Some(n) = name {
+                let l = name_label();
+                l.set_label(n);
+                tile.append(&l);
+            }
+            tile.measure(gtk::Orientation::Horizontal, -1).1
+        };
+        let long = "Visual Studio Code - Insiders -- a very long window title.py";
+        for size in [ICON, 64, ICON_MIN] {
+            let plain = width(size, None);
+            assert_eq!(width(size, Some(long)), plain, "{size}");
+            assert_eq!(width(size, Some("Files")), plain, "{size}");
+        }
+    }
+
     #[test]
     fn icons_shrink_to_fit() {
         assert_eq!(icon_size(0, 1920), ICON);

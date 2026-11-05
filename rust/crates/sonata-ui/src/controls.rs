@@ -185,8 +185,6 @@ impl Segmented {
     }
 }
 
-/// A thin slider (macOS menu slider): `on_change(value)` while dragging; a
-/// double-click puts it back to `default` (controls.slider, style "menu").
 /// A slider was let go: the left button up, a touch ended, an arrow key up
 /// (ui.controls.is_release).
 pub fn is_release(kind: gtk::gdk::EventType, button: u32, key: Option<gtk::gdk::Key>) -> bool {
@@ -216,6 +214,8 @@ pub fn on_release(widget: &impl IsA<gtk::Widget>, callback: impl Fn() + 'static)
     widget.add_controller(legacy);
 }
 
+/// A thin slider (macOS menu slider): `on_change(value)` while dragging; a
+/// double-click puts it back to `default` (controls.slider, style "menu").
 pub fn slider<F: Fn(f64) + 'static>(value: f64, on_change: F, lower: f64, upper: f64, default: Option<f64>) -> gtk::Scale {
     let s = gtk::Scale::with_range(gtk::Orientation::Horizontal, lower, upper, 1.0);
     s.add_css_class("sonata-slider");

@@ -52,10 +52,35 @@ pub struct Hooks {
 }
 
 impl Default for Hooks {
-    /// Until those are wired: nothing beyond the setting saved.
+    /// The real ones, off the main loop (system.run_async in the Python).
+    /// They did nothing here once: picking Dark in the Rust session's
+    /// assistant only moved the white ring, the desktop stayed light.
     fn default() -> Self {
-        Hooks { set_dark_mode: Rc::new(|_| {}), apply_titlebars: Rc::new(|_| {}) }
+        Hooks {
+            set_dark_mode: Rc::new(|on| {
+                std::thread::spawn(move || set_dark_mode(on));
+            }),
+            apply_titlebars: Rc::new(|on| {
+                std::thread::spawn(move || sonata_tweaks::titlebars::apply(Some(on)));
+            }),
+        }
     }
+}
+
+const IFACE: &str = "org.gnome.desktop.interface";
+
+/// What system.set_dark_mode stores: libadwaita / GTK 4 apps follow
+/// color-scheme, GTK 3 apps the theme's name.
+pub fn dark_mode_prefs(on: bool) -> [(&'static str, &'static str); 2] {
+    [("color-scheme", if on { "prefer-dark" } else { "default" }), ("gtk-theme", if on { "Sonata-Dark" } else { "Sonata-Light" })]
+}
+
+/// system.set_dark_mode: Sonata and every app, Flatpak apps too (gtkstyle.update).
+pub fn set_dark_mode(on: bool) {
+    for (k, v) in dark_mode_prefs(on) {
+        sonata_tweaks::prefs_write::set(IFACE, k, v);
+    }
+    sonata_tweaks::flatpak_theme::apply();
 }
 
 fn css() {
@@ -480,17 +505,39 @@ pub fn app_id() -> &'static str {
     }
 }
 
+/// after a restart: never wait longer than this for it (intro.py's RESTART_TIMEOUT_S)
+const RESTART_TIMEOUT_S: u64 = 6;
+/// after a restart: from all ready to sliding in (intro.py's ARRIVE_MS)
+const ARRIVE_MS: u64 = 120;
+
+/// What intro.wait waits for: the login intro (`pending`), else a restart
+/// under way, with their timeouts; None: nothing, go now.
+fn intro_wait(pending: bool, restarting: bool) -> Option<(fn() -> bool, u64, u64)> {
+    if pending {
+        Some((sonata_shell::intro::pending, INTRO_TIMEOUT_S, 0))
+    } else if restarting {
+        Some((sonata_shell::intro::restarting, RESTART_TIMEOUT_S, ARRIVE_MS))
+    } else {
+        None
+    }
+}
+
 /// callback once the login intro is over (right away without one; never
-/// later than its timeout) -- intro.wait.
+/// later than its timeout) -- intro.wait. After a restart: once the
+/// restart is over too (the Dock and the menu bar slide in first).
 fn after_intro(callback: impl FnOnce() + 'static) {
+    let Some((still, timeout_s, then_ms)) = intro_wait(sonata_shell::intro::pending(), sonata_shell::intro::restarting()) else {
+        glib::idle_add_local_once(callback);
+        return;
+    };
     let cb = RefCell::new(Some(callback));
     let start = std::time::Instant::now();
     glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
-        if sonata_shell::intro::pending() && start.elapsed().as_secs() < INTRO_TIMEOUT_S {
+        if still() && start.elapsed().as_secs() < timeout_s {
             return glib::ControlFlow::Continue;
         }
         if let Some(f) = cb.borrow_mut().take() {
-            f();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(then_ms), f);
         }
         glib::ControlFlow::Break
     });
@@ -542,6 +589,35 @@ mod tests {
         assert!(done());
         assert_eq!(PAGES, ["hello", "look", "apps", "sonata", "ready"]); // Vini: it asks how to see the apps
         assert_eq!(STYLES.map(|s| s.0), ["fullscreen", "window"]);
+    }
+
+    /// The Rust session's Setup Assistant: Dark was picked, the ring moved
+    /// to it, and the desktop stayed light -- the hooks did nothing unless
+    /// the caller filled them, and sonata2-rs never did.
+    #[test]
+    fn test_dark_choice_in_setup_did_nothing() {
+        assert_eq!(dark_mode_prefs(true), [("color-scheme", "prefer-dark"), ("gtk-theme", "Sonata-Dark")]);
+        assert_eq!(dark_mode_prefs(false), [("color-scheme", "default"), ("gtk-theme", "Sonata-Light")]);
+        // the defaults are the real ones now: a call reaches set_dark_mode
+        // (checked by what it stores, in a thread of its own)
+        let _e = crate::testenv::env();
+        let path = std::env::var_os("PATH");
+        std::env::set_var("PATH", ""); // no gsettings, no flatpak run
+        set_dark_mode(true);
+        if let Some(p) = path {
+            std::env::set_var("PATH", p);
+        }
+        let data = sonata_config::prefs::load();
+        assert_eq!(sonata_config::prefs::get(IFACE, "color-scheme", "", &data), "prefer-dark");
+        assert_eq!(sonata_config::prefs::get(IFACE, "gtk-theme", "", &data), "Sonata-Dark");
+    }
+
+    /// intro.wait: the login intro first; after a restart, the restart.
+    #[test]
+    fn waits_like_intro_wait() {
+        assert!(intro_wait(false, false).is_none());
+        assert_eq!(intro_wait(true, true).map(|w| (w.1, w.2)), Some((INTRO_TIMEOUT_S, 0)));
+        assert_eq!(intro_wait(false, true).map(|w| (w.1, w.2)), Some((RESTART_TIMEOUT_S, ARRIVE_MS)));
     }
 
     #[test]

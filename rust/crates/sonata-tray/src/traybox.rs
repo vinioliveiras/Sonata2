@@ -5,7 +5,7 @@ use crate::host::{host, Host, ListenerId};
 use crate::icon::MonoIcon;
 use crate::item::TrayItem;
 use gtk::prelude::*;
-use gtk::{gdk, gio, glib, graphene};
+use gtk::{gdk, glib, graphene};
 use sonata_i18n::tr;
 use sonata_ui::menu::{Item, Options};
 use std::cell::{Cell, RefCell};
@@ -66,7 +66,12 @@ struct Inner {
     listener: Cell<Option<ListenerId>>,
     clicks: Rc<Clicks>,
     menus: RefCell<Vec<Weak<DBusMenu>>>, // menus opened from here (a double-click closes them)
+    /// told true when one of its menus shows, false when it goes
+    on_menu: RefCell<Option<MenuHook>>,
 }
+
+/// on_menu(open): an icon's menu showed (true) or went (false).
+pub type MenuHook = Rc<dyn Fn(bool)>;
 
 /// One menu bar's tray icons. Cheap to clone (one box).
 #[derive(Clone)]
@@ -107,6 +112,7 @@ impl TrayBox {
             listener: Cell::new(None),
             clicks: Rc::default(),
             menus: RefCell::default(),
+            on_menu: RefCell::default(),
         }));
         let w = Rc::downgrade(&t.0);
         let id = t.0.host.connect_changed(move |item| {
@@ -129,6 +135,13 @@ impl TrayBox {
         if let Some(id) = self.0.listener.take() {
             self.0.host.disconnect(id);
         }
+    }
+
+    /// f(open) as an icon's menu shows and goes: an auto-hidden menu bar
+    /// stays down while one is open (ui.menu.OPEN in Python counted these
+    /// too; the Rust bar slid away from under an open tray menu).
+    pub fn connect_menu(&self, f: impl Fn(bool) + 'static) {
+        self.0.on_menu.replace(Some(Rc::new(f)));
     }
 
     /// Show or hide the icons (the "show_tray" setting).
@@ -305,7 +318,9 @@ impl TrayBox {
                     return;
                 }
                 if let Some(info) = sonata_ui::apps::lookup(d) {
-                    if info.launch(&[], None::<&gio::AppLaunchContext>).is_ok() {
+                    // Sonata's launch path, with the display's context (it
+                    // comes to the front, on its GPU, in its own scope)
+                    if sonata_ui::apps::launch(&info, &[], None).is_ok() {
                         return;
                     }
                 }
@@ -326,7 +341,7 @@ impl TrayBox {
         btn.add_css_class("open");
         self.0.menus.borrow_mut().retain(|m| m.strong_count() > 0);
         self.0.menus.borrow_mut().push(Rc::downgrade(&menu));
-        let (b, mw) = (btn.downgrade(), Rc::downgrade(&menu));
+        let (b, mw, hook) = (btn.downgrade(), Rc::downgrade(&menu), self.0.on_menu.borrow().clone());
         menu.fetch(move |lay| {
             let (Some(btn), Some(menu)) = (b.upgrade(), mw.upgrade()) else { return };
             let Some(lay) = lay.filter(|_| btn.is_mapped()) else {
@@ -337,7 +352,7 @@ impl TrayBox {
             if sections.is_empty() {
                 sections = vec![vec![Entry::disabled(&tr!("No Items"))]];
             }
-            show(&menu, &btn, sections);
+            show(&menu, &btn, sections, hook.clone());
             menu.event(0, "opened");
         });
     }
@@ -406,21 +421,24 @@ fn align_to_start(pop: &gtk::PopoverMenu, anchor: &gtk::Button, gap: i32) {
 /// The menu shown from `btn`; it stays the menu's `open` one until it
 /// closes. A redraw while open (the app changed its menu) shows a new
 /// menu in its place: sonata_ui's menus can't take new rows once built.
-fn show(menu: &Rc<DBusMenu>, btn: &gtk::Button, sections: Vec<Vec<Entry>>) {
+pub(crate) fn show(menu: &Rc<DBusMenu>, btn: &gtk::Button, sections: Vec<Vec<Entry>>, hook: Option<MenuHook>) {
     let mw = Rc::downgrade(menu);
     let pop = sonata_ui::menu::popup(btn, ui_items(sections, &mw), Options::below());
+    if let Some(h) = hook.as_ref() {
+        h(true);
+    }
     pop.set_offset(0, 2);
     align_to_start(&pop, btn, 2);
     let replaced = Rc::new(Cell::new(false));
     let token: Rc<Open> = {
-        let (p1, p2, b, r, m) = (pop.downgrade(), pop.downgrade(), btn.downgrade(), replaced.clone(), mw.clone());
+        let (p1, p2, b, r, m, h) = (pop.downgrade(), pop.downgrade(), btn.downgrade(), replaced.clone(), mw.clone(), hook.clone());
         Rc::new(Open {
             visible: Box::new(move || p1.upgrade().is_some_and(|p| p.is_visible())),
             redraw: Box::new(move |sections| {
                 let (Some(pop), Some(btn), Some(menu)) = (p2.upgrade(), b.upgrade(), m.upgrade()) else { return };
                 if !sections.is_empty() {
                     r.set(true);
-                    show(&menu, &btn, sections);
+                    show(&menu, &btn, sections, h.clone());
                 }
                 pop.popdown();
             }),
@@ -429,6 +447,9 @@ fn show(menu: &Rc<DBusMenu>, btn: &gtk::Button, sections: Vec<Vec<Entry>>) {
     menu.open.replace(Some(token.clone()));
     let (b, m, t) = (btn.downgrade(), mw, Rc::downgrade(&token));
     pop.connect_closed(move |_| {
+        if let Some(h) = hook.as_ref() {
+            h(false); // (one false for each true, a menu replaced or not)
+        }
         if replaced.get() {
             return; // its rows live on in the menu shown in its place
         }

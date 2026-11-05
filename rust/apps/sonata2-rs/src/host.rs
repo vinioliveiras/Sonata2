@@ -38,6 +38,10 @@ pub fn topbar_started(app: &gtk::Application, win: &Rc<sonata_topbar::window::To
     sonata_ui::css::register_module("shell/mission.py");
     sonata_ui::css::register_module("shell/spaces.py");
     std::mem::forget(sonata_mission::mission::MissionBackdrop::new(app));
+    // displays run at their highest refresh rate (and auto scale), kept up
+    // to date as they change -- run_topbar does it once the main bar is up;
+    // nothing called it in the Rust session
+    sonata_sessionui::monitors::ensure_refresh();
     start_services(app);
 }
 
@@ -99,7 +103,10 @@ fn start_services(app: &gtk::Application) {
         stops.push(Box::new(move || a.stop()));
     }
     // Notes' reminders notify with Notes closed (Vini)
-    let reminders = sonata_notes::notifier::Notifier::new(Rc::new(RefCell::new(sonata_notes::store::Store::new())));
+    // (read-only, followed as Notes saves: a writable store here purged and
+    // saved notes.json behind Notes' back, and a reminder added after login
+    // never rang until the next session)
+    let reminders = sonata_notes::notifier::ReminderWatch::start();
     stops.push(Box::new(move || reminders.stop()));
     // a new Sonata release: say so
     let check: su::updatenotify::Check = std::sync::Arc::new(|| sonata_system::selfupdate::available(20).map(|r| su::updatenotify::Release { tag: r.tag }));
@@ -349,6 +356,26 @@ impl sonata_gamepad::Targets for PadTargets {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Vini's Rust session: displays stayed at their default refresh rate
+    /// Notes' reminders from the menu bar: a store that could save over
+    /// notes.json, never read again -- a reminder added after login didn't
+    /// ring (release 0.15.0's fix, lost in the port).
+    #[test]
+    fn test_reminder_added_after_login_never_rang() {
+        let src = include_str!("host.rs");
+        let services = &src[src.find("fn start_services").unwrap()..];
+        assert!(services.contains("ReminderWatch::start()"));
+        assert!(!services.contains("store::Store::new()"));
+    }
+
+    /// -- run_topbar's monitors.ensure_refresh() had no caller in Rust.
+    #[test]
+    fn test_displays_never_at_highest_refresh_rate() {
+        let src = include_str!("host.rs");
+        let started = &src[src.find("pub fn topbar_started").unwrap()..src.find("fn start_services").unwrap()];
+        assert!(started.contains("monitors::ensure_refresh()"));
+    }
 
     /// Vini: the menu bar crashed on the first Ctrl+Super+Space -- the
     /// picker was stored while its cell was still borrowed. The first

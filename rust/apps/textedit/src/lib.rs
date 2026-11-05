@@ -11,6 +11,10 @@ pub mod tabs;
 #[cfg(feature = "gui")]
 pub mod window;
 
+/// The tests that move XDG_DATA_HOME take turns (one process, one environment).
+#[cfg(test)]
+pub(crate) static TEST_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// The app id: on trial its own (`sonata2rs`), so both TextEdits can be open.
 pub fn app_id() -> &'static str {
     if sonata_config::side_by_side() {

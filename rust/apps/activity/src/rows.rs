@@ -287,3 +287,20 @@ pub fn sync_store(store: &gio::ListStore, wanted: &[TaskRow]) {
         store.splice(store.n_items(), 0, &new);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The Processes list keeps surviving rows (no reorder flicker): gone
+    /// ones go, new ones are appended.
+    #[test]
+    fn sync_store_keeps_rows_in_place() {
+        let rows: Vec<TaskRow> = (0..4).map(|i| TaskRow::new(Kind::Process, &i.to_string(), None)).collect();
+        let store = gio::ListStore::new::<TaskRow>();
+        store.splice(0, 0, &rows[..3]);
+        sync_store(&store, &[rows[2].clone(), rows[3].clone(), rows[0].clone()]);
+        let got: Vec<TaskRow> = (0..store.n_items()).filter_map(|i| store.item(i).and_downcast::<TaskRow>()).collect();
+        assert_eq!(got, [rows[0].clone(), rows[2].clone(), rows[3].clone()]);
+    }
+}

@@ -34,6 +34,18 @@ const SAVE_DELAY: u64 = 500;
 /// the apps' one sidebar width (ui/window.py)
 const SIDEBAR_W: i32 = 280;
 
+/// ui/window.py's ROOMY_W, ROOMY_H: a document window's first size.
+const ROOMY: (f64, f64) = (0.66, 0.65);
+
+/// (w, h) grown to about two thirds of a `screen`-sized display
+/// (ui/window.py's roomy_size): Notes opens roomy the first time.
+fn roomy_size(w: i32, h: i32, screen: Option<(i32, i32)>) -> (i32, i32) {
+    match screen {
+        None => (w, h),
+        Some((sw, sh)) => (w.max((sw as f64 * ROOMY.0) as i32), h.max((sh as f64 * ROOMY.1) as i32)),
+    }
+}
+
 fn defaults() -> Value {
     json!({"sidebar_width": 200, "list_width": 270, "selected": "n:all"})
 }
@@ -128,7 +140,12 @@ impl NotesWindow {
         let cfg = sonata_config::load("notes", &defaults());
         let w = Rc::new_cyclic(|me: &Weak<NotesWindow>| {
             let window = gtk::ApplicationWindow::builder().application(app).title(tr!("Notes")).build();
-            sonata_ui::window::remember_size(window.upcast_ref(), "notes", 1060, 640);
+            // its last size; the first time, roomy (never bigger than the display)
+            let (w0, h0) = match sonata_ui::window::saved_size("notes") {
+                Some(_) => (1060, 640),
+                None => roomy_size(1060, 640, sonata_ui::window::screen_size_of(&window)),
+            };
+            sonata_ui::window::remember_size(window.upcast_ref(), "notes", w0, h0);
             window.add_css_class("sonata-notes");
             window.set_size_request(640, 380);
             sonata_ui::window::standard(&window);
@@ -583,7 +600,7 @@ impl NotesWindow {
             let today_idx = self.side_row("r:today").map(|r| r.row.index()).unwrap_or(i32::MAX);
             let in_notes = row.as_ref().is_none_or(|r| r.index() < today_idx);
             let sections = if in_notes { vec![vec![item(tr!("New Folder"), |t| t.new_folder())]] } else { vec![vec![item(tr!("Add List"), |t| t.new_list())]] };
-            menu::popup(&self.side, sections, menu::Options::at(x, y));
+            crate::reminders::popup_menu(&self.side, sections, menu::Options::at(x, y));
             return;
         };
         let (kind, ident) = sr.key.split_once(':').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or_default();
@@ -631,7 +648,7 @@ impl NotesWindow {
                 ],
             ]
         };
-        menu::popup(&self.side, sections, menu::Options::at(x, y));
+        crate::reminders::popup_menu(&self.side, sections, menu::Options::at(x, y));
     }
 
     fn renamed(&self, key: &str, label: &gtk::EditableLabel) {
@@ -863,7 +880,7 @@ impl NotesWindow {
         let id = picked.and_then(|p| self.row_of_widget(&p)).and_then(|r| r.id.borrow().clone());
         let Some(id) = id else {
             let w = self.me.clone();
-            menu::popup(
+            crate::reminders::popup_menu(
                 &self.listview,
                 vec![vec![menu::Item::new(&tr!("New Note"), move || {
                     if let Some(t) = w.upgrade() {
@@ -920,7 +937,7 @@ impl NotesWindow {
                 vec![act(tr!("Delete"), Box::new(move |t| t.delete_note(&b)))],
             ]
         };
-        menu::popup(&self.listview, sections, menu::Options::at(x, y));
+        crate::reminders::popup_menu(&self.listview, sections, menu::Options::at(x, y));
     }
 
     // -- editor ------------------------------------------------------------------------------------------
@@ -1290,4 +1307,18 @@ pub fn run(args: &[String]) -> glib::ExitCode {
         win.window.present();
     });
     app.run_with_args(&[std::env::args().next().unwrap_or_default()])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::roomy_size;
+
+    /// Notes opened at 1060 x 640 the first time even on a big display; the
+    /// Python Notes opens roomy (remember_size(..., roomy=True)).
+    #[test]
+    fn test_first_window_was_not_roomy() {
+        assert_eq!(roomy_size(1060, 640, Some((2560, 1440))), (1689, 936));
+        assert_eq!(roomy_size(1060, 640, Some((1280, 800))), (1060, 640)); // never smaller than asked
+        assert_eq!(roomy_size(1060, 640, None), (1060, 640));
+    }
 }

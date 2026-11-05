@@ -149,7 +149,8 @@ impl ProcessesPage {
             }
             let Some(tr) = o.downcast_ref::<gtk::TreeListRow>() else { return true };
             let Some(row) = tr.item().and_downcast::<TaskRow>() else { return true };
-            if row.name().to_lowercase().contains(&*text) || (row.kind() != Kind::App && row.pid().to_string().contains(&*text)) {
+            // an app's PID is its first process's (pages.py's AppNode.pid)
+            if row.name().to_lowercase().contains(&*text) || row.pid().to_string().contains(&*text) {
                 return true;
             }
             if row.kind() == Kind::App {
@@ -1021,7 +1022,7 @@ impl StartupPage {
         });
     }
 
-    fn set_enabled(&self, row: &TaskRow, on: bool) {
+    pub fn set_enabled(&self, row: &TaskRow, on: bool) {
         if row.data().enabled == on {
             return;
         }
@@ -1029,7 +1030,6 @@ impl StartupPage {
         let w = self.win.clone();
         let r = row.clone();
         let store = self.t.store.downgrade();
-        let (eb, db) = (self.enable_btn.downgrade(), self.disable_btn.downgrade());
         glib::spawn_future_local(async move {
             let res = gio::spawn_blocking(move || manage::set_startup_enabled(&mut entry, on, None).map(|_| entry)).await;
             match res {
@@ -1042,9 +1042,9 @@ impl StartupPage {
                             s.splice(pos, 1, &[r.clone()]); // the switch follows
                         }
                     }
-                    if let (Some(e), Some(d)) = (eb.upgrade(), db.upgrade()) {
-                        e.set_sensitive(!on);
-                        d.set_sensitive(on);
+                    // the buttons follow the selected row, which may not be the toggled one
+                    if let Some(p) = w.upgrade().and_then(|win| win.startup.borrow().clone()) {
+                        p.buttons_state();
                     }
                 }
                 _ => {
@@ -1065,6 +1065,11 @@ impl StartupPage {
                 p.reload();
             }
         }
+    }
+
+    /// (Enable, Disable) of the toolbar (tests).
+    pub fn toolbar_buttons(&self) -> (gtk::Button, gtk::Button) {
+        (self.enable_btn.clone(), self.disable_btn.clone())
     }
 
     fn buttons_state(&self) {
@@ -1272,7 +1277,7 @@ impl ServicesPage {
             let (unit, scope) = (s.unit.clone(), s.scope.clone());
             let res = gio::spawn_blocking(move || {
                 // a system unit goes through polkit, which may show its password dialog too
-                let run = |cmd: &[String]| manage::run(cmd, if scope == "system" { manage::AUTH_TIMEOUT } else { 20 });
+                let run = |cmd: &[String]| manage::run(cmd, manage::action_timeout(&scope));
                 manage::service_action(&unit, action, &scope, &run)
             })
             .await

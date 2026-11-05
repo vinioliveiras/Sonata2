@@ -121,9 +121,6 @@ pub fn merged(states: &[Value]) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    static ENV: Mutex<()> = Mutex::new(());
 
     #[test]
     fn merged_session_skips_duplicates_and_empty_untitled() {
@@ -140,7 +137,7 @@ mod tests {
 
     #[test]
     fn save_keeps_only_the_buffers_tabs_refer_to() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
         std::env::set_var("XDG_DATA_HOME", dir.path());
         write_buffer("aaaaaaaa", "kept").unwrap();

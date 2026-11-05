@@ -81,7 +81,9 @@ pub fn zoomed(size: i64, step: i32) -> i64 {
 thread_local! {
     /// every live tab, for appearance changes
     static TABS: RefCell<Vec<Weak<Tab>>> = RefCell::default();
-    static WINDOWS: RefCell<Vec<Weak<TermWindow>>> = RefCell::default();
+    /// every open window, held until GTK destroys it: everything else
+    /// (its keys, tabs, buttons, close-request) only holds it weakly
+    static WINDOWS: RefCell<Vec<Rc<TermWindow>>> = RefCell::default();
 }
 
 /// One tab: a terminal and its child process.
@@ -301,10 +303,19 @@ impl TermWindow {
         col.append(&stack);
         let size = cfg().get("font_size").and_then(|v| v.as_i64()).unwrap_or(FONT_SIZE);
         let me = Rc::new(Self { win, font_size: Cell::new(size), tabs: RefCell::default(), current: RefCell::default(), strip, tab_row, stack, closing: Cell::new(false), _monitors: RefCell::default() });
-        WINDOWS.with(|w| {
-            let mut w = w.borrow_mut();
-            w.retain(|x| x.strong_count() > 0);
-            w.push(Rc::downgrade(&me));
+        WINDOWS.with(|w| w.borrow_mut().push(me.clone()));
+        me.win.connect_destroy(|gone| {
+            // (taken out first, dropped after: its own drop may close more)
+            // (try_with: at exit the list itself may be going)
+            let mine: Vec<Rc<TermWindow>> = WINDOWS
+                .try_with(|w| {
+                    let Ok(mut w) = w.try_borrow_mut() else { return Vec::new() };
+                    let (gone_now, keep): (Vec<_>, Vec<_>) = w.drain(..).partition(|x| x.win.upcast_ref::<gtk::Window>() == gone.upcast_ref::<gtk::Window>());
+                    *w = keep;
+                    gone_now
+                })
+                .unwrap_or_default();
+            drop(mine);
         });
         let weak = Rc::downgrade(&me);
         me._monitors.replace(sonata_ui::window::follow_tab_bar(move || {
@@ -689,7 +700,7 @@ fn folder_of(p: &str) -> Option<String> {
 fn open_windows(app: &gtk::Application, paths: &[String]) {
     // the app's windows, the most recently focused first
     let order: Vec<gtk::Window> = app.windows();
-    let mut wins: Vec<Rc<TermWindow>> = WINDOWS.with(|w| w.borrow().iter().filter_map(|x| x.upgrade()).filter(|x| !x.closing.get()).collect());
+    let mut wins: Vec<Rc<TermWindow>> = WINDOWS.with(|w| w.borrow().iter().filter(|x| !x.closing.get()).cloned().collect());
     wins.sort_by_key(|w| order.iter().position(|o| o == w.win.upcast_ref::<gtk::Window>()).unwrap_or(usize::MAX));
     if paths.is_empty() {
         match wins.first() {
@@ -795,6 +806,177 @@ mod tests {
         assert_eq!(tab_title("/home/vini/code", "/home/vini", "vim", "/usr/bin/fish", "vini"), "code — vim");
         assert_eq!(tab_title("/", "/home/vini", "", "/bin/bash", "vini"), "/ — bash");
         assert_eq!(tab_title("", "/home/vini", "", "/bin/bash", "vini"), "vini — bash");
+    }
+
+    fn settle(ms: u64) {
+        let end = std::time::Instant::now() + std::time::Duration::from_millis(ms);
+        let ctx = glib::MainContext::default();
+        while std::time::Instant::now() < end {
+            ctx.iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+    }
+
+    fn names(w: &TermWindow) -> Vec<String> {
+        w.tabs.borrow().iter().map(|t| t.cwd().and_then(|c| std::path::Path::new(&c).file_name().map(|n| n.to_string_lossy().into_owned())).unwrap_or_default()).collect()
+    }
+
+    fn index_of(w: &TermWindow, t: &Rc<Tab>) -> usize {
+        w.tabs.borrow().iter().position(|x| Rc::ptr_eq(x, t)).unwrap()
+    }
+
+    fn is_current(w: &TermWindow, i: usize) -> bool {
+        let t = w.tabs.borrow()[i].clone();
+        w.current().is_some_and(|c| Rc::ptr_eq(&c, &t))
+    }
+
+    fn sh() -> Option<Vec<String>> {
+        Some(vec!["/bin/sh".into()])
+    }
+
+    /// The Rust Terminal let go of its windows as soon as they were made:
+    /// ⌘T, the "+" and the tabs' buttons did nothing, `exit` left the
+    /// window open and closing one with a program running didn't ask
+    /// (everything held the window weakly). With it, tests/test_terminal.py's
+    /// TabsTest, real terminals running sh (one test: GTK lives on one thread).
+    #[test]
+    fn test_terminal_windows_forgot_their_tabs() {
+        use gtk::gdk::{Key, ModifierType as M};
+        if (gtk::is_initialized() && !gtk::is_initialized_main_thread()) || gtk::init().is_err() {
+            return; // no display
+        }
+        setup();
+        let _ = sonata_config::update("appearance", &serde_json::json!({"always_show_tabs": false})); // (the one-tab cases)
+        let app = gtk::Application::builder().application_id("io.test.terminal").flags(gio::ApplicationFlags::NON_UNIQUE).build();
+        app.register(gio::Cancellable::NONE).expect("registered");
+        let dirs: Vec<tempfile::TempDir> = (0..3).map(|i| tempfile::Builder::new().prefix(&format!("tm{i}_")).tempdir().unwrap()).collect();
+        let dir = |i: usize| dirs[i].path().display().to_string();
+        let base = |i: usize| dirs[i].path().file_name().unwrap().to_string_lossy().into_owned();
+        let w = TermWindow::new(&app, Some(dir(0)), sh(), None);
+        w.win.present();
+        settle(300);
+
+        // one tab: no strip; the title names its folder
+        assert_eq!(w.tabs.borrow().len(), 1);
+        assert!(!w.strip.get_visible());
+        assert!(w.current().unwrap().pid.get().is_some());
+        assert!(w.win.title().unwrap().contains(&base(0)));
+        // the strip always, when chosen (Settings > Appearance)
+        let _ = sonata_config::update("appearance", &serde_json::json!({"always_show_tabs": true}));
+        settle(300); // (the change is watched)
+        assert!(w.strip.get_visible());
+        let _ = sonata_config::update("appearance", &serde_json::json!({"always_show_tabs": false}));
+        settle(300);
+        assert!(!w.strip.get_visible());
+
+        // add and switch: a new tab goes right after the current one
+        let b = w.new_tab(Some(dir(1)), sh());
+        settle(200);
+        assert!(w.strip.get_visible());
+        assert!(is_current(&w, 1));
+        assert!(b.button.borrow().as_ref().unwrap().0.has_css_class("active"));
+        assert!(!w.tabs.borrow()[0].button.borrow().as_ref().unwrap().0.has_css_class("active"));
+        assert!(w.win.title().unwrap().contains(&base(1)));
+        w.select_index(0);
+        let c = w.new_tab(Some(dir(2)), sh());
+        settle(200);
+        assert_eq!(index_of(&w, &c), 1);
+        assert_eq!(names(&w), [base(0), base(2), base(1)]);
+        w.cycle(1);
+        assert!(is_current(&w, 2));
+        w.cycle(1);
+        assert!(is_current(&w, 0));
+        w.cycle(-1);
+        assert!(is_current(&w, 2));
+        assert_eq!(w.stack.visible_child().as_ref(), Some(b.bx.upcast_ref()));
+
+        // reorder: the strip follows; clamped to the end
+        w.move_tab(&b, 0);
+        assert_eq!(names(&w), [base(1), base(0), base(2)]);
+        let order = |w: &TermWindow| {
+            let mut v = Vec::new();
+            let mut ch = w.tab_row.first_child();
+            while let Some(x) = ch {
+                ch = x.next_sibling();
+                v.push(x);
+            }
+            v
+        };
+        let buttons = |w: &TermWindow| w.tabs.borrow().iter().map(|t| t.button.borrow().as_ref().unwrap().0.clone().upcast::<gtk::Widget>()).collect::<Vec<_>>();
+        assert_eq!(order(&w), buttons(&w));
+        w.move_tab(&b, 5);
+        assert_eq!(names(&w), [base(0), base(2), base(1)]);
+        assert_eq!(order(&w), buttons(&w));
+
+        // closing the current tab selects the one to its right
+        w.select_index(1);
+        w.close_tab(&c);
+        assert_eq!(names(&w), [base(0), base(1)]);
+        assert!(is_current(&w, 1));
+
+        // ⌘ keys: Super, or Ctrl+Shift; plain Ctrl+W / Ctrl+T are the shell's
+        assert!(w.key(Key::t, 0, M::SUPER_MASK));
+        assert!(w.key(Key::T, 0, M::CONTROL_MASK | M::SHIFT_MASK));
+        settle(200);
+        assert_eq!(w.tabs.borrow().len(), 4);
+        assert!(w.key(Key::_1, 0, M::SUPER_MASK));
+        assert!(is_current(&w, 0));
+        assert!(w.key(Key::_9, 0, M::CONTROL_MASK)); // ⌘9: the last tab
+        assert!(is_current(&w, 3));
+        assert!(w.key(Key::Tab, 0, M::CONTROL_MASK));
+        assert!(is_current(&w, 0));
+        assert!(w.key(Key::ISO_Left_Tab, 0, M::CONTROL_MASK | M::SHIFT_MASK));
+        assert!(is_current(&w, 3));
+        assert!(w.key(Key::braceleft, 0, M::SUPER_MASK | M::SHIFT_MASK));
+        assert!(is_current(&w, 2));
+        assert!(w.key(Key::braceright, 0, M::CONTROL_MASK | M::SHIFT_MASK));
+        assert!(is_current(&w, 3));
+        assert!(w.key(Key::exclam, 11, M::CONTROL_MASK | M::SHIFT_MASK)); // Ctrl+Shift+2 by position
+        assert!(is_current(&w, 1));
+        assert!(!w.key(Key::w, 0, M::CONTROL_MASK));
+        assert!(!w.key(Key::t, 0, M::CONTROL_MASK));
+        assert_eq!(w.tabs.borrow().len(), 4);
+        // (the new tabs run the login shell: leave just the two sh ones)
+        let all = w.tabs.borrow().clone();
+        for t in all.iter().skip(1).filter(|t| !Rc::ptr_eq(t, &b)) {
+            w.remove(t, false);
+        }
+        assert_eq!(w.tabs.borrow().len(), 2);
+
+        // Move Tab to New Window: the same process, in a window of its own
+        let pid = b.pid.get();
+        w.move_to_new_window(&b);
+        settle(200);
+        assert_eq!(w.tabs.borrow().len(), 1);
+        assert!(!w.strip.get_visible());
+        let w2 = b.win().unwrap();
+        assert!(!Rc::ptr_eq(&w2, &w));
+        assert_eq!(w2.tabs.borrow().len(), 1);
+        assert_eq!(b.pid.get(), pid); // the same process, not a new one
+        assert!(w2.win.title().unwrap().contains(&base(1)));
+        w2.move_to_new_window(&b); // a lone tab stays
+        assert!(Rc::ptr_eq(&b.win().unwrap(), &w2));
+        w2.really_close();
+
+        // folders open as tabs of the front window; no folder: only raises
+        open_windows(&app, &[dir(1), dir(2)]);
+        settle(300);
+        assert_eq!(w.tabs.borrow().len(), 3);
+        assert_eq!(names(&w)[1..], [base(1), base(2)]);
+        open_windows(&app, &[]);
+        assert_eq!(w.tabs.borrow().len(), 3);
+
+        // the shell ending closes its tab; the last one closes the window
+        let all = w.tabs.borrow().clone();
+        w.child_exited(&all[2]);
+        w.child_exited(&all[1]);
+        let first = all[0].clone();
+        assert_eq!(w.tabs.borrow().len(), 1);
+        assert!(!w.strip.get_visible());
+        w.child_exited(&first);
+        settle(100);
+        assert!(w.closing.get());
+        assert!(!app.windows().iter().any(|x| x == w.win.upcast_ref::<gtk::Window>()));
     }
 
     #[test]

@@ -491,13 +491,13 @@ impl Cells {
             Some(crate::ops::file_content(&files, false, true))
         });
         let (cw, ww) = (Rc::downgrade(self), widget.downgrade());
-        src.connect_drag_begin(move |s, _| {
+        src.connect_drag_begin(move |_, drag| {
             let (Some(c), Some(w)) = (cw.upgrade(), ww.upgrade()) else { return };
             let Some(info) = c.drag_info.borrow().clone() else { return };
             // the file icon follows the pointer
             let paint: Option<gdk::Paintable> = info.attribute_byte_string("thumbnail::path").and_then(|t| gdk::Texture::from_filename(t.as_str()).ok()).map(|t| t.upcast()).or_else(|| sonata_ui::icons::paintable(&w, &info.icon().unwrap_or_else(|| gio::ThemedIcon::new("text-x-generic").upcast()), 64));
             if let Some(p) = paint {
-                s.set_icon(Some(&p), 32, 32);
+                hang(drag, &p);
             }
         });
         let cw = Rc::downgrade(self);
@@ -536,6 +536,19 @@ impl Cells {
         true
     }
 }
+
+/// The dragged item as macOS shows it (ui/drag.py's hang): the icon at
+/// DRAG_ICON px, a little translucent, held steady with the pointer at its
+/// middle. (GTK's own drag icon was the thumbnail at its full size, the
+/// pointer at its corner.)
+pub fn hang(drag: &gdk::Drag, paintable: &gdk::Paintable) {
+    let img = gtk::Image::builder().paintable(paintable).pixel_size(DRAG_ICON).opacity(DRAG_OPACITY).can_target(false).build();
+    gtk::DragIcon::for_drag(drag).set_child(Some(&img));
+    drag.set_hotspot(DRAG_ICON / 2, DRAG_ICON / 2);
+}
+
+const DRAG_ICON: i32 = 64;
+const DRAG_OPACITY: f64 = 0.78;
 
 fn drag_leave(b: &gtk::Widget) {
     b.remove_css_class("drop-target");
@@ -1260,6 +1273,26 @@ fn last_shown(visible: &[bool]) -> Option<usize> {
     visible.iter().rposition(|v| *v)
 }
 
+#[cfg(test)]
+impl ColumnsView {
+    /// the Folders of the columns right of the first
+    pub(crate) fn owners(&self) -> Vec<Rc<folder::Folder>> {
+        self.columns.borrow().iter().skip(1).filter_map(|c| c.owner.clone()).collect()
+    }
+
+    /// pick `name` in the first column, as a click does
+    pub(crate) fn pick_name(&self, name: &str) -> bool {
+        let first = self.columns.borrow()[0].clone();
+        match position_of(&first.model, name) {
+            Some(p) => {
+                first.selection.set_selected(p);
+                true
+            }
+            None => false,
+        }
+    }
+}
+
 // -- Columns ----------------------------------------------------------------------------------
 struct Column {
     root: gtk::ScrolledWindow,
@@ -1378,6 +1411,17 @@ impl ColumnsView {
         });
         col.root.add_controller(bg);
         col
+    }
+
+    /// Hidden files on / off: the folders open to the right follow the
+    /// window's (files/window.py toggle_hidden: they kept the old setting
+    /// until opened again).
+    pub fn set_hidden(&self, on: bool) {
+        let owners: Vec<Rc<folder::Folder>> = self.columns.borrow().iter().skip(1).filter_map(|c| c.owner.clone()).collect();
+        for o in owners {
+            o.show_hidden.set(on);
+            o.reload();
+        }
     }
 
     /// The window's folder changed: back to one column.
@@ -1595,12 +1639,7 @@ mod tests {
     /// GTK for this test, on this thread: none without a display, and none
     /// when another test's thread has it already (GTK lives on one thread;
     /// with a display the GTK tests take turns failing otherwise).
-    fn gtk_here() -> bool {
-        if gtk::is_initialized() && !gtk::is_initialized_main_thread() {
-            return false;
-        }
-        gtk::init().is_ok()
-    }
+    use crate::gtk_here;
 
     #[test]
     fn fill_last_follows_the_columns() {

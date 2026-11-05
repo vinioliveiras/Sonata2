@@ -379,7 +379,7 @@ impl Sidebar {
             menu.connect_pressed(move |g, _, x, y| {
                 let Some(r) = g.widget() else { return };
                 let u = u.clone();
-                sonata_ui::menu::popup(&r, vec![vec![sonata_ui::menu::Item::new(&tr!("Remove from Sidebar"), move || unpin(&u))]], sonata_ui::menu::Options::at(x, y));
+                sonata_ui::menu::popup(&r, vec![vec![sonata_ui::menu::Item::new(&tr!("Remove from Sidebar"), move || unpin(&u))]], sonata_ui::menu::Options::at(x, y).passthrough());
             });
             row.add_controller(menu);
         }
@@ -643,22 +643,25 @@ impl Sidebar {
         use sonata_ui::menu::Item;
         let (w1, w2, w3) = (self.me.clone(), self.me.clone(), self.me.clone());
         let (u1, u2) = (uri.to_string(), uri.to_string());
-        let mut sections = vec![vec![
-            Item::new(&tr!("Open in New Tab"), move || {
+        let mut first = Vec::new();
+        // a window with tabs only (the Open / Save panels have none)
+        if self.hooks.borrow().on_new_tab.is_some() {
+            first.push(Item::new(&tr!("Open in New Tab"), move || {
                 if let Some(s) = w1.upgrade() {
                     if let Some(f) = s.hooks.borrow().on_new_tab.as_ref() {
                         f(&u1);
                     }
                 }
-            }),
-            Item::new(&tr!("Get Info"), move || {
+            }));
+        }
+        first.push(Item::new(&tr!("Get Info"), move || {
                 if let Some(s) = w2.upgrade() {
                     if let Some(f) = s.hooks.borrow().on_info.as_ref() {
                         f(&u2);
                     }
                 }
-            }),
-        ]];
+            }));
+        let mut sections = vec![first];
         if let Some(m) = mount {
             let verb = if m.can_eject() { tr!("Eject “{name}”") } else { tr!("Unmount “{name}”") };
             sections.push(vec![Item::new(&fmt(&verb, &[("name", title)]), move || {
@@ -672,7 +675,7 @@ impl Sidebar {
                 let _ = info.launch(&[], None::<&gio::AppLaunchContext>);
             }
         })]);
-        sonata_ui::menu::popup(row, sections, sonata_ui::menu::Options::at(x, y));
+        sonata_ui::menu::popup(row, sections, sonata_ui::menu::Options::at(x, y).passthrough());
     }
 
     fn eject(&self, mount: &gio::Mount) {
@@ -709,6 +712,15 @@ fn place_drag(row: &gtk::ListBoxRow, uri: &str) {
     let src = gtk::DragSource::builder().actions(gdk::DragAction::LINK).build();
     let u = uri.to_string();
     src.connect_prepare(move |_, _, _| place_folder(&u).map(|f| crate::ops::file_content(&[f], false, false)));
+    // its icon hanging under the pointer like a file's (sidebar.py _place_drag)
+    let (u, r) = (uri.to_string(), row.downgrade());
+    src.connect_drag_begin(move |_, drag| {
+        let (Some(f), Some(r)) = (place_folder(&u), r.upgrade()) else { return };
+        let gicon = f.query_info("standard::icon", gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE).ok().and_then(|i| i.icon()).unwrap_or_else(|| gio::ThemedIcon::new("folder").upcast());
+        if let Some(p) = sonata_ui::icons::paintable(&r, &gicon, 64) {
+            crate::views::hang(drag, &p);
+        }
+    });
     row.add_controller(src);
 }
 

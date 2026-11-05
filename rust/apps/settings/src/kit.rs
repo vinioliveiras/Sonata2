@@ -100,11 +100,15 @@ pub fn combo_value<T: Clone + 'static>(row: &adw::ComboRow) -> Option<T> {
 /// rounded grey field with the magnifier. inline: inside a section.
 pub fn search_entry(placeholder: Option<&str>, inline: bool) -> gtk::SearchEntry {
     let e = gtk::SearchEntry::builder().placeholder_text(placeholder.map(str::to_string).unwrap_or_else(|| tr!("Search"))).build();
-    e.add_css_class("st-search");
-    if inline {
-        e.add_css_class("inline");
+    for c in search_classes(inline) {
+        e.add_css_class(c);
     }
     e
+}
+
+/// The search field's style classes (inline: inside a section).
+pub fn search_classes(inline: bool) -> &'static [&'static str] {
+    if inline { &["st-search", "inline"] } else { &["st-search"] }
 }
 
 /// A sidebar badge: the section's symbol on its colour.

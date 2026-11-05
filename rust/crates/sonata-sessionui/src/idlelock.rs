@@ -455,6 +455,21 @@ mod tests {
         assert_eq!(level(&d, "asus::kbd_backlight"), "3");
     }
 
+    /// tests/test_idlelock.py: a restart while dark leaves the keyboard at
+    /// 0; the next session's start (IdleLock) gives its light back, once.
+    #[test]
+    fn restart_while_dark_restores_at_the_next_session() {
+        let e = testenv::env();
+        let d = e.dir.path().join("cache");
+        let path = fake_lights(&d);
+        sh(&kbd_off(), &path);
+        std::fs::write(d.join("lvl-asus::kbd_backlight"), "0").unwrap(); // the restart: still 0
+        sh(&kbd_on(), &path); // the next session's start
+        assert_eq!(level(&d, "asus::kbd_backlight"), "3");
+        sh(&kbd_on(), &path); // nothing saved any more: left as it is
+        assert_eq!(level(&d, "asus::kbd_backlight"), "3");
+    }
+
     #[derive(Default)]
     struct Watch(RefCell<Vec<(bool, Vec<bool>)>>);
 

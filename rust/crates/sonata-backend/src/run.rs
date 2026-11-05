@@ -69,7 +69,14 @@ pub fn ok(cmd: &[&str], timeout_s: u64) -> bool {
 pub fn spawn(cmd: &[&str]) {
     use std::os::unix::process::CommandExt;
     if which(cmd[0]).is_some() {
-        let _ = Command::new(cmd[0]).args(&cmd[1..]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).process_group(0).spawn();
+        // waited for off the main loop: a child nobody waits for stays a
+        // zombie as long as the process lives -- the menu bar gathered one
+        // per sound and per lights lock (GLib.spawn_async reaps its own)
+        if let Ok(mut child) = Command::new(cmd[0]).args(&cmd[1..]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).process_group(0).spawn() {
+            let _ = std::thread::Builder::new().name("reap".into()).spawn(move || {
+                let _ = child.wait();
+            });
+        }
     }
 }
 
@@ -80,6 +87,23 @@ pub fn read(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// The menu bar collected zombies -- a defunct flock or sonata2-rs for
+    /// every sound and lights lock it started. What spawn starts is reaped.
+    #[test]
+    fn test_menu_bar_collected_zombies() {
+        super::spawn(&["true"]);
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let me = std::process::id().to_string();
+        let zombies = std::fs::read_dir("/proc").unwrap().flatten().filter(|e| {
+            let stat = std::fs::read_to_string(e.path().join("stat")).unwrap_or_default();
+            // pid (comm) state ppid ...
+            let after = stat.rsplit_once(") ").map(|x| x.1).unwrap_or("");
+            let mut f = after.split_whitespace();
+            f.next() == Some("Z") && f.next() == Some(me.as_str())
+        }).count();
+        assert_eq!(zombies, 0);
+    }
+
     #[test]
     fn output_and_missing_tools() {
         assert_eq!(super::run(&["sh", "-c", "echo hi; echo warn >&2"], 5), (0, "hi\n".into()));

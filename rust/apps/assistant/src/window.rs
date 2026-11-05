@@ -347,7 +347,9 @@ impl AssistantWindow {
         let usage = Usage::open(&store.folder);
         let me = Rc::new_cyclic(|me: &Weak<AssistantWindow>| {
             let window = gtk::ApplicationWindow::builder().application(app).title(tr!("Assistant")).build();
-            sonata_ui::window::remember_size(window.upcast_ref(), "assistant", 1000, 680);
+            // its last size; the first time roomy, about two thirds of the
+            // display (ui.window.remember_size(roomy=True), 0.20.3)
+            sonata_ui::window::remember_size_roomy(window.upcast_ref(), "assistant", 1000, 680);
             window.add_css_class("sonata-assistant");
             window.set_size_request(600, 400);
             sonata_ui::window::standard(&window);
@@ -706,7 +708,7 @@ impl AssistantWindow {
     // -- settings ---------------------------------------------------------------------------------
     /// The settings panel: API key, model, usage limits, folders Claude may use.
     pub fn show_settings(&self) {
-        let bx = gtk::Box::builder().orientation(gtk::Orientation::Vertical).css_classes(["as-settings"]).width_request(360).build();
+        let bx = gtk::Box::builder().orientation(gtk::Orientation::Vertical).css_classes(["as-settings"]).build();
         bx.append(&sonata_ui::panel::header(&tr!("Assistant Settings"), None));
         bx.append(&sonata_ui::panel::section_title(&tr!("Anthropic API Key")));
         let key_field = sonata_ui::controls::secret_field(&keystore::cached(), "sk-ant-…");
@@ -778,7 +780,9 @@ impl AssistantWindow {
         );
         bx.append(&add);
         bx.append(&gtk::Label::builder().label(tr!("Claude can list, read and create files only in these folders, and asks before every action.")).xalign(0.0).wrap(true).max_width_chars(40).css_classes(["panel-caption"]).build());
-        let panel = sonata_ui::panel::popup(&self.settings_btn, &bx, gtk::PositionType::Bottom);
+        // a fixed width (a long folder or model name ellipsizes instead of
+        // stretching the panel) and the close dot of forms (panel.popup(width=360, close=True))
+        let panel = sonata_ui::panel::popup_with(&self.settings_btn, &bx, sonata_ui::panel::Options { width: Some(360), close: true, ..Default::default() });
         self.settings.replace(Some(SettingsParts { panel, key_field, key_caption, model_row, folders_box }));
         self.key_status(None);
         let key = keystore::cached();
@@ -1482,6 +1486,26 @@ impl AssistantWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The settings panel (a form) opened without the close dot every form
+    /// panel has (tests/test_dialog_close.py's test_forms_ask_for_it), and
+    /// stretched with a long folder or model name instead of keeping 360 px.
+    #[test]
+    fn test_settings_panel_had_no_close_dot() {
+        let src = include_str!("window.rs");
+        let i = src.find("panel::popup_with(&self.settings_btn").expect("the settings panel");
+        let call = &src[i..i + 200];
+        assert!(call.contains("close: true") && call.contains("width: Some(360)"), "{call}");
+    }
+
+    /// The Assistant opened at 1000 x 680 the first time on any display:
+    /// the Python one opens roomy, about two thirds of it.
+    #[test]
+    fn test_first_size_not_roomy() {
+        use sonata_ui::window::first_size;
+        assert_eq!(first_size(None, 1000, 680, true, Some((1920, 1080))), (1267, 702, false));
+        assert_eq!(first_size(None, 1000, 680, true, Some((2560, 1440))), (1689, 936, false));
+    }
 
     #[test]
     fn grouped_like_python() {

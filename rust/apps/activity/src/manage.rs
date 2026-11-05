@@ -97,7 +97,10 @@ pub struct AppUse {
     pub name: String,
     pub cpu_time: f64,
     pub disk: f64,
-    pub last: f64,
+    /// when it was last sampled (written only once it has been, as manage.py does)
+    pub last: Option<f64>,
+    /// the entry's other keys, written back as they were (manage.py keeps dict(v))
+    pub extra: Map<String, Value>,
 }
 
 /// CPU time and disk traffic per app, added up from the samples (Windows'
@@ -118,7 +121,11 @@ impl History {
                 m.iter()
                     .map(|(k, v)| {
                         let f = |n: &str| v.get(n).and_then(Value::as_f64).unwrap_or(0.0);
-                        (k.clone(), AppUse { name: v.get("name").and_then(Value::as_str).unwrap_or(k).to_string(), cpu_time: f("cpu_time"), disk: f("disk"), last: f("last") })
+                        let mut extra = v.as_object().cloned().unwrap_or_default();
+                        for known in ["name", "cpu_time", "disk", "last"] {
+                            extra.remove(known);
+                        }
+                        (k.clone(), AppUse { name: v.get("name").and_then(Value::as_str).unwrap_or(k).to_string(), cpu_time: f("cpu_time"), disk: f("disk"), last: v.get("last").and_then(Value::as_f64), extra })
                     })
                     .collect()
             })
@@ -145,7 +152,7 @@ impl History {
             }
             a.cpu_time += cpu;
             a.disk += disk;
-            a.last = now();
+            a.last = Some(now());
         }
     }
 
@@ -155,7 +162,20 @@ impl History {
     }
 
     pub fn to_value(&self) -> Value {
-        let apps: Map<String, Value> = self.apps.iter().map(|(k, a)| (k.clone(), json!({"name": a.name, "cpu_time": a.cpu_time, "disk": a.disk, "last": a.last}))).collect();
+        let apps: Map<String, Value> = self
+            .apps
+            .iter()
+            .map(|(k, a)| {
+                let mut m = a.extra.clone();
+                m.insert("name".into(), json!(a.name));
+                m.insert("cpu_time".into(), json!(a.cpu_time));
+                m.insert("disk".into(), json!(a.disk));
+                if let Some(last) = a.last {
+                    m.insert("last".into(), json!(last));
+                }
+                (k.clone(), Value::Object(m))
+            })
+            .collect();
         json!({"since": self.since, "apps": apps})
     }
 }
@@ -364,6 +384,12 @@ fn systemctl(scope: &str) -> Vec<String> {
 /// s: polkit / pkexec wait on the password dialog; 20 s killed it mid-typing
 pub const AUTH_TIMEOUT: u64 = 600;
 
+/// How long a Start / Stop / Restart may take: a system unit goes through
+/// polkit, whose password dialog the user may be typing into.
+pub fn action_timeout(scope: &str) -> u64 {
+    if scope == "system" { AUTH_TIMEOUT } else { 20 }
+}
+
 /// cmd -> (return code, output); 127 when the program is missing.
 pub fn run(cmd: &[String], timeout_s: u64) -> (i32, String) {
     let args: Vec<&str> = cmd.iter().map(String::as_str).collect();
@@ -454,6 +480,27 @@ mod tests {
         assert!(again.apps.is_empty());
     }
 
+    /// activity-history.json written by the Python Task Manager: an app's
+    /// other keys survive the Rust one saving it, and an entry never
+    /// sampled gets no "last" (the Rust one added "last": 0 and dropped
+    /// the rest).
+    #[test]
+    fn test_history_file_kept_as_python_wrote_it() {
+        let text = r#"{"since": 1700000000.5, "apps": {"firefox": {"name": "Firefox", "cpu_time": 12.5, "disk": 300.0, "pinned": true}}}"#;
+        let v: Value = serde_json::from_str(text).unwrap();
+        let h = History::from_value(v.as_object().unwrap());
+        assert_eq!(h.since, 1700000000.5);
+        let out = h.to_value();
+        assert_eq!(out["apps"]["firefox"], json!({"name": "Firefox", "cpu_time": 12.5, "disk": 300.0, "pinned": true}));
+        let mut h = h;
+        let snap = Snapshot { interval: 2.0, procs: BTreeMap::from([(1, Proc { pid: 1, cpu: 50.0, ..Default::default() })]), ..Default::default() };
+        h.add(&snap, &BTreeMap::from([("firefox".to_string(), vec![1])]), &HashMap::new());
+        let out = h.to_value();
+        assert!(out["apps"]["firefox"]["last"].as_f64().is_some_and(|t| t > 0.0));
+        assert_eq!(out["apps"]["firefox"]["pinned"], json!(true));
+        assert_eq!(out["apps"]["firefox"]["name"], json!("Firefox")); // no new name: the old one stays
+    }
+
     #[test]
     fn startup_items_enabled_the_xdg_way() {
         let d = tempfile::tempdir().unwrap();
@@ -482,6 +529,66 @@ mod tests {
         set_startup_enabled(&mut beta, true, Some(&user)).unwrap();
         let states: HashMap<String, bool> = startup_entries(Some(&user), Some(&sys)).into_iter().map(|e| (e.name, e.enabled)).collect();
         assert_eq!(states, HashMap::from([("Alpha".into(), false), ("Beta".into(), true), ("Gamma Mine".into(), true)]));
+    }
+
+    /// systemctl's plain listing (failed units carry a ● marker) parses;
+    /// the status words map like Windows'.
+    #[test]
+    fn units_text_and_status() {
+        let text = "● bad.service loaded failed failed The Broken One\n  ok.service  loaded active running OK daemon with spaces\n  sock.socket loaded active listening Not a service\n";
+        let got = parse_units_text(text, "system");
+        assert_eq!(got.iter().map(|s| (s.unit.as_str(), s.status(), s.description.as_str())).collect::<Vec<_>>(), [("bad.service", "Failed", "The Broken One"), ("ok.service", "Running", "OK daemon with spaces")]);
+        let svc = |active: &str, sub: &str| Service { unit: "x".into(), description: String::new(), load: String::new(), active: active.into(), sub: sub.into(), scope: "user".into() };
+        assert_eq!(svc("active", "exited").status(), "Active");
+        assert_eq!(svc("reloading", "").status(), "Reloading");
+        assert_eq!(svc("inactive", "dead").status(), "Stopped");
+    }
+
+    /// A refused system unit retries through pkexec; a user unit never escalates.
+    #[test]
+    fn service_action_pkexec_only_for_system() {
+        let calls = std::cell::RefCell::new(Vec::<Vec<String>>::new());
+        let run = |cmd: &[String]| {
+            calls.borrow_mut().push(cmd.to_vec());
+            if cmd[0] == "pkexec" { (0, String::new()) } else { (1, "denied".to_string()) }
+        };
+        let (ok, msg) = service_action("b.service", "stop", "user", &run);
+        assert_eq!((ok, msg.as_str()), (false, "denied"));
+        assert_eq!(*calls.borrow(), [["systemctl", "--user", "stop", "b.service"]]);
+    }
+
+    /// System units go through polkit / pkexec: their password dialog gets
+    /// minutes, not 20 s (it was killed mid-typing).
+    #[test]
+    fn password_prompt_not_killed_after_20s() {
+        assert_eq!(action_timeout("system"), AUTH_TIMEOUT);
+        assert!(AUTH_TIMEOUT >= 120);
+        assert_eq!(action_timeout("user"), 20); // no password: the short timeout
+    }
+
+    /// Disabling twice writes one Hidden=true; enabling removes it only
+    /// from [Desktop Entry].
+    #[test]
+    fn set_keys_idempotent_and_section_scoped() {
+        let text = "[Desktop Entry]\nName=A\nExec=a\n\n[Desktop Action x]\nHidden=true\nExec=b\n";
+        let off = set_keys(&set_keys(text, &[("Hidden", Some("true"))]), &[("Hidden", Some("true"))]);
+        assert_eq!(off.matches("Hidden=true").count(), 2); // its own + the action's
+        assert_eq!(desktop_section(&off).get("Hidden").map(String::as_str), Some("true"));
+        let on = set_keys(&off, &[("Hidden", None)]);
+        assert!(!desktop_section(&on).contains_key("Hidden"));
+        assert!(on.contains("[Desktop Action x]\nHidden=true"));
+    }
+
+    /// Kernel threads and system accounts are System; another user's and
+    /// helper processes are Background; an app's children stay under it.
+    #[test]
+    fn group_processes_kinds() {
+        let p = |pid, ppid, exe: &str, uid| Proc { pid, ppid, exe: exe.into(), name: exe.into(), uid, ..Default::default() };
+        let procs: BTreeMap<i64, Proc> = [p(1, 0, "systemd", 0), p(2, 0, "", 0), p(10, 1, "firefox", 1000), p(11, 10, "helper", 1000), p(20, 1, "bash", 1001), p(21, 1, "daemon", 1000)].into_iter().map(|p| (p.pid, p)).collect();
+        let (apps, background, system) = group_processes(&procs, |p| (p.exe == "firefox").then(|| "firefox".to_string()), 1000);
+        assert_eq!(apps, BTreeMap::from([("firefox".to_string(), vec![10, 11])]));
+        assert_eq!(background, [20, 21]);
+        assert_eq!(system, [1, 2]);
     }
 
     #[test]

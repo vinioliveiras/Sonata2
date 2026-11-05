@@ -228,7 +228,7 @@ pub fn app_gicon(app_id: &str) -> Option<gio::Icon> {
 
 pub fn app_name(app_id: &str) -> String {
     match app_info(app_id) {
-        Some(i) => i.name().to_string(),
+        Some(i) => sonata_ui::apps::name(&i),
         None if !app_id.is_empty() => app_id.to_string(),
         None => tr!("Window"),
     }
@@ -705,7 +705,7 @@ pub fn open_shot(path: &str) -> bool {
         let argv = sonata_session::keep::command_for(&["preview".into(), "--markup".into(), path.into()]);
         return Command::new(&argv[0]).args(&argv[1..]).spawn().is_ok();
     }
-    gio::AppInfo::launch_default_for_uri(&gio::File::for_path(path).uri(), gio::AppLaunchContext::NONE).is_ok()
+    sonata_ui::apps::launch_default_for_uri(&gio::File::for_path(path).uri(), None).is_ok()
 }
 
 // -- the floating thumbnail ---------------------------------------------------------------------------

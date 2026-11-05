@@ -137,9 +137,10 @@ impl Drop for UpdateNotifier {
 
 use glib::prelude::ToVariant;
 
-/// Settings > About (Software Update): the Python Settings, not ported yet.
+/// Settings > About (Software Update), in this same Sonata (self_argv in
+/// the Python): the Rust session's notifier opens the Rust Settings.
 pub fn open_updates() {
-    sonata_backend::run::spawn(&["sonata2", "settings", "--page", "sonataupdate"]);
+    sonata_backend::run::spawn(&[crate::self_exe().as_str(), "settings", "--page", "sonataupdate"]);
 }
 
 #[cfg(test)]

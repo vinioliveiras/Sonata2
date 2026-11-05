@@ -113,7 +113,8 @@ pub fn regions() -> Vec<(&'static str, &'static str)> {
 
 /// The formats region in effect: LC_TIME's, else the language's.
 pub fn formats_of(settings: &Settings) -> String {
-    settings.get("LC_TIME").or(settings.get("LANG")).filter(|s| !s.is_empty()).cloned().unwrap_or_else(|| "en_US.UTF-8".into())
+    // (Python's `or`: an empty LC_TIME falls to the language's)
+    [settings.get("LC_TIME"), settings.get("LANG")].into_iter().flatten().find(|s| !s.is_empty()).cloned().unwrap_or_else(|| "en_US.UTF-8".into())
 }
 
 fn lang_of(loc: &str) -> &str {
@@ -199,6 +200,9 @@ mod tests {
         assert_eq!(cur, s(&[("LANG", "pt_BR.UTF-8"), ("LC_TIME", "pt_PT.UTF-8")]));
         assert_eq!(formats_of(&cur), "pt_PT.UTF-8");
         assert_eq!(formats_of(&s(&[("LANG", "pt_BR.UTF-8")])), "pt_BR.UTF-8");
+        // test_empty_lc_time_showed_us_formats: "LC_TIME=" in locale.conf
+        // showed the U.S. formats instead of the language's
+        assert_eq!(formats_of(&s(&[("LANG", "pt_BR.UTF-8"), ("LC_TIME", "")])), "pt_BR.UTF-8");
     }
 
     #[test]

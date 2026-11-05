@@ -390,16 +390,64 @@ fn screen_size(win: &gtk::Window) -> Option<(i32, i32)> {
     Some((g.width(), g.height()))
 }
 
-/// The window opens at the size it last had (first time: w x h, never
-/// bigger than the display) and maximized if it was; that size is kept when
-/// it closes, and shortly after a resize (a restart ends the app without
-/// closing its window).
-pub fn remember_size(win: &gtk::Window, key: &str, w: i32, h: i32) {
-    let (mut w, mut h, maximized) = saved_size(key).unwrap_or((w, h, false));
-    if let Some((sw, sh)) = screen_size(win) {
-        w = w.min(sw);
-        h = h.min(sh);
+/// What a window may take of a display: the menu bar and the Dock off
+/// (window.py's WORK_MARGIN_W / _H).
+pub const WORK_MARGIN: (i32, i32) = (32, 104);
+
+/// (w, h) shrunk to the work area of a `screen`-sized display; never grown.
+pub fn fit_size(w: i32, h: i32, screen: Option<(i32, i32)>) -> (i32, i32) {
+    match screen {
+        Some((sw, sh)) => (w.min((sw - WORK_MARGIN.0).max(1)), h.min((sh - WORK_MARGIN.1).max(1))),
+        None => (w, h),
     }
+}
+
+/// A document window's first size (no size kept yet), of the display
+/// (window.py's ROOMY_W / ROOMY_H): Vini found Files' ~820 x 520 on 1080p
+/// "too small"; ~1260 x 700 is what he wants.
+pub const ROOMY: (f64, f64) = (0.66, 0.65);
+
+/// (w, h) grown to ROOMY of a `screen`-sized display, never smaller than
+/// the app's own (window.py's roomy_size); remember_size then fits it to
+/// the work area.
+pub fn roomy_size(w: i32, h: i32, screen: Option<(i32, i32)>) -> (i32, i32) {
+    match screen {
+        Some((sw, sh)) => (w.max((sw as f64 * ROOMY.0) as i32), h.max((sh as f64 * ROOMY.1) as i32)),
+        None => (w, h),
+    }
+}
+
+/// The window opens at the size it last had (first time: w x h, never
+/// bigger than the display's work area) and maximized if it was; that size
+/// is kept when it closes, when the app quits without closing it, and
+/// shortly after a resize (a restart ends the app without closing its
+/// window). The size the user gives it becomes its default size too.
+pub fn remember_size(win: &gtk::Window, key: &str, w: i32, h: i32) {
+    remember_size_with(win, key, w, h, false)
+}
+
+/// remember_size for a document window (window.py's roomy=True): the
+/// first time about two thirds of the display, not w x h.
+pub fn remember_size_roomy(win: &gtk::Window, key: &str, w: i32, h: i32) {
+    remember_size_with(win, key, w, h, true)
+}
+
+/// (w, h, maximized) a window opens at: its kept size, else w x h (grown
+/// roomy for a document window), fitted to the display's work area.
+pub fn first_size(saved: Option<(i32, i32, bool)>, w: i32, h: i32, roomy: bool, screen: Option<(i32, i32)>) -> (i32, i32, bool) {
+    let (w, h, maximized) = saved.unwrap_or_else(|| {
+        let (w, h) = if roomy { roomy_size(w, h, screen) } else { (w, h) };
+        (w, h, false)
+    });
+    let (w, h) = fit_size(w, h, screen);
+    (w, h, maximized)
+}
+
+fn remember_size_with(win: &gtk::Window, key: &str, w: i32, h: i32, roomy: bool) {
+    // (roomy: the smallest display while not shown, as window.py's
+    // screen_size(None) -- fits whichever it opens on)
+    let screen = if roomy && !win.is_realized() { screen_size_of(win) } else { screen_size(win) };
+    let (w, h, maximized) = first_size(saved_size(key), w, h, roomy, screen);
     win.set_default_size(w, h);
     if maximized {
         win.maximize();
@@ -423,6 +471,9 @@ pub fn remember_size(win: &gtk::Window, key: &str, w: i32, h: i32) {
         k(win);
         glib::Propagation::Proceed
     });
+    let k = keep.clone();
+    win.connect_unrealize(move |win| k(win)); // the app quit without closing it
+    follow_resizes(win);
     let pending: Rc<Cell<Option<glib::SourceId>>> = Rc::default();
     let soon: Rc<dyn Fn(&gtk::Window)> = Rc::new(move |win: &gtk::Window| {
         if let Some(id) = pending.take() {
@@ -443,10 +494,66 @@ pub fn remember_size(win: &gtk::Window, key: &str, w: i32, h: i32) {
     win.connect_maximized_notify(move |w| soon(w));
 }
 
-/// set_default_size() that never opens a window bigger than the display.
+/// set_default_size() that never opens a window bigger than the display
+/// (the defaults were picked on 1080p; laptops have 720/768 px).
 pub fn fit_default_size(win: &gtk::Window, w: i32, h: i32) {
-    let (sw, sh) = screen_size(win).unwrap_or((w, h));
-    win.set_default_size(w.min(sw), h.min(sh));
+    let (w, h) = fit_size(w, h, screen_size(win));
+    win.set_default_size(w, h);
+}
+
+/// The size the user gives the window becomes its default size too
+/// (Vini: Files' size reset by itself): GTK goes back to its default size
+/// whenever the compositor lets it choose (a configure without a size), and
+/// that was still the size it opened at. Only a new size is looked at: the
+/// surface's "layout" comes on every frame something animates.
+fn follow_resizes(win: &gtk::Window) {
+    let watch = |win: &gtk::Window| {
+        let Some(surface) = win.surface() else { return };
+        let seen = Rc::new(Cell::new((0, 0)));
+        let w = win.downgrade();
+        surface.connect_layout(move |_, width, height| {
+            if seen.replace((width, height)) == (width, height) {
+                return;
+            }
+            let w = w.clone();
+            glib::idle_add_local_once(move || {
+                if let Some(win) = w.upgrade() {
+                    follow_size(&win);
+                }
+            });
+        });
+    };
+    if win.is_realized() {
+        watch(win);
+    }
+    win.connect_realize(move |w| watch(w));
+}
+
+/// The window's current size as its default size (unmaximized, not tiled
+/// or full screen); true when it changed.
+pub fn follow_size(win: &gtk::Window) -> bool {
+    use gtk::gdk::ToplevelState as S;
+    let state = win.surface().and_downcast::<gtk::gdk::Toplevel>().map(|t| t.state()).unwrap_or(S::empty());
+    if win.is_maximized() || win.is_fullscreen() || state.intersects(S::TILED | S::MAXIMIZED | S::FULLSCREEN) {
+        return false;
+    }
+    let (w, h) = (win.width(), win.height());
+    if w <= 1 || h <= 1 {
+        return false;
+    }
+    let (dw, dh) = win.default_size();
+    // the window's size and its default size differ by its decorations
+    // (title bar, shadows): measured once, while it still has its default size
+    let Some(delta) = (unsafe { win.data::<(i32, i32)>("sonata-size-delta").map(|d| *d.as_ref()) }) else {
+        unsafe { win.set_data("sonata-size-delta", (w - dw, h - dh)) };
+        return false;
+    };
+    let (nw, nh) = (w - delta.0, h - delta.1);
+    if (nw, nh) == (dw, dh) || nw <= 1 || nh <= 1 {
+        return false;
+    }
+    win.set_default_size(nw, nh);
+    true
 }
 
 // -- tab bars (Terminal, Files, TextEdit) ---------------------------------------------------------
@@ -467,6 +574,24 @@ pub fn follow_tab_bar<F: Fn() + 'static>(refresh: F) -> Vec<gtk::gio::FileMonito
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// remember_size had no roomy=True: Settings, Activity, Assistant,
+    /// Calendar and Disk Manager each kept a copy of window.py's
+    /// roomy_size, and an app without one opened small on a big display.
+    /// The first time about two thirds of the display, fitted to its work
+    /// area; a kept size wins; a small display keeps the app's own.
+    #[test]
+    fn test_remember_size_never_roomy() {
+        assert_eq!(roomy_size(920, 640, Some((1920, 1080))), (1267, 702));
+        assert_eq!(roomy_size(1100, 720, Some((1920, 1080))), (1267, 720));
+        assert_eq!(roomy_size(920, 640, Some((1280, 720))), (920, 640)); // never smaller
+        assert_eq!(roomy_size(920, 640, None), (920, 640));
+        assert_eq!(first_size(None, 900, 600, true, Some((2560, 1440))), (1689, 936, false));
+        assert_eq!(first_size(None, 900, 600, false, Some((2560, 1440))), (900, 600, false));
+        assert_eq!(first_size(Some((1000, 700, true)), 900, 600, true, Some((2560, 1440))), (1000, 700, true));
+        // within the work area (the menu bar and the Dock off)
+        assert_eq!(first_size(None, 1040, 900, true, Some((1366, 768))), (1040, 664, false));
+    }
 
     fn frame(cfg: serde_json::Value) -> crate::frame::Frame {
         crate::frame::frame_from(cfg.as_object().unwrap())
@@ -500,6 +625,17 @@ mod tests {
         let r = reach_of(&frame(json!({"button_size": 16, "radius": {"window": 14}})));
         // dot_left 17 - 8: the same room from the edge plus the rounder corner's 2
         assert_eq!((r.edge, r.top), (9.0, 10.0));
+    }
+
+    /// A first size picked on 1080p opened under the menu bar and the Dock
+    /// on a 768 px laptop: Rust fitted windows to the whole display, Python
+    /// to its work area (window.py's fit_size).
+    #[test]
+    fn test_window_bigger_than_the_work_area() {
+        assert_eq!(fit_size(1260, 700, Some((1366, 768))), (1260, 664));
+        assert_eq!(fit_size(1400, 900, Some((1366, 768))), (1334, 664));
+        assert_eq!(fit_size(800, 600, None), (800, 600));
+        assert_eq!(fit_size(800, 600, Some((10, 10))), (1, 1));
     }
 
     #[test]

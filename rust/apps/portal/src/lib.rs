@@ -95,7 +95,7 @@ pub fn settings_values() -> Values {
     let dark = prefs::get(prefs::I, "color-scheme", "", &data) == "prefer-dark";
     let look = sonata_config::load("appearance", &serde_json::json!({"accent": "blue", "reduce_transparency": false}));
     let accent = look.get("accent").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).unwrap_or("blue").to_string();
-    let reduce = look.get("reduce_transparency").and_then(|v| v.as_bool()).unwrap_or(false);
+    let reduce = truthy(look.get("reduce_transparency"));
     out.push((
         APPEARANCE.into(),
         vec![
@@ -105,6 +105,20 @@ pub fn settings_values() -> Values {
         ],
     ));
     out
+}
+
+/// Python's bool() of a setting (portal.py and appperms.py read them so):
+/// a 1 or "yes" written by an older Sonata or by hand counts as on.
+fn truthy(v: Option<&serde_json::Value>) -> bool {
+    use serde_json::Value;
+    match v {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(b)) => *b,
+        Some(Value::Number(n)) => n.as_f64().is_some_and(|f| f != 0.0),
+        Some(Value::String(s)) => !s.is_empty(),
+        Some(Value::Array(a)) => !a.is_empty(),
+        Some(Value::Object(o)) => !o.is_empty(),
+    }
 }
 
 /// The accent as the portal spec wants it (sRGB 0..1), from Sonata's tokens.
@@ -220,7 +234,7 @@ fn empty() -> glib::Variant {
 /// The Access portal (camera, location...): 0 granted, 1 refused. Not
 /// asking (Settings > Apps): granted at once.
 fn access(title: &str, subtitle: &str, body: &str, opts: &glib::VariantDict, done: impl Fn(u32) + 'static) {
-    let asking = sonata_config::load("appperms", &serde_json::json!({"ask": true})).get("ask").and_then(|v| v.as_bool()).unwrap_or(true);
+    let asking = sonata_config::load("appperms", &serde_json::json!({"ask": true})).get("ask").is_none_or(|v| truthy(Some(v)));
     if !asking {
         done(0);
         return;

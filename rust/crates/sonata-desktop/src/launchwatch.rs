@@ -84,7 +84,7 @@ pub fn has_window(info: Option<&gio::AppInfo>, views: Option<&Value>, unit: Opti
 
 /// The notification: it couldn't open.
 pub fn failed(info: Option<&gio::AppInfo>, why: &str) {
-    let name = info.map(|i| i.display_name().to_string()).unwrap_or_else(|| tr!("The app"));
+    let name = info.map(|i| sonata_ui::apps::display_name(i)).unwrap_or_else(|| tr!("The app"));
     let icon = info.and_then(|i| i.icon()).and_then(|i| IconExt::to_string(&i)).map(|s| s.to_string()).unwrap_or_default();
     let desktop = info.and_then(|i| i.id()).map(|s| s.to_string()).unwrap_or_default();
     let summary = sonata_i18n::fmt(&tr!("“{name}” couldn't open"), &[("name", &name)]);

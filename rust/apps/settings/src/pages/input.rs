@@ -515,7 +515,7 @@ pub fn page_gamepad(ctx: &Ctx) -> Vec<adw::PreferencesGroup> {
         row.add_suffix(&gtk::Label::builder().label(gettext(does)).xalign(1.0).css_classes(["dim-label"]).build());
         keys.add(&row);
     }
-    // the Game Bar group too: app.py builds it and leaves it out of the page
+    // (the Game Bar group too: app.py built it and left it out until 90b53014)
     vec![pads, desk, bar, keys]
 }
 

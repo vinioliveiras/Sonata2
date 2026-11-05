@@ -101,19 +101,15 @@ fn outputs() -> Map<String, Value> {
 fn curve_of(out: Option<&Value>) -> Curve {
     let empty = json!({});
     let out = out.filter(|o| o.is_object()).unwrap_or(&empty);
-    let mut gains: Vec<f64> = out.get("gains").and_then(Value::as_array).filter(|a| !a.is_empty()).map(|a| a.iter().map(|g| g.as_f64().unwrap_or(0.0)).collect()).unwrap_or_else(|| FLAT.to_vec());
+    // float() and bool() as curve() reads them: "1.5" is a gain, 1 is on
+    let mut gains: Vec<f64> = out.get("gains").and_then(Value::as_array).filter(|a| !a.is_empty()).map(|a| a.iter().map(|g| crate::py::float(g).unwrap_or(0.0)).collect()).unwrap_or_else(|| FLAT.to_vec());
     gains.truncate(BANDS.len());
     gains.resize(BANDS.len(), 0.0);
-    Curve { on: out.get("on").and_then(Value::as_bool).unwrap_or(false), preset: out.get("preset").and_then(Value::as_str).unwrap_or("Flat").to_string(), gains }
+    Curve { on: crate::py::truthy(out.get("on")), preset: out.get("preset").and_then(Value::as_str).unwrap_or("Flat").to_string(), gains }
 }
 
 pub fn curve(key: &str) -> Curve {
     curve_of(outputs().get(key))
-}
-
-/// Python's round(x, 1)
-fn round1(x: f64) -> f64 {
-    (x * 10.0).round_ties_even() / 10.0
 }
 
 pub fn set_curve(key: &str, on: Option<bool>, preset: Option<&str>, gains: Option<&[f64]>) {
@@ -129,7 +125,7 @@ pub fn set_curve(key: &str, on: Option<bool>, preset: Option<&str>, gains: Optio
         }
     }
     if let Some(g) = gains {
-        cur.gains = g.iter().map(|x| round1(*x).clamp(-MAX_DB, MAX_DB)).collect();
+        cur.gains = g.iter().map(|x| crate::py::round1(*x).clamp(-MAX_DB, MAX_DB)).collect();
         cur.preset = presets().find(|(_, p)| p[..] == cur.gains[..]).map(|(n, _)| n.to_string()).unwrap_or_else(|| "Custom".into());
     }
     let mut outs = cfg.get("outputs").and_then(Value::as_object).cloned().unwrap_or_default();
@@ -268,7 +264,11 @@ struct Inner {
     again: Cell<bool>,
     applying: Cell<bool>,
     apply_again: Cell<bool>,
+    /// how gains reach the filters (None: set_gains; tests count them)
+    gains_fn: RefCell<Option<GainsFn>>,
 }
+
+type GainsFn = std::sync::Arc<dyn Fn(&BTreeMap<String, Vec<f64>>) -> bool + Send + Sync>;
 
 /// The service: keeps a chain in front of every sink with an output whose
 /// equalizer is on, and each chain on the active port's curve.
@@ -447,8 +447,9 @@ impl Equalizer {
         }
         self.0.applying.set(true);
         let w = Rc::downgrade(&self.0);
+        let gains = self.0.gains_fn.borrow().clone();
         crate::run_async(
-            move || set_gains(&plan),
+            move || gains.map_or_else(|| set_gains(&plan), |f| f(&plan)),
             move |ok| {
                 let Some(i) = w.upgrade() else { return };
                 i.applying.set(false);
@@ -580,6 +581,30 @@ mod tests {
         assert_eq!(presets().count(), 20);
     }
 
+    /// A band dragged to 0.35 dB was saved as 0.4 where the Python saves
+    /// 0.3 (round(x, 1) works on the float's exact value: 0.3499...), so
+    /// the two builds named a curve differently.
+    #[test]
+    fn test_gain_rounded_unlike_python() {
+        let _l = crate::test_lock();
+        let _ = sonata_config::save("equalizer", &Map::new());
+        set_curve("a|b", None, None, Some(&[0.35, -0.05, 0.15, 1.45, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]));
+        assert_eq!(curve("a|b").gains[..4], [0.3, -0.1, 0.1, 1.4]);
+    }
+
+    /// equalizer.json written by hand or by an older Sonata: gains as text
+    /// and "on" as 1 read as the Python reads them (float(), bool()).
+    #[test]
+    fn test_curve_written_as_text_read_as_flat() {
+        let _l = crate::test_lock();
+        let cfg = json!({"outputs": {"a|b": {"on": 1, "preset": "Custom", "gains": ["1.5", 2, "x"]}}});
+        let _ = sonata_config::save("equalizer", cfg.as_object().unwrap());
+        let c = curve("a|b");
+        assert!(c.on);
+        assert_eq!(c.gains[..4], [1.5, 2.0, 0.0, 0.0]);
+        let _ = sonata_config::save("equalizer", &Map::new());
+    }
+
     #[test]
     fn chain_config() {
         let mut sinks = BTreeMap::new();
@@ -619,6 +644,48 @@ mod tests {
                       {"id": 43, "type": "PipeWire:Interface:Link", "info": {"props": {"node.name": "sonata-eq.x"}}}]"#;
         assert_eq!(node_ids_of(dump).get("sonata-eq.x"), Some(&vec![40, 41]));
         assert_eq!(node_ids_of(dump).len(), 1);
+    }
+
+    /// tests/test_audio_watch_cpu.py: the same curve on the same chain
+    /// process isn't set again (each set-param woke the menu bar), a moved
+    /// one is; with every equalizer off nothing runs at all.
+    #[test]
+    fn same_gains_are_not_set_again_and_nothing_runs_when_off() {
+        let calls = crate::on_main(|| {
+            let eq = Equalizer::new();
+            let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let c = count.clone();
+            *eq.0.gains_fn.borrow_mut() = Some(std::sync::Arc::new(move |_| {
+                c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                true
+            }));
+            // a chain process already running for this output
+            *eq.0.proc.borrow_mut() = Some(Command::new("sleep").arg("30").spawn().unwrap());
+            *eq.0.chains.borrow_mut() = vec!["alsa_out".into()];
+            let sinks = vec![("alsa_out".to_string(), "spk".to_string())];
+            let curve = |g: f64, on: bool| BTreeMap::from([("alsa_out|spk".to_string(), Curve { on, preset: "Rock".into(), gains: vec![g; 10] })]);
+            let mut seen = vec![];
+            for _ in 0..3 {
+                eq.decide((sinks.clone(), vec![], curve(1.0, true)));
+                crate::spin(50);
+            }
+            seen.push(count.load(std::sync::atomic::Ordering::SeqCst));
+            eq.decide((sinks.clone(), vec![], curve(2.0, true))); // moved in Settings: set again
+            crate::spin(50);
+            seen.push(count.load(std::sync::atomic::Ordering::SeqCst));
+            if let Some(mut p) = eq.0.proc.borrow_mut().take() {
+                let _ = p.kill();
+                let _ = p.wait();
+            }
+            // every equalizer off, no chain: nothing is set
+            let off = Equalizer::new();
+            *off.0.gains_fn.borrow_mut() = eq.0.gains_fn.borrow().clone();
+            off.decide((sinks, vec![], curve(1.0, false)));
+            crate::spin(50);
+            seen.push(count.load(std::sync::atomic::Ordering::SeqCst));
+            seen
+        });
+        assert_eq!(calls, [1, 2, 2]);
     }
 
     /// Chrome/Spotify ignored the equalizer: chain processes left by a

@@ -35,10 +35,12 @@ pub mod ccgrid;
 pub mod controls;
 pub mod kit;
 pub mod logic;
+pub mod logo;
 pub mod menubar_size;
 pub mod mixer_ui;
 pub mod mpris;
 pub mod osd;
+pub mod quiet;
 pub mod seams;
 pub mod statsui;
 pub mod statuspoll;
@@ -47,6 +49,8 @@ pub mod window;
 
 #[cfg(test)]
 mod testenv;
+#[cfg(test)]
+mod gtk_tests;
 
 use gtk::{gio, glib, prelude::*};
 use seams::Services;
@@ -90,9 +94,13 @@ pub fn parse_args(args: &[String]) -> Options {
 /// At start (after the login intro): the answers menus will need, so they
 /// open already filled.
 pub fn prefetch() {
-    kit::read_shared("bluetooth", sonata_backend::system::bluetooth_devices, |r| kit::keep("bluetooth", (*r).clone()));
-    kit::read_shared("wifi", || (sonata_backend::system::wifi_enabled(), sonata_backend::system::wifi_scan(false)), |r| kit::keep("wifi", (*r).clone()));
-    kit::read_shared("cc", cc::cc_state, |r| kit::keep("cc", (*r).clone()));
+    use sonata_backend::system;
+    kit::read_shared("bluetooth", system::bluetooth_devices, |r| kit::keep("bluetooth", (*r).clone()));
+    // Wi-Fi's list and Control Center's states in one job: the radio asked once
+    kit::read_two("wifi", "cc", |wifi, cc| {
+        let on = system::wifi_enabled();
+        (wifi.then(|| (on, system::wifi_scan(false))), cc.then(|| (on, system::wifi_current(), system::bluetooth_state(), system::airplane_mode())))
+    });
 }
 
 /// `sonata2-rs topbar [--preview] [--menu N] [--dark|--light]`.
@@ -131,7 +139,12 @@ pub fn run_with(args: &[String], services: Services, started: impl Fn(&gtk::Appl
         let win = TopBarWindow::new(app, opts.preview, main_mon.as_ref(), services.clone());
         if !opts.preview {
             // the menu bar's services (the main display's only)
-            win.bar.notifications.replace(Some(sonata_notifications::Notifications::new(app)));
+            seams::start_mixer_service(app); // each app's saved volume, from the start
+            let nc = sonata_notifications::Notifications::new(app);
+            // Notification Center's glass: the display pictured and blurred
+            // once as it opens (frost.py; the panels were always solid)
+            nc.set_frost(Rc::new(|out, done, renderer| sonata_mission::frost::capture(out, done, renderer)));
+            win.bar.notifications.replace(Some(nc));
             glib::timeout_add_seconds_local_once(4, prefetch); // menus open already filled
             if !sonata_config::side_by_side() {
                 listen_for_lock();

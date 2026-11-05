@@ -373,6 +373,8 @@ mod tests {
         assert_eq!(video_rect(1920, 800, 960.0, 800.0), (0.0, 200.0, 0.5));
         assert_eq!(ratio_rect(1920, 1080, Some(1.0)), (420, 0, 1080, 1080));
         assert_eq!(ratio_rect(1920, 1080, None), (0, 0, 1920, 1080));
+        let (_, _, w, h) = ratio_rect(1920, 1080, Some(9.0 / 16.0));
+        assert!((w as f64 / h as f64 - 9.0 / 16.0).abs() < 0.005);
     }
 
     #[test]
@@ -389,6 +391,17 @@ mod tests {
                 }
             }
         }
+        // tests/test_videos_crop.py: the shape kept, the corner opposite stays
+        for part in ["tl", "br", "b", "l"] {
+            let (x, y, w, h) = drag_crop(r, part, -700.0, 400.0, 1920, 1080, Some(16.0 / 9.0));
+            assert!((w as f64 / h as f64 - 16.0 / 9.0).abs() <= 0.02, "{part}");
+            assert!(x >= 0 && y >= 0 && x + w <= 1920 && y + h <= 1080, "{part}");
+        }
+        let (x, y, _, _) = drag_crop(r, "br", 100.0, 0.0, 1920, 1080, Some(16.0 / 9.0));
+        assert_eq!((x, y), (100, 100));
+        assert_eq!(crop_part(r, 101.0, 300.0, 10.0), "l");
+        assert_eq!(crop_part(r, 899.0, 549.0, 10.0), "br");
+        assert_eq!(crop_part(r, 10.0, 10.0, 10.0), "");
         assert_eq!(crop_part(r, 100.0, 100.0, 10.0), "tl");
         assert_eq!(crop_part(r, 500.0, 300.0, 10.0), "move");
         assert_eq!(crop_part(r, 900.0, 300.0, 10.0), "r");

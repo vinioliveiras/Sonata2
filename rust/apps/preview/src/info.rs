@@ -134,6 +134,67 @@ fn dpi(data: &[u8]) -> Option<f64> {
     None
 }
 
+/// The colour model as Pillow names it ("L", "P", "CMYK"...), read from the
+/// file's header: PNG, JPEG, GIF and BMP (None: another format, shown as
+/// RGB). Python read it from Pillow's `im.mode`.
+pub fn color_mode(data: &[u8]) -> Option<&'static str> {
+    if data.starts_with(b"\x89PNG\r\n\x1a\n") && data.get(12..16) == Some(b"IHDR") {
+        let (depth, kind) = (*data.get(24)?, *data.get(25)?);
+        return Some(match (kind, depth) {
+            (0, 1) => "1",
+            (0, 16) => "I;16",
+            (0, _) => "L",
+            (2, _) => "RGB",
+            (3, _) => "P",
+            (4, _) => "LA",
+            _ => "RGBA",
+        });
+    }
+    if data.starts_with(b"\xff\xd8") {
+        // the frame header (SOFn): its component count
+        let mut i = 2;
+        while i + 9 < data.len() && data[i] == 0xFF {
+            let m = data[i + 1];
+            if (0xC0..=0xCF).contains(&m) && !matches!(m, 0xC4 | 0xC8 | 0xCC) {
+                return Some(match data[i + 9] {
+                    1 => "L",
+                    4 => "CMYK",
+                    _ => "RGB",
+                });
+            }
+            if m == 0xD8 || (0xD0..=0xD7).contains(&m) || m == 0x01 {
+                i += 2;
+                continue;
+            }
+            i += 2 + u16::from_be_bytes([data[i + 2], data[i + 3]]) as usize;
+        }
+        return None;
+    }
+    if data.starts_with(b"GIF8") {
+        return Some("P");
+    }
+    if data.starts_with(b"BM") {
+        let bits = u16::from_le_bytes([*data.get(28)?, *data.get(29)?]);
+        return Some(if bits == 1 { "1" } else if bits <= 8 { "P" } else { "RGB" });
+    }
+    None
+}
+
+/// What the Info panel calls a colour model (info.py's MODES), translated.
+fn mode_label(mode: &str) -> String {
+    let label = match mode {
+        "1" => n_!("Black & White"),
+        "L" | "LA" => n_!("Gray"),
+        "P" => n_!("Indexed"),
+        "I" => n_!("Gray (32-bit)"),
+        "F" => n_!("Gray (float)"),
+        "I;16" => n_!("Gray (16-bit)"),
+        "RGB" | "RGBA" => "RGB",
+        other => other,
+    };
+    gettext(label)
+}
+
 fn rational(f: &exif::Field) -> Option<f64> {
     match &f.value {
         exif::Value::Rational(v) => v.first().map(|r| r.to_f64()),
@@ -243,7 +304,7 @@ pub fn read(path: &str, texture_size: Option<(i32, i32)>) -> Info {
     // the colour model and alpha: a tiny decode tells (scaled down, cheap)
     let small = if raw { imageload::pixbuf_from_bytes(&data, 8) } else { Pixbuf::from_file_at_scale(path, 8, 8, true).ok() };
     if let Some(pb) = small {
-        g_.push((n_!("Color Model"), "RGB".into()));
+        g_.push((n_!("Color Model"), mode_label(color_mode(&data).unwrap_or("RGB"))));
         g_.push((n_!("Alpha Channel"), if pb.has_alpha() { tr!("Yes") } else { tr!("No") }));
     }
     if let Some(d) = dpi(&data).filter(|d| *d > 1.0) {
@@ -333,6 +394,38 @@ mod tests {
         assert_eq!(fnumber_text(4.0), "ƒ/4");
         assert_eq!(focal_text(35.0), "35 mm");
         assert_eq!(focal_text(4.25), "4.25 mm");
+    }
+
+    #[test]
+    fn test_color_model_was_always_rgb() {
+        // Info said "RGB" for every picture -- a grey scan, a GIF, a CMYK
+        // JPEG -- where Python's said Gray / Indexed / CMYK.
+        let png = |kind: u8, depth: u8| {
+            let mut d = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR\0\0\0\x01\0\0\0\x01".to_vec();
+            d.extend_from_slice(&[depth, kind, 0, 0, 0]);
+            d
+        };
+        assert_eq!(color_mode(&png(0, 8)), Some("L"));
+        assert_eq!(color_mode(&png(0, 16)), Some("I;16"));
+        assert_eq!(color_mode(&png(3, 8)), Some("P"));
+        assert_eq!(color_mode(&png(6, 8)), Some("RGBA"));
+        assert_eq!(color_mode(&png(2, 8)), Some("RGB"));
+        // a JPEG: APP0, then the frame header with 1, 3 or 4 components
+        let jpeg = |n: u8| {
+            let mut d = vec![0xFF, 0xD8, 0xFF, 0xE0, 0, 4, 0, 0];
+            d.extend_from_slice(&[0xFF, 0xC0, 0, 8 + 3 * n, 8, 0, 1, 0, 1, n]);
+            d.extend(std::iter::repeat_n(0u8, 3 * n as usize));
+            d
+        };
+        assert_eq!(color_mode(&jpeg(1)), Some("L"));
+        assert_eq!(color_mode(&jpeg(3)), Some("RGB"));
+        assert_eq!(color_mode(&jpeg(4)), Some("CMYK"));
+        assert_eq!(color_mode(b"GIF89a\x01\0\x01\0"), Some("P"));
+        assert_eq!(color_mode(b"RIFF....WEBP"), None);
+        assert_eq!(mode_label("L"), "Gray");
+        assert_eq!(mode_label("P"), "Indexed");
+        assert_eq!(mode_label("RGBA"), "RGB");
+        assert_eq!(mode_label("CMYK"), "CMYK");
     }
 
     #[test]

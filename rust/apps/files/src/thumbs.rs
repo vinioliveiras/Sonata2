@@ -259,7 +259,12 @@ fn make(j: &Job) -> Option<PathBuf> {
         return None;
     };
     let dir = cache_dir();
-    let _ = std::fs::create_dir_all(&dir);
+    // private, as the thumbnail spec asks and Python's makedirs(mode=0o700):
+    // a thumbnail shows what the picture holds
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        let _ = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir);
+    }
     let out = dir.join(name(&j.uri));
     let tmp = dir.join(format!("{}.sonata{}.tmp", name(&j.uri), std::process::id()));
     let (mt, sz) = (j.mtime.to_string(), j.size.to_string());
@@ -300,6 +305,25 @@ fn tempfile_path() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The thumbnails folder Files made could be read by every user of the
+    /// computer (0755): Python's (and the spec's) is 0700.
+    #[test]
+    fn test_thumbnails_folder_was_open_to_everyone() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = glib::home_dir();
+        if !home.starts_with(std::env::temp_dir()) || cache_dir().exists() {
+            return; // only in the isolated test home, and only the first time
+        }
+        let d = tempfile::tempdir().unwrap();
+        let pic = d.path().join("p.png");
+        gtk::gdk_pixbuf::Pixbuf::new(gtk::gdk_pixbuf::Colorspace::Rgb, false, 8, 4, 4).unwrap().savev(&pic, "png", &[]).unwrap();
+        let uri = gio::File::for_path(&pic).uri().to_string();
+        let j = Job { key: (pic.display().to_string(), 1, 0, 1), uri, path: pic.clone(), mtime: 1, ct: "image/png".into(), size: 1, existing: None };
+        let out = make(&j).expect("a thumbnail");
+        assert!(valid(&out, 1, Some(1)));
+        assert_eq!(std::fs::metadata(cache_dir()).unwrap().permissions().mode() & 0o777, 0o700);
+    }
 
     #[test]
     fn cached_thumbnails_checked_by_their_text() {

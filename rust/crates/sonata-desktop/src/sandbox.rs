@@ -309,7 +309,7 @@ pub fn ask_open(info: &gio::AppInfo) {
     let i = info.clone();
     let go = move || {
         if !open_app(&i, &[]) {
-            let heading = sonata_i18n::fmt(&tr!("“{name}” couldn't open in a sandbox"), &[("name", &i.display_name())]);
+            let heading = sonata_i18n::fmt(&tr!("“{name}” couldn't open in a sandbox"), &[("name", &sonata_ui::apps::display_name(&i))]);
             sonata_ui::dialog::alert(&heading, "", &[("ok", tr!("OK"), "default")], |_| {}, None);
         }
     };

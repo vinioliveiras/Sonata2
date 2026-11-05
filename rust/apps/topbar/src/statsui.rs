@@ -225,9 +225,7 @@ thread_local! {
 /// Nobody sees the figures behind the lock screen (idlelock.is_locked:
 /// its marker, with a lock screen still alive behind the pid).
 fn locked() -> bool {
-    let marker = sonata_shell::lockdisplay::locked_marker();
-    let pid: u32 = std::fs::read_to_string(marker).ok().and_then(|t| t.trim().parse().ok()).unwrap_or(0);
-    pid > 0 && std::path::Path::new(&format!("/proc/{pid}")).exists()
+    crate::quiet::locked()
 }
 
 impl Stats {
