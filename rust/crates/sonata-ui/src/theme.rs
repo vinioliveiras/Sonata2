@@ -3,9 +3,12 @@
 //! Dark comes from Sonata's own settings (system.json, as prefs.py keeps
 //! it), the accent from appearance.json; both are followed live.
 //!
-//! Not ported yet (docs/RUST_PORT.md): the user's radii and backgrounds,
-//! the cross-fade on a change, the window buttons. Components that need
-//! them come later.
+//! The user's corner radii, background colours and window buttons (size,
+//! side, order: their tl_* tokens) are in the tokens too (tokens::user_palette),
+//! so a change in Settings > Appearance restyles every Sonata window;
+//! on_buttons_change tells the windows that place buttons themselves.
+//!
+//! Not ported yet (docs/RUST_PORT.md): the cross-fade on a change.
 
 use crate::glass as parts;
 use crate::tokens::{self, Values};
@@ -22,6 +25,8 @@ struct State {
     monitors: Vec<gtk::gio::FileMonitor>,
     forced: bool,
     listeners: Vec<Box<dyn Fn()>>,
+    buttons_seen: Option<String>,
+    buttons_listeners: Vec<std::rc::Rc<dyn Fn()>>,
 }
 
 thread_local! {
@@ -78,7 +83,7 @@ pub fn glass() -> bool {
 /// the materials resolved for this compositor (theme.values).
 pub fn values() -> Values {
     let dark = is_dark();
-    let mut v = tokens::palette(dark);
+    let mut v = tokens::user_palette(dark, &sonata_config::stored("appearance"));
     v.extend(tokens::accent_tokens(&accent(), dark));
     let parts = parts::settings();
     let ok = glass();
@@ -107,6 +112,46 @@ pub fn values() -> Values {
 /// Call `callback` after every restyle (appearance or accent changed).
 pub fn on_change<F: Fn() + 'static>(callback: F) {
     STATE.with(|s| s.borrow_mut().listeners.push(Box::new(callback)));
+}
+
+// The window buttons (Settings > Appearance: Window buttons, Button order,
+// Button colours) changed: windows already open follow at once (Vini:
+// Settings itself, Files and the custom colours waited for the app to open
+// again).
+
+/// `callback()` when the buttons' side, order or look changes in
+/// appearance.json. (A callback for a window holds it weakly.)
+pub fn on_buttons_change<F: Fn() + 'static>(callback: F) {
+    STATE.with(|s| s.borrow_mut().buttons_listeners.push(std::rc::Rc::new(callback)));
+}
+
+/// What the buttons look like in appearance.json (theme._buttons_sig).
+fn buttons_sig(a: &serde_json::Map<String, serde_json::Value>) -> String {
+    let get = |k: &str| a.get(k).map(|v| v.to_string()).unwrap_or_default();
+    [get("buttons_side"), get("buttons_order"), get("buttons_style"), get("buttons_colors")].join("|")
+}
+
+fn buttons_changed() {
+    let sig = buttons_sig(&sonata_config::stored("appearance"));
+    let (first, same) = STATE.with(|s| {
+        let mut s = s.borrow_mut();
+        let first = s.buttons_seen.is_none();
+        let same = s.buttons_seen.as_deref() == Some(sig.as_str());
+        s.buttons_seen = Some(sig);
+        (first, same)
+    });
+    if first || same {
+        return; // (the first look: remembered, nothing to follow)
+    }
+    let listeners = STATE.with(|s| s.borrow().buttons_listeners.clone());
+    for l in listeners {
+        l();
+    }
+}
+
+fn appearance_changed() {
+    buttons_changed();
+    load();
 }
 
 fn load() {
@@ -198,8 +243,10 @@ pub fn setup() {
     crate::menu::register_css();
     crate::dialog::register_css();
     crate::panel::register_css();
+    crate::transition::register_css();
     adw::StyleManager::default().connect_dark_notify(|_| load());
-    let mut monitors = sonata_config::watch("appearance", load);
+    buttons_changed(); // what the buttons look like now
+    let mut monitors = sonata_config::watch("appearance", appearance_changed);
     monitors.extend(sonata_config::watch("dock", load)); // its old "glass" switch (glass.rs)
     monitors.extend(sonata_config::watch("system", follow_color_scheme));
     STATE.with(|s| s.borrow_mut().monitors = monitors);

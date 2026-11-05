@@ -17,10 +17,10 @@
 //! dock_menu.rs. File drops: dock_drop.rs. Stacks: dock_stack.rs.
 //! Auto-hide lives in DockWindow.
 //!
-//! Not ported yet (docs: the port's report): minimize targets (Wayfire's
-//! foreign-toplevel set_rectangle; no Wayland client here yet), GPU /
-//! browser GPU menu items, "Edit Web App…", Mission Control's window menu
-//! and the windows' close buttons in the app menu.
+//! Minimize targets (each window flies into its icon): wlr.rs, aimed by
+//! update_rectangles / aim_at.
+//!
+//! Not ported yet (docs: the port's report): Mission Control's window menu.
 
 use crate::toplevels::{Manager, Toplevel};
 use crate::{dock_drop, dock_folder, dock_menu, dock_preview, dock_stack, poof, uninstall_ui};
@@ -464,6 +464,11 @@ pub fn toggle_show_desktop(manager: &Manager) -> &'static str {
     let hidden = DESK_HIDDEN.with(|h| h.borrow().clone());
     let (minimize, activate, keep) = show_desktop_plan(&pairs, &hidden);
     DESK_HIDDEN.with(|h| h.replace(keep));
+    if !minimize.is_empty() {
+        for d in docks() {
+            d.update_rectangles(); // each window flies to the icon on its display
+        }
+    }
     for id in &minimize {
         if let Some(t) = manager.get(*id) {
             manager.minimize(&t);
@@ -1290,6 +1295,7 @@ pub struct Dock {
     pub app: RefCell<Option<gtk::Application>>,
     menu_closed_id: Cell<u64>,
     slots: RefCell<Vec<adw::TimedAnimation>>,
+    rects_src: RefCell<Option<glib::SourceId>>,
 }
 
 fn spacer(vertical: bool) -> gtk::Box {
@@ -1407,6 +1413,7 @@ impl Dock {
                 app: RefCell::default(),
                 menu_closed_id: Cell::new(0),
                 slots: RefCell::default(),
+                rects_src: RefCell::default(),
             }
         });
         dock.build();
@@ -1486,6 +1493,7 @@ impl Dock {
             app: RefCell::default(),
             menu_closed_id: Cell::new(0),
             slots: RefCell::default(),
+            rects_src: RefCell::default(),
         }
     }
 
@@ -1789,6 +1797,7 @@ impl Dock {
         if self.mag_strength.get() <= 0.0 {
             // not while magnifying (every frame): done once the wave settles
             self.refit_soon();
+            self.rects_soon(); // icons moved (fit, apps opened/closed, reorder): minimize targets too
         }
         self.geometry_changed();
     }
@@ -3258,9 +3267,9 @@ impl Dock {
         let key = tile.key().unwrap_or_default();
         let Some(info) = &tile.info else { return false };
         let id = info.id().map(|s| s.to_string()).unwrap_or_default();
+        // (a web app is "sonata2-…" too: deleted from Launchpad or by a drop
+        // on the Trash, not from its Dock icon -- as dock.py)
         !dock_folder::is_folder(&key) && !PERMANENT.contains(&key.as_str()) && !is_protected(&key) && !is_protected(&id)
-            // (a web app is deleted by the Python Sonata's webapps: not here yet)
-            && !sonata_desktop::badges::is_webapp(&key)
     }
 
     /// Dropped on the Trash (or its menu's Uninstall…): asked, then
@@ -3641,6 +3650,7 @@ impl Dock {
             }
         }
         self.windows_seen.set(true);
+        self.rects_soon();
     }
 
     /// What follows the windows' titles: dynamic names, title badges.
@@ -3675,6 +3685,77 @@ impl Dock {
             // a window right-clicked in Mission Control: only the first Dock answers
             if docks().first().is_some_and(|d| std::ptr::eq(&**d, self)) {
                 dock_menu::scale_menu(self, msg);
+            }
+        }
+    }
+
+    // -- minimize targets (wlr.rs) ----------------------------------------------------------
+
+    /// Minimize targets again once the icons settle (not while magnified:
+    /// a zoomed icon is bigger and elsewhere than where it comes back to).
+    pub fn rects_soon(&self) {
+        if !crate::wlr::active() {
+            return;
+        }
+        if let Some(src) = self.rects_src.take() {
+            src.remove();
+        }
+        let w = self.weak();
+        let src = glib::timeout_add_local(Duration::from_millis(150), move || {
+            let Some(d) = w.upgrade() else { return glib::ControlFlow::Break };
+            if d.mag_strength.get() > 0.0 {
+                return glib::ControlFlow::Continue; // zoomed icons: wait until they settle
+            }
+            d.rects_src.replace(None);
+            d.update_rectangles();
+            glib::ControlFlow::Break
+        });
+        self.rects_src.replace(Some(src));
+    }
+
+    /// The icon's place in the Dock's surface. The rectangle is relative to
+    /// the surface, and Wayfire adds only the Dock's place *on its display*
+    /// (foreign-toplevel.cpp) -- the display's own coordinates, the ones the
+    /// genie runs in: nothing to take out (taking the display's layout
+    /// origin out aimed every genie that far off).
+    fn icon_rect(&self, tile: &Tile) -> Option<(i32, i32, i32, i32)> {
+        let native = self.plate.native()?;
+        let b = tile.button.compute_bounds(native.upcast_ref::<gtk::Widget>())?;
+        Some((b.x().round() as i32, b.y().round() as i32, b.width().round() as i32, b.height().round() as i32))
+    }
+
+    /// Tell the compositor where each window minimizes to (its Dock icon;
+    /// an app in a folder: the folder).
+    pub fn update_rectangles(&self) {
+        if !crate::wlr::active() {
+            return;
+        }
+        if self.mag_strength.get() > 0.0 {
+            self.rects_soon();
+            return;
+        }
+        let Some(surface) = self.plate.native().and_then(|n| n.surface()) else { return };
+        let mine = self.monitor().and_then(|m| crate::wlr::output_of(&m));
+        let icon = |app_id: &str| {
+            let key = sonata_desktop::appmatch::match_app_id(app_id).unwrap_or_else(|| app_id.to_string());
+            let tile = self.tiles.borrow().get(&key).cloned().or_else(|| self.folder_tile_of(&key))?;
+            self.icon_rect(&tile)
+        };
+        for (id, rect) in crate::wlr::plan(&crate::wlr::handles(), mine, docks().len() > 1, &icon) {
+            crate::wlr::set_rectangle(id, &surface, rect);
+        }
+    }
+
+    /// These windows minimize to / come back from `tile` of this Dock.
+    fn aim_at(&self, tile: &Tile, wins: &[Toplevel]) {
+        if !crate::wlr::active() || wins.is_empty() {
+            return;
+        }
+        let (Some(surface), Some(rect)) = (self.plate.native().and_then(|n| n.surface()), self.icon_rect(tile)) else { return };
+        let pairs: HashSet<(String, String)> = wins.iter().map(|t| (t.app_id.clone(), t.title.clone())).collect();
+        for h in crate::wlr::handles() {
+            if pairs.contains(&(h.app_id.clone(), h.title.clone())) {
+                crate::wlr::set_rectangle(h.id, &surface, rect);
             }
         }
     }
@@ -3738,7 +3819,17 @@ impl Dock {
             let shown: Vec<Toplevel> = wins.iter().filter(|t| !t.minimized).cloned().collect();
             if self.cfg_bool("click_minimizes") && shown.iter().any(|t| t.activated) && !over_launchpad {
                 // the app in front: clicking its icon minimizes its windows (Vini)
-                for t in self.here(&shown) {
+                for d in docks() {
+                    if !std::ptr::eq(&*d, self) {
+                        d.update_rectangles(); // aimed from the display each window is on now
+                    }
+                }
+                let here = self.here(&shown);
+                // this Dock is magnified under the pointer, so its general update
+                // would wait until after the minimize and the windows flew to the
+                // old target, the other display's icon (Vini): the clicked icon now
+                self.aim_at(tile, &here);
+                for t in here {
                     m.minimize(&t);
                 }
                 return;
@@ -3747,6 +3838,10 @@ impl Dock {
             // is minimized, restore them. The newest window ends up focused.
             // Restored from a Dock on another display: they come to this one
             if shown.is_empty() && docks().len() > 1 && self.bring_here(&wins) {
+                // aimed at this icon directly: the general update waits while the
+                // Dock is magnified, and the old aim came out of the other
+                // display's icon (Vini)
+                self.aim_at(tile, &wins);
                 glib::timeout_add_local_once(Duration::from_millis(BRING_MS), move || {
                     for t in &wins {
                         m.activate(t);
@@ -3943,6 +4038,13 @@ fn next_id() -> u64 {
         i.set(n + 1);
         n
     })
+}
+
+/// Every Dock's minimize targets again (windows came, went or moved display).
+pub fn rects_all_soon() {
+    for d in docks() {
+        d.rects_soon();
+    }
 }
 
 pub fn is_protected(id: &str) -> bool {

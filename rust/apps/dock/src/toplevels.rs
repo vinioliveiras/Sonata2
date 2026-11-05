@@ -6,8 +6,8 @@
 //! connection; the Rust workspace has no Wayland client crate yet, and the
 //! IPC tells the Dock everything it shows (app id, title, minimized, in
 //! front, display). What it can't do: tell Wayfire where a window minimizes
-//! to (foreign-toplevel's set_rectangle) -- the genie goes to Wayfire's own
-//! target until a wlr client lands (docs/RUST_PORT.md).
+//! to (foreign-toplevel's set_rectangle) -- wlr.rs does that part, on
+//! GTK's own connection.
 //!
 //! Both Docks can watch at once (each its own socket): nothing here
 //! clashes with the Python one on trial.

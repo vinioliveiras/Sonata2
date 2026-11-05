@@ -58,7 +58,9 @@ fn start_services(app: &gtk::Application) {
         compositor_off: Box::new(|| {
             sonata_tweaks::displaysleep::compositor_off();
         }),
-        watch: None,
+        // the compositor's own idle (input only: media playing doesn't count),
+        // else IdleLock keeps swayidle as before
+        watch: Some(sonata_shell::idlewatch::IdleWatch::connect()).filter(|w| w.ok() && w.input_idle()).map(|w| Rc::new(w) as Rc<dyn su::idlepolicy::IdleWatch>),
     };
     if let Some(il) = su::idlelock::IdleLock::start(hooks) {
         stops.push(Box::new(move || il.stop()));
@@ -104,6 +106,10 @@ fn start_services(app: &gtk::Application) {
     if let Some(u) = su::updatenotify::UpdateNotifier::start(check) {
         stops.push(Box::new(move || u.stop()));
     }
+    // new headphones / headsets used at once (audiofollow.py)
+    std::mem::forget(sonata_system::audiofollow::start());
+    // plugged in again: back to the energy mode chosen for it (powerprofile.Follow)
+    follow_power();
     // Settings > Sharing > Screen Sharing; the system-wide equalizer
     let share = sonata_system::screenshare::ScreenSharing::new();
     share.start();
@@ -119,6 +125,29 @@ fn start_services(app: &gtk::Application) {
     colors(sm.is_dark());
     sm.connect_dark_notify(move |m| colors(m.is_dark()));
     app.connect_shutdown(move |_| stops.iter().for_each(|f| f()));
+}
+
+/// powerprofile.Follow on UPower's events (topbar.py: power.watch), a
+/// burst of property changes looked at once.
+fn follow_power() {
+    let Ok(bus) = gio::bus_get_sync(gio::BusType::System, gio::Cancellable::NONE) else { return };
+    let follow = Rc::new(RefCell::new(sonata_tweaks::powerprofile::Follow::new()));
+    let pending: Rc<std::cell::Cell<bool>> = Rc::default();
+    for (name, path) in [("org.freedesktop.UPower", "/org/freedesktop/UPower"), ("org.freedesktop.UPower", "/org/freedesktop/UPower/devices/DisplayDevice")] {
+        let (f, p) = (follow.clone(), pending.clone());
+        // (kept for the process: the bus holds the subscription)
+        #[allow(deprecated)]
+        bus.signal_subscribe(Some(name), Some("org.freedesktop.DBus.Properties"), Some("PropertiesChanged"), Some(path), None, gio::DBusSignalFlags::NONE, move |_, _, _, _, _, _| {
+            if p.replace(true) {
+                return;
+            }
+            let (f, p) = (f.clone(), p.clone());
+            glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
+                p.set(false);
+                f.borrow_mut().changed();
+            });
+        });
+    }
 }
 
 /// The browsers' "… is sharing your screen" bars (Wayfire's views: the

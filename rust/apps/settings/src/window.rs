@@ -6,9 +6,11 @@
 //!
 //! The window is the pages' `Ctx`: see pages/mod.rs for what they may use.
 //!
-//! Not ported here: Settings' own traffic lights (ui.window.traffic_lights
-//! isn't in sonata-ui yet; the Rust apps' buttons are the compositor's) and
-//! the cross-fade when a shown section is rebuilt.
+//! The window's own traffic lights sit in the sidebar's header (buttons on
+//! the left) or each pane's (on the right), and move when Settings >
+//! Appearance changes their side or order (place_lights).
+//!
+//! Not ported here: the cross-fade when a shown section is rebuilt.
 
 use crate::pages;
 use crate::search::{self, Hit};
@@ -39,6 +41,8 @@ pub struct Pane {
     pub main: adw::PreferencesPage,
     back: RefCell<Option<gtk::Button>>,
     detail: RefCell<Option<adw::PreferencesPage>>,
+    /// the window buttons, when they're on the right (at the pane's edge)
+    lights: RefCell<Option<gtk::Box>>,
 }
 
 #[derive(Default)]
@@ -70,6 +74,9 @@ pub struct Settings {
     live_src: RefCell<Option<glib::SourceId>>,
     pub card_avatar: adw::Avatar,
     found: RefCell<Option<gtk::Widget>>,
+    /// the sidebar's header and the window buttons in it (on the left)
+    side_hb: RefCell<Option<adw::HeaderBar>>,
+    side_lights: RefCell<Option<gtk::Box>>,
     me: Weak<Settings>,
 }
 
@@ -118,10 +125,20 @@ impl Settings {
                 live_src: RefCell::new(None),
                 card_avatar: adw::Avatar::new(44, Some(&me_name), true),
                 found: RefCell::new(None),
+                side_hb: RefCell::new(None),
+                side_lights: RefCell::new(None),
                 me: me.clone(),
             }
         });
+        sonata_tweaks::trafficlights::style_windows(); // Button colours on its own buttons
         s.layout(&me_name);
+        // changed elsewhere too: this window follows
+        let w = s.me.clone();
+        sonata_ui::on_buttons_change(move || {
+            if let Some(s) = w.upgrade() {
+                s.place_lights();
+            }
+        });
         let w = s.me.clone();
         s.window.connect_close_request(move |_| {
             if let Some(s) = w.upgrade() {
@@ -178,9 +195,64 @@ impl Settings {
     }
 
     // -- sidebar -------------------------------------------------------------------------------------
+    /// The window's buttons (Zoom works: Settings is resizable, Vini's call).
+    fn lights(&self) -> gtk::Box {
+        let (c, m, z) = (self.window.downgrade(), self.window.downgrade(), self.window.downgrade());
+        sonata_ui::window::traffic_lights(
+            move || {
+                if let Some(w) = c.upgrade() {
+                    w.close();
+                }
+            },
+            move || {
+                if let Some(w) = m.upgrade() {
+                    w.minimize();
+                }
+            },
+            Some(Box::new(move || {
+                if let Some(w) = z.upgrade() {
+                    sonata_ui::window::toggle_zoom(&w);
+                }
+            })),
+        )
+    }
+
+    /// This window's buttons where Window buttons says, now: the sidebar's
+    /// header (left) or each pane's (right), in that side's order.
+    pub fn place_lights(&self) {
+        let right = sonata_ui::window::buttons_side() == "right";
+        let hb = self.side_hb.borrow().clone();
+        if let (Some(hb), Some(old)) = (hb.as_ref(), self.side_lights.take()) {
+            hb.remove(&old);
+        }
+        if let (false, Some(hb)) = (right, hb.as_ref()) {
+            let l = self.lights();
+            hb.pack_start(&l);
+            self.side_lights.replace(Some(l));
+        }
+        for pane in self.pages.borrow().values() {
+            if let Some(old) = pane.lights.take() {
+                pane.hb.remove(&old);
+            }
+            if right {
+                let l = self.lights();
+                pane.hb.pack_end(&l);
+                pane.lights.replace(Some(l));
+            }
+        }
+    }
+
     fn sidebar(self: &Rc<Self>, me_name: &str) -> adw::NavigationPage {
         let tv = adw::ToolbarView::new();
-        tv.add_top_bar(&adw::HeaderBar::builder().show_title(false).show_start_title_buttons(false).show_end_title_buttons(false).build());
+        let hb = adw::HeaderBar::builder().show_title(false).show_start_title_buttons(false).show_end_title_buttons(false).build();
+        if sonata_ui::window::buttons_side() == "left" {
+            // on the right: each pane's header (build)
+            let l = self.lights();
+            hb.pack_start(&l);
+            self.side_lights.replace(Some(l));
+        }
+        self.side_hb.replace(Some(hb.clone()));
+        tv.add_top_bar(&hb);
         let bx = gtk::Box::new(gtk::Orientation::Vertical, 0);
         // your picture (like the Apple ID card); a click opens Users & Groups
         let card = gtk::Box::builder().spacing(10).css_classes(["st-card"]).build();
@@ -447,9 +519,15 @@ impl Settings {
         let hb = adw::HeaderBar::builder().show_start_title_buttons(false).show_end_title_buttons(false).build();
         let title = gtk::Label::builder().label(sections::title(sid)).css_classes(["st-pane-title"]).build();
         hb.set_title_widget(Some(&title));
+        let lights = (sonata_ui::window::buttons_side() == "right").then(|| {
+            // the window buttons at the right edge
+            let l = self.lights();
+            hb.pack_end(&l);
+            l
+        });
         tv.add_top_bar(&hb);
         tv.set_content(Some(&page));
-        Rc::new(Pane { tv, hb, title, main: page, back: RefCell::new(None), detail: RefCell::new(None) })
+        Rc::new(Pane { tv, hb, title, main: page, back: RefCell::new(None), detail: RefCell::new(None), lights: RefCell::new(lights) })
     }
 
     /// A config file the section shows changed after it was built.

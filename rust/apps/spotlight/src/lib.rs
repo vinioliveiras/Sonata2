@@ -6,9 +6,10 @@
 //! uses (instant opening); files come from an index of the home folders
 //! built in the background.
 //!
-//! Not ported yet: opening a package, an AppImage, an archive or a script
-//! from here (files/packages.py: install, run, extract) -- they open with
-//! their default app -- and the hidden warm-up draw (layer.prewarm).
+//! A package, an AppImage, an archive or a script opened from here is
+//! installed, run or extracted, like a double-click in Files (packages.rs).
+//!
+//! Not ported yet: the hidden warm-up draw (layer.prewarm).
 
 pub mod calc;
 pub mod index;
@@ -34,7 +35,9 @@ const CLOSE_MS: u64 = 120;
 const REVEAL_MS: u32 = 180;
 /// a burst of keys: one search
 const SEARCH_DELAY_MS: u64 = 40;
-/// the Python Files (not ported): folders open there
+/// Sonata's Files: folders open there. The Rust session's Files has the
+/// same id; on trial the Python Files keeps folders (the Rust one takes no
+/// file types then).
 const FILES_ID: &str = "io.github.vinioliveiras.sonata2.files.desktop";
 
 pub fn app_id() -> &'static str {
@@ -491,8 +494,9 @@ impl Spotlight {
     }
 }
 
-/// A folder in Files (the Python one, not ported yet; else the default
-/// file manager), a file with its default app.
+/// A folder in Sonata's Files (else the default file manager); a package,
+/// an archive or a script installed / run / extracted (packages.rs); any
+/// other file with its default app.
 fn open_path(p: &Path, ctx: &gtk::gdk::AppLaunchContext) {
     let uri = gio::File::for_path(p).uri();
     if p.is_dir() {
@@ -501,6 +505,8 @@ fn open_path(p: &Path, ctx: &gtk::gdk::AppLaunchContext) {
                 return;
             }
         }
+    } else if sonata_files::packages::open_path(p, None) {
+        return; // install / run / extract
     }
     let _ = gio::AppInfo::launch_default_for_uri(&uri, Some(ctx));
 }
@@ -544,6 +550,15 @@ pub fn run(args: &[String]) -> glib::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A package, an archive or a script opened from Spotlight is
+    /// installed, run or extracted (spotlight.py's _open).
+    #[test]
+    fn packages_open_the_files_way() {
+        let src = include_str!("lib.rs");
+        let open = &src[src.find("fn open_path(").unwrap()..];
+        assert!(open[..open.find("\n}").unwrap()].contains("sonata_files::packages::open_path("));
+    }
 
     #[test]
     fn layout_on_tall_and_short_displays() {

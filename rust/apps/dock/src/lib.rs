@@ -21,11 +21,12 @@
 //!   twice would open every app twice; the login intro and the app scope
 //!   slice are left to it too;
 //! - windows: both follow Wayfire's IPC (a socket each); a click here
-//!   minimizes / brings forward the real windows, as it should.
+//!   minimizes / brings forward the real windows, as it should;
+//! - minimize targets (wlr.rs): only in the Rust session -- on trial the
+//!   Python Dock aims the windows, and two Docks writing would fight.
 //!
-//! Not in the Rust Dock yet (dock.rs / dock_menu.rs say which): minimize
-//! targets, Quit on Close (shell/quitonclose.py), the desktop entries
-//! run_dock writes (`sonata2-rs desktop-files` and the Python Dock do),
+//! Not in the Rust Dock yet (dock.rs / dock_menu.rs say which): Quit on
+//! Close (shell/quitonclose.py), the desktop entries run_dock writes (`sonata2-rs desktop-files` and the Python Dock do),
 //! the slide-away on `sonata2 restart` (intro.leave_on_signal).
 
 pub mod dock;
@@ -37,6 +38,7 @@ pub mod dock_stack;
 pub mod poof;
 pub mod toplevels;
 pub mod uninstall_ui;
+pub mod wlr;
 
 pub use dock::{Dock, DockWindow, FILES_KEY, LAUNCHPAD_KEY, PERMANENT};
 pub use dock_folder::{draw_lock_badge, lock_badge, FolderIcon};
@@ -200,6 +202,10 @@ fn activate(app: &adw::Application, a: &Args, keep: &RefCell<Vec<Box<dyn std::an
     if !a.preview && !sonata_config::side_by_side() {
         // apps opened from Sonata: watched by systemd-oomd
         sonata_desktop::appscope::ensure_slice();
+        // where windows minimize to (wlr.rs)
+        if wlr::start() {
+            wlr::add_listener(Rc::new(dock::rects_all_soon));
+        }
     }
     let mut cfg = dock::load_config();
     if !cfg.get("launchpad_added").is_some_and(dock::truthy) {

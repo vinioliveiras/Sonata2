@@ -331,4 +331,34 @@ mod tests {
         assert_eq!(folder_size(&dirs), 10);
         assert!(data_dirs_in("io.github.vinioliveiras.sonata2.files.desktop", "", None, home.path(), &[cfg]).is_empty());
     }
+
+    /// A web app's data is its login and storage (webapps' own folder), never
+    /// folders named like Chromium's.
+    #[test]
+    fn test_web_app_data_is_its_own() {
+        let _l = crate::test_lock();
+        let home = tempfile::tempdir().unwrap();
+        let old = std::env::var_os("XDG_DATA_HOME");
+        std::env::set_var("XDG_DATA_HOME", home.path());
+        let d = sonata_config::data_dir("webapps").join("wabc1234567");
+        std::fs::create_dir_all(&d).unwrap();
+        assert_eq!(data_dirs_in("sonata2-webapp-wabc1234567.desktop", "/usr/bin/chromium", None, home.path(), &[home.path().to_path_buf()]), [d]);
+        assert!(data_dirs_in("sonata2-webapp-wnothere.desktop", "", None, home.path(), &[]).is_empty());
+        match old {
+            Some(v) => std::env::set_var("XDG_DATA_HOME", v),
+            None => std::env::remove_var("XDG_DATA_HOME"),
+        }
+    }
+
+    /// Only Flatpak apps (and packaged ones, given their id) have switches.
+    #[test]
+    fn test_only_flatpak_has_permissions() {
+        let pkg = Owner::new("package", "testapp", "pacman");
+        assert!(permissions(Some(&pkg), None).is_empty());
+        assert!(permissions(None, None).is_empty());
+        assert!(!set_permission(Some(&pkg), "network", false, None));
+        // the Rust build's own apps have no data of theirs either
+        let home = tempfile::tempdir().unwrap();
+        assert!(data_dirs_in("io.github.vinioliveiras.sonata2rs.files.desktop", "", None, home.path(), &[home.path().to_path_buf()]).is_empty());
+    }
 }

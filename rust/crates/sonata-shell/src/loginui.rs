@@ -166,6 +166,8 @@ mod imp {
         }
     }
 
+    pub type Video = (crate::lockvideo::CoverPaintable, glib::SignalHandlerId);
+
     #[derive(Default)]
     pub struct Backdrop {
         pub texture: RefCell<Option<gdk::Texture>>,
@@ -173,6 +175,8 @@ mod imp {
         pub blur: std::cell::Cell<f64>,
         /// (texture, w, h, blurred picture)
         pub ready: RefCell<Option<(gdk::Texture, i32, i32, Option<gdk::Texture>)>>,
+        /// a video wallpaper's picture, and the handler that redraws with it
+        pub video: RefCell<Option<Video>>,
     }
 
     #[glib::object_subclass]
@@ -190,6 +194,20 @@ mod imp {
             let (w, h) = (obj.width(), obj.height());
             let rect = graphene::Rect::new(0.0, 0.0, w as f32, h as f32);
             let dim = gdk::RGBA::new(0.0, 0.0, 0.0, self.dim.get() as f32);
+            if let Some((video, _)) = self.video.borrow().as_ref().filter(|(v, _)| v.has_frame()) {
+                // the video, a little past each edge (the blur's edges off screen), blurred and dimmed
+                let m = BLUR_MARGIN;
+                snap.push_clip(&rect);
+                snap.push_blur(self.blur.get());
+                snap.save();
+                snap.translate(&graphene::Point::new(-m as f32, -m as f32));
+                video.snapshot(snap, w as f64 + 2.0 * m, h as f64 + 2.0 * m);
+                snap.restore();
+                snap.pop();
+                snap.append_color(&dim, &rect);
+                snap.pop();
+                return;
+            }
             let Some(tex) = self.texture.borrow().clone() else {
                 snap.append_color(&gdk::RGBA::parse("#2a3550").expect("a colour"), &rect);
                 return;
@@ -286,7 +304,8 @@ pub fn blurred(texture: &gdk::Texture, w: i32, h: i32, blur: f64) -> Option<gdk:
 }
 
 glib::wrapper! {
-    /// The wallpaper, cover-fit, blurred and dimmed (drawn once per size).
+    /// The wallpaper, cover-fit, blurred and dimmed (drawn once per size);
+    /// a video wallpaper plays under the same blur.
     pub struct Backdrop(ObjectSubclass<imp::Backdrop>) @extends gtk::Widget;
 }
 
@@ -301,6 +320,26 @@ impl Backdrop {
 
     pub fn set_texture(&self, texture: Option<gdk::Texture>) {
         self.imp().texture.replace(texture);
+        self.queue_draw();
+    }
+
+    /// A video wallpaper plays under the blur (Vini: the lock and login
+    /// screens were black with one): its picture, or None; the still
+    /// picture shows until its first frame.
+    pub fn set_video(&self, video: Option<&crate::lockvideo::CoverPaintable>) {
+        let imp = self.imp();
+        if let Some((old, id)) = imp.video.take() {
+            old.disconnect(id);
+        }
+        if let Some(v) = video {
+            let me = self.downgrade();
+            let id = v.connect_invalidate_contents(move |_| {
+                if let Some(me) = me.upgrade() {
+                    me.queue_draw();
+                }
+            });
+            imp.video.replace(Some((v.clone(), id)));
+        }
         self.queue_draw();
     }
 }

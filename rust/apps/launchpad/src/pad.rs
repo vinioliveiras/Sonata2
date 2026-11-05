@@ -59,21 +59,32 @@ fn names_of(installed: &BTreeMap<String, gio::DesktopAppInfo>) -> BTreeMap<Strin
     installed.iter().map(|(k, v)| (k.clone(), v.display_name().to_string())).collect()
 }
 
+/// The drag icon, macOS style (ui/drag.py's HangingIcon): the item's icon
+/// itself, a little translucent, held steady under the pointer -- GTK's
+/// own drag icon is opaque. A Picture keeps a photo's shape as drag.py does.
+pub const HANG_OPACITY: f64 = 0.78;
+
+fn hang(drag: &gdk::Drag, icon: &gtk::Widget, size: i32) {
+    let pic = gtk::Picture::builder().paintable(&gtk::WidgetPaintable::new(Some(icon))).content_fit(gtk::ContentFit::Contain).can_target(false).opacity(HANG_OPACITY).build();
+    pic.set_size_request(size, size);
+    if let Ok(di) = gtk::DragIcon::for_drag(drag).downcast::<gtk::DragIcon>() {
+        di.set_child(Some(&pic));
+    }
+    drag.set_hotspot(size / 2, size / 2);
+}
+
 fn is_hidden_folder(f: &Folder) -> bool {
     f.kept.contains_key("locked")
 }
 
-/// The Python Sonata's launcher (`sonata2`): Settings and the web app form
-/// aren't in the Rust build yet.
-pub fn spawn_python(args: &[&str]) {
-    let py = std::env::var("SONATA2_LAUNCHER").ok().filter(|l| std::path::Path::new(l).exists()).unwrap_or_else(|| "sonata2".into());
-    if let Err(e) = std::process::Command::new(py).args(args).spawn() {
-        println!("sonata2-launchpad: {args:?}: {e}");
-    }
+/// Settings and the web app form: the Rust ones in the Rust session, the
+/// Python Sonata's on trial (sonata_dock's spawn_sonata).
+pub fn spawn_sonata(args: &[&str]) {
+    sonata_dock::dock_menu::spawn_sonata(args);
 }
 
 pub fn open_settings(page: &str) {
-    spawn_python(&["settings", "--page", page]);
+    spawn_sonata(&["settings", "--page", page]);
 }
 
 pub struct Pad {
@@ -447,6 +458,9 @@ impl Pad {
         let menu = self.menu_if_shown();
         self.bin.invalidate();
         let pages = self.pages_with_hidden();
+        // icons slide to their new place
+        let tiles: Vec<gtk::Widget> = self.widgets.borrow().values().map(|t| t.button.clone().upcast()).collect();
+        let before = sonata_ui::transition::glide_record(&tiles, self.win.upcast_ref());
         let grids: Vec<Rc<PageGrid>> = match &menu {
             Some(mv) => mv.page_grids(self, &pages),
             None => {
@@ -481,6 +495,7 @@ impl Pad {
         self.sync_folder_view();
         self.prune_widgets(&pages);
         self.select(self.selected.get());
+        sonata_ui::transition::glide_play(before, self.win.upcast_ref(), sonata_ui::transition::GLIDE_MS);
     }
 
     fn menu_if_shown(&self) -> Option<Rc<MenuView>> {
@@ -954,7 +969,7 @@ impl Pad {
         let w = Rc::downgrade(self);
         let item = MItem::new(&tr!("New Web App…"), move || {
             if let Some(p) = w.upgrade() {
-                p.close_launchpad(Some(Box::new(|| spawn_python(&["webapp", "new"]))));
+                p.close_launchpad(Some(Box::new(|| spawn_sonata(&["webapp", "new"]))));
             }
         });
         sonata_ui::menu::popup(&root, vec![vec![item]], Options::at(x, y));
@@ -1414,7 +1429,9 @@ impl Pad {
         if !dock_sec.is_empty() {
             sections.push(dock_sec);
         }
-        // (the GPU and browser GPU choices of the Python menu: not in the Rust build yet)
+        if let Some(i) = &info {
+            sections.extend(sonata_dock::dock_menu::gpu_sections(i));
+        }
         if let Some(path) = info.as_ref().and_then(sonata_ui::apps::app_filename) {
             let w = Rc::downgrade(self);
             let p2 = path.clone();
@@ -1435,18 +1452,18 @@ impl Pad {
         }
         let w = Rc::downgrade(self);
         let a = app.to_string();
-        let hide = vec![MItem::new(&tr!("Hide"), move || {
+        let mut hide = vec![MItem::new(&tr!("Hide"), move || {
             if let Some(p) = w.upgrade() {
                 p.hide_app(&a); // into the Hidden folder
             }
         })];
         if sonata_desktop::badges::is_webapp(app) {
-            let wid = app.strip_prefix("sonata2-webapp-").unwrap_or(app).to_string();
+            let wid = sonata_webapps::id_of(app);
             let w = Rc::downgrade(self);
             sections.push(vec![MItem::new(&tr!("Edit Web App…"), move || {
                 if let Some(p) = w.upgrade() {
                     let wid = wid.clone();
-                    p.close_launchpad(Some(Box::new(move || spawn_python(&["webapp", "edit", &wid]))));
+                    p.close_launchpad(Some(Box::new(move || sonata_dock::dock_menu::edit_webapp(&wid))));
                 }
             })]);
             let (w, page) = (Rc::downgrade(self), format!("appicons/{app}"));
@@ -1456,7 +1473,12 @@ impl Pad {
                     p.close_launchpad(Some(Box::new(move || open_settings(&page))));
                 }
             })]);
-            // (Delete Web App…: the Python Sonata's webapps, not in the Rust build yet)
+            let (w, a) = (Rc::downgrade(self), app.to_string());
+            hide.push(MItem::new(&tr!("Delete Web App…"), move || {
+                if let Some(p) = w.upgrade() {
+                    p.ask_delete_webapp(&a);
+                }
+            }));
         }
         sections.push(hide);
     }
@@ -1493,6 +1515,14 @@ impl Pad {
             }
         });
         sonata_ui::menu::popup(btn, vec![vec![other], vec![tidy], vec![settings]], Options::below());
+    }
+
+    /// Asked like Uninstall (ask_delete): Launchpad closes and the question
+    /// is a glass alert of its own (Vini: it came inside Launchpad, without
+    /// the glass).
+    pub fn ask_delete_webapp(self: &Rc<Self>, app: &str) {
+        let wid = sonata_webapps::id_of(app);
+        self.close_launchpad(Some(Box::new(move || sonata_dock::uninstall_ui::ask_webapp(&wid, None, None))));
     }
 
     /// Uninstall (asked first): the package, the Flatpak or the shortcut.
@@ -1571,10 +1601,9 @@ impl Pad {
             p.drag_content(&t)
         });
         let (w, t) = (Rc::downgrade(self), Rc::downgrade(tile));
-        src.connect_drag_begin(move |s, _| {
+        src.connect_drag_begin(move |_, drag| {
             if let (Some(p), Some(t)) = (w.upgrade(), t.upgrade()) {
-                let half = t.size / 2;
-                s.set_icon(Some(&gtk::WidgetPaintable::new(Some(&t.icon))), half, half);
+                hang(drag, &t.icon, t.size);
                 p.drag_begun(&t);
             }
         });

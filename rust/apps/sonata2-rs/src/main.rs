@@ -94,6 +94,9 @@ fn main() -> ExitCode {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
+    // a Chromium web app's windows ("chrome-<site>-Default") are its own
+    // app, not Chrome's (apps.py looks through webapps.json the same way)
+    sonata_desktop::appmatch::set_webapp_resolver(sonata_webapps::desktop_for_window_class);
     if handles(component) && !NO_WINDOWS.contains(&component.as_str()) && !args.iter().any(|a| a == "--preview") {
         // __main__.py: the start-up watchdog (detailed logs) until the first
         // idle, and the main-loop stall log (ui.theme.setup) in every

@@ -357,8 +357,9 @@ stay behind `--features ui-tests` and run only under
   screenshot [screen|area|edit]` (the menu bar's capture, else grim and
   a notification). Wayfire's bindings still call the Python ones: the
   "Sonata (Rust preview)" session switches them over.
-- Not ported yet: BlueZ over D-Bus (bluez.py) and watching NetworkManager
-  and the sound server.
+- BlueZ over D-Bus (sonata-backend's bluez.rs) is in, bluetoothctl only
+  as the fallback. Not ported yet: watching NetworkManager and the sound
+  server (the menu bar polls them).
 - Left for the "Sonata (Rust preview)" session (step 4), on purpose:
   `restart` (it stops and starts the Python shell by its command lines,
   with intro.py's slide-away signals), `doctor` (it checks what the
@@ -469,7 +470,7 @@ stay behind `--features ui-tests` and run only under
 - Monitoring is the session's one switch (Settings > About > Logs): the
   Python Sonata's flag file, written on trial too -- like the wallpaper,
   it is the user asking for it.
-- Not ported yet: "Reopen your apps" after a crash (open_apps.py).
+- "Reopen your apps" after a crash (open_apps.py) is in too.
 
 ### Step 6 so far: Disk Manager
 
@@ -606,8 +607,10 @@ stay behind `--features ui-tests` and run only under
   prompts (mountop.rs), read-only Windows disks (rodisk.rs), automount
   at login (automount.rs), installing an AppImage (appimage.rs, through
   sonata-system's appimages), `files --service` (FileManager1).
-- Not yet: vault (locked folders), extracting packages, running an
-  AppImage from its menu, the icons' reflow animation.
+- Since, too: packages (packages.rs: install / run / extract, scripts;
+  also from Spotlight, the Dock's stacks and the desktop) and locked
+  folders (sonata-backend's vault, Files' Lock / Unlock).
+- Not yet: the icons' reflow animation.
 
 ### Step 6 so far: the Open / Save panels and the portal
 
@@ -679,7 +682,10 @@ apps, sandbox, scopes, Launchpad's model, app matching), sonata-system
 location, permissions, screen sharing). The window list comes from
 Wayfire's IPC events (no Wayland client crate yet), so the minimize
 target (set_rectangle) and the virtual keyboard's wire protocol are
-done by hand or left out; each crate's lib.rs lists what it left out.
+done by hand: the Dock's minimize targets bind wlr-foreign-toplevel on
+GTK's own connection (dock/src/wlr.rs), the idle watch, the virtual
+keyboard and pointer write their messages themselves. Each crate's lib.rs
+lists what it left out.
 
 ### The Rust preview session
 

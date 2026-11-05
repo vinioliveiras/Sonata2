@@ -102,7 +102,8 @@ pub fn dark_seconds() -> Option<i64> {
     dark_seconds_for(display_seconds())
 }
 
-fn dark_marker() -> PathBuf {
+/// Present while the session is dark from idle (the lock screen's video waits for it to go).
+pub fn dark_marker() -> PathBuf {
     runtime().join("sonata2-idle-dark")
 }
 

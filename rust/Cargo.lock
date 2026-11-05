@@ -1449,6 +1449,7 @@ dependencies = [
 name = "sonata-clock"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "gtk4",
  "libadwaita",
  "libc",
@@ -1542,7 +1543,9 @@ dependencies = [
  "sonata-files",
  "sonata-i18n",
  "sonata-shell",
+ "sonata-tweaks",
  "sonata-ui",
+ "sonata-webapps",
  "tempfile",
 ]
 
@@ -1556,6 +1559,7 @@ dependencies = [
  "libadwaita",
  "sonata-backend",
  "sonata-config",
+ "sonata-desktop",
  "sonata-i18n",
  "sonata-session",
  "sonata-ui",
@@ -1577,6 +1581,7 @@ dependencies = [
  "sonata-config",
  "sonata-i18n",
  "sonata-preview",
+ "sonata-shell",
  "sonata-system",
  "sonata-ui",
  "tempfile",
@@ -1665,6 +1670,7 @@ dependencies = [
  "sonata-mission",
  "sonata-shell",
  "sonata-ui",
+ "sonata-webapps",
  "tempfile",
 ]
 
@@ -1889,6 +1895,7 @@ dependencies = [
  "num-traits",
  "serde_json",
  "sonata-config",
+ "sonata-files",
  "sonata-i18n",
  "sonata-shell",
  "sonata-ui",
@@ -2034,6 +2041,7 @@ dependencies = [
  "serde_json",
  "sonata-backend",
  "sonata-config",
+ "sonata-files",
  "sonata-i18n",
  "sonata-ui",
  "tempfile",
@@ -2089,6 +2097,7 @@ dependencies = [
  "sonata-clipboard",
  "sonata-clock",
  "sonata-config",
+ "sonata-desktop",
  "sonata-desktop-icons",
  "sonata-diskutil",
  "sonata-dock",
@@ -2109,6 +2118,7 @@ dependencies = [
  "sonata-session",
  "sonata-sessionui",
  "sonata-settings",
+ "sonata-shell",
  "sonata-spotlight",
  "sonata-system",
  "sonata-textedit",

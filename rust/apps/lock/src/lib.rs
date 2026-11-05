@@ -10,14 +10,19 @@
 //! (PAM, in a thread) the field turns into a spinner, and on success
 //! everything fades before the desktop shows.
 //!
-//! Not ported yet: Switch User (userswitch.py), the video wallpaper under
-//! the blur, the screen corners, and the compositor's idle watch (the
-//! screen goes dark on this process's own timer, as lock.py does without it).
+//! - A video wallpaper plays under the blur, silent (lockvideo).
+//! - The screen corners are drawn in its own windows (ext-session-lock
+//!   hides the desktop's), when Settings has them.
+//! - Switch User (userswitch) when another user can be reached.
+//! - The screen goes dark by the compositor's own input idle (idlewatch),
+//!   or this process's timer on a compositor without one.
 
 use adw::prelude::*;
 use gtk4_session_lock as sl;
 use sonata_i18n::tr;
-use sonata_shell::{layer, lockdisplay, loginui, pam, throttle};
+use sonata_shell::idlewatch::IdleWatch;
+use sonata_shell::lockvideo::LockVideo;
+use sonata_shell::{layer, lockdisplay, loginui, pam, screencorners, throttle, userswitch};
 use sonata_ui::progress::Spinner;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -54,12 +59,18 @@ struct Lock {
     app: adw::Application,
     lock: sl::Instance,
     texture: Option<gtk::gdk::Texture>,
+    /// a video wallpaper, one player for every display
+    video: Option<Rc<LockVideo>>,
     parts: RefCell<Vec<Part>>,
     throttle: throttle::Throttle,
     /// the field's text is the same on every display: typing on any is typing in all
     syncing: Cell<bool>,
     countdown: RefCell<Option<glib::SourceId>>,
     idle: RefCell<Option<glib::SourceId>>,
+    /// the compositor's input idle, while locked (None: the timer above)
+    watch: RefCell<Option<IdleWatch>>,
+    /// Switch User shows: asked once per lock, the same on every display
+    switchable: Cell<Option<bool>>,
     dark_after: Cell<Option<i64>>,
     off: Cell<bool>,
     leaving: Cell<bool>,
@@ -72,11 +83,14 @@ impl Lock {
             app: app.clone(),
             lock: sl::Instance::new(),
             texture: loginui::wallpaper_texture(LOCK_WALLPAPER_PX), // shown only blurred: no full-size picture
+            video: lock_video(), // a video wallpaper plays under the blur
             parts: RefCell::default(),
             throttle: throttle::Throttle::new(throttle::default_path()),
             syncing: Cell::new(false),
             countdown: RefCell::default(),
             idle: RefCell::default(),
+            watch: RefCell::default(),
+            switchable: Cell::new(None),
             dark_after: Cell::new(None),
             off: Cell::new(false),
             leaving: Cell::new(false),
@@ -102,6 +116,9 @@ impl Lock {
                 me.dark(false);
                 usb(false);
                 lockdisplay::mark_locked(false);
+                if let Some(v) = me.video.as_ref() {
+                    v.close();
+                }
                 me.app.quit();
             }
         });
@@ -132,6 +149,7 @@ impl Lock {
         if locked {
             lockdisplay::locked();
             self.dark_after.set(lockdisplay::dark_seconds()); // None: you chose "never"
+            self.idle_watch();
             self.input();
             if lockdisplay::was_dark() && self.dark_after.get().is_some() {
                 self.go_dark(); // locked after the display went dark: it stays dark
@@ -140,13 +158,53 @@ impl Lock {
             if let Some(id) = self.idle.take() {
                 id.remove();
             }
-            self.wake();
+            self.wake(); // (through the watch, before it closes)
+            if let Some(w) = self.watch.take() {
+                w.close();
+            }
             lockdisplay::unlocked();
         }
     }
 
-    /// Black and the backlight at zero -- the display itself stays on:
-    /// powering it off and on again failed on Vini's laptop.
+    /// Dark and back by the compositor's own input idle (ext-idle-notify):
+    /// any key or move wakes the display, whether or not a lock window sees
+    /// it (Vini: it stayed black until the lid was closed and opened).
+    fn idle_watch(self: &Rc<Self>) {
+        let Some(after) = self.dark_after.get() else { return };
+        let w = IdleWatch::connect();
+        if !w.input_idle() {
+            w.close();
+            return;
+        }
+        let (dark, back) = (Rc::downgrade(self), Rc::downgrade(self));
+        w.watch(
+            after.clamp(1, u32::MAX as i64) as u32,
+            Rc::new(move || {
+                if let Some(me) = dark.upgrade() {
+                    me.go_dark();
+                }
+            }),
+            Rc::new(move || {
+                if let Some(me) = back.upgrade() {
+                    me.wake();
+                }
+            }),
+        );
+        self.watch.replace(Some(w));
+    }
+
+    /// As the session darkens them (idlelock.displays_dark): the panel's
+    /// backlight on a laptop, plugged-in monitors really off; the panel's
+    /// backlight only when there's no idle watch to power them.
+    fn displays(&self, on: bool) {
+        match self.watch.borrow().as_ref() {
+            Some(w) => w.displays_dark(!on),
+            None => lockdisplay::dim(!on),
+        }
+    }
+
+    /// Black and the backlight at zero -- a laptop's panel itself stays
+    /// on: powering it off and on again failed on Vini's laptop.
     fn go_dark(&self) {
         if self.off.get() {
             return;
@@ -156,7 +214,7 @@ impl Lock {
         }
         lockdisplay::pointer(true); // no pointer in the middle of the dark screen (Vini)
         lockdisplay::lights(false); // the keyboard too, whatever keeps the session awake
-        lockdisplay::dim(true);
+        self.displays(false); // the panel's backlight, or the displays really off
         self.off.set(true);
     }
 
@@ -165,7 +223,7 @@ impl Lock {
             return;
         }
         self.off.set(false);
-        lockdisplay::dim(false);
+        self.displays(true);
         for p in self.parts.borrow().iter() {
             p.blackout.remove_css_class("on");
         }
@@ -174,11 +232,15 @@ impl Lock {
         lockdisplay::mark_dark(false);
     }
 
-    /// A key or a move on the lock screen: the displays on, the countdown again.
+    /// A key or a move on the lock screen: the displays on, the countdown
+    /// again (the compositor's idle watch does both when it can).
     fn input(self: &Rc<Self>) {
         self.wake();
         if let Some(id) = self.idle.take() {
             id.remove();
+        }
+        if self.watch.borrow().is_some() {
+            return;
         }
         let Some(after) = self.dark_after.get() else { return };
         let weak = Rc::downgrade(self);
@@ -230,12 +292,18 @@ impl Lock {
     fn window(self: &Rc<Self>, monitor: &gtk::gdk::Monitor, primary: bool) {
         let win = gtk::Window::builder().application(&self.app).css_classes(["sonata-lock"]).build();
         let over = gtk::Overlay::builder().css_classes(["gr-fade-in"]).build();
-        over.set_child(Some(&loginui::Backdrop::new(self.texture.clone(), 0.18, 64.0)));
+        let backdrop = loginui::Backdrop::new(self.texture.clone(), 0.18, 64.0);
+        backdrop.set_video(self.video.as_ref().map(|v| &v.cover));
+        over.set_child(Some(&backdrop));
         over.add_overlay(&loginui::top_clock(None)); // the menu bar's place, size and format (Vini)
         let part = self.login(&win);
         loginui::lift(&part.column, Some(monitor));
         over.add_overlay(&part.column);
         over.add_overlay(&part.power);
+        if screencorners::enabled() {
+            // the desktop's corners hide under the lock
+            over.add_overlay(&screencorners::corners_overlay(screencorners::RADIUS));
+        }
         if self.off.get() {
             part.blackout.add_css_class("on");
         }
@@ -311,7 +379,21 @@ impl Lock {
             None => tr!("PAM is not available: can't check passwords"),
         };
         let hint = gtk::Label::builder().label(hint_text.as_str()).css_classes(["lk-hint"]).build();
-        loginui::balanced(&column, &[hint.clone().upcast()]); // picture, name and field centred as one
+        let mut below: Vec<gtk::Widget> = vec![hint.clone().upcast()];
+        if self.can_switch() {
+            // another user: Switch User (macOS's fast user switching)
+            let links = gtk::Box::builder().spacing(4).halign(gtk::Align::Center).build();
+            let switch = gtk::Button::builder().label(tr!("Switch User").as_str()).css_classes(["gr-link"]).focusable(false).focus_on_click(false).build();
+            let weak = Rc::downgrade(self);
+            switch.connect_clicked(move |_| {
+                if let Some(me) = weak.upgrade() {
+                    me.switch_user();
+                }
+            });
+            links.append(&switch);
+            below.insert(0, links.upcast());
+        }
+        loginui::balanced(&column, &below); // picture, name and field centred as one
         let power = loginui::power_bar(Rc::new(loginui::logind)); // Sleep keeps the lock; logind asks for the rest
         let blackout = gtk::Box::builder().css_classes(["lk-blackout"]).can_target(false).build(); // dark while idle
         Part { win: win.clone(), column, entry, spinner, slot, hint, power, blackout }
@@ -418,6 +500,38 @@ impl Lock {
         }
     }
 
+    // -- Switch User ----------------------------------------------------------------------------
+    /// Switch User shows when another user exists and can be reached
+    /// (userswitch); asked once per lock, the same on every display.
+    fn can_switch(&self) -> bool {
+        if let Some(known) = self.switchable.get() {
+            return known;
+        }
+        let known = userswitch::available(&user());
+        self.switchable.set(Some(known));
+        known
+    }
+
+    /// The login screen (or the other user's session) in front; this
+    /// session stays locked behind it (off the UI thread: D-Bus, systemd).
+    fn switch_user(self: &Rc<Self>) {
+        let me = self.clone();
+        glib::spawn_future_local(async move {
+            let who = user();
+            let ok = gio::spawn_blocking(move || userswitch::switch(&who)).await.unwrap_or(false);
+            if !ok {
+                me.switch_failed();
+            }
+        });
+    }
+
+    fn switch_failed(&self) {
+        let text = tr!("Couldn't switch user");
+        for p in self.parts.borrow().iter() {
+            p.hint.set_label(&text);
+        }
+    }
+
     /// logind "Unlock" for this session: the login screen let you back in
     /// (Switch User, your password checked there) -- this lock goes too,
     /// without asking again. Only logind, and processes polkit allows to
@@ -440,6 +554,25 @@ impl Lock {
             }
         });
     }
+}
+
+/// The video wallpaper's own player for the lock screen (silent, paused
+/// while the display is dark), or None when the wallpaper is a picture.
+/// SONATA_LOCK_WALLPAPER (previews) picks the wallpaper, as for the picture.
+fn lock_video() -> Option<Rc<LockVideo>> {
+    let path = match std::env::var("SONATA_LOCK_WALLPAPER").ok().filter(|s| !s.is_empty()) {
+        Some(over) => std::path::PathBuf::from(over),
+        None => sonata_shell::wallpaper::path_of(&sonata_shell::wallpaper::wallpaper_uri(adw::StyleManager::default().is_dark()))?,
+    };
+    if !is_video_wallpaper(&path) {
+        return None;
+    }
+    LockVideo::open(&path)
+}
+
+/// A video file the lock screen plays under its blur.
+pub fn is_video_wallpaper(path: &std::path::Path) -> bool {
+    sonata_shell::wallpaper::is_video(&path.to_string_lossy()) && path.is_file()
 }
 
 /// New USB devices blocked while locked (USBGuard), when Security &
@@ -486,6 +619,21 @@ pub fn run(_args: &[String]) -> glib::ExitCode {
 
 #[cfg(test)]
 mod tests {
+    /// Vini: the lock screen was black with a video wallpaper; it plays
+    /// one under the blur -- only a video file that is there.
+    #[test]
+    fn a_video_wallpaper_plays_under_the_blur() {
+        let dir = std::env::temp_dir().join(format!("sonata-lock-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (video, picture) = (dir.join("waves.mp4"), dir.join("hills.jpg"));
+        std::fs::write(&video, b"").unwrap();
+        std::fs::write(&picture, b"").unwrap();
+        assert!(super::is_video_wallpaper(&video));
+        assert!(!super::is_video_wallpaper(&picture));
+        assert!(!super::is_video_wallpaper(&dir.join("gone.mp4")));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn never_locks_without_a_way_to_unlock() {
         assert!(super::can_lock(true, true));

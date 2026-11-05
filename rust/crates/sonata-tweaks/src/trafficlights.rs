@@ -279,6 +279,32 @@ pub fn css_rules(dark: bool) -> String {
     css_rules_in(dark, &frame::appearance(), &cache())
 }
 
+/// Sonata's own windows in Settings > Appearance > Button Colours: the
+/// dots of another look over the bundled ones (sonata_ui::window), again
+/// when it or light/dark changes -- open windows too (Vini: Files,
+/// Settings). Once per process that shows traffic lights.
+pub fn style_windows() {
+    thread_local! {
+        static DONE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        static LAST: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    }
+    if DONE.with(|d| d.replace(true)) {
+        return;
+    }
+    fn restyle() {
+        let css = css_rules(sonata_ui::is_dark());
+        // (registering reloads, which calls this again)
+        if LAST.with(|l| l.borrow().as_deref() == Some(css.as_str())) {
+            return;
+        }
+        LAST.with(|l| l.replace(Some(css.clone())));
+        sonata_ui::register("traffic-look", &css.replace('%', "%%"));
+    }
+    restyle();
+    sonata_ui::on_change(restyle);
+    sonata_ui::on_buttons_change(restyle);
+}
+
 /// pixdecor's button pictures (Wayfire's title bars) for this look.
 pub fn wayfire_options_in(dark: bool, cfg: &Map<String, Value>, cache: &Path) -> Vec<(&'static str, String, String)> {
     let d = png_folder_in(dark, cfg, cache);
@@ -299,14 +325,16 @@ pub fn apply_wayfire(dark: bool) {
 /// After a change in Settings (in a thread: `dark` taken on the main loop
 /// and passed in -- GTK isn't asked from here): the pictures, then each
 /// place. One at a time: quick picks wrote the same files together.
-/// (GTK 4 apps' style, adwstyle.py, isn't ported yet: the Python session
-/// writes it.)
 pub fn apply(dark: bool) {
     let _one = APPLY.lock().unwrap_or_else(|e| e.into_inner());
     for d in [false, true] {
         folder(d);
     }
     apply_wayfire(dark);
+    // other GTK 4 apps (adwstyle)
+    if let Err(e) = crate::adwstyle::write(crate::titlebars::enabled(), None) {
+        eprintln!("sonata2: button colours (GTK apps): {e}");
+    }
     if crate::steamtheme::enabled() {
         crate::steamtheme::apply(); // Steam, next time it opens
     }

@@ -2,6 +2,7 @@
 //! running the system's tools, Wayfire's config and IPC, sound effects,
 //! per-device volumes, and the system state Settings and the menu bar show.
 
+pub mod bluez;
 pub mod devicevolume;
 pub mod procfs;
 pub mod run;

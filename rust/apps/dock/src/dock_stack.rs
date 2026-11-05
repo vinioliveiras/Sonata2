@@ -5,10 +5,9 @@
 //! item to open it, drag it out to copy/move it, "Open in Files" at the
 //! bottom. Right-click: Sort by, Display as (Folder / Stack = newest item's
 //! icon), View content as, Remove from Dock, Open "<folder>". A folder
-//! dropped on the Dock becomes a stack. Default: Downloads.
-//!
-//! Not ported yet: opening a package, AppImage or archive from the stack
-//! (files/packages.py: install / run / extract): it opens in its default app.
+//! dropped on the Dock becomes a stack. Default: Downloads. A package, an
+//! AppImage, an archive or a script clicked in it is installed, run or
+//! extracted, like a double-click in Files (packages.rs).
 
 use crate::dock::{self, Dock, Tile, TileFn};
 use crate::dock_menu;
@@ -172,11 +171,15 @@ fn set_icon(tile: &Tile, icon: gio::Icon) {
     tile.set_gicon(icon);
 }
 
-/// Folders open in Sonata's Files, files in their default app.
+/// Folders open in Sonata's Files, files in their default app (packages,
+/// archives and scripts: installed / run / extracted).
 pub fn open(file: &gio::File) {
     if file.query_file_type(gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE) == gio::FileType::Directory {
         dock_menu::open_folder(&file.uri());
         return;
+    }
+    if file.path().is_some_and(|p| sonata_files::packages::open_path(&p, None)) {
+        return; // install / run / extract
     }
     let _ = gio::AppInfo::launch_default_for_uri(&file.uri(), None::<&gio::AppLaunchContext>);
 }
@@ -586,6 +589,15 @@ pub fn stack_menu(row: &Rc<StackRow>, tile: &Rc<Tile>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A package, an archive or a script clicked in a stack is installed,
+    /// run or extracted (dock_stack.py's _open), not opened in an app.
+    #[test]
+    fn stack_opens_packages_the_files_way() {
+        let src = include_str!("dock_stack.rs");
+        let open = &src[src.find("pub fn open(").unwrap()..];
+        assert!(open[..open.find("\n}").unwrap()].contains("sonata_files::packages::open_path("));
+    }
 
     fn e(name: &str, kind: &str, modified: f64, added: f64) -> Entry {
         Entry { name: name.into(), display: name.into(), content_type: kind.into(), is_dir: false, modified, added, thumb: None }

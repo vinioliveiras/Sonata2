@@ -235,6 +235,15 @@ fn hidden(info: &gio::FileInfo) -> bool {
     info.is_hidden() || info.is_backup()
 }
 
+/// A locked folder (vault.rs) that's closed: drawn locked (Vini).
+pub fn vault_closed(info: &gio::FileInfo) -> bool {
+    if info.file_type() != gio::FileType::Directory {
+        return false;
+    }
+    let Some(path) = folder::file_of(info).and_then(|f| f.path()) else { return false };
+    sonata_backend::vault::is_vault(&path) && !sonata_backend::vault::is_open(&path)
+}
+
 /// The item's icon. small (16 px rows): drawn from the 32 px artwork, like
 /// Finder's full-colour small icons. Pictures and videos: their thumbnail
 /// once ready (recycled rows: only if the image still shows this item).
@@ -242,6 +251,9 @@ pub fn set_icon(image: &gtk::Image, info: &gio::FileInfo, small: bool) {
     let mut gicon = info.icon();
     if let Some(a) = launcher(info).0 {
         gicon = Some(a);
+    } else if vault_closed(info) {
+        // a locked folder, closed: a folder with a padlock
+        gicon = Some(gio::ThemedIcon::new("folder-locked").upcast());
     } else if info.content_type().as_deref() == Some("application/x-zerosize") {
         gicon = Some(gio::content_type_get_icon(&content_type(info)));
     }
@@ -1428,6 +1440,24 @@ fn preview(info: &gio::FileInfo) -> gtk::Widget {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// test_files_vault: a closed locked folder is drawn with a padlock;
+    /// open, a plain folder.
+    #[test]
+    fn closed_vault_drawn_with_a_padlock() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("Private");
+        std::fs::create_dir(&path).unwrap();
+        let f = gio::File::for_path(&path);
+        let info = f.query_info("standard::*", gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE).unwrap();
+        info.set_attribute_object("sonata::file", &f);
+        assert!(!vault_closed(&info));
+        let cipher = sonata_backend::vault::cipher_dir(&path);
+        std::fs::create_dir(&cipher).unwrap();
+        std::fs::write(cipher.join("gocryptfs.conf"), "{}").unwrap();
+        assert!(vault_closed(&info)); // (not mounted: closed)
+        assert!(include_str!("views.rs").contains("gio::ThemedIcon::new(\"folder-locked\")"));
+    }
 
     #[test]
     fn only_the_last_shown_column_fills() {

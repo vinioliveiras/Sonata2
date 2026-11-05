@@ -16,8 +16,8 @@
 //! Keys: Space or K play/pause, ← / → 5 s, J / L 10 s, ↑ / ↓ volume, M
 //! mute, F or ⌘F full screen, Esc leaves it, ⌘O open, ⌘T trim, ⌘W close.
 //!
-//! Its own binary (sonata2-rs-videos): only it needs GStreamer. Not ported
-//! yet: Files' own Open panel (GTK's file dialog asks the portal instead).
+//! Its own binary (sonata2-rs-videos): only it needs GStreamer. ⌘O opens
+//! Files' own Open panel (sonata_files::chooser), as the Python Videos does.
 
 pub mod cropbar;
 pub mod edit;
@@ -1094,22 +1094,26 @@ thread_local! {
     static WINDOWS: RefCell<Vec<Me>> = RefCell::default();
 }
 
-/// The Open panel: movies and songs.
+/// Files' Open panel: movies and songs.
 fn choose(app: &gtk::Application, parent: Option<&gtk::ApplicationWindow>) {
-    let filter = gtk::FileFilter::new();
-    filter.set_name(Some(&tr!("Movies & Songs")));
-    filter.add_mime_type("video/*");
-    filter.add_mime_type("audio/*");
-    let filters = gio::ListStore::new::<gtk::FileFilter>();
-    filters.append(&filter);
-    let dlg = gtk::FileDialog::builder().title(tr!("Open").as_str()).modal(true).filters(&filters).build();
-    let app = app.clone();
-    dlg.open_multiple(parent, gio::Cancellable::NONE, move |r| {
-        if let Ok(files) = r {
-            let paths: Vec<String> = (0..files.n_items()).filter_map(|i| files.item(i).and_downcast::<gio::File>()).filter_map(|f| f.path()).map(|p| p.display().to_string()).collect();
-            open_paths(&app, &paths);
-        }
-    });
+    use sonata_files::chooser::{Chooser, Mode, Options, MIME};
+    let a = app.clone();
+    let opts = Options {
+        mode: Mode::Open,
+        title: tr!("Open"),
+        accept_label: String::new(),
+        multiple: true,
+        filters: vec![(tr!("Movies & Songs"), vec![(MIME, "video/*".into()), (MIME, "audio/*".into())])],
+        current_filter: 0,
+        folder: None,
+        name: String::new(),
+    };
+    let dlg = Chooser::new(app, opts, Box::new(move |uris, _| open_paths(&a, &uris.unwrap_or_default())));
+    if let Some(p) = parent {
+        dlg.window().set_transient_for(Some(p));
+        dlg.window().set_modal(true);
+    }
+    dlg.present();
 }
 
 fn open_paths(app: &gtk::Application, paths: &[String]) {

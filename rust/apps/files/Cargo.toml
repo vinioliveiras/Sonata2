@@ -18,6 +18,7 @@ sonata-config.workspace = true
 sonata-i18n.workspace = true
 sonata-ui.workspace = true
 sonata-preview.workspace = true
+sonata-shell.workspace = true
 sonata-system.workspace = true
 
 [dev-dependencies]

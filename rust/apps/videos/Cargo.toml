@@ -18,6 +18,7 @@ gstreamer-pbutils.workspace = true
 serde_json.workspace = true
 sonata-backend.workspace = true
 sonata-config.workspace = true
+sonata-files.workspace = true
 sonata-i18n.workspace = true
 sonata-ui.workspace = true
 

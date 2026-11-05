@@ -5,8 +5,9 @@
 //! and writes the system services and stores nothing itself.
 //!
 //! Everything here may block (subprocesses, D-Bus): call it off the main
-//! loop. Not ported yet: BlueZ over D-Bus (bluez.py; the bluetoothctl
-//! fallback is here), watching NetworkManager and the sound server.
+//! loop. Bluetooth's devices go through BlueZ over D-Bus (bluez.rs),
+//! bluetoothctl only without it. Not ported yet: watching NetworkManager
+//! and the sound server.
 
 use crate::run::{ok, read, run, spawn, which};
 use crate::wfconfig;
@@ -509,8 +510,12 @@ pub struct BtDevice {
     pub connected: bool,
 }
 
-/// The devices bluetoothctl knows (BlueZ over D-Bus: not ported yet).
+/// Known and nearby devices: BlueZ's (bluez.rs), else the ones
+/// bluetoothctl knows.
 pub fn bluetooth_devices() -> Vec<BtDevice> {
+    if crate::bluez::available() {
+        return crate::bluez::devices(true).iter().map(crate::bluez::BtDevice::basic).collect();
+    }
     let (rc, out) = run(&["bluetoothctl", "devices"], 8);
     let mut devs = Vec::new();
     if rc == 0 {
@@ -531,7 +536,12 @@ fn last_line_or(out: &str, fallback: String) -> String {
 }
 
 /// (ok, message): connect or disconnect, and whether it really happened.
+/// BlueZ over D-Bus when it's there: bluetoothctl in one-shot mode says yes
+/// to connections that never happened.
 pub fn bluetooth_connect_result(mac: &str, on: bool) -> (bool, String) {
+    if crate::bluez::available() {
+        return if on { crate::bluez::connect(mac) } else { crate::bluez::disconnect(mac) };
+    }
     let (rc, out) = run(&["bluetoothctl", if on { "connect" } else { "disconnect" }, mac], 20);
     let low = out.to_lowercase();
     let good = rc == 0 && low.contains("successful") && !low.contains("failed");
@@ -546,9 +556,36 @@ pub fn bluetooth_connect_result(mac: &str, on: bool) -> (bool, String) {
 }
 
 pub fn bluetooth_forget(mac: &str) -> (bool, String) {
+    if crate::bluez::available() {
+        return crate::bluez::forget(mac);
+    }
     let (rc, out) = run(&["bluetoothctl", "remove", mac], 10);
     let good = rc == 0 && out.to_lowercase().contains("removed");
     (good, if good { tr!("Removed") } else { last_line_or(&out, tr!("That didn't work")) })
+}
+
+/// Forget, then pair and connect anew (the device in pairing mode).
+pub fn bluetooth_pair_again(mac: &str) -> (bool, String) {
+    let (good, msg) = bluetooth_forget(mac);
+    if !good {
+        return (good, msg);
+    }
+    if !crate::bluez::available() {
+        return (false, tr!("Removed; pair it again from Nearby Devices"));
+    }
+    crate::bluez::discovery(true);
+    for _ in 0..20 {
+        // it shows up again once in pairing mode
+        if crate::bluez::devices(false).iter().any(|d| d.mac == mac) {
+            return crate::bluez::connect(mac);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    (false, tr!("Removed; put the device in pairing mode, then Connect it in Nearby Devices"))
+}
+
+pub fn bluetooth_connect(mac: &str, on: bool) -> bool {
+    bluetooth_connect_result(mac, on).0
 }
 
 // -- Airplane Mode (rfkill) ------------------------------------------------------------

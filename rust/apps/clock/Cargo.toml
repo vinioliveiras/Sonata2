@@ -12,6 +12,7 @@ gui = ["dep:gtk", "dep:adw", "dep:sonata-ui"]
 
 [dependencies]
 serde_json.workspace = true
+chrono.workspace = true
 libc.workspace = true
 sonata-config.workspace = true
 sonata-i18n.workspace = true

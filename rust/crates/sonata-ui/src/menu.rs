@@ -1,8 +1,9 @@
 //! Context menus (macOS Big Sur menus), sonata2/ui/menu.py: a GtkPopoverMenu
 //! from sections of items, its CSS menu.py's own. Items can carry a check
 //! (shown after the text, at the right edge, as menu.py does) or a submenu
-//! (opening to the side). Not ported yet: rows with a close button,
-//! passthrough clicks.
+//! (opening to the side), or a small x at the right edge that does
+//! something else (`Item::on_close`: the Dock closes that window). Not
+//! ported yet: passthrough clicks.
 //!
 //! ```no_run
 //! # let widget = gtk::Label::new(None);
@@ -24,22 +25,35 @@ pub struct Item {
     checked: Option<bool>,
     pub enabled: bool,
     submenu: Vec<Vec<Item>>,
+    on_close: Option<Rc<dyn Fn()>>,
 }
+
+/// A row's text is at most this many characters wide (~320 px at 13 px),
+/// then ends in "…" (menu.py's LABEL_CHARS: a Chrome window titled with a
+/// whole YouTube video name made the Window menu 830 px wide).
+pub const LABEL_CHARS: i32 = 40;
 
 impl Item {
     /// A plain item.
     pub fn new<F: Fn() + 'static>(label: &str, action: F) -> Self {
-        Item { label: label.to_string(), action: Some(Rc::new(action)), toggle: None, checked: None, enabled: true, submenu: Vec::new() }
+        Item { label: label.to_string(), action: Some(Rc::new(action)), toggle: None, checked: None, enabled: true, submenu: Vec::new(), on_close: None }
     }
 
     /// A checkmark item; `action` gets the new state.
     pub fn check<F: Fn(bool) + 'static>(label: &str, checked: bool, action: F) -> Self {
-        Item { label: label.to_string(), action: None, toggle: Some(Rc::new(action)), checked: Some(checked), enabled: true, submenu: Vec::new() }
+        Item { label: label.to_string(), action: None, toggle: Some(Rc::new(action)), checked: Some(checked), enabled: true, submenu: Vec::new(), on_close: None }
     }
 
     /// An item opening a submenu (sections of items) to the side.
     pub fn submenu(label: &str, sections: Vec<Vec<Item>>) -> Self {
-        Item { label: label.to_string(), action: None, toggle: None, checked: None, enabled: true, submenu: sections }
+        Item { label: label.to_string(), action: None, toggle: None, checked: None, enabled: true, submenu: sections, on_close: None }
+    }
+
+    /// A small x at the right of a plain item's row: `f` runs and the row
+    /// goes, the menu stays open (the Dock: close that window).
+    pub fn on_close<F: Fn() + 'static>(mut self, f: F) -> Self {
+        self.on_close = Some(Rc::new(f));
+        self
     }
 
     pub fn enabled(mut self, on: bool) -> Self {
@@ -70,14 +84,18 @@ impl Options {
     }
 }
 
-fn build(sections: Vec<Vec<Item>>, group: &gio::SimpleActionGroup, prefix: &str) -> gio::Menu {
+/// Rows the model only names (`custom`): made as widgets once the
+/// popover exists.
+type Customs = Vec<(String, Item)>;
+
+fn build(sections: Vec<Vec<Item>>, group: &gio::SimpleActionGroup, prefix: &str, customs: &mut Customs) -> gio::Menu {
     let model = gio::Menu::new();
     for (s_i, section) in sections.into_iter().enumerate() {
         let part = gio::Menu::new();
         for (i_i, item) in section.into_iter().enumerate() {
             let name = format!("{prefix}{s_i}_{i_i}");
             if !item.submenu.is_empty() {
-                let sub = build(item.submenu, group, &format!("{name}_"));
+                let sub = build(item.submenu, group, &format!("{name}_"), customs);
                 let mi = gio::MenuItem::new_submenu(Some(&item.label), &sub);
                 if !item.enabled {
                     // a disabled submenu: its row points at an action that is off
@@ -87,6 +105,14 @@ fn build(sections: Vec<Vec<Item>>, group: &gio::SimpleActionGroup, prefix: &str)
                     mi.set_attribute_value("submenu-action", Some(&format!("m.{name}").to_variant()));
                 }
                 part.append_item(&mi);
+                continue;
+            }
+            if item.on_close.is_some() {
+                // a row with its own x: a widget of its own in the menu
+                let mi = gio::MenuItem::new(None, None);
+                mi.set_attribute_value("custom", Some(&name.to_variant()));
+                part.append_item(&mi);
+                customs.push((name, item));
                 continue;
             }
             let action = match item.checked {
@@ -115,6 +141,53 @@ fn build(sections: Vec<Vec<Item>>, group: &gio::SimpleActionGroup, prefix: &str)
         model.append_section(None, &part);
     }
     model
+}
+
+/// A menu row with a small x on the right: the label does the item's
+/// action (and closes the menu); the x runs on_close and removes the row.
+fn closable_row(pop: &gtk::PopoverMenu, item: Item) -> gtk::Widget {
+    let row = gtk::Box::builder().css_classes(["sonata-menu-row"]).hexpand(true).build();
+    let label = gtk::Label::builder().label(&item.label).xalign(0.0).ellipsize(gtk::pango::EllipsizeMode::End).max_width_chars(LABEL_CHARS).build();
+    let main = gtk::Button::builder().child(&label).css_classes(["sonata-menu-row-label"]).hexpand(true).can_focus(false).sensitive(item.enabled).build();
+    let (p, act) = (pop.downgrade(), item.action.clone());
+    one_click(&main, move || {
+        if let Some(p) = p.upgrade() {
+            p.popdown();
+        }
+        if let Some(f) = &act {
+            f();
+        }
+    });
+    let x = gtk::Button::builder().icon_name("window-close-symbolic").css_classes(["sonata-menu-x"]).valign(gtk::Align::Center).tooltip_text(sonata_i18n::tr!("Close")).can_focus(false).build();
+    let (r, close) = (row.downgrade(), item.on_close.clone());
+    one_click(&x, move || {
+        if let Some(f) = &close {
+            f();
+        }
+        if let Some(r) = r.upgrade() {
+            r.set_visible(false);
+        }
+    });
+    row.append(&main);
+    row.append(&x);
+    row.upcast()
+}
+
+/// Inside a PopoverMenu the menu's own gestures see the press first, so a
+/// plain "clicked" needed a second click: take the click in the capture
+/// phase and act on release over the button.
+fn one_click(button: &gtk::Button, action: impl Fn() + 'static) {
+    let g = gtk::GestureClick::builder().button(1).propagation_phase(gtk::PropagationPhase::Capture).build();
+    g.connect_pressed(|g, _, _, _| {
+        g.set_state(gtk::EventSequenceState::Claimed);
+    });
+    let b = button.downgrade();
+    g.connect_released(move |_, _, x, y| {
+        if b.upgrade().is_some_and(|b| b.is_sensitive() && b.contains(x, y)) {
+            action();
+        }
+    });
+    button.add_controller(g);
 }
 
 /// Checkmark rows: the text starts where every other row's does and the
@@ -168,10 +241,15 @@ fn check_row(btn: &gtk::Widget) {
 /// Show a menu anchored to `widget`; it cleans itself up when closed.
 pub fn popup(widget: &impl IsA<gtk::Widget>, sections: Vec<Vec<Item>>, opts: Options) -> gtk::PopoverMenu {
     let group = gio::SimpleActionGroup::new();
-    let model = build(sections, &group, "i");
+    let mut customs = Customs::new();
+    let model = build(sections, &group, "i", &mut customs);
     let pop = gtk::PopoverMenu::from_model_full(&model, gtk::PopoverMenuFlags::NESTED);
     // on the menu, not the anchor: two menus on one anchor would clash
     pop.insert_action_group("m", Some(&group));
+    for (name, item) in customs {
+        let row = closable_row(&pop, item);
+        pop.add_child(&row, &name);
+    }
     pop.set_has_arrow(false);
     if opts.glass {
         pop.add_css_class("glass");

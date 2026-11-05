@@ -140,7 +140,12 @@ pub struct PageGrid {
 
 impl PageGrid {
     pub fn new(pad: &Rc<Pad>, index: i32, cols: usize, rows: usize) -> Rc<PageGrid> {
-        let grid = gtk::Grid::builder().row_homogeneous(true).column_homogeneous(true).hexpand(true).vexpand(true).build();
+        // (its tiles glide to their new place when re-ordered)
+        let grid = crate::glide::grid();
+        grid.set_row_homogeneous(true);
+        grid.set_column_homogeneous(true);
+        grid.set_hexpand(true);
+        grid.set_vexpand(true);
         for i in 0..cols * rows {
             grid.attach(&gtk::Box::new(gtk::Orientation::Horizontal, 0), (i % cols) as i32, (i / cols) as i32, 1, 1);
         }

@@ -93,6 +93,18 @@
    "local": {}
   }
  ],
+ "ui/transition.py": [
+  {
+   "key": "motion-open",
+   "css": "\n@keyframes sonata-open { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }\npopover > contents { animation: sonata-open %(t_open)s %(ease_out)s; }\n/* the same, under another name: a panel kept and shown again (panel.reopen) */\n@keyframes sonata-open-again { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }\npopover.reopen > contents { animation-name: sonata-open-again; }\n/* a panel that appears at once (Control Center: Vini, it still felt slow --\n   each frame of the grow-in had the compositor blur the whole panel again) */\npopover.instant > contents, popover.instant.reopen > contents { animation: none; }\n",
+   "local": {}
+  },
+  {
+   "key": "sliding-selection",
+   "css": "\n/* a source list's selection sliding to the clicked row (SlidingSelection):\n   the rows' own selected background is off while the pill moves, and never\n   fades (it would show twice at the start, and flash at the end) */\nlist.sonata-sliding-list > row:selected, list.sonata-sliding-list.sliding > row { transition: none; }\nlist.sonata-sliding-list.sliding > row:selected, list.sonata-sliding-list.sliding > row:selected:hover,\nlist.sonata-sliding-list.sliding > row:selected:active { background: none; transition: none; }\n.sonata-sel-pill { background: %(sidebar_selected)s; border-radius: %(r_menu)s; }\n",
+   "local": {}
+  }
+ ],
  "calculator/window.py": [
   {
    "key": "calculator",

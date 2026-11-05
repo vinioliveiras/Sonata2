@@ -8,6 +8,7 @@
 //! `*_key` twin taking the app's key (its desktop id without ".desktop"),
 //! the form the tests use.
 
+pub mod adwstyle;
 pub mod appperms;
 pub mod backup;
 pub mod browsergpu;

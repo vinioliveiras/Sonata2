@@ -9,6 +9,7 @@ pub mod folder;
 pub mod folderprefs;
 pub mod mountop;
 pub mod ops;
+pub mod packages;
 pub mod pathbar;
 pub mod peicon;
 pub mod quicklook;

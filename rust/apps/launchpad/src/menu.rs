@@ -185,7 +185,7 @@ impl MenuView {
 
     /// The panel sized for the display it opens on (the one its surface was
     /// last on, else the main display -- not always the first one).
-    fn size(&self, pad: &Pad, mon: Option<gdk::Monitor>) {
+    pub(crate) fn size(&self, pad: &Pad, mon: Option<gdk::Monitor>) {
         let mon = mon.or_else(|| pad.win.surface().and_then(|s| WidgetExt::display(&pad.win).monitor_at_surface(&s))).or_else(sonata_shell::layer::main_monitor);
         let (w, h) = mon.map(|m| (m.geometry().width(), m.geometry().height())).unwrap_or((1600, 1000));
         let (pw, ph) = logic::panel_size(w, h);

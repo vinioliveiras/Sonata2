@@ -13,6 +13,7 @@ glib.workspace = true
 zip.workspace = true
 sonata-backend.workspace = true
 sonata-config.workspace = true
+sonata-desktop.workspace = true
 sonata-i18n.workspace = true
 sonata-session.workspace = true
 sonata-ui.workspace = true

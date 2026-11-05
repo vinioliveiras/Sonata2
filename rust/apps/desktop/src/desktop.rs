@@ -627,8 +627,9 @@ impl Desktop {
                 let _ = gio::AppInfo::launch_default_for_uri(&f.uri(), gio::AppLaunchContext::NONE);
             } else if quicklook::previewable(&info) && sel.len() == 1 && info.content_type().is_none_or(|ct| gio::AppInfo::default_for_type(&ct, false).is_none()) {
                 self.quick_look(); // Quick Look only when no app opens it (like Files)
-            } else {
-                // (packages: install / run / extract isn't ported: their default app)
+            } else if !f.path().is_some_and(|p| sonata_files::packages::open_path(&p, Some(self.fixed.upcast_ref()))) {
+                // (a package, an AppImage, an archive or a script: installed,
+                // run or expanded above, as in Files; the rest: its app)
                 let _ = gio::AppInfo::launch_default_for_uri(&f.uri(), gio::AppLaunchContext::NONE);
             }
         }
@@ -902,8 +903,11 @@ impl Desktop {
                 }
             }
         };
-        // (packages' items -- Install, Extract, Run -- aren't ported)
         let mut first = vec![M::new(&tr!("Open"), act(Desktop::open_selection))];
+        // a package, an archive or a script: Install / Run / Extract, ahead of Open
+        if let (1, None, Some(p)) = (n, &item.app, item.file().and_then(|f| f.path())) {
+            first.splice(0..0, sonata_files::packages::menu_items(&p, Some(self.fixed.upcast_ref())));
+        }
         let ct = item.info.borrow().content_type().map(|c| c.to_string()).unwrap_or_default();
         if let (1, None, Some(f)) = (n, &item.app, item.file()) {
             let uri = f.uri().to_string();

@@ -7,7 +7,8 @@
 //! key -> bool), the key being the app's id, else its program, else its
 //! name; MixerService (menu bar process) puts the saved level back on every
 //! new stream of that app, so a level set once stays even after the app
-//! quits. Sonata's own short sounds and event sounds are left out.
+//! quits. Sonata's own short sounds (pw-play, paplay...) and event sounds
+//! are left out of the list (system_sound).
 
 use serde_json::{json, Map, Value};
 use sonata_backend::system::AudioDevice;

@@ -28,14 +28,14 @@
 //! window (PREVIEW_SIZE, default 1280x800) over the sample wallpaper,
 //! without layer-shell, Wayfire or a word to the Dock: the way to try it.
 //!
-//! Not ported yet: the hidden warm-up draw at login (layer.prewarm and
-//! warm_icons: --background only starts it resident and hidden), the
-//! icons gliding to their new place on a re-order (ui.transition), the
-//! hanging drag icon (ui.drag: GTK's own drag icon), the GPU and browser
-//! GPU menu items (gpu.py, browsergpu.py), "Delete Web App…"; New / Edit
-//! Web App and Settings open in the Python Sonata (`sonata2 webapp`,
-//! `sonata2 settings`).
+//! At login (--background, not a preview) the hidden window is drawn once
+//! invisibly (prewarm, layer.prewarm) and every page's icons are decoded
+//! (warm_icons). Re-ordered icons glide to their place (glide.rs); a
+//! dragged icon hangs translucent under the pointer (ui.drag). New / Edit
+//! Web App and Settings open the Rust ones in the Rust session and the
+//! Python Sonata's on trial (sonata_dock's spawn_sonata).
 
+pub mod glide;
 pub mod logic;
 pub mod menu;
 pub mod pad;
@@ -43,7 +43,7 @@ pub mod tiles;
 pub mod zoom;
 
 use gtk::prelude::*;
-use gtk::{gio, glib};
+use gtk::{gdk, gio, glib};
 use pad::{Mode, Pad};
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -104,6 +104,164 @@ fn follow_windows(pad: &Rc<Pad>) {
     }));
 }
 
+/// What layer.prewarm does for a surface (shell/layer.py): draw the hidden
+/// window once, invisibly, shortly after start -- the first real open then
+/// doesn't pay for building the widgets' render nodes, loading icons and
+/// fonts and compiling the GPU shaders (the lag of the first Launchpad
+/// animation after a restart). It is mapped at 1 % opacity, takes no
+/// keyboard or clicks, and is hidden again after `frames` frames.
+/// before / after put the content in its "open" state and back; step(t),
+/// t from 0 to 1 over the frames, plays the opening animation too (the
+/// in-between frames had never been drawn).
+pub struct Prewarm {
+    pub before: Box<dyn Fn()>,
+    pub step: Option<Box<dyn Fn(f64)>>,
+    pub after: Box<dyn Fn()>,
+    pub frames: u32,
+    pub delay_ms: u64,
+}
+
+pub const PREWARM_DELAY_MS: u64 = 1500;
+
+/// step's t at frame n (1-based) of `frames`: 0 .. 1, the last frames at 1.
+pub fn prewarm_t(n: u32, frames: u32) -> f64 {
+    (n as f64 / frames.saturating_sub(1).max(1) as f64).min(1.0)
+}
+
+pub fn prewarm(win: &gtk::Window, w: Prewarm) {
+    let win = win.clone();
+    later(w.delay_ms, move || {
+        if win.is_visible() {
+            return; // opened already: nothing to do
+        }
+        sonata_shell::layer::set_keyboard(&win, false);
+        (w.before)();
+        win.set_opacity(0.01);
+        win.set_can_target(false);
+        win.present();
+        sonata_shell::layer::set_input_region(&win, &[]);
+        let n = std::cell::Cell::new(0u32);
+        let w = Rc::new(w);
+        win.add_tick_callback(move |win, _| {
+            n.set(n.get() + 1);
+            if let Some(step) = &w.step {
+                step(prewarm_t(n.get(), w.frames));
+            }
+            if n.get() < w.frames {
+                return glib::ControlFlow::Continue;
+            }
+            win.set_visible(false);
+            win.set_opacity(1.0);
+            win.set_can_target(true);
+            sonata_shell::layer::set_keyboard(win.upcast_ref(), true);
+            if let Some(surface) = win.surface() {
+                // the whole surface takes clicks again
+                let all = gtk::cairo::Region::create_rectangle(&gtk::cairo::RectangleInt::new(0, 0, i32::MAX / 2, i32::MAX / 2));
+                surface.set_input_region(&all);
+            }
+            (w.after)();
+            glib::ControlFlow::Break
+        });
+    });
+}
+
+/// The login's warm-up, in the layout that will open: the Apps Menu sized
+/// and filled, or the full screen's opening animation frame by frame (its
+/// zoom picture made then, kept for the first open while the grid stays).
+fn warm_up(pad: &Rc<Pad>) {
+    let win: gtk::Window = pad.win.clone().upcast();
+    if logic::style() == "window" {
+        pad.set_mode(Mode::Menu);
+        let p = pad.clone();
+        prewarm(&win, Prewarm {
+            before: Box::new(move || {
+                if let Some(mv) = p.menu.borrow().clone() {
+                    mv.size(&p, None);
+                    mv.build_tabs(&p);
+                }
+                p.render();
+            }),
+            step: None,
+            after: Box::new(|| {}),
+            frames: 3,
+            delay_ms: PREWARM_DELAY_MS,
+        });
+        return;
+    }
+    let (p1, p2, p3) = (pad.clone(), pad.clone(), pad.clone());
+    prewarm(&win, Prewarm {
+        before: Box::new(move || p1.bin.set_progress(0.0)),
+        step: Some(Box::new(move |t| {
+            p2.bin.freeze(); // (once laid out; then the kept picture)
+            p2.bin.set_progress(t);
+        })),
+        after: Box::new(move || {
+            p3.bin.thaw();
+            p3.bin.set_progress(0.0);
+        }),
+        frames: 14,
+        delay_ms: PREWARM_DELAY_MS,
+    });
+}
+
+/// Every app's tile made and its icon decoded ahead of time, page after
+/// page (launchpad.warm_icons: the first open drew only the first page warm).
+pub fn warm_icons(pad: &Rc<Pad>) {
+    if pad.win.is_visible() {
+        return;
+    }
+    let items: Vec<_> = pad.model.borrow().pages.iter().flatten().cloned().collect();
+    let mut imgs = Vec::new();
+    for item in &items {
+        let tile = pad.item_widget(item);
+        let mut stack: Vec<gtk::Widget> = vec![tile.button.clone().upcast()];
+        while let Some(c) = stack.pop() {
+            if let Ok(img) = c.clone().downcast::<gtk::Image>() {
+                imgs.push(img);
+            }
+            let mut ch = c.first_child();
+            while let Some(x) = ch {
+                ch = x.next_sibling();
+                stack.push(x);
+            }
+        }
+    }
+    warm_images(imgs);
+}
+
+/// Decode these images' pictures ahead of time, a few per idle moment
+/// (icons.warm_images: an SVG app icon with soft shadows costs
+/// milliseconds to draw the first time). Kept by the icon theme's / the
+/// images' own caches.
+pub fn warm_images(mut todo: Vec<gtk::Image>) {
+    const CHUNK: usize = 6;
+    let one = |img: &gtk::Image| {
+        let size = if img.pixel_size() > 0 { img.pixel_size() } else { 48 };
+        let scale = img.scale_factor().max(1);
+        let theme = || gtk::IconTheme::for_display(&WidgetExt::display(img));
+        let p: Option<gdk::Paintable> = match img.storage_type() {
+            gtk::ImageType::Paintable => img.paintable(),
+            gtk::ImageType::Gicon => img.gicon().map(|g| theme().lookup_by_gicon(&g, size, scale, gtk::TextDirection::None, gtk::IconLookupFlags::empty()).upcast()),
+            gtk::ImageType::IconName => img.icon_name().map(|n| theme().lookup_icon(&n, &[], size, scale, gtk::TextDirection::None, gtk::IconLookupFlags::empty()).upcast()),
+            _ => None,
+        };
+        if let Some(p) = p {
+            p.snapshot(&gtk::Snapshot::new(), size as f64, size as f64);
+        }
+    };
+    glib::idle_add_local(move || {
+        for _ in 0..CHUNK {
+            let Some(img) = todo.pop() else { return glib::ControlFlow::Break };
+            one(&img);
+        }
+        if todo.is_empty() {
+            glib::ControlFlow::Break
+        } else {
+            glib::ControlFlow::Continue
+        }
+    });
+}
+
 pub fn run(args: &[String]) -> glib::ExitCode {
     let a = Rc::new(logic::parse(args));
     if !a.preview {
@@ -154,6 +312,12 @@ pub fn run(args: &[String]) -> glib::ExitCode {
         }
         if a.background {
             pad.win.set_visible(false); // login: start resident, hidden
+            if !a.preview {
+                // drawn once invisibly: the first open is smooth
+                warm_up(&pad);
+                let p = pad.clone();
+                later(4000, move || warm_icons(&p)); // every page's icons, not only the first
+            }
             return;
         }
         pad.open_launchpad();
@@ -179,4 +343,21 @@ pub fn run(args: &[String]) -> glib::ExitCode {
         }
     });
     app.run_with_args(&[std::env::args().next().unwrap_or_default()])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Vini: the first open still lagged -- the in-between frames had never
+    /// been drawn. The warm-up's frames walk the whole opening, 0 to 1.
+    #[test]
+    fn test_warm_up_draws_the_whole_opening() {
+        let ts: Vec<f64> = (1..=14).map(|n| prewarm_t(n, 14)).collect();
+        assert!(ts.windows(2).all(|w| w[0] <= w[1]));
+        assert!(ts[0] > 0.0 && ts[0] < 0.1);
+        assert_eq!(ts[12], 1.0);
+        assert_eq!(*ts.last().unwrap(), 1.0);
+        assert_eq!(prewarm_t(1, 1), 1.0); // (one frame: drawn open)
+    }
 }

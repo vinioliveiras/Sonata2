@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 use sonata_i18n::{fmt, n_, tr, trn};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use sonata_backend::vault;
 use std::rc::{Rc, Weak};
 
 pub const VIEWS: [(&str, &str, &str); 3] = [("icons", "view-grid-symbolic", n_!("as Icons")), ("list", "view-list-symbolic", n_!("as List")), ("columns", "view-dual-symbolic", n_!("as Columns"))];
@@ -34,6 +35,17 @@ fn defaults() -> Value {
 
 fn cfg() -> serde_json::Map<String, Value> {
     sonata_config::load("files", &defaults())
+}
+
+/// vault.rs's error, said plainly.
+fn vault_reason(err: &str) -> String {
+    match err {
+        vault::WRONG => tr!("It was locked with a different password."),
+        "gocryptfs" => tr!("Locked folders need gocryptfs (install the “gocryptfs” package)."),
+        "busy" => tr!("A file in it is still open in an app."),
+        "not empty" => tr!("Something was put in it while it was locked; move it out first."),
+        e => e.to_string(),
+    }
 }
 
 fn same_disk(a: &gio::File, b: &gio::File) -> bool {
@@ -957,8 +969,20 @@ impl FilesWindow {
     }
 
     // -- navigation -------------------------------------------------------------------------------
+    /// A locked folder (vault.rs) closed: its password first, then into it.
     pub fn go(&self, uri: &str, record: bool) {
         let uri = folder::canonical(uri);
+        if let Some(path) = uri.starts_with("file:").then(|| gio::File::for_uri(&uri).path()).flatten() {
+            if vault::is_vault(&path) && !vault::is_open(&path) {
+                let (w, u) = (self.me.clone(), uri.clone());
+                self.open_vault(&path, move || {
+                    if let Some(t) = w.upgrade() {
+                        t.go(&u, record);
+                    }
+                });
+                return;
+            }
+        }
         let Some(tab) = self.cur() else { return };
         if record {
             let mut h = tab.history.borrow_mut();
@@ -1011,6 +1035,129 @@ impl FilesWindow {
         self.fwd.set_sensitive(((tab.pos.get() + 1) as usize) < tab.history.borrow().len());
     }
 
+    // -- locked folders (vault.rs: gocryptfs; Vini) ------------------------------------------------
+    fn vault_name(path: &std::path::Path) -> String {
+        path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    }
+
+    /// The login password, in the sheet every login-password prompt shares;
+    /// then(password) once it's right.
+    fn ask_vault_password(&self, heading: &str, body: &str, ok: &str, then: impl Fn(String) + 'static) {
+        let app = self.window.application();
+        sonata_shell::authsheet::ask(heading, body, Some(ok), app.as_ref(), Some(self.window.upcast_ref()), then, || {});
+    }
+
+    fn open_vault(&self, path: &std::path::Path, then: impl Fn() + 'static) {
+        let name = Self::vault_name(path);
+        let (w, p) = (self.me.clone(), path.to_path_buf());
+        let then = Rc::new(then);
+        self.ask_vault_password(&fmt(&tr!("Open “{name}”"), &[("name", &name)]), &tr!("This folder is locked. Enter your password to open it."), &tr!("Open"), move |pw| {
+            let (w, p, name, then) = (w.clone(), p.clone(), name.clone(), then.clone());
+            sonata_system::run_async(move || vault::open(&p, &pw), move |res| match res {
+                Ok(()) => then(),
+                Err(e) => {
+                    if let Some(t) = w.upgrade() {
+                        // (WRONG: locked with an earlier login password)
+                        t.alert(&fmt(&tr!("“{name}” can’t be opened"), &[("name", &name)]), &vault_reason(&e));
+                    }
+                }
+            });
+        });
+    }
+
+    /// Lock Folder… / Lock Now / Unlock Folder… for one folder.
+    pub fn vault_items(&self, info: &gio::FileInfo) -> Vec<sonata_ui::menu::Item> {
+        use sonata_ui::menu::Item;
+        let Some(path) = file_of(info).and_then(|f| f.path()) else { return vec![] };
+        if !vault::available() {
+            return vec![];
+        }
+        let item = |label: String, f: fn(&FilesWindow, &std::path::Path)| {
+            let (w, p) = (self.me.clone(), path.clone());
+            Item::new(&label, move || {
+                if let Some(t) = w.upgrade() {
+                    f(&t, &p);
+                }
+            })
+        };
+        if vault::is_vault(&path) {
+            let mut items = if vault::is_open(&path) { vec![item(tr!("Lock Now"), FilesWindow::close_vault)] } else { vec![] };
+            items.push(item(tr!("Unlock Folder…"), FilesWindow::unlock_vault));
+            return items;
+        }
+        if vault::can_lock(&path) {
+            return vec![item(tr!("Lock Folder…"), FilesWindow::lock_vault)];
+        }
+        vec![]
+    }
+
+    /// Out of `path` (and anything in it) before it closes.
+    fn leave(&self, path: &std::path::Path) {
+        let here = self.cur().map(|t| t.uri()).filter(|u| !u.is_empty()).and_then(|u| gio::File::for_uri(&u).path());
+        if here.is_some_and(|h| h.starts_with(path)) {
+            if let Some(up) = path.parent() {
+                self.go(&gio::File::for_path(up).uri(), true);
+            }
+        }
+    }
+
+    pub fn lock_vault(&self, path: &std::path::Path) {
+        let name = Self::vault_name(path);
+        let (w, p) = (self.me.clone(), path.to_path_buf());
+        self.ask_vault_password(&fmt(&tr!("Lock “{name}”?"), &[("name", &name)]), &tr!("Its files are encrypted: no app can read them until you open it with your password. Enter your password to lock it."), &tr!("Lock"), move |pw| {
+            let Some(t) = w.upgrade() else { return };
+            t.leave(&p);
+            let (w, p, name) = (w.clone(), p.clone(), name.clone());
+            sonata_system::run_async(move || vault::lock(&p, &pw), move |res| {
+                if let Some(t) = w.upgrade() {
+                    t.reload_all();
+                    if let Err(e) = res {
+                        t.alert(&fmt(&tr!("“{name}” can’t be locked"), &[("name", &name)]), &vault_reason(&e));
+                    }
+                }
+            });
+        });
+    }
+
+    /// Lock Now: out of it first, then closed (a moment later: the folder's
+    /// monitor lets go of it).
+    pub fn close_vault(&self, path: &std::path::Path) {
+        self.leave(path);
+        let (w, p) = (self.me.clone(), path.to_path_buf());
+        glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
+            let p2 = p.clone();
+            sonata_system::run_async(move || vault::close(&p2), move |ok| {
+                if let Some(t) = w.upgrade() {
+                    t.reload_all();
+                    if !ok {
+                        t.alert(&fmt(&tr!("“{name}” can’t be locked now"), &[("name", &Self::vault_name(&p))]), &tr!("A file in it is still open in an app."));
+                    }
+                }
+            });
+        });
+    }
+
+    pub fn unlock_vault(&self, path: &std::path::Path) {
+        let name = Self::vault_name(path);
+        let (w, p) = (self.me.clone(), path.to_path_buf());
+        self.ask_vault_password(&fmt(&tr!("Unlock “{name}”?"), &[("name", &name)]), &tr!("Its files are decrypted and stay readable by any app."), &tr!("Unlock"), move |pw| {
+            let Some(t) = w.upgrade() else { return };
+            t.leave(&p);
+            let (w, p, name) = (w.clone(), p.clone(), name.clone());
+            glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
+                let (p, pw, w, name) = (p.clone(), pw.clone(), w.clone(), name.clone());
+                sonata_system::run_async(move || vault::unlock(&p, &pw), move |res| {
+                    if let Some(t) = w.upgrade() {
+                        t.reload_all();
+                        if let Err(e) = res {
+                            t.alert(&fmt(&tr!("“{name}” can’t be unlocked"), &[("name", &name)]), &vault_reason(&e));
+                        }
+                    }
+                });
+            });
+        });
+    }
+
     // -- opening ----------------------------------------------------------------------------------
     pub fn open_item(&self, info: &gio::FileInfo) {
         if self.embed.borrow().as_ref().is_some_and(|e| (e.open)(info)) {
@@ -1033,6 +1180,11 @@ impl FilesWindow {
             if let Some(app) = f.path().and_then(gio::DesktopAppInfo::from_filename) {
                 let _ = app.launch(&[], Some(&ctx));
                 return;
+            }
+        }
+        if let Some(p) = f.path().filter(|_| target.is_none()) {
+            if crate::packages::open_path(&p, Some(self.window.upcast_ref())) {
+                return; // install / run / extract
             }
         }
         let ct = info.content_type().map(|c| c.to_string()).unwrap_or_default();
@@ -1493,15 +1645,10 @@ impl FilesWindow {
                     let writable = sel.iter().all(|i| !i.has_attribute("access::can-write") || i.boolean("access::can-write"));
                     let here = self.writable_here();
                     let mut first = vec![Item::new(&tr!("Open"), act(|t| t.open_selection()))];
-                    // an AppImage: Install, ahead of Open (packages.py's menu_items;
-                    // its Run isn't ported yet)
-                    if let Some(path) = sel.first().filter(|i| n == 1 && !is_dir(i)).and_then(file_of).and_then(|f| f.path()).filter(|p| crate::appimage::is_appimage(p)) {
-                        let w = me.clone();
-                        first.insert(0, Item::new(&tr!("Install"), move || {
-                            if let Some(t) = w.upgrade() {
-                                crate::appimage::install(&path, Some(t.window.upcast_ref()));
-                            }
-                        }));
+                    // a package, an archive or a script: Install / Run / Extract
+                    // Here, ahead of Open (packages.py's menu_items)
+                    if let Some(path) = sel.first().filter(|i| n == 1 && !is_dir(i)).and_then(file_of).and_then(|f| f.path()) {
+                        first.splice(0..0, crate::packages::menu_items(&path, Some(self.window.upcast_ref())));
                     }
                     if n == 1 && is_dir(&sel[0]) {
                         let (w, i) = (me.clone(), sel[0].clone());
@@ -1568,6 +1715,10 @@ impl FilesWindow {
                                 t.terminal(f);
                             }
                         })]);
+                        let lock = self.vault_items(&sel[0]); // an encrypted folder (vault.rs)
+                        if !lock.is_empty() {
+                            s.push(lock);
+                        }
                     }
                     s
                 }
@@ -2198,6 +2349,30 @@ pub fn present(app: &gtk::Application, uri: Option<&str>, fresh: bool) -> Rc<Fil
 
 #[cfg(test)]
 mod tests {
+    /// test_vault.FilesMenu: Lock Folder… / Lock Now / Unlock Folder… in a
+    /// folder's menu, and a closed locked folder asks for the password
+    /// before Files goes into it.
+    #[test]
+    fn files_offers_lock_now_and_unlock() {
+        let src = include_str!("window.rs");
+        let items = &src[src.find("pub fn vault_items(").unwrap()..];
+        let items = &items[..items.find("\n    }\n").unwrap()];
+        for label in ["(\"Lock Folder…\")", "(\"Lock Now\")", "(\"Unlock Folder…\")"] {
+            assert!(items.contains(label), "{label}");
+        }
+        let go = &src[src.find("pub fn go(").unwrap()..];
+        assert!(go[..go.find("\n    }\n").unwrap()].contains("vault::is_vault(&path) && !vault::is_open(&path)"));
+        assert!(src.contains("let lock = self.vault_items(&sel[0]);"));
+    }
+
+    /// The vault's errors said plainly; anything else as the tool said it.
+    #[test]
+    fn vault_reasons() {
+        assert_eq!(super::vault_reason(sonata_backend::vault::WRONG), "It was locked with a different password.");
+        assert_eq!(super::vault_reason("busy"), "A file in it is still open in an app.");
+        assert_eq!(super::vault_reason("fusermount: oops"), "fusermount: oops");
+    }
+
     #[test]
     fn same_disk_of_a_folder_and_itself() {
         let d = tempfile::tempdir().unwrap();

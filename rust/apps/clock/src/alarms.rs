@@ -6,8 +6,11 @@
 //! alarm = {"id", "hour", "minute", "label", "repeat": [weekday, ...] (0 =
 //! Monday; empty: once), "enabled", "snooze": bool, "sound": SOUNDS key}
 //!
-//! Not ported yet: when an alarm goes off next (the menu bar's part).
+//! When an alarm goes off next is here too (next_time, due, next_any): the
+//! menu bar rings them (sonata-topbar's alarms.rs). Times are naive local
+//! wall-clock times, as alarms.py's datetimes are.
 
+use chrono::{Datelike, Duration, NaiveDateTime, Timelike};
 use serde_json::{json, Map, Value};
 use sonata_i18n::{gettext, n_, tr};
 use std::path::PathBuf;
@@ -24,6 +27,10 @@ pub const SOUNDS: [(&str, &str, &str); 6] = [
     ("classic", n_!("Classic"), "alarm-clock-elapsed"),
 ];
 pub const SOUND: &str = "morning";
+/// iPhone / macOS
+pub const SNOOZE_MIN: i64 = 9;
+/// An alarm nobody stops goes quiet after this.
+pub const RING_MAX_S: u32 = 15 * 60;
 
 pub const WEEKDAYS: [&str; 7] = [
     n_!("Monday"),
@@ -264,10 +271,135 @@ pub fn h24() -> bool {
     }
 }
 
+/// The local wall-clock time of a Unix time (what Python's
+/// datetime.fromtimestamp gives).
+pub fn local(epoch: f64) -> NaiveDateTime {
+    let secs = epoch.floor() as libc::time_t;
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::localtime_r(&secs, &mut tm);
+    }
+    let nanos = ((epoch - epoch.floor()) * 1e9) as u32;
+    chrono::NaiveDate::from_ymd_opt(tm.tm_year + 1900, (tm.tm_mon + 1) as u32, tm.tm_mday as u32)
+        .and_then(|d| d.and_hms_nano_opt(tm.tm_hour as u32, tm.tm_min as u32, (tm.tm_sec as u32).min(59), nanos))
+        .unwrap_or_default()
+}
+
+/// Now, local (datetime.now()).
+pub fn now() -> NaiveDateTime {
+    local(crate::timers::now())
+}
+
+/// When the alarm goes off next, strictly after `after` (None when off).
+pub fn next_time(a: &Alarm, after: NaiveDateTime) -> Option<NaiveDateTime> {
+    if !a.enabled {
+        return None;
+    }
+    let base = after.with_second(0)?.with_nanosecond(0)?;
+    for days in 0..8 {
+        let day = (base + Duration::days(days)).date();
+        let t = day.and_hms_opt(a.hour, a.minute, 0)?;
+        if t <= after {
+            continue;
+        }
+        if a.repeat.is_empty() || a.repeat.contains(&(day.weekday().num_days_from_monday() as u8)) {
+            return Some(t);
+        }
+    }
+    None
+}
+
+/// Alarms going off in (since, now] -- a suspend in between: still rung
+/// when the computer is back (at most once each).
+pub fn due(alarms: &[Alarm], since: NaiveDateTime, now: NaiveDateTime) -> Vec<Alarm> {
+    alarms.iter().filter(|a| next_time(a, since).is_some_and(|t| t <= now)).cloned().collect()
+}
+
+pub fn next_any(alarms: &[Alarm], after: NaiveDateTime) -> Option<NaiveDateTime> {
+    alarms.iter().filter_map(|a| next_time(a, after)).min()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::testenv;
+
+    fn at(y: i32, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> NaiveDateTime {
+        chrono::NaiveDate::from_ymd_opt(y, mo, d).unwrap().and_hms_opt(h, mi, s).unwrap()
+    }
+
+    /// 2026-09-28 06:00, a Monday (tests/test_clock.py's MON).
+    fn mon() -> NaiveDateTime {
+        at(2026, 9, 28, 6, 0, 0)
+    }
+
+    fn alarm_on(h: u32, m: u32, repeat: &[u8], enabled: bool) -> Alarm {
+        let mut a = Alarm::new(h, m);
+        a.repeat = repeat.to_vec();
+        a.enabled = enabled;
+        a
+    }
+
+    #[test]
+    fn test_next_time() {
+        let _e = testenv::env();
+        assert_eq!(next_time(&alarm_on(7, 0, &[], true), mon()), Some(at(2026, 9, 28, 7, 0, 0)));
+        assert_eq!(next_time(&alarm_on(5, 0, &[], true), mon()), Some(at(2026, 9, 29, 5, 0, 0)));
+        let sat = next_time(&alarm_on(7, 0, &[5, 6], true), mon()).unwrap();
+        assert_eq!(sat.weekday(), chrono::Weekday::Sat);
+        assert_eq!(next_time(&alarm_on(7, 0, &[], false), mon()), None);
+        // 07:00:30: today's has gone off
+        assert_eq!(next_time(&alarm_on(7, 0, &[], true), at(2026, 9, 28, 7, 0, 30)).unwrap().date(), at(2026, 9, 29, 0, 0, 0).date());
+    }
+
+    /// Asleep from 6:00 to 8:00: the 7:00 alarm rings when the computer is back.
+    #[test]
+    fn test_due_after_a_suspend() {
+        let _e = testenv::env();
+        let a = alarm_on(7, 0, &[], true);
+        assert_eq!(due(&[a.clone()], mon(), at(2026, 9, 28, 8, 0, 0)), vec![a.clone()]);
+        assert!(due(&[a], at(2026, 9, 28, 7, 1, 0), at(2026, 9, 28, 8, 0, 0)).is_empty());
+    }
+
+    /// A one-time alarm rings later today, else tomorrow; exactly now is not 'after'.
+    #[test]
+    fn test_one_time_today_or_tomorrow() {
+        let _e = testenv::env();
+        let m = at(2026, 10, 5, 8, 30, 15);
+        assert_eq!(next_time(&alarm_on(9, 0, &[], true), m), Some(at(2026, 10, 5, 9, 0, 0)));
+        assert_eq!(next_time(&alarm_on(8, 0, &[], true), m), Some(at(2026, 10, 6, 8, 0, 0)));
+        assert_eq!(next_time(&alarm_on(9, 0, &[], true), at(2026, 10, 5, 9, 0, 0)), Some(at(2026, 10, 6, 9, 0, 0)));
+    }
+
+    /// Repeating alarms skip to their weekday, wrapping past Sunday to the same day next week.
+    #[test]
+    fn test_repeat_days_and_week_wrap() {
+        let _e = testenv::env();
+        let m = at(2026, 10, 5, 8, 30, 15);
+        assert_eq!(next_time(&alarm_on(7, 0, &[0], true), m), Some(at(2026, 10, 12, 7, 0, 0)));
+        assert_eq!(next_time(&alarm_on(7, 0, &[5, 6], true), m), Some(at(2026, 10, 10, 7, 0, 0)));
+        assert_eq!(next_time(&alarm_on(7, 0, &[0], false), m), None);
+    }
+
+    /// Alarms in (since, now] are due once; next_any picks the soonest enabled one.
+    #[test]
+    fn test_due_over_a_suspend_and_next_any() {
+        let _e = testenv::env();
+        let m = at(2026, 10, 5, 8, 30, 15);
+        let (a, b, c) = (alarm_on(9, 0, &[], true), alarm_on(23, 0, &[], true), alarm_on(9, 30, &[], false));
+        assert_eq!(due(&[a.clone(), b.clone(), c.clone()], m, at(2026, 10, 5, 12, 0, 0)), vec![a]);
+        assert_eq!(next_any(&[b, c.clone()], m), Some(at(2026, 10, 5, 23, 0, 0)));
+        assert_eq!(next_any(&[c], m), None);
+    }
+
+    #[test]
+    fn local_time_of_now() {
+        // the same wall clock as libc's, to the second
+        let t = 1_790_000_000.25;
+        let l = local(t);
+        assert_eq!(l.nanosecond(), 250_000_000);
+        assert_eq!(local(t + 60.0) - l, Duration::seconds(60));
+    }
 
     fn alarm(h: u32, m: u32) -> Alarm {
         let mut a = Alarm::new(h, m);

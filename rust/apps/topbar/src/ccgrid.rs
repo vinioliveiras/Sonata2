@@ -10,12 +10,15 @@
 //! ModuleGrid::new(widgets, order, width)
 //! ```
 //!
-//! The modules themselves are built by cc.rs. Not ported yet: the glide of
-//! the others when one moves, the shrink-away and grow-in of a module
-//! taken out or put back, the smooth height change (they're immediate);
-//! the jiggle and the x's look are ui/edit.py's CSS, not exported yet.
+//! The modules themselves are built by cc.rs. When one moves, is taken
+//! out (it shrinks away first) or put back (it grows in), the others glide
+//! to their new places (sonata_ui::transition); a module sized by its
+//! content grows and shrinks smoothly. Not ported yet: Control Center's own
+//! smooth height change (it follows at once); the jiggle and the x's look
+//! are ui/edit.py's CSS, not exported yet.
 
-use gtk::{gdk, glib, graphene, gsk, prelude::*, subclass::prelude::*};
+use adw::prelude::*;
+use gtk::{gdk, glib, graphene, gsk, subclass::prelude::*};
 use serde_json::{json, Value};
 use sonata_i18n::{n_, tr};
 use std::cell::{Cell, RefCell};
@@ -196,6 +199,9 @@ mod imp {
         pub editing: Cell<bool>,
         pub dragging: RefCell<Option<String>>,
         pub on_change: RefCell<Option<Rc<dyn Fn()>>>,
+        /// a module growing or shrinking to its new rows: its height now (set_rows)
+        pub grow: RefCell<HashMap<String, f64>>,
+        pub grow_anims: RefCell<HashMap<String, adw::TimedAnimation>>,
     }
 
     #[glib::object_subclass]
@@ -234,6 +240,10 @@ mod imp {
                 slot.root.allocate(w, h, -1, Some(t));
             }
         }
+
+        fn snapshot(&self, snapshot: &gtk::Snapshot) {
+            sonata_ui::transition::snapshot_children(&*self.obj(), snapshot); // modules glide when re-ordered
+        }
     }
 }
 
@@ -268,7 +278,7 @@ impl ModuleGrid {
             true
         });
         g.add_controller(target);
-        g.layout();
+        g.layout(false);
         g
     }
 
@@ -304,7 +314,8 @@ impl ModuleGrid {
     pub fn rect(&self, mid: &str) -> Option<(i32, i32, i32, i32)> {
         let (col, row, w, h) = *self.imp().places.borrow().get(mid)?;
         let cw = self.col_w();
-        Some(((col as f64 * (cw + SPACING as f64)).round() as i32, row * (UNIT_H + SPACING), (w as f64 * cw + ((w - 1) * SPACING) as f64).round() as i32, span_height(h)))
+        let height = self.imp().grow.borrow().get(mid).map_or(span_height(h), |g| g.round_ties_even() as i32);
+        Some(((col as f64 * (cw + SPACING as f64)).round() as i32, row * (UNIT_H + SPACING), (w as f64 * cw + ((w - 1) * SPACING) as f64).round() as i32, height))
     }
 
     pub fn target_height(&self) -> i32 {
@@ -313,17 +324,35 @@ impl ModuleGrid {
     }
 
     /// A module sized by its content (the mixer: a row per app playing)
-    /// takes `rows` grid rows; the grid never gets wider.
+    /// takes `rows` grid rows: it grows or shrinks smoothly, the modules
+    /// below glide along; the grid never gets wider.
     pub fn set_rows(&self, mid: &str, rows: i32) {
         let old = self.imp().places.borrow().get(mid).copied();
         if self.imp().rows.borrow().get(mid) == Some(&rows) && old.is_none_or(|o| o.3 == rows) {
             return;
         }
         self.imp().rows.borrow_mut().insert(mid.to_string(), rows);
-        if old.is_none_or(|o| o.3 == rows) {
-            return;
+        let Some(old) = old.filter(|o| o.3 != rows) else { return };
+        let (start, end) = (span_height(old.3) as f64, span_height(rows) as f64);
+        self.layout(true);
+        let (w, m) = (self.downgrade(), mid.to_string());
+        let target = adw::CallbackAnimationTarget::new(move |v| {
+            let Some(g) = w.upgrade() else { return };
+            if v == end {
+                g.imp().grow.borrow_mut().remove(&m);
+            } else {
+                g.imp().grow.borrow_mut().insert(m.clone(), v);
+            }
+            g.queue_allocate();
+        });
+        self.imp().grow.borrow_mut().insert(mid.to_string(), start);
+        let anim = adw::TimedAnimation::new(self, start, end, sonata_ui::tokens::ms(220.0), target);
+        anim.set_easing(adw::Easing::EaseInOutCubic);
+        // a new size while one runs: the old one stops where it is
+        if let Some(a) = self.imp().grow_anims.borrow_mut().insert(mid.to_string(), anim.clone()) {
+            a.pause();
         }
-        self.layout();
+        anim.play();
         self.notify_change();
     }
 
@@ -406,8 +435,15 @@ impl ModuleGrid {
         slot
     }
 
-    fn layout(&self) {
+    /// Every module in its cells; glide: the ones that moved slide there.
+    fn layout(&self, glide: bool) {
         let imp = self.imp();
+        let before = if glide {
+            let roots: Vec<gtk::Widget> = imp.slots.borrow().values().map(|s| s.root.clone().upcast()).collect();
+            sonata_ui::transition::glide_record(&roots, self.upcast_ref())
+        } else {
+            Vec::new()
+        };
         let places = pack(&imp.order.borrow(), COLS, &imp.rows.borrow());
         imp.places.replace(places);
         let slots: Vec<(String, Rc<Slot>)> = imp.slots.borrow().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -424,6 +460,7 @@ impl ModuleGrid {
             }
         }
         self.queue_resize();
+        sonata_ui::transition::glide_play(before, self.upcast_ref(), sonata_ui::transition::GLIDE_MS);
     }
 
     fn changed(&self) {
@@ -462,6 +499,25 @@ impl ModuleGrid {
         if !self.imp().order.borrow().iter().any(|m| m == mid) {
             return;
         }
+        match self.slot(mid) {
+            Some(slot) => {
+                // it shrinks away first (Launchpad's delete), then the others glide in
+                slot.root.add_css_class("cc-slot-leaving");
+                let (w, m) = (self.downgrade(), mid.to_string());
+                glib::timeout_add_local_once(std::time::Duration::from_millis(sonata_ui::tokens::ms(160.0) as u64), move || {
+                    if let Some(g) = w.upgrade() {
+                        g.take_out(&m);
+                    }
+                });
+            }
+            None => self.take_out(mid),
+        }
+    }
+
+    fn take_out(&self, mid: &str) {
+        if !self.imp().order.borrow().iter().any(|m| m == mid) {
+            return;
+        }
         self.imp().order.borrow_mut().retain(|m| m != mid);
         let slot = self.imp().slots.borrow_mut().remove(mid);
         if let Some(slot) = slot {
@@ -472,7 +528,7 @@ impl ModuleGrid {
             // new slot -- still held by this one, it came back empty (Vini)
             slot.root.set_child(None::<&gtk::Widget>);
         }
-        self.layout();
+        self.layout(true);
         self.changed();
     }
 
@@ -481,7 +537,10 @@ impl ModuleGrid {
             return;
         }
         self.imp().order.borrow_mut().push(mid.to_string());
-        self.layout();
+        self.layout(true);
+        if let Some(slot) = self.slot(mid) {
+            slot.root.add_css_class("cc-slot-arriving");
+        }
         self.changed();
     }
 
@@ -495,7 +554,7 @@ impl ModuleGrid {
         let m = order.remove(at);
         order.insert(index, m);
         self.imp().order.replace(order);
-        self.layout();
+        self.layout(true);
     }
 
     /// The module under (x, y) in the grid's coordinates.

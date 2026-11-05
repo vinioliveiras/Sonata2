@@ -16,9 +16,9 @@
 //! - Firefox, Thunderbird, LibreWolf, Floorp (every profile): user.js
 //!   browser.tabs.inTitlebar = 0 (tabs under the system title bar).
 //! - Obsidian: obsidian.json "frame": "native". Vesktop: "titleBar": "system".
-//!
-//! Not ported yet: GTK 4 / libadwaita apps' style (adwstyle.py): the
-//! Python session still writes it.
+//! - GTK 4 / libadwaita apps, GTK 3 apps and Chrome's GTK mode: Sonata's
+//!   traffic lights and title bar colour through a stylesheet their
+//!   gtk.css imports (adwstyle.rs), only in Sonata's session.
 
 use crate::frame;
 use serde_json::{json, Map, Value};
@@ -47,6 +47,10 @@ pub fn enabled() -> bool {
 /// The option on (or off) in every app that has one.
 pub fn apply(on: Option<bool>) {
     let on = on.unwrap_or_else(enabled);
+    // GTK 4 / libadwaita apps (and GTK 3's, Chrome's GTK mode)
+    if let Err(e) = crate::adwstyle::apply(on) {
+        eprintln!("sonata2: libadwaita style: {e}");
+    }
     let cfg = sonata_config::config_home();
     for base in chromium_roots(&cfg) {
         if base.join("SingletonLock").symlink_metadata().is_ok() {

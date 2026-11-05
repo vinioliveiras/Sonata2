@@ -112,6 +112,7 @@ mod tests {
 
     #[test]
     fn offered_in_the_menu() {
-        assert!(include_str!("window.rs").contains("crate::appimage::install("));
+        assert!(include_str!("packages.rs").contains("crate::appimage::install("));
+        assert!(include_str!("window.rs").contains("crate::packages::menu_items("));
     }
 }

@@ -9,15 +9,13 @@
 //! - Save Report / Report on GitHub…: the second also opens a pre-filled
 //!   GitHub issue in the browser and shows the .zip to attach.
 //! After a crash it says so at the top, saves a report at once and fills
-//! in the title.
-//!
-//! Not ported yet: "Reopen your apps" after a crash (open_apps.py: the
-//! Dock's notes of what was open).
+//! in the title, and offers to reopen the apps that were open then (the
+//! Dock's notes, sonata_desktop::open_apps).
 
 pub mod report;
 
 use adw::prelude::*;
-use sonata_i18n::tr;
+use sonata_i18n::{tr, trn};
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -53,6 +51,46 @@ pub fn reveal(path: &Path) {
             fallback();
         }
     });
+}
+
+/// The row's subtitle: the first four names, then how many more.
+fn reopen_subtitle(shown: &[String]) -> String {
+    let mut s = shown.iter().take(4).cloned().collect::<Vec<_>>().join(", ");
+    if shown.len() > 4 {
+        s.push(' ');
+        s.push_str(&sonata_i18n::fmt(&tr!("and {n} more"), &[("n", &(shown.len() - 4).to_string())]));
+    }
+    s
+}
+
+/// The apps that were open before the crash, one click away (Vini). No
+/// row when the Dock had noted none.
+fn reopen_row(grp: &adw::PreferencesGroup) -> Option<(adw::ActionRow, gtk::Button)> {
+    use sonata_desktop::open_apps;
+    let ids = open_apps::before_crash();
+    if ids.is_empty() {
+        return None;
+    }
+    let row = adw::ActionRow::builder().title(tr!("Reopen your apps").as_str()).use_markup(false).subtitle(reopen_subtitle(&open_apps::names(&ids)).as_str()).build();
+    row.set_subtitle_lines(0);
+    let cell: Rc<RefCell<Option<gtk::Button>>> = Rc::default();
+    let (r, c) = (row.clone(), cell.clone());
+    let btn = sonata_ui::controls::push_button(
+        &tr!("Reopen"),
+        move || {
+            let n = open_apps::reopen(&ids, None);
+            r.set_subtitle(&sonata_i18n::fmt(&trn!("Reopened {n} app.", "Reopened {n} apps.", n), &[("n", &n.to_string())]));
+            if let Some(b) = c.borrow().as_ref() {
+                b.set_sensitive(false);
+            }
+        },
+        "default",
+    );
+    btn.set_valign(gtk::Align::Center);
+    cell.replace(Some(btn.clone()));
+    row.add_suffix(&btn);
+    grp.add(&row);
+    Some((row, btn))
 }
 
 struct Feedback {
@@ -99,6 +137,7 @@ impl Feedback {
             row.set_subtitle_lines(0);
             row.add_prefix(&gtk::Image::builder().icon_name("dialog-error-symbolic").css_classes(["error"]).build());
             grp.add(&row);
+            reopen_row(&grp);
             page.add(&grp);
             crash_row = Some(row);
         }
@@ -297,4 +336,25 @@ pub fn run(args: &[String]) -> glib::ExitCode {
         state.replace(Some(f));
     });
     app.run_with_args(&[std::env::args().next().unwrap_or_default()])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn names(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn test_reopen_row() {
+        assert_eq!(reopen_subtitle(&names(&["Firefox", "Spotify"])), "Firefox, Spotify");
+    }
+
+    #[test]
+    fn test_reopen_row_names_four_then_counts() {
+        // (in the language the tests run in)
+        let more = sonata_i18n::fmt(&tr!("and {n} more"), &[("n", "2")]);
+        assert_eq!(reopen_subtitle(&names(&["A", "B", "C", "D", "E", "F"])), format!("A, B, C, D {more}"));
+    }
 }

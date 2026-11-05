@@ -13,13 +13,15 @@
 //! - State (last user, sessions, display modes): /var/cache/sonata-greeter/state.json.
 //! - A user already logged in on this seat goes back to that session
 //!   (Switch User), the password asked once.
+//! - Their video wallpaper (wallpaper-video beside the picture) plays
+//!   under the blur, silent; the screen corners are always drawn (the
+//!   login screen has no settings).
+//! - Left alone for the user's Settings > Battery time, the screen goes
+//!   dark by the compositor's input idle (idlewatch): black, the panel's
+//!   backlight at zero, plugged-in monitors off; any key or move brings it
+//!   back. A compositor without it: this process's own timer.
 //!
 //! SONATA_GREETER_FAKE=1: no greetd (previews; password "sonata"); Esc leaves.
-//!
-//! Not ported yet: the video wallpaper under the blur, the screen corners,
-//! and the compositor's idle watch -- the screen goes dark on this
-//! process's own timer (as the lock screen does), black and the backlight
-//! at zero; plugged-in monitors aren't powered off.
 
 pub mod data;
 pub mod greetd;
@@ -30,7 +32,9 @@ use data::Session;
 use serde_json::{json, Map, Value};
 use sonata_i18n::tr;
 use sonata_shell::logins::{self, User};
-use sonata_shell::{layer, lockdisplay, loginui, throttle};
+use sonata_shell::idlewatch::IdleWatch;
+use sonata_shell::lockvideo::LockVideo;
+use sonata_shell::{layer, lockdisplay, loginui, screencorners, throttle};
 use sonata_ui::menu::{self, Item, Options};
 use sonata_ui::progress::Spinner;
 use std::cell::{Cell, RefCell};
@@ -100,6 +104,10 @@ struct Greeter {
     syncing: Cell<bool>,
     off_after: i64,
     idle: RefCell<Option<glib::SourceId>>,
+    /// the compositor's input idle (None: the timer above, or never)
+    watch: RefCell<Option<IdleWatch>>,
+    /// the shown user's video wallpaper, one player for every display
+    video: RefCell<Option<Rc<LockVideo>>>,
     off: Cell<bool>,
     last_xy: Cell<Option<(i64, i64)>>,
 }
@@ -149,6 +157,8 @@ impl Greeter {
             syncing: Cell::new(false),
             off_after: 0,
             idle: RefCell::default(),
+            watch: RefCell::default(),
+            video: RefCell::default(),
             off: Cell::new(false),
             last_xy: Cell::new(None),
         };
@@ -176,6 +186,7 @@ impl Greeter {
                 }
             });
         }
+        me.sleep();
         me.input();
         me
     }
@@ -187,6 +198,26 @@ impl Greeter {
         }
         let last = self.state.borrow().get("user").and_then(Value::as_str).map(String::from);
         last.into_iter().chain(self.users.iter().map(|u| u.name.clone())).filter(|n| !n.is_empty()).collect()
+    }
+
+    /// The video wallpaper of the user whose picture shows (wallpaper()),
+    /// played silent under the blur, one player for every display; None
+    /// for a picture.
+    fn video_cover(&self) -> Option<sonata_shell::lockvideo::CoverPaintable> {
+        let root = Path::new(data::WALLPAPERS);
+        let name = self.names().into_iter().find(|n| data::user_wallpaper_in(root, n).is_some());
+        let path = name.and_then(|n| data::user_video_in(root, &n));
+        let mut cur = self.video.borrow_mut();
+        if let (Some(v), Some(p)) = (cur.as_ref(), path.as_ref()) {
+            if Path::new(&v.path) == p.as_path() {
+                return Some(v.cover.clone());
+            }
+        }
+        if let Some(v) = cur.take() {
+            v.close();
+        }
+        *cur = path.and_then(|p| LockVideo::open(&p)); // (none: the picture stays)
+        cur.as_ref().map(|v| v.cover.clone())
     }
 
     /// The chosen user's wallpaper; before choosing, the last user's (else anyone's).
@@ -201,6 +232,7 @@ impl Greeter {
         let over = gtk::Overlay::builder().css_classes(["gr-fade-in"]).build();
         let backdrop = loginui::Backdrop::default();
         backdrop.set_texture(self.wallpaper());
+        backdrop.set_video(self.video_cover().as_ref());
         over.set_child(Some(&backdrop));
         over.add_overlay(&loginui::top_clock(None)); // like the lock screen: top, centred (Vini)
         let center = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(220).halign(gtk::Align::Center).valign(gtk::Align::Center).build();
@@ -216,6 +248,8 @@ impl Greeter {
         if !self.fake {
             over.add_overlay(&self.display_button());
         }
+        // (always: the login screen has no settings)
+        over.add_overlay(&screencorners::corners_overlay(screencorners::RADIUS));
         let blackout = gtk::Box::builder().css_classes(["lk-blackout"]).can_target(false).build(); // dark while idle
         if self.off.get() {
             blackout.add_css_class("on");
@@ -335,8 +369,10 @@ impl Greeter {
             self.fill(i, focus);
         }
         let tex = self.wallpaper();
+        let video = self.video_cover();
         for p in self.parts.borrow().iter() {
             p.backdrop.set_texture(tex.clone());
+            p.backdrop.set_video(video.as_ref());
         }
         if let Some(u) = self.user.borrow().clone() {
             self.guard_blocked(&u.name);
@@ -606,14 +642,38 @@ impl Greeter {
 
     // -- the display goes dark when nobody's there ------------------------------------------------
     /// Vini: left at the login screen, the display never went dark. After
-    /// the user's Settings > Battery choice without input it goes dark like
-    /// the session's (idlelock.darken); any key or move brings it back.
+    /// `off_after` seconds without input (the user's Settings > Battery
+    /// choice) it goes dark like the session's (idlelock.darken); any key
+    /// or move brings it back -- counted by the compositor, whichever
+    /// display it is on.
+    fn sleep(self: &Rc<Self>) {
+        if let Some(w) = sleep_watch(self.off_after, self.fake, IdleWatch::connect) {
+            let (dark, back) = (Rc::downgrade(self), Rc::downgrade(self));
+            w.watch(
+                self.off_after.clamp(1, u32::MAX as i64) as u32,
+                Rc::new(move || {
+                    if let Some(me) = dark.upgrade() {
+                        me.go_dark();
+                    }
+                }),
+                Rc::new(move || {
+                    if let Some(me) = back.upgrade() {
+                        me.wake();
+                    }
+                }),
+            );
+            self.watch.replace(Some(w));
+        }
+    }
+
+    /// A key or a move here: the displays on, and (without the
+    /// compositor's idle watch) this process's countdown again.
     fn input(self: &Rc<Self>) {
         self.wake();
         if let Some(id) = self.idle.take() {
             id.remove();
         }
-        if self.off_after <= 0 || self.fake {
+        if self.off_after <= 0 || self.fake || self.watch.borrow().is_some() {
             return;
         }
         let weak = Rc::downgrade(self);
@@ -626,26 +686,37 @@ impl Greeter {
         self.idle.replace(Some(id));
     }
 
-    /// Black and the backlight at zero -- the display itself stays on:
-    /// powering it off and on again failed on Vini's laptop.
+    /// Black and a laptop panel's backlight at zero -- the panel itself
+    /// stays on: powering it off and on again failed on Vini's laptop.
+    /// Plugged-in monitors really go off (Vini: they only went black, the
+    /// pointer on them).
     fn go_dark(&self) {
         if self.off.replace(true) {
             return;
         }
         lockdisplay::lights(false); // the keyboard's light with the displays
-        lockdisplay::mark_dark(true);
+        lockdisplay::mark_dark(true); // (the video pauses)
         for p in self.parts.borrow().iter() {
             p.blackout.add_css_class("on");
         }
         lockdisplay::pointer(true); // black, no pointer (Vini: it only dimmed)
-        lockdisplay::dim(true);
+        self.displays(false);
+    }
+
+    /// idlelock.displays_dark with the compositor's watch; without it,
+    /// only the panel's backlight.
+    fn displays(&self, on: bool) {
+        match self.watch.borrow().as_ref() {
+            Some(w) => w.displays_dark(!on),
+            None => lockdisplay::dim(!on),
+        }
     }
 
     fn wake(&self) {
         if !self.off.replace(false) {
             return;
         }
-        lockdisplay::dim(false);
+        self.displays(true);
         for p in self.parts.borrow().iter() {
             p.blackout.remove_css_class("on");
         }
@@ -834,6 +905,20 @@ impl Greeter {
     }
 }
 
+/// The compositor's idle watch for the login screen's darkness, or None:
+/// never (`seconds` <= 0), a preview, or no compositor to ask.
+fn sleep_watch(seconds: i64, fake: bool, connect: impl FnOnce() -> IdleWatch) -> Option<IdleWatch> {
+    if seconds <= 0 || fake {
+        return None;
+    }
+    let w = connect();
+    if !w.ok() {
+        w.close();
+        return None;
+    }
+    Some(w)
+}
+
 /// Zeros over the password once it was used.
 fn wipe(mut pw: String) {
     // SAFETY: zeros are valid UTF-8
@@ -916,6 +1001,19 @@ mod tests {
 
     fn user(name: &str) -> User {
         User { name: name.into(), real: String::new(), icon: String::new() }
+    }
+
+    /// Vini: left at the login screen, the display never went dark. It
+    /// does after the user's time, by the compositor's idle watch -- never
+    /// when they chose "never", in a preview, or without a compositor.
+    #[test]
+    fn test_never_or_no_compositor() {
+        let dir = tempfile::tempdir().unwrap();
+        let none = || IdleWatch::connect_to(&dir.path().join("wayland-9"));
+        assert!(sleep_watch(-1, false, || panic!("not asked")).is_none());
+        assert!(sleep_watch(0, false, || panic!("not asked")).is_none());
+        assert!(sleep_watch(300, true, || panic!("not asked")).is_none()); // a preview
+        assert!(sleep_watch(300, false, none).is_none());
     }
 
     #[test]

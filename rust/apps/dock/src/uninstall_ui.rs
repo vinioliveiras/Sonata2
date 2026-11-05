@@ -7,8 +7,8 @@
 //! notification says when it's done, or why it couldn't be.
 //!
 //! Who owns the app (backend/uninstall.py) is ported here, its only users
-//! being the Dock and Launchpad. Not ported yet: web apps (webapps.py
-//! deletes them with their data) -- the Dock doesn't offer it for them.
+//! being the Dock and Launchpad. A web app is deleted with its login and
+//! data (ask_webapp, through the Rust webapps).
 
 use crate::dock::is_protected;
 use gtk::prelude::*;
@@ -165,10 +165,34 @@ fn listed(also: &[String]) -> String {
 
 pub type Done = Rc<dyn Fn(bool)>;
 
+/// The question's title: the web app by its name, "this web app" when
+/// its entry is gone.
+pub fn webapp_title(entry: Option<&serde_json::Map<String, serde_json::Value>>) -> String {
+    let name = entry.and_then(|e| e.get("name")).and_then(serde_json::Value::as_str).filter(|n| !n.is_empty()).map(String::from).unwrap_or_else(|| tr!("this web app"));
+    sonata_i18n::fmt(&tr!("Delete “{name}”?"), &[("name", &name)])
+}
+
+/// A web app: deleted with its login and data (Launchpad, the Dock's
+/// Trash -- Vini: web apps can be uninstalled too).
+pub fn ask_webapp(wid: &str, parent: Option<&gtk::Widget>, done: Option<Done>) {
+    let wid = wid.to_string();
+    let title = webapp_title(sonata_webapps::get(&wid).as_ref());
+    sonata_ui::dialog::alert(&title, &tr!("Its login and everything it saved on this computer are deleted too."), &[("cancel", tr!("Cancel"), ""), ("delete", tr!("Delete"), "destructive")], move |rid| {
+        if rid != "delete" {
+            return;
+        }
+        sonata_webapps::remove(&wid); // its entry goes: Launchpad and the Dock drop it
+        sonata_backend::sounds::play("trash");
+        if let Some(d) = &done {
+            d(true);
+        }
+    }, parent);
+}
+
 pub fn ask(info: &gio::DesktopAppInfo, parent: Option<&gtk::Widget>, done: Option<Done>) {
     let id = info.id().map(|s| s.to_string()).unwrap_or_default();
     if sonata_desktop::badges::is_webapp(&id) {
-        println!("sonata2-dock: deleting the web app {id} is the Python Sonata's (webapps.py)");
+        ask_webapp(&sonata_webapps::id_of(&id), parent, done);
         return;
     }
     let name = info.display_name().to_string();
@@ -300,6 +324,18 @@ mod tests {
     fn sonatas_own_apps_have_no_owner() {
         assert_eq!(owner("io.github.vinioliveiras.sonata2.files.desktop", Some(PathBuf::from("/x.desktop"))), None);
         assert_eq!(owner("sonata2-launchpad.desktop", Some(PathBuf::from("/x.desktop"))), None);
+    }
+
+    /// A web app is asked about by its name; one whose entry is gone
+    /// still gets a question that reads.
+    #[test]
+    fn web_apps_are_asked_by_name() {
+        let mut e = serde_json::Map::new();
+        e.insert("name".into(), serde_json::json!("WhatsApp"));
+        // (in the language the tests run in)
+        let ask = |name: &str| sonata_i18n::fmt(&tr!("Delete “{name}”?"), &[("name", name)]);
+        assert_eq!(webapp_title(Some(&e)), ask("WhatsApp"));
+        assert_eq!(webapp_title(None), ask(&tr!("this web app")));
     }
 
     #[test]

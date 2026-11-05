@@ -7,9 +7,11 @@
 //! the same without a wrapper suffix ("spotify-launcher" -> "spotify"),
 //! only where no entry claims that name exactly.
 //!
-//! Not ported: apps.py's look through webapps.json for a Chromium web
-//! app's window class -- the web app's own entry carries that class as its
-//! StartupWMClass, which the index finds.
+//! A Chromium web app's window ("chrome-<site>-Default") is looked up in
+//! webapps.json, as apps.py does, through the resolver the webapps crate
+//! gives at start (set_webapp_resolver: that crate depends on this one).
+//! Without it the web app's own entry still carries that class as its
+//! StartupWMClass, which the index finds -- once the index is built again.
 
 use gio::prelude::*;
 use std::collections::HashMap;
@@ -28,6 +30,27 @@ pub const HIT_KEEP: Duration = Duration::from_secs(10);
 pub const WRAPPER_SUFFIXES: [&str; 7] = ["-launcher", "-bin", "-wrapper", "-desktop", "-stable", "-wayland", "-x11"];
 /// webapps.APP_ID_PREFIX: a Sonata web app's window (WebKit engine).
 pub const WEBAPP_APP_ID_PREFIX: &str = "io.github.vinioliveiras.sonata2.webapp.";
+
+/// webapps' desktop_for_window_class: the web app whose windows have this
+/// app id.
+pub type WebappResolver = fn(&str) -> Option<String>;
+
+static WEBAPP_RESOLVER: std::sync::OnceLock<WebappResolver> = std::sync::OnceLock::new();
+
+/// Set once at start, by whoever links the webapps crate (the multi-call
+/// binary): `set_webapp_resolver(sonata_webapps::desktop_for_window_class)`.
+pub fn set_webapp_resolver(f: WebappResolver) {
+    let _ = WEBAPP_RESOLVER.set(f);
+}
+
+/// One on Chromium / Brave: its window is named by the site, so the web
+/// app is found through webapps.json -- when its entry is there.
+pub fn chromium_webapp(app_id: &str, resolve: WebappResolver, known: &dyn Fn(&str) -> bool) -> Option<String> {
+    if !(app_id.starts_with("chrome-") || app_id.starts_with("brave-")) {
+        return None;
+    }
+    resolve(app_id).filter(|did| known(did))
+}
 
 #[derive(Default)]
 struct State {
@@ -154,6 +177,11 @@ fn lookup_match(app_id: &str) -> Option<String> {
             return Some(did);
         }
     }
+    if let Some(resolve) = WEBAPP_RESOLVER.get() {
+        if let Some(did) = chromium_webapp(app_id, *resolve, &known) {
+            return Some(did);
+        }
+    }
     let a = app_id.to_lowercase();
     let current = {
         let mut st = STATE.lock().unwrap_or_else(|e| e.into_inner());
@@ -214,6 +242,21 @@ mod tests {
     fn test_exact_name_beats_a_wrapper() {
         let idx = build_index(vec![e("foo-bin", true, "", ""), e("foo", true, "", "")]);
         assert_eq!(find(&idx, "foo").as_deref(), Some("foo"));
+    }
+
+    /// A web app on Chromium: its window class is the site's, found in
+    /// webapps.json (apps.py's _match); not when its entry is gone.
+    #[test]
+    fn test_chromium_web_app_by_its_window_class() {
+        fn resolve(aid: &str) -> Option<String> {
+            (aid == "chrome-web.whatsapp.com__-Default").then(|| "sonata2-webapp-w6bf1bb01cf".to_string())
+        }
+        let yes = |d: &str| d == "sonata2-webapp-w6bf1bb01cf";
+        assert_eq!(chromium_webapp("chrome-web.whatsapp.com__-Default", resolve, &yes).as_deref(), Some("sonata2-webapp-w6bf1bb01cf"));
+        assert_eq!(chromium_webapp("chrome-web.whatsapp.com__-Default", resolve, &|_| false), None);
+        assert_eq!(chromium_webapp("brave-example.com__-Default", resolve, &yes), None);
+        // only Chromium's and Brave's windows are looked up
+        assert_eq!(chromium_webapp("org.gnome.Nautilus", |_| Some("x".into()), &|_| true), None);
     }
 
     #[test]

@@ -32,6 +32,20 @@ pub trait IdleWatch {
     fn displays(&self, on: bool, only: Option<&dyn Fn(&str) -> bool>) -> bool;
 }
 
+/// The compositor's input idle (ext-idle-notify, written by hand in
+/// sonata-shell): what the menu bar hands IdleLock when Wayfire has it.
+impl IdleWatch for sonata_shell::idlewatch::IdleWatch {
+    fn watch(&self, seconds: u32, on_idle: Rc<dyn Fn()>, on_back: Rc<dyn Fn()>) -> u32 {
+        sonata_shell::idlewatch::IdleWatch::watch(self, seconds, on_idle, on_back)
+    }
+    fn unwatch(&self, id: u32) {
+        sonata_shell::idlewatch::IdleWatch::unwatch(self, id)
+    }
+    fn displays(&self, on: bool, only: Option<&dyn Fn(&str) -> bool>) -> bool {
+        sonata_shell::idlewatch::IdleWatch::displays(self, on, only)
+    }
+}
+
 /// Something to do later: (seconds, what) -> how to call it off.
 pub type Later = Rc<dyn Fn(u32, Box<dyn FnOnce()>) -> Box<dyn FnOnce()>>;
 

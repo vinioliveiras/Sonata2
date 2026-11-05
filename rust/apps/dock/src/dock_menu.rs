@@ -4,11 +4,10 @@
 //!         Open File Location  |  Minimize (Maximize), Quit (running) or Open (not running)
 //! Trash:  Open  |  Empty Trash...
 //!
-//! Launchpad uses add_to_desktop, show_in_files and lock_item.
+//! Launchpad uses add_to_desktop, show_in_files, lock_item, gpu_sections
+//! and edit_webapp.
 //!
-//! Not ported yet: the windows' close buttons in the menu (ui.menu's
-//! on_close), the GPU / browser GPU items (gpu.py, browsergpu.py), "Edit
-//! Web App…" (webapps.py) and Mission Control's menu (layer.menu_at).
+//! Not ported yet: Mission Control's menu (layer.menu_at).
 
 use crate::dock::{self, Dock, DockWindow, Tile, PERMANENT};
 use crate::toplevels::Toplevel;
@@ -222,9 +221,16 @@ pub fn app_sections(dock: &Dock, key: &str, tile: &Rc<Tile>) -> Vec<Vec<Item>> {
                 .map(|t| {
                     let (m, t2) = (m.clone(), t.clone());
                     let label = if t.title.is_empty() { tile.name() } else { t.title.clone() };
+                    let (m3, t3) = (m.clone(), t.clone());
                     Item::new(&label, move || {
                         if let Some(m) = &m {
                             m.activate(&t2);
+                        }
+                    })
+                    // the x closes that window
+                    .on_close(move || {
+                        if let Some(m) = &m3 {
+                            m.close(&t3);
                         }
                     })
                 })
@@ -285,6 +291,11 @@ pub fn app_sections(dock: &Dock, key: &str, tile: &Rc<Tile>) -> Vec<Vec<Item>> {
                     add_to_desktop(sonata_ui::apps::app_filename(&i2).as_deref());
                 }),
             ]);
+            opts.extend(gpu_sections(info));
+            if sonata_desktop::badges::is_webapp(key) {
+                let wid = sonata_webapps::id_of(key);
+                opts.push(vec![Item::new(&tr!("Edit Web App…"), move || edit_webapp(&wid))]);
+            }
             let f = crate::dock_folder::app_items(dock, key);
             if !f.is_empty() {
                 opts.push(f);
@@ -341,6 +352,24 @@ pub fn app_sections(dock: &Dock, key: &str, tile: &Rc<Tile>) -> Vec<Vec<Item>> {
         sections.push(s);
     }
     sections
+}
+
+/// The GPU and browser GPU choices (gpu.py, browsergpu.py), a section
+/// each when the machine and the app have them: the Dock's Options and
+/// Launchpad's menu.
+pub fn gpu_sections(info: &gio::DesktopAppInfo) -> Vec<Vec<Item>> {
+    let app: &gio::AppInfo = info.upcast_ref();
+    [sonata_tweaks::gpu::menu_items(app), sonata_tweaks::browsergpu::menu_items(app)]
+        .into_iter()
+        .filter(|g| !g.is_empty())
+        .map(|g| g.into_iter().map(|i| Item::check(&i.label, i.checked, i.toggled).enabled(i.enabled)).collect())
+        .collect()
+}
+
+/// The web app's form, filled in (webapps.edit: a process of its own, it
+/// takes the keyboard).
+pub fn edit_webapp(wid: &str) {
+    spawn_sonata(&["webapp", "edit", wid]);
 }
 
 /// The apps' processes to quit (quitapps.app_pids): each of the app's
@@ -529,7 +558,7 @@ pub fn area_menu(dock: &Dock, window: &DockWindow, at: (f64, f64)) -> gtk::Popov
             }),
         ],
         vec![hiding_item(dock), position_item(dock)],
-        vec![Item::new(&tr!("Dock Preferences…"), || spawn_python(&["settings", "--page", "dock"]))],
+        vec![Item::new(&tr!("Dock Preferences…"), || spawn_sonata(&["settings", "--page", "dock"]))],
     ], Options { position: dock.away, at: Some(at), glass: true });
     dock::menu_opened(&pop);
     pop
@@ -542,8 +571,18 @@ pub fn spawn_own(args: &[&str]) {
     }
 }
 
-/// A component the Rust build doesn't have yet (Settings): the Python
-/// Sonata's launcher ($SONATA2_LAUNCHER, else `sonata2`).
+/// Settings and the web app form: the Rust ones once this build is the
+/// desktop (the Rust session); on trial the Python Sonata's, whose
+/// settings are the ones in use.
+pub fn spawn_sonata(args: &[&str]) {
+    if sonata_config::side_by_side() {
+        spawn_python(args);
+    } else {
+        spawn_own(args);
+    }
+}
+
+/// The Python Sonata's launcher ($SONATA2_LAUNCHER, else `sonata2`).
 pub fn spawn_python(args: &[&str]) {
     let py = std::env::var("SONATA2_LAUNCHER").ok().filter(|l| Path::new(l).exists()).unwrap_or_else(|| "sonata2".into());
     if let Err(e) = std::process::Command::new(py).args(args).spawn() {

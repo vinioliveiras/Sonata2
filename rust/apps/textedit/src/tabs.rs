@@ -2,11 +2,12 @@
 //! the glass toolbar, the selected one in the document's own background; a
 //! close button fades in at a tab's left edge on hover, where an edited
 //! document shows a dot; "+" at the right. Tabs are dragged sideways to
-//! reorder, middle-click closes, right-click asks the owner for a menu.
-//! Not ported yet: the glide when a tab moves.
+//! reorder (the others glide out of its way), middle-click closes,
+//! right-click asks the owner for a menu.
 
 use gtk::{gdk, pango, prelude::*};
 use sonata_i18n::tr;
+use sonata_ui::transition::{self, GlideBox};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -39,7 +40,7 @@ impl Tab {
 
 pub struct TabStrip {
     pub root: gtk::Box,
-    row: gtk::Box,
+    row: GlideBox,
     tabs: RefCell<Vec<Tab>>,
     handlers: Rc<Handlers>,
     drag: RefCell<Option<(String, f64, bool)>>,
@@ -50,7 +51,9 @@ impl TabStrip {
         crate::window::register_tabs_css();
         let root = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         root.add_css_class("te-tabs");
-        let row = gtk::Box::builder().homogeneous(true).hexpand(true).build();
+        let row = GlideBox::new(gtk::Orientation::Horizontal, 0);
+        row.set_homogeneous(true);
+        row.set_hexpand(true);
         root.append(&row);
         let plus = gtk::Button::builder().icon_name("list-add-symbolic").can_focus(false).tooltip_text(tr!("New Tab")).build();
         plus.add_css_class("te-tab-new");
@@ -192,7 +195,11 @@ impl TabStrip {
         let tabs = self.tabs.borrow();
         let Some(tab) = tabs.iter().find(|t| t.id == id) else { return };
         let before = if index > 0 { tabs.iter().find(|t| t.id == order[index - 1]).map(|t| t.root.clone()) } else { None };
+        // the others slide to their new place (the moved one follows the pointer)
+        let others: Vec<gtk::Widget> = tabs.iter().filter(|t| t.id != id).map(|t| t.root.clone().upcast()).collect();
+        let glide = transition::glide_record(&others, self.row.upcast_ref());
         self.row.reorder_child_after(&tab.root, before.as_ref());
+        transition::glide_play(glide, self.row.upcast_ref(), transition::GLIDE_MS);
     }
 
     // -- drag to reorder ---------------------------------------------------------------------
