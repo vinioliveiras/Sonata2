@@ -66,6 +66,13 @@ glib::wrapper! {
     pub struct FrostBox(ObjectSubclass<frost_imp::FrostBox>) @extends gtk::Box, gtk::Widget, @implements gtk::Orientable;
 }
 
+/// How far below the screen's top the Today widgets start: the calendar
+/// (its own 8 px margin on top of gap - 12) sits 8 px under the menu bar --
+/// Vini: at + 6 it all but touched the bar (notifications.py's TOP_GAP).
+pub fn top_gap(menubar_h: i32) -> i32 {
+    menubar_h + 12
+}
+
 impl FrostBox {
     fn new(spacing: i32) -> Self {
         glib::Object::builder().property("orientation", gtk::Orientation::Vertical).property("spacing", spacing).build()
@@ -190,7 +197,7 @@ impl Center {
     pub fn new(app: &gtk::Application, server: &Rc<Server>, frost: Option<FrostFn>) -> Rc<Self> {
         let win = gtk::Window::builder().application(app).title("Notification Center").decorated(false).build();
         win.add_css_class("sonata-nc");
-        let gap = model::menubar_height() + 6; // under the menu bar
+        let gap = top_gap(model::menubar_height());
         // the Today widgets stay at the top, the notifications scroll under
         // them (Vini: the calendar fixed, however many notifications)
         let top = FrostBox::new(0);

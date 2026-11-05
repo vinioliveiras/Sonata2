@@ -848,3 +848,14 @@ fn notification_center_glass_gtk() {
     c.frost_done(c.frost_opening(), None); // none this time: solid
     assert!(c.win.has_css_class("no-frost") && !c.pictured());
 }
+
+/// Vini: Notification Center's calendar all but touched the menu bar (2 px
+/// under it). It sits 8 px below now, tall bar or standard.
+#[test]
+fn test_calendar_touched_the_menu_bar() {
+    for bar in [24, 32] {
+        // the Today column's margin (gap - 12) and the calendar's own (8)
+        let calendar_top = crate::center::top_gap(bar) - 12 + 8;
+        assert_eq!(calendar_top - bar, 8);
+    }
+}

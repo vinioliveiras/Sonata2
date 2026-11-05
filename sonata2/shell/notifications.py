@@ -30,7 +30,9 @@ from . import layer  # noqa: E402
 BANNER_W = 344
 BANNER_MS = 5000
 from . import menubar_size  # noqa: E402
-TOP_GAP = menubar_size.height() + 6                # under the menu bar
+# under the menu bar: the calendar (its own 8 px margin on top of TOP_GAP - 12)
+# sits 8 px below it -- Vini: at + 6 it all but touched the bar
+TOP_GAP = menubar_size.height() + 12
 MAX_BANNERS = 3
 MAX_NOTES = 100            # kept in the Notification Center
 SHOWN = 40                 # the newest ones it shows (a card each)

@@ -809,3 +809,12 @@ class PopupFadeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CalendarGapTest(unittest.TestCase):
+    def test_calendar_touched_the_menu_bar(self):
+        """Notification Center's calendar all but touched the menu bar (2 px
+        under it): it sits 8 px below now."""
+        from sonata2.shell import notifications as N
+        from sonata2.shell import menubar_size
+        self.assertEqual(N.TOP_GAP - 12 + 8 - menubar_size.height(), 8)
