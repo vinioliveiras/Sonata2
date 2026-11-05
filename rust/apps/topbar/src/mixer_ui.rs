@@ -34,14 +34,38 @@ pub type PickFn = Rc<dyn Fn(&gtk::Button, &str, &[Stream])>;
 /// shown(stream): the app's name and icon.
 pub type ShownFn = Rc<dyn Fn(&Stream) -> (String, gio::Icon)>;
 
-/// The app's name and icon by its desktop entry (the stream's key, then
-/// its icon name); else the stream's own. Python also asks whose process
-/// it is (a Steam game, a window's app): the menu bar passes a `shown`
-/// that does, once backend/mixer.py and steamgames are ported.
+/// The app's name and icon (mixer_ui.shown): its desktop entry by the
+/// stream's names (matched as the Dock matches windows); else by the
+/// process playing it -- a Steam game (as in the Dock and Alt+Tab) or the
+/// app whose window that process (or its parent) has; else the stream's
+/// own. Vini: Control Center's mixer showed no app icons -- the names were
+/// only looked up as they were.
 pub fn shown(stream: &Stream) -> (String, gio::Icon) {
-    let info = [stream.key.as_str(), stream.icon.as_str()].into_iter().filter(|k| !k.is_empty()).find_map(sonata_ui::apps::lookup);
-    if let Some(info) = info {
-        return (stream.name.clone(), sonata_ui::icons::app_icon(info.upcast_ref()));
+    let entry = |name: &str| (!name.is_empty()).then(|| sonata_desktop::appmatch::match_app_id(name)).flatten().and_then(|did| sonata_ui::apps::lookup(&did)).map(|i| i.upcast::<gio::AppInfo>());
+    shown_with(stream, &entry, &|pid| sonata_system::mixer::whose(pid, None, "/proc").map(|(k, id)| (k.to_string(), id)), &sonata_desktop::steamgames::shown)
+}
+
+/// shown, with the desktop entry match, whose process it is and the Steam
+/// game's look given (tests).
+pub fn shown_with(stream: &Stream, entry: &dyn Fn(&str) -> Option<gio::AppInfo>, whose: &dyn Fn(i64) -> Option<(String, String)>, game: &dyn Fn(&str, &str) -> Option<(String, gio::Icon)>) -> (String, gio::Icon) {
+    if let Some(info) = entry(&stream.key).or_else(|| entry(&stream.icon)) {
+        return (stream.name.clone(), sonata_ui::icons::app_icon(&info));
+    }
+    match whose(stream.pid) {
+        Some((kind, id)) if kind == "steam" => {
+            if let Some(g) = game(&format!("steam_app_{id}"), &stream.name) {
+                return g;
+            }
+        }
+        Some((_, app_id)) => {
+            if let Some(info) = entry(&app_id) {
+                return (info.display_name().to_string(), sonata_ui::icons::app_icon(&info));
+            }
+            if let Some(g) = game(&app_id, &stream.name) {
+                return g;
+            }
+        }
+        None => {}
     }
     let names: Vec<&str> = [stream.icon.as_str(), "audio-x-generic"].into_iter().filter(|n| !n.is_empty()).collect();
     (stream.name.clone(), gio::ThemedIcon::from_names(&names).upcast())
@@ -322,6 +346,30 @@ mod tests {
     fn test_mute_and_unmute_by_moving() {
         assert_eq!(level_change(60.0, false), (Some(60), None));
         assert_eq!(level_change(29.6, true), (Some(30), Some(false))); // moving unmutes
+    }
+
+    /// Vini: Control Center's mixer showed no app icons. A stream says
+    /// "spotify" while the entry is spotify-launcher, or only its process
+    /// is the app's: matched, and asked whose it is, as mixer_ui.shown.
+    #[test]
+    fn test_mixer_showed_no_app_icons() {
+        let _env = crate::testenv::env();
+        let app = |id: &str| {
+            let kf = glib::KeyFile::new();
+            kf.load_from_data(&format!("[Desktop Entry]\nType=Application\nName={id}\nExec=/bin/sh\nIcon={id}\n"), glib::KeyFileFlags::NONE).unwrap();
+            gio::DesktopAppInfo::from_keyfile(&kf).unwrap().upcast::<gio::AppInfo>()
+        };
+        let entry = |name: &str| (name == "spotify" || name == "org.app.Player").then(|| app(if name == "spotify" { "Spotify" } else { "Player" }));
+        let no_game = |_: &str, _: &str| None;
+        let mut s = stream(1, "spotify", 10, false);
+        s.name = "Spotify".into();
+        let (_, icon) = shown_with(&s, &entry, &|_| None, &no_game);
+        assert_ne!(icon.to_string().map(|s| s.to_string()).as_deref(), Some("audio-x-generic"));
+        // a stream named after its library: the window's app of its process
+        let mut s = stream(2, "ALSA plug-in [player]", 10, false);
+        s.pid = 42;
+        let (name, _) = shown_with(&s, &entry, &|pid| (pid == 42).then(|| ("app".into(), "org.app.Player".into())), &no_game);
+        assert_eq!(name, "Player");
     }
 
     #[test]
