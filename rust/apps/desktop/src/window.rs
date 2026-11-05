@@ -443,6 +443,14 @@ impl WallpaperWindow {
     }
 }
 
+/// A restart starts the new wallpaper while the old one still shows (no
+/// black flash): as a unique app it only woke the old one and quit, and
+/// the desktop went black once the old one went (__main__.py; Vini, in the
+/// Rust session).
+pub fn app_flags() -> gio::ApplicationFlags {
+    gio::ApplicationFlags::NON_UNIQUE
+}
+
 /// `sonata2-rs wallpaper [--preview]`: the wallpaper and the desktop's
 /// icons on every display (layer-shell background surfaces). --preview, and
 /// always on trial: one plain window, next to the Python desktop.
@@ -451,7 +459,7 @@ pub fn run_wallpaper(args: &[String]) -> glib::ExitCode {
     if !preview {
         sonata_shell::layer::ensure_preload();
     }
-    let app = adw::Application::builder().application_id(app_id()).build();
+    let app = adw::Application::builder().application_id(app_id()).flags(app_flags()).build();
     let state: Rc<RefCell<Option<Rc<Walls>>>> = Rc::default();
     app.connect_activate(move |app| {
         if state.borrow().is_some() {
@@ -535,6 +543,15 @@ impl Walls {
 
 #[cfg(test)]
 mod tests {
+
+    /// Vini, in the Rust session: restarting the shell left the desktop
+    /// black -- the new wallpaper woke the old one and quit, then the old
+    /// one was stopped. Each start is its own wallpaper.
+    #[test]
+    fn test_desktop_went_black_on_restart() {
+        assert!(super::app_flags().contains(gtk::gio::ApplicationFlags::NON_UNIQUE));
+    }
+
     use super::*;
 
     #[test]
