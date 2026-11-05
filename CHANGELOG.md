@@ -13,7 +13,7 @@
 - Rust preview session: closing Mission Control no longer crashes the menu bar, and no Rust part can crash any more by stopping a timer that had already run out. The menu bar no longer gathers dead processes (one per idle lock, alarm stopped, screenshot opened in Preview...).
 - Rust preview session: the login builds Wayfire's settings in Rust (`sonata2-rs wayfire-config`) -- the window frame, the Mission Control and window button migrations and your Settings changes come out exactly as in the Python session, without python3.
 - Notification Center's calendar sits a little lower, no longer almost touching the menu bar.
-- Rust preview session: the menu bar's Wi-Fi, Bluetooth, battery and other status panels open centred under their icon, not off to the right; Notification Center's glass shows as soon as it opens.
+- The menu bar's panels and menus open where they belong at once, hung from their icon's or title's left edge, instead of opening centred and jumping to the right; Notification Center's glass (Rust) shows as soon as it opens.
 - Rust preview session: the Open / Save panels are the Rust ones too (D-Bus started the Python portal: the launcher looked for sonata2-rs on a PATH D-Bus doesn't have).
 - An app closed within 30 s of opening it (from Launchpad, the Dock or Files) no longer opens again by itself, three times: its window counts as soon as it shows.
 - The menu bar's Sound item and the equalizer follow a new default output at once (they never noticed it), hiding Sound on a system without pactl no longer crashes the menu bar, and restarting the menu bar no longer leaves a second idle timer running (the display darkening and locking twice).

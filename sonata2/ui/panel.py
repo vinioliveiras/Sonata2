@@ -214,6 +214,11 @@ def align_to_start(pop: Gtk.Popover, anchor: Gtk.Widget, gap: int = 4) -> None:
         pw = pop.get_width()
         if pw > 0:
             pop.set_offset(int((pw - anchor.get_width()) / 2), gap)
+    # placed before it shows: set only once it was on screen, it opened
+    # centred and jumped to the left edge (Vini: "thrown to the right")
+    natural = pop.measure(Gtk.Orientation.HORIZONTAL, -1)[1]
+    if natural > 0 and anchor.get_width() > 0:
+        pop.set_offset(int((natural - anchor.get_width()) / 2), gap)
     pop.connect("map", lambda *_: GLib.idle_add(lambda: (fix(), False)[1]))
 
 

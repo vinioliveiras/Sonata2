@@ -267,13 +267,31 @@ thread_local! {
 
 /// Left-align a popover below `anchor` (macOS menus hang from the title's
 /// left edge) instead of GTK's centring.
+thread_local! {
+    /// a panel's width around its content (padding, border, shadow room),
+    /// as the last one shown had it
+    static FRAME: std::cell::Cell<i32> = const { std::cell::Cell::new(0) };
+}
+
 pub fn align_to_start(pop: &gtk::Popover, anchor: &gtk::Widget, gap: i32) {
+    // placed before it shows: set only once it was on screen, it opened
+    // centred and jumped to the left edge (Vini: "thrown to the right")
+    // (a popover measures 0 before it's realized: its content's width, plus
+    // the frame the last panel had around its content)
+    let content = pop.child().map_or(0, |c| c.measure(gtk::Orientation::Horizontal, -1).1);
+    if content > 0 && anchor.width() > 0 {
+        let natural = content + FRAME.with(|f| f.get());
+        pop.set_offset((natural - anchor.width()) / 2, gap);
+    }
     let a = anchor.downgrade();
     pop.connect_map(move |p| {
         let (p, a) = (p.downgrade(), a.clone());
         glib::idle_add_local_once(move || {
             let (Some(p), Some(a)) = (p.upgrade(), a.upgrade()) else { return };
             let pw = p.width();
+            if let Some(c) = p.child().filter(|_| pw > 0) {
+                FRAME.with(|f| f.set((pw - c.width()).max(0)));
+            }
             if pw > 0 {
                 p.set_offset((pw - a.width()) / 2, gap);
             }
@@ -434,5 +452,42 @@ mod tests {
     fn test_panel_never_taller_than_the_display() {
         assert_eq!(max_height(720), 672);
         assert_eq!(max_height(100), 200); // never a sliver
+    }
+}
+
+#[cfg(test)]
+mod align_tests {
+    use gtk::prelude::*;
+
+    /// Vini: a menu bar panel opened centred under its icon, then jumped to
+    /// hang from the icon's left edge. Its offset is set before it shows.
+    #[test]
+    fn test_panel_jumped_to_the_left_edge_after_opening() {
+        if (gtk::is_initialized() && !gtk::is_initialized_main_thread()) || gtk::init().is_err() {
+            return; // (no display, or GTK is another test thread's)
+        }
+        let win = gtk::Window::new();
+        let anchor = gtk::Button::builder().label("W").width_request(30).halign(gtk::Align::Start).build();
+        let row = gtk::Box::builder().width_request(400).build();
+        row.append(&anchor);
+        win.set_child(Some(&row));
+        win.present();
+        let ctx = gtk::glib::MainContext::default();
+        while anchor.width() == 0 && ctx.iteration(false) {}
+        while ctx.pending() {
+            ctx.iteration(false);
+        }
+        if anchor.width() == 0 {
+            return; // (not laid out on this display)
+        }
+        let pop = gtk::Popover::builder().has_arrow(false).build();
+        pop.set_child(Some(&gtk::Box::builder().width_request(280).height_request(40).build()));
+        pop.set_parent(&anchor);
+        super::align_to_start(&pop, anchor.upcast_ref(), 2);
+        let (x, y) = pop.offset();
+        assert!(x > 100, "offset {x} before showing: it would open centred, then jump");
+        assert_eq!(y, 2);
+        pop.unparent();
+        win.destroy();
     }
 }

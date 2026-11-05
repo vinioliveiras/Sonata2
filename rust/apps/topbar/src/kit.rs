@@ -171,13 +171,31 @@ pub fn reopen(pop: &gtk::Popover) {
 }
 
 /// Left-align a popover below `anchor` instead of GTK's centring.
+thread_local! {
+    /// a panel's width around its content (padding, border, shadow room),
+    /// as the last one shown had it
+    static FRAME: std::cell::Cell<i32> = const { std::cell::Cell::new(0) };
+}
+
 pub fn align_to_start(pop: &gtk::Popover, anchor: &gtk::Widget, gap: i32) {
+    // placed before it shows: set only once it was on screen, it opened
+    // centred and jumped to the left edge (Vini: "thrown to the right")
+    // (a popover measures 0 before it's realized: its content's width, plus
+    // the frame the last panel had around its content)
+    let content = pop.child().map_or(0, |c| c.measure(gtk::Orientation::Horizontal, -1).1);
+    if content > 0 && anchor.width() > 0 {
+        let natural = content + FRAME.with(|f| f.get());
+        pop.set_offset((natural - anchor.width()) / 2, gap);
+    }
     let a = anchor.downgrade();
     pop.connect_map(move |p| {
         let (p, a) = (p.clone(), a.clone());
         glib::idle_add_local_once(move || {
             let Some(a) = a.upgrade() else { return };
             let pw = p.width();
+            if let Some(c) = p.child().filter(|_| pw > 0) {
+                FRAME.with(|f| f.set((pw - c.width()).max(0)));
+            }
             if pw > 0 {
                 p.set_offset((pw - a.width()) / 2, gap);
             }
