@@ -58,6 +58,8 @@
 //! Sonata: its own app ids, its own settings folder for writing.
 
 mod desktop;
+mod gamebar_host;
+mod host;
 
 use std::process::ExitCode;
 
@@ -165,7 +167,7 @@ fn main() -> ExitCode {
             ExitCode::from(code.value() as u8)
         }
         "topbar" => {
-            let code = sonata_topbar::run_with(&args[1..], topbar_services(), |_, _| {});
+            let code = sonata_topbar::run_with(&args[1..], topbar_services(), host::topbar_started);
             ExitCode::from(code.value() as u8)
         }
         "keyring" => ExitCode::from(sonata_tweaks::keyring::main(&args[1..]) as u8),

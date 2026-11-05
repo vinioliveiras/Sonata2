@@ -1604,6 +1604,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonata-gamepad"
+version = "0.1.0"
+dependencies = [
+ "gio",
+ "glib",
+ "gtk4",
+ "libc",
+ "serde_json",
+ "sonata-backend",
+ "sonata-config",
+ "sonata-i18n",
+ "sonata-ui",
+ "tempfile",
+]
+
+[[package]]
 name = "sonata-greeter"
 version = "0.1.0"
 dependencies = [
@@ -2058,6 +2074,7 @@ dependencies = [
 name = "sonata2-rs"
 version = "0.1.0"
 dependencies = [
+ "gtk4",
  "sonata-activity",
  "sonata-calculator",
  "sonata-calendar",
@@ -2071,6 +2088,7 @@ dependencies = [
  "sonata-feedback",
  "sonata-files",
  "sonata-gamebar",
+ "sonata-gamepad",
  "sonata-greeter",
  "sonata-i18n",
  "sonata-launchpad",
@@ -2088,6 +2106,7 @@ dependencies = [
  "sonata-textedit",
  "sonata-topbar",
  "sonata-tweaks",
+ "sonata-ui",
  "sonata-webapps",
  "sonata-welcome",
  "tempfile",

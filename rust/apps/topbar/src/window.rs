@@ -46,6 +46,11 @@ pub struct TopBarWindow {
 }
 
 impl TopBarWindow {
+    /// On the screen as the menu bar (a layer surface), not a preview window.
+    pub fn layered(&self) -> bool {
+        self.layered
+    }
+
     pub fn new(app: &gtk::Application, preview: bool, monitor: Option<&gtk::gdk::Monitor>, services: Services) -> Rc<TopBarWindow> {
         let win = gtk::ApplicationWindow::builder().application(app).title("Menu Bar").css_classes(["sonata-topbar"]).decorated(false).resizable(true).build();
         let bar = Bar::new(services);

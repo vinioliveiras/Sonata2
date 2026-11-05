@@ -36,6 +36,7 @@ members = [
     "crates/sonata-notifications",
     "crates/sonata-system",
     "crates/sonata-tweaks",
+    "crates/sonata-gamepad",
     "apps/mission",
     "apps/capture",
     "apps/gamebar",
@@ -117,6 +118,7 @@ sonata-settings = { path = "apps/settings" }
 sonata-notifications = { path = "crates/sonata-notifications" }
 sonata-system = { path = "crates/sonata-system" }
 sonata-tweaks = { path = "crates/sonata-tweaks" }
+sonata-gamepad = { path = "crates/sonata-gamepad" }
 sonata-mission = { path = "apps/mission" }
 sonata-capture = { path = "apps/capture" }
 sonata-gamebar = { path = "apps/gamebar" }
